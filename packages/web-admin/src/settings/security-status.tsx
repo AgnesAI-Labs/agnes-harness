@@ -2,15 +2,18 @@ import type { RuntimeSecurityStatus } from '@agnes/protocol'
 import {
   Banner,
   Button,
+  SettingsBlock,
   SettingsDetails,
-  SettingsGroup,
+  SettingsDrill,
   SettingsItem,
   SettingsList,
   SettingsRow,
-  SettingsSection,
   SettingsState,
+  SettingsTag,
+  setSettingsNavAttention,
   useUiText,
 } from '@agnes/web-ui'
+import { useEffect } from 'react'
 
 import { SECURITY_NAMESPACE, securityUxCatalog } from './security-locale.js'
 
@@ -154,45 +157,114 @@ export function SecurityStatusPanel({
         )}
       </div>
     )
+  const level = status.platform.l1.level
+  const tone =
+    level === 'full' ? 'ok' : level === 'partial' ? 'warn' : level === 'unprobed' ? 'muted' : 'error'
+  const all = ['file', 'process', 'network']
+  const missing = all.filter((scope) => !status.platform.l1.scope.includes(scope as never))
+  const value =
+    level === 'full'
+      ? scopes(status.platform.l1.scope)
+      : level === 'partial'
+        ? ux('missing', { list: scopes(missing) })
+        : level === 'unprobed'
+          ? ux('unprobedHelp')
+          : ''
+  const platform = t(`platform.${status.platform.os}`)
   return (
-    <SettingsSection
-      data-testid="sandbox-security-status"
-      title={ux('isolation')}
-      description={ux('isolationHelp')}
-    >
-      {status.platform.l1.level === 'full' ? (
-        <SettingsGroup>
-          <SettingsItem
-            icon="shield-check"
-            label={`${ux('protected')} · ${t(`platform.${status.platform.os}`)}`}
-            description={ux('platformOnly')}
-          />
-        </SettingsGroup>
-      ) : status.platform.l1.level === 'unprobed' ? (
-        // Not checked is not a fault: nothing has run in a workspace yet, so nothing is known.
-        <SettingsGroup>
-          <SettingsItem
-            data-testid="sandbox-status-unprobed"
-            label={`${ux('unprobed')} · ${t(`platform.${status.platform.os}`)}`}
-            description={ux('unprobedHelp')}
-          />
-        </SettingsGroup>
-      ) : (
-        <Banner
-          tone="warning"
-          action={
-            <Button
-              appearance="ghost"
-              size="small"
-              href="https://github.com/AgnesAI-Labs/agnes-harness/blob/feat/agh-plugin-core/docs/guide/sandbox-providers.md"
+    <SettingsBlock label={ux('isolation')} data-testid="sandbox-security-status" data-level={level}>
+      <NavAttention tone={tone} />
+      <SettingsDrill
+        id="isolation"
+        data-testid="sandbox-isolation"
+        label={ux('commandIsolation')}
+        hint={platform}
+        info={ux('isolationHelp')}
+        title={ux('isolationDetails')}
+        value={
+          <>
+            <SettingsTag
+              tone={tone}
+              data-testid={level === 'unprobed' ? 'sandbox-status-unprobed' : undefined}
             >
-              {ux('protectionHelp')}
-            </Button>
-          }
-        >
-          {ux('partial')}
-        </Banner>
-      )}
-    </SettingsSection>
+              {ux(`state.${level}`)}
+            </SettingsTag>
+            {value}
+          </>
+        }
+      >
+        {level === 'partial' && <Banner tone="warning">{ux('partialImpact')}</Banner>}
+        {level === 'unavailable' && (
+          <Banner
+            tone="error"
+            action={
+              <Button
+                appearance="ghost"
+                size="small"
+                href="https://github.com/AgnesAI-Labs/agnes-harness/blob/feat/agh-plugin-core/docs/guide/sandbox-providers.md"
+              >
+                {ux('protectionHelp')}
+              </Button>
+            }
+          >
+            {ux('partial')}
+          </Banner>
+        )}
+        <SettingsBlock label={ux('thisComputer')} data-testid="security-platform">
+          <SettingsItem label={ux('system')}>
+            <span className="agnes-settings-value">{platform}</span>
+          </SettingsItem>
+          <SettingsItem label={ux('state')}>
+            <SettingsTag tone={tone}>{ux(`state.${level}`)}</SettingsTag>
+          </SettingsItem>
+          <SettingsItem label={ux('scope')}>
+            <span className="agnes-settings-value">{scopes(status.platform.l1.scope) || '—'}</span>
+          </SettingsItem>
+          <SettingsItem label={ux('reason')}>
+            <span className="agnes-settings-value" title={status.platform.l1.reason}>
+              {status.platform.l1.reason ? t('securityProbeIssue') : '—'}
+            </span>
+          </SettingsItem>
+        </SettingsBlock>
+        <SettingsBlock label={ux('perWorkspace')} data-testid="security-workspaces">
+          {!status.workspaces.length && <SettingsItem label={t('noWorkspacePosture')} />}
+          {workspaces.map(({ workspace, key }) => {
+            const enforcement = workspace.enforcement?.level ?? 'unprobed'
+            const workspaceTone =
+              enforcement === 'full'
+                ? 'ok'
+                : enforcement === 'partial'
+                  ? 'warn'
+                  : enforcement === 'unprobed'
+                    ? 'muted'
+                    : 'error'
+            return (
+              <SettingsItem
+                key={key}
+                data-testid="workspace-sandbox-status"
+                label={<span translate="no">{workspace.path}</span>}
+                description={`${choice(workspace.preset)} · ${provider(workspace.provider)}`}
+              >
+                <span className="agnes-settings-value" data-testid="workspace-enforcement">
+                  <SettingsTag tone={workspaceTone}>{ux(`state.${enforcement}`)}</SettingsTag>
+                  {workspace.enforcement ? scopes(workspace.enforcement.scope) || '—' : ''}
+                </span>
+              </SettingsItem>
+            )
+          })}
+        </SettingsBlock>
+        <p className="agnes-settings-note">{ux('platformOnly')}</p>
+      </SettingsDrill>
+    </SettingsBlock>
   )
+}
+
+/** Yellow and red isolation states put a dot on 权限与安全 in the navigation. */
+function NavAttention({ tone }: { tone: string }) {
+  useEffect(() => {
+    const attention = tone === 'warn' ? 'warn' : tone === 'error' ? 'error' : undefined
+    setSettingsNavAttention('security', attention)
+    return () => setSettingsNavAttention('security', undefined)
+  }, [tone])
+  return null
 }

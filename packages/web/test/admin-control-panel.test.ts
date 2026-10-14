@@ -906,10 +906,18 @@ it('shows an unchecked platform as not checked, never as incomplete, and a measu
       t: text,
     })
   const unprobed = await mount(status({ level: 'unprobed', scope: [] }))
-  expect(unprobed.querySelector('[data-testid="sandbox-status-unprobed"]')?.textContent).toContain(
-    'Isolation not checked yet',
+  // One row, four states: 未检测 is grey and says when it is checked.
+  expect(unprobed.querySelector('[data-testid="sandbox-status-unprobed"]')?.textContent).toBe('Not checked')
+  expect(unprobed.querySelector('[data-testid="sandbox-status-unprobed"]')?.getAttribute('data-tone')).toBe(
+    'muted',
   )
+  expect(unprobed.textContent).toContain('It is checked the first time a session runs')
   expect(unprobed.textContent).not.toContain('Isolation on this computer is incomplete')
+  const partial = await mount(status({ level: 'partial', scope: ['file'] }))
+  expect(partial.querySelector('[data-testid="sandbox-isolation"]')?.textContent).toContain(
+    'Missing: Processes · Network',
+  )
+  expect(partial.querySelector('.agnes-settings-tag')?.getAttribute('data-tone')).toBe('warn')
   const details = await mount(
     createElement(SecurityStatusPanel, {
       status: {
@@ -926,7 +934,8 @@ it('shows an unchecked platform as not checked, never as incomplete, and a measu
   const failed = await mount(
     status({ level: 'unavailable', scope: [], reason: 'sandbox-exec rejected the profile' }),
   )
-  expect(failed.textContent).toContain('Isolation on this computer is incomplete')
+  expect(failed.querySelector('.agnes-settings-tag')?.textContent).toBe('Unavailable')
+  expect(failed.querySelector('.agnes-settings-tag')?.getAttribute('data-tone')).toBe('error')
   expect(failed.querySelector('[data-testid="sandbox-status-unprobed"]')).toBeNull()
 })
 

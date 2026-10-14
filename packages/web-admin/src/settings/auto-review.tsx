@@ -1,17 +1,20 @@
 import { AutoReviewConfig, validateAgainst } from '@agnes/protocol'
 import {
+  Banner,
   Button,
-  Field,
-  LabeledSwitch,
-  MetaText,
-  SettingsAdvanced,
-  SettingsGroup,
+  IconButton,
+  Segmented,
+  SettingsBlock,
+  SettingsChips,
+  SettingsChipToggle,
+  SettingsDrill,
   SettingsInput,
   SettingsItem,
-  SettingsSaveBar,
-  SettingsSection,
+  SettingsPresetSelect,
   SettingsSelect,
-  SettingsState,
+  StateSwitch,
+  secondPresets,
+  useAutosave,
   useUiText,
 } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
@@ -37,36 +40,39 @@ export async function reviewSettings(
   if (!response.ok || !validateAgainst(AutoReviewConfig, value).ok) throw new Error('Policy unavailable')
   return value as AutoReviewConfig
 }
+type Override = NonNullable<AutoReviewConfig['overrides']>[number]
+const CATEGORIES = ['read', 'write', 'external'] as const
+const TIMEOUT_SECONDS = [5, 10, 30, 60] as const
+const sameConfig = (a: AutoReviewConfig, b: AutoReviewConfig) => JSON.stringify(a) === JSON.stringify(b)
+
+/**
+ * 审批 under 权限与安全: whether AI reviews low-risk actions first (one switch), the review rules as a
+ * subpage (reviewer model, tools as chips, kinds of action as toggles, highest risk, per-session
+ * limit, timeout in seconds), and the rules added from approvals as a subpage where each can be
+ * removed or all cleared. Each change saves itself.
+ */
 export function AutoReviewPanel({ canSave }: { canSave: boolean }) {
   const { t } = useUiText('@agnes/web/auto-review', reviewCatalog)
   const [slots, setSlots] = useState<ModelSlotsState>()
   const [slotsFailed, setSlotsFailed] = useState(false)
   const lifetime = useRef<AbortController>()
-  const stored = useRef<AutoReviewConfig>({})
-  const [dirty, setDirty] = useState(false)
-  const [config, setConfig] = useState<AutoReviewConfig>({})
-  const [tools, setTools] = useState('')
-  const [categories, setCategories] = useState('')
-  const [loaded, setLoaded] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [message, setMessage] = useState('')
+  const [stored, setStored] = useState<AutoReviewConfig>()
+  const [readFailed, setReadFailed] = useState(false)
+  const [reads, setReads] = useState(0)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reads is an explicit retry.
   useEffect(() => {
     const controller = new AbortController()
     lifetime.current = controller
+    setReadFailed(false)
     void reviewSettings(undefined, controller.signal)
       .then((value) => {
-        if (controller.signal.aborted) return
-        stored.current = value
-        setConfig(value)
-        setTools(value.eligibleTools?.join(', ') ?? '')
-        setCategories(value.eligibleCategories?.join(', ') ?? '')
-        setLoaded(true)
+        if (!controller.signal.aborted) setStored(value)
       })
       .catch(() => {
-        if (!controller.signal.aborted) setMessage('failed')
+        if (!controller.signal.aborted) setReadFailed(true)
       })
     return () => controller.abort()
-  }, [])
+  }, [reads])
   useEffect(() => {
     const controller = new AbortController()
     let epoch = 0
@@ -90,213 +96,222 @@ export function AutoReviewPanel({ canSave }: { canSave: boolean }) {
       window.removeEventListener('agnes:model-slots-changed', refresh)
     }
   }, [])
-  const reviewer = slots?.slots[config.modelSlot ?? 'fast']
-  const configured =
-    !!reviewer &&
-    !!slots &&
-    modelSlotOptions(slots).some((model) => model.route === reviewer.route && model.id === reviewer.model)
-  const update = (patch: Partial<AutoReviewConfig>) => {
-    setConfig((value) => ({ ...value, ...patch }))
-    setMessage('')
-    setDirty(true)
-  }
-  async function save() {
-    if (busy || !loaded || !canSave) return
-    setBusy(true)
-    try {
-      const list = (text: string) =>
-        text
-          .split(',')
-          .map((value) => value.trim())
-          .filter(Boolean)
-      const { eligibleTools: _tools, eligibleCategories: _categories, ...remaining } = config
-      const eligibleCategories = list(categories).map((category) => {
-        if (category !== 'read' && category !== 'write' && category !== 'external')
-          throw new Error('Invalid eligible category')
-        return category
-      })
-      const next = {
-        ...remaining,
-        ...(tools.trim() ? { eligibleTools: list(tools) } : {}),
-        ...(eligibleCategories.length ? { eligibleCategories } : {}),
-      }
+  const config = useAutosave<AutoReviewConfig>({
+    stored,
+    equal: sameConfig,
+    save: async (next) => {
       const value = await reviewSettings(next, lifetime.current?.signal)
-      if (lifetime.current?.signal.aborted) return
-      stored.current = value
-      setConfig(value)
-      setDirty(false)
-      setMessage('saved')
-    } catch {
-      if (!lifetime.current?.signal.aborted) setMessage('failed')
-    } finally {
-      if (!lifetime.current?.signal.aborted) setBusy(false)
-    }
+      setStored(value)
+    },
+  })
+  const value = config.value ?? {}
+  const locked = !canSave || !stored
+  const edit = (
+    patch: { [Key in keyof AutoReviewConfig]?: AutoReviewConfig[Key] | undefined },
+    when: 'now' | 'idle' = 'now',
+  ) => {
+    const next = { ...value, ...patch } as Record<string, unknown>
+    for (const key of Object.keys(patch))
+      if (patch[key as keyof AutoReviewConfig] === undefined) delete next[key]
+    config.set(next as AutoReviewConfig, when)
   }
+  const slot = value.modelSlot ?? 'fast'
+  // The reviewer by the name of its account and model, never its route.
+  const modelName = (name: 'fast' | 'verifier') => {
+    const chosen = slots?.slots[name]
+    const option =
+      chosen &&
+      slots &&
+      modelSlotOptions(slots).find((entry) => entry.route === chosen.route && entry.id === chosen.model)
+    return option ? `${option.label} · ${option.name ?? option.id}` : undefined
+  }
+  const reviewer = modelName(slot)
+  const overrides = value.overrides ?? []
+  const summary = [
+    t(slot),
+    t(value.maxRisk ?? 'low'),
+    t('budgetSummary', { count: value.maxReviews ?? 20 }),
+  ].join(' · ')
   return (
-    <SettingsSection title={t('title')} data-testid="auto-review-settings">
-      <SettingsGroup>
-        <SettingsItem label={t('enabledLabel')} description={t('enabledHelp')}>
-          <LabeledSwitch
-            checked={stored.current.enabled ?? false}
-            disabled={!canSave || !loaded || busy}
-            testId="auto-review-enabled"
-            label={t('enabled')}
-            onLabel={t('on')}
-            offLabel={t('off')}
-            onToggle={(enabled) => {
-              if (busy || !loaded || !canSave) return
-              setBusy(true)
-              void reviewSettings({ ...stored.current, enabled }, lifetime.current?.signal)
-                .then((value) => {
-                  if (lifetime.current?.signal.aborted) return
-                  stored.current = value
-                  setConfig((draft) => ({ ...draft, enabled: value.enabled ?? false }))
-                  setMessage('saved')
-                })
-                .catch(() => {
-                  if (!lifetime.current?.signal.aborted) setMessage('failed')
-                })
-                .finally(() => {
-                  if (!lifetime.current?.signal.aborted) setBusy(false)
-                })
-            }}
-          />
-        </SettingsItem>
-        <SettingsItem
-          label={t('overrides')}
-          description={t('overridesCount', { count: config.overrides?.length ?? 0 })}
-        >
-          <Button
-            size="small"
-            data-testid="auto-review-clear-overrides"
-            disabled={!canSave || busy || !config.overrides?.length}
-            onClick={() => update({ overrides: [] })}
-          >
-            {t('clear')}
-          </Button>
-        </SettingsItem>
-      </SettingsGroup>
-      <SettingsAdvanced
-        title={t('customize')}
-        data-testid="auto-review-customize"
-        summary={`${t(config.modelSlot ?? 'fast')} · ${t(config.maxRisk ?? 'low')} · ${t('budgetSummary', { count: config.maxReviews ?? 20 })}`}
-      >
-        <Field label={t('modelSlot')} htmlFor="auto-review-model">
-          <SettingsSelect
-            id="auto-review-model"
-            data-testid="auto-review-model"
-            value={config.modelSlot ?? 'fast'}
-            disabled={!canSave || !loaded || busy}
-            onChange={(event) => update({ modelSlot: event.target.value as 'fast' | 'verifier' })}
-          >
-            {['fast', 'verifier'].map((value) => (
-              <option key={value} value={value}>
-                {t(value)}
-              </option>
-            ))}
-          </SettingsSelect>
-        </Field>
-        <p>
-          {t('profileHelp')}{' '}
-          <Button href="?settings=model#auxiliary-models" data-testid="auto-review-model-link">
-            {t('modelLink')}
-          </Button>
-        </p>
-        <p className="model-slot-current" data-testid="auto-review-slot-status" role="status">
-          <MetaText>
-            {slotsFailed
-              ? t('slotFailed')
-              : !slots
-                ? t('slotLoading')
-                : configured
-                  ? `${t('slotConfigured')}: ${reviewer?.route} / ${reviewer?.model}`
-                  : t('slotUnset')}
-          </MetaText>
-        </p>
-        <Field label={t('tools')} htmlFor="auto-review-tools">
-          <SettingsInput
-            id="auto-review-tools"
-            data-testid="auto-review-tools"
-            value={tools}
-            disabled={!canSave || !loaded || busy}
-            onChange={(event) => {
-              setTools(event.target.value)
-              setDirty(true)
-              setMessage('')
-            }}
-          />
-        </Field>
-        <Field label={t('categories')} htmlFor="auto-review-categories">
-          <SettingsInput
-            id="auto-review-categories"
-            data-testid="auto-review-categories"
-            value={categories}
-            disabled={!canSave || !loaded || busy}
-            onChange={(event) => {
-              setCategories(event.target.value)
-              setDirty(true)
-              setMessage('')
-            }}
-          />
-        </Field>
-        <Field label={t('maxRisk')} htmlFor="auto-review-risk">
-          <SettingsSelect
-            id="auto-review-risk"
-            data-testid="auto-review-risk"
-            value={config.maxRisk ?? 'low'}
-            disabled={!canSave || !loaded || busy}
-            onChange={(event) => update({ maxRisk: event.target.value as 'low' | 'medium' })}
-          >
-            {['low', 'medium'].map((value) => (
-              <option key={value} value={value}>
-                {t(value)}
-              </option>
-            ))}
-          </SettingsSelect>
-        </Field>
-        {(['maxReviews', 'timeoutMs'] as const).map((name) => (
-          <Field
-            key={name}
-            label={t(name === 'maxReviews' ? 'budget' : 'timeout')}
-            htmlFor={`auto-review-${name}`}
-          >
-            <SettingsInput
-              id={`auto-review-${name}`}
-              data-testid={`auto-review-${name}`}
-              type="number"
-              min={name === 'maxReviews' ? 0 : 1}
-              max={name === 'maxReviews' ? 1000 : 60000}
-              value={config[name] ?? (name === 'maxReviews' ? 20 : 10000)}
-              disabled={!canSave || !loaded || busy}
-              onChange={(event) => update({ [name]: Number(event.target.value) })}
+    <SettingsBlock
+      label={t('title')}
+      data-testid="auto-review-settings"
+      aria-busy={config.busy}
+      failed={config.failed}
+      onRetry={config.retry}
+      state={readFailed ? 'error' : !stored ? 'loading' : undefined}
+      onReload={() => setReads((count) => count + 1)}
+    >
+      {stored && (
+        <>
+          <SettingsItem label={t('enabledLabel')} info={t('enabledHelp')}>
+            <StateSwitch
+              id="auto-review-enabled"
+              testId="auto-review-enabled"
+              label={t('enabledLabel')}
+              checked={value.enabled ?? false}
+              disabled={locked}
+              onToggle={(enabled) => edit({ enabled })}
             />
-          </Field>
-        ))}
-      </SettingsAdvanced>
-      <div data-testid="auto-review-save">
-        <SettingsSaveBar
-          dirty={dirty && canSave && loaded}
-          busy={busy}
-          saved={message === 'saved'}
-          onSave={() => void save()}
-          onDiscard={() => {
-            setConfig(stored.current)
-            setTools(stored.current.eligibleTools?.join(', ') ?? '')
-            setCategories(stored.current.eligibleCategories?.join(', ') ?? '')
-            setDirty(false)
-            setMessage('')
-          }}
-        />
-      </div>
-      {message && (
-        <SettingsState
-          tone={message === 'failed' ? 'error' : 'success'}
-          role={message === 'failed' ? 'alert' : 'status'}
-          data-testid="auto-review-status"
-        >
-          {t(message)}
-        </SettingsState>
+          </SettingsItem>
+          <SettingsDrill
+            id="auto-review"
+            data-testid="auto-review-customize"
+            label={t('customize')}
+            value={summary}
+            description={t('customizeHelp')}
+          >
+            <SettingsBlock>
+              <SettingsItem label={t('modelSlot')} info={t('profileHelp')}>
+                <SettingsSelect
+                  id="auto-review-model"
+                  data-testid="auto-review-model"
+                  aria-label={t('modelSlot')}
+                  value={slot}
+                  disabled={locked}
+                  onChange={(event) => edit({ modelSlot: event.target.value as 'fast' | 'verifier' })}
+                >
+                  {(['fast', 'verifier'] as const).map((name) => (
+                    <option key={name} value={name}>
+                      {modelName(name) ? `${t(name)} · ${modelName(name)}` : t(name)}
+                    </option>
+                  ))}
+                </SettingsSelect>
+              </SettingsItem>
+            </SettingsBlock>
+            {(slotsFailed || (slots && !reviewer)) && (
+              <Banner
+                tone="warning"
+                data-testid="auto-review-slot-status"
+                action={
+                  <Button
+                    size="small"
+                    href="?settings=model#auxiliary-models"
+                    data-testid="auto-review-model-link"
+                  >
+                    {t('modelLink')}
+                  </Button>
+                }
+              >
+                {t(slotsFailed ? 'slotFailed' : 'slotUnset')}
+              </Banner>
+            )}
+            <SettingsBlock label={t('scope')}>
+              <SettingsItem label={t('tools')} description={t('allWhenEmpty')}>
+                <SettingsChips
+                  data-testid="auto-review-tools"
+                  label={t('tools')}
+                  placeholder={t('addTool')}
+                  disabled={locked}
+                  values={value.eligibleTools ?? []}
+                  onChange={(next) => edit({ eligibleTools: next.length ? next : undefined })}
+                />
+              </SettingsItem>
+              <SettingsItem label={t('categories')} description={t('allWhenEmpty')}>
+                <SettingsChipToggle<(typeof CATEGORIES)[number]>
+                  data-testid="auto-review-categories"
+                  label={t('categories')}
+                  disabled={locked}
+                  options={CATEGORIES.map((category) => ({
+                    value: category,
+                    label: t(`category.${category}`),
+                  }))}
+                  values={value.eligibleCategories ?? []}
+                  onChange={(next) => edit({ eligibleCategories: next.length ? next : undefined })}
+                />
+              </SettingsItem>
+              <SettingsItem label={t('maxRisk')}>
+                <Segmented<'low' | 'medium'>
+                  label={t('maxRisk')}
+                  testId="auto-review-risk"
+                  value={value.maxRisk ?? 'low'}
+                  disabled={locked}
+                  options={[
+                    { value: 'low', label: t('low') },
+                    { value: 'medium', label: t('medium') },
+                  ]}
+                  onChange={(maxRisk) => edit({ maxRisk })}
+                />
+              </SettingsItem>
+            </SettingsBlock>
+            <SettingsBlock label={t('limits')}>
+              <SettingsItem label={t('budget')}>
+                <span className="agnes-settings-value">
+                  <SettingsInput
+                    id="auto-review-maxReviews"
+                    data-testid="auto-review-maxReviews"
+                    type="number"
+                    min={0}
+                    max={1000}
+                    className="agnes-settings-number"
+                    aria-label={t('budget')}
+                    disabled={locked}
+                    value={value.maxReviews ?? 20}
+                    onChange={(event) => {
+                      const next = Number(event.target.value)
+                      if (Number.isInteger(next) && next >= 0 && next <= 1000)
+                        edit({ maxReviews: next }, 'idle')
+                    }}
+                    onBlur={config.flush}
+                  />
+                  {t('times')}
+                </span>
+              </SettingsItem>
+              <SettingsItem label={t('timeout')}>
+                <SettingsPresetSelect
+                  id="auto-review-timeoutMs"
+                  data-testid="auto-review-timeoutMs"
+                  label={t('timeout')}
+                  defaultLabel={t('timeoutDefault')}
+                  disabled={locked}
+                  value={value.timeoutMs}
+                  presets={secondPresets(TIMEOUT_SECONDS, (count) => t('seconds', { count }))}
+                  unit={t('secondUnit')}
+                  scale={1000}
+                  onChange={(timeoutMs) => edit({ timeoutMs })}
+                />
+              </SettingsItem>
+            </SettingsBlock>
+          </SettingsDrill>
+          <SettingsDrill
+            id="approval-rules"
+            data-testid="auto-review-overrides"
+            label={t('overrides')}
+            value={t('overridesCount', { count: overrides.length })}
+            description={t('overridesHelp')}
+            actions={
+              <Button
+                appearance="danger"
+                size="small"
+                data-testid="auto-review-clear-overrides"
+                disabled={locked || !overrides.length}
+                onClick={() => edit({ overrides: [] })}
+              >
+                {t('clear')}
+              </Button>
+            }
+          >
+            <SettingsBlock data-testid="auto-review-override-list">
+              {!overrides.length && <SettingsItem label={t('noOverrides')} />}
+              {overrides.map((rule: Override, index) => (
+                <SettingsItem
+                  key={`${rule.tool}:${rule.scopeHash}`}
+                  label={rule.tool}
+                  description={`${t(`decision.${rule.decision}`)} · ${t(`risk.${rule.risk}`)}`}
+                >
+                  <IconButton
+                    name="trash-2"
+                    label={t('removeRule', { tool: rule.tool })}
+                    data-testid="auto-review-remove-override"
+                    disabled={locked}
+                    onClick={() => edit({ overrides: overrides.filter((_, at) => at !== index) })}
+                  />
+                </SettingsItem>
+              ))}
+            </SettingsBlock>
+          </SettingsDrill>
+        </>
       )}
-    </SettingsSection>
+    </SettingsBlock>
   )
 }

@@ -1,5 +1,5 @@
 /** @vitest-environment happy-dom */
-import { modelSettingsLocaleCatalog, setAdvancedSettingsShown } from '@agnes/web-ui'
+import { modelSettingsLocaleCatalog, SettingsSubpageFrame, setAdvancedSettingsShown } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -78,7 +78,7 @@ async function mount(canSave = true, slots: Record<string, unknown> = {}) {
         'div',
         {},
         createElement(ModelSlotsPanel, { t: en }),
-        createElement(AutoReviewPanel, { canSave }),
+        createElement(SettingsSubpageFrame, { header: null }, createElement(AutoReviewPanel, { canSave })),
       ),
     ),
   )
@@ -93,16 +93,22 @@ async function choose(host: HTMLElement, slot: string, value: string) {
 }
 it('saves each choice as it is made and refreshes the security card', async () => {
   const host = await mount()
+  // The reviewer model is part of the auto review rules subpage.
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="auto-review-customize"]')?.click(),
+  )
   expect(host.querySelector('[data-testid="auto-review-slot-status"]')?.textContent).toContain('not set')
-  expect(host.querySelector('a')?.getAttribute('href')).toBe('?settings=model#auxiliary-models')
+  expect(host.querySelector('[data-testid="auto-review-model-link"]')?.getAttribute('href')).toBe(
+    '?settings=model#auxiliary-models',
+  )
   // No save or reload buttons: choosing is saving, at the revision the page read.
   expect(host.querySelector('[data-testid="model-slots-save"]')).toBeNull()
   expect(host.querySelector('[data-testid="model-slots-reload"]')).toBeNull()
   await choose(host, 'fast', JSON.stringify(['local', 'reviewer']))
   expect(writes).toEqual([{ revision: 1, slots: { fast: { route: 'local', model: 'reviewer' } } }])
-  expect(host.querySelector('[data-testid="auto-review-slot-status"]')?.textContent).toContain(
-    'local / reviewer',
-  )
+  // Chosen: the warning goes, and the reviewer row names the model, not its route.
+  expect(host.querySelector('[data-testid="auto-review-slot-status"]')).toBeNull()
+  expect(host.querySelector('#auto-review-model option[value="fast"]')?.textContent).toContain('reviewer')
   expect(host.querySelector('[data-testid="model-slots-status"]')?.textContent).toContain('New sessions')
   // Emptying the fast slot leaves it unset, so it follows the default account again.
   await choose(host, 'fast', '')

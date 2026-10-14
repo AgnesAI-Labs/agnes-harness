@@ -2363,4 +2363,42 @@
   .agnes-settings-drag {
     cursor: grab;
   }
+
+  /* Three permission modes as cards side by side; the chosen one is outlined in the accent. */
+  fieldset.agnes-settings-modes {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--s8);
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .agnes-settings-modes > div {
+    display: grid;
+    min-width: 0;
+  }
+  .agnes-settings-modes .appearance-option {
+    align-items: flex-start;
+    height: 100%;
+    box-sizing: border-box;
+    padding: var(--s10) var(--s12);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-group);
+  }
+  .agnes-settings-modes .appearance-option:has(input:checked) {
+    border-color: var(--agnes-brand-primary);
+    background: var(--agnes-bg-group);
+    box-shadow: 0 0 0 3px var(--agnes-brand-emphasis-soft);
+  }
+  @media (max-width: 639px) {
+    fieldset.agnes-settings-modes {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  .agnes-settings-number {
+    width: 4.5rem;
+    text-align: end;
+  }
 }

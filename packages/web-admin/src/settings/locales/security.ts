@@ -11,7 +11,6 @@ export const securityCatalog: LocaleCatalog = {
 
     securityProbeIssue: 'A limitation was detected; the reported reason follows.',
     security: 'Security',
-    securityIntro: 'What the Agent may do by default, and the keys it uses.',
     securityUnavailable: 'Security status is unavailable. Reconnect and refresh.',
     platformProbe: 'Platform check result',
     probeHelp:
@@ -59,7 +58,6 @@ export const securityCatalog: LocaleCatalog = {
 
     securityProbeIssue: '检测到限制，原始原因见下一行。',
     security: '安全',
-    securityIntro: 'Agent 默认能做什么，以及它用到的密钥。',
     securityUnavailable: '安全状态暂不可用。请重新连接后刷新。',
     platformProbe: '平台检测结果',
     probeHelp:

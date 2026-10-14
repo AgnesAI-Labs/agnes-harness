@@ -1,16 +1,17 @@
 import { isSessionDefaultsSnapshot } from '@agnes/protocol'
 import {
-  Banner,
   Button,
   Dialog,
+  SettingsBlock,
   SettingsChoice,
-  SettingsSection,
+  SettingsItem,
+  SettingsSelect,
   SettingsState,
-  Toast,
   useUiText,
 } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
 import { PluginAdminApi } from '../admin/plugins/api.js'
+import { SETTINGS_NAMESPACE, settingsCatalog } from './locales.js'
 import { useSettingsOverlay } from './overlay.js'
 import { SECURITY_NAMESPACE, securityUxCatalog } from './security-locale.js'
 
@@ -24,12 +25,13 @@ export function PermissionDefaults({
   fetcher?: typeof fetch
 }) {
   const { t } = useUiText(SECURITY_NAMESPACE, securityUxCatalog)
+  const { t: choiceText } = useUiText(SETTINGS_NAMESPACE, settingsCatalog)
   const [snapshot, setSnapshot] = useState<Snapshot>()
   const [canSave, setCanSave] = useState(false)
   const [effective, setEffective] = useState<string>()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(false)
-  const [saved, setSaved] = useState(false)
+  const [failedPreset, setFailedPreset] = useState<string>()
   const [confirm, setConfirm] = useState(false)
   const [revision, setRevision] = useState(0)
   const lifetime = useRef<AbortController>()
@@ -73,6 +75,7 @@ export function PermissionDefaults({
     if (!canSave || !snapshot || busy || !available.includes(preset)) return
     setBusy(true)
     setError(false)
+    setFailedPreset(preset)
     try {
       const response = await fetcher('/admin/api/defaults', {
         method: 'PUT',
@@ -87,42 +90,40 @@ export function PermissionDefaults({
       window.dispatchEvent(new CustomEvent('agnes:session-configuration-changed'))
       setSnapshot(value as Snapshot)
       setConfirm(false)
-      setSaved(true)
+      setFailedPreset(undefined)
     } catch {
       if (!lifetime.current?.signal.aborted) setError(true)
     } finally {
       if (!lifetime.current?.signal.aborted) setBusy(false)
     }
   }
+  const chosen = snapshot?.defaults.preset ?? effective
+  const more = available.filter((preset) => !(presets as readonly string[]).includes(preset))
+  const name = (id: string) => {
+    const text = choiceText(`choice.${id}`)
+    return text === `choice.${id}` ? id : text
+  }
+  const locked = !canSave || !snapshot || busy
   return (
-    <SettingsSection
+    <SettingsBlock
+      label={t('defaultPermissions')}
+      bare
       data-testid="security-default-permissions"
       aria-busy={busy}
-      title={t('defaultPermissions')}
-      description={t('defaultHelp')}
+      failed={error && !!snapshot}
+      onRetry={() => failedPreset && void save(failedPreset)}
+      state={error && !snapshot ? 'error' : busy && !snapshot ? 'loading' : undefined}
+      onReload={() => setRevision((value) => value + 1)}
     >
-      {busy && !snapshot && <SettingsState tone="loading">{t('loading')}</SettingsState>}
-      {error && (
-        <Banner
-          tone="error"
-          action={<Button onClick={() => setRevision((value) => value + 1)}>{t('retry')}</Button>}
-        >
-          {t('failed')}
-        </Banner>
-      )}
-      <fieldset
-        className="agnes-settings-group agnes-settings-choices"
-        aria-label={t('defaultPermissions')}
-        disabled={!canSave || !snapshot || busy}
-      >
+      <fieldset className="agnes-settings-modes" aria-label={t('defaultPermissions')} disabled={locked}>
         {presets.map((preset) => (
-          <div key={preset} data-testid={`security-${preset}`}>
+          <div key={preset} data-testid={`security-${preset}`} data-on={chosen === preset || undefined}>
             <SettingsChoice
               type="radio"
               name="security-default-preset"
               value={preset}
-              checked={(snapshot?.defaults.preset ?? effective) === preset}
-              disabled={!canSave || !snapshot || busy || !available.includes(preset)}
+              checked={chosen === preset}
+              disabled={locked || !available.includes(preset)}
               label={t(preset)}
               hint={available.includes(preset) ? t(`${preset}Help`) : t('notAllowed')}
               onChange={() => {
@@ -133,9 +134,26 @@ export function PermissionDefaults({
           </div>
         ))}
       </fieldset>
-      <Toast open={saved} onDismiss={() => setSaved(false)}>
-        {t('saved')}
-      </Toast>
+      {more.length > 0 && (
+        <SettingsBlock>
+          <SettingsItem label={t('morePresets')} info={t('morePresetsHelp')}>
+            <SettingsSelect
+              data-testid="security-more-presets"
+              aria-label={t('morePresets')}
+              value={chosen && more.includes(chosen) ? chosen : ''}
+              disabled={locked}
+              onChange={(event) => event.target.value && void save(event.target.value)}
+            >
+              <option value="">{t('morePresetsNone')}</option>
+              {more.map((preset) => (
+                <option key={preset} value={preset}>
+                  {name(preset)}
+                </option>
+              ))}
+            </SettingsSelect>
+          </SettingsItem>
+        </SettingsBlock>
+      )}
       <Dialog
         focusable={{ focusTriggerAfterClose: false }}
         scrollLock={false}
@@ -165,6 +183,6 @@ export function PermissionDefaults({
         <p>{t('full-accessHelp')}</p>
         {error && <SettingsState tone="error">{t('failed')}</SettingsState>}
       </Dialog>
-    </SettingsSection>
+    </SettingsBlock>
   )
 }

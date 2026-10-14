@@ -5,6 +5,10 @@ const merged: Readonly<Record<string, readonly [string, string]>> = {
   bundles: ['models', 'bundles'],
   'system-prompt': ['models', 'system-prompt'],
   context: ['models', 'context'],
+  // Subpages of 权限与安全 open from their rows.
+  'auto-review': ['security', 'auto-review'],
+  'approval-rules': ['security', 'approval-rules'],
+  isolation: ['security', 'isolation'],
   // Subpages of 运行配置 open from their rows.
   'prompt-preview': ['models', 'prompt-preview'],
   'agent-fde': ['models', 'bundles'],

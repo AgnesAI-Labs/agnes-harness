@@ -214,10 +214,10 @@ const definitions: readonly [
     20,
     (c, t) => (
       <>
-        <SettingsPageDescription>{t('securityIntro')}</SettingsPageDescription>
         {c.snapshot && (
           <>
-            {/* What a new session may do comes first; review and isolation qualify it. */}
+            {/* What a new session may do comes first; review and isolation qualify it. The preset
+             is chosen here only. */}
             <PermissionDefaults available={c.snapshot.presets.map((preset) => preset.id)} />
             <AutoReviewPanel canSave={c.canSave} />
             <SecurityStatusPanel status={c.snapshot.security} t={t} />
