@@ -7,6 +7,7 @@ import { settingsShellLocaleCatalog } from '../src/locales/settings-shell.js'
 import { sidebarLocaleCatalog } from '../src/locales/sidebar.js'
 import { toolLocaleCatalog } from '../src/locales/tool.js'
 import { topbarLocaleCatalog } from '../src/locales/topbar.js'
+import { feedbackCatalog } from '../src/message-feedback/feedback-locale.js'
 import { traceCatalog } from '../src/trace-locale.js'
 
 const catalogs = [
@@ -18,6 +19,7 @@ const catalogs = [
   ['topbar', topbarLocaleCatalog],
   ['trace', traceCatalog],
   ['diagnostics', diagnosticsCatalog],
+  ['feedback', feedbackCatalog],
   ['web-units aggregate', webUnitsLocaleCatalog],
 ] as const
 

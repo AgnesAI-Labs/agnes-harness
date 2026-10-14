@@ -1354,6 +1354,115 @@
   .agnes-message-feedback > fieldset > .agnes-ui-button {
     min-width: var(--s32);
   }
+  .agnes-message-feedback > .feedback-status:empty {
+    display: none;
+  }
+  .agnes-message-feedback .feedback-status {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s4);
+    min-width: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    white-space: nowrap;
+  }
+  .agnes-message-feedback .feedback-status[data-tone="done"] {
+    color: var(--agnes-status-success-text);
+  }
+  .agnes-message-feedback .feedback-status[data-tone="error"] {
+    color: var(--agnes-status-danger-text);
+  }
+  .agnes-message-feedback .feedback-link.agh-btn {
+    height: auto;
+    min-height: 0;
+    padding: 0;
+    font-size: inherit;
+    color: var(--agnes-brand-primary);
+  }
+  /* The rating popover: a reason, an optional note, and (for a thumbs-down) a draft request. */
+  .agnes-feedback-popover .ant-popover-inner {
+    padding: var(--s12) var(--s12) var(--s12) var(--s16);
+  }
+  .feedback-popover {
+    display: grid;
+    gap: var(--s10);
+    width: min(340px, calc(100vw - 2 * var(--s16)));
+    font-size: var(--font-size-sm);
+  }
+  .feedback-popover-head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--s8);
+  }
+  .feedback-popover-head strong {
+    font-weight: 600;
+  }
+  .feedback-popover-head span,
+  .feedback-popover-foot > span {
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+  }
+  .feedback-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .feedback-popover .feedback-chip.agh-btn:not(:disabled) {
+    height: 26px;
+    padding: 0 var(--s10);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-full);
+    corner-shape: round;
+    background: var(--agnes-bg-surface);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    box-shadow: none;
+  }
+  .feedback-popover .feedback-chip.agh-btn:not(:disabled):hover {
+    background: var(--agnes-bg-hover);
+    color: var(--agnes-text-primary);
+  }
+  .feedback-popover .feedback-chip.agh-btn[aria-pressed="true"]:not(:disabled) {
+    border-color: var(--agnes-brand-primary);
+    background: var(--agnes-brand-emphasis-soft);
+    color: var(--agnes-brand-primary);
+  }
+  .feedback-popover .feedback-note {
+    width: 100%;
+    min-height: 60px;
+    resize: vertical;
+  }
+  .feedback-generate {
+    padding: var(--s8) var(--s10);
+    border-radius: var(--radius-control);
+    background: var(--agnes-bg-subtle);
+    color: var(--agnes-text-secondary);
+  }
+  .feedback-generate .agnes-settings-checkbox {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--s8);
+    cursor: pointer;
+  }
+  .feedback-generate input {
+    margin: 3px 0 0;
+  }
+  .feedback-generate small {
+    display: block;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+  }
+  .feedback-popover-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s8);
+    margin-top: 2px;
+  }
   .agnes-intelligent-surface > header h3 {
     min-width: 0;
     overflow-wrap: anywhere;

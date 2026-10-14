@@ -31,6 +31,7 @@ import { type ReactNode, useSyncExternalStore } from 'react'
 import type { ClaimResolver } from './client-modules/boot.js'
 import { AnsweredQuestions, QuestionAnswersNode, questionSubmission } from './intelligent-ui/question-dock.js'
 import { TurnDeliverables } from './intelligent-ui/turn-deliverables.js'
+import { openPlugins } from './pages/plugins/route.js'
 import { workflowStepRecord } from './workflow-step.js'
 
 type SlotNode = Extract<UINode, { kind: 'slot' }>
@@ -317,6 +318,7 @@ export function WebConversationMessages({
                     )
                       workbenchNavigation.open('facts')
                   }}
+                  openReview={() => openPlugins('review')}
                 />
               )}
               {answer && registry?.spec('conversation.chat.assistant-actions') && (

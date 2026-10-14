@@ -1,6 +1,17 @@
 import { validateMethod } from '@agnes/protocol'
 import type { AdminFeedbackParams, AdminFeedbackResult } from '@agnes/protocol/gen/app-server'
 
+/** A refused feedback request; `reason` is the server's rejection code when it sent one. */
+export class FeedbackRequestError extends Error {
+  constructor(readonly reason: string | undefined) {
+    super('Feedback unavailable')
+  }
+}
+const rejectionReason = (value: unknown): string | undefined => {
+  const reason = (value as { error?: { data?: { reason?: unknown } } } | null)?.error?.data?.reason
+  return typeof reason === 'string' ? reason : undefined
+}
+
 export async function feedbackRequest(
   input: AdminFeedbackParams,
   signal?: AbortSignal,
@@ -15,7 +26,7 @@ export async function feedbackRequest(
   })
   const value: unknown = await response.json()
   if (!response.ok || !validateMethod('_agnes/v1/admin.feedback', 'result', value).ok)
-    throw new Error('Feedback unavailable')
+    throw new FeedbackRequestError(rejectionReason(value))
   if (input.action !== 'list' && input.sessionId) invalidateSessionFeedback(input.sessionId)
   return value as AdminFeedbackResult
 }
