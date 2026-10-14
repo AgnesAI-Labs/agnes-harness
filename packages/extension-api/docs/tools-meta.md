@@ -14,7 +14,8 @@ The five safety keys (isReadOnly, isDestructive, isConcurrencySafe, isOpenWorld,
 | `isOpenWorld` | The result comes from outside. The row carrying it is written untrusted, injection defence trims it, and surface projection reads this. |
 | `replay` | How crash recovery treats an unsettled call: safe reruns it verbatim, idempotent reruns it under the same effectId, never synthesises an unknown outcome. Consumed by the effect sandwich. |
 | `costHint` | Optional estimate for budget preflight. Omission or null means no estimate. |
-| `deferLoading` | Optional. true defers model discovery until loaded by search; omission, false or null means initial discovery. |
+| `deferLoading` | Optional. true defers model discovery until loaded by search; omission, false or null means initial discovery; auto lets the runtime defer the turn's auto tools together once there are more than 15 of them or their schemas exceed about 4000 tokens. |
+| `discoveryGroup` | Optional one-line label, such as an MCP server name. Deferred tools sharing a label are listed to the model as one line with their count. |
 | `requiresApproval` | Optional approval band. Omission or null means destructive for destructive tools, otherwise never; command policy still applies. |
 | `isPresentational` | Optional. The effect only publishes display state to the user and has no external side effect. It cannot be combined with isDestructive or isOpenWorld. Tainted-call policy does not escalate this flag; requiresApproval always and a destructive band still ask. |
 | `modelVisible` | Optional, defaults to true. false hides the tool from model schemas and discovery; internal invocation and authorization remain available. |

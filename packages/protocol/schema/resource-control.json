@@ -355,6 +355,10 @@
         }
       }
     },
+    "McpToolDisclosure": {
+      "description": "How this server's tools reach the model. auto (the default when omitted) keeps them visible while the session's auto tools are few and lets the runtime move them behind tool_search once there are many; always keeps them visible; on-demand always moves them behind tool_search.",
+      "enum": ["auto", "always", "on-demand"]
+    },
     "McpServerDefinitionInput": {
       "oneOf": [
         {
@@ -367,6 +371,7 @@
             "transport": { "$ref": "#/$defs/McpStdioTransport" },
             "secretBinding": { "$ref": "#/$defs/McpStdioSecretBinding" },
             "toolPolicy": { "$ref": "#/$defs/McpToolPolicy" },
+            "toolDisclosure": { "$ref": "#/$defs/McpToolDisclosure" },
             "sandboxProfile": {
               "enum": ["strict", "workspace-write", "network", "off-with-warning"]
             },
@@ -387,7 +392,8 @@
             "displayName": { "type": "string", "minLength": 1, "maxLength": 128 },
             "transport": { "$ref": "#/$defs/McpHttpTransport" },
             "secretBinding": { "$ref": "#/$defs/McpHttpSecretBinding" },
-            "toolPolicy": { "$ref": "#/$defs/McpToolPolicy" }
+            "toolPolicy": { "$ref": "#/$defs/McpToolPolicy" },
+            "toolDisclosure": { "$ref": "#/$defs/McpToolDisclosure" }
           }
         },
         {
@@ -399,7 +405,8 @@
             "displayName": { "type": "string", "minLength": 1, "maxLength": 128 },
             "transport": { "$ref": "#/$defs/McpSseTransport" },
             "secretBinding": { "$ref": "#/$defs/McpHttpSecretBinding" },
-            "toolPolicy": { "$ref": "#/$defs/McpToolPolicy" }
+            "toolPolicy": { "$ref": "#/$defs/McpToolPolicy" },
+            "toolDisclosure": { "$ref": "#/$defs/McpToolDisclosure" }
           }
         }
       ]

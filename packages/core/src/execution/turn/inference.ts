@@ -1461,7 +1461,13 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
         let policy: ReturnType<typeof resolveValidatedToolCallPolicy> | undefined
         if (!def) refusal = { code: 'TOOL_NOT_FOUND', text: `unknown tool ${c.name}` }
         else if (!offered.has(c.name))
-          refusal = { code: 'TOOL_NOT_DISCLOSED', text: 'tool was not disclosed in this request' }
+          refusal = {
+            code: 'TOOL_NOT_DISCLOSED',
+            text:
+              def.meta.deferLoading === true
+                ? `tool ${c.name} is deferred: call tool_describe with this exact name to load it, then call it again`
+                : 'tool was not disclosed in this request',
+          }
         else {
           const argsError = toolArgumentError(def.parameters, c.args)
           if (argsError) refusal = { code: 'TOOL_ARGS_INVALID', text: argsError }

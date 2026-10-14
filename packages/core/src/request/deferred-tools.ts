@@ -22,12 +22,39 @@ function sentence(description: string): string {
     : first || '-'
 }
 
+/** Names shown on a group line before the rest are only counted. */
+const GROUP_SAMPLE = 6
+
+/**
+ * One line per group: its label, how many tools it holds and a few of their names, which is enough
+ * for the model to know what to search for without paying for every tool's line.
+ */
+function groupLine(label: string, names: readonly string[]): { name: string; description: string } {
+  const sample = names.slice(0, GROUP_SAMPLE).join(', ')
+  const more = names.length > GROUP_SAMPLE ? `, … ${names.length - GROUP_SAMPLE} more` : ''
+  return {
+    name: label,
+    description: `${names.length} ${names.length === 1 ? 'tool' : 'tools'} (${sample}${more}); search by task or by "${label}"`,
+  }
+}
+
 /** Live turn catalog, including loaded deferred tools so discovery does not churn the cached prefix. */
 export function deferredToolsSection(defs: readonly ToolDef[]): PromptSection | undefined {
-  const rows = defs
-    .filter((tool) => tool.meta.deferLoading === true && modelVisibleTool(tool, true))
-    .map((tool) => ({ name: tool.name, description: sentence(tool.description) }))
-    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+  const deferred = defs.filter((tool) => tool.meta.deferLoading === true && modelVisibleTool(tool, true))
+  const groups = new Map<string, string[]>()
+  for (const tool of deferred) {
+    const label = tool.meta.discoveryGroup
+    if (label === undefined) continue
+    const names = groups.get(label) ?? []
+    names.push(tool.name)
+    groups.set(label, names)
+  }
+  const rows = [
+    ...deferred
+      .filter((tool) => tool.meta.discoveryGroup === undefined)
+      .map((tool) => ({ name: tool.name, description: sentence(tool.description) })),
+    ...[...groups].map(([label, names]) => groupLine(label, names.sort())),
+  ].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
   if (!rows.length) return undefined
   const lines: string[] = []
   let size = bytes(PREFIX + SUFFIX)

@@ -116,6 +116,7 @@ export function generateAll(): Record<string, string> {
     ...TOOL_META_KEYS,
     'costHint',
     'deferLoading',
+    'discoveryGroup',
     'requiresApproval',
     'isPresentational',
     'modelVisible',

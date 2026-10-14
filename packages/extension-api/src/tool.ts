@@ -46,6 +46,11 @@ export const RESOLVED_TOOL_CALL_POLICY_KEYS = [
   'approvalScopes',
 ] as const
 export const MAX_APPROVAL_SCOPES = 16
+/** `deferLoading: 'auto'` tools stay visible up to this many in one turn catalog. */
+export const AUTO_DEFER_MAX_TOOLS = 15
+/** ...and up to this many estimated schema tokens (name, description and parameters, ~4 chars each). */
+export const AUTO_DEFER_MAX_TOKENS = 4000
+const DISCOVERY_GROUP = /^[^\r\n\t]{1,120}$/u
 
 // The most text of one tool result that reaches the model before the output guard cuts it. The preset
 // key `tools.output_max_bytes` sets it per deployment; the bounds keep a page and the notes the
@@ -71,8 +76,19 @@ export interface ToolMeta {
   replay: ReplayPolicy
   /** Omitted means no cost estimate. */
   costHint?: { credits?: number; wallMs?: number } | undefined
-  /** Omitted/false means available in initial model discovery. */
-  deferLoading?: boolean | undefined
+  /**
+   * Omitted/false means available in initial model discovery; true keeps the schema out of model
+   * requests until `tool_describe` loads it. `'auto'` lets core decide per turn: auto tools stay
+   * visible while the turn catalog's auto tools are few and small (see `AUTO_DEFER_MAX_TOOLS` /
+   * `AUTO_DEFER_MAX_TOKENS`), and are all deferred once either limit is exceeded.
+   */
+  deferLoading?: boolean | 'auto' | undefined
+  /**
+   * One-line label that groups deferred tools in the model's discovery listing, for example an MCP
+   * server's name. Deferred tools sharing a label are listed as one line with their count instead of
+   * one line each. Visible tools ignore it.
+   */
+  discoveryGroup?: string
   /** Omitted means destructive for destructive tools, otherwise never. */
   requiresApproval?: RiskClass | undefined
   /** Omitted/true means discoverable by the model; false keeps internal invocation available. */
@@ -451,8 +467,13 @@ export function checkToolMeta(meta: unknown): CheckResult {
       if (extra.length) problems.push(`costHint: unknown key ${extra.join(', ')}`)
     }
   }
-  if (m.deferLoading !== undefined && typeof m.deferLoading !== 'boolean')
-    problems.push('deferLoading: expected boolean | undefined')
+  if (m.deferLoading !== undefined && typeof m.deferLoading !== 'boolean' && m.deferLoading !== 'auto')
+    problems.push("deferLoading: expected boolean | 'auto' | undefined")
+  if (
+    m.discoveryGroup !== undefined &&
+    (typeof m.discoveryGroup !== 'string' || !DISCOVERY_GROUP.test(m.discoveryGroup))
+  )
+    problems.push('discoveryGroup: expected one line of 1-120 characters | undefined')
   if (m.requiresApproval !== undefined && !RISK.has(String(m.requiresApproval)))
     problems.push('requiresApproval: expected never | destructive | always | undefined')
   for (const key of ['modelVisible', 'requiresImageInput'] as const)

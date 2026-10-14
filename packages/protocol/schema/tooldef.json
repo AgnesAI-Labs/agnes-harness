@@ -55,8 +55,20 @@
           "description": "Optional estimate for budget preflight. Omission or null means no estimate."
         },
         "deferLoading": {
-          "type": ["boolean", "null"],
-          "description": "Optional. true defers model discovery until loaded by search; omission, false or null means initial discovery."
+          "oneOf": [
+            {
+              "type": ["boolean", "null"]
+            },
+            {
+              "const": "auto"
+            }
+          ],
+          "description": "Optional. true defers model discovery until loaded by search; omission, false or null means initial discovery; auto lets the runtime defer the turn's auto tools together once there are more than 15 of them or their schemas exceed about 4000 tokens."
+        },
+        "discoveryGroup": {
+          "type": "string",
+          "pattern": "^[^\\r\\n\\t]{1,120}$",
+          "description": "Optional one-line label, such as an MCP server name. Deferred tools sharing a label are listed to the model as one line with their count."
         },
         "requiresApproval": {
           "oneOf": [

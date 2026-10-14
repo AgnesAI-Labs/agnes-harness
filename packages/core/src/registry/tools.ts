@@ -1,7 +1,14 @@
 import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import { CoreError, type Disposer, type Seq } from '@agnes/core-common/types'
 import { OwnedRegistryTable } from '@agnes/core-ledger/registry/owner-batch'
-import { checkToolDef, TOOL_DESCRIPTION_MAX_LENGTH, type ToolDef, type ToolMeta } from '@agnes/extension-api'
+import {
+  AUTO_DEFER_MAX_TOKENS,
+  AUTO_DEFER_MAX_TOOLS,
+  checkToolDef,
+  TOOL_DESCRIPTION_MAX_LENGTH,
+  type ToolDef,
+  type ToolMeta,
+} from '@agnes/extension-api'
 import { sanitize } from '../request/derive.js'
 
 export type TrustTier = 'builtin' | 'trusted'
@@ -140,7 +147,9 @@ export class ToolRegistry {
    * the two whose change makes a cached prefix no longer describe the tools on offer.
    */
   snapshot(seq: Seq): RegistrySnapshot {
-    const defs = Object.freeze([...this.#table.values()].sort((a, b) => a.name.localeCompare(b.name)))
+    const defs = Object.freeze(
+      resolveAutoDeferral([...this.#table.values()]).sort((a, b) => a.name.localeCompare(b.name)),
+    )
     const byName = new Map(defs.map((d) => [d.name, d]))
     const hash = sha256Hex(canonicalJson(defs.map((d) => ({ name: d.name, parameters: d.parameters }))))
     // Shallow on purpose: the snapshot and its list are immutable, while the ToolDef objects inside
@@ -148,6 +157,32 @@ export class ToolRegistry {
     // still holding.
     return Object.freeze({ defs, byName, hash, takenAtSeq: seq })
   }
+}
+
+/** Rough schema size of one tool as the model would receive it, about four characters a token. */
+function schemaTokens(def: ToolDef): number {
+  return Math.ceil((def.name.length + def.description.length + JSON.stringify(def.parameters).length) / 4)
+}
+
+/**
+ * Settles `deferLoading: 'auto'` for one snapshot, so every reader of a turn catalog sees a plain
+ * boolean. Auto tools are judged together: while the model-visible ones are few and small enough
+ * they stay visible as eager tools, and past either limit they are all deferred and found through
+ * `tool_search`. One shared decision keeps the cached request prefix stable until the auto set
+ * itself changes. A tool loaded by `tool_describe` stays loaded through core's disclosure record.
+ */
+export function resolveAutoDeferral<T extends ToolDef>(defs: readonly T[]): T[] {
+  const auto = defs.filter((def) => def.meta.deferLoading === 'auto')
+  if (auto.length === 0) return [...defs]
+  const counted = auto.filter((def) => def.meta.modelVisible !== false)
+  let tokens = 0
+  for (const def of counted) tokens += schemaTokens(def)
+  const defer = counted.length > AUTO_DEFER_MAX_TOOLS || tokens > AUTO_DEFER_MAX_TOKENS
+  return defs.map((def) =>
+    def.meta.deferLoading === 'auto'
+      ? { ...def, meta: Object.freeze({ ...def.meta, deferLoading: defer }) }
+      : def,
+  )
 }
 
 function materializeToolMeta(value: unknown): unknown {
@@ -185,6 +220,7 @@ function snapshotToolMeta(meta: ToolMeta): ToolMeta {
     replay: meta.replay,
     ...(costHint === undefined ? {} : { costHint }),
     ...(meta.deferLoading === undefined ? {} : { deferLoading: meta.deferLoading }),
+    ...(meta.discoveryGroup === undefined ? {} : { discoveryGroup: meta.discoveryGroup }),
     ...(meta.requiresApproval === undefined ? {} : { requiresApproval: meta.requiresApproval }),
     ...(meta.modelVisible === undefined ? {} : { modelVisible: meta.modelVisible }),
     ...(meta.requiresImageInput === undefined ? {} : { requiresImageInput: meta.requiresImageInput }),
