@@ -259,6 +259,33 @@ describe('trace panel', () => {
     )
   })
 
+  it('opens a failed tool on its result and shows the recorded error before the full read', async () => {
+    const readToolDetail = vi.fn().mockResolvedValue({
+      call: { toolUseId: 'call-1', name: 'bash', args: { command: 'npx serve .' }, ordinal: 0 },
+    })
+    const { root, panel } = mount(true, readToolDetail)
+    const failed = nodes.map((node) =>
+      node.kind === 'tool' ? { ...node, status: 'failed' as const, resultPreview: 'exit 127' } : node,
+    )
+    const trace = {
+      ...sampleTrace,
+      children: sampleTrace.children.map((span) =>
+        span.kind === 'tool'
+          ? { ...span, status: 'failed' as const, error: { code: 'EXIT', message: 'npx: command not found' } }
+          : span,
+      ),
+    }
+    panel.render(failed, [turn(trace, ['u1', 'c1', 'a1', 't1'])], { hasEarlier: false, sessionId: 's' })
+    root.querySelector<HTMLButtonElement>('[data-trace-row-id="t1"]')?.click()
+    const pane = () => root.querySelector('.trace-inspector-pane:not([hidden])')
+    expect(pane()?.querySelector('[data-testid="trace-tool-error"]')?.textContent).toContain(
+      'npx: command not found',
+    )
+    await vi.waitFor(() => expect(readToolDetail).toHaveBeenCalled())
+    await vi.waitFor(() => expect(pane()?.textContent).toContain('not recorded yet'))
+    expect(pane()?.textContent).toContain('npx: command not found')
+  })
+
   it('shows unknown duration for a completed tool without a recorded span', () => {
     const { root, panel } = mount(true, vi.fn())
     panel.render(nodes, [turn(undefined, ['u1', 'c1', 'a1', 't1'])], {

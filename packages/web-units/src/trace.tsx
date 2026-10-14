@@ -1,14 +1,16 @@
 // biome-ignore-all lint/a11y/useSemanticElements: preserve public trace div roles and the virtual list geometry during the JSX migration.
 import type { SessionControlFact } from '@agnes/protocol/gen/agnes-v1'
-import { Button, EmptyState, Icon, IconButton, SettingsInput, SettingsSelect } from '@agnes/web-ui'
+import { Button, EmptyState, Icon, SettingsInput, SettingsSelect } from '@agnes/web-ui'
 import { TraceControlFacts } from './trace-control-facts.js'
 import { type InspectorPane, type ToolDetailState, TraceInspector } from './trace-inspector.js'
+import { TraceLightbox } from './trace-inspector-parts.js'
 import {
   BADGE_KEY,
   buildGantt,
   buildTraceRows,
   clip,
   type GanttBar,
+  placeTraceRowsInTurns,
   type TimelineMode,
   type TimelineRange,
   type TraceRow,
@@ -221,7 +223,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
   // buildTraceRows reads the document language itself. locale is only the subscription snapshot.
   // biome-ignore lint/correctness/useExhaustiveDependencies: locale changes the formatted row text
   const rows = useMemo(
-    () => traceRowBuilder.build(snapshot.nodes, snapshot.turns),
+    () => placeTraceRowsInTurns(traceRowBuilder.build(snapshot.nodes, snapshot.turns), snapshot.turns),
     [snapshot.nodes, snapshot.turns, locale],
   )
   const toolHierarchy = useMemo(() => buildTraceToolHierarchy(snapshot.nodes), [snapshot.nodes])
@@ -572,7 +574,10 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
           setTimelineViewport({ start, end: start + viewportWidth })
         }
         setLightbox(null)
-        setPane('overview')
+        const chosen = rows.find((row) => row.id === id)
+        // A failed tool opens on its result, where the error is.
+        const canRead = Boolean(options.readToolDetail && currentSnapshot.current.meta?.sessionId)
+        setPane(chosen?.kind === 'tool' && chosen.statusCode === 'failed' && canRead ? 'output' : 'overview')
       })
       const list = listRef.current
       const layout = layoutRef.current
@@ -608,6 +613,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
       viewportWidth,
       root,
       listViewportHeight,
+      options.readToolDetail,
     ],
   )
   useEffect(() => {
@@ -622,7 +628,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
       const active = latest.current ?? snapshot
       const turn = active.turns.find((item) => item.id === turnId)
       if (!turn) return
-      const target = buildTraceRows(active.nodes, active.turns)
+      const target = placeTraceRowsInTurns(buildTraceRows(active.nodes, active.turns), active.turns)
         .filter((row) => row.turn === turn.turn)
         .findLast((row) => row.kind === 'assistant')
       if (!target) return
@@ -831,7 +837,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
           }
         >
           <option value="all">{traceText('trace.filter.all')}</option>
-          {['user', 'assistant', 'tool', 'context', 'approval', 'compaction'].map((kind) => (
+          {['user', 'assistant', 'tool', 'approval', 'ui', 'control', 'context', 'compaction'].map((kind) => (
             <option key={kind} value={kind}>
               {traceText(BADGE_KEY[kind]!)}
             </option>
@@ -1144,29 +1150,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
           setLightbox={setLightbox}
         />
       </div>
-      {lightbox ? (
-        <div
-          className="trace-lightbox"
-          role="dialog"
-          aria-modal={true}
-          aria-label={lightbox.alt}
-          onKeyDown={(event: { key: string; preventDefault: () => void }) => {
-            if (event.key === 'Escape') setLightbox(null)
-            if (event.key === 'Tab') {
-              event.preventDefault()
-              root.querySelector<HTMLButtonElement>('.trace-lightbox-close')?.focus()
-            }
-          }}
-        >
-          <IconButton
-            name="x"
-            className="trace-lightbox-close"
-            label={traceText('trace.lightbox.close')}
-            onClick={() => setLightbox(null)}
-          />
-          <img src={lightbox.src} alt={lightbox.alt} />
-        </div>
-      ) : null}
+      {lightbox ? <TraceLightbox image={lightbox} root={root} close={() => setLightbox(null)} /> : null}
       <EmptyState
         className="trace-empty"
         hidden={rows.length > 0}

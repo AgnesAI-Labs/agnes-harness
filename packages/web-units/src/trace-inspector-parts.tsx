@@ -1,4 +1,4 @@
-import { Button, CopyButton } from '@agnes/web-ui'
+import { Button, CopyButton, IconButton } from '@agnes/web-ui'
 import { type ReactNode, useState } from 'react'
 import { traceText } from './trace-locale.js'
 
@@ -81,5 +81,40 @@ export function TraceCode({
         </Button>
       ) : null}
     </figure>
+  )
+}
+
+/** A full-size image over the trace; Escape closes it and focus stays on its close button. */
+export function TraceLightbox({
+  image,
+  root,
+  close,
+}: {
+  image: { src: string; alt: string }
+  root: HTMLElement
+  close(): void
+}) {
+  return (
+    <div
+      className="trace-lightbox"
+      role="dialog"
+      aria-modal={true}
+      aria-label={image.alt}
+      onKeyDown={(event: { key: string; preventDefault: () => void }) => {
+        if (event.key === 'Escape') close()
+        if (event.key === 'Tab') {
+          event.preventDefault()
+          root.querySelector<HTMLButtonElement>('.trace-lightbox-close')?.focus()
+        }
+      }}
+    >
+      <IconButton
+        name="x"
+        className="trace-lightbox-close"
+        label={traceText('trace.lightbox.close')}
+        onClick={close}
+      />
+      <img src={image.src} alt={image.alt} />
+    </div>
   )
 }

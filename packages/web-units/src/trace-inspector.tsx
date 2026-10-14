@@ -308,6 +308,9 @@ export function TraceInspector({
               {selectedRow.errorCode
                 ? paneField(traceText('trace.field.errorCode'), selectedRow.errorCode)
                 : null}
+              {selectedRow.errorMessage
+                ? paneField(traceText('trace.field.error'), selectedRow.errorMessage)
+                : null}
               {selectedRow.attachments?.length
                 ? paneField(
                     traceText('trace.field.attachments'),
@@ -417,6 +420,19 @@ export function TraceInspector({
               )}
             </div>
             <div className="trace-inspector-pane" hidden={pane !== 'output'}>
+              {pane === 'output' && selectedRow.statusCode === 'failed' ? (
+                <TraceCard title={traceText('trace.card.error')} testId="trace-tool-error">
+                  <dl className="trace-fields">
+                    {selectedRow.errorCode
+                      ? paneField(traceText('trace.field.errorCode'), selectedRow.errorCode)
+                      : null}
+                    {paneField(
+                      traceText('trace.field.error'),
+                      selectedRow.errorMessage ?? traceText('trace.error.unrecorded'),
+                    )}
+                  </dl>
+                </TraceCard>
+              ) : null}
               {pane !== 'output' ? null : !detailValue ? (
                 detailNotice()
               ) : !detailValue.result ? (

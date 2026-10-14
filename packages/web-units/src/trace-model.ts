@@ -10,6 +10,8 @@ export const BADGE_KEY: Record<string, TraceMessageKey> = {
   approval: 'trace.badge.approval',
   compaction: 'trace.badge.compaction',
   cost: 'trace.badge.cost',
+  ui: 'trace.badge.ui',
+  control: 'trace.badge.control',
 }
 
 const STATUS_KEY: Record<string, TraceMessageKey> = {
@@ -39,6 +41,8 @@ export type TraceRow = {
   source: string
   status: string
   errorCode?: string | undefined
+  /** What the recorded failure said, when the span or the tool result carries it. */
+  errorMessage?: string | undefined
   startedAt?: string | undefined
   durationMs?: number | undefined
   ttftMs?: number | undefined
@@ -114,8 +118,71 @@ const walkSpans = (span: UISpan, visit: (item: UISpan) => void): void => {
   for (const child of span.children) walkSpans(child, visit)
 }
 
+type UserNode = Extract<UINode, { kind: 'user' }>
+
+/**
+ * A platform-written input (origin «system») is not something the person typed. A business-UI
+ * answer is the person's own action; everything else is a system record. Each gets readable text
+ * instead of the internal summary sent to the model.
+ */
+export function systemInputRow(
+  node: UserNode,
+): { kind: 'control' | 'context'; preview: string; source: string } | undefined {
+  if (node.origin !== 'system' || !node.system) return undefined
+  const system = node.system
+  const presentation = system.presentation
+  if (presentation?.kind === 'ui-action') {
+    const submitted = (system.data as { submitted?: { answers?: unknown } } | null)?.submitted
+    const answers =
+      submitted?.answers && typeof submitted.answers === 'object' && !Array.isArray(submitted.answers)
+        ? Object.keys(submitted.answers).length
+        : presentation.fields.length
+    const key: TraceMessageKey =
+      presentation.status === 'rejected'
+        ? 'trace.system.uiRejected'
+        : presentation.status === 'failed'
+          ? 'trace.system.uiFailed'
+          : presentation.operation === 'submit' && answers > 0
+            ? 'trace.system.uiAnswers'
+            : 'trace.system.uiAction'
+    return {
+      kind: 'control',
+      preview: traceText(key, { n: answers, label: presentation.label }),
+      source: traceText('trace.source.yourUi'),
+    }
+  }
+  if (presentation?.kind === 'child-completed')
+    return {
+      kind: 'context',
+      preview: traceText('trace.system.child', {
+        label: presentation.label,
+        status: traceText(
+          presentation.status === 'completed'
+            ? 'trace.status.completed'
+            : presentation.status === 'cancelled'
+              ? 'trace.status.cancelled'
+              : 'trace.status.failed',
+        ),
+      }),
+      source: traceText('trace.source.system'),
+    }
+  if (system.source === 'agnes/deferred-invocations')
+    return {
+      kind: 'context',
+      preview: traceText('trace.system.deferred'),
+      source: traceText('trace.source.system'),
+    }
+  return {
+    kind: 'context',
+    preview: traceText('trace.system.other', { summary: system.summary }),
+    source: traceText('trace.source.system'),
+  }
+}
+
 const nodePreview = (node: UINode): string => {
   if (node.kind === 'user') {
+    const system = systemInputRow(node)
+    if (system) return system.preview
     const message = node.content
       .filter(
         (block): block is Extract<(typeof node.content)[number], { type: 'text' }> => block.type === 'text',
@@ -150,6 +217,8 @@ const nodePreview = (node: UINode): string => {
 }
 
 const nodeRaw = (node: UINode): string => {
+  if (node.kind === 'user' && node.origin === 'system' && node.system)
+    return JSON.stringify(node.system, null, 2)
   if (node.kind === 'assistant') return [node.thinking, node.text].filter(Boolean).join('\n\n')
   if (node.kind === 'tool')
     return [traceText('trace.raw.tool', { name: node.name }), node.argsPreview, node.resultPreview]
@@ -171,6 +240,7 @@ const userAttachments = (node: UINode): string[] => {
 }
 
 const nodeSource = (node: UINode): string => {
+  if (node.kind === 'user' && systemInputRow(node)) return systemInputRow(node)?.source ?? ''
   if (node.kind === 'user')
     return node.actorLabel
       ? traceText('trace.source.userActor', { actor: node.actorLabel })
@@ -254,6 +324,13 @@ export function buildTraceRows(nodes: readonly UINode[], turns: readonly UITurn[
     const statusCode = node.kind === 'tool' ? node.status : (span?.status ?? 'completed')
     const status = traceText(STATUS_KEY[statusCode] ?? 'trace.status.completed')
     const errorCode = span && !isTruncation(span) ? span.error?.code : undefined
+    const errorMessage =
+      span && !isTruncation(span) && span.error?.message
+        ? span.error.message
+        : node.kind === 'tool' && node.status === 'failed'
+          ? node.resultPreview
+          : undefined
+    const kind = (node.kind === 'user' ? systemInputRow(node)?.kind : undefined) ?? node.kind
     const usage = turn?.usage?.calls.length ? turn.usage : undefined
     const callUsage =
       span?.callSeq === undefined
@@ -275,6 +352,8 @@ export function buildTraceRows(nodes: readonly UINode[], turns: readonly UITurn[
       cached.row.durationMs === span?.durationMs &&
       cached.row.ttftMs === span?.ttftMs &&
       cached.row.errorCode === errorCode &&
+      cached.row.errorMessage === errorMessage &&
+      cached.row.kind === kind &&
       cached.row.usage === usage &&
       cached.row.callUsage === callUsage &&
       cached.row.requestTraceId === span?.requestTraceId &&
@@ -288,8 +367,8 @@ export function buildTraceRows(nodes: readonly UINode[], turns: readonly UITurn[
       seq: node.seq,
       turn: turn?.turn,
       step: placed?.step,
-      kind: node.kind,
-      badge: traceText(BADGE_KEY[node.kind] ?? 'trace.badge.assistant'),
+      kind,
+      badge: traceText(BADGE_KEY[kind] ?? 'trace.badge.assistant'),
       preview,
       raw,
       ...(node.kind === 'tool' ? { rawNote: traceText('trace.note.tool') } : {}),
@@ -302,6 +381,7 @@ export function buildTraceRows(nodes: readonly UINode[], turns: readonly UITurn[
       ttftMs: span?.ttftMs,
       model: span?.model,
       errorCode,
+      ...(errorMessage ? { errorMessage } : {}),
       usage,
       callUsage,
       requestTraceId: span?.requestTraceId,
@@ -335,6 +415,48 @@ export function buildTraceRows(nodes: readonly UINode[], turns: readonly UITurn[
     if (turn.trace) visit(turn.trace)
   }
   return rows.sort((a, b) => a.seq - b.seq)
+}
+
+/**
+ * Put each row under the turn that owns its place in the session. A turn owns the records from its
+ * first input (a message waiting for it is listed in its nodeIds ahead of its start) up to the next
+ * turn's first input. Records written between turns, such as a business-UI action answered after a
+ * turn ended, stay with the turn they follow. Rows are already in sequence order, so every turn is
+ * one contiguous run: a turn number recorded elsewhere (a UI fact's task id) cannot split the list
+ * into alternating groups.
+ */
+export function placeTraceRowsInTurns(rows: readonly TraceRow[], turns: readonly UITurn[]): TraceRow[] {
+  if (turns.length === 0) return [...rows]
+  const seqById = new Map(rows.map((row) => [row.id, row.seq]))
+  const ordered = [...turns].sort((a, b) => a.startSeq - b.startSeq)
+  const opens: Array<{ seq: number; turn: number }> = []
+  let previousStart = Number.NEGATIVE_INFINITY
+  let previousOpen = Number.NEGATIVE_INFINITY
+  for (const turn of ordered) {
+    let open = turn.startSeq
+    for (const id of turn.nodeIds) {
+      const seq = seqById.get(id)
+      if (seq !== undefined && seq < open && seq > previousStart) open = seq
+    }
+    open = Math.max(open, previousOpen)
+    opens.push({ seq: open, turn: turn.turn })
+    previousStart = turn.startSeq
+    previousOpen = open
+  }
+  const owner = (seq: number): number | undefined => {
+    let low = 0
+    let high = opens.length
+    while (low < high) {
+      const middle = (low + high) >> 1
+      if ((opens[middle]?.seq ?? 0) <= seq) low = middle + 1
+      else high = middle
+    }
+    return low === 0 ? undefined : opens[low - 1]?.turn
+  }
+  return rows.map((row) => {
+    const turn = owner(row.seq) ?? row.turn
+    return turn === row.turn ? row : { ...row, turn }
+  })
 }
 
 /** Called through this object so a test can count how often the list is rebuilt. */
