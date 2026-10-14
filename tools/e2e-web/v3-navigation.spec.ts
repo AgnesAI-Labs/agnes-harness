@@ -1,0 +1,184 @@
+import { expect, test } from './fixtures.js'
+import { accessible, translated } from './quality.js'
+import {
+  advanced,
+  chooseWorkspace,
+  closeSettings,
+  expand,
+  fresh,
+  homePage,
+  preferences,
+  section,
+  settings,
+  sidebar,
+  turn,
+} from './ui.js'
+
+test('v3 home entries, deep links and browser back/forward retain the selected page', async ({
+  page,
+  runtime,
+}) => {
+  await preferences(page)
+  await page.goto(runtime.url)
+  await chooseWorkspace(page, runtime)
+  for (const id of ['agents', 'plugins', 'automation']) {
+    await homePage(page, id)
+    expect(new URL(page.url()).searchParams.get('page')).toBe(id)
+  }
+  await page.goBack()
+  await expect(page.getByTestId('home-page-plugins')).toBeVisible()
+  await page.goBack()
+  await expect(page.getByTestId('home-page-agents')).toBeVisible()
+  await page.goForward()
+  await expect(page.getByTestId('home-page-plugins')).toBeVisible()
+  await page.goto(`${runtime.url}/?page=automation&tab=triggers`)
+  await expect(page.getByTestId('home-page-automation')).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Triggers', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  )
+  await page.reload()
+  await expect(page.getByRole('tab', { name: 'Triggers', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  )
+})
+
+test('v3 command-K searches durable session text and opens the matching session', async ({
+  page,
+  runtime,
+}) => {
+  await preferences(page)
+  await page.goto(runtime.url)
+  await chooseWorkspace(page, runtime)
+  await fresh(page)
+  await turn(page, 'REG5_SEARCH_NEEDLE')
+  const id = new URL(page.url()).searchParams.get('session')!
+  await fresh(page)
+  await page.keyboard.press('Meta+k')
+  const search = page.getByTestId('session-search')
+  await expect(search).toBeVisible()
+  await search.getByTestId('session-search-input').fill('REG5_SEARCH_NEEDLE')
+  const hit = search.getByTestId('session-search-option').filter({ hasText: 'REG5_SEARCH_NEEDLE' })
+  await expect(hit).toHaveCount(1)
+  await hit.click()
+  await expect(search).toBeHidden()
+  await expect.poll(() => new URL(page.url()).searchParams.get('session')).toBe(id)
+  await expect(page.getByTestId('conversation-turn')).toContainText('REG5_SEARCH_NEEDLE')
+})
+
+test('v3 archive filter restores the same session and its conversation', async ({ page, runtime }) => {
+  await preferences(page, 'zh-CN')
+  await page.goto(runtime.url)
+  await chooseWorkspace(page, runtime, 'zh-CN')
+  await fresh(page, 'zh-CN')
+  const input = page.getByRole('textbox', { name: '任务内容', exact: true })
+  await input.fill('REG5_ARCHIVE_CONTENT')
+  await input.press('Enter')
+  await expect(page.getByTestId('conversation-turn')).toHaveAttribute('data-status', 'completed')
+  const id = new URL(page.url()).searchParams.get('session')!
+  await page.locator(`.session[data-session="${id}"]`).hover()
+  await page.locator(`[data-session-action-id="${id}"]`).click()
+  await page.getByRole('menuitem', { name: '归档会话', exact: true }).click()
+  const client = await runtime.connect()
+  await expect
+    .poll(async () => (await client.session.list()).items.find((row) => row.sessionId === id)?.archived)
+    .toBe(true)
+  await page.locator('#session-filter').click()
+  await page.getByTestId('session-filter-archived').click()
+  const row = page.getByTestId('archived-sessions').locator(`[data-session="${id}"]`)
+  await expect(row).toBeVisible()
+  await row.getByTestId('archived-restore').click()
+  await expect
+    .poll(async () => (await client.session.list()).items.find((row) => row.sessionId === id)?.archived)
+    .toBe(false)
+  await page.locator('#session-filter').click()
+  await page.getByTestId('session-filter-active').click()
+  await page.locator(`.session[data-session="${id}"]`).click()
+  await expect(page.getByTestId('conversation-turn')).toContainText('REG5_ARCHIVE_CONTENT')
+})
+
+test('v3 settings exposes three everyday pages, persistent advanced settings and legacy plugin redirects', async ({
+  page,
+  runtime,
+}) => {
+  await preferences(page, 'zh-CN')
+  await page.goto(runtime.url)
+  await chooseWorkspace(page, runtime, 'zh-CN')
+  await settings(page, 'zh-CN')
+  await expect(page.getByTestId('settings-navigation').locator('[data-settings-section]')).toHaveCount(3)
+  await expect(page.getByTestId('settings-advanced')).toHaveCount(0)
+  for (const id of ['general', 'model', 'security']) await section(page, id)
+  await expect(page.getByTestId('auto-review-customize')).toHaveCount(0)
+  await advanced(page)
+  await expect(page.getByTestId('settings-advanced')).toBeVisible()
+  await section(page, 'security')
+  await expand(page.getByTestId('auto-review-customize'))
+  await expect(page.getByTestId('auto-review-tools')).toBeVisible()
+  expect(await page.evaluate(() => localStorage.getItem('agnes.settings.advanced'))).toBe('1')
+  await page.reload()
+  await settings(page, 'zh-CN')
+  await expect(page.getByTestId('settings-advanced')).toBeVisible()
+  await closeSettings(page, 'zh-CN')
+  await page.goto(`${runtime.url}/?settings=plugins`)
+  await expect(page.getByTestId('home-page-plugins')).toBeVisible()
+  expect(new URL(page.url()).searchParams.get('settings')).toBeNull()
+  expect(new URL(page.url()).searchParams.get('page')).toBe('plugins')
+})
+
+for (const locale of ['en', 'zh-CN'])
+  for (const theme of ['light', 'dark']) {
+    test(`v3 every home page and capability locale/theme and 390px smoke ${locale}/${theme}`, async ({
+      page,
+      runtime,
+    }, info) => {
+      test.setTimeout(150_000)
+      await preferences(page, locale, theme)
+      await page.goto(runtime.url)
+      await chooseWorkspace(page, runtime, locale)
+      for (const width of [1280, 390]) {
+        await page.setViewportSize({ width, height: 900 })
+        for (const id of ['agents', 'plugins', 'automation']) {
+          await homePage(page, id)
+          await translated(page)
+          expect(
+            await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+            `${id}/${width}`,
+          ).toBe(true)
+          await accessible(page, info, `${id}-${width}`)
+        }
+        for (const tab of ['skills', 'mcp', 'review', 'market']) {
+          await homePage(page, 'plugins', tab)
+          await translated(page)
+          expect(
+            await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+            `${tab}/${width}`,
+          ).toBe(true)
+          await accessible(page, info, `${tab}-${width}`)
+        }
+        for (const capability of ['search', 'computer-use', 'subagents', 'execution', 'memory', 'context']) {
+          await homePage(page, 'plugins')
+          await page.getByTestId(`builtin-${capability}`).click()
+          await expect(page.getByTestId(`home-page-plugins-${capability}`)).toBeVisible()
+          await translated(page)
+          expect(
+            await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+            `${capability}/${width}`,
+          ).toBe(true)
+          await accessible(page, info, `${capability}-${width}`)
+        }
+        await sidebar(page)
+        await settings(page, locale)
+        for (const id of ['general', 'model', 'security']) {
+          await section(page, id)
+          await translated(page)
+          expect(
+            await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+            `${id}/${width}`,
+          ).toBe(true)
+          await accessible(page, info, `${id}-${width}`)
+        }
+        await closeSettings(page, locale)
+      }
+    })
+  }

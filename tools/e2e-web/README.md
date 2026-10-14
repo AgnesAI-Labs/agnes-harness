@@ -56,14 +56,17 @@ separate from this gate.
 ## Gate and failure evidence
 
 The required GitHub status is **Web E2E gate** from `.github/workflows/e2e-web.yml`. It aggregates
-all fourteen macOS 14 and twelve Linux Web jobs, all six Linux fast-test shards and the separate
+all seventeen macOS 14 and twelve Linux Web jobs, all six Linux fast-test shards and the separate
 Linux contracts job (including `pnpm test:story`) and three migrated-heavy shards; a failed or
-cancelled dependency fails the aggregate. macOS uses nine explicit file/flow lists for regular
+cancelled dependency fails the aggregate. macOS uses twelve explicit file/flow lists for regular
 cases, plus one candidate-review job and four single-case narrow locale/theme jobs. The lists
 balance observed hosted-runner durations, including build and quality prechecks: multi-minute
 candidate review and narrow flows need separate budgets, and first-run checks split by locale.
 Linux retains eight regular shards plus four single-case narrow jobs. Every job retains one
-worker, all checks, and the existing deadlines. After adding specs or changing these lists,
+worker, all checks, and the existing deadlines. The v3 specs cover full-page navigation, session
+search and archive restoration, everyday and advanced settings, provider auto-testing, plugin and
+MCP installation, business-agent start, scheduled tasks and session-grant revocation on isolated
+Demo homes. Their page matrix checks both locales/themes and 390-pixel layouts. After adding specs or changing these lists,
 compare each platform's combined `pnpm e2e:web --list` selections with the full list: every case
 must appear exactly once. Uploads retain completed reports, screenshots and trace archives,
 excluding volatile Playwright scratch directories.
@@ -119,7 +122,7 @@ are attached, and editor-style code updates are published atomically.
 
 ## Maintained UI and visual gate
 
-`ui-gate.spec.ts` checks first run, Agent options, the account dialog and all 20 settings sections
+`ui-gate.spec.ts` checks first run, Agent options, the account dialog and all settings destinations, including the moved home pages
 in en/zh-CN and light/dark at 1280×900. It checks visible and accessible-name i18n keys, horizontal
 overflow and WCAG A/AA axe violations, with JSON evidence. `ui-flows.spec.ts` drives account save
 against the loopback provider, demo read/cancel, folder review/install/enable/disable, old/new
@@ -127,6 +130,8 @@ local plugin generations through rescan and restart, MCP stdio, skill slash prel
 plan approval, authorized deliverable downloads, child collection, goal completion, background
 job output, interactive terminal input/output, schedule creation/archive and the bundled FDE
 workflow through restart. Backend assertions use CLI or SDK, never raw admin HTTP from specs.
+`candidate-review.spec.ts` retains the exact-test/hash, edited-approval refusal, publication,
+history and diff workflow formerly in `ui-flows.spec.ts`. Its CI partition remains required.
 Selectors use roles and stable test IDs; disclosures are checked before toggling.
 
 `baselines/ready.json` declares the reviewed screens on both macOS and Linux, with no pending

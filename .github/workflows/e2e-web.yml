@@ -19,14 +19,17 @@ jobs:
       matrix:
         include:
           - { id: main-1, args: "diagnostics.spec.ts fact-chain.spec.ts" }
-          - { id: main-2, args: "first-run.spec.ts --grep 'guided first run en/'" }
-          - { id: main-3, args: "first-run.spec.ts --grep 'guided first run zh-CN/'" }
+          - { id: main-2, args: "first-run.spec.ts --grep 'first-run en|first run Demo'" }
+          - { id: main-3, args: "first-run.spec.ts --grep 'first-run zh-CN'" }
           - { id: main-4, args: "memory.spec.ts" }
           - { id: main-5, args: "prompt-trace.spec.ts" }
           - { id: main-6, args: "runtime.spec.ts" }
           - { id: main-7, args: "ui-flows.spec.ts" }
           - { id: main-8, args: "ui-gate.spec.ts" }
           - { id: main-9, args: "workbench.spec.ts" }
+          - { id: main-10, args: "human-controls.spec.ts references.spec.ts intelligent-ui.spec.ts question-surfaces.spec.ts large-upload.spec.ts credentials.spec.ts observability.spec.ts" }
+          - { id: main-11, args: "auto-review.spec.ts feedback.spec.ts plugin-config.spec.ts plugin-purpose.spec.ts webhooks.spec.ts business-agents.spec.ts v3-actions.spec.ts" }
+          - { id: main-12, args: "v3-navigation.spec.ts" }
           - { id: candidate-review, args: "candidate-review.spec.ts" }
           - { id: narrow-en-light, args: "narrow.spec.ts --grep 'en/light$'" }
           - { id: narrow-en-dark, args: "narrow.spec.ts --grep 'en/dark$'" }

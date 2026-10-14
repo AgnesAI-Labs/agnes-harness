@@ -29,6 +29,8 @@ export default defineConfig({
     'business-agents.spec.ts',
     'workbench.spec.ts',
     'narrow.spec.ts',
+    'v3-navigation.spec.ts',
+    'v3-actions.spec.ts',
   ],
   workers: 2,
   // Every spec owns a fresh home and daemon; spread long flows across both workers.
