@@ -2326,4 +2326,41 @@
     font-size: var(--font-size-sm);
     line-height: 1.6;
   }
+
+  /* The one place a consequential change is confirmed: what it does on the left, the action right. */
+  .agnes-settings-apply {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--s8);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .agnes-settings-apply > :first-child {
+    margin-inline-end: auto;
+  }
+  .agnes-settings-toolbar-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s8);
+  }
+  .agnes-settings-spacer {
+    flex: 1 1 auto;
+  }
+  .agnes-settings-anchor {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    outline: none;
+  }
+  .agnes-settings-item[draggable="true"] {
+    cursor: grab;
+  }
+  .agnes-settings-item[data-dragging] {
+    opacity: 0.5;
+  }
+  .agnes-settings-drag {
+    cursor: grab;
+  }
 }

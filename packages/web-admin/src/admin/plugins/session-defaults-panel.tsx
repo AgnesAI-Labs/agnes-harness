@@ -7,33 +7,36 @@ import {
   type SessionDefaultsSnapshot,
 } from '@agnes/protocol'
 import {
-  Banner,
-  Button,
   Select,
-  SettingsDetails,
-  SettingsFooter,
+  SettingsBlock,
+  SettingsChoice,
+  SettingsDrill,
   SettingsGroup,
   SettingsItem,
-  SettingsState,
-  SettingsTechnicalDetails,
+  SettingsTag,
+  useAutosave,
   useUiText,
 } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
 import { choiceName, type ResolvedComposition, readComposition } from '../../settings/choices.js'
 import { SETTINGS_NAMESPACE, settingsCatalog } from '../../settings/locales.js'
 import type { PluginAdminApi } from './api.js'
-import { identity, label } from './composition-labels.js'
+import { identity } from './composition-labels.js'
 import type { Text } from './control-panel-types.js'
 
 type Provider = RuntimeAdminSnapshot['providers'][number]
 /** Slots a new session fills beside its loop and model adapter, in the order the page lists them. */
 const EVERYDAY_SLOTS = ['memory', 'child-agent'] as const
 const MORE_SLOTS = ['compaction', 'sandbox', 'tool-runtime', 'tool-policy'] as const
+type Choice = { loop: string; adapter: string; model: string }
+const sameChoice = (a: Choice, b: Choice) =>
+  a.loop === b.loop && a.adapter === b.adapter && a.model === b.model
 
 /**
- * What a new session starts with: one row per choice, its options the providers installed now. The
- * host stores a default for the loop, the model adapter and the permission preset; the other slots
- * follow the profile, so their rows state what is in effect.
+ * 新会话默认: what a new session starts with, one row per choice, each saved as soon as it is picked.
+ * The host stores the loop, the model adapter and its model; the permission preset is chosen under
+ * 权限与安全 and kept as it is. Memory, child-agent and the other slots follow the profile, so their
+ * rows state what is in effect. A saved choice the catalog no longer has is marked on its row.
  */
 export function SessionDefaultsPanel({
   api,
@@ -51,26 +54,16 @@ export function SessionDefaultsPanel({
   const [composition, setComposition] = useState<ResolvedComposition>()
   const [catalog, setCatalog] = useState<{
     loops: readonly AdminLoop[]
-    presets: readonly string[]
     adapters: readonly AdminModelAdapter[]
     snapshot: SessionDefaultsSnapshot
   }>()
-  const [preset, setPreset] = useState('')
-  const [loop, setLoop] = useState('')
-  const [adapter, setAdapter] = useState('')
-  const [model, setModel] = useState('')
   const [busy, setBusy] = useState(false)
-  const [status, setStatus] = useState('')
-  const [error, setError] = useState('')
+  const [failed, setFailed] = useState(false)
   const [reload, setReload] = useState(0)
-  // What the host holds: the form is saved only while it differs from this.
-  const [stored, setStored] = useState({ preset: '', loop: '', adapter: '', model: '' })
   // biome-ignore lint/correctness/useExhaustiveDependencies: reload is an explicit request to reread host catalogs.
   useEffect(() => {
     let current = true
-    setCatalog(undefined)
-    setStatus('')
-    setError('')
+    setFailed(false)
     if (!api)
       return () => {
         current = false
@@ -78,29 +71,12 @@ export function SessionDefaultsPanel({
     setBusy(true)
     Promise.all([api.loops(), api.modelAdapters(), api.composition().catch(() => undefined)])
       .then(([loops, adapters, resolved]) => {
-        if (current) setComposition(readComposition(resolved))
         if (!current) return
-        setCatalog({
-          presets: loops.presets ?? [],
-          loops: loops.loops,
-          adapters: adapters.modelAdapters,
-          snapshot: loops,
-        })
-        setPreset(loops.defaults.preset ?? '')
-        const chosenLoop = defaultLoop(loops.defaults)
-        const chosenAdapter = defaultModelAdapter(loops.defaults)
-        setLoop(chosenLoop ? identity(chosenLoop) : '')
-        setAdapter(chosenAdapter ? identity(chosenAdapter) : '')
-        setModel(chosenAdapter?.model ?? '')
-        setStored({
-          preset: loops.defaults.preset ?? '',
-          loop: chosenLoop ? identity(chosenLoop) : '',
-          adapter: chosenAdapter ? identity(chosenAdapter) : '',
-          model: chosenAdapter?.model ?? '',
-        })
+        setComposition(readComposition(resolved))
+        setCatalog({ loops: loops.loops, adapters: adapters.modelAdapters, snapshot: loops })
       })
       .catch(() => {
-        if (current) setError('defaults.unavailable')
+        if (current) setFailed(true)
       })
       .finally(() => {
         if (current) setBusy(false)
@@ -109,68 +85,53 @@ export function SessionDefaultsPanel({
       current = false
     }
   }, [api, reload])
-  const selectedLoop = catalog?.loops.find((entry) => identity(entry) === loop)
-  const selectedAdapter = catalog?.adapters.find((entry) => identity(entry) === adapter)
-  const valid =
-    (!preset || !!catalog?.presets.includes(preset)) &&
-    (!loop || !!selectedLoop) &&
-    (!adapter || !!selectedAdapter?.models.some((entry) => entry.id === model))
-  const dirty =
-    preset !== stored.preset || loop !== stored.loop || adapter !== stored.adapter || model !== stored.model
-  async function save() {
-    if (!catalog || !api || !canSave || !valid || !dirty || busy) return
-    setBusy(true)
-    setError('')
-    setStatus('')
-    try {
+  const storedLoop = catalog && defaultLoop(catalog.snapshot.defaults)
+  const storedAdapter = catalog && defaultModelAdapter(catalog.snapshot.defaults)
+  const stored: Choice | undefined = catalog && {
+    loop: storedLoop ? identity(storedLoop) : '',
+    adapter: storedAdapter ? identity(storedAdapter) : '',
+    model: storedAdapter?.model ?? '',
+  }
+  const choice = useAutosave<Choice>({
+    stored,
+    equal: sameChoice,
+    save: async (next) => {
+      if (!api || !catalog) throw new Error('not ready')
+      const loop = catalog.loops.find((entry) => identity(entry) === next.loop)
+      const adapter = catalog.adapters.find((entry) => identity(entry) === next.adapter)
+      const preset = catalog.snapshot.defaults.preset
       const snapshot = await api.saveDefaults({
         revision: catalog.snapshot.revision,
         defaults: {
+          // The permission preset is chosen under 权限与安全; a save here keeps it.
           ...(preset ? { preset } : {}),
-          ...(selectedLoop || selectedAdapter
+          ...(loop || adapter
             ? {
                 providers: {
-                  ...(selectedLoop
-                    ? { loop: { provider: selectedLoop.id, version: selectedLoop.version } }
-                    : {}),
-                  ...(selectedAdapter
-                    ? { 'model-adapter': { provider: selectedAdapter.id, version: selectedAdapter.version } }
-                    : {}),
+                  ...(loop ? { loop: { provider: loop.id, version: loop.version } } : {}),
+                  ...(adapter ? { 'model-adapter': { provider: adapter.id, version: adapter.version } } : {}),
                 },
               }
             : {}),
-          ...(selectedAdapter ? { model } : {}),
+          ...(adapter && next.model ? { model: next.model } : {}),
         },
       })
-      setCatalog({ ...catalog, snapshot })
-      setStored({ preset, loop, adapter, model })
-      setStatus('defaults.saved')
-    } catch {
-      setError('defaults.save-failed')
-    } finally {
-      setBusy(false)
-    }
-  }
-  const storedLoop = catalog && defaultLoop(catalog.snapshot.defaults)
-  const storedAdapter = catalog && defaultModelAdapter(catalog.snapshot.defaults)
-  const stale =
-    (!!preset && !catalog?.presets.includes(preset)) ||
-    (!!loop && !selectedLoop) ||
-    (!!adapter && !selectedAdapter) ||
-    (!!model && !selectedAdapter?.models.some((entry) => entry.id === model))
-  const edit = (apply: () => void) => {
-    setStatus('')
-    apply()
-  }
-  // What "follow the default" resolves to right now, by name only.
-  const follow = (name?: string) =>
-    name ? `${t('defaults.configured')} · ${name}` : t('defaults.configured')
+      setCatalog((known) => (known ? { ...known, snapshot } : known))
+    },
+  })
+  const value = choice.value ?? { loop: '', adapter: '', model: '' }
+  const selectedLoop = catalog?.loops.find((entry) => identity(entry) === value.loop)
+  const selectedAdapter = catalog?.adapters.find((entry) => identity(entry) === value.adapter)
+  const locked = busy || !canSave || !catalog
+  const staleLoop = !!value.loop && !selectedLoop
+  const staleAdapter = !!value.adapter && !selectedAdapter
+  const staleModel =
+    !!selectedAdapter && !!value.model && !selectedAdapter.models.some((m) => m.id === value.model)
   const resolvedLoop =
     composition &&
     (catalog?.loops.find((entry) => identity(entry) === identity(composition.loop)) ?? composition.loop)
-  // The loop in effect: the chosen one, or the one the default resolves to.
-  const effectiveLoop = selectedLoop ?? (catalog?.loops.length === 1 ? catalog.loops[0] : undefined)
-  const sourceLayer =
+  const loopName = (entry: AdminLoop | { id: string }) => choiceName(entry, choiceText)
+  const source =
     composition &&
     choiceText(
       composition.source.layer === 'admin'
@@ -179,16 +140,12 @@ export function SessionDefaultsPanel({
           ? 'choiceSourceBuiltin'
           : 'choiceSourceProfile',
     )
-  const unavailable = (value: string) => ({
-    value,
-    label: `${value} · ${t('defaults.unavailable-choice')}`,
-    disabled: true,
-  })
   const providerName = (entry: Provider) => {
     const name = choiceText(`providerName.${entry.id}`)
     return name === `providerName.${entry.id}` ? entry.id : name
   }
-  const slotRow = (kind: string) => {
+  const staleTag = <SettingsTag tone="warn">{t('defaults.stale-short')}</SettingsTag>
+  const slotRow = (kind: string, fixedTag: boolean) => {
     const entries = providers.filter((entry) => entry.kind === kind)
     const active = entries.find((entry) => entry.active) ?? entries[0]
     if (!active) return null
@@ -197,9 +154,9 @@ export function SessionDefaultsPanel({
         key={kind}
         data-testid={`session-default-slot-${kind}`}
         label={choiceText(`provider.${kind}`)}
-        description={entries.length > 1 ? t('defaults.slot-fixed') : undefined}
+        info={entries.length > 1 ? t('defaults.slot-fixed') : undefined}
       >
-        {entries.length > 1 ? (
+        {entries.length > 1 && !fixedTag ? (
           <Select<string>
             aria-label={choiceText(`provider.${kind}`)}
             value={identity(active)}
@@ -208,223 +165,154 @@ export function SessionDefaultsPanel({
             options={entries.map((entry) => ({ value: identity(entry), label: providerName(entry) }))}
           />
         ) : (
-          <span>{providerName(active)}</span>
+          <span className="agnes-settings-value">
+            {providerName(active)}
+            {fixedTag && <SettingsTag tone="muted">{t('defaults.slot-profile')}</SettingsTag>}
+          </span>
         )}
       </SettingsItem>
     )
   }
   const moreSlots = MORE_SLOTS.filter((kind) => providers.some((entry) => entry.kind === kind))
+  const follow = (name?: string) =>
+    name ? `${t('defaults.configured')} · ${name}` : t('defaults.configured')
+  const set = (next: Partial<Choice>) => choice.set({ ...value, ...next })
   return (
-    <div className="agnes-settings-stack plugin-session-defaults" aria-busy={busy}>
-      {error && (
-        <Banner
-          tone="error"
-          role="alert"
-          action={
-            <Button size="small" onClick={() => setReload((value) => value + 1)} disabled={!api || busy}>
-              {t('defaults.reload')}
-            </Button>
-          }
-        >
-          {t(error)}
-        </Banner>
-      )}
-      {stale && (
-        <Banner tone="warning" role="alert">
-          {t('defaults.stale')}
-        </Banner>
-      )}
-      {busy && !catalog && <SettingsState tone="loading" />}
+    <SettingsBlock
+      label={t('defaults.title')}
+      className="plugin-session-defaults"
+      data-testid="session-defaults"
+      aria-busy={busy || choice.busy}
+      failed={choice.failed}
+      onRetry={choice.retry}
+      state={failed ? 'error' : busy && !catalog ? 'loading' : undefined}
+      onReload={() => setReload((count) => count + 1)}
+    >
       {catalog && (
         <>
-          <SettingsGroup
-            role="group"
-            aria-label={t('defaults.title')}
-            onKeyDown={(event) => {
-              if (event.key !== 'Enter' || event.nativeEvent.isComposing || event.defaultPrevented) return
-              if (!(event.target instanceof HTMLInputElement)) return
-              event.preventDefault()
-              event.stopPropagation()
-              void save()
-            }}
+          <SettingsDrill
+            id="session-loop"
+            data-testid="session-default-loop"
+            label={t('defaults.loop')}
+            info={t('defaults.loop-hint')}
+            value={
+              <>
+                {staleLoop && staleTag}
+                {selectedLoop ? loopName(selectedLoop) : follow(resolvedLoop && loopName(resolvedLoop))}
+              </>
+            }
+            description={t('defaults.loop-hint')}
           >
-            <SettingsItem label={t('defaults.loop')} description={t('defaults.loop-hint')}>
-              {catalog.loops.length === 1 && !stale ? (
-                <span data-testid="admin-default-loop-readonly">
-                  {choiceName(catalog.loops[0] ?? { id: '' }, choiceText)}
-                </span>
-              ) : (
-                <Select<string>
-                  aria-label={t('defaults.loop')}
-                  value={loop}
-                  disabled={busy || !canSave}
-                  className="agent-picker-select"
-                  popupMatchSelectWidth={false}
-                  onChange={(value) => edit(() => setLoop(value))}
-                  options={[
-                    { value: '', label: follow(resolvedLoop && choiceName(resolvedLoop, choiceText)) },
-                    ...(loop && !selectedLoop && storedLoop
-                      ? [
-                          {
-                            value: loop,
-                            label: `${label(storedLoop)} · ${t('defaults.unavailable-choice')}`,
-                            disabled: true,
-                          },
-                        ]
-                      : []),
-                    ...catalog.loops.map((entry) => ({
-                      value: identity(entry),
-                      label: choiceName(entry, choiceText),
-                    })),
-                  ]}
-                />
-              )}
-            </SettingsItem>
-            {EVERYDAY_SLOTS.map(slotRow)}
-            <SettingsItem label={t('defaults.adapter')} description={t('defaults.adapter-hint')}>
-              <Select<string>
-                aria-label={t('defaults.adapter')}
-                value={adapter}
-                disabled={busy || !canSave}
-                popupMatchSelectWidth={false}
-                onChange={(value) =>
-                  edit(() => {
-                    setAdapter(value)
-                    setModel('')
-                  })
-                }
-                options={[
-                  { value: '', label: follow() },
-                  ...(adapter && !selectedAdapter && storedAdapter
-                    ? [
-                        {
-                          value: adapter,
-                          label: `${label(storedAdapter)} · ${t('defaults.unavailable-choice')}`,
-                          disabled: true,
-                        },
-                      ]
-                    : []),
-                  ...catalog.adapters.map((entry) => ({
-                    value: identity(entry),
-                    label: entry.label ?? entry.id,
-                  })),
-                ]}
-              />
-            </SettingsItem>
-            {selectedAdapter && (
-              <SettingsItem label={t('defaults.model')}>
-                <Select<string>
-                  aria-label={t('defaults.model')}
-                  value={model || null}
-                  disabled={busy || !canSave}
-                  popupMatchSelectWidth={false}
-                  onChange={(value) => edit(() => setModel(value))}
-                  options={selectedAdapter.models.map((entry) => ({
-                    value: entry.id,
-                    label: entry.label ?? entry.id,
-                  }))}
-                />
-              </SettingsItem>
-            )}
-            {(catalog.presets.length > 0 || preset) && (
-              <SettingsItem label={t('defaults.preset')} description={t('defaults.preset-hint')}>
-                {catalog.presets.length === 1 && (!preset || preset === catalog.presets[0]) ? (
-                  <span data-testid="admin-default-preset-readonly">
-                    {choiceName({ id: catalog.presets[0] ?? '' }, choiceText)}
-                  </span>
-                ) : (
-                  <Select<string>
-                    aria-label={t('defaults.preset')}
-                    value={preset}
-                    disabled={busy || !canSave}
-                    popupMatchSelectWidth={false}
-                    onChange={(value) => edit(() => setPreset(value))}
-                    options={[
-                      {
-                        value: '',
-                        label: follow(
-                          composition?.preset
-                            ? choiceName({ id: composition.preset }, choiceText)
-                            : undefined,
-                        ),
-                      },
-                      ...(preset && !catalog.presets.includes(preset) ? [unavailable(preset)] : []),
-                      ...catalog.presets.map((value) => ({
-                        value,
-                        label: choiceName({ id: value }, choiceText),
-                      })),
-                    ]}
-                  />
-                )}
-              </SettingsItem>
-            )}
-            {moreSlots.length > 0 && (
-              <SettingsDetails title={t('defaults.more-slots')} data-testid="session-default-more-slots">
-                {moreSlots.map(slotRow)}
-              </SettingsDetails>
-            )}
-          </SettingsGroup>
-          <SettingsTechnicalDetails data-testid="session-defaults-technical">
-            <dl>
-              <dt>{t('defaults.source')}</dt>
-              <dd>
-                {composition
-                  ? `${sourceLayer} · ${composition.source.name}`
-                  : choiceText('choiceSourceUnknown')}
-              </dd>
-              {effectiveLoop && (
-                <>
-                  <dt>{t('defaults.loop-id')}</dt>
-                  <dd>
-                    <code>
-                      {effectiveLoop.id} {effectiveLoop.version}
-                    </code>
-                  </dd>
-                  <dt>{t('defaults.loop-package')}</dt>
-                  <dd>
-                    <code>{effectiveLoop.sourcePackage}</code>
-                  </dd>
-                  {effectiveLoop.capabilities.length > 0 && (
-                    <>
-                      <dt>{t('defaults.loop-capabilities')}</dt>
-                      <dd>{effectiveLoop.capabilities.join(', ')}</dd>
-                    </>
-                  )}
-                </>
-              )}
-              {selectedAdapter && (
-                <>
-                  <dt>{t('defaults.adapter-id')}</dt>
-                  <dd>
-                    <code>
-                      {selectedAdapter.id} {selectedAdapter.version}
-                    </code>
-                  </dd>
-                </>
-              )}
-              {preset && (
-                <>
-                  <dt>{t('defaults.preset-id')}</dt>
-                  <dd>
-                    <code>{preset}</code>
-                  </dd>
-                </>
-              )}
-            </dl>
-          </SettingsTechnicalDetails>
-          <SettingsFooter status={status ? t(status) : undefined} data-testid="session-defaults-footer">
-            <Button
-              appearance="primary"
-              data-testid="session-defaults-save"
-              onClick={() => void save()}
-              loading={busy && dirty}
-              disabled={!dirty || !valid || !canSave || busy}
+            <SettingsGroup
+              role="radiogroup"
+              aria-label={t('defaults.loop')}
+              className="agnes-settings-choices"
             >
-              {t('defaults.save')}
-            </Button>
-          </SettingsFooter>
+              <SettingsChoice
+                type="radio"
+                name="session-default-loop"
+                value=""
+                data-testid="session-loop-follow"
+                checked={!value.loop}
+                disabled={locked}
+                onChange={() => set({ loop: '' })}
+                label={follow(resolvedLoop && loopName(resolvedLoop))}
+                hint={source && `${t('defaults.source')}: ${source}`}
+              />
+              {catalog.loops.map((entry) => (
+                <SettingsChoice
+                  key={identity(entry)}
+                  type="radio"
+                  name="session-default-loop"
+                  value={identity(entry)}
+                  data-testid={`session-loop-${entry.id}`}
+                  checked={value.loop === identity(entry)}
+                  disabled={locked}
+                  onChange={() => set({ loop: identity(entry) })}
+                  label={loopName(entry)}
+                  hint={[
+                    t('defaults.loop-from', { name: `${entry.sourcePackage} ${entry.version}` }),
+                    entry.capabilities.length
+                      ? t('defaults.loop-can', { list: entry.capabilities.join('、') })
+                      : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                />
+              ))}
+            </SettingsGroup>
+            {staleLoop && <p className="agnes-settings-note">{t('defaults.stale')}</p>}
+            <p className="agnes-settings-note">
+              {t('defaults.loop-source', {
+                source: value.loop
+                  ? choiceText('choiceSourceAdmin')
+                  : (source ?? choiceText('choiceSourceProfile')),
+              })}
+            </p>
+          </SettingsDrill>
+          <SettingsItem label={t('defaults.model')}>
+            {staleModel && staleTag}
+            <Select<string>
+              aria-label={t('defaults.model')}
+              data-testid="session-default-model"
+              value={selectedAdapter ? value.model || null : ''}
+              disabled={locked || !selectedAdapter}
+              popupMatchSelectWidth={false}
+              onChange={(next) => set({ model: next })}
+              options={
+                selectedAdapter
+                  ? selectedAdapter.models.map((entry) => ({
+                      value: entry.id,
+                      label: entry.label ?? entry.id,
+                    }))
+                  : [{ value: '', label: t('defaults.model-follow') }]
+              }
+            />
+          </SettingsItem>
+          {EVERYDAY_SLOTS.map((kind) => slotRow(kind, false))}
+          <SettingsItem label={t('defaults.adapter')} info={t('defaults.adapter-hint')}>
+            {staleAdapter && staleTag}
+            <Select<string>
+              aria-label={t('defaults.adapter')}
+              data-testid="session-default-adapter"
+              value={value.adapter}
+              disabled={locked}
+              popupMatchSelectWidth={false}
+              onChange={(next) => {
+                const adapter = catalog.adapters.find((entry) => identity(entry) === next)
+                set({ adapter: next, model: adapter?.models[0]?.id ?? '' })
+              }}
+              options={[
+                { value: '', label: follow() },
+                ...(staleAdapter && storedAdapter
+                  ? [
+                      {
+                        value: value.adapter,
+                        label: `${storedAdapter.id} · ${t('defaults.unavailable-choice')}`,
+                        disabled: true,
+                      },
+                    ]
+                  : []),
+                ...catalog.adapters.map((entry) => ({
+                  value: identity(entry),
+                  label: entry.label ?? entry.id,
+                })),
+              ]}
+            />
+          </SettingsItem>
+          {moreSlots.length > 0 && (
+            <SettingsDrill
+              id="session-slots"
+              data-testid="session-default-more-slots"
+              label={t('defaults.more-slots')}
+              value={t('defaults.more-slots-value', { count: moreSlots.length })}
+              description={t('defaults.more-slots-help')}
+            >
+              <SettingsBlock>{moreSlots.map((kind) => slotRow(kind, true))}</SettingsBlock>
+            </SettingsDrill>
+          )}
         </>
       )}
-    </div>
+    </SettingsBlock>
   )
 }

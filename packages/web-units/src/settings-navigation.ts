@@ -5,8 +5,12 @@ const merged: Readonly<Record<string, readonly [string, string]>> = {
   bundles: ['models', 'bundles'],
   'system-prompt': ['models', 'system-prompt'],
   context: ['models', 'context'],
-  // The loop is chosen in 新会话默认; memory and instructions are the General page's 个性化.
-  execution: ['models', 'models'],
+  // Subpages of 运行配置 open from their rows.
+  'prompt-preview': ['models', 'prompt-preview'],
+  'agent-fde': ['models', 'bundles'],
+  'session-slots': ['models', 'session-slots'],
+  // The loop is chosen in 新会话默认 → 执行方式; memory and instructions are the General page's 个性化.
+  execution: ['models', 'session-loop'],
   personalization: ['general', 'personalization'],
   memory: ['general', 'memory'],
   'custom-instructions': ['general', 'custom-instructions'],

@@ -7,8 +7,8 @@ import { expect, it, vi } from 'vitest'
 import {
   CustomInstructions,
   Personalization,
+  PromptRows,
   replyStyleChoice,
-  SystemPromptPanel,
 } from '../src/settings/system-prompt.js'
 import { systemPromptApi } from '../src/settings/system-prompt-api.js'
 
@@ -230,17 +230,31 @@ it('groups the instructions and memory as 个性化, reading memory only once th
   }
 })
 
-it('replaces the default prompt only after confirmation, keeps other instructions, and can go back', async () => {
+const inFrame = (element: ReturnType<typeof createElement>) =>
+  createElement(SettingsSubpageFrame, { header: null }, element)
+
+it('replaces the default prompt only after 「我已理解」 and 「应用替换」, keeps other instructions, and can go back', async () => {
   const { api, host, root, writes, input, button, click } = fixture({ replyStyle: 'brief' })
-  try {
+  const open = async (target: HTMLElement) => {
     await act(async () =>
-      root.render(createElement(SystemPromptPanel, { canSave: true, api, part: 'override' })),
+      target.querySelector<HTMLButtonElement>('[data-testid="settings-drill-system-prompt"]')?.click(),
     )
+    await act(async () =>
+      target.querySelector<HTMLButtonElement>('[data-testid="system-prompt-override-on"]')?.click(),
+    )
+  }
+  try {
+    await act(async () => root.render(inFrame(createElement(PromptRows, { canSave: true, api }))))
+    expect(host.querySelector('[data-testid="settings-drill-system-prompt"]')?.textContent).toContain(
+      'Not used',
+    )
+    await open(host)
     expect(button('override-save')?.disabled).toBe(true)
     expect(button('override-reset')).toBeNull()
     await input('fullOverride', 'override')
-    // Custom instructions are set, so a full replacement conflicts until they are cleared.
-    expect(host.textContent).toContain('Clear them before using a full replacement')
+    // Custom instructions are set: they would not be sent, and the banner offers to clear them.
+    expect(host.textContent).toContain('not sent while a replacement is used')
+    expect(host.querySelector('[data-testid="system-prompt-clear-instructions"]')).not.toBeNull()
     await click('confirm')
     expect(button('override-save')?.disabled).toBe(true)
   } finally {
@@ -250,16 +264,17 @@ it('replaces the default prompt only after confirmation, keeps other instruction
   const clean = fixture()
   try {
     await act(async () =>
-      clean.root.render(
-        createElement(SystemPromptPanel, { canSave: true, api: clean.api, part: 'override' }),
-      ),
+      clean.root.render(inFrame(createElement(PromptRows, { canSave: true, api: clean.api }))),
     )
+    await open(clean.host)
     await clean.input('fullOverride', 'override')
     expect(clean.button('override-save')?.disabled).toBe(true)
     await clean.click('confirm')
     await clean.click('override-save')
     expect(clean.writes.at(-1)).toEqual({ config: { fullOverride: 'override' }, confirmFullOverride: true })
-    expect(clean.host.querySelector('[data-testid="system-prompt-override-saved"]')).not.toBeNull()
+    expect(clean.host.querySelector('[data-testid="settings-drill-system-prompt"]')?.textContent).toContain(
+      'In use',
+    )
     await clean.click('override-reset')
     expect(clean.writes.at(-1)).toEqual({ config: {}, confirmFullOverride: false })
     expect(clean.button('override-reset')).toBeNull()
@@ -270,15 +285,19 @@ it('replaces the default prompt only after confirmation, keeps other instruction
   expect(writes).toHaveLength(0)
 })
 
-it('previews each prompt section as a row whose text can be copied', async () => {
+it('previews each prompt section as a row that expands in place, with copy for one section or all', async () => {
   const { api, host, root } = fixture()
   try {
-    await act(async () =>
-      root.render(createElement(SystemPromptPanel, { canSave: true, api, part: 'preview' })),
-    )
+    await act(async () => root.render(inFrame(createElement(PromptRows, { canSave: true, api }))))
+    const drill = host.querySelector<HTMLButtonElement>('[data-testid="settings-drill-prompt-preview"]')
+    expect(drill?.textContent).toContain('1 sections')
+    await act(async () => drill?.click())
     const source = host.querySelector('[data-testid="system-prompt-source"]')
     expect(source?.getAttribute('title')).toContain('plugin/persona.md')
-    await act(async () => host.querySelector<HTMLElement>('.agh-disclosure-summary')?.click())
+    expect(host.querySelector('[data-testid="system-prompt-copy-all"]')).not.toBeNull()
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="system-prompt-section-toggle"]')?.click(),
+    )
     expect(host.querySelector('.system-prompt-section')?.textContent).toBe('default')
     expect(host.querySelector('.agnes-settings-code button')).not.toBeNull()
   } finally {

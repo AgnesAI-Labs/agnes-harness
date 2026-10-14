@@ -3,23 +3,37 @@ import {
   Button,
   IconButton,
   Select,
+  SettingsBlock,
   SettingsCode,
-  SettingsFooter,
-  SettingsGroup,
+  SettingsDrill,
   SettingsItem,
-  SettingsState,
-  SettingsTechnicalDetails,
+  SettingsTag,
   StateSwitch,
-  Tag,
   useUiText,
 } from '@agnes/web-ui'
-import { useEffect, useState } from 'react'
+import { type DragEvent, useEffect, useState } from 'react'
 import { choiceName } from '../../settings/choices.js'
 import { SETTINGS_NAMESPACE, settingsCatalog } from '../../settings/locales.js'
 import { SessionToolsPanel } from '../../settings/session-tools.js'
 import type { PluginAdminApi } from './api.js'
 import type { Text } from './control-panel-types.js'
 
+/** Move one entry of an ordered list to another position. */
+export function reorder<T>(list: readonly T[], from: number, to: number): T[] {
+  const next = [...list]
+  const [item] = next.splice(from, 1)
+  if (item === undefined) return [...list]
+  next.splice(Math.max(0, Math.min(to, next.length)), 0, item)
+  return next
+}
+
+/**
+ * Agent FDE (formerly 组合包): the business agents applied to every new session, in order. The row
+ * states how many are on; its subpage lists them by name with a switch each, reorders them by
+ * dragging (or Alt+↑/↓ on the handle), marks ones whose plugin is gone, and shows the composed
+ * result. The order only takes effect after the background service restarts, so it is applied with
+ * one explicit 「应用」.
+ */
 export function BundlesPanel({
   api,
   canSave,
@@ -35,43 +49,26 @@ export function BundlesPanel({
   const [snapshot, setSnapshot] = useState<Awaited<ReturnType<PluginAdminApi['bundles']>>>()
   const [selected, setSelected] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
-  const [message, setMessage] = useState('')
+  const [applied, setApplied] = useState(false)
   const [failed, setFailed] = useState('')
   const [dump, setDump] = useState('')
   const [sessionInfo, setSessionInfo] = useState<unknown>()
   const [dumpPreset, setDumpPreset] = useState<string>()
   const [origins, setOrigins] = useState<{ choice: string; layer: string; name: string }[]>([])
   const [reload, setReload] = useState(0)
-  function moveBundle(index: number, offset: number) {
-    setMessage('')
-    setSelected((prior) => {
-      const next = [...prior]
-      const item = next[index],
-        neighbor = next[index + offset]
-      if (item === undefined || neighbor === undefined) return prior
-      next[index] = neighbor
-      next[index + offset] = item
-      return next
-    })
-  }
+  const [dragging, setDragging] = useState<string>()
   // biome-ignore lint/correctness/useExhaustiveDependencies: reload explicitly rereads desired bundle selection.
   useEffect(() => {
     let current = true
-    setSnapshot(undefined)
-    setDump('')
-    setOrigins([])
-    setSessionInfo(undefined)
-    setMessage('')
     setFailed('')
     if (!api) return
     setBusy(true)
-    Promise.all([api.bundles(), api.composition()])
+    Promise.all([api.bundles(), api.composition().catch(() => undefined)])
       .then(([value, composition]) => {
-        if (current) {
-          setSessionInfo(composition)
-          setSnapshot(value)
-          setSelected(value.bundles)
-        }
+        if (!current) return
+        setSessionInfo(composition)
+        setSnapshot(value)
+        setSelected(value.bundles)
       })
       .catch(() => {
         if (current) setFailed('bundles.unavailable')
@@ -87,11 +84,11 @@ export function BundlesPanel({
     !!snapshot &&
     (selected.length !== snapshot.bundles.length ||
       selected.some((id, index) => id !== snapshot.bundles[index]))
-  const toggle = (id: string, on: boolean) => {
-    setMessage('')
-    setSelected((prior) => (on ? [...prior, id] : prior.filter((entry) => entry !== id)))
+  const edit = (next: string[]) => {
+    setApplied(false)
+    setSelected(next)
   }
-  async function save() {
+  async function apply() {
     if (!api || !snapshot || busy || !canSave || !dirty) return
     setBusy(true)
     setFailed('')
@@ -101,7 +98,7 @@ export function BundlesPanel({
       const value = await api.bundles()
       setSnapshot(value)
       setSelected(value.bundles)
-      setMessage('bundles.saved')
+      setApplied(true)
     } catch {
       setFailed('bundles.failed')
     } finally {
@@ -115,32 +112,24 @@ export function BundlesPanel({
       const value = await api.composition(dumpPreset)
       setSessionInfo(value)
       setDump(JSON.stringify(value, null, 2))
-      if (
-        value &&
-        typeof value === 'object' &&
-        'sources' in value &&
-        value.sources &&
-        typeof value.sources === 'object'
+      const sources = (value as { sources?: unknown }).sources
+      setOrigins(
+        sources && typeof sources === 'object'
+          ? Object.entries(sources).flatMap(([choice, source]) => {
+              const entry = source as { layer?: unknown; name?: unknown } | null
+              return typeof entry?.layer === 'string' && typeof entry.name === 'string'
+                ? [{ choice, layer: entry.layer, name: entry.name }]
+                : []
+            })
+          : [],
       )
-        setOrigins(
-          Object.entries(value.sources).flatMap(([choice, source]) =>
-            source &&
-            typeof source === 'object' &&
-            'layer' in source &&
-            typeof source.layer === 'string' &&
-            'name' in source &&
-            typeof source.name === 'string'
-              ? [{ choice, layer: source.layer, name: source.name }]
-              : [],
-          ),
-        )
     } catch {
       setFailed('bundles.unavailable')
     } finally {
       setBusy(false)
     }
   }
-  // Chosen bundles first, in the order they apply; the rest follow as the catalog lists them.
+  // Chosen agents first, in the order they apply; the rest follow as the catalog lists them.
   const rows = snapshot
     ? [
         ...selected.map((id) => ({ id, entry: snapshot.catalog.find((item) => item.id === id) })),
@@ -149,144 +138,171 @@ export function BundlesPanel({
           .map((entry) => ({ id: entry.id, entry })),
       ]
     : []
+  const nameOf = (id: string) => {
+    const entry = snapshot?.catalog.find((item) => item.id === id)
+    return entry ? choiceName(entry, settingsText) : id
+  }
+  const locked = busy || !canSave
+  const move = (id: string, offset: number) => {
+    const from = selected.indexOf(id)
+    if (from < 0) return
+    edit(reorder(selected, from, from + offset))
+  }
+  const drop = (event: DragEvent, target: string) => {
+    event.preventDefault()
+    const from = dragging ? selected.indexOf(dragging) : -1
+    const to = selected.indexOf(target)
+    setDragging(undefined)
+    if (from >= 0 && to >= 0 && from !== to) edit(reorder(selected, from, to))
+  }
   return (
-    <div className="agnes-settings-stack" aria-busy={busy} data-testid="bundles-panel">
-      {failed && (
-        <Banner
-          tone="error"
-          role="alert"
-          action={
-            <Button size="small" disabled={!api || busy} onClick={() => setReload((value) => value + 1)}>
-              {t('defaults.reload')}
-            </Button>
-          }
-        >
-          {t(failed)}
-        </Banner>
-      )}
-      {busy && !snapshot && <SettingsState tone="loading" />}
-      {snapshot && rows.length === 0 && <SettingsState>{t('bundles.empty')}</SettingsState>}
-      {snapshot && rows.length > 0 && (
-        <SettingsGroup
-          role="group"
-          aria-label={t('bundles.title')}
-          data-testid="bundle-order"
-          onKeyDown={(event) => {
-            if (event.key !== 'Enter' || event.nativeEvent.isComposing || event.defaultPrevented) return
-            if (!(event.target instanceof HTMLInputElement)) return
-            event.preventDefault()
-            event.stopPropagation()
-            void save()
-          }}
-        >
-          {rows.map(({ id, entry }) => {
-            const position = selected.indexOf(id)
-            const on = position >= 0
-            const name = entry ? choiceName(entry, settingsText) : id
-            return (
-              <SettingsItem
-                key={id}
-                data-bundle={id}
-                data-selected={on || undefined}
-                label={
-                  <>
-                    {on && <span className="agnes-settings-order">{position + 1}</span>}
-                    <span>{name}</span>
-                    {!entry && <Tag tone="warn">{t('bundles.missing')}</Tag>}
-                  </>
-                }
-                description={entry ? t('bundles.from', { name: entry.sourcePackage }) : undefined}
+    <SettingsBlock data-testid="bundles-row">
+      <SettingsDrill
+        id="bundles"
+        data-testid="settings-drill-bundles"
+        label={t('bundles.title')}
+        hint={t('bundles.scope')}
+        value={snapshot ? t('bundles.count', { on: selected.length, total: rows.length }) : undefined}
+        description={t('bundles.description')}
+      >
+        <div className="agnes-settings-stack" aria-busy={busy} data-testid="bundles-panel">
+          {failed && (
+            <Banner
+              tone="error"
+              role="alert"
+              action={
+                <Button size="small" disabled={!api || busy} onClick={() => setReload((value) => value + 1)}>
+                  {t('defaults.reload')}
+                </Button>
+              }
+            >
+              {t(failed)}
+            </Banner>
+          )}
+          <SettingsBlock state={busy && !snapshot ? 'loading' : undefined}>
+            {snapshot && rows.length === 0 && (
+              <SettingsItem label={t('bundles.empty')} data-testid="bundles-empty" />
+            )}
+            {rows.map(({ id, entry }) => {
+              const position = selected.indexOf(id)
+              const on = position >= 0
+              const name = nameOf(id)
+              return (
+                <SettingsItem
+                  key={id}
+                  data-bundle={id}
+                  data-selected={on || undefined}
+                  data-dragging={dragging === id || undefined}
+                  draggable={on && !locked}
+                  onDragStart={(event) => {
+                    event.dataTransfer.effectAllowed = 'move'
+                    setDragging(id)
+                  }}
+                  onDragEnd={() => setDragging(undefined)}
+                  onDragOver={(event) => {
+                    if (on && dragging) event.preventDefault()
+                  }}
+                  onDrop={(event) => drop(event, id)}
+                  label={
+                    <>
+                      {on && <span className="agnes-settings-order">{position + 1}</span>}
+                      <span>{name}</span>
+                      {!entry && <SettingsTag tone="warn">{t('bundles.missing')}</SettingsTag>}
+                    </>
+                  }
+                  description={entry?.version ?? (entry ? undefined : t('bundles.missing-help'))}
+                >
+                  {on && selected.length > 1 && (
+                    <IconButton
+                      name="ellipsis-vertical"
+                      className="agnes-settings-drag"
+                      label={t('bundles.move', { name })}
+                      disabled={locked}
+                      onKeyDown={(event) => {
+                        if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+                          event.preventDefault()
+                          move(id, event.key === 'ArrowUp' ? -1 : 1)
+                        }
+                      }}
+                    />
+                  )}
+                  <StateSwitch
+                    id={`bundle-default-${encodeURIComponent(id)}`}
+                    label={name}
+                    checked={on}
+                    disabled={locked}
+                    onToggle={(checked) =>
+                      edit(checked ? [...selected, id] : selected.filter((entry) => entry !== id))
+                    }
+                  />
+                </SettingsItem>
+              )
+            })}
+          </SettingsBlock>
+          <SettingsBlock>
+            <SettingsDrill
+              id="bundles-effective"
+              data-testid="bundles-technical"
+              label={t('bundles.explain')}
+              description={settingsText('dumpHelp')}
+            >
+              <SettingsBlock>
+                <SettingsItem label={settingsText('presets')}>
+                  <Select<string>
+                    aria-label={settingsText('presets')}
+                    data-testid="config-dump-preset"
+                    value={dumpPreset ?? ''}
+                    popupMatchSelectWidth={false}
+                    onChange={(value) => setDumpPreset(value || undefined)}
+                    options={[
+                      { value: '', label: t('defaults.configured') },
+                      ...presets.map((entry) => ({
+                        value: entry.id,
+                        label: choiceName(entry, settingsText),
+                      })),
+                    ]}
+                  />
+                  <Button data-testid="config-dump" disabled={!api || busy} onClick={() => void explain()}>
+                    {t('bundles.explain-action')}
+                  </Button>
+                </SettingsItem>
+              </SettingsBlock>
+              {dump && (
+                <>
+                  <SettingsBlock label={settingsText('origin')} data-testid="config-choice-sources">
+                    {origins.map((origin) => (
+                      <SettingsItem key={origin.choice} label={origin.choice}>
+                        <span className="agnes-settings-value">
+                          {origin.name} · {origin.layer}
+                        </span>
+                      </SettingsItem>
+                    ))}
+                  </SettingsBlock>
+                  <SettingsCode label={t('bundles.explain')} copy={dump}>
+                    {dump}
+                  </SettingsCode>
+                </>
+              )}
+              <SessionToolsPanel value={sessionInfo} t={settingsText} />
+            </SettingsDrill>
+          </SettingsBlock>
+          {snapshot && rows.length > 0 && (
+            <div className="agnes-settings-apply" data-testid="bundles-footer">
+              <span role="status">{applied ? t('bundles.saved') : t('bundles.restart')}</span>
+              <Button
+                appearance="primary"
+                data-testid="bundles-save"
+                onClick={() => void apply()}
+                loading={busy && dirty}
+                disabled={!dirty || busy || !canSave}
               >
-                {on && selected.length > 1 && (
-                  <>
-                    <IconButton
-                      name="chevron-up"
-                      label={`${t('bundles.up')} ${name}`}
-                      disabled={position === 0 || busy || !canSave}
-                      onClick={() => moveBundle(position, -1)}
-                    />
-                    <IconButton
-                      name="chevron-down"
-                      label={`${t('bundles.down')} ${name}`}
-                      disabled={position === selected.length - 1 || busy || !canSave}
-                      onClick={() => moveBundle(position, 1)}
-                    />
-                  </>
-                )}
-                <StateSwitch
-                  id={`bundle-default-${encodeURIComponent(id)}`}
-                  label={name}
-                  checked={on}
-                  disabled={busy || !canSave}
-                  onToggle={(checked) => toggle(id, checked)}
-                />
-              </SettingsItem>
-            )
-          })}
-        </SettingsGroup>
-      )}
-      {snapshot && rows.length > 0 && (
-        <SettingsFooter status={message ? t(message) : t('bundles.description')}>
-          <Button
-            appearance="primary"
-            data-testid="bundles-save"
-            onClick={() => void save()}
-            loading={busy && dirty}
-            disabled={!dirty || busy || !canSave}
-          >
-            {t('bundles.save')}
-          </Button>
-        </SettingsFooter>
-      )}
-      <SettingsTechnicalDetails data-testid="bundles-technical">
-        <SettingsGroup>
-          <SettingsItem label={t('bundles.explain')} description={settingsText('dumpHelp')}>
-            <Select<string>
-              aria-label={settingsText('presets')}
-              data-testid="config-dump-preset"
-              value={dumpPreset ?? ''}
-              popupMatchSelectWidth={false}
-              onChange={(value) => setDumpPreset(value || undefined)}
-              options={[
-                { value: '', label: t('defaults.configured') },
-                ...presets.map((entry) => ({ value: entry.id, label: choiceName(entry, settingsText) })),
-              ]}
-            />
-            <Button data-testid="config-dump" disabled={!api || busy} onClick={() => void explain()}>
-              {t('bundles.explain-action')}
-            </Button>
-          </SettingsItem>
-        </SettingsGroup>
-        {dump && (
-          <>
-            <div className="agnes-settings-table">
-              <table data-testid="config-choice-sources">
-                <caption>{settingsText('origin')}</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">{settingsText('choice')}</th>
-                    <th scope="col">{settingsText('layer')}</th>
-                    <th scope="col">{settingsText('source')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {origins.map((origin) => (
-                    <tr key={origin.choice}>
-                      <th scope="row">{origin.choice}</th>
-                      <td>{origin.layer}</td>
-                      <td>{origin.name}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                {t('bundles.save')}
+              </Button>
             </div>
-            <SettingsCode label={t('bundles.explain')} copy={dump}>
-              {dump}
-            </SettingsCode>
-          </>
-        )}
-        <SessionToolsPanel value={sessionInfo} t={settingsText} />
-      </SettingsTechnicalDetails>
-    </div>
+          )}
+          <p className="agnes-settings-note">{t('bundles.single')}</p>
+        </div>
+      </SettingsDrill>
+    </SettingsBlock>
   )
 }

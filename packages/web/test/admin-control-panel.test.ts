@@ -21,7 +21,7 @@ import {
 import { SecurityStatusPanel } from '@agnes/web-admin/settings/security-status'
 import { effectiveSessionPreset, permissionForSessionPreset } from '@agnes/web-admin/settings/session-choice'
 import { SessionToolsPanel } from '@agnes/web-admin/settings/session-tools'
-import { setDisclosureOpen } from '@agnes/web-ui'
+import { SettingsSubpageFrame, setDisclosureOpen } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -334,47 +334,50 @@ it('loads catalog choices and saves their exact identities and revision', async 
     createElement(
       'form',
       { onSubmit: outerSubmit },
-      createElement(SessionDefaultsPanel, { api, canSave: true, t }),
+      createElement(
+        SettingsSubpageFrame,
+        { header: null },
+        createElement(SessionDefaultsPanel, { api, canSave: true, t }),
+      ),
     ),
   )
   expect(host.querySelector('form form')).toBeNull()
-  expect(host.querySelector('[role="group"]')?.getAttribute('aria-label')).toBe('Defaults for new sessions')
-  // One row per choice: its name on the left, its control on the right.
-  expect([...host.querySelectorAll('.agnes-settings-item-label')].map((label) => label.textContent)).toEqual([
-    'How the agent works',
-    'Model adapter',
-    'Model',
-    'Permissions',
-  ])
-  expect(host.querySelectorAll('[role="combobox"]')).toHaveLength(3)
-  expect(host.querySelector('[data-testid="admin-default-loop-readonly"]')?.textContent).toBe('workflow')
-  // Identifiers are technical details, not row text.
-  expect(host.querySelector('.agnes-settings-group')?.textContent).not.toContain('1.0.0')
-  expect(host.querySelector('[data-testid="session-defaults-technical"]')).not.toBeNull()
-  const save = host.querySelector<HTMLButtonElement>('[data-testid="session-defaults-save"]')
-  // Nothing changed yet, so there is nothing to save.
-  expect(save?.disabled).toBe(true)
-  await act(async () =>
-    host
-      .querySelector('[aria-label="Permissions"]')
-      ?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })),
-  )
-  const option = [...document.querySelectorAll<HTMLElement>('.ant-select-item-option')].find((entry) =>
-    entry.textContent?.includes(settingsCatalog.en?.['choice.workspace-write'] ?? ''),
-  )
-  expect(option).toBeDefined()
-  await act(async () => option?.click())
-  expect(save?.disabled).toBe(false)
-  await act(async () => save?.click())
+  expect(host.querySelector('[data-testid="session-defaults"] h3')?.textContent).toBe('New session defaults')
+  // One row per choice: its name on the left, its control or value on the right. The permission
+  // preset is chosen under 权限与安全 only.
   expect(
-    JSON.parse(String(fetcher.mock.calls.find(([url]) => String(url).endsWith('/defaults'))?.[1]?.body)),
-  ).toEqual({ ...snapshot, defaults: { ...snapshot.defaults, preset: 'workspace-write' } })
-  expect(host.textContent).toContain(t('defaults.saved'))
-  expect(save?.disabled).toBe(true)
+    [...host.querySelectorAll('[data-testid="session-defaults"] .agnes-settings-item-label')].map(
+      (label) => label.textContent,
+    ),
+  ).toEqual(['How the agent works', 'Model', 'Model adapter'])
+  expect(host.textContent).not.toContain('Permissions')
+  // Nothing to press: there is no save button.
+  expect(host.querySelector('[data-testid="session-defaults-save"]')).toBeNull()
+  const loopRow = host.querySelector<HTMLButtonElement>('[data-testid="session-default-loop"]')
+  expect(loopRow?.textContent).toContain('workflow')
+  // Identifiers stay off the rows; the loop's source and capabilities are in its subpage.
+  expect(host.querySelector('[data-testid="session-defaults"]')?.textContent).not.toContain('1.0.0')
+  await act(async () => loopRow?.click())
+  expect(
+    host.querySelector('[data-testid="session-loop-workflow"]')?.closest('label')?.textContent,
+  ).toContain('@acme/workflow 1.0.0')
+  // Choosing 「follow the default」 saves at once and keeps the preset chosen elsewhere.
+  await act(async () => host.querySelector<HTMLInputElement>('[data-testid="session-loop-follow"]')?.click())
+  const saved = fetcher.mock.calls.filter(([url]) => String(url).endsWith('/defaults'))
+  expect(saved).toHaveLength(1)
+  expect(JSON.parse(String(saved[0]?.[1]?.body))).toEqual({
+    revision: 4,
+    defaults: {
+      preset: 'read-only',
+      providers: { 'model-adapter': { provider: adapter.id, version: adapter.version } },
+      model: 'model',
+    },
+  })
+  expect(host.querySelector('[data-testid="settings-save-failed"]')).toBeNull()
   expect(outerSubmit).not.toHaveBeenCalled()
 })
 
-it('keeps unavailable catalog errors visible and read-only saves disabled', async () => {
+it('reports an unavailable catalog as one line with retry, and leaves read-only controls disabled', async () => {
   const fetcher = vi
     .fn<typeof fetch>()
     .mockResolvedValue(
@@ -388,20 +391,21 @@ it('keeps unavailable catalog errors visible and read-only saves disabled', asyn
     fetcher,
   )
   const host = await mount(createElement(SessionDefaultsPanel, { api, canSave: false, t }))
-  expect(host.querySelector('[role="alert"]')?.textContent).toContain(t('defaults.unavailable'))
+  expect(host.querySelector('[data-testid="settings-read-failed"]')).not.toBeNull()
   expect(host.querySelector('form')).toBeNull()
   fetcher.mockImplementation(async (url) =>
     String(url).endsWith('/loops')
       ? Response.json({ loops: [], revision: 0, defaults: {} })
       : Response.json({ modelAdapters: [] }),
   )
-  await act(async () => {
-    host.querySelector('button')?.click()
-  })
-  expect(host.querySelector<HTMLButtonElement>('[data-testid="session-defaults-save"]')?.disabled).toBe(true)
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="settings-read-failed"] button')?.click(),
+  )
+  expect(host.querySelector('[data-testid="settings-read-failed"]')).toBeNull()
+  expect(host.querySelectorAll('.ant-select-disabled').length).toBeGreaterThanOrEqual(2)
 })
 
-it('lists the other provider slots as rows that state what is in effect', async () => {
+it('lists the other provider slots as rows that state what is in effect, the rarer ones in a subpage', async () => {
   const fetcher = vi.fn<typeof fetch>(async (url) =>
     String(url).endsWith('/loops')
       ? Response.json({ loops: [], revision: 0, defaults: {} })
@@ -426,29 +430,37 @@ it('lists the other provider slots as rows that state what is in effect', async 
     selectedFor: [],
   })
   const host = await mount(
-    createElement(SessionDefaultsPanel, {
-      api,
-      canSave: true,
-      t,
-      providers: [
-        provider('memory', 'files', true),
-        provider('memory', 'vector', false),
-        provider('child-agent', 'builtin', true),
-        provider('sandbox', 'native', true),
-      ],
-    }),
+    createElement(
+      SettingsSubpageFrame,
+      { header: null },
+      createElement(SessionDefaultsPanel, {
+        api,
+        canSave: true,
+        t,
+        providers: [
+          provider('memory', 'files', true),
+          provider('memory', 'vector', false),
+          provider('child-agent', 'builtin', true),
+          provider('sandbox', 'native', true),
+        ],
+      }),
+    ),
   )
-  // Two memory providers are installed: the row lists both and says why it cannot be changed here.
+  // Two memory providers are installed: the row lists both and its ⓘ says why it cannot be changed.
   const memory = host.querySelector('[data-testid="session-default-slot-memory"]')
-  expect(memory?.querySelector('[role="combobox"]')?.hasAttribute('disabled')).toBe(true)
-  expect(memory?.textContent).toContain(t('defaults.slot-fixed'))
+  expect(memory?.querySelector('.ant-select-disabled')).not.toBeNull()
+  expect(memory?.querySelector('.agnes-settings-info')?.getAttribute('title')).toBe(t('defaults.slot-fixed'))
   // One child-agent provider: the row simply names it.
   const child = host.querySelector('[data-testid="session-default-slot-child-agent"]')
   expect(child?.querySelector('[role="combobox"]')).toBeNull()
   expect(child?.textContent).toContain('builtin')
-  // Sandbox and the other rarely changed slots sit in one fold; slots nothing provides are not listed.
-  const more = host.querySelector('[data-testid="session-default-more-slots"]')
-  expect(more?.getAttribute('data-open')).toBe('false')
+  // Sandbox and the other rarely changed slots are a subpage; slots nothing provides are not listed.
+  expect(host.querySelector('[data-testid="session-default-slot-sandbox"]')).toBeNull()
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="session-default-more-slots"]')?.click(),
+  )
+  const sandbox = host.querySelector('[data-testid="session-default-slot-sandbox"]')
+  expect(sandbox?.textContent).toContain(t('defaults.slot-profile'))
   expect(host.querySelector('[data-testid="session-default-slot-compaction"]')).toBeNull()
 })
 

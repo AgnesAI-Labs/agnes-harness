@@ -10,9 +10,6 @@
     "packages/web-admin/src/admin/plugins/admin/page.tsx": {
       "className": 14
     },
-    "packages/web-admin/src/admin/plugins/bundles-panel.tsx": {
-      "intrinsic": 1
-    },
     "packages/web-admin/src/admin/plugins/skill-authoring.tsx": {
       "className": 1
     },

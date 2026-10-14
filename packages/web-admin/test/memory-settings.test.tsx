@@ -145,9 +145,7 @@ it('opens the memory files subpage with MEMORY.md, saves with the version it rea
       content: '- prefers lists',
       baseHash: hash('a'),
     })
-    expect(host.querySelector('[data-testid="memory-root"]')?.textContent).toBe(
-      '/data/agh/memory/WorkLLM',
-    )
+    expect(host.querySelector('[data-testid="memory-root"]')?.textContent).toBe('/data/agh/memory/WorkLLM')
     expect(host.querySelector('[data-testid="memory-writer"]')?.textContent).toBe('shoe-portal · 4')
     expect(host.querySelector('[data-testid="memory-size"]')?.textContent).toContain('200')
   } finally {

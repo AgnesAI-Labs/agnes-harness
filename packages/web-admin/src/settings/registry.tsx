@@ -34,8 +34,7 @@ import {
 } from './runtime-panels.js'
 import type { SchedulesApi } from './schedules.js'
 import { SecurityStatusPanel } from './security-status.js'
-import { SystemPromptPanel } from './system-prompt.js'
-import { systemPromptApi } from './system-prompt-api.js'
+import { PromptRows } from './system-prompt.js'
 
 export type RuntimeSettingsContext = {
   api: PluginAdminApi | undefined
@@ -55,7 +54,6 @@ export type RuntimeSettingsContext = {
   schedules?: SchedulesApi | undefined
   snapshot: RuntimeAdminSnapshot | undefined
 }
-const promptSummaryApi = systemPromptApi()
 // Native account/resource panes keep their stable IDs and controller lifetime.
 const NativePaneBridge = () => null
 for (const [id, group, pane, navigationId, key, order] of [
@@ -109,34 +107,6 @@ function Subsection({
     >
       {visited && children}
     </SettingsDetails>
-  )
-}
-
-/** The system prompt section states whether the default is in effect: one small read on open. */
-function PromptSubsection({ canSave, t }: { canSave: boolean; t: UiExtensionContext['t'] }) {
-  const [customized, setCustomized] = useState<boolean>()
-  useEffect(() => {
-    const pending = new AbortController()
-    void promptSummaryApi
-      .get(pending.signal)
-      .then((value) => {
-        if (pending.signal.aborted) return
-        setCustomized(!!value.config.fullOverride?.trim())
-      })
-      // The summary is optional: the section itself reports a failed read when it is opened.
-      .catch(() => {})
-    return () => pending.abort()
-  }, [])
-  return (
-    <Subsection
-      defer
-      id="system-prompt"
-      icon="file-text"
-      title={t('runOverride')}
-      summary={customized === undefined ? undefined : t(customized ? 'runOverrideUsed' : 'runOverrideUnused')}
-    >
-      <SystemPromptPanel canSave={canSave} part="override" />
-    </Subsection>
   )
 }
 
@@ -264,65 +234,24 @@ const definitions: readonly [
     'advanced',
     'models',
     80,
-    (c, t) => {
-      // What is in effect, read from the runtime catalog the page already holds.
-      const active = (kind: string) => {
-        const provider = c.snapshot?.providers.find((entry) => entry.kind === kind && entry.active)
-        if (!provider) return undefined
-        const name = t(`providerName.${provider.id}`)
-        return name === `providerName.${provider.id}` ? provider.id : name
-      }
-      const preset = c.snapshot?.presets.find((entry) => entry.isDefault)?.id
-      const presetName =
-        preset && t(`choice.${preset}`) !== `choice.${preset}` ? t(`choice.${preset}`) : preset
-      const loop = active('loop')
-      return (
-        <>
-          <SettingsPageDescription>{t('runConfigIntro')}</SettingsPageDescription>
-          <Subsection
-            defer
-            id="models"
-            icon="bot"
-            title={t('runDefaults')}
-            summary={loop ? t('runDefaultsSummary', { loop }) : undefined}
-          >
-            <SessionDefaultsPanel
-              api={c.api}
-              canSave={c.canSave}
-              t={c.pluginText}
-              providers={c.snapshot?.providers}
-            />
-          </Subsection>
-          <Subsection
-            defer
-            id="bundles"
-            icon="folder"
-            title={t('runBundles')}
-            summary={presetName ? t('agentPresetDefault', { name: presetName }) : undefined}
-          >
-            <BundlesPanel
-              api={c.api}
-              canSave={c.canSave}
-              t={c.pluginText}
-              presets={c.snapshot?.presets ?? []}
-            />
-          </Subsection>
-          <Subsection
-            defer
-            id="context"
-            icon="sliders-horizontal"
-            title={t('runContext')}
-            summary={active('compaction')}
-          >
-            <ContextPanel canSave={c.canSave} />
-          </Subsection>
-          <PromptSubsection canSave={c.canSave} t={t} />
-          <Subsection defer id="prompt-preview" icon="eye" title={t('runPreview')}>
-            <SystemPromptPanel canSave={c.canSave} part="preview" />
-          </Subsection>
-        </>
-      )
-    },
+    (c, t) => (
+      <>
+        <SettingsPageDescription>{t('runConfigIntro')}</SettingsPageDescription>
+        <div id="settings-subsection-models" tabIndex={-1} className="agnes-settings-anchor">
+          <SessionDefaultsPanel
+            api={c.api}
+            canSave={c.canSave}
+            t={c.pluginText}
+            providers={c.snapshot?.providers}
+          />
+        </div>
+        <BundlesPanel api={c.api} canSave={c.canSave} t={c.pluginText} presets={c.snapshot?.presets ?? []} />
+        <div id="settings-subsection-context" tabIndex={-1} className="agnes-settings-anchor">
+          <ContextPanel canSave={c.canSave} />
+        </div>
+        <PromptRows canSave={c.canSave} />
+      </>
+    ),
   ],
   [
     'advanced',

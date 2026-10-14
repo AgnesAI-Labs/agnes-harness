@@ -112,6 +112,7 @@ export function SettingsPresetSelect({
   onChange,
   label,
   defaultLabel = fallbackT('ui.default'),
+  allowDefault = true,
   unit,
   scale = 1,
   disabled,
@@ -124,6 +125,8 @@ export function SettingsPresetSelect({
   /** The accessible name: the row's label. */
   label: string
   defaultLabel?: string
+  /** Whether 默认 (nothing stored) is a choice; off for settings that always hold a number. */
+  allowDefault?: boolean
   /** The custom field's unit, e.g. 「秒」; the field shows `value / scale`. */
   unit?: string
   scale?: number
@@ -147,7 +150,7 @@ export function SettingsPresetSelect({
           else if (next !== 'custom') onChange(Number(next))
         }}
       >
-        <option value="default">{defaultLabel}</option>
+        {allowDefault && <option value="default">{defaultLabel}</option>}
         {presets.map((preset) => (
           <option key={preset.value} value={String(preset.value)}>
             {preset.label}
