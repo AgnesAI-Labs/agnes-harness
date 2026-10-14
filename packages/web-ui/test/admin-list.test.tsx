@@ -285,6 +285,35 @@ it('renders six purpose sections with localized fallback and an explicit safe do
   dispose()
 })
 
+it('says the description once: the overview repeats nothing the detail header already shows', () => {
+  const metadata = purposeRow.metadata!
+  const overview = (value: NonNullable<PackageCatalogDescriptor['metadata']>) => {
+    const host = document.createElement('div')
+    const dispose = mountRegion(
+      host,
+      createElement(
+        UiLocaleProvider,
+        { source: purposeSource('en') },
+        createElement(PluginPurposeSections, {
+          item: { ...purposeRow, metadata: value },
+          value: { provides: [], appearsIn: [], available: true },
+          permissions: '',
+          versions: '',
+          section: 'overview',
+        }),
+      ),
+    )
+    const text = host.querySelector('[data-testid=plugin-description]')?.textContent ?? null
+    dispose()
+    return text
+  }
+  // A description that says more than the summary stays in the overview.
+  expect(overview(metadata)).toBe('Read and search local reports.')
+  // One that only repeats the summary (the header's line) is not said again.
+  const { locales: _locales, ...english } = metadata
+  expect(overview({ ...english, description: ' Search local reports. ' })).toBeNull()
+})
+
 describe('where a plugin comes from and what it includes', () => {
   const bundled = {
     ...purposeRow,

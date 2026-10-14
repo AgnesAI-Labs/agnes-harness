@@ -109,6 +109,12 @@ export function PluginPurposeSections({
 }) {
   const { t, locale } = useUiText(PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog)
   const purpose = resolvePluginMetadata(item.metadata, locale)
+  // The detail's header already says the summary; the overview adds the description only when it
+  // says more than that.
+  const description =
+    purpose?.description && purpose.description.trim() !== purpose.summary?.trim()
+      ? purpose.description
+      : undefined
   const settings = (item.presentation?.rows ?? []).filter((row) => row.settings)
   return (
     <div className="agnes-settings-stack" data-testid="plugin-purpose-detail">
@@ -116,7 +122,11 @@ export function PluginPurposeSections({
         <section data-testid="plugin-overview">
           {/* Inside the overview tab the tab already names this part. */}
           {!section && <h3>{t('overview')}</h3>}
-          {purpose?.description ? <p>{purpose.description}</p> : <PluginProvidesChips value={value} />}
+          {description ? (
+            <p data-testid="plugin-description">{description}</p>
+          ) : (
+            !purpose?.description && <PluginProvidesChips value={value} />
+          )}
           <p className="agh-plugin-source-line">
             <PluginSourceBadge item={item} />
             <PluginPurposeBadges item={item} value={value} />
