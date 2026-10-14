@@ -310,7 +310,7 @@
     grid-template-columns: minmax(0, 1fr);
     gap: var(--s12);
     padding: var(--s4) var(--s16) var(--s16);
-    border-top: 1px solid var(--agnes-line-secondary, var(--agnes-line-primary));
+    border-top: 1px solid var(--agnes-line-primary);
     background: var(--agnes-bg-subtle, transparent);
   }
   .capability-engine-flags {
