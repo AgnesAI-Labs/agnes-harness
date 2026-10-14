@@ -1706,6 +1706,7 @@
   .agh-computer-use .agnes-settings-item-control {
     flex: 0 0 auto;
     flex-wrap: wrap;
+    max-width: 100%;
     margin-inline-start: auto;
   }
   /* A disclosure listed in a group is one of its rows; its content keeps the row's inset. */
