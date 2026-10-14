@@ -215,7 +215,7 @@ export function DiagnosticsPanel({
           )}
         </div>
         <SettingsDetails title={t('findById')} data-testid="diagnostics-find-id">
-          <div role="search" aria-label={t('findById')}>
+          <search aria-label={t('findById')}>
             <Field label={t('id')} htmlFor="diagnostics-query">
               <SettingsInput
                 id="diagnostics-query"
@@ -255,7 +255,7 @@ export function DiagnosticsPanel({
                 {t('refresh')}
               </Button>
             </div>
-          </div>
+          </search>
         </SettingsDetails>
         <p>{t('latest')}</p>
         {!busy && bundle && bundle.errors.length === 0 && <SettingsState>{t('empty')}</SettingsState>}
