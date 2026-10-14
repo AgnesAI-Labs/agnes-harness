@@ -64,6 +64,30 @@ describe('trace region layout', () => {
     expect(trace.selectTool?.('owned-session', 100)).toBe(false)
   })
 
+  it('leaves the trace for the conversation when a new session starts there (TRACE-NEWSESSION)', async () => {
+    runtime = await mountRenderedIndex()
+    const trace = runtime.trace
+    if (!trace) throw new Error('Missing trace region')
+    trace.render([{ kind: 'user', id: 'u', seq: 1, content: [{ type: 'text', text: 'install mcp' }] }], [], {
+      sessionId: 'traced',
+      hasEarlier: false,
+    })
+    trace.setOpen(true)
+    expect(document.querySelector('#view-trace')?.getAttribute('aria-selected')).toBe('true')
+    // What the app renders for a new draft: no session, nothing recorded.
+    trace.render([], [])
+    expect(trace.isOpen()).toBe(false)
+    expect(document.querySelector('#view-chat')?.getAttribute('aria-selected')).toBe('true')
+    expect(document.querySelector('#view-trace')?.getAttribute('aria-selected')).toBe('false')
+    expect(document.body.classList.contains('trace-open')).toBe(false)
+    expect(document.querySelector<HTMLElement>('#trace-panel')?.hidden).toBe(true)
+    // The rule that hides the composer only applies while the trace tab is selected.
+    expect(flatCss).toContain('main:has(#view-trace[aria-selected="true"]) #composer-mount')
+    // An empty trace, when shown, sits in the middle of its pane.
+    expect(declarations('.trace-empty')).toContain('align-self: center')
+    expect(declarations('.trace-empty')).toContain('justify-self: center')
+  })
+
   it('neutralizes the wrappers so the list keeps its region grid row', () => {
     // 包装是普通 block 时，区域网格只看到一个按内容高度铺开的子项：三条轨道被第一行全吃掉，
     // .trace-body 拿到的不是剩余高度而是内容高度，.trace-list 的 overflow:auto 永不触发，
