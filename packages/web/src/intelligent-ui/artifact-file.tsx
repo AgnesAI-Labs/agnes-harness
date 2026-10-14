@@ -10,12 +10,10 @@ import {
   Menu,
   useUiText,
 } from '@agnes/web-ui'
-import { DocumentPreview } from '@agnes/web-ui/conversation'
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { DocumentPreview, HtmlPreviewFrame } from '@agnes/web-ui/conversation'
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { type DeliverableType, deliverableType, deliverableVersion } from './deliverable-labels.js'
 
-/** Served by the web server as an opaque-origin document with its own policy; see its module. */
-const HTML_PREVIEW_FRAME = '/__agnes/deliverable-preview'
 const PREVIEW_LIMIT = 1024 * 1024
 
 function previewKind(mime: string): ClientDocumentKind | undefined {
@@ -55,32 +53,6 @@ const previewRequest = {
   },
 }
 const fileKey = (laneId: string, file: UiArtifactFileData) => `${laneId}:${file.artifact.sha256}`
-
-/** An HTML deliverable runs in its own sandboxed document and is handed its text once, by message. */
-function HtmlPreview({ html, title }: { html: string; title: string }) {
-  const frame = useRef<HTMLIFrameElement>(null)
-  useEffect(() => {
-    const ready = (event: MessageEvent) => {
-      const target = frame.current?.contentWindow
-      if (!target || event.source !== target || event.data?.type !== 'agnes-preview-ready') return
-      // The frame's origin is opaque, so there is no origin to name; the source check above binds it.
-      target.postMessage({ type: 'agnes-preview-html', html }, '*')
-    }
-    window.addEventListener('message', ready)
-    return () => window.removeEventListener('message', ready)
-  }, [html])
-  return (
-    <section data-document-preview="html" aria-label={title}>
-      <iframe
-        ref={frame}
-        src={HTML_PREVIEW_FRAME}
-        title={title}
-        sandbox="allow-scripts"
-        referrerPolicy="no-referrer"
-      />
-    </section>
-  )
-}
 
 /** Display uses the same session-authorized resource loaders as the workspace document dock. */
 export function ArtifactFile({
@@ -302,7 +274,7 @@ export function ArtifactFile({
               {t('ui.file.loading')}
             </p>
           ) : preview.kind === 'html' ? (
-            <HtmlPreview key={file.artifact.sha256} html={preview.content ?? ''} title={file.name} />
+            <HtmlPreviewFrame key={file.artifact.sha256} html={preview.content ?? ''} title={file.name} />
           ) : (
             <DocumentPreview
               // Source files are shown as source: a scrollable monospace block, never running text.

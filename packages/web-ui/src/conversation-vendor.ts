@@ -8,6 +8,7 @@ export {
   type DocumentPreviewProps,
 } from './conversation/document-preview.js'
 export { documentResourceUrl, sanitizeDocumentHtml } from './conversation/document-preview-policy.js'
+export { HTML_PREVIEW_FRAME, HtmlPreviewFrame } from './conversation/html-preview-frame.js'
 export {
   ConversationInteractionResult,
   interactionToolPresentation,
