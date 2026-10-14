@@ -4,6 +4,6 @@ export { IntelligentSurfaceChip, type IntelligentSurfaceChipProps } from './chip
 export { CustomUiFallback, type CustomUiRenderer, type CustomUiRenderProps } from './custom.js'
 export { INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog } from './locales.js'
 export { displayableIntelligentSurface } from './source-state.js'
-export { docksInConversation, surfaceTitle } from './summary.js'
+export { docksInConversation, isDeliverableList, surfaceTitle } from './summary.js'
 export { IntelligentSurface, type IntelligentSurfaceProps } from './surface.js'
 export { boundedUiJson, validIntelligentSurface, validIntelligentSurfaceProjection } from './validate.js'

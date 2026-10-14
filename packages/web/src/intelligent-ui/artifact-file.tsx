@@ -2,9 +2,9 @@ import type { UiArtifactFileData } from '@agnes/protocol/gen/intelligent-ui'
 import type { ClientDocumentKind, ClientDocumentResource, ClientResourceService } from '@agnes/web-client'
 import {
   Button,
+  Icon,
   IconButton,
   type IconName,
-  IconTile,
   INTELLIGENT_UI_NAMESPACE,
   intelligentUiCatalog,
   Menu,
@@ -12,6 +12,7 @@ import {
 } from '@agnes/web-ui'
 import { DocumentPreview } from '@agnes/web-ui/conversation'
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { type DeliverableType, deliverableType, deliverableVersion } from './deliverable-labels.js'
 
 /** Served by the web server as an opaque-origin document with its own policy; see its module. */
 const HTML_PREVIEW_FRAME = '/__agnes/deliverable-preview'
@@ -25,11 +26,15 @@ function previewKind(mime: string): ClientDocumentKind | undefined {
   if (mime.startsWith('text/') || mime === 'application/json') return 'text'
   return undefined
 }
-function typeIcon(kind: ClientDocumentKind | undefined): IconName {
-  if (kind === 'html') return 'globe'
-  if (kind === 'image') return 'eye'
-  if (kind === 'text') return 'file-code'
-  return kind ? 'file-text' : 'file'
+const TYPE_ICON: Record<DeliverableType, IconName> = {
+  markdown: 'file-text',
+  html: 'globe',
+  pdf: 'file-text',
+  sheet: 'list',
+  image: 'eye',
+  code: 'file-code',
+  text: 'file-text',
+  file: 'file',
 }
 
 /**
@@ -121,7 +126,11 @@ export function ArtifactFile({
     size > 0 && size < 1024
       ? '<1 KiB'
       : `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(size / units[0])} ${units[1]}`
-  const type = file.name.includes('.') ? file.name.split('.').at(-1)?.toUpperCase() : file.artifact.mime
+  const type = deliverableType(file.name, file.artifact.mime)
+  const version = deliverableVersion(file.description)
+  const subtitle = [version && ('key' in version ? t(version.key) : version.text), formattedSize]
+    .filter(Boolean)
+    .join(' · ')
   const key = fileKey(laneId, file)
   const delegated = placement === 'inline' && !!onShowInWorkbench
 
@@ -206,50 +215,52 @@ export function ArtifactFile({
       data-open={opened}
     >
       <div className="deliverable-row">
-        <IconTile name={typeIcon(kind)} />
+        <span className="deliverable-tile" data-type={type} aria-hidden="true">
+          <Icon name={TYPE_ICON[type]} />
+        </span>
         <div className="deliverable-text">
           <h4 className="deliverable-name" title={file.name}>
             {file.name}
           </h4>
-          <p className="deliverable-meta">
-            {file.description && <span className="deliverable-description">{file.description}</span>}
-            <span>
-              {type} · {formattedSize}
-            </span>
-          </p>
+          <p className="deliverable-meta">{subtitle}</p>
         </div>
         <div className="deliverable-actions">
           <Button
-            appearance="primary"
             size="small"
+            className="deliverable-open"
             data-testid="deliverable-open"
             disabled={!resources || busy}
             onClick={open}
             {...(delegated ? {} : { 'aria-expanded': opened })}
           >
-            {t('ui.file.preview')}
+            {t('ui.file.openShort')}
           </Button>
-          <IconButton
-            name="download"
-            label={t('ui.file.download')}
-            data-testid="deliverable-download"
-            disabled={!resources || busy}
-            onClick={() => void download()}
-          />
           <Menu
-            label={t('ui.file.more')}
-            trigger={<IconButton name="ellipsis" label={t('ui.file.more')} />}
+            label={t('ui.file.openWith')}
+            trigger={
+              <IconButton
+                name="chevron-down"
+                className="deliverable-open-with"
+                data-testid="deliverable-open-with"
+                label={t('ui.file.openWith')}
+                disabled={!resources}
+              />
+            }
             items={[
-              ...(delegated
-                ? [
-                    {
-                      id: 'workbench',
-                      label: t('ui.file.inWorkbench'),
-                      testId: 'deliverable-in-workbench',
-                      onSelect: () => onShowInWorkbench?.(),
-                    },
-                  ]
-                : []),
+              {
+                id: 'workbench',
+                label: t('ui.file.previewInWorkbench'),
+                testId: 'deliverable-in-workbench',
+                disabled: !resources || busy,
+                onSelect: () => (delegated ? open() : void show()),
+              },
+              {
+                id: 'download',
+                label: t('ui.file.download'),
+                testId: 'deliverable-download',
+                disabled: !resources || busy,
+                onSelect: () => void download(),
+              },
               {
                 id: 'copy-name',
                 label: t(copied ? 'ui.file.nameCopied' : 'ui.file.copyName'),

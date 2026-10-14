@@ -23,6 +23,7 @@ import {
   type UiPlacementBinding,
 } from './placements.js'
 import { intelligentUiServer } from './server.js'
+import { attachTurnDeliverables } from './turn-deliverables.js'
 
 /** Two registrations, one session client. Mounting a placement never submits a command. */
 export function mountIntelligentUi(options: {
@@ -162,6 +163,7 @@ export function mountIntelligentUi(options: {
     removePanel = registerPanel()
   }
   refreshPanel()
+  const detachTurns = attachTurnDeliverables(binding)
   const stopSession = options.session.subscribe(switchSession)
   switchSession()
   return () => {
@@ -170,6 +172,7 @@ export function mountIntelligentUi(options: {
     current?.dispose()
     current = undefined
     removeInline()
+    detachTurns()
     removePanel()
     removeLocale()
     documentLocale.dispose()

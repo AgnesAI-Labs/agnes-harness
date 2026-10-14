@@ -28,6 +28,8 @@ export interface ConversationMessagesProps {
   /** Optional snapshot gate when a host supplies turns and messages through separate subscriptions. */
   visibleNodeIds?: readonly string[]
   renderTurnActions?: (turn: UITurn, finalText: string, settled: boolean) => ReactNode
+  /** Files the turn produced, shown inside its answer between the text and the action row. */
+  renderTurnDeliverables?: (turn: UITurn) => ReactNode
   renderMarkdown?: (text: string, part: 'thinking' | 'body', state?: ConversationMarkdownState) => ReactNode
   renderTool?: (node: ToolNode) => ReactNode
   renderCost?: (node: CostNode) => ReactNode

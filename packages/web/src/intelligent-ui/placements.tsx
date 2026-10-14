@@ -6,6 +6,7 @@ import {
   INTELLIGENT_UI_NAMESPACE,
   IntelligentSurface,
   intelligentUiCatalog,
+  isDeliverableList,
   Menu,
   SettingsState,
   surfaceTitle,
@@ -134,8 +135,11 @@ function SurfaceList({
     placement === 'inline'
       ? sorted.filter((record) => docksInConversation(record.surface) && !dismissed.has(record.surface.id))
       : []
+  // Files are shown inside the answer of the turn that produced them, not after the conversation.
   const cards =
-    placement === 'inline' ? sorted.filter((record) => !docksInConversation(record.surface)) : sorted
+    placement === 'inline'
+      ? sorted.filter((record) => !docksInConversation(record.surface) && !isDeliverableList(record.surface))
+      : sorted
   const overflow = docked.slice(DOCK_VISIBLE)
   return (
     <section

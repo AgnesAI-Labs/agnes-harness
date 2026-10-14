@@ -21,7 +21,7 @@ import { IntelligentCatalog, type IntelligentCatalogProps } from './catalog.js'
 import { IntelligentSurfaceChip } from './chip.js'
 import { INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog } from './locales.js'
 import { SurfaceRenderBoundary } from './render-boundary.js'
-import { docksInConversation, surfaceTitle } from './summary.js'
+import { docksInConversation, isDeliverableList, surfaceTitle } from './summary.js'
 
 export interface IntelligentSurfaceProps {
   renderArtifact?: IntelligentCatalogProps['renderArtifact']
@@ -106,10 +106,7 @@ function SurfaceCard(props: IntelligentSurfaceProps) {
       data-testid={`ui-surface-${surface.id}`}
       data-placement={props.placement}
       // A surface that only hands over files is a file list, not a form: it drops the card chrome.
-      {...(surface.components.length > 0 &&
-      surface.components.every((component) => component.kind === 'artifact-file')
-        ? { 'data-kind': 'deliverables' }
-        : {})}
+      {...(isDeliverableList(surface) ? { 'data-kind': 'deliverables' } : {})}
       data-revision={surface.revision}
       aria-labelledby={titleId}
     >

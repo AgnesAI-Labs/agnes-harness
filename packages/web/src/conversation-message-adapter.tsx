@@ -29,6 +29,7 @@ import {
 import { MessageFeedback } from '@agnes/web-units/message-feedback'
 import { type ReactNode, useSyncExternalStore } from 'react'
 import type { ClaimResolver } from './client-modules/boot.js'
+import { TurnDeliverables } from './intelligent-ui/turn-deliverables.js'
 
 type SlotNode = Extract<UINode, { kind: 'slot' }>
 const noSessionSubscription = () => () => undefined
@@ -203,6 +204,7 @@ export function WebConversationMessages({
     nodes: nodes ?? [],
     ...(turns ? { turns } : {}),
     ...(visibleNodeIds ? { visibleNodeIds } : {}),
+    renderTurnDeliverables: (turn) => <TurnDeliverables turn={turn} />,
     renderTurnActions: (turn, finalText, settled) => {
       const answer = turn.finalAssistantId ? answers.get(turn.finalAssistantId) : undefined
       const rated =

@@ -1,6 +1,7 @@
 /** @vitest-environment happy-dom */
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true })
 
+import type { UITurn } from '@agnes/protocol'
 import type { ClientResourceService } from '@agnes/web-client'
 import { createDocumentLocaleSource } from '@agnes/web-ui'
 import { act, createElement } from 'react'
@@ -13,7 +14,10 @@ import {
   newSurfacePlacements,
   type UiPlacementBinding,
 } from '../../src/intelligent-ui/placements.js'
+import { attachTurnDeliverables, TurnDeliverables } from '../../src/intelligent-ui/turn-deliverables.js'
 import { financeRecord, uiPage, uiReceipt } from './fixture.js'
+
+const turn = { id: 'turn-1', turn: 1, startSeq: 1 } as UITurn
 
 const deliverablesRecord = () => {
   const record = financeRecord()
@@ -63,11 +67,13 @@ const mounted = async (
   }
   const host = document.createElement('div'),
     root = createRoot(host)
+  const detach = attachTurnDeliverables(binding)
   await act(async () =>
     root.render(
       createElement(
         'div',
         {},
+        createElement('div', { 'data-testid': 'turn' }, createElement(TurnDeliverables, { turn })),
         createElement(IntelligentInline, { binding }),
         createElement(IntelligentPanel, {
           binding,
@@ -84,6 +90,7 @@ const mounted = async (
     root,
     cleanup: async () => {
       await act(async () => root.unmount())
+      detach()
       client.dispose()
       locale.dispose()
     },
@@ -101,11 +108,12 @@ describe('shared Intelligent UI placements', () => {
     try {
       const inline = host.querySelector('[data-testid="intelligent-ui-inline"]')!
       const workbench = host.querySelector('[data-testid="intelligent-ui-workbench"]')!
-      expect(inline.querySelector('[data-agnes-intelligent-ui="catalog"]') !== null).toBe(placement.inline)
+      // A file list is shown inside the answer of its turn, never again after the conversation.
+      expect(inline.querySelector('[data-agnes-intelligent-ui="catalog"]')).toBeNull()
+      expect(host.querySelector('[data-testid="turn-deliverables"]') !== null).toBe(placement.inline)
       expect(workbench.querySelector('[data-agnes-intelligent-ui="catalog"]') !== null).toBe(
         placement.workbench,
       )
-      expect(inline.querySelector('[data-testid="ui-expand"]') !== null).toBe(placement.workbench)
       expect(newSurfacePlacements(new Set(), [record]).showWorkbench).toBe(!placement.inline)
     } finally {
       await cleanup()
@@ -134,20 +142,20 @@ describe('shared Intelligent UI placements', () => {
     })
     const { host, cleanup } = await mounted(uiReceipt('succeeded'), deliverablesRecord(), resources)
     try {
-      const articles = [...host.querySelectorAll('[data-testid="ui-surface-card-deliverable"]')]
-      expect(articles.map((node) => node.getAttribute('data-placement'))).toEqual(['inline', 'workbench'])
+      const workbenchCopy = host.querySelector('[data-testid="ui-surface-card-deliverable"]')
+      expect(workbenchCopy?.getAttribute('data-placement')).toBe('workbench')
+      expect(host.querySelectorAll('[data-testid="ui-surface-card-deliverable"]')).toHaveLength(1)
+      const articles = [host.querySelector('[data-testid="turn-deliverables"]'), workbenchCopy]
       for (const article of articles) {
-        expect(article.hasAttribute('hidden')).toBe(false)
-        expect((article as HTMLElement).hidden).toBe(false)
-        expect(article.textContent).toContain('Deliverables')
-        expect(article.textContent).toContain('report.html')
-        expect(article.textContent).toContain('contract-review: final')
-        expect(article.textContent).not.toContain('a'.repeat(64))
-        expect(article.querySelector('[data-testid="deliverable-open"]')).toBeTruthy()
-        expect(article.querySelector('[data-testid="deliverable-download"]')).toBeTruthy()
+        expect(article?.textContent).toContain('report.html')
+        // The version is said in plain words, without the package that wrote it.
+        expect(article?.textContent).toContain('Final')
+        expect(article?.textContent).not.toContain('contract-review')
+        expect(article?.textContent).not.toContain('a'.repeat(64))
+        expect(article?.querySelector('[data-testid="deliverable-open"]')?.textContent).toBe('Open')
+        expect(article?.querySelector('[data-testid="deliverable-open-with"]')).toBeTruthy()
+        expect(article?.querySelector('.deliverable-tile')?.getAttribute('data-type')).toBe('html')
       }
-      expect(articles[0]?.querySelector('[data-agnes-intelligent-ui="catalog"]')).toBeTruthy()
-      expect(articles[1]?.querySelector('[data-agnes-intelligent-ui="catalog"]')).toBeTruthy()
       await act(async () =>
         (articles[0]?.querySelector('[data-testid="deliverable-open"]') as HTMLButtonElement)?.click(),
       )
@@ -188,7 +196,10 @@ describe('shared Intelligent UI placements', () => {
       )
       expect(articles[1]?.querySelector('[data-testid="deliverable-preview"]')).toBeNull()
       await act(async () =>
-        (articles[0]?.querySelector('[data-testid="deliverable-download"]') as HTMLButtonElement)?.click(),
+        articles[0]?.querySelector<HTMLButtonElement>('[data-testid="deliverable-open-with"]')?.click(),
+      )
+      await act(async () =>
+        document.querySelector<HTMLElement>('[data-testid="deliverable-download"]')?.click(),
       )
       expect(loadDownload).toHaveBeenCalledWith({
         laneId: 'main',

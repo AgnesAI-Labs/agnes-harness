@@ -760,11 +760,35 @@
     align-items: center;
     gap: var(--s12);
     min-width: 0;
-    padding: var(--s12);
+    padding: var(--s8) var(--s12);
   }
-  .deliverable-row > .agh-icon-tile {
+  /* The tile says what kind of file it is by icon and hue. */
+  .deliverable-tile {
+    --deliverable-hue: var(--agnes-text-secondary);
+    flex: none;
+    display: grid;
+    place-items: center;
     width: 2.25rem;
     height: 2.25rem;
+    border-radius: var(--radius-md);
+    color: var(--deliverable-hue);
+    background: color-mix(in srgb, var(--deliverable-hue) 12%, transparent);
+  }
+  .deliverable-tile[data-type="markdown"],
+  .deliverable-tile[data-type="text"] {
+    --deliverable-hue: var(--agnes-status-info-text);
+  }
+  .deliverable-tile[data-type="html"] {
+    --deliverable-hue: var(--agnes-status-warning-text);
+  }
+  .deliverable-tile[data-type="pdf"] {
+    --deliverable-hue: var(--agnes-status-danger-text);
+  }
+  .deliverable-tile[data-type="sheet"] {
+    --deliverable-hue: var(--agnes-status-success-text);
+  }
+  .deliverable-tile[data-type="image"] {
+    --deliverable-hue: var(--agnes-brand-primary);
   }
   .deliverable-text {
     flex: 1 1 0;
@@ -774,50 +798,103 @@
     margin: 0;
     overflow: hidden;
     color: var(--agnes-text-primary);
-    font-size: var(--font-size-body);
-    font-weight: var(--font-weight-semibold);
-    line-height: 1.5;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-sm);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .agnes-intelligent-surface .deliverable-meta {
-    display: flex;
-    gap: var(--s4);
-    min-width: 0;
+  .deliverable-file .deliverable-meta {
     margin: 0;
-    color: var(--agnes-text-secondary);
+    overflow: hidden;
+    color: var(--agnes-text-tertiary);
     font-size: var(--font-size-xs);
     line-height: 1.5;
+    text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .deliverable-description {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .deliverable-description::after {
-    content: " ·";
-  }
-  .agnes-intelligent-surface .deliverable-meta {
-    overflow: hidden;
-  }
-  /* The type and size give way last: the description shrinks to nothing before they are cut. */
-  .deliverable-meta > :last-child {
-    flex: 0 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .deliverable-description {
-    flex: 0 1000 auto;
-  }
+  /* Open, with a chevron beside it that lists the other ways to open: one outlined split control. */
   .deliverable-actions {
     flex: none;
     display: flex;
-    align-items: center;
-    gap: var(--s4);
+    align-items: stretch;
   }
-  .agnes-intelligent-surface .deliverable-note {
+  /* Scoped past the shared ghost and secondary button rules so both halves share one outline. */
+  .deliverable-file .deliverable-actions :is(.deliverable-open, .deliverable-open-with):not(:disabled) {
+    border-color: var(--agnes-line-emphasis);
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-surface);
+  }
+  .deliverable-file .deliverable-actions .deliverable-open-with:not(:disabled) {
+    color: var(--agnes-text-secondary);
+  }
+  .deliverable-file .deliverable-actions :is(.deliverable-open, .deliverable-open-with):hover:not(:disabled) {
+    border-color: var(--agnes-line-emphasis);
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-hover);
+  }
+  .deliverable-actions > .deliverable-open,
+  .deliverable-actions .deliverable-open-with {
+    height: 1.75rem;
+    min-height: 1.75rem;
+    border: 1px solid var(--agnes-line-emphasis);
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-surface);
+    box-shadow: none;
+  }
+  .deliverable-actions > .deliverable-open {
+    padding-inline: var(--s12);
+    border-radius: var(--radius-control) 0 0 var(--radius-control);
+    font-weight: var(--font-weight-medium);
+  }
+  .deliverable-actions .deliverable-open-with {
+    width: 1.75rem;
+    min-width: 1.75rem;
+    margin-inline-start: -1px;
+    border-radius: 0 var(--radius-control) var(--radius-control) 0;
+    color: var(--agnes-text-secondary);
+  }
+  /* In an answer: one quiet framed list between the text and the action row. */
+  .turn-deliverables {
+    display: grid;
+    gap: var(--s4);
+    min-width: 0;
+    max-width: 40rem;
+    margin-block: var(--s12) var(--s4);
+  }
+  .turn-deliverables-head {
+    margin: 0;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+  }
+  .turn-deliverables-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .turn-deliverables > .turn-deliverables-list {
+    overflow: hidden;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-lg);
+    background: var(--agnes-bg-surface);
+  }
+  .turn-deliverables-list > li + li {
+    border-top: 1px solid var(--agnes-line-primary);
+  }
+  .turn-deliverable-earlier {
+    padding: 0 var(--s12) var(--s8) calc(2.25rem + var(--s24));
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+  }
+  .turn-deliverable-earlier .turn-deliverables-list {
+    margin-top: var(--s4);
+    border-inline-start: 2px solid var(--agnes-line-primary);
+  }
+  .turn-deliverable-earlier .deliverable-row {
+    padding-block: var(--s4);
+  }
+  .deliverable-file .deliverable-note {
     margin: 0;
     padding: 0 var(--s12) var(--s12);
     color: var(--agnes-text-secondary);
@@ -886,10 +963,5 @@
     display: block;
     max-width: 100%;
     margin: 0 auto;
-  }
-  @media (max-width: 540px) {
-    .deliverable-description {
-      display: none;
-    }
   }
 }

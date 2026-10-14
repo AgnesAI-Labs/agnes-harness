@@ -373,7 +373,12 @@ export function Turn({
               <span className="process-name">{props.t('brand.harness')}</span>
             </span>
           }
-          content={process}
+          content={
+            <>
+              {process}
+              {props.renderTurnDeliverables?.(turn)}
+            </>
+          }
           footer={props.renderTurnActions?.(turn, finalText, settled)}
         />
       </div>

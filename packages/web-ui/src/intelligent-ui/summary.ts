@@ -16,6 +16,14 @@ export function surfaceTitle(surface: TitledSurface, t: LocaleTranslator): strin
  * A surface whose complete view lives in the workbench is docked in the conversation as a
  * one-line chip. Deliverables stay a full conversation card: their files are the content.
  */
+/** A surface that only hands over files: a file list, shown with the turn that produced it. */
+export function isDeliverableList(surface: Pick<UiSurface, 'components'>): boolean {
+  return (
+    surface.components.length > 0 &&
+    surface.components.every((component) => component.kind === 'artifact-file')
+  )
+}
+
 export function docksInConversation(surface: Pick<UiSurface, 'placement' | 'components'>): boolean {
   return (
     surface.placement.workbench &&
