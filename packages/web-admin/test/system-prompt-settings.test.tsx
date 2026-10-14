@@ -305,3 +305,111 @@ it('previews each prompt section as a row that expands in place, with copy for o
     host.remove()
   }
 })
+
+it('shares one prompt configuration: a replacement saved in run configuration locks the instructions, and a stale edit never erases it', async () => {
+  let stored: SystemPromptSnapshot['config'] = {}
+  const posts: { config: SystemPromptSnapshot['config']; confirmFullOverride: boolean }[] = []
+  const snapshot = () => ({
+    config: stored,
+    effect: 'new-sessions' as const,
+    hash: 'a'.repeat(64),
+    preview: 'default-sections' as const,
+    sections: [],
+  })
+  const api = systemPromptApi(async (_url, init) => {
+    if (init?.method) {
+      const input = JSON.parse(String(init.body))
+      posts.push(input)
+      stored = input.config
+    }
+    return Response.json(snapshot())
+  })
+  const host = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(host)
+  const field = (name: string) =>
+    host.querySelector<HTMLTextAreaElement | HTMLInputElement>(`[data-testid="system-prompt-${name}"]`)
+  try {
+    await act(async () =>
+      root.render(
+        createElement(
+          SettingsSubpageFrame,
+          { header: null },
+          createElement(CustomInstructions, { api, eager: true, permission: async () => true }),
+          createElement(PromptRows, { canSave: true, api }),
+        ),
+      ),
+    )
+    expect(field('personaPrefix')?.disabled).toBe(false)
+    // Replace the prompt in the run configuration.
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="settings-drill-system-prompt"]')?.click(),
+    )
+    await act(async () =>
+      host.querySelector<HTMLElement>('[data-testid="system-prompt-override-on"]')?.click(),
+    )
+    await act(async () => {
+      const node = field('fullOverride') as HTMLTextAreaElement
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(node, 'whole prompt')
+      node.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () =>
+      host.querySelector<HTMLInputElement>('[data-testid="system-prompt-confirm"]')?.click(),
+    )
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="system-prompt-override-save"]')?.click(),
+    )
+    expect(stored).toEqual({ fullOverride: 'whole prompt' })
+    // The General page's group sees it at once: read-only, with the way to the run configuration.
+    expect(field('personaPrefix')?.disabled).toBe(true)
+    expect(host.textContent).toContain('full replacement prompt is in use')
+  } finally {
+    await act(async () => root.unmount())
+    host.remove()
+  }
+
+  // Another window saved a replacement after this page read the configuration.
+  stored = { replyStyle: 'brief' }
+  const stale = document.body.appendChild(document.createElement('div'))
+  const staleRoot = createRoot(stale)
+  const staleApi = systemPromptApi(async (_url, init) => {
+    if (init?.method) {
+      const input = JSON.parse(String(init.body))
+      posts.push(input)
+      stored = input.config
+    }
+    return Response.json(snapshot())
+  })
+  try {
+    await act(async () =>
+      staleRoot.render(
+        createElement(
+          SettingsSubpageFrame,
+          { header: null },
+          createElement(CustomInstructions, { api: staleApi, eager: true, permission: async () => true }),
+        ),
+      ),
+    )
+    stored = { fullOverride: 'from another window' }
+    const before = posts.length
+    const prefix = stale.querySelector<HTMLTextAreaElement>('[data-testid="system-prompt-personaPrefix"]')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(
+        prefix,
+        'lead with it',
+      )
+      prefix.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => prefix.dispatchEvent(new FocusEvent('focusout', { bubbles: true })))
+    await act(async () => {})
+    // The save read the latest configuration first and refused: nothing was written, the
+    // replacement stands, the draft is kept and the failure is told.
+    expect(posts.length).toBe(before)
+    expect(stored).toEqual({ fullOverride: 'from another window' })
+    expect(prefix.value).toBe('lead with it')
+    expect(stale.querySelector('[data-testid="settings-save-failed"]')).not.toBeNull()
+    expect(stale.textContent).toContain('full replacement prompt is in use')
+  } finally {
+    await act(async () => staleRoot.unmount())
+    stale.remove()
+  }
+})

@@ -25,6 +25,7 @@ import {
   useCanSave,
   usePromptSnapshot,
   useShown,
+  withInstructions,
 } from './prompt-config.js'
 import { promptCatalog } from './system-prompt-locale.js'
 
@@ -69,7 +70,9 @@ export function CustomInstructions({
   const canSave = useCanSave(shown, permission)
   const config = useAutosave<SystemPromptConfig>({
     stored: snapshot?.config,
-    save: (next) => save(next, false),
+    // Only the instructions are written, onto the latest configuration; a replacement stored meanwhile
+    // refuses the save and keeps the draft.
+    save: (next) => save((latest) => withInstructions(latest, next), false),
     equal: samePromptConfig,
   })
   const [customOpen, setCustomOpen] = useState(false)

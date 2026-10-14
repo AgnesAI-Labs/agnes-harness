@@ -86,11 +86,14 @@ function PromptOverride({ canSave, api }: { canSave: boolean; api: PromptApi }) 
   const dirty = text !== stored
   const locked = !canSave || busy || saving || !snapshot
   async function store(value: string) {
-    const { fullOverride: _replaced, ...rest } = config
     setSaving(true)
     setSaveFailed(false)
     try {
-      await save(value ? { ...rest, fullOverride: value } : rest, !!value && confirmed)
+      // Only the replacement changes, on top of the latest stored configuration.
+      await save((latest) => {
+        const { fullOverride: _replaced, ...rest } = latest
+        return value ? { ...rest, fullOverride: value } : rest
+      }, !!value && confirmed)
     } catch {
       setSaveFailed(true)
     } finally {

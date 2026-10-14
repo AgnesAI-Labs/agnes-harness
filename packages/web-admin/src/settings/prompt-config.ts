@@ -1,6 +1,6 @@
 import type { SystemPromptConfig, SystemPromptSnapshot } from '@agnes/protocol'
 import { hasPermission } from '@agnes/web-ui'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { PluginAdminApi } from '../admin/plugins/api.js'
 import { systemPromptApi } from './system-prompt-api.js'
 
@@ -8,9 +8,50 @@ export const PROMPT_NAMESPACE = '@agnes/web/system-prompt'
 export const browserPromptApi = systemPromptApi()
 export type PromptApi = ReturnType<typeof systemPromptApi>
 
-/** The stored prompt configuration: read once (again on `reload`), replaced by each save. */
+/**
+ * One prompt configuration per API, shared by every surface that shows it (General's
+ * personalization, the run configuration's replacement and preview). A save by one is seen by all.
+ */
+type PromptStore = { snapshot: SystemPromptSnapshot | undefined; listeners: Set<() => void> }
+const stores = new WeakMap<PromptApi, PromptStore>()
+function storeOf(api: PromptApi): PromptStore {
+  let store = stores.get(api)
+  if (!store) {
+    store = { snapshot: undefined, listeners: new Set() }
+    stores.set(api, store)
+  }
+  return store
+}
+function publish(store: PromptStore, snapshot: SystemPromptSnapshot) {
+  store.snapshot = snapshot
+  for (const listener of store.listeners) listener()
+}
+
+/** A full replacement prompt is in use, so the instructions around the default are not saved. */
+export class PromptReplacedError extends Error {
+  constructor() {
+    super('A full replacement prompt is in use')
+    this.name = 'PromptReplacedError'
+  }
+}
+
+/**
+ * The shared prompt configuration: read when a surface shows it (again on `reload`). `save` reads
+ * the latest stored configuration first and applies only the caller's change to it, so a surface
+ * never writes back fields another surface changed meanwhile; the result reaches every surface.
+ */
 export function usePromptSnapshot(api: PromptApi, enabled = true) {
-  const [snapshot, setSnapshot] = useState<SystemPromptSnapshot>()
+  const store = storeOf(api)
+  const subscribe = useCallback(
+    (listener: () => void) => {
+      store.listeners.add(listener)
+      return () => {
+        store.listeners.delete(listener)
+      }
+    },
+    [store],
+  )
+  const snapshot = useSyncExternalStore(subscribe, () => store.snapshot)
   const [busy, setBusy] = useState(enabled)
   const [failed, setFailed] = useState(false)
   const [reads, setReads] = useState(0)
@@ -23,7 +64,7 @@ export function usePromptSnapshot(api: PromptApi, enabled = true) {
       .get(pending.signal)
       .then((value) => {
         if (pending.signal.aborted) return
-        setSnapshot(value)
+        publish(store, value)
         setFailed(false)
       })
       .catch(() => {
@@ -33,18 +74,35 @@ export function usePromptSnapshot(api: PromptApi, enabled = true) {
         if (!pending.signal.aborted) setBusy(false)
       })
     return () => pending.abort()
-  }, [api, enabled, reads])
-  /** Write a whole configuration; rejects when the save fails. */
+  }, [api, enabled, reads, store])
+  /** Apply `change` to the latest stored configuration and write it; rejects when the save fails. */
   const save = useCallback(
-    async (config: SystemPromptConfig, confirmFullOverride = false) => {
-      const result = await api.save({ config, confirmFullOverride })
-      setSnapshot(result)
+    async (change: (latest: SystemPromptConfig) => SystemPromptConfig, confirmFullOverride = false) => {
+      const latest = await api.get()
+      publish(store, latest)
+      const result = await api.save({ config: change(latest.config), confirmFullOverride })
+      publish(store, result)
       return result
     },
-    [api],
+    [api, store],
   )
   const reload = useCallback(() => setReads((value) => value + 1), [])
   return { snapshot, busy, failed, save, reload }
+}
+
+const INSTRUCTIONS = ['personaPrefix', 'personaSuffix', 'replyStyle'] as const
+/**
+ * The latest configuration with only the instructions taken from `draft`. Refused while a full
+ * replacement is stored: those instructions would not be sent, and writing would hide that.
+ */
+export function withInstructions(latest: SystemPromptConfig, draft: SystemPromptConfig): SystemPromptConfig {
+  if (latest.fullOverride?.trim()) throw new PromptReplacedError()
+  const next: SystemPromptConfig = { ...latest }
+  for (const key of INSTRUCTIONS) {
+    if (draft[key]) next[key] = draft[key]
+    else delete next[key]
+  }
+  return next
 }
 
 /** Whether an element's pane and dialog are open, so a hidden settings pane reads nothing. */
