@@ -223,16 +223,17 @@
   }
   /* Wide windows: the side dock is a full-height column of the main area, from the top bar to the
    window's bottom edge. Everything else (notices, conversation, approval, composer) keeps to the
-   left of it, so no strip is left empty beside the composer. */
+   left of it, so no strip is left empty beside the composer. A home page hides the dock, so it
+   reserves no column for it: the page stays centred in the whole main area. */
   @media (min-width: 1280px) {
-    main:has(.workbench-right-open) {
+    main:not([data-home-page]):has(.workbench-right-open) {
       position: relative;
       padding-right: var(--workbench-width, 320px);
     }
-    main:has(.workbench-right-open) > .topbar-row {
+    main:not([data-home-page]):has(.workbench-right-open) > .topbar-row {
       margin-right: calc(-1 * var(--workbench-width, 320px));
     }
-    body:has(#empty-state:not([hidden])) main:has(.workbench-right-open) > .topbar-row {
+    body:has(#empty-state:not([hidden])) main:not([data-home-page]):has(.workbench-right-open) > .topbar-row {
       margin-right: 0;
     }
     .workbench-split.workbench-right-open {
