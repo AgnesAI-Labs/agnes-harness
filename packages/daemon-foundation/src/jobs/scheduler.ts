@@ -40,12 +40,34 @@ type SchedulerOptions = {
   activationBarrier: ExtensionActivationBarrier
   random?: () => number
   log?: (message: string) => void
-  onDispatched?(job: JobRow, info: { at: number; seq?: number; reason?: string }): void
+  onDispatched?(job: JobRow, info: { at: number; seq?: number; reason?: string; sessionKey: string }): void
   keepWaiting?(job: JobRow): boolean
   onSettled?(
     job: JobRow,
     info: { at: number; nextRunAt: number | null; status: 'completed' | 'waiting' },
   ): void
+  /**
+   * Resolves the session a job runs in before it is opened. A job whose row names a placeholder (a
+   * scheduled task that opens a new session per run) gets a fresh session here; others return
+   * undefined and run in their own session.
+   */
+  prepare?(job: JobRow, signal: AbortSignal): Promise<{ sessionKey: string } | undefined>
+  /** False when a failed attempt must not be retried, e.g. one that may already have opened a session. */
+  retryable?(job: JobRow): boolean
+  /** A final failure; `sessionKey` is the session the attempt used, when it got that far. */
+  onFailed?(job: JobRow, info: { at: number; error: string; sessionKey?: string }): void
+  /** True when a repeating job should continue to its next occurrence after a final failure. */
+  recurAfterFailure?(job: JobRow): boolean
+}
+
+/** An error that carries the session a failed attempt had already opened. */
+class AttemptFailed extends Error {
+  constructor(
+    message: string,
+    readonly sessionKey: string | undefined,
+  ) {
+    super(message)
+  }
 }
 
 export class Scheduler {
@@ -154,7 +176,11 @@ export class Scheduler {
       // next daemon owner. Settling from a late dispatch continuation could otherwise cross the
       // owner-lock release boundary and overwrite state owned by the replacement daemon.
       if (!controller.signal.aborted || this.accepting)
-        this.settleFailure(job, error instanceof Error ? error.message : String(error))
+        this.settleFailure(
+          job,
+          error instanceof Error ? error.message : String(error),
+          error instanceof AttemptFailed ? error.sessionKey : undefined,
+        )
     } finally {
       clearInterval(heartbeat)
       this.aborts.delete(job.idempotencyKey)
@@ -176,13 +202,29 @@ export class Scheduler {
     signal: AbortSignal,
   ): Promise<{ seq?: number; reason?: string }> {
     signal.throwIfAborted()
-    if (!this.options.ownership.resolve(job.sessionKey))
-      throw new Error(`session owner unavailable for ${job.sessionKey}`)
-    const existing = this.options.registry.get(job.sessionKey)
-    const binding = await this.options.workspaces.restoreBinding(job.sessionKey)
+    const prepared = await this.options.prepare?.(job, signal)
+    const sessionKey = prepared?.sessionKey ?? job.sessionKey
+    try {
+      return await this.runIn(job, sessionKey, signal)
+    } catch (error) {
+      if (!prepared) throw error
+      throw new AttemptFailed(error instanceof Error ? error.message : String(error), sessionKey)
+    }
+  }
+
+  private async runIn(
+    job: JobRow,
+    sessionKey: string,
+    signal: AbortSignal,
+  ): Promise<{ seq?: number; reason?: string }> {
+    signal.throwIfAborted()
+    if (!this.options.ownership.resolve(sessionKey))
+      throw new Error(`session owner unavailable for ${sessionKey}`)
+    const existing = this.options.registry.get(sessionKey)
+    const binding = await this.options.workspaces.restoreBinding(sessionKey)
     const cwd = existing?.session.cwd ?? binding.canonicalRoot
     const entry = await this.options.registry.open({
-      key: job.sessionKey,
+      key: sessionKey,
       cwd,
       binding,
     })
@@ -195,7 +237,7 @@ export class Scheduler {
       if (!entry.session.resume) throw new Error('session does not support resume')
       await entry.session.resume()
       signal.throwIfAborted()
-      this.dispatched(job, { reason: 'resumed' })
+      this.dispatched(job, { reason: 'resumed', sessionKey })
       return { reason: 'resumed' }
     }
     if (!('prompt' in job.payload)) throw new Error(`unsupported job payload ${job.idempotencyKey}`)
@@ -222,7 +264,7 @@ export class Scheduler {
         ...(job.budget !== undefined ? { budget: job.budget } : {}),
       })
       signal.throwIfAborted()
-      this.dispatched(job, { seq })
+      this.dispatched(job, { seq, sessionKey })
       return { seq }
     }
     // Unlike ACP, scheduled prompts do not have a client prompt id. Keep the worker's separate
@@ -236,7 +278,7 @@ export class Scheduler {
         ...(job.budget !== undefined ? { budget: job.budget } : {}),
       })
       signal.throwIfAborted()
-      this.dispatched(job, { seq, reason: 'prompt' })
+      this.dispatched(job, { seq, reason: 'prompt', sessionKey })
       const outcome = await entry.session.run({ until: 'turn-end', signal })
       signal.throwIfAborted()
       if (outcome.reason === 'error') {
@@ -249,7 +291,7 @@ export class Scheduler {
     }
   }
 
-  private dispatched(job: JobRow, info: { seq?: number; reason?: string }): void {
+  private dispatched(job: JobRow, info: { seq?: number; reason?: string; sessionKey: string }): void {
     this.options.onDispatched?.(job, { at: this.options.clock(), ...info })
   }
 
@@ -268,10 +310,30 @@ export class Scheduler {
     this.options.onSettled?.(job, { at: this.options.clock(), nextRunAt: next, status })
   }
 
-  private settleFailure(job: JobRow, error: string): void {
+  private settleFailure(job: JobRow, error: string, sessionKey?: string): void {
     const attempts = job.attempts + 1
-    if (attempts >= job.maxAttempts) {
-      this.options.repo.settle(job.idempotencyKey, { status: 'failed', error, attempts })
+    if (attempts >= job.maxAttempts || this.options.retryable?.(job) === false) {
+      const at = this.options.clock()
+      this.options.onFailed?.(job, { at, error, ...(sessionKey ? { sessionKey } : {}) })
+      const next =
+        this.options.recurAfterFailure?.(job) === true
+          ? nextAfterCompletion(job.schedule, at, {
+              ...(this.options.random ? { random: this.options.random } : {}),
+            })
+          : null
+      if (next === null) {
+        this.options.repo.settle(job.idempotencyKey, { status: 'failed', error, attempts })
+        if (this.options.onFailed) this.options.onSettled?.(job, { at, nextRunAt: null, status: 'completed' })
+        return
+      }
+      // A failed occurrence does not end a repeating task: the next one starts with fresh attempts.
+      this.options.repo.settle(job.idempotencyKey, {
+        status: 'waiting',
+        error,
+        attempts: 0,
+        delayUntil: next,
+      })
+      this.options.onSettled?.(job, { at, nextRunAt: next, status: 'waiting' })
       return
     }
     const jitter = 0.8 + 0.4 * (this.options.random ?? Math.random)()

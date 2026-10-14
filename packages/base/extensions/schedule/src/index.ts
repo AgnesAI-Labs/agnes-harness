@@ -37,16 +37,28 @@ export function createScheduleExtension(tables?: ScheduleTableStore) {
               const row = target ? catalog.read(target) : undefined
               const rows =
                 details.schedules?.filter((row) => row.status === 'active') ??
-                (row?.sessionKey === ctx.session.key ? [row] : [])
+                (row &&
+                (row.origin === ctx.session.key ||
+                  (row.target.kind === 'session' && row.target.sessionKey === ctx.session.key))
+                  ? [row]
+                  : [])
               if (rows.length)
                 await renderInteractionSurface(
                   ctx,
                   tableSurface(
                     ctx.session.toolUseId,
-                    'Reminders',
-                    ['Title', { label: 'Next', format: 'date' }, { label: 'Status', format: 'status' }],
+                    'Scheduled tasks',
+                    [
+                      'Title',
+                      'Runs in',
+                      { label: 'Next', format: 'date' },
+                      { label: 'Status', format: 'status' },
+                    ],
                     rows.map((row) => [
                       clip(row.title, 1024),
+                      row.target.kind === 'new-session'
+                        ? `New session · ${clip(row.target.cwd, 512)}`
+                        : 'This session',
                       row.nextRunAt === null ? '' : new Date(row.nextRunAt).toISOString(),
                       row.status,
                     ]),

@@ -181,6 +181,7 @@ export const METHOD_TIERS: Record<MethodName, MethodTier> = {
   '_agnes/v1/schedules.list': 'admin',
   '_agnes/v1/schedules.upsert': 'admin',
   '_agnes/v1/schedules.archive': 'admin',
+  '_agnes/v1/schedules.control': 'admin',
   '_agnes/v1/artifact.job.status': 'client',
   '_agnes/v1/ext.ui.response': 'client',
   '_agnes/v1/directory.upsert': 'admin',

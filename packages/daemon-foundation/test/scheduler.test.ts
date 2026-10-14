@@ -385,6 +385,77 @@ describe('Scheduler', () => {
     expect(repo.get('flaky')).toMatchObject({ status: 'failed', attempts: 2, error: 'boom' })
   })
 
+  it('runs a prepared job in the session prepare opened and records it there', async () => {
+    const repo = new JobsRepo(sqliteTables().table('jobs'), () => 10_000)
+    repo.insert(row('schedule:sched_0000000000000001:1', { sessionKey: 'schedule:sched_0000000000000001' }))
+    const { calls, registry } = fakeRegistry()
+    const dispatched: unknown[] = []
+    const prepare = vi.fn(async () => ({ sessionKey: 'fresh' }))
+    const instance = new Scheduler({
+      repo,
+      registry,
+      notices: { emit: () => undefined } as never,
+      clock: () => 10_000,
+      owner: 'owner',
+      limits: { tickMs: 1_000, lockMs: 60_000, maxStalled: 5 },
+      workspaces: workspaceAuthority(),
+      ownership: {
+        resolve: (key: string) => (key === 'fresh' ? { active: true, principalId: 'owner' } : undefined),
+      },
+      activationBarrier: createExtensionActivationBarrier(),
+      prepare,
+      onDispatched: (_job: JobRow, info: unknown) => dispatched.push(info),
+    } as never)
+    await instance.tick()
+    expect(prepare).toHaveBeenCalledOnce()
+    expect(calls[0]).toMatchObject({ kind: 'open', value: { key: 'fresh' } })
+    expect(dispatched).toEqual([{ at: 10_000, seq: 5, reason: 'prompt', sessionKey: 'fresh' }])
+    expect(repo.get('schedule:sched_0000000000000001:1')).toMatchObject({ status: 'completed' })
+  })
+
+  it('reports a final failure once, without retry, and moves a repeating job to its next run', async () => {
+    const now = 10_000
+    const repo = new JobsRepo(sqliteTables().table('jobs'), () => now)
+    repo.insert(row('once', { maxAttempts: 3 }))
+    repo.insert(row('repeat', { maxAttempts: 3, schedule: { kind: 'every', everyMs: 60_000 }, createdAt: 1 }))
+    const failures: unknown[] = []
+    const settled: unknown[] = []
+    const failed = fakeRegistry({ fail: true })
+    const instance = new Scheduler({
+      repo,
+      registry: failed.registry,
+      notices: { emit: () => undefined } as never,
+      clock: () => now,
+      owner: 'owner',
+      limits: { tickMs: 1_000, lockMs: 60_000, maxStalled: 5 },
+      workspaces: workspaceAuthority(),
+      ownership: { resolve: () => ({ active: true, principalId: 'owner' }) },
+      activationBarrier: createExtensionActivationBarrier(),
+      random: () => 0.5,
+      prepare: async (job: JobRow) => (job.idempotencyKey === 'repeat' ? { sessionKey: 'fresh' } : undefined),
+      retryable: () => false,
+      onFailed: (job: JobRow, info: unknown) => failures.push([job.idempotencyKey, info]),
+      recurAfterFailure: (job: JobRow) => job.idempotencyKey === 'repeat',
+      onSettled: (job: JobRow, info: unknown) => settled.push([job.idempotencyKey, info]),
+    } as never)
+    await instance.tick()
+    expect(failures).toEqual([
+      ['once', { at: now, error: 'boom' }],
+      ['repeat', { at: now, error: 'boom', sessionKey: 'fresh' }],
+    ])
+    expect(repo.get('once')).toMatchObject({ status: 'failed', attempts: 1 })
+    expect(repo.get('repeat')).toMatchObject({
+      status: 'waiting',
+      attempts: 0,
+      delayUntil: 70_000,
+      error: 'boom',
+    })
+    expect(settled).toEqual([
+      ['once', { at: now, nextRunAt: null, status: 'completed' }],
+      ['repeat', { at: now, nextRunAt: 70_000, status: 'waiting' }],
+    ])
+  })
+
   it('reschedules recurring jobs after success and executes resume commands', async () => {
     const now = 10_000
     const repo = new JobsRepo(sqliteTables().table('jobs'), () => now)

@@ -34,7 +34,8 @@ function catalog(): ScheduleCatalog {
   return openScheduleCatalog(sql, () => NOW)
 }
 
-const session = (key: string, depth = 0) => ({ session: { key, depth, toolUseId: 'use-1' } }) as never
+const session = (key: string, depth = 0) =>
+  ({ session: { key, depth, toolUseId: 'use-1', workspaceRoot: '/work/app' } }) as never
 
 function named(tools: ReturnType<typeof createScheduleTools>, name: string) {
   const tool = tools.find((item) => item.name === name)
@@ -82,4 +83,58 @@ it('rejects after_seconds when updating', async () => {
     session('sess'),
   )
   expect(updated.details).toEqual({ code: 'invalid_selector' })
+})
+
+it('runs recurring work in a new session of this workspace and reminders here, and says where', async () => {
+  const tools = createScheduleTools(catalog())
+  const byName = (name: string) => named(tools, name)
+  const create = named(tools, 'schedule_create')
+  // The description steers the model: recurring work → new_session, one-off reminders → current_session.
+  expect(create.description).toMatch(/new_session for recurring work/)
+  expect(create.description).toMatch(/current_session for one-off reminders/)
+  expect(JSON.stringify(create.parameters)).toContain('"required":["title","prompt","selector","target"]')
+  const daily = await create.execute(
+    {
+      title: 'Report',
+      prompt: 'Write it',
+      selector: { daily: { time: '09:00', timeZone: 'UTC' } },
+      target: 'new_session',
+    },
+    session('sess'),
+  )
+  expect(daily.details).toMatchObject({
+    target: { kind: 'new-session', cwd: '/work/app' },
+    origin: 'sess',
+    runsIn: 'a new session in /work/app for every run',
+  })
+  const reminder = await create.execute(
+    { title: 'Ping', prompt: 'Continue', selector: { after_seconds: 1800 }, target: 'current_session' },
+    session('sess'),
+  )
+  expect(reminder.details).toMatchObject({
+    target: { kind: 'session', sessionKey: 'sess' },
+    runsIn: 'this session',
+  })
+  const listed = await byName('schedule_list').execute({}, session('sess'))
+  expect(
+    (listed.details as { schedules: { runsIn: string }[] }).schedules.map((row) => row.runsIn).sort(),
+  ).toEqual(['a new session in /work/app for every run', 'this session'])
+  // Only the session that made a new-session task may change or archive it.
+  const id = (daily.details as { id: string }).id
+  const foreign = await byName('schedule_update').execute(
+    { id, title: 'Mine', prompt: 'Write it', selector: { every_seconds: 3600 } },
+    session('other'),
+  )
+  expect(foreign.details).toEqual({ updated: false, code: 'schedule_not_found' })
+  expect((await byName('schedule_delete').execute({ id }, session('other'))).details).toEqual({
+    deleted: false,
+  })
+  const kept = await byName('schedule_update').execute(
+    { id, title: 'Weekly report', prompt: 'Write it', selector: { every_seconds: 3600 } },
+    session('sess'),
+  )
+  expect(kept.details).toMatchObject({ title: 'Weekly report', target: { kind: 'new-session' } })
+  expect((await byName('schedule_delete').execute({ id }, session('sess'))).details).toEqual({
+    deleted: true,
+  })
 })

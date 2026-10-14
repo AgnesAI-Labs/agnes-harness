@@ -43,11 +43,58 @@ export const ScheduleSelector = Type.Union([
   ),
 ])
 
-export const ScheduleDelivery = Type.Object(
+const id = Type.String({ minLength: 1, maxLength: 256, pattern: '^[^\\u0000-\\u001f\\u007f]+$' })
+
+/**
+ * Where a scheduled task runs. `session` appends the prompt to one existing session; `new-session`
+ * opens a fresh session in a registered workspace for every run, with an optional loop, bundles,
+ * permission preset and model. Unset fields use the same defaults as a new chat.
+ */
+export const ScheduleTarget = Type.Union([
+  Type.Object({ kind: Type.Literal('session'), sessionKey }, { additionalProperties: false }),
+  Type.Object(
+    {
+      kind: Type.Literal('new-session'),
+      cwd: Type.String({ minLength: 1, maxLength: 4096 }),
+      loop: Type.Optional(Type.Object({ id, version: id }, { additionalProperties: false })),
+      bundles: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 512 }), { maxItems: 64 })),
+      preset: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+      model: Type.Optional(
+        Type.Object(
+          {
+            route: Type.String({ minLength: 1, maxLength: 256 }),
+            model: Type.String({ minLength: 1, maxLength: 256 }),
+          },
+          { additionalProperties: false },
+        ),
+      ),
+    },
+    { additionalProperties: false },
+  ),
+])
+
+/**
+ * One run of a scheduled task. `running`: a turn started and has not ended; `waiting_approval`: that
+ * turn is waiting for a person to answer an approval; `ran`: the turn ended; `delivered`: the prompt
+ * joined a turn that was already running; `failed`: nothing ran, `reason` says why.
+ */
+export const ScheduleRunOutcome = Type.Union([
+  Type.Literal('running'),
+  Type.Literal('waiting_approval'),
+  Type.Literal('ran'),
+  Type.Literal('delivered'),
+  Type.Literal('failed'),
+])
+export const ScheduleRun = Type.Object(
   {
     at: Type.Integer(),
+    outcome: ScheduleRunOutcome,
+    sessionKey: Type.Optional(sessionKey),
+    endedAt: Type.Optional(Type.Integer()),
     seq: Type.Optional(Type.Integer()),
+    /** Stable code: workspace_missing, loop_missing, bundle_unavailable, preset_not_allowed, model_missing, session_unavailable, start_failed, turn_error. */
     reason: Type.Optional(Type.String({ maxLength: 64 })),
+    detail: Type.Optional(Type.String({ maxLength: 500 })),
   },
   { additionalProperties: false },
 )
@@ -55,14 +102,21 @@ export const ScheduleDelivery = Type.Object(
 export const ScheduleView = Type.Object(
   {
     id: scheduleId,
-    sessionKey,
     title,
     prompt,
     selector: ScheduleSelector,
-    status: Type.Union([Type.Literal('active'), Type.Literal('archived'), Type.Literal('ended')]),
+    target: ScheduleTarget,
+    /** The session that created the task, when one did; the session-scope list reads by it. */
+    origin: Type.Optional(sessionKey),
+    status: Type.Union([
+      Type.Literal('active'),
+      Type.Literal('paused'),
+      Type.Literal('archived'),
+      Type.Literal('ended'),
+    ]),
     nextRunAt: Type.Union([Type.Integer(), Type.Null()]),
     revision: Type.Integer({ minimum: 1 }),
-    deliveries: Type.Array(ScheduleDelivery, { maxItems: 20 }),
+    runs: Type.Array(ScheduleRun, { maxItems: 20 }),
   },
   { additionalProperties: false },
 )
@@ -80,22 +134,32 @@ export const SchedulesListResult = Type.Object(
   { additionalProperties: false },
 )
 export const SchedulesUpsertParams = Type.Object(
-  { sessionKey, id: Type.Optional(scheduleId), title, prompt, selector: ScheduleSelector },
+  { id: Type.Optional(scheduleId), title, prompt, selector: ScheduleSelector, target: ScheduleTarget },
   { additionalProperties: false },
 )
-export const SchedulesUpsertResult = Type.Union([
-  ScheduleView,
-  Type.Object(
-    { updated: Type.Literal(false), code: Type.String({ minLength: 1, maxLength: 64 }) },
-    { additionalProperties: false },
-  ),
-])
+const refused = Type.Object(
+  { updated: Type.Literal(false), code: Type.String({ minLength: 1, maxLength: 64 }) },
+  { additionalProperties: false },
+)
+export const SchedulesUpsertResult = Type.Union([ScheduleView, refused])
 export const SchedulesArchiveParams = Type.Object({ id: scheduleId }, { additionalProperties: false })
 export const SchedulesArchiveResult = Type.Object(
   { deleted: Type.Boolean() },
   { additionalProperties: false },
 )
+/** Run a task now (its next run moves to now), pause it, or resume a paused one. */
+export const SchedulesControlParams = Type.Object(
+  {
+    id: scheduleId,
+    action: Type.Union([Type.Literal('run'), Type.Literal('pause'), Type.Literal('resume')]),
+  },
+  { additionalProperties: false },
+)
+export const SchedulesControlResult = Type.Union([ScheduleView, refused])
 
+export type ScheduleTarget = Static<typeof ScheduleTarget>
+export type ScheduleRun = Static<typeof ScheduleRun>
+export type ScheduleRunOutcome = Static<typeof ScheduleRunOutcome>
 export type ScheduleView = Static<typeof ScheduleView>
 export type SchedulesListParams = Static<typeof SchedulesListParams>
 export type SchedulesListResult = Static<typeof SchedulesListResult>
@@ -103,3 +167,5 @@ export type SchedulesUpsertParams = Static<typeof SchedulesUpsertParams>
 export type SchedulesUpsertResult = Static<typeof SchedulesUpsertResult>
 export type SchedulesArchiveParams = Static<typeof SchedulesArchiveParams>
 export type SchedulesArchiveResult = Static<typeof SchedulesArchiveResult>
+export type SchedulesControlParams = Static<typeof SchedulesControlParams>
+export type SchedulesControlResult = Static<typeof SchedulesControlResult>

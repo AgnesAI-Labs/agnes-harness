@@ -33,6 +33,8 @@ import {
 import {
   SchedulesArchiveParams,
   SchedulesArchiveResult,
+  SchedulesControlParams,
+  SchedulesControlResult,
   SchedulesListParams,
   SchedulesListResult,
   SchedulesUpsertParams,
@@ -161,6 +163,7 @@ export type MethodName =
   | '_agnes/v1/schedules.list'
   | '_agnes/v1/schedules.upsert'
   | '_agnes/v1/schedules.archive'
+  | '_agnes/v1/schedules.control'
   | '_agnes/v1/artifact.job.status'
   | '_agnes/v1/ext.ui.response'
   | '_agnes/v1/directory.upsert'
@@ -384,6 +387,7 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   '_agnes/v1/schedules.list': clientRequest(SchedulesListParams, SchedulesListResult),
   '_agnes/v1/schedules.upsert': clientRequest(SchedulesUpsertParams, SchedulesUpsertResult),
   '_agnes/v1/schedules.archive': clientRequest(SchedulesArchiveParams, SchedulesArchiveResult),
+  '_agnes/v1/schedules.control': clientRequest(SchedulesControlParams, SchedulesControlResult),
   '_agnes/v1/artifact.job.status': clientRequest(A.JobIdParams, A.ArtifactJob),
   '_agnes/v1/ext.ui.response': clientRequest(A.ExtUiResponseParams, A.SeqResult),
   '_agnes/v1/directory.upsert': clientRequest(A.DirectoryUpsertParams, A.DirectoryUpsertResult),

@@ -1,57 +1,38 @@
 import { randomUUID } from 'node:crypto'
-import { type JobSchedule, nextRunAt } from '../../../src/schedule-cron.js'
+import type { JobSchedule } from '../../../src/schedule-cron.js'
 
-export type ScheduleCode =
-  | 'invalid_prompt'
-  | 'invalid_selector'
-  | 'invalid_rule'
-  | 'invalid_time_zone'
-  | 'not_future'
-  | 'time_out_of_range'
-  | 'frequency_too_high'
-  | 'subagent_session'
-  | 'internal_error'
-  | 'schedule_not_found'
-  | 'schedule_ended'
-  | 'schedule_conflict'
+import {
+  compile,
+  compileTarget,
+  delayFor,
+  MAX_PROMPT,
+  type NewSessionTarget,
+  reject,
+  type ScheduleCode,
+  ScheduleRejected,
+  type ScheduleRun,
+  type ScheduleRunOutcome,
+  type ScheduleSelector,
+  type ScheduleStatus,
+  type ScheduleTarget,
+  type ScheduleView,
+  type ScheduleWrite,
+  textField,
+} from './rules.js'
 
-export class ScheduleRejected extends Error {
-  readonly code: ScheduleCode
-  constructor(code: ScheduleCode, message: string = code) {
-    super(message)
-    this.name = 'ScheduleRejected'
-    this.code = code
-  }
-}
-
-export type ScheduleSelector =
-  | { after_seconds: number }
-  | { at: string }
-  | { every_seconds: number }
-  | { daily: { time: string; timeZone: string } }
-  | { weekly: { time: string; timeZone: string; weekdays: number[] } }
-  | { cron: { expr: string; timeZone?: string } }
-
-export type ScheduleDelivery = { at: number; seq?: number; reason?: string }
-export type ScheduleStatus = 'active' | 'archived' | 'ended'
-export type ScheduleView = {
-  id: string
-  sessionKey: string
-  title: string
-  prompt: string
-  selector: ScheduleSelector
-  status: ScheduleStatus
-  nextRunAt: number | null
-  revision: number
-  deliveries: ScheduleDelivery[]
-}
-export type ScheduleWrite = {
-  sessionKey: string
-  title: string
-  prompt: string
-  selector: unknown
-  id?: string
-}
+export {
+  compileTarget,
+  type NewSessionTarget,
+  type ScheduleCode,
+  ScheduleRejected,
+  type ScheduleRun,
+  type ScheduleRunOutcome,
+  type ScheduleSelector,
+  type ScheduleStatus,
+  type ScheduleTarget,
+  type ScheduleView,
+  type ScheduleWrite,
+} from './rules.js'
 
 export type ScheduleDb = {
   exec(sql: string, params?: readonly unknown[]): void
@@ -74,12 +55,7 @@ type SeamTable = {
   transaction<T>(fn: () => T): T
 }
 
-const MAX_PROMPT = 16_000
-const MAX_SECONDS = 366 * 24 * 60 * 60
-const MAX_AT_MS = 10 * 366 * 24 * 60 * 60 * 1000
-const TIME = /^([01]\d|2[0-3]):([0-5]\d)$/
 const SCHEDULE_KEY = /^schedule:(sched_[a-f0-9]{16}):(\d+)$/
-const SELECTOR_KEYS = ['after_seconds', 'at', 'every_seconds', 'daily', 'weekly', 'cron'] as const
 
 // Locked copy of JobsRepo's DDL. The worker may insert a reminder before the daemon opens jobs.
 const JOBS_DDL = `CREATE TABLE IF NOT EXISTS jobs (
@@ -162,14 +138,25 @@ function ensureScheduleSchema(db: ScheduleDb): void {
     updated_at INTEGER NOT NULL
   )`)
   db.exec('CREATE INDEX IF NOT EXISTS schedules_session ON schedules (session_key, status)')
-  db.exec(`CREATE TABLE IF NOT EXISTS schedule_deliveries (
+  // Rows written before targets existed have no target row and read as their session.
+  db.exec(`CREATE TABLE IF NOT EXISTS schedule_targets (
+    schedule_id TEXT PRIMARY KEY,
+    target TEXT NOT NULL,
+    origin TEXT
+  )`)
+  db.exec(`CREATE TABLE IF NOT EXISTS schedule_runs (
     schedule_id TEXT NOT NULL,
+    job_key TEXT NOT NULL,
     at INTEGER NOT NULL,
+    outcome TEXT NOT NULL,
+    session_key TEXT,
+    ended_at INTEGER,
     seq INTEGER,
     reason TEXT,
-    job_key TEXT NOT NULL
+    detail TEXT
   )`)
-  db.exec('CREATE INDEX IF NOT EXISTS schedule_deliveries_schedule ON schedule_deliveries (schedule_id, at)')
+  db.exec('CREATE INDEX IF NOT EXISTS schedule_runs_schedule ON schedule_runs (schedule_id, at)')
+  db.exec('CREATE INDEX IF NOT EXISTS schedule_runs_session ON schedule_runs (session_key, at)')
 }
 
 type ScheduleRow = {
@@ -186,10 +173,6 @@ type ScheduleRow = {
   updated_at: number
 }
 
-function reject(code: ScheduleCode, message?: string): never {
-  throw new ScheduleRejected(code, message)
-}
-
 function scheduleId(): string {
   return `sched_${randomUUID().replaceAll('-', '').slice(0, 16)}`
 }
@@ -198,126 +181,11 @@ function jobKey(id: string, revision: number): string {
   return `schedule:${id}:${revision}`
 }
 
-function assertZone(zone: unknown): string {
-  if (typeof zone !== 'string' || zone.length < 1 || zone.length > 64) reject('invalid_time_zone')
-  try {
-    Intl.DateTimeFormat('en-US', { timeZone: zone }).format(0)
-  } catch {
-    reject('invalid_time_zone')
-  }
-  return zone
-}
-
-function clockParts(time: unknown): { minute: number; hour: number } {
-  if (typeof time !== 'string') reject('invalid_rule')
-  const match = TIME.exec(time)
-  if (!match) reject('invalid_rule')
-  return { hour: Number(match[1]), minute: Number(match[2]) }
-}
-
-function whole(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isSafeInteger(value) ? value : undefined
-}
-
-function delayFor(schedule: JobSchedule, now: number): number {
-  try {
-    const next = nextRunAt(schedule, now)
-    if (next === null) reject('time_out_of_range')
-    return next
-  } catch (error) {
-    if (error instanceof ScheduleRejected) throw error
-    reject('invalid_rule')
-  }
-}
-
-function compile(
-  selector: unknown,
-  mode: 'create' | 'update',
-  now: number,
-): {
-  stored: ScheduleSelector
-  schedule: JobSchedule
-} {
-  if (!selector || typeof selector !== 'object' || Array.isArray(selector)) reject('invalid_selector')
-  const record = selector as Record<string, unknown>
-  const present = SELECTOR_KEYS.filter((key) => record[key] !== undefined)
-  if (present.length !== 1 || Object.keys(record).length !== 1) reject('invalid_selector')
-  const kind = present[0]
-  if (kind === 'after_seconds') {
-    if (mode === 'update') reject('invalid_selector')
-    const seconds = whole(record.after_seconds)
-    if (seconds === undefined || seconds < 1) reject('invalid_rule')
-    if (seconds > MAX_SECONDS) reject('time_out_of_range')
-    return {
-      stored: { after_seconds: seconds },
-      schedule: { kind: 'at', at: now + seconds * 1000 },
-    }
-  }
-  if (kind === 'at') {
-    if (typeof record.at !== 'string' || record.at.length < 1 || record.at.length > 64) reject('invalid_rule')
-    const at = Date.parse(record.at)
-    if (!Number.isFinite(at)) reject('invalid_rule')
-    if (at <= now) reject('not_future')
-    if (at > now + MAX_AT_MS) reject('time_out_of_range')
-    return { stored: { at: record.at }, schedule: { kind: 'at', at } }
-  }
-  if (kind === 'every_seconds') {
-    const seconds = whole(record.every_seconds)
-    if (seconds === undefined || seconds < 60) reject('frequency_too_high')
-    if (seconds > MAX_SECONDS) reject('time_out_of_range')
-    return {
-      stored: { every_seconds: seconds },
-      schedule: { kind: 'every', everyMs: seconds * 1000, anchorMs: now },
-    }
-  }
-  if (kind === 'daily' || kind === 'weekly') {
-    const body = record[kind]
-    if (!body || typeof body !== 'object' || Array.isArray(body)) reject('invalid_rule')
-    const fields = body as Record<string, unknown>
-    const parts = clockParts(fields.time)
-    const timeZone = assertZone(fields.timeZone)
-    if (kind === 'daily') {
-      if (Object.keys(fields).length !== 2) reject('invalid_rule')
-      const stored: ScheduleSelector = { daily: { time: fields.time as string, timeZone } }
-      return { stored, schedule: { kind: 'cron', expr: `${parts.minute} ${parts.hour} * * *`, tz: timeZone } }
-    }
-    if (!Array.isArray(fields.weekdays) || Object.keys(fields).length !== 3) reject('invalid_rule')
-    const days = [...new Set(fields.weekdays.map((day) => (day === 7 ? 0 : day)))].sort((a, b) => a - b)
-    if (
-      days.length < 1 ||
-      days.length > 7 ||
-      days.some((day) => !Number.isInteger(day) || day < 0 || day > 6)
-    )
-      reject('invalid_rule')
-    const stored: ScheduleSelector = {
-      weekly: { time: fields.time as string, timeZone, weekdays: fields.weekdays as number[] },
-    }
-    return {
-      stored,
-      schedule: { kind: 'cron', expr: `${parts.minute} ${parts.hour} * * ${days.join(',')}`, tz: timeZone },
-    }
-  }
-  const body = record.cron
-  if (!body || typeof body !== 'object' || Array.isArray(body)) reject('invalid_rule')
-  const fields = body as Record<string, unknown>
-  if (typeof fields.expr !== 'string' || fields.expr.trim().length < 1 || fields.expr.length > 128)
-    reject('invalid_rule')
-  const expr = fields.expr.trim()
-  const timeZone = fields.timeZone === undefined ? undefined : assertZone(fields.timeZone)
-  if (Object.keys(fields).length !== (timeZone ? 2 : 1)) reject('invalid_rule')
-  const stored: ScheduleSelector = timeZone ? { cron: { expr, timeZone } } : { cron: { expr } }
-  return { stored, schedule: timeZone ? { kind: 'cron', expr, tz: timeZone } : { kind: 'cron', expr } }
-}
-
-function textField(value: unknown, max: number): string {
-  if (typeof value !== 'string') reject('invalid_prompt')
-  const text = value.trim()
-  if (text.length < 1 || text.length > max) reject('invalid_prompt')
-  return text
-}
-
 type Compiled = {
-  sessionKey: string
+  target: ScheduleTarget
+  origin: string | undefined
+  /** `schedules.session_key`: the bound session, or the session that created a new-session task. */
+  owner: string
   title: string
   prompt: string
   stored: ScheduleSelector
@@ -325,14 +193,23 @@ type Compiled = {
 }
 
 function compileWrite(input: ScheduleWrite, mode: 'create' | 'update', now: number): Compiled {
-  if (typeof input.sessionKey !== 'string' || input.sessionKey.length < 1 || input.sessionKey.length > 256)
-    reject('invalid_selector')
+  const given = typeof input.origin === 'string' && input.origin.length > 0 ? input.origin : undefined
+  const target = compileTarget(input.target, given)
+  // A task bound to a session belongs to it even when nothing named a creator.
+  const origin = given ?? (target.kind === 'session' ? target.sessionKey : undefined)
   return {
-    sessionKey: input.sessionKey,
+    target,
+    origin,
+    owner: target.kind === 'session' ? target.sessionKey : (origin ?? ''),
     title: textField(input.title, 120),
     prompt: textField(input.prompt, MAX_PROMPT),
     ...compile(input.selector, mode, now),
   }
+}
+
+/** The job's session: the bound one, or a placeholder the daemon replaces with a fresh session per run. */
+function jobSession(id: string, target: ScheduleTarget): string {
+  return target.kind === 'session' ? target.sessionKey : `schedule:${id}`
 }
 
 function insertJob(
@@ -389,50 +266,155 @@ function jobStatus(db: ScheduleDb, key: string | null): string | undefined {
   return db.get<{ status: string }>('SELECT status FROM jobs WHERE idempotency_key = ?', [key])?.status
 }
 
+function writeTarget(db: ScheduleDb, id: string, target: ScheduleTarget, origin: string | undefined): void {
+  db.exec('DELETE FROM schedule_targets WHERE schedule_id = ?', [id])
+  db.exec('INSERT INTO schedule_targets (schedule_id, target, origin) VALUES (?, ?, ?)', [
+    id,
+    JSON.stringify(target),
+    origin ?? null,
+  ])
+}
+
+const clipDetail = (value: string | undefined) => (value ? value.slice(0, 500) : undefined)
+
 export type ScheduleCatalog = {
   create(input: ScheduleWrite): ScheduleView
   update(input: ScheduleWrite & { id: string }): ScheduleView | { updated: false; code: ScheduleCode }
   archive(id: string): { deleted: boolean }
+  /** Run now, pause, or resume. A refusal names a code and changes nothing. */
+  control(
+    id: string,
+    action: 'run' | 'pause' | 'resume',
+  ): ScheduleView | { updated: false; code: ScheduleCode }
   list(query: { sessionKey?: string; includeArchived?: boolean; limit?: number }): ScheduleView[]
   read(id: string): ScheduleView | undefined
-  recordDispatch(jobKey: string, info: { at: number; seq?: number; reason?: string }): void
-  noteSettlement(jobKey: string, info: { nextRunAt: number | null }): void
+  /** The task behind a job key, for the daemon to resolve a new-session target before running. */
+  targetOf(jobKey: string): { id: string; title: string; target: ScheduleTarget } | undefined
+  recordDispatch(
+    jobKey: string,
+    info: { at: number; seq?: number; reason?: string; sessionKey?: string },
+  ): void
+  noteSettlement(jobKey: string, info: { nextRunAt: number | null; at?: number }): void
+  recordFailure(
+    jobKey: string,
+    info: { at: number; reason: string; detail?: string; sessionKey?: string },
+  ): void
   stillWaiting(jobKey: string): boolean
   recentDelivery(sessionKey: string, since: number): { title: string; prompt: string } | undefined
+}
+
+type RunRow = {
+  at: number
+  outcome: ScheduleRunOutcome
+  session_key: string | null
+  ended_at: number | null
+  seq: number | null
+  reason: string | null
+  detail: string | null
 }
 
 export function openScheduleCatalog(db: ScheduleDb, clock: () => number = () => Date.now()): ScheduleCatalog {
   ensureScheduleSchema(db)
   const load = (id: string): ScheduleRow | undefined =>
     db.get<ScheduleRow>('SELECT * FROM schedules WHERE id = ?', [id])
-  const deliveries = (id: string): ScheduleDelivery[] =>
+  const targetRow = (id: string) =>
+    db.get<{ target: string; origin: string | null }>(
+      'SELECT target, origin FROM schedule_targets WHERE schedule_id = ?',
+      [id],
+    )
+  const targetFor = (row: ScheduleRow): { target: ScheduleTarget; origin?: string } => {
+    const stored = targetRow(row.id)
+    if (stored) {
+      try {
+        return {
+          target: compileTarget(JSON.parse(stored.target)),
+          ...(stored.origin ? { origin: stored.origin } : {}),
+        }
+      } catch {
+        // An unreadable target falls back to the session the row names, like a row from before targets.
+      }
+    }
+    return { target: { kind: 'session', sessionKey: row.session_key }, origin: row.session_key }
+  }
+  const runs = (id: string): ScheduleRun[] =>
     db
-      .all<{ at: number; seq: number | null; reason: string | null }>(
-        `SELECT at, seq, reason FROM (
-           SELECT at, seq, reason, rowid AS rid FROM schedule_deliveries
+      .all<RunRow>(
+        `SELECT at, outcome, session_key, ended_at, seq, reason, detail FROM (
+           SELECT *, rowid AS rid FROM schedule_runs
            WHERE schedule_id = ? ORDER BY at DESC, rowid DESC LIMIT 20
          ) ORDER BY at ASC, rid ASC`,
         [id],
       )
       .map((row) => ({
         at: row.at,
+        outcome: row.outcome,
+        ...(row.session_key === null ? {} : { sessionKey: row.session_key }),
+        ...(row.ended_at === null ? {} : { endedAt: row.ended_at }),
         ...(row.seq === null ? {} : { seq: row.seq }),
         ...(row.reason === null ? {} : { reason: row.reason }),
+        ...(row.detail === null ? {} : { detail: row.detail }),
       }))
-  const viewOf = (row: ScheduleRow): ScheduleView => ({
-    id: row.id,
-    sessionKey: row.session_key,
-    title: row.title,
-    prompt: row.prompt,
-    selector: JSON.parse(row.selector) as ScheduleSelector,
-    status: row.status,
-    nextRunAt: row.next_run_at,
-    revision: row.revision,
-    deliveries: deliveries(row.id),
-  })
+  const viewOf = (row: ScheduleRow): ScheduleView => {
+    const { target, origin } = targetFor(row)
+    return {
+      id: row.id,
+      title: row.title,
+      prompt: row.prompt,
+      selector: JSON.parse(row.selector) as ScheduleSelector,
+      target,
+      ...(origin ? { origin } : {}),
+      status: row.status,
+      nextRunAt: row.next_run_at,
+      revision: row.revision,
+      runs: runs(row.id),
+    }
+  }
   const read = (id: string): ScheduleView | undefined => {
     const row = load(id)
     return row ? viewOf(row) : undefined
+  }
+  const idOf = (key: string) => SCHEDULE_KEY.exec(key)?.[1]
+  /** The run a job started and has not closed: the one its settlement or failure finishes. */
+  const openRun = (key: string) =>
+    db.get<{ rid: number }>(
+      `SELECT rowid AS rid FROM schedule_runs WHERE job_key = ? AND outcome = 'running'
+       ORDER BY at DESC, rowid DESC LIMIT 1`,
+      [key],
+    )
+  const insertRun = (id: string, key: string, run: ScheduleRun) =>
+    db.transaction(() => {
+      db.exec(
+        `INSERT INTO schedule_runs (schedule_id, job_key, at, outcome, session_key, ended_at, seq, reason, detail)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          key,
+          run.at,
+          run.outcome,
+          run.sessionKey ?? null,
+          run.endedAt ?? null,
+          run.seq ?? null,
+          run.reason ?? null,
+          run.detail ?? null,
+        ],
+      )
+      db.exec(
+        `DELETE FROM schedule_runs WHERE schedule_id = ? AND rowid NOT IN (
+           SELECT rowid FROM schedule_runs WHERE schedule_id = ? ORDER BY at DESC, rowid DESC LIMIT 50
+         )`,
+        [id, id],
+      )
+    })
+  /** A new job for the stored rule, counted from now; used by resume. */
+  const restart = (row: ScheduleRow, now: number) => {
+    const { target } = targetFor(row)
+    const stored = JSON.parse(row.selector) as ScheduleSelector
+    const { schedule } = compile(stored, 'create', now)
+    const next = delayFor(schedule, now)
+    const revision = row.revision + 1
+    const key = jobKey(row.id, revision)
+    insertJob(db, key, jobSession(row.id, target), row.prompt, schedule, next, now)
+    return { key, revision, next }
   }
   return {
     create(input) {
@@ -442,14 +424,14 @@ export function openScheduleCatalog(db: ScheduleDb, clock: () => number = () => 
       const key = jobKey(id, 1)
       const delay = delayFor(compiled.schedule, now)
       db.transaction(() => {
-        insertJob(db, key, compiled.sessionKey, compiled.prompt, compiled.schedule, delay, now)
+        insertJob(db, key, jobSession(id, compiled.target), compiled.prompt, compiled.schedule, delay, now)
         db.exec(
           `INSERT INTO schedules (
              id, session_key, title, prompt, selector, status, job_key, revision, next_run_at, created_at, updated_at
            ) VALUES (?, ?, ?, ?, ?, 'active', ?, 1, ?, ?, ?)`,
           [
             id,
-            compiled.sessionKey,
+            compiled.owner,
             compiled.title,
             compiled.prompt,
             JSON.stringify(compiled.stored),
@@ -459,6 +441,7 @@ export function openScheduleCatalog(db: ScheduleDb, clock: () => number = () => 
             now,
           ],
         )
+        writeTarget(db, id, compiled.target, compiled.origin)
       })
       const created = read(id)
       if (!created) reject('internal_error')
@@ -467,33 +450,56 @@ export function openScheduleCatalog(db: ScheduleDb, clock: () => number = () => 
     update(input) {
       const now = clock()
       const row = load(input.id)
-      if (!row || row.session_key !== input.sessionKey) return { updated: false, code: 'schedule_not_found' }
-      if (row.status !== 'active') return { updated: false, code: 'schedule_ended' }
-      const compiled = compileWrite(input, 'update', now)
+      if (!row || (input.owner !== undefined && row.session_key !== input.owner))
+        return { updated: false, code: 'schedule_not_found' }
+      if (row.status !== 'active' && row.status !== 'paused')
+        return { updated: false, code: 'schedule_ended' }
+      const before = targetFor(row)
+      const compiled = compileWrite(
+        { ...input, target: input.target ?? before.target, origin: before.origin ?? input.origin },
+        'update',
+        now,
+      )
       const stored = JSON.stringify(compiled.stored)
       const promptChanged = compiled.prompt !== row.prompt
       const selectorChanged = stored !== row.selector
+      const targetChanged = JSON.stringify(compiled.target) !== JSON.stringify(before.target)
       const status = jobStatus(db, row.job_key)
-      if (status === 'active' && (promptChanged || selectorChanged))
+      if (status === 'active' && (promptChanged || selectorChanged || targetChanged))
         return { updated: false, code: 'schedule_conflict' }
+      const paused = row.status === 'paused'
       db.transaction(() => {
         let key = row.job_key
         let revision = row.revision
         let next = row.next_run_at
         if (status === 'active') {
-          db.exec("UPDATE schedules SET title = ?, updated_at = ? WHERE id = ? AND status = 'active'", [
+          db.exec('UPDATE schedules SET title = ?, updated_at = ? WHERE id = ?', [
             compiled.title,
             now,
             row.id,
           ])
           return
         }
-        if (selectorChanged || (promptChanged && status !== 'waiting' && status !== 'delayed')) {
+        if (paused) {
+          // A paused task has no queued job; the new rule takes effect when it is resumed.
+        } else if (
+          selectorChanged ||
+          targetChanged ||
+          (promptChanged && status !== 'waiting' && status !== 'delayed')
+        ) {
           cancelQueued(db, key, now)
           revision += 1
           key = jobKey(row.id, revision)
           next = delayFor(compiled.schedule, now)
-          insertJob(db, key, compiled.sessionKey, compiled.prompt, compiled.schedule, next, now)
+          insertJob(
+            db,
+            key,
+            jobSession(row.id, compiled.target),
+            compiled.prompt,
+            compiled.schedule,
+            next,
+            now,
+          )
         } else if (promptChanged && key) {
           db.exec(
             `UPDATE jobs SET payload = ?, updated_at = ? WHERE idempotency_key = ? AND status IN ('waiting', 'delayed')`,
@@ -502,61 +508,125 @@ export function openScheduleCatalog(db: ScheduleDb, clock: () => number = () => 
         }
         db.exec(
           `UPDATE schedules
-           SET title = ?, prompt = ?, selector = ?, job_key = ?, revision = ?, next_run_at = ?, updated_at = ?
-           WHERE id = ? AND status = 'active'`,
-          [compiled.title, compiled.prompt, stored, key, revision, next, now, row.id],
+           SET session_key = ?, title = ?, prompt = ?, selector = ?, job_key = ?, revision = ?, next_run_at = ?, updated_at = ?
+           WHERE id = ? AND status IN ('active', 'paused')`,
+          [compiled.owner, compiled.title, compiled.prompt, stored, key, revision, next, now, row.id],
         )
+        writeTarget(db, row.id, compiled.target, compiled.origin)
       })
       const updated = read(input.id)
-      if (updated?.status !== 'active') return { updated: false, code: 'schedule_ended' }
+      if (updated?.status !== 'active' && updated?.status !== 'paused')
+        return { updated: false, code: 'schedule_ended' }
       return updated
     },
     archive(id) {
       const row = load(id)
-      if (row?.status !== 'active') return { deleted: false }
+      if (row?.status !== 'active' && row?.status !== 'paused') return { deleted: false }
       const now = clock()
       const status = jobStatus(db, row.job_key)
       db.transaction(() => {
         if (status === 'waiting' || status === 'delayed') cancelQueued(db, row.job_key, now)
         db.exec(
-          `UPDATE schedules SET status = 'archived', updated_at = ? WHERE id = ? AND status = 'active'`,
+          `UPDATE schedules SET status = 'archived', updated_at = ? WHERE id = ? AND status IN ('active', 'paused')`,
           [now, id],
         )
       })
       return { deleted: true }
+    },
+    control(id, action) {
+      const row = load(id)
+      if (!row) return { updated: false, code: 'schedule_not_found' }
+      const now = clock()
+      const status = jobStatus(db, row.job_key)
+      if (action === 'pause') {
+        if (row.status === 'paused') return viewOf(row)
+        if (row.status !== 'active') return { updated: false, code: 'schedule_ended' }
+        db.transaction(() => {
+          // A run already in progress finishes; it just does not schedule another.
+          cancelQueued(db, row.job_key, now)
+          db.exec(
+            `UPDATE schedules SET status = 'paused', next_run_at = NULL, updated_at = ? WHERE id = ? AND status = 'active'`,
+            [now, id],
+          )
+        })
+      } else if (action === 'resume') {
+        if (row.status === 'active') return viewOf(row)
+        if (row.status !== 'paused') return { updated: false, code: 'schedule_ended' }
+        if (status === 'active') return { updated: false, code: 'schedule_running' }
+        let restarted: ReturnType<typeof restart>
+        try {
+          restarted = restart(row, now)
+        } catch (error) {
+          // A one-time task whose moment has passed cannot resume; it says so instead of running late.
+          if (error instanceof ScheduleRejected) return { updated: false, code: error.code }
+          throw error
+        }
+        db.transaction(() => {
+          db.exec(
+            `UPDATE schedules SET status = 'active', job_key = ?, revision = ?, next_run_at = ?, updated_at = ?
+             WHERE id = ? AND status = 'paused'`,
+            [restarted.key, restarted.revision, restarted.next, now, id],
+          )
+        })
+      } else {
+        if (row.status === 'paused') return { updated: false, code: 'schedule_paused' }
+        if (row.status !== 'active') return { updated: false, code: 'schedule_ended' }
+        if (status === 'active') return { updated: false, code: 'schedule_running' }
+        if (status !== 'waiting' && status !== 'delayed') return { updated: false, code: 'schedule_ended' }
+        // The next scheduler tick claims it. A repeating rule continues from this run as usual.
+        db.transaction(() => {
+          db.exec(
+            `UPDATE jobs SET status = 'waiting', delay_until = ?, updated_at = ? WHERE idempotency_key = ? AND status IN ('waiting', 'delayed')`,
+            [now, now, row.job_key],
+          )
+          db.exec('UPDATE schedules SET next_run_at = ?, updated_at = ? WHERE id = ?', [now, now, id])
+        })
+      }
+      const value = read(id)
+      if (!value) return { updated: false, code: 'internal_error' }
+      return value
     },
     list(query) {
       const limit = Math.min(query.limit ?? 500, 500)
       return db
         .all<ScheduleRow>(
           `SELECT * FROM schedules
-           WHERE (? IS NULL OR session_key = ?) AND (? = 1 OR status = 'active')
+           WHERE (? IS NULL OR session_key = ?) AND (? = 1 OR status IN ('active', 'paused'))
            ORDER BY COALESCE(next_run_at, 9223372036854775807), id LIMIT ?`,
           [query.sessionKey ?? null, query.sessionKey ?? null, query.includeArchived ? 1 : 0, limit],
         )
         .map(viewOf)
     },
     read,
+    targetOf(key) {
+      const id = idOf(key)
+      const row = id ? load(id) : undefined
+      return row ? { id: row.id, title: row.title, target: targetFor(row).target } : undefined
+    },
     recordDispatch(key, info) {
-      const id = SCHEDULE_KEY.exec(key)?.[1]
+      const id = idOf(key)
       if (!id || !load(id)) return
-      db.transaction(() => {
-        db.exec(
-          'INSERT INTO schedule_deliveries (schedule_id, at, seq, reason, job_key) VALUES (?, ?, ?, ?, ?)',
-          [id, info.at, info.seq ?? null, info.reason ?? null, key],
-        )
-        db.exec(
-          `DELETE FROM schedule_deliveries WHERE schedule_id = ? AND rowid NOT IN (
-             SELECT rowid FROM schedule_deliveries WHERE schedule_id = ? ORDER BY at DESC, rowid DESC LIMIT 50
-           )`,
-          [id, id],
-        )
+      // `prompt`: an idle session started a turn, which settles later. `resumed`: a resume command.
+      // No reason: the prompt joined a turn that was already running.
+      const outcome: ScheduleRunOutcome =
+        info.reason === 'prompt' ? 'running' : info.reason === 'resumed' ? 'ran' : 'delivered'
+      insertRun(id, key, {
+        at: info.at,
+        outcome,
+        ...(info.sessionKey ? { sessionKey: info.sessionKey } : {}),
+        ...(info.seq === undefined ? {} : { seq: info.seq }),
       })
     },
     noteSettlement(key, info) {
-      const id = SCHEDULE_KEY.exec(key)?.[1]
+      const id = idOf(key)
       if (!id) return
       const now = clock()
+      const open = openRun(key)
+      if (open)
+        db.exec(`UPDATE schedule_runs SET outcome = 'ran', ended_at = ? WHERE rowid = ?`, [
+          info.at ?? now,
+          open.rid,
+        ])
       if (info.nextRunAt === null) {
         db.exec(
           `UPDATE schedules SET status = 'ended', next_run_at = NULL, updated_at = ? WHERE id = ? AND status = 'active'`,
@@ -570,25 +640,62 @@ export function openScheduleCatalog(db: ScheduleDb, clock: () => number = () => 
         id,
       ])
     },
+    recordFailure(key, info) {
+      const id = idOf(key)
+      if (!id || !load(id)) return
+      const reason = info.reason.slice(0, 64)
+      const detail = clipDetail(info.detail)
+      const open = openRun(key)
+      if (open) {
+        db.exec(
+          `UPDATE schedule_runs SET outcome = 'failed', ended_at = ?, reason = ?, detail = ? WHERE rowid = ?`,
+          [info.at, reason, detail ?? null, open.rid],
+        )
+        return
+      }
+      insertRun(id, key, {
+        at: info.at,
+        outcome: 'failed',
+        endedAt: info.at,
+        reason,
+        ...(detail ? { detail } : {}),
+        ...(info.sessionKey ? { sessionKey: info.sessionKey } : {}),
+      })
+    },
     stillWaiting(key) {
-      const id = SCHEDULE_KEY.exec(key)?.[1]
+      const id = idOf(key)
       if (!id) return true
       return load(id)?.status === 'active'
     },
     recentDelivery(sessionKey, since) {
       return db.get<{ title: string; prompt: string }>(
-        `SELECT s.title AS title, s.prompt AS prompt FROM schedule_deliveries d
-         JOIN schedules s ON s.id = d.schedule_id
-         WHERE s.session_key = ? AND d.at >= ? ORDER BY d.at DESC LIMIT 1`,
+        `SELECT s.title AS title, s.prompt AS prompt FROM schedule_runs r
+         JOIN schedules s ON s.id = r.schedule_id
+         WHERE r.session_key = ? AND r.at >= ? AND r.outcome != 'failed' ORDER BY r.at DESC LIMIT 1`,
         [sessionKey, since],
       )
     },
   }
 }
 
-export function createSchedulesPort(db: ScheduleDb, clock: () => number = () => Date.now()) {
+/** Checks a new-session target against this computer: the workspace, loop, bundles, preset and model. */
+export type ScheduleTargetCheck = (target: NewSessionTarget) => Promise<ScheduleCode | undefined>
+
+export function createSchedulesPort(
+  db: ScheduleDb,
+  clock: () => number = () => Date.now(),
+  check?: ScheduleTargetCheck,
+) {
   const catalog = openScheduleCatalog(db, clock)
+  const verify = async (target: unknown) => {
+    const compiled = compileTarget(target)
+    if (compiled.kind === 'new-session' && check) {
+      const code = await check(compiled)
+      if (code) reject(code)
+    }
+  }
   return {
+    catalog,
     list(params: { scope: 'session' | 'all'; sessionKey?: string; includeArchived?: boolean }) {
       return Promise.resolve({
         schedules: catalog.list({
@@ -597,19 +704,31 @@ export function createSchedulesPort(db: ScheduleDb, clock: () => number = () => 
         }),
       })
     },
-    upsert(params: unknown) {
+    async upsert(params: unknown) {
       const body = params as ScheduleWrite
-      return Promise.resolve(body.id ? catalog.update({ ...body, id: body.id }) : catalog.create(body))
+      if (body.id) {
+        if (body.target !== undefined) await verify(body.target)
+        return catalog.update({ ...body, id: body.id })
+      }
+      await verify(body.target)
+      return catalog.create(body)
     },
     archive(params: { id: string }) {
       return Promise.resolve(catalog.archive(params.id))
     },
+    control(params: { id: string; action: 'run' | 'pause' | 'resume' }) {
+      return Promise.resolve(catalog.control(params.id, params.action))
+    },
     read(id: string) {
       const row = catalog.read(id)
-      return Promise.resolve(row ? { sessionKey: row.sessionKey } : undefined)
+      if (!row) return Promise.resolve(undefined)
+      const sessionKey = row.target.kind === 'session' ? row.target.sessionKey : row.origin
+      return Promise.resolve({ ...(sessionKey ? { sessionKey } : {}), target: row.target })
     },
+    targetOf: catalog.targetOf,
     recordDispatch: catalog.recordDispatch,
     noteSettlement: catalog.noteSettlement,
+    recordFailure: catalog.recordFailure,
     stillWaiting: catalog.stillWaiting,
   }
 }

@@ -61,9 +61,14 @@ export interface SchedulesPort {
   }): Promise<{ schedules: unknown[] }>
   upsert(params: unknown): Promise<unknown>
   archive(params: { id: string }): Promise<{ deleted: boolean }>
-  read(id: string): Promise<{ sessionKey: string } | undefined>
-  recordDispatch(jobKey: string, info: { at: number; seq?: number; reason?: string }): void
-  noteSettlement(jobKey: string, info: { nextRunAt: number | null }): void
+  control(params: { id: string; action: 'run' | 'pause' | 'resume' }): Promise<unknown>
+  /** The session a task is bound to or was created from; absent for a task made on the automation page. */
+  read(id: string): Promise<{ sessionKey?: string; target: { kind: string } } | undefined>
+  recordDispatch(
+    jobKey: string,
+    info: { at: number; seq?: number; reason?: string; sessionKey?: string },
+  ): void
+  noteSettlement(jobKey: string, info: { nextRunAt: number | null; at?: number }): void
   stillWaiting(jobKey: string): boolean
 }
 

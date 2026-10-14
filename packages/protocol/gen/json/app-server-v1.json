@@ -2045,6 +2045,16 @@
         "$ref": "#/$defs/_agnes_v1_schedules_archiveResult"
       }
     },
+    "_agnes/v1/schedules.control": {
+      "kind": "request",
+      "direction": "c2s",
+      "params": {
+        "$ref": "#/$defs/_agnes_v1_schedules_controlParams"
+      },
+      "result": {
+        "$ref": "#/$defs/_agnes_v1_schedules_controlResult"
+      }
+    },
     "_agnes/v1/artifact.job.status": {
       "kind": "request",
       "direction": "c2s",
@@ -39310,11 +39320,6 @@
                 "pattern": "^sched_[0-9a-f]{16}$",
                 "type": "string"
               },
-              "sessionKey": {
-                "minLength": 1,
-                "maxLength": 256,
-                "type": "string"
-              },
               "title": {
                 "minLength": 1,
                 "maxLength": 120,
@@ -39466,10 +39471,117 @@
                   }
                 ]
               },
+              "target": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "const": "session",
+                        "type": "string"
+                      },
+                      "sessionKey": {
+                        "minLength": 1,
+                        "maxLength": 256,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "sessionKey"
+                    ]
+                  },
+                  {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "const": "new-session",
+                        "type": "string"
+                      },
+                      "cwd": {
+                        "minLength": 1,
+                        "maxLength": 4096,
+                        "type": "string"
+                      },
+                      "loop": {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "minLength": 1,
+                            "maxLength": 256,
+                            "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+                            "type": "string"
+                          },
+                          "version": {
+                            "minLength": 1,
+                            "maxLength": 256,
+                            "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "version"
+                        ]
+                      },
+                      "bundles": {
+                        "maxItems": 64,
+                        "type": "array",
+                        "items": {
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "type": "string"
+                        }
+                      },
+                      "preset": {
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "type": "string"
+                      },
+                      "model": {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "properties": {
+                          "route": {
+                            "minLength": 1,
+                            "maxLength": 256,
+                            "type": "string"
+                          },
+                          "model": {
+                            "minLength": 1,
+                            "maxLength": 256,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "route",
+                          "model"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "cwd"
+                    ]
+                  }
+                ]
+              },
+              "origin": {
+                "minLength": 1,
+                "maxLength": 256,
+                "type": "string"
+              },
               "status": {
                 "anyOf": [
                   {
                     "const": "active",
+                    "type": "string"
+                  },
+                  {
+                    "const": "paused",
                     "type": "string"
                   },
                   {
@@ -39496,7 +39608,7 @@
                 "minimum": 1,
                 "type": "integer"
               },
-              "deliveries": {
+              "runs": {
                 "maxItems": 20,
                 "type": "array",
                 "items": {
@@ -39506,30 +39618,67 @@
                     "at": {
                       "type": "integer"
                     },
+                    "outcome": {
+                      "anyOf": [
+                        {
+                          "const": "running",
+                          "type": "string"
+                        },
+                        {
+                          "const": "waiting_approval",
+                          "type": "string"
+                        },
+                        {
+                          "const": "ran",
+                          "type": "string"
+                        },
+                        {
+                          "const": "delivered",
+                          "type": "string"
+                        },
+                        {
+                          "const": "failed",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "sessionKey": {
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "endedAt": {
+                      "type": "integer"
+                    },
                     "seq": {
                       "type": "integer"
                     },
                     "reason": {
                       "maxLength": 64,
                       "type": "string"
+                    },
+                    "detail": {
+                      "maxLength": 500,
+                      "type": "string"
                     }
                   },
                   "required": [
-                    "at"
+                    "at",
+                    "outcome"
                   ]
                 }
               }
             },
             "required": [
               "id",
-              "sessionKey",
               "title",
               "prompt",
               "selector",
+              "target",
               "status",
               "nextRunAt",
               "revision",
-              "deliveries"
+              "runs"
             ]
           }
         }
@@ -39542,11 +39691,6 @@
       "additionalProperties": false,
       "type": "object",
       "properties": {
-        "sessionKey": {
-          "minLength": 1,
-          "maxLength": 256,
-          "type": "string"
-        },
         "id": {
           "pattern": "^sched_[0-9a-f]{16}$",
           "type": "string"
@@ -39701,13 +39845,111 @@
               ]
             }
           ]
+        },
+        "target": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "const": "session",
+                  "type": "string"
+                },
+                "sessionKey": {
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "sessionKey"
+              ]
+            },
+            {
+              "additionalProperties": false,
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "const": "new-session",
+                  "type": "string"
+                },
+                "cwd": {
+                  "minLength": 1,
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                "loop": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+                      "type": "string"
+                    },
+                    "version": {
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "version"
+                  ]
+                },
+                "bundles": {
+                  "maxItems": 64,
+                  "type": "array",
+                  "items": {
+                    "minLength": 1,
+                    "maxLength": 512,
+                    "type": "string"
+                  }
+                },
+                "preset": {
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "type": "string"
+                },
+                "model": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "properties": {
+                    "route": {
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "model": {
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "route",
+                    "model"
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "cwd"
+              ]
+            }
+          ]
         }
       },
       "required": [
-        "sessionKey",
         "title",
         "prompt",
-        "selector"
+        "selector",
+        "target"
       ]
     },
     "_agnes_v1_schedules_upsertResult": {
@@ -39718,11 +39960,6 @@
           "properties": {
             "id": {
               "pattern": "^sched_[0-9a-f]{16}$",
-              "type": "string"
-            },
-            "sessionKey": {
-              "minLength": 1,
-              "maxLength": 256,
               "type": "string"
             },
             "title": {
@@ -39876,10 +40113,117 @@
                 }
               ]
             },
+            "target": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "session",
+                      "type": "string"
+                    },
+                    "sessionKey": {
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "sessionKey"
+                  ]
+                },
+                {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "new-session",
+                      "type": "string"
+                    },
+                    "cwd": {
+                      "minLength": 1,
+                      "maxLength": 4096,
+                      "type": "string"
+                    },
+                    "loop": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "minLength": 1,
+                          "maxLength": 256,
+                          "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+                          "type": "string"
+                        },
+                        "version": {
+                          "minLength": 1,
+                          "maxLength": 256,
+                          "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "version"
+                      ]
+                    },
+                    "bundles": {
+                      "maxItems": 64,
+                      "type": "array",
+                      "items": {
+                        "minLength": 1,
+                        "maxLength": 512,
+                        "type": "string"
+                      }
+                    },
+                    "preset": {
+                      "minLength": 1,
+                      "maxLength": 128,
+                      "type": "string"
+                    },
+                    "model": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "properties": {
+                        "route": {
+                          "minLength": 1,
+                          "maxLength": 256,
+                          "type": "string"
+                        },
+                        "model": {
+                          "minLength": 1,
+                          "maxLength": 256,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "route",
+                        "model"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "cwd"
+                  ]
+                }
+              ]
+            },
+            "origin": {
+              "minLength": 1,
+              "maxLength": 256,
+              "type": "string"
+            },
             "status": {
               "anyOf": [
                 {
                   "const": "active",
+                  "type": "string"
+                },
+                {
+                  "const": "paused",
                   "type": "string"
                 },
                 {
@@ -39906,7 +40250,7 @@
               "minimum": 1,
               "type": "integer"
             },
-            "deliveries": {
+            "runs": {
               "maxItems": 20,
               "type": "array",
               "items": {
@@ -39916,30 +40260,67 @@
                   "at": {
                     "type": "integer"
                   },
+                  "outcome": {
+                    "anyOf": [
+                      {
+                        "const": "running",
+                        "type": "string"
+                      },
+                      {
+                        "const": "waiting_approval",
+                        "type": "string"
+                      },
+                      {
+                        "const": "ran",
+                        "type": "string"
+                      },
+                      {
+                        "const": "delivered",
+                        "type": "string"
+                      },
+                      {
+                        "const": "failed",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "sessionKey": {
+                    "minLength": 1,
+                    "maxLength": 256,
+                    "type": "string"
+                  },
+                  "endedAt": {
+                    "type": "integer"
+                  },
                   "seq": {
                     "type": "integer"
                   },
                   "reason": {
                     "maxLength": 64,
                     "type": "string"
+                  },
+                  "detail": {
+                    "maxLength": 500,
+                    "type": "string"
                   }
                 },
                 "required": [
-                  "at"
+                  "at",
+                  "outcome"
                 ]
               }
             }
           },
           "required": [
             "id",
-            "sessionKey",
             "title",
             "prompt",
             "selector",
+            "target",
             "status",
             "nextRunAt",
             "revision",
-            "deliveries"
+            "runs"
           ]
         },
         {
@@ -39986,6 +40367,428 @@
       },
       "required": [
         "deleted"
+      ]
+    },
+    "_agnes_v1_schedules_controlParams": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "id": {
+          "pattern": "^sched_[0-9a-f]{16}$",
+          "type": "string"
+        },
+        "action": {
+          "anyOf": [
+            {
+              "const": "run",
+              "type": "string"
+            },
+            {
+              "const": "pause",
+              "type": "string"
+            },
+            {
+              "const": "resume",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "action"
+      ]
+    },
+    "_agnes_v1_schedules_controlResult": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "id": {
+              "pattern": "^sched_[0-9a-f]{16}$",
+              "type": "string"
+            },
+            "title": {
+              "minLength": 1,
+              "maxLength": 120,
+              "type": "string"
+            },
+            "prompt": {
+              "minLength": 1,
+              "maxLength": 16000,
+              "type": "string"
+            },
+            "selector": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "properties": {
+                    "after_seconds": {
+                      "minimum": 1,
+                      "maximum": 31622400,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "after_seconds"
+                  ]
+                },
+                {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "properties": {
+                    "at": {
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "at"
+                  ]
+                },
+                {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "properties": {
+                    "every_seconds": {
+                      "minimum": 60,
+                      "maximum": 31622400,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "every_seconds"
+                  ]
+                },
+                {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "properties": {
+                    "daily": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "properties": {
+                        "time": {
+                          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+                          "type": "string"
+                        },
+                        "timeZone": {
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "time",
+                        "timeZone"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "daily"
+                  ]
+                },
+                {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "properties": {
+                    "weekly": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "properties": {
+                        "time": {
+                          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+                          "type": "string"
+                        },
+                        "timeZone": {
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "type": "string"
+                        },
+                        "weekdays": {
+                          "minItems": 1,
+                          "maxItems": 7,
+                          "type": "array",
+                          "items": {
+                            "minimum": 0,
+                            "maximum": 7,
+                            "type": "integer"
+                          }
+                        }
+                      },
+                      "required": [
+                        "time",
+                        "timeZone",
+                        "weekdays"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "weekly"
+                  ]
+                },
+                {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "properties": {
+                    "cron": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "properties": {
+                        "expr": {
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "type": "string"
+                        },
+                        "timeZone": {
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "expr"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "cron"
+                  ]
+                }
+              ]
+            },
+            "target": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "session",
+                      "type": "string"
+                    },
+                    "sessionKey": {
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "sessionKey"
+                  ]
+                },
+                {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "new-session",
+                      "type": "string"
+                    },
+                    "cwd": {
+                      "minLength": 1,
+                      "maxLength": 4096,
+                      "type": "string"
+                    },
+                    "loop": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "minLength": 1,
+                          "maxLength": 256,
+                          "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+                          "type": "string"
+                        },
+                        "version": {
+                          "minLength": 1,
+                          "maxLength": 256,
+                          "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "version"
+                      ]
+                    },
+                    "bundles": {
+                      "maxItems": 64,
+                      "type": "array",
+                      "items": {
+                        "minLength": 1,
+                        "maxLength": 512,
+                        "type": "string"
+                      }
+                    },
+                    "preset": {
+                      "minLength": 1,
+                      "maxLength": 128,
+                      "type": "string"
+                    },
+                    "model": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "properties": {
+                        "route": {
+                          "minLength": 1,
+                          "maxLength": 256,
+                          "type": "string"
+                        },
+                        "model": {
+                          "minLength": 1,
+                          "maxLength": 256,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "route",
+                        "model"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "cwd"
+                  ]
+                }
+              ]
+            },
+            "origin": {
+              "minLength": 1,
+              "maxLength": 256,
+              "type": "string"
+            },
+            "status": {
+              "anyOf": [
+                {
+                  "const": "active",
+                  "type": "string"
+                },
+                {
+                  "const": "paused",
+                  "type": "string"
+                },
+                {
+                  "const": "archived",
+                  "type": "string"
+                },
+                {
+                  "const": "ended",
+                  "type": "string"
+                }
+              ]
+            },
+            "nextRunAt": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "revision": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "runs": {
+              "maxItems": 20,
+              "type": "array",
+              "items": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "at": {
+                    "type": "integer"
+                  },
+                  "outcome": {
+                    "anyOf": [
+                      {
+                        "const": "running",
+                        "type": "string"
+                      },
+                      {
+                        "const": "waiting_approval",
+                        "type": "string"
+                      },
+                      {
+                        "const": "ran",
+                        "type": "string"
+                      },
+                      {
+                        "const": "delivered",
+                        "type": "string"
+                      },
+                      {
+                        "const": "failed",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "sessionKey": {
+                    "minLength": 1,
+                    "maxLength": 256,
+                    "type": "string"
+                  },
+                  "endedAt": {
+                    "type": "integer"
+                  },
+                  "seq": {
+                    "type": "integer"
+                  },
+                  "reason": {
+                    "maxLength": 64,
+                    "type": "string"
+                  },
+                  "detail": {
+                    "maxLength": 500,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "at",
+                  "outcome"
+                ]
+              }
+            }
+          },
+          "required": [
+            "id",
+            "title",
+            "prompt",
+            "selector",
+            "target",
+            "status",
+            "nextRunAt",
+            "revision",
+            "runs"
+          ]
+        },
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "updated": {
+              "const": false,
+              "type": "boolean"
+            },
+            "code": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          "required": [
+            "updated",
+            "code"
+          ]
+        }
       ]
     },
     "_agnes_v1_artifact_job_statusParams": {

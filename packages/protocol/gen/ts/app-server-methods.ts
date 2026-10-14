@@ -173,6 +173,7 @@ export interface AppServerMethods {
   "_agnes/v1/schedules.list": { params: Static<typeof import("../../src/schedules.js").SchedulesListParams>; result: Static<typeof import("../../src/schedules.js").SchedulesListResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/schedules.upsert": { params: Static<typeof import("../../src/schedules.js").SchedulesUpsertParams>; result: Static<typeof import("../../src/schedules.js").SchedulesUpsertResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/schedules.archive": { params: Static<typeof import("../../src/schedules.js").SchedulesArchiveParams>; result: Static<typeof import("../../src/schedules.js").SchedulesArchiveResult>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/schedules.control": { params: Static<typeof import("../../src/schedules.js").SchedulesControlParams>; result: Static<typeof import("../../src/schedules.js").SchedulesControlResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/artifact.job.status": { params: Static<typeof import("./agnes-v1.js").JobIdParams>; result: Static<typeof import("./agnes-v1.js").ArtifactJob>; direction: "c2s"; kind: "request" }
   "_agnes/v1/ext.ui.response": { params: Static<typeof import("./agnes-v1.js").ExtUiResponseParams>; result: Static<typeof import("./agnes-v1.js").SeqResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/directory.upsert": { params: Static<typeof import("./agnes-v1.js").DirectoryUpsertParams>; result: Static<typeof import("./agnes-v1.js").DirectoryUpsertResult>; direction: "c2s"; kind: "request" }

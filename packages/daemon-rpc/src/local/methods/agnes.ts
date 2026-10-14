@@ -1,6 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
-import { ScheduleRejected } from '@agnes/base/schedule'
 import { AttachedFeed, type Limits } from '@agnes/daemon-foundation/local/attached'
 import { type CallContext, connActor, type LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import type {
@@ -81,6 +80,7 @@ import { registerSessionJobs, type SessionJobServices } from '../session-jobs.js
 import { registerWorkspaceFiles } from '../workspace-files.js'
 import { type Feed, type LocalContext, legacyLedgerRpcError } from './acp.js'
 import { registerIntelligentUi } from './intelligent-ui.js'
+import { registerSchedules } from './schedules.js'
 import { registerSessionGrants } from './session-grants.js'
 
 export type AuthKind = 'local' | 'jwt' | 'source-auth' | 'portal-identity' | 'surface'
@@ -521,7 +521,12 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
   },
   {
     name: 'schedules',
-    methods: ['_agnes/v1/schedules.list', '_agnes/v1/schedules.upsert', '_agnes/v1/schedules.archive'],
+    methods: [
+      '_agnes/v1/schedules.list',
+      '_agnes/v1/schedules.upsert',
+      '_agnes/v1/schedules.archive',
+      '_agnes/v1/schedules.control',
+    ],
     guidance: 'session reminders; a global list is local-only',
     when: (x) => !!x.schedules,
   },
@@ -1394,42 +1399,10 @@ export function registerAgnes(
     await jobs('jobs.cancel').cancel(jobId)
     return {}
   })
-  const schedules = (): SchedulesPort => {
-    if (!cx.schedules) throw rpcError('CAPABILITY_DENIED', { method: 'schedules' })
-    return cx.schedules
-  }
-  const scheduleCall = async <T>(run: () => Promise<T>): Promise<T> => {
-    try {
-      return await run()
-    } catch (error) {
-      if (error instanceof ScheduleRejected)
-        throw rpcError('SEMANTIC_REJECTED', { code: error.code, reason: error.message })
-      throw error
-    }
-  }
-  ep.register('_agnes/v1/schedules.list', async (params, c) => {
-    const query = params as { scope: 'session' | 'all'; sessionKey?: string; includeArchived?: boolean }
-    if (query.scope === 'all') {
-      if (c.conn.authKind !== 'local') throw rpcError('CAPABILITY_DENIED', { method: 'schedules.list' })
-    } else if (query.sessionKey) requireOwner('schedules.list', query.sessionKey, c)
-    else throw rpcError('SEMANTIC_REJECTED', { code: 'invalid_selector', reason: 'sessionKey required' })
-    return scheduleCall(() => schedules().list(query))
-  })
-  ep.register('_agnes/v1/schedules.upsert', async (params, c) => {
-    const body = params as { sessionKey: string }
-    requireOwner('schedules.upsert', body.sessionKey, c)
-    return scheduleCall(() => schedules().upsert(params))
-  })
-  ep.register('_agnes/v1/schedules.archive', async (params, c) => {
-    const id = (params as { id: string }).id
-    const row = await schedules().read(id)
-    if (!row) return { deleted: false }
-    try {
-      requireOwner('schedules.archive', row.sessionKey, c)
-    } catch {
-      return { deleted: false }
-    }
-    return scheduleCall(() => schedules().archive({ id }))
+  registerSchedules(ep, {
+    schedules: () => cx.schedules,
+    requireOwner,
+    registry: cx.registry,
   })
   const participantRows = async (session: ScannableSession): Promise<ParticipantListResult> => {
     const current = new Map<string, ParticipantListResult['participants'][number]>()

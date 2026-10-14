@@ -1,12 +1,17 @@
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import { expect, it } from 'vitest'
-import { openScheduleCatalog, type ScheduleDb, ScheduleRejected, type ScheduleView } from '../src/catalog.js'
+import {
+  createSchedulesPort,
+  openScheduleCatalog,
+  type ScheduleDb,
+  ScheduleRejected,
+  type ScheduleView,
+} from '../src/catalog.js'
 
 const NOW = Date.parse('2026-09-07T00:00:00Z')
 
-function memory(now = NOW) {
-  const db = new DatabaseSync(':memory:')
-  const sql: ScheduleDb = {
+function sqlOf(db: DatabaseSync): ScheduleDb {
+  return {
     exec(statement, params) {
       const bound = (params ?? []) as SQLInputValue[]
       if (bound.length > 0) db.prepare(statement).run(...bound)
@@ -30,12 +35,20 @@ function memory(now = NOW) {
       }
     },
   }
-  return { db, catalog: openScheduleCatalog(sql, () => now) }
+}
+
+function memory(now = NOW) {
+  const db = new DatabaseSync(':memory:')
+  return { db, catalog: openScheduleCatalog(sqlOf(db), () => now) }
+}
+
+function openScheduleCatalogAt(db: DatabaseSync, clock: () => number) {
+  return openScheduleCatalog(sqlOf(db), clock)
 }
 
 function daily(sessionKey = 'sess') {
   return {
-    sessionKey,
+    target: { kind: 'session', sessionKey },
     title: 'Standup',
     prompt: 'Check mail',
     selector: { daily: { time: '09:00', timeZone: 'UTC' } },
@@ -121,14 +134,206 @@ it('records a dispatch and keeps an ordinary job eligible to wait', () => {
   const { catalog } = memory()
   const created = catalog.create(daily())
   const key = `schedule:${created.id}:1`
-  catalog.recordDispatch(key, { at: NOW, reason: 'prompt' })
+  catalog.recordDispatch(key, { at: NOW, reason: 'prompt', sessionKey: 'sess' })
   expect(catalog.recentDelivery('sess', NOW - 1_000)).toEqual({ title: 'Standup', prompt: 'Check mail' })
-  expect(catalog.list({ sessionKey: 'sess' })[0]?.deliveries).toEqual([{ at: NOW, reason: 'prompt' }])
+  // An idle session started a turn: a run in progress, not a failed delivery.
+  expect(catalog.list({ sessionKey: 'sess' })[0]?.runs).toEqual([
+    { at: NOW, outcome: 'running', sessionKey: 'sess' },
+  ])
   expect(catalog.stillWaiting('job:other')).toBe(true)
   catalog.noteSettlement(key, { nextRunAt: null })
   expect(catalog.read(created.id)?.status).toBe('ended')
   expect(catalog.update({ ...daily(), id: created.id, title: 'Again' })).toEqual({
     updated: false,
     code: 'schedule_ended',
+  })
+})
+
+const fresh = (extra: Record<string, unknown> = {}) => ({
+  title: 'Daily report',
+  prompt: 'Write the report',
+  selector: { daily: { time: '09:00', timeZone: 'UTC' } },
+  target: { kind: 'new-session', cwd: '/work/report', ...extra },
+})
+
+it('validates a target shape and stores a new-session target with a placeholder job session', () => {
+  const { db, catalog } = memory()
+  const created = catalog.create({
+    ...fresh({
+      loop: { id: 'data-report', version: '1.0.0' },
+      bundles: ['@agnes-fde/data-report#bundle'],
+      preset: 'review',
+      model: { route: 'agnes', model: 'agnes-1' },
+    }),
+    origin: 'sess',
+  })
+  expect(created.target).toEqual({
+    kind: 'new-session',
+    cwd: '/work/report',
+    loop: { id: 'data-report', version: '1.0.0' },
+    bundles: ['@agnes-fde/data-report#bundle'],
+    preset: 'review',
+    model: { route: 'agnes', model: 'agnes-1' },
+  })
+  expect(created.origin).toBe('sess')
+  // The session that created it lists it; the job waits on a placeholder the daemon replaces per run.
+  expect(catalog.list({ sessionKey: 'sess' }).map((row) => row.id)).toEqual([created.id])
+  const row = db
+    .prepare('SELECT session_key FROM jobs WHERE idempotency_key = ?')
+    .get(`schedule:${created.id}:1`) as { session_key: string }
+  expect(row.session_key).toBe(`schedule:${created.id}`)
+  expect(catalog.targetOf(`schedule:${created.id}:1`)).toMatchObject({
+    id: created.id,
+    title: 'Daily report',
+  })
+
+  for (const bad of [
+    undefined,
+    { kind: 'elsewhere' },
+    { kind: 'session' },
+    { kind: 'session', sessionKey: 's', cwd: '/w' },
+    { kind: 'new-session' },
+    { kind: 'new-session', cwd: '/w', bundles: ['a', 'a'] },
+    { kind: 'new-session', cwd: '/w', loop: { id: 'x' } },
+    { kind: 'new-session', cwd: '/w', model: { route: 'r' } },
+    { kind: 'new-session', cwd: 'bad\nline' },
+  ])
+    expect(() => catalog.create({ ...fresh(), target: bad })).toThrowError(
+      expect.objectContaining({ code: 'invalid_target' }),
+    )
+})
+
+it('reads a row written before targets existed as its session target', () => {
+  const { db, catalog } = memory()
+  db.prepare(
+    `INSERT INTO schedules (id, session_key, title, prompt, selector, status, job_key, revision, next_run_at, created_at, updated_at)
+     VALUES ('sched_00000000000000aa', 'old-session', 'Old', 'Ping', '{"every_seconds":3600}', 'active', NULL, 1, NULL, 0, 0)`,
+  ).run()
+  expect(catalog.read('sched_00000000000000aa')).toMatchObject({
+    target: { kind: 'session', sessionKey: 'old-session' },
+    origin: 'old-session',
+    runs: [],
+  })
+})
+
+it('moves a task between targets and back, issuing a new job each time', () => {
+  const { db, catalog } = memory()
+  const created = catalog.create(daily())
+  const moved = catalog.update({ ...fresh(), id: created.id, owner: 'sess' }) as ScheduleView
+  expect(moved).toMatchObject({ target: { kind: 'new-session', cwd: '/work/report' }, revision: 2 })
+  expect(catalog.list({ sessionKey: 'sess' }).map((row) => row.id)).toEqual([created.id])
+  expect(
+    (
+      db.prepare('SELECT status FROM jobs WHERE idempotency_key = ?').get(`schedule:${created.id}:1`) as {
+        status: string
+      }
+    ).status,
+  ).toBe('cancelled')
+  // Another session cannot change it.
+  expect(catalog.update({ ...daily(), id: created.id, owner: 'other' })).toEqual({
+    updated: false,
+    code: 'schedule_not_found',
+  })
+  const back = catalog.update({ ...daily(), id: created.id, owner: 'sess' }) as ScheduleView
+  expect(back.target).toEqual({ kind: 'session', sessionKey: 'sess' })
+})
+
+it('records run outcomes: started then ran, joined a running turn, and failed with a reason', () => {
+  let now = NOW
+  const base = memory()
+  const catalog = openScheduleCatalogAt(base.db, () => now)
+  const created = catalog.create({ ...fresh(), origin: 'sess' })
+  const key = `schedule:${created.id}:1`
+  catalog.recordDispatch(key, { at: now, reason: 'prompt', sessionKey: 'run-1' })
+  now += 42_000
+  catalog.noteSettlement(key, { nextRunAt: now + 86_400_000, at: now })
+  catalog.recordDispatch(key, { at: now, seq: 9, sessionKey: 'run-2' })
+  catalog.recordFailure(key, { at: now + 1, reason: 'workspace_missing' })
+  catalog.recordDispatch(key, { at: now + 2, reason: 'prompt', sessionKey: 'run-3' })
+  catalog.recordFailure(key, {
+    at: now + 5,
+    reason: 'turn_error',
+    detail: 'x'.repeat(900),
+    sessionKey: 'run-3',
+  })
+  const runs = catalog.read(created.id)?.runs ?? []
+  expect(runs.map((run) => run.outcome)).toEqual(['ran', 'delivered', 'failed', 'failed'])
+  expect(runs[0]).toEqual({ at: NOW, outcome: 'ran', sessionKey: 'run-1', endedAt: NOW + 42_000 })
+  expect(runs[1]).toMatchObject({ sessionKey: 'run-2', seq: 9 })
+  expect(runs[2]).toMatchObject({ reason: 'workspace_missing', endedAt: now + 1 })
+  expect(runs[3]).toMatchObject({ reason: 'turn_error', sessionKey: 'run-3', endedAt: now + 5 })
+  expect(runs[3]?.detail).toHaveLength(500)
+  expect(catalog.recentDelivery('run-1', NOW)).toEqual({ title: 'Daily report', prompt: 'Write the report' })
+})
+
+it('pauses, resumes and runs a task now', () => {
+  const { db, catalog } = memory()
+  const created = catalog.create(daily())
+  expect(catalog.control(created.id, 'resume')).toMatchObject({ status: 'active' })
+  const paused = catalog.control(created.id, 'pause') as ScheduleView
+  expect(paused).toMatchObject({ status: 'paused', nextRunAt: null })
+  expect(job(db, created.id).status).toBe('cancelled')
+  expect(catalog.control(created.id, 'run')).toEqual({ updated: false, code: 'schedule_paused' })
+  expect(catalog.stillWaiting(`schedule:${created.id}:1`)).toBe(false)
+  // A paused task stays listed and editable.
+  expect(catalog.list({ sessionKey: 'sess' })).toHaveLength(1)
+  expect(catalog.update({ ...daily(), id: created.id, title: 'Renamed' })).toMatchObject({
+    status: 'paused',
+    title: 'Renamed',
+  })
+  const resumed = catalog.control(created.id, 'resume') as ScheduleView
+  expect(resumed).toMatchObject({
+    status: 'active',
+    revision: 2,
+    nextRunAt: Date.parse('2026-09-07T09:00:00Z'),
+  })
+  const now = catalog.control(created.id, 'run') as ScheduleView
+  expect(now.nextRunAt).toBe(NOW)
+  const queued = db
+    .prepare('SELECT status, delay_until FROM jobs WHERE idempotency_key = ?')
+    .get(`schedule:${created.id}:2`) as { status: string; delay_until: number }
+  expect(queued).toEqual({ status: 'waiting', delay_until: NOW })
+  db.prepare(`UPDATE jobs SET status = 'active' WHERE idempotency_key = ?`).run(`schedule:${created.id}:2`)
+  expect(catalog.control(created.id, 'run')).toEqual({ updated: false, code: 'schedule_running' })
+  expect(catalog.control('sched_ffffffffffffffff', 'run')).toEqual({
+    updated: false,
+    code: 'schedule_not_found',
+  })
+  expect(catalog.archive(created.id)).toEqual({ deleted: true })
+  expect(catalog.control(created.id, 'resume')).toEqual({ updated: false, code: 'schedule_ended' })
+})
+
+it('refuses to resume a one-time task whose moment has passed', () => {
+  let now = NOW
+  const base = memory()
+  const catalog = openScheduleCatalogAt(base.db, () => now)
+  const created = catalog.create({ ...daily(), selector: { at: '2026-09-07T01:00:00Z' } })
+  catalog.control(created.id, 'pause')
+  now = Date.parse('2026-09-08T00:00:00Z')
+  expect(catalog.control(created.id, 'resume')).toEqual({ updated: false, code: 'not_future' })
+})
+
+it('checks a new-session target through the port before saving it', async () => {
+  const base = memory()
+  const checked: unknown[] = []
+  const port = createSchedulesPort(
+    sqlOf(base.db),
+    () => NOW,
+    async (target) => {
+      checked.push(target)
+      return target.cwd === '/gone' ? 'workspace_missing' : undefined
+    },
+  )
+  await expect(
+    port.upsert({ ...fresh(), target: { kind: 'new-session', cwd: '/gone' } }),
+  ).rejects.toThrowError(expect.objectContaining({ code: 'workspace_missing' }))
+  const created = (await port.upsert(fresh())) as ScheduleView
+  expect(created.target).toMatchObject({ kind: 'new-session' })
+  // A session target is not a workspace question.
+  await port.upsert({ ...daily(), id: created.id })
+  expect(checked).toHaveLength(2)
+  expect(await port.read(created.id)).toEqual({
+    target: { kind: 'session', sessionKey: 'sess' },
+    sessionKey: 'sess',
   })
 })

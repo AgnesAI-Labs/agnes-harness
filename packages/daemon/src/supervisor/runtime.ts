@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { createSchedulesPort, openDaemonScheduleDb } from '@agnes/base/schedule'
+import { openDaemonScheduleDb } from '@agnes/base/schedule'
 import { createAppServerAdmin } from '@agnes/daemon-admin/app-server'
 import { runningPackageIdentity } from '@agnes/daemon-admin/package-actual-identity'
 import {
@@ -236,6 +236,7 @@ import { createRuntimePinCoordinator } from './publication/runtime-pin-coordinat
 import { publishProbedRuntimeTarget } from './publication/runtime-target-publisher.js'
 import { type RemoteEntry, WorkerRegistry } from './registry.js'
 import { createRuntimeTargetProbeLauncher, spawnRuntimeTargetProbeWorker } from './runtime-target-probe.js'
+import { type ScheduleCatalog, scheduledTasks } from './schedule-sessions.js'
 import { canonicalPath, resolveDaemonProfile, resolveDaemonScope } from './scope.js'
 import {
   workerComputerUseStatusSource,
@@ -1870,8 +1871,23 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
 
     const jobsRepo = jobTables ? new JobsRepo(jobTables.table('jobs'), clock) : undefined
     const schedules = jobTables
-      ? createSchedulesPort(openDaemonScheduleDb(jobTables.table('schedules')), clock)
+      ? scheduledTasks({
+          db: openDaemonScheduleDb(jobTables.table('schedules')),
+          clock,
+          socketPath: o.config.socketPath,
+          serverIdentity: lock.owner,
+          sources: {
+            workspaces: async () => (await workspaceCatalog.list()).items,
+            normalize: async (path) => (await workspaceCatalog.validate(path)).path,
+            catalog: async () =>
+              (await (
+                await pool.acquireSharedWorker()
+              ).command('session.catalog', {}, { timeoutMs: 31_000 })) as ScheduleCatalog,
+            presets: () => host.profile.presets.allowed,
+          },
+        })
       : undefined
+    if (schedules) startupCleanup.push(() => schedules.close())
     const scheduler = jobsRepo
       ? new Scheduler({
           repo: jobsRepo,
@@ -1887,13 +1903,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           workspaces: workspaceCatalog,
           ownership: sessionOwnership,
           activationBarrier,
-          ...(schedules
-            ? {
-                onDispatched: (job, info) => schedules.recordDispatch(job.idempotencyKey, info),
-                keepWaiting: (job) => schedules.stillWaiting(job.idempotencyKey),
-                onSettled: (job, info) => schedules.noteSettlement(job.idempotencyKey, info),
-              }
-            : {}),
+          ...(schedules ? schedules.hooks : {}),
         })
       : undefined
     const jobs =
