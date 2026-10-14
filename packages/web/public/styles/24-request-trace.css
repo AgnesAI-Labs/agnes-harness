@@ -138,10 +138,6 @@
   .workbench-terminal {
     height: 100%;
   }
-  .workbench-terminal > .workbench-panel-toolbar > span {
-    color: var(--agnes-text-secondary);
-    font-size: var(--font-size-xs);
-  }
   .workbench-terminal-tabs {
     display: flex;
     gap: var(--s4);
@@ -158,19 +154,6 @@
     flex: 1 0 auto;
     min-height: min-content;
   }
-  .workbench-terminal-details {
-    margin-inline: var(--s12);
-    font-size: var(--font-size-xs);
-    overflow-wrap: anywhere;
-  }
-  .workbench-terminal-details dl {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    gap: var(--s4) var(--s12);
-  }
-  .workbench-terminal-details dd {
-    margin: 0;
-  }
   .workbench-terminal-output {
     flex: 1;
     width: 100%;
@@ -184,21 +167,6 @@
     font-family: var(--font-mono);
     font-size: var(--agnes-ui-input-font-size);
     line-height: 1.5;
-  }
-  .workbench-terminal-available {
-    display: flex;
-    flex-wrap: wrap;
-    max-height: 5rem;
-    overflow: auto;
-    flex-shrink: 0;
-  }
-
-  .workbench-terminal .workbench-panel-toolbar {
-    justify-content: flex-start;
-    flex-shrink: 0;
-  }
-  .workbench-terminal-toolbar > span {
-    margin-left: auto;
   }
 
   .workbench-goal {
@@ -349,19 +317,5 @@
   .workbench-change-evidence dd,
   .workbench-changes-footer dd {
     margin: 0;
-  }
-
-  /* Shell picker and "New terminal" share one row; the detach note sits under them, left-aligned,
-   instead of floating at the right edge of a wrapped row. */
-  .workbench-terminal-toolbar > .ant-select {
-    flex: 1 1 6rem;
-    min-width: 0;
-  }
-  .workbench-terminal-toolbar > .agh-btn {
-    flex: 0 0 auto;
-  }
-  .workbench-terminal-toolbar > span {
-    flex: 1 0 100%;
-    margin-left: 0;
   }
 }

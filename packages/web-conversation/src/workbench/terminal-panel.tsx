@@ -4,16 +4,20 @@ import type { UiExtensionContext } from '@agnes/web-client'
 import {
   appServerErrorMessage,
   Button,
-  Disclosure,
+  Icon,
+  IconButton,
+  Popover,
   Select,
   SettingsState,
   SettingsTextArea,
-  SettingsToolbar,
+  StatusDot,
+  type StatusDotTone,
   terminalKey,
   terminalScreen,
 } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
 import { panelContext } from './context.js'
+import { terminalCount } from './tab-counts.js'
 
 type Input = Parameters<Session['jobsControl']>[0]
 type PendingInput = {
@@ -96,6 +100,7 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
         }
         if (!alive) return
         setSnapshot(value)
+        terminalCount.set(session.id, value.jobs.length)
         setError('')
         if (!restored.current) {
           restored.current = true
@@ -240,65 +245,109 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
     }
   }, [session, jobId, human, running, t])
   if (!session) return <SettingsState tone="empty">{t('workbench.session')}</SettingsState>
+  const available = snapshot.jobs.filter((row) => !ids.includes(row.id))
+  const name = (row: SessionJob) => row.shell ?? row.command
+  const ownerTag = (row: SessionJob) => (
+    <span className="workbench-terminal-owner">{t(`workbench.terminal.owner.${row.owner}`)}</span>
+  )
+  const newTerminal = (
+    <span className="workbench-terminal-new">
+      <Select
+        aria-label={t('workbench.terminal.shell')}
+        value={shell}
+        onChange={setShell}
+        options={['bash', 'zsh', 'pwsh'].map((value) => ({ value, label: value }))}
+      />
+      <Button
+        size="small"
+        disabled={busy}
+        data-testid="terminal-new"
+        onClick={() => void control({ operation: 'open', shell, columns: 100, rows: 30 })}
+      >
+        <Icon name="plus" />
+        {t('workbench.terminal.new')}
+      </Button>
+    </span>
+  )
   return (
     <section
       className="workbench-terminal"
       data-testid="terminal-panel"
       aria-label={t('workbench.terminal.title')}
     >
-      <SettingsToolbar className="workbench-panel-toolbar workbench-terminal-toolbar">
-        <Select
-          aria-label={t('workbench.terminal.shell')}
-          value={shell}
-          onChange={setShell}
-          options={['bash', 'zsh', 'pwsh'].map((value) => ({ value, label: value }))}
-        />
-        <Button
-          size="small"
-          disabled={busy}
-          appearance="primary"
-          data-testid="terminal-new"
-          onClick={() => void control({ operation: 'open', shell, columns: 100, rows: 30 })}
-        >
-          {t('workbench.terminal.new')}
-        </Button>
-        <span>{t('workbench.terminal.detach')}</span>
-      </SettingsToolbar>
       {error && <SettingsState tone="error">{error}</SettingsState>}
-      <div role="tablist" aria-label={t('workbench.terminal.tabs')} className="workbench-terminal-tabs">
-        {tabs.map((tab, index) => (
-          <Button
-            type="text"
-            size="small"
-            role="tab"
-            key={tab.id}
-            id={`terminal-tab-${tab.id}`}
-            aria-controls="terminal-job-content"
-            aria-selected={active === tab.id}
-            tabIndex={active === tab.id ? 0 : -1}
-            onClick={() => setActive(tab.id)}
-            onKeyDown={(event) => {
-              const step = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : 0
-              if (!step && event.key !== 'Home' && event.key !== 'End') return
-              event.preventDefault()
-              const next =
-                tabs[
-                  event.key === 'Home'
-                    ? 0
-                    : event.key === 'End'
-                      ? tabs.length - 1
-                      : (index + step + tabs.length) % tabs.length
-                ]
-              if (next) {
-                setActive(next.id)
-                document.getElementById(`terminal-tab-${next.id}`)?.focus()
-              }
-            }}
-          >
-            {tab.shell ?? tab.command} {index + 1} · {t(`workbench.terminal.owner.${tab.owner}`)}
-          </Button>
-        ))}
-      </div>
+      {tabs.length > 0 && (
+        <div className="workbench-terminal-bar">
+          <div role="tablist" aria-label={t('workbench.terminal.tabs')} className="workbench-terminal-tabs">
+            {tabs.map((tab, index) => (
+              <span key={tab.id} className="workbench-terminal-pill" data-active={active === tab.id}>
+                <Button
+                  type="text"
+                  size="small"
+                  role="tab"
+                  id={`terminal-tab-${tab.id}`}
+                  aria-controls="terminal-job-content"
+                  aria-selected={active === tab.id}
+                  tabIndex={active === tab.id ? 0 : -1}
+                  onClick={() => setActive(tab.id)}
+                  onKeyDown={(event) => {
+                    const step = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : 0
+                    if (!step && event.key !== 'Home' && event.key !== 'End') return
+                    event.preventDefault()
+                    const next =
+                      tabs[
+                        event.key === 'Home'
+                          ? 0
+                          : event.key === 'End'
+                            ? tabs.length - 1
+                            : (index + step + tabs.length) % tabs.length
+                      ]
+                    if (next) {
+                      setActive(next.id)
+                      document.getElementById(`terminal-tab-${next.id}`)?.focus()
+                    }
+                  }}
+                >
+                  <StatusDot tone={jobTone(tab.status)} running={tab.status === 'running'} />
+                  <span className="workbench-terminal-name">{name(tab)}</span>
+                  {ownerTag(tab)}
+                </Button>
+                {active === tab.id && (
+                  <IconButton
+                    name="x"
+                    data-testid="terminal-tab-close"
+                    disabled={busy}
+                    label={t(
+                      tab.owner === 'human' ? 'workbench.terminal.close' : 'workbench.terminal.unfollow',
+                    )}
+                    onClick={() =>
+                      tab.owner === 'human' && tab.status === 'running'
+                        ? void control({ operation: 'kill', jobId: tab.id }, tab.id)
+                        : detach(tab.id)
+                    }
+                  />
+                )}
+              </span>
+            ))}
+            {available.map((row) => (
+              <Button
+                key={row.id}
+                type="text"
+                size="small"
+                className="workbench-terminal-attach"
+                data-testid="terminal-attach"
+                aria-label={`${t('workbench.terminal.follow')} · ${name(row)} · ${t(`workbench.terminal.owner.${row.owner}`)}`}
+                onClick={() => attach(row.id)}
+              >
+                <Icon name="plus" />
+                <span className="workbench-terminal-name">{name(row)}</span>
+                {ownerTag(row)}
+              </Button>
+            ))}
+          </div>
+          {newTerminal}
+        </div>
+      )}
       {job ? (
         <div
           role="tabpanel"
@@ -306,53 +355,11 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
           aria-labelledby={`terminal-tab-${job.id}`}
           className="workbench-terminal-job"
         >
-          <SettingsToolbar className="workbench-panel-toolbar">
-            <span role="status">
-              {t(`workbench.terminal.status.${job.status}`)}
-              {job.code !== null && ` · ${t('workbench.terminal.exit', { code: job.code })}`}
-            </span>
-            {human && (
-              <>
-                <Button
-                  size="small"
-                  disabled={busy || !running}
-                  data-testid="terminal-interrupt"
-                  onClick={() => void control({ operation: 'signal', jobId: job.id, signal: 'SIGINT' })}
-                >
-                  {t('workbench.terminal.interrupt')}
-                </Button>
-                <Button
-                  size="small"
-                  disabled={busy || !running}
-                  data-testid="terminal-kill"
-                  onClick={() => void control({ operation: 'kill', jobId: job.id })}
-                >
-                  {t('workbench.terminal.kill')}
-                </Button>
-              </>
-            )}
-            <Button
-              size="small"
-              disabled={busy}
-              data-testid="terminal-tab-close"
-              onClick={() =>
-                human && running ? void control({ operation: 'kill', jobId: job.id }, job.id) : detach(job.id)
-              }
-            >
-              {t(human ? 'workbench.terminal.close' : 'workbench.terminal.unfollow')}
-            </Button>
-          </SettingsToolbar>
-          <Disclosure className="workbench-terminal-details" summary={t('workbench.terminal.details')}>
-            <dl>
-              <dt>{t('workbench.terminal.session')}</dt>
-              <dd>{job.ownerSessionId}</dd>
-              <dt>{t('workbench.terminal.id')}</dt>
-              <dd>{job.id}</dd>
-              <dt>{t('workbench.terminal.cwd')}</dt>
-              <dd>{job.cwd}</dd>
-            </dl>
-          </Disclosure>
-          {job.truncated && <p role="status">{t('workbench.terminal.truncated')}</p>}
+          {job.truncated && (
+            <p className="workbench-terminal-note" role="status">
+              {t('workbench.terminal.truncated')}
+            </p>
+          )}
           <SettingsTextArea
             presentation="plain"
             ref={outputElement}
@@ -376,20 +383,97 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
               sendInput(job.id, event.clipboardData.getData('text/plain').slice(0, 65536))
             }}
           />
+          <div className="workbench-terminal-status" data-tone={jobTone(job.status)}>
+            <StatusDot tone={jobTone(job.status)} running={running} />
+            <span role="status">
+              {t(`workbench.terminal.status.${job.status}`)}
+              {job.code !== null && ` · ${t('workbench.terminal.exit', { code: job.code })}`}
+            </span>
+            <span className="workbench-terminal-cwd" title={job.cwd}>
+              {job.cwd}
+            </span>
+            {human && (
+              <>
+                <Button
+                  size="small"
+                  disabled={busy || !running}
+                  data-testid="terminal-interrupt"
+                  onClick={() => void control({ operation: 'signal', jobId: job.id, signal: 'SIGINT' })}
+                >
+                  {t('workbench.terminal.interrupt')}
+                </Button>
+                <Button
+                  size="small"
+                  disabled={busy || !running}
+                  data-testid="terminal-kill"
+                  onClick={() => void control({ operation: 'kill', jobId: job.id })}
+                >
+                  {t('workbench.terminal.kill')}
+                </Button>
+              </>
+            )}
+            <Popover
+              trigger="click"
+              placement="topRight"
+              content={
+                <dl className="workbench-terminal-details" data-testid="terminal-details-content">
+                  <dt>{t('workbench.terminal.session')}</dt>
+                  <dd>{job.ownerSessionId}</dd>
+                  <dt>{t('workbench.terminal.id')}</dt>
+                  <dd>{job.id}</dd>
+                  <dt>{t('workbench.terminal.cwd')}</dt>
+                  <dd>{job.cwd}</dd>
+                </dl>
+              }
+            >
+              <Button
+                size="small"
+                data-testid="terminal-details"
+                aria-label={t('workbench.terminal.details')}
+              >
+                {t('workbench.terminal.detailsShort')}
+              </Button>
+            </Popover>
+          </div>
         </div>
       ) : (
-        <SettingsState tone="empty">{t('workbench.terminal.empty')}</SettingsState>
+        <div className="workbench-terminal-empty" data-testid="terminal-empty">
+          <p className="workbench-terminal-empty-title">{t('workbench.terminal.empty')}</p>
+          {available.length > 0 && (
+            <section className="workbench-terminal-available" aria-label={t('workbench.terminal.available')}>
+              <h4>{t('workbench.terminal.available')}</h4>
+              <ul>
+                {available.map((row) => (
+                  <li key={row.id}>
+                    <StatusDot tone={jobTone(row.status)} running={row.status === 'running'} />
+                    <span className="workbench-terminal-name">{name(row)}</span>
+                    {ownerTag(row)}
+                    <span className="workbench-terminal-row-status">
+                      {t(`workbench.terminal.status.${row.status}`)}
+                    </span>
+                    <Button size="small" data-testid="terminal-attach" onClick={() => attach(row.id)}>
+                      {t('workbench.terminal.follow')}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+          {newTerminal}
+        </div>
       )}
-      <section className="workbench-terminal-available" aria-label={t('workbench.terminal.available')}>
-        {snapshot.jobs
-          .filter((row) => !ids.includes(row.id))
-          .map((row) => (
-            <Button key={row.id} type="text" size="small" onClick={() => attach(row.id)}>
-              {t('workbench.terminal.follow')} · {row.shell ?? row.command} ·{' '}
-              {t(`workbench.terminal.owner.${row.owner}`)} · {t(`workbench.terminal.status.${row.status}`)}
-            </Button>
-          ))}
-      </section>
+      <footer className="workbench-tab-footer">{t('workbench.terminal.detach')}</footer>
     </section>
   )
+}
+
+/** Running is live, a finished process is quiet, and only a failure is red. */
+function jobTone(status: SessionJob['status']): StatusDotTone {
+  return status === 'running'
+    ? 'success'
+    : status === 'failed'
+      ? 'danger'
+      : status === 'killed'
+        ? 'warning'
+        : 'neutral'
 }

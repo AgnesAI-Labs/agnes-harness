@@ -5,6 +5,7 @@ import { panelContext } from './context.js'
 import { FactChainPanel } from './fact-chain-panel.js'
 import { FilesPanel } from './files-panel.js'
 import { GoalPanel } from './goal-panel.js'
+import { changesCount, terminalCount } from './tab-counts.js'
 import { TerminalPanel } from './terminal-panel.js'
 
 if (!workbenchPanels.get('files'))
@@ -34,6 +35,7 @@ if (!workbenchPanels.get('terminal'))
     order: 50,
     edge: 'right',
     titleKey: 'workbench.terminal.title',
+    count: terminalCount,
     component: TerminalPanel,
   })
 
@@ -54,6 +56,7 @@ if (!workbenchPanels.get('changed-files'))
     order: 30,
     edge: 'right',
     titleKey: 'workbench.changes.title',
+    count: changesCount,
     component: ChangesPanel,
   })
 if (!fileViewerActions.get('review'))

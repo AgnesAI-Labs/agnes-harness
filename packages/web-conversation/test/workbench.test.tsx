@@ -267,9 +267,8 @@ it('orders rapid terminal input, drops unsent input on detach and restores read-
     expect(agent.status).toBe('running')
     renderRegion(host, <TerminalPanel context={context} />)
     await vi.waitFor(() => expect(host.querySelector('textarea')?.value).toBe('xuman outputabc'))
-    const follow = [...host.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Attach'),
-    )
+    const follow = host.querySelector<HTMLButtonElement>('[data-testid="terminal-attach"]')
+    expect(follow?.getAttribute('aria-label')).toBe('Attach · bash · Agent')
     if (!follow) throw new Error('missing agent follow action')
     flushSync(() => follow.click())
     await vi.waitFor(() => expect(host.querySelector('textarea')?.value).toBe('agent output'))
