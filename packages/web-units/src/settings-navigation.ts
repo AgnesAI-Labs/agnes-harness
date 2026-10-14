@@ -5,6 +5,11 @@ const merged: Readonly<Record<string, readonly [string, string]>> = {
   bundles: ['models', 'bundles'],
   'system-prompt': ['models', 'system-prompt'],
   context: ['models', 'context'],
+  // The loop is chosen in 新会话默认; memory and instructions are the General page's 个性化.
+  execution: ['models', 'models'],
+  personalization: ['general', 'personalization'],
+  memory: ['general', 'memory'],
+  'custom-instructions': ['general', 'custom-instructions'],
   providers: ['diagnostics', 'providers'],
   // Credentials are the lower half of the permissions page.
   credentials: ['security', 'credentials'],
@@ -34,11 +39,11 @@ export const SETTINGS_MOVED: Readonly<Record<string, SettingsMoveTarget>> = {
   skills: { kind: 'page', page: 'plugins', tab: 'skills' },
   feedback: { kind: 'page', page: 'plugins', tab: 'review' },
   mcp: { kind: 'page', page: 'plugins', tab: 'mcp' },
-  // Built-in capabilities each have a page under the plugins tab.
+  // Web search, computer use and child agents are built-ins on the plugins page.
   'computer-use': { kind: 'page', page: 'plugins', tab: 'plugins.computer-use' },
   search: { kind: 'page', page: 'plugins', tab: 'plugins.search' },
-  memory: { kind: 'page', page: 'plugins', tab: 'plugins.memory' },
   engines: { kind: 'page', page: 'plugins', tab: 'plugins.subagents' },
+  subagents: { kind: 'page', page: 'plugins', tab: 'plugins.subagents' },
   schedules: { kind: 'page', page: 'automation', tab: 'schedules' },
   triggers: { kind: 'page', page: 'automation', tab: 'triggers' },
   history: { kind: 'session-search' },

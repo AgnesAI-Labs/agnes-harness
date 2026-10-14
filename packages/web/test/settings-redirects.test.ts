@@ -1,5 +1,6 @@
 /** @vitest-environment happy-dom */
 
+import { settingsRoute } from '@agnes/web-units'
 import { afterEach, expect, it, vi } from 'vitest'
 import {
   clearSettingsLink,
@@ -22,8 +23,8 @@ it.each([
   ['examples', '?page=agents'],
   ['computer-use', '?page=plugins&tab=plugins.computer-use'],
   ['search', '?page=plugins&tab=plugins.search'],
-  ['memory', '?page=plugins&tab=plugins.memory'],
   ['engines', '?page=plugins&tab=plugins.subagents'],
+  ['subagents', '?page=plugins&tab=plugins.subagents'],
   ['schedules', '?page=automation&tab=schedules'],
   ['triggers', '?page=automation&tab=triggers'],
 ])('opens the new home of an old settings link (%s)', (id, search) => {
@@ -34,7 +35,19 @@ it.each([
 })
 
 it('leaves links to pages the dialog still owns, and to sidebar targets, for the caller', () => {
-  for (const id of ['model', 'general', 'security', 'credentials', 'models', 'bundles', 'diagnostics']) {
+  for (const id of [
+    'model',
+    'general',
+    'security',
+    'credentials',
+    'models',
+    'bundles',
+    'diagnostics',
+    'memory',
+    'personalization',
+    'execution',
+    'custom-instructions',
+  ]) {
     history.replaceState(null, '', `/?settings=${id}#keep`)
     expect(rewriteMovedSettingsLink()).toBeUndefined()
     expect(location.search).toBe(`?settings=${id}`)
@@ -67,18 +80,31 @@ it('opens the sidebar search or the archived list for an old history or archive 
 
 it('opens a moved page by its target: a home page with its tab, the search, or the archived list', () => {
   const actions = { openPage: vi.fn(), searchSessions: vi.fn(), showArchived: vi.fn() }
-  for (const id of ['memory', 'schedules', 'examples', 'history', 'archived']) {
+  for (const id of ['search', 'schedules', 'examples', 'history', 'archived']) {
     const target = movedSettingsTarget(id)
     if (target) openMovedSettings(target, actions)
   }
   expect(actions.openPage.mock.calls).toEqual([
-    ['plugins', 'plugins.memory'],
+    ['plugins', 'plugins.search'],
     ['automation', 'schedules'],
     ['agents', undefined],
   ])
   expect(actions.searchSessions).toHaveBeenCalledOnce()
   expect(actions.showArchived).toHaveBeenCalledOnce()
 })
+
+it.each([
+  ['execution', 'models', 'settings-subsection-models'],
+  ['personalization', 'general', 'settings-subsection-personalization'],
+  ['memory', 'general', 'settings-subsection-memory'],
+  ['custom-instructions', 'general', 'settings-subsection-custom-instructions'],
+])(
+  'a built-in capability that left the plugins page opens its one settings place (%s)',
+  (id, page, anchor) => {
+    expect(movedSettingsTarget(id)).toBeUndefined()
+    expect(settingsRoute(id)).toEqual({ id: page, anchor })
+  },
+)
 
 it('drops the settings page from the address when the dialog closes', () => {
   history.replaceState(null, '', '/?session=s1&settings=general#settings-subsection-general-language')

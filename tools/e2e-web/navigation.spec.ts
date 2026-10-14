@@ -129,8 +129,12 @@ test('settings navigation, narrow master-detail and old links keep their destina
     await expect(page.getByTestId('home-entries')).toBeVisible()
     await expect(page.locator('#config')).toBeHidden()
   }
+  // Memory is part of 个性化 on the General page, which the advanced switch does not hide.
+  await page.goto('/?settings=memory')
+  await expect(page.locator('#settings-subsection-memory')).toBeVisible()
+  expect(new URL(page.url()).searchParams.get('settings')).toBeNull()
   for (const [old, target, tab, surface] of [
-    ['memory', 'plugins', 'plugins.memory', 'plugins-memory'],
+    ['engines', 'plugins', 'plugins.subagents', 'plugins-subagents'],
     ['search', 'plugins', 'plugins.search', 'plugins-search'],
     ['skills', 'plugins', 'skills', 'plugins'],
     ['mcp', 'plugins', 'mcp', 'plugins'],

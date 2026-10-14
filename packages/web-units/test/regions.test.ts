@@ -301,10 +301,10 @@ describe('independent core web-unit implementations', () => {
     expect(host.querySelector('[data-testid="settings-nav-models"]')).toBeNull()
     expect(host.querySelector('[data-testid="settings-nav-custom"]')?.textContent).toContain('Preferences')
     // A page that left settings is not opened here: its new home goes to the host.
-    for (const id of ['memory', 'skills', 'history'])
+    for (const id of ['search', 'skills', 'history'])
       form.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: id, bubbles: true }))
     expect(moved).toEqual([
-      { kind: 'page', page: 'plugins', tab: 'plugins.memory' },
+      { kind: 'page', page: 'plugins', tab: 'plugins.search' },
       { kind: 'page', page: 'plugins', tab: 'skills' },
       { kind: 'session-search' },
     ])
