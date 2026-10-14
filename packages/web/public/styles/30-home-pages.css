@@ -305,6 +305,10 @@
     grid-template-columns: minmax(0, 1fr);
     gap: var(--s16);
   }
+  .automation-panel .agh-list-row-copy > p a {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
   .automation-status {
     display: inline-flex;
     align-items: center;
