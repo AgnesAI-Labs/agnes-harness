@@ -972,43 +972,52 @@ describe('client reconciler（WC10 前端状态机）', () => {
     })
   })
 
-  it('过期 epoch 的旧挂载完成后只 dispose，不会在撤回后重新提交', async () => {
-    const h = await harness()
-    const log = { loaded: [] as string[], disposed: [] as string[] }
-    let releaseApply!: () => void
-    const gate = new Promise<void>((resolve) => {
-      releaseApply = resolve
-    })
-    ;(h.ctx as unknown as { plugin: unknown }).plugin = (modLike: unknown, config?: unknown) => {
-      void modLike
-      const id = (config as { packageId: string }).packageId
-      log.loaded.push(`apply:${id}`)
-      const fiber = {
-        async dispose() {
-          log.disposed.push(`dispose:${id}`)
-        },
+  it.each(['withdrawal', 'profile', 'session'] as const)(
+    'disposes an obsolete mount after %s without committing it',
+    async (superseded) => {
+      const h = await harness()
+      const log = { loaded: [] as string[], disposed: [] as string[] }
+      let releaseApply!: () => void
+      const gate = new Promise<void>((resolve) => {
+        releaseApply = resolve
+      })
+      ;(h.ctx as unknown as { plugin: unknown }).plugin = (modLike: unknown, config?: unknown) => {
+        void modLike
+        const id = (config as { packageId: string }).packageId
+        log.loaded.push(`apply:${id}`)
+        const fiber = {
+          async dispose() {
+            log.disposed.push(`dispose:${id}`)
+          },
+        }
+        return Object.assign(
+          gate.then(() => fiber),
+          fiber,
+        )
       }
-      return Object.assign(
-        gate.then(() => fiber),
-        fiber,
-      )
-    }
-    let current = roster([mod('a', 'v1')])
-    const reconciler = createReconciler({
-      ctx: h.ctx,
-      source: { list: async () => current },
-      importer: h.importer,
-    })
-    const first = reconciler.reconcileNow()
-    while (log.loaded.length === 0) await new Promise((resolve) => setTimeout(resolve, 0))
-    current = roster([])
-    const removed = reconciler.invalidate()
-    releaseApply()
-    await first
-    await removed
-    expect(log.disposed).toEqual(['dispose:a'])
-    expect(reconciler.snapshot().get('a')?.phase).toBe('idle')
-  })
+      let identity = 'profile-a:session-a:1'
+      let current = roster([mod('a', 'v1')])
+      const reconciler = createReconciler({
+        ctx: h.ctx,
+        source: { identity: () => identity, list: async () => current },
+        importer: h.importer,
+      })
+      const first = reconciler.reconcileNow()
+      while (log.loaded.length === 0) await new Promise((resolve) => setTimeout(resolve, 0))
+      current = roster([])
+      const removed = superseded === 'withdrawal' ? reconciler.invalidate() : undefined
+      if (superseded !== 'withdrawal') identity = `${superseded}-changed:2`
+      releaseApply()
+      await first
+      if (superseded !== 'withdrawal') {
+        expect(reconciler.snapshot().get('a')?.phase).not.toBe('active')
+        await reconciler.invalidate()
+      }
+      await removed
+      expect(log.disposed).toEqual(['dispose:a'])
+      expect(reconciler.snapshot().get('a')?.phase).toBe('idle')
+    },
+  )
 
   it('名册源抛错：保持现状不崩，下次触发继续对账', async () => {
     const h = await harness()
@@ -1145,4 +1154,43 @@ describe('client reconciler（WC10 前端状态机）', () => {
     expect(performance.now() - started).toBeLessThan(120)
     await slow
   })
+})
+
+it('does not revive a withdrawn plugin from a late hot reload roster query', async () => {
+  const h = await harness()
+  stubPlugin(h.ctx, h)
+  const plugin = mod('withdrawn', 'v1')
+  let release!: (value: ClientRoster) => void
+  let reading!: () => void
+  const started = new Promise<void>((resolve) => {
+    reading = resolve
+  })
+  let reads = 0
+  const reconciler = createReconciler({
+    ctx: h.ctx,
+    importer: h.importer,
+    source: {
+      list: async () => {
+        if (++reads === 1) return roster([plugin])
+        if (reads === 2) {
+          reading()
+          return new Promise<ClientRoster>((resolve) => {
+            release = resolve
+          })
+        }
+        return roster([])
+      },
+    },
+  })
+  await reconciler.reconcileNow()
+  const reload = reconciler.reload('withdrawn', 'v1')
+  await started
+  const withdrawn = reconciler.invalidate()
+  // The fresh query must be able to withdraw while the obsolete query is parked.
+  await withdrawn
+  expect(reconciler.snapshot().get('withdrawn')?.phase).toBe('idle')
+  release(roster([plugin]))
+  await reload
+  expect(reconciler.snapshot().get('withdrawn')?.phase).toBe('idle')
+  expect(h.disposed).toContain('dispose:withdrawn')
 })

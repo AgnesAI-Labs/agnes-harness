@@ -125,18 +125,25 @@ it('points at settings only when accounts exist and no model is usable', () => {
   expect(needsModelNotice({ modelsRead: false, models: 0, accounts: 1 })).toBe(false)
 })
 
-it('follows a settings link once and leaves the rest of the address', () => {
+it('redirects legacy settings links and preserves their destination across startup reads', () => {
   history.replaceState(null, '', '/?session=s1&settings=context#settings-subsection-context')
-  expect(consumeSettingsLink()).toEqual({ id: 'context', anchor: 'settings-subsection-context' })
-  expect(`${location.search}${location.hash}`).toBe('?session=s1')
-  // A second read finds nothing: a refresh does not open the dialog again.
-  expect(consumeSettingsLink()).toEqual({ id: '', anchor: '' })
-  // Page addresses and unrelated fragments are real addresses and stay.
+  expect(consumeSettingsLink()).toEqual({ id: 'models', anchor: 'settings-subsection-context' })
+  expect(new URL(location.href).searchParams.get('settings')).toBe('models')
+  expect(location.hash).toBe('#settings-subsection-context')
+  expect(consumeSettingsLink()).toEqual({ id: 'models', anchor: 'settings-subsection-context' })
   history.replaceState(null, '', '/?page=plugins&tab=skills&settings=security#launcher-token')
   expect(consumeSettingsLink()).toEqual({ id: 'security', anchor: '' })
-  expect(`${location.search}${location.hash}`).toBe('?page=plugins&tab=skills#launcher-token')
-  // A subsection fragment left without its page is stale too.
+  expect(`${location.search}${location.hash}`).toBe(
+    '?page=plugins&tab=skills&settings=security#launcher-token',
+  )
   history.replaceState(null, '', '/#settings-subsection-context')
   expect(consumeSettingsLink()).toEqual({ id: '', anchor: '' })
   expect(location.hash).toBe('')
+})
+
+it('keeps a settings address readable across repeated startup reads', () => {
+  history.replaceState(null, '', '/?session=s1&settings=diagnostics/otlp')
+  expect(consumeSettingsLink()).toEqual({ id: 'diagnostics', anchor: '' })
+  expect(consumeSettingsLink()).toEqual({ id: 'diagnostics', anchor: '' })
+  expect(new URL(location.href).searchParams.get('settings')).toBe('diagnostics/otlp')
 })

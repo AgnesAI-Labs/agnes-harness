@@ -1,31 +1,12 @@
-import type { SystemPromptConfig, SystemPromptSnapshot } from '@agnes/protocol'
-import { hasPermission, trackPageRequest } from '@agnes/web-ui'
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import type { SystemPromptConfig } from '@agnes/protocol'
+import { hasPermission, queueResourceWrite, scopedResourceKey, setResource, useResource } from '@agnes/web-ui'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { PluginAdminApi } from '../admin/plugins/api.js'
 import { systemPromptApi } from './system-prompt-api.js'
 
 export const PROMPT_NAMESPACE = '@agnes/web/system-prompt'
 export const browserPromptApi = systemPromptApi()
 export type PromptApi = ReturnType<typeof systemPromptApi>
-
-/**
- * One prompt configuration per API, shared by every surface that shows it (General's
- * personalization, the run configuration's replacement and preview). A save by one is seen by all.
- */
-type PromptStore = { snapshot: SystemPromptSnapshot | undefined; listeners: Set<() => void> }
-const stores = new WeakMap<PromptApi, PromptStore>()
-function storeOf(api: PromptApi): PromptStore {
-  let store = stores.get(api)
-  if (!store) {
-    store = { snapshot: undefined, listeners: new Set() }
-    stores.set(api, store)
-  }
-  return store
-}
-function publish(store: PromptStore, snapshot: SystemPromptSnapshot) {
-  store.snapshot = snapshot
-  for (const listener of store.listeners) listener()
-}
 
 /** A full replacement prompt is in use, so the instructions around the default are not saved. */
 export class PromptReplacedError extends Error {
@@ -41,52 +22,21 @@ export class PromptReplacedError extends Error {
  * never writes back fields another surface changed meanwhile; the result reaches every surface.
  */
 export function usePromptSnapshot(api: PromptApi, enabled = true) {
-  const store = storeOf(api)
-  const subscribe = useCallback(
-    (listener: () => void) => {
-      store.listeners.add(listener)
-      return () => {
-        store.listeners.delete(listener)
-      }
-    },
-    [store],
-  )
-  const snapshot = useSyncExternalStore(subscribe, () => store.snapshot)
-  const [busy, setBusy] = useState(enabled)
-  const [failed, setFailed] = useState(false)
-  const [reads, setReads] = useState(0)
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reads is an explicit retry.
-  useEffect(() => {
-    if (!enabled) return
-    const pending = new AbortController()
-    setBusy(true)
-    void trackPageRequest(api.get(pending.signal))
-      .then((value) => {
-        if (pending.signal.aborted) return
-        publish(store, value)
-        setFailed(false)
-      })
-      .catch(() => {
-        if (!pending.signal.aborted) setFailed(true)
-      })
-      .finally(() => {
-        if (!pending.signal.aborted) setBusy(false)
-      })
-    return () => pending.abort()
-  }, [api, enabled, reads, store])
-  /** Apply `change` to the latest stored configuration and write it; rejects when the save fails. */
+  const key = scopedResourceKey(api, 'settings:prompt')
+  const state = useResource(enabled ? key : undefined, () => api.get())
   const save = useCallback(
-    async (change: (latest: SystemPromptConfig) => SystemPromptConfig, confirmFullOverride = false) => {
-      const latest = await api.get()
-      publish(store, latest)
-      const result = await api.save({ config: change(latest.config), confirmFullOverride })
-      publish(store, result)
-      return result
-    },
-    [api, store],
+    (change: (latest: SystemPromptConfig) => SystemPromptConfig, confirmFullOverride = false) =>
+      queueResourceWrite(key, async () => {
+        const latest = await api.get()
+        // A current snapshot also exposes a replacement that refuses this draft's save.
+        setResource(key, latest)
+        const result = await api.save({ config: change(latest.config), confirmFullOverride })
+        setResource(key, result)
+        return result
+      }),
+    [api, key],
   )
-  const reload = useCallback(() => setReads((value) => value + 1), [])
-  return { snapshot, busy, failed, save, reload }
+  return { snapshot: state.data, busy: state.loading, failed: !!state.error, save, reload: state.reload }
 }
 
 const INSTRUCTIONS = ['personaPrefix', 'personaSuffix', 'replyStyle'] as const

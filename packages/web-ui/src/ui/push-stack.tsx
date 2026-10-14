@@ -87,9 +87,12 @@ function historyDepth(state: unknown, key: string): number {
 export function usePushNavigation({
   historyKey,
   route,
+  locationEvent,
 }: {
   historyKey: string
   route?: PushRoute | undefined
+  /** A host committed a route without traversing browser history. */
+  locationEvent?: string | undefined
 }): PushNavigation {
   const [stack, setStack] = useState<readonly string[]>(() => route?.read() ?? [])
   const current = useRef(stack)
@@ -102,21 +105,25 @@ export function usePushNavigation({
     setStack(next)
   }, [])
   useEffect(() => {
-    const listener = (event: PopStateEvent) => {
+    const listener = (event: Event) => {
       const known = current.current
       if (routeRef.current) {
         // The address is the truth: a back step lands on what it names.
         const named = routeRef.current.read()
         if (named.join('/') !== known.join('/')) publish(named)
       } else {
-        const depth = historyDepth(event.state, historyKey)
+        const depth = historyDepth((event as PopStateEvent).state, historyKey)
         if (depth < known.length) publish(known.slice(0, depth))
       }
       base.current = Math.min(base.current, current.current.length)
     }
     window.addEventListener('popstate', listener)
-    return () => window.removeEventListener('popstate', listener)
-  }, [historyKey, publish])
+    if (locationEvent) window.addEventListener(locationEvent, listener)
+    return () => {
+      window.removeEventListener('popstate', listener)
+      if (locationEvent) window.removeEventListener(locationEvent, listener)
+    }
+  }, [historyKey, publish, locationEvent])
   const open = useCallback(
     (id: string) => {
       const known = current.current

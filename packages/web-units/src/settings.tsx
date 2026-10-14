@@ -1,4 +1,10 @@
-import { SettingsAccountDialog, SettingsModelPane, Toast } from '@agnes/web-ui'
+import {
+  SETTINGS_ROUTE_EVENT,
+  SettingsAccountDialog,
+  SettingsModelPane,
+  searchParamRoute,
+  Toast,
+} from '@agnes/web-ui'
 import {
   forwardRef,
   type ReactNode,
@@ -169,10 +175,9 @@ function SettingsBuiltinImpl(
     if (options.sections) {
       const navigationEntries = () => options.sections?.entries() ?? []
       const tabs = root.querySelector<HTMLElement>('#settings-section-tabs')
-      const navigate = (requested: string, notify = true) => {
+      const navigate = (requested: string, notify = true, preserveRoute = false) => {
         const route = settingsRoute(requested)
         const id = route.id
-        // The page on screen is the dialog's own state; the address bar is not written.
         requestedPage.current = requested
         const tabFocused = tabs?.contains(document.activeElement)
         const entries = navigationEntries()
@@ -195,6 +200,10 @@ function SettingsBuiltinImpl(
           history.replaceState(history.state, '', url)
           return
         }
+        const address = searchParamRoute('settings')
+        const levels = address.read()
+        const changeAddress = notify && (levels[0] !== id || (!preserveRoute && levels.length > 1))
+        if (changeAddress) history.pushState(history.state, '', address.href([id]))
         const target = settingsEntryPane(selected)
         const pane = target === 'sections' ? activePane.current : target
         root.dataset.settingsSection = id
@@ -251,6 +260,7 @@ function SettingsBuiltinImpl(
           if (!selected.nativePane)
             root.dispatchEvent(new CustomEvent('agnes:settings-page', { detail: id, bubbles: true }))
         }
+        if (changeAddress) window.dispatchEvent(new Event(SETTINGS_ROUTE_EVENT))
         if (route.anchor) requestAnimationFrame(() => revealSettingsAnchor(route.anchor ?? ''))
         if (notify && !tabFocused && window.matchMedia('(max-width: 767px)').matches)
           root.querySelector<HTMLButtonElement>('#settings-back')?.focus({ preventScroll: true })
@@ -295,7 +305,10 @@ function SettingsBuiltinImpl(
         const id = url.searchParams.get('settings')
         if (!id) return
         event.preventDefault()
-        navigate(id)
+        history.pushState(history.state, '', url)
+        const page = searchParamRoute('settings').read()[0]
+        if (page) navigate(page, true, true)
+        window.dispatchEvent(new Event(SETTINGS_ROUTE_EVENT))
         if (url.hash.length <= 1) return
         let fragment: string
         try {
@@ -312,7 +325,7 @@ function SettingsBuiltinImpl(
         // requested subsection through that echo.
         const requested = requestedPage.current
         const linked = settingsRoute(requested)
-        navigate(linked.id === id && linked.anchor ? requested : id)
+        navigate(linked.id === id && linked.anchor ? requested : id, true, true)
       }
       const onKeys = (event: KeyboardEvent) => {
         const target = event.target as HTMLElement

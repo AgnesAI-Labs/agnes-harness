@@ -24,7 +24,7 @@ import { createElement } from 'react'
 import { oauthControls } from './oauth-controls.js'
 import { createAccountPickers } from './provider-picker.js'
 import { accountNetworkFields } from './settings/account-network.js'
-import { bindAccountPage } from './settings/account-page.js'
+import { bindAccountPage, linkedAccountRestorer, showAccountDiscard } from './settings/account-page.js'
 import {
   defaultAccountLabel,
   providerTiles,
@@ -39,6 +39,7 @@ import {
   optionalElement,
   readElements,
   setDialogOpen,
+  showSettingsDialog,
 } from './settings/dialog.js'
 import { modelSlotsPanel } from './settings/model-slots.js'
 
@@ -46,6 +47,8 @@ export type SettingsControllerOptions = {
   client: Client
   onSaved(snapshot: ConfigSnapshot): Promise<void>
   onError(error: unknown): void
+  /** The dialog has just opened; its host owns the URL. */
+  onOpen?(): void
   /** The dialog was open and has just closed, by any route. */
   onClose?(): void
 }
@@ -54,6 +57,7 @@ export type SettingsController = {
   openAccount(route?: string): Promise<void>
   open(): Promise<void>
   close(): void
+  isOpen(): boolean
   refreshLocale(): void
   attachInline(host: HTMLElement): () => void
   submitInline(): Promise<boolean>
@@ -92,13 +96,20 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   const accountDialogContext = optionalElement('config-account-context', 'p')
   const accountName = optionalElement('config-account-name', 'input')
   const accountBody = accountDialog?.querySelector<HTMLElement>('.account-dialog-body')
+  const accounts = () => configuration?.accounts
   // Leaving the page by 返回 or the browser drops the draft, as closing the dialog did.
+  const accountRestore = linkedAccountRestorer(
+    ui.dialog,
+    () => open(),
+    accounts,
+    (id) => editAccount(id),
+  )
   const accountPage = bindAccountPage(
     ui.dialog,
     accountBody,
     accountDialog,
     () => discardAccount(),
-    () => editAccount(),
+    accountRestore,
   )
   const advanced = optionalElement('config-account-advanced', 'div')
   const modelFields = optionalElement('config-model-fields', 'fieldset')
@@ -483,7 +494,6 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     }
   }
 
-  const show = (): void => setDialogOpen(ui.dialog, true)
   const closeDialog = (): void => setDialogOpen(ui.dialog, false)
 
   const close = (): void => {
@@ -751,14 +761,17 @@ export function createSettingsController(options: SettingsControllerOptions): Se
         ? tr('settings.account.detailsTitle')
         : tr('settings.account.addTitle')
     if (accountDialogContext) accountDialogContext.textContent = id ? tr('settings.account.editContext') : ''
-    showDiscard(false)
+    showAccountDiscard(false)
     draftBaseline = draftSignature()
     if (!inlineHost) openAccountDialog()
   }
 
   /** 打开账户：设置里有账户页时进入该页，否则用账户弹窗（showModal 不可用时退回 open 属性）。 */
   const openAccountDialog = (): void => {
-    if (!accountDialog || accountPage.open(!configuration?.accounts?.some((a) => a.accountId === editingId)))
+    if (
+      !accountDialog ||
+      accountPage.open(!configuration?.accounts?.some((a) => a.accountId === editingId), editingId)
+    )
       return
     setDialogOpen(accountDialog, true)
     accountFocusReturn = focusable(document.activeElement) ? document.activeElement : null
@@ -859,15 +872,8 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       }),
     )
   }
-  const showDiscard = (show: boolean) => {
-    const prompt = optionalElement('config-account-discard', 'div')
-    const actions = optionalElement('config-account-footer-actions', 'div')
-    if (prompt) prompt.hidden = !show
-    if (actions) actions.hidden = show
-    if (show) optionalElement('config-account-keep', 'button')?.focus()
-  }
   const discardAccount = () => {
-    showDiscard(false)
+    showAccountDiscard(false)
     closeAccountDialog()
     ui.apiKey.value = ''
     renderAccounts()
@@ -875,13 +881,13 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   }
   const requestCloseAccount = () => {
     if (draftSignature() !== draftBaseline) {
-      showDiscard(true)
+      showAccountDiscard(true)
       return
     }
     discardAccount()
   }
   optionalElement('config-account-keep', 'button')?.addEventListener('click', () => {
-    showDiscard(false)
+    showAccountDiscard(false)
     ui.apiKey.focus()
   })
   optionalElement('config-account-discard-confirm', 'button')?.addEventListener('click', discardAccount)
@@ -1002,7 +1008,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   updateButtons()
 
   const open = (): Promise<void> => {
-    if (opening) return opening
+    if (opening || !ui.dialog.isConnected || !ui.models.isConnected) return opening ?? Promise.resolve()
     if (!ui.dialog.open) {
       const active = document.activeElement
       focusReturn = focusable(active) ? active : null
@@ -1010,7 +1016,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     const token = ++lifecycle
     tested = undefined
     renderModels()
-    show()
+    showSettingsDialog(ui.dialog, options.onOpen)
     setLoadPhase('loading')
     const work = connected
       ? load(token)
@@ -1078,13 +1084,10 @@ export function createSettingsController(options: SettingsControllerOptions): Se
         close()
       }
     },
+    isOpen: () => ui.dialog.open,
     submitInline: verifyAndSave,
     open,
-    async openAccount(route?: string) {
-      await open()
-      const account = configuration?.accounts?.find((row) => row.route === route)
-      if (account) editAccount(account.accountId)
-    },
+    openAccount: accountRestore.openRoute,
     close,
     refreshLocale: () => {
       renderAccounts()

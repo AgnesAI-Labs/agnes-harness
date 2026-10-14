@@ -413,3 +413,45 @@ it('shares one prompt configuration: a replacement saved in run configuration lo
     stale.remove()
   }
 })
+
+it('keeps a saved prompt when an earlier snapshot read returns', async () => {
+  const { usePromptSnapshot } = await import('../src/settings/prompt-config.js')
+  let release!: (value: SystemPromptSnapshot) => void
+  const old: SystemPromptSnapshot = {
+    config: { replyStyle: 'old' },
+    effect: 'new-sessions',
+    hash: 'a'.repeat(64),
+    preview: 'default-sections',
+    sections: [],
+  }
+  let reads = 0
+  const api = {
+    get: async () =>
+      ++reads === 1
+        ? new Promise<SystemPromptSnapshot>((resolve) => {
+            release = resolve
+          })
+        : old,
+    save: async ({ config }: { config: SystemPromptSnapshot['config'] }) => ({ ...old, config }),
+  } as ReturnType<typeof systemPromptApi>
+  let save!: ReturnType<typeof usePromptSnapshot>['save']
+  function Reader() {
+    const state = usePromptSnapshot(api)
+    save = state.save
+    return createElement('output', null, state.snapshot?.config.replyStyle)
+  }
+  const host = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(host)
+  try {
+    await act(async () => root.render(createElement(Reader)))
+    await act(async () => {
+      await save((latest) => ({ ...latest, replyStyle: 'saved' }))
+    })
+    expect(host.textContent).toBe('saved')
+    await act(async () => release(old))
+    expect(host.textContent).toBe('saved')
+  } finally {
+    await act(async () => root.unmount())
+    host.remove()
+  }
+})

@@ -43,6 +43,7 @@ export function SettingsStaticPane({
     >
       <SettingsUndoScope>
         <SettingsSubpageFrame
+          routeId="general"
           header={
             <SettingsPageHeader
               className="agnes-settings-page-top"

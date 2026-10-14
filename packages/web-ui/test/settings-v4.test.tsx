@@ -370,9 +370,10 @@ function deferredSaves() {
     })
   return { calls, save }
 }
-function AutosaveChoice({ save }: { save(value: string): Promise<void> }) {
+function AutosaveChoice({ save, resourceKey }: { save(value: string): Promise<void>; resourceKey?: string }) {
   const [stored, setStored] = useState('off')
   const field = useAutosave({
+    resourceKey,
     stored,
     save: async (value: string) => {
       await save(value)
@@ -507,4 +508,60 @@ it('reads a settings group the shared way: nothing for 200 ms, then a placeholde
   expect(host.querySelector('.agh-loadable-status')?.getAttribute('data-slow')).toBeNull()
   await act(async () => vi.advanceTimersByTime(2800))
   expect(host.querySelector('.agh-loadable-status')?.getAttribute('data-slow')).toBe('true')
+})
+
+it('serializes saves across two mounted surfaces and a remount of the same resource', async () => {
+  const { calls, save } = deferredSaves()
+  const first = await render(createElement(AutosaveChoice, { save, resourceKey: 'settings:shared' }))
+  const second = await render(createElement(AutosaveChoice, { save, resourceKey: 'settings:shared' }))
+  await act(async () => $<HTMLButtonElement>(first, '[data-testid="pick-on"]').click())
+  await act(async () => $<HTMLButtonElement>(first, '[data-testid="pick-off"]').click())
+  await act(async () => $<HTMLButtonElement>(second, '[data-testid="pick-strict"]').click())
+  expect(calls.map((call) => call.value)).toEqual(['on'])
+  await act(async () => cleanups.shift()?.())
+  const again = await render(createElement(AutosaveChoice, { save, resourceKey: 'settings:shared' }))
+  await act(async () => $<HTMLButtonElement>(again, '[data-testid="pick-off"]').click())
+  await act(async () => calls[0]!.resolve())
+  expect(calls.map((call) => call.value)).toEqual(['on', 'off'])
+  await act(async () => calls[1]!.resolve())
+  expect(calls.map((call) => call.value)).toEqual(['on', 'off', 'strict'])
+  await act(async () => calls[2]!.resolve())
+  expect(calls.map((call) => call.value)).toEqual(['on', 'off', 'strict', 'off'])
+  await act(async () => calls[3]!.resolve())
+})
+
+it('restores nested settings pages from a deep link, reload, back and forward', async () => {
+  const page = () =>
+    createElement(
+      SettingsPage,
+      { title: 'Diagnostics', routeId: 'diagnostics' },
+      createElement(
+        SettingsDrill,
+        { id: 'otlp', label: 'OTLP' },
+        createElement(
+          SettingsDrill,
+          { id: 'limits', label: 'Limits' },
+          createElement('p', null, 'Limit controls'),
+        ),
+      ),
+    )
+  history.replaceState(null, '', '/?session=s1&settings=diagnostics/otlp/limits')
+  const first = await render(page())
+  expect($(first, '[data-testid="settings-subpage-header"] h2').textContent).toBe('Limits')
+  await act(async () => cleanups.shift()?.())
+  const reloaded = await render(page())
+  expect($(reloaded, '[data-testid="settings-subpage-header"] h2').textContent).toBe('Limits')
+  for (const [address, title] of [
+    ['diagnostics/otlp', 'OTLP'],
+    ['diagnostics/otlp/limits', 'Limits'],
+  ]) {
+    await act(async () => {
+      history.replaceState(null, '', `/?session=s1&settings=${address}`)
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    expect($(reloaded, '[data-testid="settings-subpage-header"] h2').textContent).toBe(title)
+  }
+  await act(async () => $(reloaded, '[data-testid="settings-subpage-back"]').click())
+  expect(new URL(location.href).searchParams.get('settings')).toBe('diagnostics/otlp')
+  expect(new URL(location.href).searchParams.get('session')).toBe('s1')
 })

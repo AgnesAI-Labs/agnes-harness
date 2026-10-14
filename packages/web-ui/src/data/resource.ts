@@ -17,6 +17,8 @@ export type ResourceState<T> = {
 }
 
 type Entry = {
+  version: number
+  writes: Promise<unknown> | undefined
   state: ResourceState<unknown>
   /** The read running for this key, shared by everyone asking for it. */
   inflight: Promise<unknown> | undefined
@@ -34,6 +36,8 @@ function entry(key: string): Entry {
   let found = entries.get(key)
   if (!found) {
     found = {
+      version: 0,
+      writes: undefined,
       state: empty,
       inflight: undefined,
       stale: true,
@@ -85,20 +89,26 @@ function revalidate(key: string): Promise<unknown> | undefined {
   if (!fetch) return undefined
   target.stale = false
   publish(target, { ...target.state, loading: true })
+  const version = target.version
   const run = fetch()
   const tracked = target.page ? trackPageRequest(run) : run
   const settled = tracked.then(
     (data) => {
       if (target.inflight !== settled) return data
       target.inflight = undefined
-      publish(target, { data, error: undefined, loading: false })
+      if (version === target.version) publish(target, { data, error: undefined, loading: false })
+      else publish(target, { ...target.state, loading: false })
       return data
     },
     (error: unknown) => {
       if (target.inflight !== settled) return undefined
       target.inflight = undefined
       // A failed refresh keeps what was already shown.
-      publish(target, { data: target.state.data, error, loading: false })
+      publish(target, {
+        ...target.state,
+        error: version === target.version ? error : target.state.error,
+        loading: false,
+      })
       return undefined
     },
   )
@@ -113,17 +123,17 @@ function revalidate(key: string): Promise<unknown> | undefined {
 export function invalidateResource(prefix: string): void {
   for (const [key, target] of entries) {
     if (key !== prefix && !key.startsWith(`${prefix}:`)) continue
+    target.version++
+    target.inflight = undefined
     target.stale = true
-    if (target.listeners.size) {
-      target.inflight = undefined
-      void revalidate(key)
-    }
+    if (target.listeners.size) void revalidate(key)
   }
 }
 
 /** Replace a cached value (a write that returned the new value); readers show it at once. */
 export function setResource<T>(key: string, data: T): void {
   const target = entry(key)
+  target.version++
   target.stale = false
   publish(target, { data, error: undefined, loading: target.state.loading })
 }
@@ -175,4 +185,33 @@ export function useResource<T>(
     void revalidate(key)
   }, [key])
   return { ...state, reload }
+}
+
+/** Serialize writes to the same scoped resource, including across unmount/remount. */
+export function queueResourceWrite<T>(key: string, write: () => Promise<T>): Promise<T> {
+  const target = entry(key)
+  const result = target.writes ? target.writes.then(write, write) : Promise.resolve().then(write)
+  target.writes = result
+  void result
+    .finally(() => {
+      if (target.writes === result) target.writes = undefined
+    })
+    .catch(() => {})
+  return result
+}
+
+const scopes = new WeakMap<object, number>()
+let scopeSequence = 0
+/** An API/connection identity owns its remote snapshots and write ordering. */
+export function scopedResourceKey(scope: object, name: string): string {
+  let id = scopes.get(scope)
+  if (id === undefined) {
+    id = ++scopeSequence
+    scopes.set(scope, id)
+  }
+  return `${name}:scope-${id}`
+}
+
+export function resourceWritePending(key: string): boolean {
+  return !!entry(key).writes
 }

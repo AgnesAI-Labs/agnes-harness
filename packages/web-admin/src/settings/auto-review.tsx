@@ -18,7 +18,7 @@ import {
   useAutosave,
   useUiText,
 } from '@agnes/web-ui'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 export { reviewCatalog } from './auto-review-locale.js'
 
@@ -56,14 +56,12 @@ export function AutoReviewPanel({ canSave }: { canSave: boolean }) {
   const { t } = useUiText('@agnes/web/auto-review', reviewCatalog)
   const [slots, setSlots] = useState<ModelSlotsState>()
   const [slotsFailed, setSlotsFailed] = useState(false)
-  const lifetime = useRef<AbortController>()
   const [stored, setStored] = useState<AutoReviewConfig>()
   const [readFailed, setReadFailed] = useState(false)
   const [reads, setReads] = useState(0)
   // biome-ignore lint/correctness/useExhaustiveDependencies: reads is an explicit retry.
   useEffect(() => {
     const controller = new AbortController()
-    lifetime.current = controller
     setReadFailed(false)
     void trackPageRequest(reviewSettings(undefined, controller.signal))
       .then((value) => {
@@ -98,10 +96,11 @@ export function AutoReviewPanel({ canSave }: { canSave: boolean }) {
     }
   }, [])
   const config = useAutosave<AutoReviewConfig>({
+    resourceKey: 'settings:auto-review',
     stored,
     equal: sameConfig,
     save: async (next) => {
-      const value = await reviewSettings(next, lifetime.current?.signal)
+      const value = await reviewSettings(next)
       setStored(value)
     },
   })

@@ -124,3 +124,10 @@ export function setDialogOpen(dialog: HTMLDialogElement, open: boolean): void {
     dialog.toggleAttribute('open', open)
   }
 }
+
+/** Show the settings surface once; its host commits the corresponding address. */
+export function showSettingsDialog(dialog: HTMLDialogElement, onOpen?: () => void): void {
+  if (dialog.open) return
+  setDialogOpen(dialog, true)
+  onOpen?.()
+}

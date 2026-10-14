@@ -56,10 +56,11 @@ export function ObservabilityPanel({ canSave = true }: { canSave?: boolean }) {
     return () => abort.abort()
   }, [])
   const settings = useAutosave<ObservabilitySettings>({
+    resourceKey: 'settings:observability',
     stored: snapshot?.settings,
     equal: sameSettings,
     save: async (next) => {
-      const value = await observabilityRequest({ settings: next }, lifetime.current?.signal)
+      const value = await observabilityRequest({ settings: next })
       setSnapshot(value)
     },
   })

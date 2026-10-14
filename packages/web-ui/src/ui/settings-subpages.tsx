@@ -5,12 +5,14 @@ import { createPortal } from 'react-dom'
 import { Icon } from './icon.js'
 import type { IconName } from './icon-set.js'
 import { IconTile } from './icon-tile.js'
-import { PushHeader, usePushNavigation } from './push-stack.js'
+import { PushHeader, searchParamRoute, usePushNavigation } from './push-stack.js'
 
 type DataAttributes = { [name: `data-${string}`]: string | number | boolean | undefined }
 
 /** Dispatched (bubbling) from inside a subpage that finished, to close it at once. */
 export const SUBPAGE_CLOSE_EVENT = 'agnes:settings-subpage-close'
+/** A settings owner wrote a URL without a browser history traversal. */
+export const SETTINGS_ROUTE_EVENT = 'agnes:settings-location'
 
 /** The history entry a subpage adds; browser back pops to the depth it names. */
 const HISTORY_KEY = 'agnesSettingsSubpage'
@@ -40,10 +42,23 @@ const SubpageContext = createContext<SubpageFrame | undefined>(undefined)
 export function SettingsSubpageFrame({
   header,
   rootTitle,
+  routeId,
   children,
   ...props
-}: HTMLAttributes<HTMLDivElement> & DataAttributes & { header: ReactNode; rootTitle?: ReactNode }) {
-  const nav = usePushNavigation({ historyKey: HISTORY_KEY })
+}: HTMLAttributes<HTMLDivElement> &
+  DataAttributes & { header: ReactNode; rootTitle?: ReactNode; routeId?: string | undefined }) {
+  const route = useMemo(() => {
+    if (!routeId) return undefined
+    const address = searchParamRoute('settings')
+    return {
+      read: () => {
+        const levels = address.read()
+        return levels[0] === routeId ? levels.slice(1) : []
+      },
+      href: (stack: readonly string[]) => address.href([routeId, ...stack]),
+    }
+  }, [routeId])
+  const nav = usePushNavigation({ historyKey: HISTORY_KEY, route, locationEvent: SETTINGS_ROUTE_EVENT })
   const { stack, reset, finish } = nav
   const [headerHost, setHeaderHost] = useState<HTMLElement | null>(null)
   const [hosts, setHosts] = useState<Readonly<Record<string, HTMLElement>>>({})

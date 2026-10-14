@@ -23,6 +23,7 @@ afterEach(() => {
   disposeMarkup?.()
   disposeMarkup = undefined
   vi.unstubAllGlobals()
+  history.replaceState(null, '', '/')
   window?.happyDOM.abort()
   window = undefined
 })

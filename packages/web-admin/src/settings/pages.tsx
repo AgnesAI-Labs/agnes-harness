@@ -211,6 +211,7 @@ function SettingsPageHost({
       <SettingsPageLayout
         // Another page starts at its top level, not inside the last page's subpage.
         key={section.id}
+        routeId={section.id}
         title={title}
         actions={
           needsRuntimeCatalog || adminFailed ? (

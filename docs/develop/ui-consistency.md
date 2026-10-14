@@ -126,3 +126,9 @@ migrate. Do not add new allowances for page styling.
 ## Navigation, loading and keyboard
 
 The [UI author guide](ui-author-guide.md) describes public registrations and classes. Settings has eight everyday groups plus Advanced. The workbench keeps Files, Goal, Changes and Activity record, with business views and terminals shown contextually. Dual-placement Intelligent UI uses a conversation summary. Use shared SettingsState/Skeleton for loading. F6/Shift+F6 cycles visible sidebar, conversation or trace, workbench, plugin panels and composer; modals retain their focus. Closing drawers/dialogs returns focus. Narrow tests retain 375/768px and add 390px; phone targets must reach 44px, including clickable pseudo-elements, and icon controls need accessible names.
+
+## Async state ownership
+
+Session facts, execution results and authorization belong to the backend and SDK projection. The app coordination layer owns current session selection, connection and subscription lifetime. Remote snapshots (settings, lists and rosters) belong to the scoped resource store; components own drafts, expansion and local interactions.
+
+A resource write commits a new version. Reads started before that commit cannot publish either data or errors over it; writes to the same resource share a queue across component lifetimes. After an await, session and roster operations must recheck their selection or request identity before changing shared state. Obsolete work may release its own handles, but cannot reset another selection's renderer or recovery target. Module loads remain independent, with failures isolated to their region and registrations removed on unmount.

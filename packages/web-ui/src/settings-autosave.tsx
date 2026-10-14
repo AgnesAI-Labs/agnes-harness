@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 
+import { queueResourceWrite, resourceWritePending } from './data/resource.js'
+
 /** How long typing must pause before a text setting saves. */
 export const AUTOSAVE_IDLE_MS = 1000
 
@@ -73,11 +75,14 @@ export type Autosave<T> = {
  * change can be undone with ⌘Z.
  */
 export function useAutosave<T>({
+  resourceKey,
   stored,
   save,
   equal = Object.is,
   idle = AUTOSAVE_IDLE_MS,
 }: {
+  /** Shared remote resource identity; omit only for a component-local setting. */
+  resourceKey?: string | undefined
   stored: T | undefined
   save(next: T): Promise<unknown>
   equal?(a: T, b: T): boolean
@@ -96,6 +101,7 @@ export function useAutosave<T>({
   // could land in either order and leave an older value stored. An edit made while a save is on its
   // way waits here; only the newest waiting edit is sent, once the save in flight settles.
   const inflight = useRef(false)
+  const writeGeneration = useRef(0)
   const queued = useRef<{ value: T; previous: T | undefined; undoable: boolean } | undefined>(undefined)
   const mounted = useRef(true)
   useEffect(
@@ -109,16 +115,20 @@ export function useAutosave<T>({
   const writeRef = useRef<(value: T, previous: T | undefined) => void>(() => {})
   const send = useCallback(
     (value: T, previous: T | undefined, undoable: boolean) => {
+      const generation = ++writeGeneration.current
       inflight.current = true
       setBusy(true)
       const next = () => {
+        if (generation !== writeGeneration.current) return true
         inflight.current = false
         const waiting = queued.current
         queued.current = undefined
         if (waiting) send(waiting.value, waiting.previous, waiting.undoable)
         return !!waiting
       }
-      void latest.current.save(value).then(
+      const save = latest.current.save
+      const work = () => save(value)
+      void (resourceKey ? queueResourceWrite(resourceKey, work) : work()).then(
         () => {
           if (mounted.current && undoable && previous !== undefined)
             undo?.push({
@@ -142,7 +152,7 @@ export function useAutosave<T>({
         },
       )
     },
-    [undo],
+    [undo, resourceKey],
   )
 
   const write = useCallback(
@@ -151,20 +161,20 @@ export function useAutosave<T>({
       pending.current = undefined
       const undoable = !reverting.current
       reverting.current = false
-      if (inflight.current) {
+      if (inflight.current && !resourceKey) {
         // Keep the first waiting edit's «before» so one ⌘Z steps back over the whole burst.
         queued.current = { value, previous: queued.current?.previous ?? previous, undoable }
         return
       }
       const { stored: known, equal: same } = latest.current
-      if (known !== undefined && same(value, known)) {
+      if (known !== undefined && same(value, known) && !(resourceKey && resourceWritePending(resourceKey))) {
         setDraft(undefined)
         setFailed(false)
         return
       }
       send(value, previous, undoable)
     },
-    [send],
+    [send, resourceKey],
   )
   writeRef.current = write
 

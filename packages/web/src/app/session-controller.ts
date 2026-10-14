@@ -110,9 +110,11 @@ export function createSessionController(
     context.liveApproval = undefined
     try {
       const stopped = await stopWithTimeout(context.stopEvents)
-      context.stopEvents = undefined
-      context.live = undefined
-      if (!stopped) {
+      if (epoch === context.selection) {
+        context.stopEvents = undefined
+        context.live = undefined
+      }
+      if (!stopped && epoch === context.selection) {
         context.notice.setText(context.t('app.notice.oldSessionClosing'))
         context.notice.setKind('warning')
       }
@@ -126,7 +128,7 @@ export function createSessionController(
             finish: (answer: PermissionOutcome) => {
               permissionContext.signal.removeEventListener('abort', reject)
               if (context.liveApproval === pending) context.liveApproval = undefined
-              context.render()
+              if (epoch === context.selection) context.render()
               resolve(permissionContext.signal.aborted ? { unanswered: 'detached' } : answer)
             },
           }
@@ -275,18 +277,20 @@ export function createSessionController(
         context.modelChangePending = false
         context.offPermission?.()
         context.offPermission = undefined
+        const stop = context.stopEvents
+        context.stopEvents = undefined
+        context.live = undefined
         try {
-          await stopWithTimeout(context.stopEvents)
+          await stopWithTimeout(stop)
         } catch {
           // The original loading failure is the useful error for this selection.
         }
-        context.stopEvents = undefined
-        context.live = undefined
         try {
           await failed?.detach()
         } catch {
           // The failed binding is already unavailable to the composer.
         }
+        if (epoch !== context.selection) return
         // 加载失败没有可保留的画面：清空转录区回到空态，错误走 #notice。
         context.renderer.reset()
         if (options.preserveSending) {
@@ -303,6 +307,7 @@ export function createSessionController(
           (await context.readOnlyController.show(id, error, epoch))
         )
           return
+        if (epoch !== context.selection) return
         context.render()
         if (!options.created && !options.preserveSending) {
           context.showSessionRecovery(error, id)
@@ -356,11 +361,14 @@ export function createSessionController(
   }
 
   async function forkTurn(turn: UITurn): Promise<void> {
+    const epoch = context.selection
     const parent = context.current
     if (!parent || !turn.forkable || turn.endSeq === undefined || context.projection?.opState !== null)
       throw new Error(context.t('app.fork.notIdle'))
     const forked = await context.client.session.fork(parent.id, turn.endSeq)
+    if (context.selection !== epoch || context.current !== parent) return
     await open(forked.id, { created: forked })
+    if (context.selection !== epoch + 1 || context.current?.id !== forked.id) return
     context.notice.setText(context.t('app.fork.created'))
     context.notice.setKind('')
     context.composerRuntime.focus()

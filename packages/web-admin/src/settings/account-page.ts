@@ -1,4 +1,6 @@
+import type { ConfigAccount } from '@agnes/protocol'
 import { ACCOUNT_PAGE_IDS, SUBPAGE_CLOSE_EVENT, setSettingsAccountPage } from '@agnes/web-ui'
+import { optionalElement } from './dialog.js'
 
 /**
  * The account form as a page of the settings dialog. Adding opens 「添加账户」 and editing opens the
@@ -12,7 +14,7 @@ export function bindAccountPage(
   fallback: HTMLDialogElement | null | undefined,
   onLeave: () => void,
   /** The add page was opened from outside the controller (a link): start a new account there. */
-  onEnter: () => void,
+  onEnter: (mode: 'add' | 'edit', accountId?: string | null) => void,
 ) {
   let host: HTMLElement | undefined
   let hostMode: 'add' | 'edit' | undefined
@@ -23,7 +25,7 @@ export function bindAccountPage(
   const row = (id: string) =>
     settings.ownerDocument.querySelector<HTMLButtonElement>(`[data-settings-drill="${id}"]`)
   setSettingsAccountPage({
-    attach(next, mode) {
+    attach(next, mode, accountId) {
       if (!form || !fallback) return () => {}
       host = next
       hostMode = mode
@@ -31,7 +33,10 @@ export function bindAccountPage(
       form.dataset.page = mode
       const fromLink = !requested
       requested = false
-      if (fromLink && mode === 'add') queueMicrotask(onEnter)
+      if (fromLink)
+        queueMicrotask(() => {
+          if (host === next) onEnter(mode, accountId)
+        })
       return () => {
         if (host !== next) return
         host = undefined
@@ -46,10 +51,14 @@ export function bindAccountPage(
   })
   return {
     /** Open the account page; false when this dialog has none and the fallback dialog is used. */
-    open(adding: boolean): boolean {
+    open(adding: boolean, accountId?: string): boolean {
       const mode = adding ? 'add' : 'edit'
       const target = row(adding ? ACCOUNT_PAGE_IDS.add : ACCOUNT_PAGE_IDS.edit)
       if (!target) return false
+      const url = new URL(location.href)
+      if (!adding && accountId) url.searchParams.set('account', accountId)
+      else url.searchParams.delete('account')
+      history.replaceState(history.state, '', url)
       // Closed a moment ago and opened again before it went away: it simply stays open.
       const reopening = closing && hostMode === mode
       if (reopening) closing = false
@@ -67,4 +76,39 @@ export function bindAccountPage(
       return true
     },
   }
+}
+
+/** Restore a linked account only while the same address still owns the surface. */
+export function linkedAccountRestorer(
+  dialog: HTMLDialogElement,
+  open: () => Promise<void>,
+  accounts: () => readonly ConfigAccount[] | undefined,
+  edit: (id?: string) => void,
+) {
+  const restore = (mode: 'add' | 'edit', accountId?: string | null) => {
+    if (!dialog.isConnected) return
+    const address = location.href
+    void open().then(() => {
+      if (!dialog.isConnected || !dialog.open || location.href !== address) return
+      const id = mode === 'edit' ? accountId : undefined
+      if (id && !accounts()?.some((account) => account.accountId === id)) return
+      edit(id ?? undefined)
+    })
+  }
+  return Object.assign(restore, {
+    async openRoute(route?: string) {
+      await open()
+      if (!dialog.isConnected || !dialog.open) return
+      const account = accounts()?.find((row) => row.route === route)
+      if (account) edit(account.accountId)
+    },
+  })
+}
+
+export function showAccountDiscard(show: boolean): void {
+  const prompt = optionalElement('config-account-discard', 'div')
+  const actions = optionalElement('config-account-footer-actions', 'div')
+  if (prompt) prompt.hidden = !show
+  if (actions) actions.hidden = show
+  if (show) optionalElement('config-account-keep', 'button')?.focus()
 }

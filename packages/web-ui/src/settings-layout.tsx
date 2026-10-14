@@ -37,6 +37,7 @@ export function SettingsPage({
   description,
   actions,
   headingId,
+  routeId,
   bodyClassName,
   banner,
   toolbar,
@@ -50,6 +51,8 @@ export function SettingsPage({
     description?: ReactNode
     actions?: ReactNode
     headingId?: string
+    /** Canonical settings page identity; its subpages become URL levels. */
+    routeId?: string | undefined
     bodyClassName?: string
     banner?: ReactNode
     toolbar?: ReactNode
@@ -99,7 +102,7 @@ export function SettingsPage({
       ) : (
         // A top-level page drills into subpages and undoes its last saved change with ⌘Z.
         <SettingsUndoScope>
-          <SettingsSubpageFrame header={header} rootTitle={title}>
+          <SettingsSubpageFrame header={header} rootTitle={title} routeId={routeId}>
             <SettingsPageFrameContext.Provider value={frame}>{body}</SettingsPageFrameContext.Provider>
           </SettingsSubpageFrame>
         </SettingsUndoScope>

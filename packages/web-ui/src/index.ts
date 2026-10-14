@@ -28,7 +28,9 @@ export { ConversationCardLayout } from './conversation/card-layout.js'
 export {
   clearResources,
   invalidateResource,
+  queueResourceWrite,
   type ResourceState,
+  scopedResourceKey,
   setResource,
   trackPageRequest,
   usePageRequestsInFlight,
@@ -231,6 +233,7 @@ export {
   setSettingsNavAttention,
 } from './ui/settings-controls.js'
 export {
+  SETTINGS_ROUTE_EVENT,
   SettingsDrill,
   SettingsExpand,
   SettingsInfo,

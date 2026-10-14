@@ -149,14 +149,11 @@ export function ContextPanel({ canSave }: { canSave: boolean }) {
     }
   }, [reads])
   const config = useAutosave<Config>({
+    resourceKey: 'settings:context',
     stored: snapshot?.config,
     equal: sameConfig,
     save: async (next) => {
-      const value = await contextRequest(
-        { ...(cwd ? { cwd } : {}), config: next },
-        fetch,
-        lifetime.current?.signal,
-      )
+      const value = await contextRequest({ ...(cwd ? { cwd } : {}), config: next }, fetch)
       setSnapshot(value)
     },
   })

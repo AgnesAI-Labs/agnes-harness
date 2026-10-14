@@ -10,6 +10,7 @@ import {
   PushPage,
   PushStack,
   searchParamRoute,
+  setResource,
   TopProgress,
   trackPageRequest,
   usePushStack,
@@ -296,3 +297,20 @@ describe('the breadcrumb on its own', () => {
     expect((q(disabled, '[data-testid="push-back"]') as HTMLButtonElement).disabled).toBe(true)
   })
 })
+it.each(['success', 'failure'])(
+  'keeps a committed write when an older read ends with %s',
+  async (outcome) => {
+    let resolve!: (value: string) => void
+    let reject!: (error: Error) => void
+    const read = () =>
+      new Promise<string>((yes, no) => {
+        resolve = yes
+        reject = no
+      })
+    const host = render(createElement(Reader, { name: 'settings:commit', read }))
+    act(() => setResource('settings:commit', 'saved'))
+    await act(async () => (outcome === 'success' ? resolve('old') : reject(new Error('old failure'))))
+    expect(q(host, '[data-testid="content"]')?.textContent).toBe('saved')
+    expect(q(host, '[data-testid="loadable-error"]')).toBeNull()
+  },
+)

@@ -52,6 +52,21 @@ vi.mock('@agnes/web-admin/settings', async (importOriginal) => {
   }
 })
 
+const selectionController = vi.hoisted(() => ({
+  open: undefined as ((id: string) => Promise<void>) | undefined,
+}))
+vi.mock('../src/app/session-controller.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/app/session-controller.js')>()
+  return {
+    ...actual,
+    createSessionController: (context: Parameters<typeof actual.createSessionController>[0]) => {
+      const controller = actual.createSessionController(context)
+      selectionController.open = controller.open
+      return controller
+    },
+  }
+})
+
 const binding = vi.hoisted(() => ({
   bindWebSession: vi.fn(),
   loadWebSession: vi.fn(),
@@ -2930,6 +2945,55 @@ describe('incremental opening', () => {
     })
     const notice = document.getElementById('notice') as HTMLElement
     await vi.waitFor(() => expect(notice.dataset.kind).toBe('session-recovery'))
+  })
+
+  it('keeps the selected session when failed opening cleanup finishes late', async () => {
+    const cleanup = deferred<void>()
+    const next = session('next', async () => idleTimeline('next'))
+    const { old } = await bootWith(
+      async () => {
+        throw new Error('old opening failed')
+      },
+      true,
+      (old) => old.detach.mockImplementationOnce(() => cleanup.promise),
+      {
+        session: {
+          list: vi.fn(async () => ({
+            items: [
+              { sessionId: 'old', title: 'Old' },
+              { sessionId: 'next', title: 'Next' },
+            ],
+          })),
+        },
+      },
+    )
+    await vi.waitFor(() => expect(old.detach).toHaveBeenCalled())
+    binding.loadWebSession.mockResolvedValue({ session: next, offPermission: vi.fn() })
+    await vi.waitFor(() => expect(document.querySelector('[data-session="next"]')).not.toBeNull())
+    const opening = selectionController.open?.('next')
+    await opening
+    await vi.waitFor(() => expect(next.projectUIOpening).toHaveBeenCalled())
+    await vi.waitFor(() => expect(document.getElementById('task-title')?.textContent).toBe('Next'))
+    cleanup.resolve()
+    await act(async () => cleanup.promise)
+    expect(document.getElementById('notice')?.dataset.kind).not.toBe('session-recovery')
+    expect(document.getElementById('notice')?.textContent).not.toContain('old opening failed')
+    expect(document.getElementById('task-title')?.textContent).toBe('Next')
+    expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false)
+  })
+
+  it('restores the settings page and subpage named by the startup address', async () => {
+    await bootWith(
+      async () => idleTimeline('old'),
+      true,
+      () => {
+        history.replaceState(null, '', '/?session=old&settings=model/add-account')
+      },
+    )
+    await vi.waitFor(() => expect((document.getElementById('config') as HTMLDialogElement).open).toBe(true))
+    await vi.waitFor(() => expect(document.querySelector('[data-testid="account-page-add"]')).not.toBeNull())
+    expect(new URL(location.href).searchParams.get('settings')).toBe('model/add-account')
+    expect(new URL(location.href).searchParams.get('session')).toBe('old')
   })
 
   it('points to a pending approval before the loaded window without offering a verdict', async () => {

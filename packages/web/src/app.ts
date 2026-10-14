@@ -2,7 +2,7 @@ import { defaultLoop, defaultModelAdapter } from '@agnes/protocol'
 import type { SessionControlStateResult } from '@agnes/protocol/gen/agnes-v1'
 import { createFirstRunController, needsFirstRun } from '@agnes/web-admin/first-run'
 import { factChainLinks, workbenchNavigation } from '@agnes/web-client'
-import { bindDialogSheets, createCatalogTranslator } from '@agnes/web-ui'
+import { bindDialogSheets, createCatalogTranslator, searchParamRoute } from '@agnes/web-ui'
 import { settingsRoute, sortSessionsByRecency } from '@agnes/web-units'
 import { createAppearanceController } from './app/appearance-controller.js'
 import { createCommandController } from './app/command-controller.js'
@@ -749,8 +749,16 @@ function renderReconnect(phase: ReconnectPhase): void {
 // 之前名册按空处理（fail-closed，不加载任何模块）。
 const customModuleListeners = new Set<() => void>()
 const moduleExtIds = new Map<string, string[]>()
+let selection = 0
+let profileName = ''
 let moduleSessionId: string | undefined
 const rosterSource: RosterSource = {
+  identity: () => JSON.stringify([profileName, moduleSessionId, selection]),
+  commit(roster) {
+    moduleExtIds.clear()
+    for (const mod of roster.modules) moduleExtIds.set(mod.rowId ?? mod.packageId, mod.extIds)
+    for (const listener of customModuleListeners) listener()
+  },
   async list() {
     if (!profileName) return { revision: '', modules: [], statuses: [] }
     const roster = await client.clientModules.list(profileName, moduleSessionId)
@@ -786,12 +794,6 @@ const rosterSource: RosterSource = {
         },
       ]
     })
-    for (const listener of customModuleListeners) listener()
-    // 认领真源（WC9）：名册刷新即重建 owner(browser row) → extIds 映射。
-    // A package may publish several independent browser rows, so packageId is
-    // deliberately not used as the slot-owner key here.
-    moduleExtIds.clear()
-    for (const mod of modules) moduleExtIds.set(mod.rowId ?? mod.packageId, mod.extIds)
     return {
       revision: roster.revision,
       modules,
@@ -1107,7 +1109,6 @@ const childControlRefreshTimer = setInterval(() => {
 }, 1500)
 onPageHide(() => clearInterval(childControlRefreshTimer))
 let projection: UITimeline | undefined
-let selection = 0
 let listGeneration = 0
 let live: LiveProjection | undefined
 // The window's first node is the session's first, so its first user message titles the task.
@@ -1154,7 +1155,7 @@ let draftPreset: string | undefined
 let draftBundles: string[] = []
 let runtimeCatalog: import('@agnes/protocol').RuntimeAdminSnapshot | undefined
 const startupRequest = new URLSearchParams(location.search)
-// A settings link opens its page once; the address no longer names it afterwards.
+// Settings and nested pages keep their address across reload and history traversal.
 const startupSettingsLink = consumeSettingsLink()
 const startupSettingsAnchor = startupSettingsLink.anchor
 let startupSettingsDismissed = false
@@ -1226,7 +1227,6 @@ let sessionYoloEnabled: boolean | undefined
 let permissionSelectionSeq = 0
 let submissionGeneration = 0
 // daemon 自己报出的 profile（config.get() 后才知道）；皮肤清单与客户端模块名册都必须把它传回去。
-let profileName = ''
 const receipts = new Map<string, RunReceipt>()
 const sessionLabels = new Map<string, string>()
 const sessionTitles = new Map<string, string>()
@@ -1288,11 +1288,43 @@ const settings = createSettingsController({
   client,
   onSaved: savedConfiguration,
   onError: showError,
+  onOpen: () => {
+    const address = searchParamRoute('settings')
+    if (!address.read().length)
+      history.pushState(
+        history.state,
+        '',
+        address.href([settingsRegion.form()?.dataset.settingsSection ?? 'model']),
+      )
+  },
   onClose: () => {
     startupSettingsDismissed = true
     clearSettingsLink()
   },
 })
+const restoreSettingsLocation = () => {
+  const moved = rewriteMovedSettingsLink()
+  if (moved?.kind === 'page') {
+    settings.close()
+    homeNavigation.open(moved.page, moved.tab ? { tab: moved.tab } : undefined)
+    return
+  }
+  const id = consumeSettingsLink().id
+  if (!id) {
+    if (settings.isOpen()) settings.close()
+    return
+  }
+  if (movedSettingsTarget(id)) {
+    openMovedSettingsLink(id, {
+      searchSessions: () => sessionSearch.open(),
+      showArchived: () => archivedSessions.show('archived'),
+    })
+    return
+  }
+  settingsRegion.route(id)
+  if (!settings.isOpen()) run(() => settings.open())
+}
+const stopSettingsRouting = onHistoryNavigation(restoreSettingsLocation)
 onSurfaceEvent('agnes:permission-settings', () =>
   run(async () => {
     settingsRegion.open('model')
@@ -2132,7 +2164,9 @@ onPageVisible(() => {
   scheduleClientRosterRead()
 })
 onHistoryNavigation(() => {
-  const id = new URL(location.href).searchParams.get('session')
+  const params = new URL(location.href).searchParams
+  const id = params.get('session')
+  if (!id && params.has('settings')) return
   run(async () => {
     if (id) {
       if (current?.id !== id) await open(id)
@@ -2165,6 +2199,7 @@ onPageHide(() => {
   intentionalClose = true
   stopConnectionEvents()
   stopSettingsTerminal()
+  stopSettingsRouting()
   statusCheck.dispose()
   stopHomeRouting()
   for (const stop of stopHomeSelection) stop()
@@ -2289,7 +2324,7 @@ run(async () => {
     showModelNotice()
     return
   }
-  const startupSettings = startupRequest.get('settings') ?? ''
+  const startupSettings = startupSettingsLink.id
   // A link to the old history or archive page opens the sidebar's search or archived list instead.
   const startupTerminal = settingsRoute(startupSettings).terminal === true
   const startupMoved = movedSettingsTarget(startupSettings)

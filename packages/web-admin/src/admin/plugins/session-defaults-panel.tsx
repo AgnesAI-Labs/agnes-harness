@@ -96,6 +96,7 @@ export function SessionDefaultsPanel({
     model: storedAdapter?.model ?? '',
   }
   const choice = useAutosave<Choice>({
+    resourceKey: 'settings:session-defaults',
     stored,
     equal: sameChoice,
     save: async (next) => {
