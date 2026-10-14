@@ -2176,13 +2176,13 @@ describe('web session selection', () => {
     composer.value = '尚未发送的草稿'
     composer.dispatchEvent(new Event('input', { bubbles: true }))
     const removeItemId = pendingInputs[1]?.itemId
-    const remove = document.querySelector<HTMLButtonElement>(
-      '.composer-queue li:nth-child(2) .composer-queue-remove',
-    )
+    // Delete is the line's icon action: named for the message it removes, its tooltip says 删除.
+    const remove = document
+      .querySelectorAll<HTMLElement>('[data-testid="queued-steer"]')[1]
+      ?.querySelector<HTMLButtonElement>('[data-testid="queued-steer-withdraw"]')
     if (!remove) throw new Error('missing queued input deletion')
     expect(remove.type).toBe('button')
-    expect(remove.textContent).toBe('删除')
-    expect(remove.getAttribute('aria-label')).toBe('删除第 2 条待执行消息')
+    expect(remove.getAttribute('aria-label')).toBe('删除第 2 条消息')
     expect(cancel.disabled).toBe(false)
     expect(running.cancel).not.toHaveBeenCalled()
     const removing = deferred<number>()
@@ -2191,8 +2191,8 @@ describe('web session selection', () => {
     remove.click()
     expect(running.removeQueued).toHaveBeenCalledExactlyOnceWith(removeItemId)
     expect(remove.disabled).toBe(true)
+    // In flight it spins in place of its icon; the state is aria-busy, not a changed label.
     expect(remove.getAttribute('aria-busy')).toBe('true')
-    expect(remove.textContent).toBe('正在删除…')
     expect(
       Array.from(document.querySelectorAll<HTMLButtonElement>('.composer-queue button')).every(
         (button) => button.disabled,
