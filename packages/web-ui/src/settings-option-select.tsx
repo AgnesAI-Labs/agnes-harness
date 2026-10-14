@@ -61,7 +61,14 @@ export function setSettingsSelectOptions(
   if (select.dispatchEvent(event)) throw new Error(`settings select #${select.id} is not mounted by React`)
 }
 
-export function SettingsOptionSelect({ id }: { id: string }) {
+export function SettingsOptionSelect({
+  id,
+  'aria-labelledby': labelledBy,
+}: {
+  id: string
+  /** The setting row's label, so the picker is named by what the row shows. */
+  'aria-labelledby'?: string
+}) {
   const ref = useRef<HTMLSelectElement>(null)
   const [content, setContent] = useState<SelectContent>({ options: [], groups: [] })
 
@@ -72,7 +79,7 @@ export function SettingsOptionSelect({ id }: { id: string }) {
   }, [])
 
   return (
-    <SettingsSelect id={id} ref={ref}>
+    <SettingsSelect id={id} ref={ref} {...(labelledBy ? { 'aria-labelledby': labelledBy } : {})}>
       {optionNodes(content)}
     </SettingsSelect>
   )

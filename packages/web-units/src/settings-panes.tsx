@@ -93,9 +93,9 @@ export function SettingsStaticPane({
                   />
                 </fieldset>
               </SettingsItem>
-              <SettingsItem label={text('settings-shell.skin', '皮肤')}>
+              <SettingsItem label={text('settings-shell.skin', '皮肤')} labelId="skin-select-label">
                 <span className="appearance-picker">
-                  <SettingsOptionSelect id="skin-select" />
+                  <SettingsOptionSelect id="skin-select" aria-labelledby="skin-select-label" />
                   <span id="skin-option-items" />
                 </span>
               </SettingsItem>
@@ -124,9 +124,12 @@ export function SettingsStaticPane({
                   />
                 </fieldset>
               </SettingsItem>
-              <SettingsItem label={text('settings.appearance.language', '语言')}>
+              <SettingsItem
+                label={text('settings.appearance.language', '语言')}
+                labelId="locale-select-label"
+              >
                 <span className="appearance-picker">
-                  <SettingsOptionSelect id="locale-select" />
+                  <SettingsOptionSelect id="locale-select" aria-labelledby="locale-select-label" />
                 </span>
               </SettingsItem>
             </SettingsBlock>

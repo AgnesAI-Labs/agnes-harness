@@ -17,8 +17,9 @@ it('uses the same-document selection when storing the locale fails', async () =>
   localStorage.setItem(LOCALE_STORAGE_KEY, 'en')
   const runtime = await mountRenderedIndex()
   const picker = document.querySelector<HTMLSelectElement>('#appearance-settings-pane #locale-select')!
-  const label = picker.closest('fieldset')?.querySelector('legend')
-  expect(label).not.toBeNull()
+  // The picker is named by its setting row's label.
+  const label = document.getElementById(picker.getAttribute('aria-labelledby') ?? '')
+  expect(label?.textContent).toBe(webLocaleCatalog.en?.['settings.appearance.language'])
   const storage = safeThemeStorage()
   bindAppearance({
     scope: document,
