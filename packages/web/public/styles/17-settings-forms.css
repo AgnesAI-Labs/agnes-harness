@@ -913,6 +913,8 @@
 
   /* Colour scheme: a section of its own above the rows, three thumbnails that are the radios. */
   .appearance-options.appearance-schemes {
+    /* Sized by its thumbnails: a fixed minimum would let a full page squeeze the row under them. */
+    min-height: auto;
     flex-direction: column;
     align-items: stretch;
     justify-content: flex-start;

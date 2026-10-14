@@ -1676,6 +1676,15 @@
   }
   .agnes-settings-item[data-stacked] > .agnes-settings-item-control {
     justify-content: flex-start;
+    flex-wrap: wrap;
+    margin-inline-start: 0;
+  }
+  /* A stacked text field takes the row's full width, under its label. */
+  .agnes-settings-item[data-stacked]
+    > .agnes-settings-item-control
+    > :is(textarea, input[type="text"], input:not([type])) {
+    flex: 1 1 12rem;
+    min-width: 0;
   }
   .agh-plugin-source-line {
     display: flex;
@@ -1734,6 +1743,36 @@
   }
   .agnes-settings-stack > :is(section, form) > :is(p, h3, h4) {
     margin-block: 0;
+  }
+  /* Rows inside an open section are already framed by it: a group there keeps its rows and
+   hairlines and draws no second outline, however deep in the section it sits. */
+  .agh-disclosure[data-variant="card"]
+    > .agh-disclosure-body
+    :is(.agnes-settings-stack, .agnes-settings-section)
+    > .agnes-settings-group {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  .agh-disclosure[data-variant="card"]
+    > .agh-disclosure-body
+    :is(.agnes-settings-stack, .agnes-settings-section)
+    > .agnes-settings-group
+    > :is(.agnes-settings-item, .agh-disclosure[data-variant]) {
+    padding-inline: 0;
+  }
+  .agh-disclosure[data-variant="card"]
+    > .agh-disclosure-body
+    :is(.agnes-settings-stack, .agnes-settings-section)
+    > .agnes-settings-group
+    > *
+    + *::before {
+    inset-inline: 0;
+  }
+  /* Rows revealed by a fold inside a group line up with the group's own rows. */
+  .agnes-settings-group > .agh-disclosure[data-variant="row"] > .agh-disclosure-body > .agnes-settings-item {
+    min-height: 0;
+    padding-inline: 0;
   }
   /* Read-only code or prompt text: one quiet block that scrolls inside itself, copy in its corner. */
   .agnes-settings-code {

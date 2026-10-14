@@ -86,6 +86,26 @@
   .agnes-settings-page-heading > .agnes-settings-actions:empty {
     display: none;
   }
+  /* The dialog's close button owns the top corner: a page's own actions sit on the description's
+   line, a row below it, as quiet small icons. */
+  #settings-sections-pane
+    > div
+    > .agnes-settings-page
+    > .agnes-settings-page-heading
+    > .agnes-settings-actions {
+    align-self: flex-end;
+    min-height: 0;
+  }
+  #settings-sections-pane
+    > div
+    > .agnes-settings-page
+    > .agnes-settings-page-heading
+    > .agnes-settings-actions
+    .agh-btn--icon
+    .icon {
+    width: var(--s16);
+    height: var(--s16);
+  }
 
   /* Tabs: a group of pages carries the title; its tabs sit under it and the page adds no second
    heading, only its description and actions. */

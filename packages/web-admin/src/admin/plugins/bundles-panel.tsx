@@ -225,7 +225,7 @@ export function BundlesPanel({
           })}
         </SettingsGroup>
       )}
-      {snapshot && (
+      {snapshot && rows.length > 0 && (
         <SettingsFooter status={message ? t(message) : t('bundles.description')}>
           <Button
             appearance="primary"

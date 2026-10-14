@@ -318,22 +318,10 @@ const definitions: readonly [
           >
             <ContextPanel canSave={c.canSave} />
           </Subsection>
-          <Subsection
-            defer
-            id="memory"
-            icon="history"
-            title={t('agentMemory')}
-            description={t('agentMemoryHelp')}
-          >
+          <Subsection defer id="memory" icon="history" title={t('agentMemory')}>
             <MemoryPanel canSave={c.canSave} />
           </Subsection>
-          <Subsection
-            defer
-            id="subagents"
-            icon="git-branch"
-            title={t('agentEngines')}
-            description={t('agentEnginesHelp')}
-          >
+          <Subsection defer id="subagents" icon="git-branch" title={t('agentEngines')}>
             <ChildEnginesPanel api={c.api} canSave={c.canSave} t={t} />
           </Subsection>
           <PromptSubsection canSave={c.canSave} t={t} />
