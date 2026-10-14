@@ -1213,14 +1213,11 @@
     cursor: pointer;
   }
   .agnes-question-option-key.agh-kbd {
-    display: inline-grid;
-    place-items: center;
-    min-width: 1.125rem;
     font-variant-numeric: tabular-nums;
   }
-  .agnes-question-option[data-selected] .agnes-question-option-key.agh-kbd {
-    border-color: var(--agnes-brand-primary);
+  .agnes-question-option[data-selected] .agnes-question-option-key .agh-kbd-key {
     color: var(--agnes-brand-primary);
+    background: var(--agnes-bg-selected);
   }
   .agnes-question-option-text {
     flex: 1 1 auto;

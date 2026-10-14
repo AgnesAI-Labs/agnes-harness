@@ -67,6 +67,7 @@ export {
 } from './locales/index.js'
 export {
   isNewSessionShortcut,
+  newSessionShortcutKeys,
   newSessionShortcutLabel,
   sortSessionsByRecency,
   untitledSessionLabel,

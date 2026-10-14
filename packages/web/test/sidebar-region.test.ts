@@ -119,7 +119,10 @@ describe('rendered sidebar region', () => {
     }
     runtime = await mountRenderedIndex({ sidebar: { state, actions: { newSession } } })
     const sidebar = document.querySelector('aside.sidebar')
-    expect(sidebar?.querySelector('#new kbd')?.textContent).toMatch(/O$/)
+    // The shortcut is one keycap per key, ending in O on every platform.
+    const caps = [...(sidebar?.querySelectorAll('#new kbd.agh-kbd > .agh-kbd-key') ?? [])]
+    expect(caps).toHaveLength(3)
+    expect(caps.at(-1)?.textContent).toBe('O')
     expect(sidebar?.querySelector('.session-running')).toBeNull()
 
     flushSync(() => runtime?.sidebar?.setRunning(['two']))
@@ -432,6 +435,9 @@ describe('rendered sidebar region', () => {
         [...(sidebar?.querySelectorAll('[data-testid^="home-entry-"]') ?? [])].map((entry) =>
           entry.getAttribute('data-testid'),
         )
+      // The FDE entry is named "Agent"; its built-in registration adds FDE as a quiet note.
+      const agents = sidebar?.querySelector('[data-testid="home-entry-agents"]')
+      expect(agents?.querySelector('.home-entry-label')?.firstChild?.textContent).toBe('Agent')
       expect(ids()).toEqual([
         'home-entry-agents',
         'home-entry-plugins',

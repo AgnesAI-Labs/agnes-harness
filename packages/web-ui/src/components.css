@@ -154,22 +154,35 @@
   .agh-btn--secondary:hover:not(:disabled):not([aria-disabled="true"]) {
     background: var(--agnes-bg-fill-hover);
   }
-  /* Keyboard hint chip: small, quiet, never the primary label. */
+  /* Keyboard hint: one small rounded keycap per key, a light fill and no outline, never the primary
+   label. */
   .agh-kbd {
     flex: 0 0 auto;
-    padding: 0 var(--s4);
-    border: 1px solid var(--agnes-line-primary);
-    border-bottom-width: 2px;
-    border-radius: var(--radius-sm);
-    color: var(--agnes-text-tertiary);
-    background: var(--agnes-bg-page);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.1875rem;
     /* The UI face, not the mono one: at this size a mono capital O reads as a zero. */
     font-family: var(--font-sans);
     font-size: 0.6875rem;
     font-weight: var(--font-weight-medium);
-    letter-spacing: 0.04em;
-    line-height: 1.125rem;
     white-space: nowrap;
+  }
+  .agh-kbd-key {
+    display: inline-grid;
+    place-items: center;
+    min-width: 1.25rem;
+    height: 1.25rem;
+    padding: 0 0.3125rem;
+    border-radius: 0.3125rem;
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-fill);
+    line-height: 1;
+  }
+  /* A tooltip that names its shortcut: the label, then the keycaps. */
+  .agh-tooltip-shortcut {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s8);
   }
   .agh-tag {
     display: inline-flex;

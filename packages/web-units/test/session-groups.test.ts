@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   isNewSessionShortcut,
+  newSessionShortcutKeys,
   newSessionShortcutLabel,
   sortSessionsByRecency,
   untitledSessionLabel,
@@ -53,6 +54,9 @@ describe('new session shortcut', () => {
     expect(newSessionShortcutLabel('MacIntel')).toBe('⇧⌘O')
     expect(newSessionShortcutLabel('Win32')).toBe('Ctrl+Shift+O')
     expect(newSessionShortcutLabel('')).toBe('Ctrl+Shift+O')
+    // One keycap per key, in the order each platform writes the chord.
+    expect(newSessionShortcutKeys('MacIntel')).toEqual(['⇧', '⌘', 'O'])
+    expect(newSessionShortcutKeys('Win32')).toEqual(['Ctrl', 'Shift', 'O'])
   })
 })
 

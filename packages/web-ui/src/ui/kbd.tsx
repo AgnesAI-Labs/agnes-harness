@@ -20,15 +20,33 @@ export function shortcutLabel(
     : names.join('+')
 }
 
+/** Each key as the current platform names it: `⌘ ⇧ O` on Apple keyboards, `Ctrl Shift O` elsewhere. */
+export function shortcutKeys(
+  keys: readonly ShortcutKey[],
+  apple = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform),
+): string[] {
+  return keys.map((key) => (apple ? APPLE : OTHER)[key] ?? key)
+}
+
 export type KbdProps = HTMLAttributes<HTMLElement> & {
-  /** Keys spelled for the current platform; takes the place of children. */
+  /** Keys spelled for the current platform, one keycap each; takes the place of children. */
   keys?: readonly ShortcutKey[]
 }
-/** A quiet keyboard hint chip; the keys are read aloud by the owning control's shortcut text. */
+/**
+ * A quiet keyboard hint: one rounded keycap per key, side by side (`⇧` `⌘` `O`). Children render as
+ * a single keycap. The keys are read aloud by the owning control's shortcut text.
+ */
 export function Kbd({ className, children, keys, ...props }: KbdProps) {
+  const caps = keys ? shortcutKeys(keys) : [children]
   return (
     <kbd {...props} className={['agh-kbd', className].filter(Boolean).join(' ')} translate="no">
-      {keys ? shortcutLabel(keys) : children}
+      {caps.map((cap, index) => (
+        // Keys repeat only in different positions, so the position is the identity.
+        // biome-ignore lint/suspicious/noArrayIndexKey: a chord's keys never reorder
+        <span key={index} className="agh-kbd-key">
+          {cap}
+        </span>
+      ))}
     </kbd>
   )
 }

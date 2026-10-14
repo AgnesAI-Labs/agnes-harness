@@ -8,10 +8,12 @@ import {
   CopyButton,
   Count,
   Disclosure,
+  IconButton,
   Kbd,
   Menu,
   mountRegion,
   StatusDot,
+  shortcutKeys,
   shortcutLabel,
   Tag,
   Toast,
@@ -136,6 +138,25 @@ it('explains a disabled action immediately on keyboard focus', async () => {
   expect(host.querySelector('button')?.getAttribute('aria-describedby')).toBeTruthy()
   key(host.querySelector('[tabindex="0"]')!, 'Escape')
   await vi.waitFor(() => expect(host.querySelector('button')?.getAttribute('aria-describedby')).toBeNull())
+})
+it('names an icon action and its shortcut as keycaps in the tooltip', async () => {
+  const host = render(
+    createElement(IconButton, { name: 'search', label: 'Search sessions', shortcut: ['⌘', 'K'] }),
+  )
+  const button = host.querySelector('button')!
+  // The accessible name is the action; the shortcut is only shown.
+  expect(button.getAttribute('aria-label')).toBe('Search sessions')
+  button.focus()
+  const tooltip = await vi.waitFor(() => {
+    const found = document.querySelector('[role="tooltip"] .agh-tooltip-shortcut')
+    expect(found).toBeTruthy()
+    return found!
+  })
+  expect(tooltip.firstChild?.textContent).toBe('Search sessions')
+  expect([...tooltip.querySelectorAll('kbd.agh-kbd .agh-kbd-key')].map((cap) => cap.textContent)).toEqual([
+    '⌘',
+    'K',
+  ])
 })
 it('announces success without stealing focus and cleans up the expiry on unmount', async () => {
   const dismiss = vi.fn()
@@ -322,10 +343,20 @@ it('spells shortcuts for the platform and renders them as an untranslated hint c
   expect(shortcutLabel(['mod', 'shift', 'enter'], true)).toBe('⌘⇧↵')
   expect(shortcutLabel(['mod', 'esc'], true)).toBe('⌘ Esc')
   expect(shortcutLabel(['mod', 'shift', 'N'], false)).toBe('Ctrl+Shift+N')
-  const host = render(createElement(Kbd, null, '⌘N'))
+  expect(shortcutKeys(['shift', 'mod', 'O'], true)).toEqual(['⇧', '⌘', 'O'])
+  expect(shortcutKeys(['mod', 'shift', 'O'], false)).toEqual(['Ctrl', 'Shift', 'O'])
+  // Each key is its own keycap.
+  const host = render(createElement(Kbd, { keys: ['⇧', '⌘', 'O'] }))
   const chip = host.querySelector('kbd.agh-kbd')
-  expect(chip?.textContent).toBe('⌘N')
+  expect([...(chip?.querySelectorAll('.agh-kbd-key') ?? [])].map((key) => key.textContent)).toEqual([
+    '⇧',
+    '⌘',
+    'O',
+  ])
   expect(chip?.getAttribute('translate')).toBe('no')
+  // Children are a single keycap.
+  const single = render(createElement(Kbd, null, '↑')).querySelector('kbd.agh-kbd')
+  expect([...(single?.querySelectorAll('.agh-kbd-key') ?? [])].map((key) => key.textContent)).toEqual(['↑'])
 })
 it('toggles a disclosure from its button, names the region it controls and keeps closed content mounted', () => {
   const changes: boolean[] = []

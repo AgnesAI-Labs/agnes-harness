@@ -1,14 +1,17 @@
 import { Tooltip as AntTooltip, type TooltipProps as AntTooltipProps } from 'antd'
 import { cloneElement, type ReactElement, useId, useState } from 'react'
+import { Kbd, type ShortcutKey } from './kbd.js'
 
 export type TooltipProps = Omit<AntTooltipProps, 'children' | 'title' | 'open' | 'trigger' | 'disabled'> & {
   title: string
   children?: ReactElement<{ 'aria-describedby'?: string | undefined }>
   /** Disabled native controls need a keyboard-accessible explanation. */
   disabled?: boolean | undefined
+  /** The action's keyboard shortcut, shown as keycaps after the title. */
+  shortcut?: readonly ShortcutKey[] | undefined
 }
 /** Hover waits 500ms; focus reveals the explanation immediately. */
-export function Tooltip({ title, children, disabled = false, ...props }: TooltipProps) {
+export function Tooltip({ title, children, disabled = false, shortcut, ...props }: TooltipProps) {
   const [open, setOpen] = useState(false)
   const id = useId()
   if (!children) return null
@@ -31,7 +34,16 @@ export function Tooltip({ title, children, disabled = false, ...props }: Tooltip
         }
       }
       id={id}
-      title={title}
+      title={
+        shortcut ? (
+          <span className="agh-tooltip-shortcut">
+            {title}
+            <Kbd keys={shortcut} />
+          </span>
+        ) : (
+          title
+        )
+      }
       open={visible}
       trigger="hover"
       mouseEnterDelay={0.5}

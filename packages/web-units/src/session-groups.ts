@@ -13,9 +13,14 @@ export function sortSessionsByRecency<Row extends { createdAt?: string }>(rows: 
     .map((entry) => entry.row)
 }
 
-/** The chip shown beside "New session"; browsers reserve ⌘N/Ctrl+N, so the page binds this chord. */
+/** The keys shown beside "New session"; browsers reserve ⌘N/Ctrl+N, so the page binds this chord. */
+export function newSessionShortcutKeys(platform: string): string[] {
+  return /mac|iphone|ipad/i.test(platform) ? ['⇧', '⌘', 'O'] : ['Ctrl', 'Shift', 'O']
+}
+
+/** The same chord as one string: `⇧⌘O`, or `Ctrl+Shift+O`. */
 export function newSessionShortcutLabel(platform: string): string {
-  return /mac|iphone|ipad/i.test(platform) ? '⇧⌘O' : 'Ctrl+Shift+O'
+  return newSessionShortcutKeys(platform).join(/mac|iphone|ipad/i.test(platform) ? '' : '+')
 }
 
 export function isNewSessionShortcut(

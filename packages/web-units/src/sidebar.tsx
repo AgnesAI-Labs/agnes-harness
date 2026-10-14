@@ -12,7 +12,7 @@ import {
   useSyncExternalStore,
 } from 'react'
 import type { Translate } from './locales/index.js'
-import { isNewSessionShortcut, newSessionShortcutLabel } from './session-groups.js'
+import { isNewSessionShortcut, newSessionShortcutKeys } from './session-groups.js'
 export type SessionAction = 'rename' | 'fork' | 'archive'
 
 export interface SidebarNavigationOptions {
@@ -246,7 +246,7 @@ const SidebarBuiltin = forwardRef<
         >
           <Icon name="plus" />
           <span>{t('sidebar.newSession')}</span>
-          <Kbd aria-hidden="true">{newSessionShortcutLabel(globalThis.navigator?.platform ?? '')}</Kbd>
+          <Kbd aria-hidden="true" keys={newSessionShortcutKeys(globalThis.navigator?.platform ?? '')} />
         </Button>
       </div>
       {slots?.entries}
