@@ -13,6 +13,7 @@ import {
   pluginPresentationCatalog,
   Select,
   SettingsDetails,
+  SettingsSelect,
   SettingsState,
   Tag,
   useUiText,
@@ -23,6 +24,20 @@ import type { PluginView } from './admin-view.js'
 import { isBusinessAgent, PluginToolbar } from './plugins-tab.js'
 
 type Text = (key: string, vars?: Readonly<Record<string, string | number>>) => string
+
+export const MARKET_TYPES = ['agent', 'tool', 'skills', 'mcp', 'ui', 'runtime'] as const
+export type MarketType = (typeof MARKET_TYPES)[number]
+/** The marketplace types a package belongs to, read from its declared kinds; a package can be several. */
+export function marketTypes(item: PackageCatalogDescriptor): readonly MarketType[] {
+  const kinds: readonly string[] = item.kinds ?? []
+  return MARKET_TYPES.filter((type) =>
+    type === 'agent'
+      ? isBusinessAgent(item)
+      : type === 'runtime'
+        ? kinds.includes('loop') || kinds.includes('model-adapter')
+        : kinds.includes(type),
+  )
+}
 
 const official = (item: PackageCatalogDescriptor) =>
   ['official', 'example'].includes(item.presentation?.origin ?? '')
@@ -123,9 +138,10 @@ function MarketCard({
 
 /** Today's plugin catalog; a real marketplace later replaces the data source, not the page. */
 export function MarketTab({ view, t }: { view: PluginView; t: Text }) {
+  const [type, setType] = useState<MarketType | ''>('')
   const rows = view.state.catalog.filter(
     (item) =>
-      !isBusinessAgent(item) &&
+      (!type || marketTypes(item).includes(type)) &&
       (!view.kind || item.kinds?.includes(view.kind)) &&
       (!view.category || (item.metadata?.category ?? 'unclassified') === view.category),
   )
@@ -140,7 +156,26 @@ export function MarketTab({ view, t }: { view: PluginView; t: Text }) {
   ] as const
   return (
     <>
-      <PluginToolbar view={view} t={t} onQuery={() => void view.loadCatalog()} />
+      <PluginToolbar
+        view={view}
+        t={t}
+        onQuery={() => void view.loadCatalog()}
+        leading={
+          <SettingsSelect
+            aria-label={t('market.type')}
+            data-testid="market-type"
+            value={type}
+            onChange={(event) => setType(MARKET_TYPES.find((id) => id === event.target.value) ?? '')}
+          >
+            <option value="">{t('market.type.all')}</option>
+            {MARKET_TYPES.map((id) => (
+              <option key={id} value={id}>
+                {t(`market.type.${id}`)}
+              </option>
+            ))}
+          </SettingsSelect>
+        }
+      />
       <div className="plugins-page-callout">
         <IconTile name="bot" />
         <div>
@@ -157,7 +192,7 @@ export function MarketTab({ view, t }: { view: PluginView; t: Text }) {
         <EmptyState
           className="plugin-empty"
           icon={<Icon name="plug" size={48} />}
-          title={view.query || view.kind || view.category ? t('market.none') : t('market.empty')}
+          title={view.query || view.kind || view.category || type ? t('market.none') : t('market.empty')}
           description={t('market.emptyHelp')}
         />
       ) : (

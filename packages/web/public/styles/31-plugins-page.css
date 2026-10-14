@@ -223,12 +223,151 @@
     font-size: 0.78125rem;
     font-weight: var(--font-weight-semibold);
   }
+  /* A built-in capability's detail and the configuration its settings tab holds. */
+  .plugins-page-builtin .ant-tabs-nav {
+    margin-bottom: var(--s16);
+  }
+  .plugins-page-builtin .home-page-section + .home-page-section {
+    margin-top: var(--s20, 1.25rem);
+  }
+  .plugins-page-builtin-actions:empty {
+    display: none;
+  }
+  .plugins-page-builtin-label {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--s8);
+    margin: var(--s20, 1.25rem) 0 var(--s8);
+    padding-inline: var(--s4);
+    color: var(--agnes-text-secondary);
+    font-size: 0.78125rem;
+    font-weight: var(--font-weight-semibold);
+  }
+  .plugins-page-builtin-label small {
+    color: var(--agnes-text-tertiary);
+    font-size: inherit;
+    font-weight: 400;
+  }
+  .plugins-page-summary[data-attention] {
+    color: var(--agnes-status-warning-text);
+  }
+  .capability-panel {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s16);
+  }
+  .capability-panel > .agnes-settings-section {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s8);
+  }
+  .capability-panel .agnes-settings-section-heading small {
+    color: var(--agnes-text-tertiary);
+    font-size: 0.78125rem;
+  }
+  .capability-form {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s12);
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .capability-form-columns {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--s12);
+  }
+  .capability-facts {
+    display: grid;
+    gap: var(--s8);
+    margin: 0;
+  }
+  .capability-facts > div {
+    display: grid;
+    grid-template-columns: minmax(6rem, 9rem) minmax(0, 1fr);
+    gap: var(--s12);
+    font-size: var(--font-size-sm);
+  }
+  .capability-facts dt {
+    color: var(--agnes-text-secondary);
+  }
+  .capability-facts dd {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .capability-facts dd[translate="no"] {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+  }
+  /* What an enabled engine needs, opened under its own row inside the same card. */
+  .capability-engine-fields {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s12);
+    padding: var(--s4) var(--s16) var(--s16);
+    border-top: 1px solid var(--agnes-line-secondary, var(--agnes-line-primary));
+    background: var(--agnes-bg-subtle, transparent);
+  }
+  .capability-engine-flags {
+    margin: 0;
+    color: var(--agnes-text-tertiary);
+    font-size: 0.75rem;
+    line-height: 1.5;
+  }
+  /* The save sits on the right; what happened is said beside it. */
+  .capability-save {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--s12);
+  }
+  .capability-save > span {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .capability-save > span[data-tone="error"] {
+    color: var(--agnes-status-danger-text);
+  }
+  .capability-editor {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s12);
+    padding: var(--s16);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-surface);
+  }
+  .capability-editor textarea {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+  }
+  .capability-panel .agnes-settings-item-description > [translate="no"] {
+    display: block;
+    overflow: hidden;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .capability-panel .agnes-settings-item-control > select {
+    max-width: 14rem;
+  }
   @media (max-width: 720px) {
     .plugins-page-summary {
       display: none;
     }
     .plugins-page-callout {
       flex-wrap: wrap;
+    }
+    .capability-form-columns {
+      grid-template-columns: minmax(0, 1fr);
     }
   }
 }

@@ -1,5 +1,5 @@
 import type { ResourceAdminMount } from '@agnes/resource-control-web/admin'
-import { Banner, Button, Icon } from '@agnes/web-ui'
+import { Banner, Button, Icon, setResourcePackageNames } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
 import { SkillFolders } from './skill-folders.js'
 
@@ -14,12 +14,21 @@ export function ResourcesTab({
   t,
   workspaceId,
   canSave,
+  packageName,
 }: {
   tab: 'skills' | 'mcp'
   t: Text
   workspaceId: string | undefined
   canSave: boolean
+  /** The display name of an installed plugin, so a skill row can say where it comes from. */
+  packageName(id: string): string | undefined
 }) {
+  const names = useRef(packageName)
+  names.current = packageName
+  useEffect(() => {
+    setResourcePackageNames((id) => names.current(id))
+    return () => setResourcePackageNames(undefined)
+  }, [])
   const list = useRef<HTMLElement>(null)
   const notice = useRef<HTMLParagraphElement>(null)
   const refresh = useRef<HTMLButtonElement>(null)

@@ -16,6 +16,7 @@ import {
   PluginList,
   PluginPurposeSections,
   Popover,
+  pluginOrigin,
   renderRegion,
   SearchBar,
   SettingsDetails,
@@ -441,7 +442,7 @@ export function renderDetailPluginView(this: PluginAdminViewContext): void {
       <DetailContent
         heading={name}
         intro={purpose?.summary ?? ''}
-        version={`${this.purposeText(`origin.${item.presentation?.origin ?? 'third-party'}`)} · ${item.version}`}
+        version={`${this.purposeText(`origin.${pluginOrigin(item)}`)} · ${item.version}`}
         stateText={undefined}
         facts={[]}
         headAction={

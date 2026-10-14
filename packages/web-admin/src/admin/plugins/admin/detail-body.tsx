@@ -9,6 +9,7 @@ import {
   Button,
   type DetailActionSpec,
   integrityLabel,
+  isBuiltinPlugin,
   PluginPurposeSections,
   SettingsState,
   SettingsTechnicalDetails,
@@ -128,7 +129,10 @@ export function PluginDetailBody({
                     </Tag>
                   ),
                 ],
-                [t('fact.source'), sourceLabel(item.source as PackageSource, adminT)],
+                // A built-in's path is not a source anyone chose; it stays in the technical details.
+                ...(isBuiltinPlugin(item)
+                  ? []
+                  : [[t('fact.source'), sourceLabel(item.source as PackageSource, adminT)] as const]),
               ]}
             />
           )}

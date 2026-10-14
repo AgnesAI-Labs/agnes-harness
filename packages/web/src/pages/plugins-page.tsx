@@ -1,3 +1,4 @@
+import { resolvePluginMetadata } from '@agnes/protocol'
 import { sessionStartUrl } from '@agnes/web-admin/settings/runtime-panels'
 import type { UiExtensionContext } from '@agnes/web-client'
 import { createComputerUsePaneController } from '@agnes/web-conversation/computer-use-pane'
@@ -6,7 +7,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { HomePageData } from './host.js'
 import { HomePageFrame } from './page-frame.js'
 import { type PluginView, useCandidateSources, usePluginAdmin } from './plugins/admin-view.js'
-import { CapabilityPage } from './plugins/capabilities.js'
+import { CapabilityDetail } from './plugins/capabilities.js'
 import { MarketTab } from './plugins/market-tab.js'
 import { PLUGINS_PAGE_NAMESPACE, pluginsPageCatalog } from './plugins/page-locale.js'
 import { PluginStatus, PluginsTab } from './plugins/plugins-tab.js'
@@ -120,6 +121,12 @@ export function PluginsPage({ context }: { context: UiExtensionContext }) {
         t={t}
         workspaceId={data.plugins?.workspaceId?.()}
         canSave={view?.canEffect('packages.activate') ?? false}
+        packageName={(id) => {
+          const item = view?.state.installed.find((entry) => entry.id === id)
+          return item
+            ? resolvePluginMetadata(item.metadata, view?.locale.getSnapshot() ?? 'en')?.displayName
+            : undefined
+        }}
       />
     ) : !view ? null : tab === 'plugins' ? (
       <PluginsTab view={view} t={t} summaries={summaries} />
@@ -132,14 +139,17 @@ export function PluginsPage({ context }: { context: UiExtensionContext }) {
     <>
       {/* The controller draws nothing here; it needs a connected node to own while it lives. */}
       <div ref={host} hidden />
-      {route.capability ? (
-        <CapabilityPage
+      {route.capability && (
+        <CapabilityDetail
           capability={route.capability}
           view={view}
           t={t}
+          summary={summaries[route.capability]}
           computerUse={computerUse.renderCapability()}
+          onClose={() => openPlugins('plugins')}
         />
-      ) : (
+      )}
+      {
         <HomePageFrame
           id="plugins"
           title={context.t('home.entry.plugins')}
@@ -182,7 +192,7 @@ export function PluginsPage({ context }: { context: UiExtensionContext }) {
             }))}
           />
         </HomePageFrame>
-      )}
+      }
     </>
   )
 }

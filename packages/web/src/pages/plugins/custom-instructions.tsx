@@ -47,6 +47,7 @@ export function CustomInstructions({
   const [busy, setBusy] = useState(true)
   const [failed, setFailed] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [stored, setStored] = useState('{}')
   useEffect(() => {
     const pending = new AbortController()
     void api
@@ -54,6 +55,7 @@ export function CustomInstructions({
       .then((value) => {
         if (pending.signal.aborted) return
         setConfig(value.config)
+        setStored(JSON.stringify(value.config))
         setHadClosing(!!value.config.personaSuffix)
         setLoaded(true)
       })
@@ -94,6 +96,7 @@ export function CustomInstructions({
     try {
       const result = await api.save({ config: reset ? {} : config, confirmFullOverride: false })
       setConfig(result.config)
+      setStored(JSON.stringify(result.config))
       setHadClosing(!!result.config.personaSuffix)
       setSaved(true)
     } catch {
@@ -145,22 +148,22 @@ export function CustomInstructions({
               />
             </Field>
           )}
-          <SettingsToolbar>
-            <Button
-              appearance="primary"
-              data-testid="system-prompt-save"
-              disabled={locked}
-              onClick={() => void save()}
-            >
-              {t('ctx.save')}
-            </Button>
+          <SettingsToolbar className="capability-save">
             <Button
               appearance="ghost"
               data-testid="system-prompt-reset"
-              disabled={locked}
+              disabled={locked || stored === '{}'}
               onClick={() => void save(true)}
             >
               {t('ctx.reset')}
+            </Button>
+            <Button
+              appearance="primary"
+              data-testid="system-prompt-save"
+              disabled={locked || JSON.stringify(config) === stored}
+              onClick={() => void save()}
+            >
+              {t('ctx.save')}
             </Button>
           </SettingsToolbar>
           {failed && (

@@ -1,5 +1,7 @@
-import type { PackageInstalledDescriptor, PackagePreview } from '@agnes/protocol'
+import type { PackageCatalogDescriptor, PackageInstalledDescriptor, PackagePreview } from '@agnes/protocol'
 import {
+  type DetailActionSpec,
+  isBuiltinPlugin,
   PreviewConfirmationFacts,
   RollbackActivationFacts,
   SettingsTechnicalDetails,
@@ -122,4 +124,17 @@ export function confirmSimple(
       page.track(receipt.operationId, { packageId: item.id })
     },
   })
+}
+
+/**
+ * The actions a plugin is offered. What ships with the product can be switched off, never removed,
+ * so its uninstall (the one destructive action among the version actions) is left out.
+ */
+export function offeredActions(page: PluginAdminPage) {
+  return (item: PackageInstalledDescriptor | PackageCatalogDescriptor): readonly DetailActionSpec[] => {
+    const actions = page.detailActions(item)
+    return isBuiltinPlugin(item)
+      ? actions.filter((action) => !(action.danger && action.group === 'versions'))
+      : actions
+  }
 }

@@ -49,7 +49,7 @@ import {
   hasFeature,
   type PluginRuntimeSource,
 } from '../types.js'
-import { confirmSimple, EnableFacts, PreviewFacts, RollbackFacts } from './confirms.js'
+import { confirmSimple, EnableFacts, offeredActions, PreviewFacts, RollbackFacts } from './confirms.js'
 import { adminErrorKey, element, markSettingsPage, setDialog } from './dom.js'
 import { hasClientContribution, isClientOnly, safeMessage, sourceForCatalog } from './model.js'
 import {
@@ -274,7 +274,7 @@ export class PluginAdminPage {
       confirmDisable: page.confirmDisable.bind(page),
       confirmEnable: page.confirmEnable.bind(page),
       confirmReleasePins: page.confirmReleasePins.bind(page),
-      detailActions: page.detailActions.bind(page),
+      detailActions: offeredActions(page),
       detailOperations: page.detailOperations.bind(page),
       errorMessage: page.errorMessage.bind(page),
       filteredInstalled: page.filteredInstalled.bind(page),

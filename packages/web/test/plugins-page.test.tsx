@@ -12,7 +12,7 @@ import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PluginView } from '../src/pages/plugins/admin-view.js'
-import { MarketTab } from '../src/pages/plugins/market-tab.js'
+import { MarketTab, marketTypes } from '../src/pages/plugins/market-tab.js'
 import { pluginsPageCatalog } from '../src/pages/plugins/page-locale.js'
 import { isBusinessAgent, isExperimental, orderInstalled } from '../src/pages/plugins/plugins-tab.js'
 import { CAPABILITIES, PLUGIN_TABS, pluginsRoute } from '../src/pages/plugins/route.js'
@@ -101,6 +101,22 @@ describe('plugin grouping', () => {
       'zeta',
       'beta',
     ])
+  })
+
+  it('files a catalog package under every marketplace type its kinds declare', () => {
+    const entry = (id: string, kinds: readonly string[], category?: string) =>
+      ({ id, kinds, ...(category ? { metadata: { category } } : {}) }) as unknown as Parameters<
+        typeof marketTypes
+      >[0]
+    expect(marketTypes(entry('@acme/desk', ['tool', 'skills']))).toEqual(['tool', 'skills'])
+    expect(marketTypes(entry('@acme/loop', ['loop']))).toEqual(['runtime'])
+    expect(marketTypes(entry('@acme/adapter', ['model-adapter', 'ui']))).toEqual(['ui', 'runtime'])
+    expect(marketTypes(entry('@acme/jira', ['mcp']))).toEqual(['mcp'])
+    expect(marketTypes(entry('@acme/review', ['bundle', 'tool'], 'business-agent'))).toEqual([
+      'agent',
+      'tool',
+    ])
+    expect(marketTypes(entry('@acme/plain', []))).toEqual([])
   })
 
   it('treats a plugin as experimental only when its metadata says so', () => {

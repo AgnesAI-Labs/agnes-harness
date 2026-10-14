@@ -14,20 +14,19 @@ import {
   Count,
   Field,
   Icon,
-  IconTile,
+  isBuiltinPlugin,
   ListRow,
   type MenuItem,
   PLUGIN_CATEGORIES,
   PluginList,
   Popover,
   SearchBar,
-  SettingsList,
   SettingsSelect,
   SettingsState,
   Tag,
   useAdvancedSettings,
 } from '@agnes/web-ui'
-import type { ComponentProps } from 'react'
+import type { ComponentProps, ReactNode } from 'react'
 import { isBusinessAgent as sharedBusinessAgent } from '../business-agents.js'
 import type { HomePageData } from '../host.js'
 import { HomePageSection } from '../page-frame.js'
@@ -115,7 +114,18 @@ export function pluginListProps(view: PluginView): Omit<ComponentProps<typeof Pl
 }
 
 /** Search and the category filter shared by the installed list and the marketplace. */
-export function PluginToolbar({ view, t, onQuery }: { view: PluginView; t: Text; onQuery(): void }) {
+export function PluginToolbar({
+  view,
+  t,
+  onQuery,
+  leading,
+}: {
+  view: PluginView
+  t: Text
+  onQuery(): void
+  /** A filter the tab owns, shown before the shared one. */
+  leading?: ReactNode
+}) {
   const advanced = useAdvancedSettings()
   return (
     <SearchBar
@@ -130,47 +140,50 @@ export function PluginToolbar({ view, t, onQuery }: { view: PluginView; t: Text;
       }}
       inputProps={{ id: 'plugin-search', disabled: !view.state.context || !view.can('packages.read') }}
       filters={
-        <Popover
-          trigger="click"
-          content={
-            <>
-              <Field label={t('filter.category')} htmlFor="plugin-category">
-                <SettingsSelect
-                  id="plugin-category"
-                  data-testid="plugin-category-filter"
-                  value={view.category}
-                  onChange={(event) => {
-                    view.category = event.target.value
-                    view.render()
-                  }}
-                >
-                  <option value="">{t('filter.all')}</option>
-                  {PLUGIN_CATEGORIES.map((category) => (
-                    <option key={category} value={category}>
-                      {view.purposeText(`category.${category}`)}
-                    </option>
-                  ))}
-                  <option value="unclassified">{view.purposeText('unclassified')}</option>
-                </SettingsSelect>
-              </Field>
-              {(advanced || !!view.kind) && (
-                <KindFilter
-                  value={view.kind}
-                  t={view.t}
-                  onChange={(value) => {
-                    view.kind = value
-                    view.render()
-                  }}
-                />
-              )}
-            </>
-          }
-        >
-          <Button icon={<Icon name="sliders-horizontal" />} data-testid="plugin-filter">
-            {t('filter.label')}
-            <Count value={Number(!!view.category) + Number(!!view.kind)} label={t('filter.active')} />
-          </Button>
-        </Popover>
+        <>
+          {leading}
+          <Popover
+            trigger="click"
+            content={
+              <>
+                <Field label={t('filter.category')} htmlFor="plugin-category">
+                  <SettingsSelect
+                    id="plugin-category"
+                    data-testid="plugin-category-filter"
+                    value={view.category}
+                    onChange={(event) => {
+                      view.category = event.target.value
+                      view.render()
+                    }}
+                  >
+                    <option value="">{t('filter.all')}</option>
+                    {PLUGIN_CATEGORIES.map((category) => (
+                      <option key={category} value={category}>
+                        {view.purposeText(`category.${category}`)}
+                      </option>
+                    ))}
+                    <option value="unclassified">{view.purposeText('unclassified')}</option>
+                  </SettingsSelect>
+                </Field>
+                {(advanced || !!view.kind) && (
+                  <KindFilter
+                    value={view.kind}
+                    t={view.t}
+                    onChange={(value) => {
+                      view.kind = value
+                      view.render()
+                    }}
+                  />
+                )}
+              </>
+            }
+          >
+            <Button icon={<Icon name="sliders-horizontal" />} data-testid="plugin-filter">
+              {t('filter.label')}
+              <Count value={Number(!!view.category) + Number(!!view.kind)} label={t('filter.active')} />
+            </Button>
+          </Popover>
+        </>
       }
     />
   )
@@ -219,6 +232,9 @@ export function PluginsTab({
   summaries: CapabilitySummaries
 }) {
   const props = pluginListProps(view)
+  const locale = view.locale.getSnapshot()
+  const nameOf = (item: PackageInstalledDescriptor) =>
+    resolvePluginMetadata(item.metadata, locale)?.displayName ?? item.id
   const rows = view
     .filteredInstalled()
     .filter(
@@ -226,69 +242,86 @@ export function PluginsTab({
         (!view.kind || item.kinds?.includes(view.kind)) &&
         (!view.category || (item.metadata?.category ?? 'unclassified') === view.category),
     )
-  const locale = view.locale.getSnapshot()
-  const stable = orderInstalled(
-    rows.filter((item) => !isExperimental(item)),
-    (item) => resolvePluginMetadata(item.metadata, locale)?.displayName ?? item.id,
+  const stable = rows.filter((item) => !isExperimental(item))
+  const builtin = orderInstalled(stable.filter(isBuiltinPlugin), nameOf, locale)
+  const others = orderInstalled(
+    stable.filter((item) => !isBuiltinPlugin(item)),
+    nameOf,
     locale,
   )
   const experimental = rows.filter(isExperimental)
+  // Capabilities are not packages: a category or type filter cannot match them, a search by name can.
+  const needle = view.query.toLocaleLowerCase(locale)
+  const capabilities =
+    view.kind || view.category
+      ? []
+      : CAPABILITIES.filter((id) =>
+          `${t(`cap.${id}.name`)} ${t(`cap.${id}.desc`)}`.toLocaleLowerCase(locale).includes(needle),
+        )
+  const searching = !!view.query || !!view.kind || !!view.category
   return (
     <>
-      <HomePageSection title={t('builtin.title')} actions={<small>{t('builtin.note')}</small>}>
-        <SettingsList data-testid="builtin-capabilities">
-          {CAPABILITIES.map((id) => {
-            const name = t(`cap.${id}.name`)
-            const summary = summaries[id]
-            return (
-              <ListRow
-                key={id}
-                className="plugins-page-capability"
-                data-capability={id}
-                data-testid={`builtin-${id}`}
-                icon={<IconTile name={CAPABILITY_ICONS[id]} />}
-                title={name}
-                titleLabel={t('builtin.open', { name })}
-                status={<Badge>{t('builtin.badge')}</Badge>}
-                description={t(`cap.${id}.desc`)}
-                onOpen={() => openPlugins('plugins', id)}
-                actions={
-                  <>
-                    {summary &&
-                      (summary.attention ? (
-                        <Tag tone="warn">{summary.text}</Tag>
-                      ) : (
-                        <span className="plugins-page-summary">{summary.text}</span>
-                      ))}
-                    <Icon name="chevron-right" size={16} />
-                  </>
-                }
-              />
-            )
-          })}
-        </SettingsList>
-      </HomePageSection>
       <PluginToolbar view={view} t={t} onQuery={() => view.render()} />
-      {stable.length === 0 && experimental.length === 0 ? (
-        <PluginList
-          {...props}
-          tab="installed"
-          rows={[]}
-          emptyActions={
-            <Button onClick={() => homeNavigation.open('agents')}>{t('installed.empty.action')}</Button>
+      {(capabilities.length > 0 || builtin.length > 0) && (
+        <HomePageSection title={t('builtin.title')} actions={<small>{t('builtin.note')}</small>}>
+          <div data-testid="plugin-builtin">
+            <PluginList
+              {...props}
+              tab="installed"
+              rows={builtin}
+              leading={capabilities.map((id) => {
+                const name = t(`cap.${id}.name`)
+                const summary = summaries[id]
+                return (
+                  <ListRow
+                    key={id}
+                    className="plugin-row plugins-page-capability"
+                    data-capability={id}
+                    data-testid={`builtin-${id}`}
+                    icon={<Icon name={CAPABILITY_ICONS[id]} size={20} />}
+                    title={name}
+                    titleLabel={t('builtin.open', { name })}
+                    status={<Badge>{t('builtin.badge')}</Badge>}
+                    description={t(`cap.${id}.desc`)}
+                    onOpen={() => openPlugins('plugins', id)}
+                    actions={
+                      <>
+                        {summary &&
+                          (summary.attention ? (
+                            <Tag tone="warn">{summary.text}</Tag>
+                          ) : (
+                            <span className="plugins-page-summary">{summary.text}</span>
+                          ))}
+                        <Icon name="chevron-right" size={16} />
+                      </>
+                    }
+                  />
+                )
+              })}
+            />
+          </div>
+        </HomePageSection>
+      )}
+      {(others.length > 0 ||
+        !searching ||
+        (!capabilities.length && !builtin.length && !experimental.length)) && (
+        <HomePageSection
+          title={t('installed.others')}
+          actions={
+            others.length ? <small>{t('installed.count', { count: others.length })}</small> : undefined
           }
-        />
-      ) : (
-        stable.length > 0 && (
-          <HomePageSection
-            title={t('installed.title')}
-            actions={<small>{t('installed.count', { count: stable.length })}</small>}
-          >
-            <div data-testid="plugin-browser">
-              <PluginList {...props} tab="installed" rows={stable} />
-            </div>
-          </HomePageSection>
-        )
+        >
+          <div data-testid="plugin-browser">
+            <PluginList
+              {...props}
+              tab="installed"
+              rows={others}
+              emptyActions={
+                <Button onClick={() => homeNavigation.open('agents')}>{t('installed.empty.action')}</Button>
+              }
+            />
+          </div>
+        </HomePageSection>
       )}
       {experimental.length > 0 && (
         <HomePageSection title={t('experimental.title')} actions={<small>{t('experimental.note')}</small>}>
