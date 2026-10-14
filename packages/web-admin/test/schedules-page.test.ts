@@ -393,6 +393,59 @@ it('round-trips a task through the form and orders Agnes AI models first', () =>
   expect(emptyDraft({ now: 0 }).target).toBe('new-session')
 })
 
+it('keeps the saved loop, ordered bundles and model when only the title changes (B03)', async () => {
+  const saved = {
+    kind: 'new-session' as const,
+    cwd: '/synthetic',
+    loop: { id: 'agent', version: '1' },
+    bundles: ['policy-b', 'policy-a'],
+    model: { route: 'r', model: 'm' },
+  }
+  const [row] = rowsOf({ schedules: [{ ...report, target: saved }] })
+  if (!row) throw new Error('row')
+  // The catalog could not be read: nothing is rebuilt from an empty list.
+  const none = scheduleChoices({})
+  expect(targetOf({ ...draftOf(row, none, 0), title: 'Renamed' }, none)).toEqual(saved)
+  // The catalog lists the loop with different default bundles: the saved order still wins.
+  const catalog = scheduleChoices({
+    loops: [{ id: 'agent', version: '1', label: 'Agent', sourcePackage: '@agnes-fde/agent' }],
+    bundles: [{ id: 'catalog-default', sourcePackage: '@agnes-fde/agent' }],
+    adapters: [{ id: 'x', models: [{ id: 'other', route: 'x' }] }],
+    accounts: [{ route: 'x', label: 'X', providerId: 'x' }],
+  })
+  const draft = draftOf(row, catalog, 0)
+  expect(targetOf(draft, catalog)).toEqual(saved)
+  // Choosing the default on purpose clears the field; choosing another entry rebuilds it.
+  const cleared = targetOf({ ...draft, mode: '', model: '' }, catalog)
+  expect(cleared).toEqual({ kind: 'new-session', cwd: '/synthetic' })
+  const other = catalog.models[0]
+  if (!other) throw new Error('model')
+  expect(targetOf({ ...draft, model: other.key }, catalog).model).toEqual({ route: 'x', model: 'other' })
+  // End to end: a title-only edit sends the saved target back unchanged, even when choices fail.
+  const upsert = vi.fn(async () => standup)
+  const host = await mount(
+    createElement(SchedulesPage, {
+      api: api([{ ...report, target: saved }], {
+        upsert,
+        choices: async () => {
+          throw new Error('catalog unavailable')
+        },
+      }),
+      t,
+    }),
+  )
+  await vi.waitFor(() => expect(host.querySelector('[data-testid="schedules-row"]')).not.toBeNull())
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="schedules-row"] button')?.click(),
+  )
+  expect(document.querySelector('[data-testid="schedules-mode-saved"]')?.textContent).toContain(
+    'saved, not available now',
+  )
+  fill('schedules-title', 'Renamed')
+  await submit()
+  expect(upsert).toHaveBeenCalledWith(expect.objectContaining({ title: 'Renamed', target: saved }))
+})
+
 it('previews the next run in this computer’s time', () => {
   const now = new Date(2026, 9, 14, 10, 0).getTime()
   const zone = localTimeZone()

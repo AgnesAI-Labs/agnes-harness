@@ -52,6 +52,12 @@ export type ScheduleDraft = {
   weekdays: number[]
   cron: string
   zone: string
+  /**
+   * The target as saved, with the form values it was shown as. Saving keeps each part the person did
+   * not change exactly as it was (loop, ordered bundles, model), even when the current catalog no
+   * longer lists it or could not be read.
+   */
+  saved?: { target: ScheduleTarget; mode: string; model: string } | undefined
 }
 
 export function emptyDraft(o: {
@@ -102,6 +108,7 @@ export function draftOf(row: ScheduleRow, choices: ScheduleChoices, now: number)
     preset: target.kind === 'new-session' ? (target.preset ?? '') : '',
     model,
     sessionKey: target.kind === 'session' ? target.sessionKey : '',
+    saved: { target, mode, model },
   }
   const kind = selectorKind(row.selector)
   const value = kind ? row.selector[kind] : undefined
@@ -152,16 +159,38 @@ export function selectorOf(draft: ScheduleDraft): Record<string, unknown> {
 
 export function targetOf(draft: ScheduleDraft, choices: ScheduleChoices): ScheduleTarget {
   if (draft.target === 'session') return { kind: 'session', sessionKey: draft.sessionKey }
+  const saved = draft.saved?.target.kind === 'new-session' ? draft.saved : undefined
+  const before = saved?.target.kind === 'new-session' ? saved.target : undefined
   const mode = choices.modes.find((item) => item.key === draft.mode)
   const model = choices.models.find((item) => item.key === draft.model)
+  // An unchanged choice, or one the catalog cannot resolve, keeps exactly what was saved.
+  const keepMode = before && (draft.mode === saved?.mode || (draft.mode !== '' && !mode))
+  const keepModel = before && (draft.model === saved?.model || (draft.model !== '' && !model))
+  const execution = keepMode
+    ? {
+        ...(before.loop ? { loop: before.loop } : {}),
+        ...(before.bundles?.length ? { bundles: [...before.bundles] } : {}),
+      }
+    : mode
+      ? { loop: mode.loop, ...(mode.bundles.length ? { bundles: mode.bundles } : {}) }
+      : {}
+  const chosenModel = keepModel
+    ? before.model
+    : model
+      ? { route: model.route, model: model.model }
+      : undefined
   return {
     kind: 'new-session',
     cwd: draft.cwd,
-    ...(mode ? { loop: mode.loop, ...(mode.bundles.length ? { bundles: mode.bundles } : {}) } : {}),
+    ...execution,
     ...(draft.preset ? { preset: draft.preset } : {}),
-    ...(model ? { model: { route: model.route, model: model.model } } : {}),
+    ...(chosenModel ? { model: chosenModel } : {}),
   }
 }
+
+/** A saved choice the current catalog does not list stays selectable, marked as unavailable. */
+const savedOnly = (value: string, known: readonly { key: string }[]): boolean =>
+  value !== '' && !known.some((item) => item.key === value)
 
 export function ScheduleDialog({
   open,
@@ -290,7 +319,7 @@ export function ScheduleDialog({
                 ))}
               </SettingsSelect>
             </Field>
-            {choices.modes.length > 0 && (
+            {(choices.modes.length > 0 || savedOnly(draft.mode, choices.modes)) && (
               <Field label={ux('mode')}>
                 <SettingsSelect
                   data-testid="schedules-mode"
@@ -299,6 +328,11 @@ export function ScheduleDialog({
                   onChange={(event) => set('mode', event.target.value)}
                 >
                   <option value="">{ux('modeDefault')}</option>
+                  {savedOnly(draft.mode, choices.modes) ? (
+                    <option value={draft.mode} data-testid="schedules-mode-saved">
+                      {ux('savedUnavailable', { name: draft.mode })}
+                    </option>
+                  ) : null}
                   {agents.length > 0 && (
                     <optgroup label={ux('modeAgents')}>
                       {agents.map((item) => (
@@ -337,7 +371,7 @@ export function ScheduleDialog({
                 </SettingsSelect>
               </Field>
             )}
-            {choices.models.length > 0 && (
+            {(choices.models.length > 0 || savedOnly(draft.model, choices.models)) && (
               <Field label={ux('model')}>
                 <SettingsSelect
                   data-testid="schedules-model"
@@ -346,6 +380,11 @@ export function ScheduleDialog({
                   onChange={(event) => set('model', event.target.value)}
                 >
                   <option value="">{ux('modelDefault')}</option>
+                  {savedOnly(draft.model, choices.models) ? (
+                    <option value={draft.model} data-testid="schedules-model-saved">
+                      {ux('savedUnavailable', { name: draft.model.replace('\u0000', ' · ') })}
+                    </option>
+                  ) : null}
                   {choices.models.map((item) => (
                     <option key={item.key} value={item.key}>
                       {item.label}
