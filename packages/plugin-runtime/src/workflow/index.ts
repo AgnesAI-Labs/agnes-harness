@@ -45,6 +45,18 @@ export function defineWorkflowLoop(options: WorkflowOptions) {
             async run(ctx, state, signal) {
               return { deliverables: await publishWorkflow(ctx, state, options, signal) }
             },
+            // The same line the present tool returns, never the artifact references: the conversation
+            // shows the files themselves as cards and folds this line into that call.
+            message(data) {
+              const names = Array.isArray(data.deliverables)
+                ? data.deliverables.flatMap((file) =>
+                    file && typeof file === 'object' && !Array.isArray(file) && typeof file.name === 'string'
+                      ? [file.name]
+                      : [],
+                  )
+                : []
+              return names.length ? `Presented ${names.join(', ')}` : undefined
+            },
           } satisfies WorkflowStage,
         ]
       : []),

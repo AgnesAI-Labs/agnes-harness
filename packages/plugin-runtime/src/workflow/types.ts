@@ -31,6 +31,8 @@ export interface WorkflowStage {
   /** Receive a complete input at a safe step boundary, including generic system notifications. */
   inputStage?: boolean
   run(ctx: LoopContext, state: WorkflowState, signal: AbortSignal): Promise<WorkflowData>
+  /** The transcript line for this stage's result. Without it the line is the stage name and its data as JSON. */
+  message?(data: WorkflowData): string | undefined
 }
 
 export interface WorkflowOptions {

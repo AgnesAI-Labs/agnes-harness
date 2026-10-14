@@ -284,6 +284,36 @@ describe('official workflow state machine', () => {
     expect(state(f.checkpoint()).input).toBe('Next')
   })
 
+  it('reports presented files as the present line, never as artifact references', async () => {
+    const f = fixture()
+    const sha256 = 'a'.repeat(64)
+    const execute = f.ctx.tools.execute
+    f.ctx.tools.execute = async (call, signal) =>
+      call.name === 'present'
+        ? {
+            ...workflowResult({}),
+            details: {
+              deliverables: [
+                {
+                  name: 'report.md',
+                  description: 'workflow: final',
+                  ref: { sha256, size: 9, mime: 'text/markdown' },
+                },
+              ],
+            },
+          }
+        : execute(call, signal)
+    const { factory } = definition({
+      deliverables: { directory: 'output/workflow', markdown: () => '# Review' },
+    })
+    const driver = await factory.create(f.ctx)
+    for (let step = 0; step < 3; step++) await driver.step(signal)
+    const last = JSON.parse(f.messages.at(-1) ?? '{}') as { content?: { text?: string }[] }
+    expect(last.content?.[0]?.text).toBe('Presented report.md')
+    expect(f.messages.at(-1)).not.toContain(sha256)
+    expect(f.messages.at(-1)).not.toContain('present-deliverables')
+  })
+
   it.each(['Proceed', 'Cancel', 'stopped', 'expired', 'unavailable', 'invalidated'] as const)(
     'resumes the original DecisionPort confirmation: %s',
     async (answer) => {

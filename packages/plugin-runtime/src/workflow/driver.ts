@@ -241,7 +241,12 @@ export function workflowDriver(
         await save()
         await ctx.events.assistant(
           {
-            content: [{ type: 'text', text: `${stage.name}:\n${JSON.stringify(data, null, 2)}` }],
+            content: [
+              {
+                type: 'text',
+                text: stage.message?.(data) ?? `${stage.name}:\n${JSON.stringify(data, null, 2)}`,
+              },
+            ],
             stopReason: 'end_turn',
           },
           codec.encode(state),
