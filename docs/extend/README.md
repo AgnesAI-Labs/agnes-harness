@@ -2,7 +2,7 @@
 
 English | [简体中文](README.zh-CN.md)
 
-[Documentation](../README.md) · [Five-minute quickstart](quickstart.md) · [Test your plugin](testing.md) · [Import map](imports.md)
+[Documentation](../README.md) · [Choose a type by role](choose-a-plugin-type.md) · [Five-minute quickstart](quickstart.md) · [Test your plugin](testing.md) · [Import map](imports.md)
 
 [Tool runtime and policies](tool-runtime.md) · [Loop events](loop-events.md) · [Business workflows](workflow-loops.md)
 

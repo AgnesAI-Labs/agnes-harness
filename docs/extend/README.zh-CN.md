@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-[文档](../README.zh-CN.md) · [五分钟入门](quickstart.zh-CN.md) · [测试你的插件](testing.zh-CN.md) · [导入选择图](imports.zh-CN.md)
+[文档](../README.zh-CN.md) · [按角色选择类型](choose-a-plugin-type.zh-CN.md) · [五分钟入门](quickstart.zh-CN.md) · [测试你的插件](testing.zh-CN.md) · [导入选择图](imports.zh-CN.md)
 
 [工具运行时与权限策略](tool-runtime.zh-CN.md) · [循环事件](loop-events.zh-CN.md) · [业务工作流](workflow-loops.zh-CN.md)
 
