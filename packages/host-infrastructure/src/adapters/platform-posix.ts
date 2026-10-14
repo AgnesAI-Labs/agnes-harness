@@ -34,6 +34,8 @@ export type PlatformBackend = Omit<PlatformSeam, 'capability'> & {
   probe(opts?: { root?: string }): Promise<void>
   /** Records the sandbox seam's actual full-boundary probe, never an executable-presence guess. */
   recordSandboxBackend(report: SandboxBackendReport): void
+  /** Whether `sandbox.l1` is a measured answer, rather than the placeholder set before any probe ran. */
+  sandboxProbed(): boolean
   killTree(pid: number): void
   matches(): boolean
 }
@@ -92,6 +94,7 @@ export function createPosixPlatform(): PlatformBackend {
   // to anyone else, and `.GIT/config` reads straight through it. An unmeasured backend now claims
   // the safe answer instead of the convenient one.
   let caseSensitive = false
+  let sandboxProbed = false
   return {
     os,
     // guards-allow-platform: the backend has to be able to say whether it is the right one
@@ -112,7 +115,9 @@ export function createPosixPlatform(): PlatformBackend {
       arch: process.arch,
       capabilities: Object.fromEntries(CAPABILITY_IDS.map((id) => [id, caps[id].level])),
     }),
+    sandboxProbed: () => sandboxProbed,
     recordSandboxBackend(report) {
+      sandboxProbed = true
       // A remote backend is not a weaker local sandbox - it is another machine. This harness ships
       // commands there; it cannot attest to whatever isolation does or does not exist inside. Saying
       // 'full' would assert something unverified, so l1 is reported unavailable with the reason
@@ -176,6 +181,7 @@ export function createPosixPlatform(): PlatformBackend {
       // The sandbox seam owns the revocable raw-exec probe because it also owns the exact compiler
       // argv. Until that complete boundary runs, executable presence proves nothing: bwrap may be
       // blocked by user-namespace policy and sandbox-exec may reject the generated profile.
+      sandboxProbed = false
       caps['sandbox.l1'] = {
         level: 'unavailable',
         scope: [],

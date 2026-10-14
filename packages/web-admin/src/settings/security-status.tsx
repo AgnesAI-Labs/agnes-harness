@@ -168,6 +168,15 @@ export function SecurityStatusPanel({
             description={ux('platformOnly')}
           />
         </SettingsGroup>
+      ) : status.platform.l1.level === 'unprobed' ? (
+        // Not checked is not a fault: nothing has run in a workspace yet, so nothing is known.
+        <SettingsGroup>
+          <SettingsItem
+            data-testid="sandbox-status-unprobed"
+            label={`${ux('unprobed')} · ${t(`platform.${status.platform.os}`)}`}
+            description={ux('unprobedHelp')}
+          />
+        </SettingsGroup>
       ) : (
         <Banner
           tone="warning"

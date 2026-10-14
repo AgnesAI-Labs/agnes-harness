@@ -30359,6 +30359,10 @@
                         {
                           "const": "unavailable",
                           "type": "string"
+                        },
+                        {
+                          "const": "unprobed",
+                          "type": "string"
                         }
                       ]
                     },

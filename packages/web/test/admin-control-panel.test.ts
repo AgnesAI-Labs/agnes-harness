@@ -886,6 +886,38 @@ it('inherits the admin preset before the profile default and renders its permiss
   expect(permissionForSessionPreset('unknown', runtime)).toBeUndefined()
 })
 
+it('shows an unchecked platform as not checked, never as incomplete, and a measured failure as a warning', async () => {
+  const text = (key: string) => settingsCatalog.en[key] ?? key
+  const status = (l1: NonNullable<RuntimeAdminSnapshot['security']>['platform']['l1']) =>
+    createElement(SecurityStatusPanel, {
+      status: { platform: { os: 'darwin', l1 }, presetPolicies: [], workspaces: [] },
+      t: text,
+    })
+  const unprobed = await mount(status({ level: 'unprobed', scope: [] }))
+  expect(unprobed.querySelector('[data-testid="sandbox-status-unprobed"]')?.textContent).toContain(
+    'Isolation not checked yet',
+  )
+  expect(unprobed.textContent).not.toContain('Isolation on this computer is incomplete')
+  const details = await mount(
+    createElement(SecurityStatusPanel, {
+      status: {
+        platform: { os: 'darwin', l1: { level: 'unprobed', scope: [] } },
+        presetPolicies: [],
+        workspaces: [],
+      },
+      t: text,
+      view: 'details',
+    }),
+  )
+  expect(details.textContent).toContain(text('enforcement.unprobed'))
+  expect(text('enforcement.unprobed')).not.toBe('enforcement.unprobed')
+  const failed = await mount(
+    status({ level: 'unavailable', scope: [], reason: 'sandbox-exec rejected the profile' }),
+  )
+  expect(failed.textContent).toContain('Isolation on this computer is incomplete')
+  expect(failed.querySelector('[data-testid="sandbox-status-unprobed"]')).toBeNull()
+})
+
 it('distinguishes requested permissions from measured workspace enforcement', async () => {
   const errors = vi.spyOn(console, 'error')
   const text = (key: string) => settingsCatalog.en[key] ?? key

@@ -38,7 +38,13 @@ export const RuntimeSecurityStatus = Type.Object(
         os: text,
         l1: Type.Object(
           {
-            level: Type.Union([Type.Literal('full'), Type.Literal('partial'), Type.Literal('unavailable')]),
+            /** `unprobed`: no workspace sandbox probe has run in this daemon yet; nothing is known. */
+            level: Type.Union([
+              Type.Literal('full'),
+              Type.Literal('partial'),
+              Type.Literal('unavailable'),
+              Type.Literal('unprobed'),
+            ]),
             scope: strings,
             reason: Type.Optional(text),
           },

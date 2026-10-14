@@ -37,6 +37,7 @@ export const securityCatalog: LocaleCatalog = {
     'enforcement.partial': 'Partial',
     'enforcement.none': 'None',
     'enforcement.unavailable': 'Unavailable',
+    'enforcement.unprobed': 'Not checked yet',
     unmeasured: 'Not measured',
     policyDigest: 'Bound policy digest',
     securityHelp:
@@ -84,6 +85,7 @@ export const securityCatalog: LocaleCatalog = {
     'enforcement.partial': '部分',
     'enforcement.none': '无',
     'enforcement.unavailable': '不可用',
+    'enforcement.unprobed': '未检测',
     unmeasured: '未实测',
     policyDigest: '绑定策略摘要',
     securityHelp:

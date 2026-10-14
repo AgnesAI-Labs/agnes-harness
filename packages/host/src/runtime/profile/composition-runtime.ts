@@ -28,6 +28,7 @@ import { createRuntimeGenerationHost, type PluginGenerationStatus } from '../gen
 import { mergeGenerationStatus } from '../generation/runtime-descriptor.js'
 import { translateSessionFailure } from '../generation/seam-pins.js'
 import { assertGenerationTrust } from '../generation/trust.js'
+import { combinedSecurityStatus } from '../lifecycle/admin-security-status.js'
 import type { Host, HostOptions } from '../lifecycle/host.js'
 import {
   assertHostPublication,
@@ -436,10 +437,10 @@ export async function createCompositionHost(
     securityStatus: () => {
       const initialStatus = initial.host.securityStatus?.()
       if (!initialStatus) throw new Error('Security status is unavailable')
-      return {
-        ...initialStatus,
-        workspaces: [...containers.values()].flatMap(({ host }) => host.securityStatus?.().workspaces ?? []),
-      }
+      return combinedSecurityStatus(
+        initialStatus,
+        [...containers.values()].flatMap(({ host }) => host.securityStatus?.() ?? []),
+      )
     },
     compositionPublicationStatus: () => lastPublication,
     createSession: (input) =>

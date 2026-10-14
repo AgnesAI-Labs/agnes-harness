@@ -19,11 +19,14 @@ export function adminSecurityStatus(
   return {
     platform: {
       os: platform.os,
-      l1: {
-        level: l1.level,
-        scope: [...l1.scope],
-        ...(l1.reason ? { reason: l1.reason.slice(0, 1024) } : {}),
-      },
+      // Before a workspace binds, l1 holds a placeholder, not a failed probe: report it as unknown.
+      l1: platform.sandboxProbed()
+        ? {
+            level: l1.level,
+            scope: [...l1.scope],
+            ...(l1.reason ? { reason: l1.reason.slice(0, 1024) } : {}),
+          }
+        : { level: 'unprobed', scope: [] },
     },
     presetPolicies: profile.presets.allowed.map((id) => {
       const doc = resolvePreset(id, presets, { limits: profile.limits }).doc
@@ -62,5 +65,31 @@ export function adminSecurityStatus(
           : {}),
       }
     }),
+  }
+}
+
+const L1_STRENGTH = { unavailable: 0, partial: 1, full: 2 } as const
+
+/**
+ * One status for a Host made of several Hosts. Each Host measures the sandbox on its own platform
+ * backend when it binds a workspace, so the Host that answers for the profile (the initial or head
+ * one) may never have probed while the Host running a session has. The platform answer is therefore
+ * the weakest measured one across all of them, and `unprobed` only when none has measured yet;
+ * workspaces are those of the given Hosts.
+ */
+export function combinedSecurityStatus(
+  head: RuntimeSecurityStatus,
+  hosts: readonly RuntimeSecurityStatus[],
+): RuntimeSecurityStatus {
+  let l1 = head.platform.l1
+  for (const status of [head, ...hosts]) {
+    const candidate = status.platform.l1
+    if (candidate.level === 'unprobed') continue
+    if (l1.level === 'unprobed' || L1_STRENGTH[candidate.level] < L1_STRENGTH[l1.level]) l1 = candidate
+  }
+  return {
+    ...head,
+    platform: { ...head.platform, l1 },
+    workspaces: hosts.flatMap((status) => status.workspaces),
   }
 }

@@ -24,6 +24,8 @@ export const securityUxCatalog: LocaleCatalog = {
     partial: 'Isolation on this computer is incomplete. Permissions that depend on it may be unavailable.',
     protectionHelp: 'Learn how to fix it',
     platformOnly: 'Each session also checks its own workspace when it runs.',
+    unprobed: 'Isolation not checked yet',
+    unprobedHelp: 'It is checked the first time a session runs in a workspace.',
   },
   'zh-CN': {
     defaultPermissions: '默认权限',
@@ -48,5 +50,7 @@ export const securityUxCatalog: LocaleCatalog = {
     partial: '这台电脑的隔离保护不完整，依赖隔离的权限可能无法使用。',
     protectionHelp: '了解如何修复',
     platformOnly: '每个会话运行时还会检查它自己的工作区。',
+    unprobed: '尚未检测隔离保护',
+    unprobedHelp: '会话第一次在工作区里运行时会检测。',
   },
 }

@@ -29,6 +29,7 @@ import {
   type RuntimeTarget,
   type RuntimeTargetArtifact,
 } from '@agnes/plugin-runtime/host'
+import { combinedSecurityStatus } from '../lifecycle/admin-security-status.js'
 import type { Host, HostOptions } from '../lifecycle/host.js'
 import { createHostFacade } from '../lifecycle/host-facade.js'
 import { applyLivePluginConfig, overlayLivePluginConfig } from '../lifecycle/live-plugin-config.js'
@@ -931,10 +932,10 @@ export async function createRuntimeGenerationHost(
     securityStatus: () => {
       const head = (current?.host ?? initial).securityStatus?.()
       if (!head) throw new Error('Security status is unavailable')
-      return {
-        ...head,
-        workspaces: [...live.values()].flatMap(({ host }) => host.securityStatus?.().workspaces ?? []),
-      }
+      return combinedSecurityStatus(
+        head,
+        [...live.values()].flatMap(({ host }) => host.securityStatus?.() ?? []),
+      )
     },
     sessionGeneration: (key) => store.session(key)?.generationId,
     lastChange: () => lastChange,

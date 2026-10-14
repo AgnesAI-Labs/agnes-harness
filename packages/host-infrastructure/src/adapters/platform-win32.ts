@@ -3,6 +3,8 @@ import { assertCapabilityId, CAPABILITY_IDS, type PlatformBackend, unprobed } fr
 
 export function createWin32Platform(): PlatformBackend {
   const caps = unprobed()
+  // No Windows backend exists to probe; once probe() has run, its unavailable answer is the result.
+  let sandboxProbed = false
   return {
     os: 'win32',
     // guards-allow-platform: this file is the win32 half of the one place a platform check belongs
@@ -23,7 +25,9 @@ export function createWin32Platform(): PlatformBackend {
       arch: process.arch,
       capabilities: Object.fromEntries(CAPABILITY_IDS.map((id) => [id, caps[id].level])),
     }),
+    sandboxProbed: () => sandboxProbed,
     recordSandboxBackend() {
+      sandboxProbed = true
       // This backend has no Windows process-creation primitive. Never let a report turn argv identity
       // into a restricted-token claim; HostExec must implement and prove that boundary first.
       caps['sandbox.l1'] = {
@@ -48,6 +52,7 @@ export function createWin32Platform(): PlatformBackend {
         reason: 'needs developer mode or admin',
       }
       caps['exec.kill-tree'] = { level: 'full', scope: ['process'] }
+      sandboxProbed = true
       caps['sandbox.l1'] = {
         level: 'unavailable',
         scope: [],
