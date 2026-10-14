@@ -196,6 +196,15 @@ export function targetOf(draft: ScheduleDraft, choices: ScheduleChoices): Schedu
   }
 }
 
+/**
+ * A permission preset by the name the rest of settings uses (`choice.<id>`); a preset a plugin adds
+ * without a name keeps its id, so it is still recognisable.
+ */
+export const presetName = (preset: string, t: Text): string => {
+  const name = t(`choice.${preset}`)
+  return name === `choice.${preset}` ? preset : name
+}
+
 /** A saved choice the current catalog does not list stays selectable, marked as unavailable. */
 const savedOnly = (value: string, known: readonly { key: string }[]): boolean =>
   value !== '' && !known.some((item) => item.key === value)
@@ -373,7 +382,7 @@ export function ScheduleDialog({
                   <option value="">{ux('presetDefault')}</option>
                   {choices.presets.map((preset) => (
                     <option key={preset} value={preset}>
-                      {preset}
+                      {presetName(preset, t)}
                     </option>
                   ))}
                 </SettingsSelect>

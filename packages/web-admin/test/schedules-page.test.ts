@@ -8,6 +8,7 @@ import {
   draftOf,
   emptyDraft,
   MIN_EVERY_SECONDS,
+  presetName,
   selectorOf,
   targetOf,
 } from '../src/settings/schedule-form.js'
@@ -478,6 +479,24 @@ it('says the shortest period instead of saving one the service refuses (F03)', a
   ).toBe(true)
   fill('schedules-when', '90')
   expect(document.body.textContent).not.toContain('Runs at most every 60 seconds.')
+})
+
+it('names permission presets the way settings does, keeping unknown ones by id (S02)', async () => {
+  const zh = (key: string) => settingsCatalog['zh-CN']?.[key] ?? key
+  expect(presetName('workspace-write', zh)).toBe('可修改工作区')
+  expect(presetName('read-only', t)).toBe('Read only')
+  expect(presetName('acme-strict', zh)).toBe('acme-strict')
+  await mount(
+    createElement(SchedulesPage, {
+      api: api([], { choices: async () => scheduleChoices({ presets: ['workspace-write', 'acme-strict'] }) }),
+      t,
+    }),
+  )
+  await click('schedules-new')
+  const options = [...document.querySelectorAll('[data-testid="schedules-preset"] option')].map(
+    (option) => option.textContent,
+  )
+  expect(options.slice(1)).toEqual(['Edit workspace', 'acme-strict'])
 })
 
 it('previews the next run in this computer’s time', () => {
