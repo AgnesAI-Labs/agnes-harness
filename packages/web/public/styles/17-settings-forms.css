@@ -1051,7 +1051,7 @@
     font-weight: var(--font-weight-medium);
   }
   .account-provider-choices > button small {
-    color: var(--agnes-text-tertiary);
+    color: var(--agnes-text-secondary);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-regular);
   }
