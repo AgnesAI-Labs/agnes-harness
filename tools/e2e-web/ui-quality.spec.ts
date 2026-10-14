@@ -258,7 +258,8 @@ for (const locale of ['zh-CN', 'en'])
           await submitTurn(call)
         }
         for (const process of await page.getByTestId('turn-process-toggle').all()) {
-          if ((await process.getAttribute('aria-expanded')) !== 'true') await process.click()
+          if ((await process.isVisible()) && (await process.getAttribute('aria-expanded')) !== 'true')
+            await process.click()
           await expandActivityGroups(
             process.locator('xpath=ancestor::*[@data-testid="conversation-turn"][1]'),
           )

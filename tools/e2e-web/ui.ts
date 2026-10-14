@@ -129,6 +129,7 @@ export function sectionSurface(page: Page, id: string) {
   }
   if (homes[id]) return page.getByTestId(`home-page-${homes[id]}`)
   if (id === 'model') return page.locator('#config-accounts')
+  if (id === 'general') return page.locator('#appearance-settings-pane')
   if (id === 'history') return page.getByTestId('session-search')
   if (id === 'archived') return page.locator('#sessions')
   if (id === 'jobs') return page.getByTestId('terminal-panel')
