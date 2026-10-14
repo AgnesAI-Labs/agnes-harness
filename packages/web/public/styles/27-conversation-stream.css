@@ -586,4 +586,9 @@
       animation: none;
     }
   }
+  @media (min-width: 768px) and (max-width: 900px) {
+    body[data-agnes-region="app"] :is(.agh-disclosure-summary, .agh-btn--link) {
+      min-height: var(--control-height);
+    }
+  }
 }

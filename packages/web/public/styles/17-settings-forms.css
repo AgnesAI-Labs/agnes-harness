@@ -1242,4 +1242,9 @@
   .account-key-help > .agh-disclosure-summary:hover {
     background: var(--agnes-surface-glass-hover);
   }
+  @media (max-width: 767px) {
+    #config-form .appearance-choices .appearance-option {
+      min-height: var(--control-height-touch);
+    }
+  }
 }

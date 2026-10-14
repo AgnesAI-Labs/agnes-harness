@@ -679,4 +679,9 @@
       line-clamp: 2;
     }
   }
+  @media (max-width: 767px) {
+    .session-search-option {
+      min-height: var(--control-height-touch);
+    }
+  }
 }
