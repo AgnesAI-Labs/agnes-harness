@@ -400,15 +400,18 @@ export function Dock({ context }: { context: UiExtensionContext }) {
       {workspace &&
         workspaceHost &&
         createPortal(
-          <Tooltip title={t('workbench.workspace')}>
+          <Tooltip title={`${workspace.name} · ${t('workbench.workspace')}`}>
             <Button
               appearance="ghost"
               size="small"
               className="topbar-workspace"
+              data-testid="topbar-workspace"
+              aria-label={`${workspace.name} · ${t('workbench.workspace')}`}
               onClick={() => void copyWorkspace()}
             >
               <Icon name="folder" />
-              {workspace.name}
+              {/* A narrow bar keeps the folder: the name goes, the tooltip still says it. */}
+              <span className="topbar-workspace-name">{workspace.name}</span>
             </Button>
           </Tooltip>,
           workspaceHost,
@@ -426,33 +429,35 @@ export function Dock({ context }: { context: UiExtensionContext }) {
         const open = layout[`${edge}Open`]
         return (
           <span key={edge}>
-            <Button
-              type="text"
-              size="small"
-              data-edge={edge}
-              data-testid={`workbench-${edge}-toggle`}
-              aria-controls={`workbench-${edge}`}
-              aria-expanded={open}
-              aria-label={t(`workbench.${edge}`)}
-              title={t(`workbench.${edge}`)}
-              onClick={() => {
-                rememberFocus(edge)
-                setLayout((value) => ({
-                  ...value,
-                  [`${edge}Open`]: !open,
-                  ...(window.innerWidth <= 767
-                    ? { [`${edge === 'right' ? 'bottom' : 'right'}Open`]: false }
-                    : {}),
-                }))
-                if (!open)
-                  requestAnimationFrame(() =>
-                    host?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')?.focus(),
-                  )
-              }}
-            >
-              <Icon name={edge === 'right' ? 'panel-right' : 'terminal'} size={18} />
-              <span className="workbench-toggle-label">{t(`workbench.${edge}`)}</span>
-            </Button>
+            <Tooltip title={t(`workbench.${edge}`)}>
+              <Button
+                type="text"
+                size="small"
+                className="workbench-toggle"
+                data-edge={edge}
+                data-testid={`workbench-${edge}-toggle`}
+                aria-controls={`workbench-${edge}`}
+                aria-expanded={open}
+                aria-label={t(`workbench.${edge}`)}
+                onClick={() => {
+                  rememberFocus(edge)
+                  setLayout((value) => ({
+                    ...value,
+                    [`${edge}Open`]: !open,
+                    ...(window.innerWidth <= 767
+                      ? { [`${edge === 'right' ? 'bottom' : 'right'}Open`]: false }
+                      : {}),
+                  }))
+                  if (!open)
+                    requestAnimationFrame(() =>
+                      host?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')?.focus(),
+                    )
+                }}
+              >
+                <Icon name={edge === 'right' ? 'panel-right' : 'terminal'} size={18} />
+                <span className="workbench-toggle-label">{t(`workbench.${edge}`)}</span>
+              </Button>
+            </Tooltip>
             {host &&
               createPortal(
                 <RegionErrorBoundary region={`workbench-${edge}`}>
@@ -582,7 +587,8 @@ export function Dock({ context }: { context: UiExtensionContext }) {
       })}
     </div>
   )
-  return workspaceHost ? createPortal(controlsView, workspaceHost) : controlsView
+  // The toggles live in the bar's action group (this region's host); only the workspace chip joins the title.
+  return controlsView
 }
 const workbenchRenderers = new WeakMap<HTMLElement, RegionRenderer>()
 /** Controller refreshes may arrive in bursts; only this domain surface publishes once per frame. */

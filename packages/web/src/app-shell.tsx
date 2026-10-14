@@ -3,7 +3,7 @@ import { Button, mountApplication, RegionErrorBoundary, useDocumentLanguage } fr
 import type { ReactNode } from 'react'
 import { renderAppDialogs } from './app-dialogs.js'
 import { AppNotice, ConnectionBar, ReadOnlyNotice } from './app-notices.js'
-import { SessionViews } from './regions/session-views.js'
+import { SessionMore, SessionViews } from './regions/session-views.js'
 
 /** The elements AppShell renders for controller-owned regions to mount into. */
 export type ShellHosts = {
@@ -75,8 +75,17 @@ export function AppShell({ children, hosts }: { children?: ReactNode; hosts?: Pa
                 <SessionViews chatRef={hold('viewChat')} traceRef={hold('viewTrace')} />
               </RegionErrorBoundary>
             </div>
-            <div ref={hold('goal')} id="session-goal-host" className="session-goal-host" />
-            <div ref={hold('dockControls')} id="workbench-controls"></div>
+            {/* One group of icon buttons: the workbench toggles, then the menu of everything else. */}
+            <div className="topbar-actions">
+              <div ref={hold('dockControls')} id="workbench-controls"></div>
+              <span className="topbar-more-anchor">
+                <RegionErrorBoundary region="topbar">
+                  <SessionMore />
+                </RegionErrorBoundary>
+                {/* The goal popover opens from the menu; its own toggle sits under the menu button. */}
+                <div ref={hold('goal')} id="session-goal-host" className="session-goal-host" />
+              </span>
+            </div>
           </div>
         </header>
 

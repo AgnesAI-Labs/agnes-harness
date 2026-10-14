@@ -8,7 +8,7 @@ import { expect, test } from './fixtures.js'
 import { accessible, screen, settled, translated } from './quality.js'
 import { toolResult } from './sdk.js'
 import { sandboxedSession } from './test/sandbox.js'
-import { chooseWorkspace, fresh, turn, workbenchTab } from './ui.js'
+import { chooseWorkspace, fresh, openGoal, turn, workbenchTab } from './ui.js'
 
 // Every gate validates the locale/theme/viewport matrix; the private report is an optional copy.
 async function workbenchScreen(page: Page, info: TestInfo, name: string, folder?: string) {
@@ -380,7 +380,7 @@ test('goal panel follows durable progress and shares authorized human controls',
   })
   await page.getByTestId('workbench-right-toggle').click()
   await expect(page.getByTestId('workbench-tab-goal')).toHaveCount(0)
-  await page.getByTestId('goal-toggle').click()
+  await openGoal(page)
   await page.getByTestId('goal-objective').fill('Review the synthetic delivery')
   await page.getByTestId('goal-max-rounds').fill('1')
   await page.getByTestId('goal-save').click()

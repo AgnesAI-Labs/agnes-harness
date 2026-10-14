@@ -129,13 +129,6 @@
       gap: var(--s4);
     }
 
-    /* 页签行里的按钮与页签同高，不把 2.25rem 的页签行撑高。 */
-    #report-problem {
-      width: 2.25rem;
-      min-width: 2.25rem;
-      height: 2.25rem;
-      min-height: 2.25rem;
-    }
     .secondary-button.compact {
       min-height: 2.75rem;
     }

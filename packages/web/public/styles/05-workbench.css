@@ -23,7 +23,7 @@
     gap: var(--s8);
     min-height: 2.75rem;
     padding: 0 var(--s12) 0 var(--s16);
-    border-bottom: 1px solid var(--agnes-line-primary);
+    border-bottom: var(--hairline) solid var(--agnes-line-hairline);
     background: var(--agnes-bg-app-content);
   }
   .topbar {
@@ -34,9 +34,10 @@
   .sidebar-toggle {
     flex: 0 0 auto;
   }
+  /* The title and its workspace chip sit together at the left; the title gives way first. */
   .task-heading {
     min-width: 0;
-    flex: 1;
+    flex: 0 1 auto;
     display: flex;
     align-items: center;
     gap: var(--s8);
@@ -117,13 +118,64 @@
     grid-template-rows: minmax(0, 1fr);
     grid-template-columns: minmax(0, 1fr);
   }
-  /* The view switch and its neighbours close the top bar; the report button stays outside the tablist. */
+  /* The right of the bar: the view switch, then one group of icon buttons. */
   .session-tabs-bar {
     min-width: 0;
-    flex: 0 1 auto;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: var(--s12);
+  }
+  .topbar-actions {
     display: flex;
     align-items: center;
     gap: var(--s4);
+  }
+  /* Every action in the group is a 28px square; the workbench toggle widens only for its label. */
+  .topbar-actions :is(.agh-btn--icon, .workbench-toggle) {
+    min-width: 1.75rem;
+    height: 1.75rem;
+    min-height: 1.75rem;
+    padding-inline: var(--s4);
+    color: var(--agnes-text-secondary);
+  }
+  .topbar-actions .workbench-toggle {
+    gap: var(--s4);
+  }
+  .topbar-actions .workbench-toggle[aria-expanded="true"] {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-selected);
+  }
+  /* The label shows only where the bar has room for it. */
+  @media (max-width: 1439px) {
+    .topbar-row .workbench-toggle-label {
+      display: none;
+    }
+  }
+  /* The menu owns these actions; their own controls stay in the page as the menu's targets. */
+  #report-problem,
+  #session-runtime {
+    display: none;
+  }
+  .topbar-more-anchor {
+    position: relative;
+    display: inline-flex;
+  }
+  /* The goal popover opens under the menu button: its toggle sits there, out of sight and reach. */
+  .topbar-more-anchor > .session-goal-host {
+    position: absolute;
+    inset: 0;
+    width: auto;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .topbar-more-anchor > .session-goal-host :is(span, .agnes-ui-button) {
+    display: block;
+    width: 100%;
+    height: 100%;
   }
   #session-view-controls,
   #session-view-controls > .agh-tooltip-anchor,
@@ -134,28 +186,36 @@
   .session-view-tabs > .ant-tabs-content-holder {
     display: none;
   }
+  /* The view switch reads as the shared segmented control: a track with a raised block on the
+   current view. It stays a tablist, so arrows, Home and End move between the views. */
   .session-tabs {
-    display: flex;
-    gap: var(--s16);
+    display: inline-flex;
+    align-items: stretch;
+    gap: var(--s2);
+    padding: var(--s2);
+    border-radius: var(--radius-segmented);
+    background: var(--agnes-segment-track);
+    box-shadow: inset 0 0 0 var(--hairline) var(--agnes-line-hairline);
   }
-  #report-problem {
-    margin-left: auto;
-  }
-  /* Shared tab vocabulary: text tabs, the current one carries a 2px accent underline. */
   .session-tabs button {
-    min-height: 2.75rem;
-    padding: 0 var(--s2);
+    min-height: var(--control-height-xs);
+    height: auto;
+    padding: 0 var(--s12);
     border: 0;
-    border-block: 2px solid transparent;
-    border-radius: 0;
+    border-radius: calc(var(--radius-segmented) - var(--s2));
     color: var(--agnes-text-secondary);
     background: transparent;
     font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    white-space: nowrap;
+  }
+  .session-tabs button:hover {
+    color: var(--agnes-text-primary);
   }
   .session-tabs button[aria-selected="true"] {
-    border-bottom-color: var(--agnes-brand-primary);
     color: var(--agnes-text-primary);
-    font-weight: var(--font-weight-medium);
+    background: var(--agnes-bg-control);
+    box-shadow: var(--shadow-control);
   }
   .conversation-shell {
     position: relative;
@@ -177,39 +237,36 @@
   .topbar .connection-group {
     display: none;
   }
+  /* The workspace follows the title as a quiet chip. */
   .topbar .topbar-workspace {
-    flex: 0 1 auto;
-    min-width: 0;
-    color: var(--agnes-text-secondary);
+    flex: 0 0 auto;
+    min-width: 1.75rem;
+    height: 1.75rem;
+    min-height: 1.75rem;
+    gap: var(--s4);
+    padding-inline: var(--s8);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
     max-width: 15rem;
     overflow: hidden;
   }
-  /* Narrow bars keep the title, state and controls; the Agent and workspace stay one tap away. */
-  @media (max-width: 900px) {
-    .topbar-workspace,
-    .task-heading .topbar-agent {
-      display: none;
-    }
+  .topbar-workspace-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
-  /* What a crowded bar gives up, in order: the title shortens first; then the workspace name, the
-   Agent chip and the workbench label go, and the two secondary actions move into one menu. The
-   view switch and the workbench toggle always stay. */
+  /* What a crowded bar gives up, in order: the title shortens first; then the Agent chip goes and
+   the workspace chip keeps only its folder. The view switch and the action group always stay. */
   .task-heading h1 {
     min-width: min(6rem, 100%);
   }
-  .topbar-overflow {
-    display: none;
-  }
   @container topbar-row (max-width: 55rem) {
-    .topbar-workspace,
     .task-heading .topbar-agent,
-    .topbar-row .workbench-toggle-label,
-    #report-problem,
-    #session-runtime {
+    .topbar-workspace-name {
       display: none;
     }
-    .topbar-overflow {
-      display: contents;
+    .topbar .topbar-workspace {
+      padding-inline: var(--s4);
     }
   }
 

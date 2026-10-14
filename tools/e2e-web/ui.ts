@@ -259,6 +259,12 @@ async function dismissWorkbench(page: Page) {
 }
 
 /** Open a dock panel through its tab or the real overflow menu when the strip folds it. */
+/** The goal popover opens from the top bar's more menu; its own toggle sits hidden under it. */
+export async function openGoal(page: Page) {
+  await page.locator('#topbar-more').click()
+  await page.getByTestId('topbar-more-goal').click()
+}
+
 export async function workbenchTab(page: Page, id: 'files' | 'terminal' | 'goal' | 'changed-files') {
   const toggle = page.getByTestId('workbench-right-toggle')
   if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()

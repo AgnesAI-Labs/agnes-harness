@@ -12,6 +12,7 @@ import {
   closeSettings,
   expand,
   fresh,
+  openGoal,
   pluginTab,
   preferences,
   section,
@@ -319,12 +320,12 @@ test('UI ask, plan approval, deliverable, child and goal cards perform their act
   await turn(page, `call subagent_collect ${JSON.stringify({ childKey, wait: true })}`)
   expect(JSON.stringify(await toolResult(session, 'subagent_collect'))).toContain('Synthetic delivery')
   await quality(page, info, 'child-card')
-  await page.getByTestId('goal-toggle').click()
+  await openGoal(page)
   await page.getByTestId('goal-objective').fill('E2E finish the inspected delivery')
   await page.getByTestId('goal-max-rounds').fill('1')
   await page.getByTestId('goal-save').click()
   await expect(page.getByTestId('goal-toggle')).toContainText('Blocked goal')
-  await page.getByTestId('goal-toggle').click()
+  await openGoal(page)
   await expect(page.getByTestId('goal-complete')).toBeEnabled()
   await quality(page, info, 'goal-card')
   await page.getByTestId('goal-complete').click()

@@ -107,7 +107,7 @@ describe('rendered topbar region', () => {
     runtime = await mountRenderedIndex()
     const more = document.getElementById('topbar-more') as HTMLButtonElement
     expect(more.getAttribute('aria-label')).toBe('More actions')
-    expect(more.closest('#session-view-controls')).not.toBeNull()
+    expect(more.closest('.topbar-actions')).not.toBeNull()
     expect(more.closest('[role="tablist"]')).toBeNull()
     const pressed = vi.fn()
     const report = document.getElementById('report-problem') as HTMLButtonElement
@@ -140,25 +140,49 @@ describe('rendered topbar region', () => {
         ),
       committed,
     )
+
+    // A session that can hold a goal adds it, labelled with the goal's state; it presses the goal's own toggle.
+    const goalHost = document.getElementById('session-goal-host') as HTMLElement
+    const goal = document.createElement('button')
+    goal.dataset.testid = 'goal-toggle'
+    goal.textContent = 'Create goal'
+    const goalPressed = vi.fn()
+    goal.addEventListener('click', goalPressed)
+    goalHost.append(goal)
+    more.click()
+    more.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+    more.click()
+    const goalEntry = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLElement>('[data-testid="topbar-more-goal"]')
+      expect(found?.textContent).toBe('Create goal')
+      return found
+    }, committed)
+    expect([...document.querySelectorAll('[role="menuitem"]')].map((entry) => entry.textContent)).toEqual([
+      'Runtime info',
+      'Create goal',
+      'Report a problem',
+    ])
+    goalEntry?.click()
+    expect(goalPressed).toHaveBeenCalledTimes(1)
+    goal.remove()
   })
 
-  it('collapses by the width of the bar: labels and secondary actions give way to the title', () => {
+  it('collapses by the width of the bar: the Agent chip and workspace name give way to the title', () => {
     const css = readWebStyleSource(resolve(__dirname, '../public/style.css'))
     expect(css).toMatch(/\.topbar-row \{[^}]*container: topbar-row \/ inline-size/)
-    const narrow = css.slice(css.indexOf('@container topbar-row (max-width: 55rem) {'))
-    expect(narrow.startsWith('@container')).toBe(true)
-    const collapsed = narrow.slice(0, narrow.indexOf('display: contents'))
-    for (const selector of [
-      '.topbar-workspace',
-      '.topbar-agent',
-      '.workbench-toggle-label',
-      '#report-problem',
-      '#session-runtime',
-    ])
-      expect(collapsed, selector).toContain(selector)
-    expect(collapsed).toMatch(/display: none/)
-    expect(collapsed).not.toMatch(/#view-chat|\.session-tabs\b|workbench-right-toggle/)
-    expect(narrow).toMatch(/\.topbar-overflow \{\s*display: contents/)
+    const start = css.indexOf('@container topbar-row (max-width: 55rem) {')
+    expect(start).toBeGreaterThan(-1)
+    const narrow = css.slice(start, css.indexOf('\n  }\n', start))
+    for (const selector of ['.topbar-agent', '.topbar-workspace-name'])
+      expect(narrow, selector).toContain(selector)
+    // The workspace keeps its folder, and the view switch and action group always stay.
+    expect(narrow).not.toMatch(
+      /\.topbar-workspace,|#view-chat|\.session-tabs\b|workbench-right-toggle|topbar-more/,
+    )
+    // The workbench label shows only on wide windows.
+    expect(css).toMatch(
+      /@media \(max-width: 1439px\) \{\s*\.topbar-row \.workbench-toggle-label \{\s*display: none;/,
+    )
   })
 
   it('shadows only topbar and restores the built-in component after unload', async () => {

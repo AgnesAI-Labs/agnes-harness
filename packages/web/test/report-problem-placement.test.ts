@@ -14,7 +14,7 @@ describe('report-problem button placement', () => {
     resetWebDom()
   })
 
-  it('sits beside the view switch in the top bar, outside the tablist and the replaceable topbar unit', async () => {
+  it('is a menu target at the end of the bar, outside the tablist and the replaceable topbar unit', async () => {
     runtime = await mountRenderedIndex()
     const buttons = document.querySelectorAll('#report-problem')
     expect(buttons).toHaveLength(1)
@@ -24,11 +24,17 @@ describe('report-problem button placement', () => {
     expect(button.closest('.connection-group')).toBeNull()
     expect(button.closest('[role="tablist"]')).toBeNull()
 
-    const bar = button.closest('#session-view-controls')
-    expect(bar?.closest('.session-tabs-bar')).not.toBeNull()
-    expect(bar?.querySelector('.session-tabs[role="tablist"]')).not.toBeNull()
-    expect(bar?.lastElementChild?.contains(button)).toBe(true)
-    expect(bar?.closest('header[data-agnes-region="topbar"]')).not.toBeNull()
+    // The action group follows the view switch; the menu is its last control.
+    const group = button.closest('.topbar-actions')
+    expect(group?.closest('.session-tabs-bar')).not.toBeNull()
+    expect(group?.previousElementSibling?.querySelector('.session-tabs[role="tablist"]')).not.toBeNull()
+    expect(group?.closest('header[data-agnes-region="topbar"]')).not.toBeNull()
+    const controls = [...(group?.querySelectorAll<HTMLButtonElement>('button') ?? [])].filter(
+      (control) => control.tabIndex >= 0 && !control.closest('#session-goal-host'),
+    )
+    expect(controls.at(-1)?.id).toBe('topbar-more')
+    // Reached from the menu, so it takes no tab stop of its own.
+    expect(button.tabIndex).toBe(-1)
 
     expect(button.type).toBe('button')
     expect(button.getAttribute('aria-label')).toBe('Report a problem')
@@ -36,15 +42,13 @@ describe('report-problem button placement', () => {
     expect(button.querySelector('svg[aria-hidden="true"][data-agnes-region="icon"]')).not.toBeNull()
   })
 
-  it('moves the row chrome to the bar and keeps the button from growing the tab row on phones', () => {
+  it('draws a hairline under the bar and keeps the menu targets out of sight', () => {
     const css = readWebStyleSource(resolve(__dirname, '../public/style.css'))
     const rule = (selector: string, from = 0) =>
       new RegExp(`^\\s*${selector.replace(/[.#]/g, '\\$&')} \\{([^}]*)\\}`, 'm').exec(css.slice(from))?.[1]
-    expect(rule('.topbar-row')).toMatch(/border-bottom: 1px solid var\(--agnes-line-primary\)/)
-    expect(rule('.session-tabs')).not.toMatch(/padding|border/)
-    expect(rule('#report-problem')).toMatch(/margin-left: auto/)
-    const phone = css.indexOf('@media (max-width: 540px) {')
-    expect(phone).toBeGreaterThan(-1)
-    expect(rule('#report-problem', phone)).toMatch(/height: 2\.25rem/)
+    expect(rule('.topbar-row')).toMatch(/border-bottom: var\(--hairline\) solid var\(--agnes-line-hairline\)/)
+    // The view switch is a segmented track, not underlined text tabs.
+    expect(rule('.session-tabs')).toMatch(/background: var\(--agnes-segment-track\)/)
+    expect(css).toMatch(/#report-problem,\s*#session-runtime \{\s*display: none;/)
   })
 })
