@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { bindAutoDismissDisclosure, bindDismissibleDialog } from '../src/dom/dialog-binding.js'
-import { releaseDialogModal } from '../src/dom/dialog-host.js'
+import { cancelDialogHost, releaseDialogModal, showDialogHost } from '../src/dom/dialog-host.js'
 import { bindDialogSheets } from '../src/dom/dialog-sheets.js'
 
 /** The admin panes own pending-state policy; this helper owns only when a modal may be dismissed. */
@@ -210,5 +210,41 @@ describe('bindAutoDismissDisclosure', () => {
     removed.remove()
     document.body.click()
     expect(kept.open).toBe(false)
+  })
+})
+
+describe('showDialogHost and cancelDialogHost', () => {
+  it('opens a host presented as a page in place, and any other host as a modal', () => {
+    document.body.innerHTML =
+      '<dialog id="page" data-presentation="page"></dialog><dialog id="modal"></dialog>'
+    const page = document.getElementById('page') as HTMLDialogElement
+    const modal = document.getElementById('modal') as HTMLDialogElement
+    const show = vi.spyOn(page, 'show')
+    const showModal = vi.spyOn(modal, 'showModal')
+    showDialogHost(page)
+    showDialogHost(modal)
+    expect(show).toHaveBeenCalledOnce()
+    expect(showModal).toHaveBeenCalledOnce()
+    // A refresh that renders an open host again does not open it twice.
+    showDialogHost(page)
+    expect(show).toHaveBeenCalledOnce()
+    expect(page.open).toBe(true)
+  })
+
+  it('lets the owner close on cancel, and closes a host that has no owner listening', () => {
+    document.body.innerHTML = '<dialog id="owned" open></dialog><dialog id="plain" open></dialog>'
+    const owned = document.getElementById('owned') as HTMLDialogElement
+    const plain = document.getElementById('plain') as HTMLDialogElement
+    const cleanUp = vi.fn()
+    owned.addEventListener('cancel', (event) => {
+      event.preventDefault()
+      cleanUp()
+    })
+    cancelDialogHost(owned)
+    cancelDialogHost(plain)
+    expect(cleanUp).toHaveBeenCalledOnce()
+    // The owner decided: it may keep the host open, e.g. while an operation is busy.
+    expect(owned.open).toBe(true)
+    expect(plain.open).toBe(false)
   })
 })
