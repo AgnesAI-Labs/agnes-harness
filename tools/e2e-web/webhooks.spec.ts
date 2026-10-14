@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { expect, test } from './fixtures.js'
 import { readSessionEvents } from './ledger.js'
 import { accessible, translated } from './quality.js'
-import { chooseWorkspace, preferences, section, settings } from './ui.js'
+import { advanced, chooseWorkspace, preferences, section, settings } from './ui.js'
 
 test('signed business event creates a policy-bound root session', async ({
   page,
@@ -22,6 +22,7 @@ test('signed business event creates a policy-bound root session', async ({
   await page.goto(runtime.url)
   await chooseWorkspace(page, runtime, 'zh-CN')
   await settings(page, 'zh-CN')
+  await advanced(page)
   await section(page, 'triggers')
   await expect(page.getByTestId('triggers-panel')).toHaveAttribute('aria-busy', 'false')
   const body = JSON.stringify({
@@ -37,14 +38,13 @@ test('signed business event creates a policy-bound root session', async ({
   expect((await request.post(`${runtime.url}/hooks/events`, { headers, data: body })).status()).toBe(404)
   await page.getByTestId('trigger-new').click()
   await page.getByTestId('trigger-id').fill('business-issues')
-  await page.getByTestId('trigger-security-details').locator('summary').click()
   await page.getByTestId('trigger-secret-picker').selectOption('secret://webhooks/sample')
   await page.getByTestId('trigger-workspace').selectOption(cwd)
-  await page.getByTestId('trigger-advanced').locator('summary').click()
+  await page.getByTestId('trigger-advanced').locator('summary, .agh-disclosure-summary').click()
   await page.getByTestId('trigger-agent').fill('read-only')
   await page.getByTestId('trigger-save').click()
   await expect(page.getByTestId('trigger-row')).toContainText('business-issues')
-  await page.getByTestId('triggers-config-details').locator('summary').click()
+  await page.getByTestId('triggers-config-details').locator('summary, .agh-disclosure-summary').click()
   await page.getByTestId('triggers-enabled').click()
   await page.getByTestId('triggers-configure').click()
   await expect(page.getByTestId('triggers-panel')).toHaveAttribute('aria-busy', 'false')
@@ -61,7 +61,7 @@ test('signed business event creates a policy-bound root session', async ({
   const result = await accepted.json()
   expect(result.delivery.sessionId).toMatch(/^agnes:webhook:business-issues:/)
   expect((await request.post(`${runtime.url}/hooks/events`, { headers, data: body })).status()).toBe(409)
-  await page.getByTestId('trigger-recent-details').locator('summary').click()
+  await expect(page.getByTestId('trigger-recent')).toBeVisible()
   await page.getByTestId('triggers-refresh').click()
   await expect(page.getByTestId('trigger-delivery')).toHaveCount(4)
   await translated(page)

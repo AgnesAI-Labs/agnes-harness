@@ -1,6 +1,15 @@
 import { expect, test } from './fixtures.js'
 import { accessible, screen, translated } from './quality.js'
-import { chooseWorkspace, closeSettings, fresh, preferences, section, settings } from './ui.js'
+import {
+  chooseWorkspace,
+  closeSettings,
+  expand,
+  fresh,
+  homePage,
+  preferences,
+  section,
+  settings,
+} from './ui.js'
 
 for (const locale of ['en', 'zh-CN'])
   for (const theme of ['light', 'dark'])
@@ -38,19 +47,20 @@ for (const locale of ['en', 'zh-CN'])
       await page.getByTestId('request-trace-compare').selectOption('pin')
       await page.locator('#view-chat').click()
       await settings(page, locale)
-      await section(page, 'system-prompt')
-      await expect(page.getByTestId('system-prompt-editor')).toHaveAttribute('aria-busy', 'false')
-      await expect(page.getByTestId('system-prompt-session-preview')).toBeVisible()
+      await homePage(page, 'plugins')
+      await page.getByTestId('builtin-context').click()
       await page
         .getByTestId('system-prompt-personaPrefix')
         .fill('Synthetic delivery persona: answer with clear next steps.')
       await page.getByTestId('system-prompt-save').click()
       await expect(page.getByTestId('system-prompt-saved')).toBeVisible()
+      await settings(page, locale)
+      await section(page, 'models')
+      await expand(page.getByTestId('settings-subsection-prompt-preview'))
+      await expect(page.getByTestId('system-prompt-session-preview')).toBeVisible()
       await translated(page)
       await accessible(page, info, 'system-prompt')
-      await page.getByTestId('system-prompt-editor').evaluate((element) => {
-        for (let parent = element.parentElement; parent; parent = parent.parentElement) parent.scrollTop = 0
-      })
+      await page.getByTestId('system-prompt-preview').scrollIntoViewIfNeeded()
       await expect(page.getByTestId('system-prompt-preview')).toBeInViewport()
       await page.mouse.move(0, 0)
       await screen(page, info, `system-prompt-${locale}-${theme}`)
@@ -118,7 +128,7 @@ for (const locale of ['en', 'zh-CN'])
         locale === 'en' ? 'Final provider body unavailable' : '最终发送正文不可用',
       )
       await expect(page.getByTestId('request-trace-copy')).toBeDisabled()
-      await page.getByTestId('request-trace-capture').locator('summary').click()
+      await page.getByTestId('request-trace-capture').locator('summary, .agh-disclosure-summary').click()
       await page.getByTestId('request-trace-delete-confirm').check()
       await page.getByTestId('request-trace-delete').click()
       await expect(page.getByTestId('request-trace')).toContainText(

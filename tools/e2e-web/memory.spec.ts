@@ -1,7 +1,16 @@
 import { realpath } from 'node:fs/promises'
 import { expect, test } from './fixtures.js'
 import { accessible, screen, translated } from './quality.js'
-import { chooseWorkspace, closeSettings, fresh, preferences, section, settings } from './ui.js'
+import {
+  advanced,
+  chooseWorkspace,
+  closeSettings,
+  expand,
+  fresh,
+  preferences,
+  section,
+  settings,
+} from './ui.js'
 
 for (const locale of ['en', 'zh-CN'])
   for (const theme of ['light', 'dark'])
@@ -16,11 +25,15 @@ for (const locale of ['en', 'zh-CN'])
       await page.goto(runtime.url)
       await chooseWorkspace(page, runtime, locale)
       await settings(page, locale)
+      await advanced(page)
       await section(page, 'memory')
       await expect(page.getByTestId('memory-panel')).toHaveAttribute('aria-busy', 'false')
-      const memorySection = page.getByTestId('settings-subsection-memory')
-      await expect(memorySection).toHaveAttribute('open')
-      await expect(memorySection.locator('summary').first()).toHaveText(locale === 'en' ? 'Memory' : '记忆')
+      await expand(page.getByTestId('memory-usage'))
+      await expect(page.getByTestId('memory-panel')).toHaveAttribute('aria-busy', 'false')
+      const memorySection = page.getByTestId('home-page-plugins-memory')
+      await expect(memorySection.getByRole('heading', { level: 1 })).toContainText(
+        locale === 'en' ? 'Memory' : '记忆',
+      )
       await expect(memorySection.getByTestId('settings-refresh')).toHaveCount(0)
       await page.getByTestId('memory-workspace').selectOption(cwd)
       await expect(page.getByTestId('memory-mode')).toHaveValue('off')
@@ -85,7 +98,10 @@ for (const locale of ['en', 'zh-CN'])
         'Prefer concise synthetic summaries.',
       )
       await settings(page, locale)
+      await advanced(page)
       await section(page, 'memory')
+      await expect(page.getByTestId('memory-panel')).toHaveAttribute('aria-busy', 'false')
+      await expand(page.getByTestId('memory-usage'))
       await expect(page.getByTestId('memory-panel')).toHaveAttribute('aria-busy', 'false')
       await page.getByTestId('memory-workspace').selectOption(cwd)
       await page.getByTestId('memory-open').click()
@@ -123,7 +139,10 @@ for (const locale of ['en', 'zh-CN'])
         'Prefer precise synthetic summaries.',
       )
       await settings(page, locale)
+      await advanced(page)
       await section(page, 'memory')
+      await expect(page.getByTestId('memory-panel')).toHaveAttribute('aria-busy', 'false')
+      await expand(page.getByTestId('memory-usage'))
       await expect(page.getByTestId('memory-panel')).toHaveAttribute('aria-busy', 'false')
       await page.getByTestId('memory-workspace').selectOption(cwd)
       await page.getByTestId('memory-mode').selectOption('off')

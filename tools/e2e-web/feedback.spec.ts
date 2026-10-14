@@ -1,7 +1,7 @@
 import { startProviderFixture } from '../acceptance/provider-fixture.js'
 import { expect, test } from './fixtures.js'
 import { accessible, translated } from './quality.js'
-import { chooseWorkspace, fresh, preferences, section, settings, turn } from './ui.js'
+import { advanced, chooseWorkspace, fresh, preferences, section, settings, turn } from './ui.js'
 
 test('message feedback drafts a Skill with a scripted local model and publishes only after review', async ({
   page,
@@ -67,13 +67,10 @@ test('message feedback drafts a Skill with a scripted local model and publishes 
       ),
     ).toBe(false)
     await settings(page)
-    await section(page, 'skills')
+    await section(page, 'review')
+    await page.getByTestId('review-type').getByRole('radio', { name: 'Skills', exact: true }).check()
     await page
-      .locator('#resource-list')
-      .getByRole('tab', { name: /^Pending review/ })
-      .click()
-    await page
-      .locator('#resource-list')
+      .getByTestId('home-page-plugins')
       .getByTestId('candidate-list')
       .locator(`li[data-candidate-id="${candidate.candidateId}"]`)
       .getByTestId('candidate-open')
@@ -97,7 +94,7 @@ test('message feedback drafts a Skill with a scripted local model and publishes 
     await expect(page.getByTestId('candidate-published-link')).toContainText('review-evidence')
     await expect(page.getByTestId('candidate-published-link')).toHaveAttribute(
       'href',
-      /settings=skills&skill=review-evidence/,
+      /page=plugins&tab=skills&skill=review-evidence/,
     )
     const published = await client.request('_agnes/v1/admin.feedback', { action: 'list', sessionId })
     expect(published.growth[0]).toMatchObject({
@@ -130,6 +127,8 @@ test('message feedback drafts a Skill with a scripted local model and publishes 
     await settings(page)
     await section(page, 'feedback')
     await expect(page.getByTestId('feedback-admin-item')).toContainText('Cite observed evidence')
+    await advanced(page)
+    await section(page, 'feedback')
     await page.getByTestId('feedback-candidate-filter').selectOption('yes')
     await expect(page.getByTestId('feedback-counts')).toContainText('1 negative')
     await page.getByTestId('feedback-rating-filter').selectOption('up')

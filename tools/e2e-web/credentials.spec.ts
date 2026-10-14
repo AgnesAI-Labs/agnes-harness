@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures.js'
-import { chooseWorkspace, preferences, section, settings } from './ui.js'
+import { chooseWorkspace, expand, preferences, section, settings } from './ui.js'
 
 // Draft values must not enter Playwright's network trace or failure screenshots.
 test.use({ trace: 'off', screenshot: 'off' })
@@ -39,8 +39,9 @@ test('credentials create inline, select in MCP, rename, refused delete and delet
   await chooseWorkspace(page, runtime)
   await settings(page)
   await section(page, 'mcp')
-  await page.locator('#mcp-create').click()
+  await page.getByTestId('mcp-create').click()
   await page.locator('#mcp-method-remote').click()
+  await expand(page.locator('#mcp-advanced'))
   await page.locator('#mcp-name').fill('Credential flow service')
   await page.locator('#mcp-url').fill('http://127.0.0.1:9/mcp')
   await page.getByTestId('mcp-credential-create').click()
