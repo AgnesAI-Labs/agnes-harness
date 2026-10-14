@@ -104,6 +104,12 @@ function RuntimeDetails({ c, t }: { c: RuntimeSettingsContext; t: UiExtensionCon
     }
   }, [open, c.api, revision])
   const providers = snapshot?.providers ?? []
+  // A mutation in here (trust, rescan, migration) changes what this subpage shows: re-read its own
+  // runtime snapshot as well as the page's.
+  const refresh = async () => {
+    setRevision((value) => value + 1)
+    await c.onRefresh()
+  }
   const generations = c.generations?.generations ?? []
   return (
     <SettingsDrill
@@ -165,7 +171,7 @@ function RuntimeDetails({ c, t }: { c: RuntimeSettingsContext; t: UiExtensionCon
             api={c.api}
             canSave={c.canSave}
             t={t}
-            onRefresh={c.onRefresh}
+            onRefresh={refresh}
           />
         </SettingsExpand>
         {snapshot && (
@@ -181,7 +187,7 @@ function RuntimeDetails({ c, t }: { c: RuntimeSettingsContext; t: UiExtensionCon
               canSave={c.canSave}
               canTrust={!!c.canTrust}
               t={t}
-              onRefresh={c.onRefresh}
+              onRefresh={refresh}
             />
           </SettingsExpand>
         )}

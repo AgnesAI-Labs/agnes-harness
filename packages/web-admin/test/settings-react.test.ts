@@ -489,3 +489,45 @@ it('loads registered diagnostics independently of the plugin catalog with one tr
     vi.unstubAllGlobals()
   }
 })
+
+it('re-reads the runtime details after a local plugin rescan, not only the page around them', async () => {
+  const host = document.createElement('div')
+  host.id = 'config-form'
+  host.dataset.runtimePage = 'diagnostics'
+  document.body.append(host)
+  const root = createRoot(host)
+  const snapshot: RuntimeAdminSnapshot = {
+    providers: [],
+    presets: [],
+    localPluginFolders: { home: '/fixture/plugins', workspace: '/fixture/workspace' },
+  }
+  const runtime = vi.fn(async () => snapshot)
+  const reloadLocal = vi.fn(async () => undefined)
+  diagnosticsFetch.mockImplementation(async () =>
+    Response.json({ error: { message: 'off' } }, { status: 503 }),
+  )
+  try {
+    await act(async () =>
+      root.render(
+        createElement(SettingsPages, { admin: adminOf({ runtime, reloadLocal }, ['packages.activate']) }),
+      ),
+    )
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="plugin-diagnostics"]')?.click(),
+    )
+    await vi.waitFor(() => expect(host.querySelector('[data-testid="runtime-local-toggle"]')).not.toBeNull())
+    const reads = runtime.mock.calls.length
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="runtime-local-toggle"]')?.click(),
+    )
+    const rescan = host.querySelector<HTMLButtonElement>('[data-testid="reload-local-plugins"]')
+    expect(rescan).not.toBeNull()
+    await act(async () => rescan?.click())
+    expect(reloadLocal).toHaveBeenCalledOnce()
+    // The subpage's own snapshot is read again after the mutation.
+    await vi.waitFor(() => expect(runtime.mock.calls.length).toBeGreaterThan(reads))
+  } finally {
+    flushSync(() => root.unmount())
+    host.remove()
+  }
+})
