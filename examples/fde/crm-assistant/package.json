@@ -26,7 +26,6 @@
     "@agnes/extension-api": "^4.0.0",
     "@agnes/plugin-runtime": "0.0.0",
     "@sinclair/typebox": "0.34.33",
-    "@modelcontextprotocol/sdk": "1.25.2",
     "@agnes/protocol": "0.0.0"
   },
   "agnes": {

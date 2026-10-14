@@ -62,7 +62,7 @@ Loop **3.0.0** 使用 checkpoint codec **3** 保存待答问题。升级后新�
 
 在 Web/TUI 中先输入 `/plan on`，再提交**新任务**，启用官方计划模式。Loop 从公开提示区识别计划模式，以 `exit_plan_mode` 提交固定业务步骤；官方审批卡片获准后才运行连接器、报告或命令。拒绝计划会停止流程，未启用时跳过此关卡。示例策略保留默认策略的计划模式拒绝结果。计划获准不替代后续业务问题或工具权限；单个原生工具票据通过公开续跑端口和原调用回执恢复，未知回执会阻止重放。
 
-随包 SDK 连接器调用 MCP 服务原始工具名（status / cool / receipt），它们不是 Host 别名。若改为 Host 配置的服务，服务 ID 为 `device` 时，在 loop 调用及允许列表中使用规范名称 `mcp__device__status`, `mcp__device__cool`, `mcp__device__receipt`；若 ID 需清理或有冲突，以目录中的实际名称为准。新客户集成不沿用旧的哈希 `mcp_...` 别名。暴露资源的服务可使用官方 `list_mcp_resources` / `read_mcp_resource`，本夹具仅暴露工具。
+随包连接器自己通过 stdio 实现 MCP 通信，安装后的包不需要任何第三方模块。它调用 MCP 服务原始工具名（status / cool / receipt），它们不是 Host 别名。若改为 Host 配置的服务，服务 ID 为 `device` 时，在 loop 调用及允许列表中使用规范名称 `mcp__device__status`, `mcp__device__cool`, `mcp__device__receipt`；若 ID 需清理或有冲突，以目录中的实际名称为准。新客户集成不沿用旧的哈希 `mcp_...` 别名。暴露资源的服务可使用官方 `list_mcp_resources` / `read_mcp_resource`，本夹具仅暴露工具。
 
 ## 快速测试
 
