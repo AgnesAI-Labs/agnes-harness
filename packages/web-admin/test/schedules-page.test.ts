@@ -13,6 +13,11 @@ import {
   targetOf,
 } from '../src/settings/schedule-form.js'
 import { rowsOf, scheduleChoices } from '../src/settings/schedule-model.js'
+import {
+  SCHEDULE_ACTIVE_REFRESH_MS,
+  SCHEDULE_IDLE_REFRESH_MS,
+  schedulesActive,
+} from '../src/settings/schedule-refresh.js'
 import { nextRun } from '../src/settings/schedule-text.js'
 import {
   describeSchedule,
@@ -497,6 +502,64 @@ it('names permission presets the way settings does, keeping unknown ones by id (
     (option) => option.textContent,
   )
   expect(options.slice(1)).toEqual(['Edit workspace', 'acme-strict'])
+})
+
+it('keeps run and approval states current while the page is open, and rests while it is hidden (F04)', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+  vi.setSystemTime(Date.parse('2026-10-14T08:00:00Z'))
+  let visibility: DocumentVisibilityState = 'visible'
+  const visible = vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility)
+  try {
+    const idle = { ...report, nextRunAt: Date.parse('2026-10-15T08:00:00Z') }
+    const running = { ...idle, runs: [{ at: Date.parse('2026-10-14T07:59:00Z'), outcome: 'running' }] }
+    let rows: unknown[] = [running]
+    const list = vi.fn(async () => ({ schedules: rows }))
+    await mount(createElement(SchedulesPage, { api: api([], { list }), t }))
+    expect(list).toHaveBeenCalledTimes(1)
+    // A run in progress is re-read quickly, so «waiting for approval» or «done» shows on its own.
+    await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_ACTIVE_REFRESH_MS))
+    expect(list).toHaveBeenCalledTimes(2)
+    rows = [{ ...running, runs: [{ ...running.runs[0], outcome: 'waiting_approval' }] }]
+    await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_ACTIVE_REFRESH_MS))
+    expect(document.body.textContent).toContain(ux('outcome.waiting_approval'))
+    // Nothing happening: the list still refreshes, but slowly.
+    rows = [idle]
+    await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_ACTIVE_REFRESH_MS))
+    const settled = list.mock.calls.length
+    await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_ACTIVE_REFRESH_MS))
+    expect(list).toHaveBeenCalledTimes(settled)
+    await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_IDLE_REFRESH_MS))
+    expect(list).toHaveBeenCalledTimes(settled + 1)
+    // Hidden pages do not poll; coming back reads at once.
+    visibility = 'hidden'
+    await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_IDLE_REFRESH_MS * 3))
+    expect(list).toHaveBeenCalledTimes(settled + 1)
+    visibility = 'visible'
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'))
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(list).toHaveBeenCalledTimes(settled + 2)
+    // «Run now» polls quickly until the run shows, even before the list says it is running.
+    await click('schedules-actions')
+    await click('schedules-run-now')
+    const afterRun = list.mock.calls.length
+    await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_ACTIVE_REFRESH_MS))
+    expect(list).toHaveBeenCalledTimes(afterRun + 1)
+  } finally {
+    visible.mockRestore()
+    vi.useRealTimers()
+  }
+})
+
+it('counts a task as active while it runs, waits for approval or is about to run', () => {
+  const now = Date.parse('2026-10-14T08:00:00Z')
+  const [row] = rowsOf({ schedules: [{ ...report, nextRunAt: now + 3_600_000 }] })
+  if (!row) throw new Error('row')
+  expect(schedulesActive([row], now)).toBe(false)
+  expect(schedulesActive([{ ...row, nextRunAt: now + 30_000 }], now)).toBe(true)
+  expect(schedulesActive([{ ...row, status: 'paused', nextRunAt: now + 30_000 }], now)).toBe(false)
+  expect(schedulesActive([{ ...row, runs: [{ at: now, outcome: 'waiting_approval' }] }], now)).toBe(true)
 })
 
 it('previews the next run in this computer’s time', () => {

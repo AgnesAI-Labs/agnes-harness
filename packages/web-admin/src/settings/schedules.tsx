@@ -44,6 +44,7 @@ import {
   type Workspace,
   workspacesOf,
 } from './schedule-model.js'
+import { useScheduleRefresh } from './schedule-refresh.js'
 import {
   codeOf,
   describeSchedule,
@@ -195,27 +196,32 @@ export function SchedulesPage({
       .then((value) => alive.current && setChoices(value))
       .catch(() => undefined)
   }, [api])
-  const refresh = useCallback(() => {
-    if (!api) return Promise.resolve()
-    const request = ++epoch.current
-    setLoading(true)
-    return api
-      .list({ scope: 'all', includeArchived })
-      .then((value) => {
-        if (!alive.current || request !== epoch.current) return
-        setRows(rowsOf(value))
-        setError(undefined)
-      })
-      .catch((reason: unknown) => {
-        if (alive.current && request === epoch.current) setError(reason)
-      })
-      .finally(() => {
-        if (alive.current && request === epoch.current) setLoading(false)
-      })
-  }, [api, includeArchived])
+  // A background re-read stays quiet: no loading state, the list just updates.
+  const refresh = useCallback(
+    (quiet = false) => {
+      if (!api) return Promise.resolve()
+      const request = ++epoch.current
+      if (!quiet) setLoading(true)
+      return api
+        .list({ scope: 'all', includeArchived })
+        .then((value) => {
+          if (!alive.current || request !== epoch.current) return
+          setRows(rowsOf(value))
+          setError(undefined)
+        })
+        .catch((reason: unknown) => {
+          if (alive.current && request === epoch.current) setError(reason)
+        })
+        .finally(() => {
+          if (alive.current && request === epoch.current) setLoading(false)
+        })
+    },
+    [api, includeArchived],
+  )
   useEffect(() => {
     void refresh()
   }, [refresh])
+  const live = useScheduleRefresh(() => refresh(true), rows, Boolean(api))
   const sessionTitle = useMemo(() => new Map(sessions.map((item) => [item.id, item])), [sessions])
   const workspaceName = useMemo(() => new Map(workspaces.map((item) => [item.path, item.name])), [workspaces])
   const homeWorkspace = () => {
@@ -264,6 +270,7 @@ export function SchedulesPage({
         setError({ code: result.code })
         return
       }
+      if (action === 'run') live.expectRun()
       setNotice(ux(action === 'run' ? 'runStarted' : action === 'pause' ? 'noticePaused' : 'noticeResumed'))
     } catch (reason) {
       if (alive.current) setError(reason)
