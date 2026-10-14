@@ -10,10 +10,13 @@ import {
   ListRow,
   Menu,
   SettingsCheckbox,
+  SettingsDrill,
   SettingsList,
   SettingsPage,
   SettingsSection,
   SettingsState,
+  SUBPAGE_CLOSE_EVENT,
+  useSettingsSubpages,
   useUiText,
 } from '@agnes/web-ui'
 import { type ComponentProps, useEffect, useRef, useState } from 'react'
@@ -28,6 +31,10 @@ import {
 import { credentialsCatalog } from './credentials-locale.js'
 
 export { useCredentialOptions } from './credential-options.js'
+
+/** The settings subpage that holds the credential editor. */
+const CREDENTIAL_PAGE = 'credential'
+
 export { CREDENTIALS_CHANGED, CredentialsApi } from './credentials-api.js'
 export { credentialsCatalog } from './credentials-locale.js'
 
@@ -135,10 +142,30 @@ export function CredentialsPage({
       if (lifetime.current) setBusy(false)
     }
   }
-  const open = (mode: 'rename' | 'replace', item: AdminCredentialMetadata) => {
+  // As a section of a settings page the editor is a page of that page; standalone it is a dialog.
+  const pages = useSettingsSubpages()
+  const inPage = section && pages.available
+  const pageBody = useRef<HTMLDivElement>(null)
+  const pageOpen = pages.stack.includes(CREDENTIAL_PAGE)
+  const wasOpen = useRef(false)
+  // Leaving the page by 返回 or the browser drops the draft.
+  useEffect(() => {
+    if (wasOpen.current && !pageOpen) setEditor(undefined)
+    wasOpen.current = pageOpen
+  }, [pageOpen])
+  const edit = (next: NonNullable<typeof editor>) => {
     setError(undefined)
-    setEditor({ mode, item })
+    setEditor(next)
+    if (inPage) pages.open(CREDENTIAL_PAGE)
   }
+  const leavePage = () =>
+    pageBody.current?.dispatchEvent(new CustomEvent(SUBPAGE_CLOSE_EVENT, { bubbles: true }))
+  const saved = (mode: NonNullable<typeof editor>['mode'], item: AdminCredentialMetadata) => {
+    setItems((current) => [item, ...(current ?? []).filter((old) => old.id !== item.id)])
+    setNotice(t(mode === 'create' ? 'saved' : mode === 'rename' ? 'renamed' : 'replaced'))
+    setEditor(undefined)
+  }
+  const open = (mode: 'rename' | 'replace', item: AdminCredentialMetadata) => edit({ mode, item })
   // As a page the list fills the pane; as a section it is one titled group on the host page.
   const Frame = section ? SettingsSection : CredentialsFrame
   return (
@@ -160,7 +187,7 @@ export function CredentialsPage({
             data-testid="credential-create"
             disabled={busy || !!blocked}
             {...(blocked ? { disabledReason: t(`error.${blocked}`) } : {})}
-            onClick={() => setEditor({ mode: 'create' })}
+            onClick={() => edit({ mode: 'create' })}
           >
             {t('create')}
           </Button>
@@ -219,19 +246,38 @@ export function CredentialsPage({
           ))}
         </SettingsList>
       )}
-      {editor && (
+      {editor && !inPage && (
         <CredentialEditor
           api={api}
           {...editor}
           onCancel={() => setEditor(undefined)}
-          onSaved={(item) => {
-            setItems((current) => [item, ...(current ?? []).filter((old) => old.id !== item.id)])
-            setNotice(
-              t(editor.mode === 'create' ? 'saved' : editor.mode === 'rename' ? 'renamed' : 'replaced'),
-            )
-            setEditor(undefined)
-          }}
+          onSaved={(item) => saved(editor.mode, item)}
         />
+      )}
+      {/* Inside settings the editor is a page of its own, opened from the list's actions. */}
+      {inPage && (
+        <SettingsDrill
+          id={CREDENTIAL_PAGE}
+          hidden
+          label={t(editor?.mode === 'rename' || editor?.mode === 'replace' ? editor.mode : 'create')}
+          title={editor?.item ? `${t(editor.mode)} · ${editor.item.label}` : t('create')}
+          description={t('description')}
+        >
+          {editor && (
+            <div ref={pageBody}>
+              <CredentialEditor
+                api={api}
+                {...editor}
+                layout="page"
+                onCancel={() => leavePage()}
+                onSaved={(item) => {
+                  saved(editor.mode, item)
+                  leavePage()
+                }}
+              />
+            </div>
+          )}
+        </SettingsDrill>
       )}
       {removing && (
         <Dialog

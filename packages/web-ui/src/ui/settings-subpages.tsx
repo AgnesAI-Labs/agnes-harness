@@ -134,9 +134,17 @@ export function SettingsSubpageFrame({
 }
 
 /** The subpages open in the nearest frame, outermost first. */
-export function useSettingsSubpages(): { stack: readonly string[]; open(id: string): void; back(): void } {
+export function useSettingsSubpages(): {
+  stack: readonly string[]
+  open(id: string): void
+  back(): void
+  /** Whether a settings page with subpages encloses this component. */
+  available: boolean
+} {
   const frame = useContext(SubpageContext)
-  return frame ?? { stack: [], open: () => {}, back: () => {} }
+  return frame
+    ? { stack: frame.stack, open: frame.open, back: frame.back, available: true }
+    : { stack: [], open: () => {}, back: () => {}, available: false }
 }
 
 /** The inside of a row: optional icon tile, name with an optional hint and ⓘ, then value and control. */
