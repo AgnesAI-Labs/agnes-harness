@@ -419,17 +419,20 @@ export function createTurnController(
     renderApproval()
     // The current decision is independent of the transcript window. Do not make the user wait for
     // hundreds of history pages before they can review the request and answer it.
+    // Started inside the promise, so a lookup that throws at once still settles the search.
     const lookup = ref
-      ? context.client.approval.list(ref.sessionId).then(({ decisions }) => {
-          if (!current()) return
-          const node = pendingApproval(decisions, ref) ?? answeredApproval(decisions, ref)
-          cachedApproval = node ? { session, ticket: JSON.stringify(ref), node } : undefined
-          renderApproval()
-          if (node?.state === 'pending' && limit === undefined) {
-            context.approvalRuntime.focus()
-            focused = true
-          }
-        })
+      ? Promise.resolve()
+          .then(() => context.client.approval.list(ref.sessionId))
+          .then(({ decisions }) => {
+            if (!current()) return
+            const node = pendingApproval(decisions, ref) ?? answeredApproval(decisions, ref)
+            cachedApproval = node ? { session, ticket: JSON.stringify(ref), node } : undefined
+            renderApproval()
+            if (node?.state === 'pending' && limit === undefined) {
+              context.approvalRuntime.focus()
+              focused = true
+            }
+          })
       : Promise.resolve()
     const history = findApproval(session, () => (current() ? context.projection : undefined), limit)
     void Promise.allSettled([lookup, history]).then(([decision, found]) => {

@@ -361,3 +361,14 @@ it('reads the answered state straight from the transcript while the turn is stil
   expect(card?.textContent).toContain('你确认：没执行')
   expect(list).not.toHaveBeenCalled()
 })
+
+it('settles the search and offers «定位审批» again when the decision lookup throws at once', async () => {
+  const { controller, list, showError } = await harness()
+  list.mockImplementation(() => {
+    throw new Error('not connected')
+  })
+  controller.searchApproval()
+  await vi.waitFor(() => expect(document.querySelector('[data-approval-action="locate"]')).not.toBeNull())
+  expect(document.querySelector('[data-testid="approval-card"]')?.textContent).toContain('有一项审批等待处理')
+  expect(showError).toHaveBeenCalledWith(expect.objectContaining({ message: 'not connected' }))
+})

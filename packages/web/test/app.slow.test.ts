@@ -2874,6 +2874,8 @@ describe('incremental opening', () => {
       },
       workspace: { list: vi.fn(async () => ({ items: [] })) },
       session: { list, load: vi.fn(async () => old) },
+      // Like every other client double here since approvals are looked up by decision: none pending.
+      approval: { list: vi.fn(async () => ({ decisions: [] })), decide: vi.fn(async () => undefined) },
       ...clientOverrides,
     })
     binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
