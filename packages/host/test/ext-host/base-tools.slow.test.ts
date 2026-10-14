@@ -491,7 +491,10 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       if (!service) throw new Error('missing Intelligent UI service')
       const surface = (await service.read({ sessionId: session.key }, new AbortController().signal))
         .surfaces[0]!
-      expect(surface).toMatchObject({ status: 'open', surface: { title: 'Questions / 问题' } })
+      expect(surface).toMatchObject({
+        status: 'open',
+        surface: { title: 'Questions', titleKey: 'ui.question.title' },
+      })
       // Optional timeout ends the tool wait, leaving the same form open for late input.
       expect((row.data as { deadline: number }).deadline).toBeLessThanOrEqual(Date.now())
       const submit = (commandId: string, choice: string, revision = surface.surface.revision) =>

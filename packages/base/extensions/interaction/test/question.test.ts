@@ -3,7 +3,7 @@ import { bundledExtensionManifest, checkManifest } from '@agnes/extension-api'
 import { Ajv2020 } from 'ajv/dist/2020.js'
 import { describe, expect, it } from 'vitest'
 import { interactionSurfaceId } from '../../../src/interaction-surfaces.js'
-import { questionProjection } from '../src/index.js'
+import { pendingQuestionText, questionProjection } from '../src/index.js'
 import { questionSurface } from '../src/question.js'
 
 const questions = [
@@ -36,6 +36,33 @@ describe('surface questions', () => {
     ])
       expect(validate(invalid)).toBe(false)
     expect(surface.actions[0]?.tool).toBe('ui_submit')
+  })
+  it('marks an inline-only, localizable question card with its deadline and optional labels', () => {
+    const surface = questionSurface(
+      'question',
+      [...questions, { id: 'named', question: 'Pick a city', label: 'City' }],
+      42,
+    )
+    expect(surface.placement).toEqual({ inline: true, workbench: false, preferred: 'inline' })
+    expect(surface.titleKey).toBe('ui.question.title')
+    expect(JSON.stringify(surface)).not.toMatch(/问题|提交|\/ /)
+    expect(surface.data.question).toEqual({
+      kind: 'ask_user_question',
+      deadline: 42,
+      labels: { named: 'City' },
+    })
+    expect(questionSurface('question', questions).data.question).toEqual({
+      kind: 'ask_user_question',
+      deadline: 0,
+    })
+  })
+  it('tells the model the questions are shown without listing them', () => {
+    const text = pendingQuestionText(questions.length)
+    expect(text).toContain('All 3 questions are shown to the user')
+    expect(text).toMatch(/Do not repeat/)
+    for (const question of questions) expect(text).not.toContain(question.question)
+    expect(text).not.toMatch(/\n1\.|\]\(/)
+    expect(pendingQuestionText(1)).toMatch(/^The question is shown/)
   })
   it('recovers late answers from authenticated action facts and ignores refusals and user prose', () => {
     const fold = questionProjection.apply

@@ -19,6 +19,12 @@ function bounded(questions: Question[], submissions: State['submissions'] = {}):
   while (bytes() > 230000 && questions.length > 1) questions.shift()
   return { questions, submissions: pending }
 }
+/** What the model reads while a question is open. It never lists the questions: the person sees them. */
+export function pendingQuestionText(count: number): string {
+  const subject = count === 1 ? 'The question is' : `All ${count} questions are`
+  return `${subject} shown to the user in the UI as a question card. Do not repeat or list the questions or options in your reply; at most say briefly that you are waiting for their answers. Continue independent work if there is any. The answers arrive later as new user input.`
+}
+
 export const questionProjection: ProjectionDef<State> = {
   name: 'questions',
   stateVersion: 2,
@@ -81,7 +87,7 @@ export default defineAgnesPlugin({
         defineTool({
           name: 'ask_user_question',
           description:
-            'Ask one to four questions with single choice, multiple choice, or free text. Use present for files the user should open or download, and ui_render for tables, charts, forms or dashboards in the UI instead. The agent continues immediately by default; timeoutMs optionally waits up to a bounded deadline. Late answers arrive as new input. Options are labels; omit options for free text. Responses use authenticated surface actions and the ordinary queued-input delivery path.',
+            'Ask one to four questions with single choice, multiple choice, or free text. Use present for files the user should open or download, and ui_render for tables, charts, forms or dashboards in the UI instead. The agent continues immediately by default; timeoutMs optionally waits up to a bounded deadline. Late answers arrive as new input. Options are labels; omit options for free text; label optionally names a question in a few words. The person sees the questions in the UI, so do not restate them in your reply. Responses use authenticated surface actions and the ordinary queued-input delivery path.',
           parameters: QuestionParams,
           meta: {
             isReadOnly: true,
@@ -111,7 +117,10 @@ export default defineAgnesPlugin({
             const id = ctx.session.toolUseId
             const deadline = previous?.deadline ?? Date.now() + (args.timeoutMs ?? 0)
             if (!previous) {
-              await renderInteractionSurface(ctx, questionSurface(interactionSurfaceId(id), args.questions))
+              await renderInteractionSurface(
+                ctx,
+                questionSurface(interactionSurfaceId(id), args.questions, deadline),
+              )
               await plugin.eventLog.append('requested', {
                 id,
                 toolUseId: id,
@@ -139,9 +148,7 @@ export default defineAgnesPlugin({
               content: [
                 {
                   type: 'text',
-                  text: `Question remains open; continue independent work. A late answer arrives through the surface action.
-${args.questions.map((q) => `${q.question}${q.options ? '\n' + q.options.map((o, i) => `${i + 1}. ${o}`).join('\n') : ''}`).join('\n\n')}
-[Open questions](/?session=${encodeURIComponent(ctx.session.key)}&surface=${interactionSurfaceId(id)})`,
+                  text: pendingQuestionText(args.questions.length),
                 },
               ],
               details: { questionId: id, surfaceId: interactionSurfaceId(id), status: 'pending', deadline },
