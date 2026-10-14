@@ -1808,6 +1808,12 @@ export async function runToolsPhase(s: SessionImpl): Promise<StepOutcome> {
         )
       return rows
     })
+    // Reconciliation preserves uncertain side effects, but cannot supersede a person's Stop.
+    // Cancelled decisions have already been invalidated; do not park the stopped turn on them.
+    if (s.ac.signal.aborted) {
+      if (deferredClosers.length) await s.append(deferredClosers)
+      return finishAborted(s)
+    }
     await s.endTurn('parked', {
       events: [
         ...unrecordedParkEvents(s, parks),
