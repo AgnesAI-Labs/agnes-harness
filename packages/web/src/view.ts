@@ -19,6 +19,18 @@ const DURABLE_APPROVAL_KEYS: Record<ApprovalOption, string> = {
 
 /** The UI may act only on options the durable approval event actually offered. */
 export function durableApprovalActions(node: ApprovalNode, t: Translate): DurableApprovalAction[] {
+  // A reconciliation asks a question of fact: the first allowed option means «it ran», reject «it did not».
+  if (node.reconcile) {
+    const ran = node.options.find((option) => option !== 'reject_once')
+    return [
+      ...(ran
+        ? [{ option: ran, label: t('app.reconcile.ran'), verdict: DURABLE_APPROVAL_VERDICTS[ran] }]
+        : []),
+      ...(node.options.includes('reject_once')
+        ? [{ option: 'reject_once' as const, label: t('app.reconcile.notRan'), verdict: 'rejected' as const }]
+        : []),
+    ]
+  }
   return node.options.map((option) => ({
     option,
     label: t(DURABLE_APPROVAL_KEYS[option]),

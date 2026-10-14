@@ -30,8 +30,19 @@ export const reasonLabelKeys: Record<string, string> = {
   subagent_scope: 'timeline.reason.subagentScope',
 }
 
+/** A reconciliation (did a call that lost its result run?) reads as the fact the person confirmed. */
+function reconcileStatus(node: ApprovalNode, t: Translate): string | undefined {
+  if (!node.reconcile) return undefined
+  if (node.state === 'pending') return t('activity.reconcile.pending')
+  if (node.state !== 'decided' || !node.decision || node.decision.reason === 'stopped') return undefined
+  if (node.decision.verdict.startsWith('allowed')) return t('activity.reconcile.ran')
+  if (node.decision.verdict === 'rejected') return t('activity.reconcile.notRan')
+  return undefined
+}
+
 export const approvalStatus = (node: ApprovalNode, t: Translate) =>
-  (node.state === 'decided' || (node.state === 'expired' && node.decision?.reason === 'stopped')) &&
+  reconcileStatus(node, t) ??
+  ((node.state === 'decided' || (node.state === 'expired' && node.decision?.reason === 'stopped')) &&
   node.decision
     ? (() => {
         const key =
@@ -39,4 +50,4 @@ export const approvalStatus = (node: ApprovalNode, t: Translate) =>
           verdictLabelKeys[node.decision.verdict]
         return key === undefined ? t(approvalLabelKeys.decided) : t(key)
       })()
-    : t(approvalLabelKeys[node.state])
+    : t(approvalLabelKeys[node.state]))

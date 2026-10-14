@@ -26,8 +26,14 @@ const APPROVAL_STEP_KEYS: Record<string, string> = {
 function ApprovalStep({ node, t }: { node: ApprovalNode; t: Translate }) {
   const [expanded, setExpanded] = useState(false)
   const decided = node.state === 'decided' && node.decision
-  const key = decided && !node.decision?.reason ? APPROVAL_STEP_KEYS[node.decision?.verdict ?? ''] : undefined
-  const refused = decided && !node.decision?.verdict.startsWith('allowed')
+  // Core asking whether a call that lost its result ran is a question of fact, not a permission.
+  const reconcile = node.reconcile
+  const key =
+    !reconcile && decided && !node.decision?.reason
+      ? APPROVAL_STEP_KEYS[node.decision?.verdict ?? '']
+      : undefined
+  const refused = decided && !reconcile && !node.decision?.verdict.startsWith('allowed')
+  const summary = reconcile ? t('activity.reconcile.summary', { tool: reconcile.tool }) : node.summary
   return (
     <>
       <ActivityRow
@@ -35,9 +41,9 @@ function ApprovalStep({ node, t }: { node: ApprovalNode; t: Translate }) {
         testId="approval-step"
         icon={<ActivityIcon name="approval" />}
         verb={<span className="tool-status">{key ? t(key) : approvalStatus(node, t)}</span>}
-        target={<span className="approval-summary">{node.summary}</span>}
-        tooltip={node.summary}
-        mono
+        target={<span className="approval-summary">{summary}</span>}
+        tooltip={summary}
+        mono={!reconcile}
         state={
           node.state === 'pending'
             ? 'attention'
@@ -49,7 +55,7 @@ function ApprovalStep({ node, t }: { node: ApprovalNode; t: Translate }) {
         onToggle={() => setExpanded((open) => !open)}
       />
       <div className="tool-detail-text approval-detail" hidden={!expanded}>
-        {node.rewrite ? `${node.rewrite.summary}\n\n${node.summary}` : node.summary}
+        {reconcile ? summary : node.rewrite ? `${node.rewrite.summary}\n\n${node.summary}` : node.summary}
       </div>
     </>
   )
@@ -78,7 +84,11 @@ export function nativeContent(
         />
       )
     case 'tool':
-      return props.renderTool ? props.renderTool(node) : <ConversationToolCard node={node} t={t} />
+      return props.renderTool ? (
+        props.renderTool(node, turnStatus)
+      ) : (
+        <ConversationToolCard node={node} t={t} turnStatus={turnStatus} />
+      )
     case 'approval':
       return <ApprovalStep node={node} t={t} />
     case 'cost':

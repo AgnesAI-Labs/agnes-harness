@@ -12,7 +12,7 @@ import type { AppSessionContext } from '../app.js'
 import { rememberWebComposer } from '../composer-memory.js'
 import { sessionTitle } from '../session-title.js'
 import { durableApprovalActions, nodeText, type WebView, webView } from '../view.js'
-import { type ApprovalNode, approvalExpiry, pendingApproval } from './pending-approval.js'
+import { type ApprovalNode, answeredApproval, approvalExpiry, pendingApproval } from './pending-approval.js'
 import { createSessionBookmarks } from './session-bookmarks.js'
 
 export function createTurnController(
@@ -178,11 +178,41 @@ export function createTurnController(
   }
 
   function renderApproval(): void {
-    const durable =
+    const known =
       (context.projection ? webView(context.projection, undefined, context.t).approval : undefined) ??
       (cachedApproval?.session === context.live && cachedApproval?.ticket === parkedTicket()
         ? cachedApproval?.node
         : undefined)
+    const durable = known?.state === 'pending' ? known : undefined
+    // Answered, but the turn has not taken the answer up yet: say so, never that it failed to load.
+    const parkedRef = context.projection?.opState?.parked?.decisionRef
+    const answered =
+      (known?.state === 'decided' ? known : undefined) ??
+      (parkedRef
+        ? context.projection?.nodes.find(
+            (node): node is ApprovalNode =>
+              node.kind === 'approval' && node.state === 'decided' && node.decisionRef?.id === parkedRef.id,
+          )
+        : undefined)
+    if (!context.liveApproval && !durable && answered) {
+      const stick = context.conversationRuntime.isTranscriptNearBottom()
+      const ran = answered.decision?.verdict.startsWith('allowed')
+      context.approvalRuntime.render({
+        key: `answered:${answered.decisionRef?.id ?? answered.id}`,
+        kind: 'answered',
+        title: context.t('app.approval.answeredTitle'),
+        summary: answered.reconcile
+          ? context.t(ran ? 'app.reconcile.answeredRan' : 'app.reconcile.answeredNotRan', {
+              tool: answered.reconcile.tool,
+            })
+          : answered.summary,
+        impact: context.t('app.approval.answeredImpact'),
+        actions: [],
+        disabled: true,
+      })
+      if (stick) context.renderer.pinToBottom()
+      return
+    }
     const parked =
       !context.liveApproval && !durable && context.projection ? context.projection.opState?.parked : undefined
     if (parked && context.approvalSearch !== 'idle') {
@@ -219,10 +249,13 @@ export function createTurnController(
     }
 
     const liveTitle = context.liveApproval?.request.toolCall.title
+    const reconcile = context.liveApproval ? undefined : durable?.reconcile
     const summary =
       typeof liveTitle === 'string'
         ? liveTitle
-        : (durable?.summary ?? context.t('app.approval.defaultSummary'))
+        : reconcile
+          ? context.t('app.reconcile.summary', { tool: reconcile.tool })
+          : (durable?.summary ?? context.t('app.approval.defaultSummary'))
     const risks = {
       destructive: context.t('app.risk.destructive'),
       always: context.t('app.risk.always'),
@@ -232,7 +265,11 @@ export function createTurnController(
     const card = context.liveApproval
       ? liveApprovalCard(context.liveApproval.request.toolCall, context.t)
       : undefined
-    const impact = durable ? risks[durable.risk] : (card?.impact ?? context.t('app.approval.toolImpact'))
+    const impact = reconcile
+      ? context.t('app.reconcile.impact')
+      : durable
+        ? risks[durable.risk]
+        : (card?.impact ?? context.t('app.approval.toolImpact'))
     const rewrite = context.liveApproval ? undefined : durable?.rewrite
     const rewritten = rewrite
       ? rewrite.by.length
@@ -292,7 +329,8 @@ export function createTurnController(
             })),
         )
     }
-    const preview = card?.preview ?? durable?.subjectText
+    // A reconciliation's subject is bookkeeping (ids, turn, step), not something to review.
+    const preview = reconcile ? undefined : (card?.preview ?? durable?.subjectText)
     const planApproval = context.liveApproval
       ? approvalToolName(context.liveApproval.request.toolCall) === 'exit_plan_mode'
       : context.projection?.nodes.some(
@@ -302,11 +340,12 @@ export function createTurnController(
     context.approvalRuntime.render({
       key,
       ...(planApproval ? { kind: 'plan' as const } : {}),
-      title: context.t('app.approval.title'),
+      ...(reconcile ? { kind: 'reconcile' as const } : {}),
+      title: context.t(reconcile ? 'app.reconcile.title' : 'app.approval.title'),
       summary,
       ...(rewritten === undefined ? {} : { rewritten }),
       impact: [impact, approvalExpiry(durable?.expiresAt, context.t)].filter(Boolean).join(' · '),
-      ...(durable ? { risk: durable.risk } : {}),
+      ...(durable && !reconcile ? { risk: durable.risk } : {}),
       ...(card?.warning === undefined ? {} : { warning: card.warning }),
       ...(preview === undefined ? {} : { preview }),
       actions,
@@ -383,10 +422,10 @@ export function createTurnController(
     const lookup = ref
       ? context.client.approval.list(ref.sessionId).then(({ decisions }) => {
           if (!current()) return
-          const node = pendingApproval(decisions, ref)
+          const node = pendingApproval(decisions, ref) ?? answeredApproval(decisions, ref)
           cachedApproval = node ? { session, ticket: JSON.stringify(ref), node } : undefined
           renderApproval()
-          if (node && limit === undefined) {
+          if (node?.state === 'pending' && limit === undefined) {
             context.approvalRuntime.focus()
             focused = true
           }

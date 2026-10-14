@@ -117,6 +117,25 @@ describe('web projection adapter', () => {
     })
   })
 
+  it('answers a reconciliation with «执行了 / 没执行» on the same options', () => {
+    const asked: Extract<UITimeline['nodes'][number], { kind: 'approval' }> = {
+      kind: 'approval',
+      id: 'r',
+      seq: 5,
+      state: 'pending',
+      summary: 'did mcp_manage happen? allowed = it happened, rejected = it did not',
+      risk: 'unknown',
+      options: ['allow_once', 'allow_always', 'reject_once'],
+      reconcile: { tool: 'mcp_manage' },
+      decisionRef: { sessionId: 's', id: 'reconcile', revision: 1 },
+    }
+    // One «it ran» even when several allowed options are offered; no session-wide grant wording.
+    expect(durableApprovalActions(asked, zhT)).toEqual([
+      { option: 'allow_once', label: '执行了', verdict: 'allowed-once' },
+      { option: 'reject_once', label: '没执行', verdict: 'rejected' },
+    ])
+  })
+
   it('removes an expired durable ticket from actions without claiming task success', () => {
     const expired: UITimeline['nodes'][number] = {
       kind: 'approval',

@@ -345,7 +345,7 @@ export function WebConversationMessages({
       if (echo) return null
       return markdown
     },
-    renderTool: (node) => (
+    renderTool: (node, turnStatus) => (
       <RegisteredConversationCard
         card={{
           kind: conversationToolCardKind(node) ?? 'tool',
@@ -375,6 +375,7 @@ export function WebConversationMessages({
               <ConversationToolCard
                 key={node.id}
                 node={node}
+                turnStatus={turnStatus}
                 resultAppendix={rawEchoes.get(node.id)?.join('\n\n')}
                 icon={toolIconReact(node.name)}
                 presentation={interactionToolPresentation(node, (key, vars) => locale?.t(key, vars) ?? key)}

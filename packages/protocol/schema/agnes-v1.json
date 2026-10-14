@@ -3403,6 +3403,15 @@
                 "enum": ["allow_once", "allow_always", "allow_permanent", "reject_once"]
               }
             },
+            "reconcile": {
+              "type": "object",
+              "description": "Present when Core asks whether a tool call whose result never arrived actually ran (decision owner core/unknown-outcome): the tool it asks about. The allowed options mean it ran; rejected means it did not.",
+              "additionalProperties": false,
+              "required": ["tool"],
+              "properties": {
+                "tool": { "type": "string", "maxLength": 256 }
+              }
+            },
             "rewrite": {
               "type": "object",
               "description": "Present when an approval_request hook rewrote the summary or context: the platform's own summary and the hook sources that rewrote it.",

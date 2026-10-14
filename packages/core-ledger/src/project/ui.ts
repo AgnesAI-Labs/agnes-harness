@@ -35,7 +35,7 @@ import { SlotFillView as SlotFillSchema } from '@agnes/protocol/gen/agnes-v1'
 import { contextAnchorOf } from '../reduce/anchor.js'
 import { reduce } from '../reduce/reducer.js'
 import { initialState, type LedgerState } from '../reduce/state.js'
-import { type ApprovalNode, approvalSubject } from './approval-subject.js'
+import { type ApprovalNode, approvalSubject, reconcileTool } from './approval-subject.js'
 import {
   applyCacheHealthEvent,
   type CacheHealthState,
@@ -860,6 +860,10 @@ export class UIProjectionCell {
                 : 'pending',
           summary: clip(value.request.spec.prompt, 4096),
           ...approvalSubject(value.request.spec.subject),
+          // Core asking whether a call that lost its result ran: a reconciliation, not a permission.
+          ...(value.request.owner === 'core/unknown-outcome'
+            ? { reconcile: { tool: reconcileTool(value.request.spec.subject) } }
+            : {}),
           options: value.request.spec.options.map((option) =>
             option === 'allowed-once'
               ? 'allow_once'

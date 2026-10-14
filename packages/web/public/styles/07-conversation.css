@@ -477,6 +477,25 @@
     border-color: var(--agnes-status-danger-border);
     background: var(--agnes-status-danger-bg);
   }
+  /* Already answered, waiting for the Agent to take it up: a quiet status, not a request. */
+  [data-agnes-region="approval"]:has([data-kind="answered"]) {
+    border-color: var(--agnes-line-primary);
+    box-shadow: none;
+  }
+  #approval:has([data-kind="answered"]) h2::before {
+    background: var(--agnes-status-success-text);
+  }
+  /* «It did not run» is a fact, not a refusal: it keeps the neutral outline. */
+  #approval [data-kind="reconcile"] .approval-actions button[data-approval-action*="reject"]:not(:disabled) {
+    color: var(--agnes-text-primary);
+  }
+  #approval
+    [data-kind="reconcile"]
+    .approval-actions
+    button[data-approval-action*="reject"]:hover:not(:disabled) {
+    border-color: var(--agnes-line-emphasis);
+    background: var(--agnes-bg-hover);
+  }
   @media (max-width: 30rem) {
     .approval-actions button {
       flex: 1 1 auto;

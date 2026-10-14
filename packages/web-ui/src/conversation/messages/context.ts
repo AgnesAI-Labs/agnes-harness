@@ -36,7 +36,8 @@ export interface ConversationMessagesProps {
   /** Files the turn produced, shown inside its answer between the text and the action row. */
   renderTurnDeliverables?: (turn: UITurn) => ReactNode
   renderMarkdown?: (text: string, part: 'thinking' | 'body', state?: ConversationMarkdownState) => ReactNode
-  renderTool?: (node: ToolNode) => ReactNode
+  /** `turnStatus`: how the turn holding the call stands, so a call it never ran can say so. */
+  renderTool?: (node: ToolNode, turnStatus?: UITurn['status']) => ReactNode
   renderCost?: (node: CostNode) => ReactNode
   renderSlot?: (node: Extract<UINode, { kind: 'slot' }>) => ReactNode
   /** The upper Web layer owns DSH registration, claims, and fallback visibility. */
