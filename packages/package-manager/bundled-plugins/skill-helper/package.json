@@ -27,7 +27,7 @@
           "displayName": "Skills helper",
           "summary": "Helps create and import reusable Skills through reviewed requests.",
           "description": "Helps create and import reusable Skills through reviewed requests.",
-          "category": "memory-context",
+          "category": "developer",
           "locales": {
             "zh-CN": {
               "displayName": "技能助手",
@@ -42,7 +42,7 @@
       "displayName": "Skills helper",
       "summary": "Helps create and import reusable Skills through reviewed requests.",
       "description": "Helps create and import reusable Skills through reviewed requests.",
-      "category": "memory-context",
+      "category": "developer",
       "locales": {
         "zh-CN": {
           "displayName": "技能助手",
