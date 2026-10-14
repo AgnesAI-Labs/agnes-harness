@@ -438,6 +438,52 @@ describe('turn navigator', () => {
     expect(card()?.textContent).toContain('书签没有保存，请重试。')
   })
 
+  it('keeps the newest change on screen when an earlier save answers or fails first', async () => {
+    const replies: { ok: () => void; fail: (error: Error) => void }[] = []
+    const save = vi.fn(
+      (_list: readonly string[]) =>
+        new Promise<void>((ok, fail) => {
+          replies.push({ ok, fail })
+        }),
+    )
+    const { nodes, turns } = conversation(4)
+    await render(4, { bookmarks: [], onBookmarksChange: save })
+    const marked = () => ticks().flatMap((tick, index) => (tick.dataset.bookmarked ? [index] : []))
+    const press = async (index: number) => {
+      await act(async () => ticks()[index]?.focus())
+      await act(async () => card()?.querySelector<HTMLElement>('[data-testid="turn-nav-bookmark"]')?.click())
+    }
+    await press(0)
+    await press(1)
+    expect(save.mock.calls.map(([list]) => list)).toEqual([['u1'], ['u1', 'u2']])
+    // The first save answers and the host reports what it saved: the newer change stays.
+    await act(async () => replies[0]?.ok())
+    await act(async () =>
+      root.render(
+        createElement(TurnNav, {
+          t: zhT,
+          nodes,
+          turns,
+          viewport,
+          bookmarks: ['u1'],
+          onBookmarksChange: save,
+        }),
+      ),
+    )
+    expect(marked()).toEqual([0, 1])
+    // A third change builds on the newest list, not on the first response.
+    await press(2)
+    expect(save).toHaveBeenLastCalledWith(['u1', 'u2', 'u3'])
+    // The second save fails, but a newer change owns the list: no rollback, no error.
+    await act(async () => replies[1]?.fail(new Error('offline')))
+    expect(marked()).toEqual([0, 1, 2])
+    expect(card()?.textContent).not.toContain('书签没有保存')
+    // The newest save fails: the host's saved list comes back and the reader is told.
+    await act(async () => replies[2]?.fail(new Error('offline')))
+    expect(marked()).toEqual([0])
+    expect(card()?.textContent).toContain('书签没有保存，请重试。')
+  })
+
   it('offers no bookmark control when the host cannot save bookmarks', async () => {
     await render(3)
     await act(async () => ticks()[1]?.focus())
