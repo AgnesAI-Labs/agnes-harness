@@ -410,12 +410,15 @@ describe('web permission synchronization', () => {
     return { old, publish, timeline, connect }
   }
 
-  describe.each(['ordinary', 'start link'])('startup list race %s', (entry) => {
+  const startupRaces = ['ordinary', 'start link', 'settings close', 'settings cancel', 'settings backdrop']
+  describe.each(startupRaces)('startup list race %s', (entry) => {
     let pending: ReturnType<typeof deferred<{ items: { sessionId: string }[] }>>
     beforeEach(async () => {
       // Load the full application as fixture preparation; this race does not measure cold imports.
       installPublicFixture()
       if (entry === 'start link') history.replaceState(null, '', '/?new=1#test-launcher-token')
+      if (entry.startsWith('settings '))
+        history.replaceState(null, '', '/?settings=security#test-launcher-token')
       pending = deferred<{ items: { sessionId: string }[] }>()
       const client = {
         connectionState: 'connected',
@@ -435,7 +438,21 @@ describe('web permission synchronization', () => {
       await vi.waitFor(() => expect(client.session.list).toHaveBeenCalled())
     })
 
-    it('keeps a new draft when the startup session list arrives after the user chooses New', async () => {
+    it('keeps the user choice when the startup session list arrives after navigation', async () => {
+      if (entry.startsWith('settings ')) {
+        document.getElementById('settings')?.click()
+        const dialog = document.getElementById('config') as HTMLDialogElement
+        await vi.waitFor(() => expect(dialog.open).toBe(true))
+        if (entry === 'settings close') document.getElementById('config-close')?.click()
+        else if (entry === 'settings cancel') dialog.dispatchEvent(new Event('cancel', { cancelable: true }))
+        else dialog.click()
+        expect(dialog.open).toBe(false)
+        await act(async () => {
+          pending.resolve({ items: [] })
+        })
+        expect(dialog.open).toBe(false)
+        return
+      }
       const newButton = document.getElementById('new') as HTMLButtonElement
       expect(newButton.disabled).toBe(entry === 'start link')
       newButton.click()
