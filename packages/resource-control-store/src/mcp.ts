@@ -17,7 +17,7 @@ import {
 } from '@agnes/protocol'
 import { renameWriteThrough } from '@agnes/system-node'
 import type { McpLifecycleAdapter } from './adapters.js'
-import { definedRow } from './mcp-definition-row.js'
+import { definedRow, disclosureOnlyUpdate } from './mcp-definition-row.js'
 import type { ResourceAuthority } from './permissions.js'
 import { assertResourceProfile, type ResourceProfileScope } from './profile-scope.js'
 
@@ -821,7 +821,8 @@ export class McpResourceStore {
       signal,
     })
     await this.observe(profile, serverId, result.status)
-    if (result.error) throw new McpLifecycleFailure(result.error)
+    if (result.error && !disclosureOnlyUpdate(op.operation.kind, op.params.previous, row.definition))
+      throw new McpLifecycleFailure(result.error)
   }
   private async observe(profile: string, serverId: string, observed: McpStatus): Promise<void> {
     if (!validateResourceControlData('McpStatus', observed).ok) throw new Error('invalid MCP observation')

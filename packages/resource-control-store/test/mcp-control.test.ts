@@ -255,9 +255,18 @@ describe('MCP durable resource control', () => {
   it('keeps trust and enablement when only the tool disclosure changes, and resets them for any other edit', async () => {
     directory = await mkdtemp(join(tmpdir(), 'agnes-mcp-control-'))
     const store = new McpResourceStore(directory, scope, {
-      reconcile: async ({ serverId, enabled }) => ({
-        status: enabled ? ready(serverId) : { ...ready(serverId), connectionState: 'disabled' as const },
-      }),
+      // A server that stops connecting once its mode is `always`, like one whose process moved away.
+      reconcile: async ({ serverId, enabled, definition: current }) =>
+        current.toolDisclosure === 'always'
+          ? {
+              status: { ...ready(serverId), connectionState: 'unavailable' as const },
+              error: { code: 'MCP_CONNECT_FAILED', message: 'fixture connection refused' },
+            }
+          : {
+              status: enabled
+                ? ready(serverId)
+                : { ...ready(serverId), connectionState: 'disabled' as const },
+            },
       reconnect: async ({ serverId }) => ({ status: ready(serverId) }),
       test: async () => ({ toolCount: 1, catalogRevision: 'a'.repeat(64) }),
       tools: async ({ serverId }) => ({ serverId, catalogRevision: 'a'.repeat(64), items: [] }),
@@ -302,13 +311,27 @@ describe('MCP durable resource control', () => {
       desired: 'enabled',
       definition: { toolDisclosure: 'on-demand' },
     })
-    const renamed = { ...lazy, displayName: 'Renamed' }
+    // The mode is saved even when the server cannot connect; the failure shows in its status.
+    const shown = { ...definition, toolDisclosure: 'always' as const }
+    expect(
+      await call(
+        '_agnes/v1/mcp.servers.update',
+        { ...target, definition: shown, expectedRevision: revision(lazy) },
+        'shown',
+      ),
+    ).toMatchObject({ state: 'succeeded' })
+    expect(await get()).toMatchObject({
+      trust: 'trusted',
+      actual: 'unavailable',
+      definition: { toolDisclosure: 'always' },
+    })
+    const renamed = { ...definition, displayName: 'Renamed' }
     await call(
       '_agnes/v1/mcp.servers.update',
-      { ...target, definition: renamed, expectedRevision: revision(lazy) },
+      { ...target, definition: renamed, expectedRevision: revision(shown) },
       'rename',
     )
-    expect(await get()).toMatchObject({ revision: revision(renamed), trust: 'untrusted' })
+    expect(await get()).toMatchObject({ trust: 'untrusted' })
   })
 
   it('keeps a running enable open when the worker reports the server disabled first', async () => {

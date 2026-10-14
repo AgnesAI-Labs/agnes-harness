@@ -9,6 +9,21 @@ function onlyDisclosureChanged(before: McpServerDefinitionInput, after: McpServe
 }
 
 /**
+ * An update that changed only the tool loading mode succeeds even when the server cannot connect:
+ * the mode is a preference, and rolling it back would not make the server connect. The connection
+ * failure is still observed in the server's status.
+ */
+export function disclosureOnlyUpdate(
+  kind: string,
+  previous: unknown,
+  definition: McpServerDefinitionInput,
+): boolean {
+  if (kind !== '_agnes/v1/mcp.servers.update' || !previous || typeof previous !== 'object') return false
+  const before = (previous as { definition?: McpServerDefinitionInput }).definition
+  return before !== undefined && onlyDisclosureChanged(before, definition)
+}
+
+/**
  * The journal row a create or update writes. Any edit needs review again, so the row starts
  * untrusted (keeping the requested enablement) -- except an update that changes only how tools reach
  * the model: nothing that runs or connects changed, so trust, enablement and a local start approval
