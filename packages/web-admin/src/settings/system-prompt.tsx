@@ -2,33 +2,24 @@ import type { SystemPromptConfig, SystemPromptSnapshot } from '@agnes/protocol'
 import {
   Banner,
   Button,
-  createDocumentLocaleSource,
-  hasPermission,
   promptSourceLabel,
   SettingsCheckbox,
   SettingsCode,
   SettingsDetails,
   SettingsFooter,
   SettingsGroup,
-  SettingsInput,
-  SettingsItem,
   SettingsSection,
   SettingsState,
   SettingsTextArea,
-  UiLocaleProvider,
-  type UiLocaleSource,
   useUiText,
 } from '@agnes/web-ui'
-import { useEffect, useRef, useState } from 'react'
-import { PluginAdminApi } from '../admin/plugins/api.js'
-import { MemoryPanel } from './memory.js'
-import { systemPromptApi } from './system-prompt-api.js'
+import { useEffect, useState } from 'react'
+import {
+  browserPromptApi as browserApi,
+  PROMPT_NAMESPACE as NAMESPACE,
+  type PromptApi,
+} from './prompt-config.js'
 import { promptCatalog } from './system-prompt-locale.js'
-
-const NAMESPACE = '@agnes/web/system-prompt'
-const browserApi = systemPromptApi()
-type PromptApi = ReturnType<typeof systemPromptApi>
-type Instruction = 'personaPrefix' | 'personaSuffix' | 'replyStyle'
 
 /** The stored prompt configuration, read once and replaced by every save. */
 function usePromptConfig(api: PromptApi, enabled = true) {
@@ -248,257 +239,9 @@ function PromptPreview({ api }: { api: PromptApi }) {
   )
 }
 
-/** Whether an element's pane and dialog are open, so a hidden settings pane reads nothing. */
-function useShown(eager: boolean) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [shown, setShown] = useState(eager)
-  useEffect(() => {
-    const node = ref.current
-    if (shown || !node) return
-    const check = () => {
-      if (!node.closest('[hidden]') && (node.closest('dialog')?.open ?? true)) setShown(true)
-    }
-    check()
-    // The pane and the dialog around it are shown by attribute changes on its ancestors.
-    const observer = new MutationObserver(check)
-    for (let parent: HTMLElement | null = node; parent; parent = parent.parentElement)
-      observer.observe(parent, { attributes: true, attributeFilter: ['hidden', 'open'] })
-    return () => observer.disconnect()
-  }, [shown])
-  return [ref, shown] as const
-}
-
-const canEditPrompt = async () => {
-  const context = await PluginAdminApi.context()
-  return !context.readOnly && hasPermission(context.permissions, 'packages.activate')
-}
-
-/**
- * What the user wants the agent to do, and how it should reply: the General page's own group. It
- * writes the opening instruction and the reply style; a closing instruction saved earlier stays
- * editable so nothing is lost. While a full replacement is in use these are read-only.
- */
-export function CustomInstructions({
-  api = browserApi,
-  permission = canEditPrompt,
-  eager = false,
-  onRunConfiguration,
-}: {
-  api?: PromptApi
-  /** Whether this connection may save; the default asks the daemon the page is served by. */
-  permission?: () => Promise<boolean>
-  /** Read at once instead of waiting for the group to be on screen. */
-  eager?: boolean
-  /** Opens the run configuration's full-replacement section. */
-  onRunConfiguration?: () => void
-}) {
-  const { t } = useUiText(NAMESPACE, promptCatalog)
-  const [ref, shown] = useShown(eager)
-  const { snapshot, busy, failed, saved, save, edited } = usePromptConfig(api, shown)
-  const [canSave, setCanSave] = useState(false)
-  const [draft, setDraft] = useState<SystemPromptConfig>({})
-  const [hadClosing, setHadClosing] = useState(false)
-  useEffect(() => {
-    if (!shown) return
-    let current = true
-    void permission().then(
-      (value) => {
-        if (current) setCanSave(value)
-      },
-      () => {},
-    )
-    return () => {
-      current = false
-    }
-  }, [shown, permission])
-  useEffect(() => {
-    if (!snapshot) return
-    setDraft(snapshot.config)
-    setHadClosing(!!snapshot.config.personaSuffix)
-  }, [snapshot])
-  const stored = snapshot?.config ?? {}
-  const replaced = !!stored.fullOverride
-  const locked = !canSave || busy || replaced || !snapshot
-  const dirty = (['personaPrefix', 'personaSuffix', 'replyStyle'] as const).some(
-    (name) => (draft[name] ?? '') !== (stored[name] ?? ''),
-  )
-  const edit = (name: Instruction, value: string) => {
-    edited()
-    setDraft((previous) => {
-      const next = { ...previous }
-      if (value) next[name] = value
-      else delete next[name]
-      return next
-    })
-  }
-  return (
-    <div ref={ref} id="settings-subsection-custom-instructions" tabIndex={-1}>
-      <SettingsSection
-        title={t('instructions')}
-        description={t('instructionsHelp')}
-        data-testid="custom-instructions"
-        aria-busy={busy}
-      >
-        {replaced && (
-          <Banner
-            tone="info"
-            action={
-              onRunConfiguration && (
-                <Button
-                  size="small"
-                  data-testid="custom-instructions-run-config"
-                  onClick={onRunConfiguration}
-                >
-                  {t('openRunConfig')}
-                </Button>
-              )
-            }
-          >
-            {t('replaced')}
-          </Banner>
-        )}
-        {failed && (
-          <Banner tone="error" role="alert">
-            {t('failed')}
-          </Banner>
-        )}
-        <SettingsGroup>
-          <SettingsItem stacked label={t('how')} labelId="custom-instructions-how-label">
-            <SettingsTextArea
-              id="custom-instructions-how"
-              data-testid="system-prompt-personaPrefix"
-              aria-labelledby="custom-instructions-how-label"
-              rows={4}
-              maxLength={8192}
-              placeholder={t('howPlaceholder')}
-              value={draft.personaPrefix ?? ''}
-              disabled={locked}
-              onChange={(event) => edit('personaPrefix', event.currentTarget.value)}
-            />
-          </SettingsItem>
-          <SettingsItem stacked label={t('style')} labelId="custom-instructions-style-label">
-            <SettingsInput
-              id="custom-instructions-style"
-              data-testid="system-prompt-replyStyle"
-              aria-labelledby="custom-instructions-style-label"
-              maxLength={8192}
-              placeholder={t('stylePlaceholder')}
-              value={draft.replyStyle ?? ''}
-              disabled={locked}
-              onChange={(event) => edit('replyStyle', event.currentTarget.value)}
-            />
-          </SettingsItem>
-          {hadClosing && (
-            <SettingsItem stacked label={t('suffix')} labelId="custom-instructions-closing-label">
-              <SettingsTextArea
-                id="custom-instructions-closing"
-                data-testid="system-prompt-personaSuffix"
-                aria-labelledby="custom-instructions-closing-label"
-                rows={3}
-                maxLength={8192}
-                value={draft.personaSuffix ?? ''}
-                disabled={locked}
-                onChange={(event) => edit('personaSuffix', event.currentTarget.value)}
-              />
-            </SettingsItem>
-          )}
-        </SettingsGroup>
-        <SettingsFooter
-          status={
-            saved && !dirty ? (
-              <span data-testid="system-prompt-saved">{t('saved')}</span>
-            ) : snapshot && !canSave && !replaced ? (
-              t('readOnly')
-            ) : undefined
-          }
-        >
-          <Button
-            appearance="primary"
-            data-testid="system-prompt-save"
-            disabled={locked || !dirty}
-            loading={busy && dirty}
-            onClick={() => void save(draft, false)}
-          >
-            {t('save')}
-          </Button>
-        </SettingsFooter>
-      </SettingsSection>
-    </div>
-  )
-}
-
-let documentLocale: UiLocaleSource | undefined
-
-/** What the settings dialog adds to its General page, with the language the document is in. */
-/**
- * 个性化 on the General page: how the agent works for you and what it remembers. It is not behind
- * the advanced switch; memory is read only once the page is on screen.
- */
-export function Personalization({
-  api = browserApi,
-  permission = canEditPrompt,
-  onRunConfiguration,
-}: {
-  api?: PromptApi
-  permission?: () => Promise<boolean>
-  onRunConfiguration?: () => void
-}) {
-  const { t } = useUiText(NAMESPACE, promptCatalog)
-  const [ref, shown] = useShown(false)
-  const [canSave, setCanSave] = useState(false)
-  useEffect(() => {
-    if (!shown) return
-    let current = true
-    void permission().then(
-      (value) => {
-        if (current) setCanSave(value)
-      },
-      () => {},
-    )
-    return () => {
-      current = false
-    }
-  }, [shown, permission])
-  return (
-    <SettingsSection
-      id="settings-subsection-personalization"
-      tabIndex={-1}
-      className="agnes-settings-personalization"
-      title={t('personalization')}
-      description={t('personalizationHelp')}
-      data-testid="settings-personalization"
-    >
-      <CustomInstructions
-        api={api}
-        permission={permission}
-        {...(onRunConfiguration ? { onRunConfiguration } : {})}
-      />
-      <div ref={ref} id="settings-subsection-memory" tabIndex={-1}>
-        <SettingsSection
-          title={t('memory')}
-          description={t('memoryHelp')}
-          data-testid="personalization-memory"
-        >
-          {shown && <MemoryPanel canSave={canSave} />}
-        </SettingsSection>
-      </div>
-    </SettingsSection>
-  )
-}
-
-export function SettingsGeneralExtras() {
-  documentLocale ??= createDocumentLocaleSource({}).source
-  return (
-    <UiLocaleProvider source={documentLocale}>
-      <Personalization
-        onRunConfiguration={() =>
-          document
-            .getElementById('config-form')
-            ?.dispatchEvent(
-              new CustomEvent('agnes:settings-route', { detail: 'system-prompt', bubbles: true }),
-            )
-        }
-      />
-    </UiLocaleProvider>
-  )
-}
+export {
+  CustomInstructions,
+  Personalization,
+  replyStyleChoice,
+  SettingsGeneralExtras,
+} from './personalization.js'

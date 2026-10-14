@@ -1,9 +1,15 @@
 /** @vitest-environment happy-dom */
 import type { SystemPromptSnapshot } from '@agnes/protocol'
+import { SettingsSubpageFrame } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
-import { CustomInstructions, Personalization, SystemPromptPanel } from '../src/settings/system-prompt.js'
+import {
+  CustomInstructions,
+  Personalization,
+  replyStyleChoice,
+  SystemPromptPanel,
+} from '../src/settings/system-prompt.js'
 import { systemPromptApi } from '../src/settings/system-prompt-api.js'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
@@ -44,35 +50,68 @@ function fixture(initial: SystemPromptSnapshot['config'] = {}) {
   return { api, host, root, writes, field, input, button, click }
 }
 
-it('saves the General page instructions only when they changed, and locks them under a full replacement', async () => {
-  const { api, host, root, writes, field, input, button, click } = fixture()
+it('saves the General page instructions by themselves, maps the reply styles, and locks them under a full replacement', async () => {
+  const { api, host, root, writes, field, input } = fixture()
   let opened = 0
+  const blur = async (name: string) =>
+    act(async () => field(name)!.dispatchEvent(new FocusEvent('focusout', { bubbles: true })))
+  const choose = async (value: string) =>
+    act(async () =>
+      host
+        .querySelector<HTMLInputElement>(
+          `[data-testid="system-prompt-replyStyle-choice"] input[value="${value}"]`,
+        )!
+        .click(),
+    )
   try {
     await act(async () =>
       root.render(
-        createElement(CustomInstructions, {
-          api,
-          eager: true,
-          permission: async () => true,
-          onRunConfiguration: () => opened++,
-        }),
+        createElement(
+          SettingsSubpageFrame,
+          { header: null },
+          createElement(CustomInstructions, {
+            api,
+            eager: true,
+            permission: async () => true,
+            onRunConfiguration: () => opened++,
+          }),
+        ),
       ),
     )
-    expect(host.textContent).toContain('What you want the agent to do')
-    expect(host.textContent).toContain('Reply style')
-    // No closing instruction was ever saved, so its field is not offered.
-    expect(field('personaSuffix')).toBeNull()
-    expect(button('save')?.disabled).toBe(true)
+    expect(field('personaPrefix')?.getAttribute('placeholder')).toContain('What should Agnes Harness do?')
+    // Nothing to press: there is no save button and no 「saved」 line.
+    expect(host.querySelector('[data-testid="system-prompt-save"]')).toBeNull()
     await input('personaPrefix', 'lead with the conclusion')
-    await input('replyStyle', 'brief')
-    expect(button('save')?.disabled).toBe(false)
-    await click('save')
+    await blur('personaPrefix')
     expect(writes.at(-1)).toEqual({
-      config: { personaPrefix: 'lead with the conclusion', replyStyle: 'brief' },
+      config: { personaPrefix: 'lead with the conclusion' },
       confirmFullOverride: false,
     })
-    expect(host.querySelector('[data-testid="system-prompt-saved"]')).not.toBeNull()
-    expect(button('save')?.disabled).toBe(true)
+    await choose('concise')
+    expect(writes.at(-1)?.config).toEqual({
+      personaPrefix: 'lead with the conclusion',
+      replyStyle: 'Concise: lead with the answer and keep it short.',
+    })
+    // 自定义 opens one field; what is typed there is the reply style.
+    expect(field('replyStyle')).toBeNull()
+    await choose('custom')
+    await input('replyStyle', 'brief, plain words')
+    await blur('replyStyle')
+    expect(writes.at(-1)?.config.replyStyle).toBe('brief, plain words')
+    await choose('default')
+    expect(writes.at(-1)?.config).toEqual({ personaPrefix: 'lead with the conclusion' })
+    // The closing instruction is a subpage of its own.
+    expect(field('personaSuffix')).toBeNull()
+    const closing = host.querySelector<HTMLButtonElement>('[data-testid="custom-instructions-closing"]')
+    expect(closing?.textContent).toContain('Not set')
+    await act(async () => closing?.click())
+    await input('personaSuffix', 'list the next steps')
+    await blur('personaSuffix')
+    expect(writes.at(-1)?.config).toEqual({
+      personaPrefix: 'lead with the conclusion',
+      personaSuffix: 'list the next steps',
+    })
+    expect(host.textContent).not.toMatch(/Saved/)
   } finally {
     await act(async () => root.unmount())
     host.remove()
@@ -81,17 +120,23 @@ it('saves the General page instructions only when they changed, and locks them u
   try {
     await act(async () =>
       replaced.root.render(
-        createElement(CustomInstructions, {
-          api: replaced.api,
-          eager: true,
-          permission: async () => true,
-          onRunConfiguration: () => opened++,
-        }),
+        createElement(
+          SettingsSubpageFrame,
+          { header: null },
+          createElement(CustomInstructions, {
+            api: replaced.api,
+            eager: true,
+            permission: async () => true,
+            onRunConfiguration: () => opened++,
+          }),
+        ),
       ),
     )
     expect(replaced.field('personaPrefix')?.disabled).toBe(true)
-    // A closing instruction saved earlier stays visible.
-    expect(replaced.field('personaSuffix')?.value).toBe('sign off')
+    // A closing instruction saved earlier is shown on its row.
+    expect(replaced.host.querySelector('[data-testid="custom-instructions-closing"]')?.textContent).toContain(
+      'sign off',
+    )
     expect(replaced.host.textContent).toContain('full replacement prompt is in use')
     await act(async () =>
       replaced.host
@@ -103,6 +148,13 @@ it('saves the General page instructions only when they changed, and locks them u
     await act(async () => replaced.root.unmount())
     replaced.host.remove()
   }
+})
+
+it('reads a saved reply style back as its choice', () => {
+  expect(replyStyleChoice(undefined)).toBe('default')
+  expect(replyStyleChoice('简洁：先给结论，少铺垫。')).toBe('concise')
+  expect(replyStyleChoice('Detailed: explain the reasoning and evidence, step by step.')).toBe('detailed')
+  expect(replyStyleChoice('pirate voice')).toBe('custom')
 })
 
 it('reads nothing while the General page is not on screen', async () => {
@@ -155,12 +207,13 @@ it('groups the instructions and memory as 个性化, reading memory only once th
     const group = host.querySelector('[data-testid="settings-personalization"]')
     expect(group?.id).toBe('settings-subsection-personalization')
     expect(group?.querySelector('h3')?.textContent).toBe('Personalization')
+    expect(group?.querySelector('[data-testid="custom-instructions"] textarea')).not.toBeNull()
     // Both links into the group have a target: the instructions and the memory beneath them.
     expect(
       group?.querySelector('#settings-subsection-custom-instructions [data-testid="custom-instructions"]'),
     ).not.toBeNull()
     expect(
-      group?.querySelector('#settings-subsection-memory [data-testid="personalization-memory"]'),
+      group?.querySelector('#settings-subsection-memory[data-testid="personalization-memory"]'),
     ).not.toBeNull()
     expect(host.querySelector('[data-testid="memory-panel"]')).toBeNull()
     expect(contextReads).not.toHaveBeenCalled()

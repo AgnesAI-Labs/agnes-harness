@@ -911,43 +911,36 @@
     cursor: pointer;
   }
 
-  /* Colour scheme: a section of its own above the rows, three thumbnails that are the radios. */
-  .appearance-options.appearance-schemes {
-    /* Sized by its thumbnails: a fixed minimum would let a full page squeeze the row under them. */
-    min-height: auto;
-    flex-direction: column;
-    align-items: stretch;
-    justify-content: flex-start;
+  /* 个性化 and 记忆 are two groups of the General page, a page rhythm apart. */
+  .agnes-settings-personalization,
+  #settings-subsection-custom-instructions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s24);
+  }
+  #settings-subsection-custom-instructions {
     gap: var(--s8);
+  }
+  /* A row's choices sit in a fieldset that draws nothing of its own. */
+  fieldset.agnes-settings-fieldset {
+    min-width: 0;
+    margin: 0;
     padding: 0;
     border: 0;
-  }
-  .appearance-schemes > legend {
-    float: none;
-    margin-inline-start: var(--s4);
-    color: var(--agnes-text-secondary);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-semibold);
-  }
-  /* 个性化 holds two titled groups: its own title reads one step larger, the groups sit apart. */
-  .agnes-settings-personalization {
-    gap: var(--s16);
-  }
-  .agnes-settings-personalization > .agnes-settings-section-heading h3 {
-    font-size: var(--font-size-md);
   }
   .appearance-thumbs {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--s12);
+    justify-content: flex-end;
+    gap: var(--s10);
   }
   .appearance-thumbs .appearance-option {
     flex-direction: column;
     align-items: center;
-    gap: var(--s8);
+    gap: var(--s4);
     padding: 0;
     color: var(--agnes-text-secondary);
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-xs);
   }
   .appearance-thumbs .appearance-option:hover,
   .appearance-thumbs .appearance-option:has(input:checked) {
@@ -974,9 +967,9 @@
   }
   .agh-scheme-thumbnail {
     display: block;
-    width: 7rem;
-    height: 4.5rem;
-    border-radius: var(--radius-card);
+    width: 3.875rem;
+    height: 2.5rem;
+    border-radius: var(--radius-control);
     box-shadow: 0 0 0 1px var(--agnes-line-primary);
   }
   .appearance-thumbs .appearance-option:has(input:checked) .agh-scheme-thumbnail {

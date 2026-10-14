@@ -2301,4 +2301,29 @@
   [data-attention="error"]::after {
     background: var(--agnes-status-danger-solid);
   }
+
+  /* A short note under a group: what happens elsewhere, in one muted line. */
+  .agnes-settings-note {
+    margin: 0;
+    padding-inline: var(--s4);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: 1.6;
+  }
+  /* A value that is text the user wrote: one line, cut with an ellipsis. */
+  .agnes-settings-value-text {
+    display: inline-block;
+    max-width: 16rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* A field holding file or prompt text reads in the monospace face. */
+  .agnes-settings-code-input {
+    width: 100%;
+    min-height: 10rem;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+  }
 }

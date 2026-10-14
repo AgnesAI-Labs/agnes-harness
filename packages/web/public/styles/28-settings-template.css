@@ -376,7 +376,7 @@
    because the column ends before it. */
   @container settings-content (max-width: 54rem) {
     .agnes-settings-group-title,
-    #settings-group-title[hidden] ~ #settings-pane-slots .settings-content > .agnes-settings-page-heading,
+    #settings-group-title[hidden] ~ #settings-pane-slots .settings-content .agnes-settings-page-top,
     #settings-group-title[hidden] ~ #settings-sections-pane .agnes-settings-page-heading,
     #settings-group-title[hidden] ~ #settings-pane-slots #plugin-list .agnes-settings-page-heading {
       padding-inline-end: calc(var(--settings-gutter) + var(--s24));
@@ -389,7 +389,7 @@
     .admin-page {
       --settings-gutter: var(--s16);
     }
-    .settings-shell .settings-content > .agnes-settings-page-heading,
+    .settings-shell .settings-content .agnes-settings-page-top,
     .runtime-settings .agnes-settings-page:not([data-nested]) .agnes-settings-page-top {
       flex-wrap: wrap;
       padding-top: var(--s8);

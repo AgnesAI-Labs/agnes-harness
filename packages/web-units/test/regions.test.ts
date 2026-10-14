@@ -18,6 +18,7 @@ import type { SettingsNavigationEntry, SettingsRegionHandle } from '../src/setti
 const roots: Root[] = []
 const englishText: Record<string, string> = {
   'settings-shell.appearanceTitle': 'General',
+  'settings-shell.appearanceGroup': 'Appearance',
   'settings-shell.fontScale': 'Font size',
   'shell.install': 'Install from source',
   'button.refresh': 'Refresh Skill catalog',
@@ -377,12 +378,17 @@ describe('independent core web-unit implementations', () => {
     // 语言切换必须留在通用设置里：合并 origin/main 时它一度被整段冲掉，
     // 而当时的用例断言被改成只查配色和字号，回归没有被兜住。
     // The language and skin controls are pickers filled at run time, not options written here.
-    expect(host.querySelector('[aria-label="Language"] select#locale-select')).toBeInstanceOf(
-      HTMLSelectElement,
-    )
+    const languageRow = host.querySelector('select#locale-select')?.closest('.agnes-settings-item')
+    expect(languageRow?.querySelector('.agnes-settings-item-label')?.textContent).toBe('Language')
     expect(host.querySelector('select#skin-select + #skin-option-items')).toBeTruthy()
     expect(host.querySelector('input[name="agnes-locale"], input[name="agnes-skin"]')).toBeNull()
-    expect(host.querySelector('[aria-label="Language"] legend')?.textContent).toBe('Language')
+    // Appearance is one labelled group of rows; the advanced switch is the page's last row.
+    expect(host.querySelector('.appearance-group h3')?.textContent).toContain('Appearance')
+    expect(
+      [...host.querySelectorAll('#appearance-settings-pane .agnes-settings-block')]
+        .at(-1)
+        ?.querySelector('[data-testid="settings-advanced-switch"]'),
+    ).toBeTruthy()
   })
 
   it('keeps the conversation child contract in the web-units package', () => {
