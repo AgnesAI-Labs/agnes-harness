@@ -50,7 +50,12 @@ export function bindAccountPage(
         delete form.dataset.page
         const ours = closing
         closing = false
-        if (!ours) onLeave()
+        if (!ours)
+          queueMicrotask(() => {
+            // React is still committing the departing page here. Only its living parent may
+            // discard the draft, and a newly attached page owns its own interaction by then.
+            if (!host && settings.isConnected && fallback.isConnected) onLeave()
+          })
       }
     },
   })

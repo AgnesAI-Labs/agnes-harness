@@ -303,8 +303,9 @@ function modelMenu(): HTMLElement {
 }
 
 afterEach(async () => {
-  window.dispatchEvent(new Event('pagehide'))
-  await Promise.resolve()
+  await act(async () => {
+    window.dispatchEvent(new Event('pagehide'))
+  })
   vi.resetModules()
   vi.clearAllMocks()
   binding.loadWebSession.mockReset()
