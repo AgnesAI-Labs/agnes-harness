@@ -124,6 +124,7 @@ test('v3 MCP two-step local wizard saves a stdio fixture only after consent', as
   await homePage(page, 'plugins', 'mcp')
   await page.getByTestId('mcp-create').click()
   const dialog = page.locator('#mcp-dialog')
+  await expect(dialog).toBeVisible()
   await expect(dialog.locator('#mcp-step')).toContainText(/1/)
   await expect(dialog.locator('#mcp-command')).toBeHidden()
   await dialog.locator('#mcp-method-local').click()

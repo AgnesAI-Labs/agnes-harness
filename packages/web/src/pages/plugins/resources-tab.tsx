@@ -90,6 +90,7 @@ export function ResourcesTab({
             htmlType="button"
             appearance="primary"
             data-testid="mcp-create"
+            disabled
             icon={<Icon name="plus" />}
           >
             {t('mcp.add')}
