@@ -1466,3 +1466,276 @@
     }
   }
 }
+
+/* The panel frame shared by the workbench «Views» tab and the card inside an answer: a header with
+   the surface's icon, title and source line, the preset body, then an action bar whose left side
+   reports the latest action state. File lists keep their own compact rows. */
+@layer ui {
+  .agnes-intelligent-surface:not([data-kind="deliverables"]) {
+    gap: var(--s12);
+    padding: 0 0 var(--s12);
+    overflow: hidden;
+    border-radius: var(--radius-lg);
+  }
+  .agnes-intelligent-surface:not([data-kind="deliverables"]) > :not(header, footer) {
+    margin-inline: var(--s12);
+  }
+  .agnes-intelligent-surface:not([data-kind="deliverables"]) > header {
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: var(--s8);
+    margin: 0;
+    padding: var(--s10) var(--s8) var(--s10) var(--s12);
+    border-bottom: 1px solid var(--agnes-line-primary);
+  }
+  .agnes-intelligent-icon {
+    display: grid;
+    flex: 0 0 auto;
+    place-items: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: var(--radius-md);
+    background: var(--agnes-brand-emphasis-soft);
+    color: var(--agnes-brand-primary);
+  }
+  .agnes-intelligent-icon > .agh-icon {
+    width: 0.875rem;
+    height: 0.875rem;
+  }
+  .agnes-intelligent-heading {
+    display: grid;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .agnes-intelligent-surface:not([data-kind="deliverables"]) .agnes-intelligent-heading > h3 {
+    overflow: hidden;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-md);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agnes-intelligent-surface .agnes-intelligent-meta {
+    margin: 0;
+    overflow: hidden;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: 1.5;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agnes-intelligent-surface [data-testid="ui-receipts"][hidden] {
+    display: none;
+  }
+  /* Action bar: execution state on the left, secondary actions then the one primary on the right. */
+  .agnes-intelligent-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s8);
+    margin-block-end: calc(-1 * var(--s12));
+    padding: var(--s8) var(--s12);
+    border-top: 1px solid var(--agnes-line-primary);
+    background: var(--agnes-bg-card);
+  }
+  .agnes-intelligent-footer-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--s8);
+    margin-inline-start: auto;
+  }
+  .agnes-intelligent-run {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s4) var(--s8);
+    min-width: 0;
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .agnes-intelligent-run-note {
+    color: var(--agnes-text-tertiary);
+  }
+  .agnes-intelligent-surface .agnes-intelligent-run .agh-btn--link {
+    height: auto;
+    padding: 0;
+  }
+  /* Status values are small flat tags. */
+  .agnes-intelligent-surface .agnes-intelligent-tag {
+    padding: 0 var(--s8);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: var(--agnes-bg-subtle);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.6;
+  }
+  .agnes-intelligent-surface .agnes-intelligent-tag[data-tone="success"] {
+    background: var(--agnes-status-success-bg);
+  }
+  .agnes-intelligent-surface .agnes-intelligent-tag[data-tone="warning"] {
+    background: var(--agnes-status-warning-bg);
+  }
+  .agnes-intelligent-surface .agnes-intelligent-tag[data-tone="error"] {
+    background: var(--agnes-status-danger-bg);
+  }
+  /* Located from the workbench: a short brand ring on the conversation's card or chip. */
+  :is(.agnes-intelligent-surface, .agnes-intelligent-chip)[data-located] {
+    outline: 2px solid var(--agnes-brand-primary);
+    outline-offset: 2px;
+    transition: outline-color var(--transition-fast);
+  }
+
+  /* Metrics: two to four sunken tiles with tabular figures. */
+  .agnes-intelligent-detail-card[data-variant="metrics"] {
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+  .agnes-intelligent-detail-card[data-variant="metrics"] .agnes-intelligent-detail {
+    grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+    gap: var(--s8);
+  }
+  .agnes-intelligent-detail-card[data-variant="metrics"] .agnes-intelligent-detail > div {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s2);
+    padding: var(--s8) var(--s10);
+    border: 0;
+    border-radius: var(--radius-md);
+    background: var(--agnes-bg-subtle);
+  }
+  .agnes-intelligent-detail-card[data-variant="metrics"] dt {
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+  }
+  .agnes-intelligent-detail-card[data-variant="metrics"] dd {
+    font-size: var(--font-size-lg);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Table: a light header, 32px rows, figures right-aligned, the selected rows in brand tint. */
+  .agnes-intelligent-surface .agh-table {
+    --ant-table-row-selected-bg: var(--agnes-brand-emphasis-soft);
+    --ant-table-row-selected-hover-bg: var(--agnes-brand-emphasis-soft);
+  }
+  .agnes-intelligent-surface .agnes-intelligent-catalog :is(th, td) {
+    height: 2rem;
+    padding: 0 var(--s8);
+    font-variant-numeric: tabular-nums;
+  }
+  .agnes-intelligent-surface .agnes-intelligent-catalog thead :is(th, td) {
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+  }
+  .agnes-intelligent-surface .agnes-intelligent-catalog tbody tr:nth-child(even) {
+    background: transparent;
+  }
+  .agnes-intelligent-surface .agnes-intelligent-catalog tbody tr:has(input:checked) > :is(th, td) {
+    background: var(--agnes-brand-emphasis-soft);
+  }
+
+  /* Form: the label above a 32px control, a small dot after a required label. */
+  .agnes-intelligent-field {
+    display: grid;
+    gap: var(--s4);
+    min-width: 0;
+  }
+  .agnes-intelligent-form + .agnes-intelligent-actions,
+  .agnes-intelligent-field + .agnes-intelligent-field {
+    margin-block-start: var(--s12);
+  }
+  .agnes-intelligent-surface .agnes-intelligent-form .config-field {
+    gap: var(--s4);
+  }
+  .agnes-intelligent-surface .agnes-intelligent-form :is(label, legend) {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+  }
+  .agnes-intelligent-surface
+    .agnes-intelligent-form
+    :is(input:not([type="checkbox"], [type="radio"]), select) {
+    min-height: 2rem;
+  }
+  :is(.agnes-intelligent-field, .agnes-intelligent-choices)[data-required]
+    :is(.config-field > label, legend):first-child::after {
+    content: "";
+    display: inline-block;
+    width: 5px;
+    height: 5px;
+    margin-inline-start: var(--s4);
+    border-radius: var(--radius-full);
+    background: var(--agnes-status-danger-text);
+    vertical-align: 0.2em;
+  }
+
+  /* Chart: a faint grid and quiet axes so the series carry the colour. */
+  .agnes-intelligent-surface .recharts-cartesian-grid line {
+    stroke-opacity: 0.6;
+    stroke-dasharray: 2 3;
+  }
+  .agnes-intelligent-surface .recharts-cartesian-axis-line {
+    stroke: var(--agnes-line-primary);
+  }
+
+  /* Inside an answer the same frame stays compact. */
+  .agnes-intelligent-surface[data-in-answer]:not([data-kind="deliverables"]) {
+    gap: var(--s8);
+    padding: 0 0 var(--s8);
+    border-radius: var(--radius-md);
+  }
+  .agnes-intelligent-surface[data-in-answer]:not([data-kind="deliverables"]) > header {
+    padding: var(--s8) var(--s8) var(--s8) var(--s12);
+  }
+  .agnes-intelligent-surface[data-in-answer]:not([data-kind="deliverables"]) .agnes-intelligent-icon {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+  .agnes-intelligent-surface[data-in-answer] .agnes-intelligent-footer {
+    margin-block-end: calc(-1 * var(--s8));
+    padding-block: var(--s4);
+  }
+
+  /* The workbench «Views» tab: panels on the ground colour, the footnote as one quiet line. */
+  .agnes-intelligent-panel {
+    display: grid;
+    gap: var(--s12);
+    min-height: 100%;
+    align-content: start;
+    padding: var(--s12);
+    background: var(--agnes-bg-app-content);
+  }
+  .agnes-intelligent-panel > [data-testid="intelligent-ui-workbench"] {
+    display: grid;
+    gap: var(--s12);
+    min-width: 0;
+  }
+  .agnes-intelligent-panel-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s8);
+    margin: 0;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+  }
+  @media (max-width: 480px) {
+    .agnes-intelligent-panel {
+      padding: var(--s8);
+    }
+    .agnes-intelligent-footer-actions {
+      flex: 1 1 100%;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :is(.agnes-intelligent-surface, .agnes-intelligent-chip)[data-located] {
+      transition: none;
+    }
+  }
+}

@@ -54,6 +54,8 @@ export interface IntelligentCatalogProps {
   onInvalid(componentId: string, path: string, invalid: boolean): void
   onAction(action: UiAction, row?: UiRowContext): void
   onRefreshSource?(): void
+  /** Components the surrounding frame shows itself, such as the action bar lifted into its footer. */
+  liftedIds?: ReadonlySet<string>
 }
 
 export function IntelligentCatalog(props: IntelligentCatalogProps) {
@@ -69,7 +71,7 @@ export function IntelligentCatalog(props: IntelligentCatalogProps) {
   return (
     <div className="agnes-intelligent-catalog" data-agnes-intelligent-ui="catalog">
       {props.surface.components.map((component) =>
-        placed.has(component.id) ? null : (
+        placed.has(component.id) || props.liftedIds?.has(component.id) ? null : (
           <ComponentBoundary key={`${component.id}:${props.surface.revision}`} fallback={<ComponentFailed />}>
             <CatalogComponent {...props} component={component} degradedKeys={degradedKeys} />
           </ComponentBoundary>
@@ -123,28 +125,13 @@ function CatalogComponent(
     [props.onInvalid, component.id],
   )
   const actionButtons = (ids: string[], row?: UiRowContext): ReactNode => (
-    <div className="agnes-intelligent-actions" role="group" aria-label={t('ui.actions')}>
-      {ids.map((id) => {
-        const action = surface.actions.find((item) => item.id === id)!
-        return (
-          <Button
-            key={id}
-            htmlType="button"
-            type={action.style === 'primary' ? 'primary' : 'default'}
-            danger={action.style === 'danger'}
-            disabled={
-              disabled ||
-              props.invalid === true ||
-              actionNeedsDegradedData(action, surface, props.degradedKeys)
-            }
-            data-testid={`ui-action-${id}`}
-            onClick={() => props.onAction(action, row)}
-          >
-            {action.label}
-          </Button>
-        )
-      })}
-    </div>
+    <IntelligentActionButtons
+      surface={surface}
+      actionIds={ids}
+      degradedKeys={props.degradedKeys}
+      disabled={disabled || props.invalid === true}
+      onAction={(action) => props.onAction(action, row)}
+    />
   )
   const dataKey = 'dataKey' in component ? component.dataKey : undefined
   const sourceStatus = dataKey ? props.sources?.[dataKey] : undefined
@@ -373,6 +360,37 @@ function CatalogComponent(
       ) : null}
       {content}
     </section>
+  )
+}
+
+/** The buttons for a set of the surface's actions; one that needs unavailable data stays disabled. */
+export function IntelligentActionButtons(props: {
+  surface: UiSurface
+  actionIds: readonly string[]
+  degradedKeys: ReadonlySet<string>
+  disabled: boolean
+  onAction(action: UiAction): void
+}) {
+  const { t } = useUiText(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
+  return (
+    <div className="agnes-intelligent-actions" role="group" aria-label={t('ui.actions')}>
+      {props.actionIds.map((id) => {
+        const action = props.surface.actions.find((item) => item.id === id)!
+        return (
+          <Button
+            key={id}
+            htmlType="button"
+            type={action.style === 'primary' ? 'primary' : 'default'}
+            danger={action.style === 'danger'}
+            disabled={props.disabled || actionNeedsDegradedData(action, props.surface, props.degradedKeys)}
+            data-testid={`ui-action-${id}`}
+            onClick={() => props.onAction(action)}
+          >
+            {action.label}
+          </Button>
+        )
+      })}
+    </div>
   )
 }
 

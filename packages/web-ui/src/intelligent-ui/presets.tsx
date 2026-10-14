@@ -75,6 +75,18 @@ export function PresetStatus({ value }: { value: string }) {
   )
 }
 
+/** Two to four figures read as a row of metric tiles rather than a label/value list. */
+export function isMetricCard(
+  fields: readonly { key: string; format?: string }[],
+  record: Readonly<Record<string, JsonValue>>,
+): boolean {
+  return (
+    fields.length >= 2 &&
+    fields.length <= 4 &&
+    fields.every((field) => typeof record[field.key] === 'number' && field.format !== 'date')
+  )
+}
+
 export function DetailCard({
   id,
   fields,
@@ -93,7 +105,11 @@ export function DetailCard({
   const status = statusKey ? record[statusKey] : undefined
   const secondary = secondaryKey ? record[secondaryKey] : undefined
   return (
-    <div className="agnes-intelligent-detail-card" data-testid={`ui-detail-${id}`}>
+    <div
+      className="agnes-intelligent-detail-card"
+      data-testid={`ui-detail-${id}`}
+      {...(isMetricCard(fields, record) ? { 'data-variant': 'metrics' } : {})}
+    >
       {typeof status === 'string' && (
         <div data-testid={`ui-detail-status-${id}`}>
           <PresetStatus value={status} />

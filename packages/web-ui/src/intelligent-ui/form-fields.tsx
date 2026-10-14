@@ -9,16 +9,11 @@ export function SurfaceFormFields(props: PluginSchemaFieldsProps) {
   const instance = useId()
   const { t } = useUiText(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
   const schema = props.schema
-  if (
-    !isSchemaObject(schema) ||
-    schema.type !== 'object' ||
-    !isSchemaObject(schema.properties) ||
-    !Object.values(schema.properties).some(
-      (field) => isSchemaObject(field) && Array.isArray(field['x-ui-choices']),
-    )
-  )
+  if (!isSchemaObject(schema) || schema.type !== 'object' || !isSchemaObject(schema.properties))
     return <PluginSchemaFields {...props} />
   const values = isSchemaObject(props.value) ? props.value : {}
+  const required = new Set(Array.isArray(schema.required) ? schema.required : [])
+  // One field per top-level property: its label above the control, a dot after it when required.
   return (
     <>
       {Object.entries(schema.properties).map(([key, field]) => {
@@ -27,14 +22,21 @@ export function SurfaceFormFields(props: PluginSchemaFieldsProps) {
         const change = (value: unknown) => props.onChange({ ...values, [key]: value })
         if (!Array.isArray(choices) || !choices.every((value) => typeof value === 'string'))
           return (
-            <PluginSchemaFields
+            <div
               key={key}
-              {...props}
-              schema={field}
-              path={`${props.path}/${key}`}
-              value={values[key]}
-              onChange={change}
-            />
+              className="agnes-intelligent-field"
+              data-testid={`ui-field-${key}`}
+              {...(required.has(key) ? { 'data-required': true } : {})}
+            >
+              <PluginSchemaFields
+                {...props}
+                schema={{ ...field, title: typeof field.title === 'string' ? field.title : key }}
+                path={`${props.path}/${key}`}
+                value={values[key]}
+                onChange={change}
+              />
+              {required.has(key) && <span className="visually-hidden">{t('ui.required')}</span>}
+            </div>
           )
         const multiple = field.type === 'array'
         const selected = multiple
@@ -76,6 +78,7 @@ export function SurfaceFormFields(props: PluginSchemaFieldsProps) {
             key={key}
             disabled={props.disabled}
             data-testid={`ui-choice-${key}`}
+            {...(required.has(key) ? { 'data-required': true } : {})}
           >
             <legend>{String(field.title ?? key)}</legend>
             {choices.map((choice, index) => (
