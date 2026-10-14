@@ -9,7 +9,6 @@ import { BUNDLED_EXAMPLES, BUNDLED_HELPERS } from '@agnes/package-manager'
 import { type BuildOptions, type BuildResult, build, type Plugin } from 'esbuild'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
 import { scrollbarCsp } from '../../../tools/web-scrollbar-csp.mjs'
-import { tabsAria } from '../../../tools/web-tabs-aria.mjs'
 import {
   inCssLayer,
   readMarkdownThemeCss,
@@ -17,6 +16,7 @@ import {
   readWebStyleSource,
   readWebUiStyleSource,
 } from '../../../tools/web-style-source.mjs'
+import { tabsAria } from '../../../tools/web-tabs-aria.mjs'
 import { xSurface } from '../../../tools/web-x-surface.mjs'
 import { beginRuntimeDirectory } from '../../base/tools/runtime-directory.js'
 import { bundledManifests } from './bundled-manifests.mjs'

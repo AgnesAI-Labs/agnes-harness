@@ -5,7 +5,6 @@ import { fileURLToPath } from 'node:url'
 import { type BuildResult, build } from 'esbuild'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
 import { scrollbarCsp } from '../../../tools/web-scrollbar-csp.mjs'
-import { tabsAria } from '../../../tools/web-tabs-aria.mjs'
 import {
   inCssLayer,
   readMarkdownThemeCss,
@@ -13,6 +12,7 @@ import {
   readWebStyleSource,
   readWebUiStyleSource,
 } from '../../../tools/web-style-source.mjs'
+import { tabsAria } from '../../../tools/web-tabs-aria.mjs'
 import { xSurface } from '../../../tools/web-x-surface.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')

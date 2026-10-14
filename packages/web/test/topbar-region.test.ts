@@ -4,8 +4,8 @@ import { resolve } from 'node:path'
 import { createElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
-import { sessionViewCommands } from '../src/regions/session-views.js'
 import { TOPBAR_SLOT } from '../src/region-slots.js'
+import { sessionViewCommands } from '../src/regions/session-views.js'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
 
 // A slot change commits in a few milliseconds, but a loaded runner has taken longer than the fixed
