@@ -52,6 +52,11 @@ export class LoopScope {
   /** The revoked scope owns nothing any more: close must not wait on calls it left hanging. */
   expire(): void {
     this.expired = true
+    this.revoke()
+  }
+
+  /** Cancellation revokes pending ports without turning a user stop into an idle timeout error. */
+  revoke(): void {
     for (const finish of [...this.operations]) finish()
     this.waits.clear()
   }
@@ -82,6 +87,11 @@ export function stepWithinLoopDeadline(s: SessionImpl, driver: LoopDriver): Prom
     idleMs: loopStepIdleMs(s),
     progress: () => s.lastSeq + s.loopScope.progress,
     waiting: () => s.decisions.waiting > 0 || s.loopScope.waiting,
+    signal: s.ac.signal,
+    cancel: () => {
+      s.decisions.revokeScope()
+      s.loopScope.revoke()
+    },
     run: () => driver.step(s.ac.signal),
     expire: () => {
       s.decisions.revokeScope()
@@ -101,6 +111,8 @@ export function stepWithinLoopDeadline(s: SessionImpl, driver: LoopDriver): Prom
  * whose end the platform owns. A driver that has done neither for `idleMs` is declared stuck:
  * `expire` cancels and revokes the driver's scope so the next run builds a fresh one, and the step
  * fails with an error that names the loop.
+ * A user abort instead starts a fixed five-second drain window, unaffected by activity or waiting;
+ * exceeding it revokes pending ports and returns control to the turn's cancellation closer.
  */
 export async function withLoopDeadline<T>(input: {
   loop: Readonly<{ id: string; version: string }>
@@ -109,10 +121,14 @@ export async function withLoopDeadline<T>(input: {
   progress(): number
   /** True while the run waits on a person, a child agent, a tool inside its own timeout or a platform timer. */
   waiting(): boolean
+  /** User cancellation has a separate fixed drain window, including while platform work is pending. */
+  signal?: AbortSignal
+  cancel?(): void
   run(): Promise<T>
   expire(): void
 }): Promise<T> {
   let disarm: (() => void) | undefined
+  let onAbort = () => {}
   let mark = input.progress()
   const expired = new Promise<never>((_, reject) => {
     // Not the injected timers: those drive the writer lease, which a held-lease test freezes.
@@ -134,7 +150,18 @@ export async function withLoopDeadline<T>(input: {
         )
       }, input.idleMs)
     }
-    arm()
+    onAbort = () => {
+      disarm?.()
+      disarm = armTimeout(() => {
+        input.cancel?.()
+        reject(new CoreError('E_CLOSED', 'Loop step did not settle after cancellation'))
+      }, 5000)
+    }
+    if (input.signal?.aborted) onAbort()
+    else {
+      input.signal?.addEventListener('abort', onAbort, { once: true })
+      arm()
+    }
   })
   const stepped = input.run()
   // A step that settles after the deadline has nothing left to report to.
@@ -143,5 +170,6 @@ export async function withLoopDeadline<T>(input: {
     return await Promise.race([stepped, expired])
   } finally {
     disarm?.()
+    input.signal?.removeEventListener('abort', onAbort)
   }
 }

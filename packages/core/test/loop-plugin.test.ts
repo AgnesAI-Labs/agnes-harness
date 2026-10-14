@@ -263,6 +263,49 @@ describe('loop plugins', () => {
     await expect(k.close()).resolves.toBeUndefined()
   })
 
+  it('ends a cancelled deaf driver before its idle deadline and can run the next turn', async () => {
+    vi.useFakeTimers()
+    let entered!: () => void
+    const started = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    let first = true
+    const stuck = working('test.cancel-bound', async () => {
+      if (!first) return
+      first = false
+      entered()
+      await never()
+    })
+    const loops = defaultLoops()
+    loops.register('@test/cancel-bound', stuck)
+    const k = kernel(new MemoryStorage(), loops)
+    try {
+      const session = await k.session('cancel-bound', { ...options, loop: stuck })
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'run' }], actor })
+      const running = session.run({ until: 'turn-end', signal: new AbortController().signal })
+      await started
+      const cancelled = new Promise<void>((resolve) =>
+        session.ac.signal.addEventListener('abort', () => resolve(), { once: true }),
+      )
+      const stopping = session.controls.apply('cancel', actor, 'cancel-deaf')
+      await cancelled
+      await vi.advanceTimersByTimeAsync(5000)
+      await stopping
+      expect((await running).reason).toBe('aborted')
+      expect(session.op()).toBeNull()
+      expect((await session.scan({ type: 'turn/end', order: 'desc', limit: 1 }))[0]?.data).toMatchObject({
+        reason: 'aborted',
+      })
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'again' }], actor })
+      expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+        'completed',
+      )
+    } finally {
+      await k.close()
+      vi.useRealTimers()
+    }
+  })
+
   it.each([
     [
       'a tool inside its own timeout',

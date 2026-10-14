@@ -78,4 +78,33 @@ describe('loop step deadline', () => {
     await vi.advanceTimersByTimeAsync(40)
     await result
   })
+
+  it.each([false, true])('bounds cancellation even while platform waiting is %s', async (waiting) => {
+    const abort = new AbortController()
+    let ended = false
+    let revoked = false
+    const running = withLoopDeadline({
+      loop,
+      idleMs: 60_000,
+      progress: () => Date.now(),
+      waiting: () => waiting,
+      signal: abort.signal,
+      run: () => new Promise<never>(() => {}),
+      expire: () => {
+        throw new Error('not an idle timeout')
+      },
+      cancel: () => {
+        revoked = true
+      },
+    }).catch((error: unknown) => {
+      ended = true
+      expect(error).toMatchObject({ code: 'E_CLOSED' })
+    })
+    abort.abort()
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(ended).toBe(true)
+    expect(revoked).toBe(true)
+    await running
+    expect(vi.getTimerCount()).toBe(0)
+  })
 })
