@@ -48,7 +48,7 @@
           "displayName": "Contract review example",
           "summary": "Reviews sample contract clauses in parallel and prepares a risk draft for a qualified reviewer.",
           "description": "Reviews sample contract clauses in parallel and prepares a risk draft for a qualified reviewer.",
-          "category": "tools",
+          "category": "business-agent",
           "locales": {
             "zh-CN": {
               "displayName": "合同审查示例",

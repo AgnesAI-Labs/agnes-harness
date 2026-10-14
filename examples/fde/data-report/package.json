@@ -48,7 +48,7 @@
           "displayName": "Data report example",
           "summary": "Turns a sample CSV into calculated figures, charts and shareable reports.",
           "description": "Turns a sample CSV into calculated figures, charts and shareable reports.",
-          "category": "tools",
+          "category": "business-agent",
           "locales": {
             "zh-CN": {
               "displayName": "数据报告示例",

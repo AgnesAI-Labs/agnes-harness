@@ -48,7 +48,7 @@
           "displayName": "Operations runbook example",
           "summary": "Reviews sample incidents, runs bounded diagnostics and requests approval before a simulated remediation.",
           "description": "Reviews sample incidents, runs bounded diagnostics and requests approval before a simulated remediation.",
-          "category": "tools",
+          "category": "business-agent",
           "locales": {
             "zh-CN": {
               "displayName": "运维手册示例",

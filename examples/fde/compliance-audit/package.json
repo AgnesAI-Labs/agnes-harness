@@ -48,7 +48,7 @@
           "displayName": "Compliance evidence example",
           "summary": "Checks local sample evidence against a checklist and reports gaps for human follow-up.",
           "description": "Checks local sample evidence against a checklist and reports gaps for human follow-up.",
-          "category": "safety-approval",
+          "category": "business-agent",
           "locales": {
             "zh-CN": {
               "displayName": "合规证据示例",

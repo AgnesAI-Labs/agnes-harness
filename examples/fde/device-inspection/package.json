@@ -51,7 +51,7 @@
           "displayName": "Device inspection simulator",
           "summary": "Checks simulated device state and prepares a constrained adjustment for human approval, with preview mode on by default.",
           "description": "Checks simulated device state and prepares a constrained adjustment for human approval, with preview mode on by default.",
-          "category": "integrations",
+          "category": "business-agent",
           "locales": {
             "zh-CN": {
               "displayName": "设备巡检模拟器",

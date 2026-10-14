@@ -49,7 +49,7 @@
           "displayName": "Support triage example",
           "summary": "Classifies sample support tickets and requests approval before recording a simulated reply.",
           "description": "Classifies sample support tickets and requests approval before recording a simulated reply.",
-          "category": "agent-loop",
+          "category": "business-agent",
           "locales": {
             "zh-CN": {
               "displayName": "客服分流示例",

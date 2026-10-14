@@ -49,7 +49,7 @@
           "displayName": "Meeting actions example",
           "summary": "Turns a sample meeting transcript into action items and drafts tasks for approval before simulated creation.",
           "description": "Turns a sample meeting transcript into action items and drafts tasks for approval before simulated creation.",
-          "category": "collaboration",
+          "category": "business-agent",
           "locales": {
             "zh-CN": {
               "displayName": "会议行动项示例",

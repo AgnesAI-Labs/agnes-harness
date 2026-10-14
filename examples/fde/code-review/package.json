@@ -48,7 +48,7 @@
           "displayName": "Code review example",
           "summary": "Reviews a synthetic patch for selected risks and prepares an evidence-linked report for a maintainer.",
           "description": "Reviews a synthetic patch for selected risks and prepares an evidence-linked report for a maintainer.",
-          "category": "developer",
+          "category": "business-agent",
           "locales": {
             "zh-CN": {
               "displayName": "代码审查示例",

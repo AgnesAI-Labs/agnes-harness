@@ -48,7 +48,7 @@
           "displayName": "Knowledge answer example",
           "summary": "Searches local sample documents and drafts an answer with source citations.",
           "description": "Searches local sample documents and drafts an answer with source citations.",
-          "category": "memory-context",
+          "category": "business-agent",
           "locales": {
             "zh-CN": {
               "displayName": "知识问答示例",

@@ -48,7 +48,7 @@
           "displayName": "Recruiting review example",
           "summary": "Scores synthetic applications against a fixed rubric and prepares a report for human review.",
           "description": "Scores synthetic applications against a fixed rubric and prepares a report for human review.",
-          "category": "tools",
+          "category": "business-agent",
           "locales": {
             "zh-CN": {
               "displayName": "招聘审核示例",
