@@ -127,6 +127,23 @@
   .workbench-resize:focus-visible {
     outline: 0;
   }
+  /* Touch targets follow the base grab strip so its 8px width cannot override them. */
+  @media (max-width: 900px) {
+    #workbench-right .workbench-resize {
+      width: 32px;
+      left: -16px;
+    }
+    #workbench-bottom .workbench-resize {
+      height: 32px;
+      top: -16px;
+    }
+    #workbench-right .workbench-resize::after {
+      inset: 0 15px;
+    }
+    #workbench-bottom .workbench-resize::after {
+      inset: 15px 0;
+    }
+  }
   .workbench-files {
     display: flex;
     flex-direction: column;
