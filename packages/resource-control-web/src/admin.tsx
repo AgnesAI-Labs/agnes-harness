@@ -557,6 +557,9 @@ class ResourceAdminPage {
             }}
             onEdit={() => openMcpDialog(selected)}
             onClose={() => this.closeDetail()}
+            {...(this.writable() && this.#activeOperation === undefined
+              ? { onToolDisclosure: (mode) => void this.#saveToolDisclosure(selected, mode) }
+              : {})}
           />
         </UiLocaleProvider>,
       )
@@ -779,6 +782,21 @@ class ResourceAdminPage {
       { className: 'agh-btn--danger' },
     )
     return specs
+  }
+
+  /** A low-risk, reversible preference: saved at once, with no confirmation step. The store keeps
+   *  the server's trust and enablement because nothing that runs or connects changes. */
+  async #saveToolDisclosure(
+    server: McpServerDescriptor,
+    toolDisclosure: NonNullable<McpServerDescriptor['definition']['toolDisclosure']>,
+  ): Promise<void> {
+    try {
+      const definition = { ...server.definition, toolDisclosure } as McpServerDefinitionInput
+      await this.track(await this.api().mcpUpdate(server.serverId, server.revision, definition))
+    } catch (error) {
+      this.showError(error)
+      this.render()
+    }
   }
 
   async #runAction(action: ResourceDetailAction): Promise<void> {
@@ -1019,7 +1037,10 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
     error.textContent = ''
     void (async () => {
       if (syncMcpFieldFeedback(true, activeResourceText).length) return
-      const definition = definitionFromForm(activeResourceText)
+      const formDefinition = definitionFromForm(activeResourceText)
+      // The form has no tool-loading field; an edit keeps the mode set on the detail page.
+      const kept = editing?.definition.toolDisclosure
+      const definition = kept ? { ...formDefinition, toolDisclosure: kept } : formDefinition
       const creating = !editing
       const summary = editing
         ? activeResourceText('action.update-mcp-summary', {

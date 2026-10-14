@@ -252,6 +252,65 @@ describe('MCP durable resource control', () => {
     })
   })
 
+  it('keeps trust and enablement when only the tool disclosure changes, and resets them for any other edit', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'agnes-mcp-control-'))
+    const store = new McpResourceStore(directory, scope, {
+      reconcile: async ({ serverId, enabled }) => ({
+        status: enabled ? ready(serverId) : { ...ready(serverId), connectionState: 'disabled' as const },
+      }),
+      reconnect: async ({ serverId }) => ({ status: ready(serverId) }),
+      test: async () => ({ toolCount: 1, catalogRevision: 'a'.repeat(64) }),
+      tools: async ({ serverId }) => ({ serverId, catalogRevision: 'a'.repeat(64), items: [] }),
+    })
+    const service = drivenService(store)
+    const call = async (method: string, params: Record<string, unknown>, commandId: string) =>
+      settled(
+        service,
+        (
+          await service.call(
+            method as Parameters<TestService['call']>[0],
+            { profile, clientId: 'client', commandId, ...params },
+            authority,
+          )
+        ).operationId,
+      )
+    const target = { serverId: definition.serverId }
+    await call('_agnes/v1/mcp.servers.create', { definition }, 'create')
+    await call(
+      '_agnes/v1/mcp.servers.trust.set',
+      { ...target, expectedRevision: revision(definition), trust: 'trusted' },
+      'trust',
+    )
+    await call(
+      '_agnes/v1/mcp.servers.enable',
+      { ...target, expectedRevision: revision(definition) },
+      'enable',
+    )
+    const lazy = { ...definition, toolDisclosure: 'on-demand' as const }
+    await call(
+      '_agnes/v1/mcp.servers.update',
+      { ...target, definition: lazy, expectedRevision: revision(definition) },
+      'lazy',
+    )
+    const get = () =>
+      service.call('_agnes/v1/mcp.servers.get', { profile, ...target }, authority) as unknown as Promise<
+        Record<string, unknown>
+      >
+    expect(await get()).toMatchObject({
+      revision: revision(lazy),
+      trust: 'trusted',
+      desired: 'enabled',
+      definition: { toolDisclosure: 'on-demand' },
+    })
+    const renamed = { ...lazy, displayName: 'Renamed' }
+    await call(
+      '_agnes/v1/mcp.servers.update',
+      { ...target, definition: renamed, expectedRevision: revision(lazy) },
+      'rename',
+    )
+    expect(await get()).toMatchObject({ revision: revision(renamed), trust: 'untrusted' })
+  })
+
   it('keeps a running enable open when the worker reports the server disabled first', async () => {
     directory = await mkdtemp(join(tmpdir(), 'agnes-mcp-control-'))
     let finishEnable: (() => void) | undefined

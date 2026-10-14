@@ -49,6 +49,13 @@ export const resourceDetailLocaleCatalog: LocaleCatalog = {
     'mcp.tools.title': 'Tool catalog ({count})',
     'mcp.tools.more': 'Load more tools',
     'mcp.edit': 'Edit',
+    'mcp.disclosure.title': 'Tool loading',
+    'mcp.disclosure.label': 'How tools load',
+    'mcp.disclosure.hint':
+      'Automatic keeps tools visible while there are few, and lets the agent search for them once there are many.',
+    'mcp.disclosure.auto': 'Automatic',
+    'mcp.disclosure.always': 'Always visible',
+    'mcp.disclosure.on-demand': 'On demand',
   },
   'zh-CN': {
     'priority.invalid': '请输入 50–500 的整数。',
@@ -95,6 +102,12 @@ export const resourceDetailLocaleCatalog: LocaleCatalog = {
     'mcp.tools.title': '工具目录（{count}）',
     'mcp.tools.more': '加载更多工具',
     'mcp.edit': '编辑',
+    'mcp.disclosure.title': '工具加载方式',
+    'mcp.disclosure.label': '工具加载方式',
+    'mcp.disclosure.hint': '自动：工具少时直接可见，多了改为由 Agent 按需搜索。',
+    'mcp.disclosure.auto': '自动',
+    'mcp.disclosure.always': '始终可见',
+    'mcp.disclosure.on-demand': '按需',
   },
 }
 

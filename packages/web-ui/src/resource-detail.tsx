@@ -1,4 +1,4 @@
-import type { McpServerDescriptor, SkillDescriptor } from '@agnes/protocol'
+import type { McpServerDefinitionInput, McpServerDescriptor, SkillDescriptor } from '@agnes/protocol'
 import type { JSX } from 'react'
 import { useState } from 'react'
 import { RESOURCE_DETAIL_LOCALE_NAMESPACE, resourceDetailLocaleCatalog } from './locales/resource-detail.js'
@@ -7,6 +7,7 @@ import { Button } from './ui/button.js'
 import { Disclosure } from './ui/disclosure.js'
 import { Field } from './ui/field.js'
 import { IconButton } from './ui/icon-button.js'
+import { Segmented } from './ui/segmented.js'
 import { useUiText } from './ui-locale.js'
 
 export type ResourceDetailAction = Readonly<{
@@ -228,6 +229,9 @@ export function SkillDetailContent({
 
 type StatusPanel = readonly (readonly [string, string])[]
 
+type McpToolDisclosure = NonNullable<McpServerDefinitionInput['toolDisclosure']>
+const TOOL_DISCLOSURE_MODES: readonly McpToolDisclosure[] = ['auto', 'always', 'on-demand']
+
 type ToolCatalog = { names: readonly string[]; nextCursor: string | undefined }
 
 /** MCP 详情体。「查看连接状态/工具目录」的异步面板在此组件内管理，api 调用由壳回调。 */
@@ -241,6 +245,7 @@ export function McpDetailContent({
   onTools,
   onEdit,
   onClose,
+  onToolDisclosure,
 }: {
   server: McpServerDescriptor
   disabled: boolean
@@ -251,8 +256,11 @@ export function McpDetailContent({
   onTools(cursor?: string): Promise<ToolCatalog>
   onEdit(): void
   onClose(): void
+  /** Saves how this server's tools reach the model. Absent hides the control. */
+  onToolDisclosure?(mode: McpToolDisclosure): void
 }): JSX.Element {
   const { t } = useUiText(RESOURCE_DETAIL_LOCALE_NAMESPACE, resourceDetailLocaleCatalog)
+  const disclosure = server.definition.toolDisclosure ?? 'auto'
   const [status, setStatus] = useState<StatusPanel | undefined>()
   const [catalog, setCatalog] = useState<ToolCatalog | undefined>()
   return (
@@ -343,6 +351,30 @@ export function McpDetailContent({
               )}
             </div>
           </Disclosure>
+        )}
+        {onToolDisclosure && (
+          <SettingsAdvanced
+            title={t('mcp.disclosure.title')}
+            summary={t(`mcp.disclosure.${disclosure}`)}
+            data-testid="mcp-tool-disclosure"
+          >
+            <Field label={t('mcp.disclosure.label')} hint={t('mcp.disclosure.hint')}>
+              <Segmented<McpToolDisclosure>
+                label={t('mcp.disclosure.label')}
+                value={disclosure}
+                disabled={disabled}
+                testId="mcp-tool-disclosure-mode"
+                options={TOOL_DISCLOSURE_MODES.map((mode) => ({
+                  value: mode,
+                  label: t(`mcp.disclosure.${mode}`),
+                  testId: `mcp-tool-disclosure-${mode}`,
+                }))}
+                onChange={(mode) => {
+                  if (mode !== disclosure) onToolDisclosure(mode)
+                }}
+              />
+            </Field>
+          </SettingsAdvanced>
         )}
         {progress && (
           <div className="resource-operation">
