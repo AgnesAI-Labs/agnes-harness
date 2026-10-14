@@ -63,7 +63,7 @@ Core 接受 Host 所有的平台适配器可选 `HostToolDispatchPort.preflight`
 
 ## 接缝与扩展
 
-人工决策只有一个持久化权威：`decision/state`。工具权限、未知结果核对、记忆审核、验证器挂起、预算报价和 operation 审核都将不可变的审核对象绑定到 decision handle，再记录答复与消费。approval seam 负责送达问题；客户端和 deferred invocation 读取 decision register。机器 guardian 的策略审计仍是独立事实。扩展通过 `ctx.decisions.review` 审核一次性候选；脱离当前执行的记忆和 operation 候选会被撤回。人工核对答复只确认未知结果，不重放副作用。不支持使用已移除审批事件格式的旧 ledger。
+人工决策只有一个持久化权威：`decision/state`。工具权限、未知结果核对、记忆审核、验证器挂起、预算报价和 operation 审核都将不可变的审核对象绑定到 decision handle，再记录答复与消费。approval seam 负责送达问题；客户端和 deferred invocation 读取 decision register。机器 guardian 的策略审计仍是独立事实。扩展通过 `ctx.decisions.review` 审核一次性候选；脱离当前执行的记忆和 operation 候选会被撤回。人工核对答复只确认未知结果，不重放副作用。调用还在等待时给出的答复会随未知结果一起被消费并告知模型，批次和轮次继续；只有仍未答复的问题才让轮次挂起，挂起批次中尚未开始的调用以 `TOOL_NOT_STARTED` 结算。只有 Core 或 Host 持有的端口能证明失败发生在任何效果之前时，才判为确定失败、不发起核对：记忆审批回调，或管理桥在本次调用尚无其他效果时收到 daemon 以 `INVALID_PARAMS` 拒绝。工具代码自己抛出的错误码不构成证明。不支持使用已移除审批事件格式的旧 ledger。
 
 Seam 是必要执行位置的实现，例如审批、计费、沙箱；其中七个是通过 `ctx.providers.register` 注册、用 `providers.<kind>: { provider }` 选择的 provider 种类，见 [Seam](../extend/seams.zh-CN.md)；缺失会以 `E_SEAM_MISSING` 拒绝，不能静默跳过。Extension 是可选贡献，例如工具、观察 hook、客户端槽位。它们虽可通过 Cordis 装配，但权限面并不相同。
 

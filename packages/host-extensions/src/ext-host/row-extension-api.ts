@@ -1,3 +1,4 @@
+import { hostPortRequest } from '@agnes/core'
 import {
   checkToolDef,
   type Disposer,
@@ -12,6 +13,7 @@ import {
 import type { ExtensionAPI } from '@agnes/extension-api/host'
 import { inspectJsonData, isHookEvent, type PluginCapabilities } from '@agnes/protocol'
 import { observePluginCapabilities } from '../plugin-capability-observer.js'
+import { refusedForParameters } from '../resources/management-refusal.js'
 import type { Lease } from './lease.js'
 import type { KernelPorts, RegMeta } from './ports.js'
 import { projectionReader } from './projection-reader.js'
@@ -201,13 +203,18 @@ export function buildRowExtensionAPI(input: RowExtensionApiInput): RowExtensionA
                               if (tctx.session.depth !== 0) throw new Error('Subagents cannot manage MCP')
                             }
                             assertLive()
-                            const result = await mcpManage(
-                              {
-                                input: structuredClone(request),
-                                toolUseId: tctx.session.toolUseId,
-                                sessionKey: tctx.session.key,
-                              },
-                              callSignal,
+                            const result = await hostPortRequest(
+                              tctx,
+                              () =>
+                                mcpManage(
+                                  {
+                                    input: structuredClone(request),
+                                    toolUseId: tctx.session.toolUseId,
+                                    sessionKey: tctx.session.key,
+                                  },
+                                  callSignal,
+                                ),
+                              refusedForParameters('mcp_manage'),
                             )
                             assertLive()
                             return result
@@ -226,14 +233,19 @@ export function buildRowExtensionAPI(input: RowExtensionApiInput): RowExtensionA
                               if (tctx.session.depth !== 0) throw new Error('Subagents cannot manage plugins')
                             }
                             assertLive()
-                            const result = await pluginManage(
-                              {
-                                input: structuredClone(request),
-                                toolUseId: tctx.session.toolUseId,
-                                turn: tctx.session.turn ?? 0,
-                                sessionKey: tctx.session.key,
-                              },
-                              callSignal,
+                            const result = await hostPortRequest(
+                              tctx,
+                              () =>
+                                pluginManage(
+                                  {
+                                    input: structuredClone(request),
+                                    toolUseId: tctx.session.toolUseId,
+                                    turn: tctx.session.turn ?? 0,
+                                    sessionKey: tctx.session.key,
+                                  },
+                                  callSignal,
+                                ),
+                              refusedForParameters('plugin management'),
                             )
                             assertLive()
                             return result

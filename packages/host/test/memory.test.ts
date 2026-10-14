@@ -164,8 +164,10 @@ it.each([
         actor: session.d.actor,
         content: [{ type: 'text', text: 'exercise ordinary memory file tools' }],
       })
+      // An uncertain memory write asks whether it happened; the approver answers at once, so the
+      // answer is consumed with the result and the turn completes rather than parking.
       expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
-        initialAnswer === 'cas-conflict' || initialAnswer === 'metadata-failure' ? 'parked' : 'completed',
+        'completed',
       )
       const request = provider?.calls.at(-1)
       const revision = /Revision: ([a-f0-9]+)/.exec(request?.system ?? '')?.[1]
@@ -188,6 +190,11 @@ it.each([
                 'unknown-outcome',
           ),
         ).toBe(true)
+        expect(
+          (await rejected.session.decisions.list()).find(
+            (value) => value.request.spec.purpose === 'unknown-outcome',
+          ),
+        ).toMatchObject({ result: { reason: 'answered' }, consumption: expect.any(Object) })
         expect(
           rows.some(
             (row) =>

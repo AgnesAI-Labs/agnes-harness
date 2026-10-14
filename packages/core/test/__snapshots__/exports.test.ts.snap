@@ -101,6 +101,7 @@ exports[`keeps the public runtime export surface stable 1`] = `
   "harnessSections",
   "hasChildControl",
   "headerEquals",
+  "hostPortRequest",
   "inProcessChildAgentProvider",
   "inboxEvent",
   "initialState",

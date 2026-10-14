@@ -432,9 +432,12 @@ describe('resume', () => {
     })
   })
 
-  it('a tool that must not be replayed becomes TOOL_OUTCOME_UNKNOWN and parks the turn', async () => {
+  it('a tool that must not be replayed becomes TOOL_OUTCOME_UNKNOWN and parks the turn while the question is open', async () => {
     const duplicateEffects: string[] = []
     const { session, log, effects } = await crashInToolCall('shell', {
+      seams: fakeSeams({
+        approval: { ask: async () => ({ ticket: 'T1', expiresAt: '2099-01-01T00:00:00Z' }) },
+      }),
       run: async () => {
         duplicateEffects.push('duplicate external write')
         return { content: [{ type: 'text', text: 'must not execute' }] }
@@ -462,6 +465,33 @@ describe('resume', () => {
     await session.resume()
     expect(duplicateEffects).toEqual([])
     expect(await log.scan({ type: 'tool/result', limit: 10 })).toEqual([result])
+  })
+
+  // The answer arrived while recovery waited: it is consumed with the reconciliation and the turn
+  // carries on to the model instead of stopping on a question nobody has left to answer.
+  it('a recovered unknown outcome answered at once is consumed and the turn continues', async () => {
+    const duplicateEffects: string[] = []
+    const { session, log } = await crashInToolCall('shell', {
+      seams: fakeSeams({ approval: { ask: async () => ({ verdict: 'rejected', answeredBy: actor }) } }),
+      run: async () => {
+        duplicateEffects.push('duplicate external write')
+        return { content: [{ type: 'text', text: 'must not execute' }] }
+      },
+    })
+    expect((await session.resume()).actions[0]?.action).toBe('unknown')
+    const decision = (await session.decisions.list()).find(
+      (value) => value.request.spec.purpose === 'unknown-outcome',
+    )
+    expect(decision).toMatchObject({
+      result: { reason: 'answered' },
+      consumption: { operationId: expect.any(String) },
+    })
+    expect(session.op()).not.toBeNull()
+    await session.run({ until: 'turn-end', signal: new AbortController().signal })
+    expect((await log.scan({ type: 'turn/end', order: 'desc', limit: 1 }))[0]?.data).toMatchObject({
+      reason: 'completed',
+    })
+    expect(duplicateEffects).toEqual([])
   })
 
   // Nobody was asked, so "it did not happen" must not be written as the answer: the question stays

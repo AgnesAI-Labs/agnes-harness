@@ -377,6 +377,10 @@ describe('resume matrix (core Task 39)', () => {
       registry: tools,
       storage: MemoryStorage.fromEvents('k', crashPrefix, { opCells }),
       writerRunId: 'reopened-tampered',
+      // The question stays open: an answer given at once would settle it and let the turn go on.
+      seams: fakeSeams({
+        approval: { ask: async () => ({ ticket: 'T1', expiresAt: '2099-01-01T00:00:00Z' }) },
+      }),
     })
     try {
       expect(await reopened.session.resume()).toMatchObject({ actions: [{ action: 'unknown' }] })

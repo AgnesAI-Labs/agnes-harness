@@ -13,6 +13,7 @@ export const enumeration = (...values) => ({
   anyOf: values.map((value) => ({ [Kind]: 'Literal', const: value, type: 'string' })),
 })
 export const optional = (schema) => ({ ...schema, [Optional]: 'Optional' })
+export const described = (schema, description) => ({ ...schema, description })
 export const object = (properties) => ({
   [Kind]: 'Object',
   type: 'object',

@@ -98,6 +98,8 @@ export type {
   HostToolDispatchPort,
   RejectedBeforeEffectError,
 } from '@agnes/core-effects/effects/tool-dispatch'
+/** Host-only: a Host-owned port proves a refusal happened before any effect. Not for plugins. */
+export { hostPortRequest } from '@agnes/core-effects/effects/tool-dispatch'
 export {
   defaultToolPolicy,
   ToolPolicyRegistry,
