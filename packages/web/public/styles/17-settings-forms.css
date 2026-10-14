@@ -882,7 +882,18 @@
     min-width: min(14rem, 100%);
   }
   .appearance-picker > :is(.agnes-settings-input, .select-picker-trigger) {
-    width: min(16rem, 100%);
+    width: 100%;
+  }
+  /* In a settings row the pickers and segments take the shared control column. */
+  .agnes-settings-item-control > .appearance-picker {
+    justify-items: stretch;
+  }
+  .agnes-settings-item-control > .appearance-choices > .appearance-option {
+    flex: 1 1 0;
+    justify-content: center;
+  }
+  .agnes-settings-item-control > .appearance-thumbs {
+    justify-content: space-between;
   }
   .appearance-picker p.appearance-option-hint {
     margin: 0;

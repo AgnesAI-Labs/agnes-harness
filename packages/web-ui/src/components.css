@@ -1918,7 +1918,7 @@
     margin-inline-start: var(--s12);
   }
   .agnes-settings-item:not([data-stacked]) > .agnes-settings-item-control > :is(select, .agnes-ui-select) {
-    width: 14rem;
+    width: 100%;
     max-width: 100%;
   }
   .agnes-settings-item[data-stacked] > .agnes-settings-item-control {
@@ -2646,5 +2646,94 @@
   }
   .agnes-settings-drag:disabled {
     opacity: 0.35;
+  }
+
+  /* One control column for every settings row: a select, text field, picker or segmented choice
+   fills the same width, so their left edges line up down the page. Switches, ›, plain values,
+   number fields and chips keep their own size at the right. Narrow rows give the column less. */
+  .agnes-settings-item:not([data-stacked])
+    > .agnes-settings-item-control:has(
+      > :is(
+          select,
+          .agnes-ui-select,
+          input:not([type="checkbox"], [type="radio"], [type="number"]),
+          .agh-segmented,
+          .agnes-settings-preset,
+          .appearance-picker,
+          .appearance-choices,
+          .appearance-thumbs
+        )
+    ) {
+    flex: 0 1 260px;
+    width: 260px;
+    min-width: min(10rem, 50%);
+    max-width: 100%;
+    justify-content: stretch;
+  }
+  .agnes-settings-item:not([data-stacked])
+    > .agnes-settings-item-control
+    > :is(
+      select,
+      .agnes-ui-select,
+      input:not([type="checkbox"], [type="radio"], [type="number"]),
+      .agh-segmented,
+      .agnes-settings-preset,
+      .appearance-picker,
+      .appearance-choices,
+      .appearance-thumbs
+    ) {
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+  /* A segmented choice spans the column with equal segments. */
+  .agnes-settings-item-control > .agh-segmented {
+    display: flex;
+  }
+  .agnes-settings-item-control > .agh-segmented > .agh-segmented-option {
+    flex: 1 1 0;
+    justify-content: center;
+    min-width: 0;
+    padding-inline: var(--s4);
+  }
+  /* On a narrow screen the control takes the whole row under its name, for every such row alike. */
+  @media (max-width: 639px) {
+    .agnes-settings-item:not([data-stacked]):has(
+        > .agnes-settings-item-control
+          > :is(
+            select,
+            .agnes-ui-select,
+            input:not([type="checkbox"], [type="radio"], [type="number"]),
+            .agh-segmented,
+            .agnes-settings-preset,
+            .appearance-picker,
+            .appearance-choices,
+            .appearance-thumbs
+          )
+      ) {
+      flex-wrap: wrap;
+    }
+    .agnes-settings-item:not([data-stacked])
+      > .agnes-settings-item-control:has(
+        > :is(
+            select,
+            .agnes-ui-select,
+            input:not([type="checkbox"], [type="radio"], [type="number"]),
+            .agh-segmented,
+            .agnes-settings-preset,
+            .appearance-picker,
+            .appearance-choices,
+            .appearance-thumbs
+          )
+      ) {
+      flex-basis: 100%;
+      width: 100%;
+      margin-inline-start: 0;
+    }
+  }
+  .agnes-settings-item-control > .agnes-settings-preset > select {
+    flex: 1 1 auto;
+    min-width: 0;
   }
 }
