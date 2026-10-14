@@ -360,7 +360,11 @@ export async function fullAccess(page: Page, locale = 'en') {
 export async function send(page: Page, input: string) {
   const turns = page.getByTestId('conversation-turn')
   const before = await turns.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-turn-id')))
-  const composer = page.getByRole('textbox', { name: 'Task content', exact: true })
+  const locale = await page.locator('html').getAttribute('lang')
+  const composer = page.getByRole('textbox', {
+    name: locale === 'zh-CN' ? '任务内容' : 'Task content',
+    exact: true,
+  })
   await expect(composer).toBeEnabled()
   await composer.fill(input)
   await composer.press('Enter')
@@ -386,6 +390,9 @@ export async function send(page: Page, input: string) {
 export async function turn(page: Page, input: string) {
   const current = await send(page, input)
   await expect(current).toHaveAttribute('data-status', 'completed', { timeout: 25_000 })
-  await expect(page.getByRole('button', { name: 'Cancel turn', exact: true })).toHaveCount(0)
+  const locale = await page.locator('html').getAttribute('lang')
+  await expect(
+    page.getByRole('button', { name: locale === 'zh-CN' ? '取消当前轮' : 'Cancel turn', exact: true }),
+  ).toHaveCount(0)
   return current
 }
