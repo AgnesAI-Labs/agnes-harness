@@ -4,6 +4,7 @@ import {
   appServerErrorMessage,
   Button,
   Disclosure,
+  Icon,
   Select,
   SettingsState,
   SettingsToolbar,
@@ -299,6 +300,7 @@ export function ReviewFileAction({
   const { session } = panelContext(context)
   return (
     <Button
+      type="link"
       size="small"
       disabled={!session || !context.openPanel}
       data-testid="file-review"
@@ -307,6 +309,7 @@ export function ReviewFileAction({
       }
     >
       {context.t('workbench.changes.review')}
+      <Icon name="arrow-right" />
     </Button>
   )
 }

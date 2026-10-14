@@ -153,10 +153,8 @@ test('workspace dock previews and mentions a file that the agent reads', async (
         expect(geometry.name.left - geometry.entry.left).toBeLessThan(50)
         expect(geometry.preview.height).toBeGreaterThan(geometry.tree.height)
         await expect(page.locator('.workbench-dock-heading button[aria-busy]')).toBeVisible()
-        await expect(page.locator('.workbench-files-footer .agh-disclosure')).toBeVisible()
-        await expect(page.locator('.workbench-file-preview .agh-disclosure-summary')).not.toContainText(
-          /T\d{2}:/,
-        )
+        await expect(page.getByTestId('files-rules')).toBeVisible()
+        await expect(page.getByTestId('file-meta')).not.toContainText(/T\d{2}:/)
         await workbenchScreen(page, info, `p1-${locale}-${theme}-${width}-after`, folder)
         await page.getByTestId('workbench-right-toggle').click()
         await workbenchScreen(page, info, `p1-${locale}-${theme}-${width}-before`, folder)

@@ -144,12 +144,6 @@
       inset: 15px 0;
     }
   }
-  .workbench-files {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    min-height: 0;
-  }
   .workbench-panel-toolbar {
     display: flex;
     align-items: center;
@@ -158,68 +152,9 @@
     padding: 0.6rem;
     flex-wrap: wrap;
   }
-  .workbench-tree-scroll {
-    flex: 1;
-    min-height: 80px;
-    overflow: auto;
-  }
-  .workbench-file-tree {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-  }
-  .workbench-file-tree .workbench-file-tree {
-    padding-left: var(--s16);
-  }
-  .workbench-tree-scroll > .workbench-file-tree {
-    padding: 0.4rem;
-  }
-  .workbench-file-entry.agnes-ui-button {
-    width: 100%;
-    text-align: left;
-    display: flex;
-    gap: 0.35rem;
-    justify-content: flex-start;
-    padding-inline: 0.3rem;
-  }
-  .workbench-file-chevron {
-    width: 0.65rem;
-    flex: 0 0 0.65rem;
-  }
-  .workbench-file-icon {
-    width: 1rem;
-    height: 1rem;
-    flex: 0 0 1rem;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.5;
-  }
   .workbench-header-actions {
     display: flex;
     margin-left: auto;
-  }
-  .workbench-files-previewing .workbench-tree-scroll {
-    flex: 0 1 28%;
-  }
-  .workbench-files-previewing .workbench-file-preview {
-    flex: 1 1 65%;
-  }
-  .workbench-files-footer {
-    flex: 0 0 auto;
-    padding: var(--s8) var(--s12);
-    border-top: 1px solid var(--agnes-line-primary);
-    font-size: var(--font-size-xs);
-    color: var(--agnes-text-secondary);
-    line-height: 1.6;
-  }
-  .workbench-files-footer p {
-    margin: 0.4rem 0 0;
-  }
-  .workbench-file-preview > .agh-disclosure {
-    margin: 0 var(--s12) var(--s8);
-    font-size: var(--font-size-xs);
-    color: var(--agnes-text-secondary);
-    overflow-wrap: anywhere;
   }
   /* Wide windows: the side dock is a full-height column of the main area, from the top bar to the
    window's bottom edge. Everything else (notices, conversation, approval, composer) keeps to the
@@ -247,31 +182,6 @@
       bottom: 0;
       width: var(--workbench-width, 320px);
     }
-  }
-  .workbench-file-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    min-width: 0;
-    white-space: nowrap;
-  }
-  .workbench-git-mark {
-    margin-left: auto;
-    font-size: var(--font-size-xs);
-    color: var(--agnes-text-secondary);
-  }
-  .workbench-file-preview {
-    flex: 1;
-    min-height: 100px;
-    border-top: 1px solid var(--agnes-line-primary);
-    overflow: auto;
-  }
-  .workbench-file-preview pre {
-    margin: 0;
-    padding: var(--s12);
-    overflow: auto;
-    font-size: var(--font-size-sm);
-    line-height: 1.6;
-    tab-size: 2;
   }
   .workbench-code-keyword {
     color: var(--agnes-text-emphasis);
@@ -372,11 +282,6 @@
     background: transparent;
     text-align: center;
   }
-  /* Until a file is picked the tree owns the panel; the preview shrinks to its one-line prompt. */
-  .workbench-files:not(.workbench-files-previewing) .workbench-file-preview {
-    flex: 0 0 auto;
-    min-height: 0;
-  }
   .workbench-panel-tabs > .agnes-ui-button {
     transition:
       color var(--transition-fast),
@@ -386,8 +291,414 @@
   .workbench-header-actions {
     gap: var(--s2);
   }
-  .workbench-file-entry.agnes-ui-button[aria-pressed="true"] {
+  /* Files tab: tree beside the preview from 640px of panel width, stacked above it below that. */
+  .workbench-files {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+  }
+  .workbench-files-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .workbench-files[data-layout="split"] .workbench-files-body {
+    flex-direction: row;
+  }
+  .workbench-files-tree {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: var(--agnes-bg-subtle);
+  }
+  .workbench-files[data-layout="split"] .workbench-files-tree {
+    flex: 0 0 var(--workbench-tree-width, 250px);
+    min-width: 0;
+  }
+  .workbench-files[data-layout="stacked"] .workbench-files-tree {
+    flex: 1 1 auto;
+    border-bottom: 1px solid var(--agnes-line-primary);
+  }
+  /* Once a file is open in the stacked layout, the tree yields to it and keeps a short list. */
+  .workbench-files-previewing[data-layout="stacked"] .workbench-files-tree {
+    flex: 0 0 auto;
+    max-height: 200px;
+  }
+  .workbench-files-filter.agh-search-bar {
+    margin: var(--s8) var(--s8) var(--s4);
+  }
+  .workbench-files-filter .agh-search-bar-field > input {
+    height: 28px;
+    min-height: 28px;
+    background: var(--agnes-input-surface);
+  }
+  .workbench-tree-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 0 var(--s4) var(--s8);
+  }
+  .workbench-file-tree {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .workbench-file-tree .workbench-file-tree {
+    margin-left: 0.7rem;
+    padding-left: var(--s4);
+    border-left: 1px solid var(--agnes-line-primary);
+  }
+  .workbench-file-entry.agnes-ui-button {
+    width: 100%;
+    height: 26px;
+    min-height: 26px;
+    text-align: left;
+    display: flex;
+    gap: 0.35rem;
+    justify-content: flex-start;
+    padding-inline: 0.3rem;
+    border-radius: var(--radius-xs);
     color: var(--agnes-text-primary);
-    background: var(--agnes-bg-selected);
+  }
+  .workbench-file-entry.agnes-ui-button[aria-pressed="true"] {
+    color: var(--agnes-brand-primary);
+    background: var(--agnes-brand-emphasis-soft);
+  }
+  .workbench-file-chevron {
+    display: inline-flex;
+    width: 12px;
+    flex: 0 0 12px;
+    color: var(--agnes-text-tertiary);
+  }
+  .workbench-file-chevron > svg {
+    width: 12px;
+    height: 12px;
+    transition: transform var(--transition-fast);
+  }
+  .workbench-file-chevron[data-open] > svg {
+    transform: rotate(90deg);
+  }
+  .workbench-file-icon {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 16px;
+    color: var(--agnes-text-tertiary);
+  }
+  .workbench-file-type {
+    --workbench-type: var(--agnes-color-gray-500);
+    flex: 0 0 auto;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 2px;
+    border-radius: var(--radius-xs);
+    display: inline-grid;
+    place-items: center;
+    font: 700 7.5px / 1 var(--font-mono);
+    letter-spacing: 0.02em;
+    color: var(--agnes-color-gray-0);
+    background: var(--workbench-type);
+  }
+  .workbench-file-type[data-tone="html"] {
+    --workbench-type: var(--agnes-color-red-500);
+  }
+  .workbench-file-type[data-tone="css"] {
+    --workbench-type: var(--agnes-color-blue-500);
+  }
+  .workbench-file-type[data-tone="js"] {
+    --workbench-type: var(--agnes-color-amber-700);
+  }
+  .workbench-file-type[data-tone="ts"] {
+    --workbench-type: var(--agnes-color-indigo-500);
+  }
+  .workbench-file-type[data-tone="json"] {
+    --workbench-type: var(--agnes-color-green-700);
+  }
+  .workbench-file-type[data-tone="md"] {
+    --workbench-type: var(--agnes-color-gray-650);
+  }
+  .workbench-file-type[data-tone="svg"] {
+    --workbench-type: var(--agnes-color-amber-500);
+  }
+  .workbench-file-type[data-tone="image"] {
+    --workbench-type: var(--agnes-color-green-500);
+  }
+  .workbench-file-type[data-tone="code"] {
+    --workbench-type: var(--agnes-color-blue-700);
+  }
+  .workbench-file-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    white-space: nowrap;
+    flex: 1;
+  }
+  .workbench-file-change {
+    flex: 0 0 auto;
+    padding: 0 4px;
+    border-radius: var(--radius-xs);
+    font: 10.5px / 16px var(--font-mono);
+    color: var(--agnes-status-warning-text);
+    background: var(--agnes-status-warning-bg);
+  }
+  .workbench-file-change[data-kind="added"] {
+    color: var(--agnes-status-success-text);
+    background: var(--agnes-status-success-bg);
+  }
+  .workbench-git-mark {
+    flex: 0 0 auto;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--agnes-text-tertiary);
+  }
+  .workbench-files-footer {
+    flex: 0 0 auto;
+    padding: 6px var(--s12);
+    border-top: 1px solid var(--agnes-line-primary);
+    font-size: var(--font-size-xs);
+    color: var(--agnes-text-secondary);
+    line-height: 1.6;
+  }
+  .workbench-files-footer p {
+    margin: 0;
+  }
+  .workbench-files-summary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .workbench-files-summary > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .workbench-files-summary > .agnes-ui-button {
+    margin-left: auto;
+    height: auto;
+    padding: 0;
+    font-size: inherit;
+  }
+  .workbench-files-rules {
+    padding-top: var(--s4);
+    overflow-wrap: anywhere;
+  }
+  .workbench-files-note {
+    margin: var(--s8);
+    font-size: var(--font-size-xs);
+    color: var(--agnes-text-secondary);
+  }
+  .workbench-files-divider {
+    flex: 0 0 5px;
+    margin-inline: -2px;
+    position: relative;
+    z-index: 1;
+    cursor: col-resize;
+    touch-action: none;
+  }
+  .workbench-files-divider::after {
+    content: "";
+    position: absolute;
+    inset: 0 2px;
+    background: var(--agnes-line-primary);
+    transition: background-color var(--transition-fast);
+  }
+  .workbench-files-divider:is(:hover, :focus-visible, [data-dragging])::after {
+    background: var(--agnes-brand-primary);
+  }
+  .workbench-files-divider:focus-visible {
+    outline: none;
+  }
+  .workbench-file-preview {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .workbench-files-choose {
+    flex: 1;
+    display: grid;
+    place-content: center;
+    gap: var(--s4);
+    padding: var(--s24) var(--s16);
+    text-align: center;
+    color: var(--agnes-text-secondary);
+  }
+  .workbench-files-choose p {
+    margin: 0;
+  }
+  .workbench-files-legend {
+    font-size: var(--font-size-xs);
+    color: var(--agnes-text-tertiary);
+  }
+  /* Until a file is picked in the stacked layout, the tree owns the panel. */
+  .workbench-files[data-layout="stacked"]:not(.workbench-files-previewing) .workbench-file-preview {
+    flex: 0 0 auto;
+  }
+  .workbench-files[data-layout="stacked"]:not(.workbench-files-previewing) .workbench-files-choose {
+    padding: var(--s12);
+  }
+  .workbench-file-header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    min-width: 0;
+    padding: var(--s8) var(--s12);
+    border-bottom: 1px solid var(--agnes-line-primary);
+  }
+  .workbench-file-crumb {
+    display: flex;
+    align-items: baseline;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    font-size: var(--font-size-xs);
+    color: var(--agnes-text-tertiary);
+  }
+  .workbench-file-crumb-part > span {
+    padding-inline: 0.3em;
+  }
+  .workbench-file-crumb-part {
+    flex: 0 1 auto;
+    min-width: 1.5em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .workbench-file-crumb > .workbench-file-name {
+    flex: 0 1 auto;
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--agnes-text-primary);
+  }
+  .workbench-file-meta {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    font-size: var(--font-size-xs);
+    color: var(--agnes-text-tertiary);
+  }
+  .workbench-file-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+    flex: 0 0 auto;
+  }
+  .workbench-file-mention.agnes-ui-button {
+    gap: var(--s4);
+  }
+  .workbench-files[data-layout="stacked"] :is(.workbench-file-mention-label, .workbench-file-meta) {
+    display: none;
+  }
+  .workbench-file-changed {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    margin: var(--s8) var(--s12) 0;
+    padding: 6px var(--s10);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-xs);
+    color: var(--agnes-status-warning-text);
+    background: var(--agnes-status-warning-bg);
+  }
+  .workbench-file-review {
+    margin-left: auto;
+    flex: 0 0 auto;
+  }
+  .workbench-file-review .agnes-ui-button {
+    height: auto;
+    padding: 0;
+    font-size: inherit;
+    gap: var(--s2);
+  }
+  .workbench-file-review .agh-icon {
+    width: 12px;
+    height: 12px;
+  }
+  .workbench-file-preview > .agnes-settings-state {
+    margin: var(--s12);
+  }
+  /* Source: numbered lines; long lines scroll sideways unless wrapping is on. */
+  .workbench-file-preview > pre {
+    flex: 1;
+    min-height: 0;
+    margin: 0;
+    padding: var(--s8) 0 var(--s16);
+    overflow: auto;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    line-height: 1.7;
+    tab-size: 2;
+    counter-reset: workbench-line;
+    background: var(--agnes-bg-surface);
+  }
+  .workbench-file-preview > pre > code {
+    display: block;
+    min-width: max-content;
+  }
+  .workbench-file-preview > pre[data-wrap] > code {
+    min-width: 0;
+  }
+  .workbench-code-line {
+    display: flex;
+  }
+  .workbench-code-line::before {
+    counter-increment: workbench-line;
+    content: counter(workbench-line);
+    position: sticky;
+    left: 0;
+    flex: 0 0 auto;
+    width: calc(var(--workbench-gutter, 3ch) + 1.75rem);
+    padding-right: 0.9rem;
+    text-align: right;
+    color: var(--agnes-text-disabled);
+    background: var(--agnes-bg-surface);
+    user-select: none;
+  }
+  .workbench-code-text {
+    white-space: pre;
+    padding-right: var(--s16);
+  }
+  .workbench-file-preview > pre[data-wrap] .workbench-code-text {
+    min-width: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .workbench-file-rendered {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+  }
+  .workbench-file-rendered > [data-document-preview] {
+    padding: var(--s12) var(--s16);
+  }
+  .workbench-file-rendered > [data-document-preview="html"] {
+    height: 100%;
+    padding: 0;
+  }
+  .workbench-file-rendered > [data-document-preview="html"] > iframe {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: var(--agnes-color-gray-0);
+  }
+  .workbench-file-rendered > [data-document-preview="image"] {
+    display: grid;
+    place-items: center;
+  }
+  .workbench-file-rendered img {
+    max-width: 100%;
+    height: auto;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .workbench-file-chevron > svg,
+    .workbench-files-divider::after {
+      transition: none;
+    }
   }
 }
