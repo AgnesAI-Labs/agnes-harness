@@ -372,6 +372,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                   </Button>
                 )}
                 {slots?.model}
+                {/* Context use sits with the model it measures: a ring and a share, details on hover. */}
+                <section id="session-usage" aria-label={t('composer.usage.label')} hidden={!showUsage}>
+                  <dependencies.UsagePanel usage={view.usage} connected={view.connected} t={t} />
+                </section>
                 <div className="model-field">
                   <dependencies.ModelPicker
                     state={pickerState(view)}
@@ -477,12 +481,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             <Icon name="chevron-down" className="model-chevron" />
           </Button>
         </div>
-        <div className="composer-meta-end">
-          <section id="session-usage" aria-label={t('composer.usage.label')} hidden={!showUsage}>
-            <dependencies.UsagePanel usage={view.usage} connected={view.connected} t={t} />
-          </section>
-          {slots?.dock}
-        </div>
+        <div className="composer-meta-end">{slots?.dock}</div>
       </div>
     </Fragment>
   )

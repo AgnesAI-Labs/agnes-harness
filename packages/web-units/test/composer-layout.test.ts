@@ -80,7 +80,7 @@ afterEach(() => {
   document.body.replaceChildren()
 })
 
-it('keeps message controls in the card and session controls in the row under it', () => {
+it('keeps message controls and context use in the card, the new-session workspace in the row under it', () => {
   const { host } = mount()
   const card = host.querySelector('#composer')
   const meta = host.querySelector('.composer-meta')
@@ -95,12 +95,15 @@ it('keeps message controls in the card and session controls in the row under it'
     '#send',
     '#cancel',
     '#composer-hint',
+    '#session-usage',
   ])
     expect(host.querySelector(id)?.closest('#composer'), id).toBe(card)
-  for (const id of ['#composer-workspace', '#session-usage']) {
-    expect(host.querySelector(id)?.closest('.composer-meta'), id).toBe(meta)
-    expect(host.querySelector(id)?.closest('#composer'), id).toBeNull()
-  }
+  // Context use sits right before the model picker it measures.
+  expect(host.querySelector('#session-usage')?.nextElementSibling?.classList.contains('model-field')).toBe(
+    true,
+  )
+  expect(host.querySelector('#composer-workspace')?.closest('.composer-meta')).toBe(meta)
+  expect(host.querySelector('#composer-workspace')?.closest('#composer')).toBeNull()
   expect(host.querySelector('#prompt')?.getAttribute('data-agnes-region')).toBe('composer-input')
   expect(host.querySelectorAll('[data-agnes-region="composer-input"]')).toHaveLength(1)
   expect(host.querySelector('label[for="prompt"]')?.textContent).toBe('任务内容')

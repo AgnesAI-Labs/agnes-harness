@@ -588,6 +588,28 @@
   #session-usage {
     z-index: 15;
   }
+  /* Context use sits in the card's control row, right before the model picker it measures. */
+  .composer-controls > #session-usage {
+    flex: none;
+    margin-inline-start: auto;
+  }
+  .composer-controls > #session-usage:not([hidden]) + .model-field {
+    margin-inline-start: 0;
+  }
+  /* The row under the card shows only while it holds something: the new-session workspace or a
+   plugin control. Otherwise it takes no room below the card. */
+  .composer-meta:not(:has(#composer-workspace:not([hidden]), [data-slot]:not([data-slot-state="empty"]))) {
+    display: none;
+  }
+  /* With the row gone the card keeps the row's distance from the window's edge. */
+  #composer-mount:not(
+    :has(
+      .composer-meta #composer-workspace:not([hidden]),
+      .composer-meta [data-slot]:not([data-slot-state="empty"])
+    )
+  ) {
+    padding-bottom: max(var(--s12), env(safe-area-inset-bottom));
+  }
   .session-usage {
     position: relative;
   }

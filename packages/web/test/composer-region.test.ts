@@ -91,9 +91,13 @@ describe('rendered composer region', () => {
     expect(fileInput?.type).toBe('file')
     expect(fileInput?.hidden).toBe(true)
     expect(fileInput?.multiple).toBe(true)
-    // The gauge is part of the quiet row whenever the session reports a context window.
-    expect(document.querySelector<HTMLElement>('#session-usage')?.hidden).toBe(false)
-    expect(document.querySelector('#session-usage')?.closest('.composer-meta')).toBeTruthy()
+    // The gauge sits in the card's control row, right before the model picker it measures.
+    const usage = document.querySelector<HTMLElement>('#session-usage')
+    expect(usage?.hidden).toBe(false)
+    expect(usage?.closest('.composer-controls')).toBeTruthy()
+    expect(usage?.closest('.composer-meta')).toBeNull()
+    expect(usage?.nextElementSibling?.classList.contains('model-field')).toBe(true)
+    expect(usage?.querySelector('.usage-ring')).toBeTruthy()
     expect(document.querySelector('.usage-percent')?.textContent).toBe('2%')
 
     if (!prompt) throw new Error('missing composer input')

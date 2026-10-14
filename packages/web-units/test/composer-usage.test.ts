@@ -92,11 +92,11 @@ it('renders the injected pickers and usage gauge in its own tree and feeds them 
     }
     await act(async () => handle.current?.render(view))
 
-    // The model and the approval mode sit in the card; usage and the workspace in the row below.
+    // The model, the approval mode and context use sit in the card; the workspace in the row below.
     expect(host.querySelector('#fixture-model')?.closest('#composer .composer-controls')).toBeTruthy()
     expect(host.querySelector('#fixture-permission')?.closest('#composer .composer-controls')).toBeTruthy()
     const usage = host.querySelector<HTMLElement>('#session-usage')
-    expect(usage?.closest('.composer-meta')).toBeTruthy()
+    expect(usage?.closest('#composer .composer-controls')).toBeTruthy()
     expect(usage?.hidden).toBe(false)
     expect(usage?.querySelector('.usage-percent')?.textContent).toBe('1%')
     expect(usage?.textContent).toContain('上次同步')
