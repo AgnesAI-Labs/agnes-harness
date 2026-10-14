@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import {
   createSchedulesPort,
   type NewSessionTarget,
@@ -100,8 +101,11 @@ export function scheduleSessions(
       clients.add(client)
       try {
         await client.initialize()
+        // A fresh key, as the Web uses for a new chat: without one, `session/new` reopens the
+        // workspace's canonical session and every run would land in the same conversation.
         const session = await client.createSession({
           cwd: target.cwd,
+          sessionKey: randomUUID(),
           ...(target.preset ? { preset: target.preset } : {}),
           ...(target.bundles?.length ? { bundles: target.bundles } : {}),
           ...(target.loop ? { loop: target.loop } : {}),
