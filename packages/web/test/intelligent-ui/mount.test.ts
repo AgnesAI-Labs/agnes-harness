@@ -6,6 +6,13 @@ import { financeRecord } from './fixture.js'
 const controls = vi.hoisted(() => ({
   clients: [] as { publish(ready: boolean, surfaces: UiSurfaceRecord[]): void }[],
   open: vi.fn(),
+  panel: undefined as
+    | undefined
+    | {
+        when(context: unknown): boolean
+        title(context: unknown): string
+        count: { read(context: unknown): number | undefined; subscribe(listener: () => void): () => void }
+      },
 }))
 vi.mock('../../src/intelligent-ui/client.js', () => ({
   IntelligentUiClient: class {
@@ -42,13 +49,23 @@ vi.mock('../../src/intelligent-ui/placements.js', async (original) => ({
 }))
 // Mount lifecycle coverage keeps the real placement policy without loading document renderers.
 vi.mock('@agnes/web-ui/conversation', () => ({ DocumentPreview: () => null }))
-vi.mock('@agnes/web-client', () => ({ workbenchPanels: { register: () => () => {} } }))
+vi.mock('@agnes/web-client', () => ({
+  workbenchPanels: {
+    register: (entry: typeof controls.panel) => {
+      controls.panel = entry
+      return () => {}
+    },
+    get: () => undefined,
+  },
+}))
 vi.mock('@agnes/web-ui', () => ({
   createDocumentLocaleSource: () => ({ source: {}, dispose() {} }),
   INTELLIGENT_UI_NAMESPACE: 'ui',
   intelligentUiCatalog: {},
-  // The finance fixtures carry tables and forms, never only text.
+  // The finance fixtures carry tables and forms, never only text, files or questions.
   isTextOnly: () => false,
+  isDeliverableList: () => false,
+  questionForm: () => undefined,
 }))
 
 it('seeds loaded surfaces on every session and reveals only first appearances', () => {
@@ -101,6 +118,42 @@ it('seeds loaded surfaces on every session and reveals only first appearances', 
     controls.clients.at(-1)!.publish(true, [live, newSurface, workbenchOnly])
     expect(reveal).toHaveBeenCalledTimes(2)
     expect(controls.open).toHaveBeenCalledTimes(1)
+  } finally {
+    dispose()
+  }
+})
+
+it('names the tab «Views» and counts the panels it lists', () => {
+  const session = { sessionId: 'counted', subscribe: () => () => {} }
+  const dispose = mountIntelligentUi({
+    client: { sessions: { get: (id: string) => ({ id }) } } as never,
+    registry: { spec: () => ({}), register: () => () => {} } as never,
+    session: session as never,
+    locale: { register: () => () => {}, t: (key: string) => `t:${key}` } as never,
+    approval: () => {},
+  })
+  const context = { t: (key: string) => key, data: { session: { id: 'counted' } } }
+  try {
+    const client = controls.clients.at(-1)!
+    client.publish(true, [])
+    expect(controls.panel?.when(context)).toBe(false)
+    const one = financeRecord()
+    const two = financeRecord()
+    two.surface.id = 'second-review'
+    const inlineOnly = financeRecord()
+    inlineOnly.surface.id = 'inline-only'
+    inlineOnly.surface.placement = { inline: true, workbench: false }
+    client.publish(true, [one, two, inlineOnly])
+    expect(controls.panel?.when(context)).toBe(true)
+    expect(controls.panel?.title(context)).toBe('t:ui.title')
+    expect(controls.panel?.count.read(context)).toBe(2)
+    const changed = vi.fn()
+    const stop = controls.panel!.count.subscribe(changed)
+    client.publish(true, [one])
+    expect(changed).toHaveBeenCalled()
+    expect(controls.panel?.count.read(context)).toBe(1)
+    stop()
+    expect(controls.panel?.when({ ...context, data: { session: { id: 'other' } } })).toBe(false)
   } finally {
     dispose()
   }

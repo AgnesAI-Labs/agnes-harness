@@ -1,5 +1,10 @@
 import type { UiActionReceipt, UiSurfaceRecord } from '@agnes/protocol/gen/intelligent-ui'
-import { type ClientResourceService, type UiExtensionContext, workbenchNavigation } from '@agnes/web-client'
+import {
+  type ClientResourceService,
+  type UiExtensionContext,
+  workbenchNavigation,
+  workbenchPanels,
+} from '@agnes/web-client'
 import {
   Button,
   docksInConversation,
@@ -32,6 +37,8 @@ export interface UiPlacementBinding {
   expand(surfaceId: string, revision: number): void
   target(): { sessionId: string; surfaceId: string; revision: number } | undefined
   approval(receipt: UiActionReceipt): void
+  /** Scroll the conversation to a surface's card or chip, showing a hidden chip again first. */
+  locate?(surfaceId: string): void
 }
 
 export function IntelligentInline({ binding }: { binding: UiPlacementBinding }) {
@@ -56,7 +63,7 @@ export function IntelligentPanel({
   const session = (context.data as { session?: { id: string } } | undefined)?.session
   return (
     <UiLocaleProvider source={binding.locale}>
-      <section data-testid="intelligent-ui-panel">
+      <section className="agnes-intelligent-panel" data-testid="intelligent-ui-panel">
         {client && session?.id === client.sessionId ? (
           <SurfaceList key={client.sessionId} binding={binding} client={client} placement="workbench" />
         ) : (
@@ -100,23 +107,18 @@ function SurfaceList({
     })
     return () => observer.disconnect()
   }, [placement])
-  const [dismissed, setDismissed] = useState(() => readDismissed(client.sessionId))
-  const dismiss = (id: string) =>
-    setDismissed((current) => {
-      const next = new Set(current).add(id)
-      try {
-        sessionStorage.setItem(DISMISSED_KEY + client.sessionId, JSON.stringify([...next]))
-      } catch {
-        /* browser policy may disallow storage */
-      }
-      return next
-    })
+  useSyncExternalStore(subscribeSurfaceChoices, surfaceChoicesVersion)
+  const dismissed = hiddenSurfaces('dock', client.sessionId)
+  const closed = hiddenSurfaces('panel', client.sessionId)
   const snapshot = client.getSnapshot(),
     target = binding.target()
   // Questions are answered in their card above the composer and read back in the transcript.
-  const sorted = snapshot.surfaces
-    .filter((record) => !isQuestionSurface(record))
-    .filter((record) => placement === 'inline' || record.surface.placement.workbench)
+  const listed =
+    placement === 'inline'
+      ? snapshot.surfaces.filter((record) => !isQuestionSurface(record))
+      : workbenchSurfaces(snapshot.surfaces)
+  const sorted = listed
+    .filter((record) => placement === 'inline' || !closed.has(record.surface.id))
     .sort((a, b) => {
       if (target?.sessionId === client.sessionId && placement === 'workbench') {
         if (a.surface.id === target.surfaceId) return -1
@@ -124,17 +126,38 @@ function SurfaceList({
       }
       return Number(b.status === 'open') - Number(a.status === 'open') || b.updatedSeq - a.updatedSeq
     })
-  const bound = (record: UiSurfaceRecord) => (
-    <BoundSurface
-      key={`${record.surface.id}:${record.surface.revision}`}
-      binding={binding}
-      client={client}
-      id={record.surface.id}
-      placement={placement}
-      workbenchOpen={workbenchOpen}
-      {...(placement === 'inline' ? { onDismiss: () => dismiss(record.surface.id) } : {})}
-    />
-  )
+  const hide = (id: string, hidden: boolean) => setSurfaceHidden('dock', client.sessionId, id, hidden)
+  const bound = (record: UiSurfaceRecord) => {
+    const id = record.surface.id
+    const docked = docksInConversation(record.surface)
+    // The workbench panel's ⋯ menu: find it in the conversation, hide or show its chip there, close it here.
+    const panelMenu =
+      placement === 'workbench'
+        ? {
+            ...(binding.locate && (docked || rendersInAnswer(record.surface))
+              ? { onLocate: () => binding.locate?.(id) }
+              : {}),
+            ...(docked
+              ? dismissed.has(id)
+                ? { onRestore: () => hide(id, false) }
+                : { onDismiss: () => hide(id, true) }
+              : {}),
+            onClose: () => setSurfaceHidden('panel', client.sessionId, id, true),
+          }
+        : { onDismiss: () => hide(id, true) }
+    return (
+      <BoundSurface
+        key={`${id}:${record.surface.revision}`}
+        binding={binding}
+        client={client}
+        id={id}
+        placement={placement}
+        workbenchOpen={workbenchOpen}
+        {...panelMenu}
+      />
+    )
+  }
+  const closedHere = placement === 'workbench' ? listed.filter((record) => closed.has(record.surface.id)) : []
   // In the conversation a surface is either a full card or a one-line chip pointing at the workbench.
   const docked =
     placement === 'inline'
@@ -163,8 +186,28 @@ function SurfaceList({
           {t('ui.refresh')}
         </Button>
       )}
-      {!sorted.length && placement === 'workbench' && <Empty />}
+      {!sorted.length && placement === 'workbench' && !closedHere.length && <Empty />}
       {cards.map(bound)}
+      {placement === 'workbench' && (sorted.length > 0 || closedHere.length > 0) && (
+        <p className="agnes-intelligent-panel-foot" data-testid="ui-panel-foot">
+          {closedHere.length > 0 && (
+            <>
+              <span data-testid="ui-panel-closed">{t('ui.closedCount', { count: closedHere.length })}</span>
+              <Button
+                htmlType="button"
+                appearance="link"
+                size="small"
+                data-testid="ui-panel-restore"
+                onClick={() => restoreSurfaces('panel', client.sessionId)}
+              >
+                {t('ui.closedRestore')}
+              </Button>
+              <span aria-hidden="true">·</span>
+            </>
+          )}
+          <span>{t('ui.footnote')}</span>
+        </p>
+      )}
       {docked.length > 0 && (
         <nav className="agnes-intelligent-dock" data-testid="ui-dock" aria-label={t('ui.dock.label')}>
           {docked.slice(0, DOCK_VISIBLE).map(bound)}
@@ -194,14 +237,96 @@ function SurfaceList({
   )
 }
 const DOCK_VISIBLE = 2
-const DISMISSED_KEY = 'agnes.ui.dock.dismissed:'
-function readDismissed(sessionId: string): ReadonlySet<string> {
-  try {
-    const stored: unknown = JSON.parse(sessionStorage.getItem(DISMISSED_KEY + sessionId) ?? '[]')
-    return new Set(Array.isArray(stored) ? stored.filter((id) => typeof id === 'string') : [])
-  } catch {
-    return new Set()
+
+/**
+ * The surfaces the workbench «Views» tab lists: every workbench placement except questions, and
+ * except file lists once a deliverables tab shows those.
+ */
+export function workbenchSurfaces(surfaces: readonly UiSurfaceRecord[]): UiSurfaceRecord[] {
+  const filesElsewhere = !!workbenchPanels.get('deliverables')
+  return surfaces.filter(
+    (record) =>
+      !isQuestionSurface(record) &&
+      record.surface.placement.workbench &&
+      !(filesElsewhere && isDeliverableList(record.surface)),
+  )
+}
+
+/**
+ * Presentation choices kept for the browser session: chips hidden from the conversation (`dock`)
+ * and panels closed in the workbench (`panel`). They never change the surface itself.
+ */
+type SurfaceChoice = 'dock' | 'panel'
+const CHOICE_KEYS: Record<SurfaceChoice, string> = {
+  dock: 'agnes.ui.dock.dismissed:',
+  panel: 'agnes.ui.panel.closed:',
+}
+const choices = new Map<string, ReadonlySet<string>>()
+const choiceListeners = new Set<() => void>()
+let choiceVersion = 0
+export const surfaceChoicesVersion = () => choiceVersion
+export function subscribeSurfaceChoices(listener: () => void): () => void {
+  choiceListeners.add(listener)
+  return () => {
+    choiceListeners.delete(listener)
   }
+}
+export function hiddenSurfaces(kind: SurfaceChoice, sessionId: string): ReadonlySet<string> {
+  const key = CHOICE_KEYS[kind] + sessionId
+  const known = choices.get(key)
+  if (known) return known
+  let stored: ReadonlySet<string> = new Set()
+  try {
+    const parsed: unknown = JSON.parse(sessionStorage.getItem(key) ?? '[]')
+    stored = new Set(Array.isArray(parsed) ? parsed.filter((id) => typeof id === 'string') : [])
+  } catch {
+    /* browser policy may disallow storage */
+  }
+  choices.set(key, stored)
+  return stored
+}
+function storeChoice(kind: SurfaceChoice, sessionId: string, next: ReadonlySet<string>) {
+  const key = CHOICE_KEYS[kind] + sessionId
+  choices.set(key, next)
+  try {
+    if (next.size) sessionStorage.setItem(key, JSON.stringify([...next]))
+    else sessionStorage.removeItem(key)
+  } catch {
+    /* browser policy may disallow storage */
+  }
+  choiceVersion++
+  for (const listener of [...choiceListeners]) listener()
+}
+export function setSurfaceHidden(kind: SurfaceChoice, sessionId: string, id: string, hidden: boolean) {
+  const current = hiddenSurfaces(kind, sessionId)
+  if (current.has(id) === hidden) return
+  const next = new Set(current)
+  if (hidden) next.add(id)
+  else next.delete(id)
+  storeChoice(kind, sessionId, next)
+}
+export function restoreSurfaces(kind: SurfaceChoice, sessionId: string) {
+  if (hiddenSurfaces(kind, sessionId).size) storeChoice(kind, sessionId, new Set())
+}
+
+/** Bring a surface's card or chip in the conversation into view and mark it briefly. */
+export function locateInConversation(surfaceId: string): boolean {
+  const node = [...document.querySelectorAll<HTMLElement>('[data-placement="inline"]')].find(
+    (element) => element.dataset.testid === `ui-surface-${surfaceId}`,
+  )
+  if (!node) return false
+  let reduce = false
+  try {
+    reduce = matchMedia('(prefers-reduced-motion: reduce)').matches
+  } catch {
+    /* no media queries outside a browser */
+  }
+  node.scrollIntoView?.({ block: 'center', behavior: reduce ? 'auto' : 'smooth' })
+  if (!node.hasAttribute('tabindex')) node.tabIndex = -1
+  node.focus({ preventScroll: true })
+  node.dataset.located = 'true'
+  window.setTimeout(() => delete node.dataset.located, 1600)
+  return true
 }
 export function BoundSurface({
   binding,
@@ -211,6 +336,9 @@ export function BoundSurface({
   inAnswer,
   workbenchOpen,
   onDismiss,
+  onRestore,
+  onLocate,
+  onClose,
 }: {
   binding: UiPlacementBinding
   client: IntelligentUiClient
@@ -219,6 +347,9 @@ export function BoundSurface({
   inAnswer?: boolean
   workbenchOpen?: boolean
   onDismiss?: () => void
+  onRestore?: () => void
+  onLocate?: () => void
+  onClose?: () => void
 }) {
   // A closed view inside an answer is read back by id; it stays in place, read-only.
   const record = client.knownRecord(id)!
@@ -286,6 +417,9 @@ export function BoundSurface({
       onRecover={() => void client.resend(id)}
       onExpand={() => binding.expand(id, record.surface.revision)}
       onDismiss={onDismiss}
+      onRestore={onRestore}
+      onLocate={onLocate}
+      onClose={onClose}
       onApproval={binding.approval}
     />
   )

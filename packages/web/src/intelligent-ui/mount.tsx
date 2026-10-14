@@ -7,20 +7,20 @@ import {
   type SlotRegistry,
   workbenchPanels,
 } from '@agnes/web-client'
-import {
-  createDocumentLocaleSource,
-  INTELLIGENT_UI_NAMESPACE,
-  intelligentUiCatalog,
-  surfaceTitle,
-} from '@agnes/web-ui'
+import { createDocumentLocaleSource, INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog } from '@agnes/web-ui'
 import { IntelligentUiClient } from './client.js'
 import type { CustomUiModuleSource } from './custom-host.js'
 import {
+  hiddenSurfaces,
   IntelligentInline,
   IntelligentPanel,
+  locateInConversation,
   newSurfacePlacements,
   openIntelligentPanel,
+  setSurfaceHidden,
+  subscribeSurfaceChoices,
   type UiPlacementBinding,
+  workbenchSurfaces,
 } from './placements.js'
 import { intelligentUiServer } from './server.js'
 import { attachTurnDeliverables } from './turn-deliverables.js'
@@ -45,12 +45,8 @@ export function mountIntelligentUi(options: {
   const documentLocale = createDocumentLocaleSource({ [INTELLIGENT_UI_NAMESPACE]: intelligentUiCatalog })
   const removeLocale = options.locale.register(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
   let version = 0
-  let panelSignature = ''
-  let removePanel = () => {}
-  let refreshPanel = () => {}
   const notify = () => {
     version++
-    refreshPanel()
     for (const listener of listeners) listener()
   }
   const binding: UiPlacementBinding = {
@@ -69,8 +65,17 @@ export function mountIntelligentUi(options: {
     expand: (surfaceId, revision) => {
       if (!current || current.record(surfaceId)?.surface.revision !== revision) return
       target = { sessionId: current.sessionId, surfaceId, revision }
+      // Asking for a panel opens it again if it was closed in the workbench.
+      setSurfaceHidden('panel', current.sessionId, surfaceId, false)
       openIntelligentPanel()
       notify()
+    },
+    locate: (surfaceId) => {
+      if (!current) return
+      setSurfaceHidden('dock', current.sessionId, surfaceId, false)
+      options.revealInline?.()
+      // Let a chip that was hidden render, and the trace pane step aside, before scrolling.
+      window.setTimeout(() => requestAnimationFrame(() => locateInConversation(surfaceId)), 0)
     },
     approval: (receipt) => {
       if (current?.sessionId === receipt.sessionId && receipt.status === 'pending-approval')
@@ -134,35 +139,37 @@ export function mountIntelligentUi(options: {
     },
     () => <IntelligentInline binding={binding} />,
   )
-  const registerPanel = () =>
-    workbenchPanels.register({
-      id: 'intelligent-ui',
-      order: 70,
-      edge: 'right',
-      titleKey: 'ui.title',
-      visibility: 'contextual',
-      when: (context) =>
-        (context.data as { session?: { id: string } } | undefined)?.session?.id === current?.sessionId &&
-        !!current?.getSnapshot().surfaces.some((record) => record.surface.placement.workbench),
-      title: () => {
-        const first = current?.getSnapshot().surfaces.find((record) => record.surface.placement.workbench)
-        // The locale service's `t` is a method; pass a bound call, not the bare reference.
-        return first
-          ? surfaceTitle(first.surface, (key, vars) => options.locale.t(key, vars))
-          : options.locale.t('ui.title')
-      },
-      component: ({ context }) => <IntelligentPanel binding={binding} context={context} />,
-    })
-  refreshPanel = () => {
-    const title = current?.getSnapshot().surfaces.find((record) => record.surface.placement.workbench)
-      ?.surface.title
-    const signature = JSON.stringify([current?.sessionId, title])
-    if (signature === panelSignature) return
-    panelSignature = signature
-    removePanel()
-    removePanel = registerPanel()
+  const listed = () => (current ? workbenchSurfaces(current.getSnapshot().surfaces) : [])
+  // The tab counts the panels it shows; closed ones are listed below them with «show all».
+  const shown = () => {
+    if (!current) return 0
+    const closed = hiddenSurfaces('panel', current.sessionId)
+    return listed().filter((record) => !closed.has(record.surface.id)).length
   }
-  refreshPanel()
+  const removePanel = workbenchPanels.register({
+    id: 'intelligent-ui',
+    order: 70,
+    edge: 'right',
+    titleKey: 'ui.title',
+    visibility: 'contextual',
+    when: (context) =>
+      (context.data as { session?: { id: string } } | undefined)?.session?.id === current?.sessionId &&
+      listed().length > 0,
+    // The locale service's `t` is a method; pass a bound call, not the bare reference.
+    title: () => options.locale.t('ui.title'),
+    count: {
+      subscribe: (listener) => {
+        listeners.add(listener)
+        const stopChoices = subscribeSurfaceChoices(listener)
+        return () => {
+          listeners.delete(listener)
+          stopChoices()
+        }
+      },
+      read: shown,
+    },
+    component: ({ context }) => <IntelligentPanel binding={binding} context={context} />,
+  })
   const detachTurns = attachTurnDeliverables(binding)
   const stopSession = options.session.subscribe(switchSession)
   switchSession()

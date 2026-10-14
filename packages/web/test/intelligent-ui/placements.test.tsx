@@ -3,16 +3,20 @@ Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, con
 
 import type { UITurn } from '@agnes/protocol'
 import type { ClientResourceService } from '@agnes/web-client'
+import { workbenchPanels } from '@agnes/web-client'
 import { createDocumentLocaleSource } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it, vi } from 'vitest'
 import { IntelligentUiClient } from '../../src/intelligent-ui/client.js'
 import {
+  hiddenSurfaces,
   IntelligentInline,
   IntelligentPanel,
+  locateInConversation,
   newSurfacePlacements,
   type UiPlacementBinding,
+  workbenchSurfaces,
 } from '../../src/intelligent-ui/placements.js'
 import { attachTurnDeliverables, TurnDeliverables } from '../../src/intelligent-ui/turn-deliverables.js'
 import { financeRecord, uiPage, uiReceipt } from './fixture.js'
@@ -45,6 +49,7 @@ const mounted = async (
   receipt = uiReceipt('pending-approval'),
   record = financeRecord(),
   resources?: ClientResourceService,
+  extra: Partial<UiPlacementBinding> = {},
 ) => {
   const client = new IntelligentUiClient('session-finance', {
     read: async () => uiPage(record, [receipt], 20),
@@ -64,6 +69,7 @@ const mounted = async (
     target: () => undefined,
     expand: vi.fn(),
     approval: vi.fn(),
+    ...extra,
   }
   const host = document.createElement('div'),
     root = createRoot(host)
@@ -313,6 +319,129 @@ describe('shared Intelligent UI placements', () => {
     } finally {
       await cleanup()
       document.documentElement.lang = 'en'
+    }
+  })
+})
+
+describe('the workbench «Views» tab', () => {
+  const panel = (host: HTMLElement) =>
+    host.querySelector<HTMLElement>('[data-testid="intelligent-ui-panel"]')!
+  const menuItem = async (scope: HTMLElement, id: string) => {
+    await act(async () => scope.querySelector<HTMLButtonElement>('header .agh-menu-anchor button')!.click())
+    return document.querySelector<HTMLElement>(`[data-testid="${id}"]`)!
+  }
+
+  it('closes a panel here only, lists it as closed and shows it again', async () => {
+    sessionStorage.clear()
+    const { host, cleanup } = await mounted(uiReceipt('succeeded'))
+    try {
+      const view = panel(host)
+      expect(view.className).toContain('agnes-intelligent-panel')
+      expect(view.querySelector('[data-testid="ui-panel-foot"]')?.textContent).toContain(
+        'Actions here go through the usual permission approval',
+      )
+      await act(async () => (await menuItem(view, 'ui-close')).click())
+      expect(view.querySelector('[data-testid="ui-surface-finance-review"]')).toBeNull()
+      // The conversation keeps its card: closing is a workbench presentation choice.
+      expect(
+        host.querySelector('[data-testid="turn"] [data-testid="ui-surface-finance-review"]'),
+      ).not.toBeNull()
+      expect(view.querySelector('[data-testid="ui-panel-closed"]')?.textContent).toBe('1 closed')
+      expect(hiddenSurfaces('panel', 'session-finance').has('finance-review')).toBe(true)
+      expect(sessionStorage.getItem('agnes.ui.panel.closed:session-finance')).toBe('["finance-review"]')
+      await act(async () =>
+        view.querySelector<HTMLButtonElement>('[data-testid="ui-panel-restore"]')!.click(),
+      )
+      expect(view.querySelector('[data-testid="ui-surface-finance-review"]')).not.toBeNull()
+      expect(view.querySelector('[data-testid="ui-panel-closed"]')).toBeNull()
+    } finally {
+      await cleanup()
+    }
+  })
+
+  it('finds the surface in the conversation from its ⋯ menu', async () => {
+    const locate = vi.fn()
+    const { host, cleanup } = await mounted(uiReceipt('succeeded'), undefined, undefined, { locate })
+    try {
+      await act(async () => (await menuItem(panel(host), 'ui-locate')).click())
+      expect(locate).toHaveBeenCalledWith('finance-review')
+    } finally {
+      await cleanup()
+    }
+  })
+
+  it('hides and shows a docked chip in the conversation from the workbench', async () => {
+    sessionStorage.clear()
+    const record = financeRecord()
+    record.surface.placement = { inline: true, workbench: true, preferred: 'workbench' }
+    const { host, cleanup } = await mounted(uiReceipt('succeeded'), record)
+    try {
+      const chip = () =>
+        host.querySelector('[data-testid="intelligent-ui-inline"] [data-testid="ui-surface-finance-review"]')
+      expect(chip()).not.toBeNull()
+      await act(async () => (await menuItem(panel(host), 'ui-dismiss')).click())
+      expect(chip()).toBeNull()
+      await act(async () => (await menuItem(panel(host), 'ui-restore')).click())
+      expect(chip()).not.toBeNull()
+    } finally {
+      await cleanup()
+    }
+  })
+
+  it('reports the latest action state in the panel footer and locates its approval', async () => {
+    const { host, binding, cleanup } = await mounted()
+    try {
+      const state = panel(host).querySelector('[data-testid="ui-footer"] [data-testid="ui-action-state"]')!
+      expect(state.getAttribute('data-state')).toBe('pending-approval')
+      await act(async () =>
+        state.querySelector<HTMLButtonElement>('[data-testid="ui-locate-approval"]')!.click(),
+      )
+      expect(binding.approval).toHaveBeenCalledWith(uiReceipt('pending-approval'))
+    } finally {
+      await cleanup()
+    }
+  })
+
+  it('leaves file lists to a deliverables tab once one is registered', () => {
+    const files = deliverablesRecord()
+    const view = financeRecord()
+    expect(workbenchSurfaces([files, view]).map((record) => record.surface.id)).toEqual([
+      'card-deliverable',
+      'finance-review',
+    ])
+    const remove = workbenchPanels.register({
+      id: 'deliverables',
+      order: 65,
+      edge: 'right',
+      titleKey: 'deliverables',
+      component: () => null,
+    })
+    try {
+      expect(workbenchSurfaces([files, view]).map((record) => record.surface.id)).toEqual(['finance-review'])
+    } finally {
+      remove()
+    }
+  })
+
+  it('scrolls to and marks the conversation card', () => {
+    vi.useFakeTimers()
+    const card = document.createElement('article')
+    card.dataset.testid = 'ui-surface-renewals'
+    card.dataset.placement = 'inline'
+    const scroll = vi.fn()
+    card.scrollIntoView = scroll
+    document.body.append(card)
+    try {
+      expect(locateInConversation('renewals')).toBe(true)
+      expect(scroll).toHaveBeenCalledOnce()
+      expect(card.dataset.located).toBe('true')
+      expect(document.activeElement).toBe(card)
+      vi.advanceTimersByTime(2000)
+      expect(card.dataset.located).toBeUndefined()
+      expect(locateInConversation('missing')).toBe(false)
+    } finally {
+      card.remove()
+      vi.useRealTimers()
     }
   })
 })
