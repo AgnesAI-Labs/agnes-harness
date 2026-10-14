@@ -51,10 +51,10 @@ const adminOf =
 
 it('keeps the account dialog close control anchored and the action footer visible in short viewports', () => {
   const css = readWebStyleSource(stylePath)
-  const close = styleRule(css, '#account-dialog .account-dialog-close')
+  const close = styleRule(css, ':is(#account-dialog, .account-page-host) .account-dialog-close')
   const body = styleRule(css, '.account-dialog-body')
-  const content = styleRule(css, '#account-dialog .config-detail-grid')
-  const footer = styleRule(css, '#account-dialog .config-detail-footer')
+  const content = styleRule(css, ':is(#account-dialog, .account-page-host) .config-detail-grid')
+  const footer = styleRule(css, ':is(#account-dialog, .account-page-host) .config-detail-footer')
 
   // Ant Design loads after style.css and gives `.ant-btn` position: relative. The account-scoped
   // selector must therefore win on specificity or the close control falls back into the left edge.
@@ -73,9 +73,9 @@ it('keeps the account dialog close control anchored and the action footer visibl
   expect(footer).not.toContain('position: sticky')
 
   const narrowViewport = css.slice(css.indexOf('@media (max-width: 480px)'))
-  expect(styleRule(narrowViewport, '#account-dialog .config-detail-footer')).toContain(
-    'flex-direction: column',
-  )
+  expect(
+    styleRule(narrowViewport, ':is(#account-dialog, .account-page-host) .config-detail-footer'),
+  ).toContain('flex-direction: column')
 })
 
 it('operates the React settings pane and account dialog without losing native form semantics', async () => {
@@ -232,13 +232,23 @@ it('operates the React settings pane and account dialog without losing native fo
         }),
       ),
     )
+    // The saved account's page closes; 添加账户 then opens a page of the settings dialog that holds
+    // the account form, not a second dialog.
+    await vi.waitFor(() => expect(dialog.querySelector('[data-testid="account-page-edit"]')).toBeNull())
+    await vi.waitFor(() => expect(dialog.querySelector('#config-add-account')).not.toBeNull())
     dialog.querySelector<HTMLButtonElement>('#config-add-account')?.click()
-    expect(dialog.querySelector<HTMLDialogElement>('#account-dialog')?.open).toBe(true)
+    await vi.waitFor(() =>
+      expect(dialog.querySelector('[data-testid="account-page-add"] #config-provider')).not.toBeNull(),
+    )
+    expect(dialog.querySelector<HTMLDialogElement>('#account-dialog')?.open).toBe(false)
     expect(dialog.querySelector<HTMLSelectElement>('#config-provider')?.value).toBe('openai')
     expect(dialog.querySelector('#config-api-key')?.closest('label')).toBeTruthy()
-    expect(dialog.querySelector<HTMLButtonElement>('#config-save')?.disabled).toBe(true)
-    dialog.querySelector<HTMLButtonElement>('#account-dialog-close')?.click()
-    expect(dialog.querySelector<HTMLDialogElement>('#account-dialog')?.open).toBe(false)
+    // The page shows the two steps in place, starting at choosing a provider.
+    expect(dialog.querySelector('.account-dialog-body')?.getAttribute('data-account-step')).toBe('provider')
+    // 返回 leaves the page and gives the form back.
+    dialog.querySelector<HTMLButtonElement>('[data-testid="settings-subpage-back"]')?.click()
+    await vi.waitFor(() => expect(dialog.querySelector('[data-testid="account-page-add"]')).toBeNull())
+    expect(dialog.querySelector('#account-dialog #config-provider')).not.toBeNull()
   } finally {
     controller.close()
     for (const host of dialog.querySelectorAll<HTMLElement>(

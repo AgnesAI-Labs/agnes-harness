@@ -137,7 +137,12 @@ export {
   SettingsTextArea,
   SettingsToolbar,
 } from './settings-layout.js'
-export { SettingsModelPane } from './settings-model-pane.js'
+export {
+  ACCOUNT_PAGE_IDS,
+  type SettingsAccountPage,
+  SettingsModelPane,
+  setSettingsAccountPage,
+} from './settings-model-pane.js'
 export {
   mountSettingsSelectOptions,
   SettingsOptionSelect,
@@ -229,6 +234,7 @@ export {
   SettingsExpand,
   SettingsInfo,
   SettingsSubpageFrame,
+  SUBPAGE_CLOSE_EVENT,
   useSettingsSubpages,
 } from './ui/settings-subpages.js'
 export { Skeleton } from './ui/skeleton.js'

@@ -9,6 +9,9 @@ import { PushHeader, usePushNavigation } from './push-stack.js'
 
 type DataAttributes = { [name: `data-${string}`]: string | number | boolean | undefined }
 
+/** Dispatched (bubbling) from inside a subpage that finished, to close it at once. */
+export const SUBPAGE_CLOSE_EVENT = 'agnes:settings-subpage-close'
+
 /** The history entry a subpage adds; browser back pops to the depth it names. */
 const HISTORY_KEY = 'agnesSettingsSubpage'
 
@@ -41,7 +44,7 @@ export function SettingsSubpageFrame({
   ...props
 }: HTMLAttributes<HTMLDivElement> & DataAttributes & { header: ReactNode; rootTitle?: ReactNode }) {
   const nav = usePushNavigation({ historyKey: HISTORY_KEY })
-  const { stack, reset } = nav
+  const { stack, reset, finish } = nav
   const [headerHost, setHeaderHost] = useState<HTMLElement | null>(null)
   const [hosts, setHosts] = useState<Readonly<Record<string, HTMLElement>>>({})
   const [titles, setTitles] = useState<Readonly<Record<string, ReactNode>>>({})
@@ -53,6 +56,17 @@ export function SettingsSubpageFrame({
     dialog.addEventListener('close', reset)
     return () => dialog.removeEventListener('close', reset)
   }, [reset])
+  // A subpage that finished by itself (a saved form) closes at once.
+  useEffect(() => {
+    const node = root.current
+    if (!node) return
+    const close = (event: Event) => {
+      event.stopPropagation()
+      finish()
+    }
+    node.addEventListener(SUBPAGE_CLOSE_EVENT, close)
+    return () => node.removeEventListener(SUBPAGE_CLOSE_EVENT, close)
+  }, [finish])
   // One stable ref per subpage: a new callback each render would detach and attach it again.
   const hostRefs = useRef(new Map<string, (node: HTMLDivElement | null) => void>())
   const hostRef = (id: string) => {

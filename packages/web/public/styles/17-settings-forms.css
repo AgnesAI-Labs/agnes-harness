@@ -382,7 +382,7 @@
       min-height: var(--control-height-touch);
     }
   }
-  #account-dialog .account-dialog-close {
+  :is(#account-dialog, .account-page-host) .account-dialog-close {
     position: absolute;
     top: 0.75rem;
     right: 0.75rem;
@@ -396,30 +396,30 @@
     overflow: hidden;
   }
   /* 只有表单内容滚动，标题与操作区始终保留在弹窗可视范围内。 */
-  #account-dialog .config-detail-grid {
+  :is(#account-dialog, .account-page-host) .config-detail-grid {
     min-height: 0;
     flex: 1 1 auto;
     padding: 0.875rem var(--s20) var(--s16);
     overflow-y: auto;
     overscroll-behavior: contain;
   }
-  #account-dialog .config-detail-heading {
+  :is(#account-dialog, .account-page-host) .config-detail-heading {
     min-height: auto;
     display: grid;
     gap: 0.125rem;
     padding: var(--s20) var(--s48) 0.875rem var(--s20);
   }
-  #account-dialog .config-detail-heading .eyebrow {
+  :is(#account-dialog, .account-page-host) .config-detail-heading .eyebrow {
     display: none;
   }
-  #account-dialog .config-detail-heading h3 {
+  :is(#account-dialog, .account-page-host) .config-detail-heading h3 {
     margin: 0;
     color: var(--agnes-text-primary);
     font-size: var(--font-size-md);
     font-weight: 500;
     line-height: 1.5rem;
   }
-  #account-dialog #config-account-context {
+  :is(#account-dialog, .account-page-host) #config-account-context {
     max-width: none;
     margin: 0;
     color: var(--agnes-text-tertiary);
@@ -427,7 +427,7 @@
     line-height: 1.6;
     text-align: start;
   }
-  #account-dialog .config-detail-footer {
+  :is(#account-dialog, .account-page-host) .config-detail-footer {
     position: static;
     flex: 0 0 auto;
   }
@@ -470,7 +470,7 @@
     color: var(--agnes-text-tertiary);
     font-size: var(--font-size-xs);
   }
-  #account-dialog .oauth-controls {
+  :is(#account-dialog, .account-page-host) .oauth-controls {
     display: grid;
     gap: var(--s12);
     padding: 0.875rem;
@@ -478,33 +478,33 @@
     border-radius: var(--radius-md);
     background: var(--agnes-bg-card);
   }
-  #account-dialog .oauth-controls[hidden] {
+  :is(#account-dialog, .account-page-host) .oauth-controls[hidden] {
     display: none;
   }
-  #account-dialog .oauth-actions {
+  :is(#account-dialog, .account-page-host) .oauth-actions {
     display: flex;
     flex-wrap: wrap;
     gap: var(--s8);
   }
-  #account-dialog .oauth-actions button {
+  :is(#account-dialog, .account-page-host) .oauth-actions button {
     flex: 1 1 8rem;
   }
-  #account-dialog .oauth-status {
+  :is(#account-dialog, .account-page-host) .oauth-status {
     min-height: 1.125rem;
     margin: 0;
     color: var(--agnes-text-tertiary);
     font-size: var(--font-size-xs);
     line-height: 1.6;
   }
-  #account-dialog :is(.oauth-status, .oauth-links):empty {
+  :is(#account-dialog, .account-page-host) :is(.oauth-status, .oauth-links):empty {
     display: none;
   }
-  #account-dialog .oauth-links a {
+  :is(#account-dialog, .account-page-host) .oauth-links a {
     color: var(--agnes-text-emphasis);
     font-size: var(--font-size-sm);
     font-weight: 500;
   }
-  #account-dialog .oauth-prompt[hidden] {
+  :is(#account-dialog, .account-page-host) .oauth-prompt[hidden] {
     display: none;
   }
   :is(#config-form, #account-dialog) .config-validation-section .config-validation-controls {
@@ -675,7 +675,7 @@
     #config-save {
       width: 100%;
     }
-    #account-dialog .config-detail-footer {
+    :is(#account-dialog, .account-page-host) .config-detail-footer {
       flex-direction: column;
     }
   }
@@ -992,11 +992,15 @@
     cursor: pointer;
   }
 
+  /* On a settings page the page header names the account form, so the form drops its own. */
+  .account-dialog-body[data-page] > .config-detail-heading {
+    display: none;
+  }
   /* Account setup shares one stable native region in settings and the first-run guide. */
   #account-dialog {
     width: min(560px, calc(100vw - var(--s32)));
   }
-  #account-dialog .account-dialog-body .config-section,
+  :is(#account-dialog, .account-page-host) .account-dialog-body .config-section,
   .account-dialog-body[data-inline="true"] .config-section {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--s12);
@@ -1054,10 +1058,10 @@
   }
   /* In the dialog the tiles choose the provider and the title names it; the select stays for the
    first-run guide, which shows no tiles. */
-  #account-dialog .account-provider-step {
+  :is(#account-dialog, .account-page-host) .account-provider-step {
     display: none;
   }
-  #account-dialog .account-key-help {
+  :is(#account-dialog, .account-page-host) .account-key-help {
     margin-block: 0;
   }
   /* A provider tile: its name, and under it how it connects. */
@@ -1204,14 +1208,14 @@
       max-width: none;
       margin: auto 0 0;
     }
-    #account-dialog .config-detail-footer {
+    :is(#account-dialog, .account-page-host) .config-detail-footer {
       flex-direction: column;
     }
-    #account-dialog .config-detail-footer .agnes-settings-actions {
+    :is(#account-dialog, .account-page-host) .config-detail-footer .agnes-settings-actions {
       justify-content: flex-end;
       flex-wrap: wrap;
     }
-    #account-dialog #config-save {
+    :is(#account-dialog, .account-page-host) #config-save {
       width: auto;
     }
     #config-account-advanced > .agh-disclosure-summary,

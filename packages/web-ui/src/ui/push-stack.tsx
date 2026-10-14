@@ -65,6 +65,12 @@ export type PushNavigation = {
   back(): void
   /** Return to this depth (0 is the root page). */
   backTo(depth: number): void
+  /**
+   * Close the top page because it finished (a saved form), at once: its history entry is
+   * relabelled rather than gone back over, so a page opened right after is not closed by a late
+   * popstate. The entry it leaves behind is one extra back step.
+   */
+  finish(): void
   /** Close every page without touching history (the host closed). */
   reset(): void
 }
@@ -171,13 +177,28 @@ export function usePushNavigation({
     [historyKey, publish],
   )
   const back = useCallback(() => backTo(current.current.length - 1), [backTo])
+  const finish = useCallback(() => {
+    const known = current.current
+    if (!known.length) return
+    const next = known.slice(0, -1)
+    if (historyDepth(history.state, historyKey) === known.length)
+      try {
+        history.replaceState(
+          { ...(history.state ?? {}), [historyKey]: next.length },
+          '',
+          routeRef.current?.href(next),
+        )
+      } catch {}
+    base.current = Math.min(base.current, next.length)
+    publish(next)
+  }, [historyKey, publish])
   const reset = useCallback(() => {
     base.current = 0
     publish([])
   }, [publish])
   return useMemo(
-    () => ({ stack, open, replace, back, backTo, reset }),
-    [stack, open, replace, back, backTo, reset],
+    () => ({ stack, open, replace, back, backTo, finish, reset }),
+    [stack, open, replace, back, backTo, finish, reset],
   )
 }
 
@@ -354,7 +375,9 @@ const noop = () => {}
 /** The nearest push frame; outside one, opening does nothing. */
 export function usePushStack(): PushNavigation {
   const frame = useContext(PushContext)
-  return frame ?? { stack: [], open: noop, replace: noop, back: noop, backTo: noop, reset: noop }
+  return (
+    frame ?? { stack: [], open: noop, replace: noop, back: noop, backTo: noop, finish: noop, reset: noop }
+  )
 }
 
 /**

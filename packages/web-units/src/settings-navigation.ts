@@ -5,6 +5,8 @@ const merged: Readonly<Record<string, readonly [string, string]>> = {
   bundles: ['models', 'bundles'],
   'system-prompt': ['models', 'system-prompt'],
   context: ['models', 'context'],
+  // Adding an account is a page of 模型与账户.
+  'add-account': ['model', 'add-account'],
   // Subpages of 权限与安全 open from their rows.
   'auto-review': ['security', 'auto-review'],
   'approval-rules': ['security', 'approval-rules'],

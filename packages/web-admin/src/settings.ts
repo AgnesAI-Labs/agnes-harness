@@ -24,6 +24,7 @@ import { createElement } from 'react'
 import { oauthControls } from './oauth-controls.js'
 import { createAccountPickers } from './provider-picker.js'
 import { accountNetworkFields } from './settings/account-network.js'
+import { bindAccountPage } from './settings/account-page.js'
 import {
   defaultAccountLabel,
   providerTiles,
@@ -91,6 +92,14 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   const accountDialogContext = optionalElement('config-account-context', 'p')
   const accountName = optionalElement('config-account-name', 'input')
   const accountBody = accountDialog?.querySelector<HTMLElement>('.account-dialog-body')
+  // Leaving the page by 返回 or the browser drops the draft, as closing the dialog did.
+  const accountPage = bindAccountPage(
+    ui.dialog,
+    accountBody,
+    accountDialog,
+    () => discardAccount(),
+    () => editAccount(),
+  )
   const advanced = optionalElement('config-account-advanced', 'div')
   const modelFields = optionalElement('config-model-fields', 'fieldset')
   let inlineHost: HTMLElement | undefined
@@ -747,9 +756,10 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     if (!inlineHost) openAccountDialog()
   }
 
-  /** 打开账户弹窗；showModal 不可用时退回 open 属性（与设置弹窗同一套兜底）。 */
+  /** 打开账户：设置里有账户页时进入该页，否则用账户弹窗（showModal 不可用时退回 open 属性）。 */
   const openAccountDialog = (): void => {
-    if (!accountDialog) return
+    if (!accountDialog || accountPage.open(!configuration?.accounts?.some((a) => a.accountId === editingId)))
+      return
     setDialogOpen(accountDialog, true)
     accountFocusReturn = focusable(document.activeElement) ? document.activeElement : null
     ui.provider.focus()
@@ -765,7 +775,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     testGeneration += 1
     testPending = false
     updateButtons()
-    if (accountDialog) setDialogOpen(accountDialog, false)
+    if (!accountPage.leave() && accountDialog) setDialogOpen(accountDialog, false)
   }
   const accountAction = async (row: ConfigAccount, action: ConfigAccountInput['action']): Promise<void> => {
     if (!connected || savePending || testPending || !configuration) return

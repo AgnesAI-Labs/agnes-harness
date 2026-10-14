@@ -462,3 +462,37 @@ it('does not let an older success clear the failure of the newest edit', async (
   expect(host.querySelector('[data-testid="settings-save-failed"]')).not.toBeNull()
   expect($(host, '[data-testid="shown"]').textContent).toBe('off')
 })
+
+it('closes a finished subpage at once, so a page opened right after stays open', async () => {
+  const { SUBPAGE_CLOSE_EVENT } = await import('../src/index.js')
+  const host = await render(
+    createElement(
+      SettingsPage,
+      { title: 'Models' },
+      createElement(
+        SettingsDrill,
+        { id: 'account', label: 'Account' },
+        createElement('p', { 'data-testid': 'account-body' }, 'Form'),
+      ),
+      createElement(
+        SettingsDrill,
+        { id: 'add-account', label: 'Add account' },
+        createElement('p', { 'data-testid': 'add-body' }, 'Form'),
+      ),
+    ),
+  )
+  await act(async () => $<HTMLButtonElement>(host, '[data-testid="settings-drill-account"]').click())
+  expect(history.state).toMatchObject({ agnesSettingsSubpage: 1 })
+  // A saved form closes its page itself and another page opens in the same tick.
+  await act(async () => {
+    $(host, '[data-testid="account-body"]').dispatchEvent(
+      new CustomEvent(SUBPAGE_CLOSE_EVENT, { bubbles: true }),
+    )
+    $<HTMLButtonElement>(host, '[data-testid="settings-drill-add-account"]').click()
+  })
+  expect(host.querySelector('[data-testid="account-body"]')).toBeNull()
+  expect(host.querySelector('[data-testid="add-body"]')).not.toBeNull()
+  // A late popstate for the closed level does not take the new page away.
+  await act(async () => window.dispatchEvent(new PopStateEvent('popstate', { state: history.state })))
+  expect(host.querySelector('[data-testid="add-body"]')).not.toBeNull()
+})

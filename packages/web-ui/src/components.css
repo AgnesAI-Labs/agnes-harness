@@ -2652,18 +2652,18 @@
    fills the same width, so their left edges line up down the page. Switches, ›, plain values,
    number fields and chips keep their own size at the right. Narrow rows give the column less. */
   .agnes-settings-item:not([data-stacked])
-    > .agnes-settings-item-control:has(
-      > :is(
-          select,
-          .agnes-ui-select,
-          input:not([type="checkbox"], [type="radio"], [type="number"]),
-          .agh-segmented,
-          .agnes-settings-preset,
-          .appearance-picker,
-          .appearance-choices,
-          .appearance-thumbs
-        )
-    ) {
+  > .agnes-settings-item-control:has(
+    > :is(
+        select,
+        .agnes-ui-select,
+        input:not([type="checkbox"], [type="radio"], [type="number"]),
+        .agh-segmented,
+        .agnes-settings-preset,
+        .appearance-picker,
+        .appearance-choices,
+        .appearance-thumbs
+      )
+  ) {
     flex: 0 1 260px;
     width: 260px;
     min-width: min(10rem, 50%);
@@ -2735,5 +2735,8 @@
   .agnes-settings-item-control > .agnes-settings-preset > select {
     flex: 1 1 auto;
     min-width: 0;
+  }
+  .agnes-settings-drill[hidden] {
+    display: none;
   }
 }
