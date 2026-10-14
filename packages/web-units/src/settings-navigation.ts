@@ -18,7 +18,10 @@ const merged: Readonly<Record<string, readonly [string, string]>> = {
   personalization: ['general', 'personalization'],
   memory: ['general', 'memory'],
   'custom-instructions': ['general', 'custom-instructions'],
-  providers: ['diagnostics', 'providers'],
+  providers: ['diagnostics', 'runtime-details'],
+  'runtime-details': ['diagnostics', 'runtime-details'],
+  otlp: ['diagnostics', 'otlp'],
+  errors: ['diagnostics', 'errors'],
   // Credentials are the lower half of the permissions page.
   credentials: ['security', 'credentials'],
 }

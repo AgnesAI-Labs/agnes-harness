@@ -555,9 +555,20 @@ it('navigates runtime capabilities and never offers a disallowed security preset
         host.querySelector(`[data-testid="settings-nav-${page}"]`)?.getAttribute('aria-current'),
     ).toBe(host.querySelector(`[data-testid="settings-nav-${page}-tab"]`) ? 'true' : 'page')
     if (page === 'diagnostics') {
-      await act(async () => {
-        setDisclosureOpen(host.querySelector<HTMLElement>('[data-testid="plugin-diagnostics"]')!, true)
-      })
+      // 运行详情 is a subpage; its provider record opens in place.
+      await act(async () =>
+        host.querySelector<HTMLButtonElement>('[data-testid="plugin-diagnostics"]')?.click(),
+      )
+      await vi.waitFor(() =>
+        expect(
+          host.querySelector('[data-testid="settings-subsection-provider-types-toggle"]'),
+        ).not.toBeNull(),
+      )
+      await act(async () =>
+        host
+          .querySelector<HTMLButtonElement>('[data-testid="settings-subsection-provider-types-toggle"]')
+          ?.click(),
+      )
       await vi.waitFor(() => expect(host.querySelector('[data-testid="providers-loop"]')).not.toBeNull())
       expect(host.textContent).toContain('@acme/loop')
       expect(host.querySelectorAll('[data-testid^="providers-"]')).toHaveLength(9)

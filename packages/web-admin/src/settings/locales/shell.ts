@@ -2,7 +2,13 @@ import type { LocaleCatalog } from '@agnes/web-ui'
 
 export const shellCatalog: LocaleCatalog = {
   en: {
-    runtimeDetails: 'Plugin runtime details',
+    runtimeDetails: 'Runtime details',
+    pinsHelp: 'Sessions held on older plugin versions',
+    presetRequirements: 'Presets and permission requirements',
+    presetCount: '{count} presets',
+    providerCount: '{kinds} kinds · {count}',
+    generationHelp: 'Move sessions to a newer generation',
+    localShort: 'Rescan and trust workspace plugins',
     runConfigIntro: 'Applies to new sessions',
     isolationDetails: 'Isolation technical details',
     migrateManual: 'Enter a session key',
@@ -97,7 +103,7 @@ export const shellCatalog: LocaleCatalog = {
     lifecycle: 'Lifecycle scope',
     persistenceHelp:
       'Persistence can use SQLite or a complete non-SQL provider. Select it in the profile and restart. Existing files stay with their provider; export and import sessions to move history.',
-    generation: 'Code generations',
+    generation: 'Runtime generations',
     bound: 'Bound sessions',
     openSessions: 'Open sessions',
     generationSessions: 'Sessions',
@@ -127,7 +133,7 @@ export const shellCatalog: LocaleCatalog = {
     migrationFailed:
       'Migration could not be confirmed. Refresh the bindings; stop any active turn and check loop/adapter compatibility before retrying.',
     noGenerations: 'No runtime generations reported.',
-    publication: 'Publication status by container',
+    publication: 'Publication status',
     noPublication: 'No composition publication has been reported yet.',
     publicationRetry:
       'Some containers did not apply the change. Retry the same desired input; do not assume all sessions received it.',
@@ -174,7 +180,13 @@ export const shellCatalog: LocaleCatalog = {
       'This view explains desired configuration. Live session bindings are listed separately; a saved bundle selection may still require a restart.',
   },
   'zh-CN': {
-    runtimeDetails: '插件运行详情',
+    runtimeDetails: '运行详情',
+    pinsHelp: '会话固定在旧插件版本的数量',
+    presetRequirements: '预设与权限要求',
+    presetCount: '{count} 个预设',
+    providerCount: '{kinds} 类 · {count} 个',
+    generationHelp: '可把会话迁移到新代际',
+    localShort: '重新加载、信任工作区插件',
     runConfigIntro: '对新会话生效',
     isolationDetails: '隔离保护技术详情',
     migrateManual: '手动输入会话标识',
@@ -269,7 +281,7 @@ export const shellCatalog: LocaleCatalog = {
     lifecycle: '生命周期作用域',
     persistenceHelp:
       '持久化支持 SQLite 或完整的非 SQL 插件实现。在配置中选择后重启生效。原文件仍归原插件实现；迁移历史请导出并导入会话。',
-    generation: '已发布的插件版本',
+    generation: '运行代际',
     bound: '绑定会话数',
     openSessions: '打开的会话数',
     generationSessions: '绑定的会话',
@@ -297,7 +309,7 @@ export const shellCatalog: LocaleCatalog = {
     migrationFailed:
       '无法确认迁移结果。请刷新绑定列表，停止正在进行的轮次，并检查 Agent Loop 与适配器兼容性后重试。',
     noGenerations: '尚无运行时代际报告。',
-    publication: '各容器的发布状态',
+    publication: '发布状态',
     noPublication: '尚无组合发布报告。',
     publicationRetry: '部分容器未应用变更。请重试相同期望输入，不要假设所有会话均已更新。',
     publicationApplied: '已应用',

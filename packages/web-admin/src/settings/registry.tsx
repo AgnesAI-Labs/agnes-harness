@@ -7,14 +7,11 @@ import type {
 import { CredentialsPage } from '@agnes/resource-control-web/credentials'
 import { type SettingsSection, settingsSections, type UiExtensionContext } from '@agnes/web-client'
 import {
-  Banner,
-  Button,
   IconButton,
-  type IconName,
-  SettingsDetails,
-  SettingsFooter,
+  SettingsBlock,
+  SettingsDrill,
+  SettingsExpand,
   SettingsPageDescription,
-  SettingsState,
 } from '@agnes/web-ui'
 import { type ReactNode, useEffect, useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
@@ -75,42 +72,10 @@ for (const [id, group, pane, navigationId, key, order] of [
     })
 }
 
-function Subsection({
-  id,
-  title,
-  children,
-  defer = false,
-  icon,
-  description,
-  summary,
-}: {
-  id: string
-  title: string
-  children: ReactNode
-  defer?: boolean
-  icon?: IconName
-  description?: string
-  summary?: string | undefined
-}) {
-  const [visited, setVisited] = useState(!defer)
-  return (
-    <SettingsDetails
-      id={`settings-subsection-${id}`}
-      title={title}
-      icon={icon}
-      description={description}
-      summary={summary}
-      data-testid={`settings-subsection-${id}`}
-      onOpenChange={(open) => {
-        if (open) setVisited(true)
-      }}
-    >
-      {visited && children}
-    </SettingsDetails>
-  )
-}
-
-/** Runtime developer data is loaded on demand; doctor checks stay independent of this catalog. */
+/**
+ * 运行详情 under 集成: a subpage of seven records, each opening in place. The runtime catalog is
+ * read when the subpage opens; the header refreshes it.
+ */
 function RuntimeDetails({ c, t }: { c: RuntimeSettingsContext; t: UiExtensionContext['t'] }) {
   const [open, setOpen] = useState(false)
   const [snapshot, setSnapshot] = useState<RuntimeAdminSnapshot>()
@@ -138,58 +103,16 @@ function RuntimeDetails({ c, t }: { c: RuntimeSettingsContext; t: UiExtensionCon
       current = false
     }
   }, [open, c.api, revision])
+  const providers = snapshot?.providers ?? []
+  const generations = c.generations?.generations ?? []
   return (
-    <SettingsDetails
-      id="settings-subsection-providers"
-      title={t('runtimeDetails')}
-      icon="code"
-      description={t('runtimeDetailsHelp')}
+    <SettingsDrill
+      id="runtime-details"
       data-testid="plugin-diagnostics"
-      onOpenChange={setOpen}
-    >
-      <PinsPanel api={c.api} canRelease={!!c.canRelease} t={t} />
-      {busy && !snapshot && <SettingsState tone="loading" />}
-      {failed && (
-        <Banner
-          tone="error"
-          action={
-            <Button size="small" disabled={busy} onClick={() => setRevision((value) => value + 1)}>
-              {t('retry')}
-            </Button>
-          }
-        >
-          {t('unavailable')}
-        </Banner>
-      )}
-      {snapshot && (
-        <>
-          <Subsection id="isolation" title={t('isolationDetails')}>
-            <IsolationDetailsPanel snapshot={snapshot} t={t} />
-          </Subsection>
-          <Subsection id="provider-types" title={t('providerTypes')}>
-            <ProvidersPanel snapshot={snapshot} t={t} />
-          </Subsection>
-          <GenerationsPanel
-            status={c.generations}
-            api={c.api}
-            canSave={c.canSave}
-            t={t}
-            onRefresh={c.onRefresh}
-          />
-          <PublicationPanel snapshot={snapshot} t={t} />
-          {c.api && (
-            <LocalPluginsPanel
-              api={c.api}
-              snapshot={snapshot}
-              canSave={c.canSave}
-              canTrust={!!c.canTrust}
-              t={t}
-              onRefresh={c.onRefresh}
-            />
-          )}
-        </>
-      )}
-      <SettingsFooter>
+      label={t('runtimeDetails')}
+      description={t('runtimeDetailsHelp')}
+      onClick={() => setOpen(true)}
+      actions={
         <IconButton
           name="refresh-cw"
           label={t('retry')}
@@ -198,8 +121,72 @@ function RuntimeDetails({ c, t }: { c: RuntimeSettingsContext; t: UiExtensionCon
           aria-busy={busy}
           onClick={() => setRevision((value) => value + 1)}
         />
-      </SettingsFooter>
-    </SettingsDetails>
+      }
+    >
+      <SettingsBlock
+        state={failed ? 'error' : busy && !snapshot ? 'loading' : undefined}
+        onReload={() => setRevision((value) => value + 1)}
+        data-testid="runtime-details"
+      >
+        <SettingsExpand label={t('pinsTitle')} hint={t('pinsHelp')} data-testid="runtime-pins">
+          <PinsPanel api={c.api} canRelease={!!c.canRelease} t={t} />
+        </SettingsExpand>
+        {snapshot && (
+          <>
+            <SettingsExpand
+              label={t('presetRequirements')}
+              value={t('presetCount', {
+                count: snapshot.security?.presetPolicies.length ?? snapshot.presets.length,
+              })}
+              data-testid="settings-subsection-isolation"
+            >
+              <IsolationDetailsPanel snapshot={snapshot} t={t} />
+            </SettingsExpand>
+            <SettingsExpand
+              label={t('providerTypes')}
+              value={t('providerCount', {
+                kinds: new Set(providers.map((entry) => entry.kind)).size,
+                count: providers.length,
+              })}
+              data-testid="settings-subsection-provider-types"
+            >
+              <ProvidersPanel snapshot={snapshot} t={t} />
+            </SettingsExpand>
+          </>
+        )}
+        <SettingsExpand
+          label={t('generation')}
+          hint={t('generationHelp')}
+          value={generations.length ? t('generationCount', { count: generations.length }) : undefined}
+          data-testid="runtime-generations"
+        >
+          <GenerationsPanel
+            status={c.generations}
+            api={c.api}
+            canSave={c.canSave}
+            t={t}
+            onRefresh={c.onRefresh}
+          />
+        </SettingsExpand>
+        {snapshot && (
+          <SettingsExpand label={t('publication')} data-testid="runtime-publication">
+            <PublicationPanel snapshot={snapshot} t={t} />
+          </SettingsExpand>
+        )}
+        {snapshot && c.api && (
+          <SettingsExpand label={t('local')} hint={t('localShort')} data-testid="runtime-local">
+            <LocalPluginsPanel
+              api={c.api}
+              snapshot={snapshot}
+              canSave={c.canSave}
+              canTrust={!!c.canTrust}
+              t={t}
+              onRefresh={c.onRefresh}
+            />
+          </SettingsExpand>
+        )}
+      </SettingsBlock>
+    </SettingsDrill>
   )
 }
 const definitions: readonly [
@@ -257,12 +244,7 @@ const definitions: readonly [
     'advanced',
     'diagnostics',
     81,
-    (c, t) => (
-      <>
-        <DiagnosticsPanel />
-        <RuntimeDetails c={c} t={t} />
-      </>
-    ),
+    (c, t) => <DiagnosticsPanel integrations={<RuntimeDetails c={c} t={t} />} />,
   ],
 ]
 for (const [group, id, order, render] of definitions) {

@@ -447,11 +447,22 @@ it('loads registered diagnostics independently of the plugin catalog with one tr
       'packages.remove',
     ])
     flushSync(() => root.render(createElement(SettingsPages, { admin })))
-    await vi.waitFor(() => expect(host.querySelector('[data-testid="doctor-checks"]')).not.toBeNull())
+    await vi.waitFor(() =>
+      expect(host.querySelector('[data-testid="diagnostics-doctor"]')?.getAttribute('aria-busy')).toBe(
+        'false',
+      ),
+    )
     expect(runtime).not.toHaveBeenCalled()
     // Leftover plugin files are read and released here, without the plugins page being open.
+    // Leftover files are the first record of the 运行详情 subpage, opened in place.
+    expect(host.querySelector('[data-testid="runtime-occupancy"]')).toBeNull()
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="plugin-diagnostics"]')?.click(),
+    )
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="runtime-pins-toggle"]')?.click(),
+    )
     const occupancy = host.querySelector<HTMLElement>('[data-testid="runtime-occupancy"]')
-    expect(occupancy?.closest<HTMLElement>('.agh-disclosure')?.dataset.open).toBe('false')
     await vi.waitFor(() => expect(occupancy?.querySelector('[data-testid="pin-row"]')).not.toBeNull())
     expect(occupancy?.textContent).toContain('@acme/tool 1.0.0')
     await act(async () => occupancy?.querySelector<HTMLButtonElement>('[data-testid="pin-release"]')?.click())
@@ -461,15 +472,16 @@ it('loads registered diagnostics independently of the plugin catalog with one tr
     )
     expect(pinsRelease).toHaveBeenCalledWith(['pin-1'])
     await vi.waitFor(() => expect(occupancy?.querySelector('[data-testid="pin-row"]')).toBeNull())
-    expect([...host.querySelectorAll('h2')].map((h) => h.textContent)).toEqual(['Runtime & diagnostics'])
+    // The page names itself once; the open subpage has its own title and the refresh.
+    expect([...host.querySelectorAll('h2')].map((h) => h.textContent)).toEqual([
+      'Runtime & diagnostics',
+      'Runtime details',
+    ])
     expect(
-      host.querySelector('[data-testid="settings-refresh"]')?.closest<HTMLElement>('.agh-disclosure')?.dataset
-        .open,
-    ).toBe('false')
+      host.querySelector('[data-testid="settings-subpage-header"] [data-testid="settings-refresh"]'),
+    ).not.toBeNull()
     expect(settingsSections.get('doctor')).toBeUndefined()
-    expect(host.querySelector('.agnes-settings-section')?.getAttribute('data-testid')).toBe(
-      'diagnostics-doctor',
-    )
+    expect(host.querySelector('[data-testid="diagnostics-doctor"]')).not.toBeNull()
   } finally {
     flushSync(() => root.unmount())
     vi.unstubAllGlobals()

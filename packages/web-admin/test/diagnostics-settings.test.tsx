@@ -1,9 +1,10 @@
 /** @vitest-environment happy-dom */
 import type { DiagnosticsExportResult } from '@agnes/protocol'
+import { SettingsSubpageFrame } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { DiagnosticsPanel } from '../src/settings/diagnostics.js'
+import { DiagnosticsPanel, errorKind, groupErrors } from '../src/settings/diagnostics.js'
 
 import { DiagnosticsRequestError, diagnosticsApi } from '../src/settings/diagnostics-api.js'
 
@@ -49,7 +50,15 @@ async function mount(api: ReturnType<typeof diagnosticsApi>, download = vi.fn())
   document.body.append(host)
   const root = createRoot(host)
   roots.push(root)
-  await act(async () => root.render(createElement(DiagnosticsPanel, { api, download })))
+  await act(async () =>
+    root.render(
+      createElement(
+        SettingsSubpageFrame,
+        { header: null },
+        createElement(DiagnosticsPanel, { api, download }),
+      ),
+    ),
+  )
   return host
 }
 it.each([false, true])(
@@ -66,36 +75,50 @@ it.each([false, true])(
     const download = vi.fn()
     const host = await mount(diagnosticsApi(fetcher), download)
     expect(host.querySelector('form')).toBeNull()
-    expect(host.querySelector<HTMLInputElement>('[data-testid="otlp-endpoint"]')?.value).toBe(
-      'http://collector.example:4318',
+    // One line per error: time, message and code; its details open in place.
+    const row = host.querySelector('[data-testid="diagnostics-error"]')!
+    expect(row.querySelector('[data-testid="diagnostics-error-time"]')).not.toBeNull()
+    expect(row.querySelector('.agnes-settings-code-chip')?.textContent).toBe('-32602')
+    expect(host.querySelector('[data-testid="diagnostics-error-code"]')).toBeNull()
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="diagnostics-error-toggle"]')?.click(),
     )
-    const errorCode = host.querySelector('[data-testid="diagnostics-error-code"]')!
-    expect(errorCode.textContent).toBe('-32602')
-    expect(errorCode.closest<HTMLElement>('.agh-disclosure')?.dataset.open).toBe('false')
-    expect(host.querySelector('[data-testid="otlp-privacy"]')).not.toBeNull()
-    expect(host.querySelector('[data-testid="otlp-worker"]')?.textContent).toContain(
-      'No Worker is currently running',
-    )
-    expect(host.querySelector<HTMLElement>('[data-testid="diagnostics-runtime-details"]')?.dataset.open).toBe(
-      'false',
-    )
+    expect(host.querySelector('[data-testid="diagnostics-error-code"]')?.textContent).toBe('-32602')
     expect(!!host.querySelector('[data-testid="diagnostics-doctor"]')).toBe(doctorAvailable)
     const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
     await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="diagnostics-copy"]')?.click())
     expect(write).toHaveBeenCalledWith(diagnosticId)
+    // OTLP is a subpage of 集成.
+    expect(host.querySelector('[data-testid="otlp-state"]')).not.toBeNull()
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="otlp-settings"]')?.click())
+    expect(host.querySelector<HTMLInputElement>('[data-testid="otlp-endpoint"]')?.value).toBe(
+      'http://collector.example:4318',
+    )
+    expect(host.querySelector('[data-testid="otlp-privacy"]')).not.toBeNull()
+    expect(host.querySelector('[data-testid="otlp-worker"]')?.textContent).toContain(
+      'No Worker is currently running',
+    )
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="settings-subpage-back"]')?.click(),
+    )
     const input = host.querySelector<HTMLInputElement>('#diagnostics-query')!
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, diagnosticId)
       input.dispatchEvent(new Event('input', { bubbles: true }))
     })
-    await act(async () => {
-      if (doctorAvailable)
-        host.querySelector<HTMLButtonElement>('[data-testid="diagnostics-search"]')?.click()
-      else
-        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
-    })
+    await act(async () =>
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })),
+    )
+    // Export says what the bundle contains first, then exports the selected error.
     await act(async () =>
       host.querySelector<HTMLButtonElement>('[data-testid="diagnostics-export"]')?.click(),
+    )
+    expect(download).not.toHaveBeenCalled()
+    expect(document.querySelector('[data-testid="diagnostics-export-details"]')?.textContent).toContain(
+      'Review deployment metadata',
+    )
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[data-testid="diagnostics-export-confirm"]')?.click(),
     )
     expect(JSON.parse(String(fetcher.mock.calls.at(-1)?.[1]?.body))).toEqual({ diagnosticId })
     expect(download).toHaveBeenCalledWith(bundle)
@@ -105,7 +128,6 @@ it.each([false, true])(
       )
       const selfCheck = host.querySelector('[data-testid="diagnostics-doctor"]')
       if (!selfCheck) throw new Error('Missing self-check block')
-      expect(host.querySelector('.agnes-settings-section')).toBe(selfCheck)
       expect(selfCheck.querySelector('[data-testid="doctor-check-node"]')?.textContent).toBe(
         'Node.js runtimeReady',
       )
@@ -123,6 +145,11 @@ it.each([false, true])(
       await act(async () =>
         selfCheck.querySelector<HTMLButtonElement>('[data-testid="diagnostics-doctor-run"]')?.click(),
       )
+      expect(
+        selfCheck
+          .querySelector('[data-testid="doctor-check-node"] .agnes-settings-tag')
+          ?.getAttribute('data-tone'),
+      ).toBe('warn')
       await act(async () =>
         host.querySelector<HTMLButtonElement>('[data-testid="diagnostics-summary-copy"]')?.click(),
       )
@@ -144,6 +171,31 @@ it.each([false, true])(
     }
   },
 )
+
+it('groups repeats into one row with a count, and sorts errors into the filter kinds', () => {
+  const at = '2026-10-08T00:00:00Z'
+  const record = (id: string, name: string, cause?: string) => ({
+    diagnosticId: `${id.repeat(8)}-1111-4111-8111-111111111111`,
+    at,
+    code: -32000,
+    name,
+    ...(cause ? { cause } : {}),
+  })
+  const groups = groupErrors([
+    record('a', 'E_POLICY'),
+    record('b', 'E_CAPABILITY'),
+    record('c', 'E_CAPABILITY'),
+  ])
+  expect(groups.map((group) => [group.latest.name, group.count])).toEqual([
+    ['E_CAPABILITY', 2],
+    ['E_POLICY', 1],
+  ])
+  expect(groups[0]?.latest.diagnosticId.startsWith('cccccccc')).toBe(true)
+  expect(errorKind(record('a', 'E_POLICY'))).toBe('permission')
+  expect(errorKind(record('a', 'PROVIDER_UNAVAILABLE'))).toBe('provider')
+  expect(errorKind(record('a', 'PLUGIN_LOAD'))).toBe('plugin')
+  expect(errorKind(record('a', 'INVALID_PARAMS'))).toBe('all')
+})
 it('renders safe translated failures, rejects invalid DTOs, and cancels an unmounted read', async () => {
   const api = diagnosticsApi(async () =>
     Response.json(
@@ -193,8 +245,8 @@ it('renders safe translated failures, rejects invalid DTOs, and cancels an unmou
       }),
     ),
   )
-  expect(idle.querySelector('[data-testid="diagnostics-runtime"]')?.textContent).toContain(
+  expect(idle.querySelector('[data-testid="diagnostics-worker"]')?.textContent).toContain(
     'No Worker is currently running',
   )
-  expect(idle.querySelector('[data-testid="otlp-health"]')?.textContent).toContain('Disabled')
+  expect(idle.querySelector('[data-testid="otlp-state"]')?.textContent).toContain('Disabled')
 })
