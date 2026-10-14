@@ -1,8 +1,11 @@
+import { estimateTokens } from '../model-tokens.js'
+
+export { estimateTokens } from '../model-tokens.js'
+
 import { conservativeSerializedTokens } from '@agnes/core-child-control/child/credits'
 import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import { type OpStateObj, type ToolCallState, withPhase } from '@agnes/core-common/step/op-state'
 import { CoreError, type Event, type EventInput, type Seq } from '@agnes/core-common/types'
-import { effectOutcome } from '@agnes/core-effects/effects/effect'
 import { withTimeout } from '@agnes/core-effects/effects/wrap'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import type { BudgetState } from '@agnes/core-ledger/reduce/shapes'
@@ -11,7 +14,6 @@ import { childReceiptNarrative } from '../../child/receipts.js'
 import {
   releaseTreeReservation,
   reserveTreeBudget,
-  settleTreeSpend,
   treeBudgetApplies,
   treePermitOf,
 } from '../../child/runtime-budget.js'
@@ -70,9 +72,10 @@ import {
   toolNamesForModel,
   toolsForModel,
 } from '../../step/model-tools.js'
-import { runCoreReplacement, runSlot } from '../../step/reentry.js'
+import { runSlot } from '../../step/reentry.js'
 import type { OpContext, SessionImpl, StepOutcome } from '../../step/session.js'
 import { toolArgumentError } from '../../step/tool-args.js'
+import { ModelExecution } from '../model-execution.js'
 import { beforeStepGate, builtinBudgetPreflight, contextBudgetError } from './gate.js'
 import { loadedToolNames, restoreToolDisclosure } from './tool-disclosure.js'
 
@@ -140,30 +143,6 @@ function auxiliaryAxSomText(events: readonly Event[], media: LedgerPreparedReque
     }
   }
   return text
-}
-
-// Unicode ranges commonly rendered as one glyph per character rather than composed from a small
-// alphabet: CJK ideographs and their punctuation, the two Japanese syllabaries, Hangul syllables,
-// and full-width forms. A four-characters-per-token divisor is calibrated on Latin script;
-// applying it to these ranges silently underprices a token count by roughly half, since a real
-// tokenizer spends closer to one token per one to two such characters.
-const CJK_CHAR = /[　-〿぀-ヿ㐀-䶿一-鿿豈-﫿＀-￯가-힣]/
-
-/**
- * Four ASCII/Latin characters to a token, roughly 1.7 CJK-range characters to a token: the estimate
- * used where no usage row has been reported yet. Counted per code point rather than assumed from
- * the string's dominant script, because a tool result or a user message commonly mixes both — a
- * file path and a Chinese comment in the same diff, for instance — and a single global divisor
- * would misprice whichever script is the minority in that particular string.
- */
-export const estimateTokens = (text: string): number => {
-  let cjk = 0
-  let other = 0
-  for (const ch of text) {
-    if (CJK_CHAR.test(ch)) cjk++
-    else other++
-  }
-  return Math.ceil(cjk / 1.7 + other / 4)
 }
 
 /** Upper bound on the wire body that will be sent, or null when a field has no supported bound. */
@@ -992,6 +971,19 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     return { effect, header, effectIntentSeq, headerSeq: t.lastHeaderSeq }
   })
 
+  const sessionSignal = s.ac.signal
+  const execution = new ModelExecution(s, {
+    wire,
+    header,
+    effect,
+    headerSeq,
+    intentSeq: effectIntentSeq,
+    signal: sessionSignal,
+    context: ctx,
+    turnId: op.meta.turn,
+    step,
+    memory: t,
+  })
   let text = ''
   let thinking = ''
   let buffered = ''
@@ -1009,12 +1001,8 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
   let flushTimer: ReturnType<typeof setTimeout> | undefined
   let flushQueue = Promise.resolve()
   let flushFailure: { error: unknown } | undefined
-  // This is the one pending `iterator.next()` at a time. A timer failure wakes it directly instead
-  // of racing every next call against one never-settling Promise (which would retain one reaction
-  // per streamed chunk). The same wake path makes session cancellation bounded for a provider that
-  // has not yet observed its signal.
-  let wakeStream: ((error: unknown) => void) | undefined
-  const streamAbort = new AbortController()
+  // A failed output flush interrupts the shared Core transport, even if the provider ignores abort.
+  const streamAbort = execution.controller
   const outputRow = (state: 'started' | 'progress' | 'interrupted'): EventInput =>
     s.ev(
       'assistant/output',
@@ -1046,14 +1034,12 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     // drains what it admitted, so recording the text here, in the abort callback, is what keeps it.
     const cut = cutRow()
     if (cut.length > 0) void s.d.log.append(cut).catch(() => undefined)
-    streamAbort.abort(s.ac.signal.reason)
-    wakeStream?.(s.ac.signal.reason ?? new Error('inference aborted'))
+    streamAbort.abort(sessionSignal.reason)
   }
-  if (s.ac.signal.aborted) onSessionAbort()
-  else s.ac.signal.addEventListener('abort', onSessionAbort, { once: true })
+  if (sessionSignal.aborted) onSessionAbort()
+  else sessionSignal.addEventListener('abort', onSessionAbort, { once: true })
   const calls: Array<{ name: string; args: unknown; via: string }> = []
   const deviations: EventInput[] = []
-  let usage: Extract<InferenceEvent, { type: 'usage' }> | undefined
   let done: Extract<InferenceEvent, { type: 'done' }> | undefined
   let error: Extract<InferenceEvent, { type: 'error' }> | undefined
   let unparsed = false
@@ -1123,40 +1109,8 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
       void flush().catch((error: unknown) => {
         flushFailure = { error }
         streamAbort.abort(error)
-        wakeStream?.(error)
       })
     }, CHUNK_FLUSH_MS)
-  }
-  const nextStream = (
-    next: Promise<IteratorResult<InferenceEvent>>,
-  ): Promise<IteratorResult<InferenceEvent>> => {
-    return new Promise((resolve, reject) => {
-      let settled = false
-      const clear = (): void => {
-        if (wakeStream === fail) wakeStream = undefined
-      }
-      const fail = (error: unknown): void => {
-        if (settled) return
-        settled = true
-        clear()
-        reject(error)
-      }
-      wakeStream = fail
-      next.then(
-        (value) => {
-          if (settled) return
-          settled = true
-          clear()
-          resolve(value)
-        },
-        (error: unknown) => fail(error),
-      )
-      // `iterator.next()` is created by the caller before this wrapper, so even a pre-existing
-      // flush failure or cancellation must attach the rejection observer above. Failing first
-      // would leave a provider's later rejection unhandled while the owner is already settling.
-      if (flushFailure) fail(flushFailure.error)
-      else if (s.ac.signal.aborted) fail(s.ac.signal.reason ?? new Error('inference aborted'))
-    })
   }
   const emit = async (kind: 'text' | 'thinking', delta: string): Promise<void> => {
     // Empty provider deltas carry no visible information and must not consume the first-flush
@@ -1178,114 +1132,42 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     thinking,
   }))
   try {
-    const inferOptions = { signal: streamAbort.signal, toolNames: out.request.tools.map((tool) => tool.name) }
-    const stream = s.d.segments?.Inference
-      ? await runCoreReplacement(s, 'Inference', ctx, { request: wire, options: inferOptions }, async () =>
-          s.d.provider.infer(wire, inferOptions),
-        )
-      : s.d.provider.infer(wire, inferOptions)
-    if (!stream || typeof stream[Symbol.asyncIterator] !== 'function')
-      throw new Error('Inference replacement returned a non-async stream')
-    const iterator = stream[Symbol.asyncIterator]()
-    let streamDone = false
-    try {
-      for (;;) {
-        const next = await nextStream(Promise.resolve(iterator.next()))
-        if (next.done) {
-          streamDone = true
-          break
-        }
-        const ev = next.value
-        s.loopScope.note()
-        if (ev.type === 'sent') {
-          if (sentWritten) {
-            error = {
-              type: 'error',
-              reason: 'error',
-              code: 'TRANSPORT',
-              message: 'duplicate sent',
-              retryable: true,
-            }
-            break
-          }
-          if (
-            ev.stamp.derived_hash !== header.derived_hash ||
-            ev.stamp.tool_schema_hash !== header.tool_schema_hash ||
-            ev.stamp.parser_version !== header.parser_version ||
-            ev.stamp.contract_id !== header.contract_id ||
-            ev.stamp.model.id !== target.model ||
-            ev.stamp.model.route !== target.route
-          ) {
-            error = {
-              type: 'error',
-              reason: 'error',
-              code: 'CONTRACT_MISMATCH',
-              message: 'provider sent stamp does not match the dispatched request',
-              retryable: false,
-            }
-            break
-          }
-          // The stamp is provider-owned evidence about the actual dispatch. Persist it immediately:
-          // no model output may be appended before this receipt, and a duplicate must never create
-          // a second receipt for the same dispatch.
-          await s.d.log.append([
-            s.ev('request/sent', ev.stamp, {
-              sourceEventSeqs: [headerSeq, effectIntentSeq],
-            }),
-          ])
-          t.lastPrefix = mintedPrefix
-          sentWritten = true
-        } else if (!sentWritten && ev.type !== 'error') {
-          error = {
-            type: 'error',
-            reason: 'error',
-            code: 'TRANSPORT',
-            message: 'missing sent',
-            retryable: true,
-          }
-          break
-        } else if (ev.type === 'text_delta') {
-          text += ev.delta
-          await emit('text', ev.delta)
-        } else if (ev.type === 'thinking_delta') {
-          // Streamed like visible text rather than only accumulated: a viewer renders reasoning from
-          // the thinking previews, and never flushing it meant no consumer ever saw one.
-          thinking += ev.delta
-          await emit('thinking', ev.delta)
-        } else if (ev.type === 'toolcall_end') {
-          calls.push({ name: ev.call.name, args: ev.call.args, via: ev.via })
-          // The deviation names the shape that was parsed, and the sample it was parsed from is the
-          // call itself: a hash of nothing cannot be compared against a later sample.
-          if (ev.via !== 'native')
-            deviations.push(
-              deviation(ev.via, sha256Hex(canonicalJson({ name: ev.call.name, args: ev.call.args }))),
-            )
-        } else if (ev.type === 'deviation') {
-          unparsed = true
-          deviations.push(deviation('unparsed', ev.sampleHash))
-        } else if (ev.type === 'usage') usage = ev
-        else if (ev.type === 'done') done = ev
-        else if (ev.type === 'error') {
-          error = ev
-          break
-        }
+    for await (const ev of execution.stream()) {
+      if (ev.type === 'sent') {
+        t.lastPrefix = mintedPrefix
+        sentWritten = true
+      } else if (ev.type === 'text_delta') {
+        text += ev.delta
+        await emit('text', ev.delta)
+      } else if (ev.type === 'thinking_delta') {
+        thinking += ev.delta
+        await emit('thinking', ev.delta)
+      } else if (ev.type === 'toolcall_end') {
+        calls.push({ name: ev.call.name, args: ev.call.args, via: ev.via })
+        if (ev.via !== 'native')
+          deviations.push(
+            deviation(ev.via, sha256Hex(canonicalJson({ name: ev.call.name, args: ev.call.args }))),
+          )
+      } else if (ev.type === 'deviation') {
+        unparsed = true
+        deviations.push(deviation('unparsed', ev.sampleHash))
+      } else if (ev.type === 'done') done = ev
+      else if (ev.type === 'error') {
+        error = ev
+        break
       }
-    } finally {
-      // The normal async-iterator protocol closes after a break. Do the same here, but do not wait
-      // for a provider that ignores return() forever: the owner has already received the failure or
-      // cancellation that made this inference stop.
-      if (!streamDone) void iterator.return?.(undefined)?.then(undefined, () => {})
     }
   } catch (err) {
     cancelFlushTimer()
     error = {
       type: 'error',
-      reason: s.ac.signal.aborted ? 'aborted' : 'error',
-      code: s.ac.signal.aborted ? 'ABORTED' : 'TRANSPORT',
+      reason: sessionSignal.aborted ? 'aborted' : 'error',
+      code: sessionSignal.aborted ? 'ABORTED' : 'TRANSPORT',
       message: err instanceof Error ? err.message : String(err),
-      retryable: !s.ac.signal.aborted,
+      retryable: !sessionSignal.aborted,
     }
   }
+  let settlementBodyFailed = false
   // The listener stays until the settling rows are admitted: a close that lands after the stream
   // has ended but before the settlement is written would otherwise take the whole text with it.
   try {
@@ -1304,48 +1186,6 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
         retryable: true,
       }
     }
-    const tokens = usage?.tokens ?? {
-      input: 0,
-      output: estimateTokens(text + thinking),
-      cacheRead: 0,
-      cacheWrite: 0,
-    }
-    // What answered, as the provider's HTTP response said: recorded on every exit, failures included.
-    const response = usage?.response ?? error?.response
-    const spend = {
-      purpose: 'inference' as const,
-      effectId: effect.effectId,
-      tokens,
-      ...(usage?.credits !== undefined ? { credits: usage.credits } : {}),
-      creditSource: usage?.creditSource ?? 'estimated',
-      model: target.model,
-      ...(usage?.billing ? { billing: usage.billing } : {}),
-      ...(usage?.timing ? { timing: usage.timing } : {}),
-      ...(response ? { response } : {}),
-    }
-    const cost = (interrupted: boolean): EventInput =>
-      s.ev('cost/ledger', { ...spend, ...(interrupted ? { interrupted: true } : {}) })
-    /**
-     * The spend is told to the ledger seam on every exit, not only the successful one. The seam is
-     * the only record that the spend happened; an interrupted request still burned the tokens it
-     * burned, and skipping the call means `ledgerFailed` can never trip on it and the fail-closed
-     * refusal above never fires for an unrecordable interrupted spend.
-     */
-    const record = async (interrupted: boolean): Promise<void> => {
-      const ok = await s.d.runtime.billingRecord({
-        ...spend,
-        ...(interrupted ? { interrupted: true } : {}),
-        sessionKey: s.key,
-        lane: s.lane,
-        turn: op.meta.turn,
-        step,
-      })
-      if (!ok) {
-        t.ledgerFailed = true
-        await s.diag('seam-failed', { seam: 'billing', op: 'record' })
-      }
-      await settleTreeSpend(s, spend.credits, (s.lastSeq + 1) as Seq)
-    }
     // A step spans this inference plus the tools it asks for. Every exit that does not hand the step
     // to the tools phase closes it here: an open step makes the next step/start illegal and blocks
     // turn/end, so a retry, a drain and a compaction would all be unreachable without this.
@@ -1356,7 +1196,6 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
       // can outlast a close, and close only drains what was admitted before it sealed the log.
       const cut = cutRow()
       if (cut.length > 0) void s.d.log.append(cut).catch(() => undefined)
-      await record(true)
       // Observe category, mode 'parallel': HookDispatch already contains a failing handler internally
       // (it reports and moves on rather than rejecting), so this cannot itself throw into the retry/
       // drain/compaction decisions that follow. `attempt` is the same retry counter those decisions
@@ -1369,8 +1208,8 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
           retryable: error.retryable,
         })
       if (error.reason === 'aborted') {
-        await s.transition(
-          [cost(true), effect.settle('aborted'), stepEnd()],
+        await execution.commit(
+          [...execution.rows('aborted', true), stepEnd()],
           withPhase(cur, {
             kind: 'failure_drain',
             error: { code: 'ABORTED', message: error.message },
@@ -1388,8 +1227,8 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
         s.preset.compaction.enabled &&
         s.compaction.onOverflow() === 'compaction'
       ) {
-        await s.transition(
-          [cost(true), effect.settle('error'), stepEnd()],
+        await execution.commit(
+          [...execution.rows('error', true), stepEnd()],
           withPhase(cur, {
             kind: 'compaction',
             reason: 'overflow',
@@ -1406,8 +1245,8 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
         const notBefore = new Date(
           s.d.clock() + s.preset.model.retry.baseDelayMs * 2 ** attempt,
         ).toISOString()
-        await s.transition(
-          [cost(true), effect.settle('error'), stepEnd()],
+        await execution.commit(
+          [...execution.rows('error', true), stepEnd()],
           withPhase(cur, {
             kind: 'inference',
             gen: { status: 'retry_wait', attempt: attempt + 1, notBefore, code: error.code },
@@ -1415,8 +1254,8 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
         )
         return { phase: 'inference' }
       }
-      await s.transition(
-        [cost(true), effect.settle('error'), stepEnd()],
+      await execution.commit(
+        [...execution.rows('error', true), stepEnd()],
         withPhase(cur, {
           kind: 'failure_drain',
           error: { code: error.code, message: error.message },
@@ -1439,7 +1278,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     await s.loopEvents.dispatch(
       'after_model_response',
       { content, stopReason },
-      loopEventContext(s, s.ac.signal),
+      loopEventContext(s, sessionSignal),
     )
     events.push(
       s.ev('assistant/message', { content, stopReason, requestSeq: s.lastSeq }, { origin: 'model' }),
@@ -1523,7 +1362,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
           planned.push({ ...baseCall, status: 'planned', ...policy })
         }
       }
-    events.push(...refusedCalls, ...deviations, cost(false), effect.settle(effectOutcome({})))
+    events.push(...refusedCalls, ...deviations, ...execution.rows('ok', false))
     if (truncated || unparsed)
       events.push(
         s.ev('user/message', {
@@ -1544,7 +1383,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     // will be committed at rather than from `lastSeq` read before the queue. Everything the turn is
     // addressed by hangs off it — `batch.assistantSeq`, every `argsSeq`, `latestAssistantSeq` — so a
     // row landing between the guess and the append would misname all of them at once.
-    await s.transition(events, (curOp, nextSeq) => {
+    await execution.commit(events, (curOp, nextSeq) => {
       settleAdmitted = true
       const base = curOp ?? cur
       const assistantSeq = (nextSeq + assistantAt) as Seq
@@ -1580,9 +1419,18 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
             { latestAssistantSeq: assistantSeq },
           )
     })
-    await record(false)
     return { phase: planned.length ? 'tools' : truncated ? 'failure_drain' : 'checkpoint' }
+  } catch (error) {
+    settlementBodyFailed = true
+    throw error
   } finally {
-    s.ac.signal.removeEventListener('abort', onSessionAbort)
+    sessionSignal.removeEventListener('abort', onSessionAbort)
+    if (!execution.settled) {
+      try {
+        await execution.commit(execution.rows(execution.outcome, execution.outcome !== 'ok'), (cur) => cur)
+      } catch (error) {
+        if (!settlementBodyFailed) throw error
+      }
+    }
   }
 }

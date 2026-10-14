@@ -1906,6 +1906,11 @@ export class SessionImpl {
    * resume in progress first, and counts while it waits, so no second resume can start before it.
    */
   /** Public-port invocation ownership: close waits even when a driver forgets to await a call. */
+  trackEffectReceipt(work: Promise<void>): void {
+    this.activeWork.add(work)
+    void work.finally(() => this.activeWork.delete(work)).catch(() => undefined)
+  }
+
   beginLoopOperation(): () => void {
     this.loopScope.assertAlive()
     if (this.closing) throw new CoreError('E_CLOSED', 'session closed')

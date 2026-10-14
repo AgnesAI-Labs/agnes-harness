@@ -299,6 +299,20 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
       })
       break
     }
+    case 'x/core/late-effect-receipt': {
+      if (e.origin !== 'system' || e.trust !== 'trusted' || d?.version !== 1 || !Array.isArray(d.effects))
+        break
+      for (const receipt of d.effects) {
+        if (!receipt || typeof receipt !== 'object') continue
+        const { effectId, outcome } = receipt as { effectId?: unknown; outcome?: unknown }
+        if (typeof effectId !== 'string' || !['ok', 'error', 'aborted', 'unknown'].includes(String(outcome)))
+          continue
+        const pending = s.pendingEffects.get(effectId)
+        if (pending?.lane === lane && e.sourceEventSeqs?.includes(pending.intentSeq))
+          remove('pendingEffects', effectId)
+      }
+      break
+    }
     case 'effect/settled':
       remove('pendingEffects', lifecycleId(d, 'effectId', e.type, e.seq))
       break

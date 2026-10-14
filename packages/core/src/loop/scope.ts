@@ -39,10 +39,11 @@ export function sessionForLoop(session: SessionImpl): SessionImpl {
           { ignorable: true, sourceEventSeqs: sources as number[] },
         ),
       )
-      await session.d.log.append(rows)
+      const committed = await session.d.log.append(rows)
       for (const row of settlements) effects.delete(String((row.data as { effectId: string }).effectId))
-      scope.assertAlive()
-      throw new CoreError('E_CLOSED', 'Loop receipt settled after revocation')
+      throw new CoreError('E_CLOSED', 'Loop receipt settled after revocation', {
+        ...(rows[0]?.type === 'cost/ledger' ? { costSeq: committed.firstSeq } : {}),
+      })
     }
     if (!scope.alive) return lateReceipt()
     try {
