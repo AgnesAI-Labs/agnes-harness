@@ -82,7 +82,25 @@ it('creates, rotates and renames write-only values; reviews changing references 
   })
   const host = document.createElement('div')
   const owner = document.createElement('dialog')
+  owner.id = 'config'
   owner.open = true
+  let modal = true
+  const matches = owner.matches.bind(owner)
+  Object.defineProperty(owner, 'matches', {
+    value: (selector: string) => (selector === ':modal' ? modal : matches(selector)),
+  })
+  owner.close = () => {
+    owner.open = false
+    modal = false
+  }
+  owner.show = () => {
+    owner.open = true
+    modal = false
+  }
+  owner.showModal = () => {
+    owner.open = true
+    modal = true
+  }
   const form = owner.appendChild(document.createElement('form'))
   form.append(host)
   document.body.append(owner)
@@ -95,6 +113,7 @@ it('creates, rotates and renames write-only values; reviews changing references 
     await click('credential-create')
     expect(node('credential-editor').parentElement?.closest('form')).toBeNull()
     expect(node('credential-editor').closest('dialog')).toBe(owner)
+    expect(owner.matches(':modal')).toBe(true)
     await fill('credential-label', 'Service key')
     await fill('credential-value', canary)
     const draft = node<HTMLInputElement>('credential-value')
@@ -130,6 +149,8 @@ it('creates, rotates and renames write-only values; reviews changing references 
     await click('credential-delete')
     await click('credential-delete-confirm')
     expect(node('credential-delete-error').textContent).toContain('not deleted')
+    expect(owner.matches(':modal')).toBe(true)
+    expect(node<HTMLButtonElement>('credential-delete-cancel').disabled).toBe(false)
     expect(node('credential-force-confirm')).toBeTruthy()
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain('service-a')
     await click('credential-delete-cancel')

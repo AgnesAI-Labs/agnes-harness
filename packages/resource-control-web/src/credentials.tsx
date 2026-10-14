@@ -9,7 +9,6 @@ import {
   IconButton,
   ListRow,
   Menu,
-  releaseDialogModal,
   SettingsCheckbox,
   SettingsList,
   SettingsPage,
@@ -17,7 +16,7 @@ import {
   SettingsState,
   useUiText,
 } from '@agnes/web-ui'
-import { type ComponentProps, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { type ComponentProps, useEffect, useRef, useState } from 'react'
 import { CredentialEditor } from './credential-editor.js'
 import {
   CREDENTIALS_CHANGED,
@@ -76,10 +75,6 @@ export function CredentialsPage({
       lifetime.current = false
     }
   }, [])
-  useLayoutEffect(() => {
-    if (editor || removing)
-      return releaseDialogModal(document.querySelector<HTMLDialogElement>('dialog#config'))
-  }, [editor, removing])
   // biome-ignore lint/correctness/useExhaustiveDependencies: revision explicitly refreshes the metadata.
   useEffect(() => {
     const abort = new AbortController()
