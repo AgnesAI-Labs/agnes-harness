@@ -44,12 +44,22 @@ export interface ApprovalProps {
   detail?: ReactNode
 }
 
+function focusApproval(content: HTMLDivElement | null): void {
+  const card = content?.querySelector<HTMLElement>('[data-approval-key]')
+  card?.scrollIntoView?.({ block: 'nearest' })
+  ;(card?.querySelector<HTMLButtonElement>('button:not(:disabled)') ?? card)?.focus()
+}
+
 export const Approval = forwardRef<ApprovalHandle, ApprovalProps>(function Approval(
   { initialView, detail }: ApprovalProps,
   ref: ForwardedRef<ApprovalHandle>,
 ) {
   const [view, setView] = useState<ApprovalView | undefined>(initialView)
   const content = useRef<HTMLDivElement>(null)
+  const committedView = useRef(initialView)
+  const pendingRender = useRef(false)
+  const requestedFocus = useRef(false)
+
   const focusedAction = useRef<string | undefined>(undefined)
   const actionButtons = useRef(new Map<string, HTMLButtonElement>())
 
@@ -60,22 +70,32 @@ export const Approval = forwardRef<ApprovalHandle, ApprovalProps>(function Appro
         const active = document.activeElement
         if (next === undefined) {
           focusedAction.current = undefined
+          requestedFocus.current = false
         } else if (active instanceof HTMLButtonElement && content.current?.contains(active)) {
           focusedAction.current = active.dataset.approvalAction
           // Blur before disabling: disabled native controls cannot reliably release focus later.
           if (next.disabled) active.blur()
         }
+        pendingRender.current = committedView.current !== next
         setView(next)
       },
       focus() {
-        content.current?.scrollIntoView?.({ block: 'nearest' })
-        content.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus()
+        if (pendingRender.current) requestedFocus.current = true
+        else focusApproval(content.current)
       },
     }),
     [],
   )
 
   useLayoutEffect(() => {
+    pendingRender.current = false
+    committedView.current = view
+    if (requestedFocus.current) {
+      requestedFocus.current = false
+      focusedAction.current = undefined
+      focusApproval(content.current)
+      return
+    }
     const actionId = focusedAction.current
     if (!actionId || !view || view.disabled) return
     const button = actionButtons.current.get(actionId)
@@ -100,6 +120,7 @@ export const Approval = forwardRef<ApprovalHandle, ApprovalProps>(function Appro
           data-testid={view.kind === 'plan' ? 'plan-approval-card' : 'approval-card'}
           data-risk={view.risk}
           role="region"
+          tabIndex={-1}
           aria-label={view.title}
         >
           <h2>{view.title}</h2>

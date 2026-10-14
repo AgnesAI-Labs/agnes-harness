@@ -12,6 +12,7 @@ import type { AppSessionContext } from '../app.js'
 import { rememberWebComposer } from '../composer-memory.js'
 import { sessionTitle } from '../session-title.js'
 import { durableApprovalActions, nodeText, type WebView, webView } from '../view.js'
+import { type ApprovalNode, approvalExpiry, pendingApproval } from './pending-approval.js'
 
 export function createTurnController(
   context: Pick<
@@ -63,6 +64,13 @@ export function createTurnController(
     | 'windowAtStart'
   >,
 ) {
+  let cachedApproval: { session: typeof context.live; ticket: string; node: ApprovalNode } | undefined
+  let activeSearch: object | undefined
+  const parkedTicket = (): string | undefined => {
+    const ref = context.projection?.opState?.parked?.decisionRef
+    return ref ? JSON.stringify(ref) : undefined
+  }
+
   function render(): void {
     if (!context.projection) {
       context.topbarRuntime.setStatus(context.t('app.status.newTask'))
@@ -153,10 +161,9 @@ export function createTurnController(
     context.renderer.render(view.nodes, context.projection.turns, meta)
     renderTrace(view, context.projection.turns, meta)
     if (approvalOutsideWindow(context.projection)) {
-      const ticket = context.projection.opState?.parked?.decisionRef.id
+      const ticket = parkedTicket()
       // A different parked approval is looked for afresh.
-      if (ticket !== context.approvalSearchTicket && context.approvalSearch !== 'searching')
-        context.approvalSearch = 'idle'
+      if (ticket !== context.approvalSearchTicket) context.approvalSearch = 'idle'
       context.approvalSearchTicket = ticket
       searchApproval(APPROVAL_SEARCH_PAGES)
     } else context.approvalSearch = 'idle'
@@ -165,20 +172,23 @@ export function createTurnController(
   }
 
   function renderApproval(): void {
-    const durable = context.projection
-      ? webView(context.projection, undefined, context.t).approval
-      : undefined
+    const durable =
+      (context.projection ? webView(context.projection, undefined, context.t).approval : undefined) ??
+      (cachedApproval?.session === context.live && cachedApproval?.ticket === parkedTicket()
+        ? cachedApproval?.node
+        : undefined)
     const parked =
       !context.liveApproval && !durable && context.projection ? context.projection.opState?.parked : undefined
     if (parked && context.approvalSearch !== 'idle') {
       const stick = context.conversationRuntime.isTranscriptNearBottom()
       const searching = context.approvalSearch === 'searching'
-      // The approval's own node, with the options it really offers, is before the loaded window; a
-      // verdict can only be given there, so this card only leads to it.
+      // Never infer verdicts from parked state alone. Resolve the current decision or its history.
       context.approvalRuntime.render({
         key: `parked:${parked.decisionRef.id}`,
         title: searching ? context.t('app.approval.searching') : context.t('app.approval.parkedTitle'),
-        summary: context.t('app.approval.parkedSummary', { expiresAt: parked.expiresAt }),
+        summary: context.t('app.approval.parkedSummary', {
+          expiry: approvalExpiry(parked.expiresAt, context.t),
+        }),
         impact: searching
           ? context.t('app.approval.searchingImpact')
           : context.t('app.approval.locateImpact'),
@@ -224,21 +234,25 @@ export function createTurnController(
         : context.t('app.approval.rewritten', { summary: rewrite.summary })
       : undefined
     const actions: ApprovalAction[] = []
+    const decisionSession = context.live
     const decide = (id: string, label: string, action: () => Promise<void>): void => {
       actions.push({
         id,
         label,
         onSelect: () =>
           context.run(async () => {
-            if (context.approvalBusy || context.stopping) return
+            if (context.live !== decisionSession || context.approvalBusy || context.stopping) return
             context.approvalBusy = true
             renderApproval()
             try {
               await action()
+              if (context.live === decisionSession) cachedApproval = undefined
             } finally {
               context.approvalBusy = false
-              context.live?.refresh()
-              renderApproval()
+              if (context.live === decisionSession) {
+                decisionSession?.refresh()
+                renderApproval()
+              }
             }
           }),
       })
@@ -272,6 +286,7 @@ export function createTurnController(
             })),
         )
     }
+    const preview = card?.preview ?? durable?.subjectText
     const planApproval = context.liveApproval
       ? approvalToolName(context.liveApproval.request.toolCall) === 'exit_plan_mode'
       : context.projection?.nodes.some(
@@ -284,14 +299,16 @@ export function createTurnController(
       title: context.t('app.approval.title'),
       summary,
       ...(rewritten === undefined ? {} : { rewritten }),
-      impact,
+      impact: [impact, approvalExpiry(durable?.expiresAt, context.t)].filter(Boolean).join(' · '),
       ...(durable ? { risk: durable.risk } : {}),
       ...(card?.warning === undefined ? {} : { warning: card.warning }),
-      ...((card?.preview ?? durable?.subjectText) === undefined
-        ? {}
-        : { preview: (card?.preview ?? durable?.subjectText)! }),
+      ...(preview === undefined ? {} : { preview }),
       actions,
-      disabled: context.approvalBusy || context.stopping || !context.connected,
+      disabled:
+        context.approvalBusy ||
+        context.stopping ||
+        !context.connected ||
+        Boolean(durable?.expiresAt && Date.parse(durable.expiresAt) <= Date.now()),
     })
     if (stick) context.renderer.pinToBottom()
   }
@@ -342,15 +359,38 @@ export function createTurnController(
       (limit !== undefined && context.approvalSearch !== 'idle')
     )
       return
+    const ticket = parkedTicket()
+    const ref = context.projection?.opState?.parked?.decisionRef
+    const search = {}
+    let focused = false
+    activeSearch = search
+    const current = () => context.live === session && parkedTicket() === ticket && activeSearch === search
+    context.approvalSearchTicket = ticket
     context.approvalSearch = 'searching'
     renderApproval()
-    void findApproval(session, () => context.projection, limit)
-      .then((found) => {
-        if (context.live !== session) return
-        context.approvalSearch = found ? 'idle' : 'not-found'
-        renderApproval()
-      })
-      .catch(context.showError)
+    // The current decision is independent of the transcript window. Do not make the user wait for
+    // hundreds of history pages before they can review the request and answer it.
+    const lookup = ref
+      ? context.client.approval.list(ref.sessionId).then(({ decisions }) => {
+          if (!current()) return
+          const node = pendingApproval(decisions, ref)
+          cachedApproval = node ? { session, ticket: JSON.stringify(ref), node } : undefined
+          renderApproval()
+          if (node && limit === undefined) {
+            context.approvalRuntime.focus()
+            focused = true
+          }
+        })
+      : Promise.resolve()
+    const history = findApproval(session, () => (current() ? context.projection : undefined), limit)
+    void Promise.allSettled([lookup, history]).then(([decision, found]) => {
+      if (!current()) return
+      context.approvalSearch = found.status === 'fulfilled' && found.value ? 'idle' : 'not-found'
+      renderApproval()
+      if (limit === undefined && !focused) context.approvalRuntime.focus()
+      for (const result of [decision, found])
+        if (result.status === 'rejected') context.showError(result.reason)
+    })
   }
 
   function paintTrace(): void {

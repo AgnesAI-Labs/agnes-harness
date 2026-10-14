@@ -142,8 +142,16 @@ export function createLiveProjection(
  * node lies before the loaded window.
  */
 export function approvalOutsideWindow(value: UITimeline): boolean {
-  if (!value.opState?.parked) return false
-  return !value.nodes.some((node) => node.kind === 'approval' && node.state === 'pending')
+  const ref = value.opState?.parked?.decisionRef
+  if (!ref) return false
+  return !value.nodes.some(
+    (node) =>
+      node.kind === 'approval' &&
+      node.state === 'pending' &&
+      node.decisionRef?.sessionId === ref.sessionId &&
+      node.decisionRef.id === ref.id &&
+      node.decisionRef.revision === ref.revision,
+  )
 }
 
 /**

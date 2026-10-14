@@ -89,9 +89,16 @@ export function webView(
   receipt?: RunReceipt,
   t: (key: string, vars?: LocaleVars) => string = (key) => key,
 ): WebView {
+  const parked = timeline.opState?.parked?.decisionRef
   const approval = timeline.nodes.find(
     (node): node is ApprovalNode =>
-      node.kind === 'approval' && node.state === 'pending' && node.decisionRef !== undefined,
+      node.kind === 'approval' &&
+      node.state === 'pending' &&
+      node.decisionRef !== undefined &&
+      (!parked ||
+        (node.decisionRef.sessionId === parked.sessionId &&
+          node.decisionRef.id === parked.id &&
+          node.decisionRef.revision === parked.revision)),
   )
   const phase = timeline.opState?.phase
   const phaseKey = phase === undefined ? undefined : PHASE_KEYS[phase]

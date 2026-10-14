@@ -388,6 +388,13 @@ describe('a pending approval before the loaded window', () => {
   it('is recognised only when the session is parked and no pending approval node is loaded', () => {
     expect(approvalOutsideWindow(parked(false))).toBe(true)
     expect(approvalOutsideWindow(parked(true))).toBe(false)
+    const other = parked(true)
+    const node = other.nodes[0]
+    if (node?.kind !== 'approval') throw new Error('fixture approval missing')
+    node.decisionRef = { sessionId: 's', id: 'different', revision: 1 }
+    expect(approvalOutsideWindow(other)).toBe(true)
+    node.decisionRef = { sessionId: 's', id: 't', revision: 2 }
+    expect(approvalOutsideWindow(other)).toBe(true)
     expect(approvalOutsideWindow({ ...parked(false), opState: null })).toBe(false)
   })
 

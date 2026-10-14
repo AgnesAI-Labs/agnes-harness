@@ -865,7 +865,7 @@ describe('web session selection', () => {
           save: vi.fn(async () => ({ configured: true })),
           test: vi.fn(async () => ({ verified: true, models: [] })),
         },
-        approval: { decide: vi.fn(async () => undefined) },
+        approval: { list: vi.fn(async () => ({ decisions: [] })), decide: vi.fn(async () => undefined) },
         workspace: {
           list: vi.fn(async () => ({ items: [] })),
           add: vi.fn(async (path: string) => ({
@@ -1041,7 +1041,7 @@ describe('web session selection', () => {
         get: vi.fn(async () => ({ configured: true })),
         providers: vi.fn(async () => ({ providers: [] })),
       },
-      approval: { decide: vi.fn(async () => undefined) },
+      approval: { list: vi.fn(async () => ({ decisions: [] })), decide: vi.fn(async () => undefined) },
       workspace: { list: vi.fn(async () => ({ items: [alpha, beta] })) },
       session: {
         list: vi.fn(async () => ({ items: [{ sessionId: 'old', cwd: alpha.path }] })),
@@ -1476,7 +1476,7 @@ describe('web session selection', () => {
 
     sdk.createClient.mockReturnValue({
       apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
-      approval: { decide: vi.fn(async () => undefined) },
+      approval: { list: vi.fn(async () => ({ decisions: [] })), decide: vi.fn(async () => undefined) },
       close: vi.fn(async () => undefined),
       config: {
         get: vi.fn(async () => ({ configured: true })),
@@ -1627,7 +1627,7 @@ describe('web session selection', () => {
       })
       sdk.createClient.mockReturnValue({
         apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
-        approval: { decide: vi.fn(async () => undefined) },
+        approval: { list: vi.fn(async () => ({ decisions: [] })), decide: vi.fn(async () => undefined) },
         close: vi.fn(async () => undefined),
         config: {
           get: vi.fn(async () => ({ configured: true, accounts: [] })),
@@ -1727,7 +1727,7 @@ describe('web session selection', () => {
     }))
     sdk.createClient.mockReturnValue({
       apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
-      approval: { decide: vi.fn(async () => undefined) },
+      approval: { list: vi.fn(async () => ({ decisions: [] })), decide: vi.fn(async () => undefined) },
       close: vi.fn(async () => undefined),
       config: {
         get: vi.fn(async () => ({ configured: true })),
@@ -1782,7 +1782,7 @@ describe('web session selection', () => {
     })
     sdk.createClient.mockReturnValue({
       apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
-      approval: { decide: vi.fn(async () => undefined) },
+      approval: { list: vi.fn(async () => ({ decisions: [] })), decide: vi.fn(async () => undefined) },
       close: vi.fn(async () => undefined),
       config: {
         get: vi.fn(async () => ({ configured: true })),
@@ -1823,7 +1823,7 @@ describe('web session selection', () => {
     })
     sdk.createClient.mockReturnValue({
       apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
-      approval: { decide: vi.fn(async () => undefined) },
+      approval: { list: vi.fn(async () => ({ decisions: [] })), decide: vi.fn(async () => undefined) },
       close: vi.fn(async () => undefined),
       config: {
         get: vi.fn(async () => ({ configured: true })),
@@ -1868,7 +1868,7 @@ describe('web session selection', () => {
       }
       sdk.createClient.mockReturnValue({
         apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
-        approval: { decide: vi.fn(async () => undefined) },
+        approval: { list: vi.fn(async () => ({ decisions: [] })), decide: vi.fn(async () => undefined) },
         close: vi.fn(async () => undefined),
         config: {
           get: vi.fn(async () => ({ configured: true })),
@@ -1964,7 +1964,7 @@ describe('web session selection', () => {
 
     sdk.createClient.mockReturnValue({
       apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
-      approval: { decide: vi.fn(async () => undefined) },
+      approval: { list: vi.fn(async () => ({ decisions: [] })), decide: vi.fn(async () => undefined) },
       close: vi.fn(async () => undefined),
       config: {
         get: vi.fn(async () => ({ configured: true })),
@@ -2035,7 +2035,8 @@ describe('web session selection', () => {
     expect(document.querySelector('[data-workspace-label]')?.textContent).toBe('agnes')
     expect(document.getElementById('composer-workspace')?.title).toBe(workspace.path)
 
-    const locale = document.querySelector<HTMLSelectElement>('#locale-select')!
+    const locale = document.querySelector<HTMLSelectElement>('#locale-select')
+    if (!locale) throw new Error('locale control missing')
     locale.value = 'en'
     locale.dispatchEvent(new Event('change', { bubbles: true }))
     composer.value = '成功后的第二条消息'
@@ -2067,7 +2068,7 @@ describe('web session selection', () => {
     const titleList = vi.fn(async () => ({ items: [{ sessionId: 'old' }] }))
     sdk.createClient.mockReturnValue({
       apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
-      approval: { decide: vi.fn(async () => undefined) },
+      approval: { list: vi.fn(async () => ({ decisions: [] })), decide: vi.fn(async () => undefined) },
       close: vi.fn(async () => undefined),
       config: {
         get: vi.fn(async () => ({ configured: true })),
@@ -2269,7 +2270,7 @@ describe('queued input deletion', () => {
       next.removeQueued.mockImplementation(() => nextRemoval.promise)
       sdk.createClient.mockReturnValue({
         apis: vi.fn(async () => ({ profile: { models: [] } })),
-        approval: { decide: vi.fn(async () => undefined) },
+        approval: { list: vi.fn(async () => ({ decisions: [] })), decide: vi.fn(async () => undefined) },
         close: vi.fn(async () => undefined),
         config: {
           get: vi.fn(async () => ({ configured: outcome === 'failure' })),
@@ -2333,7 +2334,7 @@ describe('composer draft persistence', () => {
       .mockImplementationOnce(() => unloading.promise)
     const client = {
       apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
-      approval: { decide: vi.fn(async () => undefined) },
+      approval: { list: vi.fn(async () => ({ decisions: [] })), decide: vi.fn(async () => undefined) },
       close: vi.fn(async () => undefined),
       config: {
         get: vi.fn(async () => ({ configured: true })),
@@ -2414,7 +2415,7 @@ describe('image composer submissions', () => {
       apis: vi.fn(async () => ({
         profile: { models: [{ route: 'local', id: 'model-a', input: inputModes }] },
       })),
-      approval: { decide: vi.fn(async () => undefined) },
+      approval: { list: vi.fn(async () => ({ decisions: [] })), decide: vi.fn(async () => undefined) },
       close: vi.fn(async () => undefined),
       config: {
         get: vi.fn(async () => ({ configured: true })),
@@ -2614,7 +2615,7 @@ describe('web model confirmation', () => {
           ],
         },
       })),
-      approval: { decide: vi.fn(async () => undefined) },
+      approval: { list: vi.fn(async () => ({ decisions: [] })), decide: vi.fn(async () => undefined) },
       close: vi.fn(async () => undefined),
       config: {
         get: vi.fn(async () => ({ configured: true })),

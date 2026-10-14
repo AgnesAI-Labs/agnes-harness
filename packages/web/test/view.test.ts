@@ -74,6 +74,23 @@ describe('web projection adapter', () => {
     expect(webView(timeline([pending], 'parked'), undefined, zhT).approval?.decisionRef?.id).toBe(
       'opaque-ticket',
     )
+    const parked = timeline([pending], 'tools')
+    parked.opState = {
+      turn: 1,
+      step: 1,
+      phase: 'tools',
+      parked: {
+        decisionRef: { sessionId: 's', id: 'new-ticket', revision: 1 },
+        expiresAt: '2099-01-01T00:00:00Z',
+      },
+    }
+    expect(webView(parked, undefined, zhT).approval).toBeUndefined()
+    parked.nodes.push({
+      ...pending,
+      id: 'new-node',
+      decisionRef: { sessionId: 's', id: 'new-ticket', revision: 1 },
+    })
+    expect(webView(parked, undefined, zhT).approval?.decisionRef?.id).toBe('new-ticket')
   })
 
   it('offers permanent approval only when the projected event explicitly includes it', () => {

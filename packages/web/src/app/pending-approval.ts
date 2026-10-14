@@ -1,0 +1,70 @@
+import type { DecisionSnapshot, UINode } from '@agnes/protocol'
+import type { Translate } from '@agnes/web-conversation/presentation'
+
+export type ApprovalNode = Extract<UINode, { kind: 'approval' }>
+
+const options = {
+  'allowed-once': 'allow_once',
+  'allowed-session': 'allow_always',
+  'allowed-permanent': 'allow_permanent',
+  rejected: 'reject_once',
+} as const
+
+/** Only the exact, still-pending decision and its offered approval options are actionable. */
+export function pendingApproval(
+  decisions: readonly DecisionSnapshot[],
+  ref: NonNullable<ApprovalNode['decisionRef']>,
+): ApprovalNode | undefined {
+  const value = decisions.find(
+    (item) =>
+      item.handle.sessionId === ref.sessionId &&
+      item.handle.id === ref.id &&
+      item.revision === ref.revision &&
+      !item.result &&
+      !item.invalidation &&
+      !item.consumption,
+  )
+  if (!value?.request.spec.options.every((option) => Object.hasOwn(options, option))) return
+  const { spec, expiresAt } = value.request
+  const subject =
+    spec.subject !== null && typeof spec.subject === 'object' && !Array.isArray(spec.subject)
+      ? spec.subject
+      : undefined
+  const risk = subject?.risk
+  const rewrite = subject?.rewrite
+  return {
+    kind: 'approval',
+    id: ref.id,
+    seq: 0,
+    state: 'pending',
+    decisionRef: ref,
+    summary: spec.prompt,
+    risk: risk === 'destructive' || risk === 'always' || risk === 'budget' ? risk : 'unknown',
+    options: spec.options.map((option) => options[option as keyof typeof options]),
+    // Show the complete decision subject, including the tool arguments and original summary.
+    subjectText: JSON.stringify(spec.subject, null, 2),
+    ...(expiresAt ? { expiresAt } : {}),
+    ...(rewrite &&
+    typeof rewrite === 'object' &&
+    !Array.isArray(rewrite) &&
+    typeof rewrite.summary === 'string' &&
+    Array.isArray(rewrite.by)
+      ? {
+          rewrite: {
+            summary: rewrite.summary,
+            by: rewrite.by.filter((by): by is string => typeof by === 'string'),
+          },
+        }
+      : {}),
+  }
+}
+
+export function approvalExpiry(expiresAt: string | undefined, t: Translate, now = Date.now()): string {
+  if (!expiresAt) return ''
+  const remaining = Date.parse(expiresAt) - now
+  if (!Number.isFinite(remaining)) return ''
+  if (remaining <= 0) return t('app.approval.expired')
+  const unit = remaining >= 3_600_000 ? 'hours' : 'minutes'
+  const count = Math.ceil(remaining / (unit === 'hours' ? 3_600_000 : 60_000))
+  return t(`app.approval.expires.${unit}${count === 1 ? 'One' : ''}`, { count })
+}
