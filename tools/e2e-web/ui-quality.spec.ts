@@ -198,8 +198,8 @@ for (const locale of ['zh-CN', 'en'])
           }
           if (id === 'examples') {
             const cards = page.locator('[data-testid^="business-agent-"][data-package]')
-            expect(await cards.count()).toBeGreaterThan(0)
             await expect(cards.first()).toBeVisible()
+            expect(await cards.count()).toBeGreaterThan(0)
             await section(page, 'discover')
             for (const id of ['dag-loop', 'react-loop'])
               await expect(

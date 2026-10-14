@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { expand, section, sectionSurface } from './ui.js'
+import { expand, section, sectionSurface, sidebar } from './ui.js'
 
 // Explicit Playwright tier. Run against an isolated demo home after all streams are integrated.
 for (const locale of ['en', 'zh-CN']) {
@@ -125,6 +125,7 @@ test('settings navigation, narrow master-detail and old links keep their destina
     expect(new URL(page.url()).searchParams.get('settings')).toBeNull()
     expect(new URL(page.url()).hash).toBe('')
     await page.reload()
+    await sidebar(page)
     await expect(page.getByTestId('home-entries')).toBeVisible()
     await expect(page.locator('#config')).toBeHidden()
   }
