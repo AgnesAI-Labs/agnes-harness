@@ -161,6 +161,7 @@ export const METHOD_TIERS: Record<MethodName, MethodTier> = {
   '_agnes/v1/session.fork': 'client',
   '_agnes/v1/session.rename': 'client',
   '_agnes/v1/session.archive': 'client',
+  '_agnes/v1/session.bookmarks.set': 'client',
   '_agnes/v1/diagnostics.export': 'admin',
   '_agnes/v1/diagnostics.collect': 'admin',
   '_agnes/v1/diagnostics.events': 'admin',

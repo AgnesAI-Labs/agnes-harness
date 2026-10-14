@@ -617,6 +617,7 @@ const AGNES_DEFS: Record<string, TSchema> = {
   SessionPreferences: AgnesGen.SessionPreferences,
   SessionRenameParams: AgnesGen.SessionRenameParams,
   SessionArchiveParams: AgnesGen.SessionArchiveParams,
+  SessionBookmarksSetParams: AgnesGen.SessionBookmarksSetParams,
   DiagnosticsExportParams: AgnesGen.DiagnosticsExportParams,
   DiagnosticsExportResult: AgnesGen.DiagnosticsExportResult,
   DiagnosticRecord: AgnesGen.DiagnosticRecord,
@@ -3915,8 +3916,13 @@ const AGNES_SAMPLES: Record<string, Sample> = {
   },
   SessionPreferences: {
     note: 'presentation preference',
-    valid: { archived: false, title: '我的名称' },
-    invalid: [{ archived: 'false' }, { archived: false, title: '' }],
+    valid: { archived: false, title: '我的名称', bookmarks: ['01JABCDEFGHJKMNPQRSTVWXYZ0'] },
+    invalid: [
+      { archived: 'false' },
+      { archived: false, title: '' },
+      { archived: false, bookmarks: ['a', 'a'] },
+      { archived: false, bookmarks: [''] },
+    ],
   },
   SessionRenameParams: {
     note: 'manual title input',
@@ -3924,6 +3930,16 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     invalid: [
       { sessionId: '', title: 'a' },
       { sessionId: 's', title: '' },
+    ],
+  },
+  SessionBookmarksSetParams: {
+    note: 'whole-list replacement; the daemon removes repeats',
+    valid: { sessionId: 's', bookmarks: ['a', 'a'] },
+    invalid: [
+      { sessionId: 's' },
+      { sessionId: 's', bookmarks: ['x'.repeat(129)] },
+      { sessionId: 's', bookmarks: Array.from({ length: 201 }, (_, i) => String(i)) },
+      { sessionId: 's', bookmarks: ['a\nb'] },
     ],
   },
   SessionArchiveParams: {
@@ -8165,6 +8181,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'SessionArchiveParams',
     result: 'SessionPreferences',
   },
+  '_agnes/v1/session.bookmarks.set': {
+    fileId: AGNES_ID,
+    params: 'SessionBookmarksSetParams',
+    result: 'SessionPreferences',
+  },
   '_agnes/v1/diagnostics.export': {
     fileId: AGNES_ID,
     params: 'DiagnosticsExportParams',
@@ -8924,6 +8945,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     valid: { sessionId: 's', archived: true },
     invalid: [{ sessionId: 's', archived: 'true' }],
   },
+  '_agnes/v1/session.bookmarks.set': AGNES_SAMPLES.SessionBookmarksSetParams as Sample,
   '_agnes/v1/diagnostics.export': AGNES_SAMPLES.DiagnosticsExportParams as Sample,
   '_agnes/v1/diagnostics.collect': AGNES_SAMPLES.DiagnosticsCollectParams as Sample,
   '_agnes/v1/diagnostics.events': AGNES_SAMPLES.DiagnosticsEventsParams as Sample,
@@ -9379,6 +9401,7 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
 
   '_agnes/v1/session.rename': AGNES_SAMPLES.SessionPreferences as Sample,
   '_agnes/v1/session.archive': AGNES_SAMPLES.SessionPreferences as Sample,
+  '_agnes/v1/session.bookmarks.set': AGNES_SAMPLES.SessionPreferences as Sample,
   '_agnes/v1/diagnostics.export': AGNES_SAMPLES.DiagnosticsExportResult as Sample,
   '_agnes/v1/diagnostics.collect': AGNES_SAMPLES.DiagnosticsCollectResult as Sample,
   '_agnes/v1/diagnostics.events': {

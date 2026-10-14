@@ -129,6 +129,7 @@ export type {
   SessionArchiveParams,
   SessionAttachParams,
   SessionAttachResult,
+  SessionBookmarksSetParams,
   SessionBudgetResult,
   SessionCompactParams,
   SessionControlFact,

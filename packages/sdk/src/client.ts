@@ -534,6 +534,9 @@ export class Client {
       this.call('_agnes/v1/session.rename', { sessionId, title }),
     archive: (sessionId: string, archived: boolean): Promise<SessionPreferences> =>
       this.call('_agnes/v1/session.archive', { sessionId, archived }),
+    /** Replaces the bookmarked user prompts: UINode ids of kind 'user', kept in the order given. */
+    setBookmarks: (sessionId: string, bookmarks: readonly string[]): Promise<SessionPreferences> =>
+      this.call('_agnes/v1/session.bookmarks.set', { sessionId, bookmarks: [...bookmarks] }),
     fork: async (id: string, at: number): Promise<Session> => {
       const childId = await submitForkCommand(this, id, at)
       return this.sessionHandle(childId)

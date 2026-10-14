@@ -4837,6 +4837,17 @@
         },
         "archived": {
           "type": "boolean"
+        },
+        "bookmarks": {
+          "type": "array",
+          "maxItems": 200,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+          }
         }
       }
     },
@@ -4869,6 +4880,28 @@
         },
         "archived": {
           "type": "boolean"
+        }
+      }
+    },
+    "SessionBookmarksSetParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "bookmarks"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "bookmarks": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+          }
         }
       }
     },
@@ -4999,6 +5032,17 @@
         },
         "archived": { "type": "boolean" },
         "titleSource": { "const": "user", "type": "string" },
+        "bookmarks": {
+          "type": "array",
+          "maxItems": 200,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+          }
+        },
         "cwd": {
           "type": "string"
         }
