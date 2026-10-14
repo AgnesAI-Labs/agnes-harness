@@ -12,6 +12,7 @@ import { UiArtifactFileData as ArtifactFileSchema } from '@agnes/protocol/gen/in
 import { Component, type ReactNode, useCallback, useId } from 'react'
 import { SettingsState } from '../settings-layout.js'
 import { Button } from '../ui/button.js'
+import { IconButton } from '../ui/icon-button.js'
 import { Table } from '../ui/table.js'
 import { useUiText } from '../ui-locale.js'
 import { IntelligentChart } from './chart.js'
@@ -270,8 +271,9 @@ function CatalogComponent(
       formatFieldValue(value, kind, locale)
     content = (
       <Table<Record<string, JsonValue>>
+        // The visible title is the block heading above the table; the caption only names it.
         caption={component.title ?? surfaceTitle(surface, t)}
-        captionRepeatsHeading={!component.title}
+        captionRepeatsHeading
         testId={`ui-table-${component.id}`}
         dataSource={rows}
         rowKey={(row) => String(row[component.rowKey])}
@@ -354,21 +356,22 @@ function CatalogComponent(
       data-testid={`ui-component-${component.id}`}
       aria-label={component.title ?? component.id}
     >
-      {component.title && (sourceState !== 'ready' || component.kind !== 'table') && (
-        <h4>{component.title}</h4>
-      )}
-      {content}
-      {onRefreshSource && refreshable ? (
-        <Button
-          htmlType="button"
-          data-testid="ui-source-refresh"
-          disabled={disabled || props.invalid === true}
-          aria-label={`${t('ui.refresh')} ${component.title ?? component.id}`}
-          onClick={onRefreshSource}
-        >
-          {t('ui.refresh')}
-        </Button>
+      {component.title || (onRefreshSource && refreshable) ? (
+        <header className="agnes-intelligent-component-head">
+          {component.title ? <h4>{component.title}</h4> : null}
+          {onRefreshSource && refreshable ? (
+            <IconButton
+              name="refresh-cw"
+              className="agnes-intelligent-refresh"
+              data-testid="ui-source-refresh"
+              disabled={disabled || props.invalid === true}
+              label={`${t('ui.refresh')} ${component.title ?? component.id}`}
+              onClick={onRefreshSource}
+            />
+          ) : null}
+        </header>
       ) : null}
+      {content}
     </section>
   )
 }

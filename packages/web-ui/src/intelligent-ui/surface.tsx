@@ -6,10 +6,11 @@ import type {
   UiSourceStatus,
   UiSurfaceRecord,
 } from '@agnes/protocol/gen/intelligent-ui'
-import { type ReactNode, useId, useState } from 'react'
+import { type ReactNode, useId, useMemo, useState } from 'react'
 import { SettingsState, SettingsToolbar } from '../settings-layout.js'
 import { Badge } from '../ui/badge.js'
 import { Button } from '../ui/button.js'
+import { CopyButton } from '../ui/copy-button.js'
 import { Disclosure } from '../ui/disclosure.js'
 import { IconButton } from '../ui/icon-button.js'
 import { Menu } from '../ui/menu.js'
@@ -255,6 +256,30 @@ function SurfaceCard(props: IntelligentSurfaceProps) {
     </article>
   )
 }
+/** A receipt that carries structured data is shown as source, not as a paragraph of JSON. */
+export function ReceiptSummary({ text }: { text: string }) {
+  const { t } = useUiText(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
+  const formatted = useMemo(() => {
+    const trimmed = text.trim()
+    if (!/^[[{]/.test(trimmed)) return undefined
+    try {
+      return JSON.stringify(JSON.parse(trimmed), null, 2)
+    } catch {
+      return undefined
+    }
+  }, [text])
+  if (formatted === undefined) return <p>{text}</p>
+  return (
+    <figure className="agnes-intelligent-code" data-testid="ui-receipt-data">
+      <figcaption>
+        <span>{t('ui.receiptData')}</span>
+        <CopyButton label={t('ui.copyData')} copiedLabel={t('ui.dataCopied')} text={formatted} />
+      </figcaption>
+      {/* biome-ignore lint/a11y/noNoninteractiveTabindex: the block scrolls on its own, so it must be reachable by keyboard. */}
+      <pre tabIndex={0}>{formatted}</pre>
+    </figure>
+  )
+}
 function Receipt({
   receipt,
   locked,
@@ -288,7 +313,7 @@ function Receipt({
         {t(`ui.${receipt.status}`)}
       </Badge>{' '}
       {evidence}
-      {receipt.summary && <p>{receipt.summary}</p>}
+      {receipt.summary && <ReceiptSummary text={receipt.summary} />}
       {refusal && (
         <p>
           {t(refusalKey)} <span>{refusal.message}</span>

@@ -27,6 +27,58 @@
     grid-template-columns: minmax(0, 1fr);
     gap: var(--s12);
   }
+  /* A block's title and its refresh action share one line above the content. */
+  .agnes-intelligent-component-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s8);
+    min-width: 0;
+  }
+  .agnes-intelligent-component-head > h4 {
+    flex: 1;
+    min-width: 0;
+    text-wrap: balance;
+  }
+  .agnes-intelligent-refresh {
+    flex: 0 0 auto;
+    margin-inline-start: auto;
+    color: var(--agnes-text-secondary);
+  }
+  /* Structured result data: a framed monospace block that scrolls inside a fixed height. */
+  .agnes-intelligent-code {
+    min-width: 0;
+    margin: var(--s8) 0 0;
+    overflow: hidden;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-surface);
+  }
+  .agnes-intelligent-code > figcaption {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s8);
+    min-height: 2rem;
+    padding: 0 var(--s4) 0 var(--s12);
+    border-bottom: 1px solid var(--agnes-line-primary);
+    color: var(--agnes-text-tertiary);
+    background: var(--agnes-bg-code);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+  }
+  .agnes-intelligent-code > pre {
+    max-height: 15rem;
+    margin: 0;
+    padding: var(--s8) var(--s12) var(--s12);
+    overflow: auto;
+    color: var(--agnes-text-primary);
+    font: var(--font-size-xs) / 1.65 var(--font-mono);
+    tab-size: 2;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .agnes-intelligent-component-head > h4,
   .agnes-intelligent-component > h4,
   .agnes-intelligent-catalog caption {
     margin: 0;

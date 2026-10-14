@@ -596,10 +596,11 @@ describe('UI data source states', () => {
       expect(view.host.textContent).toContain('UI_SOURCE_DENIED')
       expect(view.host.textContent).toContain('literal note')
       expect(view.host.querySelector('[data-testid="ui-table-rows"]')).toBeNull()
-      expect(view.host.querySelector('svg')).toBeNull()
+      // No chart is drawn; the only drawing left is the refresh icon.
+      expect(view.host.querySelector('svg:not(.agh-icon)')).toBeNull()
       expect(view.host.textContent).not.toContain('finance/differences')
       const button = view.host.querySelector<HTMLButtonElement>('[data-testid="ui-source-refresh"]')
-      expect(button?.textContent).toContain('Refresh')
+      expect(button?.closest('.agnes-intelligent-component-head')).not.toBeNull()
       expect(button?.getAttribute('aria-label')).toContain('Refresh')
       await act(async () => button?.click())
       expect(refresh).toHaveBeenCalledTimes(1)
@@ -624,7 +625,9 @@ describe('UI data source states', () => {
       expect(status?.getAttribute('role')).toBe('status')
       expect(status?.getAttribute('aria-busy')).toBe('true')
       expect(loading.host.textContent).toContain('正在加载数据…')
-      expect(loading.host.querySelector('[data-testid="ui-source-refresh"]')?.textContent).toContain('刷新')
+      expect(
+        loading.host.querySelector('[data-testid="ui-source-refresh"]')?.getAttribute('aria-label'),
+      ).toContain('刷新')
       expect(loading.host.textContent).toContain('literal note')
     } finally {
       await loading.unmount()

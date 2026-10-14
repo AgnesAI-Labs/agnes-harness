@@ -172,7 +172,7 @@ export function Chart({
           </span>
         ))}
       </figcaption>
-      <Disclosure summary={dataLabel}>
+      <Disclosure variant="plain" summary={dataLabel}>
         <div
           className="agnes-intelligent-table-scroll"
           role="region"
