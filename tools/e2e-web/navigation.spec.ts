@@ -120,11 +120,13 @@ test('settings navigation, narrow master-detail and old links keep their destina
   ]) {
     await page.goto(`/?settings=${old}`)
     await expect(page.getByTestId(`settings-page-${target}`)).toBeVisible()
-    await expect.poll(() => new URL(page.url()).searchParams.get('settings')).toBe(target)
-    await expect.poll(() => new URL(page.url()).hash).toBe(`#settings-subsection-${anchor}`)
     await expect(page.locator(`#settings-subsection-${anchor}`)).toBeVisible()
+    // A settings link is followed once: the address no longer names it, so a reload shows the workbench.
+    expect(new URL(page.url()).searchParams.get('settings')).toBeNull()
+    expect(new URL(page.url()).hash).toBe('')
     await page.reload()
-    await expect(page.locator(`#settings-subsection-${anchor}`)).toBeVisible()
+    await expect(page.getByTestId('home-entries')).toBeVisible()
+    await expect(page.locator('#config')).toBeHidden()
   }
   for (const [old, target, tab, surface] of [
     ['memory', 'plugins', 'plugins.memory', 'plugins-memory'],

@@ -75,3 +75,20 @@ export function clearSettingsLink(): void {
 export function needsModelNotice(state: { modelsRead: boolean; models: number; accounts: number }): boolean {
   return state.modelsRead && state.models === 0 && state.accounts > 0
 }
+
+/**
+ * A settings link is followed once: read the page and subsection it names, then take both out of
+ * the address, so a refresh shows the workbench instead of opening the dialog again. Other
+ * fragments stay.
+ */
+export function consumeSettingsLink(): { id: string; anchor: string } {
+  const url = new URL(location.href)
+  const id = url.searchParams.get('settings') ?? ''
+  const subsection = url.hash.startsWith('#settings-subsection-')
+  const anchor = id && subsection ? url.hash.slice(1) : ''
+  if (!url.searchParams.has('settings') && !subsection) return { id, anchor }
+  url.searchParams.delete('settings')
+  if (subsection) url.hash = ''
+  history.replaceState(history.state, '', url)
+  return { id, anchor }
+}

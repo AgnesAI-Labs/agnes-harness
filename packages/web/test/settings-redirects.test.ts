@@ -3,6 +3,7 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import {
   clearSettingsLink,
+  consumeSettingsLink,
   movedSettingsTarget,
   needsModelNotice,
   openMovedSettings,
@@ -96,4 +97,20 @@ it('points at settings only when accounts exist and no model is usable', () => {
   expect(needsModelNotice({ modelsRead: true, models: 0, accounts: 0 })).toBe(false)
   expect(needsModelNotice({ modelsRead: true, models: 2, accounts: 1 })).toBe(false)
   expect(needsModelNotice({ modelsRead: false, models: 0, accounts: 1 })).toBe(false)
+})
+
+it('follows a settings link once and leaves the rest of the address', () => {
+  history.replaceState(null, '', '/?session=s1&settings=context#settings-subsection-context')
+  expect(consumeSettingsLink()).toEqual({ id: 'context', anchor: 'settings-subsection-context' })
+  expect(`${location.search}${location.hash}`).toBe('?session=s1')
+  // A second read finds nothing: a refresh does not open the dialog again.
+  expect(consumeSettingsLink()).toEqual({ id: '', anchor: '' })
+  // Page addresses and unrelated fragments are real addresses and stay.
+  history.replaceState(null, '', '/?page=plugins&tab=skills&settings=security#launcher-token')
+  expect(consumeSettingsLink()).toEqual({ id: 'security', anchor: '' })
+  expect(`${location.search}${location.hash}`).toBe('?page=plugins&tab=skills#launcher-token')
+  // A subsection fragment left without its page is stale too.
+  history.replaceState(null, '', '/#settings-subsection-context')
+  expect(consumeSettingsLink()).toEqual({ id: '', anchor: '' })
+  expect(location.hash).toBe('')
 })

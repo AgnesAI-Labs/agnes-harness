@@ -143,7 +143,8 @@ describe('independent core web-unit implementations', () => {
       ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
     expect(document.activeElement?.getAttribute('data-settings-section')).toBe('second')
     expect(host.querySelector('#config-form')?.getAttribute('data-settings-section')).toBe('second')
-    expect(new URL(location.href).searchParams.get('settings')).toBe('second')
+    // The dialog keeps its page in its own state; the address is not written.
+    expect(new URL(location.href).searchParams.has('settings')).toBe(false)
     const nativeControl = host.querySelector('#model-settings')
     const tabControl = host.querySelector('#settings-section-tab-second')
     const content = host.querySelector('#settings-content-slots')
@@ -198,8 +199,8 @@ describe('independent core web-unit implementations', () => {
     link.click()
     expect(host.querySelector<HTMLElement>('#model-settings-pane')?.hidden).toBe(false)
     expect(sections()?.hidden).toBe(true)
-    expect(new URL(location.href).searchParams.get('settings')).toBe('model')
-    expect(new URL(location.href).hash).toBe('#auxiliary-models')
+    expect(new URL(location.href).searchParams.has('settings')).toBe(false)
+    expect(new URL(location.href).hash).toBe('')
     host
       .querySelector('#config-form')
       ?.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'second', bubbles: true }))
@@ -311,8 +312,8 @@ describe('independent core web-unit implementations', () => {
     // An old link to an advanced page still opens it; the switch stays the reader's choice.
     form.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'context', bubbles: true }))
     expect(form.dataset.settingsSection).toBe('models')
-    expect(new URL(location.href).searchParams.get('settings')).toBe('models')
-    expect(new URL(location.href).hash).toBe('#settings-subsection-context')
+    expect(new URL(location.href).searchParams.has('settings')).toBe(false)
+    expect(new URL(location.href).hash).toBe('')
     expect(host.querySelector<HTMLElement>('#settings-sections-pane')?.hidden).toBe(false)
     expect(host.querySelector('#settings-advanced')).toBeNull()
     const toggle = host.querySelector<HTMLElement>('[data-testid="settings-advanced-switch"]')
@@ -329,12 +330,17 @@ describe('independent core web-unit implementations', () => {
     expect(host.querySelector('[data-testid="settings-nav-diagnostics"]')?.hasAttribute('aria-current')).toBe(
       false,
     )
+    // The hub's echo of its canonical page keeps the subsection that was asked for.
+    const revealed: string[] = []
+    const frame = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((run) => {
+      revealed.push(String(run))
+      return 0
+    })
     form.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'models', bubbles: true }))
-    expect(new URL(location.href).hash).toBe('#settings-subsection-context')
-    history.replaceState(history.state, '', '?settings=context')
-    form.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'models', bubbles: true }))
-    expect(new URL(location.href).searchParams.get('settings')).toBe('models')
-    expect(new URL(location.href).hash).toBe('#settings-subsection-context')
+    expect(revealed).toHaveLength(1)
+    frame.mockRestore()
+    expect(form.dataset.settingsSection).toBe('models')
+    expect(new URL(location.href).searchParams.has('settings')).toBe(false)
     host.querySelector<HTMLButtonElement>('#settings-back')?.click()
     expect(form.dataset.settingsView).toBe('list')
     expect(document.activeElement?.getAttribute('data-settings-section')).toBe('models')

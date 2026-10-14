@@ -150,6 +150,7 @@ function SettingsBuiltinImpl(
     }),
     [form, open],
   )
+  const requestedPage = useRef('')
   useLayoutEffect(() => {
     const root = host.current
     if (!root) return
@@ -171,6 +172,8 @@ function SettingsBuiltinImpl(
       const navigate = (requested: string, notify = true) => {
         const route = settingsRoute(requested)
         const id = route.id
+        // The page on screen is the dialog's own state; the address bar is not written.
+        requestedPage.current = requested
         const tabFocused = tabs?.contains(document.activeElement)
         const entries = navigationEntries()
         const selected = entries.find((entry) => entry.id === id)
@@ -247,10 +250,6 @@ function SettingsBuiltinImpl(
           if (target !== 'sections') options.onChange?.({ pane })
           if (!selected.nativePane)
             root.dispatchEvent(new CustomEvent('agnes:settings-page', { detail: id, bubbles: true }))
-          const url = new URL(location.href)
-          url.searchParams.set('settings', id)
-          url.hash = route.anchor ?? ''
-          history.replaceState(history.state, '', url)
         }
         if (route.anchor) requestAnimationFrame(() => revealSettingsAnchor(route.anchor ?? ''))
         if (notify && !tabFocused && window.matchMedia('(max-width: 767px)').matches)
@@ -298,9 +297,6 @@ function SettingsBuiltinImpl(
         event.preventDefault()
         navigate(id)
         if (url.hash.length <= 1) return
-        const next = new URL(location.href)
-        next.hash = url.hash
-        history.replaceState(history.state, '', next)
         let fragment: string
         try {
           fragment = decodeURIComponent(url.hash.slice(1))
@@ -313,20 +309,10 @@ function SettingsBuiltinImpl(
       const onRoute = (event: Event) => {
         const id = String((event as CustomEvent).detail)
         // The embedded hub echoes its canonical page after mounting. Keep the
-        // requested subsection through that echo, including before startup routing.
-        const url = new URL(location.href)
-        const requested = url.searchParams.get('settings') ?? ''
+        // requested subsection through that echo.
+        const requested = requestedPage.current
         const linked = settingsRoute(requested)
-        const fragment = url.hash.slice(1)
-        const anchoredId = fragment.replace(/^settings-subsection-/, '')
-        const anchored = settingsRoute(anchoredId)
-        navigate(
-          linked.id === id && linked.anchor
-            ? requested
-            : requested === id && anchored.id === id && anchored.anchor === fragment
-              ? anchoredId
-              : id,
-        )
+        navigate(linked.id === id && linked.anchor ? requested : id)
       }
       const onKeys = (event: KeyboardEvent) => {
         const target = event.target as HTMLElement

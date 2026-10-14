@@ -88,6 +88,7 @@ import { mountSessionSearch } from './session-search.js'
 import { createTitleRefresh } from './session-title.js'
 import {
   clearSettingsLink,
+  consumeSettingsLink,
   movedSettingsTarget,
   needsModelNotice,
   openMovedSettings,
@@ -1148,7 +1149,9 @@ let draftPreset: string | undefined
 let draftBundles: string[] = []
 let runtimeCatalog: import('@agnes/protocol').RuntimeAdminSnapshot | undefined
 const startupRequest = new URLSearchParams(location.search)
-const startupSettingsAnchor = location.hash.slice(1)
+// A settings link opens its page once; the address no longer names it afterwards.
+const startupSettingsLink = consumeSettingsLink()
+const startupSettingsAnchor = startupSettingsLink.anchor
 const requestedLoop = startupRequest.get('loop') ?? undefined
 const requestedPreset = startupRequest.get('preset') ?? undefined
 const requestedBundles = startupRequest.getAll('bundle')
@@ -2332,13 +2335,12 @@ run(async () => {
       showArchived: () => archivedSessions.show('archived'),
     })
   showModelNotice()
-  if (
-    (startupSection || startupTerminal) &&
-    new URL(location.href).searchParams.get('settings') === startupSettings
-  ) {
+  const settingsSelection = selection
+  if (startupSection || startupTerminal) {
     settingsRegion.open('model')
     await settings.open()
-    if (new URL(location.href).searchParams.get('settings') !== startupSettings) return
+    // A choice made while the dialog was loading owns the view.
+    if (selection !== settingsSelection) return
     const anchoredSettings = startupSettingsAnchor.replace(/^settings-subsection-/, '')
     const anchoredRoute = settingsRoute(anchoredSettings)
     const target =
