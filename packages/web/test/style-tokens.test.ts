@@ -233,6 +233,8 @@ const DYNAMIC_CUSTOM_PROPERTIES = new Set([
   '--usage-pct', // packages/web-conversation/src/usage.ts 的用量环，var() 自带 0% 回退
   '--workbench-width', // packages/web/src/workbench/dock.tsx 写入，var() 自带 320px 回退
   '--workbench-height', // packages/web/src/workbench/dock.tsx 写入，var() 自带 220px 回退
+  '--workbench-tree-width', // packages/web-conversation/src/workbench/files-panel.tsx 写入拖动后的宽度，var() 自带 250px 回退
+  '--workbench-gutter', // packages/web-conversation/src/workbench/files-preview.tsx 按行数位数写入，var() 自带 3ch 回退
 ])
 
 beforeAll(async () => {

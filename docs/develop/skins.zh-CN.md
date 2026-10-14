@@ -261,6 +261,23 @@ textarea {
 --agnes-trace-badge-approval-bg
 --agnes-trace-badge-compaction-text
 --agnes-trace-badge-compaction-bg
+--agnes-file-type-text
+--agnes-file-type-html
+--agnes-file-type-css
+--agnes-file-type-js
+--agnes-file-type-ts
+--agnes-file-type-json
+--agnes-file-type-md
+--agnes-file-type-svg
+--agnes-file-type-image
+--agnes-file-type-code
+--agnes-file-type-other
+--agnes-document-page-bg
+--agnes-terminal-bg
+--agnes-terminal-bar
+--agnes-terminal-line
+--agnes-terminal-text
+--agnes-terminal-muted
 <!-- theme-tokens:end -->
 
 主题合同新增的状态区域与层级 token：

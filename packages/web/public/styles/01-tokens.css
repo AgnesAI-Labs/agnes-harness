@@ -234,6 +234,22 @@
     --agnes-trace-badge-compaction-text: var(--agnes-text-secondary);
     --agnes-trace-badge-compaction-bg: rgb(106 111 122 / 12%);
 
+    /* File-type badges in the workbench Files tree: white letters on a tone per kind of file.
+       The tones keep their light values in dark mode; the badge carries its own contrast. */
+    --agnes-file-type-text: var(--agnes-color-gray-0);
+    --agnes-file-type-html: var(--agnes-color-red-500);
+    --agnes-file-type-css: var(--agnes-color-blue-500);
+    --agnes-file-type-js: var(--agnes-color-amber-700);
+    --agnes-file-type-ts: var(--agnes-color-indigo-500);
+    --agnes-file-type-json: var(--agnes-color-green-700);
+    --agnes-file-type-md: var(--agnes-color-gray-650);
+    --agnes-file-type-svg: var(--agnes-color-amber-500);
+    --agnes-file-type-image: var(--agnes-color-green-500);
+    --agnes-file-type-code: var(--agnes-color-blue-700);
+    --agnes-file-type-other: var(--agnes-color-gray-500);
+    /* A rendered HTML file is a page: it keeps a white canvas in both themes. */
+    --agnes-document-page-bg: var(--agnes-color-gray-0);
+
     /* The workbench terminal stays dark in both themes, so its output reads as a terminal. */
     --agnes-terminal-bg: var(--agnes-color-gray-900);
     --agnes-terminal-bar: var(--agnes-color-gray-850);
@@ -377,6 +393,19 @@
     --agnes-trace-badge-approval-bg: rgb(239 123 116 / 14%);
     --agnes-trace-badge-compaction-text: var(--agnes-text-secondary);
     --agnes-trace-badge-compaction-bg: rgb(154 158 168 / 16%);
+
+    --agnes-file-type-text: var(--agnes-color-gray-0);
+    --agnes-file-type-html: var(--agnes-color-red-500);
+    --agnes-file-type-css: var(--agnes-color-blue-500);
+    --agnes-file-type-js: var(--agnes-color-amber-700);
+    --agnes-file-type-ts: var(--agnes-color-indigo-500);
+    --agnes-file-type-json: var(--agnes-color-green-700);
+    --agnes-file-type-md: var(--agnes-color-gray-650);
+    --agnes-file-type-svg: var(--agnes-color-amber-500);
+    --agnes-file-type-image: var(--agnes-color-green-500);
+    --agnes-file-type-code: var(--agnes-color-blue-700);
+    --agnes-file-type-other: var(--agnes-color-gray-500);
+    --agnes-document-page-bg: var(--agnes-color-gray-0);
 
     --agnes-terminal-bg: var(--agnes-color-gray-950);
     --agnes-terminal-bar: var(--agnes-color-gray-925);

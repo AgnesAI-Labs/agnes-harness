@@ -387,7 +387,6 @@
     color: var(--agnes-text-tertiary);
   }
   .workbench-file-type {
-    --workbench-type: var(--agnes-color-gray-500);
     flex: 0 0 auto;
     min-width: 16px;
     height: 16px;
@@ -397,35 +396,35 @@
     place-items: center;
     font: 700 7.5px / 1 var(--font-mono);
     letter-spacing: 0.02em;
-    color: var(--agnes-color-gray-0);
-    background: var(--workbench-type);
+    color: var(--agnes-file-type-text);
+    background: var(--agnes-file-type-other);
   }
   .workbench-file-type[data-tone="html"] {
-    --workbench-type: var(--agnes-color-red-500);
+    background: var(--agnes-file-type-html);
   }
   .workbench-file-type[data-tone="css"] {
-    --workbench-type: var(--agnes-color-blue-500);
+    background: var(--agnes-file-type-css);
   }
   .workbench-file-type[data-tone="js"] {
-    --workbench-type: var(--agnes-color-amber-700);
+    background: var(--agnes-file-type-js);
   }
   .workbench-file-type[data-tone="ts"] {
-    --workbench-type: var(--agnes-color-indigo-500);
+    background: var(--agnes-file-type-ts);
   }
   .workbench-file-type[data-tone="json"] {
-    --workbench-type: var(--agnes-color-green-700);
+    background: var(--agnes-file-type-json);
   }
   .workbench-file-type[data-tone="md"] {
-    --workbench-type: var(--agnes-color-gray-650);
+    background: var(--agnes-file-type-md);
   }
   .workbench-file-type[data-tone="svg"] {
-    --workbench-type: var(--agnes-color-amber-500);
+    background: var(--agnes-file-type-svg);
   }
   .workbench-file-type[data-tone="image"] {
-    --workbench-type: var(--agnes-color-green-500);
+    background: var(--agnes-file-type-image);
   }
   .workbench-file-type[data-tone="code"] {
-    --workbench-type: var(--agnes-color-blue-700);
+    background: var(--agnes-file-type-code);
   }
   .workbench-file-name {
     overflow: hidden;
@@ -655,7 +654,7 @@
     width: calc(var(--workbench-gutter, 3ch) + 1.75rem);
     padding-right: 0.9rem;
     text-align: right;
-    color: var(--agnes-text-disabled);
+    color: var(--agnes-text-tertiary);
     background: var(--agnes-bg-surface);
     user-select: none;
   }
@@ -685,7 +684,7 @@
     width: 100%;
     height: 100%;
     border: 0;
-    background: var(--agnes-color-gray-0);
+    background: var(--agnes-document-page-bg);
   }
   .workbench-file-rendered > [data-document-preview="image"] {
     display: grid;
