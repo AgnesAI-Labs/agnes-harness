@@ -5,7 +5,15 @@ import { test as base, expect } from '@playwright/test'
 import { localeKeys, unresolvedLabels } from './i18n.js'
 import { settled } from './quality.js'
 import { isolatedRuntime, type Runtime } from './runtime.js'
-import { chooseWorkspace, section } from './ui.js'
+import {
+  advanced,
+  chooseWorkspace,
+  closeSettings,
+  expand,
+  expandActivityGroups,
+  section,
+  sectionSurface,
+} from './ui.js'
 
 const root = process.env.AGH_UI_REPORT
 const test = base.extend<{ uiServer: Runtime | undefined }>({
@@ -91,9 +99,7 @@ for (const locale of ['zh-CN', 'en'])
               .isVisible()
           ) {
             if (!workspace) throw new Error('Set AGH_UI_WORKSPACE to an isolated workspace for a fresh home')
-            await page.locator('#workspace-manual').evaluate((element: HTMLDetailsElement) => {
-              element.open = true
-            })
+            await expand(page.locator('#workspace-manual'))
             await page.locator('#new-session-cwd').fill(workspace)
             await page.locator('#new-session-create').click()
           } else {
@@ -118,6 +124,8 @@ for (const locale of ['zh-CN', 'en'])
         }
         await screen('home-empty')
         await expect(page.getByTestId('goal-bar')).toBeHidden()
+        await advanced(page)
+        await closeSettings(page, locale)
         await expect(page.getByTestId('composer-agent')).toBeEnabled()
         await expect(page.getByTestId('composer-agent')).toHaveAttribute(
           'aria-label',
@@ -127,6 +135,7 @@ for (const locale of ['zh-CN', 'en'])
         await screen('agent-options')
         await page.keyboard.press('Escape')
         await page.locator('#settings').click()
+        await section(page, 'model')
         await screen('settings-model')
         await page.locator('#config-add-account').click()
         await screen('add-account')
@@ -148,8 +157,11 @@ for (const locale of ['zh-CN', 'en'])
                   : 'general',
           )
           if (id === 'skills-tab' || id === 'mcp-tab') {
-            await expect(page.locator(`#${id}`)).toHaveAttribute('role', 'tab')
-            await expect(page.locator(`#${id}`)).toHaveAttribute('tabindex', '0')
+            const tab = page
+              .getByRole('tab')
+              .filter({ has: page.getByTestId(`plugins-tab-${id === 'skills-tab' ? 'skills' : 'mcp'}`) })
+            await expect(tab).toHaveAttribute('aria-selected', 'true')
+            await expect(tab).toHaveAttribute('tabindex', '0')
           }
           await screen(`settings-${name}`)
         }
@@ -167,42 +179,53 @@ for (const locale of ['zh-CN', 'en'])
           'jobs',
           'schedules',
         ]) {
+          if (id === 'jobs') {
+            await closeSettings(page, locale)
+            await submitTurn('UI quality terminal context')
+          }
           await section(page, id)
-          const canonical = ['models', 'bundles', 'engines', 'context'].includes(id)
-            ? 'models'
-            : id === 'providers'
-              ? 'diagnostics'
-              : id === 'examples'
-                ? 'discover'
-                : id
-          await expect(page.getByTestId(`settings-page-${canonical}`)).toBeVisible()
+          await expect(sectionSurface(page, id)).toBeVisible()
           if (id === 'plugins') await expect(page.locator('#install-source')).toBeEnabled({ timeout: 30_000 })
           await screen(`runtime-${id}`)
           if (id === 'bundles' && (await page.getByTestId('session-tool-groups').count())) {
-            await page.getByTestId('session-tool-groups').first().locator('summary').first().click()
+            await page
+              .getByTestId('session-tool-groups')
+              .first()
+              .locator('summary, .agh-disclosure-summary')
+              .first()
+              .click()
             await screen('session-tool-info')
           }
           if (id === 'examples') {
-            const more = page.getByTestId('example-more')
-            if (await more.count()) await page.getByTestId('example-more-toggle').click()
-            await expect(page.getByTestId('example-install-dag-loop')).toBeVisible()
-            await expect(page.getByTestId('example-install-react-loop')).toBeVisible()
-            await expect(page.locator('[data-testid^="example-install-"]')).toHaveCount(17)
+            const cards = page.locator('[data-testid^="business-agent-"][data-package]')
+            expect(await cards.count()).toBeGreaterThan(0)
+            await expect(cards.first()).toBeVisible()
+            await section(page, 'discover')
+            for (const id of ['dag-loop', 'react-loop'])
+              await expect(
+                page.locator(`[data-testid="market-card"][data-plugin-id="@agnes-example/${id}"]`),
+              ).toBeVisible()
           }
         }
         await section(page, 'archived')
         await screen('settings-archives')
         await section(page, 'schedules')
-        await page.getByTestId('settings-nav-schedules-tab').focus()
+        await page
+          .getByRole('tab')
+          .filter({ hasText: locale === 'en' ? 'Scheduled tasks' : '定时任务' })
+          .focus()
         await page.keyboard.press('ArrowRight')
-        await expect(page.getByTestId('settings-nav-triggers-tab')).toBeFocused()
-        await expect(page.getByTestId('settings-page-triggers')).toBeVisible()
+        await expect(
+          page.getByRole('tab').filter({ hasText: locale === 'en' ? 'Triggers' : '触发器' }),
+        ).toBeFocused()
+        await page.keyboard.press('Enter')
+        await expect(page.getByTestId('home-page-automation')).toBeVisible()
+        await expect(page).toHaveURL(/tab=triggers/)
         await section(page, 'plugins')
         await page.locator('#install-source').click()
-        await page.getByTestId('plugin-install-source').click()
         await screen('plugin-install')
         await page.locator('#source-cancel').click()
-        await page.locator('#config-close').click()
+        await closeSettings(page, locale)
         async function submitTurn(input: string) {
           await expect(page.locator('#cancel')).toBeHidden({ timeout: 30_000 })
           const turns = page.locator('.conversation-turn')
@@ -234,6 +257,12 @@ for (const locale of ['zh-CN', 'en'])
         for (const call of calls) {
           await submitTurn(call)
         }
+        for (const process of await page.getByTestId('turn-process-toggle').all()) {
+          if ((await process.getAttribute('aria-expanded')) !== 'true') await process.click()
+          await expandActivityGroups(
+            process.locator('xpath=ancestor::*[@data-testid="conversation-turn"][1]'),
+          )
+        }
         await expect(
           page
             .getByTestId('intelligent-ui-inline')
@@ -261,13 +290,16 @@ for (const locale of ['zh-CN', 'en'])
           await screen('deliverable-surface')
         }
         await expect(page.getByTestId('background-job-card')).toBeVisible()
+        await section(page, 'jobs')
+        await expect(page.getByTestId('terminal-panel')).toBeVisible()
+        await page.getByTestId('workbench-right-toggle').click()
 
         await page.locator('#view-trace').click()
         await screen('trace')
         await page.locator('#view-chat').click()
         await visit('/?settings=bundles')
         await expect(page.getByTestId('settings-page-models')).toBeVisible()
-        await expect(page.getByTestId('settings-subsection-bundles')).toHaveAttribute('open')
+        await expect(page.getByTestId('settings-subsection-bundles')).toHaveAttribute('data-open', 'true')
         await expect(page.locator('#new-session')).toBeHidden()
         await screen('deep-link-bundles')
         await section(page, 'schedules')
@@ -276,23 +308,19 @@ for (const locale of ['zh-CN', 'en'])
         await page.getByTestId('schedules-prompt').fill('Synthetic UI verification')
         await page.getByTestId('schedules-create').click()
         await page.getByTestId('schedules-archive').first().click()
-        await page.getByRole('menuitem', { name: locale === 'en' ? 'Archive' : '归档', exact: true }).click()
         const confirm = page.getByTestId('schedules-archive-confirm')
         await confirm.click({ trial: true })
         await screen('schedule-confirm')
         await page.keyboard.press('Escape')
         await expect(confirm).toBeHidden()
-        await expect(page.locator('#config-form')).toBeVisible()
+        await expect(page.getByTestId('home-page-automation')).toBeVisible()
         await expect(page.getByTestId('schedules-archive').first()).toBeFocused()
         await page.getByTestId('schedules-archive').first().click()
-        await page.getByRole('menuitem', { name: locale === 'en' ? 'Archive' : '归档', exact: true }).click()
         await expect(confirm).toBeVisible()
-        // The owner can close its native host during a detail surface's lifetime.
-        // Detail cleanup must preserve that closed state rather than reopening settings.
-        await page.locator('#config').evaluate((host: HTMLDialogElement) => host.close())
-        const cancel = page.getByTestId('schedules-archive-cancel')
-        if (await cancel.isVisible()) await cancel.click()
+        // Navigating away destroys the moved page's detail lifetime without reopening a modal.
+        await visit('/?page=agents')
         await expect(confirm).toBeHidden()
+        await expect(page.getByTestId('home-page-agents')).toBeVisible()
         await expect(page.locator('#config')).toBeHidden()
       })
     }
