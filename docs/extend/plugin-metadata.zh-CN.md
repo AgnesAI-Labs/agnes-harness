@@ -29,7 +29,7 @@
 
 提供元数据时必须包含 `displayName`、`summary`、`description`、`category`。名称限制为 1–80 个 Unicode 码点，摘要 1–240，短段落 1–1,200，可选文档地址 1–2,048。文本必须去除首尾空白、可打印且为单行／单段，禁止控制字符和 Unicode 换行符。摘要用一句话说明解决的问题，描述可补充范围和前提。schema 使用按码点计数的有界正则与 UTF-16 上限，让生成的校验器正确接受上限以内的补充 Unicode 字符。
 
-分类值为 `agent-loop`、`tools`、`safety-approval`、`memory-context`、`collaboration`、`integrations`、`observability`、`ui`、`developer`、`business-agent`。分类只是编辑分组，不改变运行时类型或权限。交付一个业务流程的组合包使用 `business-agent`，客户端把这类包列为业务 Agent。`docsUrl` 只能是无凭据、空白或控制字符的绝对 HTTPS 地址。`locales` 仅接受 `en` 和 `zh-CN`，可分别覆盖名称、摘要、描述和文档地址中的部分字段。所有对象拒绝未知字段，每个完整元数据块最多 24 KiB UTF-8 JSON。
+分类值为 `agent-loop`、`tools`、`safety-approval`、`memory-context`、`collaboration`、`integrations`、`observability`、`ui`、`developer`、`business-agent`。分类只是编辑分组，不改变运行时类型或权限。客户端只读 `agnes.metadata` 上的分类，所以一个包只有一个分类；每一行填相同的值。包里有什么另由 `agnes.kinds` 声明，见[按角色选择插件类型](choose-a-plugin-type.zh-CN.md)。交付一个业务流程的组合包使用 `business-agent`，客户端把这类包列为业务 Agent。`docsUrl` 只能是无凭据、空白或控制字符的绝对 HTTPS 地址。`locales` 仅接受 `en` 和 `zh-CN`，可分别覆盖名称、摘要、描述和文档地址中的部分字段。所有对象拒绝未知字段，每个完整元数据块最多 24 KiB UTF-8 JSON。
 
 安装检查不导入插件代码即可校验包级与行级元数据，扩展准入复用同一协议 schema。通过校验的包元数据随预览、目录、锁文件和不可变运行快照保存；版本变化沿用现有完整性、信任和固定版本规则。元数据不授予能力，不进入能力哈希，不改变加载、授权或启停语义。
 
@@ -51,6 +51,16 @@
 页面逐字段读取当前语言，没有翻译时使用基础值。完全缺失时显示完整 ID、已有类型、未分类和“作者未提供用途说明”。作者文案作为纯文本展示，文档链接由用户主动打开。官方／示例来源取自现有来源记录与目录，不依据作者文案或包名猜测。
 
 “提供什么”和“在哪里出现”读取现有注册信息与库存。作者介绍或能力声明不能证明工具已注册。未加载或暂不可读的贡献不从 ID 推断。轻量展示投影的范围见已批准设计中的 Phase B 说明。
+
+<a id="what-a-package-includes"></a>
+
+`PackagePresentation.includes` 说明一个包里有什么，供每行的「包含」标签和市场的类型筛选使用：
+
+```json
+{ "kinds": ["tool", "loop", "skills", "ui", "bundle"], "counts": { "bundles": 1, "ui": 1 } }
+```
+
+`kinds` 是声明的 `agnes.kinds` 加上包数据能证明的类型：`agnes.bundles` 下有 bundle、有客户端描述文件或 surface（`ui`）、有 `skill` 贡献或 `skill` 资源能力（`skills`）、有 `mcp` 资源能力（`mcp`）、声明了工具名（`tool`）。顺序固定为 `tool`、`loop`、`model-adapter`、`mcp`、`skills`、`ui`、`bundle`。`counts` 包含 `tools`、`skills`、`mcp`、`bundles`、`ui`，只有包数据写明数量时才出现：`capabilities.tools.names` 下不重复的名称、`skill` 贡献、`agnes.bundles` 的条目、客户端描述文件加 surface。缺少某个数量表示它由插件代码决定，而检查从不运行代码；这不代表零。目前没有包数据描述 MCP 连接，所以 `mcp` 不会有数量。包没有声明任何类型、也证明不了任何类型时，这个字段不出现。客户端每个类型显示一个标签，有数量时才加上数字。
 
 `PackagePresentation.presets` 概括每个组合包 preset 的策略保证了什么，客户端可以在安装前如实说明：
 

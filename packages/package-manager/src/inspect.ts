@@ -366,7 +366,7 @@ export function inspectVerifiedTree(
       ...(fetched.releasedAt ? { releasedAt: fetched.releasedAt } : {}),
     },
     contributions,
-    presentation: presentPluginRows(plugins, { packageId: String(pkg.name), bundles }),
+    presentation: presentPluginRows(plugins, { packageId: String(pkg.name), bundles, kinds, contributions }),
     ...(displayMetadata?.ok ? { metadata: displayMetadata.value } : {}),
     ...(declaredCapabilities === undefined ? {} : { declaredCapabilities }),
     ...(kinds === undefined ? {} : { kinds }),

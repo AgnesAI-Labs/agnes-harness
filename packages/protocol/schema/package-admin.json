@@ -3712,6 +3712,31 @@
         "origin": {
           "enum": ["official", "example", "local", "local-source", "third-party"]
         },
+        "includes": {
+          "description": "What the package contains, derived from package data without running plugin code. kinds joins the declared agnes.kinds with what the data proves. A count is present only when the package data states it; an absent count means the number is decided in code, not zero.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kinds", "counts"],
+          "properties": {
+            "kinds": {
+              "type": "array",
+              "items": { "enum": ["tool", "loop", "model-adapter", "mcp", "skills", "ui", "bundle"] },
+              "uniqueItems": true,
+              "maxItems": 7
+            },
+            "counts": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "tools": { "type": "integer", "minimum": 1, "maximum": 4096 },
+                "skills": { "type": "integer", "minimum": 1, "maximum": 4096 },
+                "mcp": { "type": "integer", "minimum": 1, "maximum": 4096 },
+                "bundles": { "type": "integer", "minimum": 1, "maximum": 4096 },
+                "ui": { "type": "integer", "minimum": 1, "maximum": 4096 }
+              }
+            }
+          }
+        },
         "presets": {
           "description": "What each bundle preset's policy guarantees, derived from package data without running plugin code. Unknown means the answer is decided in code.",
           "type": "array",

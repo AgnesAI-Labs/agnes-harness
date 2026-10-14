@@ -182,7 +182,19 @@ export async function bundledExamplesEntries(signal?: AbortSignal) {
         ...(signal ? { signal } : {}),
       })
       const entry = descriptor(realpathSync(staging), example.name, signal, example.ref)
-      entries.push({ ...entry, ...(example.family === 'loops' ? { kinds: ['loop' as const] } : {}) })
+      if (example.family !== 'loops') entries.push(entry)
+      else {
+        // The loop examples predate agnes.kinds; their family is the declaration.
+        const includes = entry.presentation?.includes
+        const kinds = ['loop' as const, ...(includes?.kinds ?? []).filter((kind) => kind !== 'loop')]
+        entries.push({
+          ...entry,
+          kinds: ['loop'],
+          ...(entry.presentation
+            ? { presentation: { ...entry.presentation, includes: { kinds, counts: includes?.counts ?? {} } } }
+            : {}),
+        })
+      }
     }
     return entries
   } finally {

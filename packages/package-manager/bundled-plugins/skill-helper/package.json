@@ -15,6 +15,9 @@
     "node": ">=24"
   },
   "agnes": {
+    "kinds": [
+      "tool"
+    ],
     "plugins": [
       {
         "export": "skillHelper",

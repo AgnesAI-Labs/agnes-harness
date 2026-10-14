@@ -310,7 +310,7 @@ export function readInventory(
     let presentation: PackagePresentation | undefined
     if (directory && existsSync(join(directory, 'package.json'))) {
       try {
-        presentation = readPackagePresentation(directory, entry.trust === 'builtin')
+        presentation = readPackagePresentation(directory, entry.trust === 'builtin', entry.contributions)
       } catch {
         /* Supplementary author display data must not change activation/blocker semantics. */
       }

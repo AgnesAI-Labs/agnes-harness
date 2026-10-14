@@ -29,7 +29,7 @@ Explain the user outcome in the public `PluginMetadata` contract exported by `@a
 
 When present, `displayName`, `summary`, `description` and `category` are required. Name (1–80), summary (1–240), description (1–1,200) and optional docs URL (1–2,048) are bounded in Unicode code points. Text must be trimmed, printable and a single line/paragraph; control characters and Unicode line separators are rejected. Write a summary as one sentence about the problem solved. Descriptions may add scope or prerequisites. The schema uses a code-point-bounded pattern and a UTF-16 ceiling so its generated validator also accepts supplementary Unicode characters within the limit.
 
-Category is one of `agent-loop`, `tools`, `safety-approval`, `memory-context`, `collaboration`, `integrations`, `observability`, `ui`, `developer`, `business-agent`. It is an editorial grouping, not a runtime kind or permission. Use `business-agent` for a bundle that delivers one business workflow; clients list those packages as business agents. `docsUrl` must be an absolute HTTPS URL without credentials, whitespace or control characters. `locales` accepts only `en` and `zh-CN`; either may partially override name, summary, description and docs URL. Unknown keys are rejected. Each complete metadata block is limited to 24 KiB of UTF-8 JSON.
+Category is one of `agent-loop`, `tools`, `safety-approval`, `memory-context`, `collaboration`, `integrations`, `observability`, `ui`, `developer`, `business-agent`. It is an editorial grouping, not a runtime kind or permission. Clients read the category from `agnes.metadata` only, so a package has one category; give each row the same value. What a package contains is declared separately as `agnes.kinds`; see [Choose a plugin type by role](choose-a-plugin-type.md). Use `business-agent` for a bundle that delivers one business workflow; clients list those packages as business agents. `docsUrl` must be an absolute HTTPS URL without credentials, whitespace or control characters. `locales` accepts only `en` and `zh-CN`; either may partially override name, summary, description and docs URL. Unknown keys are rejected. Each complete metadata block is limited to 24 KiB of UTF-8 JSON.
 
 Two optional fields describe how a package is offered:
 
@@ -51,6 +51,16 @@ Installation inspection validates package and row metadata without importing plu
 The page resolves each localized field independently, then falls back to its base value. Without metadata it displays the full ID, known kinds, an uncategorized label and “No description provided”. Author text is rendered as text. Documentation opens only after an explicit click. Official/example labels come from existing provenance/catalog sources, never from author text or a package namespace.
 
 “Provides” and “Where it appears” use existing readable registrations and inventory. An author summary or capability declaration is not proof of a registered tool. Unloaded or unavailable contributions remain unavailable rather than being inferred from their IDs. See the approved design's Phase B scope for the small presentation projection.
+
+<a id="what-a-package-includes"></a>
+
+`PackagePresentation.includes` states what a package contains, for the “Includes” labels on a row and the marketplace type filter:
+
+```json
+{ "kinds": ["tool", "loop", "skills", "ui", "bundle"], "counts": { "bundles": 1, "ui": 1 } }
+```
+
+`kinds` joins the declared `agnes.kinds` with what package data proves: a bundle under `agnes.bundles`, a client descriptor or surface (`ui`), a `skill` contribution or `skill` resource capability (`skills`), an `mcp` resource capability (`mcp`), and declared tool names (`tool`). It is listed in the fixed order `tool`, `loop`, `model-adapter`, `mcp`, `skills`, `ui`, `bundle`. `counts` holds `tools`, `skills`, `mcp`, `bundles` and `ui`, each present only when package data states the number: distinct names under `capabilities.tools.names`, `skill` contributions, entries in `agnes.bundles`, and client descriptors plus surfaces. An absent count means the number is decided in plugin code, which inspection never runs; it does not mean zero. No package data names an MCP connection today, so `mcp` is never counted. The field is absent when a package declares no kinds and none can be proven. A client shows one label per kind and adds the number only when it is present.
 
 `PackagePresentation.presets` summarizes what each bundle preset's policy guarantees, so a client can state them before installation:
 

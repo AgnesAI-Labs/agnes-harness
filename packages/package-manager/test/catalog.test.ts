@@ -253,6 +253,16 @@ describe('local example catalog', () => {
         },
       ])
     }
+    // What each one contains is derived: the declared kinds, and a count only where the data has one.
+    for (const entry of fde) {
+      const includes = entry.presentation?.includes
+      expect(new Set(includes?.kinds)).toEqual(new Set(entry.kinds))
+      expect(includes?.counts.bundles).toBe(1)
+      expect(includes?.counts.tools).toBeUndefined()
+      expect(includes?.counts.ui === 1).toBe(entry.kinds?.includes('ui'))
+      // One category level: the package's, which its plugin rows repeat rather than contradict.
+      for (const row of entry.presentation?.rows ?? []) expect(row.metadata?.category).toBe('business-agent')
+    }
     for (const entry of result.entries) {
       const directory = fileURLToPath(
         new URL(`../../../${entry.source.ref.slice('file:./'.length)}`, import.meta.url),

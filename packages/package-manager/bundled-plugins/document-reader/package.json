@@ -16,6 +16,9 @@
     "node": ">=24.10"
   },
   "agnes": {
+    "kinds": [
+      "tool"
+    ],
     "plugins": [
       {
         "export": "documentReader",
