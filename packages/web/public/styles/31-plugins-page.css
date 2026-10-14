@@ -389,6 +389,11 @@
     overflow: visible;
     animation: none;
   }
+  /* The host is the page's body, not a control: it never draws a focus ring of its own. */
+  .plugins-page-hosted > dialog[data-presentation="page"]:focus,
+  .plugins-page-hosted > dialog[data-presentation="page"]:focus-visible {
+    outline: none;
+  }
   .plugins-page-hosted
     > dialog[data-presentation="page"]
     :is(.admin-detail-head, .admin-detail-scroll, .admin-detail-actions) {

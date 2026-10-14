@@ -146,6 +146,8 @@ it('asks the controller to open what a link names, and leaves a page whose item 
   expect(open).toHaveBeenCalledWith('item:b')
   expect(detail.open).toBe(true)
   expect(view()).toBe('item:b')
+  // The page's title keeps focus, not the host that opened under it.
+  expect(document.activeElement?.tagName).toBe('H2')
   await act(async () => root?.unmount())
   root = undefined
   detail.close()

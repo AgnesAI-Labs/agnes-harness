@@ -94,7 +94,11 @@ export function useHostedDialog({
     let current = true
     queueMicrotask(() => {
       if (!current || host.open || navRef.current.stack.at(-1) !== top) return
-      if (latest.current.open(top) === 'missing') navRef.current.back()
+      const result = latest.current.open(top)
+      if (result === 'missing') navRef.current.back()
+      // A host takes focus as it opens; on a link the page's title already had it, so give it back.
+      else if (result === 'opened' && host.contains(document.activeElement))
+        document.querySelector<HTMLElement>('.agh-push-header h2')?.focus({ preventScroll: true })
     })
     return () => {
       current = false
