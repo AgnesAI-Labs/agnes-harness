@@ -50,3 +50,18 @@ it('gives every settings row one control column that selects, fields, pickers an
     'width: 100%',
   )
 })
+
+it('drops the account dialog title bar and dividers when the account form is a settings page', () => {
+  // As specific as the dialog's own heading rule (an id inside :is), so it wins.
+  expect(
+    rule(
+      forms,
+      ':is(#account-dialog, .account-page-host) .account-dialog-body[data-page] .config-detail-heading',
+    ),
+  ).toContain('display: none')
+  const grid = rule(forms, '.account-dialog-body[data-page] .config-detail-grid')
+  expect(grid).toContain('padding: 0')
+  const footer = rule(forms, '.account-dialog-body[data-page] .config-detail-footer')
+  expect(footer).toContain('border-top: 0')
+  expect(footer).toContain('background: transparent')
+})

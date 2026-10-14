@@ -992,9 +992,23 @@
     cursor: pointer;
   }
 
-  /* On a settings page the page header names the account form, so the form drops its own. */
-  .account-dialog-body[data-page] .config-detail-heading {
+  /* On a settings page the page header names the account form, so the form drops its own title
+   bar and the dialog's dividers: the steps follow the page description, 取消 / 继续 close the page. */
+  :is(#account-dialog, .account-page-host) .account-dialog-body[data-page] .config-detail-heading {
     display: none;
+  }
+  :is(#account-dialog, .account-page-host) .account-dialog-body[data-page] {
+    max-height: none;
+    overflow: visible;
+  }
+  :is(#account-dialog, .account-page-host) .account-dialog-body[data-page] .config-detail-grid {
+    padding: 0;
+    overflow: visible;
+  }
+  :is(#account-dialog, .account-page-host) .account-dialog-body[data-page] .config-detail-footer {
+    padding: var(--s16) 0 0;
+    border-top: 0;
+    background: transparent;
   }
   /* Account setup shares one stable native region in settings and the first-run guide. */
   #account-dialog {
