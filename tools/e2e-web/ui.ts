@@ -7,6 +7,28 @@ export function pluginTab(page: Page, name: 'permissions' | 'versions' | 'config
   return page.getByRole('tab').filter({ has: page.getByTestId(`plugin-${name}-tab`) })
 }
 
+/** Use the visible select control, including the shared select's custom popup. */
+export async function selectValue(page: Page, id: string, value: string) {
+  const native = page.locator(`[id="${id}"]`).or(page.getByTestId(id))
+  await expect(native).toBeAttached()
+  if (await native.isVisible()) await native.selectOption(value)
+  else {
+    const label = await native
+      .locator('option')
+      .evaluateAll(
+        (options, selected) =>
+          options.find((option) => (option as HTMLOptionElement).value === selected)?.textContent?.trim(),
+        value,
+      )
+    if (!label) throw new Error(`Select ${id} does not offer ${value}`)
+    const controlId = await native.getAttribute('id')
+    if (!controlId) throw new Error(`Custom select ${id} has no control id`)
+    await page.locator(`[id="${controlId}-trigger"]`).click()
+    await page.getByRole('option', { name: label, exact: true }).click()
+  }
+  await expect(native).toHaveValue(value)
+}
+
 export async function preferences(page: Page, locale = 'en', theme = 'light') {
   await page.addInitScript(
     ({ locale, theme }) => {
@@ -19,6 +41,7 @@ export async function preferences(page: Page, locale = 'en', theme = 'light') {
 }
 
 export async function settings(page: Page, locale = 'en') {
+  await sidebar(page)
   await page.getByRole('button', { name: locale === 'en' ? 'Settings' : '设置', exact: true }).click()
   // A reopened phone dialog retains its last detail page; return through its real navigation.
   await expect(page.locator('#config')).toBeVisible()
@@ -27,60 +50,251 @@ export async function settings(page: Page, locale = 'en') {
   await expect(page.getByTestId('settings-navigation')).toBeVisible()
 }
 
-export async function section(page: Page, id: string) {
+/** Open a disclosure through its rendered control, including the React disclosure used by v3. */
+export async function expand(root: import('@playwright/test').Locator) {
+  await expect(root).toBeVisible()
+  const toggle = root.locator(':scope > summary, :scope > .agh-disclosure-summary').first()
+  const native = (await root.evaluate((node) => node.tagName)) === 'DETAILS'
+  const open = native
+    ? (await root.getAttribute('open')) !== null
+    : (await root.getAttribute('data-open')) === 'true'
+  if (!open) await toggle.click()
+  if (native) await expect(root).toHaveAttribute('open', '')
+  else await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+}
+
+/** Consecutive activity steps have their own disclosure inside the turn process. */
+export async function expandActivityGroups(turn: import('@playwright/test').Locator) {
+  for (const group of await turn.getByTestId('turn-activity-toggle').all()) {
+    if ((await group.isVisible()) && (await group.getAttribute('aria-expanded')) !== 'true') {
+      await group.click()
+      await expect(group).toHaveAttribute('aria-expanded', 'true')
+    }
+  }
+}
+
+export async function sidebar(page: Page) {
+  if (!(await page.locator('#settings').isVisible())) await page.locator('#sidebar-toggle').click()
+}
+
+export async function homePage(page: Page, id: string, tab?: string) {
+  if (await page.locator('#config').isVisible()) await dismissSettings(page)
+  const dock = page.getByTestId('workbench-right-toggle')
+  if ((await dock.isVisible()) && (await dock.getAttribute('aria-expanded')) === 'true')
+    await dismissWorkbench(page)
+  await sidebar(page)
+  await page.getByTestId(`home-entry-${id}`).click()
+  await expect(page.getByTestId(`home-page-${id}`)).toBeVisible()
+  if (tab) {
+    if (id === 'plugins')
+      await page
+        .getByRole('tab')
+        .filter({ has: page.getByTestId(`plugins-tab-${tab}`) })
+        .click()
+    else
+      await page
+        .getByRole('tab')
+        .filter({ hasText: tab === 'triggers' ? /Triggers|触发器/ : /Scheduled tasks|定时任务/ })
+        .click()
+  }
+}
+
+export async function advanced(page: Page) {
+  if (!(await page.locator('#config').isVisible()))
+    await settings(page, (await page.locator('html').getAttribute('lang')) ?? 'en')
   const back = page.getByTestId('settings-back')
   if (await back.isVisible()) await back.click()
-  const first: Record<string, string> = {
-    bundles: 'models',
-    engines: 'models',
-    'system-prompt': 'models',
-    memory: 'models',
-    context: 'models',
+  await page.getByTestId('settings-nav-general').click()
+  const toggle = page.getByTestId('settings-advanced-switch')
+  if ((await toggle.getAttribute('aria-checked')) !== 'true') await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-checked', 'true')
+  if (await back.isVisible()) await back.click()
+}
+
+/** The visible owner after information architecture moves a settings destination. */
+export function sectionSurface(page: Page, id: string) {
+  const homes: Record<string, string> = {
+    plugins: 'plugins',
     discover: 'plugins',
-    examples: 'plugins',
-    providers: 'diagnostics',
-    search: 'mcp',
-    credentials: 'mcp',
-    'computer-use': 'mcp',
-    triggers: 'schedules',
-    jobs: 'schedules',
-    archived: 'history',
-    feedback: 'skills',
+    skills: 'plugins',
+    mcp: 'plugins',
+    examples: 'agents',
+    schedules: 'automation',
+    triggers: 'automation',
+    search: 'plugins-search',
+    memory: 'plugins-memory',
+    engines: 'plugins-subagents',
+    'computer-use': 'plugins-computer-use',
+    execution: 'plugins-execution',
   }
-  let entry = first[id] ?? id
-  if (!(await page.getByTestId(`settings-nav-${entry}`).count())) {
-    if (entry === 'mcp') entry = 'search'
-    if (entry === 'skills') entry = 'feedback'
+  if (homes[id]) return page.getByTestId(`home-page-${homes[id]}`)
+  if (id === 'model') return page.locator('#config-accounts')
+  if (id === 'history') return page.getByTestId('session-search')
+  if (id === 'archived') return page.locator('.archived-session-list, .session-list-empty').first()
+  if (id === 'jobs') return page.getByTestId('terminal-panel')
+  const canonical = ['bundles', 'system-prompt', 'context'].includes(id)
+    ? 'models'
+    : id === 'providers'
+      ? 'diagnostics'
+      : id === 'credentials'
+        ? 'security'
+        : id
+  return page.getByTestId(`settings-page-${canonical}`)
+}
+
+export async function section(page: Page, id: string) {
+  if (await page.getByTestId('session-search').isVisible()) await page.keyboard.press('Escape')
+  const dock = page.getByTestId('workbench-right-toggle')
+  if (
+    id !== 'jobs' &&
+    !(await page.locator('#config').isVisible()) &&
+    (await dock.isVisible()) &&
+    (await dock.getAttribute('aria-expanded')) === 'true'
+  )
+    await dismissWorkbench(page)
+  if (id === 'jobs' && new URL(page.url()).pathname !== '/admin/plugins') {
+    await closeSettings(page, (await page.locator('html').getAttribute('lang')) ?? 'en')
+    await workbenchTab(page, 'terminal')
+    return
   }
-  if (['models', 'diagnostics'].includes(entry)) {
-    const advanced = page.getByTestId('settings-advanced')
-    if ((await advanced.getAttribute('open')) === null) await advanced.locator('summary').click()
+  if (new URL(page.url()).pathname === '/admin/plugins') {
+    const back = page.getByTestId('settings-back')
+    if (await back.isVisible()) await back.click()
+    const canonical = ['bundles', 'system-prompt', 'context'].includes(id)
+      ? 'models'
+      : id === 'providers'
+        ? 'diagnostics'
+        : id
+    if (['models', 'diagnostics'].includes(canonical)) await expand(page.getByTestId('settings-advanced'))
+    await page.getByTestId(`settings-nav-${canonical}`).click()
+    if (['models', 'bundles', 'system-prompt', 'context'].includes(id))
+      await expand(page.getByTestId(`settings-subsection-${id}`))
+    if (id === 'providers') {
+      await expand(page.getByTestId('plugin-diagnostics'))
+      await expand(page.getByTestId('settings-subsection-provider-types'))
+    }
+    return
   }
-  await page.getByTestId(`settings-nav-${entry}`).click()
-  const tab = page.getByTestId(`settings-nav-${id === 'examples' ? 'discover' : id}-tab`)
-  if (await tab.count()) await tab.click()
-  if (['models', 'bundles', 'engines', 'system-prompt', 'memory', 'context'].includes(id)) {
+  const moved: Record<string, [string, string?]> = {
+    plugins: ['plugins'],
+    discover: ['plugins', 'market'],
+    examples: ['agents'],
+    skills: ['plugins', 'skills'],
+    mcp: ['plugins', 'mcp'],
+    feedback: ['plugins', 'review'],
+    review: ['plugins', 'review'],
+    execution: ['plugins', 'plugins.execution'],
+    search: ['plugins', 'plugins.search'],
+    memory: ['plugins', 'plugins.memory'],
+    engines: ['plugins', 'plugins.subagents'],
+    'computer-use': ['plugins', 'plugins.computer-use'],
+    schedules: ['automation', 'schedules'],
+    triggers: ['automation', 'triggers'],
+  }
+  const target = moved[id]
+  if (target) {
+    const [entry, tab] = target
+    await homePage(page, entry, tab?.startsWith('plugins.') ? undefined : tab)
+    if (tab?.startsWith('plugins.')) {
+      await page.getByTestId(`builtin-${tab.slice(8)}`).click()
+      await expect(page.getByTestId(`home-page-plugins-${tab.slice(8)}`)).toBeVisible()
+    }
+    if (id === 'feedback')
+      await page
+        .getByTestId('review-view')
+        .getByRole('radio', { name: /^(Feedback|反馈记录)$/ })
+        .check()
+    return
+  }
+  if (id === 'history' || id === 'archived') {
+    if (await page.locator('#config').isVisible()) await dismissSettings(page)
+    if (id === 'history') await page.keyboard.press('Meta+k')
+    else {
+      await sidebar(page)
+      await page.locator('#session-filter').click()
+      await page.getByTestId('session-filter-archived').click()
+    }
+    return
+  }
+  if (!(await page.locator('#config').isVisible()))
+    await settings(page, (await page.locator('html').getAttribute('lang')) ?? 'en')
+  const back = page.getByTestId('settings-back')
+  if (await back.isVisible()) await back.click()
+  const canonical = ['bundles', 'system-prompt', 'context'].includes(id)
+    ? 'models'
+    : id === 'providers'
+      ? 'diagnostics'
+      : id === 'credentials'
+        ? 'security'
+        : id
+  if (['models', 'diagnostics'].includes(canonical)) await advanced(page)
+  await page.getByTestId(`settings-nav-${canonical}`).click()
+  if (['models', 'bundles', 'system-prompt', 'context'].includes(id)) {
     const subsection = page.getByTestId(`settings-subsection-${id}`)
-    if ((await subsection.getAttribute('open')) === null) await subsection.locator('summary').first().click()
-    await subsection.locator('summary').first().scrollIntoViewIfNeeded()
+    await expand(subsection)
   }
   if (id === 'providers') {
-    const runtime = page.getByTestId('plugin-diagnostics')
-    if ((await runtime.getAttribute('open')) === null) await runtime.locator('summary').first().click()
-    const providers = page.getByTestId('settings-subsection-provider-types')
-    await expect(providers).toBeVisible()
-    if ((await providers.getAttribute('open')) === null) await providers.locator('summary').first().click()
+    await expand(page.getByTestId('plugin-diagnostics'))
+    await expand(page.getByTestId('settings-subsection-provider-types'))
   }
 }
 
-export async function closeSettings(page: Page, locale = 'en') {
-  await page
-    .getByRole('button', { name: locale === 'en' ? 'Close settings' : '关闭设置', exact: true })
-    .click()
-  await expect(page.getByTestId('settings-navigation')).toBeHidden()
+/** A narrow dock covers the header; close it through its own visible action. */
+async function dismissWorkbench(page: Page) {
+  const dock = page.locator('#workbench-right')
+  if (await dock.isVisible()) {
+    await dock.getByRole('button', { name: /^(Close this dock|关闭此停靠面板)$/ }).click()
+    await expect(dock).toBeHidden()
+  }
 }
 
-export async function chooseWorkspace(page: Page, runtime: Runtime, locale = 'en') {
+/** Open a dock panel through its tab or the real overflow menu when the strip folds it. */
+export async function workbenchTab(page: Page, id: 'files' | 'terminal' | 'goal' | 'changed-files') {
+  const toggle = page.getByTestId('workbench-right-toggle')
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
+  const tab = page.getByTestId(`workbench-tab-${id}`)
+  await expect(tab).toBeAttached()
+  if (await tab.isVisible()) await tab.click()
+  else {
+    const zh = (await page.locator('html').getAttribute('lang')) === 'zh-CN'
+    const titles = {
+      files: ['Files', '文件'],
+      terminal: ['Terminal', '终端'],
+      goal: ['Goal', '目标'],
+      'changed-files': ['Changes', '更改'],
+    } as const
+    await page
+      .locator('#workbench-right .workbench-dock-heading')
+      .getByRole('button', { name: zh ? '更多' : 'More', exact: true })
+      .click()
+    await page.getByRole('menuitem', { name: titles[id][zh ? 1 : 0], exact: true }).click()
+  }
+  await expect(tab).toHaveAttribute('aria-selected', 'true')
+}
+
+async function dismissSettings(page: Page) {
+  const close = page.locator('#config-close')
+  if (!(await close.isVisible())) await page.getByTestId('settings-back').click()
+  await close.click()
+  await expect(page.locator('#config')).toBeHidden()
+}
+
+export async function closeSettings(page: Page, _locale = 'en') {
+  if (await page.getByTestId('session-search').isVisible()) {
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('session-search')).toBeHidden()
+  }
+  if (await page.locator('#config').isVisible()) await dismissSettings(page)
+  if (await page.locator('#home-page').isVisible()) {
+    await sidebar(page)
+    const id = new URL(page.url()).searchParams.get('session')
+    if (id) await page.locator(`.session[data-session="${id}"]`).click()
+    else await page.locator('#new').click()
+    await expect(page.locator('#home-page')).toBeHidden()
+  }
+}
+
+export async function chooseWorkspace(page: Page, runtime: Pick<Runtime, 'workspace'>, locale = 'en') {
   const skip = page.getByTestId('first-run-skip')
   const workspace = page.getByRole('dialog', {
     name: locale === 'en' ? 'Choose a workspace' : '选择工作区',
