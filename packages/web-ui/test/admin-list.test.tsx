@@ -3,9 +3,12 @@ import type { PackageCatalogDescriptor } from '@agnes/protocol'
 import { act, createElement } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  isBuiltinPlugin,
   mountRegion,
   PluginList,
   PluginPurposeSections,
+  pluginIncludes,
+  pluginOrigin,
   UiLocaleProvider,
   type UiLocaleSource,
 } from '../src/index.js'
@@ -211,11 +214,15 @@ it.each(['en', 'zh-CN'] as const)(
     expect(host.querySelector('[data-testid=plugin-summary]')?.textContent).toBe(
       locale === 'en' ? 'Search local reports.' : '检索本地报告。',
     )
-    expect(host.querySelector('[data-testid=plugin-purpose-badges]')?.textContent).toContain(
-      locale === 'en' ? 'Third-party' : '第三方',
+    expect(host.querySelector('[data-testid=plugin-source-badge]')?.textContent).toBe(
+      locale === 'en' ? 'Community' : '社区',
     )
-    expect(host.querySelector('[data-testid=plugin-provides]')).toBeNull()
-    expect(host.querySelectorAll('.agh-tag')).toHaveLength(0)
+    // The small line names what the plugin includes, next to its category.
+    expect(host.querySelector('[data-testid=plugin-provides]')?.textContent).toBe(
+      locale === 'en' ? 'Includes: 1 Tools' : '包含：1 个工具',
+    )
+    // The source is the row's only badge.
+    expect(host.querySelectorAll('.agh-tag')).toHaveLength(1)
     dispose()
   },
 )
@@ -230,10 +237,10 @@ it('renders metadata-free third-party packages cleanly without guessing official
   )
   expect(host.querySelector('.plugin-details-button')?.textContent).toBe('@agnes/unverified')
   expect(host.querySelector('[data-testid=plugin-summary]')).toBeNull()
-  expect(host.querySelector('[data-testid=plugin-purpose-badges]')?.textContent).not.toContain(
+  expect(host.querySelector('[data-testid=plugin-purpose-badges]')?.textContent ?? '').not.toContain(
     'Uncategorized',
   )
-  expect(host.querySelector('[data-testid=plugin-purpose-badges]')?.textContent).toContain('Third-party')
+  expect(host.querySelector('[data-testid=plugin-source-badge]')?.textContent).toBe('Community')
   dispose()
   const escaped = mountRegion(
     host,
@@ -276,4 +283,69 @@ it('renders six purpose sections with localized fallback and an explicit safe do
   expect(host.querySelector('[data-testid=plugin-provides]')?.textContent).toContain('1')
   expect(host.querySelector('a')?.getAttribute('rel')).toBe('noopener noreferrer')
   dispose()
+})
+
+describe('where a plugin comes from and what it includes', () => {
+  const bundled = {
+    ...purposeRow,
+    id: '@agnes/skill-helper',
+    source: { type: 'file', ref: 'file:./bundled-plugins/skill-helper' },
+    presentation: { origin: 'official', rows: [] },
+  } as PackageCatalogDescriptor
+  const t = (key: string, vars?: Readonly<Record<string, string | number>>) =>
+    key === 'includesItem' ? `${vars?.count} ${vars?.name}` : key.replace('provide.', '')
+
+  it('calls a package built in only when it ships with the product', () => {
+    expect(isBuiltinPlugin(bundled)).toBe(true)
+    expect(pluginOrigin(bundled)).toBe('builtin')
+    // An official package installed from elsewhere, and a local folder that only looks bundled.
+    const official = { ...bundled, source: { type: 'npm', ref: 'npm:@agnes/skill-helper@1.0.0' } }
+    expect(pluginOrigin(official as PackageCatalogDescriptor)).toBe('official')
+    const lookalike = { ...bundled, presentation: { origin: 'local-source', rows: [] } }
+    expect(pluginOrigin(lookalike as PackageCatalogDescriptor)).toBe('local-source')
+    expect(pluginOrigin(purposeRow)).toBe('third-party')
+  })
+
+  it('counts what a running plugin registered, and falls back to its declared kinds', () => {
+    const running = {
+      provides: [
+        { kind: 'tool', id: 'a' },
+        { kind: 'tool', id: 'b' },
+        { kind: 'skill', id: 'c' },
+      ],
+      appearsIn: [],
+      available: true,
+    }
+    expect(pluginIncludes(purposeRow, running, t)).toBe('2 tool · 1 skill')
+    const declared = { ...purposeRow, kinds: ['tool', 'skills'] } as PackageCatalogDescriptor
+    expect(pluginIncludes(declared, undefined, t)).toBe('tool · skill')
+    expect(pluginIncludes(purposeRow, undefined, t)).toBe('')
+  })
+
+  it('names a business agent as one', () => {
+    const agent = {
+      ...purposeRow,
+      kinds: ['bundle'],
+      metadata: { ...purposeRow.metadata!, category: 'business-agent' },
+    } as PackageCatalogDescriptor
+    expect(pluginIncludes(agent, undefined, t)).toBe('agent')
+    expect(
+      pluginIncludes({ ...purposeRow, kinds: ['bundle'] } as PackageCatalogDescriptor, undefined, t),
+    ).toBe('bundle')
+  })
+
+  it('puts the host rows at the top of the same list', () => {
+    const host = document.createElement('div')
+    const dispose = mountRegion(
+      host,
+      createElement(PluginList, {
+        ...listProps,
+        rows: [],
+        leading: createElement('article', { 'data-testid': 'leading-row' }),
+      }),
+    )
+    expect(host.querySelector('.agnes-settings-list [data-testid=leading-row]')).not.toBeNull()
+    expect(host.querySelector('.plugin-empty')).toBeNull()
+    dispose()
+  })
 })

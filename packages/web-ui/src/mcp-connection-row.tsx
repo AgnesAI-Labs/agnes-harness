@@ -47,7 +47,7 @@ export function McpConnectionRow({
       icon={<Icon name={connection.kind === 'stdio' ? 'terminal' : 'globe'} size={20} />}
       title={itemName}
       onOpen={onOpen}
-      meta={`${t(connection.kind === 'stdio' ? 'local' : 'remote')} · ${address}`}
+      meta={`${t(item.source === 'managed' ? 'mine' : 'preset')} · ${t(connection.kind === 'stdio' ? 'local' : 'remote')} · ${address}`}
       description={item.lastSafeError ? resourceFailureLabel(item.lastSafeError.code, t) : undefined}
       status={item.lastSafeError ? <Tag tone="bad">{t('connectionFailed')}</Tag> : undefined}
       actions={

@@ -3,15 +3,61 @@ import type { ReactNode } from 'react'
 import { PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog } from './locales/plugin-presentation.js'
 import { type PluginPresentation, type PluginPurposeItem, pluginOrigin } from './plugin-presentation.js'
 import { SettingsDetails } from './settings-layout.js'
+import { Badge } from './ui/badge.js'
 import { MetaText } from './ui/tag.js'
 import { useUiText } from './ui-locale.js'
 
-export function PluginPurposeBadges({ item }: { item: PluginPurposeItem }) {
+/** Where the plugin comes from: built in, official, community, local or an example. */
+export function PluginSourceBadge({ item }: { item: PluginPurposeItem }) {
   const { t } = useUiText(PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog)
+  const origin = pluginOrigin(item)
+  return (
+    <Badge>
+      <span data-testid="plugin-source-badge" data-origin={origin}>
+        {t(`origin.${origin}`)}
+      </span>
+    </Badge>
+  )
+}
+
+/**
+ * What a plugin brings, in a few words: counted from what it has registered while it runs, and
+ * from its declared kinds otherwise. A business agent is named as one.
+ */
+export function pluginIncludes(
+  item: PluginPurposeItem,
+  value: PluginPresentation | undefined,
+  t: (key: string, vars?: Readonly<Record<string, string | number>>) => string,
+): string {
+  const label = (kind: string) => {
+    const key =
+      kind === 'bundle' && item.metadata?.category === 'business-agent' ? 'provide.agent' : `provide.${kind}`
+    return t(key) === key ? kind : t(key)
+  }
+  const counts = new Map<string, number>()
+  for (const entry of value?.provides ?? []) counts.set(entry.kind, (counts.get(entry.kind) ?? 0) + 1)
+  const parts = counts.size
+    ? [...counts].map(([kind, count]) => t('includesItem', { count, name: label(kind) }))
+    : (item.kinds ?? []).map((kind) => label(kind === 'skills' ? 'skill' : kind))
+  return parts.join(' · ')
+}
+
+/** The row's small line: the category, then what the plugin includes. */
+export function PluginPurposeBadges({
+  item,
+  value,
+}: {
+  item: PluginPurposeItem
+  value?: PluginPresentation | undefined
+}) {
+  const { t } = useUiText(PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog)
+  const includes = pluginIncludes(item, value, t)
+  if (!item.metadata && !includes) return null
   return (
     <MetaText data-testid="plugin-purpose-badges">
-      {t(`origin.${pluginOrigin(item)}`)}
-      {item.metadata ? ` · ${t(`category.${item.metadata.category}`)}` : ''}
+      {item.metadata ? t(`category.${item.metadata.category}`) : ''}
+      {item.metadata && includes ? ' · ' : ''}
+      {includes && <span data-testid="plugin-provides">{t('includes', { items: includes })}</span>}
     </MetaText>
   )
 }
@@ -59,7 +105,10 @@ export function PluginPurposeSections({
           {/* Inside the overview tab the tab already names this part. */}
           {!section && <h3>{t('overview')}</h3>}
           {purpose?.description ? <p>{purpose.description}</p> : <PluginProvidesChips value={value} />}
-          <PluginPurposeBadges item={item} />
+          <p className="agh-plugin-source-line">
+            <PluginSourceBadge item={item} />
+            <PluginPurposeBadges item={item} value={value} />
+          </p>
           {purpose?.docsUrl && (
             <a href={purpose.docsUrl} target="_blank" rel="noopener noreferrer">
               {t('docs')}

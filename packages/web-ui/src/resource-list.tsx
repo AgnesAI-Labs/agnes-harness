@@ -14,6 +14,16 @@ import { StateSwitch } from './ui/state-lights.js'
 import { MetaText, Tag } from './ui/tag.js'
 import { useUiText } from './ui-locale.js'
 
+let packageNames: ((id: string) => string | undefined) | undefined
+/**
+ * The page that lists plugins tells the resource list how to name one, so a skill row can say
+ * which plugin it comes from. The list is drawn by a controller in its own root, out of reach of
+ * the page's props; without a resolver the row says only that the skill comes from a plugin.
+ */
+export function setResourcePackageNames(resolve: ((id: string) => string | undefined) | undefined): void {
+  packageNames = resolve
+}
+
 export type ResourceItem = SkillDescriptor | import('@agnes/protocol').McpServerDescriptor
 
 export type ResourceTab = 'skills' | 'mcp'
@@ -155,6 +165,11 @@ export function ResourceListContent({
                 selected={item.resourceId === selectedId}
                 switchDisabled={switchDisabled}
                 itemName={itemNameOf(item)}
+                sourceName={
+                  item.kind === 'skill' && item.sourceIdentity.scope === 'package'
+                    ? packageNames?.(item.sourceIdentity.sourceId)
+                    : undefined
+                }
                 onOpen={onOpen}
                 onToggleDesired={onToggleDesired}
                 busy={busy}
@@ -281,7 +296,10 @@ export function ResourceRow({
   onToggleDesired,
   menuItems,
   busy = false,
+  sourceName,
 }: {
+  /** The plugin a skill comes from, by the name people know it. */
+  sourceName?: string | undefined
   item: ResourceItem
   selected: boolean
   switchDisabled: boolean
@@ -304,7 +322,17 @@ export function ResourceRow({
         title={<span>{itemName}</span>}
         icon={<Icon name="file-text" size={20} />}
         description={item.description}
-        meta={<MetaText>{t(`root.scope.${item.sourceIdentity.scope}`)}</MetaText>}
+        meta={
+          <MetaText data-testid="resource-source">
+            {item.sourceIdentity.scope === 'package'
+              ? sourceName
+                ? t('row.from', { name: sourceName })
+                : t('row.from-plugin')
+              : item.sourceIdentity.scope === 'runtime'
+                ? t('row.builtin')
+                : t(`row.mine.${item.sourceIdentity.scope}`)}
+          </MetaText>
+        }
         status={
           item.lastSafeError ? (
             <Tag tone="bad" title={resourceFailureLabel(item.lastSafeError.code, t)}>

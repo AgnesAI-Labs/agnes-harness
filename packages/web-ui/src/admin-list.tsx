@@ -5,7 +5,7 @@ import type { RuntimeStateView } from './admin-text.js'
 import { ADMIN_LIST_LOCALE_NAMESPACE, adminListLocaleCatalog } from './locales/admin-list.js'
 import { PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog } from './locales/plugin-presentation.js'
 import type { PluginPresentation } from './plugin-presentation.js'
-import { PluginProvidesChips, PluginPurposeBadges } from './plugin-purpose.js'
+import { PluginPurposeBadges, PluginSourceBadge } from './plugin-purpose.js'
 import { SettingsDetails, SettingsList } from './settings-layout.js'
 import { Button } from './ui/button.js'
 import { EmptyState } from './ui/empty-state.js'
@@ -202,7 +202,10 @@ export function PluginList({
   emptyActions,
   pendingOf,
   highlight,
+  leading,
 }: {
+  /** Rows the host puts at the top of the same list, such as built-in capabilities. */
+  leading?: ReactNode
   tab: AdminTab
   rows: readonly (PackageInstalledDescriptor | PackageCatalogDescriptor)[]
   loading: boolean
@@ -260,6 +263,7 @@ export function PluginList({
       </div>
     )
   }
+  if (!rows.length && leading) return <SettingsList>{leading}</SettingsList>
   if (!rows.length) {
     const title =
       query || filtered
@@ -293,6 +297,7 @@ export function PluginList({
         <p className="plugin-inventory-status">{t('inventory.stale')}</p>
       )}
       <SettingsList>
+        {leading}
         {[...groups.values()].map((group) => {
           const item = group.find((row) => row.version === versions[row.id]) ?? group[0]!
           const alternatives = group.filter(
@@ -314,20 +319,17 @@ export function PluginList({
               titleClassName="plugin-details-button"
               title={displayName}
               titleLabel={t('row.details', { id: displayName })}
-              description={
-                description ? (
-                  <span data-testid="plugin-summary">{description}</span>
-                ) : (
-                  <PluginProvidesChips value={providesOf?.(item)} />
-                )
-              }
-              meta={<PluginPurposeBadges item={item} />}
+              description={description ? <span data-testid="plugin-summary">{description}</span> : undefined}
+              meta={<PluginPurposeBadges item={item} value={providesOf?.(item)} />}
               status={
-                tab === 'discover' ? (
-                  <CatalogCompatibility item={item as PackageCatalogDescriptor} />
-                ) : (
-                  metadataOf?.(item)
-                )
+                <>
+                  <PluginSourceBadge item={item} />
+                  {tab === 'discover' ? (
+                    <CatalogCompatibility item={item as PackageCatalogDescriptor} />
+                  ) : (
+                    metadataOf?.(item)
+                  )}
+                </>
               }
               onOpen={() => onOpen(item)}
               actions={
