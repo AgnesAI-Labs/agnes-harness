@@ -254,6 +254,18 @@ export class SessionWorkspaceRuntimeTable implements ChildWorkspaceRuntimePort {
   private readonly invocationPorts = new Map<string, WorkspaceInvocationPort>()
   private tableClosing = false
 
+  /** No published/reserved owner, pending open or closing invocation lease remains. */
+  get isIdle(): boolean {
+    return (
+      this.entries.size === 0 &&
+      this.opening.size === 0 &&
+      this.closingOpenings.size === 0 &&
+      this.closing.size === 0 &&
+      this.reservations.size === 0 &&
+      this.children.size === 0
+    )
+  }
+
   open(
     binding: WorkspaceBinding,
     create: (invocation: WorkspaceInvocationPort) => Promise<SessionWorkspaceRuntime>,

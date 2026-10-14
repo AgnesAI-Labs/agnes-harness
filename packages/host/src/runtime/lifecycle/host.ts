@@ -52,6 +52,7 @@ import { createTitleQueue, startSessionTitle } from '../sessions/session-title.j
 import { readSessionView } from '../sessions/session-view.js'
 import { adminSecurityStatus } from './admin-security-status.js'
 import type { HostConvergenceReport, HostPublicationReport } from './host-facade.js'
+import { registerHostIdle } from './host-idle.js'
 import { closeHost } from './lifecycle.js'
 
 // core does not export a type named `Session`; it exports SessionImpl and SessionLogImpl. Taking the
@@ -288,7 +289,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
   let modelApplication = Promise.resolve()
   let closed = false
   let closePromise: Promise<void> | undefined
-  return {
+  const host: Host = {
     activationBarrier: a.activationBarrier,
     approvalGrants: a.approvalGrants,
     callService: (params, credential, signal, effectAdmission) => {
@@ -760,4 +761,16 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
       return closePromise
     },
   }
+  return registerHostIdle(host, () => {
+    const state = a.activationBarrier.snapshot()
+    return (
+      state.state === 'accepting' &&
+      pendingSessionOpens.size === 0 &&
+      sessions.size === 0 &&
+      a.kernel.sessions.size === 0 &&
+      workspaceRuntimes.isIdle &&
+      Object.values(state.active).every((count) => count === 0) &&
+      Object.values(state.queued).every((count) => count === 0)
+    )
+  })
 }

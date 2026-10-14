@@ -35,6 +35,7 @@ import {
   createHostFacade,
   type HostPublicationReport,
 } from '../lifecycle/host-facade.js'
+import { collectIdleContainers, createHostCallQueue, generationIdleMs } from '../lifecycle/host-idle.js'
 import { sessionKey } from '../sessions/session.js'
 import { compositionPresets } from './composition-presets.js'
 import { profileForComposition } from './composition-selection.js'
@@ -63,6 +64,8 @@ export async function createCompositionHost(
   store.sweepOrphans((digest) => generations.pinFileState(digest))
   const containers = new Map<string, Container>()
   const opening = new Map<string, Promise<Container>>()
+  const idleSince = new Map<Container, number>()
+  const idleMs = generationIdleMs(profile.limits)
   const sessionOwners = new Map<string, Container>()
   let trustedPackages = new Set(
     (options.runtimePluginSnapshots ?? options.runtimePluginCatalogue ?? [])
@@ -88,7 +91,7 @@ export async function createCompositionHost(
   const presets = await compositionPresets(profile, options)
   let closed = false
   let closing: Promise<void> | undefined
-  let queue: Promise<unknown> = Promise.resolve()
+  const calls = createHostCallQueue(() => closed)
   let latestTarget: RuntimeTarget | undefined
   let latestRows: Parameters<Host['extensionRows']['apply']>[0] | undefined
   const writer = await createLiveCompositionWriter(options.profileDir)
@@ -178,7 +181,10 @@ export async function createCompositionHost(
   }
   const open = async (binding: CompositionBinding): Promise<Container> => {
     const found = containers.get(binding.tree.hash)
-    if (found) return found
+    if (found) {
+      idleSince.delete(found)
+      return found
+    }
     const pending = opening.get(binding.tree.hash)
     if (pending) return pending
     const started = (async () => {
@@ -349,7 +355,10 @@ export async function createCompositionHost(
       options.log.warn('Composition live status could not be written')
     }
   }
-  const statusTimer = setInterval(publish, 1000)
+  const statusTimer = setInterval(() => {
+    publish()
+    scheduleCollection()
+  }, 1000)
   statusTimer.unref()
   const convergence = (target = latestTarget) => {
     const reports = [...containers.values()].map(({ host, draining }) => {
@@ -377,14 +386,17 @@ export async function createCompositionHost(
       rows: [...rows.values()],
     }
   }
-  const enqueue = <T>(run: () => Promise<T>): Promise<T> => {
-    if (closed) return Promise.reject(new HostError('E_HOST_CLOSED', 'host is closed'))
-    const next = queue.then(() => {
-      if (closed) throw new HostError('E_HOST_CLOSED', 'host is closed')
-      return run()
-    })
-    queue = next.catch(() => undefined)
-    return next
+  const enqueue = calls.enqueue
+  const collectIdle = () => collectIdleContainers(containers, initial, idleSince, idleMs)
+  let collectionQueued = false
+  const scheduleCollection = () => {
+    if (closed || collectionQueued) return
+    collectionQueued = true
+    void enqueue(collectIdle)
+      .catch((error) => options.log.warn('Composition collection failed', { error: String(error) }))
+      .finally(() => {
+        collectionQueued = false
+      })
   }
   const broadcast = async (
     operation: HostPublicationReport['operation'],
@@ -550,6 +562,7 @@ export async function createCompositionHost(
                 await close()
               } finally {
                 sessionOwners.delete(key)
+                scheduleCollection()
                 publish()
               }
             }
@@ -570,14 +583,7 @@ export async function createCompositionHost(
         await container.host.releaseSessionGeneration?.(key)
         store.release(key)
         sessionOwners.delete(key)
-        if (
-          container.draining &&
-          container !== initial &&
-          !generations.sessions().some((pin) => store.mayUseTree(pin.sessionKey, container.tree.hash))
-        ) {
-          await container.host.close()
-          containers.delete(container.tree.hash)
-        }
+        await collectIdle()
         publish()
       }),
     migrateSessionGeneration: (key, context) =>
@@ -598,6 +604,7 @@ export async function createCompositionHost(
     collectPluginGenerations: () =>
       enqueue(async () => {
         for (const { host } of containers.values()) await host.collectPluginGenerations?.()
+        await collectIdle()
       }),
     pluginGenerationStatus: () => {
       const statuses = [...containers.values()].map(({ host, draining }) => {
@@ -793,10 +800,11 @@ export async function createCompositionHost(
       if (closing) return closing
       closed = true
       clearInterval(statusTimer)
+      idleSince.clear()
       const hosts = new Map([...containers.values()].map(({ host }) => [host, host.close()]))
       for (const close of hosts.values()) void close.catch(() => undefined)
       closing = (async () => {
-        await queue
+        await calls.drain()
         for (const { host } of containers.values()) if (!hosts.has(host)) hosts.set(host, host.close())
         const results = await Promise.allSettled(hosts.values())
         writer.close()

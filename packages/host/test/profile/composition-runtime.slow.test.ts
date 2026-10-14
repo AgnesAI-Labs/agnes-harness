@@ -1031,3 +1031,71 @@ it('uses one MCP server decision for discovery and shared resource invocation', 
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+it('reclaims idle composition containers while preserving cold bindings', async () => {
+  const root = scratch()
+  const names = Array.from({ length: 8 }, (_, index) => `idle-${index}`)
+  let created = 0
+  let disposed = 0
+  const { host } = await createTestHost({
+    dataDir: root,
+    disableSessionTitle: true,
+    limits: { 'worker.generation_idle_close_ms': 0 },
+    allowed: ['standard', ...names],
+    presets: Object.fromEntries(
+      names.map((name, index) => [
+        name,
+        {
+          name,
+          extends: 'standard',
+          composition: { tools: ['read', 'write', 'ls'].filter((_, bit) => index & (1 << bit)) },
+        },
+      ]),
+    ),
+    profileInputs: {
+      user: {
+        name: 'local-dev',
+        composition: {},
+        presets: { default: 'standard', allowed: ['standard', ...names] },
+      },
+    },
+    provider: (profile) => {
+      created++
+      return new ScriptedProvider({
+        models: profile.provider.routes?.flatMap((route) => route.models ?? []) ?? [],
+        scripts: [],
+      })
+    },
+    onSeamClose: () => {
+      disposed++
+    },
+  })
+  try {
+    const baseline = created - disposed
+    const sessions = []
+    for (const name of names) sessions.push(await host.createSession({ key: name, cwd: root, preset: name }))
+    const generation = host.sessionGeneration?.(names[0]!)
+    const peak = created - disposed
+    for (const session of sessions.slice(1)) await session.close()
+    await host.collectPluginGenerations?.()
+    expect(created - disposed).toBe(baseline + 1)
+    await sessions[0]?.close()
+    await vi.waitFor(() => expect(created - disposed).toBe(baseline), { timeout: 5000 })
+    const retained = created - disposed
+    console.info(
+      'EXECGUARD_COMPOSITION_MEASURE',
+      JSON.stringify({ compositions: names.length, baseline, peak, retained, disposed }),
+    )
+    expect(retained).toBe(baseline)
+    expect(host.sessionGeneration?.(names[0]!)).toBe(generation)
+    const beforeReopen = created
+    const reopened = await host.createSession({ key: names[0]!, cwd: root })
+    expect(created).toBeGreaterThan(beforeReopen)
+    expect(reopened.pluginGenerationId).toBe(generation)
+    expect(reopened.currentTools().list()).toHaveLength(0)
+    await reopened.close()
+  } finally {
+    await host.close()
+  }
+  expect(disposed).toBe(created)
+})
