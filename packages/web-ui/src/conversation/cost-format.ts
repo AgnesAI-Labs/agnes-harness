@@ -3,9 +3,9 @@ import { fallbackT, type Translate } from '../locales/index.js'
 
 export type CostNode = Extract<UINode, { kind: 'cost' }>
 const count = (n: number) => n.toLocaleString('en-US')
-const compact = (n: number) =>
+export const compact = (n: number) =>
   n < 1000 ? String(n) : `${(n / (n >= 1e6 ? 1e6 : 1000)).toFixed(1)}${n >= 1e6 ? 'M' : 'K'}`
-const usd = (n: number) => `$${(n / 1e6).toFixed(6).replace(/0+$/, '').replace(/\.$/, '.00')}`
+export const usd = (n: number) => `$${(n / 1e6).toFixed(6).replace(/0+$/, '').replace(/\.$/, '.00')}`
 const credits = (n: number) => n.toFixed(8).replace(/\.?0+$/, '')
 const source = (value: 'gateway' | 'estimated', t: Translate) =>
   t(value === 'estimated' ? 'cost.source.estimated' : 'cost.source.gateway')

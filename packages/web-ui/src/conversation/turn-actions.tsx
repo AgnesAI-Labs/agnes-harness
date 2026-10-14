@@ -1,6 +1,5 @@
 import type { UITurn } from '@agnes/protocol'
 import {
-  Fragment,
   type ReactNode,
   type Ref,
   useCallback,
@@ -14,7 +13,7 @@ import { createSettingsControl } from '../settings-control-templates.js'
 import { Button } from '../ui/button.js'
 import { Disclosure } from '../ui/disclosure.js'
 import { Actions } from '../x/index.js'
-import { ConversationCost } from './cost.js'
+import { TurnUsagePanel } from './turn-usage.js'
 import { ConversationXScope } from './x-scope.js'
 
 export interface ConversationTurnFeedback {
@@ -46,8 +45,6 @@ const durationLabel = (ms: number | undefined, t: Translate): string | undefined
   if (ms < 60_000) return t('turn.duration.s', { n: (ms / 1000).toFixed(ms < 10_000 ? 1 : 0) })
   return t('turn.duration.minSec', { min: Math.floor(ms / 60_000), sec: Math.round((ms % 60_000) / 1000) })
 }
-const sourceLabel = (source: 'gateway' | 'estimated', t: Translate) =>
-  t(source === 'estimated' ? 'cost.source.estimated' : 'cost.source.gateway')
 const latestModel = (turn: UITurn): string | undefined => {
   if (turn.finalModel !== undefined) return turn.finalModel
   for (let i = turn.usage.calls.length - 1; i >= 0; i--) {
@@ -57,14 +54,14 @@ const latestModel = (turn: UITurn): string | undefined => {
   return undefined
 }
 
-function positionUsage(meta: HTMLElement, usage: HTMLDListElement): void {
+function positionUsage(meta: HTMLElement, usage: HTMLElement): void {
   const doc = meta.ownerDocument
   const box = meta.getBoundingClientRect()
   const width = doc.documentElement.clientWidth || doc.defaultView?.innerWidth || 0
   const height = doc.documentElement.clientHeight || doc.defaultView?.innerHeight || 0
   const gutter = 12
   const gap = 8
-  const panelWidth = Math.max(0, Math.min(400, width - gutter * 2))
+  const panelWidth = Math.max(0, Math.min(344, width - gutter * 2))
   const below = Math.max(0, height - box.bottom - gutter - gap)
   const above = Math.max(0, box.top - gutter - gap)
   usage.style.width = `${panelWidth}px`
@@ -133,7 +130,7 @@ export function ConversationTurnActions({
 }: ConversationTurnActionsProps) {
   const [usageOpen, setUsageOpen] = useState(false)
   const summary = useRef<HTMLButtonElement>(null)
-  const usage = useRef<HTMLDListElement>(null)
+  const usage = useRef<HTMLDivElement>(null)
   const footer = useRef<HTMLElement>(null)
   const currentId = useRef(turn.id)
   currentId.current = turn.id
@@ -256,27 +253,7 @@ export function ConversationTurnActions({
     latestModel(turn),
   ].filter(Boolean)
   // The bar names when and with which model; tokens, cost and time live in its panel.
-  const { totals, cost, credits, billingComplete } = turn.usage
   const duration = durationLabel(turn.durationMs, t)
-  const rows: Array<[string, string]> = [
-    [t('turnactions.rows.tokensIn'), totals.input.toLocaleString()],
-    [t('turnactions.rows.tokensOut'), totals.output.toLocaleString()],
-    [
-      t('turnactions.rows.cache'),
-      `${totals.cacheRead.toLocaleString()} / ${totals.cacheWrite.toLocaleString()}`,
-    ],
-  ]
-  if (cost)
-    rows.push([
-      t('turnactions.rows.cost'),
-      `$${(cost.usdMicros / 1e6).toFixed(6)} · ${sourceLabel(cost.source, t)}${cost.subscription ? t('turnactions.subscription') : ''}${billingComplete ? '' : t('turnactions.billingPartial')}`,
-    ])
-  if (credits)
-    rows.push([
-      t('turnactions.rows.credits'),
-      `${credits.amount.toFixed(8).replace(/\.?0+$/, '')} credits · ${sourceLabel(credits.source, t)}${credits.complete ? '' : t('turnactions.creditsPartial')}`,
-    ])
-  if (duration) rows.push([t('turnactions.rows.duration'), duration])
 
   // The copy glyph becomes a check for as long as the confirmation is announced.
   const copied = feedback?.id === turn.id && feedback.message === t('turnactions.copied')
@@ -376,34 +353,14 @@ export function ConversationTurnActions({
             )
           }
         >
-          <dl ref={usage} className="turn-usage-grid">
-            {settled &&
-              rows.map(([name, value]) => (
-                <Fragment key={name}>
-                  <dt>{name}</dt>
-                  <dd>{value}</dd>
-                </Fragment>
-              ))}
-            {settled &&
-              turn.usage.calls
-                .filter(
-                  (call) =>
-                    call.creditSource !== 'estimated' ||
-                    !call.tokens ||
-                    Object.values(call.tokens).some((value) => value !== 0) ||
-                    (call.billing?.usdMicros ?? 0) !== 0 ||
-                    (call.credits ?? 0) !== 0 ||
-                    call.interrupted,
-                )
-                .map((call) => (
-                  <Fragment key={call.id}>
-                    <dt>{t('cost.rows.singleRecord')}</dt>
-                    <dd>
-                      <ConversationCost node={{ ...call, kind: 'cost', source: call.creditSource }} t={t} />
-                    </dd>
-                  </Fragment>
-                ))}
-          </dl>
+          <TurnUsagePanel
+            ref={usage}
+            turn={turn}
+            model={latestModel(turn)}
+            duration={duration}
+            settled={settled}
+            t={t}
+          />
         </Disclosure>
         <span className="turn-feedback" role="status">
           {feedback?.id === turn.id ? feedback.message : ''}

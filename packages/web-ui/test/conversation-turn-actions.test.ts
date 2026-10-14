@@ -60,11 +60,12 @@ function required<T extends Element>(selector: string): T {
   return element
 }
 function rows() {
-  return Array.from(host.querySelectorAll('dl dt')).map((term) => [
+  return Array.from(host.querySelectorAll('.turn-usage-tokens dt')).map((term) => [
     term.textContent,
     term.nextElementSibling?.textContent,
   ])
 }
+const text = (selector: string) => host.querySelector(selector)?.textContent
 
 it('gates actions on settlement and available text or fork callback', async () => {
   const state = { turn: turn(), finalText: '', settled: false }
@@ -106,22 +107,27 @@ it('shows complete usage facts as text and keeps the disclosure nodes through re
   await render({ turn: current, finalText: 'answer', settled: true })
   const details = required<HTMLElement>('.agh-disclosure.turn-usage')
   const summary = required<HTMLElement>('.turn-meta')
-  const list = required<HTMLElement>('dl')
+  const list = required<HTMLElement>('[data-testid="turn-usage-panel"]')
   expect(summary.textContent).toContain(model)
   expect(summary.textContent).toContain('继承历史')
   // The bar reads «time · model»; tokens, cost and time are in the panel only.
   expect(summary.textContent).not.toMatch(/输入|输出|\$|用时/)
-  expect(rows().slice(0, 6)).toEqual([
-    ['输入 Token', '1,234'],
-    ['输出 Token', '0'],
-    ['缓存读取 / 写入', '600 / 0'],
-    ['费用', '$0.000125 · 估算 · 订阅 · 已知部分'],
-    ['额度', '0 credits · 网关记录 · 部分'],
-    ['用时', '3.0 秒'],
+  // Header: this reply · model · time; the cost large with its source tag, credits beside it.
+  expect(text('.turn-usage-head')).toBe(`本次回复${model}用时 3.0 秒`)
+  expect(text('.turn-usage-amount')).toBe('$0.000125')
+  expect(text('.turn-usage-tag')).toBe('估算 · 订阅 · 已知部分')
+  expect(text('.turn-usage-credits')).toBe('0 credits · 网关记录 · 部分')
+  expect(rows()).toEqual([
+    ['输入', '1,234'],
+    ['输出', '0'],
+    ['缓存读 / 写', '600 / 0'],
   ])
+  expect(text('.turn-usage-foot')).toBe('「估算」表示服务商没返回实际费用，按目录价计算。')
   expect(host.querySelector('img, strong')).toBeNull()
-  expect(host.querySelectorAll('.call-usage')).toHaveLength(1)
-  expect(host.querySelector('.call-usage')?.textContent).toContain('输入 1')
+  // One call: no call table, its details one click away.
+  expect(host.querySelector('[data-testid="turn-usage-calls"]')).toBeNull()
+  expect(text('[data-testid="turn-usage-call-details"]')).toBe('调用细节')
+  expect(text('.call-usage .usage-grid')).toContain('输入 Token（不含缓存）1')
   await act(async () => summary.click())
   summary.focus()
   await render({
@@ -131,16 +137,16 @@ it('shows complete usage facts as text and keeps the disclosure nodes through re
   })
   expect(required('.agh-disclosure.turn-usage')).toBe(details)
   expect(required('.turn-meta')).toBe(summary)
-  expect(required('dl')).toBe(list)
+  expect(required('[data-testid="turn-usage-panel"]')).toBe(list)
   expect(details.dataset.open).toBe('true')
   expect(document.activeElement).toBe(summary)
   expect(summary.textContent).toContain('final')
-  expect(rows()).toContainEqual(['用时', '4.0 秒'])
+  expect(text('.turn-usage-took')).toBe('用时 4.0 秒')
   await render({ turn: turn('one'), finalText: 'answer', settled: true })
-  expect(rows()).toHaveLength(3)
-  expect(rows().slice(0, 2)).toEqual([
-    ['输入 Token', '12'],
-    ['输出 Token', '4'],
+  // No cache: two cells.
+  expect(rows()).toEqual([
+    ['输入', '12'],
+    ['输出', '4'],
   ])
   expect(required('.turn-meta').textContent).not.toContain('输入')
   expect(host.textContent).not.toContain('$')
@@ -159,7 +165,7 @@ it('reads «time · model» on the bar and keeps it on one line', async () => {
   const facts = required('.turn-meta-facts').textContent ?? ''
   expect(facts).toMatch(/^\d{1,2}:\d{2}( [AP]M)? · deepseek-flash$/)
   expect(required('.turn-meta').textContent).toBe(facts)
-  expect(rows()).toContainEqual(['用时', '13 秒'])
+  expect(text('.turn-usage-took')).toBe('用时 13 秒')
 })
 
 it('dismisses only its own usage on an outside click, retaining inside clicks and process disclosure', async () => {
@@ -278,13 +284,77 @@ it('uses the latest non-adjustment inference model and omits absent costs withou
   })
   await render({ turn: base, finalText: 'answer', settled: true })
   expect(required('.turn-meta').textContent).toBe('second')
-  expect(rows().slice(0, 3)).toEqual([
-    ['输入 Token', '0'],
-    ['输出 Token', '0'],
-    ['缓存读取 / 写入', '0 / 0'],
+  expect(rows()).toEqual([
+    ['输入', '0'],
+    ['输出', '0'],
   ])
+  // Nothing was charged: no cost line and no estimate note.
+  expect(host.querySelector('.turn-usage-cost')).toBeNull()
+  expect(host.querySelector('.turn-usage-foot')).toBeNull()
   await render({ turn: { ...base, finalModel: 'final' }, finalText: 'answer', settled: true })
   expect(required('.turn-meta').textContent).toBe('final')
+})
+
+it('lists several model calls in a table with right-aligned numbers, a cost share and row details', async () => {
+  const call = (id: string, seq: number, input: number, output: number, usdMicros: number) => ({
+    id,
+    seq,
+    purpose: 'inference' as const,
+    model: 'deepseek-flash',
+    creditSource: 'estimated' as const,
+    tokens: { input, output, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+    billing: { usdMicros, source: 'estimated' as const, subscription: false },
+    credits: usdMicros / 1e6,
+    timing: { ttftMs: 420, durationMs: 1800 },
+  })
+  await render({
+    turn: turn('one', {
+      durationMs: 16_000,
+      finalModel: 'deepseek-flash',
+      usage: {
+        totals: { input: 2032, output: 994, cacheRead: 44288, cacheWrite: 0, reasoning: 0 },
+        reasoningComplete: true,
+        billingComplete: true,
+        calls: [
+          call('a', 1, 1400, 330, 888),
+          call('b', 2, 182, 304, 509),
+          call('c', 3, 247, 346, 581),
+          call('d', 4, 232, 14, 90),
+        ],
+        cost: { usdMicros: 2068, source: 'estimated', subscription: false },
+        credits: { amount: 0.002068, source: 'estimated', complete: true },
+      },
+    }),
+    finalText: 'answer',
+    settled: true,
+  })
+  expect(text('.turn-usage-head')).toBe('本次回复deepseek-flash用时 16 秒')
+  expect(text('.turn-usage-amount')).toBe('$0.002068')
+  expect(text('.turn-usage-tag')).toBe('估算')
+  // Same source as the cost: credits are a plain note.
+  expect(text('.turn-usage-credits')).toBe('0.002068 credits')
+  const calls = required<HTMLElement>('[data-testid="turn-usage-calls"]')
+  expect(calls.textContent).toBe('4 次模型调用点击展开收起')
+  const row = (n: number) =>
+    Array.from(
+      host.querySelectorAll(`[data-testid="turn-call-${n}"] > .agh-disclosure-summary .turn-call-row > span`),
+    ).map((cell) => cell.textContent)
+  expect(row(1)).toEqual(['1', '1.4K', '330', '$0.000888', ''])
+  expect(row(4)).toEqual(['4', '232', '14', '$0.00009', ''])
+  expect(host.querySelector('[data-testid="turn-call-1"] .turn-call-share')?.getAttribute('aria-label')).toBe(
+    '占费用 43%',
+  )
+  // No repeated «(estimated)» per row.
+  expect(
+    host.querySelector('[data-testid="turn-call-1"] .agh-disclosure-summary')?.textContent,
+  ).not.toContain('估算')
+  // A row opens the call's own details, as before.
+  await act(async () =>
+    host.querySelector<HTMLElement>('[data-testid="turn-call-1"] > .agh-disclosure-summary')!.click(),
+  )
+  const details = text('[data-testid="turn-call-1"] .usage-grid') ?? ''
+  expect(details).toContain('首次输出等待420 ms')
+  expect(details).toContain('1,400')
 })
 
 it('does not publish an old fork failure or unlock a new turn while its fork is pending', async () => {

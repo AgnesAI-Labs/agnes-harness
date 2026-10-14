@@ -918,7 +918,8 @@ it('preserves complete React cost details, focus and order through the opt-in ti
     expect(article?.querySelector<HTMLElement>('.agh-disclosure-summary')).toBe(summary)
     expect(details.dataset.open).toBe('true')
     expect(document.activeElement).toBe(summary)
-    expect(summary.textContent).toBe(costSummary(disclosed(next, next.creditSource), zhT))
+    // One call: the panel names its details; the totals above already say in/out/cost.
+    expect(summary.textContent).toBe('调用细节')
     expect(
       Array.from(article?.querySelectorAll('dt') ?? []).map((term) => [
         term.textContent,
