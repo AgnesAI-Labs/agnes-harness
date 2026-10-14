@@ -4,7 +4,13 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import { automationCatalog } from '../src/settings/automation-locale.js'
 import { settingsCatalog } from '../src/settings/locales.js'
-import { draftOf, emptyDraft, selectorOf, targetOf } from '../src/settings/schedule-form.js'
+import {
+  draftOf,
+  emptyDraft,
+  MIN_EVERY_SECONDS,
+  selectorOf,
+  targetOf,
+} from '../src/settings/schedule-form.js'
 import { rowsOf, scheduleChoices } from '../src/settings/schedule-model.js'
 import { nextRun } from '../src/settings/schedule-text.js'
 import {
@@ -444,6 +450,34 @@ it('keeps the saved loop, ordered bundles and model when only the title changes 
   fill('schedules-title', 'Renamed')
   await submit()
   expect(upsert).toHaveBeenCalledWith(expect.objectContaining({ title: 'Renamed', target: saved }))
+})
+
+it('keeps a period of seconds exact instead of rounding it to minutes (F03)', () => {
+  const every = (seconds: number) => {
+    const [row] = rowsOf({ schedules: [{ ...report, selector: { every_seconds: seconds } }] })
+    if (!row) throw new Error('row')
+    return draftOf(row, scheduleChoices({}), 0)
+  }
+  expect(every(90)).toMatchObject({ every: '90', unit: 'seconds' })
+  expect(selectorOf({ ...every(90), title: 'Renamed' })).toEqual({ every_seconds: 90 })
+  expect(selectorOf(every(120))).toEqual({ every_seconds: 120 })
+  expect(every(120)).toMatchObject({ every: '2', unit: 'minutes' })
+  expect(selectorOf(every(7200))).toEqual({ every_seconds: 7200 })
+  expect(MIN_EVERY_SECONDS).toBe(60)
+})
+
+it('says the shortest period instead of saving one the service refuses (F03)', async () => {
+  await mount(createElement(SchedulesPage, { api: api(), t }))
+  await click('schedules-new')
+  await click('schedules-kind-every')
+  fill('schedules-unit', 'seconds')
+  fill('schedules-when', '30')
+  expect(document.body.textContent).toContain('Runs at most every 60 seconds.')
+  expect(
+    must(document.querySelector<HTMLButtonElement>('[data-testid="schedules-create"]'), 'create').disabled,
+  ).toBe(true)
+  fill('schedules-when', '90')
+  expect(document.body.textContent).not.toContain('Runs at most every 60 seconds.')
 })
 
 it('previews the next run in this computer’s time', () => {

@@ -47,7 +47,7 @@ export type ScheduleDraft = {
   frequency: Frequency
   at: string
   every: string
-  unit: 'minutes' | 'hours'
+  unit: 'seconds' | 'minutes' | 'hours'
   time: string
   weekdays: number[]
   cron: string
@@ -123,9 +123,12 @@ export function draftOf(row: ScheduleRow, choices: ScheduleChoices, now: number)
     return { ...base, frequency: 'once', at: localInput(row.nextRunAt ?? now + Number(value) * 1000) }
   if (kind === 'every_seconds') {
     const seconds = Number(value)
+    // Whole hours or minutes read as such; any other period keeps its exact seconds.
     return seconds % 3600 === 0
       ? { ...base, frequency: 'every', every: String(seconds / 3600), unit: 'hours' }
-      : { ...base, frequency: 'every', every: String(Math.round(seconds / 60)), unit: 'minutes' }
+      : seconds % 60 === 0
+        ? { ...base, frequency: 'every', every: String(seconds / 60), unit: 'minutes' }
+        : { ...base, frequency: 'every', every: String(seconds), unit: 'seconds' }
   }
   if (kind === 'daily' || kind === 'weekly')
     return {
@@ -145,10 +148,15 @@ export function draftOf(row: ScheduleRow, choices: ScheduleChoices, now: number)
   return base
 }
 
+const UNIT_SECONDS = { seconds: 1, minutes: 60, hours: 3600 } as const
+/** The shortest period the schedule service accepts. */
+export const MIN_EVERY_SECONDS = 60
+export const everySeconds = (draft: Pick<ScheduleDraft, 'every' | 'unit'>): number =>
+  Math.round(Number(draft.every) * UNIT_SECONDS[draft.unit])
+
 export function selectorOf(draft: ScheduleDraft): Record<string, unknown> {
   if (draft.frequency === 'once') return { at: isoFromLocal(draft.at) }
-  if (draft.frequency === 'every')
-    return { every_seconds: Math.round(Number(draft.every) * (draft.unit === 'hours' ? 3600 : 60)) }
+  if (draft.frequency === 'every') return { every_seconds: everySeconds(draft) }
   if (draft.frequency === 'daily') return { daily: { time: draft.time, timeZone: draft.zone } }
   if (draft.frequency === 'weekly')
     return { weekly: { time: draft.time, timeZone: draft.zone, weekdays: [...draft.weekdays].sort() } }
@@ -230,7 +238,7 @@ export function ScheduleDialog({
     draft.prompt.trim() !== '' &&
     (draft.target === 'session' ? draft.sessionKey !== '' : draft.cwd !== '') &&
     (draft.frequency !== 'weekly' || draft.weekdays.length > 0) &&
-    (draft.frequency !== 'every' || Number(draft.every) > 0) &&
+    (draft.frequency !== 'every' || everySeconds(draft) >= MIN_EVERY_SECONDS) &&
     (draft.frequency !== 'once' || draft.at !== '') &&
     (draft.frequency !== 'cron' || draft.cron.trim() !== '')
   const next = nextRun(selectorOf(draft), now)
@@ -450,7 +458,14 @@ export function ScheduleDialog({
           </Field>
         )}
         {draft.frequency === 'every' && (
-          <Field label={ux('interval')}>
+          <Field
+            label={ux('interval')}
+            error={
+              draft.every !== '' && everySeconds(draft) < MIN_EVERY_SECONDS
+                ? ux('intervalMin', { n: MIN_EVERY_SECONDS })
+                : undefined
+            }
+          >
             <span className="schedule-form-inline">
               <SettingsInput
                 type="number"
@@ -468,6 +483,7 @@ export function ScheduleDialog({
                 value={draft.unit}
                 onChange={(event) => set('unit', event.target.value as ScheduleDraft['unit'])}
               >
+                <option value="seconds">{ux('unit.seconds')}</option>
                 <option value="minutes">{ux('unit.minutes')}</option>
                 <option value="hours">{ux('unit.hours')}</option>
               </SettingsSelect>
