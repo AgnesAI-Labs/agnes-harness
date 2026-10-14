@@ -15,8 +15,13 @@ for (const locale of ['en', 'zh-CN'] as const) {
     await expect(row.getByTestId('plugin-summary')).toHaveText(
       locale === 'en' ? 'Coordinates sample work queues for a team.' : '协调团队的样例任务队列。',
     )
-    await expect(row.getByTestId('plugin-provides')).toHaveCount(0)
-    await expect(row.locator('.agh-tag')).toHaveCount(0)
+    await expect(row.getByTestId('plugin-provides')).toHaveText(
+      locale === 'en' ? 'Includes: 1 Settings' : '包含：1 个设置',
+    )
+    const source = row.getByTestId('plugin-source-badge')
+    await expect(source).toHaveAttribute('data-origin', 'local-source')
+    await expect(source).toHaveText(locale === 'en' ? 'Local' : '本地')
+    await expect(row.locator('.agh-tag')).toHaveCount(1)
     await page.getByTestId('plugin-add-more').click()
     await expect(page.getByTestId('plugin-install-source')).toBeVisible()
     await expect(page.getByTestId('plugin-creator')).toBeVisible()
