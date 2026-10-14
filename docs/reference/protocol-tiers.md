@@ -261,3 +261,4 @@ Package administration, resource control, configuration, scheduling, diagnostics
 - `_agnes/v1/schedules.list`
 - `_agnes/v1/schedules.upsert`
 - `_agnes/v1/schedules.archive`
+- `_agnes/v1/schedules.control`

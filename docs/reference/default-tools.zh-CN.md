@@ -16,10 +16,10 @@
 | `job_list` | `{}` 列出当前会话与分支的运行中和已完成任务。 |
 | `job_output` | `{"jobId":"返回的任务ID","waitMs":1000}` 读取输出和状态，可选等待最多 60 秒，并受工具期限限制。长输出存为可读取产物。 |
 | `job_kill` | `{"jobId":"返回的任务ID"}` 终止当前会话拥有的任务及进程组。 |
-| `schedule_create` | 在当前会话创建提醒。`after_seconds`、`at`、`every_seconds`、`daily`、`weekly`、`cron` 只能提供其中一项。提示会启动空闲会话，或恢复正在运行的会话。 |
-| `schedule_list` | 列出当前会话的有效提醒、下次运行和最近送达记录。 |
-| `schedule_update` | 修改当前会话拥有的提醒。`after_seconds` 只能在创建时使用。运行过程中修改提示或日程返回 `schedule_conflict`。 |
-| `schedule_delete` | 归档提醒。未知或已归档的 id 返回 `deleted: false`。已经排队的消息不会撤回。 |
+| `schedule_create` | 创建定时任务。`after_seconds`、`at`、`every_seconds`、`daily`、`weekly`、`cron` 只能提供其中一项，并用 `target` 选择在哪里运行：`new_session` 每次运行都在当前会话的工作区开一个新会话（适合重复的工作）；`current_session` 把提示发到当前会话，空闲时开始一轮，运行中则并入（适合一次性提醒）。结果里的 `runsIn` 说明在哪里运行。 |
+| `schedule_list` | 列出当前会话创建或接收的有效定时任务、运行位置、下次运行和最近的运行记录。 |
+| `schedule_update` | 修改当前会话创建或接收的定时任务。`after_seconds` 只能在创建时使用；不传 `target` 则保持不变。运行过程中修改提示、日程或运行位置返回 `schedule_conflict`。 |
+| `schedule_delete` | 归档定时任务。未知或已归档的 id 返回 `deleted: false`。已经排队的消息不会撤回。 |
 | `grep` / `find` | 使用固定版本的内置 ripgrep，跳过依赖、构建目录、禁止路径和符号链接。超过请求行数的输出存为 `artifact://…?size=…`；将完整定位符交给 `read`，使用 `offset`/`limit` 分页。 |
 
 使用 `write` 或 `edit` 修改已有文本文件之前，必须在同一会话读取该文件。缺少观察记录时返回 `FS_NOT_OBSERVED`；成功修改会记录新版本。新文件可以直接创建。观察记录有数量上限，且仅在当前进程有效：宿主重启或记录被淘汰后需要重新读取。二进制读取、失败读取和产物读取不会解锁工作区修改。已有的过期版本检查和截断防护仍然生效。

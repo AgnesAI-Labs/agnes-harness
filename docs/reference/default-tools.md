@@ -16,10 +16,10 @@ The standard preset provides `ui_render`, `ui_update` and `ui_close` up front. `
 | `job_list` | `{}` lists this session/lane's running and completed jobs. |
 | `job_output` | `{"jobId":"RETURNED_ID","waitMs":1000}` reads captured output/status, optionally waiting up to 60 seconds, capped by the tool deadline. Long output spills to a readable artifact. |
 | `job_kill` | `{"jobId":"RETURNED_ID"}` stops the owned job and its process group. |
-| `schedule_create` | Creates a reminder on the current session. Pass exactly one of `after_seconds`, `at`, `every_seconds`, `daily`, `weekly`, or `cron`. The prompt starts an idle session and resumes a session that is already running. |
-| `schedule_list` | Lists this session's active reminders, next runs, and recent deliveries. |
-| `schedule_update` | Changes a reminder owned by this session. `after_seconds` is create-only. A prompt or schedule change while a run is in flight returns `schedule_conflict`. |
-| `schedule_delete` | Archives a reminder. Unknown and already archived ids return `deleted: false`. A queued message is not retracted. |
+| `schedule_create` | Creates a scheduled task. Pass exactly one of `after_seconds`, `at`, `every_seconds`, `daily`, `weekly`, or `cron`, and a `target`: `new_session` opens a fresh session in this session's workspace for every run (for recurring work); `current_session` sends the prompt into this session, starting a turn if it is idle or joining the running one (for one-off reminders). The result's `runsIn` says where it runs. |
+| `schedule_list` | Lists the active tasks this session created or receives, with where each runs, the next run and recent runs. |
+| `schedule_update` | Changes a task this session created or receives. `after_seconds` is create-only; omitting `target` keeps it. A prompt, schedule or target change while a run is in flight returns `schedule_conflict`. |
+| `schedule_delete` | Archives a task. Unknown and already archived ids return `deleted: false`. A queued message is not retracted. |
 | `grep` / `find` | Use the pinned bundled ripgrep executable. Search skips dependencies, build directories, denied paths and symlinks. Outputs beyond the requested row limit spill to `artifact://…?size=…`; pass the complete locator to `read` with `offset`/`limit`. |
 
 Read an existing text file in the same session before using `write` or `edit` on it. A missing observation returns `FS_NOT_OBSERVED`; a successful mutation records the resulting version. New files can be created directly. Observations are bounded and process-local: restarting the Host or evicting an observation requires a fresh read. Binary, failed and artifact reads do not unlock workspace mutation. Existing stale-write and truncation checks remain active.
