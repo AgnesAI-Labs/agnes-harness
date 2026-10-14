@@ -243,12 +243,14 @@ export function SchedulesPage({
       setNotice(t(editing ? 'schedulesSaved' : 'schedulesCreated'))
       setEditing(undefined)
       setFormOpen(false)
-      await refresh()
     } catch (reason) {
       if (alive.current) setFormError(failureText(reason, ux, t))
+      return
     } finally {
       if (alive.current) setBusy(false)
     }
+    // The list reloads on its own; the page stays usable meanwhile.
+    void refresh()
   }
   const control = async (row: ScheduleRow, action: 'run' | 'pause' | 'resume') => {
     if (!api?.control || busy) return
@@ -263,12 +265,13 @@ export function SchedulesPage({
         return
       }
       setNotice(ux(action === 'run' ? 'runStarted' : action === 'pause' ? 'noticePaused' : 'noticeResumed'))
-      await refresh()
     } catch (reason) {
       if (alive.current) setError(reason)
+      return
     } finally {
       if (alive.current) setBusy(false)
     }
+    void refresh()
   }
   const openNew = () => {
     setEditing(undefined)

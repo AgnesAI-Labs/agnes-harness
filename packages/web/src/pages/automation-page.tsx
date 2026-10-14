@@ -37,10 +37,14 @@ export function AutomationPage({ context }: { context: UiExtensionContext }) {
       // The same catalog a new chat chooses from; a reader without admin access sees the defaults only.
       choices: async () => {
         const { api } = await homeAdmin()
-        const [loops, adapters, runtime] = await Promise.allSettled([
+        const [loops, adapters, runtime, config] = await Promise.allSettled([
           api.loops(),
           api.modelAdapters(),
           api.runtime(),
+          data.call<{ accounts?: { route: string; label: string; providerId?: string }[] }>(
+            '_agnes/v1/config.get',
+            {},
+          ),
         ])
         return scheduleChoices({
           ...(loops.status === 'fulfilled'
@@ -50,6 +54,7 @@ export function AutomationPage({ context }: { context: UiExtensionContext }) {
           ...(runtime.status === 'fulfilled' && runtime.value.bundles
             ? { bundles: runtime.value.bundles }
             : {}),
+          ...(config.status === 'fulfilled' ? { accounts: config.value.accounts ?? [] } : {}),
         })
       },
     }),

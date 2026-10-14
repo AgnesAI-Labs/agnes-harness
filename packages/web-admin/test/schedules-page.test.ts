@@ -341,10 +341,25 @@ it('round-trips a task through the form and orders Agnes AI models first', () =>
     bundles: [{ id: 'report#bundle', sourcePackage: '@agnes-fde/data-report' }],
     adapters: [
       { id: 'openai', label: 'OpenAI', models: [{ id: 'gpt', route: 'openai' }] },
-      { id: 'agnes', label: 'Agnes AI', models: [{ id: 'agnes-1', route: 'agnes' }, { id: 'no-route' }] },
+      {
+        id: 'agnes',
+        label: 'Agnes AI',
+        models: [{ id: 'agnes-1', route: 'agnes' }, { id: 'no-route' }, { id: 'unsaved', route: 'other' }],
+      },
+    ],
+    accounts: [
+      { route: 'openai', label: 'Work OpenAI', providerId: 'openai' },
+      {
+        route: 'agnes',
+        label: 'My Agnes',
+        providerId: 'agnes',
+        models: [{ id: 'agnes-1', name: 'Agnes 1' }],
+      },
     ],
   })
-  expect(choices.models.map((model) => model.model)).toEqual(['agnes-1', 'gpt'])
+  // Only saved accounts' models, named by the account; Agnes AI first.
+  expect(choices.models.map((model) => model.label)).toEqual(['Agnes 1 · My Agnes', 'gpt · Work OpenAI'])
+  expect(scheduleChoices({ adapters: [{ id: 'a', models: [{ id: 'm', route: 'r' }] }] }).models).toEqual([])
   expect(choices.modes.map((mode) => [mode.label, mode.businessAgent, mode.bundles])).toEqual([
     ['ReAct', false, []],
     ['Data report', true, ['report#bundle']],

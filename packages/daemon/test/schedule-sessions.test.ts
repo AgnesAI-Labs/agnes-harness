@@ -47,8 +47,8 @@ describe('new-session schedule targets', () => {
 
   it('titles each run with the task and its local start time, within the session title limit', () => {
     const at = new Date(2026, 9, 15, 9, 5).getTime()
-    expect(runTitle('Daily report', at, 'en-GB')).toBe('Daily report · 15/10/2026, 09:05')
-    expect(runTitle('x'.repeat(200), at, 'en-GB')).toHaveLength(80)
+    expect(runTitle('Daily report', at)).toBe('Daily report · 2026-10-15 09:05')
+    expect(runTitle('x'.repeat(200), at)).toHaveLength(80)
   })
 
   it('words a failure by where it stopped', () => {

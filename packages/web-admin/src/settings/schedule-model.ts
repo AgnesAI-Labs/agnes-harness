@@ -142,11 +142,21 @@ type AdapterEntry = {
 
 const isAgnes = (text: string) => /agnes/i.test(text)
 
+/** A saved model account: only its routes are offered, named the way the person named the account. */
+export type ScheduleAccount = {
+  route: string
+  label: string
+  providerId?: string
+  models?: readonly { id: string; name?: string }[]
+}
+
 export function scheduleChoices(input: {
   loops?: readonly LoopEntry[]
   presets?: readonly string[]
   bundles?: readonly { id: string; sourcePackage?: string }[]
   adapters?: readonly AdapterEntry[]
+  /** Without saved accounts no model is offered and a run uses the default model. */
+  accounts?: readonly ScheduleAccount[]
 }): ScheduleChoices {
   const modes = (input.loops ?? []).map((loop) => {
     const bundles = (input.bundles ?? [])
@@ -160,27 +170,31 @@ export function scheduleChoices(input: {
       businessAgent: loop.sourcePackage.startsWith('@agnes-fde/'),
     }
   })
+  const accounts = new Map((input.accounts ?? []).map((account) => [account.route, account]))
+  const seen = new Set<string>()
   const models = (input.adapters ?? []).flatMap((adapter) =>
-    adapter.models.flatMap((model) =>
-      model.route
-        ? [
-            {
-              key: `${model.route}\u0000${model.id}`,
-              label: `${model.label || model.id} · ${adapter.label || adapter.id}`,
-              route: model.route,
-              model: model.id,
-            },
-          ]
-        : [],
-    ),
+    adapter.models.flatMap((model) => {
+      const account = model.route ? accounts.get(model.route) : undefined
+      const key = `${model.route}\u0000${model.id}`
+      if (!model.route || !account || seen.has(key)) return []
+      seen.add(key)
+      const name = account.models?.find((entry) => entry.id === model.id)?.name || model.label || model.id
+      return [
+        {
+          key,
+          label: `${name} · ${account.label}`,
+          route: model.route,
+          model: model.id,
+          agnes: isAgnes(account.providerId ?? '') || isAgnes(account.label),
+        },
+      ]
+    }),
   )
   // Agnes AI comes first in every provider and model list.
-  models.sort(
-    (a, b) => Number(isAgnes(b.label) || isAgnes(b.route)) - Number(isAgnes(a.label) || isAgnes(a.route)),
-  )
+  models.sort((a, b) => Number(b.agnes) - Number(a.agnes))
   return {
     modes: modes.sort((a, b) => Number(a.businessAgent) - Number(b.businessAgent)),
     presets: [...(input.presets ?? [])],
-    models,
+    models: models.map(({ agnes: _agnes, ...model }) => model),
   }
 }

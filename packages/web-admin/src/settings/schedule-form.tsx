@@ -260,6 +260,8 @@ export function ScheduleDialog({
           hint={draft.target === 'new-session' ? ux('targetNewHint') : ux('targetSessionHint')}
         >
           <Segmented<TargetKind>
+            id="schedules-target"
+            block
             label={ux('targetLabel')}
             testId="schedules-target"
             value={draft.target}
@@ -384,6 +386,7 @@ export function ScheduleDialog({
         </Field>
         <Field label={ux('frequency')}>
           <Segmented<Frequency>
+            id="schedules-frequency"
             label={ux('frequency')}
             testId="schedules-kind"
             value={draft.frequency}

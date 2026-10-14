@@ -59,16 +59,11 @@ export function scheduleTargetCheck(sources: ScheduleTargetSources) {
   }
 }
 
-/** `Daily report · 2026/10/15 09:00`: the task's title and the local time the run started. */
-export function runTitle(title: string, at: number, locale?: string): string {
-  const when = new Date(at).toLocaleString(locale, {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
+/** `Daily report · 2026-10-15 09:00`: the task's title and the local time the run started, read the same in every language. */
+export function runTitle(title: string, at: number): string {
+  const date = new Date(at)
+  const pad = (value: number) => String(value).padStart(2, '0')
+  const when = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
   const suffix = ` · ${when}`
   // Session titles are at most 80 characters; the time is the part that tells runs apart.
   return `${title.slice(0, Math.max(1, 80 - suffix.length))}${suffix}`
