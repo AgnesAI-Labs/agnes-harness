@@ -14,7 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PluginView } from '../src/pages/plugins/admin-view.js'
 import { MarketTab } from '../src/pages/plugins/market-tab.js'
 import { pluginsPageCatalog } from '../src/pages/plugins/page-locale.js'
-import { isBusinessAgent, isExperimental } from '../src/pages/plugins/plugins-tab.js'
+import { isBusinessAgent, isExperimental, orderInstalled } from '../src/pages/plugins/plugins-tab.js'
 import { CAPABILITIES, PLUGIN_TABS, pluginsRoute } from '../src/pages/plugins/route.js'
 import { SkillFolders } from '../src/pages/plugins/skill-folders.js'
 
@@ -82,6 +82,25 @@ describe('plugin grouping', () => {
     expect(isBusinessAgent(item('@acme/report', { category: 'business-agent' }))).toBe(true)
     expect(isBusinessAgent(item('@agnes-fde/code-review'))).toBe(true)
     expect(isBusinessAgent(item('@agnes/attachments', { category: 'tools' }))).toBe(false)
+  })
+
+  it('lists installed plugins as one run: business agents, then enabled ones, then by name', () => {
+    const row = (id: string, desired: string, category: string) =>
+      ({ id, desired, metadata: { category } }) as unknown as Parameters<typeof orderInstalled>[0][number]
+    const rows = [
+      row('zeta', 'enabled', 'tools'),
+      row('beta', 'disabled', 'developer'),
+      row('alpha', 'enabled', 'integrations'),
+      row('report', 'disabled', 'business-agent'),
+      row('audit', 'enabled', 'business-agent'),
+    ]
+    expect(orderInstalled(rows, (item) => item.id).map((item) => item.id)).toEqual([
+      'audit',
+      'report',
+      'alpha',
+      'zeta',
+      'beta',
+    ])
   })
 
   it('treats a plugin as experimental only when its metadata says so', () => {

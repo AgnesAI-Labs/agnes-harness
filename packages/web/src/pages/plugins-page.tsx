@@ -122,7 +122,7 @@ export function PluginsPage({ context }: { context: UiExtensionContext }) {
         canSave={view?.canEffect('packages.activate') ?? false}
       />
     ) : !view ? null : tab === 'plugins' ? (
-      <PluginsTab view={view} t={t} hostT={context.t} summaries={summaries} />
+      <PluginsTab view={view} t={t} summaries={summaries} />
     ) : tab === 'review' ? (
       <ReviewTab view={view} t={t} pending={pending} sources={sources} onPendingCount={setPending} />
     ) : (

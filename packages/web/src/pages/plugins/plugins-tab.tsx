@@ -1,4 +1,8 @@
-import type { PackageCatalogDescriptor, PackageInstalledDescriptor } from '@agnes/protocol'
+import {
+  type PackageCatalogDescriptor,
+  type PackageInstalledDescriptor,
+  resolvePluginMetadata,
+} from '@agnes/protocol'
 import { pluginNotice } from '@agnes/web-admin/admin/plugins/admin'
 import { KindFilter, PluginBadges, pluginFailureMessage } from '@agnes/web-admin/admin/plugins/control-panel'
 import { PluginOperationFeedback } from '@agnes/web-admin/admin/plugins/operation-feedback'
@@ -34,12 +38,23 @@ import type { CapabilitySummaries } from './summaries.js'
 
 type Text = (key: string, vars?: Readonly<Record<string, string | number>>) => string
 type Row = PackageInstalledDescriptor | PackageCatalogDescriptor
-const BUSINESS = 'business-agent'
 
 const flag = (item: Row, name: string): unknown =>
   (item.metadata as Record<string, unknown> | undefined)?.[name]
 /** One rule for what counts as a business agent, shared with the gallery and the empty state. */
 export const isBusinessAgent = (item: Row): boolean => sharedBusinessAgent(item as PackageCatalogDescriptor)
+/**
+ * The installed list is one section: business agents lead, then what is switched on, then by name.
+ * Category is a filter and a line on the row, never a heading.
+ */
+export function orderInstalled<T extends PackageInstalledDescriptor>(
+  rows: readonly T[],
+  nameOf: (item: T) => string,
+  locale?: string,
+): T[] {
+  const rank = (item: T) => (isBusinessAgent(item) ? 0 : 2) + (item.desired === 'enabled' ? 0 : 1)
+  return [...rows].sort((a, b) => rank(a) - rank(b) || nameOf(a).localeCompare(nameOf(b), locale))
+}
 export const isExperimental = (item: Row): boolean => flag(item, 'experimental') === true
 
 /** What one row of the installed list or the marketplace needs from the controller. */
@@ -197,12 +212,10 @@ export function PluginStatus({ view, t, data }: { view: PluginView; t: Text; dat
 export function PluginsTab({
   view,
   t,
-  hostT,
   summaries,
 }: {
   view: PluginView
   t: Text
-  hostT: Text
   summaries: CapabilitySummaries
 }) {
   const props = pluginListProps(view)
@@ -213,21 +226,13 @@ export function PluginsTab({
         (!view.kind || item.kinds?.includes(view.kind)) &&
         (!view.category || (item.metadata?.category ?? 'unclassified') === view.category),
     )
-  const stable = rows.filter((item) => !isExperimental(item))
+  const locale = view.locale.getSnapshot()
+  const stable = orderInstalled(
+    rows.filter((item) => !isExperimental(item)),
+    (item) => resolvePluginMetadata(item.metadata, locale)?.displayName ?? item.id,
+    locale,
+  )
   const experimental = rows.filter(isExperimental)
-  const groups = new Map<string, PackageInstalledDescriptor[]>()
-  for (const item of stable) {
-    const key = isBusinessAgent(item) ? BUSINESS : (item.metadata?.category ?? 'unclassified')
-    groups.set(key, [...(groups.get(key) ?? []), item])
-  }
-  const order = [BUSINESS, ...PLUGIN_CATEGORIES, 'unclassified'] as readonly string[]
-  const ordered = [...groups].sort(([a], [b]) => order.indexOf(a) - order.indexOf(b))
-  const categoryName = (key: string) =>
-    key === BUSINESS
-      ? hostT('home.entry.agents')
-      : key === 'unclassified'
-        ? view.purposeText('unclassified')
-        : view.purposeText(`category.${key}`)
   return (
     <>
       <HomePageSection title={t('builtin.title')} actions={<small>{t('builtin.note')}</small>}>
@@ -264,7 +269,7 @@ export function PluginsTab({
         </SettingsList>
       </HomePageSection>
       <PluginToolbar view={view} t={t} onQuery={() => view.render()} />
-      {ordered.length === 0 && experimental.length === 0 ? (
+      {stable.length === 0 && experimental.length === 0 ? (
         <PluginList
           {...props}
           tab="installed"
@@ -274,17 +279,16 @@ export function PluginsTab({
           }
         />
       ) : (
-        ordered.map(([key, items]) => (
+        stable.length > 0 && (
           <HomePageSection
-            key={key}
-            title={t('installed.title', { category: categoryName(key) })}
-            actions={<small>{t('installed.count', { count: items.length })}</small>}
+            title={t('installed.title')}
+            actions={<small>{t('installed.count', { count: stable.length })}</small>}
           >
-            <div data-testid="plugin-browser" data-plugin-group={key}>
-              <PluginList {...props} tab="installed" rows={items} />
+            <div data-testid="plugin-browser">
+              <PluginList {...props} tab="installed" rows={stable} />
             </div>
           </HomePageSection>
-        ))
+        )
       )}
       {experimental.length > 0 && (
         <HomePageSection title={t('experimental.title')} actions={<small>{t('experimental.note')}</small>}>
