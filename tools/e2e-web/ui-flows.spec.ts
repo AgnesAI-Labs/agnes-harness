@@ -344,7 +344,7 @@ test('UI background jobs and schedule cards persist observable results', async (
   await quality(page, info, 'background-job-card')
   await turn(
     page,
-    'call schedule_create {"title":"E2E tool reminder","prompt":"Inspect delivery","selector":{"every_seconds":86400}}',
+    'call schedule_create {"title":"E2E tool reminder","prompt":"Inspect delivery","target":"current_session","selector":{"every_seconds":86400}}',
   )
   await expect(await workbenchSurface(page, 'Reminders')).toContainText('E2E tool reminder')
   await quality(page, info, 'schedule-card')
@@ -361,15 +361,18 @@ test('UI background jobs and schedule cards persist observable results', async (
   await page.getByTestId('schedules-new').click()
   await page.getByTestId('schedules-title').fill('E2E UI reminder')
   await page.getByTestId('schedules-prompt').fill('Review the synthetic delivery')
-  await selectValue(page, 'schedules-kind', 'every_seconds')
-  await page.getByTestId('schedules-when').fill('86400')
+  await page.getByTestId('schedules-kind-every').click()
+  await page.getByTestId('schedules-when').fill('24')
+  await selectValue(page, 'schedules-unit', 'hours')
   await page.getByTestId('schedules-create').click()
   const scheduled = page.getByTestId('schedules-row').filter({ hasText: 'E2E UI reminder' })
   await expect(scheduled).toBeVisible()
-  await scheduled.getByTestId('schedules-archive').click()
+  await scheduled.getByTestId('schedules-actions').click()
+  await page.getByTestId('schedules-archive').click()
   await page.getByTestId('schedules-archive-cancel').click()
   await expect(scheduled).toBeVisible()
-  await scheduled.getByTestId('schedules-archive').click()
+  await scheduled.getByTestId('schedules-actions').click()
+  await page.getByTestId('schedules-archive').click()
   await page.getByTestId('schedules-archive-confirm').click()
   await expect(scheduled).toHaveCount(0)
   await quality(page, info, 'schedules-after-archive')

@@ -231,10 +231,14 @@ test('v3 automation creates and removes a scheduled task for the selected Demo s
   const id = new URL(page.url()).searchParams.get('session')
   await homePage(page, 'automation')
   await page.getByTestId('schedules-new').click()
+  await page.getByTestId('schedules-target-session').click()
   await page.getByTestId('schedules-title').fill('REG5 future task')
   await page.getByTestId('schedules-prompt').fill('REG5 synthetic scheduled prompt')
-  await selectValue(page, 'schedules-kind', 'after_seconds')
-  await page.getByTestId('schedules-when').fill('86400')
+  await page.getByTestId('schedules-kind-once').click()
+  const future = await page.evaluate(() =>
+    new Date(Date.now() + 86_400_000 - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 16),
+  )
+  await page.getByTestId('schedules-when').fill(future)
   await page.getByTestId('schedules-create').click()
   const row = page.getByTestId('schedules-row').filter({ hasText: 'REG5 future task' })
   await expect(row).toBeVisible()
@@ -245,9 +249,12 @@ test('v3 automation creates and removes a scheduled task for the selected Demo s
       sessionKey: id,
     })
   expect((await schedules()).schedules).toEqual(
-    expect.arrayContaining([expect.objectContaining({ title: 'REG5 future task', sessionKey: id })]),
+    expect.arrayContaining([
+      expect.objectContaining({ title: 'REG5 future task', target: { kind: 'session', sessionKey: id } }),
+    ]),
   )
-  await row.getByTestId('schedules-archive').click()
+  await row.getByTestId('schedules-actions').click()
+  await page.getByTestId('schedules-archive').click()
   await page.getByTestId('schedules-archive-confirm').click()
   await expect(row).toHaveCount(0)
   await page.reload()
