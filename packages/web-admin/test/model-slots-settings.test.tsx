@@ -52,10 +52,10 @@ afterEach(async () => {
   delete state.auto
   setAdvancedSettingsShown(false)
 })
-async function mount(canSave = true) {
+async function mount(canSave = true, slots: Record<string, unknown> = {}) {
   // Auxiliary models are an advanced fold: it exists only while advanced settings show.
   setAdvancedSettingsShown(true)
-  state = { ...state, revision: 1, slots: {}, canSave }
+  state = { ...state, revision: 1, slots, canSave }
   vi.spyOn(PluginAdminApi, 'context').mockResolvedValue({} as never)
   vi.stubGlobal(
     'fetch',
@@ -150,6 +150,12 @@ it('shows the model an unset fast slot follows, and nothing automatic for the ve
   delete state.auto
   expect((await mount()).querySelector<HTMLSelectElement>('#model-slot-fast')?.options[0]?.textContent).toBe(
     'Not set',
+  )
+  // A slot on a route no adapter serves any more reads as unavailable, not as a working choice.
+  await act(async () => root?.unmount())
+  const gone = await mount(true, { fast: { route: 'account-gone', model: 'reviewer' } })
+  expect(gone.querySelector('[data-testid="auxiliary-models"] .agh-disclosure-meta')?.textContent).toBe(
+    'Fast model reviewer · Unavailable · Verifier model Not set',
   )
 })
 it('is absent while advanced settings are off, and read-only without administrator permission', async () => {

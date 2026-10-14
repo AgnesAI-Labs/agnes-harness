@@ -522,8 +522,17 @@ it('isolates two same-type accounts across disk reload, routes, credentials and 
   expect((await service.profileInput()).provider?.routes).toHaveLength(1)
   await service.account({ accountId: 'work', action: 'enable', expectedRevision: 4 })
   expect((await service.profileInput()).provider?.routes).toHaveLength(2)
-  await service.account({ accountId: 'work', action: 'remove', expectedRevision: 5 })
-  const empty = await service.account({ accountId: 'personal', action: 'remove', expectedRevision: 6 })
+  // Removing an account clears the auxiliary slots on its route, as clearing them in settings would:
+  // fast goes back to following the default account, the verifier becomes an explicit "none".
+  const personalVerifier = { route: 'account-personal', model: m2.id }
+  await service.saveModelSlots({
+    revision: 5,
+    slots: { fast: { route: 'account-work', model: m1.id }, verifier: personalVerifier },
+  })
+  await service.account({ accountId: 'work', action: 'remove', expectedRevision: 6 })
+  expect((await service.modelSlots()).slots).toEqual({ verifier: personalVerifier })
+  const empty = await service.account({ accountId: 'personal', action: 'remove', expectedRevision: 7 })
+  expect((await service.modelSlots()).slots).toEqual({ verifier: null })
   expect(empty).toMatchObject({ configured: false, accounts: [], defaultAccountId: null })
   expect(await reloaded.get()).toEqual(empty)
   // Existing sessions retain their immutable credential snapshot after configuration deletion.

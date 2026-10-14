@@ -1111,7 +1111,20 @@ export function createConfigurationService(
           ? { ...entry, enabled: input.action === 'enable' }
           : entry,
       )
-    const next: StoredConfiguration = { ...state, revision: state.revision + 1, accounts, defaultAccountId }
+    // A removed account's route never comes back, so clear the slots on it as settings would:
+    // fast follows the default account again, the verifier becomes an explicit "none".
+    const modelSlots = structuredClone(state.modelSlots)
+    if (input.action === 'remove' && modelSlots) {
+      if (modelSlots.fast?.route === row.route) delete modelSlots.fast
+      if (modelSlots.verifier?.route === row.route) modelSlots.verifier = null
+    }
+    const next: StoredConfiguration = {
+      ...state,
+      revision: state.revision + 1,
+      accounts,
+      defaultAccountId,
+      ...(modelSlots === undefined ? {} : { modelSlots }),
+    }
     await persistState(next)
     return snapshot(next)
   }

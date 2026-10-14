@@ -144,13 +144,15 @@ export function ModelSlotsPanel({
     }
   }
   const models = state ? modelSlotOptions(state, accounts) : []
-  const named = (target: { route: string; model: string } | null | undefined) => {
+  const named = (target: { route: string; model: string } | null | undefined, chosen = true) => {
     if (!target) return undefined
     const option = models.find((model) => model.route === target.route && model.id === target.model)
+    // A chosen slot on a route nothing serves any more is left empty at session start, so say so.
+    if (!option && chosen) return `${target.model} · ${t('modelSettings.slots.unavailable')}`
     return option?.name ?? target.model
   }
   // While the fast slot is unset the backend follows the default account and says which model that is.
-  const automatic = state?.auto?.fast && !state.slots.fast ? named(state.auto.fast) : undefined
+  const automatic = state?.auto?.fast && !state.slots.fast ? named(state.auto.fast, false) : undefined
   const fastUnset = automatic
     ? t('modelSettings.slots.auto', { model: automatic })
     : t('modelSettings.slots.unset')
