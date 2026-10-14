@@ -1152,6 +1152,7 @@ const startupRequest = new URLSearchParams(location.search)
 // A settings link opens its page once; the address no longer names it afterwards.
 const startupSettingsLink = consumeSettingsLink()
 const startupSettingsAnchor = startupSettingsLink.anchor
+let startupSettingsDismissed = false
 const requestedLoop = startupRequest.get('loop') ?? undefined
 const requestedPreset = startupRequest.get('preset') ?? undefined
 const requestedBundles = startupRequest.getAll('bundle')
@@ -1282,7 +1283,10 @@ const settings = createSettingsController({
   client,
   onSaved: savedConfiguration,
   onError: showError,
-  onClose: clearSettingsLink,
+  onClose: () => {
+    startupSettingsDismissed = true
+    clearSettingsLink()
+  },
 })
 onSurfaceEvent('agnes:permission-settings', () =>
   run(async () => {
@@ -2336,7 +2340,7 @@ run(async () => {
     })
   showModelNotice()
   const settingsSelection = selection
-  if (startupSection || startupTerminal) {
+  if ((startupSection || startupTerminal) && !startupSettingsDismissed) {
     settingsRegion.open('model')
     await settings.open()
     // A choice made while the dialog was loading owns the view.
