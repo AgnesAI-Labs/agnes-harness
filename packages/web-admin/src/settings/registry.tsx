@@ -9,8 +9,10 @@ import { type SettingsSection, settingsSections, type UiExtensionContext } from 
 import {
   Banner,
   Button,
+  IconButton,
   type IconName,
   SettingsDetails,
+  SettingsFooter,
   SettingsPageDescription,
   SettingsState,
 } from '@agnes/web-ui'
@@ -18,9 +20,11 @@ import { type ReactNode, useEffect, useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
 import { BundlesPanel, SessionDefaultsPanel } from '../admin/plugins/control-panel.js'
 import { AutoReviewPanel } from './auto-review.js'
+import { ChildEnginesPanel } from './child-engines.js'
 import { ContextPanel } from './context.js'
 import { DiagnosticsPanel } from './diagnostics.js'
 import { ExamplesPanel } from './examples.js'
+import { MemoryPanel } from './memory.js'
 import { PermissionDefaults } from './permission-defaults.js'
 import { PinsPanel } from './pins.js'
 import {
@@ -170,23 +174,25 @@ function RuntimeDetails({ c, t }: { c: RuntimeSettingsContext; t: UiExtensionCon
     <SettingsDetails
       id="settings-subsection-providers"
       title={t('runtimeDetails')}
+      icon="code"
+      description={t('runtimeDetailsHelp')}
       data-testid="plugin-diagnostics"
       onOpenChange={setOpen}
     >
       <PinsPanel api={c.api} canRelease={!!c.canRelease} t={t} />
-      <Button
-        appearance="ghost"
-        data-testid="settings-refresh"
-        disabled={!c.api || busy}
-        aria-busy={busy}
-        loading={busy}
-        {...(!c.api ? { disabledReason: t('unavailable') } : {})}
-        onClick={() => setRevision((value) => value + 1)}
-      >
-        {t('retry')}
-      </Button>
-      {busy && <SettingsState tone="loading">{t('loading')}</SettingsState>}
-      {failed && <Banner tone="error">{t('unavailable')}</Banner>}
+      {busy && !snapshot && <SettingsState tone="loading" />}
+      {failed && (
+        <Banner
+          tone="error"
+          action={
+            <Button size="small" disabled={busy} onClick={() => setRevision((value) => value + 1)}>
+              {t('retry')}
+            </Button>
+          }
+        >
+          {t('unavailable')}
+        </Banner>
+      )}
       {snapshot && (
         <>
           <Subsection id="isolation" title={t('isolationDetails')}>
@@ -215,6 +221,16 @@ function RuntimeDetails({ c, t }: { c: RuntimeSettingsContext; t: UiExtensionCon
           )}
         </>
       )}
+      <SettingsFooter>
+        <IconButton
+          name="refresh-cw"
+          label={t('retry')}
+          data-testid="settings-refresh"
+          disabled={!c.api || busy}
+          aria-busy={busy}
+          onClick={() => setRevision((value) => value + 1)}
+        />
+      </SettingsFooter>
     </SettingsDetails>
   )
 }
@@ -272,8 +288,12 @@ const definitions: readonly [
             title={t('runDefaults')}
             summary={loop ? t('runDefaultsSummary', { loop }) : undefined}
           >
-            <p>{t('modelsHelp')}</p>
-            <SessionDefaultsPanel api={c.api} canSave={c.canSave} t={c.pluginText} />
+            <SessionDefaultsPanel
+              api={c.api}
+              canSave={c.canSave}
+              t={c.pluginText}
+              providers={c.snapshot?.providers}
+            />
           </Subsection>
           <Subsection
             defer
@@ -297,6 +317,24 @@ const definitions: readonly [
             summary={active('compaction')}
           >
             <ContextPanel canSave={c.canSave} />
+          </Subsection>
+          <Subsection
+            defer
+            id="memory"
+            icon="history"
+            title={t('agentMemory')}
+            description={t('agentMemoryHelp')}
+          >
+            <MemoryPanel canSave={c.canSave} />
+          </Subsection>
+          <Subsection
+            defer
+            id="subagents"
+            icon="git-branch"
+            title={t('agentEngines')}
+            description={t('agentEnginesHelp')}
+          >
+            <ChildEnginesPanel api={c.api} canSave={c.canSave} t={t} />
           </Subsection>
           <PromptSubsection canSave={c.canSave} t={t} />
           <Subsection defer id="prompt-preview" icon="eye" title={t('runPreview')}>
