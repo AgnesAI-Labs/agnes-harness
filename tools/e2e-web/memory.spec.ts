@@ -31,7 +31,8 @@ for (const locale of ['en', 'zh-CN'])
       await expand(page.getByTestId('memory-usage'))
       await expect(page.getByTestId('memory-panel')).toHaveAttribute('aria-busy', 'false')
       const memorySection = page.getByTestId('home-page-plugins-memory')
-      await expect(memorySection.getByRole('heading', { level: 1 })).toContainText(
+      const memoryDialog = page.getByRole('dialog').filter({ has: memorySection })
+      await expect(memoryDialog.getByRole('heading', { level: 2 })).toContainText(
         locale === 'en' ? 'Memory' : '记忆',
       )
       await expect(memorySection.getByTestId('settings-refresh')).toHaveCount(0)
