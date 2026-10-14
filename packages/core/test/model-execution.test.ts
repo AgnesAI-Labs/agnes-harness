@@ -45,6 +45,9 @@ const cases = [
   'usage-twice',
   'throw-before-sent',
   'no-done',
+  'no-sent',
+  'done-tail-throw',
+  'error-tail-throw',
   'no-usage',
   'provider-error',
   'error-no-usage',
@@ -54,7 +57,7 @@ const cases = [
 ] as const
 
 describe('model execution guarantees across Loop implementations', () => {
-  it.each(['cancel', 'timeout', 'done'] as const)(
+  it.each(['cancel', 'timeout', 'done', 'invalid-stamp', 'invalid-no-sent'] as const)(
     'Core settles a generic iterator abandoned after %s',
     async (mode) => {
       vi.useFakeTimers()
@@ -78,8 +81,9 @@ describe('model execution guarantees across Loop implementations', () => {
                 .stream(await ctx.prepareRequest({ invocationId: 'abandoned' }), signal)
                 [Symbol.asyncIterator]()
               let event = await iterator.next()
-              if (mode === 'done')
-                while (!event.done && event.value.type !== 'done') event = await iterator.next()
+              if (mode === 'done' || mode.startsWith('invalid'))
+                while (!event.done && !['done', 'error'].includes(event.value.type))
+                  event = await iterator.next()
               entered()
               await new Promise<never>(() => {})
               return { outcome: 'idle' }
@@ -103,16 +107,25 @@ describe('model execution guarantees across Loop implementations', () => {
       })
       // Use a correctly bound deterministic transcript, including a terminal usage report.
       f.session.d.provider = fakeProvider([])
+      let cleanups = 0
       f.session.d.provider.infer = async function* (request) {
-        yield sentFor(request)
-        yield usage()
-        yield { type: 'done', reason: 'stop' }
+        try {
+          if (mode === 'invalid-no-sent') yield { type: 'text_delta', delta: 'invalid' }
+          const event = sentFor(request)
+          if (mode === 'invalid-stamp') event.stamp.model.id = 'wrong-model'
+          yield event
+          yield usage()
+          yield { type: 'done', reason: 'stop' }
+        } finally {
+          cleanups++
+        }
       }
       const stop = new AbortController()
       try {
         await f.session.enqueue('next-turn', { content: [{ type: 'text', text: 'run' }], actor })
         const running = f.session.run({ until: 'turn-end', signal: stop.signal })
         await started
+        if (mode.startsWith('invalid')) expect(cleanups).toBe(1)
         if (mode === 'done') {
           expect(await f.session.scan({ type: 'cost/ledger', limit: 10 })).toHaveLength(1)
           expect(await context.effects.status('abandoned')).toMatchObject({
@@ -126,7 +139,8 @@ describe('model execution guarantees across Loop implementations', () => {
         const costs = await f.session.scan({ type: 'cost/ledger', limit: 10 })
         expect(costs).toHaveLength(1)
         expect(billing).toHaveLength(1)
-        expect((costs[0]?.data as { tokens: { output: number } }).tokens.output).toBe(mode === 'done' ? 5 : 0)
+        expect(cleanups).toBe(1)
+        expect(costs[0]?.data).toMatchObject({ tokens: { output: mode === 'done' ? 5 : 0 } })
         expect(f.session.pendingEffects()).toEqual([])
         if (mode === 'done') {
           await f.session.close()
@@ -249,9 +263,11 @@ describe('model execution guarantees across Loop implementations', () => {
     for (const loopFactory of [defaultLoopFactory, independent]) {
       const stop = new AbortController()
       const provider = fakeProvider([])
+      let sends = 0
       provider.infer = async function* (request) {
+        sends++
         if (scenario === 'throw-before-sent') throw new Error('synthetic pre-send failure')
-        yield sentFor(request)
+        if (scenario !== 'no-sent') yield sentFor(request)
         yield { type: 'text_delta', delta: 'partial answer' }
         if (['usage', 'usage-twice', 'provider-error', 'cancel-with-usage'].includes(scenario)) yield usage()
         if (scenario === 'usage-twice') yield usage()
@@ -267,8 +283,12 @@ describe('model execution guarantees across Loop implementations', () => {
             code: 'TRANSPORT',
             message: 'synthetic failure',
             retryable: false,
+            ...(scenario === 'error-tail-throw'
+              ? { response: { status: 503, id: 'original-failure', headerNames: [] } }
+              : {}),
           }
         else if (scenario !== 'no-done') yield { type: 'done', reason: 'stop' }
+        if (scenario.endsWith('tail-throw')) throw new Error('synthetic tail failure')
       }
       const billing: unknown[] = []
       const seams = fakeSeams()
@@ -276,11 +296,16 @@ describe('model execution guarantees across Loop implementations', () => {
         billing.push(row)
       }
       const preset = presetDefaults()
-      preset.model.retry.maxAttempts = 1
+      preset.model.retry.maxAttempts = ['no-done', 'no-sent', 'done-tail-throw', 'error-tail-throw'].includes(
+        scenario,
+      )
+        ? 3
+        : 1
       const f = await openSession({ provider, loopFactory, seams, preset })
       try {
         await f.session.enqueue('next-turn', { content: [{ type: 'text', text: 'run' }], actor })
         await f.session.run({ until: 'turn-end', signal: stop.signal })
+        expect(sends).toBe(1)
         const rows = await f.session.scan({ fromSeq: 1, limit: 200 })
         const costs = rows
           .filter((row) => row.type === 'cost/ledger')
@@ -293,6 +318,8 @@ describe('model execution guarantees across Loop implementations', () => {
           return record
         })
         expect(costs).toHaveLength(1)
+        if (scenario === 'error-tail-throw')
+          expect(costs[0]).toMatchObject({ response: { status: 503, id: 'original-failure' } })
         expect(records).toHaveLength(1)
         expect(rows.filter((row) => row.type === 'effect/intent')).toHaveLength(1)
         const settled = rows
@@ -308,7 +335,7 @@ describe('model execution guarantees across Loop implementations', () => {
               scenario === 'provider-error' ||
               scenario === 'cancel-with-usage'
                 ? 5
-                : scenario === 'throw-before-sent'
+                : scenario === 'throw-before-sent' || scenario === 'no-sent'
                   ? 0
                   : 4,
           },

@@ -58,9 +58,9 @@ export class ModelExecution {
   private readonly release: () => void
   private readonly finishReceipt: () => void
   private readonly cancelReceipt = () => {
+    if (this.accounted) return
     this.controller.abort()
     this.closeProvider()
-    if (this.accounted) return
     void this.commit(this.rows(this.outcome, this.outcome !== 'ok'), (cur) => cur).catch((error) => {
       if (!(error instanceof CoreError && error.code === 'E_CLOSED'))
         this.s.d.logger.warn('model receipt settlement failed', {
@@ -167,7 +167,7 @@ export class ModelExecution {
         }
         const event = next.value
         if (event.type === 'sent') {
-          if (sent) throw new Error('duplicate sent')
+          if (sent) throw new CoreError('E_ENVELOPE', 'duplicate sent')
           const { stamp } = event
           if (
             stamp.derived_hash !== input.header.derived_hash ||
@@ -184,6 +184,8 @@ export class ModelExecution {
               message: 'provider sent stamp does not match the dispatched request',
               retryable: false,
             }
+            this.controller.abort()
+            this.closeProvider()
             yield this.error
             return
           }
@@ -191,7 +193,7 @@ export class ModelExecution {
             s.ev('request/sent', stamp, { sourceEventSeqs: [input.headerSeq, input.intentSeq] }),
           ])
           sent = true
-        } else if (!sent && event.type !== 'error') throw new Error('missing sent')
+        } else if (!sent && event.type !== 'error') throw new CoreError('E_ENVELOPE', 'missing sent')
         s.loopScope.note()
         if (event.type === 'text_delta') this.text += event.delta
         if (event.type === 'thinking_delta') this.thinking += event.delta
@@ -203,22 +205,46 @@ export class ModelExecution {
         }
         if (event.type === 'error') this.error = event
         if (event.type === 'done' || event.type === 'error') {
-          this.closeProvider()
+          // Resume past the terminal yield so provider wrappers can finish their receipt/recording.
+          // return() would skip that normal completion; cancellation still interrupts a stuck drain.
+          const tail = await interruptible(
+            Promise.resolve().then(() => active.next()),
+            this.signal,
+          )
+          if (!tail.done) throw new CoreError('E_ENVELOPE', 'events after terminal')
+          this.providerClosed = true
           ended = true
         }
         yield event
         if (event.type === 'done') return
         if (event.type === 'error') return
       }
-      if (!sent || !done) throw new Error(!sent ? 'missing sent' : 'missing done')
-    } catch (error) {
-      this.error = {
-        type: 'error',
-        reason: this.cancellation.aborted ? 'aborted' : 'error',
-        code: this.cancellation.aborted ? 'ABORTED' : 'TRANSPORT',
-        message: error instanceof Error ? error.message : String(error),
-        retryable: !this.cancellation.aborted,
+      if (!sent || !done) {
+        this.error = {
+          type: 'error',
+          reason: 'error',
+          code: 'TRANSPORT',
+          message: !sent ? 'missing sent' : 'missing done',
+          // An invalid exchange is not a transient send failure. Retrying can consume the next
+          // response after the provider already produced output or tool calls for this one.
+          retryable: false,
+        }
+        yield this.error
       }
+    } catch (error) {
+      if (!this.error || this.cancellation.aborted)
+        this.error = {
+          type: 'error',
+          reason: this.cancellation.aborted ? 'aborted' : 'error',
+          code: this.cancellation.aborted ? 'ABORTED' : 'TRANSPORT',
+          message: error instanceof Error ? error.message : String(error),
+          retryable:
+            !this.cancellation.aborted &&
+            !this.completed &&
+            !(error instanceof CoreError && error.code === 'E_ENVELOPE'),
+        }
+      this.controller.abort()
+      this.closeProvider()
       yield this.error
     } finally {
       if (!ended) {
