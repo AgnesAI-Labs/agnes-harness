@@ -72,8 +72,11 @@ export function FilesPanel({ context, headerId }: { context: UiExtensionContext;
   const [selected, setSelected] = useState('')
   const [file, setFile] = useState<SessionWorkspaceReadResult>()
   const [changes, setChanges] = useState<ReadonlyMap<string, SessionChange>>(new Map())
+  // Folder listing and file reading fail separately: one succeeding never hides the other's failure.
   const [error, setError] = useState('')
+  const [readError, setReadError] = useState('')
   const [refresh, setRefresh] = useState(0)
+  const [reread, setReread] = useState(0)
   const [loading, setLoading] = useState(false)
   const [query, setQuery] = useState('')
   const [rules, setRules] = useState(false)
@@ -167,23 +170,21 @@ export function FilesPanel({ context, headerId }: { context: UiExtensionContext;
   useEffect(() => {
     let active = true
     setFile(undefined)
+    setReadError('')
     if (!session || !selected) return
     void session
       .workspaceRead(selected)
       .then((value) => {
-        if (active) {
-          setFile(value)
-          setError('')
-        }
+        if (active) setFile(value)
       })
       .catch((cause) => {
         if (active)
-          setError(appServerErrorMessage(cause, document.documentElement.lang) ?? t('workbench.error'))
+          setReadError(appServerErrorMessage(cause, document.documentElement.lang) ?? t('workbench.error'))
       })
     return () => {
       active = false
     }
-  }, [session, selected, refresh, version, t])
+  }, [session, selected, refresh, reread, version, t])
   if (!session) return <SettingsState tone="empty">{t('workbench.session')}</SettingsState>
   const resize = (next: number, persist: boolean) => {
     const value = Math.round(Math.min(Math.max(next, TREE_MIN), maxTree))
@@ -361,6 +362,8 @@ export function FilesPanel({ context, headerId }: { context: UiExtensionContext;
               context={context}
               path={selected}
               file={file}
+              error={readError}
+              retry={() => setReread((value) => value + 1)}
               change={changes.get(selected)}
               workspace={workspace?.name}
               wrap={wrap}

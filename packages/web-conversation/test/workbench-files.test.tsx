@@ -453,3 +453,66 @@ describe('opening a file chip and naming a folder', () => {
     expect((context.data as { mention: ReturnType<typeof vi.fn> }).mention).toHaveBeenCalledWith('src', true)
   })
 })
+
+describe('separate folder and file read results', () => {
+  it('keeps a failed file read on screen when a folder listing succeeds afterwards, and retries only the file', async () => {
+    const session = fakeSession()
+    let fail = true
+    const read = session.workspaceRead as unknown as ReturnType<typeof vi.fn>
+    const original = read.getMockImplementation() as (path: string) => Promise<object>
+    read.mockImplementation(async (path: string) => {
+      if (path === 'main.ts' && fail) throw new Error('Permission denied for main.ts')
+      return original(path)
+    })
+    mount(session)
+    await vi.waitFor(() => expect(q('[data-path="main.ts"]')).not.toBeNull())
+    click('[data-path="main.ts"]')
+    await vi.waitFor(() =>
+      expect(q('[data-testid="file-read-error"]')?.textContent).toContain('could not load'),
+    )
+    // The failure belongs to the file, so the panel-level (folder) error stays empty.
+    expect(q('.workbench-files > .agnes-settings-state[data-tone="error"]')).toBeNull()
+    // A folder listing that succeeds after the failed read must not clear the file's error.
+    click('[data-path="src"]')
+    await vi.waitFor(() => expect(q('[data-path="src/util.ts"]')).not.toBeNull())
+    expect(q('[data-testid="file-read-error"]')?.textContent).toContain('could not load')
+    expect(q('[data-testid="file-preview"]')).toBeNull()
+    const lists = (session.workspaceList as unknown as ReturnType<typeof vi.fn>).mock.calls.length
+    fail = false
+    click('[data-testid="file-read-retry"]')
+    await vi.waitFor(() => expect(q('[data-testid="file-preview"]')?.textContent).toContain('const a = 1'))
+    expect(q('[data-testid="file-read-error"]')).toBeNull()
+    // The retry rereads the file, not the folders.
+    expect((session.workspaceList as unknown as ReturnType<typeof vi.fn>).mock.calls.length).toBe(lists)
+  })
+
+  it('keeps a failed folder listing on screen when a file read succeeds afterwards', async () => {
+    const session = fakeSession()
+    const list = session.workspaceList as unknown as ReturnType<typeof vi.fn>
+    const original = list.getMockImplementation() as (path: string) => Promise<object>
+    list.mockImplementation(async (path: string) => {
+      if (path === 'src') throw new Error('Folder src is unavailable')
+      return original(path)
+    })
+    mount(session)
+    await vi.waitFor(() => expect(q('[data-path="src"]')).not.toBeNull())
+    click('[data-path="src"]')
+    const folderError = '.workbench-files > .agnes-settings-state[data-tone="error"]'
+    await vi.waitFor(() => expect(q(folderError)).not.toBeNull())
+    click('[data-path="main.ts"]')
+    await vi.waitFor(() => expect(q('[data-testid="file-preview"]')?.textContent).toContain('const a = 1'))
+    // A successful file read never clears the folder listing's failure.
+    expect(q(folderError)).not.toBeNull()
+    expect(q('[data-testid="file-read-error"]')).toBeNull()
+  })
+
+  it('says a file is being read instead of showing a blank preview', async () => {
+    const session = fakeSession()
+    const read = session.workspaceRead as unknown as ReturnType<typeof vi.fn>
+    read.mockImplementation(() => new Promise(() => {}))
+    mount(session)
+    await vi.waitFor(() => expect(q('[data-path="main.ts"]')).not.toBeNull())
+    click('[data-path="main.ts"]')
+    expect(q('[data-testid="file-read-loading"]')?.textContent).toContain('Reading this file')
+  })
+})
