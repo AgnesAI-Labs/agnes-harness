@@ -8,7 +8,7 @@ import { expect, test } from './fixtures.js'
 import { accessible, screen, settled, translated } from './quality.js'
 import { toolResult } from './sdk.js'
 import { sandboxedSession } from './test/sandbox.js'
-import { chooseWorkspace, fresh, turn } from './ui.js'
+import { chooseWorkspace, fresh, turn, workbenchTab } from './ui.js'
 
 // Every gate validates the locale/theme/viewport matrix; the private report is an optional copy.
 async function workbenchScreen(page: Page, info: TestInfo, name: string, folder?: string) {
@@ -75,10 +75,11 @@ test('workspace dock previews and mentions a file that the agent reads', async (
   })
   await expect(files.locator('[data-path="report.md"] .workbench-git-mark')).toHaveText('Added')
   await expect(page.getByTestId('workbench-bottom-toggle')).toHaveCount(0)
-  expect(await page.locator('.topbar').evaluate((node) => node.getBoundingClientRect().height)).toBe(48)
-  expect(await page.getByTestId('workbench-right-toggle').evaluate((node) => !!node.closest('.topbar'))).toBe(
-    true,
-  )
+  // The redesigned 44px bar includes a 1px bottom divider.
+  expect(await page.locator('.topbar-row').evaluate((node) => node.getBoundingClientRect().height)).toBe(45)
+  expect(
+    await page.getByTestId('workbench-right-toggle').evaluate((node) => !!node.closest('.topbar-row')),
+  ).toBe(true)
   await expect(page.locator('#composer-workspace')).toBeHidden()
   await page.getByTestId('workbench-tab-files').focus()
   await page.keyboard.press('F6')
@@ -152,8 +153,10 @@ test('workspace dock previews and mentions a file that the agent reads', async (
         expect(geometry.name.left - geometry.entry.left).toBeLessThan(50)
         expect(geometry.preview.height).toBeGreaterThan(geometry.tree.height)
         await expect(page.locator('.workbench-dock-heading button[aria-busy]')).toBeVisible()
-        await expect(page.locator('.workbench-files-footer details')).toBeVisible()
-        await expect(page.locator('.workbench-file-preview summary')).not.toContainText(/T\d{2}:/)
+        await expect(page.locator('.workbench-files-footer .agh-disclosure')).toBeVisible()
+        await expect(page.locator('.workbench-file-preview .agh-disclosure-summary')).not.toContainText(
+          /T\d{2}:/,
+        )
         await workbenchScreen(page, info, `p1-${locale}-${theme}-${width}-after`, folder)
         await page.getByTestId('workbench-right-toggle').click()
         await workbenchScreen(page, info, `p1-${locale}-${theme}-${width}-before`, folder)
@@ -206,7 +209,7 @@ test('session terminal survives UI detachment, follows agent output and honors p
   })
   await page.getByTestId('workbench-right-toggle').click()
   const panel = page.getByTestId('terminal-panel')
-  await page.getByTestId('workbench-tab-terminal').click()
+  await workbenchTab(page, 'terminal')
   await expect(page.getByTestId('workbench-tab-terminal')).toBeFocused()
   const resize = page.locator('#workbench-right .workbench-resize')
   await expect(resize).toHaveAttribute('aria-valuenow', '320')
@@ -381,7 +384,7 @@ test('goal panel follows durable progress and shares authorized human controls',
   await page.getByTestId('goal-objective').fill('Review the synthetic delivery')
   await page.getByTestId('goal-max-rounds').fill('1')
   await page.getByTestId('goal-save').click()
-  await page.getByTestId('workbench-tab-goal').click()
+  await workbenchTab(page, 'goal')
   const panel = page.getByTestId('goal-panel')
   await expect(panel.getByTestId('goal-panel-phase')).toHaveText('Blocked goal', { timeout: 30_000 })
   await expect(page.getByTestId('goal-toggle')).toHaveAttribute('aria-expanded', 'false')
@@ -424,7 +427,7 @@ test('goal panel follows durable progress and shares authorized human controls',
           { locale, theme },
         )
         await page.reload()
-        await page.getByTestId('workbench-tab-goal').click()
+        await workbenchTab(page, 'goal')
         await expect(panel.getByTestId('goal-panel-objective')).toHaveText('Review the synthetic delivery')
         await translated(page)
         await settled(page)
@@ -438,7 +441,7 @@ test('goal panel follows durable progress and shares authorized human controls',
     localStorage.setItem('agnes-theme', 'light')
   })
   await page.reload()
-  await page.getByTestId('workbench-tab-goal').click()
+  await workbenchTab(page, 'goal')
   await panel.getByTestId('goal-panel-complete').click()
   await expect(panel.getByTestId('goal-panel-phase')).toHaveText('Completed goal')
   expect(await snapshot()).toMatchObject({ id: initial?.id, phase: 'complete' })
@@ -498,7 +501,7 @@ test('changed files review follows confirmed agent effects and preserves current
   expect(latest.selected).toMatchObject({ kind: 'modified', added: 1, removed: 1, basis: 'turn' })
   expect(latest.selected?.diff).toContain('-export const answer = 1\n')
   await page.getByTestId('workbench-right-toggle').click()
-  await page.getByTestId('workbench-tab-files').click()
+  await workbenchTab(page, 'files')
   await page.getByTestId('files-panel').locator('[data-path="review.ts"]').click()
   await expect(page.getByTestId('file-preview')).toContainText('answer = 2')
   const preview = await session.workspaceRead('review.ts')
@@ -529,7 +532,7 @@ test('changed files review follows confirmed agent effects and preserves current
           { locale, theme },
         )
         await page.reload()
-        await page.getByTestId('workbench-tab-changed-files').click()
+        await workbenchTab(page, 'changed-files')
         await panel.getByTestId('changed-file').filter({ hasText: 'review.ts' }).click()
         await expect(panel.getByTestId('changes-diff')).toContainText('+export const answer = 2')
         await translated(page)
@@ -543,7 +546,7 @@ test('changed files review follows confirmed agent effects and preserves current
     localStorage.setItem('agnes-theme', 'light')
   })
   await page.reload()
-  await page.getByTestId('workbench-tab-files').click()
+  await workbenchTab(page, 'files')
   await page.getByTestId('files-panel').locator('[data-path="review.ts"]').click()
   await page.getByTestId('file-review').click()
   await expect(panel.getByTestId('changes-diff')).toContainText('+export const answer = 2')
@@ -563,7 +566,7 @@ test('changed files review follows confirmed agent effects and preserves current
   await panel.getByTestId('changes-mention').click()
   await expect(composer).toHaveValue('"review.ts"')
   expect(await readFile(join(runtime.workspace, 'review.ts'), 'utf8')).toBe('export const answer = 99\n')
-  await panel.locator('.workbench-change-evidence > summary').click()
+  await panel.locator('.workbench-change-evidence > :is(summary, .agh-disclosure-summary)').click()
   await panel.getByTestId('changes-provenance').last().click()
   await expect(page.getByTestId('workbench-tab-facts')).toHaveAttribute('aria-selected', 'true')
   const receipt = changed.selected?.effects.at(-1)
@@ -573,7 +576,7 @@ test('changed files review follows confirmed agent effects and preserves current
     expect.objectContaining({ kind: 'invocation', toolUseId: receipt.toolUseId }),
   )
   await expect(page.getByTestId('fact-chain').locator('[data-fact-kind="invocation"]')).toContainText('edit')
-  await page.getByTestId('workbench-tab-changed-files').click()
+  await workbenchTab(page, 'changed-files')
   await page.setViewportSize({ width: 375, height: 812 })
   await page.getByTestId('workbench-tab-changed-files').press('Escape')
   await expect(panel).toBeHidden()

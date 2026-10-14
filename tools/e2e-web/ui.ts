@@ -130,7 +130,7 @@ export function sectionSurface(page: Page, id: string) {
   if (homes[id]) return page.getByTestId(`home-page-${homes[id]}`)
   if (id === 'model') return page.locator('#config-accounts')
   if (id === 'history') return page.getByTestId('session-search')
-  if (id === 'archived') return page.locator('.archived-session-list, .session-list-empty').first()
+  if (id === 'archived') return page.locator('#sessions')
   if (id === 'jobs') return page.getByTestId('terminal-panel')
   const canonical = ['bundles', 'system-prompt', 'context'].includes(id)
     ? 'models'
@@ -213,6 +213,7 @@ export async function section(page: Page, id: string) {
       await sidebar(page)
       await page.locator('#session-filter').click()
       await page.getByTestId('session-filter-archived').click()
+      await expect(page.locator('#session-filter')).toHaveAttribute('data-filter', 'archived')
     }
     return
   }
@@ -288,8 +289,13 @@ export async function closeSettings(page: Page, _locale = 'en') {
   if (await page.locator('#home-page').isVisible()) {
     await sidebar(page)
     const id = new URL(page.url()).searchParams.get('session')
-    if (id) await page.locator(`.session[data-session="${id}"]`).click()
-    else await page.locator('#new').click()
+    if (id) {
+      if ((await page.locator('#session-filter').getAttribute('data-filter')) === 'archived') {
+        await page.locator('#session-filter').click()
+        await page.getByTestId('session-filter-active').click()
+      }
+      await page.locator(`.session[data-session="${id}"]`).click()
+    } else await page.locator('#new').click()
     await expect(page.locator('#home-page')).toBeHidden()
   }
 }

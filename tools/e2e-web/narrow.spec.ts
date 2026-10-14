@@ -4,7 +4,7 @@ import type { Page, TestInfo } from '@playwright/test'
 import { expect, test } from './fixtures.js'
 import { accessible, screen, settled, translated } from './quality.js'
 import { prompt, toolResult } from './sdk.js'
-import { preferences, section, settings } from './ui.js'
+import { advanced, closeSettings, expand, preferences, section, settings, workbenchTab } from './ui.js'
 
 const phone = { width: 375, height: 812 }
 const tablet = { width: 768, height: 1024 }
@@ -127,22 +127,8 @@ for (const locale of ['en', 'zh-CN'])
         if (width === 390) return // Additional behavioural coverage keeps the existing pixel matrix.
         expect(++shots).toBeLessThanOrEqual(12)
         const key = `narrow-${surface}-${locale}-${theme}-${width}`
-        if (surface === 'settings') {
-          await settled(page)
-          // Focusing a rail item can retain a horizontal scroll offset from earlier sections.
-          // Frame navigation from its first item at both widths.
-          await page.locator('#settings-everyday').evaluate((button) => {
-            if (button.parentElement) button.parentElement.scrollLeft = 0
-          })
-          if (width === 768) {
-            // The merged Agent page can retain a different reading position after
-            // loading Memory. Frame its requested subsection after those reads.
-            await expect(page.getByTestId('memory-panel')).toHaveAttribute('aria-busy', 'false')
-            await page.getByTestId('settings-subsection-memory').evaluate((section) => {
-              section.scrollIntoView({ block: 'start', behavior: 'instant' })
-            })
-          }
-        }
+        if (surface === 'settings' && width === 768)
+          await page.getByTestId('memory-panel').scrollIntoViewIfNeeded()
         if (surface === 'session') {
           // Opening a tool after the phone flow can retain the previous reading position.
           // Frame the completed first turn from its start at both widths.
@@ -232,7 +218,7 @@ for (const locale of ['en', 'zh-CN'])
       await page.getByTestId('first-run-add').click()
       const account = page.getByTestId('first-run-connection')
       await expect(account.locator('#config-provider-trigger')).toBeEnabled()
-      await account.locator('#config-account-advanced > summary').click()
+      await expand(account.locator('#config-account-advanced'))
       await inspect('wizard-account-form')
       // Traverse every wizard step with a real loopback account.
       const catalog = (await client.config.test({ providerId: 'deepseek' })).models
@@ -241,6 +227,7 @@ for (const locale of ['en', 'zh-CN'])
       const { startProviderFixture } = await import('../acceptance/provider-fixture.js')
       const provider = await startProviderFixture('NARROW_READY', undefined, model)
       try {
+        await expand(account.locator('#config-account-advanced'))
         await account
           .getByRole('textbox', { name: name('Account name', '账户名称'), exact: true })
           .fill('Local test account')
@@ -252,7 +239,7 @@ for (const locale of ['en', 'zh-CN'])
         await account.getByLabel('API Key', { exact: true }).fill(provider.apiKey)
         await page.getByTestId('first-run-next').click()
         await expect(guide).toHaveAttribute('data-step', 'workspace')
-        await guide.locator('details > summary').click()
+        await guide.locator('.agh-disclosure > .agh-disclosure-summary').click()
         await guide
           .getByRole('textbox', { name: name('Folder path', '文件夹路径'), exact: true })
           .fill(runtime.workspace)
@@ -270,6 +257,8 @@ for (const locale of ['en', 'zh-CN'])
             exact: true,
           }),
         ).toBeHidden()
+        await advanced(page)
+        await closeSettings(page, locale)
         await inspect('selected-workspace')
         for (const viewport of viewports) {
           await page.setViewportSize(viewport)
@@ -280,6 +269,8 @@ for (const locale of ['en', 'zh-CN'])
             'aria-label',
             locale === 'en' ? 'More' : '更多',
           )
+          if ((await page.locator('#sidebar-toggle').getAttribute('aria-expanded')) === 'true')
+            await page.locator('#sidebar-close').click()
           await page.locator('#composer-permission').click()
           await expect(page.locator('#permission-picker-popover')).toBeVisible()
           await usable(page, info, `composer-chips-${viewport.width}`)
@@ -313,9 +304,12 @@ for (const locale of ['en', 'zh-CN'])
           .getByTestId('intelligent-ui-inline')
           .locator('[data-testid^="ui-surface-"]')
           .filter({ hasText: locale === 'en' ? 'Deliverables' : '交付物' })
+        await expand(
+          page.getByTestId('conversation-turn').nth(1).getByTestId('turn-process-toggle').locator('..'),
+        )
         await expect(delivery).toContainText('Delivery report.md')
         const rightToggle = page.getByTestId('workbench-right-toggle')
-        await delivery.getByTestId('ui-expand').click()
+        await delivery.getByTestId('deliverable-open').first().click()
         await expect(page.getByTestId('intelligent-ui-panel')).toContainText('Delivery report.md')
         await page
           .locator('#workbench-right')
@@ -333,12 +327,20 @@ for (const locale of ['en', 'zh-CN'])
             ),
           )
           await page.getByTestId('conversation-turn').first().getByTestId('turn-process-toggle').click()
-          await page.getByTestId('tool-detail-toggle').first().click()
+          const detail = page.getByTestId('tool-detail-toggle').first()
+          if ((await detail.getAttribute('aria-expanded')) !== 'true') await detail.click()
           await expect(page.getByTestId('tool-detail-text').first()).toContainText('Synthetic delivery')
           await usable(page, info, `session-${viewport.width}`)
           await capture('session', viewport.width)
-          await expect(page.locator('#report-problem')).toBeInViewport({ ratio: 1 })
-          await page.locator('#report-problem').click()
+          const report = page.locator('#report-problem')
+          const reportTrigger = (await report.isVisible()) ? report : page.locator('#topbar-more')
+          await expect(reportTrigger).toBeInViewport({ ratio: 1 })
+          await reportTrigger.click()
+          if (!(await report.isVisible())) {
+            const label = await report.getAttribute('aria-label')
+            if (!label) throw new Error('Report action must have an accessible name')
+            await page.getByRole('menuitem', { name: label, exact: true }).click()
+          }
           const diagnostics = page.locator('.diagnostics-dialog')
           await expect(diagnostics).toBeVisible()
           await usable(page, info, `report-problem-${viewport.width}`)
@@ -346,13 +348,16 @@ for (const locale of ['en', 'zh-CN'])
           await usable(page, info, `diagnostics-share-${viewport.width}`)
           await page.keyboard.press('Escape')
           await expect(diagnostics).toBeHidden()
-          await expect(page.locator('#report-problem')).toBeFocused()
+          await expect(reportTrigger).toBeFocused()
           await expect(delivery).toContainText('Delivery report.md')
           await delivery.scrollIntoViewIfNeeded()
           await usable(page, info, `delivery-${viewport.width}`)
           await page.getByTestId('conversation-turn').last().scrollIntoViewIfNeeded()
           await usable(page, info, `session-last-turn-${viewport.width}`)
-          await page.getByTestId('tool-detail-toggle').first().click()
+          await expect(page.getByTestId('tool-detail-toggle').first()).toHaveAttribute(
+            'aria-expanded',
+            'true',
+          )
           const evidence = page.getByTestId('tool-fact-chain').first()
           await evidence.click()
           await expect(page.getByTestId('fact-chain').locator('[data-fact-kind="receipt"]')).toBeVisible()
@@ -422,15 +427,15 @@ for (const locale of ['en', 'zh-CN'])
           await expect(page.locator('.trace-row').first()).toBeFocused()
           await page.locator('#view-chat').click()
           await page.getByTestId('workbench-right-toggle').click()
-          await page.getByTestId('workbench-tab-files').click()
+          await workbenchTab(page, 'files')
           await page.getByTestId('files-panel').locator('[data-path="report.md"]').click()
           await expect(page.getByTestId('file-preview')).toContainText('Synthetic delivery')
           await usable(page, info, `files-${viewport.width}`)
           if (viewport.width === 768) await capture('workbench', viewport.width)
-          await page.getByTestId('workbench-tab-goal').click()
+          await workbenchTab(page, 'goal')
           await expect(page.getByTestId('goal-panel-phase')).toBeVisible()
           await usable(page, info, `goal-${viewport.width}`)
-          await page.getByTestId('workbench-tab-changed-files').click()
+          await workbenchTab(page, 'changed-files')
           await page.getByTestId('changed-file').filter({ hasText: 'review notes.ts' }).click()
           await expect(page.getByTestId('changes-diff')).toContainText('result = 42')
           await expect(page.getByTestId('changed-file').filter({ hasText: 'review notes.ts' })).toBeFocused()
@@ -440,8 +445,12 @@ for (const locale of ['en', 'zh-CN'])
           await expect(page.locator('#prompt')).toBeFocused()
           await expect(page.locator('#prompt')).toHaveValue('"review notes.ts"')
           await page.locator('#prompt').fill('')
-          await page.getByTestId('workbench-right-toggle').click()
-          await page.getByTestId('workbench-tab-terminal').click()
+          if ((await page.getByTestId('workbench-right-toggle').getAttribute('aria-expanded')) === 'true')
+            await page
+              .locator('#workbench-right')
+              .getByRole('button', { name: name('Close this dock', '关闭此停靠面板'), exact: true })
+              .click()
+          await workbenchTab(page, 'terminal')
           await expect(page.getByTestId('terminal-panel')).toBeVisible()
           await usable(page, info, `terminal-${viewport.width}`)
           await page.getByTestId('terminal-new').click()
@@ -485,7 +494,12 @@ for (const locale of ['en', 'zh-CN'])
             }
             await usable(page, info, `settings-${id}-${viewport.width}`)
             if (id === 'plugins') {
-              await page.getByTestId('candidate-open').filter({ hasText: candidate.packageId }).click()
+              await section(page, 'review')
+              await page
+                .locator('li[data-candidate-id]')
+                .filter({ hasText: candidate.packageId })
+                .getByTestId('candidate-open')
+                .click()
               await expect(page.getByTestId('candidate-approve')).toBeInViewport({ ratio: 1 })
               await expect(page.getByTestId('candidate-reject')).toBeInViewport({ ratio: 1 })
               await usable(page, info, `candidate-review-${viewport.width}`)
@@ -493,7 +507,7 @@ for (const locale of ['en', 'zh-CN'])
             }
             if (id === 'memory' && viewport.width === 768) await capture('settings', viewport.width)
           }
-          await page.keyboard.press('Escape')
+          await closeSettings(page, locale)
           await expect(page.getByTestId('settings-navigation')).toBeHidden()
           await page.keyboard.press('Escape')
           await expect(page.locator('.sidebar')).toBeHidden()
