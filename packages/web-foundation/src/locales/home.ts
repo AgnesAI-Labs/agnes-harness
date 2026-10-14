@@ -4,7 +4,7 @@ import type { LocaleCatalog } from '@agnes/web-client'
 export const homeLocaleCatalog: LocaleCatalog = {
   en: {
     'home.entries.nav': 'Home',
-    'home.entry.agents': 'Business agents',
+    'home.entry.agents': 'Agent',
     'home.entry.agents.sub': 'FDE',
     'home.entry.plugins': 'Plugins',
     'home.entry.plugins.pending': '{count} to review',
@@ -18,7 +18,6 @@ export const homeLocaleCatalog: LocaleCatalog = {
     'home.automation.description': 'Run tasks on a schedule or when an event arrives.',
     'home.automation.schedules': 'Scheduled tasks',
     'home.automation.triggers': 'Triggers',
-    'home.search.open': 'Search sessions ({shortcut})',
     'home.search.title': 'Search sessions',
     'home.search.placeholder': 'Search what was said in any session',
     'home.search.filters': 'Filter by title or workspace',
@@ -53,7 +52,7 @@ export const homeLocaleCatalog: LocaleCatalog = {
   },
   'zh-CN': {
     'home.entries.nav': '主页',
-    'home.entry.agents': '业务 Agent',
+    'home.entry.agents': 'Agent',
     'home.entry.agents.sub': 'FDE',
     'home.entry.plugins': '插件',
     'home.entry.plugins.pending': '{count} 项待审阅',
@@ -67,7 +66,6 @@ export const homeLocaleCatalog: LocaleCatalog = {
     'home.automation.description': '让任务到点或由事件自动运行。',
     'home.automation.schedules': '定时任务',
     'home.automation.triggers': '触发器',
-    'home.search.open': '搜索会话（{shortcut}）',
     'home.search.title': '搜索会话',
     'home.search.placeholder': '搜索任意会话里说过的内容',
     'home.search.filters': '按标题或工作区筛选',
