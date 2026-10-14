@@ -24,10 +24,10 @@ jobs:
           - { id: main-4, args: "memory.spec.ts" }
           - { id: main-5, args: "prompt-trace.spec.ts" }
           - { id: main-6, args: "runtime.spec.ts" }
-          - { id: main-7, args: "ui-flows.spec.ts --grep-invert 'agent candidate review'" }
+          - { id: main-7, args: "ui-flows.spec.ts" }
           - { id: main-8, args: "ui-gate.spec.ts" }
           - { id: main-9, args: "workbench.spec.ts" }
-          - { id: candidate-review, args: "ui-flows.spec.ts --grep 'agent candidate review'" }
+          - { id: candidate-review, args: "candidate-review.spec.ts" }
           - { id: narrow-en-light, args: "narrow.spec.ts --grep 'en/light$'" }
           - { id: narrow-en-dark, args: "narrow.spec.ts --grep 'en/dark$'" }
           - { id: narrow-zh-CN-light, args: "narrow.spec.ts --grep 'zh-CN/light$'" }

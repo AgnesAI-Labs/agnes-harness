@@ -10,10 +10,12 @@ import { install, toolResult } from './sdk.js'
 import {
   chooseWorkspace,
   closeSettings,
+  expand,
   fresh,
   pluginTab,
   preferences,
   section,
+  selectValue,
   send,
   settings,
   turn,
@@ -40,11 +42,27 @@ function surfaceCard(page: Page, title: string) {
     .filter({ hasText: title })
 }
 async function workbenchSurface(page: Page, title: string) {
-  await surfaceCard(page, title).getByTestId('ui-expand').click()
-  return page
+  const panel = page
     .getByTestId('intelligent-ui-panel')
     .locator('[data-testid^="ui-surface-"]')
     .filter({ hasText: title })
+  if (!(await panel.isVisible())) {
+    const inline = surfaceCard(page, title)
+    if (!(await inline.isVisible())) {
+      await expect(inline).toBeAttached()
+      const owner = inline.locator('xpath=ancestor::*[@data-testid="conversation-turn"][1]')
+      await expand(owner.getByTestId('turn-process-toggle').locator('..'))
+      const tool = inline
+        .locator('xpath=ancestor::*[contains(@class,"timeline-node")][1]')
+        .getByTestId('tool-detail-toggle')
+      if ((await tool.count()) && (await tool.getAttribute('aria-expanded')) !== 'true') await tool.click()
+    }
+    if ((await inline.getAttribute('data-kind')) === 'deliverables')
+      await inline.getByTestId('deliverable-open').first().click()
+    else await inline.getByTestId('ui-expand').click()
+  }
+  await expect(panel).toBeVisible()
+  return panel
 }
 async function artifactText(page: Page, runtime: Runtime) {
   const session = await current(page, runtime)
@@ -70,13 +88,15 @@ async function detail(page: Page, tool: string) {
   const session = page.getByTestId('conversation-turn').last()
   const process = session.getByTestId('turn-process-toggle')
   const toggle = session.getByTestId('tool-detail-toggle')
-  if (!(await process.evaluate((summary) => summary.parentElement?.hasAttribute('open'))))
+  if (!(await process.evaluate((summary) => summary.parentElement?.getAttribute('data-open') === 'true')))
     await process.click()
   await expect
-    .poll(() => process.evaluate((summary) => summary.parentElement?.hasAttribute('open')))
+    .poll(() => process.evaluate((summary) => summary.parentElement?.getAttribute('data-open') === 'true'))
     .toBe(true)
   if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
-  await expect(session.getByTestId('tool-detail-text')).toContainText(tool)
+  await expect(
+    session.getByRole('article').filter({ has: page.getByTestId('tool-detail-toggle') }),
+  ).toContainText(tool)
   return session.getByTestId('tool-detail-text')
 }
 
@@ -110,23 +130,21 @@ test('UI first run, Agent selection, demo read/cancel, account save and restart 
     await settings(page)
     await expect(page.locator('#config-accounts')).toHaveAttribute('data-state', 'empty')
     await page.getByRole('button', { name: 'Add account', exact: true }).click()
-    const dialog = page.getByRole('dialog', { name: 'Add account', exact: true })
-    await dialog.getByRole('combobox', { name: /^Provider:/ }).click()
-    await info.attach('provider-picker.txt', { body: await dialog.ariaSnapshot(), contentType: 'text/plain' })
-    await page.getByRole('option', { name: 'DeepSeek', exact: true }).click()
-    await expect(dialog.getByRole('combobox', { name: 'Provider: DeepSeek', exact: true })).toBeVisible()
-    await dialog.getByRole('button', { name: 'Continue', exact: true }).click()
-    await dialog.locator('#config-account-advanced > summary').click()
+    const dialog = page.locator('#account-dialog')
+    await expect(dialog).toHaveAccessibleName('Add account')
+    await dialog.locator('[data-provider="deepseek"]').click()
+    await expect(dialog).toHaveAccessibleName('Connect DeepSeek')
+    await expand(dialog.locator('#config-account-advanced'))
     await dialog.getByRole('textbox', { name: 'Account name', exact: true }).fill('Offline UI account')
     await dialog.getByRole('textbox', { name: 'Base URL', exact: true }).fill(provider.baseUrl)
     await dialog.getByLabel('API Key', { exact: true }).fill(provider.apiKey)
-    await dialog.getByTestId('account-network-details').locator('summary').click()
+    await dialog.getByTestId('account-network-details').locator('summary, .agh-disclosure-summary').click()
     await dialog.getByTestId('account-network-requestMs').fill('90000')
     await dialog.getByTestId('account-network-connectMs').fill('4000')
     await dialog.getByTestId('account-network-streamIdleMs').fill('15000')
-    await dialog.getByRole('button', { name: 'Test connection', exact: true }).click()
-    await expect(dialog.getByRole('button', { name: 'Verify & save', exact: true })).toBeEnabled()
-    await dialog.getByRole('button', { name: 'Verify & save', exact: true }).click()
+    await expect(dialog.locator('#config-state')).toContainText('Connected.')
+    await expect(dialog.getByRole('button', { name: 'Save', exact: true })).toBeEnabled()
+    await dialog.getByRole('button', { name: 'Save', exact: true }).click()
     await expect(dialog).toBeHidden()
     await expect(page.locator('#config-accounts')).toHaveAttribute('data-state', 'ready')
     const saved = await client.config.get()
@@ -331,29 +349,26 @@ test('UI background jobs and schedule cards persist observable results', async (
   await quality(page, info, 'schedule-card')
   await settings(page)
   await section(page, 'jobs')
-  await page.getByTestId('jobs-session-context').locator('summary').click()
-  await expect(page.getByTestId('jobs-session').getByRole('combobox')).toBeVisible()
-  await expect(page.getByTestId('jobs-panel')).not.toContainText(session.id)
-  await expect(page.getByTestId('session-jobs-table')).toContainText('Completed')
-  await page.getByRole('button', { name: 'View output', exact: true }).first().click()
-  await expect(page.getByTestId('job-output')).toContainText('E2E_JOB_OK')
+  const terminal = page.getByTestId('terminal-panel')
+  await expect(terminal).toBeVisible()
+  await terminal.getByRole('button', { name: /^Attach.*E2E_JOB_OK/ }).click()
+  await expect(terminal.getByRole('status')).toContainText('Completed')
+  await expect(page.getByTestId('workbench-terminal-output')).toHaveValue(/E2E_JOB_OK/)
   // The interactive PTY flow is covered in workbench.spec.ts, where terminals now live.
   await section(page, 'schedules')
   await expect(page.getByTestId('schedules-row')).toContainText('E2E tool reminder')
   await page.getByTestId('schedules-new').click()
   await page.getByTestId('schedules-title').fill('E2E UI reminder')
   await page.getByTestId('schedules-prompt').fill('Review the synthetic delivery')
-  await page.getByTestId('schedules-kind').selectOption('every_seconds')
+  await selectValue(page, 'schedules-kind', 'every_seconds')
   await page.getByTestId('schedules-when').fill('86400')
   await page.getByTestId('schedules-create').click()
   const scheduled = page.getByTestId('schedules-row').filter({ hasText: 'E2E UI reminder' })
   await expect(scheduled).toBeVisible()
   await scheduled.getByTestId('schedules-archive').click()
-  await page.getByRole('menuitem', { name: 'Archive', exact: true }).click()
   await page.getByTestId('schedules-archive-cancel').click()
   await expect(scheduled).toBeVisible()
   await scheduled.getByTestId('schedules-archive').click()
-  await page.getByRole('menuitem', { name: 'Archive', exact: true }).click()
   await page.getByTestId('schedules-archive-confirm').click()
   await expect(scheduled).toHaveCount(0)
   await quality(page, info, 'schedules-after-archive')
@@ -367,7 +382,6 @@ test('UI folder install reviews capabilities, enables a tool and disables it for
   await open(page, runtime)
   await settings(page)
   await section(page, 'plugins')
-  await page.locator('#install-source').click()
   await page.getByTestId('plugin-install-source').click()
   const source = page.getByRole('dialog', { name: 'Check a plugin source', exact: true })
   await info.attach('source-dialog.txt', { body: await source.ariaSnapshot(), contentType: 'text/plain' })
@@ -376,9 +390,9 @@ test('UI folder install reviews capabilities, enables a tool and disables it for
     .getByRole('textbox', { name: 'Source reference', exact: true })
     .fill(`file:${resolve('examples/packages/hot-tool-plugin')}`)
   await source.getByRole('button', { name: 'Check source', exact: true }).click()
-  const review = page.getByRole('dialog', { name: /^Install preview/ })
-  await expect(review.getByRole('heading', { name: 'Requested capabilities', exact: true })).toBeVisible()
-  await expect(review).toContainText('@agnes-examples/hot-tool-plugin')
+  const review = page.locator('#plugin-confirm')
+  await expect(review.getByRole('heading', { name: 'What it gets', exact: true })).toBeVisible()
+  await expect(review).toContainText('Text statistics tool')
   await expect(review).toContainText('sha256-')
   const client = await runtime.connect()
   expect(
@@ -387,27 +401,27 @@ test('UI folder install reviews capabilities, enables a tool and disables it for
     ),
   ).toBe(false)
   await quality(page, info, 'capability-review')
-  await review.getByRole('button', { name: 'Confirm installation', exact: true }).click()
+  await review.getByRole('button', { name: 'Install only', exact: true }).click()
   await expect(review).toBeHidden()
   await page
     .getByRole('dialog', { name: 'Plugin details', exact: true })
     .getByRole('button', { name: /Close/ })
     .click()
   await page
-    .getByRole('switch', { name: 'Request to enable @agnes-examples/hot-tool-plugin', exact: true })
+    .locator('.plugin-row[data-plugin-id="@agnes-examples/hot-tool-plugin"]')
+    .getByRole('switch')
     .click()
   await page
-    .getByRole('dialog', { name: 'Enable @agnes-examples/hot-tool-plugin', exact: true })
-    .getByRole('button', { name: 'Confirm enable', exact: true })
+    .getByRole('dialog', { name: 'Enable “Text statistics tool”', exact: true })
+    .getByRole('button', { name: 'Trust and enable', exact: true })
     .click()
   // Completion opens a modal: its background controls are intentionally inaccessible.
   const enabledDetails = page.getByRole('dialog', { name: 'Plugin details', exact: true })
   await expect(enabledDetails).toContainText('Enable: Completed')
   await enabledDetails.getByRole('button', { name: /Close/ }).click()
-  const toggle = page.getByRole('switch', {
-    name: 'Request to disable @agnes-examples/hot-tool-plugin',
-    exact: true,
-  })
+  const toggle = page
+    .locator('.plugin-row[data-plugin-id="@agnes-examples/hot-tool-plugin"]')
+    .getByRole('switch')
   await expect(toggle).toBeChecked()
   await page
     .getByRole('searchbox', { name: 'Search plugins', exact: true })
@@ -426,14 +440,14 @@ test('UI folder install reviews capabilities, enables a tool and disables it for
   await section(page, 'plugins')
   await toggle.click()
   await page
-    .getByRole('dialog', { name: 'Request disable for @agnes-examples/hot-tool-plugin', exact: true })
-    .getByRole('button', { name: 'Request disable', exact: true })
+    .getByRole('dialog', { name: 'Disable “Text statistics tool”?', exact: true })
+    .getByRole('button', { name: 'Disable', exact: true })
     .click()
   const disabledDetails = page.getByRole('dialog', { name: 'Plugin details', exact: true })
   await expect(disabledDetails).toContainText('Disable: Completed')
   await disabledDetails.getByRole('button', { name: /Close/ }).click()
   await expect(
-    page.getByRole('switch', { name: 'Request to enable @agnes-examples/hot-tool-plugin', exact: true }),
+    page.locator('.plugin-row[data-plugin-id="@agnes-examples/hot-tool-plugin"]').getByRole('switch'),
   ).not.toBeChecked()
   await closeSettings(page)
   await fresh(page)
@@ -478,7 +492,7 @@ test('UI folder install reviews capabilities, enables a tool and disables it for
       .click()
     await pluginTab(page, 'versions').click()
     const technical = page.getByTestId('plugin-drain-details')
-    await expect(technical).not.toHaveAttribute('open')
+    await expect(technical).toHaveAttribute('data-open', 'false')
     const pinned = (await client.packages.generations({ profile: 'local-dev' })).generations.find(
       (generation) =>
         generation.state === 'draining' &&
@@ -493,8 +507,8 @@ test('UI folder install reviews capabilities, enables a tool and disables it for
     )
     await expect(summary).not.toContainText('@agnes/')
     const details = page.getByTestId('plugin-drain-details')
-    await expect(details).not.toHaveAttribute('open')
-    await details.locator('summary').click()
+    await expect(details).toHaveAttribute('data-open', 'false')
+    await details.locator('summary, .agh-disclosure-summary').click()
     await expect(details).toContainText('hot-tool-plugin')
     expect(
       (await details.locator('code').allTextContents()).some((text) =>
@@ -509,7 +523,7 @@ test('UI folder install reviews capabilities, enables a tool and disables it for
     await pluginTab(page, 'versions').click()
     const helperSummary = page.getByTestId('plugin-drain-summary')
     await expect(helperSummary).toHaveCount(1)
-    await page.getByTestId('plugin-drain-details').locator('summary').click()
+    await page.getByTestId('plugin-drain-details').locator('summary, .agh-disclosure-summary').click()
     await expect(page.getByTestId('plugin-drain-details')).toContainText(
       locale === 'en' ? 'Plugin helper' : '插件助手',
     )
@@ -625,545 +639,6 @@ test('UI FDE bundle selection runs and restores its durable deliverable', async 
   await quality(page, info, 'fde-deliverable')
 })
 
-test('agent candidate review binds exact tests and hashes, refuses edited approval, publishes only for new sessions', async ({
-  page,
-  runtime,
-  expectedBrowserErrors,
-}, info) => {
-  test.setTimeout(300_000)
-  const pluginPage = page.getByTestId('settings-page-plugins')
-  const skillReview = page.getByRole('dialog', { name: 'Candidate review', exact: true })
-  const client = await runtime.connect()
-  const old = await client.session.new({
-    sessionKey: crypto.randomUUID(),
-    cwd: runtime.workspace,
-    preset: 'full-access',
-  })
-  await old.attach()
-  expect((await old.tools()).tools.some((tool) => tool.name === 'skill_read')).toBe(true)
-  await client.session.rename(old.id, 'Text statistics workshop')
-  old.onPermissionRequest(async () => ({ verdict: 'allowed-once' }))
-  const { prompt } = await import('./sdk.js')
-  await prompt(old, 'call plugin_helper_guide {"kind":"tool"}')
-  const guide = JSON.parse(
-    (await toolResult(old, 'plugin_helper_guide'))!.content[0]!.type === 'text'
-      ? ((await toolResult(old, 'plugin_helper_guide'))!.content[0] as { text: string }).text
-      : '{}',
-  ) as { files: { path: string; content: string }[] }
-  await prompt(old, 'call plugin_helper_create ' + JSON.stringify({ files: guide.files }))
-  const createdResult = (await toolResult(old, 'plugin_helper_create'))!.content[0] as { text: string }
-  const draft = JSON.parse(createdResult.text) as import('@agnes/protocol').AuthoringCandidate
-  expect(draft).toMatchObject({ state: 'draft', installer: 'agent', origin: { turn: 2 } })
-  expect(
-    (await client.packages.list({ profile: 'local-dev' })).packages.some((p) => p.id === draft.packageId),
-  ).toBe(false)
-  await prompt(
-    old,
-    'call plugin_helper_install ' + JSON.stringify({ action: 'test', proposalId: draft.candidateId }),
-  )
-  await prompt(
-    old,
-    'call plugin_helper_install ' + JSON.stringify({ action: 'commit', proposalId: draft.candidateId }),
-  )
-  const reviewed = await client.request('_agnes/v1/plugins.candidates.show', {
-    profile: 'local-dev',
-    candidateId: draft.candidateId,
-  })
-  expect(reviewed).toMatchObject({ state: 'review', tests: { state: 'passed', hash: draft.candidateHash } })
-  await page.addInitScript(() => {
-    if (location.protocol !== 'http:') return
-    localStorage.setItem('agnes-locale', localStorage.getItem('e2e-authoring-locale') ?? 'en')
-    localStorage.setItem('agnes-theme', localStorage.getItem('e2e-authoring-theme') ?? 'light')
-  })
-  await page.goto(runtime.url)
-  await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible()
-  await expect(page.locator('.workspace-heading .workspace-name').filter({ hasText: /^w$/ })).toHaveCount(1)
-  expect((await client.workspace.list()).items.every((workspace) => workspace.name.trim().length > 0)).toBe(
-    true,
-  )
-  if (!(await page.getByTestId('settings-navigation').isVisible())) await settings(page)
-  await section(page, 'plugins')
-  await pluginPage.getByTestId('candidate-open').filter({ hasText: draft.packageId }).click()
-  await expect(pluginPage.getByTestId('candidate-state')).toHaveText('Awaiting review')
-  await expect(pluginPage.getByTestId('candidate-tests')).toContainText('Tests passed 1/1')
-  await expect(pluginPage.getByTestId('candidate-provenance')).toContainText(
-    'Drafted by Agent · From “Text statistics workshop” (turn 2)',
-  )
-  await expect(pluginPage.getByTestId('candidate-capability-delta')).toContainText('New permissions: none')
-  await expect(pluginPage.getByTestId('candidate-summary')).toContainText('No new permissions')
-  await expect(pluginPage.getByTestId('candidate-hash')).toBeHidden()
-  await expect(pluginPage.getByTestId('candidate-technical')).not.toHaveAttribute('open')
-  await expect(pluginPage.getByTestId('candidate-approve')).toBeInViewport({ ratio: 1 })
-  await expect(pluginPage.getByTestId('candidate-reject')).toBeInViewport({ ratio: 1 })
-  const diff = pluginPage
-    .getByTestId('candidate-file-diff')
-    .filter({ has: page.getByText('index.mjs', { exact: true }) })
-  await diff.locator('summary').click()
-  await expect(diff).toContainText('my_text_stats')
-  await expect(diff.getByText('New file', { exact: true })).toBeVisible()
-  await expect(diff.locator('.candidate-diff-added').first()).toContainText('+')
-  await translated(page)
-  await accessible(page, info, 'candidate-review')
-  // Review each changed screen across both languages and themes. Digest and session IDs are dynamic.
-  for (const [locale, theme] of [
-    ['en', 'light'],
-    ['en', 'dark'],
-    ['zh-CN', 'light'],
-    ['zh-CN', 'dark'],
-  ] as const) {
-    await page.evaluate(
-      ({ locale, theme }) => {
-        localStorage.setItem('e2e-authoring-locale', locale)
-        localStorage.setItem('e2e-authoring-theme', theme)
-      },
-      { locale, theme },
-    )
-    await page.goto(runtime.url)
-    await expect(page.getByTestId('conversation-turn')).toHaveCount(4)
-    await expect(
-      page.getByRole('button', { name: locale === 'en' ? 'Settings' : '设置', exact: true }),
-    ).toBeVisible()
-    if (!(await page.getByTestId('settings-navigation').isVisible())) await settings(page, locale)
-    await section(page, 'plugins')
-    await pluginPage.getByTestId('candidate-open').filter({ hasText: draft.packageId }).click()
-    await expect(pluginPage.getByTestId('candidate-approve')).toBeInViewport({ ratio: 1 })
-    await expect(pluginPage.getByTestId('candidate-reject')).toBeInViewport({ ratio: 1 })
-    await expect(pluginPage.getByTestId('candidate-hash')).toBeHidden()
-    await translated(page)
-    await accessible(page, info, `candidate-review-${locale}-${theme}`)
-    await screen(page, info, `candidate-review-${locale}-${theme}`)
-    await pluginPage.getByTestId('candidate-fact-chain').click()
-    const facts = page.getByTestId('fact-chain')
-    await expect(facts.locator('[data-fact-kind="authoring"]')).toContainText(draft.packageId)
-    await expect(facts.locator('[data-fact-kind="authoring"]')).toContainText(
-      locale === 'en' ? 'Tests passed: 1' : '测试通过 1 项',
-    )
-    await expect(facts.locator('details')).not.toHaveAttribute('open')
-    await translated(page)
-    await accessible(page, info, `fact-authoring-${locale}-${theme}`)
-    // Frame the originating conversation consistently after navigation and text reflow.
-    await page.getByRole('region', { name: /^(Conversation|对话)$/, exact: true }).evaluate((viewport) => {
-      viewport.style.scrollBehavior = 'auto'
-      viewport.scrollTop = 0
-    })
-    await page.mouse.move(0, 0)
-    await screen(page, info, `fact-authoring-${locale}-${theme}`)
-  }
-  await page.evaluate(() => {
-    localStorage.setItem('e2e-authoring-locale', 'en')
-    localStorage.setItem('e2e-authoring-theme', 'light')
-  })
-  await page.goto(runtime.url)
-  await expect(page.getByTestId('conversation-turn')).toHaveCount(4)
-  await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible()
-  if (!(await page.getByTestId('settings-navigation').isVisible())) await settings(page)
-  await section(page, 'plugins')
-  await pluginPage.getByTestId('candidate-open').filter({ hasText: draft.packageId }).click()
-  await client.session.rename(old.id, 'A very long workshop title '.repeat(3).slice(0, 80))
-  await page.goto(runtime.url)
-  await expect(page.getByTestId('conversation-turn')).toHaveCount(4)
-  if (!(await page.getByTestId('settings-navigation').isVisible())) await settings(page)
-  await section(page, 'plugins')
-  await pluginPage.getByTestId('candidate-open').filter({ hasText: draft.packageId }).click()
-  await page.emulateMedia({ reducedMotion: 'reduce' })
-  for (const [width, height] of [
-    [1440, 900],
-    [1024, 900],
-    [900, 900],
-    [840, 900],
-    [540, 900],
-    [390, 900],
-    [540, 600],
-  ]) {
-    await page.setViewportSize({ width: width!, height: height! })
-    await expect(pluginPage.getByTestId('candidate-approve')).toBeInViewport({ ratio: 1 })
-    await expect(pluginPage.getByTestId('candidate-reject')).toBeInViewport({ ratio: 1 })
-    expect(
-      await pluginPage
-        .getByTestId('candidate-review')
-        .evaluate((panel) => panel.scrollWidth <= panel.clientWidth),
-    ).toBe(true)
-  }
-  await page.setViewportSize({ width: 1280, height: 900 })
-  await page.emulateMedia({ reducedMotion: 'no-preference' })
-  await client.session.rename(old.id, 'Text statistics workshop')
-  await pluginPage.getByTestId('candidate-approve').click()
-  const dialog = page.getByRole('dialog', { name: 'Approve and publish', exact: true })
-  await expect(dialog.getByTestId('candidate-hash')).toBeHidden()
-  await dialog.getByTestId('candidate-technical').locator('summary').focus()
-  await dialog.getByTestId('candidate-technical').locator('summary').press('Enter')
-  await expect(dialog.getByTestId('candidate-hash')).toHaveText(reviewed.candidateHash)
-  // A model edit after the human opened the review must invalidate that dialog's captured hashes.
-  const changed = guide.files.map((f) =>
-    f.path === 'index.mjs' ? { ...f, content: f.content + '\n// Edited after review\n' } : f,
-  )
-  const { readFile, writeFile } = await import('node:fs/promises'),
-    { join } = await import('node:path')
-  const record = JSON.parse(
-    await readFile(
-      join(runtime.home, 'profiles/local-dev/.authoring-candidates', draft.candidateId, 'record.json'),
-      'utf8',
-    ),
-  ) as { tree: string }
-  await writeFile(join(record.tree, 'index.mjs'), changed.find((f) => f.path === 'index.mjs')!.content)
-  expectedBrowserErrors.push(
-    'console: Failed to load resource: the server responded with a status of 409 (Conflict)',
-  )
-  const staleResponse = page.waitForResponse((response) => response.url().endsWith('/candidates/approve'))
-  await dialog.getByRole('button', { name: 'Approve and publish', exact: true }).click()
-  expect((await staleResponse).status()).toBe(409)
-  await expect(pluginPage.getByTestId('candidate-error')).toBeVisible()
-  expect(
-    (await client.packages.list({ profile: 'local-dev' })).packages.some((p) => p.id === draft.packageId),
-  ).toBe(false)
-  await pluginPage.getByTestId('candidate-back').click()
-  await pluginPage.getByTestId('candidate-open').filter({ hasText: draft.packageId }).first().click()
-  await expect(pluginPage.getByTestId('candidate-state')).toHaveText('Draft; review invalidated after edits')
-  await expect(pluginPage.getByTestId('candidate-approve')).toHaveCount(0)
-  await pluginPage.getByTestId('candidate-test').click()
-  await page
-    .getByRole('dialog', { name: 'Run tests', exact: true })
-    .getByRole('button', { name: 'Run tests', exact: true })
-    .click()
-  await expect(pluginPage.getByTestId('candidate-state')).toHaveText('Tests passed; awaiting submission')
-  await pluginPage.getByTestId('candidate-submit').click()
-  await expect(pluginPage.getByTestId('candidate-state')).toHaveText('Awaiting review')
-  await pluginPage.getByTestId('candidate-approve').click()
-  await page
-    .getByRole('dialog', { name: 'Approve and publish', exact: true })
-    .getByRole('button', { name: 'Approve and publish', exact: true })
-    .click()
-  await expect(pluginPage.getByTestId('candidate-review')).toHaveCount(0, { timeout: 25_000 })
-  await expect(pluginPage.getByTestId('candidate-published-link')).toContainText(draft.packageId)
-  const provenance = await client.request('_agnes/v1/packages.provenance', {
-    profile: 'local-dev',
-    id: draft.packageId,
-  })
-  expect(provenance).toMatchObject({
-    installer: 'agent',
-    authoring: { candidateId: draft.candidateId, origin: draft.origin },
-  })
-  expect(provenance.authoring!.candidateHash).not.toBe(reviewed.candidateHash)
-  expect((await old.tools()).tools.some((t) => t.name === 'my_text_stats')).toBe(false)
-  const freshSession = await client.session.new({
-    sessionKey: crypto.randomUUID(),
-    cwd: runtime.workspace,
-    preset: 'full-access',
-  })
-  await freshSession.attach()
-  expect((await freshSession.tools()).tools.some((tool) => tool.name === 'skill_read')).toBe(true)
-  expect((await freshSession.tools()).tools.some((t) => t.name === 'my_text_stats')).toBe(true)
-  await prompt(freshSession, 'call my_text_stats {"text":"hello world"}')
-  expect((await toolResult(freshSession, 'my_text_stats'))!.structured).toEqual({ characters: 11, words: 2 })
-  await prompt(old, 'call read {"path":"report.md"}')
-  expect(JSON.stringify(await toolResult(old, 'read'))).toContain('Synthetic delivery')
-  // Authored Markdown and adjacent scripts stay inert, and rejection never publishes a Skill.
-  const skillBody =
-    '---\nname: Reviewed method\ndescription: Synthetic reusable workflow.\n---\n\nUse the normal approved shell tool for scripts.\n'
-  await prompt(
-    old,
-    'call skill_helper_create ' +
-      JSON.stringify({
-        name: 'reviewed-method',
-        files: [
-          { path: 'SKILL.md', content: skillBody },
-          {
-            path: 'scripts/check.mjs',
-            content: "throw new Error('This script must never run during review')\n",
-          },
-        ],
-      }),
-  )
-  const skill = JSON.parse(
-    ((await toolResult(old, 'skill_helper_create'))!.content[0] as { text: string }).text,
-  ) as import('@agnes/protocol').AuthoringCandidate
-  expect(skill).toMatchObject({ state: 'draft', installer: 'agent' })
-  await prompt(
-    old,
-    'call skill_helper_install ' + JSON.stringify({ action: 'test', proposalId: skill.candidateId }),
-  )
-  await prompt(
-    old,
-    'call skill_helper_install ' + JSON.stringify({ action: 'commit', proposalId: skill.candidateId }),
-  )
-  await section(page, 'skills')
-  await page
-    .locator('#resource-list')
-    .getByRole('tab', { name: /^Pending review/ })
-    .click()
-  await page.locator('#resource-list').getByTestId('candidate-refresh').click()
-  const skillRow = page
-    .locator('#resource-list')
-    .getByTestId('candidate-list')
-    .locator(`li[data-candidate-id="${skill.candidateId}"]`)
-  await expect(skillRow.getByTestId('candidate-origin-time')).toHaveCount(1)
-  await skillRow.getByTestId('candidate-open').click()
-  await expect(skillReview.getByTestId('candidate-tests')).toContainText('Tests passed 1/1')
-  await skillReview
-    .getByTestId('candidate-file-diff')
-    .filter({ has: page.getByText('skills/reviewed-method/SKILL.md', { exact: true }) })
-    .locator('summary')
-    .click()
-  const skillDiff = skillReview
-    .getByTestId('candidate-file-diff')
-    .filter({ has: page.getByText('skills/reviewed-method/SKILL.md', { exact: true }) })
-    .locator('.candidate-diff-added')
-  await expect
-    .poll(async () => (await skillDiff.allTextContents()).map((line) => line.slice(2, -1)).join('\n'))
-    .toBe(skillBody)
-  await skillReview.getByTestId('candidate-reject').click()
-  await page
-    .getByRole('dialog', { name: 'Reject candidate', exact: true })
-    .getByRole('button', { name: 'Reject candidate', exact: true })
-    .click()
-  await expect(skillReview.getByTestId('candidate-state')).toHaveText('Rejected')
-  await skillReview.getByTestId('candidate-back').click()
-  await expect(page.locator('#resource-list').getByTestId('candidate-list').locator('li')).toHaveCount(0)
-  const skillHistory = page.locator('#resource-list').getByTestId('candidate-history')
-  await expect(skillHistory).not.toHaveAttribute('open')
-  await skillHistory.locator('summary').click()
-  await expect(skillHistory.locator('li')).toHaveCount(1)
-  await expect(skillHistory.locator(`li[data-candidate-id="${skill.candidateId}"]`)).toContainText('Rejected')
-  await section(page, 'plugins')
-  await expect(pluginPage.getByTestId('candidate-review')).toHaveCount(0)
-  await expect(pluginPage.getByTestId('candidate-list').getByTestId('candidate-open')).toHaveCount(0)
-  const pluginHistory = pluginPage.getByTestId('candidate-history')
-  await expect(pluginHistory).not.toHaveAttribute('open')
-  await pluginHistory.locator('summary').click()
-  await expect(pluginHistory.getByTestId('candidate-open')).toHaveCount(1)
-  await expect(
-    pluginHistory.getByTestId('candidate-open').filter({ hasText: draft.packageId }),
-  ).toContainText('Published')
-  expect(
-    (await client.packages.list({ profile: 'local-dev' })).packages.some((p) => p.id === skill.packageId),
-  ).toBe(false)
-  // A reviewed update supplies a genuine replacement diff, and the inbox shows all three review outcomes.
-  const updateFiles = guide.files.map((file) =>
-    file.path === 'index.mjs' ? { ...file, content: file.content + '\n// Reviewed update\n' } : file,
-  )
-  // Escape template text so the demo's natural-language authoring shortcut does not replace this explicit call.
-  await prompt(
-    old,
-    'call plugin_helper_create ' +
-      JSON.stringify({ files: updateFiles }).replace(/[Pp]/g, (letter) =>
-        letter === 'P' ? '\\u0050' : '\\u0070',
-      ),
-  )
-  const update = JSON.parse(
-    ((await toolResult(old, 'plugin_helper_create'))!.content[0] as { text: string }).text,
-  ) as import('@agnes/protocol').AuthoringCandidate
-  expect(update.files.find((file) => file.path === 'index.mjs')?.after).toBe(
-    updateFiles.find((file) => file.path === 'index.mjs')!.content,
-  )
-  await prompt(
-    old,
-    'call plugin_helper_install ' + JSON.stringify({ action: 'test', proposalId: update.candidateId }),
-  )
-  await prompt(
-    old,
-    'call plugin_helper_install ' + JSON.stringify({ action: 'commit', proposalId: update.candidateId }),
-  )
-  for (const [locale, theme] of [
-    ['en', 'light'],
-    ['en', 'dark'],
-    ['zh-CN', 'light'],
-    ['zh-CN', 'dark'],
-  ] as const) {
-    await page.evaluate(
-      ({ locale, theme }) => {
-        localStorage.setItem('e2e-authoring-locale', locale)
-        localStorage.setItem('e2e-authoring-theme', theme)
-      },
-      { locale, theme },
-    )
-    await page.goto(runtime.url)
-    await expect(page.getByTestId('conversation-turn')).toHaveCount(11)
-    if (!(await page.getByTestId('settings-navigation').isVisible())) await settings(page, locale)
-    await section(page, 'plugins')
-    await expect(pluginPage.getByTestId('candidate-list').getByTestId('candidate-open')).toHaveCount(1)
-    const history = pluginPage.getByTestId('candidate-history')
-    await expect(history).not.toHaveAttribute('open')
-    await history.locator('summary').click()
-    await expect(history.getByTestId('candidate-open')).toHaveCount(1)
-    const rows = pluginPage.getByTestId('candidate-open')
-    await expect(rows).toHaveCount(2)
-    await expect(
-      rows
-        .filter({ hasText: draft.packageId })
-        .filter({ hasText: locale === 'en' ? 'New plugin' : '新插件' }),
-    ).toHaveCount(1)
-    await expect(
-      rows.filter({ hasText: draft.packageId }).filter({ hasText: locale === 'en' ? 'Update' : '更新' }),
-    ).toHaveCount(1)
-    await expect(rows.filter({ hasText: skill.packageId })).toHaveCount(0)
-    await expect(rows.getByTestId('candidate-origin-time')).toHaveCount(2)
-    await section(page, 'skills')
-    await page
-      .locator('#resource-list')
-      .getByRole('tab', { name: locale === 'en' ? 'Pending review' : '待审阅', exact: true })
-      .click()
-    const skillCandidateHistory = page.locator('#resource-list').getByTestId('candidate-history')
-    await expect(skillCandidateHistory).not.toHaveAttribute('open')
-    await skillCandidateHistory.locator('summary').click()
-    await expect(
-      page
-        .locator('#resource-list')
-        .getByTestId('candidate-history')
-        .locator(`li[data-candidate-id="${skill.candidateId}"]`),
-    ).toContainText(locale === 'en' ? 'Skill · New skill' : '技能 · 新技能')
-    await expect(
-      page
-        .locator('#resource-list')
-        .getByTestId('candidate-history')
-        .locator(`li[data-candidate-id="${skill.candidateId}"]`)
-        .getByTestId('candidate-origin-time'),
-    ).toHaveCount(1)
-    await section(page, 'plugins')
-    await expect(rows.first()).toContainText(locale === 'en' ? 'Plugin · Update' : '插件 · 更新')
-    await expect(rows.getByTestId('candidate-list-facts').first()).toContainText('0.1.0')
-    await expect(page.getByTestId('plugin-drain-summary')).toHaveCount(0)
-    const installed = (await client.packages.list({ profile: 'local-dev' })).packages
-    const draining = (await client.packages.generations({ profile: 'local-dev' })).plugins.find(
-      (plugin) => plugin.drainingSessions > 0 && installed.some((item) => item.id === plugin.id),
-    )
-    expect(draining).toBeDefined()
-    await page.locator(`.plugin-row[data-plugin-id="${draining!.id}"] .plugin-details-button`).click()
-    await pluginTab(page, 'versions').click()
-    await expect(page.getByTestId('plugin-drain-summary')).toHaveCount(1)
-    await expect(page.getByTestId('plugin-drain-summary')).not.toContainText('@agnes/')
-    await page.locator('#plugin-detail .plugin-detail-close').click()
-    // Assert real timestamps above; normalize only elapsed text for stable screenshots.
-    const times = rows.getByTestId('candidate-origin-time')
-    const originals = await times.allTextContents()
-    await times.evaluateAll(
-      (nodes, text) =>
-        nodes.forEach((node) => {
-          node.textContent = text
-        }),
-      locale === 'en' ? 'Session turn: 2 min ago' : '来源轮次：2 分钟前',
-    )
-    await screen(page, info, `candidate-list-${locale}-${theme}`)
-    await times.evaluateAll(
-      (nodes, labels) =>
-        nodes.forEach((node, index) => {
-          node.textContent = labels[index] ?? ''
-        }),
-      originals,
-    )
-    await pluginPage
-      .getByTestId('candidate-open')
-      .filter({ hasText: update.packageId })
-      .filter({ hasText: locale === 'en' ? 'Awaiting review' : '待审阅' })
-      .click()
-    const file = pluginPage
-      .getByTestId('candidate-file-diff')
-      .filter({ has: page.getByText('index.mjs', { exact: true }) })
-    await file.locator('summary').click()
-    const removed = file.locator('.candidate-diff-removed').filter({ hasText: '// Edited after review' })
-    const added = file.locator('.candidate-diff-added').filter({ hasText: '// Reviewed update' })
-    const diff = file.getByTestId('candidate-diff-lines')
-    await diff.focus()
-    await diff.press('ArrowDown')
-    await expect.poll(() => diff.evaluate((pre) => pre.scrollTop)).toBeGreaterThan(0)
-    await file.getByTestId('candidate-diff-lines').evaluate((pre) => {
-      pre.scrollIntoView({ block: 'nearest' })
-      pre.scrollTop = pre.scrollHeight
-    })
-    await expect(removed).toContainText('- // Edited after review')
-    await expect(removed).toBeInViewport({ ratio: 1 })
-    await expect(added).toContainText('+ // Reviewed update')
-    await expect(added).toBeInViewport({ ratio: 1 })
-    await expect(file.locator('summary')).toBeInViewport({ ratio: 1 })
-    await expect(pluginPage.getByTestId('candidate-approve')).toBeInViewport({ ratio: 1 })
-    await translated(page)
-    await accessible(page, info, `candidate-diff-${locale}-${theme}`)
-    await screen(page, info, `candidate-diff-${locale}-${theme}`)
-  }
-  await page.evaluate(() => {
-    localStorage.setItem('e2e-authoring-locale', 'en')
-    localStorage.setItem('e2e-authoring-theme', 'light')
-  })
-  await page.goto(runtime.url)
-  await expect(page.getByTestId('conversation-turn')).toHaveCount(11)
-  if (!(await page.getByTestId('settings-navigation').isVisible())) await settings(page)
-  await section(page, 'plugins')
-  await prompt(
-    old,
-    'call skill_helper_create ' +
-      JSON.stringify({
-        name: 'reviewed-published',
-        files: [{ path: 'SKILL.md', content: skillBody }],
-      }),
-  )
-  const publishSkill = JSON.parse(
-    ((await toolResult(old, 'skill_helper_create'))!.content[0] as { text: string }).text,
-  ) as import('@agnes/protocol').AuthoringCandidate
-  await prompt(
-    old,
-    'call skill_helper_install ' + JSON.stringify({ action: 'test', proposalId: publishSkill.candidateId }),
-  )
-  await prompt(
-    old,
-    'call skill_helper_install ' + JSON.stringify({ action: 'commit', proposalId: publishSkill.candidateId }),
-  )
-  await section(page, 'skills')
-  await page
-    .locator('#resource-list')
-    .getByRole('tab', { name: /^Pending review/ })
-    .click()
-  await page.locator('#resource-list').getByTestId('candidate-refresh').click()
-  const publishSkillRow = page
-    .locator('#resource-list')
-    .getByTestId('candidate-list')
-    .locator(`li[data-candidate-id="${publishSkill.candidateId}"]`)
-  await expect(publishSkillRow.getByTestId('candidate-origin-time')).toHaveCount(1)
-  await publishSkillRow.getByTestId('candidate-open').click()
-  await skillReview.getByTestId('candidate-approve').click()
-  await page
-    .getByRole('dialog', { name: 'Approve and publish', exact: true })
-    .getByRole('button', { name: 'Approve and publish', exact: true })
-    .click()
-  await expect(skillReview).toBeHidden({ timeout: 25_000 })
-  await expect(page.locator('#resource-list').getByTestId('candidate-published')).toBeVisible()
-  await expect(page.locator('#resource-list').getByTestId('candidate-published-link')).toHaveAttribute(
-    'href',
-    /settings=skills/,
-  )
-  const skillSession = await client.session.new({
-    sessionKey: crypto.randomUUID(),
-    cwd: runtime.workspace,
-    preset: 'full-access',
-  })
-  await skillSession.attach()
-  await prompt(skillSession, 'call skill_read {"name":"reviewed-published"}')
-  expect(JSON.stringify(await toolResult(skillSession, 'skill_read'))).toContain(
-    'Synthetic reusable workflow.',
-  )
-  await prompt(old, 'call skill_read {"name":"reviewed-published"}')
-  expect(JSON.stringify(await toolResult(old, 'skill_read'))).toContain('Synthetic reusable workflow.')
-  expect((await old.tools()).tools.some((t) => t.name === 'my_text_stats')).toBe(false)
-  const list = JSON.parse(await runtime.cli(['plugins', 'candidates', 'list', '--json'])) as {
-    candidates: { state: string }[]
-  }
-  expect(list.candidates.some((c) => c.state === 'published')).toBe(true)
-  await info.attach('reviewed-publication.json', {
-    body: JSON.stringify({ reviewed, provenance }),
-    contentType: 'application/json',
-  })
-  await section(page, 'plugins')
-  // Installed provenance opens the retained published candidate, not the pending replacement.
-  await page.getByRole('button', { name: `View details for ${draft.packageId}`, exact: true }).click()
-  await pluginTab(page, 'permissions').click()
-  await page
-    .getByRole('dialog', { name: 'Plugin details', exact: true })
-    .getByTestId('plugin-fact-chain')
-    .click()
-  const publishedFacts = page.getByTestId('fact-chain').locator('[data-fact-kind="authoring"]')
-  await expect(publishedFacts).toContainText(`${draft.packageId} 0.1.0 · Published`)
-  await expect(publishedFacts).toContainText('Human review recorded')
-  await expect(publishedFacts).toContainText('Tests passed: 1')
-})
-
 for (const locale of ['en', 'zh-CN'] as const) {
   test(`Playwright MCP preset prefill and cancelled confirmation (${locale})`, async ({ page, runtime }) => {
     await preferences(page, locale)
@@ -1172,13 +647,13 @@ for (const locale of ['en', 'zh-CN'] as const) {
     await fresh(page, locale)
     await settings(page, locale)
     await section(page, 'mcp')
-    await page.locator('#mcp-create').click()
+    await page.getByTestId('mcp-create').click()
     await expect(page.locator('#mcp-methods')).toBeVisible()
     await page.locator('#mcp-method-local').click()
     await expect(page.locator('#mcp-command')).toBeVisible()
-    await expect(page.locator('#mcp-name')).toBeFocused()
+    await expect(page.locator('#mcp-command')).toBeFocused()
     await page.locator('#mcp-cancel').click()
-    await expect(page.locator('#mcp-create')).toBeFocused()
+    await expect(page.getByTestId('mcp-create')).toBeFocused()
     await page.getByTestId('mcp-add-preset').click()
     await expect(page.locator('#mcp-dialog')).toBeVisible()
     await expect(page.locator('#mcp-id')).toHaveValue('playwright')

@@ -14,6 +14,7 @@
     "runtime.spec.ts",
     "ui-gate.spec.ts",
     "ui-flows.spec.ts",
+    "candidate-review.spec.ts",
     "first-run.spec.ts",
     "business-agents.spec.ts",
     "first-run-snapshots.ts",
