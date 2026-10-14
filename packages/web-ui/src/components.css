@@ -872,8 +872,8 @@
     gap: var(--s4);
     line-height: var(--line-sm);
   }
-  /* Same three sizes for native modal shells and React confirmations. */
-  :where(dialog:not(.agh-drawer)) {
+  /* Same three sizes for native modal shells and React confirmations. A host shown as a page has none. */
+  :where(dialog:not(.agh-drawer):not([data-presentation="page"])) {
     width: min(560px, calc(100vw - var(--s32)));
     border-radius: var(--radius-modal);
     box-shadow: var(--elevation-2);
@@ -1083,7 +1083,7 @@
   }
   @media (max-width: 767px) {
     /* Native hosts retain their IDs and controllers; dimensions supersede desktop ID widths. */
-    dialog:not(.agh-drawer):not(.lightbox)[open] {
+    dialog:not(.agh-drawer):not(.lightbox):not([data-presentation="page"])[open] {
       --dialog-max-height: min(46rem, calc(100dvh - var(--s16) - var(--control-height-touch)));
       display: flex;
       flex-direction: column;
