@@ -1304,8 +1304,10 @@
     }
   }
   /* The submitted answers, in the conversation where the person's reply landed. */
+  /* Spaced from the messages around it like any other message (design Q3). */
   .agnes-question-receipt {
     max-width: 40rem;
+    margin-block: var(--s8) var(--s24);
     border: 1px solid var(--agnes-line-primary);
     border-radius: var(--radius-md);
     background: var(--agnes-bg-surface);
@@ -1332,6 +1334,9 @@
   }
   .agnes-question-receipt dl > div {
     display: contents;
+  }
+  .agnes-question-receipt dl[data-unlabelled] {
+    grid-template-columns: minmax(0, 1fr);
   }
   .agnes-question-receipt dt {
     max-width: 14em;

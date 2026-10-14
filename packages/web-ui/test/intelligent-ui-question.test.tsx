@@ -267,6 +267,19 @@ describe('question card', () => {
     expect(host.querySelectorAll('[data-testid="question-answer-topics"] .agnes-question-pill')).toHaveLength(
       2,
     )
+    // Without a label the answer stands alone: no id column.
+    await act(async () =>
+      root.render(
+        createElement(
+          UiLocaleProvider,
+          { source: source('zh-CN') },
+          createElement(QuestionAnswersReceipt, { items: [{ id: 'scope', value: '单个 index.html' }] }),
+        ),
+      ),
+    )
+    expect(q('[data-testid="question-answers"] dt')).toBeNull()
+    expect(q('[data-testid="question-answers"] dl')?.hasAttribute('data-unlabelled')).toBe(true)
+    expect(q('[data-testid="question-answers"]')?.textContent).not.toContain('scope')
     expect(
       completeAnswers(questionForm(surface())!, { days: 'x', topics: [], notes: 'n', who: 'y' }),
     ).toBeUndefined()

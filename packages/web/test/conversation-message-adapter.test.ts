@@ -702,8 +702,11 @@ it('shows a submitted question as «你的回答» and folds the queued line tha
   })
   await mount(store)
   expect(item('queued')).toBeNull()
+  // The person's submission is not the agent's tool call; only the trace keeps it.
+  expect(item('submit')).toBeNull()
+  // Without the question surface there is no label, and the id is never shown in its place.
   expect(item('answers')?.querySelector('[data-testid="question-answer-days"]')?.textContent).toBe(
-    'days3 天 2 晚',
+    '3 天 2 晚',
   )
 })
 

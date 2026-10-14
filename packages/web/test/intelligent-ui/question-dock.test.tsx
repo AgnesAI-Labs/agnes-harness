@@ -138,6 +138,7 @@ async function mount(records: UiSurfaceRecord[], extra?: ReturnType<typeof creat
   return {
     host,
     action,
+    client,
     cleanup: async () => {
       await act(async () => root.unmount())
       detach()
@@ -248,12 +249,18 @@ describe('answered receipt', () => {
     await view.cleanup()
   })
 
-  it('falls back to question ids when the surface is gone, and keeps other forms as they were', async () => {
+  it('never shows a question id: without the question the answers stand alone', async () => {
     const gone = await mount(
       [financeRecord()],
       createElement(QuestionAnswersNode, { submission: questionSubmission(submitted())!, native: 'native' }),
     )
-    expect(gone.host.querySelector('[data-testid="question-answer-format"] dt')?.textContent).toBe('format')
+    await act(async () => {})
+    const receipt = gone.host.querySelector('[data-testid="question-answers"]')
+    expect(receipt?.querySelector('dt')).toBeNull()
+    expect(receipt?.textContent).not.toMatch(/format|topics/)
+    expect(receipt?.querySelector('[data-testid="question-answer-format"] dd')?.textContent).toBe(
+      'HTML slides',
+    )
     await gone.cleanup()
     const other = await mount(
       [financeRecord()],
@@ -265,5 +272,22 @@ describe('answered receipt', () => {
     expect(other.host.querySelector('[data-testid="question-answers"]')).toBeNull()
     expect(other.host.textContent).toContain('native')
     await other.cleanup()
+  })
+
+  it('keeps the labels when the answer arrives while the question is still open', async () => {
+    const records = [questionRecord()]
+    const view = await mount(
+      records,
+      createElement(QuestionAnswersNode, { submission: questionSubmission(submitted())!, native: 'native' }),
+    )
+    expect(view.host.querySelector('[data-testid="question-answer-format"] dt')?.textContent).toBe('Format')
+    // The submission closes the form; the session page stops listing it and nothing reads it by id.
+    records.splice(0, 1, { ...questionRecord('closed') })
+    await act(async () => view.client.refresh())
+    expect(view.host.querySelector('[data-testid="question-answer-format"] dt')?.textContent).toBe('Format')
+    expect(view.host.querySelector('[data-testid="question-answer-topics"] dt')?.textContent).toBe(
+      'What should it cover',
+    )
+    await view.cleanup()
   })
 })

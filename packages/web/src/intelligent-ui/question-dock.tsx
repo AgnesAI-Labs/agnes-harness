@@ -113,24 +113,27 @@ export function QuestionAnswersNode({
   native: ReactNode
 }) {
   const { binding, client } = useIntelligentBinding()
-  useEffect(() => {
-    if (client && submission.surfaceId.startsWith('card-')) void client.lookup(submission.surfaceId)
-  }, [client, submission.surfaceId])
   const record = client?.knownRecord(submission.surfaceId)
+  // Ask again whenever the surface is not known: it may have been listed (open) when this mounted.
+  const known = !!record
+  useEffect(() => {
+    if (client && !known && submission.surfaceId.startsWith('card-')) void client.lookup(submission.surfaceId)
+  }, [client, known, submission.surfaceId])
   const form = record ? questionForm(record.surface) : undefined
   if (record ? !form : !submission.surfaceId.startsWith('card-')) return native
   const values = submission.answers as QuestionAnswers
-  const known = form?.questions ?? []
+  const asked = form?.questions ?? []
   const items = [
-    ...known.map((question) => ({
+    ...asked.map((question) => ({
       id: question.id,
       label: question.label,
       question: question.question,
       value: values[question.id],
     })),
     ...Object.keys(values)
-      .filter((key) => !known.some((question) => question.id === key))
-      .map((key) => ({ id: key, label: key, value: values[key] })),
+      .filter((key) => !asked.some((question) => question.id === key))
+      // A question id is the model's key, never a label: without the question, show the answer alone.
+      .map((key) => ({ id: key, value: values[key] })),
   ].flatMap((item) =>
     typeof item.value === 'string' ||
     (Array.isArray(item.value) && item.value.every((value) => typeof value === 'string'))

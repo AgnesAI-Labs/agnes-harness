@@ -308,6 +308,14 @@ export class IntelligentUiClient {
     for (const receipt of this.snapshot.receipts)
       if (receipt.seq > watermark && (latest.get(receipt.commandId)?.seq ?? 0) < receipt.seq)
         latest.set(receipt.commandId, receipt)
+    // The page lists open surfaces only. One that leaves it was closed: keep its last view, so
+    // a card that is still on screen (an answer, a view in its turn) keeps its words.
+    for (const previous of this.snapshot.surfaces)
+      if (
+        !surfaces.some((item) => item.surface.id === previous.surface.id) &&
+        !this.looked.get(previous.surface.id)
+      )
+        this.looked.set(previous.surface.id, { ...previous, status: 'closed' })
     this.snapshot = {
       surfaces: surfaces.sort((a, b) => b.updatedSeq - a.updatedSeq),
       receipts: [...latest.values()].sort((a, b) => a.seq - b.seq),

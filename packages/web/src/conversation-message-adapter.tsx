@@ -147,9 +147,12 @@ export function renderedSurfaceIds(nodes: readonly UINode[], turn: UITurn): stri
   })
 }
 
-function foldedQuestionQueues(nodes: readonly UINode[]): ReadonlySet<string> {
+function foldedUserActions(nodes: readonly UINode[]): ReadonlySet<string> {
   const folded = new Set<string>()
   nodes.forEach((node, index) => {
+    // ui_submit runs only from a person's surface action, never as the agent's step: the reply
+    // does not show it as a tool call. The execution trace keeps it.
+    if (node.kind === 'tool' && node.name === 'ui_submit') folded.add(node.id)
     // The ui_submit tool node itself can sit between the queued line and the delivered answers.
     const next = nodes.slice(index + 1).find((item) => item.kind === 'user')
     if (
@@ -219,8 +222,9 @@ export function WebConversationMessages({
     registry ? registry.subscribeSession.bind(registry) : noSessionSubscription,
     () => registry?.sessionId,
   )
-  // A queued surface action followed by its question answers is one event: the answers say it.
-  const folded = foldedQuestionQueues(nodes ?? [])
+  // A person's surface submission is not the agent's work: fold its tool row, and the queued line
+  // before question answers (the answers say it).
+  const folded = foldedUserActions(nodes ?? [])
   const shownNodeIds = folded.size
     ? (visibleNodeIds ?? (nodes ?? []).map((node) => node.id)).filter((id) => !folded.has(id))
     : visibleNodeIds

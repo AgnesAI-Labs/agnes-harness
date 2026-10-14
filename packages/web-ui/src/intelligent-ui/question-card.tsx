@@ -356,7 +356,7 @@ function QuestionStep({
 export function QuestionAnswersReceipt({
   items,
 }: {
-  items: readonly { id: string; label: string; question?: string; value: string | string[] }[]
+  items: readonly { id: string; label?: string; question?: string; value: string | string[] }[]
 }) {
   const { t } = useUiText(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
   return (
@@ -369,10 +369,10 @@ export function QuestionAnswersReceipt({
         <Icon name="check" aria-hidden="true" />
         <span>{t('ui.question.answers')}</span>
       </header>
-      <dl>
+      <dl data-unlabelled={items.some((item) => !item.label) || undefined}>
         {items.map((item) => (
           <div key={item.id} data-testid={`question-answer-${item.id}`}>
-            <dt title={item.question}>{item.label}</dt>
+            {item.label && <dt title={item.question}>{item.label}</dt>}
             <dd>
               {Array.isArray(item.value)
                 ? item.value.map((value) => (
