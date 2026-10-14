@@ -79,4 +79,144 @@
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
+
+  /* 提问导航：对话区左缘一列细横线，每条一次提问；悬停放大并弹出预览卡。 */
+  .turn-nav-rail {
+    position: absolute;
+    left: 18px;
+    top: 50%;
+    z-index: 4;
+    max-height: 60%;
+    padding: var(--s8) var(--s16) var(--s8) var(--s4);
+    overflow-y: auto;
+    scrollbar-width: none;
+    transform: translateY(-50%);
+  }
+  .turn-nav-rail::-webkit-scrollbar {
+    display: none;
+  }
+  .turn-nav-list {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .turn-nav-item {
+    display: flex;
+    align-items: center;
+  }
+  .turn-nav-tick {
+    position: relative;
+    display: block;
+    height: 2px;
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--agnes-text-primary) 22%, transparent);
+    cursor: pointer;
+    transition:
+      width 140ms var(--motion-ease-out),
+      background-color 140ms var(--motion-ease-out);
+  }
+  /* 命中区比 2px 的线宽得多，上下相邻横线的命中区首尾相接。 */
+  .turn-nav-tick::after {
+    content: "";
+    position: absolute;
+    inset: -4px -10px -4px -4px;
+  }
+  .turn-nav-tick:is([data-current="true"], [data-hot="true"]) {
+    background: var(--agnes-text-primary);
+  }
+  .turn-nav-tick[data-bookmarked="true"]::before {
+    content: "";
+    position: absolute;
+    left: -8px;
+    top: -1.5px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--agnes-brand-primary);
+  }
+  .turn-nav-tick:focus-visible {
+    outline: 2px solid var(--agnes-brand-focus-ring);
+    outline-offset: 3px;
+  }
+  .turn-nav-card {
+    position: absolute;
+    left: 64px;
+    z-index: 5;
+    width: min(340px, calc(100% - 80px));
+    padding: var(--s10) var(--s12) var(--s10) var(--s16);
+    border-radius: var(--radius-popover);
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-popover);
+    box-shadow: var(--shadow-popover);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+    cursor: pointer;
+    transform-origin: left center;
+    transition:
+      opacity var(--motion-fast) var(--motion-ease-out),
+      transform 160ms var(--motion-ease-out);
+  }
+  @starting-style {
+    .turn-nav-card[data-open="true"] {
+      opacity: 0;
+      transform: translateX(-6px) scale(0.98);
+    }
+  }
+  .turn-nav-card[hidden] {
+    display: none;
+  }
+  :where(.turn-nav-card) p {
+    margin: 0;
+  }
+  .turn-nav-card-meta {
+    display: flex;
+    gap: var(--s8);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+  }
+  .turn-nav-card-prompt {
+    padding-right: var(--s24);
+    overflow: hidden;
+    font-weight: 600;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .turn-nav-card-reply {
+    display: -webkit-box;
+    margin-top: var(--s4);
+    overflow: hidden;
+    color: var(--agnes-text-secondary);
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .turn-nav-card-more {
+    margin-top: var(--s4);
+    overflow: hidden;
+    color: var(--agnes-text-tertiary);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .turn-nav-card-error {
+    margin-top: var(--s4);
+    color: var(--agnes-status-danger-text);
+    font-size: var(--font-size-xs);
+  }
+  .turn-nav-card .turn-nav-bookmark {
+    position: absolute;
+    top: var(--s8);
+    right: var(--s8);
+    color: var(--agnes-text-tertiary);
+  }
+  .turn-nav-card .turn-nav-bookmark[aria-pressed="true"] {
+    color: var(--agnes-brand-primary);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .turn-nav-tick,
+    .turn-nav-card {
+      transition: none;
+    }
+  }
 }

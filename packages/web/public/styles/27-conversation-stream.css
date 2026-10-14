@@ -591,4 +591,23 @@
       min-height: var(--control-height);
     }
   }
+
+  /* 从提问导航跳过来时，那次提问的气泡短暂高亮。 */
+  .agh-bubble-user > .ant-bubble-body > .ant-bubble-content {
+    transition:
+      background-color 300ms var(--motion-ease-out),
+      box-shadow 300ms var(--motion-ease-out);
+  }
+  .conversation-turn[data-turn-nav-flash] .agh-bubble-user > .ant-bubble-body > .ant-bubble-content,
+  .agh-bubble-user:has(> .ant-bubble-body .timeline-node[data-turn-nav-flash])
+    > .ant-bubble-body
+    > .ant-bubble-content {
+    background: var(--agnes-brand-emphasis-soft);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--agnes-brand-primary) 30%, transparent);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .agh-bubble-user > .ant-bubble-body > .ant-bubble-content {
+      transition: none;
+    }
+  }
 }

@@ -38,4 +38,16 @@ export {
   type ConversationTurnActionsProps,
   type ConversationTurnFeedback,
 } from './conversation/turn-actions.js'
+export { scrollToTurn, TURN_NAV_FLASH_MS, TurnNav, type TurnNavProps } from './conversation/turn-nav.js'
+export {
+  currentTurn,
+  railHidden,
+  TICK,
+  type TurnNavEntry,
+  type TurnNavReply,
+  tickGap,
+  tickWidth,
+  toggleBookmark,
+  turnNavEntries,
+} from './conversation/turn-nav-model.js'
 export { ConversationUsage, type ConversationUsageProps } from './conversation/usage.js'

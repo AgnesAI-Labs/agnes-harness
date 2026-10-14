@@ -1,7 +1,11 @@
 import type { UINode, UITurn } from '@agnes/protocol'
 import type { ClientResourceService, LocaleService, SessionService, SlotRegistry } from '@agnes/web-client'
 import { isConversationNode } from '@agnes/web-conversation/conversation-visibility'
-import { createConversationProjectionStore, useConversationProjection } from '@agnes/web-ui/conversation'
+import {
+  createConversationProjectionStore,
+  TurnNav,
+  useConversationProjection,
+} from '@agnes/web-ui/conversation'
 import type { TranscriptHandle, TranscriptMeta } from '@agnes/web-units'
 import { forwardRef, useCallback, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
@@ -38,10 +42,16 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
     awaitingRender: false,
     loadEpoch: 0,
   })
+  const translate = useCallback(
+    (key: string, vars?: Readonly<Record<string, string | number>>) => locale?.t(key, vars) ?? key,
+    [locale],
+  )
   const [store] = useState(() =>
     createConversationProjectionStore({ sessionId: registry.sessionId ?? '', nodes: [] }),
   )
   const projection = useConversationProjection(store)
+  // The prompt navigator draws beside the scrolling transcript, so it needs the element itself.
+  const [viewportElement, setViewportElement] = useState<HTMLElement | null>(null)
   const viewport = useCallback(
     () => content.current?.closest<HTMLElement>('#transcript') ?? content.current,
     [],
@@ -86,6 +96,7 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
   useLayoutEffect(() => {
     const element = viewport()
     if (!element) return
+    setViewportElement(element)
     scroll.current.expectedTop = element.scrollTop
     const onScroll = () => {
       const state = scroll.current
@@ -198,6 +209,14 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
           {...(resources ? { resources } : {})}
         />
       </div>
+      <TurnNav
+        t={translate}
+        nodes={projection.nodes}
+        turns={projection.turns}
+        viewport={viewportElement}
+        hasEarlier={projection.meta?.hasEarlier}
+        loadEarlier={loadEarlier}
+      />
     </div>
   )
 })
