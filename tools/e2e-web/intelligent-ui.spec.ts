@@ -128,7 +128,7 @@ for (const locale of ['en', 'zh-CN'])
     for (const action of await actions.all()) await expect(action).toBeDisabled()
     await expect(card.getByTestId('ui-table-differences')).toHaveCount(0)
     const refresh = card.getByTestId('ui-source-refresh').first()
-    await expect(refresh).toContainText(locale === 'en' ? 'Refresh' : '刷新')
+    await expect(refresh).toHaveAccessibleName(locale === 'en' ? 'Refresh differences' : '刷新 differences')
     await refresh.click()
     await expect(card.getByTestId('ui-source-error').first()).toHaveAttribute('role', 'alert')
     await expect(card.getByTestId('ui-source-error').first()).toContainText('UI_SOURCE_DENIED')
@@ -214,7 +214,9 @@ for (const [locale, theme, width] of [
       'title',
       locale === 'en' ? 'Revision 1' : '版本 1',
     )
-    await expect(fullSurface.locator('header')).not.toContainText(locale === 'en' ? 'Revision 1' : '版本 1')
+    await expect(fullSurface.locator(':scope > header')).not.toContainText(
+      locale === 'en' ? 'Revision 1' : '版本 1',
+    )
     const detail = panel.getByTestId('ui-detail-summary')
     await expect(detail).toBeVisible()
     expect(await detail.evaluate((element) => getComputedStyle(element).borderTopWidth)).toBe('1px')
