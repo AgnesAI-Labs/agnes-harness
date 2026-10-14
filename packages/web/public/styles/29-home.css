@@ -79,8 +79,7 @@
       #session-goal-host,
       #workbench-controls,
       .workbench-controls,
-      #session-runtime,
-      .topbar-workspace
+      #session-runtime
     ) {
     display: none;
   }

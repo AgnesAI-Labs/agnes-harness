@@ -374,7 +374,6 @@ export function Dock({ context }: { context: UiExtensionContext }) {
         ? { rightWidth: clampRightWidth(next, rightMax) }
         : { bottomHeight: clampBottomHeight(next, maxBottomHeight(window.innerHeight)) }),
     }))
-  const workspaceHost = document.querySelector('.topbar')
   const workspace = workbench?.workspace
   const copyWorkspace = async () => {
     if (!workspace) return
@@ -397,25 +396,21 @@ export function Dock({ context }: { context: UiExtensionContext }) {
       >
         {copyMessage}
       </Toast>
-      {workspace &&
-        workspaceHost &&
-        createPortal(
-          <Tooltip title={`${workspace.name} · ${t('workbench.workspace')}`}>
-            <Button
-              appearance="ghost"
-              size="small"
-              className="topbar-workspace"
-              data-testid="topbar-workspace"
-              aria-label={`${workspace.name} · ${t('workbench.workspace')}`}
-              onClick={() => void copyWorkspace()}
-            >
-              <Icon name="folder" />
-              {/* A narrow bar keeps the folder: the name goes, the tooltip still says it. */}
-              <span className="topbar-workspace-name">{workspace.name}</span>
-            </Button>
-          </Tooltip>,
-          workspaceHost,
-        )}
+      {/* The sidebar already shows the workspace; copying its path is a "more" menu entry that
+          presses this hidden button, which keeps the action and its toast here. */}
+      {workspace && (
+        <Button
+          appearance="ghost"
+          size="small"
+          htmlType="button"
+          id="workspace-copy-path"
+          hidden
+          tabIndex={-1}
+          aria-label={t('workbench.workspace')}
+          title={workspace.path}
+          onClick={() => void copyWorkspace()}
+        />
+      )}
       {edges.map((edge) => {
         const entries = workbenchPanels
           .entries()
@@ -587,7 +582,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
       })}
     </div>
   )
-  // The toggles live in the bar's action group (this region's host); only the workspace chip joins the title.
+  // The toggles live in the bar's action group (this region's host).
   return controlsView
 }
 const workbenchRenderers = new WeakMap<HTMLElement, RegionRenderer>()

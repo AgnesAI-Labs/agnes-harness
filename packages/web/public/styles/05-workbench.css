@@ -237,36 +237,14 @@
   .topbar .connection-group {
     display: none;
   }
-  /* The workspace follows the title as a quiet chip. */
-  .topbar .topbar-workspace {
-    flex: 0 0 auto;
-    min-width: 1.75rem;
-    height: 1.75rem;
-    min-height: 1.75rem;
-    gap: var(--s4);
-    padding-inline: var(--s8);
-    color: var(--agnes-text-tertiary);
-    font-size: var(--font-size-xs);
-    max-width: 15rem;
-    overflow: hidden;
-  }
-  .topbar-workspace-name {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  /* What a crowded bar gives up, in order: the title shortens first; then the Agent chip goes and
-   the workspace chip keeps only its folder. The view switch and the action group always stay. */
+  /* What a crowded bar gives up, in order: the title shortens first, then the Agent chip goes.
+   The view switch and the action group always stay. */
   .task-heading h1 {
     min-width: min(6rem, 100%);
   }
   @container topbar-row (max-width: 55rem) {
-    .task-heading .topbar-agent,
-    .topbar-workspace-name {
+    .task-heading .topbar-agent {
       display: none;
-    }
-    .topbar .topbar-workspace {
-      padding-inline: var(--s4);
     }
   }
 

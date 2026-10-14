@@ -165,20 +165,45 @@ describe('rendered topbar region', () => {
     goalEntry?.click()
     expect(goalPressed).toHaveBeenCalledTimes(1)
     goal.remove()
+
+    // The workspace is named in the sidebar; the bar only offers to copy its path, first in the menu.
+    expect(document.querySelector('[data-testid="topbar-workspace"]')).toBeNull()
+    const copy = document.createElement('button')
+    copy.id = 'workspace-copy-path'
+    copy.hidden = true
+    copy.setAttribute('aria-label', 'Copy workspace path')
+    const copyPressed = vi.fn()
+    copy.addEventListener('click', copyPressed)
+    document.body.append(copy)
+    more.click()
+    more.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+    more.click()
+    const copyEntry = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLElement>('[data-testid="topbar-more-workspace"]')
+      expect(found?.textContent).toBe('Copy workspace path')
+      return found
+    }, committed)
+    expect([...document.querySelectorAll('[role="menuitem"]')].map((entry) => entry.textContent)).toEqual([
+      'Copy workspace path',
+      'Runtime info',
+      'Report a problem',
+    ])
+    copyEntry?.click()
+    expect(copyPressed).toHaveBeenCalledTimes(1)
+    copy.remove()
   })
 
-  it('collapses by the width of the bar: the Agent chip and workspace name give way to the title', () => {
+  it('collapses by the width of the bar: the Agent chip gives way to the title', () => {
     const css = readWebStyleSource(resolve(__dirname, '../public/style.css'))
     expect(css).toMatch(/\.topbar-row \{[^}]*container: topbar-row \/ inline-size/)
     const start = css.indexOf('@container topbar-row (max-width: 55rem) {')
     expect(start).toBeGreaterThan(-1)
     const narrow = css.slice(start, css.indexOf('\n  }\n', start))
-    for (const selector of ['.topbar-agent', '.topbar-workspace-name'])
-      expect(narrow, selector).toContain(selector)
-    // The workspace keeps its folder, and the view switch and action group always stay.
-    expect(narrow).not.toMatch(
-      /\.topbar-workspace,|#view-chat|\.session-tabs\b|workbench-right-toggle|topbar-more/,
-    )
+    expect(narrow).toContain('.topbar-agent')
+    // The view switch and action group always stay.
+    expect(narrow).not.toMatch(/#view-chat|\.session-tabs\b|workbench-right-toggle|topbar-more/)
+    // The workspace is named in the sidebar, not in the bar.
+    expect(css).not.toContain('.topbar-workspace')
     // The workbench label shows only on wide windows.
     expect(css).toMatch(
       /@media \(max-width: 1439px\) \{\s*\.topbar-row \.workbench-toggle-label \{\s*display: none;/,

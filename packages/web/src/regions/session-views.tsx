@@ -12,7 +12,19 @@ function moreActions(): MenuItem[] {
   const goal = document.querySelector<HTMLButtonElement>(
     '#session-goal-host:not([hidden]) [data-testid="goal-toggle"]',
   )
+  const workspace = document.getElementById('workspace-copy-path')
   return [
+    // The workspace is named in the sidebar; the bar keeps only the copy of its path.
+    ...(workspace
+      ? [
+          {
+            id: 'workspace',
+            label: workspace.getAttribute('aria-label') ?? '',
+            testId: 'topbar-more-workspace',
+            onSelect: () => workspace.click(),
+          },
+        ]
+      : []),
     // Runtime info exists only while a session is open.
     ...(document.getElementById('session-runtime')
       ? [
