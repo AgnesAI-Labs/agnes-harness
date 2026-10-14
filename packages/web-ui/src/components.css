@@ -255,28 +255,6 @@
     color: var(--agnes-text-secondary);
     font-size: var(--font-size-sm);
   }
-  .agh-push-trail {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: var(--s8);
-    min-width: 0;
-  }
-  .agh-push-back {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--s2);
-    padding: 0 var(--s4) 0 0;
-    border: 0;
-    color: var(--agnes-text-secondary);
-    background: transparent;
-    font: inherit;
-    font-size: var(--font-size-sm);
-    cursor: pointer;
-  }
-  .agh-push-back:hover {
-    color: var(--agnes-text-primary);
-  }
   .agh-push-crumbs ol {
     display: flex;
     align-items: center;
@@ -302,9 +280,28 @@
     font: inherit;
     cursor: pointer;
   }
-  .agh-push-crumb:hover {
+  .agh-push-crumb {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s2);
+  }
+  .agh-push-crumb:disabled {
+    cursor: default;
+    opacity: 0.6;
+  }
+  .agh-push-crumb:hover:not(:disabled) {
     color: var(--agnes-text-primary);
     text-decoration: underline;
+  }
+  .agh-push-crumb:focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+  /* The ‹ that opens the breadcrumb: the way back starts here. */
+  .agh-push-crumb-lead {
+    width: 0.875rem;
+    height: 0.875rem;
   }
   .agh-push-crumb-separator {
     width: 0.75rem;

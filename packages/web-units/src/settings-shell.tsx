@@ -1,4 +1,4 @@
-import { Button, Icon, type IconName, icons, useAdvancedSettings } from '@agnes/web-ui'
+import { Button, Icon, type IconName, icons, PushCrumbs, useAdvancedSettings } from '@agnes/web-ui'
 import { Fragment, type ReactNode, useSyncExternalStore } from 'react'
 import type { SettingsDshSlotName, SettingsNavigationEntry, SettingsPane } from './settings.js'
 import {
@@ -125,6 +125,32 @@ function SettingsRegistryNavigation({
   )
 }
 
+/**
+ * A narrow screen shows one settings page at a time; its way back to the list is the same breadcrumb
+ * as every page: 「‹ 设置 › 当前页」. The settings controller listens on `#settings-back`.
+ */
+function SettingsBackCrumbs({
+  store,
+  translate,
+}: {
+  store: SettingsNavigationStore
+  translate?: ((key: string) => string) | undefined
+}) {
+  const { entries, selected } = useSyncExternalStore(store.subscribe, store.snapshot)
+  const t = translate ?? ((key: string) => key)
+  const current = entries.find((entry) => entry.id === selected)
+  return (
+    <PushCrumbs
+      title={current ? t(current.titleKey) : ''}
+      crumbs={[t('settings-shell.root')]}
+      backId="settings-back"
+      backTestId="settings-back"
+      // The settings controller handles the click on #settings-back.
+      onBack={() => {}}
+    />
+  )
+}
+
 function SettingsSectionTabs({
   store,
   translate,
@@ -222,9 +248,7 @@ export function SettingsShell({
       <div id="settings-content-slots">
         {store && (
           <>
-            <Button id="settings-back" appearance="ghost" data-testid="settings-back">
-              <span>{t('settings-shell.back')}</span>
-            </Button>
+            <SettingsBackCrumbs store={store} translate={translate} />
             <SettingsSectionTabs store={store} translate={translate} />
           </>
         )}

@@ -208,6 +208,7 @@ export { Menu, type MenuItem, type MenuProps } from './ui/menu.js'
 export { PageHeader, type PageHeaderProps } from './ui/page-header.js'
 export { Popover } from './ui/popover.js'
 export {
+  PushCrumbs,
   PushHeader,
   type PushNavigation,
   PushPage,

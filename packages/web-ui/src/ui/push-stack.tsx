@@ -203,8 +203,10 @@ export function usePushNavigation({
 }
 
 /**
- * The header of an open page: 「‹ 返回」, the breadcrumb from the root to this page (earlier levels are
- * links back to them), the page title, an optional line under it and its actions. Focus moves to the
+ * The header of an open page: the breadcrumb is the way back, with no separate 返回 beside it. It
+ * starts with 「‹」 (「‹ 模型与账户 › 添加账户」); the level just above this page is the back control
+ * (named 「返回到 …」, it goes back one step through history), and every earlier level jumps to its
+ * own page. Then the title, an optional line under it and the page's actions. Focus moves to the
  * title when the page opens, as it does for a new page.
  */
 export function PushHeader({
@@ -225,51 +227,19 @@ export function PushHeader({
   onBack(): void
   onCrumb(depth: number): void
   className?: string
+  /** `back` names the control that returns one level (`push-back` by default). */
   testIds?: { header?: string; back?: string }
 }) {
   const heading = useRef<HTMLHeadingElement>(null)
   useEffect(() => heading.current?.focus({ preventScroll: true }), [])
+  const backId = testIds.back ?? 'push-back'
   return (
     <header
       className={['agh-push-header', className].filter(Boolean).join(' ')}
       data-testid={testIds.header ?? 'push-header'}
     >
       <div className="agh-push-heading">
-        <div className="agh-push-trail">
-          <button
-            type="button"
-            className="agh-push-back agnes-settings-back"
-            data-testid={testIds.back ?? 'push-back'}
-            onClick={onBack}
-          >
-            <Icon name="chevron-left" />
-            {fallbackT('ui.back')}
-          </button>
-          {crumbs.length > 0 && (
-            <nav className="agh-push-crumbs" aria-label={fallbackT('ui.breadcrumb')}>
-              <ol>
-                {crumbs.map((crumb, depth) => (
-                  // The crumbs are fixed for one open page; the depth is their identity.
-                  // biome-ignore lint/suspicious/noArrayIndexKey: levels never reorder.
-                  <li key={depth}>
-                    <button
-                      type="button"
-                      className="agh-push-crumb"
-                      data-testid={`push-crumb-${depth}`}
-                      onClick={() => onCrumb(depth)}
-                    >
-                      {crumb}
-                    </button>
-                    <Icon name="chevron-right" className="agh-push-crumb-separator" />
-                  </li>
-                ))}
-                <li aria-current="page" className="agh-push-crumb-current">
-                  {title}
-                </li>
-              </ol>
-            </nav>
-          )}
-        </div>
+        <PushCrumbs title={title} crumbs={crumbs} onBack={onBack} onCrumb={onCrumb} backTestId={backId} />
         <h2 ref={heading} tabIndex={-1}>
           {title}
         </h2>
@@ -277,6 +247,86 @@ export function PushHeader({
       </div>
       {actions && <div className="agh-push-actions">{actions}</div>}
     </header>
+  )
+}
+
+/**
+ * The way back as a breadcrumb: 「‹ 上一级 › 当前」. ‹ leads the first level; the level just above is the
+ * back control (「返回到 …」); every earlier level jumps to itself. A view with no shared page header
+ * (a detail inside a list, a filtered list) uses this alone.
+ */
+export function PushCrumbs({
+  title,
+  crumbs,
+  onBack,
+  onCrumb,
+  backTestId = 'push-back',
+  backId,
+  disabled,
+}: {
+  title: ReactNode
+  /** Titles of the levels above, the outermost first. */
+  crumbs: readonly ReactNode[]
+  onBack(): void
+  /** Jump to an earlier level (its index in `crumbs`); without it earlier levels go back too. */
+  onCrumb?(depth: number): void
+  backTestId?: string
+  /** An element id for the back control, for hosts that bind to it. */
+  backId?: string
+  disabled?: boolean
+}) {
+  const parent = crumbs.length - 1
+  return (
+    <nav className="agh-push-crumbs" aria-label={fallbackT('ui.breadcrumb')}>
+      <ol>
+        {crumbs.length === 0 ? (
+          // A view with no named level above it still has its way back.
+          <li>
+            <button
+              type="button"
+              className="agh-push-crumb agh-push-back"
+              id={backId}
+              data-testid={backTestId}
+              disabled={disabled}
+              onClick={onBack}
+            >
+              <Icon name="chevron-left" className="agh-push-crumb-lead" />
+              {fallbackT('ui.back')}
+            </button>
+          </li>
+        ) : (
+          crumbs.map((crumb, depth) => (
+            // The crumbs are fixed for one open view; the depth is their identity.
+            // biome-ignore lint/suspicious/noArrayIndexKey: levels never reorder.
+            <li key={depth}>
+              <button
+                type="button"
+                className={['agh-push-crumb', depth === parent && 'agh-push-back'].filter(Boolean).join(' ')}
+                data-testid={depth === parent ? backTestId : `push-crumb-${depth}`}
+                id={depth === parent ? backId : undefined}
+                disabled={disabled}
+                {...(depth === parent && typeof crumb === 'string'
+                  ? { 'aria-label': fallbackT('ui.backTo', { name: crumb }) }
+                  : {})}
+                onClick={() => (depth === parent || !onCrumb ? onBack() : onCrumb(depth))}
+              >
+                {depth === 0 && <Icon name="chevron-left" className="agh-push-crumb-lead" />}
+                {depth === parent && typeof crumb !== 'string' && (
+                  <span className="agh-visually-hidden">{fallbackT('ui.backToPrefix')}</span>
+                )}
+                {crumb}
+              </button>
+              <Icon name="chevron-right" className="agh-push-crumb-separator" />
+            </li>
+          ))
+        )}
+        {crumbs.length > 0 && (
+          <li aria-current="page" className="agh-push-crumb-current">
+            {title}
+          </li>
+        )}
+      </ol>
+    </nav>
   )
 }
 

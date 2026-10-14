@@ -1,6 +1,6 @@
 import type { WorkspaceEntry } from '@agnes/protocol'
 import type { Translate } from '@agnes/web-conversation/presentation'
-import { Button, EmptyState, Icon, IconButton, renderRegion, SettingsInput } from '@agnes/web-ui'
+import { Button, EmptyState, Icon, IconButton, PushCrumbs, renderRegion, SettingsInput } from '@agnes/web-ui'
 import { type ConversationItemType, Conversations, XProvider } from '@agnes/web-ui/x'
 import { type SidebarNavigationOptions, sortSessionsByRecency, untitledSessionLabel } from '@agnes/web-units'
 import { useState, useSyncExternalStore } from 'react'
@@ -164,6 +164,13 @@ function ArchivedSessions({ options, t }: { options: SidebarNavigationOptions; t
       data-testid="archived-sessions"
       aria-busy={view.status === 'loading'}
     >
+      {/* The archived list is a view of the sessions list; the breadcrumb leads back to it. */}
+      <PushCrumbs
+        title={t('home.filter.archived')}
+        crumbs={[t('sidebar.sectionHeading')]}
+        backTestId="archived-back"
+        onBack={() => archivedSessions.show('active')}
+      />
       <div className="archived-search">
         <Icon name="search" />
         <SettingsInput

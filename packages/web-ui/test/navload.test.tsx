@@ -6,6 +6,7 @@ import {
   invalidateResource,
   Loadable,
   mountRegion,
+  PushCrumbs,
   PushPage,
   PushStack,
   searchParamRoute,
@@ -82,23 +83,34 @@ function Pages({ route = false }: { route?: boolean }) {
 describe('push pages', () => {
   beforeEach(() => history.replaceState(null, '', '/'))
 
-  it('opens in place with back and a breadcrumb, and the root keeps its state', async () => {
+  it('opens in place with the breadcrumb as the way back, and the root keeps its state', async () => {
     const host = render(createElement(Pages))
     click(q(host, '[data-testid="open-crm"]'))
     expect(q(host, '[data-testid="root"]')?.closest('[hidden]')).not.toBeNull()
     expect(q(host, '[data-testid="crm-body"]')).not.toBeNull()
     expect(q(host, '[data-testid="push-header"] h2')?.textContent).toBe('CRM 跟进')
-    expect(q(host, '[data-testid="push-crumb-0"]')?.textContent).toBe('Agent FDE')
+    // Two levels: 「‹ Agent FDE › CRM 跟进」. The parent is the back control; there is no separate 返回.
+    const back = q(host, '[data-testid="push-back"]')
+    expect(back?.textContent).toBe('Agent FDE')
+    expect(back?.querySelector('.agh-push-crumb-lead')).not.toBeNull()
+    expect(back?.getAttribute('aria-label')).toBe('Back to Agent FDE')
+    expect(host.querySelectorAll('[data-testid="push-header"] button')).toHaveLength(1)
     click(q(host, '[data-testid="open-edit"]'))
+    // Three levels: 「‹ Agent FDE › CRM 跟进 › 编辑」. ‹ leads the trail; the direct parent goes back.
     expect([...host.querySelectorAll('.agh-push-crumbs li')].map((item) => item.textContent)).toEqual([
       'Agent FDE',
       'CRM 跟进',
       '编辑',
     ])
-    // A crumb returns to its level; the root crumb to the page itself.
-    click(q(host, '[data-testid="push-crumb-1"]'))
-    await vi.waitFor(() => expect(q(host, '[data-testid="push-header"] h2')?.textContent).toBe('CRM 跟进'))
+    expect(q(host, '[data-testid="push-crumb-0"] .agh-push-crumb-lead')).not.toBeNull()
+    expect(q(host, '[data-testid="push-back"]')?.textContent).toBe('CRM 跟进')
+    expect(q(host, '[data-testid="push-back"] .agh-push-crumb-lead')).toBeNull()
+    expect(q(host, '[data-testid="push-back"]')?.getAttribute('aria-label')).toBe('Back to CRM 跟进')
     click(q(host, '[data-testid="push-back"]'))
+    await vi.waitFor(() => expect(q(host, '[data-testid="push-header"] h2')?.textContent).toBe('CRM 跟进'))
+    // Any earlier level jumps straight to it: the root crumb returns to the page itself.
+    click(q(host, '[data-testid="open-edit"]'))
+    click(q(host, '[data-testid="push-crumb-0"]'))
     await vi.waitFor(() => expect(q(host, '[data-testid="root"]')?.closest('[hidden]')).toBeNull())
     expect(q(host, '[data-testid="push-header"]')).toBeNull()
   })
@@ -254,5 +266,33 @@ describe('startup check notice', () => {
     expect(css).toMatch(
       /@media \(max-width: 900px\) \{\s*\.agnes-doctor-notice \{\s*top: auto;[^}]*bottom: max\(1rem, env\(safe-area-inset-bottom\)\);/,
     )
+  })
+})
+
+describe('the breadcrumb on its own', () => {
+  it('leads back from a view without a page header, keeps a host id, and has a fallback with no level above', () => {
+    const back = vi.fn()
+    const host = render(
+      createElement(PushCrumbs, {
+        title: 'pkg-a',
+        crumbs: ['Candidates'],
+        backTestId: 'candidate-back',
+        backId: 'settings-back',
+        onBack: back,
+      }),
+    )
+    const crumb = q(host, '[data-testid="candidate-back"]')
+    expect(crumb?.id).toBe('settings-back')
+    expect(crumb?.getAttribute('aria-label')).toBe('Back to Candidates')
+    expect(crumb?.querySelector('.agh-push-crumb-lead')).not.toBeNull()
+    expect(host.textContent).toBe('Candidatespkg-a')
+    click(crumb)
+    expect(back).toHaveBeenCalledOnce()
+    const disabled = render(
+      createElement(PushCrumbs, { title: 'x', crumbs: [], disabled: true, onBack: back }),
+    )
+    // Nothing named above: the way back still shows, as 「‹ 返回」.
+    expect(q(disabled, '[data-testid="push-back"]')?.textContent).toBe('Back')
+    expect((q(disabled, '[data-testid="push-back"]') as HTMLButtonElement).disabled).toBe(true)
   })
 })

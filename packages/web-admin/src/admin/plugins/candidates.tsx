@@ -10,6 +10,7 @@ import {
   Icon,
   ListRow,
   MetaText,
+  PushCrumbs,
   SettingsDetails,
   SettingsState,
   SettingsToolbar,
@@ -402,9 +403,14 @@ export function CandidateInbox({
     <section className="plugin-candidates" data-testid="plugin-candidates" aria-label={t('candidates.title')}>
       <SettingsToolbar>
         {selected && !reviewSurface ? (
-          <Button data-testid="candidate-back" disabled={busy} onClick={() => setSelected(undefined)}>
-            {t('candidates.back')}
-          </Button>
+          // A candidate is a view inside the list: 「‹ 候选 › 包名」, the list is the way back.
+          <PushCrumbs
+            title={selected.packageId}
+            crumbs={[t('candidates.title')]}
+            backTestId="candidate-back"
+            disabled={busy}
+            onBack={() => setSelected(undefined)}
+          />
         ) : (
           !merged && <h3>{t('candidates.title')}</h3>
         )}
@@ -485,9 +491,13 @@ export function CandidateInbox({
               </p>
             )}
             {reviewSurface && (
-              <Button data-testid="candidate-back" disabled={busy} onClick={() => setSelected(undefined)}>
-                {t('candidates.back')}
-              </Button>
+              <PushCrumbs
+                title={selected.packageId}
+                crumbs={[t('candidates.title')]}
+                backTestId="candidate-back"
+                disabled={busy}
+                onBack={() => setSelected(undefined)}
+              />
             )}
             <header className="candidate-summary" data-testid="candidate-summary">
               <div className="candidate-summary-heading">
