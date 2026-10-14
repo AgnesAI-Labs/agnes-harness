@@ -219,10 +219,10 @@ it('shows a failed read as one line with retry and keeps what is shown', async (
       createElement(SettingsItem, { label: 'Agnes AI', info: 'The account new sessions use' }),
     ),
   )
-  expect($(host, '[data-testid="settings-read-failed"]').textContent).toMatch(/Couldn’t load|读取失败/)
+  expect($(host, '[data-testid="loadable-error"]').textContent).toMatch(/Couldn’t load|读取失败/)
   expect(host.textContent).toContain('Agnes AI')
   expect($(host, '.agnes-settings-info').getAttribute('title')).toBe('The account new sessions use')
-  await act(async () => $<HTMLButtonElement>(host, '[data-testid="settings-read-failed"] button').click())
+  await act(async () => $<HTMLButtonElement>(host, '[data-testid="loadable-retry"]').click())
   expect(reload).toHaveBeenCalledOnce()
 })
 
@@ -495,4 +495,16 @@ it('closes a finished subpage at once, so a page opened right after stays open',
   // A late popstate for the closed level does not take the new page away.
   await act(async () => window.dispatchEvent(new PopStateEvent('popstate', { state: history.state })))
   expect(host.querySelector('[data-testid="add-body"]')).not.toBeNull()
+})
+
+it('reads a settings group the shared way: nothing for 200 ms, then a placeholder, never a loading line', async () => {
+  vi.useFakeTimers()
+  const host = await render(createElement(SettingsBlock, { label: 'Memory', state: 'loading' }))
+  expect(host.querySelector('[data-testid="loadable-placeholder"]')).toBeNull()
+  await act(async () => vi.advanceTimersByTime(200))
+  expect(host.querySelector('[data-testid="loadable-placeholder"]')).not.toBeNull()
+  // The words stay for assistive tech until the read is slow.
+  expect(host.querySelector('.agh-loadable-status')?.getAttribute('data-slow')).toBeNull()
+  await act(async () => vi.advanceTimersByTime(2800))
+  expect(host.querySelector('.agh-loadable-status')?.getAttribute('data-slow')).toBe('true')
 })

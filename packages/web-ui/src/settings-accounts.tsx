@@ -5,6 +5,7 @@ import { Badge } from './ui/badge.js'
 import { Button } from './ui/button.js'
 import { EmptyState } from './ui/empty-state.js'
 import { Icon } from './ui/icon.js'
+import { Loadable } from './ui/loadable.js'
 import { Menu } from './ui/menu.js'
 import { Tag } from './ui/tag.js'
 import { Toast } from './ui/toast.js'
@@ -167,7 +168,7 @@ export function SettingsAccounts({
       <Toast open={saved} onDismiss={() => onDismissSaved?.()}>
         {t('accounts.saved')}
       </Toast>
-      {phase === 'loading' && <SettingsState tone="loading">{t('accounts.loading')}</SettingsState>}
+      {phase === 'loading' && <Loadable loading hasData={false} shape="rows" />}
       {phase === 'empty' && (
         <EmptyState
           icon={<Icon name="key-round" size={48} />}

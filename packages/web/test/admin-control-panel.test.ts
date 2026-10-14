@@ -442,17 +442,15 @@ it('reports an unavailable catalog as one line with retry, and leaves read-only 
     fetcher,
   )
   const host = await mount(createElement(SessionDefaultsPanel, { api, canSave: false, t }))
-  expect(host.querySelector('[data-testid="settings-read-failed"]')).not.toBeNull()
+  expect(host.querySelector('[data-testid="loadable-error"]')).not.toBeNull()
   expect(host.querySelector('form')).toBeNull()
   fetcher.mockImplementation(async (url) =>
     String(url).endsWith('/loops')
       ? Response.json({ loops: [], revision: 0, defaults: {} })
       : Response.json({ modelAdapters: [] }),
   )
-  await act(async () =>
-    host.querySelector<HTMLButtonElement>('[data-testid="settings-read-failed"] button')?.click(),
-  )
-  expect(host.querySelector('[data-testid="settings-read-failed"]')).toBeNull()
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="loadable-retry"]')?.click())
+  expect(host.querySelector('[data-testid="loadable-error"]')).toBeNull()
   expect(host.querySelectorAll('.ant-select-disabled').length).toBeGreaterThanOrEqual(2)
 })
 

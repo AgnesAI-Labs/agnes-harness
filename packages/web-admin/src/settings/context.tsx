@@ -12,6 +12,7 @@ import {
   SettingsItem,
   SettingsPresetSelect,
   StateSwitch,
+  trackPageRequest,
   useAutosave,
   useUiText,
 } from '@agnes/web-ui'
@@ -132,7 +133,7 @@ export function ContextPanel({ canSave }: { canSave: boolean }) {
     lifetime.current = abort
     setBusy(true)
     setReadFailed(false)
-    void contextRequest({}, fetch, abort.signal)
+    void trackPageRequest(contextRequest({}, fetch, abort.signal))
       .then((value) => {
         if (current) setSnapshot(value)
       })

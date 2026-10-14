@@ -14,6 +14,7 @@ import {
   SettingsSelect,
   StateSwitch,
   secondPresets,
+  trackPageRequest,
   useAutosave,
   useUiText,
 } from '@agnes/web-ui'
@@ -64,7 +65,7 @@ export function AutoReviewPanel({ canSave }: { canSave: boolean }) {
     const controller = new AbortController()
     lifetime.current = controller
     setReadFailed(false)
-    void reviewSettings(undefined, controller.signal)
+    void trackPageRequest(reviewSettings(undefined, controller.signal))
       .then((value) => {
         if (!controller.signal.aborted) setStored(value)
       })

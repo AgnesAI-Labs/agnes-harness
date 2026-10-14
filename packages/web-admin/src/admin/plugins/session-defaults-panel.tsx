@@ -14,6 +14,7 @@ import {
   SettingsGroup,
   SettingsItem,
   SettingsTag,
+  trackPageRequest,
   useAutosave,
   useUiText,
 } from '@agnes/web-ui'
@@ -69,7 +70,9 @@ export function SessionDefaultsPanel({
         current = false
       }
     setBusy(true)
-    Promise.all([api.loops(), api.modelAdapters(), api.composition().catch(() => undefined)])
+    trackPageRequest(
+      Promise.all([api.loops(), api.modelAdapters(), api.composition().catch(() => undefined)]),
+    )
       .then(([loops, adapters, resolved]) => {
         if (!current) return
         setComposition(readComposition(resolved))

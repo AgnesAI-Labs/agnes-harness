@@ -12,6 +12,7 @@ import {
   SettingsTag,
   StateSwitch,
   secondPresets,
+  trackPageRequest,
   useAutosave,
   useUiText,
 } from '@agnes/web-ui'
@@ -42,7 +43,7 @@ export function ObservabilityPanel({ canSave = true }: { canSave?: boolean }) {
   useEffect(() => {
     const abort = new AbortController()
     lifetime.current = abort
-    void observabilityRequest({}, abort.signal)
+    void trackPageRequest(observabilityRequest({}, abort.signal))
       .then((value) => {
         if (!abort.signal.aborted) setSnapshot(value)
       })

@@ -8,6 +8,7 @@ import {
   Icon,
   IconButton,
   ListRow,
+  Loadable,
   Menu,
   SettingsCheckbox,
   SettingsDrill,
@@ -201,7 +202,7 @@ export function CredentialsPage({
         </Banner>
       )}
       {notice && <SettingsState tone="success">{notice}</SettingsState>}
-      {busy && <SettingsState tone="loading">{t('loading')}</SettingsState>}
+      {busy && !items && <Loadable loading hasData={false} shape="rows" />}
       {items?.length === 0 && (
         <EmptyState icon={<Icon name="key-round" />} title={t('empty')} description={t('emptyHelp')} />
       )}

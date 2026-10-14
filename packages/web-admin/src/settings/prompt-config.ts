@@ -1,5 +1,5 @@
 import type { SystemPromptConfig, SystemPromptSnapshot } from '@agnes/protocol'
-import { hasPermission } from '@agnes/web-ui'
+import { hasPermission, trackPageRequest } from '@agnes/web-ui'
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { PluginAdminApi } from '../admin/plugins/api.js'
 import { systemPromptApi } from './system-prompt-api.js'
@@ -60,8 +60,7 @@ export function usePromptSnapshot(api: PromptApi, enabled = true) {
     if (!enabled) return
     const pending = new AbortController()
     setBusy(true)
-    void api
-      .get(pending.signal)
+    void trackPageRequest(api.get(pending.signal))
       .then((value) => {
         if (pending.signal.aborted) return
         publish(store, value)

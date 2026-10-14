@@ -7,6 +7,7 @@ import {
   SettingsItem,
   SettingsSelect,
   SettingsState,
+  trackPageRequest,
   useUiText,
 } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
@@ -45,15 +46,17 @@ export function PermissionDefaults({
     lifetime.current = abort
     setBusy(true)
     setReadFailed(false)
-    void Promise.all([
-      fetcher('/admin/api/loops', { credentials: 'same-origin', cache: 'no-store', signal: abort.signal }),
-      PluginAdminApi.context((url, init) => fetcher(url, { ...init, signal: abort.signal })),
-      fetcher('/admin/api/composition', {
-        credentials: 'same-origin',
-        cache: 'no-store',
-        signal: abort.signal,
-      }),
-    ])
+    void trackPageRequest(
+      Promise.all([
+        fetcher('/admin/api/loops', { credentials: 'same-origin', cache: 'no-store', signal: abort.signal }),
+        PluginAdminApi.context((url, init) => fetcher(url, { ...init, signal: abort.signal })),
+        fetcher('/admin/api/composition', {
+          credentials: 'same-origin',
+          cache: 'no-store',
+          signal: abort.signal,
+        }),
+      ]),
+    )
       .then(async ([defaults, context, composition]) => {
         if (!defaults.ok || !composition.ok) throw new Error('defaults unavailable')
         const value = await defaults.json()

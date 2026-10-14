@@ -15,6 +15,7 @@ import {
   SettingsItem,
   SettingsPageActions,
   SettingsState,
+  trackPageRequest,
   useUiText,
 } from '@agnes/web-ui'
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
@@ -103,8 +104,7 @@ export function DiagnosticsPanel({
     const pending = new AbortController()
     controller.current = pending
     setBusy(true)
-    void api
-      .read(pending.signal)
+    void trackPageRequest(api.read(pending.signal))
       .then((value) => {
         if (!pending.signal.aborted) {
           setBundle(value.bundle)

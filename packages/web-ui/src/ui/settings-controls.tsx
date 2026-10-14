@@ -2,9 +2,10 @@ import type { HTMLAttributes, ReactNode } from 'react'
 import { useId, useState } from 'react'
 
 import { fallbackT } from '../locales/index.js'
-import { SettingsGroup, SettingsInput, SettingsSelect, SettingsState } from '../settings-layout.js'
+import { SettingsGroup, SettingsInput, SettingsSelect } from '../settings-layout.js'
 import { presetChoice, type SettingsPreset } from '../settings-values.js'
 import { Icon } from './icon.js'
+import { Loadable } from './loadable.js'
 
 type DataAttributes = { [name: `data-${string}`]: string | number | boolean | undefined }
 
@@ -38,6 +39,7 @@ export function SettingsBlock({
     children?: ReactNode
   }) {
   const labelId = useId()
+  const hasContent = children !== undefined && children !== null && children !== false
   return (
     <section
       {...props}
@@ -63,22 +65,20 @@ export function SettingsBlock({
           {actions && <span className="agnes-settings-block-actions">{actions}</span>}
         </div>
       )}
-      {state === 'loading' && <SettingsState tone="loading">{fallbackT('ui.loading')}</SettingsState>}
-      {state === 'error' && (
-        <div className="agnes-settings-read-failed" role="alert" data-testid="settings-read-failed">
-          <Icon name="circle-alert" />
-          <span>{fallbackT('ui.readFailed')}</span>
-          {onReload && (
-            <button type="button" onClick={onReload}>
-              {fallbackT('ui.retry')}
-            </button>
-          )}
-        </div>
+      {/* Reads show the shared way: nothing for 200 ms, then a placeholder, 「仍在读取…」 after
+       3 s; a failed read is one line with 重试 and keeps what was already shown. */}
+      {(state || hasContent) && (
+        <Loadable
+          loading={state === 'loading'}
+          error={state === 'error' ? true : undefined}
+          hasData={hasContent}
+          shape="rows"
+          errorText={fallbackT('ui.readFailed')}
+          {...(onReload ? { onRetry: onReload } : {})}
+        >
+          {bare ? children : <SettingsGroup>{children}</SettingsGroup>}
+        </Loadable>
       )}
-      {children !== undefined &&
-        children !== null &&
-        children !== false &&
-        (bare ? children : <SettingsGroup>{children}</SettingsGroup>)}
     </section>
   )
 }

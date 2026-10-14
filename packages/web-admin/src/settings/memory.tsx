@@ -9,6 +9,7 @@ import {
   SettingsItem,
   SettingsSelect,
   SettingsTextArea,
+  trackPageRequest,
   useUiText,
 } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
@@ -43,7 +44,7 @@ export function MemoryPanel({ canSave }: { canSave: boolean }) {
     lifetime.current = abort
     setBusy(true)
     setReadFailed(false)
-    void contextRequest({}, fetch, abort.signal)
+    void trackPageRequest(contextRequest({}, fetch, abort.signal))
       .then(async ({ workspaces }) => {
         if (abort.signal.aborted) return
         setWorkspaces(workspaces)
