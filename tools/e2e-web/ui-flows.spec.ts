@@ -48,7 +48,14 @@ async function workbenchSurface(page: Page, title: string) {
     .locator('[data-testid^="ui-surface-"]')
     .filter({ hasText: title })
   if (!(await panel.isVisible())) {
-    const inline = surfaceCard(page, title)
+    const inline =
+      title === 'Deliverables' ? page.getByTestId('turn-deliverables').last() : surfaceCard(page, title)
+    if (title === 'Deliverables') {
+      await expect(inline).toBeVisible()
+      await inline.getByTestId('deliverable-open').first().click()
+      await expect(panel).toBeVisible()
+      return panel
+    }
     if (!(await inline.isVisible())) {
       await expect(inline).toBeAttached()
       const owner = inline.locator('xpath=ancestor::*[@data-testid="conversation-turn"][1]')

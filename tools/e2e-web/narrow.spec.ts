@@ -300,10 +300,8 @@ for (const locale of ['en', 'zh-CN'])
         await page.goto(`${runtime.url}/?session=${session.id}`)
         await expect(page.getByTestId('conversation-turn').last()).toHaveAttribute('data-status', 'completed')
         // Inspect the recorded deliverable through both placements, then return to the conversation.
-        const delivery = page
-          .getByTestId('intelligent-ui-inline')
-          .locator('[data-testid^="ui-surface-"]')
-          .filter({ hasText: locale === 'en' ? 'Deliverables' : '交付物' })
+        const delivery = page.getByTestId('turn-deliverables').filter({ hasText: 'Delivery report.md' })
+        await expect(delivery).toHaveAttribute('aria-label', name('Deliverables', '交付物'))
         await expand(
           page.getByTestId('conversation-turn').nth(1).getByTestId('turn-process-toggle').locator('..'),
         )

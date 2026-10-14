@@ -277,17 +277,10 @@ for (const locale of ['zh-CN', 'en'])
           .scrollIntoViewIfNeeded()
         await screen('active-session-cards')
         if (deliverable) {
-          await expect(
-            page
-              .getByTestId('intelligent-ui-inline')
-              .locator('[data-testid^="ui-surface-"]')
-              .filter({ hasText: locale === 'en' ? 'Deliverables' : '交付物' }),
-          ).toBeVisible()
-          await page
-            .getByTestId('intelligent-ui-inline')
-            .locator('[data-testid^="ui-surface-"]')
-            .filter({ hasText: locale === 'en' ? 'Deliverables' : '交付物' })
-            .scrollIntoViewIfNeeded()
+          const files = page.getByTestId('turn-deliverables').filter({ hasText: 'report.md' }).last()
+          await expect(files).toBeVisible()
+          await expect(files).toHaveAttribute('aria-label', locale === 'en' ? 'Deliverables' : '交付物')
+          await files.scrollIntoViewIfNeeded()
           await screen('deliverable-surface')
         }
         await expect(page.getByTestId('background-job-card')).toBeVisible()
