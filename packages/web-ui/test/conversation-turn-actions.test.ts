@@ -122,7 +122,8 @@ it('shows complete usage facts as text and keeps the disclosure nodes through re
     ['输出', '0'],
     ['缓存读 / 写', '600 / 0'],
   ])
-  expect(text('.turn-usage-foot')).toBe('「估算」表示服务商没返回实际费用，按目录价计算。')
+  expect(text('.turn-usage-foot > p:first-child')).toBe('「估算」表示服务商没返回实际费用，按目录价计算。')
+  expect(text('.turn-usage-foot [data-testid="turn-view-trace"]')).toBe('在轨迹中查看此轮')
   expect(host.querySelector('img, strong')).toBeNull()
   // One call: no call table, its details one click away.
   expect(host.querySelector('[data-testid="turn-usage-calls"]')).toBeNull()
@@ -290,7 +291,7 @@ it('uses the latest non-adjustment inference model and omits absent costs withou
   ])
   // Nothing was charged: no cost line and no estimate note.
   expect(host.querySelector('.turn-usage-cost')).toBeNull()
-  expect(host.querySelector('.turn-usage-foot')).toBeNull()
+  expect(text('.turn-usage-foot')).toBe('在轨迹中查看此轮')
   await render({ turn: { ...base, finalModel: 'final' }, finalText: 'answer', settled: true })
   expect(required('.turn-meta').textContent).toBe('final')
 })
@@ -451,4 +452,28 @@ it('listens for outside clicks only while its usage panel is open', async () => 
   await act(async () => required<HTMLElement>('.turn-meta').click())
   expect(add.mock.calls.filter(([event]) => event === 'click')).toHaveLength(1)
   add.mockRestore()
+})
+
+it('opens this turn in the trace from the usage panel; the bar keeps copy and fork only', async () => {
+  await render({
+    turn: turn('one', { forkable: true }),
+    finalText: 'answer',
+    settled: true,
+    onFork: async () => {},
+  })
+  const bar = required<HTMLElement>('.turn-footer')
+  const barButtons = Array.from(bar.querySelectorAll('.turn-actions button')).map((button) =>
+    button.getAttribute('aria-label'),
+  )
+  expect(barButtons).toEqual(['复制回答', '分支到新聊天'])
+  const heard = vi.fn()
+  bar.addEventListener('agnes:trace-turn', (event) => heard((event as CustomEvent).detail))
+  await act(async () => required<HTMLElement>('.turn-meta').click())
+  const usage = required<HTMLElement>('.agh-disclosure.turn-usage')
+  expect(usage.dataset.open).toBe('true')
+  await act(async () =>
+    required<HTMLElement>('[data-testid="turn-usage-panel"] [data-testid="turn-view-trace"]').click(),
+  )
+  expect(heard).toHaveBeenCalledWith({ turnId: 'one' })
+  expect(usage.dataset.open).toBe('false')
 })

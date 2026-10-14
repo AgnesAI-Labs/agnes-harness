@@ -171,7 +171,7 @@ export const TurnUsagePanel = forwardRef<HTMLDivElement, TurnUsagePanelProps>(fu
           {(estimated || footer) && (
             <footer className="turn-usage-foot">
               {estimated && <p>{t('turnactions.usage.estimatedNote')}</p>}
-              {footer}
+              {footer && <p className="turn-usage-foot-action">{footer}</p>}
             </footer>
           )}
         </>

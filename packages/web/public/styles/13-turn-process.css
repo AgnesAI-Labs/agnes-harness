@@ -444,6 +444,15 @@
   .turn-usage-foot > p {
     margin: 0;
   }
+  .turn-usage-foot > .turn-usage-foot-action {
+    margin-top: var(--s4);
+  }
+  .turn-usage-foot .turn-usage-trace.agh-btn {
+    height: auto;
+    min-height: 0;
+    padding: 0;
+    font-size: var(--font-size-xs);
+  }
   .turn-feedback {
     color: var(--agnes-status-danger-text);
     font-size: var(--font-size-xs);
