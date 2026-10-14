@@ -20,6 +20,7 @@ import {
 } from '@agnes/web-ui'
 import type { ReactNode } from 'react'
 import {
+  grantsFailure,
   orderGrants,
   SessionGrantList,
   type SessionGrants,
@@ -274,7 +275,13 @@ export function createRuntimeDialog(options: {
         >
           {runtime ? (
             <RuntimeInfo runtime={runtime} tools={tools} loopLabel={loopLabel} t={t}>
-              <SessionGrantList grants={grants} revoking={revoking} onRevoke={revoke} t={t} />
+              <SessionGrantList
+                grants={grants}
+                revoking={revoking}
+                onRevoke={revoke}
+                onRetry={retryGrants}
+                t={t}
+              />
               <SessionToolList
                 tools={tools}
                 failed={toolsFailed}
@@ -306,13 +313,16 @@ export function createRuntimeDialog(options: {
   const render = () => renderRegion(host, <RuntimeDialog />)
   const listSchedules = (params: { scope: 'session'; sessionKey: string }) =>
     options.client.call('_agnes/v1/schedules.list', params)
-  /** The daemon lists what this session may do without asking; a refusal hides the section. */
-  const readGrants = async (mine: number, id: string) => {
+  /**
+   * The daemon lists what this session may do without asking. A failed read stays visible and says
+   * whether it was refused or failed, so it is never mistaken for «nothing is allowed».
+   */
+  const readGrants = async (mine: number, id: string, retries = 0) => {
     let next: SessionGrants
     try {
       next = orderGrants((await options.client.approval.sessionGrants(id)).grants)
-    } catch {
-      next = 'unavailable'
+    } catch (failure) {
+      next = { failed: grantsFailure(failure), retries }
     }
     if (mine !== version) return
     grants = next
@@ -340,6 +350,14 @@ export function createRuntimeDialog(options: {
         render()
       }
     }
+  }
+  const retryGrants = () => {
+    const id = sessionId
+    const previous = grants
+    if (!id || !previous || !('failed' in previous)) return
+    grants = undefined
+    render()
+    void readGrants(version, id, previous.retries + 1)
   }
   const revoke = (grant: SessionApprovalGrant) => {
     const id = sessionId

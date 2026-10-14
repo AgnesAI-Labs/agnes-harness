@@ -55,6 +55,13 @@ export const sessionLocaleCatalog: LocaleCatalog = {
     'session.runtime.grantsHelp': 'After you revoke one, the Agent asks again next time.',
     'session.runtime.grantsLoading': 'Loading what is allowed…',
     'session.runtime.grantsEmpty': 'Nothing is allowed without asking. The Agent asks each time.',
+    'session.runtime.grantsDenied':
+      'You cannot view what this session may do without asking. Existing allowances still apply.',
+    'session.runtime.grantsUnavailable':
+      'Could not read what this session may do without asking. This does not mean nothing is allowed.',
+    'session.runtime.grantsLater':
+      'Still could not read the allowances. Try again later; existing allowances still apply.',
+    'session.runtime.grantsRetry': 'Try again',
     'session.runtime.grantSession': 'This session',
     'session.runtime.grantAlways': 'Always',
     'session.runtime.grantSessionHelp': 'Allowed for this session only · {time}',
@@ -160,6 +167,10 @@ export const sessionLocaleCatalog: LocaleCatalog = {
     'session.runtime.grantsHelp': '撤销后，下次会再问你。',
     'session.runtime.grantsLoading': '正在读取已允许的操作…',
     'session.runtime.grantsEmpty': '没有不用再问的操作，Agent 每次都会先问你。',
+    'session.runtime.grantsDenied': '你无权查看这个会话的授权。已有的授权仍然有效。',
+    'session.runtime.grantsUnavailable': '暂时无法读取授权。这不代表没有授权。',
+    'session.runtime.grantsLater': '仍然无法读取授权，请稍后再试。已有的授权仍然有效。',
+    'session.runtime.grantsRetry': '重试',
     'session.runtime.grantSession': '本会话',
     'session.runtime.grantAlways': '始终',
     'session.runtime.grantSessionHelp': '只在这个会话里允许 · {time}',
