@@ -68,6 +68,7 @@ export function ArtifactFile({
   placement = 'workbench',
   onShowInWorkbench,
   earlier,
+  source,
 }: {
   file: UiArtifactFileData
   laneId: string
@@ -75,8 +76,10 @@ export function ArtifactFile({
   placement?: 'inline' | 'workbench'
   /** Present when this file also has a workbench copy: previews open there, not in the conversation. */
   onShowInWorkbench?: (() => void) | undefined
-  /** An older version of a file presented again with other content: its card says which and how. */
+  /** An older copy of a name presented again with other content: its card says which and how. */
   earlier?: EarlierVersion | undefined
+  /** Who presented the newest copy, shown when its same-name history came from someone else too. */
+  source?: string | undefined
 }) {
   const { t, locale, hostT } = useUiText(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
   const owner = useMemo(
@@ -127,6 +130,7 @@ export function ArtifactFile({
   const subtitle = (
     earlier
       ? [
+          earlier.source && t('ui.file.from', { source: earlier.source }),
           versionName,
           earlier.sizeDelta === 0
             ? t('ui.file.sameSize')
@@ -135,7 +139,7 @@ export function ArtifactFile({
               }),
           earlier.sameDescription ? undefined : described,
         ]
-      : [described, formattedSize]
+      : [source && t('ui.file.from', { source }), described, formattedSize]
   )
     .filter(Boolean)
     .join(' · ')

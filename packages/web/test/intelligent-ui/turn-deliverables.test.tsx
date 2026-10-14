@@ -134,10 +134,14 @@ it('shows one compact group with the earlier version folded, and no artifact ref
     expect(cards[0]?.querySelector('.deliverable-meta')?.textContent).toBe('Final · 1.7 KiB')
     const earlier = group?.querySelector('[data-testid="turn-deliverable-earlier"]')
     expect(earlier?.getAttribute('data-open')).toBe('false')
-    expect(earlier?.querySelector('.agh-disclosure-summary')?.textContent).toBe('Earlier versions · 1')
+    expect(earlier?.querySelector('.agh-disclosure-summary')?.textContent).toBe('Same-name history · 1')
     expect(earlier?.textContent).toContain('Review draft')
     expect(host.textContent).not.toContain(sha(3))
-    expect(host.textContent).not.toContain('crm-assistant')
+    // The version is said in plain words; the package that wrote it only names whose copy it is.
+    expect(cards.map((card) => card.textContent).join(' ')).not.toContain('crm-assistant')
+    expect(earlier?.querySelector('.deliverable-meta')?.textContent).toBe(
+      'From crm-assistant · Copy 1 · Same size as the newest · Review draft',
+    )
     // Opening a conversation card hands the preview to the workbench copy of the same surface.
     await act(async () =>
       cards[0]?.querySelector<HTMLButtonElement>('[data-testid="deliverable-open"]')?.click(),
@@ -187,7 +191,16 @@ it('names an earlier version by its time and its size against the latest', () =>
   const groups = groupDeliverables(turnDeliverables(surfaces, { startSeq: 10, endSeq: 20 }))
   expect(groups[0]?.latest.surfaceId).toBe('v2')
   expect(groups[0]?.earlier.map((entry) => [entry.surfaceId, entry.version])).toEqual([
-    ['v1-again', { presentedAt: at + 60_000, ordinal: 1, sizeDelta: -1200, sameDescription: true }],
+    [
+      'v1-again',
+      {
+        presentedAt: at + 60_000,
+        ordinal: 1,
+        sizeDelta: -1200,
+        sameDescription: true,
+        source: 'deliverables',
+      },
+    ],
   ])
 })
 
@@ -219,13 +232,13 @@ it('shows an earlier card with its time and size difference, and opens its own s
     expect(card?.getAttribute('data-version')).toBe('earlier')
     // The shared description is not repeated; time and size tell the versions apart.
     expect(card?.querySelector('.deliverable-meta')?.textContent).toBe(
-      `Version from ${time} · 1.2 KiB smaller than the latest`,
+      `Presented at ${time} · 1.2 KiB smaller than the newest`,
     )
     await act(async () => host.querySelector<HTMLElement>('[data-testid="deliverable-open"]')?.click())
     // The snapshot of this version, never the workspace file of that name.
     expect(load).toHaveBeenCalledWith({ laneId: 'main', artifact: file.artifact, kind: 'text' })
     expect(host.querySelector('[data-testid="deliverable-preview-version"]')?.textContent).toBe(
-      `Earlier version · ${time}`,
+      `Same-name history · ${time}`,
     )
   } finally {
     await act(async () => root.unmount())
