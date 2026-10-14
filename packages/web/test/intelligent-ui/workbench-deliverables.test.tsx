@@ -13,6 +13,7 @@ import type { UiPlacementBinding } from '../../src/intelligent-ui/placements.js'
 import { attachTurnDeliverables, TurnDeliverables } from '../../src/intelligent-ui/turn-deliverables.js'
 import {
   deliverableGroups,
+  deliverableSource,
   deliverablesCount,
   sessionDeliverables,
   WorkbenchDeliverables,
@@ -276,4 +277,31 @@ it('the tab shows no earlier version for an identical repeat, and labels a chang
     await act(async () => root.unmount())
     host.remove()
   }
+})
+
+it('links a file to its artifact record, else to the tool call its file list was created in', () => {
+  const [entry] = sessionDeliverables([surfaces[1] as UiSurfaceRecord])
+  if (!entry) throw new Error('missing entry')
+  const client = { knownRecord: (id: string) => surfaces.find((record) => record.surface.id === id) }
+  const tool = (toolUseId: string, seq: number, resultSeq?: number) => ({
+    kind: 'tool',
+    id: toolUseId,
+    seq,
+    toolUseId,
+    name: 'present',
+    status: 'completed',
+    summary: 'present',
+    ...(resultSeq ? { resultSeq } : {}),
+  })
+  // The file list «final» was created at seq 18, inside «present» (16–19) and the helper call it ran.
+  const timeline = {
+    nodes: [tool('before', 10, 12), tool('present', 16, 19), tool('ui_render', 17, 18), tool('after', 20)],
+  } as never
+  expect(deliverableSource(timeline, entry, client, 's')).toEqual({
+    sessionId: 's',
+    laneId: 'main',
+    anchor: { kind: 'tool', toolUseId: 'present' },
+  })
+  expect(deliverableSource({ nodes: [tool('before', 10, 12)] } as never, entry, client, 's')).toBeUndefined()
+  expect(deliverableSource(undefined, entry, client, 's')).toBeUndefined()
 })

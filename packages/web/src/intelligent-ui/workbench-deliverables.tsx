@@ -66,6 +66,43 @@ export function deliverablesCount(binding: UiPlacementBinding): WorkbenchPanelCo
   }
 }
 
+/**
+ * Where a file came from: the ledger's own artifact record when the timeline has one, otherwise the
+ * outermost tool call during which its file list was created. Without either there is no link, never a guess.
+ */
+export function deliverableSource(
+  timeline: UITimeline | undefined,
+  entry: TurnDeliverable,
+  client: { knownRecord(id: string): UiSurfaceRecord | undefined },
+  sessionId: string,
+): FactChainParams | undefined {
+  const nodes = timeline?.nodes ?? []
+  const artifact = nodes.find(
+    (node) => node.kind === 'artifact' && node.ref.sha256 === entry.file.artifact.sha256,
+  )
+  if (artifact?.kind === 'artifact')
+    return {
+      sessionId,
+      laneId: entry.lane,
+      anchor: { kind: 'artifact', seq: artifact.seq, ref: artifact.ref },
+    }
+  const created = client.knownRecord(entry.surfaceId)?.createdSeq
+  if (created === undefined) return undefined
+  let call: { seq: number; toolUseId: string } | undefined
+  for (const node of nodes)
+    if (
+      node.kind === 'tool' &&
+      node.seq <= created &&
+      (node.resultSeq === undefined || node.resultSeq >= created) &&
+      // The outermost call names the request («present»), not the helper call nested in it.
+      (!call || node.seq < call.seq)
+    )
+      call = node
+  return call
+    ? { sessionId, laneId: entry.lane, anchor: { kind: 'tool', toolUseId: call.toolUseId } }
+    : undefined
+}
+
 /** The conversation's deliverable card asks for its preview here when the workbench has the file. */
 export const openDeliverablesPanel = () => workbenchNavigation.open(DELIVERABLES_PANEL)
 
@@ -92,16 +129,7 @@ export function WorkbenchDeliverables({
   const newest = groups[0]?.entries[0]
   const current = entries.find((entry) => entryKey(entry) === chosen) ?? newest
   const timeline = (context.data as { timeline?: UITimeline } | undefined)?.timeline
-  // The ledger records each artifact once; its node is the fact chain's anchor for this file.
-  const node = current
-    ? timeline?.nodes.find(
-        (item) => item.kind === 'artifact' && item.ref.sha256 === current.file.artifact.sha256,
-      )
-    : undefined
-  const source: FactChainParams | undefined =
-    current && sessionId && node?.kind === 'artifact'
-      ? { sessionId, laneId: current.lane, anchor: { kind: 'artifact', seq: node.seq, ref: node.ref } }
-      : undefined
+  const source = current && sessionId ? deliverableSource(timeline, current, client, sessionId) : undefined
   const card = (entry: TurnDeliverable & { version?: EarlierVersion }) => (
     // biome-ignore lint/a11y/noStaticElementInteractions: a click inside a card only marks it as the one the footer names.
     <li
