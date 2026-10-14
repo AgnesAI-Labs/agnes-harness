@@ -128,3 +128,40 @@ it('picks the default permission from three cards, confirms full access, and off
   })
   expect(saves.at(-1)).toEqual({ revision: 4, defaults: { preset: 'ptc' } })
 })
+
+it('names an automatic fast reviewer instead of calling it unset, and still warns for an empty verifier', async () => {
+  let auto: Record<string, unknown> = { modelSlot: 'fast' }
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === '/admin/api/auto-review') {
+        if (init?.method === 'POST') auto = JSON.parse(String(init.body))
+        return Response.json(auto)
+      }
+      if (url === '/admin/api/model-slots')
+        return Response.json({
+          revision: 1,
+          slots: { verifier: null },
+          // The fast slot is unset, so it follows the default account's model.
+          auto: { fast: { accountId: 'agnes', route: 'agnes', model: 'agnes-pro' } },
+          modelAdapters: [],
+          canSave: true,
+        })
+      return Response.json({ profile: 'local-dev', clientId: 'admin', permissions: [], readOnly: false })
+    }),
+  )
+  const host = await mount(createElement(AutoReviewPanel, { canSave: true }))
+  await click(host, '[data-testid="auto-review-customize"]')
+  await act(async () => {})
+  expect(host.querySelector('#auto-review-model option[value="fast"]')?.textContent).toContain(
+    'Automatic · agnes-pro',
+  )
+  expect(host.querySelector('[data-testid="auto-review-slot-status"]')).toBeNull()
+  await act(async () => {
+    const select = host.querySelector<HTMLSelectElement>('#auto-review-model')!
+    select.value = 'verifier'
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+  // The verifier is off (null): reviews come to the person, and the page says so.
+  expect(host.querySelector('[data-testid="auto-review-slot-status"]')).not.toBeNull()
+})

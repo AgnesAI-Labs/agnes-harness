@@ -117,12 +117,20 @@ export function AutoReviewPanel({ canSave }: { canSave: boolean }) {
   }
   const slot = value.modelSlot ?? 'fast'
   // The reviewer by the name of its account and model, never its route.
+  /**
+   * The reviewer by the name of its account and model, never its route. An unset fast slot
+   * (undefined) follows the default account and the backend says which model that is (`auto.fast`);
+   * null means the slot is off; a chosen slot nothing serves any more has no name.
+   */
   const modelName = (name: 'fast' | 'verifier') => {
     const chosen = slots?.slots[name]
-    const option =
-      chosen &&
-      slots &&
-      modelSlotOptions(slots).find((entry) => entry.route === chosen.route && entry.id === chosen.model)
+    const automatic = name === 'fast' && chosen === undefined ? slots?.auto?.fast : undefined
+    const target = chosen ?? automatic
+    if (!target || !slots) return undefined
+    const option = modelSlotOptions(slots).find(
+      (entry) => entry.route === target.route && entry.id === target.model,
+    )
+    if (automatic) return t('autoModel', { model: option ? (option.name ?? option.id) : target.model })
     return option ? `${option.label} · ${option.name ?? option.id}` : undefined
   }
   const reviewer = modelName(slot)
