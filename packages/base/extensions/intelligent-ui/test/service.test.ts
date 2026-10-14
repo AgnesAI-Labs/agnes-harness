@@ -1,4 +1,4 @@
-import type { ToolDef } from '@agnes/extension-api'
+import { TOOL_DESCRIPTION_MAX_LENGTH, type ToolDef } from '@agnes/extension-api'
 import type { ExtensionAPI } from '@agnes/extension-api/host'
 import type {
   IntelligentUiInstance,
@@ -379,7 +379,7 @@ describe('preset surface contract and ledger lifecycle', () => {
         expect(tool.description).toContain('show/display in the UI')
         expect(tool.description).toContain('instead of writing HTML and presenting a file')
         // Words go in the reply; titles in one language; ids are the model's own.
-        expect(tool.description).toContain('Plain text, outlines and summaries belong in the reply')
+        expect(tool.description).toContain('plain text, outlines and summaries belong in the reply')
         expect(tool.description).toContain('never a bilingual "A / B" title')
         expect(tool.description).toContain('never imitate system ids')
       }
@@ -394,6 +394,9 @@ describe('preset surface contract and ledger lifecycle', () => {
       expect(text.text).toContain('surface.data[component.dataKey]')
       const bytes = (value: string) => new TextEncoder().encode(value).byteLength
       expect(bytes(tool.description)).toBeLessThan(4500)
+      // Registration refuses a description over the wire limit (UTF-16 units) and the whole
+      // extension then fails to load; keep headroom for the shared data contracts to grow.
+      expect(tool.description.length).toBeLessThanOrEqual(TOOL_DESCRIPTION_MAX_LENGTH - 100)
       expect(bytes(JSON.stringify(tool.parameters))).toBeLessThan(10000)
       expect(bytes(tool.description) + bytes(JSON.stringify(tool.parameters))).toBeLessThan(14000)
     }

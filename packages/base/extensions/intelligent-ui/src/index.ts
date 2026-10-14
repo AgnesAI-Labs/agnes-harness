@@ -48,7 +48,7 @@ export default defineAgnesPlugin({
         defineTool({
           name: 'ui_render',
           description:
-            'Show tables, charts, forms and dashboards, or content the user acts on, as a card inside your reply. Plain text, outlines and summaries belong in the reply itself, not in a surface. For "show/display in the UI", use this instead of writing HTML and presenting a file. Use present for files the user should open or download, and ask_user_question for a question or choice instead. Use presets or pinned plugin components; actions map to declared tools. No HTML or executable code. Write the title in the conversation language only, never a bilingual "A / B" title. Choose a short descriptive surface id; never imitate system ids such as card-<hash>.' +
+            'Show tables, charts, forms, dashboards or content the user acts on as a card in your reply; plain text, outlines and summaries belong in the reply itself. For "show/display in the UI", use this instead of writing HTML and presenting a file. Files: present; a question or choice: ask_user_question. Presets or pinned components only; actions map to declared tools; no HTML or code. Title in the conversation language only, never a bilingual "A / B" title; never imitate system ids such as card-<hash>.' +
             '\n' +
             UI_DATA_DESCRIPTION,
           parameters: reachableParameters(UiRenderParams),
