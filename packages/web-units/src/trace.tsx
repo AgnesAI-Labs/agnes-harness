@@ -1,24 +1,26 @@
 // biome-ignore-all lint/a11y/useSemanticElements: preserve public trace div roles and the virtual list geometry during the JSX migration.
 import type { SessionControlFact } from '@agnes/protocol/gen/agnes-v1'
-import { Button, EmptyState, Icon, SettingsInput, SettingsSelect } from '@agnes/web-ui'
-import { TraceControlFacts } from './trace-control-facts.js'
-import { type InspectorPane, type ToolDetailState, TraceInspector } from './trace-inspector.js'
+import { Button, EmptyState, Icon } from '@agnes/web-ui'
+import { barIntersectsRange, TraceGantt } from './trace-gantt.js'
+import { buildGantt, truncations } from './trace-gantt-model.js'
+import { defaultPane, type InspectorPane, type ToolDetailState, TraceInspector } from './trace-inspector.js'
 import { TraceLightbox } from './trace-inspector-parts.js'
+import { TraceListRow, traceRowHaystack } from './trace-list-row.js'
 import {
-  BADGE_KEY,
-  buildGantt,
+  buildControlRows,
   buildTraceRows,
   clip,
-  type GanttBar,
+  durationLabel,
   placeTraceRowsInTurns,
   type TimelineMode,
   type TimelineRange,
   type TraceRow,
   traceRowBuilder,
   traceStats,
-  traceStepLabel,
-  truncations,
 } from './trace-model.js'
+import type { ReadFactChain } from './trace-provenance.js'
+import { TraceSplitter, useInspectorWidth } from './trace-splitter.js'
+import { TraceToolbar } from './trace-toolbar.js'
 
 export { buildTraceRows, durationLabel, type TraceRow, traceRowBuilder } from './trace-model.js'
 
@@ -26,8 +28,6 @@ import type { ToolCall, ToolResult, UINode, UITurn } from '@agnes/protocol'
 import {
   type ForwardedRef,
   forwardRef,
-  type MouseEvent as ReactMouseEvent,
-  type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -41,8 +41,6 @@ import { flushSync } from 'react-dom'
 import { buildTraceToolHierarchy, isTraceRowHiddenByTool, traceToolAncestors } from './trace-hierarchy.js'
 import { traceLocale, traceText } from './trace-locale.js'
 import { buildTraceRequestMetrics } from './trace-request-metrics.js'
-import { traceRowPreview } from './trace-row-preview.js'
-import { buildTraceTimelineDensity, pickTraceTimelineDensityMember } from './trace-timeline-density.js'
 import {
   buildTraceVirtualLayout,
   captureTraceVirtualAnchor,
@@ -81,6 +79,8 @@ export type TracePanelOptions = {
     params: import('@agnes/protocol').ModelRequestClearParams,
   ) => Promise<import('@agnes/protocol').ModelRequestClearResult>
   openFactChain?: (input: import('@agnes/protocol').FactChainParams) => boolean
+  /** Reads a request's provenance for the inspector's «来源» tab; the trace never opens the workbench. */
+  readFactChain?: ReadFactChain
   readModelRequest?: (
     params: import('@agnes/protocol').ModelRequestParams,
     signal?: AbortSignal,
@@ -107,6 +107,8 @@ type TraceListItem =
       turn: number
       count: number
       collapsed: boolean
+      prompt?: string | undefined
+      durationMs?: number | undefined
     }
   | {
       key: string
@@ -121,16 +123,6 @@ export interface TraceProps {
   root: HTMLElement
   options: Omit<TracePanelOptions, 'root'>
 }
-const laneName = (lane: 'input' | 'model' | 'tool'): string =>
-  traceText(lane === 'input' ? 'trace.lane.input' : lane === 'model' ? 'trace.lane.model' : 'trace.lane.tool')
-const clampPercent = (value: number): number =>
-  Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 50
-const orderedRange = (a: number, b: number): TimelineRange =>
-  a <= b ? { start: a, end: b } : { start: b, end: a }
-const barIntersectsRange = (bar: GanttBar, range: TimelineRange): boolean =>
-  bar.marker
-    ? bar.domainStart >= range.start && bar.domainStart <= range.end
-    : bar.domainStart < range.end && bar.domainEnd > range.start
 /**
  * The built-in trace unit owns all of its markup and state in React.  The host
  * only supplies the outer visibility surface and the imperative data/view
@@ -160,8 +152,13 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
     media.addEventListener('change', update)
     return () => media.removeEventListener('change', update)
   }, [])
-  const [query, setQuery] = useState('')
-  const [kindFilter, setKindFilter] = useState('all')
+  // What is typed stays as typed; matching uses its trimmed, lower-case form.
+  const [typedQuery, setQuery] = useState('')
+  const query = typedQuery.trim().toLowerCase()
+  const [kinds, setKinds] = useState<ReadonlySet<string>>(new Set())
+  const [matchCursor, setMatchCursor] = useState(0)
+  const searchRef = useRef<HTMLInputElement>(null)
+  const inspectorWidth = useInspectorWidth()
   const [selected, setSelected] = useState<string | undefined>(undefined)
   useEffect(() => {
     if (!compact || !selected) return
@@ -171,7 +168,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
       if (previous instanceof HTMLElement && previous.isConnected) previous.focus()
     }
   }, [compact, selected, root])
-  const [pane, setPane] = useState<InspectorPane>('overview')
+  const [pane, setPane] = useState<InspectorPane>('content')
   const [toolDetail, setToolDetail] = useState<ToolDetailState | undefined>(undefined)
   const [lightbox, setLightbox] = useState<{
     src: string
@@ -189,7 +186,6 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
   const [collapsedTools, setCollapsedTools] = useState<ReadonlySet<string>>(new Set())
   const [timelineMode, setTimelineMode] = useState<TimelineMode>('duration')
   const [timelineRange, setTimelineRange] = useState<TimelineRange | null>(null)
-  const [timelineDraft, setTimelineDraft] = useState<TimelineRange | null>(null)
   const [timelineViewport, setTimelineViewport] = useState<TimelineRange | null>(null)
   const [listScrollTop, setListScrollTop] = useState(0)
   const [listViewportHeight, setListViewportHeight] = useState(480)
@@ -207,25 +203,18 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
     anchor: TraceVirtualAnchor | undefined
   } | null>(null)
   const renderedSessionId = useRef<string | undefined>(undefined)
-  const timelineRef = useRef<HTMLDivElement | null>(null)
-  const timelineTrackRef = useRef<HTMLDivElement | null>(null)
-  const timelineGesture = useRef<{
-    pointerId: number
-    clientX: number
-    anchor: number
-    pan: boolean
-    viewportStart: number
-  } | null>(null)
   const locale = useSyncExternalStore((listener) => {
     window.addEventListener('agnes:locale-changed', listener)
     return () => window.removeEventListener('agnes:locale-changed', listener)
   }, traceLocale)
   // buildTraceRows reads the document language itself. locale is only the subscription snapshot.
   // biome-ignore lint/correctness/useExhaustiveDependencies: locale changes the formatted row text
-  const rows = useMemo(
-    () => placeTraceRowsInTurns(traceRowBuilder.build(snapshot.nodes, snapshot.turns), snapshot.turns),
-    [snapshot.nodes, snapshot.turns, locale],
-  )
+  const rows = useMemo(() => {
+    const built = traceRowBuilder.build(snapshot.nodes, snapshot.turns)
+    const controls = buildControlRows(snapshot.meta?.controlFacts ?? [])
+    const all = controls.length ? [...built, ...controls].sort((a, b) => a.seq - b.seq) : built
+    return placeTraceRowsInTurns(all, snapshot.turns)
+  }, [snapshot.nodes, snapshot.turns, snapshot.meta?.controlFacts, locale])
   const toolHierarchy = useMemo(() => buildTraceToolHierarchy(snapshot.nodes), [snapshot.nodes])
   const selectedRow = selected ? rows.find((row) => row.id === selected) : undefined
   const requestMetrics = useMemo(
@@ -246,7 +235,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
       ? `${snapshot.meta?.sessionId ?? ''}:${selectedToolNode.id}:${selectedToolCallSeq}:${selectedToolResultSeq ?? ''}`
       : undefined
   const activeToolDetail = toolDetail?.key === selectedToolKey ? toolDetail : undefined
-  const wantsToolDetail = pane === 'input' || pane === 'output'
+  const wantsToolDetail = pane === 'args' || pane === 'result' || pane === 'input' || pane === 'output'
   useEffect(() => {
     const sessionId = snapshot.meta?.sessionId
     if (
@@ -436,16 +425,6 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
     ? Math.max(timelineModel.start, Math.min(timelineModel.end - viewportWidth, timelineViewport.start))
     : timelineModel.start
   const viewportEnd = viewportStart + viewportWidth
-  const selectedBarKey = useMemo(() => bars.find((bar) => bar.targetId === selected)?.key, [bars, selected])
-  const visibleTimelineBars = useMemo(
-    () => bars.filter((bar) => bar.domainStart <= viewportEnd && bar.domainEnd >= viewportStart),
-    [bars, viewportStart, viewportEnd],
-  )
-  const timelineUnits = useMemo(
-    () =>
-      buildTraceTimelineDensity(visibleTimelineBars, selectedBarKey ? { selectedKey: selectedBarKey } : {}),
-    [visibleTimelineBars, selectedBarKey],
-  )
   const rangeIds = useMemo(
     () =>
       timelineRange && !(timelineRange.start <= timelineModel.start && timelineRange.end >= timelineModel.end)
@@ -457,33 +436,55 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
         : null,
     [bars, timelineRange, timelineModel.start, timelineModel.end],
   )
+  const kindCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const row of rows) counts.set(row.kind, (counts.get(row.kind) ?? 0) + 1)
+    return counts
+  }, [rows])
+  // Type chips and a timeline range narrow the list; search only marks and steps through matches.
   const visibleRows = useMemo(
     () =>
       rows.filter((row) => {
-        if (kindFilter !== 'all' && row.kind !== kindFilter) return false
+        if (kinds.size && !kinds.has(row.kind)) return false
         if (rangeIds && !rangeIds.has(row.id)) return false
         if (!query && !timelineRange && isTraceRowHiddenByTool(toolHierarchy, row.id, collapsedTools))
           return false
-        if (!query) return true
-        const hay =
-          `${row.badge} ${row.step ?? ''} ${row.preview} ${row.raw} ${row.source} ${row.errorCode ?? ''}`.toLowerCase()
-        return hay.includes(query)
+        return true
       }),
-    [rows, rangeIds, query, timelineRange, toolHierarchy, collapsedTools, kindFilter],
+    [rows, rangeIds, query, timelineRange, toolHierarchy, collapsedTools, kinds],
   )
+  const matches = useMemo(
+    () =>
+      query ? visibleRows.filter((row) => traceRowHaystack(row).includes(query)).map((row) => row.id) : [],
+    [visibleRows, query],
+  )
+  const matchIndex = matches.length ? Math.min(matchCursor, matches.length - 1) : 0
+  const currentMatch = matches[matchIndex]
+  // One group per turn, in the order the turns first appear; rows are already placed contiguously.
   const groups = useMemo(() => {
-    const result: Array<{
-      turn: number | undefined
-      rows: TraceRow[]
-    }> = []
+    const result: Array<{ turn: number | undefined; rows: TraceRow[] }> = []
+    const byTurn = new Map<number, { turn: number | undefined; rows: TraceRow[] }>()
     for (const row of visibleRows) {
       const previous = result[result.length - 1]
-      if (previous && previous.turn === row.turn) previous.rows.push(row)
-      else result.push({ turn: row.turn, rows: [row] })
+      const existing = row.turn === undefined ? undefined : byTurn.get(row.turn)
+      if (existing) existing.rows.push(row)
+      else if (previous && previous.turn === row.turn) previous.rows.push(row)
+      else {
+        const group = { turn: row.turn, rows: [row] }
+        result.push(group)
+        if (row.turn !== undefined) byTurn.set(row.turn, group)
+      }
     }
     return result
   }, [visibleRows])
-  const focusActive = Boolean(query || timelineRange || kindFilter !== 'all')
+  const turnPrompts = useMemo(() => {
+    const prompts = new Map<number, string>()
+    for (const row of rows)
+      if (row.turn !== undefined && !prompts.has(row.turn) && (row.kind === 'user' || row.kind === 'control'))
+        prompts.set(row.turn, row.text)
+    return prompts
+  }, [rows])
+  const focusActive = Boolean(query || timelineRange || kinds.size)
   const listItems = useMemo(() => {
     const items: TraceListItem[] = []
     if (snapshot.meta?.hasEarlier && snapshot.meta.loadEarlier)
@@ -496,6 +497,8 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
           turn: group.turn,
           count: group.rows.length,
           collapsed: collapsedTurns.has(group.turn) && !focusActive,
+          prompt: turnPrompts.get(group.turn),
+          durationMs: snapshot.turns.find((turn) => turn.turn === group.turn)?.durationMs,
         })
       if (group.turn !== undefined && collapsedTurns.has(group.turn) && !focusActive) continue
       for (const [index, row] of group.rows.entries())
@@ -507,7 +510,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
         })
     }
     return items
-  }, [groups, collapsedTurns, focusActive, snapshot.meta])
+  }, [groups, collapsedTurns, focusActive, snapshot.meta, snapshot.turns, turnPrompts])
   const listLayout = useMemo(
     () => buildTraceVirtualLayout(listItems, { header: TRACE_HEADER_HEIGHT, row: TRACE_ROW_HEIGHT }),
     [listItems],
@@ -554,8 +557,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
       const revealBar = bar && (bar.domainStart > viewportEnd || bar.domainEnd < viewportStart)
       flushSync(() => {
         if (!visibleRows.some((row) => row.id === id)) {
-          setQuery('')
-          setKindFilter('all')
+          setKinds(new Set())
           setTimelineRange(null)
         }
         const turn = rows.find((row) => row.id === id)?.turn
@@ -574,10 +576,8 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
           setTimelineViewport({ start, end: start + viewportWidth })
         }
         setLightbox(null)
-        const chosen = rows.find((row) => row.id === id)
         // A failed tool opens on its result, where the error is.
-        const canRead = Boolean(options.readToolDetail && currentSnapshot.current.meta?.sessionId)
-        setPane(chosen?.kind === 'tool' && chosen.statusCode === 'failed' && canRead ? 'output' : 'overview')
+        setPane(defaultPane(rows.find((row) => row.id === id)))
       })
       const list = listRef.current
       const layout = layoutRef.current
@@ -613,7 +613,6 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
       viewportWidth,
       root,
       listViewportHeight,
-      options.readToolDetail,
     ],
   )
   useEffect(() => {
@@ -665,131 +664,56 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
     )
   const toggleAllTurns = (): void =>
     flushSync(() => setCollapsedTurns(allTurnsCollapsed ? new Set() : new Set(numberedTurns)))
-  const updateQuery = (event: { currentTarget: HTMLInputElement }): void =>
-    flushSync(() => setQuery(event.currentTarget.value.trim().toLowerCase()))
-  const changeTimelineMode = (event: { currentTarget: HTMLSelectElement }): void => {
-    setTimelineMode(event.currentTarget.value as TimelineMode)
+  const changeTimelineMode = (mode: TimelineMode): void => {
+    setTimelineMode(mode)
     setTimelineRange(null)
-    setTimelineDraft(null)
     setTimelineViewport(null)
   }
-  const timelinePoint = (event: ReactPointerEvent<HTMLDivElement>): number => {
-    const rect = event.currentTarget.getBoundingClientRect()
-    const fraction = clampPercent(((event.clientX - rect.left) / Math.max(1, rect.width)) * 100)
-    return viewportStart + (fraction / 100) * viewportWidth
-  }
-  const timelinePointerDown = (event: ReactPointerEvent<HTMLDivElement>): void => {
-    if (event.button !== 0 && event.button !== 2) return
-    if (event.button === 0 && (event.target as HTMLElement).closest('button')) return
-    const anchor = timelinePoint(event)
-    timelineGesture.current = {
-      pointerId: event.pointerId,
-      clientX: event.clientX,
-      anchor,
-      pan: event.button === 2,
-      viewportStart,
-    }
-    event.currentTarget.setPointerCapture?.(event.pointerId)
-    if (event.button === 0) setTimelineDraft({ start: anchor, end: anchor })
-  }
-  const timelinePointerMove = (event: ReactPointerEvent<HTMLDivElement>): void => {
-    const gesture = timelineGesture.current
-    if (!gesture || gesture.pointerId !== event.pointerId) return
-    if (gesture.pan) {
-      const rect = event.currentTarget.getBoundingClientRect()
-      const width = viewportWidth
-      const shift = ((event.clientX - gesture.clientX) / Math.max(1, rect.width)) * width
-      const start = Math.max(
-        timelineModel.start,
-        Math.min(timelineModel.end - width, gesture.viewportStart - shift),
+  const toggleKind = (kind: string | undefined): void =>
+    setKinds((current) => {
+      if (kind === undefined) return new Set()
+      const next = new Set(current)
+      if (next.has(kind)) next.delete(kind)
+      else next.add(kind)
+      return next
+    })
+  const revealRow = (id: string): void => {
+    const list = listRef.current
+    const layout = layoutRef.current
+    if (list && layout && layout.entries.length > TRACE_VIRTUAL_THRESHOLD) {
+      const position = getTraceVirtualScrollTopForKey(
+        layout,
+        `row:${id}`,
+        list.scrollTop,
+        list.clientHeight || listViewportHeight,
       )
-      setTimelineViewport({ start, end: start + width })
-      return
-    }
-    setTimelineDraft(orderedRange(gesture.anchor, timelinePoint(event)))
-  }
-  const timelinePointerUp = (event: ReactPointerEvent<HTMLDivElement>): void => {
-    const gesture = timelineGesture.current
-    if (!gesture || gesture.pointerId !== event.pointerId) return
-    timelineGesture.current = null
-    setTimelineDraft(null)
-    const distance = Math.abs(event.clientX - gesture.clientX)
-    if (gesture.pan) {
-      if (distance < 3) setTimelineRange(null)
-      return
-    }
-    const point = timelinePoint(event)
-    const selectedRange = orderedRange(gesture.anchor, point)
-    const minimum = Math.min(
-      viewportWidth,
-      Math.max(fullTimelineWidth * 0.005, fullTimelineWidth / Math.max(1, bars.length)),
-    )
-    if (selectedRange.end - selectedRange.start < minimum) {
-      const center = distance < 3 ? selectedRange.start : (selectedRange.start + selectedRange.end) / 2
-      const start = Math.max(timelineModel.start, Math.min(timelineModel.end - minimum, center - minimum / 2))
-      selectedRange.start = start
-      selectedRange.end = start + minimum
-    }
-    if (distance < 3 && bars.length) {
-      const nearest = bars.reduce((best, bar) => {
-        const gap = (candidate: GanttBar): number =>
-          point < candidate.domainStart
-            ? candidate.domainStart - point
-            : point > candidate.domainEnd
-              ? point - candidate.domainEnd
-              : 0
-        return gap(bar) < gap(best) ? bar : best
-      })
-      if (nearest.targetId) {
-        selectRow(nearest.targetId)
-        if (!barIntersectsRange(nearest, selectedRange)) {
-          const center = (nearest.domainStart + nearest.domainEnd) / 2
-          const start = Math.max(
-            timelineModel.start,
-            Math.min(timelineModel.end - minimum, center - minimum / 2),
-          )
-          selectedRange.start = start
-          selectedRange.end = start + minimum
-        }
+      if (position !== undefined) {
+        list.scrollTop = position
+        flushSync(() => setListScrollTop(position))
       }
     }
-    setTimelineRange(selectedRange)
+    root.querySelector<HTMLElement>(`.trace-row[data-trace-row-id="${CSS.escape(id)}"]`)?.scrollIntoView?.({
+      block: 'nearest',
+    })
   }
-  const timelinePointerCancel = (): void => {
-    timelineGesture.current = null
-    setTimelineDraft(null)
+  const stepMatch = (direction: 1 | -1): void => {
+    if (!matches.length) return
+    const next = (matchIndex + direction + matches.length) % matches.length
+    flushSync(() => setMatchCursor(next))
+    const id = matches[next]
+    if (id) revealRow(id)
   }
+  // ⌘F / Ctrl+F finds in the trace while it is the visible view.
   useEffect(() => {
-    const element = timelineRef.current
-    if (!element) return
-    const onWheel = (event: WheelEvent): void => {
-      const track = timelineTrackRef.current
-      if (!track || bars.length === 0) return
+    const find = (event: KeyboardEvent): void => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'f' || root.hidden) return
       event.preventDefault()
-      const rect = track.getBoundingClientRect()
-      const fraction = clampPercent(((event.clientX - rect.left) / Math.max(1, rect.width)) * 100) / 100
-      setTimelineViewport((current) => {
-        const width = current ? current.end - current.start : fullTimelineWidth
-        const oldStart = current?.start ?? timelineModel.start
-        const minimum = Math.min(fullTimelineWidth, fullTimelineWidth / Math.max(2, bars.length))
-        const nextWidth = Math.max(
-          minimum,
-          Math.min(fullTimelineWidth, width * Math.exp(event.deltaY * 0.0015)),
-        )
-        if (nextWidth >= fullTimelineWidth * 0.999) return null
-        const anchor = oldStart + fraction * width
-        const start = Math.max(
-          timelineModel.start,
-          Math.min(timelineModel.end - nextWidth, anchor - fraction * nextWidth),
-        )
-        return { start, end: start + nextWidth }
-      })
+      searchRef.current?.focus()
+      searchRef.current?.select()
     }
-    element.addEventListener('wheel', onWheel, { passive: false })
-    return () => element.removeEventListener('wheel', onWheel)
-  }, [bars.length, fullTimelineWidth, timelineModel.start, timelineModel.end])
-  const activeTimelineRange = timelineDraft ?? timelineRange
-  const projectedPosition = (value: number): number => ((value - viewportStart) / viewportWidth) * 100
+    document.addEventListener('keydown', find)
+    return () => document.removeEventListener('keydown', find)
+  }, [root])
 
   return (
     <div
@@ -798,193 +722,52 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
       data-agnes-region-owner="builtin"
       data-agnes-region-unit="trace"
     >
-      {meta?.controlFacts?.length ? <TraceControlFacts facts={meta.controlFacts} /> : null}
-      <div className="trace-toolbar" hidden={rows.length === 0 && !meta?.loop}>
-        {meta?.loop ? (
-          <span className="trace-stat" key="session-loop">
-            {traceText('trace.sessionLoop', { id: meta.loop.id, version: meta.loop.version })}
-          </span>
-        ) : null}
-        <div className="trace-stats">
-          {traceStats(snapshot.turns).map(([label, value]) => (
-            <span className="trace-stat" key={label}>{`${label} ${value}`}</span>
-          ))}
-          {meta?.hasEarlier ? (
-            <span className="trace-stat trace-partial" key="partial">
-              {traceText('trace.partial')}
-            </span>
-          ) : null}
-        </div>
-        <Button
-          appearance="ghost"
-          size="small"
-          className="trace-fold-all"
-          htmlType="button"
-          disabled={focusActive || numberedTurns.length === 0}
-          aria-label={
-            allTurnsCollapsed ? traceText('trace.expandTurnsLabel') : traceText('trace.collapseTurnsLabel')
-          }
-          onClick={toggleAllTurns}
-        >
-          {allTurnsCollapsed ? traceText('trace.expandTurns') : traceText('trace.collapseTurns')}
-        </Button>
-        <SettingsSelect
-          className="trace-type-filter"
-          aria-label={traceText('trace.filter.label')}
-          value={kindFilter}
-          onChange={(event: import('react').ChangeEvent<HTMLSelectElement>) =>
-            setKindFilter(event.currentTarget.value)
-          }
-        >
-          <option value="all">{traceText('trace.filter.all')}</option>
-          {['user', 'assistant', 'tool', 'approval', 'ui', 'control', 'context', 'compaction'].map((kind) => (
-            <option key={kind} value={kind}>
-              {traceText(BADGE_KEY[kind]!)}
-            </option>
-          ))}
-        </SettingsSelect>
-        <SettingsInput
-          className="trace-search"
-          type="search"
-          placeholder={traceText('trace.search')}
-          aria-label={traceText('trace.searchLabel')}
-          value={query}
-          onInput={updateQuery}
-        />
-      </div>
-      <div
-        className="trace-gantt"
-        role="group"
-        aria-label={traceText('trace.gantt.label')}
+      <TraceToolbar
+        hidden={rows.length === 0 && !meta?.loop}
+        loop={meta?.loop}
+        stats={traceStats(snapshot.turns)}
+        partial={Boolean(meta?.hasEarlier)}
+        counts={kindCounts}
+        kinds={kinds}
+        toggleKind={toggleKind}
+        query={typedQuery}
+        setQuery={(value) => {
+          setQuery(value)
+          setMatchCursor(0)
+        }}
+        matches={matches.length}
+        matchIndex={matchIndex}
+        stepMatch={stepMatch}
+        searchRef={searchRef}
+        allCollapsed={allTurnsCollapsed}
+        canFold={!focusActive && numberedTurns.length > 0}
+        toggleAll={toggleAllTurns}
+        timelineMode={timelineMode}
+        setTimelineMode={changeTimelineMode}
+      />
+      <TraceGantt
         hidden={rows.length === 0}
-        ref={timelineRef}
+        compact={compact}
+        bars={bars}
+        timelineModel={timelineModel}
+        viewportStart={viewportStart}
+        viewportWidth={viewportWidth}
+        fullTimelineWidth={fullTimelineWidth}
+        timelineRange={timelineRange}
+        setTimelineRange={setTimelineRange}
+        setTimelineViewport={setTimelineViewport}
+        selected={selected}
+        selectRow={selectRow}
+      />
+      <div
+        className="trace-body"
+        hidden={rows.length === 0}
+        style={
+          selectedRow && !compact
+            ? { gridTemplateColumns: `minmax(0, 1fr) auto ${inspectorWidth.width}px` }
+            : undefined
+        }
       >
-        <div className="trace-gantt-controls">
-          <label htmlFor="trace-timeline-mode">{traceText('trace.timeline.label')}</label>
-          <SettingsSelect
-            id="trace-timeline-mode"
-            value={timelineMode}
-            onChange={changeTimelineMode}
-            aria-label={traceText('trace.timeline.mode')}
-          >
-            <option value="sequence">{traceText('trace.timeline.sequence')}</option>
-            <option value="duration">{traceText('trace.timeline.duration')}</option>
-            <option value="time">{traceText('trace.timeline.time')}</option>
-            <option value="actual">{traceText('trace.timeline.actual')}</option>
-          </SettingsSelect>
-          <span className="trace-gantt-note">
-            {timelineMode === 'sequence'
-              ? traceText('trace.timeline.noteSequence')
-              : timelineMode === 'duration'
-                ? traceText('trace.timeline.noteDuration')
-                : traceText('trace.timeline.noteTime')}
-          </span>
-          {timelineRange ? (
-            <Button
-              appearance="ghost"
-              size="small"
-              className="trace-gantt-clear"
-              htmlType="button"
-              onClick={() => setTimelineRange(null)}
-              aria-label={traceText('trace.timeline.clearLabel')}
-            >
-              {traceText('trace.timeline.clear')}
-            </Button>
-          ) : null}
-        </div>
-        {(['input', 'model', 'tool'] as const).map((lane) => (
-          <div className="trace-gantt-row" key={lane}>
-            <span className="trace-gantt-label">{laneName(lane)}</span>
-            <div
-              className="trace-gantt-track agh-touch-target"
-              ref={lane === 'input' ? timelineTrackRef : undefined}
-              tabIndex={lane === 'input' ? 0 : -1}
-              role="group"
-              onPointerDown={timelinePointerDown}
-              onPointerMove={timelinePointerMove}
-              onPointerUp={timelinePointerUp}
-              onPointerCancel={timelinePointerCancel}
-              onContextMenu={(event: ReactMouseEvent<HTMLDivElement>) => event.preventDefault()}
-              onDoubleClick={() => setTimelineRange(null)}
-              onKeyDown={(event: { key: string; preventDefault: () => void }) => {
-                if (event.key === 'Escape' && timelineRange) {
-                  event.preventDefault()
-                  setTimelineRange(null)
-                }
-              }}
-              aria-label={traceText('trace.lane.aria', { lane: laneName(lane) })}
-            >
-              {activeTimelineRange ? (
-                <span
-                  key="selection"
-                  className="trace-gantt-selection"
-                  aria-hidden={true}
-                  style={{
-                    left: `${projectedPosition(activeTimelineRange.start)}%`,
-                    width: `${((activeTimelineRange.end - activeTimelineRange.start) / viewportWidth) * 100}%`,
-                  }}
-                />
-              ) : null}
-              {timelineUnits
-                .filter((unit) => unit.lane === lane)
-                .map((unit) => {
-                  const bar = unit.members[0]
-                  if (!bar) return null
-                  const cluster = unit.kind === 'cluster'
-                  const marker = cluster ? unit.domainEnd <= unit.domainStart : bar.marker
-                  const targets = unit.members.filter((member) => member.targetId)
-                  const title = cluster ? traceText('trace.cluster', { n: unit.count }) : bar.title
-                  const TimelineBar = targets.length && !compact ? Button : 'span'
-                  return (
-                    <TimelineBar
-                      className={`trace-gantt-bar lane-${lane}${!cluster && bar.tone ? ` tone-${bar.tone}` : ''}${!cluster && bar.truncated ? ' truncated' : ''}${marker ? ' marker' : ''}${cluster ? ' cluster' : ''}`}
-                      key={unit.key}
-                      {...(targets.length && !compact
-                        ? {
-                            htmlType: 'button' as const,
-                            appearance: 'ghost' as const,
-                            size: 'small' as const,
-                            'aria-label': title,
-                            'aria-pressed': unit.members.some((member) => member.targetId === selected)
-                              ? 'true'
-                              : 'false',
-                            ...(cluster ? { 'data-count': unit.count } : { 'data-target-id': bar.targetId }),
-                            'data-in-range': timelineRange
-                              ? unit.members.some((member) => barIntersectsRange(member, timelineRange))
-                              : undefined,
-                            onClick: (event: ReactMouseEvent<HTMLButtonElement>) => {
-                              const track = event.currentTarget.parentElement
-                              const rect = track?.getBoundingClientRect()
-                              const fraction = rect
-                                ? clampPercent(
-                                    ((event.clientX - rect.left) / Math.max(1, rect.width)) * 100,
-                                  ) / 100
-                                : 0.5
-                              const point = viewportStart + fraction * viewportWidth
-                              const chosen = cluster
-                                ? pickTraceTimelineDensityMember({ ...unit, members: targets }, point)
-                                : bar
-                              if (chosen.targetId) selectRow(chosen.targetId)
-                            },
-                          }
-                        : { 'aria-hidden': true })}
-                      style={{
-                        left: marker
-                          ? `min(${projectedPosition(unit.domainStart)}%, calc(100% - 6px))`
-                          : `${projectedPosition(unit.domainStart)}%`,
-                        width: cluster
-                          ? `${((unit.domainEnd - unit.domainStart) / viewportWidth) * 100}%`
-                          : `${(bar.width * fullTimelineWidth) / viewportWidth}%`,
-                      }}
-                      title={title}
-                    />
-                  )
-                })}
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="trace-body" hidden={rows.length === 0}>
         <div
           className="trace-list"
           role="list"
@@ -1041,49 +824,46 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
                     htmlType="button"
                     disabled={focusActive}
                     aria-expanded={!item.collapsed}
+                    aria-label={traceText('trace.turnHeader', {
+                      turn: item.turn,
+                      count: item.count,
+                      folded: item.collapsed ? traceText('trace.turnFolded') : '',
+                    })}
                     onClick={() => toggleTurn(item.turn)}
-                  >{`${item.collapsed ? '▸' : '▾'} ${traceText('trace.turnHeader', {
-                    turn: item.turn,
-                    count: item.count,
-                    folded: item.collapsed ? traceText('trace.turnFolded') : '',
-                  })}`}</Button>
+                  >
+                    <Icon name={item.collapsed ? 'chevron-right' : 'chevron-down'} size={16} />
+                    <b>{traceText('trace.turn.title', { turn: item.turn })}</b>
+                    {item.prompt ? (
+                      <span className="trace-turn-prompt">
+                        {traceText('trace.turn.prompt', { text: clip(item.prompt, 80) })}
+                      </span>
+                    ) : null}
+                    <span className="trace-turn-meta">
+                      {[
+                        traceText('trace.turn.count', { n: item.count }),
+                        item.durationMs === undefined ? '' : durationLabel(item.durationMs),
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </span>
+                  </Button>
                 </div>
               )
             const row = item.row
-            const request = row.callUsage ? requestMetrics.get(row.callUsage.seq) : undefined
-            const requestPrefix =
-              request?.requestNumber.state === 'known'
-                ? traceText('trace.requestPrefix', { n: request.requestNumber.value })
-                : ''
             const children = toolHierarchy.childrenById.get(row.id) ?? []
             const toolDepth = row.kind === 'tool' ? Math.min(8, toolHierarchy.depthById.get(row.id) ?? 0) : 0
             const nested = row.kind === 'tool' && (children.length > 0 || toolDepth > 0)
             const rowButton = (
-              <Button
-                appearance="ghost"
-                size="small"
-                className="trace-row"
-                htmlType="button"
-                role={nested ? undefined : 'listitem'}
-                data-trace-row-id={row.id}
-                aria-current={row.id === selected ? 'true' : undefined}
-                onClick={() => selectRow(row.id)}
-                {...(nested ? { style: { paddingLeft: `${24 + toolDepth * 16}px` } } : {})}
-              >
-                <span className="trace-step-mark">
-                  {item.showStep ? traceStepLabel(row.step) : undefined}
-                </span>
-                <span className={`trace-badge kind-${row.kind}`}>{row.badge}</span>
-                <span className="trace-row-preview">
-                  {requestPrefix}
-                  {traceRowPreview(row.kind, clip(row.preview, 160)) || traceText('trace.emptyPreview')}
-                  {row.statusCode === 'completed' && !row.errorCode ? null : (
-                    <span className="trace-preview-status" data-status={row.statusCode}>
-                      {`${row.statusCode === 'completed' ? '' : ` · ${row.status}`}${row.errorCode ? ` · ${row.errorCode}` : ''}`}
-                    </span>
-                  )}
-                </span>
-              </Button>
+              <TraceListRow
+                row={row}
+                showStep={item.showStep}
+                selected={row.id === selected}
+                current={row.id === currentMatch}
+                query={query}
+                depth={nested ? toolDepth : 0}
+                listItem={!nested}
+                onSelect={() => selectRow(row.id)}
+              />
             )
             if (!nested)
               return (
@@ -1129,12 +909,19 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
               {traceText('trace.noResults')}
             </p>
           ) : null}
+          {omitted.map((note) => (
+            <p key={`omitted:${note.key}`} className="trace-truncated" role="note">
+              {traceText('trace.omittedNote', { turn: note.turn, label: note.label })}
+            </p>
+          ))}
         </div>
-        {omitted.map((note) => (
-          <p key={`omitted:${note.key}`} className="trace-truncated" role="note">
-            {traceText('trace.omittedNote', { turn: note.turn, label: note.label })}
-          </p>
-        ))}
+        {selectedRow && !compact ? (
+          <TraceSplitter
+            width={inspectorWidth.width}
+            onChange={inspectorWidth.set}
+            onReset={inspectorWidth.reset}
+          />
+        ) : null}
         <TraceInspector
           selectedRow={selectedRow}
           compact={compact}

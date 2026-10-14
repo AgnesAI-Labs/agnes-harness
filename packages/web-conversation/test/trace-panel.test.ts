@@ -6,7 +6,6 @@ import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { traceRowPreview } from '../../web-units/src/trace-row-preview.js'
 import {
   TRACE_PANEL_STORAGE_KEY,
   Trace,
@@ -138,6 +137,22 @@ function mount(open = true, readToolDetail?: TracePanelOptions['readToolDetail']
   return { root, toggle, chat, conversation, panel: handle.current, projectUI }
 }
 
+/** Timeline modes live in the toolbar's ⋯ menu. */
+function chooseTimelineMode(root: HTMLElement, mode: string) {
+  flushSync(() => root.querySelector<HTMLButtonElement>('[data-testid="trace-toolbar-more"]')?.click())
+  const item = document.querySelector<HTMLElement>(`[data-testid="trace-timeline-${mode}"]`)
+  if (!item) throw new Error(`timeline mode ${mode} is not in the menu`)
+  flushSync(() => item.click())
+}
+
+const search = (root: HTMLElement, value: string) => {
+  const input = root.querySelector('.trace-search') as HTMLInputElement
+  input.value = value
+  flushSync(() =>
+    input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value })),
+  )
+}
+
 describe('trace panel', () => {
   it('renders event previews, gantt lanes and stats from nodes and turns', () => {
     const { root, panel } = mount()
@@ -150,7 +165,7 @@ describe('trace panel', () => {
     expect(text).toContain('Assistant')
     expect(text).toContain('我先看一下工作目录')
     expect(text).toContain('Tool')
-    expect(text).toContain('bash')
+    expect(text).toContain('Run command ls')
     expect(text).toContain('Input')
     expect(text).toContain('Model')
     expect(text).toContain('Duration')
@@ -189,24 +204,24 @@ describe('trace panel', () => {
   it('opens inspector tabs from a tool row without calling projectUI', () => {
     const { root, panel, projectUI } = mount()
     panel.render(nodes, [turn(sampleTrace, ['u1', 'c1', 'a1', 't1'])])
-    const tool = [...root.querySelectorAll('.trace-row')].find((row) => row.textContent?.includes('bash'))
-    ;(tool as HTMLButtonElement | undefined)?.click()
+    root.querySelector<HTMLButtonElement>('[data-trace-row-id="t1"]')?.click()
     expect(root.querySelector<HTMLElement>('.trace-inspector')?.hidden).toBe(false)
-    expect(root.textContent).toContain('Overview')
-    expect(root.textContent).toContain('Preview')
-    expect(root.textContent).toContain('Projected content')
-    expect(root.textContent).toContain('Source')
-    expect(root.textContent).toContain('Tool · bash')
-    const previewTab = [...root.querySelectorAll('.trace-tab')].find((tab) => tab.textContent === 'Preview')
-    ;(previewTab as HTMLButtonElement | undefined)?.click()
-    expect(root.querySelector('.trace-inspector-pane:not([hidden])')?.textContent).toContain('ls')
-    const projectionTab = [...root.querySelectorAll('.trace-tab')].find(
-      (tab) => tab.textContent === 'Projected content',
+    // One tab row per kind: a tool reads Arguments / Result / Source; debug views are in ⋯.
+    expect([...root.querySelectorAll('.trace-tab')].map((tab) => tab.textContent)).toEqual([
+      'Arguments',
+      'Result',
+      'Source',
+    ])
+    expect(root.querySelector('.trace-inspector-title')?.textContent).toBe('Run command ls')
+    expect(root.querySelector('.trace-inspector-pane')?.textContent).toContain('"command":"ls"')
+    root.querySelector<HTMLButtonElement>('[data-pane="source"]')?.click()
+    expect(root.querySelector('.trace-inspector-pane')?.textContent).toContain('Tool · bash')
+    flushSync(() => root.querySelector<HTMLButtonElement>('[data-testid="trace-inspector-more"]')?.click())
+    const projected = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (item) => item.textContent === 'Projected content',
     )
-    ;(projectionTab as HTMLButtonElement | undefined)?.click()
-    expect(root.querySelector('.trace-inspector-pane:not([hidden])')?.textContent).toContain(
-      'may be truncated',
-    )
+    flushSync(() => projected?.click())
+    expect(root.querySelector('.trace-inspector-pane')?.textContent).toContain('may be truncated')
     expect(projectUI).not.toHaveBeenCalled()
   })
 
@@ -231,11 +246,7 @@ describe('trace panel', () => {
       sessionId: 'session-one',
     })
     root.querySelector<HTMLButtonElement>('[data-trace-row-id="t1"]')?.click()
-    expect(readToolDetail).not.toHaveBeenCalled()
-    const input = [...root.querySelectorAll<HTMLButtonElement>('.trace-tab')].find(
-      (tab) => tab.textContent === 'Full input',
-    )
-    input?.click()
+    // Opening a tool reads its full record for the Arguments tab.
     await vi.waitFor(() =>
       expect(readToolDetail).toHaveBeenCalledWith('session-one', 4, 5, expect.any(AbortSignal)),
     )
@@ -244,10 +255,7 @@ describe('trace panel', () => {
         'echo complete input',
       ),
     )
-    const output = [...root.querySelectorAll<HTMLButtonElement>('.trace-tab')].find(
-      (tab) => tab.textContent === 'Full output',
-    )
-    output?.click()
+    root.querySelector<HTMLButtonElement>('[data-pane="result"]')?.click()
     expect(root.querySelector('.trace-inspector-pane:not([hidden])')?.textContent).toContain(
       'complete output beyond the preview',
     )
@@ -287,14 +295,13 @@ describe('trace panel', () => {
   })
 
   it('shows unknown duration for a completed tool without a recorded span', () => {
-    const { root, panel } = mount(true, vi.fn())
+    const { root, panel } = mount(true, vi.fn().mockReturnValue(new Promise(() => {})))
     panel.render(nodes, [turn(undefined, ['u1', 'c1', 'a1', 't1'])], {
       hasEarlier: false,
       sessionId: 'session-one',
     })
     root.querySelector<HTMLButtonElement>('[data-trace-row-id="t1"]')?.click()
-    root.querySelector<HTMLButtonElement>('[data-pane="timing"]')?.click()
-    const timing = root.querySelector('.trace-inspector-pane:not([hidden])')?.textContent
+    const timing = root.querySelector('[data-testid="trace-facts"]')?.textContent
     expect(timing).toContain('Duration unknown')
     expect(timing).not.toContain('In progress')
   })
@@ -349,19 +356,20 @@ describe('trace panel', () => {
     const { root, panel } = mount()
     panel.render(nodes, [turn(sampleTrace, ['u1', 'c1', 'a1', 't1'])])
     const row = root.querySelector('.trace-row') as HTMLElement
-    expect(root.querySelector('.trace-turn-toggle')?.textContent).toContain('Turn 1 · 4 records')
+    // The header names the turn, quotes what you asked, then counts records and time.
+    const header = root.querySelector('.trace-turn-toggle')
+    expect(header?.textContent).toBe('Turn 1“你好”4 records · 80 ms')
+    expect(header?.getAttribute('aria-label')).toBe('Turn 1 · 4 records')
     expect(row.children[0]?.classList.contains('trace-step-mark')).toBe(true)
     expect(row.children[1]?.classList.contains('trace-badge')).toBe(true)
     expect(row.children[2]?.classList.contains('trace-row-preview')).toBe(true)
-    // A tool row's summary keeps its text and marks the parts a reader scans for.
-    for (const preview of root.querySelectorAll('.trace-row-preview')) {
-      const parts = [
-        ...preview.querySelectorAll('.trace-preview-name, .trace-preview-raw, .trace-preview-result'),
-      ]
-      if (parts.length) expect(preview.textContent).toContain(parts.map((part) => part.textContent).join(''))
-    }
-    expect(traceRowPreview('tool', 'ls {"path":"."} → a.md b.md')).not.toBe('ls {"path":"."} → a.md b.md')
-    expect(traceRowPreview('assistant', 'plain answer')).toBe('plain answer')
+    expect(row.children[3]?.classList.contains('trace-row-end')).toBe(true)
+    // A tool row reads as words with its status and duration on the right; no raw JSON.
+    const tool = root.querySelector('[data-trace-row-id="t1"]')
+    expect(tool?.querySelector('.trace-row-text')?.textContent).toBe('Run command ls')
+    expect(tool?.querySelector('.trace-preview-raw')).toBeNull()
+    expect(tool?.querySelector('.trace-row-status')?.getAttribute('data-status')).toBe('completed')
+    expect(tool?.querySelector('.trace-row-duration')?.textContent).toBe('20 ms')
   })
 
   it('folds a turn, reveals search matches, and expands it for timeline selection', () => {
@@ -371,12 +379,10 @@ describe('trace panel', () => {
     fold.click()
     expect(fold.getAttribute('aria-expanded')).toBe('false')
     expect(root.querySelectorAll('.trace-row')).toHaveLength(0)
-    const search = root.querySelector('.trace-search') as HTMLInputElement
-    search.value = 'bash'
-    search.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: 'bash' }))
-    expect(root.querySelectorAll('.trace-row')).toHaveLength(1)
-    search.value = ''
-    search.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContentBackward' }))
+    search(root, 'ls')
+    // A search opens folded turns so every match can be seen and stepped to.
+    expect(root.querySelectorAll('.trace-row').length).toBeGreaterThan(0)
+    search(root, '')
     expect(root.querySelectorAll('.trace-row')).toHaveLength(0)
     root.querySelector<HTMLButtonElement>('.trace-gantt-bar.lane-model')?.click()
     expect(root.querySelector('.trace-turn-toggle')?.getAttribute('aria-expanded')).toBe('true')
@@ -429,32 +435,57 @@ describe('trace panel', () => {
     toggle.click()
     expect(root.querySelector('[data-trace-row-id="child-tool"]')).toBeNull()
     expect(root.querySelector('[data-trace-row-id="unrelated"]')).not.toBeNull()
-    const search = root.querySelector<HTMLInputElement>('.trace-search') as HTMLInputElement
-    search.value = 'child_tool'
-    search.dispatchEvent(
-      new InputEvent('input', { bubbles: true, inputType: 'insertText', data: 'child_tool' }),
-    )
+    search(root, 'child_tool')
     expect(root.querySelector('[data-trace-row-id="child-tool"]')).not.toBeNull()
-    search.value = ''
-    search.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContentBackward' }))
+    search(root, '')
     expect(root.querySelector('[data-trace-row-id="child-tool"]')).toBeNull()
-    const mode = root.querySelector<HTMLSelectElement>('#trace-timeline-mode') as HTMLSelectElement
-    mode.value = 'sequence'
-    flushSync(() => mode.dispatchEvent(new Event('change', { bubbles: true })))
+    chooseTimelineMode(root, 'sequence')
     root.querySelector<HTMLButtonElement>('[data-target-id="child-tool"]')?.click()
     expect(root.querySelector('[data-trace-row-id="child-tool"]')).not.toBeNull()
     expect(root.querySelector('.trace-tool-toggle')?.getAttribute('aria-expanded')).toBe('true')
   })
 
-  it('filters the event list by search', () => {
+  it('marks search matches, counts them and steps through them without hiding other records', () => {
     const { root, panel } = mount()
     panel.render(nodes, [turn(sampleTrace, ['u1', 'c1', 'a1', 't1'])])
-    const search = root.querySelector('.trace-search') as HTMLInputElement
-    search.value = 'bash'
-    search.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: 'bash' }))
-    const visible = [...root.querySelectorAll('.trace-row')].map((row) => row.textContent)
-    expect(visible.some((text) => text?.includes('bash'))).toBe(true)
-    expect(visible.some((text) => text?.includes('你好'))).toBe(false)
+    search(root, 'run')
+    expect(root.querySelectorAll('.trace-row')).toHaveLength(4)
+    expect(root.querySelector('[data-testid="trace-search-count"]')?.textContent).toBe('1 / 2')
+    expect(root.querySelector('[data-trace-row-id="t1"] mark')?.textContent).toBe('Run')
+    expect(root.querySelector('[data-match="current"]')?.getAttribute('data-trace-row-id')).toBe('c1')
+    const input = root.querySelector('.trace-search') as HTMLInputElement
+    flushSync(() => input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' })))
+    expect(root.querySelector('[data-testid="trace-search-count"]')?.textContent).toBe('2 / 2')
+    expect(root.querySelector('[data-match="current"]')?.getAttribute('data-trace-row-id')).toBe('t1')
+    flushSync(() =>
+      input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter', shiftKey: true })),
+    )
+    expect(root.querySelector('[data-testid="trace-search-count"]')?.textContent).toBe('1 / 2')
+    search(root, 'nothing-here')
+    expect(root.querySelector('[data-testid="trace-search-count"]')?.textContent).toBe('0 / 0')
+    // ⌘F focuses the search while the trace is showing.
+    input.blur()
+    document.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'f', metaKey: true }))
+    expect(document.activeElement).toBe(input)
+  })
+
+  it('filters by several type chips at once and counts each type', () => {
+    const { root, panel } = mount()
+    panel.render(nodes, [turn(sampleTrace, ['u1', 'c1', 'a1', 't1'])])
+    const chip = (kind: string) => root.querySelector<HTMLButtonElement>(`.trace-chip[data-kind="${kind}"]`)
+    expect(chip('all')?.getAttribute('aria-pressed')).toBe('true')
+    expect(chip('tool')?.textContent).toBe('Tool1')
+    expect(chip('approval')).toBeNull()
+    flushSync(() => chip('tool')?.click())
+    flushSync(() => chip('assistant')?.click())
+    expect(
+      [...root.querySelectorAll('.trace-row')].map((row) => row.getAttribute('data-trace-row-id')),
+    ).toEqual(['a1', 't1'])
+    expect(chip('all')?.getAttribute('aria-pressed')).toBe('false')
+    // Folding is a whole-list action, so it waits while the list is narrowed.
+    expect(root.querySelector<HTMLButtonElement>('.trace-fold-all')?.disabled).toBe(true)
+    flushSync(() => chip('all')?.click())
+    expect(root.querySelectorAll('.trace-row')).toHaveLength(4)
   })
 
   it('shows attachment-only input from safe metadata and keeps image data out of the ledger', () => {
@@ -491,8 +522,12 @@ describe('trace panel', () => {
   it('includes the recorded tool summary in the ledger', () => {
     const { root, panel } = mount()
     panel.render(nodes, [turn(sampleTrace, ['u1', 'c1', 'a1', 't1'])])
-    const tool = [...root.querySelectorAll('.trace-row')].find((row) => row.textContent?.includes('bash'))
-    expect(tool?.textContent).toContain('列出文件')
+    const shell = nodes[3] as Extract<UINode, { kind: 'tool' }>
+    // A tool without a readable form keeps its recorded summary and shows its arguments muted.
+    panel.render([{ ...shell, name: 'custom_tool' }], [turn(sampleTrace, ['t1'])])
+    const tool = root.querySelector('[data-trace-row-id="t1"]')
+    expect(tool?.querySelector('.trace-row-text')?.textContent).toBe('custom_tool · 列出文件')
+    expect(tool?.querySelector('.trace-preview-raw')?.textContent).toBe('{"command":"ls"}')
   })
 
   it('preserves user and context tones in the input gantt lane', () => {
@@ -544,8 +579,21 @@ describe('trace panel', () => {
     expect(assistant?.textContent).toContain('MODEL_TIMEOUT')
     assistant?.click()
     const inspector = root.querySelector('.trace-inspector')
-    expect(inspector?.textContent).toContain('StepStep 1')
+    // The title says what happened; status, turn and step sit on the line under it.
+    expect(inspector?.querySelector('.trace-inspector-title')?.textContent).toBe('Model request · k3')
+    expect(inspector?.querySelector('.trace-status-tag')?.textContent).toBe('Failed')
+    expect(inspector?.querySelector('.trace-inspector-meta')?.textContent).toContain('Turn 1Step 1')
+    expect(inspector?.querySelector('[data-testid="trace-facts"]')?.textContent).toContain(
+      'Input / output7 / 3',
+    )
+    expect([...root.querySelectorAll('.trace-tab')].map((tab) => tab.textContent)).toEqual([
+      'Reply',
+      'Usage',
+      'Source',
+    ])
+    root.querySelector<HTMLButtonElement>('[data-pane="source"]')?.click()
     expect(inspector?.textContent).toContain('Error codeMODEL_TIMEOUT')
+    root.querySelector<HTMLButtonElement>('[data-pane="usage"]')?.click()
     expect(inspector?.textContent).toContain('Turn usageInput 12 · Output 5')
     expect(inspector?.textContent).toContain('This callInput 7 · Output 3')
     expect(inspector?.textContent).toContain('Request order1')
@@ -579,13 +627,12 @@ describe('trace panel', () => {
   it('selects the linked record from the time overview, including a filtered record', () => {
     const { root, panel } = mount()
     panel.render(nodes, [turn(sampleTrace, ['u1', 'c1', 'a1', 't1'])])
-    const search = root.querySelector('.trace-search') as HTMLInputElement
-    search.value = 'bash'
-    search.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: 'bash' }))
+    flushSync(() => root.querySelector<HTMLButtonElement>('.trace-chip[data-kind="tool"]')?.click())
+    expect(root.querySelector('[data-trace-row-id="a1"]')).toBeNull()
     const model = root.querySelector<HTMLButtonElement>('.trace-gantt-bar.lane-model')
     expect(model?.dataset.targetId).toBe('a1')
     model?.click()
-    expect(search.value).toBe('')
+    expect(root.querySelector('.trace-chip[data-kind="all"]')?.getAttribute('aria-pressed')).toBe('true')
     expect(root.querySelector('.trace-row[aria-current="true"]')?.getAttribute('data-trace-row-id')).toBe(
       'a1',
     )
@@ -751,9 +798,7 @@ describe('trace panel', () => {
   it('filters the ledger by a dragged timeline interval and resets it with Escape', () => {
     const { root, panel } = mount()
     panel.render(nodes, [turn(sampleTrace, ['u1', 'c1', 'a1', 't1'])])
-    const mode = root.querySelector<HTMLSelectElement>('#trace-timeline-mode') as HTMLSelectElement
-    mode.value = 'sequence'
-    flushSync(() => mode.dispatchEvent(new Event('change', { bubbles: true })))
+    chooseTimelineMode(root, 'sequence')
     expect((root.querySelector('.trace-gantt-bar.tone-user') as HTMLElement).style.width).toBe('25%')
     const track = root.querySelectorAll<HTMLElement>('.trace-gantt-track')[1] as HTMLElement
     vi.spyOn(track, 'getBoundingClientRect').mockReturnValue({
@@ -855,9 +900,7 @@ describe('trace panel', () => {
       content: [{ type: 'text', text: `stable ${index}` }],
     }))
     panel.render(current)
-    const mode = root.querySelector<HTMLSelectElement>('#trace-timeline-mode') as HTMLSelectElement
-    mode.value = 'sequence'
-    flushSync(() => mode.dispatchEvent(new Event('change', { bubbles: true })))
+    chooseTimelineMode(root, 'sequence')
     const track = root.querySelectorAll<HTMLElement>('.trace-gantt-track')[1] as HTMLElement
     vi.spyOn(track, 'getBoundingClientRect').mockReturnValue({
       x: 0,
@@ -901,9 +944,7 @@ describe('trace panel', () => {
       content: [{ type: 'text', text: `input ${index}` }],
     }))
     panel.render(many)
-    const mode = root.querySelector<HTMLSelectElement>('#trace-timeline-mode') as HTMLSelectElement
-    mode.value = 'sequence'
-    flushSync(() => mode.dispatchEvent(new Event('change', { bubbles: true })))
+    chooseTimelineMode(root, 'sequence')
     const track = root.querySelector<HTMLElement>('.trace-gantt-track') as HTMLElement
     vi.spyOn(track, 'getBoundingClientRect').mockReturnValue({
       x: 0,
@@ -939,9 +980,7 @@ describe('trace panel', () => {
       content: [{ type: 'text', text: `input ${index}` }],
     }))
     panel.render(many)
-    const mode = root.querySelector<HTMLSelectElement>('#trace-timeline-mode') as HTMLSelectElement
-    mode.value = 'sequence'
-    flushSync(() => mode.dispatchEvent(new Event('change', { bubbles: true })))
+    chooseTimelineMode(root, 'sequence')
     const track = root.querySelector<HTMLElement>('.trace-gantt-track') as HTMLElement
     vi.spyOn(track, 'getBoundingClientRect').mockReturnValue({
       x: 0,
@@ -997,9 +1036,7 @@ describe('trace panel', () => {
     }))
     panel.render([...older, ...history])
     expect(list.scrollTop).toBe(32 * 80)
-    const mode = root.querySelector<HTMLSelectElement>('#trace-timeline-mode') as HTMLSelectElement
-    mode.value = 'sequence'
-    flushSync(() => mode.dispatchEvent(new Event('change', { bubbles: true })))
+    chooseTimelineMode(root, 'sequence')
     root.querySelector<HTMLButtonElement>('[data-target-id="r239"]')?.click()
     expect(root.querySelector('.trace-row[aria-current="true"]')?.getAttribute('data-trace-row-id')).toBe(
       'r239',
@@ -1015,9 +1052,7 @@ describe('trace panel', () => {
       content: [{ type: 'text', text: `dense ${index}` }],
     }))
     panel.render(history)
-    const mode = root.querySelector<HTMLSelectElement>('#trace-timeline-mode') as HTMLSelectElement
-    mode.value = 'sequence'
-    flushSync(() => mode.dispatchEvent(new Event('change', { bubbles: true })))
+    chooseTimelineMode(root, 'sequence')
     expect(root.querySelectorAll('.trace-row').length).toBeLessThan(100)
     expect(root.querySelectorAll('.trace-gantt-bar').length).toBeLessThanOrEqual(600)
     const cluster = root.querySelector<HTMLButtonElement>('.trace-gantt-bar.cluster') as HTMLButtonElement
@@ -1093,7 +1128,9 @@ it('shows projected business UI revisions and action outcomes in the ordinary tr
   }
   const rows = traceRowBuilder.build(nodes, [turn(business)])
   expect(rows.filter((row) => row.kind === 'ui').map((row) => [row.preview, row.statusCode])).toEqual([
-    ['Review updated · r2 · Finance', 'completed'],
-    ['Action failed · r2', 'failed'],
+    ['Updated · Finance · revision 2', 'completed'],
+    ['Action failed · Finance · revision 2', 'failed'],
   ])
+  // Business-UI rows name the plugin, never its internal id.
+  expect(rows.find((row) => row.kind === 'ui')?.source).toBe('Business UI (built-in plugin)')
 })

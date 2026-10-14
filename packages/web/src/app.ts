@@ -929,6 +929,10 @@ const clientModules = await startClientModules({
       return client.requestTrace.clear(params)
     },
     openFactChain: (input) => factChainLinks.open(input),
+    readFactChain: async (params) => {
+      if (!current || current.id !== params.sessionId) throw new Error(t('app.trace.sessionSwitched'))
+      return current.factChain(params.anchor, params.laneId, { timeoutMs: 10_000 })
+    },
     readModelRequest: async (params, signal) => {
       if (!current || current.id !== params.sessionId) throw new Error(t('app.trace.sessionSwitched'))
       if (signal?.aborted) throw new Error(t('app.trace.sessionSwitched'))

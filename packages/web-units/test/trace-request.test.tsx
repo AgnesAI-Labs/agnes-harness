@@ -3,7 +3,15 @@ import type { ModelRequestParams, ModelRequestResult, ModelRequestSnapshot } fro
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it } from 'vitest'
-import { RequestTraceView } from '../src/trace-request.js'
+import {
+  RequestCapture,
+  RequestContent,
+  type RequestTraceState,
+  RequestUsage,
+  requestBaseline,
+  stepCalls,
+  useRequestTrace,
+} from '../src/trace-request.js'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 const snapshot: ModelRequestSnapshot = {
@@ -36,7 +44,40 @@ const snapshot: ModelRequestSnapshot = {
   capture: 'logical-request',
   redacted: false,
 }
-it('shows captured sources and all request panes, highlights changes and explicitly selects an owner-checked comparison', async () => {
+const ids = {
+  first: snapshot.id,
+  second: '00000000-0000-4000-8000-000000000002',
+  compaction: '00000000-0000-4000-8000-000000000003',
+}
+
+function Harness(props: {
+  sessionId: string
+  callId: string
+  read: Parameters<typeof useRequestTrace>[0]['read']
+  clear?: (input: unknown) => Promise<{ cleared: boolean }>
+  locale?: 'en' | 'zh-CN'
+  expose(state: RequestTraceState): void
+}) {
+  const state = useRequestTrace(props)
+  props.expose(state)
+  return createElement(
+    'div',
+    null,
+    createElement(RequestContent, { state }),
+    createElement(RequestUsage, { state }),
+    createElement(RequestCapture, { state, ...(props.clear ? { clear: props.clear as never } : {}) }),
+  )
+}
+
+it('keeps only the calls of this step in the call picker', () => {
+  const call = (id: string, kind: string) => ({ id, kind, createdAt: '', model: 'demo' })
+  const calls = [call('a', 'inference'), call('c', 'compaction'), call('b', 'inference')]
+  expect(stepCalls(calls, 'b').map((item) => item.id)).toEqual(['c', 'b'])
+  expect(stepCalls(calls, 'a').map((item) => item.id)).toEqual(['a'])
+  expect(stepCalls(calls, 'missing')).toEqual([])
+})
+
+it('shows the request in folded sections, the sent JSON on demand, comparisons, attempts, tokens and the local delete', async () => {
   const calls: ModelRequestParams[] = []
   const deleted: unknown[] = []
   const clear = async (input: unknown) => {
@@ -50,13 +91,9 @@ it('shows captured sources and all request panes, highlights changes and explici
         snapshot: null,
         previous: null,
         calls: [
-          { id: snapshot.id, createdAt: snapshot.createdAt, kind: 'inference', model: 'demo' },
-          {
-            id: '00000000-0000-4000-8000-000000000003',
-            createdAt: snapshot.createdAt,
-            kind: 'compaction',
-            model: 'demo',
-          },
+          { id: ids.second, createdAt: snapshot.createdAt, kind: 'inference', model: 'demo' },
+          { id: ids.compaction, createdAt: snapshot.createdAt, kind: 'compaction', model: 'demo' },
+          { id: ids.first, createdAt: snapshot.createdAt, kind: 'inference', model: 'demo' },
         ],
       }
     return {
@@ -90,129 +127,86 @@ it('shows captured sources and all request panes, highlights changes and explici
   const host = document.createElement('div')
   document.body.append(host)
   const root = createRoot(host)
-  const compare = async (value: string) =>
-    act(async () => {
-      const select = host.querySelector<HTMLSelectElement>('[data-testid="request-trace-compare"]')!
-      select.value = value
-      select.dispatchEvent(new Event('change', { bubbles: true }))
-    })
+  let state: RequestTraceState | undefined
+  const expose = (value: RequestTraceState) => {
+    state = value
+  }
+  const q = (id: string) => host.querySelector(`[data-testid="${id}"]`)
+  const content = () => q('request-trace-content')?.textContent ?? ''
   try {
     await act(async () =>
-      root.render(createElement(RequestTraceView, { sessionId: 'old', callId: snapshot.id, read })),
+      root.render(createElement(Harness, { sessionId: 'old', callId: ids.first, read, expose })),
     )
-    expect(host.querySelectorAll('[role="tab"]')).toHaveLength(6)
-    expect(host.querySelector('[data-testid="request-trace-source"]')?.textContent).toContain(
-      'Your custom persona',
-    )
-    expect(host.querySelector('[data-testid="request-trace-source"]')?.getAttribute('title')).toContain(
-      'profile:system-prompt',
-    )
-    expect(host.querySelector('[data-testid="request-trace-summary"]')?.textContent).toContain('demo')
-    expect(host.querySelector('[data-testid="request-trace-content"]')?.textContent).toContain(
-      'Logical request before adapter transforms',
-    )
-    expect(host.textContent).toContain('final provider body unavailable')
-    await act(async () =>
-      host.querySelector<HTMLButtonElement>('[data-testid="request-trace-tab-raw"]')!.click(),
-    )
-    expect(host.querySelector('[data-testid="request-trace-content"]')?.textContent).toContain(
-      'Final provider body unavailable',
-    )
-    expect(host.querySelector('[data-testid="request-trace-content"]')?.textContent).not.toContain(
-      'new persona',
-    )
-    expect(host.querySelector<HTMLButtonElement>('[data-testid="request-trace-copy"]')?.disabled).toBe(true)
-    await act(async () =>
-      host.querySelector<HTMLButtonElement>('[data-testid="request-trace-tab-system"]')!.click(),
-    )
-    await compare('previous')
+    // Four folded sections with their sizes; the system prompt opens with its sources named.
+    for (const section of ['system', 'tools', 'messages', 'params'])
+      expect(q(`request-trace-section-${section}`)).not.toBeNull()
+    expect(q('request-trace-section-system')?.textContent).toContain('1 sections')
+    expect(q('request-trace-section-tools')?.textContent).toContain('1 tools')
+    expect(q('request-trace-source')?.textContent).toContain('Your custom persona')
+    expect(q('request-trace-source')?.getAttribute('title')).toContain('profile:system-prompt')
+    expect(q('request-trace-summary')?.textContent).toContain('demo')
+    // The picker lists this step's calls only: the compaction before it and the request itself.
+    const picker = q('request-trace-call') as HTMLSelectElement
+    expect([...picker.options].map((option) => option.value)).toEqual([ids.compaction, ids.first])
+    // The sent JSON is a view switch; unavailable capture says why and cannot be copied.
+    await act(async () => host.querySelector<HTMLInputElement>('input[value="wire"]')!.click())
+    expect(content()).toContain('Final provider body unavailable')
+    expect(content()).not.toContain('new persona')
+    expect((q('request-trace-copy') as HTMLButtonElement).disabled).toBe(true)
+    await act(async () => host.querySelector<HTMLInputElement>('input[value="logical"]')!.click())
+    await act(async () => state?.setCompare('previous'))
     expect(host.querySelector('del')?.textContent).toContain('old persona')
     expect(host.querySelector('ins')?.textContent).toContain('new persona')
-    await compare('pin')
+    expect(q('request-trace-section-system')?.textContent).toContain('Changed')
+    requestBaseline.pin({ sessionId: 'old', callId: ids.first })
     await act(async () =>
-      root.render(
-        createElement(RequestTraceView, {
-          key: 'new',
-          sessionId: 'new',
-          callId: '00000000-0000-4000-8000-000000000002',
-          read,
-        }),
-      ),
+      root.render(createElement(Harness, { key: 'new', sessionId: 'new', callId: ids.second, read, expose })),
     )
-    await compare('fixed')
-    expect(calls.findLast((call) => call.callId === '00000000-0000-4000-8000-000000000002')?.compare).toEqual(
-      { sessionId: 'old', callId: snapshot.id },
-    )
-    await act(async () =>
-      host.querySelector<HTMLButtonElement>('[data-testid="request-trace-tab-tools"]')!.click(),
-    )
-    expect(host.querySelector('[data-testid="request-trace-content"]')?.textContent).toContain('read')
-    await act(async () => {
-      const select = host.querySelector<HTMLSelectElement>('[data-testid="request-trace-call"]')!
-      select.value = '00000000-0000-4000-8000-000000000003'
-      select.dispatchEvent(new Event('change', { bubbles: true }))
+    await act(async () => state?.setCompare('fixed'))
+    expect(calls.findLast((call) => call.callId === ids.second)?.compare).toEqual({
+      sessionId: 'old',
+      callId: ids.first,
     })
-    await act(async () =>
-      host.querySelector<HTMLButtonElement>('[data-testid="request-trace-tab-system"]')!.click(),
-    )
-    expect(calls.findLast((call) => call.callId)?.callId).toBe('00000000-0000-4000-8000-000000000003')
     await act(async () => {
-      const select = host.querySelector<HTMLSelectElement>('[data-testid="request-trace-attempt"]')!
+      const select = q('request-trace-call') as HTMLSelectElement | null
+      if (select) {
+        select.value = ids.compaction
+        select.dispatchEvent(new Event('change', { bubbles: true }))
+      } else state?.selectCall(ids.compaction)
+    })
+    expect(calls.findLast((call) => call.callId)?.callId).toBe(ids.compaction)
+    expect(q('request-trace-summary')?.textContent).toContain('Attempt 2/2')
+    await act(async () => {
+      const select = q('request-trace-attempt') as HTMLSelectElement
       select.value = '0'
       select.dispatchEvent(new Event('change', { bubbles: true }))
     })
-    await act(async () =>
-      host.querySelector<HTMLButtonElement>('[data-testid="request-trace-tab-tokens"]')!.click(),
-    )
-    expect(host.querySelector('[data-testid="request-trace-content"]')?.textContent).toContain(
-      'Provider token usage is missing.',
-    )
-    expect(host.querySelector('[data-testid="request-trace-content"]')?.textContent).not.toContain('99')
-    expect(host.querySelector('[data-testid="request-trace-summary"]')?.textContent).toContain('Attempt 1/2')
-    expect(host.querySelector('[data-testid="request-trace-summary"]')?.textContent).toContain('Failed')
-    expect(host.querySelector('[data-testid="request-trace-summary"]')?.textContent).not.toContain('99')
-    await compare('previous')
-    expect(host.querySelector('[data-testid="request-trace-summary"]')?.textContent).toContain('Attempt 1/2')
-    expect(host.querySelector('[data-testid="request-trace-summary"]')?.textContent).not.toContain('99')
-    await compare('none')
-    await act(async () =>
-      host.querySelector<HTMLButtonElement>('[data-testid="request-trace-tab-raw"]')!.click(),
-    )
-    expect(host.querySelector('[data-testid="request-trace-content"]')?.textContent).toContain('Not sent')
-    expect(host.querySelector('[data-testid="request-trace-content"]')?.textContent).not.toContain(
-      'does not support capture',
-    )
-    expect(host.querySelector<HTMLButtonElement>('[data-testid="request-trace-copy"]')?.disabled).toBe(true)
-
-    await act(async () =>
-      host.querySelector<HTMLButtonElement>('[data-testid="request-trace-tab-system"]')!.click(),
-    )
-    await compare('previous')
-    expect(host.querySelector('[data-testid="request-trace-content"]')?.textContent).toContain(
-      'compacted history',
-    )
-    await compare('clear')
+    expect(q('request-trace-usage')?.textContent).toContain('Provider token usage is missing.')
+    expect(q('request-trace-summary')?.textContent).toContain('Attempt 1/2')
+    expect(q('request-trace-summary')?.textContent).toContain('Failed')
+    expect(q('request-trace-summary')?.textContent).not.toContain('99')
+    await act(async () => host.querySelector<HTMLInputElement>('input[value="wire"]')!.click())
+    expect(content()).toContain('Not sent')
+    expect(content()).not.toContain('does not support capture')
+    requestBaseline.clear()
     await act(async () =>
       root.render(
-        createElement(RequestTraceView, {
+        createElement(Harness, {
+          key: 'zh',
           sessionId: 'old',
-          callId: snapshot.id,
+          callId: ids.first,
           read,
           clear,
           locale: 'zh-CN',
+          expose,
         }),
       ),
     )
-    expect(
-      [...host.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent?.replace(/\s/g, '')),
-    ).toEqual(['系统提示词', '工具', '消息', '参数', 'Token', '原始JSON'])
-    expect(host.querySelector<HTMLButtonElement>('[data-testid="request-trace-delete"]')?.disabled).toBe(true)
-    await act(async () =>
-      host.querySelector<HTMLInputElement>('[data-testid="request-trace-delete-confirm"]')!.click(),
-    )
-    await act(async () =>
-      host.querySelector<HTMLButtonElement>('[data-testid="request-trace-delete"]')!.click(),
-    )
+    expect(q('request-trace-section-system')?.textContent).toContain('系统提示词')
+    expect(host.querySelector('input[value="wire"]')?.closest('label')?.textContent).toBe('实际发送 JSON')
+    expect((q('request-trace-delete') as HTMLButtonElement).disabled).toBe(true)
+    await act(async () => (q('request-trace-delete-confirm') as HTMLInputElement).click())
+    await act(async () => (q('request-trace-delete') as HTMLButtonElement).click())
     expect(deleted).toHaveLength(1)
     expect(host.textContent).toContain('此请求已不在保留范围内。')
   } finally {

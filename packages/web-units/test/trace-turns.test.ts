@@ -128,9 +128,15 @@ describe('trace turn placement', () => {
     expect(sequence).toEqual([...sequence].sort((a, b) => (a ?? 0) - (b ?? 0)))
     const runs = sequence.filter((value, index) => index === 0 || sequence[index - 1] !== value)
     expect(runs).toEqual([1, 2])
-    // An action answered after turn 1 ended stays with turn 1; what follows the next input is turn 2.
-    expect(rows.find((row) => row.id === 'ui-fact:19')?.turn).toBe(1)
-    expect(rows.find((row) => row.id === 'ui-fact:22')?.turn).toBe(2)
+    // An action answered after turn 1 ended stays with turn 1 as one row with each recorded state.
+    const action = rows.find((row) => row.id === 'ui-fact:19')
+    expect(action?.turn).toBe(1)
+    expect(action?.steps?.map((step) => step.label)).toEqual([
+      'Action received',
+      'Action executing',
+      'Action succeeded',
+    ])
+    expect(rows.find((row) => row.id === 'ui-fact:26')?.turn).toBe(2)
   })
 
   it('keeps recorded turns when no turn owns the position', () => {

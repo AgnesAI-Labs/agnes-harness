@@ -1,5 +1,9 @@
 @layer app {
   [data-agnes-region="trace"] {
+    --trace-kind-ui-text: var(--agnes-status-info-text);
+    --trace-kind-ui-bg: var(--agnes-status-info-bg);
+    --trace-kind-control-text: rgb(122 63 176);
+    --trace-kind-control-bg: rgb(122 63 176 / 10%);
     display: grid;
     /* Control records, toolbar, timeline, list. Each part names its row, so a part that is absent
      leaves an empty track instead of shifting the list out of the one row that takes the rest. */
@@ -115,72 +119,156 @@
       corner-shape: round;
     }
   }
-  /* Collapsed it is one quiet line above the toolbar; open it scrolls inside its own cap, so the
-   record list below never loses its height to it. */
-  .trace-control-facts {
-    grid-row: 1;
-    max-height: 16rem;
-    overflow: auto;
-    padding: 0 var(--s8);
-    border-bottom: 1px solid var(--agnes-line-primary);
-  }
-  /* One compact strip, the height of the tab rows around it; its filters are toolbar-sized. */
+  /* One toolbar row: Loop and stats, type chips, search with its count and stepping, fold-all and
+   the ⋯ menu. It wraps only when the panel is too narrow to hold it. */
   .trace-toolbar {
     grid-row: 2;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    justify-content: space-between;
     gap: var(--s8) var(--s12);
     min-height: 44px;
-    padding: var(--s4) var(--s16);
+    padding: var(--s6, 6px) var(--s16);
     border-bottom: 1px solid var(--agnes-line-primary);
   }
-  @media (min-width: 768px) {
-    .trace-toolbar :is(.trace-type-filter, .trace-search) {
-      height: var(--s32);
-      min-height: var(--s32);
-      padding-block: 0;
-      font-size: var(--font-size-sm);
-    }
+  .trace-toolbar[hidden] {
+    display: none;
   }
-  .trace-toolbar .trace-type-filter {
-    width: auto;
+  .trace-toolbar-lead {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--s4) var(--s12);
+    min-width: 0;
+    margin-right: auto;
   }
   .trace-stats {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--s16);
+    gap: var(--s12);
     color: var(--agnes-text-tertiary);
     font-size: var(--font-size-xs);
     font-weight: 400;
     font-variant-numeric: tabular-nums;
   }
-  .trace-toolbar > .trace-stat {
+  .trace-stat b {
+    color: var(--agnes-text-secondary);
+    font-weight: 500;
+  }
+  .trace-toolbar-lead > .trace-loop {
     color: var(--agnes-text-secondary);
     font-size: var(--font-size-sm);
   }
-  .trace-search {
-    width: min(14rem, 100%);
+  .trace-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s4);
+  }
+  .trace-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    height: 26px;
+    min-height: 26px;
+    padding: 0 0.6rem;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-full);
+    background: var(--agnes-bg-surface);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: 400;
+  }
+  .trace-chip small {
+    color: var(--agnes-text-tertiary);
+    font-size: 0.6875rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .trace-chip[aria-pressed="true"] {
+    border-color: var(--agnes-brand-primary);
+    background: var(--agnes-trace-row-current);
+    color: var(--agnes-text-emphasis);
+  }
+  .trace-chip-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .trace-chip-dot.kind-user {
+    background: var(--agnes-trace-badge-user-text);
+  }
+  .trace-chip-dot.kind-context {
+    background: var(--agnes-trace-badge-context-text);
+  }
+  .trace-chip-dot.kind-assistant {
+    background: var(--agnes-trace-badge-assistant-text);
+  }
+  .trace-chip-dot.kind-tool {
+    background: var(--agnes-trace-badge-tool-text);
+  }
+  .trace-chip-dot.kind-approval {
+    background: var(--agnes-trace-badge-approval-text);
+  }
+  .trace-chip-dot.kind-compaction {
+    background: var(--agnes-trace-badge-compaction-text);
+  }
+  .trace-chip-dot.kind-ui {
+    background: var(--trace-kind-ui-text);
+  }
+  .trace-chip-dot.kind-control {
+    background: var(--trace-kind-control-text);
+  }
+  .trace-search-box {
+    display: flex;
+    align-items: center;
+    gap: var(--s4);
+    width: min(16rem, 100%);
+    height: 28px;
+    padding: 0 var(--s4) 0 0;
+    border: 1px solid var(--agnes-input-border);
+    border-radius: var(--radius-md);
     background: var(--agnes-bg-app-content);
-    color: var(--agnes-text-primary);
-    font-weight: 400;
   }
-  /* The three toolbar controls share one height, radius and quiet border. */
-  .trace-fold-all {
-    flex: 0 0 auto;
-    height: var(--s32);
-    min-height: var(--s32);
-    padding: 0 var(--s12);
-    border-color: var(--agnes-line-primary);
-    border-radius: var(--radius-md);
-    color: var(--agnes-text-secondary);
+  .trace-search-box:focus-within {
+    border-color: var(--agnes-input-border-focus);
+    box-shadow: 0 0 0 3px var(--agnes-focus-ring-soft);
+  }
+  .trace-search-box .trace-search {
+    flex: 1;
+    min-width: 0;
+    height: 26px;
+    min-height: 26px;
+    padding: 0 var(--s8);
+    border: 0;
     background: transparent;
+    box-shadow: none;
+    color: var(--agnes-text-primary);
     font-size: var(--font-size-sm);
     font-weight: 400;
   }
-  .trace-toolbar :is(.trace-type-filter, .trace-search) {
-    border-radius: var(--radius-md);
+  .trace-search-box .trace-search:focus-visible {
+    outline: none;
+    box-shadow: none;
+  }
+  .trace-search-count {
+    color: var(--agnes-text-tertiary);
+    font-size: 0.6875rem;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .trace-search-step.agh-btn--icon,
+  .trace-fold-all.agh-btn--icon,
+  .trace-toolbar-more.agh-btn--icon {
+    width: 28px;
+    min-width: 28px;
+    height: 28px;
+    min-height: 28px;
+  }
+  .trace-search-step.agh-btn--icon {
+    width: 22px;
+    min-width: 22px;
+    height: 22px;
+    min-height: 22px;
   }
   .trace-gantt {
     grid-row: 3;
@@ -302,8 +390,9 @@
   }
   .trace-body {
     grid-row: 4;
+    position: relative;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(18rem, 24rem);
+    grid-template-columns: minmax(0, 1fr) auto minmax(20rem, 27.5rem);
     min-height: 0;
   }
   /* The inspector column exists only while a record is open; otherwise the list, and with it the
@@ -355,6 +444,10 @@
   }
   .trace-turn-toggle {
     display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    max-width: 100%;
+    min-width: 0;
     min-height: 1.5rem;
     padding: 0 0.3rem;
     border: 0;
@@ -367,10 +460,25 @@
   .trace-turn-toggle:hover:not(:disabled) {
     color: var(--agnes-text-primary);
   }
+  .trace-turn-toggle b {
+    color: var(--agnes-text-secondary);
+    font-weight: var(--font-weight-semibold);
+  }
+  .trace-turn-prompt {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--agnes-text-secondary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .trace-turn-meta {
+    flex: 0 0 auto;
+    color: var(--agnes-text-tertiary);
+  }
   .trace-row {
     display: grid;
     /* The kind column fits the longest label in either language, so a chip never runs into the text. */
-    grid-template-columns: 3.4rem 4.75rem minmax(0, 1fr);
+    grid-template-columns: 3.4rem 4.75rem minmax(0, 1fr) auto;
     align-items: center;
     justify-content: start;
     gap: 0.55rem;
@@ -503,24 +611,25 @@
     display: none;
   }
   .trace-inspector-head {
-    display: flex;
     flex: 0 0 auto;
-    align-items: center;
-    gap: var(--s8);
-    min-height: 3.25rem;
-    padding: var(--s8) var(--s12) var(--s8) var(--s16);
+    padding: var(--s12) var(--s12) var(--s8) var(--s16);
     border-bottom: 1px solid var(--agnes-line-primary);
   }
-  .trace-inspector-head > .trace-badge {
+  .trace-inspector-titlebar {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    min-width: 0;
+  }
+  .trace-inspector-titlebar > .trace-badge {
     flex: 0 0 auto;
   }
-  .trace-inspector-heading {
+  .trace-inspector-title {
     flex: 1;
     min-width: 0;
-  }
-  .trace-inspector-title {
-    min-width: 0;
-    overflow-wrap: anywhere;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     margin: 0;
     color: var(--agnes-text-primary);
     font-size: var(--font-size-sm);
@@ -528,7 +637,11 @@
     line-height: var(--line-sm);
   }
   .trace-inspector-meta {
-    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s4) var(--s8);
+    margin: var(--s4) 0 0;
     color: var(--agnes-text-tertiary);
     font-size: var(--font-size-xs);
     font-variant-numeric: tabular-nums;
@@ -538,6 +651,51 @@
   .trace-inspector-meta:empty {
     display: none;
   }
+  .trace-status-tag {
+    padding: 0 0.4rem;
+    border-radius: var(--radius-sm, 4px);
+    background: var(--agnes-status-success-bg);
+    color: var(--agnes-status-success-text);
+    font-size: 0.6875rem;
+  }
+  .trace-status-tag[data-status="failed"] {
+    background: var(--agnes-status-danger-bg);
+    color: var(--agnes-status-danger-text);
+  }
+  .trace-status-tag:is([data-status="running"], [data-status="waiting"], [data-status="awaiting_approval"]) {
+    background: var(--agnes-status-warning-bg);
+    color: var(--agnes-status-warning-text);
+  }
+  .trace-status-tag:is([data-status="cancelled"], [data-status="planned"]) {
+    background: var(--agnes-trace-badge-user-bg);
+    color: var(--agnes-text-secondary);
+  }
+  /* Four key facts in two columns, between the header and the tabs. */
+  .trace-facts {
+    display: grid;
+    flex: 0 0 auto;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--s8) var(--s16);
+    margin: 0;
+    padding: var(--s8) var(--s16) var(--s12);
+    border-bottom: 1px solid var(--agnes-line-primary);
+    font-size: var(--font-size-xs);
+  }
+  .trace-fact {
+    min-width: 0;
+  }
+  .trace-fact dt {
+    color: var(--agnes-text-tertiary);
+    font-size: 0.6875rem;
+  }
+  .trace-fact dd {
+    margin: 0;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+  }
+  .trace-inspector-more.agh-btn--icon,
   .trace-inspector-close {
     display: inline-flex;
     flex: 0 0 auto;
@@ -563,15 +721,6 @@
   .trace-inspector-body > * {
     flex: 0 0 auto;
   }
-  .trace-inspector-body > .trace-detail-copy {
-    align-self: flex-start;
-  }
-  /* The request record is one more card in the column; its own header sticks to the column top. */
-  .trace-inspector-body > .request-trace {
-    border: 1px solid var(--agnes-line-primary);
-    border-radius: var(--radius-card);
-    background: var(--agnes-bg-surface);
-  }
   .trace-inspector-pane:not([hidden]) {
     display: flex;
     flex-direction: column;
@@ -592,7 +741,9 @@
   }
   .trace-inspector-tabs {
     display: flex;
+    flex: 0 0 auto;
     gap: var(--s16);
+    padding: 0 var(--s16);
     border-bottom: 1px solid var(--agnes-line-primary);
     overflow-x: auto;
     scrollbar-width: none;
@@ -606,6 +757,13 @@
     color: var(--agnes-text-secondary);
     background: transparent;
     font-size: var(--font-size-sm);
+  }
+  .trace-tab-debug {
+    display: inline-flex;
+    align-items: center;
+    margin-left: auto;
+    border-bottom-color: var(--agnes-line-emphasis);
+    color: var(--agnes-text-tertiary);
   }
   .trace-tab[aria-pressed="true"] {
     border-bottom-color: var(--agnes-brand-primary);
@@ -806,19 +964,229 @@
     grid-row: 4;
     margin: var(--s24) var(--s20);
   }
+  .trace-badge.kind-ui {
+    color: var(--trace-kind-ui-text);
+    background: var(--trace-kind-ui-bg);
+  }
+  .trace-badge.kind-control {
+    color: var(--trace-kind-control-text);
+    background: var(--trace-kind-control-bg);
+  }
+  .trace-row-text {
+    color: var(--agnes-text-primary);
+  }
+  .trace-row-text + .trace-preview-raw {
+    margin-left: 0.5rem;
+  }
+  .trace-row-preview mark {
+    border-radius: 2px;
+    background: var(--agnes-status-warning-bg);
+    color: inherit;
+  }
+  .trace-row[data-match="current"] mark {
+    box-shadow: 0 0 0 1px var(--agnes-status-warning-text);
+  }
+  .trace-row-end {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s8);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .trace-row-status {
+    display: inline-flex;
+    color: var(--agnes-status-success-text);
+  }
+  .trace-row-status[data-status="failed"] {
+    color: var(--agnes-status-danger-text);
+  }
+  .trace-row-status:is([data-status="running"], [data-status="waiting"]) {
+    color: var(--agnes-text-emphasis);
+  }
+  .trace-visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  /* The divider between list and inspector: a hairline that turns brand-coloured with a grip on hover
+   or while dragged. */
+  .trace-splitter {
+    position: relative;
+    width: 9px;
+    margin-inline: -4px;
+    z-index: 3;
+    cursor: col-resize;
+    touch-action: none;
+  }
+  .trace-splitter::before {
+    content: "";
+    position: absolute;
+    inset: 0 4px;
+    background: var(--agnes-line-primary);
+    transition: background 0.12s;
+  }
+  .trace-splitter::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 2.5px;
+    width: 4px;
+    height: 36px;
+    margin-top: -18px;
+    border-radius: 2px;
+    background: var(--agnes-line-emphasis);
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  .trace-splitter:is(:hover, :focus-visible, [data-dragging])::before {
+    background: var(--agnes-brand-primary);
+  }
+  .trace-splitter:is(:hover, :focus-visible, [data-dragging])::after {
+    opacity: 1;
+  }
+  .trace-splitter:focus-visible {
+    outline: none;
+  }
+  /* Steps of a business-UI action or of your own control, each with its time. */
+  .trace-steps {
+    margin: 0;
+    padding: var(--s4) 0;
+    list-style: none;
+    font-size: var(--font-size-sm);
+  }
+  .trace-step {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    padding: 0.3rem 0;
+    color: var(--agnes-status-success-text);
+  }
+  .trace-step > span {
+    color: var(--agnes-text-primary);
+  }
+  .trace-step[data-status="failed"] {
+    color: var(--agnes-status-danger-text);
+  }
+  .trace-step:is([data-status="running"], [data-status="waiting"]) {
+    color: var(--agnes-text-emphasis);
+  }
+  .trace-step time {
+    margin-left: auto;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+  }
+  /* The request's provenance as a short vertical chain. */
+  .trace-chain {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .trace-chain-link {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(5rem, 34%) minmax(0, 1fr);
+    gap: var(--s4) var(--s12);
+    padding: 0.35rem 0 0.35rem 1.1rem;
+    font-size: var(--font-size-sm);
+  }
+  .trace-chain-link::before {
+    content: "";
+    position: absolute;
+    top: 0.75rem;
+    left: 0.15rem;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--agnes-brand-primary);
+  }
+  .trace-chain-link + .trace-chain-link::after {
+    content: "";
+    position: absolute;
+    top: -0.35rem;
+    left: calc(0.15rem + 3px);
+    width: 1px;
+    height: 1.1rem;
+    background: var(--agnes-line-emphasis);
+  }
+  .trace-chain-label {
+    color: var(--agnes-text-secondary);
+  }
+  .trace-chain-value {
+    color: var(--agnes-text-primary);
+    overflow-wrap: anywhere;
+  }
+  .trace-chain-detail {
+    grid-column: 2;
+    margin: 0;
+    padding-left: 1rem;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+  }
+  /* The request content tab: a view switch, the call picker and copy above folded sections. */
+  .request-trace {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s8);
+    min-width: 0;
+  }
+  .request-trace-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s8);
+  }
+  .request-trace-bar .request-trace-copy {
+    margin-left: auto;
+  }
+  .request-trace-note {
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    line-height: 1.6;
+  }
+  .request-trace-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s4) var(--s12);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+  }
+  [data-testid="request-trace-content"] {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s8);
+    min-width: 0;
+  }
+  /* Narrow panels: the inspector lies over the list instead of squeezing it. */
   @media (max-width: 900px) {
     .trace-body {
       grid-template-columns: minmax(0, 1fr);
     }
-    .trace-inspector {
+    .trace-inspector:not([hidden]) {
+      position: absolute;
+      z-index: 4;
+      inset: 0;
       border-left: 0;
-      border-top: 1px solid var(--agnes-line-primary);
+      box-shadow: var(--shadow-elevation-prominent);
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    .trace-gantt-bar {
+    .trace-gantt-bar,
+    .trace-splitter::before,
+    .trace-splitter::after {
       transition: none;
     }
+  }
+  .dark [data-agnes-region="trace"] {
+    --trace-kind-control-text: rgb(201 162 239);
+    --trace-kind-control-bg: rgb(176 120 230 / 16%);
   }
   :is(.trace-gantt-label, .trace-stats) {
     font-variant-numeric: tabular-nums;

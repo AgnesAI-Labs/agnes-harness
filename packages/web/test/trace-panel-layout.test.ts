@@ -80,12 +80,10 @@ describe('trace region layout', () => {
     expect(declarations('.trace-list')).toContain('overflow: auto')
   })
 
-  it('gives every part of the trace its own row, so control records cannot push the list off the flexible one', () => {
+  it('gives every part of the trace its own row, so nothing can push the list off the flexible one', () => {
     // A run with approvals adds the control records above the toolbar. With auto-placement that
     // fourth part moved the timeline onto the flexible row, where it collapsed and its lanes were
     // painted over the first records.
-    expect(declarations('.trace-control-facts')).toContain('grid-row: 1')
-    expect(declarations('.trace-control-facts')).toContain('overflow: auto')
     expect(declarations('.trace-toolbar')).toContain('grid-row: 2')
     expect(declarations('.trace-gantt')).toContain('grid-row: 3')
     expect(declarations('.trace-body')).toContain('grid-row: 4')

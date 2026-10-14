@@ -1,6 +1,8 @@
 import type { UINode, UISpan, UITurn } from '@agnes/protocol'
+import type { SessionControlFact } from '@agnes/protocol/gen/agnes-v1'
 import { type TraceMessageKey, traceLocale, traceText } from './trace-locale.js'
 import type { TraceMetric, TraceTokenMetrics } from './trace-request-metrics.js'
+import { summarizeTool } from './trace-summary.js'
 
 export const BADGE_KEY: Record<string, TraceMessageKey> = {
   user: 'trace.badge.user',
@@ -24,7 +26,24 @@ const STATUS_KEY: Record<string, TraceMessageKey> = {
   awaiting_approval: 'trace.status.awaiting_approval',
 }
 
+/** One recorded state of a business-UI action or of something you did, in order. */
+export type TraceRowStep = { label: string; at?: string | undefined; statusCode: string }
+
 export type TraceRow = {
+  /** What happened, in words: the inspector title. */
+  title: string
+  /** The list line; raw payloads stay out of it. */
+  text: string
+  /** Muted raw arguments, only when no readable summary exists. */
+  secondary?: string | undefined
+  tool?: { name: string; args?: string | undefined; result?: string | undefined } | undefined
+  /** A business-UI view this row is about: its title and revision. */
+  surface?: { title?: string | undefined; revision?: string | undefined; action?: boolean } | undefined
+  steps?: readonly TraceRowStep[] | undefined
+  /** Who did it, for your own actions. */
+  actor?: string | undefined
+  /** The answers you submitted through a business-UI view, field by field. */
+  answers?: ReadonlyArray<readonly [string, string]> | undefined
   review?: import('@agnes/protocol').ToolReviewFact | undefined
   requestTraceId?: string | undefined
   id: string
@@ -51,24 +70,7 @@ export type TraceRow = {
   callUsage?: UITurn['usage']['calls'][number] | undefined
 }
 
-export type GanttBar = {
-  key: string
-  truncated?: string
-  targetId?: string
-  marker?: boolean
-  lane: 'input' | 'model' | 'tool'
-  tone?: 'user' | 'context' | 'system'
-  left: number
-  width: number
-  end: number
-  domainStart: number
-  domainEnd: number
-  title: string
-}
-type GanttModel = { bars: GanttBar[]; start: number; end: number }
-
-export type TimelineMode = 'sequence' | 'duration' | 'time' | 'actual'
-export type TimelineRange = { start: number; end: number }
+export type { GanttBar, TimelineMode, TimelineRange } from './trace-gantt-model.js'
 export const clip = (value: string, max: number): string =>
   value.length <= max ? value : `${value.slice(0, max).trimEnd()}…`
 
@@ -113,7 +115,7 @@ export const metricTokensLabel = (tokens: TraceTokenMetrics): string =>
     reasoning: metricLabel(tokens.reasoning),
   })
 
-const walkSpans = (span: UISpan, visit: (item: UISpan) => void): void => {
+export const walkSpans = (span: UISpan, visit: (item: UISpan) => void): void => {
   visit(span)
   for (const child of span.children) walkSpans(child, visit)
 }
@@ -125,9 +127,14 @@ type UserNode = Extract<UINode, { kind: 'user' }>
  * answer is the person's own action; everything else is a system record. Each gets readable text
  * instead of the internal summary sent to the model.
  */
-export function systemInputRow(
-  node: UserNode,
-): { kind: 'control' | 'context'; preview: string; source: string } | undefined {
+export function systemInputRow(node: UserNode):
+  | {
+      kind: 'control' | 'context'
+      preview: string
+      source: string
+      answers?: Array<[string, string]>
+    }
+  | undefined {
   if (node.origin !== 'system' || !node.system) return undefined
   const system = node.system
   const presentation = system.presentation
@@ -145,10 +152,24 @@ export function systemInputRow(
           : presentation.operation === 'submit' && answers > 0
             ? 'trace.system.uiAnswers'
             : 'trace.system.uiAction'
+    const given =
+      submitted?.answers && typeof submitted.answers === 'object' && !Array.isArray(submitted.answers)
+        ? Object.entries(submitted.answers as Record<string, unknown>).map(
+            ([field, value]): [string, string] => [
+              field,
+              Array.isArray(value)
+                ? value.map(String).join(traceText('trace.join.items'))
+                : typeof value === 'string'
+                  ? value
+                  : JSON.stringify(value),
+            ],
+          )
+        : []
     return {
       kind: 'control',
       preview: traceText(key, { n: answers, label: presentation.label }),
       source: traceText('trace.source.yourUi'),
+      ...(given.length ? { answers: given } : {}),
     }
   }
   if (presentation?.kind === 'child-completed')
@@ -253,11 +274,67 @@ const nodeSource = (node: UINode): string => {
   return node.kind
 }
 
-const LIST_KINDS = new Set(['user', 'context', 'assistant', 'tool', 'approval', 'compaction'])
+/** «[runtime context] {json}» reads as its label and the facts a person would look for. */
+export function contextLine(text: string): { label: string; detail: string } {
+  const match = /^\[([^\]]+)\]\s*([\s\S]*)$/.exec(text.trim())
+  if (!match) return { label: traceText('trace.badge.context'), detail: clip(oneLine(text), 160) }
+  const name = match[1] ?? ''
+  const rest = match[2] ?? ''
+  const label =
+    name === 'runtime context'
+      ? traceText('trace.context.runtime')
+      : name === 'hook context'
+        ? traceText('trace.context.hook')
+        : name
+  try {
+    const value = JSON.parse(rest) as { environment?: Record<string, unknown> }
+    const environment = value.environment
+    if (environment && typeof environment === 'object') {
+      const parts = [
+        typeof environment.cwd === 'string' ? traceText('trace.context.cwd', { cwd: environment.cwd }) : '',
+        typeof environment.model === 'string' ? environment.model : '',
+      ].filter(Boolean)
+      if (parts.length) return { label, detail: parts.join(' · ') }
+    }
+  } catch {}
+  return { label, detail: clip(oneLine(rest), 160) }
+}
+const oneLine = (value: string): string => value.replace(/\s+/g, ' ').trim()
+
+/** The list line and the inspector title for one recorded node. */
+function describe(
+  node: Exclude<UINode, { kind: 'slot' }>,
+  preview: string,
+  model: string | undefined,
+): Pick<TraceRow, 'title' | 'text' | 'secondary'> {
+  if (node.kind === 'tool') {
+    const summary = summarizeTool(node)
+    return { title: summary.text, text: summary.text, secondary: summary.secondary }
+  }
+  if (node.kind === 'context') {
+    const line = contextLine(node.text)
+    return { title: line.label, text: line.detail ? `${line.label} · ${line.detail}` : line.label }
+  }
+  if (node.kind === 'assistant')
+    return {
+      title: model ? traceText('trace.title.request', { model }) : traceText('trace.title.reply'),
+      text: preview,
+    }
+  if (node.kind === 'user') {
+    const system = systemInputRow(node)
+    return { title: system ? system.preview : traceText('trace.title.user'), text: preview }
+  }
+  if (node.kind === 'approval')
+    return { title: traceText('trace.title.approval', { summary: clip(preview, 60) }), text: preview }
+  if (node.kind === 'compaction') return { title: traceText('trace.title.compaction'), text: preview }
+  return { title: preview, text: preview }
+}
+
+export const LIST_KINDS = new Set(['user', 'context', 'assistant', 'tool', 'approval', 'compaction'])
 
 /** A span placed where the trace shortened a subtree; its message is how many steps it stands for. */
-const isTruncation = (span: UISpan): boolean => span.error?.code === 'TRACE_TRUNCATED'
-const truncationLabel = (span: UISpan): string => {
+export const isTruncation = (span: UISpan): boolean => span.error?.code === 'TRACE_TRUNCATED'
+export const truncationLabel = (span: UISpan): string => {
   const n = span.error?.message ?? traceText('trace.truncated.some')
   return traceText(n === '1' ? 'trace.truncated.one' : 'trace.truncated', { n })
 }
@@ -357,7 +434,8 @@ export function buildTraceRows(nodes: readonly UINode[], turns: readonly UITurn[
       cached.row.usage === usage &&
       cached.row.callUsage === callUsage &&
       cached.row.requestTraceId === span?.requestTraceId &&
-      cached.row.review === span?.review
+      cached.row.review === span?.review &&
+      cached.row.model === span?.model
     ) {
       rows.push(cached.row)
       continue
@@ -369,6 +447,13 @@ export function buildTraceRows(nodes: readonly UINode[], turns: readonly UITurn[
       step: placed?.step,
       kind,
       badge: traceText(BADGE_KEY[kind] ?? 'trace.badge.assistant'),
+      ...describe(node, preview, span?.model),
+      ...(node.kind === 'tool'
+        ? { tool: { name: node.name, args: node.argsPreview, result: node.resultPreview } }
+        : {}),
+      ...(node.kind === 'user' && systemInputRow(node)?.answers
+        ? { answers: systemInputRow(node)?.answers }
+        : {}),
       preview,
       raw,
       ...(node.kind === 'tool' ? { rawNote: traceText('trace.note.tool') } : {}),
@@ -390,31 +475,185 @@ export function buildTraceRows(nodes: readonly UINode[], turns: readonly UITurn[
     rowCache.set(node, { locale, turn, span, row })
     rows.push(row)
   }
-  for (const turn of turns) {
-    const visit = (span: UISpan) => {
-      if (span.kind === 'other' && span.id.startsWith('ui-fact:'))
-        rows.push({
-          id: span.id,
-          seq: span.startSeq,
-          turn: turn.turn,
-          kind: 'ui',
-          badge: traceText('trace.badge.ui'),
-          preview: span.name
-            .split(' · ')
-            .map((part, index) => (index === 0 ? traceText(('trace.ui.' + part) as TraceMessageKey) : part))
-            .join(' · '),
-          raw: JSON.stringify(span, null, 2),
-          source: 'agnes/intelligent-ui',
-          status: traceText(STATUS_KEY[span.status] ?? 'trace.status.completed'),
-          statusCode: span.status,
-          startedAt: span.startedAt,
-          durationMs: span.durationMs,
-        })
-      for (const child of span.children) visit(child)
-    }
-    if (turn.trace) visit(turn.trace)
-  }
+  rows.push(...uiFactRows(turns))
   return rows.sort((a, b) => a.seq - b.seq)
+}
+
+const UI_STATE_KEY = (state: string): TraceMessageKey => `trace.ui.${state}` as TraceMessageKey
+
+/**
+ * Business-UI facts the host adds to a turn's trace («action.received · r1», «surface.opened · r1 ·
+ * Questions»). A view opening, changing or closing is one row; one action, from received to its
+ * outcome, is one row whose steps keep each recorded state and time.
+ */
+function uiFactRows(turns: readonly UITurn[]): TraceRow[] {
+  const facts: Array<{ span: UISpan; turn: number; state: string; revision?: string; title?: string }> = []
+  for (const turn of turns)
+    if (turn.trace)
+      walkSpans(turn.trace, (span) => {
+        if (span.kind !== 'other' || !span.id.startsWith('ui-fact:')) return
+        const [state = '', revision, ...title] = span.name.split(' · ')
+        facts.push({
+          span,
+          turn: turn.turn,
+          state,
+          ...(revision?.startsWith('r') ? { revision: revision.slice(1) } : {}),
+          ...(title.length ? { title: title.join(' · ') } : {}),
+        })
+      })
+  facts.sort((a, b) => a.span.startSeq - b.span.startSeq)
+  const titleFor = (revision: string | undefined): string | undefined =>
+    facts.find((fact) => fact.title && fact.revision === revision)?.title ??
+    facts.find((fact) => fact.title)?.title
+  const rows: TraceRow[] = []
+  let open:
+    | { row: TraceRow; revision: string | undefined; steps: TraceRowStep[]; spans: UISpan[] }
+    | undefined
+  for (const fact of facts) {
+    const { span } = fact
+    const label = traceText(UI_STATE_KEY(fact.state))
+    const step = { label, at: span.startedAt, statusCode: span.status }
+    const surface = fact.title ?? titleFor(fact.revision) ?? traceText('trace.ui.unknownSurface')
+    const revision = fact.revision && fact.revision !== '?' ? fact.revision : undefined
+    const line = [label, surface, revision ? traceText('trace.ui.revision', { n: revision }) : '']
+      .filter(Boolean)
+      .join(' · ')
+    const base = {
+      seq: span.startSeq,
+      turn: fact.turn,
+      kind: 'ui',
+      badge: traceText('trace.badge.ui'),
+      source: traceText('trace.source.uiPlugin'),
+      startedAt: span.startedAt,
+      surface: { title: surface, revision },
+    }
+    if (!fact.state.startsWith('action.')) {
+      open = undefined
+      rows.push({
+        ...base,
+        id: span.id,
+        title: traceText('trace.ui.title.surface', { state: label, surface }),
+        text: line,
+        preview: line,
+        raw: JSON.stringify(span, null, 2),
+        status: traceText(STATUS_KEY[span.status] ?? 'trace.status.completed'),
+        statusCode: span.status,
+        durationMs: span.durationMs,
+        steps: [step],
+      })
+      continue
+    }
+    if (!open || fact.state === 'action.received' || open.revision !== fact.revision) {
+      const row: TraceRow = {
+        ...base,
+        id: span.id,
+        title: traceText('trace.ui.title.action', { surface }),
+        surface: { title: surface, revision, action: true },
+        text: line,
+        preview: line,
+        raw: '',
+        status: '',
+        statusCode: span.status,
+        steps: [],
+      }
+      open = { row, revision: fact.revision, steps: [], spans: [] }
+      rows.push(row)
+    }
+    open.steps.push(step)
+    open.spans.push(span)
+    const first = Date.parse(open.steps[0]?.at ?? '')
+    const last = Date.parse(span.startedAt)
+    const failed = open.steps.some((item) => item.statusCode === 'failed')
+    const statusCode = failed ? 'failed' : span.status
+    Object.assign(open.row, {
+      text: line,
+      preview: line,
+      statusCode,
+      status: traceText(STATUS_KEY[statusCode] ?? 'trace.status.completed'),
+      steps: [...open.steps],
+      raw: JSON.stringify(open.spans, null, 2),
+      ...(Number.isFinite(first) && Number.isFinite(last) ? { durationMs: Math.max(0, last - first) } : {}),
+    })
+  }
+  return rows
+}
+
+const CONTROL_STATUS: Record<string, string> = {
+  applied: 'completed',
+  delivered: 'completed',
+  withdrawn: 'cancelled',
+  refused: 'failed',
+  uncertain: 'waiting',
+  requested: 'running',
+  queued: 'waiting',
+  edited: 'waiting',
+}
+
+/** The first text a person wrote inside a recorded control, such as a guidance message. */
+function writtenText(value: unknown, depth = 0): string | undefined {
+  if (depth > 5 || !value || typeof value !== 'object') return undefined
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = writtenText(item, depth + 1)
+      if (found) return found
+    }
+    return undefined
+  }
+  const record = value as Record<string, unknown>
+  if (typeof record.text === 'string' && record.text.trim()) return record.text
+  for (const key of ['item', 'content', 'message', 'input', 'prompt']) {
+    const found = writtenText(record[key], depth + 1)
+    if (found) return found
+  }
+  return undefined
+}
+
+/**
+ * The controls you used while the agent ran (guidance, pause, resume, cancel, interrupt, queued
+ * message changes, subagent stop/continue), as rows of their own kind in the timeline. Facts about
+ * one control (its admission or queued item) form one row whose steps are its recorded outcomes.
+ */
+export function buildControlRows(facts: readonly SessionControlFact[]): TraceRow[] {
+  const groups = new Map<string, SessionControlFact[]>()
+  for (const fact of [...facts].sort((a, b) => a.seq - b.seq)) {
+    const details = (fact.details ?? {}) as Record<string, unknown>
+    const id = details.itemId ?? details.admissionId
+    const key = `${fact.action}:${typeof id === 'string' ? id : fact.seq}`
+    groups.set(key, [...(groups.get(key) ?? []), fact])
+  }
+  return [...groups.values()].map((group) => {
+    const first = group[0] as SessionControlFact
+    const last = group.at(-1) as SessionControlFact
+    const action = traceText(`trace.controls.${first.action}` as TraceMessageKey)
+    const text = group.map((fact) => writtenText(fact.details)).find(Boolean)
+    const title = !text
+      ? action
+      : first.action === 'steer'
+        ? traceText('trace.control.title.steer', { text: clip(oneLine(text), 80) })
+        : `${action} · ${clip(oneLine(text), 80)}`
+    const statusCode = CONTROL_STATUS[last.outcome] ?? 'completed'
+    const outcome = traceText(`trace.controls.${last.outcome}` as TraceMessageKey)
+    return {
+      id: `control:${first.seq}`,
+      seq: first.seq,
+      kind: 'control',
+      badge: traceText('trace.badge.control'),
+      title,
+      text: `${title} · ${outcome}`,
+      preview: `${title} · ${outcome}`,
+      raw: JSON.stringify(group, null, 2),
+      source: traceText('trace.control.you'),
+      actor: first.actor.id,
+      status: outcome,
+      statusCode,
+      startedAt: first.ts,
+      steps: group.map((fact) => ({
+        label: traceText(`trace.controls.${fact.outcome}` as TraceMessageKey),
+        at: fact.ts,
+        statusCode: CONTROL_STATUS[fact.outcome] ?? 'completed',
+      })),
+    }
+  })
 }
 
 /**
@@ -461,202 +700,6 @@ export function placeTraceRowsInTurns(rows: readonly TraceRow[], turns: readonly
 
 /** Called through this object so a test can count how often the list is rebuilt. */
 export const traceRowBuilder = { build: buildTraceRows }
-
-type GanttEvent = {
-  key: string
-  truncated?: string
-  targetId?: string
-  lane: GanttBar['lane']
-  tone?: GanttBar['tone']
-  start: number
-  end: number
-  title: string
-}
-
-const IDLE_GAP_MS = 120
-
-function projectTimedEvents(events: GanttEvent[], mode: Exclude<TimelineMode, 'sequence'>): GanttModel {
-  if (events.length === 0) return { bars: [], start: 0, end: 1 }
-  const ordered = [...events].sort((a, b) => a.start - b.start || a.end - b.end)
-  const origin = ordered[0]?.start ?? 0
-  let coveredUntil = origin
-  let removedIdle = 0
-  const placed: Array<GanttEvent & { compactStart: number; compactEnd: number }> = []
-  for (const event of ordered) {
-    const gap = event.start - coveredUntil
-    if (mode === 'duration' && gap > IDLE_GAP_MS) removedIdle += gap - 48
-    const compactStart = event.start - origin - removedIdle
-    const compactEnd =
-      (mode === 'time' ? event.start : Math.max(event.end, event.start)) - origin - removedIdle
-    placed.push({ ...event, compactStart, compactEnd })
-    coveredUntil = Math.max(coveredUntil, event.end, event.start)
-  }
-  let total = 1
-  for (const event of placed) total = Math.max(total, event.compactEnd)
-  return {
-    start: 0,
-    end: total,
-    bars: placed.map((event) => ({
-      key: event.key,
-      ...(event.truncated ? { truncated: event.truncated } : {}),
-      ...(event.targetId ? { targetId: event.targetId } : {}),
-      ...(event.compactEnd <= event.compactStart ? { marker: true } : {}),
-      lane: event.lane,
-      ...(event.tone ? { tone: event.tone } : {}),
-      left: (event.compactStart / total) * 100,
-      width:
-        event.compactEnd <= event.compactStart
-          ? 0
-          : Math.max(1.8, ((event.compactEnd - event.compactStart) / total) * 100),
-      end: (event.compactEnd / total) * 100,
-      domainStart: event.compactStart,
-      domainEnd: event.compactEnd,
-      title: event.title,
-    })),
-  }
-}
-
-export function buildGantt(
-  turns: readonly UITurn[],
-  nodes: readonly UINode[] = [],
-  rows: readonly TraceRow[] = [],
-  mode: TimelineMode = 'duration',
-): GanttModel {
-  if (mode === 'sequence') {
-    return {
-      start: 0,
-      end: Math.max(1, rows.length),
-      bars: rows.map((row, index) => ({
-        key: `row:${row.id}`,
-        targetId: row.id,
-        lane:
-          row.kind === 'user' || row.kind === 'context' ? 'input' : row.kind === 'tool' ? 'tool' : 'model',
-        ...(row.kind === 'user' ? { tone: 'user' as const } : {}),
-        ...(row.kind === 'context' ? { tone: 'context' as const } : {}),
-        left: (index / rows.length) * 100,
-        end: ((index + 1) / rows.length) * 100,
-        width: 100 / rows.length,
-        domainStart: index,
-        domainEnd: index + 1,
-        title: `${row.source} · ${clip(row.preview, 120)}`,
-      })),
-    }
-  }
-  const events: GanttEvent[] = []
-  const nodeById = new Map(nodes.map((node) => [node.id, node]))
-  const rowNodeIds = new Set(nodes.filter((node) => LIST_KINDS.has(node.kind)).map((node) => node.id))
-  const toolByUseId = new Map(
-    nodes.flatMap((node) => (node.kind === 'tool' ? [[node.toolUseId, node.id] as const] : [])),
-  )
-  const inputNodes = nodes
-    .filter((node) => node.kind === 'user' || node.kind === 'context')
-    .sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
-  const firstAtOrAfter = (seq: number): number => {
-    let low = 0
-    let high = inputNodes.length
-    while (low < high) {
-      const middle = Math.floor((low + high) / 2)
-      if ((inputNodes[middle]?.seq ?? 0) < seq) low = middle + 1
-      else high = middle
-    }
-    return low
-  }
-  for (const turn of turns) {
-    if (!turn.trace) continue
-    const origin = Date.parse(turn.trace.startedAt)
-    if (!Number.isFinite(origin)) continue
-    const selected = new Set<string>()
-    const turnInputs: UINode[] = []
-    for (const id of turn.nodeIds) {
-      const node = nodeById.get(id)
-      if (node && (node.kind === 'user' || node.kind === 'context') && !selected.has(node.id)) {
-        selected.add(node.id)
-        turnInputs.push(node)
-      }
-    }
-    const start = firstAtOrAfter(turn.startSeq)
-    const end = firstAtOrAfter((turn.endSeq ?? Number.POSITIVE_INFINITY) + 1)
-    for (const node of inputNodes.slice(start, end)) {
-      if (selected.has(node.id)) continue
-      selected.add(node.id)
-      turnInputs.push(node)
-    }
-    turnInputs.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
-    if (turnInputs.length === 0) {
-      events.push({
-        key: `input:${turn.id}`,
-        lane: 'input',
-        start: origin,
-        end: origin,
-        title: traceText('trace.gantt.turnInput', { turn: turn.turn }),
-      })
-    } else {
-      turnInputs.forEach((node) => {
-        events.push({
-          key: `input:${turn.id}:${node.id}`,
-          lane: 'input',
-          tone: node.kind === 'user' ? 'user' : 'context',
-          start: origin,
-          end: origin,
-          targetId: node.id,
-          title: traceText('trace.gantt.anchored', {
-            kind: traceText(node.kind === 'user' ? 'trace.badge.user' : 'trace.badge.context'),
-          }),
-        })
-      })
-    }
-    walkSpans(turn.trace, (span) => {
-      const at = Date.parse(span.startedAt)
-      if (!Number.isFinite(at)) return
-      const duration = span.durationMs ?? 0
-      const targetId =
-        span.nodeIds?.find((id) => rowNodeIds.has(id)) ??
-        (span.toolUseId ? toolByUseId.get(span.toolUseId) : undefined)
-      if (span.kind === 'generation')
-        events.push({
-          key: span.id,
-          lane: 'model',
-          start: at,
-          end: at + duration,
-          ...(targetId ? { targetId } : {}),
-          title: `${span.model ?? span.name} · ${span.durationMs === undefined && span.status !== 'running' ? traceText('trace.duration.unknown') : durationLabel(span.durationMs)}`,
-        })
-      if (span.kind === 'tool')
-        events.push({
-          key: span.id,
-          lane: 'tool',
-          start: at,
-          end: at + duration,
-          ...(targetId ? { targetId } : {}),
-          title: `${span.name} · ${span.durationMs === undefined && span.status !== 'running' ? traceText('trace.duration.unknown') : durationLabel(span.durationMs)}`,
-        })
-      if (isTruncation(span)) {
-        const label = truncationLabel(span)
-        events.push({ key: span.id, truncated: label, lane: 'tool', start: at, end: at, title: label })
-      }
-    })
-  }
-  // Span ids are unique in practice; a repeated one gets a suffix so each bar keeps its own key.
-  const seen = new Map<string, number>()
-  for (const event of events) {
-    const count = seen.get(event.key) ?? 0
-    seen.set(event.key, count + 1)
-    if (count > 0) event.key = `${event.key}#${count}`
-  }
-  return projectTimedEvents(events, mode)
-}
-
-export const truncations = (
-  turns: readonly UITurn[],
-): Array<{ key: string; turn: number; label: string }> => {
-  const found: Array<{ key: string; turn: number; label: string }> = []
-  for (const turn of turns)
-    if (turn.trace)
-      walkSpans(turn.trace, (span) => {
-        if (isTruncation(span)) found.push({ key: span.id, turn: turn.turn, label: truncationLabel(span) })
-      })
-  return found
-}
 
 export const traceStats = (turns: readonly UITurn[]): Array<[string, string]> => {
   let calls = 0
