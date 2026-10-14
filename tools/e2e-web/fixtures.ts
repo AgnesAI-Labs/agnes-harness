@@ -10,7 +10,7 @@ export const test = base.extend<{
   expectedBrowserErrors: async ({}, use) => {
     await use([])
   },
-  runtime: async ({ page }, use, info) => {
+  runtime: async ({ page, screenshot }, use, info) => {
     const runtime = await isolatedRuntime(
       info.title.startsWith('guided first run zh-CN') ? 'installed' : 'root',
     )
@@ -21,10 +21,11 @@ export const test = base.extend<{
     } finally {
       try {
         try {
-          await info.attach('final-screen.png', {
-            body: await page.screenshot({ animations: 'disabled' }),
-            contentType: 'image/png',
-          })
+          if ((typeof screenshot === 'string' ? screenshot : screenshot.mode) !== 'off')
+            await info.attach('final-screen.png', {
+              body: await page.screenshot({ animations: 'disabled' }),
+              contentType: 'image/png',
+            })
         } finally {
           try {
             await page.close()
