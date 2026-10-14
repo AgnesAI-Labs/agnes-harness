@@ -1012,7 +1012,21 @@
   .account-dialog-body[data-inline="true"] .config-detail-footer {
     display: none;
   }
+  .account-dialog-body[data-inline="true"],
+  .account-dialog-body[data-inline="true"] .config-detail-grid,
+  .account-dialog-body[data-inline="true"] .account-connection-step,
+  .account-dialog-body[data-inline="true"] .config-section {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .account-dialog-body[data-inline="true"] .config-section {
+    display: grid;
+    margin-inline: 0;
+    padding-inline: 0;
+    border-inline: 0;
+  }
   .account-dialog-body[data-inline="true"] .config-detail-grid {
+    grid-template-columns: minmax(0, 1fr);
     padding: var(--s16) 0;
     overflow: visible;
   }
