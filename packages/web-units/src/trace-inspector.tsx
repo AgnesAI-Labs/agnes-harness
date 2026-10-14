@@ -1,6 +1,7 @@
-import type { UINode, UITurn } from '@agnes/protocol'
+import type { FactChainAnchor, UINode, UITurn } from '@agnes/protocol'
 import { Button, IconButton, Menu, type MenuItem } from '@agnes/web-ui'
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
+import { FeedbackProvenance } from './message-feedback/index.js'
 import type { TraceMeta, TracePanelOptions } from './trace.js'
 import {
   AnswersTable,
@@ -17,7 +18,7 @@ import {
 import { TraceCard, TraceCode, TraceField } from './trace-inspector-parts.js'
 import { type TraceMessageKey, traceLocale, traceText } from './trace-locale.js'
 import { durationLabel, type TraceRow, traceStepLabel } from './trace-model.js'
-import { TraceProvenance } from './trace-provenance.js'
+import { TraceSourceRecord } from './trace-provenance.js'
 import {
   RequestCapture,
   RequestContent,
@@ -26,6 +27,7 @@ import {
   useRequestTrace,
 } from './trace-request.js'
 import type { TraceRequestMetrics } from './trace-request-metrics.js'
+import { TraceReview } from './trace-review.js'
 
 const PANE_KEY = {
   reply: 'trace.pane.reply',
@@ -78,7 +80,8 @@ type InspectorProps = {
   selectedUserNode: UINode | undefined
   selectedRequest: TraceRequestMetrics | undefined
   setLightbox(value: { src: string; alt: string }): void
-  width?: number | undefined
+  /** The record a link asked for, when the trace was opened from one. */
+  focus?: FactChainAnchor | undefined
 }
 
 /** Owns the model-request read for an assistant row, so its tabs and ⋯ items share one result. */
@@ -130,8 +133,13 @@ function InspectorView({
   selectedUserNode,
   selectedRequest,
   setLightbox,
-  width,
+  focus,
 }: InspectorProps & { row: TraceRow; request: RequestTraceState | undefined }) {
+  const anchor = row.requestTraceId
+    ? ({ kind: 'request', callId: row.requestTraceId } as const)
+    : row.tool?.toolUseId
+      ? ({ kind: 'tool', toolUseId: row.tool.toolUseId } as const)
+      : undefined
   const detail = activeToolDetail?.status === 'ready' ? activeToolDetail.value : undefined
   const notice =
     activeToolDetail?.status === 'error' ? (
@@ -286,28 +294,27 @@ function InspectorView({
             </TraceCard>
             {row.review ? (
               <TraceCard title={traceText('trace.card.review')} testId="trace-auto-review">
-                <p className="trace-card-line">
-                  {traceText('trace.review.model', { model: row.review.model })}
-                </p>
-                <p className="trace-card-line">
-                  {traceText('trace.review.decision', {
-                    decision: row.review.decision,
-                    risk: row.review.risk,
-                  })}
-                </p>
-                <p className="trace-card-line">{row.review.reason}</p>
+                <TraceReview name={row.tool?.name ?? row.source} review={row.review} />
               </TraceCard>
             ) : null}
-            {row.requestTraceId && sessionId && options.readFactChain ? (
+            {focus?.kind === 'authoring' && sessionId ? (
+              <FeedbackProvenance sessionId={sessionId} candidateId={focus.candidateId} />
+            ) : null}
+            {anchor && sessionId && options.readFactChain ? (
               <TraceCard title={traceText('trace.provenance.title')}>
-                <TraceProvenance
+                <TraceSourceRecord
                   sessionId={sessionId}
-                  callId={row.requestTraceId}
+                  anchor={anchor}
                   read={options.readFactChain}
+                  loadArtifact={options.loadArtifact}
+                  review={!row.review}
                 />
               </TraceCard>
             ) : null}
             {request ? <RequestCapture state={request} clear={options.clearModelRequest} /> : null}
+            <p className="trace-readonly" data-testid="trace-readonly">
+              {traceText('trace.facts.readOnly')}
+            </p>
           </>
         )
       case 'projected':
@@ -350,7 +357,6 @@ function InspectorView({
     <aside
       className="trace-inspector"
       data-kind={row.kind}
-      style={width ? { width: `${width}px` } : undefined}
       onKeyDown={(event: ReactKeyboardEvent<HTMLElement>) => {
         if (compact && event.key === 'Escape' && !event.defaultPrevented) {
           event.preventDefault()

@@ -39,6 +39,9 @@ export function mountTraceRegion(
     selectTool(sessionId, callSeq, resultSeq) {
       return handle.current?.selectTool?.(sessionId, callSeq, resultSeq) ?? false
     },
+    focusFact(params) {
+      return handle.current?.focusFact?.(params) ?? false
+    },
     dispose() {
       if (disposed) return
       disposed = true

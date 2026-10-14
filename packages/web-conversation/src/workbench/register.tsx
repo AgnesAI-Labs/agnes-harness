@@ -2,7 +2,6 @@ import { fileViewerActions, workbenchPanels } from '@agnes/web-client'
 import { goalSlot } from '../goal-card.js'
 import { ChangesPanel, ReviewFileAction } from './changes-panel.js'
 import { panelContext } from './context.js'
-import { FactChainPanel } from './fact-chain-panel.js'
 import { FilesPanel } from './files-panel.js'
 import { GoalPanel } from './goal-panel.js'
 import { changesCount, terminalCount } from './tab-counts.js'
@@ -15,15 +14,6 @@ if (!workbenchPanels.get('files'))
     edge: 'right',
     titleKey: 'workbench.files.title',
     component: FilesPanel,
-  })
-
-if (!workbenchPanels.get('facts'))
-  workbenchPanels.register({
-    id: 'facts',
-    order: 40,
-    edge: 'right',
-    titleKey: 'facts.title',
-    component: FactChainPanel,
   })
 
 export type { WorkbenchContext } from './context.js'

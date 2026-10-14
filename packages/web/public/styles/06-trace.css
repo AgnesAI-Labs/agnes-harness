@@ -1,9 +1,5 @@
 @layer app {
   [data-agnes-region="trace"] {
-    --trace-kind-ui-text: var(--agnes-status-info-text);
-    --trace-kind-ui-bg: var(--agnes-status-info-bg);
-    --trace-kind-control-text: rgb(122 63 176);
-    --trace-kind-control-bg: rgb(122 63 176 / 10%);
     display: grid;
     /* Control records, toolbar, timeline, list. Each part names its row, so a part that is absent
      leaves an empty track instead of shifting the list out of the one row that takes the rest. */
@@ -128,7 +124,7 @@
     align-items: center;
     gap: var(--s8) var(--s12);
     min-height: 44px;
-    padding: var(--s6, 6px) var(--s16);
+    padding: 0.375rem var(--s16);
     border-bottom: 1px solid var(--agnes-line-primary);
   }
   .trace-toolbar[hidden] {
@@ -213,10 +209,10 @@
     background: var(--agnes-trace-badge-compaction-text);
   }
   .trace-chip-dot.kind-ui {
-    background: var(--trace-kind-ui-text);
+    background: var(--agnes-status-info-text);
   }
   .trace-chip-dot.kind-control {
-    background: var(--trace-kind-control-text);
+    background: color-mix(in srgb, var(--agnes-status-info-text) 55%, var(--agnes-status-danger-text));
   }
   .trace-search-box {
     display: flex;
@@ -653,7 +649,7 @@
   }
   .trace-status-tag {
     padding: 0 0.4rem;
-    border-radius: var(--radius-sm, 4px);
+    border-radius: var(--radius-md);
     background: var(--agnes-status-success-bg);
     color: var(--agnes-status-success-text);
     font-size: 0.6875rem;
@@ -965,12 +961,16 @@
     margin: var(--s24) var(--s20);
   }
   .trace-badge.kind-ui {
-    color: var(--trace-kind-ui-text);
-    background: var(--trace-kind-ui-bg);
+    color: var(--agnes-status-info-text);
+    background: var(--agnes-status-info-bg);
   }
   .trace-badge.kind-control {
-    color: var(--trace-kind-control-text);
-    background: var(--trace-kind-control-bg);
+    color: color-mix(in srgb, var(--agnes-status-info-text) 55%, var(--agnes-status-danger-text));
+    background: color-mix(
+      in srgb,
+      var(--agnes-status-info-text) 7%,
+      color-mix(in srgb, var(--agnes-status-danger-text) 6%, transparent)
+    );
   }
   .trace-row-text {
     color: var(--agnes-text-primary);
@@ -1183,10 +1183,6 @@
     .trace-splitter::after {
       transition: none;
     }
-  }
-  .dark [data-agnes-region="trace"] {
-    --trace-kind-control-text: rgb(201 162 239);
-    --trace-kind-control-bg: rgb(176 120 230 / 16%);
   }
   :is(.trace-gantt-label, .trace-stats) {
     font-variant-numeric: tabular-nums;

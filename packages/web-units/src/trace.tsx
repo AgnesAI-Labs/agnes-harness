@@ -1,6 +1,7 @@
 // biome-ignore-all lint/a11y/useSemanticElements: preserve public trace div roles and the virtual list geometry during the JSX migration.
 import type { SessionControlFact } from '@agnes/protocol/gen/agnes-v1'
 import { Button, EmptyState, Icon } from '@agnes/web-ui'
+import { authoringRow, resolveFactRow } from './trace-focus.js'
 import { barIntersectsRange, TraceGantt } from './trace-gantt.js'
 import { buildGantt, truncations } from './trace-gantt-model.js'
 import { defaultPane, type InspectorPane, type ToolDetailState, TraceInspector } from './trace-inspector.js'
@@ -18,7 +19,7 @@ import {
   traceRowBuilder,
   traceStats,
 } from './trace-model.js'
-import type { ReadFactChain } from './trace-provenance.js'
+import type { LoadArtifact, ReadFactChain } from './trace-provenance.js'
 import { TraceSplitter, useInspectorWidth } from './trace-splitter.js'
 import { TraceToolbar } from './trace-toolbar.js'
 
@@ -67,6 +68,8 @@ export type TraceHandle = {
   setOpen(open: boolean): void
   isOpen(): boolean
   selectTool?(sessionId: string, callSeq: number, resultSeq?: number): boolean
+  /** Opens the trace on the record a fact-chain link names, with its «来源» tab showing. */
+  focusFact?(params: import('@agnes/protocol').FactChainParams): boolean
 }
 export type TracePanel = TraceHandle
 export type TracePanelOptions = {
@@ -78,7 +81,8 @@ export type TracePanelOptions = {
   clearModelRequest?: (
     params: import('@agnes/protocol').ModelRequestClearParams,
   ) => Promise<import('@agnes/protocol').ModelRequestClearResult>
-  openFactChain?: (input: import('@agnes/protocol').FactChainParams) => boolean
+  /** Downloads an artifact a record produced, through the session's resource service. */
+  loadArtifact?: LoadArtifact
   /** Reads a request's provenance for the inspector's «来源» tab; the trace never opens the workbench. */
   readFactChain?: ReadFactChain
   readModelRequest?: (
@@ -169,6 +173,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
     }
   }, [compact, selected, root])
   const [pane, setPane] = useState<InspectorPane>('content')
+  const [focus, setFocus] = useState<import('@agnes/protocol').FactChainAnchor | undefined>(undefined)
   const [toolDetail, setToolDetail] = useState<ToolDetailState | undefined>(undefined)
   const [lightbox, setLightbox] = useState<{
     src: string
@@ -405,11 +410,43 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
         selectRowRef.current?.(node.id)
         return true
       },
+      focusFact(params) {
+        const value = latest.current ?? currentSnapshot.current
+        if (value.meta?.sessionId !== params.sessionId) return false
+        applyOpenRef.current(true, true)
+        const placed = placeTraceRowsInTurns(buildTraceRows(value.nodes, value.turns), value.turns)
+        const reveal = (id: string): void => {
+          flushSync(() => {
+            setTimelineRange(null)
+            setTimelineViewport(null)
+            setLightbox(null)
+          })
+          selectRowRef.current?.(id)
+          flushSync(() => {
+            setFocus(params.anchor)
+            setPane('source')
+          })
+        }
+        const id = resolveFactRow(placed, value.nodes, params.anchor)
+        if (id) {
+          reveal(id)
+          return true
+        }
+        if (params.anchor.kind !== 'authoring' || !options.readFactChain) return false
+        options.readFactChain(params).then(
+          (result) => {
+            const target = authoringRow(placed, result)
+            if (target) reveal(target)
+          },
+          () => undefined,
+        )
+        return true
+      },
       isOpen() {
         return open.current
       },
     }),
-    [],
+    [options.readFactChain],
   )
   const timelineModel = useMemo(
     () => buildGantt(snapshot.turns, snapshot.nodes, rows, timelineMode),
@@ -568,6 +605,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
         if (ancestors.some((ancestor) => collapsedTools.has(ancestor)))
           setCollapsedTools((current) => new Set([...current].filter((value) => !ancestors.includes(value))))
         setSelected(id)
+        setFocus(undefined)
         if (revealBar) {
           const start = Math.max(
             timelineModel.start,
@@ -633,6 +671,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
       if (!target) return
       options.toggle.click()
       selectRow(target.id)
+      flushSync(() => setPane('source'))
     }
     conversation.addEventListener('agnes:trace-turn', jump)
     return () => conversation.removeEventListener('agnes:trace-turn', jump)
@@ -935,6 +974,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
           selectedUserNode={selectedUserNode}
           selectedRequest={selectedRequest}
           setLightbox={setLightbox}
+          focus={focus}
         />
       </div>
       {lightbox ? <TraceLightbox image={lightbox} root={root} close={() => setLightbox(null)} /> : null}

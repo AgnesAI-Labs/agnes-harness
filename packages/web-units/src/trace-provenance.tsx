@@ -1,10 +1,26 @@
-import type { FactChainNode, FactChainParams, FactChainResult } from '@agnes/protocol'
-import { useEffect, useState } from 'react'
+import type {
+  ArtifactRef,
+  FactChainAnchor,
+  FactChainNode,
+  FactChainParams,
+  FactChainResult,
+} from '@agnes/protocol'
+import { Button } from '@agnes/web-ui'
+import { useEffect, useRef, useState } from 'react'
 import { type TraceMessageKey, traceText } from './trace-locale.js'
+import { TraceReview } from './trace-review.js'
 
 export type ReadFactChain = (params: FactChainParams, signal?: AbortSignal) => Promise<FactChainResult>
+/** Loads one ledger artifact through the session's resource service; release frees its object URL. */
+export type LoadArtifact = (input: {
+  laneId: string
+  artifact: ArtifactRef
+}) => Promise<{ url: string; release(): void }>
 
 type Link = { key: string; label: string; value: string; detail?: readonly string[] }
+type Node<K extends FactChainNode['kind']> = Extract<FactChainNode, { kind: K }>
+const of = <K extends FactChainNode['kind']>(result: FactChainResult, kind: K): Node<K>[] =>
+  result.nodes.filter((node): node is Node<K> => node.kind === kind)
 
 const ATTEMPT_STATUS: Record<string, TraceMessageKey> = {
   completed: 'trace.status.completed',
@@ -20,15 +36,13 @@ const ATTEMPT_STATUS: Record<string, TraceMessageKey> = {
  * shows empty or zero entries.
  */
 export function provenanceLinks(result: FactChainResult, callId: string): Link[] {
-  const of = <K extends FactChainNode['kind']>(kind: K) =>
-    result.nodes.filter((node): node is Extract<FactChainNode, { kind: K }> => node.kind === kind)
-  const request = of('request').find((node) => node.callId === callId) ?? of('request')[0]
-  const attempts = of('attempt')
+  const request = of(result, 'request').find((node) => node.callId === callId) ?? of(result, 'request')[0]
+  const attempts = of(result, 'attempt')
     .filter((node) => !request || node.parentCallId === request.callId)
     .sort((a, b) => a.index - b.index)
   const last = attempts.at(-1)
-  const bundles = of('composition').flatMap((node) => node.bundles)
-  const packages = of('generation').flatMap((node) => node.packages)
+  const bundles = of(result, 'composition').flatMap((node) => node.bundles)
+  const packages = of(result, 'generation').flatMap((node) => node.packages)
   const links: Link[] = []
   if (request?.model)
     links.push({ key: 'model', label: traceText('trace.provenance.model'), value: request.model })
@@ -59,50 +73,47 @@ export function provenanceLinks(result: FactChainResult, callId: string): Link[]
   return links
 }
 
-/** Reads the request's fact chain once per request and draws it as a short vertical chain. */
-export function TraceProvenance({
-  sessionId,
-  callId,
-  read,
-}: {
-  sessionId: string
-  callId: string
-  read: ReadFactChain
-}) {
-  const [state, setState] = useState<
-    { key: string; links: Link[] } | { key: string; error: true } | undefined
-  >()
-  const key = `${sessionId}:${callId}`
-  useEffect(() => {
-    const controller = new AbortController()
-    read({ sessionId, laneId: 'main', anchor: { kind: 'request', callId } }, controller.signal).then(
-      (result) => {
-        if (!controller.signal.aborted) setState({ key, links: provenanceLinks(result, callId) })
-      },
-      () => {
-        if (!controller.signal.aborted) setState({ key, error: true })
-      },
-    )
-    return () => controller.abort()
-  }, [read, sessionId, callId, key])
-  const current = state?.key === key ? state : undefined
-  if (!current)
-    return (
-      <p className="trace-detail-status" role="status">
-        {traceText('trace.provenance.loading')}
-      </p>
-    )
-  if ('error' in current)
-    return (
-      <p className="trace-detail-status" role="alert">
-        {traceText('trace.provenance.failed')}
-      </p>
-    )
-  if (current.links.length === 0)
-    return <p className="trace-detail-status">{traceText('trace.provenance.empty')}</p>
+/** A tool call's settled facts: its receipt and the business-UI records linked to it. */
+export function toolLinks(result: FactChainResult): Link[] {
+  const links: Link[] = []
+  const receipt = of(result, 'receipt')[0]
+  if (receipt)
+    links.push({
+      key: 'receipt',
+      label: traceText('trace.facts.receipt'),
+      value: [
+        traceText(
+          receipt.resultKind === 'deferred-accepted'
+            ? 'trace.facts.deferred'
+            : (`trace.facts.outcome.${receipt.outcome}` as TraceMessageKey),
+        ),
+        receipt.partial ? traceText('trace.facts.partial') : '',
+        receipt.resultKind === 'synthetic' ? traceText('trace.facts.synthetic') : '',
+      ]
+        .filter(Boolean)
+        .join(' · '),
+    })
+  else if (of(result, 'invocation').length)
+    links.push({
+      key: 'receipt',
+      label: traceText('trace.facts.receipt'),
+      value: traceText('trace.facts.noReceipt'),
+    })
+  const ui = of(result, 'plugin-fact')
+  if (ui.length)
+    links.push({
+      key: 'ui',
+      label: traceText('trace.facts.ui'),
+      value: traceText('trace.facts.uiCount', { n: ui.length }),
+      detail: ui.map((node) => `${node.label} · ${traceText('trace.ui.revision', { n: node.revision })}`),
+    })
+  return links
+}
+
+function Chain({ links }: { links: readonly Link[] }) {
   return (
     <ol className="trace-chain" data-testid="trace-provenance">
-      {current.links.map((link) => (
+      {links.map((link) => (
         <li key={link.key} className="trace-chain-link" data-link={link.key}>
           <span className="trace-chain-label">{link.label}</span>
           <span className="trace-chain-value">{link.value}</span>
@@ -116,5 +127,145 @@ export function TraceProvenance({
         </li>
       ))}
     </ol>
+  )
+}
+
+/** Downloads one artifact the record produced or used, through the existing resource service. */
+export function ArtifactDownload({
+  artifact,
+  laneId,
+  load,
+}: {
+  artifact: Node<'artifact'>
+  laneId: string
+  load: LoadArtifact | undefined
+}) {
+  const [state, setState] = useState<'idle' | 'busy' | 'failed'>('idle')
+  const [file, setFile] = useState<{ url: string; release(): void }>()
+  const link = useRef<HTMLAnchorElement>(null)
+  const mime = artifact.ref.mime
+  const name = `${artifact.ref.sha256.slice(0, 12)}.${mime === 'application/pdf' ? 'pdf' : mime.startsWith('text/') ? 'txt' : 'bin'}`
+  // The loaded file is handed to the browser through a rendered link, then released shortly after.
+  useEffect(() => {
+    if (!file) return
+    link.current?.click()
+    const timer = setTimeout(() => file.release(), 1000)
+    return () => {
+      clearTimeout(timer)
+      file.release()
+    }
+  }, [file])
+  const download = async () => {
+    if (!load) return
+    setState('busy')
+    try {
+      setFile(await load({ laneId, artifact: artifact.ref }))
+      setState('idle')
+    } catch {
+      setState('failed')
+    }
+  }
+  return (
+    <li className="trace-artifact" data-testid="trace-artifact">
+      <span>
+        {traceText(`trace.facts.relation.${artifact.relation}` as TraceMessageKey)} · {mime}
+      </span>
+      <Button
+        size="small"
+        data-testid="artifact-download"
+        disabled={!load || state === 'busy'}
+        loading={state === 'busy'}
+        onClick={() => void download()}
+      >
+        {traceText('trace.facts.download')}
+      </Button>
+      {file ? (
+        <a ref={link} href={file.url} download={name} hidden={true}>
+          {name}
+        </a>
+      ) : null}
+      {state === 'failed' ? <p role="alert">{traceText('trace.facts.downloadFailed')}</p> : null}
+    </li>
+  )
+}
+
+/**
+ * The «来源» record, read in place through the fact-chain read: a request's provenance chain, or a
+ * tool call's authorization (with future-call rules), receipt, artifacts and business-UI records.
+ * Missing evidence is named, and the last line says what a record can and cannot prove.
+ */
+export function TraceSourceRecord({
+  sessionId,
+  anchor,
+  read,
+  loadArtifact,
+  laneId = 'main',
+  review = true,
+}: {
+  sessionId: string
+  anchor: Extract<FactChainAnchor, { kind: 'request' } | { kind: 'tool' }>
+  read: ReadFactChain
+  loadArtifact?: LoadArtifact | undefined
+  laneId?: string
+  /** False when the row already shows its review with the future-call rules. */
+  review?: boolean
+}) {
+  const key = JSON.stringify([sessionId, laneId, anchor])
+  const [state, setState] = useState<{ key: string; result?: FactChainResult; error?: true }>()
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the serialized key names the read.
+  useEffect(() => {
+    const controller = new AbortController()
+    read({ sessionId, laneId, anchor }, controller.signal).then(
+      (result) => {
+        if (!controller.signal.aborted) setState({ key, result })
+      },
+      () => {
+        if (!controller.signal.aborted) setState({ key, error: true })
+      },
+    )
+    return () => controller.abort()
+  }, [read, key])
+  const current = state?.key === key ? state : undefined
+  if (!current)
+    return (
+      <p className="trace-detail-status" role="status">
+        {traceText('trace.provenance.loading')}
+      </p>
+    )
+  if (!current.result)
+    return (
+      <p className="trace-detail-status" role="alert">
+        {traceText('trace.provenance.failed')}
+      </p>
+    )
+  const result = current.result
+  const links = anchor.kind === 'request' ? provenanceLinks(result, anchor.callId) : toolLinks(result)
+  const invocation = of(result, 'invocation')[0]
+  const artifacts = of(result, 'artifact')
+  const gaps = [...new Set(result.gaps.map((gap) => gap.reason))]
+  return (
+    <div className="trace-source-record">
+      {links.length ? (
+        <Chain links={links} />
+      ) : (
+        <p className="trace-detail-status">{traceText('trace.provenance.empty')}</p>
+      )}
+      {review && invocation?.review ? (
+        <TraceReview name={invocation.name} review={invocation.review} />
+      ) : null}
+      {artifacts.length ? (
+        <ul className="trace-artifacts" aria-label={traceText('trace.facts.artifact')}>
+          {artifacts.map((artifact) => (
+            <ArtifactDownload key={artifact.id} artifact={artifact} laneId={laneId} load={loadArtifact} />
+          ))}
+        </ul>
+      ) : null}
+      {gaps.length ? (
+        <p className="trace-raw-note" data-testid="trace-gaps">
+          <strong>{traceText('trace.facts.gaps')}</strong>{' '}
+          {gaps.map((reason) => traceText(`trace.facts.gap.${reason}` as TraceMessageKey)).join(' ')}
+        </p>
+      ) : null}
+    </div>
   )
 }

@@ -6,7 +6,6 @@ import type { UiExtensionContext } from '@agnes/web-client'
 export type WorkbenchContext = {
   session?: Session | undefined
   timeline?: UITimeline | undefined
-  factChain?: import('@agnes/protocol').FactChainParams | undefined
   workspace?: { name: string; path: string }
   disabled: boolean
   /** Name a workspace file (or, with `directory`, a folder) in the prompt as a file chip. */

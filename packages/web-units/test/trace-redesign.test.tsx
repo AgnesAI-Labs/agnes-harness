@@ -1,12 +1,12 @@
 // @vitest-environment happy-dom
-import type { FactChainResult, UINode, UISpan, UITurn } from '@agnes/protocol'
+import type { FactChainParams, FactChainResult, UINode, UISpan, UITurn } from '@agnes/protocol'
 import type { SessionControlFact } from '@agnes/protocol/gen/agnes-v1'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 import { defaultPane, inspectorPanes } from '../src/trace-inspector.js'
 import { buildControlRows, buildTraceRows, contextLine } from '../src/trace-model.js'
-import { provenanceLinks, TraceProvenance } from '../src/trace-provenance.js'
+import { provenanceLinks, TraceSourceRecord } from '../src/trace-provenance.js'
 import {
   clampInspectorWidth,
   TRACE_INSPECTOR_DEFAULT_WIDTH,
@@ -224,10 +224,10 @@ describe('provenance in the source tab', () => {
     const root = createRoot(host)
     await act(async () =>
       root.render(
-        createElement(TraceProvenance, {
+        createElement(TraceSourceRecord, {
           sessionId: 's',
-          callId: 'call',
-          read: async (params) => {
+          anchor: { kind: 'request', callId: 'call' },
+          read: async (params: FactChainParams) => {
             reads.push(params)
             return result
           },

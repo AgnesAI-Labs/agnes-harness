@@ -95,9 +95,9 @@ import {
   openMovedSettingsLink,
   rewriteMovedSettingsLink,
 } from './settings-redirects.js'
+import { readTraceFactChain } from './trace-facts.js'
 import type { RunReceipt, WebView } from './view.js'
 import { unmountWorkbench } from './workbench/dock.js'
-
 import { requestWorkspacePicker, workspacePickerAvailable } from './workspace-picker.js'
 
 installBrowserLogCapture()
@@ -928,11 +928,9 @@ const clientModules = await startClientModules({
       if (!current || current.id !== params.sessionId) throw new Error(t('app.trace.sessionSwitched'))
       return client.requestTrace.clear(params)
     },
-    openFactChain: (input) => factChainLinks.open(input),
-    readFactChain: async (params) => {
-      if (!current || current.id !== params.sessionId) throw new Error(t('app.trace.sessionSwitched'))
-      return current.factChain(params.anchor, params.laneId, { timeoutMs: 10_000 })
-    },
+    readFactChain: (params, signal) =>
+      readTraceFactChain(current, params, () => new Error(t('app.trace.sessionSwitched')), signal),
+    loadArtifact: (input) => clientModules.resources.files.load(input),
     readModelRequest: async (params, signal) => {
       if (!current || current.id !== params.sessionId) throw new Error(t('app.trace.sessionSwitched'))
       if (signal?.aborted) throw new Error(t('app.trace.sessionSwitched'))
@@ -970,6 +968,8 @@ const clientModules = await startClientModules({
 })
 const tracePanel = clientModules.trace as NonNullable<typeof clientModules.trace>
 if (!tracePanel) throw new Error('missing trace region')
+// Every «在轨迹中查看» link (requests, tools, changes, deliverables, feedback) opens the trace.
+factChainLinks.register((target) => tracePanel.focusFact?.(target) ?? false)
 const openSettingsTerminal = (event: Event) => {
   settings.close()
   if (workbenchNavigation.open('terminal')) event.preventDefault()

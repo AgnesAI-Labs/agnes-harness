@@ -1,10 +1,4 @@
-import type { FactChainParams } from '@agnes/protocol'
-import {
-  factChainLinks,
-  type UiExtensionContext,
-  workbenchNavigation,
-  workbenchPanels,
-} from '@agnes/web-client'
+import { type UiExtensionContext, workbenchNavigation, workbenchPanels } from '@agnes/web-client'
 import type { WorkbenchContext } from '@agnes/web-conversation/workbench'
 import {
   Button,
@@ -186,7 +180,6 @@ export function Dock({ context }: { context: UiExtensionContext }) {
   useEffect(() => {
     if (!bottomAvailable) setLayout((value) => (value.bottomOpen ? { ...value, bottomOpen: false } : value))
   }, [bottomAvailable])
-  const [factTarget, setFactTarget] = useState<FactChainParams>()
   const returnFocus = useRef<Partial<Record<'right' | 'bottom', HTMLElement>>>({})
   const sessionId = (context.data as WorkbenchContext)?.session?.id
   const [selection, setSelection] = useState<unknown>()
@@ -249,7 +242,6 @@ export function Dock({ context }: { context: UiExtensionContext }) {
       target.focus()
     else controls.current?.querySelector<HTMLButtonElement>(`[data-edge="${edge}"]`)?.focus()
   }, [])
-  useEffect(() => setFactTarget((value) => (value?.sessionId === sessionId ? value : undefined)), [sessionId])
   useEffect(() => {
     const sheet = window.matchMedia('(max-width: 767px)')
     const reconcile = () => {
@@ -297,17 +289,11 @@ export function Dock({ context }: { context: UiExtensionContext }) {
       setSelection({ path, directory: mention.directory })
       return true
     })
-    const removeFacts = factChainLinks.register((target) => {
-      if (target.sessionId !== sessionId || !openPanel('facts')) return false
-      setFactTarget(target)
-      return true
-    })
     return () => {
-      removeFacts()
       removePanel()
       removeMentions()
     }
-  }, [sessionId, rememberFocus, context])
+  }, [rememberFocus, context])
   useEffect(
     () => () => {
       surfaces.split?.classList.remove('workbench-right-open', 'workbench-bottom-open')
@@ -594,11 +580,6 @@ export function Dock({ context }: { context: UiExtensionContext }) {
                                       leaveOverlay(edge)
                                       workbench.mention(path, directory)
                                     },
-                                  }
-                                : {}),
-                              ...(active.id === 'facts'
-                                ? {
-                                    factChain: factTarget?.sessionId === sessionId ? factTarget : undefined,
                                   }
                                 : {}),
                             },

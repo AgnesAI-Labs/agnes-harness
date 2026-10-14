@@ -110,27 +110,6 @@
     }
   }
 
-  .fact-chain {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    min-width: 0;
-    overflow-wrap: anywhere;
-  }
-  .fact-chain-nodes {
-    padding-inline-start: var(--s20);
-  }
-  .fact-chain-nodes > li {
-    margin-block: var(--s12);
-  }
-  .fact-chain pre {
-    max-height: 16rem;
-    overflow: auto;
-    white-space: pre-wrap;
-    font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
-  }
-
   .workbench-terminal,
   .workbench-terminal-job {
     display: flex;

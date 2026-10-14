@@ -34,8 +34,9 @@ it('keeps every exported frontend catalog paired across all frontend packages', 
         const catalog = value as Record<string, Record<string, unknown>>
         if (!catalog.en || Array.isArray(catalog.en)) continue
         if (name === 'factChainCatalog') {
-          expect(catalog.en['facts.title']).toBe('Activity record')
-          expect(catalog['zh-CN']?.['facts.title']).toBe('执行记录')
+          // The activity record lives in the trace now; its links all say where they go.
+          expect(catalog.en['facts.toolLink']).toBe('View in trace')
+          expect(catalog['zh-CN']?.['facts.toolLink']).toBe('在轨迹中查看')
         }
         count += 1
         discovered.add(name)

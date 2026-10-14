@@ -8,7 +8,6 @@ import {
   SlotOutlet,
   type SlotRegistry,
   SlotsProvider,
-  workbenchNavigation,
 } from '@agnes/web-client'
 import {
   conversationToolCardKind,
@@ -309,14 +308,11 @@ export function WebConversationMessages({
                   sessionId={sessionScope}
                   target={{ messageSeq: answer.seq, turn: turn.turn }}
                   openEvidence={(candidateId) => {
-                    if (
-                      !factChainLinks.open({
-                        sessionId: sessionScope,
-                        laneId: 'main',
-                        anchor: { kind: 'authoring', candidateId },
-                      })
-                    )
-                      workbenchNavigation.open('facts')
+                    factChainLinks.open({
+                      sessionId: sessionScope,
+                      laneId: 'main',
+                      anchor: { kind: 'authoring', candidateId },
+                    })
                   }}
                   openReview={() => openPlugins('review')}
                 />

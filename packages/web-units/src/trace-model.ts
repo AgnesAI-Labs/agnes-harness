@@ -36,7 +36,9 @@ export type TraceRow = {
   text: string
   /** Muted raw arguments, only when no readable summary exists. */
   secondary?: string | undefined
-  tool?: { name: string; args?: string | undefined; result?: string | undefined } | undefined
+  tool?:
+    | { name: string; toolUseId?: string; args?: string | undefined; result?: string | undefined }
+    | undefined
   /** A business-UI view this row is about: its title and revision. */
   surface?: { title?: string | undefined; revision?: string | undefined; action?: boolean } | undefined
   steps?: readonly TraceRowStep[] | undefined
@@ -449,7 +451,14 @@ export function buildTraceRows(nodes: readonly UINode[], turns: readonly UITurn[
       badge: traceText(BADGE_KEY[kind] ?? 'trace.badge.assistant'),
       ...describe(node, preview, span?.model),
       ...(node.kind === 'tool'
-        ? { tool: { name: node.name, args: node.argsPreview, result: node.resultPreview } }
+        ? {
+            tool: {
+              name: node.name,
+              toolUseId: node.toolUseId,
+              args: node.argsPreview,
+              result: node.resultPreview,
+            },
+          }
         : {}),
       ...(node.kind === 'user' && systemInputRow(node)?.answers
         ? { answers: systemInputRow(node)?.answers }

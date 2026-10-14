@@ -37,9 +37,6 @@
     "packages/web-conversation/src/tool-icon.ts": {
       "dom": 2
     },
-    "packages/web-conversation/src/workbench/artifact-download.tsx": {
-      "dom": 1
-    },
     "packages/web-ui/src/admin-detail.tsx": {
       "className": 6
     },
