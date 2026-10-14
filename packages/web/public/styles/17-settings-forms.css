@@ -993,7 +993,7 @@
   }
 
   /* On a settings page the page header names the account form, so the form drops its own. */
-  .account-dialog-body[data-page] > .config-detail-heading {
+  .account-dialog-body[data-page] .config-detail-heading {
     display: none;
   }
   /* Account setup shares one stable native region in settings and the first-run guide. */
