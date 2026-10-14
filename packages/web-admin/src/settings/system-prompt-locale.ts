@@ -1,6 +1,10 @@
 import type { LocaleCatalog } from '@agnes/web-ui'
 export const promptCatalog: LocaleCatalog = {
   en: {
+    personalization: 'Personalization',
+    personalizationHelp: 'How the agent works for you and what it remembers.',
+    memory: 'Memory',
+    memoryHelp: 'What the agent keeps between sessions, per workspace.',
     instructions: 'Custom instructions',
     instructionsHelp: 'Used by new sessions. Sessions already open keep theirs.',
     how: 'What you want the agent to do',
@@ -29,6 +33,10 @@ export const promptCatalog: LocaleCatalog = {
     empty: 'The prompt plugins provide no sections.',
   },
   'zh-CN': {
+    personalization: '个性化',
+    personalizationHelp: 'Agent 怎么为你做事，以及它记住什么。',
+    memory: '记忆',
+    memoryHelp: 'Agent 在会话之间保留的内容，按工作区保存。',
     instructions: '自定义指令',
     instructionsHelp: '对新会话生效，已打开的会话保持原样。',
     how: '你希望 Agent 怎么做',

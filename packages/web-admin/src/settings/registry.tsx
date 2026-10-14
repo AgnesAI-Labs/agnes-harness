@@ -20,11 +20,9 @@ import { type ReactNode, useEffect, useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
 import { BundlesPanel, SessionDefaultsPanel } from '../admin/plugins/control-panel.js'
 import { AutoReviewPanel } from './auto-review.js'
-import { ChildEnginesPanel } from './child-engines.js'
 import { ContextPanel } from './context.js'
 import { DiagnosticsPanel } from './diagnostics.js'
 import { ExamplesPanel } from './examples.js'
-import { MemoryPanel } from './memory.js'
 import { PermissionDefaults } from './permission-defaults.js'
 import { PinsPanel } from './pins.js'
 import {
@@ -317,12 +315,6 @@ const definitions: readonly [
             summary={active('compaction')}
           >
             <ContextPanel canSave={c.canSave} />
-          </Subsection>
-          <Subsection defer id="memory" icon="history" title={t('agentMemory')}>
-            <MemoryPanel canSave={c.canSave} />
-          </Subsection>
-          <Subsection defer id="subagents" icon="git-branch" title={t('agentEngines')}>
-            <ChildEnginesPanel api={c.api} canSave={c.canSave} t={t} />
           </Subsection>
           <PromptSubsection canSave={c.canSave} t={t} />
           <Subsection defer id="prompt-preview" icon="eye" title={t('runPreview')}>

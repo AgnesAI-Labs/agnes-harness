@@ -21,6 +21,7 @@ import {
 } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
 import { PluginAdminApi } from '../admin/plugins/api.js'
+import { MemoryPanel } from './memory.js'
 import { systemPromptApi } from './system-prompt-api.js'
 import { promptCatalog } from './system-prompt-locale.js'
 
@@ -331,7 +332,7 @@ export function CustomInstructions({
     })
   }
   return (
-    <div ref={ref}>
+    <div ref={ref} id="settings-subsection-custom-instructions" tabIndex={-1}>
       <SettingsSection
         title={t('instructions')}
         description={t('instructionsHelp')}
@@ -429,11 +430,67 @@ export function CustomInstructions({
 let documentLocale: UiLocaleSource | undefined
 
 /** What the settings dialog adds to its General page, with the language the document is in. */
+/**
+ * 个性化 on the General page: how the agent works for you and what it remembers. It is not behind
+ * the advanced switch; memory is read only once the page is on screen.
+ */
+export function Personalization({
+  api = browserApi,
+  permission = canEditPrompt,
+  onRunConfiguration,
+}: {
+  api?: PromptApi
+  permission?: () => Promise<boolean>
+  onRunConfiguration?: () => void
+}) {
+  const { t } = useUiText(NAMESPACE, promptCatalog)
+  const [ref, shown] = useShown(false)
+  const [canSave, setCanSave] = useState(false)
+  useEffect(() => {
+    if (!shown) return
+    let current = true
+    void permission().then(
+      (value) => {
+        if (current) setCanSave(value)
+      },
+      () => {},
+    )
+    return () => {
+      current = false
+    }
+  }, [shown, permission])
+  return (
+    <SettingsSection
+      id="settings-subsection-personalization"
+      tabIndex={-1}
+      className="agnes-settings-personalization"
+      title={t('personalization')}
+      description={t('personalizationHelp')}
+      data-testid="settings-personalization"
+    >
+      <CustomInstructions
+        api={api}
+        permission={permission}
+        {...(onRunConfiguration ? { onRunConfiguration } : {})}
+      />
+      <div ref={ref} id="settings-subsection-memory" tabIndex={-1}>
+        <SettingsSection
+          title={t('memory')}
+          description={t('memoryHelp')}
+          data-testid="personalization-memory"
+        >
+          {shown && <MemoryPanel canSave={canSave} />}
+        </SettingsSection>
+      </div>
+    </SettingsSection>
+  )
+}
+
 export function SettingsGeneralExtras() {
   documentLocale ??= createDocumentLocaleSource({}).source
   return (
     <UiLocaleProvider source={documentLocale}>
-      <CustomInstructions
+      <Personalization
         onRunConfiguration={() =>
           document
             .getElementById('config-form')

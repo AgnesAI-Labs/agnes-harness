@@ -2,8 +2,8 @@
 import type { SystemPromptSnapshot } from '@agnes/protocol'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
-import { expect, it } from 'vitest'
-import { CustomInstructions, SystemPromptPanel } from '../src/settings/system-prompt.js'
+import { expect, it, vi } from 'vitest'
+import { CustomInstructions, Personalization, SystemPromptPanel } from '../src/settings/system-prompt.js'
 import { systemPromptApi } from '../src/settings/system-prompt-api.js'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
@@ -130,6 +130,50 @@ it('reads nothing while the General page is not on screen', async () => {
   } finally {
     await act(async () => root.unmount())
     pane.remove()
+  }
+})
+
+it('groups the instructions and memory as 个性化, reading memory only once the General page is shown', async () => {
+  const contextReads = vi.fn(async () => Response.json({ workspaces: [] }))
+  vi.stubGlobal('fetch', contextReads)
+  const api = systemPromptApi(async () =>
+    Response.json({
+      config: {},
+      effect: 'new-sessions',
+      hash: 'a'.repeat(64),
+      preview: 'default-sections',
+      sections: [],
+    }),
+  )
+  const pane = document.createElement('section')
+  pane.hidden = true
+  const host = pane.appendChild(document.createElement('div'))
+  document.body.append(pane)
+  const root = createRoot(host)
+  try {
+    await act(async () => root.render(createElement(Personalization, { api, permission: async () => true })))
+    const group = host.querySelector('[data-testid="settings-personalization"]')
+    expect(group?.id).toBe('settings-subsection-personalization')
+    expect(group?.querySelector('h3')?.textContent).toBe('Personalization')
+    // Both links into the group have a target: the instructions and the memory beneath them.
+    expect(
+      group?.querySelector('#settings-subsection-custom-instructions [data-testid="custom-instructions"]'),
+    ).not.toBeNull()
+    expect(
+      group?.querySelector('#settings-subsection-memory [data-testid="personalization-memory"]'),
+    ).not.toBeNull()
+    expect(host.querySelector('[data-testid="memory-panel"]')).toBeNull()
+    expect(contextReads).not.toHaveBeenCalled()
+    await act(async () => {
+      pane.hidden = false
+      await Promise.resolve()
+    })
+    expect(host.querySelector('[data-testid="memory-panel"]')).not.toBeNull()
+    expect(contextReads).toHaveBeenCalledWith('/api/context', expect.objectContaining({ method: 'POST' }))
+  } finally {
+    await act(async () => root.unmount())
+    pane.remove()
+    vi.unstubAllGlobals()
   }
 })
 
