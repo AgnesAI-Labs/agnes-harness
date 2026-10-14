@@ -6,6 +6,8 @@ English | [简体中文](backend.zh-CN.md)
 
 [Documentation](../README.md) · Prerequisite: [Cordis boundaries](plugins.md)
 
+Plugins are fully trusted code running with the user's rights. Capability declarations are reviewed at admission; they do not restrict arbitrary JavaScript or enforce a hook allowlist. `ctx.hooks.register` accepts the supported observe, transform and intercept hooks regardless of the declared `hooks` list. Use only code you intend to authorize.
+
 Build an installable text-statistics tool and check its inputs and results in the tool record. This is a small starting point for connecting a business function to AGH.
 
 Reuse the installable [hot-tool-plugin](../../examples/packages/hot-tool-plugin/package.json). It does not access networks, files, or paid models. `demo_text_stats` accepts text and returns character and whitespace-separated word counts. Character counting uses JavaScript `text.length`, not Unicode grapheme clusters.

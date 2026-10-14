@@ -3,7 +3,7 @@ import { Context } from '../src/index.js'
 
 declare module '../src/events.js' {
   interface Events {
-    'internal/probe'(this: Context, value: number, next?: () => string): string | void
+    'internal/probe'(this: Context, value: number, next?: () => string): string | void | Promise<void>
   }
 }
 
@@ -118,5 +118,28 @@ describe('internal dispatch provenance', () => {
     expect(observations[0]?.name).toBe('internal/dispatch')
     expect(observations[0]?.source).toBe(root)
     expect(observations[0]?.system).toBe(false)
+  })
+})
+
+
+describe('fire-and-forget listener failures', () => {
+  it.each(['public', 'system', 'dispatch'] as const)('logs rejected %s listeners with their owning plugin', async (kind) => {
+    const root = new Context()
+    const failure = new Error('listener rejected')
+    const owner = await root.plugin(function asyncObserver(ctx) {
+      if (kind === 'public') ctx.on('internal/probe', async () => { throw failure })
+      if (kind === 'system') ctx.on('internal/plugin', async () => { throw failure })
+      if (kind === 'dispatch') ctx.on('internal/dispatch', async (_mode, name) => {
+        if (name === 'internal/probe') throw failure
+      })
+    })
+    if (kind === 'system') await root.plugin(() => {})
+    else root.emit('internal/probe', 1)
+    for (let turn = 0; turn < 8; turn++) await Promise.resolve()
+    const logged = root.logger.buffer.find(message => message.args.includes(failure))
+    expect(logged?.type).toBe('error')
+    expect(logged?.name).toBe('async-observer')
+    expect(logged?.fiber?.deref()).toBe(owner)
+    await owner.dispose()
   })
 })

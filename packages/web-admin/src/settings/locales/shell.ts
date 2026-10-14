@@ -15,7 +15,9 @@ export const shellCatalog: LocaleCatalog = {
     trustFailed: 'The workspace could not be trusted. Check the folder and try again.',
     trusted: 'Trusted. Rescan to load the plugins.',
     trustConfirmAction: 'Trust',
-    trustConfirm: 'Trust the plugins in {path}? They will be able to load with the permissions they declare.',
+    trustConfirm: 'Trust the plugins in {path}? They run with your user rights.',
+    localTrustConfirm:
+      'This repository contains {count} local plugins. Trust them and its current hooks? Plugins run with your user rights. ({path})',
     'trustState.untrusted': 'Not trusted',
     'trustState.changed': 'Files changed since it was trusted',
     'trustState.trusted': 'Trusted',
@@ -193,7 +195,9 @@ export const shellCatalog: LocaleCatalog = {
     trustFailed: '无法信任这个工作区，请检查目录后重试。',
     trusted: '已信任。重新扫描后加载这些插件。',
     trustConfirmAction: '信任',
-    trustConfirm: '信任 {path} 里的插件？它们将能按各自声明的权限加载。',
+    trustConfirm: '信任 {path} 里的插件？它们以你的用户权限运行。',
+    localTrustConfirm:
+      '此仓库包含 {count} 个本地插件，是否信任它们和当前仓库 hooks？插件以你的用户权限运行。（{path}）',
     'trustState.untrusted': '未信任',
     'trustState.changed': '信任之后文件有变更',
     'trustState.trusted': '已信任',

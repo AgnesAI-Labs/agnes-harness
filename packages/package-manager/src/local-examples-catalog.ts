@@ -106,7 +106,6 @@ function descriptor(
       license: pkg.license,
       dependencies: (pkg.dependencies ?? {}) as Record<string, string>,
     },
-    ceiling: [],
     ...(signal ? { signal } : {}),
   })
   if (preview.blockers.length) return invalid('blocked-example')

@@ -55,10 +55,14 @@ function fixture(initial: Uint8Array = encoded(hookDocument())) {
   }
 }
 
+function trustedLoader(fs: ConstructorParameters<typeof WorkspaceHookLoader>[0], revision: () => string) {
+  return new WorkspaceHookLoader(fs, revision, () => true)
+}
+
 describe('WorkspaceHookLoader', () => {
   it('reads only the exact workspace path and returns one immutable normalized snapshot', async () => {
     const io = fixture()
-    const loader = new WorkspaceHookLoader(io.fs, () => 'policy-7')
+    const loader = trustedLoader(io.fs, () => 'policy-7')
     const snapshot = await loader.snapshot()
 
     expect(io.stat).toHaveBeenNthCalledWith(1, path)
@@ -81,7 +85,7 @@ describe('WorkspaceHookLoader', () => {
   it('returns an empty snapshot only when the initial exact-path stat reports missing', async () => {
     const io = fixture()
     io.setMissing(true)
-    const snapshot = await new WorkspaceHookLoader(io.fs, () => 'policy-1').snapshot()
+    const snapshot = await trustedLoader(io.fs, () => 'policy-1').snapshot()
 
     expect(snapshot.hooks).toEqual([])
     expect(snapshot.workspaceDigest).toMatch(/^sha256-[a-f0-9]{64}$/)
@@ -108,7 +112,7 @@ describe('WorkspaceHookLoader', () => {
       }),
       read: async (requested: string) => Uint8Array.from(get(requested)),
     }
-    const snapshot = () => new WorkspaceHookLoader(fs, () => 'policy-1').snapshot()
+    const snapshot = () => trustedLoader(fs, () => 'policy-1').snapshot()
 
     expect((await snapshot()).hooks).toEqual([
       {
@@ -124,7 +128,7 @@ describe('WorkspaceHookLoader', () => {
   it('reuses parsed immutable data by content digest while sampling policy revision per snapshot', async () => {
     const io = fixture()
     let revision = 'policy-1'
-    const loader = new WorkspaceHookLoader(io.fs, () => revision)
+    const loader = trustedLoader(io.fs, () => revision)
     const first = await loader.snapshot()
     revision = 'policy-2'
     const second = await loader.snapshot()
@@ -142,7 +146,7 @@ describe('WorkspaceHookLoader', () => {
       const bytes = encoded(hookDocument())
       return { kind: 'file', size: bytes.byteLength, mtimeMs: 1 }
     })
-    const loader = new WorkspaceHookLoader(io.fs, () => {
+    const loader = trustedLoader(io.fs, () => {
       order.push('policy')
       return 'policy-1'
     })
@@ -154,7 +158,7 @@ describe('WorkspaceHookLoader', () => {
   it.each(['symlink', 'dir', 'other'] as const)('rejects a %s in place of the regular file', async (kind) => {
     const io = fixture()
     io.setKind(kind)
-    await expect(new WorkspaceHookLoader(io.fs, () => 'policy-1').snapshot()).rejects.toMatchObject({
+    await expect(trustedLoader(io.fs, () => 'policy-1').snapshot()).rejects.toMatchObject({
       code: 'E_WORKSPACE_UNTRUSTED',
       detail: { reason: 'hooks-not-regular' },
     })
@@ -163,7 +167,7 @@ describe('WorkspaceHookLoader', () => {
 
   it('rejects an oversized file before reading it', async () => {
     const io = fixture(new Uint8Array(256 * 1024 + 1))
-    await expect(new WorkspaceHookLoader(io.fs, () => 'policy-1').snapshot()).rejects.toMatchObject({
+    await expect(trustedLoader(io.fs, () => 'policy-1').snapshot()).rejects.toMatchObject({
       code: 'E_WORKSPACE_UNTRUSTED',
       detail: { reason: 'hooks-too-large' },
     })
@@ -172,7 +176,7 @@ describe('WorkspaceHookLoader', () => {
 
   it('rejects malformed JSON and never falls back to the prior valid cached snapshot', async () => {
     const io = fixture()
-    const loader = new WorkspaceHookLoader(io.fs, () => 'policy-1')
+    const loader = trustedLoader(io.fs, () => 'policy-1')
     await expect(loader.snapshot()).resolves.toBeDefined()
     io.setBytes(encoded('{broken'))
     io.setMtime(2)
@@ -194,7 +198,7 @@ describe('WorkspaceHookLoader', () => {
         },
       }),
     )
-    await expect(new WorkspaceHookLoader(io.fs, () => 'policy-1').snapshot()).rejects.toMatchObject({
+    await expect(trustedLoader(io.fs, () => 'policy-1').snapshot()).rejects.toMatchObject({
       detail: { reason: 'hooks-shape-invalid' },
     })
   })
@@ -205,7 +209,7 @@ describe('WorkspaceHookLoader', () => {
       .mockResolvedValueOnce({ kind: 'file', size: encoded(hookDocument()).byteLength, mtimeMs: 1 })
       .mockResolvedValueOnce({ kind: 'file', size: encoded(hookDocument()).byteLength, mtimeMs: 2 })
 
-    await expect(new WorkspaceHookLoader(io.fs, () => 'policy-1').snapshot()).rejects.toMatchObject({
+    await expect(trustedLoader(io.fs, () => 'policy-1').snapshot()).rejects.toMatchObject({
       code: 'E_WORKSPACE_UNTRUSTED',
       detail: { reason: 'hooks-read-race' },
     })
@@ -214,8 +218,25 @@ describe('WorkspaceHookLoader', () => {
   it('treats disappearance after the initial stat as a race rather than an empty snapshot', async () => {
     const io = fixture()
     io.read.mockRejectedValueOnce(Object.assign(new Error('missing'), { code: 'ENOENT' }))
-    await expect(new WorkspaceHookLoader(io.fs, () => 'policy-1').snapshot()).rejects.toMatchObject({
+    await expect(trustedLoader(io.fs, () => 'policy-1').snapshot()).rejects.toMatchObject({
       detail: { reason: 'hooks-read-race' },
     })
   })
+})
+
+it('withholds repository hooks until their exact digest has been trusted and rejects changed bytes', async () => {
+  const io = fixture()
+  let trustedDigest: string | undefined
+  expect((await new WorkspaceHookLoader(io.fs, () => 'policy-1').snapshot()).hooks).toEqual([])
+  const loader = new WorkspaceHookLoader(
+    io.fs,
+    () => 'policy-1',
+    (digest) => digest === trustedDigest,
+  )
+  const first = await loader.snapshot()
+  expect(first.hooks).toEqual([])
+  trustedDigest = first.workspaceDigest
+  expect((await loader.snapshot()).hooks).toHaveLength(1)
+  io.setBytes(encoded(hookDocument('changed command')))
+  expect((await loader.snapshot()).hooks).toEqual([])
 })

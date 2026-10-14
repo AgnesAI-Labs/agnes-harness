@@ -4,6 +4,8 @@
 
 [文档导航](../README.zh-CN.md) · 前提：[Cordis 边界](plugins.zh-CN.md)
 
+插件是完全受信任的代码，以用户权限运行。能力声明用于准入审核，不限制任意 JavaScript，也不强制 hook 白名单。`ctx.hooks.register` 接受受支持的 observe、transform、intercept hooks，不按声明的 `hooks` 列表限制注册。只授权你愿意执行的代码。
+
 做完本教程，你会得到一个可安装的文本统计工具，并能从工具记录核对输入和结果。这是把业务函数接入 AGH 的最小起点。
 
 复用可安装的 [hot-tool-plugin](../../examples/packages/hot-tool-plugin/package.json)。它不访问网络、文件或付费模型；工具 `demo_text_stats` 接受 text，返回字符数与空白分隔词数。字符计数采用 JavaScript `text.length`，不是 Unicode 字素数。

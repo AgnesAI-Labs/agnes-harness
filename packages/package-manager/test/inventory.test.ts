@@ -44,7 +44,7 @@ function currentFixture() {
   const checked = inspectStaged({
     dir: directory,
     source,
-    ceiling: [],
+    ceiling: ['ui'],
     fetched: {
       dir: directory,
       version: '1.0.0',
@@ -54,6 +54,7 @@ function currentFixture() {
     },
   })
   const lock = emptyLock('local-dev', '0.1.0')
+  lock.policySnapshot.capabilityCeiling = ['ui']
   lock.resolvedProfileHash = `sha256-${'0'.repeat(64)}`
   lock.seams = Object.fromEntries(
     ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals'].map((name) => [

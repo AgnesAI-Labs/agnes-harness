@@ -410,7 +410,7 @@ export function LocalPluginsPanel({
     setFailed(false)
     setConfirming(undefined)
     try {
-      await api.trustWorkspace(deployment.deployDir)
+      await api.trustWorkspace(deployment.deployDir, deployment.trustHash)
       setMessage('trusted')
       // The trust stands even if the separate catalog refresh is unavailable.
       await onRefresh().catch(() => undefined)
@@ -496,7 +496,10 @@ export function LocalPluginsPanel({
                 </>
               }
             >
-              {t('trustConfirm', { path: confirming.path })}
+              {t(confirming.pluginCount === undefined ? 'trustConfirm' : 'localTrustConfirm', {
+                path: confirming.path,
+                count: confirming.pluginCount ?? 0,
+              })}
             </Banner>
           )}
         </SettingsSection>

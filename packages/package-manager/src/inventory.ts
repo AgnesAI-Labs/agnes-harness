@@ -249,6 +249,12 @@ export function readInventory(
       directory = resolve(workspace.deployDir, entry.source.ref.slice('workspace:'.length))
     }
     const blockers: PackageBlocker[] = capabilityPolicyBlockers(entry.declaredCapabilities, capabilityPolicy)
+    if (
+      entry.source.type === 'local' &&
+      entry.source.ref.startsWith('local:workspace/') &&
+      lock.policySnapshot.workspacePackages === 'deny'
+    )
+      blockers.push({ code: 'policy', references: ['workspace-packages-denied'] })
     let provenance = entry.provenance
     let hash = capabilityHash(entry)
     let kinds: readonly AgnesPluginKind[] | undefined

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, realpathSync, statSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { setImmediate } from 'node:timers/promises'
 import type { ExtensionManifest } from '@agnes/extension-api'
@@ -33,9 +33,15 @@ import {
   stageLocalPlugin,
 } from './local-source.js'
 import { type LocalPluginReload, type LocalPluginWatcher, watchLocalPlugins } from './local-watcher.js'
+import {
+  confirmLocalWorkspace,
+  localWorkspaceRoot,
+  localWorkspaceTrustHash,
+} from './local-workspace-trust.js'
 import { type LockEntry, type Lockfile, readLock, withLock, writeLock } from './lockfile.js'
 import { readBundledManifest } from './manifest.js'
 import { type RuntimePluginSnapshot, runtimePluginSnapshotsFromPins } from './package-plugin-loader.js'
+import { entryFrom, readPackageJson } from './package-record.js'
 import { readPluginCapabilityPolicy } from './plugin-capabilities.js'
 import { checkCancelled, type OperationOptions, type PackageSourceAdapter, progress } from './ports.js'
 import {
@@ -161,7 +167,7 @@ export interface PackageManager {
       activation?: PackageLifecycleActivation
     }>,
   ): Promise<LockEntry>
-  trustWorkspace(profileDir: string, deployDir: string): Promise<{ hash: string }>
+  trustWorkspace(profileDir: string, deployDir: string, expectedHash?: string): Promise<{ hash: string }>
   status(profileDir: string): Promise<PackageStatus[]>
 }
 
@@ -187,71 +193,9 @@ export type ManagerOptions = {
   residueCheck?: (id: string) => Promise<string[]>
 }
 
-type PackageJson = {
-  name: string
-  version: string
-  license: string
-  dependencies: Record<string, string>
-}
-
-const MAX_JSON_BYTES = 1024 * 1024
-
 function contained(root: string, target: string): boolean {
   const rel = relative(root, target)
   return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))
-}
-
-function readPackageJson(dir: string): PackageJson {
-  const file = join(dir, 'package.json')
-  let value: unknown
-  try {
-    if (statSync(file).size > MAX_JSON_BYTES) throw new Error('too large')
-    const text = readFileSync(file, 'utf8')
-    if (Buffer.byteLength(text) > MAX_JSON_BYTES) throw new Error('too large')
-    value = JSON.parse(text)
-  } catch {
-    throw new PackageError('E_DEP_MISSING', 'installed package has no valid package.json', {
-      source: { file },
-      detail: { reason: 'package-json' },
-    })
-  }
-  if (value === null || typeof value !== 'object' || Array.isArray(value))
-    throw new PackageError('E_DEP_MISSING', 'installed package has no valid package.json', {
-      source: { file },
-      detail: { reason: 'package-json' },
-    })
-  const record = value as Record<string, unknown>
-  if (typeof record.name !== 'string' || typeof record.version !== 'string')
-    throw new PackageError('E_DEP_MISSING', 'installed package identity is incomplete', {
-      source: { file },
-      detail: { reason: 'package-json' },
-    })
-  const dependencies: Record<string, string> = {}
-  if (record.dependencies !== undefined) {
-    if (
-      record.dependencies === null ||
-      typeof record.dependencies !== 'object' ||
-      Array.isArray(record.dependencies)
-    )
-      throw new PackageError('E_DEP_MISSING', 'installed package dependencies are invalid', {
-        source: { file },
-        detail: { reason: 'package-json' },
-      })
-    for (const [id, version] of Object.entries(record.dependencies)) {
-      if (typeof version !== 'string')
-        throw new PackageError('E_DEP_MISSING', 'installed package dependencies are invalid', {
-          source: { file },
-          detail: { reason: 'package-json', id },
-        })
-      dependencies[id] = version
-    }
-  }
-  return {
-    name: record.name,
-    version: record.version,
-    license: typeof record.license === 'string' ? record.license : 'UNLICENSED',
-    dependencies,
-  }
 }
 
 export { readBundledManifest } from './manifest.js'
@@ -271,56 +215,6 @@ function verifyIdentity(
     throw new PackageError('E_LOCK_MISMATCH', `${id} installed identity differs from the lockfile`, {
       detail: { id, reason: 'identity' },
     })
-}
-
-function entryFrom(
-  source: PackageSource,
-  fetched: FetchedSource,
-  pkg: PackageJson,
-  manifest: ExtensionManifest | undefined,
-  installed: string,
-  previous: LockEntry | undefined,
-): LockEntry {
-  if (manifest && (manifest.id !== pkg.name || manifest.version !== pkg.version))
-    throw new PackageError('E_EXT_LOAD', 'package and extension manifest identities differ', {
-      detail: {
-        reason: 'identity-mismatch',
-        packageId: pkg.name,
-        packageVersion: pkg.version,
-        manifestId: manifest.id,
-        manifestVersion: manifest.version,
-      },
-    })
-  const common = {
-    version: fetched.version,
-    ...(fetched.provenance
-      ? { provenance: { ...fetched.provenance, installedAt: installed, trustDecision: 'pending' as const } }
-      : {}),
-    integrity: fetched.integrity,
-    trust: 'trusted' as const,
-    license: pkg.license,
-    ...(manifest ? { apiRange: manifest.apiRange, capabilities: manifest.capabilities } : {}),
-    ...(manifest?.provides ? { provides: [...manifest.provides] } : {}),
-    state: { installed, trusted: null, enabled: false },
-    dependencies: { ...fetched.dependencies },
-    previous: previous ? { version: previous.version, integrity: previous.integrity } : null,
-  }
-  if (source.type === 'npm') {
-    if (!fetched.releasedAt)
-      throw new PackageError('E_DEP_MISSING', 'npm package has no release timestamp', {
-        detail: { reason: 'release-time', id: pkg.name },
-      })
-    return {
-      ...common,
-      source: { type: 'npm', ref: source.ref },
-      releasedAt: fetched.releasedAt,
-    }
-  }
-  if (source.type === 'market')
-    throw new PackageError('E_DEP_MISSING', 'market sources are v0.x', {
-      detail: { reason: 'market v0.x' },
-    })
-  return { ...common, source: { type: source.type, ref: source.ref } }
 }
 
 function entryOf(lock: Lockfile, id: string): LockEntry {
@@ -535,6 +429,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
     }
   >()
   const localPending = new Set<string>()
+  const localTrustPending = new Set<string>()
   const scanLocal = (profileDir: string): string[] => {
     if (!options.localPlugins) return []
     let lock = load(profileDir)
@@ -610,10 +505,14 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
         if (checked.preview.declaredCapabilities !== undefined)
           entry.declaredCapabilities = checked.preview.declaredCapabilities
         const capabilityChanged = current && capabilityHash(current) !== capabilityHash(entry)
+        const workspaceSource = candidate.source.ref.startsWith('local:workspace/')
         entry.state = {
           installed: current?.state.installed ?? stamp(),
-          trusted: capabilityChanged || (current && current.state.trusted === null) ? null : stamp(),
-          enabled: capabilityChanged ? false : (current?.state.enabled ?? true),
+          trusted:
+            workspaceSource || capabilityChanged || (current && current.state.trusted === null)
+              ? null
+              : stamp(),
+          enabled: workspaceSource || capabilityChanged ? false : (current?.state.enabled ?? true),
         }
         if (entry.provenance) entry.provenance.trustDecision = entry.state.trusted ? 'confirmed' : 'pending'
         if (entry.state.trusted !== null)
@@ -657,7 +556,9 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       localPending.add(id)
     }
     for (const ref of localFailures.keys()) if (!seen.has(ref)) localFailures.delete(ref)
-    return changed
+    const result = [...new Set([...changed, ...localTrustPending])]
+    localTrustPending.clear()
+    return result
   }
   const projectLocal = (inventory: InstalledInventory): InstalledInventory => {
     if (!options.localPlugins) return inventory
@@ -1431,7 +1332,67 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       })
     },
 
-    async trustWorkspace(profileDir, requestedDeployDir) {
+    async trustWorkspace(profileDir, requestedDeployDir, expectedHash) {
+      // Repository local roots are outside the profile deploy-manifest format.
+      // Accept only the configured startup workspace, never an arbitrary path.
+      if (
+        options.localPlugins &&
+        realpathSync(requestedDeployDir) === localWorkspaceRoot(options.localPlugins)
+      ) {
+        return locked(profileDir, async () => {
+          scanLocal(profileDir)
+          const lock = load(profileDir)
+          writable(lock)
+          if (lock.policySnapshot.workspacePackages === 'deny')
+            throw new PackageError('E_WORKSPACE_UNTRUSTED', 'profile policy denies workspace packages')
+          const roots = options.localPlugins!
+          if (!expectedHash || localWorkspaceTrustHash(roots, lock) !== expectedHash)
+            throw new PackageError('E_LOCK_MISMATCH', 'review the current repository code before trusting', {
+              code: 'E_PACKAGE_PREVIEW_STALE',
+            })
+          if (
+            [...localFailures.values()].some((failure) => failure.source.ref.startsWith('local:workspace/'))
+          )
+            throw new PackageError('E_EXT_LOAD', 'fix local plugin metadata before trusting this workspace')
+          const present = new Set(
+            discoverLocalPlugins(options.localPlugins!).map((candidate) => candidate.source.ref),
+          )
+          const rows = readInventory(lock, { ...storeFor(profileDir), ceiling: ceiling(lock) }).packages
+          for (const row of rows) {
+            if (
+              row.entry.source.type !== 'local' ||
+              !row.entry.source.ref.startsWith('local:workspace/') ||
+              !present.has(row.entry.source.ref)
+            )
+              continue
+            if (row.blockers.length)
+              throw new PackageError('E_API_RANGE', 'workspace plugin is blocked', {
+                detail: { blockers: row.blockers },
+              })
+            const entry = lock.packages[row.id]!
+            // This explicit group decision permits bare local author code too;
+            // unlike downloaded packages, its license may be UNLICENSED.
+            entry.state.trusted = stamp()
+            const previousState = entry.previous?.state
+            entry.state.enabled = row.trusted
+              ? row.enabled
+              : previousState?.trusted
+                ? previousState.enabled
+                : true
+            entry.trustDecision = {
+              integrity: entry.integrity,
+              capabilityHash: row.capabilityHash,
+              decidedAt: stamp(),
+            }
+            if (entry.provenance) entry.provenance.trustDecision = 'confirmed'
+            localPending.add(row.id)
+            localTrustPending.add(row.id)
+          }
+          const hash = confirmLocalWorkspace(profileDir, roots, lock, expectedHash)
+          writeLock(profileDir, lock)
+          return { hash }
+        })
+      }
       const workspace = workspacePath(profileDir, requestedDeployDir)
       const manifest = readDeployManifest(workspace.deployDir)
       const initialHash = hashWorkspace(workspace.deployDir)

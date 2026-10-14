@@ -29,12 +29,14 @@ import {
   LOCAL_SANDBOX_PROVIDER_ID,
   sandboxProviderIdFrom,
 } from '@agnes/host-providers/adapters/sandbox-providers'
+import { isWorkspaceHooksTrusted } from '@agnes/package-manager'
 import { remoteSandboxModule } from '../adapters/index.js'
 import type { AssemblyContext } from './context.js'
 import type { PackageSet } from './packages.js'
 import type { PresetCatalog } from './presets.js'
 import type { ProcessServices } from './process-services.js'
 import type { SeamContexts } from './seam-contexts.js'
+import { trustedHookCommands } from './trusted-hooks.js'
 
 type WorkspacePlans = Map<string, Awaited<ReturnType<typeof compileWorkspacePolicy>>>
 
@@ -322,6 +324,14 @@ export function createWorkspaceRuntimeFactory(
         const loader = new WorkspaceHookLoader(
           runtime.fs,
           () => commandHookInvocationSnapshot(hotPolicy).revision,
+          (digest) =>
+            ctx.profile.policy.workspacePackages !== 'deny' &&
+            (isWorkspaceHooksTrusted(deps.profileDir, binding.canonicalRoot, digest) ||
+              trustedHookCommands(
+                ctx.profile.commandHooks,
+                binding.canonicalRoot,
+                adapters.platform.fs(),
+              )?.allowsUnconfined('workspace', digest) === true),
         )
         return Object.freeze({ snapshot: () => loader.snapshot() })
       },

@@ -72,6 +72,48 @@ describe('verified row contract', () => {
     await fiber.dispose()
   })
 
+  it('revokes a cancelled in-flight mount before delayed plugin code can register', async () => {
+    const root = new Context()
+    const host = createVerifiedRowHost({ root, snapshots: snapshots() })
+    let finish!: () => void
+    let started!: () => void
+    const ready = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    const hold = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    let pluginContext: Context | undefined
+    const plugin = Object.assign(
+      async (ctx: Context) => {
+        pluginContext = ctx
+        started()
+        await hold
+        ctx.provide('late-service', true)
+      },
+      { provide: ['late-service'] },
+    )
+    const target = row({ provides: ['late-service'] })
+    const mount = await host.thirdParty.verifyAndCreate({
+      snapshot: candidate,
+      row: target,
+      entry: normalizePluginExport(plugin),
+    })
+    const abort = new AbortController()
+    const pending = host.adapter.mount(root, target, mount, abort.signal)
+    // Attach a rejection observer before cancellation so the test cannot hide an unhandled error.
+    const result = pending.then(
+      () => 'mounted',
+      () => 'cancelled',
+    )
+    await ready
+    abort.abort(new Error('transaction timed out'))
+    expect(pluginContext?.fiber.uid).toBeNull()
+    finish()
+    expect(await result).toBe('cancelled')
+    expect(root.reflect.get('late-service', false)).toBeUndefined()
+  })
+
   it('captures plugin metadata and runs a non-idempotent schema exactly once', async () => {
     let count = 0
     const applied: unknown[] = []

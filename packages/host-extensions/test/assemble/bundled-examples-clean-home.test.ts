@@ -3,6 +3,7 @@ import Module from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { loadTemplate } from '@agnes/host-common/profile/templates'
 import {
   BUNDLED_EXAMPLES,
   createPackageManager,
@@ -40,6 +41,10 @@ beforeAll(() => {
   // The state a daemon's first start leaves: a resolved profile with no packages installed.
   writeLock(profile, {
     ...emptyLock('local-dev', '0.1.0'),
+    policySnapshot: {
+      capabilityCeiling: loadTemplate('local-dev').policy?.capabilityCeiling ?? [],
+      workspacePackages: 'require-project-trust',
+    },
     resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
     seams: Object.fromEntries(
       ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals'].map((seam) => [

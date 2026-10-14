@@ -79,6 +79,7 @@ import {
 } from './permissions.js'
 import { PluginConfiguration } from './plugin-config.js'
 import type { PackageProfileDirectory } from './project.js'
+import { type TrustParams, trustAndRefresh } from './trust-workspace.js'
 
 export type PackageActivationActual = PackageInstalledDescriptor['actual']
 export type PackageActivationObservation = Readonly<{
@@ -747,7 +748,7 @@ class Service implements PackageAdminService {
       if (method === '_agnes/v1/packages.operation.cancel')
         return await this.cancel(data as EffectParams & { operationId: string }, granted)
       if (method === '_agnes/v1/packages.trustWorkspace')
-        return await this.trustWorkspace(data as EffectParams & { deployDir: string }, granted)
+        return await this.trustWorkspace(data as TrustParams, granted)
       // Not gated by `this.recoveryError` above -- see the comment on that check for why.
       if (method === '_agnes/v1/packages.pins.inspect')
         return await this.pinsInspect(data as { profile: string })
@@ -1284,14 +1285,11 @@ class Service implements PackageAdminService {
   }
 
   private async trustWorkspace(
-    params: EffectParams & { deployDir: string },
+    params: TrustParams,
     authority: PackageAdminAuthority,
   ): Promise<{ hash: string }> {
     this.requireBoundClient('_agnes/v1/packages.trustWorkspace', params, authority)
-    const directory = await this.options.profileDirectory(params.profile)
-    const result = await this.options.manager.trustWorkspace(directory, params.deployDir)
-    await this.refreshClientModules(params.profile, directory, 'trust')
-    return result
+    return trustAndRefresh(this.options, params, this.refreshClientModules.bind(this))
   }
 
   private async operationGet(

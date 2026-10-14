@@ -806,7 +806,14 @@ it('trusts a workspace deploy directory the backend offers, by confirmation, and
       snapshot: {
         ...base,
         workspaceDeployments: [
-          { deployDir: 'workspaces/site', path: '/synthetic/site', manifestId: 'site', state: 'untrusted' },
+          {
+            deployDir: 'workspaces/site',
+            path: '/synthetic/site',
+            manifestId: 'site',
+            pluginCount: 2,
+            trustHash: `sha256-${'b'.repeat(64)}`,
+            state: 'untrusted',
+          },
           { deployDir: 'workspaces/docs', path: '/synthetic/docs', manifestId: 'docs', state: 'trusted' },
         ],
       },
@@ -821,11 +828,17 @@ it('trusts a workspace deploy directory the backend offers, by confirmation, and
   expect(host.querySelector('[data-testid="trust-workspace-confirm"]')?.textContent).toContain(
     '/synthetic/site',
   )
+  expect(host.querySelector('[data-testid="trust-workspace-confirm"]')?.textContent).toContain(
+    '2 local plugins',
+  )
+  expect(host.querySelector('[data-testid="trust-workspace-confirm"]')?.textContent).toContain(
+    'your user rights',
+  )
   await act(async () =>
     host.querySelector<HTMLButtonElement>('[data-testid="trust-workspace-confirm-action"]')?.click(),
   )
   // What is sent is the backend's own value for the directory, not the display path.
-  expect(trustWorkspace).toHaveBeenCalledWith('workspaces/site')
+  expect(trustWorkspace).toHaveBeenCalledWith('workspaces/site', `sha256-${'b'.repeat(64)}`)
   expect(onRefresh).toHaveBeenCalledOnce()
   expect(host.querySelector('[role="status"]')?.textContent).toBe(text('trusted'))
 })

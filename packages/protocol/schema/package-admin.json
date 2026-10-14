@@ -2379,6 +2379,11 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 4096
+        },
+        "expectedHash": {
+          "type": "string",
+          "pattern": "^sha256-[a-f0-9]{64}$",
+          "description": "Required for repository local-plugin trust; binds confirmation to the offered package and hooks snapshot."
         }
       },
       "required": ["profile", "clientId", "commandId", "deployDir"]

@@ -477,8 +477,11 @@ export class PluginAdminApi {
   }
 
   /** Vouch for a workspace deploy directory the runtime snapshot offered; returns the trusted hash. */
-  async trustWorkspace(deployDir: string): Promise<{ hash: string }> {
-    return this.#effect<{ deployDir: string }, { hash: string }>('trust-workspace', { deployDir })
+  async trustWorkspace(deployDir: string, expectedHash?: string): Promise<{ hash: string }> {
+    return this.#effect<{ deployDir: string; expectedHash?: string }, { hash: string }>('trust-workspace', {
+      deployDir,
+      ...(expectedHash ? { expectedHash } : {}),
+    })
   }
 
   async #effect<T extends Record<string, unknown>, R = PackageOperationReceipt>(

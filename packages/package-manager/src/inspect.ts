@@ -21,6 +21,7 @@ import {
   capabilityPolicyBlockers,
   mergePluginCapabilities,
   type PluginCapabilityPolicy,
+  pluginCapabilityCategories,
 } from './plugin-capabilities.js'
 import {
   isReservedPluginRowIdError,
@@ -120,7 +121,7 @@ type InspectionInput = {
   source: PackageSource
   fetched: FetchedSource
   previous?: LockEntry
-  ceiling: readonly string[]
+  ceiling?: readonly string[]
   capabilityPolicy?: PluginCapabilityPolicy
   signal?: AbortSignal
 }
@@ -232,6 +233,13 @@ export function inspectVerifiedTree(
     declaredCapabilities,
     input.capabilityPolicy ?? {},
   )
+  if (input.ceiling !== undefined) {
+    const allowedCategories = new Set(input.ceiling)
+    const extra = [...new Set(plugins.flatMap((entry) => pluginCapabilityCategories(entry.capabilities)))]
+      .filter((category) => !allowedCategories.has(category))
+      .sort()
+    if (extra.length) blockers.push({ code: 'policy', references: ['capability-ceiling', ...extra] })
+  }
   const clientRows = new Set<string>()
   const clientPaths = new Set<string>()
   for (const raw of array(metadata.clientDescriptors)) {

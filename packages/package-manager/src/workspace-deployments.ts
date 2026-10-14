@@ -10,6 +10,9 @@ export type WorkspaceDeployment = {
   /** The same directory relative to the profile, as the lock records it. */
   path: string
   manifestId: string
+  trustHash?: string
+  pluginCount?: number
+  hasHooks?: boolean
   /** `changed`: trusted once, but its files no longer match the hash that was signed. */
   state: 'untrusted' | 'trusted' | 'changed'
 }

@@ -63,6 +63,7 @@ function setup(pass = true) {
   mkdirSync(profile, { recursive: true })
   writeLock(profile, {
     ...emptyLock('test', '0.0.0'),
+    policySnapshot: { capabilityCeiling: ['network'], workspacePackages: 'require-project-trust' },
     resolvedProfileHash: 'sha256-' + '0'.repeat(64),
     seams: Object.fromEntries(
       ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals'].map((k) => [

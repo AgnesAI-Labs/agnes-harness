@@ -664,7 +664,7 @@ function createVerifiedRowAdapter(
   leases: FiberLeases,
 ): EntryMountAdapter<VerifiedRowMount, VerifiedRowInstallation> {
   const adapter: EntryMountAdapter<VerifiedRowMount, VerifiedRowInstallation> = {
-    async mount(parent, row, imported) {
+    async mount(parent, row, imported, signal) {
       const ticket = mounts.get(imported)
       if (!ticket || ticket.consumed) {
         throw new VerifiedRowError('E_VERIFIED_MOUNT', `row ${row.id} was not verified for this mount`)
@@ -698,6 +698,7 @@ function createVerifiedRowAdapter(
       let wrapper!: Fiber
       let fiber!: Fiber
       try {
+        signal?.throwIfAborted()
         let wrapperParent = parent
         for (const name of Object.keys(mount.extras?.values ?? {}).sort()) {
           wrapperParent = wrapperParent.isolate(name)
@@ -718,8 +719,18 @@ function createVerifiedRowAdapter(
             leases.bind(candidate, mount.preboundLease.capability)
           }
         })
+        const cancel = () => {
+          // Revoke synchronously, before waiting for arbitrary async startup.
+          // Both child and wrapper must stop accepting effects immediately.
+          void fiber.dispose().catch((error) => parent.logger.error(error))
+          void wrapper.dispose().catch((error) => parent.logger.error(error))
+        }
+        signal?.addEventListener('abort', cancel, { once: true })
+        cleanup.push(() => signal?.removeEventListener('abort', cancel))
+        signal?.throwIfAborted()
         const published = batch.publish()
         await Promise.all(published)
+        signal?.throwIfAborted()
         // Publication makes the fibers visible atomically; readiness still requires the actual
         // plugin callback to settle. Surface startup failures here instead of letting Host's later
         // required-service audit replace the author's error with a generic missing-row message.
