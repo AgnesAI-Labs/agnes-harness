@@ -337,7 +337,7 @@ export function TurnNav({
                   tabIndex={index === tabStop ? 0 : -1}
                   className="turn-nav-tick"
                   data-testid="turn-nav-tick"
-                  data-turn-id={entry.id}
+                  data-prompt-id={entry.id}
                   data-current={isCurrent ? 'true' : undefined}
                   data-hot={index === hover ? 'true' : undefined}
                   data-bookmarked={bookmarked ? 'true' : undefined}

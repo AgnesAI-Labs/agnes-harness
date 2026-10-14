@@ -13,6 +13,7 @@ import { rememberWebComposer } from '../composer-memory.js'
 import { sessionTitle } from '../session-title.js'
 import { durableApprovalActions, nodeText, type WebView, webView } from '../view.js'
 import { type ApprovalNode, approvalExpiry, pendingApproval } from './pending-approval.js'
+import { createSessionBookmarks } from './session-bookmarks.js'
 
 export function createTurnController(
   context: Pick<
@@ -64,6 +65,11 @@ export function createTurnController(
     | 'windowAtStart'
   >,
 ) {
+  const bookmarks = createSessionBookmarks({
+    rows: () => context.sessionRows,
+    save: (sessionId, list) => context.client.session.setBookmarks(sessionId, list),
+    changed: () => render(),
+  })
   let cachedApproval: { session: typeof context.live; ticket: string; node: ApprovalNode } | undefined
   let activeSearch: object | undefined
   const parkedTicket = (): string | undefined => {
@@ -319,6 +325,8 @@ export function createTurnController(
     sessionId?: string
     loop?: { id: string; version: string }
     controlFacts?: NonNullable<SessionControlStateResult['facts']>
+    bookmarks?: readonly string[]
+    setBookmarks?: (next: readonly string[]) => Promise<void>
   } {
     const readOnly = context.readOnly
     if (readOnly)
@@ -333,10 +341,12 @@ export function createTurnController(
       sessionLoopSelection(context.projection) ??
       sessionLoopSelection(context.current) ??
       sessionLoopSelection(context.sessionRows.find((row) => row.sessionId === context.current?.id))
+    const saved = context.current ? bookmarks.read(context.current.id) : undefined
     const identity = context.current
       ? {
           sessionId: context.current.id,
           ...(loop ? { loop } : {}),
+          ...(saved ?? {}),
           ...(context.sessionControls?.sessionId === context.current.id
             ? { controlFacts: context.sessionControls.value.facts ?? [] }
             : {}),

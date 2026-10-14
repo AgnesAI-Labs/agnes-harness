@@ -99,7 +99,7 @@ describe('turn navigator model', () => {
       turn(5, ['u5'], { status: 'failed' }),
     ]
     const entries = turnNavEntries(nodes, turns)
-    expect(entries.map((entry) => entry.id)).toEqual(['turn:1', 'turn:3', 'turn:4', 'turn:5'])
+    expect(entries.map((entry) => entry.id)).toEqual(['u1', 'u3', 'u4', 'u5'])
     expect(entries[0]).toMatchObject({
       number: 1,
       prompt: '迁移 MCP 和技能',
@@ -408,7 +408,7 @@ describe('turn navigator', () => {
           reject = fail
         }),
     )
-    await render(3, { bookmarks: ['turn:1'], onBookmarksChange: save })
+    await render(3, { bookmarks: ['u1'], onBookmarksChange: save })
     expect(ticks()[0]?.dataset.bookmarked).toBe('true')
     expect(ticks()[0]?.getAttribute('aria-label')).toBe('第 1 轮（已加书签）：问题 1')
     await act(async () => ticks()[2]?.focus())
@@ -416,7 +416,7 @@ describe('turn navigator', () => {
     expect(button()?.getAttribute('aria-pressed')).toBe('false')
     expect(button()?.getAttribute('aria-label')).toBe('加书签')
     await act(async () => button()?.click())
-    expect(save).toHaveBeenCalledWith(['turn:1', 'turn:3'])
+    expect(save).toHaveBeenCalledWith(['u1', 'u3'])
     expect(ticks()[2]?.dataset.bookmarked).toBe('true')
     expect(button()?.getAttribute('aria-pressed')).toBe('true')
     await act(async () => reject(new Error('offline')))

@@ -12,7 +12,7 @@ export type TurnNavReply =
 
 /** One tick of the rail: one thing the reader asked. */
 export type TurnNavEntry = {
-  /** The turn id when the transcript has turns, otherwise the user message id. Bookmarks key on it. */
+  /** The prompt's user message id: stable across reloads, and what a session's bookmarks hold. */
   id: string
   /** The element the transcript renders for it carries this attribute and value. */
   anchor: { attribute: 'data-turn-id' | 'data-node-id'; value: string }
@@ -105,7 +105,7 @@ export function turnNavEntries(nodes: readonly UINode[], turns?: readonly UITurn
       if (!prompt) return []
       return [
         {
-          id: turn.id,
+          id: prompt.id,
           anchor: { attribute: 'data-turn-id', value: turn.id },
           number: turn.turn,
           prompt: oneLine(userMessageText(prompt)),

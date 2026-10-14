@@ -6,7 +6,12 @@ export type ConversationProjection = Readonly<{
   sessionId: string
   nodes: readonly UINode[]
   turns?: readonly UITurn[]
-  meta?: Readonly<{ hasEarlier: boolean; loadEarlier?: () => void }>
+  meta?: Readonly<{
+    hasEarlier: boolean
+    loadEarlier?: () => void
+    bookmarks?: readonly string[]
+    setBookmarks?: (next: readonly string[]) => Promise<void>
+  }>
 }>
 
 export type ConversationProjectionStore = Readonly<{

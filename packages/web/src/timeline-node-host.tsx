@@ -216,6 +216,8 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
         viewport={viewportElement}
         hasEarlier={projection.meta?.hasEarlier}
         loadEarlier={loadEarlier}
+        bookmarks={projection.meta?.setBookmarks ? projection.meta.bookmarks : undefined}
+        onBookmarksChange={projection.meta?.setBookmarks}
       />
     </div>
   )
