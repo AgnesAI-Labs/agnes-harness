@@ -16,10 +16,10 @@ const roots: string[] = []
 // Explicit preload now adds one durable tail note. It does not alter the disclosed tool schema:
 // discovery and read tools remain available for the loaded and generic turns alike.
 // Pin the complete model-visible schema, including official interaction, delivery, jobs,
-// MCP resources, plugin authoring, workflows, PTYs, history, reminders, goals, child-model
-// discovery and bounded questions.
+// plugin authoring, workflows, PTYs, reminders, goals, child-model discovery and bounded
+// questions. Past-session and MCP resource tools load on demand through tool_search.
 // Includes eager UI display schemas, explicit file/question/UI routing, and child completion notices.
-const EXPECTED_SKILL_TOOL_SCHEMA_HASH = 'ef7d959d9773fdb02e002d863b2dc175f41fc5da1d9f2ced17b236c97c2b400b'
+const EXPECTED_SKILL_TOOL_SCHEMA_HASH = '03a71109e76b22d2af6c17b7085d149fce7c51b3181311621240871d127c6a4d'
 const expectedToolNames = [
   'ask_user_question',
   'compact',
@@ -32,8 +32,6 @@ const expectedToolNames = [
   'job_kill',
   'job_list',
   'job_output',
-  'list_mcp_resource_templates',
-  'list_mcp_resources',
   'list_subagent_models',
   'ls',
   'plugin_candidate_read',
@@ -51,16 +49,10 @@ const expectedToolNames = [
   'pty_send',
   'pty_signal',
   'read',
-  'read_mcp_resource',
   'schedule_create',
   'schedule_delete',
   'schedule_list',
   'schedule_update',
-  'session_event_read',
-  'session_event_search',
-  'session_event_trace',
-  'session_search',
-  'session_trace',
   'shell',
   'skill_read',
   'skill_read_file',

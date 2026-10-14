@@ -9,7 +9,9 @@ const readOnly = Object.freeze({
   isOpenWorld: true,
   replay: 'safe' as const,
   costHint: Object.freeze({}),
-  deferLoading: false,
+  // Only servers that expose resources need these; they wait behind tool_search as one group.
+  deferLoading: true,
+  discoveryGroup: 'MCP resources (list and read resources a connected server exposes)',
 })
 
 const server = Type.String({ minLength: 1, maxLength: 256 })

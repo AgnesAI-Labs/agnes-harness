@@ -16,8 +16,10 @@ const READ_ONLY = {
   isConcurrencySafe: true,
   isOpenWorld: false,
   replay: 'safe' as const,
-
-  deferLoading: false,
+  // Looking back at earlier sessions is occasional; the five tools wait behind tool_search as one
+  // listed group instead of costing about 490 schema tokens on every request.
+  deferLoading: true,
+  discoveryGroup: 'Earlier sessions (search, read and trace past sessions)',
   requiresApproval: 'never' as const,
 }
 

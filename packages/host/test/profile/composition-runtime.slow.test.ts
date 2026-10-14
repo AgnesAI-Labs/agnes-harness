@@ -977,6 +977,15 @@ it('uses one MCP server decision for discovery and shared resource invocation', 
       user: { name: 'local-dev', composition: { mcp: ['mcp/allowed'], toolPolicy: { readOnly: true } } },
     },
     script: [
+      // MCP resource tools load on demand: discovery first, then the same composition policy.
+      [
+        {
+          type: 'toolcall_end' as const,
+          via: 'native' as const,
+          call: { toolUseId: '', name: 'tool_describe', args: { name: 'list_mcp_resources' }, ordinal: 0 },
+        },
+        { type: 'done' as const, reason: 'toolUse' as const },
+      ],
       ...['denied', 'allowed'].map((server) => [
         {
           type: 'toolcall_end' as const,
