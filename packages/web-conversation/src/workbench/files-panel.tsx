@@ -97,6 +97,21 @@ export function FilesPanel({ context, headerId }: { context: UiExtensionContext;
     setChanges(new Map())
     setQuery('')
   }, [session?.id])
+  // A file chip asks for a path: open its folders and show the file, or open the folder itself.
+  const requested = context.selection as { path?: unknown; directory?: unknown } | undefined
+  useEffect(() => {
+    if (!session || typeof requested?.path !== 'string') return
+    const path = requested.path
+    // A path outside the workspace is absolute: no folders of the tree hold it, so only the read is
+    // tried, and the workspace's visibility rules answer it.
+    const outside = path.startsWith('/') || /^[A-Za-z]:[\\/]/u.test(path)
+    const parts = outside ? [] : path.split('/').filter(Boolean)
+    const folders = parts.slice(0, requested.directory === true ? parts.length : -1)
+    const ancestors = folders.map((_, index) => folders.slice(0, index + 1).join('/'))
+    setQuery('')
+    setExpanded((paths) => [...new Set([...paths, ...ancestors])])
+    setSelected(requested.directory === true ? '' : path)
+  }, [session, requested])
   // biome-ignore lint/correctness/useExhaustiveDependencies: explicit refresh and ledger watermarks invalidate workspace reads.
   useEffect(() => {
     let active = true
@@ -247,6 +262,7 @@ export function FilesPanel({ context, headerId }: { context: UiExtensionContext;
               changes={changes}
               t={t}
               select={setSelected}
+              mentionFolder={(path) => mention(path, true)}
               toggle={(path) =>
                 setExpanded((paths) =>
                   paths.includes(path)

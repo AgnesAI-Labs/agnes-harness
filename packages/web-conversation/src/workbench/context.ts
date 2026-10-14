@@ -9,7 +9,8 @@ export type WorkbenchContext = {
   factChain?: import('@agnes/protocol').FactChainParams | undefined
   workspace?: { name: string; path: string }
   disabled: boolean
-  mention(path: string): void
+  /** Name a workspace file (or, with `directory`, a folder) in the prompt as a file chip. */
+  mention(path: string, directory?: boolean): void
   command(command: string): void
 }
 export const panelContext = (context: UiExtensionContext): WorkbenchContext =>

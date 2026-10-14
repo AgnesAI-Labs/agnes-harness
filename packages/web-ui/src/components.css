@@ -184,6 +184,43 @@
     align-items: center;
     gap: var(--s8);
   }
+  /* A file or folder named inside text: its type icon and name, quiet like an inline code span. */
+  .agh-file-mention {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.1875rem;
+    max-width: 100%;
+    margin: 0 0.0625rem;
+    padding: 0 0.3125rem 0 0.25rem;
+    border: 0;
+    border-radius: var(--radius-sm);
+    color: var(--agnes-brand-primary);
+    background: var(--agnes-brand-emphasis-soft);
+    font: inherit;
+    line-height: 1.4;
+    vertical-align: baseline;
+  }
+  .agh-file-mention > svg {
+    flex: none;
+    width: 0.875rem;
+    height: 0.875rem;
+  }
+  .agh-file-mention-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  button.agh-file-mention {
+    cursor: pointer;
+  }
+  button.agh-file-mention:hover {
+    text-decoration: underline;
+  }
+  button.agh-file-mention:focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: 1px;
+  }
   .agh-tag {
     display: inline-flex;
     align-items: center;

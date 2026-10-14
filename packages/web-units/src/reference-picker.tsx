@@ -1,5 +1,5 @@
 import type { ReferenceCandidate, ReferenceSearchResult } from '@agnes/protocol'
-import { Button } from '@agnes/web-ui'
+import { Button, fileMentionIcon, Icon } from '@agnes/web-ui'
 import {
   type RefObject,
   useEffect,
@@ -99,17 +99,49 @@ export function referenceStart(input: HTMLTextAreaElement): { start: number; end
   }
 }
 
+/**
+ * Folders among the found files: each parent folder whose name matches the query, ahead of the
+ * files, so a folder can be named too. The search walks files; their folders come with them.
+ */
+export function withFolders(result: ReferenceSearchResult, query: string): ReferenceSearchResult {
+  const wanted = query.trim().toLowerCase()
+  if (!wanted) return result
+  const folders = new Map<string, ReferenceCandidate>()
+  for (const item of result.items) {
+    if (item.source !== 'file') continue
+    const parts = item.id.split('/')
+    for (let depth = 1; depth < parts.length && folders.size < 5; depth++) {
+      const id = parts.slice(0, depth).join('/')
+      const name = parts[depth - 1] ?? ''
+      if (name.toLowerCase().includes(wanted) && !folders.has(id))
+        folders.set(id, { source: 'folder', id, label: id })
+    }
+  }
+  return folders.size ? { ...result, items: [...folders.values(), ...result.items] } : result
+}
+
+const FILE_SOURCES = new Set(['file', 'folder'])
+
 /** One composer mount point; keyboard capture keeps Enter from submitting while choosing. */
 export function ReferencePicker({
   textarea,
   edit,
   adapter,
+  chooseFile,
+  isChip,
   t,
   disabled,
 }: {
   textarea: RefObject<HTMLTextAreaElement>
   /** The composer owns the draft; the picker asks it to replace the `@query` it consumed. */
   edit(start: number, end: number, text: string): void
+  /**
+   * A workspace file or folder becomes a chip in the text at the `@query` it replaces, sent as a link
+   * to its path. Returns false when the composer cannot place it (no workspace yet).
+   */
+  chooseFile?(id: string, directory: boolean, range: { start: number; end: number }): boolean
+  /** Whether the `@` at this index starts a file chip already in the text, which is not a query. */
+  isChip?(index: number): boolean
   adapter?: ComposerReferences
   t: Translate
   disabled: boolean
@@ -123,6 +155,10 @@ export function ReferencePicker({
   disabledRef.current = disabled
   const editRef = useRef(edit)
   editRef.current = edit
+  const chooseFileRef = useRef(chooseFile)
+  chooseFileRef.current = chooseFile
+  const isChipRef = useRef(isChip)
+  isChipRef.current = isChip
   const [page, setPage] = useState<ReferenceSearchResult>({ items: [], truncated: false })
   const [opened, setOpened] = useState(false)
   const [active, setActive] = useState(0)
@@ -151,7 +187,7 @@ export function ReferencePicker({
     }
     const query = () => {
       const token = tokenAt(input)
-      if (disabledRef.current || !token) {
+      if (disabledRef.current || !token || isChipRef.current?.(token.start)) {
         close()
         return
       }
@@ -165,7 +201,7 @@ export function ReferencePicker({
         void adapter.search(token.query).then(
           (result) => {
             if (disposed || request !== epoch || tokenAt(input)?.query !== token.query) return
-            setPage(result)
+            setPage(chooseFileRef.current ? withFolders(result, token.query) : result)
             setStatus('ready')
           },
           () => {
@@ -180,6 +216,13 @@ export function ReferencePicker({
     choose.current = (candidate) => {
       const token = tokenAt(input)
       if (!token || disabledRef.current) return
+      if (
+        FILE_SOURCES.has(candidate.source) &&
+        chooseFileRef.current?.(candidate.id, candidate.source === 'folder', token)
+      ) {
+        close()
+        return
+      }
       if (!adapter.select(candidate)) {
         setStatus('limit')
         return
@@ -322,9 +365,16 @@ export function ReferencePicker({
                   choose.current(item)
                 }}
               >
-                <span>
-                  @{item.source} {item.label}
-                </span>
+                {FILE_SOURCES.has(item.source) && chooseFile ? (
+                  <span className="reference-file">
+                    <Icon name={fileMentionIcon(item.label, item.source === 'folder')} size={16} />
+                    {item.label}
+                  </span>
+                ) : (
+                  <span>
+                    @{item.source} {item.label}
+                  </span>
+                )}
                 {item.description && <small>{item.description}</small>}
               </li>
             ))}

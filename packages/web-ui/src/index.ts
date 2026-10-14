@@ -154,6 +154,17 @@ export {
 export { Drawer, type DrawerProps } from './ui/drawer.js'
 export { EmptyState, type EmptyStateProps } from './ui/empty-state.js'
 export { Field, type FieldProps } from './ui/field.js'
+export {
+  FILE_MENTION_DIRECTORY_MIME,
+  type FileMention,
+  FileMentionChip,
+  fileMentionBlock,
+  fileMentionIcon,
+  fileMentionLinks,
+  fileMentionOf,
+  fileMentionPath,
+  fileMentionUri,
+} from './ui/file-mention.js'
 export { Icon, type IconProps } from './ui/icon.js'
 export { IconButton, type IconButtonProps } from './ui/icon-button.js'
 export { type IconName, icons } from './ui/icon-set.js'

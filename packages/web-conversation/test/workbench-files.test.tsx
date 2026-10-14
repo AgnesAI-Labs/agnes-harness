@@ -426,3 +426,30 @@ describe('FilesPanel preview', () => {
     expect(q('[data-testid="file-view-mode"]')).toBeNull()
   })
 })
+
+describe('opening a file chip and naming a folder', () => {
+  it('opens a requested file with its folders expanded, and a requested folder', async () => {
+    const session = fakeSession()
+    mount(session, { selection: { path: 'src/util.ts', directory: false } })
+    await vi.waitFor(() => expect(q('[data-path="src"]')?.getAttribute('aria-expanded')).toBe('true'))
+    await vi.waitFor(() => expect(q('[data-path="src/util.ts"]')?.getAttribute('aria-pressed')).toBe('true'))
+    await vi.waitFor(() => expect(session.workspaceRead).toHaveBeenCalledWith('src/util.ts'))
+    unmountRegion(host)
+    mount(session, { selection: { path: 'src', directory: true } })
+    await vi.waitFor(() => expect(q('[data-path="src"]')?.getAttribute('aria-expanded')).toBe('true'))
+    expect(q('[data-testid="files-choose"]')).not.toBeNull()
+  })
+
+  it('names a folder in the prompt from its row', async () => {
+    const context = mount(fakeSession())
+    const button = await vi.waitFor(() => {
+      const found = q('[data-path="src"]')
+        ?.closest('li')
+        ?.querySelector<HTMLElement>('[data-testid="workspace-folder-mention"]')
+      expect(found?.getAttribute('aria-label')).toBe('Mention folder src in prompt')
+      return found as HTMLElement
+    })
+    flushSync(() => button.click())
+    expect((context.data as { mention: ReturnType<typeof vi.fn> }).mention).toHaveBeenCalledWith('src', true)
+  })
+})

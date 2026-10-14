@@ -197,6 +197,9 @@ export function mountComposerRegion(
       draft = value
       handle.current?.setDraft(value)
     },
+    mention(mention) {
+      handle.current?.mention(mention)
+    },
     dispose() {
       if (disposed) return
       disposed = true

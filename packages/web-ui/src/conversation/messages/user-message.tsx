@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Translate } from '../../locales/index.js'
 import { Button } from '../../ui/button.js'
 import { Disclosure } from '../../ui/disclosure.js'
+import { type FileMention, FileMentionChip, fileMentionLinks, fileMentionOf } from '../../ui/file-mention.js'
 import { UserMessageReferences } from '../reference-chips.js'
 import { systemInputText } from '../user-presentation.js'
 
@@ -108,6 +109,75 @@ export function UserMessageImages({ node, t }: { node: Extract<UINode, { kind: '
   )
 }
 
+const NAME_CHAR = /[\p{L}\p{N}_.\-/\\]/u
+
+/**
+ * The text with each file it names as a chip. A message names a file as `@name` (or as much of its
+ * path as told two files apart) and carries the file's link beside the text.
+ */
+export function withFileMentions(
+  text: string,
+  mentions: readonly FileMention[],
+): { parts: Array<string | FileMention>; unplaced: FileMention[] } {
+  type Hit = { start: number; end: number; mention: FileMention }
+  const hits: Hit[] = []
+  const placed = new Set<FileMention>()
+  const labels = mentions.flatMap((mention) => {
+    const segments = mention.path.split(/[\\/]/u).filter(Boolean)
+    return segments.map((_, index) => ({ mention, label: segments.slice(index).join('/') }))
+  })
+  labels.push(...mentions.map((mention) => ({ mention, label: mention.name })))
+  labels.sort((a, b) => b.label.length - a.label.length)
+  for (const { mention, label } of labels) {
+    const token = `@${label}`
+    for (let at = text.indexOf(token); at >= 0; at = text.indexOf(token, at + 1)) {
+      const end = at + token.length
+      if (NAME_CHAR.test(text[end] ?? '') || hits.some((hit) => at < hit.end && end > hit.start)) continue
+      hits.push({ start: at, end, mention })
+      placed.add(mention)
+    }
+  }
+  hits.sort((a, b) => a.start - b.start)
+  const parts: Array<string | FileMention> = []
+  let at = 0
+  for (const hit of hits) {
+    if (hit.start > at) parts.push(text.slice(at, hit.start))
+    parts.push(hit.mention)
+    at = hit.end
+  }
+  if (at < text.length) parts.push(text.slice(at))
+  return { parts, unplaced: mentions.filter((mention) => !placed.has(mention)) }
+}
+
+function MentionedText({ text, mentions, t }: { text: string; mentions: FileMention[]; t: Translate }) {
+  const { parts, unplaced } = withFileMentions(text, mentions)
+  const chip = (mention: FileMention, key: string) => (
+    <FileMentionChip
+      key={key}
+      mention={mention}
+      onOpen={(target) => fileMentionLinks.open(target)}
+      openLabel={t('usermessage.openFile', { name: mention.name })}
+    />
+  )
+  let offset = 0
+  return (
+    <>
+      {unplaced.length > 0 && (
+        <p className="user-message-mentions">
+          {unplaced.map((mention) => chip(mention, `unplaced:${mention.path}`))}
+        </p>
+      )}
+      <div className="node-body">
+        {parts.map((part) => {
+          const key = offset
+          offset += typeof part === 'string' ? part.length : 1
+          return typeof part === 'string' ? part : chip(part, `mention:${key}`)
+        })}
+      </div>
+    </>
+  )
+}
+
 export function UserMessage({ node, t }: { node: Extract<UINode, { kind: 'user' }>; t: Translate }) {
   const value = node.content
     .filter(
@@ -134,7 +204,14 @@ export function UserMessage({ node, t }: { node: Extract<UINode, { kind: 'user' 
       <UserMessageImages node={node} t={t} />
       <UserMessageFiles node={node} />
       <UserMessageReferences node={node} t={t} />
-      <div className="node-body">{value}</div>
+      <MentionedText
+        text={value}
+        mentions={node.content.flatMap((block) => {
+          const mention = fileMentionOf(block)
+          return mention ? [mention] : []
+        })}
+        t={t}
+      />
     </>
   )
 }

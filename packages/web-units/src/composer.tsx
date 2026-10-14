@@ -27,6 +27,7 @@ import {
   pickerState,
 } from './composer/contracts.js'
 import { ComposerExtras } from './composer/extras.js'
+import { FileMentionLayer, mentionTokens, useFileMentions } from './composer/file-mentions.js'
 import type { ComposerAttachment } from './composer/image-files.js'
 import { renderComposerQueue } from './composer/queue.js'
 import { ReferencePicker, referenceStart } from './reference-picker.js'
@@ -116,6 +117,20 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     pendingCaret.current = start + text.length
     changeDraft(draftRef.current.slice(0, start) + text + draftRef.current.slice(end))
   }
+  const mentions = useFileMentions({ prompt, draftRef, editDraft })
+  const mentionTokensInDraft = mentionTokens(draft, mentions.mentions)
+  const currentDraft = () =>
+    draftRef.current !== renderedDraft.current
+      ? draftRef.current
+      : (prompt.current?.value ?? draftRef.current)
+  /** An `@` result names a file or folder of the workspace by its relative path. */
+  const mentionRelative = (relative: string, directory: boolean, range?: { start: number; end: number }) => {
+    const root = view.workspace.root
+    if (!root) return false
+    const name = relative.split('/').filter(Boolean).at(-1) ?? relative
+    mentions.insert({ path: `${root.replace(/[\\/]+$/u, '')}/${relative}`, name, directory }, range)
+    return true
+  }
 
   // The reference picker and the queue address the native textarea; publish it before their effects run.
   useLayoutEffect(() => {
@@ -141,10 +156,17 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     return () => input.removeEventListener('input', adopt)
   }, [])
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the handle reads the latest draft through refs.
   useImperativeHandle(
     ref,
     () => ({
-      clearImageBlocks,
+      clearImageBlocks() {
+        clearImageBlocks()
+        mentions.clear()
+      },
+      mention(mention) {
+        mentions.insert(mention)
+      },
       focus() {
         sender.current?.focus()
       },
@@ -159,27 +181,36 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           .map(({ type, data, mimeType }) => ({ type, data, mimeType }))
       },
       getAttachmentBlocks() {
-        return attachmentsRef.current.map((block) =>
-          block.type === 'resource_link'
-            ? {
-                type: block.type,
-                uri: block.uri,
-                ...(block.name ? { name: block.name } : {}),
-                ...(block.mimeType ? { mimeType: block.mimeType } : {}),
-              }
-            : block.type === 'file'
-              ? { type: block.type, data: block.data, mimeType: block.mimeType, name: block.name }
-              : { type: block.type, data: block.data, mimeType: block.mimeType },
-        )
+        const linked = mentions.blocks(currentDraft())
+        return [
+          ...attachmentsRef.current.map((block) =>
+            block.type === 'resource_link'
+              ? {
+                  type: block.type,
+                  uri: block.uri,
+                  ...(block.name ? { name: block.name } : {}),
+                  ...(block.mimeType ? { mimeType: block.mimeType } : {}),
+                }
+              : block.type === 'file'
+                ? { type: block.type, data: block.data, mimeType: block.mimeType, name: block.name }
+                : { type: block.type, data: block.data, mimeType: block.mimeType },
+          ),
+          // Files and folders named in the text travel as links to their real paths.
+          ...linked,
+        ]
       },
-      restoreAttachmentBlocks,
+      restoreAttachmentBlocks(restored) {
+        restoreAttachmentBlocks(mentions.restore(restored))
+      },
       hasPendingImages() {
         return pendingCountRef.current > 0 || uploads.pending()
       },
       render(next) {
         flushSync(() => setView(next))
       },
-      restoreImageBlocks: restoreAttachmentBlocks,
+      restoreImageBlocks(restored) {
+        restoreAttachmentBlocks(mentions.restore(restored))
+      },
       setDraft(value) {
         if (draftRef.current !== value) {
           draftRef.current = value
@@ -191,7 +222,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         if (input && input.value !== value) input.value = value
       },
     }),
-    [clearImageBlocks, restoreAttachmentBlocks, attachmentsRef, pendingCountRef, uploads],
+    [clearImageBlocks, restoreAttachmentBlocks, attachmentsRef, pendingCountRef, uploads, mentions],
   )
 
   const attachmentCount = attachments.length + pendingCount + uploads.count()
@@ -280,6 +311,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           textarea={prompt}
           edit={editDraft}
           {...(references ? { adapter: references } : {})}
+          chooseFile={(id, directory, range) => mentionRelative(id, directory, range)}
+          isChip={(index) =>
+            mentionTokens(draftRef.current, mentions.mentions).some((token) => token.start === index)
+          }
           t={t}
           disabled={imageDisabled}
         />
@@ -300,6 +335,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             onChange={changeDraft}
             onKeyDown={(event) => {
               const native = event.nativeEvent as KeyboardEvent
+              // A file chip is one piece of text: Backspace and Delete take it whole.
+              mentions.keydown({
+                key: event.key,
+                isComposing: native.isComposing,
+                preventDefault: () => event.preventDefault(),
+              })
+              if (event.defaultPrevented) return false
               if (
                 dependencies.isSubmitShortcut({
                   key: event.key,
@@ -460,6 +502,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             }
           />
         </XProvider>
+        <FileMentionLayer
+          prompt={prompt}
+          draft={draft}
+          tokens={mentionTokensInDraft}
+          remove={mentions.remove}
+          t={t}
+        />
         <SettingsInput
           ref={fileInput}
           type="file"

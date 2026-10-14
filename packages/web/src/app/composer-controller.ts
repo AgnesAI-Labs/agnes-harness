@@ -83,10 +83,15 @@ export function createComposerController(
       session: context.draftingNew || context.sessionPending ? undefined : context.current,
       timeline: context.draftingNew || context.sessionPending ? undefined : context.projection,
       disabled: !context.connected || context.sessionPending || context.sending || context.stopping,
-      mention: (path) => {
-        const reference = JSON.stringify(path)
-        const draft = context.composerRuntime.getDraft()
-        context.composerRuntime.setDraft(`${draft}${draft ? '\n' : ''}${reference}`)
+      // A workbench path becomes a file chip at the caret, sent as a link to its absolute path.
+      mention: (path, directory = false) => {
+        const root = context.selectedWorkspace?.path
+        const absolute =
+          path.startsWith('/') || /^[A-Za-z]:[\\/]/u.test(path) || !root
+            ? path
+            : `${root.replace(/[\\/]+$/u, '')}/${path.replace(/^\.?\//u, '')}`
+        const name = absolute.split(/[\\/]/u).filter(Boolean).at(-1) ?? absolute
+        context.composerRuntime.mention({ path: absolute, name, directory })
         context.composerRuntime.focus()
       },
       command: (command) => {
@@ -385,6 +390,7 @@ export function createComposerController(
       stopping: context.stopping,
       usage: context.projection?.usage,
       workspace: {
+        ...(context.selectedWorkspace?.path ? { root: context.selectedWorkspace.path } : {}),
         visible: !context.current || context.draftingNew,
         disabled: !available || context.sending || context.sessionPending,
         label:

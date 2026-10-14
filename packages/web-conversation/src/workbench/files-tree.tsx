@@ -1,6 +1,6 @@
 import type { SessionWorkspaceChange, SessionWorkspaceListResult } from '@agnes/protocol'
 import type { UiExtensionContext } from '@agnes/web-client'
-import { Button, Icon } from '@agnes/web-ui'
+import { Button, Icon, IconButton } from '@agnes/web-ui'
 import { fileType } from './file-types.js'
 
 export type SessionChange = Pick<SessionWorkspaceChange, 'kind' | 'added' | 'removed'>
@@ -34,6 +34,7 @@ export function FileTree({
   t,
   toggle,
   select,
+  mentionFolder,
 }: {
   directories: Record<string, SessionWorkspaceListResult>
   expanded: readonly string[]
@@ -43,6 +44,8 @@ export function FileTree({
   t: UiExtensionContext['t']
   toggle(path: string): void
   select(path: string): void
+  /** Name a folder in the prompt; files are named from their preview. */
+  mentionFolder?(path: string): void
 }) {
   const needle = query.trim().toLowerCase()
   const matches = (path: string, name: string, kind: string): boolean =>
@@ -96,6 +99,15 @@ export function FileTree({
                 </span>
               )}
             </Button>
+            {directory && mentionFolder ? (
+              <IconButton
+                name="at-sign"
+                className="workbench-folder-mention"
+                data-testid="workspace-folder-mention"
+                label={t('workbench.files.mentionFolder', { name: entry.name })}
+                onClick={() => mentionFolder(child)}
+              />
+            ) : null}
             {directory && open && tree(child, all || (!!needle && entry.name.toLowerCase().includes(needle)))}
           </li>
         )

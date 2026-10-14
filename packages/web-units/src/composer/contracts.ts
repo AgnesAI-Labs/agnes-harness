@@ -8,6 +8,7 @@ import type {
   userImagePolicy,
 } from '@agnes/protocol'
 import type { SessionControlledChild } from '@agnes/protocol/gen/agnes-v1'
+import type { FileMention } from '@agnes/web-ui'
 import type { ComponentType, ReactNode } from 'react'
 import { composerLocaleCatalog } from '../locales/composer.js'
 import type { Translate } from '../locales/index.js'
@@ -133,7 +134,8 @@ export interface ComposerView {
   send: { disabled: boolean; label: string; mode: 'idle' | 'busy' | 'pending'; title: string }
   stopping: boolean
   usage: UsageView | undefined
-  workspace: { disabled: boolean; label: string; title: string; visible?: boolean }
+  /** `root` is the absolute workspace path that `@` file references resolve against. */
+  workspace: { disabled: boolean; label: string; title: string; visible?: boolean; root?: string }
 }
 
 export interface ComposerHandle {
@@ -147,6 +149,8 @@ export interface ComposerHandle {
   render(view: ComposerView): void
   restoreImageBlocks(images: readonly ComposerImageBlock[]): void
   setDraft(value: string): void
+  /** Name a file or folder at the caret: a chip in the text, sent as its `file://` link. */
+  mention(mention: FileMention): void
 }
 
 export interface ComposerRegionOptions {

@@ -10,6 +10,7 @@ import {
   Button,
   createRegionRenderer,
   EmptyState,
+  fileMentionLinks,
   Icon,
   IconButton,
   type IconName,
@@ -281,6 +282,21 @@ export function Dock({ context }: { context: UiExtensionContext }) {
       return true
     }
     const removePanel = workbenchNavigation.register(openPanel)
+    // A file chip in the conversation opens its file (or folder) in the files panel. A path inside
+    // the workspace opens by its relative path; any other path goes as is, and the panel applies its
+    // usual visibility rules to it.
+    const removeMentions = fileMentionLinks.register((mention) => {
+      const root = (context.data as WorkbenchContext)?.workspace?.path?.replace(/[\\/]+$/u, '')
+      const path =
+        root && mention.path === root
+          ? ''
+          : root && mention.path.startsWith(`${root}/`)
+            ? mention.path.slice(root.length + 1)
+            : mention.path
+      if (!openPanel('files')) return false
+      setSelection({ path, directory: mention.directory })
+      return true
+    })
     const removeFacts = factChainLinks.register((target) => {
       if (target.sessionId !== sessionId || !openPanel('facts')) return false
       setFactTarget(target)
@@ -289,6 +305,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
     return () => {
       removeFacts()
       removePanel()
+      removeMentions()
     }
   }, [sessionId, rememberFocus, context])
   useEffect(
@@ -573,9 +590,9 @@ export function Dock({ context }: { context: UiExtensionContext }) {
                               ...workbench,
                               ...(workbench?.mention
                                 ? {
-                                    mention: (path: string) => {
+                                    mention: (path: string, directory?: boolean) => {
                                       leaveOverlay(edge)
-                                      workbench.mention(path)
+                                      workbench.mention(path, directory)
                                     },
                                   }
                                 : {}),

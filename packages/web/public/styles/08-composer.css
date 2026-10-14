@@ -111,6 +111,105 @@
       0 0 0 1px var(--agnes-line-emphasis),
       var(--shadow-elevation-soft);
   }
+  /* File chips in the draft: a layer over the textarea repeats its text with the same metrics and
+   paints each `@name` as a chip, so the chip sits exactly where its text is. Only the chips take the
+   pointer; typing, selection and the caret stay the textarea's. */
+  .composer-mention-layer {
+    position: absolute;
+    z-index: 2;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .composer-mention-text {
+    border-style: solid;
+    border-color: transparent;
+    color: transparent;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    word-break: normal;
+  }
+  .composer-mention {
+    position: relative;
+    border-radius: var(--radius-sm);
+    color: var(--agnes-brand-primary);
+    /* Opaque, so the textarea's own letters underneath do not show through. */
+    background: color-mix(in srgb, var(--agnes-brand-primary) 10%, var(--agnes-bg-surface));
+    box-shadow: 0 0 0 0.125rem color-mix(in srgb, var(--agnes-brand-primary) 10%, var(--agnes-bg-surface));
+    pointer-events: auto;
+    cursor: default;
+  }
+  .composer-mention-at {
+    position: relative;
+    color: transparent;
+  }
+  .composer-mention-icon {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0.875rem;
+    height: 0.875rem;
+    color: var(--agnes-brand-primary);
+    transform: translate(-50%, -50%);
+  }
+  .composer-mention > .composer-mention-remove.agh-btn.agh-btn--sm {
+    position: absolute;
+    top: -0.5rem;
+    right: -0.5rem;
+    display: none;
+    width: 1rem;
+    min-width: 1rem;
+    height: 1rem;
+    min-height: 1rem;
+    padding: 0;
+    border-radius: var(--radius-full);
+    color: var(--agnes-text-inverse);
+    background: var(--agnes-text-secondary);
+  }
+  .composer-mention-remove.agh-btn svg {
+    width: 0.625rem;
+    height: 0.625rem;
+  }
+  .composer-mention:hover .composer-mention-remove.agh-btn {
+    display: inline-grid;
+    place-items: center;
+  }
+  /* The @ picker lists workspace files and folders by their type icon and path. */
+  .reference-file {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s4);
+    min-width: 0;
+  }
+  .reference-file > svg {
+    flex: none;
+    color: var(--agnes-text-tertiary);
+  }
+  /* A folder's mention action shows on its row while the row is pointed at or focused. */
+  .workbench-file-tree > li {
+    position: relative;
+  }
+  .workbench-file-tree > li > .agh-tooltip-anchor:has(> .workbench-folder-mention) {
+    position: absolute;
+    top: 0.125rem;
+    right: 0.25rem;
+    opacity: 0;
+  }
+  /* Only the folder's own row shows it, not the rows of its open children. */
+  .workbench-file-tree
+    > li
+    > .workbench-file-entry:hover
+    + .agh-tooltip-anchor:has(> .workbench-folder-mention),
+  .workbench-file-tree > li > .agh-tooltip-anchor:has(> .workbench-folder-mention):is(:hover, :focus-within) {
+    opacity: 1;
+  }
+  /* Files a message names but whose `@name` is not in its text show above it. */
+  .user-message-mentions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s4);
+    margin: 0 0 var(--s4);
+  }
+
   /* Messages written while the agent works wait in a small tray joined to the card's top edge:
    inset from the card's corners, no bottom edge, so it reads as the card's lip, not another card. */
   .composer-queue,
