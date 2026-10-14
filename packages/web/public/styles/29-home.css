@@ -679,9 +679,4 @@
       line-clamp: 2;
     }
   }
-  @media (max-width: 767px) {
-    .home-page-tabs .ant-tabs-tab + .ant-tabs-tab {
-      margin-inline-start: var(--s4);
-    }
-  }
 }

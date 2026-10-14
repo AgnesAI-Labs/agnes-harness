@@ -100,7 +100,7 @@ test.beforeAll(async () => {
         <Button onClick={() => setDescription(value => !value)}>Toggle row description</Button>
         <ListRow title="Synthetic row" icon={<Icon name="plug" size={20}/>} description={description ? 'A short description' : undefined} onOpen={() => setDrawer(true)} actions={<Menu label="Row actions" trigger={<Button>Row actions</Button>} items={[{id:'row-copy', label:'Copy row', onSelect:() => select('Row copied')}]} />}/>
         <div id="picker-scroll-frame" style={{height:120, overflow:'auto', overflowAnchor:'none'}}><div style={{height:16}}/><label htmlFor="synthetic-choice">Synthetic selection<select ref={choice} id="synthetic-choice"><option value="alpha">Alpha</option><option value="beta">Beta</option></select></label><div style={{height:160}}/></div>
-        <div style={{width:300}}><Tabs aria-label="Synthetic pages" items={['Plugins', 'Skills', 'MCP', 'Pending review', 'Marketplace'].map(key => ({key, label:key, children:<p>{key} content</p>}))}/></div>
+        <div style={{width:350}}><Tabs aria-label="Synthetic pages" items={['Plugins', 'Skills', 'MCP', 'Pending review', 'Marketplace'].map(key => ({key, label:key, children:<p>{key} content</p>}))}/></div>
       </main>
     }
     createAntdRoot(document.getElementById('fixture')).render(<Fixture />)
@@ -280,6 +280,18 @@ test('native drawer is modal, closes on Escape and restores focus', async ({ pag
 })
 test('narrow icon hit area, focus tooltip and draggable bottom sheet', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
+  const tabTargets = () =>
+    page.locator('.agnes-ui-tabs .ant-tabs-tab').evaluateAll((tabs) =>
+      tabs.map((tab) => {
+        const clip = tab.closest('.ant-tabs-nav-wrap')?.getBoundingClientRect()
+        const rect = tab.getBoundingClientRect()
+        return !!clip && rect.left >= clip.left - 1 && rect.right <= clip.right + 1
+      }),
+    )
+  await expect
+    .poll(tabTargets, { message: 'Five short page labels remain reachable inside the phone strip' })
+    .toEqual(Array(5).fill(true))
+
   const icon = page.getByRole('button', { name: 'Refresh', exact: true })
   await expect(icon).toHaveCSS('width', '28px')
   await expect(icon).toHaveCSS('height', '28px')
