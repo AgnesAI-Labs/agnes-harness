@@ -297,6 +297,37 @@ test('narrow icon hit area, focus tooltip and draggable bottom sheet', async ({ 
   await expect(icon).toHaveCSS('height', '28px')
   await icon.focus()
   await expect(page.getByRole('tooltip')).toHaveText('Refresh')
+  for (const width of [375, 390]) {
+    await page.setViewportSize({ width, height: 844 })
+    for (const edge of ['left', 'right'] as const) {
+      await icon.blur()
+      await expect(page.getByRole('tooltip')).toBeHidden()
+      await icon.evaluate((node, edge) => {
+        const anchor = node.closest<HTMLElement>('.agh-tooltip-anchor')!
+        anchor.style.cssText = `position:fixed;top:12px;${edge}:4px`
+      }, edge)
+      await icon.focus()
+      await expect(page.getByRole('tooltip')).toBeVisible()
+      await settled(page)
+      const bounds = await page.getByRole('tooltip').boundingBox()
+      if (!bounds) throw new Error('The focused icon must show its explanation')
+      expect(bounds.x).toBeGreaterThanOrEqual(-1)
+      expect(bounds.x + bounds.width).toBeLessThanOrEqual(width + 1)
+      const control = await icon.boundingBox()
+      if (!control) throw new Error('The focused action must remain visible')
+      const overlapX =
+        Math.min(bounds.x + bounds.width, control.x + control.width) - Math.max(bounds.x, control.x)
+      const overlapY =
+        Math.min(bounds.y + bounds.height, control.y + control.height) - Math.max(bounds.y, control.y)
+      expect(
+        Math.min(overlapX, overlapY),
+        'The tooltip must leave its action unobstructed',
+      ).toBeLessThanOrEqual(1)
+    }
+  }
+  await icon.blur()
+  await icon.evaluate((node) => node.closest<HTMLElement>('.agh-tooltip-anchor')!.removeAttribute('style'))
+  await page.setViewportSize({ width: 390, height: 844 })
   const target = await icon.evaluate((node) => {
     const style = getComputedStyle(node, '::after')
     return [Number.parseFloat(style.width), Number.parseFloat(style.height)]

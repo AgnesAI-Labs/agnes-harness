@@ -19,6 +19,17 @@ export function Tooltip({ title, children, disabled = false, ...props }: Tooltip
   return (
     <AntTooltip
       {...props}
+      align={
+        props.align ?? {
+          overflow: {
+            adjustX: props.autoAdjustOverflow !== false,
+            adjustY: props.autoAdjustOverflow !== false,
+            shiftX: props.autoAdjustOverflow !== false,
+            shiftY: props.autoAdjustOverflow !== false,
+            ...(typeof props.autoAdjustOverflow === 'object' ? props.autoAdjustOverflow : {}),
+          },
+        }
+      }
       id={id}
       title={title}
       open={visible}
