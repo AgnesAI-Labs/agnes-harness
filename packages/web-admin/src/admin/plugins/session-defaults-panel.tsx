@@ -153,7 +153,7 @@ export function SessionDefaultsPanel({
       <SettingsItem
         key={kind}
         data-testid={`session-default-slot-${kind}`}
-        label={choiceText(`provider.${kind}`)}
+        label={fixedTag ? choiceText(`provider.${kind}`) : t(`defaults.slot.${kind}`)}
         info={entries.length > 1 ? t('defaults.slot-fixed') : undefined}
       >
         {entries.length > 1 && !fixedTag ? (

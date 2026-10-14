@@ -288,23 +288,22 @@ export function DiagnosticsPanel({
           {t(notice)}
         </SettingsState>
       )}
-      <SettingsBlock label={t('doctor')} bare data-testid="diagnostics-checks">
-        {doctorAvailable ? (
-          <DoctorRows
-            load={loadChecks}
-            worker={workerIdle ? t('workerIdle') : t(`state.${workerStatus ?? 'unavailable'}`)}
-            version={bundle ? `${bundle.agh.version} · Node ${bundle.runtime.node}` : undefined}
-          />
-        ) : (
-          <SettingsBlock data-testid="diagnostics-worker-only">
-            <SettingsItem label={t('worker')}>
-              <span className="agnes-settings-value" data-testid="diagnostics-worker">
-                {workerIdle ? t('workerIdle') : t(`state.${workerStatus ?? 'unavailable'}`)}
-              </span>
-            </SettingsItem>
-          </SettingsBlock>
-        )}
-      </SettingsBlock>
+      {doctorAvailable ? (
+        <DoctorRows
+          label={t('doctor')}
+          load={loadChecks}
+          worker={workerIdle ? t('workerIdle') : t(`state.${workerStatus ?? 'unavailable'}`)}
+          version={bundle ? `${bundle.agh.version} · Node ${bundle.runtime.node}` : undefined}
+        />
+      ) : (
+        <SettingsBlock label={t('doctor')} data-testid="diagnostics-worker-only">
+          <SettingsItem label={t('worker')}>
+            <span className="agnes-settings-value" data-testid="diagnostics-worker">
+              {workerIdle ? t('workerIdle') : t(`state.${workerStatus ?? 'unavailable'}`)}
+            </span>
+          </SettingsItem>
+        </SettingsBlock>
+      )}
       <SettingsBlock
         label={`${t('recent')} · ${count}`}
         data-testid="diagnostics-errors"

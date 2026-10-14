@@ -94,10 +94,13 @@ const CHECK_TONE = { ok: 'ok', warn: 'warn', fail: 'error' } as const
  */
 export function DoctorRows({
   load,
+  label,
   worker,
   version,
 }: {
   load(probe: boolean, signal: AbortSignal): Promise<DoctorResult>
+  /** The group label, with the two actions on its line. */
+  label?: string
   /** The background worker's state, in words. */
   worker?: string | undefined
   /** The background service's version line. */
@@ -131,6 +134,7 @@ export function DoctorRows({
   }, [request, load])
   return (
     <SettingsBlock
+      label={label}
       data-testid="diagnostics-doctor"
       aria-busy={busy}
       actions={

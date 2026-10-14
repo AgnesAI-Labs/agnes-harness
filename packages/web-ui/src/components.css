@@ -2430,4 +2430,13 @@
   .agnes-settings-logo[data-hue="5"] {
     background: var(--agnes-text-secondary);
   }
+
+  /* A drill row stays one line at any width: the value gives way, the chevron stays at the end. */
+  .agnes-settings-item.agnes-settings-drill {
+    flex-wrap: nowrap;
+  }
+  .agnes-settings-drill > .agnes-settings-value {
+    flex: 0 1 auto;
+    max-width: 55%;
+  }
 }
