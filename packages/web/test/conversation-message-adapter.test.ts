@@ -601,7 +601,7 @@ it('summarizes interaction protocol and exact demo echoes while preserving raw d
   const store = createConversationProjectionStore({ sessionId: 'session', nodes: [question, echo, prose] })
   await mount(store)
   expect(item('tool')?.querySelector('.tool-name')?.textContent).toBe('提问')
-  expect(item('tool')?.querySelector('.activity-target')?.textContent).toBe('问题已发送，等待你的回答。')
+  expect(item('tool')?.querySelector('.activity-target')?.textContent).toBe('向你提了问题')
   expect(item('echo')?.querySelector('[data-testid=interaction-result-details]')).toBeNull()
   expect(item('tool')?.querySelectorAll('[data-testid=tool-detail-toggle]')).toHaveLength(1)
   expect(item('tool')?.querySelector('[data-testid=tool-detail-text]')?.textContent).toContain(

@@ -29,6 +29,7 @@ import {
 import { MessageFeedback } from '@agnes/web-units/message-feedback'
 import { type ReactNode, useSyncExternalStore } from 'react'
 import type { ClaimResolver } from './client-modules/boot.js'
+import { QuestionAnswersNode, questionSubmission } from './intelligent-ui/question-dock.js'
 import { TurnDeliverables } from './intelligent-ui/turn-deliverables.js'
 import { workflowStepRecord } from './workflow-step.js'
 
@@ -330,7 +331,8 @@ export function WebConversationMessages({
       />
     ),
     renderNode: (node, native) => {
-      const base = native
+      const submission = questionSubmission(node)
+      const base = submission ? <QuestionAnswersNode submission={submission} native={native} /> : native
       const factAnchor =
         node.kind === 'tool'
           ? { kind: 'tool' as const, toolUseId: node.toolUseId }

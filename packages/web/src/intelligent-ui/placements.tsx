@@ -18,6 +18,7 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { ArtifactFile } from './artifact-file.js'
 import type { IntelligentUiClient } from './client.js'
 import { CustomUiHost, type CustomUiModuleSource } from './custom-host.js'
+import { isQuestionSurface } from './question-dock.js'
 
 export interface UiPlacementBinding {
   resources?: ClientResourceService
@@ -110,7 +111,9 @@ function SurfaceList({
     })
   const snapshot = client.getSnapshot(),
     target = binding.target()
+  // Questions are answered in their card above the composer and read back in the transcript.
   const sorted = snapshot.surfaces
+    .filter((record) => !isQuestionSurface(record))
     .filter((record) => placement === 'inline' || record.surface.placement.workbench)
     .sort((a, b) => {
       if (target?.sessionId === client.sessionId && placement === 'workbench') {

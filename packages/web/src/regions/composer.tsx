@@ -10,6 +10,7 @@ import {
 } from '@agnes/web-units'
 import type { ReactElement } from 'react'
 import { flushSync } from 'react-dom'
+import { QuestionDock } from '../intelligent-ui/question-dock.js'
 import { LoopPicker } from '../loop-picker.js'
 import {
   COMPOSER_BAR_DSH_CHILDREN,
@@ -44,6 +45,7 @@ export function ComposerDshFrame({
           owner={{ composerId: 'composer' }}
           hideWhenEmpty={true}
         />
+        <QuestionDock />
         <Composer
           ref={setHandle}
           dependencies={dependencies}

@@ -40,6 +40,16 @@ export function attachTurnDeliverables(binding: UiPlacementBinding): () => void 
   }
 }
 
+/** The mounted session's placement binding and client, re-read whenever either changes. */
+export function useIntelligentBinding(): {
+  binding: UiPlacementBinding | undefined
+  client: ReturnType<UiPlacementBinding['getSnapshot']>
+  version: string
+} {
+  const current = useSyncExternalStore(subscribe, version)
+  return { binding: active, client: active?.getSnapshot(), version: current }
+}
+
 /** The files a turn produced: every file-list surface the session created while the turn ran. */
 export function turnDeliverables(
   surfaces: readonly UiSurfaceRecord[],
@@ -75,9 +85,7 @@ export function turnDeliverables(
 
 /** Files shown inside the answer that produced them, one quiet card each. */
 export function TurnDeliverables({ turn }: { turn: UITurn }) {
-  const current = useSyncExternalStore(subscribe, version)
-  const binding = active
-  const client = binding?.getSnapshot()
+  const { binding, client, version: current } = useIntelligentBinding()
   // biome-ignore lint/correctness/useExhaustiveDependencies: `current` is the store version the list reads through.
   const entries = useMemo(
     () => (client ? turnDeliverables(client.getSnapshot().surfaces, turn) : []),

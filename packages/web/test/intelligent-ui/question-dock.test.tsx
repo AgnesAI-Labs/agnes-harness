@@ -1,0 +1,259 @@
+/** @vitest-environment happy-dom */
+Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true })
+
+import type { UINode } from '@agnes/protocol'
+import type { UiActionParams, UiSurfaceRecord } from '@agnes/protocol/gen/intelligent-ui'
+import { createDocumentLocaleSource } from '@agnes/web-ui'
+import { act, createElement } from 'react'
+import { createRoot } from 'react-dom/client'
+import { describe, expect, it, vi } from 'vitest'
+import { IntelligentUiClient } from '../../src/intelligent-ui/client.js'
+import {
+  IntelligentInline,
+  IntelligentPanel,
+  newSurfacePlacements,
+  type UiPlacementBinding,
+} from '../../src/intelligent-ui/placements.js'
+import {
+  QuestionAnswersNode,
+  QuestionDock,
+  questionSubmission,
+} from '../../src/intelligent-ui/question-dock.js'
+import { attachTurnDeliverables } from '../../src/intelligent-ui/turn-deliverables.js'
+import { financeRecord, uiPage, uiReceipt } from './fixture.js'
+
+/** The record ask_user_question leaves behind (packages/base/extensions/interaction/src/question.ts). */
+const questionRecord = (status: UiSurfaceRecord['status'] = 'open'): UiSurfaceRecord => ({
+  owner: 'agnes/intelligent-ui',
+  lane: 'main',
+  taskId: 'question',
+  createdSeq: 2,
+  updatedSeq: 2,
+  status,
+  surface: {
+    id: 'card-q',
+    revision: 1,
+    title: 'Questions',
+    titleKey: 'ui.question.title',
+    placement: { inline: true, workbench: false, preferred: 'inline' },
+    components: [
+      {
+        id: 'answers',
+        kind: 'form',
+        dataKey: 'draft',
+        actionIds: ['submit'],
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['format', 'topics'],
+          properties: {
+            format: {
+              title: 'Which format do you want?',
+              type: 'string',
+              minLength: 1,
+              enum: ['HTML slides', 'PPTX'],
+              'x-ui-choices': ['HTML slides', 'PPTX'],
+            },
+            topics: {
+              title: 'What should it cover?',
+              type: 'array',
+              minItems: 1,
+              items: { type: 'string', minLength: 1, enum: ['Food', 'Transport'] },
+              'x-ui-choices': ['Food', 'Transport'],
+            },
+          },
+        },
+      },
+    ],
+    data: { draft: {}, question: { kind: 'ask_user_question', deadline: 0, labels: { format: 'Format' } } },
+    actions: [
+      {
+        id: 'submit',
+        label: 'Submit',
+        tool: 'ui_submit',
+        style: 'primary',
+        argsTemplate: { surfaceId: { literal: 'card-q' }, answers: { from: 'input', key: 'answers' } },
+        paramsSchema: {
+          type: 'object',
+          required: ['surfaceId', 'answers'],
+          additionalProperties: false,
+          properties: { surfaceId: { const: 'card-q' }, answers: { type: 'object' } },
+        },
+      },
+    ],
+  },
+})
+
+async function mount(records: UiSurfaceRecord[], extra?: ReturnType<typeof createElement>) {
+  const action = vi.fn(async (params: UiActionParams) =>
+    uiReceipt('received', {
+      surfaceId: params.surfaceId,
+      actionId: params.actionId,
+      commandId: params.commandId,
+    }),
+  )
+  const client = new IntelligentUiClient('session-finance', {
+    read: async () => ({ ...uiPage(records[0], [], 20), surfaces: records }),
+    refresh: async () => records[0]!,
+    action,
+    listen: () => () => {},
+    attach: async () => {},
+  })
+  await client.start()
+  const locale = createDocumentLocaleSource({})
+  const binding: UiPlacementBinding = {
+    subscribe: () => () => {},
+    getSnapshot: () => client,
+    getVersion: () => 0,
+    locale: locale.source,
+    target: () => undefined,
+    expand: vi.fn(),
+    approval: vi.fn(),
+  }
+  const detach = attachTurnDeliverables(binding)
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+  await act(async () =>
+    root.render(
+      createElement(
+        'div',
+        {},
+        createElement('div', { 'data-testid': 'inline' }, createElement(IntelligentInline, { binding })),
+        createElement(IntelligentPanel, {
+          binding,
+          context: { t: (key) => key, data: { session: { id: 'session-finance' } } },
+        }),
+        createElement('div', { 'data-testid': 'composer' }, createElement(QuestionDock)),
+        extra,
+      ),
+    ),
+  )
+  return {
+    host,
+    action,
+    cleanup: async () => {
+      await act(async () => root.unmount())
+      detach()
+      client.dispose()
+      locale.dispose()
+      host.remove()
+    },
+  }
+}
+
+const submitted = (surfaceId = 'card-q'): UINode => ({
+  kind: 'user',
+  id: 'answer',
+  seq: 9,
+  origin: 'system',
+  content: [{ type: 'text', text: 'UI submit succeeded: Submit' }],
+  system: {
+    source: 'agnes/intelligent-ui',
+    type: 'action-result',
+    summary: 'UI submit succeeded: Submit',
+    data: {
+      status: 'succeeded',
+      surfaceId,
+      submitted: { surfaceId, answers: { format: 'HTML slides', topics: ['Food', 'Transport'] } },
+    },
+    presentation: {
+      kind: 'ui-action',
+      operation: 'submit',
+      status: 'succeeded',
+      label: 'Submit',
+      fields: ['format', 'topics'],
+    },
+  },
+})
+
+describe('question dock', () => {
+  it('docks an open question above the composer, never in the conversation list or the workbench', async () => {
+    const view = await mount([questionRecord(), financeRecord()])
+    const card = view.host.querySelector('[data-testid="composer"] [data-testid="question-card"]')
+    expect(card?.getAttribute('data-surface-id')).toBe('card-q')
+    expect(view.host.querySelector('[data-testid="inline"] [data-testid="ui-surface-card-q"]')).toBeNull()
+    expect(
+      view.host.querySelector('[data-testid="intelligent-ui-panel"] [data-testid="ui-surface-card-q"]'),
+    ).toBeNull()
+    expect(
+      view.host.querySelector('[data-testid="inline"] [data-testid="ui-surface-finance-review"]'),
+    ).not.toBeNull()
+    expect(newSurfacePlacements(new Set(), [questionRecord()])).toEqual({
+      keys: ['card-q'],
+      showConversation: true,
+      showWorkbench: false,
+    })
+    await view.cleanup()
+  })
+
+  it('submits every answer through the existing surface action', async () => {
+    const view = await mount([questionRecord()])
+    const click = async (testId: string) =>
+      act(async () => view.host.querySelector<HTMLElement>(`[data-testid="${testId}"]`)?.click())
+    await click('question-option-format-0')
+    await click('question-next')
+    await click('question-option-topics-1')
+    await click('question-submit')
+    expect(view.action).toHaveBeenCalledTimes(1)
+    expect(view.action.mock.calls[0]![0]).toMatchObject({
+      surfaceId: 'card-q',
+      actionId: 'submit',
+      revision: 1,
+      input: { answers: { format: 'HTML slides', topics: ['Transport'] } },
+    })
+    await view.cleanup()
+  })
+
+  it('shows no card once the question is closed', async () => {
+    const view = await mount([questionRecord('closed')])
+    expect(view.host.querySelector('[data-testid="question-card"]')).toBeNull()
+    expect(view.host.querySelector('[data-testid="ui-surface-card-q"]')).toBeNull()
+    await view.cleanup()
+  })
+})
+
+describe('answered receipt', () => {
+  it('reads the delivered answer and ignores other inputs', () => {
+    expect(questionSubmission(submitted())).toEqual({
+      surfaceId: 'card-q',
+      answers: { format: 'HTML slides', topics: ['Food', 'Transport'] },
+    })
+    expect(questionSubmission({ kind: 'user', id: 'u', seq: 1, content: [] })).toBeUndefined()
+  })
+
+  it('renders «你的回答» from the persisted surface after a fresh mount', async () => {
+    const node = submitted()
+    const view = await mount(
+      [questionRecord('closed')],
+      createElement(QuestionAnswersNode, { submission: questionSubmission(node)!, native: 'native' }),
+    )
+    const receipt = view.host.querySelector('[data-testid="question-answers"]')
+    expect(receipt?.querySelector('[data-testid="question-answer-format"] dt')?.textContent).toBe('Format')
+    expect(receipt?.querySelector('[data-testid="question-answer-topics"] dt')?.textContent).toBe(
+      'What should it cover',
+    )
+    expect(receipt?.querySelectorAll('.agnes-question-pill')).toHaveLength(2)
+    expect(view.host.textContent).not.toContain('native')
+    await view.cleanup()
+  })
+
+  it('falls back to question ids when the surface is gone, and keeps other forms as they were', async () => {
+    const gone = await mount(
+      [financeRecord()],
+      createElement(QuestionAnswersNode, { submission: questionSubmission(submitted())!, native: 'native' }),
+    )
+    expect(gone.host.querySelector('[data-testid="question-answer-format"] dt')?.textContent).toBe('format')
+    await gone.cleanup()
+    const other = await mount(
+      [financeRecord()],
+      createElement(QuestionAnswersNode, {
+        submission: questionSubmission(submitted('finance-review'))!,
+        native: 'native',
+      }),
+    )
+    expect(other.host.querySelector('[data-testid="question-answers"]')).toBeNull()
+    expect(other.host.textContent).toContain('native')
+    await other.cleanup()
+  })
+})
