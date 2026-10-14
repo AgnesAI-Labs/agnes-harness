@@ -244,3 +244,15 @@ describe('loading', () => {
     await vi.waitFor(() => expect(bar?.dataset.active).toBeUndefined())
   })
 })
+
+describe('startup check notice', () => {
+  it('floats clear of headers: under the top bar when wide, along the bottom when narrow', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { resolve } = await import('node:path')
+    const css = readFileSync(resolve(__dirname, '../src/tokens.css'), 'utf8')
+    expect(css).toMatch(/\.agnes-doctor-notice \{\s*position: fixed;\s*top: 3\.5rem;/)
+    expect(css).toMatch(
+      /@media \(max-width: 900px\) \{\s*\.agnes-doctor-notice \{\s*top: auto;[^}]*bottom: max\(1rem, env\(safe-area-inset-bottom\)\);/,
+    )
+  })
+})

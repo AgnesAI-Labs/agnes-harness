@@ -1172,12 +1172,27 @@
   .agnes-overlay-root {
     display: contents;
   }
+  /* The startup check notice floats where no header is: under the top bar on wide windows, along the
+   bottom on narrow ones (above the composer while a session shows), so 「‹ 返回」, the top bar's
+   actions and a page's header stay clickable while it is open. */
   .agnes-doctor-notice {
     position: fixed;
-    top: 1rem;
+    top: 3.5rem;
     right: 1rem;
     max-width: min(42rem, calc(100vw - 2rem));
     z-index: var(--agh-z-notification);
+  }
+  @media (max-width: 900px) {
+    .agnes-doctor-notice {
+      top: auto;
+      right: 1rem;
+      bottom: max(1rem, env(safe-area-inset-bottom));
+      left: 1rem;
+      max-width: none;
+    }
+    body:has(main:not([data-home-page]) #composer) .agnes-doctor-notice {
+      bottom: calc(max(1rem, env(safe-area-inset-bottom)) + 9rem);
+    }
   }
   /* Onboarding shares the modal vocabulary; familiarity comes from the controls, not glass. */
   .agnes-first-run-layer .ant-modal-mask {
