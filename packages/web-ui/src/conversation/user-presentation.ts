@@ -4,6 +4,9 @@ import type { Translate } from '../locales/index.js'
 /** Typed backend presentation only. Machine input remains available in the execution trace. */
 export function systemInputText(system: SystemInput | undefined, t: Translate): string | undefined {
   if (!system) return undefined
+  // An instruction addressed to the loop, not to the reader: say what is happening instead.
+  if (system.source === 'agnes/deferred-invocations' && system.type === 'invocation-queued')
+    return t('timeline.deferredQueued')
   const presentation = system.presentation
   if (!presentation) return system.summary
   if (presentation.kind === 'child-completed')

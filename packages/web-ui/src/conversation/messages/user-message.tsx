@@ -122,8 +122,8 @@ export function UserMessage({ node, t }: { node: Extract<UINode, { kind: 'user' 
           {systemInputText(node.system, t) ?? value}
         </div>
         {node.system && (
-          <Disclosure className="system-input-trace" summary={t('tool.detail.expand')}>
-            <pre>{JSON.stringify(node.system.data, null, 2)}</pre>
+          <Disclosure variant="plain" className="system-input-trace" summary={t('tool.detail.expand')}>
+            <pre className="system-input-data">{JSON.stringify(node.system.data, null, 2)}</pre>
           </Disclosure>
         )}
       </>
