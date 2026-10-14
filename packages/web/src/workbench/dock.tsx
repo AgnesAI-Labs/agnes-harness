@@ -23,25 +23,41 @@ import {
 } from '@agnes/web-ui'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal, flushSync } from 'react-dom'
+import {
+  BOTTOM_DEFAULT,
+  BOTTOM_MIN,
+  clampBottomHeight,
+  clampRightWidth,
+  maxBottomHeight,
+  maxRightWidth,
+  RIGHT_DEFAULT,
+  RIGHT_MIN,
+} from './dock-size.js'
 import { useTabOverflow } from './tab-fit.js'
 
 type Layout = { rightOpen: boolean; bottomOpen: boolean; rightWidth: number; bottomHeight: number }
 const sharedIcon = (name: string | undefined): name is IconName => !!name && Object.hasOwn(icons, name)
 const edges = ['right', 'bottom'] as const
 const key = 'agnes.workbench.layout.v1'
-const defaults: Layout = { rightOpen: false, bottomOpen: false, rightWidth: 320, bottomHeight: 220 }
+const defaults: Layout = {
+  rightOpen: false,
+  bottomOpen: false,
+  rightWidth: RIGHT_DEFAULT,
+  bottomHeight: BOTTOM_DEFAULT,
+}
 function readLayout(): Layout {
   try {
     const value = JSON.parse(localStorage.getItem(key) ?? '{}') as Partial<Layout>
     return {
       rightOpen: value.rightOpen === true,
       bottomOpen: value.bottomOpen === true,
+      // The stored width is what the reader chose; the window decides how much of it fits.
       rightWidth: Number.isFinite(value.rightWidth)
-        ? Math.max(240, Math.min(480, value.rightWidth ?? 320))
-        : 320,
+        ? Math.max(RIGHT_MIN, value.rightWidth ?? RIGHT_DEFAULT)
+        : RIGHT_DEFAULT,
       bottomHeight: Number.isFinite(value.bottomHeight)
-        ? Math.max(120, Math.min(450, value.bottomHeight ?? 220))
-        : 220,
+        ? Math.max(BOTTOM_MIN, Math.min(450, value.bottomHeight ?? BOTTOM_DEFAULT))
+        : BOTTOM_DEFAULT,
     }
   } catch {
     return defaults
@@ -146,6 +162,8 @@ export function Dock({ context }: { context: UiExtensionContext }) {
     .some((panel) => panel.edge === 'bottom' && (panel.visibility !== 'contextual' || panel.when?.(context)))
   const [layout, setLayout] = useState(readLayout)
   const [expanded, setExpanded] = useState(false)
+  const [rightMax, setRightMax] = useState(() => maxRightWidth(window.innerWidth))
+  const rightWidth = clampRightWidth(layout.rightWidth, rightMax)
   const [copyMessage, setCopyMessage] = useState('')
   const [copyFailed, setCopyFailed] = useState(false)
   useEffect(() => {
@@ -176,6 +194,22 @@ export function Dock({ context }: { context: UiExtensionContext }) {
     }),
     [],
   )
+  // The limit follows the main column: the window, and the sidebar opening or closing beside it.
+  useEffect(() => {
+    const main = surfaces.split?.closest('main')
+    const update = () => {
+      const width = main?.getBoundingClientRect().width
+      setRightMax(maxRightWidth(width && width > 0 ? width : window.innerWidth))
+    }
+    update()
+    window.addEventListener('resize', update)
+    const observer = main && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : undefined
+    if (main) observer?.observe(main)
+    return () => {
+      window.removeEventListener('resize', update)
+      observer?.disconnect()
+    }
+  }, [surfaces])
   const controls = useRef<HTMLDivElement>(null)
   const { t } = context
   const workbench = context.data as WorkbenchContext
@@ -259,14 +293,14 @@ export function Dock({ context }: { context: UiExtensionContext }) {
     if (!split) return
     split.classList.toggle('workbench-right-open', layout.rightOpen)
     split.classList.toggle('workbench-bottom-open', layout.bottomOpen && bottomAvailable)
-    split.style.setProperty('--workbench-width', expanded ? '60vw' : `${layout.rightWidth}px`)
-    split.parentElement?.style.setProperty('--workbench-width', expanded ? '60vw' : `${layout.rightWidth}px`)
+    split.style.setProperty('--workbench-width', expanded ? '60vw' : `${rightWidth}px`)
+    split.parentElement?.style.setProperty('--workbench-width', expanded ? '60vw' : `${rightWidth}px`)
     split.style.setProperty('--workbench-height', `${layout.bottomHeight}px`)
     for (const edge of edges) {
       const host = surfaces[edge]
       if (host) host.hidden = !layout[`${edge}Open`] || (edge === 'bottom' && !bottomAvailable)
     }
-  }, [layout, surfaces, expanded, selected, bottomAvailable])
+  }, [layout, rightWidth, surfaces, expanded, selected, bottomAvailable])
   useEffect(() => {
     const keyboard = (event: KeyboardEvent) => {
       const edge = edges.find(
@@ -329,12 +363,16 @@ export function Dock({ context }: { context: UiExtensionContext }) {
     if (edge === 'right' ? window.innerWidth < 1280 : window.innerWidth <= 767)
       flushSync(() => setLayout((value) => ({ ...value, [`${edge}Open`]: false })))
   }
-  const resize = (edge: 'right' | 'bottom', amount: number) =>
+  const size = (edge: 'right' | 'bottom') =>
+    edge === 'right'
+      ? rightWidth
+      : clampBottomHeight(layout.bottomHeight, maxBottomHeight(window.innerHeight))
+  const resizeTo = (edge: 'right' | 'bottom', next: number) =>
     setLayout((value) => ({
       ...value,
       ...(edge === 'right'
-        ? { rightWidth: Math.max(240, Math.min(480, value.rightWidth + amount)) }
-        : { bottomHeight: Math.max(120, Math.min(window.innerHeight / 2, value.bottomHeight + amount)) }),
+        ? { rightWidth: clampRightWidth(next, rightMax) }
+        : { bottomHeight: clampBottomHeight(next, maxBottomHeight(window.innerHeight)) }),
     }))
   const workspaceHost = document.querySelector('.topbar')
   const workspace = workbench?.workspace
@@ -425,26 +463,33 @@ export function Dock({ context }: { context: UiExtensionContext }) {
                       tabIndex={0}
                       aria-label={t('workbench.resize')}
                       aria-orientation={edge === 'right' ? 'vertical' : 'horizontal'}
-                      aria-valuemin={edge === 'right' ? 240 : 120}
-                      aria-valuemax={edge === 'right' ? 480 : Math.floor(window.innerHeight / 2)}
-                      aria-valuenow={edge === 'right' ? layout.rightWidth : layout.bottomHeight}
+                      aria-valuemin={edge === 'right' ? RIGHT_MIN : BOTTOM_MIN}
+                      aria-valuemax={edge === 'right' ? rightMax : maxBottomHeight(window.innerHeight)}
+                      aria-valuenow={size(edge)}
+                      title={t('workbench.resizeHint')}
+                      onDoubleClick={() => resizeTo(edge, edge === 'right' ? RIGHT_DEFAULT : BOTTOM_DEFAULT)}
                       onKeyDown={(event) => {
                         if (['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'].includes(event.key)) {
                           event.preventDefault()
-                          resize(edge, ['ArrowLeft', 'ArrowUp'].includes(event.key) ? 16 : -16)
+                          resizeTo(
+                            edge,
+                            size(edge) + (['ArrowLeft', 'ArrowUp'].includes(event.key) ? 16 : -16),
+                          )
                         }
                       }}
                       onPointerDown={(event) => {
                         event.preventDefault()
                         const element = event.currentTarget
                         element.setPointerCapture(event.pointerId)
-                        let position = edge === 'right' ? event.clientX : event.clientY
-                        const move = (next: PointerEvent) => {
-                          const coordinate = edge === 'right' ? next.clientX : next.clientY
-                          resize(edge, position - coordinate)
-                          position = coordinate
-                        }
+                        // Measured from where the drag began, so the edge stays under the pointer
+                        // after it has been pushed past a limit and comes back.
+                        const origin = edge === 'right' ? event.clientX : event.clientY
+                        const start = size(edge)
+                        element.dataset.dragging = 'true'
+                        const move = (next: PointerEvent) =>
+                          resizeTo(edge, start + origin - (edge === 'right' ? next.clientX : next.clientY))
                         const end = () => {
+                          delete element.dataset.dragging
                           element.removeEventListener('pointermove', move)
                           element.removeEventListener('pointerup', end)
                           element.removeEventListener('pointercancel', end)

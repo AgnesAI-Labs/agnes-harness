@@ -66,6 +66,21 @@ it('restores focus on Escape, resizes with keys, retires registrations and detac
     expect(
       document.querySelector<HTMLElement>('.workbench-split')?.style.getPropertyValue('--workbench-width'),
     ).toBe('304px')
+    // The limit comes from the window (happy-dom: 1024px wide), not from a fixed 480px ceiling.
+    const width = () =>
+      document.querySelector<HTMLElement>('.workbench-split')?.style.getPropertyValue('--workbench-width')
+    expect(resize.getAttribute('aria-valuemax')).toBe(String(window.innerWidth - 420))
+    for (let step = 0; step < 40; step++)
+      flushSync(() => resize.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })))
+    expect(width()).toBe(`${window.innerWidth - 420}px`)
+    expect(resize.getAttribute('aria-valuenow')).toBe(String(window.innerWidth - 420))
+    expect(JSON.parse(localStorage.getItem('agnes.workbench.layout.v1') ?? '{}').rightWidth).toBe(
+      window.innerWidth - 420,
+    )
+    flushSync(() => resize.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+    expect(width()).toBe('320px')
+    flushSync(() => resize.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })))
+    expect(width()).toBe('304px')
     const selected = dock.querySelector('[aria-selected="true"]') as HTMLButtonElement
     selected.focus()
     flushSync(() =>

@@ -293,6 +293,12 @@
       height: 32px;
       top: -16px;
     }
+    #workbench-right .workbench-resize::after {
+      inset: 0 15px;
+    }
+    #workbench-bottom .workbench-resize::after {
+      inset: 15px 0;
+    }
     .request-trace pre {
       min-height: 32px;
       align-content: center;
