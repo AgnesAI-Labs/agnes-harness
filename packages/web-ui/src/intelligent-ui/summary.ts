@@ -1,6 +1,6 @@
 import type { JsonValue, UiSurface } from '@agnes/protocol/gen/intelligent-ui'
 import { useEffect, useState } from 'react'
-import type { IconName } from '../ui/icons.js'
+import type { IconName } from '../ui/icon-set.js'
 import type { LocaleTranslator } from '../ui-locale.js'
 import { questionForm } from './question.js'
 

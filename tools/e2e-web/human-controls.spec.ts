@@ -33,6 +33,8 @@ test('human controls queue, interrupt, persist pause and stop/continue a child',
   await composer.fill('call e2e_wait_for_cancel {}')
   await composer.press('Enter')
   const beforeInterrupt = await page.getByTestId('conversation-turn').count()
+  // Interrupting with a queued message is in the line's "more" menu.
+  await page.getByTestId('queued-steer-more').first().click()
   await page.getByTestId('queued-steer-interrupt').click()
   await expect(original).toHaveAttribute('data-status', 'cancelled')
   await expect(page.getByTestId('conversation-turn')).toHaveCount(beforeInterrupt + 1)
@@ -48,8 +50,9 @@ test('human controls queue, interrupt, persist pause and stop/continue a child',
   await expect(page.getByTestId('composer-paused')).toBeVisible()
   await page.getByTestId('composer-pause-resume').click()
   await expect.poll(async () => (await session.controls()).paused).toBe(false)
+  // Stop returns queued guidance to the draft (a queued follow-up stays queued), so this is sent as guidance.
   await composer.fill('return this to my draft')
-  await composer.press('Enter')
+  await composer.press('ControlOrMeta+Enter')
   await expect(page.getByTestId('queued-steer')).toContainText('return this to my draft')
   await page.getByTestId('composer-cancel').click()
   await expect(composer).toHaveValue('return this to my draft')

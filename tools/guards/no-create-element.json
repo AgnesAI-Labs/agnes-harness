@@ -32,7 +32,6 @@
     "packages/web-units/src/composer.tsx",
     "packages/web-units/src/composer/child-controls.tsx",
     "packages/web-units/src/composer/image-files.ts",
-    "packages/web-units/src/composer/queue-editor.tsx",
     "packages/web-units/src/composer/queue.tsx",
     "packages/web-units/src/conversation.tsx",
     "packages/web-units/src/conversation/attachments.tsx",

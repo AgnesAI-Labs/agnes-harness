@@ -1,5 +1,5 @@
 import { USER_MESSAGE_ATTACHMENT_LIMITS } from '@agnes/protocol-validation'
-import { Button, Icon, Menu, SettingsInput } from '@agnes/web-ui'
+import { Button, Icon, Menu, SettingsInput, Tooltip } from '@agnes/web-ui'
 import { Sender, type SenderInputAttributes, type SenderRef, XProvider } from '@agnes/web-ui/x'
 import {
   type ChangeEvent,
@@ -65,6 +65,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     onPauseResume,
     onEditQueued,
     onSendNow,
+    onPromoteQueued,
     onRemoveQueued,
     onWorkspace,
     slots,
@@ -76,6 +77,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   // The host reads the draft synchronously (set, then submit) before React commits the state.
   const draftRef = useRef(initialDraft)
   const form = useRef<HTMLFormElement>(null)
+  // Set by ⌘/Ctrl+Enter for the submit it starts: send as guidance instead of queueing.
+  const submitAsSteer = useRef(false)
   const sender = useRef<SenderRef>(null)
   const prompt = useRef<HTMLTextAreaElement | null>(null)
   const t = dependencies.translate
@@ -227,6 +230,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     view,
     dependencies,
     onSendNow,
+    onPromoteQueued,
     onEditQueued,
     onRemoveQueued,
     onError,
@@ -243,6 +247,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           t={t}
         />
       ) : null}
+      {view.controls?.paused ? (
+        <p className="composer-paused" role="status" data-testid="composer-paused">
+          <Icon name="pause" size={16} />
+          <span>
+            {view.queue?.items.length
+              ? t('composer.control.pausedQueued', { count: view.queue.items.length })
+              : t('composer.control.paused')}
+          </span>
+        </p>
+      ) : null}
       {queueSection}
       <form
         ref={form}
@@ -257,7 +271,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         onDrop={handleDrop}
         onSubmit={(event: FormEvent<HTMLFormElement>) => {
           event.preventDefault()
-          onSubmit()
+          const steer = submitAsSteer.current
+          submitAsSteer.current = false
+          onSubmit(steer ? { steer } : undefined)
         }}
       >
         <ReferencePicker
@@ -295,6 +311,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 })
               ) {
                 event.preventDefault()
+                submitAsSteer.current = event.metaKey || event.ctrlKey
                 form.current?.requestSubmit()
               }
               // One keyboard contract: the host's shortcut decides, never Sender's own Enter rule.
@@ -387,28 +404,31 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                   />
                 </div>
                 {view.controls ? (
-                  <Button
-                    htmlType="button"
-                    appearance="ghost"
-                    size="small"
-                    data-testid="composer-pause-resume"
-                    hidden={view.cancel.hidden}
-                    disabled={
-                      view.controls.disabled || view.controls.pending || !view.controls.pauseSupported
-                    }
+                  // Pause and stop are a pair of same-size icon buttons; paused, this one turns into continue.
+                  <Tooltip
                     title={
-                      view.controls.pauseSupported ? t('composer.control.pauseTitle') : view.controls.reason
+                      view.controls.pauseSupported
+                        ? t(view.controls.paused ? 'composer.control.resume' : 'composer.control.pauseTitle')
+                        : view.controls.reason
                     }
-                    aria-pressed={view.controls.paused}
-                    onClick={onPauseResume}
                   >
-                    {t(view.controls.paused ? 'composer.control.resume' : 'composer.control.pause')}
-                  </Button>
-                ) : null}
-                {view.controls?.paused ? (
-                  <span role="status" data-testid="composer-paused">
-                    {t('composer.control.paused')}
-                  </span>
+                    <Button
+                      htmlType="button"
+                      appearance="ghost"
+                      id="composer-pause"
+                      data-testid="composer-pause-resume"
+                      hidden={view.cancel.hidden}
+                      disabled={
+                        view.controls.disabled || view.controls.pending || !view.controls.pauseSupported
+                      }
+                      aria-label={t(
+                        view.controls.paused ? 'composer.control.resume' : 'composer.control.pause',
+                      )}
+                      aria-pressed={view.controls.paused}
+                      icon={<Icon name={view.controls.paused ? 'play' : 'pause'} size={16} />}
+                      onClick={onPauseResume}
+                    />
+                  </Tooltip>
                 ) : null}
                 <Button
                   data-testid="composer-cancel"

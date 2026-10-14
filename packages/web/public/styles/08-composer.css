@@ -111,74 +111,74 @@
       0 0 0 1px var(--agnes-line-emphasis),
       var(--shadow-elevation-soft);
   }
-  /* 队列是输入卡上方的一张独立卡片。排队的消息和正在写的草稿是两件事，早先把它塞在输入卡
-   内部，两者读起来是一件事。现在它是 form 的前一个兄弟节点：宽度和居中与输入卡对齐，
-   圆角取同一个值，成为一组而不是一体。 */
-  .composer-queue {
-    width: min(calc(100% - 2rem), var(--composer-card-max-width));
-    margin: 0 auto var(--s8);
-    padding: var(--s8) 0.625rem;
+  /* Messages written while the agent works wait in a small tray joined to the card's top edge:
+   inset from the card's corners, no bottom edge, so it reads as the card's lip, not another card. */
+  .composer-queue,
+  .composer-paused {
+    width: min(calc(100% - 2rem - 1.75rem), calc(var(--composer-card-max-width) - 1.75rem));
+    margin: 0 auto;
     border: 1px solid var(--agnes-line-primary);
-    border-radius: var(--radius-panel);
-    background: var(--agnes-bg-card);
-    box-shadow: none;
-    color: var(--agnes-text-secondary);
+    border-bottom: 0;
+    border-radius: var(--radius-panel) var(--radius-panel) 0 0;
     font-size: var(--font-size-sm);
   }
+  .composer-queue {
+    padding: 0.375rem 0.375rem var(--s4);
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-subtle);
+  }
+  /* Paused and a tray: the strip sits on top and the tray loses its own top corners. */
+  .composer-paused + .composer-queue {
+    border-radius: 0;
+  }
   .composer-queue-count {
-    margin: 0 0 var(--s4);
-    padding: 0 0.375rem;
+    margin: 0;
+    padding: var(--s2) var(--s8) var(--s4);
     color: var(--agnes-text-tertiary);
     font-size: var(--font-size-xs);
-    font-weight: 600;
-    letter-spacing: 0;
-    line-height: 1.6;
+    line-height: 1.5;
     font-variant-numeric: tabular-nums;
   }
-  /* 列表标记换成自绘序号：默认的 ol 数字是浏览器给的字形，跟卡片其余部分不是一套。
-   仍用 ol，读屏时的"第 N 项"语义不变。 */
-  .composer-queue ol {
+  .composer-queue-total {
+    color: var(--agnes-text-secondary);
+    font-weight: var(--font-weight-semibold);
+  }
+  /* Three rows show; more scroll inside the tray, so the conversation is not pushed up. */
+  .composer-queue-list {
     margin: 0;
     padding: 0;
     list-style: none;
-    counter-reset: composer-queue-item;
-    max-height: 10rem;
+    max-height: calc(3 * 2rem + 2 * 0.125rem);
     overflow-y: auto;
     overscroll-behavior: contain;
-    /* 第 6 节开头把全局滚动条外观藏了。队列这里破例恢复细滚动条：超过 max-height 时若只靠
-     计数行提示还有内容，用户不会想到这块能滚。 */
     scrollbar-width: thin;
     scrollbar-color: var(--agnes-line-emphasis) transparent;
   }
-  .composer-queue li {
-    counter-increment: composer-queue-item;
+  .composer-queue-list > li {
+    border-radius: var(--radius-md);
+    outline: 0;
   }
-  /* 行间距沿用侧栏的 2px 组内节奏。 */
-  .composer-queue li + li {
+  .composer-queue-list > li + li {
     margin-top: 0.125rem;
+  }
+  .composer-queue-list > li:focus-visible {
+    box-shadow: var(--focus-line);
   }
   .composer-queue-row {
     display: flex;
     align-items: center;
     gap: var(--s8);
     min-width: 0;
-    padding: var(--s4) 0.375rem;
+    height: 2rem;
+    padding: 0 0.375rem 0 var(--s8);
     border-radius: var(--radius-md);
   }
-  /* 行本身不可点，所以底色只在指针或焦点落到这一行的动作上时出现，用来说明你正要操作哪一条。 */
-  .composer-queue-row:hover,
-  .composer-queue-row:focus-within {
-    background: var(--agnes-bg-hover);
+  .composer-queue-list > li:is(:hover, :focus-within) .composer-queue-row {
+    background: var(--agnes-bg-surface);
   }
-  /* 序号跟按钮的 aria-label「立即发送第 N 条待执行消息」指的是同一件事，右对齐让个位对齐。 */
-  .composer-queue-row::before {
-    content: counter(composer-queue-item);
+  .composer-queue-icon {
     flex: none;
-    min-width: 1rem;
     color: var(--agnes-text-tertiary);
-    font-size: var(--font-size-xs);
-    font-variant-numeric: tabular-nums;
-    text-align: right;
   }
   .composer-queue-preview {
     flex: 1;
@@ -187,45 +187,95 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  /* 全局 button 是带边框的 36px 控件，放这里既和右下角的主发送键抢视线，又把每行撑高。
-   退成无边框文字按钮，只留品牌色。底色/边框/字色必须显式写：全局的 button:disabled 与本块
-   同为 (0,1,1)，靠本块更靠后生效，漏掉哪一条都会让禁用态变回一块灰底方块。 */
-  .composer-queue button {
+  /* A line already queued as guidance says it joins at the next step. */
+  .composer-queue-kind {
     flex: none;
-    min-height: 1.5rem;
-    padding: 0.125rem var(--s8);
-    border-color: transparent;
-    border-radius: var(--radius-full);
+    padding: 0 var(--s4);
+    border-radius: var(--radius-sm);
     color: var(--agnes-brand-primary);
-    background: transparent;
+    background: var(--agnes-brand-emphasis-soft);
     font-size: var(--font-size-xs);
-    font-weight: 600;
-    white-space: nowrap;
-    transition:
-      background-color var(--transition-fast),
-      color var(--transition-fast);
+    line-height: 1.125rem;
   }
-  .composer-queue button:hover:not(:disabled) {
-    border-color: transparent;
+  /* The actions show while the row is pointed at or focused; they stay in the layout, so the text
+   does not jump, and stay reachable by keyboard. */
+  .composer-queue-actions {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--s2);
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+  }
+  .composer-queue-list > li:is(:hover, :focus-within) .composer-queue-actions,
+  .composer-queue-actions:has([aria-busy="true"]) {
+    opacity: 1;
+  }
+  @media (hover: none) {
+    .composer-queue-actions {
+      opacity: 1;
+    }
+  }
+  .composer-queue-tool.agh-btn {
+    width: 1.625rem;
+    min-width: 1.625rem;
+    height: 1.625rem;
+    min-height: 1.625rem;
+    padding: 0;
+    color: var(--agnes-text-secondary);
+  }
+  .composer-queue-actions .composer-queue-remove:hover:not(:disabled) {
+    color: var(--agnes-status-danger-text);
+  }
+  .composer-queue-send.agh-btn {
+    height: 1.5rem;
+    min-height: 1.5rem;
+    gap: var(--s4);
+    padding: 0 0.5625rem;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-control);
+    color: var(--agnes-brand-primary);
+    background: var(--agnes-bg-surface);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+  }
+  .composer-queue-send.agh-btn:hover:not(:disabled) {
+    color: var(--agnes-brand-primary);
     background: var(--agnes-brand-emphasis-soft);
   }
-  .composer-queue button:active:not(:disabled) {
-    transform: none;
-  }
-  .composer-queue button:disabled {
+  .composer-queue-send.agh-btn:disabled {
     color: var(--agnes-text-tertiary);
-    border-color: transparent;
     background: transparent;
   }
-  /* 正在发送或删除的按钮给个转圈。必须排在 :disabled 之后：进行中的
-   那一行两条同时命中，靠后的一条决定它显示为进行中，而不是跟着整列一起灰掉。 */
-  .composer-queue button[aria-busy="true"] {
-    gap: 0.375rem;
-    color: var(--agnes-text-tertiary);
+  /* Wide cards say "send now" in words; a narrow one keeps the icon (the tooltip still says it). */
+  .composer-queue-send-icon {
+    display: none;
   }
-  .composer-queue button[aria-busy="true"]::before {
+  @media (max-width: 540px) {
+    .composer-queue-send.agh-btn {
+      width: 1.625rem;
+      padding: 0;
+      justify-content: center;
+    }
+    .composer-queue-send-icon {
+      display: inline-flex;
+    }
+    .composer-queue-send-label {
+      display: none;
+    }
+  }
+  /* A send or delete in flight spins in place of its icon or label. */
+  .composer-queue-actions [aria-busy="true"] > :is(.agh-btn-icon, .ant-btn-icon, svg, span) {
+    visibility: hidden;
+  }
+  .composer-queue-actions [aria-busy="true"] {
+    position: relative;
+  }
+  .composer-queue-actions [aria-busy="true"]::after {
     content: "";
-    flex: none;
+    position: absolute;
+    inset: 0;
+    margin: auto;
     width: 0.625rem;
     height: 0.625rem;
     border: 1.5px solid var(--agnes-line-emphasis);
@@ -238,8 +288,30 @@
       transform: rotate(360deg);
     }
   }
+  @media (prefers-reduced-motion: reduce) {
+    .composer-queue-actions [aria-busy="true"]::after {
+      animation: none;
+    }
+  }
+  /* Editing turns the line into a text box with its two actions under it. */
+  .composer-queue-edit {
+    display: grid;
+    gap: var(--s4);
+    padding: var(--s4);
+    border-radius: var(--radius-md);
+    background: var(--agnes-bg-surface);
+  }
+  .composer-queue-edit [data-testid="queued-steer-editor"] {
+    width: 100%;
+    min-width: 0;
+  }
+  .composer-queue-edit-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--s4);
+  }
   .composer-queue-error {
-    margin: var(--s8) 0 0;
+    margin: var(--s4) 0 0;
     padding: 0.375rem var(--s8);
     border-radius: var(--radius-md);
     color: var(--agnes-status-danger-text);
@@ -247,11 +319,44 @@
     font-size: var(--font-size-xs);
     overflow-wrap: anywhere;
   }
-  /* 全局那份 reduced-motion 只清 transition，转圈是 animation，得单独关。 */
-  @media (prefers-reduced-motion: reduce) {
-    .composer-queue button[aria-busy="true"]::before {
-      animation: none;
-    }
+  /* Paused: a pale yellow strip on the card's top edge says so and when queued messages arrive. */
+  .composer-paused {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    padding: 0.4375rem var(--s12);
+    border-color: var(--agnes-status-warning-border);
+    color: var(--agnes-status-warning-text);
+    background: var(--agnes-status-warning-bg);
+  }
+  .composer-paused > svg {
+    flex: none;
+  }
+  /* Pause sits beside stop at the same size; paused, it is the accent "continue". */
+  #composer-pause {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 2.25rem;
+    min-width: 2.25rem;
+    height: 2.25rem;
+    min-height: 2.25rem;
+    padding: 0;
+    border: 1px solid var(--agnes-line-emphasis);
+    border-radius: var(--radius-full);
+    color: var(--agnes-text-primary);
+    background: transparent;
+  }
+  #composer-pause[hidden] {
+    display: none;
+  }
+  #composer-pause[aria-pressed="true"]:not(:disabled) {
+    border-color: transparent;
+    color: var(--agnes-button-primary-content);
+    background: var(--agnes-button-primary-bg);
+  }
+  #composer-pause[aria-pressed="true"]:hover:not(:disabled) {
+    background: var(--agnes-button-primary-bg-hover);
   }
   /* Attachments sit above the draft inside the card. */
   .composer-writing {
@@ -503,11 +608,16 @@
     color: var(--agnes-text-primary);
     background: var(--agnes-bg-hover);
   }
-  /* While the agent runs and there is nothing to send, Stop is the card's one filled action. */
+  /* While the agent runs and there is nothing to send, Stop is a dark filled square: the accent is
+   kept for "continue", which sits beside it once the session is paused. */
   #composer[data-busy="true"] #cancel:not([hidden]):has(~ #send:disabled) {
     border-color: transparent;
-    color: var(--agnes-button-primary-content);
-    background: var(--agnes-button-primary-bg);
+    color: var(--agnes-text-inverse);
+    background: var(--agnes-text-primary);
+  }
+  #composer[data-busy="true"] #cancel:not([hidden]):has(~ #send:disabled):hover:not(:disabled) {
+    color: var(--agnes-text-inverse);
+    background: color-mix(in srgb, var(--agnes-text-primary) 85%, var(--agnes-bg-surface));
   }
   #composer[data-busy="true"] #cancel:not([hidden]) ~ #send:disabled {
     display: none;
@@ -763,22 +873,6 @@
     border: 1px solid var(--agnes-line-primary);
     border-radius: var(--radius-card);
     min-width: 12rem;
-  }
-  /* Editing gets a full-width field instead of compressing the queued message and actions. */
-  .composer-queue-row:has([data-testid="queued-steer-editor"]) {
-    flex-wrap: wrap;
-    align-items: flex-start;
-  }
-  .composer-queue-row > div:has([data-testid="queued-steer-editor"]) {
-    display: contents;
-  }
-  .composer-queue-row:has([data-testid="queued-steer-editor"]) > .composer-queue-remove {
-    margin-inline-start: auto;
-  }
-  .composer-queue-row [data-testid="queued-steer-editor"] {
-    flex: 1 1 100%;
-    width: 100%;
-    min-width: 0;
   }
   @media (min-width: 768px) and (max-width: 900px) {
     :is(.composer-meta, .composer-controls) .composer-agent.agnes-ui-button {

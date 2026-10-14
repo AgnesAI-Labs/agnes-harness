@@ -12,6 +12,7 @@ import {
   shouldShowEmptyState,
 } from '@agnes/web-conversation/presentation'
 import type { WorkbenchContext } from '@agnes/web-conversation/workbench'
+import { shortcutLabel } from '@agnes/web-ui'
 import type { AppSessionContext } from '../app.js'
 import { rememberWebComposer } from '../composer-memory.js'
 import { loopIdentity, updateLoopPicker } from '../loop-picker.js'
@@ -203,17 +204,11 @@ export function createComposerController(
       hasSession: context.current !== undefined || context.draftingNew || context.readOnly !== undefined,
       hint: context.readOnly
         ? { kind: 'state', text: context.t('composer.hint.readOnly') }
-        : busy && context.sessionControls?.value.controls.steer !== true
-          ? {
-              kind: 'state',
-              text: context.t(
-                context.sessionControls?.sessionId === context.current?.id
-                  ? 'composer.control.unsupported'
-                  : 'composer.control.syncing',
-              ),
-            }
+        : busy && context.sessionControls?.sessionId !== context.current?.id
+          ? { kind: 'state', text: context.t('composer.control.syncing') }
           : busy && !permissionUnknown
-            ? { kind: 'state', text: context.t('composer.control.steerHint') }
+            ? // When queued messages arrive is said by the queue tray, not by a line under the input.
+              { kind: 'state', text: '' }
             : permissionUnknown
               ? {
                   kind: 'state',
@@ -258,7 +253,10 @@ export function createComposerController(
           initialSubmissionPending,
         // The slash hint is a promise that typing "/" offers something: only with a command registered.
         placeholder: busy
-          ? context.t('composer.placeholder.busy')
+          ? context.sessionControls?.sessionId === context.current?.id &&
+            context.sessionControls?.value.paused === true
+            ? context.t('composer.placeholder.paused')
+            : context.t('composer.placeholder.busy', { shortcut: shortcutLabel(['mod', 'enter']) })
           : context.t(
               context.clientModules.commands.list().length
                 ? 'composer.placeholder.idle'
@@ -307,19 +305,27 @@ export function createComposerController(
       queue: {
         items:
           context.current && context.projection?.sessionId === context.current.id
-            ? (context.projection.pendingInputs ?? []).map((item) => ({
-                ...item,
-                editText:
-                  context.sessionControls?.value.pending
-                    .find((pending) => pending.itemId === item.itemId)
-                    ?.content.filter((block) => block.type === 'text')
-                    .map((block) => block.text)
-                    .join('\n') ?? item.preview,
-              }))
+            ? (context.projection.pendingInputs ?? []).map((item) => {
+                const pending = context.sessionControls?.value.pending.find(
+                  (candidate) => candidate.itemId === item.itemId,
+                )
+                return {
+                  ...item,
+                  ...(pending?.kind ? { kind: pending.kind } : {}),
+                  editText:
+                    pending?.content
+                      .filter((block) => block.type === 'text')
+                      .map((block) => block.text)
+                      .join('\n') ?? item.preview,
+                }
+              })
             : [],
         interruptSupported:
           context.sessionControls?.sessionId === context.current?.id &&
           context.sessionControls?.value.controls.interrupt === true,
+        promoteSupported:
+          context.sessionControls?.sessionId === context.current?.id &&
+          context.sessionControls?.value.controls.steer === true,
         reason: context.t('composer.control.unsupported'),
         removeDisabled:
           !available ||
@@ -347,7 +353,9 @@ export function createComposerController(
               ...(context.queueAction.pending
                 ? context.queueAction.kind === 'sendNow'
                   ? { sending: context.queueAction.itemId }
-                  : { removing: context.queueAction.itemId }
+                  : context.queueAction.kind === 'promote'
+                    ? { promoting: context.queueAction.itemId }
+                    : { removing: context.queueAction.itemId }
                 : {}),
               ...(context.queueAction.error ? { error: context.queueAction.error } : {}),
             }
@@ -361,9 +369,8 @@ export function createComposerController(
           !context.selectedModelAvailable() ||
           (!context.current && !canStartDraft) ||
           !hasInput ||
-          (busy &&
-            (context.sessionControls?.sessionId !== context.current?.id ||
-              context.sessionControls?.value.controls.steer !== true)) ||
+          // While the agent runs, Enter queues a message; that needs only this session's controls.
+          (busy && context.sessionControls?.sessionId !== context.current?.id) ||
           context.composerRuntime.hasPendingImages() ||
           Boolean(imageUnsupported) ||
           context.sending ||

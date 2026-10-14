@@ -1,5 +1,5 @@
 import { Icon } from './ui/icon.js'
-import { type IconName, icons } from './ui/icons.js'
+import { type IconName, icons } from './ui/icon-set.js'
 
 const navigation: Readonly<Record<string, IconName>> = {
   accounts: 'list',

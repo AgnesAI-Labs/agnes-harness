@@ -99,6 +99,7 @@ type SessionDouble = {
   detach: ReturnType<typeof vi.fn>
   events: ReturnType<typeof vi.fn>
   steer: ReturnType<typeof vi.fn>
+  followUp: ReturnType<typeof vi.fn>
   interrupt: ReturnType<typeof vi.fn>
   removeQueued: ReturnType<typeof vi.fn>
   onPermissionRequest: ReturnType<typeof vi.fn>
@@ -217,6 +218,7 @@ function session(id: string, projectUI: () => Promise<UITimeline>): SessionDoubl
       }),
     })),
     steer: vi.fn(async () => undefined),
+    followUp: vi.fn(async () => undefined),
     interrupt: vi.fn(async () => 1),
     removeQueued: vi.fn(async () => 1),
     onPermissionRequest: vi.fn(() => vi.fn()),
@@ -2102,25 +2104,37 @@ describe('web session selection', () => {
     const hint = document.getElementById('composer-hint') as HTMLParagraphElement
 
     await vi.waitFor(() => expect(send.dataset.mode).toBe('busy'))
-    expect(send.getAttribute('aria-label')).toBe('排队指引')
-    expect(send.title).toBe('排队指引（Enter）')
+    expect(send.getAttribute('aria-label')).toBe('排队消息')
+    expect(send.title).toBe('排队消息（Enter）')
     expect(hint.dataset.kind).toBe('state')
-    expect(hint.textContent).toBe('指引将在当前模型调用或工具批次结束后送达。')
+    // When queued messages arrive is said by the queue tray, not by a line under the input.
+    expect(hint.textContent).toBe('')
     expect(cancel.hidden).toBe(false)
     expect(cancel.textContent).toBe('取消当前轮')
-    expect(document.querySelector('.composer-queue-count')?.textContent).toBe('待执行 · 2')
+    expect(document.querySelector('.composer-queue-total')?.textContent).toBe('待发送 2 条')
     expect(
       Array.from(document.querySelectorAll('.composer-queue-preview'), (node) => node.textContent),
     ).toEqual(['第二条提示词', '第三条提示词'])
     const sendNow = deferred<number>()
     running.interrupt.mockImplementationOnce(() => sendNow.promise)
-    const queuedButton = document.querySelector<HTMLButtonElement>('[data-queue-item="C"] button')
+    // Interrupting with a queued message is in the line's "more" menu.
+    const queuedButton = document.querySelector<HTMLButtonElement>(
+      '[data-queue-item="C"] [data-testid="queued-steer-more"]',
+    )
     if (!queuedButton) throw new Error('missing queued input action')
-    queuedButton.click()
-    queuedButton.click()
+    const interruptFromMenu = async () => {
+      queuedButton.click()
+      const item = await vi.waitFor(() => {
+        const found = document.querySelector<HTMLElement>('[data-testid="queued-steer-interrupt"]')
+        expect(found).toBeTruthy()
+        return found as HTMLElement
+      })
+      item.click()
+    }
+    await interruptFromMenu()
     expect(running.interrupt).toHaveBeenCalledTimes(1)
     expect(running.interrupt).toHaveBeenCalledWith('C')
-    expect(queuedButton.disabled).toBe(true)
+    await vi.waitFor(() => expect(queuedButton.disabled).toBe(true))
     expect(queuedButton.getAttribute('aria-busy')).toBe('true')
     expect(cancel.disabled).toBe(true)
     sendNow.reject(new Error('synthetic send-now refusal'))
@@ -2133,12 +2147,13 @@ describe('web session selection', () => {
       sequence++
       return sequence
     })
-    queuedButton.click()
+    await interruptFromMenu()
     await vi.waitFor(() => expect(document.querySelectorAll('[data-queue-item]')).toHaveLength(1))
-    expect(document.querySelector('.composer-queue-count')?.textContent).toBe('待执行 · 1')
+    expect(document.querySelector('.composer-queue-total')?.textContent).toBe('待发送 1 条')
     expect(running.prompt).not.toHaveBeenCalled()
     const reads = titleList.mock.calls.length
-    running.steer.mockImplementation(async (input: { type: string; text?: string }[]) => {
+    // Enter while the agent runs queues a follow-up.
+    running.followUp.mockImplementation(async (input: { type: string; text?: string }[]) => {
       sequence++
       // 提交内容已是 ContentBlock[]，排队区的 preview 由 daemon 从文本块得出，这里照此模拟。
       const preview = input
@@ -2150,7 +2165,7 @@ describe('web session selection', () => {
     const followUps = ['本轮还没结束，先补充下一轮', '再排一条', '第三条也应立即显示']
     for (const [index, input] of followUps.entries()) {
       submit(input)
-      await vi.waitFor(() => expect(running.steer).toHaveBeenCalledTimes(index + 1))
+      await vi.waitFor(() => expect(running.followUp).toHaveBeenCalledTimes(index + 1))
       await vi.waitFor(() => expect(document.querySelectorAll('[data-queue-item]')).toHaveLength(index + 2))
     }
     expect(
@@ -2211,7 +2226,7 @@ describe('web session selection', () => {
     })
     remove.click()
     await vi.waitFor(() => expect(document.querySelectorAll('[data-queue-item]')).toHaveLength(3))
-    expect(document.querySelector('.composer-queue-count')?.textContent).toBe('待执行 · 3')
+    expect(document.querySelector('.composer-queue-total')?.textContent).toBe('待发送 3 条')
     expect(
       Array.from(document.querySelectorAll('.composer-queue-preview'), (node) => node.textContent),
     ).toEqual(['第二条提示词', ...followUps.slice(1)])
@@ -2300,7 +2315,10 @@ describe('queued input deletion', () => {
       await vi.waitFor(() =>
         expect(document.querySelector<HTMLButtonElement>('.composer-queue-remove')?.disabled).toBe(false),
       )
-      expect(document.querySelector<HTMLButtonElement>('.composer-queue-send')?.disabled).toBe(true)
+      // Interrupting needs a usable model; its menu stays shut while removing still works.
+      expect(document.querySelector<HTMLButtonElement>('[data-testid="queued-steer-more"]')?.disabled).toBe(
+        true,
+      )
       document.querySelector<HTMLButtonElement>('.composer-queue-remove')?.click()
       expect(old.removeQueued).toHaveBeenCalledExactlyOnceWith('shared-id')
       document.querySelector<HTMLButtonElement>('[data-session="next"]')?.click()
@@ -2495,9 +2513,9 @@ describe('image composer submissions', () => {
     },
   )
 
-  it('sends mixed text and images through session.steer and restores both on failure', async () => {
+  it('queues mixed text and images through session.followUp and restores both on failure', async () => {
     const active = session('old', async () => busyTimeline('old', { route: 'local', id: 'model-a' }))
-    active.steer.mockRejectedValueOnce(new Error('follow-up rejected'))
+    active.followUp.mockRejectedValueOnce(new Error('follow-up rejected'))
     await start(active, true)
     await attachPng()
     const draft = document.getElementById('prompt') as HTMLTextAreaElement
@@ -2505,8 +2523,8 @@ describe('image composer submissions', () => {
     draft.dispatchEvent(new Event('input', { bubbles: true }))
     submit('请解释这张图')
 
-    await vi.waitFor(() => expect(active.steer).toHaveBeenCalledTimes(1))
-    expect(active.steer).toHaveBeenCalledWith(
+    await vi.waitFor(() => expect(active.followUp).toHaveBeenCalledTimes(1))
+    expect(active.followUp).toHaveBeenCalledWith(
       [
         { type: 'text', text: '请解释这张图' },
         { type: 'image', mimeType: 'image/png', data: imagePngData },
@@ -2590,6 +2608,7 @@ describe('image composer submissions', () => {
     const longText = 'x'.repeat(MAX_FRAME_BYTES)
     submit(longText)
 
+    expect(active.followUp).not.toHaveBeenCalled()
     expect(active.steer).not.toHaveBeenCalled()
     expect((document.getElementById('prompt') as HTMLTextAreaElement).value).toBe(longText)
     expect(document.querySelector('.composer-image-preview img')).not.toBeNull()

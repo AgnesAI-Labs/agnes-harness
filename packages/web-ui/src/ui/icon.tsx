@@ -1,5 +1,5 @@
 import { createElement, forwardRef, type SVGProps } from 'react'
-import { type IconName, icons } from './icons.js'
+import { type IconName, icons } from './icon-set.js'
 
 export type IconProps = Omit<SVGProps<SVGSVGElement>, 'name'> & {
   name: IconName

@@ -1,7 +1,7 @@
 import { forwardRef } from 'react'
 import { Button, type ButtonProps } from './button.js'
 import { Icon } from './icon.js'
-import type { IconName } from './icons.js'
+import type { IconName } from './icon-set.js'
 import type { ShortcutKey } from './kbd.js'
 import { Tooltip } from './tooltip.js'
 

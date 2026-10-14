@@ -92,8 +92,8 @@ describe('web presentation controls', () => {
     })
     expect(composerActionPresentation({ busy: true, loading: false, sending: false }, zhT)).toEqual({
       mode: 'busy',
-      label: '排队指引',
-      title: '排队指引（Enter）',
+      label: '排队消息',
+      title: '排队消息（Enter）',
     })
     expect(composerActionPresentation({ busy: true, loading: false, sending: true }, zhT)).toEqual({
       mode: 'pending',

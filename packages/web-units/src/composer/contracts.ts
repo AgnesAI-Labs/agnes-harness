@@ -116,12 +116,16 @@ export interface ComposerView {
   }
   permission: PermissionPickerState
   queue?: {
-    items: readonly (UIPendingInput & { editText?: string })[]
+    /** `kind` is how the item was queued: `steer` joins at the next step, others wait for the turn to end. */
+    items: readonly (UIPendingInput & { editText?: string; kind?: string })[]
     disabled: boolean
     removeDisabled?: boolean
     sending?: string
     removing?: string
+    promoting?: string
     interruptSupported?: boolean
+    /** Whether a queued message can be turned into guidance for the next step. */
+    promoteSupported?: boolean
     reason?: string
     error?: string
   }
@@ -158,11 +162,14 @@ export interface ComposerRegionOptions {
   onModelSelect(option: ModelPickerOption): Promise<boolean>
   onModelSettingsChange?(settings: ModelSettings): Promise<boolean>
   onPermissionSelect(mode: PermissionMode): Promise<boolean>
-  onSubmit(): void
+  /** `steer` is true for the guidance shortcut (⌘/Ctrl+Enter): while the agent runs it joins at the next step. */
+  onSubmit(options?: { steer?: boolean }): void
   onChildControl?(id: string, action: 'stop' | 'continue', text?: string): Promise<void>
   onPauseResume?(): void
   onEditQueued?(itemId: string, text: string): Promise<void>
   onSendNow?(itemId: string): void
+  /** Turn a queued message into guidance delivered when the current step ends. */
+  onPromoteQueued?(itemId: string): void
   onRemoveQueued?(itemId: string): void
   onWorkspace(): void
 }

@@ -14,8 +14,8 @@ import { Button } from './ui/button.js'
 import { CopyButton } from './ui/copy-button.js'
 import { Disclosure, type DisclosureProps, NestedSurfaceContext } from './ui/disclosure.js'
 import { Icon } from './ui/icon.js'
+import type { IconName } from './ui/icon-set.js'
 import { IconTile } from './ui/icon-tile.js'
-import type { IconName } from './ui/icons.js'
 import { Skeleton } from './ui/skeleton.js'
 
 type DataAttributes = { [name: `data-${string}`]: string | number | boolean | undefined }

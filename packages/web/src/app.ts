@@ -915,6 +915,7 @@ const clientModules = await startClientModules({
     onPermissionSelect: selectPermission,
     onSubmit: submitComposer,
     onSendNow: (itemId) => handleQueuedAction(itemId, 'sendNow'),
+    onPromoteQueued: (itemId) => handleQueuedAction(itemId, 'promote'),
     onRemoveQueued: (itemId) => handleQueuedAction(itemId, 'removeQueued'),
     onWorkspace: handleComposerWorkspace,
   },
@@ -1122,7 +1123,7 @@ let queueAction:
       sessionId: string
       selection: number
       itemId: string
-      kind: 'sendNow' | 'removeQueued'
+      kind: 'sendNow' | 'removeQueued' | 'promote'
       pending: boolean
       error?: string
     }
@@ -2045,7 +2046,7 @@ function handleComposerWorkspace(): void {
 function handleComposerCancel(): void {
   commandController.handleComposerCancel()
 }
-function handleQueuedAction(itemId: string, kind: 'sendNow' | 'removeQueued'): void {
+function handleQueuedAction(itemId: string, kind: 'sendNow' | 'removeQueued' | 'promote'): void {
   commandController.handleQueuedAction(itemId, kind)
 }
 
@@ -2069,8 +2070,8 @@ function prepareComposerSession(): Promise<Session> {
   return submissionController.prepareComposerSession()
 }
 
-function submitComposer(): void {
-  submissionController.submitComposer()
+function submitComposer(options?: { steer?: boolean }): void {
+  submissionController.submitComposer(options)
 }
 const diagnostics = createDiagnosticsDialog({
   call: (method, params) => client.call(method, params),

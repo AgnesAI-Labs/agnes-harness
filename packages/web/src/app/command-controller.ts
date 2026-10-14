@@ -109,7 +109,24 @@ export function createCommandController(
     })
   }
 
-  function handleQueuedAction(itemId: string, kind: 'sendNow' | 'removeQueued'): void {
+  /**
+   * "Send at next step": the queued follow-up becomes guidance. There is no conversion command, so
+   * the item is taken out of the queue and its full content (attachments included) is sent as a steer.
+   * Should the steer be refused after the removal, the content goes back as a follow-up, so it is not lost.
+   */
+  async function promoteQueued(session: Session, itemId: string): Promise<void> {
+    const item = (await session.controls()).pending.find((candidate) => candidate.itemId === itemId)
+    if (!item) throw new Error(context.t('composer.queue.gone'))
+    await session.removeQueued(itemId)
+    try {
+      await session.steer(item.content)
+    } catch (error) {
+      await session.followUp(item.content).catch(() => undefined)
+      throw error
+    }
+  }
+
+  function handleQueuedAction(itemId: string, kind: 'sendNow' | 'removeQueued' | 'promote'): void {
     const session = context.current
     if (
       !session ||
@@ -137,7 +154,13 @@ export function createCommandController(
     } as NonNullable<typeof context.queueAction>
     context.queueAction = action
     context.renderControls()
-    void (kind === 'sendNow' ? session.interrupt(itemId) : session.removeQueued(itemId))
+    void (
+      kind === 'sendNow'
+        ? session.interrupt(itemId)
+        : kind === 'promote'
+          ? promoteQueued(session, itemId)
+          : session.removeQueued(itemId)
+    )
       .then(() => {
         if (context.current === session && context.selection === action.selection) {
           context.live?.refresh()

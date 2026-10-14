@@ -214,7 +214,8 @@ it('offers stop and pause while the agent runs and keeps their names for assisti
   expect(props.onCancel).toHaveBeenCalledTimes(1)
   const pause = host.querySelector<HTMLButtonElement>('[data-testid="composer-pause-resume"]')
   expect(pause?.getAttribute('aria-pressed')).toBe('true')
-  expect(pause?.textContent).toBe('继续')
+  // An icon button: its name is the action.
+  expect(pause?.getAttribute('aria-label')).toBe('继续')
   pause?.click()
   expect(onPauseResume).toHaveBeenCalledTimes(1)
   expect(host.querySelector('[data-testid="composer-paused"]')?.getAttribute('role')).toBe('status')

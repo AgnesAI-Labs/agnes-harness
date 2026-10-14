@@ -156,7 +156,11 @@ export function createSubmissionController(
     }
   }
 
-  function submitComposer(): void {
+  /**
+   * While the agent runs, a message queues as a follow-up: it is sent as the next message once the
+   * turn ends. `steer` (⌘/Ctrl+Enter) sends it as guidance instead, joining when the current step ends.
+   */
+  function submitComposer(options: { steer?: boolean } = {}): void {
     const originalDraft = context.composerRuntime.getDraft()
     const selectedReferences = context.references.getSnapshot()
     const referenceSelections = selectedReferences.map(({ source, id }) => ({ source, id }))
@@ -255,9 +259,11 @@ export function createSubmissionController(
       context.showError(new Error(context.t('app.error.messageTooLarge')))
       return
     }
+    const steer = busy && options.steer === true
     if (
       busy &&
-      (context.sessionControls?.sessionId !== session?.id || !context.sessionControls?.value.controls.steer)
+      (context.sessionControls?.sessionId !== session?.id ||
+        (steer && !context.sessionControls?.value.controls.steer))
     )
       return
     context.notice.setText('')
@@ -331,7 +337,9 @@ export function createSubmissionController(
         throw new Error(context.t('app.error.sessionChanged'))
       if (context.sessionYoloEnabled === undefined) throw new Error(context.t('app.error.permissionRequired'))
       const result = await (busy
-        ? session.steer(content, { references: referenceSelections })
+        ? steer
+          ? session.steer(content, { references: referenceSelections })
+          : session.followUp(content, { references: referenceSelections })
         : session.prompt(content, {
             references: referenceSelections,
             titleLocale: context.clientModules.locale.getSnapshot() === 'zh-CN' ? 'zh-CN' : 'en',
