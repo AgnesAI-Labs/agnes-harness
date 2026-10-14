@@ -52,7 +52,7 @@ export const feedbackCatalog: LocaleCatalog = {
     error:
       'Feedback could not be saved or generated. Reload to check its revision. Suggestions require a local model.',
     privacy: 'Feedback stays in this installation. Suggestions require human review before publication.',
-    evidence: 'Execution evidence',
+    evidence: 'View activity record',
     chain: 'Reviewed growth provenance',
     source: 'Feedback / turn evidence',
     candidate: 'Skill candidate',
@@ -125,7 +125,7 @@ export const feedbackCatalog: LocaleCatalog = {
     withdrawn: '反馈已撤回',
     error: '反馈保存或建议生成失败。请重新加载核对版本；建议生成需要本地模型。',
     privacy: '反馈保存在本机。建议必须经人工评审后才能发布。',
-    evidence: '执行依据',
+    evidence: '查看执行记录',
     chain: '人工评审成长来源链',
     source: '反馈 / 回合证据',
     candidate: 'Skill 候选',
