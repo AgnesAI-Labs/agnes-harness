@@ -10,7 +10,7 @@ import {
 import { act, createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PluginView } from '../src/pages/plugins/admin-view.js'
 import { MarketTab } from '../src/pages/plugins/market-tab.js'
 import { pluginsPageCatalog } from '../src/pages/plugins/page-locale.js'
@@ -245,6 +245,8 @@ describe('skill detail', () => {
     )
     return host
   }
+  // Advanced settings are on unless the reader turned them off.
+  beforeEach(() => setAdvancedSettingsShown(false))
   afterEach(() => setAdvancedSettingsShown(false))
 
   it('shows what the skill is and where it comes from, without priority or identifiers', () => {

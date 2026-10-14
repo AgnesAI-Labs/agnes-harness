@@ -42,6 +42,8 @@ it('loads exact new-session defaults and renders the selected/stale Loop accessi
     unavailable: enT('composer.loop.unavailable'),
     onSelect: vi.fn(),
   }
+  // Advanced settings show unless this browser turned them off.
+  localStorage.setItem('agnes.settings.advanced', '0')
   try {
     await act(async () => {
       updateLoopPicker(view)
@@ -55,7 +57,7 @@ it('loads exact new-session defaults and renders the selected/stale Loop accessi
     )
     // One loop and nothing chosen: the chip has nothing to select until advanced settings show.
     expect(host.querySelector<HTMLButtonElement>('[data-testid="composer-agent"]')?.hidden).toBe(true)
-    localStorage.setItem('agnes.settings.advanced', '1')
+    localStorage.removeItem('agnes.settings.advanced')
     await act(async () =>
       updateLoopPicker({ ...view, bundles: [{ id: 'workflow#delivery', sourcePackage: 'workflow' }] }),
     )

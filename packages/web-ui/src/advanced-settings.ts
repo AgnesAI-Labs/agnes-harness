@@ -8,13 +8,24 @@ let cached: boolean | undefined
 let unbind: (() => void) | undefined
 let memoryOnly = false
 
+/**
+ * What a stored value means. Only an explicit "off" hides the advanced settings: a browser that has
+ * never chosen, or whose storage cannot be read, shows them.
+ */
+export function advancedSettingsValue(stored: string | null | undefined): boolean {
+  return stored !== ADVANCED_SETTINGS_OFF
+}
+
+const ADVANCED_SETTINGS_OFF = '0'
+const ADVANCED_SETTINGS_ON = '1'
+
 function read(): boolean {
   try {
     const storage = globalThis.localStorage
-    return storage ? storage.getItem(ADVANCED_SETTINGS_STORAGE_KEY) === '1' : (cached ?? false)
+    return storage ? advancedSettingsValue(storage.getItem(ADVANCED_SETTINGS_STORAGE_KEY)) : (cached ?? true)
   } catch {
     // Storage can be blocked; the switch then lasts for this page only.
-    return cached ?? false
+    return cached ?? true
   }
 }
 
@@ -33,7 +44,7 @@ function bind(): void {
     try {
       const storage = globalThis.localStorage
       if (!storage || (event.storageArea && event.storageArea !== storage)) return
-      next = storage.getItem(ADVANCED_SETTINGS_STORAGE_KEY) === '1'
+      next = advancedSettingsValue(storage.getItem(ADVANCED_SETTINGS_STORAGE_KEY))
       memoryOnly = false
     } catch {
       return
@@ -46,7 +57,10 @@ function bind(): void {
   unbind = () => target.removeEventListener('storage', changed)
 }
 
-/** Whether 「显示高级设置」 is on: the advanced settings group and every advanced fold follow it. */
+/**
+ * Whether 「显示高级设置」 is on: the advanced settings group and every advanced fold follow it. On
+ * unless this browser turned it off.
+ */
 export function advancedSettingsShown(): boolean {
   if (cached === undefined) cached = read()
   return cached
@@ -58,8 +72,7 @@ export function setAdvancedSettingsShown(shown: boolean): void {
   try {
     const storage = globalThis.localStorage
     memoryOnly = !storage
-    if (shown) storage?.setItem(ADVANCED_SETTINGS_STORAGE_KEY, '1')
-    else storage?.removeItem(ADVANCED_SETTINGS_STORAGE_KEY)
+    storage?.setItem(ADVANCED_SETTINGS_STORAGE_KEY, shown ? ADVANCED_SETTINGS_ON : ADVANCED_SETTINGS_OFF)
   } catch {
     // Kept in memory for this page.
     memoryOnly = true
@@ -80,5 +93,5 @@ export function subscribeAdvancedSettings(listener: () => void): () => void {
 }
 
 export function useAdvancedSettings(): boolean {
-  return useSyncExternalStore(subscribeAdvancedSettings, advancedSettingsShown, () => false)
+  return useSyncExternalStore(subscribeAdvancedSettings, advancedSettingsShown, () => true)
 }

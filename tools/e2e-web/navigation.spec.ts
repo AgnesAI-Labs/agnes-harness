@@ -97,8 +97,11 @@ test('settings navigation, narrow master-detail and old links keep their destina
   await expect(page.locator('#config')).toBeVisible()
   const everyday = page.locator('#settings-everyday button[data-settings-group]')
   await expect(everyday).toHaveCount(3)
-  await expect(page.getByTestId('settings-advanced')).toHaveCount(0)
+  // Advanced settings show until the reader turns them off.
+  await expect(page.getByTestId('settings-advanced')).toBeVisible()
   await section(page, 'general')
+  await page.getByTestId('settings-advanced-switch').click()
+  await expect(page.getByTestId('settings-advanced')).toHaveCount(0)
   await page.getByTestId('settings-advanced-switch').click()
   await expect(page.getByTestId('settings-advanced')).toBeVisible()
   await section(page, 'model')

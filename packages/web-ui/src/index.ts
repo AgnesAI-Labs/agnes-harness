@@ -6,6 +6,7 @@ export * from './admin-text.js'
 export {
   ADVANCED_SETTINGS_STORAGE_KEY,
   advancedSettingsShown,
+  advancedSettingsValue,
   setAdvancedSettingsShown,
   subscribeAdvancedSettings,
   useAdvancedSettings,

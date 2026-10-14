@@ -760,6 +760,8 @@ it('offers only the loop from the chip until advanced settings show or a bundle 
     onPreset() {},
     onBundles() {},
   }
+  // Advanced settings show unless this browser turned them off.
+  localStorage.setItem('agnes.settings.advanced', '0')
   await act(async () => updateLoopPicker(view))
   const host = await mount(createElement(LoopPicker))
   try {
@@ -772,7 +774,8 @@ it('offers only the loop from the chip until advanced settings show or a bundle 
     expect(document.querySelector('[data-testid="new-session-bundles"]')).not.toBeNull()
     await act(async () => updateLoopPicker(view))
     expect(document.querySelector('[data-testid="new-session-bundles"]')).toBeNull()
-    localStorage.setItem('agnes.settings.advanced', '1')
+    // No stored choice is the same as on.
+    localStorage.removeItem('agnes.settings.advanced')
     await act(async () => updateLoopPicker({ ...view }))
     expect(document.querySelector('[data-testid="new-session-bundles"]')).not.toBeNull()
     expect(document.querySelector('[data-testid="new-session-preset"]')).not.toBeNull()

@@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import {
   ADVANCED_SETTINGS_STORAGE_KEY,
   advancedSettingsShown,
+  advancedSettingsValue,
   Banner,
   Button,
   Drawer,
@@ -209,6 +210,8 @@ it('shows an advanced fold only while advanced settings are on, and remembers th
       createElement('p', null, 'Fast model'),
     ),
   )
+  // The suite turned the switch off; that explicit choice is what hides the fold.
+  expect(localStorage.getItem(ADVANCED_SETTINGS_STORAGE_KEY)).toBe('0')
   expect(host.querySelector('[data-testid="aux"]')).toBeNull()
   expect(advancedSettingsShown()).toBe(false)
   setAdvancedSettingsShown(true)
@@ -222,7 +225,7 @@ it('shows an advanced fold only while advanced settings are on, and remembers th
   host.querySelector<HTMLButtonElement>('[data-testid="aux-toggle"]')?.click()
   await vi.waitFor(() => expect(fold?.dataset.open).toBe('true'))
   // A blocked store keeps the choice for this page instead of failing.
-  const blocked = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
+  const blocked = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
     throw new Error('storage is blocked')
   })
   try {
@@ -244,9 +247,16 @@ it('synchronizes local storage changes without discarding an in-memory choice wh
       new StorageEvent('storage', { key: ADVANCED_SETTINGS_STORAGE_KEY, storageArea: localStorage }),
     )
     expect(advancedSettingsShown()).toBe(true)
+    localStorage.setItem(ADVANCED_SETTINGS_STORAGE_KEY, '0')
+    window.dispatchEvent(
+      new StorageEvent('storage', { key: ADVANCED_SETTINGS_STORAGE_KEY, storageArea: localStorage }),
+    )
+    expect(advancedSettingsShown()).toBe(false)
+    // Clearing the store forgets the choice, and an absent choice means on.
     localStorage.clear()
     window.dispatchEvent(new StorageEvent('storage', { key: null, storageArea: localStorage }))
-    expect(advancedSettingsShown()).toBe(false)
+    expect(advancedSettingsShown()).toBe(true)
+    setAdvancedSettingsShown(false)
     const blocked = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
       throw new Error('blocked')
     })
@@ -265,8 +275,26 @@ it('synchronizes local storage changes without discarding an in-memory choice wh
     stop()
   }
   // A change made while no view subscribes must be picked up on the next mount.
-  localStorage.removeItem(ADVANCED_SETTINGS_STORAGE_KEY)
+  localStorage.setItem(ADVANCED_SETTINGS_STORAGE_KEY, '0')
   const restart = subscribeAdvancedSettings(changed)
   expect(advancedSettingsShown()).toBe(false)
   restart()
+})
+
+it('shows advanced settings until this browser turns them off', () => {
+  expect(advancedSettingsValue(null)).toBe(true)
+  expect(advancedSettingsValue(undefined)).toBe(true)
+  expect(advancedSettingsValue('1')).toBe(true)
+  expect(advancedSettingsValue('0')).toBe(false)
+  // No stored choice: on.
+  localStorage.removeItem(ADVANCED_SETTINGS_STORAGE_KEY)
+  const stop = subscribeAdvancedSettings(() => {})
+  expect(advancedSettingsShown()).toBe(true)
+  stop()
+  // The explicit "off" is remembered.
+  setAdvancedSettingsShown(false)
+  expect(localStorage.getItem(ADVANCED_SETTINGS_STORAGE_KEY)).toBe('0')
+  const again = subscribeAdvancedSettings(() => {})
+  expect(advancedSettingsShown()).toBe(false)
+  again()
 })

@@ -27,7 +27,7 @@
 
 | `SettingsList` / `SettingsRow` | A | 平面设置列表 | 同账户页标题、说明与操作对齐；无嵌套卡片 |
 | `SettingsDetails` | A | 原生 details | 默认折叠的高级信息；键盘可展开；`compact` 用于行内无嵌套卡片的技术信息 |
-| `SettingsAdvanced` / `useAdvancedSettings` | A | 高级折叠 | 只在「显示高级设置」打开时存在：虚线卡片 +「高级」标记，标题行右侧显示当前值；开关状态只存本机浏览器（`agnes.settings.advanced`） |
+| `SettingsAdvanced` / `useAdvancedSettings` | A | 高级折叠 | 只在「显示高级设置」打开时存在：虚线卡片 +「高级」标记，标题行右侧显示当前值；开关默认打开，只有用户明确关闭（本机浏览器 `agnes.settings.advanced` 存 `0`）才隐藏，未存或读不到都算打开 |
 | `SettingsToolbar` | A | 设置筛选操作栏 | 表单控件与按钮底部对齐，窄屏自动换行 |
 
 | `ConversationInteractionResult` / `interactionToolPresentation` | A | 会话交互结果 | 从工具生命周期生成本地化摘要；原始结果置于“查看详情”，不修改协议数据 |

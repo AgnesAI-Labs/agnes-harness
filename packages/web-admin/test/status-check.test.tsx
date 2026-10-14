@@ -1,11 +1,13 @@
 /** @vitest-environment happy-dom */
 import { setAdvancedSettingsShown } from '@agnes/web-ui'
 import { act } from 'react'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { DiagnosticsApi } from '../src/settings/diagnostics-api.js'
 import { mountStatusCheck } from '../src/settings/status-check.js'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+// Advanced settings are on unless the reader turned them off.
+beforeEach(() => setAdvancedSettingsShown(false))
 afterEach(() => {
   setAdvancedSettingsShown(false)
   document.body.replaceChildren()

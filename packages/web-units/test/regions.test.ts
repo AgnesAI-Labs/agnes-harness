@@ -340,7 +340,8 @@ describe('independent core web-unit implementations', () => {
     expect(document.activeElement?.getAttribute('data-settings-section')).toBe('models')
     await act(async () => toggle.click())
     expect(host.querySelector('#settings-advanced')).toBeNull()
-    expect(localStorage.getItem(ADVANCED_SETTINGS_STORAGE_KEY)).toBeNull()
+    // Turning it off is an explicit choice, so it is stored rather than forgotten.
+    expect(localStorage.getItem(ADVANCED_SETTINGS_STORAGE_KEY)).toBe('0')
     // The background tasks page is gone: its links open the workbench terminal, like the terminal's.
     for (const [index, id] of ['terminal', 'jobs'].entries()) {
       await act(async () => {

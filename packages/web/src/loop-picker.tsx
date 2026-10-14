@@ -14,7 +14,17 @@ import {
 } from '@agnes/web-admin/settings/choices'
 import { tr as hostText } from '@agnes/web-foundation/locale-bridge'
 import { composerLocaleCatalog } from '@agnes/web-foundation/locales/composer'
-import { Button, Field, Icon, Popover, Select, SettingsInput, useUiText } from '@agnes/web-ui'
+import {
+  ADVANCED_SETTINGS_STORAGE_KEY,
+  advancedSettingsValue,
+  Button,
+  Field,
+  Icon,
+  Popover,
+  Select,
+  SettingsInput,
+  useUiText,
+} from '@agnes/web-ui'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 
 export type LoopSelection = { id: string; version: string }
@@ -118,14 +128,15 @@ const subscribe = (listener: () => void) => {
 }
 
 /**
- * Whether 「显示高级设置」 is on. The settings dialog owns the switch and stores it in this browser;
- * the chip reads it each time it renders, which includes every time its popover opens.
+ * Whether 「显示高级设置」 is on, which it is unless this browser turned it off. The settings dialog
+ * owns the switch and stores it in this browser; the chip reads it each time it renders, which
+ * includes every time its popover opens.
  */
 function advancedSettingsShown(): boolean {
   try {
-    return globalThis.localStorage?.getItem('agnes.settings.advanced') === '1'
+    return advancedSettingsValue(globalThis.localStorage?.getItem(ADVANCED_SETTINGS_STORAGE_KEY))
   } catch {
-    return false
+    return true
   }
 }
 
