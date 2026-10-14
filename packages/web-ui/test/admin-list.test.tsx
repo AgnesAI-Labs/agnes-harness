@@ -306,7 +306,22 @@ describe('where a plugin comes from and what it includes', () => {
     expect(pluginOrigin(purposeRow)).toBe('third-party')
   })
 
-  it('counts what a running plugin registered, and falls back to its declared kinds', () => {
+  it('reads what the package says it includes, with a number only where the package states one', () => {
+    const stated = {
+      ...purposeRow,
+      kinds: ['tool'],
+      presentation: {
+        origin: 'third-party',
+        rows: [],
+        includes: { kinds: ['tool', 'loop', 'skills', 'bundle'], counts: { bundles: 1, skills: 2 } },
+      },
+    } as PackageCatalogDescriptor
+    expect(pluginIncludes(stated, undefined, t)).toBe('tool · loop · 2 skill · 1 bundle')
+  })
+
+  it('falls back to the declared kinds, then to what a running plugin registered', () => {
+    const declared = { ...purposeRow, kinds: ['tool', 'skills'] } as PackageCatalogDescriptor
+    expect(pluginIncludes(declared, undefined, t)).toBe('tool · skill')
     const running = {
       provides: [
         { kind: 'tool', id: 'a' },
@@ -317,18 +332,16 @@ describe('where a plugin comes from and what it includes', () => {
       available: true,
     }
     expect(pluginIncludes(purposeRow, running, t)).toBe('2 tool · 1 skill')
-    const declared = { ...purposeRow, kinds: ['tool', 'skills'] } as PackageCatalogDescriptor
-    expect(pluginIncludes(declared, undefined, t)).toBe('tool · skill')
     expect(pluginIncludes(purposeRow, undefined, t)).toBe('')
   })
 
   it('names a business agent as one', () => {
     const agent = {
       ...purposeRow,
-      kinds: ['bundle'],
+      presentation: { origin: 'example', rows: [], includes: { kinds: ['bundle'], counts: { bundles: 1 } } },
       metadata: { ...purposeRow.metadata!, category: 'business-agent' },
     } as PackageCatalogDescriptor
-    expect(pluginIncludes(agent, undefined, t)).toBe('agent')
+    expect(pluginIncludes(agent, undefined, t)).toBe('1 agent')
     expect(
       pluginIncludes({ ...purposeRow, kinds: ['bundle'] } as PackageCatalogDescriptor, undefined, t),
     ).toBe('bundle')

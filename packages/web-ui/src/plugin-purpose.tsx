@@ -20,9 +20,13 @@ export function PluginSourceBadge({ item }: { item: PluginPurposeItem }) {
   )
 }
 
+const INCLUDE_COUNTS = { tool: 'tools', skills: 'skills', mcp: 'mcp', bundle: 'bundles', ui: 'ui' } as const
+
 /**
- * What a plugin brings, in a few words: counted from what it has registered while it runs, and
- * from its declared kinds otherwise. A business agent is named as one.
+ * What a plugin brings, in a few words. The package says which kinds it includes and, where its
+ * data states one, how many; a kind without a number is counted by the plugin's code, not zero.
+ * A package that says nothing falls back to the kinds its author declared, then to what it has
+ * registered while running. A business agent is named as one.
  */
 export function pluginIncludes(
   item: PluginPurposeItem,
@@ -31,15 +35,23 @@ export function pluginIncludes(
 ): string {
   const label = (kind: string) => {
     const key =
-      kind === 'bundle' && item.metadata?.category === 'business-agent' ? 'provide.agent' : `provide.${kind}`
+      kind === 'bundle' && item.metadata?.category === 'business-agent'
+        ? 'provide.agent'
+        : `provide.${kind === 'skills' ? 'skill' : kind}`
     return t(key) === key ? kind : t(key)
   }
+  const includes = item.presentation?.includes
+  const kinds: readonly string[] = includes?.kinds ?? item.kinds ?? []
+  if (kinds.length)
+    return kinds
+      .map((kind) => {
+        const count = includes?.counts?.[INCLUDE_COUNTS[kind as keyof typeof INCLUDE_COUNTS]]
+        return count ? t('includesItem', { count, name: label(kind) }) : label(kind)
+      })
+      .join(' · ')
   const counts = new Map<string, number>()
   for (const entry of value?.provides ?? []) counts.set(entry.kind, (counts.get(entry.kind) ?? 0) + 1)
-  const parts = counts.size
-    ? [...counts].map(([kind, count]) => t('includesItem', { count, name: label(kind) }))
-    : (item.kinds ?? []).map((kind) => label(kind === 'skills' ? 'skill' : kind))
-  return parts.join(' · ')
+  return [...counts].map(([kind, count]) => t('includesItem', { count, name: label(kind) })).join(' · ')
 }
 
 /** The row's small line: the category, then what the plugin includes. */

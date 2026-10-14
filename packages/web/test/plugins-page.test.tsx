@@ -103,19 +103,21 @@ describe('plugin grouping', () => {
     ])
   })
 
-  it('files a catalog package under every marketplace type its kinds declare', () => {
-    const entry = (id: string, kinds: readonly string[], category?: string) =>
-      ({ id, kinds, ...(category ? { metadata: { category } } : {}) }) as unknown as Parameters<
-        typeof marketTypes
-      >[0]
+  it('files a catalog package under every marketplace type it says it includes', () => {
+    const entry = (id: string, kinds: readonly string[], declared?: readonly string[]) =>
+      ({
+        id,
+        ...(declared ? { kinds: declared } : {}),
+        presentation: { rows: [], ...(kinds.length ? { includes: { kinds } } : {}) },
+      }) as unknown as Parameters<typeof marketTypes>[0]
     expect(marketTypes(entry('@acme/desk', ['tool', 'skills']))).toEqual(['tool', 'skills'])
     expect(marketTypes(entry('@acme/loop', ['loop']))).toEqual(['runtime'])
     expect(marketTypes(entry('@acme/adapter', ['model-adapter', 'ui']))).toEqual(['ui', 'runtime'])
     expect(marketTypes(entry('@acme/jira', ['mcp']))).toEqual(['mcp'])
-    expect(marketTypes(entry('@acme/review', ['bundle', 'tool'], 'business-agent'))).toEqual([
-      'agent',
-      'tool',
-    ])
+    expect(marketTypes(entry('@acme/review', ['tool', 'bundle']))).toEqual(['agent', 'tool'])
+    // What the package says wins over what its author declared; an older source has only the latter.
+    expect(marketTypes(entry('@acme/both', ['skills'], ['tool']))).toEqual(['skills'])
+    expect(marketTypes(entry('@acme/older', [], ['tool']))).toEqual(['tool'])
     expect(marketTypes(entry('@acme/plain', []))).toEqual([])
   })
 

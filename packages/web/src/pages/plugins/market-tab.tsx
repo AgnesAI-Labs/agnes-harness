@@ -27,12 +27,15 @@ type Text = (key: string, vars?: Readonly<Record<string, string | number>>) => s
 
 export const MARKET_TYPES = ['agent', 'tool', 'skills', 'mcp', 'ui', 'runtime'] as const
 export type MarketType = (typeof MARKET_TYPES)[number]
-/** The marketplace types a package belongs to, read from its declared kinds; a package can be several. */
+/**
+ * The marketplace types a package belongs to. The package says which kinds it includes; an entry
+ * from an older source without that falls back to the kinds its author declared.
+ */
 export function marketTypes(item: PackageCatalogDescriptor): readonly MarketType[] {
-  const kinds: readonly string[] = item.kinds ?? []
+  const kinds: readonly string[] = item.presentation?.includes?.kinds ?? item.kinds ?? []
   return MARKET_TYPES.filter((type) =>
     type === 'agent'
-      ? isBusinessAgent(item)
+      ? kinds.includes('bundle') || isBusinessAgent(item)
       : type === 'runtime'
         ? kinds.includes('loop') || kinds.includes('model-adapter')
         : kinds.includes(type),
