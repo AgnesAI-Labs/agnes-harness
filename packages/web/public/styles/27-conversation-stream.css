@@ -441,8 +441,10 @@
     color: var(--agnes-text-emphasis);
     background: var(--agnes-bg-hover);
   }
+  /* The facts take the rest of the bar and shorten with an ellipsis; they never wrap to a line of their own. */
   .turn-footer .turn-usage {
     order: 1;
+    flex: 1 1 0;
     min-width: 0;
   }
   .turn-footer .turn-feedback {
