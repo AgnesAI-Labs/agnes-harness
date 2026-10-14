@@ -813,46 +813,77 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  /* Open, with a chevron beside it that lists the other ways to open: one outlined split control. */
+  /* Open, with a chevron beside it that lists the other ways to open: one split control. The frame
+     owns the 28px height, the outline and the outer corners; the halves share it and a divider. */
   .deliverable-actions {
     flex: none;
+    align-self: center;
+    display: inline-flex;
+    align-items: stretch;
+    height: 1.75rem;
+    border: 1px solid var(--agnes-line-emphasis);
+    border-radius: var(--radius-control);
+    background: var(--agnes-bg-surface);
+    overflow: hidden;
+  }
+  @supports (corner-shape: squircle) {
+    .deliverable-actions {
+      corner-shape: var(--corner-shape);
+      border-radius: calc(var(--radius-control) * var(--corner-scale));
+    }
+  }
+  .deliverable-actions > .agh-menu-anchor,
+  .deliverable-actions > .agh-menu-anchor > .agh-tooltip-anchor {
     display: flex;
     align-items: stretch;
   }
-  /* Scoped past the shared ghost and secondary button rules so both halves share one outline. */
-  .deliverable-file .deliverable-actions :is(.deliverable-open, .deliverable-open-with):not(:disabled) {
-    border-color: var(--agnes-line-emphasis);
-    color: var(--agnes-text-primary);
-    background: var(--agnes-bg-surface);
+  .deliverable-actions > .agh-menu-anchor {
+    border-inline-start: 1px solid var(--agnes-line-emphasis);
   }
-  .deliverable-file .deliverable-actions .deliverable-open-with:not(:disabled) {
-    color: var(--agnes-text-secondary);
-  }
-  .deliverable-file .deliverable-actions :is(.deliverable-open, .deliverable-open-with):hover:not(:disabled) {
-    border-color: var(--agnes-line-emphasis);
-    color: var(--agnes-text-primary);
-    background: var(--agnes-bg-hover);
-  }
-  .deliverable-actions > .deliverable-open,
-  .deliverable-actions .deliverable-open-with {
-    height: 1.75rem;
-    min-height: 1.75rem;
-    border: 1px solid var(--agnes-line-emphasis);
-    color: var(--agnes-text-primary);
-    background: var(--agnes-bg-surface);
+  /* Scoped past the shared button size, outline, corner and shadow rules: the halves draw none. */
+  .deliverable-file .deliverable-actions :is(.deliverable-open, .deliverable-open-with).agh-btn {
+    height: auto;
+    min-height: 0;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    corner-shape: initial;
     box-shadow: none;
+    background: transparent;
+    color: var(--agnes-text-primary);
   }
-  .deliverable-actions > .deliverable-open {
+  .deliverable-file .deliverable-actions .deliverable-open.agh-btn {
     padding-inline: var(--s12);
-    border-radius: var(--radius-control) 0 0 var(--radius-control);
     font-weight: var(--font-weight-medium);
   }
-  .deliverable-actions .deliverable-open-with {
+  .deliverable-file .deliverable-actions .deliverable-open-with.agh-btn {
     width: 1.75rem;
     min-width: 1.75rem;
-    margin-inline-start: -1px;
-    border-radius: 0 var(--radius-control) var(--radius-control) 0;
+    padding: 0;
     color: var(--agnes-text-secondary);
+  }
+  .deliverable-file
+    .deliverable-actions
+    :is(.deliverable-open, .deliverable-open-with).agh-btn:hover:not(:disabled) {
+    background: var(--agnes-bg-hover);
+    color: var(--agnes-text-primary);
+  }
+  /* Narrow screens keep the shell's 32px touch floor: the frame grows to fit, both halves alike. */
+  @media (max-width: 900px) {
+    .deliverable-actions {
+      height: auto;
+    }
+    .deliverable-file .deliverable-actions .deliverable-open-with.agh-btn {
+      width: 2rem;
+      min-width: 2rem;
+      min-height: 2rem;
+    }
+  }
+  /* The frame clips its children, so the focus ring is drawn inside the half. */
+  .deliverable-file
+    .deliverable-actions
+    :is(.deliverable-open, .deliverable-open-with).agh-btn:focus-visible {
+    outline-offset: -2px;
   }
   /* In an answer: one quiet framed list between the text and the action row. */
   .turn-deliverables {
