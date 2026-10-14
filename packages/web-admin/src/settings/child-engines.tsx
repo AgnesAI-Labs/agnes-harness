@@ -9,8 +9,11 @@ import {
   configIssues,
   SchemaConfigFields,
   SchemaControl,
-  SettingsCard,
-  SettingsState,
+  SettingsCode,
+  SettingsDetails,
+  SettingsGroup,
+  SettingsItem,
+  SettingsTechnicalDetails,
 } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
 import { childEngineConfigSchema } from './config-schemas.js'
@@ -59,6 +62,7 @@ export function ChildEnginesPanel({
   const [ready, setReady] = useState(false)
   const [status, setStatus] = useState('')
   const [saved, setSaved] = useState('')
+  const [loaded, setLoaded] = useState('')
   const [busy, setBusy] = useState(false)
   useEffect(() => {
     let cancelled = false
@@ -70,6 +74,7 @@ export function ChildEnginesPanel({
       (state) => {
         if (cancelled) return
         setDraft(state.engines)
+        setLoaded(JSON.stringify(state.engines))
         setRevision(state.revision)
         setReady(true)
       },
@@ -95,123 +100,144 @@ export function ChildEnginesPanel({
     else if (id === 'codex') update({ ...draft, codex: { ...draft.codex, ...patch } })
     else update({ ...draft, sdk: { ...draft.sdk, ...patch } })
   }
+  const dirty = ready && JSON.stringify(draft) !== loaded
+  const succeeded = status === 'engine.saved' || status === 'engine.savedRestart'
+  const save = () => {
+    if (busy || !ready) return
+    const invalid = ENGINES.some((id) => configIssues(childEngineConfigSchema(id), engine(id)).length > 0)
+    const error = invalid ? 'command' : childEngineSettingsError(draft)
+    if (error) {
+      setStatus(error === 'allow' ? 'engine.allowRequired' : 'engine.commandRequired')
+      return
+    }
+    if (!api) {
+      setStatus('engine.unavailable')
+      return
+    }
+    setBusy(true)
+    void api.saveChildEngines({ revision, engines: draft }).then(
+      (state) => {
+        setBusy(false)
+        setRevision(state.revision)
+        setDraft(state.engines)
+        setLoaded(JSON.stringify(state.engines))
+        setSaved(JSON.stringify(state.engines))
+        setStatus(state.effect === 'restart-required' ? 'engine.savedRestart' : 'engine.saved')
+      },
+      (error: unknown) => {
+        setBusy(false)
+        setStatus(
+          failureCode(error) === 'CONFIG_REVISION_CONFLICT' ? 'engine.conflict' : 'engine.unavailable',
+        )
+      },
+    )
+  }
   return (
-    <SettingsCard data-testid="child-engines">
-      <p>{t('enginesHelp')}</p>
+    <div className="capability-panel" data-testid="child-engines">
       {ENGINES.map((id) => {
         const current = engine(id)
         const protocol = id === 'sdk' ? draft.sdk.protocol : 'sdk'
         const capability = flags(id, protocol)
+        const schema = childEngineConfigSchema(id)
         return (
-          <SettingsCard
+          <SettingsGroup
             key={id}
-            className="runtime-card"
+            role="group"
             data-testid={`child-engine-${id}`}
             aria-labelledby={`child-engine-${id}-title`}
           >
-            <h3 id={`child-engine-${id}-title`}>{t(`engine.${id}`)}</h3>
-            <label className="agnes-settings-checkbox" htmlFor={`child-engine-${id}-enabled`}>
+            <SettingsItem
+              icon="terminal"
+              label={t(`engine.${id}`)}
+              labelId={`child-engine-${id}-title`}
+              description={
+                current.enabled ? (
+                  <span translate="no">{[current.command, ...current.args].join(' ')}</span>
+                ) : (
+                  t('engine.off')
+                )
+              }
+            >
               <SchemaControl
-                schema={childEngineConfigSchema(id).properties!.enabled!}
+                schema={schema.properties!.enabled!}
                 value={current.enabled}
                 disabled={!canSave || !ready || busy}
                 t={t}
                 onChange={(value) => replace(id, { enabled: value === true })}
-              />{' '}
-              {t('engine.enabled')}
-            </label>
-            <SchemaConfigFields
-              schema={{
-                ...childEngineConfigSchema(id),
-                required: [],
-                properties: Object.fromEntries(
-                  Object.entries(childEngineConfigSchema(id).properties ?? {}).filter(
-                    ([key]) => key !== 'enabled',
-                  ),
-                ),
-              }}
-              value={{
-                command: current.command,
-                args: current.args,
-                allow: current.allow,
-                ...(id === 'sdk' ? { protocol: draft.sdk.protocol } : {}),
-              }}
-              t={t}
-              disabled={!canSave || !ready || busy}
-              onChange={(next) => {
-                if (typeof next.command === 'string' && Array.isArray(next.args) && Array.isArray(next.allow))
-                  replace(id, {
-                    command: next.command,
-                    args: next.args,
-                    allow: next.allow,
-                    ...(id === 'sdk' ? { protocol: next.protocol === 'acp' ? 'acp' : 'sdk' } : {}),
-                  })
-              }}
-            />
-            <h4>{t('engine.capabilities')}</h4>
-            <ul data-testid={`child-engine-${id}-capabilities`}>
-              {Object.entries(capability).map(([name, on]) => (
-                <li key={name}>
-                  {t(`cap.${name}`)}: {t(on ? 'yes' : 'no')}
-                </li>
-              ))}
-            </ul>
-          </SettingsCard>
+              />
+            </SettingsItem>
+            {current.enabled && (
+              <div className="capability-engine-fields">
+                <SchemaConfigFields
+                  schema={{
+                    ...schema,
+                    required: [],
+                    properties: Object.fromEntries(
+                      Object.entries(schema.properties ?? {}).filter(([key]) => key !== 'enabled'),
+                    ),
+                  }}
+                  value={{
+                    command: current.command,
+                    args: current.args,
+                    allow: current.allow,
+                    ...(id === 'sdk' ? { protocol: draft.sdk.protocol } : {}),
+                  }}
+                  t={t}
+                  disabled={!canSave || !ready || busy}
+                  onChange={(next) => {
+                    if (
+                      typeof next.command === 'string' &&
+                      Array.isArray(next.args) &&
+                      Array.isArray(next.allow)
+                    )
+                      replace(id, {
+                        command: next.command,
+                        args: next.args,
+                        allow: next.allow,
+                        ...(id === 'sdk' ? { protocol: next.protocol === 'acp' ? 'acp' : 'sdk' } : {}),
+                      })
+                  }}
+                />
+                <p className="capability-engine-flags" data-testid={`child-engine-${id}-capabilities`}>
+                  {t('engine.capabilities')}:{' '}
+                  {Object.entries(capability)
+                    .map(([name, on]) => `${t(`cap.${name}`)}: ${t(on ? 'yes' : 'no')}`)
+                    .join(' · ')}
+                </p>
+              </div>
+            )}
+          </SettingsGroup>
         )
       })}
-      <p>{t('engine.restart')}</p>
-      {status && (
-        <SettingsState
-          tone={status === 'engine.saved' || status === 'engine.savedRestart' ? 'success' : 'error'}
-          role={status === 'engine.saved' || status === 'engine.savedRestart' ? 'status' : 'alert'}
-          data-testid="child-engine-status"
+      <div className="capability-save">
+        <span
+          role={succeeded || !status ? 'status' : 'alert'}
+          data-tone={succeeded ? 'success' : 'error'}
+          data-testid={status ? 'child-engine-status' : undefined}
         >
-          {t(status)}
-        </SettingsState>
-      )}
+          {status ? t(status) : ''}
+        </span>
+        <Button
+          appearance="primary"
+          data-testid="child-engine-save"
+          disabled={!canSave || !ready || busy || !dirty}
+          loading={busy}
+          onClick={save}
+        >
+          {t('engine.save')}
+        </Button>
+      </div>
+      <SettingsDetails compact title={t('engine.more')} data-testid="child-engine-more">
+        <p>{t('enginesHelp')}</p>
+        <p>{t('engine.restart')}</p>
+      </SettingsDetails>
       {saved && (
-        <section aria-label={t('engine.document')}>
-          <pre data-testid="child-engine-document">{saved}</pre>
-        </section>
+        <SettingsTechnicalDetails title={t('engine.document')}>
+          <SettingsCode label={t('engine.document')} data-testid="child-engine-document">
+            {saved}
+          </SettingsCode>
+        </SettingsTechnicalDetails>
       )}
-      <Button
-        data-testid="child-engine-save"
-        disabled={!canSave || !ready || busy}
-        loading={busy}
-        onClick={() => {
-          if (busy || !ready) return
-          const invalid = ENGINES.some(
-            (id) => configIssues(childEngineConfigSchema(id), engine(id)).length > 0,
-          )
-          const error = invalid ? 'command' : childEngineSettingsError(draft)
-          if (error) {
-            setStatus(error === 'allow' ? 'engine.allowRequired' : 'engine.commandRequired')
-            return
-          }
-          if (!api) {
-            setStatus('engine.unavailable')
-            return
-          }
-          setBusy(true)
-          void api.saveChildEngines({ revision, engines: draft }).then(
-            (state) => {
-              setBusy(false)
-              setRevision(state.revision)
-              setDraft(state.engines)
-              setSaved(JSON.stringify(state.engines))
-              setStatus(state.effect === 'restart-required' ? 'engine.savedRestart' : 'engine.saved')
-            },
-            (error: unknown) => {
-              setBusy(false)
-              setStatus(
-                failureCode(error) === 'CONFIG_REVISION_CONFLICT' ? 'engine.conflict' : 'engine.unavailable',
-              )
-            },
-          )
-        }}
-      >
-        {t('engine.save')}
-      </Button>
-    </SettingsCard>
+    </div>
   )
 }

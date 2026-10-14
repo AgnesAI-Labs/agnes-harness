@@ -89,12 +89,14 @@ it('shows the unconfigured state and saves a key without rendering it again', as
     'https://api.search.brave.com',
   )
   expect(panel.querySelector('[data-testid="search-empty"]')?.textContent).toContain('No search service')
-  expect(panel.querySelector('[data-testid="search-provider-brave"]')).not.toBeNull()
-  expect(panel.querySelector<HTMLElement>('[data-testid="search-other-services"]')?.dataset.open).toBe(
-    'false',
-  )
-  expect(panel.querySelector<HTMLElement>('[data-testid="search-technical-exa"]')?.dataset.open).toBe('false')
-  expect(panel.querySelector('[data-testid="search-technical-exa"]')?.hasAttribute('data-compact')).toBe(true)
+  // A service that was never set up is chosen in the dialog; the page lists only what is in use.
+  expect(panel.querySelector('[data-testid="search-provider-brave"]')).toBeNull()
+  expect(
+    [...panel.querySelectorAll<HTMLInputElement>('[data-testid="search-edit-provider"] input')].map(
+      (option) => option.value,
+    ),
+  ).toEqual(['brave', 'tavily', 'exa', 'perplexity', 'searxng'])
+  expect(panel.querySelector<HTMLElement>('[data-testid="search-technical"]')?.dataset.open).toBe('false')
   expect(settingsCatalog.en.searchApiKeyHint).not.toContain('secret://')
   expect(panel.querySelector('[data-testid="search-secret-exa"]')?.textContent).toContain(
     'secret://search/exa',
@@ -126,6 +128,7 @@ it('shows the unconfigured state and saves a key without rendering it again', as
   await act(async () => {
     panel.querySelector<HTMLButtonElement>('[data-testid="search-save"]')?.click()
   })
+  expect(panel.querySelector('[data-testid="search-provider-brave"]')).not.toBeNull()
   expect(panel.querySelector('[data-testid="search-enabled-brave"]')?.getAttribute('role')).toBe('switch')
   expect(panel.querySelector('[data-testid="search-enabled-brave"]')?.getAttribute('aria-checked')).toBe(
     'true',
@@ -156,7 +159,7 @@ it('shows the unconfigured state and saves a key without rendering it again', as
   )
 })
 
-it('offers an explicit default action for a ready service and exposes saved drawer controls', async () => {
+it('offers an explicit default action for a ready service and opens the saved settings from its row', async () => {
   const ready = { ...brave, enabled: true, ready: true, secretConfigured: true }
   let refuseDefault = true
   let current = { ...status, defaultProvider: null as string | null, providers: [ready] }
@@ -195,7 +198,7 @@ it('offers an explicit default action for a ready service and exposes saved draw
   expect(host.querySelector<HTMLButtonElement>('[data-testid="search-test"]')?.disabled).toBe(false)
   expect(host.querySelector('[data-testid="search-needs-default"]')).toBeNull()
   await act(async () =>
-    host.querySelector<HTMLButtonElement>('[data-testid="search-settings-brave"]')?.click(),
+    host.querySelector<HTMLButtonElement>('[data-testid="search-provider-brave"] h3 button')?.click(),
   )
   expect(document.querySelector('[data-testid="search-editor-enabled"]')?.getAttribute('aria-checked')).toBe(
     'true',

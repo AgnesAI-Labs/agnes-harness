@@ -75,7 +75,11 @@ export function ComputerUseCapability({
   const canInstall =
     view.permissions.grantHidden && view.controls.updateDisabled && !view.controls.installDisabled
   return (
-    <div className="agnes-settings-stack" data-testid="computer-use-capability" data-attention={needsUser}>
+    <div
+      className="agnes-settings-stack agh-computer-use"
+      data-testid="computer-use-capability"
+      data-attention={needsUser}
+    >
       <SettingsGroup>
         <SettingsItem
           icon="eye"
@@ -174,7 +178,6 @@ export function ComputerUseCapability({
           </SettingsItem>
           <SettingsItem
             icon="download"
-            stacked
             label={
               <>
                 <span>{label('computerUse.operation.eyebrow')}</span>{' '}

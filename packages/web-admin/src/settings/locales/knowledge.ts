@@ -125,7 +125,7 @@ export const knowledgeCatalog: LocaleCatalog = {
     searchEnabled: '启用',
     searchMakeDefault: '用作默认服务',
     searchSave: '保存搜索服务',
-    searchSaved: '搜索设置已保存。下一次网页搜索 会使用它们。',
+    searchSaved: '搜索设置已保存。下一次网页搜索会使用它们。',
     searchTestQuery: '测试查询',
     searchTest: '测试已保存的服务',
     searchTestEmpty: '输入查询以测试已保存的服务。',

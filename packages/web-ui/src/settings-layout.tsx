@@ -86,6 +86,23 @@ export function SettingsPage({
     </section>
   )
 }
+/**
+ * Lets a host page with its own header receive what the panels inside it declare: their page
+ * actions land in `actions`, and their description is dropped because the host already has one.
+ */
+export function SettingsPageSlots({
+  actions,
+  children,
+}: {
+  actions: HTMLElement | null
+  children: ReactNode
+}) {
+  return (
+    <SettingsPageFrameContext.Provider value={{ lead: null, actions }}>
+      {children}
+    </SettingsPageFrameContext.Provider>
+  )
+}
 /** Page-level actions declared from anywhere inside a page land in that page's header. */
 export function SettingsPageActions({ children }: { children: ReactNode }) {
   const frame = useContext(SettingsPageFrameContext)

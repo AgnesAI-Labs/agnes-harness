@@ -1677,6 +1677,28 @@
   .agnes-settings-item[data-stacked] > .agnes-settings-item-control {
     justify-content: flex-start;
   }
+  .agh-plugin-source-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s8);
+    margin: 0;
+  }
+  .agh-plugin-source-line > .agh-tag {
+    flex: 0 0 auto;
+  }
+  /* Computer use states carry a sentence and a button: in a narrow host the button drops below. */
+  .agh-computer-use .agnes-settings-item {
+    flex-wrap: wrap;
+  }
+  .agh-computer-use .agnes-settings-item-copy {
+    flex: 1 1 14rem;
+  }
+  .agh-computer-use .agnes-settings-item-control {
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    margin-inline-start: auto;
+  }
   /* A disclosure listed in a group is one of its rows; its content keeps the row's inset. */
   .agnes-settings-group > .agh-disclosure[data-variant] {
     padding-inline: var(--s16);

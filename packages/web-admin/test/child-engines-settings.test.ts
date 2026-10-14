@@ -14,6 +14,7 @@ afterEach(async () => {
 })
 
 function client(effect: 'new-sessions' | 'restart-required' = 'new-sessions'): ChildEnginesClient & {
+  childEngines: ReturnType<typeof vi.fn>
   saveChildEngines: ReturnType<typeof vi.fn>
 } {
   const engines = structuredClone(DISABLED_CHILD_ENGINES)
@@ -41,16 +42,19 @@ it('requires an exact allowlist entry before enabling an engine', async () => {
   const api = client()
   const host = await mount(true, api)
   expect(host.querySelector('[data-testid="child-engine-codex-enabled"]')).not.toBeNull()
+  // An engine that is off is one row; its command, allowlist and capabilities open once it is on.
+  expect(host.querySelector('[data-testid="child-engine-codex-allow"]')).toBeNull()
+  expect(host.querySelector<HTMLButtonElement>('[data-testid="child-engine-save"]')?.disabled).toBe(true)
+  const enabled = host.querySelector<HTMLButtonElement>('[data-testid="child-engine-codex-enabled"]')
+  expect(enabled?.getAttribute('role')).toBe('switch')
+  await act(async () => enabled?.click())
+  expect(enabled?.getAttribute('aria-checked')).toBe('true')
   expect(host.querySelector('[data-testid="child-engine-codex-capabilities"]')?.textContent).toContain(
     'Continuable: No',
   )
   expect(host.querySelector('[data-testid="child-engine-codex-capabilities"]')?.textContent).toContain(
     'Interrupt: Yes',
   )
-  const enabled = host.querySelector<HTMLButtonElement>('[data-testid="child-engine-codex-enabled"]')
-  expect(enabled?.getAttribute('role')).toBe('switch')
-  await act(async () => enabled?.click())
-  expect(enabled?.getAttribute('aria-checked')).toBe('true')
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="child-engine-save"]')?.click())
   expect(host.querySelector('[data-testid="child-engine-status"]')?.getAttribute('role')).toBe('alert')
   expect(api.saveChildEngines).not.toHaveBeenCalled()
@@ -68,14 +72,23 @@ it('requires an exact allowlist entry before enabling an engine', async () => {
   const saved = api.saveChildEngines.mock.calls[0]?.[0] as { engines: ChildEngineSettings }
   expect(saved.engines.codex).toMatchObject({ enabled: true, allow: ['codex'] })
   expect(host.querySelector('[data-testid="child-engine-document"]')?.textContent).toContain('"enabled":true')
+  expect(host.querySelector<HTMLButtonElement>('[data-testid="child-engine-save"]')?.disabled).toBe(true)
 })
 
 it('shows ACP as continuable and keeps a read-only panel disabled', async () => {
-  const host = await mount(false, client())
+  const stored = client()
+  stored.childEngines.mockResolvedValue({
+    revision: 4,
+    engines: { ...DISABLED_CHILD_ENGINES, sdk: { ...DISABLED_CHILD_ENGINES.sdk, enabled: true } },
+  })
+  const host = await mount(false, stored)
   expect(host.querySelector<HTMLButtonElement>('[data-testid="child-engine-save"]')?.disabled).toBe(true)
   const protocol = host.querySelector<HTMLSelectElement>('[data-testid="child-engine-sdk-protocol"]')
   expect(protocol?.disabled).toBe(true)
   const writable = await mount(true, client('restart-required'))
+  await act(async () =>
+    writable.querySelector<HTMLButtonElement>('[data-testid="child-engine-sdk-enabled"]')?.click(),
+  )
   const select = writable.querySelector<HTMLSelectElement>('[data-testid="child-engine-sdk-protocol"]')
   await act(async () => {
     if (!select) return

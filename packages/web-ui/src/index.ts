@@ -116,6 +116,7 @@ export {
   SettingsPageActions,
   SettingsPageDescription,
   SettingsPageHeader,
+  SettingsPageSlots,
   SettingsRow,
   SettingsSaveBar,
   SettingsSection,

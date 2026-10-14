@@ -3,9 +3,14 @@ import {
   appServerErrorMessage,
   Button,
   Field,
+  IconTile,
+  ListRow,
   SettingsAdvanced,
-  SettingsCard,
-  SettingsCode,
+  SettingsDetails,
+  SettingsGroup,
+  SettingsItem,
+  SettingsList,
+  SettingsSection,
   SettingsSelect,
   SettingsState,
   SettingsTextArea,
@@ -81,50 +86,50 @@ export function MemoryPanel({ canSave }: { canSave: boolean }) {
         lines: numbers.format(inspection.settings.indexMaxLines),
       })
     : ''
+  const files = inspection ? [...new Set(['MEMORY.md', ...inspection.files.map((entry) => entry.path)])] : []
+  const sizeOf = (path: string) => {
+    const bytes = inspection?.files.find((entry) => entry.path === path)?.bytes
+    return bytes === undefined ? t('fileEmpty') : `${numbers.format(bytes / 1024)} KB`
+  }
   return (
-    <SettingsCard data-testid="memory-panel" aria-busy={busy}>
-      <p>{t('help')}</p>
-      <p>{t('privacy')}</p>
+    <div className="capability-panel" data-testid="memory-panel" aria-busy={busy}>
       {Boolean(error) && (
         <SettingsState tone="error" role="alert" data-testid="memory-error">
           {appServerErrorMessage(error, locale) ?? t('failed')}
         </SettingsState>
       )}
-      {saved && (
-        <SettingsState tone="success" role="status" data-testid="memory-saved">
-          {t('saved')}
-        </SettingsState>
-      )}
       {!workspaces.some((workspace) => workspace.available) && !busy && (
         <SettingsState>{t('noWorkspace')}</SettingsState>
       )}
-      <Field htmlFor="memory-workspace" label={t('workspace')}>
-        <SettingsSelect
-          id="memory-workspace"
-          data-testid="memory-workspace"
-          value={cwd}
-          disabled={busy}
-          onChange={(event) => {
-            const path = event.target.value
-            setCwd(path)
-            setFile(undefined)
-            void request({ cwd: path })
-          }}
-        >
-          {!cwd && <option value="">{t('choose')}</option>}
-          {workspaces.map((workspace) => (
-            <option key={workspace.path} value={workspace.path} disabled={!workspace.available}>
-              {workspace.path}
-            </option>
-          ))}
-        </SettingsSelect>
-      </Field>
-      {inspection && (
-        <>
-          <Field htmlFor="memory-mode" label={t('permission')}>
+      <SettingsGroup>
+        <SettingsItem icon="folder" label={t('workspace')} description={t('workspaceHelp')}>
+          <SettingsSelect
+            id="memory-workspace"
+            data-testid="memory-workspace"
+            aria-label={t('workspace')}
+            value={cwd}
+            disabled={busy}
+            onChange={(event) => {
+              const path = event.target.value
+              setCwd(path)
+              setFile(undefined)
+              void request({ cwd: path })
+            }}
+          >
+            {!cwd && <option value="">{t('choose')}</option>}
+            {workspaces.map((workspace) => (
+              <option key={workspace.path} value={workspace.path} disabled={!workspace.available}>
+                {workspace.path}
+              </option>
+            ))}
+          </SettingsSelect>
+        </SettingsItem>
+        {inspection && (
+          <SettingsItem icon="history" label={t('permission')} description={t('modeHelp')}>
             <SettingsSelect
               id="memory-mode"
               data-testid="memory-mode"
+              aria-label={t('permission')}
               value={inspection.settings.mode}
               disabled={!canSave || busy}
               onChange={(event) =>
@@ -135,30 +140,41 @@ export function MemoryPanel({ canSave }: { canSave: boolean }) {
               <option value="ask">{t('ask')}</option>
               <option value="auto">{t('auto')}</option>
             </SettingsSelect>
-          </Field>
-          <p>{t('offHelp')}</p>
-          {/* How much is stored and where: for whoever tunes it, not for everyday use. */}
-          <SettingsAdvanced title={t('usage')} summary={usage} data-testid="memory-usage">
-            <p data-testid="memory-size">{usage}</p>
-            <p>{t('budget', { tokens: numbers.format(inspection.settings.tokenBudget) })}</p>
-            <SettingsCode label={t('location')} data-testid="memory-root">
-              {inspection.root}
-            </SettingsCode>
-            {inspection.lastWriter && (
-              <p data-testid="memory-writer">
-                {t('writer')}: {inspection.lastWriter.sessionKey} · {inspection.lastWriter.turn}
-              </p>
-            )}
-          </SettingsAdvanced>
-          <Button
-            data-testid="memory-open"
-            disabled={busy}
-            onClick={() => void request({ cwd, file: 'MEMORY.md' })}
-          >
-            {t('open')}
-          </Button>
+          </SettingsItem>
+        )}
+      </SettingsGroup>
+      {saved && (
+        <SettingsState tone="success" role="status" data-testid="memory-saved">
+          {t('saved')}
+        </SettingsState>
+      )}
+      {inspection && (
+        <SettingsSection
+          title={t('files')}
+          actions={<small>{t('fileCount', { count: files.length })}</small>}
+        >
+          <SettingsList>
+            {files.map((path) => (
+              <ListRow
+                key={path}
+                icon={<IconTile name="file" />}
+                title={<span translate="no">{path}</span>}
+                description={sizeOf(path)}
+                actions={
+                  <Button
+                    size="small"
+                    data-testid={path === 'MEMORY.md' ? 'memory-open' : 'memory-open-file'}
+                    disabled={busy || file?.path === path}
+                    onClick={() => void request({ cwd, file: path })}
+                  >
+                    {t(file?.path === path ? 'opened' : 'openFile')}
+                  </Button>
+                }
+              />
+            ))}
+          </SettingsList>
           {file && (
-            <>
+            <div className="capability-editor">
               <Field htmlFor="memory-file" label={t('file')}>
                 <SettingsSelect
                   id="memory-file"
@@ -167,14 +183,14 @@ export function MemoryPanel({ canSave }: { canSave: boolean }) {
                   value={file.path}
                   onChange={(event) => void request({ cwd, file: event.target.value })}
                 >
-                  {[...new Set(['MEMORY.md', ...inspection.files.map((file) => file.path)])].map((path) => (
+                  {files.map((path) => (
                     <option key={path} value={path}>
                       {path}
                     </option>
                   ))}
                 </SettingsSelect>
               </Field>
-              <Field htmlFor="memory-content" label={t('editor')}>
+              <Field htmlFor="memory-content" label={t('editor')} hint={t('conflict')}>
                 <SettingsTextArea
                   id="memory-content"
                   data-testid="memory-content"
@@ -187,15 +203,7 @@ export function MemoryPanel({ canSave }: { canSave: boolean }) {
                   }}
                 />
               </Field>
-              <p>{t('conflict')}</p>
-              <SettingsToolbar data-testid="memory-actions">
-                <Button
-                  data-testid="memory-save"
-                  disabled={!canSave || busy || content === file.content}
-                  onClick={() => void request({ cwd, file: file.path, content, baseHash: file.hash })}
-                >
-                  {t('save')}
-                </Button>
+              <SettingsToolbar className="capability-save" data-testid="memory-actions">
                 <Button
                   data-testid="memory-reload"
                   disabled={busy}
@@ -203,11 +211,53 @@ export function MemoryPanel({ canSave }: { canSave: boolean }) {
                 >
                   {t('reload')}
                 </Button>
+                <Button
+                  appearance="primary"
+                  data-testid="memory-save"
+                  disabled={!canSave || busy || content === file.content}
+                  onClick={() => void request({ cwd, file: file.path, content, baseHash: file.hash })}
+                >
+                  {t('save')}
+                </Button>
               </SettingsToolbar>
-            </>
+            </div>
           )}
-        </>
+        </SettingsSection>
       )}
-    </SettingsCard>
+      {inspection && (
+        /* How much is stored and where: for whoever tunes it, not for everyday use. */
+        <SettingsAdvanced title={t('usage')} summary={usage} data-testid="memory-usage">
+          <dl className="capability-facts">
+            <div>
+              <dt>{t('used')}</dt>
+              <dd data-testid="memory-size">{usage}</dd>
+            </div>
+            <div>
+              <dt>{t('budgetLabel')}</dt>
+              <dd>{t('budgetValue', { tokens: numbers.format(inspection.settings.tokenBudget) })}</dd>
+            </div>
+            <div>
+              <dt>{t('location')}</dt>
+              <dd translate="no" data-testid="memory-root">
+                {inspection.root}
+              </dd>
+            </div>
+            {inspection.lastWriter && (
+              <div>
+                <dt>{t('writer')}</dt>
+                <dd data-testid="memory-writer">
+                  {inspection.lastWriter.sessionKey} · {inspection.lastWriter.turn}
+                </dd>
+              </div>
+            )}
+          </dl>
+        </SettingsAdvanced>
+      )}
+      <SettingsDetails compact title={t('more')} data-testid="memory-more">
+        <p>{t('help')}</p>
+        <p>{t('privacy')}</p>
+        <p>{t('offHelp')}</p>
+      </SettingsDetails>
+    </div>
   )
 }

@@ -1,34 +1,38 @@
 import {
   appServerErrorMessage,
+  Badge,
   Banner,
   Button,
   type ConfigIssue,
   configIssues,
   Dialog,
-  Drawer,
   EmptyState,
   Field,
   Icon,
   IconButton,
-  LabeledSwitch,
+  IconTile,
   ListRow,
   Menu,
   SchemaControl,
   SearchBar,
+  Segmented,
   SettingsDetails,
   SettingsGroup,
   SettingsInput,
   SettingsItem,
+  SettingsList,
   SettingsPageActions,
   SettingsPageDescription,
   SettingsSection,
   SettingsState,
+  SettingsTechnicalDetails,
   StateSwitch,
   setDisclosureOpen,
   Tag,
   useUiText,
 } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { searchConfigSchema } from './config-schemas.js'
 import { useSettingsOverlay } from './overlay.js'
 import { SEARCH_NAMESPACE, searchCatalog } from './search-locale.js'
@@ -243,8 +247,9 @@ export function SearchPanel({
       )
       if (lifetime.current?.signal.aborted) return
       if (!isStatus(value)) throw new Error('invalid')
+      // A closed dialog stops rendering, so the key leaves the field before the dialog closes.
+      flushSync(() => setApiKey(''))
       setStatus(value)
-      setApiKey('')
       setNotice('searchSaved')
       setEditor(false)
     } catch (error) {
@@ -376,22 +381,32 @@ export function SearchPanel({
     row.enabled || row.secretConfigured || row.isDefault || (!row.needsKey && !!row.endpoint)
   const readyWithoutDefault =
     status && !status.configured ? status.providers.filter((row) => row.enabled && row.ready) : []
+  const numbers = new Intl.NumberFormat(document.documentElement.lang || 'en')
+  const listed = status?.providers.filter(configured) ?? []
+  const current = listed.filter((row) => row.isDefault)
+  const others = listed.filter((row) => !row.isDefault)
   const serviceRow = (row: SearchRow) => (
     <ListRow
       key={row.id}
       data-testid={`search-provider-${row.id}`}
+      icon={<IconTile name="globe" />}
       title={row.label}
-      meta={[
-        row.isDefault ? ux('default') : '',
-        row.ready
-          ? ux(row.id === status?.defaultProvider && status.configured ? 'connected' : 'ready')
-          : row.secretConfigured
-            ? ux('keySaved')
-            : '',
-      ]
-        .filter(Boolean)
-        .join(' · ')}
-      status={row.enabled && !row.ready ? <Tag tone="warn">{t('searchNotReady')}</Tag> : undefined}
+      titleLabel={`${ux('settings')}: ${row.label}`}
+      onOpen={() => edit(row.id)}
+      description={row.secretConfigured ? ux('keySaved') : row.needsKey ? ux('keyMissing') : row.endpoint}
+      status={
+        <>
+          {row.isDefault && <Tag tone="info">{ux('default')}</Tag>}
+          {row.enabled &&
+            (row.ready ? (
+              <Badge tone="ok">
+                {ux(row.id === status?.defaultProvider && status.configured ? 'connected' : 'ready')}
+              </Badge>
+            ) : (
+              <Tag tone="warn">{t('searchNotReady')}</Tag>
+            ))}
+        </>
+      }
       actions={
         <>
           <StateSwitch
@@ -402,22 +417,11 @@ export function SearchPanel({
             disabled={!canSave || busy}
             onToggle={(enabled) => void changeRow(row, { enabled })}
           />
-          {readyWithoutDefault.some((ready) => ready.id === row.id) && (
-            <Button
-              data-testid={`search-set-default-${row.id}`}
-              disabled={!canSave || busy}
-              onClick={() => void changeRow(row, { makeDefault: true })}
-            >
-              {t('searchMakeDefault')}
-            </Button>
-          )}
-          <Button data-testid={`search-settings-${row.id}`} onClick={() => edit(row.id)}>
-            {ux('settings')}
-          </Button>
           <Menu
             label={ux('actions')}
             trigger={<IconButton name="ellipsis" label={`${ux('actions')}: ${row.label}`} />}
             items={[
+              { id: 'settings', label: ux('settings'), onSelect: () => edit(row.id) },
               {
                 id: 'default',
                 label: t('searchMakeDefault'),
@@ -435,30 +439,23 @@ export function SearchPanel({
           />
         </>
       }
-    >
-      <SettingsDetails compact title={t('searchTechnicalDetails')} data-testid={`search-technical-${row.id}`}>
-        <span data-testid={`search-secret-${row.id}`}>{row.secretRef}</span>
-      </SettingsDetails>
-    </ListRow>
+    />
   )
   return (
-    <section data-testid="search-providers" aria-busy={busy}>
+    <section className="capability-panel" data-testid="search-providers" aria-busy={busy}>
       <SettingsPageActions>
         <Button
           appearance="primary"
+          icon={<Icon name="plus" />}
           data-testid="search-add"
           disabled={!canSave || busy || !status}
           disabledReason={t('searchReadOnly')}
-          onClick={() => edit(status?.providers.find((row) => !row.enabled)?.id ?? 'brave')}
+          onClick={() => edit(status?.providers.find((row) => !configured(row))?.id ?? 'brave')}
         >
           {ux('add')}
         </Button>
       </SettingsPageActions>
-      <SettingsPageDescription>
-        {status?.defaultProvider
-          ? `${ux('current')}: ${status.providers.find((row) => row.id === status.defaultProvider)?.label ?? ''}`
-          : ux('help')}
-      </SettingsPageDescription>
+      <SettingsPageDescription>{ux('help')}</SettingsPageDescription>
       {busy && !status && (
         <SettingsState tone="loading" data-testid="search-loading">
           {t('loading')}
@@ -477,8 +474,8 @@ export function SearchPanel({
           {problem}
         </Banner>
       )}
-      {!canSave && <p>{t('searchReadOnly')}</p>}
-      {status && !status.providers.some(configured) && (
+      {!canSave && <SettingsState>{t('searchReadOnly')}</SettingsState>}
+      {status && !listed.length && (
         <EmptyState
           data-testid="search-empty"
           icon={<Icon name="search" size={48} />}
@@ -487,13 +484,31 @@ export function SearchPanel({
         />
       )}
       {!!readyWithoutDefault.length && (
-        <Banner data-testid="search-needs-default">{ux('needsDefault')}</Banner>
+        <Banner
+          data-testid="search-needs-default"
+          action={readyWithoutDefault.map((row) => (
+            <Button
+              key={row.id}
+              data-testid={`search-set-default-${row.id}`}
+              disabled={!canSave || busy}
+              onClick={() => void changeRow(row, { makeDefault: true })}
+            >
+              {ux('useAsDefault').replace('{name}', row.label)}
+            </Button>
+          ))}
+        >
+          {ux('needsDefault')}
+        </Banner>
       )}
-      {status?.providers.filter(configured).map(serviceRow)}
-      {status?.providers.some((row) => !configured(row)) && (
-        <SettingsDetails title={ux('otherServices')} data-testid="search-other-services">
-          {status.providers.filter((row) => !configured(row)).map(serviceRow)}
-        </SettingsDetails>
+      {!!current.length && (
+        <SettingsSection title={ux('current')}>
+          <SettingsList>{current.map(serviceRow)}</SettingsList>
+        </SettingsSection>
+      )}
+      {!!others.length && (
+        <SettingsSection title={ux(current.length ? 'otherServices' : 'services')}>
+          <SettingsList>{others.map(serviceRow)}</SettingsList>
+        </SettingsSection>
       )}
       <SettingsSection title={ux('trySearch')} description={ux('tryHelp')}>
         <SearchBar
@@ -509,40 +524,67 @@ export function SearchPanel({
             <Button
               data-testid="search-test"
               disabled={!canSave || busy || !status?.configured}
+              {...(status?.configured ? {} : { disabledReason: ux('needsDefault') })}
               onClick={() => void testProvider()}
             >
               {ux('test')}
             </Button>
           }
         />
+        {probeFailure && (
+          <SettingsState tone="error" data-testid="search-test-error">
+            {probeFailure}
+            {elapsed !== undefined ? ` · ${numbers.format(elapsed)} ms` : ''}
+          </SettingsState>
+        )}
+        {notice && (
+          <SettingsState tone="success" data-testid="search-notice">
+            {notice === 'tested'
+              ? `${ux('tested')} · ${ux('results').replace('{count}', String(hits.length))} · ${numbers.format(elapsed ?? 0)} ms`
+              : t(notice)}
+          </SettingsState>
+        )}
+        <div data-testid="search-test-result" aria-live="polite">
+          {!!hits.length && (
+            <SettingsList>
+              {hits.map((hit) => (
+                <ListRow
+                  key={hit.url}
+                  icon={<IconTile name="globe" />}
+                  title={
+                    <a href={hit.url} target="_blank" rel="noreferrer">
+                      {hit.title || hit.url}
+                    </a>
+                  }
+                  description={hit.snippet}
+                />
+              ))}
+            </SettingsList>
+          )}
+        </div>
       </SettingsSection>
-      {probeFailure && (
-        <SettingsState tone="error" data-testid="search-test-error">
-          {probeFailure}
-          {elapsed !== undefined
-            ? ` · ${new Intl.NumberFormat(document.documentElement.lang || 'en').format(elapsed)} ms`
-            : ''}
-        </SettingsState>
+      {status && (
+        <SettingsTechnicalDetails data-testid="search-technical">
+          <dl className="capability-facts">
+            {status.providers.map((row) => (
+              <div key={row.id}>
+                <dt>{row.label}</dt>
+                <dd translate="no" data-testid={`search-secret-${row.id}`}>
+                  {row.secretRef}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </SettingsTechnicalDetails>
       )}
-      {notice && (
-        <SettingsState tone="success" data-testid="search-notice">
-          {notice === 'tested'
-            ? `${ux('tested')} · ${new Intl.NumberFormat(document.documentElement.lang || 'en').format(elapsed ?? 0)} ms`
-            : t(notice)}
-        </SettingsState>
-      )}
-      <ul data-testid="search-test-result" aria-live="polite">
-        {hits.map((hit) => (
-          <li key={hit.url}>
-            <a href={hit.url}>{hit.title || hit.url}</a>
-            <pre>{hit.snippet}</pre>
-          </li>
-        ))}
-      </ul>
-      <Drawer
+      <Dialog
+        focusable={{ focusTriggerAfterClose: false }}
+        scrollLock={false}
+        getContainer={() => document.body}
         open={editor}
-        title={ux('settings')}
-        onClose={() => {
+        destroyOnHidden
+        title={ux(selected && configured(selected) ? 'editTitle' : 'add')}
+        onCancel={() => {
           if (!busy) setEditor(false)
         }}
         footer={
@@ -563,56 +605,68 @@ export function SearchPanel({
           </>
         }
       >
-        <form id="search-settings-editor" onSubmit={(event) => void save(event)}>
-          <fieldset disabled={!canSave || busy || !status}>
-            <SettingsGroup>
-              <SettingsItem label={t('searchEnabled')}>
-                <LabeledSwitch
-                  id="search-editor-enabled"
-                  testId="search-editor-enabled"
-                  label={t('searchEnabled')}
-                  checked={enabled}
-                  disabled={!canSave || busy}
-                  onToggle={(value) => {
-                    setEnabled(value)
-                    if (!value) setMakeDefault(false)
-                  }}
-                />
-              </SettingsItem>
-              <SettingsItem label={t('searchMakeDefault')}>
-                <LabeledSwitch
-                  id="search-editor-default"
-                  testId="search-editor-default"
-                  label={t('searchMakeDefault')}
-                  checked={makeDefault}
-                  disabled={!canSave || busy || !enabled}
-                  onToggle={setMakeDefault}
-                />
-              </SettingsItem>
-            </SettingsGroup>
-            <Field label={ux('provider')} htmlFor="search-edit-provider">
-              <SchemaControl
-                schema={searchConfigSchema.properties.id}
-                value={providerId}
-                t={(key) => status?.providers.find((row) => row.id === key)?.label ?? key}
-                onChange={(value) => {
-                  if (isProviderId(value)) setProviderId(value)
+        <form id="search-settings-editor" className="capability-form" onSubmit={(event) => void save(event)}>
+          <Field label={ux('provider')}>
+            <Segmented
+              id="search-edit-provider"
+              testId="search-edit-provider"
+              label={ux('provider')}
+              block
+              disabled={!canSave || busy || !status}
+              value={providerId}
+              options={(status?.providers ?? []).map((row) => ({ value: row.id, label: row.label }))}
+              onChange={(value) => {
+                if (isProviderId(value)) setProviderId(value)
+              }}
+            />
+          </Field>
+          <Field
+            label={t('searchApiKey')}
+            htmlFor="search-api-key"
+            hint={selected?.secretConfigured ? t('searchApiKeyStored') : t('searchApiKeyHint')}
+          >
+            <SettingsInput
+              id="search-api-key"
+              data-testid="search-api-key"
+              type="password"
+              value={apiKey}
+              autoComplete="off"
+              spellCheck={false}
+              disabled={!canSave || busy || !status}
+              onChange={(event) => setApiKey(event.target.value)}
+            />
+          </Field>
+          <SettingsGroup>
+            <SettingsItem label={t('searchEnabled')}>
+              <StateSwitch
+                id="search-editor-enabled"
+                testId="search-editor-enabled"
+                label={t('searchEnabled')}
+                checked={enabled}
+                disabled={!canSave || busy}
+                onToggle={(value) => {
+                  setEnabled(value)
+                  if (!value) setMakeDefault(false)
                 }}
               />
-            </Field>
-            <Field label={t('searchApiKey')} htmlFor="search-api-key" hint={t('searchApiKeyHint')}>
-              <SettingsInput
-                id="search-api-key"
-                data-testid="search-api-key"
-                type="password"
-                value={apiKey}
-                autoComplete="off"
-                spellCheck={false}
-                onChange={(event) => setApiKey(event.target.value)}
+            </SettingsItem>
+            <SettingsItem label={t('searchMakeDefault')}>
+              <StateSwitch
+                id="search-editor-default"
+                testId="search-editor-default"
+                label={t('searchMakeDefault')}
+                checked={makeDefault}
+                disabled={!canSave || busy || !enabled}
+                onToggle={setMakeDefault}
               />
-            </Field>
-            {selected?.secretConfigured && <p>{t('searchApiKeyStored')}</p>}
-            <SettingsDetails title={ux('advanced')} data-testid="search-advanced">
+            </SettingsItem>
+          </SettingsGroup>
+          <SettingsDetails
+            title={ux('advanced')}
+            summary={ux('advancedSummary')}
+            data-testid="search-advanced"
+          >
+            <fieldset className="capability-form" disabled={!canSave || busy || !status}>
               <Field label={t('searchEndpoint')} htmlFor="search-endpoint" hint={t('searchEndpointHint')}>
                 <SchemaControl
                   schema={searchConfigSchema.properties.endpoint}
@@ -621,78 +675,43 @@ export function SearchPanel({
                   onChange={(value) => setEndpoint(String(value))}
                 />
               </Field>
-              <Field
-                label={t('searchMaxResults')}
-                htmlFor="search-max-results"
-                error={
-                  invalid('maxResults') ? (
-                    <span id="search-max-results-error">{t('searchMaxResultsError')}</span>
-                  ) : undefined
-                }
-              >
-                <SchemaControl
-                  schema={searchConfigSchema.properties.maxResults}
-                  value={maxResults}
-                  t={t}
-                  invalid={invalid('maxResults')}
-                  describedBy={invalid('maxResults') ? 'search-max-results-error' : undefined}
-                  onChange={(value) => {
-                    setMaxResults(String(value))
-                    setIssues((current) => current.filter((issue) => issue.path !== '/maxResults'))
-                  }}
-                />
-              </Field>
-              <Field
-                label={t('searchTimeout')}
-                htmlFor="search-timeout"
-                error={
-                  invalid('timeoutMs') ? (
-                    <span id="search-timeout-error">{t('searchTimeoutError')}</span>
-                  ) : undefined
-                }
-              >
-                <SchemaControl
-                  schema={searchConfigSchema.properties.timeoutMs}
-                  value={timeoutMs}
-                  t={t}
-                  invalid={invalid('timeoutMs')}
-                  describedBy={invalid('timeoutMs') ? 'search-timeout-error' : undefined}
-                  onChange={(value) => {
-                    setTimeoutMs(String(value))
-                    setIssues((current) => current.filter((issue) => issue.path !== '/timeoutMs'))
-                  }}
-                />
-              </Field>
-              <Field
-                label={t('searchRate')}
-                htmlFor="search-rate"
-                error={
-                  invalid('ratePerMinute') ? (
-                    <span id="search-rate-error">{t('searchRateError')}</span>
-                  ) : undefined
-                }
-              >
-                <SchemaControl
-                  schema={searchConfigSchema.properties.ratePerMinute}
-                  value={rate}
-                  t={t}
-                  invalid={invalid('ratePerMinute')}
-                  describedBy={invalid('ratePerMinute') ? 'search-rate-error' : undefined}
-                  onChange={(value) => {
-                    setRate(String(value))
-                    setIssues((current) => current.filter((issue) => issue.path !== '/ratePerMinute'))
-                  }}
-                />
-              </Field>
-            </SettingsDetails>
-          </fieldset>
+              <div className="capability-form-columns">
+                {(
+                  [
+                    ['maxResults', 'search-max-results', 'searchMaxResults', maxResults, setMaxResults],
+                    ['timeoutMs', 'search-timeout', 'searchTimeout', timeoutMs, setTimeoutMs],
+                    ['ratePerMinute', 'search-rate', 'searchRate', rate, setRate],
+                  ] as const
+                ).map(([name, id, label, value, set]) => (
+                  <Field
+                    key={name}
+                    label={t(label)}
+                    htmlFor={id}
+                    error={invalid(name) ? <span id={`${id}-error`}>{t(`${label}Error`)}</span> : undefined}
+                  >
+                    <SchemaControl
+                      schema={searchConfigSchema.properties[name]}
+                      value={value}
+                      t={t}
+                      invalid={invalid(name)}
+                      describedBy={invalid(name) ? `${id}-error` : undefined}
+                      onChange={(next) => {
+                        set(String(next))
+                        setIssues((current) => current.filter((issue) => issue.path !== `/${name}`))
+                      }}
+                    />
+                  </Field>
+                ))}
+              </div>
+            </fieldset>
+          </SettingsDetails>
         </form>
         {error && (
           <SettingsState tone="error">
             {appServerErrorMessage(errorEnvelope, document.documentElement.lang) ?? t(error)}
           </SettingsState>
         )}
-      </Drawer>
+      </Dialog>
       <Dialog
         focusable={{ focusTriggerAfterClose: false }}
         scrollLock={false}
