@@ -98,7 +98,7 @@ export function SettingsPage({
       ) : (
         // A top-level page drills into subpages and undoes its last saved change with ⌘Z.
         <SettingsUndoScope>
-          <SettingsSubpageFrame header={header}>
+          <SettingsSubpageFrame header={header} rootTitle={title}>
             <SettingsPageFrameContext.Provider value={frame}>{body}</SettingsPageFrameContext.Provider>
           </SettingsSubpageFrame>
         </SettingsUndoScope>

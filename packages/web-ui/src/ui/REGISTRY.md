@@ -115,6 +115,9 @@ Badge, Tag, EmptyState, Skeleton, ListRow, Banner, Icon and SheetHandle remain c
 `Select` without `showSearch` or `mode` is a popup button: a raised surface ending in the accent block with up/down chevrons (`.agh-popup-chevrons`); pass `suffixIcon` to replace it. Control proportions, hairlines, continuous corners and motion live in `refinement.css` and read scale tokens only. / 不带搜索与多选的 `Select` 是弹出按钮；控件比例、发丝线、连续圆角与动效集中在 `refinement.css`，只读取尺度 token。
 
 | `SettingsSubpageFrame` / `SettingsDrill` / `SettingsExpand` | A | 设置二级页 | 带 › 的行打开同一弹框内的二级页（顶部「‹ 返回」、浏览器后退、`settings-subsection-<id>` 深链即打开）；`SettingsExpand` 在行下就地展开；`SettingsPage` 顶层自带二级页框架 |
+| `PushStack` / `PushPage` / `usePushStack` / `usePushNavigation` / `searchParamRoute` | Shared | 导航 | 唯一的「进入新页面」：区域内替换内容，顶部「‹ 返回」+ 面包屑，浏览器后退返回一级，`route` 让地址带上打开的页面（深链、刷新可直达）；`replace` 用于流程换步不留历史；设置二级页同用此引擎 |
+| `useResource` / `invalidateResource` / `setResource` / `trackPageRequest` | Shared | 数据 | 唯一的读接口钩子：本次页面会话内存缓存，再次进入先显示缓存、后台刷新（SWR）；写后按前缀失效；页面级请求驱动顶部进度条 |
+| `Loadable` / `TopProgress` | Shared | 加载 | 200 ms 内不显示；之后通用占位（可传形状）；3 s 后「仍在读取…」；失败显示原因 + 重试且不清空数据；内容淡入 160 ms（减少动态时不做）；全局 2px 顶部进度条 |
 | `SettingsBlock` / `SettingsTag` / `SettingsInfo` | A | 设置分组 | 分组标题是名词，右侧放分组操作；保存失败只在标题处显示「保存失败 · 重试」；读取失败一行 + 重试且不清空；同一套状态小标；说明文字收进名称旁 ⓘ |
 | `useAutosave` / `SettingsUndoScope` | A | 自动保存 | 开关/选择立即保存，文字停 1 秒或失焦保存；不显示「已保存」；⌘Z 在文本框外撤销最近一次保存 |
 | `SettingsPresetSelect` / `SettingsChips` / `SettingsChipToggle` | A | 人话取值 | 毫秒 ↔ 秒/分钟档位（默认 / 档位 / 自定义保留原值）；逗号列表 ↔ 标签；固定选项多选标签 |

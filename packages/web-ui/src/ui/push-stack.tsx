@@ -1,0 +1,393 @@
+import type { HTMLAttributes, ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { fallbackT } from '../locales/index.js'
+import { Icon } from './icon.js'
+
+/**
+ * One way to go deeper: a page opens in place of the current one (push). Its header has 「‹ 返回」
+ * and a breadcrumb (上一级 › 当前); the browser's back button returns one level; with a route, the
+ * address names the open page so it can be linked to directly.
+ */
+
+/** Where the open pages live in the address, so a page can be linked to and reloaded. */
+export type PushRoute = {
+  /** The pages the current address opens, outermost first. */
+  read(): string[]
+  /** The address for these open pages. */
+  href(stack: readonly string[]): string
+}
+
+/** A route kept in one search parameter, levels joined by `/` (`?view=agent:fde-crm/edit`). */
+export function searchParamRoute(param: string): PushRoute {
+  return {
+    read() {
+      const value = new URL(location.href).searchParams.get(param)
+      return value ? value.split('/').filter(Boolean).map(decodeURIComponent) : []
+    },
+    href(stack) {
+      const url = new URL(location.href)
+      if (!stack.length) {
+        url.searchParams.delete(param)
+        return `${url.pathname}${url.search}${url.hash}`
+      }
+      // Levels stay readable in the address (`view=crm/edit`); each level is encoded on its own.
+      const marker = '\u0000levels\u0000'
+      url.searchParams.set(param, marker)
+      const search = url.search.replace(encodeURIComponent(marker), stack.map(encodeURIComponent).join('/'))
+      return `${url.pathname}${search}${url.hash}`
+    },
+  }
+}
+
+export type PushNavigation = {
+  /** Open pages, outermost first. */
+  stack: readonly string[]
+  open(id: string): void
+  /**
+   * Swap the top page for another without a new history entry: a flow that moves on (添加插件 →
+   * 审阅 → 插件详情), so back leaves the flow instead of landing on a finished step.
+   */
+  replace(id: string): void
+  /** Return one level; through the browser's history when this frame put the level there. */
+  back(): void
+  /** Return to this depth (0 is the root page). */
+  backTo(depth: number): void
+  /** Close every page without touching history (the host closed). */
+  reset(): void
+}
+
+function historyDepth(state: unknown, key: string): number {
+  const depth = (state as Record<string, unknown> | null)?.[key]
+  return typeof depth === 'number' ? depth : 0
+}
+
+/**
+ * The stack behind every push frame. Each opened level adds one history entry under `historyKey`,
+ * so browser back pops exactly one level; with a `route` the address follows the stack.
+ */
+export function usePushNavigation({
+  historyKey,
+  route,
+}: {
+  historyKey: string
+  route?: PushRoute | undefined
+}): PushNavigation {
+  const [stack, setStack] = useState<readonly string[]>(() => route?.read() ?? [])
+  const current = useRef(stack)
+  // Levels below `base` came from the address (a link or a reload) and have no history entry.
+  const base = useRef(stack.length)
+  const routeRef = useRef(route)
+  routeRef.current = route
+  const publish = useCallback((next: readonly string[]) => {
+    current.current = next
+    setStack(next)
+  }, [])
+  useEffect(() => {
+    const listener = (event: PopStateEvent) => {
+      const known = current.current
+      if (routeRef.current) {
+        // The address is the truth: a back step lands on what it names.
+        const named = routeRef.current.read()
+        if (named.join('/') !== known.join('/')) publish(named)
+      } else {
+        const depth = historyDepth(event.state, historyKey)
+        if (depth < known.length) publish(known.slice(0, depth))
+      }
+      base.current = Math.min(base.current, current.current.length)
+    }
+    window.addEventListener('popstate', listener)
+    return () => window.removeEventListener('popstate', listener)
+  }, [historyKey, publish])
+  const open = useCallback(
+    (id: string) => {
+      const known = current.current
+      if (known.at(-1) === id) return
+      const next = [...known.filter((entry) => entry !== id), id]
+      publish(next)
+      // One history entry per level, so the browser's back button leaves the page.
+      try {
+        history.pushState(
+          { ...(history.state ?? {}), [historyKey]: next.length },
+          '',
+          routeRef.current?.href(next),
+        )
+      } catch {}
+    },
+    [historyKey, publish],
+  )
+  const replace = useCallback(
+    (id: string) => {
+      const known = current.current
+      if (!known.length) {
+        open(id)
+        return
+      }
+      if (known.at(-1) === id) return
+      const next = [...known.slice(0, -1).filter((entry) => entry !== id), id]
+      publish(next)
+      try {
+        history.replaceState(
+          { ...(history.state ?? {}), [historyKey]: next.length },
+          '',
+          routeRef.current?.href(next),
+        )
+      } catch {}
+    },
+    [historyKey, open, publish],
+  )
+  const backTo = useCallback(
+    (depth: number) => {
+      const known = current.current
+      const target = Math.max(0, Math.min(depth, known.length))
+      if (target === known.length) return
+      // Levels this frame pushed go back through history, so back and forward stay truthful.
+      if (target >= base.current && historyDepth(history.state, historyKey) === known.length) {
+        if (known.length - target === 1) history.back()
+        else history.go(target - known.length)
+        return
+      }
+      const next = known.slice(0, target)
+      base.current = Math.min(base.current, target)
+      publish(next)
+      const address = routeRef.current
+      if (address)
+        try {
+          history.replaceState({ ...(history.state ?? {}), [historyKey]: target }, '', address.href(next))
+        } catch {}
+    },
+    [historyKey, publish],
+  )
+  const back = useCallback(() => backTo(current.current.length - 1), [backTo])
+  const reset = useCallback(() => {
+    base.current = 0
+    publish([])
+  }, [publish])
+  return useMemo(
+    () => ({ stack, open, replace, back, backTo, reset }),
+    [stack, open, replace, back, backTo, reset],
+  )
+}
+
+/**
+ * The header of an open page: 「‹ 返回」, the breadcrumb from the root to this page (earlier levels are
+ * links back to them), the page title, an optional line under it and its actions. Focus moves to the
+ * title when the page opens, as it does for a new page.
+ */
+export function PushHeader({
+  title,
+  crumbs,
+  description,
+  actions,
+  onBack,
+  onCrumb,
+  className,
+  testIds = {},
+}: {
+  title: ReactNode
+  /** Titles of the levels above, the root first. */
+  crumbs: readonly ReactNode[]
+  description?: ReactNode
+  actions?: ReactNode
+  onBack(): void
+  onCrumb(depth: number): void
+  className?: string
+  testIds?: { header?: string; back?: string }
+}) {
+  const heading = useRef<HTMLHeadingElement>(null)
+  useEffect(() => heading.current?.focus({ preventScroll: true }), [])
+  return (
+    <header
+      className={['agh-push-header', className].filter(Boolean).join(' ')}
+      data-testid={testIds.header ?? 'push-header'}
+    >
+      <div className="agh-push-heading">
+        <div className="agh-push-trail">
+          <button
+            type="button"
+            className="agh-push-back agnes-settings-back"
+            data-testid={testIds.back ?? 'push-back'}
+            onClick={onBack}
+          >
+            <Icon name="chevron-left" />
+            {fallbackT('ui.back')}
+          </button>
+          {crumbs.length > 0 && (
+            <nav className="agh-push-crumbs" aria-label={fallbackT('ui.breadcrumb')}>
+              <ol>
+                {crumbs.map((crumb, depth) => (
+                  // The crumbs are fixed for one open page; the depth is their identity.
+                  // biome-ignore lint/suspicious/noArrayIndexKey: levels never reorder.
+                  <li key={depth}>
+                    <button
+                      type="button"
+                      className="agh-push-crumb"
+                      data-testid={`push-crumb-${depth}`}
+                      onClick={() => onCrumb(depth)}
+                    >
+                      {crumb}
+                    </button>
+                    <Icon name="chevron-right" className="agh-push-crumb-separator" />
+                  </li>
+                ))}
+                <li aria-current="page" className="agh-push-crumb-current">
+                  {title}
+                </li>
+              </ol>
+            </nav>
+          )}
+        </div>
+        <h2 ref={heading} tabIndex={-1}>
+          {title}
+        </h2>
+        {description && <p>{description}</p>}
+      </div>
+      {actions && <div className="agh-push-actions">{actions}</div>}
+    </header>
+  )
+}
+
+type PushFrame = PushNavigation & {
+  rootTitle: ReactNode
+  title(id: string): ReactNode
+  setTitle(id: string, title: ReactNode): void
+  header: HTMLElement | null
+  host(id: string): HTMLElement | null
+}
+const PushContext = createContext<PushFrame | undefined>(undefined)
+
+type DataAttributes = { [name: `data-${string}`]: string | number | boolean | undefined }
+
+/**
+ * A region that pages push into: a full page (Agent FDE, 插件, 自动化) or a pane. The root content
+ * stays mounted under open pages, so its state (scroll, filters) survives a round trip.
+ */
+export function PushStack({
+  rootTitle,
+  historyKey = 'agnesPushPage',
+  route,
+  children,
+  ...props
+}: HTMLAttributes<HTMLDivElement> &
+  DataAttributes & {
+    /** The root page's title: the breadcrumb's first level. */
+    rootTitle: ReactNode
+    /** History state key; frames that can be open at once need their own. */
+    historyKey?: string
+    route?: PushRoute
+  }) {
+  const nav = usePushNavigation({ historyKey, route })
+  const [titles, setTitles] = useState<Readonly<Record<string, ReactNode>>>({})
+  const [headerHost, setHeaderHost] = useState<HTMLElement | null>(null)
+  const [hosts, setHosts] = useState<Readonly<Record<string, HTMLElement>>>({})
+  const hostRefs = useRef(new Map<string, (node: HTMLDivElement | null) => void>())
+  const hostRef = (id: string) => {
+    let ref = hostRefs.current.get(id)
+    if (!ref) {
+      ref = (node) =>
+        setHosts((known) => {
+          if (node ? known[id] === node : !known[id]) return known
+          const next = { ...known }
+          if (node) next[id] = node
+          else delete next[id]
+          return next
+        })
+      hostRefs.current.set(id, ref)
+    }
+    return ref
+  }
+  const setTitle = useCallback(
+    (id: string, title: ReactNode) =>
+      setTitles((known) => (known[id] === title ? known : { ...known, [id]: title })),
+    [],
+  )
+  const frame = useMemo<PushFrame>(
+    () => ({
+      ...nav,
+      rootTitle,
+      title: (id) => titles[id] ?? id,
+      setTitle,
+      header: headerHost,
+      host: (id) => hosts[id] ?? null,
+    }),
+    [nav, rootTitle, titles, setTitle, headerHost, hosts],
+  )
+  const top = nav.stack.at(-1)
+  return (
+    <PushContext.Provider value={frame}>
+      <div
+        {...props}
+        className={['agh-push-stack', props.className].filter(Boolean).join(' ')}
+        data-push-page={top}
+      >
+        <div className="agh-push-root" hidden={!!top}>
+          {children}
+        </div>
+        <div ref={setHeaderHost} className="agh-push-header-host" hidden={!top} />
+        {nav.stack.map((id) => (
+          <div
+            key={id}
+            ref={hostRef(id)}
+            className="agh-push-body"
+            data-testid={`push-page-${id}`}
+            hidden={id !== top}
+          />
+        ))}
+      </div>
+    </PushContext.Provider>
+  )
+}
+
+const noop = () => {}
+/** The nearest push frame; outside one, opening does nothing. */
+export function usePushStack(): PushNavigation {
+  const frame = useContext(PushContext)
+  return frame ?? { stack: [], open: noop, replace: noop, back: noop, backTo: noop, reset: noop }
+}
+
+/**
+ * One page of a push frame. Declare it where its data lives; it renders only while open, into the
+ * frame. `id` is the route segment, so a link or a reload opens it directly.
+ */
+export function PushPage({
+  id,
+  title,
+  description,
+  actions,
+  children,
+}: {
+  id: string
+  title: ReactNode
+  description?: ReactNode
+  actions?: ReactNode
+  children?: ReactNode
+}) {
+  const frame = useContext(PushContext)
+  const setTitle = frame?.setTitle
+  useEffect(() => setTitle?.(id, title), [setTitle, id, title])
+  if (!frame) return null
+  const depth = frame.stack.indexOf(id)
+  if (depth < 0) return null
+  const body = frame.host(id)
+  const isTop = depth === frame.stack.length - 1
+  const crumbs = [frame.rootTitle, ...frame.stack.slice(0, depth).map((level) => frame.title(level))]
+  return (
+    <>
+      {isTop &&
+        frame.header &&
+        createPortal(
+          <PushHeader
+            key={id}
+            title={title}
+            crumbs={crumbs}
+            description={description}
+            actions={actions}
+            onBack={frame.back}
+            onCrumb={frame.backTo}
+          />,
+          frame.header,
+        )}
+      {body && createPortal(children, body)}
+    </>
+  )
+}

@@ -1,5 +1,11 @@
 import { tr as t } from '@agnes/web-foundation/locale-bridge'
-import { Button, mountApplication, RegionErrorBoundary, useDocumentLanguage } from '@agnes/web-ui'
+import {
+  Button,
+  mountApplication,
+  RegionErrorBoundary,
+  TopProgress,
+  useDocumentLanguage,
+} from '@agnes/web-ui'
 import type { ReactNode } from 'react'
 import { renderAppDialogs } from './app-dialogs.js'
 import { AppNotice, ConnectionBar, ReadOnlyNotice } from './app-notices.js'
@@ -44,6 +50,8 @@ export function AppShell({ children, hosts }: { children?: ReactNode; hosts?: Pa
     }
   return (
     <>
+      {/* The one progress indicator for page reads, driven by the request layer. */}
+      <TopProgress />
       <a className="skip-link" href="#main-content">
         {t('index-shell.skip')}
       </a>

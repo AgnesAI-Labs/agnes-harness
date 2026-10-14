@@ -2,10 +2,10 @@ import type { HTMLAttributes, ReactNode } from 'react'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
-import { fallbackT } from '../locales/index.js'
 import { Icon } from './icon.js'
 import type { IconName } from './icon-set.js'
 import { IconTile } from './icon-tile.js'
+import { PushHeader, usePushNavigation } from './push-stack.js'
 
 type DataAttributes = { [name: `data-${string}`]: string | number | boolean | undefined }
 
@@ -17,81 +17,42 @@ type SubpageFrame = {
   stack: readonly string[]
   open(id: string): void
   back(): void
+  backTo(depth: number): void
+  /** The page's own title: the breadcrumb's first level. */
+  rootTitle: ReactNode
+  title(id: string): ReactNode
+  setTitle(id: string, title: ReactNode): void
   /** Where an open subpage puts its header and its body. */
   header: HTMLElement | null
   host(id: string): HTMLElement | null
 }
 const SubpageContext = createContext<SubpageFrame | undefined>(undefined)
 
-function historyDepth(state: unknown): number {
-  const depth = (state as Record<string, unknown> | null)?.[HISTORY_KEY]
-  return typeof depth === 'number' ? depth : 0
-}
-
 /**
  * A settings page that can drill into subpages: `header` is the page's own header, shown while no
- * subpage is open. A subpage replaces the header and the body in the same dialog; 「‹ 返回」 and the
- * browser's back button return one level. The page body stays mounted, so its state survives.
+ * subpage is open. A subpage replaces the header and the body in the same dialog; 「‹ 返回」, the
+ * breadcrumb and the browser's back button return. The page body stays mounted, so its state
+ * survives. The stack is the shared push navigation (`usePushNavigation`) every page uses.
  */
 export function SettingsSubpageFrame({
   header,
+  rootTitle,
   children,
   ...props
-}: HTMLAttributes<HTMLDivElement> & DataAttributes & { header: ReactNode }) {
-  const [stack, setStack] = useState<readonly string[]>([])
+}: HTMLAttributes<HTMLDivElement> & DataAttributes & { header: ReactNode; rootTitle?: ReactNode }) {
+  const nav = usePushNavigation({ historyKey: HISTORY_KEY })
+  const { stack, reset } = nav
   const [headerHost, setHeaderHost] = useState<HTMLElement | null>(null)
   const [hosts, setHosts] = useState<Readonly<Record<string, HTMLElement>>>({})
-  const pushed = useRef(0)
-  const current = useRef(stack)
-  current.current = stack
+  const [titles, setTitles] = useState<Readonly<Record<string, ReactNode>>>({})
   const root = useRef<HTMLDivElement>(null)
   // Closing the dialog leaves its subpages: it opens again on the page itself.
   useEffect(() => {
     const dialog = root.current?.closest('dialog')
     if (!dialog) return
-    const reset = () => {
-      pushed.current = 0
-      current.current = []
-      setStack([])
-    }
     dialog.addEventListener('close', reset)
     return () => dialog.removeEventListener('close', reset)
-  }, [])
-  useEffect(() => {
-    const listener = (event: PopStateEvent) => {
-      const depth = historyDepth(event.state)
-      pushed.current = Math.min(pushed.current, depth)
-      setStack((known) => {
-        const next = depth < known.length ? known.slice(0, depth) : known
-        current.current = next
-        return next
-      })
-    }
-    window.addEventListener('popstate', listener)
-    return () => window.removeEventListener('popstate', listener)
-  }, [])
-  const open = useCallback((id: string) => {
-    const known = current.current
-    if (known.at(-1) === id) return
-    const next = [...known.filter((entry) => entry !== id), id]
-    current.current = next
-    setStack(next)
-    // One history entry per level, so the browser's back button leaves the subpage.
-    try {
-      history.pushState({ ...(history.state ?? {}), [HISTORY_KEY]: next.length }, '')
-      pushed.current = next.length
-    } catch {}
-  }, [])
-  const back = useCallback(() => {
-    const depth = current.current.length
-    if (depth > 0 && pushed.current === depth && historyDepth(history.state) === depth) {
-      history.back()
-      return
-    }
-    const next = current.current.slice(0, -1)
-    current.current = next
-    setStack(next)
-  }, [])
+  }, [reset])
   // One stable ref per subpage: a new callback each render would detach and attach it again.
   const hostRefs = useRef(new Map<string, (node: HTMLDivElement | null) => void>())
   const hostRef = (id: string) => {
@@ -109,9 +70,24 @@ export function SettingsSubpageFrame({
     }
     return ref
   }
+  const setTitle = useCallback(
+    (id: string, title: ReactNode) =>
+      setTitles((known) => (known[id] === title ? known : { ...known, [id]: title })),
+    [],
+  )
   const frame = useMemo<SubpageFrame>(
-    () => ({ stack, open, back, header: headerHost, host: (id) => hosts[id] ?? null }),
-    [stack, open, back, headerHost, hosts],
+    () => ({
+      stack,
+      open: nav.open,
+      back: nav.back,
+      backTo: nav.backTo,
+      rootTitle,
+      title: (id) => titles[id] ?? id,
+      setTitle,
+      header: headerHost,
+      host: (id) => hosts[id] ?? null,
+    }),
+    [stack, nav.open, nav.back, nav.backTo, rootTitle, titles, setTitle, headerHost, hosts],
   )
   const top = stack.at(-1)
   return (
@@ -227,6 +203,9 @@ export function SettingsDrill({
   const isOpen = !!frame?.stack.includes(id)
   const isTop = frame?.stack.at(-1) === id
   const body = frame?.host(id)
+  const pageTitle = title ?? label
+  const setTitle = frame?.setTitle
+  useEffect(() => setTitle?.(id, pageTitle), [setTitle, id, pageTitle])
   return (
     <>
       <button
@@ -253,7 +232,7 @@ export function SettingsDrill({
       {isTop &&
         frame?.header &&
         createPortal(
-          <SettingsSubpageHeader title={title ?? label} description={description} actions={actions} />,
+          <SettingsSubpageHeader id={id} title={pageTitle} description={description} actions={actions} />,
           frame.header,
         )}
       {isOpen && body && createPortal(children, body)}
@@ -262,40 +241,36 @@ export function SettingsDrill({
 }
 
 function SettingsSubpageHeader({
+  id,
   title,
   description,
   actions,
 }: {
+  id: string
   title: ReactNode
   description?: ReactNode
   actions?: ReactNode
 }) {
-  const { back } = useSettingsSubpages()
-  const heading = useRef<HTMLHeadingElement>(null)
-  // A subpage is a new screen: focus moves to its title, as it does for a page.
-  useEffect(() => heading.current?.focus({ preventScroll: true }), [])
+  const frame = useContext(SubpageContext)
+  if (!frame) return null
+  const depth = frame.stack.indexOf(id)
+  const crumbs = [
+    ...(frame.rootTitle === undefined ? [] : [frame.rootTitle]),
+    ...frame.stack.slice(0, depth).map((level) => frame.title(level)),
+  ]
+  // Without a root title the crumbs start at the first subpage, one level shorter.
+  const offset = frame.rootTitle === undefined ? 1 : 0
   return (
-    <header
+    <PushHeader
       className="config-heading agnes-settings-page-heading agnes-settings-page-top"
-      data-testid="settings-subpage-header"
-    >
-      <div>
-        <button
-          type="button"
-          className="agnes-settings-back"
-          data-testid="settings-subpage-back"
-          onClick={back}
-        >
-          <Icon name="chevron-left" />
-          {fallbackT('ui.back')}
-        </button>
-        <h2 ref={heading} tabIndex={-1}>
-          {title}
-        </h2>
-        {description && <p>{description}</p>}
-      </div>
-      {actions && <div className="agnes-settings-actions">{actions}</div>}
-    </header>
+      title={title}
+      crumbs={crumbs}
+      description={description}
+      actions={actions}
+      onBack={frame.back}
+      onCrumb={(level) => frame.backTo(level + offset)}
+      testIds={{ header: 'settings-subpage-header', back: 'settings-subpage-back' }}
+    />
   )
 }
 

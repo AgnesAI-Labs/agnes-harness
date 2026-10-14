@@ -221,6 +221,199 @@
     outline: var(--focus-outline);
     outline-offset: 1px;
   }
+  /* Push pages: an opened page takes the region; 「‹ 返回」 and the breadcrumb lead back. */
+  .agh-push-stack {
+    min-width: 0;
+  }
+  .agh-push-root[hidden],
+  .agh-push-header-host[hidden],
+  .agh-push-body[hidden] {
+    display: none;
+  }
+  .agh-push-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--s16);
+    margin-bottom: var(--s16);
+  }
+  .agh-push-heading {
+    min-width: 0;
+  }
+  .agh-push-heading h2 {
+    margin: var(--s4) 0 0;
+    color: var(--agnes-text-primary);
+    font-size: 1.25rem;
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.75rem;
+  }
+  .agh-push-heading h2:focus {
+    outline: none;
+  }
+  .agh-push-heading > p {
+    margin: var(--s4) 0 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .agh-push-trail {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--s8);
+    min-width: 0;
+  }
+  .agh-push-back {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s2);
+    padding: 0 var(--s4) 0 0;
+    border: 0;
+    color: var(--agnes-text-secondary);
+    background: transparent;
+    font: inherit;
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+  }
+  .agh-push-back:hover {
+    color: var(--agnes-text-primary);
+  }
+  .agh-push-crumbs ol {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--s2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-sm);
+  }
+  .agh-push-crumbs li {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s2);
+    min-width: 0;
+  }
+  .agh-push-crumb {
+    padding: 0;
+    border: 0;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    cursor: pointer;
+  }
+  .agh-push-crumb:hover {
+    color: var(--agnes-text-primary);
+    text-decoration: underline;
+  }
+  .agh-push-crumb-separator {
+    width: 0.75rem;
+    height: 0.75rem;
+  }
+  .agh-push-crumb-current {
+    color: var(--agnes-text-secondary);
+  }
+  .agh-push-actions {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+  }
+  /* Loading: a quiet placeholder after 200 ms, words only once it is slow, a fade on arrival. */
+  .agh-loadable-placeholder {
+    display: grid;
+    gap: var(--s12);
+  }
+  .agh-loadable-shapes {
+    display: grid;
+    gap: var(--s8);
+  }
+  .agh-loadable-placeholder[data-shape="cards"] .agh-loadable-shapes {
+    grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+    gap: var(--s12);
+  }
+  .agh-loadable-shape {
+    display: block;
+    height: 0.875rem;
+    border-radius: var(--radius-sm);
+    background: var(--agnes-bg-fill);
+  }
+  .agh-loadable-shape:nth-child(3n) {
+    width: 62%;
+  }
+  .agh-loadable-placeholder[data-shape="rows"] .agh-loadable-shape {
+    height: 2.5rem;
+    width: auto;
+  }
+  .agh-loadable-placeholder[data-shape="cards"] .agh-loadable-shape {
+    height: 9rem;
+    width: auto;
+    border-radius: var(--radius-card);
+  }
+  .agh-loadable-status {
+    margin: 0;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-sm);
+  }
+  .agh-loadable-error {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    margin-bottom: var(--s12);
+    padding: var(--s8) var(--s12);
+    border-radius: var(--radius-md);
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
+    font-size: var(--font-size-sm);
+  }
+  .agh-loadable-content[data-fade] {
+    animation: agh-loadable-fade 160ms ease-out;
+  }
+  @keyframes agh-loadable-fade {
+    from {
+      opacity: 0;
+    }
+  }
+  /* The one progress indicator for page reads: 2px along the top of the window. */
+  .agh-top-progress {
+    position: fixed;
+    z-index: 2000;
+    inset: 0 0 auto;
+    height: 2px;
+    pointer-events: none;
+    opacity: 0;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      var(--agnes-brand-primary) 40%,
+      var(--agnes-brand-primary) 60%,
+      transparent
+    );
+    background-size: 50% 100%;
+    background-repeat: no-repeat;
+    transition: opacity 200ms ease;
+  }
+  .agh-top-progress[data-active] {
+    opacity: 1;
+    animation: agh-top-progress 1.2s ease-in-out infinite;
+  }
+  @keyframes agh-top-progress {
+    from {
+      background-position: -50% 0;
+    }
+    to {
+      background-position: 150% 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .agh-loadable-content[data-fade],
+    .agh-top-progress[data-active] {
+      animation: none;
+    }
+    .agh-top-progress[data-active] {
+      background: var(--agnes-brand-primary);
+    }
+  }
   .agh-tag {
     display: inline-flex;
     align-items: center;
