@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { ContentBlock, UINode, UITimeline, UiActionParams, UiSurfaceRecord } from '@agnes/protocol'
+import type { ContentBlock, UITimeline, UiActionParams, UiSurfaceRecord } from '@agnes/protocol'
 import { numberedSurfaceInput, surfaceText } from '@agnes/protocol/intelligent-ui'
 import { type Branding, DEFAULT_BRANDING, type NodeClient, PreviewMerger, type Session } from '@agnes/sdk'
 import { createAnsi, xterm256 } from './ansi.js'
@@ -13,6 +13,7 @@ import { parseKey } from './keys.js'
 import { type Locale, t } from './locale.js'
 import { tt } from './locale-extended.js'
 import { renderMarkdown } from './markdown.js'
+import { nodeText } from './node-text.js'
 import { PackageController } from './package-controller.js'
 import { PermissionModal } from './permission-modal.js'
 import { TuiProjection, type TuiProjectionWindow } from './projection.js'
@@ -35,52 +36,6 @@ import { TIMELINE_RESERVED_ROWS, Timeline } from './views/timeline.js'
 import { ToolCard } from './views/tool-card.js'
 import { UsagePanel } from './views/usage-panel.js'
 import { WelcomeBanner } from './views/welcome-banner.js'
-
-/** Text presentation while the richer cards are assembled around the same projected nodes. */
-function nodeText(node: UINode): string {
-  switch (node.kind) {
-    case 'user':
-      return `you: ${node.content.map((block) => (block.type === 'text' ? block.text : `[${block.type}]`)).join('\n')}`
-    case 'assistant':
-      // An attempt whose streamed text died with its process has only that fact to show.
-      return node.text === '' && node.lostChars !== undefined
-        ? `(output interrupted, at least ${node.lostChars} characters not saved)`
-        : node.text
-    case 'tool':
-      return `${node.name}: ${node.status}\n${node.summary}`
-    case 'approval':
-      return `approval ${node.state}: ${node.summary}`
-    case 'cost':
-      // Aggregate usage already lives in the fixed footer and /usage keeps the detailed report.
-      // Repeating four accounting rows after every answer drowns the conversation itself.
-      return ''
-    case 'artifact':
-      return `artifact: ${node.name}`
-    case 'compaction':
-      return `compacted: ${node.summary ?? node.range.join('–')}`
-    case 'context':
-      // A per-request environment snapshot or a harness note. It is content the model is sent, not
-      // a message for the human reading the transcript, so it gets no line here -- same treatment
-      // as the 'slot' case below, and the same treatment the channel renderer already gives it.
-      // The node stays in the projection; only this rendering of it goes away.
-      return ''
-    case 'slot':
-      // A standalone slot node (status.line / sidebar.action / notification) has no timeline
-      // presence of its own: collectSlots() reads it out of the projected timeline directly and
-      // routes it to the hint row or status bar instead. Never dump its payload as text here.
-      return ''
-    case 'tool-source-pending':
-      return `${node.sources.join(', ')} still connecting; this turn runs without it`
-    case 'ledger-recovery':
-      return `Recovered the valid log through event ${node.validThroughSeq}; damaged tail quarantined. Diagnostic ID: ${node.diagnosticId}`
-    case 'context-sections':
-    case 'contribute-conflict':
-      // Advisory diagnostic rows, not turn transcript: /context reads these directly off
-      // projectUIOpening().timeline.nodes (formatContextBreakdown), so they have no chat-line
-      // rendering of their own any more than a slot node does.
-      return ''
-  }
-}
 
 // `data.reason` is opaque transport input, not a display contract. Only exact, local business
 // rejections get an actionable explanation; every other reason stays out of the terminal.

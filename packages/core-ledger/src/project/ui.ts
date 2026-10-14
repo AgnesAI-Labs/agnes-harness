@@ -47,6 +47,7 @@ import { SurfaceCache } from './surface.js'
 import { TurnProjection, turnsForNodes } from './turns.js'
 import { fillInlineNodes, fillInlinePage } from './ui-inline-slots.js'
 import { fillLiveSlots } from './ui-live-slots.js'
+import { noticeNode } from './ui-notices.js'
 
 /** Generation belongs to the daemon's writer ownership, not to a core ledger projection. */
 export type CoreUITimeline = Omit<UITimeline, 'generation'>
@@ -970,31 +971,11 @@ export class UIProjectionCell {
         changed.add(id)
         break
       }
+      case 'x/core/ledger-tail-recovered':
       case 'x/core/tool-source-pending': {
-        const pending = data as { sources?: unknown }
-        const sources = Array.isArray(pending.sources)
-          ? pending.sources
-              .filter((source): source is string => typeof source === 'string' && source.length > 0)
-              .slice(0, 16)
-              .map((source) => clip(source, 128))
-          : []
-        if (sources.length === 0) break
-        this.pushNode({ kind: 'tool-source-pending', id, seq, sources })
-        changed.add(id)
-        break
-      }
-      case 'x/core/ledger-tail-recovered': {
-        const recovery = data as { diagnosticId?: unknown; validThroughSeq?: unknown }
-        if (typeof recovery.diagnosticId !== 'string' || !Number.isSafeInteger(recovery.validThroughSeq))
-          break
-        this.pushNode({
-          kind: 'ledger-recovery',
-          id,
-          seq,
-          diagnosticId: clip(recovery.diagnosticId, 128),
-          validThroughSeq: Number(recovery.validThroughSeq),
-        })
-        changed.add(id)
+        const notice = noticeNode(event.type, id, seq, data)
+        if (notice) this.pushNode(notice)
+        if (notice) changed.add(id)
         break
       }
       case 'turn/start':
