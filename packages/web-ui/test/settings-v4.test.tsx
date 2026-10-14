@@ -360,3 +360,105 @@ it('lists accounts as rows: logo, default model and count, state tags, fix, and 
   const labels = () => [...document.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent)
   expect(labels()).toEqual(['Edit'])
 })
+
+/** A whole-object setting whose saves settle only when the test says so. */
+function deferredSaves() {
+  const calls: { value: string; resolve(): void; reject(): void }[] = []
+  const save = (value: string) =>
+    new Promise<void>((resolve, reject) => {
+      calls.push({ value, resolve, reject: () => reject(new Error('offline')) })
+    })
+  return { calls, save }
+}
+function AutosaveChoice({ save }: { save(value: string): Promise<void> }) {
+  const [stored, setStored] = useState('off')
+  const field = useAutosave({
+    stored,
+    save: async (value: string) => {
+      await save(value)
+      // Like the real settings: the server's answer becomes the stored value.
+      setStored(value)
+    },
+  })
+  return createElement(
+    SettingsBlock,
+    { label: 'Review', failed: field.failed, onRetry: field.retry },
+    createElement('output', { 'data-testid': 'shown' }, field.value),
+    createElement('output', { 'data-testid': 'stored' }, stored),
+    ...['on', 'off', 'strict'].map((option) =>
+      createElement('button', {
+        key: option,
+        type: 'button',
+        'data-testid': `pick-${option}`,
+        onClick: () => field.set(option),
+      }),
+    ),
+  )
+}
+
+it('sends one save at a time and then only the newest edit, so an older save never lands last', async () => {
+  const { calls, save } = deferredSaves()
+  const host = await render(createElement(AutosaveChoice, { save }))
+  const pick = (option: string) =>
+    act(async () => $<HTMLButtonElement>(host, `[data-testid="pick-${option}"]`).click())
+  const shown = () => $(host, '[data-testid="shown"]').textContent
+  await pick('on')
+  await pick('strict')
+  await pick('off')
+  // The second and third edits wait for the first save; nothing else is in flight.
+  expect(calls.map((call) => call.value)).toEqual(['on'])
+  expect(shown()).toBe('off')
+  await act(async () => calls[0]!.resolve())
+  // The first save's answer is stored, but the newest edit stays on screen and is sent next.
+  expect($(host, '[data-testid="stored"]').textContent).toBe('on')
+  expect(shown()).toBe('off')
+  expect(calls.map((call) => call.value)).toEqual(['on', 'off'])
+  await act(async () => calls[1]!.resolve())
+  expect($(host, '[data-testid="stored"]').textContent).toBe('off')
+  expect(shown()).toBe('off')
+  expect(calls).toHaveLength(2)
+  expect(host.querySelector('[data-testid="settings-save-failed"]')).toBeNull()
+})
+
+it('lets a newer edit supersede an older failed save and keeps the newest failed edit for retry', async () => {
+  const { calls, save } = deferredSaves()
+  const host = await render(createElement(AutosaveChoice, { save }))
+  const pick = (option: string) =>
+    act(async () => $<HTMLButtonElement>(host, `[data-testid="pick-${option}"]`).click())
+  const shown = () => $(host, '[data-testid="shown"]').textContent
+  const failed = () => host.querySelector('[data-testid="settings-save-failed"]')
+  await pick('on')
+  await pick('strict')
+  // The older save fails while a newer edit waits: the newer one is sent, no failure is shown.
+  await act(async () => calls[0]!.reject())
+  expect(failed()).toBeNull()
+  expect(calls.map((call) => call.value)).toEqual(['on', 'strict'])
+  // The newest save fails with nothing behind it: its edit stays shown and retry sends it again.
+  await act(async () => calls[1]!.reject())
+  expect(failed()).not.toBeNull()
+  expect(shown()).toBe('strict')
+  expect($(host, '[data-testid="stored"]').textContent).toBe('off')
+  await act(async () => $<HTMLButtonElement>(host, '[data-testid="settings-save-retry"]').click())
+  expect(calls.map((call) => call.value)).toEqual(['on', 'strict', 'strict'])
+  await act(async () => calls[2]!.resolve())
+  expect(failed()).toBeNull()
+  expect($(host, '[data-testid="stored"]').textContent).toBe('strict')
+})
+
+it('does not let an older success clear the failure of the newest edit', async () => {
+  const { calls, save } = deferredSaves()
+  const host = await render(createElement(AutosaveChoice, { save }))
+  const pick = (option: string) =>
+    act(async () => $<HTMLButtonElement>(host, `[data-testid="pick-${option}"]`).click())
+  await pick('on')
+  await act(async () => calls[0]!.reject())
+  expect(host.querySelector('[data-testid="settings-save-failed"]')).not.toBeNull()
+  await pick('strict')
+  await pick('off')
+  await act(async () => calls[1]!.resolve())
+  // `strict` saved; `off` is now on its way and decides the outcome.
+  expect(calls.map((call) => call.value)).toEqual(['on', 'strict', 'off'])
+  await act(async () => calls[2]!.reject())
+  expect(host.querySelector('[data-testid="settings-save-failed"]')).not.toBeNull()
+  expect($(host, '[data-testid="shown"]').textContent).toBe('off')
+})

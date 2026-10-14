@@ -92,7 +92,11 @@ export function useAutosave<T>({
   const latest = useRef({ stored, save, equal })
   latest.current = { stored, save, equal }
   const reverting = useRef(false)
-  const sending = useRef(0)
+  // One save per setting at a time. Settings are written as whole objects, so two saves in flight
+  // could land in either order and leave an older value stored. An edit made while a save is on its
+  // way waits here; only the newest waiting edit is sent, once the save in flight settles.
+  const inflight = useRef(false)
+  const queued = useRef<{ value: T; previous: T | undefined; undoable: boolean } | undefined>(undefined)
   const mounted = useRef(true)
   useEffect(
     () => () => {
@@ -102,45 +106,37 @@ export function useAutosave<T>({
     [],
   )
 
-  const write = useCallback(
-    (value: T, previous: T | undefined) => {
-      clearTimeout(timer.current)
-      pending.current = undefined
-      const { stored: known, save: send, equal: same } = latest.current
-      // Equal to what is stored, with no other save on its way: nothing to send. While a save is in
-      // flight the stored value is about to change, so the edit is sent regardless.
-      if (sending.current === 0 && known !== undefined && same(value, known)) {
-        setDraft(undefined)
-        setFailed(false)
-        return
-      }
-      const undoable = !reverting.current
-      reverting.current = false
-      sending.current += 1
+  const writeRef = useRef<(value: T, previous: T | undefined) => void>(() => {})
+  const send = useCallback(
+    (value: T, previous: T | undefined, undoable: boolean) => {
+      inflight.current = true
       setBusy(true)
-      const settle = () => {
-        sending.current -= 1
+      const next = () => {
+        inflight.current = false
+        const waiting = queued.current
+        queued.current = undefined
+        if (waiting) send(waiting.value, waiting.previous, waiting.undoable)
+        return !!waiting
       }
-      void send(value).then(
+      void latest.current.save(value).then(
         () => {
-          settle()
-          if (!mounted.current) return
-          setBusy(sending.current > 0)
-          setFailed(false)
-          // The stored value catches up with the next read; until then the edit stays shown.
-          if (undoable && previous !== undefined)
+          if (mounted.current && undoable && previous !== undefined)
             undo?.push({
               revert: () => {
                 reverting.current = true
                 setDraft({ value: previous })
-                write(previous, value)
+                writeRef.current(previous, value)
               },
             })
+          // A newer edit is already waiting: it is the one the outcome must describe.
+          if (next() || !mounted.current) return
+          setBusy(false)
+          setFailed(false)
         },
         () => {
-          settle()
-          if (!mounted.current) return
-          setBusy(sending.current > 0)
+          // The newest edit carries the whole setting, so it supersedes this failed one.
+          if (next() || !mounted.current) return
+          setBusy(false)
           setFailed(true)
           pending.current = { value, previous }
         },
@@ -149,9 +145,40 @@ export function useAutosave<T>({
     [undo],
   )
 
+  const write = useCallback(
+    (value: T, previous: T | undefined) => {
+      clearTimeout(timer.current)
+      pending.current = undefined
+      const undoable = !reverting.current
+      reverting.current = false
+      if (inflight.current) {
+        // Keep the first waiting edit's «before» so one ⌘Z steps back over the whole burst.
+        queued.current = { value, previous: queued.current?.previous ?? previous, undoable }
+        return
+      }
+      const { stored: known, equal: same } = latest.current
+      if (known !== undefined && same(value, known)) {
+        setDraft(undefined)
+        setFailed(false)
+        return
+      }
+      send(value, previous, undoable)
+    },
+    [send],
+  )
+  writeRef.current = write
+
   // Once the stored value matches the edit, the edit is no longer needed.
   useEffect(() => {
-    if (draft && stored !== undefined && !pending.current && equal(draft.value, stored)) setDraft(undefined)
+    if (
+      draft &&
+      stored !== undefined &&
+      !pending.current &&
+      !inflight.current &&
+      !queued.current &&
+      equal(draft.value, stored)
+    )
+      setDraft(undefined)
   }, [stored, draft, equal])
 
   const set = useCallback(
