@@ -35,7 +35,13 @@ import {
 import { $ } from './admin-dom.js'
 import { ResourceAdminApi, ResourceAdminApiError } from './api.js'
 import { RESOURCE_ADMIN_LOCALE_NAMESPACE, resourceAdminLocaleCatalog } from './locales/admin.js'
-import { createMcpForm, McpFormValidationError } from './mcp-form.js'
+import {
+  createMcpForm,
+  keepToolDisclosure,
+  McpFormValidationError,
+  sandboxProfileOf,
+  saveToolDisclosure,
+} from './mcp-form.js'
 import { mountMcpPresets } from './mcp-presets.js'
 import { watchMcpPanel } from './mcp-refresh.js'
 import { mountMcpWizard } from './mcp-wizard.js'
@@ -519,12 +525,7 @@ class ResourceAdminPage {
                   ? [
                       [
                         this.#t('sandbox.title'),
-                        this.#t(
-                          'sandbox.' +
-                            (('sandboxProfile' in selected.definition
-                              ? selected.definition.sandboxProfile
-                              : undefined) ?? 'strict'),
-                        ),
+                        this.#t(`sandbox.${sandboxProfileOf(selected.definition)}`),
                       ] as const,
                     ]
                   : []),
@@ -557,9 +558,7 @@ class ResourceAdminPage {
             }}
             onEdit={() => openMcpDialog(selected)}
             onClose={() => this.closeDetail()}
-            {...(this.writable() && this.#activeOperation === undefined
-              ? { onToolDisclosure: (mode) => void this.#saveToolDisclosure(selected, mode) }
-              : {})}
+            onToolDisclosure={(mode) => void saveToolDisclosure(this, selected, mode)}
           />
         </UiLocaleProvider>,
       )
@@ -650,11 +649,7 @@ class ResourceAdminPage {
     })
     const sandbox =
       item.kind === 'mcp' && item.definition.transport.kind === 'stdio'
-        ? this.#t(
-            'sandbox.' +
-              (('sandboxProfile' in item.definition ? item.definition.sandboxProfile : undefined) ??
-                'strict'),
-          )
+        ? this.#t(`sandbox.${sandboxProfileOf(item.definition)}`)
         : ''
     if (!(await this.confirm(sandbox ? summary + '\n' + sandbox : summary))) return
     try {
@@ -749,14 +744,7 @@ class ResourceAdminPage {
       () => this.api().mcpTest(server.serverId, server.revision),
     )
     const sandboxSummary =
-      server.transportKind === 'stdio'
-        ? '\n' +
-          this.#t(
-            'sandbox.' +
-              (('sandboxProfile' in server.definition ? server.definition.sandboxProfile : undefined) ??
-                'strict'),
-          )
-        : ''
+      server.transportKind === 'stdio' ? `\n${this.#t(`sandbox.${sandboxProfileOf(server.definition)}`)}` : ''
     add(
       this.#t(resourceDesiredEnabled(server) ? 'action.disable' : 'action.enable'),
       this.#t('action.request', {
@@ -782,21 +770,6 @@ class ResourceAdminPage {
       { className: 'agh-btn--danger' },
     )
     return specs
-  }
-
-  /** A low-risk, reversible preference: saved at once, with no confirmation step. The store keeps
-   *  the server's trust and enablement because nothing that runs or connects changes. */
-  async #saveToolDisclosure(
-    server: McpServerDescriptor,
-    toolDisclosure: NonNullable<McpServerDescriptor['definition']['toolDisclosure']>,
-  ): Promise<void> {
-    try {
-      const definition = { ...server.definition, toolDisclosure } as McpServerDefinitionInput
-      await this.track(await this.api().mcpUpdate(server.serverId, server.revision, definition))
-    } catch (error) {
-      this.showError(error)
-      this.render()
-    }
   }
 
   async #runAction(action: ResourceDetailAction): Promise<void> {
@@ -853,8 +826,7 @@ function writeDefinition(definition: McpServerDefinitionInput): void {
   $('mcp-id', 'input').value = definition.serverId
   $('mcp-name', 'input').value = definition.displayName
   mcpTransport.value = definition.transport.kind
-  $('mcp-sandbox', 'select').value =
-    ('sandboxProfile' in definition ? definition.sandboxProfile : undefined) ?? 'strict'
+  $('mcp-sandbox', 'select').value = sandboxProfileOf(definition)
   $('mcp-executable', 'input').value =
     definition.transport.kind === 'stdio' ? definition.transport.executable : ''
   $('mcp-args', 'textarea').value =
@@ -1037,10 +1009,7 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
     error.textContent = ''
     void (async () => {
       if (syncMcpFieldFeedback(true, activeResourceText).length) return
-      const formDefinition = definitionFromForm(activeResourceText)
-      // The form has no tool-loading field; an edit keeps the mode set on the detail page.
-      const kept = editing?.definition.toolDisclosure
-      const definition = kept ? { ...formDefinition, toolDisclosure: kept } : formDefinition
+      const definition = keepToolDisclosure(definitionFromForm(activeResourceText), editing)
       const creating = !editing
       const summary = editing
         ? activeResourceText('action.update-mcp-summary', {

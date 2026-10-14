@@ -17,6 +17,7 @@ import {
 } from '@agnes/protocol'
 import { renameWriteThrough } from '@agnes/system-node'
 import type { McpLifecycleAdapter } from './adapters.js'
+import { definedRow } from './mcp-definition-row.js'
 import type { ResourceAuthority } from './permissions.js'
 import { assertResourceProfile, type ResourceProfileScope } from './profile-scope.js'
 
@@ -29,7 +30,7 @@ import { assertResourceProfile, type ResourceProfileScope } from './profile-scop
  * once a flow has actually finished once.
  */
 type McpAuthorizationStatus = 'authorized' | 'needs-reconnect' | 'error'
-type McpRow = Readonly<{
+export type McpRow = Readonly<{
   definition: McpServerDefinitionInput
   revision: string
   trust: TrustState
@@ -52,12 +53,6 @@ type Journal = Readonly<{
 }>
 const terminal = new Set<ResourceOperation['state']>(['succeeded', 'failed', 'cancelled'])
 const windows = process.platform === 'win32' // guards-allow-platform: Windows journal replacement and read handle lifetime.
-/** True when two definitions differ at most in `toolDisclosure` (an omitted mode is `auto`). */
-function onlyDisclosureChanged(before: McpServerDefinitionInput, after: McpServerDefinitionInput): boolean {
-  const { toolDisclosure: was, ...restBefore } = before
-  const { toolDisclosure: now, ...restAfter } = after
-  return (was ?? 'auto') !== (now ?? 'auto') && jcs(restBefore) === jcs(restAfter)
-}
 const digest = (value: unknown) => createHash('sha256').update(jcs(value), 'utf8').digest('hex')
 const copy = <T>(value: T): T => structuredClone(value)
 const initial = (): Journal => ({
@@ -644,25 +639,7 @@ export class McpResourceStore {
       const servers = { ...journal.servers }
       if (method === '_agnes/v1/mcp.servers.create' || method === '_agnes/v1/mcp.servers.update') {
         const definition = copy(params.definition as McpServerDefinitionInput)
-        servers[serverId] =
-          prior &&
-          method === '_agnes/v1/mcp.servers.update' &&
-          onlyDisclosureChanged(prior.definition, definition)
-            ? // How tools reach the model changes nothing that runs or connects, so trust, enablement
-              // and a local start approval carry over to the new revision.
-              {
-                ...prior,
-                definition,
-                revision,
-                ...(prior.localStartApproval ? { localStartApproval: revision } : {}),
-              }
-            : {
-                definition,
-                revision,
-                trust: 'untrusted',
-                desired: prior?.desired ?? 'disabled',
-                status: status(serverId, 'unavailable'),
-              }
+        servers[serverId] = definedRow(prior, definition, revision, status(serverId, 'unavailable'))
       }
       if (method === '_agnes/v1/mcp.servers.trust.set') {
         if (!prior) throw rpcError('SEMANTIC_REJECTED', { code: 'MCP_NOT_FOUND' })

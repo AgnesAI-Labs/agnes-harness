@@ -1,6 +1,7 @@
-import type { McpServerDefinitionInput } from '@agnes/protocol'
+import type { McpServerDefinitionInput, McpServerDescriptor } from '@agnes/protocol'
 import { type LocaleTranslator, setDisclosureOpen } from '@agnes/web-ui'
 import { $ } from './admin-dom.js'
+import type { ResourceAdminApi } from './api.js'
 import { parseMcpCommand } from './mcp-command.js'
 import { type McpFormFieldId, type McpFormFieldSnapshot, mcpFormIssues } from './mcp-form-validation.js'
 
@@ -173,4 +174,44 @@ export function createMcpForm(input: {
   }
 
   return { syncMcpFieldFeedback, definitionFromForm }
+}
+
+type ToolDisclosure = NonNullable<McpServerDefinitionInput['toolDisclosure']>
+
+/** The edit form has no tool-loading field: an edit keeps the mode set on the detail page. */
+export function keepToolDisclosure(
+  definition: McpServerDefinitionInput,
+  editing: McpServerDescriptor | undefined,
+): McpServerDefinitionInput {
+  const kept = editing?.definition.toolDisclosure
+  return kept ? { ...definition, toolDisclosure: kept } : definition
+}
+
+/**
+ * Saves a server's tool loading mode. A low-risk, reversible preference: saved at once, with no
+ * confirmation step. The store keeps the server's trust and enablement because nothing that runs or
+ * connects changes; a failure lands in the page notice like any other action.
+ */
+export async function saveToolDisclosure(
+  page: Readonly<{
+    api(): Pick<ResourceAdminApi, 'mcpUpdate'>
+    track(receipt: { operationId: string }): Promise<boolean>
+    showError(error: unknown): void
+    render(): void
+  }>,
+  server: McpServerDescriptor,
+  toolDisclosure: ToolDisclosure,
+): Promise<void> {
+  try {
+    const definition = { ...server.definition, toolDisclosure } as McpServerDefinitionInput
+    await page.track(await page.api().mcpUpdate(server.serverId, server.revision, definition))
+  } catch (error) {
+    page.showError(error)
+    page.render()
+  }
+}
+
+/** A stdio definition's sandbox profile; one without a profile runs `strict`. */
+export function sandboxProfileOf(definition: McpServerDefinitionInput): string {
+  return ('sandboxProfile' in definition ? definition.sandboxProfile : undefined) ?? 'strict'
 }
