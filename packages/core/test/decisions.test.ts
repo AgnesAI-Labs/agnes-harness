@@ -1,6 +1,6 @@
 import type { DecisionSpec, LoopContext, LoopFactory } from '@agnes/extension-api'
 import { loopCheckpointCodec } from '@agnes/extension-api'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
@@ -315,6 +315,31 @@ describe('session decision authority', () => {
       await f.session.close()
     }
   })
+  it('refuses an expired decision read that loses execution authority before commit', async () => {
+    let now = 1_757_203_200_000
+    const f = await fixture({ clock: () => now })
+    try {
+      const handle = await f.ctx.decisions.request(spec)
+      now += f.session.preset.approval.pendingTtlMs
+      const before = await f.session.scan({ fromSeq: 1, limit: 200 })
+      const append = f.log.append.bind(f.log)
+      const gate = vi.spyOn(f.log, 'append').mockImplementation((events, options) =>
+        append(events, {
+          ...options,
+          beforeCommit: async () => {
+            await options?.beforeCommit?.()
+            f.session.loopScope.revoke()
+          },
+        }),
+      )
+      await expect(f.ctx.decisions.get(handle)).rejects.toMatchObject({ code: 'E_CLOSED' })
+      gate.mockRestore()
+      expect(await f.session.scan({ fromSeq: 1, limit: 200 })).toEqual(before)
+    } finally {
+      await f.session.close()
+    }
+  })
+
   it('revokes a no-op-state execution scope, including queued and late callbacks', async () => {
     const contexts: LoopContext[] = []
     const f = await fixture({ loopFactory: loop((ctx) => contexts.push(ctx)) })

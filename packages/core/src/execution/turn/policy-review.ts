@@ -2,6 +2,7 @@ import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import type { ToolPolicyDecision, ToolPolicyInput } from '@agnes/extension-api'
 import { type RequestBody, type TokenCounts, ToolReviewFact, validateAgainst } from '@agnes/protocol'
+import { sessionIdentity } from '../../loop/scope.js'
 import { deriveRequest } from '../../request/derive.js'
 import { toProviderRequest } from '../../request/to-provider.js'
 import { applyBeforeRequestPatches } from '../../request/transforms.js'
@@ -30,7 +31,7 @@ function isModelResponseFact(value: unknown): value is ModelResponseFact {
   )
 }
 
-const counters = new WeakMap<SessionImpl, number>()
+const counters = new WeakMap<object, number>()
 /** Generic policy execution. Policy algorithms and review consistency belong to plugins. */
 export async function decideToolPolicy(
   s: SessionImpl,
@@ -86,9 +87,10 @@ export async function decideToolPolicy(
         async reserve(limit) {
           if (replay) return true
           const count =
-            counters.get(s) ?? history.filter((row) => row.type === 'x/approval/reservation').length
+            counters.get(sessionIdentity(s)) ??
+            history.filter((row) => row.type === 'x/approval/reservation').length
           if (count >= limit) return false
-          counters.set(s, count + 1)
+          counters.set(sessionIdentity(s), count + 1)
           await s.d.log.append([
             s.ev('x/approval/reservation', { toolUseId: input.call.id }, { ignorable: true }),
           ])

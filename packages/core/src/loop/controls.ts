@@ -17,13 +17,15 @@ export class SessionControls {
   private activeEffects = 0
   /** Public effect ports fence input delivery even when a plugin overlaps operations. */
   async beginEffect(): Promise<() => void> {
+    const scope = this.s.loopScope
     return this.s.locked(async () => {
       if (await this.paused())
         throw new CoreError('E_LANE_BUSY', 'Session is paused', { reason: 'CONTROL_PAUSED' })
+      scope.assertAlive()
       this.activeEffects++
-      return () => {
+      return scope.own(() => {
         this.activeEffects--
-      }
+      })
     })
   }
   constructor(private readonly s: SessionImpl) {}

@@ -98,3 +98,5 @@ helper 首先插入计划关卡。公开 turn view 包含 Plan mode 时，通过
 工作流 checkpoint 使用 codec 1，并绑定工作流身份与阶段数。改变阶段、设置或依据含义时须更新 Loop 版本。FDE 现在选择 5.0.0，旧 codec 被拒绝，已有会话保留 pinned 代码；不提供旧 checkpoint 转换。
 
 从 `@agnes/host/author-testkit` 调用 `driveLoop(workflow.factory, { inputs, replies, tools })` 做确定性 fast 测试；真实会话决策、授权和延迟队列使用完整 author testkit。进程测试放 heavy tier。官方 helper 单测覆盖阶段推进、两种确认、审批停驻/恢复、停止、未知结果、结构化通知和幂等恢复。从 [Loop 模板](../../templates/loop/) 开始。
+
+每个 `LoopContext` 绑定一个执行代。超时、替换或释放会永久撤销其写端口（`E_CLOSED`）；保留旧 context 不能获得后续轮次的执行权限。Core 在账本最终提交入口再次检查排队的写操作。晚到的真实 effect 回执仍关联原 effect；替代 Loop 可通过 `effects.status(invocationId)` 读取，冷恢复后同样可读。晚到回执不会重开旧轮次，也不会提交旧 driver 的助手消息或检查点。

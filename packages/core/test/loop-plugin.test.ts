@@ -250,6 +250,238 @@ describe('loop plugins', () => {
     },
   )
 
+  it('refuses every old driver write after timeout and a replacement turn', async () => {
+    let old!: LoopContext
+    let release!: () => void
+    let finished!: () => void
+    const resumed = new Promise<void>((resolve) => {
+      finished = resolve
+    })
+    const failures: unknown[] = []
+    let nextStarted!: () => void
+    let finishNext!: () => void
+    const nextReady = new Promise<void>((resolve) => {
+      nextStarted = resolve
+    })
+    let first = true
+    const stuck = working('test.stale', async (ctx) => {
+      if (!first) {
+        nextStarted()
+        await new Promise<void>((resolve) => {
+          finishNext = resolve
+        })
+        return
+      }
+      first = false
+      old = ctx
+      await new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const signal = new AbortController().signal
+      for (const write of [
+        () =>
+          old.events.assistant(
+            { content: [{ type: 'text', text: 'late' }], stopReason: 'end_turn' },
+            codec.encode('done'),
+          ),
+        () => old.checkpoints.write(codec.encode('done')),
+        () => modelCall(old, signal),
+        () => old.tools.execute({ name: 'read', args: {} }, signal),
+        () => old.events.emit('late', {}),
+        () => old.input.accept(),
+        () => old.wait.wake(),
+        () => old.events.finish('completed'),
+      ]) {
+        try {
+          await write()
+          failures.push('accepted')
+        } catch (error) {
+          failures.push(error)
+        }
+      }
+      finished()
+    })
+    const loops = defaultLoops()
+    loops.register('@test/stale', stuck)
+    const k = kernel(new MemoryStorage(), loops, { loopStepTimeoutMs: 30, preset: quickPreset() })
+    const session = await k.session('stale-driver', { ...options, loop: stuck })
+    try {
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'run' }], actor })
+      expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+        'error',
+      )
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'again' }], actor })
+      const next = session.run({ until: 'turn-end', signal: new AbortController().signal })
+      await nextReady
+      const before = await session.scan({ fromSeq: 1, limit: 200 })
+      const projection = await session.projectUI()
+      release()
+      await resumed
+      expect(failures).toHaveLength(8)
+      for (const error of failures) expect(error).toMatchObject({ code: 'E_CLOSED' })
+      expect(await session.scan({ fromSeq: 1, limit: 200 })).toEqual(before)
+      expect(await session.projectUI()).toEqual(projection)
+      finishNext()
+      expect((await next).reason).toBe('completed')
+    } finally {
+      await k.close()
+    }
+  })
+
+  it.each(['checkpoint', 'assistant', 'input', 'wake'] as const)(
+    'rechecks a queued %s write at final commit admission',
+    async (kind) => {
+      const f = await openSession({ provider: fakeProvider([]), loopFactory: echo })
+      const ctx = await createLoopContext(f.session)
+      const append = f.log.append.bind(f.log)
+      try {
+        await f.session.enqueue('next-turn', { content: [{ type: 'text', text: 'run' }], actor })
+        if (kind !== 'input') await ctx.input.accept()
+        const before = await f.session.scan({ fromSeq: 1, limit: 200 })
+        const gate = vi.spyOn(f.log, 'append').mockImplementation((events, options) =>
+          append(events, {
+            ...options,
+            beforeCommit: async () => {
+              await options?.beforeCommit?.()
+              f.session.loopScope.revoke()
+            },
+          }),
+        )
+        const write =
+          kind === 'checkpoint'
+            ? () => ctx.checkpoints.write(codec.encode('done'))
+            : kind === 'assistant'
+              ? () =>
+                  ctx.events.assistant(
+                    { content: [{ type: 'text', text: 'late' }], stopReason: 'end_turn' },
+                    codec.encode('done'),
+                  )
+              : kind === 'input'
+                ? () => ctx.input.accept()
+                : () => ctx.wait.wake()
+        await expect(write()).rejects.toMatchObject({ code: 'E_CLOSED' })
+        gate.mockRestore()
+        expect(await f.session.scan({ fromSeq: 1, limit: 200 })).toEqual(before)
+      } finally {
+        disposeLoopContext(ctx)
+        await f.session.close()
+      }
+    },
+  )
+
+  it('recovers a late real tool receipt on its original invocation after replacement and cold restore', async () => {
+    let release!: () => void
+    let settled!: () => void
+    const finished = new Promise<void>((resolve) => {
+      settled = resolve
+    })
+    let first = true
+    let latest!: LoopContext
+    const loop = working('test.late-receipt', async (ctx, signal) => {
+      latest = ctx
+      if (!first) return
+      first = false
+      await ctx.checkpoints.write(codec.encode('ready'))
+      try {
+        await ctx.tools.execute({ name: 'read', args: {}, invocationId: 'original' }, signal)
+      } catch (error) {
+        expect(error).toMatchObject({ code: 'E_CLOSED' })
+      } finally {
+        settled()
+      }
+    })
+    const events = new LoopEventRegistry()
+    events.on('after_tool_result', async () => {
+      await new Promise<void>((resolve) => {
+        release = resolve
+      })
+      return {}
+    })
+    const loops = defaultLoops()
+    loops.register('@test/late-receipt', loop)
+    const storage = new MemoryStorage()
+    const k = kernel(storage, loops, { loopEvents: events, loopStepTimeoutMs: 30, preset: quickPreset() })
+    k.tools.add(readTool() as ToolDef, { source: 'test', trust: 'builtin' })
+    try {
+      const session = await k.session('late-receipt', { ...options, loop })
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'run' }], actor })
+      expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+        'error',
+      )
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'next' }], actor })
+      expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+        'completed',
+      )
+      const projection = await session.projectUI()
+      release()
+      await finished
+      expect(await latest.effects.status('original')).toMatchObject({
+        status: 'responded',
+        result: { content: [{ type: 'text', text: 'read:{}' }] },
+      })
+      expect(session.op()).toBeNull()
+      expect((await session.projectUI()).turns).toEqual(projection.turns)
+    } finally {
+      await k.close()
+    }
+    const restored = kernel(storage, loops)
+    try {
+      const session = await restored.session('late-receipt', options)
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'restore' }], actor })
+      expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+        'completed',
+      )
+      expect(await latest.effects.status('original')).toMatchObject({
+        status: 'responded',
+        result: { content: [{ type: 'text', text: 'read:{}' }] },
+      })
+    } finally {
+      await restored.close()
+    }
+  })
+
+  it('does not let a queued old child start borrow the replacement scope', async () => {
+    let starts = 0
+    const f = await openSession({
+      provider: fakeProvider([]),
+      loopFactory: echo,
+      bindLoopChildren: () => ({
+        start: async () => {
+          starts++
+          throw new Error('must not start')
+        },
+        list: async () => [],
+        sendMessage: async () => ({ messageId: 'm' }),
+        interrupt: async () => ({ accepted: true }),
+        result: async () => ({ status: 'completed', text: '' }),
+        events: async function* () {},
+        dispose: async () => {},
+      }),
+    })
+    const ctx = await createLoopContext(f.session)
+    const append = f.log.append.bind(f.log)
+    try {
+      await ctx.checkpoints.write(codec.encode('ready'))
+      const gate = vi.spyOn(f.log, 'append').mockImplementation(async (events, options) => {
+        const result = await append(events, options)
+        if (events.some((row) => row.type === 'x/core/loop-child-start')) await f.session.restartLoopDriver()
+        return result
+      })
+      await expect(ctx.children!.start('old child')).rejects.toMatchObject({ code: 'E_CLOSED' })
+      gate.mockRestore()
+      expect(starts).toBe(0)
+      const fresh = await createLoopContext(f.session)
+      try {
+        expect(await fresh.children!.list()).toEqual([])
+      } finally {
+        disposeLoopContext(fresh)
+      }
+    } finally {
+      disposeLoopContext(ctx)
+      await f.session.close()
+    }
+  })
+
   it('closes within its drain window while a port call ignores cancellation', async () => {
     const stuck = working('test.deaf', modelCall)
     const loops = defaultLoops()

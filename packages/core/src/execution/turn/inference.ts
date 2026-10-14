@@ -18,6 +18,7 @@ import {
 import type { RuntimePromptPreload } from '../../kernel.js'
 import { beforeLoopModelRequest, loopEventContext } from '../../loop/events.js'
 import { loopRequestSurface } from '../../loop/request-surface.js'
+import { sessionIdentity } from '../../loop/scope.js'
 import {
   auxiliaryVisionAvailableForSession,
   runAuxiliaryVisionAssembly,
@@ -76,15 +77,15 @@ import { beforeStepGate, builtinBudgetPreflight, contextBudgetError } from './ga
 import { loadedToolNames, restoreToolDisclosure } from './tool-disclosure.js'
 
 /** Truncation reasons already reported per session in this process: one diagnostic row each. */
-const reportedMediaWindows = new WeakMap<SessionImpl, Set<RequestMediaScanTruncation['reason']>>()
+const reportedMediaWindows = new WeakMap<object, Set<RequestMediaScanTruncation['reason']>>()
 
 async function reportMediaWindow(
   s: SessionImpl,
   info: RequestMediaScanTruncation | undefined,
 ): Promise<void> {
   if (!info) return
-  const reported = reportedMediaWindows.get(s) ?? new Set()
-  reportedMediaWindows.set(s, reported)
+  const reported = reportedMediaWindows.get(sessionIdentity(s)) ?? new Set()
+  reportedMediaWindows.set(sessionIdentity(s), reported)
   if (reported.has(info.reason)) return
   reported.add(info.reason)
   await s.diag('request-media-window', { ...info })

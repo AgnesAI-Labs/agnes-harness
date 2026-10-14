@@ -33,6 +33,7 @@ import { dispatchLoopEvent } from './events.js'
 import { LoopInvocations } from './invocations.js'
 import { loopJobs } from './jobs.js'
 import { publicOutcome } from './outcome.js'
+import { scopeLoopContext, sessionForLoop } from './scope.js'
 import { freezeView, loopTurnView } from './turn-view.js'
 import { loopWait } from './wait.js'
 
@@ -45,6 +46,7 @@ const CHECKPOINT_EVENT = 'x/core/loop-checkpoint'
 
 /** Fit public operations without handing an independent driver the default scheduler. */
 export async function createLoopContext(s: SessionImpl, restoreCheckpoint = false): Promise<LoopContext> {
+  s = sessionForLoop(s)
   const decisionSource = s.loopDecisionSource()
   let checkpoint: LoopCheckpoint | null = null
   // Next-step inputs claimed after the restored checkpoint: the driver never recorded them, so they
@@ -732,8 +734,10 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
         }),
     },
   }
-  cleanup.set(ctx, () => {
+  const scoped = scopeLoopContext(ctx, s.loopScope)
+  cleanup.set(scoped, () => {
+    s.loopScope.revoke()
     waiting.dispose()
   })
-  return ctx
+  return scoped
 }

@@ -1,13 +1,14 @@
 import { CoreError } from '@agnes/core-common/types'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
+import { sessionIdentity } from '../../loop/scope.js'
 import { modelVisibleTool } from '../../step/model-tools.js'
 import type { SessionImpl } from '../../step/session.js'
 
 const EVENT = 'x/core/tool-disclosed'
-const loaded = new WeakMap<SessionImpl, Set<string>>()
+const loaded = new WeakMap<object, Set<string>>()
 
 export function loadedToolNames(s: SessionImpl): ReadonlySet<string> {
-  return loaded.get(s) ?? new Set<string>()
+  return loaded.get(sessionIdentity(s)) ?? new Set<string>()
 }
 
 /** Durable discovery survives compaction and reopen; current catalog membership still governs use. */
@@ -22,7 +23,7 @@ export async function restoreToolDisclosure(s: SessionImpl): Promise<void> {
     const name = (row.data as { name?: unknown }).name
     if (typeof name === 'string') names.add(name)
   }
-  loaded.set(s, names)
+  loaded.set(sessionIdentity(s), names)
 }
 
 /** Disclosure is only a schema selection. Execution still uses normal validation and policy. */
@@ -35,5 +36,5 @@ export async function discloseTool(s: SessionImpl, name: string, signal: AbortSi
   await s.d.log.append([s.ev(EVENT, { name }, { ignorable: true })])
   const names = new Set(loadedToolNames(s))
   names.add(name)
-  loaded.set(s, names)
+  loaded.set(sessionIdentity(s), names)
 }
