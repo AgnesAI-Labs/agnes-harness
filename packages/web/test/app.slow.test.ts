@@ -2244,6 +2244,10 @@ describe('web session selection', () => {
     expect(composer.value).toBe('尚未发送的草稿')
     cancel.click()
     await vi.waitFor(() => expect(running.cancel).toHaveBeenCalledTimes(2))
+    // A parked turn can acknowledge Stop without producing a newer turn/end. The receipt unlocks
+    // the composer even if its last projection is still the busy frame seen when Stop was clicked.
+    await vi.waitFor(() => expect(cancel.disabled).toBe(false))
+    expect(composer.disabled).toBe(false)
     expect(running.prompt).not.toHaveBeenCalled()
   })
 })

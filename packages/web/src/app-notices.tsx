@@ -10,6 +10,7 @@ type NoticeSnapshot = {
   recovery?: RecoveryNotice
   repair?: () => void
   action?: NoticeAction
+  actions?: readonly NoticeAction[]
 }
 const store = createExternalStore<NoticeSnapshot>({ text: '', kind: '' })
 type ReadOnlyNoticeView = {
@@ -43,6 +44,9 @@ export const appNotice = {
   /** The valid next step for the notice just shown; the next notice text clears it. */
   offer(action: NoticeAction) {
     store.set({ ...store.getSnapshot(), action })
+  },
+  offerMany(actions: readonly NoticeAction[]) {
+    store.set({ ...store.getSnapshot(), actions })
   },
   disableRecovery(disabled: boolean) {
     const snapshot = store.getSnapshot()
@@ -113,6 +117,11 @@ export function AppNotice() {
           </Button>
         </>
       )}
+      {view.actions?.map((action) => (
+        <Button key={action.label} data-testid="notice-stop-action" onClick={action.run}>
+          {action.label}
+        </Button>
+      ))}
     </p>
   )
 }

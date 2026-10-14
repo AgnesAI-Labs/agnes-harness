@@ -22,6 +22,17 @@ it('offers the next step beside a notice and drops it when the next notice arriv
   expect(use).toHaveBeenCalledTimes(1)
   await act(async () => appNotice.setText('Saved.'))
   expect(host.querySelector('[data-testid="notice-action"]')).toBeNull()
+  await act(async () => {
+    appNotice.offerMany([
+      { label: 'Retry stop', run: use },
+      { label: 'Force end', run: use },
+    ])
+  })
+  expect(
+    [...host.querySelectorAll('[data-testid="notice-stop-action"]')].map((node) => node.textContent),
+  ).toEqual(['Retry stop', 'Force end'])
+  await act(async () => appNotice.setText('Stopped.'))
+  expect(host.querySelector('[data-testid="notice-stop-action"]')).toBeNull()
   await act(async () => root.unmount())
   host.remove()
 })

@@ -7,6 +7,7 @@ export function createCommandController(
   context: Pick<
     AppSessionContext,
     | 'composerDraftKey'
+    | 'client'
     | 'composerRuntime'
     | 'configured'
     | 'connected'
@@ -15,6 +16,7 @@ export function createCommandController(
     | 'controlsRefresh'
     | 'current'
     | 'live'
+    | 'notice'
     | 'permissionChangePending'
     | 'permissionRefreshPending'
     | 'projection'
@@ -34,21 +36,75 @@ export function createCommandController(
     | 't'
   >,
 ) {
+  let stopRequest = 0
   function handleComposerCancel(): void {
+    requestStop(false)
+  }
+
+  function requestStop(force: boolean): void {
     context.run(async () => {
       const session = context.current
-      if (!session || context.sessionPending || context.stopping || !context.projection?.opState) return
+      if (!session || context.sessionPending || context.stopping) return
       const epoch = context.selection
+      const request = ++stopRequest
+      const current = () =>
+        context.current === session && context.selection === epoch && request === stopRequest
       context.stopping = true
-      context.stopAfterSeq = context.projection.upto
+      context.stopAfterSeq = context.projection?.upto ?? 0
       context.render()
+      let timer: ReturnType<typeof setTimeout> | undefined
+      let poll: ReturnType<typeof setTimeout> | undefined
+      let wake: (() => void) | undefined
+      let finished = false
+      const directStop = async () => {
+        await context.client.notify('session/cancel', { sessionId: session.id })
+        let afterSeq = context.stopAfterSeq
+        while (!finished) {
+          const state = await context.client.call<SessionControlStateResult>(
+            '_agnes/v1/session.controls',
+            { sessionId: session.id, afterSeq },
+            { timeoutMs: 1000 },
+          )
+          if (state.facts?.some((fact) => fact.action === 'cancel' && fact.outcome === 'applied')) return
+          afterSeq = state.factsThrough ?? afterSeq
+          if (!finished && !state.factsMore)
+            await new Promise<void>((resolve) => {
+              wake = resolve
+              poll = setTimeout(resolve, 100)
+            })
+        }
+      }
       try {
-        await session.cancel()
-      } catch (error) {
-        if (context.current !== session || context.selection !== epoch || context.sessionPending) return
-        context.stopping = false
-        context.render()
-        throw error
+        await Promise.race([
+          // The direct, owner-checked control bypasses an unresolved durable command receipt.
+          force ? directStop() : session.cancel(),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error('stop confirmation timeout')), 10_000)
+          }),
+        ])
+        if (current()) {
+          context.notice.setText('')
+          context.live?.refresh()
+          void refreshSessionControls(session).catch(context.showError)
+        }
+      } catch {
+        if (!current() || context.sessionPending) return
+        context.notice.setText(context.t('app.stop.unconfirmed'))
+        context.notice.setKind('warning')
+        context.notice.offerMany([
+          { label: context.t('app.stop.retry'), run: () => current() && requestStop(false) },
+          { label: context.t('app.stop.force'), run: () => current() && requestStop(true) },
+        ])
+      } finally {
+        finished = true
+        if (timer !== undefined) clearTimeout(timer)
+        if (poll !== undefined) clearTimeout(poll)
+        wake?.()
+        // A successful cancel also covers an already parked/ended turn. No newer turn/end is owed.
+        if (current()) {
+          context.stopping = false
+          context.render()
+        }
       }
     })
   }
