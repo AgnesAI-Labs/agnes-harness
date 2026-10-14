@@ -118,6 +118,18 @@ Node SDK 与服务端提供以下管理接口；调用者必须持有对应控�
 
 `session` 是仍然有效的「本会话允许」；`always` 属于该会话的操作者及其策略，对这个操作者的其他会话同样生效。`client.approval.revokeSessionGrant(sessionId, grantId)`（`_agnes/v1/approvalGrants.revokeForSession`）按列表里的 id 撤销任一种授权，返回带 `revokedAt` 的授权；不在列表里的 id 以 `APPROVAL_REJECTED` 拒绝。撤销是持久的，会话授权在会话重新打开后也不会恢复；它对之后的调用生效，工具会再次询问。已经掌握工具、范围和策略版本的调用方仍可使用完整绑定的 `approvalGrants.list` 与 `approvalGrants.revoke`。
 
+## 会话书签
+
+会话把书签过的用户提问和其他展示偏好存在一起，所以各台设备看到同一份列表。`client.session.setBookmarks(sessionId, bookmarks)`（`_agnes/v1/session.bookmarks.set`，参数 `{ sessionId, bookmarks: string[] }`）整体替换列表，返回 `SessionPreferences`：
+
+```json
+{ "title": "季度复盘", "archived": false, "bookmarks": ["01JABCDEFGHJKMNPQRSTVWXYZ0", "01JABCDEFGHJKMNPQRSTVWXYZ7"] }
+```
+
+每个 id 是会话 UI 投影（`session.projectUI` / `session.view` 的 `nodes`）里 `kind: "user"` 节点的 `id`，即 `user/message` 事件的账本 id：26 位 ULID，刷新、daemon 重启和分叉后都不变。列表保持给定顺序，重复的 id 只保留第一次出现的位置，最多 200 个，每个 1–128 个字符且不含控制字符；空列表即清空；没有书签时不返回 `bookmarks` 字段。id 不与对话记录核对，对应提问不在界面上时这个书签只是匹配不到。调用是幂等的，所有者与本地凭据检查和 `session.rename` 相同；未知会话以 `SESSION_NOT_FOUND` 拒绝。
+
+`session.list` 的行（`SessionMeta`）在 `title`、`archived` 旁带同样的 `bookmarks` 字段。分叉会按原顺序复制提问位于继承历史内（分叉边界及之前）的书签，父会话的列表不变。目前没有删除会话的接口；归档的会话保留书签。
+
 ## 辅助模型默认值
 
 本地 Node SDK 提供 `client.config.modelSlots.get()` 与 `client.config.modelSlots.save({ revision, slots })`，均返回 `{ revision, slots, auto? }`。`slots` 仅接受 `fast` 和 `verifier`，值为显式 `{ route, model }` 或 `null`（不使用）；省略 `verifier` 时保留预设定义行为。保存会替换辅助模型默认值映射，检查共享配置 revision，并按 Host 实时目录校验完整路由／模型组合；模型不可用或 revision 冲突时拒绝。

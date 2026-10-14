@@ -130,6 +130,18 @@ The default Host filesystem authorizes canonical names and executes reads, write
 
 A `session` grant is an "allow for this session" answer still in force; an `always` grant belongs to the session's actor under its policy and also applies to that actor's other sessions. `client.approval.revokeSessionGrant(sessionId, grantId)` (`_agnes/v1/approvalGrants.revokeForSession`) revokes either kind by the listed id and returns the grant with `revokedAt`; an id that is not listed is refused with `APPROVAL_REJECTED`. Revocation is durable, including for a session grant after the session is reopened, and applies to later calls: the tool asks again. The fully-bound `approvalGrants.list` and `approvalGrants.revoke` remain for callers that already hold a tool, scope and policy version.
 
+## Session bookmarks
+
+A session keeps a list of bookmarked user prompts with its other presentation preferences, so every device sees the same list. `client.session.setBookmarks(sessionId, bookmarks)` (`_agnes/v1/session.bookmarks.set`, params `{ sessionId, bookmarks: string[] }`) replaces the whole list and returns `SessionPreferences`:
+
+```json
+{ "title": "Quarterly review", "archived": false, "bookmarks": ["01JABCDEFGHJKMNPQRSTVWXYZ0", "01JABCDEFGHJKMNPQRSTVWXYZ7"] }
+```
+
+Each id is the `id` of a `kind: "user"` node in the session's UI projection (`session.projectUI` / `session.view` `nodes`). It is the ledger id of the `user/message` event, a 26-character ULID that does not change across reloads, daemon restarts or forks. The list keeps the order given, drops repeats after their first place, holds at most 200 ids of 1–128 characters without control characters, and an empty list clears it; `bookmarks` is absent when nothing is bookmarked. Ids are not checked against the transcript, so a bookmark whose prompt is not shown is simply never matched. The call is idempotent and has the same owner and local-credential checks as `session.rename`; an unknown session is refused with `SESSION_NOT_FOUND`.
+
+`session.list` rows (`SessionMeta`) carry the same `bookmarks` field next to `title` and `archived`. A fork copies the bookmarks whose prompt lies inside the history it inherits (at or before the fork boundary), in their order; the parent keeps its list. There is no session delete; an archived session keeps its bookmarks.
+
 ## Auxiliary model defaults
 
 The local Node SDK exposes `client.config.modelSlots.get()` and `client.config.modelSlots.save({ revision, slots })`. Both return `{ revision, slots, auto? }`; `slots` accepts only `fast` and `verifier`, each an explicit `{ route, model }` or `null` (none). An omitted `verifier` retains preset-defined behavior. The save replaces the auxiliary-default map, checks the shared configuration revision and validates the exact route/model against the live Host catalog. Unsupported models and stale revisions are refused.
