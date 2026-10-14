@@ -92,6 +92,7 @@ export function useAutosave<T>({
   const latest = useRef({ stored, save, equal })
   latest.current = { stored, save, equal }
   const reverting = useRef(false)
+  const sending = useRef(0)
   const mounted = useRef(true)
   useEffect(
     () => () => {
@@ -106,18 +107,25 @@ export function useAutosave<T>({
       clearTimeout(timer.current)
       pending.current = undefined
       const { stored: known, save: send, equal: same } = latest.current
-      if (known !== undefined && same(value, known)) {
+      // Equal to what is stored, with no other save on its way: nothing to send. While a save is in
+      // flight the stored value is about to change, so the edit is sent regardless.
+      if (sending.current === 0 && known !== undefined && same(value, known)) {
         setDraft(undefined)
         setFailed(false)
         return
       }
       const undoable = !reverting.current
       reverting.current = false
+      sending.current += 1
       setBusy(true)
+      const settle = () => {
+        sending.current -= 1
+      }
       void send(value).then(
         () => {
+          settle()
           if (!mounted.current) return
-          setBusy(false)
+          setBusy(sending.current > 0)
           setFailed(false)
           // The stored value catches up with the next read; until then the edit stays shown.
           if (undoable && previous !== undefined)
@@ -130,8 +138,9 @@ export function useAutosave<T>({
             })
         },
         () => {
+          settle()
           if (!mounted.current) return
-          setBusy(false)
+          setBusy(sending.current > 0)
           setFailed(true)
           pending.current = { value, previous }
         },
