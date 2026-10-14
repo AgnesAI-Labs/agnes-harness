@@ -163,17 +163,20 @@ it('groups the session tools by source and explains an unopened session', async 
       tool('read', '@agnes/base'),
       tool('edit', '@agnes/base'),
       tool('review_diff', '@agnes-fde/code-review'),
+      { ...tool('mcp__tracker__create', 'agnes/mcp-tracker'), deferred: true },
     ],
   } as SessionToolsResult
-  expect(groupTools(tools.tools).map((group) => [group.source, group.tools.length])).toEqual([
-    ['@agnes/base', 2],
-    ['@agnes-fde/code-review', 1],
+  expect(groupTools(tools.tools).map((group) => [group.source, group.tools.length, group.deferred])).toEqual([
+    ['@agnes/base', 2, 0],
+    ['@agnes-fde/code-review', 1, 0],
+    ['agnes/mcp-tracker', 1, 1],
   ])
   const view = await mount(
     createElement(SessionToolList, { tools, failed: false, busy: false, onRefresh() {}, t: enT }),
   )
-  expect(view.host.textContent).toContain(enT('session.runtime.toolsCount', { count: 3 }))
-  expect(view.host.querySelectorAll('[data-testid="session-runtime-tool-group"]')).toHaveLength(2)
+  expect(view.host.textContent).toContain(enT('session.runtime.toolsCount', { count: 4 }))
+  expect(view.host.querySelectorAll('[data-testid="session-runtime-tool-group"]')).toHaveLength(3)
+  expect(view.host.textContent).toContain(enT('session.runtime.toolsDeferred', { count: 1 }))
   await view.render(
     createElement(SessionToolList, { tools: undefined, failed: true, busy: false, onRefresh() {}, t: enT }),
   )

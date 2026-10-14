@@ -104,13 +104,17 @@ export function SessionGrantList({
   )
 }
 
-type ToolGroup = { source: string; tools: Tool[] }
+type ToolGroup = { source: string; tools: Tool[]; deferred: number }
 const PREVIEW = 5
 
 export function groupTools(tools: readonly Tool[]): ToolGroup[] {
   const groups = new Map<string, Tool[]>()
   for (const tool of tools) groups.set(tool.source, [...(groups.get(tool.source) ?? []), tool])
-  return [...groups].map(([source, list]) => ({ source, tools: list }))
+  return [...groups].map(([source, list]) => ({
+    source,
+    tools: list,
+    deferred: list.filter((tool) => tool.deferred).length,
+  }))
 }
 
 /** The tools this session can call right now, by where they come from. */
@@ -168,10 +172,11 @@ export function SessionToolList({
                   {group.tools.length > PREVIEW ? ' …' : ''}
                 </span>
               }
-              description={t('session.runtime.toolsFrom', {
-                source: group.source,
-                count: group.tools.length,
-              })}
+              description={[
+                t('session.runtime.toolsFrom', { source: group.source, count: group.tools.length }),
+                // Deferred tools reach the model only after tool_search finds and loads them.
+                ...(group.deferred ? [t('session.runtime.toolsDeferred', { count: group.deferred })] : []),
+              ].join(' · ')}
             >
               {group.tools.length > PREVIEW && (
                 <SettingsDetails compact title={t('session.runtime.toolsAll')}>
@@ -183,6 +188,7 @@ export function SessionToolList({
                           <MetaText>{t('session.runtime.toolDisabled')}</MetaText>
                         )}
                         {tool.readOnly && <MetaText>{t('session.runtime.toolReadOnly')}</MetaText>}
+                        {tool.deferred && <MetaText>{t('session.runtime.toolDeferred')}</MetaText>}
                       </li>
                     ))}
                   </ul>
