@@ -1663,8 +1663,8 @@
     :is(input:not([type="checkbox"], [type="radio"]), select) {
     min-height: 2rem;
   }
-  :is(.agnes-intelligent-field, .agnes-intelligent-choices)[data-required]
-    :is(.config-field > label, legend):first-child::after {
+  .agnes-intelligent-field[data-required] > .config-field > label::after,
+  .agnes-intelligent-choices[data-required] > legend::after {
     content: "";
     display: inline-block;
     width: 5px;
