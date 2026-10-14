@@ -31,6 +31,7 @@ export const resourceListLocaleCatalog: LocaleCatalog = {
     'skills.readFailed': 'Could not read',
     'skills.actions': 'Skill actions',
     'skills.details': 'Details',
+    'skills.run': 'Run in a new session',
 
     'empty.skills.importEnabled':
       'User-agent skill imports are enabled for this installation. The scanned locations are listed above.',
@@ -129,6 +130,7 @@ export const resourceListLocaleCatalog: LocaleCatalog = {
     'skills.readFailed': '读取失败',
     'skills.actions': '技能操作',
     'skills.details': '详情',
+    'skills.run': '在新会话中运行',
 
     'empty.skills.importEnabled': '当前安装已启用其他 Agent 的用户技能导入，实际扫描的来源已列在上方。',
     'root.location.workspace-agnes': '工作区技能文件夹',

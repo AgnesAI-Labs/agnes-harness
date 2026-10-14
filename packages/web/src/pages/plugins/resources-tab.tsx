@@ -1,7 +1,8 @@
 import type { ResourceAdminMount } from '@agnes/resource-control-web/admin'
-import { Banner, Button, Icon, setResourcePackageNames } from '@agnes/web-ui'
+import { Banner, Button, Icon, setResourcePackageNames, setResourceSkillRunner } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
 import { SkillFolders } from './skill-folders.js'
+import { SkillRunDialog } from './skill-run.js'
 
 type Text = (key: string, vars?: Readonly<Record<string, string | number>>) => string
 
@@ -25,9 +26,15 @@ export function ResourcesTab({
 }) {
   const names = useRef(packageName)
   names.current = packageName
+  // A skill that is on can be run in a new session from its row's menu (this replaces 运行技能 in settings).
+  const [running, setRunning] = useState<string>()
   useEffect(() => {
     setResourcePackageNames((id) => names.current(id))
-    return () => setResourcePackageNames(undefined)
+    setResourceSkillRunner(setRunning)
+    return () => {
+      setResourcePackageNames(undefined)
+      setResourceSkillRunner(undefined)
+    }
   }, [])
   const list = useRef<HTMLElement>(null)
   const notice = useRef<HTMLParagraphElement>(null)
@@ -101,6 +108,7 @@ export function ResourcesTab({
       <section ref={list} className="plugin-list" aria-live="polite" />
       {/* Saving the folder list asks for a rescan through the controller's own confirmed refresh. */}
       {tab === 'skills' && <SkillFolders t={t} canSave={canSave} onSaved={() => refresh.current?.click()} />}
+      <SkillRunDialog key={running} name={running} t={t} onClose={() => setRunning(undefined)} />
     </div>
   )
 }
