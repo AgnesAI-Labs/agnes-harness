@@ -87,7 +87,9 @@ import { createSessionActions } from './session-actions.js'
 import { mountSessionSearch } from './session-search.js'
 import { createTitleRefresh } from './session-title.js'
 import {
+  clearSettingsLink,
   movedSettingsTarget,
+  needsModelNotice,
   openMovedSettings,
   openMovedSettingsLink,
   rewriteMovedSettingsLink,
@@ -1273,7 +1275,12 @@ const SESSION_WATCH_STOP_TIMEOUT_MS: number = 3000
 function stopWithTimeout(stop: (() => Promise<void>) | undefined): Promise<boolean> {
   return sessionController.stopWithTimeout(stop)
 }
-const settings = createSettingsController({ client, onSaved: savedConfiguration, onError: showError })
+const settings = createSettingsController({
+  client,
+  onSaved: savedConfiguration,
+  onError: showError,
+  onClose: clearSettingsLink,
+})
 onSurfaceEvent('agnes:permission-settings', () =>
   run(async () => {
     settingsRegion.open('model')
@@ -2210,16 +2217,27 @@ run(async () => {
   const page = sessions.value
   // A user choice also owns whether the account setup dialog may open.
   if (selection !== startupSelection) return
-  if (
-    models.status === 'fulfilled' &&
-    !configured &&
-    snapshot.accounts?.length &&
-    !homeNavigation.getSnapshot()
-  ) {
-    renderControls()
-    notice.setText(t('app.firstRun.configure'))
-    await settings.open()
+  // Accounts without a usable model get a notice that leads to settings; a load never opens the dialog.
+  const modelNotice = needsModelNotice({
+    modelsRead: models.status === 'fulfilled',
+    models: runtimeModels.length,
+    accounts: snapshot.accounts?.length ?? 0,
+  })
+  let missingSession = false
+  const showModelNotice = () => {
+    // A link to a session that is gone keeps its own notice.
+    if (!modelNotice || configured || missingSession) return
+    notice.setText(t('app.model.noneUsable'))
+    notice.offer({
+      label: t('app.model.openSettings'),
+      run: () =>
+        run(async () => {
+          settingsRegion.open('model')
+          await settings.open()
+        }),
+    })
   }
+  if (modelNotice) renderControls()
   const guided =
     !startupRequest.get('settings') &&
     !homeNavigation.getSnapshot() &&
@@ -2256,6 +2274,7 @@ run(async () => {
     if (requestedPrompt) composerRuntime.setDraft(requestedPrompt)
     renderControls()
     await firstRun.initialize(snapshot, true)
+    showModelNotice()
     return
   }
   const startupSettings = startupRequest.get('settings') ?? ''
@@ -2269,6 +2288,7 @@ run(async () => {
       : await client.session.list({ q: { prefix: selected }, limit: 100 })
     if (candidates.items.some((item) => item.sessionId === selected)) await open(selected)
     else {
+      missingSession = true
       notice.setText(t('app.session.notFound'))
       renderControls()
     }
@@ -2311,6 +2331,7 @@ run(async () => {
       searchSessions: () => sessionSearch.open(),
       showArchived: () => archivedSessions.show('archived'),
     })
+  showModelNotice()
   if (
     (startupSection || startupTerminal) &&
     new URL(location.href).searchParams.get('settings') === startupSettings

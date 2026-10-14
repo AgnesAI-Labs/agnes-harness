@@ -45,6 +45,8 @@ export type SettingsControllerOptions = {
   client: Client
   onSaved(snapshot: ConfigSnapshot): Promise<void>
   onError(error: unknown): void
+  /** The dialog was open and has just closed, by any route. */
+  onClose?(): void
 }
 
 export type SettingsController = {
@@ -476,6 +478,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   const closeDialog = (): void => setDialogOpen(ui.dialog, false)
 
   const close = (): void => {
+    const wasOpen = ui.dialog.open
     savedNotice = false
     oauth.clear()
     testPending = false
@@ -491,6 +494,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     renderModels()
     ui.apiKey.value = ''
     closeDialog()
+    if (wasOpen) options.onClose?.()
     updateButtons()
     const target = focusReturn
     focusReturn = null

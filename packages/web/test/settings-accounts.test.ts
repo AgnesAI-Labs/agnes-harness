@@ -83,10 +83,12 @@ async function setup(accounts: ConfigAccount[] = [account('work'), account('pers
     ),
   }
   const onSaved = vi.fn(async () => undefined)
+  const onClose = vi.fn()
   const controller = createSettingsController({
     client: { config } as unknown as Client,
     onSaved,
     onError: vi.fn(),
+    onClose,
   })
   await controller.open()
   const doc = window.document
@@ -110,7 +112,7 @@ async function setup(accounts: ConfigAccount[] = [account('work'), account('pers
     )
       (doc.getElementById('config-account-discard-confirm') as unknown as HTMLButtonElement)?.click()
   }
-  return { config, controller, input, click, doc, onSaved }
+  return { config, controller, input, click, doc, onSaved, onClose }
 }
 const settle = async () => {
   await new Promise((resolve) => setTimeout(resolve, 10))
@@ -368,4 +370,19 @@ it('reuses the credential flow inline, preserves failed drafts and restores the 
   expect(host.querySelector('#config-api-key')).toBeNull()
   expect(h.doc.querySelector('#account-dialog #config-api-key')).not.toBeNull()
   host.remove()
+})
+
+it('reports a close once per open dialog, however it was closed', async () => {
+  const h = await setup()
+  const dialog = h.doc.getElementById('config') as unknown as HTMLDialogElement
+  expect(dialog.open).toBe(true)
+  ;(h.doc.getElementById('config-close') as unknown as HTMLButtonElement).click()
+  expect(dialog.open).toBe(false)
+  expect(h.onClose).toHaveBeenCalledTimes(1)
+  // Closing what is already closed is not a second close.
+  h.controller.close()
+  expect(h.onClose).toHaveBeenCalledTimes(1)
+  await h.controller.open()
+  dialog.dispatchEvent(new (window as Window).Event('cancel', { cancelable: true }) as unknown as Event)
+  expect(h.onClose).toHaveBeenCalledTimes(2)
 })

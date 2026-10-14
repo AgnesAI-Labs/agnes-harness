@@ -55,3 +55,23 @@ export function openMovedSettings(
   else if (target.kind === 'session-search') actions.searchSessions()
   else actions.showArchived()
 }
+
+/**
+ * Drop the settings page from the address once the dialog closes, so a refresh shows the workbench
+ * instead of opening the dialog again.
+ */
+export function clearSettingsLink(): void {
+  const url = new URL(location.href)
+  if (!url.searchParams.has('settings')) return
+  url.searchParams.delete('settings')
+  if (url.hash.startsWith('#settings-subsection-')) url.hash = ''
+  history.replaceState(history.state, '', url)
+}
+
+/**
+ * Whether startup should point at settings: accounts exist but none serves a usable model. This is
+ * a notice with an action; loading the page never opens the dialog by itself.
+ */
+export function needsModelNotice(state: { modelsRead: boolean; models: number; accounts: number }): boolean {
+  return state.modelsRead && state.models === 0 && state.accounts > 0
+}

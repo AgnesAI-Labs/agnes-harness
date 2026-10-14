@@ -2,7 +2,9 @@
 
 import { afterEach, expect, it, vi } from 'vitest'
 import {
+  clearSettingsLink,
   movedSettingsTarget,
+  needsModelNotice,
   openMovedSettings,
   openMovedSettingsLink,
   rewriteMovedSettingsLink,
@@ -75,4 +77,23 @@ it('opens a moved page by its target: a home page with its tab, the search, or t
   ])
   expect(actions.searchSessions).toHaveBeenCalledOnce()
   expect(actions.showArchived).toHaveBeenCalledOnce()
+})
+
+it('drops the settings page from the address when the dialog closes', () => {
+  history.replaceState(null, '', '/?session=s1&settings=general#settings-subsection-general-language')
+  clearSettingsLink()
+  expect(location.search).toBe('?session=s1')
+  expect(location.hash).toBe('')
+  history.replaceState(null, '', '/?page=agents#keep')
+  clearSettingsLink()
+  expect(`${location.search}${location.hash}`).toBe('?page=agents#keep')
+})
+
+it('points at settings only when accounts exist and no model is usable', () => {
+  expect(needsModelNotice({ modelsRead: true, models: 0, accounts: 1 })).toBe(true)
+  // A first run with no account is guided by the first-run flow, a configured one needs nothing,
+  // and a failed model read reports its own error.
+  expect(needsModelNotice({ modelsRead: true, models: 0, accounts: 0 })).toBe(false)
+  expect(needsModelNotice({ modelsRead: true, models: 2, accounts: 1 })).toBe(false)
+  expect(needsModelNotice({ modelsRead: false, models: 0, accounts: 1 })).toBe(false)
 })

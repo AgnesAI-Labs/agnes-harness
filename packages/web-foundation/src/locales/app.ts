@@ -95,7 +95,8 @@ export const appLocaleCatalog: LocaleCatalog = {
     'app.gap.partial':
       'Some history events are no longer replayable; reading the backend’s current projection.',
     'app.ws.unavailable': 'The WebSocket address is unavailable.',
-    'app.firstRun.configure': 'Configure a model first to start the first task.',
+    'app.model.noneUsable': 'An account is connected, but no model is usable yet.',
+    'app.model.openSettings': 'Open settings',
     'app.workspaceList.unreadable':
       'Could not read the workspace list. Try again later or add a working directory directly.',
     'app.session.notFound':
@@ -234,7 +235,8 @@ export const appLocaleCatalog: LocaleCatalog = {
     'app.connection.lost': '与后台的连接已断开；任务是否结束请以后台状态为准。',
     'app.gap.partial': '部分历史事件已不可回放，正在读取后台现有投影。',
     'app.ws.unavailable': 'WebSocket 连接地址不可用。',
-    'app.firstRun.configure': '先配置模型，即可开始第一个任务。',
+    'app.model.noneUsable': '已连接账户，但还没有可用的模型。',
+    'app.model.openSettings': '去设置',
     'app.workspaceList.unreadable': '无法读取工作区列表，请稍后重试或直接添加工作目录。',
     'app.session.notFound': '当前后台中找不到这个任务。请从侧栏选择，或新建任务。',
     'runtime.import': '插件 UI 入口加载失败，可重试',
