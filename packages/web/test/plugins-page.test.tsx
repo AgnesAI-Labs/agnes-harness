@@ -58,6 +58,18 @@ describe('plugins page route', () => {
       expect(pluginsRoute({ tab: `plugins.${capability}` })).toEqual({ tab: 'plugins', capability })
   })
 
+  it('lists only the built-ins that are not configured in settings', () => {
+    expect(CAPABILITIES).toEqual(['search', 'computer-use', 'subagents'])
+  })
+
+  it('sends an old link to a capability that moved into settings to the settings page that holds it', () => {
+    expect(pluginsRoute({ tab: 'plugins.execution' })).toEqual({ tab: 'plugins', settings: 'models' })
+    expect(pluginsRoute({ tab: 'plugins.memory' })).toEqual({ tab: 'plugins', settings: 'general' })
+    expect(pluginsRoute({ tab: 'plugins.context' })).toEqual({ tab: 'plugins', settings: 'general' })
+    // Only the old capability ids move; a lookalike from the object prototype does not.
+    expect(pluginsRoute({ tab: 'plugins.toString' })).toEqual({ tab: 'plugins' })
+  })
+
   it('falls back to the plugins tab for anything it does not know', () => {
     for (const tab of ['discover', 'plugins.unknown', '', 7, null])
       expect(pluginsRoute({ tab })).toEqual({ tab: 'plugins' })
@@ -71,6 +83,16 @@ describe('plugins page copy', () => {
     for (const tab of PLUGIN_TABS) expect(en).toContain(`tab.${tab}`)
     for (const capability of CAPABILITIES)
       for (const part of ['name', 'desc', 'page']) expect(en).toContain(`cap.${capability}.${part}`)
+    // What moved into settings leaves no copy behind here.
+    for (const prefix of [
+      'cap.execution.',
+      'cap.memory.',
+      'cap.context.',
+      'ctx.',
+      'exec.',
+      'summary.context.',
+    ])
+      expect(en.filter((key) => key.startsWith(prefix))).toEqual([])
   })
 })
 

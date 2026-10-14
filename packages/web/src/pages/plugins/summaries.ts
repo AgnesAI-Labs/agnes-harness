@@ -1,5 +1,3 @@
-import { defaultLoop } from '@agnes/protocol'
-import { systemPromptApi } from '@agnes/web-admin/settings/system-prompt-api'
 import { useEffect, useState } from 'react'
 import type { HomePageData } from '../host.js'
 import type { PluginView } from './admin-view.js'
@@ -16,7 +14,6 @@ const SEARCH_NAMES: Readonly<Record<string, string>> = {
   perplexity: 'Perplexity',
   searxng: 'SearXNG',
 }
-const prompts = systemPromptApi()
 
 /**
  * One line of current state per built-in capability. Each read is independent and optional: a
@@ -56,27 +53,7 @@ export function useCapabilitySummaries(
         if (!settled) put('computer-use', { text: t('summary.computerUse.attention'), attention: true })
       })
       .catch(quiet)
-    void prompts
-      .get(pending.signal)
-      .then((value) =>
-        put('context', {
-          text: t(
-            Object.values(value.config).some((entry) => typeof entry === 'string' && entry.trim() !== '')
-              ? 'summary.context.custom'
-              : 'summary.context.default',
-          ),
-        }),
-      )
-      .catch(quiet)
     if (api) {
-      void api
-        .loops()
-        .then((value) => {
-          const chosen = defaultLoop(value.defaults)
-          const loop = value.loops.find((item) => item.id === chosen?.id && item.version === chosen.version)
-          if (loop) put('execution', { text: loop.label ?? loop.id })
-        })
-        .catch(quiet)
       void api
         .childEngines()
         .then((value) => {

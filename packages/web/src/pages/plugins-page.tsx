@@ -51,6 +51,17 @@ export function PluginsPage({ context }: { context: UiExtensionContext }) {
     candidateSessionTurnTime: sources.sessionTurnTime,
   })
   const summaries = useCapabilitySummaries(view?.api, data, t)
+  // A capability that moved to settings: its old link opens the page there, once. A link the app
+  // starts with mounts this page before the workbench has finished starting, so wait for that.
+  const moved = route.settings
+  useEffect(() => {
+    if (!moved) return
+    const timer = setTimeout(() => {
+      openPlugins('plugins')
+      data.openSettings(moved)
+    })
+    return () => clearTimeout(timer)
+  }, [moved, data])
   const [pending, setPending] = usePendingReviews(view?.api)
   const computerUse = useMemo(() => createComputerUsePaneController({ call: data.call }), [data])
   useEffect(() => () => computerUse.dispose(), [computerUse])

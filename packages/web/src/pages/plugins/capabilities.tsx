@@ -1,6 +1,5 @@
 import { ChildEnginesPanel } from '@agnes/web-admin/settings/child-engines'
 import { SETTINGS_NAMESPACE, settingsCatalog } from '@agnes/web-admin/settings/locales'
-import { MemoryPanel } from '@agnes/web-admin/settings/memory'
 import { SearchPanel } from '@agnes/web-admin/settings/search'
 import {
   Badge,
@@ -14,8 +13,6 @@ import {
 } from '@agnes/web-ui'
 import { type ReactNode, useState } from 'react'
 import type { PluginView } from './admin-view.js'
-import { CustomInstructions } from './custom-instructions.js'
-import { ExecutionModes } from './execution-modes.js'
 import type { Capability } from './route.js'
 import type { CapabilitySummary } from './summaries.js'
 
@@ -25,9 +22,6 @@ export const CAPABILITY_ICONS: Readonly<Record<Capability, IconName>> = {
   search: 'globe',
   'computer-use': 'eye',
   subagents: 'git-branch',
-  execution: 'bot',
-  memory: 'history',
-  context: 'list',
 }
 
 /**
@@ -123,9 +117,6 @@ export function CapabilityDetail({
                       <ChildEnginesPanel api={view?.api} canSave={canSave} t={settingsText} />
                     </>
                   )}
-                  {capability === 'execution' && <ExecutionModes view={view} t={t} canSave={canSave} />}
-                  {capability === 'memory' && <MemoryPanel canSave={canSave} />}
-                  {capability === 'context' && <CustomInstructions canSave={canSave} t={t} />}
                 </SettingsPageSlots>
               ),
             },
