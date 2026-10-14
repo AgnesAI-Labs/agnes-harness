@@ -207,16 +207,18 @@ it('operates the React settings pane and account dialog without losing native fo
     expect(dialog.querySelectorAll('.config-account')).toHaveLength(1)
     expect(dialog.querySelector('#config-accounts .config-account-select')).toBeTruthy()
     dialog.querySelector<HTMLButtonElement>('#config-accounts .config-account-select')?.click()
-    dialog.querySelector<HTMLElement>('[data-testid="account-network-details"] summary')?.click()
-    const field = dialog.querySelector<HTMLInputElement>('[data-testid="account-network-connectMs"]')
-    expect(field?.value).toBe('4000')
+    // Timeouts are chosen in seconds; a stored value no preset names stays as 自定义.
+    const field = dialog.querySelector<HTMLSelectElement>('[data-testid="account-network-connectMs"]')
+    expect(field?.value).toBe('custom')
+    expect(
+      dialog.querySelector<HTMLInputElement>('[data-testid="account-network-connectMs-custom"]')?.value,
+    ).toBe('4')
     expect(dialog.querySelector('[data-testid="account-network-timeouts"]')?.textContent).toContain(
       zhT('accounts.network.legend'),
     )
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
     flushSync(() => {
-      setter?.call(field, '5000')
-      field?.dispatchEvent(new Event('input', { bubbles: true }))
+      if (field) field.value = '5000'
+      field?.dispatchEvent(new Event('change', { bubbles: true }))
     })
     dialog.querySelector<HTMLButtonElement>('#config-test')?.click()
     await vi.waitFor(() =>

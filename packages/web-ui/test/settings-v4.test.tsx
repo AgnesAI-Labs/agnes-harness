@@ -311,3 +311,52 @@ it('edits a list as chips and toggles a fixed set', async () => {
   await act(async () => read?.click())
   expect(kinds).toEqual([['read', 'write']])
 })
+
+it('lists accounts as rows: logo, default model and count, state tags, fix, and a menu that guards the default', async () => {
+  const { SettingsAccounts } = await import('../src/index.js')
+  const account = (accountId: string, label: string, extra: Record<string, unknown> = {}) => ({
+    accountId,
+    label,
+    providerId: accountId,
+    route: accountId,
+    baseUrl: 'https://example.invalid',
+    model: 'flash',
+    models: [{ id: 'flash', name: 'Flash' }, { id: 'pro' }],
+    enabled: true,
+    credentialConfigured: true,
+    ...extra,
+  })
+  const actions: string[] = []
+  const edits: string[] = []
+  const host = await render(
+    createElement(SettingsAccounts, {
+      accounts: [
+        account('agnes', 'Agnes AI'),
+        account('openai', 'OpenAI', { enabled: false }),
+        account('kimi', 'Kimi', { credentialConfigured: false }),
+      ] as never,
+      defaultAccountId: 'agnes',
+      disabled: false,
+      onEdit: (id: string) => edits.push(id),
+      onAction: (row: { accountId: string }, action: string) => actions.push(`${action}:${row.accountId}`),
+      onCancelRemove: () => {},
+    }),
+  )
+  const rows = [...host.querySelectorAll<HTMLElement>('.config-account')]
+  expect(rows.map((row) => row.querySelector('.agnes-settings-logo')?.textContent)).toEqual(['A', 'O', 'K'])
+  expect(rows[0]?.querySelector('.config-account-meta')?.textContent).toBe('Flash · 2 models')
+  expect(rows[0]?.textContent).toContain('Default')
+  expect(rows[1]?.dataset.enabled).toBe('false')
+  expect(rows[1]?.textContent).toContain('Disabled')
+  expect(rows[2]?.textContent).toContain('Credential missing')
+  await act(async () =>
+    [...(rows[2]?.querySelectorAll('button') ?? [])].find((b) => b.textContent === 'Fix')?.click(),
+  )
+  expect(edits).toEqual(['kimi'])
+  // The default account offers neither disable nor remove while another account could take over.
+  await act(async () =>
+    rows[0]?.querySelector<HTMLButtonElement>('button[aria-label="Actions for Agnes AI"]')?.click(),
+  )
+  const labels = () => [...document.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent)
+  expect(labels()).toEqual(['Edit'])
+})

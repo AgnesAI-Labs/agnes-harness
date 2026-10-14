@@ -123,26 +123,16 @@
     gap: var(--s8);
     overflow: visible;
   }
-  /* An account is a row of the account list: key tile, name over its service and model, then
-   its state and the row menu. */
+  /* An account is one row: logo, name over its default model and count, its state, then the menu. */
   .config-account {
-    min-width: 0;
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    grid-template-areas:
-      "tile identity actions"
-      "tile meta actions";
-    align-items: center;
-    justify-items: stretch;
-    gap: 0 var(--s12);
     transition: background-color var(--transition-fast);
   }
-  .config-account > .agh-icon-tile {
-    grid-area: tile;
+  .config-account[data-enabled="false"] > :not(.config-account-actions) {
+    opacity: 0.6;
   }
   .config-account:hover,
   .config-account[data-selected="true"] {
-    background: var(--agnes-bg-card);
+    background: var(--agnes-bg-hover);
   }
   .config-account-select {
     min-width: 0;
@@ -150,7 +140,6 @@
     display: flex;
     align-items: center;
     justify-content: flex-start;
-    grid-area: identity;
     gap: var(--s8);
     padding: 0;
     overflow: hidden;
@@ -171,7 +160,6 @@
     box-shadow: none;
   }
   .config-account-meta {
-    grid-area: meta;
     display: flex;
     align-items: center;
     flex-wrap: wrap;
@@ -191,7 +179,6 @@
     flex: 0 0 auto;
   }
   .config-account-actions {
-    grid-area: actions;
     display: flex;
     flex-wrap: wrap;
     justify-content: flex-end;

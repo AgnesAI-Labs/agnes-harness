@@ -2401,4 +2401,33 @@
     width: 4.5rem;
     text-align: end;
   }
+
+  /* A provider's logo tile: its initial on one of six stable colours. */
+  .agnes-settings-logo {
+    display: grid;
+    flex: 0 0 auto;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: var(--radius-control);
+    color: var(--agnes-text-inverse);
+    background: var(--agnes-brand-primary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+  }
+  .agnes-settings-logo[data-hue="1"] {
+    background: var(--agnes-status-info-solid);
+  }
+  .agnes-settings-logo[data-hue="2"] {
+    background: var(--agnes-status-success-solid);
+  }
+  .agnes-settings-logo[data-hue="3"] {
+    background: var(--agnes-status-warning-solid);
+  }
+  .agnes-settings-logo[data-hue="4"] {
+    background: var(--agnes-status-danger-solid);
+  }
+  .agnes-settings-logo[data-hue="5"] {
+    background: var(--agnes-text-secondary);
+  }
 }

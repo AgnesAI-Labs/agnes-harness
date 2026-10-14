@@ -102,7 +102,9 @@ async function setup(accounts: ConfigAccount[] = [account('work'), account('pers
       ;(trigger as unknown as HTMLButtonElement | null)?.click()
       await vi.waitFor(() => expect(doc.querySelector('[role="menuitem"]')).not.toBeNull())
       node =
-        [...doc.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent === action) ?? null
+        [...doc.querySelectorAll('[role="menuitem"]')].find(
+          (item) => item.textContent === action || item.getAttribute('aria-label') === action,
+        ) ?? null
     }
     if (!node) throw new Error(`missing ${selector}`)
     ;(node as unknown as HTMLButtonElement).click()
