@@ -24,6 +24,7 @@ import {
 } from './placements.js'
 import { intelligentUiServer } from './server.js'
 import { attachTurnDeliverables } from './turn-deliverables.js'
+import { DELIVERABLES_PANEL, deliverablesCount, WorkbenchDeliverables } from './workbench-deliverables.js'
 
 /** Two registrations, one session client. Mounting a placement never submits a command. */
 export function mountIntelligentUi(options: {
@@ -170,6 +171,18 @@ export function mountIntelligentUi(options: {
     },
     component: ({ context }) => <IntelligentPanel binding={binding} context={context} />,
   })
+  // File lists have their own 交付物 tab; while it is registered the views tab leaves them out.
+  const counted = deliverablesCount(binding)
+  const removeDeliverables = workbenchPanels.register({
+    id: DELIVERABLES_PANEL,
+    order: 55,
+    edge: 'right',
+    titleKey: 'workbench.deliverables.title',
+    visibility: 'contextual',
+    when: (context) => !!counted.read(context),
+    count: counted,
+    component: ({ context }) => <WorkbenchDeliverables binding={binding} context={context} />,
+  })
   const detachTurns = attachTurnDeliverables(binding)
   const stopSession = options.session.subscribe(switchSession)
   switchSession()
@@ -181,6 +194,7 @@ export function mountIntelligentUi(options: {
     removeInline()
     detachTurns()
     removePanel()
+    removeDeliverables()
     removeLocale()
     documentLocale.dispose()
     listeners.clear()

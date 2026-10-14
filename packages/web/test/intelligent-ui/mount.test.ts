@@ -51,8 +51,9 @@ vi.mock('../../src/intelligent-ui/placements.js', async (original) => ({
 vi.mock('@agnes/web-ui/conversation', () => ({ DocumentPreview: () => null }))
 vi.mock('@agnes/web-client', () => ({
   workbenchPanels: {
-    register: (entry: typeof controls.panel) => {
-      controls.panel = entry
+    // The views tab is the one under test; the deliverables tab registers beside it.
+    register: (entry: typeof controls.panel & { id: string }) => {
+      if (entry?.id === 'intelligent-ui') controls.panel = entry
       return () => {}
     },
     get: () => undefined,

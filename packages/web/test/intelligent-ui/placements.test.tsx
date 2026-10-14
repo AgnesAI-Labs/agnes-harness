@@ -19,6 +19,7 @@ import {
   workbenchSurfaces,
 } from '../../src/intelligent-ui/placements.js'
 import { attachTurnDeliverables, TurnDeliverables } from '../../src/intelligent-ui/turn-deliverables.js'
+import { WorkbenchDeliverables } from '../../src/intelligent-ui/workbench-deliverables.js'
 import { financeRecord, uiPage, uiReceipt } from './fixture.js'
 
 const turn = { id: 'turn-1', turn: 1, startSeq: 1 } as UITurn
@@ -73,6 +74,14 @@ const mounted = async (
   }
   const host = document.createElement('div'),
     root = createRoot(host)
+  // As in the app: file lists have their own tab, so the views tab leaves them out.
+  const removeFilesTab = workbenchPanels.register({
+    id: 'deliverables',
+    order: 55,
+    edge: 'right',
+    titleKey: 'workbench.deliverables.title',
+    component: () => null,
+  })
   const detach = attachTurnDeliverables(binding)
   await act(async () =>
     root.render(
@@ -82,6 +91,10 @@ const mounted = async (
         createElement('div', { 'data-testid': 'turn' }, createElement(TurnDeliverables, { turn })),
         createElement(IntelligentInline, { binding }),
         createElement(IntelligentPanel, {
+          binding,
+          context: { t: (key) => key, data: { session: { id: 'session-finance' } } },
+        }),
+        createElement(WorkbenchDeliverables, {
           binding,
           context: { t: (key) => key, data: { session: { id: 'session-finance' } } },
         }),
@@ -99,6 +112,7 @@ const mounted = async (
       detach()
       client.dispose()
       locale.dispose()
+      removeFilesTab()
     },
   }
 }
@@ -117,9 +131,12 @@ describe('shared Intelligent UI placements', () => {
       // A file list is shown inside the answer of its turn, never again after the conversation.
       expect(inline.querySelector('[data-agnes-intelligent-ui="catalog"]')).toBeNull()
       expect(host.querySelector('[data-testid="turn-deliverables"]') !== null).toBe(placement.inline)
-      expect(workbench.querySelector('[data-agnes-intelligent-ui="catalog"]') !== null).toBe(
-        placement.workbench,
-      )
+      // A file list is never one of the workbench views: the 交付物 tab lists its files instead.
+      expect(workbench.querySelector('[data-agnes-intelligent-ui="catalog"]')).toBeNull()
+      expect(
+        host.querySelector('[data-testid="workbench-deliverables"] [data-testid="deliverable-file"]')
+          ?.textContent,
+      ).toContain('report.html')
       expect(newSurfacePlacements(new Set(), [record]).showWorkbench).toBe(!placement.inline)
     } finally {
       await cleanup()
@@ -148,9 +165,12 @@ describe('shared Intelligent UI placements', () => {
     })
     const { host, cleanup } = await mounted(uiReceipt('succeeded'), deliverablesRecord(), resources)
     try {
-      const workbenchCopy = host.querySelector('[data-testid="ui-surface-card-deliverable"]')
-      expect(workbenchCopy?.getAttribute('data-placement')).toBe('workbench')
-      expect(host.querySelectorAll('[data-testid="ui-surface-card-deliverable"]')).toHaveLength(1)
+      const workbenchCopy = host.querySelector('[data-testid="workbench-deliverables"]')
+      expect(
+        workbenchCopy?.querySelector('[data-testid="deliverable-file"]')?.getAttribute('data-placement'),
+      ).toBe('workbench')
+      // The file list itself is no longer a card among the workbench views.
+      expect(host.querySelectorAll('[data-testid="ui-surface-card-deliverable"]')).toHaveLength(0)
       const articles = [host.querySelector('[data-testid="turn-deliverables"]'), workbenchCopy]
       for (const article of articles) {
         expect(article?.textContent).toContain('report.html')
@@ -247,7 +267,7 @@ describe('shared Intelligent UI placements', () => {
     // Locale sources follow the document event, just like a live language change.
     document.documentElement.lang = 'zh-CN'
     await act(async () => window.dispatchEvent(new CustomEvent('agnes:locale-changed')))
-    expect(host.querySelector('h3')?.textContent).toBe('交付物')
+    expect(host.querySelector('[data-testid="turn-deliverables"]')?.getAttribute('aria-label')).toBe('交付物')
     await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="deliverable-open"]')?.click())
     await cleanup()
     await act(async () =>

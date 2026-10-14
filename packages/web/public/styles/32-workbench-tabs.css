@@ -387,4 +387,50 @@
   .workbench-activity-technical {
     color: var(--agnes-text-secondary);
   }
+
+  /* Deliverables: the answer's cards under version headings; the opened card carries its preview. */
+  .workbench-deliverables {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+  }
+  .workbench-deliverables-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: var(--s4) var(--s12) var(--s12);
+  }
+  .workbench-deliverables-group > h4 {
+    margin: var(--s8) var(--s2) var(--s4);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-regular);
+  }
+  :is(.workbench-deliverables-group, .workbench-deliverables-earlier) ul {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s8);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .workbench-deliverables .deliverable-file {
+    overflow: hidden;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-lg);
+    background: var(--agnes-bg-surface);
+  }
+  .workbench-deliverables li[data-chosen="true"] .deliverable-file[data-open="true"] {
+    border-color: var(--agnes-brand-primary);
+    box-shadow: 0 0 0 3px var(--agnes-brand-emphasis-soft);
+  }
+  .workbench-deliverables-earlier {
+    margin-block-start: var(--s12);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+  }
+  .workbench-deliverables-earlier ul {
+    margin-block-start: var(--s8);
+  }
 }

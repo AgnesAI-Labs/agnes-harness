@@ -15,6 +15,7 @@ import { useEffect, useMemo, useSyncExternalStore } from 'react'
 import { ArtifactFile } from './artifact-file.js'
 import { groupDeliverables, type TurnDeliverable } from './deliverable-labels.js'
 import { BoundSurface, type UiPlacementBinding } from './placements.js'
+import { openDeliverablesPanel } from './workbench-deliverables.js'
 
 /** The session's placement binding, set while the intelligent UI is mounted. */
 let active: UiPlacementBinding | undefined
@@ -51,37 +52,40 @@ export function useIntelligentBinding(): {
   return { binding: active, client: active?.getSnapshot(), version: current }
 }
 
+/** The files one file-list surface hands over, in the order the surface lists them. */
+export function surfaceDeliverables(record: UiSurfaceRecord): TurnDeliverable[] {
+  const { surface } = record
+  if (!isDeliverableList(surface)) return []
+  return surface.components.flatMap((component, index) => {
+    if (!('dataKey' in component)) return []
+    const parsed = validateAgainst<UiArtifactFileData>(UiArtifactFileData, surface.data[component.dataKey])
+    return parsed.ok
+      ? [
+          {
+            file: parsed.value,
+            surfaceId: surface.id,
+            revision: surface.revision,
+            lane: record.lane,
+            workbench: surface.placement.workbench,
+            order: record.createdSeq * 1000 + index,
+          },
+        ]
+      : []
+  })
+}
+
 /** The files a turn produced: every file-list surface the session created while the turn ran. */
 export function turnDeliverables(
   surfaces: readonly UiSurfaceRecord[],
   turn: Pick<UITurn, 'startSeq' | 'endSeq'>,
 ): TurnDeliverable[] {
-  return surfaces.flatMap((record) => {
-    const { surface } = record
-    if (
-      !isDeliverableList(surface) ||
-      !surface.placement.inline ||
-      record.createdSeq < turn.startSeq ||
-      (turn.endSeq !== undefined && record.createdSeq > turn.endSeq)
-    )
-      return []
-    return surface.components.flatMap((component, index) => {
-      if (!('dataKey' in component)) return []
-      const parsed = validateAgainst<UiArtifactFileData>(UiArtifactFileData, surface.data[component.dataKey])
-      return parsed.ok
-        ? [
-            {
-              file: parsed.value,
-              surfaceId: surface.id,
-              revision: surface.revision,
-              lane: record.lane,
-              workbench: surface.placement.workbench,
-              order: record.createdSeq * 1000 + index,
-            },
-          ]
-        : []
-    })
-  })
+  return surfaces.flatMap((record) =>
+    !record.surface.placement.inline ||
+    record.createdSeq < turn.startSeq ||
+    (turn.endSeq !== undefined && record.createdSeq > turn.endSeq)
+      ? []
+      : surfaceDeliverables(record),
+  )
 }
 
 /**
@@ -174,7 +178,11 @@ function DeliverableGroup({
       resources={binding.resources}
       placement="inline"
       {...(entry.workbench
-        ? { onShowInWorkbench: () => binding.expand(entry.surfaceId, entry.revision) }
+        ? {
+            onShowInWorkbench: () => {
+              if (!openDeliverablesPanel()) binding.expand(entry.surfaceId, entry.revision)
+            },
+          }
         : {})}
     />
   )
