@@ -441,10 +441,10 @@ it('navigates from file review, renders a read-only diff and ignores results det
       expect(host.querySelector('pre')?.textContent).toContain('+<script>plain text</script>'),
     )
     expect(read).toHaveBeenCalledWith({ scope: 'session', path, expectedRevision: revision })
-    expect(host.querySelector('[data-testid=changed-file] > span')?.textContent).toBe(path)
-    expect(
-      host.querySelector('.workbench-change-preview > .workbench-panel-toolbar > code')?.textContent,
-    ).toBe(path)
+    expect(host.querySelector('[data-testid=changed-file] .workbench-changes-path')?.textContent).toBe(path)
+    expect(host.querySelector('.workbench-change-head .workbench-change-name')?.getAttribute('title')).toBe(
+      path,
+    )
     expect(host.querySelector('script')).toBeNull()
     expect(host.textContent).toContain('changed after the recorded agent edit')
     expect(host.textContent).toContain('changed since the preview was read')
