@@ -2,7 +2,12 @@ import { defaultLoop, defaultModelAdapter } from '@agnes/protocol'
 import type { SessionControlStateResult } from '@agnes/protocol/gen/agnes-v1'
 import { createFirstRunController, needsFirstRun } from '@agnes/web-admin/first-run'
 import { factChainLinks, workbenchNavigation } from '@agnes/web-client'
-import { bindDialogSheets, createCatalogTranslator, searchParamRoute } from '@agnes/web-ui'
+import {
+  bindDialogSheets,
+  createCatalogTranslator,
+  preserveRouteParams,
+  searchParamRoute,
+} from '@agnes/web-ui'
 import { settingsRoute, sortSessionsByRecency } from '@agnes/web-units'
 import { createAppearanceController } from './app/appearance-controller.js'
 import { createCommandController } from './app/command-controller.js'
@@ -1740,7 +1745,8 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   url.searchParams.delete('session')
   const settingsHash =
     url.searchParams.has('settings') && url.hash.startsWith('#settings-subsection-') ? url.hash : ''
-  history.replaceState(null, '', `${url.pathname}${url.search}${settingsHash}`)
+  url.hash = settingsHash
+  history.replaceState(null, '', preserveRouteParams(url))
   topbarRuntime.setTaskTitle(t('app.newSession.defaultTitle'))
   render()
   if (!selectedWorkspace?.available && showWorkspacePicker) openNewSessionDialog(true)

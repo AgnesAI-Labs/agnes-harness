@@ -2,6 +2,7 @@ import { type PageSessionMeta, readSessionTitle, type UITurn, type WorkspaceEntr
 import type { LedgerEvent, PermissionOutcome, Session } from '@agnes/sdk/browser'
 import { createLiveProjection } from '@agnes/web-conversation/live-projection'
 import type { KnownSessionModel } from '@agnes/web-conversation/presentation'
+import { preserveRouteParams } from '@agnes/web-ui'
 import type { AppSessionContext } from '../app.js'
 import { forkTitle } from '../session-actions.js'
 import { bindWebSession, loadWebSession } from '../session-binding.js'
@@ -187,7 +188,8 @@ export function createSessionController(
       url.searchParams.set('session', id)
       const settingsHash =
         url.searchParams.has('settings') && url.hash.startsWith('#settings-subsection-') ? url.hash : ''
-      history.replaceState(null, '', `${url.pathname}${url.search}${settingsHash}`)
+      url.hash = settingsHash
+      history.replaceState(null, '', preserveRouteParams(url))
       context.offPermission = binding.offPermission
       let opened = false
       const selected = () => context.current === loaded && epoch === context.selection
@@ -246,7 +248,10 @@ export function createSessionController(
           })
         },
         event(event) {
-          if (selected()) void followEvent(loaded, event).catch(context.showError)
+          if (selected())
+            void followEvent(loaded, event).catch((error) => {
+              if (selected()) context.showError(error)
+            })
         },
         error(error) {
           if (selected()) context.showError(error)
@@ -341,16 +346,20 @@ export function createSessionController(
 
   /** What watching the event stream used to do per event: titles, the list, the run receipt. */
   async function followEvent(session: Session, event: LedgerEvent): Promise<void> {
+    const epoch = context.selection
+    const showError = (error: unknown) => {
+      if (context.selection === epoch && context.current === session) context.showError(error)
+    }
     if (['inbox', 'x/core/control', 'x/core/pause-state', 'turn/start', 'turn/end'].includes(event.type))
-      void context.refreshSessionControls(session).catch(context.showError)
+      void context.refreshSessionControls(session).catch(showError)
     const title = readSessionTitle(event)
     if (title?.status === 'generated') {
       // The list owns user overrides; a late automatic event cannot overwrite one.
-      await context.list().catch(context.showError)
+      await context.list().catch(showError)
       context.titleRefresh.stop(session.id)
     } else if (title?.status === 'failed') context.titleRefresh.stop(session.id)
     // A new message makes this the most recently chatted session; the daemon now lists it first.
-    if (event.type === 'user/message') void context.list().catch(context.showError)
+    if (event.type === 'user/message') void context.list().catch(showError)
     if (
       event.type === 'turn/end' &&
       (event.data as { reason?: string }).reason === 'completed' &&

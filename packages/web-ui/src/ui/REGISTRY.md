@@ -121,3 +121,5 @@ Badge, Tag, EmptyState, Skeleton, ListRow, Banner, Icon and SheetHandle remain c
 | `SettingsBlock` / `SettingsTag` / `SettingsInfo` | A | 设置分组 | 分组标题是名词，右侧放分组操作；保存失败只在标题处显示「保存失败 · 重试」；读取失败一行 + 重试且不清空；同一套状态小标；说明文字收进名称旁 ⓘ |
 | `useAutosave` / `SettingsUndoScope` | A | 自动保存 | 开关/选择立即保存，文字停 1 秒或失焦保存；`resourceKey` 共用跨组件写队列；不显示「已保存」；⌘Z 在文本框外撤销最近一次保存 |
 | `SettingsPresetSelect` / `SettingsChips` / `SettingsChipToggle` | A | 人话取值 | 毫秒 ↔ 秒/分钟档位（默认 / 档位 / 自定义保留原值）；逗号列表 ↔ 标签；固定选项多选标签 |
+
+`preserveRouteParams(url)` keeps the existing `view` and `settings` level encoding when the host edits unrelated URL metadata; explicit `searchParamRoute().href()` changes its own route and preserves the other. / `preserveRouteParams(url)` 在宿主修改其他 URL 元数据时保留已有层级编码；`searchParamRoute().href()` 只改自身路由并保留另一路由。

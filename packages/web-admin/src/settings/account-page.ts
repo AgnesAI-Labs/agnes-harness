@@ -1,5 +1,10 @@
 import type { ConfigAccount } from '@agnes/protocol'
-import { ACCOUNT_PAGE_IDS, SUBPAGE_CLOSE_EVENT, setSettingsAccountPage } from '@agnes/web-ui'
+import {
+  ACCOUNT_PAGE_IDS,
+  preserveRouteParams,
+  SUBPAGE_CLOSE_EVENT,
+  setSettingsAccountPage,
+} from '@agnes/web-ui'
 import { optionalElement } from './dialog.js'
 
 /**
@@ -58,7 +63,7 @@ export function bindAccountPage(
       const url = new URL(location.href)
       if (!adding && accountId) url.searchParams.set('account', accountId)
       else url.searchParams.delete('account')
-      history.replaceState(history.state, '', url)
+      history.replaceState(history.state, '', preserveRouteParams(url))
       // Closed a moment ago and opened again before it went away: it simply stays open.
       const reopening = closing && hostMode === mode
       if (reopening) closing = false

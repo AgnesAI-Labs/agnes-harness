@@ -216,6 +216,7 @@ export {
   PushPage,
   type PushRoute,
   PushStack,
+  preserveRouteParams,
   searchParamRoute,
   usePushNavigation,
   usePushStack,

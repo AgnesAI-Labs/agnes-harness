@@ -61,9 +61,10 @@ export function useHostedDialog({
       shown.current = undefined
       if (!closed) return
       // Another host may open in the same turn (a form gives way to the detail it produced):
-      // wait for it, and step back only if nothing replaced this page.
+      // wait for it, and finish only if nothing replaced this page. A completed controller flow
+      // commits its route at once; a pending history traversal could reopen it on a data refresh.
       setTimeout(() => {
-        if (navRef.current.stack.at(-1) === closed) navRef.current.back()
+        if (navRef.current.stack.at(-1) === closed) navRef.current.finish()
       })
     })
     observer.observe(element, { attributes: true, attributeFilter: ['open'] })

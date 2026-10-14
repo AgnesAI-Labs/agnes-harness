@@ -1,4 +1,5 @@
 import {
+  preserveRouteParams,
   SETTINGS_ROUTE_EVENT,
   SettingsAccountDialog,
   SettingsModelPane,
@@ -197,7 +198,7 @@ function SettingsBuiltinImpl(
           setTerminalNotice(opened ? 'moved' : 'needs-session')
           const url = new URL(location.href)
           url.searchParams.delete('settings')
-          history.replaceState(history.state, '', url)
+          history.replaceState(history.state, '', preserveRouteParams(url))
           return
         }
         const address = searchParamRoute('settings')

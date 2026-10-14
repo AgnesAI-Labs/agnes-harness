@@ -132,3 +132,5 @@ The [UI author guide](ui-author-guide.md) describes public registrations and cla
 Session facts, execution results and authorization belong to the backend and SDK projection. The app coordination layer owns current session selection, connection and subscription lifetime. Remote snapshots (settings, lists and rosters) belong to the scoped resource store; components own drafts, expansion and local interactions.
 
 A resource write commits a new version. Reads started before that commit cannot publish either data or errors over it; writes to the same resource share a queue across component lifetimes. After an await, session and roster operations must recheck their selection or request identity before changing shared state. Obsolete work may release its own handles, but cannot reset another selection's renderer or recovery target. Module loads remain independent, with failures isolated to their region and registrations removed on unmount.
+
+Incidental URL updates preserve the raw `view` and `settings` route encoding, so page boundaries and identifiers containing slashes survive session and account metadata changes.

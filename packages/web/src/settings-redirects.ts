@@ -1,4 +1,4 @@
-import { searchParamRoute } from '@agnes/web-ui'
+import { preserveRouteParams, searchParamRoute } from '@agnes/web-ui'
 import { type SettingsMoveTarget, settingsMoved, settingsRoute } from '@agnes/web-units'
 
 /** The new home of the page an old `?settings=<id>` link names, when it left the settings dialog. */
@@ -23,7 +23,7 @@ export function rewriteMovedSettingsLink(): SettingsMoveTarget | undefined {
   if (target.tab) url.searchParams.set('tab', target.tab)
   else url.searchParams.delete('tab')
   if (url.hash.startsWith('#settings-subsection-')) url.hash = ''
-  history.replaceState(history.state, '', url)
+  history.replaceState(history.state, '', preserveRouteParams(url))
   return target
 }
 
@@ -42,7 +42,7 @@ export function openMovedSettingsLink(
   const url = new URL(location.href)
   if (url.searchParams.get('settings') === id) {
     url.searchParams.delete('settings')
-    history.replaceState(history.state, '', url)
+    history.replaceState(history.state, '', preserveRouteParams(url))
   }
   return true
 }
@@ -67,7 +67,7 @@ export function clearSettingsLink(): void {
   url.searchParams.delete('settings')
   url.searchParams.delete('account')
   if (url.hash.startsWith('#settings-subsection-')) url.hash = ''
-  history.replaceState(history.state, '', url)
+  history.replaceState(history.state, '', preserveRouteParams(url))
 }
 
 /**

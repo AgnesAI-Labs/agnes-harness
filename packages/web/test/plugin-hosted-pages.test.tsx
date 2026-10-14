@@ -117,6 +117,13 @@ it('leaves the page when the controller closes its detail, and when the browser 
   await settle()
   expect(view()).toBeNull()
   expect(document.querySelector('[data-testid="push-page-item:a"]')).toBeNull()
+  // Completing the controller flow keeps its parent page and leaves no finished detail ahead.
+  await act(async () => history.forward())
+  await settle()
+  await settle()
+  expect(new URL(location.href).searchParams.get('page')).toBe('plugins')
+  expect(view()).toBeNull()
+  expect(detail.open).toBe(false)
 
   await act(async () => detail.show())
   await settle()

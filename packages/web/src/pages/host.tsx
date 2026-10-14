@@ -3,6 +3,7 @@ import { homeEntries, homeNavigation, type LocaleService, type UiExtensionContex
 import {
   createDocumentLocaleSource,
   createRegionRenderer,
+  preserveRouteParams,
   RegionErrorBoundary,
   UiLocaleProvider,
   type UiLocaleSource,
@@ -148,7 +149,8 @@ export function bindHomeRouting(): () => void {
     else url.searchParams.delete('page')
     if (requested && typeof tab === 'string') url.searchParams.set('tab', tab)
     else url.searchParams.delete('tab')
-    if (url.href !== before) history.pushState(history.state, '', `${url.pathname}${url.search}${url.hash}`)
+    const address = preserveRouteParams(url)
+    if (new URL(address, location.href).href !== before) history.pushState(history.state, '', address)
   })
   window.addEventListener('popstate', readLocation)
   return () => {

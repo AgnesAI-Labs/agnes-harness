@@ -18,6 +18,20 @@ export type PushRoute = {
   href(stack: readonly string[]): string
 }
 
+/** Keep existing route level boundaries when unrelated URL metadata is changed. */
+export function preserveRouteParams(url: URL, params: readonly string[] = ['view', 'settings']): string {
+  const before = new URL(location.href)
+  let search = url.search
+  for (const param of params) {
+    if (before.searchParams.get(param) !== url.searchParams.get(param)) continue
+    const name = encodeURIComponent(param).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const pattern = new RegExp(`([?&]${name}=)([^&#]*)`)
+    const raw = pattern.exec(before.search)?.[2]
+    if (raw !== undefined) search = search.replace(pattern, (_match, prefix: string) => `${prefix}${raw}`)
+  }
+  return `${url.pathname}${search}${url.hash}`
+}
+
 /** A route kept in one search parameter, levels joined by `/` (`?view=agent:fde-crm/edit`). */
 export function searchParamRoute(param: string): PushRoute {
   return {
@@ -41,13 +55,19 @@ export function searchParamRoute(param: string): PushRoute {
       const url = new URL(location.href)
       if (!stack.length) {
         url.searchParams.delete(param)
-        return `${url.pathname}${url.search}${url.hash}`
+        return preserveRouteParams(
+          url,
+          ['view', 'settings'].filter((name) => name !== param),
+        )
       }
       // Levels stay readable in the address (`view=crm/edit`); each level is encoded on its own.
       const marker = '\u0000levels\u0000'
       url.searchParams.set(param, marker)
-      const search = url.search.replace(encodeURIComponent(marker), stack.map(encodeURIComponent).join('/'))
-      return `${url.pathname}${search}${url.hash}`
+      const address = preserveRouteParams(
+        url,
+        ['view', 'settings'].filter((name) => name !== param),
+      )
+      return address.replace(encodeURIComponent(marker), stack.map(encodeURIComponent).join('/'))
     },
   }
 }

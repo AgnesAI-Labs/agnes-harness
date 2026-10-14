@@ -148,6 +148,11 @@ describe('push pages', () => {
     history.replaceState(null, '', route.href(['plugin:@agnes/plugin-helper', 'edit']))
     expect(location.search).toBe('?view=plugin%3A%40agnes%2Fplugin-helper/edit')
     expect(route.read()).toEqual(['plugin:@agnes/plugin-helper', 'edit'])
+    // Another page opens settings without changing the underlying detail route.
+    const settings = searchParamRoute('settings')
+    history.replaceState(null, '', settings.href(['security', 'auto-review']))
+    expect(settings.read()).toEqual(['security', 'auto-review'])
+    expect(route.read()).toEqual(['plugin:@agnes/plugin-helper', 'edit'])
   })
 
   it('swaps the top page for the next step of a flow without a new history entry', () => {
