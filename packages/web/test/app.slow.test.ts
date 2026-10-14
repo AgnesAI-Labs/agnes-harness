@@ -2933,23 +2933,36 @@ describe('incremental opening', () => {
   })
 
   it('points to a pending approval before the loaded window without offering a verdict', async () => {
-    await bootWith(async () => ({
-      ...idleTimeline('old'),
-      upto: 9,
-      opState: {
-        turn: 1,
-        step: 1,
-        phase: 'tools',
-        parked: {
-          decisionRef: { sessionId: 's', id: 't-1', revision: 1 },
-          expiresAt: '2026-09-25T00:00:00Z',
+    const decisions = vi.fn(async () => ({ decisions: [] }))
+    await bootWith(
+      async () => ({
+        ...idleTimeline('old'),
+        upto: 9,
+        opState: {
+          turn: 1,
+          step: 1,
+          phase: 'tools',
+          parked: {
+            decisionRef: { sessionId: 's', id: 't-1', revision: 1 },
+            expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          },
         },
-      },
-    }))
+      }),
+      true,
+      undefined,
+      { approval: { list: decisions, decide: vi.fn(async () => undefined) } },
+    )
     const approval = document.getElementById('approval') as HTMLElement
+    // The automatic search of earlier pages ends without the decision: the card says where it is.
     await vi.waitFor(() => expect(approval.textContent).toContain('有一项审批等待处理'))
+    expect(approval.textContent).not.toContain('已过期')
     const buttons = [...approval.querySelectorAll('button')].map((button) => button.textContent)
     expect(buttons).toEqual(['定位审批'])
+    // «定位审批» looks the decision up again, by its id, instead of giving up.
+    const lookups = decisions.mock.calls.length
+    approval.querySelector('button')?.click()
+    await vi.waitFor(() => expect(decisions.mock.calls.length).toBeGreaterThan(lookups))
+    expect(decisions).toHaveBeenLastCalledWith('s')
   })
 
   const parkedTimeline = (): UITimeline => ({
@@ -2959,7 +2972,10 @@ describe('incremental opening', () => {
       turn: 1,
       step: 1,
       phase: 'tools',
-      parked: { decisionRef: { sessionId: 's', id: 't-1', revision: 1 }, expiresAt: '2026-09-25T00:00:00Z' },
+      parked: {
+        decisionRef: { sessionId: 's', id: 't-1', revision: 1 },
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      },
     },
   })
 
