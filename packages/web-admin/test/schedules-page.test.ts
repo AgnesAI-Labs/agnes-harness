@@ -432,7 +432,11 @@ it('keeps the saved loop, ordered bundles and model when only the title changes 
   expect(cleared).toEqual({ kind: 'new-session', cwd: '/synthetic' })
   const other = catalog.models[0]
   if (!other) throw new Error('model')
-  expect(targetOf({ ...draft, model: other.key }, catalog).model).toEqual({ route: 'x', model: 'other' })
+  // Only a new-session target names a model; anything else here is a failure of its own.
+  const rebuilt = targetOf({ ...draft, model: other.key }, catalog)
+  if (rebuilt.kind !== 'new-session') throw new Error('expected a new-session target')
+  expect(rebuilt.model).toEqual({ route: 'x', model: 'other' })
+  expect(rebuilt).toEqual({ ...saved, model: { route: 'x', model: 'other' } })
   // End to end: a title-only edit sends the saved target back unchanged, even when choices fail.
   const upsert = vi.fn(async () => standup)
   const host = await mount(
