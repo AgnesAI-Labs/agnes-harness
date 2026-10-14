@@ -307,3 +307,47 @@ it('batches controller refreshes and isolates a failed right panel from the bott
     document.body.replaceChildren()
   }
 })
+
+it('shows a tab count beside the title and re-reads it when its source notifies', () => {
+  localStorage.clear()
+  document.body.innerHTML =
+    '<div class="workbench-split"><div id="controls"></div><aside id="workbench-right" hidden><div id="workbench-right-content"></div></aside><aside id="workbench-bottom" hidden><div id="workbench-bottom-content"></div></aside></div>'
+  const host = document.getElementById('controls') as HTMLElement
+  const listeners = new Set<() => void>()
+  let value: number | undefined = 3
+  const remove = workbenchPanels.register({
+    id: 'test.counted',
+    order: 1,
+    edge: 'right',
+    titleKey: 'Changes',
+    count: {
+      subscribe: (listener) => {
+        listeners.add(listener)
+        return () => listeners.delete(listener)
+      },
+      read: (context) => (context.data === 'session' ? value : undefined),
+    },
+    component: () => <p>Counted</p>,
+  })
+  try {
+    renderRegion(host, <Dock context={{ t: (key) => key, data: 'session' }} />)
+    flushSync(() => (host.querySelector('[data-edge="right"]') as HTMLButtonElement).click())
+    const tab = document.getElementById('workbench-tab-test.counted')
+    expect(tab?.querySelector('[data-testid="workbench-tab-count-test.counted"]')?.textContent).toBe('3')
+    value = 0
+    flushSync(() => {
+      for (const listener of listeners) listener()
+    })
+    expect(tab?.querySelector('.workbench-tab-count')).toBeNull()
+    value = 12
+    flushSync(() => {
+      for (const listener of listeners) listener()
+    })
+    expect(tab?.textContent).toBe('Changes12')
+  } finally {
+    unmountRegion(host)
+    remove()
+    expect(listeners.size).toBe(0)
+    localStorage.clear()
+  }
+})

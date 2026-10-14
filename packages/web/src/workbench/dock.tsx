@@ -63,7 +63,7 @@ function readLayout(): Layout {
     return defaults
   }
 }
-type DockTab = { id: string; title: string; icon: IconName | undefined }
+type DockTab = { id: string; title: string; icon: IconName | undefined; count?: number | undefined }
 /**
  * A dock's tab strip. Tabs that do not fit the strip fold into one "more" menu instead of scrolling
  * out of sight; the current tab always stays in the strip.
@@ -140,6 +140,11 @@ function DockTabs({
               >
                 {tab.icon && <Icon name={tab.icon} />}
                 {tab.title}
+                {!!tab.count && (
+                  <span className="workbench-tab-count" data-testid={`workbench-tab-count-${tab.id}`}>
+                    {tab.count}
+                  </span>
+                )}
               </Button>
             ))}
           </div>
@@ -156,7 +161,18 @@ function DockTabs({
   )
 }
 export function Dock({ context }: { context: UiExtensionContext }) {
-  useSyncExternalStore(workbenchPanels.subscribe, workbenchPanels.getSnapshot)
+  const registryVersion = useSyncExternalStore(workbenchPanels.subscribe, workbenchPanels.getSnapshot)
+  // A tab count changes without the dock's context changing (a poll, a session client update).
+  const [, setCountVersion] = useState(0)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a registry change brings new count sources.
+  useEffect(() => {
+    const stops = workbenchPanels
+      .entries()
+      .flatMap((panel) => (panel.count ? [panel.count.subscribe(() => setCountVersion((v) => v + 1))] : []))
+    return () => {
+      for (const stop of stops) stop()
+    }
+  }, [registryVersion])
   const bottomAvailable = workbenchPanels
     .entries()
     .some((panel) => panel.edge === 'bottom' && (panel.visibility !== 'contextual' || panel.when?.(context)))
@@ -508,6 +524,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
                           id: panel.id,
                           title: panel.title?.(context) ?? t(panel.titleKey),
                           icon: sharedIcon(panel.icon) ? panel.icon : undefined,
+                          count: panel.count?.read(context),
                         }))}
                         activeId={active?.id}
                         select={(id) => setSelected((value) => ({ ...value, [edge]: id }))}

@@ -122,6 +122,7 @@ export type {
   SettingsSection,
   UiExtensionContext,
   WorkbenchPanel,
+  WorkbenchPanelCount,
 } from './ui-registries.js'
 export {
   conversationCards,

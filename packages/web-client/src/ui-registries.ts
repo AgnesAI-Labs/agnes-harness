@@ -35,6 +35,14 @@ export type ConversationCard = Readonly<{
   matches(input: ConversationCardInput): boolean
   component: ComponentType<{ card: ConversationCardInput; context: UiExtensionContext }>
 }>
+/**
+ * A number beside a dock tab's title, such as how many files changed. The dock reads it again
+ * whenever the source notifies; undefined or zero shows nothing. Presentation only.
+ */
+export type WorkbenchPanelCount = Readonly<{
+  subscribe(listener: () => void): () => void
+  read(context: UiExtensionContext): number | undefined
+}>
 /** A session dock panel. `right` is the side dock and `bottom` is the lower dock. */
 export type WorkbenchPanel = Readonly<{
   id: string
@@ -47,6 +55,7 @@ export type WorkbenchPanel = Readonly<{
   when?(context: UiExtensionContext): boolean
   /** Optional dynamic presentation title, e.g. a business surface title. */
   title?(context: UiExtensionContext): string
+  count?: WorkbenchPanelCount
   /** Optional presentation-only destination for panel header actions. */
   component: ComponentType<{ context: UiExtensionContext; headerId?: string }>
 }>
