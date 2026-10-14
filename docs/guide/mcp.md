@@ -128,6 +128,16 @@ For stdio, use `--stdio EXECUTABLE` and repeat `--arg VALUE` as needed. Do not p
 
 Use existing secret references: `--secret-env NAME=secret://namespace/name` for stdio, or `--bearer-ref secret://namespace/name` and `--header-ref x-api-key=secret://namespace/name` for HTTP/SSE. Keep real keys out of command lines, screenshots, and documentation. Repeat `--allow-tool TOOL_NAME` to restrict allowed tools.
 
+<a id="mcp-工具如何提供给模型"></a>
+
+## How MCP tools reach the model
+
+Every tool schema the model can call is sent with every request, so a large MCP catalog costs context and money on every turn. Measured with the official tool set: one server with 15 typical tools adds about 2,750 tokens per request, ten such servers about 27,500.
+
+You do not have to choose anything. Each server's tool loading mode is **Automatic** by default: while the session holds at most 15 automatic tools whose schemas stay under about 4,000 tokens, they are sent as usual. Past either limit, all automatic tools move behind `tool_search`, and the model sees one line per server instead: its name, how many tools it has and a few of their names. The model searches by task or server name, loads a tool with `tool_describe`, and that tool stays loaded for the rest of the session, including after compaction and reopening. Loading grants nothing: argument validation, policy and approvals are the same as for any other call.
+
+With advanced settings shown, the server's detail page has a **Tool loading** control: Automatic, Always visible (the schemas are always sent) or On demand (always behind `tool_search`). It is the definition's `toolDisclosure` field (`auto`, `always` or `on-demand`; omitted means `auto`), saved through the normal `mcp update` path. Changing only this mode keeps the server trusted and enabled, because nothing that runs or connects changes; any other edit still asks for review again. The session runtime dialog marks the tools that load on demand.
+
 <a id="调试变更与清理"></a>
 
 ## Diagnose, change, and clean up
@@ -149,7 +159,7 @@ The model can search and invoke tools from enabled catalogs, but server content 
 
 At session-worker startup and turn boundaries after resource changes, the runner created by `createMcpRowRuntime()` calls `apply()`. It derives one Host `ext:` row per trusted and enabled server from a snapshot. Each row owns its connection; management commands run through the shared worker. See [verification](../maintainers/verification.md) for methods and scope.
 
-Changing a definition changes the row's revision, while unchanged servers can retain their connections. Disabling or removing a server withdraws its row. Each definition is checked before derivation; invalid ones are skipped with a reason. Initial connection waiting is bounded, so a mounted row does not prove a successful remote connection. `agnes/mcp-search` and the catalog hub provide cross-server tool discovery. The legacy aggregate `agnes/mcp-client` extension has been removed from this mainline.
+Changing a definition changes the row's revision, while unchanged servers can retain their connections. Disabling or removing a server withdraws its row. Each definition is checked before derivation; invalid ones are skipped with a reason. A turn waits at most 10 seconds for a newly enabled server's first connection. A server still connecting after that starts the turn without its tools, and the conversation shows a quiet notice such as "Docs Tools is still connecting; this turn runs without it." Its tools join a later turn once connected. A mounted row therefore does not prove a successful remote connection. `agnes/mcp-search` and the catalog hub provide cross-server tool discovery. The legacy aggregate `agnes/mcp-client` extension has been removed from this mainline.
 
 **Large results:** A tool result is cut by the same output guard as built-in tools (see `tools.output_max_bytes`): the model sees a head and a tail, and the text is stored under an `artifact://…?size=…` path that `read` and `grep` accept. When a call returns many blocks that together pass four times that limit, the model sees the first ones and the full text set is stored the same way, one `=== text block N of M ===` line before each block. At most 4 MiB of text per call is kept. Past that the result is cut at a character boundary, later text blocks are dropped, and a note at the top of the result says how many bytes the server returned and how many were kept; the rest is not stored and cannot be read back. The MCP client reads a whole response into memory before any of this applies, so the limit bounds what is copied and stored, not that first buffer.
 

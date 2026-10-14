@@ -122,6 +122,14 @@ stdio 使用 `--stdio EXECUTABLE` 与重复的 `--arg VALUE`；不要把完整 s
 
 凭据使用已有 secret 引用：`--secret-env NAME=secret://namespace/name`（stdio）、`--bearer-ref secret://namespace/name` 或 `--header-ref x-api-key=secret://namespace/name`（HTTP/SSE）。不把真实密钥放在命令行、截图或文档中。`--allow-tool TOOL_NAME` 可以重复指定允许的工具。
 
+## MCP 工具如何提供给模型
+
+模型可调用的每个工具 schema 都会随每次请求发送，MCP 目录一大，每一轮都要多付上下文和费用。以官方工具集实测：一个含 15 个常见工具的服务器每次请求约增加 2,750 tokens，十个这样的服务器约 27,500。
+
+你不需要做任何选择。每个服务器的工具加载方式默认为**自动**：会话中的自动工具不超过 15 个、且 schema 合计不超过约 4,000 tokens 时，照常发送；超过任一上限，所有自动工具改由 `tool_search` 发现，模型只看到每个服务器一行：名称、工具数量和其中几个工具名。模型按任务或服务器名搜索，用 `tool_describe` 加载工具，加载后在本会话内一直可用，压缩和重新打开后也是如此。加载不授予任何权限：参数校验、策略与审批和其他调用完全相同。
+
+开启「显示高级设置」后，服务器详情页有**工具加载方式**：自动、始终可见（总是发送 schema）或按需（总是经 `tool_search` 发现）。它对应定义中的 `toolDisclosure` 字段（`auto`、`always` 或 `on-demand`，省略即 `auto`），经正常的 `mcp update` 路径保存。只改加载方式时，服务器保持受信和启用，因为运行和连接的内容都没有变化；其他任何修改仍需重新审核。会话运行时对话框会标出按需加载的工具。
+
 ## 调试、变更与清理
 
 ```sh
@@ -139,7 +147,7 @@ node agnes.mjs mcp remove docs-tools --expected-revision REVISION
 
 session worker 启动及资源变化后的轮次边界调用 `createMcpRowRuntime()` 所创建运行器的 `apply()`，从快照为每个启用且受信的服务器派生 Host `ext:` 行。各行拥有自己的连接，管理命令经共享 worker 处理。验证方法与范围见[验证记录](../maintainers/verification.zh-CN.md)。
 
-修改定义会改变该行的 revision，未改变的服务器可以保留连接；禁用或删除会撤下对应行。派生前逐服务器校验，不合格定义被跳过并附原因。首轮连接等待有上限，行挂载完成不等于远端一定连接成功。跨服务器的工具搜索由 `agnes/mcp-search` 与 catalog hub 提供，旧 `agnes/mcp-client` 聚合扩展已从该主线移除。
+修改定义会改变该行的 revision，未改变的服务器可以保留连接；禁用或删除会撤下对应行。派生前逐服务器校验，不合格定义被跳过并附原因。新启用服务器的首次连接，一轮最多等待 10 秒；仍在连接的服务器不参与本轮，对话中会出现一条安静提示，例如「Docs Tools 还在连接，本轮先不使用它」，连上后从之后的轮次开始可用。因此行挂载完成不等于远端一定连接成功。跨服务器的工具搜索由 `agnes/mcp-search` 与 catalog hub 提供，旧 `agnes/mcp-client` 聚合扩展已从该主线移除。
 
 **大结果：** MCP 工具结果与内置工具走同一个输出守卫（见 `tools.output_max_bytes`）：模型看到头部和尾部，完整文本存在 `artifact://…?size=…` 路径下，`read` 与 `grep` 都认。一次调用返回多个块、总量超过该上限四倍时，模型只看到前面几块，完整文本集合以同样方式存储，每块前有一行 `=== text block N of M ===`。一次调用最多保留 4 MiB 文本：超过的部分在字符边界处截断，其后的文本块被丢弃，结果开头的说明会写明服务器返回了多少字节、保留了多少；其余内容不会存储，也无法读回。MCP 客户端会先把整个响应读进内存，之后才适用这些限制，所以上限约束的是复制与存储的量，不是最初那一份缓冲。
 
