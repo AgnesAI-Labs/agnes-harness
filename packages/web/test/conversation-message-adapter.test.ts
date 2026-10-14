@@ -660,3 +660,49 @@ it('summarizes interaction protocol and exact demo echoes while preserving raw d
     'artifact/abc',
   )
 })
+
+it('shows a submitted question as «你的回答» and folds the queued line that announced it', async () => {
+  const queued: UINode = {
+    kind: 'user',
+    id: 'queued',
+    seq: 7,
+    origin: 'system',
+    content: [{ type: 'text', text: 'queued' }],
+    system: {
+      source: 'agnes/deferred-invocations',
+      type: 'invocation-queued',
+      summary: 'queued',
+      data: { invocationId: 'ui:abc' },
+    },
+  }
+  const answers: UINode = {
+    kind: 'user',
+    id: 'answers',
+    seq: 8,
+    origin: 'system',
+    content: [{ type: 'text', text: 'UI submit succeeded: Submit' }],
+    system: {
+      source: 'agnes/intelligent-ui',
+      type: 'action-result',
+      summary: 'UI submit succeeded: Submit',
+      data: { status: 'succeeded', submitted: { surfaceId: 'card-q', answers: { days: '3 天 2 晚' } } },
+      presentation: {
+        kind: 'ui-action',
+        operation: 'submit',
+        status: 'succeeded',
+        label: 'Submit',
+        fields: ['days'],
+      },
+    },
+  }
+  const submit: UINode = { ...tool('completed'), id: 'submit', name: 'ui_submit' }
+  const store = createConversationProjectionStore({
+    sessionId: 'session',
+    nodes: [user, queued, submit, answers],
+  })
+  await mount(store)
+  expect(item('queued')).toBeNull()
+  expect(item('answers')?.querySelector('[data-testid="question-answer-days"]')?.textContent).toBe(
+    'days3 天 2 晚',
+  )
+})

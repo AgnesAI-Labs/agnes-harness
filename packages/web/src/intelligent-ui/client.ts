@@ -68,6 +68,8 @@ export class IntelligentUiClient {
   private readonly retryRows = new Map<string, UiActionReceipt>()
   private readonly recheck = new Set<string>()
   private readonly reviewed = new Set<string>()
+  /** Closed surfaces read back by id; the session page lists open surfaces only. */
+  private readonly looked = new Map<string, UiSurfaceRecord | null>()
   private readonly confirming = new Map<
     string,
     { action: UiAction; row?: UiRowContext; retryOf?: string; revision: number }
@@ -342,6 +344,32 @@ export class IntelligentUiClient {
 
   record(id: string): UiSurfaceRecord | undefined {
     return this.snapshot.surfaces.find((item) => item.surface.id === id)
+  }
+  /** A listed surface, or one already read back by id (for example a closed question). */
+  knownRecord(id: string): UiSurfaceRecord | undefined {
+    return this.record(id) ?? this.looked.get(id) ?? undefined
+  }
+  /** Read one surface by id once, open or closed, through the same authenticated ui.read. */
+  async lookup(id: string): Promise<void> {
+    if (this.disposed || this.record(id) || this.looked.has(id)) return
+    this.looked.set(id, null)
+    try {
+      const page = await this.server.read({ sessionId: this.sessionId, surfaceId: id, limit: 1 })
+      const record = page.surfaces[0]
+      if (
+        this.disposed ||
+        !boundedUiJson(page, X_AGNES_UI_LIMITS.projectionBytes, X_AGNES_UI_LIMITS.jsonDepth + 4) ||
+        !validateAgainst<UiReadResult>(UiReadResult, page).ok ||
+        page.sessionId !== this.sessionId ||
+        record?.surface.id !== id ||
+        !displayableIntelligentSurface(record.surface, typedSources(record.sources))
+      )
+        return
+      this.looked.set(id, record)
+      this.emit()
+    } catch {
+      /* the answers still show, keyed by question id */
+    }
   }
   receipts(id: string): UiActionReceipt[] {
     return this.snapshot.receipts.filter((item) => item.surfaceId === id)

@@ -132,6 +132,26 @@ function DshNodeLeaf({
   )
 }
 
+function foldedQuestionQueues(nodes: readonly UINode[]): ReadonlySet<string> {
+  const folded = new Set<string>()
+  nodes.forEach((node, index) => {
+    // The ui_submit tool node itself can sit between the queued line and the delivered answers.
+    const next = nodes.slice(index + 1).find((item) => item.kind === 'user')
+    if (
+      node.kind === 'user' &&
+      node.system?.source === 'agnes/deferred-invocations' &&
+      node.system.type === 'invocation-queued' &&
+      String((node.system.data as { invocationId?: unknown } | undefined)?.invocationId ?? '').startsWith(
+        'ui:',
+      ) &&
+      next &&
+      questionSubmission(next)?.surfaceId.startsWith('card-')
+    )
+      folded.add(node.id)
+  })
+  return folded
+}
+
 /** Independent Web harness for transcript projection and interaction. */
 function interactionEcho(
   nodes: readonly UINode[],
@@ -184,6 +204,11 @@ export function WebConversationMessages({
     registry ? registry.subscribeSession.bind(registry) : noSessionSubscription,
     () => registry?.sessionId,
   )
+  // A queued surface action followed by its question answers is one event: the answers say it.
+  const folded = foldedQuestionQueues(nodes ?? [])
+  const shownNodeIds = folded.size
+    ? (visibleNodeIds ?? (nodes ?? []).map((node) => node.id)).filter((id) => !folded.has(id))
+    : visibleNodeIds
   // Route exact interaction echoes into the tool's existing disclosure, keeping one details action.
   const echoedTools = new Map<string, Extract<UINode, { kind: 'tool' }>>()
   const rawEchoes = new Map<string, string[]>()
@@ -205,7 +230,7 @@ export function WebConversationMessages({
     t: (key, vars) => locale?.t(key, vars) ?? key,
     nodes: nodes ?? [],
     ...(turns ? { turns } : {}),
-    ...(visibleNodeIds ? { visibleNodeIds } : {}),
+    ...(shownNodeIds ? { visibleNodeIds: shownNodeIds } : {}),
     renderTurnDeliverables: (turn) => <TurnDeliverables turn={turn} />,
     processStep: (node) => workflowStepRecord(node.text),
     renderTurnActions: (turn, finalText, settled) => {

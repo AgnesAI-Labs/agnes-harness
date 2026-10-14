@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { SettingsInput, SettingsTextArea } from '../settings-layout.js'
 import { Button } from '../ui/button.js'
 import { Icon } from '../ui/icon.js'
@@ -85,8 +85,8 @@ export function QuestionCard(props: QuestionCardProps) {
     if (complete && !props.locked) props.onSubmit(complete)
   }
   const forward = () => (last ? submit() : go(step + 1))
-  const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
-    if (props.locked || event.nativeEvent.isComposing || event.metaKey || event.ctrlKey || event.altKey)
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (props.locked || collapsed || event.isComposing || event.metaKey || event.ctrlKey || event.altKey)
       return
     const target = event.target as HTMLElement
     if (target.closest('button')) return
@@ -105,6 +105,19 @@ export function QuestionCard(props: QuestionCardProps) {
       set(current, toggleOption(current, answers[current.id], option))
     }
   }
+  const section = useRef<HTMLElement>(null)
+  const keys = useRef(onKeyDown)
+  keys.current = onKeyDown
+  // With nothing focused the keys reach the first open card; the composer and other fields keep theirs.
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => {
+      if (event.target !== document.body || event.defaultPrevented) return
+      if (document.querySelector('[data-testid="question-card"]') !== section.current) return
+      keys.current(event)
+    }
+    document.addEventListener('keydown', listener)
+    return () => document.removeEventListener('keydown', listener)
+  }, [])
   const heading = collapsed
     ? t('ui.question.headingProgress', { answered, count })
     : t(count === 1 ? 'ui.question.headingOne' : 'ui.question.heading', { count })
@@ -120,7 +133,8 @@ export function QuestionCard(props: QuestionCardProps) {
       data-surface-id={props.surfaceId}
       data-collapsed={collapsed || undefined}
       aria-labelledby={titleId}
-      onKeyDown={onKeyDown}
+      ref={section}
+      onKeyDown={(event) => onKeyDown(event.nativeEvent)}
     >
       <header className="agnes-question-head">
         <h3 id={titleId}>{heading}</h3>

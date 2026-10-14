@@ -969,8 +969,10 @@
   .agnes-question-card {
     display: grid;
     grid-template-rows: auto auto minmax(0, 1fr) auto;
+    /* Same column as the composer card it sits on. */
+    width: min(calc(100% - 2rem), var(--composer-card-max-width, 48rem));
     max-height: min(62vh, 34rem);
-    margin: 0 0 var(--s8);
+    margin: 0 auto var(--s8);
     border: 1px solid var(--agnes-line-primary);
     border-radius: var(--radius-lg);
     background: var(--agnes-bg-surface);
@@ -1174,7 +1176,7 @@
     border-radius: var(--radius-full);
   }
   .agnes-question-option[data-multiple] .agnes-question-option-mark {
-    border-radius: var(--radius-sm);
+    border-radius: 0.25rem;
   }
   .agnes-question-option[data-selected] .agnes-question-option-mark {
     border-color: var(--agnes-brand-primary);

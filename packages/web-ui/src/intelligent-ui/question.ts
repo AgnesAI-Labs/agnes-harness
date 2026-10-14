@@ -63,7 +63,14 @@ export function questionForm(
   if (!action || !record(schema.properties)) return undefined
   const labels = record(marker.labels) ? marker.labels : {}
   const questions: QuestionItem[] = []
-  for (const [id, field] of Object.entries(schema.properties)) {
+  // Stored surfaces are canonical JSON, so property order is lost; `required` keeps the asking order.
+  const properties = schema.properties
+  const asked = Array.isArray(schema.required)
+    ? schema.required.filter((id): id is string => typeof id === 'string' && Object.hasOwn(properties, id))
+    : []
+  const order = [...asked, ...Object.keys(properties).filter((id) => !asked.includes(id))]
+  for (const id of order) {
+    const field = properties[id]
     if (!record(field)) return undefined
     const multiple = field.type === 'array'
     const item = multiple && record(field.items) ? field.items : field

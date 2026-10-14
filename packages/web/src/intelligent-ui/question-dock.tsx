@@ -8,7 +8,7 @@ import {
   questionForm,
   UiLocaleProvider,
 } from '@agnes/web-ui'
-import { type ReactNode, useSyncExternalStore } from 'react'
+import { type ReactNode, useEffect, useSyncExternalStore } from 'react'
 import type { IntelligentUiClient } from './client.js'
 import { useIntelligentBinding } from './turn-deliverables.js'
 
@@ -113,7 +113,10 @@ export function QuestionAnswersNode({
   native: ReactNode
 }) {
   const { binding, client } = useIntelligentBinding()
-  const record = client?.record(submission.surfaceId)
+  useEffect(() => {
+    if (client && submission.surfaceId.startsWith('card-')) void client.lookup(submission.surfaceId)
+  }, [client, submission.surfaceId])
+  const record = client?.knownRecord(submission.surfaceId)
   const form = record ? questionForm(record.surface) : undefined
   if (record ? !form : !submission.surfaceId.startsWith('card-')) return native
   const values = submission.answers as QuestionAnswers

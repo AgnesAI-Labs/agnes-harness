@@ -49,6 +49,7 @@ function surface(deadline = 0): UiSurface {
         schema: {
           type: 'object',
           additionalProperties: false,
+          // Canonical JSON sorts properties; `required` keeps the asking order.
           required: ['days', 'topics', 'notes', 'who'],
           properties: {
             days: {
@@ -56,6 +57,7 @@ function surface(deadline = 0): UiSurface {
               ...choice(['2 天 1 晚', '3 天 2 晚']),
               'x-ui-choices': ['2 天 1 晚', '3 天 2 晚'],
             },
+            notes: { title: 'Anything else?', type: 'string', minLength: 1 },
             topics: {
               title: 'Which topics should it cover?',
               type: 'array',
@@ -63,7 +65,6 @@ function surface(deadline = 0): UiSurface {
               items: choice(['Food', 'Transport', 'Budget']),
               'x-ui-choices': ['Food', 'Transport', 'Budget'],
             },
-            notes: { title: 'Anything else?', type: 'string', minLength: 1 },
             who: {
               title: 'Who is travelling?',
               ...choice(['Couple', 'Family'], true),
@@ -203,6 +204,14 @@ describe('question card', () => {
       notes: 'Quiet hotels',
       who: 'Friends',
     })
+  })
+
+  it('takes the keys when nothing on the page has focus', async () => {
+    await mount()
+    await press(document.body, '2')
+    expect((q('[data-testid="question-option-days-1"]') as HTMLInputElement).checked).toBe(true)
+    await press(document.body, 'Enter')
+    expect(q('[data-testid="question-step-1"]')?.dataset.state).toBe('current')
   })
 
   it('digits typed into free text stay text', async () => {

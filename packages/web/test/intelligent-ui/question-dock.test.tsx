@@ -93,7 +93,13 @@ async function mount(records: UiSurfaceRecord[], extra?: ReturnType<typeof creat
     }),
   )
   const client = new IntelligentUiClient('session-finance', {
-    read: async () => ({ ...uiPage(records[0], [], 20), surfaces: records }),
+    // Like the service: the session page lists open surfaces; a surface id reads that one, open or closed.
+    read: async (params) => ({
+      ...uiPage(records[0], [], 20),
+      surfaces: records.filter((record) =>
+        params.surfaceId ? record.surface.id === params.surfaceId : record.status === 'open',
+      ),
+    }),
     refresh: async () => records[0]!,
     action,
     listen: () => () => {},
@@ -102,9 +108,9 @@ async function mount(records: UiSurfaceRecord[], extra?: ReturnType<typeof creat
   await client.start()
   const locale = createDocumentLocaleSource({})
   const binding: UiPlacementBinding = {
-    subscribe: () => () => {},
+    subscribe: (listener) => client.subscribe(listener),
     getSnapshot: () => client,
-    getVersion: () => 0,
+    getVersion: () => client.getVersion(),
     locale: locale.source,
     target: () => undefined,
     expand: vi.fn(),
@@ -228,6 +234,7 @@ describe('answered receipt', () => {
       [questionRecord('closed')],
       createElement(QuestionAnswersNode, { submission: questionSubmission(node)!, native: 'native' }),
     )
+    await act(async () => {})
     const receipt = view.host.querySelector('[data-testid="question-answers"]')
     expect(receipt?.querySelector('[data-testid="question-answer-format"] dt')?.textContent).toBe('Format')
     expect(receipt?.querySelector('[data-testid="question-answer-topics"] dt')?.textContent).toBe(
