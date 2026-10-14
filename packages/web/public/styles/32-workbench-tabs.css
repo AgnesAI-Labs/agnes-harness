@@ -246,4 +246,145 @@
     color: var(--agnes-text-secondary);
     font-size: var(--font-size-xs);
   }
+
+  /* Execution record: turns of one-row records; the open row's facts sit right under it. */
+  .workbench-activity-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: var(--s4) var(--s8) var(--s12);
+  }
+  .workbench-activity-turn-head {
+    margin: var(--s8) var(--s4) var(--s4);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-regular);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .workbench-activity-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .workbench-activity-row.agnes-ui-button {
+    display: grid;
+    grid-template-columns: 1.375rem minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--s8);
+    width: 100%;
+    height: auto;
+    min-height: 2.5rem;
+    padding: var(--s4) var(--s4);
+    border-radius: var(--radius-sm);
+    color: var(--agnes-text-primary);
+    text-align: start;
+    font-weight: var(--font-weight-regular);
+  }
+  .workbench-activity-row.agnes-ui-button[aria-expanded="true"] {
+    background: var(--agnes-bg-selected);
+  }
+  .workbench-activity-icon {
+    display: grid;
+    place-items: center;
+    width: 1.375rem;
+    height: 1.375rem;
+    border-radius: var(--radius-sm);
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-fill);
+  }
+  .workbench-activity-icon > svg {
+    width: 0.8125rem;
+    height: 0.8125rem;
+  }
+  .workbench-activity-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .workbench-activity-text > strong {
+    font-weight: var(--font-weight-medium);
+  }
+  .workbench-activity-text > :is(strong, small) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .workbench-activity-text > small {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+  }
+  .workbench-activity-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s8);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+  }
+  .workbench-activity-details,
+  .workbench-activity-pinned {
+    margin: var(--s4) var(--s4) var(--s12) 2.125rem;
+    padding: var(--s8) var(--s12);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-md);
+    background: var(--agnes-bg-surface);
+  }
+  .workbench-activity-pinned {
+    margin-inline-start: var(--s4);
+  }
+  .workbench-activity-record {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--s8);
+    font-size: var(--font-size-xs);
+  }
+  .workbench-activity-record > .agnes-ui-button {
+    align-self: flex-start;
+  }
+  .workbench-activity-facts {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--s4) var(--s12);
+    margin: 0;
+  }
+  .workbench-activity-facts > div {
+    display: contents;
+  }
+  .workbench-activity-facts dt {
+    color: var(--agnes-text-secondary);
+  }
+  .workbench-activity-facts dd {
+    margin: 0;
+    min-width: 0;
+  }
+  .workbench-activity-facts dd .agnes-ui-button {
+    height: auto;
+    padding: 0;
+  }
+  .workbench-activity-artifact {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s8);
+  }
+  .workbench-activity-record [data-testid="review-evidence"] {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s4) var(--s8);
+  }
+  .workbench-activity-record [data-testid="review-evidence"] > p {
+    flex-basis: 100%;
+    margin: 0;
+    color: var(--agnes-text-secondary);
+  }
+  .workbench-activity-gaps {
+    margin: 0;
+    color: var(--agnes-status-warning-text);
+  }
+  .workbench-activity-technical {
+    color: var(--agnes-text-secondary);
+  }
 }
