@@ -1,4 +1,5 @@
 import { SettingsPages } from '@agnes/web-admin/settings/pages'
+import { SettingsGeneralExtras } from '@agnes/web-admin/settings/system-prompt'
 import {
   dshSlotSpec,
   type LocaleService,
@@ -107,7 +108,12 @@ export function mountSettingsPaneRegion(
         priority: 0,
       },
       () => (
-        <SettingsPaneBuiltin pane={pane} {...(locale ? { translate: (key: string) => locale.t(key) } : {})} />
+        <SettingsPaneBuiltin
+          pane={pane}
+          {...(locale ? { translate: (key: string) => locale.t(key) } : {})}
+          // The General page also carries the custom instructions, which the admin package owns.
+          {...(pane === 'appearance' ? { extras: <SettingsGeneralExtras /> } : {})}
+        />
       ),
     )
     removeBuiltin.set(pane, remove)

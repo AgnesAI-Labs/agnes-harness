@@ -415,9 +415,12 @@ export const SettingsBuiltin = forwardRef(SettingsBuiltinImpl)
 export function SettingsPaneBuiltin({
   pane,
   translate,
+  extras,
 }: {
   translate?: (key: string) => string
   pane: SettingsPane
+  /** More groups for the General page, owned by the host: they sit above the advanced switch. */
+  extras?: ReactNode
 }) {
   return (
     <div data-agnes-region-owner="builtin" data-agnes-region-unit={`settings-${pane}`}>
@@ -428,7 +431,7 @@ export function SettingsPaneBuiltin({
           afterAccounts={<SettingsDshHost name="settings.models.footer" />}
         />
       ) : (
-        <SettingsStaticPane pane={pane} {...(translate ? { translate } : {})} />
+        <SettingsStaticPane pane={pane} extras={extras} {...(translate ? { translate } : {})} />
       )}
     </div>
   )

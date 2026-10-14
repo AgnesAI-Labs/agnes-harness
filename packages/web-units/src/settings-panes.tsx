@@ -9,6 +9,7 @@ import {
   setAdvancedSettingsShown,
   useAdvancedSettings,
 } from '@agnes/web-ui'
+import type { ReactNode } from 'react'
 import type { SettingsPane } from './settings.js'
 import { SettingsDshHost } from './settings-shell.js'
 
@@ -16,9 +17,12 @@ import { SettingsDshHost } from './settings-shell.js'
 export function SettingsStaticPane({
   pane,
   translate,
+  extras,
 }: {
   pane: SettingsPane
   translate?: (key: string) => string
+  /** Groups the host adds between the appearance settings and the advanced switch. */
+  extras?: ReactNode
 }) {
   const advanced = useAdvancedSettings()
   const text = (key: string, fallback: string) => {
@@ -117,6 +121,7 @@ export function SettingsStaticPane({
             </div>
           </fieldset>
         </SettingsGroup>
+        {extras}
         <SettingsGroup>
           <SettingsItem
             icon="sliders-horizontal"
