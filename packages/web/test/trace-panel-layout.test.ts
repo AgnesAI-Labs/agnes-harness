@@ -69,7 +69,7 @@ describe('trace region layout', () => {
     // .trace-body 拿到的不是剩余高度而是内容高度，.trace-list 的 overflow:auto 永不触发，
     // 列表被区域的 overflow:hidden 裁掉又滚不动。
     expect(declarations('[data-agnes-region="trace"]')).toContain(
-      'grid-template-rows: auto auto minmax(0, 1fr)',
+      'grid-template-rows: auto auto auto minmax(0, 1fr)',
     )
     expect(
       declarations(
@@ -78,5 +78,34 @@ describe('trace region layout', () => {
     ).toContain('display: contents')
     expect(declarations('.trace-body')).toContain('min-height: 0')
     expect(declarations('.trace-list')).toContain('overflow: auto')
+  })
+
+  it('gives every part of the trace its own row, so control records cannot push the list off the flexible one', () => {
+    // A run with approvals adds the control records above the toolbar. With auto-placement that
+    // fourth part moved the timeline onto the flexible row, where it collapsed and its lanes were
+    // painted over the first records.
+    expect(declarations('.trace-control-facts')).toContain('grid-row: 1')
+    expect(declarations('.trace-control-facts')).toContain('overflow: auto')
+    expect(declarations('.trace-toolbar')).toContain('grid-row: 2')
+    expect(declarations('.trace-gantt')).toContain('grid-row: 3')
+    expect(declarations('.trace-body')).toContain('grid-row: 4')
+    expect(declarations('.trace-empty')).toContain('grid-row: 4')
+  })
+
+  it('keeps shared control retuning out of the trace', () => {
+    const scope = ':where([data-agnes-region="trace"])'
+    const small = declarations(`${scope} :where(.agh-btn--sm:not(.agh-btn--icon))`)
+    expect(small).toContain('height: var(--control-height-sm)')
+    expect(small).toContain('min-height: var(--control-height-sm)')
+    expect(declarations(`${scope} :where(.agh-btn:not(.agh-btn--link), .agnes-settings-input)`)).toContain(
+      'border-radius: var(--radius-md)',
+    )
+    const select = declarations(`${scope} :where(select.agnes-settings-input)`)
+    expect(select).toContain('box-shadow: none')
+    expect(select).toContain('border-color: var(--agnes-input-border)')
+    expect(declarations(`${scope} :where(.agh-btn, .agnes-settings-input)`)).toContain('corner-shape: round')
+    // Trace rules name the fixed 10px step; the shared control radius is free to move.
+    const traceRules = flatCss.match(/\.trace-[\w-]+[^{}]*\{[^}]*\}/g) ?? []
+    expect(traceRules.filter((rule) => rule.includes('var(--radius-control)'))).toEqual([])
   })
 })

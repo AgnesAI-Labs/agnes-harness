@@ -1,7 +1,9 @@
 @layer app {
   [data-agnes-region="trace"] {
     display: grid;
-    grid-template-rows: auto auto minmax(0, 1fr);
+    /* Control records, toolbar, timeline, list. Each part names its row, so a part that is absent
+     leaves an empty track instead of shifting the list out of the one row that takes the rest. */
+    grid-template-rows: auto auto auto minmax(0, 1fr);
     min-width: 0;
     min-height: 0;
     overflow: hidden;
@@ -82,8 +84,49 @@
   .rightbar-document-preview .document-preview-unavailable {
     color: var(--agnes-text-secondary);
   }
+  /* The trace keeps the look it was approved with. The refinement layer retunes shared controls
+   everywhere (24px small buttons, 8px squircle corners, popup-button selects); here they are
+   set back, at zero specificity so each trace rule below still decides for itself. */
+  :where([data-agnes-region="trace"]) :where(.agh-btn--sm:not(.agh-btn--icon)) {
+    height: var(--control-height-sm);
+    min-height: var(--control-height-sm);
+  }
+  :where([data-agnes-region="trace"]) :where(.agh-btn:not(.agh-btn--link), .agnes-settings-input) {
+    border-radius: var(--radius-md);
+  }
+  :where([data-agnes-region="trace"]) :where(.agnes-settings-input) {
+    line-height: inherit;
+  }
+  :where([data-agnes-region="trace"]) :where(select.agnes-settings-input) {
+    padding-inline: var(--s12) var(--s32);
+    border-color: var(--agnes-input-border);
+    box-shadow: none;
+  }
+  :where([data-agnes-region="trace"])
+    :where(select.agnes-settings-input:hover:not(:disabled):not(:focus-visible)) {
+    border-color: var(--agnes-input-border-emphasis);
+  }
+  :where([data-agnes-region="trace"]) :where(select.agnes-settings-input:focus-visible) {
+    border-color: var(--agnes-input-border-focus);
+    box-shadow: 0 0 0 3px var(--agnes-focus-ring-soft);
+  }
+  @supports (corner-shape: squircle) {
+    :where([data-agnes-region="trace"]) :where(.agh-btn, .agnes-settings-input) {
+      corner-shape: round;
+    }
+  }
+  /* Collapsed it is one quiet line above the toolbar; open it scrolls inside its own cap, so the
+   record list below never loses its height to it. */
+  .trace-control-facts {
+    grid-row: 1;
+    max-height: 16rem;
+    overflow: auto;
+    padding: 0 var(--s8);
+    border-bottom: 1px solid var(--agnes-line-primary);
+  }
   /* One compact strip, the height of the tab rows around it; its filters are toolbar-sized. */
   .trace-toolbar {
+    grid-row: 2;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -130,16 +173,17 @@
     min-height: var(--s32);
     padding: 0 var(--s12);
     border-color: var(--agnes-line-primary);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-md);
     color: var(--agnes-text-secondary);
     background: transparent;
     font-size: var(--font-size-sm);
     font-weight: 400;
   }
   .trace-toolbar :is(.trace-type-filter, .trace-search) {
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-md);
   }
   .trace-gantt {
+    grid-row: 3;
     display: flex;
     flex-direction: column;
     gap: 0.28rem;
@@ -165,7 +209,7 @@
     min-height: var(--control-height-sm);
     padding: 0 var(--s8);
     border: 1px solid var(--agnes-line-primary);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-md);
     background: var(--agnes-bg-app-content);
     color: var(--agnes-text-primary);
     font-size: var(--font-size-xs);
@@ -257,6 +301,7 @@
     background: var(--agnes-trace-lane-tool);
   }
   .trace-body {
+    grid-row: 4;
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(18rem, 24rem);
     min-height: 0;
@@ -704,7 +749,7 @@
     min-height: 1.75rem;
     padding: 0 var(--s8);
     border: 1px solid var(--agnes-line-primary);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-md);
     background: transparent;
     color: var(--agnes-text-primary);
     font-size: var(--font-size-xs);
@@ -727,7 +772,7 @@
     padding: 0;
     overflow: hidden;
     border: 1px solid var(--agnes-line-primary);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-md);
     background: transparent;
   }
   .trace-image-thumb img {
@@ -758,6 +803,7 @@
     min-height: 2rem;
   }
   .trace-empty {
+    grid-row: 4;
     margin: var(--s24) var(--s20);
   }
   @media (max-width: 900px) {

@@ -5,7 +5,11 @@ import { type TraceMessageKey, traceText } from './trace-locale.js'
 /** The session control decisions recorded for this trace, collapsed until the reader asks. */
 export function TraceControlFacts({ facts }: { facts: readonly SessionControlFact[] }) {
   return (
-    <Disclosure data-testid="control-facts" summary={traceText('trace.controls.title')}>
+    <Disclosure
+      className="trace-control-facts"
+      data-testid="control-facts"
+      summary={traceText('trace.controls.title')}
+    >
       <ol>
         {facts.map((fact) => (
           <li key={fact.seq} data-testid="control-fact">
