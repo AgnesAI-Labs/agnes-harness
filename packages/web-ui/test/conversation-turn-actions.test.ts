@@ -109,6 +109,8 @@ it('shows complete usage facts as text and keeps the disclosure nodes through re
   const list = required<HTMLElement>('dl')
   expect(summary.textContent).toContain(model)
   expect(summary.textContent).toContain('继承历史')
+  // The bar reads «time · model»; tokens, cost and time are in the panel only.
+  expect(summary.textContent).not.toMatch(/输入|输出|\$|用时/)
   expect(rows().slice(0, 6)).toEqual([
     ['输入 Token', '1,234'],
     ['输出 Token', '0'],
@@ -136,9 +138,28 @@ it('shows complete usage facts as text and keeps the disclosure nodes through re
   expect(rows()).toContainEqual(['用时', '4.0 秒'])
   await render({ turn: turn('one'), finalText: 'answer', settled: true })
   expect(rows()).toHaveLength(3)
-  expect(required('.turn-meta').textContent).toContain('输入 12')
-  expect(required('.turn-meta').textContent).toContain('输出 4')
+  expect(rows().slice(0, 2)).toEqual([
+    ['输入 Token', '12'],
+    ['输出 Token', '4'],
+  ])
+  expect(required('.turn-meta').textContent).not.toContain('输入')
   expect(host.textContent).not.toContain('$')
+})
+
+it('reads «time · model» on the bar and keeps it on one line', async () => {
+  await render({
+    turn: turn('one', {
+      endedAt: '2026-10-14T08:23:00.000Z',
+      durationMs: 13_000,
+      finalModel: 'deepseek-flash',
+    }),
+    finalText: 'answer',
+    settled: true,
+  })
+  const facts = required('.turn-meta-facts').textContent ?? ''
+  expect(facts).toMatch(/^\d{1,2}:\d{2}( [AP]M)? · deepseek-flash$/)
+  expect(required('.turn-meta').textContent).toBe(facts)
+  expect(rows()).toContainEqual(['用时', '13 秒'])
 })
 
 it('dismisses only its own usage on an outside click, retaining inside clicks and process disclosure', async () => {

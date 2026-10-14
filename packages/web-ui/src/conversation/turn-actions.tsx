@@ -252,15 +252,8 @@ export function ConversationTurnActions({
       : undefined,
     latestModel(turn),
   ].filter(Boolean)
+  // The bar names when and with which model; tokens, cost and time live in its panel.
   const { totals, cost, credits, billingComplete } = turn.usage
-  // Reuse the backend's authoritative turn totals, including partial accounting.
-  if (totals.input || totals.output || (cost?.usdMicros ?? 0) || (credits?.amount ?? 0)) {
-    facts.push(t('cost.summary.input', { n: totals.input }), t('cost.summary.output', { n: totals.output }))
-    if (cost)
-      facts.push(
-        `$${(cost.usdMicros / 1e6).toFixed(6)}${billingComplete ? '' : t('turnactions.billingPartial')}`,
-      )
-  }
   const duration = durationLabel(turn.durationMs, t)
   const rows: Array<[string, string]> = [
     [t('turnactions.rows.tokensIn'), totals.input.toLocaleString()],
@@ -373,15 +366,6 @@ export function ConversationTurnActions({
             settled ? (
               <span className="turn-meta-text">
                 <span className="turn-meta-facts">{facts.join(' · ')}</span>
-                {turn.status === 'completed' && duration && (
-                  <span className="turn-meta-done">
-                    {facts.length > 0 && ' · '}
-                    <svg className="icon turn-done-check" viewBox="0 0 24 24" aria-hidden="true">
-                      <path d="m5 12.5 4.5 4.5L19 7.5" />
-                    </svg>
-                    {t('turnactions.took', { duration })}
-                  </span>
-                )}
               </span>
             ) : (
               ''

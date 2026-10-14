@@ -471,34 +471,9 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .turn-meta-done {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-  }
-  .turn-meta .turn-done-check {
-    width: 0.75rem;
-    height: 0.75rem;
-    margin-inline-end: 0.1875rem;
-    color: var(--agnes-status-success-text);
-  }
   .turn-action[data-copied="true"] {
     color: var(--agnes-status-success-text);
   }
-  /* The newest turn keeps its bar; an earlier one shows it to the pointer or the keyboard. */
-  @media (hover: hover) and (min-width: 768px) {
-    .conversation-turn:not([data-latest="true"]) .turn-footer {
-      opacity: 0;
-      transition: opacity var(--transition-fast);
-    }
-    .conversation-turn:not([data-latest="true"]):hover .turn-footer,
-    .conversation-turn:not([data-latest="true"]) .turn-footer:focus-within,
-    .conversation-turn:not([data-latest="true"])
-      .turn-footer:has([aria-expanded="true"], [aria-pressed="true"]) {
-      opacity: 1;
-    }
-  }
-
   /* Empty conversation: greeting, one line of purpose, a few starting points. */
   #empty-state .ant-welcome.empty-state-welcome {
     flex-direction: column;
