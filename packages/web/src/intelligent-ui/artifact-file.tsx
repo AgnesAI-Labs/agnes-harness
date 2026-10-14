@@ -12,7 +12,12 @@ import {
 } from '@agnes/web-ui'
 import { DocumentPreview, HtmlPreviewFrame } from '@agnes/web-ui/conversation'
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
-import { type DeliverableType, deliverableType, deliverableVersion } from './deliverable-labels.js'
+import {
+  type DeliverableType,
+  deliverableType,
+  deliverableVersion,
+  type EarlierVersion,
+} from './deliverable-labels.js'
 
 const PREVIEW_LIMIT = 1024 * 1024
 
@@ -61,6 +66,7 @@ export function ArtifactFile({
   resources,
   placement = 'workbench',
   onShowInWorkbench,
+  earlier,
 }: {
   file: UiArtifactFileData
   laneId: string
@@ -68,6 +74,8 @@ export function ArtifactFile({
   placement?: 'inline' | 'workbench'
   /** Present when this file also has a workbench copy: previews open there, not in the conversation. */
   onShowInWorkbench?: (() => void) | undefined
+  /** An older version of a file presented again with other content: its card says which and how. */
+  earlier?: EarlierVersion | undefined
 }) {
   const { t, locale, hostT } = useUiText(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
   const owner = useMemo(
@@ -93,14 +101,41 @@ export function ArtifactFile({
   }, [owner])
   const kind = previewKind(file.artifact.mime)
   const size = file.artifact.size
-  const units = size >= 1024 * 1024 ? ([1024 * 1024, 'MiB'] as const) : ([1024, 'KiB'] as const)
-  const formattedSize =
-    size > 0 && size < 1024
+  const formatSize = (bytes: number) => {
+    const units = bytes >= 1024 * 1024 ? ([1024 * 1024, 'MiB'] as const) : ([1024, 'KiB'] as const)
+    return bytes > 0 && bytes < 1024
       ? '<1 KiB'
-      : `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(size / units[0])} ${units[1]}`
+      : `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(bytes / units[0])} ${units[1]}`
+  }
+  const formattedSize = formatSize(size)
   const type = deliverableType(file.name, file.artifact.mime)
   const version = deliverableVersion(file.description)
-  const subtitle = [version && ('key' in version ? t(version.key) : version.text), formattedSize]
+  const described = version && ('key' in version ? t(version.key) : version.text)
+  // An earlier version names when it was presented and how its size differs from the latest.
+  const versionTime =
+    earlier?.presentedAt === undefined
+      ? undefined
+      : new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' }).format(
+          new Date(earlier.presentedAt),
+        )
+  const versionName = earlier
+    ? versionTime === undefined
+      ? t('ui.file.versionN', { n: earlier.ordinal })
+      : t('ui.file.versionAt', { time: versionTime })
+    : undefined
+  const subtitle = (
+    earlier
+      ? [
+          versionName,
+          earlier.sizeDelta === 0
+            ? t('ui.file.sameSize')
+            : t(earlier.sizeDelta < 0 ? 'ui.file.smaller' : 'ui.file.larger', {
+                size: formatSize(Math.abs(earlier.sizeDelta)),
+              }),
+          earlier.sameDescription ? undefined : described,
+        ]
+      : [described, formattedSize]
+  )
     .filter(Boolean)
     .join(' · ')
   const key = fileKey(laneId, file)
@@ -185,6 +220,7 @@ export function ArtifactFile({
       data-testid="deliverable-file"
       data-placement={placement}
       data-open={opened}
+      {...(earlier ? { 'data-version': 'earlier' } : {})}
     >
       <div className="deliverable-row">
         <span className="deliverable-tile" data-type={type} aria-hidden="true">
@@ -252,6 +288,11 @@ export function ArtifactFile({
         <div className="deliverable-preview" data-testid="deliverable-preview" data-kind={kind ?? 'none'}>
           <div className="deliverable-preview-bar">
             <span className="deliverable-preview-name">{file.name}</span>
+            {versionName && (
+              <span className="deliverable-preview-version" data-testid="deliverable-preview-version">
+                {t('ui.file.earlierLabel', { version: versionTime ?? versionName })}
+              </span>
+            )}
             <IconButton
               name="download"
               label={t('ui.file.download')}

@@ -9,7 +9,12 @@ import {
 import { Button, Disclosure, Icon, SettingsState, UiLocaleProvider } from '@agnes/web-ui'
 import { useState, useSyncExternalStore } from 'react'
 import { ArtifactFile } from './artifact-file.js'
-import { deliverableVersion, groupDeliverables, type TurnDeliverable } from './deliverable-labels.js'
+import {
+  deliverableVersion,
+  type EarlierVersion,
+  groupDeliverables,
+  type TurnDeliverable,
+} from './deliverable-labels.js'
 import type { UiPlacementBinding } from './placements.js'
 import { surfaceDeliverables } from './turn-deliverables.js'
 
@@ -29,7 +34,7 @@ export function sessionDeliverables(surfaces: readonly UiSurfaceRecord[]): TurnD
  */
 export function deliverableGroups(entries: readonly TurnDeliverable[]): {
   groups: { group: Group; entries: TurnDeliverable[] }[]
-  earlier: TurnDeliverable[]
+  earlier: (TurnDeliverable & { version: EarlierVersion })[]
 } {
   const named = groupDeliverables(entries)
   const groupOf = (entry: TurnDeliverable): Group => {
@@ -97,7 +102,7 @@ export function WorkbenchDeliverables({
     current && sessionId && node?.kind === 'artifact'
       ? { sessionId, laneId: current.lane, anchor: { kind: 'artifact', seq: node.seq, ref: node.ref } }
       : undefined
-  const card = (entry: TurnDeliverable) => (
+  const card = (entry: TurnDeliverable & { version?: EarlierVersion }) => (
     // biome-ignore lint/a11y/noStaticElementInteractions: a click inside a card only marks it as the one the footer names.
     <li
       key={entryKey(entry)}
@@ -109,6 +114,7 @@ export function WorkbenchDeliverables({
         laneId={entry.lane}
         resources={binding.resources}
         placement="workbench"
+        {...(entry.version ? { earlier: entry.version } : {})}
       />
     </li>
   )

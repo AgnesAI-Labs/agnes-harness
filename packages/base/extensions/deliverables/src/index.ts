@@ -133,12 +133,16 @@ export default defineAgnesPlugin({
                   kind: 'artifact-file',
                   dataKey: 'file-' + i,
                 })),
-                data: Object.fromEntries(
-                  files.map((file, i) => [
-                    'file-' + i,
-                    { name: file.name, description: file.description, artifact: file.ref },
-                  ]),
-                ),
+                data: {
+                  ...Object.fromEntries(
+                    files.map((file, i) => [
+                      'file-' + i,
+                      { name: file.name, description: file.description, artifact: file.ref },
+                    ]),
+                  ),
+                  // When the files were presented (epoch ms): an earlier version is named by it.
+                  presentedAt: Date.now(),
+                },
                 actions: [],
               })
               return {

@@ -974,6 +974,15 @@
     border-bottom: 1px solid var(--agnes-line-primary);
     background: var(--agnes-bg-fill);
   }
+  .deliverable-preview-version {
+    flex: none;
+    padding: 0 var(--s4);
+    border-radius: var(--radius-sm);
+    color: var(--agnes-status-warning-text);
+    background: var(--agnes-status-warning-bg);
+    font-size: var(--font-size-xs);
+    white-space: nowrap;
+  }
   .deliverable-preview-name {
     flex: 1 1 0;
     min-width: 0;

@@ -233,3 +233,47 @@ it('says when a session has no deliverables, and opens this tab from a conversat
     host.remove()
   }
 })
+
+it('the tab shows no earlier version for an identical repeat, and labels a changed one by time and size', async () => {
+  const at = Date.parse('2026-10-14T08:16:00.000Z')
+  const time = new Intl.DateTimeFormat('en', { hour: '2-digit', minute: '2-digit' }).format(new Date(at))
+  const presented = (id: string, seq: number, digest: string, size: number, when: number) => {
+    const record = fileList(id, seq, [
+      { name: 'index.html', description: '咖啡豆门户站', sha: digest, mime: 'text/html' },
+    ])
+    const file = record.surface.data['file-0'] as { artifact: { size: number } }
+    file.artifact.size = size
+    record.surface.data.presentedAt = when
+    return record
+  }
+  const t = createCatalogTranslator(workbenchLocaleCatalog, 'zh-CN')
+  const host = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(host)
+  const show = (records: UiSurfaceRecord[]) =>
+    act(async () =>
+      root.render(
+        createElement(WorkbenchDeliverables, {
+          binding: binding(records),
+          context: { t, data: { session: { id: 's' } } },
+        }),
+      ),
+    )
+  try {
+    // Presented twice with the same bytes: one file, no «早期版本».
+    await show([presented('a', 10, sha(7), 15_155, at), presented('b', 11, sha(7), 15_155, at + 60_000)])
+    expect(host.querySelectorAll('[data-testid="deliverable-file"]')).toHaveLength(1)
+    expect(host.querySelector('[data-testid="workbench-deliverables-earlier"]')).toBeNull()
+    // Changed bytes: the older one is an earlier version that says when and how it differs.
+    await show([presented('a', 10, sha(7), 14_000, at), presented('c', 12, sha(8), 15_229, at + 120_000)])
+    const earlier = host.querySelector(
+      '[data-testid="workbench-deliverables-earlier"] [data-testid="deliverable-file"]',
+    )
+    expect(earlier?.getAttribute('data-version')).toBe('earlier')
+    expect(earlier?.querySelector('.deliverable-meta')?.textContent).toBe(
+      `Version from ${time} · 1.2 KiB smaller than the latest`,
+    )
+  } finally {
+    await act(async () => root.unmount())
+    host.remove()
+  }
+})
