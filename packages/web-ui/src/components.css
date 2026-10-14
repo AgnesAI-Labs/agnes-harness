@@ -1735,6 +1735,60 @@
   .agnes-settings-stack > :is(section, form) > :is(p, h3, h4) {
     margin-block: 0;
   }
+  /* Read-only code or prompt text: one quiet block that scrolls inside itself, copy in its corner. */
+  .agnes-settings-code {
+    position: relative;
+    min-width: 0;
+  }
+  .agnes-settings-code > pre {
+    max-height: 20rem;
+    margin: 0;
+    padding: var(--s12);
+    overflow: auto;
+    border-radius: var(--radius-md);
+    background: var(--agnes-bg-code);
+    color: var(--agnes-text-secondary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    line-height: 1.65;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    scrollbar-width: thin;
+  }
+  .agnes-settings-code > .agh-btn {
+    position: absolute;
+    inset-block-start: var(--s4);
+    inset-inline-end: var(--s4);
+  }
+  .agnes-settings-code:has(> .agh-btn) > pre {
+    padding-inline-end: var(--s32);
+  }
+  /* Where a chosen item sits in an ordered list of rows. */
+  .agnes-settings-order {
+    display: inline-grid;
+    place-items: center;
+    min-width: 1.25rem;
+    height: 1.25rem;
+    margin-inline-end: var(--s8);
+    border-radius: var(--radius-full);
+    background: var(--agnes-bg-hover);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+  }
+  /* A saving section ends in one line: what happened on the left, the actions on the right. */
+  .agnes-settings-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s12);
+    min-width: 0;
+  }
+  .agnes-settings-footer-status {
+    min-width: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
   .agnes-settings-details > .agh-disclosure-body > section:not([class]) {
     display: grid;
     grid-template-columns: minmax(0, 1fr);

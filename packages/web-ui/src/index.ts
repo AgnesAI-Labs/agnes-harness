@@ -108,6 +108,7 @@ export {
   SettingsChoice,
   SettingsCode,
   SettingsDetails,
+  SettingsFooter,
   SettingsGroup,
   SettingsInput,
   SettingsItem,

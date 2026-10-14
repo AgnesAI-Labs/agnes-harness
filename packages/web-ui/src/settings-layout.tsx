@@ -11,6 +11,7 @@ import { createPortal } from 'react-dom'
 import { useAdvancedSettings } from './advanced-settings.js'
 import { fallbackT } from './locales/index.js'
 import { Button } from './ui/button.js'
+import { CopyButton } from './ui/copy-button.js'
 import { Disclosure, type DisclosureProps, NestedSurfaceContext } from './ui/disclosure.js'
 import { Icon } from './ui/icon.js'
 import { IconTile } from './ui/icon-tile.js'
@@ -521,13 +522,46 @@ export function SchemeThumbnail({ scheme }: { scheme: 'system' | 'light' | 'dark
   )
 }
 
-/** Read-only code region remains keyboard scrollable when its content overflows. */
-export function SettingsCode({ label, ...props }: HTMLAttributes<HTMLPreElement> & { label: string }) {
+/**
+ * Read-only code or prompt text. It scrolls inside a fixed height, stays keyboard scrollable, and
+ * with `copy` carries a copy button in its corner.
+ */
+export function SettingsCode({
+  label,
+  copy,
+  ...props
+}: HTMLAttributes<HTMLPreElement> & {
+  label: string
+  /** The text the copy button puts on the clipboard; without it there is no button. */
+  copy?: string | undefined
+}) {
   return (
-    <section aria-label={label}>
+    <section aria-label={label} className="agnes-settings-code">
+      {copy !== undefined && (
+        <CopyButton label={fallbackT('ui.copy')} copiedLabel={fallbackT('ui.copied')} text={copy} />
+      )}
       {/* biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users need to scroll long prompt and JSON blocks. */}
       <pre {...props} tabIndex={0} />
     </section>
+  )
+}
+
+/**
+ * The bottom line of a section that saves: what just happened on the left, the actions on the right
+ * with the primary one last.
+ */
+export function SettingsFooter({
+  status,
+  children,
+  ...props
+}: HTMLAttributes<HTMLDivElement> & DataAttributes & { status?: ReactNode }) {
+  return (
+    <div {...props} className={['agnes-settings-footer', props.className].filter(Boolean).join(' ')}>
+      <span className="agnes-settings-footer-status" role="status">
+        {status}
+      </span>
+      <div className="agnes-settings-actions">{children}</div>
+    </div>
   )
 }
 
