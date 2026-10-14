@@ -216,3 +216,38 @@ it('rereads the defaults on a revision conflict, keeps the chosen preset, and re
   await act(async () => {})
   expect(fetcher.mock.calls.filter(([url]) => url === '/admin/api/loops').length).toBeGreaterThan(reads)
 })
+
+it('keeps the last auto review switch when an earlier save is slower (B01, one write at a time)', async () => {
+  let stored: Record<string, unknown> = { enabled: false }
+  const posts: Record<string, unknown>[] = []
+  let releaseFirst: (() => void) | undefined
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === '/admin/api/auto-review') {
+        if (init?.method === 'POST') {
+          const body = JSON.parse(String(init.body))
+          posts.push(body)
+          // The first save is slow; nothing else may be sent until it returns.
+          if (posts.length === 1) await new Promise<void>((resolve) => (releaseFirst = resolve))
+          stored = body
+        }
+        return Response.json(stored)
+      }
+      return Response.json({ revision: 1, slots: {}, modelAdapters: [], canSave: true })
+    }),
+  )
+  const host = await mount(createElement(AutoReviewPanel, { canSave: true }))
+  await click(host, '[data-testid="auto-review-enabled"]')
+  await click(host, '[data-testid="auto-review-enabled"]')
+  expect(posts).toHaveLength(1)
+  await act(async () => releaseFirst?.())
+  await act(async () => {})
+  await act(async () => {})
+  // The newest choice (off) is written last and is what the server keeps.
+  expect(posts.at(-1)).toMatchObject({ enabled: false })
+  expect(stored).toMatchObject({ enabled: false })
+  expect(
+    host.querySelector<HTMLElement>('[data-testid="auto-review-enabled"]')?.getAttribute('aria-checked'),
+  ).toBe('false')
+})
