@@ -62,6 +62,12 @@ const surfaces = [
   ]),
   fileList('trip', 20, [{ name: 'trip.md', description: 'travel: review draft', sha: sha(5) }]),
   fileList('notes', 22, [{ name: 'notes.txt', description: 'meeting notes', sha: sha(6) }], {
+    inline: false,
+    workbench: true,
+    preferred: 'workbench',
+  }),
+  // An inline-only file list stays in its answer and never appears in this tab.
+  fileList('aside', 23, [{ name: 'aside.txt', description: 'scratch', sha: sha(7) }], {
     inline: true,
     workbench: false,
     preferred: 'inline',

@@ -133,10 +133,11 @@ describe('shared Intelligent UI placements', () => {
       expect(host.querySelector('[data-testid="turn-deliverables"]') !== null).toBe(placement.inline)
       // A file list is never one of the workbench views: the 交付物 tab lists its files instead.
       expect(workbench.querySelector('[data-agnes-intelligent-ui="catalog"]')).toBeNull()
-      expect(
-        host.querySelector('[data-testid="workbench-deliverables"] [data-testid="deliverable-file"]')
-          ?.textContent,
-      ).toContain('report.html')
+      // Only a file list the workbench may show is listed there.
+      const listed = host.querySelector(
+        '[data-testid="workbench-deliverables"] [data-testid="deliverable-file"]',
+      )?.textContent
+      expect(listed?.includes('report.html') ?? false).toBe(placement.workbench)
       expect(newSurfacePlacements(new Set(), [record]).showWorkbench).toBe(!placement.inline)
     } finally {
       await cleanup()

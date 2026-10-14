@@ -23,9 +23,15 @@ type Group = 'final' | 'review' | 'other'
 const GROUPS: readonly Group[] = ['final', 'review', 'other']
 const entryKey = (entry: TurnDeliverable) => `${entry.surfaceId}:${entry.file.artifact.sha256}`
 
-/** Every file the session's file lists hand over, oldest first; a later entry is a newer version. */
+/**
+ * Every file the session's workbench file lists hand over, oldest first; a later entry is a newer
+ * version. An inline-only file list stays in its answer.
+ */
 export function sessionDeliverables(surfaces: readonly UiSurfaceRecord[]): TurnDeliverable[] {
-  return surfaces.flatMap(surfaceDeliverables).sort((a, b) => a.order - b.order)
+  return surfaces
+    .flatMap(surfaceDeliverables)
+    .filter((entry) => entry.workbench)
+    .sort((a, b) => a.order - b.order)
 }
 
 /**
