@@ -17,7 +17,6 @@ export const resourceAdminLocaleCatalog: LocaleCatalog = {
     'error.invalid-transport': 'Unrecognized transport: {value}. Refresh the page and try again.',
     'confirmation.description':
       '{summary}\n\nThe request will be sent to the local host, which checks it against the current version and security policy.',
-    'notice.loading': 'Reading the local resource catalog…',
     'notice.read-only':
       'The host is in read-only recovery mode. You can review status, but cannot change resources.',
     'notice.load-more-failed': 'Could not read more resources. Try again.',
@@ -120,7 +119,6 @@ export const resourceAdminLocaleCatalog: LocaleCatalog = {
     'error.not-connected': '资源管理尚未连接。',
     'error.invalid-transport': '未识别的传输方式：{value}，请刷新页面后重试。',
     'confirmation.description': '{summary}\n\n确认后将提交到本地后台，并按当前版本和策略完成安全校验。',
-    'notice.loading': '正在读取本地资源目录…',
     'notice.read-only': '后台处于只读恢复模式；可以查看状态，不能更改资源。',
     'notice.load-more-failed': '读取更多资源失败，可重试。',
     'notice.submitted': '操作已提交，正在等待后台确认…',

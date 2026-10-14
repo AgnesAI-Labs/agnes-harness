@@ -370,4 +370,67 @@
       grid-template-columns: minmax(0, 1fr);
     }
   }
+  /* A controller's detail or form drawn as a page: in the column, without a frame of its own. Its own
+   title and close button give way to the page header's title and 返回. */
+  .plugins-page-hosted > dialog[data-presentation="page"][open] {
+    position: static;
+    display: block;
+    width: auto !important;
+    max-width: none !important;
+    height: auto;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+    box-shadow: none;
+    overflow: visible;
+    animation: none;
+  }
+  .plugins-page-hosted
+    > dialog[data-presentation="page"]
+    :is(.admin-detail-head, .admin-detail-scroll, .admin-detail-actions) {
+    padding-inline: 0;
+    border: 0;
+    overflow: visible;
+  }
+  .plugins-page-hosted
+    > dialog[data-presentation="page"]
+    :is(.plugin-detail-heading > h2, .plugin-detail-close) {
+    display: none;
+  }
+  /* A draft under review is a page: its header's 返回 replaces the review's own back button. */
+  [data-testid="home-page-plugins"] .agh-push-body [data-testid="candidate-back"] {
+    display: none;
+  }
+  /* A form shown as a page: the header carries its title, and the column its margins. */
+  .plugins-page-hosted > dialog[data-presentation="page"] .plugin-dialog-form {
+    max-height: none;
+    padding: 0;
+  }
+  .plugins-page-hosted > dialog[data-presentation="page"] .plugin-dialog-form > .dialog-heading {
+    display: none;
+  }
+  /* With the title in the page header, the main switch sits at the end of the version line. */
+  .plugins-page-hosted > dialog[data-presentation="page"] .admin-detail-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: var(--s12);
+    padding-top: 0;
+  }
+  .plugins-page-hosted > dialog[data-presentation="page"] .admin-detail-head > * {
+    grid-column: 1 / -1;
+  }
+  .plugins-page-hosted > dialog[data-presentation="page"] .admin-detail-head > .plugin-detail-heading {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .plugins-page-hosted > dialog[data-presentation="page"] .admin-detail-head > .plugin-detail-version {
+    grid-column: 1;
+    grid-row: 1;
+    margin: 0;
+  }
 }

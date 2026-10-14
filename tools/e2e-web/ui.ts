@@ -75,13 +75,6 @@ export async function expandActivityGroups(turn: import('@playwright/test').Loca
 }
 
 export async function sidebar(page: Page) {
-  const capability = page.getByRole('dialog').filter({
-    has: page.locator('[data-testid^="home-page-plugins-"]'),
-  })
-  if (await capability.isVisible()) {
-    await capability.getByRole('button', { name: /^(Close|关闭)$/, exact: true }).click()
-    await expect(capability).toBeHidden()
-  }
   if (!(await page.locator('#settings').isVisible())) await page.locator('#sidebar-toggle').click()
 }
 

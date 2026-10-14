@@ -51,6 +51,7 @@ import {
 } from '../types.js'
 import { confirmSimple, EnableFacts, offeredActions, PreviewFacts, RollbackFacts } from './confirms.js'
 import { adminErrorKey, element, markSettingsPage, setDialog } from './dom.js'
+import { rememberInventory, seededState } from './inventory-cache.js'
 import { hasClientContribution, isClientOnly, safeMessage, sourceForCatalog } from './model.js'
 import {
   type PreviewMode,
@@ -320,7 +321,6 @@ export class PluginAdminPage {
     this.#surface = options.surface
     this.#listHost = options.surface?.host ?? element('plugin-list', 'section')
     if (!options.surface) this.#pane = settingsPaneHosts()
-    this.#detail.classList.add('agh-drawer')
     // Keep the scrollable tab panel keyboard reachable during empty/loading states.
     this.#listHost.tabIndex = 0
     this.actualSlots = options.actualSlots
@@ -341,7 +341,7 @@ export class PluginAdminPage {
     this.#adminT = createUiTranslator(this.#locale, ADMIN_LOCALE_NAMESPACE, adminLocaleCatalog)
   }
 
-  #state: AdminPageState = {
+  #state: AdminPageState = seededState({
     installed: [],
     surfaceLinks: [],
     catalog: [],
@@ -351,7 +351,7 @@ export class PluginAdminPage {
     inventoryAuthoritative: false,
     loading: true,
     connection: 'loading',
-  }
+  })
   #kind: PluginKind | '' = ''
   #category = ''
   #presentationRuntime: RuntimeAdminSnapshot | undefined
@@ -511,7 +511,7 @@ export class PluginAdminPage {
       this.#presentationRuntime = runtimeCatalog
       this.#presentationComposition = composition
       const surfaceLinks = surfaceFeed?.surfaces ?? []
-      this.#state = {
+      this.#state = rememberInventory({
         ...this.#state,
         context,
         installed: list.packages,
@@ -521,7 +521,7 @@ export class PluginAdminPage {
         inventoryAuthoritative: true,
         loading: false,
         connection: 'connected',
-      }
+      })
       this.scheduleTreePoll()
       this.render()
       try {

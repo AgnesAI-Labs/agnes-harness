@@ -25,6 +25,7 @@ import {
   SettingsState,
   Tag,
   useAdvancedSettings,
+  usePushStack,
 } from '@agnes/web-ui'
 import type { ComponentProps, ReactNode } from 'react'
 import { isBusinessAgent as sharedBusinessAgent } from '../business-agents.js'
@@ -32,7 +33,7 @@ import type { HomePageData } from '../host.js'
 import { HomePageSection } from '../page-frame.js'
 import type { PluginView } from './admin-view.js'
 import { CAPABILITY_ICONS } from './capabilities.js'
-import { CAPABILITIES, openPlugins } from './route.js'
+import { CAPABILITIES } from './route.js'
 import type { CapabilitySummaries } from './summaries.js'
 
 type Text = (key: string, vars?: Readonly<Record<string, string | number>>) => string
@@ -232,6 +233,7 @@ export function PluginsTab({
   summaries: CapabilitySummaries
 }) {
   const props = pluginListProps(view)
+  const pages = usePushStack()
   const locale = view.locale.getSnapshot()
   const nameOf = (item: PackageInstalledDescriptor) =>
     resolvePluginMetadata(item.metadata, locale)?.displayName ?? item.id
@@ -283,7 +285,7 @@ export function PluginsTab({
                     titleLabel={t('builtin.open', { name })}
                     status={<Badge>{t('builtin.badge')}</Badge>}
                     description={t(`cap.${id}.desc`)}
-                    onOpen={() => openPlugins('plugins', id)}
+                    onOpen={() => pages.open(id)}
                     actions={
                       <>
                         {summary &&

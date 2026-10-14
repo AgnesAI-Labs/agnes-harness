@@ -526,7 +526,7 @@ test('UI folder install reviews capabilities, enables a tool and disables it for
         /^@agnes\/(ai|base|code) ·/.test(text),
       ),
     ).toBe(false)
-    await page.locator('#plugin-detail .plugin-detail-close').click()
+    await page.getByTestId('push-back').click()
     await page
       .getByRole('searchbox', { name: locale === 'en' ? 'Search plugins' : '搜索插件', exact: true })
       .fill('plugin-helper')
@@ -538,7 +538,7 @@ test('UI folder install reviews capabilities, enables a tool and disables it for
     await expect(page.getByTestId('plugin-drain-details')).toContainText(
       locale === 'en' ? 'Plugin helper' : '插件助手',
     )
-    await page.locator('#plugin-detail .plugin-detail-close').click()
+    await page.getByTestId('push-back').click()
     await closeSettings(page, locale)
   }
 })

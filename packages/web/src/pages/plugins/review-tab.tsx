@@ -1,8 +1,9 @@
 import { CandidateInbox } from '@agnes/web-admin/admin/plugins/candidates'
 import { FeedbackAdminPanel } from '@agnes/web-admin/settings/feedback'
-import { Count, Segmented, SettingsState } from '@agnes/web-ui'
+import { Count, PushPage, Segmented, SettingsState, usePushStack } from '@agnes/web-ui'
 import { useState } from 'react'
 import type { PluginView, useCandidateSources } from './admin-view.js'
+import { pluginPage, pluginPageId } from './route.js'
 
 type Text = (key: string, vars?: Readonly<Record<string, string | number>>) => string
 type Kind = 'all' | 'plugin' | 'skill'
@@ -21,6 +22,11 @@ export function ReviewTab({
   sources: ReturnType<typeof useCandidateSources>
   onPendingCount(count: number): void
 }) {
+  // A draft under review is a page over this list: `review:<candidate>` in the address.
+  const pages = usePushStack()
+  const top = pages.stack.at(-1)
+  const topPage = top ? pluginPage(top) : undefined
+  const opened = topPage?.kind === 'review' ? topPage.id : undefined
   const [showing, setShowing] = useState<'candidates' | 'feedback'>('candidates')
   const [kind, setKind] = useState<Kind>('all')
   return (
@@ -77,6 +83,24 @@ export function ReviewTab({
           sessionTitle={sources.sessionTitle}
           sessionTurnTime={sources.sessionTurnTime}
           onPendingCount={onPendingCount}
+          openId={opened}
+          onSelectedChange={(id) => {
+            if (id) {
+              const segment = pluginPageId({ kind: 'review', id })
+              if (top === segment) return
+              // One draft replaces another; from the list it is a new page.
+              if (opened) pages.replace(segment)
+              else pages.open(segment)
+            } else if (opened) pages.back()
+          }}
+          reviewSurface={(content, _close, candidate) => (
+            <PushPage
+              id={pluginPageId({ kind: 'review', id: candidate.candidateId })}
+              title={candidate.packageId}
+            >
+              {content}
+            </PushPage>
+          )}
         />
       ) : (
         <SettingsState tone={view.state.error ? 'error' : 'loading'}>

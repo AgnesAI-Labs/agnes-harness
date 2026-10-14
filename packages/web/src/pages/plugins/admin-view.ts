@@ -4,6 +4,7 @@ import {
   type PluginAdminSources,
   type PluginAdminViewContext,
 } from '@agnes/web-admin/admin/plugins/admin'
+import { trackPageRequest } from '@agnes/web-ui'
 import { type RefObject, useEffect, useMemo, useRef, useState } from 'react'
 import type { HomePageData } from '../host.js'
 
@@ -67,4 +68,21 @@ export function usePluginAdmin(sources: PluginAdminSources): {
     }
   }, [])
   return { host, view }
+}
+
+/**
+ * A read the page waits on that does not go through the shared data hook (the controllers read for
+ * themselves) still moves the top progress bar, until it settles or the page leaves.
+ */
+export function usePageProgress(loading: boolean): void {
+  useEffect(() => {
+    if (!loading) return
+    let settle = () => {}
+    void trackPageRequest(
+      new Promise<void>((resolve) => {
+        settle = resolve
+      }),
+    )
+    return () => settle()
+  }, [loading])
 }

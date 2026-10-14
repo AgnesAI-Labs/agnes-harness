@@ -6,11 +6,16 @@ import { Button, Count, Icon, IconButton, Menu, Tabs, useUiText } from '@agnes/w
 import { useEffect, useMemo, useState } from 'react'
 import type { HomePageData } from './host.js'
 import { HomePageFrame } from './page-frame.js'
-import { type PluginView, useCandidateSources, usePluginAdmin } from './plugins/admin-view.js'
-import { CapabilityDetail } from './plugins/capabilities.js'
+import {
+  type PluginView,
+  useCandidateSources,
+  usePageProgress,
+  usePluginAdmin,
+} from './plugins/admin-view.js'
 import { MarketTab } from './plugins/market-tab.js'
 import { PLUGINS_PAGE_NAMESPACE, pluginsPageCatalog } from './plugins/page-locale.js'
 import { PluginStatus, PluginsTab } from './plugins/plugins-tab.js'
+import { PluginsPushPages } from './plugins/push-pages.js'
 import { ResourcesTab } from './plugins/resources-tab.js'
 import { ReviewTab } from './plugins/review-tab.js'
 import { openPlugins, PLUGIN_TABS, type PluginTab, pluginsRoute } from './plugins/route.js'
@@ -39,7 +44,11 @@ function usePendingReviews(api: PluginView['api']) {
   return [count, setCount] as const
 }
 
-/** Plugins, skills, MCP servers, drafts to review and the catalog: everything that extends Agnes. */
+/**
+ * Plugins, skills, MCP servers, drafts to review and the catalog: everything that extends Agnes.
+ * Opening one thing (a plugin, a skill, a built-in, an add form) pushes its page in place of the
+ * list, named in the address as `view=<page>`.
+ */
 export function PluginsPage({ context }: { context: UiExtensionContext }) {
   const data = context.data as HomePageData
   const { t } = useUiText(PLUGINS_PAGE_NAMESPACE, pluginsPageCatalog)
@@ -51,6 +60,7 @@ export function PluginsPage({ context }: { context: UiExtensionContext }) {
     candidateSessionTurnTime: sources.sessionTurnTime,
   })
   const summaries = useCapabilitySummaries(view?.api, data, t)
+  usePageProgress(!view || view.state.loading)
   // A capability that moved to settings: its old link opens the page there, once. A link the app
   // starts with mounts this page before the workbench has finished starting, so wait for that.
   const moved = route.settings
@@ -150,19 +160,10 @@ export function PluginsPage({ context }: { context: UiExtensionContext }) {
     <>
       {/* The controller draws nothing here; it needs a connected node to own while it lives. */}
       <div ref={host} hidden />
-      {route.capability && (
-        <CapabilityDetail
-          capability={route.capability}
-          view={view}
-          t={t}
-          summary={summaries[route.capability]}
-          computerUse={computerUse.renderCapability()}
-          onClose={() => openPlugins('plugins')}
-        />
-      )}
       {
         <HomePageFrame
           id="plugins"
+          pushTitle={context.t('home.entry.plugins')}
           title={context.t('home.entry.plugins')}
           description={context.t('home.plugins.description')}
           actions={
@@ -181,6 +182,13 @@ export function PluginsPage({ context }: { context: UiExtensionContext }) {
             </>
           }
         >
+          <PluginsPushPages
+            route={route}
+            view={view}
+            t={t}
+            summaries={summaries}
+            computerUse={() => computerUse.renderCapability()}
+          />
           {view && <PluginStatus view={view} t={t} data={data} />}
           <Tabs
             className="plugins-page-tabs"

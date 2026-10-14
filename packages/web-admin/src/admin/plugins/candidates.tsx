@@ -59,6 +59,8 @@ export function CandidateInbox({
   type,
   onPendingCount,
   reviewSurface,
+  openId,
+  onSelectedChange,
 }: {
   api: PluginAdminApi | undefined
   canReview: boolean
@@ -73,7 +75,14 @@ export function CandidateInbox({
   merged?: boolean
   type?: 'skill' | 'plugin' | undefined
   onPendingCount?(count: number): void
-  reviewSurface?(content: ReactNode, onClose: () => void): ReactNode
+  reviewSurface?(content: ReactNode, onClose: () => void, candidate: AuthoringCandidate): ReactNode
+  /**
+   * The candidate the host's address names. Setting it opens that candidate; clearing it (the reader
+   * went back) closes the one that is open.
+   */
+  openId?: string | undefined
+  /** Which candidate is open, so the host can name it in its address. */
+  onSelectedChange?(candidateId: string | undefined): void
 }) {
   const { locale } = useUiText(PLUGIN_ADMIN_LOCALE_NAMESPACE, pluginAdminLocaleCatalog)
   const [items, setItems] = useState<AuthoringCandidateSummary[]>([]),
@@ -101,6 +110,39 @@ export function CandidateInbox({
     }
   }, [originKey, sessionTitle])
   const selectedId = selected?.candidateId
+  const reportSelected = useRef(onSelectedChange)
+  reportSelected.current = onSelectedChange
+  useEffect(() => reportSelected.current?.(selectedId), [selectedId])
+  // Follows the host's address only when it changes: opening a row here reports first, then the
+  // address catches up.
+  const showing = useRef(selectedId)
+  showing.current = selectedId
+  useEffect(() => {
+    if (openId === undefined) {
+      if (showing.current !== undefined) setSelected(undefined)
+      return
+    }
+    if (!api || openId === showing.current) return
+    let alive = true
+    setBusy(true)
+    api
+      .candidatesShow(openId)
+      .then(
+        (value) => {
+          if (alive) setSelected(value)
+        },
+        () => {
+          // A draft that is gone (or never was) leaves its page.
+          if (alive) reportSelected.current?.(undefined)
+        },
+      )
+      .finally(() => {
+        if (alive) setBusy(false)
+      })
+    return () => {
+      alive = false
+    }
+  }, [api, openId])
   useEffect(() => {
     if (!selectedId) return
     let frame = 0
@@ -342,7 +384,8 @@ export function CandidateInbox({
       )}
     </li>
   )
-  const renderReview = reviewSurface ?? ((content: ReactNode) => content)
+  const renderReview = (content: ReactNode) =>
+    reviewSurface && selected ? reviewSurface(content, () => setSelected(undefined), selected) : content
   const title = originTitle || t('candidates.untitledSession')
   const permissions = selected ? addedPermissions(selected) : undefined
   const tone = (state: string) =>
@@ -567,7 +610,6 @@ export function CandidateInbox({
               )}
             </SettingsToolbar>
           </section>,
-          () => setSelected(undefined),
         )
       )}
     </section>

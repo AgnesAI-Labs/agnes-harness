@@ -6,7 +6,7 @@ import { ADMIN_LIST_LOCALE_NAMESPACE, adminListLocaleCatalog } from './locales/a
 import { PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog } from './locales/plugin-presentation.js'
 import type { PluginPresentation } from './plugin-presentation.js'
 import { PluginPurposeBadges, PluginSourceBadge } from './plugin-purpose.js'
-import { SettingsDetails, SettingsList } from './settings-layout.js'
+import { SettingsDetails, SettingsList, SettingsState } from './settings-layout.js'
 import { Button } from './ui/button.js'
 import { EmptyState } from './ui/empty-state.js'
 import { Icon } from './ui/icon.js'
@@ -258,9 +258,9 @@ export function PluginList({
   }
   if (loading && !rows.length) {
     return (
-      <div className="agnes-settings-state" data-tone="loading" role="status" aria-busy="true">
+      <SettingsState tone="loading" aria-busy="true">
         {t('empty.loading')}
-      </div>
+      </SettingsState>
     )
   }
   if (!rows.length && leading) return <SettingsList>{leading}</SettingsList>

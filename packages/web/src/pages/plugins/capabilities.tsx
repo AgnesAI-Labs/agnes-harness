@@ -3,8 +3,8 @@ import { SETTINGS_NAMESPACE, settingsCatalog } from '@agnes/web-admin/settings/l
 import { SearchPanel } from '@agnes/web-admin/settings/search'
 import {
   Badge,
-  Drawer,
   type IconName,
+  PushPage,
   SettingsGroup,
   SettingsItem,
   SettingsPageSlots,
@@ -25,8 +25,9 @@ export const CAPABILITY_ICONS: Readonly<Record<Capability, IconName>> = {
 }
 
 /**
- * A built-in capability's detail: the same drawer a plugin opens, with an overview and a settings
- * tab that holds its configuration. It has no versions, trust or uninstall, because it is not a package.
+ * A built-in capability's page, pushed over the plugins page like a plugin's detail: an overview and
+ * a settings tab that holds its configuration. It has no versions, trust or uninstall, because it is
+ * not a package. It renders only while its page is open.
  */
 export function CapabilityDetail({
   capability,
@@ -34,7 +35,6 @@ export function CapabilityDetail({
   t,
   summary,
   computerUse,
-  onClose,
 }: {
   capability: Capability
   view: PluginView | undefined
@@ -42,7 +42,6 @@ export function CapabilityDetail({
   summary: CapabilitySummary | undefined
   /** The computer-use panel is composed by the page: its state lives with the conversation package. */
   computerUse: ReactNode
-  onClose(): void
 }) {
   const { t: settingsText } = useUiText(SETTINGS_NAMESPACE, settingsCatalog)
   const [tab, setTab] = useState('settings')
@@ -50,19 +49,17 @@ export function CapabilityDetail({
   const canSave = view?.canEffect('packages.activate') ?? false
   const name = t(`cap.${capability}.name`)
   return (
-    <Drawer
-      open
-      className="plugins-page-builtin"
-      title={
+    <PushPage
+      id={capability}
+      title={name}
+      description={
         <>
-          {name} <Badge>{t('builtin.badge')}</Badge>
+          <Badge>{t('builtin.badge')}</Badge> {t(`cap.${capability}.page`)}
         </>
       }
-      description={t(`cap.${capability}.page`)}
-      onClose={onClose}
     >
       {/* The id the capability's page had before it became a detail. */}
-      <div data-testid={`home-page-plugins-${capability}`}>
+      <div className="plugins-page-builtin" data-testid={`home-page-plugins-${capability}`}>
         <Tabs
           activeKey={tab}
           onChange={setTab}
@@ -123,6 +120,6 @@ export function CapabilityDetail({
           ]}
         />
       </div>
-    </Drawer>
+    </PushPage>
   )
 }

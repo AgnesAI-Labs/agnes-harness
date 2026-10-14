@@ -1,10 +1,10 @@
 /** @vitest-environment happy-dom */
-import { ResourceRow, setResourceSkillRunner } from '@agnes/web-ui'
+import { PushStack, ResourceRow, searchParamRoute, setResourceSkillRunner } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import { pluginsPageCatalog } from '../src/pages/plugins/page-locale.js'
-import { SkillRunDialog, skillRunUrl } from '../src/pages/plugins/skill-run.js'
+import { SkillRunPage, skillRunUrl } from '../src/pages/plugins/skill-run.js'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 afterEach(() => {
@@ -66,19 +66,33 @@ it('offers 「在新会话中运行」 on a skill that is on, once the plugins p
   await on.unmount()
 })
 
-it('asks for optional arguments and opens a new session with the invocation filled in', async () => {
+it('is a page over the skills list: a link opens it, it asks for optional arguments, then opens a new session', async () => {
   expect(skillRunUrl('review', '')).toBe('/?new=1&prompt=%2Fskill+invoke+review')
+  history.replaceState(null, '', '/?page=plugins&tab=skills&view=run%3Areview')
   const assign = vi.fn()
-  vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, assign } as Location)
-  const closed = vi.fn()
-  const { unmount } = await render(createElement(SkillRunDialog, { name: 'review', t, onClose: closed }))
-  expect(document.body.textContent).toContain('Run review')
+  const { unmount } = await render(
+    createElement(
+      PushStack,
+      { rootTitle: 'Plugins', route: searchParamRoute('view') },
+      createElement(SkillRunPage, { name: 'review', t }),
+    ),
+  )
+  // The header names where it sits: Plugins › Run review.
+  expect(document.querySelector('[data-testid="push-header"]')?.textContent).toContain('Plugins')
+  expect(document.querySelector('[data-testid="push-page-run:review"]')?.textContent).toContain('Arguments')
+  expect(document.querySelector('h2')?.textContent).toBe('Run review')
   const input = document.querySelector<HTMLInputElement>('[data-testid="skill-run-args"]')
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, 'src/app.ts')
     input?.dispatchEvent(new Event('input', { bubbles: true }))
   })
+  vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, assign } as Location)
   await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="skill-run-open"]')?.click())
   expect(assign).toHaveBeenCalledWith('/?new=1&prompt=%2Fskill+invoke+review+src%2Fapp.ts')
+  vi.restoreAllMocks()
+  // 返回 leaves the page: the list is back and the address no longer names it.
+  await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="push-back"]')?.click())
+  expect(document.querySelector('[data-testid="push-page-run:review"]')).toBeNull()
+  expect(new URL(location.href).searchParams.get('view')).toBeNull()
   await unmount()
 })

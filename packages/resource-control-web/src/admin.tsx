@@ -278,9 +278,8 @@ class ResourceAdminPage {
     const requestWorkspace = this.#workspaceId
     this.#loadState = 'loading'
     this.render()
-    if (!preserveNotice) {
-      this.setNotice('notice.loading')
-    }
+    // The list shows its own placeholder while it reads; the notice line stays for outcomes.
+    if (!preserveNotice) this.setNotice(undefined)
     try {
       const context = this.#context ?? (await ResourceAdminApi.context())
       if (this.lifetime.signal.aborted) return

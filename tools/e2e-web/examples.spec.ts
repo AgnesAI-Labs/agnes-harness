@@ -51,7 +51,7 @@ for (const [locale, example, loop] of [
     await expect(detail).toContainText(locale === 'en' ? 'Enable: Completed' : '启用：已完成', {
       timeout: 30_000,
     })
-    await detail.locator('.plugin-detail-close').click()
+    await page.getByTestId('push-back').click()
     // An enabled execution mode is offered to every new session, in the composer's agent menu.
     await page.getByRole('button', { name: locale === 'en' ? 'New session' : '新会话', exact: true }).click()
     const workspace = process.env.AGH_UI_WORKSPACE

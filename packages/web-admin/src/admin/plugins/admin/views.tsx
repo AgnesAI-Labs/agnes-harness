@@ -61,14 +61,13 @@ export function pluginNotice(view: PluginAdminViewContext): {
 
 function notice(this: PluginAdminViewContext) {
   const { connection, error, tree } = this.state
+  // Reading needs no words of its own: the list shows its placeholder and the top bar moves.
   const connectionNotice =
-    connection === 'loading'
-      ? this.t('connection.loading')
-      : connection === 'offline'
-        ? this.t('connection.offline')
-        : connection === 'forbidden'
-          ? this.t('connection.forbidden')
-          : ''
+    connection === 'offline'
+      ? this.t('connection.offline')
+      : connection === 'forbidden'
+        ? this.t('connection.forbidden')
+        : ''
   const noticeMessage = error
     ? this.state.lastOperation
       ? this.t('notice.operation-error', {
@@ -77,7 +76,7 @@ function notice(this: PluginAdminViewContext) {
         })
       : this.errorMessage(error)
     : this.state.loading
-      ? this.t('connection.loading')
+      ? ''
       : this.state.lastOperation
         ? this.t('notice.operation-refreshed', {
             operation: operationLabel(this.state.lastOperation, this.adminT),
