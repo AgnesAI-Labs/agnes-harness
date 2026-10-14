@@ -119,7 +119,8 @@
   }
   /* The view switch and its neighbours close the top bar; the report button stays outside the tablist. */
   .session-tabs-bar {
-    flex: 0 0 auto;
+    min-width: 0;
+    flex: 0 1 auto;
     display: flex;
     align-items: center;
     gap: var(--s4);
@@ -267,9 +268,18 @@
     display: none;
   }
   @media (max-width: 900px) {
+    /* The left bar keeps space for navigation and workbench actions before view tabs shrink. */
+    .topbar {
+      min-width: calc(2 * var(--s32) + var(--s8));
+    }
     #sidebar-toggle {
       min-width: var(--s32);
       min-height: var(--s32);
+    }
+  }
+  @media (max-width: 767px) {
+    .topbar {
+      min-width: calc(2 * var(--control-height-touch) + var(--s8));
     }
   }
 }

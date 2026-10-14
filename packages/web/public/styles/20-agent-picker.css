@@ -112,13 +112,14 @@
   }
 
   .session-tabs-bar .session-goal-host {
+    min-width: 0;
     width: auto;
     margin: 0;
     padding: 0;
     flex: 0 1 auto;
   }
   .session-goal-host .agnes-ui-button {
-    max-width: 14rem;
+    max-width: min(100%, 14rem);
     overflow: hidden;
     text-overflow: ellipsis;
   }
