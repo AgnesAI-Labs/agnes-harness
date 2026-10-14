@@ -13,6 +13,8 @@ export type ConfirmDialogProps = Omit<
   cancelLabel?: ReactNode
   destructive?: boolean
   busy?: boolean
+  /** Test ids of the two buttons, for pages whose ids predate the shared dialog. */
+  testIds?: { confirm?: string; cancel?: string }
 }
 /** One primary action. Enter confirms; Escape cancels; a busy operation refuses duplicate decisions. */
 export function ConfirmDialog({
@@ -22,6 +24,7 @@ export function ConfirmDialog({
   cancelLabel,
   destructive = false,
   busy = false,
+  testIds,
   children,
   ...props
 }: ConfirmDialogProps) {
@@ -37,7 +40,7 @@ export function ConfirmDialog({
       }}
       footer={
         <>
-          <Button disabled={busy} onClick={onCancel}>
+          <Button disabled={busy} onClick={onCancel} data-testid={testIds?.cancel}>
             {cancelLabel ?? fallbackT('ui.cancel')}
           </Button>
           <Button
@@ -45,6 +48,7 @@ export function ConfirmDialog({
             danger={destructive}
             dangerFilled={destructive}
             loading={busy}
+            data-testid={testIds?.confirm}
             onClick={onConfirm}
           >
             {confirmLabel ?? fallbackT('ui.confirm')}

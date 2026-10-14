@@ -22,8 +22,20 @@ export type PushRoute = {
 export function searchParamRoute(param: string): PushRoute {
   return {
     read() {
-      const value = new URL(location.href).searchParams.get(param)
-      return value ? value.split('/').filter(Boolean).map(decodeURIComponent) : []
+      // Split the raw value: a level may hold an encoded `/` (a package id), decoded only after.
+      const name = encodeURIComponent(param).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const raw = new RegExp(`[?&]${name}=([^&#]*)`).exec(location.search)?.[1]
+      if (!raw) return []
+      return raw
+        .split('/')
+        .filter(Boolean)
+        .map((level) => {
+          try {
+            return decodeURIComponent(level.replace(/\+/g, ' '))
+          } catch {
+            return level
+          }
+        })
     },
     href(stack) {
       const url = new URL(location.href)

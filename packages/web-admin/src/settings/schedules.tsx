@@ -1,10 +1,12 @@
 import {
   Button,
-  Dialog,
+  ConfirmDialog,
   EmptyState,
   Icon,
   IconButton,
+  invalidateResource,
   ListRow,
+  Loadable,
   Menu,
   MetaText,
   Segmented,
@@ -17,7 +19,10 @@ import {
   SettingsToolbar,
   StateSwitch,
   StatusDot,
+  setResource,
   Tag,
+  usePushStack,
+  useResource,
   useUiText,
 } from '@agnes/web-ui'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -28,8 +33,9 @@ import { useSettingsOverlay } from './overlay.js'
 import {
   draftOf,
   emptyDraft,
-  ScheduleDialog,
   type ScheduleDraft,
+  ScheduleEditor,
+  schedulePageId,
   selectorOf,
   targetOf,
 } from './schedule-form.js'
@@ -140,6 +146,18 @@ function failureText(error: unknown, ux: Text, t: Text): string {
   return reasonText(codeOf(error), ux) ?? t('schedulesError')
 }
 
+/** One cache entry per backend, so two pages reading different daemons never share a list. */
+const apiKeys = new WeakMap<object, number>()
+let apis = 0
+function apiKey(api: object): number {
+  let key = apiKeys.get(api)
+  if (key === undefined) {
+    key = ++apis
+    apiKeys.set(api, key)
+  }
+  return key
+}
+
 export function SchedulesPage({
   api,
   t,
@@ -155,18 +173,26 @@ export function SchedulesPage({
 }) {
   const { t: ux } = useUiText(AUTOMATION_NAMESPACE, automationCatalog)
   const alive = useRef(true)
-  const epoch = useRef(0)
-  const [loading, setLoading] = useState(false)
   const [filter, setFilter] = useState<Filter>('all')
   const [includeArchived, setIncludeArchived] = useState(false)
-  const [rows, setRows] = useState<ScheduleRow[]>([])
+  // The list is a cached read: shown at once when the page opens again, refreshed behind.
+  const listKey = api ? `schedules:${apiKey(api)}:${includeArchived ? 'all' : 'live'}` : undefined
+  const list = useResource(listKey, () => (api as SchedulesApi).list({ scope: 'all', includeArchived }))
+  const rows = useMemo(() => (list.data === undefined ? [] : rowsOf(list.data)), [list.data])
+  const loading = list.loading
+  // Failures of an action the reader took; a failed read shows where the list is.
   const [error, setError] = useState<unknown>()
   const [formError, setFormError] = useState<string>()
   const [notice, setNotice] = useState<string>()
   const [pending, setPending] = useState<string>()
   const [busy, setBusy] = useState(false)
-  const [formOpen, setFormOpen] = useState(false)
-  const [editing, setEditing] = useState<string>()
+  // New and edit open as pages inside 自动化: the open page is the address (`view=schedule-…`).
+  const nav = usePushStack()
+  const top = nav.stack.at(-1)
+  const formOpen = top?.startsWith('schedule-') === true
+  const editing = formOpen && top !== schedulePageId(undefined) ? top.slice('schedule-'.length) : undefined
+  /** The page whose draft the form holds; a link opened directly fills it once its row is known. */
+  const prepared = useRef<string>()
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [sessions, setSessions] = useState<SessionInfo[]>([])
   const [choices, setChoices] = useState<ScheduleChoices>(NO_CHOICES)
@@ -177,7 +203,6 @@ export function SchedulesPage({
     alive.current = true
     return () => {
       alive.current = false
-      epoch.current++
     }
   }, [])
   // Names for targets: workspace and session titles, and what a new session may be started with.
@@ -196,31 +221,26 @@ export function SchedulesPage({
       .then((value) => alive.current && setChoices(value))
       .catch(() => undefined)
   }, [api])
-  // A background re-read stays quiet: no loading state, the list just updates.
+  /**
+   * After a write every cached schedule list reads again. A background re-read stays quiet: it
+   * replaces the cached list without a loading state or the page progress bar.
+   */
   const refresh = useCallback(
     (quiet = false) => {
       if (!api) return Promise.resolve()
-      const request = ++epoch.current
-      if (!quiet) setLoading(true)
+      if (!quiet) {
+        invalidateResource('schedules')
+        return Promise.resolve()
+      }
       return api
         .list({ scope: 'all', includeArchived })
         .then((value) => {
-          if (!alive.current || request !== epoch.current) return
-          setRows(rowsOf(value))
-          setError(undefined)
+          if (alive.current && listKey) setResource(listKey, value)
         })
-        .catch((reason: unknown) => {
-          if (alive.current && request === epoch.current) setError(reason)
-        })
-        .finally(() => {
-          if (alive.current && request === epoch.current) setLoading(false)
-        })
+        .catch(() => undefined)
     },
-    [api, includeArchived],
+    [api, includeArchived, listKey],
   )
-  useEffect(() => {
-    void refresh()
-  }, [refresh])
   const live = useScheduleRefresh(() => refresh(true), rows, Boolean(api))
   const sessionTitle = useMemo(() => new Map(sessions.map((item) => [item.id, item])), [sessions])
   const workspaceName = useMemo(() => new Map(workspaces.map((item) => [item.path, item.name])), [workspaces])
@@ -247,8 +267,7 @@ export function SchedulesPage({
         return
       }
       setNotice(t(editing ? 'schedulesSaved' : 'schedulesCreated'))
-      setEditing(undefined)
-      setFormOpen(false)
+      nav.back()
     } catch (reason) {
       if (alive.current) setFormError(failureText(reason, ux, t))
       return
@@ -280,19 +299,44 @@ export function SchedulesPage({
     }
     void refresh()
   }
-  const openNew = () => {
-    setEditing(undefined)
+  const prepareNew = () => {
+    prepared.current = schedulePageId(undefined)
     setFormError(undefined)
     setDraft(emptyDraft({ sessionKey, cwd: homeWorkspace(), now: Date.now() }))
-    setFormOpen(true)
   }
-  const openEdit = (row: ScheduleRow) => {
-    setEditing(row.id)
+  const prepareEdit = (row: ScheduleRow) => {
+    prepared.current = schedulePageId(row.id)
     setFormError(undefined)
     const next = draftOf(row, choices, Date.now())
     setDraft({ ...next, sessionKey: next.sessionKey || sessionKey || '', cwd: next.cwd || homeWorkspace() })
-    setFormOpen(true)
   }
+  const openNew = () => {
+    prepareNew()
+    nav.open(schedulePageId(undefined))
+  }
+  const openEdit = (row: ScheduleRow) => {
+    prepareEdit(row)
+    nav.open(schedulePageId(row.id))
+  }
+  // A link (or a reload) that names the form opens it here: a new task at once, a task once its row is read.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the form is prepared once per opened page.
+  useEffect(() => {
+    if (!formOpen || !top) {
+      prepared.current = undefined
+      return
+    }
+    if (prepared.current === top) return
+    if (top === schedulePageId(undefined)) return prepareNew()
+    const row = rows.find((item) => schedulePageId(item.id) === top)
+    if (row) prepareEdit(row)
+  }, [formOpen, top, rows])
+  // A form opened before the workspaces were read gets the default workspace once they are.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: fills one empty field once the list arrives.
+  useEffect(() => {
+    if (!formOpen || editing || draft.cwd) return
+    const cwd = homeWorkspace()
+    if (cwd) setDraft((current) => (current.cwd ? current : { ...current, cwd }))
+  }, [formOpen, editing, workspaces, sessions])
   const create = (
     <Button
       appearance="primary"
@@ -322,7 +366,6 @@ export function SchedulesPage({
       ) : (
         actionsHost && createPortal(create, actionsHost)
       )}
-      {loading && <SettingsState tone="loading">{t('loading')}</SettingsState>}
       {!api && (
         <SettingsState tone="error" data-testid="schedules-error">
           {t('schedulesUnavailable')}
@@ -352,8 +395,8 @@ export function SchedulesPage({
           {t('schedulesIncludeArchived')}
         </label>
       </div>
-      <ScheduleDialog
-        open={formOpen}
+      <ScheduleEditor
+        pageId={formOpen && top ? top : schedulePageId(undefined)}
         editing={!!editing}
         draft={draft}
         onDraft={setDraft}
@@ -364,7 +407,7 @@ export function SchedulesPage({
         error={formError}
         t={t}
         ux={ux}
-        onCancel={() => setFormOpen(false)}
+        onCancel={nav.back}
         onSubmit={() => void save()}
       />
       {notice && (
@@ -377,180 +420,174 @@ export function SchedulesPage({
           {failureText(error, ux, t)}
         </SettingsState>
       )}
-      {api && visible.length === 0 && !error && !loading && (
-        <EmptyState
-          data-testid="schedules-empty"
-          icon={<Icon name="clock" size={48} />}
-          title={t('schedulesEmpty')}
-          description={t('schedulesHelp')}
-        />
-      )}
-      {visible.length > 0 && (
-        <SettingsList>
-          {visible.map((row) => {
-            const live = row.status === 'active' || row.status === 'paused'
-            const last = row.runs.at(-1)
-            const target = row.target
-            const link = target.kind === 'session' ? target.sessionKey : undefined
-            return (
-              <ListRow
-                key={row.id}
-                data-testid="schedules-row"
-                data-status={row.status}
-                data-target={target.kind}
-                icon={<Icon name="clock" size={16} />}
-                title={row.title}
-                {...(live ? { onOpen: () => openEdit(row) } : {})}
-                description={
-                  <>
-                    {link ? (
-                      <a data-testid="schedules-target-link" href={sessionHref(link)}>
-                        {targetText(row)}
-                      </a>
-                    ) : (
-                      <span data-testid="schedules-target-text">{targetText(row)}</span>
-                    )}
-                    {' · '}
-                    {describeSchedule(row.selector, t, ux)}
-                    {' · '}
-                    <span data-testid="schedules-next">
-                      {t('schedulesNext')}{' '}
-                      {row.nextRunAt === null ? t('schedulesNone') : when(row.nextRunAt, ux)}
-                    </span>
-                  </>
-                }
-                status={
-                  row.status === 'active' ? (
-                    last ? (
-                      <OutcomeTag run={last} ux={ux} />
-                    ) : (
-                      <span className="automation-status">
-                        <StatusDot tone="success" />
-                        {ux('noRuns')}
-                      </span>
-                    )
-                  ) : (
-                    <MetaText data-testid="schedules-status">{ux(`status.${row.status}`)}</MetaText>
-                  )
-                }
-                actions={
-                  live && (
-                    <>
-                      <StateSwitch
-                        testId="schedules-enabled"
-                        label={ux('enabledLabel', { title: row.title })}
-                        disabled={busy || !api?.control}
-                        checked={row.status === 'active'}
-                        onToggle={(checked) => void control(row, checked ? 'resume' : 'pause')}
-                      />
-                      <Menu
-                        label={ux('more', { title: row.title })}
-                        trigger={
-                          <IconButton
-                            size="small"
-                            appearance="ghost"
-                            data-testid="schedules-actions"
-                            name="ellipsis"
-                            label={ux('more', { title: row.title })}
-                          />
-                        }
-                        items={[
-                          ...(api?.control && row.status === 'active'
-                            ? [
-                                {
-                                  id: 'run',
-                                  label: ux('runNow'),
-                                  testId: 'schedules-run-now',
-                                  disabled: busy || last?.outcome === 'running',
-                                  onSelect: () => void control(row, 'run'),
-                                },
-                              ]
-                            : []),
-                          {
-                            id: 'edit',
-                            label: ux('edit'),
-                            testId: 'schedules-edit',
-                            onSelect: () => openEdit(row),
-                          },
-                          {
-                            id: 'archive',
-                            label: ux('archive'),
-                            danger: true,
-                            testId: 'schedules-archive',
-                            ariaLabel: ux('archiveLabel', { title: row.title }),
-                            onSelect: () => {
-                              setError(undefined)
-                              setPending(row.id)
-                            },
-                          },
-                        ]}
-                      />
-                    </>
-                  )
-                }
-              >
-                {row.runs.length > 0 && <RunHistory runs={row.runs} ux={ux} />}
-              </ListRow>
+      {api && (
+        <Loadable
+          loading={loading}
+          error={list.error}
+          hasData={list.data !== undefined}
+          onRetry={list.reload}
+          errorText={
+            list.error === undefined ? undefined : (
+              <span data-testid="schedules-error">{failureText(list.error, ux, t)}</span>
             )
-          })}
-        </SettingsList>
+          }
+          shape="rows"
+        >
+          {visible.length === 0 && (
+            <EmptyState
+              data-testid="schedules-empty"
+              icon={<Icon name="clock" size={48} />}
+              title={t('schedulesEmpty')}
+              description={t('schedulesHelp')}
+            />
+          )}
+          {visible.length > 0 && (
+            <SettingsList>
+              {visible.map((row) => {
+                const live = row.status === 'active' || row.status === 'paused'
+                const last = row.runs.at(-1)
+                const target = row.target
+                const link = target.kind === 'session' ? target.sessionKey : undefined
+                return (
+                  <ListRow
+                    key={row.id}
+                    data-testid="schedules-row"
+                    data-status={row.status}
+                    data-target={target.kind}
+                    icon={<Icon name="clock" size={16} />}
+                    title={row.title}
+                    {...(live ? { onOpen: () => openEdit(row) } : {})}
+                    description={
+                      <>
+                        {link ? (
+                          <a data-testid="schedules-target-link" href={sessionHref(link)}>
+                            {targetText(row)}
+                          </a>
+                        ) : (
+                          <span data-testid="schedules-target-text">{targetText(row)}</span>
+                        )}
+                        {' · '}
+                        {describeSchedule(row.selector, t, ux)}
+                        {' · '}
+                        <span data-testid="schedules-next">
+                          {t('schedulesNext')}{' '}
+                          {row.nextRunAt === null ? t('schedulesNone') : when(row.nextRunAt, ux)}
+                        </span>
+                      </>
+                    }
+                    status={
+                      row.status === 'active' ? (
+                        last ? (
+                          <OutcomeTag run={last} ux={ux} />
+                        ) : (
+                          <span className="automation-status">
+                            <StatusDot tone="success" />
+                            {ux('noRuns')}
+                          </span>
+                        )
+                      ) : (
+                        <MetaText data-testid="schedules-status">{ux(`status.${row.status}`)}</MetaText>
+                      )
+                    }
+                    actions={
+                      live && (
+                        <>
+                          <StateSwitch
+                            testId="schedules-enabled"
+                            label={ux('enabledLabel', { title: row.title })}
+                            disabled={busy || !api?.control}
+                            checked={row.status === 'active'}
+                            onToggle={(checked) => void control(row, checked ? 'resume' : 'pause')}
+                          />
+                          <Menu
+                            label={ux('more', { title: row.title })}
+                            trigger={
+                              <IconButton
+                                size="small"
+                                appearance="ghost"
+                                data-testid="schedules-actions"
+                                name="ellipsis"
+                                label={ux('more', { title: row.title })}
+                              />
+                            }
+                            items={[
+                              ...(api?.control && row.status === 'active'
+                                ? [
+                                    {
+                                      id: 'run',
+                                      label: ux('runNow'),
+                                      testId: 'schedules-run-now',
+                                      disabled: busy || last?.outcome === 'running',
+                                      onSelect: () => void control(row, 'run'),
+                                    },
+                                  ]
+                                : []),
+                              {
+                                id: 'edit',
+                                label: ux('edit'),
+                                testId: 'schedules-edit',
+                                onSelect: () => openEdit(row),
+                              },
+                              {
+                                id: 'archive',
+                                label: ux('archive'),
+                                danger: true,
+                                testId: 'schedules-archive',
+                                ariaLabel: ux('archiveLabel', { title: row.title }),
+                                onSelect: () => {
+                                  setError(undefined)
+                                  setPending(row.id)
+                                },
+                              },
+                            ]}
+                          />
+                        </>
+                      )
+                    }
+                  >
+                    {row.runs.length > 0 && <RunHistory runs={row.runs} ux={ux} />}
+                  </ListRow>
+                )
+              })}
+            </SettingsList>
+          )}
+        </Loadable>
       )}
       <p className="automation-note">{ux('missedNote')}</p>
-      <Dialog
-        focusable={{ focusTriggerAfterClose: false }}
-        scrollLock={false}
-        getContainer={() => document.body}
+      <ConfirmDialog
         open={!!pending}
         title={t('schedulesConfirm')}
-        footer={null}
-        onCancel={() => {
-          if (!busy) setPending(undefined)
+        confirmLabel={t('schedulesConfirm')}
+        cancelLabel={t('schedulesCancel')}
+        destructive
+        busy={busy}
+        testIds={{ confirm: 'schedules-archive-confirm', cancel: 'schedules-archive-cancel' }}
+        onCancel={() => setPending(undefined)}
+        onConfirm={() => {
+          const id = pending
+          if (!api || !id || busy) return
+          setError(undefined)
+          setBusy(true)
+          void api
+            .archive({ id })
+            .then((result) => {
+              if (!alive.current) return
+              if ((result as { deleted?: boolean }).deleted === false) throw new Error('archive refused')
+              setNotice(t('schedulesArchived'))
+              setPending(undefined)
+              return refresh()
+            })
+            .catch((reason: unknown) => {
+              if (alive.current) setError(reason)
+            })
+            .finally(() => {
+              if (alive.current) setBusy(false)
+            })
         }}
       >
         <p>{t('schedulesConfirmBody')}</p>
         {pending && error !== undefined && <SettingsState tone="error">{t('schedulesError')}</SettingsState>}
-        <SettingsToolbar>
-          <Button
-            htmlType="button"
-            data-testid="schedules-archive-cancel"
-            disabled={busy}
-            onClick={() => setPending(undefined)}
-          >
-            {t('schedulesCancel')}
-          </Button>
-          <Button
-            htmlType="button"
-            danger
-            dangerFilled
-            data-testid="schedules-archive-confirm"
-            disabled={busy}
-            loading={busy}
-            onClick={() => {
-              const id = pending
-              if (!api || !id || busy) return
-              setError(undefined)
-              setBusy(true)
-              void api
-                .archive({ id })
-                .then((result) => {
-                  if (!alive.current) return
-                  if ((result as { deleted?: boolean }).deleted === false) throw new Error('archive refused')
-                  setNotice(t('schedulesArchived'))
-                  setPending(undefined)
-                  return refresh()
-                })
-                .catch((reason: unknown) => {
-                  if (alive.current) setError(reason)
-                })
-                .finally(() => {
-                  if (alive.current) setBusy(false)
-                })
-            }}
-          >
-            {t('schedulesConfirm')}
-          </Button>
-        </SettingsToolbar>
-      </Dialog>
+      </ConfirmDialog>
     </section>
   )
 }

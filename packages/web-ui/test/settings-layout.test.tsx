@@ -197,12 +197,16 @@ it('closes the detail drawer on Escape and returns focus to its trigger', async 
   expect(document.activeElement).toBe(trigger)
 })
 
-it('announces loading once, marks it busy and removes the decorative skeleton after completion', async () => {
+it('announces loading once, marks it busy, shows the skeleton after 200 ms and removes it after completion', async () => {
   const { SettingsState, renderRegion } = await import('../src/index.js')
   const host = render(createElement(SettingsState, { tone: 'loading' }, 'Loading skills…'))
   expect(host.querySelector('[role="status"]')?.textContent).toBe('Loading skills…')
   expect(host.querySelector('[role="status"]')?.getAttribute('aria-busy')).toBe('true')
-  expect(host.querySelector('.agh-skeleton')?.getAttribute('aria-hidden')).toBe('true')
+  // The shared loading rule: nothing on screen for 200 ms, then the decorative skeleton.
+  expect(host.querySelector('.agh-skeleton')).toBeNull()
+  await vi.waitFor(() =>
+    expect(host.querySelector('.agh-skeleton')?.getAttribute('aria-hidden')).toBe('true'),
+  )
   renderRegion(host, createElement(SettingsState, { tone: 'success' }, 'Loaded'))
   expect(host.querySelector('.agh-skeleton')).toBeNull()
   expect(host.querySelector('[role="status"]')?.getAttribute('aria-busy')).toBeNull()

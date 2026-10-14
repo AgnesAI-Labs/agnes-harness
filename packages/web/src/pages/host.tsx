@@ -138,6 +138,12 @@ export function bindHomeRouting(): () => void {
     const url = new URL(location.href)
     const before = url.href
     const tab = (requested?.selection as { tab?: unknown } | undefined)?.tab
+    // A page opened inside a page (`view=…`) belongs to that page and tab; another one starts at its top.
+    if (
+      url.searchParams.get('page') !== (requested?.id ?? null) ||
+      url.searchParams.get('tab') !== (typeof tab === 'string' ? tab : null)
+    )
+      url.searchParams.delete('view')
     if (requested) url.searchParams.set('page', requested.id)
     else url.searchParams.delete('page')
     if (requested && typeof tab === 'string') url.searchParams.set('tab', tab)

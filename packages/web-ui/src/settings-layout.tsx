@@ -17,6 +17,7 @@ import { Disclosure, type DisclosureProps, NestedSurfaceContext } from './ui/dis
 import { Icon } from './ui/icon.js'
 import type { IconName } from './ui/icon-set.js'
 import { IconTile } from './ui/icon-tile.js'
+import { LOADABLE_DELAY_MS, LOADABLE_SLOW_MS } from './ui/loadable.js'
 import { SettingsInfo, SettingsSubpageFrame } from './ui/settings-subpages.js'
 import { Skeleton } from './ui/skeleton.js'
 
@@ -263,9 +264,31 @@ export function SettingsState({
       aria-live={props['aria-live'] ?? 'polite'}
       aria-busy={props['aria-busy'] ?? (tone === 'loading' || undefined)}
     >
-      {tone === 'loading' && <Skeleton />}
-      {children}
+      {tone === 'loading' ? <LoadingState>{children}</LoadingState> : children}
     </div>
+  )
+}
+
+/**
+ * A read in progress, the shared way (DESIGN v4 「统一加载」): nothing for 200 ms, then quiet grey lines,
+ * and 「仍在读取…」 only after 3 s. What is being read is announced, not printed on its own line.
+ */
+function LoadingState({ children }: { children?: ReactNode }) {
+  const [phase, setPhase] = useState<'hidden' | 'shown' | 'slow'>('hidden')
+  useEffect(() => {
+    const show = setTimeout(() => setPhase('shown'), LOADABLE_DELAY_MS)
+    const slow = setTimeout(() => setPhase('slow'), LOADABLE_SLOW_MS)
+    return () => {
+      clearTimeout(show)
+      clearTimeout(slow)
+    }
+  }, [])
+  return (
+    <>
+      {phase !== 'hidden' && <Skeleton />}
+      <span className="agh-visually-hidden">{children}</span>
+      {phase === 'slow' && <span className="agnes-settings-state-slow">{fallbackT('ui.stillLoading')}</span>}
+    </>
   )
 }
 export const SettingsInput = forwardRef<

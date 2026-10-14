@@ -545,6 +545,17 @@
     line-height: 1.6;
     overflow-wrap: anywhere;
   }
+  /* A read in progress takes no room until its placeholder shows (after 200 ms). */
+  .agnes-settings-state[data-tone="loading"] {
+    display: grid;
+    gap: var(--s8);
+  }
+  .agnes-settings-state[data-tone="loading"]:not(:has(.agh-skeleton)) {
+    padding: 0;
+  }
+  .agnes-settings-state-slow {
+    color: var(--agnes-text-tertiary);
+  }
   .agnes-settings-state[data-tone="error"] {
     padding: var(--s8) var(--s12);
     color: var(--agnes-status-danger-text);

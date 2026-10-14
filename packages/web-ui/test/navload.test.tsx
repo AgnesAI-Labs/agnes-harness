@@ -130,6 +130,13 @@ describe('push pages', () => {
     expect(q(host, '[data-testid="root"]')?.closest('[hidden]')).toBeNull()
   })
 
+  it('keeps a level that holds a slash as one level', () => {
+    const route = searchParamRoute('view')
+    history.replaceState(null, '', route.href(['plugin:@agnes/plugin-helper', 'edit']))
+    expect(location.search).toBe('?view=plugin%3A%40agnes%2Fplugin-helper/edit')
+    expect(route.read()).toEqual(['plugin:@agnes/plugin-helper', 'edit'])
+  })
+
   it('swaps the top page for the next step of a flow without a new history entry', () => {
     const host = render(createElement(Pages, { route: true }))
     click(q(host, '[data-testid="open-crm"]'))

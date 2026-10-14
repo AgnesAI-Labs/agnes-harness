@@ -163,6 +163,33 @@
   .home-page-tabs {
     margin-bottom: calc(-1 * var(--s12));
   }
+  /* Pages opened inside a home page take its column; the frame itself adds no box. */
+  .home-page-push,
+  .home-page-push > .agh-push-root:not([hidden]) {
+    display: contents;
+  }
+  .home-page-push > .agh-push-header-host:not([hidden]),
+  .home-page-push > .agh-push-body:not([hidden]) {
+    display: grid;
+    gap: 1.25rem;
+    min-width: 0;
+  }
+  .home-page-push .agh-push-header {
+    margin-bottom: 0;
+  }
+  .home-page-push .agh-push-heading h2 {
+    font-size: 1.625rem;
+    font-weight: 700;
+    letter-spacing: -0.022em;
+    line-height: 2rem;
+  }
+  /* A page that edits something ends with its actions, right-aligned, as a dialog footer did. */
+  .home-push-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--s8);
+    padding-top: var(--s8);
+  }
   .home-page-body {
     min-width: 0;
     display: grid;

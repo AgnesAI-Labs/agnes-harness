@@ -65,6 +65,8 @@ export function AutomationPage({ context }: { context: UiExtensionContext }) {
     <HomePageFrame
       id="automation"
       title={context.t('home.entry.automation')}
+      // New and edit open as pages inside this one: 自动化 › 新建定时任务.
+      pushTitle={context.t('home.entry.automation')}
       description={ux('pageDescription')}
       actions={<div className="home-page-action-slot" ref={setActionsHost} />}
       tabs={

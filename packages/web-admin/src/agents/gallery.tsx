@@ -4,12 +4,16 @@ import {
   EmptyState,
   hasPermission,
   Icon,
+  Loadable,
   MetaText,
+  PushPage,
   SearchBar,
   Segmented,
-  SettingsState,
   StatusDot,
+  setResource,
   Tag,
+  usePushStack,
+  useResource,
   useUiText,
 } from '@agnes/web-ui'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -23,7 +27,7 @@ import {
   businessAgentView,
   readBusinessAgents,
 } from './catalog.js'
-import { type StartedSession, useBusinessAgentStart } from './start-dialog.js'
+import { agentPageId, type StartedSession, useBusinessAgentStart } from './start-dialog.js'
 
 type Loaded = {
   api: PluginAdminApi
@@ -45,41 +49,38 @@ const connectAdmin = async () => {
  * The business agents a daemon offers and how far along each one is. The gallery and the
  * new-session empty state read the same list.
  */
+/** One cache entry per way of connecting, so a host or a test with its own admin keeps its own list. */
+const sourceKeys = new WeakMap<object, string>()
+let sources = 0
+function catalogKey(connect: object): string {
+  let key = sourceKeys.get(connect)
+  if (!key) {
+    key = `agents:catalog:${++sources}`
+    sourceKeys.set(connect, key)
+  }
+  return key
+}
+
 export function useBusinessAgents(source: BusinessAgentsSource = {}) {
   const { locale } = useUiText(AGENTS_NAMESPACE, agentsCatalog)
-  const [loaded, setLoaded] = useState<Loaded>()
-  const [failed, setFailed] = useState(false)
-  const [busy, setBusy] = useState(true)
-  const [revision, setRevision] = useState(0)
   const connect = useRef(source.connect ?? connectAdmin)
-  // biome-ignore lint/correctness/useExhaustiveDependencies: revision is an explicit reload.
-  useEffect(() => {
-    const pending = new AbortController()
-    setBusy(true)
-    setFailed(false)
-    void connect
-      .current()
-      .then(async ({ api, context }) => {
-        const [rows, list] = await Promise.all([readBusinessAgents(api, pending.signal), api.list()])
-        if (!pending.signal.aborted) setLoaded({ api, context, rows, installed: list.packages })
-      })
-      .catch(() => {
-        if (!pending.signal.aborted) setFailed(true)
-      })
-      .finally(() => {
-        if (!pending.signal.aborted) setBusy(false)
-      })
-    return () => pending.abort()
-  }, [revision])
+  const key = catalogKey(connect.current)
+  // One cached read: a return visit shows the cards at once and refreshes them behind.
+  const read = useResource<Loaded>(key, async () => {
+    const { api, context } = await connect.current()
+    const [rows, list] = await Promise.all([readBusinessAgents(api), api.list()])
+    return { api, context, rows, installed: list.packages }
+  })
+  const loaded = read.data
   /** Re-reads only what a start changes; the catalog itself stays as loaded. */
   const refreshInstalled = useCallback(() => {
-    const api = loaded?.api
-    if (!api) return
-    void api
+    const current = loaded
+    if (!current) return
+    void current.api
       .list()
-      .then((list) => setLoaded((current) => (current ? { ...current, installed: list.packages } : current)))
+      .then((list) => setResource<Loaded>(key, { ...current, installed: list.packages }))
       .catch(() => {})
-  }, [loaded?.api])
+  }, [loaded, key])
   const agents = useMemo(
     () => (loaded?.rows ?? []).map((row) => businessAgentView(row, locale)),
     [loaded?.rows, locale],
@@ -101,9 +102,12 @@ export function useBusinessAgents(source: BusinessAgentsSource = {}) {
     installed: loaded?.installed ?? [],
     /** Why package changes are refused here; undefined when the user may start any agent. */
     denied,
-    busy,
-    failed,
-    reload: () => setRevision((value) => value + 1),
+    busy: read.loading,
+    failed: read.error !== undefined,
+    error: read.error,
+    /** The list has been read once (it may be refreshing). */
+    loaded: loaded !== undefined,
+    reload: read.reload,
     refreshInstalled,
   }
 }
@@ -227,6 +231,23 @@ export function BusinessAgentGallery({
   )
   const disabledReason = data.denied ? t(data.denied) : undefined
   const gallery = useRef<HTMLDivElement>(null)
+  // A link that names an agent's page (`view=agent-<slug>`) starts it once the list is read.
+  const nav = usePushStack()
+  const top = nav.stack.at(-1)
+  const linked = top?.startsWith('agent-')
+    ? data.agents.find((agent) => agentPageId(agent) === top)
+    : undefined
+  const linkHandled = useRef<string>()
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a linked page is acted on once, when its agent is known.
+  useEffect(() => {
+    if (!top?.startsWith('agent-')) {
+      linkHandled.current = undefined
+      return
+    }
+    if (!linked || starter.pageId === top || linkHandled.current === top) return
+    linkHandled.current = top
+    starter.start(linked)
+  }, [top, linked])
   const handled = useRef<object>()
   const focused = focus ? data.agents.find((agent) => agent.entry.id === focus.id) : undefined
   // biome-ignore lint/correctness/useExhaustiveDependencies: a focus request is acted on once, when its card exists.
@@ -242,7 +263,7 @@ export function BusinessAgentGallery({
   }, [focus, focused, data.busy])
   return (
     <div className="agent-gallery-page" data-testid="business-agents" aria-busy={data.busy}>
-      {data.agents.length > 0 && (
+      {
         <SearchBar
           label={t('search')}
           placeholder={t('searchPlaceholder')}
@@ -270,47 +291,56 @@ export function BusinessAgentGallery({
             />
           }
         />
-      )}
-      {data.busy && data.agents.length === 0 && <SettingsState tone="loading">{t('loading')}</SettingsState>}
-      {data.failed && (
-        <SettingsState tone="error" data-testid="business-agents-error">
-          {t('failed')}
-        </SettingsState>
-      )}
-      {!data.busy && !data.failed && data.agents.length === 0 && (
-        <EmptyState
-          data-testid="business-agents-empty"
-          icon={<Icon name="bot" size={48} />}
-          title={t('emptyTitle')}
-          description={t('emptyHelp')}
-          actions={<Button onClick={data.reload}>{t('refresh')}</Button>}
-        />
-      )}
-      {data.agents.length > 0 && shown.length === 0 && (
-        <EmptyState
-          icon={<Icon name="search" size={48} />}
-          title={t('noMatchTitle')}
-          description={t('noMatchHelp')}
-        />
-      )}
-      {shown.length > 0 && (
-        <div className="agent-gallery" data-testid="business-agents-gallery" ref={gallery}>
-          {shown.map((agent) => {
-            const state = stateOf(agent)
-            return (
-              <AgentCard
-                key={agent.entry.id}
-                agent={agent}
-                state={state}
-                focused={focus?.id === agent.entry.id}
-                disabledReason={disabledReason}
-                onStart={() => starter.start(agent, { quiet: state === 'ready' })}
-              />
-            )
-          })}
-        </div>
-      )}
+      }
+      <Loadable
+        loading={data.busy}
+        error={data.error}
+        hasData={data.loaded}
+        onRetry={data.reload}
+        errorText={<span data-testid="business-agents-error">{t('failed')}</span>}
+        shape="cards"
+      >
+        {data.agents.length === 0 && (
+          <EmptyState
+            data-testid="business-agents-empty"
+            icon={<Icon name="bot" size={48} />}
+            title={t('emptyTitle')}
+            description={t('emptyHelp')}
+            actions={<Button onClick={data.reload}>{t('refresh')}</Button>}
+          />
+        )}
+        {data.agents.length > 0 && shown.length === 0 && (
+          <EmptyState
+            icon={<Icon name="search" size={48} />}
+            title={t('noMatchTitle')}
+            description={t('noMatchHelp')}
+          />
+        )}
+        {shown.length > 0 && (
+          <div className="agent-gallery" data-testid="business-agents-gallery" ref={gallery}>
+            {shown.map((agent) => {
+              const state = stateOf(agent)
+              return (
+                <AgentCard
+                  key={agent.entry.id}
+                  agent={agent}
+                  state={state}
+                  focused={focus?.id === agent.entry.id}
+                  disabledReason={disabledReason}
+                  onStart={() => starter.start(agent, { quiet: state === 'ready' })}
+                />
+              )
+            })}
+          </div>
+        )}
+      </Loadable>
       {starter.dialog}
+      {/* A linked agent's page shows at once; its start fills it when the list has been read. */}
+      {top?.startsWith('agent-') && starter.pageId !== top && (
+        <PushPage id={top} title={linked?.name ?? ''}>
+          <Loadable loading hasData={false} shape="rows" />
+        </PushPage>
+      )}
     </div>
   )
 }

@@ -1,8 +1,8 @@
 import {
   Button,
-  Dialog,
   Field,
   MetaText,
+  PushPage,
   Segmented,
   SessionPicker,
   SettingsInput,
@@ -209,8 +209,15 @@ export const presetName = (preset: string, t: Text): string => {
 const savedOnly = (value: string, known: readonly { key: string }[]): boolean =>
   value !== '' && !known.some((item) => item.key === value)
 
-export function ScheduleDialog({
-  open,
+/** The push page that holds the schedule editor: `schedule-new`, or `schedule-<id>` for one task. */
+export const schedulePageId = (id: string | undefined) => (id ? `schedule-${id}` : 'schedule-new')
+
+/**
+ * New or edit scheduled task: a page opened inside 自动化 (「‹ 返回」, breadcrumb, a link of its own),
+ * the form in the page and its two actions at the end.
+ */
+export function ScheduleEditor({
+  pageId,
   editing,
   draft,
   onDraft,
@@ -224,7 +231,7 @@ export function ScheduleDialog({
   onCancel,
   onSubmit,
 }: {
-  open: boolean
+  pageId: string
   editing: boolean
   draft: ScheduleDraft
   onDraft(next: ScheduleDraft): void
@@ -255,33 +262,7 @@ export function ScheduleDialog({
   const agents = choices.modes.filter((item) => item.businessAgent)
   const loops = choices.modes.filter((item) => !item.businessAgent)
   return (
-    <Dialog
-      focusable={{ focusTriggerAfterClose: false }}
-      scrollLock={false}
-      getContainer={() => document.body}
-      open={open}
-      title={editing ? t('schedulesSave') : ux('newSchedule')}
-      onCancel={() => {
-        if (!busy) onCancel()
-      }}
-      footer={
-        <>
-          <Button disabled={busy} onClick={onCancel}>
-            {t('schedulesCancel')}
-          </Button>
-          <Button
-            appearance="primary"
-            htmlType="submit"
-            form="schedules-editor"
-            disabled={busy || !ready}
-            loading={busy}
-            data-testid={editing ? 'schedules-save' : 'schedules-create'}
-          >
-            {editing ? t('schedulesSave') : t('schedulesCreate')}
-          </Button>
-        </>
-      }
-    >
+    <PushPage id={pageId} title={editing ? t('schedulesSave') : ux('newSchedule')}>
       <form
         id="schedules-editor"
         className="schedule-form"
@@ -566,6 +547,21 @@ export function ScheduleDialog({
           {error}
         </SettingsState>
       )}
-    </Dialog>
+      <div className="home-push-actions">
+        <Button disabled={busy} onClick={onCancel}>
+          {t('schedulesCancel')}
+        </Button>
+        <Button
+          appearance="primary"
+          htmlType="submit"
+          form="schedules-editor"
+          disabled={busy || !ready}
+          loading={busy}
+          data-testid={editing ? 'schedules-save' : 'schedules-create'}
+        >
+          {editing ? t('schedulesSave') : t('schedulesCreate')}
+        </Button>
+      </div>
+    </PushPage>
   )
 }

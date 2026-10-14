@@ -1,4 +1,6 @@
 /** @vitest-environment happy-dom */
+
+import { clearResources, PushStack, searchParamRoute } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -38,6 +40,8 @@ const roots: Root[] = []
 afterEach(async () => {
   for (const root of roots.splice(0)) await act(async () => root.unmount())
   document.body.replaceChildren()
+  clearResources()
+  history.replaceState(null, '', '/')
 })
 
 async function mount(node: ReturnType<typeof createElement>) {
@@ -45,7 +49,8 @@ async function mount(node: ReturnType<typeof createElement>) {
   document.body.append(host)
   const root = createRoot(host)
   roots.push(root)
-  await act(async () => root.render(node))
+  // The page sits in 自动化, whose new and edit forms open as pages inside it.
+  await act(async () => root.render(createElement(PushStack, { rootTitle: 'Automation' }, node)))
   return host
 }
 
@@ -606,4 +611,46 @@ it('lists this session’s tasks in the runtime dialog and links to the automati
     }),
   )
   expect(quiet.querySelector('[data-testid="session-schedules"]')).toBeNull()
+})
+
+it('opens a new task as a page inside 自动化, with back, a breadcrumb and a link of its own', async () => {
+  const host = await mount(createElement(SchedulesPage, { api: api(), t }))
+  await click('schedules-new', host)
+  expect(document.querySelector('form#schedules-editor')).not.toBeNull()
+  expect([...host.querySelectorAll('.agh-push-crumbs li')].map((item) => item.textContent)).toEqual([
+    'Automation',
+    ux('newSchedule'),
+  ])
+  expect(host.querySelector('[data-testid="schedules-page"]')?.closest('[hidden]')).not.toBeNull()
+  // The browser's back button leaves the form.
+  await act(async () => {
+    history.replaceState({ agnesPushPage: 0 }, '')
+    window.dispatchEvent(new PopStateEvent('popstate', { state: { agnesPushPage: 0 } }))
+  })
+  expect(document.querySelector('form#schedules-editor')).toBeNull()
+  expect(host.querySelector('[data-testid="schedules-page"]')?.closest('[hidden]')).toBeNull()
+})
+
+it('opens a task named by a link once its row is read, and archives it through the shared confirmation', async () => {
+  history.replaceState(null, '', `/?view=schedule-${standup.id}`)
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+  roots.push(root)
+  const daemon = api([], { list: vi.fn(async () => ({ schedules: [standup] })) })
+  await act(async () =>
+    root.render(
+      createElement(
+        PushStack,
+        { rootTitle: 'Automation', route: searchParamRoute('view') },
+        createElement(SchedulesPage, { api: daemon, t }),
+      ),
+    ),
+  )
+  await vi.waitFor(() =>
+    expect(document.querySelector<HTMLInputElement>('[data-testid="schedules-title"]')?.value).toBe(
+      'Standup',
+    ),
+  )
+  expect(document.querySelector('[data-testid="schedules-save"]')).not.toBeNull()
 })
