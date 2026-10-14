@@ -122,6 +122,7 @@ describe('tool types', () => {
       | 'replay'
       | 'costHint'
       | 'deferLoading'
+      | 'discoveryGroup'
       | 'requiresApproval'
       | 'paths'
       | 'commandArg'

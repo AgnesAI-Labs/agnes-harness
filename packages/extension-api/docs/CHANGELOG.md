@@ -43,6 +43,11 @@ Every `agnes.plugins[].apiRange` and `@agnes/extension-api` dependency range mov
 
 ### Added
 
+- `ToolMeta.deferLoading: 'auto'`: core keeps the turn's auto tools visible while there are at most
+  15 of them with schemas under about 4,000 tokens, and defers them together past either limit.
+  MCP server tools use it by default. `true` and `false` keep their meaning.
+- `ToolMeta.discoveryGroup`: a one-line label (at most 120 characters) that lists deferred tools
+  sharing it as one line with their count; `tool_search` also matches it.
 - Theme tokens `--agnes-bg-fill`, `--agnes-bg-fill-hover` (the soft neutral fill of text fields,
   secondary buttons and icon tiles), `--agnes-bg-group` (the surface of a grouped card),
   `--focus-outline`, `--focus-line` and `--focus-line-inset` (the one keyboard focus ring: a solid
