@@ -47,6 +47,8 @@ vi.mock('@agnes/web-ui', () => ({
   createDocumentLocaleSource: () => ({ source: {}, dispose() {} }),
   INTELLIGENT_UI_NAMESPACE: 'ui',
   intelligentUiCatalog: {},
+  // The finance fixtures carry tables and forms, never only text.
+  isTextOnly: () => false,
 }))
 
 it('seeds loaded surfaces on every session and reveals only first appearances', () => {

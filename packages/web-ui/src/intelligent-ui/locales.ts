@@ -3,6 +3,8 @@ export const INTELLIGENT_UI_NAMESPACE = '@agnes/web-ui/intelligent-ui'
 export const intelligentUiCatalog: LocaleCatalog = {
   en: {
     'ui.question.title': 'Questions',
+    'ui.card.more': 'Show all',
+    'ui.card.less': 'Show less',
     'ui.question.heading': 'Needs your answer · {count} questions',
     'ui.question.headingOne': 'Needs your answer · 1 question',
     'ui.question.headingProgress': 'Needs your answer · {answered} / {count} answered',
@@ -133,6 +135,8 @@ export const intelligentUiCatalog: LocaleCatalog = {
   },
   'zh-CN': {
     'ui.question.title': '问题',
+    'ui.card.more': '展开',
+    'ui.card.less': '收起',
     'ui.question.heading': '需要你确认 · {count} 个问题',
     'ui.question.headingOne': '需要你确认 · 1 个问题',
     'ui.question.headingProgress': '需要你确认 · {answered} / {count} 已答',

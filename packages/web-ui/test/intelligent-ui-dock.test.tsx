@@ -13,6 +13,8 @@ import {
 import {
   columnLabel,
   docksInConversation,
+  isTextOnly,
+  rendersInAnswer,
   stateLabel,
   surfaceDockSummary,
   surfaceTitle,
@@ -90,14 +92,46 @@ describe('docked surface summary', () => {
     expect(surfaceDockSummary(schedule([]), options)).toBeUndefined()
   })
 
-  it('docks workbench surfaces as chips but keeps deliverable files as conversation cards', () => {
-    expect(docksInConversation(one)).toBe(true)
-    expect(docksInConversation({ ...one, placement: { inline: true, workbench: false } })).toBe(false)
+  it('shows inline views inside the answer and docks only workbench-preferred ones as chips', () => {
+    const workbench = { inline: true, workbench: true, preferred: 'workbench' } as const
+    expect(rendersInAnswer(one)).toBe(true)
+    expect(docksInConversation(one)).toBe(false)
+    expect(docksInConversation({ ...one, placement: workbench })).toBe(true)
+    expect(rendersInAnswer({ ...one, placement: workbench })).toBe(false)
+    expect(docksInConversation({ ...one, placement: { inline: false, workbench: true } })).toBe(true)
+    // Words with nothing to act on stay in the conversation, whatever the author preferred.
+    const note = {
+      ...one,
+      placement: { inline: false, workbench: true },
+      components: [{ id: 'note', kind: 'text', dataKey: 'note' }],
+      data: { note: 'D1 新街口 | D2 玄武湖' },
+    } as typeof one
+    expect(isTextOnly(note)).toBe(true)
+    expect(rendersInAnswer(note)).toBe(true)
+    expect(docksInConversation(note)).toBe(false)
+    const files = {
+      ...one,
+      components: [{ id: 'file', kind: 'artifact-file', dataKey: 'file' }],
+    } as typeof one
+    expect(docksInConversation(files)).toBe(false)
+    expect(rendersInAnswer(files)).toBe(false)
+    const question = { ...one, data: { ...one.data, question: { kind: 'ask_user_question', deadline: 0 } } }
     expect(
-      docksInConversation({
-        placement: { inline: true, workbench: true },
-        components: [{ id: 'file', kind: 'artifact-file', dataKey: 'file' }],
-      }),
+      rendersInAnswer({
+        ...question,
+        components: [
+          {
+            id: 'a',
+            kind: 'form',
+            dataKey: 'd',
+            schema: { type: 'object', properties: { x: { type: 'string' } } },
+            actionIds: ['s'],
+          },
+        ],
+        actions: [
+          { id: 's', label: 'Submit', tool: 'ui_submit', argsTemplate: {}, paramsSchema: { type: 'object' } },
+        ],
+      } as typeof one),
     ).toBe(false)
   })
 })

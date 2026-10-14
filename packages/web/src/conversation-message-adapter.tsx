@@ -132,6 +132,21 @@ function DshNodeLeaf({
   )
 }
 
+/** The views a turn's ui_render calls created, named by their persisted result (`…&surface=<id>`). */
+export function renderedSurfaceIds(nodes: readonly UINode[], turn: UITurn): string[] {
+  const own = new Set(turn.nodeIds)
+  return nodes.flatMap((node) => {
+    if (node.kind !== 'tool' || node.name !== 'ui_render' || !own.has(node.id)) return []
+    const id = /[?&]surface=([A-Za-z0-9_.%-]+)/.exec(node.resultPreview ?? '')?.[1]
+    if (!id) return []
+    try {
+      return [decodeURIComponent(id)]
+    } catch {
+      return []
+    }
+  })
+}
+
 function foldedQuestionQueues(nodes: readonly UINode[]): ReadonlySet<string> {
   const folded = new Set<string>()
   nodes.forEach((node, index) => {
@@ -231,7 +246,9 @@ export function WebConversationMessages({
     nodes: nodes ?? [],
     ...(turns ? { turns } : {}),
     ...(shownNodeIds ? { visibleNodeIds: shownNodeIds } : {}),
-    renderTurnDeliverables: (turn) => <TurnDeliverables turn={turn} />,
+    renderTurnDeliverables: (turn) => (
+      <TurnDeliverables turn={turn} surfaceIds={renderedSurfaceIds(nodes ?? [], turn)} />
+    ),
     processStep: (node) => workflowStepRecord(node.text),
     renderTurnActions: (turn, finalText, settled) => {
       const answer = turn.finalAssistantId ? answers.get(turn.finalAssistantId) : undefined

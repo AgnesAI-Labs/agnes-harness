@@ -2,6 +2,7 @@ import type { JsonValue, UiSurface } from '@agnes/protocol/gen/intelligent-ui'
 import { useEffect, useState } from 'react'
 import type { IconName } from '../ui/icons.js'
 import type { LocaleTranslator } from '../ui-locale.js'
+import { questionForm } from './question.js'
 
 type TitledSurface = Pick<UiSurface, 'title' | 'titleKey'>
 
@@ -12,10 +13,6 @@ export function surfaceTitle(surface: TitledSurface, t: LocaleTranslator): strin
   return translated === surface.titleKey ? surface.title : translated
 }
 
-/**
- * A surface whose complete view lives in the workbench is docked in the conversation as a
- * one-line chip. Deliverables stay a full conversation card: their files are the content.
- */
 /** A surface that only hands over files: a file list, shown with the turn that produced it. */
 export function isDeliverableList(surface: Pick<UiSurface, 'components'>): boolean {
   return (
@@ -24,10 +21,35 @@ export function isDeliverableList(surface: Pick<UiSurface, 'components'>): boole
   )
 }
 
-export function docksInConversation(surface: Pick<UiSurface, 'placement' | 'components'>): boolean {
+/** Only words and nothing to act on: it belongs in the conversation, never only in the workbench. */
+export function isTextOnly(surface: Pick<UiSurface, 'components' | 'actions'>): boolean {
+  return (
+    surface.components.length > 0 &&
+    surface.components.every((component) => component.kind === 'text') &&
+    !surface.actions.length
+  )
+}
+
+/**
+ * A card inside the answer that produced it, between its text and its action row: any surface that
+ * may show inline and does not prefer the workbench, and any text-only surface. Files and questions
+ * have their own places.
+ */
+export function rendersInAnswer(
+  surface: Pick<UiSurface, 'placement' | 'components' | 'actions' | 'data'>,
+): boolean {
+  if (isDeliverableList(surface) || questionForm(surface)) return false
+  return isTextOnly(surface) || (surface.placement.inline && surface.placement.preferred !== 'workbench')
+}
+
+/** A surface whose complete view lives in the workbench is docked in the conversation as a one-line chip. */
+export function docksInConversation(
+  surface: Pick<UiSurface, 'placement' | 'components' | 'actions' | 'data'>,
+): boolean {
   return (
     surface.placement.workbench &&
-    (!surface.placement.inline || !surface.components.some((component) => component.kind === 'artifact-file'))
+    !rendersInAnswer(surface) &&
+    (!surface.placement.inline || !isDeliverableList(surface))
   )
 }
 

@@ -7,7 +7,9 @@ import {
   IntelligentSurface,
   intelligentUiCatalog,
   isDeliverableList,
+  isTextOnly,
   Menu,
+  rendersInAnswer,
   SettingsState,
   surfaceTitle,
   UiLocaleProvider,
@@ -138,10 +140,15 @@ function SurfaceList({
     placement === 'inline'
       ? sorted.filter((record) => docksInConversation(record.surface) && !dismissed.has(record.surface.id))
       : []
-  // Files are shown inside the answer of the turn that produced them, not after the conversation.
+  // Files and inline views are shown inside the answer of the turn that produced them.
   const cards =
     placement === 'inline'
-      ? sorted.filter((record) => !docksInConversation(record.surface) && !isDeliverableList(record.surface))
+      ? sorted.filter(
+          (record) =>
+            !docksInConversation(record.surface) &&
+            !isDeliverableList(record.surface) &&
+            !rendersInAnswer(record.surface),
+        )
       : sorted
   const overflow = docked.slice(DOCK_VISIBLE)
   return (
@@ -201,6 +208,7 @@ export function BoundSurface({
   client,
   id,
   placement,
+  inAnswer,
   workbenchOpen,
   onDismiss,
 }: {
@@ -208,10 +216,12 @@ export function BoundSurface({
   client: IntelligentUiClient
   id: string
   placement: 'inline' | 'workbench'
+  inAnswer?: boolean
   workbenchOpen?: boolean
   onDismiss?: () => void
 }) {
-  const record = client.record(id)!
+  // A closed view inside an answer is read back by id; it stays in place, read-only.
+  const record = client.knownRecord(id)!
   const draft = client.draft(id),
     receipts = client.receipts(id),
     confirmation = client.confirmation(id)
@@ -251,6 +261,7 @@ export function BoundSurface({
       {...(binding.customModules ? { renderCustom } : {})}
       record={record}
       placement={placement}
+      inAnswer={inAnswer}
       workbenchOpen={workbenchOpen}
       input={draft.input}
       selection={draft.selection}
@@ -299,7 +310,9 @@ export function newSurfacePlacements(
     keys.push(key)
     if (record.status !== 'open') continue
     showConversation = true
-    if (record.surface.placement.workbench && !record.surface.placement.inline) showWorkbench = true
+    // Only a workbench-only view opens the workbench; anything shown in the answer waits to be asked.
+    if (record.surface.placement.workbench && !record.surface.placement.inline && !isTextOnly(record.surface))
+      showWorkbench = true
   }
   return { keys, showConversation, showWorkbench }
 }

@@ -7,13 +7,14 @@ import {
   INTELLIGENT_UI_NAMESPACE,
   intelligentUiCatalog,
   isDeliverableList,
+  rendersInAnswer,
   UiLocaleProvider,
   useUiText,
 } from '@agnes/web-ui'
-import { useMemo, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useSyncExternalStore } from 'react'
 import { ArtifactFile } from './artifact-file.js'
 import { groupDeliverables, type TurnDeliverable } from './deliverable-labels.js'
-import type { UiPlacementBinding } from './placements.js'
+import { BoundSurface, type UiPlacementBinding } from './placements.js'
 
 /** The session's placement binding, set while the intelligent UI is mounted. */
 let active: UiPlacementBinding | undefined
@@ -83,18 +84,75 @@ export function turnDeliverables(
   })
 }
 
-/** Files shown inside the answer that produced them, one quiet card each. */
-export function TurnDeliverables({ turn }: { turn: UITurn }) {
+/**
+ * The views a turn produced and still shows inline: those the session lists, created while the turn
+ * ran, plus the ones the turn's ui_render results name (a closed view is read back by id).
+ */
+export function turnSurfaceIds(
+  surfaces: readonly UiSurfaceRecord[],
+  turn: Pick<UITurn, 'startSeq' | 'endSeq'>,
+  named: readonly string[],
+  known: (id: string) => UiSurfaceRecord | undefined,
+): string[] {
+  const listed = surfaces
+    .filter(
+      (record) =>
+        record.createdSeq >= turn.startSeq && (turn.endSeq === undefined || record.createdSeq <= turn.endSeq),
+    )
+    .map((record) => record.surface.id)
+  const ids = [...new Set([...named, ...listed])]
+  return ids
+    .flatMap((id) => {
+      const record = known(id)
+      return record && rendersInAnswer(record.surface) ? [record] : []
+    })
+    .sort((a, b) => a.createdSeq - b.createdSeq)
+    .map((record) => record.surface.id)
+}
+
+/** Views and files shown inside the answer that produced them, between its text and its actions. */
+export function TurnDeliverables({
+  turn,
+  surfaceIds = [],
+}: {
+  turn: UITurn
+  surfaceIds?: readonly string[]
+}) {
   const { binding, client, version: current } = useIntelligentBinding()
+  const named = surfaceIds.join('\n')
+  useEffect(() => {
+    if (!client) return
+    for (const id of named ? named.split('\n') : []) void client.lookup(id)
+  }, [client, named])
   // biome-ignore lint/correctness/useExhaustiveDependencies: `current` is the store version the list reads through.
   const entries = useMemo(
     () => (client ? turnDeliverables(client.getSnapshot().surfaces, turn) : []),
     [client, current, turn.startSeq, turn.endSeq],
   )
-  if (!binding || !client || !entries.length) return null
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `current` is the store version the list reads through.
+  const views = useMemo(
+    () =>
+      client
+        ? turnSurfaceIds(client.getSnapshot().surfaces, turn, named ? named.split('\n') : [], (id) =>
+            client.knownRecord(id),
+          )
+        : [],
+    [client, current, named, turn.startSeq, turn.endSeq],
+  )
+  if (!binding || !client || (!entries.length && !views.length)) return null
   return (
     <UiLocaleProvider source={binding.locale}>
-      <DeliverableGroup binding={binding} entries={entries} />
+      {views.map((id) => (
+        <BoundSurface
+          key={`${id}:${client.knownRecord(id)?.surface.revision}:${client.knownRecord(id)?.status}`}
+          binding={binding}
+          client={client}
+          id={id}
+          placement="inline"
+          inAnswer={true}
+        />
+      ))}
+      {entries.length > 0 && <DeliverableGroup binding={binding} entries={entries} />}
     </UiLocaleProvider>
   )
 }

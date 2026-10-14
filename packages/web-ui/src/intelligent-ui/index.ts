@@ -14,6 +14,12 @@ export {
 } from './question.js'
 export { QuestionAnswersReceipt, QuestionCard, type QuestionCardProps } from './question-card.js'
 export { displayableIntelligentSurface } from './source-state.js'
-export { docksInConversation, isDeliverableList, surfaceTitle } from './summary.js'
+export {
+  docksInConversation,
+  isDeliverableList,
+  isTextOnly,
+  rendersInAnswer,
+  surfaceTitle,
+} from './summary.js'
 export { IntelligentSurface, type IntelligentSurfaceProps } from './surface.js'
 export { boundedUiJson, validIntelligentSurface, validIntelligentSurfaceProjection } from './validate.js'

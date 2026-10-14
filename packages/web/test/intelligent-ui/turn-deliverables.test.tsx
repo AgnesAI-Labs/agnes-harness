@@ -95,7 +95,11 @@ it('shows one compact group with the earlier version folded, and no artifact ref
       { name: 'report.html', description: 'crm-assistant: final', sha: sha(4) },
     ]),
   ]
-  const client = { getSnapshot: () => ({ surfaces }) } as unknown as IntelligentUiClient
+  const client = {
+    getSnapshot: () => ({ surfaces }),
+    knownRecord: (id: string) => surfaces.find((record) => record.surface.id === id),
+    lookup: async () => {},
+  } as unknown as IntelligentUiClient
   const locale = createDocumentLocaleSource({})
   const expand = vi.fn()
   const binding: UiPlacementBinding = {

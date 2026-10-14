@@ -6,7 +6,7 @@ import type {
   UiSourceStatus,
   UiSurfaceRecord,
 } from '@agnes/protocol/gen/intelligent-ui'
-import { type ReactNode, useId, useMemo, useState } from 'react'
+import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { SettingsState, SettingsToolbar } from '../settings-layout.js'
 import { Badge } from '../ui/badge.js'
 import { Button } from '../ui/button.js'
@@ -28,6 +28,8 @@ export interface IntelligentSurfaceProps {
   renderCustom?: IntelligentCatalogProps['renderCustom']
   record: UiSurfaceRecord
   placement: 'inline' | 'workbench'
+  /** Shown inside the answer that produced it: a compact header and a capped body for large views. */
+  inAnswer?: boolean | undefined
   workbenchOpen?: boolean | undefined
   input: Record<string, JsonValue>
   selection: Record<string, string[]>
@@ -79,6 +81,22 @@ function SurfaceCard(props: IntelligentSurfaceProps) {
   const [sourceVisible, setSourceVisible] = useState(false)
   const [copyMessage, setCopyMessage] = useState('')
   const [copyFailed, setCopyFailed] = useState(false)
+  const [full, setFull] = useState(false)
+  const capped = !!props.inAnswer && !full && isLarge(surface)
+  // «Show all» only when the capped view really hides something.
+  const body = useRef<HTMLDivElement>(null)
+  const [overflows, setOverflows] = useState(false)
+  useEffect(() => {
+    const node = body.current
+    if (!node || !props.inAnswer || !isLarge(surface)) return
+    const measure = () => setOverflows(node.scrollHeight > node.clientHeight + 1)
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(measure)
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [props.inAnswer, surface])
+  const openInWorkbench = props.placement === 'inline' && surface.placement.workbench
   const textComponent = surface.components.find((component) => component.kind === 'text')
   const text = textComponent && 'dataKey' in textComponent ? surface.data[textComponent.dataKey] : undefined
   const summary =
@@ -105,6 +123,7 @@ function SurfaceCard(props: IntelligentSurfaceProps) {
       className="agnes-intelligent-surface"
       data-testid={`ui-surface-${surface.id}`}
       data-placement={props.placement}
+      {...(props.inAnswer ? { 'data-in-answer': true } : {})}
       // A surface that only hands over files is a file list, not a form: it drops the card chrome.
       {...(isDeliverableList(surface) ? { 'data-kind': 'deliverables' } : {})}
       data-revision={surface.revision}
@@ -126,6 +145,16 @@ function SurfaceCard(props: IntelligentSurfaceProps) {
           label={t('ui.menu')}
           trigger={<IconButton name="ellipsis" label={t('ui.menu')} />}
           items={[
+            ...(props.inAnswer && openInWorkbench
+              ? [
+                  {
+                    id: 'workbench',
+                    label: t('ui.file.inWorkbench'),
+                    testId: 'ui-expand',
+                    onSelect: props.onExpand,
+                  },
+                ]
+              : []),
             { id: 'source', label: t('ui.source'), onSelect: () => setSourceVisible((value) => !value) },
             {
               id: 'copy',
@@ -134,7 +163,7 @@ function SurfaceCard(props: IntelligentSurfaceProps) {
             },
           ]}
         />
-        {props.placement === 'inline' && surface.placement.workbench && (
+        {!props.inAnswer && openInWorkbench && (
           <Button
             htmlType="button"
             {...(props.workbenchOpen ? { appearance: 'ghost' as const } : {})}
@@ -178,7 +207,12 @@ function SurfaceCard(props: IntelligentSurfaceProps) {
             {t('ui.reconfirm')}
           </Button>
         )}
-        <div className="agnes-intelligent-body">
+        <div
+          ref={body}
+          className="agnes-intelligent-body"
+          data-capped={capped || undefined}
+          data-overflows={(capped && overflows) || undefined}
+        >
           <SurfaceRenderBoundary key={surface.revision} message={t('ui.renderError')} retry={t('ui.refresh')}>
             <IntelligentCatalog
               {...(props.renderArtifact ? { renderArtifact: props.renderArtifact } : {})}
@@ -200,6 +234,19 @@ function SurfaceCard(props: IntelligentSurfaceProps) {
             />
           </SurfaceRenderBoundary>
         </div>
+        {props.inAnswer && isLarge(surface) && (overflows || full) && (
+          <Button
+            htmlType="button"
+            appearance="ghost"
+            size="small"
+            className="agnes-intelligent-more"
+            data-testid="ui-card-more"
+            aria-expanded={full}
+            onClick={() => setFull((value) => !value)}
+          >
+            {t(full ? 'ui.card.less' : 'ui.card.more')}
+          </Button>
+        )}
         {props.confirmation && (
           <section role="group" aria-label={t('ui.confirm')} data-testid="ui-confirmation">
             <p>{props.confirmation.action.confirm ?? props.confirmation.action.label}</p>
@@ -251,6 +298,15 @@ function SurfaceCard(props: IntelligentSurfaceProps) {
         </ol>
       </>
     </article>
+  )
+}
+/** Wide or tall views are capped inside an answer; the workbench and «show all» give the full view. */
+function isLarge(surface: IntelligentSurfaceProps['record']['surface']): boolean {
+  return (
+    surface.components.length > 3 ||
+    surface.components.some(
+      (component) => 'fallback' in component || ['table', 'chart', 'tabs'].includes(component.kind),
+    )
   )
 }
 /** A receipt that carries structured data is shown as source, not as a paragraph of JSON. */

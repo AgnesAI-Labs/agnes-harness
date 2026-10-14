@@ -885,6 +885,34 @@
     :is(.deliverable-open, .deliverable-open-with).agh-btn:focus-visible {
     outline-offset: -2px;
   }
+  /* A view inside the answer that produced it: a compact card in the reading column. */
+  .agnes-intelligent-surface[data-in-answer] {
+    gap: var(--s8);
+    margin-block: var(--s12) var(--s4);
+    padding: var(--s12) var(--s16);
+    border-radius: var(--radius-md);
+  }
+  .agnes-intelligent-surface[data-in-answer] > header {
+    flex-wrap: nowrap;
+    padding-block-end: var(--s8);
+  }
+  .agnes-intelligent-surface[data-in-answer] > header h3 {
+    overflow: hidden;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agnes-intelligent-surface[data-in-answer] .agnes-intelligent-body[data-capped] {
+    max-height: 22rem;
+    overflow: hidden;
+  }
+  .agnes-intelligent-surface[data-in-answer] .agnes-intelligent-body[data-overflows] {
+    mask-image: linear-gradient(to bottom, #000 80%, transparent);
+  }
+  .agnes-intelligent-surface .agnes-intelligent-more.agh-btn {
+    justify-self: start;
+  }
   /* In an answer: one quiet framed list between the text and the action row. */
   .turn-deliverables {
     display: grid;

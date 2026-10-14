@@ -9,7 +9,7 @@ import { createConversationProjectionStore, useConversationProjection } from '@a
 import { act, createElement, useEffect, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { WebConversationMessages } from '../src/conversation-message-adapter.js'
+import { renderedSurfaceIds, WebConversationMessages } from '../src/conversation-message-adapter.js'
 import { zhLocaleService, zhT } from './helpers/locale.js'
 
 let host: HTMLDivElement
@@ -705,4 +705,17 @@ it('shows a submitted question as «你的回答» and folds the queued line tha
   expect(item('answers')?.querySelector('[data-testid="question-answer-days"]')?.textContent).toBe(
     'days3 天 2 晚',
   )
+})
+
+it('names the views a turn rendered from its persisted ui_render results', () => {
+  const rendered: UINode = {
+    ...tool('completed'),
+    id: 'render',
+    name: 'ui_render',
+    resultPreview: '行程框架 — 1 components. [Open review](/?session=s&surface=outline-v1).',
+  }
+  const other: UINode = { ...tool('completed'), id: 'other', name: 'ui_render', resultPreview: 'failed' }
+  const elsewhere: UINode = { ...rendered, id: 'elsewhere' }
+  const turn = { id: 't', nodeIds: ['render', 'other'] } as unknown as UITurn
+  expect(renderedSurfaceIds([rendered, other, elsewhere], turn)).toEqual(['outline-v1'])
 })

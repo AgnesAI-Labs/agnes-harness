@@ -182,8 +182,11 @@ describe('question dock', () => {
     expect(
       view.host.querySelector('[data-testid="intelligent-ui-panel"] [data-testid="ui-surface-card-q"]'),
     ).toBeNull()
+    // The other view still reaches the workbench panel.
     expect(
-      view.host.querySelector('[data-testid="inline"] [data-testid="ui-surface-finance-review"]'),
+      view.host.querySelector(
+        '[data-testid="intelligent-ui-panel"] [data-testid="ui-surface-finance-review"]',
+      ),
     ).not.toBeNull()
     expect(newSurfacePlacements(new Set(), [questionRecord()])).toEqual({
       keys: ['card-q'],

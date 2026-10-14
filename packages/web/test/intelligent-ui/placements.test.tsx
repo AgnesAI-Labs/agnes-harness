@@ -56,9 +56,9 @@ const mounted = async (
   await client.start()
   const locale = createDocumentLocaleSource({})
   const binding: UiPlacementBinding = {
-    subscribe: () => () => {},
+    subscribe: (listener) => client.subscribe(listener),
     getSnapshot: () => client,
-    getVersion: () => 0,
+    getVersion: () => client.getVersion(),
     locale: locale.source,
     ...(resources ? { resources } : {}),
     target: () => undefined,
@@ -257,8 +257,13 @@ describe('shared Intelligent UI placements', () => {
       const surfaces = host.querySelectorAll('[data-testid="ui-surface-finance-review"]')
       expect(surfaces).toHaveLength(2)
       expect([...surfaces].map((node) => node.getAttribute('data-revision'))).toEqual(['1', '1'])
-      expect(host.querySelectorAll('[data-status="pending-approval"]')).toHaveLength(1)
-      await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="ui-expand"]')!.click())
+      // The answer and the workbench show the same complete view, receipts included.
+      expect(host.querySelectorAll('[data-status="pending-approval"]')).toHaveLength(2)
+      // Inside the answer the view opens in the workbench from its ⋯ menu.
+      const card = host.querySelector('[data-testid="turn"] [data-testid="ui-surface-finance-review"]')!
+      expect(card.getAttribute('data-in-answer')).toBe('true')
+      await act(async () => card.querySelector<HTMLButtonElement>('header .agh-menu-anchor button')!.click())
+      await act(async () => document.querySelector<HTMLElement>('[data-testid="ui-expand"]')!.click())
       expect(binding.expand).toHaveBeenCalledWith('finance-review', 1)
       await act(async () =>
         host.querySelector<HTMLButtonElement>('[data-testid="ui-open-approval"]')!.click(),
@@ -284,7 +289,7 @@ describe('shared Intelligent UI placements', () => {
         ),
       ).toBe(true)
       const reasons = [...host.querySelectorAll<HTMLInputElement>('[data-testid="ui-form-adjustment"] input')]
-      expect(reasons.map((input) => input.value)).toEqual(['Human review'])
+      expect(reasons.map((input) => input.value)).toEqual(['Human review', 'Human review'])
     } finally {
       await cleanup()
     }
