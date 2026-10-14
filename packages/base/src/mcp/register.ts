@@ -316,6 +316,7 @@ function remoteDefinition(
       replay: readOnly ? 'safe' : idempotent ? 'idempotent' : 'never',
       costHint: {},
       deferLoading: cfg.defer,
+      ...(cfg.discoveryGroup === undefined ? {} : { discoveryGroup: cfg.discoveryGroup }),
       requiresApproval: destructive || (!readOnly && !idempotent) ? 'always' : undefined,
     },
     async execute(args, ctx): Promise<ToolResult> {

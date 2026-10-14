@@ -16,7 +16,8 @@ export type McpServerConfig = {
   env?: Record<string, string>
   headers?: Record<string, string>
   allowedTools?: readonly string[]
-  defer: boolean
+  defer: boolean | 'auto'
+  discoveryGroup?: string
 }
 export type McpRemoteTool = {
   name: string
@@ -396,7 +397,7 @@ export async function resolvedConfig(
       baseEnv: fixedEnvironment(baseEnv),
       ...(Object.keys(env).length ? { env: Object.freeze(env) } : {}),
       ...(allowedTools === undefined ? {} : { allowedTools }),
-      defer: false,
+      ...toolDisclosure(definition),
     })
   }
   const binding = definition.secretBinding
@@ -434,8 +435,18 @@ export async function resolvedConfig(
     url: definition.transport.url,
     ...(Object.keys(headers).length ? { headers: Object.freeze(headers) } : {}),
     ...(allowedTools === undefined ? {} : { allowedTools }),
-    defer: false,
+    ...toolDisclosure(definition),
   })
+}
+
+/** Same mapping as `@agnes/base`'s `mcpToolDisclosure`, which this layer cannot import. */
+function toolDisclosure(definition: McpServerDefinitionInput): Pick<McpServerConfig, 'defer' | 'discoveryGroup'> {
+  const mode = definition.toolDisclosure ?? 'auto'
+  const name = definition.displayName.replace(/[\t\r\n]+/gu, ' ').trim().slice(0, 100)
+  return {
+    defer: mode === 'always' ? false : mode === 'on-demand' ? true : 'auto',
+    discoveryGroup: `MCP server ${name || 'unnamed'}`,
+  }
 }
 
 // The injected inspector admits only tools of the protocol `McpTool` shape and reports the rest as

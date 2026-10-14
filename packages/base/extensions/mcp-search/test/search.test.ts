@@ -490,4 +490,32 @@ describe('tool_search / tool_describe', () => {
     expect(await toolDescribeTool(index).execute({ name: 'ui_render' }, ctx)).toMatchObject({ isError: true })
     expect(disclosed).toEqual(['ui_render'])
   })
+
+  it('finds deferred MCP tools by name, description and server name', async () => {
+    const ctx = fakeToolContext()
+    const template = toolSearchTool(populated())
+    const remote = (name: string, description: string, group: string) => ({
+      ...template,
+      name,
+      description,
+      meta: { ...template.meta, deferLoading: true, discoveryGroup: group },
+    })
+    ctx.tools.list = () => [
+      remote('mcp__tracker__create_issue', 'Create an issue', 'MCP server Acme Tracker'),
+      remote('mcp__tracker__close_issue', 'Close an issue', 'MCP server Acme Tracker'),
+      remote('mcp__wiki__edit_page', 'Edit a page', 'MCP server Team Wiki'),
+    ]
+    const names = async (query: string) =>
+      ((await toolSearchTool(new MemFts()).execute({ query, limit: 5 }, ctx)).content[0] as { text: string }).text
+        .split('\n')
+        .map((line) => line.split(' — ')[0])
+    expect(await names('create_issue')).toEqual(['mcp__tracker__create_issue'])
+    expect(await names('edit page')).toEqual(['mcp__wiki__edit_page'])
+    expect(await names('Acme Tracker')).toEqual(['mcp__tracker__close_issue', 'mcp__tracker__create_issue'])
+    // The label only helps ranking; the model still sees the tool's own description.
+    expect(
+      ((await toolSearchTool(new MemFts()).execute({ query: 'Team Wiki' }, ctx)).content[0] as { text: string })
+        .text,
+    ).toBe('mcp__wiki__edit_page — Edit a page')
+  })
 })

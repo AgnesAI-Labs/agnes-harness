@@ -30,8 +30,9 @@ const MAX_TEXT = 256
 const MAX_MIME = 128
 const MAX_BODY = 1_048_576
 
-const readOnlyMeta = (defer: boolean) =>
+const readOnlyMeta = (defer: boolean | 'auto', discoveryGroup?: string) =>
   Object.freeze({
+    ...(discoveryGroup === undefined ? {} : { discoveryGroup }),
     isReadOnly: true,
     isDestructive: false,
     isConcurrencySafe: true,
@@ -190,7 +191,7 @@ export function admitMcpResourceTools(
         { cursor: Type.Optional(Type.String({ maxLength: 1024 })) },
         { additionalProperties: false },
       ),
-      meta: readOnlyMeta(cfg.defer),
+      meta: readOnlyMeta(cfg.defer, cfg.discoveryGroup),
       async execute(args, ctx) {
         try {
           const page = await conn.listResources?.({
@@ -217,7 +218,7 @@ export function admitMcpResourceTools(
           { cursor: Type.Optional(Type.String({ maxLength: 1024 })) },
           { additionalProperties: false },
         ),
-        meta: readOnlyMeta(cfg.defer),
+        meta: readOnlyMeta(cfg.defer, cfg.discoveryGroup),
         async execute(args, ctx) {
           try {
             const page = await conn.listResourceTemplates?.({
@@ -245,7 +246,7 @@ export function admitMcpResourceTools(
         { uri: Type.String({ minLength: 1, maxLength: MAX_URI }) },
         { additionalProperties: false },
       ),
-      meta: readOnlyMeta(cfg.defer),
+      meta: readOnlyMeta(cfg.defer, cfg.discoveryGroup),
       async execute(args, ctx) {
         try {
           const page = await conn.readResource?.(args.uri, { signal: ctx.signal })

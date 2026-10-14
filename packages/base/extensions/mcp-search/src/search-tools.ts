@@ -106,9 +106,13 @@ export const toolSearchTool = (index: ToolIndexReader, skills?: SkillRuntimeDisc
         const toolLimit = reserveSkillSlot ? limit - 1 : limit
         const catalog = ctx.tools.list()
         const names = new Set(catalog.map((tool) => tool.name))
+        // A deferred tool's group label (an MCP server's name) is searchable with its description,
+        // because that label is all the model saw of the tool before searching.
         const local = catalog.map((tool) => ({
           name: tool.name,
-          description: tool.description,
+          description: tool.meta.discoveryGroup
+            ? `${tool.description} ${tool.meta.discoveryGroup}`
+            : tool.description,
           schema: JSON.stringify(tool.parameters),
         }))
         const hits = [

@@ -21,7 +21,11 @@ export type McpServerConfig = {
   headers?: Record<string, string>
   /** Managed server policy is enforced before registration and invocation. */
   allowedTools?: readonly string[]
-  defer: boolean
+  /** Tool disclosure: false always visible, true found through tool_search, 'auto' decided per turn
+   *  by core from how many auto tools the catalog holds (see `ToolMeta.deferLoading`). */
+  defer: boolean | 'auto'
+  /** One-line label core lists this server's deferred tools under, for example its display name. */
+  discoveryGroup?: string
 }
 
 /** Longest secrets first, so a shorter prefix of the same value cannot survive redaction. */
