@@ -165,7 +165,7 @@ for (const locale of ['en', 'zh-CN'])
           ).toBe(true)
           await accessible(page, info, `${tab}-${width}`)
         }
-        for (const capability of ['search', 'computer-use', 'subagents', 'execution', 'memory', 'context']) {
+        for (const capability of ['search', 'computer-use', 'subagents']) {
           await homePage(page, 'plugins')
           await page.getByTestId(`builtin-${capability}`).click()
           await expect(page.getByTestId(`home-page-plugins-${capability}`)).toBeVisible()

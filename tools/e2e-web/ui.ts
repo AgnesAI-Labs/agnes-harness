@@ -133,7 +133,6 @@ export function sectionSurface(page: Page, id: string) {
     memory: 'plugins-memory',
     engines: 'plugins-subagents',
     'computer-use': 'plugins-computer-use',
-    execution: 'plugins-execution',
   }
   if (homes[id]) return page.getByTestId(`home-page-${homes[id]}`)
   if (id === 'model') return page.locator('#config-accounts')
@@ -192,7 +191,6 @@ export async function section(page: Page, id: string) {
     mcp: ['plugins', 'mcp'],
     feedback: ['plugins', 'review'],
     review: ['plugins', 'review'],
-    execution: ['plugins', 'plugins.execution'],
     search: ['plugins', 'plugins.search'],
     memory: ['plugins', 'plugins.memory'],
     engines: ['plugins', 'plugins.subagents'],

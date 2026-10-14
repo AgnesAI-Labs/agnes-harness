@@ -9,6 +9,7 @@ import {
   fresh,
   homePage,
   preferences,
+  section,
   selectValue,
   send,
   settings,
@@ -62,12 +63,15 @@ test('v3 plugin tabs and built-in context save survive navigation and reload', a
       page.getByRole('tab').filter({ has: page.getByTestId(`plugins-tab-${tab}`) }),
     ).toHaveAttribute('aria-selected', 'true')
   }
-  await homePage(page, 'plugins')
-  await page.getByTestId('builtin-context').click()
+  // The custom instructions are on the General page of settings.
+  await settings(page)
+  await section(page, 'general')
   await page.getByTestId('system-prompt-personaPrefix').fill('REG5 persisted opening instruction')
   await page.getByTestId('system-prompt-save').click()
   await expect(page.getByTestId('system-prompt-saved')).toBeVisible()
   await page.reload()
+  await settings(page)
+  await section(page, 'general')
   await expect(page.getByTestId('system-prompt-personaPrefix')).toHaveValue(
     'REG5 persisted opening instruction',
   )

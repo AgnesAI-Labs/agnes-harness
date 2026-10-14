@@ -1,15 +1,6 @@
 import { expect, test } from './fixtures.js'
 import { accessible, screen, translated } from './quality.js'
-import {
-  chooseWorkspace,
-  closeSettings,
-  expand,
-  fresh,
-  homePage,
-  preferences,
-  section,
-  settings,
-} from './ui.js'
+import { chooseWorkspace, closeSettings, expand, fresh, preferences, section, settings } from './ui.js'
 
 for (const locale of ['en', 'zh-CN'])
   for (const theme of ['light', 'dark'])
@@ -46,9 +37,9 @@ for (const locale of ['en', 'zh-CN'])
       await request()
       await page.getByTestId('request-trace-compare').selectOption('pin')
       await page.locator('#view-chat').click()
+      // The custom instructions are on the General page of settings.
       await settings(page, locale)
-      await homePage(page, 'plugins')
-      await page.getByTestId('builtin-context').click()
+      await section(page, 'general')
       await page
         .getByTestId('system-prompt-personaPrefix')
         .fill('Synthetic delivery persona: answer with clear next steps.')

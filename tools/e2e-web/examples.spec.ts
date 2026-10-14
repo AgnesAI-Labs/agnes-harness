@@ -1,7 +1,7 @@
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { advanced, chooseWorkspace, closeSettings, homePage } from './ui.js'
+import { advanced, chooseWorkspace, closeSettings } from './ui.js'
 
 // Explicit mutation opt-in: only point this flow at a disposable real daemon home.
 for (const [locale, example, loop] of [
@@ -52,12 +52,8 @@ for (const [locale, example, loop] of [
       timeout: 30_000,
     })
     await detail.locator('.plugin-detail-close').click()
-    await homePage(page, 'plugins')
-    await page.getByTestId('builtin-execution').click()
-    const mode = page.getByTestId('execution-modes').locator(`[data-loop-id="${loop}"]`)
-    await expect(mode).toBeVisible({ timeout: 30_000 })
-    await screen('official-available')
-    await mode.getByTestId('execution-start').click()
+    // An enabled execution mode is offered to every new session, in the composer's agent menu.
+    await page.getByRole('button', { name: locale === 'en' ? 'New session' : '新会话', exact: true }).click()
     const workspace = process.env.AGH_UI_WORKSPACE
     if (!workspace) throw new Error('Official-example flow requires an isolated workspace')
     await chooseWorkspace(page, { workspace }, locale)
