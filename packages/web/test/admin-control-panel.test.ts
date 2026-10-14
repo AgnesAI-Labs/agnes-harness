@@ -377,6 +377,57 @@ it('loads catalog choices and saves their exact identities and revision', async 
   expect(outerSubmit).not.toHaveBeenCalled()
 })
 
+it('rereads new-session defaults after a revision conflict so retry saves on the current revision', async () => {
+  const loop = { id: 'workflow', version: '1.0.0', sourcePackage: '@acme/workflow', capabilities: [] }
+  let revision = 4
+  let conflict = true
+  const fetcher = vi.fn<typeof fetch>(async (url, init) => {
+    if (String(url).endsWith('/loops'))
+      return Response.json({ loops: [loop], revision, defaults: { preset: 'read-only' } })
+    if (String(url).endsWith('/model-adapters')) return Response.json({ modelAdapters: [] })
+    if (String(url).endsWith('/composition')) return Response.json({})
+    const body = JSON.parse(String(init?.body))
+    if (conflict) {
+      conflict = false
+      revision = 9
+      return Response.json(
+        { error: { code: 'CONFIG_REVISION_CONFLICT', message: 'changed' } },
+        { status: 409 },
+      )
+    }
+    return Response.json({ revision: body.revision + 1, defaults: body.defaults })
+  })
+  const api = new PluginAdminApi(
+    { profile: 'local-dev', clientId: 'admin', permissions: ['packages.activate'], readOnly: false },
+    fetcher,
+  )
+  const host = await mount(
+    createElement(
+      SettingsSubpageFrame,
+      { header: null },
+      createElement(SessionDefaultsPanel, { api, canSave: true, t }),
+    ),
+  )
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="session-default-loop"]')?.click(),
+  )
+  await act(async () =>
+    host.querySelector<HTMLInputElement>('[data-testid="session-loop-workflow"]')?.click(),
+  )
+  await act(async () => {})
+  const saves = () =>
+    fetcher.mock.calls
+      .filter(([url]) => String(url).endsWith('/defaults'))
+      .map(([, init]) => JSON.parse(String(init?.body)))
+  expect(saves().at(-1)?.revision).toBe(4)
+  expect(host.querySelector('[data-testid="settings-save-failed"]')).not.toBeNull()
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="settings-save-retry"]')?.click())
+  expect(saves().at(-1)).toEqual({
+    revision: 9,
+    defaults: { preset: 'read-only', providers: { loop: { provider: 'workflow', version: '1.0.0' } } },
+  })
+})
+
 it('reports an unavailable catalog as one line with retry, and leaves read-only controls disabled', async () => {
   const fetcher = vi
     .fn<typeof fetch>()

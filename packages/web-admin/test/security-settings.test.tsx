@@ -86,14 +86,16 @@ it('saves the auto review rules as chips, toggles, a segment and second presets,
 it('picks the default permission from three cards, confirms full access, and offers plugin presets in one row', async () => {
   const saves: unknown[] = []
   let defaults: Record<string, unknown> = { preset: 'workspace-write' }
+  let revision = 3
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
-    if (url === '/admin/api/loops') return Response.json({ revision: 3, defaults, loops: [] })
+    if (url === '/admin/api/loops') return Response.json({ revision, defaults, loops: [] })
     if (url === '/admin/api/composition') return Response.json({ preset: 'workspace-write' })
     if (url === '/admin/api/defaults') {
       const body = JSON.parse(String(init?.body))
       saves.push(body)
       defaults = body.defaults
-      return Response.json({ revision: 4, defaults })
+      revision = 4
+      return Response.json({ revision, defaults })
     }
     return Response.json({
       profile: 'local-dev',
@@ -164,4 +166,53 @@ it('names an automatic fast reviewer instead of calling it unset, and still warn
   })
   // The verifier is off (null): reviews come to the person, and the page says so.
   expect(host.querySelector('[data-testid="auto-review-slot-status"]')).not.toBeNull()
+})
+
+it('rereads the defaults on a revision conflict, keeps the chosen preset, and retries on the new revision', async () => {
+  const saves: { revision: number; defaults: Record<string, unknown> }[] = []
+  let revision = 3
+  let conflictOnce = true
+  const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/admin/api/loops')
+      return Response.json({ revision, defaults: { preset: 'workspace-write' }, loops: [] })
+    if (url === '/admin/api/composition') return Response.json({ preset: 'workspace-write' })
+    if (url === '/admin/api/defaults') {
+      const body = JSON.parse(String(init?.body))
+      saves.push(body)
+      if (conflictOnce) {
+        // Another window saved first.
+        conflictOnce = false
+        revision = 7
+        return Response.json({ error: { code: 'CONFIG_REVISION_CONFLICT' } }, { status: 409 })
+      }
+      return Response.json({ revision: revision + 1, defaults: body.defaults })
+    }
+    return Response.json({
+      profile: 'local-dev',
+      clientId: 'admin',
+      permissions: ['packages.activate'],
+      readOnly: false,
+    })
+  })
+  vi.stubGlobal('fetch', fetcher)
+  const host = await mount(
+    createElement(PermissionDefaults, {
+      available: ['read-only', 'workspace-write', 'full-access'],
+      fetcher: fetcher as unknown as typeof fetch,
+    }),
+  )
+  await click(host, '[data-testid="security-read-only"] input')
+  await act(async () => {})
+  expect(saves.at(-1)?.revision).toBe(3)
+  expect(host.querySelector('[data-testid="security-default-conflict"]')).not.toBeNull()
+  // The choice is kept on screen while it waits.
+  expect(host.querySelector<HTMLInputElement>('[data-testid="security-read-only"] input')?.checked).toBe(true)
+  await click(host, '[data-testid="settings-save-retry"]')
+  expect(saves.at(-1)).toEqual({ revision: 7, defaults: { preset: 'read-only' } })
+  expect(host.querySelector('[data-testid="settings-save-failed"]')).toBeNull()
+  // Defaults saved elsewhere are read again.
+  const reads = fetcher.mock.calls.filter(([url]) => url === '/admin/api/loops').length
+  await act(async () => window.dispatchEvent(new CustomEvent('agnes:session-configuration-changed')))
+  await act(async () => {})
+  expect(fetcher.mock.calls.filter(([url]) => url === '/admin/api/loops').length).toBeGreaterThan(reads)
 })

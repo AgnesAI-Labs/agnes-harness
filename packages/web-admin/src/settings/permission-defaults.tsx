@@ -30,7 +30,10 @@ export function PermissionDefaults({
   const [canSave, setCanSave] = useState(false)
   const [effective, setEffective] = useState<string>()
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState(false)
+  const [readFailed, setReadFailed] = useState(false)
+  const [saveFailed, setSaveFailed] = useState(false)
+  // Another place saved the defaults first: they are read again and the choice waits for 重试.
+  const [conflict, setConflict] = useState(false)
   const [failedPreset, setFailedPreset] = useState<string>()
   const [confirm, setConfirm] = useState(false)
   const [revision, setRevision] = useState(0)
@@ -41,7 +44,7 @@ export function PermissionDefaults({
     const abort = new AbortController()
     lifetime.current = abort
     setBusy(true)
-    setError(false)
+    setReadFailed(false)
     void Promise.all([
       fetcher('/admin/api/loops', { credentials: 'same-origin', cache: 'no-store', signal: abort.signal }),
       PluginAdminApi.context((url, init) => fetcher(url, { ...init, signal: abort.signal })),
@@ -64,17 +67,24 @@ export function PermissionDefaults({
         }
       })
       .catch(() => {
-        if (!abort.signal.aborted) setError(true)
+        if (!abort.signal.aborted) setReadFailed(true)
       })
       .finally(() => {
         if (!abort.signal.aborted) setBusy(false)
       })
     return () => abort.abort()
   }, [fetcher, revision])
+  // New-session defaults saved elsewhere (run configuration, another window's save) are read again.
+  useEffect(() => {
+    const reread = () => setRevision((value) => value + 1)
+    window.addEventListener('agnes:session-configuration-changed', reread)
+    return () => window.removeEventListener('agnes:session-configuration-changed', reread)
+  }, [])
   async function save(preset: string) {
     if (!canSave || !snapshot || busy || !available.includes(preset)) return
     setBusy(true)
-    setError(false)
+    setSaveFailed(false)
+    setConflict(false)
     setFailedPreset(preset)
     try {
       const response = await fetcher('/admin/api/defaults', {
@@ -84,6 +94,15 @@ export function PermissionDefaults({
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ revision: snapshot.revision, defaults: { ...snapshot.defaults, preset } }),
       })
+      if (response.status === 409) {
+        // The revision this page read is stale. Read the current defaults; 重试 then saves the
+        // same choice against them instead of repeating the stale revision.
+        if (lifetime.current?.signal.aborted) return
+        setConflict(true)
+        setSaveFailed(true)
+        setRevision((value) => value + 1)
+        return
+      }
       const value: unknown = await response.json()
       if (!response.ok || !isSessionDefaultsSnapshot(value)) throw new Error('save failed')
       if (lifetime.current?.signal.aborted) return
@@ -92,12 +111,13 @@ export function PermissionDefaults({
       setConfirm(false)
       setFailedPreset(undefined)
     } catch {
-      if (!lifetime.current?.signal.aborted) setError(true)
+      if (!lifetime.current?.signal.aborted) setSaveFailed(true)
     } finally {
       if (!lifetime.current?.signal.aborted) setBusy(false)
     }
   }
-  const chosen = snapshot?.defaults.preset ?? effective
+  // A choice whose save failed stays shown until it is retried or another is made.
+  const chosen = (saveFailed ? failedPreset : undefined) ?? snapshot?.defaults.preset ?? effective
   const more = available.filter((preset) => !(presets as readonly string[]).includes(preset))
   const name = (id: string) => {
     const text = choiceText(`choice.${id}`)
@@ -110,11 +130,16 @@ export function PermissionDefaults({
       bare
       data-testid="security-default-permissions"
       aria-busy={busy}
-      failed={error && !!snapshot}
+      failed={saveFailed && !!snapshot}
       onRetry={() => failedPreset && void save(failedPreset)}
-      state={error && !snapshot ? 'error' : busy && !snapshot ? 'loading' : undefined}
+      state={readFailed && !snapshot ? 'error' : busy && !snapshot ? 'loading' : undefined}
       onReload={() => setRevision((value) => value + 1)}
     >
+      {conflict && (
+        <p className="agnes-settings-note" role="status" data-testid="security-default-conflict">
+          {t('conflict')}
+        </p>
+      )}
       <fieldset className="agnes-settings-modes" aria-label={t('defaultPermissions')} disabled={locked}>
         {presets.map((preset) => (
           <div key={preset} data-testid={`security-${preset}`} data-on={chosen === preset || undefined}>
@@ -181,7 +206,7 @@ export function PermissionDefaults({
         }
       >
         <p>{t('full-accessHelp')}</p>
-        {error && <SettingsState tone="error">{t('failed')}</SettingsState>}
+        {saveFailed && <SettingsState tone="error">{t('failed')}</SettingsState>}
       </Dialog>
     </SettingsBlock>
   )

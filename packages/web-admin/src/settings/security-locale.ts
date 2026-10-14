@@ -26,6 +26,8 @@ export const securityUxCatalog: LocaleCatalog = {
     unprobed: 'Isolation not checked yet',
     unprobedHelp: 'It is checked the first time a session runs in a workspace.',
     morePresets: 'More presets',
+    conflict:
+      'The defaults were changed elsewhere and have been read again. Retry to save your choice on top of them.',
     morePresetsHelp: 'Presets that plugins provide, beside the three above.',
     morePresetsNone: 'None',
     commandIsolation: 'Command isolation',
@@ -69,6 +71,7 @@ export const securityUxCatalog: LocaleCatalog = {
     unprobed: '尚未检测隔离保护',
     unprobedHelp: '会话第一次在工作区里运行时会检测。',
     morePresets: '更多预设',
+    conflict: '默认权限已在别处修改，已重新读取。点「重试」在最新版本上保存你的选择。',
     morePresetsHelp: '插件提供的其他预设，在上面三种之外。',
     morePresetsNone: '无',
     commandIsolation: '命令隔离',

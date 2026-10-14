@@ -20,7 +20,7 @@ import {
 import { useEffect, useState } from 'react'
 import { choiceName, type ResolvedComposition, readComposition } from '../../settings/choices.js'
 import { SETTINGS_NAMESPACE, settingsCatalog } from '../../settings/locales.js'
-import type { PluginAdminApi } from './api.js'
+import { AdminApiError, type PluginAdminApi } from './api.js'
 import { identity } from './composition-labels.js'
 import type { Text } from './control-panel-types.js'
 
@@ -100,22 +100,31 @@ export function SessionDefaultsPanel({
       const loop = catalog.loops.find((entry) => identity(entry) === next.loop)
       const adapter = catalog.adapters.find((entry) => identity(entry) === next.adapter)
       const preset = catalog.snapshot.defaults.preset
-      const snapshot = await api.saveDefaults({
-        revision: catalog.snapshot.revision,
-        defaults: {
-          // The permission preset is chosen under 权限与安全; a save here keeps it.
-          ...(preset ? { preset } : {}),
-          ...(loop || adapter
-            ? {
-                providers: {
-                  ...(loop ? { loop: { provider: loop.id, version: loop.version } } : {}),
-                  ...(adapter ? { 'model-adapter': { provider: adapter.id, version: adapter.version } } : {}),
-                },
-              }
-            : {}),
-          ...(adapter && next.model ? { model: next.model } : {}),
-        },
-      })
+      const snapshot = await api
+        .saveDefaults({
+          revision: catalog.snapshot.revision,
+          defaults: {
+            // The permission preset is chosen under 权限与安全; a save here keeps it.
+            ...(preset ? { preset } : {}),
+            ...(loop || adapter
+              ? {
+                  providers: {
+                    ...(loop ? { loop: { provider: loop.id, version: loop.version } } : {}),
+                    ...(adapter
+                      ? { 'model-adapter': { provider: adapter.id, version: adapter.version } }
+                      : {}),
+                  },
+                }
+              : {}),
+            ...(adapter && next.model ? { model: next.model } : {}),
+          },
+        })
+        .catch((error: unknown) => {
+          // Saved elsewhere first: read the current defaults so 重试 saves on their revision.
+          if (error instanceof AdminApiError && error.details.code === 'CONFIG_REVISION_CONFLICT')
+            setReload((count) => count + 1)
+          throw error
+        })
       setCatalog((known) => (known ? { ...known, snapshot } : known))
     },
   })
