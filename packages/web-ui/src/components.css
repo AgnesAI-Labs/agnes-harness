@@ -2439,4 +2439,19 @@
     flex: 0 1 auto;
     max-width: 55%;
   }
+
+  /* An ID shown only because no name exists: small and monospace, never a title. */
+  .agnes-settings-id {
+    color: var(--agnes-text-secondary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-regular);
+    overflow-wrap: anywhere;
+  }
+  .agnes-settings-drag:not(:disabled) {
+    cursor: grab;
+  }
+  .agnes-settings-drag:disabled {
+    opacity: 0.35;
+  }
 }

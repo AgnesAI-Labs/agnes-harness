@@ -10,6 +10,14 @@ const added = {
     ['circle', { cx: '12', cy: '12', r: '4' }],
     ['path', { d: 'M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8' }],
   ],
+  'grip-vertical': [
+    ['circle', { cx: '9', cy: '12', r: '1' }],
+    ['circle', { cx: '9', cy: '5', r: '1' }],
+    ['circle', { cx: '9', cy: '19', r: '1' }],
+    ['circle', { cx: '15', cy: '12', r: '1' }],
+    ['circle', { cx: '15', cy: '5', r: '1' }],
+    ['circle', { cx: '15', cy: '19', r: '1' }],
+  ],
   pencil: [
     [
       'path',

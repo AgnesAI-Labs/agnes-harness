@@ -1,3 +1,4 @@
+import { type PackageInstalledDescriptor, resolvePluginMetadata } from '@agnes/protocol'
 import {
   Banner,
   Button,
@@ -17,6 +18,13 @@ import { SETTINGS_NAMESPACE, settingsCatalog } from '../../settings/locales.js'
 import { SessionToolsPanel } from '../../settings/session-tools.js'
 import type { PluginAdminApi } from './api.js'
 import type { Text } from './control-panel-types.js'
+
+/** A stable colour for an agent's tile, from its ID. */
+function hue(id: string): number {
+  let sum = 0
+  for (const char of id) sum = (sum * 31 + char.charCodeAt(0)) % 997
+  return sum % 6
+}
 
 /** Move one entry of an ordered list to another position. */
 export function reorder<T>(list: readonly T[], from: number, to: number): T[] {
@@ -45,7 +53,7 @@ export function BundlesPanel({
   t: Text
   presets?: readonly { id: string }[]
 }) {
-  const { t: settingsText } = useUiText(SETTINGS_NAMESPACE, settingsCatalog)
+  const { t: settingsText, locale } = useUiText(SETTINGS_NAMESPACE, settingsCatalog)
   const [snapshot, setSnapshot] = useState<Awaited<ReturnType<PluginAdminApi['bundles']>>>()
   const [selected, setSelected] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
@@ -57,15 +65,25 @@ export function BundlesPanel({
   const [origins, setOrigins] = useState<{ choice: string; layer: string; name: string }[]>([])
   const [reload, setReload] = useState(0)
   const [dragging, setDragging] = useState<string>()
+  const [installed, setInstalled] = useState<readonly PackageInstalledDescriptor[]>([])
   // biome-ignore lint/correctness/useExhaustiveDependencies: reload explicitly rereads desired bundle selection.
   useEffect(() => {
     let current = true
     setFailed('')
     if (!api) return
     setBusy(true)
-    Promise.all([api.bundles(), api.composition().catch(() => undefined)])
-      .then(([value, composition]) => {
+    Promise.all([
+      api.bundles(),
+      api.composition().catch(() => undefined),
+      // Names come from the installed packages; without them a row falls back to its ID.
+      api.list().then(
+        (list) => list.packages,
+        () => [],
+      ),
+    ])
+      .then(([value, composition, packages]) => {
         if (!current) return
+        setInstalled(packages)
         setSessionInfo(composition)
         setSnapshot(value)
         setSelected(value.bundles)
@@ -138,10 +156,19 @@ export function BundlesPanel({
           .map((entry) => ({ id: entry.id, entry })),
       ]
     : []
-  const nameOf = (id: string) => {
+  /**
+   * A business agent by the name its package gives it (the catalog's own name first, then the
+   * installed package's metadata), with its version. Without a name the row shows the ID, small
+   * and monospace, never as a title.
+   */
+  const describe = (id: string) => {
     const entry = snapshot?.catalog.find((item) => item.id === id)
-    return entry ? choiceName(entry, settingsText) : id
+    const pkg = installed.find((item) => item.id === (entry?.sourcePackage ?? id.split('#')[0]))
+    const name =
+      entry?.displayName ?? entry?.label ?? resolvePluginMetadata(pkg?.metadata, locale)?.displayName
+    return { name, version: entry?.version ?? pkg?.version }
   }
+  const nameOf = (id: string) => describe(id).name ?? id
   const locked = busy || !canSave
   const move = (id: string, offset: number) => {
     const from = selected.indexOf(id)
@@ -181,17 +208,23 @@ export function BundlesPanel({
           )}
           <SettingsBlock state={busy && !snapshot ? 'loading' : undefined}>
             {snapshot && rows.length === 0 && (
-              <SettingsItem label={t('bundles.empty')} data-testid="bundles-empty" />
+              <SettingsItem label={t('bundles.empty')} data-testid="bundles-empty">
+                <Button size="small" href="/?page=agents">
+                  {t('bundles.install')}
+                </Button>
+              </SettingsItem>
             )}
             {rows.map(({ id, entry }) => {
               const position = selected.indexOf(id)
               const on = position >= 0
-              const name = nameOf(id)
+              const { name, version } = describe(id)
+              const label = name ?? id
               return (
                 <SettingsItem
                   key={id}
                   data-bundle={id}
                   data-selected={on || undefined}
+                  data-missing={!entry || undefined}
                   data-dragging={dragging === id || undefined}
                   draggable={on && !locked}
                   onDragStart={(event) => {
@@ -203,32 +236,45 @@ export function BundlesPanel({
                     if (on && dragging) event.preventDefault()
                   }}
                   onDrop={(event) => drop(event, id)}
+                  leading={
+                    <>
+                      {/* Drag the handle, or move with ↑/↓ while it has focus. */}
+                      <IconButton
+                        name="grip-vertical"
+                        className="agnes-settings-drag"
+                        data-testid="bundle-drag"
+                        label={t('bundles.move', { name: label })}
+                        disabled={locked || !on || selected.length < 2}
+                        onKeyDown={(event) => {
+                          if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+                            event.preventDefault()
+                            move(id, event.key === 'ArrowUp' ? -1 : 1)
+                          }
+                        }}
+                      />
+                      <span className="agnes-settings-logo" data-hue={hue(id)} aria-hidden="true">
+                        {(label.replace(/^@[^/]+\//, '').trim()[0] ?? '?').toUpperCase()}
+                      </span>
+                    </>
+                  }
                   label={
                     <>
                       {on && <span className="agnes-settings-order">{position + 1}</span>}
-                      <span>{name}</span>
+                      {name ? (
+                        <span data-testid="bundle-name">{name}</span>
+                      ) : (
+                        <code className="agnes-settings-id" data-testid="bundle-name">
+                          {id}
+                        </code>
+                      )}
                       {!entry && <SettingsTag tone="warn">{t('bundles.missing')}</SettingsTag>}
                     </>
                   }
-                  description={entry?.version ?? (entry ? undefined : t('bundles.missing-help'))}
+                  description={entry ? version : t('bundles.missing-help')}
                 >
-                  {on && selected.length > 1 && (
-                    <IconButton
-                      name="ellipsis-vertical"
-                      className="agnes-settings-drag"
-                      label={t('bundles.move', { name })}
-                      disabled={locked}
-                      onKeyDown={(event) => {
-                        if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
-                          event.preventDefault()
-                          move(id, event.key === 'ArrowUp' ? -1 : 1)
-                        }
-                      }}
-                    />
-                  )}
                   <StateSwitch
                     id={`bundle-default-${encodeURIComponent(id)}`}
-                    label={name}
+                    label={label}
                     checked={on}
                     disabled={locked}
                     onToggle={(checked) =>
@@ -288,7 +334,9 @@ export function BundlesPanel({
           </SettingsBlock>
           {snapshot && rows.length > 0 && (
             <div className="agnes-settings-apply" data-testid="bundles-footer">
-              <span role="status">{applied ? t('bundles.saved') : t('bundles.restart')}</span>
+              <span role="status" data-testid="bundles-status">
+                {applied ? t('bundles.saved') : t('bundles.restart')}
+              </span>
               <Button
                 appearance="primary"
                 data-testid="bundles-save"

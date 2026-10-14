@@ -11,13 +11,13 @@ import { createPortal } from 'react-dom'
 import { useAdvancedSettings } from './advanced-settings.js'
 import { fallbackT } from './locales/index.js'
 import { SettingsUndoScope } from './settings-autosave.js'
-import { SettingsInfo, SettingsSubpageFrame } from './ui/settings-subpages.js'
 import { Button } from './ui/button.js'
 import { CopyButton } from './ui/copy-button.js'
 import { Disclosure, type DisclosureProps, NestedSurfaceContext } from './ui/disclosure.js'
 import { Icon } from './ui/icon.js'
 import type { IconName } from './ui/icon-set.js'
 import { IconTile } from './ui/icon-tile.js'
+import { SettingsInfo, SettingsSubpageFrame } from './ui/settings-subpages.js'
 import { Skeleton } from './ui/skeleton.js'
 
 type DataAttributes = { [name: `data-${string}`]: string | number | boolean | undefined }
@@ -181,6 +181,7 @@ export function SettingsItem({
   info,
   labelId,
   icon,
+  leading,
   stacked = false,
   children,
   ...props
@@ -192,6 +193,8 @@ export function SettingsItem({
     info?: string | undefined
     labelId?: string
     icon?: IconName
+    /** Before the icon: a drag handle or a logo tile. */
+    leading?: ReactNode
     stacked?: boolean
   }) {
   return (
@@ -200,6 +203,7 @@ export function SettingsItem({
       data-stacked={stacked || undefined}
       className={['agnes-settings-item', props.className].filter(Boolean).join(' ')}
     >
+      {leading}
       {icon && <IconTile name={icon} />}
       <div className="agnes-settings-item-copy">
         <div className="agnes-settings-item-label" id={labelId}>
