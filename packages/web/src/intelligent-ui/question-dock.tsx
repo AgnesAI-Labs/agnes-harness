@@ -52,14 +52,54 @@ function OpenQuestions({ client }: { client: IntelligentUiClient }) {
   )
 }
 
+/**
+ * How a question card recovers, the same way any surface does: a stale or changed question is read
+ * again before it can be answered; a submission whose delivery is unconfirmed is sent again with its
+ * own commandId; only a failure the backend marks safe to retry makes a new command; an unknown
+ * outcome stays locked.
+ */
+export function questionRecovery(
+  client: Pick<IntelligentUiClient, 'needsReview' | 'pendingCommands' | 'receipts'>,
+  id: string,
+):
+  | { kind: 'review' }
+  | { kind: 'resend' }
+  | { kind: 'retry'; receipt: UiActionReceipt }
+  | { kind: 'unknown' }
+  | { kind: 'rejected'; message?: string }
+  | undefined {
+  const receipts = client.receipts(id)
+  if (client.needsReview(id)) return { kind: 'review' }
+  if (
+    client
+      .pendingCommands(id)
+      .some((command) => !receipts.some((receipt) => receipt.commandId === command.commandId))
+  )
+    return { kind: 'resend' }
+  const latest = receipts.at(-1)
+  if (latest?.failure?.outcomeUnknown) return { kind: 'unknown' }
+  if (latest?.status === 'failed' && latest.failure?.retryable) return { kind: 'retry', receipt: latest }
+  if (latest?.status === 'failed' || latest?.status === 'rejected')
+    return { kind: 'rejected', ...(latest.refusal?.message ? { message: latest.refusal.message } : {}) }
+  return undefined
+}
+
 function BoundQuestion({ client, record }: { client: IntelligentUiClient; record: UiSurfaceRecord }) {
   const form = questionForm(record.surface)!
   const id = record.surface.id
   const answers = draftAnswers(form, client.draft(id).input[form.componentId])
   const receipts = client.receipts(id)
-  const submitting = client.pendingCommands(id).length > 0 || receipts.some(inFlight)
-  const latest = receipts.at(-1)
-  const failed = !submitting && (latest?.status === 'failed' || latest?.status === 'rejected')
+  const recovery = questionRecovery(client, id)
+  const submitting = !recovery && (client.pendingCommands(id).length > 0 || receipts.some(inFlight))
+  const recover = () => {
+    if (recovery?.kind === 'review') void client.review(id)
+    else if (recovery?.kind === 'resend') void client.resend(id)
+    else if (recovery?.kind === 'retry') {
+      // retry() only stages a command the backend marked safe to repeat; the card is its confirmation.
+      client.retry(recovery.receipt)
+      if (client.confirmation(id)) void client.confirm(id)
+    }
+  }
   return (
     <QuestionCard
       surfaceId={id}
@@ -67,7 +107,16 @@ function BoundQuestion({ client, record }: { client: IntelligentUiClient; record
       answers={answers}
       locked={client.locked(id)}
       submitting={submitting}
-      failed={failed}
+      failed={recovery?.kind === 'rejected'}
+      {...(recovery
+        ? {
+            recovery: {
+              kind: recovery.kind,
+              ...('message' in recovery && recovery.message ? { message: recovery.message } : {}),
+            },
+          }
+        : {})}
+      onRecover={recover}
       onAnswers={(next) => client.setInput(id, form.componentId, next)}
       onSubmit={(complete) => {
         const action = record.surface.actions.find((item) => item.id === form.actionId)
