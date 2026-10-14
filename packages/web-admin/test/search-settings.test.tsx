@@ -1,4 +1,5 @@
 /** @vitest-environment happy-dom */
+import { PushStack } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -81,8 +82,20 @@ it('shows the unconfigured state and saves a key without rendering it again', as
   const root = createRoot(host)
   roots.push(root)
   await act(async () => {
-    root.render(createElement(SearchPanel, { t, canSave: true, fetcher }))
+    root.render(
+      createElement(
+        PushStack,
+        { rootTitle: 'Plugins' },
+        createElement(SearchPanel, { t, canSave: true, fetcher }),
+      ),
+    )
   })
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="search-add"]')?.click())
+  // Adding a service is a page over 网页搜索, with 返回 and where it sits.
+  expect(document.querySelector('[data-testid="push-page-search-engine"]')).not.toBeNull()
+  expect(document.querySelector('[data-testid="push-header"]')?.textContent).toContain('Plugins')
+  await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="push-back"]')?.click())
+  expect(document.querySelector('[data-testid="push-page-search-engine"]')).toBeNull()
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="search-add"]')?.click())
   const panel = document.body
   expect(panel.querySelector<HTMLInputElement>('[data-testid="search-endpoint"]')?.value).toBe(
@@ -182,7 +195,15 @@ it('offers an explicit default action for a ready service and opens the saved se
   document.body.append(host)
   const root = createRoot(host)
   roots.push(root)
-  await act(async () => root.render(createElement(SearchPanel, { t, canSave: true, fetcher })))
+  await act(async () =>
+    root.render(
+      createElement(
+        PushStack,
+        { rootTitle: 'Plugins' },
+        createElement(SearchPanel, { t, canSave: true, fetcher }),
+      ),
+    ),
+  )
   expect(host.querySelector('[data-testid="search-empty"]')).toBeNull()
   expect(host.querySelector('[data-testid="search-needs-default"]')?.textContent).toContain('default')
   expect(host.querySelector<HTMLButtonElement>('[data-testid="search-test"]')?.disabled).toBe(true)
