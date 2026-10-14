@@ -287,8 +287,13 @@
     cursor: not-allowed;
   }
   @media (max-width: 767px) {
+    .agh-segmented {
+      max-width: 100%;
+      flex-wrap: wrap;
+    }
     .agh-segmented-option {
-      min-height: var(--s32);
+      min-width: var(--control-height-touch);
+      min-height: var(--control-height-touch);
     }
     .agh-segmented-option > input {
       inset: min(0px, calc((100% - var(--control-height-touch)) / 2)) 0;

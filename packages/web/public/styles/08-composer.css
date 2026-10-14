@@ -758,4 +758,10 @@
     width: 100%;
     min-width: 0;
   }
+  @media (min-width: 768px) and (max-width: 900px) {
+    :is(.composer-meta, .composer-controls) .composer-agent.agnes-ui-button {
+      height: var(--control-height);
+      min-height: var(--control-height);
+    }
+  }
 }

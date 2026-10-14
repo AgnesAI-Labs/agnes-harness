@@ -523,6 +523,16 @@
       --control-height-form: var(--control-height-touch);
     }
   }
+  /* Tablet actions keep their established tap target; desktop density starts above the
+     responsive sidebar breakpoint. Phone controls keep their separate 44px hit areas. */
+  @media (min-width: 768px) and (max-width: 900px) {
+    :root {
+      --control-height: var(--s32);
+      --control-height-sm: var(--s32);
+      --control-height-xs: var(--s32);
+      --menu-item-height: var(--s32);
+    }
+  }
   @media (min-resolution: 2dppx) {
     :root {
       --hairline: 0.5px;

@@ -212,6 +212,22 @@
     opacity: 1;
     pointer-events: auto;
   }
+  @media (max-width: 900px) {
+    .workspace-heading-row .workspace-new-session {
+      width: var(--control-height-sm);
+      min-width: var(--control-height-sm);
+      height: var(--control-height-sm);
+      min-height: var(--control-height-sm);
+    }
+  }
+  @media (max-width: 767px) {
+    .workspace-heading-row .workspace-new-session {
+      width: var(--control-height-touch);
+      min-width: var(--control-height-touch);
+      height: var(--control-height-touch);
+      min-height: var(--control-height-touch);
+    }
+  }
   @media (max-width: 720px) {
     .workspace-heading-row .workspace-new-session {
       opacity: 1;
