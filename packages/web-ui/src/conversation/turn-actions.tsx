@@ -34,6 +34,8 @@ export interface ConversationTurnActionsProps {
   feedbackRef?: Ref<ConversationTurnFeedback>
   /** Host actions that belong to the same bar: rating and plugin contributions for this answer. */
   extra?: ReactNode
+  /** Host marks shown first in the bar, before copy (for example «answered» on an asking answer). */
+  leading?: ReactNode
 }
 
 const ACTION_BUTTON = { htmlType: 'button', appearance: 'ghost', size: 'small' } as const
@@ -127,6 +129,7 @@ export function ConversationTurnActions({
   onFork,
   feedbackRef,
   extra,
+  leading,
 }: ConversationTurnActionsProps) {
   const [usageOpen, setUsageOpen] = useState(false)
   const summary = useRef<HTMLButtonElement>(null)
@@ -348,6 +351,7 @@ export function ConversationTurnActions({
   return (
     <ConversationXScope>
       <footer ref={footer} className="turn-footer" hidden={!settled}>
+        {leading}
         <Actions className="turn-actions" items={actions} />
         {extra}
         <Disclosure

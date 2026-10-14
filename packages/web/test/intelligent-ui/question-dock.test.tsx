@@ -15,6 +15,7 @@ import {
   type UiPlacementBinding,
 } from '../../src/intelligent-ui/placements.js'
 import {
+  AnsweredQuestions,
   QuestionAnswersNode,
   QuestionDock,
   questionSubmission,
@@ -288,6 +289,21 @@ describe('answered receipt', () => {
     expect(view.host.querySelector('[data-testid="question-answer-topics"] dt')?.textContent).toBe(
       'What should it cover',
     )
+    await view.cleanup()
+  })
+
+  it('labels the «answered» badge with the questions after a reload', async () => {
+    const view = await mount(
+      [questionRecord('closed')],
+      createElement(AnsweredQuestions, { answered: [{ submission: questionSubmission(submitted())! }] }),
+    )
+    await act(async () => {})
+    const badge = view.host.querySelector('[data-testid="question-answered"]')
+    expect(badge?.querySelector('[data-testid="question-answer-format"] dt')?.textContent).toBe('Format')
+    expect(badge?.querySelector('[data-testid="question-answer-topics"] dt')?.textContent).toBe(
+      'What should it cover',
+    )
+    expect(badge?.textContent).not.toMatch(/\bformat\b|\btopics\b/)
     await view.cleanup()
   })
 })

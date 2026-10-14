@@ -388,3 +388,79 @@ export function QuestionAnswersReceipt({
     </section>
   )
 }
+
+/**
+ * «✓ 已回答 N 项» at the front of the asking answer's action row. Pointer hover or keyboard focus
+ * shows the answers above it; a touch opens it until a touch elsewhere.
+ */
+export function AnsweredBadge({
+  items,
+}: {
+  items: readonly { id: string; label?: string; question?: string; value: string | string[] }[]
+}) {
+  const { t } = useUiText(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
+  const [pinned, setPinned] = useState(false)
+  // Above the bar by default; below it when the badge sits too near the top of the window.
+  const [below, setBelow] = useState(false)
+  const root = useRef<HTMLDivElement>(null)
+  const popId = useId()
+  const place = () => {
+    const box = root.current?.getBoundingClientRect()
+    const pop = root.current?.querySelector<HTMLElement>('.agnes-answered-pop')
+    if (box && pop) setBelow(box.top < pop.offsetHeight + 16)
+  }
+  useEffect(() => {
+    if (!pinned) return
+    const close = (event: PointerEvent) => {
+      if (!root.current?.contains(event.target as Node)) setPinned(false)
+    }
+    document.addEventListener('pointerdown', close)
+    return () => document.removeEventListener('pointerdown', close)
+  }, [pinned])
+  const separator = t('ui.question.listSeparator')
+  return (
+    <div
+      ref={root}
+      className="agnes-answered"
+      data-testid="question-answered"
+      data-open={pinned || undefined}
+      data-below={below || undefined}
+    >
+      <Button
+        htmlType="button"
+        appearance="ghost"
+        size="small"
+        className="agnes-answered-badge"
+        data-testid="question-answered-badge"
+        aria-describedby={popId}
+        aria-expanded={pinned}
+        onPointerEnter={place}
+        onFocus={place}
+        onPointerUp={(event) => {
+          if (event.pointerType === 'mouse') return
+          place()
+          setPinned((value) => !value)
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== 'Escape') return
+          setPinned(false)
+          event.currentTarget.blur()
+        }}
+      >
+        <Icon name="check" aria-hidden="true" />
+        {t('ui.question.answeredCount', { count: items.length })}
+      </Button>
+      <div id={popId} role="tooltip" className="agnes-answered-pop" data-testid="question-answers">
+        <p className="agnes-answered-head">{t('ui.question.answers')}</p>
+        <dl data-unlabelled={items.some((item) => !item.label) || undefined}>
+          {items.map((item) => (
+            <div key={item.id} className="agnes-answered-row" data-testid={`question-answer-${item.id}`}>
+              {item.label && <dt title={item.question}>{item.label}</dt>}
+              <dd>{Array.isArray(item.value) ? item.value.join(separator) : item.value}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+    </div>
+  )
+}

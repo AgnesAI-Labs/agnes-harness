@@ -1,6 +1,7 @@
 import type { SystemInput, UINode } from '@agnes/protocol'
 import type { UiActionReceipt, UiSurfaceRecord } from '@agnes/protocol/gen/intelligent-ui'
 import {
+  AnsweredBadge,
   draftAnswers,
   type QuestionAnswers,
   QuestionAnswersReceipt,
@@ -101,29 +102,15 @@ export function questionSubmission(
   return { surfaceId: submitted.surfaceId, answers: submitted.answers as Record<string, unknown> }
 }
 
-/**
- * «你的回答» where the answer landed in the transcript. Labels come from the closed question surface;
- * an interaction surface (`card-…`) that is no longer listed falls back to the question ids.
- */
-export function QuestionAnswersNode({
-  submission,
-  native,
-}: {
-  submission: NonNullable<ReturnType<typeof questionSubmission>>
-  native: ReactNode
-}) {
-  const { binding, client } = useIntelligentBinding()
-  const record = client?.knownRecord(submission.surfaceId)
-  // Ask again whenever the surface is not known: it may have been listed (open) when this mounted.
-  const known = !!record
-  useEffect(() => {
-    if (client && !known && submission.surfaceId.startsWith('card-')) void client.lookup(submission.surfaceId)
-  }, [client, known, submission.surfaceId])
+type Submission = NonNullable<ReturnType<typeof questionSubmission>>
+type AnswerItem = { id: string; label?: string; question?: string; value: string | string[] }
+
+/** Each question's short label → answer, in asking order. A question id is never a label. */
+function answerItems(submission: Submission, record: UiSurfaceRecord | undefined): AnswerItem[] {
   const form = record ? questionForm(record.surface) : undefined
-  if (record ? !form : !submission.surfaceId.startsWith('card-')) return native
   const values = submission.answers as QuestionAnswers
   const asked = form?.questions ?? []
-  const items = [
+  return [
     ...asked.map((question) => ({
       id: question.id,
       label: question.label,
@@ -132,7 +119,7 @@ export function QuestionAnswersNode({
     })),
     ...Object.keys(values)
       .filter((key) => !asked.some((question) => question.id === key))
-      // A question id is the model's key, never a label: without the question, show the answer alone.
+      // Without the question, the answer stands alone.
       .map((key) => ({ id: key, value: values[key] })),
   ].flatMap((item) =>
     typeof item.value === 'string' ||
@@ -140,6 +127,41 @@ export function QuestionAnswersNode({
       ? [{ ...item, value: item.value }]
       : [],
   )
+}
+
+/** Labels come from the question surface: listed, remembered after it closed, or read back by id. */
+function useQuestionRecords(ids: readonly string[]) {
+  const { binding, client } = useIntelligentBinding()
+  const records = ids.map((id) => client?.knownRecord(id))
+  const missing = ids.filter((id, index) => !records[index] && id.startsWith('card-')).join('\n')
+  useEffect(() => {
+    if (client && missing) for (const id of missing.split('\n')) void client.lookup(id)
+  }, [client, missing])
+  return { binding, records }
+}
+
+/** «✓ 已回答 N 项» on the answer that asked, with each question's label → answer on hover or focus. */
+export function AnsweredQuestions({ answered }: { answered: readonly { submission: Submission }[] }) {
+  const { binding, records } = useQuestionRecords(answered.map((item) => item.submission.surfaceId))
+  const items = answered.flatMap(({ submission }, index) =>
+    answerItems(submission, records[index]).map((item) =>
+      answered.length > 1 ? { ...item, id: `${submission.surfaceId}-${item.id}` } : item,
+    ),
+  )
+  if (!items.length) return null
+  const badge = <AnsweredBadge items={items} />
+  return binding ? <UiLocaleProvider source={binding.locale}>{badge}</UiLocaleProvider> : badge
+}
+
+/**
+ * «你的回答» where the answer landed, for an answer whose asking turn is not in view. Labels come
+ * from the question surface; without it the answers stand alone.
+ */
+export function QuestionAnswersNode({ submission, native }: { submission: Submission; native: ReactNode }) {
+  const { binding, records } = useQuestionRecords([submission.surfaceId])
+  const record = records[0]
+  if (record ? !questionForm(record.surface) : !submission.surfaceId.startsWith('card-')) return native
+  const items = answerItems(submission, record)
   if (!items.length) return native
   const receipt = <QuestionAnswersReceipt items={items} />
   return binding ? <UiLocaleProvider source={binding.locale}>{receipt}</UiLocaleProvider> : receipt

@@ -12,7 +12,12 @@ export {
   questionForm,
   shortQuestionLabel,
 } from './question.js'
-export { QuestionAnswersReceipt, QuestionCard, type QuestionCardProps } from './question-card.js'
+export {
+  AnsweredBadge,
+  QuestionAnswersReceipt,
+  QuestionCard,
+  type QuestionCardProps,
+} from './question-card.js'
 export { displayableIntelligentSurface } from './source-state.js'
 export {
   docksInConversation,

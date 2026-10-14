@@ -29,7 +29,7 @@ import {
 import { MessageFeedback } from '@agnes/web-units/message-feedback'
 import { type ReactNode, useSyncExternalStore } from 'react'
 import type { ClaimResolver } from './client-modules/boot.js'
-import { QuestionAnswersNode, questionSubmission } from './intelligent-ui/question-dock.js'
+import { AnsweredQuestions, QuestionAnswersNode, questionSubmission } from './intelligent-ui/question-dock.js'
 import { TurnDeliverables } from './intelligent-ui/turn-deliverables.js'
 import { workflowStepRecord } from './workflow-step.js'
 
@@ -147,6 +147,28 @@ export function renderedSurfaceIds(nodes: readonly UINode[], turn: UITurn): stri
   })
 }
 
+/** Each asking turn's delivered question answers: the turn rendered the question's surface. */
+export function answeredQuestions(
+  nodes: readonly UINode[],
+  turns: readonly UITurn[],
+): Map<string, { nodeId: string; submission: NonNullable<ReturnType<typeof questionSubmission>> }[]> {
+  const out = new Map<
+    string,
+    { nodeId: string; submission: NonNullable<ReturnType<typeof questionSubmission>> }[]
+  >()
+  const submissions = nodes.flatMap((node) => {
+    const submission = questionSubmission(node)
+    return submission?.surfaceId.startsWith('card-') ? [{ nodeId: node.id, submission }] : []
+  })
+  if (!submissions.length) return out
+  for (const turn of turns) {
+    const rendered = new Set(renderedSurfaceIds(nodes, turn))
+    const answered = submissions.filter((item) => rendered.has(item.submission.surfaceId))
+    if (answered.length) out.set(turn.id, answered)
+  }
+  return out
+}
+
 function foldedUserActions(nodes: readonly UINode[]): ReadonlySet<string> {
   const folded = new Set<string>()
   nodes.forEach((node, index) => {
@@ -224,7 +246,10 @@ export function WebConversationMessages({
   )
   // A person's surface submission is not the agent's work: fold its tool row, and the queued line
   // before question answers (the answers say it).
-  const folded = foldedUserActions(nodes ?? [])
+  // Answers to a question show as «answered» on the answer that asked; their node leaves the stream.
+  const answeredByTurn = answeredQuestions(nodes ?? [], turns ?? [])
+  const folded = new Set(foldedUserActions(nodes ?? []))
+  for (const answered of answeredByTurn.values()) for (const item of answered) folded.add(item.nodeId)
   const shownNodeIds = folded.size
     ? (visibleNodeIds ?? (nodes ?? []).map((node) => node.id)).filter((id) => !folded.has(id))
     : visibleNodeIds
@@ -273,6 +298,9 @@ export function WebConversationMessages({
           t={(key, vars) => locale?.t(key, vars) ?? key}
           {...(locale ? { localeTag: locale.locale } : {})}
           {...(onFork ? { onFork } : {})}
+          {...(answeredByTurn.has(turn.id)
+            ? { leading: <AnsweredQuestions answered={answeredByTurn.get(turn.id)!} /> }
+            : {})}
           extra={
             <>
               {rated && (

@@ -9,7 +9,11 @@ import { createConversationProjectionStore, useConversationProjection } from '@a
 import { act, createElement, useEffect, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { renderedSurfaceIds, WebConversationMessages } from '../src/conversation-message-adapter.js'
+import {
+  answeredQuestions,
+  renderedSurfaceIds,
+  WebConversationMessages,
+} from '../src/conversation-message-adapter.js'
 import { zhLocaleService, zhT } from './helpers/locale.js'
 
 let host: HTMLDivElement
@@ -721,4 +725,104 @@ it('names the views a turn rendered from its persisted ui_render results', () =>
   const elsewhere: UINode = { ...rendered, id: 'elsewhere' }
   const turn = { id: 't', nodeIds: ['render', 'other'] } as unknown as UITurn
   expect(renderedSurfaceIds([rendered, other, elsewhere], turn)).toEqual(['outline-v1'])
+})
+
+it('marks the asking answer «answered» before copy and drops the answer node and ui_submit row', async () => {
+  const usage = {
+    totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+    reasoningComplete: true,
+    billingComplete: true,
+    calls: [],
+  }
+  const base = {
+    inherited: false,
+    forkable: false,
+    usage,
+    status: 'completed' as const,
+    reason: 'completed' as const,
+    startedAt: '2026-10-14T08:15:00.000Z',
+  }
+  const ask: UINode = { ...tool('completed'), id: 'ask', name: 'ask_user_question', resultPreview: 'shown' }
+  const render: UINode = {
+    ...tool('completed'),
+    id: 'render',
+    name: 'ui_render',
+    resultPreview: 'Questions — 1 components. [Open review](/?session=s&surface=card-q).',
+  }
+  const reply: UINode = { kind: 'assistant', id: 'reply', seq: 4, text: '动手前先确认 2 件事。' }
+  const answer: UINode = {
+    kind: 'user',
+    id: 'answer',
+    seq: 5,
+    origin: 'system',
+    content: [{ type: 'text', text: 'UI submit succeeded: Submit' }],
+    system: {
+      source: 'agnes/intelligent-ui',
+      type: 'action-result',
+      summary: 'UI submit succeeded: Submit',
+      data: {
+        status: 'succeeded',
+        submitted: { surfaceId: 'card-q', answers: { purpose: '公司官网', style: ['简洁', '浅色'] } },
+      },
+      presentation: {
+        kind: 'ui-action',
+        operation: 'submit',
+        status: 'succeeded',
+        label: 'Submit',
+        fields: [],
+      },
+    },
+  }
+  const submit: UINode = { ...tool('completed'), id: 'submit', seq: 6, name: 'ui_submit' }
+  const next: UINode = { kind: 'assistant', id: 'next', seq: 7, text: '收到。' }
+  const nodes = [user, ask, render, reply, answer, submit, next]
+  const turns: UITurn[] = [
+    {
+      ...base,
+      id: 'turn:1',
+      turn: 1,
+      startSeq: 1,
+      endSeq: 4,
+      endedAt: '2026-10-14T08:16:00.000Z',
+      nodeIds: ['user', 'ask', 'render', 'reply'],
+      finalAssistantId: 'reply',
+    },
+    {
+      ...base,
+      id: 'turn:2',
+      turn: 2,
+      startSeq: 5,
+      endSeq: 7,
+      nodeIds: ['answer', 'submit', 'next'],
+      finalAssistantId: 'next',
+    },
+  ]
+  expect([...answeredQuestions(nodes, turns).keys()]).toEqual(['turn:1'])
+  const store = createConversationProjectionStore({ sessionId: 'session', nodes, turns })
+  function Asked() {
+    const projection = useConversationProjection(store)
+    return createElement(WebConversationMessages, {
+      nodes: projection.nodes,
+      registry,
+      turns,
+      locale: zhLocaleService(),
+    })
+  }
+  await act(async () => root.render(createElement(Asked)))
+  const footer = host.querySelector('[data-turn-id="turn:1"] .turn-footer')
+  const badge = footer?.querySelector('[data-testid="question-answered"]')
+  // Copy follows the UI locale (the badge's own catalog is checked in web-ui).
+  expect(badge?.querySelector('[data-testid="question-answered-badge"]')?.textContent).toMatch(
+    /^(Answered 2|已回答 2 项)$/,
+  )
+  // First in the bar: before copy.
+  expect(footer?.firstElementChild).toBe(badge)
+  expect(host.querySelector('[data-turn-id="turn:2"] [data-testid="question-answered"]')).toBeNull()
+  expect(item('answer')).toBeNull()
+  expect(item('submit')).toBeNull()
+  expect(host.textContent).not.toMatch(/purpose|style/)
+  // Multiple answers read as one phrase.
+  expect(badge?.querySelector('[data-testid="question-answer-style"] dd')?.textContent).toMatch(
+    /^简洁(、|, )浅色$/,
+  )
 })

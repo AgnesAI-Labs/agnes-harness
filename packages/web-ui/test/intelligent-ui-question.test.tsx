@@ -6,6 +6,7 @@ import { act, createElement, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  AnsweredBadge,
   completeAnswers,
   intelligentUiCatalog,
   type QuestionAnswers,
@@ -283,5 +284,56 @@ describe('question card', () => {
     expect(
       completeAnswers(questionForm(surface())!, { days: 'x', topics: [], notes: 'n', who: 'y' }),
     ).toBeUndefined()
+  })
+
+  it('marks an answered question with a badge whose panel lists label → answer', async () => {
+    host = document.createElement('div')
+    document.body.append(host)
+    const root = createRoot(host)
+    const items = [
+      { id: 'purpose', label: '门户用途', question: '门户用途是什么？', value: '公司或团队官网' },
+      { id: 'style', label: '风格偏好', value: ['简洁现代', '浅色'] },
+    ]
+    await act(async () =>
+      root.render(
+        createElement(UiLocaleProvider, { source: source('zh-CN') }, createElement(AnsweredBadge, { items })),
+      ),
+    )
+    const badge = q('[data-testid="question-answered-badge"]')!
+    expect(badge.textContent).toBe('已回答 2 项')
+    const panel = q('[data-testid="question-answers"]')!
+    expect(panel.getAttribute('role')).toBe('tooltip')
+    expect(badge.getAttribute('aria-describedby')).toBe(panel.id)
+    expect(panel.textContent).toBe('你的回答门户用途公司或团队官网风格偏好简洁现代、浅色')
+    // A mouse only hovers; a touch pins it open until a touch elsewhere.
+    const wrapper = q('[data-testid="question-answered"]')!
+    const pointer = (type: string, pointerType: string, target: EventTarget = badge) =>
+      act(async () => {
+        const event = new MouseEvent(type, { bubbles: true }) as MouseEvent & { pointerType: string }
+        Object.defineProperty(event, 'pointerType', { value: pointerType })
+        target.dispatchEvent(event)
+      })
+    await pointer('pointerup', 'mouse')
+    expect(wrapper.hasAttribute('data-open')).toBe(false)
+    await pointer('pointerup', 'touch')
+    expect(wrapper.hasAttribute('data-open')).toBe(true)
+    // At the top of the window (no room above) the panel opens below the badge.
+    expect(wrapper.hasAttribute('data-below')).toBe(true)
+    await pointer('pointerdown', 'touch', panel)
+    expect(wrapper.hasAttribute('data-open')).toBe(true)
+    await pointer('pointerdown', 'touch', document.body)
+    expect(wrapper.hasAttribute('data-open')).toBe(false)
+    await act(async () =>
+      root.render(
+        createElement(
+          UiLocaleProvider,
+          { source: source('en') },
+          createElement(AnsweredBadge, { items: [{ id: 'scope', value: 'index.html' }] }),
+        ),
+      ),
+    )
+    expect(q('[data-testid="question-answered-badge"]')?.textContent).toBe('Answered 1')
+    expect(q('[data-testid="question-answers"] dt')).toBeNull()
+    expect(q('[data-testid="question-answers"]')?.textContent).not.toContain('scope')
   })
 })
