@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test'
 import { expect } from './fixtures.js'
+import { settled } from './quality.js'
 import type { Runtime } from './runtime.js'
 
 /** Select the interactive tab, whose localized label may span several lines on a phone. */
@@ -256,6 +257,12 @@ export async function workbenchTab(page: Page, id: 'files' | 'terminal' | 'goal'
   if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
   const tab = page.getByTestId(`workbench-tab-${id}`)
   await expect(tab).toBeAttached()
+  await expect(page.locator('#workbench-right')).toBeVisible()
+  await settled(page)
+  // The dock commits on a frame; its ResizeObserver can fold a tab on the next layout.
+  await page.evaluate(
+    () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
+  )
   if (await tab.isVisible()) await tab.click()
   else {
     const zh = (await page.locator('html').getAttribute('lang')) === 'zh-CN'
