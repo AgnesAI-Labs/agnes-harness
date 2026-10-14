@@ -77,11 +77,15 @@ function setup(translate = zhT) {
     archive: vi.fn(async () => ({ archived: false })),
     runtime: vi.fn(async (id: string) => runtimeDescriptor(id)),
   }
+  const call = vi.fn(async (method: string) => {
+    if (method === '_agnes/v1/schedules.list') return { schedules: [] }
+    throw new Error(`Unavailable fixture method: ${method}`)
+  })
   const changed = vi.fn(async () => {})
   const fork = vi.fn(async () => {})
   const error = vi.fn()
   const actions = createSessionActions({
-    client: { session } as unknown as Client,
+    client: { session, call } as unknown as Client,
     changed,
     fork,
     error,
@@ -90,6 +94,7 @@ function setup(translate = zhT) {
   controllers.push(actions)
   return {
     session,
+    call,
     changed,
     fork,
     error,
@@ -282,12 +287,14 @@ it('distinguishes a committed archive from a failed refresh', async () => {
 
 it('shows the Host runtime descriptor in the session menu dialog, with pending and restart notes', async () => {
   document.documentElement.lang = 'zh-CN'
-  const { actions, session, trigger } = setup((key, values) =>
+  const { actions, session, call, trigger } = setup((key, values) =>
     (document.documentElement.lang === 'en' ? enT : zhT)(key, values),
   )
   await actions.act('runtime', 's', '名称', trigger)
   await vi.waitFor(() => expect(document.querySelector('[data-session-runtime="s"]')).not.toBeNull())
   expect(session.runtime).toHaveBeenCalledWith('s')
+  await vi.waitFor(() => expect(document.querySelector('[data-testid="session-schedules"]')).not.toBeNull())
+  expect(call).toHaveBeenCalledWith('_agnes/v1/schedules.list', { scope: 'session', sessionKey: 's' })
   const text = document.querySelector('[data-session-runtime="s"]')?.textContent ?? ''
   expect(text).toContain('gen-old')
   expect(text).toContain('有更新的代次 gen-new：新会话生效')
