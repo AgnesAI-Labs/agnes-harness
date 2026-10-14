@@ -332,7 +332,7 @@ describe('Kernel (I1 assembly)', () => {
 
   it('the diagnostic name set is closed and holds the names written outside the kernel', () => {
     expect(new Set(CORE_DIAG_NAMES).size).toBe(CORE_DIAG_NAMES.length)
-    expect(CORE_DIAG_NAMES).toHaveLength(23)
+    expect(CORE_DIAG_NAMES).toHaveLength(24)
     expect(CORE_DIAG_NAMES).toContain('ledger-tail-recovered')
     expect(CORE_DIAG_NAMES).toContain('request-media-window')
     expect(CORE_DIAG_NAMES).toContain('registers-rebuilt')
@@ -341,6 +341,7 @@ describe('Kernel (I1 assembly)', () => {
     expect(CORE_DIAG_NAMES).toContain('context-breakdown')
     expect(CORE_DIAG_NAMES).toContain('tool-policy-refused-on-resume')
     expect(CORE_DIAG_NAMES).toContain('hook-compact-plan-ignored')
+    expect(CORE_DIAG_NAMES).toContain('tool-source-pending')
   })
 })
 
