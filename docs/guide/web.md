@@ -44,6 +44,8 @@ Session and approval traffic uses the browser SDK's direct WebSocket connection 
 
 The sidebar files sessions under their workspace folder, newest first, and shows a dot beside a session whose turn is running. Click a folder to collapse or expand it; the browser remembers the choice. The plus button on a folder row starts a session in that workspace, and the folder button beside the Workspaces heading adds a workspace. Press Shift+Cmd+O (Shift+Ctrl+O on Windows and Linux) to start a new session. The top bar shows the session title, its Agent and a runtime information button, followed by the Conversation/Trace switch and the workbench toggles.
 
+The thin ticks along the left edge of the conversation are the prompt navigator: one per prompt you sent, with the one you are reading drawn longer and darker. Ticks near the pointer lengthen; hover one to preview that prompt and the start of its answer, and click to jump to it with a brief highlight. Press Option+↑ / Option+↓ (Alt+↑ / Alt+↓ on Windows and Linux) for the previous or next prompt; when the window is narrow or the workbench leaves no room on the left, the ticks hide and the shortcuts still work. The bookmark button on the preview marks a prompt; bookmarks are saved with the session and show as a small dot beside the tick.
+
 The first message proceeds once the new session is ready; refreshing the sidebar does not block sending. A sidebar refresh failure is reported separately and does not restore an already submitted message as a draft.
 Resource updates discovered during startup are prepared while the worker is idle. Updates discovered during a running turn remain deferred until before the next turn. Repeated Skill scans with unchanged resources do not trigger another worker reload.
 
