@@ -925,8 +925,12 @@ it('preserves complete React cost details, focus and order through the opt-in ti
         term.textContent,
         term.nextElementSibling?.textContent,
       ]),
-    ).toEqual(costDetails(disclosed(next, next.creditSource), zhT))
-    expect(article?.querySelector('svg, strong, img')).toBeNull()
+    ).toEqual(
+      // The usage panel prints every cost with the total's six decimals.
+      costDetails(disclosed(next, next.creditSource), zhT, (usdMicros) => `$${(usdMicros / 1e6).toFixed(6)}`),
+    )
+    // Model text never becomes markup; the only drawing is the panel's own chevron.
+    expect(article?.querySelector('svg:not(.turn-usage-chevron), strong, img')).toBeNull()
     expect(transcript.querySelector('[data-node-id="cost"]')).toBeNull()
     expect(transcript.querySelectorAll('.turn-process-body [data-node-id]')).toHaveLength(0)
     expect(item(transcript, 'assistant')?.textContent).toContain('final answer')

@@ -49,7 +49,12 @@ function tokenRows(tokens: NonNullable<CostNode['tokens']>, t: Translate): Rows 
   ]
 }
 
-export function costDetails(node: CostNode, t: Translate = fallbackT): Rows {
+/** `money` lets a view that lines costs up print every amount with one precision. */
+export function costDetails(
+  node: CostNode,
+  t: Translate = fallbackT,
+  money: (usdMicros: number) => string = usd,
+): Rows {
   const purpose = node.purpose ?? ''
   const purposeKey = Object.hasOwn(purposeKeys, purpose) ? purposeKeys[purpose] : undefined
   return [
@@ -60,7 +65,7 @@ export function costDetails(node: CostNode, t: Translate = fallbackT): Rows {
       : [[t('cost.rows.tokenDetail'), t('cost.rows.notProvided')] as [string, string]]),
     ...(node.billing
       ? [
-          [t('cost.rows.usd'), `${usd(node.billing.usdMicros)} · ${source(node.billing.source, t)}`] as [
+          [t('cost.rows.usd'), `${money(node.billing.usdMicros)} · ${source(node.billing.source, t)}`] as [
             string,
             string,
           ],

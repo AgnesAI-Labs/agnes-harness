@@ -2,7 +2,8 @@ import type { UITurn } from '@agnes/protocol'
 import { Fragment, forwardRef, type ReactNode } from 'react'
 import type { Translate } from '../locales/index.js'
 import { Disclosure } from '../ui/disclosure.js'
-import { compact, costDetails, usd } from './cost-format.js'
+import { Icon } from '../ui/icon.js'
+import { compact, costDetails } from './cost-format.js'
 
 type Call = UITurn['usage']['calls'][number]
 
@@ -14,6 +15,27 @@ export const listedCall = (call: Call): boolean =>
   (call.billing?.usdMicros ?? 0) !== 0 ||
   (call.credits ?? 0) !== 0 ||
   !!call.interrupted
+
+/** Every cost in the panel has the total's precision, so the column lines up. */
+export const money = (usdMicros: number): string => `$${(usdMicros / 1e6).toFixed(6)}`
+
+/**
+ * Each call's bar against the most expensive call (which is full), and its share of the total
+ * for the accessible label. Calls without a charge are compared by credits.
+ */
+export function callShares(
+  calls: readonly Pick<Call, 'billing' | 'credits'>[],
+): { width: number; percent: number }[] {
+  const byCost = calls.some((call) => (call.billing?.usdMicros ?? 0) > 0)
+  const value = (call: Pick<Call, 'billing' | 'credits'>) =>
+    byCost ? (call.billing?.usdMicros ?? 0) : (call.credits ?? 0)
+  const max = Math.max(0, ...calls.map(value))
+  const total = calls.reduce((sum, call) => sum + value(call), 0)
+  return calls.map((call) => ({
+    width: max > 0 ? Math.round((value(call) / max) * 100) : 0,
+    percent: total > 0 ? Math.round((value(call) / total) * 100) : 0,
+  }))
+}
 
 const creditText = (amount: number) => `${amount.toFixed(8).replace(/\.?0+$/, '')} credits`
 
@@ -46,7 +68,7 @@ export const TurnUsagePanel = forwardRef<HTMLDivElement, TurnUsagePanelProps>(fu
     calls.some((call) => call.billing?.source === 'estimated')
   const amount = cost
     ? {
-        value: `$${(cost.usdMicros / 1e6).toFixed(6)}`,
+        value: money(cost.usdMicros),
         tag: `${source(cost.source)}${cost.subscription ? t('turnactions.subscription') : ''}${billingComplete ? '' : t('turnactions.billingPartial')}`,
       }
     : credits
@@ -61,11 +83,8 @@ export const TurnUsagePanel = forwardRef<HTMLDivElement, TurnUsagePanelProps>(fu
       ? `${creditText(credits.amount)}${credits.source === cost.source ? '' : ` · ${source(credits.source)}`}${credits.complete ? '' : t('turnactions.creditsPartial')}`
       : undefined
   const cached = totals.cacheRead > 0 || totals.cacheWrite > 0
-  const charge = (call: Call) => call.billing?.usdMicros ?? 0
-  const total = calls.reduce((sum, call) => sum + charge(call), 0)
-  const creditTotal = calls.reduce((sum, call) => sum + (call.credits ?? 0), 0)
-  const share = (call: Call) =>
-    total > 0 ? charge(call) / total : creditTotal > 0 ? (call.credits ?? 0) / creditTotal : 0
+  const shares = callShares(calls)
+  const chevron = <Icon name="chevron-right" className="turn-usage-chevron" />
   return (
     <div ref={ref} className="turn-usage-grid turn-usage-panel" data-testid="turn-usage-panel">
       {settled && (
@@ -102,10 +121,17 @@ export const TurnUsagePanel = forwardRef<HTMLDivElement, TurnUsagePanelProps>(fu
             // One call needs no table; its own details stay one click away.
             <Disclosure
               className="turn-usage-calls call-usage"
-              summary={<span className="turn-usage-calls-title">{t('turnactions.usage.callDetails')}</span>}
+              summary={
+                <span className="turn-usage-calls-title">
+                  {chevron}
+                  <span>{t('turnactions.usage.callDetails')}</span>
+                </span>
+              }
               summaryProps={{ 'data-testid': 'turn-usage-call-details', 'aria-label': t('cost.detailsAria') }}
             >
-              <CallDetails call={calls[0]} t={t} />
+              <div className="turn-usage-calls-body">
+                <CallDetails call={calls[0]} t={t} />
+              </div>
             </Disclosure>
           )}
           {calls.length > 1 && (
@@ -113,6 +139,7 @@ export const TurnUsagePanel = forwardRef<HTMLDivElement, TurnUsagePanelProps>(fu
               className="turn-usage-calls"
               summary={
                 <span className="turn-usage-calls-title">
+                  {chevron}
                   <span>{t('turnactions.usage.calls', { count: calls.length })}</span>
                   <span className="turn-usage-calls-hint" data-when="closed">
                     {t('turnactions.usage.callsShow')}
@@ -124,48 +151,53 @@ export const TurnUsagePanel = forwardRef<HTMLDivElement, TurnUsagePanelProps>(fu
               }
               summaryProps={{ 'data-testid': 'turn-usage-calls' }}
             >
-              <div className="turn-call-row turn-call-head" aria-hidden="true">
-                <span>{'#'}</span>
-                <span>{t('turnactions.usage.input')}</span>
-                <span>{t('turnactions.usage.output')}</span>
-                <span>{t('turnactions.usage.cost')}</span>
-                <span />
+              <div className="turn-usage-calls-body">
+                <div className="turn-call-row turn-call-head" aria-hidden="true">
+                  <span>{'#'}</span>
+                  <span>{t('turnactions.usage.input')}</span>
+                  <span>{t('turnactions.usage.output')}</span>
+                  <span>{t('turnactions.usage.cost')}</span>
+                  <span />
+                </div>
+                {calls.map((call, index) => (
+                  <Disclosure
+                    key={call.id}
+                    className="turn-call"
+                    data-testid={`turn-call-${index + 1}`}
+                    summary={
+                      <span className="turn-call-row">
+                        <span className="turn-call-n">
+                          {chevron}
+                          {index + 1}
+                        </span>
+                        <span>{call.tokens ? compact(call.tokens.input) : '—'}</span>
+                        <span>{call.tokens ? compact(call.tokens.output) : '—'}</span>
+                        <span>
+                          {call.billing
+                            ? money(call.billing.usdMicros)
+                            : call.credits !== undefined
+                              ? creditText(call.credits)
+                              : '—'}
+                        </span>
+                        <span
+                          className="turn-call-share"
+                          role="img"
+                          aria-label={t('turnactions.usage.share', {
+                            percent: shares[index]?.percent ?? 0,
+                          })}
+                        >
+                          <i style={{ width: `${shares[index]?.width ?? 0}%` }} />
+                        </span>
+                      </span>
+                    }
+                    summaryProps={{
+                      'aria-label': t('turnactions.usage.callAria', { index: index + 1 }),
+                    }}
+                  >
+                    <CallDetails call={call} t={t} />
+                  </Disclosure>
+                ))}
               </div>
-              {calls.map((call, index) => (
-                <Disclosure
-                  key={call.id}
-                  className="turn-call"
-                  data-testid={`turn-call-${index + 1}`}
-                  summary={
-                    <span className="turn-call-row">
-                      <span>{index + 1}</span>
-                      <span>{call.tokens ? compact(call.tokens.input) : '—'}</span>
-                      <span>{call.tokens ? compact(call.tokens.output) : '—'}</span>
-                      <span>
-                        {call.billing
-                          ? usd(call.billing.usdMicros)
-                          : call.credits !== undefined
-                            ? creditText(call.credits)
-                            : '—'}
-                      </span>
-                      <span
-                        className="turn-call-share"
-                        role="img"
-                        aria-label={t('turnactions.usage.share', {
-                          percent: Math.round(share(call) * 100),
-                        })}
-                      >
-                        <i style={{ width: `${Math.round(share(call) * 100)}%` }} />
-                      </span>
-                    </span>
-                  }
-                  summaryProps={{
-                    'aria-label': t('turnactions.usage.callAria', { index: index + 1 }),
-                  }}
-                >
-                  <CallDetails call={call} t={t} />
-                </Disclosure>
-              ))}
             </Disclosure>
           )}
           {(estimated || footer) && (
@@ -183,7 +215,7 @@ export const TurnUsagePanel = forwardRef<HTMLDivElement, TurnUsagePanelProps>(fu
 function CallDetails({ call, t }: { call: Call; t: Translate }) {
   return (
     <dl className="usage-grid">
-      {costDetails({ ...call, kind: 'cost', source: call.creditSource }, t).map(([name, value]) => (
+      {costDetails({ ...call, kind: 'cost', source: call.creditSource }, t, money).map(([name, value]) => (
         <Fragment key={name}>
           <dt>{name}</dt>
           <dd>{value}</dd>

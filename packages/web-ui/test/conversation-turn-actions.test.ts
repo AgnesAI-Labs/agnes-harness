@@ -4,6 +4,7 @@ import { ConversationTurnActions } from '@agnes/web-ui/conversation'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { callShares, money } from '../src/conversation/turn-usage.js'
 import { zhT } from './locale.js'
 
 function turn(id = 'turn:one', changes: Partial<UITurn> = {}): UITurn {
@@ -341,7 +342,16 @@ it('lists several model calls in a table with right-aligned numbers, a cost shar
       host.querySelectorAll(`[data-testid="turn-call-${n}"] > .agh-disclosure-summary .turn-call-row > span`),
     ).map((cell) => cell.textContent)
   expect(row(1)).toEqual(['1', '1.4K', '330', '$0.000888', ''])
-  expect(row(4)).toEqual(['4', '232', '14', '$0.00009', ''])
+  // Every cost has the total's six decimals.
+  expect(row(4)).toEqual(['4', '232', '14', '$0.000090', ''])
+  expect(row(1)[3]).toBe('$0.000888')
+  // The chevron sits in the same summary as the text, never on a line of its own.
+  expect(calls.querySelector('.turn-usage-calls-title > .turn-usage-chevron')).not.toBeNull()
+  expect(host.querySelector('[data-testid="turn-call-1"] .turn-call-n > .turn-usage-chevron')).not.toBeNull()
+  // The dearest call is a full bar, the others in proportion.
+  const width = (n: number) =>
+    host.querySelector<HTMLElement>(`[data-testid="turn-call-${n}"] .turn-call-share > i`)?.style.width
+  expect([1, 2, 3, 4].map(width)).toEqual(['100%', '57%', '65%', '10%'])
   expect(host.querySelector('[data-testid="turn-call-1"] .turn-call-share')?.getAttribute('aria-label')).toBe(
     '占费用 43%',
   )
@@ -356,6 +366,8 @@ it('lists several model calls in a table with right-aligned numbers, a cost shar
   const details = text('[data-testid="turn-call-1"] .usage-grid') ?? ''
   expect(details).toContain('首次输出等待420 ms')
   expect(details).toContain('1,400')
+  // The call's own details print its cost with the panel's precision too.
+  expect(details).toContain('$0.000888 · 估算')
 })
 
 it('does not publish an old fork failure or unlock a new turn while its fork is pending', async () => {
@@ -476,4 +488,26 @@ it('opens this turn in the trace from the usage panel; the bar keeps copy and fo
   )
   expect(heard).toHaveBeenCalledWith({ turnId: 'one' })
   expect(usage.dataset.open).toBe('false')
+})
+
+it('compares each call with the dearest one and prints every cost with the same precision', () => {
+  const billed = (usdMicros: number) => ({
+    billing: { usdMicros, source: 'estimated' as const, subscription: false },
+  })
+  expect(callShares([billed(414), billed(1390), billed(888), billed(1052)])).toEqual([
+    { width: 30, percent: 11 },
+    { width: 100, percent: 37 },
+    { width: 64, percent: 24 },
+    { width: 76, percent: 28 },
+  ])
+  // Without charges the bars follow credits; with neither they stay empty.
+  expect(callShares([{ credits: 1 }, { credits: 4 }])).toEqual([
+    { width: 25, percent: 20 },
+    { width: 100, percent: 80 },
+  ])
+  expect(callShares([{}, {}])).toEqual([
+    { width: 0, percent: 0 },
+    { width: 0, percent: 0 },
+  ])
+  expect([1390, 414, 90, 3744].map(money)).toEqual(['$0.001390', '$0.000414', '$0.000090', '$0.003744'])
 })

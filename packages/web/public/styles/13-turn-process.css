@@ -351,14 +351,18 @@
     border-top: 1px solid var(--agnes-line-primary);
   }
   .turn-usage-calls > .agh-disclosure-summary {
+    display: flex;
+    align-items: center;
     width: 100%;
     padding: 0.5625rem 0.875rem;
     color: var(--agnes-text-secondary);
+    cursor: pointer;
   }
   .turn-usage-calls-title {
     display: flex;
     flex: 1;
-    gap: var(--s8);
+    align-items: center;
+    gap: var(--s4);
   }
   .turn-usage-calls-hint {
     margin-inline-start: auto;
@@ -368,16 +372,41 @@
   .turn-usage-calls:not([data-open="true"]) .turn-usage-calls-hint[data-when="open"] {
     display: none;
   }
-  .turn-usage-calls > .agh-disclosure-content {
-    padding: 0 0.875rem var(--s8);
+  /* The primitive's marker would sit on a line of its own above a full-width row; the panel draws
+     its own chevron on the same line as the text. */
+  .turn-usage-panel .agh-disclosure-marker {
+    display: none;
+  }
+  .turn-usage-chevron {
+    flex: none;
+    width: 0.75rem;
+    height: 0.75rem;
+    color: var(--agnes-text-tertiary);
+    transition: transform var(--transition-fast);
+  }
+  .turn-usage-calls[data-open="true"]
+    > .agh-disclosure-summary
+    > .turn-usage-calls-title
+    > .turn-usage-chevron,
+  .turn-call[data-open="true"]
+    > .agh-disclosure-summary
+    > .turn-call-row
+    > .turn-call-n
+    > .turn-usage-chevron {
+    transform: rotate(90deg);
+  }
+  /* The content box is transparent to layout; this body carries the panel's 14px inset. */
+  .turn-usage-calls-body {
+    padding: 0 0.875rem 0.625rem;
   }
   /* One row per call: #, input, output, cost and its share of the cost; numbers right-aligned. */
   .turn-call-row {
     display: grid;
-    grid-template-columns: 1.375rem repeat(3, minmax(0, 1fr)) 3.625rem;
+    grid-template-columns: 2rem repeat(3, minmax(0, 1fr)) 3.625rem;
     align-items: center;
     gap: var(--s8);
     width: 100%;
+    line-height: 1.4;
     text-align: right;
     white-space: nowrap;
   }
@@ -398,16 +427,28 @@
     border-bottom: 0;
   }
   .turn-call > .agh-disclosure-summary {
+    display: flex;
+    align-items: center;
     width: 100%;
     padding: 0.3125rem 0;
     color: var(--agnes-text-primary);
+    cursor: pointer;
   }
-  .turn-call > .agh-disclosure-summary > .agh-disclosure-marker,
-  .turn-usage-calls > .agh-disclosure-summary > .agh-disclosure-marker {
-    flex: none;
+  .turn-call > .agh-disclosure-summary:hover:not(:disabled) {
+    background: var(--agnes-bg-hover);
+  }
+  /* The number column starts after the 12px chevron and its 2px gap; the head's # lines up with it. */
+  .turn-call-head > :first-child {
+    padding-inline-start: 0.875rem;
+  }
+  .turn-call-n {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
   }
   .turn-call-share {
     display: block;
+    width: 3.625rem;
     height: 4px;
     overflow: hidden;
     border-radius: 2px;
@@ -512,6 +553,9 @@
     font-size: var(--font-size-xs);
   }
   .turn-usage-calls.call-usage > .agh-disclosure-summary {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
     width: 100%;
     padding: 0.5625rem 0.875rem;
     color: var(--agnes-text-secondary);
