@@ -61,7 +61,7 @@ test('human controls queue, interrupt, persist pause and stop/continue a child',
 
   await turn(page, 'call subagent_spawn {"task":"call e2e_wait_for_cancel {}","isolation":"shared"}')
   const tree = page.getByTestId('child-control-tree')
-  await tree.locator('summary').click()
+  await tree.locator('summary, .agh-disclosure-summary').click()
   const child = tree.getByTestId('child-control-row').first()
   await expect(child.getByTestId('child-stop')).toBeEnabled()
   await expect(child.getByTestId('child-control-metrics')).toBeVisible()
@@ -84,6 +84,6 @@ test('human controls queue, interrupt, persist pause and stop/continue a child',
     )
   await page.locator('#view-trace').click()
   const evidence = page.getByTestId('control-facts')
-  await evidence.locator('summary').click()
+  await evidence.locator('summary, .agh-disclosure-summary').click()
   await expect(evidence.getByTestId('control-fact').filter({ hasText: 'child-stop' }).last()).toBeVisible()
 })

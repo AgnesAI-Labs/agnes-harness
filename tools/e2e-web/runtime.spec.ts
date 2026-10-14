@@ -351,7 +351,7 @@ test('stored credential rejection offers account repair and recovers without res
     await expect(page.getByRole('dialog', { name: 'Account details', exact: true })).toBeVisible()
     await expect(page.locator('#config-account-name')).toHaveValue('Revoked fixture account')
     await page.locator('#config-api-key').fill(provider.apiKey)
-    await expect(page.locator('#config-save')).toHaveText('Verify & save')
+    await expect(page.locator('#config-save')).toHaveText('Save')
     await expect(page.locator('#config-save')).toBeEnabled()
     const revision = (await client.config.get()).revision
     await page.locator('#config-save').click()

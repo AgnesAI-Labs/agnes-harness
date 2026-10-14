@@ -4,7 +4,7 @@ import { startProviderFixture } from '../acceptance/provider-fixture.js'
 import { firstRunSnapshots } from './first-run-snapshots.js'
 import { expect, test } from './fixtures.js'
 import { accessible, screen, translated } from './quality.js'
-import { closeSettings, fullAccess, preferences, settings } from './ui.js'
+import { closeSettings, expand, fullAccess, preferences, settings } from './ui.js'
 
 // The behavioral gate uses the same real flows without the decorative replay/pixel matrix.
 const behaviorOnly = process.env.AGH_BEHAVIOR_ONLY === '1'
@@ -57,14 +57,14 @@ for (const locale of ['en', 'zh-CN']) {
       try {
         await connection.locator('#config-provider-trigger').click()
         await page.getByRole('option', { name: 'DeepSeek', exact: true }).click()
-        await connection.locator('#config-account-advanced > summary').click()
+        await expand(connection.locator('#config-account-advanced'))
         await connection.locator('#config-base-url').fill(provider.baseUrl)
         await connection.getByLabel('API Key', { exact: true }).fill(provider.apiKey)
         await page.getByTestId('first-run-next').click()
         await expect(guide).toHaveAttribute('data-step', 'workspace')
         await expect(page.getByTestId('first-run-saved')).toHaveAttribute('role', 'status')
         await expect(page.locator('#config-api-key')).toHaveValue('')
-        await guide.locator('details > summary').click()
+        await guide.locator('.agh-disclosure > .agh-disclosure-summary').click()
         await guide
           .getByRole('textbox', { name: name('Folder path', '文件夹路径'), exact: true })
           .fill(runtime.workspace)
@@ -80,7 +80,7 @@ for (const locale of ['en', 'zh-CN']) {
         await page.getByTestId('first-run-next').click()
         await expect(guide).toHaveAttribute('data-step', 'ready')
         await page.getByTestId('first-run-examples').click()
-        await expect(page.getByTestId('settings-page-discover')).toBeVisible()
+        await expect(page.getByTestId('home-page-agents')).toBeVisible()
         await closeSettings(page, locale)
         await expect(guide).toHaveAttribute('data-step', 'ready')
         await quality('setup-ready')
@@ -110,12 +110,9 @@ for (const locale of ['en', 'zh-CN']) {
         await page.locator('#config-add-account').click()
         const account = page.locator('#account-dialog')
         await expect(account.locator('.account-dialog-body')).toHaveAttribute('data-account-step', 'provider')
-        await account
-          .locator('#config-provider-choices')
-          .getByRole('button', { name: 'DeepSeek', exact: true })
-          .click()
-        await expect(account.locator('#config-account-advanced')).not.toHaveAttribute('open', '')
-        await account.locator('#config-account-advanced > summary').click()
+        await account.locator('#config-provider-choices').locator('[data-provider="deepseek"]').click()
+        await expect(account.locator('#config-account-advanced')).toHaveAttribute('data-open', 'false')
+        await account.locator('#config-account-advanced > :is(summary, .agh-disclosure-summary)').click()
         await account.locator('#config-account-name').fill('Second account')
         await account.locator('#config-base-url').fill(provider.baseUrl)
         await account.getByLabel('API Key', { exact: true }).fill(provider.apiKey)
@@ -140,16 +137,22 @@ for (const locale of ['en', 'zh-CN']) {
         await closeSettings(page, locale)
         await page.locator('#model').click()
         await page
-          .locator('#model-picker-popover [role="option"]')
+          .locator('#model-picker-popover [role="group"]')
           .filter({ hasText: 'Second account' })
+          .getByRole('option')
           .first()
           .click()
         await expect(page.locator('#model')).toHaveAttribute('aria-busy', 'false')
+        await expect(page.locator('#model-picker-popover')).toBeHidden()
+        await page.locator('#model').click()
         await expect(
-          page.locator('#model-picker-popover [role="option"][aria-selected="true"]'),
-        ).toContainText('Second account')
+          page
+            .locator('#model-picker-popover [role="group"]')
+            .filter({ hasText: 'Second account' })
+            .locator('[role="option"][aria-selected="true"]'),
+        ).toHaveCount(1)
         await page.keyboard.press('Escape')
-        await expect(page.locator('#new')).toHaveClass(/agh-btn--primary/)
+        await expect(page.locator('#new')).toHaveClass(/agh-btn--secondary/)
         await expect(page.locator('#settings')).toHaveClass(/agh-btn--ghost/)
         // Closing Settings retains its deep link. Restore the conversation URL before testing startup.
         const conversationUrl = new URL(page.url())

@@ -1,7 +1,7 @@
 import { startProviderFixture } from '../acceptance/provider-fixture.js'
 import { expect, test } from './fixtures.js'
 import { accessible, screen, translated } from './quality.js'
-import { chooseWorkspace, fresh, preferences } from './ui.js'
+import { chooseWorkspace, expand, expandActivityGroups, fresh, preferences } from './ui.js'
 
 for (const locale of ['en', 'zh-CN'])
   for (const theme of ['light', 'dark'])
@@ -34,7 +34,7 @@ for (const locale of ['en', 'zh-CN'])
       await page.getByTestId('tool-detail-toggle').click()
       await expect(page.getByTestId('tool-detail-text')).toContainText('Synthetic delivery')
       await screen(page, info, `tool-row-${locale}-${theme}`)
-      await page.getByTestId('tool-detail-toggle').click()
+      await expect(page.getByTestId('tool-detail-toggle')).toHaveAttribute('aria-expanded', 'true')
       const entry = page.getByTestId('tool-fact-chain').last()
       await entry.click()
       const facts = page.getByTestId('fact-chain')
@@ -42,7 +42,7 @@ for (const locale of ['en', 'zh-CN'])
         locale === 'en' ? 'Result received' : '收到结果',
       )
       await expect(facts).toContainText(locale === 'en' ? 'External completion: unknown' : '外部是否已完成')
-      await expect(facts.locator('details')).not.toHaveAttribute('open')
+      await expect(facts.locator('.agh-disclosure')).toHaveAttribute('data-open', 'false')
       await expect(facts.locator('ol')).not.toContainText(/[a-f0-9]{64}/)
       await translated(page)
       await accessible(page, info, `fact-tool-${locale}-${theme}`)
@@ -69,12 +69,18 @@ for (const locale of ['en', 'zh-CN'])
       await page.getByTestId('workbench-tab-facts').press('Escape')
 
       await send('call present {"files":[{"path":"report.md","name":"report.md"}]}')
-      await page.getByTestId('conversation-turn').last().getByTestId('turn-process-toggle').click()
+      const artifactTurn = page.getByTestId('conversation-turn').last()
+      await expand(artifactTurn.getByTestId('turn-process-toggle').locator('..'))
+      await expandActivityGroups(artifactTurn)
       const artifactEntry = page
         .getByTestId('conversation-turn')
         .last()
         .getByRole('article', { name: /\bpresent\b/ })
         .getByTestId('tool-fact-chain')
+      await artifactEntry
+        .locator('xpath=ancestor::*[contains(@class, "timeline-node")][1]')
+        .getByTestId('tool-detail-toggle')
+        .click()
       await artifactEntry.click()
       await facts
         .locator('[data-fact-kind=artifact]')
@@ -193,6 +199,8 @@ for (const locale of ['en', 'zh-CN'])
       const actionTurn = page.getByTestId('conversation-turn').filter({ has: actionTool })
       await expect(actionTurn).toHaveAttribute('data-status', 'completed', { timeout: 25_000 })
       await actionTurn.getByTestId('turn-process-toggle').click()
+      await expandActivityGroups(actionTurn)
+      await actionTool.getByTestId('tool-detail-toggle').click()
       await actionTool.getByTestId('tool-fact-chain').click()
       const facts = page.getByTestId('fact-chain')
       await expect(

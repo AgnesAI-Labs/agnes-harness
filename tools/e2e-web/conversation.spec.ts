@@ -13,7 +13,7 @@ for (const locale of ['en', 'zh-CN'])
       await page.goto(`${fixtureUrl}/?locale=${locale}`)
       for (const id of ['background-job-card', 'child-agent-card', 'plan-approval-card'])
         await expect(page.getByTestId(id)).toBeVisible()
-      await expect(page.locator('.turn-process')).not.toHaveAttribute('open', '')
+      await expect(page.locator('.turn-process')).toHaveAttribute('data-open', 'false')
       await page.getByTestId('turn-process-toggle').click()
       await page.getByTestId('turn-process-toggle').click()
       for (const id of ['background-job-card', 'child-agent-card']) {
