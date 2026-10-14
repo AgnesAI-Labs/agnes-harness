@@ -10,7 +10,11 @@ import {
 import { createSqliteStorage } from '@agnes/host'
 import { describe, expect, it } from 'vitest'
 import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
-import { registerSessionPreferences } from '../src/local/methods/session-preferences.js'
+import {
+  copyForkBookmarks,
+  type ForkPromptScan,
+  registerSessionPreferences,
+} from '../src/local/methods/session-preferences.js'
 
 const row = {
   sessionId: 's',
@@ -38,7 +42,10 @@ describe('session preferences', () => {
       })
       store.rename('s', '持久名称')
       expect(store.archive('s', true)).toEqual({ title: '持久名称', archived: true })
+      expect(store.setBookmarks('s', ['01JTURN']).bookmarks).toEqual(['01JTURN'])
+      expect(store.setBookmarks('s', [])).toEqual({ title: '持久名称', archived: true })
       expect(storage.coreTableNames()).not.toContain('session_preferences')
+      expect(storage.coreTableNames()).not.toContain('session_bookmarks')
     } finally {
       await storage.close()
       await rm(dir, { recursive: true, force: true })
@@ -135,5 +142,127 @@ describe('session preferences', () => {
         { title: 'name', archived: false },
       )
     await endpoint.close()
+  })
+})
+
+describe('session bookmarks', () => {
+  it('replaces the whole list, keeps the first place of a repeat, and clears with an empty list', () => {
+    const store = new SessionPreferencesStore()
+    store.rename('s', '名称')
+    expect(store.setBookmarks('s', ['b', 'a', 'b'])).toEqual({
+      title: '名称',
+      archived: false,
+      bookmarks: ['b', 'a'],
+    })
+    expect(store.setBookmarks('s', ['c']).bookmarks).toEqual(['c'])
+    expect(store.setBookmarks('s', ['c'])).toEqual(store.get('s'))
+    expect(store.setBookmarks('s', [])).toEqual({ title: '名称', archived: false })
+    expect(store.archive('s', true)).not.toHaveProperty('bookmarks')
+  })
+
+  it('refuses an invalid list without changing the saved one', () => {
+    const store = new SessionPreferencesStore()
+    store.setBookmarks('s', ['keep'])
+    const many = Array.from({ length: 201 }, (_, i) => `t${i}`)
+    for (const bad of [many, [''], ['x'.repeat(129)], ['a\nb'], ['\u0085']]) {
+      expect(() => store.setBookmarks('s', bad)).toThrow()
+      expect(store.get('s').bookmarks).toEqual(['keep'])
+    }
+    // 200 distinct ids, or more entries that collapse to 200, are accepted.
+    expect(store.setBookmarks('s', many.slice(0, 200)).bookmarks).toHaveLength(200)
+    expect(store.setBookmarks('s', [...many.slice(0, 200), 't0']).bookmarks).toHaveLength(200)
+  })
+
+  it('persists across a real SQLite restart, independently of title and archive, and shows in the list', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'agnes-session-bookmarks-'))
+    let tables = sqliteTables(join(dir, 'preferences.db'))
+    try {
+      const store = new SessionPreferencesStore(tables.table('session_preferences'))
+      store.setBookmarks('s', ['01JTURNA', '01JTURNB'])
+      store.rename('s', '名称')
+      store.archive('s', true)
+      await tables.close()
+      tables = sqliteTables(join(dir, 'preferences.db'))
+      const reopened = new SessionPreferencesStore(tables.table('session_preferences'))
+      expect(reopened.get('s')).toEqual({
+        title: '名称',
+        archived: true,
+        bookmarks: ['01JTURNA', '01JTURNB'],
+      })
+      expect(reopened.setBookmarks('s', []).bookmarks).toBeUndefined()
+      expect(reopened.get('s')).toEqual({ title: '名称', archived: true })
+      reopened.setBookmarks('s', ['01JTURNB'])
+      const decorated = withSessionPreferences(lister, reopened)
+      expect((await decorated.list({})).items).toEqual([
+        { ...row, title: '名称', titleSource: 'user', archived: true, bookmarks: ['01JTURNB'] },
+      ])
+      expect(
+        (await withSessionPreferences(lister, new SessionPreferencesStore()).list({})).items[0],
+      ).not.toHaveProperty('bookmarks')
+    } finally {
+      await tables.close()
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('applies the same principal checks as rename on the wire and validates the list', async () => {
+    const store = new SessionPreferencesStore()
+    const endpoint = new LocalEndpoint({ clock: Date.now, principalId: 'local' })
+    registerSessionPreferences(endpoint, lister, store)
+    const set = (params: unknown) =>
+      endpoint.handle({ jsonrpc: '2.0', id: 1, method: '_agnes/v1/session.bookmarks.set', params })
+    endpoint.conn.initialized = true
+    for (const [authKind, credentialKind] of [
+      ['jwt', 'local'],
+      ['local', 'jwt'],
+    ] as const) {
+      endpoint.conn.authKind = authKind
+      endpoint.conn.credentialKind = credentialKind
+      expect(await set({ sessionId: 's', bookmarks: ['a'] })).toHaveProperty(
+        'error.data.code',
+        'CAPABILITY_DENIED',
+      )
+    }
+    endpoint.conn.authKind = 'local'
+    endpoint.conn.credentialKind = 'local'
+    expect(store.get('s')).not.toHaveProperty('bookmarks')
+    expect(await set({ sessionId: 'missing', bookmarks: ['a'] })).toHaveProperty(
+      'error.data.code',
+      'SESSION_NOT_FOUND',
+    )
+    expect(await set({ sessionId: 's' })).toHaveProperty('error')
+    expect(await set({ sessionId: 's', bookmarks: ['x'.repeat(129)] })).toHaveProperty('error')
+    expect(await set({ sessionId: 's', bookmarks: ['a', 'b', 'a'] })).toHaveProperty('result', {
+      archived: false,
+      bookmarks: ['a', 'b'],
+    })
+    expect(await set({ sessionId: 's', bookmarks: [] })).toHaveProperty('result', { archived: false })
+    await endpoint.close()
+  })
+
+  it('a fork keeps only the bookmarks whose prompt lies inside the copied history, in their order', async () => {
+    const store = new SessionPreferencesStore()
+    // 1200 prompts, so the copy pages through more than one 500-row scan.
+    const events = Array.from({ length: 1200 }, (_, i) => ({ id: `u${i + 1}`, seq: i + 1 }))
+    const queries: unknown[] = []
+    const scan: ForkPromptScan = async (query) => {
+      queries.push(query)
+      return events.filter((e) => e.seq >= query.fromSeq && e.seq <= query.toSeq).slice(0, query.limit)
+    }
+    store.setBookmarks('p', ['u900', 'u2', 'u1100'])
+    await copyForkBookmarks(store, scan, 'p', 1000, 'c')
+    expect(store.get('c').bookmarks).toEqual(['u900', 'u2'])
+    expect(store.get('p').bookmarks).toEqual(['u900', 'u2', 'u1100'])
+    expect(queries).toEqual([
+      { type: 'user/message', order: 'asc', fromSeq: 1, toSeq: 1000, limit: 500 },
+      { type: 'user/message', order: 'asc', fromSeq: 501, toSeq: 1000, limit: 500 },
+    ])
+    // Nothing bookmarked inside the boundary, nothing bookmarked at all, or a failed read: no copy.
+    await copyForkBookmarks(store, scan, 'p', 1, 'c2')
+    queries.length = 0
+    await copyForkBookmarks(store, scan, 'none', 1000, 'c3')
+    expect(queries).toEqual([])
+    await copyForkBookmarks(store, async () => Promise.reject(new Error('gone')), 'p', 1000, 'c4')
+    for (const child of ['c2', 'c3', 'c4']) expect(store.get(child)).toEqual({ archived: false })
   })
 })

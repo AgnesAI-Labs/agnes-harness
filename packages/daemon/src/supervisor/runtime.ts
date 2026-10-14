@@ -123,7 +123,7 @@ import { executeJournaledEffect, registerExtensions } from '@agnes/daemon-rpc/lo
 import { registerFactChain } from '@agnes/daemon-rpc/local/methods/fact-chain'
 import { registerFeedback } from '@agnes/daemon-rpc/local/methods/feedback'
 import { registerPromptTrace } from '@agnes/daemon-rpc/local/methods/prompt-trace'
-import { registerSessionPreferences } from '@agnes/daemon-rpc/local/methods/session-preferences'
+import * as sessionPrefs from '@agnes/daemon-rpc/local/methods/session-preferences'
 import {
   registerSessionSelection,
   sessionSelectionProvider,
@@ -2074,6 +2074,8 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       const feeds = new Map<string, Feed>()
       const attached = new Map<string, AttachedFeed>()
       const artifactReadConfigured = artifactRead !== undefined
+      const factRead: (key: string) => ScanRead<import('@agnes/protocol').EventEnvelope> =
+        o.sessionFactRead ?? ((key) => (query) => cx.registry.require(key).session.scan(query))
       const cx: AgnesContext = {
         sessionServices: { activationBarrier, journal, commandQueue, callService, inspectService },
         host,
@@ -2131,12 +2133,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
               reason: 'session owner unavailable',
             })
           }
-          if (!principalId)
-            throw rpcError('CAPABILITY_DENIED', {
-              method: 'session.fork',
-              reason: 'session owner unavailable',
-            })
-          const ownerPrincipal = principalId
+          const ownerPrincipal = principalId ?? denyFork()
           if (!Number.isSafeInteger(at) || at < 1)
             throw rpcError('SEMANTIC_REJECTED', { reason: 'fork boundary must be a completed turn/end' })
           const ownedChildKey = childKey ?? `agnes:fork:${randomUUID()}`
@@ -2162,6 +2159,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
             const entry = await activateForkOwnership(supervisorRegistry, created, () =>
               sessionOwnership.activateFork(sessionId, created.key, ownerPrincipal, at),
             )
+            await sessionPrefs.copyForkBookmarks(preferences, factRead(sessionId), sessionId, at, entry.key)
             return { result: { sessionId: entry.key } }
           } catch (error) {
             if ((error as { code?: unknown }).code === 'E_LANE_BUSY')
@@ -2191,7 +2189,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           : denyPackageAdminAuthority,
         effectivePackageAdmin?.service,
       )
-      registerSessionPreferences(ep, lister, preferences)
+      sessionPrefs.registerSessionPreferences(ep, lister, preferences)
       registerWorkerSessionReads(ep, pool, requireSessionOwner(cx))
       registerWorkspaces(ep, workspaceCatalog)
       registerAcp(ep, cx, feeds, attached)
@@ -2279,7 +2277,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         })
       registerFactChain(ep, {
         requireSessionOwner: requireSessionOwner(cx),
-        scan: o.sessionFactRead ?? ((key) => (query) => cx.registry.require(key).session.scan(query)),
+        scan: factRead,
         traces: new RequestTraceStore(o.config.dataDir, o.profile.name),
         binding: (key, generationId) => readFactChainBinding(o.profileDir, key, generationId),
         ...(effectivePackageAdmin

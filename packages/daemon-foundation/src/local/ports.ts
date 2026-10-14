@@ -83,6 +83,7 @@ export type SessionMetaRow = {
   title?: string
   titleSource?: 'user'
   archived?: boolean
+  bookmarks?: string[]
   cwd?: string
 }
 export interface SessionLister {

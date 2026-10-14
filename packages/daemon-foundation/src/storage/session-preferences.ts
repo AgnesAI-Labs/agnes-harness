@@ -2,6 +2,8 @@ import { rpcError, type SessionPreferences } from '@agnes/protocol'
 import type { SessionLister, SessionMetaRow } from '../local/ports.js'
 import type { TableHandle } from './table.js'
 
+const BOOKMARK_LIMIT = 200
+
 /** Presentation preferences are independent of generated titles and conversation history. */
 export class SessionPreferencesStore {
   private readonly memory = new Map<string, SessionPreferences>()
@@ -9,6 +11,10 @@ export class SessionPreferencesStore {
   constructor(private readonly table?: TableHandle) {
     table?.exec(`CREATE TABLE IF NOT EXISTS session_preferences (
       session_key TEXT PRIMARY KEY, title TEXT, archived INTEGER NOT NULL DEFAULT 0
+    )`)
+    // Its own table rather than a column, so a store created before bookmarks needs no migration.
+    table?.exec(`CREATE TABLE IF NOT EXISTS session_bookmarks (
+      session_key TEXT PRIMARY KEY, ids TEXT NOT NULL
     )`)
   }
 
@@ -18,7 +24,16 @@ export class SessionPreferencesStore {
       'SELECT title, archived FROM session_preferences WHERE session_key = ?',
       [sessionId],
     )
-    return { archived: row?.archived === 1, ...(row?.title ? { title: row.title } : {}) }
+    const bookmarks = this.table.get<{ ids: string }>(
+      'SELECT ids FROM session_bookmarks WHERE session_key = ?',
+      [sessionId],
+    )
+    const ids = bookmarks ? (JSON.parse(bookmarks.ids) as string[]) : []
+    return {
+      archived: row?.archived === 1,
+      ...(row?.title ? { title: row.title } : {}),
+      ...(ids.length ? { bookmarks: ids } : {}),
+    }
   }
 
   rename(sessionId: string, title: string): SessionPreferences {
@@ -53,12 +68,43 @@ export class SessionPreferencesStore {
     return this.get(sessionId)
   }
 
+  /**
+   * Replaces the bookmarked user prompts. Ids are UINode ids of kind 'user'; a repeat keeps its first
+   * place, and an empty list clears the set. Ids are not checked against the transcript: a bookmark
+   * whose prompt is no longer shown is simply never matched.
+   */
+  setBookmarks(sessionId: string, bookmarks: readonly string[]): SessionPreferences {
+    const ids = [...new Set(bookmarks)]
+    if (
+      ids.length > BOOKMARK_LIMIT ||
+      ids.some((id) => typeof id !== 'string' || !id || id.length > 128 || /\p{Cc}/u.test(id))
+    )
+      throw rpcError('SEMANTIC_REJECTED', {
+        code: 'SESSION_BOOKMARKS_INVALID',
+        reason: 'At most 200 bookmarks, each a turn id of 1–128 visible characters.',
+      })
+    if (this.table) {
+      if (ids.length)
+        this.table.exec(
+          `INSERT INTO session_bookmarks (session_key, ids) VALUES (?, ?)
+         ON CONFLICT(session_key) DO UPDATE SET ids = excluded.ids`,
+          [sessionId, JSON.stringify(ids)],
+        )
+      else this.table.exec('DELETE FROM session_bookmarks WHERE session_key = ?', [sessionId])
+    } else {
+      const { bookmarks: _previous, ...rest } = this.get(sessionId)
+      this.memory.set(sessionId, { ...rest, ...(ids.length ? { bookmarks: ids } : {}) })
+    }
+    return this.get(sessionId)
+  }
+
   apply(row: SessionMetaRow): SessionMetaRow {
     const preference = this.get(row.sessionId)
     return {
       ...row,
       archived: preference.archived,
       ...(preference.title ? { title: preference.title, titleSource: 'user' as const } : {}),
+      ...(preference.bookmarks ? { bookmarks: preference.bookmarks } : {}),
     }
   }
 }

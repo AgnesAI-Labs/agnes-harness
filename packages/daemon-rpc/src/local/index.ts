@@ -71,7 +71,7 @@ import { registerConfiguration } from './methods/config.js'
 import { registerDiagnostics } from './methods/diagnostics.js'
 import { registerExtensions } from './methods/extensions.js'
 import { registerFactChain } from './methods/fact-chain.js'
-import { registerSessionPreferences } from './methods/session-preferences.js'
+import { copyForkBookmarks, registerSessionPreferences } from './methods/session-preferences.js'
 import { registerSessionRuntime } from './methods/session-runtime.js'
 import {
   hostSessionCatalog,
@@ -488,6 +488,8 @@ export function createLocalEndpoint(
             ...(credential === undefined ? {} : { credential }),
           })
           if (!sessionOwnership.activateFork(sessionId, entry.key, ownerPrincipal, at)) denyFork()
+          const parent = registry.require(sessionId).session
+          await copyForkBookmarks(preferences, (query) => parent.scan(query), sessionId, at, entry.key)
           return { result: { sessionId: entry.key } }
         } catch (error) {
           if ((error as { code?: unknown }).code === 'E_LANE_BUSY')

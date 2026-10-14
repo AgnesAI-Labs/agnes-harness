@@ -75,16 +75,32 @@ it.each([
       }),
     ])
     await client.session.archive(session.id, false)
+    // A bookmark names a user prompt by its UINode id; an id outside the fork boundary is not copied.
+    const prompt = timeline.nodes.find((node) => node.kind === 'user')?.id as string
+    expect(prompt).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/)
+    expect((await session.projectUI()).nodes.find((node) => node.kind === 'user')?.id).toBe(prompt)
+    await client.session.setBookmarks(session.id, ['not-in-history', prompt])
     const boundary = timeline.turns.findLast((turn) => turn.forkable)?.endSeq
     expect(boundary).toEqual(expect.any(Number))
     const child = await client.session.fork(session.id, boundary as number)
     await client.session.rename(child.id, 'WebSocket 人工名称 (1)')
     const inherited = await child.projectUI()
     expect(JSON.stringify(inherited.nodes)).toContain('WebSocket question')
+    expect(inherited.nodes.find((node) => node.kind === 'user')?.id).toBe(prompt)
     expect((await client.session.list()).items).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ sessionId: session.id, title: 'WebSocket 人工名称', archived: false }),
-        expect.objectContaining({ sessionId: child.id, title: 'WebSocket 人工名称 (1)', archived: false }),
+        expect.objectContaining({
+          sessionId: session.id,
+          title: 'WebSocket 人工名称',
+          archived: false,
+          bookmarks: ['not-in-history', prompt],
+        }),
+        expect.objectContaining({
+          sessionId: child.id,
+          title: 'WebSocket 人工名称 (1)',
+          archived: false,
+          bookmarks: [prompt],
+        }),
       ]),
     )
 
