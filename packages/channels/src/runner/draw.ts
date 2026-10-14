@@ -149,6 +149,10 @@ export function whatToDraw(
       const blocks = slotBlocks(node.fill.slot, node.fill.payload, node.fill.requestSeq)
       return blocks.length === 0 ? null : { blocks }
     }
+    case 'tool-source-pending':
+      return {
+        blocks: [{ kind: 'text', markdown: `${node.sources.join('、')} 还在连接，本轮先不使用它` }],
+      }
     case 'ledger-recovery':
       return {
         blocks: [

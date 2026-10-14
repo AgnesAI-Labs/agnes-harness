@@ -72,7 +72,10 @@ export function mcpToolDisclosure(
   definition: Pick<McpServerDefinitionInput, 'displayName' | 'toolDisclosure'>,
 ): Pick<McpServerConfig, 'defer' | 'discoveryGroup'> {
   const mode = definition.toolDisclosure ?? 'auto'
-  const name = definition.displayName.replace(/[\t\r\n]+/gu, ' ').trim().slice(0, 100)
+  const name = definition.displayName
+    .replace(/[\t\r\n]+/gu, ' ')
+    .trim()
+    .slice(0, 100)
   return {
     defer: mode === 'always' ? false : mode === 'on-demand' ? true : 'auto',
     discoveryGroup: `MCP server ${name || 'unnamed'}`,

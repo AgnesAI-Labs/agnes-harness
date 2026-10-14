@@ -6541,6 +6541,7 @@ function resourceControlSamples(): Record<ResourceControlSampleName, Sample> {
       { kind: 'oauth', staticClientId: 'test-oauth-client', extraField: 'nope' },
     ]),
     McpToolPolicy: ok({ allow: ['search'] }),
+    McpToolDisclosure: ok('on-demand', ['lazy']),
     McpServerDefinitionInput: ok(definitionSseValid, [
       { ...definition, secretBinding: httpBinding },
       definitionSseInvalid,
@@ -7186,6 +7187,7 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     McpTool: ResourceControlGen.McpTool,
     McpToolCatalogPage: ResourceControlGen.McpToolCatalogPage,
     McpToolPolicy: ResourceControlGen.McpToolPolicy,
+    McpToolDisclosure: ResourceControlGen.McpToolDisclosure,
     McpToolsListParams: ResourceControlGen.McpToolsListParams,
     McpTrustSetParams: ResourceControlGen.McpTrustSetParams,
     McpOAuthStatusSetParams: ResourceControlGen.McpOAuthStatusSetParams,

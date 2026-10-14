@@ -3187,6 +3187,32 @@
     "UINode": {
       "oneOf": [
         {
+          "description": "Tool sources a turn started without because they were still connecting, such as a newly enabled MCP server.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id", "seq", "sources"],
+          "properties": {
+            "kind": {
+              "const": "tool-source-pending"
+            },
+            "id": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "integer"
+            },
+            "sources": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 16,
+              "items": {
+                "type": "string",
+                "maxLength": 128
+              }
+            }
+          }
+        },
+        {
           "type": "object",
           "additionalProperties": false,
           "required": ["kind", "id", "seq", "diagnosticId", "validThroughSeq"],

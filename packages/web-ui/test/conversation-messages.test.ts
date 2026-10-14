@@ -143,6 +143,19 @@ describe('W3b projected message DOM', () => {
     expect(notice?.textContent).not.toContain('timeline.ledgerRecovery')
   })
 
+  it('quietly names tool sources a turn started without', async () => {
+    const store = createConversationProjectionStore({
+      sessionId: 'session',
+      nodes: [{ kind: 'tool-source-pending', id: 'pending', seq: 3, sources: ['Tracker', 'Wiki'] }],
+    })
+    await mount(store)
+    const notice = host.querySelector('[data-testid="tool-source-pending-notice"]')
+    expect(notice?.getAttribute('role')).toBe('status')
+    expect(notice?.textContent).toBe(
+      t('timeline.toolSourcePending', { names: `Tracker${t('timeline.conflictOpsJoiner')}Wiki` }),
+    )
+  })
+
   it('renders ordinary message content once, in the node article', async () => {
     const store = createConversationProjectionStore({
       sessionId: 'session',

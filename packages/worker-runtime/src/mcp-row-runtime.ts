@@ -136,6 +136,9 @@ export type McpRowRuntime = Readonly<{
    *  past its first attempt, and gives up for good after `maxAttempts`). A no-op until the next
    *  apply(); has no effect on a server apply() has never seen. */
   reconnect(serverId: string): void
+  /** Servers of the last applied snapshot whose first connection is still in progress: their tools
+   *  are not registered yet, so a turn starting now runs without them. */
+  connecting?(): readonly Readonly<{ serverId: string; displayName: string }>[]
 }>
 
 /**
@@ -189,6 +192,7 @@ export function createMcpRowRuntime(
   const statuses = new Map<string, McpStatus>()
   const catalogs = new Map<string, Catalog>()
   const statusChanged = new Set<() => void>()
+  const displayNames = new Map<string, string>()
   const cap = deps.firstAttemptTimeoutMs ?? FIRST_ATTEMPT_TIMEOUT_MS
   return Object.freeze({
     async apply(entries: readonly McpServerSnapshotEntry[]): Promise<McpRowApplyResult> {
@@ -202,7 +206,11 @@ export function createMcpRowRuntime(
           epochs.delete(serverId)
           for (const notify of statusChanged) notify()
         }
-      for (const entry of entries) revisions.set(entry.definition.serverId, entry.revision)
+      displayNames.clear()
+      for (const entry of entries) {
+        revisions.set(entry.definition.serverId, entry.revision)
+        displayNames.set(entry.definition.serverId, entry.definition.displayName)
+      }
       // A row's extension starts while Host applies it, so by the time Host's apply resolves this
       // holds exactly the rows Host (re)mounted in this call -- never an unchanged row.
       const started: Promise<unknown>[] = []
@@ -293,11 +301,18 @@ export function createMcpRowRuntime(
     reconnect(serverId) {
       epochs.set(serverId, (epochs.get(serverId) ?? 0) + 1)
     },
+    connecting() {
+      return [...displayNames]
+        .filter(([serverId]) => statuses.get(serverId)?.connectionState === 'connecting')
+        .map(([serverId, displayName]) => Object.freeze({ serverId, displayName }))
+    },
   })
 }
 
-/** The old resource manager's worst case before a turn could start: 10s connect + 10s catalog. */
-export const FIRST_ATTEMPT_TIMEOUT_MS = 20_000
+/** How long a turn waits for a newly enabled server's first connection. A server still connecting
+ * after this starts the turn without its tools, and the session shows a quiet notice instead; its
+ * tools join the next turn once connected. */
+export const FIRST_ATTEMPT_TIMEOUT_MS = 10_000
 /** Matches the protocol schema's `McpToolCatalogPage.items` cap. */
 const PAGE_SIZE = 100
 

@@ -89,6 +89,7 @@ export const conversationLocaleCatalog: LocaleCatalog = {
     'timeline.compactionFallback': 'Context compacted (range: {range})',
     'timeline.unsupportedLabel': 'Unsupported content',
     'timeline.conflictLabel': 'Context configuration conflict',
+    'timeline.toolSourcePending': '{names} is still connecting; this turn runs without it.',
     'timeline.ledgerRecovery':
       'Recovered the valid log through event {seq}. The damaged tail was quarantined; uncertain tool effects will not be replayed. Diagnostic ID: {diagnosticId}',
     'timeline.conflictJoiner': ': ',
@@ -378,6 +379,7 @@ export const conversationLocaleCatalog: LocaleCatalog = {
     'timeline.compactionFallback': '已整理上下文（范围：{range}）',
     'timeline.unsupportedLabel': '暂不支持的内容',
     'timeline.conflictLabel': '上下文配置冲突',
+    'timeline.toolSourcePending': '{names} 还在连接，本轮先不使用它',
     'timeline.ledgerRecovery':
       '已恢复至有效日志事件 {seq}。损坏尾部已隔离，不会重放结果不确定的工具操作。诊断编号：{diagnosticId}',
     'timeline.conflictJoiner': '：',

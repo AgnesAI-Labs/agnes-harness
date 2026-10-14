@@ -215,6 +215,33 @@ async function admitResourceRun(
   }
 }
 
+/** Servers each session was already told about, so a slow server is announced once, not per turn. */
+const announcedConnecting = new WeakMap<object, Set<string>>()
+
+/**
+ * A turn waits only boundedly for a newly enabled MCP server (`FIRST_ATTEMPT_TIMEOUT_MS`). A server
+ * still connecting after that starts the turn without its tools; this writes one quiet session
+ * notice naming it, so a missing tool is explained rather than silent. A diagnostic row: never part
+ * of the model's view, and a failed write never blocks the turn.
+ */
+async function noticeConnectingMcp(
+  session: HostSession,
+  slot: WorkerResourceSlot | undefined,
+): Promise<void> {
+  const connecting = slot?.mcpRows?.connecting?.() ?? []
+  const announced = announcedConnecting.get(session) ?? new Set<string>()
+  announcedConnecting.set(session, announced)
+  const now = new Set(connecting.map((server) => server.serverId))
+  for (const serverId of announced) if (!now.has(serverId)) announced.delete(serverId)
+  const fresh = connecting.filter((server) => !announced.has(server.serverId))
+  if (fresh.length === 0) return
+  for (const server of fresh) announced.add(server.serverId)
+  await session.diag('tool-source-pending', {
+    kind: 'mcp',
+    sources: fresh.map((server) => server.displayName),
+  })
+}
+
 /** Prepare an idle worker without making its next prompt pay for a pending resource reload. */
 export async function prepareIdleResources(
   o: Pick<CommandOptions, 'host' | 'resources' | 'workerResourcesInput'>,
@@ -406,6 +433,7 @@ export async function handleCommand(
       let releaseResources: (() => void) | undefined
       try {
         releaseResources = await admitResourceRun(o, ac.signal)
+        await noticeConnectingMcp(session, o.resources)
         // A run cancelled while it waited for admission still reaches the core, with its signal
         // already aborted: the prompt it was sent for is queued, and the core ends that turn as
         // aborted without doing work. Answering here instead would leave it to run under the next one.

@@ -37,6 +37,7 @@ describe('author documentation generation', () => {
       ...TOOL_META_KEYS,
       'costHint',
       'deferLoading',
+      'discoveryGroup',
       'requiresApproval',
       'isPresentational',
       'modelVisible',

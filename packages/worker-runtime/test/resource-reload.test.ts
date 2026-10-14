@@ -313,6 +313,50 @@ describe('worker-side resource.stale/run reload (next-turn reload, not mid-turn 
     expect(ctx.resources).toMatchObject({ staleMarks: 0, reloadedMarks: 0 })
   })
 
+  it('names a server still connecting once per session when a turn starts without it', async () => {
+    const notices: unknown[] = []
+    const runs: string[] = []
+    const session = {
+      run: async () => {
+        runs.push('run')
+        return { reason: 'completed' }
+      },
+      diag: async (name: string, data: unknown) => {
+        notices.push({ name, data })
+      },
+    } as unknown as HostSession
+    let connecting = [{ serverId: 'slow', displayName: 'Slow Server' }]
+    const rows = recordingRows()
+    const ctx: Parameters<typeof handleCommand>[2] = {
+      host: {} as unknown as Host,
+      aborts: new Map(),
+      resources: {
+        generation: undefined,
+        staleMarks: 0,
+        reloadedMarks: 0,
+        mcpRows: { ...rows.runtime, connecting: () => connecting },
+      },
+    }
+    const run = (id: string) =>
+      handleCommand(
+        session,
+        { kind: 'command', requestId: id, method: 'run', params: { runId: id, until: 'turn-end' } },
+        ctx,
+      )
+    await run('r1')
+    await run('r2')
+    expect(notices).toEqual([
+      { name: 'tool-source-pending', data: { kind: 'mcp', sources: ['Slow Server'] } },
+    ])
+    // Once connected it is forgotten, so a later remount that is slow again is announced again.
+    connecting = []
+    await run('r3')
+    connecting = [{ serverId: 'slow', displayName: 'Slow Server' }]
+    await run('r4')
+    expect(notices).toHaveLength(2)
+    expect(runs).toHaveLength(4)
+  })
+
   it('waits for every active session run and blocks later runs while reloading', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wrr-'))
     cleanup.push(() => rm(root, { recursive: true, force: true }))

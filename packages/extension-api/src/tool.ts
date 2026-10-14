@@ -46,10 +46,6 @@ export const RESOLVED_TOOL_CALL_POLICY_KEYS = [
   'approvalScopes',
 ] as const
 export const MAX_APPROVAL_SCOPES = 16
-/** `deferLoading: 'auto'` tools stay visible up to this many in one turn catalog. */
-export const AUTO_DEFER_MAX_TOOLS = 15
-/** ...and up to this many estimated schema tokens (name, description and parameters, ~4 chars each). */
-export const AUTO_DEFER_MAX_TOKENS = 4000
 const DISCOVERY_GROUP = /^[^\r\n\t]{1,120}$/u
 
 // The most text of one tool result that reaches the model before the output guard cuts it. The preset
@@ -79,8 +75,8 @@ export interface ToolMeta {
   /**
    * Omitted/false means available in initial model discovery; true keeps the schema out of model
    * requests until `tool_describe` loads it. `'auto'` lets core decide per turn: auto tools stay
-   * visible while the turn catalog's auto tools are few and small (see `AUTO_DEFER_MAX_TOOLS` /
-   * `AUTO_DEFER_MAX_TOKENS`), and are all deferred once either limit is exceeded.
+   * visible while the turn catalog holds at most 15 of them and their schemas stay under about 4000
+   * tokens, and are all deferred together once either limit is exceeded.
    */
   deferLoading?: boolean | 'auto' | undefined
   /**

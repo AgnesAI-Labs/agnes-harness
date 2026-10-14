@@ -1,14 +1,7 @@
 import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import { CoreError, type Disposer, type Seq } from '@agnes/core-common/types'
 import { OwnedRegistryTable } from '@agnes/core-ledger/registry/owner-batch'
-import {
-  AUTO_DEFER_MAX_TOKENS,
-  AUTO_DEFER_MAX_TOOLS,
-  checkToolDef,
-  TOOL_DESCRIPTION_MAX_LENGTH,
-  type ToolDef,
-  type ToolMeta,
-} from '@agnes/extension-api'
+import { checkToolDef, TOOL_DESCRIPTION_MAX_LENGTH, type ToolDef, type ToolMeta } from '@agnes/extension-api'
 import { sanitize } from '../request/derive.js'
 
 export type TrustTier = 'builtin' | 'trusted'
@@ -158,6 +151,12 @@ export class ToolRegistry {
     return Object.freeze({ defs, byName, hash, takenAtSeq: seq })
   }
 }
+
+/** `deferLoading: 'auto'` tools stay visible up to this many in one turn catalog. Measured: one
+ * typical MCP server of 15 tools costs about 2,750 schema tokens on every request. */
+export const AUTO_DEFER_MAX_TOOLS = 15
+/** ...and up to this many estimated schema tokens, so a few huge schemas also defer. */
+export const AUTO_DEFER_MAX_TOKENS = 4000
 
 /** Rough schema size of one tool as the model would receive it, about four characters a token. */
 function schemaTokens(def: ToolDef): number {

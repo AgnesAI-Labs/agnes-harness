@@ -105,6 +105,12 @@ export function nativeContent(
       ) : (
         <div data-slot-state="empty">{t('slot.notReady')}</div>
       )
+    case 'tool-source-pending':
+      return (
+        <div className="node-body" role="status" data-testid="tool-source-pending-notice">
+          {t('timeline.toolSourcePending', { names: node.sources.join(t('timeline.conflictOpsJoiner')) })}
+        </div>
+      )
     case 'ledger-recovery':
       return (
         <div className="node-body" role="status" data-testid="ledger-tail-recovery-notice">

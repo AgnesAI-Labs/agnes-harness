@@ -93,6 +93,7 @@ export const CORE_DIAG_NAMES = [
   'contribute-conflict',
   'context-breakdown',
   'request-media-window',
+  'tool-source-pending',
 ] as const
 export type CoreDiagName = (typeof CORE_DIAG_NAMES)[number]
 

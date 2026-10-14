@@ -440,9 +440,14 @@ export async function resolvedConfig(
 }
 
 /** Same mapping as `@agnes/base`'s `mcpToolDisclosure`, which this layer cannot import. */
-function toolDisclosure(definition: McpServerDefinitionInput): Pick<McpServerConfig, 'defer' | 'discoveryGroup'> {
+function toolDisclosure(
+  definition: McpServerDefinitionInput,
+): Pick<McpServerConfig, 'defer' | 'discoveryGroup'> {
   const mode = definition.toolDisclosure ?? 'auto'
-  const name = definition.displayName.replace(/[\t\r\n]+/gu, ' ').trim().slice(0, 100)
+  const name = definition.displayName
+    .replace(/[\t\r\n]+/gu, ' ')
+    .trim()
+    .slice(0, 100)
   return {
     defer: mode === 'always' ? false : mode === 'on-demand' ? true : 'auto',
     discoveryGroup: `MCP server ${name || 'unnamed'}`,

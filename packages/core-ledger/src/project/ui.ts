@@ -970,6 +970,19 @@ export class UIProjectionCell {
         changed.add(id)
         break
       }
+      case 'x/core/tool-source-pending': {
+        const pending = data as { sources?: unknown }
+        const sources = Array.isArray(pending.sources)
+          ? pending.sources
+              .filter((source): source is string => typeof source === 'string' && source.length > 0)
+              .slice(0, 16)
+              .map((source) => clip(source, 128))
+          : []
+        if (sources.length === 0) break
+        this.pushNode({ kind: 'tool-source-pending', id, seq, sources })
+        changed.add(id)
+        break
+      }
       case 'x/core/ledger-tail-recovered': {
         const recovery = data as { diagnosticId?: unknown; validThroughSeq?: unknown }
         if (typeof recovery.diagnosticId !== 'string' || !Number.isSafeInteger(recovery.validThroughSeq))

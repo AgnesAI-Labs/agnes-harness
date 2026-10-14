@@ -506,7 +506,9 @@ describe('tool_search / tool_describe', () => {
       remote('mcp__wiki__edit_page', 'Edit a page', 'MCP server Team Wiki'),
     ]
     const names = async (query: string) =>
-      ((await toolSearchTool(new MemFts()).execute({ query, limit: 5 }, ctx)).content[0] as { text: string }).text
+      (
+        (await toolSearchTool(new MemFts()).execute({ query, limit: 5 }, ctx)).content[0] as { text: string }
+      ).text
         .split('\n')
         .map((line) => line.split(' — ')[0])
     expect(await names('create_issue')).toEqual(['mcp__tracker__create_issue'])
@@ -514,8 +516,11 @@ describe('tool_search / tool_describe', () => {
     expect(await names('Acme Tracker')).toEqual(['mcp__tracker__close_issue', 'mcp__tracker__create_issue'])
     // The label only helps ranking; the model still sees the tool's own description.
     expect(
-      ((await toolSearchTool(new MemFts()).execute({ query: 'Team Wiki' }, ctx)).content[0] as { text: string })
-        .text,
+      (
+        (await toolSearchTool(new MemFts()).execute({ query: 'Team Wiki' }, ctx)).content[0] as {
+          text: string
+        }
+      ).text,
     ).toBe('mcp__wiki__edit_page — Edit a page')
   })
 })

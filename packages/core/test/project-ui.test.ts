@@ -1239,6 +1239,29 @@ describe('context-sections and contribute-conflict projection', () => {
     })
   })
 
+  it('projects a tool-source-pending diagnostic into a notice and drops one with no sources', async () => {
+    const row = (seq: number, data: unknown) =>
+      ({
+        seq,
+        ts: '2026-10-14T00:00:00.000Z',
+        id: `01K00000000000000000000${seq}`,
+        type: 'x/core/tool-source-pending',
+        data,
+        actor: { id: 'system', org: 'local', role: 'system', deptPath: [], attrs: {} },
+        origin: 'system',
+        trust: 'trusted',
+        lane: 'main',
+        v: 1,
+        ignorable: true,
+      }) as Event
+    const cell = new UIProjectionCell('k', 'main')
+    cell.apply([row(1, { kind: 'mcp', sources: ['Tracker', 7] }), row(2, { sources: [] })])
+    const { nodes } = await cell.view()
+    expect(nodes.filter((node) => node.kind === 'tool-source-pending')).toEqual([
+      { kind: 'tool-source-pending', id: '01K000000000000000000001', seq: 1, sources: ['Tracker'] },
+    ])
+  })
+
   it('projects a contribute-conflict diagnostic into a contribute-conflict node', async () => {
     const cell = new UIProjectionCell('k', 'main')
     const event: Event = {

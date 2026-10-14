@@ -69,6 +69,8 @@ function nodeText(node: UINode): string {
       // presence of its own: collectSlots() reads it out of the projected timeline directly and
       // routes it to the hint row or status bar instead. Never dump its payload as text here.
       return ''
+    case 'tool-source-pending':
+      return `${node.sources.join(', ')} still connecting; this turn runs without it`
     case 'ledger-recovery':
       return `Recovered the valid log through event ${node.validThroughSeq}; damaged tail quarantined. Diagnostic ID: ${node.diagnosticId}`
     case 'context-sections':
