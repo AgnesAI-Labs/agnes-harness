@@ -103,6 +103,49 @@ export function resetCollapsedGroups(): void {
   saveCollapsedGroups()
 }
 
+/** How many sessions a workspace shows before 「展开显示」. */
+export const RECENT_SESSIONS = 5
+const EXPANDED_KEY = 'agnes.sidebar.expanded-workspaces.v1'
+
+function readExpandedGroups(): Set<string> {
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem(EXPANDED_KEY) ?? '[]')
+    return new Set(Array.isArray(saved) ? saved.filter((path) => typeof path === 'string') : [])
+  } catch {
+    return new Set()
+  }
+}
+
+// Which workspaces show all their sessions, remembered on this computer like the folder collapse.
+const expandedGroups = readExpandedGroups()
+
+function saveExpandedGroups(): void {
+  try {
+    localStorage.setItem(EXPANDED_KEY, JSON.stringify([...expandedGroups]))
+  } catch {
+    /* the in-memory record keeps working */
+  }
+}
+
+export function resetExpandedGroups(): void {
+  expandedGroups.clear()
+  saveExpandedGroups()
+}
+
+/**
+ * The sessions a workspace shows: the most recent few, unless expanded. The open session always
+ * shows, in its place, even when it is older than those.
+ */
+export function shownSessions<T extends { sessionId: string }>(
+  sorted: readonly T[],
+  expanded: boolean,
+  currentId: string | undefined,
+): { shown: T[]; hidden: number } {
+  if (expanded || sorted.length <= RECENT_SESSIONS) return { shown: [...sorted], hidden: 0 }
+  const shown = sorted.filter((row, index) => index < RECENT_SESSIONS || row.sessionId === currentId)
+  return { shown, hidden: sorted.length - shown.length }
+}
+
 /** Archived sessions in one flat list: find one, put it back among the active sessions. */
 function ArchivedSessions({ options, t }: { options: SidebarNavigationOptions; t: Translate }) {
   const view = useSyncExternalStore(archivedSessions.subscribe, archivedSessions.getSnapshot)
@@ -273,6 +316,10 @@ function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; 
           const workspace = options.workspaces.find((entry) => entry.path === path)
           const name = workspace ? workspaceLabel(workspace) : t('session.uncategorized')
           const collapsed = collapsedGroups.has(path)
+          const expanded = expandedGroups.has(path)
+          const sorted = sortSessionsByRecency(sessions)
+          const { shown, hidden } = shownSessions(sorted, expanded, options.currentId)
+          const toggleable = sorted.length > RECENT_SESSIONS
           return (
             <section key={path} className="workspace-group">
               <div className="workspace-heading-row">
@@ -309,8 +356,25 @@ function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; 
                   <Conversations
                     className="session-conversations"
                     {...(options.currentId ? { activeKey: options.currentId } : {})}
-                    items={sortSessionsByRecency(sessions).map(item)}
+                    items={shown.map(item)}
                   />
+                )}
+                {toggleable && (
+                  <Button
+                    appearance="ghost"
+                    className="session-list-toggle"
+                    data-testid="workspace-sessions-toggle"
+                    data-workspace={path}
+                    aria-expanded={expanded}
+                    onClick={() => {
+                      if (expanded) expandedGroups.delete(path)
+                      else expandedGroups.add(path)
+                      saveExpandedGroups()
+                      redraw((value) => value + 1)
+                    }}
+                  >
+                    {expanded ? t('nav.showLess') : t('nav.showMore', { count: hidden })}
+                  </Button>
                 )}
               </div>
             </section>

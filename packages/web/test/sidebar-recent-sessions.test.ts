@@ -1,0 +1,116 @@
+/** @vitest-environment happy-dom */
+
+import { resolve } from 'node:path'
+import type { PageSessionMeta, WorkspaceEntry } from '@agnes/protocol'
+import { flushSync } from 'react-dom'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
+import {
+  RECENT_SESSIONS,
+  renderSessionNavigation,
+  resetCollapsedGroups,
+  resetExpandedGroups,
+  shownSessions,
+} from '../src/navigation.js'
+import { zhT } from './helpers/locale.js'
+
+const WORKSPACE = '/work/WorkLLM'
+const session = (index: number): PageSessionMeta['items'][number] =>
+  ({
+    sessionId: `s${index}`,
+    title: `会话 ${index}`,
+    cwd: WORKSPACE,
+    archived: false,
+    // s0 is the newest.
+    createdAt: new Date(Date.UTC(2026, 9, 14, 12) - index * 60_000).toISOString(),
+    updatedAt: new Date(Date.UTC(2026, 9, 14, 12) - index * 60_000).toISOString(),
+    lastSeq: 1,
+    generation: 1,
+    preset: 'code',
+  }) as PageSessionMeta['items'][number]
+const workspace: WorkspaceEntry = {
+  path: WORKSPACE,
+  name: 'WorkLLM',
+  lastUsedAt: null,
+  sessionCount: 8,
+  available: true,
+}
+
+function render(currentId?: string, sessions = Array.from({ length: 8 }, (_, index) => session(index))) {
+  const nav = document.createElement('nav')
+  document.body.append(nav)
+  const draw = () =>
+    renderSessionNavigation(
+      {
+        nav,
+        sessions,
+        workspaces: [workspace],
+        labels: new Map(),
+        ...(currentId ? { currentId } : {}),
+        newSession: vi.fn(),
+        open: vi.fn(),
+      },
+      zhT,
+    )
+  flushSync(draw)
+  return nav
+}
+const titles = (nav: Element) => [...nav.querySelectorAll('.session-title')].map((node) => node.textContent)
+
+afterEach(() => {
+  resetExpandedGroups()
+  resetCollapsedGroups()
+  document.body.replaceChildren()
+})
+
+describe('recent sessions per workspace', () => {
+  it('shows the five most recent, then 「展开显示（还有 N 条）」, and all of them once expanded', async () => {
+    expect(RECENT_SESSIONS).toBe(5)
+    const nav = render()
+    expect(titles(nav)).toEqual(['会话 0', '会话 1', '会话 2', '会话 3', '会话 4'])
+    const toggle = nav.querySelector<HTMLButtonElement>('[data-testid="workspace-sessions-toggle"]')
+    expect(toggle?.textContent).toBe('展开显示（还有 3 条）')
+    expect(toggle?.getAttribute('aria-expanded')).toBe('false')
+    flushSync(() => toggle?.click())
+    await vi.waitFor(() => expect(titles(nav)).toHaveLength(8))
+    expect(toggle?.textContent).toBe('收起')
+    // Remembered on this computer, per workspace.
+    expect(JSON.parse(localStorage.getItem('agnes.sidebar.expanded-workspaces.v1') ?? '[]')).toEqual([
+      WORKSPACE,
+    ])
+    flushSync(() => toggle?.click())
+    await vi.waitFor(() => expect(titles(nav)).toHaveLength(5))
+  })
+
+  it('keeps the open session in its place even when it is older than the five shown', () => {
+    const nav = render('s7')
+    expect(titles(nav)).toEqual(['会话 0', '会话 1', '会话 2', '会话 3', '会话 4', '会话 7'])
+    expect(nav.querySelector('[data-testid="workspace-sessions-toggle"]')?.textContent).toBe(
+      '展开显示（还有 2 条）',
+    )
+  })
+
+  it('offers nothing to expand for five or fewer sessions', () => {
+    const nav = render(
+      undefined,
+      Array.from({ length: 5 }, (_, index) => session(index)),
+    )
+    expect(titles(nav)).toHaveLength(5)
+    expect(nav.querySelector('[data-testid="workspace-sessions-toggle"]')).toBeNull()
+    expect(shownSessions([{ sessionId: 'a' }], false, undefined)).toEqual({
+      shown: [{ sessionId: 'a' }],
+      hidden: 0,
+    })
+  })
+
+  it('draws the heading tools small and quiet: 24px buttons, 14px icons, darker when pointed at', () => {
+    const css = readWebStyleSource(resolve(__dirname, '../public/style.css'))
+    expect(css).toMatch(
+      /\.sidebar-section-heading \.agh-btn--icon \{[^}]*width: 1\.5rem;[^}]*height: 1\.5rem;/,
+    )
+    expect(css).toMatch(/\.sidebar-section-heading \.agh-btn--icon svg \{[^}]*width: 0\.875rem;/)
+    expect(css).toMatch(
+      /\.sidebar-section-heading \.agh-btn--icon \{[^}]*color: var\(--agnes-text-tertiary\);/,
+    )
+  })
+})

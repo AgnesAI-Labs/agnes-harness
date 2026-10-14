@@ -385,6 +385,39 @@
     padding-left: var(--s8);
     margin: var(--s12) 0 var(--s2);
   }
+  /* The heading's tools are small and quiet: 24px buttons, 14px icons, muted until pointed at. */
+  .sidebar-section-heading .agh-btn--icon {
+    width: 1.5rem;
+    min-width: 1.5rem;
+    height: 1.5rem;
+    min-height: 1.5rem;
+    padding: 0;
+    color: var(--agnes-text-tertiary);
+  }
+  .sidebar-section-heading .agh-btn--icon svg {
+    width: 0.875rem;
+    height: 0.875rem;
+  }
+  .sidebar-section-heading .agh-btn--icon:is(:hover, :focus-visible):not(:disabled) {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-hover);
+  }
+  /* 「展开显示（还有 N 条）」 under a workspace's recent sessions: small, grey, a light fill on hover. */
+  .session-list-toggle.agh-btn {
+    height: 1.625rem;
+    min-height: 1.625rem;
+    margin: var(--s2) 0 var(--s4) 1.375rem;
+    padding: 0 var(--s8);
+    border-radius: var(--radius-control);
+    color: var(--agnes-text-tertiary);
+    background: transparent;
+    font-size: var(--font-size-xs);
+    font-weight: 400;
+  }
+  .session-list-toggle.agh-btn:hover:not(:disabled) {
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-hover);
+  }
   .sidebar-section-heading .section-label {
     margin: 0;
     font-size: var(--font-size-xs);
