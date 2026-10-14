@@ -13,7 +13,12 @@ import {
 } from '@agnes/web-ui'
 import { useEffect, useMemo, useSyncExternalStore } from 'react'
 import { ArtifactFile } from './artifact-file.js'
-import { type EarlierVersion, groupDeliverables, type TurnDeliverable } from './deliverable-labels.js'
+import {
+  deliverableKey,
+  type EarlierVersion,
+  groupDeliverables,
+  type TurnDeliverable,
+} from './deliverable-labels.js'
 import { BoundSurface, type UiPlacementBinding } from './placements.js'
 import { openDeliverablesPanel } from './workbench-deliverables.js'
 
@@ -64,6 +69,7 @@ export function surfaceDeliverables(record: UiSurfaceRecord): TurnDeliverable[] 
           {
             file: parsed.value,
             surfaceId: surface.id,
+            componentId: component.id,
             revision: surface.revision,
             lane: record.lane,
             workbench: surface.placement.workbench,
@@ -175,7 +181,7 @@ function DeliverableGroup({
   const groups = groupDeliverables(entries)
   const card = (entry: TurnDeliverable & { version?: EarlierVersion }) => (
     <ArtifactFile
-      key={`${entry.surfaceId}:${entry.file.artifact.sha256}`}
+      key={deliverableKey(entry)}
       file={entry.file}
       laneId={entry.lane}
       resources={binding.resources}
@@ -208,7 +214,7 @@ function DeliverableGroup({
               >
                 <ul className="turn-deliverables-list">
                   {earlier.map((entry) => (
-                    <li key={`${entry.surfaceId}:${entry.file.artifact.sha256}`}>{card(entry)}</li>
+                    <li key={deliverableKey(entry)}>{card(entry)}</li>
                   ))}
                 </ul>
               </Disclosure>

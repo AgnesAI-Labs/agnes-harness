@@ -9,6 +9,7 @@ import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
 import type { IntelligentUiClient } from '../../src/intelligent-ui/client.js'
+import { deliverableKey } from '../../src/intelligent-ui/deliverable-labels.js'
 import type { UiPlacementBinding } from '../../src/intelligent-ui/placements.js'
 import { attachTurnDeliverables, TurnDeliverables } from '../../src/intelligent-ui/turn-deliverables.js'
 import {
@@ -310,4 +311,40 @@ it('links a file to its artifact record, else to the tool call its file list was
   })
   expect(deliverableSource({ nodes: [tool('before', 10, 12)] } as never, entry, client, 's')).toBeUndefined()
   expect(deliverableSource(undefined, entry, client, 's')).toBeUndefined()
+})
+
+it('keeps two names for the same bytes as two cards with their own selection', async () => {
+  const twins = fileList('twins', 30, [
+    { name: 'report.md', description: 'crm-assistant: final', sha: sha(9) },
+    { name: 'report-copy.md', description: 'crm-assistant: final', sha: sha(9) },
+  ])
+  const entries = sessionDeliverables([twins])
+  expect(new Set(entries.map((entry) => deliverableKey(entry))).size).toBe(2)
+  const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const host = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(host)
+  const t = createCatalogTranslator(workbenchLocaleCatalog, 'en')
+  try {
+    await act(async () =>
+      root.render(
+        createElement(WorkbenchDeliverables, {
+          binding: binding([twins]),
+          context: { t, data: { session: { id: 's' } } },
+        }),
+      ),
+    )
+    const items = [...host.querySelectorAll<HTMLElement>('.workbench-deliverables-group li')]
+    expect(items.map((item) => item.querySelector('.deliverable-name')?.textContent)).toEqual([
+      'report.md',
+      'report-copy.md',
+    ])
+    await act(async () => items[1]?.querySelector<HTMLElement>('.deliverable-name')?.click())
+    expect(items.map((item) => item.dataset.chosen)).toEqual(['false', 'true'])
+    // React saw two distinct keys: no duplicate-key warning.
+    expect(errors.mock.calls.flat().join(' ')).not.toContain('same key')
+  } finally {
+    await act(async () => root.unmount())
+    host.remove()
+    errors.mockRestore()
+  }
 })

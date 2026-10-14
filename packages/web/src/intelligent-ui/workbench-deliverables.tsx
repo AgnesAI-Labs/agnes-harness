@@ -10,6 +10,7 @@ import { Button, Disclosure, Icon, SettingsState, UiLocaleProvider } from '@agne
 import { useState, useSyncExternalStore } from 'react'
 import { ArtifactFile } from './artifact-file.js'
 import {
+  deliverableKey,
   deliverableVersion,
   type EarlierVersion,
   groupDeliverables,
@@ -21,7 +22,7 @@ import { surfaceDeliverables } from './turn-deliverables.js'
 export const DELIVERABLES_PANEL = 'deliverables'
 type Group = 'final' | 'review' | 'other'
 const GROUPS: readonly Group[] = ['final', 'review', 'other']
-const entryKey = (entry: TurnDeliverable) => `${entry.surfaceId}:${entry.file.artifact.sha256}`
+const entryKey = deliverableKey
 
 /**
  * Every file the session's workbench file lists hand over, oldest first; a later entry is a newer

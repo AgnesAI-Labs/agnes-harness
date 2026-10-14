@@ -57,7 +57,8 @@ const previewRequest = {
     return () => listeners.delete(listener)
   },
 }
-const fileKey = (laneId: string, file: UiArtifactFileData) => `${laneId}:${file.artifact.sha256}`
+// A request names the file by name and content: the same bytes under two names are two cards.
+const fileKey = (laneId: string, file: UiArtifactFileData) => `${laneId}:${file.name}:${file.artifact.sha256}`
 
 /** Display uses the same session-authorized resource loaders as the workspace document dock. */
 export function ArtifactFile({

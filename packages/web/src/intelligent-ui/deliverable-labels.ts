@@ -63,6 +63,8 @@ export function deliverableVersion(
 export type TurnDeliverable = {
   file: UiArtifactFileData
   surfaceId: string
+  /** The component that lists it: one surface may list the same bytes under two names, or twice. */
+  componentId?: string
   revision: number
   lane: string
   /** Workbench copy exists, so a preview opens there. */
@@ -150,5 +152,9 @@ export function deliverableVersions(
   for (const entry of entries) if (!shown.has(entry)) out.set(deliverableKey(entry), 'hidden')
   return out
 }
-export const deliverableKey = (entry: Pick<TurnDeliverable, 'surfaceId' | 'file'>) =>
-  `${entry.surfaceId}:${entry.file.name}:${entry.file.artifact.sha256}`
+/**
+ * A presented file's identity: its surface, the component listing it, its name and its content.
+ * The hash alone names content, not a row — two names for the same bytes are two deliverables.
+ */
+export const deliverableKey = (entry: Pick<TurnDeliverable, 'surfaceId' | 'componentId' | 'file'>) =>
+  `${entry.surfaceId}:${entry.componentId ?? ''}:${entry.file.name}:${entry.file.artifact.sha256}`
