@@ -2,6 +2,9 @@ import { Button, IconButton } from '@agnes/web-ui'
 import { type ForwardedRef, forwardRef, useEffect, useImperativeHandle, useState } from 'react'
 import { flushSync } from 'react-dom'
 import type { Translate } from './locales/index.js'
+import { RunStatus, type TopbarStatusDetails } from './run-status.js'
+
+export type { TopbarStatusDetails } from './run-status.js'
 export type TopbarConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'closed'
 /** 渲染时取词：状态 → key 表，文案在组件内按当前 locale 解析。 */
 const CONNECTION_LABEL_KEYS: Record<TopbarConnectionState, string> = {
@@ -12,7 +15,8 @@ const CONNECTION_LABEL_KEYS: Record<TopbarConnectionState, string> = {
 }
 export interface TopbarHandle {
   setTaskTitle(title: string): void
-  setStatus(text: string, state?: string): void
+  setStatus(text: string, state?: string, details?: TopbarStatusDetails): void
+  setStopAction(action: () => void): void
   setConnectionState(value: TopbarConnectionState): void
   /** The session's Agent (loop) name; omitted while no session is selected. */
   setAgent(name: string | undefined): void
@@ -27,7 +31,12 @@ export const Topbar = forwardRef<TopbarHandle, TopbarProps>(function Topbar(
   ref: ForwardedRef<TopbarHandle>,
 ) {
   const [taskTitle, setTaskTitle] = useState<string>()
-  const [status, setStatus] = useState<{ text: string; state: string }>()
+  const [status, setStatus] = useState<{
+    text: string
+    state: string
+    details?: TopbarStatusDetails | undefined
+  }>()
+  const [onStop, setOnStop] = useState<() => void>()
   const [connection, setConnection] = useState<TopbarConnectionState>('connecting')
   const [agent, setAgent] = useState<string>()
   const [runtimeAvailable, setRuntimeAvailable] = useState(false)
@@ -44,8 +53,13 @@ export const Topbar = forwardRef<TopbarHandle, TopbarProps>(function Topbar(
       setTaskTitle(title) {
         flushSync(() => setTaskTitle(title))
       },
-      setStatus(text, state) {
-        flushSync(() => setStatus((previous) => ({ text, state: state ?? previous?.state ?? 'idle' })))
+      setStatus(text, state, details) {
+        flushSync(() =>
+          setStatus((previous) => ({ text, state: state ?? previous?.state ?? 'idle', details })),
+        )
+      },
+      setStopAction(action) {
+        flushSync(() => setOnStop(() => action))
       },
       setConnectionState(value) {
         flushSync(() => setConnection(value))
@@ -94,9 +108,14 @@ export const Topbar = forwardRef<TopbarHandle, TopbarProps>(function Topbar(
             <span translate="no">{agent}</span>
           </span>
         )}
-        <span id="status" role="status" aria-live="polite" data-state={status?.state ?? 'idle'}>
-          {status?.text ?? t('topbar.defaultStatus')}
-        </span>
+        <RunStatus
+          key={`${status?.details?.sessionId ?? ''}:${status?.details?.startedAt ?? ''}`}
+          text={status?.text ?? t('topbar.defaultStatus')}
+          state={status?.state ?? 'idle'}
+          details={status?.details}
+          onStop={onStop}
+          translate={t}
+        />
       </div>
       {runtimeAvailable && (
         <IconButton
