@@ -488,6 +488,46 @@ describe('client module immutable snapshots', () => {
     registry.close()
   })
 
+  it.each([16, 17])('keeps %i client rows of one package readable across lists', async (count) => {
+    const files = fixture()
+    const base = installed({ directory: files.packageDirectory, styles: [] })
+    const primary = base.contributions[0]
+    if (primary?.kind !== 'extension' || !primary.client) throw new Error('missing fixture extension')
+    const contributions = Array.from({ length: count }, (_, index) => {
+      const name = `c${String(index).padStart(2, '0')}`
+      writeFileSync(join(files.packageDirectory, 'dist', `${name}.js`), `export const value = "${name}"\n`)
+      return {
+        ...primary,
+        id: `acme/${name}`,
+        client: { ...primary.client, entry: `dist/${name}.js`, styles: [] },
+      }
+    })
+    const row = { ...base, contributions } as unknown as InstalledPackage
+    const registry = createClientModuleRegistry({ snapshotDirectory: () => files.snapshots })
+    const reasons: string[] = []
+    registry.subscribe((event) => reasons.push(event.reason))
+    const input = {
+      profile: 'local-dev',
+      profileDirectory: files.root,
+      inventory: inventory(row),
+      actual: async () => undefined,
+      refreshInventory: async () => inventory(row),
+    }
+    try {
+      const first = await registry.list(input)
+      expect(first.rows?.filter((item) => item.phase === 'ready')).toHaveLength(count)
+      const announced = reasons.length
+      const second = await registry.list(input)
+      expect(second.revision).toBe(first.revision)
+      expect(reasons.slice(announced)).not.toContain('resources')
+      expect(await registry.read({ ...input, path: first.rows?.[0]?.entryUrl ?? '' })).toMatchObject({
+        found: true,
+      })
+    } finally {
+      registry.close()
+    }
+  })
+
   it('persists a unique legacy single-row migration when a package gains another client contribution', async () => {
     const files = fixture()
     writeFileSync(join(files.packageDirectory, 'dist', 'secondary.js'), 'export const value = "secondary"\n')
@@ -885,6 +925,51 @@ describe('client module immutable snapshots', () => {
     await registry.list(input())
     expect(await registry.read({ ...input(), path: oldUrl })).toEqual({ found: false })
     registry.close()
+  })
+
+  it.each([16, 18])('keeps the replaced snapshot in its grace window after %i revisions', async (total) => {
+    const files = fixture()
+    const revision = (index: number) => `sha256-${index.toString(16).padStart(2, '0').repeat(32)}`
+    const retentionMs = 3_600_000
+    let now = new Date('2026-09-18T00:00:00.000Z')
+    let currentInventory = inventory(installed({ directory: files.packageDirectory }))
+    const registry = createClientModuleRegistry({
+      snapshotDirectory: () => files.snapshots,
+      clock: () => now,
+      retentionMs,
+    })
+    const input = () => ({
+      profile: 'local-dev',
+      profileDirectory: files.root,
+      inventory: currentInventory,
+      actual: async () => undefined,
+      refreshInventory: async () => currentInventory,
+    })
+    try {
+      let previousUrl = ''
+      let latest: Awaited<ReturnType<typeof registry.list>> | undefined
+      for (let index = 1; index <= total; index++) {
+        // Each earlier step outlives the previous grace window; the last one keeps the clock still.
+        if (index < total) now = new Date(now.getTime() + 2 * retentionMs)
+        writeFileSync(join(files.packageDirectory, 'dist', 'index.js'), `export const value = "v${index}"\n`)
+        currentInventory = inventory(
+          installed({ directory: files.packageDirectory, integrity: revision(index) }),
+        )
+        if (latest) previousUrl = latest.modules[0]?.entryUrl ?? ''
+        latest = await registry.list(input())
+        expect(latest.statuses[0]?.state).toBe('ready')
+      }
+      expect(latest?.statuses[0]?.retained).toEqual(
+        expect.arrayContaining([
+          { revision: revision(total - 1), expiresAt: new Date(now.getTime() + retentionMs).toISOString() },
+        ]),
+      )
+      const asset = await registry.read({ ...input(), path: previousUrl })
+      expect(asset).toMatchObject({ found: true })
+      if (asset.found) expect(Buffer.from(asset.base64, 'base64').toString()).toContain(`"v${total - 1}"`)
+    } finally {
+      registry.close()
+    }
   })
 
   it('removes a rollback target from retained before making it current again', async () => {
