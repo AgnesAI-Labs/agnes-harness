@@ -18,7 +18,7 @@ ctx.services.register({
     return { input, resourceRevision: 'reviewed-resource-revision', presentation: { action: 'Publish report' } }
   },
   async handler(input, context) {
-    // The Host supplies context.scope, actor, source and the consumed approval proof.
+    // The Host supplies context.scope, actor, source, immutable admission.prepared and the consumed approval proof.
     return publishReviewedReport(input, context.signal)
   },
 })
@@ -38,7 +38,7 @@ A reviewed effect can declare `priority: 'urgent'` for a separate bounded dispat
 
 ## Owner state and notifications
 
-Declare `capabilities.store: true` for the bounded `context.store` port, available to profile services and admitted plugin tools. Keys and values stay inside the loader-selected owner/profile namespace. Values are limited to 64 KiB, with at most 10,000 keys and 16 MiB per namespace. `transaction` commits synchronously: returning a Promise rolls back, and continuations of that rejected transaction cannot write later. Query and preparation contexts receive a read-only view. No SQL or alternate-owner selector is exposed.
+Declare `capabilities.store: true` for the bounded `context.store` port, available to profile services and admitted plugin tools. Keys and values stay inside the loader-selected owner/profile namespace. Values are limited to 64 KiB, with at most 10,000 keys and 16 MiB per namespace. `transaction` commits synchronously: returning a Promise rolls back, and continuations of that rejected transaction cannot write later. Use `scan({ prefix, limit, cursor? })` for bounded keyset pagination (1–256 rows). Query and preparation contexts receive a read-only view. No SQL or alternate-owner selector is exposed.
 
 Declare `capabilities.wake: true` to receive `context.wake.bind()` in an admitted session tool. The Host persists the owner, package integrity, activation, session, original lane and generation; the returned target only exposes `bindingId`. Persist that target alongside the accepted operation. Record a terminal result and an outbox item in one owner-store transaction.
 

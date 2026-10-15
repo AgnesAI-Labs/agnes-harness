@@ -34,7 +34,9 @@
           "device": true,
           "ui": [
             "client"
-          ]
+          ],
+          "store": true,
+          "wake": true
         },
         "metadata": {
           "displayName": "MHS devices",
@@ -74,7 +76,9 @@
   "devDependencies": {
     "@agnes/daemon-rpc": "workspace:*",
     "@agnes/mhs-ui": "workspace:*",
+    "@agnes/sdk": "workspace:*",
     "@agnes/protocol": "workspace:*",
-    "@agnes/sdk": "workspace:*"
+    "@agnes/host-extensions": "workspace:*",
+    "@agnes/core": "workspace:*"
   }
 }

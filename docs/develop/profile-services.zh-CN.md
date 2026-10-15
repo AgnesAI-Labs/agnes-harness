@@ -57,3 +57,5 @@ await client.extensions.wakes.enqueue({
 目标被撤销后返回终态拒绝，不转移到其他 session 或 activation。普通 jobs API 拒绝内部通知 payload。操作安全回执和未投递 outbox 不应随活动展示窗口一起清理。
 
 这些接口面向可信插件，不隔离任意 JavaScript。Scope、风险、lease、store 和 wake 都是严格 schema 声明，旧 Host 会拒绝不认识的声明，不会静默放宽权限。
+
+`context.admission.prepared` 是 Host 固定并冻结的准备结果，供领域适配器核对最终下发的参数与资源修订号。`store.scan({ prefix, limit, cursor? })` 按键分页返回 1–256 行，查询与准备阶段仍只有只读权限。

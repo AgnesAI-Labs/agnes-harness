@@ -225,6 +225,8 @@ describe('clientModule fiber 绑定', () => {
     const fiber = ctx.plugin(
       clientModule({
         apply(value) {
+          expect(value.profile.examples).toBeDefined()
+          expect(value.profile.launch.openPage).toBeTypeOf('function')
           profile = value.profile
         },
       }),

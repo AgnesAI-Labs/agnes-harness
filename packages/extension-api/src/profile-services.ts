@@ -13,6 +13,10 @@ export interface ProfilePluginServices {
 
 /** Bounded JSON state. Transactions are synchronous; promises abort the transaction. */
 export interface OwnedStore {
+  scan(input: { prefix: string; limit: number; cursor?: string }): {
+    rows: readonly { key: string; value: JsonValue }[]
+    nextCursor?: string
+  }
   get(key: string): JsonValue | undefined
   set(key: string, value: JsonValue): void
   delete(key: string): void

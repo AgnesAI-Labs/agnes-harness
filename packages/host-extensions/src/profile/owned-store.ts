@@ -45,6 +45,28 @@ export function ownedStore(
     return depth ? run() : namespace.transaction(run)
   }
   return Object.freeze({
+    scan(input) {
+      assertLive()
+      if (
+        typeof input.prefix !== 'string' ||
+        input.prefix.length > 256 ||
+        !Number.isSafeInteger(input.limit) ||
+        input.limit < 1 ||
+        input.limit > 256 ||
+        (input.cursor !== undefined && (typeof input.cursor !== 'string' || input.cursor.length > 256))
+      )
+        throw rpcError('INVALID_PARAMS')
+      const entries = namespace
+        .entries()
+        .filter(
+          (row) => row.key.startsWith(input.prefix) && (input.cursor === undefined || row.key > input.cursor),
+        )
+        .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
+      const rows = entries
+        .slice(0, input.limit)
+        .map((row) => ({ key: row.key, value: structuredClone(row.value) as JsonValue }))
+      return { rows, ...(entries.length > rows.length ? { nextCursor: rows.at(-1)!.key } : {}) }
+    },
     get(key) {
       return structuredClone(namespace.get(keyOf(key))) as JsonValue | undefined
     },

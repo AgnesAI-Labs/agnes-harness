@@ -34,7 +34,7 @@ it('atomically deduplicates bound inputs on the original lane across worker rest
     expect(session.latest('inbox')).toMatchObject({
       items: [{ commandId: 'wake:stable', origin: 'system', trust: 'untrusted' }],
     })
-    await session.run({ until: 'turn-end' })
+    await session.run({ until: 'turn-end', signal: new AbortController().signal })
     await session.close()
     const second = await openSession({
       provider: fakeProvider([]),

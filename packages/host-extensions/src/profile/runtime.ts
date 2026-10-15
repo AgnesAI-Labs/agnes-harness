@@ -400,6 +400,7 @@ export function createProfileServiceRuntime(deps: {
             context(id, executionSignal, true, {
               operationId,
               subjectDigest: digest,
+              prepared,
               ...(control ? { controlGrant: control } : {}),
               ...(approval ? { approval } : {}),
             }),

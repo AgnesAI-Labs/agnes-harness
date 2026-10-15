@@ -14,6 +14,7 @@ export interface ServiceContext {
   readonly admission?: Readonly<{
     operationId: string
     subjectDigest: string
+    prepared: PreparedServiceEffect
     controlGrant?: Readonly<{ grantId: string; expiresAt: number }>
     approval?: ToolContext['approval']
   }>

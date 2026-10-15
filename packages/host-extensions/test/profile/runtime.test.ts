@@ -464,6 +464,13 @@ describe('current profile authority', () => {
         first.set('outbox', { terminal: 'done' })
       })
       expect(second.get('accepted')).toBeUndefined()
+      expect(first.scan({ prefix: '', limit: 1 })).toMatchObject({
+        rows: [{ key: 'accepted', value: true }],
+        nextCursor: 'accepted',
+      })
+      expect(first.scan({ prefix: '', limit: 1, cursor: 'accepted' }).rows).toEqual([
+        { key: 'outbox', value: { terminal: 'done' } },
+      ])
       expect(() =>
         first.transaction(() => {
           first.set('accepted', false)

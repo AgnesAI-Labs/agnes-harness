@@ -6444,6 +6444,19 @@ const PackageAdminSamples: Record<string, Sample> = Object.fromEntries(
     },
   ]),
 )
+PackageAdminSamples.ContributionBinding = {
+  valid: {
+    lifetime: 'profile',
+    owner: 'plugin/0123456789abcdef',
+    packageId: '@acme/reports',
+    integrity: 'reviewed',
+    profileId: 'default',
+    activationId: 'current',
+    availability: 'active',
+  },
+  invalid: [{ lifetime: 'profile', availability: 'active' }],
+  note: 'Current roster authority binding',
+}
 AGNES_SAMPLES.AuthoringFile = PackageAdminSamples.AuthoringFile as Sample
 AGNES_SAMPLES.AuthoringOrigin = PackageAdminSamples.AuthoringOrigin as Sample
 AGNES_SAMPLES.AuthoringTests = PackageAdminSamples.AuthoringTests as Sample
@@ -7392,6 +7405,7 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     SkinReadResult: PackageAdminGen.SkinReadResult,
     ClientModuleListResult: PackageAdminGen.ClientModuleListResult,
     ClientModuleRosterRow: PackageAdminGen.ClientModuleRosterRow,
+    ContributionBinding: PackageAdminGen.ContributionBinding,
     ClientModuleReadParams: PackageAdminGen.ClientModuleReadParams,
     ClientModuleReadResult: PackageAdminGen.ClientModuleReadResult,
     ClientModuleServiceCallParams: PackageAdminGen.ClientModuleServiceCallParams,
@@ -7482,6 +7496,7 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     ProfileDecisionsListParams: ServiceGen.ProfileDecisionsListParams,
     ProfileDecisionsListResult: ServiceGen.ProfileDecisionsListResult,
     ProfileDecisionAnswerParams: ServiceGen.ProfileDecisionAnswerParams,
+    ProfileDecisionAnswerResult: ServiceGen.ProfileDecisionAnswerResult,
     BoundWakeEnqueueParams: ServiceGen.BoundWakeEnqueueParams,
     BoundWakeReadParams: ServiceGen.BoundWakeReadParams,
     BoundWakeReceipt: ServiceGen.BoundWakeReceipt,
