@@ -4,8 +4,8 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { fakeModel } from '@agnes/ai/testkit'
 import { buildCompactionPlan } from '@agnes/base'
-import { fakeProvider, textTurn, toolTurn } from '@agnes/core/testkit'
-import type { Provider, RequestBody } from '@agnes/protocol'
+import { fakeProvider, sent, textTurn, toolTurn, usage } from '@agnes/core/testkit'
+import type { InferenceEvent, Provider, RequestBody } from '@agnes/protocol'
 import { createPrivateDirectorySync, createPrivateFileSync } from '@agnes/system-node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -28,6 +28,20 @@ const SCHEDULE_TOOL_NAMES = new Set([
   'schedule_update',
 ])
 
+const discoveryNames = (delegate: string) => [...SCHEDULE_TOOL_NAMES, delegate]
+const discover = (delegate: string): InferenceEvent[] => [
+  sent(),
+  ...discoveryNames(delegate).map(
+    (name, ordinal): InferenceEvent => ({
+      type: 'toolcall_end',
+      call: { toolUseId: '', name: 'tool_describe', args: { name }, ordinal },
+      via: 'native',
+    }),
+  ),
+  usage(),
+  { type: 'done', reason: 'toolUse' },
+]
+
 function toolName(tool: unknown): string | undefined {
   if (!tool || typeof tool !== 'object') return undefined
   const record = tool as { name?: unknown; function?: { name?: unknown } }
@@ -39,6 +53,24 @@ function toolName(tool: unknown): string | undefined {
 /** Delegated children keep the parent prefix except the four schedule tools the subagent filter denies. */
 function withoutScheduleTools(tools: unknown): unknown {
   return Array.isArray(tools) ? tools.filter((tool) => !SCHEDULE_TOOL_NAMES.has(toolName(tool) ?? '')) : tools
+}
+
+/** The same four denied tools must disappear from the deferred discovery catalogue too. */
+function withoutScheduleDiscovery(value: unknown, removed: string[]): unknown {
+  if (typeof value === 'string')
+    return value.replace(
+      /^(schedule_create|schedule_delete|schedule_list|schedule_update) — [^\n]*\n/gmu,
+      (_line, name: string) => {
+        removed.push(name)
+        return ''
+      },
+    )
+  if (Array.isArray(value)) return value.map((item) => withoutScheduleDiscovery(item, removed))
+  if (value && typeof value === 'object')
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, withoutScheduleDiscovery(item, removed)]),
+    )
+  return value
 }
 
 function expectForkExtends(
@@ -61,7 +93,16 @@ function expectForkExtends(
     })
   const parentParts = visible(previous)
   const childParts = visible(next)
-  for (const [index, left] of parentParts.entries()) expect(childParts[index]).toEqual(left)
+  for (const [index, left] of parentParts.entries()) {
+    if (left.key !== 'system') {
+      expect(childParts[index]).toEqual(left)
+      continue
+    }
+    const removed: string[] = []
+    const expected = JSON.stringify(withoutScheduleDiscovery(JSON.parse(left.bytes), removed))
+    expect(removed.sort()).toEqual([...SCHEDULE_TOOL_NAMES].sort())
+    expect(childParts[index]).toEqual({ key: 'system', bytes: expected })
+  }
 }
 
 function setupDir() {
@@ -113,14 +154,19 @@ describe('delegated child wire prefixes', () => {
       const { dataDir, credentials } = setupDir()
       writeFileSync(join(dataDir, 'probe.txt'), 'fixture body')
       let calls = 0
+      const names = discoveryNames('subagent_fork')
       const capture = await startWireCapture(() => {
         calls++
-        if (calls <= precedingReads) return { toolCall: { name: 'read', args: { path: 'probe.txt' } } }
-        if (calls === precedingReads + 1)
+        if (calls <= names.length)
+          return { toolCall: { name: 'tool_describe', args: { name: names[calls - 1] } } }
+        if (calls === names.length + 1) return { text: 'Delegation tools loaded' }
+        const taskCall = calls - names.length - 1
+        if (taskCall <= precedingReads) return { toolCall: { name: 'read', args: { path: 'probe.txt' } } }
+        if (taskCall === precedingReads + 1)
           return {
             toolCall: { name: 'subagent_fork', args: { question: 'child task', isolation: 'shared' } },
           }
-        return { text: calls === precedingReads + 2 ? 'child answer' : 'parent answer' }
+        return { text: taskCall === precedingReads + 2 ? 'child answer' : 'parent answer' }
       })
       try {
         const baseUrl = capture.baseUrl(api)
@@ -144,13 +190,17 @@ describe('delegated child wire prefixes', () => {
         })
         try {
           const session = await parentSession(host, dataDir)
+          // Load the selected deferred schemas through the public discovery path before the measured turn.
+          await prompt(session, 'Prepare delegation tools')
+          const offset = names.length + 1
+          expect(capture.requests).toHaveLength(offset)
           await prompt(session, 'Delegate after reading if needed')
-          await expect.poll(() => capture.requests.length).toBe(precedingReads + 3)
+          await expect.poll(() => capture.requests.length).toBe(offset + precedingReads + 3)
           await expect.poll(async () => (await session.d.children.list?.())?.[0]?.status).toBe('idle')
-          const first = capture.requests[0]
-          const beforeFork = capture.requests[precedingReads]
+          const first = capture.requests[offset]
+          const beforeFork = capture.requests[offset + precedingReads]
           const child = capture.requests
-            .slice(precedingReads + 1)
+            .slice(offset + precedingReads + 1)
             .find((request) => !request.raw.includes('started prefix-parent/'))
           if (!first || !beforeFork || !child) throw new Error('missing fork request')
           expectForkExtends(first, child)
@@ -176,7 +226,12 @@ describe('delegated child wire prefixes', () => {
     const requests: RequestBody[] = []
     const model = fakeModel({ route: 'gw', id: 'm1' })
     const parentProvider = fakeProvider(
-      [toolTurn('subagent_spawn', { task: 'child task', isolation: 'shared' }), textTurn('parent answer')],
+      [
+        discover('subagent_spawn'),
+        textTurn('Delegation tools loaded'),
+        toolTurn('subagent_spawn', { task: 'child task', isolation: 'shared' }),
+        textTurn('parent answer'),
+      ],
       '2',
     )
     const childProvider = fakeProvider([textTurn('child answer')], '2')
@@ -196,15 +251,18 @@ describe('delegated child wire prefixes', () => {
       })
       try {
         const session = await parentSession(host, dataDir)
+        await prompt(session, 'Prepare delegation tools')
         await prompt(session, 'Spawn a helper')
         await expect.poll(() => requests.some((request) => request.sessionKey !== parentKey)).toBe(true)
-        const parent = requests.find((request) => request.sessionKey === parentKey)
+        const parent = requests.filter((request) => request.sessionKey === parentKey)[2]
         const child = requests.find((request) => request.sessionKey !== parentKey)
         expect(parent).toBeDefined()
         expect(child).toBeDefined()
         expect(withoutScheduleTools(parent?.tools)).toEqual(child?.tools)
         expect((parent?.tools ?? []).some((tool) => SCHEDULE_TOOL_NAMES.has(toolName(tool) ?? ''))).toBe(true)
-        expect(child?.system).toBe(parent?.system)
+        const removed: string[] = []
+        expect(child?.system).toBe(withoutScheduleDiscovery(parent?.system, removed))
+        expect(removed.sort()).toEqual([...SCHEDULE_TOOL_NAMES].sort())
       } finally {
         await host.close()
       }
@@ -218,6 +276,8 @@ describe('delegated child wire prefixes', () => {
     const model = fakeModel({ route: 'gw', id: 'm1' })
     const parentProvider = fakeProvider(
       [
+        discover('subagent_fork'),
+        textTurn('Delegation tools loaded'),
         textTurn('first answer'),
         toolTurn('subagent_fork', { question: 'child task', isolation: 'shared' }),
         textTurn('parent answer'),
@@ -239,11 +299,12 @@ describe('delegated child wire prefixes', () => {
       })
       try {
         const session = await parentSession(host, dataDir)
+        await prompt(session, 'Prepare delegation tools')
         await prompt(session, 'historical untrusted marker', true)
         await prompt(session, 'trigger untrusted marker', true)
         await expect.poll(() => childProvider.requests.length).toBe(1)
         await expect.poll(async () => (await session.d.children.list?.())?.[0]?.status).toBe('idle')
-        const parent = parentProvider.requests[1]
+        const parent = parentProvider.requests[3]
         const child = childProvider.requests[0]
         if (!parent || !child) throw new Error('missing parent or child request')
         const findMessage = (messages: RequestBody['messages'], marker: string) =>

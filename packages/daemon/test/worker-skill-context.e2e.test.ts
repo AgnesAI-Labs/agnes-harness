@@ -15,24 +15,18 @@ const baseDir = fileURLToPath(new URL('../../base', import.meta.url))
 const roots: string[] = []
 // Explicit preload now adds one durable tail note. It does not alter the disclosed tool schema:
 // discovery and read tools remain available for the loaded and generic turns alike.
-// Pin the complete model-visible schema, including official interaction, delivery, jobs,
-// plugin authoring, workflows, PTYs, reminders, goals, child-model discovery and bounded
-// questions. Past-session and MCP resource tools load on demand through tool_search.
+// Pin the eager model-visible schema, including interaction, delivery, plugin authoring and
+// bounded questions. Jobs, workflows, PTYs, reminders, goals and child tools now load through
+// tool_describe, alongside past-session and MCP resource discovery.
 // Includes eager UI display schemas, explicit file/question/UI routing, and child completion notices.
-const EXPECTED_SKILL_TOOL_SCHEMA_HASH = '03a71109e76b22d2af6c17b7085d149fce7c51b3181311621240871d127c6a4d'
+const EXPECTED_SKILL_TOOL_SCHEMA_HASH = 'c73e4f707eae94bf525cff224191f1be06a8569c235c0b5bf31288c76af35bef'
 const expectedToolNames = [
   'ask_user_question',
   'compact',
   'edit',
   'exit_plan_mode',
   'find',
-  'goal_get',
-  'goal_update',
   'grep',
-  'job_kill',
-  'job_list',
-  'job_output',
-  'list_subagent_models',
   'ls',
   'plugin_candidate_read',
   'plugin_candidate_write',
@@ -41,28 +35,10 @@ const expectedToolNames = [
   'plugin_scaffold',
   'plugin_test',
   'present',
-  'pty_close',
-  'pty_list',
-  'pty_open',
-  'pty_read',
-  'pty_resize',
-  'pty_send',
-  'pty_signal',
   'read',
-  'schedule_create',
-  'schedule_delete',
-  'schedule_list',
-  'schedule_update',
   'shell',
   'skill_read',
   'skill_read_file',
-  'subagent_cancel',
-  'subagent_collect',
-  'subagent_fork',
-  'subagent_interrupt',
-  'subagent_list',
-  'subagent_send_message',
-  'subagent_spawn',
   'todo',
   'tool_describe',
   'tool_search',
@@ -71,8 +47,6 @@ const expectedToolNames = [
   'ui_update',
   'web_fetch',
   'web_search',
-  'workflow',
-  'workflow_status',
   'write',
 ]
 
@@ -157,7 +131,6 @@ it.each([false, true])('preloads and discovers workspace Skills with shared work
         expect(request.tools.find((tool) => tool.name === 'find')).toBeDefined()
         expect(request.tools.find((tool) => tool.name === 'grep')).toBeDefined()
         expect(request.tools.find((tool) => tool.name === 'ls')).toBeDefined()
-        expect(request.tools.map((tool) => tool.name).sort()).toEqual(expectedToolNames)
         return [
           { type: 'text_delta', delta: 'Read the synthetic Skill.' },
           { type: 'done', reason: 'stop' },
@@ -278,15 +251,15 @@ it.each([false, true])('preloads and discovers workspace Skills with shared work
       actor: session.d.actor,
       kind: 'prompt',
     })
-    await expect(
-      session.run({ until: 'turn-end', signal: new AbortController().signal }),
-    ).resolves.toMatchObject({ reason: 'completed' })
+    const firstRun = await session.run({ until: 'turn-end', signal: new AbortController().signal })
     expect(provider.calls).toHaveLength(1)
     const headers = (await session.scan({ fromSeq: 1, toSeq: session.lastSeq })).filter(
       (row) => row.type === 'request/header',
     )
     const firstRequest = provider.calls[0]
     if (!firstRequest) throw new Error('missing first Skill request')
+    expect(firstRequest.tools.map((tool) => tool.name).sort()).toEqual(expectedToolNames)
+    expect(firstRun).toMatchObject({ reason: 'completed' })
     const firstToolSchemaHash = sha256hex(canonicalJson(firstRequest.tools).normalize('NFC'))
     expect(headers.map((row) => (row.data as { tool_schema_hash?: string }).tool_schema_hash)).toEqual([
       firstToolSchemaHash,
