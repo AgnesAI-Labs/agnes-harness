@@ -1,6 +1,7 @@
 import type { TSchema } from '@sinclair/typebox'
 import * as Acp from '../gen/ts/acp.js'
 import * as A from '../gen/ts/agnes-v1.js'
+import * as ProfileServices from '../gen/ts/extension-service.js'
 import {
   UiActionParams,
   UiActionReceipt,
@@ -79,6 +80,10 @@ export type MethodName =
   | ResourceControlMethodName
   | '_agnes/v1/extension.ack'
   | '_agnes/v1/extension.call'
+  | '_agnes/v1/extension.callScoped'
+  | '_agnes/v1/extension.readOperation'
+  | '_agnes/v1/profile.decisions.list'
+  | '_agnes/v1/profile.decisions.answer'
   | '_agnes/v1/sessionSelection.loops'
   | '_agnes/v1/sessionSelection.runtime'
   | '_agnes/v1/sessionSelection.reloadLocal'
@@ -189,6 +194,22 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   ...PACKAGE_ADMIN_METHODS,
   ...RESOURCE_CONTROL_METHODS,
   '_agnes/v1/extension.ack': clientRequest(A.ExtensionAckParams, A.Empty),
+  '_agnes/v1/extension.callScoped': clientRequest(
+    ProfileServices.ProfileServiceCallParams,
+    ProfileServices.ProfileServiceCallResult,
+  ),
+  '_agnes/v1/extension.readOperation': clientRequest(
+    ProfileServices.ProfileServiceOperationParams,
+    ProfileServices.ProfileServiceReceipt,
+  ),
+  '_agnes/v1/profile.decisions.list': clientRequest(
+    ProfileServices.ProfileDecisionsListParams,
+    ProfileServices.ProfileDecisionsListResult,
+  ),
+  '_agnes/v1/profile.decisions.answer': clientRequest(
+    ProfileServices.ProfileDecisionAnswerParams,
+    ProfileServices.DecisionCommandReceipt,
+  ),
   '_agnes/v1/extension.call': clientRequest(A.ExtensionCallParams, A.ExtensionCallResult),
   '_agnes/v1/sessionSelection.loops': clientRequest(A.ConfigEmptyParams, A.SessionLoopCatalogResult),
   '_agnes/v1/sessionSelection.runtime': clientRequest(RuntimeAdminEmpty, RuntimeAdminSnapshot),

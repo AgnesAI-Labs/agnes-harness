@@ -35,6 +35,7 @@ export * from './persistence.js'
 export * from './plugin-config.js'
 export * from './plugin-context.js'
 export * from './process.js'
+export * from './profile-services.js'
 export * from './projections.js'
 export * from './provider-kind.js'
 export type {

@@ -296,7 +296,20 @@ const TARGETS: Array<{
     out: 'gen/ts/extension-service.ts',
     module: 'ExtensionServiceSchema',
     imports: [
-      { from: 'schema/session-v1.json', defs: ['JsonValue'] },
+      {
+        from: 'schema/session-v1.json',
+        defs: [
+          'JsonValue',
+          'DecisionHandle',
+          'DecisionSnapshot',
+          'DecisionResponse',
+          'DecisionSpec',
+          'DecisionRequest',
+          'DecisionResult',
+          'DecisionCommandReceipt',
+          'Actor',
+        ],
+      },
       { from: 'schema/tooldef.json', defs: ['ParametersSchema'] },
     ],
   },

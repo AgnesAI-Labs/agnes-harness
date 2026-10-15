@@ -251,6 +251,15 @@ export type {
 export type { ServiceCapability } from '../gen/ts/extension-service.js'
 /** The one capabilities shape every plugin declares, bundled or installed. */
 export type PluginCapabilities = import('../gen/ts/extension-manifest.js').Capabilities
+
+export type {
+  ProfileDecisionAnswerParams,
+  ProfileServiceCallParams,
+  ProfileServiceCallResult,
+  ProfileServiceOperationParams,
+  ProfileServiceReceipt,
+  ServiceEffectPolicy,
+} from '../gen/ts/extension-service.js'
 // Preset surface declarations; execution is supplied by the official Intelligent UI plugin.
 export type {
   UiAction,

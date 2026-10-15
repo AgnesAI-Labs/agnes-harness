@@ -3,13 +3,21 @@ import { validateServiceCapability } from '@agnes/protocol'
 import type { Logger, PlatformView } from './common.js'
 import type { ToolContext } from './tool.js'
 
-export type { ServiceCapability } from '@agnes/protocol'
+export type { ServiceCapability, ServiceEffectPolicy } from '@agnes/protocol'
 export interface SessionChildJobs {
   list(): Promise<readonly import('./child-agent.js').ChildAgentListing[]>
   /** Query services receive no cancellation opening. */
   cancel?(id: string): Promise<void>
 }
 export interface ServiceContext {
+  readonly scope?: Readonly<{ kind: 'profile'; profileId: string; activationId: string }>
+  readonly admission?: Readonly<{
+    operationId: string
+    subjectDigest: string
+    approval?: ToolContext['approval']
+  }>
+  readonly store?: import('./profile-services.js').OwnedStore
+  readonly wake?: import('./profile-services.js').SessionWakePort
   readonly childJobs?: SessionChildJobs
   /** Host-bound identity, never caller input. Use session.workspaceRoot for workspace-owned state, policy and config. Non-session services may omit it; refuse identity-dependent operations when absent. */
   readonly session?: import('./common.js').SessionRef
@@ -34,9 +42,18 @@ export interface ServiceContext {
   readonly timeoutMs: number
   readonly log: Logger
 }
-export interface ServiceDef<I extends JsonValue = JsonValue, O extends JsonValue = JsonValue>
-  extends ServiceCapability {
+export type ServiceDef<
+  I extends JsonValue = JsonValue,
+  O extends JsonValue = JsonValue,
+> = ServiceCapability & {
+  /** Pure, bounded preparation under query authority. The Host binds both inputs and revision. */
+  prepare?(input: I, ctx: ServiceContext): Promise<PreparedServiceEffect>
   handler(input: I, ctx: ServiceContext): Promise<O>
+}
+export interface PreparedServiceEffect {
+  readonly input: JsonValue
+  readonly presentation: JsonValue
+  readonly resourceRevision?: string
 }
 /** Static data contract only; Host compiles schemas and enforces grants before invoking handlers. */
 export function checkServiceDef(def: unknown): { ok: true } | { ok: false; problems: string[] } {
@@ -50,6 +67,10 @@ export function checkServiceDef(def: unknown): { ok: true } | { ok: false; probl
       throw new Error('data fields required')
     const capability = { ...def } as Record<string, unknown>
     const handler = Object.getOwnPropertyDescriptor(def, 'handler')?.value
+    const prepare = Object.getOwnPropertyDescriptor(def, 'prepare')?.value
+    if (prepare !== undefined && typeof prepare !== 'function')
+      return { ok: false, problems: ['prepare: expected function'] }
+    delete capability.prepare
     delete capability.handler
     const checked = validateServiceCapability(capability)
     if (typeof handler !== 'function') return { ok: false, problems: ['handler: expected function'] }

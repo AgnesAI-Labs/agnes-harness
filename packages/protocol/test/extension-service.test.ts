@@ -27,6 +27,38 @@ describe('S1 Extension Service contract', () => {
     expect(result.total).toBe(35)
     expect(result.skipped).toBe(0)
   })
+  it('requires reviewed profile effect policy and refuses caller authority fields', () => {
+    const effect = { ...capability, scope: 'profile', kind: 'effect' }
+    expect(validateServiceCapability(effect).ok).toBe(false)
+    expect(
+      validateServiceCapability({
+        ...effect,
+        effectPolicy: {
+          isDestructive: true,
+          isOpenWorld: true,
+          replay: 'never',
+          requiresApproval: 'always',
+          approvalScopes: [],
+        },
+      }).ok,
+    ).toBe(true)
+    for (const field of ['actor', 'role', 'profileId', 'owner', 'approval', 'approved'])
+      expect(
+        validateMethod('_agnes/v1/extension.callScoped', 'params', {
+          extension: 'acme/dashboard',
+          service: 'report.query',
+          input: {},
+          [field]: true,
+        }).ok,
+      ).toBe(false)
+    expect(
+      validateMethod('_agnes/v1/extension.callScoped', 'params', {
+        extension: 'acme/dashboard',
+        service: 'report.query',
+        input: {},
+      }).ok,
+    ).toBe(true)
+  })
   it('rejects duplicate names even when kind or limits differ', () => {
     const manifest = {
       id: 'acme/dashboard',

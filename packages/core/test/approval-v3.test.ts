@@ -449,7 +449,7 @@ describe('v3 approval modes and grants', () => {
               value.result?.reason === 'answered' &&
               value.result.response.option === 'allowed-permanent' &&
               permanentGrantId({
-                sessionKey: value.handle.sessionId,
+                sessionKey: value.handle.sessionId!,
                 toolUseId: value.request.operationId,
                 scope: (value.request.spec.subject as { scope: string }).scope,
               }) === grant.grantId,

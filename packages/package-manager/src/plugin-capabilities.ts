@@ -39,7 +39,9 @@ export function capabilityAtoms(value: PluginCapabilities | undefined): string[]
     ...(['read', 'write'] as const).flatMap((key) =>
       (value.filesystem?.[key] ?? []).map((scope) => `filesystem.${key}:${scope}`),
     ),
-    ...(['model', 'childAgents', 'ui', 'device'] as const).filter((key) => value[key] === true),
+    ...(['model', 'childAgents', 'ui', 'device', 'wake', 'store'] as const).filter(
+      (key) => value[key] === true,
+    ),
     ...(value.uiData ?? []).map((permission) => `uiData:${permission}`),
     ...(value.streams ?? []).map((stream) => `streams:${stream.scope}:${stream.name}:${stream.lane}`),
     ...(value.managedServices ?? []).map((service) => `managedServices:${service.scope}:${service.id}`),

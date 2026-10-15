@@ -2558,23 +2558,52 @@
       }
     },
     "DecisionHandle": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["id", "sessionId"],
-      "properties": {
-        "id": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 256,
-          "pattern": "^[^\\u0000]+$"
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "sessionId"],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[^\\u0000]+$"
+            },
+            "sessionId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[^\\u0000]+$"
+            },
+            "profileId": {
+              "type": "null"
+            }
+          }
         },
-        "sessionId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 512,
-          "pattern": "^[^\\u0000]+$"
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "sessionId", "profileId"],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[^\\u0000]+$"
+            },
+            "sessionId": {
+              "type": "null"
+            },
+            "profileId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[^\\u0000]+$"
+            }
+          }
         }
-      }
+      ]
     },
     "DecisionResponse": {
       "type": "object",
