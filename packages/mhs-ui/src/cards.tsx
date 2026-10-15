@@ -17,15 +17,15 @@ export function ToolCard({ call, onRecord }: { call: ToolRecord; onRecord?: () =
       </header>
       <details>
         <summary>{t('details')}</summary>
-        <pre>{jsonText(call.args)}</pre>
-        <pre>{jsonText(call.result)}</pre>
+        <pre>{typeof call.args === 'string' ? call.args : jsonText(call.args)}</pre>
+        <pre>{typeof call.result === 'string' ? call.result : jsonText(call.result)}</pre>
       </details>
     </article>
   )
 }
 export function cardCall(card: ConversationCardInput): ToolRecord | undefined {
   const data = record(card.data),
-    node = record(data.node ?? record(data.owner).block ?? data.block)
+    node = record(data.node ?? record(data.owner).block ?? data.block ?? data)
   if (!TOOL_NAMES.includes(text(node.name) as (typeof TOOL_NAMES)[number])) return undefined
   return toolsFrom([node])[0]
 }

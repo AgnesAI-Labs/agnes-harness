@@ -4,6 +4,7 @@ import { type ReactNode, useSyncExternalStore } from 'react'
 import { cardCall, SessionDevices, ToolCard } from './cards.js'
 import { MhsClient } from './client.js'
 import { catalog, type TextKey } from './locales.js'
+import { nativeExamples } from './native-examples.js'
 import { MhsPage } from './page.js'
 import type { MhsModuleContext, MhsPorts } from './ports.js'
 import { MhsProvider } from './react.js'
@@ -120,7 +121,9 @@ export function createMhsModule(ports: MhsPorts) {
                     {...(call.callSeq !== undefined && context.session?.sessionId
                       ? {
                           onRecord: () => {
-                            context.openRecord?.(context.session!.sessionId!, call.callSeq!)
+                            const sessionId = context.session?.sessionId
+                            if (sessionId && call.callSeq !== undefined)
+                              context.openRecord?.(sessionId, call.callSeq)
                           },
                         }
                       : {})}
@@ -152,6 +155,6 @@ export function apply(ctx: ClientContext) {
     streams: ctx.profile.streams,
     session: ctx.session,
     ...(ctx.profile.mhsDeveloper ? { developer: ctx.profile.mhsDeveloper } : {}),
-    ...(ctx.profile.mhsExamples ? { examples: ctx.profile.mhsExamples } : {}),
+    examples: ctx.profile.mhsExamples ?? nativeExamples(ctx),
   }).apply(ctx)
 }

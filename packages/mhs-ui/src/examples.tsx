@@ -1,31 +1,56 @@
 import { Button } from '@agnes/web-ui'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { jsonText } from './model.js'
 import type { ExampleView } from './ports.js'
 import { QueryState, useMhs, useQuery } from './react.js'
-export function ExamplesPage() {
+export function ExamplesPage({ initialScene }: { initialScene?: string }) {
   const { client, t } = useMhs(),
     port = client.ports.examples,
-    [version, setVersion] = useState(0),
-    [scene, setScene] = useState<string>(),
+    [scene, setScene] = useState<string | undefined>(initialScene),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState(false)
-  useEffect(() => port?.subscribe(() => setVersion((v) => v + 1)), [port])
-  const query = useQuery(async (signal) => (port ? port.list(signal) : []), [port, version]),
+    [error, setError] = useState(false),
+    [review, setReview] = useState<{
+      id: string
+      action: 'enable' | 'launch'
+      token: string
+      presentation: unknown
+    }>(),
+    lock = useRef(false)
+  const query = useQuery(useCallback(async (signal: AbortSignal) => (port ? port.list(signal) : []), [port])),
     selected = query.value?.find((e) => e.id === scene)
-  const run = async (action: 'enable' | 'stop' | 'launch', example: ExampleView) => {
-    if (!port || busy) return
+  useEffect(() => port?.subscribe(query.retry), [port, query.retry])
+  useEffect(() => {
+    if (!query.value?.some((e) => e.state === 'starting')) return
+    const timer = setTimeout(query.retry, 1000)
+    return () => clearTimeout(timer)
+  }, [query.value, query.retry])
+  const run = async (action: 'enable' | 'stop' | 'launch', example: ExampleView, token?: string) => {
+    if (!port || lock.current) return
+    lock.current = true
     setBusy(true)
     setError(false)
     try {
-      await port[action](example.id)
-      setVersion((v) => v + 1)
+      if (action === 'enable' && port.inspect && !token) {
+        const r = await port.inspect(example.id)
+        setReview({ id: example.id, action, token: r.reviewId, presentation: r.presentation })
+        return
+      }
+      if (action === 'launch' && port.prepare && !token) {
+        const r = await port.prepare(example.id)
+        setReview({ id: example.id, action, token: r.launchTicket, presentation: r.presentation })
+        return
+      }
+      await port[action](example.id, token)
+      setReview(undefined)
+      query.retry()
     } catch {
       setError(true)
     } finally {
+      lock.current = false
       setBusy(false)
     }
   }
-  if (selected?.Scene && selected.state === 'running')
+  if (selected?.Scene && ['running', 'installed'].includes(selected.state))
     return (
       <section className="mhs-scene">
         <Button onClick={() => setScene(undefined)}>{t('back')}</Button>
@@ -60,7 +85,7 @@ export function ExamplesPage() {
                   {t(example.state === 'failed' ? 'retry' : 'enable')}
                 </Button>
               )}
-              {example.state === 'running' && (
+              {['running', 'installed'].includes(example.state) && (
                 <>
                   <Button disabled={!example.Scene || busy} onClick={() => setScene(example.id)}>
                     {t('openScene')}
@@ -68,15 +93,34 @@ export function ExamplesPage() {
                   <Button appearance="primary" disabled={busy} onClick={() => void run('launch', example)}>
                     {t('startSession')}
                   </Button>
-                  <Button appearance="danger" disabled={busy} onClick={() => void run('stop', example)}>
-                    {t('stopExample')}
-                  </Button>
+                  {example.state === 'running' && (
+                    <Button appearance="danger" disabled={busy} onClick={() => void run('stop', example)}>
+                      {t('stopExample')}
+                    </Button>
+                  )}
                 </>
               )}
             </div>
           </article>
         ))
       )}
+      {review && (
+        <fieldset className="mhs-box">
+          <legend>{t('confirm')}</legend>
+          <pre>{jsonText(review.presentation)}</pre>
+          <Button onClick={() => setReview(undefined)}>{t('cancel')}</Button>
+          <Button
+            disabled={busy}
+            onClick={() => {
+              const example = query.value?.find((e) => e.id === review.id)
+              if (example) void run(review.action, example, review.token)
+            }}
+          >
+            {t('run')}
+          </Button>
+        </fieldset>
+      )}
+      <Button onClick={query.retry}>{t('retry')}</Button>
       {error && <p role="alert">{t('unavailable')}</p>}
     </section>
   )

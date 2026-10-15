@@ -4,8 +4,9 @@ import { type PickMode, WorldMap } from './map.js'
 import { array, asJson, type Data, type Device, jsonText, number, record, text } from './model.js'
 import { ActionFeedback, useAction, useMhs, useSnapshot } from './react.js'
 
+const INVALID_INPUT = Symbol('invalid-json')
 export function validValue(schema: Data, value: unknown): boolean {
-  if (value === undefined) return false
+  if (value === undefined || typeof value === 'symbol') return false
   if (Array.isArray(schema.enum) && !schema.enum.some((v) => JSON.stringify(v) === JSON.stringify(value)))
     return false
   switch (schema.type) {
@@ -35,10 +36,12 @@ export function validValue(schema: Data, value: unknown): boolean {
   }
 }
 function JsonInput({
+  id,
   value,
   onChange,
   disabled,
 }: {
+  id: string
   value: unknown
   onChange(v: unknown): void
   disabled: boolean
@@ -47,6 +50,7 @@ function JsonInput({
     [invalid, setInvalid] = useState(false)
   return (
     <textarea
+      id={id}
       value={draft}
       disabled={disabled}
       aria-invalid={invalid}
@@ -59,19 +63,21 @@ function JsonInput({
           onChange(v)
         } catch {
           setInvalid(true)
-          onChange(undefined)
+          onChange(INVALID_INPUT)
         }
       }}
     />
   )
 }
 export function Input({
+  id,
   schema,
   value,
   onChange,
   disabled = false,
   onPick,
 }: {
+  id: string
   schema: Data
   value: unknown
   onChange(v: unknown): void
@@ -84,7 +90,7 @@ export function Input({
     return (
       <span>
         <code>{value === undefined ? '—' : jsonText(value)}</code>
-        <Button disabled={disabled} onClick={() => onPick(pick as PickMode)}>
+        <Button id={id} disabled={disabled} onClick={() => onPick(pick as PickMode)}>
           {t('pick')}
         </Button>
       </span>
@@ -92,13 +98,14 @@ export function Input({
   if (Array.isArray(schema.enum))
     return (
       <select
+        id={id}
         value={value === undefined ? '' : JSON.stringify(value)}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value === '' ? undefined : JSON.parse(e.target.value))}
       >
         <option value="">—</option>
-        {schema.enum.map((v, i) => (
-          <option key={i} value={JSON.stringify(v)}>
+        {schema.enum.map((v) => (
+          <option key={JSON.stringify(v)} value={JSON.stringify(v)}>
             {String(v)}
           </option>
         ))}
@@ -107,6 +114,7 @@ export function Input({
   if (schema.type === 'boolean')
     return (
       <input
+        id={id}
         type="checkbox"
         checked={value === true}
         disabled={disabled}
@@ -116,6 +124,7 @@ export function Input({
   if (schema.type === 'number' || schema.type === 'integer')
     return (
       <input
+        id={id}
         type="number"
         value={typeof value === 'number' ? value : ''}
         step={schema.type === 'integer' ? 1 : 'any'}
@@ -136,13 +145,14 @@ export function Input({
   if (schema.type === 'string')
     return (
       <input
+        id={id}
         value={typeof value === 'string' ? value : ''}
         maxLength={number(schema.maxLength, 4096)}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
       />
     )
-  return <JsonInput value={value} onChange={onChange} disabled={disabled} />
+  return <JsonInput id={id} value={value} onChange={onChange} disabled={disabled} />
 }
 export function ToolForm({ device, tool }: { device: Device; tool: Data }) {
   const { t } = useMhs(),
@@ -194,12 +204,13 @@ export function ToolForm({ device, tool }: { device: Device; tool: Data }) {
         }}
       >
         {Object.entries(properties).map(([key, raw]) => (
-          <label key={key} className="mhs-field">
+          <label key={key} htmlFor={`${id}-${key}`} className="mhs-field">
             <span>
               {key}
               {required.includes(key) && ' *'}
             </span>
             <Input
+              id={`${id}-${key}`}
               schema={record(raw)}
               value={values[key]}
               disabled={disabled}
@@ -224,21 +235,21 @@ export function ToolForm({ device, tool }: { device: Device; tool: Data }) {
           htmlType="submit"
           appearance="primary"
           disabled={disabled || invalid}
-          disabledReason={invalid ? t('required') : undefined}
+          {...(invalid ? { disabledReason: t('required') } : {})}
           loading={action.busy}
         >
           {t('run')}
         </Button>
       </form>
       {confirm && (
-        <div role="group" aria-labelledby={id} className="mhs-confirm">
+        <fieldset aria-labelledby={id} className="mhs-confirm">
           <strong id={id}>{t('confirm')}</strong>
           <p>{t('confirmHelp')}</p>
           <Button onClick={() => setConfirm(false)}>{t('cancel')}</Button>
           <Button disabled={disabled || invalid} onClick={run}>
             {t('run')}
           </Button>
-        </div>
+        </fieldset>
       )}
       <ActionFeedback action={action} />
       <Operation receipt={action.receipt} device={device.id} />
@@ -287,12 +298,12 @@ function Operation({ receipt, device }: { receipt: Receipt | undefined; device: 
       {text(outcome.status) || state} {text(outcome.reason)}{' '}
       {typeof operation.progress === 'number' && <progress value={operation.progress} max={1} />}
       {state === 'paused' && (
-        <Button onClick={() => void action.run('resume', { device, params: { operationId } })}>
+        <Button onClick={() => void action.run('resume', { device, params: { call: operationId } })}>
           {t('resume')}
         </Button>
       )}
       {['running', 'accepted', 'paused'].includes(state) && (
-        <Button onClick={() => void action.run('cancel', { device, params: { operationId } })}>
+        <Button onClick={() => void action.run('cancel', { device, params: { call: operationId } })}>
           {t('cancel')}
         </Button>
       )}
@@ -305,16 +316,18 @@ export function StateField({ device, name, schema }: { device: Device; name: str
     { t } = useMhs(),
     [value, setValue] = useState<unknown>(device.state[name]),
     [dirty, setDirty] = useState(false)
+  const id = useId()
   return (
     <div className="mhs-field">
-      <label>
+      <label htmlFor={id}>
         <span>
           {name} {text(schema.unit)}
         </span>
         <Input
+          id={id}
           schema={schema}
           value={dirty ? value : device.state[name]}
-          disabled={!device.available || action.busy || action.pending}
+          disabled={!device.available || schema.writable !== true || action.busy || action.pending}
           onChange={(v) => {
             setValue(v)
             setDirty(true)
@@ -322,7 +335,14 @@ export function StateField({ device, name, schema }: { device: Device; name: str
         />
       </label>
       <Button
-        disabled={!dirty || !validValue(schema, value) || !device.available || action.busy || action.pending}
+        disabled={
+          !dirty ||
+          !validValue(schema, value) ||
+          !device.available ||
+          schema.writable !== true ||
+          action.busy ||
+          action.pending
+        }
         onClick={() => void action.run('set', { device: device.id, values: asJson({ [name]: value }) })}
       >
         {t('run')}

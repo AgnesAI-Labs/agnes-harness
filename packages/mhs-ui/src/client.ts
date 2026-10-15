@@ -5,6 +5,13 @@ import type { MhsPorts, Receipt } from './ports.js'
 /** Each action gets one operation ID; polling never repeats dispatch. */
 export class MhsClient {
   readonly abort = new AbortController()
+  private readonly disposers = new Set<() => void>()
+  onDispose(dispose: () => void) {
+    this.disposers.add(dispose)
+    return () => {
+      this.disposers.delete(dispose)
+    }
+  }
   private readonly children = new Set<() => void>()
   constructor(readonly ports: MhsPorts) {}
   query(name: string, input: JsonValue = {}, signal = this.abort.signal): Promise<unknown> {
@@ -57,6 +64,8 @@ export class MhsClient {
     return { stream, close }
   }
   dispose() {
+    for (const dispose of this.disposers) dispose()
+    this.disposers.clear()
     this.abort.abort()
     for (const close of [...this.children]) close()
   }

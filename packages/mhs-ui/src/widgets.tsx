@@ -67,30 +67,39 @@ function Audio({ sample }: { sample: Sample | undefined }) {
   useEffect(() => {
     if (!listen || !sample?.bytes || !audio.current) return
     const context = audio.current
-    let active = true
-    // Bounded playback: reject unsupported codecs instead of pretending a stream is audible.
-    if (!['audio/wav', 'audio/mpeg', 'audio/ogg'].includes(sample.mime)) {
+    // MOS audio is interleaved little-endian signed PCM16, with rate/channels in metadata.
+    const channels = number(sample.data.channels),
+      rate = number(sample.data.rate)
+    if (
+      !Number.isInteger(channels) ||
+      channels < 1 ||
+      channels > 8 ||
+      rate < 8000 ||
+      rate > 384000 ||
+      sample.bytes.length % (channels * 2) !== 0
+    ) {
       setUnsupported(true)
       return
     }
     if (sources.current.size >= 2) return
-    void context
-      .decodeAudioData(sample.bytes.slice().buffer)
-      .then((buffer) => {
-        if (!active || context.state === 'closed') return
-        const source = context.createBufferSource()
-        source.buffer = buffer
-        source.connect(context.destination)
-        sources.current.add(source)
-        source.onended = () => sources.current.delete(source)
-        source.start()
-      })
-      .catch(() => {
-        if (active) setUnsupported(true)
-      })
-    return () => {
-      active = false
+    const count = sample.bytes.length / (channels * 2),
+      buffer = context.createBuffer(channels, count, rate),
+      view = new DataView(sample.bytes.buffer, sample.bytes.byteOffset, sample.bytes.byteLength)
+    for (let channel = 0; channel < channels; channel++) {
+      const out = buffer.getChannelData(channel)
+      for (let i = 0; i < count; i++) out[i] = view.getInt16((i * channels + channel) * 2, true) / 32768
     }
+    const source = context.createBufferSource()
+    source.buffer = buffer
+    source.connect(context.destination)
+    sources.current.add(source)
+    source.onended = () => sources.current.delete(source)
+    try {
+      source.start()
+    } catch {
+      setUnsupported(true)
+    }
+    return () => {}
   }, [listen, sample])
   return (
     <>
@@ -106,11 +115,18 @@ export function Observation({ source, device }: { source: Data; device: Device }
     [sample, setSample] = useState<Sample>(),
     [error, setError] = useState(false),
     [stale, setStale] = useState(false),
+    [confirmedOff, setConfirmedOff] = useState<boolean>(),
+    requestedOff = useRef(false),
     action = useAction()
   // Only a confirmed backend source-state projection may label a source as off.
   const configured = record(device.state.sources)[text(source.id)],
-    off = configured === false || (configured === undefined && source.default === false),
+    off = configured === false || (configured === undefined && (confirmedOff ?? source.default === false)),
     kind = text(source.kind)
+  useEffect(() => {
+    const receipt = action.receipt
+    if (receipt?.state === 'completed' && record(record(receipt.output).outcome).status === 'done')
+      setConfirmedOff(requestedOff.current)
+  }, [action.receipt])
   useEffect(() => {
     setSample(undefined)
     setError(false)
@@ -147,7 +163,7 @@ export function Observation({ source, device }: { source: Data; device: Device }
       abort.abort()
       clearInterval(timer)
     }
-  }, [client, device.id, device.online, device.revision, source.id, off])
+  }, [client, device.id, device.online, source.id, off])
   const points = array(sample?.data.ranges ?? sample?.data.points),
     values = sample?.data ?? {}
   return (
@@ -158,12 +174,13 @@ export function Observation({ source, device }: { source: Data; device: Device }
           <Button
             loading={action.busy}
             disabled={!device.available || action.pending}
-            onClick={() =>
+            onClick={() => {
+              requestedOff.current = !off
               void action.run('configure', {
                 device: device.id,
-                params: { source: text(source.id), enabled: off },
+                params: { sources: { [text(source.id)]: { on: off } } },
               })
-            }
+            }}
           >
             {t(off ? 'turnOn' : 'sourceOff')}
           </Button>
@@ -184,11 +201,11 @@ export function Observation({ source, device }: { source: Data; device: Device }
           ) : kind === 'scan' ? (
             <svg viewBox="-100 -100 200 200" role="img" aria-label={text(source.description)}>
               {points.slice(0, 2048).map((p, i) => {
-                const angle = (i / Math.max(1, points.length - 1)) * Math.PI
+                const angle = number(sample?.data.angle_min) + i * number(sample?.data.angle_inc)
                 const a = array(p)
                 const x = a.length ? number(a[0]) : number(p) * Math.cos(angle),
                   y = a.length ? number(a[1]) : number(p) * Math.sin(angle)
-                return <circle key={i} cx={x} cy={-y} r="1" />
+                return <circle key={String(angle)} cx={x} cy={-y} r="1" />
               })}
             </svg>
           ) : (

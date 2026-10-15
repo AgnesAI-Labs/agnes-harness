@@ -5,7 +5,7 @@ import { DeviceDetail } from './detail.js'
 import { DeveloperPage } from './developer.js'
 import { ExamplesPage } from './examples.js'
 import { WorldMap } from './map.js'
-import { type Device, jsonText, text } from './model.js'
+import { type Device, text } from './model.js'
 import { Stop, useMhs, useSnapshot } from './react.js'
 export function DeviceCard({ device }: { device: Device }) {
   const { openDevice, t } = useMhs(),
@@ -24,7 +24,7 @@ export function DeviceCard({ device }: { device: Device }) {
       <p>
         {t(device.available ? 'online' : 'offline')} · {device.health}
       </p>
-      {device.state.problem && <p role="status">{String(device.state.problem)}</p>}
+      {Boolean(device.state.problem) && <p role="status">{String(device.state.problem)}</p>}
       <dl>
         {numbers.map(([k, v]) => (
           <div key={k}>
@@ -63,11 +63,14 @@ export function MhsPage({ selection }: { selection?: unknown }) {
         />
       </div>
     )
-  const groups = Map.groupBy(
-    snapshot.devices,
-    (d) =>
-      d.origin || t(d.simulated === true ? 'simulated' : d.simulated === false ? 'real' : 'unclassified'),
-  )
+  const groups = new Map<string, Device[]>()
+  for (const d of snapshot.devices) {
+    const group =
+      d.origin || t(d.simulated === true ? 'simulated' : d.simulated === false ? 'real' : 'unclassified')
+    const entries = groups.get(group) ?? []
+    entries.push(d)
+    groups.set(group, entries)
+  }
   const alerts = snapshot.devices.filter((d) => d.health === 'bad' || d.health === 'attention')
   const devices = (
     <>

@@ -1,6 +1,15 @@
 import type { JsonValue } from '@agnes/protocol'
 import { Button, Toast } from '@agnes/web-ui'
-import { createContext, type ReactNode, useContext, useEffect, useState, useSyncExternalStore } from 'react'
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import { type MhsClient, receiptMessage } from './client.js'
 import type { Translate } from './locales.js'
 import type { Receipt } from './ports.js'
@@ -20,10 +29,11 @@ export function useSnapshot() {
   const { store } = useMhs()
   return useSyncExternalStore(store.subscribe, store.read, store.read)
 }
-export function useQuery<T>(load: (signal: AbortSignal) => Promise<T>, deps: readonly unknown[]) {
+export function useQuery<T>(load: (signal: AbortSignal) => Promise<T>) {
   const [value, setValue] = useState<T>(),
     [error, setError] = useState(false),
     [revision, setRevision] = useState(0)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Explicit retry invalidates an otherwise identical read.
   useEffect(() => {
     const abort = new AbortController()
     setValue(undefined)
@@ -36,8 +46,8 @@ export function useQuery<T>(load: (signal: AbortSignal) => Promise<T>, deps: rea
         if (!abort.signal.aborted) setError(true)
       })
     return () => abort.abort()
-  }, [...deps, revision])
-  return { value, error, retry: () => setRevision((n) => n + 1) }
+  }, [load, revision])
+  return { value, error, retry: useCallback(() => setRevision((n) => n + 1), []) }
 }
 export function ReceiptView({ receipt }: { receipt: Receipt | undefined }) {
   const { t } = useMhs()
@@ -59,13 +69,16 @@ export function useAction() {
     [receipt, setReceipt] = useState<Receipt>(),
     [busy, setBusy] = useState(false),
     [failed, setFailed] = useState(false)
+  const locked = useRef(false)
+  const operationId = receipt?.operationId,
+    state = receipt?.state
   useEffect(() => {
-    if (!receipt || !['approval-required', 'running'].includes(receipt.state)) return
+    if (!operationId || !state || !['approval-required', 'running'].includes(state)) return
     let live = true
     let timer: ReturnType<typeof setTimeout>
     const poll = async () => {
       try {
-        const next = await client.ports.services.readOperation(receipt.operationId)
+        const next = await client.ports.services.readOperation(operationId)
         if (live) {
           setReceipt(next)
           if (['approval-required', 'running'].includes(next.state)) timer = setTimeout(poll, 750)
@@ -82,9 +95,10 @@ export function useAction() {
       live = false
       clearTimeout(timer)
     }
-  }, [client, receipt?.operationId, receipt?.state])
+  }, [client, operationId, state])
   const run = async (name: string, input: JsonValue) => {
-    if (busy) return undefined
+    if (locked.current) return undefined
+    locked.current = true
     setBusy(true)
     setFailed(false)
     setReceipt(undefined)
@@ -96,6 +110,7 @@ export function useAction() {
       if (!client.abort.signal.aborted) setFailed(true)
       return undefined
     } finally {
+      locked.current = false
       setBusy(false)
     }
   }

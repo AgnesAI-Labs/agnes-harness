@@ -1,5 +1,5 @@
 import type { MhsClient } from './client.js'
-import { activityFrom, array, type Device, record, type ToolRecord, toolsFrom } from './model.js'
+import { type Device, record, type ToolRecord, toolsFrom } from './model.js'
 
 export type Snapshot = {
   status: 'loading' | 'ready' | 'failed' | 'disabled'
@@ -7,8 +7,8 @@ export type Snapshot = {
   maps: Record<string, unknown>[]
   calls: ToolRecord[]
   sessionId: string | undefined
-  error?: string
-  streamError?: string
+  error?: string | undefined
+  streamError?: string | undefined
 }
 export class MhsStore {
   private snapshot: Snapshot = { status: 'loading', devices: [], maps: [], calls: [], sessionId: undefined }
@@ -62,7 +62,7 @@ export class MhsStore {
       sessionId = this.client.ports.session.getSnapshot()
     if (!sessionId) return
     try {
-      const projection = await this.client.ports.session.projection.read()
+      const projection = record(await this.client.ports.session.projection.read())
       if (this.stopped || epoch !== this.sessionEpoch || this.snapshot.sessionId !== sessionId) return
       this.update({ calls: projection.status === 'available' ? toolsFrom(projection.value) : [] })
     } catch {

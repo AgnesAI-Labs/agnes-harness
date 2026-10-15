@@ -20,19 +20,19 @@ export class ManualController {
     this.timer = setInterval(
       () => {
         if (this.now() >= expiresAt) {
-          void this.release()
+          void this.release().catch(() => {})
           return
         }
         // The controller sends while held, including zero between releases. No queued replay.
         if (this.stream.send({ type: 'manual', axes: { ...this.values } } as JsonValue) !== 'accepted')
-          void this.release()
+          void this.release().catch(() => {})
       },
       Math.max(34, 1000 / Math.max(1, Math.min(30, rateHz))),
     )
   }
   set(id: string, normalized: number) {
     if (this.released || this.now() >= this.expiresAt) {
-      void this.release()
+      void this.release().catch(() => {})
       return
     }
     const axis = this.axes.find((a) => a.id === id)

@@ -1,7 +1,7 @@
 import { Button, Tooltip } from '@agnes/web-ui'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { type Axis, ManualController, roleKeys } from './manual.js'
-import { array, type Device, number, record, text } from './model.js'
+import { array, type Device, jsonText, number, record, text } from './model.js'
 import { ActionFeedback, useAction, useMhs } from './react.js'
 
 export function Drive({ device }: { device: Device }) {
@@ -11,20 +11,35 @@ export function Drive({ device }: { device: Device }) {
     [failure, setFailure] = useState(false)
   const current = useRef<ManualController>(),
     opening = useRef(false)
-  const axes: Axis[] = array(device.manual.axes).map((v) => {
-    const a = record(v)
-    return {
-      id: text(a.id),
-      min: number(a.min),
-      max: number(a.max),
-      ...(text(a.role) ? { role: text(a.role) } : {}),
-    }
-  })
+  const manualKey = jsonText(device.manual)
+  const axes = useMemo(
+    (): Axis[] =>
+      array(record(JSON.parse(manualKey)).axes).map((v) => {
+        const a = record(v)
+        return {
+          id: text(a.id),
+          min: number(a.min),
+          max: number(a.max),
+          ...(text(a.role) ? { role: text(a.role) } : {}),
+        }
+      }),
+    [manualKey],
+  )
+  const rate = number(device.manual.rate_hz, 30)
+  const consumed = useRef(new Set<string>())
   useEffect(() => {
     const receipt = action.receipt
-    if (receipt?.state !== 'completed' || opening.current || current.current) return
+    if (
+      receipt?.state !== 'completed' ||
+      opening.current ||
+      current.current ||
+      !device.available ||
+      consumed.current.has(receipt.operationId)
+    )
+      return
+    consumed.current.add(receipt.operationId)
     const output = record(receipt.output),
-      leaseId = text(output.leaseId),
+      leaseId = text(output.leaseId ?? output.operationId),
       expiresAt = number(output.expiresAt ?? output.until)
     if (!leaseId || expiresAt <= Date.now()) {
       setFailure(true)
@@ -42,7 +57,7 @@ export function Drive({ device }: { device: Device }) {
           expiresAt,
           () => client.effect('stop', { device: device.id }),
           Date.now,
-          number(device.manual.rate_hz, 30),
+          rate,
         )
         const ended = () => {
           void control.release().catch(() => setFailure(true))
@@ -51,6 +66,20 @@ export function Drive({ device }: { device: Device }) {
         }
         stream.onDisconnect(ended)
         stream.onDrop(ended)
+        const expiry = setTimeout(ended, Math.max(0, expiresAt - Date.now()))
+        const off = client.onDispose(() => {
+          clearTimeout(expiry)
+          void control.release().catch(() => {})
+        })
+        abort.signal.addEventListener(
+          'abort',
+          () => {
+            clearTimeout(expiry)
+            off()
+            void control.release().catch(() => {})
+          },
+          { once: true },
+        )
         current.current = control
         setController(control)
       })
@@ -61,7 +90,7 @@ export function Drive({ device }: { device: Device }) {
       abort.abort()
       opening.current = false
     }
-  }, [action.receipt, client, device.id])
+  }, [action.receipt, client, device.id, device.available, axes, rate])
   useEffect(() => {
     const release = () => {
       const c = current.current
@@ -79,7 +108,7 @@ export function Drive({ device }: { device: Device }) {
       document.removeEventListener('visibilitychange', hidden)
       release()
     }
-  }, [device.id, device.revision])
+  }, [])
   useEffect(() => {
     if (!device.available) {
       void current.current?.release().catch(() => setFailure(true))
@@ -110,10 +139,8 @@ export function Drive({ device }: { device: Device }) {
       {controller && <Button onClick={release}>{t('release')}</Button>}
       <ActionFeedback action={action} />
       {failure && <p role="alert">{t('unknown')}</p>}
-      <div
+      <fieldset
         className="mhs-drive"
-        tabIndex={0}
-        role="group"
         aria-label={t('manual')}
         onBlur={(e) => {
           if (!e.currentTarget.contains(e.relatedTarget)) release()
@@ -186,7 +213,7 @@ export function Drive({ device }: { device: Device }) {
             ))}
           </div>
         ))}
-      </div>
+      </fieldset>
     </section>
   )
 }

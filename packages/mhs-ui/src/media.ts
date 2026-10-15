@@ -52,7 +52,7 @@ export class VideoView {
     const data = sample.data,
       key = data.key === true || data.keyframe === true || data.type === 'key'
     if (!this.decoder) {
-      const codec = text(data.codec)
+      const codec = text(data.codec) || h264Codec(sample.bytes)
       if (!codec.startsWith('avc1.')) {
         this.failed()
         return
@@ -60,6 +60,10 @@ export class VideoView {
       this.decoder = new VideoDecoder({
         output: (frame) => {
           try {
+            if (frame.displayWidth * frame.displayHeight > 16_777_216) {
+              this.failed()
+              return
+            }
             this.canvas.width = frame.displayWidth
             this.canvas.height = frame.displayHeight
             this.canvas.getContext('2d')?.drawImage(frame, 0, 0)
@@ -101,4 +105,16 @@ export class VideoView {
     if (this.decoder?.state !== 'closed') this.decoder?.close()
     this.decoder = undefined
   }
+}
+
+/** Annex-B SPS supplies the AVC profile/compatibility/level advertised to WebCodecs. */
+function h264Codec(bytes: Uint8Array): string {
+  for (let i = 0; i + 7 < Math.min(bytes.length, 65536); i++) {
+    let at = -1
+    if (bytes[i] === 0 && bytes[i + 1] === 0 && bytes[i + 2] === 1) at = i + 3
+    else if (bytes[i] === 0 && bytes[i + 1] === 0 && bytes[i + 2] === 0 && bytes[i + 3] === 1) at = i + 4
+    if (at >= 0 && (bytes[at] ?? 0) % 32 === 7)
+      return `avc1.${[bytes[at + 1], bytes[at + 2], bytes[at + 3]].map((v) => (v ?? 0).toString(16).padStart(2, '0')).join('')}`
+  }
+  return ''
 }

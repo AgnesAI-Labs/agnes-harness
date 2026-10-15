@@ -51,7 +51,7 @@ export interface ExampleView {
   id: string
   name: string
   description: string
-  state: 'disabled' | 'starting' | 'running' | 'failed' | 'stopped' | 'unavailable'
+  state: 'disabled' | 'starting' | 'running' | 'failed' | 'stopped' | 'unavailable' | 'installed'
   code?: string
   connected?: number
   total?: number
@@ -62,9 +62,11 @@ export interface ExamplesPort {
   list(signal: AbortSignal): Promise<readonly ExampleView[]>
   subscribe(listener: () => void): () => void
   /** Activation/launch retain native package review and bounded launch authorization. */
-  enable(id: string): Promise<void>
+  inspect?(id: string): Promise<{ reviewId: string; presentation: unknown }>
+  prepare?(id: string): Promise<{ launchTicket: string; presentation: unknown }>
+  enable(id: string, reviewId?: string): Promise<void>
   stop(id: string): Promise<void>
-  launch(id: string): Promise<void>
+  launch(id: string, launchTicket?: string): Promise<void>
 }
 export interface MhsPorts {
   services: ProfileServices
@@ -76,7 +78,7 @@ export interface MhsPorts {
   /** Optional service prefix resolved by the package's reviewed service declarations. */
   prefix?: string
 }
-export interface MhsModuleContext extends ClientContext {
+export type MhsModuleContext = ClientContext & {
   profile: {
     services: ProfileServices
     streams: Streams

@@ -87,7 +87,7 @@ export function toolsFrom(value: unknown): ToolRecord[] {
     .flatMap((raw, i) => {
       const n = record(raw)
       if (n.kind !== 'tool' || !TOOL_NAMES.includes(n.name as (typeof TOOL_NAMES)[number])) return []
-      const args = n.args ?? n.arguments ?? n.input
+      const args = n.args ?? parsePreview(n.argsPreview) ?? n.arguments ?? n.input
       const a = record(args)
       return [
         {
@@ -95,9 +95,9 @@ export function toolsFrom(value: unknown): ToolRecord[] {
           name: text(n.name),
           device: text(a.device),
           args,
-          result: n.result ?? n.output,
+          result: n.result ?? parsePreview(n.resultPreview) ?? n.resultPreview ?? n.output,
           state: text(n.state) || text(n.status),
-          ...(typeof n.callSeq === 'number' ? { callSeq: n.callSeq } : {}),
+          ...(typeof (n.callSeq ?? n.seq) === 'number' ? { callSeq: number(n.callSeq ?? n.seq) } : {}),
         },
       ]
     })
@@ -139,3 +139,12 @@ export const asJson = (v: unknown): JsonValue => JSON.parse(JSON.stringify(v)) a
 export const isException = (e: Activity): boolean =>
   /error|fault|stop|interrupt|reject|disconnect|health|unknown/.test(e.type) ||
   /error|bad|unknown|reject|interrupt/.test(jsonText(e.detail))
+
+function parsePreview(value: unknown): unknown {
+  if (typeof value !== 'string') return undefined
+  try {
+    return JSON.parse(value)
+  } catch {
+    return value
+  }
+}

@@ -16,6 +16,7 @@ export function ActivityPage() {
     [revision, setRevision] = useState(0),
     [page, setPage] = useState('')
   const sessionId = sessionOnly ? snapshot.sessionId : undefined
+  // biome-ignore lint/correctness/useExhaustiveDependencies: A filter change resets the pagination cursor.
   useEffect(() => {
     setPage('')
     setEvents([])
@@ -24,6 +25,7 @@ export function ActivityPage() {
   useEffect(() => {
     if (!snapshot.sessionId) setSessionOnly(false)
   }, [snapshot.sessionId])
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Explicit retry repeats this bounded query.
   useEffect(() => {
     const abort = new AbortController()
     setLoading(true)

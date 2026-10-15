@@ -59,7 +59,7 @@
   background: var(--agnes-bg-app-content);
   padding: 12px 0;
   margin-bottom: 12px;
-  border-bottom: 1px solid var(--agnes-border-subtle);
+  border-bottom: 1px solid var(--agnes-line-primary);
 }
 .mhs-header h2 {
   margin: 0;
@@ -76,7 +76,7 @@
 .mhs-device,
 .mhs-box,
 .mhs-tool-card {
-  border: 1px solid var(--agnes-border-subtle);
+  border: 1px solid var(--agnes-line-primary);
   border-radius: var(--radius-lg);
   padding: 16px;
   margin-bottom: 12px;
@@ -134,7 +134,7 @@
 .mhs-root textarea {
   color: var(--agnes-text-primary);
   background: var(--agnes-bg-surface);
-  border: 1px solid var(--agnes-border-default);
+  border: 1px solid var(--agnes-line-emphasis);
   border-radius: var(--radius-md);
   padding: 8px;
   max-width: 100%;
@@ -147,7 +147,7 @@
   min-height: 90px;
 }
 .mhs-root :focus-visible {
-  outline: 2px solid var(--agnes-focus-ring);
+  outline: 2px solid var(--agnes-brand-focus-ring);
   outline-offset: 3px;
 }
 .mhs-field {
@@ -177,7 +177,7 @@
   font: var(--font-size-xs) / 1.5 var(--font-mono);
 }
 .mhs-tool {
-  border-top: 1px solid var(--agnes-border-subtle);
+  border-top: 1px solid var(--agnes-line-primary);
   padding: 12px 0;
 }
 .mhs-root summary {
@@ -189,7 +189,7 @@
   flex-wrap: wrap;
   gap: 12px;
   padding: 12px;
-  border: 1px solid var(--agnes-border-subtle);
+  border: 1px solid var(--agnes-line-primary);
   border-radius: var(--radius-md);
 }
 .mhs-axis {
@@ -203,7 +203,7 @@
   touch-action: none;
 }
 .mhs-observation {
-  border-top: 1px solid var(--agnes-border-subtle);
+  border-top: 1px solid var(--agnes-line-primary);
   padding: 12px 0;
 }
 .mhs-observation canvas,
@@ -245,7 +245,7 @@
   position: relative;
   height: 420px;
   margin: 12px 0;
-  border: 1px solid var(--agnes-border-subtle);
+  border: 1px solid var(--agnes-line-primary);
   border-radius: var(--radius-lg);
   overflow: hidden;
   background: var(--agnes-bg-card);
@@ -256,7 +256,7 @@
 }
 .mhs-map-surface polygon {
   fill: var(--agnes-bg-selected);
-  stroke: var(--agnes-border-default);
+  stroke: var(--agnes-line-emphasis);
   stroke-width: 0.2;
 }
 .mhs-map-surface text {
@@ -266,7 +266,7 @@
 .mhs-map-marker {
   position: absolute;
   transform: translate(-50%, -50%);
-  border: 1px solid var(--agnes-border-default);
+  border: 1px solid var(--agnes-line-emphasis);
   color: var(--agnes-text-primary);
   background: var(--agnes-bg-surface);
   padding: 8px;
@@ -301,7 +301,7 @@
   gap: 12px;
   align-items: baseline;
   padding: 12px;
-  border-bottom: 1px solid var(--agnes-border-subtle);
+  border-bottom: 1px solid var(--agnes-line-primary);
 }
 .mhs-events pre {
   grid-column: 1 / -1;
@@ -321,7 +321,7 @@
 .mhs-example {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  border: 1px solid var(--agnes-border-subtle);
+  border: 1px solid var(--agnes-line-primary);
   border-radius: var(--radius-lg);
   overflow: hidden;
 }

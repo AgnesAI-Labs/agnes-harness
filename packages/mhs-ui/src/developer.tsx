@@ -1,5 +1,5 @@
 import { Button, CopyButton } from '@agnes/web-ui'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { jsonText, record, text } from './model.js'
 import { QueryState, useMhs, useQuery, useSnapshot } from './react.js'
 export function DeveloperPage() {
@@ -15,7 +15,9 @@ export function DeveloperPage() {
     [checking, setChecking] = useState(false)
   const selected = devices.find((d) => d.id === id) ?? devices[0],
     port = client.ports.developer,
-    status = useQuery(async (signal) => (port ? port.status(signal) : undefined), [port])
+    status = useQuery(
+      useCallback(async (signal: AbortSignal) => (port ? port.status(signal) : undefined), [port]),
+    )
   useEffect(() => {
     if (paused) return
     const abort = new AbortController()
@@ -40,16 +42,20 @@ export function DeveloperPage() {
       })
     return () => abort.abort()
   }, [client, paused])
+  const selectedId = selected?.id
+  const currentId = useRef(selectedId)
+  currentId.current = selectedId
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Results belong to the selected device only.
   useEffect(() => {
     setChecks(undefined)
-  }, [selected?.id])
+  }, [selectedId])
   const check = async () => {
     if (!port || !selected) return
     const selectedId = selected.id
     setChecking(true)
     try {
       const result = await port.check(selectedId, client.abort.signal)
-      if (client.ports.session && selectedId === selected.id) setChecks(result)
+      if (currentId.current === selectedId && !client.abort.signal.aborted) setChecks(result)
     } catch {
       setFailed(true)
     } finally {
@@ -68,11 +74,7 @@ export function DeveloperPage() {
               <option value="py">Python</option>
             </select>
           </label>
-          <pre>
-            {language === 'ts'
-              ? "import { Device, connectDevice } from '@agnes/mhs-device'\n// Define a validated device registration and local stop handler.\n// See the SDK guide before connecting physical hardware."
-              : 'from agnes_mhs import Device\n# Define registration, stop and deadman handlers.\n# See the Python SDK guide.'}
-          </pre>
+          <pre>{language === 'ts' ? tsSnippet : pythonSnippet}</pre>
           <nav>
             <a href="https://github.com/AgnesAI-Labs/agnes-harness/tree/main/packages/mhs-device">SDK</a> ·{' '}
             <a href="https://github.com/AgnesAI-Labs/agnes-harness/blob/main/docs/guide/mhs.md">MHS</a> ·{' '}
@@ -165,8 +167,8 @@ export function DeveloperPage() {
           <Button disabled={!port || !selected || checking} onClick={() => void check()}>
             {t('check')}
           </Button>
-          {checks?.map((check, i) => (
-            <p key={i}>
+          {checks?.map((check) => (
+            <p key={check.name}>
               {check.name} · {check.state} {check.detail}
             </p>
           ))}
@@ -175,3 +177,24 @@ export function DeveloperPage() {
     </div>
   )
 }
+
+const tsSnippet = `import { Device, connectDevice } from '@agnes/mhs-device'
+
+const device = new Device({
+  protocol: 'mhs/v1',
+  device: { id: 'sensor-01', kind: 'sensor' },
+  state: { temperature: { type: 'number', unit: '°C' } },
+})
+device.update({ temperature: 22 })
+const lifetime = new AbortController()
+await connectDevice(device, HUB_DEVICE_ENDPOINT, lifetime.signal)`
+const pythonSnippet = `import asyncio
+from agnes_mhs import Device, connect_device
+
+device = Device({
+    "protocol": "mhs/v1",
+    "device": {"id": "sensor-01", "kind": "sensor"},
+    "state": {"temperature": {"type": "number", "unit": "°C"}},
+})
+device.update({"temperature": 22})
+asyncio.run(connect_device(device, HUB_DEVICE_ENDPOINT))`

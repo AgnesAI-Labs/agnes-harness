@@ -82,6 +82,7 @@ export function WorldMap({
       100 - ((py - y0) / (y1 - y0)) * 100,
     ]
   const add = (point: [number, number]) => {
+    if (points.some((p) => p[0] === point[0] && p[1] === point[1])) return
     const next = [...points, point].slice(0, 256)
     setPoints(next)
     if (mode && mode !== 'polygon') {
@@ -140,9 +141,9 @@ export function WorldMap({
             )
           })}
           {points.length > 0 && <polyline points={points.map((p) => xy(...p).join(',')).join(' ')} />}
-          {points.map((p, i) => {
+          {points.map((p) => {
             const [px, py] = xy(...p)
-            return <circle key={`${px}-${py}-${i}`} cx={px} cy={py} r="1" />
+            return <circle key={`${px}-${py}`} cx={px} cy={py} r="1" />
           })}
         </svg>
         {mode && (
