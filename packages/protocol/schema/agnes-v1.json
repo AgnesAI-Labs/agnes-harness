@@ -3,6 +3,18 @@
   "$id": "https://agnes.ai/schema/agnes-v1.json",
   "title": "_agnes/v1",
   "$defs": {
+    "SessionRevealWorkspaceParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId"],
+      "properties": { "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 } }
+    },
+    "SessionRevealWorkspaceResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["opened"],
+      "properties": { "opened": { "const": true, "type": "boolean" } }
+    },
     "DecisionListResult": {
       "type": "object",
       "additionalProperties": false,

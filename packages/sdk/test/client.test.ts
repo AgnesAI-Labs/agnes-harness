@@ -131,7 +131,7 @@ describe('createClient', () => {
       initialize: () => ({
         protocolVersion: 1,
         agentCapabilities: { loadSession: true },
-        _meta: { agnes: { agnesVersion: '9.9.9' } },
+        _meta: { agnes: { agnesVersion: '9.9.9', platform: 'linux' } },
       }),
     })
     const c = createClient({
@@ -139,7 +139,11 @@ describe('createClient', () => {
       journal: memoryJournal(),
       authProviders: providers,
     })
-    expect(await c.initialize()).toEqual({ agnesVersion: '9.9.9', capabilities: { loadSession: true } })
+    expect(await c.initialize()).toEqual({
+      agnesVersion: '9.9.9',
+      capabilities: { loadSession: true },
+      platform: 'linux',
+    })
   })
 
   it('rejects an unsupported negotiated protocol before sending business requests', async () => {

@@ -546,7 +546,13 @@ export function registerAcp(
         loadSession: true,
         promptCapabilities: { image: true, audio: false, embeddedContext: true },
       },
-      _meta: { agnes: { agnesVersion: cx.agnesVersion, apis: 'call apis.list' } },
+      _meta: {
+        agnes: {
+          agnesVersion: cx.agnesVersion,
+          platform: process.platform, // guards-allow-platform: daemon handshake reports its own OS to clients.
+          apis: 'call apis.list',
+        },
+      },
     }
   }
   // Credential verification runs before anything else `initialize` does: a failing auth.kind never
