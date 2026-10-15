@@ -63,3 +63,17 @@ export function modelAdapterLookup(o: {
     }
   }
 }
+
+/**
+ * The supervisor's lookup over its own profile and worker pool. Create it once per daemon, not per
+ * connection: the catalog it last read is then shared by every connection.
+ */
+export function supervisorAdapterLookup(
+  host: { profile: { provider: { routes?: readonly Readonly<{ api: string }>[] } } },
+  pool: { businessWorker(): { link: Pick<WorkerLink, 'command'> } | undefined },
+): ReturnType<typeof modelAdapterLookup> {
+  return modelAdapterLookup({
+    routes: () => host.profile.provider.routes ?? [],
+    worker: () => pool.businessWorker()?.link,
+  })
+}
