@@ -168,7 +168,7 @@ describe('an unknown outcome the user answers', () => {
       },
       { actor, category: 'human', authorize() {} },
     )
-    expect(await continueParked(s.session)).toBe(false)
+    expect(await continueParked(s.session)).toBe('opened')
     expect((await reconciliations(s))[0]).toMatchObject({
       result: { reason: 'answered' },
       consumption: { operationId: open_.request.operationId },

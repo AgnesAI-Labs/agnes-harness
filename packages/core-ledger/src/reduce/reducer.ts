@@ -197,11 +197,11 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
         if (durable) {
           if (
             d?.trigger !== 'approval-resume' ||
-            !['core/tool-permission', 'core/gate'].includes(durable.request.owner) ||
+            !['core/tool-permission', 'core/gate', 'core/unknown-outcome'].includes(durable.request.owner) ||
             durable.request.sourcePackage !== '@agnes/core' ||
             durable.request.lane !== lane ||
             durable.consumption ||
-            (durable.request.owner === 'core/tool-permission' &&
+            (['core/tool-permission', 'core/unknown-outcome'].includes(durable.request.owner) &&
               durable.request.operationId !== (d?.continues as { toolUseId?: string })?.toolUseId)
           )
             throw new CoreError('E_RELATION', 'continuation does not match the original decision gate', {
