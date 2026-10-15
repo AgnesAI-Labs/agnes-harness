@@ -1,12 +1,14 @@
-import type { HTMLAttributes, ReactNode } from 'react'
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import type { HTMLAttributes, ReactNode, Ref } from 'react'
+import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { fallbackT } from '../locales/index.js'
 import { Icon } from './icon.js'
 
+type DataAttributes = { [name: `data-${string}`]: string | number | boolean | undefined }
+
 /**
- * One way to go deeper: a page opens in place of the current one (push). Its header has 「‹ 返回」
- * and a breadcrumb (上一级 › 当前); the browser's back button returns one level; with a route, the
+ * One way to go deeper: a page opens in place of the current one (push). Its header is a breadcrumb
+ * (上一级 › 当前) whose levels lead back; the browser's back button returns one level; with a route, the
  * address names the open page so it can be linked to directly.
  */
 
@@ -229,11 +231,15 @@ export function usePushNavigation({
 }
 
 /**
- * The header of an open page: the breadcrumb is the way back, with no separate 返回 beside it. It
- * starts with 「‹」 (「‹ 模型与账户 › 添加账户」); the level just above this page is the back control
- * (named 「返回到 …」, it goes back one step through history), and every earlier level jumps to its
- * own page. Then the title, an optional line under it and the page's actions. Focus moves to the
+ * The header of an open page: the breadcrumb is the way back, with no separate 返回 beside it and
+ * no leading ‹ (「模型与账户 › 添加账户」); the level just above this page is the back control (named
+ * 「返回到 …」, it goes back one step through history), and every earlier level jumps to its own
+ * page. Then the title, an optional line under it and the page's actions. Focus moves to the
  * title when the page opens, as it does for a new page.
+ *
+ * `line` is the settings header: one line where the breadcrumb is the title (「通用 › 记忆文件」, the
+ * current level is the heading), the page's actions sit at its end and the description is only read
+ * to assistive tech. A top level page passes no crumbs and shows its title alone.
  */
 export function PushHeader({
   title,
@@ -244,42 +250,97 @@ export function PushHeader({
   onCrumb,
   className,
   testIds = {},
-}: {
-  title: ReactNode
-  /** Titles of the levels above, the root first. */
-  crumbs: readonly ReactNode[]
-  description?: ReactNode
-  actions?: ReactNode
-  onBack(): void
-  onCrumb(depth: number): void
-  className?: string
-  /** `back` names the control that returns one level (`push-back` by default). */
-  testIds?: { header?: string; back?: string }
-}) {
+  line = false,
+  headingId,
+  autoFocus = true,
+  actionsRef,
+  actionsClassName,
+  ...props
+}: Omit<HTMLAttributes<HTMLElement>, 'title'> &
+  DataAttributes & {
+    title: ReactNode
+    /** Titles of the levels above, the root first. */
+    crumbs: readonly ReactNode[]
+    description?: ReactNode
+    actions?: ReactNode
+    onBack(): void
+    onCrumb(depth: number): void
+    className?: string
+    /** `back` names the control that returns one level (`push-back` by default). */
+    testIds?: { header?: string; back?: string }
+    /** One header line: the breadcrumb is the title. */
+    line?: boolean
+    headingId?: string | undefined
+    /** Move focus to the title on mount (a page that just opened); a page shown at once does not. */
+    autoFocus?: boolean
+    /** Receives the actions host, so content declared deeper can add its actions there. */
+    actionsRef?: ((node: HTMLElement | null) => void) | undefined
+    actionsClassName?: string
+  }) {
   const heading = useRef<HTMLHeadingElement>(null)
-  useEffect(() => heading.current?.focus({ preventScroll: true }), [])
+  const descriptionId = useId()
+  // biome-ignore lint/correctness/useExhaustiveDependencies: focus once, when the page opens.
+  useEffect(() => {
+    if (autoFocus) heading.current?.focus({ preventScroll: true })
+  }, [])
   const backId = testIds.back ?? 'push-back'
+  const actionsHost = (actions || actionsRef) && (
+    <div ref={actionsRef} className={['agh-push-actions', actionsClassName].filter(Boolean).join(' ')}>
+      {actions}
+    </div>
+  )
+  if (line)
+    return (
+      <header
+        data-testid={testIds.header ?? 'push-header'}
+        {...props}
+        className={['agh-push-header', 'agh-push-header--line', className].filter(Boolean).join(' ')}
+      >
+        <div className="agh-push-heading">
+          <PushCrumbs
+            title={title}
+            crumbs={crumbs}
+            onBack={onBack}
+            onCrumb={onCrumb}
+            backTestId={backId}
+            heading={{
+              ref: heading,
+              id: headingId,
+              describedBy: description ? descriptionId : undefined,
+            }}
+          />
+          {description && (
+            <p id={descriptionId} className="agh-visually-hidden">
+              {description}
+            </p>
+          )}
+        </div>
+        {actionsHost}
+      </header>
+    )
   return (
     <header
-      className={['agh-push-header', className].filter(Boolean).join(' ')}
       data-testid={testIds.header ?? 'push-header'}
+      {...props}
+      className={['agh-push-header', className].filter(Boolean).join(' ')}
     >
       <div className="agh-push-heading">
         <PushCrumbs title={title} crumbs={crumbs} onBack={onBack} onCrumb={onCrumb} backTestId={backId} />
-        <h2 ref={heading} tabIndex={-1}>
+        <h2 ref={heading} id={headingId} tabIndex={-1}>
           {title}
         </h2>
         {description && <p>{description}</p>}
       </div>
-      {actions && <div className="agh-push-actions">{actions}</div>}
+      {actionsHost}
     </header>
   )
 }
 
 /**
- * The way back as a breadcrumb: 「‹ 上一级 › 当前」. ‹ leads the first level; the level just above is the
- * back control (「返回到 …」); every earlier level jumps to itself. A view with no shared page header
- * (a detail inside a list, a filtered list) uses this alone.
+ * The way back as a breadcrumb: 「上一级 › 当前」, with no leading ‹. The level just above is the back
+ * control (「返回到 …」); every earlier level jumps to itself. A view with no shared page header (a
+ * detail inside a list, a filtered list) uses this alone. With `heading` the breadcrumb is the page
+ * title: the current level is the page heading, and a top level shows only its title.
  */
 export function PushCrumbs({
   title,
@@ -289,6 +350,7 @@ export function PushCrumbs({
   backTestId = 'push-back',
   backId,
   disabled,
+  heading,
 }: {
   title: ReactNode
   /** Titles of the levels above, the outermost first. */
@@ -300,12 +362,21 @@ export function PushCrumbs({
   /** An element id for the back control, for hosts that bind to it. */
   backId?: string
   disabled?: boolean
+  /** Render the current level as the page heading. */
+  heading?: {
+    ref?: Ref<HTMLHeadingElement> | undefined
+    id?: string | undefined
+    describedBy?: string | undefined
+  }
 }) {
   const parent = crumbs.length - 1
   return (
-    <nav className="agh-push-crumbs" aria-label={fallbackT('ui.breadcrumb')}>
+    <nav
+      className={['agh-push-crumbs', heading && 'agh-push-crumbs--title'].filter(Boolean).join(' ')}
+      aria-label={fallbackT('ui.breadcrumb')}
+    >
       <ol>
-        {crumbs.length === 0 ? (
+        {crumbs.length === 0 && !heading ? (
           // A view with no named level above it still has its way back.
           <li>
             <button
@@ -316,7 +387,6 @@ export function PushCrumbs({
               disabled={disabled}
               onClick={onBack}
             >
-              <Icon name="chevron-left" className="agh-push-crumb-lead" />
               {fallbackT('ui.back')}
             </button>
           </li>
@@ -336,7 +406,6 @@ export function PushCrumbs({
                   : {})}
                 onClick={() => (depth === parent || !onCrumb ? onBack() : onCrumb(depth))}
               >
-                {depth === 0 && <Icon name="chevron-left" className="agh-push-crumb-lead" />}
                 {depth === parent && typeof crumb !== 'string' && (
                   <span className="agh-visually-hidden">{fallbackT('ui.backToPrefix')}</span>
                 )}
@@ -346,9 +415,15 @@ export function PushCrumbs({
             </li>
           ))
         )}
-        {crumbs.length > 0 && (
+        {(crumbs.length > 0 || heading) && (
           <li aria-current="page" className="agh-push-crumb-current">
-            {title}
+            {heading ? (
+              <h2 ref={heading.ref} id={heading.id} tabIndex={-1} aria-describedby={heading.describedBy}>
+                {title}
+              </h2>
+            ) : (
+              title
+            )}
           </li>
         )}
       </ol>
@@ -364,8 +439,6 @@ type PushFrame = PushNavigation & {
   host(id: string): HTMLElement | null
 }
 const PushContext = createContext<PushFrame | undefined>(undefined)
-
-type DataAttributes = { [name: `data-${string}`]: string | number | boolean | undefined }
 
 /**
  * A region that pages push into: a full page (Agent FDE, 插件, 自动化) or a pane. The root content

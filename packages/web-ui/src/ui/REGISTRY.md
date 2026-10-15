@@ -57,7 +57,7 @@ SettingsPage accepts `headingId` and `bodyClassName` for existing native pane ID
 | `Tooltip` / `IconButton` | Shared | Tooltip / Button | 500ms hover, immediate focus, mandatory icon-action label, keyboard-accessible disabled explanation. |
 | `Icon` / `SettingsIcon` | Shared | Vendored Lucide | One geometry table, 24px view box, 1.5 stroke (`--icon-stroke`; 1.75 in a primary button and on the selected navigation item), currentColor; sizes 16/18/20/48. |
 | `Toast` | Shared | antd message hook | Three-second nonmodal status, Escape dismissal and lifecycle cleanup; `tone="success|info|error"` selects outcome colours; existing outcome class names remain supported. Duration remains milliseconds. |
-| `SettingsPageHeader` / `SettingsSaveBar` | Shared | SettingsPage / Button | Page actions in heading; caller-owned dirty state; discard/save order; busy guard; two-second saved feedback. |
+| `SettingsPageHeader` / `SettingsSaveBar` | Shared | SettingsPage / Button | One header line (`PushHeader line`): title, page actions before the dialog's ×, no description line; caller-owned dirty state; discard/save order; busy guard; two-second saved feedback. |
 | `EmptyState` / `Banner` / `ListRow` | Shared | Contract CSS | Teaching empty state; one inline notice/action; flat detail rows with independent trailing actions. |
 | `Drawer` | Shared | antd Drawer | 480px right detail surface, narrow full screen, Escape and focus return. Close other modal hosts before opening. |
 
@@ -114,8 +114,8 @@ Badge, Tag, EmptyState, Skeleton, ListRow, Banner, Icon and SheetHandle remain c
 
 `Select` without `showSearch` or `mode` is a popup button: a raised surface ending in the accent block with up/down chevrons (`.agh-popup-chevrons`); pass `suffixIcon` to replace it. Control proportions, hairlines, continuous corners and motion live in `refinement.css` and read scale tokens only. / 不带搜索与多选的 `Select` 是弹出按钮；控件比例、发丝线、连续圆角与动效集中在 `refinement.css`，只读取尺度 token。
 
-| `SettingsSubpageFrame` / `SettingsDrill` / `SettingsExpand` | A | 设置二级页 | 带 › 的行打开同一弹框内的二级页（顶部「‹ 返回」、浏览器后退与前进；`routeId` 为设置页提供 `?settings=<page>/<sub>`，`settings-subsection-<id>` 旧深链仍可打开）；`SettingsExpand` 在行下就地展开；`SettingsPage` 顶层自带二级页框架 |
-| `PushStack` / `PushPage` / `usePushStack` / `usePushNavigation` / `searchParamRoute` | Shared | 导航 | 唯一的「进入新页面」：区域内替换内容，顶部「‹ 返回」+ 面包屑，浏览器后退返回一级，`route` 让地址带上打开的页面（深链、刷新可直达）；`replace` 用于流程换步不留历史；`finish` 完成深链页面也同步父级地址；设置二级页同用此引擎 |
+| `SettingsSubpageFrame` / `SettingsDrill` / `SettingsExpand` | A | 设置二级页 | 带 › 的行打开同一弹框内的二级页（顶部一行面包屑即标题「通用 › 记忆文件」，上级可点返回，页面操作同行，无「返回」、大标题与说明行；浏览器后退与前进；`routeId` 为设置页提供 `?settings=<page>/<sub>`，`settings-subsection-<id>` 旧深链仍可打开）；`SettingsExpand` 在行下就地展开；`SettingsPage` 顶层自带二级页框架 |
+| `PushStack` / `PushPage` / `usePushStack` / `usePushNavigation` / `searchParamRoute` | Shared | 导航 | 唯一的「进入新页面」：区域内替换内容，顶部面包屑「上一级 › 当前」（无前导 ‹，上一级即返回），浏览器后退返回一级，`route` 让地址带上打开的页面（深链、刷新可直达）；`replace` 用于流程换步不留历史；`finish` 完成深链页面也同步父级地址；设置二级页同用此引擎 |
 | `useResource` / `invalidateResource` / `setResource` / `trackPageRequest` | Shared | 数据 | 唯一的读接口钩子：本次页面会话内存缓存，再次进入先显示缓存、后台刷新（SWR）；写后按前缀失效；提交版本禁止旧读覆盖新写；`scopedResourceKey` 绑定 API 身份，`queueResourceWrite` 按资源串行写入，可选 owner 合并该编辑来源未发送的完整值并按最新意图排序；页面级请求驱动顶部进度条 |
 | `Loadable` / `TopProgress` | Shared | 加载 | 200 ms 内不显示；之后通用占位（可传形状）；3 s 后「仍在读取…」；失败显示原因 + 重试且不清空数据；内容淡入 160 ms（减少动态时不做）；全局 2px 顶部进度条 |
 | `SettingsBlock` / `SettingsTag` / `SettingsInfo` | A | 设置分组 | 分组标题是名词，右侧放分组操作；保存失败只在标题处显示「保存失败 · 重试」；读取失败一行 + 重试且不清空；同一套状态小标；说明文字收进名称旁 ⓘ |

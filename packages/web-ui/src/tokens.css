@@ -1173,7 +1173,7 @@
     display: contents;
   }
   /* The startup check notice floats where no header is: under the top bar on wide windows, along the
-   bottom on narrow ones (above the composer while a session shows), so 「‹ 返回」, the top bar's
+   bottom on narrow ones (above the composer while a session shows), so the breadcrumb, the top bar's
    actions and a page's header stay clickable while it is open. */
   .agnes-doctor-notice {
     position: fixed;

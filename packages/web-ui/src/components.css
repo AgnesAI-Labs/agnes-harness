@@ -221,7 +221,7 @@
     outline: var(--focus-outline);
     outline-offset: 1px;
   }
-  /* Push pages: an opened page takes the region; 「‹ 返回」 and the breadcrumb lead back. */
+  /* Push pages: an opened page takes the region; its breadcrumb (上一级 › 当前) leads back. */
   .agh-push-stack {
     min-width: 0;
   }
@@ -298,11 +298,6 @@
     outline-offset: 2px;
     border-radius: var(--radius-sm);
   }
-  /* The ‹ that opens the breadcrumb: the way back starts here. */
-  .agh-push-crumb-lead {
-    width: 0.875rem;
-    height: 0.875rem;
-  }
   .agh-push-crumb-separator {
     width: 0.75rem;
     height: 0.75rem;
@@ -315,6 +310,66 @@
     display: flex;
     align-items: center;
     gap: var(--s8);
+  }
+  /* One header line (settings): the breadcrumb is the title, the actions sit at its end. Earlier
+   levels are quiet links back; the current level is the page heading. */
+  .agh-push-header--line {
+    align-items: center;
+    gap: var(--s12);
+    min-height: 3.375rem;
+    margin-bottom: 0;
+  }
+  .agh-push-header--line > .agh-push-heading {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+  }
+  .agh-push-crumbs--title {
+    min-width: 0;
+  }
+  .agh-push-crumbs--title ol {
+    flex-wrap: nowrap;
+    gap: var(--s4);
+    color: var(--agnes-text-tertiary);
+    font-size: 1rem;
+    line-height: 1.5rem;
+  }
+  .agh-push-crumbs--title li {
+    gap: var(--s4);
+    flex: none;
+  }
+  .agh-push-crumbs--title .agh-push-crumb {
+    max-width: 14rem;
+    margin-inline-start: calc(-1 * var(--s4));
+    padding: var(--s2) var(--s4);
+    border-radius: var(--radius-sm);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .agh-push-crumbs--title .agh-push-crumb:hover:not(:disabled) {
+    background: var(--agnes-bg-hover);
+  }
+  .agh-push-crumbs--title .agh-push-crumb-current {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .agh-push-header--line .agh-push-crumbs--title .agh-push-crumb-current h2 {
+    margin: 0;
+    overflow: hidden;
+    color: var(--agnes-text-primary);
+    font-size: 1rem;
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.5rem;
+    letter-spacing: 0;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .agh-push-crumbs--title .agh-push-crumb-current h2:focus {
+    outline: none;
+  }
+  .agh-push-header--line > .agh-push-actions:empty {
+    display: none;
   }
   /* Loading: a quiet placeholder after 200 ms, words only once it is slow, a fade on arrival. */
   .agh-loadable-placeholder {

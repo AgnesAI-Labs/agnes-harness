@@ -90,22 +90,22 @@ describe('push pages', () => {
     expect(q(host, '[data-testid="root"]')?.closest('[hidden]')).not.toBeNull()
     expect(q(host, '[data-testid="crm-body"]')).not.toBeNull()
     expect(q(host, '[data-testid="push-header"] h2')?.textContent).toBe('CRM 跟进')
-    // Two levels: 「‹ Agent FDE › CRM 跟进」. The parent is the back control; there is no separate 返回.
+    // Two levels: 「Agent FDE › CRM 跟进」, no leading ‹. The parent is the back control; no separate 返回.
     const back = q(host, '[data-testid="push-back"]')
     expect(back?.textContent).toBe('Agent FDE')
-    expect(back?.querySelector('.agh-push-crumb-lead')).not.toBeNull()
+    expect(back?.querySelector('svg')).toBeNull()
     expect(back?.getAttribute('aria-label')).toBe('Back to Agent FDE')
     expect(host.querySelectorAll('[data-testid="push-header"] button')).toHaveLength(1)
     click(q(host, '[data-testid="open-edit"]'))
-    // Three levels: 「‹ Agent FDE › CRM 跟进 › 编辑」. ‹ leads the trail; the direct parent goes back.
+    // Three levels: 「Agent FDE › CRM 跟进 › 编辑」. Nothing leads the trail; the direct parent goes back.
     expect([...host.querySelectorAll('.agh-push-crumbs li')].map((item) => item.textContent)).toEqual([
       'Agent FDE',
       'CRM 跟进',
       '编辑',
     ])
-    expect(q(host, '[data-testid="push-crumb-0"] .agh-push-crumb-lead')).not.toBeNull()
+    expect(q(host, '[data-testid="push-crumb-0"]')?.firstElementChild).toBeNull()
     expect(q(host, '[data-testid="push-back"]')?.textContent).toBe('CRM 跟进')
-    expect(q(host, '[data-testid="push-back"] .agh-push-crumb-lead')).toBeNull()
+    expect(q(host, '[data-testid="push-back"]')?.querySelector('svg')).toBeNull()
     expect(q(host, '[data-testid="push-back"]')?.getAttribute('aria-label')).toBe('Back to CRM 跟进')
     click(q(host, '[data-testid="push-back"]'))
     await vi.waitFor(() => expect(q(host, '[data-testid="push-header"] h2')?.textContent).toBe('CRM 跟进'))
@@ -290,14 +290,14 @@ describe('the breadcrumb on its own', () => {
     const crumb = q(host, '[data-testid="candidate-back"]')
     expect(crumb?.id).toBe('settings-back')
     expect(crumb?.getAttribute('aria-label')).toBe('Back to Candidates')
-    expect(crumb?.querySelector('.agh-push-crumb-lead')).not.toBeNull()
+    expect(crumb?.querySelector('svg')).toBeNull()
     expect(host.textContent).toBe('Candidatespkg-a')
     click(crumb)
     expect(back).toHaveBeenCalledOnce()
     const disabled = render(
       createElement(PushCrumbs, { title: 'x', crumbs: [], disabled: true, onBack: back }),
     )
-    // Nothing named above: the way back still shows, as 「‹ 返回」.
+    // Nothing named above: the way back still shows, as 「返回」.
     expect(q(disabled, '[data-testid="push-back"]')?.textContent).toBe('Back')
     expect((q(disabled, '[data-testid="push-back"]') as HTMLButtonElement).disabled).toBe(true)
   })
