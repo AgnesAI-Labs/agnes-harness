@@ -16,6 +16,7 @@ import {
   SettingsItem,
   SettingsPage,
   SettingsPresetSelect,
+  SUBPAGE_CLOSE_EVENT,
   secondPresets,
   splitList,
   useAutosave,
@@ -588,4 +589,44 @@ it('restores nested settings pages from a deep link, reload, back and forward', 
   await act(async () => $(reloaded, '[data-testid="settings-subpage-back"]').click())
   expect(new URL(location.href).searchParams.get('settings')).toBe('diagnostics/otlp')
   expect(new URL(location.href).searchParams.get('session')).toBe('s1')
+  // A linked page has no history depth owned by this frame. Completing it must still commit
+  // its parent address, including for nested pages, so reload and history restore that parent.
+  await act(async () => {
+    history.replaceState(null, '', '/?session=s1&settings=diagnostics/otlp/limits')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  })
+  await act(async () =>
+    $(reloaded, '[data-testid="settings-subpage-limits"]').dispatchEvent(
+      new CustomEvent(SUBPAGE_CLOSE_EVENT, { bubbles: true }),
+    ),
+  )
+  expect(new URL(location.href).searchParams.get('settings')).toBe('diagnostics/otlp')
+  await act(async () => cleanups.shift()?.())
+  const parent = await render(page())
+  expect($(parent, '[data-testid="settings-subpage-header"] h2').textContent).toBe('OTLP')
+  expect(parent.querySelector('[data-testid="settings-subpage-limits"]')).toBeNull()
+  await act(async () => {
+    history.replaceState(null, '', location.href)
+    $(parent, '[data-testid="settings-subpage-otlp"]').dispatchEvent(
+      new CustomEvent(SUBPAGE_CLOSE_EVENT, { bubbles: true }),
+    )
+  })
+  expect(new URL(location.href).searchParams.get('settings')).toBe('diagnostics')
+  expect(new URL(location.href).searchParams.get('session')).toBe('s1')
+  await act(async () => cleanups.shift()?.())
+  const completed = await render(page())
+  expect(completed.querySelector('[data-testid="settings-subpage-otlp"]')).toBeNull()
+  const completedAddress = location.href
+  const completedState = history.state
+  await act(async () => {
+    history.pushState(null, '', '/?session=s1&settings=diagnostics/otlp')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  })
+  expect($(completed, '[data-testid="settings-subpage-header"] h2').textContent).toBe('OTLP')
+  await act(async () => {
+    history.replaceState(completedState, '', completedAddress)
+    window.dispatchEvent(new PopStateEvent('popstate', { state: completedState }))
+  })
+  expect(new URL(location.href).searchParams.get('settings')).toBe('diagnostics')
+  expect(completed.querySelector('[data-testid="settings-subpage-otlp"]')).toBeNull()
 })

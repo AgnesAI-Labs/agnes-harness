@@ -133,4 +133,6 @@ Session facts, execution results and authorization belong to the backend and SDK
 
 A resource write commits a new version. Reads started before that commit cannot publish either data or errors over it; writes to the same resource share a queue across component lifetimes. Autosave coalesces each editor's unsent full-value replacements at the latest intent's position; an older failure cannot stop the newer value. Operations that read and modify the latest snapshot keep FIFO ordering. After an await, session and roster operations must recheck their selection or request identity before changing shared state. Obsolete work may release its own handles, but cannot reset another selection's renderer or recovery target. Module loads remain independent, with failures isolated to their region and registrations removed on unmount.
 
+Finishing a routed page always replaces its current URL with the parent stack, even when the page came from a deep link with no owned history state. Reload and history restoration must keep that completed page closed.
+
 Incidental URL updates preserve the raw `view` and `settings` route encoding, so page boundaries and identifiers containing slashes survive session and account metadata changes.

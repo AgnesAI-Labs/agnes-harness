@@ -208,14 +208,13 @@ export function usePushNavigation({
     const known = current.current
     if (!known.length) return
     const next = known.slice(0, -1)
-    if (historyDepth(history.state, historyKey) === known.length)
-      try {
-        history.replaceState(
-          { ...(history.state ?? {}), [historyKey]: next.length },
-          '',
-          routeRef.current?.href(next),
-        )
-      } catch {}
+    try {
+      history.replaceState(
+        { ...(history.state ?? {}), [historyKey]: next.length },
+        '',
+        routeRef.current?.href(next),
+      )
+    } catch {}
     base.current = Math.min(base.current, next.length)
     publish(next)
   }, [historyKey, publish])
