@@ -8,5 +8,37 @@
     "jsx": "react-jsx",
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts"],
+  "references": [
+    {
+      "path": "../../../packages/core"
+    },
+    {
+      "path": "../../../packages/core/tsconfig.testkit.json"
+    },
+    {
+      "path": "../../../packages/daemon-foundation"
+    },
+    {
+      "path": "../../../packages/extension-api"
+    },
+    {
+      "path": "../../../packages/host-extensions"
+    },
+    {
+      "path": "../../../packages/host-infrastructure"
+    },
+    {
+      "path": "../../../packages/mhs-device"
+    },
+    {
+      "path": "../../../packages/mhs-hub"
+    },
+    {
+      "path": "../../../packages/mhs-plugin"
+    },
+    {
+      "path": "../../../packages/sdk"
+    }
+  ]
 }

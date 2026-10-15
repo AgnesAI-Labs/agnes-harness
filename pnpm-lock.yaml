@@ -120,6 +120,18 @@ importers:
         specifier: 0.0.0
         version: link:../../../packages/web-client
     devDependencies:
+      '@agnes/core':
+        specifier: workspace:*
+        version: link:../../../packages/core
+      '@agnes/daemon-foundation':
+        specifier: workspace:*
+        version: link:../../../packages/daemon-foundation
+      '@agnes/host-extensions':
+        specifier: workspace:*
+        version: link:../../../packages/host-extensions
+      '@agnes/host-infrastructure':
+        specifier: workspace:*
+        version: link:../../../packages/host-infrastructure
       '@agnes/extension-api':
         specifier: workspace:*
         version: link:../../../packages/extension-api

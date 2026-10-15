@@ -49,7 +49,7 @@
 工作区具备 MHS SDK 后运行：
 
 ```sh
-pnpm exec tsc -p examples/mhs/mars-rescue/tsconfig.json
+pnpm exec tsc -b examples/mhs/mars-rescue/tsconfig.json
 pnpm exec vitest run examples/mhs/mars-rescue/test --project fast --maxWorkers=1
 node examples/mhs/mars-rescue/tools/build.mjs
 ```
@@ -59,3 +59,5 @@ node examples/mhs/mars-rescue/tools/build.mjs
 导出的 `createMarsHubTransport` 使用真实公开 Hub/DeviceLink 合同接入受管理的嵌入式模拟器，要求显式审核后的 current-link 检查，并拒绝接管在线设备。浏览器设备流传输仍由父 MHS 适配器负责；Agent 启动已接入实际 Examples 宿主。
 
 受管理运行时检查使用真实 `@agnes/sdk/managed-service`、SQLite owned store 和 `startManagedMhsHub`，父服务停用会让 11 台设备全部停止并离线。模拟器不另建 Hub，也不假造 singleton。已合入的 `registerMhsStreams` 提供 North 事件、媒体和控制通道；浏览器模拟设备接入仍需父模块提供，示例启动已接入 Examples 宿主。
+
+权限与 wake 检查使用真实 `createProfileServiceRuntime`、`createMhsNativeProfileAdapter`、`mhsOwnedStore`、Host SQLite persistence、`ProfileWakeBindings` 及 `BoundWakeService`/`JobsRepo`。Mars 运动由真实 AR1 回答批准或拒绝，误用 fake approval seam 会令测试失败。真实 watch 将通知写入原 session/lane/generation 的持久任务，重建队列适配器后重复入队保持同一 job，撤销后拒绝投递。测试中的包清单、本地身份与原会话事实为合成 fixture；真实 worker/session 输入投递仍须集成检查。

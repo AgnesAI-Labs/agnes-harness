@@ -27,7 +27,7 @@
     "@agnes/web-client": "0.0.0"
   },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json",
+    "typecheck": "tsc -b tsconfig.json",
     "test": "vitest run test --project fast --maxWorkers=1",
     "build": "node tools/build.mjs",
     "gen:check": "node tools/build.mjs --check"
@@ -112,7 +112,11 @@
     "esbuild": "0.28.2",
     "@agnes/mhs-hub": "workspace:*",
     "@agnes/extension-api": "workspace:*",
-    "@agnes/sdk": "workspace:*"
+    "@agnes/sdk": "workspace:*",
+    "@agnes/core": "workspace:*",
+    "@agnes/daemon-foundation": "workspace:*",
+    "@agnes/host-extensions": "workspace:*",
+    "@agnes/host-infrastructure": "workspace:*"
   },
   "peerDependenciesMeta": {
     "@agnes/web-client": {

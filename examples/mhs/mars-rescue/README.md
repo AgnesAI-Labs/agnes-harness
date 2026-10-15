@@ -49,7 +49,7 @@ Use the public `@agnes/mhs-device` TypeScript SDK to implement transport; consum
 After the MHS SDK is present in the workspace:
 
 ```sh
-pnpm exec tsc -p examples/mhs/mars-rescue/tsconfig.json
+pnpm exec tsc -b examples/mhs/mars-rescue/tsconfig.json
 pnpm exec vitest run examples/mhs/mars-rescue/test --project fast --maxWorkers=1
 node examples/mhs/mars-rescue/tools/build.mjs
 ```
@@ -59,3 +59,5 @@ Build tools use esbuild 0.28.2; browser resources are committed for offline inst
 The exported `createMarsHubTransport` adapter uses the real public Hub/DeviceLink contract for an embedded managed simulator. It requires an explicit reviewed-current-link check and refuses taking over an online fleet. Browser device stream transport remains the parent MHS adapter’s responsibility; Agent launch uses the integrated Examples host.
 
 The managed-runtime check also uses the real `@agnes/sdk/managed-service` runtime, SQLite owned store and `startManagedMhsHub`; disabling the parent parks all eleven devices. No simulator-owned Hub or fake singleton is started. The integrated `registerMhsStreams` adapter supplies North event/media/control lanes; it does not supply the browser simulator producer described above.
+
+The authority/wake check uses real `createProfileServiceRuntime`, `createMhsNativeProfileAdapter`, `mhsOwnedStore`, Host SQLite persistence, `ProfileWakeBindings` and `BoundWakeService`/`JobsRepo`. Native AR1 answers allow or refuse Mars motion; a fake approval seam throws if invoked. A real watch queues an original-session/lane/generation notification, retains its job on re-enqueue through a recreated queue adapter, and refuses delivery after revocation. Inventory, local principal and original-session facts are synthetic test fixtures; actual worker/session input delivery remains an integration check.

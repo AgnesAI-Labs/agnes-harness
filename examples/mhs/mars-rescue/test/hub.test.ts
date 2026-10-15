@@ -2,18 +2,18 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
+import { deliverBoundWake } from '@agnes/daemon-foundation/jobs/bound-wakes'
 import type { ToolContext } from '@agnes/extension-api'
 import { createMhsTools, startManagedMhsHub } from '@agnes/mhs'
-import { Hub, North } from '@agnes/mhs-hub'
+import { digest, Hub, North } from '@agnes/mhs-hub'
 import { createManagedServiceRuntime } from '@agnes/sdk/managed-service'
-import { createOwnedStore } from '@agnes/sdk/owned-store'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createMarsHubTransport } from '../src/hub-transport.js'
 import { MarsRuntime } from '../src/runtime.js'
 import { DEVICE_IDS, PLACES } from '../src/world.js'
+import { nativeHarness } from './native-harness.js'
 
-// Only admission/wake identities are synthetic; storage, SDK, Hub and tools are real.
+// Account/session facts are synthetic; native approval, storage, wake queue, SDK and Hub are real.
 async function freePort() {
   const server = createServer()
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
@@ -23,52 +23,25 @@ async function freePort() {
   return address.port
 }
 afterEach(() => vi.useRealTimers())
-it('uses the actual seven-tool Hub contract, refuses unapproved motion and stops the fleet on revocation', async () => {
+it('runs Mars through real native AR1, owner storage and durable original-session wakes', async () => {
   vi.useFakeTimers()
-  let current = true,
-    approved = false,
-    sequence = 0
-  const database = new DatabaseSync(':memory:')
-  const hub = new Hub({
-    store: createOwnedStore(database, 'mars'),
-    authority: {
-      async assertActive() {
-        if (!current) throw new Error('revoked')
-      },
-      async admit(_subject, proof) {
-        if (proof !== 'synthetic-approved') throw new Error('approval-required')
-      },
-    },
-    wakes: {
-      async enqueue() {
-        return { wakeId: 'synthetic-wake', state: 'queued' }
-      },
-    },
-  })
+  const native = await nativeHarness()
+  const hub = new Hub({ store: native.store, authority: native.adapter.authority, wakes: native.wakes })
   await hub.recover()
-  const parent = new AbortController()
-  const runtime = new MarsRuntime(
-    createMarsHubTransport(hub, async () => {
-      parent.signal.throwIfAborted()
-      if (!current) throw new Error('reviewed-link-revoked')
-    }),
-  )
+  const services = native.attach(hub)
+  const runtime = new MarsRuntime(createMarsHubTransport(hub, native.current))
+  let sequence = 0
   try {
     await runtime.start()
-    expect((await hub.list()).map((d) => d.id)).toEqual(DEVICE_IDS)
     const tools = createMhsTools({
       north: new North(hub),
-      async invocation() {
-        return {
-          operationId: `mars-tool-${++sequence}`,
-          context: approved ? 'synthetic-approved' : 'refused',
-          sessionId: 'rescue-session',
-          laneId: 'main',
-        }
-      },
-      async bindWake() {
-        return { bindingId: 'rescue-session/main' }
-      },
+      invocation: async () => ({
+        operationId: `mars-tool-${++sequence}`,
+        context: null,
+        sessionId: 'rescue-session',
+        laneId: 'main',
+      }),
+      bindWake: async () => native.target(),
     })
     expect(tools.map((t) => t.name)).toEqual([
       'list_devices',
@@ -79,33 +52,101 @@ it('uses the actual seven-tool Hub contract, refuses unapproved motion and stops
       'watch_device',
       'unwatch_device',
     ])
+    expect((await hub.list()).map((d) => d.id)).toEqual(DEVICE_IDS)
     const ctx = { signal: new AbortController().signal, timeoutMs: 50_000 } as ToolContext
-    const call = tools.find((t) => t.name === 'call_device')
-    if (!call) throw new Error('missing-call-device')
+    const call = tools.find((t) => t.name === 'call_device')!
     expect(call.meta).toMatchObject({ requiresApproval: 'always', replay: 'never' })
     const args = { device: 'rover-01', tool: 'drive_to', args: { ...PLACES.sample } }
+    // A direct session connector without consumed native admission must be refused.
     expect((await call.execute(args, ctx)).isError).toBe(true)
+    const request = {
+      extension: native.owner,
+      service: 'mhs.call',
+      operationId: 'native-refused-motion',
+      input: args,
+    }
+    expect(await services.call(request, native.credential)).toMatchObject({ state: 'approval-required' })
     expect(runtime.simulation.pose('rover-01')).toMatchObject(PLACES.dock)
-    approved = true
-    const moving = call.execute(args, ctx)
+    await native.answer('rejected')
+    expect(await services.call(request, native.credential)).toMatchObject({ state: 'refused' })
+    expect(runtime.simulation.pose('rover-01')).toMatchObject(PLACES.dock)
+    const moving = { ...request, operationId: 'native-motion' }
+    expect(await services.call(moving, native.credential)).toMatchObject({ state: 'approval-required' })
+    const approval = await native.answer('allowed-once')
+    expect(approval.request.spec.subject).toMatchObject({
+      presentation: { device: 'rover-01', action: 'call', input: { tool: 'drive_to', args: PLACES.sample } },
+    })
+    expect(await services.call(moving, native.credential)).toMatchObject({ state: 'completed' })
     await vi.advanceTimersByTimeAsync(500)
-    const stop = tools.find((t) => t.name === 'stop_device')
-    if (!stop) throw new Error('missing-stop-device')
-    await stop.execute({}, ctx)
-    expect((await moving).isError).toBe(true)
+    expect(runtime.simulation.pose('rover-01')).not.toMatchObject(PLACES.dock)
+    expect(
+      await services.call(
+        { extension: native.owner, service: 'mhs.stop', operationId: 'native-stop', input: {} },
+        native.credential,
+      ),
+    ).toMatchObject({ state: 'completed', output: { state: 'settled' } })
+    expect(await hub.waitOperation('native-motion', ctx.signal, 100)).toMatchObject({
+      outcome: { status: 'interrupted' },
+    })
     const at = { ...runtime.simulation.pose('rover-01') }
     await vi.advanceTimersByTimeAsync(100)
     expect(runtime.simulation.pose('rover-01')).toEqual(at)
-    current = false
-    parent.abort()
+    const watch = tools.find((t) => t.name === 'watch_device')!
+    const watched = await watch.execute(
+      { device: 'power-01', until: { state: 'production', lt: 1 }, timeout: 30 },
+      ctx,
+    )
+    expect(watched.isError).not.toBe(true)
+    const outcome = watched.structured
+    if (
+      !outcome ||
+      typeof outcome !== 'object' ||
+      Array.isArray(outcome) ||
+      !('watch' in outcome) ||
+      typeof outcome.watch !== 'string'
+    )
+      throw new Error('missing-watch-id')
+    runtime.simulation.device('power-01').update({ production: 0 })
+    await hub.watches.tick()
+    const jobs = native.repo().claimDue(Date.now(), 'synthetic-worker', 1000, 10)
+    expect(jobs).toHaveLength(1)
+    const job = jobs[0]!
+    expect(job.sessionKey).toBe('rescue-session')
+    if (!('pluginNotification' in job.payload)) throw new Error('missing-bound-wake')
+    const notification = job.payload.pluginNotification
+    expect(native.bindings.require(notification.bindingId)).toMatchObject({
+      sessionId: 'rescue-session',
+      laneId: 'main',
+      generationId: 'synthetic-rescue-generation',
+    })
+    const requeued = await native.makeWakes().enqueue(
+      {
+        target: { bindingId: notification.bindingId },
+        idempotencyKey: `mhs/${digest(outcome.watch)}/terminal`,
+        event: notification.event,
+      },
+      native.credential,
+    )
+    expect(requeued).toMatchObject({ wakeId: job.idempotencyKey, state: 'queued' })
+    expect(await native.queue.read(job.idempotencyKey, native.credential)).toMatchObject({ state: 'queued' })
+    await expect(native.queue.read(job.idempotencyKey, {})).rejects.toThrow('foreign-credential')
     await runtime.stop()
+    native.activations.publish([])
+    await expect(services.call(moving, native.credential)).rejects.toThrow()
+    expect(() => native.bindings.require(notification.bindingId)).toThrow()
+    expect(
+      await deliverBoundWake(job, ctx.signal, {
+        requireTarget: async (id) => services.requireWake(id),
+        deliver: async () => {
+          throw new Error('revoked-target-must-not-deliver')
+        },
+      }),
+    ).toMatchObject({ reason: 'refused', code: 'TARGET_REVOKED' })
     expect(hub.snapshot().every((d) => !d.online)).toBe(true)
-    await expect(hub.list()).rejects.toThrow('revoked')
-    expect(runtime.snapshot().online).toEqual([])
   } finally {
     await runtime.stop()
-    await hub.shutdown()
-    database.close()
+    await hub.shutdown().catch(() => {})
+    await native.close()
   }
 })
 it('joins the real managed Hub, refuses duplicate fleets, resets in place and parks on parent shutdown', async () => {
@@ -123,33 +164,22 @@ it('joins the real managed Hub, refuses duplicate fleets, resets in place and pa
       listeners: { device: { host: '127.0.0.1', port: devicePort } },
     },
   })
+  const native = await nativeHarness(managed.signal)
   let parent: Awaited<ReturnType<typeof startManagedMhsHub>> | undefined
   let first: MarsRuntime | undefined, second: MarsRuntime | undefined
   try {
-    parent = await startManagedMhsHub(managed, {
-      authority: {
-        async assertActive() {
-          managed.signal.throwIfAborted()
-        },
-        async admit() {
-          throw new Error('denied')
-        },
-      },
-      wakes: {
-        async enqueue() {
-          return { wakeId: 'w', state: 'queued' }
-        },
-      },
-    })
+    parent = await startManagedMhsHub(managed, { authority: native.adapter.authority, wakes: native.wakes })
     const hub = parent.north.hub
+    native.attach(hub)
     const denied = new MarsRuntime(
       createMarsHubTransport(hub, async () => {
-        throw new Error('CAPABILITY_DENIED')
+        await native.current()
+        native.activations.require('plugin/0000000000000000', 'not-reviewed')
       }),
     )
-    await expect(denied.start()).rejects.toThrow('CAPABILITY_DENIED')
+    await expect(denied.start()).rejects.toMatchObject({ data: { code: 'CAPABILITY_DENIED' } })
     expect(hub.snapshot()).toEqual([])
-    const current = async () => managed.signal.throwIfAborted()
+    const current = native.current
     first = new MarsRuntime(createMarsHubTransport(hub, current))
     second = new MarsRuntime(createMarsHubTransport(hub, current))
     await first.start()
@@ -174,6 +204,7 @@ it('joins the real managed Hub, refuses duplicate fleets, resets in place and pa
     await first?.stop()
     await parent?.stop()
     await managed.close()
+    await native.close()
     rmSync(directory, { recursive: true, force: true })
   }
 })
