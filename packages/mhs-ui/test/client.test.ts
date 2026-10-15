@@ -3,6 +3,7 @@ import { MhsClient, receiptMessage } from '../src/client.js'
 import { ManualController } from '../src/manual.js'
 import { sampleFrom } from '../src/media.js'
 import { activityFrom, devicesFrom, TOOL_NAMES, toolsFrom } from '../src/model.js'
+import { profileServices } from '../src/profile-services.js'
 import { MhsStore, usedDeviceIds } from '../src/store.js'
 import { deferred, device, fake, Stream } from './fixtures.js'
 
@@ -89,6 +90,28 @@ describe('owner-bound MHS browser data', () => {
     ).toBe('unknown')
     client.dispose()
     await expect(client.effect('stop', {})).rejects.toThrow()
+  })
+  it('reads native operation receipts through the original declared service without repeating dispatch', async () => {
+    const reads: string[][] = []
+    const services = profileServices({
+      async query() {
+        return []
+      },
+      async effect(_name, _input, { operationId }) {
+        return { state: 'approval-required', operationId, decision: { id: 'native' } }
+      },
+      async readOperation(name, id) {
+        reads.push([name, id])
+        return { state: 'refused', operationId: id, code: 'APPROVAL_REFUSED' }
+      },
+    })
+    expect(await services.effect('mhs.call', { device: 'rover-01' }, { operationId: 'once' })).toMatchObject({
+      state: 'approval-required',
+      operationId: 'once',
+    })
+    expect(await services.readOperation('once')).toMatchObject({ state: 'refused', code: 'APPROVAL_REFUSED' })
+    expect(reads).toEqual([['mhs.call', 'once']])
+    await expect(services.readOperation('other')).rejects.toThrow('unknown-operation-service')
   })
   it('closes a stream which finishes opening after disposal and rejects invalid binary framing', async () => {
     const f = fake(),

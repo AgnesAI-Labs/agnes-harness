@@ -291,12 +291,22 @@ function Operation({ receipt, device }: { receipt: Receipt | undefined; device: 
     }
   }, [client, operationId])
   if (!operation) return null
-  const state = text(operation.state),
+  const state =
+      text(operation.state) === 'terminal' ? 'terminal' : text(operation.phase) || text(operation.state),
     outcome = record(operation.outcome)
   return (
     <div role="status">
-      {text(outcome.status) || state} {text(outcome.reason)}{' '}
-      {typeof operation.progress === 'number' && <progress value={operation.progress} max={1} />}
+      {text(outcome.status) || state} {text(outcome.reason)}
+      {typeof operation.startedAt === 'number' && (
+        <Elapsed
+          start={operation.startedAt}
+          end={typeof operation.endedAt === 'number' ? operation.endedAt : undefined}
+        />
+      )}{' '}
+      {typeof (record(operation.progress).fraction ?? operation.progress) === 'number' && (
+        <progress value={number(record(operation.progress).fraction ?? operation.progress)} max={1} />
+      )}
+      {operation.progress !== undefined && <pre>{jsonText(operation.progress)}</pre>}
       {state === 'paused' && (
         <Button onClick={() => void action.run('resume', { device, params: { call: operationId } })}>
           {t('resume')}
@@ -309,6 +319,21 @@ function Operation({ receipt, device }: { receipt: Receipt | undefined; device: 
       )}
       <ActionFeedback action={action} />
     </div>
+  )
+}
+function Elapsed({ start, end }: { start: number; end: number | undefined }) {
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    if (end !== undefined) return
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [end])
+  const seconds = Math.max(0, Math.floor(((end ?? now) - start) / 1000))
+  return (
+    <span>
+      {' '}
+      · {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, '0')}
+    </span>
   )
 }
 export function StateField({ device, name, schema }: { device: Device; name: string; schema: Data }) {

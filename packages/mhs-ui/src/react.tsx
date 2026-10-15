@@ -69,6 +69,7 @@ export function useAction() {
     [receipt, setReceipt] = useState<Receipt>(),
     [busy, setBusy] = useState(false),
     [failed, setFailed] = useState(false)
+  const generation = useRef(0)
   const locked = useRef(false)
   const operationId = receipt?.operationId,
     state = receipt?.state
@@ -99,12 +100,13 @@ export function useAction() {
   const run = async (name: string, input: JsonValue) => {
     if (locked.current) return undefined
     locked.current = true
+    const epoch = ++generation.current
     setBusy(true)
     setFailed(false)
     setReceipt(undefined)
     try {
       const result = await client.effect(name, input)
-      if (!client.abort.signal.aborted) setReceipt(result)
+      if (!client.abort.signal.aborted && epoch === generation.current) setReceipt(result)
       return result
     } catch {
       if (!client.abort.signal.aborted) setFailed(true)
@@ -114,8 +116,22 @@ export function useAction() {
       setBusy(false)
     }
   }
+  const reconcile = async () => {
+    if (!receipt) return
+    const epoch = generation.current
+    try {
+      const next = await client.ports.services.readOperation(receipt.operationId)
+      if (epoch === generation.current && !client.abort.signal.aborted) {
+        setReceipt(next)
+        setFailed(false)
+      }
+    } catch {
+      if (epoch === generation.current) setFailed(true)
+    }
+  }
   return {
     run,
+    reconcile,
     receipt,
     busy,
     failed,
@@ -127,6 +143,9 @@ export function ActionFeedback({ action }: { action: ReturnType<typeof useAction
   return (
     <>
       <ReceiptView receipt={action.receipt} />
+      {action.receipt?.state === 'unknown' && (
+        <Button onClick={() => void action.reconcile()}>{t('checkStatus')}</Button>
+      )}
       {action.failed && <div role="alert">{t('unknown')}</div>}
     </>
   )

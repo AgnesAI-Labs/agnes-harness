@@ -1,5 +1,5 @@
 import { Button, Tabs } from '@agnes/web-ui'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ActivityPage } from './activity.js'
 import { DeviceDetail } from './detail.js'
 import { DeveloperPage } from './developer.js'
@@ -7,6 +7,32 @@ import { ExamplesPage } from './examples.js'
 import { WorldMap } from './map.js'
 import { type Device, text } from './model.js'
 import { HubHealth, Stop, useMhs, useSnapshot } from './react.js'
+import { Observation } from './widgets.js'
+
+function Preview({ device }: { device: Device }) {
+  const ref = useRef<HTMLDivElement>(null),
+    [visible, setVisible] = useState(false)
+  const source = device.description.device.mobile
+    ? device.sources.find((s) => s.kind === 'image' || s.kind === 'video')
+    : undefined
+  const sourceId = source?.id
+  useEffect(() => {
+    if (!sourceId || !ref.current || typeof IntersectionObserver === 'undefined') return
+    const observer = new IntersectionObserver((entries) =>
+      setVisible(entries.some((entry) => entry.isIntersecting)),
+    )
+    observer.observe(ref.current)
+    return () => observer.disconnect()
+  }, [sourceId])
+  if (!source) return null
+  return (
+    <div ref={ref} className="mhs-preview">
+      {visible && source ? (
+        <Observation key={`${device.revision}:${String(source.id)}`} source={source} device={device} />
+      ) : null}
+    </div>
+  )
+}
 export function DeviceCard({ device }: { device: Device }) {
   const { openDevice, t } = useMhs(),
     numbers = Object.entries(device.state)
@@ -18,6 +44,7 @@ export function DeviceCard({ device }: { device: Device }) {
         <strong>{device.name}</strong>
         <code>{device.id}</code>
       </Button>
+      <Preview device={device} />
       <span className="mhs-origin">
         {t(device.simulated === true ? 'simulated' : device.simulated === false ? 'real' : 'unclassified')}
       </span>

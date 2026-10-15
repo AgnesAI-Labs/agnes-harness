@@ -65,7 +65,7 @@ it('consumes the real SDK declaration, Hub/North query/effect outputs and binary
         hub.state('sensor-01', sdk.state())
         return result
       }
-      if (method === 'mhs/configure') return sdk.configure(params)
+      if (method === 'mhs/configure') return sdk.configure(params.sources)
       if (method === 'mhs/stop') {
         await sdk.stop()
         return {}
@@ -101,6 +101,24 @@ it('consumes the real SDK declaration, Hub/North query/effect outputs and binary
     output: { state: 'terminal', outcome: { status: 'done' } },
   })
   expect((await client.devices())[0]?.state.lamp).toBe(true)
+  hub.observation('sensor-01', 'air', { temperature: 22 })
+  expect((await client.devices())[0]?.sourceStates.air).toBe(true)
+  await client.effect('configure', { device: 'sensor-01', params: { sources: { air: { on: false } } } })
+  expect((await new MhsClient(f.ports).devices())[0]?.sourceStates.air).toBe(false)
+  await hub.journal.accept('sensor-01', {}, { operationId: 'paused', context: 'synthetic-native-admission' })
+  await hub.journal.running('paused', 'sensor-01', { state: 'paused', fraction: 0.4 })
+  expect(await north.query('operation', { operationId: 'paused' })).toMatchObject({
+    state: 'running',
+    phase: 'paused',
+    startedAt: expect.any(Number),
+    progress: { fraction: 0.4 },
+  })
+  await hub.journal.finish('paused', { status: 'done' })
+  await hub.journal.running('paused', 'sensor-01', { state: 'running' })
+  expect(await north.query('operation', { operationId: 'paused' })).toMatchObject({
+    state: 'terminal',
+    endedAt: expect.any(Number),
+  })
   const decoded = sampleFrom(
     encodeMedia({ device: 'sensor-01', source: 'air', at: 123, data: { temperature: 22 } }),
   )

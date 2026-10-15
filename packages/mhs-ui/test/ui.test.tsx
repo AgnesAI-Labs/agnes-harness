@@ -151,7 +151,7 @@ describe('MHS approved device interactions', () => {
     expect(host.textContent).toContain('expired')
     expect(f.effects).toHaveLength(1)
   })
-  it('uses a backend lease for manual axes, then zeros and requests stop on focus loss', async () => {
+  it.each(['blur', 'space'])('uses a backend lease and independently stops on %s', async (mode) => {
     vi.useFakeTimers()
     const raw = device()
     raw.description = {
@@ -180,7 +180,8 @@ describe('MHS approved device interactions', () => {
     })
     expect(f.stream.sent.at(-1)).toEqual({ type: 'manual', axes: { vx: 1, pitch: 0 } })
     await act(async () => {
-      window.dispatchEvent(new Event('blur'))
+      if (mode === 'space') fireEvent.keyDown(axis, { key: ' ', code: 'Space' })
+      else window.dispatchEvent(new Event('blur'))
       await Promise.resolve()
     })
     expect(f.stream.sent.at(-1)).toEqual({ type: 'manual', axes: { vx: 0, pitch: 0 } })
@@ -195,6 +196,9 @@ describe('MHS approved device interactions', () => {
     await click(getByRole(host, 'button', { name: 'Stop all' }))
     expect(f.effects[0]).toMatchObject({ name: 'mhs.stop', input: {} })
     expect(host.textContent).toContain('Outcome unknown')
+    await click(getByRole(host, 'button', { name: 'Check status' }))
+    expect(host.textContent).toContain('expired')
+    expect(f.effects).toHaveLength(1)
   })
   it('renders all five tabs from the current projection and keeps the no-session activity filter disabled', async () => {
     const f = fake()

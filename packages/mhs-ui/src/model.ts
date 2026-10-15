@@ -23,6 +23,7 @@ export type Device = {
   description: DeviceView['description']
   fields: Data
   state: Data
+  sourceStates: Data
   tools: Data[]
   sources: Data[]
   manual: Data
@@ -56,6 +57,7 @@ export function devicesFrom(value: unknown): Device[] {
       description: desc,
       fields: record(desc.state),
       state: record(d.state),
+      sourceStates: record(d.sourceStates),
       tools: array(desc.tools).map(record),
       sources: array(desc.sources).map(record),
       manual: record(desc.manual),

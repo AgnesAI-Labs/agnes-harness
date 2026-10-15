@@ -4,10 +4,16 @@ import type { ComponentType } from 'react'
 
 /** Presentation adapters only. The Host binds owner, profile, source and authority. */
 export type Receipt =
-  | { state: 'approval-required'; operationId: string; decisionId: string }
+  | { state: 'approval-required'; operationId: string; decisionId?: string }
   | { state: 'running'; operationId: string }
   | { state: 'completed'; operationId: string; output: JsonValue }
   | { state: 'refused' | 'cancelled' | 'unknown'; operationId: string; code: string }
+/** Published Host facade; reads name both the declared service and its operation. */
+export interface HostProfileServices {
+  query(service: string, input: Record<string, unknown>): Promise<unknown>
+  effect(service: string, input: Record<string, unknown>, options: { operationId: string }): Promise<unknown>
+  readOperation(service: string, operationId: string): Promise<unknown>
+}
 export interface ProfileServices {
   query(name: string, input: JsonValue, options?: { signal?: AbortSignal }): Promise<unknown>
   effect(
@@ -80,7 +86,7 @@ export interface MhsPorts {
 }
 export type MhsModuleContext = ClientContext & {
   profile: {
-    services: ProfileServices
+    services: HostProfileServices
     streams: Streams
     mhsDeveloper?: DeveloperPort
     mhsExamples?: ExamplesPort

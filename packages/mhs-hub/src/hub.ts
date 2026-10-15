@@ -467,11 +467,9 @@ export class Hub implements SouthEvents {
         const applied = object(object(data).sources ?? {})
         live.view.sourceStates ??= {}
         for (const [id, options] of Object.entries(applied)) {
-          if (
-            live.view.description.sources?.some((source) => source.id === id) &&
-            typeof object(options).on === 'boolean'
-          )
-            live.view.sourceStates[id] = object(options).on as boolean
+          const on = object(options).on
+          if (live.view.description.sources?.some((source) => source.id === id) && typeof on === 'boolean')
+            live.view.sourceStates[id] = on
         }
         this.emit({ type: 'configuration', device })
       }

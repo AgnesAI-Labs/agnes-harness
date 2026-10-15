@@ -42,7 +42,7 @@ function Picture({ sample, kind, dropped }: { sample: Sample | undefined; kind: 
       {kind === 'video' ? (
         <canvas ref={canvas} aria-label="Video" />
       ) : url ? (
-        <img src={url} alt="Device observation" />
+        <img src={url} alt="Device observation" onError={() => setFailed(true)} />
       ) : (
         <p>{t('waiting')}</p>
       )}
@@ -57,11 +57,23 @@ function Audio({ sample }: { sample: Sample | undefined }) {
     sources = useRef(new Set<AudioBufferSourceNode>())
   useEffect(() => {
     if (!listen || typeof AudioContext === 'undefined') return
-    const context = new AudioContext()
+    let context: AudioContext
+    try {
+      context = new AudioContext()
+    } catch {
+      setUnsupported(true)
+      return
+    }
     audio.current = context
     void context.resume().catch(() => setUnsupported(true))
     return () => {
-      for (const source of sources.current) source.stop()
+      for (const source of sources.current) {
+        try {
+          source.stop()
+        } catch {
+          /* Already ended or never started. */
+        }
+      }
       sources.current.clear()
       audio.current = undefined
       void context.close().catch(() => {})
@@ -85,20 +97,24 @@ function Audio({ sample }: { sample: Sample | undefined }) {
       return
     }
     if (sources.current.size >= 2) return
-    const count = sample.bytes.length / (channels * 2),
-      buffer = context.createBuffer(channels, count, rate),
-      view = new DataView(sample.bytes.buffer, sample.bytes.byteOffset, sample.bytes.byteLength)
-    for (let channel = 0; channel < channels; channel++) {
-      const out = buffer.getChannelData(channel)
-      for (let i = 0; i < count; i++) out[i] = view.getInt16((i * channels + channel) * 2, true) / 32768
-    }
-    const source = context.createBufferSource()
-    source.buffer = buffer
-    source.connect(context.destination)
-    sources.current.add(source)
-    source.onended = () => sources.current.delete(source)
     try {
-      source.start()
+      const count = sample.bytes.length / (channels * 2),
+        buffer = context.createBuffer(channels, count, rate),
+        view = new DataView(sample.bytes.buffer, sample.bytes.byteOffset, sample.bytes.byteLength)
+      for (let channel = 0; channel < channels; channel++) {
+        const out = buffer.getChannelData(channel)
+        for (let i = 0; i < count; i++) out[i] = view.getInt16((i * channels + channel) * 2, true) / 32768
+      }
+      const source = context.createBufferSource()
+      source.buffer = buffer
+      source.connect(context.destination)
+      sources.current.add(source)
+      source.onended = () => sources.current.delete(source)
+      try {
+        source.start()
+      } catch {
+        setUnsupported(true)
+      }
     } catch {
       setUnsupported(true)
     }
@@ -123,7 +139,7 @@ export function Observation({ source, device }: { source: Data; device: Device }
     requestedOff = useRef(false),
     action = useAction()
   // Only a confirmed backend source-state projection may label a source as off.
-  const configured = record(device.state.sources)[text(source.id)],
+  const configured = device.sourceStates[text(source.id)],
     off = configured === false || (configured === undefined && (confirmedOff ?? source.default === false)),
     kind = text(source.kind)
   useEffect(() => {
@@ -182,17 +198,19 @@ export function Observation({ source, device }: { source: Data; device: Device }
             loading={action.busy}
             disabled={!device.available || action.pending}
             onClick={() => {
-              requestedOff.current = !off
+              const turnOn = off || configured === null
+              requestedOff.current = !turnOn
               void action.run('configure', {
                 device: device.id,
-                params: { sources: { [text(source.id)]: { on: off } } },
+                params: { sources: { [text(source.id)]: { on: off || configured === null } } },
               })
             }}
           >
-            {t(off ? 'turnOn' : 'sourceOff')}
+            {t(off || configured === null ? 'turnOn' : 'sourceOff')}
           </Button>
         )}
       </header>
+      {configured === null && <p role="status">{t('unknown')}</p>}
       {off ? (
         <p>{t('sourceOff')}</p>
       ) : !device.online ? (
@@ -205,9 +223,12 @@ export function Observation({ source, device }: { source: Data; device: Device }
             <Picture sample={sample} kind={kind} dropped={dropped} />
           ) : kind === 'audio' ? (
             <Audio sample={sample} />
+          ) : kind.startsWith('x_') ? (
+            <pre>{jsonText(sample?.rawData)}</pre>
           ) : kind === 'scan' ? (
             <svg viewBox="-100 -100 200 200" role="img" aria-label={text(source.description)}>
               {points.slice(0, 2048).map((p, i) => {
+                if (p === null) return null
                 const angle = number(sample?.data.angle_min) + i * number(sample?.data.angle_inc)
                 const a = array(p)
                 const x = a.length ? number(a[0]) : number(p) * Math.cos(angle),
@@ -225,9 +246,11 @@ export function Observation({ source, device }: { source: Data; device: Device }
   )
 }
 function Values({ kind, data }: { kind: string; data: Data }) {
+  const last = useRef<Data>()
   const history = useRef<number[]>([]),
     v = Object.values(data).find((x) => typeof x === 'number')
-  if (typeof v === 'number') {
+  if (typeof v === 'number' && last.current !== data) {
+    last.current = data
     history.current = [...history.current, v].slice(-40)
   }
   if (['text', 'transcript'].includes(kind)) return <pre>{text(data.text) || jsonText(data)}</pre>

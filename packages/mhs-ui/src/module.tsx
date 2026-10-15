@@ -8,6 +8,7 @@ import { TOOL_NAMES, toolsFrom } from './model.js'
 import { nativeExamples } from './native-examples.js'
 import { MhsPage } from './page.js'
 import type { MhsModuleContext, MhsPorts } from './ports.js'
+import { profileServices } from './profile-services.js'
 import { MhsProvider } from './react.js'
 import { MhsStore, usedDeviceIds } from './store.js'
 
@@ -112,7 +113,7 @@ export function createMhsModule(ports: MhsPorts) {
           cleanup.push(
             ctx.slots.register(
               { name: 'tool.call.toolview', key: name, id: `mhs.${name}`, priority: 40 },
-              ({ owner }) => {
+              ({ owner }: import('@agnes/web-client').DshSlotPropsFor<'tool.call.toolview'>) => {
                 const call = toolsFrom([owner?.block])[0]
                 return call ? (
                   <Provider>
@@ -166,7 +167,7 @@ export function apply(ctx: ClientContext) {
   if (!supportsProfile(ctx))
     throw new Error('MHS requires profile services, authenticated streams and primary home contributions')
   return createMhsModule({
-    services: ctx.profile.services,
+    services: profileServices(ctx.profile.services),
     streams: ctx.profile.streams,
     session: ctx.session,
     ...(ctx.profile.mhsDeveloper ? { developer: ctx.profile.mhsDeveloper } : {}),

@@ -153,10 +153,11 @@ export function Drive({ device }: { device: Device }) {
           }
           if (e.code === 'Space') {
             e.preventDefault()
-            controller?.zero()
-            void client.effect('stop', { device: device.id }).catch(() => setFailure(true))
+            if (controller) release()
+            else void client.effect('stop', { device: device.id }).catch(() => setFailure(true))
             return
           }
+          if (e.ctrlKey || e.metaKey || e.altKey) return
           const key = e.key.toLowerCase()
           for (const axis of axes) {
             const keys = roleKeys[axis.role ?? '']
@@ -193,14 +194,14 @@ export function Drive({ device }: { device: Device }) {
                   onPointerCancel={() => controller?.zero()}
                   onLostPointerCapture={() => controller?.zero()}
                   onKeyDown={(e) => {
-                    if (e.code === 'Space' || e.key === 'Enter') {
+                    if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey) {
                       e.stopPropagation()
                       e.preventDefault()
                       controller?.set(axis.id, sign)
                     }
                   }}
                   onKeyUp={(e) => {
-                    if (e.code === 'Space' || e.key === 'Enter') {
+                    if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey) {
                       e.stopPropagation()
                       e.preventDefault()
                       controller?.zero()

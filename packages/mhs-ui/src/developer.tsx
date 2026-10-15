@@ -18,10 +18,10 @@ export function DeveloperPage() {
     status = useQuery(
       useCallback(async (signal: AbortSignal) => (port ? port.status(signal) : undefined), [port]),
     )
+  const messageSequence = useRef(0)
   useEffect(() => {
     if (paused) return
     const abort = new AbortController()
-    let seq = 0
     // Only sanitized metadata from the owner-bound diagnostics stream is rendered.
     void client
       .stream(
@@ -39,7 +39,7 @@ export function DeveloperPage() {
             [
               ...prior,
               {
-                id: ++seq,
+                id: ++messageSequence.current,
                 protocol: text(m.protocol) || (m.type === 'observation' ? 'mos' : 'mhs'),
                 summary,
               },
@@ -54,23 +54,29 @@ export function DeveloperPage() {
     return () => abort.abort()
   }, [client, paused])
   const selectedId = selected?.id
+  const checkAbort = useRef<AbortController>()
   const currentId = useRef(selectedId)
   currentId.current = selectedId
   // biome-ignore lint/correctness/useExhaustiveDependencies: Results belong to the selected device only.
   useEffect(() => {
+    const abort = new AbortController()
+    checkAbort.current = abort
     setChecks(undefined)
+    setChecking(false)
+    return () => abort.abort()
   }, [selectedId])
   const check = async () => {
     if (!port || !selected) return
     const selectedId = selected.id
     setChecking(true)
     try {
-      const result = await port.check(selectedId, client.abort.signal)
+      const signal = AbortSignal.any([checkAbort.current?.signal ?? client.abort.signal, client.abort.signal])
+      const result = await port.check(selectedId, signal)
       if (currentId.current === selectedId && !client.abort.signal.aborted) setChecks(result)
     } catch {
       setFailed(true)
     } finally {
-      setChecking(false)
+      if (currentId.current === selectedId) setChecking(false)
     }
   }
   return (

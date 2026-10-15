@@ -359,3 +359,9 @@
     height: 320px;
   }
 }
+
+.mhs-preview {
+  min-height: 140px;
+  background: var(--agnes-bg-card);
+  border-radius: var(--radius-md);
+}

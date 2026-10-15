@@ -5,6 +5,7 @@ export type Sample = {
   source: string
   at: number
   data: Data
+  rawData: unknown
   mime: string
   bytes?: Uint8Array
 }
@@ -22,6 +23,7 @@ export function sampleFrom(frame: unknown): Sample {
     source: text(value.source),
     at: value.at,
     data: record(value.data),
+    rawData: value.data,
     mime: text(value.mime),
     ...(value.bytes instanceof Uint8Array ? { bytes: value.bytes } : {}),
   }

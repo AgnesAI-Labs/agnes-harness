@@ -34,10 +34,15 @@ export class MhsClient {
     this.abort.signal.throwIfAborted()
     signal.throwIfAborted()
     signal = AbortSignal.any([signal, this.abort.signal])
-    return this.ports.services.effect(`${this.ports.prefix ?? 'mhs.'}${name}`, input, {
-      operationId: crypto.randomUUID(),
-      signal,
-    })
+    const operationId = crypto.randomUUID()
+    try {
+      return await this.ports.services.effect(`${this.ports.prefix ?? 'mhs.'}${name}`, input, {
+        operationId,
+        signal,
+      })
+    } catch {
+      return { state: 'unknown', operationId, code: 'receipt-unavailable' }
+    }
   }
   async stream(
     name: string,
