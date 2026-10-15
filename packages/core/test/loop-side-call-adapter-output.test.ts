@@ -48,6 +48,18 @@ const endlessCredits: SideScript = async function* (request) {
   yield unchecked({ ...sideUsage(), credits: Number.POSITIVE_INFINITY })
   yield { type: 'done', reason: 'stop' }
 }
+const misshapenResponse: SideScript = async function* (request) {
+  yield sentFor(request)
+  yield { type: 'text_delta', delta: ANSWER }
+  yield unchecked({ ...sideUsage(), response: { id: 42 } })
+  yield { type: 'done', reason: 'stop' }
+}
+const negativeTiming: SideScript = async function* (request) {
+  yield sentFor(request)
+  yield { type: 'text_delta', delta: ANSWER }
+  yield sideUsage()
+  yield unchecked({ type: 'done', reason: 'stop', timing: { ttftMs: -5, durationMs: 'slow' } })
+}
 const unknownCodeBeforeSending: SideScript = async function* () {
   yield unchecked({
     type: 'error',
@@ -63,6 +75,8 @@ describe('adapter output Core cannot record as given', () => {
     ['an unknown error code after sending', unknownCode],
     ['a usage report whose billing has another shape', misshapenBilling],
     ['a usage report whose credits are not finite', endlessCredits],
+    ['a usage report whose response id is not a string', misshapenResponse],
+    ['timing figures that are not valid numbers', negativeTiming],
   ])('records %s as an adapter error with an estimate and leaves nothing pending', async (_name, script) => {
     await withSession({ script, preset: withTreeBudget() }, async (t) => {
       const settle = vi.spyOn(t.storage, 'settleOrigin')

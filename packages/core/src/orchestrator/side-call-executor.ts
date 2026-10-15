@@ -407,6 +407,8 @@ async function dispatch(
       batch = [cost, ...rest, effects.terminalRow(binding, terminal)]
       recordable(batch)
     } catch {
+      // The reason is left out on purpose: validation messages can quote the adapter's values.
+      s.d.logger.warn('side call output could not be recorded as given', { sessionKey: s.key })
       ;({ batch, terminal } = unreadable())
     }
     spendSource = ((batch[0] as EventInput).data as CostLedger).creditSource
