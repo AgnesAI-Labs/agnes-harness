@@ -1,4 +1,3 @@
-export { launchMarsAgent } from './access.js'
 
 import type { Device } from '@agnes/mhs-device'
 import { MarsSimulation } from './simulation.js'

@@ -1,6 +1,6 @@
 import { createElement as h, useEffect, useRef, useState } from 'react'
 import { MarsCameras } from './generated/cameras.js'
-import { launchMarsAgent, MarsRuntime } from './generated/runtime.js'
+import { MarsRuntime } from './generated/runtime.js'
 import { MarsScene, VIEWS } from './generated/scene.js'
 
 const PACKAGE = '@agnes-example/mars-rescue'
@@ -11,6 +11,8 @@ export function apply(ctx) {
     releaseLock,
     disposed = false,
     unavailable = 'Enable the reviewed MHS example device connection to start.'
+  const lifetime = new AbortController()
+  const hosts = new WeakSet()
   const listeners = new Set()
   const notify = () => {
     for (const fn of listeners) fn()
@@ -39,12 +41,7 @@ export function apply(ctx) {
     try {
       assertLive()
       const access = ctx.get('mhsExampleAccess', false)
-      if (
-        !access ||
-        typeof access.connect !== 'function' ||
-        typeof access.launch?.prepare !== 'function' ||
-        typeof access.launch?.start !== 'function'
-      )
+      if (!access || typeof access.connect !== 'function')
         throw new Error('E_MARS_REVIEWED_DEVICE_TRANSPORT_REQUIRED')
       if (!releaseLock) {
         if (!navigator.locks || !ctx.module.binding?.profileId) throw new Error('profile-lock-unavailable')
@@ -105,6 +102,7 @@ export function apply(ctx) {
   window.addEventListener('pagehide', exit)
   ctx.effect(() => () => {
     disposed = true
+    lifetime.abort()
     window.removeEventListener('pagehide', exit)
     release()
     clearInterval(captureTimer)
@@ -125,7 +123,32 @@ export function apply(ctx) {
   ctx.effect(() => ctx.availability.subscribe(bindingChanged))
   ctx.examplePages.register({ id: 'mars-rescue', component: Page })
 
-  function Page() {
+  const presentation = {
+    getSnapshot: () => {
+      const state = runtime.snapshot()
+      return {
+        state: state.status === 'ready' ? 'running' : state.status,
+        connected: state.online.length,
+        total: 11,
+      }
+    },
+    subscribe: runtime.subscribe,
+    stop,
+  }
+  function Page({ context }) {
+    const host =
+      context?.data?.kind === 'agnes.mhs-example-scene/v1' &&
+      context.data.exampleId === PACKAGE &&
+      context.data.profileId === ctx.module.binding?.profileId
+        ? context.data
+        : undefined
+    useEffect(() => {
+      if (!host || hosts.has(host.bindRuntime)) return
+      const release = host.bindRuntime(presentation, lifetime.signal)
+      hosts.add(host.bindRuntime)
+      // The profile owns this binding. Detaching the scene never stops the fleet.
+      ctx.effect(() => release)
+    }, [host?.bindRuntime])
     const [, update] = useState(0),
       canvas = useRef(null),
       renderer = useRef(null),
@@ -186,9 +209,8 @@ export function apply(ctx) {
     const launch = async (id) => {
       assertLive()
       if (runtime?.snapshot().status !== 'ready') throw new Error('example-unavailable')
-      const access = ctx.get('mhsExampleAccess', false)
-      const key = `mars.launch.${ctx.module.binding.profileId}.${ctx.module.binding.activationId}.${id}`
-      await launchMarsAgent(access.launch, sessionStorage, key, id)
+      if (!host) throw new Error('example-scene-host-unavailable')
+      host.launch(id)
     }
     const keyDown = (event) => {
       if (
