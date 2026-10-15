@@ -4,6 +4,7 @@ import { ActivityPage } from './activity.js'
 import { DeviceDetail } from './detail.js'
 import { DeveloperPage } from './developer.js'
 import { ExamplesPage } from './examples.js'
+import { deviceTone, Fields, keyFields } from './fields.js'
 import { WorldMap } from './map.js'
 import { type Device, text } from './model.js'
 import { HubHealth, Stop, useMhs, useSnapshot } from './react.js'
@@ -35,11 +36,9 @@ function Preview({ device }: { device: Device }) {
 }
 export function DeviceCard({ device }: { device: Device }) {
   const { openDevice, t } = useMhs(),
-    numbers = Object.entries(device.state)
-      .filter(([, v]) => typeof v === 'number')
-      .slice(0, 3)
+    numbers = keyFields(device.fields)
   return (
-    <article className="mhs-device" data-state={!device.available ? 'offline' : device.health}>
+    <article className="mhs-device" data-state={deviceTone(device)}>
       <Button appearance="link" onClick={() => openDevice(device.id)}>
         <strong>{device.name}</strong>
         <code>{device.id}</code>
@@ -52,14 +51,10 @@ export function DeviceCard({ device }: { device: Device }) {
         {t(device.available ? 'online' : 'offline')} · {device.health}
       </p>
       {Boolean(device.state.problem) && <p role="status">{String(device.state.problem)}</p>}
-      <dl>
-        {numbers.map(([k, v]) => (
-          <div key={k}>
-            <dt>{k}</dt>
-            <dd>{String(v)}</dd>
-          </div>
-        ))}
-      </dl>
+      <Fields
+        fields={Object.fromEntries(numbers.map(([k]) => [k, device.fields[k] ?? {}]))}
+        values={device.state}
+      />
       <Stop device={device.id} />
     </article>
   )

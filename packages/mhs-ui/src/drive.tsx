@@ -1,6 +1,6 @@
 import { Button, Tooltip } from '@agnes/web-ui'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { type Axis, ManualController, manualKey, roleKeys } from './manual.js'
+import { type Axis, axisKeys, ManualController } from './manual.js'
 import { array, type Device, jsonText, number, record, text } from './model.js'
 import { ActionFeedback, useAction, useMhs } from './react.js'
 
@@ -23,11 +23,30 @@ export function Drive({ device }: { device: Device }) {
           id: text(a.id),
           min: number(a.min),
           max: number(a.max),
+          ...(array(a.keys).length === 2 && array(a.keys).every((k) => typeof k === 'string')
+            ? { keys: array(a.keys) as [string, string] }
+            : {}),
           ...(text(a.role) ? { role: text(a.role) } : {}),
         }
       }),
     [declarationKey],
   )
+  const keys = axisKeys(axes),
+    held = useRef(new Set<string>())
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Key state belongs to one control lease and cannot survive replacement.
+  useEffect(() => {
+    held.current.clear()
+  }, [controller])
+  const applyKeys = () => {
+    for (const axis of axes) {
+      let value = 0
+      for (const key of held.current) {
+        const hit = keys.get(key)
+        if (hit?.[0] === axis.id) value += hit[1]
+      }
+      controller?.set(axis.id, value)
+    }
+  }
   const rate = number(device.manual.rate_hz, 30)
   const consumed = useRef(new Set<string>())
   // biome-ignore lint/correctness/useExhaustiveDependencies: A declaration revision invalidates the current device lease.
@@ -133,6 +152,7 @@ export function Drive({ device }: { device: Device }) {
   }, [device.available])
   if (!axes.length) return null
   const release = () => {
+    held.current.clear()
     void controller?.release().catch(() => setFailure(true))
     setController(undefined)
     current.current = undefined
@@ -176,22 +196,16 @@ export function Drive({ device }: { device: Device }) {
             return
           }
           if (e.ctrlKey || e.metaKey || e.altKey) return
-          const key = manualKey(e.key)
-          for (const axis of axes) {
-            const keys = roleKeys[axis.role ?? '']
-            if (keys?.includes(key)) {
-              e.preventDefault()
-              controller?.set(axis.id, key === keys[0] ? 1 : -1)
-            }
+          if (keys.has(e.key.toLowerCase())) {
+            e.preventDefault()
+            held.current.add(e.key.toLowerCase())
+            applyKeys()
           }
         }}
         onKeyUp={(e) => {
-          for (const axis of axes) {
-            if (roleKeys[axis.role ?? '']?.includes(manualKey(e.key))) {
-              e.preventDefault()
-              controller?.set(axis.id, 0)
-              controller?.zero()
-            }
+          if (held.current.delete(e.key.toLowerCase())) {
+            e.preventDefault()
+            applyKeys()
           }
         }}
       >

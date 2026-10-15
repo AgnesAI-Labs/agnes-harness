@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 
+import { encodeMedia } from '@agnes/mhs-hub/media'
 import { fireEvent, getByLabelText, getByRole, queryByLabelText, queryByRole } from '@testing-library/dom'
 import { act, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -7,15 +8,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MhsClient } from '../src/client.js'
 import { ClipSender, pcmWav } from '../src/clips.js'
 import { DeviceDetail } from '../src/detail.js'
+import { DeveloperPage } from '../src/developer.js'
 import { Drive } from '../src/drive.js'
 import { ExamplesPage } from '../src/examples.js'
+import { alertLevel, Fields, keyFields, sourceGroup } from '../src/fields.js'
 import { ToolForm } from '../src/forms.js'
-import { catalog } from '../src/locales.js'
+import { gridBounds, MapGrid } from '../src/grid.js'
+import { catalog, translate } from '../src/locales.js'
+import { axisKeys } from '../src/manual.js'
 import { pickValue, WorldMap } from '../src/map.js'
 import { devicesFrom } from '../src/model.js'
 import { MhsPage } from '../src/page.js'
 import { MhsProvider, Stop } from '../src/react.js'
 import { MhsStore } from '../src/store.js'
+import { pointCloud } from '../src/telemetry.js'
 import { Observation } from '../src/widgets.js'
 import { device, fake } from './fixtures.js'
 
@@ -33,6 +39,8 @@ afterEach(async () => {
   })
   host.remove()
   vi.useRealTimers()
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
 })
 async function mount(node: ReactNode, f = fake()) {
   const client = new MhsClient(f.ports),
@@ -143,7 +151,7 @@ describe('MHS approved device interactions', () => {
       f,
     )
     expect(queryByLabelText(host, 'temperature')).toBeNull()
-    expect(getByLabelText(host, 'speed')).toBeTruthy()
+    expect(getByRole(host, 'spinbutton', { name: 'speed' })).toBeTruthy()
     await click(getByRole(host, 'button', { name: 'Resume' }))
     expect(f.effects[0]).toMatchObject({
       name: 'mhs.resume',
@@ -268,7 +276,7 @@ describe('MHS approved device interactions', () => {
       const axis = getByRole(host, 'button', { name: 'vx +' })
       await act(async () => {
         fireEvent.keyDown(axis, {
-          key: mode === 'space' ? 'ArrowUp' : 'w',
+          key: 'w',
           code: mode === 'space' ? 'ArrowUp' : 'KeyW',
         })
         await vi.advanceTimersByTimeAsync(40)
@@ -421,4 +429,295 @@ describe('MHS approved device interactions', () => {
     await click(getByRole(host, 'button', { name: 'Stop example' }))
     expect(stopped).toEqual(['mars'])
   })
+})
+
+describe('declaration-driven MHS observation inventory', () => {
+  const rows = [
+    ['scan', { angle_min: 90, angle_inc: 1, ranges: [1, null, 2] }, 'svg'],
+    ['points', { n: 1, fields: ['z', 'x', 'y'] }, 'svg'],
+    ['pose', { map: 'site', x: 1, y: 2, yaw: 45, ok: true }, 'svg'],
+    ['world', { map: 'site', entities: [{ device: 'other', x: 3, y: 4, yaw: 90, ok: true }] }, 'svg'],
+    ['odometry', { x: 1, y: 2, yaw: 3, v: 4, w: 5 }, 'svg'],
+    ['imu', { accel: [1, 2, 3], gyro: [0, 0, 1], rpy: [0, 0, 0.4] }, 'svg'],
+    ['gnss', { lat: 20, lon: 30, fix: 'rtk', acc_m: 0.2 }, 'dl'],
+    ['detections', { w: 640, h: 360, items: [{ label: 'rock', conf: 0.8, box: [1, 2, 20, 30] }] }, 'rect'],
+    ['values', { temperature: 20 }, 'dl'],
+    ['switch', { temperature: true }, 'dl'],
+    ['text', { text: 'hello' }, '[role="log"]'],
+    ['transcript', { text: 'hello', final: false, start: 0, end: 1 }, '[role="log"]'],
+    ['x_custom', { raw: ['payload'] }, 'pre'],
+  ] as const
+  it.each(rows)(
+    'renders actual binary MOS %s frames and releases the subscription',
+    async (kind, data, selector) => {
+      const d = devicesFrom([device()])[0]!,
+        f = fake()
+      await mount(
+        <Observation
+          device={d}
+          source={{
+            id: 'source',
+            kind,
+            description: kind,
+            fields: { temperature: { type: 'number', unit: '°C' } },
+          }}
+        />,
+        f,
+      )
+      const bytes = kind === 'points' ? new Uint8Array(new Float32Array([3, 1, 2]).buffer) : undefined
+      const frame = encodeMedia({
+        device: d.id,
+        source: 'source',
+        at: Date.now(),
+        data: JSON.parse(JSON.stringify(data)),
+        ...(bytes ? { bytes } : {}),
+      })
+      await act(async () => {
+        for (const listener of f.stream.frames) listener(frame)
+      })
+      expect(host.querySelector(selector)).toBeTruthy()
+      if (kind === 'points') expect(host.querySelector('circle')?.getAttribute('cx')).toBe('1')
+      if (kind === 'detections') {
+        expect(host.textContent).toContain('rock 80%')
+        expect(host.querySelector('rect')?.getAttribute('width')).toBe('19')
+      }
+      if (kind === 'scan') expect(Number(host.querySelector('circle')?.getAttribute('cx'))).toBeCloseTo(0)
+      if (kind === 'gnss') expect(host.textContent).toContain('GNSS rtk')
+      await act(async () => root.render(null))
+      expect(f.stream.closed).toBe(true)
+    },
+  )
+  it.each(['image', 'grid'])('releases %s object URLs on frame replacement and unmount', async (kind) => {
+    const create = vi.fn(() => 'blob:sample'),
+      revoke = vi.fn()
+    vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: create, revokeObjectURL: revoke }))
+    const d = devicesFrom([device()])[0]!,
+      f = fake()
+    await mount(<Observation device={d} source={{ id: 'source', kind, description: kind }} />, f)
+    await act(async () => {
+      for (const listener of f.stream.frames)
+        listener(
+          encodeMedia({
+            device: d.id,
+            source: 'source',
+            at: Date.now(),
+            mime: 'image/png',
+            bytes: new Uint8Array([137, 80, 78, 71]),
+            data: kind === 'grid' ? { id: 'site', resolution: 0.5, origin: [1, 2] } : { w: 1, h: 1 },
+          }),
+        )
+    })
+    expect(getByRole(host, 'img')).toBeTruthy()
+    await click(getByRole(host, 'button', { name: 'Zoom' }))
+    expect(host.querySelector('img')?.className).toBe('mhs-picture-zoom')
+    await act(async () => root.render(null))
+    expect(revoke).toHaveBeenCalledWith('blob:sample')
+    vi.unstubAllGlobals()
+  })
+  it('uses labels, units, hidden fields, bounded gauges and both alert directions', async () => {
+    await mount(
+      <Fields
+        fields={{
+          o2: {
+            type: 'number',
+            min: 0,
+            max: 100,
+            role: 'consumable',
+            of: 'oxygen',
+            unit: '%',
+            alert: { warn: 25, bad: 10, below: true },
+          },
+          secret: { ui: { hidden: true } },
+        }}
+        values={{ o2: 10, secret: 9 }}
+      />,
+    )
+    expect(getByRole(host, 'meter', { name: 'oxygen' })).toBeTruthy()
+    expect(host.textContent).toContain('10 %')
+    expect(host.textContent).not.toContain('secret')
+    expect(host.querySelector('[data-alert="bad"]')).toBeTruthy()
+    expect(alertLevel({ alert: { warn: 25, bad: 10, below: true } }, 25)).toBe('attention')
+    expect(alertLevel({ alert: { warn: 25, bad: 10, below: true } }, 26)).toBe('ok')
+    expect(alertLevel({ alert: { warn: 70, bad: 90 } }, 90)).toBe('bad')
+    expect(() =>
+      pointCloud({
+        device: 'd',
+        source: 's',
+        at: 1,
+        mime: '',
+        rawData: {},
+        data: { n: 2, fields: ['x', 'y', 'z'] },
+        bytes: new Uint8Array(1),
+      }),
+    ).toThrow('invalid-points')
+    expect(Object.keys(catalog.en).sort()).toEqual(Object.keys(catalog['zh-CN']).sort())
+    expect(translate('unknown', 'stop')).toBe(catalog.en.stop)
+    expect(
+      keyFields({
+        plain: {},
+        battery: { role: 'battery' },
+        problem: {},
+        hidden: { role: 'cpu', ui: { hidden: true } },
+      }).map(([k]) => k),
+    ).toEqual(['battery', 'plain'])
+    expect(keyFields({ a: {}, b: { ui: { tile: true } } }).map(([k]) => k)).toEqual(['b'])
+    expect(sourceGroup({ kind: 'grid' })).toBe('ranging')
+    expect(sourceGroup({ kind: 'values', ui: { group: 'power' } })).toBe('power')
+    const keys = axisKeys([
+      { id: 'move', min: -1, max: 1, role: 'forward', keys: ['U', 'N'] },
+      { id: 'pitch', min: -1, max: 1, role: 'pitch' },
+    ])
+    expect(keys.get('u')).toEqual(['move', 1])
+    expect(keys.get('w')).toBeUndefined()
+    expect(keys.get('arrowup')).toEqual(['pitch', 1])
+    expect(axisKeys([{ id: 'move', min: -1, max: 1, role: 'forward' }]).get('arrowup')).toEqual(['move', 1])
+  })
+})
+
+it('decodes PCM for explicit listening and closes live audio on unmount', async () => {
+  let stopped = false,
+    closed = false,
+    channels: Float32Array[] = []
+  vi.stubGlobal(
+    'AudioContext',
+    class {
+      destination = {}
+      async resume() {}
+      async close() {
+        closed = true
+      }
+      createBuffer(count: number, length: number) {
+        channels = Array.from({ length: count }, () => new Float32Array(length))
+        return { getChannelData: (i: number) => channels[i] }
+      }
+      createBufferSource() {
+        return {
+          buffer: undefined,
+          onended: undefined,
+          connect() {},
+          start() {},
+          stop() {
+            stopped = true
+          },
+        }
+      }
+    },
+  )
+  const d = devicesFrom([device()])[0]!,
+    f = fake()
+  await mount(
+    <Observation device={d} source={{ id: 'audio', kind: 'audio', description: 'Microphone' }} />,
+    f,
+  )
+  await click(getByRole(host, 'button', { name: 'Listen' }))
+  const bytes = new Uint8Array([0, 64, 0, 192])
+  await act(async () => {
+    for (const listener of f.stream.frames)
+      listener(
+        encodeMedia({
+          device: d.id,
+          source: 'audio',
+          at: Date.now(),
+          data: { rate: 16000, channels: 1 },
+          bytes,
+        }),
+      )
+  })
+  expect([...channels[0]!]).toEqual([0.5, -0.5])
+  await act(async () => root.render(null))
+  expect(stopped).toBe(true)
+  expect(closed).toBe(true)
+  vi.unstubAllGlobals()
+})
+it('submits advanced Hub mode through the reviewed developer port and can return to local mode', async () => {
+  vi.useFakeTimers()
+  const f = fake(),
+    configured: unknown[] = []
+  let remote = false
+  f.ports.developer = {
+    status: async () => ({
+      state: 'ready',
+      mode: remote ? 'external' : 'local',
+      devicePort: 'auto',
+      ...(remote
+        ? { address: 'wss://192.0.2.10/mhs-peer/v1', allowlist: ['wss://192.0.2.10/mhs-peer/v1'] }
+        : {}),
+    }),
+    retry: async () => {},
+    check: async () => [],
+    configure: async (port, external) => {
+      configured.push({ port, external })
+      remote = external !== undefined
+    },
+  }
+  await mount(<DeveloperPage />, f)
+  host.querySelector('details')!.open = true
+  await act(async () => fireEvent.change(getByLabelText(host, 'Hub mode'), { target: { value: 'external' } }))
+  await act(async () =>
+    fireEvent.change(getByLabelText(host, 'External peer address'), {
+      target: { value: 'wss://192.0.2.10/mhs-peer/v1' },
+    }),
+  )
+  expect(getByRole(host, 'button', { name: 'Hub listener settings' }).hasAttribute('disabled')).toBe(true)
+  await act(async () =>
+    fireEvent.change(getByLabelText(host, 'Reviewed endpoint allowlist (one per line)'), {
+      target: { value: 'wss://192.0.2.10/mhs-peer/v1' },
+    }),
+  )
+  await click(getByRole(host, 'button', { name: 'Hub listener settings' }))
+  expect(configured[0]).toEqual({
+    port: 'auto',
+    external: { address: 'wss://192.0.2.10/mhs-peer/v1', allowlist: ['wss://192.0.2.10/mhs-peer/v1'] },
+  })
+  await act(async () => {
+    fireEvent.change(getByLabelText(host, 'External peer address'), {
+      target: { value: 'wss://192.0.2.11/mhs-peer/v1' },
+    })
+    await vi.advanceTimersByTimeAsync(1001)
+  })
+  expect(host.querySelector('details')?.open).toBe(true)
+  expect((getByLabelText(host, 'External peer address') as HTMLInputElement).value).toBe(
+    'wss://192.0.2.11/mhs-peer/v1',
+  )
+  await act(async () => fireEvent.change(getByLabelText(host, 'Hub mode'), { target: { value: 'local' } }))
+  await click(getByRole(host, 'button', { name: 'Hub listener settings' }))
+  expect(configured[1]).toEqual({ port: 'auto', external: undefined })
+})
+
+it('projects binary occupancy into its map frame and revokes the background on detach', async () => {
+  const create = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:grid'),
+    revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+  const d = devicesFrom([device()])[0]!,
+    f = fake(),
+    bytes = new Uint8Array(24)
+  bytes.set([137, 80, 78, 71])
+  const view = new DataView(bytes.buffer)
+  view.setUint32(16, 10)
+  view.setUint32(20, 20)
+  const sample = {
+    device: d.id,
+    source: 'grid',
+    at: Date.now(),
+    data: { id: 'site', resolution: 0.5, origin: [1, 2] },
+    mime: 'image/png',
+    rawData: {},
+    bytes,
+  }
+  expect(gridBounds(sample)).toEqual([1, 2, 6, 12])
+  await mount(
+    <svg role="img" aria-label="Occupancy map">
+      <MapGrid map="site" device={d} source="grid" xy={(x, y) => [x, 100 - y]} />
+    </svg>,
+    f,
+  )
+  await act(async () => {
+    for (const listener of f.stream.frames) listener(encodeMedia(sample))
+  })
+  expect(host.querySelector('image')?.getAttribute('x')).toBe('1')
+  expect(host.querySelector('image')?.getAttribute('y')).toBe('88')
+  expect(host.querySelector('image')?.getAttribute('height')).toBe('10')
+  expect(create).toHaveBeenCalled()
+  await act(async () => root.render(null))
+  expect(revoke).toHaveBeenCalledWith('blob:grid')
+  expect(f.stream.closed).toBe(true)
 })

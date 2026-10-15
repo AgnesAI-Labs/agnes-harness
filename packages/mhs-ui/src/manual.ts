@@ -1,7 +1,7 @@
 import type { JsonValue } from '@agnes/protocol'
 import type { ClientStream } from './ports.js'
 
-export type Axis = { id: string; min: number; max: number; role?: string }
+export type Axis = { id: string; min: number; max: number; role?: string; keys?: readonly [string, string] }
 /** A local interaction deadman complements device safety; it never grants control. */
 export class ManualController {
   private timer: ReturnType<typeof setInterval> | undefined
@@ -57,18 +57,36 @@ export class ManualController {
     }
   }
 }
-export const roleKeys: Readonly<Record<string, readonly [string, string]>> = {
+const roleKeys: Readonly<Record<string, readonly [string, string]>> = {
   forward: ['w', 's'],
   turn: ['a', 'd'],
+  strafe: ['q', 'e'],
   up: ['r', 'f'],
-  pitch: ['i', 'k'],
-  yaw: ['j', 'l'],
+  roll: ['z', 'c'],
+  pitch: ['arrowup', 'arrowdown'],
+  yaw: ['arrowleft', 'arrowright'],
+  zoom: ['=', '-'],
+  grip: ['g', 'h'],
 }
-
-export function manualKey(key: string): string {
-  const lower = key.toLowerCase()
-  return (
-    ({ arrowup: 'w', arrowdown: 's', arrowleft: 'a', arrowright: 'd' } as Record<string, string>)[lower] ??
-    lower
-  )
+export function axisKeys(axes: readonly Axis[]): Map<string, [string, number]> {
+  const map = new Map<string, [string, number]>()
+  for (const axis of axes) {
+    const keys = axis.keys ?? roleKeys[axis.role ?? '']
+    keys?.forEach((key, i) => {
+      map.set(key.toLowerCase(), [axis.id, i === 0 ? 1 : -1])
+    })
+  }
+  if (!axes.some((a) => a.role === 'pitch' || a.role === 'yaw')) {
+    for (const [role, positive, negative] of [
+      ['forward', 'arrowup', 'arrowdown'],
+      ['turn', 'arrowleft', 'arrowright'],
+    ] as const) {
+      const axis = axes.find((a) => a.role === role)
+      if (axis) {
+        map.set(positive, [axis.id, 1])
+        map.set(negative, [axis.id, -1])
+      }
+    }
+  }
+  return map
 }

@@ -217,12 +217,17 @@ export function ToolForm({ device, tool }: { device: Device; tool: Data }) {
         {Object.entries(properties).map(([key, raw]) => (
           <label key={key} htmlFor={`${id}-${key}`} className="mhs-field">
             <span>
-              {key}
+              {text(record(record(record(tool.ui).params)[key]).label) ||
+                text(record(record(raw).ui).label) ||
+                key}
               {required.includes(key) && ' *'}
             </span>
             <Input
               id={`${id}-${key}`}
-              schema={{ ...record(raw), ui: record(record(record(tool.ui).params)[key]) }}
+              schema={{
+                ...record(raw),
+                ui: { ...record(record(raw).ui), ...record(record(record(tool.ui).params)[key]) },
+              }}
               value={values[key]}
               disabled={disabled}
               onChange={(v) => update(key, v)}

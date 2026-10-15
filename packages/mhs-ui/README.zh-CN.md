@@ -17,3 +17,6 @@ Activity 支持 1–1,000 的条数上限和最多 512 字符的 opaque cursor�
 真实 Host 适配器保留待审批提案的不可变输入和原 operation id，协调时仅重试该提案，直至原生审批完成。运行中、已完成、已拒绝及 unknown 操作只查询回执，不重发。卸载会取消待审批重试，最多保留 1,024 条操作关联。原生批准入口位于 Web 侧栏的操作审批区。
 
 本地场景模块可读取既有 `context.data` 中的 `ExampleSceneHost`，须核对 kind 为 `agnes.mhs-example-scene/v1` 且 exampleId 匹配。用子模块 profile 寿命 signal 绑定 `ExampleRuntime`，视图卸载不释放运行时。宿主投影状态与连接数、去重订阅，在父模块撤销时停止，并拒绝重复绑定；这些事实不赋予后端批准。标签与场景中的各个 launch 选项使用相同父级 review。结果未知时，在 profile/activation 隔离的 session storage 保留 ticket 与 operation ID，父页面重载后也不换新请求。
+
+
+观测控件覆盖 MOS 所有类型，包括 float32 点云、占用 PNG、朝向轨迹、IMU 向量、GNSS 精度和检测框。声明驱动源分组、字段标签/角色/单位/阈值/隐藏和量表；轴 keys 覆盖角色默认键，箭头优先控制已声明的 pitch/yaw，否则控制 forward/turn。接入页高级配置把精确远端地址及白名单提交原生审批，浏览器不直接访问外部 Hub。

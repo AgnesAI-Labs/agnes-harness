@@ -1,6 +1,7 @@
 import type { JsonValue } from '@agnes/protocol'
 import { Button } from '@agnes/web-ui'
 import { useState } from 'react'
+import { gridSources, MapGrid } from './grid.js'
 import { array, type Data, type Device, number, record, text } from './model.js'
 import { useMhs } from './react.js'
 export type PickMode = 'point' | 'pose' | 'polygon'
@@ -121,6 +122,18 @@ export function WorldMap({
           role="img"
           aria-label={text(map.name) || text(map.id)}
         >
+          {!mode &&
+            gridSources(devices, text(map.id))
+              .slice(0, 1)
+              .map(({ device, source }) => (
+                <MapGrid
+                  key={`${device.id}:${device.revision}:${source}:${text(map.id)}`}
+                  map={text(map.id)}
+                  device={device}
+                  source={source}
+                  xy={xy}
+                />
+              ))}
           {array(map.places).map((raw, i) => {
             const p = record(raw),
               at = array(p.at),
@@ -140,6 +153,40 @@ export function WorldMap({
               </g>
             )
           })}
+          {devices
+            .filter((d) => d.position.map === map.id)
+            .flatMap((d) =>
+              d.jobs
+                .filter((job) => job.state !== 'terminal')
+                .map((job) => {
+                  const progress = record(job.navigation),
+                    route = array(progress.route ?? progress.points),
+                    target = array(progress.target)
+                  return (
+                    <g key={`${d.id}:${text(job.id)}`} aria-label={`${d.name} route`}>
+                      {route.length > 0 && (
+                        <polyline
+                          points={[[d.position.x, d.position.y], ...route]
+                            .map((p) => {
+                              const a = array(p)
+                              return xy(number(a[0]), number(a[1])).join(',')
+                            })
+                            .join(' ')}
+                        />
+                      )}
+                      {target.length === 2 && (
+                        <circle
+                          cx={xy(number(target[0]), number(target[1]))[0]}
+                          cy={xy(number(target[0]), number(target[1]))[1]}
+                          r="1.5"
+                        >
+                          <title>{`${d.name} target`}</title>
+                        </circle>
+                      )}
+                    </g>
+                  )
+                }),
+            )}
           {points.length > 0 && <polyline points={points.map((p) => xy(...p).join(',')).join(' ')} />}
           {points.map((p) => {
             const [px, py] = xy(...p)

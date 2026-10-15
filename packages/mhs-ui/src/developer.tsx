@@ -6,6 +6,9 @@ export function DeveloperPage() {
   const { client, t } = useMhs(),
     { devices } = useSnapshot(),
     [id, setId] = useState(''),
+    [mode, setMode] = useState('local'),
+    [address, setAddress] = useState(''),
+    [allowlist, setAllowlist] = useState(''),
     [devicePort, setDevicePort] = useState('auto'),
     [language, setLanguage] = useState('ts'),
     [paused, setPaused] = useState(false),
@@ -18,16 +21,30 @@ export function DeveloperPage() {
     port = client.ports.developer,
     status = useQuery(
       useCallback(async (signal: AbortSignal) => (port ? port.status(signal) : undefined), [port]),
+      true,
     )
   useEffect(() => {
-    if (status.value?.state !== 'starting' && status.value?.state !== 'stopping') return
+    if (
+      status.value?.state !== 'starting' &&
+      status.value?.state !== 'stopping' &&
+      status.value?.mode !== 'external'
+    )
+      return
     const timer = setTimeout(status.retry, 1000)
     return () => clearTimeout(timer)
-  }, [status.value?.state, status.retry])
+  }, [status.value?.state, status.value?.mode, status.retry])
   const configuredPort = status.value?.devicePort
   useEffect(() => {
     if (configuredPort !== undefined) setDevicePort(String(configuredPort))
   }, [configuredPort])
+  const configuredAllowlist = status.value?.allowlist?.join('\n')
+  useEffect(() => {
+    if (status.value?.mode) setMode(status.value.mode)
+    if (status.value?.address) {
+      setAddress(status.value.address)
+      setAllowlist(configuredAllowlist ?? status.value.address)
+    }
+  }, [status.value?.mode, status.value?.address, configuredAllowlist])
   const messageSequence = useRef(0)
   useEffect(() => {
     if (paused) return
@@ -121,7 +138,7 @@ export function DeveloperPage() {
           ) : (
             <>
               <p role="status">
-                {status.value.state} {status.value.code}
+                {status.value.state} · {status.value.mode} {status.value.code}
               </p>
               {Object.entries(status.value.endpoints ?? {}).map(([key, value]) => (
                 <div className="mhs-endpoint" key={key}>
@@ -141,33 +158,67 @@ export function DeveloperPage() {
               >
                 {t('retry')}
               </Button>
-              <label>
-                {t('devicePort')}
-                <input
-                  aria-label={t('devicePort')}
-                  value={devicePort}
-                  onChange={(event) => setDevicePort(event.target.value)}
-                  placeholder={t('automaticPort')}
-                />
-              </label>
-              {port.configure && (
-                <Button
-                  disabled={
-                    devicePort !== 'auto' &&
-                    (!Number.isInteger(Number(devicePort)) ||
-                      Number(devicePort) < 1 ||
-                      Number(devicePort) > 65535)
-                  }
-                  onClick={() =>
-                    void port
-                      .configure?.(devicePort === 'auto' ? 'auto' : Number(devicePort))
-                      .then(status.retry)
-                      .catch(() => setFailed(true))
-                  }
-                >
-                  {t('external')}
-                </Button>
-              )}
+              <details>
+                <summary>{t('advancedHub')}</summary>
+                <label>
+                  {t('hubMode')}
+                  <select value={mode} onChange={(e) => setMode(e.target.value)}>
+                    <option value="local">{t('localHub')}</option>
+                    <option value="external">{t('externalHub')}</option>
+                  </select>
+                </label>
+                {mode === 'external' && (
+                  <>
+                    <label>
+                      {t('hubAddress')}
+                      <input
+                        value={address}
+                        onChange={(e) => setAddress(e.target.value)}
+                        placeholder="wss://192.0.2.10/mhs-peer/v1"
+                      />
+                    </label>
+                    <label>
+                      {t('hubAllowlist')}
+                      <textarea value={allowlist} onChange={(e) => setAllowlist(e.target.value)} />
+                    </label>
+                    <p>{t('hubBoundary')}</p>
+                  </>
+                )}
+                <label>
+                  {t('devicePort')}
+                  <input
+                    aria-label={t('devicePort')}
+                    value={devicePort}
+                    onChange={(event) => setDevicePort(event.target.value)}
+                    placeholder={t('automaticPort')}
+                  />
+                </label>
+                {port.configure && (
+                  <Button
+                    disabled={
+                      (mode === 'external' &&
+                        (!address.trim() || !allowlist.split('\n').includes(address))) ||
+                      (devicePort !== 'auto' &&
+                        (!Number.isInteger(Number(devicePort)) ||
+                          Number(devicePort) < 1 ||
+                          Number(devicePort) > 65535))
+                    }
+                    onClick={() =>
+                      void port
+                        .configure?.(
+                          devicePort === 'auto' ? 'auto' : Number(devicePort),
+                          mode === 'external'
+                            ? { address, allowlist: allowlist.split('\n').filter(Boolean) }
+                            : undefined,
+                        )
+                        .then(status.retry)
+                        .catch(() => setFailed(true))
+                    }
+                  >
+                    {t('external')}
+                  </Button>
+                )}
+              </details>
             </>
           )}
         </section>

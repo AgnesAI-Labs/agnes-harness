@@ -3,14 +3,17 @@ import { useEffect, useRef, useState } from 'react'
 import { type Sample, sampleFrom, VideoView } from './media.js'
 import { array, type Data, type Device, jsonText, number, record, text } from './model.js'
 import { ActionFeedback, useAction, useMhs } from './react.js'
+import { Telemetry } from './telemetry.js'
 
 function Picture({ sample, kind, dropped }: { sample: Sample | undefined; kind: string; dropped: number }) {
   const { t } = useMhs(),
     canvas = useRef<HTMLCanvasElement>(null),
     decoder = useRef<VideoView>(),
     [url, setUrl] = useState(''),
-    [failed, setFailed] = useState(false)
+    [failed, setFailed] = useState(false),
+    [zoom, setZoom] = useState(false)
   useEffect(() => {
+    setFailed(false)
     if (kind !== 'video' || !canvas.current) return
     const v = new VideoView(canvas.current, () => setFailed(true))
     decoder.current = v
@@ -40,9 +43,19 @@ function Picture({ sample, kind, dropped }: { sample: Sample | undefined; kind: 
     <>
       {failed && <p role="status">{t('unsupported')}</p>}
       {kind === 'video' ? (
-        <canvas ref={canvas} aria-label="Video" />
+        <canvas ref={canvas} aria-label={t('video')} />
       ) : url ? (
-        <img src={url} alt="Device observation" onError={() => setFailed(true)} />
+        <>
+          <Button onClick={() => setZoom((v) => !v)} aria-pressed={zoom}>
+            {t('zoom')}
+          </Button>
+          <img
+            className={zoom ? 'mhs-picture-zoom' : undefined}
+            src={url}
+            alt={t('deviceObservation')}
+            onError={() => setFailed(true)}
+          />
+        </>
       ) : (
         <p>{t('waiting')}</p>
       )}
@@ -131,13 +144,15 @@ function Audio({ sample }: { sample: Sample | undefined }) {
 }
 export function Observation({ source, device }: { source: Data; device: Device }) {
   const { client, t } = useMhs(),
-    [sample, setSample] = useState<Sample>(),
+    [samples, setSamples] = useState<{ latest?: Sample; history: Data[] }>({ history: [] }),
+    sequence = useRef(0),
     [error, setError] = useState(false),
     [stale, setStale] = useState(false),
     [dropped, setDropped] = useState(0),
     [confirmedOff, setConfirmedOff] = useState<boolean>(),
     requestedOff = useRef(false),
     action = useAction()
+  const sample = samples.latest
   // Only a confirmed backend source-state projection may label a source as off.
   const configured = device.sourceStates[text(source.id)],
     off = configured === false || (configured === undefined && (confirmedOff ?? source.default === false)),
@@ -147,8 +162,9 @@ export function Observation({ source, device }: { source: Data; device: Device }
     if (receipt?.state === 'completed' && record(record(receipt.output).outcome).status === 'done')
       setConfirmedOff(requestedOff.current)
   }, [action.receipt])
+  // biome-ignore lint/correctness/useExhaustiveDependencies: A device declaration revision invalidates the source subscription.
   useEffect(() => {
-    setSample(undefined)
+    setSamples({ history: [] })
     setError(false)
     setStale(false)
     if (off || !device.online) return
@@ -164,7 +180,24 @@ export function Observation({ source, device }: { source: Data; device: Device }
             const next = sampleFrom(frame)
             if (next.device !== device.id || next.source !== source.id) return
             last = next.at
-            setSample(next)
+            const id = ++sequence.current
+            const retain = ['values', 'switch', 'text', 'transcript', 'odometry', 'pose'].includes(kind)
+            const historyData =
+              kind === 'values'
+                ? Object.fromEntries(
+                    Object.entries(next.data)
+                      .filter(([, v]) => typeof v === 'number')
+                      .slice(0, 128),
+                  )
+                : next.data
+            setSamples((prior) => ({
+              latest: next,
+              history: retain
+                ? [...prior.history, { ...historyData, _id: id }].slice(
+                    kind === 'text' || kind === 'transcript' ? -30 : -200,
+                  )
+                : [],
+            }))
             setStale(Date.now() - last > 10_000)
           } catch {
             setError(true)
@@ -186,9 +219,9 @@ export function Observation({ source, device }: { source: Data; device: Device }
       abort.abort()
       clearInterval(timer)
     }
-  }, [client, device.id, device.online, source.id, off])
-  const points = array(sample?.data.ranges ?? sample?.data.points),
-    values = sample?.data ?? {}
+  }, [client, device.id, device.revision, device.online, source.id, off, kind])
+  const points = array(sample?.data.ranges),
+    scanSpan = Math.max(1, ...points.slice(0, 2048).map((p) => number(p)))
   return (
     <section className="mhs-observation">
       <header>
@@ -219,63 +252,47 @@ export function Observation({ source, device }: { source: Data; device: Device }
         <>
           {(error || stale) && <p role="status">{t(error ? 'unavailable' : 'stale')}</p>}
           {!sample && <p>{t('waiting')}</p>}
-          {['image', 'video'].includes(kind) ? (
-            <Picture sample={sample} kind={kind} dropped={dropped} />
+          {['image', 'video', 'grid'].includes(kind) ? (
+            <>
+              <Picture sample={sample} kind={kind} dropped={dropped} />
+              {kind === 'grid' && (
+                <p>{`${text(sample?.data.id)} · ${number(sample?.data.resolution)} m/px · ${jsonText(sample?.data.origin)}`}</p>
+              )}
+            </>
           ) : kind === 'audio' ? (
             <Audio sample={sample} />
           ) : kind.startsWith('x_') ? (
             <pre>{jsonText(sample?.rawData)}</pre>
           ) : kind === 'scan' ? (
-            <svg viewBox="-100 -100 200 200" role="img" aria-label={text(source.description)}>
+            <svg
+              viewBox={`${-scanSpan} ${-scanSpan} ${scanSpan * 2} ${scanSpan * 2}`}
+              role="img"
+              aria-label={text(source.description)}
+            >
               {points.slice(0, 2048).map((p, i) => {
                 if (p === null) return null
-                const angle = number(sample?.data.angle_min) + i * number(sample?.data.angle_inc)
+                const angle =
+                  ((number(sample?.data.angle_min) + i * number(sample?.data.angle_inc)) * Math.PI) / 180
                 const a = array(p)
                 const x = a.length ? number(a[0]) : number(p) * Math.cos(angle),
                   y = a.length ? number(a[1]) : number(p) * Math.sin(angle)
-                return <circle key={String(angle)} cx={x} cy={-y} r="1" />
+                return <circle key={String(angle)} cx={x} cy={-y} r={scanSpan / 150} />
               })}
             </svg>
           ) : (
-            <Values kind={kind} data={values} />
+            sample && (
+              <Telemetry
+                key={`${device.revision}:${String(source.id)}`}
+                kind={kind}
+                sample={sample}
+                source={source}
+                history={samples.history}
+              />
+            )
           )}
         </>
       )}
       <ActionFeedback action={action} />
     </section>
-  )
-}
-function Values({ kind, data }: { kind: string; data: Data }) {
-  const last = useRef<Data>()
-  const history = useRef<number[]>([]),
-    v = Object.values(data).find((x) => typeof x === 'number')
-  if (typeof v === 'number' && last.current !== data) {
-    last.current = data
-    history.current = [...history.current, v].slice(-40)
-  }
-  if (['text', 'transcript'].includes(kind)) return <pre>{text(data.text) || jsonText(data)}</pre>
-  return (
-    <>
-      <dl>
-        {Object.entries(data).map(([k, v]) => (
-          <div key={k}>
-            <dt>{k}</dt>
-            <dd>{typeof v === 'object' ? jsonText(v) : String(v)}</dd>
-          </div>
-        ))}
-      </dl>
-      {kind === 'values' && history.current.length > 1 && (
-        <svg viewBox="0 0 100 30" role="img" aria-label="Trend">
-          <polyline
-            points={history.current
-              .map(
-                (v, i) =>
-                  `${(i / (history.current.length - 1)) * 100},${28 - ((v - Math.min(...history.current)) / (Math.max(...history.current) - Math.min(...history.current) || 1)) * 26}`,
-              )
-              .join(' ')}
-          />
-        </svg>
-      )}
-    </>
   )
 }

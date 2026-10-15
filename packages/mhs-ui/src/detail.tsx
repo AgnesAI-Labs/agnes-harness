@@ -1,7 +1,9 @@
 import { Button } from '@agnes/web-ui'
 import { Drive } from './drive.js'
+import { Fields, sourceGroup } from './fields.js'
 import { JobView, StateField, ToolForm } from './forms.js'
-import { type Device, jsonText, record } from './model.js'
+import { catalog } from './locales.js'
+import { type Device, record } from './model.js'
 import { HubHealth, Stop, useMhs } from './react.js'
 import { Observation } from './widgets.js'
 export function DeviceDetail({ device, onBack }: { device: Device; onBack(): void }) {
@@ -21,20 +23,24 @@ export function DeviceDetail({ device, onBack }: { device: Device; onBack(): voi
         <div>
           <section className="mhs-box">
             <h3>{t('sources')}</h3>
-            {device.sources.map((source) => (
-              <Observation key={String(source.id)} source={source} device={device} />
+            {[...new Set(device.sources.map((s) => sourceGroup(s)))].map((group) => (
+              <section key={group} aria-label={group || t('sources')}>
+                {group && (
+                  <h4>
+                    {`group.${group}` in catalog.en ? t(`group.${group}` as keyof typeof catalog.en) : group}
+                  </h4>
+                )}
+                {device.sources
+                  .filter((s) => sourceGroup(s) === group)
+                  .map((source) => (
+                    <Observation key={String(source.id)} source={source} device={device} />
+                  ))}
+              </section>
             ))}
             {!device.sources.length && <p>—</p>}
           </section>
           <section className="mhs-box">
-            <dl>
-              {Object.entries(device.state).map(([k, v]) => (
-                <div key={k}>
-                  <dt>{k}</dt>
-                  <dd>{typeof v === 'object' ? jsonText(v) : String(v)}</dd>
-                </div>
-              ))}
-            </dl>
+            <Fields fields={device.fields} values={device.state} />
           </section>
           <Drive device={device} />
         </div>

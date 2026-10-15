@@ -29,14 +29,16 @@ export function useSnapshot() {
   const { store } = useMhs()
   return useSyncExternalStore(store.subscribe, store.read, store.read)
 }
-export function useQuery<T>(load: (signal: AbortSignal) => Promise<T>) {
+export function useQuery<T>(load: (signal: AbortSignal) => Promise<T>, retainOnRetry = false) {
+  const previousLoad = useRef(load)
   const [value, setValue] = useState<T>(),
     [error, setError] = useState(false),
     [revision, setRevision] = useState(0)
   // biome-ignore lint/correctness/useExhaustiveDependencies: Explicit retry invalidates an otherwise identical read.
   useEffect(() => {
     const abort = new AbortController()
-    setValue(undefined)
+    if (!retainOnRetry || previousLoad.current !== load) setValue(undefined)
+    previousLoad.current = load
     setError(false)
     void load(abort.signal)
       .then((v) => {
@@ -46,7 +48,7 @@ export function useQuery<T>(load: (signal: AbortSignal) => Promise<T>) {
         if (!abort.signal.aborted) setError(true)
       })
     return () => abort.abort()
-  }, [load, revision])
+  }, [load, revision, retainOnRetry])
   return { value, error, retry: useCallback(() => setRevision((n) => n + 1), []) }
 }
 export function ReceiptView({ receipt }: { receipt: Receipt | undefined }) {
@@ -187,9 +189,16 @@ export function Notice({ children }: { children: string }) {
 export function HubHealth() {
   const { client, t } = useMhs(),
     port = client.ports.developer
-  const status = useQuery(useCallback(async (signal: AbortSignal) => port?.status(signal), [port]))
+  const status = useQuery(
+    useCallback(async (signal: AbortSignal) => port?.status(signal), [port]),
+    true,
+  )
   useEffect(() => {
-    if (!status.value || !['starting', 'stopping'].includes(status.value.state)) return
+    if (
+      !status.value ||
+      (!['starting', 'stopping'].includes(status.value.state) && status.value.mode !== 'external')
+    )
+      return
     const timer = setTimeout(status.retry, 2000)
     return () => clearTimeout(timer)
   }, [status.value, status.retry])
@@ -202,7 +211,7 @@ export function HubHealth() {
     )
   return (
     <span role="status">
-      Hub · {status.value?.state ?? t('loading')} {status.value?.code}
+      Hub · {status.value?.mode} · {status.value?.state ?? t('loading')} {status.value?.code}
     </span>
   )
 }

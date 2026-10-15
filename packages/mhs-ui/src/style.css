@@ -105,6 +105,12 @@
   .mhs-receipt[data-state="unknown"] {
     border-left: 3px solid var(--agnes-status-danger-text);
   }
+  .mhs-device[data-state="attention"] {
+    border-left: 3px solid var(--agnes-status-warning-text);
+  }
+  .mhs-device[data-state="busy"] {
+    border-left: 3px solid var(--agnes-status-info-text);
+  }
   .mhs-device[data-state="offline"] {
     border-style: dashed;
   }
@@ -399,5 +405,25 @@
     transform: translateX(-50%);
     font-size: var(--font-size-xs);
     color: var(--agnes-text-secondary);
+  }
+}
+
+@layer app {
+  .mhs-fields [data-alert="bad"] {
+    color: var(--agnes-status-danger-text);
+  }
+  .mhs-fields [data-alert="attention"] {
+    color: var(--agnes-status-warning-text);
+  }
+  .mhs-observation svg rect {
+    fill: none;
+    stroke: currentColor;
+  }
+  .mhs-observation img.mhs-picture-zoom {
+    max-width: none;
+    width: auto;
+  }
+  .mhs-observation {
+    overflow: auto;
   }
 }

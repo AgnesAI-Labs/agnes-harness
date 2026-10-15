@@ -3,7 +3,7 @@ import { conversationCards, homeNavigation, workbenchPanels } from '@agnes/web-c
 import { type ReactNode, useSyncExternalStore } from 'react'
 import { cardCall, SessionDevices, ToolCard } from './cards.js'
 import { MhsClient } from './client.js'
-import { catalog, type TextKey } from './locales.js'
+import { catalog, type TextKey, translate } from './locales.js'
 import { TOOL_NAMES, toolsFrom } from './model.js'
 import { nativeDeveloper } from './native-developer.js'
 import { nativeExamples } from './native-examples.js'
@@ -60,7 +60,7 @@ export function createMhsModule(ports: MhsPorts) {
               value={{
                 client,
                 store,
-                t: (key: TextKey) => catalog[locale === 'zh-CN' ? 'zh-CN' : 'en'][key],
+                t: (key: TextKey) => translate(locale, key),
                 openDevice,
               }}
             >

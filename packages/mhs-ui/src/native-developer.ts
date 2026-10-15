@@ -25,26 +25,42 @@ export function nativeDeveloper(ctx: ClientContext): DeveloperPort {
         services.query('hub.status', {}, { signal }),
         services.query('hub.configuration', {}, { signal }),
       ])
+      const external = record(record(rawConfig).externalHub)
+      const connection =
+        text(external.address) &&
+        record(rawStatus).state === 'ready' &&
+        record(await services.query('mhs.connection', {}, { signal }))
       const config = record(record(rawConfig).listenerPorts),
         status = record(rawStatus),
         endpoint = record(record(status.endpoints).device)
       const port = endpoint.port
       return {
+        mode: text(external.address) ? 'external' : 'local',
+        ...(text(external.address)
+          ? {
+              address: text(external.address),
+              allowlist: Array.isArray(external.allowlist)
+                ? external.allowlist.filter((v): v is string => typeof v === 'string')
+                : [],
+            }
+          : {}),
         state:
-          status.state === 'draining' || status.state === 'stopping'
-            ? 'stopping'
-            : status.state === 'ready'
-              ? 'ready'
-              : status.state === 'starting'
-                ? 'starting'
-                : status.code === 'shutdown-unconfirmed'
-                  ? 'shutdown-unconfirmed'
-                  : 'failed',
+          connection && connection.state === 'failed'
+            ? 'failed'
+            : status.state === 'draining' || status.state === 'stopping'
+              ? 'stopping'
+              : status.state === 'ready'
+                ? 'ready'
+                : status.state === 'starting'
+                  ? 'starting'
+                  : status.code === 'shutdown-unconfirmed'
+                    ? 'shutdown-unconfirmed'
+                    : 'failed',
         ...(config.device === 'auto' || typeof config.device === 'number'
           ? { devicePort: config.device }
           : {}),
         ...(text(status.code) ? { code: text(status.code) } : {}),
-        ...(endpoint.host === '127.0.0.1' && typeof port === 'number'
+        ...(!text(external.address) && endpoint.host === '127.0.0.1' && typeof port === 'number'
           ? {
               endpoints: {
                 command: `ws://127.0.0.1:${port}/ws/mhs`,
@@ -55,7 +71,11 @@ export function nativeDeveloper(ctx: ClientContext): DeveloperPort {
       }
     },
     retry: () => effect('hub.retry', {}),
-    configure: (port = 'auto') => effect('hub.configure', { listenerPorts: { device: port } }),
+    configure: (port = 'auto', external) =>
+      effect('hub.configure', {
+        listenerPorts: { device: port },
+        ...(external ? { externalHub: external } : {}),
+      }),
     async check(device, signal) {
       const result = await services.query('hub.check', { device }, { signal })
       if (!Array.isArray(result)) throw new Error('invalid-managed-check')
