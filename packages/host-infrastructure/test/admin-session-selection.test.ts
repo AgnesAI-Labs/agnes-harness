@@ -54,7 +54,17 @@ it('validates exact catalog versions and model ids before persisting defaults', 
   expect(save).toHaveBeenCalledOnce()
 })
 
-const entry = (id: string, wireApi: string, capabilities: Record<string, boolean>) => ({
+const entry = (
+  id: string,
+  wireApi: string,
+  capabilities: {
+    imageInput?: boolean
+    tools?: boolean
+    streaming?: boolean
+    payload?: boolean
+    payloadOnly?: boolean
+  },
+) => ({
   id,
   version: '1.0.0',
   wireApi,

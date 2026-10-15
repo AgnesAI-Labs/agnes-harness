@@ -68,7 +68,16 @@ describe('materializeRoutes with payload-only adapters', () => {
     baseUrl: 'https://gw.example/v1',
     models: [model(id, name)],
   })
-  const adapter = (id: string, capabilities: Record<string, boolean>) => ({
+  const adapter = (
+    id: string,
+    capabilities: {
+      imageInput?: boolean
+      tools?: boolean
+      streaming?: boolean
+      payload?: boolean
+      payloadOnly?: boolean
+    },
+  ) => ({
     id,
     capabilities: { imageInput: false, tools: false, streaming: false, ...capabilities },
   })

@@ -739,7 +739,13 @@ it('opens a task named by a link once its row is read, and archives it through t
 })
 
 it('offers no model of a payload-only adapter to a scheduled task', () => {
-  const capabilities = (extra: Record<string, boolean>) => ({
+  const capabilities = (extra: {
+    imageInput?: boolean
+    tools?: boolean
+    streaming?: boolean
+    payload?: boolean
+    payloadOnly?: boolean
+  }) => ({
     imageInput: false,
     tools: false,
     streaming: false,
