@@ -43,3 +43,28 @@ export function zoneAt(map: DeviceMap, position: Position): string | undefined {
   }
   return undefined
 }
+
+/** Project bounded, approved navigation coordinates without exposing arbitrary tool arguments. */
+export function navigationFrom(
+  input: unknown,
+): { route: [number, number][]; target?: [number, number] } | undefined {
+  const data =
+    input && typeof input === 'object' && !Array.isArray(input) ? (input as Record<string, unknown>) : {}
+  const point = (v: unknown): [number, number] | undefined => {
+    const p = Array.isArray(v)
+      ? v
+      : v && typeof v === 'object'
+        ? [(v as Record<string, unknown>).x, (v as Record<string, unknown>).y]
+        : []
+    return p.length === 2 && p.every((n) => typeof n === 'number' && Number.isFinite(n))
+      ? (p as [number, number])
+      : undefined
+  }
+  const raw = data.route ?? data.points,
+    route =
+      Array.isArray(raw) && raw.length <= 256
+        ? raw.map(point).filter((p): p is [number, number] => p !== undefined)
+        : []
+  const target = point(data.target) ?? point(data)
+  return target || route.length ? { route, ...(target ? { target } : {}) } : undefined
+}

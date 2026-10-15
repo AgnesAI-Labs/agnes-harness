@@ -32,7 +32,8 @@
       "hub.check",
       "mhs.pause",
       "mhs.events",
-      "mhs.clip"
+      "mhs.clip",
+      "mhs.connection"
     ],
     "projections": [],
     "publicConfig": {},

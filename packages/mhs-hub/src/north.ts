@@ -7,6 +7,9 @@ export class North {
   constructor(readonly hub: Hub) {}
   async query(method: string, input: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
     switch (method) {
+      case 'connection':
+        await this.hub.list()
+        return this.hub.connection()
       case 'devices':
         return this.hub.list()
       case 'read': {

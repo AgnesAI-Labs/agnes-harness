@@ -1,0 +1,77 @@
+import { once } from 'node:events'
+import { Device } from '@agnes/mhs-device'
+import { afterEach, expect, it, vi } from 'vitest'
+import { WebSocketServer } from 'ws'
+import { connectExternalHub, externalHubAddress, Hub, serveExternalHubPeer } from '../src/index.js'
+import { authority, description, invocation, MemoryStore } from './fixtures.js'
+
+const cleanups: (() => Promise<unknown>)[] = []
+afterEach(async () => {
+  for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
+})
+it.each([
+  'ws://192.0.2.1/mhs-peer/v1',
+  'wss://example.com/mhs-peer/v1',
+  'wss://127.0.0.1/private',
+  'wss://user:password@127.0.0.1/mhs-peer/v1',
+  'wss://127.0.0.1/mhs-peer/v1?target=x',
+])('refuses unreviewed or ambiguous external peer address %s', (address) => {
+  expect(() => externalHubAddress({ address, allowlist: [address] })).toThrow()
+})
+it('imports an exclusive remote fleet through local admission, stops on revoke and isolates other profiles', async () => {
+  const device = new Device(description, { arm() {}, async stop() {} }),
+    movements: number[] = []
+  device.update({ battery: 90 })
+  device.tool('move', async (args) => {
+    movements.push(Number(args.x))
+    return { moved: args.x! }
+  })
+  const server = new WebSocketServer({ host: '127.0.0.1', port: 0, maxPayload: 1 << 20 })
+  await once(server, 'listening')
+  const life = new AbortController(),
+    peerLife = new AbortController()
+  cleanups.push(async () => {
+    peerLife.abort()
+    life.abort()
+    for (const s of server.clients) s.terminate()
+    await new Promise<void>((resolve, reject) => server.close((e) => (e ? reject(e) : resolve())))
+  })
+  server.on('connection', (socket) => serveExternalHubPeer(socket, [device], peerLife.signal))
+  const addressInfo = server.address()
+  if (!addressInfo || typeof addressInfo === 'string') throw new Error('port')
+  const address = `ws://127.0.0.1:${addressInfo.port}/mhs-peer/v1`
+  await expect(connectExternalHub({} as Hub, { address, allowlist: [] }, life.signal)).rejects.toThrow(
+    'external-hub-address-denied',
+  )
+  const hub = new Hub({
+    store: new MemoryStore(),
+    authority,
+    wakes: { enqueue: async () => ({ wakeId: 'w', state: 'queued' }) },
+  })
+  await hub.recover()
+  const remote = await connectExternalHub(hub, { address, allowlist: [address] }, life.signal)
+  expect(remote.connected).toBe(true)
+  expect((await hub.list())[0]).toMatchObject({ id: 'rover', available: true, state: { battery: 90 } })
+  const other = new Hub({
+    store: new MemoryStore(),
+    authority,
+    wakes: { enqueue: async () => ({ wakeId: 'w', state: 'queued' }) },
+  })
+  expect(await other.list()).toEqual([])
+  await expect(
+    hub.call('rover', 'move', { x: 1 }, { ...invocation('bad'), context: { approved: true } }),
+  ).rejects.toThrow()
+  expect(movements).toEqual([])
+  await hub.call('rover', 'move', { x: 1 }, invocation('good'))
+  await vi.waitFor(async () =>
+    expect((await hub.journal.read('good'))?.outcome).toMatchObject({ status: 'done' }),
+  )
+  expect(movements).toEqual([1])
+  const stopped = vi.spyOn(device, 'stop')
+  expect(await hub.shutdown('disable')).toEqual({ state: 'settled' })
+  life.abort()
+  await vi.waitFor(() => expect(stopped).toHaveBeenCalledWith('peer-disconnect'))
+  expect(remote.connected).toBe(false)
+  expect(server.address()).toBeTruthy()
+  await expect(hub.call('rover', 'move', { x: 2 }, invocation('late'))).rejects.toThrow()
+})

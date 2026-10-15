@@ -114,6 +114,12 @@ export const registrationSchema = Type.Object({
           min: finite,
           max: finite,
           role: Type.Optional(name),
+          keys: Type.Optional(
+            Type.Tuple([
+              Type.String({ minLength: 1, maxLength: 32 }),
+              Type.String({ minLength: 1, maxLength: 32 }),
+            ]),
+          ),
           unit: Type.Optional(Type.String()),
           description: Type.Optional(Type.String()),
         }),

@@ -1,8 +1,11 @@
+import { once } from 'node:events'
 import { readFileSync } from 'node:fs'
 import { checkToolDef, managedServiceCapabilities, type ToolContext } from '@agnes/extension-api'
-import { Hub, North } from '@agnes/mhs-hub'
+import { Device } from '@agnes/mhs-device'
+import { Hub, North, serveExternalHubPeer } from '@agnes/mhs-hub'
 import { describe, expect, it, vi } from 'vitest'
-import { attach, authority, invocation, MemoryStore } from '../../mhs-hub/test/fixtures.js'
+import { WebSocketServer } from 'ws'
+import { attach, authority, description, invocation, MemoryStore } from '../../mhs-hub/test/fixtures.js'
 import {
   createMhsNativeProfileAdapter,
   createMhsTools,
@@ -71,6 +74,10 @@ describe('MHS author adapters', () => {
       'unwatch_device',
     ])
     for (const tool of tools) expect(checkToolDef(tool), tool.name).toEqual({ ok: true })
+    const addressPattern = new RegExp(MHS_HUB_CONFIG_SCHEMA.properties.externalHub.properties.address.pattern)
+    expect(addressPattern.test('wss://192.0.2.10/mhs-peer/v1')).toBe(true)
+    expect(addressPattern.test('wss://user:secret@192.0.2.10/mhs-peer/v1')).toBe(false)
+    expect(addressPattern.test('wss://192.0.2.10/mhs-peer/v1?credential=redacted')).toBe(false)
     const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
     const declared = createMhsNativeProfileAdapter(async () => {})
       .definitions(north)
@@ -212,33 +219,63 @@ describe('MHS author adapters', () => {
     ).rejects.toThrow('lease-expired')
     await hub.shutdown()
   })
-  it('reports ready only after initialization and settles the managed shutdown callback', async () => {
-    let shutdown:
-      | ((
-          reason: 'disable' | 'upgrade' | 'exit',
-          signal: AbortSignal,
-        ) => Promise<{ state: 'settled' | 'unknown' }>)
-      | undefined
-    const ready = vi.fn(async () => {})
-    const runtime = await startMhsHub({
-      store: new MemoryStore(),
-      authority,
-      wakes: {
-        async enqueue() {
-          return { wakeId: 'wake', state: 'queued' }
-        },
-      },
-      devicePort: 0,
-      signal: new AbortController().signal,
-      ready,
-      onShutdown(fn) {
-        shutdown = fn
-      },
-    })
-    expect(ready).toHaveBeenCalledWith({ apiVersion: '1.0.0', listeners: ['device'] })
-    if (!shutdown) throw new Error('missing-shutdown-handler')
-    expect(await shutdown('disable', new AbortController().signal)).toEqual({ state: 'settled' })
-    await expect(runtime.north.query('devices', {})).rejects.toThrow('disabled')
-    expect(await runtime.stop()).toEqual({ state: 'settled' })
-  })
+  it.each(['local', 'external'])(
+    'reports %s ready only after initialization and settles the managed shutdown callback',
+    async (mode) => {
+      const peerLife = new AbortController()
+      const device = new Device(description, { arm() {}, async stop() {} })
+      let server: WebSocketServer | undefined,
+        externalHub: { address: string; allowlist: string[] } | undefined
+      if (mode === 'external') {
+        server = new WebSocketServer({ host: '127.0.0.1', port: 0 })
+        await once(server, 'listening')
+        server.on('connection', (socket) => serveExternalHubPeer(socket, [device], peerLife.signal))
+        const address = server.address()
+        if (!address || typeof address === 'string') throw new Error('no-port')
+        const endpoint = `ws://127.0.0.1:${address.port}/mhs-peer/v1`
+        externalHub = { address: endpoint, allowlist: [endpoint] }
+      }
+      try {
+        let shutdown:
+          | ((
+              reason: 'disable' | 'upgrade' | 'exit',
+              signal: AbortSignal,
+            ) => Promise<{ state: 'settled' | 'unknown' }>)
+          | undefined
+        const ready = vi.fn(async () => {})
+        const runtime = await startMhsHub({
+          store: new MemoryStore(),
+          authority,
+          wakes: {
+            async enqueue() {
+              return { wakeId: 'wake', state: 'queued' }
+            },
+          },
+          devicePort: 0,
+          ...(externalHub ? { externalHub } : {}),
+          signal: new AbortController().signal,
+          ready,
+          onShutdown(fn) {
+            shutdown = fn
+          },
+        })
+        expect(ready).toHaveBeenCalledWith({
+          apiVersion: '1.0.0',
+          listeners: mode === 'local' ? ['device'] : [],
+        })
+        expect(await runtime.north.query('connection', {})).toEqual({ mode, state: 'ready' })
+        if (mode === 'external') expect(await runtime.north.query('devices', {})).toHaveLength(1)
+        if (!shutdown) throw new Error('missing-shutdown-handler')
+        expect(await shutdown('disable', new AbortController().signal)).toEqual({ state: 'settled' })
+        await expect(runtime.north.query('devices', {})).rejects.toThrow('disabled')
+        expect(await runtime.stop()).toEqual({ state: 'settled' })
+      } finally {
+        peerLife.abort()
+        if (server) {
+          for (const s of server.clients) s.terminate()
+          await new Promise<void>((resolve, reject) => server!.close((e) => (e ? reject(e) : resolve())))
+        }
+      }
+    },
+  )
 })

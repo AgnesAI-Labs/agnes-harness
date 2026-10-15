@@ -706,6 +706,24 @@
                     "pattern": "^[a-z][a-z0-9_]{0,31}$",
                     "type": "string"
                   },
+                  "keys": {
+                    "type": "array",
+                    "items": [
+                      {
+                        "minLength": 1,
+                        "maxLength": 32,
+                        "type": "string"
+                      },
+                      {
+                        "minLength": 1,
+                        "maxLength": 32,
+                        "type": "string"
+                      }
+                    ],
+                    "additionalItems": false,
+                    "minItems": 2,
+                    "maxItems": 2
+                  },
                   "unit": {
                     "type": "string"
                   },
@@ -1896,6 +1914,24 @@
                           "role": {
                             "pattern": "^[a-z][a-z0-9_]{0,31}$",
                             "type": "string"
+                          },
+                          "keys": {
+                            "type": "array",
+                            "items": [
+                              {
+                                "minLength": 1,
+                                "maxLength": 32,
+                                "type": "string"
+                              },
+                              {
+                                "minLength": 1,
+                                "maxLength": 32,
+                                "type": "string"
+                              }
+                            ],
+                            "additionalItems": false,
+                            "minItems": 2,
+                            "maxItems": 2
                           },
                           "unit": {
                             "type": "string"

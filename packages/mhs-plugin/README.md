@@ -23,3 +23,24 @@ The installed Hub also accepts reviewed backend producer bridges through `mhs.pr
 The profile client also declares approved `mhs.pause` and `mhs.clip`. Clip bytes use the separate `mhs.clip` control stream, bound to that exact service's native grant; media/control sockets cannot substitute it. Tools with a string `clip` parameter offer bounded PCM16 WAV upload, then populate the parameter only after cache acknowledgement. The context hook puts maps first (at most 3000 UTF-8 bytes) and includes positions, zones and tool parameter schemas within a total 6000-byte limit. `read_device` supports `since`, values history and bounded history paging; profile queries additionally support cancellation/deadlines and event replay.
 
 Clip uploads use ordered 2 KiB binary chunks on the existing 4 KiB/30-frame-per-second control contract. The browser paces chunks at 40 ms, and the Hub assembles at most 1 MiB under the approved hash before sending it to the device. Partial, excess, expired or repeated uploads cannot trigger a device tool.
+
+Advanced external Hub mode keeps the AGH-managed profile resource and local approval/journal,
+but replaces its South listener with one reviewed `mhs-peer/v1` device-ingress connection.
+Configure `externalHub: { address, allowlist }` alongside `listenerPorts` through `hub.configure`.
+The exact normalized address must be allowlisted; use a numeric host and `wss:` with a valid TLS
+certificate (only loopback permits `ws:`). Credentials, URL queries, fragments, redirects and
+DNS hostnames are refused. No browser network/CSP authority is added. `mhs.connection` projects
+local/external readiness without credentials; a disconnected peer is failed and requires Retry.
+
+On the remote machine, a device adapter can call `serveExternalHubPeer(socket, devices, signal)`
+from `@agnes/mhs-hub` after authenticating a server-owned WebSocket at `/mhs-peer/v1` over its
+TLS/VPN access boundary. Give this socket exclusive ownership of those SDK devices; it replaces
+their observation/state callbacks. This is an explicit versioned peer adapter, not the old North
+protocol or a public unauthenticated listener. The adapter validates registrations and bounded
+media, retains device-local deadman, and stops its fleet on peer loss. Native admission on the
+AGH side remains mandatory for calls, writes and manual leases.
+
+Switching local/external drains the old Hub through the managed configuration receipt. Disable
+stops the attached fleet and closes this profile's peer, without terminating the external service.
+A missing stop acknowledgement stays unknown. Stores, sockets and control leases remain bound
+to each current profile; old pinned sessions cannot re-open a disabled connection.

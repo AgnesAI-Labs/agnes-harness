@@ -13,7 +13,7 @@ import { SourceDemand } from './demand.js'
 import { Events } from './events.js'
 import { digest, Journal, type Operation } from './journal.js'
 import { Localization } from './localization.js'
-import { type Position, zoneAt } from './maps.js'
+import { navigationFrom, type Position, zoneAt } from './maps.js'
 import type { MediaSample } from './media.js'
 import type { Authority, BoundWakes, DeviceLink, Invocation, OwnedStore, SouthEvents } from './ports.js'
 import { type ReadOptions, readSource, validateRead } from './reads.js'
@@ -25,6 +25,7 @@ export type JobSummary = Pick<
   'id' | 'device' | 'state' | 'label' | 'startedAt' | 'endedAt' | 'phase'
 > & {
   progress?: number
+  navigation?: { route: [number, number][]; target?: [number, number] }
   outcome?: Pick<NonNullable<Operation['outcome']>, 'status' | 'reason'>
 }
 export interface DeviceView {
@@ -73,6 +74,7 @@ export class Hub implements SouthEvents {
       wakes: BoundWakes
       authority: Authority
       now?: () => number
+      connection?: () => { mode: 'local' | 'external'; state: 'ready' | 'failed' }
     },
   ) {
     this.events = new Events(() => this.now())
@@ -96,6 +98,9 @@ export class Hub implements SouthEvents {
         ? operation.progress
         : {}
     const fraction = typeof operation.progress === 'number' ? operation.progress : data.fraction
+    const navigation =
+      navigationFrom(data) ??
+      this.recentJobs.get(operation.device)?.find((j) => j.id === operation.id)?.navigation
     const job: JobSummary = {
       id: operation.id,
       device: operation.device,
@@ -107,6 +112,7 @@ export class Hub implements SouthEvents {
       ...(typeof fraction === 'number' && Number.isFinite(fraction) && fraction >= 0 && fraction <= 1
         ? { progress: fraction }
         : {}),
+      ...(navigation ? { navigation } : {}),
       ...(operation.outcome
         ? {
             outcome: {
@@ -156,6 +162,9 @@ export class Hub implements SouthEvents {
     if (!found) throw new MhsError(id ? 'not-found' : 'device-required')
     if (requireOnline && !found.view.available) throw new MhsError('offline')
     return found
+  }
+  connection() {
+    return this.ports.connection?.() ?? { mode: 'local', state: 'ready' }
   }
   async list(): Promise<DeviceView[]> {
     await this.active()
@@ -458,6 +467,8 @@ export class Hub implements SouthEvents {
     await this.active()
     if (this.pick(live.view.id).link !== live.link) throw new MhsError('stale-device')
     const accepted = await this.journal.accept(live.view.id, subject, invocation)
+    const navigation = navigationFrom(args)
+    if (navigation) this.remember({ ...accepted.operation, progress: navigation as unknown as Json })
     if (!accepted.fresh) return accepted.operation
     try {
       if (this.stopping || epoch !== this.controlEpoch)

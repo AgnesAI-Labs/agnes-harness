@@ -26,6 +26,9 @@ export type ClientStream = Awaited<ReturnType<Streams['open']>>
 export interface HubStatus {
   state: 'starting' | 'ready' | 'stopping' | 'failed' | 'shutdown-unconfirmed'
   code?: string
+  mode?: 'local' | 'external'
+  address?: string
+  allowlist?: string[]
   devicePort?: number | 'auto'
   /** Public device SDK endpoints, never browser stream URLs or connection credentials. */
   endpoints?: { command: string; observation: string }
@@ -34,7 +37,7 @@ export interface DeveloperPort {
   status(signal: AbortSignal): Promise<HubStatus>
   retry(): Promise<void>
   /** Host-owned, reviewed configuration interface. No direct socket or arbitrary URL fetch. */
-  configure?(port?: number | 'auto'): Promise<void>
+  configure?(port?: number | 'auto', external?: { address: string; allowlist: string[] }): Promise<void>
   check(
     device: string,
     signal: AbortSignal,

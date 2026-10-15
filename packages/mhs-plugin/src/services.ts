@@ -2,6 +2,7 @@ import { MhsError, object } from '@agnes/mhs-device'
 import { encodeMedia, type Invocation, type North } from '@agnes/mhs-hub'
 
 export const MHS_QUERY_SERVICES = [
+  'connection',
   'devices',
   'read',
   'events',

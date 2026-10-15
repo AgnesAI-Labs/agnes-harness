@@ -1,6 +1,15 @@
 import type { PluginContextFacets } from '@agnes/extension-api'
 import { object } from '@agnes/mhs-device'
-import { type Authority, type BoundWakes, Hub, North, type OwnedStore, South } from '@agnes/mhs-hub'
+import {
+  type Authority,
+  type BoundWakes,
+  connectExternalHub,
+  type ExternalHub,
+  Hub,
+  North,
+  type OwnedStore,
+  South,
+} from '@agnes/mhs-hub'
 import { MHS_HUB_CHECK_SCHEMA, MHS_HUB_CONFIG_SCHEMA } from './config.js'
 import { createMhsNativeProfileAdapter } from './native-profile.js'
 import { mhsOwnedStore } from './owned-store.js'
@@ -14,6 +23,7 @@ export interface ManagedMhsInit {
   store: OwnedStore
   wakes: BoundWakes
   authority: Authority
+  externalHub?: ExternalHub
   devicePort: number
   signal: AbortSignal
   ready(info: { apiVersion: string; listeners: readonly string[] }): Promise<void>
@@ -28,7 +38,14 @@ export interface ManagedMhsInit {
 export async function startMhsHub(
   init: ManagedMhsInit,
 ): Promise<{ north: North; stop(): Promise<{ state: 'settled' | 'unknown' }> }> {
-  const hub = new Hub(init)
+  let remote: { close(): void; connected: boolean } | undefined
+  const hub = new Hub({
+    ...init,
+    connection: () => ({
+      mode: init.externalHub ? 'external' : 'local',
+      state: init.externalHub && !remote?.connected ? 'failed' : 'ready',
+    }),
+  })
   const south = new South(hub)
   let stopped: Promise<{ state: 'settled' | 'unknown' }> | undefined
   let initialized = false
@@ -41,6 +58,7 @@ export async function startMhsHub(
       } catch {
         return { state: 'unknown' as const }
       } finally {
+        remote?.close()
         await south.close()
       }
     })())
@@ -66,13 +84,14 @@ export async function startMhsHub(
     init.signal.throwIfAborted()
     await hub.recover()
     initialized = true
-    await south.listen(init.devicePort)
+    if (init.externalHub) remote = await connectExternalHub(hub, init.externalHub, init.signal)
+    else await south.listen(init.devicePort)
     init.signal.throwIfAborted()
     timer = setInterval(() => {
       void hub.watches.tick().catch(() => {})
       void hub.journal.flush().catch(() => {})
     }, 1000)
-    await init.ready({ apiVersion: MHS_HUB_API_VERSION, listeners: ['device'] })
+    await init.ready({ apiVersion: MHS_HUB_API_VERSION, listeners: init.externalHub ? [] : ['device'] })
     return { north: new North(hub), stop }
   } catch (error) {
     await stop()
@@ -110,6 +129,9 @@ export const mhsPlugin = {
           wakes: init.wakes,
           store: mhsOwnedStore(init.store),
           devicePort: deviceListener.port,
+          ...(object(init.config).externalHub
+            ? { externalHub: object(init.config).externalHub as unknown as ExternalHub }
+            : {}),
           signal: init.signal,
           ready: async () => init.ready(),
           onShutdown: (handler) => init.onShutdown((reason) => handler(reason, AbortSignal.timeout(5000))),

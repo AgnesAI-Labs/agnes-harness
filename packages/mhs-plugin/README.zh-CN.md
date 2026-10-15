@@ -25,3 +25,7 @@
 Profile 客户端还声明审批保护的 `mhs.pause` 与 `mhs.clip`。音频字节通过独立 `mhs.clip` control stream，绑定该服务的原生 grant，其他媒体/控制通道不能替代。含 string 类型 `clip` 参数的工具可上传有界 PCM16 WAV，仅在缓存确认后填写参数。Context 先放地图（最多 3000 UTF-8 字节），并在总计 6000 字节内提供位置、区域和工具参数 Schema。`read_device` 支持 `since`、values 历史与分页；profile 查询还支持取消/期限和事件重放。
 
 音频上传使用有序 2 KiB 二进制分块，遵守现有 control 通道 4 KiB/每秒 30 帧合同；浏览器按 40 ms 间隔发送。Hub 按审批的 hash 聚合最多 1 MiB 后再发送给设备；部分、超量、过期和重复上传不能触发设备工具。
+
+高级外部 Hub 模式保留本机 profile 的批准、日志和受管生命周期，通过 `hub.configure` 的 `externalHub: { address, allowlist }` 选择远端 `mhs-peer/v1` 设备接入。要求数值 IP、精确标准化白名单与有效 TLS 的 `wss:`，仅回环开发允许 `ws:`；拒绝凭据、查询、片段、重定向和 DNS 名称。浏览器仍只连接同源网关。`mhs.connection` 返回本机/外部及真实连接状态，断开后需重试。
+
+远端适配器在 TLS/VPN 边界验证服务端 WebSocket 的调用方身份后，调用 `@agnes/mhs-hub` 的 `serveExternalHubPeer(socket, devices, signal)`。这些 SDK 设备应由此连接独占；它接管状态与观测回调并在掉线时停车。没有自动开放的远端监听器，也不兼容旧 North 免审批通路。切换配置会排空旧连接；停用只停止所接 fleet 并关闭本 profile 的 socket，不终止远端服务，未确认停车仍记 unknown。
