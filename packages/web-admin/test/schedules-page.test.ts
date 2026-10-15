@@ -3,7 +3,7 @@
 import { clearResources, PushStack, searchParamRoute } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { automationCatalog } from '../src/settings/automation-locale.js'
 import { settingsCatalog } from '../src/settings/locales.js'
 import {
@@ -14,11 +14,12 @@ import {
   selectorOf,
   targetOf,
 } from '../src/settings/schedule-form.js'
-import { rowsOf, scheduleChoices } from '../src/settings/schedule-model.js'
+import { rowsOf, type ScheduleRow, scheduleChoices } from '../src/settings/schedule-model.js'
 import {
   SCHEDULE_ACTIVE_REFRESH_MS,
   SCHEDULE_IDLE_REFRESH_MS,
   schedulesActive,
+  useScheduleRefresh,
 } from '../src/settings/schedule-refresh.js'
 import { nextRun } from '../src/settings/schedule-text.js'
 import {
@@ -559,6 +560,88 @@ it('keeps run and approval states current while the page is open, and rests whil
     visible.mockRestore()
     vi.useRealTimers()
   }
+})
+
+describe('polling lifetime (N02)', () => {
+  const now = Date.parse('2026-10-15T08:00:00Z')
+  const idleRow = () => {
+    const [row] = rowsOf({ schedules: [{ ...report, nextRunAt: now + 3_600_000 }] })
+    if (!row) throw new Error('row')
+    return row
+  }
+  /** A refresh whose answer the test releases, so a read can still be open at cleanup. */
+  function slowRefresh() {
+    const pending: Array<{ resolve(): void; reject(error: Error): void }> = []
+    const refresh = vi.fn(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          pending.push({ resolve, reject })
+        }),
+    )
+    return { refresh, pending }
+  }
+  function Probe(props: { refresh: () => Promise<void>; rows: ScheduleRow[] }) {
+    useScheduleRefresh(props.refresh, props.rows, true)
+    return null
+  }
+  const withClock = async (body: () => Promise<void>) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    vi.setSystemTime(now)
+    try {
+      await body()
+    } finally {
+      vi.useRealTimers()
+    }
+  }
+
+  for (const outcome of ['succeeds', 'fails'] as const)
+    it(`starts no new poll when a read still open at unmount ${outcome} later`, () =>
+      withClock(async () => {
+        const { refresh, pending } = slowRefresh()
+        const host = document.createElement('div')
+        const root = createRoot(host)
+        await act(async () => root.render(createElement(Probe, { refresh, rows: [idleRow()] })))
+        await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_IDLE_REFRESH_MS))
+        expect(refresh).toHaveBeenCalledTimes(1)
+        await act(async () => root.unmount())
+        await act(async () => {
+          const read = pending[0]
+          if (outcome === 'succeeds') read?.resolve()
+          else read?.reject(new Error('network'))
+          await vi.advanceTimersByTimeAsync(0)
+        })
+        expect(vi.getTimerCount()).toBe(0)
+        await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_IDLE_REFRESH_MS * 4))
+        expect(refresh).toHaveBeenCalledTimes(1)
+      }))
+
+  it('keeps one polling chain when the pace changes while a read is open', () =>
+    withClock(async () => {
+      const { refresh, pending } = slowRefresh()
+      const host = document.createElement('div')
+      const root = createRoot(host)
+      const idle = idleRow()
+      const due = { ...idle, nextRunAt: now + 10_000 }
+      await act(async () => root.render(createElement(Probe, { refresh, rows: [idle] })))
+      await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_IDLE_REFRESH_MS))
+      expect(refresh).toHaveBeenCalledTimes(1)
+      // The list turns active while that read is still open: the quick chain takes over.
+      await act(async () => root.render(createElement(Probe, { refresh, rows: [due] })))
+      await act(async () => {
+        pending[0]?.resolve()
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(vi.getTimerCount()).toBe(1)
+      await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_ACTIVE_REFRESH_MS))
+      expect(refresh).toHaveBeenCalledTimes(2)
+      await act(async () => {
+        pending[1]?.resolve()
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(vi.getTimerCount()).toBe(1)
+      await act(async () => root.unmount())
+      expect(vi.getTimerCount()).toBe(0)
+    }))
 })
 
 it('counts a task as active while it runs, waits for approval or is about to run', () => {

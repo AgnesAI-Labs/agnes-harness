@@ -42,7 +42,11 @@ export function useScheduleRefresh(
     if (!enabled || typeof document === 'undefined') return
     let timer: ReturnType<typeof setTimeout> | undefined
     let inFlight = false
+    // This effect's lifetime. Cleanup ends it, so a read still open then (on unmount, or when the
+    // pace changes and a new chain takes over) can neither read again nor schedule the next poll.
+    let alive = true
     const tick = () => {
+      if (!alive) return
       if (document.visibilityState === 'hidden' || inFlight) return schedule()
       inFlight = true
       void latest
@@ -50,11 +54,12 @@ export function useScheduleRefresh(
         .catch(() => undefined)
         .finally(() => {
           inFlight = false
-          schedule()
+          if (alive) schedule()
         })
     }
     const schedule = () => {
       clearTimeout(timer)
+      if (!alive) return
       const fast = quick || Date.now() < expected.current
       timer = setTimeout(tick, fast ? SCHEDULE_ACTIVE_REFRESH_MS : SCHEDULE_IDLE_REFRESH_MS)
     }
@@ -69,6 +74,7 @@ export function useScheduleRefresh(
     window.addEventListener('online', wake)
     schedule()
     return () => {
+      alive = false
       clearTimeout(timer)
       reschedule.current = () => undefined
       document.removeEventListener('visibilitychange', wake)
