@@ -17,7 +17,14 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { type ExecFn, fetchSource, hashDirectory, packageDir, parseSource } from '../src/sources.js'
+import {
+  type ExecFn,
+  fetchSource,
+  hashDirectory,
+  hashDirectoryAsync,
+  packageDir,
+  parseSource,
+} from '../src/sources.js'
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
 
@@ -117,7 +124,7 @@ describe('hashDirectory', () => {
   })
   afterEach(() => rmSync(root, { recursive: true, force: true }))
 
-  it('is deterministic, path-sensitive, and excludes only the configured trees', () => {
+  it('is deterministic, path-sensitive, and excludes only the configured trees', async () => {
     mkdirSync(join(root, 'z'))
     mkdirSync(join(root, 'node_modules', 'ignored'), { recursive: true })
     mkdirSync(join(root, 'fixtures', 'out'), { recursive: true })
@@ -128,25 +135,49 @@ describe('hashDirectory', () => {
     const first = hashDirectory(root)
     expect(first).toMatch(/^sha256-[a-f0-9]{64}$/)
     expect(hashDirectory(root)).toBe(first)
+    expect(await hashDirectoryAsync(root)).toBe(first)
+    expect(await hashDirectoryAsync(root, { exclude: [] })).toBe(hashDirectory(root, { exclude: [] }))
     writeFileSync(join(root, 'node_modules', 'ignored', 'x'), 'changed but excluded')
     expect(hashDirectory(root)).toBe(first)
     writeFileSync(join(root, 'z', 'b'), 'changed')
     expect(hashDirectory(root)).not.toBe(first)
+    expect(await hashDirectoryAsync(root)).toBe(hashDirectory(root))
   })
 
-  it('refuses symlinks and special entries instead of hashing outside the tree', () => {
+  it('refuses symlinks and special entries instead of hashing outside the tree', async () => {
     const outside = join(dirname(root), `${Date.now()}-outside`)
     const rootAlias = `${root}-alias`
     writeFileSync(outside, 'secret')
     try {
       symlinkSync(root, rootAlias, process.platform === 'win32' ? 'junction' : 'dir')
       expect(() => hashDirectory(rootAlias)).toThrow(/symbolic link/)
+      await expect(hashDirectoryAsync(rootAlias)).rejects.toThrow(/symbolic link/)
       symlinkSync(outside, join(root, 'escape'))
       expect(() => hashDirectory(root)).toThrow(/symbolic link/)
+      await expect(hashDirectoryAsync(root)).rejects.toThrow(/symbolic link/)
     } finally {
       rmSync(outside, { force: true })
       unlinkSync(rootAlias)
     }
+  })
+  it('yields while hashing file contents and honours cancellation', async () => {
+    writeFileSync(join(root, 'payload'), Buffer.alloc(1024 * 1024, 23))
+    let progressed = false
+    const immediate = new Promise<void>((resolve) =>
+      setImmediate(() => {
+        progressed = true
+        resolve()
+      }),
+    )
+    const digest = await hashDirectoryAsync(root)
+    expect(progressed).toBe(true)
+    await immediate
+    expect(digest).toBe(hashDirectory(root))
+    const abort = new AbortController()
+    abort.abort()
+    await expect(hashDirectoryAsync(root, { signal: abort.signal })).rejects.toMatchObject({
+      code: 'E_PACKAGE_CANCELLED',
+    })
   })
 })
 

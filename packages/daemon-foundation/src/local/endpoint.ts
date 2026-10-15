@@ -51,6 +51,7 @@ export type ConnectionState = {
   clientId: string
   initialized: boolean
   /** Set only after this connection successfully calls the authorized client-module roster RPC. */
+  surfaceMountNotices?: boolean
   clientModuleNotices: boolean
   capabilities: { permission: boolean }
   attached: Map<string, AttachPrefs>

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, lstatSync, mkdirSync, realpathSync, statSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { setTimeout as delay, setImmediate } from 'node:timers/promises'
 import type { ExtensionManifest } from '@agnes/extension-api'
@@ -14,7 +14,13 @@ import { copyPackageTreeSync } from './copy-tree.js'
 import { isPackageError, PackageError } from './errors.js'
 import { inspectStaged } from './inspect.js'
 import { canonical, capabilityHash, freezeData, own } from './integrity.js'
-import { type InstalledInventory, type InstalledPackage, readInventory } from './inventory.js'
+import {
+  type InstalledInventory,
+  type InstalledPackage,
+  type InventoryVerificationCache,
+  readInventory,
+} from './inventory.js'
+import { readBoundary } from './inventory-boundary.js'
 import {
   assertNoReferences,
   assertNoRuntimePins,
@@ -254,26 +260,10 @@ function workspacePath(profileDir: string, deployDir: string): { deployDir: stri
 }
 
 export function createPackageManager(options: ManagerOptions): PackageManager {
+  const inventoryVerifications: InventoryVerificationCache = new Map()
   const inventoryReads = new Map<string, { boundary: string; promise: Promise<InstalledInventory> }>()
   const profileKey = (directory: string): string =>
     existsSync(directory) ? realpathSync(directory) : resolve(directory)
-  // Small policy/lock files are change sentinels ONLY for joining a pending scan, never authority
-  // for skipping byte verification. A scan itself always reads current policy and installed bytes.
-  const readBoundary = (
-    directory: string,
-    files = ['agnes-lock.json', 'plugin-capabilities.json', 'package-sources.json'],
-  ): string =>
-    files
-      .map((file) => {
-        try {
-          const stat = statSync(join(directory, file), { bigint: true })
-          return `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'absent'
-          throw error
-        }
-      })
-      .join('|')
   const adapters = new Map(options.sourceAdapters?.map((adapter) => [adapter.type, adapter]))
   if (adapters.size !== (options.sourceAdapters?.length ?? 0)) throw new TypeError('duplicate source adapter')
   const stamp = options.now ?? (() => new Date().toISOString())
@@ -695,7 +685,13 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       const read = () => {
         try {
           const lock = load(profileDir)
-          return projectLocal(readInventory(lock, { ...storeFor(profileDir), ceiling: ceiling(lock) }))
+          return projectLocal(
+            readInventory(lock, {
+              ...storeFor(profileDir),
+              ceiling: ceiling(lock),
+              ...(opts.fresh ? {} : { verificationCache: inventoryVerifications }),
+            }),
+          )
         } finally {
           // No reader may join a finished verification, even before Promise settlement is observed.
           clear()
@@ -723,10 +719,18 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
         const boundary = committed()
         try {
           const beforeLock = load(profileDir)
-          const before = readInventory(beforeLock, { ...store, ceiling: ceiling(beforeLock) })
+          const before = readInventory(beforeLock, {
+            ...store,
+            ceiling: ceiling(beforeLock),
+            verificationCache: inventoryVerifications,
+          })
           const pins = listRuntimePinsStore(store)
           const afterLock = load(profileDir)
-          const after = readInventory(afterLock, { ...store, ceiling: ceiling(afterLock) })
+          const after = readInventory(afterLock, {
+            ...store,
+            ceiling: ceiling(afterLock),
+            verificationCache: inventoryVerifications,
+          })
           if (before.hash === after.hash) return runtimePluginSnapshotsFromPins(after, pins)
         } catch (error) {
           // A failure no writer explains is tampering and stays fatal; otherwise let the writer finish.

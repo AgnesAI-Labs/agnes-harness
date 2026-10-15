@@ -302,7 +302,9 @@ describe('package plugin loader', () => {
       generation: 1,
     }
     await expect(verifier.verify(candidate)).resolves.toMatchObject({ trusted: true, exports: ['main'] })
+    const racing = verifier.verify(candidate)
     trusted = false
+    await expect(racing).rejects.toMatchObject({ code: 'E_SNAPSHOT_UNAVAILABLE' })
     await expect(verifier.verify(candidate)).resolves.toMatchObject({ trusted: false })
   })
 

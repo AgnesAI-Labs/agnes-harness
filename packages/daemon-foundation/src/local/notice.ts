@@ -91,7 +91,7 @@ export class NoticeSink {
             conn.profile === noticeProfile &&
             conn.initialized &&
             conn.authKind !== undefined &&
-            conn.clientModuleNotices
+            (conn.clientModuleNotices || (kind === 'packages_changed' && conn.surfaceMountNotices === true))
           : o.sessionId !== undefined && conn.attached.has(o.sessionId))
       )
         this.deliver(ep, n)

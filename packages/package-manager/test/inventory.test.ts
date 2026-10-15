@@ -104,6 +104,9 @@ it('shares an ordinary in-flight read, then verifies bytes again even without a 
   ])
   expect(first).toBe(second)
   expect(Object.isFrozen(first.packages)).toBe(true)
+  const warm = await f.manager.inventory(f.profileDir)
+  expect(warm).toEqual(first)
+  expect(await f.manager.inventory(f.profileDir, { fresh: true })).toEqual(first)
   writeFileSync(join(f.directory, 'index.mjs'), 'changed bytes')
   const failures = await Promise.allSettled([
     f.manager.inventory(f.profileDir),
