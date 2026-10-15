@@ -12,12 +12,12 @@ const imageMime: Readonly<Record<string, string>> = {
 const mimeFor = (name: string): string =>
   imageMime[name.split('.').at(-1)?.toLowerCase() ?? ''] ?? 'text/plain'
 /**
- * bindScope must resolve a Host-prepared child scope; a filename is an identity hint, never a
+ * bindScope must resolve a Host-prepared child scope; the batch/name pair is an identity hint, never a
  * session selector. Pending receipts stay pinned until Core commits that child's inbox input.
  */
 export function attachmentSnapshots(
   store: AttachmentStore | undefined,
-  bindScope: (name: string) => Promise<AttachmentScope>,
+  bindScope: (input: { batch: string; name: string }) => Promise<AttachmentScope>,
   signal: AbortSignal,
 ): SnapshotArtifacts {
   if (!store) throw new BatchError('E_BATCH_ATTACHMENT_STORE_REQUIRED')
@@ -25,7 +25,7 @@ export function attachmentSnapshots(
   return {
     async put(bytes, metadata): Promise<InputReference> {
       signal.throwIfAborted()
-      const scope = await bindScope(metadata.name)
+      const scope = await bindScope({ batch: metadata.batch, name: metadata.name })
       const mime = mimeFor(metadata.name)
       const receipt = await provider.store(scope, bytes, mime, signal)
       try {

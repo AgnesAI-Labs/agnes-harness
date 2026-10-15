@@ -246,6 +246,9 @@ importers:
       '@agnes/base':
         specifier: workspace:*
         version: link:../base
+      '@agnes/sdk':
+        specifier: workspace:*
+        version: link:../sdk
 
   packages/bridges:
     dependencies:

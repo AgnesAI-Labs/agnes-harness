@@ -6,6 +6,7 @@
   },
   "include": ["test/**/*.ts"],
   "references": [
+    { "path": "../sdk" },
     {
       "path": "."
     },

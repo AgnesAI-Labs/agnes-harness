@@ -12,8 +12,15 @@ public plugin API. The connector resolves Host-admitted context to a bound `Batc
 data cannot select its owner or workspace. The default `batchPlugin` entry refuses installation
 with `E_BATCH_MANAGED_CONNECTOR_REQUIRED` until that runtime integration is supplied.
 
-`BatchService` binds one workspace and owner outside request data. The runtime drives `tick()` after
-startup and while work is active. A persisted intent is written before dispatch; lookup and dispatch
+`startManagedBatch(runtime, ports)` consumes the real `ManagedServiceInit`, `ManagedServiceRuntime`
+and transactional `OwnedStore` contracts. The supervisor supplies one profile-bound instance; batch
+creates no separate singleton or listener. The driver serializes ticks, discovers manifests before
+mutating versioned store cursors, and registers shutdown before readiness. Disable/upgrade closes
+admission and cancels active work; a missed shutdown deadline returns unknown with reservations
+intact. Process exit preserves durable work for reconciliation. Native confined dispatch, workspace
+and scoped artifact bindings remain required injected ports.
+
+`BatchService` binds one workspace and owner outside request data. A persisted intent is written before dispatch; lookup and dispatch
 use the same key after an interrupted response. Missing evidence remains unknown and retains its
 credit reservation. Resume reconciles evidence; it does not reset an unknown item or replay effects.
 Cancellation fences the dispatch key, including a key that has never been accepted, and waits for a

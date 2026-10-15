@@ -6,7 +6,7 @@ import { BatchError, type Input, type InputReference } from './contracts.js'
 
 export interface SnapshotArtifacts {
   /** Stores immutable bytes and returns an opaque artifact identity, not a writable path. */
-  put(bytes: Uint8Array, metadata: { digest: string; name: string }): Promise<InputReference>
+  put(bytes: Uint8Array, metadata: { batch: string; digest: string; name: string }): Promise<InputReference>
   discard?(input: InputReference): Promise<void>
 }
 const inside = (root: string, path: string) => {
@@ -32,6 +32,7 @@ async function ancestry(root: string, path: string): Promise<string> {
 }
 /** Captures sorted immutable file content; later file edits cannot change a dispatched item. */
 export async function snapshotFolder(input: {
+  id: string
   root: string
   dir: string
   artifacts: SnapshotArtifacts
@@ -114,7 +115,7 @@ export async function snapshotFolder(input: {
       }
       const digest = createHash('sha256').update(bytes).digest('hex')
       const itemName = relative(dir, path).split(sep).join('/')
-      const reference = await input.artifacts.put(bytes, { digest, name: itemName })
+      const reference = await input.artifacts.put(bytes, { batch: input.id, digest, name: itemName })
       files.push({ name: itemName, size: bytes.length, digest, ...reference })
       total += bytes.length
     }

@@ -1,5 +1,5 @@
 /** Batch-owned contracts. Runtime adapters must enforce authority, not trust a model's claims. */
-import type { AttachmentScope } from '@agnes/extension-api'
+import type { AttachmentScope, OwnedStore, OwnedStoreTxn } from '@agnes/extension-api'
 import type { ArtifactRef, JsonValue as Json } from '@agnes/protocol'
 
 export type { JsonValue as Json } from '@agnes/protocol'
@@ -57,19 +57,10 @@ export type Manifest = {
   resultBytes: number
   stop?: 'cancelled' | 'budget_exhausted' | 'failed'
 }
-export type Stored = { value: Json; revision: string }
-/** Structural adapter for the generic owner store; no SQL, paths or caller-supplied owner. */
-export interface StoreTransaction {
-  get(key: string): Stored | undefined
-  put(key: string, value: Json, expectedRevision: string | null): void
-}
-export interface Store {
-  scan(input: { prefix: string; limit: number; cursor?: string }): Promise<{
-    rows: readonly Stored[]
-    nextCursor?: string
-  }>
-  transaction<T>(fn: (tx: StoreTransaction) => T): Promise<T>
-}
+/** Real managed-service store, bound by the runtime to this installation/profile/service. */
+export type Store = OwnedStore
+export type StoreTransaction = OwnedStoreTxn
+export type Stored = NonNullable<ReturnType<OwnedStoreTxn['get']>>
 export type Dispatch = {
   key: string
   batch: string

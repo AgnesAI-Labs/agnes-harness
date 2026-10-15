@@ -46,6 +46,7 @@ export class BatchService {
     )
       throw new BatchError('E_BATCH_AUTHORITY_UNAVAILABLE')
     const inputs = await snapshotFolder({
+      id: input.id,
       root: this.binding.workspaceRoot,
       dir: input.dir,
       artifacts: this.binding.artifacts,
@@ -93,16 +94,22 @@ export class BatchService {
   }
   /** Called by the managed runtime's wake/driver, not by an untrusted child. */
   async tick(): Promise<void> {
+    // Managed-store cursors are invalidated by writes. Complete discovery before any tick.
+    const ids: string[] = []
     let cursor: string | undefined
     do {
       this.binding.signal.throwIfAborted()
       const page = await this.list(cursor)
       for (const m of page.rows) {
         this.binding.signal.throwIfAborted()
-        if (m.status === 'running' || m.status === 'unknown') await this.binding.engine.tick(m.id)
+        if (m.status === 'running' || m.status === 'unknown') ids.push(m.id)
       }
       cursor = page.nextCursor
     } while (cursor)
+    for (const id of ids) {
+      this.binding.signal.throwIfAborted()
+      await this.binding.engine.tick(id)
+    }
   }
   async export(id: string, out: string) {
     this.binding.signal.throwIfAborted()

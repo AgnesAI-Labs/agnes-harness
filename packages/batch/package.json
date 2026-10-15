@@ -211,6 +211,7 @@
     ]
   },
   "devDependencies": {
-    "@agnes/base": "workspace:*"
+    "@agnes/base": "workspace:*",
+    "@agnes/sdk": "workspace:*"
   }
 }

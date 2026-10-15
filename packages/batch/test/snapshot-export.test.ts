@@ -42,19 +42,19 @@ describe('input snapshots and bounded data exports', () => {
         return reference(meta.digest, bytes.length)
       },
     }
-    const files = await snapshotFolder({ root, dir: 'items', artifacts })
+    const files = await snapshotFolder({ id, root, dir: 'items', artifacts })
     expect(files.map((f) => f.name)).toEqual(['a.txt', 'b.txt'])
     await writeFile(join(root, 'items/a.txt'), 'changed')
     expect(Buffer.from(blobs.get(files[0]!.digest)!).toString()).toBe('alpha')
     await symlink(join(root, 'items/a.txt'), join(root, 'items/link.txt'))
-    await expect(snapshotFolder({ root, dir: 'items', artifacts })).rejects.toMatchObject({
+    await expect(snapshotFolder({ id, root, dir: 'items', artifacts })).rejects.toMatchObject({
       code: 'E_BATCH_SYMLINK',
     })
     await symlink(join(root, 'items'), join(root, 'alias'))
-    await expect(snapshotFolder({ root, dir: 'alias', artifacts })).rejects.toMatchObject({
+    await expect(snapshotFolder({ id, root, dir: 'alias', artifacts })).rejects.toMatchObject({
       code: 'E_BATCH_SYMLINK',
     })
-    await expect(snapshotFolder({ root, dir: '../outside', artifacts })).rejects.toMatchObject({
+    await expect(snapshotFolder({ id, root, dir: '../outside', artifacts })).rejects.toMatchObject({
       code: 'E_BATCH_PATH',
     })
   })
@@ -67,14 +67,17 @@ describe('input snapshots and bounded data exports', () => {
     const artifacts = {
       put: async (bytes: Uint8Array, meta: { digest: string }) => reference(meta.digest, bytes.length),
     }
-    await expect(snapshotFolder({ root, dir: 'items', artifacts, maxFiles: 1 })).rejects.toMatchObject({
+    await expect(snapshotFolder({ id, root, dir: 'items', artifacts, maxFiles: 1 })).rejects.toMatchObject({
       code: 'E_BATCH_INPUT_LIMIT',
     })
-    await expect(snapshotFolder({ root, dir: 'items', artifacts, maxTotalBytes: 1 })).rejects.toMatchObject({
+    await expect(
+      snapshotFolder({ id, root, dir: 'items', artifacts, maxTotalBytes: 1 }),
+    ).rejects.toMatchObject({
       code: 'E_BATCH_INPUT_LIMIT',
     })
     await expect(
       snapshotFolder({
+        id,
         root,
         dir: 'items',
         artifacts: {

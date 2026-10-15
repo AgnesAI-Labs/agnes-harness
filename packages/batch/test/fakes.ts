@@ -22,7 +22,7 @@ export class MemoryStore implements Store {
       .sort(([a], [b]) => (a < b ? -1 : 1))
     const selected = rows.slice(0, input.limit)
     return {
-      rows: selected.map(([, row]) => structuredClone(row)),
+      rows: selected.map(([key, row]) => ({ key, ...structuredClone(row) })),
       ...(rows.length > input.limit ? { nextCursor: selected.at(-1)![0] } : {}),
     }
   }
@@ -30,6 +30,10 @@ export class MemoryStore implements Store {
     const next = structuredClone(this.rows)
     const result = fn({
       get: (key) => structuredClone(next.get(key)),
+      remove: (key, revision) => {
+        if (next.get(key)?.revision !== revision) throw new Error('CAS conflict')
+        next.delete(key)
+      },
       put: (key, value, revision) => {
         if ((next.get(key)?.revision ?? null) !== revision) throw new Error('CAS conflict')
         if (Buffer.byteLength(JSON.stringify(value)) > 128 * 1024) throw new Error('value limit')

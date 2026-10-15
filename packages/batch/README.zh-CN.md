@@ -36,3 +36,9 @@ Host 预先绑定的会话和 lane。只有 Core 提交子会话 inbox 输入后
 
 CLI 模块只校验选项、读取有界提示词和 Schema 文件并调用后台；枚举、执行和导出由后台负责。
 既有 `agh run --batch` 流程保持独立。
+
+`startManagedBatch(runtime, ports)` 已消费真实受管理服务初始化、生命周期和事务型
+`OwnedStore` 接口；单例由通用 supervisor 持有，批插件不另建单例或监听端口。驱动先遍历
+manifest 再修改状态，避免写入使分页 cursor 失效。disable/upgrade 先关闭接纳再取消；
+截止时间内无法获得结算回执时返回 unknown 并保留预算预留。进程退出保留耐久状态用于恢复。
+原生受限 child/job 派发、工作区与附件 scope 仍须由可信运行时注入。
