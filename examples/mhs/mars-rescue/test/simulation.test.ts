@@ -125,6 +125,8 @@ describe('Mars base simulation', () => {
     sim.device('hopper-01').update({ propellant: 30 })
     await run(sim, 'hopper-01', 'take_off', { alt: 10 })
     for (let i = 0; i < 250; i++) sim.tick(0.2)
+    // The automatic landing stop must settle before attempting another SDK call.
+    await vi.advanceTimersByTimeAsync(1)
     expect(sim.pose('hopper-01').z).toBe(0)
     expect(Number(sim.state('hopper-01').propellant)).toBeGreaterThanOrEqual(9.9)
     expect(await run(sim, 'hopper-01', 'take_off', { alt: 10 })).toMatchObject({ status: 'error' })

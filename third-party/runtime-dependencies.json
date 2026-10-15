@@ -9,6 +9,7 @@
       "purpose": "Bundle shareable plugins, SDK browser checks, Web clients, isolated hooks runners and reviewed authoring tests.",
       "rationale": "Reuse the repository bundler so the receiving machine needs no plugin dependency installation.",
       "consumers": [
+        "examples/mhs/mars-rescue",
         "packages/base",
         "packages/cli",
         "packages/daemon-admin",

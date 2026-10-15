@@ -6,8 +6,7 @@ import { MarsScene, VIEWS } from './generated/scene.js'
 const PACKAGE = '@agnes-example/mars-rescue'
 /** Parent MHS supplies an explicitly reviewed, owner-bound connector. No browser URL fallback. */
 export function apply(ctx) {
-  let runtime,
-    cameras,
+  let cameras,
     captureTimer,
     releaseLock,
     disposed = false,
@@ -24,6 +23,18 @@ export function apply(ctx) {
     if (disposed || ctx.availability.getSnapshot()?.availability !== 'active')
       throw new Error('example-revoked')
   }
+  const runtime = new MarsRuntime(
+    {
+      connect: (device, signal) => {
+        assertLive()
+        const currentAccess = ctx.get('mhsExampleAccess', false)
+        if (typeof currentAccess?.connect !== 'function') throw new Error('example-connection-unavailable')
+        return currentAccess.connect(PACKAGE, device, signal)
+      },
+    },
+    typeof VideoEncoder !== 'undefined',
+  )
+  runtime.subscribe(notify)
   const start = async () => {
     try {
       assertLive()
@@ -51,21 +62,6 @@ export function apply(ctx) {
             })
             .catch(reject)
         })
-      }
-      if (!runtime) {
-        runtime = new MarsRuntime(
-          {
-            connect: (device, signal) => {
-              assertLive()
-              const currentAccess = ctx.get('mhsExampleAccess', false)
-              if (typeof currentAccess?.connect !== 'function')
-                throw new Error('example-connection-unavailable')
-              return currentAccess.connect(PACKAGE, device, signal)
-            },
-          },
-          typeof VideoEncoder !== 'undefined',
-        )
-        runtime.subscribe(notify)
       }
       cameras ??= new MarsCameras(runtime.simulation, document)
       await cameras.capture(performance.now())
