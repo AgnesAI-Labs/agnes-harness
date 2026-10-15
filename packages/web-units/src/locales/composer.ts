@@ -3,6 +3,20 @@ import type { LocaleCatalog } from './index.js'
 /** 组件内置可访问性文案。经 `ComposerDependencies.translate` 注入，命名空间 `@agnes/web-units`。 */
 export const composerLocaleCatalog: LocaleCatalog = {
   en: {
+    'composer.attachment.hashMismatch': 'The attachment contents changed. Attach the file again.',
+    'composer.attachment.notAuthorized': 'This session cannot access that attachment.',
+    'composer.attachment.missing': 'The attachment is no longer available. Attach it again.',
+    'composer.attachment.quota': 'Attachment storage is full. Remove unused attachments and retry.',
+    'composer.attachment.cancelled': 'The attachment operation was cancelled.',
+    'composer.attachment.timeout': 'The attachment operation timed out. Retry it.',
+
+    'composer.attachment.dataInvalid': 'The attachment data is not valid Base64.',
+    'composer.attachment.nameInvalid': 'The attachment name or file type is invalid.',
+    'composer.attachment.tooLarge': 'Attachments exceed the allowed size. Use smaller files.',
+    'composer.attachment.unavailable': 'Attachments cannot be added right now.',
+    'composer.image.tooLargePixels': 'This image exceeds the pixel limit. Resize it before attaching it.',
+    'composer.image.mimeMismatch': 'The image contents do not match its file type.',
+
     'composer.example.tab': 'Tab',
     'composer.example.adopt': 'Adopt',
     'composer.extra.title': 'More controls',
@@ -111,6 +125,20 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.image.tooLarge': 'Attachments in one message must total no more than 100 MiB.',
   },
   'zh-CN': {
+    'composer.attachment.hashMismatch': '附件内容已变化，请重新添加文件。',
+    'composer.attachment.notAuthorized': '当前会话无权访问该附件。',
+    'composer.attachment.missing': '附件已不可用，请重新添加。',
+    'composer.attachment.quota': '附件存储空间已满，请清理不用的附件后重试。',
+    'composer.attachment.cancelled': '附件操作已取消。',
+    'composer.attachment.timeout': '附件操作超时，请重试。',
+
+    'composer.attachment.dataInvalid': '附件数据不是有效的 Base64。',
+    'composer.attachment.nameInvalid': '附件名称或文件类型无效。',
+    'composer.attachment.tooLarge': '附件超出体积限制，请缩小文件后重试。',
+    'composer.attachment.unavailable': '当前无法添加附件。',
+    'composer.image.tooLargePixels': '图片像素超出限制，请缩小图片后重试。',
+    'composer.image.mimeMismatch': '图片内容与文件类型不匹配。',
+
     'composer.example.tab': 'Tab',
     'composer.example.adopt': '采用',
     'composer.extra.title': '更多控件',
