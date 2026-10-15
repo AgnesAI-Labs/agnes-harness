@@ -162,13 +162,11 @@ import {
   claimFrom,
   type EnqueueMsg,
   INBOX_BUDGET_EVENT,
-  type InboxBudgetOverride,
   inboxEvent,
   inputMessageEvents,
   inputTainted,
   TRIGGER,
   TURN_BUDGET_EVENT,
-  type TurnBudgetOverride,
 } from './inbox.js'
 import { discloseTools, resolveModel, runInference } from './inference.js'
 import { LoopScope, stepWithinLoopDeadline } from './loop-deadline.js'
@@ -179,6 +177,7 @@ import { type PreviewDelta, PreviewHub, type PreviewSnapshot } from './preview.j
 import { type CoreOpName, invokeTool, runCoreReplacement, setModel, setPreset } from './reentry.js'
 import { type ResumeMode, type ResumeReport, resumeSession } from './resume.js'
 import { runToolsPhase } from './tools.js'
+import { inboxBudget, rehydratedBudget } from './turn-budget.js'
 import { settleParkedCompletion } from './verifier-continuation.js'
 
 type OperationCommon = {
@@ -542,6 +541,7 @@ export type TurnMemory = {
   ordinal: number
   ledgerFailed: boolean
   compactionRequested: string | null | false
+  hardBudgetCap?: number
   budgetCap?: number
   /** Extension rows counted toward this turn's quota so far, through `countedTo`. */
   extEvents?: { triggerSeq: Seq; countedTo: Seq; count: number }
@@ -1350,6 +1350,8 @@ export class SessionImpl {
         )
         if (original) return original.seq
       }
+      if (msg.hardBudget !== undefined && (msg.hardBudget !== true || msg.budget === undefined))
+        throw new CoreError('E_ENVELOPE', 'hard budget requires a credit ceiling')
       if (msg.budget !== undefined) {
         if (target !== 'next-turn')
           throw new CoreError('E_ENVELOPE', 'a per-turn budget override requires next-turn input')
@@ -1409,6 +1411,7 @@ export class SessionImpl {
                 budgetOverrideEvent(INBOX_BUDGET_EVENT, this.d.actor, {
                   itemId: item.itemId,
                   creditsCap: msg.budget,
+                  ...(msg.hardBudget ? { hard: true as const } : {}),
                 }),
               ]
             : []),
@@ -1532,7 +1535,7 @@ export class SessionImpl {
       if (!claimed) return false
       const { item, rest } = claimed
       const turn = this.lastTurnNumber() + 1
-      const budget = await this.inboxBudget(item.itemId)
+      const budget = await inboxBudget(this, item.itemId)
       const triggerSeq = (this.lastSeq + 2) as Seq
       await this.d.log.append(
         [
@@ -1553,8 +1556,7 @@ export class SessionImpl {
             ? [
                 budgetOverrideEvent(TURN_BUDGET_EVENT, this.d.actor, {
                   turn,
-                  itemId: item.itemId,
-                  creditsCap: budget,
+                  ...budget,
                 }),
               ]
             : []),
@@ -1580,7 +1582,10 @@ export class SessionImpl {
       )
       this.hooks.resetTurn?.()
       this.turn = this.freshTurn()
-      if (budget !== undefined) this.turn.budgetCap = budget
+      if (budget !== undefined) {
+        this.turn.budgetCap = budget.creditsCap
+        if (budget.hard) this.turn.hardBudgetCap = budget.creditsCap
+      }
       return true
     })
   }
@@ -1651,64 +1656,6 @@ export class SessionImpl {
     return seqs[2] as Seq
   }
 
-  private async inboxBudget(itemId: string): Promise<number | undefined> {
-    let found: number | undefined
-    let toSeq: Seq | undefined
-    for (;;) {
-      const rows = await this.d.log.scan({
-        type: INBOX_BUDGET_EVENT,
-        order: 'desc',
-        limit: SCAN_PAGE_MAX,
-        ...(toSeq === undefined ? {} : { toSeq }),
-      })
-      for (const event of rows) {
-        const data = event.data as Partial<InboxBudgetOverride> | null
-        if (data?.itemId !== itemId) continue
-        if (typeof data.creditsCap !== 'number' || !Number.isFinite(data.creditsCap) || data.creditsCap < 0)
-          throw new CoreError('E_ENVELOPE', 'stored per-turn budget override is invalid')
-        if (found !== undefined)
-          throw new CoreError('E_RELATION', `duplicate budget override for inbox item ${itemId}`)
-        found = data.creditsCap
-      }
-      if (rows.length < SCAN_PAGE_MAX) return found
-      const oldest = rows.at(-1)
-      if (!oldest || oldest.seq <= 1) return found
-      toSeq = (oldest.seq - 1) as Seq
-    }
-  }
-
-  private async rehydratedBudget(op: OpStateObj): Promise<number | undefined> {
-    let found: number | undefined
-    let fromSeq = op.meta.triggerSeq
-    for (;;) {
-      const rows = await this.d.log.scan({
-        fromSeq,
-        toSeq: this.lastSeq,
-        type: TURN_BUDGET_EVENT,
-        order: 'asc',
-        limit: SCAN_PAGE_MAX,
-      })
-      for (const event of rows) {
-        const data = event.data as Partial<TurnBudgetOverride> | null
-        if (data?.turn !== op.meta.turn) continue
-        if (
-          typeof data.itemId !== 'string' ||
-          typeof data.creditsCap !== 'number' ||
-          !Number.isFinite(data.creditsCap) ||
-          data.creditsCap < 0
-        )
-          throw new CoreError('E_ENVELOPE', 'stored turn budget override is invalid')
-        if (found !== undefined)
-          throw new CoreError('E_RELATION', `duplicate budget override for turn ${op.meta.turn}`)
-        found = data.creditsCap
-      }
-      if (rows.length < SCAN_PAGE_MAX) return found
-      const newest = rows.at(-1)
-      if (!newest || newest.seq >= this.lastSeq) return found
-      fromSeq = (newest.seq + 1) as Seq
-    }
-  }
-
   /**
    * `asOf` is the seq the tool registry is snapshotted at. A resumed turn passes its own start, not
    * the resume point: a tool registered while the turn was down was never disclosed to the model,
@@ -1733,6 +1680,8 @@ export class SessionImpl {
     const op = this.op()
     if (!op) return this.preset.budget.perRequestCap
     if (!this.turn) throw new CoreError('E_RELATION', 'open turn budget has not been rehydrated')
+    if (this.turn.hardBudgetCap !== undefined && this.preset.budget.perRequestCap !== null)
+      return Math.min(this.turn.hardBudgetCap, this.preset.budget.perRequestCap)
     return this.turn.budgetCap ?? this.preset.budget.perRequestCap
   }
 
@@ -1851,8 +1800,11 @@ export class SessionImpl {
     const ordinal =
       op.phase.kind === 'tools' ? Math.max(calls, ...op.phase.batch.calls.map((c) => c.ordinal + 1)) : calls
     const turn = this.freshTurn(ordinal, op.meta.triggerSeq)
-    const budget = await this.rehydratedBudget(op)
-    if (budget !== undefined) turn.budgetCap = budget
+    const budget = await rehydratedBudget(this, op)
+    if (budget !== undefined) {
+      turn.budgetCap = budget.creditsCap
+      if (budget.hard) turn.hardBudgetCap = budget.creditsCap
+    }
     if (last?.envelopeNonce) {
       turn.nonce = last.envelopeNonce
       turn.lastHeader = last

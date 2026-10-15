@@ -1,7 +1,9 @@
 import type { ReferenceSearchResult, ReferenceSelection } from '@agnes/protocol'
 import { PermissionGate, type PermissionHandler, type PermissionRequest } from './permission.js'
+import { checkTurnCreditLimit, promptMetadata, toContentBlocks } from './prompt-budget.js'
 
 export type { PermissionOption, PermissionOutcome, PermissionRequest } from './permission.js'
+export { toContentBlocks } from './prompt-budget.js'
 
 import {
   type AcpStopReason,
@@ -121,10 +123,6 @@ export type SessionNotificationListener = (
   params: Record<string, unknown>,
   meta: HarnessMeta | undefined,
 ) => void
-
-export function toContentBlocks(input: ContentBlock[] | string): ContentBlock[] {
-  return typeof input === 'string' ? [{ type: 'text', text: input }] : input
-}
 
 type TurnEndRecord = { reason: TurnEndReason; seq: number; credits?: TurnResult['credits'] }
 
@@ -737,12 +735,15 @@ export class Session {
     opts: {
       signal?: AbortSignal
       titleLocale?: 'en' | 'zh-CN'
+      /** Durable total turn ceiling. Refuses servers without hard-turn budget support. */
+      creditLimit?: number
       references?: readonly ReferenceSelection[]
     } = {},
   ): Promise<TurnResult> {
     // Captured by identity: the outcome of *this* turn is only the record that was
     // installed while the request was in flight, never one left over from a past turn.
     const before = this.lastTurnEnd
+    if (opts.creditLimit !== undefined) await checkTurnCreditLimit(this.client, opts.creditLimit, opts.signal)
     // Best effort: the turn's own outcome is what the caller gets either way, so a
     // cancel that cannot be sent must not become an unhandled rejection. Held for the
     // whole call, including a fallback wait on quiescence: an abort during that wait
@@ -752,7 +753,14 @@ export class Session {
     }
     opts.signal?.addEventListener('abort', onAbort, { once: true })
     try {
-      return await this.requestPrompt(input, before, false, opts.titleLocale, opts.references)
+      return await this.requestPrompt(
+        input,
+        before,
+        false,
+        opts.titleLocale,
+        opts.references,
+        opts.creditLimit,
+      )
     } finally {
       opts.signal?.removeEventListener('abort', onAbort)
     }
@@ -764,6 +772,7 @@ export class Session {
     restored = false,
     titleLocale?: 'en' | 'zh-CN',
     references?: readonly ReferenceSelection[],
+    creditLimit?: number,
   ): Promise<TurnResult> {
     try {
       // No deadline: a turn is bounded by the transport's liveness, not by a stopwatch.
@@ -772,16 +781,7 @@ export class Session {
         {
           sessionId: this.id,
           prompt: toAcpPrompt(toContentBlocks(input)),
-          ...(titleLocale || references?.length
-            ? {
-                _meta: {
-                  'ai.agnes.harness': {
-                    ...(titleLocale ? { titleLocale } : {}),
-                    ...(references?.length ? { references } : {}),
-                  },
-                },
-              }
-            : {}),
+          ...promptMetadata(titleLocale, references, creditLimit),
         },
         { timeoutMs: null },
       )
@@ -805,7 +805,7 @@ export class Session {
       // exactly once. No other failure is safe to replay here.
       if (!restored && this.workspace && this.isSessionNotFound(e)) {
         await this.restoreAfterReclaim()
-        return this.requestPrompt(input, before, true, titleLocale, references)
+        return this.requestPrompt(input, before, true, titleLocale, references, creditLimit)
       }
       // The request itself failing to the transport dropping, not to a cancel or a
       // protocol error, is the one case with anything to wait for: the daemon may already

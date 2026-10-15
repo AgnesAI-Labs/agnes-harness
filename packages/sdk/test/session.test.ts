@@ -203,6 +203,26 @@ describe('Session', () => {
     expect(seen).toEqual(['first', 'second'])
   })
 
+  it('refuses hard-budget prompts on older servers without sending a prompt', async () => {
+    const f = fakeEndpoint({ initialize: init, 'session/new': () => ({ sessionId: 'budget' }) })
+    const client = createClient({
+      transport: { kind: 'inproc', endpoint: f.endpoint },
+      journal: memoryJournal(),
+      authProviders: providers,
+    })
+    try {
+      const session = await client.createSession({ cwd: '/synthetic' })
+      await expect(session.prompt('bounded', { creditLimit: 1 })).rejects.toThrow(
+        'server does not support hard turn budgets',
+      )
+      for (const creditLimit of [-1, Infinity, NaN])
+        await expect(session.prompt('invalid', { creditLimit })).rejects.toThrow('invalid turn credit limit')
+      expect(f.calls.filter((row) => row.method === 'session/prompt')).toEqual([])
+    } finally {
+      await client.close()
+    }
+  })
+
   it.each([undefined, 'en', 'zh-CN'] as const)(
     'prompt carries title language %s and returns its own turn outcome',
     async (titleLocale) => {

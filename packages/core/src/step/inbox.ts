@@ -20,6 +20,8 @@ export type EnqueueMsg = {
   /** Replaces `budget.per_request_cap` for the one next turn opened by this inbox item. The value
    * is ledger-bound to the item and turn, so worker recovery cannot lose or leak it. */
   budget?: number
+  /** Enforce the override as a durable total turn ceiling, with no approval escalation. */
+  hardBudget?: boolean
 }
 
 /** Reference text is external evidence even when embedded in an authenticated human prompt. */
@@ -59,7 +61,7 @@ export function inputMessageEvents(item: InboxItem, lane: string): EventInput[] 
   ]
 }
 
-export type InboxBudgetOverride = { itemId: string; creditsCap: number }
+export type InboxBudgetOverride = { itemId: string; creditsCap: number; hard?: true }
 export type TurnBudgetOverride = InboxBudgetOverride & { turn: number }
 
 export const INBOX_BUDGET_EVENT = 'x/core/inbox-budget'

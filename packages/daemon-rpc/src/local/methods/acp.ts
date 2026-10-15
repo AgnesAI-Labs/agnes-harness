@@ -546,6 +546,7 @@ export function registerAcp(
       protocolVersion: 1,
       agentCapabilities: {
         loadSession: true,
+        _meta: { 'ai.agnes.harness': { hardTurnBudget: true } },
         promptCapabilities: { image: true, audio: false, embeddedContext: true },
       },
       _meta: {
@@ -760,6 +761,15 @@ export function registerAcp(
       throw rpcError('INVALID_PARAMS', { reason: 'Invalid attachment resource or locator.' })
     }
     const entry = cx.registry.require(p.sessionId)
+    const creditLimit = pocket(params).creditLimit
+    if (
+      creditLimit !== undefined &&
+      (typeof creditLimit !== 'number' ||
+        !Number.isFinite(creditLimit) ||
+        creditLimit < 0 ||
+        creditLimit > Number.MAX_SAFE_INTEGER / 1_000_000)
+    )
+      throw rpcError('INVALID_PARAMS', { reason: 'invalid turn credit limit' })
     const titleLocale = pocket(params).titleLocale
     if (titleLocale !== undefined && titleLocale !== 'en' && titleLocale !== 'zh-CN')
       throw rpcError('SEMANTIC_REJECTED', { reason: 'unsupported title language' })
@@ -801,6 +811,7 @@ export function registerAcp(
             kind: 'prompt',
             commandId,
             ...(titleLocale ? { titleLocale } : {}),
+            ...(creditLimit !== undefined ? { budget: creditLimit as number, hardBudget: true } : {}),
           })
           running = invocation.run(async () => {
             for (;;) {

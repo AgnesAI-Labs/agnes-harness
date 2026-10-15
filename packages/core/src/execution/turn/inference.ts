@@ -722,7 +722,7 @@ export async function admitInferenceRequest(
   if (projectPreparedWire && cap !== null) {
     const projected = await s.d.runtime.billingProjected({ tokensEstimate: estimate, model: target.model })
     if (projected.credits > cap) {
-      if (s.preset.budget.onExceed === 'deny') {
+      if (s.turn?.hardBudgetCap !== undefined || s.preset.budget.onExceed === 'deny') {
         await s.endTurn('budget')
         return { phase: 'terminal', reason: 'budget' }
       }
@@ -830,7 +830,7 @@ export async function admitInferenceRequest(
   if (cal.deny) {
     const deny = cal.deny
     const counted = cal.event ? [cal.event] : []
-    if (s.preset.budget.onExceed === 'deny') {
+    if (s.turn?.hardBudgetCap !== undefined || s.preset.budget.onExceed === 'deny') {
       await releaseTreeReservation(s)
       await s.endTurn('budget', { error: deny, events: counted })
       return { phase: 'terminal', reason: 'budget' }

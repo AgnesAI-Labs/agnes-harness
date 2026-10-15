@@ -115,6 +115,16 @@ describe('Kernel child lifecycle (generation, fan-out, budget)', () => {
     const parent = await k.session('parent', sessionOpts)
     const child = await parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'x' })
     expect(child.key).toBeDefined()
+    await parent.enqueue('next-turn', {
+      actor,
+      content: [{ type: 'text', text: 'bounded' }],
+      budget: 1,
+      hardBudget: true,
+    })
+    await parent.acceptInput()
+    await expect(
+      parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'unreserved' }),
+    ).rejects.toMatchObject({ code: 'E_BUDGET' })
     await k.close()
   })
 

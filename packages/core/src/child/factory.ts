@@ -75,6 +75,8 @@ export class KernelChildren implements ChildrenFactory {
 
   async createWithKind(kind: ChildKind, opts: CreateOpts): Promise<ChildHandle> {
     const parent = this.parent()
+    if (parent.turn?.hardBudgetCap !== undefined)
+      throw new CoreError('E_BUDGET', 'Child delegation is unavailable in a hard-bounded turn')
     this.bindSession(parent.key)
     if (opts.parent !== parent.key)
       throw new CoreError('E_DEPTH_EXCEEDED', 'child factory parent mismatch', {
