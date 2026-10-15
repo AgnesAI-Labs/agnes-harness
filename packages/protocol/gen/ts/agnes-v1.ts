@@ -13,6 +13,8 @@ export const UISpan = Type.Recursive((This) => Type.Object({ "review": Type.Opti
 export type UISpan = Static<typeof UISpan>
 
 export const AgnesV1 = Type.Module({
+  "SessionRevealWorkspaceParams": Type.Object({ "sessionId": Type.String({ minLength: 1, maxLength: 512 }) }, { additionalProperties: false }),
+  "SessionRevealWorkspaceResult": Type.Object({ "opened": Type.Literal(true) }, { additionalProperties: false }),
   "DecisionListResult": Type.Object({ "decisions": Type.Array(Type.Ref('DecisionSnapshot')) }, { additionalProperties: false }),
   "DecisionSnapshot": Type.Object({ "handle": Type.Ref('DecisionHandle'), "revision": Type.Integer({ minimum: 1, maximum: 9007199254740991 }), "request": Type.Ref('DecisionRequest'), "result": Type.Union([Type.Ref('DecisionResult'), Type.Null()]), "answerCommand": Type.Union([Type.Ref('DecisionCommandReceipt'), Type.Null()]), "consumption": Type.Union([Type.Ref('DecisionConsumption'), Type.Null()]), "invalidation": Type.Union([Type.Object({ "at": Type.String({ format: "date-time" }), "code": Type.String({ minLength: 1, maxLength: 256, pattern: "^[^\\u0000]+$" }) }, { additionalProperties: false }), Type.Null()]) }, { additionalProperties: false }),
   "DecisionCommandReceipt": Type.Object({ "commandId": Type.String({ minLength: 1, maxLength: 256, pattern: "^[^\\u0000]+$" }), "digest": Type.String({ pattern: "^[a-f0-9]{64}$" }), "revision": Type.Integer({ minimum: 1, maximum: 9007199254740991 }), "seq": Type.Integer({ minimum: 1, maximum: 9007199254740991 }) }, { additionalProperties: false }),
@@ -314,6 +316,10 @@ export const AgnesV1 = Type.Module({
   "TokenCounts": Type.Object({ "input": Type.Integer({ minimum: 0 }), "output": Type.Integer({ minimum: 0 }), "cacheRead": Type.Integer({ minimum: 0 }), "cacheWrite": Type.Integer({ minimum: 0 }), "reasoning": Type.Optional(Type.Integer({ minimum: 0 })) }, { additionalProperties: false }),
 })
 
+export const SessionRevealWorkspaceParams = AgnesV1.Import('SessionRevealWorkspaceParams')
+export type SessionRevealWorkspaceParams = Static<typeof SessionRevealWorkspaceParams>
+export const SessionRevealWorkspaceResult = AgnesV1.Import('SessionRevealWorkspaceResult')
+export type SessionRevealWorkspaceResult = Static<typeof SessionRevealWorkspaceResult>
 export const DecisionListResult = AgnesV1.Import('DecisionListResult')
 export type DecisionListResult = Static<typeof DecisionListResult>
 export const DecisionSnapshot = AgnesV1.Import('DecisionSnapshot')

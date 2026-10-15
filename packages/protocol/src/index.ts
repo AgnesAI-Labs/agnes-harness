@@ -163,6 +163,8 @@ export type {
   SessionReferenceSearchResult,
   SessionRemoveQueuedParams,
   SessionRenameParams,
+  SessionRevealWorkspaceParams,
+  SessionRevealWorkspaceResult,
   SessionSendNowParams,
   SessionSetModelParams,
   SessionSetPresetParams,

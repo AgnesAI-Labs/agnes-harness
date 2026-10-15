@@ -10,10 +10,10 @@ import { cycleTaskFocus } from '../src/workbench/focus.js'
 
 it('restores focus on Escape, resizes with keys, retires registrations and detaches on unmount', () => {
   const css = readWebStyleSource(resolve(__dirname, '../public/style.css'))
-  // Short docks must scroll terminal controls together, instead of shrinking the job below them.
+  // A short dock gives the emulator a bounded viewport so fit can resize the PTY.
   const terminalJob = [...css.matchAll(/\.workbench-terminal-job \{([^}]*)\}/g)].at(-1)?.[1]
-  expect(terminalJob).toContain('flex: 1 0 auto')
-  expect(terminalJob).toContain('min-height: min-content')
+  expect(terminalJob).toContain('flex: 1;')
+  expect(terminalJob).toContain('min-height: 0')
   expect(/\.workbench-terminal,\s*\.workbench-terminal-job \{([^}]*)\}/.exec(css)?.[1]).not.toContain(
     'height: 100%',
   )
@@ -55,7 +55,11 @@ it('restores focus on Escape, resizes with keys, retires registrations and detac
     expect(document.getElementById('workbench-tab-test.second')).toBeNull()
     renderRegion(host, <Dock context={{ t: (key) => key, data: 'show' }} />)
     const toggle = host.querySelector('[data-edge="right"]') as HTMLButtonElement
+    expect(toggle.textContent).toBe('')
+    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+    expect(toggle.querySelector('.workbench-toggle-pane')).not.toBeNull()
     flushSync(() => toggle.click())
+    expect(toggle.getAttribute('aria-pressed')).toBe('true')
     const dock = document.getElementById('workbench-right') as HTMLElement
     expect(dock.hidden).toBe(false)
     flushSync(() => (dock.querySelector('[data-testid="navigate-review"]') as HTMLButtonElement).click())

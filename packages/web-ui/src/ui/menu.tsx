@@ -23,16 +23,21 @@ export type MenuItem = {
   className?: string
   ariaLabel?: string
   title?: string
+  dividerBefore?: boolean
   onSelect(): void
 }
 export type MenuProps = {
   trigger: ReactElement<HTMLAttributes<HTMLElement>>
   label: string
   items: readonly MenuItem[]
+  triggerMode?: 'click' | 'contextMenu'
 }
 /** antd owns placement and menu semantics; this adapter preserves the existing keyboard contract. */
-export function Menu({ trigger, label, items }: MenuProps) {
+export function Menu({ trigger, label, items, triggerMode = 'click' }: MenuProps) {
   const [open, setOpen] = useState(false)
+  const hold = useRef<ReturnType<typeof setTimeout>>()
+  const held = useRef(false)
+  useEffect(() => () => clearTimeout(hold.current), [])
   const reduce = useReducedMotion()
   const endOnOpen = useRef(false)
   const anchor = useRef<HTMLSpanElement>(null)
@@ -78,7 +83,7 @@ export function Menu({ trigger, label, items }: MenuProps) {
     <AntDropdown
       open={open}
       onOpenChange={setOpen}
-      trigger={['click']}
+      trigger={[triggerMode]}
       placement="bottomRight"
       destroyOnHidden
       transitionName={reduce ? '' : 'ant-slide-up'}
@@ -107,7 +112,7 @@ export function Menu({ trigger, label, items }: MenuProps) {
             'aria-label': item.ariaLabel,
             ...(item.title ? { title: item.title } : {}),
           }
-          return item.danger && index > 0 && !ordered[index - 1]?.danger
+          return item.dividerBefore || (item.danger && index > 0 && !ordered[index - 1]?.danger)
             ? [
                 { type: 'divider' as const, key: `${item.id}-divider`, className: 'agh-menu-separator' },
                 action,
@@ -187,9 +192,53 @@ export function Menu({ trigger, label, items }: MenuProps) {
           'aria-haspopup': 'menu',
           'aria-expanded': open,
           'aria-controls': open ? id : undefined,
+          onPointerDown: (event) => {
+            trigger.props.onPointerDown?.(event)
+            held.current = false
+            if (triggerMode !== 'contextMenu' || event.pointerType === 'mouse') return
+            hold.current = setTimeout(() => {
+              held.current = true
+              setOpen(true)
+            }, 500)
+          },
+          onPointerUp: (event) => {
+            clearTimeout(hold.current)
+            trigger.props.onPointerUp?.(event)
+          },
+          onPointerCancel: (event) => {
+            clearTimeout(hold.current)
+            trigger.props.onPointerCancel?.(event)
+          },
+          onPointerLeave: (event) => {
+            clearTimeout(hold.current)
+            trigger.props.onPointerLeave?.(event)
+          },
+          onClickCapture: (event) => {
+            trigger.props.onClickCapture?.(event)
+            // Context menus also hide on click inside rc-trigger. Consume the synthetic touch
+            // click before that handler runs, so a long press neither launches nor closes it.
+            if (held.current) {
+              held.current = false
+              event.preventDefault()
+              event.stopPropagation()
+            }
+          },
+          onClick: (event) => {
+            if (held.current) {
+              held.current = false
+              event.preventDefault()
+              event.stopPropagation()
+              return
+            }
+            trigger.props.onClick?.(event)
+          },
           onKeyDown: (event) => {
             trigger.props.onKeyDown?.(event)
-            if (!event.defaultPrevented && ['ArrowDown', 'ArrowUp'].includes(event.key)) {
+            if (
+              !event.defaultPrevented &&
+              (['ArrowDown', 'ArrowUp', 'ContextMenu'].includes(event.key) ||
+                (event.shiftKey && event.key === 'F10'))
+            ) {
               event.preventDefault()
               endOnOpen.current = event.key === 'ArrowUp'
               setOpen(true)

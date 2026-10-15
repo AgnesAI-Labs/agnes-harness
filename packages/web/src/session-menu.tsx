@@ -13,6 +13,7 @@ const ITEMS: readonly (readonly [SessionAction, string, readonly string[]])[] = 
     ],
   ],
   ['runtime', 'session.menu.runtime', ['M4 6h16', 'M4 12h16', 'M4 18h10']],
+  ['revealWorkspace', 'session.menu.openFolder', ['M3 7V5a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v11H3z']],
   ['fork', 'session.menu.fork', ['M6 3v5a4 4 0 0 0 4 4h8', 'm14 8 4 4-4 4', 'M6 21v-5a4 4 0 0 1 4-4']],
   [
     'archive',
@@ -38,7 +39,9 @@ export function SessionMenu({
   disabled,
   t,
   action,
+  platform,
 }: {
+  platform?: string | undefined
   id: string
   title: string
   disabled: boolean
@@ -93,7 +96,15 @@ export function SessionMenu({
         }
         items={ITEMS.map(([item, key, paths]) => ({
           id: item,
-          label: t(key),
+          label: t(
+            item === 'revealWorkspace'
+              ? platform === 'darwin'
+                ? 'session.menu.openFinder'
+                : platform === 'win32'
+                  ? 'session.menu.openExplorer'
+                  : key
+              : key,
+          ),
           icon: <MenuIcon paths={paths} />,
           onSelect: () => {
             if (trigger.current) action(item, id, title, trigger.current)

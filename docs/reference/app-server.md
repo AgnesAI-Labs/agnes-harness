@@ -6,6 +6,8 @@ English | [简体中文](app-server.zh-CN.md)
 
 One daemon owns the App Server for an `AGH_HOME`. CLI, TUI, Web, channels, ACP, SDK and stdio clients use its authenticated method contract. Workers execute tasks; a stdio bridge only forwards frames to that daemon.
 
+`_agnes/v1/session.revealWorkspace` is a client-tier local desktop action: input `{ sessionId }`, result `{ opened: true }` after the native opener starts. It requires an authenticated local Unix/loopback-Web connection and session ownership, revalidates the session’s authoritative workspace binding, and accepts no client path. Remote/headless runtimes and missing/stale workspaces are rejected. It launches `open`, `explorer.exe`, or `xdg-open` with a detached argv call and no shell. Optional `initialize._meta.agnes.platform` (SDK `InitializeInfo.platform`) identifies the daemon OS for client labels.
+
 ## Sessions, turns, events and approvals
 
 A session has durable identity, history, workspace authority and pinned plugin code. A turn starts with `session/prompt`; previews arrive as `session/update`. Attach with `_agnes/v1/session.attach` to receive durable `_agnes/v1/session.event` records. Persist the ledger cursor for reconnects; previews are ephemeral. The prompt response reports its stop reason.

@@ -12,6 +12,8 @@ The Web workbench brings tasks, history, and administration into one local inter
 
 The main Web listener starts while its first Surface mount-table query runs in the background. Until that query succeeds, unknown Surface paths return HTTP 503 with a retry hint. A successful empty table means no mount; later query failures retain the last successful table. Refreshes do not overlap, and shutdown waits for the active query and its connection cleanup.
 
+The topbar switches between Conversation and Trace with a sliding pill; the Trace activity dot appears while a turn is in flight. Its bug button opens Report a problem directly, and the rightmost icon toggles the workbench. Runtime info is in each sidebar session menu. That menu also offers Open in Finder (macOS), Open in File Explorer (Windows), or Open folder (Linux), named for the daemon’s platform. It opens only that session’s bound workspace on the daemon’s local desktop. Remote connections, headless desktops and missing workspaces return an error notice.
+
 ## Start and connect
 
 ```sh
@@ -126,7 +128,11 @@ Implementation: [Web entry](../../packages/web/src/serve-entry.ts), [application
 
 ## Terminal and background jobs
 
-Open a session, then use the terminal tab in the workbench’s bottom panel to create a terminal. No session ID is required. Focus the output to type, paste, use arrow keys or Ctrl+C. Refresh reconnects to the same PTY. Closing a tab detaches its UI; the explicit kill action ends the human-owned terminal and its process. Shell selection affects new terminals only. The text terminal supports cursor movement and line clearing, but does not emulate graphical terminal extensions.
+Open a session and select **Terminal** in the workbench. The guide card starts a terminal with your last-used shell (zsh on macOS, pwsh on Windows, bash otherwise). Its chevron lets you choose another shell. With tabs open, **+** starts the remembered shell; right-click, long-press, or press Shift+F10 on **+** to choose a shell or attach an Agent job.
+
+The xterm.js screen follows the app theme, preserves ANSI/OSC colors and fits the PTY when the panel resizes. Focus it to type, paste (up to 64 KiB of UTF-8 per paste), use arrow keys or Ctrl+C. Refresh reconnects to the same PTY. Double-click a human terminal's tab name, or choose **Rename** from its menu, to rename it; Enter or blur saves and Escape cancels. Names are stored in this browser per session.
+
+Right-click a tab or press Shift+F10 to interrupt, inspect its session/job/working directory, or kill a human terminal. Its **×** ends a running process and closes the tab; an Agent tab's **×** only stops following. Closing the workbench detaches the UI and leaves processes running. Agent jobs are read-only. Exit codes appear at the end of the screen with a grey tab dot for zero or red for nonzero. Capped-output and input-full notices appear in a dismissible strip. Output uses bounded snapshots: text missed between polls or before the retained tail cannot be recovered.
 
 The legacy `/?settings=terminal` link opens the terminal in an available session workbench. If no session is open, it closes settings and asks you to open a session to use the terminal.
 

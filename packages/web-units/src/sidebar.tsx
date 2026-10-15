@@ -13,9 +13,11 @@ import {
 } from 'react'
 import type { Translate } from './locales/index.js'
 import { isNewSessionShortcut, newSessionShortcutKeys } from './session-groups.js'
-export type SessionAction = 'rename' | 'fork' | 'archive'
+export type SessionAction = 'rename' | 'fork' | 'archive' | 'runtime' | 'revealWorkspace'
 
 export interface SidebarNavigationOptions {
+  runtimePlatform?: string
+
   sessions: PageSessionMeta['items']
   workspaces: readonly WorkspaceEntry[]
   currentId?: string
@@ -47,6 +49,8 @@ export interface SidebarDependencies {
 }
 
 export interface SidebarState {
+  runtimePlatform?: string
+
   sessions: PageSessionMeta['items']
   workspaces: readonly WorkspaceEntry[]
   labels: ReadonlyMap<string, string>
@@ -268,6 +272,7 @@ const SidebarBuiltin = forwardRef<
           workspaces: current.workspaces,
           labels: current.labels,
           runningIds: running,
+          ...(current.runtimePlatform ? { runtimePlatform: current.runtimePlatform } : {}),
           ...(current.currentId ? { currentId: current.currentId } : {}),
           disabled: current.sessionPending,
           newDisabled: current.newDisabled,

@@ -166,30 +166,25 @@ describe('rendered topbar region', () => {
     // The full title stays reachable when the bar truncates it.
     expect(topbar?.querySelector('#task-title')?.getAttribute('title')).toContain('测试任务')
 
-    // Agent and runtime information appear only for a selected session.
+    // Agent identity remains in the bar; runtime information belongs to the session menu.
     expect(topbar?.querySelector('[data-testid="topbar-agent"]')).toBeNull()
-    expect(topbar?.querySelector('#session-runtime')).toBeNull()
     handle?.setAgent('Research Agent')
-    handle?.setRuntimeAvailable(true)
     expect(topbar?.querySelector('[data-testid="topbar-agent"]')?.textContent).toBe('Research Agent')
-    let runtimeRequests = 0
-    const onRuntime = () => runtimeRequests++
-    document.addEventListener('agnes:runtime-current-session', onRuntime)
-    topbar?.querySelector<HTMLButtonElement>('#session-runtime')?.click()
-    document.removeEventListener('agnes:runtime-current-session', onRuntime)
-    expect(runtimeRequests).toBe(1)
     handle?.setAgent(undefined)
-    handle?.setRuntimeAvailable(false)
     expect(topbar?.querySelector('[data-testid="topbar-agent"]')).toBeNull()
     expect(topbar?.querySelector('#session-runtime')).toBeNull()
 
     const chat = document.getElementById('view-chat') as HTMLButtonElement
     const trace = document.getElementById('view-trace') as HTMLButtonElement
+    expect(chat.querySelector('.icon')).not.toBeNull()
+    expect(trace.querySelector('.session-view-live')).not.toBeNull()
     expect(chat.getAttribute('aria-controls')).toBe('conversation-shell')
     expect(trace.getAttribute('aria-controls')).toBe('trace-panel')
     trace.click()
     expect(runtime.trace?.isOpen()).toBe(true)
     expect(trace.getAttribute('aria-selected')).toBe('true')
+    expect(document.getElementById('trace-panel')?.dataset.viewEnter).toBe('right')
+    await vi.waitFor(() => expect(trace.closest('[role=tablist]')?.getAttribute('data-view')).toBe('trace'))
     document.documentElement.lang = 'zh-CN'
     window.dispatchEvent(new Event('agnes:locale-changed'))
     await vi.waitFor(() => expect(trace.textContent).toBe('轨迹'))
@@ -199,6 +194,7 @@ describe('rendered topbar region', () => {
     expect(document.getElementById('report-problem')?.getAttribute('aria-label')).toBe('报告问题')
     chat.click()
     expect(runtime.trace?.isOpen()).toBe(false)
+    expect(document.getElementById('conversation-shell')?.dataset.viewEnter).toBe('left')
 
     // Arrow, Home and End move both focus and the selected view.
     const press = (tab: HTMLElement, key: string) =>
@@ -213,94 +209,25 @@ describe('rendered topbar region', () => {
     expect(document.activeElement).toBe(chat)
   })
 
-  it('offers the secondary actions from one menu that presses their own buttons', async () => {
+  it('opens the existing report flow directly before the workbench and retains the Goal host', async () => {
     runtime = await mountRenderedIndex()
-    const more = document.getElementById('topbar-more') as HTMLButtonElement
-    expect(more.getAttribute('aria-label')).toBe('More actions')
-    expect(more.closest('.topbar-actions')).not.toBeNull()
-    expect(more.closest('[role="tablist"]')).toBeNull()
-    const pressed = vi.fn()
     const report = document.getElementById('report-problem') as HTMLButtonElement
-    report.style.display = 'none'
-    const priorReport = sessionViewCommands.reportProblem
+    expect(report.getAttribute('aria-label')).toBe('Report a problem')
+    expect(report.closest('.topbar-actions')).not.toBeNull()
+    expect(report.closest('[role="tablist"]')).toBeNull()
+    expect(document.getElementById('topbar-more')).toBeNull()
     const opened = vi.fn()
     sessionViewCommands.reportProblem = opened
-    report.addEventListener('click', pressed)
-
-    more.click()
-    const entries = await vi.waitFor(() => {
-      const found = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
-      expect(found.map((entry) => entry.textContent)).toEqual(['Report a problem'])
-      return found
-    }, committed)
-    entries[0]?.click()
-    expect(pressed).toHaveBeenCalledTimes(1)
-    expect(opened).toHaveBeenCalledWith(more)
-    if (priorReport) sessionViewCommands.reportProblem = priorReport
-    else delete sessionViewCommands.reportProblem
-
-    // Runtime info joins the menu once a session offers it.
-    runtime.topbar?.setRuntimeAvailable(true)
-    more.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
-    more.click()
-    await vi.waitFor(
-      () =>
-        expect([...document.querySelectorAll('[role="menuitem"]')].map((entry) => entry.textContent)).toEqual(
-          ['Runtime info', 'Report a problem'],
-        ),
-      committed,
-    )
-
-    // A session that can hold a goal adds it, labelled with the goal's state; it presses the goal's own toggle.
-    const goalHost = document.getElementById('session-goal-host') as HTMLElement
-    const goal = document.createElement('button')
-    goal.dataset.testid = 'goal-toggle'
-    goal.textContent = 'Create goal'
-    const goalPressed = vi.fn()
-    goal.addEventListener('click', goalPressed)
-    goalHost.append(goal)
-    more.click()
-    more.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
-    more.click()
-    const goalEntry = await vi.waitFor(() => {
-      const found = document.querySelector<HTMLElement>('[data-testid="topbar-more-goal"]')
-      expect(found?.textContent).toBe('Create goal')
-      return found
-    }, committed)
-    expect([...document.querySelectorAll('[role="menuitem"]')].map((entry) => entry.textContent)).toEqual([
-      'Runtime info',
-      'Create goal',
-      'Report a problem',
-    ])
-    goalEntry?.click()
-    expect(goalPressed).toHaveBeenCalledTimes(1)
-    goal.remove()
-
-    // The workspace is named in the sidebar; the bar only offers to copy its path, first in the menu.
-    expect(document.querySelector('[data-testid="topbar-workspace"]')).toBeNull()
-    const copy = document.createElement('button')
-    copy.id = 'workspace-copy-path'
-    copy.hidden = true
-    copy.setAttribute('aria-label', 'Copy workspace path')
-    const copyPressed = vi.fn()
-    copy.addEventListener('click', copyPressed)
-    document.body.append(copy)
-    more.click()
-    more.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
-    more.click()
-    const copyEntry = await vi.waitFor(() => {
-      const found = document.querySelector<HTMLElement>('[data-testid="topbar-more-workspace"]')
-      expect(found?.textContent).toBe('Copy workspace path')
-      return found
-    }, committed)
-    expect([...document.querySelectorAll('[role="menuitem"]')].map((entry) => entry.textContent)).toEqual([
-      'Copy workspace path',
-      'Runtime info',
-      'Report a problem',
-    ])
-    copyEntry?.click()
-    expect(copyPressed).toHaveBeenCalledTimes(1)
-    copy.remove()
+    report.click()
+    expect(opened).toHaveBeenCalledWith(report)
+    expect(document.querySelector('[role="menu"]')).toBeNull()
+    expect(
+      report.compareDocumentPosition(document.getElementById('workbench-controls') as Node) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(document.getElementById('session-goal-host')).not.toBeNull()
+    expect(document.getElementById('workspace-copy-path')).toBeNull()
+    expect(document.getElementById('session-runtime')).toBeNull()
   })
 
   it('collapses by the width of the bar: the Agent chip gives way to the title', () => {
@@ -323,10 +250,14 @@ describe('rendered topbar region', () => {
     expect(narrow).not.toMatch(/#view-chat|\.session-tabs\b|workbench-right-toggle|topbar-more/)
     // The workspace is named in the sidebar, not in the bar.
     expect(css).not.toContain('.topbar-workspace')
-    // The workbench label shows only on wide windows.
-    expect(css).toMatch(
-      /@media \(max-width: 1439px\) \{\s*\.topbar-row \.workbench-toggle-label \{\s*display: none;/,
-    )
+    expect(css).not.toContain('.workbench-toggle-label')
+    expect(css).toContain('.session-view-thumb')
+    expect(css).toContain('cubic-bezier(0.3, 1.35, 0.5, 1)')
+    expect(css).toContain('.topbar-actions::before')
+    expect(css).toContain('.session-view-live')
+    expect(css).toContain('[data-view-enter="right"]')
+    expect(css).toContain('[data-view-enter="left"]')
+    expect(css).toContain('.topbar-report:hover .icon')
   })
 
   it('shadows only topbar and restores the built-in component after unload', async () => {

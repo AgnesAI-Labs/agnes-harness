@@ -1261,6 +1261,7 @@ function updateTitle(id: string, title: string): void {
   if (current?.id === id) topbarRuntime.setTaskTitle(title)
   updateSidebar()
 }
+let runtimePlatform: string | undefined
 let sessionRows: PageSessionMeta['items'] = []
 let workspaceRows: WorkspaceEntry[] = []
 let sessionNext: string | undefined
@@ -1274,6 +1275,7 @@ let liveApproval:
 function updateSidebar(): void {
   clientModules.sidebar?.update({
     sessions: sessionRows,
+    ...(runtimePlatform ? { runtimePlatform } : {}),
     workspaces: workspaceRows,
     labels: sessionLabels,
     locale: clientModules.locale.getSnapshot(),
@@ -2248,7 +2250,7 @@ run(async () => {
   if (!wsUrl) throw new Error(t('app.ws.unavailable'))
   // A first connection that fails never reports `closed`; the page may hold a stale daemon address.
   try {
-    await client.initialize()
+    runtimePlatform = (await client.initialize()).platform
   } catch (error) {
     if (!intentionalClose) reconnect.start()
     throw error

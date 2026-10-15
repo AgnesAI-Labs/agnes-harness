@@ -4,7 +4,7 @@ import { Button, createRegionHost, Dialog, renderRegion, SettingsInput, unmountR
 
 import { createRuntimeDialog } from './session-runtime-dialog.js'
 
-export type SessionAction = 'rename' | 'fork' | 'archive' | 'runtime'
+export type SessionAction = 'rename' | 'fork' | 'archive' | 'runtime' | 'revealWorkspace'
 
 export function forkTitle(title: string): string {
   const match = /^(.*) \((\d+)\)$/.exec(title)
@@ -230,7 +230,9 @@ export function createSessionActions(options: {
       trigger.setAttribute('aria-busy', 'true')
       let archivedSuccessfully = false
       try {
-        if (action === 'fork') await options.fork(id, title)
+        if (action === 'revealWorkspace')
+          await options.client.call('_agnes/v1/session.revealWorkspace', { sessionId: id })
+        else if (action === 'fork') await options.fork(id, title)
         else {
           await options.client.session.archive(id, true)
           archivedSuccessfully = true

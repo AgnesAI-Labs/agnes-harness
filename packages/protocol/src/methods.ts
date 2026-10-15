@@ -130,6 +130,7 @@ export type MethodName =
   | '_agnes/v1/session.view'
   | '_agnes/v1/session.projectUIOpening'
   | '_agnes/v1/session.projectUIHistory'
+  | '_agnes/v1/session.revealWorkspace'
   | '_agnes/v1/session.runtime'
   | '_agnes/v1/session.tools'
   | '_agnes/v1/session.jobs.read'
@@ -320,6 +321,10 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     params: A.SessionProjectUIHistoryParams,
     result: A.UIHistoryPage,
   },
+  '_agnes/v1/session.revealWorkspace': clientRequest(
+    A.SessionRevealWorkspaceParams,
+    A.SessionRevealWorkspaceResult,
+  ),
   '_agnes/v1/session.runtime': clientRequest(SessionRuntimeParams, SessionRuntimeDescriptor),
   '_agnes/v1/session.tools': clientRequest(SessionToolsParams, SessionToolsResult),
   '_agnes/v1/session.jobs.read': clientRequest(A.SessionJobsReadParams, A.SessionJobsReadResult),

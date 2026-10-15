@@ -6,6 +6,8 @@
 
 每个 `AGH_HOME` 的 App Server 由一个 daemon 管理。CLI、TUI、Web、渠道、ACP、SDK 和 stdio 客户端使用同一套经过认证的方法合同。worker 执行任务；stdio bridge 只转发请求，不创建另一个服务。
 
+`_agnes/v1/session.revealWorkspace` 是客户端层的本机桌面操作：输入 `{ sessionId }`，原生目录打开器启动后返回 `{ opened: true }`。它要求经过认证的本地 Unix/回环 Web 连接及会话所有权，重新验证会话的权威工作区绑定，不接受客户端路径。远程或无桌面运行环境、缺失或过期的工作区会被拒绝。它以分离进程和 argv 数组调用 `open`、`explorer.exe` 或 `xdg-open`，不经过 shell。可选的 `initialize._meta.agnes.platform`（SDK `InitializeInfo.platform`）提供 daemon 操作系统事实，供客户端选择标签。
+
 ## 会话、轮次、事件与审批
 
 会话保存身份、历史、workspace 权限和固定的插件代码。`session/prompt` 启动轮次，`session/update` 推送预览。通过 `_agnes/v1/session.attach` 订阅持久化的 `_agnes/v1/session.event`；保存 ledger cursor 用于重连，预览不持久化。prompt 的响应报告停止原因。

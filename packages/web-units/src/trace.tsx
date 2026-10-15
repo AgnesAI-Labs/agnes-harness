@@ -290,7 +290,12 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
   const allTurnsCollapsed =
     numberedTurns.length > 0 && numberedTurns.every((turn) => collapsedTurns.has(turn))
   const applyOpen = (next: boolean, persist: boolean): void => {
+    const changed = open.current !== next
     open.current = next
+    if (changed && persist) {
+      root.dataset.viewEnter = 'right'
+      if (options.conversation) options.conversation.dataset.viewEnter = 'left'
+    }
     const pending = latest.current
     if (next && pending) {
       latest.current = undefined
@@ -338,8 +343,10 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
       options.toggle.removeEventListener('click', openTrace)
       options.chatToggle?.removeEventListener('click', openChat)
       document.body.classList.remove('trace-open')
+      root.removeAttribute('data-view-enter')
+      options.conversation?.removeAttribute('data-view-enter')
     }
-  }, [options.chatToggle, options.toggle])
+  }, [options.chatToggle, options.toggle, options.conversation, root])
   useImperativeHandle(
     ref,
     () => ({

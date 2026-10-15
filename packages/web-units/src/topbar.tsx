@@ -23,8 +23,6 @@ export interface TopbarHandle {
   setConnectionState(value: TopbarConnectionState): void
   /** The session's Agent (loop) name; omitted while no session is selected. */
   setAgent(name: string | undefined): void
-  /** Whether a live session can show its runtime information. */
-  setRuntimeAvailable(available: boolean): void
 }
 interface TopbarProps {
   translate: Translate
@@ -44,7 +42,6 @@ export const Topbar = forwardRef<TopbarHandle, TopbarProps>(function Topbar(
   const [onStop, setOnStop] = useState<() => void>()
   const [connection, setConnection] = useState<TopbarConnectionState>('connecting')
   const [agent, setAgent] = useState<string>()
-  const [runtimeAvailable, setRuntimeAvailable] = useState(false)
   useEffect(() => {
     const previous = document.title
     document.title = taskTitle ? `${taskTitle} · Agnes Harness` : 'Agnes Harness'
@@ -79,9 +76,6 @@ export const Topbar = forwardRef<TopbarHandle, TopbarProps>(function Topbar(
       },
       setAgent(name) {
         flushSync(() => setAgent(name))
-      },
-      setRuntimeAvailable(available) {
-        flushSync(() => setRuntimeAvailable(available))
       },
     }),
     [],
@@ -139,20 +133,6 @@ export const Topbar = forwardRef<TopbarHandle, TopbarProps>(function Topbar(
           translate={t}
         />
       </div>
-      {runtimeAvailable && (
-        <IconButton
-          id="session-runtime"
-          name="info"
-          className="topbar-runtime"
-          label={t('topbar.runtime')}
-          title={t('topbar.runtime')}
-          onClick={(event) =>
-            event.currentTarget.dispatchEvent(
-              new CustomEvent('agnes:runtime-current-session', { bubbles: true }),
-            )
-          }
-        />
-      )}
       <div className="connection-group">
         <span id="connection" role="status" aria-live="polite" data-state={connection}>
           {t(CONNECTION_LABEL_KEYS[connection])}

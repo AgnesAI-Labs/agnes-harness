@@ -315,6 +315,24 @@
       "purpose": "React element identification for the Recharts peer dependency.",
       "rationale": "Matches the pinned React 18 runtime so chart children and fragments are recognized correctly.",
       "consumers": ["packages/web-ui"]
+    },
+    {
+      "name": "@xterm/xterm",
+      "version": "6.0.0",
+      "license": "MIT",
+      "source": "https://github.com/xtermjs/xterm.js",
+      "purpose": "Emulate the workbench PTY screen, ANSI/OSC colors and accessible terminal input.",
+      "rationale": "Shared, lazy-loaded terminal renderer behind the Web UI boundary; uses the existing session jobs transport.",
+      "consumers": ["packages/web-ui"]
+    },
+    {
+      "name": "@xterm/addon-fit",
+      "version": "0.11.0",
+      "license": "MIT",
+      "source": "https://github.com/xtermjs/xterm.js",
+      "purpose": "Measure terminal cells and fit the workbench PTY to its panel.",
+      "rationale": "Shared, lazy-loaded terminal renderer behind the Web UI boundary; uses the existing session jobs transport.",
+      "consumers": ["packages/web-ui"]
     }
   ]
 }

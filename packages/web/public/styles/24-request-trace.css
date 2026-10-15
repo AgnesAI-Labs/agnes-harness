@@ -131,23 +131,9 @@
     color: var(--agnes-text-primary);
   }
   .workbench-terminal-job {
-    /* Keep the controls and output in flow when a short dock needs to scroll. */
-    flex: 1 0 auto;
-    min-height: min-content;
-  }
-  .workbench-terminal-output {
     flex: 1;
-    width: 100%;
-    min-height: 4rem;
-    resize: none;
-    border: 0;
-    border-radius: 0;
-    padding: var(--s8) var(--s12);
-    color: var(--agnes-text-primary);
-    background: var(--agnes-bg-app-content);
-    font-family: var(--font-mono);
-    font-size: var(--agnes-ui-input-font-size);
-    line-height: 1.5;
+    min-height: 0;
+    overflow: hidden;
   }
 
   .workbench-goal {

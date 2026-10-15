@@ -53,6 +53,12 @@ following material retains its original notices and license terms:
   See packages/web-ui/THIRD_PARTY_NOTICES.md and LUCIDE-LICENSE.
   Web builds retain the full license in THIRD-PARTY-NOTICES/lucide-icons.txt.
 
+- xterm.js and its fit addon in the lazy-loaded Web terminal renderer:
+  MIT License; original copyright notices and licenses are copied from the pinned packages
+  to web/THIRD-PARTY-NOTICES/xterm-xterm.txt and xterm-addon-fit.txt by both Web builds.
+  See packages/web-ui/THIRD_PARTY_NOTICES.md and third-party/runtime-dependencies.json.
+
+
 This NOTICE is informational and does not modify any license. It records known
 source-tree attributions; a separately distributed binary or package must also
 be checked against its actual bundled dependencies and assets.
