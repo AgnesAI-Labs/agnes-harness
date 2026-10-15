@@ -6,6 +6,7 @@ import type {
   LoopFactory,
   LoopInput,
   LoopRequest,
+  LoopSideCallPort,
   LoopStepOutcome,
   LoopTurnView,
 } from '@agnes/extension-api'
@@ -23,6 +24,11 @@ export interface LoopTestOptions {
   decisions?: DecisionPort
   /** Durable receipts that exist before the first step, keyed by invocation id. */
   effects?: Readonly<Record<string, LoopEffectStatus>>
+  /**
+   * The port behind `ctx.sideCall`. `ctx.sideCall` stays undefined unless one is supplied, so a loop
+   * that guards on it sees the same context as before; a fake needs to answer only what the loop calls.
+   */
+  sideCall?: LoopSideCallPort
   tools?: Pick<LoopContext['tools'], 'execute' | 'batch'> & Partial<Pick<LoopContext['tools'], 'resume'>>
   /** Result of the approval-continuation probe; defaults to false (nothing parked). */
   resumeParked?: Awaited<ReturnType<LoopContext['input']['resumeParked']>>
@@ -123,6 +129,7 @@ export async function driveLoop(factory: LoopFactory, options: LoopTestOptions =
       finishFailure: unavailable,
     },
     effects: { status: async (id) => statuses.get(id) ?? { status: 'not-sent', invocationId: id } },
+    ...(options.sideCall ? { sideCall: options.sideCall } : {}),
     model: { ...scripted.model, respond: unavailable },
     tools: {
       drain: unavailable,

@@ -143,6 +143,8 @@ Agent Loop 负责调度与自身检查点状态。通过 `@agnes/extension-api` 
 
 为请求和工具调用分配稳定 `invocationId`。`ctx.effects.status(id)` 返回 `not-sent`、`may-have-sent` 或含持久响应的 `responded`。通过 `ctx.checkpoints.write(driver.checkpoint(), { invocationIds })` 关联检查点与副作用。重开可复用持久响应；不确定的调用拒绝自动重放。responded 不代表工具成功，也不保证进程外副作用恰好执行一次。
 
+循环还可以向另一个模型发一次性请求，而不触碰对话；见[循环的旁路模型调用](#循环的旁路模型调用)。
+
 `LoopContext` 由两个有文档的面合成。`GenericLoopPorts` 是可替换循环所需的全部端口（模型、工具、决策、副作用回执、输入、事件、检查点、等待/唤醒、作业、子代理、压缩）；把工厂声明为 `GenericLoopFactory` 即证明它不依赖其他端口。`DefaultLoopConvenience`（`turn.continuation`/`checkpoint`/`finishCancelled`/`finishFailure`、`model.respond`、`tools.drain`、`wait.poll`）是绑定 Core ReAct 阶段的粗粒度边，只有默认循环应当依赖。
 
 受控的 `turn.checkpoint`、`model.respond`、`tools.drain` 与延迟等待便捷端口，以及压缩，维护 Core 的账本和恢复不变量。调度器通过 `ctx.turn.continuation()` 选择下一条边，无须接触私有程序计数器；Core 可能新增 continuation 阶段，因此循环必须把未知的 `LoopContinuation` 值视为错误，不能依赖穷尽式 switch。`@agnes/loop-default` 只使用公共上下文，由 Base 发行包的普通插件行注册。`checkpointMode: 'ledger'` 使用 Core 恢复并接受没有驱动检查点的历史会话。有状态驱动默认使用 `'driver'` 模式，恢复前校验 codec 版本。Host 为 `ctx.children` 绑定父会话的 `ChildAgentSessionService`，提供 start/list/message/interrupt/result/events/dispose。省略 providerId 使用 child-agent 配置；每次 start 都检查当前允许名单，继承父工作区、固定代码 generation、预算和工具过滤，子选项只能收窄这些约束。会话关闭会取消并等待已启动或正在启动的子代理清理完成。
@@ -163,3 +165,91 @@ Agent Loop 负责调度与自身检查点状态。通过 `@agnes/extension-api` 
 新会话选择优先级为显式参数、管理端默认值、配置档的 `providers.loop: { provider, version? }`、`agnes.default@1.0.0`。SDK 使用 `client.createSession({ cwd, loop })` 或 `client.session.new({ cwd, loop })`，CLI 使用 `agh -p "提示词" --loop example.dag@1.0.0`。开始记录固定循环身份；默认值变更仅影响新会话。旧会话映射到默认身份，缺失时明确失败，不会替换循环。参见[计划-执行示例](../../examples/loops/plan-execute-loop/README.md)：非 ReAct 状态机，声明为 `GenericLoopFactory`，通过 `DecisionPort` 请求真人批准，吸收结构化 child-completed `system` 输入，并在拒绝、取消或结果未知时如实结束，其测试是通用端口的一致性参照。参见[独立 DAG 示例](../../examples/loops/dag-loop/README.md)：模型规划、并行波次、依赖汇合与恢复均只依赖公共端口。
 
 `await ctx.plugin(...)`（及 prepared awaitable fiber）在所需服务尚未就绪时以 `DEPENDENCY_UNAVAILABLE` 拒绝，包括循环依赖。fiber 保持 pending，服务到达后仍可激活。`Fiber.await()` 等待当前生命周期迁移稳定，可能返回 pending fiber；判断已加载前须检查状态。异步事件的脱离等待失败通过监听器所属 logger 记录；被等待的分派仍传播错误。
+
+## 循环的旁路模型调用
+
+`ctx.sideCall` 向你指定的路由和模型发一次请求，发生在对话之外。请求不带主系统提示、对话历史、工具，也不套不可信信封，答案也不进入上下文。循环在两步之间需要咨询另一个模型时使用它：决策模型、分类器或第二意见。这个成员在 `LoopContext` 类型里是可选的，测试替身可以不提供；Core 总会提供。
+
+一次调用分两步。`prepare` 校验选项，返回冻结的 `PreparedSideCall`，其中带估算，循环可以在花钱之前先看价格。`invoke` 发送调用。`status` 读回已记录的调用。
+
+```ts
+const prepared = await ctx.sideCall.prepare({
+  label: 'jev.decide',
+  target: { route: 'jev', model: modelId },
+  payload: { state, questions },
+  output: 'json',
+  deadlineMs: 10_000,
+  invocationId: `decide-${turnId}-${attempt}`,
+})
+if ((prepared.estimate.projectedCredits ?? 0) > creditLimit) return fallback()
+const result = await ctx.sideCall.invoke(prepared, signal)
+if (result.status === 'ok') return useAnswers(result.json)
+if (result.status === 'failed' && result.retryable) return retryWithNewId()
+return fallback()
+```
+
+超出范围的选项在 `prepare` 时被拒绝，不会被截断。
+
+| 选项 | 含义 |
+| --- | --- |
+| `label` | 你自定的用途标签，随调用一起记录，例如 `jev.decide`。匹配 `/^[a-z][a-z0-9._-]{0,63}$/`。 |
+| `target` | `{ route, model }`，二者都必须在已装配的模型目录里。不接受槽位名。 |
+| `deadlineMs` | 整次调用的时限，由 Core 竞速。100 到 120000 毫秒，缺省 10000。 |
+| `system`、`messages`、`sampling` | 原样发出。`system` 至多 1 MiB。只允许 `user` 和 `assistant` 消息；assistant 消息不带 `toolCalls`，`tool_result` 块被拒绝。图片要求目标模型声明支持图片输入。 |
+| `payload` | 结构化 JSON，作为 `RequestBody.payload` 原样交给适配器。规范 JSON 至多 1 MiB。 |
+| `output` | `'json'` 让 Core 把返回文本解析成 `result.json`。缺省 `'text'`。 |
+| `invocationId` | 稳定 id，效果编号为 `side:<invocationId>`。匹配 `/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,122}$/`，且不得像凭据。省略时由 Core 生成。 |
+
+### 目标与适配器能力
+
+目标路由背后的适配器在注册时用 `capabilities` 声明请求可以带什么（见[模型适配器包](#模型适配器包)）：
+
+| 标志 | 对旁路调用的含义 |
+| --- | --- |
+| `imageInput` | 适配器读取图片块。带图片的旁路调用要求目标模型声明支持图片输入，否则 `prepare` 抛出 `E_ENVELOPE`，`detail.reason` 为 `image-input`。 |
+| `tools` | 适配器处理工具调用。旁路调用从不发送工具。 |
+| `streaming` | 适配器边生成边流式返回事件。旁路调用对流式和非流式适配器都适用，答案完整后返回一次。 |
+| `payload` | 适配器读取 `RequestBody.payload`。没有它时，AI 门面在发送前就拒绝带 payload 的请求：结果是 `failed`，`reason: 'adapter-error'`，`code: 'CONTRACT_MISMATCH'`，`dispatch: 'not-sent'`。 |
+| `payloadOnly` | 适配器只接受 payload，不接受消息。要求 `payload: true`。对话模型选择入口不列出这类适配器的模型，所以只有旁路调用能到达它们。 |
+
+内置的 Jev 适配器注册为 `typesafe-systemone`，声明 `imageInput: false`、`tools: false`、`streaming: false`、`payload: true` 和 `payloadOnly: true`。把路由的 `api` 设为 `typesafe-systemone`，在 `target` 里写这条路由和它的一个模型，发送 `payload: { state, questions }`，不带 `system` 和 `messages`。适配器每次调用只发一个 HTTP 请求，把答案作为 JSON 文本返回，所以请求 `output: 'json'`，即可在 `result.json` 里拿到答案。路由的 `baseUrl` 和凭据来自你的配置档，不由循环提供。
+
+### 结果与错误
+
+`invoke` 返回一个结果。厂商、时钟或调用方对一次调用做的任何事，都以状态返回；`invoke` 只在用法错误时抛出，而此时什么都没有写入。
+
+| `status` | 含义 |
+| --- | --- |
+| `ok` | `text`；`output` 为 `'json'` 时还有解析后的 `json`；以及 `usage`、`latencyMs` 和厂商回报的 `response` id 与模型。 |
+| `failed` | `reason` 为 `deadline`、`cancelled`、`adapter-error` 或 `invalid-output`。有 AI 错误码时带 `code`。`dispatch` 为 `not-sent` 或 `may-have-sent`。调用经正常终态结算时带 `usage`：观察到的用量，或没有观察到用量且目录有价格时的估算（`creditSource: 'estimated'`）。因循环的执行作用域被撤销而收尾的调用不带 `usage`，但它的成本行已写入。 |
+| `refused` | `reason` 为 `budget` 或 `usage-unrecorded`。什么都没写：没有意图行、没有成本行、没有调用适配器。 |
+| `unknown` | `reason` 为 `interrupted`：进程在记录结果之前停止，调用可能到达厂商，也可能没有。它不会被再次发送。 |
+
+`failed` 结果的 `retryable`：`deadline` 为 true，`cancelled` 和 `invalid-output` 为 false，`adapter-error` 沿用适配器自己的标志。
+
+错误都在写入任何内容之前抛出，所以抛出意味着什么都没有记录：
+
+- `prepare` 对越界的选项抛出 `E_ENVELOPE`（`detail.reason`：`label`、`deadline`、`payload-size`、`messages`、`image-input` 或 `invocation-id`），目标不在 provider 目录里时抛出 `E_MODEL_UNKNOWN`（`target-unknown`）。另有几个 `E_ENVELOPE` 原因：`output`（既不是 `'text'` 也不是 `'json'`）、`system`（不是至多 1 MiB 的字符串）和 `sampling`（键或值超出请求 schema 的范围）。
+- `invoke` 的 signal 不是 `AbortSignal` 时抛出 `E_ENVELOPE`（`signal`）。
+- 不在已打开的回合内时，`prepare` 和 `invoke` 抛出 `E_RELATION`（`no-turn`）。
+- 调用由另一个上下文或回合准备时，`invoke` 抛出 `E_REQUEST_FROZEN`（`foreign`、`turn`）；`prepare` 之后目录记录或适配器身份变了，同样抛出（`target-changed`）。`invocationId` 已有记录但 `requestHash` 不同时抛出 `E_RELATION`（`invocation-reused`），本进程内正在运行时也抛出 `E_RELATION`（`invocation-in-flight`）。会话暂停时抛出 `E_LANE_BUSY`（`CONTROL_PAUSED`），已准备的调用不被消耗，可以再次 `invoke`。
+- 会话正在关闭，或循环的执行作用域已被撤销后，每个方法都抛出 `E_CLOSED`。
+- 还有调用没有结算时，`ctx.events.finish` 抛出 `E_RELATION`（`side-call-in-flight`）。同一回合内的调用可以并发；结束回合之前先等它们完成。
+
+### 调用 id、时限与重试
+
+调用 id 让调用幂等。用同一个 id 和同一个请求再次 `invoke`，返回已记录的结果（`replayed: true`），不再发送。同一个 id 配不同的请求，抛出 `invocation-reused`。恢复前后保持 id 稳定；决定是否再次调用之前，先看 `ctx.sideCall.status(id)`（`absent`、`in-flight` 或 `finished`）。进程停止时仍在进行的调用，读回来是 `unknown`，原因 `interrupted`，不会再次发送。
+
+`deadlineMs` 限定整次调用。时限由 Core 计时，所以忽略取消的适配器也会在时限到时被切断：结果是 `failed`，原因 `deadline`，错误码 `TIMEOUT`。
+
+Core 和适配器都不重试旁路调用。重试由循环决定：换一个新的 `invocationId` 再调用（旧 id 一直返回它已记录的失败），只对 `retryable` 的失败重试，把尝试次数控制得很小，本步骤没有时间时回落到循环自己的行为。
+
+### 平台处理的部分
+
+每个已发送的调用留下一行用途为 `side-call` 的成本行，计入额度和预算。它记录观察到的用量；没有观察到花费时（时限到、被取消、没有用量的适配器错误），记录 `prepare` 给出的估算价。账本保存摘要和审计元数据（标签、路由、适配器、端点主机），不保存请求内容。
+
+撤销、用户 Stop 和会话关闭，不需要循环写任何代码。Stop 和关闭会切断调用并记录；如果调用进行中循环的执行作用域被撤销（例如循环被替换），Core 用迟到回执收尾，旧上下文的方法抛出 `E_CLOSED`。替换后的新一代用 `status` 读回这条记录。把 `E_CLOSED` 和 `cancelled` 结果都当作本步骤的结束。
+
+### 测试使用旁路调用的循环
+
+`@agnes/host/author-testkit` 的 `driveLoop` 接受 `sideCall` 选项：由你的测试编写的假 `LoopSideCallPort`。不传时 `ctx.sideCall` 是 `undefined`。要在真实执行路径上检查循环，调用 `verifyLoopExecutionContract(factory, { sideCall: true })`。它通过循环自己的上下文，对它自己定义的只接受 payload 的适配器发起旁路调用，覆盖成功、时限、循环取消与会话 Stop 取消、被撤销的循环代际，以及估算成本行。

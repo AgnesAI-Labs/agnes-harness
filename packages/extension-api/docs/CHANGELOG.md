@@ -122,6 +122,14 @@ Every `agnes.plugins[].apiRange` and `@agnes/extension-api` dependency range mov
   such an adapter out. A registration whose `payload` or `payloadOnly` is not a boolean, or that
   sets `payloadOnly` without `payload`, is refused as an invalid model adapter registration. The
   catalog and the capability names list both keys when they are true.
+- `LoopTestOptions.sideCall` for `driveLoop` in `@agnes/plugin-runtime/testkit` (re-exported by
+  `@agnes/host/author-testkit`): a fake `LoopSideCallPort` that becomes `ctx.sideCall`. Without it
+  `ctx.sideCall` stays undefined, as before.
+- `verifyLoopExecutionContract(factory, options)` in `@agnes/host/author-testkit` takes the new
+  `LoopContractOptions`. `{ sideCall: true }` adds the checks `side-call`, `side-call-deadline`,
+  `side-call-cancel`, `side-call-revocation` and `side-call-estimated-cost`; they make side calls
+  through the loop's own context against a payload-only adapter that the suite defines. Without the
+  option the report is unchanged.
 
 ## 3.1.0
 

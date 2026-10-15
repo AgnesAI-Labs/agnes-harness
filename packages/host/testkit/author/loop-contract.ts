@@ -20,11 +20,32 @@ import {
   textTurn,
   toolTurn,
 } from '@agnes/core/testkit'
-import type { LoopCheckpoint, LoopContext, LoopDriver, LoopFactory } from '@agnes/extension-api'
+import type {
+  LoopCheckpoint,
+  LoopContext,
+  LoopDriver,
+  LoopFactory,
+  LoopSideCallPort,
+  LoopStepOutcome,
+  PreparedSideCall,
+  SideCallOptions,
+  SideCallResult,
+  SideCallStatus,
+} from '@agnes/extension-api'
 
 export interface LoopContractReport {
   loop: { id: string; version: string }
   checks: string[]
+}
+
+export interface LoopContractOptions {
+  /**
+   * Also check side model calls. The suite makes calls through the loop's own `ctx.sideCall` against
+   * a payload-only adapter it defines, then lets the loop finish the turn. It checks the success, the
+   * deadline, both kinds of cancellation, a revoked loop generation and the estimated cost row that
+   * covers a call whose spend was not seen. Without this option a loop is checked exactly as before.
+   */
+  sideCall?: boolean
 }
 
 const signal = () => new AbortController().signal
@@ -37,6 +58,10 @@ const payload = (row: Event | undefined): Record<string, unknown> => {
   assert.ok(row.data && typeof row.data === 'object' && !Array.isArray(row.data))
   return row.data
 }
+const sideCosts = (rows: Event[]) =>
+  rows.filter((row) => row.type === 'cost/ledger' && payload(row).purpose === 'side-call')
+const sideSettled = (rows: Event[], invocationId: string) =>
+  rows.filter((row) => row.type === 'effect/settled' && payload(row).effectId === `side:${invocationId}`)
 const defer = () => {
   let resolve!: () => void
   const promise = new Promise<void>((done) => {
@@ -64,7 +89,10 @@ function variant(factory: LoopFactory, overrides: Partial<LoopFactory> = {}): Lo
  * The factory must support ordinary text prompts and model tool-call replies. Scheduler-specific
  * planning languages should be adapted in the factory supplied by the author.
  */
-export async function verifyLoopExecutionContract(factory: LoopFactory): Promise<LoopContractReport> {
+export async function verifyLoopExecutionContract(
+  factory: LoopFactory,
+  options: LoopContractOptions = {},
+): Promise<LoopContractReport> {
   const report: LoopContractReport = { loop: { id: factory.id, version: factory.version }, checks: [] }
   function runtime(loop = factory, scripts = [textTurn('contract answer')], storage = new MemoryStorage()) {
     const provider = fakeProvider(scripts)
@@ -368,5 +396,274 @@ export async function verifyLoopExecutionContract(factory: LoopFactory): Promise
       await kit.kernel.close()
     }
   }
+
+  // The suite makes the side calls itself, through the loop's own context in its first step, and then
+  // hands the turn to the loop under test: whatever the loop does, a call must settle once, bill once
+  // and leave no pending effect behind. The adapter is defined here, so no account or service is needed.
+  async function sideCallCases() {
+    const { addSideRoute, SIDE_ANSWER, SIDE_ENDPOINT_HOST, SIDE_TARGET } = await import(
+      './side-call-fixture.js'
+    )
+    const sentinel = 'SENTINEL-side-call-request-content'
+    const request = (invocationId: string, over: Partial<SideCallOptions> = {}): SideCallOptions => ({
+      label: 'contract.check',
+      target: SIDE_TARGET,
+      system: 'Judge the question.',
+      payload: { question: sentinel },
+      output: 'json',
+      deadlineMs: 5000,
+      invocationId,
+      ...over,
+    })
+    type Act = (
+      port: LoopSideCallPort,
+      stop: AbortSignal,
+      generation: number,
+    ) => Promise<LoopStepOutcome | undefined>
+    /** A runtime whose loop runs `act` in the first step of each generation before the loop's own step. */
+    const start = (mode: 'answer' | 'stall', act: Act) => {
+      let generations = 0
+      const wrap = (ctx: LoopContext, base: LoopDriver): LoopDriver => {
+        const generation = generations++
+        let first = true
+        return {
+          checkpoint: () => base.checkpoint(),
+          cancel: () => base.cancel(),
+          dispose: () => base.dispose(),
+          async step(stop) {
+            if (first) {
+              first = false
+              assert.ok(ctx.sideCall, 'Core provides ctx.sideCall')
+              await ctx.input.accept()
+              const early = await act(ctx.sideCall, stop, generation)
+              if (early) return early
+            }
+            return base.step(stop)
+          },
+        }
+      }
+      const kit = runtime(
+        variant(factory, {
+          create: async (ctx, stop) => wrap(ctx, await factory.create(ctx, stop)),
+          resume: async (ctx, saved, stop) => wrap(ctx, await factory.resume(ctx, saved, stop)),
+        }),
+      )
+      const adapter = addSideRoute(kit.provider)
+      adapter.mode = mode
+      return { ...kit, adapter }
+    }
+    type Kit = ReturnType<typeof start>
+    const billed = (kit: Kit) =>
+      kit.billing.filter((row) => (row as { purpose?: string }).purpose === 'side-call')
+    let got: { prepared?: PreparedSideCall; result?: SideCallResult; again?: SideCallResult } = {}
+
+    {
+      got = {}
+      const kit: Kit = start('answer', async (port, stop) => {
+        got.prepared = await port.prepare(request('contract-ok'))
+        got.result = await port.invoke(got.prepared, stop)
+        return undefined
+      })
+      try {
+        const session = await kit.open('side-ok')
+        assert.equal((await kit.run(session)).reason, 'completed', 'a side call must not block the turn')
+        const result = got.result
+        assert.ok(result?.status === 'ok', 'the call succeeds')
+        assert.equal(result.text, SIDE_ANSWER)
+        assert.deepEqual(result.json, { verdict: 'yes' })
+        assert.equal(result.replayed, false)
+        assert.equal(result.usage.credits, 0.042, 'the vendor price is the cost')
+        assert.equal(result.usage.creditSource, 'gateway')
+        assert.equal(kit.adapter.seen.length, 1)
+        assert.deepEqual(kit.adapter.seen[0]?.payload, { question: sentinel })
+        assert.ok(kit.provider.requests.every((body) => body.payload === undefined))
+        const rows = await facts(session)
+        const [cost, ...extra] = sideCosts(rows)
+        assert.equal(extra.length, 0, 'one cost row per side call')
+        assert.equal(payload(cost).route, SIDE_TARGET.route)
+        assert.equal(payload(cost).endpointHost, SIDE_ENDPOINT_HOST)
+        assert.equal(payload(cost).creditSource, 'gateway')
+        assert.deepEqual(
+          sideSettled(rows, 'contract-ok').map((row) => payload(row).outcome),
+          ['ok'],
+        )
+        assert.equal(billed(kit).length, 1, 'one billing record per side call')
+        assert.deepEqual(session.pendingEffects(), [])
+        assert.ok(!JSON.stringify(rows).includes(sentinel), 'request content stays out of the ledger')
+        report.checks.push('side-call')
+      } finally {
+        await kit.kernel.close()
+      }
+    }
+    {
+      got = {}
+      let elapsedMs = Infinity
+      const kit: Kit = start('stall', async (port, stop) => {
+        got.prepared = await port.prepare(request('contract-deadline', { deadlineMs: 100 }))
+        const began = performance.now()
+        got.result = await port.invoke(got.prepared, stop)
+        elapsedMs = performance.now() - began
+        return undefined
+      })
+      try {
+        const session = await kit.open('side-deadline')
+        assert.equal((await kit.run(session)).reason, 'completed')
+        assert.ok(got.result?.status === 'failed')
+        assert.equal(got.result.reason, 'deadline')
+        assert.equal(got.result.code, 'TIMEOUT')
+        assert.equal(got.result.retryable, true)
+        assert.equal(got.result.dispatch, 'may-have-sent')
+        assert.ok(elapsedMs < 2000, 'the platform ends the call; the adapter never answers')
+        const settled = sideSettled(await facts(session), 'contract-deadline')
+        assert.deepEqual(
+          settled.map((row) => [payload(row).outcome, payload(row).code]),
+          [['error', 'TIMEOUT']],
+        )
+        assert.deepEqual(session.pendingEffects(), [])
+        report.checks.push('side-call-deadline')
+      } finally {
+        await kit.kernel.close()
+      }
+    }
+    for (const sessionStop of [false, true]) {
+      // The loop cutting its own call is a failure of that call; a stop of the whole session is a cancellation.
+      const id = sessionStop ? 'contract-stop' : 'contract-cancel'
+      got = {}
+      const own = new AbortController()
+      const stop = new AbortController()
+      const kit: Kit = start('stall', async (port, signal) => {
+        got.prepared = await port.prepare(request(id))
+        const call = port.invoke(got.prepared, sessionStop ? signal : own.signal)
+        await kit.adapter.arrived
+        if (!sessionStop) own.abort()
+        got.result = await call
+        return undefined
+      })
+      try {
+        const session = await kit.open(id)
+        const running = kit.run(session, undefined, stop.signal)
+        if (sessionStop) {
+          await kit.adapter.arrived
+          stop.abort()
+        }
+        assert.equal((await running).reason, sessionStop ? 'aborted' : 'completed')
+        assert.ok(got.result?.status === 'failed')
+        assert.equal(got.result.reason, 'cancelled')
+        assert.equal(got.result.retryable, false)
+        assert.equal(got.result.dispatch, 'may-have-sent')
+        const rows = await facts(session)
+        assert.deepEqual(
+          sideSettled(rows, id).map((row) => payload(row).outcome),
+          [sessionStop ? 'aborted' : 'error'],
+        )
+        assert.deepEqual(
+          sideCosts(rows).map((row) => payload(row).creditSource),
+          ['estimated'],
+          'a cut call still leaves one cost row',
+        )
+        assert.deepEqual(session.pendingEffects(), [])
+      } finally {
+        await kit.kernel.close()
+      }
+    }
+    report.checks.push('side-call-cancel')
+    {
+      // The loop is replaced while its call is in flight (an interrupt, a hot swap). The old execution
+      // scope is revoked, so the call closes with a late receipt instead of hanging or vanishing, and
+      // the replacement generation reads it back.
+      const id = 'contract-revoked'
+      const seen: { call?: Promise<SideCallResult>; refused?: unknown; back?: SideCallStatus } = {}
+      let session: SessionImpl | undefined
+      const kit: Kit = start('stall', async (port, stop, generation) => {
+        if (generation === 0) {
+          seen.call = port.invoke(await port.prepare(request(id)), stop)
+          seen.call.catch(() => undefined)
+          await kit.adapter.arrived
+          await session?.restartLoopDriver()
+          return { outcome: 'running', phase: 'replaced' }
+        }
+        // Finishing the turn is refused until the revoked call has been written down.
+        seen.refused = await seen.call?.then(
+          () => undefined,
+          (error: unknown) => error,
+        )
+        seen.back = await port.status(id)
+        return undefined
+      })
+      try {
+        session = await kit.open('side-revoked')
+        assert.equal((await kit.run(session)).reason, 'completed')
+        assert.equal(
+          (seen.refused as { code?: string } | undefined)?.code,
+          'E_CLOSED',
+          'the old caller is refused',
+        )
+        assert.equal(kit.adapter.seen.length, 1)
+        assert.ok(seen.back?.status === 'finished', 'the replacement reads the call back')
+        const back = seen.back.result
+        assert.ok(back.status === 'failed')
+        assert.deepEqual(
+          [back.reason, back.retryable, back.dispatch, back.replayed],
+          ['cancelled', false, 'may-have-sent', true],
+        )
+        const rows = await facts(session)
+        assert.equal(rows.filter((row) => row.type === 'x/core/late-effect-receipt').length, 1)
+        assert.equal(sideSettled(rows, id).length, 0, 'the late receipt carries the settlement')
+        assert.deepEqual(
+          sideCosts(rows).map((row) => [payload(row).creditSource, payload(row).interrupted]),
+          [['estimated', true]],
+        )
+        assert.equal(rows.filter((row) => row.type === 'turn/end').length, 1)
+        assert.deepEqual(session.pendingEffects(), [])
+        report.checks.push('side-call-revocation')
+      } finally {
+        await kit.kernel.close()
+      }
+    }
+    {
+      // A call whose spend was not seen is billed at the estimate frozen by `prepare`, once, and asking
+      // for the same invocation again returns the record instead of sending and billing a second time.
+      const id = 'contract-estimate'
+      got = {}
+      const kit: Kit = start('stall', async (port, stop) => {
+        got.prepared = await port.prepare(request(id, { deadlineMs: 100 }))
+        got.result = await port.invoke(got.prepared, stop)
+        got.again = await port.invoke(got.prepared, stop)
+        return undefined
+      })
+      try {
+        const session = await kit.open('side-estimate')
+        assert.equal((await kit.run(session)).reason, 'completed')
+        const projected = got.prepared?.estimate.projectedCredits
+        assert.equal(typeof projected, 'number', 'the billing seam prices the estimate')
+        assert.ok(got.result?.status === 'failed' && got.again?.status === 'failed')
+        assert.equal(got.again.reason, 'deadline')
+        assert.equal(got.again.replayed, true)
+        assert.equal(got.result.usage?.creditSource, 'estimated')
+        assert.equal(got.result.usage?.credits, projected)
+        assert.equal(kit.adapter.seen.length, 1, 'the second invoke does not send')
+        const rows = await facts(session)
+        const [cost, ...extra] = sideCosts(rows)
+        assert.equal(extra.length, 0, 'exactly one cost row')
+        assert.equal(payload(cost).creditSource, 'estimated')
+        assert.equal(payload(cost).interrupted, true)
+        assert.equal(payload(cost).credits, projected)
+        assert.deepEqual(payload(cost).tokens, {
+          input: got.prepared?.estimate.inputTokens,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+        })
+        assert.deepEqual(
+          billed(kit).map((row) => (row as { effectId: string }).effectId),
+          [`side:${id}`],
+        )
+        report.checks.push('side-call-estimated-cost')
+      } finally {
+        await kit.kernel.close()
+      }
+    }
+  }
+  if (options.sideCall) await sideCallCases()
   return report
 }

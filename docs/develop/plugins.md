@@ -159,6 +159,8 @@ Prepare model requests with `await ctx.prepareRequest({ system, messages, tools,
 
 Assign stable `invocationId` values to model preparations and tool calls. `ctx.effects.status(id)` returns `not-sent`, `may-have-sent` or `responded`, with a durable result for a response. Save state with `ctx.checkpoints.write(driver.checkpoint(), { invocationIds })` to associate a checkpoint with effects. A durable response can be reused after reopen; an uncertain invocation refuses automatic replay. A responded receipt does not imply tool success or exactly-once execution outside the process.
 
+A loop can also send a one-off request to another model without touching the conversation; see [Side model calls from a loop](#side-model-calls-from-a-loop).
+
 `LoopContext` is the union of two documented surfaces. `GenericLoopPorts` carries everything a replaceable loop needs (model, tools, decisions, effect receipts, inputs, events, checkpoints, wait/wake, jobs, children, compaction); type a factory as `GenericLoopFactory` to prove it needs nothing else. `DefaultLoopConvenience` (`turn.continuation`/`checkpoint`/`finishCancelled`/`finishFailure`, `model.respond`, `tools.drain`, `wait.poll`) is the coarse edge set tied to Core's ReAct stages; only the default loop should depend on it.
 
 The controlled `turn.checkpoint`, `model.respond`, `tools.drain` and deferred-wait convenience ports, with compaction, preserve Core's ledger and recovery invariants. A scheduler can select these edges through `ctx.turn.continuation()` without accessing a private program counter; Core may add continuation stages additively, so a loop must treat an unknown `LoopContinuation` value as an error rather than rely on an exhaustive switch. `@agnes/loop-default` does this using only the public context; the Base distribution registers it as an ordinary plugin row. Its `checkpointMode: 'ledger'` uses Core continuation recovery and accepts historical sessions without driver checkpoints. Stateful drivers use the default `'driver'` mode and reject unsupported codec versions before resumed work. Host fits `ctx.children` with a parent-bound `ChildAgentSessionService` supporting start/list/message/interrupt/result/events/dispose. An omitted providerId uses the child-agent configuration; every start checks the current allowlist and inherits the parent workspace, pinned code generation, budget and tool filter. Child options can only narrow those constraints. Session close cancels and joins running or starting children before closing the log.
@@ -183,3 +185,91 @@ Choose a loop for a new session with the profile's `providers.loop: { provider: 
 See [the standalone DAG example](../../examples/loops/dag-loop/README.md) for model planning, parallel tool waves, joins and guarded checkpoint recovery. It imports no Core or Host scheduling internals.
 
 `await ctx.plugin(...)` (and prepared awaitable fibers) rejects with `DEPENDENCY_UNAVAILABLE` if required services are still missing, including dependency cycles. The fiber remains pending and can activate when services arrive. `Fiber.await()` waits for current lifecycle work to settle and may return a pending fiber; inspect its state before treating it as loaded. Detached async event failures are logged with the listener owner; awaited dispatch failures still propagate.
+
+## Side model calls from a loop
+
+`ctx.sideCall` sends one request to a route and model that you name, outside the conversation. The request carries no main system prompt, no history, no tools and no untrusted envelope, and the answer is not added to the context. Use it when a loop consults another model between steps: a decision model, a classifier, a second opinion. The member is optional in the `LoopContext` type so that a test double can leave it out; Core always provides it.
+
+A call has two steps. `prepare` validates the options and returns a frozen `PreparedSideCall` that carries an estimate, so a loop can check the price before it spends anything. `invoke` sends the call. `status` reads a recorded call back.
+
+```ts
+const prepared = await ctx.sideCall.prepare({
+  label: 'jev.decide',
+  target: { route: 'jev', model: modelId },
+  payload: { state, questions },
+  output: 'json',
+  deadlineMs: 10_000,
+  invocationId: `decide-${turnId}-${attempt}`,
+})
+if ((prepared.estimate.projectedCredits ?? 0) > creditLimit) return fallback()
+const result = await ctx.sideCall.invoke(prepared, signal)
+if (result.status === 'ok') return useAnswers(result.json)
+if (result.status === 'failed' && result.retryable) return retryWithNewId()
+return fallback()
+```
+
+An option outside its range is refused at `prepare` and never truncated.
+
+| Option | Meaning |
+| --- | --- |
+| `label` | Your purpose tag, recorded with the call, for example `jev.decide`. Matches `/^[a-z][a-z0-9._-]{0,63}$/`. |
+| `target` | `{ route, model }`, both in the assembled model catalog. A slot name is not accepted. |
+| `deadlineMs` | Deadline for the whole call, raced by Core. 100 to 120000 milliseconds, default 10000. |
+| `system`, `messages`, `sampling` | Sent as written. `system` is at most 1 MiB. Only `user` and `assistant` messages are allowed; an assistant message carries no `toolCalls` and a `tool_result` block is refused. An image needs a target model that declares image input. |
+| `payload` | Structured JSON handed to the adapter unchanged as `RequestBody.payload`. At most 1 MiB of canonical JSON. |
+| `output` | `'json'` makes Core parse the returned text into `result.json`. Default `'text'`. |
+| `invocationId` | Stable id; the effect id is `side:<invocationId>`. Matches `/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,122}$/` and must not look like a credential. Core generates one when it is omitted. |
+
+### Target and adapter capabilities
+
+The adapter behind the target route declares what a request may carry in its `capabilities` when it registers (see [Model adapter packages](#model-adapter-packages)):
+
+| Flag | Meaning for a side call |
+| --- | --- |
+| `imageInput` | The adapter reads image blocks. A side call with an image needs a target model that declares image input; otherwise `prepare` throws `E_ENVELOPE` with `detail.reason` `image-input`. |
+| `tools` | The adapter handles tool calls. A side call never sends tools. |
+| `streaming` | The adapter streams events as they arrive. A side call works with streaming and non-streaming adapters alike and returns once, when the answer is complete. |
+| `payload` | The adapter reads `RequestBody.payload`. Without it the AI facade refuses a request that carries a payload before sending anything: the result is `failed` with `reason: 'adapter-error'`, `code: 'CONTRACT_MISMATCH'` and `dispatch: 'not-sent'`. |
+| `payloadOnly` | The adapter accepts only a payload and no messages. Requires `payload: true`. The conversation model pickers leave the models of such an adapter out, so only a side call reaches them. |
+
+The built-in Jev adapter, registered as `typesafe-systemone`, declares `imageInput: false`, `tools: false`, `streaming: false`, `payload: true` and `payloadOnly: true`. Set a route's `api` to `typesafe-systemone`, name that route and one of its models in `target`, and send `payload: { state, questions }` with no `system` and no `messages`. The adapter sends one HTTP request per call and returns the answers as JSON text, so ask for `output: 'json'` to receive them in `result.json`. The route's `baseUrl` and credential come from your profile, not from the loop.
+
+### Results and errors
+
+`invoke` returns a result. Whatever the vendor, the clock or the caller can do to a call comes back as a status; `invoke` throws only for misuse, and then nothing was written.
+
+| `status` | Meaning |
+| --- | --- |
+| `ok` | `text`, the parsed `json` when `output` is `'json'`, `usage`, `latencyMs` and the vendor's `response` id and model. |
+| `failed` | `reason` is `deadline`, `cancelled`, `adapter-error` or `invalid-output`. `code` is the AI error code when there is one. `dispatch` is `not-sent` or `may-have-sent`. `usage` is present when the call settled through its normal terminal: the observed usage, or an estimate (`creditSource: 'estimated'`) when none was observed and the catalog has a price. A call closed because the loop's execution scope was revoked reports none, although its cost row is written. |
+| `refused` | `reason` is `budget` or `usage-unrecorded`. Nothing was written: no intent row, no cost row, no adapter call. |
+| `unknown` | `reason` is `interrupted`: the process stopped before the outcome was recorded, and the call may or may not have reached the vendor. It is never sent again. |
+
+`retryable` on a `failed` result is true for `deadline`, false for `cancelled` and `invalid-output`, and follows the adapter's own flag for `adapter-error`.
+
+Errors are thrown before anything is written, so a throw means nothing was recorded:
+
+- `prepare` throws `E_ENVELOPE` (`detail.reason`: `label`, `deadline`, `payload-size`, `messages`, `image-input` or `invocation-id`) for an out-of-range option, and `E_MODEL_UNKNOWN` (`target-unknown`) when the target is not in the provider's catalog. Further `E_ENVELOPE` reasons: `output` (neither `'text'` nor `'json'`), `system` (not a string of at most 1 MiB) and `sampling` (a key or value outside the request schema's ranges).
+- `invoke` throws `E_ENVELOPE` (`signal`) when its signal is not an `AbortSignal`.
+- `prepare` and `invoke` throw `E_RELATION` (`no-turn`) outside an open turn.
+- `invoke` throws `E_REQUEST_FROZEN` for a call prepared by another context or turn (`foreign`, `turn`) or when the catalog record or adapter identity changed after `prepare` (`target-changed`); `E_RELATION` when the `invocationId` already has a record with a different `requestHash` (`invocation-reused`) or is running in this process (`invocation-in-flight`); and `E_LANE_BUSY` (`CONTROL_PAUSED`) while the session is paused. The prepared call is not consumed and can be invoked again.
+- Every method throws `E_CLOSED` once the session is closing or the loop's execution scope was revoked.
+- `ctx.events.finish` throws `E_RELATION` (`side-call-in-flight`) while a call is still unsettled. Calls may run concurrently within a turn; await them before you finish the turn.
+
+### Invocation ids, the deadline and retries
+
+The invocation id makes a call idempotent. Calling `invoke` again with the same id and the same request returns the recorded result with `replayed: true` and sends nothing. The same id with a different request throws `invocation-reused`. Keep ids stable across a resume, and check `ctx.sideCall.status(id)` (`absent`, `in-flight` or `finished`) before you decide to call again. A call that was in flight when the process stopped reads as `unknown` with reason `interrupted` and is not sent again.
+
+`deadlineMs` bounds the whole call. Core times it, so an adapter that ignores cancellation is still cut off when the deadline passes: the result is `failed` with reason `deadline` and code `TIMEOUT`.
+
+Neither Core nor the adapter retries a side call. The loop owns that decision: call again with a new `invocationId` (the old id keeps returning its recorded failure), do it only for a `retryable` failure, keep the number of attempts small and fall back to the loop's own behaviour when the step has no time left.
+
+### What the platform handles
+
+Every call that was sent leaves one cost row with purpose `side-call` that counts toward credit limits and budgets. It records the observed usage or, when the spend was not seen (a deadline, a cancellation, an adapter error without usage), an estimate priced from `prepare`. The ledger keeps digests and audit metadata such as the label, route, adapter and endpoint host, not the request content.
+
+Revocation, a user Stop and session close need no code in the loop. Stop and close cut the call and record it; if the loop's execution scope is revoked while a call is in flight, for example because the loop was replaced, Core closes the call with a late receipt and the old context's methods throw `E_CLOSED`. A replacement generation reads that record back with `status`. Treat `E_CLOSED` and a `cancelled` result as the end of the step.
+
+### Testing a loop that uses side calls
+
+`driveLoop` from `@agnes/host/author-testkit` takes a `sideCall` option: a fake `LoopSideCallPort` that your test writes. Without it `ctx.sideCall` is `undefined`. To check a loop against the real execution path, call `verifyLoopExecutionContract(factory, { sideCall: true })`. It makes side calls through the loop's own context against a payload-only adapter that it defines, and covers success, the deadline, cancellation by the loop and by a session stop, a revoked loop generation and the estimated cost row.

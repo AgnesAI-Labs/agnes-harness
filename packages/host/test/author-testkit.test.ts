@@ -1,10 +1,17 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { loopCheckpointCodec, loopKind } from '@agnes/extension-api'
+import {
+  type LoopSideCallPort,
+  loopCheckpointCodec,
+  loopKind,
+  type PreparedSideCall,
+  type SideCallResult,
+} from '@agnes/extension-api'
 import {
   createAuthorTestkit,
   createPluginTestHost,
+  driveLoop,
   fakeModel,
   recordModelFixture,
   replayModelFixture,
@@ -320,5 +327,87 @@ describe('public author testkit', () => {
     } finally {
       await kit.dispose()
     }
+  })
+
+  it('hands a supplied side-call port to a driven loop and leaves it absent otherwise', async () => {
+    const codec = loopCheckpointCodec(1, (state) => state)
+    const loop = defineLoop({
+      id: 'author.side-call',
+      version: '1.0.0',
+      capabilities: [],
+      codec,
+      create(ctx) {
+        return {
+          async step(signal) {
+            await ctx.input.accept()
+            const port = ctx.sideCall
+            if (!port) await ctx.events.emit('side-call', { present: false })
+            else {
+              const prepared = await port.prepare({
+                label: 'author.check',
+                target: { route: 'side-route', model: 'side-model' },
+                payload: { question: 'next move' },
+                invocationId: 'check-1',
+              })
+              const result = await port.invoke(prepared, signal)
+              await ctx.events.emit('side-call', {
+                present: true,
+                status: result.status,
+                text: result.status === 'ok' ? result.text : null,
+                again: (await port.status('check-1')).status,
+              })
+            }
+            await ctx.checkpoints.write(codec.encode(null))
+            await ctx.events.finish('completed')
+            return { outcome: 'turn-ended', phase: 'done', reason: 'completed' }
+          },
+          checkpoint: () => codec.encode(null),
+          cancel() {},
+          dispose() {},
+        }
+      },
+      resume() {
+        throw new Error('Not used')
+      },
+    })
+    const calls: unknown[] = []
+    const sideCall: LoopSideCallPort = {
+      async prepare(options) {
+        calls.push(['prepare', options])
+        return { invocationId: options.invocationId ?? 'generated', requestHash: 'h' } as PreparedSideCall
+      },
+      async invoke(prepared, signal) {
+        calls.push(['invoke', prepared.invocationId, signal.aborted])
+        return {
+          status: 'ok',
+          invocationId: prepared.invocationId,
+          text: 'yes',
+          usage: {
+            tokens: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+            credits: 0,
+            creditSource: 'estimated',
+          },
+          latencyMs: 1,
+          replayed: false,
+        } satisfies SideCallResult
+      },
+      async status(invocationId) {
+        calls.push(['status', invocationId])
+        return { status: 'absent', invocationId }
+      },
+    }
+    const inputs = [{ content: [{ type: 'text' as const, text: 'decide' }] }]
+    const supplied = await driveLoop(loop, { inputs, sideCall })
+    expect(supplied.events).toContainEqual({
+      type: 'side-call',
+      data: { present: true, status: 'ok', text: 'yes', again: 'absent' },
+    })
+    expect(calls).toEqual([
+      ['prepare', expect.objectContaining({ label: 'author.check', payload: { question: 'next move' } })],
+      ['invoke', 'check-1', false],
+      ['status', 'check-1'],
+    ])
+    const plain = await driveLoop(loop, { inputs })
+    expect(plain.events).toContainEqual({ type: 'side-call', data: { present: false } })
   })
 })
