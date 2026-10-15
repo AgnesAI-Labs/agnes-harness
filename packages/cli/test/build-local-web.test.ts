@@ -1,7 +1,9 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { createWebServer } from '@agnes/web/server'
 import { expect, it } from 'vitest'
 import { readUiCss } from '../../../tools/web-style-source.mjs'
 import { resolveLaunchResources } from '../launch/resources.js'
@@ -12,6 +14,31 @@ it('builds local web assets with the shared platform vendor modules', async () =
     const { buildLocalWeb } = await import('../tools/build-local.js')
     await buildLocalWeb(output)
 
+    // Check the actual local distribution, including lazy entries and all vendor/shared chunks.
+    const assets = (await readdir(output, { recursive: true })).filter((file) => /\.(js|css|map)$/.test(file))
+    expect(assets.some((file) => /^terminal-[A-Z0-9]{8}\.js$/.test(file))).toBe(true)
+    const listener = createServer()
+    await new Promise<void>((resolve) => listener.listen(0, '127.0.0.1', resolve))
+    const address = listener.address()
+    if (!address || typeof address === 'string') throw new Error('No test port')
+    const port = address.port
+    await new Promise<void>((resolve) => listener.close(() => resolve()))
+    const server = await createWebServer({
+      root: output,
+      wsUrl: 'ws://127.0.0.1:4316',
+      token: 'synthetic',
+      port,
+      origin: `http://127.0.0.1:${port}`,
+    })
+    try {
+      for (const file of assets) {
+        const response = await fetch(`${server.url}/${file}`)
+        expect(response.status, file).toBe(200)
+        expect(Buffer.from(await response.arrayBuffer()), file).toEqual(await readFile(join(output, file)))
+      }
+    } finally {
+      await server.close()
+    }
     const app = await readFile(join(output, 'app.js'), 'utf8')
     const appChunks = [...app.matchAll(/from\s+["'](\.\/chunk-[^"']+\.js)["']/g)].map((match) => match[1])
     const chunkSources = await Promise.all(
