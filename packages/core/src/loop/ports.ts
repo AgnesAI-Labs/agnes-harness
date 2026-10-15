@@ -451,7 +451,8 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
       },
     },
     tools: {
-      drain: (signal) => controlled(signal, async () => publicOutcome(await s.runToolsPhase())),
+      drain: (signal) =>
+        controlled(signal, async () => publicOutcome(await announced.driving(() => s.runToolsPhase()))),
       execute,
       async resume(id, signal) {
         if (resumingTools.has(id))

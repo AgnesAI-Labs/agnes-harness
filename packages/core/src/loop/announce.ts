@@ -29,8 +29,10 @@ type Planned = { call: PlannedCall; invocationId: string; input: ReturnType<type
 /** An announced call of the open step that was planned and never dispatched. */
 type Stranded = { toolUseId: string; name: string; argsSeq: Seq; invocationId: string }
 
-/** The result text of an announced call whose step ended before it ran. */
-const NOT_STARTED = (name: string) => `${name} was announced but did not run before its step ended`
+/** The result text of an announced call that never started. */
+const NOT_STARTED = (name: string) => `${name} was announced but did not run`
+/** Thrown inside the commit lock to make no commit when nothing is left to write. */
+const NOTHING = new Error('No stranded call is left to answer')
 
 /** What the announce path shares with the loop context that owns it. */
 export interface AnnounceDeps {
@@ -53,28 +55,36 @@ export interface AnnounceDeps {
 export function announcedTools(s: SessionImpl, deps: AnnounceDeps) {
   // A replay writes no new fence, so this keeps two replays of one id from running it twice.
   const resuming = new Set<string>()
-  // Calls this process has planned and is still running; none of them is stranded.
+  // Calls this process is running, through an announce or a tools phase; none of them is stranded.
   const running = new Set<string>()
+  const idle = (call: Stranded) => !running.has(call.toolUseId) && !resuming.has(call.invocationId)
   /** Read inside the commit lock: the calls of `found` still undispatched that nothing here runs. */
   const still = (found: readonly Stranded[]) => {
     const live = new Set(undispatchedCalls(s.op()).map((call) => call.toolUseId))
-    return found.filter(
-      (call) => live.has(call.toolUseId) && !running.has(call.toolUseId) && !resuming.has(call.invocationId),
-    )
+    return found.filter((call) => live.has(call.toolUseId) && idle(call))
   }
-  /** Commits a result for each call of `found` still stranded, ahead of `rows`, and completes them. */
-  const answering = (found: readonly Stranded[], rows: EventInput[]) => {
+  /**
+   * Commits a result for each call of `found` still stranded, ahead of `rows`, and completes them.
+   * With nothing to answer and no `rows` it commits nothing, not even the op-mark of an empty commit.
+   */
+  const answering = async (found: readonly Stranded[], rows: EventInput[]) => {
     let closed = new Set<string>()
-    return s.transition(
-      () => {
-        const calls = still(found)
-        closed = new Set(calls.map((call) => call.toolUseId))
-        return [...notStartedResults(s, calls, NOT_STARTED), ...rows]
-      },
-      (cur) => cur && setCallsCompleted(cur, closed),
-    )
+    await s
+      .transition(
+        () => {
+          const calls = still(found)
+          if (!calls.length && !rows.length) throw NOTHING
+          closed = new Set(calls.map((call) => call.toolUseId))
+          return [...notStartedResults(s, calls, NOT_STARTED), ...rows]
+        },
+        (cur) => cur && setCallsCompleted(cur, closed),
+      )
+      .catch((error: unknown) => {
+        if (error !== NOTHING) throw error
+      })
   }
-  const stranded = (candidates: readonly ToolCallState[]) => strandedCalls(s, deps.invocations, candidates)
+  const stranded = async (candidates: readonly ToolCallState[]) =>
+    (await strandedCalls(s, deps.invocations, candidates)).filter(idle)
   const run = async (
     calls: readonly LoopToolCall[],
     signal: AbortSignal,
@@ -149,6 +159,18 @@ export function announcedTools(s: SessionImpl, deps: AnnounceDeps) {
       const found = candidates.length ? await stranded(candidates) : []
       if (found.length) await answering(found, [])
     },
+    /** Runs `phase`, a tools phase that drives the batch's planned calls, with those calls running. */
+    async driving<T>(phase: () => Promise<T>): Promise<T> {
+      const ids = undispatchedCalls(s.op())
+        .map((call) => call.toolUseId)
+        .filter((id) => !running.has(id))
+      for (const id of ids) running.add(id)
+      try {
+        return await phase()
+      } finally {
+        for (const id of ids) running.delete(id)
+      }
+    },
   }
 }
 
@@ -186,7 +208,7 @@ async function strandedCalls(
     if (link?.type !== 'x/core/loop-effect' || link.origin !== 'system' || link.trust !== 'trusted') continue
     if (linked?.toolUseId !== call.toolUseId || typeof linked.invocationId !== 'string') continue
     const input = receiptInput({ name: call.name, args: data.args as JsonValue })
-    if (!(await invocations.claimedFor(linked.invocationId, input).catch(() => false))) continue
+    if (!(await invocations.recordedFor(linked.invocationId, input))) continue
     const { toolUseId, name, argsSeq } = call
     found.push({ toolUseId, name, argsSeq, invocationId: linked.invocationId })
   }

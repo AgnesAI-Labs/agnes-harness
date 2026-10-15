@@ -145,8 +145,8 @@ function commits(storage: MemoryStorage) {
 }
 const types = (tx: CommitTx) => tx.events.map((row) => row.type)
 const dataOf = (row: { data: unknown }) => row.data as Record<string, unknown>
-/** The result text of an announced call that never started before its step ended. */
-const NOT_STARTED = (name: string) => `${name} was announced but did not run before its step ended`
+/** The result text of an announced call that never started. */
+const NOT_STARTED = (name: string) => `${name} was announced but did not run`
 
 function countingRead(counter: { n: number }, text = 'read once') {
   return readTool(async () => {
@@ -956,37 +956,24 @@ describe('replay after a crash', () => {
     })
 
     it('leaves a call that was dispatched to recovery', async () => {
-      /** Never replayed, so recovery cannot rerun it and records its outcome as unknown. */
-      const once = (counter: { n: number }) =>
-        ({
-          ...(readTool(async () => {
-            counter.n++
-            return { content: [{ type: 'text', text: 'ran' }] }
-          }) as { meta: object }),
-          name: 'once',
-          meta: { ...(readTool() as { meta: object }).meta, isReadOnly: false, replay: 'never' },
-        }) as never
       const dispatched = (tx: CommitTx) =>
         tx.events.some((row) => row.type === 'effect/intent' && dataOf(row).kind === 'tool')
-      const call = (ctx: LoopContext, s: AbortSignal) =>
-        ctx.tools.execute({ name: 'once', args: {}, invocationId: 'once:1' }, s, { announce: true })
-      const storage = await crashAt('sent', async (ctx, s) => void (await call(ctx, s)), dispatched, [
-        once({ n: 0 }),
-      ])
-      const ran = { n: 0 }
-      const { seen, session } = await reopenWith(
-        'sent',
-        storage,
-        async (ctx, s) => {
-          await ctx.model.complete(await ctx.prepareRequest(), s)
-        },
-        [once(ran)],
-      )
-      await run(session)
-      expect(ran.n).toBe(0)
+      const storage = await crashAt('sent', async (ctx, s) => void (await pass('sent:1')(ctx, s)), dispatched)
+      let pending: unknown
+      const { counter, seen, session } = await reopenWith('sent', storage, async (ctx, s) => {
+        // Recovery keeps a safe read for a second attempt: dispatched, with no result yet.
+        pending = structuredClone(session.op())
+        await ctx.prepareRequest()
+        await ctx.tools.drain(s)
+      })
+      expect(await run(session)).toMatchObject({ reason: 'completed' })
+      expect(pending).toMatchObject({
+        phase: { batch: { calls: [{ status: 'dispatch_pending', dispatchAttempt: 2 }] } },
+      })
+      expect(counter.n).toBe(1)
       expect(closers(seen)).toEqual([])
       const results = await session.scan({ type: 'tool/result', limit: 10 })
-      expect(results.map((row) => dataOf(row).code)).toEqual(['TOOL_OUTCOME_UNKNOWN'])
+      expect(results.map((row) => [dataOf(row).code, dataOf(row).isError])).toEqual([[undefined, false]])
     })
 
     it('closes every call of an announced batch in the one commit that ends the step', async () => {
@@ -1117,23 +1104,34 @@ describe('replay after a crash', () => {
     }
     const shell = (id: string) => (ctx: LoopContext, s: AbortSignal) =>
       ctx.tools.execute({ name: 'shell', args: {}, invocationId: id }, s, { announce: true })
-    /** Runs `call` and prepares a model request while the call waits for its approval. */
+    /**
+     * Runs `call` and prepares a model request while the call waits for its approval, noting in
+     * `written` how many rows that preparation added to the ledger.
+     */
     const preparedWhileAsking =
-      (call: (ctx: LoopContext, s: AbortSignal) => Promise<ToolResult>, h: ReturnType<typeof heldApproval>) =>
+      (
+        call: (ctx: LoopContext, s: AbortSignal) => Promise<unknown>,
+        h: ReturnType<typeof heldApproval>,
+        ledger: () => SessionImpl,
+        written: number[],
+      ) =>
       async (ctx: LoopContext, s: AbortSignal) => {
         const running = call(ctx, s)
         await h.asking
+        const before = ledger().lastSeq
         await ctx.prepareRequest()
+        written.push(ledger().lastSeq - before)
         h.held.allow()
         return running
       }
 
-    it('does not answer a call this process is still running', async () => {
+    it('does not answer a call this process is still running, and writes nothing for it', async () => {
       const h = heldApproval()
       let result: unknown
+      const written: number[] = []
       const f = setup(
         perTurn(async (ctx, s) => {
-          result = await preparedWhileAsking(shell('live:1'), h)(ctx, s)
+          result = await preparedWhileAsking(shell('live:1'), h, () => session, written)(ctx, s)
         }),
         { seams: h.seams },
       )
@@ -1144,10 +1142,78 @@ describe('replay after a crash', () => {
       expect(await run(session)).toMatchObject({ reason: 'completed' })
       expect(result).toEqual({ content: [{ type: 'text', text: 'ran' }] })
       expect(h.held.ran).toBe(1)
+      expect(written).toEqual([0])
       expect(closers(seen)).toEqual([])
       expect((await session.scan({ type: 'tool/result', limit: 10 })).map((row) => row.data)).toEqual([
         expect.not.objectContaining({ code: expect.anything() }),
       ])
+    })
+
+    it('does not answer a call a tool phase is driving, and runs it once', async () => {
+      const storage = await crashAt(
+        'driven',
+        async (ctx, s) => void (await shell('driven:1')(ctx, s)),
+        planned,
+        [shellTool()],
+      )
+      const h = heldApproval()
+      const written: number[] = []
+      const { seen, session } = await reopenWith(
+        'driven',
+        storage,
+        preparedWhileAsking(
+          (ctx, s) => ctx.tools.drain(s),
+          h,
+          () => session,
+          written,
+        ),
+        [h.shell],
+        h.seams,
+      )
+      expect(await run(session)).toMatchObject({ reason: 'completed' })
+      expect(h.held.ran).toBe(1)
+      expect(written).toEqual([0])
+      expect(closers(seen)).toEqual([])
+      const results = await session.scan({ type: 'tool/result', limit: 10 })
+      expect(results.map((row) => [dataOf(row).code, dataOf(row).isError])).toEqual([[undefined, false]])
+    })
+
+    it('never dispatches a call that was closed while its approval was pending', async () => {
+      const storage = await crashAt(
+        'closed',
+        async (ctx, s) => void (await shell('closed:1')(ctx, s)),
+        planned,
+        [shellTool()],
+      )
+      const h = heldApproval()
+      const written: number[] = []
+      let refused: unknown
+      const { seen, session } = await reopenWith(
+        'closed',
+        storage,
+        // The tools phase run directly, not through the loop port, so nothing marks the call as
+        // driven and the request preparation closes it while its approval is pending.
+        preparedWhileAsking(
+          async () => {
+            refused = await session.runToolsPhase().catch((error: unknown) => error)
+          },
+          h,
+          () => session,
+          written,
+        ),
+        [h.shell],
+        h.seams,
+      )
+      await run(session)
+      expect(written).toEqual([1])
+      expect(closers(seen)).toHaveLength(1)
+      expect(refused).toMatchObject({
+        code: 'E_RELATION',
+        message: expect.stringContaining('no longer planned'),
+      })
+      expect(h.held.ran).toBe(0)
+      const results = await session.scan({ type: 'tool/result', limit: 10 })
+      expect(results.map((row) => dataOf(row).code)).toEqual(['TOOL_NOT_STARTED'])
     })
 
     it('does not answer a call a replay is still running', async () => {
@@ -1159,11 +1225,12 @@ describe('replay after a crash', () => {
       )
       const h = heldApproval()
       let result: unknown
+      const written: number[] = []
       const { seen, session } = await reopenWith(
         'replaying',
         storage,
         async (ctx, s) => {
-          result = await preparedWhileAsking(shell('again:1'), h)(ctx, s)
+          result = await preparedWhileAsking(shell('again:1'), h, () => session, written)(ctx, s)
         },
         [h.shell],
         h.seams,
@@ -1171,6 +1238,7 @@ describe('replay after a crash', () => {
       expect(await run(session)).toMatchObject({ reason: 'completed' })
       expect(result).toEqual({ content: [{ type: 'text', text: 'ran' }] })
       expect(h.held.ran).toBe(1)
+      expect(written).toEqual([0])
       expect(closers(seen)).toEqual([])
     })
 
@@ -1224,11 +1292,12 @@ describe('replay after a crash', () => {
         shellTool(),
       ])
       const h = heldApproval()
+      let turns = 0
       const { seen, session, f } = await reopenWith(
         'asked',
         storage,
         async (ctx, s) => {
-          await ctx.model.complete(await ctx.prepareRequest(), s)
+          if (turns++ === 0) await ctx.model.complete(await ctx.prepareRequest(), s)
         },
         [h.shell],
         h.seams,
@@ -1237,9 +1306,24 @@ describe('replay after a crash', () => {
       expect(h.held.ran).toBe(0)
       expect(closers(seen)).toHaveLength(1)
       const [call] = await session.scan({ type: 'tool/call', limit: 1 })
+      const toolUseId = dataOf(call!).toolUseId as string
       const messages = f.provider.requests[0]!.messages
       const at = messages.findIndex((m) => m.role === 'assistant')
-      expect(messages.slice(at)).toEqual(pairOf(dataOf(call!).toolUseId as string, 'shell'))
+      expect(messages.slice(at)).toEqual(pairOf(toolUseId, 'shell'))
+      // The question asked before the crash stays open; answering it later runs nothing.
+      const gates = (await session.decisions.list()).filter((d) => d.request.owner === 'core/tool-permission')
+      expect(gates).toEqual([
+        expect.objectContaining({ request: expect.objectContaining({ operationId: toolUseId }) }),
+      ])
+      expect(gates[0]?.result ?? null).toBeNull()
+      await answerToolDecision(session, 1, 'allowed-once', { ...actor, id: 'approver' })
+      await enqueue(session, 'next')
+      expect(await run(session)).toMatchObject({ reason: 'completed' })
+      expect(h.held.ran).toBe(0)
+      const results = await session.scan({ type: 'tool/result', limit: 10 })
+      expect(results.map((row) => [dataOf(row).toolUseId, dataOf(row).code])).toEqual([
+        [toolUseId, 'TOOL_NOT_STARTED'],
+      ])
     })
   })
 })

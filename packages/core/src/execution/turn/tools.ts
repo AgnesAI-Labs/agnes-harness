@@ -39,6 +39,7 @@ import { deferredEffectId } from '../../step/deferred.js'
 import { modelAllowsTool, modelVisibleTool } from '../../step/model-tools.js'
 import type { ChainStep, SessionImpl, StepOutcome } from '../../step/session.js'
 import { summarizeCall } from '../../step/summarize-call.js'
+import { dispatchable } from '../../step/tool-recovery.js'
 import { stepVerifyInput, toolVerifyInput } from '../../step/verify-input.js'
 import { resolveModel } from './inference.js'
 import { approveMemoryFile } from './memory-approval.js'
@@ -1070,7 +1071,10 @@ export async function approveAndExecute(
     // implied by the intent row and are never stored on their own. A Host call records `dispatched`
     // only once its port has returned, so it stops at dispatch_pending here.
     const chain: ChainStep[] = [
-      { events: [], next: (cur) => updateCall(cur, call.toolUseId, { status: 'approved' }) },
+      {
+        events: [],
+        next: (cur) => updateCall(dispatchable(cur, call.toolUseId), call.toolUseId, { status: 'approved' }),
+      },
       {
         events: [started.intent],
         next: (cur) => {

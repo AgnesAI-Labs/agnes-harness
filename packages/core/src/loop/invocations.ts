@@ -164,6 +164,10 @@ export class LoopInvocations {
         )?.data as { toolUseId?: string } | undefined
     )?.toolUseId
   }
+  /** Whether `id` has a receipt for exactly this input; none, or one for another input, is false. */
+  async recordedFor(id: string, input: unknown): Promise<boolean> {
+    return (await this.record(id))?.fingerprint === sha256Hex(canonicalJson(input))
+  }
   /** Whether `id` has a receipt for exactly this input; a receipt for another input is refused. */
   async claimedFor(id: string, input: unknown): Promise<boolean> {
     const previous = await this.record(id)
