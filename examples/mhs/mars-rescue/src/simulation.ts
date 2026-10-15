@@ -1,6 +1,20 @@
 import { type CallContext, Device, type Json } from '@agnes/mhs-device'
 import { INITIAL, registration } from './devices.js'
-import { DEVICE_IDS, type DeviceId, PLACES, type Point, type Pose, route, SPAWNS } from './world.js'
+import { OCCUPANCY } from './occupancy.js'
+import {
+  burn,
+  DEVICE_IDS,
+  type DeviceId,
+  flightTimeLeft,
+  lidar,
+  maxAltitude,
+  PLACES,
+  type Point,
+  type Pose,
+  route,
+  SPAWNS,
+  segmentClear,
+} from './world.js'
 
 export class MarsSimulation {
   readonly devices = new Map<DeviceId, Device>()
@@ -10,6 +24,7 @@ export class MarsSimulation {
   private readonly sleepers = new Set<{ id: DeviceId; wake(): void; reject(): void }>()
   private readonly actions = new Set<Promise<Json>>()
   private clock = 0
+  private readonly flight = new Map<DeviceId, { speed: number; climb: number }>()
   private stopped = false
   constructor(video = false) {
     for (const id of DEVICE_IDS) {
@@ -66,6 +81,12 @@ export class MarsSimulation {
         // Reject direct unsafe movement; manual steering never teleports around an obstacle.
         const legs = route(p, next)
         if (legs.length !== 1) throw new Error('obstacle')
+        if (
+          id === 'monolith-01' &&
+          this.state(id).carrying !== 'astronaut' &&
+          Math.hypot(next.x - this.pose('suit-01').x, next.y - this.pose('suit-01').y) < 2
+        )
+          throw new Error('person-clearance')
         Object.assign(p, next, { yaw: p.yaw + axes.wz * seconds })
       } catch {
         void this.device(id).stop('obstacle')
@@ -74,11 +95,15 @@ export class MarsSimulation {
     const hopper = this.state('hopper-01'),
       hp = this.pose('hopper-01')
     if (hp.z > 0) {
-      const propellant = Math.max(0, Number(hopper.propellant) - seconds * 0.5)
+      const flight = this.flight.get('hopper-01')
+      const propellant = Math.max(
+        10,
+        Number(hopper.propellant) - burn(seconds, flight?.speed ?? 0, flight?.climb ?? 0),
+      )
       this.device('hopper-01').update({
         propellant,
-        flight_time_left: Math.max(0, (propellant - 10) * 2),
-        max_altitude: Math.min(30, Math.max(0, propellant - 10)),
+        flight_time_left: flightTimeLeft(propellant),
+        max_altitude: maxAltitude(propellant),
       })
       if (propellant <= 10) {
         hp.z = 0
@@ -86,6 +111,10 @@ export class MarsSimulation {
         void this.device('hopper-01').stop('landing-reserve')
       }
     }
+    this.environment(seconds)
+    const rover = this.device('rover-01')
+    rover.publish('lidar', lidar(this.pose('rover-01')))
+    rover.publish('occupancy', { id: 'mars-base', resolution: 1, origin: [-80, -80] }, OCCUPANCY, 'image/png')
     if (this.state('monolith-01').carrying === 'astronaut')
       Object.assign(this.pose('suit-01'), this.pose('monolith-01'))
     for (const id of DEVICE_IDS) {
@@ -94,6 +123,42 @@ export class MarsSimulation {
       this.device(id).publish('readings', this.readings(id))
     }
     for (const sleeper of [...this.sleepers]) sleeper.wake()
+  }
+  private environment(seconds: number): void {
+    const wind = 12 + 10 * Math.sin(this.clock / 45),
+      dust = 0.3 + 0.2 * Math.sin(this.clock / 60)
+    this.device('weather-01').update({
+      wind,
+      dust,
+      temperature: -45 + 5 * Math.sin(this.clock / 120),
+      storm_warning: wind > 18 ? 'storm' : 'watch',
+    })
+    const power = this.state('power-01'),
+      shed =
+        Number(power.storage) < 20 ? (power.priority === 'science' ? 'comms' : 'lab') : String(power.shed)
+    const production = power.panels === 'deployed' ? 8 * (1 - Number(power.dust) / 100) * (1 - dust * 0.5) : 0
+    const load = 3 + (shed === 'lab' ? 0 : 1.5) + (shed === 'comms' ? 0 : 0.5)
+    this.device('power-01').update({
+      production,
+      load,
+      shed,
+      storage: Math.max(0, Math.min(100, Number(power.storage) + ((production - load) * seconds) / 60)),
+      dust: Math.min(100, Number(power.dust) + (dust * seconds) / 60),
+    })
+    const comms = this.state('comms-01'),
+      window = this.clock % 120 < 90
+    this.device('comms-01').update({ window, link: window && comms.target !== 'none' && shed !== 'comms' })
+    const suit = this.state('suit-01')
+    if (!suit.rescued)
+      this.device('suit-01').update({
+        o2_left: Math.max(0, Number(suit.o2_left) - seconds / 60),
+        battery: Math.max(0, Number(suit.battery) - seconds / 120),
+        heart_rate: 110 + 10 * Math.sin(this.clock / 10),
+        temperature: Math.max(10, Number(suit.temperature) - seconds / 600),
+        comm: wind < 21,
+      })
+    const medical = this.state('habitat-01').mode === 'medical'
+    this.device('habitat-01').update({ temperature: medical ? 23 : 21, co2: medical ? 400 : 450 })
   }
   private readings(id: DeviceId): Record<string, Json> {
     const { problem: _problem, faults: _faults, ...values } = this.state(id)
@@ -124,9 +189,20 @@ export class MarsSimulation {
     })
     call.signal.throwIfAborted()
   }
-  private async move(id: DeviceId, target: Point, call: CallContext, airborne = false): Promise<void> {
+  private async move(
+    id: DeviceId,
+    target: Point,
+    call: CallContext,
+    airborne = false,
+    gait = 'walk',
+  ): Promise<void> {
     const p = this.pose(id),
-      legs = airborne ? [target] : route(p, target)
+      legs = airborne ? [target] : route(p, target, gait === 'roll' ? 2 : 1)
+    if (id === 'monolith-01') this.device(id).update({ gait })
+    const person = () => this.pose('suit-01')
+    if (gait === 'roll' && Math.hypot(target.x - person().x, target.y - person().y) < 6)
+      throw new Error('roll-near-person')
+    call.progress({ target: [target.x, target.y], route: legs.map((v) => [v.x, v.y]) })
     this.device(id).update({ mode: 'moving', ...(id === 'rover-01' ? { docked: false } : {}) })
     const start = this.clock
     try {
@@ -137,7 +213,19 @@ export class MarsSimulation {
           const dx = end.x - p.x,
             dy = end.y - p.y,
             d = Math.hypot(dx, dy)
-          const distance = Math.min(d, (this.clock - before) * (airborne ? 10 : 4))
+          const speed = airborne
+            ? 10
+            : gait === 'roll'
+              ? 7
+              : id === 'monolith-01' && Math.hypot(p.x - person().x, p.y - person().y) < 6
+                ? 1
+                : 4
+          const distance = Math.min(d, (this.clock - before) * speed)
+          const next = { x: p.x + (dx / d) * distance, y: p.y + (dy / d) * distance }
+          if (!airborne && !segmentClear(p, next, gait === 'roll' ? 2 : 1)) throw new Error('obstacle')
+          if (gait === 'roll' && Math.hypot(next.x - person().x, next.y - person().y) < 6)
+            throw new Error('roll-near-person')
+          if (airborne) this.flight.set(id, { speed, climb: 0 })
           if (airborne && p.z <= 0) throw new Error('not-airborne')
           p.x += (dx / d) * distance
           p.y += (dy / d) * distance
@@ -146,6 +234,7 @@ export class MarsSimulation {
           if (this.clock - start > 110) throw new Error('route-timeout')
         }
     } finally {
+      this.flight.delete(id)
       this.device(id).update({ mode: airborne && p.z > 0 ? 'hovering' : 'idle' })
     }
   }
@@ -164,9 +253,20 @@ export class MarsSimulation {
       state = this.state(id),
       p = this.pose(id)
     switch (name) {
+      case 'plan_route':
+        return {
+          map: 'mars-base',
+          points: route(p, { x: Number(args.x), y: Number(args.y) }).map((v) => [v.x, v.y]),
+        }
       case 'drive_to':
       case 'go_to':
-        await this.move(id, { x: Number(args.x), y: Number(args.y) }, call)
+        await this.move(
+          id,
+          { x: Number(args.x), y: Number(args.y) },
+          call,
+          false,
+          String(args.gait ?? 'walk'),
+        )
         break
       case 'follow_route':
         for (const point of args.points as number[][])
@@ -184,10 +284,14 @@ export class MarsSimulation {
       case 'take_off':
         if (p.z > 0 || Number(state.propellant) < 30) throw new Error('unsafe-takeoff')
         p.z = Math.min(Number(args.alt), Number(state.max_altitude))
+        d.update({ propellant: Math.max(10, Number(state.propellant) - p.z * 0.2) })
         d.update({ mode: 'hovering' })
         break
       case 'fly_to':
         if (p.z <= 0 || Number(args.alt) > Number(state.max_altitude)) throw new Error('unsafe-flight')
+        d.update({
+          propellant: Math.max(10, Number(state.propellant) - Math.max(0, Number(args.alt) - p.z) * 0.2),
+        })
         p.z = Number(args.alt)
         await this.move(id, { x: Number(args.x), y: Number(args.y) }, call, true)
         break
@@ -199,7 +303,8 @@ export class MarsSimulation {
           route: route(PLACES.dock, PLACES.sample).map((v) => [v.x, v.y]),
         }
       case 'land':
-        await this.move(id, PLACES.pad, call, true)
+        if (p.z <= 0) throw new Error('not-airborne')
+        await this.move(id, args.pad === 'landing pad' ? PLACES.landing : PLACES.pad, call, true)
         p.z = 0
         d.update({ mode: 'landed' })
         break
@@ -252,11 +357,15 @@ export class MarsSimulation {
         d.update({ queue: 'rock-1' })
         break
       case 'analyze':
+        if (this.state('power-01').shed === 'lab') throw new Error('load-shed')
         if (state.queue !== args.sample) throw new Error('no-sample')
         d.update({ queue: 'none', last_result: 'rock-1: hydrated silicate (synthetic)', mode: 'idle' })
         break
       case 'point':
-        d.update({ target: args.target!, link: true })
+        d.update({
+          target: args.target!,
+          link: Boolean(state.window) && this.state('power-01').shed !== 'comms',
+        })
         break
       case 'send':
         if (typeof args.report !== 'string' || !args.report.trim()) throw new Error('empty-report')
@@ -290,6 +399,7 @@ export class MarsSimulation {
     this.stopped = true
     this.velocities.clear()
     this.deadlines.clear()
+    this.flight.clear()
     await Promise.all([...this.devices.values()].map((device) => device.stop('example-stop')))
     for (const sleeper of [...this.sleepers]) sleeper.reject()
     await Promise.allSettled([...this.actions])
@@ -300,6 +410,7 @@ export class MarsSimulation {
       Object.assign(this.pose(id), SPAWNS[id], { z: 0, yaw: 0 })
       this.device(id).update(structuredClone(INITIAL[id]))
     }
+    this.clock = 0
     this.stopped = false
   }
 }

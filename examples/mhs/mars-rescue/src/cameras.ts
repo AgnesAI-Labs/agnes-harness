@@ -25,24 +25,28 @@ export class MarsCameras {
     for (const id of DEVICE_IDS) {
       const device = simulation.device(id)
       device.onConfigure = async (sources) => {
+        const desired = new Set(this.video)
         for (const [source, options] of Object.entries(sources)) {
-          const key = `${id}/${source}`
           if (
-            source.endsWith('_video') &&
-            typeof options === 'object' &&
-            options !== null &&
-            !Array.isArray(options)
-          ) {
-            if (options.on === true) {
-              if (!this.video.has(key) && this.video.size >= 2) throw new Error('video-camera-budget')
-              this.video.add(key)
-            } else {
-              this.video.delete(key)
-              this.encoders.get(key)?.close()
-              this.encoders.delete(key)
-            }
-          }
+            !source.endsWith('_video') ||
+            typeof options !== 'object' ||
+            options === null ||
+            Array.isArray(options)
+          )
+            continue
+          const key = `${id}/${source}`
+          if (options.on === true) desired.add(key)
+          else desired.delete(key)
         }
+        if (desired.size > 2) throw new Error('video-camera-budget')
+        for (const key of this.video)
+          if (!desired.has(key)) {
+            const encoder = this.encoders.get(key)
+            if (encoder?.state !== 'closed') encoder?.close()
+            this.encoders.delete(key)
+          }
+        this.video.clear()
+        for (const key of desired) this.video.add(key)
       }
       device.onKeyframe = async (source) => {
         this.keyframes.add(`${id}/${source}`)
@@ -52,6 +56,8 @@ export class MarsCameras {
   retry(): void {
     this.scene?.dispose()
     this.scene = undefined
+    for (const encoder of this.encoders.values()) if (encoder.state !== 'closed') encoder.close()
+    this.encoders.clear()
     this.error = undefined
   }
   async capture(now: number): Promise<void> {
@@ -59,6 +65,8 @@ export class MarsCameras {
     this.capturing = true
     try {
       this.scene ??= new MarsScene(this.canvas, this.simulation)
+      await this.scene.ready
+      if (this.disposed) return
       const still = now - this.lastStill >= 1000,
         periodicKeyframe = now - this.lastKeyframe >= 1000
       if (still) this.lastStill = now
@@ -128,7 +136,7 @@ export class MarsCameras {
         width: 640,
         height: 360,
         bitrate: 800000,
-        framerate: 10,
+        framerate: 20,
         latencyMode: 'realtime' as const,
         avc: { format: 'annexb' as const },
       }
@@ -141,14 +149,25 @@ export class MarsCameras {
           chunk.copyTo(bytes)
           this.simulation
             .device(id)
-            .publish(`${source}_video`, { w: 640, h: 360, key: chunk.type === 'key' }, bytes)
+            .publish(
+              `${source}_video`,
+              { w: 640, h: 360, key: chunk.type === 'key', codec: 'avc1.42E01E', timestamp: chunk.timestamp },
+              bytes,
+            )
         },
         error: () => {
+          const failed = this.encoders.get(key)
+          if (failed?.state !== 'closed') failed?.close()
           this.error = 'Video encoder unavailable. Retry video.'
           this.encoders.delete(key)
         },
       })
-      encoder.configure(config)
+      try {
+        encoder.configure(config)
+      } catch (error) {
+        if (encoder.state !== 'closed') encoder.close()
+        throw error
+      }
       this.encoders.set(key, encoder)
       this.keyframes.add(key)
     }
@@ -158,7 +177,8 @@ export class MarsCameras {
     }
     const frame = new VideoFrame(this.canvas, { timestamp: Math.round(now * 1000) })
     try {
-      encoder.encode(frame, { keyFrame: periodic || this.keyframes.delete(key) })
+      const requested = this.keyframes.delete(key)
+      encoder.encode(frame, { keyFrame: periodic || requested })
     } finally {
       frame.close()
     }

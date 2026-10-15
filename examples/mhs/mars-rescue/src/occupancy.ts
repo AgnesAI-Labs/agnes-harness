@@ -1,0 +1,7 @@
+/** Synthetic occupancy PNG, 1 metre/pixel, north up; 0 occupied, 255 free. */
+export const OCCUPANCY = Uint8Array.from(
+  atob(
+    'iVBORw0KGgoAAAANSUhEUgAAAKAAAACgCAAAAACupDjxAAABPUlEQVR4nO3XUQ6CMBQF0e5/05pgogmCVuaV3sjMd3k91iDYbuG12YBvCaQJpAmkCaQJpAmkCaQJpAmkCaQJpAmkCaQJpAmkCaQJpAmkCaQJpAmkCaQJpAmkCaQJpAmkCaQJpAmkCaQJpAmkCaQJpJUDqwfWzmuPSkdWznpVOLRwVBshvBCwtSFCgXhs2aB1VXOL5uSfYCBwdWkYcIMR9Tu4BYkHRj2LdyTlvKPAD2cV8j444Lvc2+ngZQKfOx297iRf4ZNkUNf721mdQJpAmkCaQJpAmkDaL8ApH6Z/05NeUN+27V8ZDjztHX+9b//K8BPMB8bfxZMSSBNIE0j7G+C0D9K38aTH3LJ136pw4KxXrWXvvlXhJ5gPjL+LJyaQJpAmkCaQJpAmkCaQJpAmkCaQJpAmkCaQJpAWD7wDb5BTDyWRRwgAAAAASUVORK5CYII=',
+  ),
+  (c) => c.charCodeAt(0),
+)

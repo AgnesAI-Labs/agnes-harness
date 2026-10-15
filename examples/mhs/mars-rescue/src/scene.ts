@@ -1,3 +1,4 @@
+import { loadModels, type ModelName } from './assets.js'
 import type { MarsSimulation } from './simulation.js'
 import { DEVICE_IDS, heightAt, OBSTACLES, PLACES, type Point } from './world.js'
 
@@ -83,6 +84,30 @@ export class MarsScene {
   private readonly buffer: WebGLBuffer
   private readonly camera: WebGLUniformLocation | null
   private disposed = false
+  private readonly lifetime = new AbortController()
+  private readonly models = new Map<ModelName, { buffer: WebGLBuffer; count: number }>()
+  private assetError = false
+  readonly ready: Promise<void>
+  azimuth = 0.8
+  elevation = 0.65
+  distance = 1
+  quality: 'low' | 'high' = 'high'
+  time = 12
+  ao = true
+  bloom = true
+  resetView(): void {
+    this.azimuth = 0.8
+    this.elevation = 0.65
+    this.distance = 1
+  }
+  orbit(dx: number, dy: number): void {
+    this.azimuth += dx
+    this.elevation = Math.max(0.1, Math.min(1.5, this.elevation + dy))
+  }
+  zoom(delta: number): void {
+    this.distance = Math.max(0.2, Math.min(4, this.distance * Math.exp(delta)))
+  }
+
   private projection: Float32Array | undefined
   view = 0
   constructor(
@@ -105,11 +130,11 @@ export class MarsScene {
     }
     const vertex = shader(
       gl.VERTEX_SHADER,
-      'attribute vec3 p; attribute vec3 c; uniform mat4 camera; varying vec3 color; void main(){gl_Position=camera*vec4(p,1.0);color=c;}',
+      'attribute vec3 p; attribute vec3 c; uniform mat4 camera; uniform mat4 model; varying vec3 color; varying float height; void main(){vec4 world=model*vec4(p,1.0);gl_Position=camera*world;color=c;height=world.y;}',
     )
     const fragment = shader(
       gl.FRAGMENT_SHADER,
-      'precision mediump float; varying vec3 color; void main(){gl_FragColor=vec4(color,1.0);}',
+      'precision mediump float; varying vec3 color; varying float height; uniform float daylight; uniform float ao; uniform float bloom; void main(){float shade=mix(1.0,0.72+0.28*smoothstep(0.0,4.0,height),ao);vec3 lit=color*daylight*shade;gl_FragColor=vec4(lit+bloom*max(lit-vec3(0.55),vec3(0.0))*0.18,1.0);}',
     )
     const program = gl.createProgram(),
       buffer = gl.createBuffer()
@@ -138,6 +163,25 @@ export class MarsScene {
       gl.vertexAttribPointer(location, 3, gl.FLOAT, false, 24, offset)
     }
     gl.enable(gl.DEPTH_TEST)
+    this.ready = loadModels(this.lifetime.signal)
+      .then((models) => {
+        if (this.disposed) return
+        for (const [name, values] of models) {
+          const buffer = gl.createBuffer()
+          if (!buffer) throw new Error('WebGL model allocation failed')
+          gl.bindBuffer(gl.ARRAY_BUFFER, buffer)
+          gl.bufferData(gl.ARRAY_BUFFER, values, gl.STATIC_DRAW)
+          this.models.set(name, { buffer, count: values.length / 6 })
+        }
+      })
+      .catch((error: unknown) => {
+        if (!this.disposed) {
+          this.assetError = true
+          throw error
+        }
+      })
+    // The owner awaits ready; drawing callers also receive a visible error on the next frame.
+    void this.ready.catch(() => {})
   }
   target(): Point {
     if (this.view === 8) return this.simulation.pose('hopper-01')
@@ -157,6 +201,7 @@ export class MarsScene {
   }
   render(camera?: { eye: number[]; target: number[]; zoom?: number }): void {
     if (this.disposed || this.gl.isContextLost()) throw new Error('WebGL context lost; retry scene')
+    if (this.assetError) throw new Error('Offline scene asset unavailable')
     const gl = this.gl,
       vertices: number[] = []
     const triangle = (a: number[], b: number[], c: number[], color: number[]) => {
@@ -186,18 +231,20 @@ export class MarsScene {
         triangle(p[face[0]!]!, p[face[2]!]!, p[face[3]!]!, shade)
       }
     }
-    for (let x = -90; x < 90; x += 6)
-      for (let y = -90; y < 90; y += 6) {
+    const step = this.quality === 'low' ? 12 : 6
+    for (let x = -90; x < 90; x += step)
+      for (let y = -90; y < 90; y += step) {
         const point = (dx: number, dy: number) => [x + dx, heightAt(x + dx, y + dy), -(y + dy)]
         const c = [0.5 + 0.06 * Math.sin(x * y), 0.25, 0.15]
-        triangle(point(0, 0), point(6, 0), point(6, 6), c)
-        triangle(point(0, 0), point(6, 6), point(0, 6), c)
+        triangle(point(0, 0), point(step, 0), point(step, step), c)
+        triangle(point(0, 0), point(step, step), point(0, step), c)
       }
     for (const o of OBSTACLES) box(o.x, -o.y, o.radius * 1.8, o.radius, o.radius * 1.5, colors[3]!)
     for (const [i, id] of DEVICE_IDS.entries()) {
       const p = this.simulation.pose(id),
         moving = id === 'hopper-01' || id === 'rover-01' || id === 'monolith-01' || id === 'suit-01'
-      box(p.x, -p.y, moving ? 2 : 5, moving ? 2.4 : 4, moving ? 3 : 5, colors[i % colors.length]!, p.z)
+      if (id !== 'rover-01' && id !== 'suit-01')
+        box(p.x, -p.y, moving ? 2 : 5, moving ? 2.4 : 4, moving ? 3 : 5, colors[i % colors.length]!, p.z)
       if (id === 'rover-01')
         for (const side of [-1, 1])
           for (const dy of [-1, 1]) box(p.x + side * 1.2, -p.y + dy, 0.6, 0.8, 0.8, colors[3]!)
@@ -216,15 +263,71 @@ export class MarsScene {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
     gl.useProgram(this.program)
     this.projection = matrix(
-      camera?.eye ?? [t.x + (wide ? 105 : 24), follow + (wide ? 95 : 22), -t.y + (wide ? 110 : 30)],
+      camera?.eye ?? [
+        t.x + Math.cos(this.azimuth) * (wide ? 160 : 40) * this.distance * Math.cos(this.elevation),
+        follow + (wide ? 160 : 40) * this.distance * Math.sin(this.elevation),
+        -t.y + Math.sin(this.azimuth) * (wide ? 160 : 40) * this.distance * Math.cos(this.elevation),
+      ],
       camera?.target ?? [t.x, follow, -t.y],
       this.canvas.width / this.canvas.height,
       camera?.zoom ?? 1,
     )
     gl.uniformMatrix4fv(this.camera, false, this.projection)
+    gl.uniform1f(
+      gl.getUniformLocation(this.program, 'daylight'),
+      0.35 + 0.65 * Math.max(0, Math.cos(((this.time - 12) * Math.PI) / 24)),
+    )
+    gl.uniform1f(gl.getUniformLocation(this.program, 'ao'), this.ao ? 1 : 0)
+    gl.uniform1f(gl.getUniformLocation(this.program, 'bloom'), this.bloom ? 1 : 0)
+    const model = gl.getUniformLocation(this.program, 'model')
+    gl.uniformMatrix4fv(model, false, new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]))
     gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer)
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.DYNAMIC_DRAW)
+    this.attributes()
     gl.drawArrays(gl.TRIANGLES, 0, vertices.length / 6)
+    const draw = (name: ModelName, x: number, y: number, size: number, altitude = 0, yaw = 0) => {
+      const mesh = this.models.get(name)
+      if (!mesh) return
+      const c = Math.cos(yaw) * size,
+        s = Math.sin(yaw) * size
+      gl.uniformMatrix4fv(
+        model,
+        false,
+        new Float32Array([c, 0, -s, 0, 0, size, 0, 0, s, 0, c, 0, x, heightAt(x, y) + altitude, -y, 1]),
+      )
+      gl.bindBuffer(gl.ARRAY_BUFFER, mesh.buffer)
+      this.attributes()
+      gl.drawArrays(gl.TRIANGLES, 0, mesh.count)
+    }
+    for (const [id, name, size] of [
+      ['rover-01', 'rover', 4],
+      ['suit-01', 'suit', 2.4],
+    ] as const) {
+      const p = this.simulation.pose(id)
+      draw(name, p.x, p.y, size, p.z, p.yaw)
+    }
+    const rocks: ModelName[] = [
+      'moon_rock_01',
+      'moon_rock_03',
+      'moon_rock_05',
+      'moon_rock_07',
+      'namaqualand_boulder_02',
+    ]
+    OBSTACLES.slice(2).forEach((o, i) => {
+      draw(rocks[i % rocks.length]!, o.x, o.y, o.radius * 2)
+    })
+    draw('namaqualand_boulder_02', PLACES.sample.x, PLACES.sample.y, 3)
+  }
+  private attributes(): void {
+    const gl = this.gl
+    for (const [name, offset] of [
+      ['p', 0],
+      ['c', 12],
+    ] as const) {
+      const location = gl.getAttribLocation(this.program, name)
+      gl.enableVertexAttribArray(location)
+      gl.vertexAttribPointer(location, 3, gl.FLOAT, false, 24, offset)
+    }
   }
   project(pose: { x: number; y: number; z: number }): { x: number; y: number } | undefined {
     const m = this.projection
@@ -240,6 +343,9 @@ export class MarsScene {
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
+    this.lifetime.abort()
+    for (const mesh of this.models.values()) this.gl.deleteBuffer(mesh.buffer)
+    this.models.clear()
     this.gl.deleteBuffer(this.buffer)
     this.gl.deleteProgram(this.program)
   }

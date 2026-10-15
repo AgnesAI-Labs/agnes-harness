@@ -1,0 +1,391 @@
+{
+  "asset": {
+    "generator": "Khronos glTF Blender I/O v4.4.55",
+    "version": "2.0"
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "name": "Scene",
+      "nodes": [
+        0,
+        1,
+        2,
+        3
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "mesh": 0,
+      "name": "moon_rock_01_LOD0"
+    },
+    {
+      "mesh": 1,
+      "name": "moon_rock_01_LOD1"
+    },
+    {
+      "mesh": 2,
+      "name": "moon_rock_01_LOD2"
+    },
+    {
+      "mesh": 3,
+      "name": "moon_rock_01_LOD3"
+    }
+  ],
+  "materials": [
+    {
+      "doubleSided": true,
+      "name": "moon_rock_01",
+      "normalTexture": {
+        "index": 0
+      },
+      "pbrMetallicRoughness": {
+        "baseColorTexture": {
+          "index": 1
+        },
+        "metallicFactor": 0,
+        "metallicRoughnessTexture": {
+          "index": 2
+        }
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "name": "realCap_Model_3",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1,
+            "TEXCOORD_0": 2
+          },
+          "indices": 3,
+          "material": 0
+        }
+      ]
+    },
+    {
+      "name": "realCap_Model_3.001",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 4,
+            "NORMAL": 5,
+            "TEXCOORD_0": 6
+          },
+          "indices": 7,
+          "material": 0
+        }
+      ]
+    },
+    {
+      "name": "realCap_Model_3.002",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 8,
+            "NORMAL": 9,
+            "TEXCOORD_0": 10
+          },
+          "indices": 11,
+          "material": 0
+        }
+      ]
+    },
+    {
+      "name": "realCap_Model_3.003",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 12,
+            "NORMAL": 13,
+            "TEXCOORD_0": 14
+          },
+          "indices": 15,
+          "material": 0
+        }
+      ]
+    }
+  ],
+  "textures": [
+    {
+      "sampler": 0,
+      "source": 0
+    },
+    {
+      "sampler": 0,
+      "source": 1
+    },
+    {
+      "sampler": 0,
+      "source": 2
+    }
+  ],
+  "images": [
+    {
+      "mimeType": "image/jpeg",
+      "name": "moon_rock_01_nor_gl",
+      "uri": "textures/moon_rock_01_nor_gl_1k.jpg"
+    },
+    {
+      "mimeType": "image/jpeg",
+      "name": "moon_rock_01_diff",
+      "uri": "textures/moon_rock_01_diff_1k.jpg"
+    },
+    {
+      "mimeType": "image/jpeg",
+      "name": "moon_rock_01_rough",
+      "uri": "textures/moon_rock_01_arm_1k.jpg"
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 5384,
+      "max": [
+        0.10701721161603928,
+        0.07252805680036545,
+        0.06184259057044983
+      ],
+      "min": [
+        -0.1051042452454567,
+        -0.002606769325211644,
+        -0.04976683109998703
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 5384,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5126,
+      "count": 5384,
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5123,
+      "count": 29874,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 4,
+      "componentType": 5126,
+      "count": 2824,
+      "max": [
+        0.10701721161603928,
+        0.07252805680036545,
+        0.06184259057044983
+      ],
+      "min": [
+        -0.1051042452454567,
+        -0.002606769325211644,
+        -0.0497453548014164
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 5,
+      "componentType": 5126,
+      "count": 2824,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 6,
+      "componentType": 5126,
+      "count": 2824,
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 7,
+      "componentType": 5123,
+      "count": 14934,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 8,
+      "componentType": 5126,
+      "count": 1493,
+      "max": [
+        0.1068340539932251,
+        0.07245106250047684,
+        0.061698123812675476
+      ],
+      "min": [
+        -0.10525599867105484,
+        -0.002723200246691704,
+        -0.049472611397504807
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 9,
+      "componentType": 5126,
+      "count": 1493,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 10,
+      "componentType": 5126,
+      "count": 1493,
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 11,
+      "componentType": 5123,
+      "count": 7464,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 12,
+      "componentType": 5126,
+      "count": 804,
+      "max": [
+        0.10661427676677704,
+        0.07251390069723129,
+        0.06193367764353752
+      ],
+      "min": [
+        -0.1052539050579071,
+        -0.0026873149909079075,
+        -0.04967871680855751
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 13,
+      "componentType": 5126,
+      "count": 804,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 14,
+      "componentType": 5126,
+      "count": 804,
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 15,
+      "componentType": 5123,
+      "count": 3732,
+      "type": "SCALAR"
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteLength": 64608,
+      "byteOffset": 0,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 64608,
+      "byteOffset": 64608,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 43072,
+      "byteOffset": 129216,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 59748,
+      "byteOffset": 172288,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteLength": 33888,
+      "byteOffset": 232036,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 33888,
+      "byteOffset": 265924,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 22592,
+      "byteOffset": 299812,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 29868,
+      "byteOffset": 322404,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteLength": 17916,
+      "byteOffset": 352272,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 17916,
+      "byteOffset": 370188,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 11944,
+      "byteOffset": 388104,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 14928,
+      "byteOffset": 400048,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteLength": 9648,
+      "byteOffset": 414976,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 9648,
+      "byteOffset": 424624,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 6432,
+      "byteOffset": 434272,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 7464,
+      "byteOffset": 440704,
+      "target": 34963
+    }
+  ],
+  "samplers": [
+    {
+      "magFilter": 9729,
+      "minFilter": 9987
+    }
+  ],
+  "buffers": [
+    {
+      "byteLength": 448168,
+      "uri": "moon_rock_01.bin"
+    }
+  ]
+}

@@ -45,6 +45,22 @@ for (const path of files) {
         : 'Apache-2.0',
   })
 }
+for (const resource of JSON.parse(
+  await readFile(new URL('../assets/third-party.json', import.meta.url), 'utf8'),
+)) {
+  const bytes = await readFile(new URL(`../${resource.path}`, import.meta.url))
+  if (bytes.length !== resource.bytes || createHash('sha256').update(bytes).digest('hex') !== resource.sha256)
+    throw new Error(`Asset integrity: ${resource.path}`)
+  entries.push(resource)
+}
+const occupancy = await readFile(new URL('../client/assets/occupancy.png', import.meta.url))
+entries.push({
+  path: 'client/assets/occupancy.png',
+  bytes: occupancy.length,
+  sha256: createHash('sha256').update(occupancy).digest('hex'),
+  origin: 'Project-authored scene obstacle footprints',
+  license: 'Apache-2.0',
+})
 const manifest = new URL('../assets/manifest.json', import.meta.url)
 const content = `${JSON.stringify({ version: 1, firstOpenNetworkDownloads: false, draco: null, resources: entries }, null, 2)}\n`
 if (check) {

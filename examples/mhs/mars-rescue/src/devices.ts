@@ -27,6 +27,7 @@ export const TOOLS: Partial<Record<DeviceId, DeviceTool[]>> = {
   'habitat-01': [tool('set_mode', { mode: choice('normal', 'storm_shelter', 'medical') })],
   'airlock-01': ['cycle_in', 'cycle_out', 'open_outer', 'close_outer'].map((n) => tool(n, {}, true)),
   'rover-01': [
+    { ...tool('plan_route', at), readOnly: true, uses: [] },
     tool('drive_to', at, true),
     tool(
       'follow_route',
@@ -82,10 +83,10 @@ export const TOOLS: Partial<Record<DeviceId, DeviceTool[]>> = {
 export const INITIAL: Record<DeviceId, Record<string, string | number | boolean>> = {
   'habitat-01': { mode: 'normal', o2: 21, co2: 450, pressure: 101, temperature: 21 },
   'airlock-01': { mode: 'pressurized', pressure: 101, inner: 'closed', outer: 'closed', occupied: false },
-  'suit-01': { o2_left: 18, battery: 60, comm: true, rescued: false },
+  'suit-01': { o2_left: 18, battery: 60, comm: true, rescued: false, heart_rate: 110, temperature: 22 },
   'rover-01': { mode: 'idle', battery: 100, cargo: 'none', docked: true },
   'hopper-01': { mode: 'landed', propellant: 100, battery: 100, flight_time_left: 180, max_altitude: 30 },
-  'monolith-01': { mode: 'idle', battery: 100, carrying: 'none', humor: 75, honesty: 90 },
+  'monolith-01': { gait: 'walk', mode: 'idle', battery: 100, carrying: 'none', humor: 75, honesty: 90 },
   'lab-01': { mode: 'idle', queue: 'none', last_result: 'none' },
   'power-01': {
     storage: 90,
@@ -114,7 +115,11 @@ export function registration(id: DeviceId, video: boolean): Registration {
     state[key] = typeof value === 'number' ? number(-100, 10000) : typeof value === 'boolean' ? flag : text
   for (const key of ['battery', 'propellant', 'storage', 'o2_left'])
     if (key in state)
-      state[key] = { ...number(0, 100, '%'), role: key === 'o2_left' ? 'consumable' : 'battery' }
+      state[key] = {
+        ...number(0, 100, '%'),
+        role: key === 'o2_left' ? 'consumable' : 'battery',
+        alert: { warn: 25, bad: 10, below: true },
+      }
   for (const key of ['humor', 'honesty']) if (key in state) state[key] = { ...number(0, 100), writable: true }
   if (id === 'power-01')
     state.priority = { type: 'string', enum: ['life_support', 'science'], writable: true }
@@ -143,11 +148,18 @@ export function registration(id: DeviceId, video: boolean): Registration {
         description: 'Simulated camera video',
         codec: 'h264',
         gop_s: 1,
-        hz: 10,
+        hz: 20,
+        default: false,
+        switchable: true,
         sizes: [[640, 360]],
         bitrate_kbps: [600, 1200],
       })
   }
+  if (id === 'rover-01')
+    sources.push(
+      { id: 'lidar', kind: 'scan', description: 'Obstacle ranges in rover frame', hz: 2, range_m: [0, 40] },
+      { id: 'occupancy', kind: 'grid', description: 'North-up base occupancy', hz: 1 },
+    )
   const mobile = ['rover-01', 'hopper-01', 'monolith-01', 'suit-01'].includes(id)
   return {
     protocol: 'mhs/v1',
@@ -163,8 +175,8 @@ export function registration(id: DeviceId, video: boolean): Registration {
       ? {
           manual: {
             axes: [
-              { id: 'vx', min: -2, max: 2 },
-              { id: 'wz', min: -1, max: 1 },
+              { id: 'vx', min: -2, max: 2, role: 'forward' },
+              { id: 'wz', min: -1, max: 1, role: 'turn' },
             ],
             rate_hz: 30,
             deadman_s: 0.3,

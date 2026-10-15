@@ -2,7 +2,18 @@ import type { Json, Outcome } from '@agnes/mhs-device'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { type MarsConnection, MarsRuntime } from '../src/runtime.js'
 import { MarsSimulation } from '../src/simulation.js'
-import { BASE_MAP, DEVICE_IDS, type DeviceId, OBSTACLES, PLACES, route } from '../src/world.js'
+import {
+  BASE_MAP,
+  burn,
+  DEVICE_IDS,
+  type DeviceId,
+  flightTimeLeft,
+  lidar,
+  maxAltitude,
+  OBSTACLES,
+  PLACES,
+  route,
+} from '../src/world.js'
 
 afterEach(() => vi.useRealTimers())
 async function run(
@@ -87,6 +98,33 @@ describe('Mars base simulation', () => {
     expect(await run(sim, 'comms-01', 'send', { report })).toMatchObject({ status: 'done' })
     expect(sim.state('comms-01').last_report).toContain('synthetic')
     expect(sim.state('rover-01')).toMatchObject({ cargo: 'none', docked: true })
+    expect(
+      await run(sim, 'rover-01', 'follow_route', {
+        points: [
+          [-16, -20],
+          [-18, -22],
+        ],
+      }),
+    ).toMatchObject({ status: 'done' })
+    expect(await run(sim, 'monolith-01', 'follow', { target: 'rover-01', seconds: 1 })).toMatchObject({
+      status: 'done',
+    })
+    expect(await run(sim, 'monolith-01', 'say', { text: 'Rescue verified' })).toMatchObject({
+      status: 'done',
+      data: { spoken: 'Rescue verified' },
+    })
+    await run(sim, 'power-01', 'stow_array')
+    expect(sim.state('power-01').production).toBe(0)
+    await run(sim, 'power-01', 'deploy_array')
+    expect(Number(sim.state('power-01').production)).toBeGreaterThan(0)
+    await run(sim, 'power-01', 'clean_array')
+    expect(Number(sim.state('power-01').dust)).toBeLessThan(0.1)
+    await run(sim, 'power-01', 'shed', { load: 'comms', on: true })
+    expect(await run(sim, 'comms-01', 'send', { report })).toMatchObject({ status: 'error' })
+    await run(sim, 'power-01', 'shed', { load: 'comms', on: false })
+    await run(sim, 'cam-base', 'look_at', { preset: 'dock' })
+    await run(sim, 'cam-base', 'zoom', { level: 3 })
+    expect(sim.state('cam-base')).toMatchObject({ preset: 'dock', zoom: 3 })
     await sim.stop()
   })
   it('stops pending motion, refuses resource overlap, and resets without replacing devices', async () => {
@@ -128,6 +166,65 @@ describe('Mars base simulation', () => {
     expect(sim.pose('hopper-01').z).toBe(0)
     expect(Number(sim.state('hopper-01').propellant)).toBeGreaterThanOrEqual(9.9)
     expect(await run(sim, 'hopper-01', 'take_off', { alt: 10 })).toMatchObject({ status: 'error' })
+    await sim.stop()
+  })
+  it('projects zones, lidar/grid, read-only plans and distinct pads, with gait safety and changing telemetry', async () => {
+    vi.useFakeTimers()
+    const sim = new MarsSimulation(),
+      rover = sim.device('rover-01')
+    expect(BASE_MAP.places.filter((p) => 'points' in p)).toHaveLength(3)
+    expect(rover.description.sources?.map((s) => s.id)).toEqual(
+      expect.arrayContaining(['lidar', 'occupancy', 'front', 'hazcam']),
+    )
+    const samples: { source: string; bytes?: Uint8Array; data: unknown }[] = []
+    rover.onObservation = (o, bytes) => {
+      samples.push({ source: o.source, data: o.data, ...(bytes ? { bytes } : {}) })
+      return true
+    }
+    sim.tick(0.1)
+    expect(samples.find((s) => s.source === 'occupancy')?.bytes?.slice(0, 4)).toEqual(
+      new Uint8Array([137, 80, 78, 71]),
+    )
+    expect(lidar({ x: -12, y: 0, z: 0, yaw: 0 }).ranges[90]).toBeCloseTo(4)
+    const before = { ...sim.pose('rover-01') }
+    const plan = await run(sim, 'rover-01', 'plan_route', PLACES.sample)
+    expect(plan).toMatchObject({
+      status: 'done',
+      data: { map: 'mars-base', points: route(before, PLACES.sample).map((p) => [p.x, p.y]) },
+    })
+    expect(sim.pose('rover-01')).toEqual(before)
+    expect(await run(sim, 'monolith-01', 'go_to', { ...PLACES.field, gait: 'roll' })).toMatchObject({
+      status: 'error',
+    })
+    await run(sim, 'monolith-01', 'go_to', { x: 20, y: -30, gait: 'roll' })
+    expect(sim.state('monolith-01').gait).toBe('roll')
+    await run(sim, 'hopper-01', 'take_off', { alt: 5 })
+    await run(sim, 'hopper-01', 'land', { pad: 'landing pad' })
+    expect(sim.pose('hopper-01')).toMatchObject({ ...PLACES.landing, z: 0 })
+    expect(Number(sim.state('suit-01').o2_left)).toBeLessThan(18)
+    await sim.reset()
+    sim.device('power-01').update({ storage: 10 })
+    sim.tick(0.1)
+    expect(sim.state('power-01').shed).toBe('lab')
+    sim.device('power-01').set({ priority: 'science' })
+    sim.tick(0.1)
+    expect(sim.state('power-01').shed).toBe('comms')
+    const wind = sim.state('weather-01').wind
+    for (let i = 0; i < 600; i++) sim.tick(0.2)
+    expect(sim.state('weather-01').wind).not.toBe(wind)
+    expect(Number(sim.state('power-01').production)).toBeLessThan(8)
+    expect(typeof sim.state('comms-01').window).toBe('boolean')
+    await sim.reset()
+    for (let i = 0; i < 455; i++) sim.tick(0.2)
+    expect(sim.state('comms-01').window).toBe(false)
+    for (let i = 0; i < 150; i++) sim.tick(0.2)
+    expect(sim.state('comms-01').window).toBe(true)
+    expect(burn(1, 10, 0)).toBeGreaterThan(burn(1, 0, 0))
+    expect(burn(1, 0, 2)).toBeGreaterThan(burn(1, 0, 0))
+    expect(burn(1, 0, -2)).toBe(burn(1, 0, 0))
+    expect(flightTimeLeft(10)).toBe(0)
+    expect(maxAltitude(100)).toBe(30)
+    expect(maxAltitude(10)).toBe(0)
     await sim.stop()
   })
   it('plans ground routes outside every obstacle and refuses unreachable targets', () => {

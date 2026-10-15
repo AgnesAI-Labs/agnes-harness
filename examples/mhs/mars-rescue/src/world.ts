@@ -6,6 +6,7 @@ export const PLACES = {
   dock: { x: -17, y: -18 },
   lab: { x: -22, y: -8 },
   pad: { x: 23, y: -15 },
+  landing: { x: 38, y: -24 },
   field: { x: -45, y: -42 },
   sample: { x: -52, y: -38 },
   power: { x: 22, y: 16 },
@@ -26,7 +27,7 @@ export function heightAt(x: number, y: number): number {
 export function inside(p: Point): boolean {
   return Number.isFinite(p.x) && Number.isFinite(p.y) && Math.abs(p.x) <= 80 && Math.abs(p.y) <= 80
 }
-function segmentClear(a: Point, b: Point, clearance: number): boolean {
+export function segmentClear(a: Point, b: Point, clearance: number): boolean {
   return OBSTACLES.every((o) => {
     const dx = b.x - a.x,
       dy = b.y - a.y
@@ -76,7 +77,23 @@ export const BASE_MAP = {
   id: 'mars-base',
   name: 'Agnes Mars Base (simulation)',
   bounds: [-80, -80, 80, 80] as [number, number, number, number],
-  places: Object.entries(PLACES).map(([id, p]) => ({ id, name: id, at: [p.x, p.y] as [number, number] })),
+  places: [
+    ...Object.entries(PLACES).map(([id, p]) => ({ id, name: id, at: [p.x, p.y] as [number, number] })),
+    ...Object.entries({
+      'base-area': [-30, -32, 50, 32],
+      'west-field': [-75, -65, -32, -25],
+      'east-dunes': [50, -60, 78, 60],
+    }).map(([id, b]) => ({
+      id,
+      name: id.replaceAll('-', ' '),
+      points: [
+        [b[0]!, b[1]!],
+        [b[2]!, b[1]!],
+        [b[2]!, b[3]!],
+        [b[0]!, b[3]!],
+      ] as [number, number][],
+    })),
+  ],
 }
 export const DEVICE_IDS = [
   'habitat-01',
@@ -104,4 +121,39 @@ export const SPAWNS: Record<DeviceId, Point> = {
   'comms-01': PLACES.comms,
   'cam-base': PLACES.camera,
   'monolith-01': PLACES.monolith,
+}
+
+/** Sensor and navigation use the same obstacles and frame as the rendered scene. */
+export function lidar(pose: Pose): { angle_min: number; angle_inc: number; ranges: (number | null)[] } {
+  const count = 180,
+    angle_min = -180,
+    angle_inc = 360 / count
+  const ranges = Array.from({ length: count }, (_, i) => {
+    const a = pose.yaw + ((angle_min + i * angle_inc) * Math.PI) / 180,
+      dx = Math.cos(a),
+      dy = Math.sin(a)
+    let nearest = 40
+    for (const o of OBSTACLES) {
+      const x = pose.x - o.x,
+        y = pose.y - o.y,
+        b = x * dx + y * dy,
+        c = x * x + y * y - o.radius * o.radius,
+        discriminant = b * b - c
+      if (discriminant < 0) continue
+      const d = -b - Math.sqrt(discriminant)
+      if (d >= 0) nearest = Math.min(nearest, d)
+    }
+    return nearest < 40 ? nearest : null
+  })
+  return { angle_min, angle_inc, ranges }
+}
+export const ROCKET = { reserve: 10, minTakeOff: 30, ceiling: 30, hoverBurn: 0.5 }
+export function burn(seconds: number, speed: number, climb: number): number {
+  return seconds * (ROCKET.hoverBurn + Math.abs(speed) * 0.04 + Math.max(0, climb) * 0.2)
+}
+export function flightTimeLeft(propellant: number): number {
+  return Math.max(0, propellant - ROCKET.reserve) / ROCKET.hoverBurn
+}
+export function maxAltitude(propellant: number): number {
+  return Math.min(ROCKET.ceiling, Math.max(0, propellant - ROCKET.reserve))
 }

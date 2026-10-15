@@ -1,10 +1,27 @@
 Mars rescue example
 Copyright 2026 Agnes Harness contributors
 
-The Mars simulation, terrain, base structures, device models, shaders and UI are
-original project-authored procedural resources under Apache-2.0 (see LICENSE).
-No NASA, Sketchfab or other downloaded models/textures are included. This example
-is not affiliated with NASA. No Draco-compressed assets or Draco decoder is used.
+The simulation, terrain, base structures, shaders and UI are project-authored
+under Apache-2.0. Device and rock geometry also uses the offline resources below.
+This project is not affiliated with or endorsed by NASA or Poly Haven.
+
+NASA: Mars 2020 Perseverance Rover and Mark III Spacesuit.
+Source: https://github.com/nasa/NASA-3D-Resources
+NASA describes these resources as free and without copyright; NASA media usage
+and insignia restrictions still apply. No NASA endorsement is implied.
+Guidelines: https://www.nasa.gov/nasa-brand-center/images-and-media/
+
+Poly Haven (CC0-1.0): moon_rock_01, moon_rock_03, moon_rock_05, moon_rock_07,
+namaqualand_boulder_02, sandy_gravel_02, rock_face and metal_plate.
+Creators: Greg Zaal, Rico Cilliers, Jenelle van Heerden, Dario Barresi,
+Rob Tuytel and the other creators individually listed in assets/third-party.json.
+Source and license: https://polyhaven.com/license
+Each original resource, author credit, byte size and SHA-256 is recorded in
+assets/third-party.json and assets/manifest.json. Derived .bin geometry preserves
+its source's terms. The renderer uses baked geometry/material base colors;
+original textures and compressed source models are retained offline as well.
+Draco is decoded during asset conversion with draco3dgltf 1.5.7 (Apache-2.0);
+no Draco decoder is downloaded or executed by the browser.
 
 The compiled browser runtime contains the @agnes/mhs-device SDK (Apache-2.0) and
 @sinclair/typebox 0.34.33 (MIT), Copyright (c) 2017-2025 Haydn Paterson.

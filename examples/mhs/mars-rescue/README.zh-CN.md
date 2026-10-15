@@ -4,7 +4,7 @@
 
 11 台虚拟设备、MHS 示例页内的程序化 3D 火星基地，以及救援和采样业务 Agent 的启动声明。所有设备均为模拟器。[设备指南](../../../docs/guide/mhs.zh-CN.md)。
 
-本包面向新插件架构及干净 AGH home，不迁移旧 Mars-world 会话。浏览器资源及许可完整随包，首次打开无需下载模型、纹理或 Draco 解码器。原创程序化场景替代旧版下载模型，并未重新分发旧模型。
+本包面向新插件架构及干净 AGH home，不迁移旧 Mars-world 会话。浏览器资源及许可完整随包，首次打开无需下载模型、纹理或 Draco 解码器。NASA 漫游车、宇航服与 Poly Haven 岩石资源、纹理及署名随包提供，显示使用预转换几何体和材质基色。
 
 **集成状态：**已接入实际 MHS profile 运行时与经审核的浏览器 producer 通道。启用示例会启动 profile 持有的模拟器，11 台设备完成真实 Hub 注册后才显示就绪。GPU、媒体及真实模型浏览器验收仍是独立检查。
 
@@ -36,7 +36,7 @@
 
 救援链：巡查西野、将宇航员搬至气闸、准备医疗模式并核对 `suit-01.rescued`。采样链：巡查、按安全路线到 rock-1、采集、停靠、卸载、分析、发送，并核对合成分析及发送结果。
 
-相机渲染独立于可见场景，模型收到实际模拟场景的 PNG。可选 WebCodecs H.264 视频最多同时启用两个源，失败可重试；缺少 WebGL 时相机不可用，不伪造图片。这个小示例没有复刻旧火星世界的视觉精度或全部自主环境变化。
+相机渲染独立于可见场景，模型收到实际模拟场景的 PNG。可选 WebCodecs H.264 视频最多同时启用两个源，失败可重试；缺少 WebGL 时相机不可用，不伪造图片。风尘、宇航服消耗、供电和通信窗口随确定性的模拟时钟变化，GPU 视觉仍需真实浏览器验收。
 
 ## 扩展接口与本地检查
 
@@ -63,3 +63,7 @@ node examples/mhs/mars-rescue/tools/build.mjs
 权限与 wake 检查使用真实 `createProfileServiceRuntime`、`createMhsNativeProfileAdapter`、`mhsOwnedStore`、Host SQLite persistence、`ProfileWakeBindings` 及 `BoundWakeService`/`JobsRepo`。Mars 运动由真实 AR1 回答批准或拒绝，误用 fake approval seam 会令测试失败。真实 watch 将通知写入原 session/lane/generation 的持久任务，重建队列适配器后重复入队保持同一 job，撤销后拒绝投递。测试中的包清单、本地身份与原会话事实为合成 fixture；真实 worker/session 输入投递仍须集成检查。
 
 Producer 心跳在通道停滞后两秒内停止本地设备。页面从挂起恢复时也会停止物理更新，不补算运动；Retry 不重放先前动作。
+
+场景离线包含 NASA 毅力号、Mark III 宇航服以及 Poly Haven 岩石的原始模型、纹理和署名，详见 `NOTICE` 与 `assets/third-party.json`。显示使用预转换的几何体和材质基色，无需运行时下载 Draco。R 重置视角，拖动环绕、滚轮缩放；可调画质、时间、高度遮蔽与高亮泛光，`?stats` 显示 FPS。GPU 视觉和真实浏览器 H.264 仍需集成验收。
+
+漫游车提供只读 `plan_route`、激光雷达与占用 PNG；Monolith 区分步行和滚动，滚动路线保持更大岩石间距并拒绝靠近宇航员；跳跃器按移动与上升耗能，区分两个着陆垫。风尘、氧气、电量、供电和通信窗口随模拟时钟变化。
