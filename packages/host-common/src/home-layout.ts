@@ -22,6 +22,11 @@ export function homeLayout(home: string, profile = 'local-dev') {
     tmp: join(home, 'tmp'),
   }
 }
+export { homeVersionMessage } from './home-message.js'
+export const homeVersionFault = (
+  home: string,
+  reason: 'unversioned' | 'invalid-marker' | 'unsupported-version',
+) => Object.assign(new Error('E_HOME_VERSION'), { code: 'E_HOME_VERSION', home, reason })
 const homeFault = (code: string) => Object.assign(new Error(code), { code })
 const present = (path: string): boolean => {
   try {
@@ -52,10 +57,10 @@ export function inspectHome(home: string, profile = 'local-dev') {
     try {
       value = JSON.parse(readFileSync(marker, 'utf8'))
     } catch {
-      throw homeFault('E_HOME_VERSION')
+      throw homeVersionFault(home, 'invalid-marker')
     }
     if (!value || typeof value !== 'object' || !('version' in value) || value.version !== HOME_LAYOUT_VERSION)
-      throw homeFault('E_HOME_VERSION')
+      throw homeVersionFault(home, 'unsupported-version')
     if (
       'instanceId' in value &&
       typeof value.instanceId === 'string' &&

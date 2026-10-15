@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { homeVersionMessage } from '@agnes/host'
 import { parseArgs } from './supervisor/config.js'
 import { runDaemonControl } from './supervisor/control.js'
 import { runAgnesd } from './supervisor/supervisor.js'
@@ -22,6 +23,8 @@ async function main(): Promise<void> {
 }
 
 main().catch((e: unknown) => {
-  console.error(e instanceof Error ? e.message : String(e))
+  console.error(
+    homeVersionMessage(e, process.env.AGNES_LOCALE) ?? (e instanceof Error ? e.message : String(e)),
+  )
   process.exit(2)
 })

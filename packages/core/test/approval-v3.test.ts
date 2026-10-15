@@ -112,6 +112,56 @@ async function atTools(o: {
 }
 
 describe('v3 approval modes and grants', () => {
+  it('labels forced review of a never-risk tool unknown and starts its deadline after hooks', async () => {
+    let now = 1_757_203_200_000
+    const policies = new ToolPolicyRegistry()
+    policies.register('test', {
+      id: 'force-review',
+      version: '1',
+      decide: async () => ({ effect: 'ask', reason: 'review required' }),
+    })
+    const tool = scopedTool(['tool:write'], async () => ({ content: [{ type: 'text', text: 'ok' }] }))
+    tool.meta = { ...tool.meta, isDestructive: false, requiresApproval: 'never' }
+    tool.classify = () => ({
+      isReadOnly: false,
+      isDestructive: false,
+      replay: 'never',
+      requiresApproval: 'never',
+      approvalScopes: ['tool:write'],
+    })
+    let seen: { risk: string; deadline: string } | undefined
+    const opened = await openSession({
+      provider: fakeProvider([toolTurn('scoped_write', { value: 'one' }), textTurn('done')]),
+      registry: registryWith(tool),
+      toolPolicies: policies,
+      toolPolicySettings: async () => ({ policy: 'force-review' }),
+      clock: () => now,
+      seams: fakeSeams({
+        approval: {
+          ask: async (request) => {
+            seen = request
+            return { verdict: 'allowed-once', answeredBy: actor }
+          },
+        },
+      }),
+    })
+    opened.session.hooks = {
+      ...opened.session.hooks,
+      approvalRequest: async () => {
+        now += 5000
+        return {}
+      },
+    }
+    await opened.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'go' }] })
+    await opened.session.run({ until: 'turn-end', signal: new AbortController().signal })
+    expect(seen?.risk).toBe('unknown')
+    // Durable decisions retain pendingTtlMs; the delivery waiter timeout does not shorten validity.
+    expect(Date.parse(seen?.deadline ?? '') - now).toBe(opened.session.preset.approval.pendingTtlMs)
+    const request = (await opened.log.scan({ type: 'decision/state', limit: 1 }))[0]?.data as DecisionSnapshot
+    expect(Date.parse(request.request.createdAt)).toBe(now)
+    await opened.session.close()
+  })
+
   it.each(['manual', 'off', 'auto-review'] as const)(
     'requires verified once answers for human-only revision review in %s mode',
     async (approvalMode) => {

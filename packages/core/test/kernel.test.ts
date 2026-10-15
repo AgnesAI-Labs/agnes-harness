@@ -55,6 +55,7 @@ const base = (over: Partial<Parameters<typeof Kernel.create>[0]> = {}) =>
 const sessionOpts = {
   actor,
   resolvedProfileHash: 'h1',
+  resolvedPresetHash: 'sha256-' + 'a'.repeat(64),
   cwd: '/w',
   writerRunId: 'r1',
 }
@@ -413,6 +414,8 @@ describe('Kernel default children', () => {
     expect(types).toContain('turn/end')
     expect(parent.surface()).toEqual([])
     expect(starts).toEqual([{ childKey: child.key, kind: 'fork', budget: null }])
+    const childStart = await storage.scan(child.key, { type: 'session/start', order: 'desc', limit: 1 })
+    expect(childStart[0]?.data).toMatchObject({ resolvedPresetHash: sessionOpts.resolvedPresetHash })
     expect(ends).toEqual([{ childKey: child.key, outcome: 'completed', credits: 1 }])
 
     await child.close()
@@ -425,7 +428,8 @@ describe('Kernel default children', () => {
     Object.assign(provider, {
       models: () => [modelRecord('ds', 'deepseek-v4-pro', 'fast'), modelRecord('anthropic', 'claude/sonnet')],
     })
-    const k = base({ provider, preset: childPreset })
+    const storage = new MemoryStorage()
+    const k = base({ provider, preset: childPreset, storage })
     const parent = await k.session('parent', {
       ...sessionOpts,
       preset: {
@@ -451,6 +455,8 @@ describe('Kernel default children', () => {
       })
       await child.run(`use ${selector}`)
       expect(provider.requests.at(-1)).toMatchObject(expected)
+      const rows = await storage.scan(child.key, { type: 'session/start', order: 'desc', limit: 1 })
+      expect(rows[0]?.data).not.toHaveProperty('resolvedPresetHash')
       await child.close()
     }
     await k.close()
@@ -615,7 +621,7 @@ describe('Kernel (fix round 1)', () => {
     expect(counters.at(-1)).toBe(true)
     expect(counters.indexOf(true)).toBeGreaterThan(0)
     const ask = rows.find((e) => e.type === 'decision/state')
-    expect(ask?.data).toMatchObject({ request: { spec: { subject: { risk: 'destructive' } } } })
+    expect(ask?.data).toMatchObject({ request: { spec: { subject: { risk: 'unknown' } } } })
     await k.close()
   })
 })

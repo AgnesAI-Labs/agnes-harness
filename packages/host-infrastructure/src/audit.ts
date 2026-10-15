@@ -10,6 +10,15 @@ import { createPlatform } from './adapters/platform.js'
  * from weakening the sink to an open string just to add one event.
  */
 export const AUDIT_KINDS = [
+  'daemon.started',
+  'daemon.stopped',
+  'daemon.crashed',
+  'daemon.error',
+  'worker.log',
+  'worker.stderr',
+  'worker.exited',
+  'worker.start_failed',
+  'session.interrupted',
   'profile.resolved',
   'package.installed',
   'package.trusted',

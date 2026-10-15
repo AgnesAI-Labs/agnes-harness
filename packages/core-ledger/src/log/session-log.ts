@@ -10,7 +10,7 @@ import {
   type Seq,
   type SessionKey,
 } from '@agnes/core-common/types'
-import { type ThinkingLevel, validateOpState } from '@agnes/protocol'
+import { describeValidationErrors, type ThinkingLevel, validateOpState } from '@agnes/protocol'
 import { type ForkBase, forkBaseProviders, forkPaths, pageYield, seededLogs } from './fork-seed.js'
 import {
   INTEGRITY_PAGE_SIZE,
@@ -371,7 +371,7 @@ export class SessionLogImpl {
     if (op) {
       const checked = validateOpState(op.data)
       if (!checked.ok)
-        throw new CoreError('E_ENVELOPE', checked.errors[0]?.message ?? 'invalid op state', {
+        throw new CoreError('E_ENVELOPE', describeValidationErrors(checked.errors), {
           errors: checked.errors,
         })
     }
@@ -529,6 +529,7 @@ export class SessionLogImpl {
       agnesVersion: string
       preset: string | null
       resolvedProfileHash: string | null
+      resolvedPresetHash?: string
       writerRunId: string
       lane: string
       loop?: { id: string; version: string }
@@ -632,6 +633,7 @@ export class SessionLogImpl {
             ...(opener.loop ? { loop: { ...opener.loop } } : {}),
             parent: { key: this.o.key, boundarySeq },
             resolvedProfileHash: opener.resolvedProfileHash,
+            ...(opener.resolvedPresetHash ? { resolvedPresetHash: opener.resolvedPresetHash } : {}),
             preset: opener.preset,
             agnesVersion: opener.agnesVersion,
             ...(opener.delegation ? { delegation: opener.delegation } : {}),

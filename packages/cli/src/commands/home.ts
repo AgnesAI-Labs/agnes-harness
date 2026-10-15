@@ -1,6 +1,6 @@
-import { agnesHome, inspectHome } from '@agnes/host'
+import { agnesHome, homeVersionMessage, inspectHome } from '@agnes/host'
 import type { MainIO } from '../bin.js'
-import { firstRunText, startupFailure } from './first-run-locales.js'
+import { startupFailure } from './first-run-locales.js'
 
 export async function homeCommand(argv: readonly string[], io: MainIO): Promise<number> {
   if ((argv[0] ?? 'info') !== 'info' || argv.slice(1).some((flag) => flag !== '--json'))
@@ -9,7 +9,12 @@ export async function homeCommand(argv: readonly string[], io: MainIO): Promise<
     const info = inspectHome(agnesHome(io.env), io.env.AGNES_PROFILE ?? 'local-dev')
     io.stdout.write(JSON.stringify(info, null, 2) + '\n')
     if (info.state === 'unsupported') {
-      io.stderr.write(firstRunText(io.env, 'version') + '\n')
+      io.stderr.write(
+        homeVersionMessage(
+          { code: 'E_HOME_VERSION', home: info.home, reason: 'unversioned' },
+          io.env.AGNES_LOCALE,
+        ) + '\n',
+      )
       return 1
     }
     return 0

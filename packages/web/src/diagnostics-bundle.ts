@@ -169,7 +169,15 @@ export async function collectDiagnostics(
   const effective = { ...include, conversation: include.conversation && sessionId !== null }
   const [collected, apis, config] = await Promise.all([
     // Always read for bundle.version, but a failure only matters when logs or system were selected.
-    rpc<DiagnosticsCollectResult>('diagnostics.collect', {}, !(effective.logs || effective.system)),
+    (async () =>
+      (effective.logs
+        ? await rpc<DiagnosticsCollectResult>('diagnostics.collect', { runtimeLog: true }, true)
+        : undefined) ??
+      (await rpc<DiagnosticsCollectResult>(
+        'diagnostics.collect',
+        {},
+        !(effective.logs || effective.system),
+      )))(),
     effective.system ? rpc<ApisListResult>('apis.list', {}) : undefined,
     effective.system ? rpc<unknown>('config.get', {}) : undefined,
   ])

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { toRpcError, validateEvent, validateOpState } from '../src/index.js'
+import { describeValidationErrors, toRpcError, validateEvent, validateOpState } from '../src/index.js'
 // DATA_DEFS is not on the root export surface — internal pieces of the generated module are not
 // spread onto `@agnes/protocol`'s root export — so tests that need it import the implementation
 // module directly.
@@ -49,7 +49,10 @@ describe('validateEvent', () => {
     }
     const r = validateEvent(noTrust)
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.errors[0]).toMatchObject({ code: 'MISSING', key: 'trust' })
+    if (!r.ok) {
+      expect(r.errors[0]).toMatchObject({ code: 'MISSING', key: 'trust' })
+      expect(describeValidationErrors(r.errors)).toContain('/trust')
+    }
   })
   it('validates data by type in stage two', () => {
     const r = validateEvent({
@@ -58,7 +61,10 @@ describe('validateEvent', () => {
       data: { toolUseId: 't1', content: [], isError: false, authz: { decisionId: 'n/a' } },
     })
     expect(r.ok).toBe(false) // missing enforcement
-    if (!r.ok) expect(r.errors[0]).toMatchObject({ code: 'MISSING', key: 'enforcement', path: '/data' })
+    if (!r.ok) {
+      expect(r.errors[0]).toMatchObject({ code: 'MISSING', key: 'enforcement', path: '/data' })
+      expect(describeValidationErrors(r.errors)).toContain('/data/enforcement')
+    }
   })
   // Stage two is now on for all 30 names in the closed set, so the only data this package waves
   // through is an extension event's, whose shape it deliberately does not know.

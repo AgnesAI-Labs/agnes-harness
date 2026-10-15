@@ -720,10 +720,9 @@ describe('production compaction phase', () => {
     })
     expect(replacements[0]?.sourceEventSeqs).toHaveLength(4)
     const replaceIndex = rows.findIndex((row) => row.seq === replacements[0]?.seq)
-    expect(rows.slice(replaceIndex - 1, replaceIndex + 4).map((row) => row.type)).toEqual([
+    expect(rows.slice(replaceIndex - 1, replaceIndex + 3).map((row) => row.type)).toEqual([
       'x/core/compaction-begin',
       'assistant/message',
-      'cost/ledger',
       'effect/settled',
       'x/core/compaction-end',
     ])
@@ -867,7 +866,7 @@ describe('production compaction phase', () => {
     expect(await log.scan({ type: 'x/core/compaction-failed', limit: 5 })).toHaveLength(1)
   })
 
-  it('materializes and runs the split-turn prefix request in parallel, then joins both summaries', async () => {
+  it('materializes parallel split-turn requests with independent receipts, then joins both summaries', async () => {
     const provider = fakeProvider([
       // Long enough (unlike the tiny 'MAIN'/'PREFIX' summaries) that the combined summary text,
       // "[turn prefix]" glue included, stays comfortably below the size guard's shadowed-token sum.
@@ -877,6 +876,20 @@ describe('production compaction phase', () => {
       textTurn('PREFIX'),
       textTurn('final'),
     ])
+    let summariesStarted = 0
+    let release = () => {}
+    const bothStarted = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const infer = provider.infer.bind(provider)
+    provider.infer = async function* (request, options) {
+      if (request.kind === 'summary') {
+        summariesStarted++
+        if (summariesStarted === 2) release()
+        await bothStarted
+      }
+      yield* infer(request, options)
+    }
     provider.models = () => [model('answer-model', 'primary'), model('summary-model', 'compaction', 1000)]
     const { session, log } = await openSession({ provider })
     session.preset.model.id.compaction = 'summary-model'
@@ -912,6 +925,12 @@ describe('production compaction phase', () => {
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'x'.repeat(40) }], actor })
     expect((await session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
     expect(provider.requests.slice(2, 4).map((request) => request.kind)).toEqual(['summary', 'summary'])
+    expect(summariesStarted).toBe(2)
+    const costRows = (await log.scan({ type: 'cost/ledger', limit: 100 })).filter(
+      (row) => (row.data as { purpose?: string }).purpose === 'compaction',
+    )
+    expect(costRows).toHaveLength(2)
+    expect(new Set(costRows.map((row) => (row.data as { effectId?: string }).effectId)).size).toBe(2)
     const prefixMessages = provider.requests[3]?.messages ?? []
     expect(prefixMessages[0]?.content[0]).toEqual({ type: 'text', text: 'two' })
     // The prefix segment reuses the same envelope cache as the main segment: 'old-two' is the same
@@ -1458,7 +1477,7 @@ describe('summary stopped at the token cap', () => {
     // The failed call's spend, its error settlement and the replace land in one transaction.
     expect(
       commits.find((types) => types.includes('assistant/message') && types.includes('x/core/compaction-end')),
-    ).toEqual(expect.arrayContaining(['cost/ledger', 'effect/settled', 'x/core/compaction-begin']))
+    ).toEqual(expect.arrayContaining(['effect/settled', 'x/core/compaction-begin']))
   })
 
   it('does not commit a summary that was truncated at the cap', async () => {
@@ -1501,8 +1520,21 @@ describe('length-cap retry', () => {
     { type: 'done', reason: 'length' },
   ]
 
-  async function compactWithScripts(scripts: Script[], configuredThinking?: ThinkingLevel) {
+  async function compactWithScripts(
+    scripts: Script[],
+    configuredThinking?: ThinkingLevel,
+    cancelOnSummary = false,
+  ) {
     const provider = fakeProvider([textTurn('old-one'), textTurn('old-two'), ...scripts])
+    const ac = new AbortController()
+    const infer = provider.infer.bind(provider)
+    provider.infer = async function* (request, options) {
+      for await (const event of infer(request, options)) yield event
+      if (cancelOnSummary && request.kind === 'summary') {
+        await opened.session.abort()
+        ac.abort()
+      }
+    }
     const opened = await openSession({ provider })
     for (const prompt of ['one '.repeat(200), 'two '.repeat(200)]) {
       await opened.session.enqueue('next-turn', { content: [{ type: 'text', text: prompt }], actor })
@@ -1527,7 +1559,8 @@ describe('length-cap retry', () => {
       onCompact: async () => undefined,
     })
     await opened.session.requestCompaction({ actor, admissionId: 'manual' })
-    expect((await opened.session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
+    const outcome = await opened.session.run({ until: 'turn-end', signal: ac.signal })
+    expect(outcome.reason).toBe(cancelOnSummary ? 'aborted' : 'completed')
     const rows = await opened.log.scan({ fromSeq: 1, limit: 500 })
     return {
       reasons: rows
@@ -1536,6 +1569,9 @@ describe('length-cap retry', () => {
       replaced: rows.filter((row) => row.surfaceOp),
       begins: rows.filter((row) => row.type === 'x/core/compaction-begin'),
       provider,
+      costs: rows.filter(
+        (row) => row.type === 'cost/ledger' && (row.data as { purpose?: string }).purpose === 'compaction',
+      ),
     }
   }
 
@@ -1555,8 +1591,32 @@ describe('length-cap retry', () => {
     expect(provider.calls).toBe(3)
   })
 
+  it('does not retry a cancelled wide summary and settles its consumed cost once', async () => {
+    const { provider, costs, replaced } = await compactWithScripts([capped('')], undefined, true)
+    expect(provider.requests.filter((request) => request.kind === 'summary')).toHaveLength(1)
+    expect(costs).toHaveLength(1)
+    expect(costs[0]?.data).toMatchObject({ interrupted: true })
+    expect(replaced).toHaveLength(0)
+  })
+
+  it('retries a wide tool answer once with a narrow request and independent costs', async () => {
+    const { provider, replaced, costs } = await compactWithScripts([
+      toolTurn('read', { path: 'x' }),
+      textTurn('Goal: narrow summary'),
+    ])
+    expect(provider.requests.at(-1)?.tools).toEqual([])
+    expect(replaced).toHaveLength(1)
+    expect(costs).toHaveLength(2)
+    expect(new Set(costs.map((row) => (row.data as { effectId: string }).effectId)).size).toBe(2)
+  })
+
   it('commits the retry summary when it succeeds within budget', async () => {
-    const { reasons, replaced } = await compactWithScripts([capped(''), textTurn('Goal: recovered summary')])
+    const { reasons, replaced, costs } = await compactWithScripts([
+      capped(''),
+      textTurn('Goal: recovered summary'),
+    ])
+    expect(costs).toHaveLength(2)
+    expect(new Set(costs.map((row) => (row.data as { effectId: string }).effectId)).size).toBe(2)
     expect(replaced).not.toEqual([])
     expect(reasons).toEqual([])
   })
@@ -1659,7 +1719,7 @@ describe('routing a summary that is unavailable', () => {
     return { ...opened, provider, commits, seams, runner, sizes, enter, outcome, planned: () => planned }
   }
 
-  /** The elided replace was written, as one transaction with the failed call's spend when there was one. */
+  /** Replacement is atomic; each real model request's cost was already durably settled. */
   async function expectElided(
     h: Awaited<ReturnType<typeof toolHistory>>,
     cause: RegExp,
@@ -1675,13 +1735,19 @@ describe('routing a summary that is unavailable', () => {
     const tx = h.commits.find((types) => types.includes('x/core/compaction-end')) ?? []
     if (withCall) {
       expect(tx).toEqual(
-        expect.arrayContaining([
-          'cost/ledger',
-          'effect/settled',
-          'x/core/compaction-begin',
-          'assistant/message',
-        ]),
+        expect.arrayContaining(['effect/settled', 'x/core/compaction-begin', 'assistant/message']),
       )
+      expect(o.spends.length).toBeGreaterThan(0)
+      for (const spend of o.spends) {
+        expect(spend.seq).toBeLessThan(o.replaces[0]!.seq)
+        expect(
+          o.rows.some(
+            (row) =>
+              row.type === 'effect/settled' &&
+              (row.data as { effectId?: string }).effectId === (spend.data as { effectId?: string }).effectId,
+          ),
+        ).toBe(true)
+      }
       expect((o.begins[0]?.data as { effectId?: string } | undefined)?.effectId).toBeDefined()
     } else {
       expect(o.spends).toEqual([])
@@ -1886,15 +1952,24 @@ describe('routing a summary that is unavailable', () => {
       const h = await toolHistory([])
       h.session.preset.treeBudgetCredits = 1
       h.seams.billing.projected = async () => ({ credits: 1000, creditSource: 'estimated' })
-      // A refused tree reservation ends the turn with `budget` from inside the summary call, and the
-      // compaction then fails writing its own settlement (E_ENVELOPE). That predates this routing
-      // and is left as it is; what matters here is that no elided replace is written instead.
-      await h.enter(reason).catch(() => undefined)
+      await expect(h.enter(reason)).resolves.toEqual({ phase: 'terminal', reason: 'budget' })
       const o = await h.outcome()
       expect(o.replaces).toEqual([])
       expect(o.begins).toEqual([])
       expect(o.rows.filter((row) => row.type === 'turn/end').at(-1)?.data).toMatchObject({ reason: 'budget' })
       expect(h.provider.calls).toBe(4)
+      const intents = o.rows.filter(
+        (row) => row.type === 'effect/intent' && (row.data as { kind?: string }).kind === 'compaction',
+      )
+      for (const intent of intents)
+        expect(
+          o.rows.some(
+            (row) =>
+              row.type === 'effect/settled' &&
+              (row.data as { effectId?: string }).effectId ===
+                (intent.data as { effectId?: string }).effectId,
+          ),
+        ).toBe(true)
     },
   )
 

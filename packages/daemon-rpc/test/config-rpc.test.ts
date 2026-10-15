@@ -168,3 +168,44 @@ it('validates auxiliary routes against the live catalog and denies nonlocal writ
     await Promise.all([local.close(), remote.close()])
   }
 })
+
+it('projects only allowlisted credential metadata and never arbitrary codes or paths', async () => {
+  const configuration = service()
+  configuration.get.mockRejectedValueOnce(
+    Object.assign(new Error('private body'), {
+      code: 'CONFIG_CREDENTIAL_PERMISSIONS',
+      credential: {
+        part: 'secrets',
+        check: 'mode',
+        mode: '0644',
+        path: '/private/fixture',
+        body: 'synthetic-private',
+      },
+    }),
+  )
+  const ep = endpoint(true, configuration)
+  const response = await request(ep, '_agnes/v1/config.get')
+  expect(response).toMatchObject({
+    error: {
+      data: { reason: 'CONFIG_CREDENTIAL_PERMISSIONS', part: 'secrets', check: 'mode', mode: '0644' },
+    },
+  })
+  expect(JSON.stringify(response)).not.toContain('/private/fixture')
+  expect(JSON.stringify(response)).not.toContain('synthetic-private')
+  configuration.get.mockRejectedValueOnce({
+    code: 'CONFIG_CREDENTIAL_PERMISSIONS',
+    credential: { part: { toString: () => 'secrets', value: 'synthetic-private' }, check: 'mode' },
+  })
+  const malformed = await request(ep, '_agnes/v1/config.get')
+  expect(malformed).toMatchObject({ error: { data: { reason: 'CONFIG_CREDENTIAL_PERMISSIONS' } } })
+  expect(JSON.stringify(malformed)).not.toContain('synthetic-private')
+  expect(JSON.stringify(malformed)).not.toContain('"part"')
+  configuration.get.mockRejectedValueOnce({
+    code: 'CONFIG_UNREVIEWED',
+    credential: { part: 'private', check: 'private', mode: 'secret' },
+  })
+  expect(await request(ep, '_agnes/v1/config.get')).toMatchObject({
+    error: { data: { reason: 'CONFIG_FAILED' } },
+  })
+  await ep.close()
+})

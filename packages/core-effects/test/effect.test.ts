@@ -31,5 +31,9 @@ describe('effect outcomes', () => {
       type: 'effect/settled',
       data: { effectId: 'effect-1', outcome: 'unknown', durationMs: 7 },
     })
+    now = 8
+    expect(effect.settle('error').data).toMatchObject({ durationMs: 0 })
+    now = 18.7
+    expect(effect.settle('ok').data).toMatchObject({ durationMs: 9 })
   })
 })

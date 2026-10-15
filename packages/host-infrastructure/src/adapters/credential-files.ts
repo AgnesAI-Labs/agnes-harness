@@ -15,6 +15,8 @@ import {
 } from '@agnes/system-node'
 import type { PlatformBackend } from './platform.js'
 
+export { inspectCredentialMetadata } from './credential-metadata.js'
+
 export type CredentialKind = 'api-key' | 'oauth'
 export type CredentialStoreReason =
   | 'bad-ref'

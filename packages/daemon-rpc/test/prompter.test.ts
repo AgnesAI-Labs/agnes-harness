@@ -384,7 +384,7 @@ describe('PrompterRouter', () => {
         if (c === next.conn) return next
         throw new Error('endpointFor: connection not found among live connections')
       },
-      connections: () => [origin.conn, next.conn],
+      connections: () => [next.conn],
       originOf: () => origin.conn,
       clock: () => 0,
       record: (x) => log.push(x),

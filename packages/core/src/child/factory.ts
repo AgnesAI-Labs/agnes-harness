@@ -19,6 +19,7 @@ import { deliverChildCompletion } from './completion-notice.js'
 import { childExecutionReceipt } from './execution-receipt.js'
 import type { ResidentStart, ResidentTurn } from './provider.js'
 import { bindChildFactory, childBackend } from './sessions.js'
+import { snapshotFromLedger, snapshotFromRecord } from './status.js'
 import { childSessionToolFilter, narrowChildToolFilter } from './tool-filter.js'
 
 /**
@@ -593,6 +594,9 @@ export class KernelChildren implements ChildrenFactory {
       ...(filter ? { toolFilter: filter } : {}),
       actor: parent.d.actor,
       resolvedProfileHash: parent.d.resolvedProfileHash,
+      ...(!modelTarget && parent.d.resolvedPresetHash
+        ? { resolvedPresetHash: parent.d.resolvedPresetHash }
+        : {}),
       ...(parent.d.policyDigest ? { policyDigest: parent.d.policyDigest } : {}),
       preset: childPreset,
       parent: {
@@ -1208,41 +1212,4 @@ function rootTaskIdOf(session: SessionImpl): string {
 
 function parentBoundary(parent: SessionImpl, opts: CreateOpts, kind: ChildKind): number {
   return opts.forkAt ?? (kind === 'fork' ? parent.op()?.meta.triggerSeq : undefined) ?? parent.lastSeq
-}
-
-function snapshotFromRecord(record: ChildTaskRecord): ChildStatus {
-  const terminal = record.state === 'completed' || record.state === 'failed' || record.state === 'cancelled'
-  return {
-    state:
-      record.state === 'failed' || record.state === 'cancelled' ? 'error' : terminal ? 'done' : 'running',
-    lastSeq: 0,
-  }
-}
-
-async function snapshotFromLedger(parent: SessionImpl, record: ChildTaskRecord): Promise<ChildStatus> {
-  const base = snapshotFromRecord(record)
-  try {
-    const fromSeq = (record.boundarySeq + 1) as typeof record.boundarySeq
-    const tail = await parent.d.log.storage.scan(record.childKey, { fromSeq, order: 'desc', limit: 1 })
-    const msgs = await parent.d.log.storage.scan(record.childKey, {
-      fromSeq,
-      type: 'assistant/message',
-      order: 'desc',
-      limit: 1,
-    })
-    const content = (msgs[0]?.data as { content?: Array<{ type?: string; text?: string }> } | undefined)
-      ?.content
-    const text = (content ?? [])
-      .filter((block) => block.type === 'text' && typeof block.text === 'string')
-      .map((block) => block.text)
-      .join('')
-    return {
-      ...base,
-      lastSeq: tail[0]?.seq ?? base.lastSeq,
-      ...(text ? { text } : {}),
-      receipt: await childExecutionReceipt(parent, record),
-    }
-  } catch {
-    return base
-  }
 }

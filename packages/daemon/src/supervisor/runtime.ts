@@ -145,7 +145,6 @@ import {
   compositionSurfaceAllowed,
   createExtensionActivationBarrier,
   createFeedbackOwner,
-  createFileAudit,
   createPlatform,
   createSecretsEnv,
   createSecretsFile,
@@ -236,6 +235,7 @@ import { deferPackageActivation } from './publication/deferred-package-activatio
 import { createRuntimePinCoordinator } from './publication/runtime-pin-coordinator.js'
 import { publishProbedRuntimeTarget } from './publication/runtime-target-publisher.js'
 import { type RemoteEntry, WorkerRegistry } from './registry.js'
+import { openDaemonLogs } from './runtime-log.js'
 import { createRuntimeTargetProbeLauncher, spawnRuntimeTargetProbeWorker } from './runtime-target-probe.js'
 import { type ScheduleCatalog, scheduledTasks } from './schedule-sessions.js'
 import { canonicalPath, resolveDaemonProfile, resolveDaemonScope } from './scope.js'
@@ -1241,6 +1241,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       },
       onPreview: (sessionKey, p) => registry.deliverPreview(sessionKey, p),
       onResourceStatus: (input) => observeResourceMcpStatus?.(input),
+      onRuntimeLog: (record) => o.audit?.(record),
       onLog: (input) => o.audit?.({ kind: 'worker.log', ...input }),
       onLifecycle: (phase, id) => o.observability?.lifecycle('worker', phase, undefined, id),
       onSessionFailure: (sessionKey, error) => registry.interrupt(sessionKey, error),
@@ -3031,19 +3032,9 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
     }),
   }
 
-  const requestAudit = createFileAudit(join(scope.dataDir, 'audit', 'daemon.jsonl'))
-  const flushAudit = async () => {
-    await requestAudit.close?.()
-  }
+  const { record: audit, close: flushAudit } = openDaemonLogs(scope.dataDir)
   const sup = await (deps.startProduction ?? startProductionSupervisor)({
-    audit: (record) => {
-      if (!record || typeof record !== 'object' || !('kind' in record)) return
-      if (record.kind === 'daemon.request_failed' || record.kind === 'plugin.tree.reverted')
-        requestAudit.write({
-          kind: record.kind,
-          ...('detail' in record ? { detail: record.detail as Record<string, unknown> } : {}),
-        })
-    },
+    audit,
     config,
     profile,
     profileDir: scope.profileDir,

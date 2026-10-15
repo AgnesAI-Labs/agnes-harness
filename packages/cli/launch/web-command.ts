@@ -161,7 +161,14 @@ export async function runWebCommand(
   const makeServer = io.createServer ?? createWebServer
   const env = io.env ?? process.env
   const home = parsed.home ?? agnesHome(env)
-  if (!io.ensureBackend) initializeHome(home, parsed.profile ?? 'local-dev')
+  try {
+    if (!io.ensureBackend) initializeHome(home, parsed.profile ?? 'local-dev')
+  } catch (error) {
+    const message = startupFailure(error, env)
+    if (message)
+      throw Object.assign(new Error(message, { cause: error }), { code: (error as { code?: string }).code })
+    throw error
+  }
   const composition =
     io.composition ??
     (!io.ensureBackend

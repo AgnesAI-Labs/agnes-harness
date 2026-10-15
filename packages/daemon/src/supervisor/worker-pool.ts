@@ -31,6 +31,7 @@ import type {
   CompositeRuntimeDelivery,
   RuntimeBootDelivery,
 } from './publication/composite-runtime-delivery.js'
+import { workerStderrEvidence } from './runtime-log.js'
 import { WorkerBootFailures } from './worker-boot-failures.js'
 import { WorkerLink, type WorkerSessionChannel } from './worker-link.js'
 
@@ -148,6 +149,7 @@ export class WorkerPool {
         traceId?: string
         spanId?: string
       }) => void
+      onRuntimeLog?: (record: unknown) => void
       onLifecycle?: (phase: 'start' | 'stop' | 'restart', id: string) => void
       onSessionFailure?: (sessionKey: string, error: unknown) => void
       runtimeDelivery?: CompositeRuntimeDelivery
@@ -365,6 +367,7 @@ export class WorkerPool {
       const failStarting = (error: Error): void => {
         if (startupFinished) return
         startupFinished = true
+        this.o.onRuntimeLog?.({ kind: 'worker.start_failed', detail: { code: bootFailureCode } })
         if (!helloReceived && !this.stopping) this.bootFailures.record(workerKey, bootFailureCode, bootEpoch)
         // A start that dies on the very target it was given says something about that target, not
         // about the worker; only then is the exit expected rather than a crash to count.
@@ -525,7 +528,7 @@ export class WorkerPool {
               AGNES_WORKER_ROOT: opts.kind === 'service' && opts.cwd ? opts.cwd : undefined,
             },
             windowsHide: true,
-            stdio: ['ignore', 'inherit', 'inherit', 'pipe', 'ipc'],
+            stdio: ['ignore', 'inherit', 'pipe', 'pipe', 'ipc'],
           },
         )
       } catch (error) {
@@ -541,6 +544,8 @@ export class WorkerPool {
         return
       }
       const spawnedChild = child
+      const stderr = workerStderrEvidence()
+      spawnedChild.stderr?.on('data', (chunk: Buffer) => stderr.push(chunk))
       slot.child = spawnedChild
       spawnedChild.on('message', (message: unknown) => {
         if (startupFinished || slot.initializingLink || !message || typeof message !== 'object') return
@@ -559,6 +564,12 @@ export class WorkerPool {
       // Reject immediately so callers do not wait for the full startup deadline and remove the
       // token before a late socket connection can claim a failed generation.
       spawnedChild.once('exit', (code, signal) => {
+        this.o.onRuntimeLog?.({
+          kind: 'worker.exited',
+          detail: { pid: spawnedChild.pid, exitCode: code, signal },
+        })
+        const stderrFacts = stderr.snapshot()
+        if (stderrFacts.bytes) this.o.onRuntimeLog?.({ kind: 'worker.stderr', detail: stderrFacts })
         try {
           this.o.onLifecycle?.('stop', `${workerKey}:${generation}`)
         } catch {

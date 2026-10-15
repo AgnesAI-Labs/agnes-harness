@@ -1,3 +1,5 @@
+import { homeVersionMessage } from '@agnes/host'
+
 /** CLI startup and home errors use fixed text, never an upstream error body. */
 const en = {
   home: 'Home',
@@ -43,6 +45,8 @@ export function startupFailure(
   error: unknown,
   env: Readonly<Record<string, string | undefined>>,
 ): string | undefined {
+  const homeMessage = homeVersionMessage(error, env.AGNES_LOCALE)
+  if (homeMessage) return homeMessage
   const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined
   if (
     code !== 'E_DAEMON_SCOPE_CONFLICT' &&
@@ -61,15 +65,26 @@ export function startupFailure(
         ? 'daemonBusy'
         : code === 'EADDRINUSE'
           ? 'port'
-          : ['EACCES', 'EPERM', 'EROFS', 'ENOSPC'].includes(String(code))
+          : [
+                'EACCES',
+                'EPERM',
+                'EROFS',
+                'ENOSPC',
+                'CONFIG_CREDENTIAL_READ_ONLY',
+                'CONFIG_CREDENTIAL_NO_SPACE',
+              ].includes(String(code))
             ? 'writable'
             : code === 'E_HOME_VERSION'
               ? 'version'
               : code === 'E_HOME_UNSAFE'
                 ? 'unsafe'
-                : ['CREDENTIAL_STORE_UNSAFE', 'CONFIG_CREDENTIAL_STORE', 'E_SECRET_UNRESOLVED'].includes(
-                      String(code),
-                    )
+                : [
+                      'CREDENTIAL_STORE_UNSAFE',
+                      'CONFIG_CREDENTIAL_STORE',
+                      'CONFIG_CREDENTIAL_PERMISSIONS',
+                      'CONFIG_CREDENTIAL_INVALID',
+                      'E_SECRET_UNRESOLVED',
+                    ].includes(String(code))
                   ? 'credentials'
                   : undefined
   return key ? firstRunText(env, key) : undefined

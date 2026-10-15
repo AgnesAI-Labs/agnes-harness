@@ -472,6 +472,7 @@ export type SessionDeps = {
   clock: Clock
   actor: Actor
   resolvedProfileHash: string | null
+  resolvedPresetHash?: string
   policyDigest?: string | null
   /** Carried into a new session/start only; a reopened ledger keeps the one it has. */
   imported?: SessionStart['imported']
@@ -1015,6 +1016,7 @@ export class SessionImpl {
             : {}),
           loop: { ...this.loop },
           resolvedProfileHash: this.d.resolvedProfileHash,
+          ...(this.d.resolvedPresetHash ? { resolvedPresetHash: this.d.resolvedPresetHash } : {}),
           preset: this.preset.name,
           agnesVersion: this.d.agnesVersion ?? '0.0.0',
           ...(modelSettings.length ? { modelSettings } : {}),

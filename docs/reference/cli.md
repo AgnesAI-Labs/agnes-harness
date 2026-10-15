@@ -43,7 +43,8 @@ Print options `--park`, `--chunks`, and `--meta` control waiting and output. See
 | `agh daemon start\|status\|stop` | Explicit daemon lifecycle |
 | `agh serve [--home DIR] [--profile NAME] [--cwd DIR] [--port N]` | Local Web |
 | `agh profile list` / `inspect NAME --resolved` / `trust DEPLOY_DIR` | Configuration inspection and deployment trust |
-| `agh doctor [platform\|network\|provider\|storage\|profile\|extensions\|daemon\|binary\|code-runtime] --json` | Diagnostics |
+| `agh doctor [platform\|network\|provider\|storage\|credentials\|profile\|extensions\|daemon\|binary\|code-runtime] --json` | Diagnostics |
+| `agh doctor credentials --json` | Read-only file metadata (target, mode and safety checks); never reads credential contents or changes permissions |
 | `agh doctor provider --probe` | Explicit minimal inference; may incur charges |
 | `agh doctor subagents [--repair] --json` | Subagent checks; repair changes state |
 | `agh consent DISABLED\|LOCAL\|ANON\|FULL` | Save a telemetry consent level; does not establish all external collection has been verified |

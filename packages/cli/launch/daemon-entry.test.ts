@@ -59,3 +59,27 @@ it('publishes the real startup refusal in a private, write-once launcher receipt
     rmSync(directory, { recursive: true, force: true })
   }
 })
+
+it.each([false, true])(
+  'formats a wrapped=%s old-home refusal without publishing a startup receipt into that home',
+  async (wrapped) => {
+    const directory = mkdtempSync(join(tmpdir(), 'agh-old-daemon-home-'))
+    const path = startupDiagnosticPath(join(directory, 'daemon'))
+    vi.stubEnv(STARTUP_DIAGNOSTIC_ENV, path)
+    vi.stubEnv('AGNES_LOCALE', 'zh-CN')
+    const refusal = Object.assign(new Error('private upstream body'), {
+      code: 'E_HOME_VERSION',
+      home: directory,
+      reason: 'unversioned',
+    })
+    runAgnesd.mockRejectedValueOnce(wrapped ? new Error('private wrapper', { cause: refusal }) : refusal)
+    try {
+      await expect(runDaemonEntry(['--home', directory, '--data-dir', directory])).rejects.toThrow(
+        `旧环境目录：${directory}`,
+      )
+      expect(readStartupDiagnostic(path)).toBeUndefined()
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  },
+)

@@ -3,7 +3,9 @@ import { existsSync, realpathSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { type RunAgnesdArgs, runAgnesd } from '@agnes/daemon'
+import { homeVersionMessage } from '@agnes/host'
 import { publishStartupDiagnostic } from '../src/boot/startup-diagnostic.js'
+import { startupFailure } from '../src/commands/first-run-locales.js'
 
 type LocalWeb = { addr: string; origin: string }
 
@@ -66,7 +68,10 @@ export async function runDaemonEntry(argv: readonly string[] = process.argv.slic
       ...(parsed.localWeb ? { localWeb: parsed.localWeb } : {}),
     })
   } catch (error) {
-    publishStartupDiagnostic(error, parsed.args.dataDir)
+    if (!homeVersionMessage(error, process.env.AGNES_LOCALE))
+      publishStartupDiagnostic(error, parsed.args.dataDir)
+    const message = startupFailure(error, process.env)
+    if (message) throw new Error(message, { cause: error })
     throw error
   }
 }

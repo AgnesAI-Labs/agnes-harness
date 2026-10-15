@@ -1,7 +1,9 @@
 import { daemonDoctor, daemonStatus, runtimeDoctor } from '@agnes/daemon'
 import { createPrompterBridge } from '@agnes/daemon/local'
 import {
+  CONFIGURATION_ERROR_CODES,
   createConfigurationService,
+  HOST_ERROR_CODES,
   type Host,
   dataDir as hostDataDir,
   type ResolvedProfile,
@@ -11,6 +13,7 @@ import type { ParsedArgs } from '../args.js'
 import { profileNameFrom } from '../boot/inputs.js'
 import { assembleLocalHost, type LocalBootDeps } from '../boot/local.js'
 import { doctorCodeRuntime } from './doctor-code-runtime.js'
+import { doctorCredentials } from './doctor-credentials.js'
 import { doctorExtensions } from './doctor-extensions.js'
 import { doctorBinary, doctorStorage, type Section } from './doctor-local.js'
 import { doctorPlatform, doctorResolvedProfile, resolveDoctorProfile } from './doctor-profile.js'
@@ -26,6 +29,7 @@ export const DOCTOR_SECTIONS = [
   'network',
   'provider',
   'storage',
+  'credentials',
   'profile',
   'extensions',
   'daemon',
@@ -42,6 +46,22 @@ const failed = (name: DoctorSectionName, detail: string): Section => ({
   status: 'fail',
   detail: [detail],
 })
+
+function assemblyFailure(name: DoctorSectionName, error: unknown): Section {
+  const value =
+    error && typeof error === 'object' ? (error as { code?: unknown; detail?: { reason?: unknown } }) : {}
+  if (value.code === 'E_PRESET_UNRESOLVED' && value.detail?.reason === 'no-routes')
+    return {
+      name,
+      status: 'warn',
+      detail: ['No model provider is configured. Run agh config to complete setup.'],
+    }
+
+  return failed(
+    name,
+    `${name} host assembly failed${[...HOST_ERROR_CODES, ...CONFIGURATION_ERROR_CODES].some((code) => code === value.code) ? ` (${value.code})` : ''}`,
+  )
+}
 
 /** Read-only daemon health through the package-owned owner/process/socket probes (ERRATA B23). */
 export async function doctorDaemon(deps: Pick<DoctorCommandDeps, 'home'>): Promise<Section> {
@@ -154,6 +174,9 @@ export async function doctorCommand(
           })
           break
         }
+        case 'credentials':
+          sections.push(await doctorCredentials(commandDeps))
+          break
         case 'storage':
           sections.push(await doctorStorage(commandDeps))
           break
@@ -163,8 +186,8 @@ export async function doctorCommand(
         case 'profile':
           try {
             sections.push(doctorResolvedProfile(await resolvedProfile()))
-          } catch {
-            sections.push(failed('profile', 'profile resolution failed'))
+          } catch (error) {
+            sections.push(assemblyFailure('profile', error))
           }
           break
         case 'binary':
@@ -202,15 +225,15 @@ export async function doctorCommand(
                 accounts,
               }),
             )
-          } catch {
-            sections.push(failed('provider', 'provider host assembly failed'))
+          } catch (error) {
+            sections.push(assemblyFailure('provider', error))
           }
           break
         case 'extensions':
           try {
             sections.push(await doctorExtensions(await assembledHost()))
-          } catch {
-            sections.push(failed('extensions', 'extension host assembly failed'))
+          } catch (error) {
+            sections.push(assemblyFailure('extensions', error))
           }
           break
         case 'code-runtime':
@@ -220,8 +243,8 @@ export async function doctorCommand(
                 ...(commandDeps.signal ? { signal: commandDeps.signal } : {}),
               }),
             )
-          } catch {
-            sections.push(failed('code-runtime', 'code runtime host assembly failed'))
+          } catch (error) {
+            sections.push(assemblyFailure('code-runtime', error))
           }
           break
       }

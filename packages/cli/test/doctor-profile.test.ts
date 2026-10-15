@@ -2,7 +2,12 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CAPABILITY_IDS, type ConfigurationService, createConfigurationService } from '@agnes/host'
+import {
+  CAPABILITY_IDS,
+  type ConfigurationService,
+  createConfigurationService,
+  createPosixPlatform,
+} from '@agnes/host'
 import { createPrivateDirectorySync } from '@agnes/system-node'
 import { describe, expect, it } from 'vitest'
 import { parseArgs } from '../src/args.js'
@@ -22,10 +27,18 @@ describe('profile and platform doctor', () => {
   it('reports real probed capabilities and warns about degraded capability levels', async () => {
     const d = setup()
     try {
-      const report = await doctorPlatform(d)
+      const platform = createPosixPlatform()
+      const report = await doctorPlatform(d, platform)
       expect(report.status).toBe('warn')
       for (const id of CAPABILITY_IDS)
         expect(report.detail.some((line) => line.startsWith(`${id}=`))).toBe(true)
+      for (const id of CAPABILITY_IDS) {
+        const fact = platform.capability(id)
+        if (fact.level !== 'full' && fact.reason)
+          expect(report.detail).toContain(`${id}.reason=${fact.reason}`)
+        if (fact.level === 'full')
+          expect(report.detail.some((line) => line.startsWith(`${id}.reason=`))).toBe(false)
+      }
       expect(report.detail).toContain('ipc=full')
       expect(report.detail).toContain('terminal.kitty-keys=unavailable')
     } finally {

@@ -3,26 +3,13 @@ import { type OpStateObj, type OpStatePhase, withPhase } from '@agnes/core-commo
 import { CoreError, type EventInput, type Seq } from '@agnes/core-common/types'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import type { SurfaceNode } from '@agnes/core-ledger/project/surface'
-import { pairClosed, validateReplace } from '@agnes/core-ledger/project/surface'
-import type { CostLedger, TokenCounts } from '@agnes/core-ledger/reduce/shapes'
-import type {
-  CompactionInput,
-  CompactionModelPort,
-  CompactionOutput,
-  HookPayloadMap,
-  HookReturnMap,
-} from '@agnes/extension-api'
-import type { Billing, InferenceEvent, ThinkingLevel } from '@agnes/protocol'
+import type { CompactionInput, CompactionModelPort, CompactionOutput } from '@agnes/extension-api'
 import { childReceiptNarrative } from '../../child/receipts.js'
-import { settleTreeSpend } from '../../child/runtime-budget.js'
 import { HookBlockedError } from '../../hooks/block.js'
-import { deriveRequest, requestMemoryRevision, sanitize, wrapUntrusted } from '../../request/derive.js'
-import type { RequestBody as MintedRequestBody } from '../../request/mint.js'
-import { toProviderRequest } from '../../request/to-provider.js'
-import { applyBeforeRequestPatches } from '../../request/transforms.js'
+import { sanitize, wrapUntrusted } from '../../request/derive.js'
 import { quoteBudget } from '../../step/calibrate.js'
 import { elideSpan } from '../../step/compaction-elide.js'
-import { resolvedModelRecord } from '../../step/model-tools.js'
+import { CompactionRunner } from '../../step/compaction-runner.js'
 import type { SessionImpl, StepOutcome } from '../../step/session.js'
 import {
   compactionSettingsFor,
@@ -33,436 +20,32 @@ import {
   fixedPrefixTokens,
   lastCacheHint,
   nearlyFull,
-  reserveTreeBudget,
 } from './gate.js'
-import {
-  assembleRequestPrefix,
-  boundWireInputTokens,
-  estimateTokens,
-  resolveModel,
-  surfaceToolCalls,
-} from './inference.js'
-
-export type CompactionPlan = Exclude<HookReturnMap['before_compact'], null>
-export type BeforeCompactPayload = HookPayloadMap['before_compact']
-export type CompactPayload = HookPayloadMap['compact']
-
-import { CompactionRunner } from '../../step/compaction-runner.js'
+import { estimateTokens, resolveModel, surfaceToolCalls } from './inference.js'
 
 export { CompactionRunner } from '../../step/compaction-runner.js'
+export type { BeforeCompactPayload, CompactionPlan, CompactPayload } from './compaction-summary.js'
 
-const SUMMARY_NO_TOOLS_PREAMBLE =
-  'Summarize the conversation only. Do not call any tool, emit a tool invocation, or delegate work. Return only the requested summary text.'
-type Prefix = Pick<MintedRequestBody, 'sections' | 'tools' | 'model' | 'samplingParams'> & {
-  memoryRevision?: string
-}
-type SummarySegment = {
-  nodes: readonly SurfaceNode[]
-  instruction: string
-  wide: boolean
-  quote?: { node: SurfaceNode; text: string }
-  quoteEstimate?: string
-}
-
-/**
- * Why a summary is unusable. `permanent` is an answer of the wrong shape that a retry would repeat:
- * cut off, empty, calling a tool, deviating, or over its window. `retryable` is a transient provider
- * or transport failure. `config` is a compaction route that cannot work as set up (credentials,
- * model, adapter, contract, or a final error nobody classified), and `budget` includes an exhausted
- * quota: neither may be hidden behind a lossy fallback.
- */
-type SummaryFailure = 'cancelled' | 'budget' | 'config' | 'permanent' | 'retryable'
-/** When two segments fail differently, the first class listed here decides. */
-const FAILURE_ORDER: readonly SummaryFailure[] = ['cancelled', 'budget', 'config', 'permanent', 'retryable']
-
-const CONFIG_CODES = new Set([
-  'AUTH',
-  'NO_MODEL',
-  'NO_ADAPTER',
-  'FORMAT',
-  'CONTRACT_MISMATCH',
-  'SECRET_UNRESOLVED',
-  'INVALID_BASE_URL',
-  'DUPLICATE_ROUTE',
-  'UNSEALED',
-])
-
-/** The class of a provider failure by its code; `retryable` decides only for codes with no class. */
-function classify(code: string | undefined, retryable: boolean): SummaryFailure {
-  if (code === 'QUOTA') return 'budget'
-  if (code === 'OVERFLOW') return 'permanent'
-  if (code !== undefined && CONFIG_CODES.has(code)) return 'config'
-  return retryable ? 'retryable' : 'config'
-}
-
-type SummaryResult = {
-  text: string
-  tokens: TokenCounts
-  credits?: number
-  creditSource: CostLedger['creditSource']
-  billing?: Billing
-  failed: boolean
-  failure?: SummaryFailure
-  /** Why `failed`, when known; lands in `x/core/compaction-failed.reason`. */
-  cause?: string
-}
-
-// Matches DeriveInput['toolCalls']'s per-item shape exactly (not a narrower projection of it): C1
-// passes this array straight into deriveRequest as toolCalls, since a summary now replays real
-// tool_result nodes and derive re-attaches each one's originating call the same way an ordinary
-// turn's derivation does. toolUseId and ordinal exist for that re-attachment, not for anything read
-// in this file directly.
-type ToolCallForSummary = {
-  assistantSeq: Seq
-  toolUseId: string
-  name: string
-  args: unknown
-  ordinal: number
-}
-
-const zeroTokens = (): TokenCounts => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 })
-const addTokens = (a: TokenCounts, b: TokenCounts): TokenCounts => ({
-  input: a.input + b.input,
-  output: a.output + b.output,
-  cacheRead: a.cacheRead + b.cacheRead,
-  cacheWrite: a.cacheWrite + b.cacheWrite,
-  ...(a.reasoning !== undefined || b.reasoning !== undefined
-    ? { reasoning: (a.reasoning ?? 0) + (b.reasoning ?? 0) }
-    : {}),
-})
-
-/** Each assistant message's call arguments, estimated as the model sees them: they are sent too. */
-function callArgsTokens(calls: readonly ToolCallForSummary[]): Map<Seq, number> {
-  const out = new Map<Seq, number>()
-  for (const call of calls)
-    out.set(call.assistantSeq, (out.get(call.assistantSeq) ?? 0) + estimateTokens(canonicalJson(call.args)))
-  return out
-}
-
-function hookSurface(
-  surface: readonly SurfaceNode[],
-  argsTokens: ReadonlyMap<Seq, number>,
-): ReturnType<BeforeCompactPayload['getSurface']> {
-  return surface.map((node) => {
-    const type =
-      node.kind === 'summary'
-        ? 'summary'
-        : node.kind === 'tool_result'
-          ? 'tool/result'
-          : node.kind === 'assistant'
-            ? 'assistant/message'
-            : 'user/message'
-    return {
-      seq: node.seq,
-      type,
-      ...(node.kind === 'user'
-        ? { messageKind: (node.event.data as import('@agnes/protocol').UserMessage).kind ?? 'prompt' }
-        : {}),
-      ...(node.pinned ? { pinned: true } : {}),
-      tokensEstimate: nodeTokens(node, argsTokens),
-    }
-  })
-}
-
-function nodeTokens(node: SurfaceNode, argsTokens: ReadonlyMap<Seq, number>): number {
-  const data = node.event.data as { content?: Array<{ text?: string }> } | null
-  const text = (data?.content ?? []).reduce((sum, block) => sum + estimateTokens(block.text ?? ''), 0)
-  return text + (node.kind === 'assistant' ? (argsTokens.get(node.seq) ?? 0) : 0)
-}
-
-function containsString(value: unknown, needle: string, depth = 0): boolean {
-  if (depth > 32) return false
-  if (typeof value === 'string') return value.includes(needle)
-  if (Array.isArray(value)) return value.some((child) => containsString(child, needle, depth + 1))
-  return value && typeof value === 'object'
-    ? Object.values(value).some((child) => containsString(child, needle, depth + 1))
-    : false
-}
-
-/**
- * Resolves the plan to the span one replace masks: the main range and, for a split turn, the prefix
- * right after it. The span is judged as a whole, and each range again on its own, because each goes
- * to the model as its own message sequence.
- */
-function summaryRange(
-  plan: CompactionPlan,
-  surface: readonly SurfaceNode[],
-): { start: Seq; end: Seq; seqs: Seq[]; nodes: SurfaceNode[]; prefixNodes?: SurfaceNode[] } {
-  const start = plan.previousSummarySeq ?? plan.summarizeRange[0]
-  const keep = surface.findIndex((node) => node.seq === plan.keepFromSeq)
-  const from = surface.findIndex((node) => node.seq === start)
-  const to = surface.findIndex((node) => node.seq === plan.summarizeRange[1])
-  if (keep < 0 || from < 0 || to < from || keep <= to)
-    throw new CoreError('E_SURFACE_RANGE', 'compaction plan does not preserve keepFromSeq', {
-      start,
-      end: plan.summarizeRange[1],
-      keepFromSeq: plan.keepFromSeq,
-    })
-  let spanTo = to
-  if (plan.turnPrefixRange) {
-    if (plan.prompts.prefix === undefined)
-      throw new CoreError('E_ENVELOPE', 'turnPrefixRange requires a prefix prompt')
-    const prefixFrom = surface.findIndex((node) => node.seq === plan.turnPrefixRange?.[0])
-    spanTo = surface.findIndex((node) => node.seq === plan.turnPrefixRange?.[1])
-    if (prefixFrom !== to + 1 || spanTo < prefixFrom || spanTo >= keep)
-      throw new CoreError('E_SURFACE_RANGE', 'turnPrefixRange must bridge the main range and kept suffix')
-  }
-  const span = surface.slice(from, spanTo + 1)
-  const end = span.at(-1)?.seq as Seq
-  const seqs = span.map((node) => node.seq)
-  validateReplace({ start, end }, seqs, surface, new Map(surface.map((node) => [node.seq, node.event])))
-  if (!pairClosed(surface, from, to) || (spanTo > to && !pairClosed(surface, to + 1, spanTo)))
-    throw new CoreError('E_SURFACE_RANGE', 'replace range splits a tool call from its result', { start, end })
-  if (!Number.isSafeInteger(plan.maxTokens) || plan.maxTokens < 1)
-    throw new CoreError('E_ENVELOPE', 'compaction maxTokens must be a positive integer')
-  const nodes = surface.slice(from, to + 1)
-  return spanTo === to
-    ? { start, end, seqs, nodes }
-    : { start, end, seqs, nodes, prefixNodes: span.slice(nodes.length) }
-}
-
-async function primaryPrefix(s: SessionImpl): Promise<Prefix> {
-  const t = s.turn
-  const op = s.op()
-  if (!t || !op) throw new CoreError('E_RELATION', 'compaction outside an active turn')
-  if (t.lastPrefix) return t.lastPrefix
-  // A recovery may compact before this process sends a primary request. Build its sections and
-  // disclosure without invoking a per-request patch hook for a request that is never sent.
-  const ctx = s.operationContext()
-  const { merged, disclosed, memoryRevision } = await assembleRequestPrefix(s, ctx, op.meta.triggerSeq)
-  const target = resolveModel(s, 'primary')
-  const out = deriveRequest({
-    ...(memoryRevision === undefined ? {} : { memoryRevision }),
-    kind: 'turn',
-    merged,
-    harnessEntries: [...s.state.registers.harnessEntries.values()].map((entry) => entry.value),
-    surface: [],
-    disclosed,
-    model: {
-      slot: 'primary',
-      ...target,
-      ...(s.preset.model.thinking.primary === undefined ? {} : { thinking: s.preset.model.thinking.primary }),
-    },
-    contract: s.d.contractForModel?.(target) ?? s.d.contract,
-    nonce: t.nonce,
-    envelopeNonceFor: (nodeSeq) => s.envelopeNonceFor(nodeSeq),
-    envelopeCache: s.envelopeCache,
-  })
-  const revision = requestMemoryRevision(out.request)
-  return {
-    ...(revision === undefined ? {} : { memoryRevision: revision }),
-    sections: out.request.sections,
-    tools: out.request.tools,
-    model: out.request.model,
-    ...(out.request.samplingParams ? { samplingParams: out.request.samplingParams } : {}),
-  }
-}
-
-async function summaryRequest(
-  s: SessionImpl,
-  plan: CompactionPlan,
-  segment: SummarySegment,
-  calls: readonly ToolCallForSummary[],
-  target: { route: string; model: string },
-  prefix: Prefix,
-  thinkingOverride?: ThinkingLevel,
-) {
-  const t = s.turn
-  if (!t) throw new CoreError('E_RELATION', 'compaction outside an active turn')
-  const thinking =
-    thinkingOverride ??
-    s.preset.model.thinking.compaction ??
-    (prefix.samplingParams?.thinking as ThinkingLevel | undefined)
-  const receipts = await childReceiptNarrative(s)
-  const system = [plan.prompts.system, receipts].filter(Boolean).join('\n\n')
-  const instruction = segment.wide
-    ? `${SUMMARY_NO_TOOLS_PREAMBLE}\n\n${system}\n\n${segment.instruction}`
-    : segment.instruction
-  let derived = deriveRequest({
-    kind: 'summary',
-    inlineImages: {
-      model: resolvedModelRecord(s.d.provider, target),
-      canRead: false,
-    },
-    merged: { tools: [], sections: [], runtimeContext: {}, conflicts: [] },
-    harnessEntries: [],
-    surface: segment.nodes,
-    disclosed: [],
-    toolCalls: calls,
-    model: {
-      slot: 'compaction',
-      ...target,
-      ...(thinking === undefined ? {} : { thinking }),
-    },
-    contract: Object.freeze({ ...(s.d.contractForModel?.(target) ?? s.d.contract) }),
-    nonce: t.nonce,
-    envelopeNonceFor: (nodeSeq) => s.envelopeNonceFor(nodeSeq),
-    envelopeCache: s.envelopeCache,
-    ...(segment.wide
-      ? {
-          mintedPrefix: prefix,
-          ...(prefix.memoryRevision === undefined ? {} : { memoryRevision: prefix.memoryRevision }),
-        }
-      : {}),
-    summaryPlan: {
-      ...(segment.wide ? {} : { system }),
-      instruction,
-      ...(segment.quote ? { quote: segment.quote } : {}),
-    },
-  })
-  derived = applyBeforeRequestPatches(derived, [
-    { ext: 'core:compaction', patch: { maxTokens: plan.maxTokens } },
-  ])
-  const wire = toProviderRequest(derived.request, {
-    sessionKey: s.key,
-    derivedHash: derived.header.derived_hash,
-  })
-  return { derived, wire }
-}
-
-function summaryInputTokens(wire: Awaited<ReturnType<typeof summaryRequest>>['wire']): number {
-  return (
-    boundWireInputTokens(wire) ??
-    estimateTokens(canonicalJson({ system: wire.system, tools: wire.tools, messages: wire.messages }))
-  )
-}
-
-async function summarize(
-  s: SessionImpl,
-  plan: CompactionPlan,
-  segment: SummarySegment,
-  calls: readonly ToolCallForSummary[],
-  target: { route: string; model: string },
-  prefix: Prefix,
-  // Only the length-cutoff retry overrides the configured thinking level.
-  thinkingOverride?: ThinkingLevel,
-  signal = s.ac.signal,
-): Promise<SummaryResult> {
-  const { wire } = await summaryRequest(s, plan, segment, calls, target, prefix, thinkingOverride)
-  const inputTokens = summaryInputTokens(wire)
-  const projected = await s.d.runtime.billingProjected({
-    tokensEstimate: inputTokens + plan.maxTokens,
-    model: target.model,
-  })
-  const tree = await reserveTreeBudget(s, projected.credits, target, inputTokens + plan.maxTokens)
-  if (tree !== 'ok')
-    return {
-      text: '',
-      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      creditSource: 'estimated',
-      failed: true,
-      failure: 'budget',
-    }
-  let text = ''
-  let usage: Extract<InferenceEvent, { type: 'usage' }> | undefined
-  let failure: SummaryFailure | undefined
-  let cause: string | undefined
-  const fail = (kind: SummaryFailure, why: string) => {
-    failure ??= kind
-    cause ??= why
-  }
-  try {
-    for await (const event of s.d.provider.infer(wire, {
-      signal,
-      toolNames: segment.wide ? prefix.tools.map((tool) => tool.name) : [],
-    })) {
-      if (event.type === 'text_delta') text += event.delta
-      else if (event.type === 'usage') usage = event
-      // A reasoning model can spend the whole budget before (or while) writing: an empty summary
-      // fails anyway, but a cut-off one would otherwise replace the history it was meant to keep.
-      else if (event.type === 'done' && event.reason === 'length')
-        fail('permanent', 'summary stopped at the max_tokens cap')
-      else if (event.type === 'toolcall_end') fail('permanent', 'summary called a tool')
-      else if (event.type === 'deviation') fail('permanent', 'summary deviated from the contract')
-      else if (event.type === 'error') {
-        // Only a closed-shape code travels on: it ends up in a ledger row and an assistant message.
-        const code = /^[A-Z0-9_]{1,32}$/.test(event.code) ? event.code : 'UNKNOWN'
-        fail(classify(event.code, event.retryable), `summary provider error ${code}`)
-        break
-      }
-    }
-  } catch (error) {
-    // A throw is treated as transport trouble unless it names a code that says otherwise.
-    const raw = (error as { code?: unknown } | null)?.code
-    const code = typeof raw === 'string' && /^[A-Z0-9_]{1,32}$/.test(raw) ? raw : undefined
-    fail(classify(code, true), code ? `summary provider error ${code}` : 'summary transport failed')
-  }
-  if (signal.aborted) failure = 'cancelled'
-  else if (text.length === 0) fail('permanent', 'summary was empty')
-  const tokens = usage?.tokens ?? {
-    input: 0,
-    output: estimateTokens(text),
-    cacheRead: 0,
-    cacheWrite: 0,
-  }
-  await settleTreeSpend(s, usage?.credits, (s.lastSeq + 1) as Seq)
-  return {
-    text,
-    tokens,
-    ...(usage?.credits !== undefined ? { credits: usage.credits } : {}),
-    creditSource: usage?.creditSource ?? 'estimated',
-    ...(usage?.billing ? { billing: usage.billing } : {}),
-    failed: failure !== undefined,
-    ...(failure ? { failure } : {}),
-    ...(cause ? { cause } : {}),
-  }
-}
-
-// Levels at or below 'low' would not free up any more of the summary budget for text after
-// reasoning than a 'low' retry already would, so a max_tokens-cap cutoff at one of these is not
-// retried — it would just repeat the same outcome.
-const LOW_OR_BELOW_THINKING: ReadonlySet<ThinkingLevel> = new Set(['off', 'minimal', 'low'])
-
-/** Combines two real inference attempts' cost into one record — both consumed real budget, so
- * neither is dropped even though only the second attempt's text/outcome is kept. */
-function mergeSummaryResults(first: SummaryResult, retry: SummaryResult): SummaryResult {
-  const attempts = [first, retry]
-  const tokens = attempts.reduce((sum, r) => addTokens(sum, r.tokens), zeroTokens())
-  const credits = attempts.reduce<number | undefined>(
-    (sum, r) => (r.credits === undefined ? sum : (sum ?? 0) + r.credits),
-    undefined,
-  )
-  const creditSource = attempts.every((r) => r.creditSource === 'gateway') ? 'gateway' : 'estimated'
-  const billings = attempts.flatMap((r) => (r.billing ? [r.billing] : []))
-  const billing: Billing | undefined =
-    billings.length === 0
-      ? undefined
-      : {
-          usdMicros: billings.reduce((sum, value) => sum + value.usdMicros, 0),
-          source: billings.every((value) => value.source === 'gateway') ? 'gateway' : 'estimated',
-          subscription: billings.every((value) => value.subscription),
-        }
-  return {
-    ...retry,
-    tokens,
-    ...(credits === undefined ? {} : { credits }),
-    creditSource,
-    ...(billing ? { billing } : {}),
-  }
-}
-
-/**
- * Runs one summary request; if it fails specifically because it hit the max_tokens cap while
- * reasoning, retries exactly once at the lowest thinking level. Any other failure, a retry that
- * fails for a different reason, or a second cap hit is returned as-is — never a second retry, so a
- * model that genuinely cannot summarize this segment fails in one extra step instead of looping.
- */
-async function summarizeWithRetry(
-  s: SessionImpl,
-  plan: CompactionPlan,
-  segment: SummarySegment,
-  calls: readonly ToolCallForSummary[],
-  target: { route: string; model: string },
-  prefix: Prefix,
-  signal = s.ac.signal,
-): Promise<SummaryResult> {
-  const first = await summarize(s, plan, segment, calls, target, prefix, undefined, signal)
-  if (first.cause !== 'summary stopped at the max_tokens cap') return first
-  const configured = s.preset.model.thinking.compaction
-  if (configured !== undefined && LOW_OR_BELOW_THINKING.has(configured)) return first
-  const retry = await summarize(s, plan, segment, calls, target, prefix, 'low', signal)
-  return mergeSummaryResults(first, retry)
-}
+import {
+  type BeforeCompactPayload,
+  type CompactionPlan,
+  type CompactPayload,
+  callArgsTokens,
+  containsString,
+  FAILURE_ORDER,
+  hookSurface,
+  nodeTokens,
+  type Prefix,
+  primaryPrefix,
+  SUMMARY_NO_TOOLS_PREAMBLE,
+  type SummaryFailure,
+  type SummarySegment,
+  summarizeWithRetry,
+  summaryInputTokens,
+  summaryRange,
+  summaryRequest,
+  type ToolCallForSummary,
+} from './compaction-summary.js'
 
 function failedPhase(phase: Extract<OpStatePhase, { kind: 'compaction' }>, message: string): OpStatePhase {
   return phase.reason === 'overflow'
@@ -491,8 +74,8 @@ type Attempt = {
   tokensBefore: number
 }
 
-/** The model call a compaction made: its effect, still to be settled, and what it cost. */
-type SummaryCall = { effect: ReturnType<SessionImpl['effects']['start']>; spend: CostLedger }
+/** The orchestration effect brackets replacement; each model attempt settles its own cost. */
+type SummaryCall = { effect: ReturnType<SessionImpl['effects']['start']> }
 
 // Consecutive transient threshold failures before the elided compaction replaces another retry.
 const MAX_TRANSIENT_FAILURES = 2
@@ -617,7 +200,6 @@ async function settleFailed(
   const current = s.op() as OpStateObj
   await s.transition(
     [
-      s.ev('cost/ledger', call.spend),
       call.effect.settle(outcome),
       s.ev(
         'x/core/compaction-failed',
@@ -636,8 +218,8 @@ async function settleFailed(
 }
 
 /**
- * Replaces the span with the elided record in place of a model summary: the failed call's spend and
- * error settlement, when there was a call, land in the same transaction. When even the elided record
+ * Replaces the span with an elided record and settles the orchestration effect atomically.
+ * Each attempted model request has already recorded its own spend and settlement. When even the elided record
  * is not smaller than the span, the failure it stood in for is recorded as before.
  */
 async function elide(
@@ -658,7 +240,7 @@ async function elide(
   }
   const id = call ? { effectId: call.effect.effectId } : {}
   const events: EventInput[] = [
-    ...(call ? [s.ev('cost/ledger', call.spend), call.effect.settle('error')] : []),
+    ...(call ? [call.effect.settle('error')] : []),
     beginEvent(s, a, id, { mode: 'elided', cause }),
     replaceEvent(s, a, text, 'system'),
     s.ev('x/core/compaction-end', { ...id, tokensAfter: tokensAfter(a, text) }, { ignorable: true }),
@@ -726,32 +308,15 @@ function engineModel(
       let settled = false
       try {
         const result = await summarizeWithRetry(s, plan, segment, selectedCalls, target, prefix, callSignal)
-        const spend: CostLedger = {
-          purpose: 'compaction',
-          effectId: effect.effectId,
-          model: target.model,
-          tokens: result.tokens,
-          creditSource: result.creditSource,
-          ...(result.credits === undefined ? {} : { credits: result.credits }),
-          ...(result.billing ? { billing: result.billing } : {}),
-          ...(callSignal.aborted ? { interrupted: true } : {}),
-        }
-        const op = s.op() as OpStateObj
-        const recorded = await s.d.runtime.billingRecord({
-          ...spend,
-          sessionKey: s.key,
-          lane: s.lane,
-          turn: op.meta.turn,
-          step: op.step,
-        })
-        if (!recorded && s.turn) s.turn.ledgerFailed = true
-        await s.d.log.append([
-          s.ev('cost/ledger', spend),
-          effect.settle(callSignal.aborted ? 'aborted' : result.failed ? 'error' : 'ok'),
-        ])
+        const recorded = !s.turn?.ledgerFailed
+        await s.d.log.append([effect.settle(callSignal.aborted ? 'aborted' : result.failed ? 'error' : 'ok')])
         settled = true
         callSignal.throwIfAborted()
         if (!recorded) throw new CoreError('E_ENVELOPE', 'engine summary usage could not be recorded')
+        if (result.reservationRefused) {
+          await s.endTurn('budget')
+          throw new CoreError('E_BUDGET', 'engine summary budget refused')
+        }
         if (result.failed) throw new CoreError('E_ENVELOPE', result.cause ?? 'engine summary request failed')
         return result.text
       } finally {
@@ -905,6 +470,8 @@ export async function runCompaction(s: SessionImpl, signal = s.ac.signal): Promi
       throw new CoreError('E_ENVELOPE', 'invalid compaction engine output')
     plan = output?.plan ?? null
   } catch (error) {
+    if (!s.op() && error instanceof CoreError && error.code === 'E_BUDGET')
+      return { phase: 'terminal', reason: 'budget' }
     return leaveWithoutEffect(s, s.op() as OpStateObj, error instanceof Error ? error.message : String(error))
   }
   if (!plan) {
@@ -1043,6 +610,7 @@ export async function runCompaction(s: SessionImpl, signal = s.ac.signal): Promi
   for (const candidate of candidates) {
     const wide: SummarySegment = {
       nodes: candidate.wideNodes,
+      narrowNodes: candidate.nodes,
       instruction: candidate.instruction,
       wide: true,
       ...('quote' in candidate ? { quote: candidate.quote, quoteEstimate: candidate.quoteEstimate } : {}),
@@ -1082,47 +650,25 @@ export async function runCompaction(s: SessionImpl, signal = s.ac.signal): Promi
   )
 
   const selected = plan
-  const results = await Promise.all(
+  const attempts = await Promise.allSettled(
     segments.map((segment) => summarizeWithRetry(s, selected, segment, calls, target, prefix, signal)),
   )
-  const tokens = results.reduce((sum, result) => addTokens(sum, result.tokens), zeroTokens())
-  const credits = results.reduce<number | undefined>(
-    (sum, result) => (result.credits === undefined ? sum : (sum ?? 0) + result.credits),
-    undefined,
-  )
-  const creditSource = results.every((result) => result.creditSource === 'gateway') ? 'gateway' : 'estimated'
-  const billings = results.flatMap((result) => (result.billing ? [result.billing] : []))
-  const billing =
-    billings.length === 0
-      ? undefined
-      : {
-          usdMicros: billings.reduce((sum, value) => sum + value.usdMicros, 0),
-          source: billings.every((value) => value.source === 'gateway')
-            ? ('gateway' as const)
-            : ('estimated' as const),
-          subscription: billings.every((value) => value.subscription),
-        }
-  const spend: CostLedger = {
-    purpose: 'compaction',
-    effectId: effect.effectId,
-    tokens,
-    ...(credits === undefined ? {} : { credits }),
-    creditSource,
-    model: target.model,
-    ...(billing ? { billing } : {}),
-    ...(signal.aborted ? { interrupted: true } : {}),
+  const rejected = attempts.find((attempt) => attempt.status === 'rejected')
+  if (rejected?.status === 'rejected') {
+    await s.append([effect.settle(signal.aborted ? 'aborted' : 'error')])
+    throw rejected.reason
   }
-  const record = await s.d.runtime.billingRecord({
-    ...spend,
-    sessionKey: s.key,
-    lane: s.lane,
-    turn: op.meta.turn,
-    step: op.step,
-  })
-  if (!record && s.turn) s.turn.ledgerFailed = true
-  const call = { effect, spend }
+  const results = attempts.flatMap((attempt) => (attempt.status === 'fulfilled' ? [attempt.value] : []))
+  const call = { effect }
+  if (!signal.aborted && results.some((result) => result.reservationRefused)) {
+    await s.append([effect.settle('error')])
+    await s.endTurn('budget')
+    return { phase: 'terminal', reason: 'budget' }
+  }
 
-  const failure = FAILURE_ORDER.find((kind) => results.some((result) => result.failure === kind))
+  const failure = signal.aborted
+    ? 'cancelled'
+    : FAILURE_ORDER.find((kind) => results.some((result) => result.failure === kind))
   if (failure) {
     const cause = (results.find((result) => result.failure === failure) ?? results[0])?.cause
     const message = signal.aborted
@@ -1171,7 +717,6 @@ export async function runCompaction(s: SessionImpl, signal = s.ac.signal): Promi
   const events: EventInput[] = [
     beginEvent(s, attempt, { effectId: effect.effectId }),
     replaceEvent(s, attempt, summary, 'model'),
-    s.ev('cost/ledger', spend),
     effect.settle('ok'),
     s.ev(
       'x/core/compaction-end',

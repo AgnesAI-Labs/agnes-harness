@@ -76,7 +76,14 @@ describe('createSession', () => {
     expect(s.key).toMatch(/^agnes:local:local-dev:cli:workspace:[0-9a-f]{16}$/)
     const start = (await s.scan({ type: 'session/start', limit: 1 }))[0]
     // `preset` is the recipe name - the shape session-v1.json requires and core already writes.
-    expect(start?.data).toMatchObject({ preset: 'standard', resolvedProfileHash: host.profile.hash })
+    expect(start?.data).toMatchObject({
+      preset: 'standard',
+      resolvedProfileHash: host.profile.hash,
+      resolvedPresetHash: expect.stringMatching(/^sha256-[0-9a-f]{64}$/),
+    })
+    expect((start?.data as { resolvedPresetHash?: string } | undefined)?.resolvedPresetHash).not.toBe(
+      host.profile.hash,
+    )
     expect(start?.actor).toMatchObject({ role: 'owner', org: 'local' })
     await host.close()
   })

@@ -8,6 +8,15 @@ export type ValidationError = {
 }
 export type ValidationResult<T> = { ok: true; value: T } | { ok: false; errors: ValidationError[] }
 
+/** Describe the first field failure without serializing the rejected value. */
+export function describeValidationErrors(errors: readonly ValidationError[]): string {
+  const first = errors[0]
+  if (!first) return 'invalid'
+  const location = first.code === 'MISSING' && first.key ? `${first.path}/${first.key}` : first.path
+  const path = location.length > 200 ? `${location.slice(0, 200)}…` : location
+  return `${path ? `${path} ` : ''}${first.message}${errors.length > 1 ? ` (+${errors.length - 1} more)` : ''}`
+}
+
 function classify(e: ValueError): ValidationError {
   const key = e.path.split('/').pop() || undefined
   // Measured against TypeBox 0.34.33: for ObjectRequiredProperty, `e.path` points at the missing key

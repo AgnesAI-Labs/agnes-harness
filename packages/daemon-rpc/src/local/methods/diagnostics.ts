@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
-import { open } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { lstat, open } from 'node:fs/promises'
 import { release } from 'node:os' // guards-allow-platform: diagnostics report
 import { join } from 'node:path'
 import {
@@ -12,6 +13,7 @@ import { memoryPrivateEvent } from '@agnes/extension-api'
 import { redactDetail } from '@agnes/host'
 import { administerObservability, observabilityHome, readDiagnosticJournal } from '@agnes/observability'
 import {
+  type DiagnosticsCollectParams,
   type DiagnosticsCollectResult,
   type DiagnosticsEventsParams,
   type DiagnosticsEventsResult,
@@ -56,10 +58,7 @@ function redactLine(line: string): string {
     const row = JSON.parse(line) as unknown
     if (row === null || typeof row !== 'object' || Array.isArray(row)) throw new TypeError('not a row')
     const record = row as Record<string, unknown>
-    return JSON.stringify({
-      ...record,
-      detail: redactDetail(record.detail as Record<string, unknown> | undefined),
-    })
+    return JSON.stringify(redactDetail(record))
   } catch {
     return JSON.stringify({ at: null, kind: 'unparseable' })
   }
@@ -68,10 +67,19 @@ function redactLine(line: string): string {
 async function readTail(dataDir: string | undefined, name: Log['name']): Promise<Log> {
   const missing: Log = { name, size: 0, text: '', truncated: false, missing: true }
   if (dataDir === undefined) return missing
-  let fh: Awaited<ReturnType<typeof open>>
+  let fh: Awaited<ReturnType<typeof open>> | undefined
   try {
-    fh = await open(join(dataDir, 'audit', name), 'r')
+    const path = join(dataDir, 'audit', name)
+    const before = await lstat(path)
+    if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1) return missing
+    fh = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0))
+    const after = await fh.stat()
+    if (!after.isFile() || after.nlink !== 1 || after.dev !== before.dev || after.ino !== before.ino) {
+      await fh.close()
+      return missing
+    }
   } catch (error) {
+    await fh?.close().catch(() => undefined)
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return missing
     throw error
   }
@@ -258,27 +266,28 @@ export function registerDiagnostics(
     }
   })
 
-  endpoint.register(
-    '_agnes/v1/diagnostics.collect',
-    async (_params, c): Promise<DiagnosticsCollectResult> => {
-      localOwner(c)
-      const logs: Log[] = []
-      for (const name of LOGS) logs.push(await readTail(deps.dataDir, name))
-      return {
-        collectedAt: new Date(c.clock()).toISOString(),
-        agh: { version: typeof AGNES_VERSION === 'string' ? AGNES_VERSION : 'dev' },
-        runtime: {
-          platform: process.platform, // guards-allow-platform: diagnostics report // guards-allow-platform: diagnostics report
-          arch: process.arch, // guards-allow-platform: diagnostics report // guards-allow-platform: diagnostics report
-          osRelease: release(), // guards-allow-platform: diagnostics report
-          node: process.versions.node,
-          pid: process.pid,
-          uptimeMs: Math.round(process.uptime() * 1000),
-        },
-        logs,
-      }
-    },
-  )
+  endpoint.register('_agnes/v1/diagnostics.collect', async (params, c): Promise<DiagnosticsCollectResult> => {
+    localOwner(c)
+    const logs: Log[] = []
+    for (const name of [
+      ...LOGS,
+      ...((params as DiagnosticsCollectParams).runtimeLog ? ['runtime.jsonl' as const] : []),
+    ])
+      logs.push(await readTail(deps.dataDir, name))
+    return {
+      collectedAt: new Date(c.clock()).toISOString(),
+      agh: { version: typeof AGNES_VERSION === 'string' ? AGNES_VERSION : 'dev' },
+      runtime: {
+        platform: process.platform, // guards-allow-platform: diagnostics report // guards-allow-platform: diagnostics report
+        arch: process.arch, // guards-allow-platform: diagnostics report // guards-allow-platform: diagnostics report
+        osRelease: release(), // guards-allow-platform: diagnostics report
+        node: process.versions.node,
+        pid: process.pid,
+        uptimeMs: Math.round(process.uptime() * 1000),
+      },
+      logs,
+    }
+  })
 
   endpoint.register('_agnes/v1/diagnostics.events', async (params, c): Promise<DiagnosticsEventsResult> => {
     const { sessionId, afterSeq, limit, maxBytes } = params as DiagnosticsEventsParams

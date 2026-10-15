@@ -56,15 +56,14 @@ import { renameWriteThrough, windowsEnsurePrivateDirectorySync } from '@agnes/sy
 import { deploymentFetch, ensureDeploymentProxy } from '@agnes/system-node/deployment-network'
 import { subscriptionCredentials } from './adapters/codex-credentials.js'
 import {
-  CredentialStoreError,
   createCredentialStore,
   isSubscriptionCredential,
   type StoredCredential,
 } from './adapters/credential-store.js'
 import { createWin32Platform } from './adapters/platform.js'
-import { createFileAudit } from './audit.js'
 import { type CodexLoginDependencies, createCodexLogin } from './codex-login.js'
 import { automaticFastModel } from './configuration-auto-slots.js'
+import { configurationCredentialFailure } from './configuration-credential-failure.js'
 import { ConfigurationError, type ConfigurationErrorCode } from './configuration-error.js'
 import {
   applyModelConfiguration,
@@ -76,6 +75,7 @@ import {
 
 type ConfigurationProvider = ApiKeyProviderRegistryEntry | SubscriptionProviderEntry
 
+export { CONFIGURATION_ERROR_CODES } from './configuration-error.js'
 export { ConfigurationError, type ConfigurationErrorCode }
 
 export interface ConfigurationService {
@@ -675,37 +675,8 @@ export function createConfigurationService(
     }
   }
 
-  const credentialFailure = (error: unknown, operation: 'read' | 'write'): ConfigurationError => {
-    const failure = error instanceof CredentialStoreError ? error : undefined
-    try {
-      createFileAudit(join(home, 'data', 'audit', 'configuration.jsonl')).write({
-        kind: 'daemon.request_failed',
-        detail: {
-          operation,
-          errorClass: failure ? 'CredentialStoreError' : 'UnknownError',
-          errorCode: failure?.code ?? 'UNKNOWN',
-          reason: failure?.reason,
-          osCode: failure?.osCode,
-          path: failure?.path ?? fileSecretsDir(home),
-        },
-      })
-    } catch {
-      /* Audit failure must not replace the refusal. */
-    }
-    return new ConfigurationError(
-      failure?.osCode === 'ENOSPC'
-        ? 'CONFIG_CREDENTIAL_NO_SPACE'
-        : failure?.osCode === 'EROFS'
-          ? 'CONFIG_CREDENTIAL_READ_ONLY'
-          : failure &&
-              (['mode', 'owner'].includes(failure.reason) ||
-                ['EPERM', 'EACCES'].includes(failure.osCode ?? ''))
-            ? 'CONFIG_CREDENTIAL_PERMISSIONS'
-            : failure && !['io', 'enforcement-unavailable'].includes(failure.reason)
-              ? 'CONFIG_CREDENTIAL_INVALID'
-              : 'CONFIG_CREDENTIAL_STORE',
-    )
-  }
+  const credentialFailure = (error: unknown, operation: 'read' | 'write') =>
+    configurationCredentialFailure(home, error, operation)
 
   const loadState = async (): Promise<StoredConfiguration | undefined> => {
     if (loading) return loading

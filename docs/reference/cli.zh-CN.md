@@ -37,7 +37,8 @@ Print 的 `--park`、`--chunks`、`--meta` 控制等待和输出；退出码见[
 | `agh daemon start\|status\|stop` | 显式后台生命周期 |
 | `agh serve [--home DIR] [--profile NAME] [--cwd DIR] [--port N]` | 本地 Web |
 | `agh profile list` / `inspect NAME --resolved` / `trust DEPLOY_DIR` | 配置检查与部署信任 |
-| `agh doctor [platform\|network\|provider\|storage\|profile\|extensions\|daemon\|binary\|code-runtime] --json` | 诊断 |
+| `agh doctor [platform\|network\|provider\|storage\|credentials\|profile\|extensions\|daemon\|binary\|code-runtime] --json` | 诊断 |
+| `agh doctor credentials --json` | 只读检查目标、权限模式与安全状态；不读取凭据内容、不修改权限 |
 | `agh doctor provider --probe` | 明确发起最小推理，可能计费 |
 | `agh doctor subagents [--repair] --json` | 子 agent 检查；repair 会修改状态 |
 | `agh consent DISABLED\|LOCAL\|ANON\|FULL` | 保存遥测同意档位；不等于已验证所有外部采集 |

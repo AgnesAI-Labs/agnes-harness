@@ -653,6 +653,7 @@ export type { ValidationError, ValidationResult } from './validate.js'
 export {
   decodeAttachmentData,
   decodeSafeImages,
+  describeValidationErrors,
   isDateTime,
   modelImageInputError,
   toRpcError,

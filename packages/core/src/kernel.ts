@@ -182,6 +182,7 @@ export type SessionOptions = {
   actor: Actor
   preset?: PresetView
   resolvedProfileHash: string | null
+  resolvedPresetHash?: string
   /** The authorization-relevant part of the profile; durable approval grants bind to it, not to the whole hash. */
   policyDigest?: string | null
   seams?: Partial<SeamImplementations>
@@ -470,6 +471,7 @@ export class Kernel {
         agnesVersion: this.o.agnesVersion ?? '0.0.0',
         preset: preset.name,
         resolvedProfileHash: so.resolvedProfileHash,
+        ...(so.resolvedPresetHash ? { resolvedPresetHash: so.resolvedPresetHash } : {}),
         writerRunId: so.writerRunId,
         lane,
         loop: selection,
@@ -639,6 +641,7 @@ export class Kernel {
         clock: this.clock,
         actor: so.actor,
         resolvedProfileHash: so.resolvedProfileHash,
+        ...(so.resolvedPresetHash ? { resolvedPresetHash: so.resolvedPresetHash } : {}),
         ...(so.policyDigest ? { policyDigest: so.policyDigest } : {}),
         ...(so.imported ? { imported: so.imported } : {}),
         cwd: so.cwd,

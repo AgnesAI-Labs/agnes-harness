@@ -2,6 +2,7 @@ import type { AssistantMessage } from '@earendil-works/pi-ai'
 import { describe, expect, it, vi } from 'vitest'
 import { classifyPiError } from '../src/adapters/pi/errors.js'
 import { PiAdapter } from '../src/adapters/pi/index.js'
+import { networkEvent, networkFailure, watchResponse } from '../src/adapters/pi/network.js'
 import { AMBIENT_CREDENTIAL_APIS } from '../src/adapters/pi/wire.js'
 import type { WireEvent } from '../src/index.js'
 import { memoryRetryLedger } from '../src/retry.js'
@@ -53,6 +54,42 @@ describe('classifyPiError', () => {
     // The provider's own words are never forwarded; a key quoted back in an error message would
     // otherwise land in an event that is stored and displayed.
     expect(c.message).not.toContain('sk-abc')
+  })
+
+  it('retains only allowlisted network facts from nested causes and body failures', async () => {
+    const raw = Object.assign(new Error('private URL and credential'), { code: 'ECONNRESET' })
+    const fact = networkFailure(new Error('fetch failed', { cause: raw }), 'connect')
+    expect(fact).toEqual({ phase: 'connect', code: 'ECONNRESET', retryable: true })
+    if (!fact) throw new Error('expected transport evidence')
+    expect(networkEvent(fact)).toMatchObject({
+      code: 'TRANSPORT',
+      retryable: true,
+      message: 'network phase=connect code=ECONNRESET',
+    })
+    expect(
+      networkFailure({ code: 'UNTRUSTED', cause: { code: 'CERT_HAS_EXPIRED' } }, 'body')?.retryable,
+    ).toBe(false)
+    expect(networkFailure(new Error('private unclassified'), 'stream')).toBeUndefined()
+    expect(networkFailure(new AggregateError([{ code: 'ETIMEDOUT' }]), 'connect')).toMatchObject({
+      code: 'ETIMEDOUT',
+      retryable: true,
+    })
+    let evidence: unknown
+    const response = watchResponse(
+      new Response(
+        new ReadableStream({
+          pull(controller) {
+            controller.error(raw)
+          },
+        }),
+      ),
+      (error) => {
+        evidence = networkFailure(error, 'body')
+      },
+    )
+    await expect(response.text()).rejects.toBe(raw)
+    expect(evidence).toEqual({ phase: 'body', code: 'ECONNRESET', retryable: true })
+    expect(JSON.stringify(evidence)).not.toContain('private')
   })
 
   it('maps context overflow and abort', () => {
@@ -116,6 +153,33 @@ const drain = async (
   return out
 }
 const slow = { firstToken: 5000, total: 5000 }
+
+it('bounds nested transport retries and stops before a replacement when cancelled', async () => {
+  for (const cancelled of [false, true]) {
+    const ac = new AbortController()
+    let attempts = 0
+    const broken = async function* () {
+      attempts++
+      yield* []
+      throw new Error('private transport body', {
+        cause: Object.assign(new Error('private'), { code: 'ECONNRESET' }),
+      })
+    } as StreamImpl
+    const out = await drain(
+      adapter({
+        streamImpl: broken,
+        maxRetries: 1,
+        sleep: async () => {
+          if (cancelled) ac.abort()
+        },
+      }),
+      { signal: ac.signal, timeoutMs: slow },
+    )
+    expect(attempts).toBe(cancelled ? 1 : 2)
+    expect(out.at(-1)).toMatchObject({ type: 'error', code: cancelled ? 'ABORTED' : 'TRANSPORT' })
+    expect(JSON.stringify(out)).not.toContain('private')
+  }
+})
 
 describe('timeouts and cancellation', () => {
   // The total deadline is set far out of reach, so only the first-token one can end this. With both

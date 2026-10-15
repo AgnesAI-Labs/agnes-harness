@@ -447,6 +447,7 @@ export async function createSession(
     actor,
     preset: view,
     resolvedProfileHash: profile.hash,
+    resolvedPresetHash: preset.hash,
     policyDigest: policyDigest(profile),
     cwd,
     writerRunId: opts.writerRunId ?? randomUUID(),
