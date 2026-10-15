@@ -158,9 +158,10 @@ it('round-trips current-product rows and original bytes through the public artif
             ),
           ).toMatchObject({ ok: true })
         }
+      const bytesStore = createLocalArtifactReadStore({ dataDir: dir, maxArtifactBytes: 1024 * 1024 })
       const read = createAuthenticatedArtifactReadHandler({
         authority: createArtifactReadAuthorityPort(authority),
-        artifacts: createLocalArtifactReadStore({ dataDir: dir, maxArtifactBytes: 1024 * 1024 }),
+        artifacts: { get: bytesStore.get, readRange: bytesStore.readRange },
         limits: { maxArtifactBytes: 1024 * 1024, maxResponseBytes: 1024 * 1024 },
         operationTimeoutMs: 1000,
       })

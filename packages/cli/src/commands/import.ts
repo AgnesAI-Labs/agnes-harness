@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { importSession, OLDER_EXPORT_FORMAT } from '@agnes/bridges/convert'
 import { SessionAdmissionDenied } from '@agnes/daemon/local'
-import type { AttachmentReceipt, AttachmentScope } from '@agnes/extension-api'
 import type { Host, HostSession } from '@agnes/host'
 import type { EventEnvelope, SessionStart } from '@agnes/protocol'
 import { CommandError, ExitCode, UsageError } from '../errors.js'
@@ -163,7 +162,10 @@ export async function importFile(parsed: ParsedArgs, deps: ImportDeps): Promise<
       throw new CommandError(`import target ${key} is not fresh (last sequence ${session.lastSeq})`)
     let written = 0
     const attachments = session.d.runtime.attachmentStore()
-    const receipts: Array<{ scope: AttachmentScope; receipt: AttachmentReceipt }> = []
+    const receipts: Array<{
+      scope: { sessionKey: string; lane: string }
+      receipt: Awaited<ReturnType<NonNullable<typeof attachments>['store']>>
+    }> = []
     try {
       if (originals.length && !attachments) throw new Error('native import attachment storage unavailable')
       for (const { lane, ref } of originals) {
