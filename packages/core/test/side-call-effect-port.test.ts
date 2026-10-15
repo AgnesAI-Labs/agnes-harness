@@ -149,6 +149,22 @@ function settlementRows(session: SessionImpl, effectId: string, terminal: SideCa
   return { cost, settled }
 }
 
+/** A terminal row built by hand, so a shape the port itself refuses can still reach `write`. */
+const forgedTerminal = (session: SessionImpl, identity: SideCallEffectBinding, terminal: unknown) =>
+  session.ev(
+    'x/core/side-call-terminal',
+    {
+      version: 1,
+      effectId: identity.effectId,
+      bindingHash: sha256Hex(canonicalJson(identity)),
+      terminal,
+      terminalHash: sha256Hex(canonicalJson(terminal)),
+    },
+    { ignorable: true },
+  )
+const external = (row: EventInput) =>
+  ({ ...row, origin: 'external:fixture', trust: 'untrusted' }) as EventInput
+
 function commitRows(
   session: SessionImpl,
   port: ReturnType<typeof createSideCallEffectPort>,
@@ -258,6 +274,7 @@ describe('side-call ledger rows', () => {
       { ...unknownTerminal, code: 'AUTH' },
       { ...unknownTerminal, outcome: 'ok' },
       { ...unknownTerminal, reason: 'driver_failed' },
+      { ...unknownTerminal, outcome: 'unknown', reason: 'driver_outcome_unknown' },
       { ...unknownTerminal, latencyMs: -1 },
       {
         kind: 'known_spend',
@@ -458,6 +475,16 @@ describe('side-call ledger rows', () => {
     })
     await expect(readSideCallBinding(session, alteredSeq, altered.effectId)).resolves.toBeUndefined()
 
+    for (const [name, swapped] of [
+      ['lane', { lane: 'other' }],
+      ['key', { sessionKey: 'other-session' }],
+    ] as const) {
+      const foreign = binding(session.key, { effectId: `side:foreign-${name}`, ...swapped })
+      const bindingHash = sha256Hex(canonicalJson(foreign))
+      const seq = await append(foreign.effectId, { version: 1, binding: foreign, bindingHash, audit })
+      await expect(readSideCallBinding(session, seq, foreign.effectId)).resolves.toBeUndefined()
+    }
+
     const fresh = createSideCallEffectPort(session)
     await expect(fresh.status('forged')).resolves.toEqual({ status: 'absent', invocationId: 'forged' })
     await expect(fresh.status('mismatched')).rejects.toMatchObject({ code: 'E_RELATION' })
@@ -601,6 +628,76 @@ describe('side-call ledger rows', () => {
     await kernel.close()
   })
 
+  it('refuses a settlement that records a live call as unknown', async () => {
+    const { kernel, session } = await setup('side-live-unknown')
+    const port = createSideCallEffectPort(session)
+    const identity = binding(session.key)
+    await port.begin(identity, audit)
+    const unknown = { ...unknownTerminal, outcome: 'unknown', reason: 'driver_outcome_unknown' }
+    const { cost, settled } = settlementRows(session, identity.effectId, unknown as SideCallEffectTerminal)
+    const before = session.lastSeq
+    const batch = [cost, settled, forgedTerminal(session, identity, unknown)]
+    await expect(port.write(batch)).rejects.toMatchObject({ code: 'E_ENVELOPE' })
+    expect(session.lastSeq).toBe(before)
+    await expect(port.status('call-1')).resolves.toEqual({ status: 'in-flight', invocationId: 'call-1' })
+    await kernel.close()
+  })
+
+  it('leaves a call in flight when its settlement or receipt rows lack Core authority', async () => {
+    const { kernel, session } = await setup('side-forged')
+    const port = createSideCallEffectPort(session)
+    const identity = binding(session.key)
+    const intentSeq = await port.begin(identity, audit)
+    const status = () => createSideCallEffectPort(session).status('call-1')
+    const inFlight = { status: 'in-flight', invocationId: 'call-1' }
+    const { cost, settled } = settlementRows(session, identity.effectId, okTerminal)
+    await session.append([cost, settled, port.terminalRow(identity, okTerminal)].map(external))
+    await expect(status()).resolves.toEqual(inFlight)
+    const receipt = session.ev(
+      'x/core/late-effect-receipt',
+      { version: 1, effects: [settled.data], receipts: [] },
+      { ignorable: true, sourceEventSeqs: [intentSeq] },
+    )
+    await session.append([external(receipt)])
+    await expect(status()).resolves.toEqual(inFlight)
+    await session.append([
+      session.ev('effect/intent', { effectId: identity.effectId, kind: 'side-call', replay: 'never' }),
+      session.ev(
+        'x/core/side-call-intent',
+        { version: 1, binding: identity, bindingHash: sha256Hex(canonicalJson(identity)), audit },
+        { ignorable: true },
+      ),
+    ])
+    await expect(status()).rejects.toMatchObject({ code: 'E_RELATION' })
+    await kernel.close()
+  })
+
+  it('checks the cost row it keeps when revocation turns a settlement into a late receipt', async () => {
+    const { kernel, session } = await setup('side-revoked-cost')
+    const scoped = sessionForLoop(session)
+    const port = createSideCallEffectPort(scoped)
+    const identity = binding(session.key)
+    const intentSeq = await port.begin(identity, audit)
+    const { cost, settled } = settlementRows(session, identity.effectId, okTerminal)
+    const changed = (data: object) => ({ ...cost, data: { ...(cost.data as object), ...data } })
+    scoped.loopScope.revoke()
+    const before = session.lastSeq
+    for (const row of [
+      changed({ purpose: 'inference' }),
+      changed({ model: 'other-model' }),
+      changed({ route: 'other-route' }),
+      external(cost),
+    ])
+      await expect(port.write([row as EventInput, settled])).rejects.toMatchObject({ code: 'E_ENVELOPE' })
+    expect(session.lastSeq).toBe(before)
+    const closed = { code: 'E_CLOSED', detail: { costSeq: before + 1 } }
+    await expect(port.write([cost, settled])).rejects.toMatchObject(closed)
+    const written = await session.scan({ fromSeq: intentSeq + 2, toSeq: session.lastSeq })
+    expect(written.map((row) => row.type)).toEqual(['cost/ledger', 'x/core/late-effect-receipt'])
+    expect(written[0]?.data).toMatchObject({ purpose: 'side-call', effectId: 'side:call-1' })
+    await kernel.close()
+  })
+
   it('keeps prompt and payload text out of the ledger', async () => {
     const { kernel, session } = await setup('side-digests')
     const port = createSideCallEffectPort(session)
@@ -617,67 +714,42 @@ describe('side-call ledger rows', () => {
     const context = { invocationId: 'call-1', output: 'text' as const, replayed: false }
     expect(sideCallResult(okTerminal, context)).toMatchObject({ status: 'ok', replayed: false })
     expect(sideCallResult(okTerminal, context)).not.toHaveProperty('json')
-    const cancelled: SideCallEffectTerminal = {
-      kind: 'no_spend',
-      outcome: 'aborted',
-      ...head,
-      interrupted: true,
-      reason: 'cancelled_before_dispatch',
-      latencyMs: 1,
-    }
-    expect(sideCallResult(cancelled, context)).toMatchObject({
-      status: 'failed',
-      reason: 'cancelled',
-      retryable: false,
-      dispatch: 'not-sent',
-    })
-    const invalidOutput: SideCallEffectTerminal = {
-      kind: 'known_spend',
-      outcome: 'error',
-      ...head,
-      interrupted: false,
-      tokens: okTerminal.tokens,
-      credits: 0.42,
-      creditSource: 'gateway',
-      text: 'not json',
-      reason: 'invalid_output',
-      latencyMs: 9,
-    }
-    expect(sideCallResult(invalidOutput, { ...context, output: 'json' })).toMatchObject({
+    const result = (terminal: object, output: 'text' | 'json' = 'text') =>
+      sideCallResult({ ...head, ...terminal } as SideCallEffectTerminal, { ...context, output })
+    const spent = { tokens: okTerminal.tokens, creditSource: 'estimated', interrupted: true }
+    expect(
+      result({ kind: 'no_spend', outcome: 'aborted', reason: 'cancelled_before_dispatch', latencyMs: 1 }),
+    ).toMatchObject({ status: 'failed', reason: 'cancelled', retryable: false, dispatch: 'not-sent' })
+    expect(
+      result(
+        { ...okTerminal, outcome: 'error', reason: 'invalid_output', text: 'not json', latencyMs: 9 },
+        'json',
+      ),
+    ).toMatchObject({
       status: 'failed',
       reason: 'invalid-output',
       retryable: false,
       dispatch: 'may-have-sent',
     })
-    const unpriced: SideCallEffectTerminal = {
-      kind: 'unknown_spend',
-      outcome: 'unknown',
-      ...head,
-      interrupted: true,
-      tokens: unknownTerminal.tokens,
-      creditSource: 'estimated',
-      reason: 'driver_outcome_unknown',
-      latencyMs: 4,
-    }
-    expect(sideCallResult(unpriced, context)).toEqual({
-      status: 'unknown',
+    expect(
+      result({
+        ...spent,
+        kind: 'unknown_spend',
+        outcome: 'aborted',
+        reason: 'session_cancelled',
+        latencyMs: 4,
+      }),
+    ).toEqual({
+      status: 'failed',
       invocationId: 'call-1',
-      reason: 'interrupted',
+      reason: 'cancelled',
+      retryable: false,
+      dispatch: 'may-have-sent',
+      latencyMs: 4,
       replayed: false,
     })
-    const adapterError: SideCallEffectTerminal = {
-      kind: 'unknown_spend',
-      outcome: 'error',
-      ...head,
-      interrupted: true,
-      tokens: unknownTerminal.tokens,
-      creditSource: 'estimated',
-      reason: 'adapter_error',
-      code: 'RATE_LIMIT',
-      retryable: true,
-      latencyMs: 4,
-    }
-    const failed = sideCallResult(adapterError, context)
+    const adapterError = { ...spent, kind: 'unknown_spend', outcome: 'error', reason: 'adapter_error' }
+    const failed = result({ ...adapterError, code: 'RATE_LIMIT', retryable: true, latencyMs: 4 })
     expect(failed).toMatchObject({ status: 'failed', reason: 'adapter-error', retryable: true })
     expect(failed).not.toHaveProperty('usage')
   })

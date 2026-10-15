@@ -125,7 +125,6 @@ export type SideCallUnknownReason =
   | 'deadline_exceeded'
   | 'caller_cancelled'
   | 'session_cancelled'
-  | 'driver_outcome_unknown'
 
 /**
  * How a side call ended, as its terminal row records it. Known spend copies the observed usage,
@@ -171,7 +170,7 @@ export type SideCallEffectTerminal =
       SideCallCommon &
         Omit<SideCallSpend, 'credits' | 'creditSource' | 'billing'> & {
           kind: 'unknown_spend'
-          outcome: 'error' | 'aborted' | 'unknown'
+          outcome: 'error' | 'aborted'
           interrupted: true
           credits?: number
           creditSource: 'estimated'
@@ -191,7 +190,7 @@ type ReasonRule = Readonly<{
   completed?: true
   code?: 'adapter' | 'TIMEOUT'
   text?: true
-  failure?: SideCallFailure | 'unknown'
+  failure?: SideCallFailure
 }>
 
 /** The terminal side of a purpose: its terminal row, the commit that carries it, and its shapes. */
@@ -241,7 +240,7 @@ const SPENT: readonly TerminalKind[] = ['known_spend', 'unknown_spend']
 const reason = (
   kinds: readonly TerminalKind[],
   outcomes: readonly string[],
-  failure: SideCallFailure | 'unknown',
+  failure: SideCallFailure,
   extra: Omit<ReasonRule, 'kinds' | 'outcomes' | 'failure'> = {},
 ): ReasonRule => ({ kinds, outcomes, failure, ...extra })
 
@@ -303,7 +302,6 @@ const RULES: Readonly<Record<LedgerPurpose, TerminalRules>> = {
         'route',
         'adapter',
         'endpointHost',
-        'sourceTurn',
       ],
     },
     head: (value) => ownData(value, HEAD, SIDE_CALL_KEYS),
@@ -319,7 +317,6 @@ const RULES: Readonly<Record<LedgerPurpose, TerminalRules>> = {
       caller_cancelled: reason(SPENT, ['error'], 'cancelled'),
       session_cancelled: reason(SPENT, ['aborted'], 'cancelled'),
       invalid_output: reason(['known_spend'], ['error'], 'invalid-output', { completed: true, text: true }),
-      driver_outcome_unknown: reason(['unknown_spend'], ['unknown'], 'unknown'),
     },
     fields: (kind, rule) => {
       const required = ['latencyMs']
@@ -532,6 +529,35 @@ export function checkMediaCost(
 const ZERO_TOKENS: TokenCounts = Object.freeze({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 })
 
 /**
+ * Checks what a side call's cost row must satisfy however the call ended: Core's authority on the
+ * call's lane, only cost-row keys, and the call's own purpose, effect, model and route. A route is
+ * optional, but when present it is the bound one. Returns the row's fields with parsed tokens.
+ */
+export function checkSideCallCost(
+  cost: EventInput,
+  binding: Readonly<{ effectId: string; lane: string; route: string; model: string }>,
+): Snapshot {
+  const fail: Invalid = RULES['side-call'].invalid
+  const { required, optional } = RULES['side-call'].costKeys
+  const spent = ownData(cost.data, required, optional)
+  if (
+    cost.type !== COST_EVENT ||
+    !trusted(cost) ||
+    cost.lane !== binding.lane ||
+    spent?.purpose !== 'side-call' ||
+    spent.effectId !== binding.effectId ||
+    spent.model !== binding.model ||
+    (spent.route !== undefined && spent.route !== binding.route) ||
+    (spent.credits !== undefined && !amount(spent.credits))
+  )
+    fail('side-call cost row does not belong to its call')
+  return Object.freeze({
+    ...spent,
+    tokens: parseTokens(spent.tokens, fail, 'side-call effect usage is invalid'),
+  })
+}
+
+/**
  * Checks a side call's settlement batch, written or read back: cost, settlement and terminal rows
  * of the bound effect, in that order, with Core's authority, a terminal bound to `bindingHash`, a
  * settlement with the terminal's outcome and code, and a cost row that repeats the terminal's spend
@@ -569,20 +595,15 @@ export function checkSideCallSettlement(
           creditSource: terminal.creditSource,
           billing: terminal.kind === 'known_spend' ? terminal.billing : undefined,
         }
-  const { required, optional } = RULES['side-call'].costKeys
-  const spent = ownData(cost.data, required, optional)
+  const spent = checkSideCallCost(cost, binding)
   if (
-    spent?.purpose !== 'side-call' ||
-    spent.model !== binding.model ||
-    canonicalJson(parseTokens(spent.tokens, fail, 'side-call effect usage is invalid')) !==
-      canonicalJson(spend.tokens) ||
+    canonicalJson(spent.tokens) !== canonicalJson(spend.tokens) ||
     spent.credits !== spend.credits ||
     spent.creditSource !== spend.creditSource ||
     (spent.billing === undefined) !== (spend.billing === undefined) ||
     (spent.billing !== undefined && canonicalJson(spent.billing) !== canonicalJson(spend.billing)) ||
     (spent.interrupted !== undefined && spent.interrupted !== true) ||
-    (spent.interrupted === true) !== terminal.interrupted ||
-    (spent.route !== undefined && spent.route !== binding.route)
+    (spent.interrupted === true) !== terminal.interrupted
   )
     fail('side-call cost row does not match its terminal')
   return terminal
@@ -622,9 +643,7 @@ export function sideCallResult(
       ...(terminal.response ? { response: terminal.response } : {}),
       replayed,
     })
-  const failure = RULES['side-call'].reasons[terminal.reason]?.failure ?? 'unknown'
-  if (failure === 'unknown')
-    return Object.freeze({ status: 'unknown', invocationId, reason: 'interrupted', replayed })
+  const failure = RULES['side-call'].reasons[terminal.reason]?.failure as SideCallFailure
   const spent = usage(terminal)
   return Object.freeze({
     status: 'failed',

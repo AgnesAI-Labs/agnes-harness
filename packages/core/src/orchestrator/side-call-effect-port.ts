@@ -16,6 +16,7 @@ import {
   bounded,
   checkMediaCost,
   checkSettlementOrder,
+  checkSideCallCost,
   checkSideCallSettlement,
   count,
   effectIdOf,
@@ -201,6 +202,8 @@ function snapshotAudit(value: unknown): SideCallEffectAudit {
 }
 
 const bindingHashOf = (binding: object) => sha256Hex(canonicalJson(binding))
+const belongs = (session: SessionImpl, binding: Readonly<{ sessionKey: string; lane: string }>) =>
+  binding.sessionKey === session.key && binding.lane === session.lane
 
 function intentEvents(
   session: SessionImpl,
@@ -509,7 +512,14 @@ async function loadSideCallBinding(
     )
       return undefined
     const binding = snapshotBinding('side-call', data.binding)
-    if (binding.effectId !== effectId || data.bindingHash !== bindingHashOf(binding)) return undefined
+    if (
+      binding.effectId !== effectId ||
+      !belongs(session, binding) ||
+      intent.lane !== binding.lane ||
+      bound.lane !== binding.lane ||
+      data.bindingHash !== bindingHashOf(binding)
+    )
+      return undefined
     return Object.freeze({ binding, audit: snapshotAudit(data.audit), bindingHash: data.bindingHash })
   } catch {
     return undefined
@@ -518,8 +528,9 @@ async function loadSideCallBinding(
 
 /**
  * The binding of a pending side-call effect, for recovery. It sits right after the intent row, and
- * is returned only when both rows carry Core's system authority and the stored hash matches the
- * binding; anything else is `undefined`, never an exception.
+ * is returned only when both rows carry Core's system authority, sit on the binding's lane, and the
+ * binding names this session and lane and matches its stored hash; anything else is `undefined`,
+ * never an exception.
  */
 export async function readSideCallBinding(
   session: SessionImpl,
@@ -595,7 +606,8 @@ export type SideCallEffectPort = Readonly<{
    * Appends one settlement batch, cost then settlement then terminal, after checking every row
    * against the terminal, and returns the sequence numbers in order; it fits a model execution's
    * `write` option. Once the loop scope is revoked a scoped writer turns the batch into a late
-   * receipt and throws `E_CLOSED`, so cost and settlement alone are accepted then.
+   * receipt and throws `E_CLOSED`, so cost and settlement alone are accepted then, once the cost row
+   * is checked to be this call's own.
    */
   write(events: EventInput[]): Promise<readonly Seq[]>
   /** What the ledger holds for an invocation: absent, in flight, or finished with its result. */
@@ -672,8 +684,7 @@ export function createSideCallEffectPort(session: SessionImpl): SideCallEffectPo
     async begin(value: SideCallEffectBinding, auditValue: SideCallEffectAudit) {
       const binding = snapshotBinding('side-call', value)
       const audit = snapshotAudit(auditValue)
-      if (binding.sessionKey !== session.key || binding.lane !== session.lane)
-        fail('side-call effect does not belong to this session lane')
+      if (!belongs(session, binding)) fail('side-call effect does not belong to this session lane')
       const entries = await index()
       return session.locked(async () => {
         if (entries.has(binding.effectId))
@@ -708,10 +719,8 @@ export function createSideCallEffectPort(session: SessionImpl): SideCallEffectPo
         // Once the scope is revoked a scoped writer keeps only the cost row, adds a late receipt and
         // throws; a model execution settling on revocation sends cost and settlement alone.
         const receipt = !session.loopScope.alive && sessionIdentity(session) !== session
-        if (receipt && events.length === 2) {
-          if (events[0]?.type !== COST_EVENT || effectIdOf(events[0].data) !== effectId)
-            fail('side-call effect settlement rows are out of order')
-        } else checkSideCallSettlement(events, known.binding, known.bindingHash)
+        if (receipt && events.length === 2) checkSideCallCost(events[0] as EventInput, known.binding)
+        else checkSideCallSettlement(events, known.binding, known.bindingHash)
         const committed = await session.append(events)
         entry.settledSeq = committed.seqs[1]
         entry.terminalSeq = committed.seqs[2]
