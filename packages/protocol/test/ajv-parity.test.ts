@@ -5928,6 +5928,23 @@ const EXTENSION_SAMPLES: Record<string, Sample> = {
     ],
     note: 'Locale overrides allow only public presentation fields',
   },
+  HomeContributionDeclaration: {
+    valid: { id: 'reports', placement: 'primary' },
+    invalid: [{ id: 'reports' }, { id: 'reports', placement: 'overflow' }],
+    note: 'Reviewed primary or secondary home contribution',
+  },
+  ExampleLaunchDeclaration: {
+    valid: {
+      id: 'rescue',
+      kind: 'business-agent',
+      title: 'Start rescue',
+      bundle: 'example/rescue',
+      preset: 'rescue',
+      prompt: 'Inspect the simulated base.',
+    },
+    invalid: [{ id: 'rescue', kind: 'business-agent' }],
+    note: 'Explicit bounded business-agent example launch',
+  },
   Capabilities: helperSample('Capabilities', [
     { events: ['x'] },
     { tools: { prefix: 'BAD' } },
