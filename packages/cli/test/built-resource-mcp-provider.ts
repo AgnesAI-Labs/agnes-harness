@@ -39,14 +39,15 @@ export async function mcpChatProvider() {
       tools?: Array<{ function: { name: string } }>
     }
     const { marker, behavior, userIndex } = latestMcpCase(body.messages)
-    const results = body.messages.slice(userIndex + 1).filter((message) => message.role === 'tool')
+    const turn = body.messages.slice(userIndex + 1)
+    const results = turn.filter((message) => message.role === 'tool')
     const tools = body.tools?.map((tool) => tool.function.name) ?? []
     const result = JSON.stringify(results)
     observations.push({ marker, tools, result })
-    const called = results.some((message) => !JSON.stringify(message.content).includes(PAGER_TOOL120))
     const visible = tools.includes(PAGER_TOOL120)
-    const noTool = !visible && results.length > 0
-    // Search only if the tool is deferred. A missing catalog cannot turn into a fabricated call.
+    const searched = results.some((message) => JSON.stringify(message.content).includes(PAGER_TOOL120))
+    const called = results.some((message) => !JSON.stringify(message.content).includes(PAGER_TOOL120))
+    const noTool = !visible && results.length > 0 && (!searched || results.length >= 2)
     const finished = called || noTool
     const text = result.includes(`MCP_RESULT_${marker}`)
       ? `VERIFIED_${marker}`
@@ -55,6 +56,9 @@ export async function mcpChatProvider() {
         : noTool
           ? `ABSENT_${marker}`
           : `UNAVAILABLE_${marker}`
+    // Search finds a deferred name; describe must load its schema before the fixture can call it.
+    const name = visible ? PAGER_TOOL120 : searched ? 'tool_describe' : 'tool_search'
+    const args = visible ? { marker, behavior } : searched ? { name: PAGER_TOOL120 } : { query: 'tool120' }
     const delta = finished
       ? { content: text }
       : {
@@ -63,10 +67,7 @@ export async function mcpChatProvider() {
               index: 0,
               id: `call-${marker}-${results.length}`,
               type: 'function',
-              function: {
-                name: visible ? PAGER_TOOL120 : 'tool_search',
-                arguments: JSON.stringify(visible ? { marker, behavior } : { query: 'tool120' }),
-              },
+              function: { name, arguments: JSON.stringify(args) },
             },
           ],
         }
