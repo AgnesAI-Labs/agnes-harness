@@ -3037,7 +3037,8 @@
       }
     },
     "SessionLoadingParams": {
-      "type": "object", "additionalProperties": false,
+      "type": "object",
+      "additionalProperties": false,
       "required": ["sessionId", "phase", "verifiedSeq", "lastSeq"],
       "properties": {
         "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
