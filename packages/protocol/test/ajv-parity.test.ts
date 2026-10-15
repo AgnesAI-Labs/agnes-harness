@@ -7302,6 +7302,7 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     PackageSource: PackageAdminGen.PackageSource,
     PluginCapabilities: PackageAdminGen.PluginCapabilities,
     ClientModuleListParams: PackageAdminGen.ClientModuleListParams,
+    ContributionBinding: PackageAdminGen.ContributionBinding,
     PackageContributionSummary: PackageAdminGen.PackageContributionSummary,
     PackageCapabilityDiff: PackageAdminGen.PackageCapabilityDiff,
     PackageBlocker: PackageAdminGen.PackageBlocker,

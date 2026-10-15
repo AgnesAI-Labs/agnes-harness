@@ -307,6 +307,21 @@ describe('local endpoint: ACP round trip', () => {
         params: { sessionId: ok.result.sessionId, cwd: h.dataDir, mcpServers: [] },
       }),
     ).toMatchObject({ result: {} })
+    const raw = new DatabaseSync(join(h.dataDir, 'sessions.db'))
+    raw
+      .prepare(
+        "UPDATE events SET data = json_set(data, '$.content[0].text', 'changed') WHERE session_key = ? AND type = 'user/message'",
+      )
+      .run(ok.result.sessionId)
+    raw.close()
+    await expect(
+      ep.handle({
+        jsonrpc: '2.0',
+        id: 5,
+        method: 'session/load',
+        params: { sessionId: ok.result.sessionId, cwd: h.dataDir, mcpServers: [] },
+      }),
+    ).resolves.toMatchObject({ error: { data: { code: 'E_SESSION_CORRUPT' } } })
     const replayed = (await drain(ep)).slice(before) as N[]
     const updates = replayed
       .filter((n) => n.method === 'session/update')
@@ -330,21 +345,6 @@ describe('local endpoint: ACP round trip', () => {
       .map((u) => u.content?.text ?? '')
       .join('')
     expect(said).toBe('hi')
-    const raw = new DatabaseSync(join(h.dataDir, 'sessions.db'))
-    raw
-      .prepare(
-        "UPDATE events SET data = json_set(data, '$.content[0].text', 'changed') WHERE session_key = ? AND type = 'user/message'",
-      )
-      .run(ok.result.sessionId)
-    raw.close()
-    await expect(
-      ep.handle({
-        jsonrpc: '2.0',
-        id: 5,
-        method: 'session/load',
-        params: { sessionId: ok.result.sessionId, cwd: h.dataDir, mcpServers: [] },
-      }),
-    ).resolves.toMatchObject({ error: { data: { code: 'E_SESSION_CORRUPT' } } })
     await h.close()
   })
 

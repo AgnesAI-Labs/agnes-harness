@@ -125,6 +125,7 @@ export async function writeNativeBundle(
   const stage = join(dirname(path), `.agnes-export-${randomUUID()}`)
   const sidecar = `${path}.artifacts`
   let published = false
+  let manifestPublished = false
   await mkdir(stage, { mode: 0o700 })
   if (createPlatform().os === 'win32') windowsEnsurePrivateDirectorySync(stage)
   try {
@@ -153,8 +154,10 @@ export async function writeNativeBundle(
     for (const digest of written) await rename(join(stage, digest), join(sidecar, digest))
     syncDirectory(sidecar)
     await link(join(stage, 'manifest'), path)
+    manifestPublished = true
     syncDirectory(dirname(path))
   } catch (error) {
+    if (manifestPublished) await rm(path, { force: true })
     if (published) await rm(sidecar, { recursive: true, force: true })
     throw error
   } finally {

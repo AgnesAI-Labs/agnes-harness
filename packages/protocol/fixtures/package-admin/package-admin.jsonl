@@ -634,3 +634,6 @@
 {"id":"presentation-id","target":"config","name":"PackagePresentation","kind":"invalid","payload":{"rows":[{"id":"","settings":true}]}}
 {"id":"presentation-settings","target":"config","name":"PackagePresentation","kind":"invalid","payload":{"rows":[{"id":"ext:author/main","settings":"true"}]}}
 {"id":"presentation-extra","target":"config","name":"PackagePresentation","kind":"invalid","payload":{"rows":[],"capabilities":{"admin":true}}}
+{"id":"mp-binding-valid-7","target":"config","name":"ContributionBinding","kind":"valid","payload":{"lifetime":"session","owner":"test-owner","packageId":"acme/pkg","integrity":"sha256-test","profileId":"test-profile","activationId":"test-activation","availability":"history-only"}}
+{"id":"mp-binding-invalid-7","target":"config","name":"ContributionBinding","kind":"invalid","payload":{"lifetime":"session","owner":"test-owner","packageId":"acme/pkg","integrity":"sha256-test","profileId":"test-profile","activationId":"test-activation","availability":"unknown"}}
+{"id":"mp-binding-invalid-6","target":"config","name":"ContributionBinding","kind":"invalid","payload":{"lifetime":"session","packageId":"acme/pkg","integrity":"sha256-test","profileId":"test-profile","activationId":"test-activation","availability":"history-only"}}

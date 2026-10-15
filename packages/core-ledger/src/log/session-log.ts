@@ -184,8 +184,10 @@ export class SessionLogImpl {
         o.verification,
       )
       const rows = await o.storage.registers(o.key)
+      // Opening observers belong to the caller, not to the lifetime of the cached session.
+      const { verification: _opening, ...retained } = o
       const log = new SessionLogImpl(
-        o,
+        retained,
         opened.lastSeq,
         rows,
         integrityState,
@@ -224,8 +226,10 @@ export class SessionLogImpl {
         })
       const own = await verifiedRange(o.storage, o.key, start, opened.lastSeq)
       const rows = await o.storage.registers(o.key)
+      // Opening observers belong to the caller, not to the lifetime of the cached session.
+      const { verification: _opening, ...retained } = o
       const log = new SessionLogImpl(
-        o,
+        retained,
         opened.lastSeq,
         rows,
         own.state,

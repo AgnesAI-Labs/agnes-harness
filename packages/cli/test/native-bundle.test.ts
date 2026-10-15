@@ -41,7 +41,25 @@ const client = (bytes = original, sessionId = 's') =>
 
 it('round-trips current-product rows and original bytes through the public artifact seam', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'agnes-native-'))
-  const { host } = await createTestHost({ dataDir: dir })
+  // Content-addressed fake for the public seam; the default test seam returns a fixed identity.
+  const originals = new Map<string, Uint8Array>()
+  const { host } = await createTestHost({
+    dataDir: dir,
+    seams: {
+      artifacts: {
+        put: async (bytes, options) => {
+          const sha256 = createHash('sha256').update(bytes).digest('hex')
+          originals.set(sha256, bytes.slice())
+          return { sha256, size: bytes.length, mime: options?.mime ?? 'application/octet-stream' }
+        },
+        get: async (artifact) => {
+          const bytes = originals.get(artifact.sha256)
+          if (!bytes) throw new Error('missing original')
+          return bytes.slice()
+        },
+      },
+    },
+  })
   const admission = await memoryAdmission(host, dir)
   const source = await openAdmittedSession(host, admission, 'agnes:local:default:cli:dm:source', dir)
   try {
