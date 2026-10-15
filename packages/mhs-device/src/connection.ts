@@ -1,10 +1,12 @@
-import { validateCommand } from './commands.js'
+import { validateCommand, validateNerveMessage } from './commands.js'
 import type { Device } from './device.js'
 import type { Json, Observation } from './schema.js'
-import { object } from './validation.js'
+import { MhsError, object } from './validation.js'
 
 /** Browser-compatible adapter. Each connection owns both sockets; no action survives reconnect. */
 export async function connectDevice(device: Device, base: string, signal: AbortSignal): Promise<void> {
+  if (Object.keys(device.description.state ?? {}).some((key) => !Object.hasOwn(device.state(), key)))
+    throw new MhsError('initial-state-required')
   const root = new URL(base)
   if (!['ws:', 'wss:'].includes(root.protocol) || root.username || root.password)
     throw new Error('invalid-hub-url')
@@ -54,6 +56,7 @@ export async function connectDevice(device: Device, base: string, signal: AbortS
           }
           if (clip) return close()
           const m = object(JSON.parse(String(event.data)))
+          validateNerveMessage(m)
           if (m.type === 'clip') {
             if (typeof m.id !== 'string' || typeof m.rate !== 'number' || typeof m.channels !== 'number')
               return close()

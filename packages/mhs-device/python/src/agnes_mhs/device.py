@@ -42,6 +42,8 @@ class Device:
         self.on_manual = None
         self.on_observation = None
         self.sequences = {}
+        self.source_settings = {}
+        self.published_at = {}
         self.on_configure = None
         self.on_keyframe = None
         self.manual_until = 0
@@ -49,10 +51,19 @@ class Device:
         self.closed = False
 
     async def publish(self, source, data, payload=None, mime=None):
-        if not any(s["id"] == source for s in self.description.get("sources", [])):
+        declaration = next((s for s in self.description.get("sources", []) if s["id"] == source), None)
+        if declaration is None:
             raise MhsError("unknown-source")
+        settings = self.source_settings.get(source, {})
+        if settings.get("on") is False:
+            return False
+        hz = settings.get("hz", 1 if declaration["kind"] == "image" else 5 if declaration["kind"] == "video" else min(declaration.get("hz", 0), 2))
+        now = time.monotonic()
+        if hz and now - self.published_at.get(source, -math.inf) < 1 / hz:
+            return False
         if not self.on_observation:
             return False
+        self.published_at[source] = now
         sequence = self.sequences.get(source, -1) + 1
         self.sequences[source] = sequence
         header = {"type": "data", "source": source, "seq": sequence, "t": time.time(), "data": data}
@@ -62,6 +73,37 @@ class Device:
             header["mime"] = mime
         await self.on_observation(header, payload)
         return True
+
+    async def configure(self, sources):
+        if not isinstance(sources, dict):
+            raise MhsError("invalid-configure")
+        applied = {}
+        for source_id, requested in sources.items():
+            source = next((s for s in self.description.get("sources", []) if s["id"] == source_id), None)
+            if source is None or not isinstance(requested, dict) or type(requested.get("on")) is not bool:
+                raise MhsError("invalid-configure")
+            settings = {"on": requested["on"]}
+            if "hz" in requested:
+                hz = requested["hz"]
+                if type(hz) not in (int, float) or not math.isfinite(hz) or hz <= 0:
+                    raise MhsError("invalid-configure")
+                settings["hz"] = min(hz, source.get("hz", hz))
+            if "bitrate_kbps" in requested:
+                bitrate = requested["bitrate_kbps"]
+                if source["kind"] != "video" or type(bitrate) not in (int, float) or not math.isfinite(bitrate):
+                    raise MhsError("invalid-configure")
+                bounds = source.get("bitrate_kbps", [1, bitrate])
+                settings["bitrate_kbps"] = max(bounds[0], min(bounds[1], bitrate))
+            if "size" in requested:
+                size = requested["size"]
+                if not isinstance(size, list) or len(size) != 2 or any(type(v) not in (int, float) or not math.isfinite(v) for v in size) or not source.get("sizes"):
+                    raise MhsError("invalid-configure")
+                settings["size"] = min(source["sizes"], key=lambda s: abs(s[0] - size[0]) + abs(s[1] - size[1]))
+            applied[source_id] = settings
+        if self.on_configure:
+            await self.on_configure(applied)
+        self.source_settings.update(applied)
+        return {"sources": applied}
 
     def receive_clip(self, clip_id, rate, channels, pcm):
         if not isinstance(clip_id, str) or not 1 <= len(clip_id) <= 256 or type(rate) is not int or not 1 <= rate <= 384000 or type(channels) is not int or not 1 <= channels <= 8 or not 0 < len(pcm) <= 16 << 20 or len(pcm) % (channels * 2):

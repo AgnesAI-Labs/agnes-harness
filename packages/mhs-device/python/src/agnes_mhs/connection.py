@@ -8,6 +8,8 @@ from .validation import MhsError
 
 async def connect_device(device, base):
     from websockets.asyncio.client import connect
+    if any(key not in device.values for key in device.description.get("state", {})):
+        raise MhsError("initial-state-required")
     parts = urlsplit(base)
     if parts.scheme not in ("ws", "wss") or parts.username or parts.password:
         raise MhsError("invalid-hub-url")
@@ -59,8 +61,8 @@ async def connect_device(device, base):
                                 await device.pause(params.get("call"))
                             elif method == "mhs/resume":
                                 device.resume(params.get("call"))
-                            elif method == "mhs/configure" and device.on_configure:
-                                await device.on_configure(params.get("sources", {}))
+                            elif method == "mhs/configure":
+                                answer = await device.configure(params.get("sources", {}))
                             elif method == "mhs/keyframe" and device.on_keyframe:
                                 await device.on_keyframe(params.get("source"))
                             elif method == "mhs/time":

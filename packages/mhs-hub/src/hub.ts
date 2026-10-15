@@ -97,11 +97,21 @@ export class Hub implements SouthEvents {
       const latest = live.samples.get(source)?.at(-1)
       if (!latest || this.now() - latest.at > 10_000)
         return { source, at: latest?.at ?? 0, data: { state: 'stale' } }
-      return { source, ...structuredClone(latest) }
+      const copy = structuredClone(latest)
+      if (declaration.kind === 'image') {
+        const data = object(copy.data)
+        copy.data = { w: Number(data.w), h: Number(data.h) }
+      }
+      if (!['image', 'grid'].includes(declaration.kind)) delete copy.bytes
+      return { source, ...copy }
     })
     return { device: structuredClone(live.view), items }
   }
   online(link: DeviceLink): void {
+    if (this.stopping) {
+      link.close()
+      return
+    }
     const id = link.registration.device.id
     const prior = this.live.get(id)
     if (!prior && this.live.size >= 512) {
@@ -221,9 +231,9 @@ export class Hub implements SouthEvents {
       }
       history.length = 0
       if (this.sampleBytes + bytes.length > 16 << 20) return
-      this.sampleBytes += bytes.length
     }
     if (this.sampleJsonBytes + jsonBytes > 8 << 20) return
+    this.sampleBytes += bytes?.length ?? 0
     this.sampleJsonBytes += jsonBytes
     history.push(sample)
     while (history.length > 32) {
@@ -526,11 +536,14 @@ export class Hub implements SouthEvents {
   }
   async shutdown(): Promise<{ state: 'settled' | 'unknown' }> {
     this.stopping = true
-    const result = await this.stop()
-    for (const live of this.live.values()) live.link.close()
-    this.listeners.clear()
-    this.mediaListeners.clear()
-    await this.journal.recover()
-    return { state: result.state }
+    try {
+      const result = await this.stop()
+      await this.journal.recover()
+      return { state: result.state }
+    } finally {
+      for (const live of this.live.values()) live.link.close()
+      this.listeners.clear()
+      this.mediaListeners.clear()
+    }
   }
 }

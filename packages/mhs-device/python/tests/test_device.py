@@ -42,6 +42,11 @@ class DeviceTests(unittest.IsolatedAsyncioTestCase):
         device.on_manual = manual
         await device.manual({"vx": 99})
         self.assertEqual(seen[-1], {"vx": 1})
+        device.receive_clip("audio", 24000, 1, b"\x00\x00")
+        self.assertEqual(device.clip("audio")["pcm"], b"\x00\x00")
+        sensor = Device({"protocol": "mhs/v1", "device": {"id": "sensor", "kind": "sensor"}, "sources": [{"id": "text", "kind": "text", "description": "Text"}]})
+        await sensor.configure({"text": {"on": False}})
+        self.assertFalse(await sensor.publish("text", {"text": "hidden"}))
         await device.disconnect()
         self.assertEqual(seen[-1], {"vx": 0})
         with self.assertRaises(MhsError):

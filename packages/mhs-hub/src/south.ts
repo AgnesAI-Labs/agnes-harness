@@ -7,6 +7,7 @@ import {
   object,
   type Registration,
   validateCommand,
+  validateNerveMessage,
   validateRegistration,
 } from '@agnes/mhs-device'
 import { type WebSocket, WebSocketServer } from 'ws'
@@ -137,6 +138,7 @@ export class South {
   private readonly links = new Map<string, Link>()
   private readonly sockets = new Set<WebSocket>()
   private readonly wss = new WebSocketServer({ noServer: true, maxPayload: 16 << 20 })
+  private closing = false
   private server: Server | undefined
   private heartbeat: ReturnType<typeof setInterval> | undefined
   constructor(
@@ -144,14 +146,14 @@ export class South {
     private readonly admit: (request: IncomingMessage) => boolean = (request) => !request.headers.origin,
   ) {}
   async listen(port = 4180): Promise<{ host: '127.0.0.1'; port: number }> {
-    if (this.server) throw new MhsError('already-listening')
+    if (this.server || this.closing) throw new MhsError('already-listening')
     const server = createServer((_req, response) => {
       response.writeHead(404)
       response.end()
     })
     this.server = server
     server.on('upgrade', (request, socket, head) => {
-      if (!this.admit(request) || !['/ws/mhs', '/ws/nerve'].includes(request.url ?? '')) {
+      if (this.closing || !this.admit(request) || !['/ws/mhs', '/ws/nerve'].includes(request.url ?? '')) {
         socket.destroy()
         return
       }
@@ -177,7 +179,7 @@ export class South {
     return { host: '127.0.0.1', port: address.port }
   }
   private attach(ws: WebSocket, nerve: boolean): void {
-    if (this.sockets.size >= 128) {
+    if (this.closing || this.sockets.size >= 128) {
       ws.close(1013)
       return
     }
@@ -216,7 +218,19 @@ export class South {
         if (raw.byteLength > (nerve ? 1 << 20 : 65536)) throw new MhsError('oversize')
         if (binary) throw new MhsError('missing-binary')
         const message = object(JSON.parse(raw.toString()))
+        if (!nerve && message.method === 'mhs/register' && object(message.params).protocol !== 'mhs/v1') {
+          ws.send(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: message.id,
+              error: { code: -32001, message: 'unsupported-version' },
+            }),
+          )
+          ws.close(4003)
+          return
+        }
         if (!nerve) validateCommand(message)
+        else validateNerveMessage(message)
         if (!link) {
           if (nerve) {
             if (message.type !== 'hello' || typeof message.device !== 'string')
@@ -323,7 +337,11 @@ export class South {
     })
   }
   async close(): Promise<void> {
+    this.closing = true
     clearInterval(this.heartbeat)
+    const server = this.server
+    this.server = undefined
+    const stopped = server ? new Promise<void>((resolve) => server.close(() => resolve())) : Promise.resolve()
     await Promise.all(
       [...this.sockets].map(
         (ws) =>
@@ -337,8 +355,6 @@ export class South {
           }),
       ),
     )
-    const server = this.server
-    this.server = undefined
-    if (server) await new Promise<void>((resolve) => server.close(() => resolve()))
+    await stopped
   }
 }

@@ -118,7 +118,14 @@ describe('Hub authority, tasks and recovery', () => {
     let now = 0
     const { hub } = setup(() => now)
     const { device, link } = attach(hub)
-    hub.observation('rover', 'front', { w: 1, h: 1 }, new Uint8Array([1, 2]), 'image/png')
+    hub.observation(
+      'rover',
+      'front',
+      { w: 1, h: 1, b64: 'untrusted-inline-media' },
+      new Uint8Array([1, 2]),
+      'image/png',
+    )
+    expect((await hub.read('rover', ['front'])).items[0]?.data).toEqual({ w: 1, h: 1 })
     expect((await hub.read('rover', ['front'])).items[0]?.bytes).toEqual(new Uint8Array([1, 2]))
     await expect(hub.read('rover', ['video'])).rejects.toThrow('video-not-model-input')
     await expect(hub.manualLease('rover', { ...invocation('lease-bad'), context: {} })).rejects.toThrow()

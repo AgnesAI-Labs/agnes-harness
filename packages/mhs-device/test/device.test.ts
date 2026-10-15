@@ -84,6 +84,9 @@ describe('device-local boundaries', () => {
     await vi.advanceTimersByTimeAsync(201)
     expect(stopped).toContain('deadman')
     expect(seen.at(-1)).toEqual({ vx: 0 })
+    await device.configure({ front: { on: false } })
+    device.onObservation = () => true
+    expect(device.publish('front', { w: 1, h: 1 }, new Uint8Array([1]), 'image/png')).toBe(false)
     await device.disconnect()
     await expect(device.manual({ vx: 1 })).rejects.toThrow('unsafe')
   })
