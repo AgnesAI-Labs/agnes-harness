@@ -8185,6 +8185,8 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
   '_agnes/v1/session.detach': { fileId: AGNES_ID, params: 'SessionIdParams', result: 'Empty' },
   '_agnes/v1/auth.claim': { fileId: AGNES_ID, params: 'AuthClaimParams', result: 'AuthClaimResult' },
   '_agnes/v1/session.event': { fileId: AGNES_ID, params: 'SessionEventParams' },
+  '_agnes/v1/session.loading': { fileId: AGNES_ID, params: 'SessionLoadingParams' },
+  '_agnes/v1/session.loadingCancel': { fileId: AGNES_ID, params: 'SessionIdParams' },
   '_agnes/v1/session.preview': { fileId: AGNES_ID, params: 'SessionPreviewParams' },
   '_agnes/v1/daemon.notice': { fileId: AGNES_ID, params: 'DaemonNotice' },
   '_agnes/v1/session.fork': { fileId: AGNES_ID, params: 'SessionForkParams', result: 'SessionIdParams' },
@@ -8950,6 +8952,14 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     note: 'valid and the first invalid reuse fixtures/methods/i1.jsonl (auth-claim-params-windowed / auth-claim-params-mixed-shapes)',
   },
   '_agnes/v1/session.event': AGNES_SAMPLES.SessionEventParams as Sample,
+  '_agnes/v1/session.loading': {
+    valid: { sessionId: 's', phase: 'verifying', verifiedSeq: 5, lastSeq: 10 },
+    invalid: [
+      { sessionId: 's', phase: 'ready', verifiedSeq: 5, lastSeq: 10 },
+      { sessionId: 's', phase: 'verifying', verifiedSeq: -1, lastSeq: 10 },
+    ],
+  },
+  '_agnes/v1/session.loadingCancel': AGNES_SAMPLES.SessionIdParams as Sample,
   '_agnes/v1/session.preview': AGNES_SAMPLES.SessionPreviewParams as Sample,
   '_agnes/v1/daemon.notice': AGNES_SAMPLES.DaemonNotice as Sample,
   '_agnes/v1/session.fork': AGNES_SAMPLES.SessionForkParams as Sample,

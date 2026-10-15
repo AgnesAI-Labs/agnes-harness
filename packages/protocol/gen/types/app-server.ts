@@ -1768,6 +1768,7 @@ export type _agnes_v1_ui_readResult = D90f302ab7404_UiReadResult
 export type _agnes_v1_ui_refreshParams = D90f302ab7404_UiRefreshParams
 export type _agnes_v1_ui_refreshResult = D90f302ab7404_UiSurfaceRecord
 export type _agnes_v1_session_eventParams = D2af62e0fbbd2_SessionEventParams
+export type _agnes_v1_session_loadingCancelParams = D2af62e0fbbd2_SessionIdParams
 export type _agnes_v1_session_loadingParams = D2af62e0fbbd2_SessionLoadingParams
 export type _agnes_v1_session_previewParams = D2af62e0fbbd2_SessionPreviewParams
 export type _agnes_v1_daemon_noticeParams = D2af62e0fbbd2_DaemonNotice
@@ -1964,6 +1965,7 @@ export interface AppServerMethods {
   "_agnes/v1/ui.read": {params:_agnes_v1_ui_readParams; result:_agnes_v1_ui_readResult; direction:"c2s"; kind:"request"}
   "_agnes/v1/ui.refresh": {params:_agnes_v1_ui_refreshParams; result:_agnes_v1_ui_refreshResult; direction:"c2s"; kind:"request"}
   "_agnes/v1/session.event": {params:_agnes_v1_session_eventParams; result:void; direction:"s2c"; kind:"notification"}
+  "_agnes/v1/session.loadingCancel": {params:_agnes_v1_session_loadingCancelParams; result:void; direction:"c2s"; kind:"notification"}
   "_agnes/v1/session.loading": {params:_agnes_v1_session_loadingParams; result:void; direction:"s2c"; kind:"notification"}
   "_agnes/v1/session.preview": {params:_agnes_v1_session_previewParams; result:void; direction:"s2c"; kind:"notification"}
   "_agnes/v1/daemon.notice": {params:_agnes_v1_daemon_noticeParams; result:void; direction:"s2c"; kind:"notification"}

@@ -200,6 +200,8 @@ export const METHOD_TIERS: Record<MethodName, MethodTier> = {
   '_agnes/v1/ui.read': 'client',
   '_agnes/v1/ui.refresh': 'client',
   '_agnes/v1/session.event': 'client',
+  '_agnes/v1/session.loading': 'client',
+  '_agnes/v1/session.loadingCancel': 'client',
   '_agnes/v1/session.preview': 'client',
   '_agnes/v1/daemon.notice': 'client',
 }

@@ -192,6 +192,7 @@ export interface AppServerMethods {
   "_agnes/v1/ui.read": { params: Static<typeof import("./intelligent-ui.js").UiReadParams>; result: Static<typeof import("./intelligent-ui.js").UiReadResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/ui.refresh": { params: Static<typeof import("./intelligent-ui.js").UiRefreshParams>; result: Static<typeof import("./intelligent-ui.js").UiSurfaceRecord>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.event": { params: Static<typeof import("./agnes-v1.js").SessionEventParams>; result: void; direction: "s2c"; kind: "notification" }
+  "_agnes/v1/session.loadingCancel": { params: Static<typeof import("./agnes-v1.js").SessionIdParams>; result: void; direction: "c2s"; kind: "notification" }
   "_agnes/v1/session.loading": { params: Static<typeof import("./agnes-v1.js").SessionLoadingParams>; result: void; direction: "s2c"; kind: "notification" }
   "_agnes/v1/session.preview": { params: Static<typeof import("./agnes-v1.js").SessionPreviewParams>; result: void; direction: "s2c"; kind: "notification" }
   "_agnes/v1/daemon.notice": { params: Static<typeof import("./agnes-v1.js").DaemonNotice>; result: void; direction: "s2c"; kind: "notification" }
