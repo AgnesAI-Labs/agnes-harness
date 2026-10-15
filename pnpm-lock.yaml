@@ -234,6 +234,15 @@ importers:
         specifier: 0.28.2
         version: 0.28.2
 
+  packages/batch:
+    dependencies:
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
+      '@agnes/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+
   packages/bridges:
     dependencies:
       '@agnes/protocol':

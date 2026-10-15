@@ -1,0 +1,213 @@
+{
+  "name": "@agnes/batch",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "vitest run"
+  },
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@agnes/extension-api": "workspace:*",
+    "@agnes/protocol": "workspace:*"
+  },
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:agnes.batch",
+        "export": "batchPlugin",
+        "apiRange": "^4.0.0",
+        "inject": [
+          "services"
+        ],
+        "runtime": "in-process",
+        "default": false,
+        "capabilities": {
+          "services": [
+            {
+              "name": "batch.start",
+              "kind": "effect",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^b[0-9a-f]{12}$"
+                  },
+                  "dir": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "spec": {
+                    "type": "object"
+                  },
+                  "extensions": {
+                    "type": "array",
+                    "maxItems": 32,
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9]{1,10}$"
+                    }
+                  }
+                },
+                "required": [
+                  "id",
+                  "dir",
+                  "spec"
+                ],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 131072
+            },
+            {
+              "name": "batch.status",
+              "kind": "query",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^b[0-9a-f]{12}$"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 131072
+            },
+            {
+              "name": "batch.results",
+              "kind": "query",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^b[0-9a-f]{12}$"
+                  },
+                  "offset": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 3
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 131072
+            },
+            {
+              "name": "batch.cancel",
+              "kind": "effect",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^b[0-9a-f]{12}$"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 131072
+            },
+            {
+              "name": "batch.resume",
+              "kind": "effect",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^b[0-9a-f]{12}$"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 131072
+            },
+            {
+              "name": "batch.list",
+              "kind": "query",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "cursor": {
+                    "type": "string",
+                    "maxLength": 2048
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 131072
+            },
+            {
+              "name": "batch.export",
+              "kind": "effect",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^b[0-9a-f]{12}$"
+                  },
+                  "out": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  }
+                },
+                "required": [
+                  "id",
+                  "out"
+                ],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 131072
+            }
+          ]
+        },
+        "metadata": {
+          "displayName": "File batches",
+          "summary": "Processes immutable file inputs with bounded, recoverable item attempts.",
+          "description": "Requires an owner-bound confined runtime connector.",
+          "category": "developer"
+        }
+      }
+    ]
+  }
+}

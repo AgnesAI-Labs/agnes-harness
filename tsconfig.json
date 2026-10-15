@@ -318,6 +318,12 @@
     },
     {
       "path": "packages/mhs-hub/tsconfig.test.json"
+    },
+    {
+      "path": "packages/batch"
+    },
+    {
+      "path": "packages/batch/tsconfig.test.json"
     }
   ]
 }
