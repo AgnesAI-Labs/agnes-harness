@@ -92,6 +92,7 @@ describe('protocol src boundary', () => {
         'AppServerErrorCause',
         'safeDiagnosticRecord',
         'diagnosticRecords',
+        'describeValidationErrors',
         'observeDiagnostics',
         'normalizeRpcError',
         'errorMessageKey',
