@@ -209,5 +209,8 @@
         }
       }
     ]
+  },
+  "devDependencies": {
+    "@agnes/base": "workspace:*"
   }
 }

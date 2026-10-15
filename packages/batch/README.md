@@ -27,6 +27,14 @@ Hidden entries and unsupported extensions are excluded. Aborted captures may lea
 artifacts; the artifact store owns their collection. Filesystem adapters remain responsible for
 hostile concurrent directory replacement and platform-specific guarantees.
 
+`attachmentSnapshots` consumes the public `AttachmentStore` and `AttachmentScope` contracts. It
+checks the returned artifact hash, size, MIME and exact scoped receipt, and discards receipts from
+an unsuccessful capture. Input records retain their artifact reference and receipt scope; terminal
+execution receipts must match the prepared session and lane. Scope binding must come from Host.
+Only Core's committed child inbox input permits confirmation; a saved batch manifest does not.
+The runtime adapter must account for attachment pending-root quotas/expiry and owner-store quotas
+before accepting a large or long-lived batch. This package does not relax provider limits.
+
 Every concurrent attempt reserves a hard credit ceiling from the remaining batch budget. Repairs
 reserve a new ceiling, retain the same child/input and share the original item deadline. Cancelled
 attempts are charged using backend receipts. Unknown work stops further admission. Output is at most

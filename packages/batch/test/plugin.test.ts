@@ -1,9 +1,18 @@
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { checkServiceDef, type ServiceDef } from '@agnes/extension-api'
+import { BASE_SEAM_PROVIDERS } from '@agnes/base'
+import { fakeSeamInit } from '@agnes/base/testkit'
+import { checkServiceDef, type PersistenceMetadataNamespace, type ServiceDef } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
-import { BatchEngine, BatchService, batchPlugin, createBatchPlugin, Repository } from '../src/index.js'
+import {
+  attachmentSnapshots,
+  BatchEngine,
+  BatchService,
+  batchPlugin,
+  createBatchPlugin,
+  Repository,
+} from '../src/index.js'
 import { FakeExecutor, id, MemoryStore, spec } from './fakes.js'
 
 describe('batch plugin connector', () => {
@@ -14,20 +23,41 @@ describe('batch plugin connector', () => {
       await mkdir(join(root, 'inputs'))
       await writeFile(join(root, 'inputs/a.txt'), 'alpha')
       await writeFile(join(root, 'inputs/b.txt'), 'beta')
-      const blobs = new Map<string, Uint8Array>(),
-        store = new MemoryStore(),
-        executor = new FakeExecutor()
-      const artifacts = {
-        put: async (bytes: Uint8Array, meta: { digest: string }) => {
-          blobs.set(meta.digest, bytes.slice())
-          return meta.digest
+      let values = new Map<string, unknown>()
+      const namespace: PersistenceMetadataNamespace = {
+        get: (key) => structuredClone(values.get(key)),
+        set: (key, value) => {
+          values.set(key, structuredClone(value))
+        },
+        delete: (key) => {
+          values.delete(key)
+        },
+        entries: () => [...values].map(([key, value]) => ({ key, value: structuredClone(value) })),
+        transaction(work) {
+          const before = structuredClone(values)
+          try {
+            return work()
+          } catch (e) {
+            values = before
+            throw e
+          }
         },
       }
+      const init = fakeSeamInit()
+      init.adapters.storage.namespace = () => namespace
+      const seam = await BASE_SEAM_PROVIDERS.artifacts.create(init, init.signal)
+      const store = new MemoryStore(),
+        executor = new FakeExecutor()
+      const artifacts = attachmentSnapshots(
+        seam.attachments,
+        async (name) => ({ sessionKey: `child:${id}:${name}`, lane: 'main' }),
+        init.signal,
+      )
       executor.reply = (request) => ({
         state: 'completed',
         charged: 0.1,
         inputRead: true,
-        text: String(blobs.get(request.input.artifact)?.byteLength),
+        text: String(request.input.size),
       })
       const binding = {
         workspaceRoot: root,
@@ -37,7 +67,30 @@ describe('batch plugin connector', () => {
       }
       const service = new BatchService(binding)
       await service.start({ id, dir: 'inputs', spec })
+      await expect(service.start({ id, dir: 'inputs', spec })).resolves.toMatchObject({
+        id,
+        status: 'running',
+      })
+      expect((await seam.attachments!.pendingRoots()).roots).toHaveLength(2)
+      await expect(
+        artifacts.put(new TextEncoder().encode('wrong original'), {
+          digest: '0'.repeat(64),
+          name: 'bad.txt',
+        }),
+      ).rejects.toMatchObject({ code: 'E_BATCH_ATTACHMENT_RECEIPT' })
+      expect((await seam.attachments!.pendingRoots()).roots).toHaveLength(2)
       await writeFile(join(root, 'inputs/a.txt'), 'changed after snapshot')
+      const captured = await binding.engine.repo.page(id)
+      expect(new TextDecoder().decode(await seam.get(captured[0]!.input.artifact))).toBe('alpha')
+      const first = captured[0]!.input
+      expect(
+        await seam.attachments!.authorize(
+          { sessionKey: 'other-child', lane: 'main' },
+          { id: first.receipt.id, artifact: first.artifact },
+          init.signal,
+        ),
+      ).toBe(false)
+      expect((await seam.attachments!.pendingRoots()).roots).toHaveLength(2)
       const recovered = new BatchService({
         ...binding,
         engine: new BatchEngine(new Repository(store), executor),
@@ -50,6 +103,11 @@ describe('batch plugin connector', () => {
       ])
       await recovered.tick()
       expect(executor.executions).toBe(2)
+      await symlink(join(root, 'inputs/a.txt'), join(root, 'inputs/z.txt'))
+      await expect(service.start({ id: 'b000000000001', dir: 'inputs', spec })).rejects.toMatchObject({
+        code: 'E_BATCH_SYMLINK',
+      })
+      expect((await seam.attachments!.pendingRoots()).roots).toHaveLength(2)
     } finally {
       await rm(dir, { recursive: true, force: true })
     }
@@ -89,5 +147,12 @@ describe('batch plugin connector', () => {
     ).toThrow('registration refused')
     expect(active.size).toBe(0)
     expect(() => batchPlugin.apply()).toThrow('E_BATCH_MANAGED_CONNECTOR_REQUIRED')
+    expect(() =>
+      attachmentSnapshots(
+        undefined,
+        async () => ({ sessionKey: 's', lane: 'main' }),
+        new AbortController().signal,
+      ),
+    ).toThrow('E_BATCH_ATTACHMENT_STORE_REQUIRED')
   })
 })

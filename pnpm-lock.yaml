@@ -242,6 +242,10 @@ importers:
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
+    devDependencies:
+      '@agnes/base':
+        specifier: workspace:*
+        version: link:../base
 
   packages/bridges:
     dependencies:

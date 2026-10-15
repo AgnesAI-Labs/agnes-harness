@@ -12,6 +12,7 @@ describe('repo', () => {
     expect(names).toEqual([
       '@agnes/ai',
       '@agnes/base',
+      '@agnes/batch',
       '@agnes/bridges',
       '@agnes/channels',
       '@agnes/cli',

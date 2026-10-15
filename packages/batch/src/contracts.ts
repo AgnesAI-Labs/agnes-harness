@@ -1,8 +1,10 @@
 /** Batch-owned contracts. Runtime adapters must enforce authority, not trust a model's claims. */
-import type { JsonValue as Json } from '@agnes/protocol'
+import type { AttachmentScope } from '@agnes/extension-api'
+import type { ArtifactRef, JsonValue as Json } from '@agnes/protocol'
 
 export type { JsonValue as Json } from '@agnes/protocol'
-export type Input = { name: string; digest: string; size: number; artifact: string }
+export type InputReference = { artifact: ArtifactRef; receipt: { id: string; scope: AttachmentScope } }
+export type Input = InputReference & { name: string; digest: string; size: number }
 export type Spec = {
   prompt: string
   budget: number
@@ -86,6 +88,7 @@ export type Receipt = {
   child: string
   job: string
   session: string
+  lane: string
   frame: string
   /** Authoritative cumulative cost for this attempt, including interrupted work. */
   charged: number

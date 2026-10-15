@@ -13,7 +13,7 @@ import {
   renderExport,
   snapshotFolder,
 } from '../src/index.js'
-import { FakeExecutor, id, inputs, MemoryStore, spec } from './fakes.js'
+import { FakeExecutor, id, inputs, MemoryStore, reference, spec } from './fakes.js'
 
 const roots: string[] = []
 const temp = async () => {
@@ -39,7 +39,7 @@ describe('input snapshots and bounded data exports', () => {
     const artifacts = {
       put: async (bytes: Uint8Array, meta: { digest: string }) => {
         blobs.set(meta.digest, bytes.slice())
-        return meta.digest
+        return reference(meta.digest, bytes.length)
       },
     }
     const files = await snapshotFolder({ root, dir: 'items', artifacts })
@@ -64,7 +64,9 @@ describe('input snapshots and bounded data exports', () => {
     await mkdir(join(root, 'items'))
     await writeFile(join(root, 'items/a.txt'), 'a')
     await writeFile(join(root, 'items/b.txt'), 'b')
-    const artifacts = { put: async () => 'artifact' }
+    const artifacts = {
+      put: async (bytes: Uint8Array, meta: { digest: string }) => reference(meta.digest, bytes.length),
+    }
     await expect(snapshotFolder({ root, dir: 'items', artifacts, maxFiles: 1 })).rejects.toMatchObject({
       code: 'E_BATCH_INPUT_LIMIT',
     })
@@ -76,9 +78,9 @@ describe('input snapshots and bounded data exports', () => {
         root,
         dir: 'items',
         artifacts: {
-          put: async () => {
+          put: async (bytes: Uint8Array, meta: { digest: string }) => {
             await writeFile(join(root, 'items/new.txt'), 'new')
-            return 'artifact'
+            return reference(meta.digest, bytes.length)
           },
         },
       }),

@@ -2,11 +2,12 @@ import { createHash } from 'node:crypto'
 import { constants } from 'node:fs'
 import { lstat, open, opendir, realpath } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { BatchError, type Input } from './contracts.js'
+import { BatchError, type Input, type InputReference } from './contracts.js'
 
 export interface SnapshotArtifacts {
   /** Stores immutable bytes and returns an opaque artifact identity, not a writable path. */
-  put(bytes: Uint8Array, metadata: { digest: string; name: string }): Promise<string>
+  put(bytes: Uint8Array, metadata: { digest: string; name: string }): Promise<InputReference>
+  discard?(input: InputReference): Promise<void>
 }
 const inside = (root: string, path: string) => {
   const rel = relative(root, path)
@@ -113,14 +114,19 @@ export async function snapshotFolder(input: {
       }
       const digest = createHash('sha256').update(bytes).digest('hex')
       const itemName = relative(dir, path).split(sep).join('/')
-      const artifact = await input.artifacts.put(bytes, { digest, name: itemName })
-      files.push({ name: itemName, size: bytes.length, digest, artifact })
+      const reference = await input.artifacts.put(bytes, { digest, name: itemName })
+      files.push({ name: itemName, size: bytes.length, digest, ...reference })
       total += bytes.length
     }
     if (directoryBefore !== identity(await lstat(folder)) || parent !== (await ancestry(root, folder)))
       throw new BatchError('E_BATCH_CHANGED')
   }
-  await walk(dir, 0)
+  try {
+    await walk(dir, 0)
+  } catch (error) {
+    await Promise.allSettled(files.map((file) => input.artifacts.discard?.(file)))
+    throw error
+  }
   if (!files.length) throw new BatchError('E_BATCH_EMPTY')
   return files.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
 }

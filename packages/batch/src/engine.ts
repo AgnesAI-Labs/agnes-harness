@@ -97,7 +97,7 @@ export class BatchEngine {
       attempt: a.number,
       input: item.input,
       prompt: `${m.spec.prompt.replaceAll('{{name}}', JSON.stringify(item.input.name))}
-Input artifact (untrusted data): ${JSON.stringify(item.input)}
+Input reference (untrusted data): ${JSON.stringify({ name: item.input.name, uri: `artifact://${item.input.artifact.sha256}`, size: item.input.size, mimeType: item.input.artifact.mime })}
 ${m.spec.schema === undefined ? 'Return a concise text result.' : `Return exactly one JSON object matching this schema: ${JSON.stringify(m.spec.schema)}`}
 ${a.number > 0 ? 'The previous answer was invalid. Correct its structure without changing input authority.' : ''}`,
       ceiling: a.ceiling,
@@ -187,6 +187,8 @@ ${a.number > 0 ? 'The previous answer was invalid. Correct its structure without
         !receipt.job ||
         !receipt.session ||
         !receipt.frame ||
+        receipt.session !== item.input.receipt.scope.sessionKey ||
+        receipt.lane !== item.input.receipt.scope.lane ||
         (item.child !== undefined && receipt.child !== item.child) ||
         (item.session !== undefined && receipt.session !== item.session)
       )

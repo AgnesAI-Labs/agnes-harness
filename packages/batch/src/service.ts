@@ -52,8 +52,25 @@ export class BatchService {
       signal: this.binding.signal,
       ...(input.extensions ? { extensions: input.extensions } : {}),
     })
-    this.binding.signal.throwIfAborted()
-    return batchStatus(await this.binding.engine.begin(input.id, spec, inputs))
+    let accepted: Manifest
+    try {
+      this.binding.signal.throwIfAborted()
+      accepted = await this.binding.engine.begin(input.id, spec, inputs)
+    } catch (error) {
+      await Promise.allSettled(inputs.map((input) => this.binding.artifacts.discard?.(input)))
+      throw error
+    }
+    // A same-key retry may have uploaded independent pending receipts. Keep only the receipts
+    // actually retained in the accepted manifest; never clear the original batch's roots.
+    for (let offset = 0; offset < inputs.length; offset += 1000) {
+      const stored = await this.binding.engine.repo.page(input.id, offset, 1000)
+      for (const [index, item] of stored.entries()) {
+        const captured = inputs[offset + index]
+        if (captured && captured.receipt.id !== item.input.receipt.id)
+          await this.binding.artifacts.discard?.(captured)
+      }
+    }
+    return batchStatus(accepted)
   }
   async status(id: string) {
     return batchStatus(await this.binding.engine.repo.status(id))

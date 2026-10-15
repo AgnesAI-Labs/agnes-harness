@@ -88,6 +88,7 @@ export class Repository {
       a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
     )
     const names = new Set<string>()
+    const scopes = new Set<string>()
     for (const file of files) {
       if (
         !file.name ||
@@ -101,13 +102,32 @@ export class Repository {
         file.size < 0 ||
         file.size > 20 * 1024 * 1024 ||
         !file.artifact ||
-        Buffer.byteLength(file.artifact) > 1024 ||
-        names.has(file.name)
+        file.artifact.sha256 !== file.digest ||
+        file.artifact.size !== file.size ||
+        !file.artifact.mime ||
+        !file.receipt?.id ||
+        !file.receipt.scope.sessionKey ||
+        !file.receipt.scope.lane ||
+        names.has(file.name) ||
+        scopes.has(JSON.stringify([file.receipt.scope.sessionKey, file.receipt.scope.lane]))
       )
         throw new BatchError('E_BATCH_INPUTS')
       names.add(file.name)
+      scopes.add(JSON.stringify([file.receipt.scope.sessionKey, file.receipt.scope.lane]))
     }
-    const digest = createHash('sha256').update(JSON.stringify({ spec, files })).digest('hex')
+    // Receipt ids are per-upload leases, not input identity. A retry can create another receipt
+    // for the same immutable original and prepared child; it must resolve the accepted batch.
+    const identity = files.map((file) => ({
+      name: file.name,
+      digest: file.digest,
+      size: file.size,
+      mime: file.artifact.mime,
+      session: file.receipt.scope.sessionKey,
+      lane: file.receipt.scope.lane,
+    }))
+    const digest = createHash('sha256')
+      .update(JSON.stringify({ spec, files: identity }))
+      .digest('hex')
     return this.store.transaction((tx) => {
       const key = batchKey(id)
       if (tx.get(key)) {

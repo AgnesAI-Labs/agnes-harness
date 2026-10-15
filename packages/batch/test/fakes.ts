@@ -3,6 +3,7 @@ import {
   type Dispatch,
   type Executor,
   type Input,
+  type InputReference,
   type Json,
   type Receipt,
   type Spec,
@@ -48,11 +49,15 @@ export const spec: Spec = {
   maxRepairs: 1,
   failureLimit: 5,
 }
+export const reference = (digest: string, size: number, tag = digest): InputReference => ({
+  artifact: { sha256: digest, size, mime: 'text/plain' },
+  receipt: { id: `receipt:${tag}`, scope: { sessionKey: `session:${tag}`, lane: 'main' } },
+})
 export const inputs: Input[] = ['a.txt', 'b.txt'].map((name, i) => ({
   name,
   digest: String(i + 1).repeat(64),
   size: 1,
-  artifact: `artifact:${i}`,
+  ...reference(String(i + 1).repeat(64), 1, name),
 }))
 export const id = 'b123456abcdef'
 export class FakeExecutor implements Executor {
@@ -87,7 +92,8 @@ export class FakeExecutor implements Executor {
       inputDigest: request.input.digest,
       child,
       job: `job:${request.key}`,
-      session: `session:${child}`,
+      session: request.input.receipt.scope.sessionKey,
+      lane: request.input.receipt.scope.lane,
       frame: `frame:${request.key}`,
       charged: 0,
       state: 'running',
@@ -109,13 +115,17 @@ export class FakeExecutor implements Executor {
     return structuredClone(receipt)
   }
   /** Synthetic authority boundary: only exact bound input, child/session/frame/job accepted. */
-  read(key: string, binding: Pick<Receipt, 'child' | 'session' | 'frame' | 'job'>, artifact: string): string {
+  read(
+    key: string,
+    binding: Pick<Receipt, 'child' | 'session' | 'lane' | 'frame' | 'job'>,
+    artifact: Input['artifact'],
+  ): string {
     const request = this.requests.get(key),
       receipt = this.receipts.get(key)
     if (
       !request ||
       !receipt ||
-      artifact !== request.input.artifact ||
+      artifact.sha256 !== request.input.artifact.sha256 ||
       Object.entries(binding).some(([k, v]) => receipt[k as keyof Receipt] !== v)
     )
       throw new Error('E_INPUT_DENIED')

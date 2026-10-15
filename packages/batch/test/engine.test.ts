@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { BatchEngine, Repository } from '../src/index.js'
-import { FakeExecutor, id, inputs, MemoryStore, spec } from './fakes.js'
+import { FakeExecutor, id, inputs, MemoryStore, reference, spec } from './fakes.js'
 
 const harness = () => {
   const store = new MemoryStore(),
@@ -74,7 +74,10 @@ describe('durable batch business state', () => {
   it('reserves hard ceilings across concurrency, accounts cancellation and stops at the batch limit', async () => {
     const h = harness()
     h.executor.reply = (r) => ({ state: 'running', charged: r.ceiling / 2 })
-    await h.engine.begin(id, { ...spec, budget: 1.5 }, [...inputs, { ...inputs[0]!, name: 'c.txt' }])
+    await h.engine.begin(id, { ...spec, budget: 1.5 }, [
+      ...inputs,
+      { ...inputs[0]!, name: 'c.txt', ...reference(inputs[0]!.digest, 1, 'c.txt') },
+    ])
     expect(await h.engine.tick(id)).toMatchObject({ status: 'running', spent: 0.75, reserved: 0.75 })
     expect([...h.executor.requests.values()].map((r) => r.ceiling)).toEqual([1, 0.5])
     expect(await h.engine.cancel(id)).toMatchObject({
@@ -147,7 +150,13 @@ describe('durable batch business state', () => {
     expect(h.store.rows.size).toBe(0)
   })
   it('refuses forged receipt binding and over-ceiling billing without settling success', async () => {
-    for (const forged of [{ inputDigest: 'forged' }, { charged: 2 }, { child: '' }]) {
+    for (const forged of [
+      { inputDigest: 'forged' },
+      { charged: 2 },
+      { child: '' },
+      { session: 'other' },
+      { lane: 'other' },
+    ]) {
       const h = harness()
       h.executor.reply = () => ({ state: 'completed', charged: 0.25, text: 'ok', inputRead: true, ...forged })
       await h.engine.begin(id, spec, inputs)
