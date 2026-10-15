@@ -1709,7 +1709,8 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
                         }
                       }
                     : undefined
-                if (pinCoordinator) await pinCoordinator.publish(artifact, runtimeTargetProbe, undefined, apply)
+                if (pinCoordinator)
+                  await pinCoordinator.publish(artifact, runtimeTargetProbe, undefined, apply)
                 else
                   await publishProbedRuntimeTarget({
                     store: runtimeStore,
