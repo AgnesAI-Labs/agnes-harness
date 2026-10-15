@@ -56,13 +56,13 @@ it('runs the real Hub on the generic owned store/readiness and streams, parking 
   }
   const row: ClientModuleRosterRow = {
     rowId: 'web:sample-mhs',
-    moduleName: 'sample/mhs',
+    moduleName: 'plugin/0123456789abcdef',
     enabled: true,
     phase: 'ready',
     packageId: 'sample-mhs',
     revision: 'revision',
     contentDigest: `sha256-${'a'.repeat(64)}`,
-    extIds: ['sample/mhs'],
+    extIds: ['plugin/0123456789abcdef'],
     streams: ['mhs.media', 'mhs.events', 'mhs.control'],
     binding: {
       owner: 'web:sample-mhs',
@@ -76,7 +76,7 @@ it('runs the real Hub on the generic owned store/readiness and streams, parking 
   }
   const meta = metadata(),
     activations = new ProfileActivations(meta.namespace('@host', 'activation'))
-  const owner = 'sample/mhs'
+  const owner = 'plugin/0123456789abcdef'
   activations.publish([{ owner, revision: 'revision' }])
   const adapter = createMhsNativeProfileAdapter(async () => {
     activations.require(owner, 'revision')
@@ -213,7 +213,7 @@ it('runs the real Hub on the generic owned store/readiness and streams, parking 
       ...(lane === 'control' ? { controlService: 'mhs.lease' } : {}),
     }))
     const author = bindPluginStreams(broker, {
-      owner: 'sample/mhs',
+      owner: 'plugin/0123456789abcdef',
       profileId: 'one',
       activationId,
       signal: lifetime.signal,
@@ -247,7 +247,7 @@ it('runs the real Hub on the generic owned store/readiness and streams, parking 
     const release = registerMhsStreams(hub.north, author, adapter.bindControl)
     async function open(name: string, input: Record<string, string>, pressure = 0) {
       const grant = await broker.open(principal, {
-        owner: 'sample/mhs',
+        owner: 'plugin/0123456789abcdef',
         name,
         scope: { kind: 'profile', profileId: 'one' },
         input,
@@ -269,7 +269,7 @@ it('runs the real Hub on the generic owned store/readiness and streams, parking 
     }
     await expect(
       broker.open(principal, {
-        owner: 'sample/mhs',
+        owner: 'plugin/0123456789abcdef',
         name: 'mhs.control',
         scope: { kind: 'profile', profileId: 'one' },
         input: {},

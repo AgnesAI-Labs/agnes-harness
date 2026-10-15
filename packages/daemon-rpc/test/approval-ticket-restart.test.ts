@@ -51,6 +51,7 @@ describe('durable approval restart', () => {
       expect(await session.prompt('run')).toMatchObject({ reason: 'parked' })
       const [original] = (await client.approval.list(session.id)).decisions
       expect(original?.result).toBeNull()
+      expect(original?.handle.sessionId).toBe(session.id)
       expect(original?.request.spec.subject).toMatchObject({
         call: { name: 'shell', args: { command: 'echo restart-safe' } },
       })
@@ -62,7 +63,8 @@ describe('durable approval restart', () => {
       await client.initialize()
       expect((await client.approval.list(session.id)).decisions).toEqual([original])
       const command = {
-        ...original!.handle,
+        id: original!.handle.id,
+        sessionId: session.id,
         revision: original!.revision,
         commandId: 'review',
         response: { option: 'allowed-once', value: null },

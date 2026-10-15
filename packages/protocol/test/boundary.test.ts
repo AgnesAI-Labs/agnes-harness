@@ -59,6 +59,9 @@ describe('protocol src boundary', () => {
     expect(Object.keys(mod).sort()).toEqual(
       [
         'AGNES_ERRORS',
+        'PROFILE_DECISION_JOURNAL_PREFIX',
+        'isProfileDecisionJournal',
+        'profileDecisionJournalKey',
         'PLUGIN_STREAM_PATH',
         'PLUGIN_STREAM_OPEN_PATH',
         'PLUGIN_STREAM_SOURCE_PATH',

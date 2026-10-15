@@ -10,7 +10,7 @@
 
 安装级部署尚需组合 managed-service connector、当前 activation admission 与 gateway 注册链路。在该部署组合安装前，默认 `mhsPlugin` 以 `E_MHS_MANAGED_CONNECTOR_REQUIRED` 拒绝启用，不开裸 North WebSocket，也不凭调用者提供的 role 授权。runtime factory 可接受显式注入的端口，包括合成测试 fixture。宣称普通插件安装或浏览器验收通过前必须关闭此限制。
 
-这是源码预览，不承诺公开发行或真实设备兼容。UI、随包示例、部署 supervision、原生批准呈现与 Windows 进程验收属于后续集成职责。参阅 [Hub 合同](../mhs-hub/README.zh-CN.md)与[设备 SDK](../mhs-device/README.zh-CN.md)。
+这是源码预览，不承诺公开发行或真实设备兼容。MHS UI、随包示例、安装级部署组合与 Windows 进程验收仍属于后续集成职责。原生 profile 审批显示在 Web 侧栏的**操作审批**区，参阅 [profile 服务指南](../../docs/develop/profile-services.zh-CN.md)。参阅 [Hub 合同](../mhs-hub/README.zh-CN.md)与[设备 SDK](../mhs-device/README.zh-CN.md)。
 
 `startManagedMhsHub(runtime, { authority, wakes })` 使用通用 `ManagedServiceInit & ManagedServiceRuntime` 的真实 `ManagedOwnedStore`、device 监听端口、私有 ready 与 shutdown 生命周期。`registerMhsStreams(north, streams, bindControl)` 通过 `PluginStreamsPort` 注册 `mhs.media`、`mhs.events` 与 `mhs.control`；可信 binder 将已验证 grant 映射到确切设备与 Hub lease，浏览器输入不能选择控制目标。媒体恢复每条流每秒最多请求一次关键帧，控制断线会停止已绑定设备。进程内测试使用真实 Hub、通用存储和 gateway broker；当前默认插件仍因缺少安装级可信 connector 而拒绝激活，不代表已通过完整安装或浏览器验收。
 

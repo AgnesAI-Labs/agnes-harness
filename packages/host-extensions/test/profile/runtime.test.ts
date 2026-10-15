@@ -6,7 +6,13 @@ import type {
   ServiceContext,
   ServiceDef,
 } from '@agnes/extension-api'
-import type { Actor, DecisionSnapshot, JsonValue, ProfileServiceReceipt } from '@agnes/protocol'
+import type {
+  Actor,
+  DecisionSnapshot,
+  JsonValue,
+  ProfileServiceReceipt,
+  ServiceEffectPolicy,
+} from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { ServiceRegistry } from '../../src/ext-host/services.js'
 import { ProfileActivations } from '../../src/profile/activation.js'
@@ -17,13 +23,13 @@ import { ProfileWakeBindings } from '../../src/profile/wakes.js'
 const owner = 'plugin/0123456789abcdef'
 const actor: Actor = { id: 'operator', org: 'local', role: 'user', deptPath: [], attrs: {} }
 const logger = { debug() {}, info() {}, warn() {}, error() {} }
-const policy = {
+const policy: ServiceEffectPolicy = {
   isDestructive: true,
   isOpenWorld: true,
   requiresApproval: 'always',
   replay: 'never',
   approvalScopes: [],
-} as const
+}
 const schema = {
   type: 'object',
   properties: { value: { type: 'number' } },

@@ -1319,8 +1319,10 @@ it('retains the original request across worker and daemon crashes, then consumes
       async () => expect((await sdk.approval.list(session.id)).decisions).toEqual([original]),
       { timeout: 50000, interval: 500 },
     )
+    expect(original?.handle.sessionId).toBe(session.id)
     const command = {
-      ...original!.handle,
+      id: original!.handle.id,
+      sessionId: session.id,
       revision: original!.revision,
       commandId: 'cold-human-answer',
       response: { option: 'allowed-once', value: null },

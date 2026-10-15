@@ -21,8 +21,9 @@ const workspace = {
   approvalContext: () => ({}),
   checkpointContext: () => ({}),
 } as unknown as WorkspaceInvocationView
-function setup(over: Partial<ServiceDef> = {}, budget = Infinity) {
-  const def: ServiceDef = { ...serviceFixture(), ...over }
+type SessionServiceDef = Extract<ServiceDef, { scope?: 'session' }>
+function setup(over: Partial<SessionServiceDef> = {}, budget = Infinity) {
+  const def: SessionServiceDef = { ...serviceFixture(), ...over }
   const { handler: _, ...cap } = def
   const manifest: ExtensionManifest = {
     id: 'fixture/service',
