@@ -1,7 +1,9 @@
-import { mkdtempSync, rmSync, statSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { appendFileSync, mkdtempSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { defaultIds, SessionLogImpl } from '@agnes/core'
+import { attachmentLink } from '@agnes/protocol'
 import { expect, it } from 'vitest'
 import { readSessionView } from '../../../host/src/runtime/sessions/session-view.js'
 import { ev } from '../../../host/test/adapters/events.js'
@@ -36,6 +38,27 @@ it('previews and fully verifies the same 100 MiB history without carrying origin
           }),
         ),
       )
+    // Originals live outside the log. The same preview/verification gate must retain references
+    // while never reading 100 MiB of original payload into the opening projection.
+    for (let index = 0; index < 5; index++) {
+      const chunk = Buffer.alloc(1024 * 1024, index + 1)
+      const digest = createHash('sha256')
+      const original = join(dir, `original-${index}.bin`)
+      for (let part = 0; part < 20; part++) {
+        appendFileSync(original, chunk)
+        digest.update(chunk)
+      }
+      await log.append([
+        ev('user/message', {
+          content: [
+            attachmentLink(
+              { sha256: digest.digest('hex'), size: 20 * 1024 * 1024, mime: 'application/octet-stream' },
+              `original-${index}.bin`,
+            ),
+          ],
+        }),
+      ])
+    }
     await log.close()
     await storage.close()
     expect(statSync(file).size).toBeGreaterThan(100 * 1024 * 1024)
@@ -51,15 +74,21 @@ it('previews and fully verifies the same 100 MiB history without carrying origin
       expect(view.readOnly).toBe(true)
       expect(view.timeline.opState).toBeNull()
       expect(JSON.stringify(view).length).toBeLessThan(8 * 1024 * 1024)
-      expect(view.lastSeq).toBe(5100)
+      expect(view.lastSeq).toBe(5105)
     }
+    expect(Math.max(...samples)).toBeLessThan(1000)
     const started = performance.now()
     const verified = await SessionLogImpl.open(options())
-    expect(verified.lastSeq).toBe(5100)
+    expect(verified.lastSeq).toBe(5105)
     await verified.close()
+    expect(performance.now() - started).toBeLessThan(15_000)
+    expect(process.resourceUsage().maxRSS * 1024).toBeLessThan(1024 * 1024 * 1024)
     console.info(
       JSON.stringify({
-        dataset: '5100-messages-100MiB-v1',
+        dataset: '5105-messages-100MiB-text-100MiB-originals-v2',
+        platform: process.platform,
+        arch: process.arch,
+        node: process.version,
         storedBytes: statSync(file).size,
         freshReaderMs: samples[0],
         warmMs: samples.slice(1),

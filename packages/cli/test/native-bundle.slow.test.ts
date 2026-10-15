@@ -77,10 +77,13 @@ it('exports and preflights 100 MiB of originals separately from the ledger', asy
     expect(refs.reduce((total, ref) => total + statSync(join(`${path}.artifacts`, ref.sha256)).size, 0)).toBe(
       100 * chunkSize,
     )
+    expect(exportedMs).toBeLessThan(30_000)
     const reading = performance.now()
     const bundle = await readNativeBundle(path, readFileSync(path))
     expect(bundle?.manifest.lastSeq).toBe(events.length)
     for (const ref of refs) expect((await bundle?.readOriginal(ref))?.length).toBe(size)
+    expect(performance.now() - reading).toBeLessThan(30_000)
+    expect(process.resourceUsage().maxRSS * 1024).toBeLessThan(1024 * 1024 * 1024)
     console.info(
       JSON.stringify({
         dataset: '5-originals-20MiB-v1',
