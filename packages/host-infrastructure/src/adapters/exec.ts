@@ -141,8 +141,12 @@ export function createExec(
         return handle
       },
       killAll: async () => {
-        await Promise.all([...interactive].map((handle) => handle.close()))
-        await windows.killAll()
+        const results = await Promise.allSettled([
+          ...[...interactive].map((handle) => handle.close()),
+          windows.killAll(),
+        ])
+        const errors = results.flatMap((result) => (result.status === 'rejected' ? [result.reason] : []))
+        if (errors.length) throw new AggregateError(errors, 'Windows process cleanup failed')
       },
     }
   }
