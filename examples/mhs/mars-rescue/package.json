@@ -1,0 +1,123 @@
+{
+  "name": "@agnes-example/mars-rescue",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": {
+    ".": "./index.mjs",
+    "./runtime": "./src/runtime.ts",
+    "./simulation": "./src/simulation.ts"
+  },
+  "files": [
+    "index.mjs",
+    "client",
+    "src",
+    "skills",
+    "assets",
+    "LICENSE",
+    "NOTICE",
+    "README.md",
+    "README.zh-CN.md",
+    "tools"
+  ],
+  "peerDependencies": {
+    "@agnes/mhs-device": "0.0.0",
+    "@agnes/web-client": "0.0.0"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run test --project fast --maxWorkers=1",
+    "build": "node tools/build.mjs"
+  },
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:agnes-example.mars-rescue",
+        "export": "marsRescue",
+        "apiRange": "^4.0.0",
+        "inject": [
+          "skills"
+        ],
+        "capabilities": {
+          "device": true,
+          "ui": true
+        },
+        "runtime": "in-process"
+      }
+    ],
+    "clientDescriptors": [
+      {
+        "rowId": "ext:agnes-example.mars-rescue",
+        "path": "./client/agnes.client.json"
+      }
+    ],
+    "bundles": {
+      "rescue": {
+        "profile": {
+          "skills": [
+            "mars-rescue"
+          ]
+        },
+        "presets": {
+          "mars-rescue": {
+            "name": "mars-rescue",
+            "extends": "standard"
+          }
+        }
+      }
+    },
+    "metadata": {
+      "displayName": "Mars rescue",
+      "summary": "Eleven simulated devices, an in-page Mars base and a rescue business Agent.",
+      "description": "Simulated rescue and sample missions. Movement requires ordinary MHS approval. No physical hardware is connected.",
+      "category": "example",
+      "exampleOf": "@agnes/mhs",
+      "pageEntry": "mars-rescue",
+      "launches": [
+        {
+          "id": "rescue",
+          "kind": "business-agent",
+          "title": "Rescue the astronaut",
+          "bundle": "@agnes-example/mars-rescue#rescue",
+          "preset": "mars-rescue",
+          "prompt": "Use the mars-rescue Skill. Read the suit oxygen and base state, locate the astronaut with a hopper camera, then ask approval for movement and have Monolith bring them to the airlock. Prepare medical habitat mode and cycle the airlock safely. Verify the suit rescued state and report receipts; never replay unknown actions."
+        },
+        {
+          "id": "sample",
+          "kind": "business-agent",
+          "title": "Collect and analyze a sample",
+          "bundle": "@agnes-example/mars-rescue#rescue",
+          "preset": "mars-rescue",
+          "prompt": "Use the mars-rescue Skill. Survey the west field, ask approval for movement, route the rover to rock-1, collect and dock, unload and analyze it in the lab, and send the synthetic result through the comms dish. Verify every result; stop on refusal or unknown motion."
+        }
+      ],
+      "locales": {
+        "zh-CN": {
+          "displayName": "火星救援",
+          "summary": "11 台模拟设备、页内火星基地与救援业务 Agent。",
+          "description": "模拟救援和采样任务，运动沿用 MHS 原生批准。没有连接物理设备。"
+        }
+      }
+    },
+    "kinds": [
+      "bundle",
+      "skills",
+      "ui"
+    ]
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  },
+  "peerDependenciesMeta": {
+    "@agnes/mhs-device": {
+      "optional": true
+    },
+    "@agnes/web-client": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@agnes/mhs": "0.0.0"
+  }
+}

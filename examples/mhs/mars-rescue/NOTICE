@@ -1,0 +1,12 @@
+Mars rescue example
+Copyright 2026 Agnes Harness contributors
+
+The Mars simulation, terrain, base structures, device models, shaders and UI are
+original project-authored procedural resources under Apache-2.0 (see LICENSE).
+No NASA, Sketchfab or other downloaded models/textures are included. This example
+is not affiliated with NASA. No Draco-compressed assets or Draco decoder is used.
+
+The compiled browser runtime contains the @agnes/mhs-device SDK (Apache-2.0) and
+@sinclair/typebox 0.34.33 (MIT), Copyright (c) 2017-2025 Haydn Paterson.
+The complete TypeBox license is included in assets/TYPEBOX-LICENSE.txt.
+React is supplied by the AGH host and is not copied into this example.

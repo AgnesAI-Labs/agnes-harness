@@ -1,0 +1,53 @@
+.mars-rescue {
+  color: var(--agnes-text-primary);
+  padding: 1rem;
+}
+.mars-rescue canvas {
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: 8px;
+}
+.mars-rescue-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-block: 1rem;
+}
+.mars-rescue button,
+.mars-rescue select {
+  color: var(--agnes-text-primary);
+  background: var(--agnes-bg-surface);
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: 6px;
+  padding: 0.5rem;
+}
+.mars-rescue button:focus-visible,
+.mars-rescue select:focus-visible,
+.mars-rescue canvas:focus-visible {
+  outline: 2px solid var(--agnes-brand-primary);
+  outline-offset: 2px;
+}
+.mars-rescue-devices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding-inline: 1rem;
+}
+.mars-rescue svg {
+  width: min(100%, 28rem);
+  height: auto;
+  border: 1px solid var(--agnes-line-primary);
+}
+.mars-rescue svg circle {
+  fill: var(--agnes-brand-primary);
+}
+.mars-rescue svg text {
+  fill: var(--agnes-text-primary);
+  font-size: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mars-rescue * {
+    scroll-behavior: auto;
+  }
+}

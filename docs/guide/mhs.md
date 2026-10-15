@@ -86,3 +86,7 @@ Start with [backend plugins](../develop/backend.md), [MCP](mcp.md), and [full-st
 ## Current status at a glance
 
 **Native MHS source modules and a separate MCP inspection example are available.** A verified general-purpose MHS adapter and supported-device list remain future work. The simulator does not establish MHS compatibility or physical-device acceptance. Device controllers retain responsibility for real-time control and physical safety.
+
+## Mars rescue example
+
+The bundled [Mars rescue package](../../examples/mhs/mars-rescue/README.md) implements eleven simulated devices and an in-page procedural 3D scene. See the [Mars guide](mars-world.md) for lifecycle, business-Agent launch and integration status. Its reviewed parent device transport is still required; unit tests do not establish end-to-end activation or motion approval.

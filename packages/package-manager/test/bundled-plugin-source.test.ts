@@ -74,9 +74,14 @@ it.each(BUNDLED_HELPERS)(
   },
 )
 
-it('fetches reserved official examples outside a checkout without using a workspace impostor', async () => {
+it.each([
+  { family: 'loops', name: 'dag-loop', id: '@agnes-example/dag-loop' },
+  { family: 'mhs', name: 'mars-rescue', id: '@agnes-example/mars-rescue' },
+])('fetches bundled $family/$name offline without using a workspace impostor', async (expected) => {
   const root = fixture()
-  const example = BUNDLED_EXAMPLES[0]!
+  const example = BUNDLED_EXAMPLES.find(
+    (item) => item.family === expected.family && item.name === expected.name,
+  )!
   const impostor = join(root, 'bundled-examples', example.family, example.name)
   mkdirSync(impostor, { recursive: true })
   writeFileSync(join(impostor, 'package.json'), JSON.stringify({ name: 'impostor', version: '9.9.9' }))
@@ -85,7 +90,25 @@ it('fetches reserved official examples outside a checkout without using a worksp
   })
   const into = join(root, 'stage')
   await fetchSource(parseSource(example.ref), into, { cwd: root, exec })
-  expect(JSON.parse(readFileSync(join(into, 'package.json'), 'utf8')).name).toBe('@agnes-example/dag-loop')
+  const metadata = JSON.parse(readFileSync(join(into, 'package.json'), 'utf8'))
+  expect(metadata.name).toBe(expected.id)
+  if (expected.family === 'mhs') {
+    expect(metadata.agnes.metadata).toMatchObject({
+      category: 'example',
+      exampleOf: '@agnes/mhs',
+      pageEntry: 'mars-rescue',
+    })
+    for (const file of [
+      'LICENSE',
+      'NOTICE',
+      'assets/TYPEBOX-LICENSE.txt',
+      'skills/rescue/SKILL.md',
+      'client/generated/runtime.js',
+      'client/generated/scene.js',
+      'client/generated/cameras.js',
+    ])
+      expect(readFileSync(join(into, file)).length).toBeGreaterThan(0)
+  }
   expect(bundledExampleSource('file:./bundled-examples/loops/dag-loop/../../impostor')).toBeUndefined()
   expect(exec).not.toHaveBeenCalled()
 })

@@ -76,3 +76,7 @@ MCP 桥保留 `readOnlyHint`、`destructiveHint` 与 `idempotentHint`，映射�
 ## 当前状态摘要
 
 **原生 MHS 源码模块与独立 MCP 巡检示例已提供。** 经过验证的通用 MHS 适配器与受支持设备清单仍待后续交付。模拟器不证明 MHS 兼容或物理设备验收。实时控制与物理安全仍由设备控制器负责。
+
+## 火星救援示例
+
+随包的[火星救援](../../examples/mhs/mars-rescue/README.zh-CN.md) 实现 11 台模拟设备及页内程序化 3D 场景。[火星指南](mars-world.zh-CN.md) 说明生命周期、业务 Agent 启动及集成状态。经审核的父设备传输仍待接线，单测不代表端到端启用或运动批准已通过。

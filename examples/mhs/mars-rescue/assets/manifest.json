@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "firstOpenNetworkDownloads": false,
+  "draco": null,
+  "resources": [
+    {
+      "path": "client/generated/runtime.js",
+      "bytes": 137621,
+      "sha256": "db572c662bd9c2f6be5e2c0a4dff46b9c66c809b15ea3d3d6387f6a89abb7d64",
+      "origin": "Agnes simulation, MHS device SDK and bundled TypeBox",
+      "license": "Apache-2.0 AND MIT"
+    },
+    {
+      "path": "client/generated/scene.js",
+      "bytes": 5118,
+      "sha256": "29d150df902ee1dc1bd6b4607cc12a24a643ddd3b99dea56cdba77cfd11aa69a",
+      "origin": "Project-authored procedural Mars scene",
+      "license": "Apache-2.0"
+    },
+    {
+      "path": "client/generated/cameras.js",
+      "bytes": 12260,
+      "sha256": "d470bcccf5db7c305c072783d988f01ad16ac4a132b1a5db28ef5125f625757b",
+      "origin": "Project-authored procedural Mars scene",
+      "license": "Apache-2.0"
+    }
+  ]
+}
