@@ -23,20 +23,9 @@ export interface ProfileServices {
   ): Promise<Receipt>
   readOperation(operationId: string): Promise<Receipt>
 }
-export interface ClientStream {
-  send(frame: Uint8Array | JsonValue): 'accepted' | 'dropped' | 'closed'
-  onFrame(listener: (frame: Uint8Array | JsonValue) => void): () => void
-  onDrop(listener: (info: { reason: 'backpressure'; count: number }) => void): () => void
-  onDisconnect(listener: (info: { reason: string }) => void): () => void
-  close(reason: string): void
-}
-export interface Streams {
-  open(
-    name: string,
-    input: JsonValue,
-    options?: { signal?: AbortSignal; controlOperationId?: string },
-  ): Promise<ClientStream>
-}
+/** The installed module consumes the Host's authenticated lane facade directly. */
+export type Streams = ClientContext['profile']['streams']
+export type ClientStream = Awaited<ReturnType<Streams['open']>>
 export interface HubStatus {
   state: 'starting' | 'ready' | 'stopping' | 'failed' | 'shutdown-unconfirmed'
   code?: string

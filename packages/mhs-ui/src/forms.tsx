@@ -314,12 +314,18 @@ export function JobView({ operation, device }: { operation: Data; device: string
       )}
       {operation.progress !== undefined && <pre>{jsonText(operation.progress)}</pre>}
       {state === 'paused' && (
-        <Button onClick={() => void action.run('resume', { device, params: { call: operationId } })}>
+        <Button
+          disabled={action.busy || action.pending}
+          onClick={() => void action.run('resume', { device, params: { call: operationId } })}
+        >
           {t('resume')}
         </Button>
       )}
       {['running', 'accepted', 'paused'].includes(state) && (
-        <Button onClick={() => void action.run('cancel', { device, params: { call: operationId } })}>
+        <Button
+          disabled={action.busy || action.pending}
+          onClick={() => void action.run('cancel', { device, params: { call: operationId } })}
+        >
           {t('cancel')}
         </Button>
       )}

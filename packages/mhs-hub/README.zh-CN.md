@@ -15,3 +15,5 @@
 真实 Harness admission、managed-service 生命周期与浏览器 gateway 集成依赖对应的公开作者 API。本包不会用本地 role 字段、裸 Node socket 或任意 jobs/admin 访问替代这些 API。合成单测与 socket 测试仅证明本地软件行为；真实硬件与 Windows 服务仍需部署验收。
 
 浏览器查询提供可选的 `DeviceView.sourceStates`（true/false；尚未确认时为 null）及操作的 `startedAt`/`endedAt`、`phase` 和 `progress`。源状态由设备观测或 configure 确认回执更新；进度只能细化同一设备的既有活动操作，不能重新打开终态。SDK 在运动到达静止检查点后才报告暂停。这些是向后兼容的 MHS 投影，不改变原生批准或通用 Harness wire schema。
+
+`DeviceView.jobs` 是可选的有界投影，每台设备最多提供八条近期操作回执；恢复时从既有日志重建，并通过事件通道发布变化。摘要只包含标签、状态、时间、数值进度及终态状态/原因，参数、结果载荷与 session/wake 身份保留在所属记录中。内存索引最多保留 512 台设备。

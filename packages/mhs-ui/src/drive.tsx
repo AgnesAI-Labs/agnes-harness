@@ -30,6 +30,7 @@ export function Drive({ device }: { device: Device }) {
   )
   const rate = number(device.manual.rate_hz, 30)
   const consumed = useRef(new Set<string>())
+  // biome-ignore lint/correctness/useExhaustiveDependencies: A declaration revision invalidates the current device lease.
   useEffect(() => {
     const receipt = action.receipt
     if (
@@ -60,7 +61,7 @@ export function Drive({ device }: { device: Device }) {
           expiresAt,
           async () => {
             const result = await stopRunner.current('stop', { device: device.id })
-            if (!result || result.state !== 'completed' || record(result.output).state !== 'settled') {
+            if (result?.state !== 'completed' || record(result.output).state !== 'settled') {
               setFailure(true)
               throw new Error('stop-unconfirmed')
             }
@@ -86,6 +87,10 @@ export function Drive({ device }: { device: Device }) {
           () => {
             clearTimeout(expiry)
             off()
+            if (current.current === control) {
+              current.current = undefined
+              setController(undefined)
+            }
             void control.release().catch(() => {})
           },
           { once: true },
@@ -100,7 +105,7 @@ export function Drive({ device }: { device: Device }) {
       abort.abort()
       opening.current = false
     }
-  }, [action.receipt, client, device.id, device.available, axes, rate])
+  }, [action.receipt, client, device.id, device.revision, device.available, axes, rate])
   useEffect(() => {
     const release = () => {
       const c = current.current

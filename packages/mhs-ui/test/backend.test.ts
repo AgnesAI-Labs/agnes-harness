@@ -122,11 +122,28 @@ it('consumes the real SDK declaration, Hub/North query/effect outputs and binary
     state: 'terminal',
     endedAt: expect.any(Number),
   })
+  const recovered = new Hub({
+    store,
+    wakes: {
+      async enqueue() {
+        return { wakeId: 'wake', state: 'queued' }
+      },
+    },
+    authority: { async assertActive() {}, async admit() {} },
+  })
+  await recovered.recover()
+  recovered.online(link)
+  const recoveredDevice = recovered.snapshot()[0]
+  expect(recoveredDevice?.jobs).toContainEqual(
+    expect.objectContaining({ id: 'paused', state: 'terminal', outcome: { status: 'done' } }),
+  )
+  expect(recoveredDevice?.jobs?.find((job) => job.id === 'paused')).not.toHaveProperty('sessionId')
   const decoded = sampleFrom(
     encodeMedia({ device: 'sensor-01', source: 'air', at: 123, data: { temperature: 22 } }),
   )
   expect(decoded).toMatchObject({ device: 'sensor-01', source: 'air', at: 123, data: { temperature: 22 } })
   expect(await client.effect('stop', {})).toMatchObject({ state: 'completed', output: { state: 'settled' } })
   client.dispose()
+  await recovered.shutdown()
   await hub.shutdown()
 })

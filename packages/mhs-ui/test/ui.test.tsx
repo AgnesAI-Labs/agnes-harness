@@ -110,8 +110,15 @@ describe('MHS approved device interactions', () => {
     expect(getByLabelText(host, 'data').getAttribute('aria-invalid')).toBe('true')
     expect(getByRole(host, 'button', { name: 'Run' }).hasAttribute('disabled')).toBe(true)
   })
-  it('renders only writable settings and confirms source switches through the device receipt', async () => {
-    const d = devicesFrom([device()])[0]!
+  it('renders writable settings and paused jobs, and confirms source switches through the device receipt', async () => {
+    const d = devicesFrom([
+      {
+        ...device(),
+        jobs: [
+          { id: 'paused-call', state: 'running', phase: 'paused', startedAt: Date.now(), progress: 0.4 },
+        ],
+      },
+    ])[0]!
     const f = fake()
     f.receipt = {
       state: 'completed',
@@ -130,6 +137,11 @@ describe('MHS approved device interactions', () => {
     )
     expect(queryByLabelText(host, 'temperature')).toBeNull()
     expect(getByLabelText(host, 'speed')).toBeTruthy()
+    await click(getByRole(host, 'button', { name: 'Resume' }))
+    expect(f.effects[0]).toMatchObject({
+      name: 'mhs.resume',
+      input: { device: d.id, params: { call: 'paused-call' } },
+    })
     await click(getByRole(host, 'button', { name: 'Turn on' }))
     expect(f.effects.at(-1)).toMatchObject({
       name: 'mhs.configure',
@@ -151,53 +163,59 @@ describe('MHS approved device interactions', () => {
     expect(host.textContent).toContain('expired')
     expect(f.effects).toHaveLength(1)
   })
-  it.each(['blur', 'space'])('uses a backend lease and independently stops on %s', async (mode) => {
-    vi.useFakeTimers()
-    const raw = device()
-    raw.description = {
-      ...raw.description,
-      manual: {
-        axes: [
-          { id: 'vx', min: -1, max: 1, role: 'forward' },
-          { id: 'pitch', min: -30, max: 30, role: 'pitch' },
-          { id: 'wz', min: -90, max: 90, role: 'turn' },
-        ],
-        deadman_s: 0.5,
-      },
-    } as typeof raw.description
-    const d = devicesFrom([raw])[0]!,
-      f = fake()
-    f.receipt = {
-      state: 'completed',
-      operationId: 'lease',
-      output: { operationId: 'lease', expiresAt: Date.now() + 30000 },
-    }
-    await mount(<Drive device={d} />, f)
-    await click(getByRole(host, 'button', { name: 'Request control' }))
-    expect(f.opened[0]).toMatchObject({
-      name: 'mhs.control',
-      input: { device: d.id, leaseId: f.effects[0]?.operationId },
-      operationId: f.effects[0]?.operationId,
-    })
-    expect(getByRole(host, 'button', { name: 'vx / wz' })).toBeTruthy()
-    const axis = getByRole(host, 'button', { name: 'vx +' })
-    await act(async () => {
-      fireEvent.keyDown(axis, {
-        key: mode === 'space' ? 'ArrowUp' : 'w',
-        code: mode === 'space' ? 'ArrowUp' : 'KeyW',
+  it.each(['blur', 'space', 'drop', 'disable'])(
+    'uses a backend lease and independently stops on %s',
+    async (mode) => {
+      vi.useFakeTimers()
+      const raw = device()
+      raw.description = {
+        ...raw.description,
+        manual: {
+          axes: [
+            { id: 'vx', min: -1, max: 1, role: 'forward' },
+            { id: 'pitch', min: -30, max: 30, role: 'pitch' },
+            { id: 'wz', min: -90, max: 90, role: 'turn' },
+          ],
+          deadman_s: 0.5,
+        },
+      } as typeof raw.description
+      const d = devicesFrom([raw])[0]!,
+        f = fake()
+      f.receipt = {
+        state: 'completed',
+        operationId: 'lease',
+        output: { operationId: 'lease', expiresAt: Date.now() + 30000 },
+      }
+      await mount(<Drive device={d} />, f)
+      await click(getByRole(host, 'button', { name: 'Request control' }))
+      expect(f.opened[0]).toMatchObject({
+        name: 'mhs.control',
+        input: { device: d.id, leaseId: f.effects[0]?.operationId },
+        operationId: f.effects[0]?.operationId,
       })
-      await vi.advanceTimersByTimeAsync(40)
-    })
-    expect(f.stream.sent.at(-1)).toEqual({ type: 'manual', axes: { vx: 1, pitch: 0, wz: 0 } })
-    await act(async () => {
-      if (mode === 'space') fireEvent.keyDown(axis, { key: ' ', code: 'Space' })
-      else window.dispatchEvent(new Event('blur'))
-      await Promise.resolve()
-    })
-    expect(f.stream.sent.at(-1)).toEqual({ type: 'manual', axes: { vx: 0, pitch: 0, wz: 0 } })
-    expect(f.effects.at(-1)?.name).toBe('mhs.stop')
-    expect(f.stream.closed).toBe(true)
-  })
+      expect(getByRole(host, 'button', { name: 'vx / wz' })).toBeTruthy()
+      const axis = getByRole(host, 'button', { name: 'vx +' })
+      await act(async () => {
+        fireEvent.keyDown(axis, {
+          key: mode === 'space' ? 'ArrowUp' : 'w',
+          code: mode === 'space' ? 'ArrowUp' : 'KeyW',
+        })
+        await vi.advanceTimersByTimeAsync(40)
+      })
+      expect(f.stream.sent.at(-1)).toEqual({ type: 'manual', axes: { vx: 1, pitch: 0, wz: 0 } })
+      await act(async () => {
+        if (mode === 'space') fireEvent.keyDown(axis, { key: ' ', code: 'Space' })
+        else if (mode === 'drop') {
+          for (const listener of f.stream.drops) listener({ reason: 'backpressure', count: 1 })
+        } else if (mode === 'disable') dispose()
+        else window.dispatchEvent(new Event('blur'))
+        await Promise.resolve()
+      })
+      expect(f.stream.sent.at(-1)).toEqual({ type: 'manual', axes: { vx: 0, pitch: 0, wz: 0 } })
+      expect(f.effects.at(-1)?.name).toBe('mhs.stop')
+      expect(f.stream.closed).toBe(true)
+    },
+  )
   it('keeps global stop available without a session and shows unknown rather than confirmed stopped', async () => {
     const f = fake()
     f.setSession(undefined)
