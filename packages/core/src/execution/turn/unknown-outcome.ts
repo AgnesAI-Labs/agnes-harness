@@ -139,22 +139,22 @@ export function reconciledMessage(answer: 'happened' | 'not-happened' | undefine
   return ''
 }
 
-/** Results for calls a parked batch never started, so none is left planned without an answer. */
+/**
+ * Results for calls that never started, so none is left planned without an answer: by default the
+ * calls a parked batch did not reach. `text` says why, for the model reading the result.
+ */
 export function notStartedResults(
   s: SessionImpl,
   calls: readonly { toolUseId: string; name: string; argsSeq: number }[],
+  text = (name: string) =>
+    `${name} was not run: the turn paused for a decision on an earlier call in the same batch`,
 ): EventInput[] {
   return calls.map((call) =>
     s.ev(
       'tool/result',
       {
         toolUseId: call.toolUseId,
-        content: [
-          {
-            type: 'text',
-            text: `${call.name} was not run: the turn paused for a decision on an earlier call in the same batch`,
-          },
-        ],
+        content: [{ type: 'text', text: text(call.name) }],
         isError: true,
         code: 'TOOL_NOT_STARTED',
         enforcement: s.d.runtime.enforcement(),

@@ -1,9 +1,11 @@
-import { type OpStateObj, withPhase } from '@agnes/core-common/step/op-state'
+import { type OpStateObj, type ToolCallState, withPhase } from '@agnes/core-common/step/op-state'
 import { CoreError, type EventInput, type Seq } from '@agnes/core-common/types'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import type { LoopToolCall, LoopToolCallOptions, ToolResult } from '@agnes/extension-api'
 import type { JsonValue } from '@agnes/protocol'
+import { setCallsCompleted } from '../execution/turn/resume.js'
 import type { PlannedCall } from '../execution/turn/tools.js'
+import { notStartedResults } from '../execution/turn/unknown-outcome.js'
 import {
   hasCompleteToolPolicyEnvelope,
   hasTrustedToolCallProvenance,
@@ -24,6 +26,11 @@ type Announce = NonNullable<LoopToolCallOptions['announce']>
 type Call = LoopToolCall & { invocationId: string }
 /** A planned call with the receipt it settles. */
 type Planned = { call: PlannedCall; invocationId: string; input: ReturnType<typeof receiptInput> }
+/** An announced call of the open step that was planned and never dispatched. */
+type Stranded = { toolUseId: string; name: string; argsSeq: Seq; invocationId: string }
+
+/** The result text of an announced call whose step ended before it ran. */
+const NOT_STARTED = (name: string) => `${name} was announced but did not run before its step ended`
 
 /** What the announce path shares with the loop context that owns it. */
 export interface AnnounceDeps {
@@ -38,10 +45,36 @@ export interface AnnounceDeps {
  * so the history never holds the message without its calls or a call without its message, and a
  * call never attaches to an earlier message that did not ask for it. Each call then goes through
  * the same approval and execution path as any other.
+ *
+ * An announced call that never started, because its process died after the planning commit, is
+ * answered with a `TOOL_NOT_STARTED` result when the loop moves on without replaying it: in the
+ * commit that closes its step, or before a model request is derived while that step is still open.
  */
 export function announcedTools(s: SessionImpl, deps: AnnounceDeps) {
   // A replay writes no new fence, so this keeps two replays of one id from running it twice.
   const resuming = new Set<string>()
+  // Calls this process has planned and is still running; none of them is stranded.
+  const running = new Set<string>()
+  /** Read inside the commit lock: the calls of `found` still undispatched that nothing here runs. */
+  const still = (found: readonly Stranded[]) => {
+    const live = new Set(undispatchedCalls(s.op()).map((call) => call.toolUseId))
+    return found.filter(
+      (call) => live.has(call.toolUseId) && !running.has(call.toolUseId) && !resuming.has(call.invocationId),
+    )
+  }
+  /** Commits a result for each call of `found` still stranded, ahead of `rows`, and completes them. */
+  const answering = (found: readonly Stranded[], rows: EventInput[]) => {
+    let closed = new Set<string>()
+    return s.transition(
+      () => {
+        const calls = still(found)
+        closed = new Set(calls.map((call) => call.toolUseId))
+        return [...notStartedResults(s, calls, NOT_STARTED), ...rows]
+      },
+      (cur) => cur && setCallsCompleted(cur, closed),
+    )
+  }
+  const stranded = (candidates: readonly ToolCallState[]) => strandedCalls(s, deps.invocations, candidates)
   const run = async (
     calls: readonly LoopToolCall[],
     signal: AbortSignal,
@@ -65,12 +98,16 @@ export function announcedTools(s: SessionImpl, deps: AnnounceDeps) {
       const receipts = []
       for (const call of owned) receipts.push(await deps.invocations.status(call.invocationId))
       if (receipts.every((receipt) => receipt.status === 'not-sent'))
-        return await announceNew(s, deps, owned, signal, announce, single)
+        return await announceNew(s, deps, owned, signal, announce, single, running)
       if (receipts.some((receipt) => receipt.status === 'not-sent'))
         throw new CoreError('E_RELATION', 'An announced batch mixes new and recorded invocations')
-      if (ids.some((id) => resuming.has(id)))
-        throw new CoreError('E_RELATION', 'Announced invocation is already resuming')
-      for (const id of ids) resuming.add(id)
+      // Under the commit lock, so a commit that closes a stranded call either sees this replay and
+      // leaves the call to it, or has closed the call before the replay reads the batch.
+      await s.locked(async () => {
+        if (ids.some((id) => resuming.has(id)))
+          throw new CoreError('E_RELATION', 'Announced invocation is already resuming')
+        for (const id of ids) resuming.add(id)
+      })
       try {
         return await replay(s, deps, owned, receipts, signal, single)
       } finally {
@@ -89,7 +126,79 @@ export function announcedTools(s: SessionImpl, deps: AnnounceDeps) {
     },
     batch: (calls: readonly LoopToolCall[], signal: AbortSignal, announce: Announce) =>
       run(calls, signal, announce, false),
+    /**
+     * Commits `rows`, which close the open step, after a `TOOL_NOT_STARTED` result for each stranded
+     * call of that step, and marks those calls completed in the same commit. With no planned call
+     * left undispatched it is the commit made before: `rows` onto `op`.
+     */
+    async closeStep(rows: EventInput[], op: OpStateObj): Promise<void> {
+      const candidates = undispatchedCalls(s.op())
+      if (!candidates.length) return void (await s.transition(rows, op))
+      await answering(await stranded(candidates), rows)
+    },
+    /** The rows of a turn that ends with its step: `rows`, after those results when a call needs one. */
+    async endTurnRows(rows: EventInput[]): Promise<EventInput[] | (() => EventInput[])> {
+      const candidates = undispatchedCalls(s.op())
+      const found = candidates.length ? await stranded(candidates) : []
+      if (!found.length) return rows
+      return () => [...notStartedResults(s, still(found), NOT_STARTED), ...rows]
+    },
+    /** Answers stranded calls before a model request is derived, so no request holds one alone. */
+    async answerStranded(): Promise<void> {
+      const candidates = undispatchedCalls(s.op())
+      const found = candidates.length ? await stranded(candidates) : []
+      if (found.length) await answering(found, [])
+    },
   }
+}
+
+/** The calls of the batch still planned that never reached dispatch: no effect was written for them. */
+function undispatchedCalls(op: OpStateObj | null): ToolCallState[] {
+  if (op?.phase.kind !== 'tools') return []
+  return op.phase.batch.calls.filter((call) => call.status === 'planned' && call.effectId === undefined)
+}
+
+/**
+ * Of `candidates`, the announced calls of the open step that have no result: what an announce leaves
+ * when its process dies between the commit that recorded the calls and their dispatch, approval
+ * included. Core writes a call's effect intent only after its approval and immediately before
+ * dispatch, so none of them ran. An unannounced call is left as it is.
+ */
+async function strandedCalls(
+  s: SessionImpl,
+  invocations: LoopInvocations,
+  candidates: readonly ToolCallState[],
+): Promise<Stranded[]> {
+  const step = s.state.openStep.get(s.lane)
+  const found: Stranded[] = []
+  for (const call of candidates) {
+    const origin = s.state.toolCalls.get(call.toolUseId)
+    if (!step || origin?.turn !== step.turn || origin.step !== step.step) continue
+    // An announced call row is always followed by the row that links it to its invocation.
+    const [row, link] = await s.d.log.scan({
+      fromSeq: call.argsSeq,
+      toSeq: (call.argsSeq + 1) as Seq,
+      limit: 2,
+    })
+    const data = row?.data as { toolUseId?: unknown; args?: unknown } | undefined
+    const linked = link?.data as { toolUseId?: unknown; invocationId?: unknown } | undefined
+    if (!row || !hasTrustedToolCallProvenance(row) || data?.toolUseId !== call.toolUseId) continue
+    if (link?.type !== 'x/core/loop-effect' || link.origin !== 'system' || link.trust !== 'trusted') continue
+    if (linked?.toolUseId !== call.toolUseId || typeof linked.invocationId !== 'string') continue
+    const input = receiptInput({ name: call.name, args: data.args as JsonValue })
+    if (!(await invocations.claimedFor(linked.invocationId, input).catch(() => false))) continue
+    const { toolUseId, name, argsSeq } = call
+    found.push({ toolUseId, name, argsSeq, invocationId: linked.invocationId })
+  }
+  if (!found.length) return found
+  const results = await scanAll((query) => s.d.log.scan(query), {
+    fromSeq: Math.min(...found.map((call) => call.argsSeq)) as Seq,
+    toSeq: s.lastSeq,
+    type: 'tool/result',
+    lane: s.lane,
+  })
+  const answered = new Set(results.map((result) => (result.data as { toolUseId?: unknown }).toolUseId))
+  return found.filter((call) => !answered.has(call.toolUseId))
 }
 
 /** The receipt input: `announce` is part of it, so the same id cannot be replayed without it. */
@@ -104,6 +213,7 @@ async function announceNew(
   signal: AbortSignal,
   announce: Announce,
   single: boolean,
+  running: Set<string>,
 ): Promise<ToolResult[]> {
   const op = s.op()
   if (!op) throw new Error('Loop operation requires an accepted input')
@@ -144,22 +254,28 @@ async function announceNew(
     return at
   })
   const at = (assistantSeq: Seq, i: number) => (assistantSeq + (offsets[i] ?? 0)) as Seq
-  const [assistantSeq] = await s.transition(rows, (cur, seq) => {
-    const calls = plans.map((plan, i) => plannedCallState(plan, at(seq, i), { depth: 0 }))
-    return withPhase(
-      assertQuiet(s, cur),
-      { kind: 'tools', batch: { assistantSeq: seq, calls } },
-      { latestAssistantSeq: seq },
-    )
-  })
-  if (assistantSeq === undefined)
-    throw new CoreError('E_RELATION', 'Announced call commit returned no sequence')
-  const planned = plans.map(({ policy, invocationId, ...plan }, i) => ({
-    call: { ...plan, argsSeq: at(assistantSeq, i), ...policy },
-    invocationId,
-    input: receiptInput(plan),
-  }))
-  return runPlanned(s, deps, planned, signal, single)
+  // Marked as running before they are planned, so no step close answers them as stranded.
+  for (const plan of plans) running.add(plan.toolUseId)
+  try {
+    const [assistantSeq] = await s.transition(rows, (cur, seq) => {
+      const calls = plans.map((plan, i) => plannedCallState(plan, at(seq, i), { depth: 0 }))
+      return withPhase(
+        assertQuiet(s, cur),
+        { kind: 'tools', batch: { assistantSeq: seq, calls } },
+        { latestAssistantSeq: seq },
+      )
+    })
+    if (assistantSeq === undefined)
+      throw new CoreError('E_RELATION', 'Announced call commit returned no sequence')
+    const planned = plans.map(({ policy, invocationId, ...plan }, i) => ({
+      call: { ...plan, argsSeq: at(assistantSeq, i), ...policy },
+      invocationId,
+      input: receiptInput(plan),
+    }))
+    return await runPlanned(s, deps, planned, signal, single)
+  } finally {
+    for (const plan of plans) running.delete(plan.toolUseId)
+  }
 }
 
 /**

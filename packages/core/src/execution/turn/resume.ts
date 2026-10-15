@@ -48,7 +48,8 @@ function setCallCompleted(o: OpStateObj, toolUseId: string): OpStateObj {
   return withPhase(o, { ...o.phase, batch: { ...o.phase.batch, calls } })
 }
 
-function setCallsCompleted(o: OpStateObj, toolUseIds: ReadonlySet<string>): OpStateObj {
+/** Marks each of the named calls terminal, as `setCallCompleted` does for one. */
+export function setCallsCompleted(o: OpStateObj, toolUseIds: ReadonlySet<string>): OpStateObj {
   if (o.phase.kind !== 'tools' || toolUseIds.size === 0) return o
   return withPhase(o, {
     ...o.phase,

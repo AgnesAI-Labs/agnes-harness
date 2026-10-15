@@ -220,11 +220,14 @@ export interface LoopToolCallOptions {
    * Each call still goes through approval and tool policy. Omitted: the call is recorded on its own.
    *
    * Replay takes the same `invocationId` and `announce`; the receipt covers the name, the arguments
-   * and `announce`, not `content`. A planned call that was never dispatched continues on replay only
-   * while the step that planned it is open, so after a reopen a loop replays its recorded announced
-   * invocations before any other model or tool call. Otherwise that call stays refused and its
-   * tool call stays in the history without a result. An invocation whose receipt was written but
-   * whose message and call rows were not (a crash between the two) stays refused as well.
+   * and `announce`, not `content`. A planned call that was never dispatched (its process died first)
+   * continues on replay while the step that planned it is open: after a reopen, a loop that replays
+   * its recorded announced invocations before it prepares a request or makes any other model or tool
+   * call still runs that very call, once. Otherwise the call is closed with a `TOOL_NOT_STARTED`
+   * error result when its step ends, or before the next request is prepared, so the history never
+   * holds the call without a result; a later replay returns that result without running the call,
+   * and the loop can announce again under a new `invocationId`. An invocation whose receipt was
+   * written but whose message and call rows were not (a crash between the two) stays refused.
    */
   readonly announce?: true | { readonly content: AssistantMessage['content'] }
 }
