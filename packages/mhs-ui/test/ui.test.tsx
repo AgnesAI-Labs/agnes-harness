@@ -5,6 +5,7 @@ import { act, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MhsClient } from '../src/client.js'
+import { ClipSender, pcmWav } from '../src/clips.js'
 import { DeviceDetail } from '../src/detail.js'
 import { Drive } from '../src/drive.js'
 import { ExamplesPage } from '../src/examples.js'
@@ -121,6 +122,7 @@ describe('MHS approved device interactions', () => {
         ...device(),
         jobs: [
           { id: 'paused-call', state: 'running', phase: 'paused', startedAt: Date.now(), progress: 0.4 },
+          { id: 'running-call', state: 'running', phase: 'running' },
         ],
       },
     ])[0]!
@@ -147,6 +149,11 @@ describe('MHS approved device interactions', () => {
       name: 'mhs.resume',
       input: { device: d.id, params: { call: 'paused-call' } },
     })
+    await click(getByRole(host, 'button', { name: 'Pause' }))
+    expect(f.effects.at(-1)).toMatchObject({
+      name: 'mhs.pause',
+      input: { device: d.id, params: { call: 'running-call' } },
+    })
     await click(getByRole(host, 'button', { name: 'Turn on' }))
     expect(f.effects.at(-1)).toMatchObject({
       name: 'mhs.configure',
@@ -154,6 +161,65 @@ describe('MHS approved device interactions', () => {
     })
     expect(queryByRole(host, 'button', { name: 'Turn on' })).toBeNull()
     expect(f.streams.length).toBeGreaterThan(0)
+  })
+  it('sends a bounded PCM16 WAV only under its approved clip grant and waits for cache acknowledgement', async () => {
+    const wav = new Uint8Array(48),
+      view = new DataView(wav.buffer)
+    const tag = (at: number, value: string) => wav.set(new TextEncoder().encode(value), at)
+    tag(0, 'RIFF')
+    view.setUint32(4, 40, true)
+    tag(8, 'WAVE')
+    tag(12, 'fmt ')
+    view.setUint32(16, 16, true)
+    view.setUint16(20, 1, true)
+    view.setUint16(22, 1, true)
+    view.setUint32(24, 24000, true)
+    view.setUint32(28, 48000, true)
+    view.setUint16(32, 2, true)
+    view.setUint16(34, 16, true)
+    tag(36, 'data')
+    view.setUint32(40, 4, true)
+    wav.set([1, 0, 2, 0], 44)
+    expect(pcmWav(wav)).toMatchObject({ rate: 24000, channels: 1, pcm: new Uint8Array([1, 0, 2, 0]) })
+    const bad = wav.slice()
+    new DataView(bad.buffer).setUint16(34, 8, true)
+    expect(() => pcmWav(bad)).toThrow('pcm16-required')
+    const f = fake(),
+      received = vi.fn()
+    f.ports.services.effect = async (name, input, { operationId }) => {
+      f.effects.push({ name, input, operationId })
+      return { state: 'completed', operationId, output: { operationId, expiresAt: Date.now() + 30000 } }
+    }
+    await mount(<ClipSender device="rover-01" onSent={received} />, f)
+    const file = new File([wav], 'voice.wav', { type: 'audio/wav' })
+    Object.defineProperty(file, 'arrayBuffer', { value: async () => wav.buffer })
+    await act(async () => {
+      fireEvent.change(getByLabelText(host, 'PCM16 WAV clip (up to 1 MiB)'), { target: { files: [file] } })
+    })
+    await vi.waitFor(() =>
+      expect(getByRole(host, 'button', { name: 'Approve and send clip' }).hasAttribute('disabled')).toBe(
+        false,
+      ),
+    )
+    await click(getByRole(host, 'button', { name: 'Approve and send clip' }))
+    expect(f.effects[0]).toMatchObject({
+      name: 'mhs.clip',
+      input: {
+        device: 'rover-01',
+        params: { bytes: 4, rate: 24000, channels: 1, sha256: expect.stringMatching(/^[a-f0-9]{64}$/) },
+      },
+    })
+    expect(f.opened.at(-1)).toMatchObject({
+      name: 'mhs.clip',
+      input: {},
+      operationId: f.effects[0]?.operationId,
+    })
+    expect(f.stream.sent).toEqual([new Uint8Array([1, 0, 2, 0])])
+    expect(received).not.toHaveBeenCalled()
+    await act(async () => {
+      f.stream.emit({ state: 'sent', id: 'voice' })
+    })
+    expect(received).toHaveBeenCalledOnce()
   })
   it('does not repeat an effect after native approval expires', async () => {
     vi.useFakeTimers()

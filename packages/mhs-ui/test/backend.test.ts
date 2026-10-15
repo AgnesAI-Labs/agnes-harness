@@ -10,7 +10,7 @@ import { Device as DeviceSdk, type Json } from '@agnes/mhs-device'
 import { type DeviceLink, Hub, North } from '@agnes/mhs-hub'
 import { encodeMedia } from '@agnes/mhs-hub/media'
 import { createOwnedStore } from '@agnes/sdk/owned-store'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { MhsClient } from '../src/client.js'
 import { sampleFrom } from '../src/media.js'
 import { profileServices } from '../src/profile-services.js'
@@ -57,13 +57,47 @@ it('consumes native AR1 authority, bounded session-filtered activity, SDK/Hub ou
   const adapter = createMhsNativeProfileAdapter(async () => {
     activations.require(owner, 'reviewed')
   })
+  let checkpoint!: () => void, rest!: () => void, entered!: () => void
+  const checkpointGate = new Promise<void>((r) => {
+    checkpoint = r
+  })
+  const restGate = new Promise<void>((r) => {
+    rest = r
+  })
+  const pauseEntered = new Promise<void>((r) => {
+    entered = r
+  })
   const sdk = new DeviceSdk({
     protocol: 'mhs/v1',
     device: { id: 'sensor-01', kind: 'sensor' },
+    tools: [
+      {
+        name: 'wait',
+        description: 'Wait for cancel',
+        timeout: 10,
+        pausable: true,
+        inputSchema: { type: 'object' },
+      },
+    ],
     state: { lamp: { type: 'boolean', writable: true } },
     sources: [{ id: 'air', kind: 'values', description: 'Air', fields: { temperature: { type: 'number' } } }],
     maps: [{ id: 'site', bounds: [0, 0, 10, 10] }],
   })
+  sdk.tool('wait', async (_args, call) => {
+    await checkpointGate
+    await call.checkpoint(async () => restGate)
+    await new Promise<void>((_resolve, reject) =>
+      call.signal.addEventListener('abort', () => reject(new Error('cancel'))),
+    )
+    return null
+  })
+  const pause = sdk.pause.bind(sdk)
+  sdk.pause = async (id) => {
+    const paused = pause(id)
+    checkpoint()
+    entered()
+    return paused
+  }
   sdk.update({ lamp: false })
   const hub = new Hub({
     store,
@@ -84,6 +118,18 @@ it('consumes native AR1 authority, bounded session-filtered activity, SDK/Hub ou
         hub.state('sensor-01', sdk.state())
         return result
       }
+      if (method === 'mhs/pause') {
+        await sdk.pause(String(params.call))
+        return {}
+      }
+      if (method === 'mhs/resume') {
+        sdk.resume(String(params.call))
+        return {}
+      }
+      if (method === 'mhs/cancel') {
+        await sdk.cancel(String(params.call))
+        return {}
+      }
       if (method === 'mhs/configure') return sdk.configure(params.sources)
       if (method === 'mhs/stop') {
         await sdk.stop()
@@ -91,14 +137,19 @@ it('consumes native AR1 authority, bounded session-filtered activity, SDK/Hub ou
       }
       throw new Error('not-used')
     },
-    async call() {
-      throw new Error('not-used')
+    async call(id, name, args) {
+      const acceptance = sdk.call(id, name, args)
+      return { ...acceptance, result: acceptance.result ?? Promise.resolve({ status: 'rejected' as const }) }
+    },
+    clip(id, rate, channels, pcm) {
+      sdk.receiveClip(id, rate, channels, pcm)
     },
     manual() {},
     close() {
       hub.offline('sensor-01', link)
     },
   }
+  sdk.onProgress = (id, data) => hub.progress('sensor-01', id, data)
   hub.online(link)
   hub.state('sensor-01', sdk.state())
   const north = new North(hub),
@@ -205,6 +256,33 @@ it('consumes native AR1 authority, bounded session-filtered activity, SDK/Hub ou
       state: 'completed',
     })
     expect((await new MhsClient(f.ports).devices())[0]?.sourceStates.air).toBe(false)
+    const run = await client.effect('call', { device: 'sensor-01', tool: 'wait', args: {} })
+    expect(run.state).toBe('approval-required')
+    await approve()
+    const runningJob = await f.ports.services.readOperation(run.operationId)
+    expect(runningJob).toMatchObject({ state: 'completed', output: { state: 'running' } })
+    const pauseProposal = await client.effect('pause', {
+      device: 'sensor-01',
+      params: { call: run.operationId },
+    })
+    expect(pauseProposal.state).toBe('approval-required')
+    await approve()
+    const applyingPause = f.ports.services.readOperation(pauseProposal.operationId)
+    await pauseEntered
+    expect((await hub.journal.read(run.operationId))?.phase).not.toBe('paused')
+    rest()
+    expect(await applyingPause).toMatchObject({ state: 'completed', output: { outcome: { status: 'done' } } })
+    expect((await hub.journal.read(run.operationId))?.phase).toBe('paused')
+    for (const method of ['resume', 'cancel']) {
+      const effect = await client.effect(method, { device: 'sensor-01', params: { call: run.operationId } })
+      expect(effect.state).toBe('approval-required')
+      await approve()
+      expect(await f.ports.services.readOperation(effect.operationId)).toMatchObject({ state: 'completed' })
+      if (method === 'resume') expect((await hub.journal.read(run.operationId))?.phase).toBe('running')
+    }
+    await vi.waitFor(async () =>
+      expect((await hub.journal.read(run.operationId))?.outcome?.status).toBe('interrupted'),
+    )
     await hub.journal.accept('sensor-01', {}, { operationId: 'paused', context: null })
     await hub.journal.running('paused', 'sensor-01', { state: 'paused', fraction: 0.4 })
     expect(await north.query('operation', { operationId: 'paused' })).toMatchObject({

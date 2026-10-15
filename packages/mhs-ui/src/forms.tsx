@@ -1,6 +1,7 @@
 import { prepareArguments } from '@agnes/mhs-device'
 import { Button } from '@agnes/web-ui'
 import { useId, useState } from 'react'
+import { ClipSender } from './clips.js'
 import { type PickMode, WorldMap } from './map.js'
 import { array, asJson, type Data, type Device, jsonText, number, record, text } from './model.js'
 import { ActionFeedback, useAction, useMhs, useSnapshot } from './react.js'
@@ -202,6 +203,9 @@ export function ToolForm({ device, tool }: { device: Device; tool: Data }) {
         {text(tool.name)} {tool.motion === true && '↗'}
       </summary>
       <p>{text(tool.description)}</p>
+      {record(properties.clip).type === 'string' && (
+        <ClipSender device={device.id} onSent={(id) => update('clip', id)} />
+      )}
       <form
         onSubmit={(e) => {
           e.preventDefault()
@@ -320,6 +324,14 @@ export function JobView({ operation, device }: { operation: Data; device: string
         <progress value={number(record(operation.progress).fraction ?? operation.progress)} max={1} />
       )}
       {operation.progress !== undefined && <pre>{jsonText(operation.progress)}</pre>}
+      {['running', 'accepted'].includes(state) && (
+        <Button
+          disabled={action.busy || action.pending}
+          onClick={() => void action.run('pause', { device, params: { call: operationId } })}
+        >
+          {t('pauseJob')}
+        </Button>
+      )}
       {state === 'paused' && (
         <Button
           disabled={action.busy || action.pending}
