@@ -253,7 +253,7 @@ Errors are thrown before anything is written, so a throw means nothing was recor
 
 - `prepare` throws `E_ENVELOPE` (`detail.reason`: `label`, `deadline`, `payload-size`, `messages`, `image-input` or `invocation-id`) for an out-of-range option, and `E_MODEL_UNKNOWN` (`target-unknown`) when the target is not in the provider's catalog. Further `E_ENVELOPE` reasons: `output` (neither `'text'` nor `'json'`), `system` (not a string of at most 1 MiB) and `sampling` (a key or value outside the request schema's ranges).
 - `invoke` throws `E_ENVELOPE` (`signal`) when its signal is not an `AbortSignal`.
-- `prepare` and `invoke` throw `E_RELATION` (`no-turn`) outside an open turn.
+- `prepare` and `invoke` throw `E_RELATION` (`no-turn`) outside an open turn, and `invoke` throws `E_RELATION` (`turn-closing`) once the turn has begun to end.
 - `invoke` throws `E_REQUEST_FROZEN` for a call prepared by another context or turn (`foreign`, `turn`) or when the catalog record or adapter identity changed after `prepare` (`target-changed`); `E_RELATION` when the `invocationId` already has a record with a different `requestHash` (`invocation-reused`) or is running in this process (`invocation-in-flight`); and `E_LANE_BUSY` (`CONTROL_PAUSED`) while the session is paused. After `E_LANE_BUSY` the prepared call is not consumed and can be invoked again.
 - Every method throws `E_CLOSED` once the session is closing or the loop's execution scope was revoked.
 - `ctx.events.finish` throws `E_RELATION` (`side-call-in-flight`) while a call is still unsettled. Calls may run concurrently within a turn; await them before you finish the turn.
@@ -270,7 +270,7 @@ Neither Core nor the adapter retries a side call. The loop owns that decision: c
 
 Every call that was sent leaves one cost row with purpose `side-call` that counts toward credit limits and budgets. It records the observed usage or, when the spend was not seen (a deadline, a cancellation, an adapter error without usage), an estimate priced from `prepare`. The ledger keeps digests and audit metadata such as the label, route, adapter and endpoint host, not the request content.
 
-Revocation, a user Stop and session close need no code in the loop. Stop and close cut the call and record it; if the loop's execution scope is revoked while a call is in flight, for example because the loop was replaced, Core closes the call with a late receipt and the old context's methods throw `E_CLOSED`. A replacement generation reads that record back with `status`. Treat `E_CLOSED` and a `cancelled` result as the end of the step.
+Revocation, a user Stop, session close and the end of the turn need no code in the loop. Each of them cuts a call that is still in flight and records it. A turn that ends while a call is in flight, for example because a step threw or the loop ended the turn as cancelled, waits up to five seconds for that record before it ends. If the loop's execution scope is revoked while a call is in flight, for example because the loop was replaced, Core closes the call with a late receipt and the old context's methods throw `E_CLOSED`. A replacement generation reads that record back with `status`. Treat `E_CLOSED` and a `cancelled` result as the end of the step.
 
 ### Testing a loop that uses side calls
 

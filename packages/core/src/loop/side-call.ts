@@ -3,19 +3,10 @@ import type { LoopSideCallPort } from '@agnes/extension-api'
 import { createSideCallEffectPort } from '../orchestrator/side-call-effect-port.js'
 import { executeSideCall } from '../orchestrator/side-call-executor.js'
 import type { SessionImpl } from '../step/session.js'
-import { sessionIdentity } from './scope.js'
+import { claimSideCall, inFlight } from './side-call-receipts.js'
 import { checkInvocationId, noTurn, sideCallRequests } from './side-call-request.js'
 
-/** The effect ids of side calls running in this process, by session. */
-const running = new WeakMap<object, Set<string>>()
-
-/** Whether a side call of this session is between its admission and its settlement. */
-export function sideCallInFlight(s: SessionImpl): boolean {
-  return (running.get(sessionIdentity(s))?.size ?? 0) > 0
-}
-
-const inFlight = () =>
-  new CoreError('E_RELATION', 'Side call invocation is already running', { reason: 'invocation-in-flight' })
+export { sideCallInFlight } from './side-call-receipts.js'
 
 /**
  * The side-call port of one loop context, over its loop-scoped session. A call is sent at most once
@@ -45,12 +36,8 @@ export function createSideCallPort(s: SessionImpl): LoopSideCallPort {
         const op = s.op()
         if (!op) throw noTurn()
         if (!s.turn) await s.rehydrateTurn(op)
-        const { effectId } = call.binding
-        const owner = sessionIdentity(s)
-        const claims = running.get(owner) ?? new Set<string>()
-        if (claims.has(effectId)) throw inFlight()
-        claims.add(effectId)
-        running.set(owner, claims)
+        // The end of the turn cuts a claimed call through the claim's signal and waits for it.
+        const claim = claimSideCall(s, call.binding.effectId, op.meta.turn)
         try {
           const prior = await effects.status(call.prepared.invocationId)
           if (prior.status === 'in-flight') throw inFlight()
@@ -61,10 +48,9 @@ export function createSideCallPort(s: SessionImpl): LoopSideCallPort {
               })
             return prior.result
           }
-          return await executeSideCall(s, effects, call, signal)
+          return await executeSideCall(s, effects, call, AbortSignal.any([signal, claim.signal]))
         } finally {
-          claims.delete(effectId)
-          if (!claims.size && running.get(owner) === claims) running.delete(owner)
+          claim.release()
         }
       } finally {
         done()

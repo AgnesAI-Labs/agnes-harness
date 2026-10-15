@@ -89,12 +89,12 @@ const sideRoute: RouteDecl = {
  * it before a crash is still counted after the reopen. How it treats a request is set by the case:
  * answer at once; take the request and never answer; hold the request before it is sent at all; or
  * take it and answer only when the case opens the gate. A request that waits ends when the adapter's
- * signal aborts, as a socket read does. (An adapter that ignores its signal keeps its instance's
- * lifetime from draining, so the host could not be closed under it; that is not what these cases
- * are about.)
+ * signal aborts, as a socket read does, except under `ignore-abort`, which waits for the gate alone.
+ * An adapter that ignores its signal keeps its instance's lifetime from draining, so a case that uses
+ * it opens the gate before it closes the host.
  */
 class Endpoint {
-  behaviour: 'answer' | 'stall' | 'hold-before-send' | 'gate' = 'answer'
+  behaviour: 'answer' | 'stall' | 'hold-before-send' | 'gate' | 'ignore-abort' = 'answer'
   /** Requests that reached the service. */
   readonly hits: RequestBody[] = []
   /** The signal each request entering the adapter was handed, in arrival order. */
@@ -128,6 +128,7 @@ class Endpoint {
     options.reportDispatch?.()
     if (behaviour === 'stall') await aborted(options.signal)
     if (behaviour === 'gate') await Promise.race([this.gate.promise, aborted(options.signal)])
+    if (behaviour === 'ignore-abort') await this.gate.promise
     yield { type: 'text_delta' as const, delta: ANSWER }
     yield {
       type: 'usage' as const,
@@ -1244,27 +1245,37 @@ describe('stopping a turn while a side call is in flight', () => {
 })
 
 // A turn can also end while its side call is in flight with the session itself never stopped: a
-// loop step that throws ends the turn as failed, and a loop may end its own turn as cancelled.
-// Nothing on those paths stops the call or waits for it. The call runs on to its own deadline, its
-// settlement is then refused because the turn has ended, the effect stays pending and the next
-// turn cannot close its step until the session is reopened and recovery settles it as unknown.
-describe('known gap: a turn ended by its loop while a side call is in flight', () => {
-  async function endedUnderCall(id: string, end: (ctx: LoopContext) => Promise<LoopStepOutcome>) {
+// loop step that throws ends the turn as failed, and a loop may end its own turn as cancelled. The
+// end of the turn cuts the call and waits for its settlement before it writes `turn/end`, so the call
+// is recorded inside its turn and the next turn closes its step as usual. Core stops reading the
+// adapter when it cuts the call, so an adapter that ignores its abort does not hold the turn's end.
+describe('a turn ended by its loop while a side call is in flight', () => {
+  async function endedUnderCall(
+    id: string,
+    end: (ctx: LoopContext) => Promise<LoopStepOutcome>,
+    behaviour: 'stall' | 'ignore-abort' = 'stall',
+    deadlineMs = 300,
+  ) {
     const endpoint = new Endpoint()
-    endpoint.behaviour = 'stall'
-    const seen: Seen = {}
+    endpoint.behaviour = behaviour
+    const seen: Seen & { endedMs?: number } = {}
     const plan = script(async (port, signal, ctx) => {
-      seen.call = call(port, id, signal, { deadlineMs: 300 })
+      seen.call = call(port, id, signal, { deadlineMs })
       seen.call.catch(() => undefined)
       await endpoint.entering(1)
-      return end(ctx)
+      const began = performance.now()
+      try {
+        return await end(ctx)
+      } finally {
+        seen.endedMs = performance.now() - began
+      }
     })
     const kit = await boot(scratch(), endpoint, plan)
     try {
-      const session = await kit.open(`gap-${id}`)
+      const session = await kit.open(`ended-${id}`)
       await runTurn(session)
       expect(session.op()).toBeNull()
-      // The call ends at its own deadline, after its turn.
+      // The end of the turn cut the call before its own deadline and waited for its settlement.
       const outcome = await settledWith(seen.call as Promise<SideCallResult>)
       const rows = await rowsOf(session)
       // Each expectation is reported on its own, so a failure shows the whole state left behind.
@@ -1273,20 +1284,42 @@ describe('known gap: a turn ended by its loop while a side call is in flight', (
       expect.soft(forEffect(rows, 'effect/settled', id), 'the call is settled once').toHaveLength(1)
       expect.soft(sideCosts(rows), 'the ledger has its cost row').toHaveLength(1)
       expect.soft(sideBilled(kit.billed, id), 'the billing seam has one row').toHaveLength(1)
+      expect(outcome.value).toMatchObject({
+        status: 'failed',
+        reason: 'cancelled',
+        dispatch: 'may-have-sent',
+        replayed: false,
+      })
+      expect(endpoint.signals[0]?.aborted).toBe(true)
+      expect(forEffect(rows, 'effect/settled', id).map((row) => data(row).outcome)).toEqual(['error'])
+      expect(
+        forEffect(rows, 'x/core/side-call-terminal', id).map((row) => (data(row).terminal as Row).reason),
+      ).toEqual(['caller_cancelled'])
+      const [settled] = forEffect(rows, 'effect/settled', id)
+      expect(settled?.seq).toBeLessThan(ofType(rows, 'turn/end')[0]?.seq ?? 0)
+      expect(
+        ofType(rows, 'x/core/invariant').filter((row) => data(row).kind === 'side-call-unsettled'),
+      ).toEqual([])
+      // A loop that ends its own turn waits only until Core has cut and recorded the call.
+      expect(seen.endedMs).toBeLessThan(Math.min(deadlineMs, 2000))
       const next = await runTurn(session, 'next')
       expect.soft(plan.refusals.map(String), 'the next turn closes its step').toEqual([])
       expect.soft(next.reason, 'the next turn finishes').toBe('completed')
       expect(violations(await rowsOf(session))).toEqual([])
     } finally {
+      endpoint.gate.resolve()
       await kit.host.close()
     }
   }
 
   it('a loop step that throws while its call is in flight', () =>
-    endedUnderCall('gap-1', async () => {
+    endedUnderCall('end-1', async () => {
       throw new Error('loop step failed')
     }))
 
   it('a loop that ends its own turn as cancelled while its call is in flight', () =>
-    endedUnderCall('gap-2', (ctx) => ctx.turn.finishCancelled()))
+    endedUnderCall('end-2', (ctx) => ctx.turn.finishCancelled()))
+
+  it('a loop that ends its own turn while the adapter ignores the abort of its call', () =>
+    endedUnderCall('end-3', (ctx) => ctx.turn.finishCancelled(), 'ignore-abort', 5000))
 })

@@ -233,7 +233,7 @@ return fallback()
 
 - `prepare` 对越界的选项抛出 `E_ENVELOPE`（`detail.reason`：`label`、`deadline`、`payload-size`、`messages`、`image-input` 或 `invocation-id`），目标不在 provider 目录里时抛出 `E_MODEL_UNKNOWN`（`target-unknown`）。另有几个 `E_ENVELOPE` 原因：`output`（既不是 `'text'` 也不是 `'json'`）、`system`（不是至多 1 MiB 的字符串）和 `sampling`（键或值超出请求 schema 的范围）。
 - `invoke` 的 signal 不是 `AbortSignal` 时抛出 `E_ENVELOPE`（`signal`）。
-- 不在已打开的回合内时，`prepare` 和 `invoke` 抛出 `E_RELATION`（`no-turn`）。
+- 不在已打开的回合内时，`prepare` 和 `invoke` 抛出 `E_RELATION`（`no-turn`）；回合开始结束之后，`invoke` 抛出 `E_RELATION`（`turn-closing`）。
 - 调用由另一个上下文或回合准备时，`invoke` 抛出 `E_REQUEST_FROZEN`（`foreign`、`turn`）；`prepare` 之后目录记录或适配器身份变了，同样抛出（`target-changed`）。`invocationId` 已有记录但 `requestHash` 不同时抛出 `E_RELATION`（`invocation-reused`），本进程内正在运行时也抛出 `E_RELATION`（`invocation-in-flight`）。会话暂停时抛出 `E_LANE_BUSY`（`CONTROL_PAUSED`），已准备的调用不被消耗，可以再次 `invoke`。
 - 会话正在关闭，或循环的执行作用域已被撤销后，每个方法都抛出 `E_CLOSED`。
 - 还有调用没有结算时，`ctx.events.finish` 抛出 `E_RELATION`（`side-call-in-flight`）。同一回合内的调用可以并发；结束回合之前先等它们完成。
@@ -250,7 +250,7 @@ Core 和适配器都不重试旁路调用。重试由循环决定：换一个新
 
 每个已发送的调用留下一行用途为 `side-call` 的成本行，计入额度和预算。它记录观察到的用量；没有观察到花费时（时限到、被取消、没有用量的适配器错误），记录 `prepare` 给出的估算价。账本保存摘要和审计元数据（标签、路由、适配器、端点主机），不保存请求内容。
 
-撤销、用户 Stop 和会话关闭，不需要循环写任何代码。Stop 和关闭会切断调用并记录；如果调用进行中循环的执行作用域被撤销（例如循环被替换），Core 用迟到回执收尾，旧上下文的方法抛出 `E_CLOSED`。替换后的新一代用 `status` 读回这条记录。把 `E_CLOSED` 和 `cancelled` 结果都当作本步骤的结束。
+撤销、用户 Stop、会话关闭和回合结束，不需要循环写任何代码。它们都会切断仍在进行的调用并记录。调用进行中回合结束时（例如步骤抛出异常，或循环把回合作为取消结束），回合先等这条记录写完再结束，最多等五秒。如果调用进行中循环的执行作用域被撤销（例如循环被替换），Core 用迟到回执收尾，旧上下文的方法抛出 `E_CLOSED`。替换后的新一代用 `status` 读回这条记录。把 `E_CLOSED` 和 `cancelled` 结果都当作本步骤的结束。
 
 ### 测试使用旁路调用的循环
 

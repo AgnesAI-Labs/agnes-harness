@@ -138,7 +138,8 @@ export type SideCallStatus =
  *   - `system`: `system` is not a string of at most 1 MiB;
  *   - `sampling`: `sampling` has a key or value outside the request schema's ranges.
  * - `invoke` throws `E_ENVELOPE` (`signal`) when its signal is not an `AbortSignal`.
- * - `prepare` and `invoke` throw `E_RELATION` (`no-turn`) outside an open turn.
+ * - `prepare` and `invoke` throw `E_RELATION` (`no-turn`) outside an open turn, and `invoke` throws
+ *   `E_RELATION` (`turn-closing`) once the turn has begun to end.
  * - `invoke` throws `E_REQUEST_FROZEN` for a call prepared by another context or turn (`foreign`,
  *   `turn`) or when the catalog record or adapter identity changed after `prepare`
  *   (`target-changed`); `E_RELATION` when the `invocationId` already has a record with a different
