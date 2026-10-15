@@ -339,24 +339,6 @@ export function ConversationTurnActions({
             duration={duration}
             settled={settled}
             t={t}
-            footer={
-              // This turn in the execution trace: the panel's last line, not a button in the bar.
-              <Button
-                htmlType="button"
-                appearance="link"
-                size="small"
-                className="turn-usage-trace"
-                data-testid="turn-view-trace"
-                onClick={() => {
-                  setUsageOpen(false)
-                  footer.current?.dispatchEvent(
-                    new CustomEvent('agnes:trace-turn', { bubbles: true, detail: { turnId: turn.id } }),
-                  )
-                }}
-              >
-                {t('turnactions.trace')}
-              </Button>
-            }
           />
         </Disclosure>
         <span className="turn-feedback" role="status">
