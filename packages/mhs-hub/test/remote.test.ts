@@ -19,8 +19,12 @@ it.each([
   expect(() => externalHubAddress({ address, allowlist: [address] })).toThrow()
 })
 it('imports an exclusive remote fleet through local admission, stops on revoke and isolates other profiles', async () => {
+  const axes: Record<string, number>[] = []
   const device = new Device(description, { arm() {}, async stop() {} }),
     movements: number[] = []
+  device.onManual = async (value) => {
+    axes.push(value)
+  }
   device.update({ battery: 90 })
   device.tool('move', async (args) => {
     movements.push(Number(args.x))
@@ -67,6 +71,9 @@ it('imports an exclusive remote fleet through local admission, stops on revoke a
     expect((await hub.journal.read('good'))?.outcome).toMatchObject({ status: 'done' }),
   )
   expect(movements).toEqual([1])
+  const lease = await hub.manualLease('rover', invocation('remote-lease'))
+  await hub.manual('rover', lease.operationId, { vx: 0.5 })
+  await vi.waitFor(() => expect(axes).toContainEqual({ vx: 0.5 }))
   const stopped = vi.spyOn(device, 'stop')
   expect(await hub.shutdown('disable')).toEqual({ state: 'settled' })
   life.abort()
