@@ -56,8 +56,9 @@ type Schema = {
   required?: string[]
   properties?: Record<string, Schema>
   enum?: unknown[]
+  const?: unknown
   oneOf?: unknown[]
-  anyOf?: unknown[]
+  anyOf?: Schema[]
   $ref?: string
 }
 type Document = {
@@ -91,7 +92,9 @@ export function schemaSummary(doc: Document, file: string, name: string): string
 export function generateAll(): Record<string, string> {
   const hooks = read('hooks.json'),
     slots = read('slots.json'),
-    tools = read('tooldef.json')
+    tools = read('tooldef.json'),
+    services = read('extension-service.json')
+  const serviceBranches = services.$defs.ServiceCapability?.anyOf ?? []
   const descriptions = Object.fromEntries(
     HOOK_EVENTS.map((name) => {
       const io = hooks['x-agnes-hook-io']?.[name]
@@ -130,7 +133,9 @@ export function generateAll(): Record<string, string> {
   return {
     'services.md': `${header('extension-service.json')}# Extension Services
 
-${schemaSummary(read('extension-service.json'), 'extension-service.json', 'ServiceCapability')}
+${schemaSummary(services, 'extension-service.json', 'ServiceCapability')}
+
+${serviceBranches.map((branch) => `- Scope: ${branch.properties?.scope?.const ?? 'session'}; kind: ${branch.properties?.kind?.const ?? branch.properties?.kind?.enum?.join(', ')}; required: ${branch.required?.join(', ')}`).join('\n')}
 
 Register a declared name with registerService and a Promise-returning handler. Schemas are plain JSON data objects; Host compiles them. checkServiceDef validates metadata only and never executes the handler. Actor, source and requestId come from Host. Host enforces source grants, policy, current activation, timeouts and result limits. Services default to session scope. Explicit profile services have no session or workspace ports; effects reuse durable native decisions and operation receipts. prepare is read-only and excluded from the static capability snapshot. See [profile services](../../../docs/develop/profile-services.md).
 `,

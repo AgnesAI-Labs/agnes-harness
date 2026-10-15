@@ -4,4 +4,8 @@
 
 [ServiceCapability](../../protocol/schema/extension-service.json#/$defs/ServiceCapability): anyOf: 3 branches
 
+- Scope: session; kind: query, effect; required: name, kind, inputSchema, outputSchema, timeoutMs, maxResultBytes
+- Scope: profile; kind: query; required: name, kind, inputSchema, outputSchema, timeoutMs, maxResultBytes, scope
+- Scope: profile; kind: effect; required: name, kind, inputSchema, outputSchema, timeoutMs, maxResultBytes, scope, effectPolicy
+
 Register a declared name with registerService and a Promise-returning handler. Schemas are plain JSON data objects; Host compiles them. checkServiceDef validates metadata only and never executes the handler. Actor, source and requestId come from Host. Host enforces source grants, policy, current activation, timeouts and result limits. Services default to session scope. Explicit profile services have no session or workspace ports; effects reuse durable native decisions and operation receipts. prepare is read-only and excluded from the static capability snapshot. See [profile services](../../../docs/develop/profile-services.md).
