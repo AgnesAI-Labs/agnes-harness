@@ -34,6 +34,24 @@ const NOT_STARTED = (name: string) => `${name} was announced but did not run`
 /** Thrown inside the commit lock to make no commit when nothing is left to write. */
 const NOTHING = new Error('No stranded call is left to answer')
 
+/** Calls this process is running, counted per driver, so a mark lasts until its last driver ends. */
+class Running {
+  private readonly drivers = new Map<string, number>()
+  has(toolUseId: string): boolean {
+    return this.drivers.has(toolUseId)
+  }
+  mark(toolUseIds: readonly string[]): void {
+    for (const id of toolUseIds) this.drivers.set(id, (this.drivers.get(id) ?? 0) + 1)
+  }
+  unmark(toolUseIds: readonly string[]): void {
+    for (const id of toolUseIds) {
+      const left = (this.drivers.get(id) ?? 1) - 1
+      if (left > 0) this.drivers.set(id, left)
+      else this.drivers.delete(id)
+    }
+  }
+}
+
 /** What the announce path shares with the loop context that owns it. */
 export interface AnnounceDeps {
   readonly invocations: LoopInvocations
@@ -56,7 +74,7 @@ export function announcedTools(s: SessionImpl, deps: AnnounceDeps) {
   // A replay writes no new fence, so this keeps two replays of one id from running it twice.
   const resuming = new Set<string>()
   // Calls this process is running, through an announce or a tools phase; none of them is stranded.
-  const running = new Set<string>()
+  const running = new Running()
   const idle = (call: Stranded) => !running.has(call.toolUseId) && !resuming.has(call.invocationId)
   /** Read inside the commit lock: the calls of `found` still undispatched that nothing here runs. */
   const still = (found: readonly Stranded[]) => {
@@ -159,16 +177,23 @@ export function announcedTools(s: SessionImpl, deps: AnnounceDeps) {
       const found = candidates.length ? await stranded(candidates) : []
       if (found.length) await answering(found, [])
     },
-    /** Runs `phase`, a tools phase that drives the batch's planned calls, with those calls running. */
+    /**
+     * Runs `phase`, a tools phase that drives the batch's planned calls, with those calls marked as
+     * running. They are read and marked under the commit lock, so whichever of this and a closing
+     * commit takes the lock first has the call: a commit queued ahead has landed by the time they are
+     * read, and the phase, reading the batch after this, finds the call closed and leaves it; a
+     * commit queued behind sees the mark and leaves the call to the phase.
+     */
     async driving<T>(phase: () => Promise<T>): Promise<T> {
-      const ids = undispatchedCalls(s.op())
-        .map((call) => call.toolUseId)
-        .filter((id) => !running.has(id))
-      for (const id of ids) running.add(id)
+      const ids = await s.locked(async () => {
+        const ids = undispatchedCalls(s.op()).map((call) => call.toolUseId)
+        running.mark(ids)
+        return ids
+      })
       try {
         return await phase()
       } finally {
-        for (const id of ids) running.delete(id)
+        running.unmark(ids)
       }
     },
   }
@@ -235,7 +260,7 @@ async function announceNew(
   signal: AbortSignal,
   announce: Announce,
   single: boolean,
-  running: Set<string>,
+  running: Running,
 ): Promise<ToolResult[]> {
   const op = s.op()
   if (!op) throw new Error('Loop operation requires an accepted input')
@@ -277,7 +302,8 @@ async function announceNew(
   })
   const at = (assistantSeq: Seq, i: number) => (assistantSeq + (offsets[i] ?? 0)) as Seq
   // Marked as running before they are planned, so no step close answers them as stranded.
-  for (const plan of plans) running.add(plan.toolUseId)
+  const ids = plans.map((plan) => plan.toolUseId)
+  running.mark(ids)
   try {
     const [assistantSeq] = await s.transition(rows, (cur, seq) => {
       const calls = plans.map((plan, i) => plannedCallState(plan, at(seq, i), { depth: 0 }))
@@ -296,7 +322,7 @@ async function announceNew(
     }))
     return await runPlanned(s, deps, planned, signal, single)
   } finally {
-    for (const plan of plans) running.delete(plan.toolUseId)
+    running.unmark(ids)
   }
 }
 

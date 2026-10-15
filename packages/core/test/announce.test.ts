@@ -1216,6 +1216,133 @@ describe('replay after a crash', () => {
       expect(results.map((row) => dataOf(row).code)).toEqual(['TOOL_NOT_STARTED'])
     })
 
+    it.each(['rejected', 'allowed-once'] as const)(
+      'gives a stranded call to the closer or to a tools phase, never to both, at every interleaving (%s)',
+      async (verdict) => {
+        const key = `sweep-${verdict}`
+        const base = await crashAt(key, async (ctx, s) => void (await shell('sweep:1')(ctx, s)), planned, [
+          shellTool(),
+        ])
+        const rows = await base.scan(key, { fromSeq: 1, limit: 10000 })
+        const opCells = (await base.registers(key)).filter((row) => row.register === 'op.state')
+        const winners = new Set<string>()
+        const wrong: string[] = []
+        // A model request is prepared first and the tools phase starts `delay` microtasks later, so
+        // the two meet at every point of the request's commit, including while it is queued.
+        for (let delay = 0; delay <= 40; delay++) {
+          let asked = 0
+          const ran = { n: 0 }
+          let drained = 'not run'
+          const seams = fakeSeams({
+            approval: {
+              ask: async () => {
+                asked++
+                return { verdict, answeredBy: actor }
+              },
+            },
+          })
+          const f = setup(
+            perTurn(async (ctx, s) => {
+              const preparing = ctx.prepareRequest()
+              for (let i = 0; i < delay; i++) await Promise.resolve()
+              const draining = ctx.tools.drain(s).then(
+                () => 'ok',
+                (error: { code?: string }) => `threw ${error.code}`,
+              )
+              await preparing
+              drained = await draining
+            }),
+            { storage: MemoryStorage.fromEvents(key, rows, { opCells }), seams },
+          )
+          f.k.tools.add(
+            shellTool(async () => {
+              ran.n++
+              return { content: [{ type: 'text', text: 'ran' }] }
+            }),
+            { source: 'test', trust: 'builtin' },
+          )
+          const session = await f.reopen(key)
+          await session.resume()
+          const out = await run(session)
+          const codes = (await session.scan({ type: 'tool/result', limit: 10 })).map(
+            (row) => dataOf(row).code ?? 'ok',
+          )
+          // The closer won: nobody is asked and nothing runs. The tools phase won: it asks once and
+          // the answer decides. Either way the call holds exactly one result.
+          const closed = codes[0] === 'TOOL_NOT_STARTED'
+          winners.add(closed ? 'closer' : 'tools phase')
+          const allowed = verdict === 'allowed-once'
+          const expected = closed
+            ? { asked: 0, ran: 0, codes: ['TOOL_NOT_STARTED'] }
+            : { asked: 1, ran: allowed ? 1 : 0, codes: [allowed ? 'ok' : 'APPROVAL_REJECTED'] }
+          const actual = JSON.stringify({ delay, out: out.reason, drained, asked, ran: ran.n, codes })
+          if (actual !== JSON.stringify({ delay, out: 'completed', drained: 'ok', ...expected }))
+            wrong.push(actual)
+          for (const kernel of kernels.splice(0)) await kernel.close()
+        }
+        expect(wrong).toEqual([])
+        expect(winners).toEqual(new Set(['closer', 'tools phase']))
+      },
+    )
+
+    it('keeps a call marked while any tools phase still drives it', async () => {
+      const storage = await crashAt(
+        'twice',
+        async (ctx, s) => void (await shell('twice:1')(ctx, s)),
+        planned,
+        [shellTool()],
+      )
+      const ran = { n: 0 }
+      const seams = fakeSeams({
+        approval: { ask: async () => ({ verdict: 'allowed-once' as const, answeredBy: actor }) },
+      })
+      const release: Array<() => void> = []
+      const gates = [0, 1].map(() => new Promise<void>((resolve) => release.push(resolve)))
+      let bothStarted!: () => void
+      const started = new Promise<void>((resolve) => {
+        bothStarted = resolve
+      })
+      let first: unknown
+      const { seen, session } = await reopenWith(
+        'twice',
+        storage,
+        async (ctx, s) => {
+          const phase = session.runToolsPhase.bind(session)
+          let entered = 0
+          // Two tools phases at once; the first stops early, before it drives anything.
+          vi.spyOn(session, 'runToolsPhase').mockImplementation(async () => {
+            const mine = entered++
+            if (entered === 2) bothStarted()
+            await gates[mine]
+            if (mine === 0) throw new Error('the first tools phase stopped early')
+            return phase()
+          })
+          const firstDrain = ctx.tools.drain(s).catch((error: unknown) => error)
+          const secondDrain = ctx.tools.drain(s)
+          await started
+          release[0]!()
+          first = await firstDrain
+          // The second phase still drives the call, so this request must leave it alone.
+          await ctx.prepareRequest()
+          release[1]!()
+          await secondDrain
+        },
+        [
+          shellTool(async () => {
+            ran.n++
+            return { content: [{ type: 'text', text: 'ran' }] }
+          }),
+        ],
+        seams,
+      )
+      expect(await run(session)).toMatchObject({ reason: 'completed' })
+      expect(first).toMatchObject({ message: expect.stringContaining('stopped early') })
+      expect(closers(seen)).toEqual([])
+      expect(ran.n).toBe(1)
+      const results = await session.scan({ type: 'tool/result', limit: 10 })
+      expect(results.map((row) => [dataOf(row).code, dataOf(row).isError])).toEqual([[undefined, false]])
+    })
+
     it('does not answer a call a replay is still running', async () => {
       const storage = await crashAt(
         'replaying',
