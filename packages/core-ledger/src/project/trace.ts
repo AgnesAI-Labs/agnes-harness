@@ -339,12 +339,19 @@ function applyTraceEventInner(state: TraceFoldState, event: EventEnvelope): void
       const effectId = typeof data.effectId === 'string' ? data.effectId : undefined
       if (!effectId) return
       const span = state.spans.get(state.effectToSpan.get(effectId) ?? '')
-      if (!span || span.endSeq !== undefined) return
+      if (!span) return
       const outcome = typeof data.outcome === 'string' ? data.outcome : 'ok'
+      if (typeof data.code === 'string') span.error = { code: data.code }
+      if (span.endSeq !== undefined) {
+        // The cost row is written first and has already closed the span with its own timing. Only this row
+        // says how a side call ended, so a side call that did not settle ok is failed even when its cost row
+        // was not marked interrupted. Other spans keep the status their closing row gave them.
+        if (span.purpose === 'side-call' && outcome !== 'ok') span.status = 'failed'
+        return
+      }
       const status: UISpan['status'] =
         outcome === 'ok' ? 'completed' : outcome === 'aborted' ? 'cancelled' : 'failed'
       const durationMs = typeof data.durationMs === 'number' ? data.durationMs : undefined
-      if (typeof data.code === 'string') span.error = { code: data.code }
       closeSpan(span, event, status, durationMs)
       if (span.kind === 'tool' && SUBAGENT_TOOL_NAMES.has(span.name) && span.name === 'subagent_fork') {
         const nested = span.children.find((child) => child.kind === 'subagent')

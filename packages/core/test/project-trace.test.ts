@@ -261,7 +261,7 @@ describe('projectUI trace fold', () => {
     const sideCost = (
       effectId: string,
       extra: Record<string, unknown> = {},
-      timing: { durationMs: number } | undefined = { durationMs: 30 },
+      timing: { durationMs: number } | false = { durationMs: 30 },
     ) =>
       event('cost/ledger', {
         purpose: 'side-call',
@@ -283,6 +283,7 @@ describe('projectUI trace fold', () => {
         event('step/start', { turn: 1, step: 1 }),
         event('effect/intent', { effectId: 'side:a', kind: 'side-call', replay: 'never' }),
         sideCost('side:a'),
+        // Settled arrives after the cost row has closed the span: the duration the cost row measured stays.
         event('effect/settled', { effectId: 'side:a', outcome: 'ok', durationMs: 31 }),
         event('effect/intent', { effectId: 'inf-1', kind: 'inference', replay: 'safe' }),
         event('cost/ledger', {
@@ -346,7 +347,7 @@ describe('projectUI trace fold', () => {
           code: 'TIMEOUT',
           durationMs: 200,
         }),
-        sideCost('side:slow', { interrupted: true, creditSource: 'estimated' }, undefined),
+        sideCost('side:slow', { interrupted: true, creditSource: 'estimated' }, false),
         event('step/end', { turn: 1, step: 1 }),
         event('turn/end', { reason: 'completed', lastAssistantSeq: null }),
       ]
@@ -361,6 +362,97 @@ describe('projectUI trace fold', () => {
       })
       expect(side?.endSeq).toBeDefined()
       expect(side?.callSeq).toBeDefined()
+    })
+
+    describe('when the cost row closes the span before effect/settled arrives', () => {
+      // Each call is its own ledger. The rows are built by a callback so their sequence numbers follow the
+      // turn and step rows that open it.
+      const traceOf = async (effectId: string, rows: () => Event[]) => {
+        reset()
+        const events = [
+          event('turn/start', { turn: 1, trigger: 'prompt' }),
+          event('step/start', { turn: 1, step: 1 }),
+          event('effect/intent', {
+            effectId,
+            kind: effectId.startsWith('side:') ? 'side-call' : 'inference',
+            replay: effectId.startsWith('side:') ? 'never' : 'safe',
+          }),
+          ...rows(),
+          event('step/end', { turn: 1, step: 1 }),
+          event('turn/end', { reason: 'completed', lastAssistantSeq: null }),
+        ]
+        const root = timelineTrace(await projectUI(events, { sessionKey: `trace-order-${effectId}` }))
+        const span = byKind(root, 'generation').find((item) => item.effectId === effectId)
+        if (!span) throw new Error('expected a generation span')
+        return span
+      }
+
+      it('records the failure code and fails an interrupted side call, keeping the cost row duration', async () => {
+        const span = await traceOf('side:t', () => [
+          sideCost('side:t', { interrupted: true, creditSource: 'estimated' }, { durationMs: 150 }),
+          event('effect/settled', {
+            effectId: 'side:t',
+            outcome: 'error',
+            code: 'TIMEOUT',
+            durationMs: 200,
+          }),
+        ])
+        expect(span).toMatchObject({
+          status: 'failed',
+          error: { code: 'TIMEOUT' },
+          durationMs: 150,
+          purpose: 'side-call',
+          model: 'side-model',
+        })
+      })
+
+      it('fails a side call whose cost row says it finished but whose effect settled as an error', async () => {
+        const span = await traceOf('side:e', () => [
+          sideCost('side:e'),
+          event('effect/settled', { effectId: 'side:e', outcome: 'error', code: 'ADAPTER_ERROR' }),
+        ])
+        expect(span).toMatchObject({ status: 'failed', error: { code: 'ADAPTER_ERROR' }, durationMs: 30 })
+      })
+
+      it('fails a side call on any settled outcome other than ok, with no code to record', async () => {
+        for (const outcome of ['error', 'aborted', 'unknown'])
+          expect(
+            await traceOf(`side:${outcome}`, () => [
+              sideCost(`side:${outcome}`),
+              event('effect/settled', { effectId: `side:${outcome}`, outcome }),
+            ]),
+          ).toMatchObject({ status: 'failed', durationMs: 30 })
+        const span = await traceOf('side:nocode', () => [
+          sideCost('side:nocode'),
+          event('effect/settled', { effectId: 'side:nocode', outcome: 'error' }),
+        ])
+        expect(span).not.toHaveProperty('error')
+      })
+
+      it('keeps a completed side call completed when it settled ok', async () => {
+        const span = await traceOf('side:ok', () => [
+          sideCost('side:ok'),
+          event('effect/settled', { effectId: 'side:ok', outcome: 'ok', durationMs: 31 }),
+        ])
+        expect(span).toMatchObject({ status: 'completed', durationMs: 30 })
+        expect(span).not.toHaveProperty('error')
+      })
+
+      it('leaves the status of a conversation request alone, whatever its effect settled as', async () => {
+        const span = await traceOf('inf-x', () => [
+          event('cost/ledger', {
+            purpose: 'inference',
+            effectId: 'inf-x',
+            tokens,
+            creditSource: 'estimated',
+            model: 'm',
+            timing: { durationMs: 8 },
+          }),
+          event('effect/settled', { effectId: 'inf-x', outcome: 'error' }),
+        ])
+        expect(span).toMatchObject({ purpose: 'inference', status: 'completed', durationMs: 8 })
+        expect(span).not.toHaveProperty('error')
+      })
     })
 
     it('leaves a side call without a settled row running, and closes it as cancelled when aborted', async () => {
