@@ -56,6 +56,8 @@ What third-party clients rely on: sessions, submit, decisions and events. These 
 - `session/update`
 - `_agnes/v1/session.event`
 - `_agnes/v1/session.preview`
+- `_agnes/v1/session.loading`
+- `_agnes/v1/session.loadingCancel`
 - `_agnes/v1/daemon.notice`
 
 ### Session content, workspace and surfaces
