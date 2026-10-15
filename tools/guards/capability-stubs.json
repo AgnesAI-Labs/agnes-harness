@@ -77,6 +77,10 @@
         {
           "path": "packages/host-infrastructure/src/adapters/credential-files.ts",
           "marker": "private credential ACL enforcement is unavailable"
+        },
+        {
+          "path": "packages/base/extensions/sandbox/src/workspace-probe.ts",
+          "marker": "OS isolation is not implemented for this execution target"
         }
       ]
     },

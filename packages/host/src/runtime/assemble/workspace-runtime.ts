@@ -210,6 +210,42 @@ export function sandboxBackendPackages(
     .map(([id]) => id)
 }
 
+/** Derive one workspace's posture from the current provider and memory catalog. */
+function workspaceSandboxPolicy(
+  ctx: AssemblyContext,
+  pkgs: PackageSet,
+  proc: ProcessServices,
+  preset: PresetDoc,
+) {
+  const { adapters } = proc
+  const requestedSandbox = normalizeSandboxStaticConfig(preset)
+  const implementation =
+    !adapters.transport && sandboxProviderIdFrom(ctx.profile) === LOCAL_SANDBOX_PROVIDER_ID
+      ? localSandboxImplementation(ctx.profile, pkgs.modules, adapters.platform.os)
+      : 'unknown'
+  const unconfined =
+    implementation === 'unimplemented' &&
+    !requestedSandbox.required &&
+    ((requestedSandbox.level === 'L1' && requestedSandbox.onUnavailable === 'allow-if-unimplemented') ||
+      (requestedSandbox.level === 'L0' && requestedSandbox.onUnavailable === 'allow'))
+  const requiresFileIsolation = memoryRequiresFileIsolation(
+    ctx.live.pluginTree
+      .get()
+      .root.providers.catalog()
+      .some((entry) => entry.kind === 'memory'),
+    implementation,
+    requestedSandbox,
+  )
+  const sandboxConfig = requiresFileIsolation
+    ? {
+        ...requestedSandbox,
+        level: 'L1' as const,
+        onUnavailable: requestedSandbox.level === 'L1' ? requestedSandbox.onUnavailable : ('allow' as const),
+      }
+    : requestedSandbox
+  return { implementation, unconfined, requiresFileIsolation, sandboxConfig }
+}
+
 export type WorkspaceRuntimeFactory = Readonly<{
   /** Compiled policies by workspace root identity; the Skill installer reads the one a session runs under. */
   workspacePlans: ReadonlyMap<string, Awaited<ReturnType<typeof compileWorkspacePolicy>>>
@@ -244,32 +280,12 @@ export function createWorkspaceRuntimeFactory(
     preset: PresetDoc = presets.defaultPreset.doc,
     invocation?: import('@agnes/core').WorkspaceInvocationPort,
   ): Promise<SessionWorkspaceRuntime> => {
-    const requestedSandbox = normalizeSandboxStaticConfig(preset)
-    const implementation =
-      !adapters.transport && sandboxProviderIdFrom(ctx.profile) === LOCAL_SANDBOX_PROVIDER_ID
-        ? localSandboxImplementation(ctx.profile, pkgs.modules, adapters.platform.os)
-        : 'unknown'
-    const unconfined =
-      implementation === 'unimplemented' &&
-      !requestedSandbox.required &&
-      ((requestedSandbox.level === 'L1' && requestedSandbox.onUnavailable === 'allow-if-unimplemented') ||
-        (requestedSandbox.level === 'L0' && requestedSandbox.onUnavailable === 'allow'))
-    const requiresFileIsolation = memoryRequiresFileIsolation(
-      ctx.live.pluginTree
-        .get()
-        .root.providers.catalog()
-        .some((entry) => entry.kind === 'memory'),
-      implementation,
-      requestedSandbox,
+    const { implementation, unconfined, requiresFileIsolation, sandboxConfig } = workspaceSandboxPolicy(
+      ctx,
+      pkgs,
+      proc,
+      preset,
     )
-    const sandboxConfig = requiresFileIsolation
-      ? {
-          ...requestedSandbox,
-          level: 'L1' as const,
-          onUnavailable:
-            requestedSandbox.level === 'L1' ? requestedSandbox.onUnavailable : ('allow' as const),
-        }
-      : requestedSandbox
     let savedPlan: Awaited<ReturnType<typeof compileWorkspacePolicy>> | undefined
     let fence: SessionWorkspaceFence | undefined
     let posture: Readonly<{ execBackend: SandboxExecBackend; enforcement: Enforcement }> | undefined
