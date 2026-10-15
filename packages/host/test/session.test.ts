@@ -353,8 +353,8 @@ describe('createSession', () => {
     await host.close()
   })
   it.each([false, true])(
-    'quarantines a damaged tail without replaying tools when repair was already committed=%s',
-    async (repairCommitted) => {
+    'refuses damaged history without changing evidence or replaying tools after a raw open=%s',
+    async (rawOpenFirst) => {
       const dataDir = tmp()
       let executions = 0
       const first = await createTestHost({
@@ -417,34 +417,32 @@ describe('createSession', () => {
         session.key,
         damagedSeq,
       )
+      const evidence = db.prepare('SELECT * FROM events WHERE session_key = ? ORDER BY seq').all(session.key)
       db.close()
-      if (repairCommitted) {
+      if (rawOpenFirst) {
         const storage = createSqliteStorage({ file: join(dataDir, 'sessions.db') })
         expect(
-          (await storage.open(session.key, { writerRunId: 'repair-only', ttlMs: 60000 })).recovery,
-        ).toBeDefined()
-        // Lose the opener before Host reconciliation: only the durable audit and counter remain.
-        await storage.release(session.key, 'repair-only')
+          (await storage.open(session.key, { writerRunId: 'raw-open', ttlMs: 60000 })).recovery,
+        ).toBeUndefined()
+        await storage.release(session.key, 'raw-open')
         await storage.close()
       }
       const reopened = await createTestHost({ dataDir })
 
       try {
-        const recovered = await reopened.host.createSession({ cwd: dataDir })
+        await expect(reopened.host.createSession({ cwd: dataDir })).rejects.toMatchObject({
+          code: 'E_SESSION_CORRUPT',
+        })
         expect(executions).toBe(1)
-        expect(JSON.stringify(await recovered.scan({ type: 'tool/result', limit: 10 }))).toContain(
-          'TOOL_OUTCOME_UNKNOWN',
-        )
-        const notice = (await recovered.projectUI(undefined, { surface: 'web' })).nodes.find(
-          (node) => node.kind === 'ledger-recovery',
-        )
-        expect(notice).toMatchObject({ validThroughSeq: damagedSeq - 1, diagnosticId: expect.any(String) })
-        if (!repairCommitted)
+        expect(reopened.audit.events.filter((event) => event.kind === 'session.recovered')).toEqual([])
+        const preserved = new DatabaseSync(join(dataDir, 'sessions.db'))
+        try {
           expect(
-            reopened.audit.events.find((event) => event.kind === 'session.recovered')?.detail,
-          ).toMatchObject({ reason: 'damaged-tail', diagnosticId: expect.any(String) })
-        expect(await recovered.scan({ type: 'x/core/ledger-tail-recovered', limit: 10 })).toHaveLength(1)
-        expect(recovered.state.openTurn.size).toBe(0)
+            preserved.prepare('SELECT * FROM events WHERE session_key = ? ORDER BY seq').all(session.key),
+          ).toEqual(evidence)
+        } finally {
+          preserved.close()
+        }
       } finally {
         await reopened.host.close()
       }
