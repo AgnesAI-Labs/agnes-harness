@@ -33,7 +33,8 @@ describe('PM4 management contracts', () => {
     // the generated-schema parity table. The current set also includes generation status and
     // capability/source authoring boundaries.
     // Five presentation rows preserve valid metadata and reject invalid display/authority fields.
-    expect(result.total).toBe(636)
+    // Three binding rows cover history-only session ownership and reject invalid availability/owner.
+    expect(result.total).toBe(639)
     expect(result.skipped).toBe(0)
   })
   it('requires explicit classification, permission and command identity for every management method', () => {
