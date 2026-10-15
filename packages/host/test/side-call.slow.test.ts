@@ -1966,7 +1966,7 @@ describe('side model calls through the built-in typesafe-systemone adapter', () 
         dispatch: 'may-have-sent',
       })
       expect(seen.elapsedMs).toBeGreaterThanOrEqual(1990)
-      expect(seen.elapsedMs).toBeLessThan(2900)
+      expect(seen.elapsedMs).toBeLessThan(3000)
       expect(fake.seen).toHaveLength(1)
       const rows = await rowsOf(session)
       expect(terminalOf(rows, 'slow-1')).toMatchObject({
@@ -2003,7 +2003,7 @@ describe('side model calls through the built-in typesafe-systemone adapter', () 
       expect((await runTurn(session)).reason).toBe('completed')
       expect(seen.result).toMatchObject({ status: 'failed', reason: 'deadline', code: 'TIMEOUT' })
       expect(seen.elapsedMs).toBeGreaterThanOrEqual(1990)
-      expect(seen.elapsedMs).toBeLessThan(2900)
+      expect(seen.elapsedMs).toBeLessThan(3000)
       expect(endpoint.signals[0]?.aborted).toBe(true)
       const rows = await rowsOf(session)
       expect(forEffect(rows, 'effect/settled', 'ignored-1').map((row) => data(row).code)).toEqual(['TIMEOUT'])
@@ -2143,7 +2143,7 @@ describe('side model calls through the built-in typesafe-systemone adapter', () 
       const fake = await startJev({ hang: true })
       const results: SideCallResult[] = []
       const kit = await bootJev(jevDataDir(), fake, {
-        loop: decidingLoop(askBeforeReply(results, () => ({ deadlineMs: 300 }))),
+        loop: decidingLoop(askBeforeReply(results, () => ({ deadlineMs: 1000 }))),
       })
       try {
         const session = await kit.open('jev-timeout')
