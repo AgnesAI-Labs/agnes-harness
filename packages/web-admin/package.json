@@ -9,6 +9,7 @@
     "./admin/plugins/candidates": "./src/admin/plugins/candidates.tsx",
     "./admin/plugins/capability-review": "./src/admin/plugins/capability-review.tsx",
     "./admin/plugins/control-panel": "./src/admin/plugins/control-panel.tsx",
+    "./admin/plugins/install-review": "./src/admin/plugins/install-review.tsx",
     "./admin/plugins/locales/admin": "./src/admin/plugins/locales/admin.ts",
     "./admin/plugins/operation-feedback": "./src/admin/plugins/operation-feedback.tsx",
     "./admin/plugins/locales/shell": "./src/admin/plugins/locales/shell.ts",

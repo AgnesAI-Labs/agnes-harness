@@ -93,3 +93,22 @@ export type {
   PluginGenerationStatus,
   PluginTreeView,
 }
+
+/**
+ * An install or update check that finished, shown as a page of the full plugins page (never a
+ * dialog). It stays open while the confirmed operation runs, so a failure is read where it was asked.
+ */
+export type InstallReviewState = Readonly<{
+  preview: PackagePreview
+  mode: 'install' | 'update'
+  /** The installed version an update replaces. */
+  current: PackageInstalledDescriptor | undefined
+  /** The update also activates, binding both current summaries. */
+  combined: boolean
+  /** Confirming trusts and enables at once; installing without enabling is the second choice. */
+  enables: boolean
+  /** What the last confirmation chose, for its retry. */
+  enableAfter: boolean
+  busy: boolean
+  error: AdminError | undefined
+}>
