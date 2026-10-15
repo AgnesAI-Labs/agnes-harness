@@ -168,6 +168,15 @@ it('runs the real Hub on the generic owned store/readiness and streams, parking 
       await Promise.resolve()
       return { peer, sent, grant }
     }
+    await expect(
+      broker.open(principal, {
+        owner: 'sample/mhs',
+        name: 'mhs.control',
+        scope: { kind: 'profile', profileId: 'one' },
+        input: {},
+        client: { rowId: row.rowId, revision: 'revision', contentDigest: `sha256-${'a'.repeat(64)}` },
+      }),
+    ).rejects.toThrow('approval-required')
     const media = await open('mhs.media', { device: 'rover', source: 'front' }, 2097152)
     const control = await open('mhs.control', { device: 'forged-browser-device' })
     hub.north.hub.observation('rover', 'front', { w: 1, h: 1 }, new Uint8Array([1, 2]), 'image/png')

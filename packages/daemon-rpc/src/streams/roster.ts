@@ -46,7 +46,8 @@ export function createRosterStreamAuthorizer(options: {
         request.owner !== registration.owner ||
         request.name !== registration.declaration.name ||
         request.scope.kind !== registration.declaration.scope ||
-        binding?.owner !== row.rowId ||
+        !binding ||
+        binding.owner !== row.rowId ||
         binding.availability !== 'active' ||
         binding.profileId !== principal.profileId ||
         binding.profileId !== registration.profileId ||

@@ -24,6 +24,7 @@ applyUITimelinePatch
 applyWindowedUITimelinePatch
 classify
 createClient
+createExampleClient
 createExtensionClient
 createManagedServiceRuntime
 createOwnedStore

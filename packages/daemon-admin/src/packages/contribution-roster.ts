@@ -120,7 +120,11 @@ export function combineContributionRosters(
 
 /** Reviewed client declarations retained with an immutable asset snapshot and reprojected on restore. */
 export function clientContributionDeclarations(
-  client: Pick<ClientContribution, 'lifetime' | 'homeEntries' | 'examplePages' | 'assets' | 'streams'>,
+  client: {
+    [K in 'lifetime' | 'homeEntries' | 'examplePages' | 'assets' | 'streams']?:
+      | ClientContribution[K]
+      | undefined
+  },
 ) {
   return {
     ...(client.lifetime ? { lifetime: client.lifetime } : {}),

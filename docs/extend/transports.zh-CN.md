@@ -4,7 +4,7 @@
 
 [扩展指南](README.zh-CN.md)
 
-可选的 `streams.v1` 与 `services.managed.v1` 适配器提供认证流与 daemon 持有的单例进程。现有会话服务和 Surface HTTP 合同保持兼容。能力必须经过审核并由 profile ceiling 明确允许；旧会话 pin 不能重启旧全局进程。
+可选的流与受管理服务适配器提供认证流与 daemon 持有的单例进程。现有会话服务和 Surface HTTP 合同保持兼容。能力必须经过审核并由 profile ceiling 明确允许；旧会话 pin 不能重启旧全局进程。
 
 在 `capabilities.streams` 声明流，在 `contributes.client.streams` 列出浏览器可用的精确名称。每条声明选择 profile 或 session 作用域、lane、方向和字节上限。入站帧必须使用 control lane，并绑定同 owner 的 effect `controlService`。浏览器 open 还携带不可变客户端 `rowId`、`revision` 和 `contentDigest`；这些是用于核对当前 roster 的选择器，不是自称身份的凭据。授权适配器必须验证当前 activation、不可变客户端 roster、认证主体、作用域、allowlist 和有效 effect grant；缺少适配器时拒绝访问。Surface 的 source-auth 仍须同时具备用户主体和明确的服务授权。
 

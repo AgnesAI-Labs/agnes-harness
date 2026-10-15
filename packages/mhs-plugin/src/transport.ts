@@ -23,8 +23,8 @@ export function startManagedMhsHub(
     store: runtime.store,
     signal: runtime.signal,
     devicePort: device.port,
-    ready: runtime.ready,
-    onShutdown: runtime.onShutdown,
+    ready: (info) => runtime.ready(info),
+    onShutdown: (handler) => runtime.onShutdown(handler),
   })
 }
 

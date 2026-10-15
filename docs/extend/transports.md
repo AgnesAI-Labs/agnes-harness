@@ -4,7 +4,7 @@ English | [简体中文](transports.zh-CN.md)
 
 [Extension guide](README.md)
 
-The optional `streams.v1` and `services.managed.v1` adapters provide authenticated streams and daemon-owned singleton processes. Existing session services and Surface HTTP routes keep their contracts. These capabilities must be explicitly reviewed and permitted by the profile ceiling; a pinned session cannot start an older global process.
+The optional stream and managed-service adapters provide authenticated streams and daemon-owned singleton processes. Existing session services and Surface HTTP routes keep their contracts. These capabilities must be explicitly reviewed and permitted by the profile ceiling; a pinned session cannot start an older global process.
 
 Declare streams in `capabilities.streams` and exact browser names in `contributes.client.streams`. A declaration selects one profile or session scope, one lane, directions and byte limits. Inbound frames require the control lane and an own effect `controlService`. Browser opens also carry the immutable client `rowId`, `revision` and `contentDigest`; these are selectors to verify against the current roster, never self-asserted credentials. The authority adapter must validate the current activation, immutable client roster, authenticated subject, scope, allowlist and live effect grant. Absence of this adapter refuses access. A source-authenticated Surface still needs a user subject and explicit service grants.
 
