@@ -1,14 +1,18 @@
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { discoverLocalExamples } from '../src/packages/local-examples.js'
 
 const roots: string[] = []
 afterEach(() => {
+  vi.useRealTimers()
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 it.each([false, true])('discovers optional pinned helper even with broken examples=%s', async (broken) => {
+  // Fake only Date, before discovery, so the catalog clock can cross the snapshot ttl below.
+  vi.useFakeTimers({ toFake: ['Date'] })
+  const start = Date.now()
   const root = mkdtempSync(join(tmpdir(), 'agnes-builtin-catalog-'))
   roots.push(root)
   if (broken) mkdirSync(join(root, 'examples', 'packages'), { recursive: true })
@@ -44,4 +48,23 @@ it.each([false, true])('discovers optional pinned helper even with broken exampl
   expect(result.sources.find((source) => source.sourceId === 'builtin-plugins')?.status).toBe('cached')
   if (broken)
     expect(result.sources.find((source) => source.sourceId === 'local-examples')?.status).toBe('unavailable')
+
+  // Bundled snapshots never go stale: they are served from cache until ttlMs, and an offline read
+  // after that reloads them instead of emptying the catalog. A source that never loaded stays out.
+  const ids = (read: typeof result) => read.entries.map((entry) => `${entry.id}@${entry.version}`)
+  const status = (read: typeof result, sourceId: string) =>
+    read.sources.find((source) => source.sourceId === sourceId)?.status
+  vi.setSystemTime(start + 86_399_999)
+  const cached = await catalog.read({ offline: true })
+  expect({ ids: ids(cached), builtin: status(cached, 'builtin-plugins') }).toEqual({
+    ids: ids(result),
+    builtin: 'cached',
+  })
+  vi.setSystemTime(start + 86_400_001)
+  const expired = await catalog.read({ offline: true })
+  expect({ ids: ids(expired), builtin: status(expired, 'builtin-plugins') }).toEqual({
+    ids: ids(result),
+    builtin: 'fresh',
+  })
+  if (broken) expect(status(expired, 'local-examples')).toBe('unavailable')
 })
