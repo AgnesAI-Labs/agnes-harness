@@ -268,6 +268,7 @@ describe('assemble', () => {
       const sources = Array.from({ length: 4 }, (_, i) => prepareSource(`@acme/fail-${i}`))
       const held = [gate(), gate()]
       const reached = gate()
+      const secondEntered = gate()
       const started: string[] = []
       let settled = false
       const options = deps(allModules(), {
@@ -277,9 +278,13 @@ describe('assemble', () => {
         runtimePrepareIndependent: sources.map(({ snapshot }) => snapshot),
         extensionLoader: {
           import: async (file) => {
+            const index = sources.findIndex(({ snapshot }) => file.startsWith(snapshot.directory))
+            // Independent imports may arrive in either order; exercise the reverse order explicitly.
+            if (index === 0) await secondEntered.promise
             started.push(file)
+            if (index === 1) secondEntered.resolve()
             if (started.length === 2) reached.resolve()
-            await held[started.length - 1]?.promise
+            await held[index]?.promise
             return { main: () => {} }
           },
         },
