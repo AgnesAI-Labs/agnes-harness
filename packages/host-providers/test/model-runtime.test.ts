@@ -114,3 +114,53 @@ it('drains direct inference and counting, including iterator cancellation and cl
   expect(disposed).toBe(true)
   expect(errors).toHaveLength(1)
 })
+
+// The identity a caller reads for a route has to come from the same image that would serve the
+// request, or a route could be described by one generation and dispatched by the next.
+it('describes a route from the image in force, following a generation switch', async () => {
+  const describing = (id: string) => ({
+    provider: {
+      models: () => [],
+      describeRoute: (route: string, model: string) => ({
+        adapter: { id, version: null },
+        api: 'openai-completions',
+        endpointHost: `${id}.invalid`,
+        routeDigest: `${id}:${route}:${model}`,
+      }),
+      async *infer() {},
+    },
+    contractForModel: () => ({ contract_id: id, parser_version: '1' }),
+    dispose: async () => {},
+  })
+  const runtime = modelRuntime(describing('old'), () => {})
+  expect(runtime.provider.describeRoute?.('gw', 'flash')).toMatchObject({
+    adapter: { id: 'old' },
+    routeDigest: 'old:gw:flash',
+  })
+  let pinned: ReturnType<NonNullable<typeof runtime.provider.describeRoute>> | undefined
+  const inflight = runtime.run(async () => {
+    runtime.publish(describing('fresh'))
+    pinned = runtime.provider.describeRoute?.('gw', 'flash')
+  })
+  await inflight
+  // A request that began on the old image keeps reading it, as models() and infer() do.
+  expect(pinned).toMatchObject({ adapter: { id: 'old' } })
+  expect(runtime.provider.describeRoute?.('gw', 'flash')).toMatchObject({
+    adapter: { id: 'fresh' },
+    routeDigest: 'fresh:gw:flash',
+  })
+  await runtime.dispose()
+})
+
+it('describes nothing when the image in force cannot describe routes', async () => {
+  const runtime = modelRuntime(
+    {
+      provider: { models: () => [], async *infer() {} },
+      contractForModel: () => ({ contract_id: null, parser_version: '1' }),
+      dispose: async () => {},
+    },
+    () => {},
+  )
+  expect(runtime.provider.describeRoute?.('gw', 'flash')).toBeUndefined()
+  await runtime.dispose()
+})

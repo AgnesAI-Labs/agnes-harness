@@ -42,6 +42,9 @@ class CommunityWireAdapter extends WireAdapter {
     override readonly version: string,
     private readonly lifecycle: ProviderLifetime,
     private readonly registration: AbortSignal,
+    // Taken from the registration's declared capabilities rather than from the instance: an instance
+    // can claim anything, and the declaration is what the catalog reports for this adapter.
+    override readonly acceptsPayload: boolean,
   ) {
     super()
     this.id = instance.id
@@ -251,7 +254,13 @@ export class ModelAdapterRegistry extends Service {
       }
       this.registrations.select(`adapter:${id}`, id)
       return {
-        adapter: new CommunityWireAdapter(instance, record.version, lifecycle, record.lifetime.signal),
+        adapter: new CommunityWireAdapter(
+          instance,
+          record.version,
+          lifecycle,
+          record.lifetime.signal,
+          record.entry.capabilities.payload === true,
+        ),
         dispose,
       }
     }, creationSignal)

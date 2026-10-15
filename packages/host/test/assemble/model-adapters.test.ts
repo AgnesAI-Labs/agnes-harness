@@ -147,6 +147,41 @@ it('validates payload capabilities at registration and carries them into the cat
   await root.fiber.dispose()
 })
 
+// The facade refuses a payload for any adapter that is not marked as reading one. For an assembled
+// adapter that mark comes from the registration's declared capabilities, not from the instance the
+// factory returned: an instance is free to claim anything, and only the declaration is reviewed.
+it('marks an assembled adapter as payload-accepting only when its registration declares it', async () => {
+  const root = new Context()
+  new ModelAdapterRegistry(root)
+  const register = (id: string, capabilities: Record<string, unknown>, instanceClaim?: boolean) =>
+    root.providers.registerHost(
+      modelAdapterKind,
+      '@agnes/host',
+      definition({
+        id,
+        capabilities: { imageInput: false, tools: false, streaming: false, ...capabilities } as never,
+        create: (config) =>
+          ({
+            ...(definition().create(config) as ModelAdapterInstance),
+            ...(instanceClaim === undefined ? {} : { acceptsPayload: instanceClaim }),
+          }) as ModelAdapterInstance,
+      }),
+    )
+  register('plain', {})
+  register('declared-off', { payload: false })
+  register('declared', { payload: true })
+  register('declared-only', { payload: true, payloadOnly: true })
+  register('claims-without-declaring', {}, true)
+  const accepts = async (id: string) =>
+    (await root.modelAdapters.create(id, { routes: [] })).adapter.acceptsPayload
+  expect(await accepts('declared')).toBe(true)
+  expect(await accepts('declared-only')).toBe(true)
+  expect(await accepts('plain')).toBe(false)
+  expect(await accepts('declared-off')).toBe(false)
+  expect(await accepts('claims-without-declaring')).toBe(false)
+  await root.fiber.dispose()
+})
+
 it('cleans up an instance whose asynchronous factory finishes after unregistering', async () => {
   const root = new Context()
   installModelAdapters(root)
