@@ -12,6 +12,7 @@ import { fallbackT, type Translate } from '../locales/index.js'
 import { createSettingsControl } from '../settings-control-templates.js'
 import { Button } from '../ui/button.js'
 import { Disclosure } from '../ui/disclosure.js'
+import { Icon as SharedIcon } from '../ui/icon.js'
 import { Actions } from '../x/index.js'
 import { TurnUsagePanel } from './turn-usage.js'
 import { ConversationXScope } from './x-scope.js'
@@ -299,7 +300,7 @@ export function ConversationTurnActions({
           disabled={pendingId === turn.id || !turn.forkable || !onFork}
           onClick={fork}
         >
-          <Icon paths={['M6 3v5a4 4 0 0 0 4 4h8', 'm14 8 4 4-4 4', 'M6 21v-5a4 4 0 0 1 4-4']} />
+          <SharedIcon name="split" />
         </Button>
       ),
     },
