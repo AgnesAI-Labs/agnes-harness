@@ -5,8 +5,8 @@
   "resources": [
     {
       "path": "client/generated/runtime.js",
-      "bytes": 143355,
-      "sha256": "8ce9fc01e7d3db7cb706ec9523a2bbfed9623385ffbf2d2a200da7e960510bd3",
+      "bytes": 144166,
+      "sha256": "f24248f08677fa821633446f6da7267ab30c85a25beccacc2f8a54ed67e8b17f",
       "origin": "Agnes simulation, MHS device SDK and bundled TypeBox",
       "license": "Apache-2.0 AND MIT"
     },
@@ -26,8 +26,8 @@
     },
     {
       "path": "client/generated/browser-transport.js",
-      "bytes": 57519,
-      "sha256": "3351b2737de12dbb3acf9a9830335473b475d38c533f5947a8eede337ee2009f",
+      "bytes": 57619,
+      "sha256": "e184b2e12d1e58e000fe486545ead7779658d44f76d4e1ad8b92249ac48e79fa",
       "origin": "Agnes simulation, MHS device SDK and bundled TypeBox",
       "license": "Apache-2.0 AND MIT"
     },

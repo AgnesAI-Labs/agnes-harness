@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { once } from 'node:events'
 import { Device } from '@agnes/mhs-device'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -20,14 +21,23 @@ it.each([
 })
 it('imports an exclusive remote fleet through local admission, stops on revoke and isolates other profiles', async () => {
   const axes: Record<string, number>[] = []
-  const device = new Device(description, { arm() {}, async stop() {} }),
+  let finishMove = false
+  const registration = {
+    ...description,
+    tools: description.tools?.map((tool) => ({ ...tool, pausable: true })),
+  }
+  const device = new Device(registration, { arm() {}, async stop() {} }),
     movements: number[] = []
   device.onManual = async (value) => {
     axes.push(value)
   }
   device.update({ battery: 90 })
-  device.tool('move', async (args) => {
+  device.tool('move', async (args, context) => {
     movements.push(Number(args.x))
+    while (args.x === 2 && !finishMove) {
+      await context.checkpoint()
+      await new Promise<void>((resolve) => setImmediate(resolve))
+    }
     return { moved: args.x! }
   })
   const server = new WebSocketServer({ host: '127.0.0.1', port: 0, maxPayload: 1 << 20 })
@@ -71,6 +81,42 @@ it('imports an exclusive remote fleet through local admission, stops on revoke a
     expect((await hub.journal.read('good'))?.outcome).toMatchObject({ status: 'done' }),
   )
   expect(movements).toEqual([1])
+  const pcm = new Uint8Array(4096).fill(42)
+  await expect(hub.clipChunk('rover', 'unapproved', pcm.subarray(0, 2048))).rejects.toThrow(
+    'clip-grant-required',
+  )
+  await hub.clipLease(
+    'rover',
+    {
+      id: 'remote-clip',
+      rate: 16000,
+      channels: 1,
+      bytes: pcm.length,
+      sha256: createHash('sha256').update(pcm).digest('hex'),
+    },
+    invocation('clip-grant'),
+  )
+  expect(await hub.clipChunk('rover', 'clip-grant', pcm.subarray(0, 2048))).toBeUndefined()
+  expect(device.clip('remote-clip')).toBeUndefined()
+  expect(await hub.clipChunk('rover', 'clip-grant', pcm.subarray(2048))).toEqual({
+    id: 'remote-clip',
+    state: 'sent',
+  })
+  expect(device.clip('remote-clip')).toMatchObject({ rate: 16000, channels: 1, pcm })
+  await hub.call('rover', 'move', { x: 2 }, invocation('held'))
+  const refused = await hub.call('rover', 'move', { x: 1 }, invocation('busy'))
+  expect(refused.outcome).toMatchObject({
+    status: 'rejected',
+    reason: 'busy',
+    holder: { call: 'held', job: 'held', tool: 'move', caller: 'agent' },
+  })
+  await hub.effect('pause', 'rover', { call: 'held' }, invocation('pause-held'))
+  expect((await hub.journal.read('held'))?.phase).toBe('paused')
+  await hub.effect('resume', 'rover', { call: 'held' }, invocation('resume-held'))
+  finishMove = true
+  await vi.waitFor(async () =>
+    expect((await hub.journal.read('held'))?.outcome).toMatchObject({ status: 'done' }),
+  )
   const lease = await hub.manualLease('rover', invocation('remote-lease'))
   await hub.manual('rover', lease.operationId, { vx: 0.5 })
   await vi.waitFor(() => expect(axes).toContainEqual({ vx: 0.5 }))

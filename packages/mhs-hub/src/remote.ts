@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { isIP } from 'node:net'
 import {
   type Device,
@@ -5,6 +6,7 @@ import {
   MhsError,
   type Outcome,
   object,
+  type ResourceHolder,
   validateRegistration,
 } from '@agnes/mhs-device'
 import { type RawData, WebSocket } from 'ws'
@@ -12,6 +14,7 @@ import { type RawData, WebSocket } from 'ws'
 const payload = (data: RawData): Buffer =>
   Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as ArrayBuffer)
 
+import { Clips, clipSpec } from './clips.js'
 import { decodeMedia, encodeMedia } from './media.js'
 import type { DeviceLink, SouthEvents } from './ports.js'
 
@@ -60,12 +63,12 @@ export async function connectExternalHub(events: SouthEvents, config: ExternalHu
     resolveReady = resolve
     rejectReady = reject
   })
-  const send = (m: Json) => {
+  const send = (m: Json | Uint8Array) => {
     if (socket.readyState !== 1 || socket.bufferedAmount > 1 << 20)
       throw new MhsError('external-hub-unavailable')
-    socket.send(JSON.stringify(m))
+    socket.send(m instanceof Uint8Array ? m : JSON.stringify(m))
   }
-  const request = (device: string, method: string, params: Json, timeout = 2000) =>
+  const request = (device: string, method: string, params: Json, timeout = 2000, bytes?: Uint8Array) =>
     new Promise<unknown>((resolve, reject) => {
       if (ended || pending.size >= 128) {
         reject(new MhsError('external-hub-unavailable'))
@@ -78,7 +81,17 @@ export async function connectExternalHub(events: SouthEvents, config: ExternalHu
         }, timeout)
       pending.set(id, { resolve, reject, timer })
       try {
-        send({ type: 'request', id, device, method, params })
+        send(
+          bytes
+            ? encodeMedia({
+                device,
+                source: 'clip',
+                at: Date.now(),
+                data: { type: 'request', id, method, params },
+                bytes,
+              })
+            : { type: 'request', id, device, method, params },
+        )
       } catch (error) {
         clearTimeout(timer)
         pending.delete(id)
@@ -140,8 +153,15 @@ export async function connectExternalHub(events: SouthEvents, config: ExternalHu
               return !ended && socket.readyState === 1
             },
             request: (method, params, timeout) => request(id, method, params as Json, timeout),
-            async call(call, name, args) {
-              const acceptance = object(await request(id, 'call', { call, name, args }))
+            async call(call, name, args, caller) {
+              const acceptance = object(
+                await request(id, 'call', { call, name, args, ...(caller ? { caller } : {}) }),
+              )
+              const rejection = {
+                ...(typeof acceptance.reason === 'string' ? { reason: acceptance.reason } : {}),
+                ...(acceptance.holder ? { holder: acceptance.holder as ResourceHolder } : {}),
+                ...(Array.isArray(acceptance.needs) ? { needs: acceptance.needs as string[] } : {}),
+              }
               const result =
                 acceptance.accepted === true
                   ? request(
@@ -160,8 +180,27 @@ export async function connectExternalHub(events: SouthEvents, config: ExternalHu
                       },
                       () => ({ status: 'unknown' as const, reason: 'disconnect' }),
                     )
-                  : Promise.resolve({ status: 'rejected' as const })
-              return { accepted: acceptance.accepted === true, result }
+                  : Promise.resolve({ status: 'rejected' as const, ...rejection })
+              return {
+                accepted: acceptance.accepted === true,
+                ...rejection,
+                result,
+              }
+            },
+            async clip(clip, rate, channels, pcm) {
+              await request(id, 'mhs/clip-prepare', {
+                id: clip,
+                rate,
+                channels,
+                bytes: pcm.length,
+                sha256: createHash('sha256').update(pcm).digest('hex'),
+              })
+              for (let offset = 0; offset < pcm.length; offset += 2048) {
+                const chunk = pcm.subarray(offset, offset + 2048)
+                const ack = object(await request(id, 'mhs/clip-chunk', { id: clip }, 2000, chunk))
+                if (ack.cached !== (offset + chunk.length === pcm.length))
+                  throw new MhsError('clip-unconfirmed')
+              }
             },
             manual: (axes) => send({ type: 'manual', device: id, axes }),
             close,
@@ -227,7 +266,8 @@ export function serveExternalHubPeer(
   }
   for (const d of devices) peerOwners.set(d, socket)
   const fleet = new Map(devices.map((d) => [d.description.device.id, d])),
-    outcomes = new Map<string, Promise<Outcome>>()
+    outcomes = new Map<string, Promise<Outcome>>(),
+    clips = new Clips(() => Date.now())
   let hello = false,
     ended = false,
     lastPong = Date.now()
@@ -258,6 +298,7 @@ export function serveExternalHubPeer(
     }
     socket.close()
     outcomes.clear()
+    clips.revoke()
   }
   const heartbeat = setInterval(() => {
     if (Date.now() - lastPong > 1500) {
@@ -275,8 +316,11 @@ export function serveExternalHubPeer(
   socket.on('message', async (raw, binary) => {
     const bytes = payload(raw)
     try {
-      if (binary || bytes.length > 65536) throw new MhsError('invalid-peer-message')
-      const m = object(JSON.parse(bytes.toString()))
+      if (bytes.length > 65536) throw new MhsError('invalid-peer-message')
+      const frame = binary ? decodeMedia(bytes) : undefined
+      const m = frame ? { ...object(frame.data), device: frame.device } : object(JSON.parse(bytes.toString()))
+      if (binary && (!hello || frame?.source !== 'clip' || m.method !== 'mhs/clip-chunk'))
+        throw new MhsError('invalid-peer-message')
       if (!hello) {
         if (m.type !== 'hello' || m.protocol !== 'mhs-peer/v1') throw new MhsError('invalid-peer')
         hello = true
@@ -324,9 +368,15 @@ export function serveExternalHubPeer(
               String(params.call),
               String(params.name),
               object(params.args) as Record<string, Json>,
+              typeof params.caller === 'string' ? params.caller : undefined,
             )
             if (c.result) outcomes.set(`${m.device}/${params.call}`, c.result)
-            value = { accepted: c.accepted }
+            value = {
+              accepted: c.accepted,
+              ...(c.reason ? { reason: c.reason } : {}),
+              ...(c.holder ? { holder: c.holder } : {}),
+              ...(c.needs ? { needs: c.needs } : {}),
+            }
             break
           }
           case 'outcome': {
@@ -349,6 +399,26 @@ export function serveExternalHubPeer(
             break
           case 'mhs/keyframe':
             await d.onKeyframe?.(String(params.source))
+            value = {}
+            break
+          case 'mhs/clip-prepare': {
+            const spec = clipSpec(params as Json)
+            clips.grant(`${m.device}/${spec.id}`, String(m.device), 'peer', spec, Date.now() + 30000)
+            value = {}
+            break
+          }
+          case 'mhs/clip-chunk': {
+            const key = `${m.device}/${params.id}`
+            const pcm = clips.append(key, String(m.device), 'peer', frame?.bytes ?? new Uint8Array())
+            if (pcm) {
+              const spec = clips.consume(key, String(m.device), 'peer', pcm)
+              d.receiveClip(spec.id, spec.rate, spec.channels, pcm)
+            }
+            value = { cached: Boolean(pcm) }
+            break
+          }
+          case 'mhs/pause':
+            await d.pause(String(params.call))
             value = {}
             break
           case 'mhs/resume':

@@ -38,7 +38,9 @@ TLS/VPN access boundary. Give this socket exclusive ownership of those SDK devic
 their observation/state callbacks. This is an explicit versioned peer adapter, not the old North
 protocol or a public unauthenticated listener. The adapter validates registrations and bounded
 media, retains device-local deadman, and stops its fleet on peer loss. Native admission on the
-AGH side remains mandatory for calls, writes and manual leases.
+AGH side remains mandatory for calls, writes and manual leases. The peer forwards pause/resume,
+resource holder/caller details and approved clips; clip chunks reuse the bounded hash-checked
+assembler and complete only after the remote SDK acknowledges caching.
 
 Switching local/external drains the old Hub through the managed configuration receipt. Disable
 stops the attached fleet and closes this profile's peer, without terminating the external service.

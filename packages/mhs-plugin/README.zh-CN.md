@@ -29,3 +29,5 @@ Profile 客户端还声明审批保护的 `mhs.pause` 与 `mhs.clip`。音频字
 高级外部 Hub 模式保留本机 profile 的批准、日志和受管生命周期，通过 `hub.configure` 的 `externalHub: { address, allowlist }` 选择远端 `mhs-peer/v1` 设备接入。要求数值 IP、精确标准化白名单与有效 TLS 的 `wss:`，仅回环开发允许 `ws:`；拒绝凭据、查询、片段、重定向和 DNS 名称。浏览器仍只连接同源网关。`mhs.connection` 返回本机/外部及真实连接状态，断开后需重试。
 
 远端适配器在 TLS/VPN 边界验证服务端 WebSocket 的调用方身份后，调用 `@agnes/mhs-hub` 的 `serveExternalHubPeer(socket, devices, signal)`。这些 SDK 设备应由此连接独占；它接管状态与观测回调并在掉线时停车。没有自动开放的远端监听器，也不兼容旧 North 免审批通路。切换配置会排空旧连接；停用只停止所接 fleet 并关闭本 profile 的 socket，不终止远端服务，未确认停车仍记 unknown。
+
+对等适配器保留暂停/继续、资源持有者与调用方信息及审批保护的音频上传。音频分块复用有界 hash 校验聚合器，仅在远端 SDK 确认缓存后完成。
