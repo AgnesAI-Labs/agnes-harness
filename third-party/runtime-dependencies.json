@@ -15,7 +15,8 @@
         "packages/package-manager",
         "packages/sdk",
         "packages/web",
-        "packages/web-ui"
+        "packages/web-ui",
+        "packages/mhs-ui"
       ]
     },
     {

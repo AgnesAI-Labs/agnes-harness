@@ -6,13 +6,26 @@ import { apply, createMhsModule } from '../src/module.js'
 import type { MhsModuleContext } from '../src/ports.js'
 import { fake } from './fixtures.js'
 
-function context(f: ReturnType<typeof fake>) {
+function context(f: ReturnType<typeof fake>, withProfile = false) {
   const availability = new Set<() => void>(),
     registrations = new Map<string, HomeEntry>(),
     effects: (() => unknown)[] = [],
     slots = new Set<string>()
   let active = true
   const ctx = {
+    ...(withProfile
+      ? {
+          profile: {
+            services: {
+              query: f.ports.services.query,
+              effect: f.ports.services.effect,
+              readOperation: (_service: string, operationId: string) =>
+                f.ports.services.readOperation(operationId),
+            },
+            streams: f.ports.streams,
+          },
+        }
+      : {}),
     effect: (fn: () => unknown) => {
       effects.push(fn)
     },
@@ -34,6 +47,7 @@ function context(f: ReturnType<typeof fake>) {
       },
     },
     locale: { register: () => () => {}, subscribe: () => () => {}, getSnapshot: () => 'en' },
+    examplePages: { subscribe: () => () => {}, render: () => null },
     session: f.ports.session,
     slots: {
       register: ({ key }: { key: string }) => {
@@ -60,8 +74,8 @@ describe('profile contribution lifecycle', () => {
   it('keeps a primary home entry independent of session, scopes dock counts, and synchronously removes all registrations on disable', async () => {
     vi.useFakeTimers()
     const f = fake(),
-      c = context(f),
-      dispose = createMhsModule(f.ports).apply(c.ctx)
+      c = context(f, true),
+      dispose = apply(c.ctx)
     await vi.advanceTimersByTimeAsync(0)
     expect(c.registrations.get('mhs')?.badge?.getSnapshot()).toBe(1)
     expect(c.registrations.get('mhs')).toMatchObject({ placement: 'primary', order: 40 })
