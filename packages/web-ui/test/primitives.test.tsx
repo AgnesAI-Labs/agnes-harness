@@ -203,7 +203,8 @@ it('draws settings icons with the shared Icon geometry and labels icon actions',
   }
   // A settings category maps to its glyph, and an unknown name reads as a plugin.
   expect(settingsIconName('security')).toBe('shield-check')
-  expect(settingsIconName('no-such-icon')).toBe('plug')
+  expect(settingsIconName('plugins')).toBe('puzzle')
+  expect(settingsIconName('no-such-icon')).toBe('puzzle')
   const host = render(createElement(IconButton, { name: 'refresh-cw', label: 'Refresh' }))
   expect(host.querySelector('button')?.getAttribute('aria-label')).toBe('Refresh')
   const pending = render(createElement(Button, { 'aria-busy': true, disabled: true }, 'Refresh'))

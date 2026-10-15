@@ -1,7 +1,11 @@
 import { Button, IconButton } from '@agnes/web-ui'
-import { type ForwardedRef, forwardRef, useEffect, useImperativeHandle, useState } from 'react'
+import { type ForwardedRef, forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import type { Translate } from './locales/index.js'
+import { RunStatus, type TopbarStatusDetails } from './run-status.js'
+import { type TitleEditRequest, TopbarTitleEditor } from './topbar-title.js'
+
+export type { TopbarStatusDetails } from './run-status.js'
 export type TopbarConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'closed'
 /** 渲染时取词：状态 → key 表，文案在组件内按当前 locale 解析。 */
 const CONNECTION_LABEL_KEYS: Record<TopbarConnectionState, string> = {
@@ -12,7 +16,10 @@ const CONNECTION_LABEL_KEYS: Record<TopbarConnectionState, string> = {
 }
 export interface TopbarHandle {
   setTaskTitle(title: string): void
-  setStatus(text: string, state?: string): void
+  setSession(id: string | undefined): void
+  editTitle(request: TitleEditRequest): void
+  setStatus(text: string, state?: string, details?: TopbarStatusDetails): void
+  setStopAction(action: () => void): void
   setConnectionState(value: TopbarConnectionState): void
   /** The session's Agent (loop) name; omitted while no session is selected. */
   setAgent(name: string | undefined): void
@@ -27,7 +34,14 @@ export const Topbar = forwardRef<TopbarHandle, TopbarProps>(function Topbar(
   ref: ForwardedRef<TopbarHandle>,
 ) {
   const [taskTitle, setTaskTitle] = useState<string>()
-  const [status, setStatus] = useState<{ text: string; state: string }>()
+  const sessionId = useRef<string>()
+  const [edit, setEdit] = useState<TitleEditRequest>()
+  const [status, setStatus] = useState<{
+    text: string
+    state: string
+    details?: TopbarStatusDetails | undefined
+  }>()
+  const [onStop, setOnStop] = useState<() => void>()
   const [connection, setConnection] = useState<TopbarConnectionState>('connecting')
   const [agent, setAgent] = useState<string>()
   const [runtimeAvailable, setRuntimeAvailable] = useState(false)
@@ -41,11 +55,24 @@ export const Topbar = forwardRef<TopbarHandle, TopbarProps>(function Topbar(
   useImperativeHandle(
     ref,
     () => ({
+      setSession(id) {
+        if (id === sessionId.current) return
+        sessionId.current = id
+        flushSync(() => setEdit(undefined))
+      },
+      editTitle(request) {
+        if (request.sessionId === sessionId.current) flushSync(() => setEdit(request))
+      },
       setTaskTitle(title) {
         flushSync(() => setTaskTitle(title))
       },
-      setStatus(text, state) {
-        flushSync(() => setStatus((previous) => ({ text, state: state ?? previous?.state ?? 'idle' })))
+      setStatus(text, state, details) {
+        flushSync(() =>
+          setStatus((previous) => ({ text, state: state ?? previous?.state ?? 'idle', details })),
+        )
+      },
+      setStopAction(action) {
+        flushSync(() => setOnStop(() => action))
       },
       setConnectionState(value) {
         flushSync(() => setConnection(value))
@@ -71,19 +98,28 @@ export const Topbar = forwardRef<TopbarHandle, TopbarProps>(function Topbar(
       />
       <div className="task-heading">
         <h1>
-          <Button
-            id="task-title"
-            appearance="ghost"
-            size="small"
-            title={taskTitle ? `${taskTitle} · ${t('topbar.rename')}` : t('topbar.rename')}
-            onClick={(event) =>
-              event.currentTarget.dispatchEvent(
-                new CustomEvent('agnes:rename-current-session', { bubbles: true }),
-              )
-            }
-          >
-            {taskTitle ?? t('topbar.defaultTitle')}
-          </Button>
+          {edit ? (
+            <TopbarTitleEditor
+              key={edit.sessionId}
+              request={edit}
+              t={t}
+              onFinish={() => setEdit(undefined)}
+            />
+          ) : (
+            <Button
+              id="task-title"
+              appearance="ghost"
+              size="small"
+              title={taskTitle ? `${taskTitle} · ${t('topbar.rename')}` : t('topbar.rename')}
+              onClick={(event) =>
+                event.currentTarget.dispatchEvent(
+                  new CustomEvent('agnes:rename-current-session', { bubbles: true }),
+                )
+              }
+            >
+              {taskTitle ?? t('topbar.defaultTitle')}
+            </Button>
+          )}
         </h1>
         {agent && (
           <span
@@ -94,9 +130,14 @@ export const Topbar = forwardRef<TopbarHandle, TopbarProps>(function Topbar(
             <span translate="no">{agent}</span>
           </span>
         )}
-        <span id="status" role="status" aria-live="polite" data-state={status?.state ?? 'idle'}>
-          {status?.text ?? t('topbar.defaultStatus')}
-        </span>
+        <RunStatus
+          key={`${status?.details?.sessionId ?? ''}:${status?.details?.startedAt ?? ''}`}
+          text={status?.text ?? t('topbar.defaultStatus')}
+          state={status?.state ?? 'idle'}
+          details={status?.details}
+          onStop={onStop}
+          translate={t}
+        />
       </div>
       {runtimeAvailable && (
         <IconButton

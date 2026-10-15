@@ -4,8 +4,19 @@ import { PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog } from './loca
 import { type PluginPresentation, type PluginPurposeItem, pluginOrigin } from './plugin-presentation.js'
 import { SettingsDetails } from './settings-layout.js'
 import { Badge } from './ui/badge.js'
+import type { IconName } from './ui/icon-set.js'
 import { MetaText } from './ui/tag.js'
 import { useUiText } from './ui-locale.js'
+
+const PLUGIN_ICONS = new Map<string, IconName>([
+  ['@agnes/plugin-helper', 'puzzle'],
+  ['@agnes/document-reader', 'file-text'],
+  ['@agnes/skill-helper', 'sparkles'],
+  ['@agnes/mcp-helper', 'plug'],
+])
+
+/** Known package IDs carry purpose across locales; other plugins keep the generic glyph. */
+export const pluginIconName = (id: string): IconName => PLUGIN_ICONS.get(id) ?? 'puzzle'
 
 /** Where the plugin comes from: built in, official, community, local or an example. */
 export function PluginSourceBadge({ item }: { item: PluginPurposeItem }) {

@@ -57,9 +57,12 @@ it('refuses unsupported schemas and invalid configuration without leaking creden
     { ...schema, additionalProperties: true },
     { type: 'string', pattern: '[' },
     { type: 'object', properties: [], additionalProperties: false },
+    { type: 'object', properties: {} },
     { anyOf: [{ const: 'option', type: 'boolean' }] },
     { type: 'invalid', enum: ['option'] },
     { type: 'array', uniqueItems: 'true', items: { type: 'string' } },
+    { ...schema, not: { type: 'string', pattern: '[' } },
+    { ...schema, not: { type: 'object', properties: {}, unevaluatedProperties: false } },
   ])
     expect(configSchemaSupported(bad as ConfigSchema)).toBe(false)
   const cycle: { type: 'object'; additionalProperties: false; properties: Record<string, ConfigSchema> } = {
@@ -69,6 +72,20 @@ it('refuses unsupported schemas and invalid configuration without leaking creden
   }
   cycle.properties.self = cycle
   expect(configSchemaSupported(cycle)).toBe(false)
+  const negativeCycle: { not?: ConfigSchema } = { ...schema }
+  negativeCycle.not = negativeCycle
+  expect(configSchemaSupported(negativeCycle)).toBe(false)
+  const excludedText: ConfigSchema = {
+    ...schema,
+    properties: {
+      ...schema.properties,
+      name: { type: 'string', maxLength: 100000, not: { type: 'string' } },
+    },
+  }
+  expect(configIssues(excludedText, { ...valid, name: 'x'.repeat(70000) })).toContainEqual({
+    path: '/name',
+    code: 'choice',
+  })
   const nested: ConfigSchema = {
     type: 'object',
     additionalProperties: false,
@@ -87,6 +104,19 @@ it('refuses unsupported schemas and invalid configuration without leaking creden
     path: '/level',
     code: 'choice',
   })
+  for (const value of [
+    { level: 'L1', on_unavailable: 'allow-if-unimplemented' },
+    { level: 'L0', on_unavailable: 'allow' },
+    { on_unavailable: 'allow-if-unimplemented' },
+  ])
+    expect(configIssues(providerConfigSchemas.sandbox, value)).toEqual([])
+  expect(
+    configIssues(providerConfigSchemas.sandbox, {
+      level: 'L0',
+      on_unavailable: 'allow-if-unimplemented',
+      required: false,
+    }),
+  ).toContainEqual({ path: '', code: 'choice' })
   expect(configIssues(providerConfigSchemas.persistence, { provider: 'bad provider' })).toContainEqual({
     path: '/provider',
     code: 'pattern',
@@ -293,15 +323,35 @@ it('blocks missing field translations and safely retries unavailable configurati
   await act(async () => root.unmount())
 })
 
-it.each(['sandbox', 'compaction', 'persistence'] as const)(
-  'renders generated %s options with shared localized controls',
-  async (kind) => {
+it.each(
+  (['sandbox', 'compaction', 'persistence'] as const).flatMap((kind) =>
+    (['en', 'zh-CN'] as const).map((language) => ({ kind, language })),
+  ),
+)(
+  'renders generated $kind options with shared localized controls ($language)',
+  async ({ kind, language }) => {
     const { ProviderConfigForm } = await import('../src/index.js')
     const host = document.createElement('div')
     const root = createRoot(host)
-    await act(async () =>
-      root.render(createElement(ProviderConfigForm, { kind, value: {}, onChange: vi.fn() })),
-    )
+    document.documentElement.lang = language
+    const locale = createDocumentLocaleSource({})
+    const save = vi.fn().mockResolvedValue(undefined)
+    const render = (value: Record<string, unknown>, editable = false) =>
+      act(async () =>
+        root.render(
+          createElement(
+            UiLocaleProvider,
+            { source: locale.source },
+            createElement(ProviderConfigForm, {
+              kind,
+              value,
+              onChange: vi.fn(),
+              ...(editable ? { onSave: save } : {}),
+            }),
+          ),
+        ),
+      )
+    await render({})
     expect(host.querySelectorAll('label').length).toBe(
       Object.keys(providerConfigSchemas[kind].properties ?? {}).length,
     )
@@ -311,7 +361,29 @@ it.each(['sandbox', 'compaction', 'persistence'] as const)(
     if (kind !== 'persistence') expect(host.querySelector('[role="switch"]')).not.toBeNull()
     for (const control of host.querySelectorAll<HTMLInputElement>('input, select, textarea'))
       expect(control.disabled).toBe(true)
+    if (kind === 'sandbox') {
+      expect(host.querySelector('option[value="allow-if-unimplemented"]')?.textContent).toBe(
+        language === 'en'
+          ? 'Allow only where operating system isolation is not implemented'
+          : '仅在未实现操作系统隔离的平台上允许执行',
+      )
+      await render({ level: 'L0', on_unavailable: 'allow-if-unimplemented', required: false }, true)
+      await act(async () =>
+        host.querySelector('form')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })),
+      )
+      expect(save).not.toHaveBeenCalled()
+      expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+        language === 'en' ? 'Choose an available option.' : '请选择可用选项。',
+      )
+      const value = { level: 'L1', on_unavailable: 'allow-if-unimplemented', required: false }
+      await render(value, true)
+      await act(async () =>
+        host.querySelector('form')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })),
+      )
+      expect(save).toHaveBeenCalledWith(value, expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    }
     await act(async () => root.unmount())
+    locale.dispose()
   },
 )
 

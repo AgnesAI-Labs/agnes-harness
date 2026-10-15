@@ -25,6 +25,7 @@ import {
   type PromptApi,
   usePromptSnapshot,
 } from './prompt-config.js'
+import { PromptConflictNotice } from './prompt-conflict.js'
 import { promptCatalog } from './system-prompt-locale.js'
 
 /** Opens another settings page or subpage of the dialog by its id. */
@@ -68,18 +69,14 @@ export function SystemPromptPanel({
 
 function PromptOverride({ canSave, api }: { canSave: boolean; api: PromptApi }) {
   const { t } = useUiText(NAMESPACE, promptCatalog)
-  const { snapshot, busy, failed, save, reload } = usePromptSnapshot(api)
+  const { snapshot, busy, failed, conflict: revisionConflict, save, reload } = usePromptSnapshot(api)
   const stored = snapshot?.config.fullOverride ?? ''
-  const [open, setOpen] = useState(false)
-  const [text, setText] = useState('')
+  const [open, setOpen] = useState<boolean>()
+  const [draft, setDraft] = useState<string>()
+  const text = draft ?? stored
   const [confirmed, setConfirmed] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveFailed, setSaveFailed] = useState(false)
-  useEffect(() => {
-    setText(stored)
-    setOpen(!!stored)
-    setConfirmed(false)
-  }, [stored])
   const config = snapshot?.config ?? {}
   // A full replacement leaves no place for the instructions added around the default prompt.
   const conflict = !!text && !!(config.personaPrefix || config.personaSuffix || config.replyStyle)
@@ -94,8 +91,12 @@ function PromptOverride({ canSave, api }: { canSave: boolean; api: PromptApi }) 
         const { fullOverride: _replaced, ...rest } = latest
         return value ? { ...rest, fullOverride: value } : rest
       }, !!value && confirmed)
+      setDraft(undefined)
+      setOpen(!!value)
+      setConfirmed(false)
     } catch {
       setSaveFailed(true)
+      setConfirmed(false)
     } finally {
       setSaving(false)
     }
@@ -110,9 +111,10 @@ function PromptOverride({ canSave, api }: { canSave: boolean; api: PromptApi }) 
         description={t('overrideHelp')}
       >
         <div className="agnes-settings-stack" data-testid="system-prompt-editor" aria-busy={busy || saving}>
+          {revisionConflict && <PromptConflictNotice current={revisionConflict} reload={reload} />}
           <SettingsBlock
             failed={saveFailed}
-            onRetry={() => void store(text)}
+            onRetry={!text || confirmed ? () => void store(text) : undefined}
             state={failed && !snapshot ? 'error' : busy && !snapshot ? 'loading' : undefined}
             onReload={reload}
           >
@@ -121,7 +123,7 @@ function PromptOverride({ canSave, api }: { canSave: boolean; api: PromptApi }) 
                 id="system-prompt-override-on"
                 testId="system-prompt-override-on"
                 label={t('overrideUse')}
-                checked={open}
+                checked={open ?? !!stored}
                 disabled={locked}
                 onToggle={(checked) => {
                   setOpen(checked)
@@ -131,7 +133,7 @@ function PromptOverride({ canSave, api }: { canSave: boolean; api: PromptApi }) 
               />
             </SettingsItem>
           </SettingsBlock>
-          {open && (
+          {(open ?? !!stored) && (
             <>
               <Banner tone="warning">{t('warning')}</Banner>
               {conflict && (
@@ -169,7 +171,7 @@ function PromptOverride({ canSave, api }: { canSave: boolean; api: PromptApi }) 
                   disabled={locked}
                   value={text}
                   onChange={(event) => {
-                    setText(event.currentTarget.value)
+                    setDraft(event.currentTarget.value)
                     setConfirmed(false)
                   }}
                 />

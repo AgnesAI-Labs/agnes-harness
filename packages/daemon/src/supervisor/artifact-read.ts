@@ -118,9 +118,9 @@ export function composeDefaultProductionProjectedArtifactRead(
     const revoke = PersistentArtifactReadAuthorityIndex.prototype.revoke
     const resolveArtifact = PersistentArtifactReadAuthorityIndex.prototype.resolve
     const authority: ArtifactReadAuthorityPort = Object.freeze({
-      async resolve(sessionId: string, laneId: string, sha256: string, signal: AbortSignal) {
+      async resolve(sessionId: string, laneId: string, sha256: string, signal: AbortSignal, mime?: string) {
         if (signal.aborted) throw new Error('artifact read authority lookup unavailable')
-        const binding = Reflect.apply(resolveArtifact, artifactAuthority, [sessionId, laneId, sha256])
+        const binding = Reflect.apply(resolveArtifact, artifactAuthority, [sessionId, laneId, sha256, mime])
         if (signal.aborted) throw new Error('artifact read authority lookup unavailable')
         if (!binding) return undefined
         return Object.freeze({

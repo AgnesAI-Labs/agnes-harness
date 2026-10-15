@@ -81,6 +81,10 @@
         {
           "path": "packages/base/extensions/sandbox/src/workspace-probe.ts",
           "marker": "OS isolation is not implemented for this execution target"
+        },
+        {
+          "path": "packages/web-ui/src/locales/config-form.ts",
+          "marker": "Allow only where operating system isolation is not implemented"
         }
       ]
     },

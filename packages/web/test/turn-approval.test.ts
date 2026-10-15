@@ -85,7 +85,16 @@ async function harness() {
     stopping: false,
     client: { approval: { list, decide } },
     conversationRuntime: { isTranscriptNearBottom: () => false },
-    renderer: { pinToBottom: vi.fn() },
+    renderer: { pinToBottom: vi.fn(), render: vi.fn() },
+    topbarRuntime: { setStatus: vi.fn(), setTaskTitle: vi.fn() },
+    clientModules: {},
+    sessionRows: [],
+    sessionTitles: new Map(),
+    receipts: new Map(),
+    renderControls: vi.fn(),
+    tracePanel: { render: vi.fn() },
+    TRACE_THROTTLE_MS: 0,
+    tracePaintedAt: 0,
     t: zhT,
     showError,
     run: (action: () => Promise<void>) => {
@@ -95,6 +104,67 @@ async function harness() {
   const controller = createTurnController(context)
   return { context, controller, list, decide, showError }
 }
+
+it('projects the current turn start and distinguishes running, approval, stopping and read-only status', async () => {
+  const { context, controller } = await harness()
+  const startedAt = '2026-10-15T00:00:00Z'
+  const turn = (number: number) => ({
+    id: `turn-${number}`,
+    turn: number,
+    startSeq: 1,
+    startedAt: number === 1 ? startedAt : '2026-10-14T00:00:00Z',
+    status: 'running' as const,
+    nodeIds: [],
+    inherited: false,
+    forkable: false,
+    usage: {
+      totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+      reasoningComplete: true,
+      billingComplete: true,
+      calls: [],
+    },
+  })
+  context.projection = {
+    ...timeline(),
+    turns: [turn(8), turn(1)],
+    opState: { turn: 1, step: 1, phase: 'inference' },
+  }
+  controller.render()
+  expect(context.topbarRuntime.setStatus).toHaveBeenLastCalledWith('生成回复', 'running', {
+    sessionId: 's',
+    startedAt,
+    accessibleLabel: '正在执行：生成回复',
+  })
+  context.projection.nodes = [approval]
+  controller.render()
+  expect(context.topbarRuntime.setStatus).toHaveBeenLastCalledWith('等待你审批', 'approval', {
+    sessionId: 's',
+    startedAt,
+    accessibleLabel: undefined,
+  })
+  context.projection.nodes = []
+  context.projection.opState = null
+  context.receipts.set('s', { startSeq: 1, endSeq: 3, reason: 'parked' })
+  controller.render()
+  expect(context.topbarRuntime.setStatus).toHaveBeenLastCalledWith('等待你审批', 'approval', {
+    sessionId: 's',
+    startedAt,
+    accessibleLabel: undefined,
+  })
+  context.stopping = true
+  controller.render()
+  expect(context.topbarRuntime.setStatus).toHaveBeenLastCalledWith('正在停止…', 'stopping', {
+    sessionId: 's',
+    startedAt,
+    accessibleLabel: undefined,
+  })
+  context.readOnly = { id: 's', hasEarlier: false } as NonNullable<typeof context.readOnly>
+  controller.render()
+  expect(context.topbarRuntime.setStatus).toHaveBeenLastCalledWith(zhT('app.readOnly.label'), 'idle')
+  context.projection = undefined
+  controller.render()
+  expect(context.topbarRuntime.setStatus).toHaveBeenLastCalledWith(zhT('app.status.newTask'), 'idle')
+})
 
 it('locates a pending approval beyond the opening window and automatic search, then scrolls and focuses it', async () => {
   const { context, controller } = await harness()

@@ -5,7 +5,7 @@ import type { UiSurfaceRecord } from '@agnes/protocol/gen/intelligent-ui'
 import { type ClientResourceService, factChainLinks, workbenchNavigation } from '@agnes/web-client'
 import { workbenchLocaleCatalog } from '@agnes/web-conversation/workbench'
 import { createCatalogTranslator, createDocumentLocaleSource } from '@agnes/web-ui'
-import { act, createElement } from 'react'
+import { act, createElement, Fragment } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
 import type { IntelligentUiClient } from '../../src/intelligent-ui/client.js'
@@ -83,10 +83,14 @@ const surfaces = [
   } as unknown as UiSurfaceRecord,
 ]
 
-function binding(records: UiSurfaceRecord[], resources?: ClientResourceService): UiPlacementBinding {
+function binding(
+  records: UiSurfaceRecord[],
+  resources?: ClientResourceService,
+  sessionId = 's',
+): UiPlacementBinding {
   const listeners = new Set<() => void>()
   const client = {
-    sessionId: 's',
+    sessionId,
     getSnapshot: () => ({ surfaces: records }),
     knownRecord: (id: string) => records.find((record) => record.surface.id === id),
     lookup: async () => {},
@@ -187,7 +191,14 @@ it('shows conversation-style cards under group headings and previews the opened 
     await vi.waitFor(() =>
       expect(cards[0]?.querySelector('[data-testid="deliverable-preview"]')).not.toBeNull(),
     )
-    expect(cards[0]?.querySelector('[data-testid="deliverable-preview-close"]')).not.toBeNull()
+    const toggle = cards[0]?.querySelector<HTMLButtonElement>('[data-testid="deliverable-open"]')
+    expect(toggle?.textContent).toBe('Close')
+    expect(toggle?.getAttribute('aria-expanded')).toBe('true')
+    expect(cards[0]?.querySelector('.deliverable-preview-bar')).toBeNull()
+    await act(async () => toggle?.click())
+    expect(toggle?.textContent).toBe('Open')
+    expect(toggle?.getAttribute('aria-expanded')).toBe('false')
+    expect(cards[0]?.querySelector('[data-testid="deliverable-preview"]')).toBeNull()
     expect(cards[0]?.closest('li')?.getAttribute('data-chosen')).toBe('true')
     expect(panel.querySelector('.workbench-tab-footer')?.textContent).toContain(
       '每个交付物都能追到产生它的工具调用',
@@ -225,17 +236,64 @@ it('says when a session has no deliverables, and opens this tab from a conversat
     ),
   )
   expect(host.textContent).toBe('No deliverables in this session yet.')
-  const sessionBinding = binding(surfaces, {} as ClientResourceService)
+  const load = vi.fn(async () => ({ kind: 'markdown', content: '# Selected', release: () => {} }))
+  const sessionBinding = binding(surfaces, { documents: { load } } as unknown as ClientResourceService)
   const detach = attachTurnDeliverables(sessionBinding)
   const navigate = vi.fn(() => true)
   const stop = workbenchNavigation.register(navigate)
   await act(async () =>
-    root.render(createElement(TurnDeliverables, { turn: { startSeq: 15, endSeq: 19 } as never })),
+    root.render(
+      createElement(
+        Fragment,
+        null,
+        createElement(TurnDeliverables, { turn: { startSeq: 15, endSeq: 19 } as never }),
+      ),
+    ),
   )
   try {
-    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="deliverable-open"]')?.click())
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="deliverable-target"]')?.click(),
+    )
     expect(navigate).toHaveBeenCalledWith('deliverables')
     expect(sessionBinding.expand).not.toHaveBeenCalled()
+    // A request survives a panel mounting after the click, and marks the target as chosen.
+    const showPanel = (activeBinding: UiPlacementBinding, id: string) =>
+      act(async () =>
+        root.render(
+          createElement(
+            Fragment,
+            null,
+            createElement(TurnDeliverables, { turn: { startSeq: 15, endSeq: 19 } as never }),
+            createElement(WorkbenchDeliverables, {
+              binding: activeBinding,
+              context: { t, data: { session: { id } } },
+            }),
+          ),
+        ),
+      )
+    await showPanel(sessionBinding, 's')
+    const panel = () => host.querySelector('[data-testid="workbench-deliverables"]')!
+    const cards = () => [...panel().querySelectorAll<HTMLElement>('[data-testid="deliverable-file"]')]
+    expect(cards()[0]?.getAttribute('data-open')).toBe('true')
+    expect(cards()[0]?.closest('li')?.getAttribute('data-chosen')).toBe('true')
+    const targets = [...host.querySelectorAll<HTMLButtonElement>('[data-testid="deliverable-target"]')]
+    await act(async () => targets[1]?.click())
+    expect(cards()[1]?.getAttribute('data-open')).toBe('true')
+    expect(cards()[1]?.closest('li')?.getAttribute('data-chosen')).toBe('true')
+    // Already-open requests select and reveal, rather than toggling the file closed.
+    await act(async () => targets[0]?.click())
+    expect(cards()[0]?.getAttribute('data-open')).toBe('true')
+    expect(cards()[0]?.closest('li')?.getAttribute('data-chosen')).toBe('true')
+    await act(async () =>
+      cards()[0]?.querySelector<HTMLButtonElement>('[data-testid="deliverable-open"]')?.click(),
+    )
+    expect(cards()[0]?.getAttribute('data-open')).toBe('false')
+    expect(cards()[1]?.getAttribute('data-open')).toBe('true')
+    // Identical lane/name/hash in another session must start closed and ignore old-session requests.
+    await showPanel(binding(surfaces, sessionBinding.resources, 'other'), 'other')
+    expect(cards().every((card) => card.dataset.open === 'false')).toBe(true)
+    await act(async () => targets[1]?.click())
+    expect(cards().every((card) => card.dataset.open === 'false')).toBe(true)
   } finally {
     await act(async () => root.unmount())
     stop()

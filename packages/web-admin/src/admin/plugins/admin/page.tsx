@@ -47,10 +47,12 @@ import {
   type AdminPageState,
   type AdminSurfaceLink,
   hasFeature,
+  type InstallReviewState,
   type PluginRuntimeSource,
 } from '../types.js'
 import { confirmSimple, EnableFacts, offeredActions, PreviewFacts, RollbackFacts } from './confirms.js'
 import { adminErrorKey, element, markSettingsPage, setDialog } from './dom.js'
+import { InstallFlow, operationFailure } from './install-flow.js'
 import { rememberInventory, seededState } from './inventory-cache.js'
 import { hasClientContribution, isClientOnly, safeMessage, sourceForCatalog } from './model.js'
 import {
@@ -196,6 +198,9 @@ export class PluginAdminPage {
       get pendingConfirm() {
         return page.#pendingConfirm
       },
+      get review() {
+        return page.reviewState()
+      },
       get query() {
         return page.#query
       },
@@ -268,6 +273,13 @@ export class PluginAdminPage {
       can: page.can.bind(page),
       canEffect: page.canEffect.bind(page),
       cancelOperation: page.cancelOperation.bind(page),
+      cancelReview: page.cancelReview.bind(page),
+      confirmReview: page.confirmReview.bind(page),
+      inspectCatalog: page.inspectCatalog.bind(page),
+      inspectFailure: (packageId: string) => page.#flow.failure(packageId),
+      inspecting: (packageId: string) => page.#flow.checking(packageId),
+      nameOf: page.nameOf.bind(page),
+      openOperations: page.openOperations.bind(page),
       closeConfirm: page.closeConfirm.bind(page),
       closeDetail: page.closeDetail.bind(page),
       closeSourceDialog: page.closeSourceDialog.bind(page),
@@ -371,6 +383,7 @@ export class PluginAdminPage {
   #operationTimers = new Map<string, number>()
   #operationCompletions = new Map<string, (operation: PackageOperation) => Promise<void>>()
   #submittingPackages = new Set<string>()
+  readonly #flow = new InstallFlow()
   #sourceMode: PreviewMode = 'install'
   #sourcePackageId: string | undefined
   #sourceTrigger: HTMLElement | undefined
@@ -608,32 +621,131 @@ export class PluginAdminPage {
     mode: PreviewMode,
     trigger: HTMLElement,
     packageId?: string,
-  ): Promise<{ ok: true } | { ok: false; error: SourceInlineError }> {
+    /** The catalog card that asked: it shows the check and its failure in place, not the page. */
+    key?: string,
+  ): Promise<{ ok: true; operationId: string } | { ok: false; error: SourceInlineError }> {
     const api = this.effectApi('packages.install')
     if (!api) return { ok: false, error: this.#state.error ?? { code: 'ADMIN_UNAVAILABLE', message: '' } }
+    if (key) {
+      this.#flow.begin(key)
+      this.render()
+    }
     try {
       const receipt = packageId
         ? await this.submitPackage(packageId, () => api.inspect(source))
         : await api.inspect(source)
+      if (key) this.#flow.accepted(key, receipt.operationId)
       this.track(receipt.operationId, {
         mode,
         ...(packageId ? { packageId } : {}),
       })
       this.#confirmTrigger = trigger
-      this.setNoticeKey('notice.inspecting-source', 'state')
-      return { ok: true }
+      // The full page shows a check where it was asked (the card, the add form); the settings pane
+      // has only its status line.
+      if (!this.#surface) this.setNoticeKey('notice.inspecting-source', 'state')
+      return { ok: true, operationId: receipt.operationId }
     } catch (error) {
-      this.showError(error)
+      if (key) {
+        this.#flow.stopped(key, safeMessage(error))
+        this.render()
+      } else this.showError(error)
       return { ok: false, error: safeMessage(error) }
     }
   }
 
+  /** Check a catalog entry for install, or for an update of the installed package it names. */
+  inspectCatalog(catalog: PackageCatalogDescriptor): Promise<unknown> {
+    const installed = this.#state.installed.some((candidate) => candidate.id === catalog.id)
+    return this.inspect(
+      sourceForCatalog(catalog),
+      installed ? 'update' : 'install',
+      this.#installTrigger(),
+      installed ? catalog.id : undefined,
+      // The settings pane has no card line for it: its failures stay on the pane's status line.
+      this.#surface ? catalog.id : undefined,
+    )
+  }
+
+  /** The finished check under review on the full page, with what its confirmation would do. */
+  reviewState(): InstallReviewState | undefined {
+    const { preview, previewMode: mode = 'install' } = this.#state
+    const current =
+      mode === 'update' ? this.#state.installed.find((item) => item.id === preview?.id) : undefined
+    const combined = !!current && !!preview && this.canCombineUpdate(current, preview)
+    return this.#flow.state(
+      preview,
+      mode,
+      current,
+      combined,
+      !!preview && this.#previewEnables(preview, mode),
+    )
+  }
+
+  /** Confirming an install preview is trusting what it shows, so it can go straight to running. */
+  #previewEnables(preview: PackagePreview, mode: PreviewMode): boolean {
+    return (
+      mode === 'install' &&
+      !!preview.capabilityHash &&
+      this.can('packages.trust') &&
+      this.canEffect('packages.activate')
+    )
+  }
+
+  /** Confirm the reviewed check. The page stays, busy, until the operation it starts has settled. */
+  async confirmReview(enableAfter = false): Promise<void> {
+    const flow = this.#flow
+    if (!flow.review || flow.review.busy) return
+    flow.review = { busy: true, enableAfter }
+    this.render()
+    try {
+      const operationId = await this.#submitPreview(enableAfter)
+      // Refused before it was sent (permission, connection): say why on this page.
+      if (flow.review)
+        flow.review = operationId
+          ? { ...flow.review, operationId }
+          : { busy: false, error: this.#state.error, enableAfter }
+    } catch (error) {
+      if (flow.review) flow.review = { busy: false, error: safeMessage(error), enableAfter }
+    }
+    this.render()
+  }
+
+  /** Leave the review without installing; a confirmed operation keeps running in the background. */
+  cancelReview(): void {
+    if (!this.#flow.review) return
+    this.#flow.review = undefined
+    this.#exampleInstallId = undefined
+    this.#state = { ...this.#state, preview: undefined, previewMode: undefined }
+    this.render()
+  }
+
+  /** Show the running operations, on request: an install never opens them by itself. */
+  openOperations(): void {
+    this.#ownsDialogs(true)
+    this.#flow.operationsShown = true
+    this.#detailDismissed = false
+    this.render()
+  }
+
   async confirmPreview(enableAfter = false): Promise<void> {
+    const mode = this.#state.previewMode ?? 'install'
+    if (!(await this.#submitPreview(enableAfter))) return
+    this.#state = {
+      ...this.#state,
+      preview: undefined,
+      previewMode: undefined,
+    }
+    this.setNoticeKey(mode === 'install' ? 'notice.installing' : 'notice.updating', 'state')
+    this.render()
+  }
+
+  /** Submit the install or update the current preview confirms; the operation id once accepted. */
+  async #submitPreview(enableAfter: boolean): Promise<string | undefined> {
     const preview = this.#state.preview
-    if (!preview) return
+    if (!preview) return undefined
     const mode = this.#state.previewMode ?? 'install'
     const api = this.effectApi('packages.install')
-    if (!api) return
+    if (!api) return undefined
     const installed = this.#state.installed.find((item) => item.id === preview.id)
     const activeIntegrity = installed ? this.activeIntegrity(installed) : undefined
     const combined =
@@ -683,13 +795,7 @@ export class PluginAdminPage {
           }
         : undefined,
     )
-    this.#state = {
-      ...this.#state,
-      preview: undefined,
-      previewMode: undefined,
-    }
-    this.setNoticeKey(mode === 'install' ? 'notice.installing' : 'notice.updating', 'state')
-    this.render()
+    return receipt.operationId
   }
 
   setNotice(message: string, kind: 'error' | 'state' | ''): void {
@@ -779,10 +885,17 @@ export class PluginAdminPage {
     void this.inspect(source, mode, trigger, packageId)
       .then((result) => {
         if (this.#lifetime.signal.aborted) return
+        if (result.ok && this.#surface) {
+          // On the full page the form stays, busy, until the check is done: then its review page
+          // takes its place, or its failure shows here.
+          this.#flow.sourceCheck = result.operationId
+          return
+        }
+        this.#sourceBusy = false
         if (result.ok) this.closeSourceDialog()
         else this.#sourceError = result.error
       })
-      .finally(() => {
+      .catch(() => {
         this.#sourceBusy = false
       })
       .then(() => this.render())
@@ -794,6 +907,7 @@ export class PluginAdminPage {
     this.#operationCompletions.delete(operation.operationId)
     const previewMode = this.#operationModes.get(operation.operationId)
     const packageId = operation.packageId ?? this.#operationPackages.get(operation.operationId)
+    const inspectKey = this.#flow.settle(operation.operationId)
     this.forgetOperation(operation.operationId)
     if (operation.operation === 'inspect') {
       if (operation.state === 'completed' && operation.preview && previewMode) {
@@ -803,21 +917,58 @@ export class PluginAdminPage {
           previewMode,
           error: undefined,
         }
+        if (this.#surface) {
+          // The full page pushes its review page for this; the add form gives way to it.
+          this.#flow.review = { busy: false }
+          if (this.#flow.sourceCheck === operation.operationId) {
+            this.#flow.sourceCheck = undefined
+            this.#sourceBusy = false
+            this.closeSourceDialog()
+          }
+          this.render()
+          return
+        }
         this.render()
         this.openPreview(operation.preview, previewMode)
         return
       }
+      const failed = operation.state === 'failed'
+      if (this.#flow.sourceCheck === operation.operationId) {
+        // A check the add form started reports on the form, which is still open.
+        this.#flow.sourceCheck = undefined
+        this.#sourceBusy = false
+        if (failed)
+          this.#sourceError = {
+            code: operationFailure(operation).code,
+            message: operation.error?.safeMessage ?? '',
+          }
+        this.render()
+        if (failed) return
+      }
+      // The card that asked shows why, with its retry; the page does not jump or change.
+      if (inspectKey && failed) {
+        this.#flow.stopped(inspectKey, operationFailure(operation))
+        return this.render()
+      }
+    }
+    const flow = this.#flow
+    if (flow.reviewed(operation) && operation.state === 'failed') {
+      // The review page stays open: its button is ready again and the reason is under it.
+      flow.review = {
+        ...flow.review,
+        busy: false,
+        operationId: undefined,
+        error: operationFailure(operation),
+      }
+      return this.refresh()
+    }
+    // Done (or cancelled elsewhere): back to the list, where the card now says what happened.
+    if (flow.reviewed(operation)) {
+      flow.review = undefined
+      this.#state = { ...this.#state, preview: undefined, previewMode: undefined }
     }
     if (operation.state === 'failed') {
-      this.#state = {
-        ...this.#state,
-        lastOperation: operation,
-        error: {
-          code: operation.error?.code ?? 'E_PACKAGE_STATE',
-          message: operation.error?.safeMessage ?? 'The operation could not be completed.',
-          blockers: operation.error?.blockers,
-        },
-      }
+      this.#state = { ...this.#state, lastOperation: operation, error: operationFailure(operation) }
     } else if (operation.state === 'cancelled') {
       this.#state = {
         ...this.#state,
@@ -870,12 +1021,7 @@ export class PluginAdminPage {
     const installed =
       mode === 'update' ? this.#state.installed.find((item) => item.id === preview.id) : undefined
     const combined = !!installed && this.canCombineUpdate(installed, preview)
-    // Confirming an install preview is trusting what it shows, so it can go straight to running.
-    const enables =
-      mode === 'install' &&
-      !!preview.capabilityHash &&
-      this.can('packages.trust') &&
-      this.canEffect('packages.activate')
+    const enables = this.#previewEnables(preview, mode)
     const action = enables ? 'install-enable' : mode === 'install' ? 'install' : 'update'
     const describe = mode === 'install' ? mode : combined ? 'update-combined' : 'update-compatible'
     this.configureConfirm({
@@ -1279,14 +1425,9 @@ export class PluginAdminPage {
       disabled:
         catalog.compatibility === 'unsupported' ||
         !this.canEffect('packages.install') ||
-        (installed && this.packageBusy(catalog.id)),
-      onClick: () =>
-        void this.inspect(
-          catalog.source,
-          installed ? 'update' : 'install',
-          this.#installTrigger(),
-          installed ? catalog.id : undefined,
-        ),
+        (installed && this.packageBusy(catalog.id)) ||
+        this.#flow.checking(catalog.id),
+      onClick: () => void this.inspectCatalog(catalog),
     })
     return specs
   }
@@ -1430,15 +1571,11 @@ export class PluginAdminPage {
         disabled:
           !this.canEffect('packages.install') ||
           catalog.compatibility === 'unsupported' ||
-          (installed && this.packageBusy(catalog.id)),
-        // A catalog entry has no dialog to keep open: a failure already reaches the page notice.
+          (installed && this.packageBusy(catalog.id)) ||
+          this.#flow.checking(catalog.id),
+        // The card shows the check in place and its failure under it.
         run: async () => {
-          await this.inspect(
-            sourceForCatalog(catalog),
-            installed ? 'update' : 'install',
-            this.#installTrigger(),
-            installed ? catalog.id : undefined,
-          )
+          await this.inspectCatalog(catalog)
         },
       }
     }
@@ -1510,19 +1647,19 @@ export class PluginAdminPage {
   }
 
   hasDetail(): boolean {
+    if (this.#state.selectedId || this.#state.selectedCatalog) return true
+    if (this.#detailDismissed) return false
+    // The full page opens running operations only when asked; a blocked operation still explains why.
+    if (this.#surface) return this.#flow.operationsShown || !!this.#state.error?.blockers?.length
     return (
-      !!this.#state.selectedId ||
-      !!this.#state.selectedCatalog ||
-      (!this.#detailDismissed &&
-        (this.#state.operations.size > 0 ||
-          !!this.#state.lastOperation ||
-          !!this.#state.error?.blockers?.length))
+      this.#state.operations.size > 0 || !!this.#state.lastOperation || !!this.#state.error?.blockers?.length
     )
   }
 
   closeDetail(): void {
     const targetId = this.#detailTrigger?.dataset.pluginId
     this.#detailDismissed = true
+    this.#flow.operationsShown = false
     this.#state = {
       ...this.#state,
       selectedId: undefined,

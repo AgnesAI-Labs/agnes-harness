@@ -37,7 +37,6 @@ import { type WorkspaceBinding, WorkspaceBindingAuthority } from '@agnes/host-co
 import {
   MemoryPackageLoader,
   type PackageModule,
-  type SeamFactory,
   type SeamInitContext,
 } from '@agnes/host-extensions/assemble/packages'
 import type { FencedFs } from '@agnes/host-infrastructure/adapters/fs'
@@ -131,6 +130,8 @@ type Fixture = {
   workspace: string
   dataDir: string
   homeDir: string
+  hookFailures: unknown[]
+  hookElapsedMs?: number
 }
 
 /**
@@ -146,11 +147,13 @@ async function assembleWithSandbox(opts: {
   shellRequest?: string
   hooksDeployment?: 'workspace' | 'data' | 'no-grant' | 'wrong-digest' | 'wrong-source' | 'wrong-root'
   workspace?: string
+  hookDelayMs?: number
   memory?: boolean
 }): Promise<Fixture> {
   const workspace = opts.workspace ?? scratch('agnes-l0-ws-')
   const dataDir = scratch('agnes-l0-data-')
   const homeDir = scratch('agnes-l0-home-')
+  const hookFailures: unknown[] = []
   let init: SeamInitContext | undefined
   let commandHooks:
     | {
@@ -163,7 +166,11 @@ async function assembleWithSandbox(opts: {
     | undefined
   if (opts.hooksDeployment) {
     const marker = join(workspace, 'assembly-hook.json').replaceAll("'", "''")
-    const command = `[IO.File]::WriteAllText('${marker}', [Console]::In.ReadToEnd()); [Console]::Error.Write('装载链拒绝'); exit 2`
+    const pidFile = join(workspace, 'assembly-hook.pid').replaceAll("'", "''")
+    const delay = opts.hookDelayMs
+      ? `[IO.File]::WriteAllText('${pidFile}', [string]$PID); Start-Sleep -Milliseconds ${opts.hookDelayMs};`
+      : ''
+    const command = `[IO.File]::WriteAllText('${marker}', [Console]::In.ReadToEnd()); ${delay} [Console]::Error.Write('装载链拒绝'); exit 2`
     const bytes = JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ type: 'command', command }] }] } })
     const source = opts.hooksDeployment === 'data' ? 'data' : 'workspace'
     const directory = source === 'data' ? dataDir : join(workspace, '.agh')
@@ -299,7 +306,14 @@ async function assembleWithSandbox(opts: {
     hostRoot: process.cwd(),
     loader: new MemoryPackageLoader(mods),
     audit: createMemoryAudit(),
-    log: { debug() {}, info() {}, warn() {}, error() {} },
+    log: {
+      debug() {},
+      info() {},
+      error() {},
+      warn(message, fields) {
+        if (message === 'hook failed') hookFailures.push(fields)
+      },
+    },
     agnesVersion: '0.1.0',
     env: { ...process.env, ...(opts.shellRequest ? { AGNES_POWERSHELL: opts.shellRequest } : {}) },
     providerFactory: () =>
@@ -344,6 +358,7 @@ async function assembleWithSandbox(opts: {
       workspace,
       dataDir,
       homeDir,
+      hookFailures,
     }
   } catch (error) {
     await table.closeAll().catch(() => undefined)
@@ -818,7 +833,10 @@ describe
     it.each([0, 2, 7, 'timeout', 'cancel'] as const)(
       'preserves Hook result %s through the policy-bound seam',
       async (exitCode) => {
-        const f = await assembleWithSandbox({ shellRequest, sandboxPreset: { on_unavailable: 'allow' } })
+        const f = await assembleWithSandbox({
+          shellRequest,
+          sandboxPreset: { level: 'L1', required: false, on_unavailable: 'allow-if-unimplemented' },
+        })
         try {
           const marker = join(f.workspace, 'hook-input.json')
           const quote = (value: string) => `'${value.replaceAll("'", "''")}'`
@@ -968,6 +986,7 @@ describe
           invocation: f.table.invocation(f.binding.sessionKey),
         },
       )
+      const started = performance.now()
       try {
         return await session.hooks.toolCall({
           toolUseId: 'real-hook-1',
@@ -998,22 +1017,54 @@ describe
           policyHash: 'b'.repeat(64),
         })
       } finally {
+        f.hookElapsedMs = Math.round(performance.now() - started)
         await session.close()
       }
     }
     const refused = { allow: false, reason: 'hook execution failed' }
 
-    it('keeps required isolation stronger than a valid deployment grant', async () => {
-      // No process backend exists, so a required sandbox refuses the workspace runtime before any
-      // session, and so any Hook, can exist; the grant does not change that.
-      await expect(
-        assembleWithSandbox({
-          shellRequest,
-          hooksDeployment: 'workspace',
-          sandboxPreset: { required: true, on_unavailable: 'allow' },
-        }),
-      ).rejects.toMatchObject({ code: 'E_SANDBOX_WORKSPACE' })
+    it('identifies a native Hook deadline separately from refusal and drains its process', async () => {
+      const f = await assembleWithSandbox({
+        shellRequest,
+        hooksDeployment: 'workspace',
+        hookDelayMs: 3000,
+        memory: true,
+        sandboxPreset: { level: 'L1', required: false, on_unavailable: 'allow-if-unimplemented' },
+      })
+      try {
+        expect(await toolCallVerdict(f)).toEqual(refused)
+        const pidFile = join(f.workspace, 'assembly-hook.pid')
+        const started = existsSync(pidFile)
+        const diagnostic = JSON.stringify({ elapsedMs: f.hookElapsedMs, started, failures: f.hookFailures })
+        expect(f.hookFailures, diagnostic).toEqual([
+          expect.objectContaining({ event: 'tool_call', failure: 'timeout' }),
+        ])
+        // Startup shares the event budget. Whether it reached the script or not, no success is
+        // reported. If the script wrote its PID, verify the real process has already been reaped.
+        if (started) {
+          const pid = Number(readFileSync(pidFile, 'utf8'))
+          expect(pid).toBeGreaterThan(0)
+          expect(windowsProcessStartTimeSync(pid)).toBeNull()
+        }
+      } finally {
+        await f.a.rollback.unwind()
+      }
     })
+
+    it.each(['allow', 'allow-if-unimplemented'])(
+      'keeps required isolation stronger than a valid deployment grant with %s',
+      async (onUnavailable) => {
+        // No process backend exists, so a required sandbox refuses the workspace runtime before any
+        // session, and so any Hook, can exist; the grant does not change that.
+        await expect(
+          assembleWithSandbox({
+            shellRequest,
+            hooksDeployment: 'workspace',
+            sandboxPreset: { level: 'L1', required: true, on_unavailable: onUnavailable },
+          }),
+        ).rejects.toMatchObject({ code: 'E_SANDBOX_WORKSPACE' })
+      },
+    )
     it('does not let a valid grant override the default unconfined-execution denial', async () => {
       const f = await assembleWithSandbox({ shellRequest, hooksDeployment: 'workspace' })
       try {
@@ -1025,13 +1076,25 @@ describe
       }
     })
 
-    it.each(['workspace', 'data', 'no-grant', 'wrong-digest', 'wrong-source', 'wrong-root'] as const)(
-      'runs or refuses the %s deployment through the real Host',
-      async (hooksDeployment) => {
+    it.each(
+      (['allow', 'allow-if-unimplemented'] as const).flatMap((onUnavailable) =>
+        (['workspace', 'data', 'no-grant', 'wrong-digest', 'wrong-source', 'wrong-root'] as const).map(
+          (hooksDeployment) => ({ onUnavailable, hooksDeployment }),
+        ),
+      ),
+    )(
+      'runs or skips $hooksDeployment through the real Host with $onUnavailable',
+      async ({ hooksDeployment, onUnavailable }) => {
         const f = await assembleWithSandbox({
           shellRequest,
           hooksDeployment,
-          sandboxPreset: { on_unavailable: 'allow' },
+          // Exercise the real memory provider alongside the new Windows policy.
+          memory: onUnavailable === 'allow-if-unimplemented',
+          sandboxPreset: {
+            level: onUnavailable === 'allow-if-unimplemented' ? 'L1' : 'L0',
+            required: false,
+            on_unavailable: onUnavailable,
+          },
         })
         try {
           const status = f.a.extensionStatus().find((entry) => entry.id === 'agnes/hooks-runner')
@@ -1041,12 +1104,18 @@ describe
           const marker = join(f.workspace, 'assembly-hook.json')
           expect(existsSync(marker)).toBe(false)
           const verdict = await toolCallVerdict(f)
+          const diagnostic = JSON.stringify({
+            elapsedMs: f.hookElapsedMs,
+            commandStarted: existsSync(marker),
+            failures: f.hookFailures,
+          })
           if (!allowed) {
-            expect(verdict).toEqual(refused)
+            // Untrusted workspace code is omitted by the loader; the tool continues without it.
+            expect(verdict).toEqual({ allow: true })
             expect(existsSync(marker)).toBe(false)
             return
           }
-          expect(verdict).toEqual({ allow: false, reason: '装载链拒绝' })
+          expect(verdict, diagnostic).toEqual({ allow: false, reason: '装载链拒绝' })
           const input = JSON.parse(readFileSync(marker, 'utf8')) as { cwd: string }
           expect(input).toMatchObject({
             hook_event_name: 'PreToolUse',

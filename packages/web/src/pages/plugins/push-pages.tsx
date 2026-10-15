@@ -2,6 +2,7 @@ import { usePushStack } from '@agnes/web-ui'
 import { type ReactNode, useEffect } from 'react'
 import type { PluginView } from './admin-view.js'
 import { CapabilityDetail } from './capabilities.js'
+import { InstallReviewPage } from './install-page.js'
 import { PluginPages } from './plugin-pages.js'
 import {
   CAPABILITIES,
@@ -16,8 +17,8 @@ import type { CapabilitySummaries } from './summaries.js'
 type Text = (key: string, vars?: Readonly<Record<string, string | number>>) => string
 
 /**
- * The pages pushed over the plugins page: the built-ins' details and the controller's detail and add
- * form (skills, MCP and drafts declare theirs in their own tabs). It also keeps the address honest:
+ * The pages pushed over the plugins page: the built-ins' details, the controller's detail and add
+ * form, and the review of a checked install (skills, MCP and drafts declare theirs in their own tabs). It also keeps the address honest:
  * an older built-in link opens its page, a page shows under the tab it belongs to, and a page this
  * one does not know is left.
  */
@@ -74,6 +75,7 @@ export function PluginsPushPages({
         />
       ))}
       <PluginPages view={view} />
+      <InstallReviewPage view={view} />
     </>
   )
 }

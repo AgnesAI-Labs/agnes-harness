@@ -56,7 +56,7 @@ export function registerBuiltinHomeEntries(): () => void {
     homeEntries.register({
       id: 'plugins',
       order: 20,
-      icon: 'plug',
+      icon: 'puzzle',
       titleKey: 'home.entry.plugins',
       badge: pending,
       component: PluginsPage,

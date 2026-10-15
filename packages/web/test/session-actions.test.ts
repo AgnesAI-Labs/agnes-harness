@@ -323,3 +323,17 @@ it('reports a failed runtime read and closes the dialog', async () => {
   await vi.waitFor(() => expect(error).toHaveBeenCalled())
   expect(document.querySelector('[data-session-runtime]')).toBeNull()
 })
+
+it('shares rename validation and refresh recovery with the inline title editor', async () => {
+  const { actions, session, changed } = setup()
+  const save = actions.renameInline('session-a', 'Old')
+  for (const title of [' ', 'x'.repeat(81), 'bad\nname', '\u202Ehidden'])
+    await expect(save(title)).rejects.toThrow('1–80')
+  expect(session.rename).not.toHaveBeenCalled()
+  changed.mockRejectedValueOnce(new Error('Synthetic refresh failure'))
+  await expect(save('  New  ')).rejects.toThrow('Synthetic refresh failure')
+  expect(session.rename).toHaveBeenCalledWith('session-a', 'New')
+  await save('New')
+  expect(session.rename).toHaveBeenCalledOnce()
+  expect(changed).toHaveBeenCalledTimes(2)
+})

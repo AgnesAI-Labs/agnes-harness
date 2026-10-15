@@ -13,6 +13,7 @@ function setup(
   seams = fakeSeams(),
   publicFetch?: PublicFetch,
   over: {
+    registerArtifact?: Parameters<typeof buildToolContext>[0]['registerArtifact']
     invoke?: Parameters<typeof buildToolContext>[0]['invoke']
     parentSignal?: AbortSignal
     netFetch?: Parameters<typeof buildToolContext>[0]['netFetch']
@@ -69,6 +70,7 @@ function setup(
       appendPlan: async () => 1,
       requestCompaction: () => undefined,
       progress: () => undefined,
+      registerArtifact: over.registerArtifact ?? (async () => undefined),
       artifactJobEvent: async () => undefined,
       lease: { remainingMs: () => over.remainingMs ?? 1_000 },
     },
@@ -400,4 +402,43 @@ describe('ToolContext platform view and sandbox enforcement (spec 2026-09-15 §4
       'tools',
     ])
   })
+})
+
+it('returns an artifact only after its session registration commits and refuses cancelled or failed registration', async () => {
+  const rows: unknown[] = []
+  const ref = { sha256: 'a'.repeat(64), size: 3, mime: 'text/plain' }
+  const seams = fakeSeams({ artifacts: { put: async () => ref } })
+  const { context } = setup(seams, undefined, {
+    registerArtifact: async (artifact) => {
+      rows.push(artifact)
+    },
+  })
+  expect(await context.artifacts.put(new Uint8Array([1, 2, 3]), { mime: 'text/plain' })).toEqual(ref)
+  expect(rows).toEqual([ref])
+  const failed = setup(seams, undefined, {
+    registerArtifact: async () => {
+      throw new Error('ledger unavailable')
+    },
+  })
+  await expect(failed.context.artifacts.put(new Uint8Array([1, 2, 3]))).rejects.toThrow('ledger unavailable')
+  const cancelled = new AbortController()
+  const delayed = setup(
+    fakeSeams({
+      artifacts: {
+        put: async () => {
+          cancelled.abort()
+          return ref
+        },
+      },
+    }),
+    undefined,
+    {
+      parentSignal: cancelled.signal,
+      registerArtifact: async (value) => {
+        rows.push(value)
+      },
+    },
+  )
+  await expect(delayed.context.artifacts.put(new Uint8Array([1, 2, 3]))).rejects.toThrow()
+  expect(rows).toEqual([ref])
 })

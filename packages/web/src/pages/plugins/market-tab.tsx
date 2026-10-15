@@ -10,6 +10,7 @@ import {
   IconTile,
   MetaText,
   PLUGIN_PRESENTATION_NAMESPACE,
+  pluginIconName,
   pluginPresentationCatalog,
   Select,
   SettingsDetails,
@@ -65,6 +66,9 @@ function MarketCard({
   const name = purpose?.displayName ?? item.id
   const installed = view.state.installed.find((row) => row.id === item.id)
   const action = view.primaryAction(item)
+  // The check runs on the card; its result opens as a page, its failure stays under the card.
+  const checking = view.inspecting(item.id)
+  const failure = view.inspectFailure(item.id)
   const origin =
     item.presentation?.origin ??
     (['file', 'local', 'workspace', 'path'].includes(item.source.type) ? 'local-source' : 'third-party')
@@ -76,7 +80,7 @@ function MarketCard({
       data-testid="market-card"
     >
       <header>
-        <IconTile name="plug" />
+        <IconTile name={pluginIconName(item.id)} />
         <div>
           <h3>
             <Button
@@ -127,14 +131,31 @@ function MarketCard({
           <Button
             size="small"
             data-testid="market-install"
-            disabled={action.disabled}
+            loading={checking}
+            disabled={action.disabled || checking}
             {...(view.canEffect('packages.install') ? {} : { disabledReason: t('add.forbidden') })}
             onClick={() => void action.run()}
           >
-            {installed ? t('market.update') : t('market.install')}
+            {checking ? view.t('review.checking') : installed ? t('market.update') : t('market.install')}
           </Button>
         )}
       </footer>
+      {failure && !checking && (
+        <div className="plugins-page-card-error" role="alert" data-testid="market-install-error">
+          <span>
+            {view.t('review.check-failed', { reason: failure.message || view.errorMessage(failure) })}
+          </span>
+          <Button
+            appearance="link"
+            size="small"
+            data-testid="market-install-retry"
+            disabled={action.disabled}
+            onClick={() => void action.run()}
+          >
+            {view.t('review.retry')}
+          </Button>
+        </div>
+      )}
     </article>
   )
 }
@@ -194,7 +215,7 @@ export function MarketTab({ view, t }: { view: PluginView; t: Text }) {
       ) : !rows.length ? (
         <EmptyState
           className="plugin-empty"
-          icon={<Icon name="plug" size={48} />}
+          icon={<Icon name="puzzle" size={48} />}
           title={view.query || view.kind || view.category || type ? t('market.none') : t('market.empty')}
           description={t('market.emptyHelp')}
         />

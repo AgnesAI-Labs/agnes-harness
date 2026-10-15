@@ -376,6 +376,11 @@ describe('ClientResourceService', () => {
     const other = service.documents.load({ laneId: 'lane-a', kind: 'image', artifact })
     await expect(other).rejects.toThrow('document resource is unavailable: artifact_unavailable')
     await expect(other).rejects.not.toBeInstanceOf(ClientResourceReclaimedError)
+    await expect(other).rejects.toMatchObject({ code: 'artifact_unavailable' })
+    call.mockResolvedValueOnce({ ok: false, status: 404, code: 'artifact_not_found' } as never)
+    await expect(service.documents.load({ laneId: 'lane-a', kind: 'image', artifact })).rejects.toMatchObject(
+      { code: 'artifact_not_found' },
+    )
   })
 })
 

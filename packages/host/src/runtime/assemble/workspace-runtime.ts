@@ -311,7 +311,7 @@ export function createWorkspaceRuntimeFactory(
           ?.catalog()
           .find((entry) => entry.id === sandboxProviderIdFrom(ctx.profile))
         if (!provider) throw new HostError('E_SANDBOX_WORKSPACE', 'sandbox provider identity is missing')
-        new SessionSandboxStore(deps.profileDir).verify(
+        new SessionSandboxStore(deps.profileDir, deps.log).verify(
           key,
           {
             workspaceId: binding.workspaceId,

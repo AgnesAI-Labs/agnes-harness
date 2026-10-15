@@ -4,9 +4,9 @@ import { PLUGIN_ADMIN_LOCALE_NAMESPACE, pluginAdminLocaleCatalog } from './local
 
 type Text = (key: string) => string
 
-export function CapabilityReview({ value, t }: { value: PluginCapabilities | undefined; t: Text }) {
-  useUiText(PLUGIN_ADMIN_LOCALE_NAMESPACE, pluginAdminLocaleCatalog)
-  const requests = value
+/** Each capability a package declares, as one line of plain words. */
+export function capabilityRequests(value: PluginCapabilities | undefined, t: Text): string[] {
+  return value
     ? [
         ...(['network', 'exec', 'secrets', 'credentials'] as const).flatMap((key) =>
           (value[key] ?? []).map((scope) => `${t('capability.' + key)}: ${scope}`),
@@ -19,6 +19,11 @@ export function CapabilityReview({ value, t }: { value: PluginCapabilities | und
           .map((key) => t('capability.' + key)),
       ]
     : []
+}
+
+export function CapabilityReview({ value, t }: { value: PluginCapabilities | undefined; t: Text }) {
+  useUiText(PLUGIN_ADMIN_LOCALE_NAMESPACE, pluginAdminLocaleCatalog)
+  const requests = capabilityRequests(value, t)
   return (
     <section aria-label={t('capability.title')}>
       <h3>{t('capability.title')}</h3>

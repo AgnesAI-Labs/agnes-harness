@@ -1,5 +1,5 @@
 import type { UITurn } from '@agnes/protocol'
-import { Fragment, forwardRef, type ReactNode } from 'react'
+import { Fragment, forwardRef } from 'react'
 import type { Translate } from '../locales/index.js'
 import { Disclosure } from '../ui/disclosure.js'
 import { Icon } from '../ui/icon.js'
@@ -46,8 +46,6 @@ export interface TurnUsagePanelProps {
   /** Only once the answer settled; a running answer shows nothing here. */
   settled: boolean
   t: Translate
-  /** Optional last line of the panel, after the explanation (for example «view in trace»). */
-  footer?: ReactNode
 }
 
 /**
@@ -55,7 +53,7 @@ export interface TurnUsagePanelProps {
  * each model call on demand. Every value is one the turn already carries.
  */
 export const TurnUsagePanel = forwardRef<HTMLDivElement, TurnUsagePanelProps>(function TurnUsagePanel(
-  { turn, model, duration, settled, t, footer },
+  { turn, model, duration, settled, t },
   ref,
 ) {
   const { totals, cost, credits, billingComplete } = turn.usage
@@ -63,10 +61,6 @@ export const TurnUsagePanel = forwardRef<HTMLDivElement, TurnUsagePanelProps>(fu
     t(value === 'estimated' ? 'cost.source.estimated' : 'cost.source.gateway')
   const calls = turn.usage.calls.filter(listedCall)
   const titleCalls = calls.filter((call) => call.purpose === 'title').length
-  const estimated =
-    cost?.source === 'estimated' ||
-    (!cost && credits?.source === 'estimated') ||
-    calls.some((call) => call.billing?.source === 'estimated')
   const amount = cost
     ? {
         value: money(cost.usdMicros),
@@ -215,12 +209,6 @@ export const TurnUsagePanel = forwardRef<HTMLDivElement, TurnUsagePanelProps>(fu
                 ))}
               </div>
             </Disclosure>
-          )}
-          {(estimated || footer) && (
-            <footer className="turn-usage-foot">
-              {estimated && <p>{t('turnactions.usage.estimatedNote')}</p>}
-              {footer && <p className="turn-usage-foot-action">{footer}</p>}
-            </footer>
           )}
         </>
       )}

@@ -116,7 +116,7 @@ export {
   type SidebarSlots,
   type SidebarState,
 } from './sidebar.js'
-export { Topbar, type TopbarConnectionState, type TopbarHandle } from './topbar.js'
+export { Topbar, type TopbarConnectionState, type TopbarHandle, type TopbarStatusDetails } from './topbar.js'
 export {
   buildTraceRows,
   durationLabel,

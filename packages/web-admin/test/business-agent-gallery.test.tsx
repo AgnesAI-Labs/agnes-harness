@@ -201,6 +201,14 @@ it('asks once with what the package gets, then installs, trusts, enables and ope
   expect(document.querySelector('[data-testid="agent-start-confirm"]')?.textContent).toBe(
     en('action.install'),
   )
+  // The same review page as a marketplace install: hashes under 技术详情, collapsed, no dialog.
+  const review = document.querySelector('[data-testid="agent-start-review"]')
+  expect(review?.classList.contains('install-review')).toBe(true)
+  const technical = review?.querySelector('[data-testid="install-review-technical"]')
+  expect(technical?.getAttribute('data-open')).toBe('false')
+  expect(technical?.textContent).toContain('sha512-a')
+  expect(review?.querySelector('[data-testid="install-review-unverified"]')).not.toBeNull()
+  expect(document.querySelector('[role="dialog"]')).toBeNull()
   await click('[data-testid="agent-start-confirm"]')
   await vi.waitFor(() => expect(opened).toHaveLength(1), { timeout: 5000 })
   expect(kit.calls).toEqual(['inspect', 'install', 'trust', 'enable'])

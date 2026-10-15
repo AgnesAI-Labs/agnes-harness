@@ -24,7 +24,7 @@ export type TurnNavEntry = {
 }
 
 export const TICK = {
-  /** Resting length; the current turn's tick is longer and darker. */
+  /** Resting length for every tick; the current turn only lengthens while the rail is hovered. */
   idle: 12,
   current: 22,
   /** Longest length under the pointer, reached at distance 0 and gone by `reach` pixels. */
@@ -142,10 +142,8 @@ export function turnNavEntries(nodes: readonly UINode[], turns?: readonly UITurn
 
 /** Tick length for a pointer `distance` pixels away (undefined: no pointer over the rail). */
 export function tickWidth(distance: number | undefined, current: boolean, reducedMotion: boolean): number {
-  const near =
-    distance === undefined || reducedMotion
-      ? TICK.idle
-      : TICK.idle + Math.max(0, (TICK.max - TICK.idle) * (1 - Math.abs(distance) / TICK.reach))
+  if (distance === undefined || reducedMotion) return TICK.idle
+  const near = TICK.idle + Math.max(0, (TICK.max - TICK.idle) * (1 - Math.abs(distance) / TICK.reach))
   const width = Math.round(near * 10) / 10
   return current ? Math.max(width, TICK.current) : width
 }

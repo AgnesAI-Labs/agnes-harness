@@ -94,6 +94,7 @@ export type WebView = {
   approval?: ApprovalNode
   nodes: UINode[]
   status: string
+  statusLabel: string
 }
 
 export function webView(
@@ -114,8 +115,10 @@ export function webView(
   )
   const phase = timeline.opState?.phase
   const phaseKey = phase === undefined ? undefined : PHASE_KEYS[phase]
+  const phaseLabel = phaseKey ? t(phaseKey) : t('timeline.status.running')
   return {
     busy: timeline.opState !== null,
+    statusLabel: phaseKey ? t('timeline.status.runningPhase', { phase: phaseLabel }) : phaseLabel,
     ...(approval ? { approval } : {}),
     // WC9：slot 节点不再被丢弃；时间线为它保留稳定容器，认领未命中时显示占位。
     nodes: timeline.nodes,
@@ -123,7 +126,7 @@ export function webView(
       ? t('timeline.status.awaitingApproval')
       : phase
         ? phaseKey
-          ? t('timeline.status.runningPhase', { phase: t(phaseKey) })
+          ? phaseLabel
           : t('timeline.status.running')
         : receipt?.reason && receipt.endSeq >= receipt.startSeq
           ? t(TERMINAL_KEYS[receipt.reason])

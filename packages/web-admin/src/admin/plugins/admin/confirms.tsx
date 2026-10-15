@@ -63,6 +63,34 @@ export function PreviewFacts({
   )
 }
 
+/**
+ * What a review page keeps under 技术详情: the full record of the preview and where it came from.
+ * The confirmation this replaced showed the same facts.
+ */
+export function PreviewTechnicalFacts({
+  preview,
+  current,
+  combined,
+  t,
+}: {
+  preview: PackagePreview
+  current: PackageInstalledDescriptor | undefined
+  combined: boolean
+  t: Text
+}) {
+  return (
+    <>
+      <ProvenanceReview value={preview.provenance} t={t} />
+      {current && <CapabilityReview value={preview.declaredCapabilities} t={t} />}
+      {current && combined ? (
+        <UpdateActivationFacts installed={current} preview={preview} />
+      ) : (
+        <PreviewConfirmationFacts preview={preview} />
+      )}
+    </>
+  )
+}
+
 export function EnableFacts({ item, t }: { item: PackageInstalledDescriptor; t: Text }) {
   return (
     <>

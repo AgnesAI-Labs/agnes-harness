@@ -64,7 +64,7 @@ The service adapters, permission check and resource identity in this example are
 
 | API | Contract |
 | --- | --- |
-| `ConfigSchema` | Plain JSON/TypeBox JSON subset: closed objects, nested objects, required fields, strings, booleans, finite numbers/integers, enum or literal `anyOf`, string arrays, range/length/item bounds, patterns and unique items |
+| `ConfigSchema` | Plain JSON/TypeBox JSON subset: closed objects, nested objects, required fields, strings, booleans, finite numbers/integers, enum or literal `anyOf`, string arrays, range/length/item bounds, patterns, unique items and `not` predicates over the supported types |
 | `SchemaConfigForm` | Controlled draft, validate before save/test, translated field errors, disabled/loading, safe operation failure, draft retention, abort signal on disposal; no automatic requests, persistence, credential resolution or defaults |
 | `SchemaConfigFields` | Same fields without a form or action wrapper, for existing page handlers |
 | `SchemaControl` | One native shared control, retaining a page's existing Field/checkbox wrapper |
@@ -72,6 +72,8 @@ The service adapters, permission check and resource identity in this example are
 | `ProviderConfigForm` / `providerConfigSchemas` | Sandbox and compaction options from the generated preset schema; persistence selection from the generated profile schema. Requires caller-supplied authoritative values and permitted handlers; without handlers it is read-only |
 
 Unsupported keywords/unions, open objects, invalid patterns, cycles, excessive depth/size and unsafe property names are refused. This is not a complete JSON Schema renderer: resolve supported property schemas before passing them in; `$ref`, arbitrary unions, transforms and additional-property maps are not accepted. TypeBox symbols do not form part of JSON declarations. Keep declaration objects stable during rendering. `default` is annotation only; the caller initializes the draft.
+
+`not` predicates validate excluded combinations without declaring controls; their object predicates may constrain a subset of fields. A matching exclusion blocks save/test and displays a form error. Provider forms preserve the generated TypeBox intersection of one object with one `not` predicate, including the sandbox restriction on combining `L0` with `allow-if-unimplemented`; other intersections remain unsupported. Backend validation remains authoritative.
 
 Credential fields accept only the protocol's `secret://namespace/name` references. Never pass plaintext credentials as config defaults, initial values, saved config or test logs. Creating/replacing a credential uses the dedicated write-only credential-store API; the existing search key operation retains that separate path. MCP retains its managed form, transport-specific checks, credential-reference validation and reviewed creation flow.
 

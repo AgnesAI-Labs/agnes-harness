@@ -20,7 +20,7 @@ type Text = (key: string, vars?: Readonly<Record<string, string | number>>) => s
 
 export const CAPABILITY_ICONS: Readonly<Record<Capability, IconName>> = {
   search: 'globe',
-  'computer-use': 'eye',
+  'computer-use': 'monitor',
   subagents: 'git-branch',
 }
 
@@ -83,7 +83,7 @@ export function CapabilityDetail({
                     )}
                   </SettingsItem>
                   <SettingsItem
-                    icon="plug"
+                    icon="puzzle"
                     label={t('builtin.source')}
                     description={t('builtin.sourceHelp')}
                   />

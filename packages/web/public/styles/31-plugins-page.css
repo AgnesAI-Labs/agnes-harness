@@ -438,4 +438,89 @@
     grid-row: 1;
     margin: 0;
   }
+
+  /* A check that stopped: one line under the card, with its retry. */
+  .plugins-page-card {
+    grid-template-rows: auto 1fr auto auto;
+  }
+  .plugins-page-card-error {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--s4) var(--s8);
+    color: var(--agnes-status-danger-text);
+    font-size: var(--font-size-sm);
+    overflow-wrap: anywhere;
+  }
+
+  /* ── Install review page ───────────────────────────────────────────────────
+   What the reader judges up front; the full record under 技术详情, wrapping, never cut off. */
+  .install-review {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s16);
+  }
+  .install-review-hero {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--s12);
+  }
+  .install-review-name {
+    font-size: var(--font-size-lg, 1rem);
+    overflow-wrap: anywhere;
+  }
+  .install-review-meta,
+  .install-review-lead,
+  .install-review-note {
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    overflow-wrap: anywhere;
+  }
+  .install-review section {
+    min-width: 0;
+    display: grid;
+    gap: var(--s8);
+  }
+  .install-review section > h3 {
+    margin: 0;
+    padding-inline-start: var(--s4);
+    color: var(--agnes-text-secondary);
+    font-size: 0.78125rem;
+    font-weight: var(--font-weight-semibold);
+  }
+  .install-review .agnes-settings-item {
+    flex-wrap: nowrap;
+  }
+  .install-review .agnes-settings-item-description {
+    overflow-wrap: anywhere;
+  }
+  .install-review-technical :is(dd, li, p, code) {
+    min-width: 0;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: var(--font-size-xs);
+    overflow-wrap: anywhere;
+  }
+  .install-review-technical :is(dl, ul, section) {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .install-review-error {
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--s4) var(--s8);
+    color: var(--agnes-status-danger-text);
+    font-size: var(--font-size-sm);
+    overflow-wrap: anywhere;
+  }
+  .install-review-bar {
+    position: sticky;
+    bottom: 0;
+    flex-wrap: wrap;
+    background: var(--agnes-bg-app-content);
+  }
 }

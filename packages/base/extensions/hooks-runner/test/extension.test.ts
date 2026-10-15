@@ -440,51 +440,60 @@ describe('trusted unconfined command Hooks', () => {
     expect(permits).not.toHaveBeenCalled()
     expect(state.handlers.size).toBe(0)
   })
-  it('uses the same configuration bytes, the bound exec and JSON stdin, and rechecks permission before every command', async () => {
-    const init = fakeSeamInit({
-      platform: { shell: () => 'powershell', fs: () => ({ pathSep: '\\', caseSensitive: false }) },
-      files: { '.agh/hooks.json': bytes },
-      preset: { sandbox: { on_unavailable: 'allow' } },
-    })
-    let allowed = true
-    const permits = vi.fn(
-      (source: string, value: string) => allowed && source === 'workspace' && value === digest,
-    )
-    init.trustedHookCommands = { allowsUnconfined: permits }
-    const exec = vi.fn(async () => result),
-      state = fakeApi()
-    const read = vi.spyOn(init.adapters.fs, 'read')
-    await extensionFactoryOf(hooksRunnerExtension(init, { map, sandbox: sandbox(exec, partial) }))(state.api)
-    expect(read).toHaveBeenCalledTimes(1)
-    expect(exec).not.toHaveBeenCalled()
-    expect(await invoke(state, 'tool_call', toolCall('shell'))).toEqual({
-      allow: false,
-      reason: 'policy says no',
-    })
-    const call = exec.mock.calls[0] as unknown as [string[], { stdin: string; cwd: string }]
-    expect(call[0]).toEqual(['$SHELL', 'trusted-command'])
-    expect(JSON.parse(call[1].stdin)).toMatchObject({ session_id: context.session.key })
-    expect(state.warnings).toEqual([
-      {
-        message: 'trusted Hook commands run without process isolation',
-        fields: { source: 'workspace', configDigest: digest },
-      },
-    ])
-    allowed = false
-    await expect(invoke(state, 'tool_call', toolCall('shell'))).rejects.toThrow('E_SANDBOX_UNAVAILABLE')
-    expect(exec).toHaveBeenCalledTimes(1)
-  })
-  it.each(['missing', 'changed', 'wrong-source', 'required', 'deny', 'unbound', 'mixed'])(
+  it.each(['allow', 'allow-if-unimplemented'])(
+    'uses the bound exec and exact configuration grant, rechecking permission for %s',
+    async (onUnavailable) => {
+      const init = fakeSeamInit({
+        platform: { shell: () => 'powershell', fs: () => ({ pathSep: '\\', caseSensitive: false }) },
+        files: { '.agh/hooks.json': bytes },
+        preset: { sandbox: { on_unavailable: onUnavailable } },
+      })
+      let allowed = true
+      const permits = vi.fn(
+        (source: string, value: string) => allowed && source === 'workspace' && value === digest,
+      )
+      init.trustedHookCommands = { allowsUnconfined: permits }
+      const exec = vi.fn(async () => result),
+        state = fakeApi()
+      const read = vi.spyOn(init.adapters.fs, 'read')
+      await extensionFactoryOf(hooksRunnerExtension(init, { map, sandbox: sandbox(exec, partial) }))(
+        state.api,
+      )
+      expect(read).toHaveBeenCalledTimes(1)
+      expect(exec).not.toHaveBeenCalled()
+      expect(await invoke(state, 'tool_call', toolCall('shell'))).toEqual({
+        allow: false,
+        reason: 'policy says no',
+      })
+      const call = exec.mock.calls[0] as unknown as [string[], { stdin: string; cwd: string }]
+      expect(call[0]).toEqual(['$SHELL', 'trusted-command'])
+      expect(JSON.parse(call[1].stdin)).toMatchObject({ session_id: context.session.key })
+      expect(state.warnings).toEqual([
+        {
+          message: 'trusted Hook commands have no process isolation; Host execution policy still applies',
+          fields: { source: 'workspace', configDigest: digest },
+        },
+      ])
+      // A previously successful Hook must still surface a later Host refusal, without fallback.
+      exec.mockRejectedValueOnce(new Error('SANDBOX_UNAVAILABLE: Host revoked execution'))
+      await expect(invoke(state, 'tool_call', toolCall('shell'))).rejects.toThrow('Host revoked execution')
+      allowed = false
+      await expect(invoke(state, 'tool_call', toolCall('shell'))).rejects.toThrow('E_SANDBOX_UNAVAILABLE')
+      expect(exec).toHaveBeenCalledTimes(2)
+    },
+  )
+  // The Host owns required/deny checks at execution; this layer owns the exact Hook grant.
+  it.each(['missing', 'changed', 'wrong-source', 'unbound', 'mixed'])(
     'refuses %s without executing or registering a command',
     async (mode) => {
       const init = fakeSeamInit({
         platform: { shell: () => 'powershell', fs: () => ({ pathSep: '\\', caseSensitive: false }) },
         files: { '.agh/hooks.json': mode === 'changed' ? `${bytes} ` : bytes },
         preset: {
-          sandbox: { on_unavailable: mode === 'deny' ? 'deny' : 'allow', required: mode === 'required' },
+          sandbox: { on_unavailable: 'allow-if-unimplemented' },
         },
       })
-      if (mode === 'mixed') init.data.set('/home/u/.agh/hooks.json', enc.encode(bytes))
+      if (mode === 'mixed') init.data.set(`${init.profile.dataDir}/hooks.json`, enc.encode(bytes))
       if (mode !== 'missing')
         init.trustedHookCommands = {
           allowsUnconfined: (source, value) =>

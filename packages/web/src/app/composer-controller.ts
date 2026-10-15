@@ -142,6 +142,7 @@ export function createComposerController(
     context.topbarRuntime.setAgent(
       sessionLoop ? choiceName(loopEntry ?? { id: sessionLoop.id }, context.t) : undefined,
     )
+    context.topbarRuntime.setSession(workbench.session?.id)
     context.topbarRuntime.setRuntimeAvailable(!!workbench.session)
     // 切换会话加载期间的视觉态：旧画面降不透明度提示「正在准备」，新投影就绪后
     // 由 sessionPending = false 的那次 renderControls 平滑恢复。

@@ -25,9 +25,11 @@ for (const [locale, example, loop] of [
       if (folder) await page.screenshot({ path: join(folder, `${name}.png`) })
     }
     await button.click()
-    const review = page.locator('#plugin-confirm')
-    await expect(review).toBeVisible()
-    await expect(page.locator('#plugin-confirm-action')).toHaveText(
+    // The check runs on the card, then its review opens as a page, never a dialog.
+    const review = page.getByTestId('install-review')
+    await expect(review).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await expect(review.getByTestId('install-review-confirm')).toHaveText(
       locale === 'en' ? 'Install and enable' : '安装并启用',
     )
     await screen('official-capability-review')
@@ -44,14 +46,11 @@ for (const [locale, example, loop] of [
       window.dispatchEvent(new CustomEvent('agnes:locale-changed', { detail: value }))
     }, locale)
     await screen('official-trust-enable')
-    await page.locator('#plugin-confirm-action').click()
+    await review.getByTestId('install-review-confirm').click()
     await expect(review).toBeHidden({ timeout: 30_000 })
-    const detail = page.locator('#plugin-detail')
-    await expect(detail).toBeVisible({ timeout: 30_000 })
-    await expect(detail).toContainText(locale === 'en' ? 'Enable: Completed' : '启用：已完成', {
-      timeout: 30_000,
-    })
-    await page.getByTestId('push-back').click()
+    // Back on the marketplace: the card says it is installed, and nothing opened by itself.
+    await expect(card).toContainText(locale === 'en' ? 'Installed' : '已安装', { timeout: 30_000 })
+    await expect(page.locator('#plugin-detail')).toBeHidden()
     // An enabled execution mode is offered to every new session, in the composer's agent menu.
     await page.getByRole('button', { name: locale === 'en' ? 'New session' : '新会话', exact: true }).click()
     const workspace = process.env.AGH_UI_WORKSPACE
