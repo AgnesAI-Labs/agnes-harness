@@ -191,6 +191,50 @@ describe('client module immutable snapshots', () => {
       registry.close()
     }
   })
+  it('leaves a pinned generation registry its own staging when the profile registry prunes', async () => {
+    const f = fixture()
+    const row = installed({ directory: f.packageDirectory })
+    const store = new RuntimeGenerationSnapshotStore(f.root)
+    const snapshot = store.create(
+      decodeRuntimeTargetArtifact(webArtifact(row.id, row.entry.integrity)),
+      [
+        {
+          generation: 1,
+          trusted: true,
+          snapshot: {
+            snapshotId: row.entry.integrity,
+            integrity: row.entry.integrity,
+            profile: 'local-dev',
+            packageId: row.id,
+            version: '1.0.0',
+            treeIntegrity: hashDirectory(f.packageDirectory, { exclude: [] }),
+            capabilityHash: row.capabilityHash,
+            directory: f.packageDirectory,
+            contributions: row.contributions,
+          },
+        },
+      ],
+      'test',
+    )
+    store.pin('old-session', snapshot.id, [])
+    const staging = join(f.snapshots, 'generations', snapshot.id, '_staging-child')
+    mkdirSync(join(staging, 'dist'), { recursive: true })
+    writeFileSync(join(staging, 'dist', 'index.js'), 'export const value = "staged"\n')
+    const empty: InstalledInventory = { profile: 'local-dev', hash: 'empty', packages: [] }
+    const registry = createClientModuleRegistry({ snapshotDirectory: () => f.snapshots })
+    try {
+      await registry.list({
+        profile: 'local-dev',
+        profileDirectory: f.root,
+        inventory: empty,
+        actual: async () => undefined,
+        refreshInventory: async () => empty,
+      })
+      expect(existsSync(staging)).toBe(true)
+    } finally {
+      registry.close()
+    }
+  })
   it('binds a row-owned client descriptor to its plugin service identity', async () => {
     const files = fixture()
     const base = installed({ directory: files.packageDirectory, backend: true })

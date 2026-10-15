@@ -9,7 +9,7 @@
   "packages/core/src/execution/turn/tools.ts": 1750,
   "packages/core/src/step/session.ts": 2312,
   "packages/daemon-admin/src/packages/admin-surface.ts": 993,
-  "packages/daemon-admin/src/packages/client-modules.ts": 1485,
+  "packages/daemon-admin/src/packages/client-modules.ts": 1487,
   "packages/daemon-admin/src/packages/handler.ts": 1961,
   "packages/daemon-rpc/src/local/computer-use-control.ts": 806,
   "packages/daemon-rpc/src/local/methods/agnes.ts": 1865,

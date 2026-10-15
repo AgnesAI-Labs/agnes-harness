@@ -38,6 +38,7 @@ const CLIENT_PARENT_CHILD_DECLARATION_VERSION = 'dsh-parent-child/v1'
 const PACKAGE_ID =
   /^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)?)$/
 const REVISION = /^(?:sha256-[a-f0-9]{64}|sha512-[A-Za-z0-9+/]{86}==)$/
+const GENERATION_ID = /^[a-f0-9-]{36}$/
 const SERVABLE = new Set(['.js', '.mjs', '.css', '.map'])
 const MAX_METADATA_BYTES = 1024 * 1024
 
@@ -760,6 +761,8 @@ async function pruneUntracked(root: string, state: ProfileState): Promise<boolea
     if (depth >= 3) return
     for (const entry of entries) {
       if (!entry.isDirectory()) continue
+      // A generation registry owns `generations/<id>` and prunes it in its own serialization domain.
+      if (directory === join(root, 'generations') && GENERATION_ID.test(entry.name)) continue
       const child = join(directory, entry.name)
       if (entry.name.startsWith('_staging-')) {
         await rm(child, { recursive: true, force: true })
@@ -954,7 +957,7 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
       throw error
     })
     for (const id of directories) {
-      if (!/^[a-f0-9-]{36}$/.test(id) || referenced.has(id)) continue
+      if (!GENERATION_ID.test(id) || referenced.has(id)) continue
       const key = `${input.profile}:${id}`
       generationRegistries.get(key)?.close()
       generationRegistries.delete(key)
