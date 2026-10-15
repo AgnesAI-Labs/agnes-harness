@@ -73,7 +73,9 @@ export function modelSlotOptions(state: ModelSlotsState, accounts: readonly Mode
   return [
     ...new Map(
       state.modelAdapters.flatMap((adapter) =>
-        adapter.models.flatMap((model) => {
+        // A payload-only adapter takes no messages, so none of its models can fill a slot a
+        // conversation reads. The catalog leaves them out; this does not rely on that alone.
+        (adapter.capabilities.payloadOnly === true ? [] : adapter.models).flatMap((model) => {
           if (!model.route) return []
           const account = byRoute.get(model.route)
           const name = account?.models?.find((entry) => entry.id === model.id)?.name

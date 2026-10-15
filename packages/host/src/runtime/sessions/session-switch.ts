@@ -1,6 +1,7 @@
 import { HostError } from '@agnes/host-common/errors'
 import { type ResolvedPreset, resolvePreset } from '@agnes/host-common/presets/resolve'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
+import { isPayloadOnlyApi } from '@agnes/host-infrastructure/admin-session-selection'
 import { materializeRoutes, pinPresetRoutes } from '@agnes/host-providers/assemble/routes'
 import { minimumContextBudget, type ThinkingLevel } from '@agnes/protocol'
 import type { Assembled } from '../assemble/assemble.js'
@@ -58,6 +59,13 @@ export function validateModelSwitch(
       'E_MODEL_UNSUPPORTED',
       "the requested model is outside this deployment's assembled route table",
       { detail: { slot: sel.slot, route: sel.route, model: sel.model, declared, published: !!record } },
+    )
+  // An adapter that takes a payload and no messages cannot hold a conversation, whichever slot asks.
+  if (isPayloadOnlyApi(a.modelAdapterCatalog(), record.api))
+    throw new HostError(
+      'E_MODEL_UNSUPPORTED',
+      'the requested model answers payload requests only and cannot be selected for a conversation',
+      { detail: { slot: sel.slot, route: sel.route, model: sel.model, payloadOnly: true } },
     )
   if (
     sel.thinking !== undefined &&

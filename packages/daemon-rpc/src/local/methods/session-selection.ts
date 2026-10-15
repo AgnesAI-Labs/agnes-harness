@@ -2,6 +2,7 @@ import type { PackageAdminAuthorityResolver } from '@agnes/daemon-admin/packages
 import type { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import {
   type ConfigurationService,
+  conversationModelAdapters,
   createAdminSessionSelection,
   type Host,
   type SessionDefaultsConfigurationService,
@@ -41,19 +42,13 @@ export function sessionSelectionProvider(
 }
 
 export async function hostSessionCatalog(host: Host): Promise<Catalog> {
-  const models = host.provider.models()
   return {
     presets: host.profile.presets.allowed.map((id) => ({
       id,
       isDefault: id === host.profile.presets.default,
     })),
     loops: host.kernel.loops.catalog(),
-    modelAdapters: host.modelAdapterCatalog().map((entry) => ({
-      ...entry,
-      models: models
-        .filter((model) => model.api === entry.wireApi)
-        .map((model) => ({ id: model.id, route: model.route })),
-    })),
+    modelAdapters: conversationModelAdapters(host.modelAdapterCatalog(), host.provider.models()),
   }
 }
 

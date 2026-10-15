@@ -1852,14 +1852,15 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           },
         })
       : undefined
-    const sessionSelection = sessionSelectionProvider(o.configuration, async () => {
+    const sharedCatalog = async () => {
       const link = await pool.acquireSharedWorker()
       return (await link.command('session.catalog', {}, { timeoutMs: 31_000 })) as {
         presets?: readonly { id: string; isDefault: boolean }[]
         loops: import('@agnes/protocol').AdminLoop[]
         modelAdapters: import('@agnes/protocol').AdminModelAdapter[]
       }
-    })
+    }
+    const sessionSelection = sessionSelectionProvider(o.configuration, sharedCatalog)
     const preferences = new SessionPreferencesStore(jobTables?.table('session_preferences'))
     const rawLister =
       o.ports?.lister ??
@@ -2085,6 +2086,9 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         agnesVersion: '0.0.0',
         quiescenceWaitMs: 2_000,
         configuration: o.configuration !== undefined,
+        // The supervisor holds no adapter registry: the shared worker's assembled Host answers which
+        // model adapters take payloads only, so `apis.list` can leave their models out.
+        modelAdapters: async () => (await sharedCatalog()).modelAdapters,
         // The WSS lifecycle bearer is only an upgrade gate. initialize still requires one of the
         // configured remote credentials; missing/local auth on WSS is always refused.
         auth: {

@@ -434,6 +434,7 @@ export function createLocalEndpoint(
         inspectService: host.inspectService.bind(host),
       },
       configuration: opts.configuration !== undefined,
+      modelAdapters: async () => host.modelAdapterCatalog(),
       profileHashForSession: async (key: string) => registry.require(key).session.d.resolvedProfileHash,
       policyDigestForSession: async (key: string) => registry.require(key).session.d.policyDigest ?? null,
       limits: { ...DEFAULT_LIMITS, ...opts.limits },

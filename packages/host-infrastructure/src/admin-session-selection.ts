@@ -1,5 +1,5 @@
 import type { LoopCatalogEntry, ModelAdapterCatalogEntry } from '@agnes/extension-api'
-import type { AdminModelAdapter, AdminSessionSelection } from '@agnes/protocol'
+import type { AdminModelAdapter, AdminSessionSelection, ModelRecord } from '@agnes/protocol'
 import { isSessionDefaultsSnapshot } from '@agnes/protocol'
 import { ConfigurationError, type SessionDefaultsConfigurationService } from './configuration.js'
 
@@ -9,6 +9,40 @@ export interface HostAdminSessionCatalog {
   modelAdapters(): Promise<readonly ModelAdapterCatalogEntry[]>
   /** Models from configured runtime routes, never invented from adapter registration metadata. */
   models(adapter: ModelAdapterCatalogEntry): Promise<AdminModelAdapter['models']>
+}
+
+/** What a model's adapter has to tell a conversation entry point: which API it serves and what it takes. */
+type ServingAdapter = Readonly<{ wireApi: string; capabilities: Readonly<{ payloadOnly?: boolean }> }>
+
+/**
+ * Whether a model on `api` answers payload requests only. A payload-only adapter takes a payload
+ * instead of messages, so a conversation that selected one of its models would fail at the adapter.
+ * When several registered adapters serve the same API the model stays selectable: any of them may
+ * be the one that takes messages.
+ */
+export function isPayloadOnlyApi(adapters: readonly ServingAdapter[], api: string): boolean {
+  const serving = adapters.filter((adapter) => adapter.wireApi === api)
+  return serving.length > 0 && serving.every((adapter) => adapter.capabilities.payloadOnly === true)
+}
+
+/**
+ * The registered adapters with the models each one offers for conversations. A payload-only adapter
+ * stays in the list, so an administrator sees it and what it takes, but it offers no model: every
+ * picker and every check that reads these models then leaves it out.
+ */
+export function conversationModelAdapters(
+  adapters: readonly ModelAdapterCatalogEntry[],
+  models: readonly Pick<ModelRecord, 'id' | 'route' | 'api'>[],
+): AdminModelAdapter[] {
+  return adapters.map((entry) => ({
+    ...entry,
+    models:
+      entry.capabilities.payloadOnly === true
+        ? []
+        : models
+            .filter((model) => model.api === entry.wireApi)
+            .map((model) => ({ id: model.id, route: model.route })),
+  }))
 }
 
 /** Compose real host catalogs with the existing locked, revisioned configuration storage. */

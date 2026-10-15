@@ -111,3 +111,65 @@ it('serves host catalogs, persists exact defaults and refuses web/narrow writes'
     await rm(home, { recursive: true, force: true })
   }
 })
+
+it('lists a payload-only adapter without models and refuses its models as the default', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'agnes-selection-'))
+  const configuration = createConfigurationService({ home, profile: 'local-dev' })
+  const entry = (id: string, wireApi: string, capabilities: Record<string, boolean>) => ({
+    id,
+    version: '1.0.0',
+    wireApi,
+    sourcePackage: '@acme/adapter',
+    capabilities: { imageInput: false, tools: false, streaming: false, ...capabilities },
+  })
+  const jev = entry('typesafe-systemone', 'typesafe-systemone', { payload: true, payloadOnly: true })
+  const mixed = entry('mixed', 'mixed-wire', { payload: true })
+  const chat = entry('chat', 'chat-wire', { tools: true, streaming: true })
+  const host = {
+    profile: { presets: { default: 'standard', allowed: ['standard'] } },
+    kernel: { loops: { catalog: () => [] } },
+    modelAdapterCatalog: () => [chat, jev, mixed],
+    provider: {
+      models: () => [
+        { id: 'jev-1', route: 'jev', api: 'typesafe-systemone' },
+        { id: 'mixed-1', route: 'mixed-route', api: 'mixed-wire' },
+        { id: 'chat-1', route: 'chat-route', api: 'chat-wire' },
+      ],
+    },
+  } as unknown as Host
+  const service = sessionSelectionProvider(configuration, () => hostSessionCatalog(host))
+  const ep = new LocalEndpoint({ clock: Date.now, principalId: 'owner' })
+  ep.conn.initialized = true
+  ep.conn.authKind = 'local'
+  ep.conn.credentialKind = 'local'
+  registerSessionSelection(ep, service, localPackageAdminAuthority())
+  const request = (method: string, params: unknown = {}) =>
+    ep.handle({ jsonrpc: '2.0', id: 1, method: `_agnes/v1/sessionSelection.${method}`, params })
+  const save = (provider: string, model: string, revision = 0) =>
+    request('defaults.save', {
+      revision,
+      defaults: { providers: { 'model-adapter': { provider, version: '1.0.0' } }, model },
+    })
+  try {
+    // The adapter itself stays visible to the administrator, with its capabilities.
+    expect(await request('modelAdapters')).toMatchObject({
+      result: {
+        modelAdapters: [
+          { ...chat, models: [{ id: 'chat-1', route: 'chat-route' }] },
+          { ...jev, models: [] },
+          { ...mixed, models: [{ id: 'mixed-1', route: 'mixed-route' }] },
+        ],
+      },
+    })
+    // Naming a payload-only model as the default is refused like any model the host does not offer.
+    expect(await save('typesafe-systemone', 'jev-1')).toMatchObject({
+      error: { data: { reason: 'CONFIG_MODEL_UNAVAILABLE' } },
+    })
+    expect(await configuration.sessionDefaults()).toEqual({ revision: 0, defaults: {} })
+    // A mixed adapter takes messages too, so its model stays selectable.
+    expect(await save('mixed', 'mixed-1')).toMatchObject({ result: { revision: 1 } })
+  } finally {
+    await ep.close()
+    await rm(home, { recursive: true, force: true })
+  }
+})

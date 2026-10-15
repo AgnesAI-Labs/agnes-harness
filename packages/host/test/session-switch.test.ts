@@ -143,7 +143,9 @@ async function profileWithRoutes(routes: RouteDecl[]): Promise<ResolvedProfile> 
  * `Assembled`/`ResolvedProfile` object drifts from what assembly actually produces in ways a test
  * written against the real pipeline cannot.
  */
-async function buildFixture(): Promise<{ assembled: Assembled; profile: ResolvedProfile }> {
+async function buildFixture(
+  extraRoutes: RouteDecl[] = [],
+): Promise<{ assembled: Assembled; profile: ResolvedProfile }> {
   const dataDir = scratch()
   // Named 'gw', not 'default': 'default' is the reserved unresolved-sentinel spelling
   // (profile/templates.ts's RESERVED_ROUTE_NAMES) and resolveProfile refuses a declared route using
@@ -163,7 +165,7 @@ async function buildFixture(): Promise<{ assembled: Assembled; profile: Resolved
     baseUrl: 'https://alt.example.invalid/v1',
     models: [modelRecord('alt', 'm2')],
   }
-  const profile = await profileWithRoutes([route, alternate])
+  const profile = await profileWithRoutes([route, alternate, ...extraRoutes])
   const codePresets: Record<string, PresetDoc> = {
     standard: {
       name: 'standard',
@@ -276,6 +278,73 @@ describe('validateModelSwitch', () => {
     expect(() =>
       validateModelSwitch(profile, assembled, { slot: 'primary', route: 'gw', model: 'm', thinking: 'high' }),
     ).toThrow(/E_MODEL_UNSUPPORTED/)
+  })
+
+  // A payload-only adapter answers a payload and takes no messages. A conversation that selected one
+  // of its models would only fail at the adapter, so the gate refuses the selection up front.
+  describe('payload-only adapters', () => {
+    const jevRoute: RouteDecl = {
+      route: 'jev',
+      api: 'typesafe-systemone',
+      baseUrl: 'https://example.invalid/v1',
+      models: [
+        {
+          ...modelRecord('jev', 'typesafe/jev-1.13-20260917'),
+          api: 'typesafe-systemone',
+          input: ['text'],
+          toolCallFormats: [],
+        },
+      ],
+    }
+    const entry = (capabilities: Record<string, boolean>) => ({
+      id: 'openai-completions',
+      version: '1.0.0',
+      wireApi: 'openai-completions',
+      sourcePackage: '@acme/adapter',
+      capabilities: { imageInput: false, tools: false, streaming: false, ...capabilities },
+    })
+
+    it('refuses a model served by the built-in typesafe-systemone adapter', async () => {
+      const { assembled, profile } = await buildFixture([jevRoute])
+      expect(assembled.modelAdapterCatalog().find((item) => item.id === 'typesafe-systemone')).toMatchObject({
+        capabilities: { payload: true, payloadOnly: true },
+      })
+      let thrown: unknown
+      try {
+        validateModelSwitch(profile, assembled, {
+          slot: 'primary',
+          route: 'jev',
+          model: 'typesafe/jev-1.13-20260917',
+        })
+      } catch (error) {
+        thrown = error
+      }
+      expect(thrown).toMatchObject({
+        code: 'E_MODEL_UNSUPPORTED',
+        detail: { slot: 'primary', route: 'jev', payloadOnly: true },
+      })
+      // The refusal is for this model: the other routes of the same deployment stay selectable.
+      expect(() =>
+        validateModelSwitch(profile, assembled, { slot: 'primary', route: 'gw', model: 'm' }),
+      ).not.toThrow()
+    })
+
+    it('refuses every slot, not only the primary one', async () => {
+      const { assembled, profile } = await buildFixture()
+      Object.assign(assembled, { modelAdapterCatalog: () => [entry({ payload: true, payloadOnly: true })] })
+      for (const slot of ['primary', 'fast', 'verifier'])
+        expect(() => validateModelSwitch(profile, assembled, { slot, route: 'gw', model: 'm' })).toThrow(
+          /E_MODEL_UNSUPPORTED/,
+        )
+    })
+
+    it('keeps a mixed adapter selectable: payload alone does not make a model payload-only', async () => {
+      const { assembled, profile } = await buildFixture()
+      Object.assign(assembled, { modelAdapterCatalog: () => [entry({ payload: true })] })
+      expect(() =>
+        validateModelSwitch(profile, assembled, { slot: 'primary', route: 'gw', model: 'm' }),
+      ).not.toThrow()
+    })
   })
 })
 

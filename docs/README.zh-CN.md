@@ -39,6 +39,7 @@
 | [Webhook 触发器](guide/webhooks.zh-CN.md) | 通过认证的业务事件创建普通业务 Agent 会话 |
 | [无界面运行与回放](guide/headless.zh-CN.md) | JSONL 事件、固定模型回复比较和批量输入 |
 | [使用本地模型](guide/local-model.zh-CN.md) | 本地 OpenAI-compatible endpoint 和模型发现 |
+| [使用 TypeSafe Jev 做旁路模型调用](guide/typesafe-jev.zh-CN.md) | 配置内置的仅载荷适配器，供循环插件在对话之外调用 |
 | [安全与信任](guide/security.zh-CN.md) | 选择工作目录，理解授权和执行边界 |
 | [沙箱提供者](guide/sandbox-providers.zh-CN.md) | 在启动时选择进程沙箱，并阅读声明的能力 |
 | [可观测性与诊断](guide/observability.zh-CN.md) | 开启 OTLP 遥测并导出脱敏问题包 |
@@ -55,6 +56,7 @@
 
 - **场景与方法**：[FDE 与应用场景](guide/why-agh.zh-CN.md) · [MHS 与设备接入](guide/mhs.zh-CN.md)。
 - **精确接口**：[命令参考](reference/cli.zh-CN.md) · [配置参考](reference/configuration.zh-CN.md) · [API 与 Schema](reference/api.zh-CN.md)。
+- **旁路模型调用**：[TypeSafe Jev 适配器](guide/typesafe-jev.zh-CN.md) · [编写循环插件](develop/plugins.zh-CN.md)。
 - **支持与反馈**：[支持范围](reference/limitations.zh-CN.md) · [反馈与开发协作](develop/contributing.zh-CN.md) · [安全报告](../SECURITY.md)。
 - **更多开发主题**：[皮肤开发](develop/skins.zh-CN.md) · [主题](develop/ui-theme.zh-CN.md) · [构建恢复](guide/build-recovery.zh-CN.md) · [能力清单](reference/capabilities.zh-CN.md)。
 
