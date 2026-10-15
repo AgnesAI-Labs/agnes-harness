@@ -13,7 +13,6 @@ import {
   RegionErrorBoundary,
   type RegionRenderer,
   Tabs,
-  Toast,
   Tooltip,
 } from '@agnes/web-ui'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
@@ -175,8 +174,6 @@ export function Dock({ context }: { context: UiExtensionContext }) {
   const [expanded, setExpanded] = useState(false)
   const [rightMax, setRightMax] = useState(() => maxRightWidth(window.innerWidth))
   const rightWidth = clampRightWidth(layout.rightWidth, rightMax)
-  const [copyMessage, setCopyMessage] = useState('')
-  const [copyFailed, setCopyFailed] = useState(false)
   useEffect(() => {
     if (!bottomAvailable) setLayout((value) => (value.bottomOpen ? { ...value, bottomOpen: false } : value))
   }, [bottomAvailable])
@@ -393,44 +390,9 @@ export function Dock({ context }: { context: UiExtensionContext }) {
         ? { rightWidth: clampRightWidth(next, rightMax) }
         : { bottomHeight: clampBottomHeight(next, maxBottomHeight(window.innerHeight)) }),
     }))
-  const workspace = workbench?.workspace
-  const copyWorkspace = async () => {
-    if (!workspace) return
-    try {
-      if (!navigator.clipboard) throw new Error('Clipboard unavailable')
-      await navigator.clipboard.writeText(workspace.path)
-      setCopyFailed(false)
-      setCopyMessage(t('workbench.copied'))
-    } catch {
-      setCopyFailed(true)
-      setCopyMessage(t('workbench.copyFailed'))
-    }
-  }
   const controlsView = (
     <div ref={controls} className="workbench-controls">
-      <Toast
-        tone={copyFailed ? 'error' : 'success'}
-        open={!!copyMessage}
-        onDismiss={() => setCopyMessage('')}
-      >
-        {copyMessage}
-      </Toast>
-      {/* The sidebar already shows the workspace; copying its path is a "more" menu entry that
-          presses this hidden button, which keeps the action and its toast here. */}
-      {workspace && (
-        <Button
-          appearance="ghost"
-          size="small"
-          htmlType="button"
-          id="workspace-copy-path"
-          hidden
-          tabIndex={-1}
-          aria-label={t('workbench.workspace')}
-          title={workspace.path}
-          onClick={() => void copyWorkspace()}
-        />
-      )}
-      {edges.map((edge) => {
+      {[...edges].reverse().map((edge) => {
         const entries = workbenchPanels
           .entries()
           .filter(
@@ -452,6 +414,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
                 data-testid={`workbench-${edge}-toggle`}
                 aria-controls={`workbench-${edge}`}
                 aria-expanded={open}
+                aria-pressed={open}
                 aria-label={t(`workbench.${edge}`)}
                 onClick={() => {
                   rememberFocus(edge)
@@ -468,8 +431,10 @@ export function Dock({ context }: { context: UiExtensionContext }) {
                     )
                 }}
               >
-                <Icon name={edge === 'right' ? 'panel-right' : 'terminal'} size={18} />
-                <span className="workbench-toggle-label">{t(`workbench.${edge}`)}</span>
+                <span className="workbench-toggle-icon" aria-hidden="true">
+                  <Icon name={edge === 'right' ? 'panel-right' : 'terminal'} size={18} />
+                  {edge === 'right' && <span className="workbench-toggle-pane" />}
+                </span>
               </Button>
             </Tooltip>
             {host &&

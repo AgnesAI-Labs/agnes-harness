@@ -55,7 +55,11 @@ it('restores focus on Escape, resizes with keys, retires registrations and detac
     expect(document.getElementById('workbench-tab-test.second')).toBeNull()
     renderRegion(host, <Dock context={{ t: (key) => key, data: 'show' }} />)
     const toggle = host.querySelector('[data-edge="right"]') as HTMLButtonElement
+    expect(toggle.textContent).toBe('')
+    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+    expect(toggle.querySelector('.workbench-toggle-pane')).not.toBeNull()
     flushSync(() => toggle.click())
+    expect(toggle.getAttribute('aria-pressed')).toBe('true')
     const dock = document.getElementById('workbench-right') as HTMLElement
     expect(dock.hidden).toBe(false)
     flushSync(() => (dock.querySelector('[data-testid="navigate-review"]') as HTMLButtonElement).click())

@@ -78,8 +78,7 @@
       .topbar-actions,
       #session-goal-host,
       #workbench-controls,
-      .workbench-controls,
-      #session-runtime
+      .workbench-controls
     ) {
     display: none;
   }

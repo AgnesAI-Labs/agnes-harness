@@ -12,6 +12,8 @@ The Web workbench brings tasks, history, and administration into one local inter
 
 The main Web listener starts while its first Surface mount-table query runs in the background. Until that query succeeds, unknown Surface paths return HTTP 503 with a retry hint. A successful empty table means no mount; later query failures retain the last successful table. Refreshes do not overlap, and shutdown waits for the active query and its connection cleanup.
 
+The topbar switches between Conversation and Trace with a sliding pill; the Trace activity dot appears while a turn is in flight. Its bug button opens Report a problem directly, and the rightmost icon toggles the workbench. Runtime info is in each sidebar session menu. That menu also offers Open in Finder (macOS), Open in File Explorer (Windows), or Open folder (Linux), named for the daemon’s platform. It opens only that session’s bound workspace on the daemon’s local desktop. Remote connections, headless desktops and missing workspaces return an error notice.
+
 ## Start and connect
 
 ```sh

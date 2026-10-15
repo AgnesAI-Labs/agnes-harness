@@ -6,6 +6,11 @@ import { type IconNode, icons as lucideSubset } from './icons.js'
  * geometry unmodified.
  */
 const added = {
+  route: [
+    ['circle', { cx: '6', cy: '19', r: '3' }],
+    ['path', { d: 'M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15' }],
+    ['circle', { cx: '18', cy: '5', r: '3' }],
+  ],
   'at-sign': [
     ['circle', { cx: '12', cy: '12', r: '4' }],
     ['path', { d: 'M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8' }],

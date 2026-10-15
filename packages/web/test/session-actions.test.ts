@@ -77,7 +77,7 @@ function setup(translate = zhT) {
     archive: vi.fn(async () => ({ archived: false })),
     runtime: vi.fn(async (id: string) => runtimeDescriptor(id)),
   }
-  const call = vi.fn(async (method: string) => {
+  const call = vi.fn(async (method: string): Promise<unknown> => {
     if (method === '_agnes/v1/schedules.list') return { schedules: [] }
     throw new Error(`Unavailable fixture method: ${method}`)
   })
@@ -111,6 +111,7 @@ it('keeps the row menu out of the session button and hides archived rows', async
     {
       nav,
       sessions: [row('visible'), row('hidden', true)],
+      runtimePlatform: 'darwin',
       workspaces: [],
       labels: new Map(),
       newSession: vi.fn(),
@@ -132,6 +133,7 @@ it('keeps the row menu out of the session button and hides archived rows', async
   expect([...panel.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent)).toEqual([
     '重命名…',
     '运行信息',
+    '在访达中打开',
     '分叉会话',
     '归档会话',
   ])
@@ -336,4 +338,18 @@ it('shares rename validation and refresh recovery with the inline title editor',
   await save('New')
   expect(session.rename).toHaveBeenCalledOnce()
   expect(changed).toHaveBeenCalledTimes(2)
+})
+
+it('reveals the selected session workspace through RPC and sends failures to the existing notice path', async () => {
+  const { actions, call, error, trigger, changed, session } = setup()
+  call.mockResolvedValueOnce({ opened: true })
+  await actions.act('revealWorkspace', 's', 'Session', trigger)
+  expect(call).toHaveBeenLastCalledWith('_agnes/v1/session.revealWorkspace', { sessionId: 's' })
+  expect(changed).not.toHaveBeenCalled()
+  expect(session.archive).not.toHaveBeenCalled()
+  const failure = new Error('Desktop unavailable')
+  call.mockRejectedValueOnce(failure)
+  await actions.act('revealWorkspace', 's', 'Session', trigger)
+  expect(error).toHaveBeenCalledWith(failure)
+  expect(trigger.hasAttribute('aria-busy')).toBe(false)
 })

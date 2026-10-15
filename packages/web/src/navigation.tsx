@@ -309,6 +309,7 @@ function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; 
               disabled={options.disabled ?? false}
               t={t}
               action={options.action}
+              platform={options.runtimePlatform}
             />
           )}
         </>

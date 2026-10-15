@@ -55,6 +55,7 @@ describe('rendered sidebar region', () => {
           workspaces: [workspace('/workspace', '主工作区')],
           labels: new Map(),
           currentId: 'one',
+          runtimePlatform: 'win32',
           sessionPending: false,
           newDisabled: false,
         },
@@ -78,6 +79,9 @@ describe('rendered sidebar region', () => {
 
     flushSync(() => sidebar?.querySelector<HTMLButtonElement>('.session-menu-trigger')?.click())
     await vi.waitFor(() => expect(document.querySelector('[role=menuitem]')).not.toBeNull())
+    expect([...document.querySelectorAll('[role=menuitem]')].map((item) => item.textContent)).toContain(
+      'Open in File Explorer',
+    )
     document.querySelector<HTMLButtonElement>('[role="menuitem"]')?.click()
     expect(sessionAction).toHaveBeenCalledWith('rename', 'one', '会话 one', expect.any(HTMLElement))
     await vi.waitFor(() =>
