@@ -1,9 +1,9 @@
 import {
   AttachmentError,
+  type ContentBlock,
   IncrementalSha256,
   sha256Hex,
   uploadedAttachment,
-  type ContentBlock,
 } from '@agnes/protocol'
 import type { SessionImpl } from '../step/session.js'
 import { attachmentOperation } from './attachment-operation.js'

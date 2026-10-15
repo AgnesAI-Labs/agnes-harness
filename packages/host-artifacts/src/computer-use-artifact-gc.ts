@@ -1,4 +1,3 @@
-import type { AttachmentRootSnapshot } from '@agnes/extension-api'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -12,6 +11,7 @@ import {
   planRetainedArtifactGc,
   prepareArtifactGcExecutionPrerequisite,
 } from '@agnes/core/artifacts'
+import type { AttachmentRootSnapshot } from '@agnes/extension-api'
 import type { ResolvedComputerUseProfile } from '@agnes/host-common/profile/types'
 import { createPlatform } from '@agnes/host-infrastructure/adapters/platform'
 import { syncCheckpointsToMedium } from '@agnes/host-infrastructure/adapters/sqlite-durability'

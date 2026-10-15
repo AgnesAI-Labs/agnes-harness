@@ -1,4 +1,3 @@
-import { privateArtifactDeleteAvailable } from '@agnes/system-node'
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -25,6 +24,7 @@ import { hashDirectory, type RuntimePluginSnapshot, type RuntimeSnapshot } from 
 import { buildRuntimeTarget, createPluginRow, normalizePluginExport } from '@agnes/plugin-runtime/host'
 import type { Actor, ModelRecord, RouteDecl } from '@agnes/protocol'
 import { defineRemoteSandboxProvider } from '@agnes/sandbox-remote'
+import { privateArtifactDeleteAvailable } from '@agnes/system-node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ASSEMBLY_STEPS, type AssembleDeps, assemble } from '../../src/runtime/assemble/assemble.js'
 import { closeHost } from '../../src/runtime/lifecycle/lifecycle.js'

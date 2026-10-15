@@ -34,7 +34,8 @@ vi.mock('node:module', () => ({
     return factory
   },
 }))
-import { readLocalImage, IMAGE_PREPARE_TIMEOUT_MS } from '../src/tools/local-image.js'
+
+import { IMAGE_PREPARE_TIMEOUT_MS, readLocalImage } from '../src/tools/local-image.js'
 
 const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47])
 const metadata = { ...codec.metadata }
