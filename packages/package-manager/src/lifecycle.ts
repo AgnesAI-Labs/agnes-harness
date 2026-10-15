@@ -4,6 +4,7 @@ import { type PackageBlocker, validatePackageAdminData } from '@agnes/protocol'
 import { parse as parseYaml } from 'yaml'
 import { surfaceReferences } from './deployment-refs.js'
 import { PackageError } from './errors.js'
+import { own } from './integrity.js'
 import { capabilityHash, type InstalledPackage, readInventory } from './inventory.js'
 import type { LockEntry, Lockfile } from './lockfile.js'
 import { readBundledManifest } from './manifest.js'
@@ -129,7 +130,7 @@ export async function assertNoReferences(
     if (named(document, id)) profileRefs.push('profile.yaml')
   }
   if (profileRefs.length) blockers.push({ code: 'profile', references: profileRefs })
-  const extensions = (lock.packages[id]?.contributions ?? []).flatMap((c) =>
+  const extensions = (own(lock.packages, id)?.contributions ?? []).flatMap((c) =>
     c.kind === 'extension' ? [c.id] : [],
   )
   if (lock.workspace) {

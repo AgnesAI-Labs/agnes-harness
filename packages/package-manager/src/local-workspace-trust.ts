@@ -3,7 +3,7 @@ import { existsSync, lstatSync, readFileSync, realpathSync, renameSync, writeFil
 import { dirname, join } from 'node:path'
 import { AGH_DIR } from '@agnes/protocol'
 import { PackageError } from './errors.js'
-import { canonical, readStaticJson } from './integrity.js'
+import { canonical, own, readStaticJson } from './integrity.js'
 import { discoverLocalPlugins, type LocalPluginRoots } from './local-source.js'
 import type { Lockfile } from './lockfile.js'
 import type { WorkspaceDeployment } from './workspace-deployments.js'
@@ -105,7 +105,7 @@ export function localWorkspaceDeployment(
       signed &&
       signed.hooksDigest === hooksDigest &&
       Object.entries(packages).every(
-        ([id, digest]) => signed.packages?.[id] === digest && lock.packages[id]?.state.trusted !== null,
+        ([id, digest]) => signed.packages?.[id] === digest && own(lock.packages, id)?.state.trusted !== null,
       ) &&
       Object.keys(signed.packages ?? {}).length === pluginCount
     return [

@@ -13,7 +13,7 @@ import {
 import { normalizeClientContribution, resolveClientAssets } from './client-assets.js'
 import { containedEntry } from './entry-path.js'
 import { PackageError } from './errors.js'
-import { canonical, capabilityHash, freezeData, readStaticJson, snapshotHash } from './integrity.js'
+import { canonical, capabilityHash, freezeData, own, readStaticJson, snapshotHash } from './integrity.js'
 import type { LockEntry } from './lockfile.js'
 import { presentPluginRows } from './package-presentation.js'
 import {
@@ -107,7 +107,7 @@ function diff(
       })
       .sort(),
     dependenciesAdded: Object.keys(dependencies)
-      .filter((key) => previous?.dependencies[key] !== dependencies[key])
+      .filter((key) => (previous && own(previous.dependencies, key)) !== dependencies[key])
       .sort(),
     serviceGrantsAdded: [...new Map(grants.map((g) => [canonical(g), g])).values()].sort((a, b) =>
       compare(canonical(a), canonical(b)),

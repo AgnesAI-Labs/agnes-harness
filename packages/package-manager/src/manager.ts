@@ -13,7 +13,7 @@ import type { PackageAuditSink } from './audit.js'
 import { copyPackageTreeSync } from './copy-tree.js'
 import { PackageError } from './errors.js'
 import { inspectStaged } from './inspect.js'
-import { canonical, capabilityHash, freezeData } from './integrity.js'
+import { canonical, capabilityHash, freezeData, own } from './integrity.js'
 import { type InstalledInventory, type InstalledPackage, readInventory } from './inventory.js'
 import {
   assertNoReferences,
@@ -218,7 +218,7 @@ function verifyIdentity(
 }
 
 function entryOf(lock: Lockfile, id: string): LockEntry {
-  const entry = lock.packages[id]
+  const entry = own(lock.packages, id)
   if (!entry)
     throw new PackageError('E_DEP_MISSING', `${id} is not installed`, {
       detail: { id, reason: 'not-installed' },
@@ -398,7 +398,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
     stage: string,
     operation: 'add' | 'rollback',
   ) => {
-    const current = lock.packages[id]
+    const current = own(lock.packages, id)
     if (current && (options.references || lock.workspace))
       await assertNoReferences(
         storeFor(profileDir),
@@ -456,7 +456,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
           )
         )
           throw new Error('local package identity changed; remove its previous installation first')
-        const current = lock.packages[id]
+        const current = own(lock.packages, id)
         if (current && current.source.ref !== candidate.source.ref)
           throw new Error('package identity collision')
         const checked = inspectStaged({
@@ -637,7 +637,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
     },
     reportLocalPluginFailure(profileDir, id) {
       inventoryReads.delete(profileKey(profileDir))
-      const entry = load(profileDir).packages[id]
+      const entry = own(load(profileDir).packages, id)
       if (entry?.source.type === 'local')
         localFailures.set(entry.source.ref, {
           id,
@@ -866,12 +866,12 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       try {
         const fetched = await acquire(source, stage, op, profileDir)
         const lock = load(profileDir)
-        const pkg = readPackageJson(stage)
+        const previous = own(lock.packages, readPackageJson(stage).name)
         const { preview } = inspectStaged({
           dir: stage,
           source: fetched.source ?? source,
           fetched,
-          ...(lock.packages[pkg.name] ? { previous: lock.packages[pkg.name] } : {}),
+          ...(previous ? { previous } : {}),
           ceiling: ceiling(lock),
           capabilityPolicy: readPluginCapabilityPolicy(profileDir),
           ...(op.signal ? { signal: op.signal } : {}),
@@ -919,7 +919,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
               capabilityPolicy: readPluginCapabilityPolicy(profileDir),
               ...(op.signal ? { signal: op.signal } : {}),
             })
-            if (lock.packages[preview.id])
+            if (own(lock.packages, preview.id))
               throw new PackageError('E_EXT_LOAD', 'package is already installed; use update')
             if (preview.blockers.length)
               throw new PackageError('E_API_RANGE', 'package installation is blocked', {
@@ -991,7 +991,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
             pkg,
             manifest,
             installed,
-            lock.packages[pkg.name],
+            own(lock.packages, pkg.name),
           )
           if (addOptions.trust === 'verify') {
             runTrustGate({
@@ -1004,7 +1004,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
             })
             entry.state.trusted = installed
           }
-          if (lock.packages[pkg.name]?.contributions !== undefined)
+          if (own(lock.packages, pkg.name)?.contributions !== undefined)
             throw new PackageError('E_EXT_LOAD', 'modern package requires digest-bound update')
           await commitLegacyStage(profileDir, lock, pkg.name, entry, stage, 'add')
           return entry
@@ -1154,7 +1154,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
         if (options.references || lock.workspace)
           await assertNoReferences(store, lock, id, 'remove', options.references)
         const dependents = Object.entries(lock.packages)
-          .filter(([candidate, value]) => candidate !== id && id in value.dependencies)
+          .filter(([candidate, value]) => candidate !== id && Object.hasOwn(value.dependencies, id))
           .map(([candidate]) => candidate)
           .sort()
         if (dependents.length)
@@ -1369,7 +1369,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
               throw new PackageError('E_API_RANGE', 'workspace plugin is blocked', {
                 detail: { blockers: row.blockers },
               })
-            const entry = lock.packages[row.id]!
+            const entry = own(lock.packages, row.id)!
             // This explicit group decision permits bare local author code too;
             // unlike downloaded packages, its license may be UNLICENSED.
             entry.state.trusted = stamp()

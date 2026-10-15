@@ -171,15 +171,21 @@ it('rejects stale previews without any lock/store change', async () => {
   expect(existsSync(packageDir(root, 'local-dev', preview.id))).toBe(false)
   clean()
 })
-it('never replaces an installed package through install', async () => {
-  const m = manager(),
-    p = await m.inspect(profile, source)
-  await m.install(profile, source, { expectedIntegrity: p.integrity })
-  const before = lockBytes()
-  await expect(m.install(profile, source, { expectedIntegrity: p.integrity })).rejects.toThrow('use update')
-  expect(lockBytes()).toBe(before)
-  clean()
-})
+it.each(['acme/pkg-a', 'constructor'])(
+  'never replaces an installed package %s through install',
+  async (name) => {
+    // Lock membership is own-property only: "constructor" is a valid id, not Object.prototype's.
+    pkg({ name, dependencies: { 'acme/dependency': '^1.0' } })
+    const m = manager(),
+      p = await m.inspect(profile, source)
+    expect(p.id).toBe(name)
+    await m.install(profile, source, { expectedIntegrity: p.integrity })
+    const before = lockBytes()
+    await expect(m.install(profile, source, { expectedIntegrity: p.integrity })).rejects.toThrow('use update')
+    expect(lockBytes()).toBe(before)
+    clean()
+  },
+)
 it('reads the non-executable contribution kinds and detects grant/dependency differences', async () => {
   mkdirSync(join(sourceDir, 'dist'))
   writeFileSync(join(sourceDir, 'dist', 'server.mjs'), 'throw Error()')

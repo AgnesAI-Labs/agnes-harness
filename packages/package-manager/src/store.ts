@@ -5,7 +5,7 @@ import { validateLockfile } from '@agnes/protocol'
 import { renameWriteThroughSync } from '@agnes/system-node'
 import { appendPackageAudit, type PackageAuditSink } from './audit.js'
 import { PackageError } from './errors.js'
-import { canonical, readStaticJson, snapshotHash, syncDirectory } from './integrity.js'
+import { canonical, own, readStaticJson, snapshotHash, syncDirectory } from './integrity.js'
 import { type LockEntry, type Lockfile, readLock, writeLock } from './lockfile.js'
 import { hashDirectory, packageDir } from './sources.js'
 
@@ -210,7 +210,7 @@ export function recoverPackageStore(s: PackageStore): void {
   const lock = readLock(s.profileDir, { profile: s.profile, agnesVersion: s.agnesVersion }),
     j = checked(s, lock, readStaticJson(journalPath(s))),
     p = paths(s, j)
-  const current = lock.packages[j.id] ?? null
+  const current = own(lock.packages, j.id) ?? null
   if (canonical(current) === canonical(j.next)) {
     finish(s, j)
     return
@@ -257,7 +257,7 @@ export function commitPackage(
     }
   if (existsSync(journalPath(s))) fail('pending-transaction')
   const dest = packageDir(s.dataDir, s.profile, id),
-    old = lock.packages[id] ?? null
+    old = own(lock.packages, id) ?? null
   for (const other of Object.keys(lock.packages))
     if (other !== id && packageDir(s.dataDir, s.profile, other) === dest) fail('package-path-collision')
   if (old === null && present(dest)) fail('unowned-directory')

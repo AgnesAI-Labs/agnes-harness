@@ -16,6 +16,7 @@ import {
   canonical,
   capabilityHash,
   freezeData,
+  own,
   readStaticJson,
   snapshotHash,
   syncDirectory,
@@ -496,7 +497,7 @@ function select(
     entry = row.entry
     directory = row.directory
   } else {
-    const current = lock.packages[request.packageId]
+    const current = own(lock.packages, request.packageId)
     if (!current?.previous?.treeIntegrity || !current.previous.source)
       stateFailure('previous-snapshot-missing')
     entry = { ...structuredClone(current.previous), previous: null } as LockEntry
@@ -663,7 +664,7 @@ export function pinRuntimeSnapshotStore(
   const requestHash = validateRequest(s, request),
     state = readState(s)
   assertKnownRuntimeDirectories(s, state)
-  if (!lock.packages[request.packageId]) stateFailure('package-not-installed')
+  if (!own(lock.packages, request.packageId)) stateFailure('package-not-installed')
   const prior = state.pins[request.pinId]
   if (prior) {
     if (
@@ -746,7 +747,7 @@ export function resolveRuntimePinStore(
   if (request.expectedSnapshotId !== undefined && pin.snapshotId !== request.expectedSnapshotId)
     integrityFailure('pin-snapshot-stale')
   if (lock) {
-    const current = lock.packages[pin.packageId]
+    const current = own(lock.packages, pin.packageId)
     if (!current) stateFailure('package-not-found')
     if (current.state.trusted === null || (packageEligible && !packageEligible(pin.packageId)))
       stateFailure('package-not-eligible')

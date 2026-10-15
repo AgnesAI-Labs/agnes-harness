@@ -28,6 +28,10 @@ export function canonical(value: unknown): string {
       .join(',')}}`
   return JSON.stringify(value) ?? 'null'
 }
+/** Own-property read of a JSON record: ids like "constructor" never resolve through the prototype. */
+export function own<T>(record: Readonly<Record<string, T>>, key: string): T | undefined {
+  return Object.hasOwn(record, key) ? record[key] : undefined
+}
 export function snapshotHash(value: unknown): string {
   return createHash('sha256').update(canonical(value)).digest('hex')
 }
