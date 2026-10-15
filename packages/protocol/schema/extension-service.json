@@ -654,6 +654,12 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 128
+        },
+        "sessionReads": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 512 }
         }
       }
     },

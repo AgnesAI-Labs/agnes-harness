@@ -143,11 +143,15 @@ export type ClientProfileCaller = (
   module: ModuleIdentity,
   service: string,
   input: Record<string, unknown> | undefined,
-  options?: { operationId?: string; read?: boolean },
+  options?: { operationId?: string; read?: boolean; sessionReads?: readonly string[] },
 ) => Promise<unknown>
 
 export interface ClientProfileServices {
-  query(service: string, input: Record<string, unknown>): Promise<unknown>
+  query(
+    service: string,
+    input: Record<string, unknown>,
+    options?: { sessionReads?: readonly string[] },
+  ): Promise<unknown>
   effect(service: string, input: Record<string, unknown>, options: { operationId: string }): Promise<unknown>
   readOperation(service: string, operationId: string): Promise<unknown>
 }

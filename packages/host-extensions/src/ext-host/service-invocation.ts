@@ -18,6 +18,8 @@ import type { ServiceRegistration, ServiceRegistry } from './services.js'
 export interface ServiceAuthority {
   resolve(credential: unknown): Promise<{
     source: string
+    /** Validated by the authenticated ingress using durable session ownership, never copied from input. */
+    sessionReads?: readonly string[]
     subjectCredential: unknown
     grants: readonly { extension: string; name: string; range: string }[]
   }>

@@ -36,6 +36,8 @@ Profile 上下文没有 session、workspace、子任务取消、进程或任意 
 
 经审核的 effect 可以声明 `priority: 'urgent'`，使用独立、有界的执行队列，但审批要求不变。建立临时控制的 effect 可声明 1–30,000 毫秒的 `controlLeaseMs`；Host 将绑定主体的 grant 和过期时间与 dispatch 原子记录，并通过 `context.admission.controlGrant` 提供给 handler。可信 stream 网关使用该操作授权控制前，必须携带已认证来源凭据调用 `Host.profileServices.authorizeControl`。资源限制、释放、过期处理和安全停止仍由插件负责。
 
+查询会话所属记录时，可通过 `query(name, input, { sessionReads: [sessionId] })` 请求读取范围。已认证入口逐项复用现有持久 session-owner gate 校验；这些 id 是访问请求，不是授权证明。handler 在使用此类过滤条件前必须调用 `context.sessionAccess.requireRead(sessionId)`，缺失、越权或未请求的 id 都会被拒绝。最多准入 16 个 id，且只适用于 query，不打开会话或提供会话修改接口。Node `callScoped` 使用同名 `sessionReads` 请求；可信 embedding 必须从其已认证的所有权检查取得范围。
+
 ## Owner 状态和通知
 
 声明 `capabilities.store: true` 后，profile 服务和已准入的插件工具可使用有界的 `context.store`。键值限制在 loader 选定的 owner/profile 命名空间内；单值最多 64 KiB，每个命名空间最多 10,000 个键和 16 MiB。`transaction` 同步提交；返回 Promise 会回滚，其后续异步代码也不能继续写入。Query 和准备阶段只能读取。接口不暴露 SQL 或其他 owner 的选择器。同步 `OwnedStore` 与 `ManagedServiceInit` 提供的异步修订号存储 `ManagedOwnedStore` 各有独立语义；managed 进程直接使用其 runtime 所有的存储。

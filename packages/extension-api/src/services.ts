@@ -18,6 +18,8 @@ export interface ServiceContext {
     controlGrant?: Readonly<{ grantId: string; expiresAt: number }>
     approval?: ToolContext['approval']
   }>
+  /** Server-validated session read scope; this never opens or mutates a conversation. */
+  readonly sessionAccess?: { requireRead(sessionId: string): Promise<void> }
   readonly store?: import('./profile-services.js').OwnedStore
   readonly wake?: import('./profile-services.js').SessionWakePort
   readonly childJobs?: SessionChildJobs

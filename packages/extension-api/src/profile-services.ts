@@ -2,7 +2,11 @@ import type { JsonValue, ProfileServiceCallResult, ProfileServiceReceipt } from 
 
 /** Host-selected profile and loader-selected owner. No profile, owner or actor selectors. */
 export interface ProfilePluginServices {
-  query<O extends JsonValue>(service: string, input: Record<string, JsonValue>): Promise<O>
+  query<O extends JsonValue>(
+    service: string,
+    input: Record<string, JsonValue>,
+    options?: { sessionReads?: readonly string[] },
+  ): Promise<O>
   effect(
     service: string,
     input: Record<string, JsonValue>,
