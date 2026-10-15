@@ -40,7 +40,7 @@
 
 ## 扩展接口与本地检查
 
-`MarsRuntime` 接收 `MarsTransport`：`connect(Device, signal)` 返回注册就绪、连接寿命和幂等 close。就绪必须覆盖 SDK 双通道，不能以 socket 打开代替。父 MHS 客户端须在经审核的 Cordis profile 作用域提供 `mhsExampleAccess`，仅开放 `connect(exampleId, device, signal)` 与 `launch(exampleId, launchId, operationId)`；绑定当前 profile、精确示例包、审核后的跨 owner grant 和当前 activation，不返回原始 admin 客户端。启动实现用通用 prepare/start API，重试保留 operation ID。该窄接口是待接线的消费端口，不是已经存在的 AGH 作者 API。
+`MarsRuntime` 接收 `MarsTransport`：`connect(Device, signal)` 返回注册就绪、连接寿命和幂等 close。就绪必须覆盖 SDK 双通道，不能以 socket 打开代替。父 MHS 客户端须在经审核的 Cordis profile 作用域提供 `mhsExampleAccess`，仅开放 `connect(exampleId, device, signal)` 与 `launch: ExampleLaunches`（父模块的 `ctx.profile.launch.prepare/start`）；绑定当前 profile、精确示例包、审核后的跨 owner grant 和当前 activation，不返回原始 admin 客户端。启动实现用真实通用 prepare/start API，结果未知时重试保留 launch ticket 和 operation ID。该窄接口是待接线的消费端口，不是已经存在的 AGH 作者 API。
 
 设备传输使用公开 `@agnes/mhs-device` TypeScript SDK；Python 设备使用 `packages/mhs-device/python` 独立发行包。两者均不经 MCP。协议校验和准入由 SDK 与 Hub 拥有，不向本包复制 wire schema。两种 SDK 都必须保留设备本地断线停车及手动 deadman。本浏览器模拟器不是硬件安全控制器，也不证明 MHS 认证。
 
@@ -55,3 +55,5 @@ node examples/mhs/mars-rescue/tools/build.mjs
 构建使用 esbuild 0.28.2，浏览器产物随源码提交供离线安装。资源清单记录字节、SHA-256 和许可，源码变化后重建；AGH 发行包应完整携带 `client`、`assets`、`skills`、`LICENSE` 和 `NOTICE`。浏览器、受管理运行时和批准的完整检查属于集成验收，单测不能替代。旧版世界没有可复用演示视频；当前以源码及视角控制供审阅，仍待集成预览验收。
 
 导出的 `createMarsHubTransport` 使用真实公开 Hub/DeviceLink 合同接入受管理的嵌入式模拟器，要求显式审核后的 current-link 检查，并拒绝接管在线设备。浏览器流传输和原生启动授权仍由父 MHS 适配器负责。
+
+受管理运行时检查使用真实 `@agnes/sdk/managed-service`、SQLite owned store 和 `startManagedMhsHub`，父服务停用会让 11 台设备全部停止并离线。模拟器不另建 Hub，也不假造 singleton。已合入的 `registerMhsStreams` 提供 North 事件、媒体和控制通道；上述浏览器模拟设备接入与示例启动绑定仍需父模块提供。

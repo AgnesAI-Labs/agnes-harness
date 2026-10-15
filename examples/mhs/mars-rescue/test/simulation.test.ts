@@ -1,5 +1,7 @@
 import type { Json, Outcome } from '@agnes/mhs-device'
+import { createExampleClient } from '@agnes/sdk/browser'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { launchMarsAgent } from '../src/access.js'
 import { type MarsConnection, MarsRuntime } from '../src/runtime.js'
 import { MarsSimulation } from '../src/simulation.js'
 import { BASE_MAP, DEVICE_IDS, type DeviceId, OBSTACLES, PLACES, route } from '../src/world.js'
@@ -224,4 +226,36 @@ describe('profile-owned Mars runtime', () => {
     expect(runtime.snapshot()).toMatchObject({ status: 'stopped', online: [] })
     expect(vi.getTimerCount()).toBe(0)
   })
+})
+
+it('retries an uncertain Agent launch with the real facade ticket and the same operation', async () => {
+  const rows = new Map<string, string>(),
+    sessions = new Set<string>()
+  let uncertain = true
+  const { launches } = createExampleClient(async (request) => {
+    if (request.action === 'prepare') return { launchTicket: 'reviewed-ticket', presentation: {} }
+    if (request.action !== 'start' || request.launchTicket !== 'reviewed-ticket') throw new Error('denied')
+    sessions.add(request.operationId)
+    if (uncertain) {
+      uncertain = false
+      throw new Error('OUTCOME_UNKNOWN')
+    }
+    return { sessionId: 'rescue-session' }
+  })
+  const storage = {
+    getItem: (k: string) => rows.get(k) ?? null,
+    setItem: (k: string, v: string) => {
+      rows.set(k, v)
+    },
+    removeItem: (k: string) => {
+      rows.delete(k)
+    },
+  }
+  await expect(launchMarsAgent(launches, storage, 'rescue', 'rescue')).rejects.toThrow('OUTCOME_UNKNOWN')
+  expect(JSON.parse(rows.get('rescue') ?? '{}')).toMatchObject({ launchTicket: 'reviewed-ticket' })
+  await expect(launchMarsAgent(launches, storage, 'rescue', 'rescue')).resolves.toEqual({
+    sessionId: 'rescue-session',
+  })
+  expect(sessions.size).toBe(1)
+  expect(rows.has('rescue')).toBe(false)
 })

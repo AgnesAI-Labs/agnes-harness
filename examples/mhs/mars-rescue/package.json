@@ -111,7 +111,8 @@
   "devDependencies": {
     "esbuild": "0.28.2",
     "@agnes/mhs-hub": "workspace:*",
-    "@agnes/extension-api": "workspace:*"
+    "@agnes/extension-api": "workspace:*",
+    "@agnes/sdk": "workspace:*"
   },
   "peerDependenciesMeta": {
     "@agnes/web-client": {

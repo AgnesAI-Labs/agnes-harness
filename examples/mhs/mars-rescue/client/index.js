@@ -1,6 +1,6 @@
 import { createElement as h, useEffect, useRef, useState } from 'react'
 import { MarsCameras } from './generated/cameras.js'
-import { MarsRuntime } from './generated/runtime.js'
+import { launchMarsAgent, MarsRuntime } from './generated/runtime.js'
 import { MarsScene, VIEWS } from './generated/scene.js'
 
 const PACKAGE = '@agnes-example/mars-rescue'
@@ -28,7 +28,12 @@ export function apply(ctx) {
     try {
       assertLive()
       const access = ctx.get('mhsExampleAccess', false)
-      if (!access || typeof access.connect !== 'function' || typeof access.launch !== 'function')
+      if (
+        !access ||
+        typeof access.connect !== 'function' ||
+        typeof access.launch?.prepare !== 'function' ||
+        typeof access.launch?.start !== 'function'
+      )
         throw new Error('E_MARS_REVIEWED_DEVICE_TRANSPORT_REQUIRED')
       if (!releaseLock) {
         if (!navigator.locks || !ctx.module.binding?.profileId) throw new Error('profile-lock-unavailable')
@@ -186,14 +191,8 @@ export function apply(ctx) {
       assertLive()
       if (runtime?.snapshot().status !== 'ready') throw new Error('example-unavailable')
       const access = ctx.get('mhsExampleAccess', false)
-      // Keep the operation id across retries, including an uncertain response.
-      const key = `mars.launch.${ctx.module.binding.profileId}.${ctx.module.binding.activationId}.${id}`,
-        operationId = sessionStorage.getItem(key) ?? crypto.randomUUID()
-      sessionStorage.setItem(key, operationId)
-      const launched = await access.launch(PACKAGE, id, operationId)
-      if (typeof launched?.sessionId !== 'string' || !launched.sessionId)
-        throw new Error('launch-outcome-unknown')
-      sessionStorage.removeItem(key)
+      const key = `mars.launch.${ctx.module.binding.profileId}.${ctx.module.binding.activationId}.${id}`
+      await launchMarsAgent(access.launch, sessionStorage, key, id)
     }
     const keyDown = (event) => {
       if (

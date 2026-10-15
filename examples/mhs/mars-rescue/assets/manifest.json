@@ -5,8 +5,8 @@
   "resources": [
     {
       "path": "client/generated/runtime.js",
-      "bytes": 138774,
-      "sha256": "6b4a4b0427298377f4f9ea0da790d66a81c38039fb74ae937afd32a65da4d305",
+      "bytes": 139535,
+      "sha256": "cff2f28e81e268439873e6cc189fb65d284c15b956767a70df905f2d0e4660f4",
       "origin": "Agnes simulation, MHS device SDK and bundled TypeBox",
       "license": "Apache-2.0 AND MIT"
     },

@@ -1,41 +1,26 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { createServer } from 'node:net'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import type { ToolContext } from '@agnes/extension-api'
-import { createMhsTools } from '@agnes/mhs'
-import type { Json } from '@agnes/mhs-device'
-import { Hub, North, type OwnedStore } from '@agnes/mhs-hub'
+import { createMhsTools, startManagedMhsHub } from '@agnes/mhs'
+import { Hub, North } from '@agnes/mhs-hub'
+import { createManagedServiceRuntime } from '@agnes/sdk/managed-service'
+import { createOwnedStore } from '@agnes/sdk/owned-store'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createMarsHubTransport } from '../src/hub-transport.js'
 import { MarsRuntime } from '../src/runtime.js'
 import { DEVICE_IDS, PLACES } from '../src/world.js'
 
-// Synthetic persistence and admission ports; SDK, Hub, North and all seven tools are real.
-function store(): OwnedStore {
-  let rows = new Map<string, { value: Json; revision: string }>(),
-    sequence = 0
-  return {
-    async transaction(fn) {
-      const next = structuredClone(rows)
-      const result = fn({
-        get: (key) => next.get(key),
-        put(key, value, expected) {
-          if ((next.get(key)?.revision ?? null) !== expected) throw new Error('CAS_CONFLICT')
-          next.set(key, { value: structuredClone(value), revision: String(++sequence) })
-        },
-        remove(key, expected) {
-          if (next.get(key)?.revision !== expected) throw new Error('CAS_CONFLICT')
-          next.delete(key)
-        },
-      })
-      rows = next
-      return result
-    },
-    async scan({ prefix, limit, cursor }) {
-      const selected = [...rows]
-        .filter(([key]) => key.startsWith(prefix) && (!cursor || key > cursor))
-        .sort(([a], [b]) => (a < b ? -1 : 1))
-      const page = selected.slice(0, limit).map(([key, row]) => ({ key, ...structuredClone(row) }))
-      return { rows: page, ...(selected.length > page.length ? { nextCursor: page.at(-1)!.key } : {}) }
-    },
-  }
+// Only admission/wake identities are synthetic; storage, SDK, Hub and tools are real.
+async function freePort() {
+  const server = createServer()
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  await new Promise<void>((resolve) => server.close(() => resolve()))
+  if (!address || typeof address === 'string') throw new Error('no-port')
+  return address.port
 }
 afterEach(() => vi.useRealTimers())
 it('uses the actual seven-tool Hub contract, refuses unapproved motion and stops the fleet on revocation', async () => {
@@ -43,8 +28,9 @@ it('uses the actual seven-tool Hub contract, refuses unapproved motion and stops
   let current = true,
     approved = false,
     sequence = 0
+  const database = new DatabaseSync(':memory:')
   const hub = new Hub({
-    store: store(),
+    store: createOwnedStore(database, 'mars'),
     authority: {
       async assertActive() {
         if (!current) throw new Error('revoked')
@@ -94,7 +80,8 @@ it('uses the actual seven-tool Hub contract, refuses unapproved motion and stops
       'unwatch_device',
     ])
     const ctx = { signal: new AbortController().signal, timeoutMs: 50_000 } as ToolContext
-    const call = tools.find((t) => t.name === 'call_device')!
+    const call = tools.find((t) => t.name === 'call_device')
+    if (!call) throw new Error('missing-call-device')
     expect(call.meta).toMatchObject({ requiresApproval: 'always', replay: 'never' })
     const args = { device: 'rover-01', tool: 'drive_to', args: { ...PLACES.sample } }
     expect((await call.execute(args, ctx)).isError).toBe(true)
@@ -102,7 +89,8 @@ it('uses the actual seven-tool Hub contract, refuses unapproved motion and stops
     approved = true
     const moving = call.execute(args, ctx)
     await vi.advanceTimersByTimeAsync(500)
-    const stop = tools.find((t) => t.name === 'stop_device')!
+    const stop = tools.find((t) => t.name === 'stop_device')
+    if (!stop) throw new Error('missing-stop-device')
     await stop.execute({}, ctx)
     expect((await moving).isError).toBe(true)
     const at = { ...runtime.simulation.pose('rover-01') }
@@ -117,41 +105,75 @@ it('uses the actual seven-tool Hub contract, refuses unapproved motion and stops
   } finally {
     await runtime.stop()
     await hub.shutdown()
+    database.close()
   }
 })
-it('refuses a missing reviewed link and refuses taking over an existing fleet', async () => {
-  const hub = new Hub({
-    store: store(),
-    authority: {
-      async assertActive() {},
-      async admit() {
-        throw new Error('denied')
-      },
-    },
-    wakes: {
-      async enqueue() {
-        return { wakeId: 'w', state: 'queued' }
-      },
+it('joins the real managed Hub, refuses duplicate fleets, resets in place and parks on parent shutdown', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'agh-mars-managed-'))
+  const [port, devicePort] = await Promise.all([freePort(), freePort()])
+  const managed = await createManagedServiceRuntime({
+    port,
+    initialization: {
+      instanceId: 'mars-parent',
+      incarnation: 'synthetic-mars-proof',
+      scopeId: 'mars-profile',
+      apiVersion: '1.0.0',
+      namespace: 'mhs',
+      storePath: join(directory, 'owned.db'),
+      listeners: { device: { host: '127.0.0.1', port: devicePort } },
     },
   })
-  const denied = new MarsRuntime(
-    createMarsHubTransport(hub, async () => {
-      throw new Error('CAPABILITY_DENIED')
-    }),
-  )
-  await expect(denied.start()).rejects.toThrow('CAPABILITY_DENIED')
-  expect(hub.snapshot()).toEqual([])
-  const first = new MarsRuntime(createMarsHubTransport(hub, async () => {}))
-  const second = new MarsRuntime(createMarsHubTransport(hub, async () => {}))
+  let parent: Awaited<ReturnType<typeof startManagedMhsHub>> | undefined
+  let first: MarsRuntime | undefined, second: MarsRuntime | undefined
   try {
+    parent = await startManagedMhsHub(managed, {
+      authority: {
+        async assertActive() {
+          managed.signal.throwIfAborted()
+        },
+        async admit() {
+          throw new Error('denied')
+        },
+      },
+      wakes: {
+        async enqueue() {
+          return { wakeId: 'w', state: 'queued' }
+        },
+      },
+    })
+    const hub = parent.north.hub
+    const denied = new MarsRuntime(
+      createMarsHubTransport(hub, async () => {
+        throw new Error('CAPABILITY_DENIED')
+      }),
+    )
+    await expect(denied.start()).rejects.toThrow('CAPABILITY_DENIED')
+    expect(hub.snapshot()).toEqual([])
+    const current = async () => managed.signal.throwIfAborted()
+    first = new MarsRuntime(createMarsHubTransport(hub, current))
+    second = new MarsRuntime(createMarsHubTransport(hub, current))
     await first.start()
     await expect(second.start()).rejects.toThrow('example-device-already-owned')
-    expect((await hub.list()).filter((d) => d.online)).toHaveLength(11)
+    expect(await parent.north.query('devices', {})).toHaveLength(11)
     await first.reset()
-    expect((await hub.list()).filter((d) => d.online)).toHaveLength(11)
+    expect(hub.snapshot().filter((d) => d.online)).toHaveLength(11)
+    expect((await managed.store.scan({ prefix: 'format', limit: 1 })).rows[0]?.value).toBe(1)
+    const response = await fetch(`http://127.0.0.1:${port}/_agnes/managed/shutdown`, {
+      method: 'POST',
+      headers: { 'x-agnes-incarnation': 'synthetic-mars-proof' },
+      body: JSON.stringify({ reason: 'disable' }),
+    })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ state: 'settled' })
+    await vi.waitFor(() => {
+      expect(hub.snapshot().every((d) => !d.online)).toBe(true)
+      expect(first?.snapshot()).toMatchObject({ status: 'unavailable', online: [] })
+    })
   } finally {
-    await second.stop()
-    await first.stop()
-    await hub.shutdown()
+    await second?.stop()
+    await first?.stop()
+    await parent?.stop()
+    await managed.close()
+    rmSync(directory, { recursive: true, force: true })
   }
 })

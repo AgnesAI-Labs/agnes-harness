@@ -126,6 +126,9 @@ importers:
       '@agnes/mhs-hub':
         specifier: workspace:*
         version: link:../../../packages/mhs-hub
+      '@agnes/sdk':
+        specifier: workspace:*
+        version: link:../../../packages/sdk
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
