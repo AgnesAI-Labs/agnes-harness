@@ -132,10 +132,7 @@ import { registerSurfaces } from '@agnes/daemon-rpc/local/methods/surfaces'
 import { registerWorkspaces } from '@agnes/daemon-rpc/local/methods/workspaces'
 import { type ApprovalRequest, PrompterRouter } from '@agnes/daemon-rpc/local/prompter'
 import type { SessionEntry } from '@agnes/daemon-rpc/local/sessions'
-import { createSurfaceArtifactResolver } from '@agnes/daemon-surfaces/surfaces/artifact-resolver'
 import { coordinateSurfacesOnBoot } from '@agnes/daemon-surfaces/surfaces/boot-coordination'
-import { createSurfaceController } from '@agnes/daemon-surfaces/surfaces/controller'
-import { createSurfaceSecretResolver } from '@agnes/daemon-surfaces/surfaces/secret-resolver'
 import type { SurfaceController } from '@agnes/daemon-surfaces/surfaces/types'
 import {
   ActivationInProgressError,
@@ -222,6 +219,7 @@ import { createMcpManageRequests } from './mcp-manage-requests.js'
 import { acquireDaemonMutationLock } from './mutation-lock.js'
 import { acquireOwnerLock } from './owner-lock.js'
 import { createPluginManageRequests } from './plugin-manage-requests.js'
+import { createProfileSurfaceController } from './profile-surfaces.js'
 import {
   CompositeRuntimeDelivery,
   deliverDesiredToWorkers,
@@ -1454,10 +1452,12 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           }
         }
       }
-      surfaceController = createSurfaceController({
-        artifacts: createSurfaceArtifactResolver(surfaceInventory),
-        secrets: createSurfaceSecretResolver((ref) => surfaceSecretBackend.resolve(ref)),
-      })
+      surfaceController = createProfileSurfaceController(
+        o.profile.name,
+        surfaceInventory,
+        (ref) => surfaceSecretBackend.resolve(ref),
+        notices,
+      )
       // Covers a startup ABORT only (thrown before this function returns a handle) -- see
       // `startupCleanup.length = 0` below, and cleanupStartup()'s own doc. The real graceful-stop
       // path is wired separately into `closeSockets` in the shutdown ladder further down.

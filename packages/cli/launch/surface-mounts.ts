@@ -5,8 +5,7 @@ import type { LocalBackend } from './backend.js'
 
 type MountProxyLookup = Parameters<typeof createMountProxy>[0]['lookup']
 
-/** Fallback cadence: a slow query keeps one connection lifecycle in flight instead of starting
- * another connection on each tick. A successful refresh still uses the shared mount predicate. */
+/** Retry only after a failed read; healthy connections have no periodic mount queries. */
 export const SURFACE_MOUNT_REFRESH_MS = 8_000
 
 /** Reserved URL prefixes the Web server answers with its own fixed branches (design WC3): the admin
@@ -25,96 +24,108 @@ export type SurfaceMountFeed = Readonly<{
   lookup: MountProxyLookup
   /** False until a query has succeeded, including after an initial failure. */
   ready(): boolean
-  /** Stops the refresh ticker. Idempotent; safe to call before the first fetch resolved. */
+  /** Stops subscriptions, retries and the connection. Idempotent; safe to call before the first fetch resolved. */
   close(): Promise<void>
 }>
 
-/**
- * Bridges `createMountProxy`'s synchronous lookup() across the OS-process boundary between `agnesd`
- * and `agh serve` (see packages/daemon/src/local/methods/surfaces.ts for the RPC method this calls,
- * and the design note at packages/daemon/src/surfaces/mount-proxy.ts for why a closure alone cannot
- * do this in production).
- *
- * Polls the mount table on a fixed interval (`SURFACE_MOUNT_REFRESH_MS` by default) over a short-lived
- * private Unix connection identical in kind to `localPackageAdmin`'s (same `auth: {kind:'local'}`,
- * same pipe-factory seam for the Windows named pipe transport) -- a fresh connection per tick, not one
- * held open across the poll's lifetime. This is spec RC1: a boot-time-only snapshot never learns about
- * a Surface instance `agnesd` hot-updates after this process started, so the mount table is refreshed
- * in the background instead of fetched once and frozen.
- *
- * Returns before the first query completes. Until one query succeeds, ready() is false so Web can
- * distinguish a temporarily unavailable mount table from a successfully fetched empty table.
- * A LATER poll failing (after at least one success) keeps serving the last known-good table rather
- * than blanking out a page the user is currently viewing -- a transient daemon hiccup must not look
- * like every Surface vanished. Web itself remains reachable either way.
- */
+/** Subscribe before reading. Notices are hints; only the authenticated RPC can publish routes.
+ * Reconnects re-read the full table. Failed reads retain the last good table and retry serially. */
 export async function fetchSurfaceMountLookup(
   backend: LocalBackend,
   options: Readonly<{ intervalMs?: number }> = {},
 ): Promise<SurfaceMountFeed> {
-  // `undefined` means "no successful fetch has ever landed" -- distinct from "the daemon reports an
-  // empty table". Only a SUCCESSFUL fetch ever writes here: a later poll that throws must leave the
-  // last-known-good table in place rather than blanking out a page the user is currently viewing.
   let mounts: readonly MountProxyMatch[] | undefined
   let inflight: Promise<void> | undefined
   let closing: Promise<void> | undefined
+  let retry: ReturnType<typeof setTimeout> | undefined
   let stopped = false
-  let generation = 0
-
-  const refresh = async (requestGeneration: number): Promise<void> => {
-    // Identical connection shape on EVERY tick -- including `transportFactories` (the Windows
-    // named-pipe seam) and a fresh `memoryJournal` per attempt. `memoryJournal` is a pure in-memory
-    // closure with no shared registry (packages/sdk/src/journal.ts), so calling it repeatedly with the
-    // same label is safe; nothing here is a one-time-only construct.
-    const client = createClient({
+  let dirty = false
+  let terminal = false
+  const openClient = () =>
+    createClient({
       transport: { kind: 'unix', path: backend.socketPath },
       transportFactories: localPipeFactories(backend.socketPath, backend.scope),
       auth: { kind: 'local' },
       journal: memoryJournal(`surface-mounts-${backend.scope.scopeID}`),
     })
-    try {
-      await client.initialize()
-      const next = await client.surfaces.mounts()
-      // The mount RPC returns {mount, host, port}, matching the proxy's narrow MountProxyMatch.
-      if (!stopped && requestGeneration === generation)
-        mounts = next.mounts.filter((row) => !isReservedMount(row.mount))
-    } finally {
-      await client.close().catch(() => undefined)
-    }
+  let client = openClient()
+  let subscriptions: (() => void)[] = []
+  const scheduleRetry = () => {
+    if (stopped || retry) return
+    retry = setTimeout(() => {
+      retry = undefined
+      refresh()
+    }, options.intervalMs ?? SURFACE_MOUNT_REFRESH_MS)
+    retry.unref?.()
   }
-  const tick = (): Promise<void> => {
-    if (stopped) return Promise.resolve()
-    if (inflight) return inflight
-    const pending = refresh(++generation)
-      .catch((error: unknown) => {
-        console.error(
-          mounts === undefined
-            ? 'agh serve: could not read the Surface mount table; retrying in the background'
-            : 'agh serve: Surface mount table refresh failed; serving the last known table',
-          error,
+  const subscribe = () => {
+    subscriptions = [
+      client.on('notice', (payload) => {
+        if (
+          payload &&
+          typeof payload === 'object' &&
+          'kind' in payload &&
+          payload.kind === 'packages_changed'
         )
-      })
-      .finally(() => {
-        if (inflight === pending) inflight = undefined
-      })
-    inflight = pending
-    return pending
+          refresh()
+      }),
+      client.on('reconnected', refresh),
+      client.on('closed', () => {
+        terminal = true
+        scheduleRetry()
+      }),
+    ]
   }
-
-  void tick()
-  const timer = setInterval(() => void tick(), options.intervalMs ?? SURFACE_MOUNT_REFRESH_MS)
-  timer.unref()
+  const unsubscribe = () => {
+    for (const stop of subscriptions.splice(0)) stop()
+  }
+  const refresh = (): void => {
+    if (stopped) return
+    dirty = true
+    if (inflight) return
+    clearTimeout(retry)
+    retry = undefined
+    inflight = (async () => {
+      try {
+        if (terminal) {
+          unsubscribe()
+          await client.close().catch(() => undefined)
+          if (stopped) return
+          client = openClient()
+          terminal = false
+          subscribe()
+        }
+        const connection = client
+        await connection.initialize()
+        if (stopped) return
+        do {
+          dirty = false
+          const next = await connection.surfaces.mounts()
+          if (!stopped && !terminal) mounts = next.mounts.filter((row) => !isReservedMount(row.mount))
+        } while (dirty && !stopped)
+      } catch {
+        terminal = true
+        scheduleRetry()
+      } finally {
+        inflight = undefined
+      }
+    })()
+  }
+  subscribe()
+  refresh()
   return Object.freeze({
-    // I3 (final review, Important): the match predicate itself comes from the shared `matchMount`
-    // instead of being re-derived here.
     lookup: (pathname: string) => (mounts === undefined ? undefined : matchMount(mounts, pathname)),
     ready: () => mounts !== undefined,
     close() {
       if (closing) return closing
       stopped = true
-      generation++
-      clearInterval(timer)
-      closing = inflight ?? Promise.resolve()
+      clearTimeout(retry)
+      unsubscribe()
+      // Close first to cancel an RPC on a dead connection instead of waiting for its timeout.
+      closing = client
+        .close()
+        .then(() => inflight)
+        .then(() => undefined)
       return closing
     },
   })

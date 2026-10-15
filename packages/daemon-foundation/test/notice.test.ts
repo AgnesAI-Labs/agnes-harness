@@ -38,7 +38,7 @@ describe('NoticeSink', () => {
     for (const ep of [first, second, otherProfile]) {
       ep.conn.initialized = true
       ep.conn.authKind = 'local'
-      ep.conn.clientModuleNotices = true
+      ep.conn.surfaceMountNotices = true
     }
     const sink = new NoticeSink({
       endpoints: () =>
@@ -90,10 +90,10 @@ describe('NoticeSink', () => {
     authorized.conn.clientModuleNotices = true
     const uninitialized = new LocalEndpoint({ clock: () => 0, principalId: 'uninitialized', profile: 'p1' })
     uninitialized.conn.authKind = 'local'
-    uninitialized.conn.clientModuleNotices = true
+    uninitialized.conn.surfaceMountNotices = true
     const unverified = new LocalEndpoint({ clock: () => 0, principalId: 'unverified', profile: 'p1' })
     unverified.conn.initialized = true
-    unverified.conn.clientModuleNotices = true
+    unverified.conn.surfaceMountNotices = true
     const sink = new NoticeSink({
       endpoints: () =>
         [authorized, uninitialized, unverified].map((ep) => ({

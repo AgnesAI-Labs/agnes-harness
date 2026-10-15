@@ -1,6 +1,9 @@
 import { setImmediate } from 'node:timers/promises'
 import { HostError } from '@agnes/host-common/errors'
-import { type LoadedRuntimePackage, preflightRuntimePackage } from '@agnes/host-extensions/assemble/packages'
+import {
+  type LoadedRuntimePackage,
+  preflightRuntimePackageAsync,
+} from '@agnes/host-extensions/assemble/packages'
 import type { RuntimePluginSnapshot } from '@agnes/package-manager'
 import type { AssembleDeps } from './assembly-deps.js'
 
@@ -21,7 +24,7 @@ export async function prepareRuntimeSelection(
     })
   const packageIds = new Set<string>()
   const rowIds = new Set<string>()
-  const metadata: ReturnType<typeof preflightRuntimePackage>[] = []
+  const metadata: Awaited<ReturnType<typeof preflightRuntimePackageAsync>>[] = []
   for (const source of sources) {
     deps.signal?.throwIfAborted()
     const id = source.snapshot.packageId
@@ -34,7 +37,7 @@ export async function prepareRuntimeSelection(
       throw new HostError('E_EXT_LOAD', 'runtime snapshot is not eligible for this profile', {
         detail: { package: id, reason: 'runtime-snapshot-ineligible' },
       })
-    const checked = preflightRuntimePackage(source)
+    const checked = await preflightRuntimePackageAsync(source)
     for (const declaration of checked.declarations) {
       if (rowIds.has(declaration.id))
         throw new HostError('E_PACKAGE_DUPLICATE', 'duplicate runtime plugin row', {
