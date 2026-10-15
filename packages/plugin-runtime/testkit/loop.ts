@@ -101,7 +101,9 @@ export async function driveLoop(factory: LoopFactory, options: LoopTestOptions =
     if (previous?.status === 'responded') return previous.result as import('@agnes/extension-api').ToolResult
     statuses.set(id, { status: 'may-have-sent', invocationId: id, checkpoint })
     const result = options.tools
-      ? await options.tools.execute(call, signal, callOptions)
+      ? await (callOptions === undefined
+          ? options.tools.execute(call, signal)
+          : options.tools.execute(call, signal, callOptions))
       : await unavailable()
     statuses.set(id, {
       status: 'responded',

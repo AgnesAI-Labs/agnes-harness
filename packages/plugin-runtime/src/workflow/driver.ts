@@ -49,7 +49,9 @@ export function workflowDriver(
       ...ctx.tools,
       async execute(call: LoopToolCall, signal: AbortSignal, callOptions?: LoopToolCallOptions) {
         options.guardToolCall?.(call, state)
-        const output = await ctx.tools.execute(call, signal, callOptions)
+        const output = await (callOptions === undefined
+          ? ctx.tools.execute(call, signal)
+          : ctx.tools.execute(call, signal, callOptions))
         if (options.recordToolResult?.(call, output, state)) await save()
         return output
       },
@@ -224,7 +226,9 @@ export function workflowDriver(
                     throw new Error('Approval receipt does not match the original call')
                   state.approvalCall = { ...call, invocationId }
                   await save()
-                  return businessCtx.tools.execute(state.approvalCall, callSignal, callOptions)
+                  return callOptions === undefined
+                    ? businessCtx.tools.execute(state.approvalCall, callSignal)
+                    : businessCtx.tools.execute(state.approvalCall, callSignal, callOptions)
                 },
               },
             })

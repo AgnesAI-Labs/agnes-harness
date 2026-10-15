@@ -65,3 +65,40 @@ it('records an announced call or batch as one assistant message and passes the o
     ['plain', undefined],
   ])
 })
+
+it('calls the fake tools port with exactly two arguments when no call option is given', async () => {
+  const codec = loopCheckpointCodec(1, (state) => state)
+  const create = (ctx: LoopContext) => ({
+    cancel() {},
+    dispose() {},
+    checkpoint: () => codec.encode(null),
+    async step(signal: AbortSignal) {
+      if (!(await ctx.input.accept())) return { outcome: 'idle' as const }
+      await ctx.tools.execute({ name: 'plain', args: {} }, signal)
+      return ctx.events.finish('completed')
+    },
+  })
+  const factory: LoopFactory = {
+    id: 'test.plain-call',
+    version: '1.0.0',
+    capabilities: ['tools'],
+    codec,
+    create,
+    resume: create,
+  }
+  const argumentCounts: number[] = []
+  await driveLoop(factory, {
+    inputs: [{ content: [{ type: 'text', text: 'go' }] }],
+    tools: {
+      // A rest parameter sees the real arity, so an explicit trailing `undefined` would show up here.
+      execute: async (...args: unknown[]) => {
+        argumentCounts.push(args.length)
+        return { content: [{ type: 'text', text: 'ok' }] }
+      },
+      batch: async () => {
+        throw new Error('the testkit runs a batch through execute')
+      },
+    },
+  })
+  expect(argumentCounts).toEqual([2])
+})
