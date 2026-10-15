@@ -2,7 +2,6 @@ import type {
   PackageCatalogDescriptor,
   PackageInstalledDescriptor,
   PluginGenerationStatus,
-  RuntimeAdminSnapshot,
 } from '@agnes/protocol'
 import { type SettingsSection, settingsSections } from '@agnes/web-client'
 import {
@@ -10,12 +9,13 @@ import {
   Button,
   Disclosure,
   Icon,
-  IconButton,
   type IconName,
   PushCrumbs,
   SettingsInput,
   SettingsPage as SettingsPageLayout,
   SettingsState,
+  scopedResourceKey,
+  useResource,
   useUiText,
 } from '@agnes/web-ui'
 import {
@@ -106,11 +106,17 @@ export function SettingsHub({
   const [page, setPage] = useState<SettingsPage>(initialPage)
   const [query, setQuery] = useState('')
   const [detail, setDetail] = useState(() => !!new URLSearchParams(location.search).get('settings'))
-  const [snapshot, setSnapshot] = useState<RuntimeAdminSnapshot>()
-  const [busy, setBusy] = useState(false)
-  const [failed, setFailed] = useState(false)
-  const [revision, setRevision] = useState(0)
   const needsRuntimeCatalog = hubSection(page)?.runtimeCatalog !== false
+  const resource = useResource(
+    api && needsRuntimeCatalog ? scopedResourceKey(api, `settings:hub:${page}`) : undefined,
+    () => {
+      if (!api) throw new Error('Admin unavailable')
+      return api.runtime()
+    },
+  )
+  const snapshot = resource.data
+  const busy = resource.loading
+  const failed = !!resource.error
   // biome-ignore lint/correctness/useExhaustiveDependencies: registryVersion invalidates a disposed selection.
   useEffect(() => {
     if (!hubSection(page)) setPage('plugins')
@@ -236,29 +242,6 @@ export function SettingsHub({
       </Button>
     )
   }
-  // biome-ignore lint/correctness/useExhaustiveDependencies: revision is an explicit refresh.
-  useEffect(() => {
-    let current = true
-    if (!needsRuntimeCatalog) setSnapshot(undefined)
-    setFailed(false)
-    setBusy(false)
-    if (!api || !needsRuntimeCatalog) return
-    setBusy(true)
-    void api
-      .runtime()
-      .then((value) => {
-        if (current) setSnapshot(value)
-      })
-      .catch(() => {
-        if (current) setFailed(true)
-      })
-      .finally(() => {
-        if (current) setBusy(false)
-      })
-    return () => {
-      current = false
-    }
-  }, [api, revision, needsRuntimeCatalog])
   return (
     <div className="runtime-settings" data-settings-view={detail ? 'detail' : 'list'}>
       {!embedded && (
@@ -378,20 +361,6 @@ export function SettingsHub({
           <SettingsPageLayout
             title={sectionTitle(page)}
             variant={['plugins', 'discover', 'history'].includes(page) ? 'list' : 'form'}
-            actions={
-              needsRuntimeCatalog ? (
-                // The page loads on open and after each action; a manual reload stays one quiet icon.
-                <IconButton
-                  name="refresh-cw"
-                  label={t('retry')}
-                  data-testid="settings-refresh"
-                  {...(!api ? { disabledReason: t('unavailable') } : {})}
-                  disabled={!api || busy}
-                  aria-busy={busy}
-                  onClick={() => setRevision((value) => value + 1)}
-                />
-              ) : undefined
-            }
           >
             {needsRuntimeCatalog && busy && (
               <SettingsState tone="loading" data-testid="settings-catalog-state">
@@ -400,7 +369,10 @@ export function SettingsHub({
             )}
             {needsRuntimeCatalog && failed && (
               <Banner tone="error" data-testid="settings-catalog-state">
-                {t('unavailable')}
+                {t('readFailed')} ·{' '}
+                <Button type="text" size="small" onClick={resource.reload}>
+                  {t('retry')}
+                </Button>
               </Banner>
             )}
             {(() => {
@@ -421,7 +393,10 @@ export function SettingsHub({
                       installed,
                       generations,
                       children,
-                      onRefresh,
+                      onRefresh: async () => {
+                        resource.reload()
+                        await onRefresh()
+                      },
                       onReview,
                       schedules,
                       snapshot,

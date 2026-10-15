@@ -7,13 +7,14 @@ import type {
 import { CredentialsPage } from '@agnes/resource-control-web/credentials'
 import { type SettingsSection, settingsSections, type UiExtensionContext } from '@agnes/web-client'
 import {
-  IconButton,
   SettingsBlock,
   SettingsDrill,
   SettingsExpand,
   SettingsPageDescription,
+  scopedResourceKey,
+  useResource,
 } from '@agnes/web-ui'
-import { type ReactNode, useEffect, useState } from 'react'
+import { type ReactNode, useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
 import { BundlesPanel, SessionDefaultsPanel } from '../admin/plugins/control-panel.js'
 import { AutoReviewPanel } from './auto-review.js'
@@ -74,40 +75,25 @@ for (const [id, group, pane, navigationId, key, order] of [
 
 /**
  * 运行详情 under 集成: a subpage of seven records, each opening in place. The runtime catalog is
- * read when the subpage opens; the header refreshes it.
+ * cached when the subpage opens and revalidated on window focus.
  */
 function RuntimeDetails({ c, t }: { c: RuntimeSettingsContext; t: UiExtensionContext['t'] }) {
   const [open, setOpen] = useState(false)
-  const [snapshot, setSnapshot] = useState<RuntimeAdminSnapshot>()
-  const [busy, setBusy] = useState(false)
-  const [failed, setFailed] = useState(false)
-  const [revision, setRevision] = useState(0)
-  // biome-ignore lint/correctness/useExhaustiveDependencies: revision is an explicit refresh.
-  useEffect(() => {
-    let current = true
-    if (!open || !c.api) return
-    setBusy(true)
-    setFailed(false)
-    void c.api
-      .runtime()
-      .then((value) => {
-        if (current) setSnapshot(value)
-      })
-      .catch(() => {
-        if (current) setFailed(true)
-      })
-      .finally(() => {
-        if (current) setBusy(false)
-      })
-    return () => {
-      current = false
-    }
-  }, [open, c.api, revision])
+  const resource = useResource(
+    open && c.api ? scopedResourceKey(c.api, 'settings:runtime:details') : undefined,
+    () => {
+      if (!c.api) throw new Error('Admin unavailable')
+      return c.api.runtime()
+    },
+  )
+  const snapshot = resource.data
+  const busy = resource.loading
+  const failed = !!resource.error
   const providers = snapshot?.providers ?? []
   // A mutation in here (trust, rescan, migration) changes what this subpage shows: re-read its own
   // runtime snapshot as well as the page's.
   const refresh = async () => {
-    setRevision((value) => value + 1)
+    resource.reload()
     await c.onRefresh()
   }
   const generations = c.generations?.generations ?? []
@@ -118,20 +104,10 @@ function RuntimeDetails({ c, t }: { c: RuntimeSettingsContext; t: UiExtensionCon
       label={t('runtimeDetails')}
       description={t('runtimeDetailsHelp')}
       onClick={() => setOpen(true)}
-      actions={
-        <IconButton
-          name="refresh-cw"
-          label={t('retry')}
-          data-testid="settings-refresh"
-          disabled={!c.api || busy}
-          aria-busy={busy}
-          onClick={() => setRevision((value) => value + 1)}
-        />
-      }
     >
       <SettingsBlock
         state={failed ? 'error' : busy && !snapshot ? 'loading' : undefined}
-        onReload={() => setRevision((value) => value + 1)}
+        onReload={resource.reload}
         data-testid="runtime-details"
       >
         <SettingsExpand label={t('pinsTitle')} hint={t('pinsHelp')} data-testid="runtime-pins">
