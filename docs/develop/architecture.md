@@ -16,7 +16,7 @@ Clients present state, the daemon manages sessions and the control plane, Host a
 
 Business Loops, tools, model adapters and personas are replaceable plugins composed by Host. The official default Loop lives in [loop-default](../../packages/loop-default/src/index.ts), using public LoopContext ports; Core owns authorization, durable facts and recovery. [File memory](../guide/memory.md) stores learned preferences, while the ledger retains execution history.
 
-Jev remains an exploratory structured-decision integration, without an installed Jev adapter. [MHS](../guide/mhs.md) has a simulated MCP inspection bundle; it does not establish physical-device compatibility. These directions are distinct from the implemented request path below.
+Jev remains an exploratory structured-decision integration, without an installed Jev adapter. [MHS](../guide/mhs.md) provides device SDK/Hub factories and the [Mars simulator](../guide/mars-world.md); production managed adapters and physical-device compatibility still need validation. These directions are distinct from the implemented request path below.
 
 ## Runtime request path
 
@@ -116,6 +116,6 @@ FDE is a delivery approach; MHS is a device integration direction. An FDE deploy
 
 Ordinary backend plugins execute as trusted in-process code. A tool approval or available command sandbox does not isolate arbitrary plugin code. Approvals, sandbox behavior, and other required seams are selected by trusted deployment configuration; ordinary extensions do not acquire the right to replace them by registering a tool or hook. See [security and trust](../guide/security.md).
 
-MHS adapters are the device branch in the overview, built on MCP (Model Context Protocol) rather than a vendor-specific SDK or a ROS bridge. A [simulated inspection bundle](../guide/mhs.md) is available; hardware adapters require validation; a bare MCP connection alone does not establish MHS compatibility, since no public MHS specification is open for certification. Task cancellation does not establish that a physical device stopped safely. Enterprise deployment, audit, isolation, and device actions each need validation in their actual environment.
+MHS devices connect to their Hub through the TypeScript or Python device SDK, independently of MCP. The older [MCP inspection bundle](../guide/mhs.md) is a separate simulator. The [Mars rescue package](../guide/mars-world.md) exercises the device contract; its production managed/approval adapters remain integration work. Task cancellation does not establish that a physical device stopped safely. Enterprise deployment, audit, isolation and physical actions each require validation in their actual environment.
 
 Source: [Host](../../packages/host/src/runtime/assemble/assemble.ts), [Worker](../../packages/worker-runtime/src/main.ts), [Core](../../packages/core/src), [Daemon](../../packages/daemon/src/supervisor/runtime.ts), [runtime-target publication](../../packages/host-providers/src/runtime-target-publisher.ts), [Web Context](../../packages/web/src/client-modules/boot.tsx).

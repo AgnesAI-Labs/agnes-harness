@@ -3,6 +3,16 @@ import type { DeviceLink, Hub } from '@agnes/mhs-hub'
 import type { MarsConnection, MarsTransport } from './runtime.js'
 import { DEVICE_IDS } from './world.js'
 
+function json(value: unknown, depth = 0): Json {
+  if (depth > 16) throw new Error('observation-too-deep')
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (Array.isArray(value)) return value.map((item) => json(item, depth + 1))
+  if (value && typeof value === 'object')
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, json(item, depth + 1)]))
+  throw new Error('invalid-observation-data')
+}
+
 /** Embedded managed-runtime adapter against the public Hub/SDK, with no second Hub or socket. */
 export function createMarsHubTransport(
   hub: Hub,
@@ -100,7 +110,7 @@ export function createMarsHubTransport(
       device.onState = (values) => hub.state(id, values)
       device.onObservation = (observation, bytes) => {
         if (closing || signal.aborted) return false
-        hub.observation(id, observation.source, observation.data ?? null, bytes, observation.mime)
+        hub.observation(id, observation.source, json(observation.data ?? null), bytes, observation.mime)
         return true
       }
       device.onProgress = (call, data) => hub.progress(id, call, data)

@@ -36,6 +36,10 @@ Ask the agent to draft a Skill or plugin, test it, then review its files and per
 
 The screenshots show the current interface using synthetic browser fixtures. The runnable demos use fresh isolated homes and a deterministic local model by default; they do not send external business messages. Old code remains retained while durable session pins reference it, including idle history.
 
+Explore [Mars rescue](docs/guide/mars-world.md): eleven simulated devices, an in-page 3D scene and rescue/sampling Agent tasks. The reviewed parent transport is still awaiting integration; this is a schematic preview, not an end-to-end demo video.
+
+[![Mars rescue schematic preview](docs/assets/readme/mars-rescue.svg)](docs/guide/mars-world.md)
+
 <a id="new-product-clean-home"></a>
 
 ## New product and old environments

@@ -83,6 +83,7 @@ export class MarsScene {
   private readonly buffer: WebGLBuffer
   private readonly camera: WebGLUniformLocation | null
   private disposed = false
+  private projection: Float32Array | undefined
   view = 0
   constructor(
     readonly canvas: HTMLCanvasElement,
@@ -214,19 +215,27 @@ export class MarsScene {
     gl.clearColor(0.15, 0.08, 0.07, 1)
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
     gl.useProgram(this.program)
-    gl.uniformMatrix4fv(
-      this.camera,
-      false,
-      matrix(
-        camera?.eye ?? [t.x + (wide ? 105 : 24), follow + (wide ? 95 : 22), -t.y + (wide ? 110 : 30)],
-        camera?.target ?? [t.x, follow, -t.y],
-        this.canvas.width / this.canvas.height,
-        camera?.zoom ?? 1,
-      ),
+    this.projection = matrix(
+      camera?.eye ?? [t.x + (wide ? 105 : 24), follow + (wide ? 95 : 22), -t.y + (wide ? 110 : 30)],
+      camera?.target ?? [t.x, follow, -t.y],
+      this.canvas.width / this.canvas.height,
+      camera?.zoom ?? 1,
     )
+    gl.uniformMatrix4fv(this.camera, false, this.projection)
     gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer)
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.DYNAMIC_DRAW)
     gl.drawArrays(gl.TRIANGLES, 0, vertices.length / 6)
+  }
+  project(pose: { x: number; y: number; z: number }): { x: number; y: number } | undefined {
+    const m = this.projection
+    if (!m) return
+    const v = [pose.x, pose.z + 5, -pose.y, 1]
+    const row = (r: number) => v.reduce((sum, value, i) => sum + value * m[i * 4 + r]!, 0)
+    const w = row(3),
+      x = row(0) / w,
+      y = row(1) / w
+    if (w <= 0 || Math.abs(x) > 1 || Math.abs(y) > 1) return
+    return { x: (x + 1) * 480, y: (1 - y) * 270 }
   }
   dispose(): void {
     if (this.disposed) return

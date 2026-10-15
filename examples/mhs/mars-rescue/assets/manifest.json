@@ -12,15 +12,15 @@
     },
     {
       "path": "client/generated/scene.js",
-      "bytes": 5118,
-      "sha256": "29d150df902ee1dc1bd6b4607cc12a24a643ddd3b99dea56cdba77cfd11aa69a",
+      "bytes": 5369,
+      "sha256": "4a6a3675f98625d3c2229e4d339a37e1d939b0f766141ecf500aa323ef528c09",
       "origin": "Project-authored procedural Mars scene",
       "license": "Apache-2.0"
     },
     {
       "path": "client/generated/cameras.js",
-      "bytes": 12260,
-      "sha256": "d470bcccf5db7c305c072783d988f01ad16ac4a132b1a5db28ef5125f625757b",
+      "bytes": 12511,
+      "sha256": "43c9e00bad980e44bfae56fcbb69cd5e9dd2527a570222bbe3d679f3d87fb1a2",
       "origin": "Project-authored procedural Mars scene",
       "license": "Apache-2.0"
     }

@@ -15,7 +15,7 @@ AGH 的客户端展示状态，daemon 管理会话与控制面，Host 组装运�
 
 业务 Agent Loop、工具、模型适配器与角色通过插件替换，由 Host 组合。官方默认 Agent Loop 位于 [loop-default](../../packages/loop-default/src/index.ts)，只使用公开 LoopContext 端口；Core 负责授权、持久事实与恢复。[文件记忆](../guide/memory.zh-CN.md)保存学习到的偏好，账本保留执行历史。
 
-Jev 仍是探索中的结构化决策接入，没有已安装的 Jev 适配器。[MHS](../guide/mhs.zh-CN.md)已有模拟 MCP 巡检组合包，不证明物理设备兼容性；这些方向与下方已实现的请求链路分开说明。
+Jev 仍是探索中的结构化决策接入，没有已安装的 Jev 适配器。[MHS](../guide/mhs.zh-CN.md)已有设备 SDK/Hub 工厂及[火星模拟器](../guide/mars-world.zh-CN.md)，生产受管理适配器和物理设备兼容性仍待验证；这些方向与下方已实现的请求链路分开说明。
 
 ## 运行时请求链路
 
@@ -101,6 +101,6 @@ FDE 是交付方式，MHS 是设备接入方向。FDE 交付可通过 AGH 已有
 
 普通后端插件作为受信进程内代码执行；一次工具审批或可用的命令沙箱不代表任意插件代码已被隔离。审批、沙箱等必要接缝由受信部署配置选择；普通扩展注册工具或 hook 不会获得替换它们的权限。详见[安全与信任](../guide/security.zh-CN.md)。
 
-MHS 适配器对应总览图中的设备分支，基于 MCP（Model Context Protocol）而非厂商专属 SDK 或 ROS 桥接；已有[模拟巡检组合包](../guide/mhs.zh-CN.md)，真实硬件适配仍需验证。仅完成一次 MCP 连接本身不构成 MHS 兼容证明，因为目前没有可供认证的公开 MHS 规范；取消任务也不代表物理设备已安全停止。企业部署、审计、隔离与设备动作均需在实际环境中分别验证。
+MHS 设备通过 TypeScript 或 Python 设备 SDK 连接 Hub，与 MCP 相互独立。已有 [MCP 模拟巡检组合包](../guide/mhs.zh-CN.md)是另一套模拟器。[火星救援](../guide/mars-world.zh-CN.md)验证设备消费合同，生产受管理及批准适配器仍待集成。取消任务不代表物理设备已安全停止；企业部署、审计、隔离与物理动作均须在实际环境中分别验证。
 
 源码依据：[Host](../../packages/host/src/runtime/assemble/assemble.ts)、[Worker](../../packages/worker-runtime/src/main.ts)、[Core](../../packages/core/src)、[Daemon](../../packages/daemon/src/supervisor/runtime.ts)、[运行目标发布](../../packages/host-providers/src/runtime-target-publisher.ts)、[Web Context](../../packages/web/src/client-modules/boot.tsx)。

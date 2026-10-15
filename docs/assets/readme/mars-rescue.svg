@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="320" viewBox="0 0 960 320" role="img" aria-labelledby="title desc">
+<title id="title">Mars rescue — eleven simulated devices</title>
+<desc id="desc">Original schematic of the Mars example package: a procedural scene, eleven devices and rescue or sampling business-Agent tasks. Production parent transport integration is pending. This is not a screenshot or recorded demonstration.</desc>
+<defs><linearGradient id="sky" x2="0" y2="1"><stop stop-color="#171a2a"/><stop offset="1" stop-color="#593c36"/></linearGradient><linearGradient id="ground"><stop stop-color="#b06d50"/><stop offset="1" stop-color="#734b43"/></linearGradient></defs>
+<rect width="960" height="320" rx="16" fill="url(#sky)"/>
+<circle cx="660" cy="210" r="165" fill="#8b5141" opacity=".5"/>
+<path d="M430 260L667 116 926 236 694 310Z" fill="url(#ground)"/>
+<g fill="#d9dee5" stroke="#8491a3" stroke-width="2"><path d="M585 184l43-22 40 21v35l-42 22-41-23Z"/><path d="M645 235l24-12 23 12v21l-24 13-23-13Z"/><path d="M538 230l34-17 35 17v26l-35 18-34-18Z"/></g>
+<g fill="#4f6997" stroke="#a7b5d1"><path d="M713 167l34-18 38 18-34 19Z"/><path d="M751 185l34-18 38 18-34 19Z"/><path d="M790 203l34-18 38 18-34 19Z"/></g>
+<g fill="#d7a079" stroke="#f5d5b6" stroke-width="2"><path d="M750 250l15-8 17 8v16l-17 8-15-8Z"/><path d="M505 265l13-7 14 7v12l-14 8-13-8Z"/><path d="M855 238v-28m-10 5 10-5 10 5-10 5Z"/></g>
+<g stroke="#e1e4ee" stroke-width="3" fill="none"><path d="M693 190v-37m0 8 24-9v15l-24 9"/><path d="M592 269v-22m-8 4 8-4 8 4m-8 8-9 13m9-13 9 13"/><path d="M812 255v-29m-9 6 9-6 9 6"/></g>
+<g fill="#e8eaf0" font-family="system-ui,sans-serif"><text x="38" y="56" font-size="14" letter-spacing="2" fill="#bdc5d9">MHS EXAMPLE · SIMULATION</text><text x="38" y="112" font-size="36" font-weight="650">Mars rescue</text><text x="38" y="149" font-size="17" fill="#d5ced1">11 devices · in-page 3D · business Agent</text><text x="38" y="190" font-size="15" fill="#d5ced1">Rescue · sample · verify receipts</text><text x="38" y="255" font-size="13" fill="#cec1b7">SCHEMATIC PREVIEW</text><text x="38" y="279" font-size="13" fill="#cec1b7">Reviewed parent transport integration pending</text></g>
+</svg>

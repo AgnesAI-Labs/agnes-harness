@@ -108,6 +108,7 @@ export function apply(ctx) {
   function Page() {
     const [, update] = useState(0),
       canvas = useRef(null),
+      renderer = useRef(null),
       [view, setView] = useState(0),
       [tags, setTags] = useState(true),
       [map, setMap] = useState(true),
@@ -128,6 +129,7 @@ export function apply(ctx) {
       try {
         scene = new MarsScene(canvas.current, runtime.simulation)
         scene.view = view
+        renderer.current = scene
         setError('')
         const draw = () => {
           if (disposed) return
@@ -147,6 +149,7 @@ export function apply(ctx) {
         disposed = true
         cancelAnimationFrame(frame)
         scene?.dispose()
+        renderer.current = null
       }
     }, [view, snapshot?.status, attempt])
     const act = async (fn) => {
@@ -231,13 +234,26 @@ export function apply(ctx) {
           ...VIEWS.map((name, i) => h('option', { key: name, value: i }, `${i === 9 ? 0 : i + 1} · ${name}`)),
         ),
       ),
-      h('canvas', {
-        ref: canvas,
-        width: 960,
-        height: 540,
-        tabIndex: 0,
-        'aria-label': '3D Mars base. Keys 1–9 and 0 change views; L toggles labels; M toggles map.',
-      }),
+      h(
+        'div',
+        { className: 'mars-rescue-scene' },
+        h('canvas', {
+          ref: canvas,
+          width: 960,
+          height: 540,
+          tabIndex: 0,
+          'aria-label': '3D Mars base. Keys 1–9 and 0 change views; L toggles labels; M toggles map.',
+        }),
+        tags &&
+          h(
+            'svg',
+            { className: 'mars-rescue-tags', viewBox: '0 0 960 540', 'aria-hidden': true },
+            ...(snapshot?.devices ?? []).flatMap((device) => {
+              const p = renderer.current?.project(device.pose)
+              return p ? [h('text', { key: device.id, x: p.x, y: p.y }, device.id)] : []
+            }),
+          ),
+      ),
       h(
         'p',
         null,
@@ -255,10 +271,19 @@ export function apply(ctx) {
         h(
           'svg',
           {
+            className: 'mars-rescue-map',
             viewBox: '-80 -80 160 160',
             role: 'img',
             'aria-label': 'Base map in metres east and north of habitat',
           },
+          ...Array.from({ length: 15 }, (_, i) => (i - 7) * 10).flatMap((n) => [
+            h('path', {
+              key: `grid-${n}`,
+              d: `M ${n} -80 V 80 M -80 ${n} H 80`,
+              className: 'mars-rescue-grid',
+            }),
+            h('text', { key: `tick-${n}`, x: n, y: 78 }, n),
+          ]),
           ...(snapshot?.devices ?? []).map((d) =>
             h(
               'g',

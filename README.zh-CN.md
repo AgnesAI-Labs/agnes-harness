@@ -36,6 +36,10 @@ AGH 是面向开发者与现场交付团队的开源开发者预览版。CLI、W
 
 截图使用当前界面与合成浏览器测试数据。可运行演示默认使用全新隔离 home 和确定性本地模型，不发送外部业务消息。只要持久会话仍引用旧代码，旧版本就会保留，包括闲置历史会话。
 
+体验[火星救援](docs/guide/mars-world.zh-CN.md)：11 台模拟设备、页内 3D 场景及救援/采样 Agent 任务。经审核的父传输仍待集成；下图是示意预览，不是端到端演示视频。
+
+[![火星救援示意预览](docs/assets/readme/mars-rescue.svg)](docs/guide/mars-world.zh-CN.md)
+
 <a id="new-product-clean-home"></a>
 
 ## 新产品与旧环境
