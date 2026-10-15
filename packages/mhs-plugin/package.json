@@ -1,0 +1,64 @@
+{
+  "name": "@agnes/mhs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@agnes/mhs-device": "workspace:*",
+    "@agnes/mhs-hub": "workspace:*",
+    "@agnes/extension-api": "workspace:*",
+    "@sinclair/typebox": "0.34.33"
+  },
+  "license": "Apache-2.0",
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:agnes.mhs",
+        "export": "mhsPlugin",
+        "apiRange": "^4.0.0",
+        "inject": [
+          "tools",
+          "hooks"
+        ],
+        "runtime": "in-process",
+        "default": false,
+        "capabilities": {
+          "device": true
+        },
+        "metadata": {
+          "displayName": "MHS devices",
+          "summary": "Connects reviewed device capabilities through the managed Hub and native admission.",
+          "description": "Connects reviewed device capabilities through the managed Hub and native admission.",
+          "category": "developer",
+          "locales": {
+            "zh-CN": {
+              "displayName": "MHS 设备",
+              "summary": "通过受管理 Hub 与原生批准连接经审核的设备能力。",
+              "description": "通过受管理 Hub 与原生批准连接经审核的设备能力。"
+            }
+          }
+        }
+      }
+    ],
+    "metadata": {
+      "displayName": "MHS devices",
+      "summary": "Connects reviewed device capabilities through the managed Hub and native admission.",
+      "description": "Connects reviewed device capabilities through the managed Hub and native admission.",
+      "category": "developer",
+      "locales": {
+        "zh-CN": {
+          "displayName": "MHS 设备",
+          "summary": "通过受管理 Hub 与原生批准连接经审核的设备能力。",
+          "description": "通过受管理 Hub 与原生批准连接经审核的设备能力。"
+        }
+      }
+    }
+  }
+}

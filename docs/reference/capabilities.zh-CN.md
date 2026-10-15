@@ -21,6 +21,7 @@
 | `cli.remote-and-extra-modes` | CLI 远程传输与额外模式 | partial | 本地 print/TUI 与 ACP 可用；显式 `--connect` 使用共享 daemon。其余管理命令仍遵循文档规定的本地或拒绝执行范围。 | 按模式补充实现 | `packages/cli/src/bin.ts` |
 | `sdk.optional-build-capabilities` | SDK 可选传输与认证构造 | wired | 入口未包含可选传输或认证实现时，`Unsupported` 是预期的类型化边界。 | 已完成；保留缺失能力时拒绝执行的行为 | `packages/sdk/src/errors.ts` |
 | `sandbox.bwrap-runtime-selection` | Bubblewrap 选择 | wired | 编译器叶子实现有意不作为默认 seam 直接使用，由运行时后端选择器探测并选择。 | 已完成；保留间接接入方式 | `packages/base/extensions/sandbox/src/backends/bwrap.ts` |
+| `mhs.managed-integration` | MHS 受管理插件启用 | partial | 设备 SDK、Hub 与七工具工厂可接受注入端口；经审核的 profile connector、原生授权及 managed gateway 接通前，默认启用明确拒绝。 | 接入通用公开服务接缝 | `packages/mhs-plugin/src/runtime.ts` |
 
 ## 会话命令传输
 

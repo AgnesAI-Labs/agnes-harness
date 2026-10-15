@@ -294,6 +294,15 @@
     },
     {
       "path": "packages/core-ledger/tsconfig.testkit.json"
+    },
+    {
+      "path": "packages/mhs-device"
+    },
+    {
+      "path": "packages/mhs-hub"
+    },
+    {
+      "path": "packages/mhs-plugin"
     }
   ]
 }

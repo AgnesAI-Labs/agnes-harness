@@ -1,0 +1,13 @@
+# MHS Harness plugin (preview)
+
+[简体中文](README.zh-CN.md)
+
+`@agnes/mhs` connects the profile-owned `@agnes/mhs-hub` to the public extension API. It exports seven tools, a bounded context hook, profile service and stream adapters, and a managed-service runtime factory. Device semantics and schemas remain in MHS packages.
+
+The seven tools are `list_devices`, `read_device`, `call_device`, `set_device`, `stop_device`, `watch_device` and `unwatch_device`. Calls and settings declare `requiresApproval: always` and `replay: never`; a second trusted admission check binds effective device arguments and revision before dispatch. Stop is a risk-reducing operation with a confirmed/unknown receipt. Watches bind to the real invoking session/lane and cannot select another conversation. Stills use `ToolContext.session.imageInput` and its current model policy; neither raw media bytes nor video enters a text result or the ledger.
+
+`createMhsPlugin(connector)` registers session tools and context against an existing current Hub. `startMhsHub(init)` is called by a profile managed-service supervisor once; it opens storage, recovers unknown outcomes, installs shutdown, binds the device listener, then reports readiness. Multiple sessions do not own separate listeners. `mhsServices` accepts trusted service contexts separately from user input; `mhsStreams` supplies events, bounded media frames and control through server-bound leases.
+
+The baseline Host lacks the public managed-service connector, current-activation admission and gateway registration path. Until those adapters are available, the default exported `mhsPlugin` refuses activation with `E_MHS_MANAGED_CONNECTOR_REQUIRED`. It does not open a bare North WebSocket or grant control through a caller-supplied role. The runtime factory is usable with explicitly supplied ports, including synthetic test fixtures. This limitation must be resolved before claiming normal installed-plugin or browser acceptance.
+
+This is a source preview with no published-package or physical-device compatibility claim. UI, bundled examples, deployment supervision, native approval presentation and Windows process acceptance are separate integration responsibilities. See the [Hub contract](../mhs-hub/README.md) and [device SDK](../mhs-device/README.md).

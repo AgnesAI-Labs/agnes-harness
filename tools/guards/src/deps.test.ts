@@ -54,6 +54,9 @@ describe('dependency allowlist (dependencies point one way, downward)', () => {
 // therefore 9 here, with channels/bridges still together on 8, which lets every existing and
 // previously approved dependency in the code pass.
 const LAYER: Record<string, number> = {
+  '@agnes/mhs-device': 0, // Device protocol and SDK have no Harness dependencies.
+  '@agnes/mhs-hub': 1, // Device-facing Hub owns physical integration.
+  '@agnes/mhs': 2, // Plugin consumes the Hub and public author API.
   '@agnes/memory-file': 2, // File provider implements the pure extension API; Base composes it.
   '@agnes/e2e-web': 11, // Private acceptance client consumes only the public SDK and protocol.
   // Vendored Cordis core and utilities: third-party code, no @agnes layer (web-client-modules WC4).

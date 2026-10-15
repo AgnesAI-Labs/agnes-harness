@@ -27,6 +27,7 @@ capability ID; it also rejects stale source markers and drift between this table
 | `cli.remote-and-extra-modes` | Remote CLI transport and non-print/TUI modes | partial | Local print/TUI and ACP work; explicit `--connect` uses the shared daemon. Remaining management commands retain their documented local/refused scope. | Mode-specific implementation | `packages/cli/src/bin.ts` |
 | `sdk.optional-build-capabilities` | Optional SDK transport/auth construction | wired | `Unsupported` is the intended typed boundary when an entry point omits an optional transport or auth implementation. | Complete; keep fail-closed | `packages/sdk/src/errors.ts` |
 | `sandbox.bwrap-runtime-selection` | Bubblewrap selection | wired | The compiler leaf is intentionally not a direct default seam; the runtime backend selector probes and selects it. | Complete; keep indirect wiring | `packages/base/extensions/sandbox/src/backends/bwrap.ts` |
+| `mhs.managed-integration` | MHS managed plugin activation | partial | Device SDK, Hub and seven-tool factories exist with injected ports. Default activation refuses until the reviewed profile connector, native authority and managed gateway are connected. | Integrate the generic public service seams | `packages/mhs-plugin/src/runtime.ts` |
 
 ## Session command transport
 

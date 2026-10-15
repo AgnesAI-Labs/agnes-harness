@@ -1,0 +1,15 @@
+# Agnes MHS Hub (preview)
+
+[简体中文](README.zh-CN.md)
+
+`@agnes/mhs-hub` owns device connectivity and physical integration semantics. `South` is a loopback device listener with separate command/Nerve channels. `North` is an in-process service facade, not a public control socket. `Hub` owns device views, maps, bounded observations, health, manual leases, stop, durable operations, watches and notification outbox.
+
+Construct the Hub with an owner/profile-bound transactional store, bound wake producer and trusted authority adapter. No production permissive adapter is provided. Test fakes are under `test/` only. The adapter must check current activation and consume native admission bound to the exact operation, action, device description revision and effective input. Browser actor/role/approval fields are never proof. Managed-service supervision must own one Hub per profile; session plugins only connect to it.
+
+Operation acceptance is committed before dispatch. Matching operation ids return the same receipt; changed subjects conflict. Device results commit terminal state and a stable outbox entry in one transaction. After restart, a nonterminal action becomes `unknown` and is never dispatched again. Bound notifications retry the same idempotency key. Store version 1 is a fresh format; unsupported versions refuse startup. Durable receipts, watches and outbox are separate from display activity. Activity retains at most seven days and 10,000 records, whichever is reached first, and reports the earliest readable timestamp and cursor.
+
+Manual leases last at most 30 seconds, do not renew through duplicate operation ids, and never survive restart. Stop invalidates pending control and existing leases before sending zero/manual and command Stop to every selected device. An unavailable device or missing acknowledgement produces `unknown`; the latest stop result remains persisted outside the activity window. Shutdown denies new work, stops devices, closes streams and records unconfirmed in-flight operations. Local device deadman remains required.
+
+Raw observations retain at most 32 JSON samples per source and one binary sample. Binary retention across the profile is capped at 16 MiB. Telemetry and video frames do not become durable activity rows. Video never enters model input. The model adapter passes stills through the session request-media API. Gateway media frames contain a length-prefixed JSON header and bytes in one frame, capped at 1 MiB; loss requests a keyframe. The device protocol's two-frame pairing stays confined to one Nerve socket.
+
+Real Harness admission, managed-service lifecycle and browser gateway integration require the corresponding public author APIs. This package does not substitute a local role field, raw Node socket or arbitrary jobs/admin access for those APIs. Synthetic unit/socket tests establish local software behavior only; physical hardware and Windows service acceptance remain deployment checks.

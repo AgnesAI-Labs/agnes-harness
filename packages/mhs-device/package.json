@@ -1,0 +1,19 @@
+{
+  "name": "@agnes/mhs-device",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "gen": "tsx tools/schema.ts",
+    "gen:check": "tsx tools/schema.ts --check"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "0.34.33"
+  },
+  "license": "Apache-2.0"
+}

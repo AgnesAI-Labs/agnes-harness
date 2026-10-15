@@ -1086,6 +1086,40 @@ importers:
         specifier: workspace:*
         version: link:../system-node
 
+  packages/mhs-device:
+    dependencies:
+      '@sinclair/typebox':
+        specifier: 0.34.33
+        version: 0.34.33
+
+  packages/mhs-hub:
+    dependencies:
+      '@agnes/mhs-device':
+        specifier: workspace:*
+        version: link:../mhs-device
+      ws:
+        specifier: 8.21.3
+        version: 8.21.3
+    devDependencies:
+      '@types/ws':
+        specifier: 8.18.1
+        version: 8.18.1
+
+  packages/mhs-plugin:
+    dependencies:
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
+      '@agnes/mhs-device':
+        specifier: workspace:*
+        version: link:../mhs-device
+      '@agnes/mhs-hub':
+        specifier: workspace:*
+        version: link:../mhs-hub
+      '@sinclair/typebox':
+        specifier: 0.34.33
+        version: 0.34.33
+
   packages/model-adapters:
     dependencies:
       '@agnes/ai':

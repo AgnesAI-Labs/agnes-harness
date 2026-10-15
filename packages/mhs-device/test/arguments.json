@@ -1,0 +1,22 @@
+[
+  { "schema": { "type": "number", "minimum": -2, "maximum": 2 }, "value": 99, "expected": 2 },
+  { "schema": { "type": "number" }, "value": true, "error": true },
+  { "schema": { "type": "integer" }, "value": 1.5, "error": true },
+  { "schema": { "type": "string", "maxLength": 2 }, "value": "abcd", "expected": "ab" },
+  { "schema": { "type": "boolean", "enum": [false] }, "value": true, "error": true },
+  {
+    "schema": { "type": "array", "items": { "type": "integer" }, "maxItems": 1 },
+    "value": [1, 2],
+    "error": true
+  },
+  {
+    "schema": { "type": "object", "properties": { "n": { "type": "integer", "default": 3 } } },
+    "value": { "ignored": true },
+    "expected": { "n": 3 }
+  },
+  {
+    "schema": { "type": "object", "properties": { "n": { "type": "integer" } }, "required": ["n"] },
+    "value": {},
+    "error": true
+  }
+]
