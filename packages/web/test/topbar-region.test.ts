@@ -1,7 +1,7 @@
 /** @vitest-environment happy-dom */
 
 import { resolve } from 'node:path'
-import { createElement } from 'react'
+import { act, createElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 import { TOPBAR_SLOT } from '../src/region-slots.js'
@@ -20,6 +20,116 @@ describe('rendered topbar region', () => {
     runtime = undefined
     resetWebDom()
     delete sessionViewCommands.reportProblem
+  })
+
+  it('edits the selected title inline with explicit save/cancel, IME and session isolation', async () => {
+    runtime = await mountRenderedIndex()
+    const handle = runtime.topbar!
+    handle.setSession('s')
+    handle.setTaskTitle('Original')
+    const save = vi.fn(async (title: string) => {
+      handle.setTaskTitle(title)
+    })
+    const begin = () =>
+      handle.editTitle({
+        sessionId: 's',
+        title: document.getElementById('task-title')?.textContent ?? '',
+        save,
+      })
+    document.addEventListener('agnes:rename-current-session', begin)
+    const input = () => document.querySelector<HTMLInputElement>('#task-title-input')!
+    const click = (selector: string) =>
+      act(async () => document.querySelector<HTMLButtonElement>(selector)?.click())
+    const change = (value: string) =>
+      act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input(), value)
+        input().dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    const key = (value: string, composing = false) =>
+      act(async () =>
+        input().dispatchEvent(
+          new KeyboardEvent('keydown', {
+            key: value,
+            isComposing: composing,
+            bubbles: true,
+            cancelable: true,
+          }),
+        ),
+      )
+    try {
+      await click('#task-title')
+      expect(input().value).toBe('Original')
+      expect(document.activeElement).toBe(input())
+      expect(document.querySelector('.session-rename-dialog')).toBeNull()
+      await click('[data-testid="task-title-save"]')
+      expect(save).not.toHaveBeenCalled()
+      await click('#task-title')
+      await change('Discard')
+      await key('Escape')
+      expect(document.querySelector('#task-title-input')).toBeNull()
+      expect(document.getElementById('task-title')?.textContent).toBe('Original')
+      await click('#task-title')
+      await change('Discard again')
+      await click('[data-testid="task-title-cancel"]')
+      expect(document.getElementById('task-title')?.textContent).toBe('Original')
+      await click('#task-title')
+      await act(async () =>
+        document
+          .querySelector('[data-testid="task-title-save"]')
+          ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })),
+      )
+      expect(document.getElementById('task-title')?.textContent).toBe('Original')
+      await click('#task-title')
+      await change('  ')
+      await key('Enter')
+      expect(save).not.toHaveBeenCalled()
+      expect(document.querySelector('.topbar-title-error')?.textContent).toContain('Enter a session name')
+      await change('输入法')
+      await act(async () =>
+        input().dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true })),
+      )
+      await key('Enter', true)
+      expect(save).not.toHaveBeenCalled()
+      await act(async () => input().dispatchEvent(new CompositionEvent('compositionend', { bubbles: true })))
+      // Blur itself neither saves nor cancels.
+      input().blur()
+      expect(input().value).toBe('输入法')
+      expect(save).not.toHaveBeenCalled()
+      await key('Enter')
+      expect(save).toHaveBeenCalledWith('输入法')
+      expect(document.getElementById('task-title')?.textContent).toBe('输入法')
+      save.mockRejectedValueOnce(new Error('Synthetic save failed'))
+      await click('#task-title')
+      await change('Retry title')
+      await click('[data-testid="task-title-save"]')
+      expect(input().value).toBe('Retry title')
+      expect(document.querySelector('[role="alert"]')?.textContent).toContain('Synthetic save failed')
+      await click('[data-testid="task-title-save"]')
+      expect(document.getElementById('task-title')?.textContent).toBe('Retry title')
+      let complete: (() => void) | undefined
+      save.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            complete = resolve
+          }),
+      )
+      await click('#task-title')
+      await change('Old session pending')
+      await key('Enter')
+      const submitted = save.mock.calls.length
+      await key('Enter')
+      expect(save.mock.calls.length).toBe(submitted)
+      expect(document.querySelector<HTMLButtonElement>('[data-testid="task-title-save"]')?.disabled).toBe(
+        true,
+      )
+      handle.setSession('next')
+      handle.setTaskTitle('Other session')
+      expect(document.querySelector('#task-title-input')).toBeNull()
+      await act(async () => complete?.())
+      expect(document.getElementById('task-title')?.textContent).toBe('Other session')
+    } finally {
+      document.removeEventListener('agnes:rename-current-session', begin)
+    }
   })
 
   it('renders the topbar controls and updates them through its public handle', async () => {

@@ -260,6 +260,66 @@
     }
   }
 
+  .task-heading h1:has(.topbar-title-editor) {
+    overflow: visible;
+  }
+  .task-heading .topbar-title-editor {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    width: min(24ch, 46vw);
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-body);
+    height: 1.75rem;
+    overflow: visible;
+    border: 1px solid var(--agnes-line-emphasis);
+    border-radius: var(--radius-control);
+    background: var(--agnes-bg-surface);
+  }
+  .topbar-title-editor:focus-within {
+    outline: var(--focus-outline);
+    box-shadow: var(--focus-line);
+    outline-offset: 1px;
+  }
+  .topbar-title-editor #task-title-input {
+    flex: 1 1 0;
+    min-width: 0;
+    width: 0;
+    height: 100%;
+    min-height: 0;
+    padding: 0 var(--s8);
+    border: 0;
+    box-shadow: none;
+    outline: 0;
+    background: transparent;
+    color: var(--agnes-text-primary);
+    font: inherit;
+  }
+  .topbar-title-editor > .agh-tooltip-anchor {
+    flex: none;
+    display: flex;
+  }
+  .topbar-title-editor .agh-btn--icon.agh-btn {
+    width: 1.5rem;
+    min-width: 1.5rem;
+    height: 1.5rem;
+    min-height: 0;
+    padding: 0;
+  }
+  .task-heading .topbar-title-error {
+    position: absolute;
+    inset-block-start: calc(100% + var(--s8));
+    inset-inline-start: 0;
+    z-index: var(--agh-z-tooltip);
+    width: max-content;
+    max-width: min(28rem, 75vw);
+    padding: var(--s8) var(--s12);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-control);
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-bg-surface);
+    white-space: normal;
+  }
   #task-title {
     display: block;
     color: var(--agnes-text-primary);

@@ -1434,8 +1434,15 @@ for (const action of ['rename', 'runtime'] as const)
   onSurfaceEvent(`agnes:${action}-current-session`, (event) => {
     if (!current || draftingNew || sessionPending) return
     const trigger = event.target
-    if (trigger instanceof HTMLElement)
-      void sessionActions.act(action, current.id, trigger.textContent ?? '', trigger)
+    if (!(trigger instanceof HTMLElement)) return
+    if (action === 'rename') {
+      const title = trigger.textContent ?? ''
+      topbarRuntime.editTitle({
+        sessionId: current.id,
+        title,
+        save: sessionActions.renameInline(current.id, title),
+      })
+    } else void sessionActions.act(action, current.id, trigger.textContent ?? '', trigger)
   })
 onSurfaceEvent('agnes:compose-suggestion', (event) => {
   if ((current && !draftingNew) || sessionPending || !(event instanceof CustomEvent)) return

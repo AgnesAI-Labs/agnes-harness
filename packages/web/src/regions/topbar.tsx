@@ -17,6 +17,7 @@ export function mountTopbarRegion(
   const ready = new Promise<void>((resolve) => {
     resolveReady = resolve
   })
+  let sessionId: string | undefined
   let taskTitle: string | undefined
   let status:
     | {
@@ -33,6 +34,7 @@ export function mountTopbarRegion(
     resolveReady()
     queueMicrotask(() => {
       if (handle.current !== value) return
+      value.setSession(sessionId)
       if (taskTitle !== undefined) value.setTaskTitle(taskTitle)
       if (status !== undefined) value.setStatus(status.text, status.state)
       if (connectionState !== undefined) value.setConnectionState(connectionState)
@@ -57,6 +59,14 @@ export function mountTopbarRegion(
   let disposed = false
   return {
     ready,
+    setSession(id) {
+      if (sessionId === id) return
+      sessionId = id
+      handle.current?.setSession(id)
+    },
+    editTitle(request) {
+      handle.current?.editTitle(request)
+    },
     setTaskTitle(title) {
       taskTitle = title
       handle.current?.setTaskTitle(title)

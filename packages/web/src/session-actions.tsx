@@ -17,6 +17,9 @@ export function forkTitle(title: string): string {
   )
 }
 
+const validRenameTitle = (title: string): boolean =>
+  !!title && Array.from(title).length <= 80 && !/[\p{Cc}\p{Zl}\p{Zp}\u202a-\u202e\u2066-\u2069]/u.test(title)
+
 /** The existing action controller owns SDK writes, retries and pending state. */
 export function createSessionActions(options: {
   client: Client
@@ -56,14 +59,14 @@ export function createSessionActions(options: {
     renderRename()
     restoreFocus()
   }
+  const writeTitle = async (id: string, title: string) => {
+    if (!validRenameTitle(title)) throw new Error(t('session.rename.invalidName'))
+    await options.client.session.rename(id, title)
+  }
   const save = () => {
     if (!target || pending) return
     const title = input?.value.trim() ?? ''
-    if (
-      !title ||
-      Array.from(title).length > 80 ||
-      /[\p{Cc}\p{Zl}\p{Zp}\u202a-\u202e\u2066-\u2069]/u.test(title)
-    ) {
+    if (!validRenameTitle(title)) {
       message = t('session.rename.invalidName')
       invalid = true
       renderRename()
@@ -78,7 +81,7 @@ export function createSessionActions(options: {
     void (async () => {
       try {
         if (!saved) {
-          await options.client.session.rename(id, title)
+          await writeTitle(id, title)
           saved = true
         }
         await options.changed()
@@ -179,6 +182,23 @@ export function createSessionActions(options: {
   const busy = new Set<string>()
   return {
     dispose,
+    renameInline(id: string, initialTitle: string) {
+      let persisted = initialTitle
+      return async (title: string) => {
+        if (disposed) return
+        title = title.trim()
+        if (!validRenameTitle(title)) throw new Error(t('session.rename.invalidName'))
+        if (title !== persisted) {
+          await writeTitle(id, title)
+          persisted = title
+        }
+        try {
+          await options.changed()
+        } catch (failure) {
+          throw new Error(t('session.rename.savedRefreshFailed', { detail: text(failure) }))
+        }
+      }
+    },
     async act(action: SessionAction, id: string, title: string, trigger: HTMLElement) {
       if (disposed) return
       if (action === 'rename') {
