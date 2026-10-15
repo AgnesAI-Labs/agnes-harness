@@ -17,6 +17,7 @@ import type { Kernel } from '../kernel.js'
 import type { SessionImpl } from '../step/session.js'
 import { deliverChildCompletion } from './completion-notice.js'
 import { childExecutionReceipt } from './execution-receipt.js'
+import { childModels, resolveChildModel } from './model-scope.js'
 import type { ResidentStart, ResidentTurn } from './provider.js'
 import { bindChildFactory, childBackend } from './sessions.js'
 import { childSessionToolFilter, narrowChildToolFilter } from './tool-filter.js'
@@ -230,9 +231,11 @@ export class KernelChildren implements ChildrenFactory {
   }
 
   models(): readonly { id: string; route: string; selector: string }[] {
-    return this.parent()
-      .d.provider.models()
-      .map((model) => ({ id: model.id, route: model.route, selector: `${model.route}/${model.id}` }))
+    return childModels(this.parent().d.provider).map((model) => ({
+      id: model.id,
+      route: model.route,
+      selector: `${model.route}/${model.id}`,
+    }))
   }
 
   private completionOf(childKey: string): Promise<ChildAgentResult> {
@@ -1154,35 +1157,7 @@ export class KernelChildren implements ChildrenFactory {
   }
 
   private resolveModel(parent: SessionImpl, selector: string): { route: string; model: string } | undefined {
-    let models: ReturnType<Provider['models']>
-    try {
-      models = parent.d.provider.models()
-    } catch {
-      return undefined
-    }
-    const slotRoute = parent.preset.model.route[selector]
-    if (slotRoute !== undefined) {
-      const pinned = parent.preset.model.id[selector]
-      const record = models.find(
-        (item) => item.route === slotRoute && (pinned ? item.id === pinned : item.slot === selector),
-      )
-      const fallback = models.find((item) => item.route === slotRoute)
-      const model = pinned ?? record?.id ?? fallback?.id
-      return model === undefined ? undefined : { route: slotRoute, model }
-    }
-    const byId = models.filter((item) => item.id === selector)
-    const currentRoute = parent.preset.model.route.primary ?? 'default'
-    const current = byId.find((item) => item.route === currentRoute)
-    if (current) return { route: current.route, model: current.id }
-    const only = byId.length === 1 ? byId[0] : undefined
-    if (only) return { route: only.route, model: only.id }
-    const slash = selector.indexOf('/')
-    if (slash > 0) {
-      const route = selector.slice(0, slash)
-      const model = selector.slice(slash + 1)
-      if (models.some((item) => item.route === route && item.id === model)) return { route, model }
-    }
-    return undefined
+    return resolveChildModel(parent.d.provider, parent.preset, selector)
   }
 }
 

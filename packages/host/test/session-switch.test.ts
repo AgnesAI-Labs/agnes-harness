@@ -338,6 +338,36 @@ describe('validateModelSwitch', () => {
         )
     })
 
+    it('judges a route by the adapter that serves it, even when a chat adapter names the same wire API', async () => {
+      const { assembled, profile } = await buildFixture()
+      const community = { route: 'community', api: 'community-jev', baseUrl: 'https://example.invalid/v1' }
+      Object.assign(assembled, {
+        modelAdapterCatalog: () => [
+          entry({ tools: true, streaming: true }),
+          { ...entry({ payload: true, payloadOnly: true }), id: 'community-jev' },
+        ],
+      })
+      const published = assembled.provider.models()
+      Object.assign(assembled.provider, {
+        // Its wire API is openai-completions, the chat route's too.
+        models: () => [...published, modelRecord('community', 'community-model')],
+      })
+      const declared = {
+        ...profile,
+        provider: { ...profile.provider, routes: [...(profile.provider.routes ?? []), community] },
+      }
+      expect(() =>
+        validateModelSwitch(declared, assembled, {
+          slot: 'primary',
+          route: 'community',
+          model: 'community-model',
+        }),
+      ).toThrow(/E_MODEL_UNSUPPORTED/)
+      expect(() =>
+        validateModelSwitch(declared, assembled, { slot: 'primary', route: 'gw', model: 'm' }),
+      ).not.toThrow()
+    })
+
     it('keeps a mixed adapter selectable: payload alone does not make a model payload-only', async () => {
       const { assembled, profile } = await buildFixture()
       Object.assign(assembled, { modelAdapterCatalog: () => [entry({ payload: true })] })

@@ -11,36 +11,44 @@ export interface HostAdminSessionCatalog {
   models(adapter: ModelAdapterCatalogEntry): Promise<AdminModelAdapter['models']>
 }
 
-/** What a model's adapter has to tell a conversation entry point: which API it serves and what it takes. */
-type ServingAdapter = Readonly<{ wireApi: string; capabilities: Readonly<{ payloadOnly?: boolean }> }>
+/** What a route's adapter has to tell a conversation entry point: its id and what it takes. */
+type ServingAdapter = Readonly<{ id: string; capabilities: Readonly<{ payloadOnly?: boolean }> }>
 
 /**
- * Whether a model on `api` answers payload requests only. A payload-only adapter takes a payload
- * instead of messages, so a conversation that selected one of its models would fail at the adapter.
- * When several registered adapters serve the same API the model stays selectable: any of them may
- * be the one that takes messages.
+ * The declared routes whose adapter answers payload requests only. A route is served by the
+ * registration whose id is the route's `api`, so that is the one asked, whatever wire API its models
+ * name. A payload-only adapter takes a payload instead of messages: a conversation or a child agent
+ * that selected one of these routes' models would fail at the adapter.
  */
-export function isPayloadOnlyApi(adapters: readonly ServingAdapter[], api: string): boolean {
-  const serving = adapters.filter((adapter) => adapter.wireApi === api)
-  return serving.length > 0 && serving.every((adapter) => adapter.capabilities.payloadOnly === true)
+export function payloadOnlyRoutes(
+  adapters: readonly ServingAdapter[],
+  routes: readonly Readonly<{ route: string; api: string }>[],
+): ReadonlySet<string> {
+  const payloadOnly = new Set(
+    adapters.filter((adapter) => adapter.capabilities.payloadOnly === true).map((adapter) => adapter.id),
+  )
+  return new Set(routes.filter((route) => payloadOnly.has(route.api)).map((route) => route.route))
 }
 
 /**
  * The registered adapters with the models each one offers for conversations. A payload-only adapter
- * stays in the list, so an administrator sees it and what it takes, but it offers no model: every
- * picker and every check that reads these models then leaves it out.
+ * stays in the list, so an administrator sees it and what it takes, but it offers no model, and no
+ * adapter lists a model of a route a payload-only adapter serves: every picker and every check that
+ * reads these models then leaves them out.
  */
 export function conversationModelAdapters(
   adapters: readonly ModelAdapterCatalogEntry[],
   models: readonly Pick<ModelRecord, 'id' | 'route' | 'api'>[],
+  routes: readonly Readonly<{ route: string; api: string }>[],
 ): AdminModelAdapter[] {
+  const blocked = payloadOnlyRoutes(adapters, routes)
   return adapters.map((entry) => ({
     ...entry,
     models:
       entry.capabilities.payloadOnly === true
         ? []
         : models
-            .filter((model) => model.api === entry.wireApi)
+            .filter((model) => model.api === entry.wireApi && !blocked.has(model.route))
             .map((model) => ({ id: model.id, route: model.route })),
   }))
 }

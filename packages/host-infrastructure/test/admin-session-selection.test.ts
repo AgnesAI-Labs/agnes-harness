@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest'
 import {
   conversationModelAdapters,
   createAdminSessionSelection,
-  isPayloadOnlyApi,
+  payloadOnlyRoutes,
 } from '../src/admin-session-selection.js'
 
 it('validates exact catalog versions and model ids before persisting defaults', async () => {
@@ -69,18 +69,35 @@ it('offers no conversation model for a payload-only adapter and keeps the adapte
     { id: 'j', route: 'r1', api: 'jev-wire' },
     { id: 'm', route: 'r2', api: 'mixed-wire' },
   ]
-  expect(conversationModelAdapters([jev, mixed], models)).toEqual([
+  const routes = [
+    { route: 'r1', api: 'jev' },
+    { route: 'r2', api: 'mixed' },
+  ]
+  expect(conversationModelAdapters([jev, mixed], models, routes)).toEqual([
     { ...jev, models: [] },
     { ...mixed, models: [{ id: 'm', route: 'r2' }] },
   ])
 })
 
-it('treats a model as payload-only only when every adapter serving its API is', () => {
-  const jev = entry('jev', 'shared', { payload: true, payloadOnly: true })
-  const chat = entry('chat', 'shared', { tools: true })
-  expect(isPayloadOnlyApi([jev], 'shared')).toBe(true)
-  expect(isPayloadOnlyApi([jev, chat], 'shared')).toBe(false)
-  expect(isPayloadOnlyApi([chat], 'shared')).toBe(false)
-  // An API no registered adapter serves is not payload-only: other checks refuse it.
-  expect(isPayloadOnlyApi([jev], 'elsewhere')).toBe(false)
+it('finds payload-only routes by the registration that serves them, not by wire API', () => {
+  // A community payload-only adapter may name the same wire API as a chat adapter.
+  const chat = entry('chat', 'shared-wire', { tools: true })
+  const payload = entry('community-jev', 'shared-wire', { payload: true, payloadOnly: true })
+  const routes = [
+    { route: 'chat-route', api: 'chat' },
+    { route: 'jev-route', api: 'community-jev' },
+    { route: 'unregistered', api: 'nobody' },
+  ]
+  expect([...payloadOnlyRoutes([chat, payload], routes)]).toEqual(['jev-route'])
+  // The chat adapter lists no model of the payload-only route, although both name the wire API.
+  const models = [
+    { id: 'c', route: 'chat-route', api: 'shared-wire' },
+    { id: 'j', route: 'jev-route', api: 'shared-wire' },
+  ]
+  expect(conversationModelAdapters([chat, payload], models, routes)).toEqual([
+    { ...chat, models: [{ id: 'c', route: 'chat-route' }] },
+    { ...payload, models: [] },
+  ])
+  // A mixed adapter, or no registration at all, never makes a route payload-only.
+  expect([...payloadOnlyRoutes([entry('chat', 'w', { payload: true })], routes)]).toEqual([])
 })

@@ -29,6 +29,7 @@ it('serves host catalogs, persists exact defaults and refuses web/narrow writes'
     hostSessionCatalog({
       profile: {
         presets: { default: 'workspace-write', allowed: ['read-only', 'workspace-write', 'full-access'] },
+        provider: { routes: [] },
       },
       kernel: { loops: { catalog: () => [loop] } },
       modelAdapterCatalog: () => [adapter],
@@ -125,15 +126,28 @@ it('lists a payload-only adapter without models and refuses its models as the de
   const jev = entry('typesafe-systemone', 'typesafe-systemone', { payload: true, payloadOnly: true })
   const mixed = entry('mixed', 'mixed-wire', { payload: true })
   const chat = entry('chat', 'chat-wire', { tools: true, streaming: true })
+  // A community adapter that takes payloads only may name the same wire API as a chat adapter.
+  const community = entry('community-jev', 'chat-wire', { payload: true, payloadOnly: true })
   const host = {
-    profile: { presets: { default: 'standard', allowed: ['standard'] } },
+    profile: {
+      presets: { default: 'standard', allowed: ['standard'] },
+      provider: {
+        routes: [
+          { route: 'jev', api: 'typesafe-systemone' },
+          { route: 'mixed-route', api: 'mixed' },
+          { route: 'chat-route', api: 'chat' },
+          { route: 'community-route', api: 'community-jev' },
+        ],
+      },
+    },
     kernel: { loops: { catalog: () => [] } },
-    modelAdapterCatalog: () => [chat, jev, mixed],
+    modelAdapterCatalog: () => [chat, community, jev, mixed],
     provider: {
       models: () => [
         { id: 'jev-1', route: 'jev', api: 'typesafe-systemone' },
         { id: 'mixed-1', route: 'mixed-route', api: 'mixed-wire' },
         { id: 'chat-1', route: 'chat-route', api: 'chat-wire' },
+        { id: 'community-1', route: 'community-route', api: 'chat-wire' },
       ],
     },
   } as unknown as Host
@@ -156,6 +170,7 @@ it('lists a payload-only adapter without models and refuses its models as the de
       result: {
         modelAdapters: [
           { ...chat, models: [{ id: 'chat-1', route: 'chat-route' }] },
+          { ...community, models: [] },
           { ...jev, models: [] },
           { ...mixed, models: [{ id: 'mixed-1', route: 'mixed-route' }] },
         ],

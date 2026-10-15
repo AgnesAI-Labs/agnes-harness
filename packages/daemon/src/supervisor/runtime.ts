@@ -218,6 +218,7 @@ import { describeGenerationSessions } from './generation-sessions.js'
 import { type JwksResolver, type JwksTransport, startJwksCache } from './jwks-cache.js'
 import { closeWithAudit, installSignals, shutdownLadder } from './lifecycle.js'
 import { createMcpManageRequests } from './mcp-manage-requests.js'
+import { modelAdapterLookup, sharedSessionCatalog } from './model-adapter-lookup.js'
 import { acquireDaemonMutationLock } from './mutation-lock.js'
 import { acquireOwnerLock } from './owner-lock.js'
 import { createPluginManageRequests } from './plugin-manage-requests.js'
@@ -1852,15 +1853,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           },
         })
       : undefined
-    const sharedCatalog = async () => {
-      const link = await pool.acquireSharedWorker()
-      return (await link.command('session.catalog', {}, { timeoutMs: 31_000 })) as {
-        presets?: readonly { id: string; isDefault: boolean }[]
-        loops: import('@agnes/protocol').AdminLoop[]
-        modelAdapters: import('@agnes/protocol').AdminModelAdapter[]
-      }
-    }
-    const sessionSelection = sessionSelectionProvider(o.configuration, sharedCatalog)
+    const sessionSelection = sessionSelectionProvider(o.configuration, () => sharedSessionCatalog(pool))
     const preferences = new SessionPreferencesStore(jobTables?.table('session_preferences'))
     const rawLister =
       o.ports?.lister ??
@@ -2086,9 +2079,12 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         agnesVersion: '0.0.0',
         quiescenceWaitMs: 2_000,
         configuration: o.configuration !== undefined,
-        // The supervisor holds no adapter registry: the shared worker's assembled Host answers which
-        // model adapters take payloads only, so `apis.list` can leave their models out.
-        modelAdapters: async () => (await sharedCatalog()).modelAdapters,
+        // The supervisor holds no adapter registry. `apis.list` learns which adapters take payloads
+        // only from the built-in registrations, and from the shared worker if it is already running.
+        modelAdapters: modelAdapterLookup({
+          routes: () => host.profile.provider.routes ?? [],
+          worker: () => pool.businessWorker()?.link,
+        }),
         // The WSS lifecycle bearer is only an upgrade gate. initialize still requires one of the
         // configured remote credentials; missing/local auth on WSS is always refused.
         auth: {

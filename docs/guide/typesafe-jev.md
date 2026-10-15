@@ -6,7 +6,7 @@ English | [简体中文](typesafe-jev.zh-CN.md)
 
 `@agnes/ai` includes a model adapter for TypeSafe Jev, registered as `typesafe-systemone`. It answers one structured request at a time: a JSON `state` and a set of `questions`, to which the vendor returns an answer for each question. A loop plugin uses it for quick decisions that should not go through the conversation model.
 
-Jev is **not a chat model**. The adapter takes a payload and nothing else: no messages, no system prompt, no tools and no streaming. It declares the capabilities `payload: true` and `payloadOnly: true`, so a model served by it never appears in a model picker, cannot be chosen as a session, default, fast or verifier model, and is refused if a client asks for it by name. A loop plugin reaches it through a side model call.
+Jev is **not a chat model**. The adapter takes a payload and nothing else: no messages, no system prompt, no tools and no streaming. It declares the capabilities `payload: true` and `payloadOnly: true`, so a model served by it never appears in a model picker, cannot be chosen as a session, default, fast, verifier or child-agent model, and is refused if a client asks for it by name. A loop plugin reaches it through a side model call.
 
 ## Profile route
 
@@ -41,7 +41,7 @@ provider:
 - `credentialRef` names a secret, not the key. Save the key as a [generic credential](credentials.md) and use the `secret://generic/<UUID>` reference it returns, or place it in the profile's secret store. The reference is resolved when the runtime is assembled; a reference that cannot be resolved stops the route from starting. Never write a key into the profile.
 - The model id is sent exactly as written. Pin a dated version such as `typesafe/jev-1.13-20260917`; an alias such as `~typesafe/jev-latest` can change what answers without any change on your side. The reply reports the exact model that answered, and the side-call record keeps it.
 - `cost` is in US dollars per million tokens. When the vendor reports the price of a call, AGH records that price; otherwise it estimates from `cost`. Check the vendor's current price before copying the numbers above.
-- Do not put a Jev model into a preset slot. A slot is a conversation model.
+- Do not name a Jev model in a preset slot. A slot is a conversation model. A slot that a preset leaves at `default` takes the first declared route that no payload-only adapter serves, so the order of the routes does not matter. If a profile declares only payload-only routes, `default` stays on the first of them and every conversation fails at the adapter.
 
 To call TypeSafe directly instead of through OpenRouter, change the route's and the models' `baseUrl` to `https://api.typesafe.ai/v1`, point `credentialRef` at the direct key, and use the vendor's model id, for example `jev-1.13.0`. The direct endpoint follows the vendor's documentation and has not been exercised against a live key.
 
@@ -49,9 +49,10 @@ To call TypeSafe directly instead of through OpenRouter, change the route's and 
 
 - The Web model picker, the CLI `/model` list and the list returned by `apis.list` leave Jev models out, so a new session cannot start on one by default.
 - Admin defaults for new sessions and the fast and verifier slots do not offer them, and scheduled tasks cannot target them.
+- Child agents cannot choose them: `list_subagent_models` leaves them out, and starting a child on one is refused as an unknown model (`E_MODEL_UNKNOWN`). Side model calls are not affected, so a loop plugin can still target the route.
 - The server refuses the same choices when a client sends them directly: switching a session to a Jev model is refused with `PRESET_SWITCH_REJECTED`, and saving one as a default or slot fails with `CONFIG_MODEL_UNAVAILABLE`.
 - If a request still reaches the adapter with messages, tools or a system prompt, it is refused with `CONTRACT_MISMATCH` before any network call.
-- The Web settings still list the adapter, with the labels **Payload requests** and **Payload requests only, no chat**.
+- The Web settings still list the adapter, marked **Payload requests only, no chat**; its technical details show the `payload` and `payloadOnly` capabilities.
 
 A community adapter that answers both messages and payloads declares only `payload: true`; its models stay selectable. The model adapter plugin template explains the `payload` and `payloadOnly` capability fields.
 

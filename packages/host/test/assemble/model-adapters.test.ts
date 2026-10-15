@@ -12,6 +12,7 @@ import { resolveProfile } from '@agnes/host-common/profile/resolve'
 import { MemoryPackageLoader, type PackageModule } from '@agnes/host-extensions/assemble/packages'
 import { createMemoryAudit } from '@agnes/host-infrastructure/audit'
 import {
+  builtinModelAdapterCatalog,
   installModelAdapters,
   ModelAdapterRegistry,
   modelAdapterCatalog,
@@ -413,3 +414,11 @@ it.each([
     })
   },
 )
+
+it('reads what the built-in adapters take without assembling a Host', () => {
+  const builtin = new Map(builtinModelAdapterCatalog().map((entry) => [entry.id, entry.capabilities]))
+  expect(builtin.get('typesafe-systemone')).toMatchObject({ payload: true, payloadOnly: true })
+  // Every conversation adapter declares neither payload key.
+  for (const id of ['openai-completions', 'anthropic-messages', 'openai'])
+    expect(builtin.get(id)).toEqual({ imageInput: true, tools: true, streaming: true })
+})

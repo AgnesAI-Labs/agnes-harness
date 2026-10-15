@@ -16,7 +16,7 @@ import type { TicketPort } from '@agnes/daemon-foundation/storage/lister'
 import type { WorkspaceBindingEnvelope } from '@agnes/daemon-foundation/storage/workspaces'
 import {
   ActivationInProgressError,
-  isPayloadOnlyApi,
+  payloadOnlyRoutes,
   type QueuedActivationInvocation,
   SCAN_PAGE_MAX,
   type ScanRead,
@@ -107,7 +107,7 @@ export type AgnesContext = LocalContext & {
    * The registered model adapters, as far as a model list needs them: which API each serves and
    * what it takes. Absent, or failing, the list of models is left whole.
    */
-  modelAdapters?: () => Promise<readonly Pick<AdminModelAdapter, 'wireApi' | 'capabilities'>[]>
+  modelAdapters?: () => Promise<readonly Pick<AdminModelAdapter, 'id' | 'capabilities'>[]>
   /** Host-owned, read-only locked-package mutation readiness. Absence is reported as unknown. */
   lockedPackageMutations?: Readonly<{ status(): unknown }>
   /** Present only when Host completed platform-scoped production admission. */
@@ -1953,6 +1953,7 @@ export function registerAgnes(
       // A catalog that cannot be read leaves the list whole; the model switch gate still refuses
       // such a model, so listing it cannot select it.
     }
+    const payloadOnly = payloadOnlyRoutes(adapters, pr.provider.routes ?? [])
     // ResolvedProfile has no branding field. ApisListResult keeps `branding` optional, so it is simply
     // omitted here rather than read off a key that does not exist; host owns branding and has to
     // publish it before this can be filled.
@@ -1962,18 +1963,16 @@ export function registerAgnes(
         resolvedProfileHash: pr.hash ?? null,
         presets: pr.presets,
         models: (pr.provider.routes ?? []).flatMap((route) =>
-          (route.models ?? [])
-            .filter((model) => !isPayloadOnlyApi(adapters, model.api))
-            .map((model) => ({
-              route: route.route,
-              id: model.id,
-              input: model.input,
-              ...(model.inputLimits === undefined ? {} : { inputLimits: model.inputLimits }),
-              ...(model.reasoning === undefined ? {} : { reasoning: model.reasoning }),
-              ...(model.thinkingLevelMap === undefined ? {} : { thinkingLevelMap: model.thinkingLevelMap }),
-              contextWindow: model.contextWindow,
-              ...(model.defaultSettings === undefined ? {} : { defaultSettings: model.defaultSettings }),
-            })),
+          (payloadOnly.has(route.route) ? [] : (route.models ?? [])).map((model) => ({
+            route: route.route,
+            id: model.id,
+            input: model.input,
+            ...(model.inputLimits === undefined ? {} : { inputLimits: model.inputLimits }),
+            ...(model.reasoning === undefined ? {} : { reasoning: model.reasoning }),
+            ...(model.thinkingLevelMap === undefined ? {} : { thinkingLevelMap: model.thinkingLevelMap }),
+            contextWindow: model.contextWindow,
+            ...(model.defaultSettings === undefined ? {} : { defaultSettings: model.defaultSettings }),
+          })),
         ),
       },
       // The verifier writes these during initialize. Missing values fail closed for a bare endpoint

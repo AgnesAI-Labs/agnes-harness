@@ -199,7 +199,16 @@ it('leaves the models of a payload-only adapter out of the session catalog', asy
     capabilities: { imageInput: false, tools: false, streaming: false, ...capabilities },
   })
   const host = {
-    profile: { presets: { default: 'standard', allowed: ['standard'] }, bundleCatalog: {} },
+    profile: {
+      presets: { default: 'standard', allowed: ['standard'] },
+      bundleCatalog: {},
+      provider: {
+        routes: [
+          { route: 'jev', api: 'typesafe-systemone' },
+          { route: 'mixed-route', api: 'mixed' },
+        ],
+      },
+    },
     providers: { catalog: () => [] },
     kernel: { loops: { catalog: () => [] } },
     modelAdapterCatalog: () => [

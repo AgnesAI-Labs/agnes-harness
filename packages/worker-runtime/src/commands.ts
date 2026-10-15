@@ -821,7 +821,11 @@ export async function handleServiceCommand(
           isDefault: id === host.profile.presets.default,
         })),
         loops: host.kernel.loops.catalog(),
-        modelAdapters: conversationModelAdapters(host.modelAdapterCatalog(), host.provider.models()),
+        modelAdapters: conversationModelAdapters(
+          host.modelAdapterCatalog(),
+          host.provider.models(),
+          host.profile.provider.routes ?? [],
+        ),
       }
     }
     case 'session.runtime': {

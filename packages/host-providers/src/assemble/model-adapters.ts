@@ -275,6 +275,25 @@ export const builtinModelAdaptersPlugin = {
   },
 }
 
+/**
+ * The builtin registrations as the catalog lists them, read without a Host by letting the plugin
+ * register into a recorder. What each takes is declared on its registration, so a process that holds
+ * no adapter registry can still tell, for example, that `typesafe-systemone` answers payloads only.
+ */
+export function builtinModelAdapterCatalog(): readonly Pick<
+  ModelAdapterCatalogEntry,
+  'id' | 'wireApi' | 'capabilities'
+>[] {
+  const found: Pick<ModelAdapterCatalogEntry, 'id' | 'wireApi' | 'capabilities'>[] = []
+  builtinModelAdaptersPlugin.apply({
+    providers: {
+      register: (_kind: unknown, adapter: ModelAdapter) =>
+        void found.push({ id: adapter.id, wireApi: adapter.wireApi, capabilities: adapter.capabilities }),
+    },
+  } as never)
+  return found
+}
+
 /** Builtins use exactly the same registration contract as community plugin rows. */
 export function installModelAdapters(root: Context, origins?: RowOriginLookup): ModelAdapterRegistry {
   return new ModelAdapterRegistry(root, origins)

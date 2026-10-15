@@ -67,6 +67,7 @@ describe('code presets under a remote sandbox', () => {
             // transport intentionally omitted: this is the local-deployment shape.
           },
           runtimes: { python: () => ({}) },
+          modelAdapterCatalog: () => [],
           routes: { primary: { route: 'default', model: 'model-a' } },
         } as never,
         /* resolved */ {

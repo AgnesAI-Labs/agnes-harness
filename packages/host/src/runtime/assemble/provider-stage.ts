@@ -27,6 +27,7 @@ import {
   verifyRoutes,
 } from '@agnes/host-providers/assemble/routes'
 import type { RouteTable } from '@agnes/protocol'
+import { limitChildModels } from './child-model-scope.js'
 import type { AssemblyContext } from './context.js'
 import type { PresetCatalog } from './presets.js'
 import type { ProcessServices } from './process-services.js'
@@ -50,7 +51,11 @@ export async function assembleProvider(
   // 6 provider - route table first, environment second, credentials third.
   let routes: RouteTable | undefined
   try {
-    routes = materializeRoutes(presets.defaultPreset.view, ctx.profile)
+    routes = materializeRoutes(
+      presets.defaultPreset.view,
+      ctx.profile,
+      pluginTree.root.modelAdapters.catalog(),
+    )
   } catch (error) {
     if (
       !(error instanceof HostError) ||
@@ -103,10 +108,15 @@ export async function assembleProvider(
     say('provider.dispose_failed', { message: error instanceof Error ? error.message : String(error) })
   })
   disposeProvider = () => models.dispose()
+  limitChildModels(
+    models.provider,
+    () => pluginTree.root.modelAdapters.catalog(),
+    () => ctx.profile,
+  )
   const applyModelProfile = async (next: ResolvedProfile): Promise<void> => {
     next = applyProviderSelections(next)
     const nextRoutes = next.provider.routes?.length
-      ? materializeRoutes(presets.defaultPreset.view, next)
+      ? materializeRoutes(presets.defaultPreset.view, next, pluginTree.root.modelAdapters.catalog())
       : undefined
     const nextSecrets =
       next.adapters.secrets.kind === 'file'
