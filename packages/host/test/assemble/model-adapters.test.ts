@@ -104,6 +104,49 @@ it('registers factories with immutable metadata, rejects duplicates and releases
   await root.fiber.dispose()
 })
 
+it('validates payload capabilities at registration and carries them into the catalog', async () => {
+  const root = new Context()
+  new ModelAdapterRegistry(root)
+  const register = (id: string, capabilities: Record<string, unknown>) =>
+    root.providers.registerHost(
+      modelAdapterKind,
+      '@agnes/host',
+      definition({
+        id,
+        capabilities: { imageInput: false, tools: false, streaming: false, ...capabilities } as never,
+      }),
+    )
+  expect(() => register('bad-type', { payload: 'yes' })).toThrow('invalid model adapter registration')
+  expect(() => register('bad-only-type', { payload: true, payloadOnly: 1 })).toThrow(
+    'invalid model adapter registration',
+  )
+  expect(() => register('only-without-payload', { payloadOnly: true })).toThrow(
+    'invalid model adapter registration',
+  )
+  expect(modelAdapterCatalog(root)).toEqual([])
+  register('plain', {})
+  register('payload', { payload: true })
+  register('payload-only', { payload: true, payloadOnly: true })
+  const capabilities = (id: string) =>
+    modelAdapterCatalog(root).find((entry) => entry.id === id)?.capabilities
+  expect(capabilities('plain')).toEqual({ imageInput: false, tools: false, streaming: false })
+  expect(capabilities('payload')).toEqual({
+    imageInput: false,
+    tools: false,
+    streaming: false,
+    payload: true,
+  })
+  expect(capabilities('payload-only')).toEqual({
+    imageInput: false,
+    tools: false,
+    streaming: false,
+    payload: true,
+    payloadOnly: true,
+  })
+  expect(Object.isFrozen(capabilities('payload-only'))).toBe(true)
+  await root.fiber.dispose()
+})
+
 it('cleans up an instance whose asynchronous factory finishes after unregistering', async () => {
   const root = new Context()
   installModelAdapters(root)

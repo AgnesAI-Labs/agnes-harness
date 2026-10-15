@@ -52,6 +52,7 @@ export * from './sandbox-provider.js'
 export * from './search-provider.js'
 export * from './service-provider.js'
 export * from './services.js'
+export * from './side-call.js'
 export * from './skill-install.js'
 export * from './slots.js'
 export {

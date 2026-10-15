@@ -16,6 +16,7 @@ import type { SessionRef } from './common.js'
 import type { DecisionHandle, DecisionPort } from './decisions.js'
 import type { LoopEventPort } from './loop-events.js'
 import type { BindableKind, ServiceInstance, ServicePorts } from './service-provider.js'
+import type { LoopSideCallPort } from './side-call.js'
 import type { ToolResult } from './tool.js'
 
 /** A session pins this identity; reopening never substitutes a different loop. */
@@ -217,6 +218,8 @@ export interface GenericLoopPorts {
     cancelled(): boolean
   }
   readonly effects: { status(invocationId: string): Promise<LoopEffectStatus> }
+  /** One-off model calls to a chosen route and model, outside the conversation. Optional so existing test doubles keep compiling. */
+  readonly sideCall?: LoopSideCallPort
   readonly model: {
     /** RequestBody accepts text, images and other protocol content blocks. */
     stream(request: LoopRequest, signal: AbortSignal): AsyncIterable<InferenceEvent>

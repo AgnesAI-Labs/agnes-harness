@@ -104,6 +104,24 @@ Every `agnes.plugins[].apiRange` and `@agnes/extension-api` dependency range mov
   applies it around the session's selected tool policy, so the floor follows the session's preset
   instead of the Host's default preset. `ToolPolicyRegistryPort` is unchanged; a Host no longer
   wraps it.
+- `GenericLoopPorts.sideCall` (optional) and the `LoopSideCallPort` contract in `side-call.ts`:
+  a loop sends a one-off model request to a chosen route and model, outside the conversation.
+  `prepare(options)` validates the options and returns a frozen `PreparedSideCall` with an
+  estimate; `invoke(prepared, signal)` sends it and returns a `SideCallResult` (`ok`, `failed`,
+  `unknown` after a crash, or `refused` with nothing written); `status(invocationId)` reads a
+  recorded call back. The request goes out as written, with no main system prompt, history or
+  untrusted envelope. Also exported: `SideCallTarget` (a route and model only), `SideCallOptions`,
+  `PreparedSideCall`, `SideCallUsage`, `SideCallFailure` and `SideCallStatus`. The port is optional
+  so a test double of `LoopContext` that does not provide it keeps compiling.
+- `CostLedger.purpose` accepts `'side-call'`, and `CostLedger` has the optional `route`, `adapter`
+  (`{ id, version? }`) and `endpointHost`.
+- `ModelAdapterCapabilities.payload` and `.payloadOnly` (both optional booleans). `payload: true`
+  declares that the adapter reads `RequestBody.payload`; without it the facade rejects a request
+  that carries a payload before sending. `payloadOnly: true` declares that the adapter accepts only
+  a payload and no messages, and requires `payload: true`; pickers of the conversation model leave
+  such an adapter out. A registration whose `payload` or `payloadOnly` is not a boolean, or that
+  sets `payloadOnly` without `payload`, is refused as an invalid model adapter registration. The
+  catalog and the capability names list both keys when they are true.
 
 ## 3.1.0
 

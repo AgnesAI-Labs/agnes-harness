@@ -86,6 +86,7 @@ export type CostLedger = {
     | 'tool'
     | 'title'
     | 'approval-guardian'
+    | 'side-call'
   sourceTurn?: number
   effectId: string
   tokens: TokenCounts
@@ -96,6 +97,12 @@ export type CostLedger = {
   interrupted?: boolean
   adjustment?: { of: Seq; delta: number; usdMicrosDelta?: number; reason: string }
   billing?: Billing
+  /** Route the call went to, when the row is for a side call. */
+  route?: string
+  /** Identity of the model adapter behind the route, when the provider publishes one. */
+  adapter?: { id: string; version?: string }
+  /** Host name of the endpoint the call was sent to. */
+  endpointHost?: string
 }
 export type BillingRow = CostLedger & { sessionKey: string; lane: string; turn: number; step: number }
 export interface BillingSeam {

@@ -58,7 +58,14 @@ export const modelAdapterKind = defineKind<ModelAdapter>({
       !adapter.capabilities ||
       ['imageInput', 'tools', 'streaming'].some(
         (key) => typeof adapter.capabilities[key as keyof typeof adapter.capabilities] !== 'boolean',
-      )
+      ) ||
+      ['payload', 'payloadOnly'].some(
+        (key) =>
+          adapter.capabilities[key as keyof typeof adapter.capabilities] !== undefined &&
+          typeof adapter.capabilities[key as keyof typeof adapter.capabilities] !== 'boolean',
+      ) ||
+      // An adapter that accepts only a payload necessarily accepts a payload.
+      (adapter.capabilities.payloadOnly === true && adapter.capabilities.payload !== true)
     )
       throw new Error('invalid model adapter registration')
   },
