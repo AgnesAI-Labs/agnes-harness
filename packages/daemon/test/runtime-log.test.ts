@@ -14,7 +14,7 @@ it('bounds and rotates runtime facts, omits worker text and detaches the crash l
     evidence.push(Buffer.from('NOT_FOUND private-fixture'))
     evidence.push(Buffer.alloc(100_000))
     expect(evidence.snapshot()).toEqual({ bytes: 65536, code: 'ERR_MODULE_NOT_FOUND' })
-    const log = openRuntimeLog(directory, source, 300)
+    const log = openRuntimeLog(directory, source as unknown as Pick<NodeJS.Process, 'on' | 'off'>, 300)
     expect(source.listenerCount('uncaughtExceptionMonitor')).toBe(1)
     for (let i = 0; i < 20; i++)
       log.record({
