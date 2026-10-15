@@ -677,6 +677,39 @@ it('fails a composite update on a stale active baseline before changing desired 
   expect((await manager.inventory(profileDir)).packages[0]?.entry.integrity).toBe(installed.entry.integrity)
 })
 
+it.each([false, true])(
+  'fails an enable on a stale installed baseline even when the package is already enabled (enabled=%s)',
+  async (alreadyEnabled) => {
+    const preview = await manager.inspect(profileDir, source)
+    await manager.install(profileDir, source, { expectedIntegrity: preview.integrity })
+    const row = (await manager.inventory(profileDir)).packages[0]
+    if (!row) throw new Error('setup install is missing')
+    await manager.trust(profileDir, row.id, {
+      integrity: row.entry.integrity,
+      capabilityHash: row.capabilityHash,
+    })
+    if (alreadyEnabled) await manager.setEnabled(profileDir, row.id, true)
+    const admin = service()
+    const accepted = (await admin.call(
+      '_agnes/v1/packages.enable',
+      {
+        profile,
+        clientId,
+        commandId: 'stale-enable',
+        id: row.id,
+        expectedInstalledIntegrity: `sha256-${'1'.repeat(64)}`,
+      },
+      authority,
+    )) as { operationId: string }
+    expect(await operation(admin, profile, accepted.operationId)).toMatchObject({
+      state: 'failed',
+      retryable: true,
+      error: { code: 'E_PACKAGE_PREVIEW_STALE' },
+    })
+    expect((await manager.inventory(profileDir)).packages[0]?.enabled).toBe(alreadyEnabled)
+  },
+)
+
 it('keeps update and rollback trust, desired state, and activation under one command identity', async () => {
   const first = await manager.inspect(profileDir, source)
   await manager.install(profileDir, source, { expectedIntegrity: first.integrity })

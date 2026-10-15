@@ -1830,8 +1830,12 @@ class Service implements PackageAdminService {
           : 'no'
       case 'untrust':
         return row && !row.trusted && !row.enabled ? 'yes' : 'no'
-      case 'enable':
-        return row?.enabled ? 'yes' : 'no'
+      case 'enable': {
+        // Enabled alone does not prove this request: its installed baseline must match too, or
+        // invoke() refuses the stale view exactly as PackageManager's own check would.
+        const expected = record.request.params.expectedInstalledIntegrity
+        return row?.enabled && (expected === undefined || row.entry.integrity === expected) ? 'yes' : 'no'
+      }
       case 'disable':
         return row && !row.enabled ? 'yes' : 'no'
       case 'remove':
