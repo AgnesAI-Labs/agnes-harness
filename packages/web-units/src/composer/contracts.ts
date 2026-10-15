@@ -106,7 +106,7 @@ export interface ComposerView {
   hasSession: boolean
   /** `action` is the one-click way out of the state the hint describes: switch to this model. */
   hint: { kind: 'shortcut' | 'state'; text: string; action?: { label: string; model: ModelPickerOption } }
-  input: { disabled: boolean; placeholder: string }
+  input: { disabled: boolean; placeholder: string; exampleHint?: boolean }
   loading: boolean
   model: ModelPickerState
   modelSettings?: {
@@ -156,6 +156,8 @@ export interface ComposerHandle {
 export interface ComposerRegionOptions {
   references?: ComposerReferences
   initialDraft?: string
+  /** Localized catalog sample tasks, offered decoratively only in a new-session composer. */
+  examplePrompts?: readonly string[]
   onCancel(): void
   onAttachmentsChange?(): void
   prepareUploadSession?(): Promise<string>

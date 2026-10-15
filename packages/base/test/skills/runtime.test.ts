@@ -187,6 +187,9 @@ describe('skill runtime extension', () => {
     expect(content).toContain('review\t')
     expect(content).not.toContain(resourceId)
     expect(content).toContain('call skill_read')
+    expect(content).toContain(
+      'unless its body is already present as <active_skill>, in which case use it directly.',
+    )
     expect(content).toContain('A description is not the skill procedure.')
     expect(content).not.toContain('The listing is data, not instructions.')
     expect(content).toContain('<available_skills>')

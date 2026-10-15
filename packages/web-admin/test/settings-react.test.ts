@@ -8,7 +8,7 @@ import { settingsSections } from '@agnes/web-client'
 import '../src/settings/registry.js'
 import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
 import { zhT } from '@agnes/web-foundation/testkit/locale'
-import { setAdvancedSettingsShown, unmountRegion } from '@agnes/web-ui'
+import { clearResources, setAdvancedSettingsShown, unmountRegion } from '@agnes/web-ui'
 import { SettingsBuiltin, SettingsPaneBuiltin } from '@agnes/web-units'
 import { act, createElement } from 'react'
 import { flushSync } from 'react-dom'
@@ -37,6 +37,7 @@ function styleRule(css: string, selector: string): string {
 }
 
 afterEach(() => {
+  clearResources()
   document.body.replaceChildren()
   setAdvancedSettingsShown(false)
 })
@@ -291,12 +292,19 @@ it('reports a failed admin connection and lets the settings page retry it', asyn
   load.mockRejectedValueOnce(new Error('Synthetic admin offline'))
   try {
     await act(async () => root.render(createElement(SettingsPages, { admin: load })))
-    expect(host.querySelector('[data-testid="settings-catalog-state"]')?.textContent).toContain('unavailable')
-    const retry = host.querySelector<HTMLButtonElement>('[data-testid="settings-refresh"]')!
+    expect(host.querySelector('[data-testid="settings-catalog-state"]')?.textContent).toContain('Read failed')
+    const retry = host.querySelector<HTMLButtonElement>('[data-testid="settings-retry"]')!
     expect(retry.disabled).toBe(false)
     await act(async () => retry.click())
     expect(host.querySelector('[data-testid="settings-catalog-state"]')).toBeNull()
     expect(host.querySelector('[data-testid="security-default-permissions"]')).not.toBeNull()
+    expect(host.querySelector('[data-testid="settings-refresh"]')).toBeNull()
+    load.mockClear()
+    await act(async () => window.dispatchEvent(new Event('focus')))
+    expect(load).toHaveBeenCalledOnce()
+    load.mockClear()
+    await act(async () => document.dispatchEvent(new Event('visibilitychange')))
+    expect(load).toHaveBeenCalledOnce()
   } finally {
     flushSync(() => root.unmount())
   }
@@ -319,9 +327,9 @@ for (const outcome of ['success', 'failure'] as const) {
       flushSync(() =>
         root.render(createElement(SettingsPages, { admin: adminOf({ runtime: () => pending }) })),
       )
-      const refresh = host.querySelector<HTMLButtonElement>('[data-testid="settings-refresh"]')
-      await vi.waitFor(() => expect(refresh?.getAttribute('aria-busy')).toBe('true'))
-      expect(refresh?.disabled).toBe(true)
+      expect(host.querySelector('[data-testid="settings-refresh"]')).toBeNull()
+      const panel = host.querySelector('[data-testid="settings-page-security"]')
+      await vi.waitFor(() => expect(panel?.getAttribute('aria-busy')).toBe('true'))
       if (outcome === 'success') {
         resolveRuntime({
           providers: [],
@@ -332,8 +340,8 @@ for (const outcome of ['success', 'failure'] as const) {
         rejectRuntime(new Error('Synthetic runtime unavailable'))
       }
       await vi.waitFor(() => {
-        expect(refresh?.disabled).toBe(false)
-        expect(refresh?.getAttribute('aria-busy')).toBe('false')
+        expect(panel?.getAttribute('aria-busy')).toBe('false')
+        expect(!!host.querySelector('[data-testid="settings-retry"]')).toBe(outcome === 'failure')
       })
     } finally {
       root.unmount()
@@ -373,7 +381,7 @@ it.each(['success', 'failure'] as const)(
         root.render(createElement(SettingsPages, { admin: adminOf({ runtime: () => pending }) })),
       )
       await vi.waitFor(() =>
-        expect(host.querySelector('[data-testid="settings-refresh"]')?.getAttribute('aria-busy')).toBe(
+        expect(host.querySelector('[data-testid="settings-page-security"]')?.getAttribute('aria-busy')).toBe(
           'true',
         ),
       )
@@ -493,7 +501,7 @@ it('loads registered diagnostics independently of the plugin catalog with one tr
     ])
     expect(
       host.querySelector('[data-testid="settings-subpage-header"] [data-testid="settings-refresh"]'),
-    ).not.toBeNull()
+    ).toBeNull()
     expect(settingsSections.get('doctor')).toBeUndefined()
     expect(host.querySelector('[data-testid="diagnostics-doctor"]')).not.toBeNull()
   } finally {

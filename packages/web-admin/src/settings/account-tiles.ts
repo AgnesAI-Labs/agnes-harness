@@ -38,6 +38,7 @@ export function providerTiles(
   providers: readonly Provider[],
   tr: (key: string) => string,
   select: (id: string, custom?: boolean) => void,
+  quick = false,
 ): ReactElement {
   const tile = (key: string, name: string, hint: string, onClick: () => void) =>
     createElement(
@@ -66,12 +67,14 @@ export function providerTiles(
     createElement(
       'div',
       { className: 'account-provider-choices' },
-      ...popular.map(providerTile),
-      ...(providers.some((provider) => provider.id === 'openai')
+      ...(quick ? popular.slice(0, 4) : popular).map(providerTile),
+      ...(quick ? [tile('more', tr('accounts.moreProviders'), '…', () => select(''))] : []),
+      ...(!quick && providers.some((provider) => provider.id === 'openai')
         ? [tile('custom', tr('accounts.custom'), tr('accounts.customHint'), () => select('openai', true))]
         : []),
     ),
-    more.length > 0 &&
+    !quick &&
+      more.length > 0 &&
       createElement(
         Disclosure,
         {
@@ -83,6 +86,31 @@ export function providerTiles(
         createElement('div', { className: 'account-provider-choices' }, ...more.map(providerTile)),
       ),
   )
+}
+
+/** Welcome shortcuts reuse the same catalog, ordering and selection as the account form. */
+export function accountWelcome(
+  providers: readonly Provider[],
+  tr: (key: string) => string,
+  begin: () => void,
+  select: (id: string) => void,
+  close: () => void,
+) {
+  return {
+    providerChoices: providerTiles(
+      providers,
+      tr,
+      (id) => {
+        begin()
+        if (id) select(id)
+      },
+      true,
+    ),
+    onDemo: () => {
+      close()
+      document.querySelector<HTMLButtonElement>('#new')?.click()
+    },
+  }
 }
 
 /** A new account is named after its provider; a second one of the same provider gets a number. */

@@ -210,6 +210,12 @@ describe('loading', () => {
     expect(q(again, '[data-testid="content"]')?.closest('[data-fade]')).toBeNull()
     await vi.waitFor(() => expect(q(again, '[data-testid="content"]')?.textContent).toBe('second'))
     expect(read).toHaveBeenCalledTimes(2)
+    value = 'third'
+    await act(async () => window.dispatchEvent(new Event('focus')))
+    await vi.waitFor(() => expect(q(again, '[data-testid="content"]')?.textContent).toBe('third'))
+    value = 'fourth'
+    await act(async () => document.dispatchEvent(new Event('visibilitychange')))
+    await vi.waitFor(() => expect(q(again, '[data-testid="content"]')?.textContent).toBe('fourth'))
   })
 
   it('reads again after a write invalidates the key, and shares one read between readers', async () => {
@@ -240,7 +246,7 @@ describe('loading', () => {
     const host = render(createElement(Reader, { name: 'automation', read }))
     await vi.waitFor(() => expect(q(host, '[data-testid="content"]')?.textContent).toBe('kept'))
     fail = true
-    act(() => invalidateResource('automation'))
+    act(() => window.dispatchEvent(new Event('focus')))
     await vi.waitFor(() =>
       expect(q(host, '[data-testid="loadable-error"]')?.textContent).toContain('backend unavailable'),
     )

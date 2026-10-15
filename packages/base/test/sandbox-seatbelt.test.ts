@@ -15,6 +15,7 @@ it('does not grant implicit temp/device writes and denies both reads and writes'
   expect(args.slice(-2)).toEqual(['echo', 'a b'])
   expect(args[2]).toContain('(deny file-read* file-write* (subpath "/w/secret"))')
   expect(args[2]).not.toContain('/private/tmp')
-  expect(args[2]).not.toContain('/dev')
+  expect(args[2]).toContain('(ioctl-command TIOCSPGRP)')
+  expect(args[2]).not.toMatch(/\(allow file-write[^\n]*\/dev/)
   expect(args[2]).toContain('(deny network*)')
 })

@@ -8,8 +8,11 @@ export const conversationLocaleCatalog: LocaleCatalog = {
   en: {
     'accounts.keepEditing': 'Keep editing',
     'accounts.discardAction': 'Discard changes',
-    'accounts.emptyHelp':
-      'Connect a model to start working. Choose Add account above, or try Demo from a new conversation.',
+    'accounts.or': 'Or',
+    'accounts.demo': 'Try a local demo model',
+    'accounts.demoHelp': 'Open a new session, then choose Demo in the model picker.',
+    'accounts.auxiliaryEmpty': 'Add an account to configure',
+    'accounts.emptyHelp': 'Choose a provider, then enter an API key or sign in.',
     'accounts.readFailed': 'Accounts could not be loaded. Your saved accounts have been kept.',
     'accounts.advanced': 'Advanced options',
     'accounts.back': 'Back',
@@ -343,7 +346,11 @@ export const conversationLocaleCatalog: LocaleCatalog = {
   'zh-CN': {
     'accounts.keepEditing': '继续编辑',
     'accounts.discardAction': '放弃更改',
-    'accounts.emptyHelp': '连接模型后即可开始工作。点击上方“添加账户”，或在新会话里试用 Demo。',
+    'accounts.or': '或者',
+    'accounts.demo': '先用本地演示模型试试',
+    'accounts.demoHelp': '打开新会话后，在模型选择器中选择 Demo。',
+    'accounts.auxiliaryEmpty': '添加账户后可设置',
+    'accounts.emptyHelp': '选一个服务商，填上 API Key 或登录即可。',
     'accounts.readFailed': '无法读取账户，已保存的账户仍然保留。',
     'accounts.advanced': '高级选项',
     'accounts.back': '上一步',

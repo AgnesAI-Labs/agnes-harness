@@ -221,6 +221,10 @@ describe('skill context hook assembly', () => {
           expect(JSON.stringify(request.messages)).toContain(OTHER_EXT_SENTINEL)
           expect(JSON.stringify(request.messages)).toContain(resourceId)
           expect(JSON.stringify(request.messages)).toContain(SKILL_BODY)
+          expect(JSON.stringify(request).split(SKILL_BODY)).toHaveLength(2)
+          expect(request.system).toContain(
+            'unless its body is already present as <active_skill>, in which case use it directly.',
+          )
           expect(JSON.stringify(request.messages)).toContain('Host has already loaded it')
           expect(request.tools.find((tool) => tool.name === 'skill_read')).toBeDefined()
           expect(request.tools.find((tool) => tool.name === 'tool_search')).toBeDefined()
@@ -234,12 +238,14 @@ describe('skill context hook assembly', () => {
           expect(request.tools).toEqual(firstRequest?.tools)
           expect(request.messages.slice(0, firstRequest?.messages.length)).toEqual(firstRequest?.messages)
           expect(JSON.stringify(request.messages).split('[skill loaded]')).toHaveLength(2)
+          expect(JSON.stringify(request).split(SKILL_BODY)).toHaveLength(2)
           return say('discovered')
         },
         (request) => {
           expect(request.system).toBe(firstRequest?.system)
           expect(request.tools).toEqual(firstRequest?.tools)
           expect(JSON.stringify(request.messages).split('[skill loaded]')).toHaveLength(2)
+          expect(JSON.stringify(request).split(SKILL_BODY)).toHaveLength(2)
           return say('reused')
         },
       ],

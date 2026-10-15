@@ -26,6 +26,7 @@ import { createAccountPickers } from './provider-picker.js'
 import { accountNetworkFields } from './settings/account-network.js'
 import { bindAccountPage, linkedAccountRestorer, showAccountDiscard } from './settings/account-page.js'
 import {
+  accountWelcome,
   defaultAccountLabel,
   providerTiles,
   settledTest,
@@ -88,7 +89,6 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   // keeping either reference here would make a reopened settings dialog target a detached pane.
   const accountList = () => optionalElement('config-accounts', 'div')
   let renderedAccountList: HTMLElement | undefined
-  const addAccount = () => optionalElement('config-add-account', 'button')
   // The account dialog itself belongs to the stable settings shell, so an in-flight edit survives
   // a model-pane replacement.
   const accountDialog = optionalElement('account-dialog', 'dialog')
@@ -287,8 +287,6 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       !connected || busy || oauth.operation() !== undefined || selectedAccount() !== undefined
     ui.authMethod.disabled = !connected || busy || oauth.operation() !== undefined
     if (accountName) accountName.disabled = !connected || busy || oauth.operation() !== undefined
-    const currentAddAccount = addAccount()
-    if (currentAddAccount) currentAddAccount.disabled = !connected || busy
     renderAccounts()
     ui.baseUrl.disabled = !connected || busy || oauthSelected
     ui.apiKey.disabled = !connected || busy || oauthSelected
@@ -722,20 +720,19 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     await save()
     return configuration?.revision !== previous && !ui.error.textContent
   }
+  const selectProvider = (id: string, custom = false) => {
+    ui.provider.value = id
+    ui.provider.dispatchEvent(new Event('change', { bubbles: true }))
+    accountStep = 'connection'
+    updateButtons()
+    if (custom && advanced) {
+      setDisclosureOpen(advanced, true)
+      ui.baseUrl.focus()
+    } else if (!isOAuth()) ui.apiKey.focus()
+  }
   const renderProviderChoices = () => {
     const host = optionalElement('config-provider-choices', 'div')
-    if (!host) return
-    const select = (id: string, custom = false) => {
-      ui.provider.value = id
-      ui.provider.dispatchEvent(new Event('change', { bubbles: true }))
-      accountStep = 'connection'
-      updateButtons()
-      if (custom && advanced) {
-        setDisclosureOpen(advanced, true)
-        ui.baseUrl.focus()
-      } else if (!isOAuth()) ui.apiKey.focus()
-    }
-    renderRegion(host, providerTiles(providers, tr, select))
+    if (host) renderRegion(host, providerTiles(providers, tr, selectProvider))
   }
 
   const editAccount = (id?: string): void => {
@@ -852,6 +849,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       createElement(SettingsAccounts, {
         accounts: configuration?.accounts ?? [],
         phase: loadPhase,
+        ...accountWelcome(providers, tr, () => editAccount(), selectProvider, close),
         saved: savedNotice,
         onDismissSaved: () => {
           savedNotice = false

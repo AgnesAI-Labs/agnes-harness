@@ -177,7 +177,9 @@ export function SchedulesPage({
   const [includeArchived, setIncludeArchived] = useState(false)
   // The list is a cached read: shown at once when the page opens again, refreshed behind.
   const listKey = api ? `schedules:${apiKey(api)}:${includeArchived ? 'all' : 'live'}` : undefined
-  const list = useResource(listKey, () => (api as SchedulesApi).list({ scope: 'all', includeArchived }))
+  const list = useResource(listKey, () => (api as SchedulesApi).list({ scope: 'all', includeArchived }), {
+    revalidateOnFocus: false,
+  })
   const rows = useMemo(() => (list.data === undefined ? [] : rowsOf(list.data)), [list.data])
   const loading = list.loading
   // Failures of an action the reader took; a failed read shows where the list is.

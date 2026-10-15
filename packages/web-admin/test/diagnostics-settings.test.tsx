@@ -70,7 +70,10 @@ it.each([false, true])(
     const fetcher = vi.fn<typeof fetch>(async (url, init) => {
       if (String(url).endsWith('/doctor'))
         return Response.json({
-          checks: [{ id: 'node', status: 'ok', fixHintKey: 'doctor.fix.node' }],
+          checks: [
+            { id: 'node', status: 'ok', fixHintKey: 'doctor.fix.node' },
+            { id: 'accounts', status: 'ok', fixHintKey: 'doctor.fix.accounts' },
+          ],
           status: 'ok',
         })
       return Response.json(init?.method ? bundle : { bundle, doctorAvailable })
@@ -298,8 +301,15 @@ it('groups each check once, excludes unavailable workers, and shows only supplie
     })),
   }
   const host = await mount(healthApi(report, 'unavailable', 'warn'))
-  expect(host.querySelector('.agnes-doctor-heartbeat')?.getAttribute('data-state')).toBe('warn')
+  expect(host.querySelector('.agnes-doctor-footer')?.getAttribute('data-state')).toBe('warn')
   expect(host.querySelector('.agnes-doctor-service')?.textContent).toContain('Needs attention')
+  expect(host.querySelector('.agnes-doctor-ecg')).toBeNull()
+  expect(host.querySelector('.agnes-doctor-footer [data-testid=diagnostics-summary-copy]')).not.toBeNull()
+  expect(host.querySelector('.agnes-doctor-footer [data-testid=diagnostics-export]')).not.toBeNull()
+  expect(host.querySelectorAll('.agnes-doctor-card')).toHaveLength(1)
+  expect(
+    host.querySelector('[data-testid=doctor-check-accounts] [data-testid=doctor-probe-accounts]'),
+  ).not.toBeNull()
   const groups = [...host.querySelectorAll('[data-doctor-group]')]
   expect(
     groups.map((group) => [
@@ -312,6 +322,8 @@ it('groups each check once, excludes unavailable workers, and shows only supplie
     ['isolation', '2/2'],
     ['connection', '1/3'],
   ])
+  expect(groups[0]?.querySelector('small')?.getAttribute('data-tone')).toBe('warn')
+  expect(groups[1]?.querySelector('small')?.getAttribute('data-tone')).toBe('ok')
   for (const id of [...checkIds, 'worker'])
     expect(host.querySelectorAll(`[data-testid="doctor-check-${id}"]`)).toHaveLength(1)
   const row = (id: string) => {

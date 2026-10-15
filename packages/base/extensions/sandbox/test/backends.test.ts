@@ -113,7 +113,8 @@ describe('closed-network backend compilers', () => {
     )
     expect(profile).toContain('(deny network*)')
     expect(profile).not.toContain('/private/tmp')
-    expect(profile).not.toContain('/dev')
+    expect(profile).toContain('(ioctl-command TIOCSPGRP)')
+    expect(profile).not.toMatch(/\(allow file-write[^\n]*\/dev/)
   })
 
   it('does not return raw argv for a Windows backend it cannot enforce', () => {

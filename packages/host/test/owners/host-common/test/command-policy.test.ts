@@ -71,7 +71,9 @@ describe('checkCommandRule', () => {
   })
   it('accepts the shipped standard preset absolute-path rule at session open', () => {
     const approval = loadPreset('standard').approval as { command_policy: CommandRule[] }
-    expect(approval.command_policy).toHaveLength(1)
+    expect(approval.command_policy).toContainEqual(
+      expect.objectContaining({ tool: 'edit|write', action: 'allow' }),
+    )
     for (const rule of approval.command_policy) expect(checkCommandRule(rule)).toBeUndefined()
   })
 

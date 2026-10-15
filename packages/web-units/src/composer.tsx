@@ -26,6 +26,7 @@ import {
   INITIAL_VIEW,
   pickerState,
 } from './composer/contracts.js'
+import { useExampleHint } from './composer/example-hint.js'
 import { ComposerExtras } from './composer/extras.js'
 import { FileMentionLayer, mentionTokens, useFileMentions } from './composer/file-mentions.js'
 import type { ComposerAttachment } from './composer/image-files.js'
@@ -49,6 +50,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   {
     references,
     initialDraft = '',
+    examplePrompts = [],
     initialView = INITIAL_VIEW,
     dependencies,
     onCancel,
@@ -100,6 +102,23 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     handlePaste,
     handleDrop,
   } = useComposerAttachments({ view, dependencies, prepareUploadSession, onAttachmentsChange, onError })
+
+  const [focused, setFocused] = useState(false)
+  const hasAttachments = attachments.length + pendingCount + uploads.chips.length > 0
+  const example = useExampleHint(
+    examplePrompts,
+    view.input.exampleHint === true &&
+      !view.input.disabled &&
+      !view.loading &&
+      !view.sending &&
+      !draft &&
+      !hasAttachments,
+  )
+  const { pause, resume } = example
+  useEffect(() => {
+    if (draft || hasAttachments) pause()
+    else if (!focused) resume()
+  }, [draft, hasAttachments, focused, pause, resume])
 
   // What React last rendered into the textarea; a host edit is pending while it differs from draftRef.
   const renderedDraft = useRef(initialDraft)
@@ -295,6 +314,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         data-agnes-region="composer"
         data-agnes-region-owner="builtin"
         data-agnes-region-unit="composer"
+        data-example-hint={example.visible || undefined}
+        onFocusCapture={() => {
+          setFocused(true)
+          if (draftRef.current || hasAttachments) example.pause()
+        }}
+        onBlurCapture={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false)
+        }}
+        onInputCapture={() => example.pause()}
+        onPasteCapture={() => example.pause()}
         data-busy={view.send.mode === 'busy'}
         onDragOver={(event: DragEvent<HTMLFormElement>) => {
           if (event.dataTransfer.types.includes('Files')) event.preventDefault()
@@ -319,6 +348,19 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           disabled={imageDisabled}
         />
         {slots?.overlay}
+        {example.visible && (
+          <div className="composer-example-hint" aria-hidden="true">
+            <span className="composer-example-text">
+              {example.text}
+              <span className="composer-example-caret" />
+            </span>
+            {example.complete && (
+              <span className="composer-example-adopt">
+                <kbd>{t('composer.example.tab')}</kbd> {t('composer.example.adopt')}
+              </span>
+            )}
+          </div>
+        )}
         <label className="visually-hidden" htmlFor="prompt">
           {t('composer.input.label')}
         </label>
@@ -335,6 +377,24 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             onChange={changeDraft}
             onKeyDown={(event) => {
               const native = event.nativeEvent as KeyboardEvent
+              if (
+                event.key === 'Tab' &&
+                !event.shiftKey &&
+                !event.ctrlKey &&
+                !event.metaKey &&
+                !event.altKey &&
+                !native.isComposing &&
+                example.complete &&
+                !currentDraft() &&
+                !attachmentsRef.current.length &&
+                !pendingCountRef.current &&
+                !uploads.count()
+              ) {
+                event.preventDefault()
+                editDraft(0, 0, example.text)
+                example.pause()
+                return false
+              }
               // A file chip is one piece of text: Backspace and Delete take it whole.
               mentions.keydown({
                 key: event.key,

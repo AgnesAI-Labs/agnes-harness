@@ -101,34 +101,22 @@ describe('migrated empty-state region', () => {
     }, committed)
   })
 
-  it('names the product over its one-line promise and sends a picked starting point to the composer', async () => {
+  it('names the product over its promise without starter cards or suggestion copy', async () => {
     const slots = await registry()
     const section = document.createElement('section')
     section.id = 'empty-state'
     document.body.append(section)
     mounts.push(mountEmptyStateRegion(slots, section, { locale: zhLocaleService() }))
-    const picked: unknown[] = []
-    const listen = (event: Event) => picked.push((event as CustomEvent).detail)
-    document.addEventListener('agnes:compose-suggestion', listen)
-    try {
-      await vi.waitFor(() => {
-        const title = section.querySelector('#empty-state-title')
-        expect(title?.textContent).toBe('Agnes Harness')
-        expect(title?.getAttribute('translate')).toBe('no')
-        expect(section.querySelector('.empty-state-copy')?.textContent).toBe('以可信为根基，为真实世界而生。')
-        expect(section.querySelectorAll('[data-testid="task-suggestions"] button')).toHaveLength(3)
-      }, committed)
-      const prompts = section.querySelectorAll<HTMLButtonElement>('[data-testid="task-suggestions"] button')
-      expect(Array.from(prompts, (prompt) => prompt.textContent)).toEqual([
-        '介绍这个项目',
-        '检查潜在问题',
-        '补充实用测试',
-      ])
-      prompts[1]?.click()
-      expect(picked).toEqual(['检查潜在问题'])
-    } finally {
-      document.removeEventListener('agnes:compose-suggestion', listen)
-    }
+    await vi.waitFor(() => {
+      expect(section.querySelector('#empty-state-title')?.textContent).toBe('Agnes Harness')
+      expect(section.querySelector('.empty-state-copy')?.textContent).toBe('以可信为根基，为真实世界而生。')
+      expect(
+        section.querySelectorAll(
+          '[data-testid="agent-suggestion"], [data-testid="task-suggestions"], .empty-state-agents-note',
+        ),
+      ).toHaveLength(0)
+      expect(section.textContent).not.toContain('业务 Agent 是装好就能用')
+    }, committed)
   })
 
   it('allows a lower-priority replaceable unit without changing the outer section', async () => {
@@ -387,9 +375,7 @@ describe('migrated settings panes', () => {
     const hosts = [
       ...config.querySelectorAll<HTMLElement>('[data-agnes-settings-pane-slot], [data-agnes-dsh-slot]'),
     ]
-    const refresh = config.querySelector<HTMLButtonElement>('#config-add-account')
-    const refreshed = vi.fn()
-    refresh?.addEventListener('click', refreshed)
+    const accounts = config.querySelector('#config-accounts')
     mount.open('appearance')
     const dark = config.querySelector<HTMLInputElement>('input[name="agnes-theme"][value="dark"]')
     dark?.click()
@@ -404,9 +390,8 @@ describe('migrated settings panes', () => {
     expect(config.querySelector('#model-settings-pane')?.textContent).toContain('Models & accounts')
     expect(config.querySelector('#model-settings-pane')?.textContent).not.toContain('模型与账户')
     for (const host of hosts) expect(config.querySelector(`#${host.id}`)).toBe(host)
-    expect(config.querySelector('#config-add-account')).toBe(refresh)
-    refresh?.click()
-    expect(refreshed).toHaveBeenCalledOnce()
+    expect(config.querySelector('#config-accounts')).toBe(accounts)
+    expect(config.querySelector('#model-settings-pane .agnes-settings-header button')).toBeNull()
     expect(config.querySelector('#appearance-settings-pane')?.hasAttribute('hidden')).toBe(false)
     expect(config.querySelector('#model-settings-pane')?.hasAttribute('hidden')).toBe(true)
     expect(dark?.checked).toBe(true)
@@ -440,7 +425,7 @@ describe('migrated settings panes', () => {
       expect(
         config.querySelector('#fixture-settings-footer-content')?.closest('.config-workspace'),
       ).toBeTruthy()
-      expect(config.querySelector('#config-add-account')).toBeTruthy()
+      expect(config.querySelector('#config-accounts')).toBeTruthy()
       expect(config.querySelector('#account-dialog')).toBeTruthy()
     }, committed)
 

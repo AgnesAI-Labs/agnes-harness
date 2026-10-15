@@ -475,7 +475,7 @@
   .turn-action[data-copied="true"] {
     color: var(--agnes-status-success-text);
   }
-  /* Empty conversation: greeting, one line of purpose, a few starting points. */
+  /* New-session hero: the brand lockup and its one-line promise. */
   #empty-state .ant-welcome.empty-state-welcome {
     flex-direction: column;
     align-items: center;
@@ -504,39 +504,19 @@
   }
   .empty-state-lockup .empty-brand-mark {
     flex: none;
-    width: 2.5rem;
-    height: 2.5rem;
+    width: 1.875rem;
+    height: 1.875rem;
     margin: 0;
   }
   .empty-state-heading {
     display: block;
     min-width: 0;
     color: var(--agnes-brand-mark);
-    font-size: 1.75rem;
+    font-size: var(--font-size-title);
     font-weight: var(--font-weight-semibold);
-    line-height: 2.5rem;
+    line-height: var(--line-title);
     white-space: nowrap;
   }
-  .empty-state-copy {
-    display: block;
-    margin: 0;
-  }
-  #empty-state .ant-prompts.empty-state-suggestions,
-  #empty-state .empty-state-suggestions .ant-prompts-list {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: var(--s8);
-  }
-  #empty-state .empty-state-suggestions .ant-prompts-item {
-    padding: 0;
-    border: 0;
-    background: transparent;
-  }
-  #empty-state .empty-state-suggestions .ant-prompts-item p {
-    margin: 0;
-  }
-
   /* Approval: a bordered card, no shadow. The risk line carries the level in colour and words. */
   [data-agnes-region="approval"] {
     border-radius: var(--radius-md);

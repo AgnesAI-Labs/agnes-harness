@@ -34,10 +34,9 @@ it('restores focus on Escape, resizes with keys, retires registrations and detac
   expect(/\.workbench-terminal,\s*\.workbench-terminal-job \{([^}]*)\}/.exec(css)?.[1]).not.toContain(
     'height: 100%',
   )
-  const emptyGroup = /\.workbench-terminal-empty-group \{([^}]*)\}/.exec(css)?.[1]
-  expect(emptyGroup).toContain('margin-block: auto;')
-  expect(emptyGroup).toContain('flex-shrink: 0;')
-  expect(/\.workbench-terminal-footer \{([^}]*)\}/.exec(css)?.[1]).not.toContain('border')
+  expect(css).toContain('@container (max-width: 560px)')
+  expect(/\.workbench-terminal-bar \{([^}]*)\}/.exec(css)?.[1]).toContain('width: 168px')
+  expect(css).toContain('flex-direction: row;')
   localStorage.clear()
   document.body.innerHTML =
     '<div class="workbench-split"><div id="controls"></div><aside id="workbench-right" hidden><div id="workbench-right-content"></div></aside><aside id="workbench-bottom" hidden><div id="workbench-bottom-content"></div></aside></div>'

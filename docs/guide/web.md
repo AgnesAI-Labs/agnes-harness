@@ -50,6 +50,8 @@ On desktop, collapsing the sidebar keeps an icon rail for New session, Agent · 
 
 The thin ticks along the left edge of the conversation are the prompt navigator: one per prompt you sent, with the one you are reading drawn darker. All ticks stay short until the pointer enters the navigator, then nearby ticks lengthen; hover one to preview that prompt and the start of its answer, and click to jump to it with a brief highlight. Press Option+↑ / Option+↓ (Alt+↑ / Alt+↓ on Windows and Linux) for the previous or next prompt; when the window is narrow or the workbench leaves no room on the left, the ticks hide and the shortcuts still work. The bookmark button on the preview marks a prompt; bookmarks are saved with the session and show as a small dot beside the tick.
 
+On the new-session home, an empty composer types sample tasks from the business-agent catalog. When **Tab Adopt** appears, Tab fills the draft and puts the caret at the end; it does not send the task. Typing, pasting or attaching pauses the examples until the composer is empty and unfocused again. Otherwise Tab follows normal focus navigation. Reduced motion keeps the normal static placeholder without Tab adoption. Find the examples themselves on the sidebar's **Business agents** page.
+
 The first message proceeds once the new session is ready; refreshing the sidebar does not block sending. A sidebar refresh failure is reported separately and does not restore an already submitted message as a draft.
 Resource updates discovered during startup are prepared while the worker is idle. Updates discovered during a running turn remain deferred until before the next turn. Repeated Skill scans with unchanged resources do not trigger another worker reload.
 

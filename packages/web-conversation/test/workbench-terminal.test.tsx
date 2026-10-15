@@ -51,8 +51,8 @@ function mount(jobs = [job()]) {
   const session = {
     id: 's',
     jobsRead: async (id?: string) => ({
-      jobs,
-      completions: [],
+      jobs: jobs.map(({ stdout, stderr, ...row }) => row),
+      completions: jobs.filter((row) => row.status !== 'running'),
       ...(id ? { job: jobs.find((row) => row.id === id) } : {}),
     }),
     jobsControl,
@@ -95,63 +95,74 @@ async function menu(tab: Element, keyboard = false) {
   return within(popup as unknown as HTMLElement)
 }
 
-it('creates from the guide with the remembered shell, and the chevron and plus menus choose shells or attach jobs', async () => {
+it('auto-opens once, lists Agent jobs read-only, retains completed output until removal and supports shell menus', async () => {
   localStorage.setItem('agnes.workbench.terminal.shell', 'zsh')
-  const { host, jobsControl } = mount()
-  await vi.waitFor(() => expect(host.querySelector('li')).not.toBeNull())
-  expect(host.textContent).toContain('在会话工作区运行命令 · zsh')
-  expect(host.textContent).toContain('关闭工作台后，进程仍会运行')
-  const group = host.querySelector('.workbench-terminal-empty-group')
-  if (!group) throw new Error('Missing centred guide group')
-  expect(group.querySelector('.workbench-terminal-guide')).not.toBeNull()
-  expect(group.querySelector('.workbench-terminal-available')).not.toBeNull()
-  expect(group.querySelector('footer')?.className).toBe('workbench-terminal-footer')
-  click(within(host).getByLabelText('终端 shell'))
-  await vi.waitFor(() => expect(document.querySelector('[role=menu]')).not.toBeNull())
-  click(
-    within(document.querySelector('[role=menu]') as HTMLElement).getByRole('menuitem', {
-      name: /新建终端 · bash/,
-    }),
+  const agent = job()
+  const listed = [agent]
+  const { host, jobsControl } = mount(listed)
+  await vi.waitFor(() => expect(host.querySelectorAll('[role=option]')).toHaveLength(2))
+  expect(jobsControl).toHaveBeenCalledWith({ operation: 'open', shell: 'zsh', columns: 100, rows: 30 })
+  expect(jobsControl.mock.calls.filter(([input]) => input.operation === 'open')).toHaveLength(1)
+  expect(host.textContent).not.toContain('关闭工作台后')
+  click(host.querySelector('#terminal-tab-job'))
+  await vi.waitFor(() =>
+    expect(host.querySelector('.workbench-terminal-readonly')?.textContent).toContain(
+      'Agent 运行的命令 · 只读',
+    ),
   )
-  await vi.waitFor(() => expect(host.querySelector('[role=tab]')).not.toBeNull())
-  expect(jobsControl).toHaveBeenCalledWith({ operation: 'open', shell: 'bash', columns: 100, rows: 30 })
+  await vi.waitFor(() => expect(host.querySelector('input')?.disabled).toBe(true))
+  agent.status = 'failed'
+  agent.code = 1
+  agent.stdout = 'retained output'
+  await vi.waitFor(() => expect(host.textContent).toContain('退出 1'))
+  await vi.waitFor(() => expect(host.textContent).toContain('retained output'))
+  listed.splice(0, 1) // The backend registry can evict a completed job; the followed output remains available.
+  click(host.querySelector('#terminal-tab-human-1'))
+  click(host.querySelector('#terminal-tab-job'))
+  await vi.waitFor(() => expect(host.textContent).toContain('retained output'))
+  expect(host.querySelector('#terminal-tab-job')?.getAttribute('aria-selected')).toBe('true')
+  const agentActions = await menu(host.querySelector('#terminal-tab-job') as HTMLElement, true)
+  expect(agentActions.queryByText('重命名')).toBeNull()
+  click(agentActions.getByText('取消跟随'))
+  await vi.waitFor(() => expect(host.querySelectorAll('[role=option]')).toHaveLength(1))
+  const actions = await menu(host.querySelector('[data-testid=terminal-new]') as HTMLElement)
+  click(actions.getByRole('menuitem', { name: /新建终端 · bash/ }))
+  await vi.waitFor(() => expect(host.querySelectorAll('[role=option]')).toHaveLength(2))
   expect(localStorage.getItem('agnes.workbench.terminal.shell')).toBe('bash')
   click(host.querySelector('[data-testid=terminal-new]'))
-  await vi.waitFor(() => expect(host.querySelectorAll('[role=tab]')).toHaveLength(2))
-  const actions = await menu(host.querySelector('[data-testid=terminal-new]') as HTMLElement)
-  expect(actions.getByRole('menuitem', { name: /bash · 上次使用/ })).toBeTruthy()
-  click(actions.getByRole('menuitem', { name: /连接 Agent 的任务 · npx serve/ }))
-  await vi.waitFor(() =>
-    expect(host.querySelector('.workbench-terminal-readonly')?.textContent).toBe('Agent 正在使用 · 只读'),
-  )
-  expect(host.querySelector('[title="Agent 的任务 · 只读"]')).not.toBeNull()
-  await vi.waitFor(() => expect(host.querySelector('input')?.disabled).toBe(true))
-  const agentActions = await menu(host.querySelector('[aria-selected=true]') as HTMLElement, true)
-  expect(agentActions.queryByText('重命名')).toBeNull()
-  expect(agentActions.queryByText(/中断/)).toBeNull()
-  click(agentActions.getByText('取消跟随'))
-  await vi.waitFor(() => expect(host.querySelectorAll('[role=tab]')).toHaveLength(2))
-  expect(jobsControl.mock.calls.every(([input]) => input.operation === 'open')).toBe(true)
+  await vi.waitFor(() => expect(host.querySelectorAll('[role=option]')).toHaveLength(3))
 })
 
-it('the empty guide launches the last shell and empty-state job rows attach without taking control', async () => {
-  localStorage.setItem('agnes.workbench.terminal.shell', 'pwsh')
-  const { host, jobsControl } = mount()
-  await vi.waitFor(() => expect(host.querySelector('li')).not.toBeNull())
-  click(host.querySelector('[data-testid=terminal-attach]'))
-  await vi.waitFor(() => expect(host.querySelector('.workbench-terminal-readonly')).not.toBeNull())
+it('does not reopen after closing the last terminal, including after remount, and offers a minimal new button', async () => {
+  const { host, jobsControl, session } = mount([])
+  await vi.waitFor(() => expect(host.querySelectorAll('[role=option]')).toHaveLength(1))
   click(host.querySelector('[data-testid=terminal-tab-close]'))
+  await vi.waitFor(() => expect(within(document.body).getByRole('button', { name: '终止进程' })).toBeTruthy())
+  click(within(document.body).getByRole('button', { name: '终止进程' }))
   await vi.waitFor(() => expect(host.querySelector('[data-testid=terminal-empty]')).not.toBeNull())
-  click(host.querySelector('[data-testid=terminal-new]'))
+  expect(jobsControl.mock.calls.filter(([input]) => input.operation === 'open')).toHaveLength(1)
+  unmountRegion(host)
+  renderRegion(
+    host,
+    <TerminalPanel
+      context={{
+        t: createCatalogTranslator(workbenchLocaleCatalog, 'zh-CN'),
+        data: { session, disabled: false },
+      }}
+    />,
+  )
+  await vi.waitFor(() => expect(host.querySelector('[data-testid=terminal-empty]')).not.toBeNull())
+  expect(jobsControl.mock.calls.filter(([input]) => input.operation === 'open')).toHaveLength(1)
+  click(within(host).getByRole('button', { name: '+ 新建终端' }))
   await vi.waitFor(() =>
-    expect(jobsControl).toHaveBeenCalledWith({ operation: 'open', shell: 'pwsh', columns: 100, rows: 30 }),
+    expect(jobsControl.mock.calls.filter(([input]) => input.operation === 'open')).toHaveLength(2),
   )
 })
 
 it('long-presses plus without also creating a terminal, and tolerates unavailable browser storage', async () => {
   const human = job({ id: 'mine', owner: 'human', shell: 'zsh' })
   const { host, jobsControl } = mount([human])
-  await vi.waitFor(() => expect(host.querySelector('[role=tab]')).not.toBeNull())
+  await vi.waitFor(() => expect(host.querySelector('[role=option]')).not.toBeNull())
   const plus = host.querySelector('[data-testid=terminal-new]') as HTMLElement
   vi.useFakeTimers()
   try {
@@ -188,13 +199,13 @@ it('long-presses plus without also creating a terminal, and tolerates unavailabl
 it('offers human controls and details, renames with Enter, Escape, blur and IME, and restores names after refresh', async () => {
   const human = job({ id: 'mine', owner: 'human', shell: 'zsh' })
   const { host, jobsControl, session } = mount([human])
-  await vi.waitFor(() => expect(host.querySelector('[role=tab]')).not.toBeNull())
+  await vi.waitFor(() => expect(host.querySelector('[role=option]')).not.toBeNull())
   await vi.waitFor(() => expect(host.querySelector('[data-testid=terminal-fixture-resize]')).not.toBeNull())
   click(host.querySelector('[data-testid=terminal-fixture-resize]'))
   await vi.waitFor(() =>
     expect(jobsControl).toHaveBeenCalledWith({ operation: 'resize', jobId: 'mine', columns: 80, rows: 24 }),
   )
-  let tab = host.querySelector('[role=tab]') as HTMLElement
+  let tab = host.querySelector('[role=option]') as HTMLElement
   let actions = await menu(tab, true)
   click(actions.getByRole('menuitem', { name: /中断/ }))
   await vi.waitFor(() =>
@@ -241,10 +252,12 @@ it('offers human controls and details, renames with Enter, Escape, blur and IME,
       }}
     />,
   )
-  await vi.waitFor(() => expect(host.querySelector('[role=tab]')?.textContent).toContain('server'))
-  tab = host.querySelector('[role=tab]') as HTMLElement
+  await vi.waitFor(() => expect(host.querySelector('[role=option]')?.textContent).toContain('server'))
+  tab = host.querySelector('[role=option]') as HTMLElement
   actions = await menu(tab)
   click(actions.getByText('终止进程'))
+  await vi.waitFor(() => expect(within(document.body).getByRole('button', { name: '终止进程' })).toBeTruthy())
+  click(within(document.body).getByRole('button', { name: '终止进程' }))
   await vi.waitFor(() => expect(jobsControl).toHaveBeenCalledWith({ operation: 'kill', jobId: 'mine' }))
 })
 
@@ -259,8 +272,8 @@ it('shows the exit line and dot tone, allows tab arrows and dismisses truncation
     truncated: true,
   })
   const { host } = mount([mine, success])
-  await vi.waitFor(() => expect(host.querySelectorAll('[role=tab]')).toHaveLength(2))
-  const [first, second] = [...host.querySelectorAll<HTMLElement>('[role=tab]')]
+  await vi.waitFor(() => expect(host.querySelectorAll('[role=option]')).toHaveLength(2))
+  const [first, second] = [...host.querySelectorAll<HTMLElement>('[role=option]')]
   await vi.waitFor(() => expect(host.textContent).toContain('进程已退出（1）'))
   expect(first?.querySelector('.agh-status-dot')?.getAttribute('data-tone')).toBe('danger')
   expect(second?.querySelector('.agh-status-dot')?.getAttribute('data-tone')).toBe('neutral')
