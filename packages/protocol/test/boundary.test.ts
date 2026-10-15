@@ -104,6 +104,7 @@ describe('protocol src boundary', () => {
         'httpRpcError',
         'CHILD_ENGINE_ROW_IDS',
         'CHILD_ENGINE_CAPABILITIES',
+        'CLIENT_PLATFORM_IMPORTS',
         'parseChildEngineSettings',
         'METHOD_TIERS',
         'ChildEnginesSaveParams',
