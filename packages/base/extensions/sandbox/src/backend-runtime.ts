@@ -5,6 +5,12 @@ import { seatbeltConfine } from './backends/seatbelt.js'
 import type { ClosedNetworkConfineOptions } from './backends/shared.js'
 import { backendCompileFault, requireClosedNetwork, validateArgv } from './backends/shared.js'
 
+export function sandboxImplementation(platform: string): 'implemented' | 'unimplemented' | 'unknown' {
+  if (platform === 'darwin' || platform === 'linux') return 'implemented'
+  if (platform === 'win32') return 'unimplemented'
+  return 'unknown'
+}
+
 export type BackendName = 'none' | 'bwrap' | 'seatbelt'
 
 export type RuntimeBackend = Readonly<{
@@ -29,6 +35,7 @@ export type BackendProbeExec = (
 
 export type DetectBackendInput = Readonly<{
   level: 'L0' | 'L1'
+  platform?: string
   shell: 'posix' | 'powershell'
   options: ClosedNetworkConfineOptions
   probeExec: BackendProbeExec
@@ -116,7 +123,15 @@ export async function detectBackend(input: DetectBackendInput): Promise<RuntimeB
   if (input.level !== 'L1' || input.shell !== 'posix') return NONE_BACKEND
   requireClosedNetwork(input.options.networkAllow)
 
-  for (const backend of [BWRAP_BACKEND, SEATBELT_BACKEND]) {
+  const candidates =
+    input.platform === undefined
+      ? [BWRAP_BACKEND, SEATBELT_BACKEND]
+      : input.platform === 'linux'
+        ? [BWRAP_BACKEND]
+        : input.platform === 'darwin'
+          ? [SEATBELT_BACKEND]
+          : []
+  for (const backend of candidates) {
     if (await runsBoundary(input, backend)) {
       input.log.info('sandbox backend', { name: backend.name, enforcement: backend.enforcement })
       return backend

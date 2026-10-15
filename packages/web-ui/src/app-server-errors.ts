@@ -49,6 +49,10 @@ const messages: Record<string, readonly [string, string]> = {
     'This session was created with an older version that is no longer available. You can read it, or start a new session; an administrator can switch it to the current version.',
     '你的这个会话是用较旧版本创建的，该版本已不可用。你可以查看它，或新开一个会话；管理员也可以把它切换到当前版本。',
   ],
+  sessionSandbox: [
+    'This session has missing or incompatible execution isolation records. You can read its history, but must start a new session to continue working.',
+    '此会话的执行隔离记录缺失或不匹配。可以查看历史，但无法继续执行，请新建会话。',
+  ],
   sessionCorrupt: [
     'This session failed an integrity check and was not opened. Nothing was changed; start a new session.',
     '你的这个会话没有通过完整性检查，所以没有打开，也没有任何改动。请新开一个会话。',

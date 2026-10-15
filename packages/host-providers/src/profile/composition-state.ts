@@ -13,6 +13,8 @@ import {
   removeFileDurablySync,
 } from '@agnes/package-manager'
 
+import { SessionSandboxStore } from './sandbox-state.js'
+
 export type CompositionBinding = Readonly<{
   sessionKey: string
   tree: ResolvedComposition
@@ -109,6 +111,7 @@ export class CompositionSessionStore {
   }
   release(key: string): void {
     removeFileDurablySync(this.path(key))
+    new SessionSandboxStore(dirname(this.root)).release(key)
   }
   /**
    * A binding is the intent record written before the generation pin and released after it, so a crash

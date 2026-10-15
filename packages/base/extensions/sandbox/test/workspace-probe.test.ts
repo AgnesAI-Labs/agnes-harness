@@ -60,4 +60,75 @@ describe('sandboxWorkspaceProbe', () => {
       message: expect.stringContaining('explicitly select full-access'),
     })
   })
+  it('runs the trusted Windows unimplemented policy without an OS probe', async () => {
+    const request = input({
+      level: 'L1',
+      platform: 'win32',
+      shell: 'powershell',
+      onUnavailable: 'allow-if-unimplemented',
+    })
+    const backend = await sandboxWorkspaceProbe(request)
+    expect(backend).toMatchObject({
+      execBackend: 'none',
+      degraded: true,
+      implementation: 'unimplemented',
+      probeState: 'unprobed',
+    })
+    expect(backend.confine({ argv: ['pwsh', '-Command', 'echo ok'], cwd: request.options.cwd })).toEqual([
+      'pwsh',
+      '-Command',
+      'echo ok',
+    ])
+    expect(request.probeExec).not.toHaveBeenCalled()
+  })
+
+  it.each(['darwin', 'linux', 'unknown'])(
+    'refuses failed or unknown implementation on %s',
+    async (platform) => {
+      await expect(
+        sandboxWorkspaceProbe(input({ level: 'L1', platform, onUnavailable: 'allow-if-unimplemented' })),
+      ).rejects.toMatchObject({ code: 'E_SANDBOX_WORKSPACE' })
+    },
+  )
+
+  it.each([
+    ['darwin', '/usr/bin/sandbox-exec', 'seatbelt'],
+    ['linux', 'bwrap', 'bwrap'],
+  ])(
+    'keeps implemented %s isolation when its real probe succeeds',
+    async (platform, executable, backendName) => {
+      const probeExec = vi.fn(async (argv: string[]) => ({
+        code: argv[0] === executable ? 0 : 127,
+        stdout: argv[0] === executable ? 'agnes-sandbox-probe-v1' : '',
+        stderr: '',
+        truncated: false,
+        timedOut: false,
+      }))
+      const backend = await sandboxWorkspaceProbe(
+        input({ level: 'L1', platform, onUnavailable: 'allow-if-unimplemented', probeExec }),
+      )
+      expect(backend).toMatchObject({
+        name: backendName,
+        execBackend: 'l1',
+        implementation: 'implemented',
+        probeState: 'ready',
+        degraded: false,
+      })
+      expect(backend.enforcement).toEqual({ level: 'full', scope: ['file', 'network', 'process'] })
+    },
+  )
+
+  it('keeps required isolation stronger than the unimplemented allowance', async () => {
+    await expect(
+      sandboxWorkspaceProbe(
+        input({
+          level: 'L1',
+          platform: 'win32',
+          shell: 'powershell',
+          required: true,
+          onUnavailable: 'allow-if-unimplemented',
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'E_SANDBOX_WORKSPACE' })
+  })
 })

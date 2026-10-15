@@ -70,6 +70,7 @@ export function yoloEnabled(mode: PermissionMode): boolean {
 const NO_MOTION = { motionName: '' }
 
 export type PermissionPickerState = {
+  isolationNote?: string
   disabled: boolean
   pending: boolean
   selected: PermissionMode | null
@@ -138,7 +139,7 @@ export function PermissionPickerControl({ state, onSelect, onError }: Permission
         aria-controls={open ? 'permission-listbox' : undefined}
         aria-label={tr('settings.picker.aria')}
         aria-busy={state.pending || busy}
-        title={label}
+        title={[label, state.isolationNote].filter(Boolean).join(' · ')}
         disabled={disabled}
         onKeyDown={(event) => {
           if (disabled || open || event.key !== 'ArrowDown') return
@@ -148,6 +149,7 @@ export function PermissionPickerControl({ state, onSelect, onError }: Permission
       >
         <Icon name={permissionIcon(state.selected)} />
         <span data-permission-label={true}>{label}</span>
+        {state.isolationNote && <span data-isolation-note={true}>{state.isolationNote}</span>}
         <Icon name="chevron-down" className="model-chevron" />
       </Button>
     </Popover>

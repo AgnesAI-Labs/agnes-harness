@@ -297,6 +297,14 @@
         "sandbox": {
           "type": "object",
           "additionalProperties": false,
+          "not": {
+            "type": "object",
+            "required": ["level", "on_unavailable"],
+            "properties": {
+              "level": { "const": "L0" },
+              "on_unavailable": { "const": "allow-if-unimplemented" }
+            }
+          },
           "properties": {
             "level": {
               "enum": ["L0", "L1", "L2"]
@@ -305,7 +313,7 @@
               "type": "boolean"
             },
             "on_unavailable": {
-              "enum": ["deny", "allow"]
+              "enum": ["deny", "allow", "allow-if-unimplemented"]
             },
             "extra_paths": {
               "type": "array",

@@ -1,6 +1,6 @@
 import { realpath } from 'node:fs/promises'
 import { detectBackend } from '@agnes/base/sandbox'
-import { createExec, type DoctorOptions, runDoctor } from '@agnes/host'
+import { createExec, createPlatform, type DoctorOptions, runDoctor } from '@agnes/host'
 
 /** Reuses the exact runnable-boundary probe used by the sandbox seam. No authority is granted. */
 export async function runtimeDoctor(options: DoctorOptions) {
@@ -14,7 +14,8 @@ export async function runtimeDoctor(options: DoctorOptions) {
         try {
           const backend = await detectBackend({
             level: 'L1',
-            shell: 'posix',
+            platform: createPlatform().os,
+            shell: createPlatform().shell(),
             options: { cwd: root, allowPaths: [], denyPaths: [root], network: 'deny' },
             probeExec: (argv, input) => exec.run(argv, input),
             log: { info() {}, warn() {}, error() {}, debug() {} },

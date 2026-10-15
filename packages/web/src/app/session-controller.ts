@@ -47,6 +47,7 @@ export function createSessionController(
     | 'selection'
     | 'sending'
     | 'sessionControls'
+    | 'sessionIsolation'
     | 'sessionPending'
     | 'sessionRows'
     | 'sessionTitles'
@@ -156,6 +157,22 @@ export function createSessionController(
       }
       const loaded = binding.session
       context.current = loaded
+      context.sessionIsolation = undefined
+      void Promise.resolve()
+        .then(() => context.client.session.runtime(loaded.id))
+        .then((runtime) => {
+          if (epoch !== context.selection || context.current !== loaded) return
+          const sandbox = runtime.policy?.sandbox
+          if (sandbox?.provider === 'local' && sandbox.enforcement) {
+            context.sessionIsolation = {
+              sessionId: loaded.id,
+              disabled:
+                sandbox.enforcement.level !== 'full' && !sandbox.enforcement.scope.includes('process'),
+            }
+            context.renderControls()
+          }
+        })
+        .catch(() => undefined)
       context.sessionControls = undefined
       context.controlPending = false
       context.offPermission = binding.offPermission

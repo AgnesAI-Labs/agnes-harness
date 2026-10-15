@@ -20,6 +20,7 @@ export const securityCatalog: LocaleCatalog = {
     sandboxLevel: 'Sandbox level',
     required: 'Required',
     onUnavailable: 'If unavailable',
+    'allow-if-unimplemented': 'Without OS isolation only when no implementation exists',
     approvalPolicy: 'Approval policy',
     commandNetwork: 'Command network policy',
     'network.deny': 'Denied',
@@ -38,6 +39,7 @@ export const securityCatalog: LocaleCatalog = {
     'enforcement.none': 'None',
     'enforcement.unavailable': 'Unavailable',
     unmeasured: 'Not measured',
+    noOsIsolation: 'Application permissions apply · OS sandbox off',
     policyDigest: 'Bound policy digest',
     securityHelp:
       'Permissions are enforced by the backend. Availability below comes from the running profile. A sandbox provider declaration does not confirm workspace enforcement; execution probes the chosen workspace and fails closed when required enforcement is unavailable.',
@@ -67,6 +69,7 @@ export const securityCatalog: LocaleCatalog = {
     sandboxLevel: '沙箱级别',
     required: '是否必须',
     onUnavailable: '不可用时',
+    'allow-if-unimplemented': '仅无实现时允许无系统沙箱运行',
     approvalPolicy: '审批策略',
     commandNetwork: '命令网络策略',
     'network.deny': '禁止',
@@ -85,6 +88,7 @@ export const securityCatalog: LocaleCatalog = {
     'enforcement.none': '无',
     'enforcement.unavailable': '不可用',
     unmeasured: '未实测',
+    noOsIsolation: '按所选应用权限执行 · 系统沙箱未启用',
     policyDigest: '绑定策略摘要',
     securityHelp:
       '权限由后台执行。下方可用性来自当前运行配置档。沙箱插件实现的能力声明不代表工作区已隔离；执行时会探测所选工作区，所需隔离不可用时拒绝执行。',

@@ -10,7 +10,6 @@ import { describe, expect, it } from 'vitest'
 const docs = { ...basePresets, ...loadAllPresets() }
 const approvalPolicy = (init: Parameters<typeof BASE_SEAM_PROVIDERS.approval.create>[0]) =>
   BASE_SEAM_PROVIDERS.approval.create(init, new AbortController().signal)
-const preset = resolvePreset('standard-windows', docs).doc
 const request = (path: string): ApprovalRequest => ({
   requestId: 'r',
   kind: 'tool',
@@ -40,7 +39,8 @@ const request = (path: string): ApprovalRequest => ({
   scope: 'local',
 })
 
-describe('standard-windows command floor and approval delivery', () => {
+describe.each(['standard', 'standard-windows'])('%s command floor and approval delivery', (name) => {
+  const preset = resolvePreset(name, docs).doc
   it('gives Skill import enough time for bounded GitHub reads and source approval', () => {
     const tools = readPreset(preset, 'standard-windows').tools
     expect(tools.timeoutMs).toBe(120_000)

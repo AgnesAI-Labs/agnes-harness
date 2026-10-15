@@ -20,11 +20,12 @@ function platformOf(os: string): readonly SandboxPlatform[] {
 export function createLocalSandboxProvider(
   exec: ExecAdapter,
   os: string,
-  options: { ownProcesses?: boolean } = {},
+  options: { ownProcesses?: boolean; l1Implementation?: SandboxCapabilities['l1Implementation'] } = {},
 ): SandboxProvider {
   const platform = platformOf(os)
   const capabilities: SandboxCapabilities = Object.freeze({
     network: true,
+    l1Implementation: options.l1Implementation ?? 'unknown',
     programmatic: os !== 'win32',
     fsWrite: Object.freeze([]),
     platform,

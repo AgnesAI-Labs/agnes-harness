@@ -6,6 +6,13 @@ import { appReadOnly } from '../src/app-notices.js'
 vi.mock('../src/app-notices.js', () => ({ appReadOnly: { show: vi.fn(), clear: vi.fn() } }))
 
 const refusal = { data: { code: SESSION_VERSION_CODES.older } }
+const isolationRefusal = {
+  data: {
+    code: 'E_SANDBOX_WORKSPACE',
+    reason: 'session-execution-record-invalid',
+    messageKey: 'appServer.errors.sessionSandbox',
+  },
+}
 const view = (id: string, hasEarlier = true, scan?: { fromSeq: number; throughSeq: number }) => ({
   timeline: { sessionId: id },
   history: { hasEarlier, ...(scan ? { scan: { reason: 'events', ...scan } } : {}) },
@@ -58,17 +65,77 @@ it('keeps the newest selection when a late loadEarlier response of the previous 
   expect(context.projection).toEqual({ sessionId: 'B' })
 })
 
-it('does not let a late response resurrect read-only state after the selection was cleared', async () => {
+it.each([refusal, isolationRefusal])(
+  'does not let a late response resurrect read-only state after the selection was cleared (%j)',
+  async (error) => {
+    const { context, controller, pending } = setup()
+    const a = controller.show('A', error, 1)
+    await tick()
+    context.selection = 2
+    controller.clear()
+    pending.get('A:200')?.(view('A'))
+    await a
+    expect(context.readOnly).toBeUndefined()
+    expect(context.projection).toBeUndefined()
+  },
+)
+
+it('shows isolation-refused history with only a new-session action, including earlier messages', async () => {
   const { context, controller, pending } = setup()
-  const a = controller.show('A', refusal, 1)
+  const shown = controller.show(
+    'A',
+    {
+      data: {
+        ...isolationRefusal.data,
+        actions: ['upgrade', 'repin'],
+        localized: { en: 'unsafe', 'zh-CN': 'unsafe' },
+      },
+    },
+    1,
+  )
   await tick()
-  context.selection = 2
-  controller.clear()
   pending.get('A:200')?.(view('A'))
-  await a
-  expect(context.readOnly).toBeUndefined()
-  expect(context.projection).toBeUndefined()
+  expect(await shown).toBe(true)
+  expect(context.readOnly).toEqual({ id: 'A', maxNodes: 200, hasEarlier: true })
+  expect(context.projection).toEqual({ sessionId: 'A' })
+  const notice = vi.mocked(appReadOnly.show).mock.lastCall?.[0]
+  expect(notice?.actions.map((action) => action.id)).toEqual(['new'])
+  expect(notice?.message.en).toContain('read')
+  expect(notice?.message['zh-CN']).toContain('查看')
+  const earlier = controller.loadEarlier()
+  await tick()
+  pending.get('A:400')?.(view('A', false))
+  await earlier
+  expect(context.readOnly).toEqual({ id: 'A', maxNodes: 400, hasEarlier: false })
+  expect(context.windowAtStart).toBe(true)
 })
+
+it.each([
+  { data: { code: 'E_SANDBOX_WORKSPACE', reason: 'probe-failed' } },
+  { data: { code: 'E_SANDBOX_WORKSPACE' } },
+  { data: { code: 'E_FORBIDDEN', reason: 'session-execution-record-invalid' } },
+])('does not treat unrelated refusals as readable history (%j)', async (error) => {
+  const { context, controller, pending } = setup()
+  expect(await controller.show('A', error, 1)).toBe(false)
+  expect(pending.size).toBe(0)
+  expect(context.readOnly).toBeUndefined()
+})
+
+it.each(['current', 'changed', 'cleared'])(
+  'offers recovery for unreadable history only while the request is current (%s)',
+  async (selection) => {
+    const { context, controller } = setup()
+    context.client.session.view = async () => {
+      throw new Error('unreadable history')
+    }
+    const shown = controller.show('A', isolationRefusal, 1)
+    if (selection === 'changed') context.selection = 2
+    if (selection === 'cleared') controller.clear()
+    expect(await shown).toBe(selection !== 'current')
+    expect(context.readOnly).toBeUndefined()
+    expect(context.projection).toBeUndefined()
+  },
+)
 
 it('states which rows a truncated record shows', async () => {
   const { controller, pending } = setup()

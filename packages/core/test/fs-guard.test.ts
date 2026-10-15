@@ -163,6 +163,23 @@ describe('what the probe asks', () => {
     )
   })
 
+  it.each([
+    [String.raw`C:\work\项目`, 'C:/work/项目'],
+    [String.raw`\\server\share\work`, '//server/share/work'],
+  ])('keeps the absolute identity of %s in denial probes', (workspaceRoot, canonical) => {
+    const policy: FsPolicy = {
+      workspaceRoot,
+      rules: [rule('allow', workspaceRoot), rule('deny', `${workspaceRoot}/private`, true)],
+      networkAllow: [],
+      digest: '0'.repeat(64),
+    }
+    const probes = enforcementProbes(policy)
+    expect(probes).toContain(`${canonical}/../agnes-fs-enforcement-probe`)
+    expect(probes).toContain(`${canonical}/private`)
+    expect(probes).toContain('private/agnes-fs-enforcement-probe')
+    expect(probes.some((path) => /^\/[A-Za-z]:/.test(path))).toBe(false)
+  })
+
   it('probes nothing for an allow rule: a policy is held to its denials, not its openings', () => {
     const probes = enforcementProbes(testFsPolicy('/w', { extraAllowAbsolute: ['/data/tmp'] }))
     expect(probes.filter((p) => p.startsWith('/data'))).toEqual([])

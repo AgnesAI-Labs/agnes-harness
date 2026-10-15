@@ -125,7 +125,12 @@ export function SecurityStatusPanel({
                   <dt>{t('enforcement')}</dt>
                   <dd>
                     <span data-testid="workspace-enforcement">
-                      {workspace.enforcement ? (
+                      {workspace.provider === 'local' &&
+                      workspace.enforcement &&
+                      workspace.enforcement.level !== 'full' &&
+                      !workspace.enforcement.scope.includes('process') ? (
+                        t('noOsIsolation')
+                      ) : workspace.enforcement ? (
                         <>
                           <span>{t(`enforcement.${workspace.enforcement.level}`)}</span>{' '}
                           {scopes(workspace.enforcement.scope) || '—'}

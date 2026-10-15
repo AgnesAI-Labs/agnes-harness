@@ -949,7 +949,7 @@ it('distinguishes requested permissions from measured workspace enforcement', as
   )
   const rows = host.querySelectorAll('[data-testid="workspace-sandbox-status"]')
   expect(rows).toHaveLength(3)
-  expect(rows[0]?.textContent).toContain(text('enforcement.partial'))
+  expect(rows[0]?.textContent).toContain(text('noOsIsolation'))
   expect(rows[0]?.textContent).toContain('bound-digest')
   expect(rows[1]?.textContent).toContain(text('unmeasured'))
   expect(rows[1]?.querySelector('[data-testid=workspace-enforcement]')?.textContent).not.toContain(

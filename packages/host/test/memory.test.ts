@@ -3,9 +3,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ScriptedProvider } from '@agnes/ai/testkit'
-import { defaultLoopPlugin, memoryPlugin } from '@agnes/base'
+import { defaultLoopPlugin, memoryPlugin, sandboxImplementation, sandboxWorkspaceProbe } from '@agnes/base'
 import type { ApprovalRequest } from '@agnes/core'
+import { createPlatform } from '@agnes/host-infrastructure/adapters/platform'
 import { RequestTraceStore } from '@agnes/host-infrastructure/request-traces'
+import { createSandboxSeam } from '@agnes/host-infrastructure/sandbox-seam'
 import { observabilityPlugin } from '@agnes/observability'
 import { memoryCollector } from '@agnes/observability/testkit'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
@@ -14,6 +16,9 @@ import { afterEach, expect, it } from 'vitest'
 import { baseSeamFactories, createTestHost } from '../testkit/index.js'
 
 const homes: string[] = []
+// Windows exercises the real unimplemented-backend path, including the memory exception.
+// Other platforms retain the simulated L1 fixture; real OS isolation has separate acceptance tests.
+const nativeWindows = process.platform === 'win32'
 afterEach(async () => {
   await Promise.all(homes.splice(0).map((home) => rm(home, { recursive: true, force: true })))
 })
@@ -62,6 +67,7 @@ it.each([
     let provider: ScriptedProvider | undefined
     const { host } = await createTestHost({
       dataDir: home,
+      ...(nativeWindows ? { platform: createPlatform(), sandboxSeam: createSandboxSeam() } : {}),
       disableSessionTitle: true,
       allowed: ['standard', 'full-access'],
       presets: {
@@ -75,6 +81,7 @@ it.each([
       packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
       packages: {
         '@agnes/base': {
+          ...(nativeWindows ? { sandboxImplementation, sandboxWorkspaceProbe } : {}),
           plugins: [
             ...plugins,
             {
@@ -159,6 +166,11 @@ it.each([
     await memory.configure({ mode: 'ask' })
     async function turn(key: string) {
       const session = await host.createSession({ key, cwd: home, preset: 'full-access' })
+      if (nativeWindows)
+        expect(host.sessionRuntime?.(key).policy?.sandbox.enforcement).toEqual({
+          level: 'partial',
+          scope: ['file'],
+        })
       const before = session.lastSeq
       await session.enqueue('next-turn', {
         actor: session.d.actor,
@@ -294,16 +306,24 @@ it('pins index and topic revisions across tool requests and a model retry, then 
   let provider: ScriptedProvider | undefined
   const { host } = await createTestHost({
     dataDir: home,
+    ...(nativeWindows ? { platform: createPlatform(), sandboxSeam: createSandboxSeam() } : {}),
     disableSessionTitle: true,
     presets: {
       standard: {
         name: 'standard',
         extends: 'base',
         model: { route: { primary: 'default' }, retry: { max_attempts: 2, base_delay_ms: 1 } },
+        sandbox: { level: 'L1', required: false, on_unavailable: 'allow-if-unimplemented' },
       },
     },
     packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
-    packages: { '@agnes/base': { plugins, seams: { checkpoint: baseSeamFactories.checkpoint } } },
+    packages: {
+      '@agnes/base': {
+        plugins,
+        seams: { checkpoint: baseSeamFactories.checkpoint },
+        ...(nativeWindows ? { sandboxImplementation, sandboxWorkspaceProbe } : {}),
+      },
+    },
     provider: (profile) => {
       provider = new ScriptedProvider({
         models: profile.provider.routes?.[0]?.models ?? [],
@@ -353,6 +373,11 @@ it('pins index and topic revisions across tool requests and a model retry, then 
       await memory.editFile(file, content, prior.hash)
     }
     const session = await host.createSession({ key: 'turn-snapshot', cwd: home })
+    if (nativeWindows)
+      expect(host.sessionRuntime?.(session.key).policy?.sandbox.enforcement).toEqual({
+        level: 'partial',
+        scope: ['file'],
+      })
     const turn = async () => {
       await session.enqueue('next-turn', {
         actor: session.d.actor,

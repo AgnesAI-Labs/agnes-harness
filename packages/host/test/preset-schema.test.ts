@@ -19,6 +19,27 @@ const docs = Object.fromEntries(
 )
 
 describe('delivered preset schema conformance', () => {
+  it('validates conditional sandbox intent without allowing an explicit L0 combination', () => {
+    for (const required of [false, true]) {
+      expect(
+        validatePreset({
+          name: 'conditional',
+          sandbox: { level: 'L1', required, on_unavailable: 'allow-if-unimplemented' },
+        }),
+      ).toMatchObject({ ok: true })
+    }
+    expect(
+      validatePreset({
+        name: 'inherited',
+        extends: 'standard',
+        sandbox: { on_unavailable: 'allow-if-unimplemented' },
+      }),
+    ).toMatchObject({ ok: true })
+    expect(
+      validatePreset({ name: 'invalid', sandbox: { level: 'L0', on_unavailable: 'allow-if-unimplemented' } }),
+    ).toMatchObject({ ok: false })
+  })
+
   it('includes all delivered recipes and validates exact YAML and merged documents', () => {
     expect(Object.keys(docs).sort()).toEqual([
       'base',

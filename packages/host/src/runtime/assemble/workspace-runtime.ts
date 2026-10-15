@@ -7,7 +7,11 @@ import type { PresetDoc } from '@agnes/host-common/presets/types'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { commandHookInvocationSnapshot } from '@agnes/host-common/profile-policy'
 import type { WorkspaceBinding } from '@agnes/host-common/workspace-authority'
-import { compileWorkspacePolicy, normalizeSandboxStaticConfig } from '@agnes/host-common/workspace-policy'
+import {
+  compileWorkspacePolicy,
+  memoryRequiresFileIsolation,
+  normalizeSandboxStaticConfig,
+} from '@agnes/host-common/workspace-policy'
 import type { PackageModule } from '@agnes/host-extensions/assemble/packages'
 import { powerShellCommand } from '@agnes/host-infrastructure/adapters/powershell-command'
 import type { SessionWorkspaceFence } from '@agnes/host-infrastructure/adapters/session-workspace'
@@ -29,6 +33,7 @@ import {
   LOCAL_SANDBOX_PROVIDER_ID,
   sandboxProviderIdFrom,
 } from '@agnes/host-providers/adapters/sandbox-providers'
+import { SessionSandboxStore } from '@agnes/host-providers/profile/sandbox-state'
 import { remoteSandboxModule } from '../adapters/index.js'
 import type { AssemblyContext } from './context.js'
 import type { PackageSet } from './packages.js'
@@ -60,6 +65,11 @@ function createReadinessManager(
       throw new HostError('E_SANDBOX_WORKSPACE', 'workspace readiness has no compiled policy', {
         detail: { reason: 'workspace-policy-missing' },
       })
+    if (adapters.transport && plan.staticConfig.onUnavailable === 'allow-if-unimplemented')
+      throw new HostError(
+        'E_SANDBOX_WORKSPACE',
+        'remote transport does not declare conditional local isolation support',
+      )
     if (adapters.transport)
       return Object.freeze({
         name: 'remote' as const,
@@ -87,7 +97,7 @@ function createReadinessManager(
         !capabilities.available ||
         (!full &&
           (plan.staticConfig.required ||
-            (plan.staticConfig.level === 'L1' && plan.staticConfig.onUnavailable === 'deny')))
+            (plan.staticConfig.level === 'L1' && plan.staticConfig.onUnavailable !== 'allow')))
       )
         throw new HostError(
           'E_SANDBOX_WORKSPACE',
@@ -109,6 +119,7 @@ function createReadinessManager(
       level: plan.staticConfig.level,
       required: plan.staticConfig.required,
       onUnavailable: plan.staticConfig.onUnavailable,
+      platform: adapters.platform.os,
       shell: adapters.platform.shell(),
       options: {
         ...plan.backendOptions,
@@ -122,6 +133,16 @@ function createReadinessManager(
       log: deps.log,
       signal: key.signal,
     })
+    if (plan.staticConfig.onUnavailable === 'allow-if-unimplemented') {
+      const support = localSandboxImplementation(ctx.profile, modules, adapters.platform.os)
+      if (
+        raw.implementation !== support ||
+        support === 'unknown' ||
+        (raw.execBackend === 'none' && (support !== 'unimplemented' || !raw.degraded)) ||
+        (raw.execBackend === 'l1' && (support !== 'implemented' || raw.probeState !== 'ready'))
+      )
+        throw new HostError('E_SANDBOX_WORKSPACE', 'sandbox capability and execution probe disagree')
+    }
     if (!raw.execBackend || !raw.enforcement)
       throw new HostError('E_SANDBOX_WORKSPACE', 'sandbox probe omitted its posture', {
         detail: { reason: 'workspace-posture-missing' },
@@ -136,6 +157,22 @@ function createReadinessManager(
  * The OS-confinement probe of the local sandbox. Only a builtin package may supply it: the posture
  * it reports (backend, enforcement, the argv rewrite) is what the Host trusts as local isolation.
  */
+export function localSandboxImplementation(
+  profile: Pick<ResolvedProfile, 'packages'>,
+  modules: ReadonlyMap<string, PackageModule>,
+  platform: string,
+): 'implemented' | 'unimplemented' | 'unknown' {
+  const probe = localSandboxProbe(profile, modules)
+  const supplier = [...modules].find(
+    ([id, mod]) =>
+      probe !== undefined &&
+      mod.sandboxWorkspaceProbe === probe &&
+      profile.packages.some((pkg) => pkg.id === id && pkg.trust === 'builtin'),
+  )?.[1]
+  const support = supplier?.sandboxImplementation?.(platform)
+  return support === 'implemented' || support === 'unimplemented' ? support : 'unknown'
+}
+
 export function localSandboxProbe(
   profile: Pick<ResolvedProfile, 'packages'>,
   modules: ReadonlyMap<string, PackageModule>,
@@ -205,11 +242,24 @@ export function createWorkspaceRuntimeFactory(
     preset: PresetDoc = presets.defaultPreset.doc,
     invocation?: import('@agnes/core').WorkspaceInvocationPort,
   ): Promise<SessionWorkspaceRuntime> => {
-    const requiresFileIsolation = ctx.live.pluginTree
-      .get()
-      .root.providers.catalog()
-      .some((entry) => entry.kind === 'memory')
     const requestedSandbox = normalizeSandboxStaticConfig(preset)
+    const implementation =
+      !adapters.transport && sandboxProviderIdFrom(ctx.profile) === LOCAL_SANDBOX_PROVIDER_ID
+        ? localSandboxImplementation(ctx.profile, pkgs.modules, adapters.platform.os)
+        : 'unknown'
+    const unconfined =
+      implementation === 'unimplemented' &&
+      !requestedSandbox.required &&
+      ((requestedSandbox.level === 'L1' && requestedSandbox.onUnavailable === 'allow-if-unimplemented') ||
+        (requestedSandbox.level === 'L0' && requestedSandbox.onUnavailable === 'allow'))
+    const requiresFileIsolation = memoryRequiresFileIsolation(
+      ctx.live.pluginTree
+        .get()
+        .root.providers.catalog()
+        .some((entry) => entry.kind === 'memory'),
+      implementation,
+      requestedSandbox,
+    )
     const sandboxConfig = requiresFileIsolation
       ? {
           ...requestedSandbox,
@@ -218,11 +268,54 @@ export function createWorkspaceRuntimeFactory(
             requestedSandbox.level === 'L1' ? requestedSandbox.onUnavailable : ('allow' as const),
         }
       : requestedSandbox
+    let savedPlan: Awaited<ReturnType<typeof compileWorkspacePolicy>> | undefined
     let fence: SessionWorkspaceFence | undefined
     let posture: Readonly<{ execBackend: SandboxExecBackend; enforcement: Enforcement }> | undefined
     return createSessionWorkspaceRuntime({
       binding,
       ...(invocation ? { invocation } : {}),
+      verifySession: async (key) => {
+        if (!savedPlan || !posture)
+          throw new HostError('E_SANDBOX_WORKSPACE', 'execution policy is not ready')
+        const [history] = await adapters.storage.scan(key, {
+          type: ['session/start'],
+          order: 'desc',
+          limit: 1,
+        })
+        // A newly reserved child reads its parent's prefix before it writes its own session/start.
+        // Use the storage-owned origin, not a key asserted in event data, to distinguish that prefix.
+        const [origin] = history
+          ? await adapters.storage.scanIntegrity(key, { fromSeq: history.seq, toSeq: history.seq, limit: 1 })
+          : []
+        const inheritedStart =
+          origin?.event.id === history?.id && origin !== undefined && origin.sessionKey !== key
+        const provider = sandboxProviderSlot.registry
+          ?.catalog()
+          .find((entry) => entry.id === sandboxProviderIdFrom(ctx.profile))
+        if (!provider) throw new HostError('E_SANDBOX_WORKSPACE', 'sandbox provider identity is missing')
+        new SessionSandboxStore(deps.profileDir).verify(
+          key,
+          {
+            workspaceId: binding.workspaceId,
+            workspaceRoot: savedPlan.policy.workspaceRoot,
+            policyDigest: savedPlan.policy.digest,
+            staticConfigHash: savedPlan.staticConfigHash,
+            provider: provider.id,
+            providerVersion: provider.version,
+            target: adapters.transport ? 'remote' : adapters.platform.os,
+            implementation,
+            probeState:
+              posture.execBackend === 'l1'
+                ? 'ready'
+                : sandboxConfig.level === 'L1' && implementation === 'implemented'
+                  ? 'failed'
+                  : 'unprobed',
+            backend: posture.execBackend,
+            enforcement: posture.enforcement,
+          },
+          history !== undefined && !inheritedStart,
+        )
+      },
       openWorkspace: adapters.openWorkspace,
       openFence: async (workspace) => {
         fence = await adapters.openFence(workspace)
@@ -249,6 +342,7 @@ export function createWorkspaceRuntimeFactory(
         const rootIdentity = plan.semantics.caseSensitive
           ? plan.policy.workspaceRoot
           : plan.policy.workspaceRoot.toLocaleLowerCase('en-US')
+        savedPlan = plan
         workspacePlans.set(JSON.stringify([rootIdentity, plan.staticConfigHash]), plan)
         return plan
       },
@@ -281,7 +375,14 @@ export function createWorkspaceRuntimeFactory(
               })
             fence?.activateGate({
               backend: raw.execBackend,
-              onUnavailable: raw.execBackend === 'remote' ? 'deny' : plan.staticConfig.onUnavailable,
+              onUnavailable:
+                raw.execBackend === 'remote'
+                  ? 'deny'
+                  : plan.staticConfig.onUnavailable === 'allow-if-unimplemented'
+                    ? raw.execBackend === 'none' && unconfined
+                      ? 'allow'
+                      : 'deny'
+                    : plan.staticConfig.onUnavailable,
               access: plan.staticConfig.access ?? 'workspace-write',
               requiredFileIsolation: requiresFileIsolation,
             })

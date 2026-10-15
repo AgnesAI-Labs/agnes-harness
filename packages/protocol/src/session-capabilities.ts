@@ -69,7 +69,11 @@ export const SessionCapabilitySet = Type.Object(
     sandbox: Type.Object(
       {
         provider: Type.String(),
-        onUnavailable: Type.Union([Type.Literal('allow'), Type.Literal('deny')]),
+        onUnavailable: Type.Union([
+          Type.Literal('allow'),
+          Type.Literal('deny'),
+          Type.Literal('allow-if-unimplemented'),
+        ]),
         source: CapabilitySource,
       },
       { additionalProperties: false },

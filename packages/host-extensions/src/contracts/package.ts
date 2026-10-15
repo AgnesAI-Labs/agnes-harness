@@ -117,7 +117,8 @@ export type BuildCompactionPlan = (
 export type SandboxWorkspaceProbeFactory = (input: {
   level: 'L0' | 'L1'
   required: boolean
-  onUnavailable: 'deny' | 'allow'
+  onUnavailable: 'deny' | 'allow' | 'allow-if-unimplemented'
+  platform?: string
   shell: 'posix' | 'powershell'
   options: {
     cwd: string
@@ -145,6 +146,8 @@ export type SandboxWorkspaceProbeFactory = (input: {
       execBackend: SandboxExecBackend
       enforcement: Enforcement
       degraded: boolean
+      implementation?: 'implemented' | 'unimplemented' | 'unknown'
+      probeState?: 'ready' | 'failed' | 'unprobed'
     }>
 >
 
@@ -180,6 +183,7 @@ export type PackageModule = {
   sandboxProvider?: SandboxProvider
   /** Package-owned backend compiler; Host supplies and retains the only raw probe capability. */
   sandboxWorkspaceProbe?: SandboxWorkspaceProbeFactory
+  sandboxImplementation?: (platform: string) => 'implemented' | 'unimplemented' | 'unknown'
   id: string
   /** Host-private Cordis exports declared by this package's unique static plugin manifest. */
   plugins?: readonly Readonly<{

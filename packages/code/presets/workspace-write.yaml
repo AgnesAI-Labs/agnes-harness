@@ -2,7 +2,7 @@
 name: workspace-write
 extends: standard
 
-sandbox: { level: L1, required: true, on_unavailable: deny }
+sandbox: { level: L1, required: false, on_unavailable: allow-if-unimplemented }
 
 providers:
   tool-policy: { provider: default }

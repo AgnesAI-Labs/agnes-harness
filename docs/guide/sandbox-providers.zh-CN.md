@@ -52,6 +52,14 @@ Host 向所有提供者（包括 `local`）的 `exec` 传递本次已授权的 `
 
 启动配置支持 `providers.sandbox: { provider: docker }` 加上 `sandbox: { options: { image: alpine:3.21 } }`；options 是提供者字符串映射。相同 provider、工作区根和有效 options 共享实例；不同工作区或 options 不复用首个实例。每个实例负责取消并排空自己的命令；底层本地 spawner 由 Host 持有。
 
-Docker 示例仅展示进程/网络隔离，没有完整的 Host 文件拒绝策略，因此不能替换默认必需的 L1。其能力不足或策略不支持时拒绝，不退回本地执行。
+Docker 示例仅展示进程/网络隔离，没有完整的 Host 文件拒绝策略，因此不能替换普通预设的条件 L1 要求。其能力不足或策略不支持时拒绝，不退回本地执行。
 
 显式 L0 覆盖不要求命令隔离，并报告 `level: none, scope: []`；文件工具的围栏独立生效。
+
+## 本机条件隔离
+
+`l1Implementation` 表示实现支持状态（`implemented`、`unimplemented`、`unknown`），与命令是否可执行、工作区实际探测分别记录。缺字段为未知。只有可信内置本机后端可授予未实现例外；第三方声明不能授权回退本机执行。
+
+普通预设使用 L1、`required: false`、`on_unavailable: allow-if-unimplemented`。Windows 本机尚未实现，使用无系统隔离的原生命令；macOS/Linux 必须通过真实后端探测，已实现但探测失败仍拒绝。`required: true` 优先。L0 搭配此条件值无效，原有显式 `allow`/`deny` 语义保留。远程传输沿用原来的明确策略，新本机条件不授予远程例外。
+
+会话或子会话执行前，Host 持久记录实际工作区策略、provider 及版本、执行目标、实现状态与隔离结果。恢复时重新验证当前条件并核对记录。缺失、损坏或不匹配的历史证据会拒绝继续执行并提示新建会话，保留历史；会话记录本身仍可读取时，可以只读查看。不改写预设意图哈希来假装用户请求了 L0。本版本不迁移历史、不支持混合版本继续执行。

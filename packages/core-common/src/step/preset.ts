@@ -47,7 +47,7 @@ export type PresetView = {
     commandTable?: readonly PolicyRule[]
   }
   codeRuntime?: import('@agnes/extension-api').ToolContext['codeRuntime']
-  sandbox: { onUnavailable: 'deny' | 'allow' }
+  sandbox: { onUnavailable: 'deny' | 'allow' | 'allow-if-unimplemented' }
   tools: {
     runtime?: string
     maxParallel?: number

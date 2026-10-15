@@ -175,6 +175,7 @@ export interface AppSessionContext {
   renderNewSessionControls: typeof renderNewSessionControls
   renderer: typeof renderer
   run: typeof run
+  sessionIsolation: typeof sessionIsolation
   runtimeCatalog: typeof runtimeCatalog
   runtimeModels: typeof runtimeModels
   selectedDraftPreset: typeof selectedDraftPreset
@@ -521,6 +522,12 @@ const appSessionContext: AppSessionContext = {
   },
   get run() {
     return run
+  },
+  get sessionIsolation() {
+    return sessionIsolation
+  },
+  set sessionIsolation(value: typeof sessionIsolation) {
+    sessionIsolation = value
   },
   get runtimeCatalog() {
     return runtimeCatalog
@@ -1152,6 +1159,7 @@ let draftLoop: LoopSelection | undefined
 let draftLoopEdited = false
 let draftPreset: string | undefined
 let draftBundles: string[] = []
+let sessionIsolation: { sessionId: string; disabled: boolean } | undefined
 let runtimeCatalog: import('@agnes/protocol').RuntimeAdminSnapshot | undefined
 const startupRequest = new URLSearchParams(location.search)
 // A settings link opens its page once; the address no longer names it afterwards.

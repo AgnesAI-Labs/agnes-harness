@@ -230,7 +230,7 @@ describe('standard.yaml', () => {
       ],
     })
     expect(doc.mcp).toEqual({ defer: true })
-    expect(doc.sandbox).toEqual({ level: 'L1', required: true, on_unavailable: 'deny' })
+    expect(doc.sandbox).toEqual({ level: 'L1', required: false, on_unavailable: 'allow-if-unimplemented' })
     // Spend ceiling for one request. Widening it costs money silently; nothing else asserts it.
     expect(doc.budget).toEqual({ per_request_cap: 4000, max_steps: null })
     // `isolation: worktree` is what keeps a subagent's writes off the operator's checkout. `none`
@@ -247,11 +247,11 @@ describe('standard.yaml', () => {
     expect(loadPreset('workspace-write')).toMatchObject({
       extends: 'standard',
       providers: { 'tool-policy': { provider: 'default' } },
-      sandbox: { level: 'L1', required: true, on_unavailable: 'deny' },
+      sandbox: { level: 'L1', required: false, on_unavailable: 'allow-if-unimplemented' },
     })
     expect(loadPreset('read-only')).toMatchObject({
       providers: { 'tool-policy': { provider: 'read-only' } },
-      sandbox: { level: 'L1', required: true, on_unavailable: 'deny' },
+      sandbox: { level: 'L1', required: false, on_unavailable: 'allow-if-unimplemented' },
     })
     expect(loadPreset('full-access')).toMatchObject({
       providers: { 'tool-policy': { provider: 'full-access' } },
@@ -298,7 +298,8 @@ describe('standard.yaml', () => {
   })
 
   it('carries the workspace edit/write allow rule and nothing wider', () => {
-    expect(policy).toHaveLength(1)
+    expect(policy).toHaveLength(3)
+    for (const rule of policy) expect(rule).toMatchObject({ tool: 'edit|write', action: 'allow' })
     expect(policy[0]).toMatchObject({ tool: 'edit|write', action: 'allow' })
     // shell is never pre-approved, under any rule in the table.
     expect(policy.some((p) => p.tool.includes('shell'))).toBe(false)

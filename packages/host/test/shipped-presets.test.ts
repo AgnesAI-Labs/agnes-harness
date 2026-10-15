@@ -116,10 +116,6 @@ describe('the shipped presets, loaded from disk', () => {
         code: 'E_PRESET_UNSUPPORTED',
         detail: { capability: 'sandbox.l1' },
       })
-      await expect(t.host.createSession({ cwd: dataDir, preset: 'standard' })).rejects.toMatchObject({
-        code: 'E_PRESET_UNSUPPORTED',
-        detail: { capability: 'sandbox.l1' },
-      })
       // The same platform, an explicit L0 recipe: it opens. Without this the case would
       // also pass if the host refused every session on that platform.
       const s = await t.host.createSession({ cwd: dataDir, preset: 'full-access' })

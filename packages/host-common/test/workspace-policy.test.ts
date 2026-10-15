@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { privateStateRoots } from '../src/paths.js'
 import {
   compileWorkspacePolicy,
+  memoryRequiresFileIsolation,
   normalizeSandboxStaticConfig,
   sandboxStaticConfigHash,
 } from '../src/workspace-policy.js'
@@ -33,7 +34,30 @@ describe('Host workspace policy compiler', () => {
     expect(sandboxStaticConfigHash(a)).toBe(sandboxStaticConfigHash(b))
     expect(sandboxStaticConfigHash(a)).toMatch(/^[a-f0-9]{64}$/)
     expect(Object.isFrozen(a)).toBe(true)
+    const conditional = normalizeSandboxStaticConfig({
+      sandbox: { level: 'L1', on_unavailable: 'allow-if-unimplemented' },
+    })
+    expect(conditional.onUnavailable).toBe('allow-if-unimplemented')
+    expect(() =>
+      normalizeSandboxStaticConfig({ sandbox: { level: 'L0', on_unavailable: 'allow-if-unimplemented' } }),
+    ).toThrow('E_SANDBOX_WORKSPACE')
   })
+
+  it.each(['implemented', 'unknown', 'unimplemented'] as const)(
+    'preserves memory isolation for %s except explicitly permitted missing local implementation',
+    (support) => {
+      const l0 = normalizeSandboxStaticConfig({ sandbox: { level: 'L0', on_unavailable: 'allow' } })
+      const conditional = normalizeSandboxStaticConfig({
+        sandbox: { level: 'L1', on_unavailable: 'allow-if-unimplemented' },
+      })
+      for (const config of [l0, conditional]) {
+        expect(memoryRequiresFileIsolation(true, support, config)).toBe(support !== 'unimplemented')
+        expect(memoryRequiresFileIsolation(true, support, { ...config, required: true })).toBe(true)
+        expect(memoryRequiresFileIsolation(false, support, config)).toBe(false)
+      }
+      expect(memoryRequiresFileIsolation(true, support, { ...l0, onUnavailable: 'deny' })).toBe(true)
+    },
+  )
 
   it('rejects unknown config instead of silently compiling a weaker plan', () => {
     expect(() => normalizeSandboxStaticConfig({ sandbox: { raw_exec: true } })).toThrow('E_SANDBOX_WORKSPACE')
@@ -65,7 +89,11 @@ describe('Host workspace policy compiler', () => {
   })
 
   it('binds permission presets to write roots and distinct readiness identities', async () => {
-    const protectedPaths = privateStateRoots({ home: '/installation', dataDir: '/data', workspace: '/work' })
+    const protectedPaths = privateStateRoots({
+      home: '/installation',
+      dataDir: '/data',
+      workspace: '/work',
+    }).map((path) => path.replaceAll('\\', '/'))
     const readOnly = await compile(
       '/work',
       {

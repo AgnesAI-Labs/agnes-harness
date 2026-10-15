@@ -25,6 +25,8 @@ export type SandboxCapabilities = Readonly<{
   platform: readonly SandboxPlatform[]
   /** False when the provider cannot run commands. Exec must refuse. */
   available: boolean
+  /** Static support; absence is unknown, never permission to run without isolation. */
+  l1Implementation?: 'implemented' | 'unimplemented' | 'unknown'
   unavailableReason?: string
   /** Enforcement the provider can guarantee for requested policies; absent means unproven. */
   enforcement?: SandboxEnforcement
@@ -171,6 +173,8 @@ export function validSandboxCapabilities(capabilities: SandboxCapabilities | und
     !capabilities ||
     typeof capabilities.network !== 'boolean' ||
     typeof capabilities.available !== 'boolean' ||
+    (capabilities.l1Implementation !== undefined &&
+      !['implemented', 'unimplemented', 'unknown'].includes(capabilities.l1Implementation)) ||
     (capabilities.programmatic !== undefined && typeof capabilities.programmatic !== 'boolean')
   )
     return false

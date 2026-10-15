@@ -53,7 +53,11 @@ export const RuntimeSecurityStatus = Type.Object(
           id: text,
           level: Type.Union([Type.Literal('L0'), Type.Literal('L1')]),
           required: Type.Boolean(),
-          onUnavailable: Type.Union([Type.Literal('deny'), Type.Literal('allow')]),
+          onUnavailable: Type.Union([
+            Type.Literal('deny'),
+            Type.Literal('allow'),
+            Type.Literal('allow-if-unimplemented'),
+          ]),
           approvalPolicy: text,
           networkMode: Type.Union([
             Type.Literal('deny'),

@@ -260,6 +260,13 @@ export function readNamedExports(
       })
     out.sandboxProvider = provider as SandboxProvider
   }
+  if (mod.sandboxImplementation !== undefined) {
+    if (typeof mod.sandboxImplementation !== 'function')
+      throw new HostError('E_EXT_LOAD', 'sandboxImplementation must be a function')
+    out.sandboxImplementation = mod.sandboxImplementation as NonNullable<
+      PackageModule['sandboxImplementation']
+    >
+  }
   if (mod.sandboxWorkspaceProbe !== undefined) {
     if (typeof mod.sandboxWorkspaceProbe !== 'function')
       throw new HostError('E_EXT_LOAD', `${id}: sandboxWorkspaceProbe export must be a function`, {

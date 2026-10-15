@@ -62,6 +62,14 @@ sandbox:
 
 Instances are keyed by provider id, authorized workspace root and effective options. Equal keys share an instance; another workspace or options creates a separate instance. Each instance cancels and drains its own commands. The Host owns the underlying local spawner.
 
-The Docker example reports partial process/network enforcement and refuses unsupported Host file denies or network allowlists. It does not satisfy the default required L1 policy. Missing capability never falls back to local execution.
+The Docker example reports partial process/network enforcement and refuses unsupported Host file denies or network allowlists. It does not satisfy the ordinary conditional L1 policy. Missing capability never falls back to local execution.
 
 An explicit L0 override requests no command enforcement and reports `level: none, scope: []`. The file-tool fence still applies independently.
+
+## Conditional local isolation
+
+`l1Implementation` describes implementation support (`implemented`, `unimplemented`, or `unknown`), separately from command availability and the actual workspace probe. Missing support is unknown. Only the trusted builtin local backend can grant the unimplemented exception; a third-party declaration cannot authorize a fallback to local execution.
+
+Ordinary presets use L1, `required: false`, `on_unavailable: allow-if-unimplemented`. Windows local execution is unimplemented and runs without OS isolation; macOS/Linux must still pass the real backend probe. A failed implemented backend refuses. `required: true` takes priority. The conditional value is invalid with L0. Explicit legacy `allow`/`deny` keep their semantics. Remote transports need their existing explicit policy; the new local conditional policy does not grant them an exception.
+
+Before a session or child session executes, Host durably binds the actual workspace policy, provider/version, target, implementation and enforcement to that session. Restoration reprobes current conditions and requires a matching record. Missing, damaged or incompatible historical evidence refuses continuation with guidance to create a new session; history is preserved and can be viewed read-only when the conversation record remains readable. Intent hashes are not rewritten to pretend L0 was requested. This version provides no history migration or mixed-version continuation.

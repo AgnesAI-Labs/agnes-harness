@@ -216,3 +216,14 @@ it('links to the permission settings from the list', async () => {
     document.removeEventListener('agnes:permission-settings', opens)
   }
 })
+
+it('shows measured isolation information without changing the permission choice', () => {
+  const { trigger } = mountPicker({
+    disabled: false,
+    pending: false,
+    selected: 'workspace',
+    isolationNote: 'OS sandbox off',
+  })
+  expect(trigger.textContent).toContain('OS sandbox off')
+  expect(trigger.dataset.permission).toBe('workspace')
+})

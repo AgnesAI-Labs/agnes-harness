@@ -160,6 +160,7 @@
                 "appServer.errors.sessionNewer",
                 "appServer.errors.sessionOlder",
                 "appServer.errors.sessionCorrupt",
+                "appServer.errors.sessionSandbox",
                 "appServer.errors.rejected",
                 "appServer.errors.memoryCap",
                 "appServer.errors.memorySecret",

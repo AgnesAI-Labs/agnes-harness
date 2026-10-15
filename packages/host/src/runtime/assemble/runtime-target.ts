@@ -52,7 +52,7 @@ import type { ProcessServices } from './process-services.js'
 import type { RowHosts } from './row-hosts.js'
 import type { SeamSet } from './seam-set.js'
 import type { SkillState } from './skills.js'
-import { sandboxBackendPackages } from './workspace-runtime.js'
+import { localSandboxImplementation, sandboxBackendPackages } from './workspace-runtime.js'
 
 export type RuntimeTargetHost = Readonly<{
   publisher: RuntimeTargetPublisher<HostRuntimeTargetResources, IsolatedSessionOverlay>
@@ -215,7 +215,13 @@ function createPublisher(ctx: AssemblyContext, input: RuntimeTargetInput, shared
           root.providers.registerHost(
             sandboxKind,
             '@agnes/host',
-            createLocalSandboxProvider(proc.adapters.exec, proc.adapters.platform.os),
+            createLocalSandboxProvider(proc.adapters.exec, proc.adapters.platform.os, {
+              l1Implementation: localSandboxImplementation(
+                ctx.profile,
+                pkgs.modules,
+                proc.adapters.platform.os,
+              ),
+            }),
           )
           // Providers a package exports as `sandboxProvider` are registered under that package; the
           // Host read them before the tree existed because a remote one opens its channel then.

@@ -85,6 +85,8 @@ export function normalizeRpcError(error: RpcError): AppServerError {
       ...data,
       code: error.data.code,
       messageKey: (() => {
+        if (cause?.code === 'E_SANDBOX_WORKSPACE' && data.reason === 'session-execution-record-invalid')
+          return 'appServer.errors.sessionSandbox'
         const key = errorMessageKey(cause?.code ?? data.code)
         return key === 'appServer.errors.internal' ? errorMessageKey(name) : key
       })(),

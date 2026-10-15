@@ -32,7 +32,7 @@ Web 审批卡先显示路径、命令等定位字段，超长的内容会注明�
 
 `approvals.mode` 接受 `manual`、`auto-review`、`off`；已移除的 `smart` 会报配置错误并提示改用 `auto-review`。Web「完全权限」和 TUI `/yolo` 会跳过当前会话余下审批，并允许文件工具读写所选工作区之外的文件。工作区仍是相对路径的默认目录。只读预设仍拒绝修改。明确的安全禁令、受保护的密钥路径、操作系统权限和命令沙箱约束仍然生效。不建议把跳过审批写入新手示例或自动化默认配置。
 
-完全权限下，Agnes 主目录的私有状态——包括 `secrets/`、`auth/`、`profiles/` 以及显式指定的 secrets 目录——普通文件工具仍不可读取或写入。即使这些路径位于所选工作区内，硬拒绝也继续生效。授权管理应通过对应的设置与凭据服务；会话不能读取密钥，也不能改写 `profile.yaml` 将更弱的审批带到之后的会话。命令访问范围独立遵循所选预设：`workspace-write` 下，shell 写入仍受 OS 沙箱允许目录约束；显式选择 `full-access` 后，shell 可写工作区外，但已安装的记忆 provider 仍保留 Host 私有文件隔离底线；没有可用 OS 边界就拒绝执行，见[记忆](memory.zh-CN.md)。完全权限不授权命令访问受保护的安装状态。
+完全权限下，Agnes 主目录的私有状态——包括 `secrets/`、`auth/`、`profiles/` 以及显式指定的 secrets 目录——普通文件工具仍不可读取或写入。即使这些路径位于所选工作区内，硬拒绝也继续生效。授权管理应通过对应的设置与凭据服务；会话不能读取密钥，也不能改写 `profile.yaml` 将更弱的审批带到之后的会话。命令访问范围独立遵循所选预设：macOS/Linux 的 `workspace-write` 下，shell 写入受 OS 沙箱允许目录约束，Windows 命令没有系统隔离；显式选择 `full-access` 后，shell 可写工作区外，但 macOS/Linux 已安装的记忆 provider 仍保留 Host 私有文件隔离底线；没有可用 OS 边界就拒绝执行，见[记忆](memory.zh-CN.md)。应用权限不能代替系统隔离：获准的 Windows 命令以当前系统账户执行，可以访问该账户有权访问的文件和网络。
 
 Web「工作区内修改」将文件访问限制在所选工作区内，执行命令仍遵循审批策略。访问工作区外路径时会拒绝操作，并提示切换「完全权限」或将目标目录选为工作区，不额外弹出审批。
 
@@ -56,19 +56,21 @@ Web「工作区内修改」将文件访问限制在所选工作区内，执行�
 
 ## 平台与进程
 
-`standard` 配方与默认 `workspace-write` 预设要求 L1 OS 隔离：Linux 使用 bubblewrap，macOS 使用 Seatbelt。Host 在发布会话运行时前，针对工作区策略实际运行受隔离的子进程探测。缺少程序、禁用 namespace、Seatbelt 策略被拒绝时，初始化以 `E_SANDBOX_WORKSPACE` 拒绝，并说明所需后端；后续执行拒绝返回 `SANDBOX_UNAVAILABLE`。未创建会话的 Host 启动成功不证明沙箱可用。Windows 尚无已验证的 L1 后端，默认同样拒绝；见[限制](../reference/limitations.zh-CN.md)。
+`standard`、`workspace-write`、`read-only` 请求 L1，使用 `required: false` 和 `on_unavailable: allow-if-unimplemented`。可信本机后端声明系统隔离是否已实现。macOS/Linux 已实现，必须实际通过 Seatbelt/bubblewrap 探测；缺少程序、namespace 禁用或策略拒绝仍以 `E_SANDBOX_WORKSPACE` 拒绝初始化，不能当作“未实现”。Windows 本机后端声明尚未实现，所以允许原生命令，不探测 POSIX 后端。未知能力、远程目标不能借此自动放行。`required: true` 始终要求真正隔离。
+
+Windows 保留工具审批、只读限制、文件工具的工作区与保护路径检查，以及用户明确设置的审批模式。获准命令使用当前系统账户执行，应用检查不能隔离任意 shell 的文件或网络操作。设置页、会话运行信息和输入框分别显示权限与实际隔离状态。
 
 可在管理页的会话默认预设、创建会话时用 CLI `--preset <name>` 选择。存量会话变更沙箱权限须新建会话，`/preset` 会明确拒绝该类切换。可选项由 profile 的 `presets.allowed` 决定；本地与企业模板默认使用 `workspace-write`，`standard` 保留兼容名称。
 
 | 预设 | 命令沙箱 | 审批与文件行为 |
 | --- | --- | --- |
-| `read-only` | 实测 L1；没有可写目录；禁止命令联网 | 仅披露读取工具；即使启用 `/yolo` 或关闭审批，也拒绝非读取效果及文件写入 |
-| `workspace-write`（默认） | 实测 L1；允许工作区和显式额外目录写入；禁止命令联网 | 工作区编辑沿用审批规则；shell 和其他风险调用仍需审批 |
-| `full-access` | 配置 L0；已安装的记忆 provider 仍要求私有文件 OS 隔离 | 普通工具策略放行；文件工具可访问工作区外；主体授权拒绝及保护路径仍生效 |
+| `read-only` | macOS/Linux：实测 L1、无可写目录、禁止命令联网；Windows：无系统隔离 | 仅披露读取工具；即使启用 `/yolo` 或关闭审批，也拒绝非读取效果及文件写入 |
+| `workspace-write`（默认） | macOS/Linux：实测 L1、指定目录写入、禁止命令联网；Windows：无系统隔离 | 工作区编辑沿用审批规则；shell 和其他风险调用仍需审批 |
+| `full-access` | 配置 L0；macOS/Linux 的记忆仍要求私有文件 OS 隔离；Windows 无系统隔离 | 普通工具策略放行；文件工具可访问工作区外；主体授权拒绝及保护路径仍生效 |
 
 即使使用 `full-access`，`edit` 和使用 `write` 覆盖已有文件也要求同一会话中已有该文件的观察记录，可来自读取或成功创建。其他写入者修改文件后，`write` 会拒绝过期的读取记录；必须重新读取再覆盖。创建新文件无需预先读取。
 
-需要允许工作区外文件时，显式使用 `agh --preset full-access`。没有可用 L1 时，受控文件工具仍可用，但已安装的记忆 provider 会拒绝未隔离命令。可保存：
+需要允许工作区外文件时，显式使用 `agh --preset full-access`。macOS/Linux 没有可用 L1 时，受控文件工具仍可用，但记忆 provider 会拒绝未隔离命令。Windows 使用可信本机后端的“未实现”例外，保留记忆 API 权限。可保存：
 
 ```yaml
 presets:
@@ -76,7 +78,7 @@ presets:
   allowed: [standard, read-only, workspace-write, full-access]
 ```
 
-若要保留审批，可在自定义配方明确覆盖 `sandbox: { level: L0, required: false, on_unavailable: allow }`；只有没有已安装 provider 要求私有文件隔离时，才可执行未隔离命令。仅修改 `on_unavailable` 不会覆盖 `required: true`。Web「完全权限」和 `/yolo` 不会取消所选预设的 OS 沙箱。当前 L1 后端拒绝非空命令网络主机白名单；`web_fetch` 使用独立的公网访问策略。Profile 可以在启动时选择另一个沙箱提供者，见[沙箱提供者](sandbox-providers.zh-CN.md)。当前进程会保持这个选择，直到再次启动。
+若要保留审批，可在自定义配方明确覆盖 `sandbox: { level: L0, required: false, on_unavailable: allow }`；没有已安装 provider 要求私有文件隔离，或可信 Windows 本机后端声明未实现时，才可执行未隔离命令。L0 不允许搭配新条件值。仅修改 `on_unavailable` 不会覆盖 `required: true`。Web「完全权限」和 `/yolo` 不会取消所选预设的 OS 沙箱。当前 L1 后端拒绝非空命令网络主机白名单；`web_fetch` 使用独立的公网访问策略。Profile 可以在启动时选择另一个沙箱提供者，见[沙箱提供者](sandbox-providers.zh-CN.md)。当前进程会保持这个选择，直到再次启动。
 
 本地 Web 的安全边界是回环监听及精确 Origin/Host 校验，不是互联网用户认证。不要直接把它暴露到公网。手动 `--connect` 必须明确指定目标；Windows 命名管道还核对所属进程与发现记录。
 

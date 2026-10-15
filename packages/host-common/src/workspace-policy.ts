@@ -14,7 +14,7 @@ export type SandboxStaticConfig = Readonly<{
   level: 'L0' | 'L1'
   access?: 'read-only' | 'workspace-write' | 'full-access'
   required: boolean
-  onUnavailable: 'deny' | 'allow'
+  onUnavailable: 'deny' | 'allow' | 'allow-if-unimplemented'
   extraPaths: readonly string[]
   denyPaths: readonly string[]
   networkAllow: readonly string[]
@@ -80,8 +80,10 @@ export function normalizeSandboxStaticConfig(preset: Readonly<Record<string, unk
   const required = input.required ?? false
   if (typeof required !== 'boolean') throw fault('sandbox.required is not boolean')
   const onUnavailable = input.on_unavailable ?? 'deny'
-  if (onUnavailable !== 'deny' && onUnavailable !== 'allow')
-    throw fault('sandbox.on_unavailable is not deny or allow')
+  if (onUnavailable !== 'deny' && onUnavailable !== 'allow' && onUnavailable !== 'allow-if-unimplemented')
+    throw fault('sandbox.on_unavailable is invalid')
+  if (level !== 'L1' && onUnavailable === 'allow-if-unimplemented')
+    throw fault('allow-if-unimplemented requires an L1 request')
   return Object.freeze({
     level,
     access,
@@ -91,6 +93,19 @@ export function normalizeSandboxStaticConfig(preset: Readonly<Record<string, unk
     denyPaths: stringList(input.deny_paths, 'deny_paths'),
     networkAllow: stringList(input.network_allow, 'network_allow'),
   })
+}
+
+/** Only the trusted local caller supplies an unimplemented fact. Explicit L0 alone never waives memory isolation. */
+export function memoryRequiresFileIsolation(
+  registered: boolean,
+  implementation: 'implemented' | 'unimplemented' | 'unknown',
+  config: SandboxStaticConfig,
+): boolean {
+  const permitted =
+    !config.required &&
+    ((config.level === 'L1' && config.onUnavailable === 'allow-if-unimplemented') ||
+      (config.level === 'L0' && config.onUnavailable === 'allow'))
+  return registered && !(implementation === 'unimplemented' && permitted)
 }
 
 export function sandboxStaticConfigHash(config: SandboxStaticConfig): string {

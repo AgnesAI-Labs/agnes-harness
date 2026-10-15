@@ -33,6 +33,8 @@ export type WorkspaceRuntimeResource = Readonly<{ close(): Promise<void> | void 
 
 export type SessionWorkspaceRuntime = Readonly<{
   binding: WorkspaceBinding
+  /** Production callback verifies durable execution evidence before opening a session. */
+  verifySession?(key: string): Promise<void>
   root: string
   fs: FsOps
   /** Host-only fenced operations available on production runtimes. */
@@ -64,6 +66,8 @@ export type WorkspaceRuntimeFence = WorkspaceRuntimeResource &
 
 export type SessionWorkspaceRuntimeFactoryInput = Readonly<{
   binding: WorkspaceBinding
+  /** Production callback verifies durable execution evidence before opening a session. */
+  verifySession?(key: string): Promise<void>
   invocation?: WorkspaceInvocationPort
   signal?: AbortSignal
   openWorkspace(binding: WorkspaceBinding): Promise<WorkspaceRuntimeHandle>
@@ -134,6 +138,7 @@ export async function createSessionWorkspaceRuntime(
     const sandboxBackend = await readiness.capability.ready(input.signal)
     const base = Object.freeze({
       binding: input.binding,
+      ...(input.verifySession ? { verifySession: input.verifySession } : {}),
       root: fence.root,
       fs: fence.fs,
       ...('resolveInside' in fence.fs && 'canonicalize' in fence.fs

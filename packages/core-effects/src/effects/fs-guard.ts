@@ -150,13 +150,18 @@ export function validateFsPolicy(policy: FsPolicy): void {
 
 /** Folds away `.` and `..` without a platform path module, so a probe path is spelled once. */
 function normalize(path: string): string {
+  const windows = /^[A-Za-z]:[\\/]/.test(path) || path.startsWith('\\\\') || path.startsWith('//')
+  const spelling = windows ? path.replaceAll('\\', '/') : path
+  const prefix = /^[A-Za-z]:\//.test(spelling) ? spelling.slice(0, 3) : spelling.startsWith('//') ? '//' : '/'
   const out: string[] = []
-  for (const part of path.split('/')) {
+  const floor = prefix === '//' ? 2 : 0
+  for (const part of spelling.slice(prefix.length).split('/')) {
     if (part === '' || part === '.') continue
-    if (part === '..') out.pop()
-    else out.push(part)
+    if (part === '..') {
+      if (out.length > floor) out.pop()
+    } else out.push(part)
   }
-  return `/${out.join('/')}`
+  return `${prefix}${out.join('/')}`
 }
 
 function parentOf(root: string): string {
@@ -178,7 +183,7 @@ export function enforcementProbes(policy: FsPolicy): string[] {
   // Outside the root. Asked three ways because an implementation may resolve a relative path
   // against its own root, against a working directory, or not at all - plus a sibling that shares
   // the root's string prefix, which a startsWith fence would wave through.
-  if (root !== '/')
+  if (root !== '/' && !/^[A-Za-z]:\/$/.test(root) && !/^\/\/[^/]+\/[^/]+$/.test(root))
     probes.push(
       `../${PROBE}`,
       `${root}/../${PROBE}`,

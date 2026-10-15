@@ -121,6 +121,18 @@ describe('throwSessionOpenRpcError', () => {
     })
   })
 
+  it('gives safe new-session guidance for missing or incompatible execution records', () => {
+    const error = caught({
+      code: 'E_SANDBOX_WORKSPACE',
+      reason: 'session-execution-record-invalid',
+      message: 'private path',
+    })
+    expect(normalizeRpcError(error as RpcError).data).toMatchObject({
+      messageKey: 'appServer.errors.sessionSandbox',
+    })
+    expect(JSON.stringify(error)).not.toContain('private path')
+  })
+
   it.each(['E_SANDBOX_WORKSPACE', 'SANDBOX_UNAVAILABLE'])(
     'maps %s from the Host or worker to a fixed sandbox refusal without exception prose',
     (code) => {

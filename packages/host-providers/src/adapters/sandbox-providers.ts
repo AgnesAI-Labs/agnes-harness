@@ -54,6 +54,7 @@ function freezeCapabilities(capabilities: SandboxCapabilities): SandboxCapabilit
     fsWrite: Object.freeze(capabilities.fsWrite.map((scope) => Object.freeze({ path: scope.path }))),
     platform: Object.freeze([...capabilities.platform]),
     available: capabilities.available,
+    ...(capabilities.l1Implementation ? { l1Implementation: capabilities.l1Implementation } : {}),
     ...(capabilities.enforcement
       ? {
           enforcement: Object.freeze({
@@ -73,6 +74,8 @@ function validCapabilities(capabilities: SandboxCapabilities | undefined): boole
     !capabilities ||
     typeof capabilities.network !== 'boolean' ||
     typeof capabilities.available !== 'boolean' ||
+    (capabilities.l1Implementation !== undefined &&
+      !['implemented', 'unimplemented', 'unknown'].includes(capabilities.l1Implementation)) ||
     (capabilities.programmatic !== undefined && typeof capabilities.programmatic !== 'boolean')
   )
     return false

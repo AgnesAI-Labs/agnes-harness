@@ -27,6 +27,7 @@
     "./assemble/skill-row": "./src/assemble/skill-row.ts",
     "./assemble/tool-providers": "./src/assemble/tool-providers.ts",
     "./profile/bundles-reader": "./src/profile/bundles-reader.ts",
+    "./profile/sandbox-state": "./src/profile/sandbox-state.ts",
     "./profile/composition-state": "./src/profile/composition-state.ts",
     "./runtime-generation-view": "./src/runtime-generation-view.ts",
     "./runtime-hot-policy": "./src/runtime-hot-policy.ts",

@@ -126,7 +126,11 @@ export const SessionRuntimeDescriptor = Type.Object(
           sandbox: Type.Object(
             {
               provider: text,
-              onUnavailable: Type.Union([Type.Literal('allow'), Type.Literal('deny')]),
+              onUnavailable: Type.Union([
+                Type.Literal('allow'),
+                Type.Literal('deny'),
+                Type.Literal('allow-if-unimplemented'),
+              ]),
               policyDigest: Type.Optional(text),
               enforcement: Type.Optional(
                 Type.Object(

@@ -66,6 +66,7 @@ export function createComposerController(
     | 'selection'
     | 'sending'
     | 'sessionControls'
+    | 'sessionIsolation'
     | 'sessionPending'
     | 'sessionYoloEnabled'
     | 'settingsText'
@@ -297,6 +298,12 @@ export function createComposerController(
           }
         : {}),
       permission: {
+        ...(context.connected &&
+        !context.draftingNew &&
+        context.sessionIsolation?.sessionId === context.current?.id &&
+        context.sessionIsolation?.disabled
+          ? { isolationNote: context.t('session.runtime.noOsIsolation') }
+          : {}),
         disabled:
           !available ||
           (!context.current && !context.draftingNew) ||

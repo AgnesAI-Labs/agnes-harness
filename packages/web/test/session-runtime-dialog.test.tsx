@@ -117,6 +117,29 @@ it('falls back to the loop id and to unknown when the session is not open', asyn
   await view.close()
 })
 
+it('distinguishes native local execution from OS isolation without changing permission labels', async () => {
+  const runtime = descriptor('gen-1', {
+    policy: {
+      toolPolicy: 'default',
+      toolRuntime: 'default',
+      readOnly: false,
+      sandbox: {
+        provider: 'local',
+        onUnavailable: 'allow-if-unimplemented',
+        enforcement: { level: 'partial', scope: ['file'] },
+      },
+    },
+  })
+  const view = await mount(createElement(RuntimeInfo, { runtime, t: enT }))
+  expect(view.host.textContent).toContain(enT('session.runtime.noOsIsolation'))
+  expect(view.host.textContent).toContain(enT('session.runtime.noOsIsolationHelp'))
+  if (!runtime.policy) throw new Error('missing test policy')
+  runtime.policy.sandbox.enforcement = { level: 'full', scope: ['file', 'network', 'process'] }
+  await view.render(createElement(RuntimeInfo, { runtime, t: enT }))
+  expect(view.host.textContent).not.toContain(enT('session.runtime.noOsIsolation'))
+  await view.close()
+})
+
 it('puts session allowances before standing ones and drops revoked grants', () => {
   const result = orderGrants([
     grant('write', { lifetime: 'always', createdAt: '2026-10-14T03:00:00.000Z' }),

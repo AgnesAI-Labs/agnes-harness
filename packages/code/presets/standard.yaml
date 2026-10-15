@@ -18,8 +18,8 @@ model:
   prompt_sections: [persona, environment, coding-doctrine]
 disclosure: standard
 tools: { core: [read, write, edit, shell, grep, find, ls, todo, web_fetch, web_search, ask_user_question, ui_render, ui_update, ui_close, ui_submit, present, job_output, job_list, job_kill, schedule_create, schedule_list, schedule_update, schedule_delete] }
-# OS confinement must pass a real workspace probe before a session can execute.
-sandbox: { level: L1, required: true, on_unavailable: deny }
+# Use OS confinement when implemented; failed probes never permit unconfined execution.
+sandbox: { level: L1, required: false, on_unavailable: allow-if-unimplemented }
 mcp: { defer: true }
 # No cumulative step ceiling: completion, cancellation and failure end a normal task.
 budget: { per_request_cap: 4000, max_steps: null }
@@ -43,7 +43,7 @@ approval:
   # The shape: anchored at both ends, a leading `/`, then one or more `/`-joined components, each
   # component non-empty and built only from characters that are neither a separator nor a control
   # character (so no backslash, no NUL, no tab, no newline, no NEL, no LINE/PARAGRAPH SEPARATOR).
-  # That single alphabet is what closes the Windows family (`\Windows\x`, `\\server\share`,
+  # This POSIX rule excludes the Windows family (`\Windows\x`, `\\server\share`,
   # `\\?\C:\x`), the empty-component family (`//etc`, `a//b`, a trailing `/`) and every
   # line-terminator smuggling of a `..` segment, because a path carrying one of those bytes no longer
   # matches at all. Every relative spelling - `src/a.ts`, `../outside`, `~/.ssh/config`, `C:x` - fails
@@ -61,9 +61,16 @@ approval:
   #
   # This is the auto-approval gate only; the sandbox write domain is the second gate behind it, and
   # denied paths inside the workspace are refused there even though this rule pre-approves them.
+  # The two additional rules accept canonical Windows drive/UNC paths after containment checks.
   command_policy:
     - tool: 'edit|write'
       argv: '^/(?!(?:[\s\S]*/)?\.\.(?:/|$))(?:[^/\\\x00-\x1F\x7F\u0080-\u009F\u2028\u2029]+/)*[^/\\\x00-\x1F\x7F\u0080-\u009F\u2028\u2029]+$'
+      action: allow
+    - tool: 'edit|write'
+      argv: '^[A-Z]:/(?!(?:[\s\S]*/)?\.\.(?:/|$))(?:[^/\\:\x00-\x1F\x7F\u0080-\u009F\u2028\u2029]+/)*[^/\\:\x00-\x1F\x7F\u0080-\u009F\u2028\u2029]+$'
+      action: allow
+    - tool: 'edit|write'
+      argv: '^//(?!(?:[\s\S]*/)?\.\.(?:/|$))[^/\\:\x00-\x1F\x7F\u0080-\u009F\u2028\u2029]+/[^/\\:\x00-\x1F\x7F\u0080-\u009F\u2028\u2029]+/(?:[^/\\:\x00-\x1F\x7F\u0080-\u009F\u2028\u2029]+/)*[^/\\:\x00-\x1F\x7F\u0080-\u009F\u2028\u2029]+$'
       action: allow
 subagent: { max_depth: 1, max_fan_out: 4, isolation: worktree }
 ext_ui: { input: prompt, unattended: decline }

@@ -300,7 +300,11 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
         entry: normalizePluginExport(defaultLoopPlugin),
       },
     ],
+    // Simulated isolation matches fakePlatform's full capability, independently of the test host OS.
+    sandboxImplementation: () => 'implemented',
     sandboxWorkspaceProbe: async () => ({
+      implementation: 'implemented',
+      probeState: 'ready',
       name: 'bwrap',
       execBackend: 'l1',
       enforcement: { level: 'full', scope: ['file', 'network', 'process'] },

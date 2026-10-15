@@ -96,6 +96,7 @@ export {
   transitionConsent,
 } from '../extensions/privacy/src/index.js'
 export { createRefineHarness } from '../extensions/refine/src/seam.js'
+export { sandboxImplementation } from '../extensions/sandbox/src/backend-runtime.js'
 export {
   type ProbedSandboxWorkspace,
   type SandboxWorkspaceProbeInput,

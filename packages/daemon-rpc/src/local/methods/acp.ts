@@ -406,7 +406,11 @@ export function throwSessionOpenRpcError(error: unknown, sessionId = ''): never 
     throw rpcError('SEMANTIC_REJECTED', {
       code: 'E_SANDBOX_WORKSPACE',
       ...(typeof reason === 'string' &&
-      ['workspace-ancestor-not-directory', 'workspace-ancestor-unavailable'].includes(reason)
+      [
+        'workspace-ancestor-not-directory',
+        'workspace-ancestor-unavailable',
+        'session-execution-record-invalid',
+      ].includes(reason)
         ? { reason, cause: { code: 'E_SANDBOX_WORKSPACE' } }
         : {}),
     })

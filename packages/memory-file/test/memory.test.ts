@@ -57,7 +57,7 @@ describe('file memory contract', () => {
       code: 'MEMORY_DISABLED',
     })
     const alias = join(f.home, 'alias')
-    await symlink(f.session.root, alias)
+    await symlink(f.session.root, alias, 'junction')
     await expect(f.files(1).write(join(alias, 'MEMORY.md'), 'changed')).rejects.toMatchObject({
       code: 'MEMORY_SCOPE_DENIED',
     })
@@ -203,7 +203,7 @@ describe('file memory contract', () => {
     expect((await f.session.readFile('MEMORY.md')).content).toBe('stable convention '.repeat(40))
   })
 
-  it('denies cross-workspace, symlink/hardlink escapes and missing topic references', async () => {
+  it('denies cross-workspace and hardlink escapes and missing topic references', async () => {
     const f = await fixture()
     await f.session.configure({ mode: 'auto' })
     const other = fileMemoryProvider.open({ home: f.home, workspaceRoot: tmpdir(), sessionKey: 'elsewhere' })
@@ -212,11 +212,6 @@ describe('file memory contract', () => {
     })
     const outside = join(f.home, 'outside.md')
     await writeFile(outside, 'outside')
-    await symlink(outside, join(f.session.root, 'escape.md'))
-    await expect(f.files(1).write(join(f.session.root, 'escape.md'), 'escape')).rejects.toMatchObject({
-      code: 'MEMORY_SCOPE_DENIED',
-    })
-    await rm(join(f.session.root, 'escape.md'))
     await link(outside, join(f.session.root, 'linked.md'))
     await expect(f.files(1).write(join(f.session.root, 'linked.md'), 'escape')).rejects.toMatchObject({
       code: 'MEMORY_SCOPE_DENIED',
@@ -235,6 +230,26 @@ describe('file memory contract', () => {
     })
     expect(await readFile(f.index, 'utf8')).toBe('Committed file with failed provenance')
   })
+  it('refuses symbolic memory files where the OS permits creating a file symlink', async ({ skip }) => {
+    const f = await fixture()
+    await f.session.configure({ mode: 'auto' })
+    const outside = join(f.home, 'outside.md')
+    await writeFile(outside, 'outside')
+    try {
+      await symlink(outside, join(f.session.root, 'escape.md'))
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EPERM') {
+        skip()
+        return
+      }
+      throw error
+    }
+    await expect(f.files(1).write(join(f.session.root, 'escape.md'), 'escape')).rejects.toMatchObject({
+      code: 'MEMORY_SCOPE_DENIED',
+    })
+    expect(await readFile(outside, 'utf8')).toBe('outside')
+  })
+
   it('keeps optional user memory separately budgeted and read-only, with no secret injection', async () => {
     const f = await fixture()
     const user = join(f.home, 'memory', 'user')

@@ -101,6 +101,16 @@ export function RuntimeInfo({
         />
         <SettingsItem icon="sparkles" label={t('session.runtime.model')} description={model ?? unknown} />
         <SettingsItem icon="shield" label={t('session.runtime.policy')} description={permission} />
+        {policy?.sandbox.provider === 'local' &&
+          policy.sandbox.enforcement &&
+          policy.sandbox.enforcement.level !== 'full' &&
+          !policy.sandbox.enforcement.scope.includes('process') && (
+            <SettingsItem
+              icon="shield"
+              label={t('session.runtime.noOsIsolation')}
+              description={t('session.runtime.noOsIsolationHelp')}
+            />
+          )}
         <SettingsItem
           icon="refresh-cw"
           label={t('session.runtime.version')}

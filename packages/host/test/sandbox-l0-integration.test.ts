@@ -12,7 +12,13 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ScriptedProvider } from '@agnes/ai/testkit'
-import { ecosystem as baseEcosystem, SHELL_SENTINEL, sandboxWorkspaceProbe } from '@agnes/base'
+import {
+  ecosystem as baseEcosystem,
+  memoryPlugin,
+  SHELL_SENTINEL,
+  sandboxImplementation,
+  sandboxWorkspaceProbe,
+} from '@agnes/base'
 import { type SandboxSeam, WORKSPACE_HOOK_SANDBOX } from '@agnes/core'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
 import {
@@ -40,6 +46,7 @@ import {
   type SessionWorkspaceRuntime,
   SessionWorkspaceRuntimeTable,
 } from '@agnes/host-infrastructure/session-workspace-runtime'
+import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import type { ModelRecord, RouteDecl } from '@agnes/protocol'
 import { windowsProcessStartTimeSync } from '@agnes/system-node'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -139,6 +146,7 @@ async function assembleWithSandbox(opts: {
   shellRequest?: string
   hooksDeployment?: 'workspace' | 'data' | 'no-grant' | 'wrong-digest' | 'wrong-source' | 'wrong-root'
   workspace?: string
+  memory?: boolean
 }): Promise<Fixture> {
   const workspace = opts.workspace ?? scratch('agnes-l0-ws-')
   const dataDir = scratch('agnes-l0-data-')
@@ -179,6 +187,25 @@ async function assembleWithSandbox(opts: {
     '@agnes/base': {
       id: '@agnes/base',
       sandboxWorkspaceProbe,
+      sandboxImplementation,
+      ...(opts.memory
+        ? {
+            plugins: [
+              {
+                declaration: {
+                  export: 'memoryPlugin',
+                  id: 'memory:file',
+                  apiRange: '^4.0.0',
+                  default: true,
+                  inject: ['providers'],
+                  provide: [],
+                  runtime: 'in-process' as const,
+                },
+                entry: normalizePluginExport(memoryPlugin),
+              },
+            ],
+          }
+        : {}),
       ...(opts.hooksDeployment
         ? {
             ecosystem: { 'agnes/hooks-runner': baseEcosystem['agnes/hooks-runner'] },
@@ -275,8 +302,18 @@ async function assembleWithSandbox(opts: {
     log: { debug() {}, info() {}, warn() {}, error() {} },
     agnesVersion: '0.1.0',
     env: { ...process.env, ...(opts.shellRequest ? { AGNES_POWERSHELL: opts.shellRequest } : {}) },
-    providerFactory: () => new ScriptedProvider({ scripts: [] }),
+    providerFactory: () =>
+      new ScriptedProvider({
+        models: [MODEL],
+        scripts: [
+          [
+            { type: 'text_delta', delta: 'Windows test reply' },
+            { type: 'done', reason: 'stop' },
+          ],
+        ],
+      }),
   }
+  mkdirSync(deps.profileDir, { recursive: true })
   const a = await assemble(profile, deps)
   if (!init) throw new Error('sandbox context missing')
   const sessionKey = 'session-a'
@@ -314,6 +351,54 @@ async function assembleWithSandbox(opts: {
     throw error
   }
 }
+
+describe('conditional native execution', () => {
+  it.runIf(process.platform === 'win32').each([false, true])(
+    'memory=%s keeps the file fence and executes an authorized Windows command without OS isolation',
+    async (memory) => {
+      const f = await assembleWithSandbox({
+        memory,
+        sandboxPreset: { level: 'L1', required: false, on_unavailable: 'allow-if-unimplemented' },
+      })
+      let session: Awaited<ReturnType<typeof createSession>> | undefined
+      try {
+        session = await createSession(
+          f.profile,
+          f.a,
+          { key: f.binding.sessionKey, binding: f.binding },
+          undefined,
+          {
+            runtime: f.runtime,
+            lifecycle: f.table.lifecycle(f.binding.sessionKey),
+            children: f.table,
+            invocation: f.table.invocation(f.binding.sessionKey),
+          },
+        )
+        expect(await session.scan({ type: 'session/start', limit: 1 })).toHaveLength(1)
+        await session.enqueue('next-turn', {
+          actor: session.d.actor,
+          content: [{ type: 'text', text: 'hello' }],
+        })
+        expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+          'completed',
+        )
+        await f.fs.write('allowed.txt', bytes)
+        await expect(f.fs.write(join(f.homeDir, 'escape.txt'), bytes)).rejects.toThrow('E_FS_DENIED')
+        const result = await f.seam.exec([SHELL_SENTINEL, "[Console]::Write('windows-ok')"], {
+          cwd: f.runtime.root,
+        })
+        expect(result.code).toBe(0)
+        expect(result.stdout).toBe('windows-ok')
+        expect(f.seam.enforcement()).toEqual({ level: 'partial', scope: ['file'] })
+        await f.runtime.verifySession?.('session-a')
+        await f.runtime.verifySession?.('session-a')
+      } finally {
+        await session?.close()
+        await f.a.rollback.unwind()
+      }
+    },
+  )
+})
 
 describe('the bound policy is enforced by the real host FsOps on real directories', () => {
   it('allows workspace and extra roots, denies dataDir with its narrow exceptions', async () => {

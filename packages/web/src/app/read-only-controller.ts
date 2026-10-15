@@ -4,18 +4,27 @@ import {
   type SessionViewNotice,
   sessionVersionNotice,
 } from '@agnes/protocol'
+import { appServerErrorMessage } from '@agnes/web-ui'
 import type { AppSessionContext } from '../app.js'
 import { appReadOnly } from '../app-notices.js'
 
 type ViewScan = { fromSeq: number; throughSeq: number } | undefined
+type ReadOnlyNotice = Pick<SessionViewNotice, 'actions' | 'localized'>
 
 const PAGE = 200
 const CODES: readonly string[] = Object.values(SESSION_VERSION_CODES)
 
-/** What the refusal to open a session said, when it was one of the three version directions. */
-function refusalNotice(error: unknown, sessionId: string): SessionViewNotice | undefined {
+/** Only known recovery refusals may offer history without reopening the execution session. */
+function refusalNotice(error: unknown, sessionId: string): ReadOnlyNotice | undefined {
   const data = (error as { data?: Record<string, unknown> } | null)?.data
   const code = data?.code
+  if (code === 'E_SANDBOX_WORKSPACE' && data?.reason === 'session-execution-record-invalid') {
+    const message = { data: { messageKey: 'appServer.errors.sessionSandbox' } }
+    const en = appServerErrorMessage(message, 'en')
+    const zh = appServerErrorMessage(message, 'zh-CN')
+    if (!en || !zh) return undefined
+    return { actions: ['new-session'], localized: { en, 'zh-CN': zh } }
+  }
   if (typeof code !== 'string' || !CODES.includes(code)) return undefined
   const issue = (
     Object.entries(SESSION_VERSION_CODES).find(([, value]) => value === code) as [
@@ -27,8 +36,6 @@ function refusalNotice(error: unknown, sessionId: string): SessionViewNotice | u
   const actions = Array.isArray(data?.actions) ? (data.actions as SessionVersionAction[]) : undefined
   const fallback = sessionVersionNotice(issue, { sessionId })
   return {
-    code: fallback.code,
-    issue,
     actions: actions ?? [...fallback.actions],
     localized: localized?.en && localized['zh-CN'] ? localized : fallback.message,
   }
@@ -58,16 +65,22 @@ export function createReadOnlyController(
   /** Fetches a view and commits it in one step; false when a newer request or selection superseded it. */
   async function load(id: string, maxNodes: number, epoch: number): Promise<boolean> {
     const ticket = ++latest
-    const view = await context.client.session.view(id, { maxNodes })
-    if (ticket !== latest || epoch !== context.selection) return false
-    scan = view.history.scan
-    context.readOnly = { id, maxNodes, hasEarlier: view.history.hasEarlier }
-    context.projection = view.timeline
-    context.windowAtStart = !view.history.hasEarlier
-    return true
+    try {
+      const view = await context.client.session.view(id, { maxNodes })
+      if (ticket !== latest || epoch !== context.selection) return false
+      scan = view.history.scan
+      context.readOnly = { id, maxNodes, hasEarlier: view.history.hasEarlier }
+      context.projection = view.timeline
+      context.windowAtStart = !view.history.hasEarlier
+      return true
+    } catch (error) {
+      // An obsolete failure must not replace the current selection with recovery UI either.
+      if (ticket !== latest || epoch !== context.selection) return false
+      throw error
+    }
   }
 
-  function banner(notice: SessionViewNotice, scan: ViewScan): void {
+  function banner(notice: ReadOnlyNotice, scan: ViewScan): void {
     const id = context.readOnly?.id
     if (!id) return
     // Switching to the current version is an administrator operation named per pinned kind
@@ -88,7 +101,7 @@ export function createReadOnlyController(
 
   /**
    * Shows a session that refused to open as a read-only conversation. Returns false when the
-   * refusal is not a version one, or the record itself cannot be read; the caller then offers the
+   * refusal does not support read-only recovery, or the record cannot be read; the caller offers the
    * usual recovery.
    */
   async function show(id: string, error: unknown, epoch: number): Promise<boolean> {

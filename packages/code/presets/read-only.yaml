@@ -3,7 +3,7 @@ name: read-only
 extends: standard
 tools: { core: [read, grep, find, ls, web_fetch] }
 approval: { command_policy: [] }
-sandbox: { level: L1, required: true, on_unavailable: deny }
+sandbox: { level: L1, required: false, on_unavailable: allow-if-unimplemented }
 subagent: { isolation: shared }
 
 providers:

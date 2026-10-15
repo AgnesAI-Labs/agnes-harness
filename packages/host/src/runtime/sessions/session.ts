@@ -232,6 +232,7 @@ function childSandboxes(
       const child = await port.reserve(parentKey, childKey)
       try {
         const { runtime } = child
+        await runtime.verifySession?.(childKey)
         const sandbox = await fenceSandbox(
           runtime.seam ?? a.seams.sandbox,
           workspaceFence(runtime),
@@ -417,6 +418,8 @@ export async function createSession(
         detail: { reason: 'binding-session-mismatch' },
       },
     )
+
+  await workspace?.runtime.verifySession?.(key)
 
   // 5 open: core takes the writer lease and writes session/start. `writerRunId` is required and
   // nothing upstream mints it, so it is minted here when the caller did not bring one.

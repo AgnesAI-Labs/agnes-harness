@@ -16,6 +16,7 @@ import type {} from '@agnes/host-providers/assemble/loops'
 import type { ProviderBuildOptions } from '@agnes/host-providers/assemble/provider'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import type { ModelRecord, RouteDecl } from '@agnes/protocol'
+import { createPrivateDirectorySync } from '@agnes/system-node'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { AssembleDeps, Assembled } from '../src/runtime/assemble/assemble.js'
 import { assemble } from '../src/runtime/assemble/assemble.js'
@@ -66,7 +67,10 @@ afterEach(async () => {
 const scratch = (): string => {
   const d = mkdtempSync(join(tmpdir(), 'agnes-session-switch-'))
   dirs.push(d)
-  return d
+  // The configuration store requires a private home; Windows temp ACLs may include other users.
+  const home = join(d, 'home')
+  createPrivateDirectorySync(home)
+  return home
 }
 
 function mods(
