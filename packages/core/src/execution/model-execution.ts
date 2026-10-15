@@ -10,6 +10,72 @@ import { estimateTokens } from './model-tokens.js'
 
 type Usage = Extract<InferenceEvent, { type: 'usage' }>
 type Failure = Extract<InferenceEvent, { type: 'error' }>
+type AuditFields = Pick<CostLedger, 'route' | 'adapter' | 'endpointHost'>
+
+/** Every optional control left out keeps the behaviour of a conversation request. */
+type ModelExecutionInput = {
+  wire: RequestBody
+  effect: EffectHandle
+  intentSeq: Seq
+  signal: AbortSignal
+  context?: OpContext
+  publicIterator?: boolean
+  turnId: number
+  step: number
+  memory: SessionImpl['turn']
+  /** The purpose the cost row records. */
+  purpose?: 'inference' | 'side-call'
+  /**
+   * The input tokens and credits to record when the call reports no usage. A call that may have
+   * reached the provider records them as an interrupted estimate; a call cancelled before its first
+   * read, or refused before any sent stamp, records zero tokens and zero credits.
+   */
+  unobserved?: { inputTokens: number; credits?: number }
+  /** Settles the recorded spend against the tree budget, in place of the session's own permit. */
+  settleTreeBudget?: (credits: number | undefined, costSeq: Seq) => Promise<void>
+  /**
+   * The caller chooses the settled outcome. A cancellation still marks the spend interrupted, and
+   * the `outcome` getter reads only a session stop as aborted and any other cut as an error.
+   */
+  outcomeFromCaller?: boolean
+  /** Asks the provider not to retry the request itself. */
+  retry?: false
+  /** Sends to the provider directly, past any installed Inference replacement. */
+  replaceable?: false
+  /** Route, adapter and endpoint fields copied onto the cost row; nothing else is copied. */
+  extraCostFields?: Readonly<{
+    route?: string
+    adapter?: { id: string; version?: string }
+    endpointHost?: string
+  }>
+  /** Appends settlement rows in place of a session transition, returning their sequence numbers in order. */
+  write?: (events: EventInput[]) => Promise<readonly Seq[]>
+} & (
+  | {
+      /** The request header the sent stamp is checked against, and the receipt row sources. */
+      header: RequestHeaderData
+      headerSeq: Seq
+    }
+  | {
+      /** Without a header only the stamp's model and route are checked, and no receipt row is written. */
+      header?: undefined
+      headerSeq?: undefined
+    }
+)
+
+function auditFields(extra: ModelExecutionInput['extraCostFields']): AuditFields {
+  if (!extra) return {}
+  const { route, adapter, endpointHost } = extra
+  return {
+    ...(route !== undefined ? { route } : {}),
+    ...(adapter
+      ? {
+          adapter: { id: adapter.id, ...(adapter.version !== undefined ? { version: adapter.version } : {}) },
+        }
+      : {}),
+    ...(endpointHost !== undefined ? { endpointHost } : {}),
+  }
+}
 
 /** Cancellation also covers factory/replacement admission, before an iterator exists. */
 function interruptible<T>(work: Promise<T>, signal: AbortSignal, late?: (value: T) => void): Promise<T> {
@@ -53,6 +119,8 @@ export class ModelExecution {
   private thinking = ''
   private providerIterator: AsyncIterator<InferenceEvent> | undefined
   private providerClosed = false
+  // False until the first provider read starts unaborted, and again after a refusal before sent.
+  private dispatched = false
   private completed = false
   private accounted = false
   private recording: Promise<void> | undefined
@@ -88,19 +156,7 @@ export class ModelExecution {
 
   constructor(
     private readonly s: SessionImpl,
-    private readonly input: {
-      wire: RequestBody
-      header: RequestHeaderData
-      effect: EffectHandle
-      headerSeq: Seq
-      intentSeq: Seq
-      signal: AbortSignal
-      context?: OpContext
-      publicIterator?: boolean
-      turnId: number
-      step: number
-      memory: SessionImpl['turn']
-    },
+    private readonly input: ModelExecutionInput,
   ) {
     this.turn = input.memory
     this.op = { turn: input.turnId, step: input.step }
@@ -128,7 +184,11 @@ export class ModelExecution {
     try {
       s.loopScope.assertAlive()
       this.signal.throwIfAborted()
-      const options = { signal: this.signal, toolNames: input.wire.tools.map((tool) => tool.name) }
+      const options = {
+        signal: this.signal,
+        toolNames: input.wire.tools.map((tool) => tool.name),
+        ...(input.retry === false ? { retry: false as const } : {}),
+      }
       const send = () => {
         s.loopScope.assertAlive()
         this.signal.throwIfAborted()
@@ -136,7 +196,7 @@ export class ModelExecution {
       }
       const source = await interruptible(
         Promise.resolve(
-          s.d.segments?.Inference
+          s.d.segments?.Inference && input.replaceable !== false
             ? runCoreReplacement(
                 s,
                 'Inference',
@@ -156,6 +216,9 @@ export class ModelExecution {
         throw new Error('Inference replacement returned a non-async stream')
       iterator = source[Symbol.asyncIterator]()
       this.providerIterator = iterator
+      // A provider stream does its work on the first read; a non-streaming one yields nothing until
+      // its response arrives, so from here on the request may have left even with no event seen.
+      this.dispatched = !this.signal.aborted
       for (;;) {
         const active = iterator
         const next = await interruptible(
@@ -171,10 +234,11 @@ export class ModelExecution {
           if (sent) throw new CoreError('E_ENVELOPE', 'duplicate sent')
           const { stamp } = event
           if (
-            stamp.derived_hash !== input.header.derived_hash ||
-            stamp.tool_schema_hash !== input.header.tool_schema_hash ||
-            stamp.parser_version !== input.header.parser_version ||
-            stamp.contract_id !== input.header.contract_id ||
+            (input.header &&
+              (stamp.derived_hash !== input.header.derived_hash ||
+                stamp.tool_schema_hash !== input.header.tool_schema_hash ||
+                stamp.parser_version !== input.header.parser_version ||
+                stamp.contract_id !== input.header.contract_id)) ||
             stamp.model.id !== input.wire.model ||
             stamp.model.route !== input.wire.route
           ) {
@@ -190,9 +254,10 @@ export class ModelExecution {
             yield this.error
             return
           }
-          await s.d.log.append([
-            s.ev('request/sent', stamp, { sourceEventSeqs: [input.headerSeq, input.intentSeq] }),
-          ])
+          if (input.header)
+            await s.d.log.append([
+              s.ev('request/sent', stamp, { sourceEventSeqs: [input.headerSeq, input.intentSeq] }),
+            ])
           sent = true
         } else if (!sent && event.type !== 'error') throw new CoreError('E_ENVELOPE', 'missing sent')
         s.loopScope.note()
@@ -204,7 +269,12 @@ export class ModelExecution {
           done = true
           this.completed = true
         }
-        if (event.type === 'error') this.error = event
+        if (event.type === 'error') {
+          this.error = event
+          // Any other event before sent has already failed, so this error is the first event: the
+          // request was refused before it was sent.
+          if (!sent) this.dispatched = false
+        }
         if (event.type === 'done' || event.type === 'error') {
           this.timing = event.timing
           // Resume past the terminal yield so provider wrappers can finish their receipt/recording.
@@ -258,13 +328,20 @@ export class ModelExecution {
   }
 
   get outcome(): EffectOutcome {
-    return this.cancellation.aborted || this.error?.reason === 'aborted'
-      ? 'aborted'
-      : this.error
-        ? 'error'
-        : this.completed
-          ? 'ok'
-          : 'aborted'
+    const outcome =
+      this.cancellation.aborted || this.error?.reason === 'aborted'
+        ? 'aborted'
+        : this.error
+          ? 'error'
+          : this.completed
+            ? 'ok'
+            : 'aborted'
+    // A caller that chooses its own outcome reads only a session stop as aborted.
+    return outcome === 'aborted' &&
+      this.input.outcomeFromCaller &&
+      this.s.op()?.control.status !== 'cancel_requested'
+      ? 'error'
+      : outcome
   }
 
   get content(): Array<{ type: 'text' | 'thinking'; text: string }> {
@@ -277,26 +354,39 @@ export class ModelExecution {
   rows(outcome: EffectOutcome, interrupted: boolean): EventInput[] {
     const { usage, error, timing, input } = this
     if (this.cancellation.aborted) {
-      outcome = 'aborted'
+      if (!input.outcomeFromCaller) outcome = 'aborted'
       interrupted = true
     }
     const response = usage?.response ?? error?.response
+    // The caller's estimate stands in for missing usage only when the request may have been sent. A
+    // request that certainly was not cost nothing, and streamed no text to estimate output from.
+    const estimate =
+      usage || !input.unobserved
+        ? undefined
+        : this.dispatched
+          ? input.unobserved
+          : { inputTokens: 0, credits: 0 }
     const spend: CostLedger = {
-      purpose: 'inference',
+      purpose: input.purpose ?? 'inference',
       effectId: input.effect.effectId,
       model: input.wire.model,
       tokens: usage?.tokens ?? {
-        input: 0,
+        input: estimate?.inputTokens ?? 0,
         output: estimateTokens(this.text + this.thinking),
         cacheRead: 0,
         cacheWrite: 0,
       },
-      ...(usage?.credits !== undefined ? { credits: usage.credits } : {}),
+      ...(usage?.credits !== undefined
+        ? { credits: usage.credits }
+        : estimate?.credits !== undefined
+          ? { credits: estimate.credits }
+          : {}),
       creditSource: usage?.creditSource ?? 'estimated',
       ...(usage?.billing ? { billing: usage.billing } : {}),
       ...(usage?.timing || timing ? { timing: { ...usage?.timing, ...timing } } : {}),
       ...(response ? { response } : {}),
-      ...(interrupted ? { interrupted: true } : {}),
+      ...(interrupted || (estimate && this.dispatched) ? { interrupted: true } : {}),
+      ...auditFields(input.extraCostFields),
     }
     return [this.s.ev('cost/ledger', spend), input.effect.settle(outcome)]
   }
@@ -314,7 +404,7 @@ export class ModelExecution {
         )
         if (continuation.length) {
           this.s.loopScope.assertAlive()
-          await this.s.transition(continuation, next)
+          await this.append(continuation, next)
         }
       })
     this.accounted = true
@@ -324,6 +414,14 @@ export class ModelExecution {
       this.finishReceipt()
     })
     return this.recording
+  }
+
+  /** The caller's writer when it brings one, otherwise a session transition to `next`. */
+  private append(
+    events: EventInput[],
+    next: Parameters<SessionImpl['transition']>[1],
+  ): Promise<readonly Seq[]> {
+    return this.input.write ? this.input.write(events) : this.s.transition(events, next)
   }
 
   private async record(events: EventInput[], next: Parameters<SessionImpl['transition']>[1]): Promise<void> {
@@ -336,7 +434,7 @@ export class ModelExecution {
     let failed = false
     let failure: unknown
     try {
-      costSeq = (await this.s.transition(events, next))[index]
+      costSeq = (await this.append(events, next))[index]
     } catch (error) {
       failed = true
       failure = error
@@ -354,7 +452,10 @@ export class ModelExecution {
       if (this.turn) this.turn.ledgerFailed = true
       if (this.s.loopScope.alive) await this.s.diag('seam-failed', { seam: 'billing', op: 'record' })
     }
-    if (costSeq !== undefined) await settleTreeSpend(this.s, cost.credits, costSeq)
+    if (costSeq !== undefined)
+      await (this.input.settleTreeBudget
+        ? this.input.settleTreeBudget(cost.credits, costSeq)
+        : settleTreeSpend(this.s, cost.credits, costSeq))
     if (failed) throw failure
   }
 }
