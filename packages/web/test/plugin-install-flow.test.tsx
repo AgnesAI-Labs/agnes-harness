@@ -263,7 +263,9 @@ it('pushes the review page when the check is done, with the hashes under collaps
   await click('[data-testid="market-install"]')
   await vi.waitFor(() => expect(review()).not.toBeNull(), { timeout: 5000 })
   expect(view()).toBe(`install:${ID}`)
-  const crumbs = [...document.querySelectorAll('.agh-push-crumbs li')].map((item) => item.textContent)
+  const crumbs = [...document.querySelectorAll('.agh-push-stack .agh-push-crumbs li')].map(
+    (item) => item.textContent,
+  )
   expect(crumbs).toEqual(['插件', '安装「Task graph Loop」'])
   expectNoDialog()
   const page = review() as HTMLElement
@@ -421,7 +423,9 @@ it('sends 添加插件 through the same review page, which takes the form’s pl
   kit.outcome.inspect = 'completed'
   await vi.waitFor(() => expect(review()).not.toBeNull(), { timeout: 10_000 })
   expect(view()).toBe(`install:${ID}`)
-  const crumbs = [...document.querySelectorAll('.agh-push-crumbs li')].map((item) => item.textContent)
+  const crumbs = [...document.querySelectorAll('.agh-push-stack .agh-push-crumbs li')].map(
+    (item) => item.textContent,
+  )
   expect(crumbs).toEqual(['插件', '安装「Task graph Loop」'])
   expectNoDialog()
   await click('[data-testid="push-back"]')
