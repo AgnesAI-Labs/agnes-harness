@@ -316,3 +316,143 @@ it('closes loading previews, releases late results and keeps errors and unsuppor
     host.remove()
   }
 })
+
+it('keeps a verified file ahead of a persisted invalid card without hiding temporary failures', () => {
+  const good = fileList('good', 12, [{ name: 'demo.html', description: '', sha: sha(1) }])
+  const bad = fileList('bad', 18, [{ name: 'demo.html', description: '', sha: sha(2) }])
+  Object.assign(good, { artifacts: { 'file-0': 'available' } })
+  Object.assign(bad, { artifacts: { 'file-0': 'not_found' } })
+  let grouped = groupDeliverables(turnDeliverables([good, bad], { startSeq: 10 }))
+  expect(grouped[0]?.latest.surfaceId).toBe('good')
+  expect(grouped[0]?.earlier[0]?.surfaceId).toBe('bad')
+  expect(grouped[0]?.recovered).toBe(true)
+  const metadata = fileList('bad-metadata', 19, [
+    { name: 'demo.html', description: '', sha: sha(1), size: 20990 },
+  ])
+  Object.assign(metadata, { artifacts: { 'file-0': 'identity_mismatch' } })
+  expect(groupDeliverables(turnDeliverables([good, metadata], { startSeq: 10 }))[0]?.earlier).toHaveLength(1)
+  for (const status of ['unavailable', undefined]) {
+    Object.assign(bad, { artifacts: status ? { 'file-0': status } : undefined })
+    grouped = groupDeliverables(turnDeliverables([good, bad], { startSeq: 10 }))
+    expect(grouped[0]?.latest.surfaceId).toBe('bad')
+  }
+})
+
+it.each([
+  ['artifact_not_found', 'This file reference does not exist in this session.'],
+  ['artifact_reclaimed', 'This file was removed by the retention policy.'],
+  ['artifact_identity_mismatch', 'This file reference does not match the registered file.'],
+  ['artifact_forbidden', 'This file reference does not match the registered file.'],
+  ['artifact_unavailable', 'The file could not be loaded. Try again.'],
+])(
+  'shows a specific file error for %s and keeps retries available for temporary failures',
+  async (code, message) => {
+    const load = vi.fn(async () => {
+      throw Object.assign(new Error('synthetic failure'), { code })
+    })
+    const retry = vi.fn()
+    const locale = createDocumentLocaleSource({})
+    const host = document.body.appendChild(document.createElement('div'))
+    const root = createRoot(host)
+    try {
+      await act(async () =>
+        root.render(
+          createElement(ArtifactFile, {
+            file: {
+              name: 'demo.html',
+              description: '',
+              artifact: { sha256: sha(1), size: 7, mime: 'text/html' },
+            },
+            laneId: 'main',
+            sessionId: 's',
+            artifactStatus: 'available',
+            recovered: true,
+            onRetry: retry,
+            resources: { documents: { load } } as never,
+          }),
+        ),
+      )
+      expect(host.textContent).toContain('A newer presentation has an invalid reference.')
+      await act(async () => host.querySelector<HTMLElement>('[data-testid="deliverable-open"]')?.click())
+      expect(host.querySelector('[role="alert"]')?.textContent).toContain(message)
+      const button = host.querySelector<HTMLButtonElement>('[data-testid="deliverable-open"]')
+      // Errors still allow closing an expanded preview; permanent failures then refuse reopening.
+      expect(button?.textContent).toBe('Close')
+      expect(button?.disabled).toBe(false)
+      if (code !== 'artifact_unavailable') {
+        await act(async () => button?.click())
+        expect(button?.disabled).toBe(true)
+        expect(host.querySelector('[data-testid="deliverable-preview"]')).toBeNull()
+      }
+      if (code === 'artifact_unavailable') {
+        await act(async () => host.querySelector<HTMLElement>('[role="alert"] button')?.click())
+        expect(retry).toHaveBeenCalled()
+      }
+    } finally {
+      await act(async () => root.unmount())
+      locale.dispose()
+      host.remove()
+    }
+  },
+)
+
+it('distinguishes unchecked availability from an in-progress metadata check without downloading a body', async () => {
+  const host = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(host)
+  const file = {
+    name: 'demo.html',
+    description: '',
+    artifact: { sha256: sha(1), size: 7, mime: 'text/html' },
+  }
+  const load = vi.fn()
+  try {
+    await act(async () =>
+      root.render(
+        createElement(ArtifactFile, {
+          file,
+          sessionId: 's',
+          laneId: 'main',
+          resources: { documents: { load } } as never,
+        }),
+      ),
+    )
+    expect(host.textContent).toContain('File availability has not been checked.')
+    await act(async () =>
+      root.render(
+        createElement(ArtifactFile, {
+          file,
+          sessionId: 's',
+          laneId: 'main',
+          checking: true,
+          resources: { documents: { load } } as never,
+        }),
+      ),
+    )
+    expect(host.textContent).toContain('Checking file availability…')
+    expect(host.querySelector('[role="alert"]')).toBeNull()
+    expect(load).not.toHaveBeenCalled()
+    const openWorkbench = vi.fn()
+    await act(async () =>
+      root.render(
+        createElement(ArtifactFile, {
+          file,
+          sessionId: 's',
+          laneId: 'main',
+          placement: 'inline',
+          artifactStatus: 'identity_mismatch',
+          onShowInWorkbench: openWorkbench,
+          resources: { documents: { load } } as never,
+        }),
+      ),
+    )
+    const target = host.querySelector<HTMLButtonElement>('[data-testid="deliverable-target"]')
+    expect(target?.disabled).toBe(true)
+    await act(async () => host.querySelector<HTMLElement>('.deliverable-row')?.click())
+    expect(openWorkbench).not.toHaveBeenCalled()
+    expect(load).not.toHaveBeenCalled()
+    expect(host.textContent).toContain('This file reference does not match the registered file.')
+  } finally {
+    await act(async () => root.unmount())
+    host.remove()
+  }
+})

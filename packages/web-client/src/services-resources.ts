@@ -84,6 +84,7 @@ export class ClientResourceReclaimedError extends Error {
   constructor() {
     super('document resource was reclaimed by retention')
     this.name = 'ClientResourceReclaimedError'
+    Object.assign(this, { code: 'artifact_reclaimed' })
   }
 }
 
@@ -164,7 +165,10 @@ export class ClientResourceService extends Service {
     if (this.session.sessionId !== sessionId) throw new Error('document resource session changed')
     if (!result.ok && result.status === 410 && result.code === 'artifact_reclaimed')
       throw new ClientResourceReclaimedError()
-    if (!result.ok) throw new Error(`document resource is unavailable: ${result.code}`)
+    if (!result.ok)
+      throw Object.assign(new Error(`document resource is unavailable: ${result.code}`), {
+        code: result.code,
+      })
     if (!sameImageArtifact(result.artifact, input.artifact) || result.contentLength !== input.artifact.size)
       throw new Error('document resource identity mismatch')
 

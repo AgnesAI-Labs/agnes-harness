@@ -29,7 +29,8 @@ export async function downloadArtifact(
       artifact,
       ...(range ? { range } : {}),
     })
-    if (!result.ok) throw new Error(`deliverable unavailable: ${result.code}`)
+    if (!result.ok)
+      throw Object.assign(new Error(`deliverable unavailable: ${result.code}`), { code: result.code })
     if (
       result.artifact.sha256 !== artifact.sha256 ||
       result.artifact.size !== artifact.size ||

@@ -30,7 +30,13 @@ export type ArtifactReadAuthority = Readonly<{
 }>
 
 export type ArtifactReadAuthorityPort = Readonly<{
-  resolve(sessionId: string, laneId: string, sha256: string, signal: AbortSignal): Promise<unknown>
+  resolve(
+    sessionId: string,
+    laneId: string,
+    sha256: string,
+    signal: AbortSignal,
+    mime?: string,
+  ): Promise<unknown>
 }>
 
 export type ArtifactReadStore = Readonly<{
@@ -379,6 +385,7 @@ export function createAuthenticatedArtifactReadHandler(
           request.laneId,
           request.artifact.sha256,
           operationSignal,
+          request.artifact.mime,
         ]) as Promise<unknown>,
       signal,
       configuration.operationTimeoutMs,

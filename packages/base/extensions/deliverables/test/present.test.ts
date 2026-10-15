@@ -23,7 +23,7 @@ describe('deliverable surface', () => {
     } as unknown as ExtensionAPI)
     const tool = tools[0]!
     const base = fakeToolContext({
-      files: { 'cities.html': '<h1>Cities</h1>' },
+      files: { 'cities.html': '<h1>城市</h1>' },
       invoke: async () => ({ content: [] }),
     })
     const ctx = {
@@ -51,7 +51,11 @@ describe('deliverable surface', () => {
         titleKey: 'ui.deliverables',
         components: [{ id: 'file-0', kind: 'artifact-file', dataKey: 'file-0' }],
         data: {
-          'file-0': { name: 'Cities.html', description: 'City comparison', artifact: { mime: 'text/html' } },
+          'file-0': {
+            name: 'Cities.html',
+            description: 'City comparison',
+            artifact: { mime: 'text/html', size: new TextEncoder().encode('<h1>城市</h1>').byteLength },
+          },
         },
       },
     })

@@ -352,6 +352,7 @@ export function BoundSurface({
 }) {
   // A closed view inside an answer is read back by id; it stays in place, read-only.
   const record = client.knownRecord(id)!
+  const snapshot = client.getSnapshot()
   const draft = client.draft(id),
     receipts = client.receipts(id),
     confirmation = client.confirmation(id)
@@ -376,11 +377,20 @@ export function BoundSurface({
   )
   return (
     <IntelligentSurface
-      renderArtifact={(file) => (
+      renderArtifact={(file, componentId) => (
         <ArtifactFile
           key={file.artifact.sha256}
           sessionId={client.sessionId}
           file={file}
+          checking={snapshot.ready === false && !snapshot.error}
+          artifactStatus={
+            snapshot.error
+              ? 'unavailable'
+              : (
+                  record.artifacts as Record<string, import('@agnes/protocol').UiArtifactStatus> | undefined
+                )?.[componentId]
+          }
+          onRetry={() => void client.refresh()}
           laneId={record.lane}
           resources={binding.resources}
           placement={placement}

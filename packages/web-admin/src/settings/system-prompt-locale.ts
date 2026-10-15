@@ -52,6 +52,10 @@ export const promptCatalog: LocaleCatalog = {
     sources:
       'What the prompt plugins provide now. Session context is added per request and shows in the trace.',
     failed: 'Unable to read or save the prompt. Check access and try again.',
+    revisionConflict: 'Changed in another window. Your draft is kept. Reload the saved value and try again.',
+    reloadSaved: 'Reload saved value',
+    savedValue: 'Saved value',
+    noCustomPrompt: 'No custom instructions or replacement.',
     empty: 'The prompt plugins provide no sections.',
   },
   'zh-CN': {
@@ -104,6 +108,10 @@ export const promptCatalog: LocaleCatalog = {
     initial: '按此会话的配置组合而成；还没有保留过请求。',
     sources: '提示词插件现在提供的内容。会话上下文在每次请求时加入，可在轨迹里查看。',
     failed: '无法读取或保存提示词，请检查权限后重试。',
+    revisionConflict: '另一窗口已修改。草稿已保留，请重新读取已保存的内容后重试。',
+    reloadSaved: '重新读取已保存的内容',
+    savedValue: '已保存的内容',
+    noCustomPrompt: '未设置自定义指令或完整替换。',
     empty: '提示词插件没有提供内容。',
   },
 }

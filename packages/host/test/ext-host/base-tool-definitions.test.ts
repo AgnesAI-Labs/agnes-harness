@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -97,22 +97,24 @@ describe('built-in base tools', () => {
       ],
       onExhausted: 'error',
     })
-    const { host } = await createTestHost({
+    const options: Parameters<typeof createTestHost>[0] = {
       dataDir,
       packageDirs: { '@agnes/base': baseDir },
       provider,
       disableSessionTitle: true,
-      // present stores the file as a session artifact before it renders the file card.
       seams: {
         artifacts: {
-          put: async (bytes, meta) => ({
-            sha256: createHash('sha256').update(bytes).digest('hex'),
-            size: bytes.length,
-            mime: meta?.mime ?? 'application/octet-stream',
-          }),
+          put: async (bytes, meta) => {
+            const sha256 = createHash('sha256').update(bytes).digest('hex')
+            const shard = join(dataDir, 'artifacts', 'sha256', sha256.slice(0, 2))
+            mkdirSync(shard, { recursive: true })
+            writeFileSync(join(shard, sha256), bytes)
+            return { sha256, size: bytes.byteLength, mime: meta?.mime ?? 'application/octet-stream' }
+          },
         },
       },
-    })
+    }
+    let { host } = await createTestHost(options)
     try {
       const session = await host.createSession({ cwd: dataDir })
       const service = session.intelligentUi
@@ -136,15 +138,33 @@ describe('built-in base tools', () => {
       expect(question?.surface).toMatchObject({ titleKey: 'ui.question.title', placement: { inline: true } })
 
       expect(await prompt('Show me the file')).toMatchObject({ reason: 'completed' })
-      expect(
-        (await surfaces()).some((record) =>
-          record.surface.components.every((component) => component.kind === 'artifact-file'),
-        ),
-      ).toBe(true)
+      const file = (await surfaces()).find((record) =>
+        record.surface.components.every((component) => component.kind === 'artifact-file'),
+      )
+      expect(file?.artifacts).toEqual({ 'file-0': 'available' })
+      const rows = await session.scan({ limit: 500 })
+      const registration = rows.find((row) => row.type === 'x/core/artifact.registered')
+      const presented = rows.find((row) => row.type === 'tool/result' && row.origin === 'tool:present')
+      expect(registration?.trust).toBe('trusted')
+      expect(registration!.seq).toBeLessThan(file!.createdSeq)
+      expect(file!.createdSeq).toBeLessThan(presented!.seq)
 
       expect(await prompt('Remind me daily')).toMatchObject({ reason: 'completed' })
-      expect((await surfaces()).some((record) => record.surface.title === 'Scheduled tasks')).toBe(true)
+      expect(
+        (await surfaces()).some((record) => record.surface.title === 'Scheduled tasks'),
+        JSON.stringify(await session.scan({ type: 'tool/result', limit: 100 })),
+      ).toBe(true)
       expect(failures()).toEqual([])
+      const key = session.key
+      await host.close()
+      ;({ host } = await createTestHost(options))
+      const resumed = await host.createSession({ key, cwd: dataDir })
+      const restored = await resumed.intelligentUi!.read({ sessionId: key }, new AbortController().signal)
+      expect(
+        restored.surfaces.find((record) =>
+          record.surface.components.every((component) => component.kind === 'artifact-file'),
+        )?.artifacts,
+      ).toEqual({ 'file-0': 'available' })
     } finally {
       await host.close()
     }

@@ -42,7 +42,7 @@ export function sessionDeliverables(surfaces: readonly UiSurfaceRecord[]): TurnD
  * another producer carries `source`, so its card says whose it is.
  */
 export function deliverableGroups(entries: readonly TurnDeliverable[]): {
-  groups: { group: Group; entries: (TurnDeliverable & { source?: string })[] }[]
+  groups: { group: Group; entries: (TurnDeliverable & { source?: string; recovered?: boolean })[] }[]
   earlier: (TurnDeliverable & { version: EarlierVersion })[]
 } {
   const named = groupDeliverables(entries)
@@ -55,9 +55,9 @@ export function deliverableGroups(entries: readonly TurnDeliverable[]): {
     groups: GROUPS.map((group) => ({
       group,
       entries: named
-        .map(({ latest, mixedSources }) => {
+        .map(({ latest, mixedSources, recovered }) => {
           const source = mixedSources ? deliverableProducer(latest) : undefined
-          return source ? { ...latest, source } : latest
+          return { ...latest, recovered, ...(source ? { source } : {}) }
         })
         .filter((entry) => groupOf(entry) === group),
     })).filter((item) => item.entries.length > 0),
@@ -143,13 +143,16 @@ function SessionDeliverables({
   const [historyOpen, setHistoryOpen] = useState(false)
   if (!client || client.sessionId !== sessionId)
     return <SettingsState tone="empty">{t('workbench.deliverables.empty')}</SettingsState>
-  const entries = sessionDeliverables(client.getSnapshot().surfaces)
+  const snapshot = client.getSnapshot()
+  const entries = sessionDeliverables(snapshot.surfaces)
   const { groups, earlier } = deliverableGroups(entries)
   const newest = groups[0]?.entries[0]
   const current = entries.find((entry) => entryKey(entry) === chosen) ?? newest
   const timeline = (context.data as { timeline?: UITimeline } | undefined)?.timeline
   const source = current && sessionId ? deliverableSource(timeline, current, client, sessionId) : undefined
-  const card = (entry: TurnDeliverable & { version?: EarlierVersion; source?: string }) => (
+  const card = (
+    entry: TurnDeliverable & { version?: EarlierVersion; source?: string; recovered?: boolean },
+  ) => (
     // biome-ignore lint/a11y/noStaticElementInteractions: a click inside a card only marks it as the one the footer names.
     <li
       key={entryKey(entry)}
@@ -163,6 +166,10 @@ function SessionDeliverables({
           if (entry.version) setHistoryOpen(true)
         }}
         file={entry.file}
+        artifactStatus={snapshot.error ? 'unavailable' : entry.artifactStatus}
+        checking={snapshot.ready === false && !snapshot.error}
+        recovered={entry.recovered}
+        onRetry={() => void binding.getSnapshot()?.refresh()}
         laneId={entry.lane}
         resources={binding.resources}
         placement="workbench"

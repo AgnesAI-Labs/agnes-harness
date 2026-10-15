@@ -1,4 +1,4 @@
-import type { UiArtifactFileData } from '@agnes/protocol/gen/intelligent-ui'
+import type { UiArtifactFileData, UiArtifactStatus } from '@agnes/protocol/gen/intelligent-ui'
 import type { ClientDocumentKind, ClientDocumentResource, ClientResourceService } from '@agnes/web-client'
 import {
   Button,
@@ -18,6 +18,14 @@ import {
   deliverableVersion,
   type EarlierVersion,
 } from './deliverable-labels.js'
+
+function resourceFailure(error: unknown): UiArtifactStatus {
+  const code = (error as { code?: string } | undefined)?.code
+  if (code === 'artifact_not_found') return 'not_found'
+  if (code === 'artifact_identity_mismatch' || code === 'artifact_forbidden') return 'identity_mismatch'
+  if (code === 'artifact_reclaimed') return 'reclaimed'
+  return 'unavailable'
+}
 
 const PREVIEW_LIMIT = 1024 * 1024
 
@@ -59,10 +67,14 @@ const previewRequest = {
 }
 // A request names the file by name and content: the same bytes under two names are two cards.
 const fileKey = (sessionId: string, laneId: string, file: UiArtifactFileData) =>
-  JSON.stringify([sessionId, laneId, file.name, file.artifact.sha256])
+  JSON.stringify([sessionId, laneId, file.name, file.artifact.sha256, file.artifact.size, file.artifact.mime])
 
 type ArtifactFileProps = {
   file: UiArtifactFileData
+  artifactStatus?: UiArtifactStatus | undefined
+  onRetry?: (() => void) | undefined
+  recovered?: boolean | undefined
+  checking?: boolean | undefined
   sessionId: string
   laneId: string
   resources: ClientResourceService | undefined
@@ -91,6 +103,10 @@ function ArtifactFileCard({
   onPreviewRequested,
   earlier,
   source,
+  artifactStatus,
+  onRetry,
+  recovered,
+  checking,
 }: ArtifactFileProps) {
   const { t, locale, hostT } = useUiText(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
   const owner = useMemo(
@@ -103,13 +119,13 @@ function ArtifactFileCard({
   const trigger = useRef<HTMLButtonElement>(null)
   const previewId = useId()
   const [busy, setBusy] = useState(false)
-  const [failed, setFailed] = useState(false)
+  const [failed, setFailed] = useState<UiArtifactStatus>()
   const [copied, setCopied] = useState(false)
   useEffect(() => {
     owner.active = true
     setPreview(undefined)
     setBusy(false)
-    setFailed(false)
+    setFailed(undefined)
     return () => {
       owner.active = false
       owner.request++
@@ -160,13 +176,29 @@ function ArtifactFileCard({
   const key = fileKey(sessionId, laneId, file)
   const delegated = placement === 'inline' && !!onShowInWorkbench
 
+  const status = failed ?? artifactStatus
+  const permanent = status === 'not_found' || status === 'identity_mismatch' || status === 'reclaimed'
+  const note = checking
+    ? 'ui.file.checking'
+    : status === 'available'
+      ? undefined
+      : status === 'not_found'
+        ? 'ui.file.notFound'
+        : status === 'identity_mismatch'
+          ? 'ui.file.invalidReference'
+          : status === 'reclaimed'
+            ? 'ui.file.reclaimed'
+            : status === 'unavailable'
+              ? 'ui.file.failed'
+              : 'ui.file.unknown'
   const unavailable = !kind || size > PREVIEW_LIMIT
   async function show() {
-    if (!resources || owner.loading || (preview && preview.status !== 'failed')) return
+    if (!resources || permanent || owner.loading || (preview && preview.status !== 'failed')) return
     if (unavailable) {
       setPreview({ status: 'unavailable' })
       return
     }
+    setFailed(undefined)
     const request = ++owner.request
     owner.loading = true
     setPreview({ status: 'loading' })
@@ -178,8 +210,11 @@ function ArtifactFileCard({
       }
       owner.releases.add(result.release)
       setPreview({ status: 'ready', resource: result })
-    } catch {
-      if (owner.active && request === owner.request) setPreview({ status: 'failed' })
+    } catch (error) {
+      if (owner.active && request === owner.request) {
+        setFailed(resourceFailure(error))
+        setPreview({ status: 'failed' })
+      }
     } finally {
       if (request === owner.request) owner.loading = false
     }
@@ -221,9 +256,9 @@ function ArtifactFileCard({
     })
   }, [requested, placement])
   async function download() {
-    if (!resources || busy) return
+    if (!resources || busy || permanent) return
     setBusy(true)
-    setFailed(false)
+    setFailed(undefined)
     try {
       const result = await resources.files.load({ laneId, artifact: file.artifact })
       if (!owner.active) {
@@ -241,8 +276,8 @@ function ArtifactFileCard({
       }
       const timer = setTimeout(release, 1000)
       owner.releases.add(release)
-    } catch {
-      if (owner.active) setFailed(true)
+    } catch (error) {
+      if (owner.active) setFailed(resourceFailure(error))
     } finally {
       if (owner.active) setBusy(false)
     }
@@ -281,7 +316,7 @@ function ArtifactFileCard({
                 )
                   return
                 trigger.current?.focus()
-                if (resources) open()
+                if (resources && !permanent) open()
               }
             : undefined
         }
@@ -297,7 +332,7 @@ function ArtifactFileCard({
                 appearance="ghost"
                 className="deliverable-target"
                 data-testid="deliverable-target"
-                disabled={!resources}
+                disabled={!resources || permanent}
                 aria-label={`${t('ui.file.inWorkbench')}: ${file.name}`}
                 onClick={() => {
                   if (!window.getSelection()?.toString()) open()
@@ -318,7 +353,7 @@ function ArtifactFileCard({
               size="small"
               className="deliverable-open"
               data-testid="deliverable-open"
-              disabled={!resources || (!opened && busy)}
+              disabled={!resources || (!opened && (busy || permanent))}
               aria-busy={preview?.status === 'loading'}
               onClick={open}
               aria-expanded={opened}
@@ -343,14 +378,14 @@ function ArtifactFileCard({
                 id: 'workbench',
                 label: t('ui.file.previewInWorkbench'),
                 testId: 'deliverable-in-workbench',
-                disabled: !resources || busy,
+                disabled: !resources || busy || permanent,
                 onSelect: () => (delegated ? open() : void show()),
               },
               {
                 id: 'download',
                 label: t('ui.file.download'),
                 testId: 'deliverable-download',
-                disabled: !resources || busy,
+                disabled: !resources || busy || permanent,
                 onSelect: () => void download(),
               },
               {
@@ -363,10 +398,29 @@ function ArtifactFileCard({
           />
         </div>
       </div>
-      {failed && (
-        <p className="deliverable-note" role="alert">
-          {t('ui.file.failed')}
+      {recovered && (
+        <p className="deliverable-note" role="status">
+          {t('ui.file.recovered')}
         </p>
+      )}
+      {note && preview?.status !== 'failed' && (
+        <div
+          className="deliverable-note"
+          role={!checking && status && status !== 'available' ? 'alert' : 'status'}
+        >
+          {t(note)}
+          {status === 'unavailable' && onRetry && (
+            <Button
+              size="small"
+              onClick={() => {
+                setFailed(undefined)
+                onRetry()
+              }}
+            >
+              {t('ui.file.retry')}
+            </Button>
+          )}
+        </div>
       )}
       {opened && (
         <div
@@ -376,9 +430,21 @@ function ArtifactFileCard({
           data-kind={kind ?? 'none'}
         >
           {preview.status === 'failed' ? (
-            <p className="deliverable-note" role="alert">
-              {t('ui.file.failed')}
-            </p>
+            <div className="deliverable-note" role="alert">
+              {t(note ?? 'ui.file.failed')}
+              {status === 'unavailable' && onRetry && (
+                <Button
+                  size="small"
+                  onClick={() => {
+                    close()
+                    setFailed(undefined)
+                    onRetry()
+                  }}
+                >
+                  {t('ui.file.retry')}
+                </Button>
+              )}
+            </div>
           ) : unavailable ? (
             <p className="deliverable-note" role="status">
               {t(size > PREVIEW_LIMIT ? 'ui.file.large' : 'ui.file.unsupported')}
