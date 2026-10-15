@@ -544,3 +544,51 @@ describe('fs adapter, full access over the installation own state', () => {
     })
   })
 })
+
+it('keeps exclusive creation confined, refuses aliases and never overwrites a concurrent creator', async () => {
+  const { createHash } = await import('node:crypto')
+  const sha256Hex = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
+  const files = new Map<string, Uint8Array>()
+  const links = new Map([['/w/link', '/w/real']])
+  const io: import('../../src/adapters/fs-io.js').FsIo = {
+    lstat: async (path) =>
+      ['/', '/w', '/w/real'].includes(path)
+        ? { kind: 'dir', size: 0, mtimeMs: 0 }
+        : links.has(path)
+          ? { kind: 'symlink', size: 0, mtimeMs: 0, linkTarget: links.get(path) ?? '' }
+          : files.has(path)
+            ? { kind: 'file', size: files.get(path)!.length, mtimeMs: 0 }
+            : undefined,
+    readlink: async (path) => links.get(path) ?? '',
+    readFile: async (path) => files.get(path) ?? new Uint8Array(),
+    writeFile: async (path, data) => {
+      files.set(path, data)
+    },
+    createFile: async (path, data) => {
+      if (files.has(path)) throw Object.assign(new Error('exists'), { code: 'EEXIST' })
+      files.set(path, data.slice())
+      return { size: data.length, sha256: sha256Hex(data) }
+    },
+    mkdir: async () => {},
+    readdir: async () => [],
+    rm: async () => {},
+  }
+  const binding = { policy: testFsPolicy('/w', { deny: ['denied'] }), caseSensitive: true }
+  const fs = createFs(() => binding, io)
+  const bytes = new Uint8Array([0, 250])
+  await expect(fs.create!('/elsewhere', bytes)).rejects.toMatchObject({ code: 'E_FS_DENIED' })
+  await expect(fs.create!('/w/denied/file', bytes)).rejects.toMatchObject({ code: 'E_FS_DENIED' })
+  await expect(fs.create!('/w/link/file', bytes)).rejects.toMatchObject({ code: 'E_FS_DENIED' })
+  const attempts = await Promise.allSettled([
+    fs.create!('/w/new', bytes),
+    fs.create!('/w/new', new Uint8Array([1])),
+  ])
+  expect(attempts.map((attempt) => attempt.status).sort()).toEqual(['fulfilled', 'rejected'])
+  expect(files.get('/w/new')).toEqual(bytes)
+  const first = attempts.find((attempt) => attempt.status === 'fulfilled')
+  expect(first).toMatchObject({ value: { size: bytes.length, sha256: sha256Hex(bytes) } })
+  binding.policy = testFsPolicy('/w')
+  await expect(
+    createFs(() => ({ ...binding, readOnly: true }), io).create!('/w/blocked', bytes),
+  ).rejects.toMatchObject({ code: 'E_FS_DENIED' })
+})

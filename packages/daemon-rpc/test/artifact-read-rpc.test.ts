@@ -496,3 +496,42 @@ describe('authenticated artifact read RPC', () => {
       ).toThrow(TypeError)
   })
 })
+
+it('keeps authenticated artifact windows bounded and preserves authority before a verified range read', async () => {
+  const { createAuthenticatedArtifactReadHandler } = await import('../src/local/artifact-read.js')
+  const ref = { sha256: 'a'.repeat(64), size: 80 * 1024 * 1024, mime: 'application/octet-stream' }
+  const caller = { principalId: 'owner', sessionId: 'session', laneId: 'main', authKind: 'local' }
+  let active = true
+  let served = false
+  const read = createAuthenticatedArtifactReadHandler({
+    authority: {
+      resolve: async () =>
+        active ? { sessionId: 'session', laneId: 'main', ownerId: 'owner', artifact: ref } : undefined,
+    },
+    artifacts: {
+      get: async () => {
+        throw new Error('whole originals are not allocated for window reads')
+      },
+      readRange: async (_ref, range) => {
+        served = true
+        return new Uint8Array(range.endExclusive - range.start).fill(7)
+      },
+    },
+    limits: { maxArtifactBytes: 100 * 1024 * 1024, maxResponseBytes: 1024 },
+    operationTimeoutMs: 1000,
+  })
+  const request = { sessionId: 'session', laneId: 'main', artifact: ref, range: 'bytes=100-109' }
+  expect(await read(request, caller)).toMatchObject({
+    ok: true,
+    status: 206,
+    body: new Uint8Array(10).fill(7),
+    headers: { contentRange: `bytes 100-109/${ref.size}` },
+  })
+  served = false
+  active = false
+  expect(await read(request, caller)).toMatchObject({ ok: false, status: 404 })
+  expect(served).toBe(false)
+  active = true
+  expect(await read({ ...request, range: 'bytes=0-4095' }, caller)).toMatchObject({ ok: false, status: 413 })
+  expect(served).toBe(false)
+})

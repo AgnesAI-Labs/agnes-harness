@@ -1,3 +1,4 @@
+import { privateArtifactDeleteAvailable } from '@agnes/system-node'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -40,11 +41,13 @@ const inspect = (dir: string, enabled: boolean, os = process.platform) =>
   })
 
 describe('Computer Use artifact retention', () => {
-  it('leaves artifact writes alone while the feature is off and no screenshot was ever written', () => {
+  it('keeps shared CAS writes private independently of screenshot capture', () => {
     const retention = inspect(dataDir(), false)
     expect(retention.required).toBe(false)
     expect(retention.metadataPresent).toBe(false)
-    expect(retention.contextFor('@agnes/base', 'artifacts')).toEqual({})
+    expect('privateArtifactStore' in retention.contextFor('@agnes/base', 'artifacts')).toBe(
+      privateArtifactDeleteAvailable(),
+    )
   })
 
   it('keeps the writer and collector once screenshot metadata exists, even when disabled', () => {

@@ -21,6 +21,7 @@ import {
   hasPrivateDaclSync,
   listCanonicalDirectorySync,
   openCanonicalFileSync,
+  openCanonicalWritableFileSync,
   renameWriteThroughSync,
   syncDirectorySync,
   syncFileSync,
@@ -184,3 +185,27 @@ it.runIf(process.platform !== 'win32')(
     }).toThrow(expect.objectContaining({ code: 'EINVAL' }))
   },
 )
+
+it('creates a workspace original exclusively and refuses existing leaves and symlink ancestors', () => {
+  const canonical = realpathSync.native(root)
+  const path = join(canonical, 'original.bin')
+  const bytes = new Uint8Array([0, 250, 255])
+  const fd = openCanonicalWritableFileSync(path, true)
+  try {
+    writeFileSync(fd, bytes)
+    fsyncSync(fd)
+  } finally {
+    closeSync(fd)
+  }
+  expect(readFileSync(path)).toEqual(Buffer.from(bytes))
+  expect(() => openCanonicalWritableFileSync(path, true)).toThrow()
+  expect(readFileSync(path)).toEqual(Buffer.from(bytes))
+  mkdirSync(join(canonical, 'real'))
+  symlinkSync(
+    join(canonical, 'real'),
+    join(canonical, 'alias'),
+    process.platform === 'win32' ? 'junction' : 'dir',
+  )
+  expect(() => openCanonicalWritableFileSync(join(canonical, 'alias', 'escape'), true)).toThrow()
+  expect(existsSync(join(canonical, 'real', 'escape'))).toBe(false)
+})

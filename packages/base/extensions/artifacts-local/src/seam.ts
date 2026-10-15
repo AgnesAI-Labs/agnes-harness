@@ -1,6 +1,8 @@
+import { AttachmentError } from '@agnes/protocol'
 import { createHash } from 'node:crypto'
 import type { ArtifactRef, ArtifactsSeam } from '@agnes/core'
 import type { SeamFactory } from '../../../src/seam-init.js'
+import { createAttachmentStore } from './attachments.js'
 import { createJobRunner } from './jobs.js'
 
 const ARTIFACTS = 'artifacts/sha256'
@@ -49,7 +51,7 @@ export const artifactsLocal: SeamFactory<ArtifactsSeam> = async (ctx) => {
   const pathOf = (sha256: string): string =>
     `${ctx.profile.dataDir}/${ARTIFACTS}/${sha256.slice(0, 2)}/${sha256}`
   const jobs = createJobRunner(ctx)
-  return {
+  const seam: ArtifactsSeam = {
     async put(bytes, meta) {
       const sha256 = createHash('sha256').update(bytes).digest('hex')
       const at = pathOf(sha256)
@@ -113,25 +115,33 @@ export const artifactsLocal: SeamFactory<ArtifactsSeam> = async (ctx) => {
       try {
         const stat = await fs.stat(at)
         if (stat.kind !== 'file' || stat.size !== identity.size)
-          throw new Error(`artifact size mismatch: ${identity.sha256}`)
+          throw new AttachmentError('ATTACHMENT_HASH_MISMATCH', `artifact size mismatch: ${identity.sha256}`)
         bytes = await fs.read(at)
       } catch (e) {
         // Only a missing file is "not found". A permission error, a refused path or a failing disk
         // is re-thrown as itself: reporting those as an absent artifact would have a caller decide
         // the bytes were never stored and quietly produce them again.
         if ((e as { code?: unknown }).code === 'ENOENT')
-          throw new Error(`artifact not found: ${identity.sha256}`)
+          throw new AttachmentError('ATTACHMENT_MISSING', `artifact not found: ${identity.sha256}`)
         throw e
       }
       // A content-addressed filename is not evidence about the bytes currently at that path. This
       // catches corruption and swap/tamper before media preflight or any other consumer can use it.
       const actualSha256 = createHash('sha256').update(bytes).digest('hex')
-      if (actualSha256 !== identity.sha256) throw new Error(`artifact integrity mismatch: ${identity.sha256}`)
-      if (bytes.byteLength !== identity.size) throw new Error(`artifact size mismatch: ${identity.sha256}`)
+      if (actualSha256 !== identity.sha256)
+        throw new AttachmentError(
+          'ATTACHMENT_HASH_MISMATCH',
+          `artifact integrity mismatch: ${identity.sha256}`,
+        )
+      if (bytes.byteLength !== identity.size)
+        throw new AttachmentError('ATTACHMENT_HASH_MISMATCH', `artifact size mismatch: ${identity.sha256}`)
       return bytes
     },
     submitJob: (spec) => jobs.submit(spec),
     poll: (jobId) => jobs.poll(jobId),
     cancel: (jobId) => jobs.cancel(jobId),
   }
+  const metadata = ctx.adapters.storage.namespace?.('attachments-v1')
+  if (metadata) Object.assign(seam, { attachments: createAttachmentStore(metadata, seam) })
+  return seam
 }

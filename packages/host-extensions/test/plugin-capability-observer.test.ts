@@ -17,7 +17,7 @@ it('reports undeclared Host port use without exposing targets or changing port o
     session: { workspaceRoot: '/workspace' },
     exec: async () => ({ stdout: 'ok' }),
     net: { fetch: async () => 'response' },
-    fs: { read: async () => new Uint8Array([1]) },
+    fs: { read: async () => new Uint8Array([1]), create: async () => ({ size: 0, sha256: 'a'.repeat(64) }) },
     sandbox: { confine: async (argv: string[]) => argv },
   } as unknown as ToolContext
   const minimal = { cwd: '/workspace', signal: new AbortController().signal } as ToolContext
@@ -32,6 +32,8 @@ it('reports undeclared Host port use without exposing targets or changing port o
   await declared.fs.read('/workspace/report.txt')
   expect(events).toEqual([])
   const undeclared = observePluginCapabilities(context, undefined, log)
+  await undeclared.fs.create!('/workspace/private-name', new Uint8Array())
+  expect(events).toContainEqual(expect.objectContaining({ detail: { capability: 'filesystem.write' } }))
   await undeclared.exec(['node', '--secret=do-not-log'])
   await undeclared.net.fetch('https://api.example.com/?token=do-not-log')
   expect(events).toEqual(

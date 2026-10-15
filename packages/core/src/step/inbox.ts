@@ -3,6 +3,8 @@ import type { Inbox, InboxItem } from '@agnes/core-ledger/reduce/shapes'
 import type { Actor, ContentBlock, SystemInput } from '@agnes/protocol'
 
 export type EnqueueMsg = {
+  /** Backend cancellation for attachment admission; never persisted. */
+  signal?: AbortSignal
   /** Atomic admission for a continuation: refuse when another input is already pending. */
   ifEmpty?: boolean
   content: ContentBlock[]

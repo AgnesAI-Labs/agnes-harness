@@ -13,7 +13,7 @@ export async function downloadArtifact(
     !/^[0-9a-f]{64}$/.test(artifact.sha256) ||
     !Number.isSafeInteger(artifact.size) ||
     artifact.size < 0 ||
-    artifact.size > 32 * 1024 * 1024 ||
+    artifact.size > 100 * 1024 * 1024 ||
     !laneId ||
     laneId.length > 512 ||
     !artifact.mime

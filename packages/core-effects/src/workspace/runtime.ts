@@ -254,6 +254,9 @@ function invocationView(source: WorkspaceInvocationSource, scope: InvocationScop
       : {}),
     read: (path, opts) => scope.track(() => source.fs.read(path, opts)),
     write: (path, data) => scope.track(() => source.fs.write(path, data)),
+    ...(source.fs.create
+      ? { create: (path: string, data: Uint8Array) => scope.track(() => source.fs.create!(path, data)) }
+      : {}),
     list: (path) => scope.track(() => source.fs.list(path)),
     stat: (path) => scope.track(() => source.fs.stat(path)),
   })

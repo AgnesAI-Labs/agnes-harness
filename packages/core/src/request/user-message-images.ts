@@ -1,6 +1,7 @@
 import { CoreError } from '@agnes/core-common/types'
 import type { ContentBlock } from '@agnes/protocol'
 import {
+  AttachmentError,
   decodeSafeImages,
   SafeImageError,
   USER_MESSAGE_IMAGE_LIMITS,
@@ -14,7 +15,14 @@ export function validateUserMessageImages(content: readonly ContentBlock[]): voi
   try {
     validateUserAttachments(content)
   } catch (error) {
-    throw new CoreError('E_ENVELOPE', error instanceof Error ? error.message : 'Invalid attachment.')
+    throw new CoreError('E_ENVELOPE', error instanceof Error ? error.message : 'Invalid attachment.', {
+      code:
+        error instanceof AttachmentError
+          ? error.code
+          : error instanceof SafeImageError && error.code === 'BYTE_LIMIT'
+            ? 'ATTACHMENT_BYTES'
+            : 'ATTACHMENT_DATA',
+    })
   }
   const images = content.filter((block): block is UserImage => block.type === 'image')
   if (images.length === 0) return
@@ -23,7 +31,16 @@ export function validateUserMessageImages(content: readonly ContentBlock[]): voi
     decodeSafeImages(images, USER_MESSAGE_IMAGE_LIMITS)
   } catch (error) {
     if (error instanceof SafeImageError)
-      throw new CoreError('E_ENVELOPE', `user image rejected (${error.code})`)
+      throw new CoreError('E_ENVELOPE', `user image rejected (${error.code})`, {
+        code:
+          error.code === 'BYTE_LIMIT'
+            ? 'ATTACHMENT_BYTES'
+            : error.code === 'PIXEL_LIMIT'
+              ? 'ATTACHMENT_PIXELS'
+              : error.code === 'MIME_MISMATCH'
+                ? 'ATTACHMENT_MIME'
+                : 'ATTACHMENT_DATA',
+      })
     throw error
   }
 }

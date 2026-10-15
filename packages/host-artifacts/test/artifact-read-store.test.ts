@@ -276,3 +276,24 @@ describe('local production artifact read store', () => {
     })
   })
 })
+
+it('verifies an entire original while returning only the requested bounded window', async () => {
+  const item = await fixture('original bytes outside the selected window also matter')
+  const store = createLocalArtifactReadStore({ dataDir: item.dataDir, maxArtifactBytes: 1024 })
+  const signal = new AbortController().signal
+  expect(await store.readRange(item.ref, { start: 2, endExclusive: 9 }, signal)).toEqual(
+    item.bytes.slice(2, 9),
+  )
+  const corrupted = item.bytes.slice()
+  corrupted[corrupted.length - 1] = 0
+  await writeFile(item.path, corrupted)
+  await expect(store.readRange(item.ref, { start: 2, endExclusive: 9 }, signal)).rejects.toThrow(
+    'artifact bytes unavailable',
+  )
+  for (const range of [
+    { start: -1, endExclusive: 2 },
+    { start: 5, endExclusive: 4 },
+    { start: 0, endExclusive: 1025 },
+  ])
+    await expect(store.readRange(item.ref, range, signal)).rejects.toThrow()
+})

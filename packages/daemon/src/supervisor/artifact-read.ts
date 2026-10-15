@@ -225,7 +225,7 @@ export function composeProductionProjectedArtifactRead(
     })
     const workerRead = createTrustedSessionArtifactReadHandler({
       authority: legacy.authority,
-      artifacts: Object.freeze({ get: artifacts.get }),
+      artifacts: Object.freeze({ get: artifacts.get, readRange: artifacts.readRange }),
       limits,
       operationTimeoutMs: legacy.operationTimeoutMs,
     })
@@ -332,7 +332,7 @@ function composeProductionArtifactReadWithStore(
       artifactStore ?? createLocalArtifactReadStore({ dataDir, maxArtifactBytes: limits.maxArtifactBytes })
     const read = createAuthenticatedArtifactReadHandler({
       authority,
-      artifacts: Object.freeze({ get: artifacts.get }),
+      artifacts: Object.freeze({ get: artifacts.get, readRange: artifacts.readRange }),
       limits,
       operationTimeoutMs,
     })

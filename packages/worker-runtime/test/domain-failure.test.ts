@@ -56,3 +56,17 @@ describe('E_SCAN_TRUNCATED at the worker seam', () => {
     }
   })
 })
+
+it('preserves attachment admission reasons on the wire with fixed text and no arbitrary detail', async () => {
+  const { workerDomainFailure } = await import('../src/worker-errors.js')
+  const { encodeFrame, JsonlDecoder } = await import('../src/framing.js')
+  const failure = workerDomainFailure({
+    code: 'E_ENVELOPE',
+    message: 'native error with private filesystem data',
+    detail: { code: 'ATTACHMENT_PIXELS', raw: 'private payload' },
+  })
+  expect(failure).toEqual({ code: -32602, message: 'INVALID_PARAMS', data: { code: 'ATTACHMENT_PIXELS' } })
+  const frame = { kind: 'reply', requestId: 'synthetic', error: failure }
+  expect(new JsonlDecoder().feed(encodeFrame(frame))).toEqual([frame])
+  expect(JSON.stringify(failure)).not.toContain('private')
+})

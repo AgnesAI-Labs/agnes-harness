@@ -144,7 +144,7 @@ it.each(['direct', 'nested', 'uploaded'] as const)(
       type: 'resource_link',
       name: 'data.bin',
       mimeType: 'text/plain',
-      uri: `agnes-upload://${uploadSessionHash(session.key)}/${'a'.repeat(64)}/27/00000000-0000-4000-8000-000000000001`,
+      uri: `agnes-upload://${uploadSessionHash(session.key)}/${sha256Hex(new TextEncoder().encode('original attachment content'))}/27/00000000-0000-4000-8000-000000000001`,
     }
     const content = [
       mode === 'uploaded' ? uploaded : file(),
@@ -165,12 +165,12 @@ it.each(['direct', 'nested', 'uploaded'] as const)(
     expect(await read(`${path},${path}`)).toBeUndefined()
     expect(await read('session-file://999999/1')).toBeUndefined()
     if (mode === 'uploaded') {
-      expect(
-        (await readSessionAttachment(session, { path, maxBytes: 4 }, new AbortController().signal))?.bytes,
-      ).toEqual(new TextEncoder().encode('orig'))
+      await expect(
+        readSessionAttachment(session, { path, maxBytes: 4 }, new AbortController().signal),
+      ).rejects.toMatchObject({ code: 'ATTACHMENT_TOO_LARGE' })
       await expect(
         readSessionAttachment(session, { path, maxBytes: -1 }, new AbortController().signal),
-      ).rejects.toThrow('byte limit')
+      ).rejects.toMatchObject({ code: 'ATTACHMENT_DATA' })
       const wrong = await log.append([
         session.ev('user/message', {
           content: [

@@ -1,3 +1,4 @@
+import { privateArtifactDeleteAvailable } from '@agnes/system-node'
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -1505,7 +1506,7 @@ describe('assemble', () => {
     expect((ctx.preset as { name: string }).name).toBe('standard')
     await a.rollback.unwind()
   })
-  it('keeps Computer Use artifact retention out of a never-enabled profile', async () => {
+  it('keeps screenshot collection off while permitting private shared CAS writes', async () => {
     const p = await profileFor({ computerUse: { enabled: false } })
     const m = baseModule()
     const seams = testSeams(m)
@@ -1518,7 +1519,7 @@ describe('assemble', () => {
     }
 
     const a = await assemble(p, deps({ '@agnes/base': m, '@agnes/code': codeModule, '@agnes/ai': aiModule }))
-    expect(privateStoreInjected).toBe(false)
+    expect(privateStoreInjected).toBe(privateArtifactDeleteAvailable())
     expect(a.computerUseArtifactGc).toBeUndefined()
     await a.rollback.unwind()
   })

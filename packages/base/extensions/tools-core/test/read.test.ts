@@ -140,6 +140,7 @@ describe('read', () => {
       requiresApproval: 'never',
       paths: [
         { arg: 'path', access: 'read', nonWorkspaceSchemes: ['artifact', 'session-file', 'session-image'] },
+        { arg: 'save_to', access: 'write' },
       ],
     })
   })
@@ -423,4 +424,73 @@ it('reads confined local PNG/JPEG bytes as model images, downsizes them, and fal
     base.mem.files.set('/w/picture', Uint8Array.of(0x89, 0x50, 0x4e, 0x47))
     expect((await readTool.execute({ path: 'picture' }, ctx)).isError).toBe(true)
   }
+})
+
+it('copies authorized originals with the writing policy and verifies the actual exclusive-create receipt', async () => {
+  const { resolveToolCallPolicy } = await import('@agnes/extension-api')
+  const { createHash } = await import('node:crypto')
+  const sha256Hex = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
+  const bytes = new Uint8Array([0, 1, 250, 255])
+  const base = ctxOf()
+  const files = new Map<string, Uint8Array>()
+  const ctx = {
+    ...base,
+    session: {
+      ...base.session,
+      readAttachment: async () => ({ bytes, name: 'original.bin', mimeType: 'application/octet-stream' }),
+    },
+    fs: {
+      ...base.fs,
+      create: async (path: string, content: Uint8Array) => {
+        if (files.has(path)) throw Object.assign(new Error('exists'), { code: 'EEXIST' })
+        files.set(path, content.slice())
+        return { size: content.length, sha256: sha256Hex(content) }
+      },
+    },
+  }
+  expect(resolveToolCallPolicy(readTool, { path: 'session-file://3/1' }).isReadOnly).toBe(true)
+  const args = { path: 'session-file://3/1', save_to: 'copies/original.bin' }
+  expect(resolveToolCallPolicy(readTool, args)).toMatchObject({
+    isReadOnly: false,
+    isDestructive: true,
+    requiresApproval: 'destructive',
+    replay: 'never',
+  })
+  const copied = await readTool.execute(args, ctx)
+  expect(copied.isError).not.toBe(true)
+  expect(copied.details).toMatchObject({ size: bytes.length, sha256: sha256Hex(bytes) })
+  expect([...files.values()]).toEqual([bytes])
+  expect((await readTool.execute(args, ctx)).isError).toBe(true)
+  expect(
+    (
+      await readTool.execute(
+        { ...args, save_to: 'another' },
+        { ...ctx, fs: { ...ctx.fs, create: async () => ({ size: 1, sha256: 'a'.repeat(64) }) } },
+      )
+    ).isError,
+  ).toBe(true)
+  expect((await readTool.execute(args, { ...ctx, fs: base.fs })).isError).toBe(true)
+})
+
+it.each([
+  '/absolute',
+  '../escape',
+  'a/../b',
+  'a//b',
+  'C:/drive',
+  'a\\b',
+  'a/CON.txt',
+  'LPT1',
+  'nul',
+  'a/x.',
+  'a/x ',
+  'a/COM¹.txt',
+  'a/b:stream',
+  'a/\u0000x',
+])('refuses save_to %s before reading an original', async (save_to) => {
+  const base = ctxOf()
+  const result = await readTool.execute({ path: 'session-file://3/1', save_to }, base)
+  expect(result.isError).toBe(true)
+  expect(base.calls.read).toEqual([])
+  expect(base.mem.files.size).toBe(0)
 })

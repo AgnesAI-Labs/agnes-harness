@@ -8,7 +8,7 @@
 
 | 工具 | 输入与行为 |
 | --- | --- |
-| `read` | 读取受工作区权限约束的文本、会话附件及原图。对支持视觉的模型，本地单帧 PNG/JPEG 通过 artifact 成为模型图片输入；输入上限 4 MiB、1600 万像素。按当前模型/运行时的字节、尺寸及像素限制等比例缩小，并去掉元数据。Web 沿用工具图片卡片；非视觉模型收到明确未检查像素的文字说明。其他格式需相应工具。 |
+| `read` | 读取受工作区权限约束的文本、会话附件及原图。对支持视觉的模型，本地单帧 PNG/JPEG 通过 artifact 成为模型图片输入；输入上限为 20 MiB、6400 万像素与 256 MiB 解码采样内存；渐进或隔行输入限制为 1600 万像素与 64 MiB 解码采样内存。进程最多同时解码两张图片，整个准备流程共享 30 秒时限；可选的原生 codec 只在读取图片时加载。按当前模型/运行时的字节、尺寸及像素限制等比例缩小，并去掉元数据。Web 沿用工具图片卡片；非视觉模型收到明确未检查像素的文字说明。`max_edge`（8–1456）可进一步降低输出尺寸。对单个 session-file/session-image 原件使用 `save_to`，可在正常写授权下通过独占、不跟随符号链接的创建能力复制到新的工作区相对路径，禁止覆盖。每份最多 100 MiB，每会话同时一份、每进程两份；更大的原件需客户端按字节窗口下载。其他格式需相应工具。 |
 | `web_search` | `{"queries":["主题"]}`；一至四条非空查询。宿主提供搜索标题、链接和摘要。没有配置搜索提供方或密钥时返回 `WEB_SEARCH_UNAVAILABLE`，可改用已知 URL 调用 `web_fetch`。 |
 | `ask_user_question` | `{"questions":[{"id":"route","question":"请选择路线","options":["A","B"]}]}`。省略 options 使用自由文本；`multiple:true` 允许多选，`allowFreeText:true` 允许补充答案。一至四个问题，id 必须唯一。`timeoutMs` 默认为 0（立即继续），1–60000 可选择等待至持久化截止时间。同批其他工具仍可执行；晚答作为新输入送达。 |
 | `present` | `{"files":[{"path":"report.pdf","name":"Report.pdf","description":"供审阅"}]}`。注册已存在、可读取的普通文件，将内容复制为会话产物。最多十六个文件，每个文件和总量都不超过 32 MiB。surface 列出名称、说明及产物身份；工具结果保留需授权读取的 artifact 引用。 |
@@ -36,7 +36,7 @@ Shell 命令默认获得 `PYTHONUNBUFFERED=1` 和 `PYTHONUTF8=1`。PowerShell �
 
 文件搜索对进程捕获量和累计匹配文本设有上限，累计匹配文本最多 4 MiB。达到捕获上限会明确标记结果不完整；产物包含全部已捕获行，不包含未捕获数据。文件访问仍通过公开上下文与受约束执行器检查。发行包携带固定版本的平台可执行文件及许可声明，无须系统安装 `rg`。
 
-本地 artifact 存储接受零到 32 MiB 的配置读取上限，硬上限为 32 MiB。CLI 和 daemon 使用 32 MiB，与交付物及可读溢出产物的最大大小一致。ripgrep 在两种溢出存储路径写入前拒绝超过此上限的已捕获搜索输出，并提示缩小搜索范围。Computer Use 图片仍单独受 4 MiB 上限约束，RPC 响应分块也有独立限制。
+本地 artifact 存储接受零到 100 MiB 的配置读取上限，硬上限为 100 MiB。daemon 授权最多 100 MiB 的原件下载；交付物和工具输出读取仍保留各自的 32 MiB 上限。有界窗口读取先按 64 KiB 窗口核验整份原件摘要，再返回请求的响应范围。ripgrep 保留独立的捕获输出上限。Computer Use 图片仍单独受 4 MiB 上限约束，RPC 响应分块也有独立限制。
 
 问答、提醒/工作流表格和交付物列表使用统一的 Intelligent UI surface 投影，同时显示在会话与工作台中，不再填充专用 `tool.card.inline` 载荷。交付物采用既有 text 预设，不增加专用下载控件或新组件。
 
@@ -66,3 +66,5 @@ PTY 工具：`pty_open/read/send/signal/resize/list/close` 分别负责打开、
 ## 持久目标工具
 
 goal_get {} 读取会话目标、续轮与额度用量。goal_update 接受 status "complete" 或 "blocked" 和非空 reason。模型不能创建或恢复目标。通过 Web 目标卡片或 [会话指南](../guide/sessions.zh-CN.md#persistent-goals) 中的 /goal 命令控制。
+
+已存附件在 inbox 和消息中保留 artifact 引用。Core 在接纳前核验精确的 session/lane 授权、MIME、大小和摘要；fork 只能读取父会话的可见前缀。普通 CAS 对象至少保留 24 小时，只有在持锁核验完整 ledger 与回执根、确认不可达后才可回收。原件、缩略图与派生产物引用都作为根保留；索引损坏或不完整时禁止删除。

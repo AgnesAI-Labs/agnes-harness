@@ -77,6 +77,10 @@ describe('methods (I1 set)', () => {
         payload: { sessionId: 's', content },
       })
     expect(submit([stored]).ok).toBe(true)
+    expect(fromAcpPrompt(toAcpPrompt([stored]))).toEqual([stored])
+    expect(
+      validateMethod('session/prompt', 'params', { sessionId: 's', prompt: toAcpPrompt([stored]) }).ok,
+    ).toBe(true)
     expect(
       validateAgainst(ContentBlockSchema, {
         ...stored,
@@ -98,7 +102,9 @@ describe('methods (I1 set)', () => {
       { ...uploaded, mimeType: 'bad' },
     ])
       expect(() => validateUserAttachments([block])).toThrow('invalid')
-    expect(() => validateUserAttachments(Array.from({ length: 51 }, () => uploaded))).toThrow('50')
+    expect(() => validateUserAttachments(Array.from({ length: 51 }, () => uploaded))).toThrow(
+      'ATTACHMENT_COUNT',
+    )
     expect(
       validateMethod('_agnes/v1/submit', 'params', {
         clientId: 'protocol-test',

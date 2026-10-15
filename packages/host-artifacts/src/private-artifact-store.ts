@@ -243,6 +243,14 @@ export function createPrivateArtifactStore(dataDir: string, platform: PrivatePla
         // Bytes first: until they exist a reclaim tombstone must stay, or the digest would read as
         // lost instead of reclaimed. Then a digest classified by any earlier screenshot is refreshed
         // to v1 with a new age, so GC cannot delete a newly returned reference by its old age.
+        const objectRoot = join(dataDir, 'artifacts', 'object-meta', sha256.slice(0, 2))
+        if (platform === 'win32') windowsEnsurePrivateDirectorySync(objectRoot)
+        await writePrivate(
+          dataDir,
+          platform,
+          join(objectRoot, `${sha256}.json`),
+          computerUseMetadata(sha256, bytes.byteLength),
+        )
         await writePrivate(dataDir, platform, target, bytes)
         if (pathEntryExists(metadata))
           await writePrivate(dataDir, platform, metadata, computerUseMetadata(sha256, bytes.byteLength))

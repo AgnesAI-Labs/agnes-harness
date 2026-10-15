@@ -466,6 +466,9 @@ export class SessionWorkspaceRuntimeTable implements ChildWorkspaceRuntimePort {
               : runtime.fs.read(path, opts),
           ),
         write: (path, data) => withAccess(() => runtime.fs.write(path, data)),
+        ...(runtime.fs.create
+          ? { create: (path: string, data: Uint8Array) => withAccess(() => runtime.fs.create!(path, data)) }
+          : {}),
         list: (path) => withAccess(() => runtime.fs.list(path)),
         stat: (path) => withAccess(() => runtime.fs.stat(path)),
       },

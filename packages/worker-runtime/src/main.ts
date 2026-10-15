@@ -3,7 +3,7 @@ import { createReadStream, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { Duplex } from 'node:stream'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { domainFailureFromUnknown } from '@agnes/error-sanitization'
+import { workerDomainFailure } from './worker-errors.js'
 import { createSkillCordisService } from '@agnes/resource-control-runtime'
 import {
   bootstrapWorkerResources,
@@ -794,7 +794,7 @@ export async function runWorker(
                 code: typeof err.code === 'string' ? err.code : 'INTERNAL_ERROR',
                 _servicePhase: 'pre-dispatch',
               })
-            : domainFailureFromUnknown(e)
+            : workerDomainFailure(e)
       const reply = {
         kind: 'reply' as const,
         requestId: frame.requestId,

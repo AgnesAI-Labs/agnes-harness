@@ -11,7 +11,11 @@ import { type RpcError, rpcError } from './errors.js'
 import { validateRequestMedia } from './request-media.js'
 
 export {
+  ATTACHMENT_ERROR_CODES,
+  AttachmentError,
+  type AttachmentErrorCode,
   USER_MESSAGE_ATTACHMENT_LIMITS,
+  validateStoredAttachment,
   validateUserAttachments,
 } from '../../protocol-validation/src/attachments.js'
 export { modelImageInputError, userImagePolicy } from '../../protocol-validation/src/model-images.js'

@@ -250,7 +250,6 @@ export type {
 export type { ServiceCapability } from '../gen/ts/extension-service.js'
 /** The one capabilities shape every plugin declares, bundled or installed. */
 export type PluginCapabilities = import('../gen/ts/extension-manifest.js').Capabilities
-export { ATTACHMENT_ERROR_CODES, AttachmentError, type AttachmentErrorCode } from '@agnes/protocol-validation'
 // Preset surface declarations; execution is supplied by the official Intelligent UI plugin.
 export type {
   UiAction,
@@ -581,6 +580,7 @@ export type {
 } from '../gen/ts/worker.js'
 export * from './admin-session-selection.js'
 export * from './app-server.js'
+export { attachmentErrorCode } from './attachment-errors.js'
 export * from './attachments.js'
 export { AutoReviewConfig, ToolReviewFact } from './auto-review.js'
 export * from './child-engine-document.js'
@@ -653,6 +653,9 @@ export * from './stored-attachments.js'
 export * from './surfaces.js'
 export type { ValidationError, ValidationResult } from './validate.js'
 export {
+  ATTACHMENT_ERROR_CODES,
+  AttachmentError,
+  type AttachmentErrorCode,
   decodeAttachmentData,
   decodeSafeImages,
   isDateTime,

@@ -24,11 +24,12 @@ export class ToolEffectScope {
     const proof = error && typeof error === 'object' ? this.refused.get(error) : undefined
     return proof?.safe && !this.started && this.writes === 0 ? proof.diagnostic : undefined
   }
-  async write(run: () => Promise<void>): Promise<void> {
+  async write<T>(run: () => Promise<T>): Promise<T> {
     this.writes++
     try {
-      await run()
+      const result = await run()
       this.beginEffect()
+      return result
     } catch (error) {
       if (!error || typeof error !== 'object' || !this.refused.has(error)) this.beginEffect()
       throw error
