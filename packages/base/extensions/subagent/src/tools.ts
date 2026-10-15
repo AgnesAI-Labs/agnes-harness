@@ -176,7 +176,7 @@ const forkDefinition: ToolDef<typeof forkParameters> = {
     isOpenWorld: true,
     replay: 'never',
 
-    deferLoading: false,
+    deferLoading: 'auto' as const,
     requiresApproval: 'never',
   },
   async execute(args, ctx) {
@@ -242,7 +242,7 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
       isOpenWorld: true,
       replay: 'never',
 
-      deferLoading: false,
+      deferLoading: 'auto' as const,
       requiresApproval: 'never',
     },
     async execute(args, ctx) {
@@ -370,7 +370,7 @@ export const listSubagentModelsTool = defineTool({
     replay: 'safe',
     requiresApproval: 'never',
 
-    deferLoading: false,
+    deferLoading: 'auto' as const,
   },
   async execute(_args, ctx) {
     const allow = childAgentAllowlist(ctx.session.key)
@@ -409,7 +409,7 @@ export function subagentCollectTool(deps: SubagentDeps): ToolDef<typeof collectP
       isOpenWorld: false,
       replay: 'safe',
 
-      deferLoading: false,
+      deferLoading: 'auto' as const,
       requiresApproval: 'never',
     },
     async execute(args, ctx) {
@@ -460,7 +460,7 @@ export function subagentCancelTool(deps: SubagentDeps): ToolDef<typeof cancelPar
       isOpenWorld: false,
       replay: 'never',
 
-      deferLoading: false,
+      deferLoading: 'auto' as const,
       requiresApproval: 'never',
     },
     async execute(args, ctx) {
@@ -487,7 +487,7 @@ const controlMeta = {
   isOpenWorld: false,
   replay: 'never' as const,
 
-  deferLoading: false,
+  deferLoading: 'auto' as const,
   requiresApproval: 'never' as const,
 }
 

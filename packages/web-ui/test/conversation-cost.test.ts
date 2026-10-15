@@ -53,6 +53,15 @@ function rows() {
     term.nextElementSibling?.textContent,
   ])
 }
+const unknownTiming = [
+  ['调用总耗时（非整轮）', '未提供'],
+  ['调用内准备', '未提供'],
+  ['其中：轨迹采集（与其他阶段重叠）', '未提供'],
+  ['首次发送时点（距调用开始）', '未提供'],
+  ['首次可见输出（距调用开始）', '未提供'],
+  ['输出阶段', '未提供'],
+  ['收尾', '未提供'],
+]
 it('renders the complete per-call contract with compact summary and exact detail values', async () => {
   await mount(call)
   expect(host.querySelector('.agh-disclosure-summary')?.textContent).toBe(
@@ -68,8 +77,9 @@ it('renders the complete per-call contract with compact summary and exact detail
     ['推理 Token（输出的子集）', '20'],
     ['美元费用', '$0.000125 · 估算'],
     ['额度', '0.000206 credits · 估算'],
-    ['首次输出等待', '0 ms'],
-    ['模型请求耗时', '2.40 秒'],
+    ...unknownTiming,
+    ['初始采集后的首次输出等待', '0 ms'],
+    ['请求采样耗时（不含收尾）', '2.40 秒'],
   ])
 })
 it('keeps expansion, summary focus and nodes through gateway updates, replay and optional-field removal', async () => {
@@ -83,6 +93,15 @@ it('keeps expansion, summary focus and nodes through gateway updates, replay and
   const gateway: CostNode = {
     ...call,
     source: 'gateway',
+    timing: {
+      providerCallMs: 116,
+      prepareMs: 4,
+      captureMs: 30,
+      dispatchMs: 17,
+      firstOutputMs: 47,
+      outputMs: 45,
+      finalizeMs: 24,
+    },
     credits: 0,
     interrupted: true,
     model: '<img src=x onerror=alert(1)> **literal** [link](javascript:alert(1))',
@@ -99,6 +118,11 @@ it('keeps expansion, summary focus and nodes through gateway updates, replay and
     expect(summary.textContent).toBe('输入 0 · 输出 0 · $0.00（网关记录） · 已中断')
     expect(rows()).toContainEqual(['模型', gateway.model])
     expect(rows()).toContainEqual(['额度', '0 credits · 网关记录'])
+    expect(rows()).toContainEqual(['调用总耗时（非整轮）', '116 ms'])
+    expect(rows()).toContainEqual(['其中：轨迹采集（与其他阶段重叠）', '30 ms'])
+    expect(rows()).toContainEqual(['首次发送时点（距调用开始）', '17 ms'])
+    expect(rows()).toContainEqual(['首次可见输出（距调用开始）', '47 ms'])
+    expect(rows()).toContainEqual(['收尾', '24 ms'])
     expect(rows()).toContainEqual(['推理 Token（输出的子集）', '未提供'])
     expect(rows()).toContainEqual(['状态', '已中断；用量可能不完整或包含估算'])
     expect(host.querySelector('img, a, strong, script')).toBeNull()
@@ -110,6 +134,7 @@ it('keeps expansion, summary focus and nodes through gateway updates, replay and
     ['记录范围', '单次费用记录'],
     ['Token 明细', '未提供'],
     ['额度', '未提供'],
+    ...unknownTiming,
   ])
   expect(details.dataset.open).toBe('true')
   expect(document.activeElement).toBe(summary)

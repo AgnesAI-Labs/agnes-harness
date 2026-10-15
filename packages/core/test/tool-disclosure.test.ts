@@ -178,12 +178,17 @@ it('defers auto tools together once they pass the count or size limit, and leave
     meta: { ...eager.meta, deferLoading: 'auto' as const },
   })
   const fixed = [
+    { ...eager, name: 'tool_search', meta: { ...eager.meta, deferLoading: false } },
+    { ...eager, name: 'tool_describe', meta: { ...eager.meta, deferLoading: false } },
     { ...eager, name: 'always_shown', meta: { ...eager.meta, deferLoading: false } },
     { ...eager, name: 'on_demand', meta: { ...eager.meta, deferLoading: true } },
   ]
-  const deferredNames = (count: number, note?: string) => {
+  const deferredNames = (count: number, note?: string, discovery = true) => {
     const registry = new ToolRegistry()
-    for (const tool of [...fixed, ...Array.from({ length: count }, (_, i) => auto(`auto_${i}`, note))])
+    for (const tool of [
+      ...fixed.filter((tool) => discovery || !['tool_search', 'tool_describe'].includes(tool.name)),
+      ...Array.from({ length: count }, (_, i) => auto(`auto_${i}`, note)),
+    ])
       registry.add(tool, { source: 'test', trust: 'builtin' })
     return registry
       .snapshot(0)
@@ -192,8 +197,30 @@ it('defers auto tools together once they pass the count or size limit, and leave
   }
   expect(deferredNames(AUTO_DEFER_MAX_TOOLS)).toEqual(['on_demand'])
   expect(deferredNames(AUTO_DEFER_MAX_TOOLS + 1)).toHaveLength(AUTO_DEFER_MAX_TOOLS + 2)
+  expect(deferredNames(AUTO_DEFER_MAX_TOOLS + 1, undefined, false)).toEqual(['on_demand'])
   // A few tools with very large schemas cost as much as many small ones.
   expect(deferredNames(3, 'x'.repeat(6000))).toEqual(['auto_0', 'auto_1', 'auto_2', 'on_demand'])
+  for (const meta of [
+    { modelVisible: false },
+    { deferLoading: true },
+    { deferLoading: 'auto' as const },
+    { requiresImageInput: true },
+  ]) {
+    const registry = new ToolRegistry()
+    for (const tool of [
+      ...fixed.map((tool) =>
+        tool.name === 'tool_describe' ? { ...tool, meta: { ...tool.meta, ...meta } } : tool,
+      ),
+      ...Array.from({ length: 20 }, (_, i) => auto(`auto_${i}`)),
+    ])
+      registry.add(tool, { source: 'test', trust: 'builtin' })
+    expect(
+      registry
+        .snapshot(0)
+        .defs.filter((tool) => tool.name.startsWith('auto_'))
+        .every((tool) => tool.meta.deferLoading === false),
+    ).toBe(true)
+  }
   const registry = new ToolRegistry()
   registry.add(auto('only'), { source: 'test', trust: 'builtin' })
   expect(registry.snapshot(0).defs[0]?.meta.deferLoading).toBe(false)
@@ -216,62 +243,71 @@ it('lists a discovery group as one line with its count instead of one line per t
   expect(text).not.toContain('mcp__github__tool_7')
 })
 
-it('loads an auto-deferred tool by describe and runs it through the same approval as any call', async () => {
-  const registry = new ToolRegistry()
-  const executed: unknown[] = []
-  const approvals: string[] = []
-  const base = readTool(async (args) => {
-    executed.push(args)
-    return { content: [{ type: 'text', text: 'executed' }] }
-  }) as ToolDef
-  for (let i = 0; i <= AUTO_DEFER_MAX_TOOLS; i++)
+it.each(['allowed-once', 'rejected'] as const)(
+  'loads an auto-deferred tool by describe and preserves %s approval',
+  async (verdict) => {
+    const registry = new ToolRegistry()
+    const executed: unknown[] = []
+    const approvals: string[] = []
+    const base = readTool(async (args) => {
+      executed.push(args)
+      return { content: [{ type: 'text', text: 'executed' }] }
+    }) as ToolDef
+    for (let i = 0; i <= AUTO_DEFER_MAX_TOOLS; i++)
+      registry.add(
+        {
+          ...base,
+          name: `remote_${i}`,
+          meta: { ...base.meta, deferLoading: 'auto', requiresApproval: 'always', discoveryGroup: 'Remote' },
+        },
+        { source: 'test', trust: 'builtin' },
+      )
     registry.add(
       {
-        ...base,
-        name: `remote_${i}`,
-        meta: { ...base.meta, deferLoading: 'auto', requiresApproval: 'always', discoveryGroup: 'Remote' },
+        ...(readTool() as ToolDef),
+        name: 'tool_describe',
+        parameters: Type.Object({ name: Type.String() }),
+        async execute({ name }, ctx) {
+          if (!ctx.tools.disclose) throw new Error('expected tool disclosure port')
+          await ctx.tools.disclose(name)
+          return { content: [{ type: 'text', text: name }] }
+        },
       },
       { source: 'test', trust: 'builtin' },
     )
-  registry.add(
-    {
-      ...(readTool() as ToolDef),
-      name: 'describe',
-      parameters: Type.Object({ name: Type.String() }),
-      async execute({ name }, ctx) {
-        await ctx.tools.disclose!(name)
-        return { content: [{ type: 'text', text: name }] }
+    registry.add({ ...(readTool() as ToolDef), name: 'tool_search' }, { source: 'test', trust: 'builtin' })
+    const provider = fakeProvider([
+      toolTurn('remote_3', {}),
+      toolTurn('tool_describe', { name: 'remote_3' }),
+      toolTurn('remote_3', {}),
+      textTurn('done'),
+    ])
+    const seams = fakeSeams({
+      approval: {
+        ask: async (request) => {
+          approvals.push(request.tool?.name ?? '')
+          return { verdict, answeredBy: actor }
+        },
       },
-    },
-    { source: 'test', trust: 'builtin' },
-  )
-  const provider = fakeProvider([
-    toolTurn('remote_3', {}),
-    toolTurn('describe', { name: 'remote_3' }),
-    toolTurn('remote_3', {}),
-    textTurn('done'),
-  ])
-  const seams = fakeSeams({
-    approval: {
-      ask: async (request) => {
-        approvals.push(request.tool?.name ?? '')
-        return { verdict: 'allowed-once', answeredBy: actor }
-      },
-    },
-  })
-  const { session } = await openSession({ provider, registry, seams })
-  try {
-    await session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'use remote' }] })
-    await session.run({ until: 'turn-end', signal: new AbortController().signal })
-    expect(provider.requests[0]?.tools.map((tool) => tool.name)).toEqual(['describe'])
-    expect(provider.requests[0]?.system).toContain(`Remote — ${AUTO_DEFER_MAX_TOOLS + 1} tools`)
-    expect(provider.requests[2]?.tools.map((tool) => tool.name)).toEqual(['describe', 'remote_3'])
-    const results = await session.scan({ type: 'tool/result', toSeq: session.lastSeq })
-    expect(results[0]?.data).toMatchObject({ code: 'TOOL_NOT_DISCLOSED', isError: true })
-    expect(JSON.stringify(results[0]?.data)).toContain('call tool_describe')
-    expect(executed).toEqual([{}])
-    expect(approvals).toEqual(['remote_3'])
-  } finally {
-    await session.close()
-  }
-})
+    })
+    const { session } = await openSession({ provider, registry, seams })
+    try {
+      await session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'use remote' }] })
+      await session.run({ until: 'turn-end', signal: new AbortController().signal })
+      expect(provider.requests[0]?.tools.map((tool) => tool.name)).toEqual(['tool_describe', 'tool_search'])
+      expect(provider.requests[0]?.system).toContain(`Remote — ${AUTO_DEFER_MAX_TOOLS + 1} tools`)
+      expect(provider.requests[2]?.tools.map((tool) => tool.name)).toEqual([
+        'remote_3',
+        'tool_describe',
+        'tool_search',
+      ])
+      const results = await session.scan({ type: 'tool/result', toSeq: session.lastSeq })
+      expect(results[0]?.data).toMatchObject({ code: 'TOOL_NOT_DISCLOSED', isError: true })
+      expect(JSON.stringify(results[0]?.data)).toContain('call tool_describe')
+      expect(executed).toEqual(verdict === 'allowed-once' ? [{}] : [])
+      expect(approvals).toEqual(['remote_3'])
+    } finally {
+      await session.close()
+    }
+  },
+)

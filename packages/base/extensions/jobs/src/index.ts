@@ -12,7 +12,7 @@ export function createJobTools(jobs: ShellJobs) {
     isOpenWorld: false,
     replay: 'safe' as const,
     costHint: {},
-    deferLoading: false,
+    deferLoading: 'auto' as const,
     requiresApproval: 'never' as const,
   }
   return [

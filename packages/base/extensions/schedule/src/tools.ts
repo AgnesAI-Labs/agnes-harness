@@ -20,7 +20,7 @@ const baseMeta = {
   isConcurrencySafe: false,
   isOpenWorld: false,
   costHint: {},
-  deferLoading: false,
+  deferLoading: 'auto' as const,
   requiresApproval: 'never' as const,
 }
 const daily = Type.Object({ time: Time, timeZone: Zone }, { additionalProperties: false })
