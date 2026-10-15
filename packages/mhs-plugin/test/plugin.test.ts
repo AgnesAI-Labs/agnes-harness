@@ -2,7 +2,7 @@ import { checkToolDef, type ToolContext } from '@agnes/extension-api'
 import { Hub, North } from '@agnes/mhs-hub'
 import { describe, expect, it, vi } from 'vitest'
 import { attach, authority, invocation, MemoryStore } from '../../mhs-hub/test/fixtures.js'
-import { createMhsTools, mhsServices, mhsStreams } from '../src/index.js'
+import { createMhsTools, mhsServices, mhsStreams, startMhsHub } from '../src/index.js'
 
 describe('MHS author adapters', () => {
   it('registers seven valid tools, keeps writes approved, and returns model stills through request-media', async () => {
@@ -109,5 +109,34 @@ describe('MHS author adapters', () => {
       streams.control({ type: 'manual', axes: { vx: 1 } }, { device: 'rover', leaseId: 'invented' }),
     ).rejects.toThrow('lease-expired')
     await hub.shutdown()
+  })
+  it('reports ready only after initialization and settles the managed shutdown callback', async () => {
+    let shutdown:
+      | ((
+          reason: 'disable' | 'upgrade' | 'exit',
+          signal: AbortSignal,
+        ) => Promise<{ state: 'settled' | 'unknown' }>)
+      | undefined
+    const ready = vi.fn(async () => {})
+    const runtime = await startMhsHub({
+      store: new MemoryStore(),
+      authority,
+      wakes: {
+        async enqueue() {
+          return { wakeId: 'wake', state: 'queued' }
+        },
+      },
+      devicePort: 0,
+      signal: new AbortController().signal,
+      ready,
+      onShutdown(fn) {
+        shutdown = fn
+      },
+    })
+    expect(ready).toHaveBeenCalledWith({ apiVersion: '1.0.0', listeners: ['device'] })
+    if (!shutdown) throw new Error('missing-shutdown-handler')
+    expect(await shutdown('disable', new AbortController().signal)).toEqual({ state: 'settled' })
+    await expect(runtime.north.query('devices', {})).rejects.toThrow('disabled')
+    expect(await runtime.stop()).toEqual({ state: 'settled' })
   })
 })

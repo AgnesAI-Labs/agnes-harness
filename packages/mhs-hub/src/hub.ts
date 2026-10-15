@@ -534,10 +534,11 @@ export class Hub implements SouthEvents {
     await this.activity.append('stop', devices, device)
     return { state: Object.values(devices).includes('unknown') ? 'unknown' : 'settled', devices }
   }
-  async shutdown(): Promise<{ state: 'settled' | 'unknown' }> {
+  async shutdown(reason: 'disable' | 'upgrade' | 'exit' = 'exit'): Promise<{ state: 'settled' | 'unknown' }> {
     this.stopping = true
     try {
       const result = await this.stop()
+      if (reason !== 'exit') await this.watches.interrupt(reason)
       await this.journal.recover()
       return { state: result.state }
     } finally {

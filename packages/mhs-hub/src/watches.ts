@@ -136,6 +136,18 @@ export class Watches {
     })
     await this.journal.flush()
   }
+  async interrupt(reason: 'disable' | 'upgrade'): Promise<void> {
+    await this.journal.each('watch/', async (row) => {
+      const watch = row as unknown as Watch
+      if (!watch.active) return
+      await this.journal.finish(watch.id, { status: 'interrupted', reason }, (tx) => {
+        const key = `watch/${digest(watch.id)}`
+        const prior = tx.get(key)
+        if (prior) tx.put(key, { ...object(prior.value), active: false } as Json, prior.revision)
+      })
+    })
+    await this.journal.flush()
+  }
   tick(changedDevice?: string): Promise<void> {
     return this.schedule(changedDevice)
   }

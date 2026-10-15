@@ -113,6 +113,12 @@ describe('Hub authority, tasks and recovery', () => {
     await hub.watches.tick()
     expect((await hub.journal.read('timeout'))?.outcome?.reason).toBe('timeout')
     expect((await restarted.read('rover')).device.health).toBe('bad')
+    await north.effect('watch', { device: 'rover', until: { health: 'bad' } }, invocation('disabled-watch'))
+    await hub.shutdown('disable')
+    expect((await hub.journal.read('disabled-watch'))?.outcome).toMatchObject({
+      status: 'interrupted',
+      reason: 'disable',
+    })
   })
   it('separates command and observation state, rejects video model reads, and stops every motion on disable', async () => {
     let now = 0

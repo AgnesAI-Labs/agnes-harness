@@ -12,7 +12,12 @@ export interface ManagedMhsInit {
   devicePort: number
   signal: AbortSignal
   ready(info: { apiVersion: string; listeners: readonly string[] }): Promise<void>
-  onShutdown(fn: () => Promise<{ state: 'settled' | 'unknown' }>): void
+  onShutdown(
+    fn: (
+      reason: 'disable' | 'upgrade' | 'exit',
+      signal: AbortSignal,
+    ) => Promise<{ state: 'settled' | 'unknown' }>,
+  ): void
 }
 /** Called once by the profile managed-service owner, never by a session plugin's apply(). */
 export async function startMhsHub(
@@ -23,22 +28,32 @@ export async function startMhsHub(
   let stopped: Promise<{ state: 'settled' | 'unknown' }> | undefined
   let initialized = false
   let timer: ReturnType<typeof setInterval> | undefined
-  const stop = () =>
+  const stop = (reason: 'disable' | 'upgrade' | 'exit' = 'exit') =>
     (stopped ??= (async () => {
       clearInterval(timer)
       try {
-        return initialized ? await hub.shutdown() : { state: 'settled' as const }
+        return initialized ? await hub.shutdown(reason) : { state: 'settled' as const }
       } catch {
         return { state: 'unknown' as const }
       } finally {
         await south.close()
       }
     })())
-  init.onShutdown(stop)
+  init.onShutdown(async (reason) => {
+    const result = await stop(reason)
+    try {
+      if (initialized && reason !== 'exit') await hub.watches.interrupt(reason)
+      return result
+    } catch {
+      return { state: 'unknown' }
+    }
+  })
   init.signal.addEventListener(
     'abort',
     () => {
-      void stop().catch(() => {})
+      void stop(
+        init.signal.reason === 'disable' || init.signal.reason === 'upgrade' ? init.signal.reason : 'exit',
+      ).catch(() => {})
     },
     { once: true },
   )
