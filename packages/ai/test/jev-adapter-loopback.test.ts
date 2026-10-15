@@ -65,10 +65,7 @@ async function start(script?: FakeSystemOneScript) {
   return fake
 }
 
-function adapterFor(
-  baseUrl: string,
-  timeouts?: { requestMs?: number; connectMs?: number; streamIdleMs?: number },
-) {
+function adapterFor(baseUrl: string) {
   const adapter = new JevAdapter({
     routes: [
       {
@@ -76,7 +73,6 @@ function adapterFor(
         api: JEV_WIRE_API,
         baseUrl,
         credentialRef: 'secret://jev/key',
-        ...(timeouts ? { networkTimeouts: timeouts } : {}),
         models: [fakeModel({ id: MODEL, route: 'jev', api: JEV_WIRE_API, baseUrl })],
       },
     ],

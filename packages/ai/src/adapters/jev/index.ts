@@ -138,6 +138,8 @@ export class JevAdapter extends WireAdapter {
     } catch {
       /* Request capture is passive and never decides whether to send. */
     }
+    // The capture hook can take a while; a call that ended meanwhile is not dispatched or reported.
+    if (signal.aborted) return [interrupted()]
     opts.reportDispatch?.()
     let response: Response
     try {

@@ -107,8 +107,14 @@ function harness(replies: Reply[] = [], over: { routes?: JevRoute[]; clock?: () 
     clock: over.clock ?? (() => NOW),
   })
   adapter.bindCredential('jev', KEY)
+  hookLogs.set(adapter, log)
   return { adapter, calls, closed, log, queue }
 }
+
+// The log of an adapter built by `harness` also records the three reporting hooks, so a test can see
+// that a call refused before it was sent never reported anything. `run` installs the spies unless
+// the test passes its own.
+const hookLogs = new WeakMap<JevAdapter, string[]>()
 
 async function run(
   adapter: JevAdapter,
@@ -116,8 +122,16 @@ async function run(
   opts: Partial<AdapterStreamOptions> = {},
   route = 'jev',
 ): Promise<WireEvent[]> {
+  const log = hookLogs.get(adapter)
+  const spies: Partial<AdapterStreamOptions> = log
+    ? {
+        reportSent: () => void log.push('sent'),
+        reportRequest: async () => void log.push('request'),
+        reportDispatch: () => void log.push('dispatch'),
+      }
+    : {}
   const out: WireEvent[] = []
-  for await (const event of adapter.stream(route, req, options(opts))) out.push(event)
+  for await (const event of adapter.stream(route, req, options({ ...spies, ...opts }))) out.push(event)
   return out
 }
 
@@ -224,10 +238,10 @@ describe('the request on the wire', () => {
 })
 
 describe('requests refused before any network call', () => {
-  const noKey = (): JevAdapter => {
-    const { adapter } = harness()
-    adapter.bindCredential('jev', undefined)
-    return adapter
+  const noKey = () => {
+    const built = harness()
+    built.adapter.bindCredential('jev', undefined)
+    return built
   }
   const cases: Array<[string, RequestOver, AiErrorCode]> = [
     ['no payload', { payload: undefined }, 'CONTRACT_MISMATCH'],
@@ -255,11 +269,7 @@ describe('requests refused before any network call', () => {
   ]
   it.each(cases)('rejects %s', async (_name, over, code) => {
     const { adapter, calls, log } = harness()
-    const events = await run(adapter, request(over), {
-      reportSent: () => log.push('sent'),
-      reportRequest: async () => void log.push('request'),
-      reportDispatch: () => log.push('dispatch'),
-    })
+    const events = await run(adapter, request(over))
     expect(types(events)).toEqual(['error'])
     expect(errorOf(events)).toMatchObject({ reason: 'error', code, retryable: false })
     expect(calls).toHaveLength(0)
@@ -267,50 +277,89 @@ describe('requests refused before any network call', () => {
   })
 
   it('rejects a call with no bound credential as AUTH', async () => {
-    const adapter = noKey()
+    const { adapter, calls, log } = noKey()
     const events = await run(adapter)
     expect(types(events)).toEqual(['error'])
     expect(errorOf(events)).toMatchObject({ code: 'AUTH', retryable: false })
+    expect(calls).toHaveLength(0)
+    expect(log).toEqual([])
   })
 
   it('does not send a blank credential', async () => {
-    const { adapter, calls } = harness()
+    const { adapter, calls, log } = harness()
     adapter.bindCredential('jev', '   ')
     const events = await run(adapter)
-    expect(errorOf(events)).toMatchObject({ code: 'AUTH' })
+    expect(types(events)).toEqual(['error'])
+    expect(errorOf(events)).toMatchObject({ code: 'AUTH', retryable: false })
     expect(calls).toHaveLength(0)
+    expect(log).toEqual([])
   })
 
   it('rejects an unknown route as NO_ADAPTER', async () => {
-    const { adapter, calls } = harness()
+    const { adapter, calls, log } = harness()
     const events = await run(adapter, request(), {}, 'ghost')
     expect(types(events)).toEqual(['error'])
     expect(errorOf(events)).toMatchObject({ code: 'NO_ADAPTER', retryable: false })
     expect(calls).toHaveLength(0)
+    expect(log).toEqual([])
   })
 
   it('rejects a call on a disposed instance as NO_ADAPTER', async () => {
-    const { adapter, calls } = harness()
+    const { adapter, calls, log } = harness()
     await adapter.dispose()
     const events = await run(adapter)
     expect(types(events)).toEqual(['error'])
     expect(errorOf(events)).toMatchObject({ code: 'NO_ADAPTER', retryable: false })
     expect(calls).toHaveLength(0)
+    expect(log).toEqual([])
   })
 
   it('rejects a call whose signal is already aborted without dispatching it', async () => {
     const { adapter, calls, log } = harness()
     const controller = new AbortController()
     controller.abort()
-    const events = await run(adapter, request(), {
-      signal: controller.signal,
-      reportDispatch: () => log.push('dispatch'),
-    })
+    const events = await run(adapter, request(), { signal: controller.signal })
     expect(types(events)).toEqual(['error'])
     expect(errorOf(events)).toMatchObject({ reason: 'aborted', code: 'ABORTED', retryable: false })
     expect(calls).toHaveLength(0)
     expect(log).toEqual([])
   })
+
+  it.each([
+    ['the caller cancels', { kind: 'caller' }, { reason: 'aborted', code: 'ABORTED', retryable: false }],
+    [
+      'the instance is disposed',
+      { kind: 'dispose' },
+      { reason: 'aborted', code: 'ABORTED', retryable: false },
+    ],
+    [
+      'the call time limit runs out',
+      { kind: 'limit' },
+      { reason: 'error', code: 'TIMEOUT', retryable: true },
+    ],
+  ] as const)(
+    'does not dispatch or report a dispatch when %s while the request capture is still running',
+    async (_name, how, expected) => {
+      const { adapter, calls, log } = harness()
+      const controller = new AbortController()
+      const slowCapture = async () => {
+        log.push('request')
+        if (how.kind === 'caller') setTimeout(() => controller.abort(), 5)
+        else if (how.kind === 'dispose') setTimeout(() => void adapter.dispose(), 5)
+        await new Promise((resolve) => setTimeout(resolve, 40))
+      }
+      const events = await run(adapter, request(), {
+        signal: controller.signal,
+        timeoutMs:
+          how.kind === 'limit' ? { firstToken: 10, total: 10 } : { firstToken: 60_000, total: 60_000 },
+        reportRequest: slowCapture,
+      })
+      expect(types(events)).toEqual(['error'])
+      expect(errorOf(events)).toMatchObject(expected)
+      expect(calls).toHaveLength(0)
+      expect(log).toEqual(['sent', 'request'])
+    },
+  )
 
   it('never puts the credential in a refusal', async () => {
     const { adapter } = harness()
