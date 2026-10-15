@@ -180,7 +180,14 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
       if (admitted.calibration.event && !admitted.calibration.deny)
         await s.d.log.append([admitted.calibration.event])
       await ensureStep(true)
-      await invocations.claim(binding.invocationId, request)
+      const result = await invocations.claim(binding.invocationId, request)
+      // Another stream can settle this invocation while request admission is awaiting.
+      if (result !== undefined) {
+        if (!Array.isArray(result))
+          throw new CoreError('E_RELATION', 'Invocation result is not a model response')
+        for (const event of result) yield event
+        return
+      }
       const events: InferenceEvent[] = []
       let settled = false
       for await (const event of streamWire(admitted.wire, admitted.output, signal, binding.invocationId)) {
