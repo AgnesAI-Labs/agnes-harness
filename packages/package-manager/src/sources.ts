@@ -278,6 +278,7 @@ export async function hashDirectoryAsync(
     (await asyncFs.realpath(dir)) !== root
   )
     throw sourceError('package directory changed while hashing', 'tree-changed')
+  checkCancelled(opts.signal)
   return `sha256-${outer.digest('hex')}`
 }
 

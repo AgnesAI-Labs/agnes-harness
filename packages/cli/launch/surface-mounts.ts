@@ -104,6 +104,7 @@ export async function fetchSurfaceMountLookup(
           if (!stopped && !terminal) mounts = next.mounts.filter((row) => !isReservedMount(row.mount))
         } while (dirty && !stopped)
       } catch {
+        console.error('agh serve: Surface mount table read failed; retrying in the background')
         terminal = true
         scheduleRetry()
       } finally {

@@ -398,12 +398,30 @@ describe('W3b projected message DOM', () => {
   })
 
   it('keeps the attachment block above the message text', async () => {
-    const store = createConversationProjectionStore({ sessionId: 'session', nodes })
+    const content = nodes.map((node) =>
+      node.kind === 'user'
+        ? {
+            ...node,
+            content: [
+              ...node.content,
+              {
+                type: 'resource_link' as const,
+                uri: `artifact://${'a'.repeat(64)}`,
+                name: 'stored-original.pdf',
+                mimeType: 'application/pdf',
+              },
+            ],
+          }
+        : node,
+    )
+    const store = createConversationProjectionStore({ sessionId: 'session', nodes: content })
     await mount(store)
     const article = item('user')
     expect(article?.querySelectorAll('.user-message-files')).toHaveLength(1)
     expect(article?.querySelector('.user-message-files')?.textContent).toContain('<script>附件.txt</script>')
     expect(article?.querySelector('.user-message-files script')).toBeNull()
+    expect(article?.querySelector('.user-message-files')?.textContent).toContain('stored-original.pdf')
+    expect(article?.querySelector('[href^="artifact://"]')).toBeNull()
     const images = article?.querySelector('.user-message-images') as Element
     const text = article?.querySelector('.node-body') as Element
     expect(images).not.toBeNull()
