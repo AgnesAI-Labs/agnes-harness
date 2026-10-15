@@ -79,7 +79,7 @@ export function createTurnController(
 
   function render(): void {
     if (!context.projection) {
-      context.topbarRuntime.setStatus(context.t('app.status.newTask'))
+      context.topbarRuntime.setStatus(context.t('app.status.newTask'), 'idle')
       context.clientModules.sidebar?.setRunning([])
       context.tracePanel.render([], [])
       context.renderControls()
@@ -150,15 +150,35 @@ export function createTurnController(
       context.sending = false
     }
     if (!view.busy && receipt?.reason && receipt.endSeq > context.stopAfterSeq) context.stopping = false
+    const awaitingApproval = Boolean(
+      context.liveApproval ||
+        view.approval ||
+        context.projection.opState?.parked ||
+        (!view.busy && receipt?.reason === 'parked'),
+    )
+    const turn =
+      context.projection.turns.find((candidate) => candidate.turn === context.projection?.opState?.turn) ??
+      context.projection.turns.at(-1)
     if (context.readOnly) context.topbarRuntime.setStatus(context.t('app.readOnly.label'), 'idle')
     else
       context.topbarRuntime.setStatus(
         context.stopping
           ? context.t('app.status.stoppingWait')
-          : context.liveApproval
+          : awaitingApproval
             ? context.t('app.status.awaitingApproval')
             : view.status,
-        context.liveApproval ? 'approval' : view.busy ? 'running' : (receipt?.reason ?? 'idle'),
+        context.stopping
+          ? 'stopping'
+          : awaitingApproval
+            ? 'approval'
+            : view.busy
+              ? 'running'
+              : (receipt?.reason ?? 'idle'),
+        {
+          sessionId: viewId,
+          startedAt: turn?.startedAt,
+          accessibleLabel: !context.stopping && !awaitingApproval && view.busy ? view.statusLabel : undefined,
+        },
       )
     context.clientModules.sidebar?.setRunning(
       context.current && view.busy && !context.readOnly ? [context.current.id] : [],

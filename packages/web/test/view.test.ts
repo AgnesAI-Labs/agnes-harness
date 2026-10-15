@@ -1,7 +1,7 @@
 import type { EventEnvelope, UITimeline } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { durableApprovalActions, nodeText, recordRunEvent, webView } from '../src/view.js'
-import { zhT } from './helpers/locale.js'
+import { enT, zhT } from './helpers/locale.js'
 
 const timeline = (nodes: UITimeline['nodes'], phase: string | null = null): UITimeline => ({
   sessionId: 's',
@@ -34,7 +34,20 @@ describe('web projection adapter', () => {
       active,
       event(6, 'turn/end', { reason: 'completed', lastAssistantSeq: null }),
     )
-    expect(webView(timeline([], 'inference'), replay, zhT).status).toContain('正在执行')
+    for (const [phase, zh, en] of [
+      ['inference', '生成回复', 'Generating a reply'],
+      ['tools', '执行工具', 'Running tools'],
+      ['checkpoint', '检查下一步', 'Checking the next step'],
+      ['compaction', '整理上下文', 'Compacting context'],
+      ['deferred', '等待外部结果', 'Waiting for external results'],
+      ['cancel_requested', '处理停止请求', 'Handling the stop request'],
+      ['failure_drain', '处理执行失败', 'Handling the failure'],
+    ] as const) {
+      expect(webView(timeline([], phase), replay, zhT).status).toBe(zh)
+      expect(webView(timeline([], phase), replay, zhT).statusLabel).toBe(`正在执行：${zh}`)
+      expect(webView(timeline([], phase), replay, enT).status).toBe(en)
+      expect(webView(timeline([], phase), replay, enT).statusLabel).toBe(`Running: ${en}`)
+    }
     expect(webView(timeline([]), replay, zhT).status).not.toBe('已完成')
     const failure = recordRunEvent(active, event(10, 'turn/end', { reason: 'error', lastAssistantSeq: null }))
     expect(webView(timeline([]), failure, zhT).status).toBe('执行失败')

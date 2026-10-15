@@ -1029,6 +1029,7 @@ const homePages = mountHomePages(hosts.homePage, {
 const stopHomeRouting = bindHomeRouting()
 const topbarRuntime = clientModules.topbar as NonNullable<typeof clientModules.topbar>
 if (!topbarRuntime) throw new Error('missing topbar region')
+topbarRuntime.setStopAction(handleComposerCancel)
 const approvalRuntime = clientModules.approval as NonNullable<typeof clientModules.approval>
 if (!approvalRuntime) throw new Error('missing approval region')
 const composerRuntime = clientModules.composer as NonNullable<typeof clientModules.composer>
