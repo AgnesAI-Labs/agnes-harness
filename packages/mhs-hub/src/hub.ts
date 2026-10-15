@@ -8,10 +8,16 @@ import {
   validateObservation,
 } from '@agnes/mhs-device'
 import { Activity } from './activity.js'
+import { Clips, clipSpec } from './clips.js'
+import { SourceDemand } from './demand.js'
+import { Events } from './events.js'
 import { digest, Journal, type Operation } from './journal.js'
+import { Localization } from './localization.js'
 import { type Position, zoneAt } from './maps.js'
 import type { MediaSample } from './media.js'
 import type { Authority, BoundWakes, DeviceLink, Invocation, OwnedStore, SouthEvents } from './ports.js'
+import { type ReadOptions, readSource, validateRead } from './reads.js'
+import { Samples } from './samples.js'
 import { Watches } from './watches.js'
 
 export type JobSummary = Pick<
@@ -34,21 +40,32 @@ export interface DeviceView {
   health: 'ok' | 'attention' | 'bad'
   trust: 'trusted' | 'uncertain' | 'lost'
   position?: Position
+  positionReason?: string
+  fixed?: boolean
+  zone?: string
 }
-type Sample = { at: number; data: Json; bytes?: Uint8Array; mime?: string }
-type Live = { link: DeviceLink; view: DeviceView; samples: Map<string, Sample[]> }
+type Live = {
+  link: DeviceLink
+  view: DeviceView
+  samples: Samples
+  demand: SourceDemand
+  localization: Localization
+}
 export class Hub implements SouthEvents {
   readonly journal: Journal
   readonly activity: Activity
   readonly watches: Watches
   private readonly live = new Map<string, Live>()
   private readonly recentJobs = new Map<string, JobSummary[]>()
+  private readonly videoResets = new Map<() => void, { device: string; source: string }>()
   private readonly mediaListeners = new Set<(sample: MediaSample) => void>()
-  private readonly listeners = new Set<(event: Json) => void>()
+  readonly events: Events
+  private readonly clips = new Clips(() => this.now())
+  private readonly readAbort = new AbortController()
+  private completionFlush: ReturnType<typeof setTimeout> | undefined
   private stopping = false
   private controlEpoch = 0
-  private sampleBytes = 0
-  private sampleJsonBytes = 0
+  private readonly sampleBudget = { binary: 0, json: 0 }
   private readonly leases = new Map<string, { until: number; operationId: string }>()
   constructor(
     private readonly ports: {
@@ -58,9 +75,19 @@ export class Hub implements SouthEvents {
       now?: () => number
     },
   ) {
+    this.events = new Events(() => this.now())
     this.journal = new Journal(ports.store, ports.wakes, (operation) => this.remember(operation))
     this.activity = new Activity(ports.store, ports.now)
-    this.watches = new Watches(this.journal, this.activity, () => this.snapshot(), ports.now)
+    this.watches = new Watches(
+      this.journal,
+      this.activity,
+      () => this.snapshot(),
+      ports.now,
+      (device, source) => {
+        const live = this.live.get(device)
+        return live?.view.available ? live.demand.acquire(source, 1) : undefined
+      },
+    )
   }
   private remember(operation: Operation) {
     if (operation.kind !== 'action') return
@@ -119,7 +146,9 @@ export class Hub implements SouthEvents {
     await this.ports.authority.assertActive()
   }
   snapshot(): DeviceView[] {
-    return [...this.live.values()].map((d) => structuredClone(d.view))
+    return [...this.live.values()].map((d) =>
+      structuredClone({ ...d.view, ...d.localization.project(d.view.available) }),
+    )
   }
   private pick(id?: string, requireOnline = true): Live {
     const devices = [...this.live.values()].filter((d) => d.view.available)
@@ -132,31 +161,37 @@ export class Hub implements SouthEvents {
     await this.active()
     return this.snapshot()
   }
-  async read(
-    id?: string,
-    sources: string[] = [],
-  ): Promise<{
-    device: DeviceView
-    items: { source: string; at: number; data: Json; mime?: string; bytes?: Uint8Array }[]
-  }> {
+  async read(id?: string, sources: string[] = [], options: ReadOptions = {}) {
+    validateRead(options)
     await this.active()
     const live = this.pick(id, false)
-    const items = sources.map((source) => {
+    const declarations = sources.map((source) => {
       const declaration = live.view.description.sources?.find((s) => s.id === source)
       if (!declaration) throw new MhsError('unknown-source')
       if (declaration.kind === 'video') throw new MhsError('video-not-model-input')
-      const latest = live.samples.get(source)?.at(-1)
-      if (!latest || this.now() - latest.at > 10_000)
-        return { source, at: latest?.at ?? 0, data: { state: 'stale' } }
-      const copy = structuredClone(latest)
-      if (declaration.kind === 'image') {
-        const data = object(copy.data)
-        copy.data = { w: Number(data.w), h: Number(data.h) }
-      }
-      if (!['image', 'grid'].includes(declaration.kind)) delete copy.bytes
-      return { source, ...copy }
+      return declaration
     })
-    return { device: structuredClone(live.view), items }
+    const signal = AbortSignal.any([this.readAbort.signal, ...(options.signal ? [options.signal] : [])])
+    const releases = declarations.map((source) => live.demand.acquire(source.id))
+    try {
+      const items = await Promise.all(
+        declarations.map((source) =>
+          readSource(
+            source,
+            () => live.samples.get(source.id),
+            (wake) => this.subscribe(wake),
+            () => this.now(),
+            { ...options, signal },
+            () => live.samples.history(source.id),
+          ),
+        ),
+      )
+      await this.active()
+      if (this.pick(live.view.id, false).link !== live.link) throw new MhsError('stale-device')
+      return { device: this.snapshot().find((d) => d.id === live.view.id)!, items }
+    } finally {
+      for (const release of releases) release()
+    }
   }
   online(link: DeviceLink): void {
     if (this.stopping) {
@@ -171,6 +206,9 @@ export class Hub implements SouthEvents {
     }
     const same = prior?.link === link
     if (prior && !same) {
+      this.clips.revoke(id)
+      this.watches.releaseDevice(id)
+      prior.demand.close()
       this.releaseSamples(prior)
       this.leases.delete(id)
     }
@@ -186,10 +224,29 @@ export class Hub implements SouthEvents {
         ? (prior.view.sourceStates ?? {})
         : Object.fromEntries((link.registration.sources ?? []).map((source) => [source.id, null])),
       health: 'ok',
-      trust: 'uncertain',
+      trust: 'lost',
       ...(link.registration.placement ? { position: link.registration.placement } : {}),
     }
-    this.live.set(id, { link, view, samples: same ? prior.samples : new Map() })
+    const demand = same
+      ? prior.demand
+      : new SourceDemand(link, (states) => {
+          const current = this.live.get(id)
+          if (!current || current.link !== link) return
+          current.view.sourceStates = { ...current.view.sourceStates, ...states }
+          this.emit({ type: 'configuration', device: id })
+        })
+    const localization = same ? prior.localization : new Localization(link.registration, () => this.now())
+    this.live.set(id, {
+      link,
+      view,
+      demand,
+      localization,
+      samples: same ? prior.samples : new Samples(this.sampleBudget, () => this.now()),
+    })
+    if (link.available) {
+      void demand.sync().catch(() => {})
+      void this.watches.tick().catch(() => {})
+    }
     this.emit({ type: 'online', device: id })
     void this.persistOnline(link).catch(() => {
       link.close()
@@ -202,22 +259,21 @@ export class Hub implements SouthEvents {
         const prior = tx.get(key)
         if (prior) {
           const previous = prior.value as DeviceMap
-          if (
-            digest(previous.anchor ?? null) !== digest(map.anchor ?? null) ||
-            digest(previous.bounds ?? null) !== digest(map.bounds ?? null)
-          )
-            throw new MhsError('map-frame-conflict')
           const places = new Map((previous.places ?? []).map((p) => [p.id, p]))
           for (const place of map.places ?? []) places.set(place.id, place)
           if (places.size > 256) throw new MhsError('map-place-limit')
-          tx.put(key, { ...previous, ...map, places: [...places.values()] } as Json, prior.revision)
+          tx.put(key, { ...map, places: [...places.values()] } as Json, prior.revision)
         } else tx.put(key, map as Json, null)
       })
+    this.emit({ type: 'maps' })
     await this.activity.append('connected', null, link.registration.device.id)
   }
   offline(device: string, link: DeviceLink): void {
     const live = this.live.get(device)
     if (!live || live.link !== link) return
+    this.clips.revoke(device)
+    this.watches.releaseDevice(device)
+    live.demand.close()
     live.view.online = false
     live.view.available = false
     live.view.trust = 'lost'
@@ -271,34 +327,8 @@ export class Hub implements SouthEvents {
     validateObservation(declaration, data, bytes, mime)
     live.view.sourceStates ??= {}
     live.view.sourceStates[source] = true
-    const jsonBytes = Buffer.byteLength(JSON.stringify(data))
-    if (jsonBytes > 65536) throw new MhsError('oversize-data')
-    const history = live.samples.get(source) ?? []
-    const sample: Sample = {
-      at: this.now(),
-      data: structuredClone(data),
-      ...(bytes ? { bytes: bytes.slice() } : {}),
-      ...(mime ? { mime } : {}),
-    }
-    // Binary frames retain one latest sample, and all devices share a strict media budget.
-    if (bytes) {
-      for (const previous of history) {
-        this.sampleBytes -= previous.bytes?.length ?? 0
-        this.sampleJsonBytes -= Buffer.byteLength(JSON.stringify(previous.data))
-      }
-      history.length = 0
-      if (this.sampleBytes + bytes.length > 16 << 20) return
-    }
-    if (this.sampleJsonBytes + jsonBytes > 8 << 20) return
-    this.sampleBytes += bytes?.length ?? 0
-    this.sampleJsonBytes += jsonBytes
-    history.push(sample)
-    while (history.length > 32) {
-      const removed = history.shift()
-      this.sampleBytes -= removed?.bytes?.length ?? 0
-      if (removed) this.sampleJsonBytes -= Buffer.byteLength(JSON.stringify(removed.data))
-    }
-    live.samples.set(source, history)
+    const sample = live.samples.put(declaration, data, bytes, mime)
+    if (!sample) return
     for (const listener of this.mediaListeners) {
       try {
         listener({ device, source, ...sample })
@@ -306,16 +336,7 @@ export class Hub implements SouthEvents {
         /* Dropped subscriber frame. */
       }
     }
-    if (declaration.kind === 'pose') {
-      const pose = object(data)
-      live.view.trust = pose.ok === true ? 'trusted' : 'uncertain'
-      live.view.position = {
-        map: String(pose.map),
-        x: Number(pose.x),
-        y: Number(pose.y),
-        yaw: Number(pose.yaw),
-      }
-    }
+    live.localization.observe(declaration, data)
     this.emit({ type: 'observation', device, source, data })
     void this.watches.observe(device, source, data).catch(() => {})
   }
@@ -328,42 +349,66 @@ export class Hub implements SouthEvents {
       .catch(() => {})
   }
   private releaseSamples(live: Live): void {
-    for (const samples of live.samples.values())
-      for (const sample of samples) {
-        this.sampleBytes -= sample.bytes?.length ?? 0
-        this.sampleJsonBytes -= Buffer.byteLength(JSON.stringify(sample.data))
-      }
+    live.samples.close()
   }
   async subscribeMedia(
     device: string,
     source: string,
     listener: (sample: MediaSample) => void,
+    hz?: number,
   ): Promise<() => void> {
     await this.active()
     const live = this.pick(device)
-    if (!live.view.description.sources?.some((s) => s.id === source)) throw new MhsError('unknown-source')
+    const declaration = live.view.description.sources?.find((s) => s.id === source)
+    if (!declaration) throw new MhsError('unknown-source')
+    const release = live.demand.acquire(source, hz)
+    let last = -Infinity,
+      key = declaration.kind !== 'video',
+      closed = false
     const filtered = (sample: MediaSample) => {
-      if (sample.device === device && sample.source === source) listener(sample)
+      if (closed || sample.device !== device || sample.source !== source) return
+      if (!key && object(sample.data).key !== true) return
+      key = true
+      // Encoded video frames are dependent: rate is configured at producer, never drop deltas here.
+      if (declaration.kind !== 'video' && hz && sample.at - last < 1000 / hz) return
+      last = sample.at
+      listener(sample)
     }
+    const reset = () => {
+      key = false
+    }
+    if (declaration.kind === 'video') this.videoResets.set(reset, { device, source })
     this.mediaListeners.add(filtered)
-    return () => this.mediaListeners.delete(filtered)
+    try {
+      await live.demand.sync()
+      if (declaration.kind === 'video') await this.keyframe(device, source)
+    } catch (error) {
+      this.mediaListeners.delete(filtered)
+      this.videoResets.delete(reset)
+      release()
+      throw error
+    }
+    return () => {
+      closed = true
+      this.videoResets.delete(reset)
+      this.mediaListeners.delete(filtered)
+      this.videoResets.delete(reset)
+      release()
+    }
   }
   async keyframe(device: string, source: string): Promise<void> {
     await this.active()
-    await this.pick(device).link.request('mhs/keyframe', { source })
+    const live = this.pick(device)
+    if (live.view.description.sources?.find((s) => s.id === source)?.kind !== 'video') return
+    for (const [reset, binding] of this.videoResets)
+      if (binding.device === device && binding.source === source) reset()
+    await live.link.request('mhs/keyframe', { source })
   }
-  subscribe(listener: (event: Json) => void): () => void {
-    this.listeners.add(listener)
-    return () => this.listeners.delete(listener)
+  subscribe(listener: (event: Json) => void, since?: string): () => void {
+    return this.events.subscribe(listener, since)
   }
   private emit(event: Json): void {
-    for (const fn of this.listeners) {
-      try {
-        fn(event)
-      } catch {
-        /* Subscriber cannot break device processing. */
-      }
-    }
+    this.events.emit(event)
   }
   async maps(): Promise<DeviceMap[]> {
     await this.active()
@@ -383,6 +428,7 @@ export class Hub implements SouthEvents {
           device: view.id,
           ...view.position,
           ok: view.trust === 'trusted',
+          ...(view.fixed ? { fixed: true } : {}),
           online: view.online,
           zone: view.position ? (zoneAt(map, view.position) ?? null) : null,
         })),
@@ -416,8 +462,30 @@ export class Hub implements SouthEvents {
     try {
       if (this.stopping || epoch !== this.controlEpoch)
         return this.journal.finish(invocation.operationId, { status: 'interrupted', reason: 'stop' })
-      const call = await live.link.call(invocation.operationId, name, args)
+      const releases = (tool.needs ?? []).map((source) => live.demand.acquire(source))
+      const release = () => {
+        for (const off of releases) off()
+      }
+      let call: Awaited<ReturnType<DeviceLink['call']>>
+      try {
+        await live.demand.sync()
+        await this.active()
+        if (epoch !== this.controlEpoch || this.pick(live.view.id).link !== live.link) {
+          release()
+          return this.journal.finish(invocation.operationId, { status: 'interrupted', reason: 'stop' })
+        }
+        call = await live.link.call(
+          invocation.operationId,
+          name,
+          args,
+          invocation.sessionId ? 'agent' : 'human',
+        )
+      } catch (error) {
+        release()
+        throw error
+      }
       void call.result
+        .finally(release)
         .then(async (outcome) => {
           await this.journal.finish(invocation.operationId, {
             ...outcome,
@@ -430,7 +498,10 @@ export class Hub implements SouthEvents {
             live.view.id,
             invocation.sessionId,
           )
-          await this.journal.flush()
+          this.completionFlush ??= setTimeout(() => {
+            this.completionFlush = undefined
+            void this.journal.flush().catch(() => {})
+          }, 1000)
         })
         .catch(() => {
           /* Terminal/outbox remain recoverable on retry. */
@@ -440,6 +511,8 @@ export class Hub implements SouthEvents {
         : await this.journal.finish(invocation.operationId, {
             status: 'rejected',
             reason: call.reason ?? 'invalid',
+            ...(call.holder ? { holder: call.holder } : {}),
+            ...(call.needs ? { needs: call.needs } : {}),
           })
     } catch {
       return this.journal.finish(invocation.operationId, {
@@ -483,7 +556,7 @@ export class Hub implements SouthEvents {
     return this.journal.read(id)
   }
   async effect(
-    action: 'set' | 'configure' | 'resume' | 'cancel',
+    action: 'set' | 'configure' | 'pause' | 'resume' | 'cancel',
     device: string,
     input: Json,
     invocation: Invocation,
@@ -506,6 +579,14 @@ export class Hub implements SouthEvents {
     await this.ports.authority.admit(subject, invocation.context)
     await this.active()
     if (this.pick(device).link !== live.link) throw new MhsError('stale-device')
+    const target = ['pause', 'resume', 'cancel'].includes(action)
+      ? await this.journal.read(String(object(input).call))
+      : undefined
+    if (
+      ['pause', 'resume', 'cancel'].includes(action) &&
+      (!target || target.device !== device || target.kind !== 'action' || target.state === 'terminal')
+    )
+      throw new MhsError('job-not-running')
     const requestedSources = action === 'configure' ? object(object(input).sources ?? {}) : {}
     const accepted = await this.journal.accept(device, subject, invocation)
     if (!accepted.fresh) return accepted.operation
@@ -513,7 +594,12 @@ export class Hub implements SouthEvents {
       if (this.stopping || epoch !== this.controlEpoch)
         return this.journal.finish(invocation.operationId, { status: 'interrupted', reason: 'stop' })
       const params = action === 'set' ? { values: input } : object(input)
-      const data = await live.link.request(`mhs/${action}`, params)
+      const data =
+        action === 'configure'
+          ? await live.demand.configure(requestedSources)
+          : await live.link.request(`mhs/${action}`, params)
+      if (target && (action === 'pause' || action === 'resume'))
+        await this.journal.running(target.id, device, { state: action === 'pause' ? 'paused' : 'running' })
       if (action === 'configure') {
         const applied = object(object(data).sources ?? {})
         live.view.sourceStates ??= {}
@@ -536,6 +622,47 @@ export class Hub implements SouthEvents {
         reason: 'dispatch-unconfirmed',
       })
     }
+  }
+  async clipLease(device: string, input: Json, invocation: Invocation) {
+    await this.active()
+    const live = this.pick(device),
+      spec = clipSpec(input),
+      epoch = this.controlEpoch
+    if (!live.link.clip) throw new MhsError('clip-unavailable')
+    const subject = {
+      operationId: invocation.operationId,
+      action: 'clip' as const,
+      device,
+      revision: live.view.revision,
+      input,
+    }
+    await this.ports.authority.admit(subject, invocation.context)
+    await this.active()
+    if (this.pick(device).link !== live.link || epoch !== this.controlEpoch)
+      throw new MhsError('stale-device')
+    const accepted = await this.journal.accept(device, subject, invocation)
+    if (!accepted.fresh) throw new MhsError('clip-already-prepared')
+    const expiresAt = this.now() + 30000
+    this.clips.grant(invocation.operationId, device, live.view.revision, spec, expiresAt)
+    await this.journal.finish(invocation.operationId, { status: 'done', data: { expiresAt } })
+    return { operationId: invocation.operationId, expiresAt }
+  }
+  async clipChunk(device: string, leaseId: string, chunk: Uint8Array) {
+    await this.active()
+    const live = this.pick(device)
+    const bytes = this.clips.append(leaseId, device, live.view.revision, chunk)
+    return bytes ? this.sendClip(device, leaseId, bytes) : undefined
+  }
+  async sendClip(device: string, leaseId: string, bytes: Uint8Array) {
+    await this.active()
+    const live = this.pick(device)
+    const spec = this.clips.consume(leaseId, device, live.view.revision, bytes)
+    if (!live.link.clip) throw new MhsError('clip-unavailable')
+    await live.link.clip(spec.id, spec.rate, spec.channels, bytes)
+    return { id: spec.id, state: 'sent' }
+  }
+  revokeClip(device: string, leaseId?: string) {
+    this.clips.revoke(device, leaseId)
   }
   async manualLease(
     device: string,
@@ -585,6 +712,7 @@ export class Hub implements SouthEvents {
     device?: string,
   ): Promise<{ state: 'settled' | 'unknown'; devices: Record<string, 'stopped' | 'unknown'> }> {
     this.controlEpoch += 1
+    this.clips.revoke(device)
     const devices: Record<string, 'stopped' | 'unknown'> = {}
     const selected = device ? [this.pick(device, false)] : [...this.live.values()]
     await Promise.all(
@@ -614,6 +742,7 @@ export class Hub implements SouthEvents {
   }
   async shutdown(reason: 'disable' | 'upgrade' | 'exit' = 'exit'): Promise<{ state: 'settled' | 'unknown' }> {
     this.stopping = true
+    clearTimeout(this.completionFlush)
     try {
       const result = await this.stop()
       if (reason !== 'exit') await this.watches.interrupt(reason)
@@ -621,8 +750,14 @@ export class Hub implements SouthEvents {
       return { state: result.state }
     } finally {
       for (const live of this.live.values()) live.link.close()
-      this.listeners.clear()
+      this.readAbort.abort(new MhsError('disabled'))
+      this.events.close()
+      for (const live of this.live.values()) {
+        live.demand.close()
+        live.samples.close()
+      }
       this.mediaListeners.clear()
+      this.videoResets.clear()
     }
   }
 }

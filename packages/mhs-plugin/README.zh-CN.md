@@ -21,3 +21,7 @@
 浏览器贡献由 [`@agnes/mhs-ui`](../mhs-ui/README.zh-CN.md) 实现，声明在 `agnes.client.json`，使用 profile 生命周期、primary MHS 入口和公开工具卡片槽。运行 `pnpm --filter @agnes/mhs build:client` 生成插件内的客户端资源。该构建不启动 Hub；启用已安装插件时才启动，缺少 profile runtime 合同时拒绝激活。
 
 已安装 Hub 还通过 `mhs.producer` 与 `mhs.producer.media` 接受经审核的后端 producer bridge。子包必须在 managed `requires` 中声明精确 grant，通用 profile runtime 为每条转接流绑定当前 child 权限；浏览器直连不能冒充该 bridge。设备命令仍来自经原生批准的 Hub 操作，媒体使用独立有界通道。
+
+Profile 客户端还声明审批保护的 `mhs.pause` 与 `mhs.clip`。音频字节通过独立 `mhs.clip` control stream，绑定该服务的原生 grant，其他媒体/控制通道不能替代。含 string 类型 `clip` 参数的工具可上传有界 PCM16 WAV，仅在缓存确认后填写参数。Context 先放地图（最多 3000 UTF-8 字节），并在总计 6000 字节内提供位置、区域和工具参数 Schema。`read_device` 支持 `since`、values 历史与分页；profile 查询还支持取消/期限和事件重放。
+
+音频上传使用有序 2 KiB 二进制分块，遵守现有 control 通道 4 KiB/每秒 30 帧合同；浏览器按 40 ms 间隔发送。Hub 按审批的 hash 聚合最多 1 MiB 后再发送给设备；部分、超量、过期和重复上传不能触发设备工具。

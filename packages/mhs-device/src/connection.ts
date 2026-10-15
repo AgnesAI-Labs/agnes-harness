@@ -51,6 +51,7 @@ export async function connectDevice(device: Device, base: string, signal: AbortS
           if (event.data instanceof ArrayBuffer) {
             if (!clip) return close()
             device.receiveClip(clip.id, clip.rate, clip.channels, new Uint8Array(event.data))
+            send({ jsonrpc: '2.0', method: 'mhs/clip-received', params: { id: clip.id } })
             clip = undefined
             return
           }
@@ -87,9 +88,18 @@ export async function connectDevice(device: Device, base: string, signal: AbortS
           let result: unknown = {}
           switch (m.method) {
             case 'mhs/call': {
-              const acceptance = device.call(String(m.id), String(p.name), p.arguments)
+              const acceptance = device.call(
+                String(m.id),
+                String(p.name),
+                p.arguments,
+                p.meta && typeof object(p.meta).caller === 'string'
+                  ? String(object(p.meta).caller)
+                  : undefined,
+              )
               reply(m.id, {
                 accepted: acceptance.accepted,
+                ...(acceptance.holder ? { holder: acceptance.holder } : {}),
+                ...(acceptance.needs ? { needs: acceptance.needs } : {}),
                 ...(acceptance.reason ? { reason: acceptance.reason, status: 'rejected' } : {}),
               })
               if (acceptance.result)

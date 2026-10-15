@@ -82,6 +82,8 @@ def check_schema(schema, depth=0):
 def _check(schema, value, depth=0):
     if depth > 32:
         raise MhsError("invalid-description")
+    if schema.get("type") == "null" and value is not None:
+        raise MhsError("invalid-description")
     if "anyOf" in schema:
         for branch in schema["anyOf"]:
             try:
@@ -127,7 +129,8 @@ def _check(schema, value, depth=0):
                 raise MhsError("invalid-description")
 
 
-_SCHEMA = json.loads((Path(__file__).parent / "schema.json").read_text())["$defs"]["registration"]
+_SCHEMAS = json.loads((Path(__file__).parent / "schema.json").read_text())["$defs"]
+_SCHEMA = _SCHEMAS["registration"]
 
 
 def registration(value):
@@ -141,7 +144,7 @@ def registration(value):
     resources = value.get("resources", {})
     for tool in value.get("tools", []):
         check_schema(tool["inputSchema"])
-        if tool["inputSchema"]["type"] != "object" or any(r not in resources for r in tool.get("uses", [])) or (tool.get("motion") and tool.get("readOnly")):
+        if tool["inputSchema"]["type"] != "object" or any(r not in resources for r in tool.get("uses", [])) or (tool.get("motion") and tool.get("readOnly")) or any(source not in {s["id"] for s in value.get("sources", [])} for source in tool.get("needs", [])):
             raise MhsError("invalid-tool")
     manual = value.get("manual")
     if manual:
@@ -158,3 +161,39 @@ def registration(value):
     if value.get("localization") == "fixed" and "placement" not in value:
         raise MhsError("invalid-placement")
     return copy.deepcopy(value)
+
+
+def validate_wire(value, *kinds):
+    for kind in kinds:
+        try:
+            _check(_SCHEMAS[kind], value)
+            return
+        except MhsError:
+            pass
+    raise MhsError("invalid-wire")
+
+
+def observation(source, data, payload=None, mime=None):
+    kind = source["kind"]
+    if kind in _SCHEMAS:
+        _check(_SCHEMAS[kind], data)
+    if kind in ("values", "switch"):
+        if not isinstance(data, dict):
+            raise MhsError("invalid-observation")
+        for key, value in data.items():
+            field = source.get("fields", {}).get(key)
+            if not field:
+                raise MhsError("invalid-observation")
+            schema = {"type": field["type"], **({"minimum": field["min"]} if "min" in field else {}), **({"maximum": field["max"]} if "max" in field else {}), **({"enum": field["enum"]} if "enum" in field else {})}
+            if prepare(schema, value) != value:
+                raise MhsError("invalid-observation")
+    if kind in ("image", "video", "audio", "points", "grid") and not payload:
+        raise MhsError("missing-binary")
+    if kind == "image" and mime not in ("image/png", "image/jpeg"):
+        raise MhsError("invalid-image")
+    if kind == "audio" and len(payload) % (data["channels"] * 2):
+        raise MhsError("invalid-pcm")
+    if kind == "points" and len(payload) != data["n"] * len(data["fields"]) * 4:
+        raise MhsError("invalid-points")
+    if kind == "pose" and any(data.get("cov", [0] * 9)[i] < 0 for i in (0, 4, 8)):
+        raise MhsError("invalid-covariance")

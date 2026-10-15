@@ -1,6 +1,7 @@
+import { createHash } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
 import { type BoundWakes, Hub, Journal, North } from '../src/index.js'
-import { attach, authority, invocation, MemoryStore } from './fixtures.js'
+import { attach, authority, description, invocation, MemoryStore } from './fixtures.js'
 
 function setup(now?: () => number) {
   const notifications = new Map<string, unknown>()
@@ -81,6 +82,39 @@ describe('Hub authority, tasks and recovery', () => {
     expect(ids[0]).toBe(ids[1])
     expect((await store.scan({ prefix: 'outbox/', limit: 10 })).rows).toHaveLength(0)
   })
+  it('coalesces multiple device completions into one bounded durable wake for the original lane', async () => {
+    vi.useFakeTimers()
+    try {
+      const { hub, notifications } = setup()
+      const first = attach(hub)
+      hub.online({
+        ...first.link,
+        registration: { ...first.link.registration, device: { id: 'second', kind: 'robot' } },
+      })
+      await hub.call('rover', 'move', { x: 1 }, invocation('first-completion'))
+      await hub.call('second', 'move', { x: 1 }, invocation('second-completion'))
+      await vi.advanceTimersByTimeAsync(0)
+      expect(notifications.size).toBe(0)
+      await vi.advanceTimersByTimeAsync(1001)
+      expect([...notifications.values()]).toEqual([
+        expect.objectContaining({
+          target: { bindingId: 'bound-s1-lane1' },
+          event: expect.objectContaining({
+            name: 'mhs.operations',
+            data: {
+              operations: [
+                expect.objectContaining({ operationId: expect.any(String), status: 'done' }),
+                expect.objectContaining({ operationId: expect.any(String), status: 'done' }),
+              ],
+            },
+          }),
+        }),
+      ])
+      await hub.shutdown()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
   it('persists watches, ignores existing samples, isolates cancellation and wakes the original lane', async () => {
     let now = 1000
     const { hub, store, wakes, notifications } = setup(() => now)
@@ -155,5 +189,251 @@ describe('Hub authority, tasks and recovery', () => {
     expect((await hub.activity.list()).events.map((e) => e.type)).toEqual(['new'])
     expect(await hub.journal.read('pending')).toBeDefined()
     expect((await hub.activity.list()).earliest).toBe(now)
+  })
+})
+
+describe('Hub source and world contracts', () => {
+  it('waits for strictly newer data, cancels and times out, and pages bounded values history and event replay', async () => {
+    vi.useFakeTimers()
+    try {
+      let now = 1000
+      const { hub } = setup(() => now)
+      attach(hub, {
+        registration: {
+          ...description,
+          sources: [
+            { id: 'motors', kind: 'values', description: 'Motor values', fields: { n: { type: 'number' } } },
+          ],
+        },
+      })
+      hub.observation('rover', 'motors', { n: 1 })
+      const controller = new AbortController()
+      const cancelled = hub.read('rover', ['motors'], { since: now, signal: controller.signal })
+      const rejected = expect(cancelled).rejects.toThrow('closed')
+      controller.abort(new Error('closed'))
+      await rejected
+      let settled = false
+      const pending = hub.read('rover', ['motors'], { since: now, history: true, limit: 1 }).then((v) => {
+        settled = true
+        return v
+      })
+      await vi.advanceTimersByTimeAsync(10)
+      hub.observation('rover', 'motors', { n: 2 })
+      await vi.advanceTimersByTimeAsync(10)
+      expect(settled).toBe(false)
+      now += 1000
+      hub.observation('rover', 'motors', { n: 3 })
+      const read = await pending
+      expect(read.items[0]?.data).toEqual({ n: 3 })
+      expect(read.items[0]?.history).toHaveLength(1)
+      expect(read.items[0]?.nextCursor).toBe(1000)
+      const page = await hub.read('rover', ['motors'], { history: true, cursor: 1000 })
+      expect(page.items[0]?.history?.map((s) => s.data)).toEqual([{ n: 3 }])
+      const timeout = hub.read('rover', ['motors'], { since: now, timeoutMs: 20 })
+      await vi.advanceTimersByTimeAsync(21)
+      expect((await timeout).items[0]?.data).toEqual({ state: 'timeout' })
+      for (let n = 0; n < 150; n++) {
+        now += 1000
+        hub.observation('rover', 'motors', { n })
+      }
+      expect(
+        (await hub.read('rover', ['motors'], { history: true, limit: 120 })).items[0]?.history,
+      ).toHaveLength(120)
+      const events = hub.events.page(undefined, 1)
+      expect(events.more).toBe(true)
+      const replay: unknown[] = []
+      const off = hub.subscribe((e) => replay.push(e), events.cursor)
+      expect(replay.length).toBeGreaterThan(0)
+      expect(replay).not.toContainEqual(expect.objectContaining({ cursor: events.cursor }))
+      off()
+      now += 601_000
+      expect(hub.events.page(events.cursor).gap).toBe(true)
+      await hub.shutdown()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+  it('aggregates demand and rates per source, keeps pose slow, respects manual off, and gates video on keyframes', async () => {
+    vi.useFakeTimers()
+    try {
+      const { hub } = setup()
+      const { device, link } = attach(hub, {
+        registration: {
+          ...description,
+          sources: [
+            { id: 'pose', kind: 'pose', hz: 5, description: 'Position' },
+            { id: 'front', kind: 'image', hz: 10, description: 'Still' },
+            { id: 'video', kind: 'video', hz: 20, description: 'Video' },
+          ],
+        },
+      })
+      const configurations: Record<string, unknown>[] = []
+      device.onConfigure = async (sources) => {
+        configurations.push(sources)
+      }
+      await vi.advanceTimersByTimeAsync(0)
+      expect(configurations.at(-1)).toMatchObject({
+        pose: { on: true, hz: 1 },
+        front: { on: false },
+        video: { on: false },
+      })
+      const first: unknown[] = [],
+        second: unknown[] = []
+      const a = await hub.subscribeMedia('rover', 'front', (s) => first.push(s), 2)
+      const b = await hub.subscribeMedia('rover', 'front', (s) => second.push(s), 4)
+      expect(configurations.at(-1)?.front).toMatchObject({ on: true, hz: 4 })
+      hub.observation('rover', 'front', { w: 1, h: 1 }, new Uint8Array([1]), 'image/png')
+      await vi.advanceTimersByTimeAsync(250)
+      hub.observation('rover', 'front', { w: 1, h: 1 }, new Uint8Array([2]), 'image/png')
+      expect(first).toHaveLength(1)
+      expect(second).toHaveLength(2)
+      await hub.effect('configure', 'rover', { sources: { front: { on: false } } }, invocation('off'))
+      expect(configurations.at(-1)?.front).toEqual({ on: false })
+      const c = await hub.subscribeMedia('rover', 'front', () => {}, 8)
+      expect(configurations.at(-1)?.front).toEqual({ on: false })
+      a()
+      b()
+      c()
+      const sent: unknown[] = []
+      const requests = vi.spyOn(link, 'request')
+      const video = await hub.subscribeMedia('rover', 'video', (sample) => sent.push(sample))
+      expect(requests).toHaveBeenCalledWith('mhs/keyframe', { source: 'video' })
+      hub.observation('rover', 'video', { w: 1, h: 1, key: false }, new Uint8Array([1]))
+      expect(sent).toEqual([])
+      hub.observation('rover', 'video', { w: 1, h: 1, key: true }, new Uint8Array([2]))
+      expect(sent).toHaveLength(1)
+      await hub.keyframe('rover', 'video')
+      hub.observation('rover', 'video', { w: 1, h: 1, key: false }, new Uint8Array([3]))
+      expect(sent).toHaveLength(1)
+      video()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(configurations.at(-1)?.video).toEqual({ on: false })
+      await hub.shutdown()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+  it('projects fixed placement and dynamic age/error/odometry trust, uses the smallest zone and persists legal frame updates', async () => {
+    let now = 1000
+    const { hub, store, wakes } = setup(() => now)
+    const registration = {
+      ...description,
+      localization: 'fixed' as const,
+      placement: { map: 'site', x: 1, y: 1, yaw: 0 },
+      maps: [
+        {
+          id: 'site',
+          bounds: [0, 0, 10, 10] as [number, number, number, number],
+          places: [
+            {
+              id: 'all',
+              name: 'All',
+              points: [
+                [0, 0],
+                [10, 0],
+                [10, 10],
+                [0, 10],
+              ] as [number, number][],
+            },
+            {
+              id: 'small',
+              name: 'Small',
+              points: [
+                [0, 0],
+                [2, 0],
+                [2, 2],
+                [0, 2],
+              ] as [number, number][],
+            },
+          ],
+        },
+      ],
+    }
+    const { link } = attach(hub, { registration })
+    await vi.waitFor(async () => expect((await hub.maps())[0]?.places).toHaveLength(2))
+    expect((await hub.read('rover')).device.trust).toBe('trusted')
+    expect(await hub.world()).toMatchObject([{ entities: [{ ok: true, zone: 'small' }] }])
+    const updated = {
+      ...registration,
+      device: { id: 'fixed2', kind: 'sensor' },
+      maps: [
+        {
+          id: 'site',
+          bounds: [-1, -1, 20, 20] as [number, number, number, number],
+          places: [{ id: 'gate', name: 'Gate', at: [3, 3] as [number, number] }],
+        },
+      ],
+    }
+    hub.online({ ...link, registration: updated })
+    await vi.waitFor(async () => expect((await hub.maps())[0]?.bounds).toEqual([-1, -1, 20, 20]))
+    hub.offline('rover', link)
+    const restarted = new Hub({ store, wakes, authority })
+    expect((await restarted.maps())[0]?.places?.map((p) => p.id)).toEqual(['all', 'small', 'gate'])
+    const dynamic = {
+      ...description,
+      localization: 'self' as const,
+      sources: [
+        { id: 'pose', kind: 'pose', description: 'Position', max_error_m: 0.5 },
+        { id: 'odom', kind: 'odometry', description: 'Odometry' },
+      ],
+    }
+    attach(hub, { registration: dynamic })
+    expect((await hub.read('rover')).device.trust).toBe('lost')
+    hub.observation('rover', 'odom', { x: 0, y: 0, yaw: 0, v: 0, w: 0 })
+    hub.observation('rover', 'pose', { map: 'site', x: 1, y: 1, yaw: 0, ok: true })
+    expect((await hub.read('rover')).device.trust).toBe('trusted')
+    hub.observation('rover', 'pose', {
+      map: 'site',
+      x: 1,
+      y: 1,
+      yaw: 0,
+      ok: true,
+      cov: [1, 0, 0, 0, 1, 0, 0, 0, 0],
+    })
+    expect((await hub.read('rover')).device.positionReason).toBe('position-error')
+    hub.observation('rover', 'pose', { map: 'site', x: 5, y: 1, yaw: 0, ok: true })
+    expect((await hub.read('rover')).device.positionReason).toBe('odometry-disagreement')
+    hub.observation('rover', 'pose', { map: 'site', x: 5, y: 1, yaw: 0, ok: false })
+    expect((await hub.read('rover')).device.trust).toBe('uncertain')
+    now += 11_000
+    expect((await hub.read('rover')).device.trust).toBe('lost')
+    await hub.shutdown()
+  })
+  it('binds binary clips to native admission, exact bytes, destination, one send and revocation', async () => {
+    const { hub } = setup()
+    const { device } = attach(hub)
+    const bytes = new Uint8Array([1, 0, 2, 0])
+    const spec = {
+      id: 'speech',
+      rate: 24000,
+      channels: 1,
+      bytes: 4,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+    }
+    await expect(hub.clipLease('rover', spec, { ...invocation('bad-clip'), context: {} })).rejects.toThrow()
+    await expect(hub.clipLease('rover', { ...spec, channels: 3 }, invocation('format'))).rejects.toThrow(
+      'invalid-clip',
+    )
+    await hub.clipLease('rover', spec, invocation('clip'))
+    await expect(hub.sendClip('rover', 'clip', new Uint8Array([0, 0, 0, 0]))).rejects.toThrow(
+      'clip-payload-mismatch',
+    )
+    await expect(hub.sendClip('rover', 'clip', bytes)).rejects.toThrow('clip-grant-required')
+    await hub.clipLease('rover', spec, invocation('good-clip'))
+    expect(await hub.sendClip('rover', 'good-clip', bytes)).toEqual({ id: 'speech', state: 'sent' })
+    expect(device.clip('speech')?.pcm).toEqual(bytes)
+    await hub.clipLease('rover', { ...spec, id: 'chunked' }, invocation('chunked'))
+    expect(await hub.clipChunk('rover', 'chunked', bytes.subarray(0, 2))).toBeUndefined()
+    expect(device.clip('chunked')).toBeUndefined()
+    expect(await hub.clipChunk('rover', 'chunked', bytes.subarray(2))).toEqual({
+      id: 'chunked',
+      state: 'sent',
+    })
+    expect(device.clip('chunked')?.pcm).toEqual(bytes)
+    await expect(hub.clipChunk('rover', 'chunked', bytes)).rejects.toThrow('clip-grant-required')
+    await hub.clipLease('rover', spec, invocation('revoked-clip'))
+    await hub.stop()
+    await expect(hub.sendClip('rover', 'revoked-clip', bytes)).rejects.toThrow('clip-grant-required')
+    await hub.shutdown()
   })
 })

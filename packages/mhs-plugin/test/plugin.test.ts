@@ -10,6 +10,7 @@ import {
   MHS_HUB_CONFIG_SCHEMA,
   mhsServices,
   mhsStreams,
+  registerMhsTools,
   startMhsHub,
 } from '../src/index.js'
 
@@ -104,6 +105,80 @@ describe('MHS author adapters', () => {
     const id = (watch.structured as { watch: string }).watch
     expect((await run('unwatch_device', { watch: id })).isError).toBeUndefined()
     expect((await run('stop_device')).isError).toBeUndefined()
+    await hub.shutdown()
+  })
+  it('runs the registered context hook with maps first, positions/zones/tool parameters, within UTF-8 budgets', async () => {
+    const hub = new Hub({
+      store: new MemoryStore(),
+      authority,
+      wakes: {
+        async enqueue() {
+          return { wakeId: 'w', state: 'queued' }
+        },
+      },
+    })
+    const { link } = attach(hub)
+    hub.online({
+      ...link,
+      registration: {
+        ...link.registration,
+        localization: 'fixed',
+        placement: { map: 'site', x: 1, y: 1, yaw: 0 },
+        maps: [
+          {
+            id: 'site',
+            places: [
+              {
+                id: 'yard',
+                name: 'Yard',
+                points: [
+                  [0, 0],
+                  [2, 0],
+                  [2, 2],
+                  [0, 2],
+                ],
+              },
+              ...Array.from({ length: 80 }, (_, n) => ({
+                id: `p${n}`,
+                name: '位置'.repeat(40),
+                at: [n, n] as [number, number],
+              })),
+            ],
+          },
+        ],
+      },
+    })
+    await vi.waitFor(async () => expect((await hub.maps())[0]?.id).toBeDefined())
+    let context: (() => Promise<{ additionalContext?: string }>) | undefined
+    registerMhsTools(
+      {
+        tools: { register() {} },
+        hooks: {
+          register(event: string, fn: unknown) {
+            if (event === 'context') context = fn as typeof context
+          },
+        },
+      } as unknown as Parameters<typeof registerMhsTools>[0],
+      {
+        north: new North(hub),
+        async invocation() {
+          return invocation('context')
+        },
+        async bindWake() {
+          return { bindingId: 's1' }
+        },
+      },
+    )
+    if (!context) throw new Error('context hook missing')
+    const result = (await context()).additionalContext ?? ''
+    expect(Buffer.byteLength(result)).toBeLessThanOrEqual(6000)
+    const deviceStart = result.indexOf('rover:')
+    expect(deviceStart).toBeGreaterThan(result.indexOf('Map site'))
+    expect(Buffer.byteLength(result.slice(0, deviceStart))).toBeLessThanOrEqual(3000)
+    expect(result).toContain('"zone":"yard"')
+    expect(result).toContain('"position":{"map":"site","x":1,"y":1,"yaw":0}')
+    expect(result).toContain('Tool move:')
+    expect(result).toContain('"minimum":-2')
     await hub.shutdown()
   })
   it('rejects browser identity fields and uses only server-bound control leases', async () => {

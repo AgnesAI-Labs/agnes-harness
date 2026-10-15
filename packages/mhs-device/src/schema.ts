@@ -140,7 +140,10 @@ export type Source = Static<typeof sourceSchema>
 export type Observation = Static<typeof observationSchema>
 export type DeviceMap = Static<typeof mapSchema>
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json }
+export type ResourceHolder = { call: string; tool: string; caller?: string } | { manual: true }
 export type Outcome = {
+  holder?: ResourceHolder
+  needs?: string[]
   status: 'done' | 'error' | 'interrupted' | 'rejected' | 'unknown'
   reason?: string
   detail?: string

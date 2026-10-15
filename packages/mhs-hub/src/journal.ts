@@ -31,6 +31,7 @@ export function digest(value: unknown): string {
   return createHash('sha256').update(canonical(value)).digest('hex')
 }
 export class Journal {
+  private flushing: Promise<void> = Promise.resolve()
   constructor(
     readonly store: OwnedStore,
     private readonly wakes: BoundWakes,
@@ -153,25 +154,66 @@ export class Journal {
     })
     await this.flush()
   }
-  async flush(): Promise<void> {
-    const keys: string[] = []
-    await this.each('outbox/', async (value) => {
-      const row = object(value)
-      const id = String(row.id)
+  flush(): Promise<void> {
+    const run = this.flushing.catch(() => {}).then(() => this.flushPending())
+    this.flushing = run
+    return run
+  }
+  private async flushPending(): Promise<void> {
+    // Persist the exact batch before enqueueing: a lost reply must retry the same membership/key.
+    const page = await this.store.scan({ prefix: 'outbox/', limit: 128 })
+    const groups = new Map<string, (typeof page.rows)[number][]>()
+    for (const row of page.rows) {
+      const binding = digest(object(row.value).target)
+      const group = groups.get(binding) ?? []
+      group.push(row)
+      groups.set(binding, group)
+    }
+    for (const rows of groups.values()) {
+      const id = digest(rows.map((row) => row.key).sort())
+      const entries = rows.map((row) => object(row.value))
+      await this.store.transaction((tx) => {
+        const key = `wakebatch/${id}`
+        if (!tx.get(key))
+          tx.put(
+            key,
+            {
+              batchId: id,
+              idempotencyKey:
+                entries.length === 1
+                  ? `mhs/${digest(String(entries[0]?.id))}/terminal`
+                  : `mhs/${id}/terminal-batch`,
+              target: entries[0]?.target ?? null,
+              event:
+                entries.length === 1
+                  ? (entries[0]?.event ?? null)
+                  : {
+                      name: 'mhs.operations',
+                      summary: `${entries.length} device operations completed`,
+                      data: { operations: entries.map((entry) => object(entry.event).data ?? null) },
+                    },
+            } as Json,
+            null,
+          )
+        for (const row of rows) tx.remove(row.key, row.revision)
+      })
+    }
+    await this.each('wakebatch/', async (value) => {
+      const row = object(value),
+        id = digest(value)
       const queued = await this.wakes.enqueue({
         target: row.target as unknown as WakeTarget,
-        idempotencyKey: `mhs/${digest(id)}/terminal`,
+        idempotencyKey: String(row.idempotencyKey),
         event: row.event as { name: string; summary: string; data: Json },
         delivery: 'next-turn',
       })
-      if (queued.state === 'queued' || queued.state === 'delivered' || queued.state === 'refused')
-        keys.push(`outbox/${digest(id)}`)
+      if (['queued', 'delivered', 'refused'].includes(queued.state))
+        await this.store.transaction((tx) => {
+          const key = `wakebatch/${String(row.batchId)}`
+          const stored = tx.get(key)
+          if (stored && digest(stored.value) === id) tx.remove(key, stored.revision)
+        })
     })
-    for (const key of keys)
-      await this.store.transaction((tx) => {
-        const row = tx.get(key)
-        if (row) tx.remove(key, row.revision)
-      })
   }
   async each(prefix: string, consume: (value: Json) => Promise<void>): Promise<void> {
     let cursor: string | undefined

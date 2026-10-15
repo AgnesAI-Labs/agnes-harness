@@ -90,6 +90,11 @@ export function validateObservation(source: Source, data: Json, bytes?: Uint8Arr
   }
   if (['image', 'video', 'audio', 'points', 'grid'].includes(source.kind) && !bytes)
     throw new MhsError('missing-binary')
+  if (source.kind === 'pose') {
+    const cov = object(data).cov
+    if (Array.isArray(cov) && [0, 4, 8].some((i) => Number(cov[i]) < 0))
+      throw new MhsError('invalid-covariance')
+  }
   if (source.kind === 'image' && !['image/png', 'image/jpeg'].includes(mime ?? ''))
     throw new MhsError('invalid-image')
   if (source.kind === 'audio' && bytes) {

@@ -1,24 +1,34 @@
 import { MhsError, object } from '@agnes/mhs-device'
 import { encodeMedia, type Invocation, type North } from '@agnes/mhs-hub'
 
-export const MHS_QUERY_SERVICES = ['devices', 'read', 'maps', 'world', 'activity', 'operation'] as const
+export const MHS_QUERY_SERVICES = [
+  'devices',
+  'read',
+  'events',
+  'maps',
+  'world',
+  'activity',
+  'operation',
+] as const
 export const MHS_EFFECT_SERVICES = [
   'call',
   'set',
   'stop',
   'lease',
+  'clip',
   'watch',
   'unwatch',
   'configure',
+  'pause',
   'resume',
   'cancel',
 ] as const
 /** Adapter for profile/session service contexts supplied by the generic authority layer. */
 export function mhsServices(north: North, invocation: (context: unknown) => Promise<Invocation>) {
   return {
-    async query(service: string, input: unknown): Promise<unknown> {
+    async query(service: string, input: unknown, signal?: AbortSignal): Promise<unknown> {
       if (!(MHS_QUERY_SERVICES as readonly string[]).includes(service)) throw new MhsError('unknown-query')
-      return north.query(service, object(input))
+      return north.query(service, object(input), signal)
     },
     async effect(service: string, input: unknown, context: unknown): Promise<unknown> {
       if (!(MHS_EFFECT_SERVICES as readonly string[]).includes(service)) throw new MhsError('unknown-effect')
@@ -38,18 +48,23 @@ export function mhsServices(north: North, invocation: (context: unknown) => Prom
 export function mhsStreams(north: North) {
   return {
     async media(
-      binding: { device: string; source: string },
+      binding: { device: string; source: string; hz?: number },
       send: (frame: Uint8Array) => void,
       signal: AbortSignal,
     ): Promise<() => void> {
       signal.throwIfAborted()
-      const dispose = await north.hub.subscribeMedia(binding.device, binding.source, (sample) => {
-        try {
-          send(encodeMedia(sample))
-        } catch {
-          /* Gateway budgets drop oversize media; command lane stays available. */
-        }
-      })
+      const dispose = await north.hub.subscribeMedia(
+        binding.device,
+        binding.source,
+        (sample) => {
+          try {
+            send(encodeMedia(sample))
+          } catch {
+            /* Gateway budgets drop oversize media; command lane stays available. */
+          }
+        },
+        binding.hz,
+      )
       if (signal.aborted) {
         dispose()
         return dispose
@@ -63,9 +78,9 @@ export function mhsStreams(north: North) {
     async dropped(binding: { device: string; source: string }): Promise<void> {
       await north.hub.keyframe(binding.device, binding.source)
     },
-    events(send: (event: unknown) => void, signal: AbortSignal): () => void {
+    events(send: (event: unknown) => void, signal: AbortSignal, since?: string): () => void {
       signal.throwIfAborted()
-      const dispose = north.hub.subscribe(send)
+      const dispose = north.hub.subscribe(send, since)
       signal.addEventListener('abort', dispose, { once: true })
       return () => {
         signal.removeEventListener('abort', dispose)

@@ -28,3 +28,7 @@ await connectDevice(device, 'ws://127.0.0.1:4180', lifetime.signal)
 Stop 中断全部运动并归零人工轴。命令连接丢失时停止，重连不会恢复旧动作。替换关闭码 4001 与不支持版本关闭码 4003 会阻止自动重连。没有停止确认意味着结果未知，不能声称安全静止；联锁、急停与本地接管仍由硬件适配器负责。
 
 监听默认只绑定 loopback，拒绝携带浏览器 Origin 的设备连接。裸 MHS 设备 id 不代表认证。真实部署需要显式认证的设备准入适配器或受控网络；人工与 Agent API 必须使用经审核的 Harness authority 与 stream gateway。系统不开放免认证的 North 控制 WebSocket。
+
+除低频 pose 外，source 初始关闭，由 `mhs/configure` 按消费者需求启用。工具 `needs` 只能引用已声明的 source，关闭时以 `reason: "needs"` 和 source id 列表拒绝。资源占用拒绝包含 `holder: {call, tool, caller?}` 或 `{manual: true}`；caller 是 Hub 提供的展示标签，不是授权依据。
+
+PCM16 音频使用 `{type:"clip",id,rate,channels}` 加单个 Nerve 二进制帧。两个 SDK 校验大小与采样对齐，最多缓存 8 段、60 秒，缓存成功后通过命令通道发送 `mhs/clip-received {id}`。名为 `clip` 的工具参数必须引用仍在缓存的音频。旧设备没有该新增确认时，上传视为未确认；发送前应升级两端。clip 和运动授权均不跨重连保留。

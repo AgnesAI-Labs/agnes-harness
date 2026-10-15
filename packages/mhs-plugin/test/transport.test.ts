@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -13,7 +14,7 @@ import {
 import { ServiceRegistry } from '@agnes/host-extensions/ext-host/services'
 import { ProfileActivations } from '@agnes/host-extensions/profile/activation'
 import { createProfileServiceRuntime } from '@agnes/host-extensions/profile/runtime'
-import type { ClientModuleRosterRow, StreamDeclaration } from '@agnes/protocol'
+import { type ClientModuleRosterRow, encodePluginStreamBinary, type StreamDeclaration } from '@agnes/protocol'
 import { createManagedServiceRuntime } from '@agnes/sdk/managed-service'
 import { expect, it, vi } from 'vitest'
 import { attach } from '../../mhs-hub/test/fixtures.js'
@@ -63,7 +64,7 @@ it('runs the real Hub on the generic owned store/readiness and streams, parking 
     revision: 'revision',
     contentDigest: `sha256-${'a'.repeat(64)}`,
     extIds: ['plugin/0123456789abcdef'],
-    streams: ['mhs.media', 'mhs.events', 'mhs.control'],
+    streams: ['mhs.media', 'mhs.events', 'mhs.control', 'mhs.clip'],
     binding: {
       owner: 'web:sample-mhs',
       lifetime: 'profile',
@@ -212,6 +213,15 @@ it('runs the real Hub on the generic owned store/readiness and streams, parking 
       maxBytesPerSecond: lane === 'media' ? 4194304 : 65536,
       ...(lane === 'control' ? { controlService: 'mhs.lease' } : {}),
     }))
+    declarations.push({
+      ...declarations.find((d) => d.name === 'mhs.control')!,
+      name: 'mhs.clip',
+      directions: ['inbound', 'outbound'],
+      maxFrameBytes: 4096,
+      maxBufferedBytes: 32768,
+      maxBytesPerSecond: 65536,
+      controlService: 'mhs.clip',
+    })
     const author = bindPluginStreams(broker, {
       owner: 'plugin/0123456789abcdef',
       profileId: 'one',
@@ -219,25 +229,7 @@ it('runs the real Hub on the generic owned store/readiness and streams, parking 
       signal: lifetime.signal,
       capabilities: {
         streams: declarations,
-        services: [
-          {
-            name: 'mhs.lease',
-            kind: 'effect',
-            scope: 'profile',
-            controlLeaseMs: 30000,
-            effectPolicy: {
-              isDestructive: true,
-              isOpenWorld: true,
-              replay: 'never',
-              requiresApproval: 'always',
-              approvalScopes: [],
-            },
-            inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-            outputSchema: {},
-            timeoutMs: 1000,
-            maxResultBytes: 4096,
-          },
-        ],
+        services: definitions.map(({ handler: _handler, prepare: _prepare, ...d }) => d),
       },
       assertCurrent() {
         activations.require(owner, 'revision', activationId)
@@ -252,7 +244,11 @@ it('runs the real Hub on the generic owned store/readiness and streams, parking 
         scope: { kind: 'profile', profileId: 'one' },
         input,
         client: { rowId: row.rowId, revision: 'revision', contentDigest: `sha256-${'a'.repeat(64)}` },
-        ...(name === 'mhs.control' ? { controlOperationId: 'manual-lease' } : {}),
+        ...(name === 'mhs.control'
+          ? { controlOperationId: 'manual-lease' }
+          : name === 'mhs.clip'
+            ? { controlOperationId: 'clip-upload' }
+            : {}),
       })
       const sent: (string | Uint8Array)[] = []
       const peer = broker.connect(principal, {
@@ -289,6 +285,39 @@ it('runs the real Hub on the generic owned store/readiness and streams, parking 
         },
       ),
     ).rejects.toThrow('actor-mismatch')
+    const pcm = new Uint8Array([1, 0, 2, 0])
+    const clip = {
+      extension: owner,
+      service: 'mhs.clip',
+      operationId: 'clip-upload',
+      input: {
+        device: 'rover',
+        params: {
+          id: 'speech',
+          rate: 24000,
+          channels: 1,
+          bytes: pcm.length,
+          sha256: createHash('sha256').update(pcm).digest('hex'),
+        },
+      },
+    }
+    expect(await native.call(clip, credential)).toMatchObject({ state: 'approval-required' })
+    const clipDecision = (await native.listDecisions(credential))[0]!
+    await native.answerDecision(
+      {
+        handle: clipDecision.handle,
+        revision: clipDecision.revision,
+        commandId: 'review-clip',
+        response: { option: 'allowed-once', value: null },
+      },
+      credential,
+    )
+    expect(await native.call(clip, credential)).toMatchObject({ state: 'completed' })
+    const upload = await open('mhs.clip', {})
+    upload.peer.receive(encodePluginStreamBinary(upload.grant.streamId, 0, pcm), true)
+    await vi.waitFor(() => expect(device.clip('speech')?.pcm).toEqual(pcm))
+    upload.peer.receive(encodePluginStreamBinary(upload.grant.streamId, 1, pcm), true)
+    upload.peer.disconnect()
     const media = await open('mhs.media', { device: 'rover', source: 'front' }, 2097152)
     const control = await open('mhs.control', { device: 'forged-browser-device' })
     hub.north.hub.observation('rover', 'front', { w: 1, h: 1 }, new Uint8Array([1, 2]), 'image/png')

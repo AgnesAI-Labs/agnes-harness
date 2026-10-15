@@ -82,7 +82,8 @@ export function validateRegistration(value: unknown): Registration {
     if (
       tool.inputSchema.type !== 'object' ||
       tool.uses?.some((r) => !Object.hasOwn(description.resources ?? {}, r)) ||
-      (tool.motion && tool.readOnly)
+      (tool.motion && tool.readOnly) ||
+      tool.needs?.some((id) => !description.sources?.some((source) => source.id === id))
     )
       throw new MhsError('invalid-tool')
   }

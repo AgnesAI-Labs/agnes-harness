@@ -2262,6 +2262,31 @@
               "type": "string"
             },
             "method": {
+              "const": "mhs/clip-received",
+              "type": "string"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "type": "string"
+                }
+              },
+              "required": ["id"]
+            }
+          },
+          "required": ["jsonrpc", "method", "params"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0",
+              "type": "string"
+            },
+            "method": {
               "const": "mhs/state",
               "type": "string"
             },

@@ -27,6 +27,26 @@ const inputSchema = {
   additionalProperties: false,
 } as const
 
+const readInputSchema = {
+  ...inputSchema,
+  properties: {
+    ...inputSchema.properties,
+    since: { type: 'number' },
+    history: { type: 'boolean' },
+    cursor: { type: 'number' },
+    limit: { type: 'integer', minimum: 1, maximum: 120 },
+    timeoutMs: { type: 'number', minimum: 0, maximum: 10000 },
+  },
+} as const
+const eventsInputSchema = {
+  type: 'object',
+  properties: {
+    since: { type: 'string', maxLength: 128 },
+    limit: { type: 'integer', minimum: 1, maximum: 512 },
+  },
+  additionalProperties: false,
+} as const
+
 const activityInputSchema = {
   type: 'object',
   properties: {
@@ -78,8 +98,8 @@ export function createMhsNativeProfileAdapter(assertActive: () => Promise<void>)
       return { operationId: admission.operationId, context }
     }
     const services = {
-      query: async (method: string, input: Json) =>
-        mhsServices(await getNorth(), invocation).query(method, input),
+      query: async (method: string, input: Json, signal?: AbortSignal) =>
+        mhsServices(await getNorth(), invocation).query(method, input, signal),
       effect: async (method: string, input: Json, context: ServiceContext) =>
         mhsServices(await getNorth(), invocation).effect(method, input, context),
     }
@@ -89,7 +109,14 @@ export function createMhsNativeProfileAdapter(assertActive: () => Promise<void>)
           name: `mhs.${method}`,
           scope: 'profile',
           kind: 'query',
-          inputSchema: method === 'activity' ? activityInputSchema : inputSchema,
+          inputSchema:
+            method === 'activity'
+              ? activityInputSchema
+              : method === 'read'
+                ? readInputSchema
+                : method === 'events'
+                  ? eventsInputSchema
+                  : inputSchema,
           outputSchema: {},
           timeoutMs: 30000,
           maxResultBytes: 1048576,
@@ -100,7 +127,7 @@ export function createMhsNativeProfileAdapter(assertActive: () => Promise<void>)
               await context.sessionAccess.requireRead(params.sessionId)
               context.signal.throwIfAborted()
             }
-            return ((await services.query(method, input)) ?? null) as Json
+            return ((await services.query(method, input, context.signal)) ?? null) as Json
           },
         }),
       ),
@@ -114,7 +141,7 @@ export function createMhsNativeProfileAdapter(assertActive: () => Promise<void>)
           timeoutMs: 30000,
           maxResultBytes: 1048576,
           ...(method === 'stop' ? { priority: 'urgent' as const } : {}),
-          ...(method === 'lease' ? { controlLeaseMs: 30000 } : {}),
+          ...(['lease', 'clip'].includes(method) ? { controlLeaseMs: 30000 } : {}),
           effectPolicy: {
             isDestructive: !['stop', 'watch', 'unwatch'].includes(method),
             isOpenWorld: true,
@@ -173,7 +200,7 @@ export function createMhsNativeProfileAdapter(assertActive: () => Promise<void>)
               } as unknown as AdmissionSubject)
             try {
               const output = ((await services.effect(method, input, context)) ?? null) as Json
-              if (method === 'lease') {
+              if (method === 'lease' || method === 'clip') {
                 context.signal.throwIfAborted()
                 await assertActive()
                 const grant = admission.controlGrant,

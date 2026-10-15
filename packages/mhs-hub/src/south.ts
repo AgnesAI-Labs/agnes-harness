@@ -6,6 +6,7 @@ import {
   type Outcome,
   object,
   type Registration,
+  type ResourceHolder,
   validateCommand,
   validateNerveMessage,
   validateRegistration,
@@ -20,6 +21,7 @@ type Pending = {
 }
 class Link implements DeviceLink {
   nerve: WebSocket | undefined
+  private readonly clips = new Map<string, Pending>()
   private next = 0
   private readonly pending = new Map<string, Pending>()
   private readonly results = new Map<
@@ -46,6 +48,8 @@ class Link implements DeviceLink {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id)
+        if (method === 'mhs/stop') this.close()
+        if (method === 'mhs/pause') void this.expire(String(params.call))
         reject(new MhsError('timeout'))
       }, timeoutMs)
       this.pending.set(id, { resolve, reject, timer })
@@ -79,13 +83,20 @@ class Link implements DeviceLink {
     id: string,
     name: string,
     args: Json,
-  ): Promise<{ accepted: boolean; reason?: string; result: Promise<Outcome> }> {
+    caller?: string,
+  ): Promise<{
+    accepted: boolean
+    reason?: string
+    holder?: ResourceHolder
+    needs?: string[]
+    result: Promise<Outcome>
+  }> {
     const tool = this.registration.tools?.find((t) => t.name === name)
     const result = new Promise<Outcome>((resolve) => {
       const timer = setTimeout(
         () => {
           this.results.delete(id)
-          void this.request('mhs/stop', {}).catch(() => this.close())
+          void this.expire(id)
           resolve({ status: 'unknown', reason: 'timeout' })
         },
         ((tool?.timeout ?? 1) + 5) * 1000,
@@ -93,24 +104,80 @@ class Link implements DeviceLink {
       this.results.set(id, { resolve, timer })
     })
     try {
-      const acceptance = object(await this.request('mhs/call', { name, arguments: args }, 2000, id))
+      const acceptance = object(
+        await this.request(
+          'mhs/call',
+          { name, arguments: args, ...(caller ? { meta: { caller } } : {}) },
+          2000,
+          id,
+        ),
+      )
       if (acceptance.accepted !== true) {
         const entry = this.results.get(id)
         if (entry) {
           clearTimeout(entry.timer)
           this.results.delete(id)
-          entry.resolve({ status: 'rejected', reason: String(acceptance.reason ?? 'invalid') })
+          entry.resolve({
+            status: 'rejected',
+            reason: String(acceptance.reason ?? 'invalid'),
+            ...rejection(acceptance),
+          })
         }
       }
       return {
         accepted: acceptance.accepted === true,
         ...(typeof acceptance.reason === 'string' ? { reason: acceptance.reason } : {}),
+        ...rejection(acceptance),
         result,
       }
     } catch (error) {
-      void this.request('mhs/stop', {}).catch(() => this.close())
+      const entry = this.results.get(id)
+      if (entry) {
+        clearTimeout(entry.timer)
+        this.results.delete(id)
+        entry.resolve({ status: 'unknown', reason: 'accept-timeout' })
+      }
+      void this.expire(id)
       throw error
     }
+  }
+  private async expire(id: string): Promise<void> {
+    try {
+      await this.request('mhs/cancel', { call: id }, 500)
+    } catch {
+      /* Stop is mandatory either way. */
+    }
+    try {
+      await this.request('mhs/stop', {}, 1500)
+    } catch {
+      this.close()
+    }
+  }
+  clip(id: string, rate: number, channels: number, pcm: Uint8Array): Promise<void> {
+    const nerve = this.nerve
+    if (
+      nerve?.readyState !== 1 ||
+      nerve.bufferedAmount > 1 << 20 ||
+      this.clips.size >= 8 ||
+      this.clips.has(id)
+    )
+      return Promise.reject(new MhsError('clip-unavailable'))
+    return new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.clips.delete(id)
+        reject(new MhsError('clip-unconfirmed'))
+      }, 2000)
+      this.clips.set(id, { resolve: () => resolve(), reject, timer })
+      nerve.send(JSON.stringify({ type: 'clip', id, rate, channels }))
+      nerve.send(pcm)
+    })
+  }
+  clipReceived(id: string) {
+    const pending = this.clips.get(id)
+    if (!pending) return
+    this.clips.delete(id)
+    clearTimeout(pending.timer)
+    pending.resolve({})
   }
   manual(axes: Record<string, number>): void {
     if (this.nerve?.readyState !== 1 || this.nerve.bufferedAmount > 32768) throw new MhsError('offline')
@@ -121,6 +188,11 @@ class Link implements DeviceLink {
     this.nerve?.close()
   }
   lost(): void {
+    for (const p of this.clips.values()) {
+      clearTimeout(p.timer)
+      p.reject(new MhsError('clip-unconfirmed'))
+    }
+    this.clips.clear()
     for (const p of this.pending.values()) {
       clearTimeout(p.timer)
       p.reject(new MhsError('offline'))
@@ -300,6 +372,9 @@ export class South {
           }
           const p = object(message.params ?? {})
           switch (message.method) {
+            case 'mhs/clip-received':
+              link.clipReceived(String(p.id))
+              break
             case 'mhs/ping':
               send(message.id, {})
               break
@@ -357,4 +432,21 @@ export class South {
     )
     await stopped
   }
+}
+
+function rejection(value: Record<string, unknown>): { holder?: ResourceHolder; needs?: string[] } {
+  const result: { holder?: ResourceHolder; needs?: string[] } = {}
+  if (value.holder && typeof value.holder === 'object') {
+    const holder = object(value.holder)
+    if (holder.manual === true) result.holder = { manual: true }
+    else if (typeof holder.call === 'string' && typeof holder.tool === 'string')
+      result.holder = {
+        call: holder.call.slice(0, 256),
+        tool: holder.tool.slice(0, 64),
+        ...(typeof holder.caller === 'string' ? { caller: holder.caller.slice(0, 128) } : {}),
+      }
+  }
+  if (Array.isArray(value.needs) && value.needs.every((n) => typeof n === 'string'))
+    result.needs = value.needs.slice(0, 64)
+  return result
 }

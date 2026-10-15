@@ -1,4 +1,4 @@
-import type { Json, Outcome, Registration } from '@agnes/mhs-device'
+import type { Json, Outcome, Registration, ResourceHolder } from '@agnes/mhs-device'
 
 export interface StoreRow {
   key: string
@@ -39,7 +39,7 @@ export interface Invocation {
 }
 export interface AdmissionSubject {
   operationId: string
-  action: 'call' | 'set' | 'manual' | 'configure' | 'resume' | 'cancel'
+  action: 'call' | 'set' | 'manual' | 'configure' | 'clip' | 'pause' | 'resume' | 'cancel'
   device: string
   revision: string
   input: Json
@@ -57,7 +57,15 @@ export interface DeviceLink {
     id: string,
     name: string,
     args: Json,
-  ): Promise<{ accepted: boolean; reason?: string; result: Promise<Outcome> }>
+    caller?: string,
+  ): Promise<{
+    accepted: boolean
+    reason?: string
+    holder?: ResourceHolder
+    needs?: string[]
+    result: Promise<Outcome>
+  }>
+  clip?(id: string, rate: number, channels: number, pcm: Uint8Array): void | Promise<void>
   manual(axes: Record<string, number>): void
   close(): void
 }

@@ -90,9 +90,10 @@ export const invocation = (id: string): Invocation => ({
 })
 export function attach(
   hub: Hub,
-  options: { result?: Promise<Json>; onStop?: () => void } = {},
+  options: { result?: Promise<Json>; onStop?: () => void; registration?: Registration } = {},
 ): { device: Device; link: DeviceLink } {
-  const device = new Device(description, {
+  const registration = options.registration ?? description
+  const device = new Device(registration, {
     arm() {},
     async stop() {
       options.onStop?.()
@@ -101,23 +102,41 @@ export function attach(
   device.onManual = async () => {}
   device.tool('move', async (args) => (options.result ? options.result : args.x))
   const link: DeviceLink = {
-    registration: description,
+    registration,
     available: true,
     async request(method, params) {
       if (method === 'mhs/stop') {
         await device.stop()
         return {}
       }
+      if (method === 'mhs/configure') return device.configure(params.sources)
+      if (method === 'mhs/pause') {
+        await device.pause(String(params.call))
+        return {}
+      }
+      if (method === 'mhs/resume') {
+        device.resume(String(params.call))
+        return {}
+      }
+      if (method === 'mhs/cancel') {
+        await device.cancel(String(params.call))
+        return {}
+      }
       if (method === 'mhs/set') return device.set(params.values as Record<string, Json>)
       return {}
     },
-    async call(id, name, args) {
-      const accepted = device.call(id, name, args)
+    async call(id, name, args, caller) {
+      const accepted = device.call(id, name, args, caller)
       return {
         accepted: accepted.accepted,
+        ...(accepted.holder ? { holder: accepted.holder } : {}),
+        ...(accepted.needs ? { needs: accepted.needs } : {}),
         ...(accepted.reason ? { reason: accepted.reason } : {}),
         result: accepted.result ?? Promise.resolve<Outcome>({ status: 'rejected' }),
       }
+    },
+    clip(id, rate, channels, pcm) {
+      device.receiveClip(id, rate, channels, pcm)
     },
     manual(axes) {
       void device.manual(axes).catch(() => {})
@@ -127,6 +146,7 @@ export function attach(
     },
   }
   hub.online(link)
+  device.onProgress = (id, data) => hub.progress('rover', id, data)
   device.onState = (values) => hub.state('rover', values)
   device.update({ battery: 90, lamp: false })
   return { device, link }

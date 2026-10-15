@@ -1,5 +1,5 @@
 import { validateObservation } from './observations.js'
-import type { DeviceTool, Json, Observation, Outcome, Registration } from './schema.js'
+import type { DeviceTool, Json, Observation, Outcome, Registration, ResourceHolder } from './schema.js'
 import { fieldValue, MhsError, object, prepareArguments, validateRegistration } from './validation.js'
 
 export interface Clip {
@@ -22,6 +22,8 @@ export interface CallContext {
 }
 export type ToolHandler = (args: Record<string, Json>, call: CallContext) => Promise<Json | undefined>
 type Running = {
+  id: string
+  caller?: string
   tool: DeviceTool
   controller: AbortController
   paused: boolean
@@ -89,6 +91,11 @@ export class Device {
     private readonly safety?: SafetyPort,
   ) {
     this.description = validateRegistration(description)
+    for (const source of this.description.sources ?? [])
+      this.settings.set(source.id, {
+        on: source.kind === 'pose',
+        ...(source.kind === 'pose' ? { hz: 1 } : {}),
+      })
   }
   async configure(input: unknown): Promise<{ sources: Record<string, Json> }> {
     const sources = object(input)
@@ -215,7 +222,14 @@ export class Device {
     id: string,
     name: string,
     input: unknown,
-  ): { accepted: boolean; reason?: string; result?: Promise<Outcome> } {
+    caller?: string,
+  ): {
+    accepted: boolean
+    reason?: string
+    holder?: ResourceHolder
+    needs?: string[]
+    result?: Promise<Outcome>
+  } {
     const tool = this.description.tools?.find((t) => t.name === name)
     const handler = this.handlers.get(name)
     if (!tool || !handler || this.running.has(id)) return { accepted: false, reason: 'invalid' }
@@ -233,19 +247,33 @@ export class Device {
       (tool.motion && !this.safety)
     )
       return { accepted: false, reason: 'unsafe' }
+    const needs = (tool.needs ?? []).filter((id) => this.settings.get(id)?.on === false)
+    if (needs.length) return { accepted: false, reason: 'needs', needs }
+    const clipId = args.clip
+    if (typeof clipId === 'string' && !this.clip(clipId)) return { accepted: false, reason: 'missing-clip' }
     const conflicts = [...this.running.values()].filter((r) =>
       r.tool.uses?.some((x) => tool.uses?.includes(x)),
     )
-    if (
-      (tool.motion && this.manualUntil > performance.now()) ||
-      conflicts.some((r) =>
-        r.tool.uses?.some((x) => tool.uses?.includes(x) && this.description.resources?.[x] === 'reject'),
-      )
+    if (tool.motion && this.manualUntil > performance.now())
+      return { accepted: false, reason: 'busy', holder: { manual: true } }
+    const holder = conflicts.find((r) =>
+      r.tool.uses?.some((x) => tool.uses?.includes(x) && this.description.resources?.[x] === 'reject'),
     )
-      return { accepted: false, reason: 'busy' }
+    if (holder)
+      return {
+        accepted: false,
+        reason: 'busy',
+        holder: {
+          call: holder.id,
+          tool: holder.tool.name,
+          ...(holder.caller ? { caller: holder.caller } : {}),
+        },
+      }
     const controller = new AbortController()
     // Register before yielding so a second call sees queued resource ownership too.
     const entry: Running = {
+      id,
+      ...(caller ? { caller } : {}),
       tool,
       controller,
       paused: false,
@@ -387,6 +415,7 @@ export class Device {
     await this.onManual(axes)
   }
   async disconnect(): Promise<void> {
+    this.clips.clear()
     this.stopped = true
     try {
       await this.stop('disconnect')

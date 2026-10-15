@@ -3,7 +3,7 @@ import asyncio
 import json
 import time
 from urllib.parse import urlsplit, urlunsplit
-from .validation import MhsError
+from .validation import MhsError, validate_wire
 
 
 async def connect_device(device, base):
@@ -21,6 +21,7 @@ async def connect_device(device, base):
             async with connect(url("/ws/mhs"), subprotocols=["mhs.v1"], max_size=65536, ping_interval=2, ping_timeout=3) as command:
                 await command.send(json.dumps({"jsonrpc": "2.0", "id": "register", "method": "mhs/register", "params": device.description}))
                 registered = json.loads(await asyncio.wait_for(command.recv(), 5))
+                validate_wire(registered, "commandResponse")
                 if "result" not in registered:
                     raise MhsError("registration-refused")
                 async with connect(url("/ws/nerve"), subprotocols=["mhs.v1"], max_size=16 << 20, ping_interval=2, ping_timeout=3) as nerve:
@@ -38,15 +39,24 @@ async def connect_device(device, base):
                     async def result(call_id, task):
                         outcome = await task
                         await send({"jsonrpc": "2.0", "method": "mhs/result", "params": {"call": call_id, **outcome}})
-                    async def commands():
-                        async for raw in command:
-                            msg = json.loads(raw)
-                            method, params = msg.get("method"), msg.get("params", {})
-                            answer = {}
+                    last_reply = time.monotonic()
+                    background = set()
+                    def start(coroutine):
+                        task = asyncio.create_task(coroutine)
+                        background.add(task)
+                        def done(task):
+                            background.discard(task)
+                            if not task.cancelled():
+                                task.exception()
+                        task.add_done_callback(done)
+                    async def handle(msg):
+                        method, params = msg.get("method"), msg.get("params", {})
+                        answer = {}
+                        try:
                             if method == "mhs/call":
-                                answer, task = device.call(msg["id"], params["name"], params.get("arguments", {}))
+                                answer, task = device.call(msg["id"], params["name"], params.get("arguments", {}), params.get("meta", {}).get("caller"))
                                 if task:
-                                    asyncio.create_task(result(msg["id"], task))
+                                    start(result(msg["id"], task))
                             elif method == "mhs/stop":
                                 await device.stop()
                             elif method == "mhs/set":
@@ -68,8 +78,28 @@ async def connect_device(device, base):
                             elif method == "mhs/time":
                                 answer = {"t": time.time()}
                             elif method != "mhs/ping":
+                                raise MhsError("unsupported-command")
+                            await send({"jsonrpc": "2.0", "id": msg["id"], "result": answer})
+                        except Exception:
+                            await send({"jsonrpc": "2.0", "id": msg["id"], "error": {"code": -32602, "message": "invalid-or-unsafe"}})
+                    async def commands():
+                        nonlocal last_reply
+                        async for raw in command:
+                            msg = json.loads(raw)
+                            validate_wire(msg, "commandRequest", "commandResponse")
+                            last_reply = time.monotonic()
+                            if "method" not in msg:
                                 continue
-                            await send({"jsonrpc": "2.0", "id": msg.get("id"), "result": answer})
+                            if len(background) >= 128:
+                                raise MhsError("command-capacity")
+                            start(handle(msg))
+                    async def heartbeat():
+                        while True:
+                            await asyncio.sleep(2)
+                            if time.monotonic() - last_reply > 5:
+                                await command.close()
+                                return
+                            await send({"jsonrpc": "2.0", "id": f"ping-{time.monotonic()}", "method": "mhs/ping", "params": {}})
                     async def controls():
                         clip = None
                         async for raw in nerve:
@@ -77,24 +107,26 @@ async def connect_device(device, base):
                                 if clip is None:
                                     raise MhsError("unexpected-binary")
                                 device.receive_clip(clip["id"], clip["rate"], clip["channels"], raw)
+                                await send({"jsonrpc": "2.0", "method": "mhs/clip-received", "params": {"id": clip["id"]}})
                                 clip = None
                                 continue
                             if clip is not None:
                                 raise MhsError("missing-binary")
                             msg = json.loads(raw)
+                            validate_wire(msg, "nerveMessage")
                             if msg.get("type") == "clip":
                                 clip = msg
                             if msg.get("type") == "manual":
                                 await device.manual(msg["axes"])
-                    tasks = [asyncio.create_task(commands()), asyncio.create_task(controls())]
+                    tasks = [asyncio.create_task(commands()), asyncio.create_task(controls()), asyncio.create_task(heartbeat())]
                     try:
                         done, _pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
                         for task in done:
                             task.result()
                     finally:
-                        for task in tasks:
+                        for task in [*tasks, *background]:
                             task.cancel()
-                        await asyncio.gather(*tasks, return_exceptions=True)
+                        await asyncio.gather(*tasks, *background, return_exceptions=True)
         except asyncio.CancelledError:
             raise
         except Exception as exc:

@@ -17,6 +17,8 @@ describe('device-local boundaries', () => {
         tools: [{ ...description.tools?.[0], inputSchema: { type: 'object', $ref: 'http://invalid' } }],
       },
       { ...description, localization: 'fixed' },
+      { ...description, maps: [{ id: 'bad', bounds: [0, 0, -1, 1] }] },
+      { ...description, tools: description.tools?.map((t) => ({ ...t, needs: ['missing'] })) },
     ])
       expect(() => validateRegistration(bad)).toThrow()
     expect(
@@ -56,7 +58,11 @@ describe('device-local boundaries', () => {
     )
     const first = device.call('a', 'move', { x: 99 })
     expect(first.accepted).toBe(true)
-    expect(device.call('b', 'move', { x: 0 })).toMatchObject({ accepted: false, reason: 'busy' })
+    expect(device.call('b', 'move', { x: 0 })).toMatchObject({
+      accepted: false,
+      reason: 'busy',
+      holder: { call: 'a', tool: 'move' },
+    })
     await device.stop()
     expect(await first.result).toMatchObject({ status: 'interrupted', reason: 'stop' })
     expect(stopped).toContain('stop')
@@ -123,5 +129,39 @@ describe('device-local boundaries', () => {
     expect(device.publish('front', { w: 1, h: 1 }, new Uint8Array([1]), 'image/png')).toBe(false)
     await device.disconnect()
     await expect(device.manual({ vx: 1 })).rejects.toThrow('unsafe')
+  })
+  it('queues shared resources, identifies their caller, and refuses unavailable declared needs', async () => {
+    let complete!: () => void
+    const gate = new Promise<void>((r) => {
+      complete = r
+    })
+    const registration = {
+      ...description,
+      resources: { drive: 'queue' as const },
+      tools: (description.tools ?? []).map((t) => ({ ...t, needs: ['motors'] })),
+    }
+    const device = new Device(registration, { arm() {}, async stop() {} })
+    const started: string[] = []
+    device.tool('move', async (_args, call) => {
+      started.push(call.id)
+      await gate
+      return null
+    })
+    expect(device.call('missing', 'move', { x: 1 })).toMatchObject({
+      accepted: false,
+      reason: 'needs',
+      needs: ['motors'],
+    })
+    await device.configure({ motors: { on: true } })
+    const first = device.call('first', 'move', { x: 1 }, 'agent')
+    const second = device.call('second', 'move', { x: 1 }, 'human')
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(started).toEqual(['first'])
+    complete()
+    expect((await first.result)?.status).toBe('done')
+    expect((await second.result)?.status).toBe('done')
+    expect(started).toEqual(['first', 'second'])
+    await device.disconnect()
   })
 })

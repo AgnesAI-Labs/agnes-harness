@@ -35,6 +35,7 @@ export function registerMhsStreams(
   streams: PluginStreamsPort,
   bindControl: (context: StreamContext) => Promise<{ grantId: string; device: string; leaseId: string }>,
 ): () => void {
+  const getNorth = async () => (typeof north === 'function' ? await north() : north)
   const getHandlers = async () => mhsStreams(typeof north === 'function' ? await north() : north)
   const releases: (() => void)[] = []
   const owned = (context: StreamContext, release: () => void) => {
@@ -46,12 +47,16 @@ export function registerMhsStreams(
   }
   try {
     releases.push(
-      streams.register('mhs.events', async (_input, context) => {
+      streams.register('mhs.events', async (input, context) => {
         const handlers = await getHandlers()
         context.signal.throwIfAborted()
         owned(
           context,
-          handlers.events((event) => context.stream.send(event as Json), context.signal),
+          handlers.events(
+            (event) => context.stream.send(event as Json),
+            context.signal,
+            typeof object(input).since === 'string' ? String(object(input).since) : undefined,
+          ),
         )
       }),
     )
@@ -62,7 +67,11 @@ export function registerMhsStreams(
         const data = object(input)
         if (typeof data.device !== 'string' || typeof data.source !== 'string')
           throw new MhsError('invalid-media-binding')
-        const binding = { device: data.device, source: data.source }
+        const binding = {
+          device: data.device,
+          source: data.source,
+          ...(typeof data.hz === 'number' ? { hz: data.hz } : {}),
+        }
         let nextKeyframeAt = 0
         const drop = context.stream.onDrop(() => {
           if (Date.now() < nextKeyframeAt) return
@@ -85,6 +94,43 @@ export function registerMhsStreams(
           drop()
           throw error
         }
+      }),
+    )
+    releases.push(
+      streams.register('mhs.clip', async (_input, context) => {
+        const hub = (await getNorth()).hub
+        if (!context.control) throw new MhsError('control-admission-required')
+        const binding = await bindControl(context)
+        context.signal.throwIfAborted()
+        if (binding.grantId !== context.control.grantId) throw new MhsError('control-binding-mismatch')
+        const revoke = () => hub.revokeClip(binding.device, binding.leaseId)
+        context.stream.onDisconnect(revoke)
+        let used = false,
+          queued = Promise.resolve(),
+          pending = 0
+        const frame = context.stream.onFrame((input) => {
+          if (used || !(input instanceof Uint8Array) || ++pending > 4) {
+            context.stream.close('invalid-clip')
+            return
+          }
+          queued = queued
+            .then(async () => {
+              context.signal.throwIfAborted()
+              const receipt = await hub.clipChunk(binding.device, binding.leaseId, input)
+              if (receipt) {
+                used = true
+                context.stream.send(receipt)
+              }
+            })
+            .catch(() => context.stream.close('clip-refused'))
+            .finally(() => {
+              pending--
+            })
+        })
+        owned(context, () => {
+          frame()
+          revoke()
+        })
       }),
     )
     releases.push(

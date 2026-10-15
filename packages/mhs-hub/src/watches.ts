@@ -69,6 +69,7 @@ function matches(condition: Condition, view: DeviceView, source?: string, data?:
 }
 export class Watches {
   private readonly generation = randomUUID()
+  private readonly demands = new Map<string, { device: string; release: () => void }>()
   private sequence = 0
   private running: Promise<void> = Promise.resolve()
   constructor(
@@ -76,6 +77,7 @@ export class Watches {
     private readonly activity: Activity,
     private readonly views: () => DeviceView[],
     private readonly now = Date.now,
+    private readonly demand?: (device: string, source: string) => (() => void) | undefined,
   ) {}
   async create(
     device: string,
@@ -118,6 +120,7 @@ export class Watches {
         )
       },
     )
+    await this.tick()
     return { watch: id }
   }
   async cancel(id: string, invocation: Invocation): Promise<void> {
@@ -134,12 +137,16 @@ export class Watches {
         throw new MhsError('watch-owner-mismatch')
       tx.put(key, { ...watch, active: false }, prior.revision)
     })
+    this.demands.get(id)?.release()
+    this.demands.delete(id)
     await this.journal.flush()
   }
   async interrupt(reason: 'disable' | 'upgrade'): Promise<void> {
     await this.journal.each('watch/', async (row) => {
       const watch = row as unknown as Watch
       if (!watch.active) return
+      this.demands.get(watch.id)?.release()
+      this.demands.delete(watch.id)
       await this.journal.finish(watch.id, { status: 'interrupted', reason }, (tx) => {
         const key = `watch/${digest(watch.id)}`
         const prior = tx.get(key)
@@ -147,6 +154,13 @@ export class Watches {
       })
     })
     await this.journal.flush()
+  }
+  releaseDevice(device: string) {
+    for (const [id, demand] of this.demands)
+      if (demand.device === device) {
+        demand.release()
+        this.demands.delete(id)
+      }
   }
   tick(changedDevice?: string): Promise<void> {
     return this.schedule(changedDevice)
@@ -161,9 +175,14 @@ export class Watches {
     return next
   }
   private async check(sequence: number, device?: string, source?: string, data?: Json): Promise<void> {
+    let settled = false
     await this.journal.each('watch/', async (row) => {
       const watch = row as unknown as Watch
       if (!watch.active) return
+      if (typeof watch.until.source === 'string' && !this.demands.has(watch.id)) {
+        const release = this.demand?.(watch.device, watch.until.source)
+        if (release) this.demands.set(watch.id, { device: watch.device, release })
+      }
       const view = this.views().find((v) => v.id === watch.device)
       const timedOut = this.now() >= watch.deadline
       if (
@@ -176,7 +195,10 @@ export class Watches {
         )
       )
         return
+      settled = true
       const outcome = { status: 'done' as const, reason: timedOut ? 'timeout' : 'condition' }
+      this.demands.get(watch.id)?.release()
+      this.demands.delete(watch.id)
       // Terminal receipt, active index and outbox share the same commit.
       await this.journal.finish(watch.id, outcome, (tx) => {
         const key = `watch/${digest(watch.id)}`
@@ -190,6 +212,6 @@ export class Watches {
         watch.sessionId,
       )
     })
-    await this.journal.flush()
+    if (settled) await this.journal.flush()
   }
 }

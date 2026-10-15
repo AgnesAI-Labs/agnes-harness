@@ -3,7 +3,7 @@ import asyncio
 import copy
 import math
 import time
-from .validation import MhsError, prepare, registration
+from .validation import MhsError, observation, prepare, registration
 
 
 class Call:
@@ -44,7 +44,7 @@ class Device:
         self.on_manual = None
         self.on_observation = None
         self.sequences = {}
-        self.source_settings = {}
+        self.source_settings = {s["id"]: {"on": s["kind"] == "pose", **({"hz": 1} if s["kind"] == "pose" else {})} for s in self.description.get("sources", [])}
         self.published_at = {}
         self.on_configure = None
         self.on_keyframe = None
@@ -56,6 +56,7 @@ class Device:
         declaration = next((s for s in self.description.get("sources", []) if s["id"] == source), None)
         if declaration is None:
             raise MhsError("unknown-source")
+        observation(declaration, data, payload, mime)
         settings = self.source_settings.get(source, {})
         if settings.get("on") is False:
             return False
@@ -157,7 +158,7 @@ class Device:
                 refused.append(key)
         return {"values": accepted, "refused": refused}
 
-    def call(self, call_id, name, arguments):
+    def call(self, call_id, name, arguments, caller=None):
         tool = next((t for t in self.description.get("tools", []) if t["name"] == name), None)
         if not tool or name not in self.handlers or call_id in self.running:
             return {"accepted": False, "reason": "invalid"}, None
@@ -168,21 +169,31 @@ class Device:
             return {"accepted": False, "reason": "invalid"}, None
         if self.closed or self.values["problem"] or self.values["faults"] or (tool.get("motion") and not self.safety):
             return {"accepted": False, "reason": "unsafe"}, None
+        needs = [source for source in tool.get("needs", []) if self.source_settings.get(source, {}).get("on") is False]
+        if needs:
+            return {"accepted": False, "reason": "needs", "needs": needs}, None
+        if isinstance(args.get("clip"), str) and self.clip(args["clip"]) is None:
+            return {"accepted": False, "reason": "missing-clip"}, None
         conflicts = [r for r in self.running.values() if set(r["tool"].get("uses", [])) & set(tool.get("uses", []))]
-        if (tool.get("motion") and time.monotonic() < self.manual_until) or any(self.description.get("resources", {}).get(r) == "reject" for c in conflicts for r in set(c["tool"].get("uses", [])) & set(tool.get("uses", []))):
-            return {"accepted": False, "reason": "busy"}, None
+        if tool.get("motion") and time.monotonic() < self.manual_until:
+            return {"accepted": False, "reason": "busy", "holder": {"manual": True}}, None
+        holder = next((c for c in conflicts if any(self.description.get("resources", {}).get(r) == "reject" for r in set(c["tool"].get("uses", [])) & set(tool.get("uses", [])))), None)
+        if holder:
+            return {"accepted": False, "reason": "busy", "holder": {"call": holder["call"].id, "tool": holder["tool"]["name"], **({"caller": holder["caller"]} if holder.get("caller") else {})}}, None
         call = Call(call_id, self.safety, tool.get("motion", False))
         call.progress = lambda data: self.on_progress(call_id, data)
         result = asyncio.get_running_loop().create_future()
-        entry = {"tool": tool, "call": call, "reason": "cancel", "result": result}
+        entry = {"tool": tool, "call": call, "caller": caller, "reason": "cancel", "result": result}
 
         async def work():
             try:
-                for conflict in conflicts:
-                    await asyncio.shield(conflict["result"])
-                if tool.get("motion"):
-                    self.safety.arm(2000)
-                data = await asyncio.wait_for(self.handlers[name](args, call), tool["timeout"])
+                async def execute():
+                    for conflict in conflicts:
+                        await asyncio.shield(conflict["result"])
+                    if tool.get("motion"):
+                        self.safety.arm(2000)
+                    return await self.handlers[name](args, call)
+                data = await asyncio.wait_for(execute(), tool["timeout"])
                 return {"status": "done", "data": data, "notes": notes}
             except asyncio.TimeoutError:
                 if tool.get("motion"):
@@ -266,6 +277,7 @@ class Device:
         await self.on_manual(axes)
 
     async def disconnect(self):
+        self.clips.clear()
         self.closed = True
         try:
             await self.stop("disconnect")

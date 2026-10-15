@@ -43,6 +43,11 @@ export const commandRequestSchema = Type.Union([
 export const commandNotificationSchema = Type.Union([
   Type.Object({
     jsonrpc: Type.Literal('2.0'),
+    method: Type.Literal('mhs/clip-received'),
+    params: Type.Object({ id }),
+  }),
+  Type.Object({
+    jsonrpc: Type.Literal('2.0'),
     method: Type.Literal('mhs/state'),
     params: Type.Object({ t: Type.Number(), values: params }),
   }),

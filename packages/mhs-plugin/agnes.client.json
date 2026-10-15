@@ -29,10 +29,13 @@
       "hub.configuration",
       "hub.retry",
       "hub.configure",
-      "hub.check"
+      "hub.check",
+      "mhs.pause",
+      "mhs.events",
+      "mhs.clip"
     ],
     "projections": [],
     "publicConfig": {},
-    "streams": ["mhs.media", "mhs.events", "mhs.control"]
+    "streams": ["mhs.media", "mhs.events", "mhs.control", "mhs.clip"]
   }
 }

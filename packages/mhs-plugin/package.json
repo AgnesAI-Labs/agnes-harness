@@ -65,7 +65,12 @@
               "scope": "profile",
               "inputSchema": {
                 "type": "object",
-                "properties": {},
+                "properties": {
+                  "since": {
+                    "type": "string",
+                    "maxLength": 128
+                  }
+                },
                 "additionalProperties": false
               },
               "directions": [
@@ -87,6 +92,11 @@
                   },
                   "source": {
                     "type": "string"
+                  },
+                  "hz": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 1000
                   }
                 },
                 "additionalProperties": false,
@@ -172,6 +182,24 @@
               "maxFrameBytes": 1048576,
               "maxBufferedBytes": 2097152,
               "maxBytesPerSecond": 4194304
+            },
+            {
+              "name": "mhs.clip",
+              "lane": "control",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              },
+              "directions": [
+                "inbound",
+                "outbound"
+              ],
+              "maxFrameBytes": 4096,
+              "maxBufferedBytes": 32768,
+              "maxBytesPerSecond": 65536,
+              "controlService": "mhs.clip"
             }
           ],
           "services": [
@@ -267,6 +295,48 @@
                     "items": {
                       "type": "string"
                     }
+                  },
+                  "since": {
+                    "type": "number"
+                  },
+                  "history": {
+                    "type": "boolean"
+                  },
+                  "cursor": {
+                    "type": "number"
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 120
+                  },
+                  "timeoutMs": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 10000
+                  }
+                },
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576
+            },
+            {
+              "name": "mhs.events",
+              "scope": "profile",
+              "kind": "query",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "since": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 512
                   }
                 },
                 "additionalProperties": false
@@ -690,6 +760,64 @@
               }
             },
             {
+              "name": "mhs.clip",
+              "scope": "profile",
+              "kind": "effect",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "device": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "type": "string"
+                  },
+                  "args": {
+                    "type": "object"
+                  },
+                  "values": {
+                    "type": "object"
+                  },
+                  "params": {
+                    "type": "object"
+                  },
+                  "until": {
+                    "type": "object"
+                  },
+                  "timeout": {
+                    "type": "number"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "watch": {
+                    "type": "string"
+                  },
+                  "operationId": {
+                    "type": "string"
+                  },
+                  "sources": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576,
+              "controlLeaseMs": 30000,
+              "effectPolicy": {
+                "isDestructive": true,
+                "isOpenWorld": true,
+                "replay": "never",
+                "requiresApproval": "always",
+                "approvalScopes": []
+              }
+            },
+            {
               "name": "mhs.watch",
               "scope": "profile",
               "kind": "effect",
@@ -805,6 +933,63 @@
             },
             {
               "name": "mhs.configure",
+              "scope": "profile",
+              "kind": "effect",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "device": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "type": "string"
+                  },
+                  "args": {
+                    "type": "object"
+                  },
+                  "values": {
+                    "type": "object"
+                  },
+                  "params": {
+                    "type": "object"
+                  },
+                  "until": {
+                    "type": "object"
+                  },
+                  "timeout": {
+                    "type": "number"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "watch": {
+                    "type": "string"
+                  },
+                  "operationId": {
+                    "type": "string"
+                  },
+                  "sources": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576,
+              "effectPolicy": {
+                "isDestructive": true,
+                "isOpenWorld": true,
+                "replay": "never",
+                "requiresApproval": "always",
+                "approvalScopes": []
+              }
+            },
+            {
+              "name": "mhs.pause",
               "scope": "profile",
               "kind": "effect",
               "inputSchema": {

@@ -7,7 +7,16 @@ export interface Position {
 }
 export function zoneAt(map: DeviceMap, position: Position): string | undefined {
   if (map.id !== position.map) return undefined
-  for (const place of map.places ?? []) {
+  const area = (points: number[][]) =>
+    Math.abs(
+      points.reduce((sum, a, i) => {
+        const b = points[(i + 1) % points.length]!
+        return sum + a[0]! * b[1]! - b[0]! * a[1]!
+      }, 0),
+    )
+  for (const place of [...(map.places ?? [])].sort(
+    (a, b) => area(a.points ?? []) - area(b.points ?? []) || a.id.localeCompare(b.id),
+  )) {
     const points = place.points
     if (!points) continue
     let inside = false
