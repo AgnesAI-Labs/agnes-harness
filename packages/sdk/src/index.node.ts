@@ -83,6 +83,16 @@ export * from './errors.js'
 // Emitter only: `Disposer` is the same `() => void` in both modules, and re-exporting
 // it twice would make the name ambiguous on the package surface.
 export { Emitter, notifyListeners } from './events.js'
+export type {
+  ExampleLaunches,
+  ExampleOperation,
+  ExamplePackages,
+  ExampleRequest,
+  ExampleReview,
+  ExampleTransport,
+  ExampleView,
+} from './examples.js'
+export { createExampleClient } from './examples.js'
 export * from './extensions.node.js'
 export * from './headless.js'
 export * from './identity.node.js'

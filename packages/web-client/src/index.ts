@@ -30,6 +30,8 @@ export {
 } from '@agnes/web-slots'
 export type { ClientContext, ClientModule } from './client-module.js'
 export { clientModule } from './client-module.js'
+export type { ContributionAvailability } from './contribution-scope.js'
+export { revokeContributionOwner } from './contribution-scope.js'
 export type { DshSlotDefinition, DshSlotName } from './dsh-slot-catalog.js'
 export {
   DSH_PUBLIC_SLOT_NAMES,
@@ -127,8 +129,10 @@ export type {
 export {
   conversationCards,
   fileViewerActions,
+  HomeEntryRegistry,
   HomeNavigation,
   homeEntries,
+  homeEntryGroups,
   homeNavigation,
   settingsSections,
   UiExtensionRegistry,

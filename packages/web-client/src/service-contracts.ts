@@ -1,4 +1,4 @@
-import type { ArtifactRef } from '@agnes/protocol'
+import type { ArtifactRef, ContributionBinding, HomeContributionDeclaration } from '@agnes/protocol'
 
 export type HostAgnesClient = import('@agnes/sdk/browser').Client
 
@@ -116,6 +116,9 @@ export type CommandAuthorizer = (
  */
 export interface ModuleIdentity {
   /** Browser lifecycle/slot owner identity. Distinct rows of one package must not tear down each other. */
+  binding?: ContributionBinding
+  homeEntries?: readonly HomeContributionDeclaration[]
+  examplePages?: readonly string[]
   rowId?: string
   packageId: string
   revision: string

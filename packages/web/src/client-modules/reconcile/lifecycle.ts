@@ -264,6 +264,9 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
           await lifecycle('refresh', rowId)
           stagedStyles.activate()
           const created = ctx.plugin(clientModule(mod as never), {
+            ...(target.binding ? { binding: target.binding } : {}),
+            ...(target.homeEntries ? { homeEntries: target.homeEntries } : {}),
+            ...(target.examplePages ? { examplePages: target.examplePages } : {}),
             rowId,
             packageId: target.packageId,
             revision: target.revision,

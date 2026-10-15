@@ -74,19 +74,31 @@
           "type": "array",
           "maxItems": 128,
           "uniqueItems": true,
-          "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
         },
         "secrets": {
           "type": "array",
           "maxItems": 128,
           "uniqueItems": true,
-          "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
         },
         "credentials": {
           "type": "array",
           "maxItems": 128,
           "uniqueItems": true,
-          "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
         },
         "filesystem": {
           "type": "object",
@@ -96,19 +108,33 @@
               "type": "array",
               "maxItems": 128,
               "uniqueItems": true,
-              "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              }
             },
             "write": {
               "type": "array",
               "maxItems": 128,
               "uniqueItems": true,
-              "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              }
             }
           }
         },
-        "model": { "type": "boolean" },
-        "device": { "type": "boolean" },
-        "childAgents": { "type": "boolean" },
+        "model": {
+          "type": "boolean"
+        },
+        "device": {
+          "type": "boolean"
+        },
+        "childAgents": {
+          "type": "boolean"
+        },
         "uiData": {
           "description": "Exact UI data-source permissions. Trust shows each value as the atom uiData:<value>. The capability hash covers this list; resolution accepts only an exact atom, never a glob.",
           "type": "array",
@@ -282,6 +308,37 @@
           "items": {
             "$ref": "#/$defs/UiComponentDeclaration"
           }
+        },
+        "lifetime": {
+          "enum": ["profile", "session"],
+          "description": "Defaults to session for legacy modules. Profile contributions always follow current activation, independently of the selected session."
+        },
+        "homeEntries": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/HomeContributionDeclaration"
+          }
+        },
+        "examplePages": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9.-]*$",
+            "maxLength": 128
+          }
+        },
+        "assets": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
         }
       }
     },
@@ -309,7 +366,9 @@
         "liveResources": {
           "type": "array",
           "uniqueItems": true,
-          "items": { "enum": ["skills"] },
+          "items": {
+            "enum": ["skills"]
+          },
           "description": "Live resource kinds consumed by this extension row. Resource refresh preserves pinned plugin code and reloads every declaring row."
         },
         "capabilities": {
@@ -494,6 +553,24 @@
               "$ref": "#/$defs/PluginMetadataLocale"
             }
           }
+        },
+        "exampleOf": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$"
+        },
+        "launches": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/ExampleLaunchDeclaration"
+          }
+        },
+        "pageEntry": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9.-]*$",
+          "maxLength": 128
         }
       }
     },
@@ -539,8 +616,59 @@
         "observability",
         "ui",
         "developer",
-        "business-agent"
+        "business-agent",
+        "example"
       ]
+    },
+    "HomeContributionDeclaration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "placement"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9.-]*$",
+          "maxLength": 128
+        },
+        "placement": {
+          "enum": ["primary", "secondary"]
+        }
+      }
+    },
+    "ExampleLaunchDeclaration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "title", "bundle", "preset", "prompt"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9.-]*$",
+          "maxLength": 128
+        },
+        "kind": {
+          "const": "business-agent"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "bundle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "preset": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16384
+        }
+      }
     }
   }
 }

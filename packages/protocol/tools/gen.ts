@@ -34,6 +34,8 @@ const TARGETS: Array<{
         defs: [
           'Capabilities',
           'ClientContribution',
+          'HomeContributionDeclaration',
+          'ExampleLaunchDeclaration',
           'UiComponentDeclaration',
           'PluginMetadata',
           'PluginMetadataLocale',
@@ -149,6 +151,8 @@ const TARGETS: Array<{
         defs: [
           'Capabilities',
           'ClientContribution',
+          'HomeContributionDeclaration',
+          'ExampleLaunchDeclaration',
           'UiComponentDeclaration',
           'PluginMetadata',
           'PluginMetadataLocale',
@@ -367,6 +371,8 @@ const TARGETS: Array<{
         defs: [
           'Capabilities',
           'ClientContribution',
+          'HomeContributionDeclaration',
+          'ExampleLaunchDeclaration',
           'UiComponentDeclaration',
           'PluginMetadata',
           'PluginMetadataLocale',

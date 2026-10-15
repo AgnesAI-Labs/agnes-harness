@@ -792,6 +792,9 @@ const rosterSource: RosterSource = {
       return [
         {
           ...(row.intelligentComponents ? { intelligentComponents: row.intelligentComponents } : {}),
+          ...(row.binding ? { binding: row.binding } : {}),
+          ...(row.homeEntries ? { homeEntries: row.homeEntries } : {}),
+          ...(row.examplePages ? { examplePages: row.examplePages } : {}),
           rowId: row.rowId,
           packageId: row.packageId,
           revision: row.revision,

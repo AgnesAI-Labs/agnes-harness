@@ -1,3 +1,4 @@
+import { revokeContributionOwner } from '@agnes/web-client'
 import {
   normalizeRuntimeError,
   type PluginRuntimeError,
@@ -21,12 +22,16 @@ const DEFAULT_TIMEOUTS = { import: 15_000, styles: 15_000, apply: 15_000, dispos
 
 export function createReconciler(options: ReconcilerOptions): ClientReconciler {
   const { ctx, source, locale } = options
-  const removeOwner =
+  const removeRegistrations =
     options.removeOwner ??
     ((packageId: string) => {
       const registry = (ctx as unknown as { slots?: { removeOwner(owner: string): void } }).slots
       registry?.removeOwner(packageId)
     })
+  const removeOwner = (owner: string) => {
+    revokeContributionOwner(owner)
+    removeRegistrations(owner)
+  }
   let importGeneration = 0
   const importer =
     options.importer ??
@@ -292,10 +297,12 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
       const unchanged =
         state.active?.revision === mod.revision &&
         state.active.entryUrl === mod.entryUrl &&
+        JSON.stringify(state.active.binding) === JSON.stringify(mod.binding) &&
         state.phase === 'active'
       const pending =
         state.target?.revision === mod.revision &&
         state.target.entryUrl === mod.entryUrl &&
+        JSON.stringify(state.target.binding) === JSON.stringify(mod.binding) &&
         (state.phase === 'loading' || state.phase === 'active')
       const forced = reload?.packageId === mod.packageId && reload.revision === mod.revision
       if (!forced && (unchanged || pending)) continue

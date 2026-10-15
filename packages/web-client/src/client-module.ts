@@ -1,5 +1,6 @@
 /** Client-module adapter: plugin registrations are owned by their Cordis fiber. */
 import type { Context } from '@agnes/cordis'
+import { type ContributionAvailability, scopedHomeEntries } from './contribution-scope.js'
 import {
   DSH_SLOT_CATALOG_VERSION,
   getDshSlotDefinition,
@@ -37,6 +38,8 @@ export interface ClientContext extends Context {
   session: import('./services.js').SessionService
   theme: import('./services.js').ThemeService
   locale: import('./services.js').LocaleService
+  availability: ContributionAvailability
+  homeEntries: ReturnType<typeof scopedHomeEntries>
   resources: ClientResourceService
 }
 
@@ -143,6 +146,19 @@ export function clientModule(mod: ClientModule): {
       Object.defineProperty(ctx, 'resources', { value: resources, configurable: true })
       Object.defineProperty(ctx, 'theme', { value: theme, configurable: true })
       Object.defineProperty(ctx, 'locale', { value: locale, configurable: true })
+      Object.defineProperty(ctx, 'homeEntries', {
+        value: scopedHomeEntries(config, (off) => {
+          ctx.effect(() => off)
+        }),
+        configurable: true,
+      })
+      Object.defineProperty(ctx, 'availability', {
+        value: Object.freeze({
+          getSnapshot: () => config.binding,
+          subscribe: (_listener: () => void) => () => undefined,
+        }),
+        configurable: true,
+      })
       return mod.apply(ctx as ClientContext, config)
     },
   }

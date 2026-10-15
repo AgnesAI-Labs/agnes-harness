@@ -1,6 +1,12 @@
 import { expect, it, vi } from 'vitest'
 import { RegistrableLink } from '../src/fact-chain-links.js'
-import { type HomeEntry, HomeNavigation, UiExtensionRegistry } from '../src/ui-registries.js'
+import {
+  type HomeEntry,
+  HomeEntryRegistry,
+  HomeNavigation,
+  homeEntryGroups,
+  UiExtensionRegistry,
+} from '../src/ui-registries.js'
 
 it('orders registrations, refuses duplicate IDs and disposes only its own live entry', () => {
   const registry = new UiExtensionRegistry<{ id: string; order: number }>()
@@ -90,4 +96,35 @@ it('tracks the requested home page and notifies on open and close', () => {
   navigation.close()
   expect(navigation.getSnapshot()).toBeUndefined()
   expect(changed).toHaveBeenCalledTimes(3)
+})
+
+it('keeps every primary entry inline and enforces limits without replacing registrations', () => {
+  const entries = new HomeEntryRegistry()
+  const entry = (id: string, placement: 'primary' | 'secondary', order = 1): HomeEntry => ({
+    id,
+    placement,
+    order,
+    icon: 'plug',
+    titleKey: id,
+    component: () => null,
+  })
+  for (const id of ['delta', 'alpha', 'gamma', 'beta']) entries.register(entry(id, 'primary'))
+  for (let i = 0; i < 5; i++) entries.register(entry(`extra-${i}`, 'secondary'))
+  expect(homeEntryGroups(entries.entries()).inline.map((row) => row.id)).toEqual([
+    'alpha',
+    'beta',
+    'delta',
+    'gamma',
+  ])
+  expect(homeEntryGroups(entries.entries()).more).toHaveLength(5)
+  expect(() => entries.register(entry('alpha', 'secondary', 0))).toThrow('already registered')
+  expect(entries.get('alpha')?.placement).toBe('primary')
+  const disposers = []
+  for (let i = 0; i < 28; i++) disposers.push(entries.register(entry(`primary-${i}`, 'primary')))
+  expect(() => entries.register(entry('overflow', 'primary'))).toThrow('limit')
+  disposers[0]?.()
+  entries.register(entry('overflow', 'primary'))
+  expect(() => entries.register({ ...entry('invalid', 'primary'), placement: 'invalid' as never })).toThrow(
+    'placement',
+  )
 })
