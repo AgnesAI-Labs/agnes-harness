@@ -35,6 +35,9 @@ export function createSideCallPort(s: SessionImpl): LoopSideCallPort {
       }
     },
     async invoke(prepared, signal) {
+      // Checked before anything is held or written: the execution races this signal.
+      if (!(signal instanceof AbortSignal))
+        throw new CoreError('E_ENVELOPE', 'Side call signal must be an AbortSignal', { reason: 'signal' })
       const releaseEffect = await s.controls.beginEffect()
       const done = s.beginLoopOperation()
       try {

@@ -185,7 +185,9 @@ const cancelled = (invocationId: string, dispatch: 'not-sent' | 'may-have-sent',
 
 /**
  * Settles the tree budget hold against the recorded spend. The cost row is already committed, so a
- * settlement that still fails after reconciling is logged; the hold stays counted against the tree.
+ * settlement that still fails after reconciling is not thrown: it is logged and, while the scope
+ * can still write, recorded as a seam failure naming only the effect. The hold stays counted
+ * against the tree.
  */
 async function settleHold(
   s: SessionImpl,
@@ -203,6 +205,8 @@ async function settleHold(
     })
   } catch (error) {
     s.d.logger.warn('side call tree budget settlement failed', { sessionKey: s.key, error: String(error) })
+    if (s.loopScope.alive)
+      await s.diag('seam-failed', { seam: 'tree-budget', op: 'settle', effectId: hold.effectId })
   }
 }
 

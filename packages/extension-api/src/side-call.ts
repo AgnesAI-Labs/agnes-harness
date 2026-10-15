@@ -133,7 +133,11 @@ export type SideCallStatus =
  * Errors are thrown before anything is written, so a throw means nothing was recorded:
  * - `prepare` throws `E_ENVELOPE` (`detail.reason`: `label`, `deadline`, `payload-size`, `messages`,
  *   `image-input` or `invocation-id`) for an out-of-range option, and `E_MODEL_UNKNOWN`
- *   (`target-unknown`) when the target is not in the provider's catalog.
+ *   (`target-unknown`) when the target is not in the provider's catalog. Further `E_ENVELOPE` reasons:
+ *   - `output`: `output` is neither `'text'` nor `'json'`;
+ *   - `system`: `system` is not a string of at most 1 MiB;
+ *   - `sampling`: `sampling` has a key or value outside the request schema's ranges.
+ * - `invoke` throws `E_ENVELOPE` (`signal`) when its signal is not an `AbortSignal`.
  * - `prepare` and `invoke` throw `E_RELATION` (`no-turn`) outside an open turn.
  * - `invoke` throws `E_REQUEST_FROZEN` for a call prepared by another context or turn (`foreign`,
  *   `turn`) or when the catalog record or adapter identity changed after `prepare`
