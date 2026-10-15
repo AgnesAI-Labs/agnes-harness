@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { initializeHome } from '@agnes/host'
+import * as packageManager from '@agnes/package-manager'
 import {
   activeRuntimePinId,
   createPackageManager,
@@ -14,6 +15,7 @@ import {
   parseSource,
   readLock,
   SKIN_MAX_ASSET_BYTES,
+  SKIN_MAX_CSS_BYTES,
   writeLock,
 } from '@agnes/package-manager'
 import { buildRuntimeTarget, createPluginRow, encodeRuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
@@ -2075,6 +2077,34 @@ it('hands out one file as bytes, and only for the enabled, trusted roster', asyn
   const png = await read('/skins/aurora/assets/hero.jpg')
   const onDisk = readFileSync(join(skinAssetsDir(), 'hero.jpg'))
   expect(Buffer.from(png.base64 ?? '', 'base64').equals(onDisk)).toBe(true)
+
+  // A served snapshot can grow between verification and opening the file.
+  const pins = await manager.listRuntimePins(profileDirectory(secondProfile))
+  const snapshot = pins.find(
+    (pin) => pin.purpose === 'active' && pin.snapshot.packageId === '@agnes-examples/skins-builtin',
+  )?.snapshot
+  if (!snapshot) throw new Error('active skin snapshot missing')
+  const resolveAsset = packageManager.resolveSkinAsset
+  for (const [route, relative, cap] of [
+    ['/skins/aurora/skin.css', 'skin.css', SKIN_MAX_CSS_BYTES],
+    ['/skins/aurora/assets/hero.jpg', 'assets/hero.jpg', SKIN_MAX_ASSET_BYTES],
+  ] as const) {
+    const file = join(snapshot.directory, 'extensions/main/skins/aurora', relative)
+    const saved = readFileSync(file)
+    const resolution = vi.spyOn(packageManager, 'resolveSkinAsset').mockImplementationOnce((...args) => {
+      const result = resolveAsset(...args)
+      expect(result).toBe(file)
+      writeFileSync(file, Buffer.alloc(cap + 1, 32))
+      return result
+    })
+    try {
+      expect(await read(route)).toEqual({ found: false })
+    } finally {
+      writeFileSync(file, saved)
+      resolution.mockRestore()
+    }
+    expect(await read(route)).toMatchObject({ found: true })
+  }
 
   // Every negative answer is the same answer: a miss, a skin with no assets, an unknown id, a
   // traversal attempt and a missing file are indistinguishable to the caller (design §22.3).

@@ -64,6 +64,24 @@ describe('prepareEvents', () => {
     }
   })
 
+  it.each([
+    [{ effectId: 'private-effect-canary', outcome: 'ok', durationMs: -11460 }, '/data/durationMs'],
+    [{ outcome: 'ok' }, '/data/effectId'],
+    [{ outcome: 'private-outcome-canary', durationMs: -11460 }, '/data/effectId'],
+  ])('locates an invalid effect row without echoing its values (%j)', (data, path) => {
+    try {
+      prepareEvents([{ ...base, type: 'effect/settled', data } as EventInput], ctx)
+      expect.unreachable('invalid row accepted')
+    } catch (error) {
+      expect(error).toBeInstanceOf(CoreError)
+      const rejection = error as CoreError
+      expect(rejection.code).toBe('E_ENVELOPE')
+      expect(rejection.message).toContain(`effect/settled ${path}`)
+      expect(rejection.message).not.toMatch(/private-.*canary|11460/)
+      if (!('effectId' in data)) expect(rejection.message).toMatch(/\(\+\d+ more\)$/)
+    }
+  })
+
   it('rejects retired approvals and harness/refine from a non-refine caller', () => {
     for (const type of ['approval/asked', 'approval/decided'])
       expect(() => prepareEvents([{ ...base, type, data: {} }], ctx)).toThrow('E_UNKNOWN_EVENT')

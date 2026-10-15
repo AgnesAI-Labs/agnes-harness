@@ -40,7 +40,9 @@ export function prepareEvents(
     // An ignorable event of an unknown type fails the envelope only on `/type`; anything else it got
     // wrong is still a rejection, so the pass is narrowed to batches where `/type` is the sole error.
     if (!r.ok && !(e.ignorable === true && r.errors.every((x) => x.path === '/type')))
-      throw new CoreError('E_ENVELOPE', describeValidationErrors(r.errors), { errors: r.errors })
+      throw new CoreError('E_ENVELOPE', `${e.type} ${describeValidationErrors(r.errors)}`, {
+        errors: r.errors,
+      })
     if (
       (e.type === 'decision/state' || e.register === 'decision/state') &&
       (e.type !== 'decision/state' ||

@@ -1,6 +1,12 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { describeValidationErrors, toRpcError, validateEvent, validateOpState } from '../src/index.js'
+import {
+  describeValidationErrors,
+  toRpcError,
+  type ValidationError,
+  validateEvent,
+  validateOpState,
+} from '../src/index.js'
 // DATA_DEFS is not on the root export surface — internal pieces of the generated module are not
 // spread onto `@agnes/protocol`'s root export — so tests that need it import the implementation
 // module directly.
@@ -236,5 +242,36 @@ describe('validateEvent', () => {
       'x-agnes-data': Record<string, string>
     }
     expect(Object.keys(DATA_DEFS).sort()).toEqual(Object.keys(schema['x-agnes-data']).sort())
+  })
+})
+
+describe('validation refusal descriptions', () => {
+  const field: ValidationError = {
+    path: '/data/durationMs',
+    message: 'Expected nonnegative integer',
+    code: 'RANGE',
+  }
+  it.each([
+    [[field], '/data/durationMs Expected nonnegative integer'],
+    [
+      [{ ...field, path: '/data', key: 'effectId', code: 'MISSING' }],
+      '/data/effectId Expected nonnegative integer',
+    ],
+    [[{ ...field, path: '' }], 'Expected nonnegative integer'],
+    [[field, field, field], '/data/durationMs Expected nonnegative integer (+2 more)'],
+    [[], 'invalid'],
+  ] as [ValidationError[], string][])(
+    'describes field, missing, root and multiple failures (%j)',
+    (errors, expected) => {
+      expect(describeValidationErrors(errors)).toBe(expected)
+    },
+  )
+  it('bounds the displayed path without serializing extra rejected data', () => {
+    const description = describeValidationErrors([
+      { ...field, path: `/data/${'a'.repeat(500)}`, value: 'rejected-private-canary' } as ValidationError,
+    ])
+    expect(description.length).toBeLessThan(260)
+    expect(description).toContain('…')
+    expect(description).not.toContain('rejected-private-canary')
   })
 })

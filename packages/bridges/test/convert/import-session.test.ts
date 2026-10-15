@@ -27,15 +27,21 @@ describe('importSession', () => {
   it('passes a native stream through, skips its CLI result, and rejects malformed rows', () => {
     const own = importSession(fixture('pi/branching.jsonl'), { ...options, from: 'pi' }).events
     const bad = { ...own[1], seq: own[0]?.seq, type: 'not/allowed' }
+    const invalid = {
+      ...own.find((event) => event.type === 'user/message'),
+      data: { content: 'import-private-canary' },
+    }
     const bytes = new TextEncoder().encode(
-      `${own.map((event) => JSON.stringify(event)).join('\n')}\n${JSON.stringify(bad)}\n` +
+      `${own.map((event) => JSON.stringify(event)).join('\n')}\n${JSON.stringify(bad)}\n${JSON.stringify(invalid)}\n` +
         '{"v":"agnes-cli-result/v1","sessionId":"k"}\n',
     )
     const result = importSession(bytes)
     expect(result.report.source).toBe('agnes')
     expect(result.events).toEqual(own)
     expect(result.report.unsupported).toEqual({ 'cli-result': 1 })
-    expect(result.report.skipped).toHaveLength(1)
+    expect(result.report.skipped).toHaveLength(2)
+    expect(JSON.stringify(result.report.skipped)).toContain('/data/content')
+    expect(JSON.stringify(result.report.skipped)).not.toContain('import-private-canary')
   })
 
   it('tolerates bad body lines but refuses unknown and headerless files', () => {
