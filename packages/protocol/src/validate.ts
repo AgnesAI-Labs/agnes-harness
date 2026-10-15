@@ -21,7 +21,9 @@ export {
 export { modelImageInputError, userImagePolicy } from '../../protocol-validation/src/model-images.js'
 export {
   decodeAttachmentData,
+  decodeSafeImageBytes,
   decodeSafeImages,
+  USER_IMAGE_ORIGINAL_LIMITS,
   USER_MESSAGE_IMAGE_LIMITS,
 } from '../../protocol-validation/src/safe-image.js'
 export type { ValidationError, ValidationResult } from '../../protocol-validation/src/validate.js'

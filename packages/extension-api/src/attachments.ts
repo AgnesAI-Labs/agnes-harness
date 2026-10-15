@@ -9,8 +9,27 @@ export type AttachmentRootSnapshot = Readonly<{
   roots: readonly ArtifactRef[]
 }>
 
+export type AttachmentImagePolicy = Readonly<{
+  maxWidth: number
+  maxHeight: number
+  maxBytes: number
+  jpegQuality: number
+}>
+export type AttachmentImageVersion = AttachmentReceipt & { width: number; height: number }
+
 /** Optional artifacts capability. Bytes and durable receipts belong to the storage provider. */
 export interface AttachmentStore {
+  /** Caller must first authorize and verify the original. Cache entries never grant read authority.
+   * A returned receipt protects derived bytes until publication (thumbnail) or expiry (request input).
+   * Implementations must bound native decode memory, concurrency and total duration.
+   */
+  imageVersion?(
+    scope: AttachmentScope,
+    original: ArtifactRef,
+    policy: AttachmentImagePolicy,
+    signal: AbortSignal,
+  ): Promise<AttachmentImageVersion>
+
   store(
     scope: AttachmentScope,
     bytes: Uint8Array,

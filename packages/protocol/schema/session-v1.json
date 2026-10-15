@@ -698,6 +698,7 @@
         "envelopeNonce"
       ],
       "properties": {
+        "attachmentImagesOmittedThrough": { "type": "integer", "minimum": 0 },
         "derived_hash": { "type": "string", "maxLength": 128 },
         "sent_hash": { "type": "string", "maxLength": 128 },
         "transforms": {

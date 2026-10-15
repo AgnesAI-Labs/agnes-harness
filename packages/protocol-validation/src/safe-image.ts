@@ -17,6 +17,14 @@ export const USER_MESSAGE_IMAGE_LIMITS = Object.freeze({
   maxAggregatePixels: 8_000_000,
 }) satisfies SafeImageLimits
 
+/** Stored originals are independent of the smaller provider input rendition. */
+export const USER_IMAGE_ORIGINAL_LIMITS: SafeImageLimits = Object.freeze({
+  maxBytesPerImage: 20 * 1024 * 1024,
+  maxAggregateBytes: 100 * 1024 * 1024,
+  maxPixelsPerImage: 64_000_000,
+  maxAggregatePixels: 64_000_000,
+})
+
 export type SafeImageInput = Readonly<{ data: string; mimeType: string }>
 export type SafeImageBytesInput = Readonly<{ bytes: Uint8Array; mimeType: string }>
 
@@ -580,8 +588,7 @@ function jpegDimensions(bytes: Uint8Array, maxPixels: number) {
     if (marker === 0x00)
       throw new SafeImageError('FORMAT_INVALID', 'unexpected stuffed byte outside JPEG scan')
     if (marker === 0xd9) {
-      if (!size || !sawScan || offset !== bytes.length)
-        throw new SafeImageError('FORMAT_INVALID', 'JPEG ended before image data or has trailing bytes')
+      if (!size || !sawScan) throw new SafeImageError('FORMAT_INVALID', 'JPEG ended before image data')
       return size
     }
     if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue

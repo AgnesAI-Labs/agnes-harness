@@ -88,3 +88,17 @@ SDK：`session.controls()` 读取能力与状态；`steer(content)`、`editQueue
 原件无损导出使用 `node agnes.mjs export SESSION_ID --raw -o session.agnes`，并将 `session.agnes` 与 `session.agnes.artifacts/` 一起保存。清单以 size 和 SHA-256 绑定完整事件流及每个声明原件；导出通过已认证的 session/lane 权限读取并核验原件。缺失、摘要不符或权限拒绝时不发布 bundle，已有 bundle 不会被覆盖。脱敏导出用于分享，不包含原件。
 
 使用 `node agnes.mjs import session.agnes --key NEW_SESSION_KEY` 导入。预留目标前先核验清单、序号、事务边界和全部 sidecar 原件；随后再次核验原件，并通过所选 artifact seam 以新会话和 lane 的作用域获取 receipt、存储原件。引用事件持久化前，pending receipt 保护原件不被回收；持久化后再确认 receipt。append 或激活失败会回滚新会话；已写入但未引用的内容寻址原件由普通保留机制回收。格式只支持当前产品的事件 schema，单个原件最多 32 MiB，声明原件总量最多 256 MiB，不提供其他产品格式或旧 home 的迁移。
+
+## 原件附件
+
+原件上传通过 `_agnes/v1/session.fileUpload`，指定 `destination: "original"` 和当前
+`laneId`。`start`、`chunk`、`status`、`finish`、`cancel` 操作绑定会话的上传 ID。
+每块最多 1 MiB，携带 SHA-256；`finish` 核验完整摘要后返回待确认的附件回执。
+将该引用放入 prompt 内容即可提交到会话。已经完成、取消或过期的上传 ID 不能再次完成。
+断线后可在同一个存活 worker 内续传；worker 重启后需要新上传 ID。
+上传在 30 分钟后过期，并预留有界配额。不指定 `destination` 时保留独立的工作区文件上传语义。
+
+SDK 导出 `uploadAttachment` 和 `cancelAttachmentUpload`，供客户端分块上传原件。
+Web 的文件和图片使用同一原件回执。历史图片按需加载经授权的缩略图或原件引用；
+下载保留原字节。模型图片版本由 provider 派生和缓存，不修改原件。
+当前轮图片必须满足所选模型限制；缺失的旧原件显示占位；已经省略的历史前缀在模型切换和重启后继续省略。

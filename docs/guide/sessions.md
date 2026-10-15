@@ -98,3 +98,21 @@ Sending while the agent is working queues a steer for the next step boundary, af
 SDK: `session.controls()` reads capabilities and state; `steer(content)`, `editQueued(itemId, content)`, `removeQueued(itemId)`, `interrupt(itemId)`, `pause()`, `resume()` and `cancel()` use durable commands. A Loop opts in through `LoopFactory.controls`; omission refuses steer, interrupt and pause. Without `afterSeq`, `controls()` returns the latest window of at most 200 facts (`facts[0].seq` is the earliest seq in that window) and sets `factsMore` when the window is full. Use `afterSeq`, starting at 0, to read history.
 
 The composer’s child tree lists owned workflow and sub-agent sessions with duration and token usage (unknown values stay explicit). **Stop child** cooperatively ends the child’s turn while keeping the workflow waiting; a continue message runs in the same child with its original constraints. SDK callers use `stopChild(childId)` and `continueChild(childId, text)`. Child and parent control facts retain the human actor. External child providers expose their own interrupt/continue capabilities; unsupported actions remain disabled. `controls({ afterSeq })` pages the complete control history using `factsThrough` and `factsMore`.
+
+## Original attachments
+
+The original-upload path uses `_agnes/v1/session.fileUpload` with `destination: "original"`
+and the active `laneId`. `start`, `chunk`, `status`, `finish` and `cancel` operate on a
+session-scoped upload ID. Each chunk is at most 1 MiB and carries its SHA-256; `finish`
+checks the complete digest and returns a pending attachment receipt. Submit that reference
+in prompt content to commit it to the session. A finished, cancelled or expired upload ID
+cannot be finished again. Interrupted intake can resume in the same live worker; a worker
+restart requires a new upload ID. Intake expires after 30 minutes and reserves bounded quota.
+Omitting `destination` retains the independent workspace-file upload semantics.
+
+The SDK exports `uploadAttachment` and `cancelAttachmentUpload` for bounded original intake.
+Web uses the same original receipts for files and images. Historical images load authorized
+thumbnail/original references on demand; downloading an original preserves its bytes.
+Model image renditions are provider-owned cached derivatives. The original is unchanged;
+current-turn images must fit the selected model, missing older originals show a placeholder,
+and an omitted historical prefix remains omitted across model changes and restart.
