@@ -10,6 +10,7 @@ export function apply(ctx) {
     cameras,
     captureTimer,
     releaseLock,
+    disposed = false,
     unavailable = 'Enable the reviewed MHS example device connection to start.'
   const listeners = new Set()
   const notify = () => {
@@ -19,8 +20,13 @@ export function apply(ctx) {
     releaseLock?.()
     releaseLock = undefined
   }
+  const assertLive = () => {
+    if (disposed || ctx.availability.getSnapshot()?.availability !== 'active')
+      throw new Error('example-revoked')
+  }
   const start = async () => {
     try {
+      assertLive()
       const access = ctx.get('mhsExampleAccess', false)
       if (!access || typeof access.connect !== 'function' || typeof access.launch !== 'function')
         throw new Error('E_MARS_REVIEWED_DEVICE_TRANSPORT_REQUIRED')
@@ -43,7 +49,12 @@ export function apply(ctx) {
       }
       if (!runtime) {
         runtime = new MarsRuntime(
-          { connect: (device, signal) => access.connect(PACKAGE, device, signal) },
+          {
+            connect: (device, signal) => {
+              assertLive()
+              return access.connect(PACKAGE, device, signal)
+            },
+          },
           typeof VideoEncoder !== 'undefined',
         )
         runtime.subscribe(notify)
@@ -51,7 +62,9 @@ export function apply(ctx) {
       cameras ??= new MarsCameras(runtime.simulation, document)
       await cameras.capture(performance.now())
       if (cameras.error) throw new Error('camera-renderer-unavailable')
+      assertLive()
       await runtime.start()
+      assertLive()
       clearInterval(captureTimer)
       captureTimer = setInterval(() => {
         if (runtime.snapshot().status !== 'ready') {
@@ -66,6 +79,7 @@ export function apply(ctx) {
       }, 100)
       unavailable = undefined
     } catch {
+      await runtime?.stop().catch(() => {})
       cameras?.dispose()
       cameras = undefined
       release()
@@ -86,6 +100,7 @@ export function apply(ctx) {
   }
   window.addEventListener('pagehide', exit)
   ctx.effect(() => () => {
+    disposed = true
     window.removeEventListener('pagehide', exit)
     release()
     clearInterval(captureTimer)
@@ -95,6 +110,7 @@ export function apply(ctx) {
   const bindingChanged = () => {
     const binding = ctx.availability.getSnapshot()
     if (binding?.availability !== 'active') {
+      disposed = true
       clearInterval(captureTimer)
       cameras?.dispose()
       cameras = undefined
@@ -164,13 +180,16 @@ export function apply(ctx) {
       }
     }
     const launch = async (id) => {
+      assertLive()
       if (runtime?.snapshot().status !== 'ready') throw new Error('example-unavailable')
       const access = ctx.get('mhsExampleAccess', false)
       // Keep the operation id across retries, including an uncertain response.
       const key = `mars.launch.${ctx.module.binding.profileId}.${ctx.module.binding.activationId}.${id}`,
         operationId = sessionStorage.getItem(key) ?? crypto.randomUUID()
       sessionStorage.setItem(key, operationId)
-      await access.launch(PACKAGE, id, operationId)
+      const launched = await access.launch(PACKAGE, id, operationId)
+      if (typeof launched?.sessionId !== 'string' || !launched.sessionId)
+        throw new Error('launch-outcome-unknown')
       sessionStorage.removeItem(key)
     }
     const keyDown = (event) => {
