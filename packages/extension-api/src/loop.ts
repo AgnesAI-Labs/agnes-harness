@@ -77,6 +77,29 @@ export interface LoopStepOutcome {
 /** Core resolves route, contracts, media and hashes. A prepared request is session/turn bound. */
 declare const preparedLoopRequest: unique symbol
 export type LoopRequest = Readonly<RequestBody> & { readonly [preparedLoopRequest]: true }
+/** One trailing note for one model request. */
+export interface LoopTailNote {
+  /**
+   * Appended after the visible history and after Core's own per-request notes, as one user-side
+   * message. It is trusted at the level of the loop's own instructions, the same as `system`: Core
+   * scrubs it and never wraps it as untrusted data, since the note is meant to steer the model. A
+   * loop that quotes untrusted content in it (a tool result, a file name, fetched text) is
+   * responsible for that content; Core does not mark the quote as data. 1 to 32768 UTF-8 bytes; it
+   * must not begin with a Core note prefix (`[runtime context]`, `[hook context]` or
+   * `[skill loaded]` followed by a line break).
+   */
+  readonly text: string
+  /**
+   * Write the note as a history row in the transaction that records this request as sent, so
+   * every later request carries it as an ordinary turn and each request stays a prefix of the
+   * next. The row stays even if the request then fails; `effects.status(invocationId)` tells
+   * whether it was sent, so the note is not added a second time. Send it when none of the loop's
+   * tool calls is still running: a result recorded after the note is placed before it in later
+   * requests. Default false: this request only, and the next request's history no longer extends
+   * this one from the note on. Refused together with custom `messages`.
+   */
+  readonly commit?: boolean
+}
 export interface LoopRequestOptions {
   slot?: RequestBody['slot']
   system?: string
@@ -86,6 +109,8 @@ export interface LoopRequestOptions {
   tools?: readonly string[]
   sampling?: RequestBody['sampling']
   invocationId?: string
+  /** A note sent after the history; an invalid one throws `E_ENVELOPE` before anything is written. */
+  tailNote?: LoopTailNote
 }
 /** Advisory estimates of the prepared wire; never a send permit or a token upper bound. */
 export interface LoopRequestEstimate {

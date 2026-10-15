@@ -53,6 +53,11 @@ export type DeriveInput = {
     text: string
     dedup: { kind: 'latest' } | { kind: 'present'; key: string }
   }>
+  /**
+   * A loop's note for this request: the last message, after Core's notes, scrubbed and never
+   * enveloped. When `commit` is set it is also returned among `notes`, to be written with the request.
+   */
+  tailNote?: { text: string; commit: boolean }
   /** Already preflighted with caller-supplied limits; this layer never selects images or invents caps. */
   media?: LedgerPreparedRequestMedia
   /** Canonical session identity supplied by the same owner that reads the ledger. */
@@ -685,6 +690,18 @@ export function toMessage(node: SurfaceNode, nonce: string, envelopeCache: Envel
  * lives in the text, which is where it already was.
  */
 const RUNTIME_CONTEXT_PREFIX = '[runtime context]\n'
+/** The first lines of the two per-request notes the default request path hands in through `notes`. */
+export const HOOK_CONTEXT_PREFIX = '[hook context]\n'
+export const SKILL_LOADED_PREFIX = '[skill loaded]\n'
+/**
+ * Every prefix a later derivation reads a Core note back by. A loop's note may not begin with one: a
+ * committed note that did would be taken for the snapshot or note it imitates.
+ */
+export const RESERVED_NOTE_PREFIXES: readonly string[] = Object.freeze([
+  RUNTIME_CONTEXT_PREFIX,
+  HOOK_CONTEXT_PREFIX,
+  SKILL_LOADED_PREFIX,
+])
 
 /** The user line placed between a summary and an assistant message that directly follows it. */
 const SUMMARY_BRIDGE_TEXT =
@@ -925,7 +942,7 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
   }
   if (input.kind === 'turn') {
     const rank = (prefix: string) =>
-      prefix === '[hook context]\n' ? 0 : prefix === '[skill loaded]\n' ? 1 : 2
+      prefix === HOOK_CONTEXT_PREFIX ? 0 : prefix === SKILL_LOADED_PREFIX ? 1 : 2
     for (const note of [...(input.notes ?? [])].sort((a, b) => rank(a.prefix) - rank(b.prefix))) {
       const previous = lastNoteText(input.surface, note.prefix)
       if (note.dedup.kind === 'present') {
@@ -951,6 +968,18 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
       notes.push(noteEvent(rendered))
       messages.push({ role: 'user', seq: 0, content: [{ type: 'text', text: rendered }] })
     }
+  }
+  // A loop's note goes last, after Core's: Core notes are always written with the request, so a
+  // committed note lands on the ledger in the order this request ends with, and the next request
+  // renders the same messages as its prefix. Scrubbed like `system` and never enveloped: the note is
+  // the loop's instruction to the model, and an envelope would tell the model to read it as data.
+  if (input.tailNote !== undefined) {
+    if (input.kind !== 'turn') throw new CoreError('E_ENVELOPE', 'a tail note belongs only to a turn request')
+    const text = sanitize(input.tailNote.text)
+    if (RESERVED_NOTE_PREFIXES.some((prefix) => text.startsWith(prefix)))
+      throw new CoreError('E_ENVELOPE', 'a tail note cannot begin with a Core note prefix')
+    if (input.tailNote.commit) notes.push(noteEvent(text))
+    messages.push({ role: 'user', seq: 0, content: [{ type: 'text', text }] })
   }
   // Tool schemas are scrubbed in every field, `parameters` to the leaves. A `ToolDef` arrives
   // through `registerTool`, the same tier as a contributed prompt section — and a tool description

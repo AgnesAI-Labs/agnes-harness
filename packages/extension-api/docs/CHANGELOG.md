@@ -113,6 +113,15 @@ Every `agnes.plugins[].apiRange` and `@agnes/extension-api` dependency range mov
   untrusted envelope. Also exported: `SideCallTarget` (a route and model only), `SideCallOptions`,
   `PreparedSideCall`, `SideCallUsage`, `SideCallFailure` and `SideCallStatus`. The port is optional
   so a test double of `LoopContext` that does not provide it keeps compiling.
+- `LoopRequestOptions.tailNote` (`LoopTailNote`): one user-side note appended after the visible
+  history and after Core's own per-request notes. It is trusted at the level of the loop's
+  instructions, like `system`: scrubbed, never wrapped as untrusted, so a loop that quotes untrusted
+  content in it answers for that content. The system prompt, tools, `prompt_prefix_hash` and
+  `tool_schema_hash` are unchanged by it. With `commit: true` the note is written as a history row
+  in the transaction that records the request as sent, so later requests carry it as an ordinary
+  turn and each request stays a prefix of the next. A note of 0 or more than 32768 UTF-8 bytes, one
+  that begins with a Core note prefix, or `commit` together with custom `messages` is refused with
+  `E_ENVELOPE` before anything is written. A request without `tailNote` is unchanged.
 - `CostLedger.purpose` accepts `'side-call'`, and `CostLedger` has the optional `route`, `adapter`
   (`{ id, version? }`) and `endpointHost`.
 - `ModelAdapterCapabilities.payload` and `.payloadOnly` (both optional booleans). `payload: true`
