@@ -102,9 +102,10 @@ export interface LoopTailNote {
    * same `invocationId` gives a different request, and sending it throws `E_RELATION`. Read
    * `effects.status(invocationId)` and use the recorded result instead.
    *
-   * Other slots: a committed note on a request for a slot other than `primary` (`fast`, `verifier`,
-   * `compaction`) is written into the main conversation history all the same, as Core's own runtime
-   * and hook notes are on such requests. Core does not check this; the loop is responsible for it.
+   * Other slots: a committed note on a request for a slot other than `primary` (such as `fast`,
+   * `verifier` or `compaction`) is written into the main conversation history all the same, as Core's
+   * own runtime and hook notes are on such requests. Core does not check this; the loop is
+   * responsible for it.
    */
   readonly commit?: boolean
 }
@@ -114,11 +115,12 @@ export interface LoopRequestOptions {
   /** Omitted uses the visible post-compaction history. */
   messages?: RequestBody['messages']
   /**
-   * Exact names from the turn's frozen catalog; omitted uses current disclosure, which can grow
-   * within a turn when the model loads a deferred tool. Requests that pass the same names carry the
-   * same tool bytes (sorted by name, whatever the order passed) and the same `tool_schema_hash`
-   * within a turn, and across turns while those tools' definitions are unchanged. A name outside the
-   * catalog throws `E_ENVELOPE`.
+   * Exact names from the turn's frozen catalog; omitted uses current disclosure, which grows
+   * whenever the model loads a deferred tool, in this turn or an earlier one (loads are kept for the
+   * session). Requests that pass the same names carry the same tool bytes (sorted by name, whatever
+   * the order passed) and the same `tool_schema_hash` within a turn, and across turns while those
+   * tools' definitions are unchanged, for the same slot and model. A name outside the catalog throws
+   * `E_ENVELOPE`.
    */
   tools?: readonly string[]
   sampling?: RequestBody['sampling']
@@ -237,10 +239,12 @@ export interface LoopToolCallOptions {
    * and `announce`, not `content`. A planned call that was never dispatched (its process died first)
    * continues on replay while the step that planned it is open: after a reopen, a loop that replays
    * its recorded announced invocations before it prepares a request or makes any other model or tool
-   * call still runs that very call, once. Otherwise the call is closed with a `TOOL_NOT_STARTED`
-   * error result when its step ends, or before the next request is prepared, so the history never
-   * holds the call without a result; a later replay returns that result without running the call,
-   * and the loop can announce again under a new `invocationId`. An invocation whose receipt was
+   * call still runs that very call, once. Otherwise the call is closed with an error result (its
+   * `tool/result` row in the history carries the code `TOOL_NOT_STARTED`; a `ToolResult` has no
+   * `code`) when its step ends, or before the next request is prepared, so the history never holds
+   * the call without a result; a later replay returns that result (the text
+   * `<name> was announced but did not run`, `isError: true`) without running the call, and the loop
+   * can announce again under a new `invocationId`. An invocation whose receipt was
    * written but whose message and call rows were not (a crash between the two) stays refused.
    */
   readonly announce?: true | { readonly content: AssistantMessage['content'] }

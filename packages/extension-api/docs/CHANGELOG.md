@@ -96,9 +96,9 @@ Every `agnes.plugins[].apiRange` and `@agnes/extension-api` dependency range mov
 - Two requests of one loop that pass the same `LoopRequestOptions.tools` names carry the same tool
   schemas, sorted by name whatever the order passed, and the same `tool_schema_hash` for the rest of
   the turn, also when the model loads a deferred tool in between; across turns the same holds while
-  those tools' definitions are unchanged. Omitting `tools` follows the turn's current disclosure, which
-  can grow within a turn. The guarantee already held; it is now documented and covered by a contract
-  test.
+  those tools' definitions are unchanged, for the same slot and model. Omitting `tools` follows the
+  current disclosure, which grows whenever the model loads a deferred tool (loads are kept for the
+  session). The guarantee already held; it is now documented and covered by a contract test.
 - A message a loop supplies in `LoopRequestOptions.messages` is no longer served from the session's
   envelope memo: each request carries the text it was prepared with. Earlier, a later request in the
   same session could resend the text of the first.
@@ -153,9 +153,10 @@ Every `agnes.plugins[].apiRange` and `@agnes/extension-api` dependency range mov
   transaction as the call rows, before anything runs; each call still goes through approval and tool
   policy. A planned announced call that was never dispatched continues on replay with the same
   `invocationId` while the step that planned it is open, so a loop that replays it first after a
-  reopen still runs that very call. Otherwise the call is closed with a `TOOL_NOT_STARTED` error
-  result when its step ends (or before the next model request is prepared), and the loop can
-  announce again with a new `invocationId`. Without `announce` nothing changes.
+  reopen still runs that very call. Otherwise the call is closed with an error result (the history's
+  `tool/result` row carries the code `TOOL_NOT_STARTED`) when its step ends, or before the next
+  model request is prepared, and the loop can announce again with a new `invocationId`. Without
+  `announce` nothing changes.
 - `SideCallResult` (`status: 'failed'`) has an optional `retryAfterMs`: for an `adapter-error` whose
   vendor asked for a wait, such as a rate limit with `retry-after`, the milliseconds to wait before a
   retry. It is a whole number up to one hour (a longer or invalid hint is dropped), recorded with the

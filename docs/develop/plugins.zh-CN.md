@@ -176,7 +176,7 @@ Core 在回合开始时取得工具目录，并在这个回合内冻结。之后
 
 请求列出什么，取决于 `tools`：
 
-- 不传 `tools` 时，请求列出此刻已披露的工具：可见且未延迟的工具，加上本回合里 `tool_describe` 已加载的每个延迟工具，再按预设的 `disclosure` 设置收窄。模型在两次请求之间加载了一个工具，第二次请求就多列一个工具。工具字节随之改变，`tool_schema_hash` 也变，提供方缓存的前缀不再匹配。
+- 不传 `tools` 时，请求列出此刻已披露的工具：可见且未延迟的工具，加上本会话里 `tool_describe` 已加载的每个延迟工具，再按预设的 `disclosure` 设置收窄。加载会跨回合保留，重开之后也保留。模型在两次请求之间加载了一个工具，第二次请求就多列一个工具，之后不传 `tools` 的每次请求也都列出它，本回合和之后的回合都是如此。工具字节随之改变，`tool_schema_hash` 也变，提供方缓存的前缀不再匹配。
 - 传了 `tools` 时，请求恰好列出这些名字。Core 按名字排序，所以你传入的顺序无关紧要。在同一个回合内，传同一组名字的每次请求，工具字节和 `tool_schema_hash` 都逐次相同，不论模型在其间加载了什么。跨回合时，只要这些工具各自的名字、描述和参数 schema 没有变，它们同样保持相同。
 
 ```ts
@@ -191,7 +191,7 @@ const request = await ctx.prepareRequest({ tools: toolNames, invocationId })
 
 `'read'` 代表你自己的工具。`ctx.turn.view()` 列出本回合的整个目录，包括延迟工具，所以请挑选要发送的名字，不要全部传入。
 
-名字不在本回合目录里时，`prepareRequest` 抛出 `E_ENVELOPE`。因此在你选定名字之后被注销的工具，是循环要自己处理的错误，例如到下一个回合重新选名字。名字在目录里、但不向模型提供的工具会被请求略去，例如标记为对模型不可见的工具，或模型不接受图片时的 computer-use 工具。回合中途由模型通过 `tool_describe` 加载的工具，不会加进你已固定名字的请求；想让它被提供，就把它的名字加进这组名字，这会让字节改变一次。
+名字不在本回合目录里时，`prepareRequest` 抛出 `E_ENVELOPE`。目录是冻结的，所以回合进行中被注销的工具仍留在本回合的目录里，请求还可以点它的名字。这个错误出现在之后的回合里，或回合进行到一半时进程重启之后，因为那时会重新取得目录。循环要自己处理它，例如从 `ctx.turn.view()` 重新选名字。名字在目录里、但不向模型提供的工具会被请求略去，例如标记为对模型不可见的工具，或模型不接受图片时的 computer-use 工具。回合中途由模型通过 `tool_describe` 加载的工具，不会加进你已固定名字的请求；想让它被提供，就把它的名字加进这组名字，这会让字节改变一次。这条保证以同一个槽位和同一个模型为前提：computer-use 过滤取决于该槽位的模型，换模型可能改变列表。
 
 这条保证针对请求的 `tools`。系统提示列出整个目录里的延迟工具，并告诉模型使用 `tool_search` 和 `tool_describe`。这份列表来自目录，而不是 `tools`，所以传名字不会改变它，它在同一回合内也不会改变。如果目录里有延迟工具，而你的名字漏掉了这两个发现工具，提示就会把模型指向它调用不了的工具。把两个名字都包含进去，或者接受这处不一致。
 
@@ -217,22 +217,24 @@ const request = await ctx.prepareRequest({
 
 **不带 `commit`** 时，尾注只随这一次请求发送。下一次请求的历史不含它，所以下一次请求从尾注起不再延续这一次，提供方的缓存在那里不再匹配。
 
-**带 `commit: true`** 时，Core 在把请求记为已发送的同一个事务里，把尾注写成一行历史。之后的请求把它当作普通的用户轮次，放在同一个位置，因此每个请求都是下一个请求的前缀。请求之后即使失败，这一行也保留，因为请求已被记为已发送。Core 在发送之前就拒绝的请求（例如预算拒绝）不写尾注；用同一个 `invocationId` 再次发送同一个已准备的请求，返回已记录的结果，什么也不写。等没有工具调用还在运行时再发送带 `commit` 的尾注：在尾注之后记录的结果，在之后的请求里会排到尾注之前。
+**带 `commit: true`** 时，Core 在把请求记为已发送的同一个事务里，把尾注写成一行历史。之后的请求把它当作普通的用户轮次，放在同一个位置，因此每个请求都是下一个请求的前缀。请求之后即使失败，这一行也保留，因为请求已被记为已发送。Core 在发送之前就拒绝的请求（例如预算拒绝）不写尾注。请求一旦发送，用同一个 `invocationId` 再次发送同一个已准备的请求，返回已记录的结果，什么也不写。等没有工具调用还在运行时再发送带 `commit` 的尾注：在尾注之后记录的结果，在之后的请求里会排到尾注之前。
 
-**提交尾注之后续跑。** 已提交的尾注现在是历史的一部分，所以用同一个 `invocationId` 再次准备请求，得到的是另一个请求，发送它会抛出 `E_RELATION`。重启之后，先读 `ctx.effects.status(invocationId)`。状态是 `responded` 时，使用已记录的 `result`，不要再次准备请求。状态是 `may-have-sent` 时，请求可能已经到达模型，Core 拒绝用同一个 id 再次发送。
+**提交尾注之后续跑。** 已提交的尾注现在是历史的一部分，所以用同一个 `invocationId` 再次准备请求，得到的是另一个请求，发送它会抛出 `E_RELATION`。重启之后，先读 `ctx.effects.status(invocationId)`。状态是 `responded` 时，使用已记录的 `result`，不要再次准备请求。状态是 `may-have-sent` 时，请求可能已经到达模型，Core 拒绝用同一个 id 再次发送，所以也在这里停下。
 
 ```ts
 const recorded = await ctx.effects.status(invocationId)
 if (recorded.status === 'responded') return recorded.result
+// 请求可能已经到达模型：不要用这个 id 再次准备或发送。
+if (recorded.status === 'may-have-sent') return undefined
 const request = await ctx.prepareRequest({ invocationId, tailNote: { text: note, commit: true } })
 return ctx.model.complete(request, signal)
 ```
 
-**其他槽位。** 发往 `primary` 以外槽位（`fast`、`verifier` 或 `compaction`，用 `slot` 指定）的请求，带 `commit: true` 的尾注照样写进主对话历史。Core 自己的运行时上下文附注和钩子附注在这类请求上也是这样。Core 不做检查，由循环作者负责。必须留在对话之外的请求应该走 [`ctx.sideCall`](#循环的旁路模型调用)，它不接受尾注。
+**其他槽位。** 发往 `primary` 以外槽位（例如 `fast`、`verifier` 或 `compaction`，用 `slot` 指定）的请求，带 `commit: true` 的尾注照样写进主对话历史。Core 自己的运行时上下文附注和钩子附注在这类请求上也是这样。Core 不做检查，由循环作者负责。必须留在对话之外的请求应该走 [`ctx.sideCall`](#循环的旁路模型调用)，它不接受尾注。
 
 ### 公告一次工具调用
 
-`ctx.tools.execute(call, signal, options)` 和 `ctx.tools.batch(calls, signal, options)` 接受可选的第三个参数。不传时，循环自己选定的调用独立记录，归属于最近的一条助手消息，而那条消息并没有要求过它。传 `announce` 时，Core 把这次调用（或整批调用）记成一条新的、要求了它的助手消息。你用 `ctx.events.assistant` 提交的模型回复所要求的调用，不需要公告。
+`ctx.tools.execute(call, signal, options)` 和 `ctx.tools.batch(calls, signal, options)` 接受可选的第三个参数。不传时，循环自己选定的调用独立记录。它被挂到本回合最近的一条助手消息上，而那条消息并没有要求过它；本回合还没有助手消息时，则挂到本回合的输入上。传 `announce` 时，Core 把这次调用（或整批调用）记成一条新的、要求了它的助手消息。你用 `ctx.events.assistant` 提交的模型回复所要求的调用，不需要公告。
 
 ```ts
 // 循环自己选定了这次调用：一条没有文本的助手消息，加上这次调用。
@@ -259,7 +261,7 @@ const results = await ctx.tools.batch(calls, signal, {
 **重放。** 给每个被公告的调用一个稳定的 `invocationId`，并用相同的名字、参数和 `announce` 选项重放。回执只覆盖这三者，不覆盖 `content`。如果进程死在公告已提交、工具尚未派发之前，这个调用就是已规划但从未派发：
 
 - 先重放它，也就是在准备请求或进行任何其他模型调用、工具调用之前，它会根据已记录的调用运行一次，运行在规划它的那个步骤里。规划行不会再写一遍。
-- 否则 Core 用错误码为 `TOOL_NOT_STARTED` 的错误结果把它收尾。这发生在它的步骤结束时，或下一次模型请求准备之前，所以历史里不会出现没有结果的调用。之后再重放这个 id，返回已记录的结果，不会运行工具。仍想执行这次调用，就用新的 `invocationId` 再公告一次。
+- 否则 Core 用一个错误结果把它收尾。这发生在它的步骤结束时，或下一次模型请求准备之前，所以历史里不会出现没有结果的调用。历史里的 `tool/result` 行带有错误码 `TOOL_NOT_STARTED`，模型读到的文本是 `<name> was announced but did not run`。之后再重放这个 id，不会运行工具；它返回一个 `ToolResult`，内容就是这段文本，`isError: true`。`ToolResult` 没有 `code`，所以要到历史里找这个错误码，不要找 `result.code`。仍想执行这次调用，就用新的 `invocationId` 再公告一次。
 
 已经派发的调用不受上述规则影响：它遵循不确定调用的通常规则，在 Core 的恢复把它结算之前，`ctx.effects.status` 报告 `may-have-sent`，重放被拒绝。如果回执已写入、而消息和调用行没有写入（进程死在这两者之间），这个 id 一直被拒绝；当时什么都没运行，换一个新的 `invocationId` 重新开始。
 

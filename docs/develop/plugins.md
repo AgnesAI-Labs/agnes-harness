@@ -196,7 +196,7 @@ Core takes the tool catalog when a turn starts and freezes it for that turn. A t
 
 What a request lists depends on `tools`:
 
-- Without `tools`, the request lists the tools disclosed at that moment: the visible tools that are not deferred, plus every deferred tool that `tool_describe` has loaded in this turn, narrowed by the preset's `disclosure` setting. When the model loads a tool between two requests, the second request lists one more tool. The tool bytes change, so does `tool_schema_hash`, and a provider's cached prefix no longer matches.
+- Without `tools`, the request lists the tools disclosed at that moment: the visible tools that are not deferred, plus every deferred tool that `tool_describe` has loaded in this session, narrowed by the preset's `disclosure` setting. A load is kept across turns and after a reopen. When the model loads a tool between two requests, the second request lists one more tool, and so does every later request without `tools`, in this turn and in the next ones. The tool bytes change, so does `tool_schema_hash`, and a provider's cached prefix no longer matches.
 - With `tools`, the request lists exactly those names. Core sorts them by name, so the order you pass them in does not matter. Within a turn, every request that passes the same names carries identical tool bytes and an identical `tool_schema_hash`, whatever the model loaded in between. Across turns they stay identical as long as the name, the description and the parameter schema of each of those tools stay the same.
 
 ```ts
@@ -211,7 +211,7 @@ const request = await ctx.prepareRequest({ tools: toolNames, invocationId })
 
 `'read'` stands for a tool of your own. `ctx.turn.view()` lists the whole catalog of the turn, deferred tools included, so choose the names you want to send instead of passing them all.
 
-A name that is not in the turn's catalog makes `prepareRequest` throw `E_ENVELOPE`, so a tool that was unregistered after you chose the names is an error your loop handles, for example by choosing the names again at the next turn. A name that is in the catalog but is not offered to the model, such as a tool marked as not visible to the model, or a computer-use tool when the model takes no images, is left out of the request. A tool that the model loads with `tool_describe` in the middle of the turn is not added to a request whose names you fixed; add its name to the set if you want it offered, which changes the bytes once.
+A name that is not in the turn's catalog makes `prepareRequest` throw `E_ENVELOPE`. The catalog is frozen, so a tool that is unregistered while a turn runs stays in that turn's catalog and requests can still name it. The error shows in a later turn, or after a restart in the middle of a turn, when the catalog is taken again. Your loop handles it, for example by choosing the names again from `ctx.turn.view()`. A name that is in the catalog but is not offered to the model, such as a tool marked as not visible to the model, or a computer-use tool when the model takes no images, is left out of the request. A tool that the model loads with `tool_describe` in the middle of the turn is not added to a request whose names you fixed; add its name to the set if you want it offered, which changes the bytes once. The guarantee assumes the same slot and the same model: the computer-use filter depends on the model of the slot, so switching the model can change the list.
 
 The guarantee covers the `tools` of a request. The system prompt lists the deferred tools of the whole catalog and tells the model to use `tool_search` and `tool_describe`. That list comes from the catalog, not from `tools`, so passing names does not change it, and it does not change within a turn. If your names leave out the two discovery tools while the catalog has deferred tools, the prompt points the model at tools it cannot call. Include both names, or accept the mismatch.
 
@@ -237,22 +237,24 @@ An invalid note makes `prepareRequest` throw `E_ENVELOPE` before anything is wri
 
 **Without `commit`**, the note rides this request only. The next request's history does not contain it, so the next request no longer extends this one from the note on, and a provider's cache stops matching there.
 
-**With `commit: true`**, Core writes the note as a history row in the same transaction that records the request as sent. Later requests carry the note as an ordinary user turn at the same place, so each request stays a prefix of the next. The row stays even if the request then fails, because the request was recorded as sent. A request that Core refuses before it is sent (a budget refusal, for example) writes no note, and sending the same prepared request again under the same `invocationId` returns the recorded result and writes nothing. Send a committed note when none of your tool calls is still running: a result recorded after the note is placed before it in later requests.
+**With `commit: true`**, Core writes the note as a history row in the same transaction that records the request as sent. Later requests carry the note as an ordinary user turn at the same place, so each request stays a prefix of the next. The row stays even if the request then fails, because the request was recorded as sent. A request that Core refuses before it is sent (a budget refusal, for example) writes no note. Once a request has been sent, sending the same prepared request again under the same `invocationId` returns the recorded result and writes nothing. Send a committed note when none of your tool calls is still running: a result recorded after the note is placed before it in later requests.
 
-**Resuming after a committed note.** The committed note is now part of the history, so preparing the request again under the same `invocationId` gives a different request, and sending it throws `E_RELATION`. After a restart, read `ctx.effects.status(invocationId)` first. When it is `responded`, use the recorded `result` and do not prepare the request again. When it is `may-have-sent`, the request may have reached the model, and Core refuses to send it again under that id.
+**Resuming after a committed note.** The committed note is now part of the history, so preparing the request again under the same `invocationId` gives a different request, and sending it throws `E_RELATION`. After a restart, read `ctx.effects.status(invocationId)` first. When it is `responded`, use the recorded `result` and do not prepare the request again. When it is `may-have-sent`, the request may have reached the model, and Core refuses to send it again under that id, so stop there as well.
 
 ```ts
 const recorded = await ctx.effects.status(invocationId)
 if (recorded.status === 'responded') return recorded.result
+// The request may have reached the model: do not prepare or send it again under this id.
+if (recorded.status === 'may-have-sent') return undefined
 const request = await ctx.prepareRequest({ invocationId, tailNote: { text: note, commit: true } })
 return ctx.model.complete(request, signal)
 ```
 
-**Other slots.** A `commit: true` note on a request sent to a slot other than `primary` (`fast`, `verifier` or `compaction`, chosen with `slot`) is written into the main conversation history all the same. Core's own runtime-context and hook notes behave the same way on such requests. Core does not check it, so the loop author is responsible for it. A request that must stay out of the conversation belongs in [`ctx.sideCall`](#side-model-calls-from-a-loop), which takes no note.
+**Other slots.** A `commit: true` note on a request sent to a slot other than `primary` (such as `fast`, `verifier` or `compaction`, chosen with `slot`) is written into the main conversation history all the same. Core's own runtime-context and hook notes behave the same way on such requests. Core does not check it, so the loop author is responsible for it. A request that must stay out of the conversation belongs in [`ctx.sideCall`](#side-model-calls-from-a-loop), which takes no note.
 
 ### Announcing a tool call
 
-`ctx.tools.execute(call, signal, options)` and `ctx.tools.batch(calls, signal, options)` take an optional third argument. Without it, a call that the loop chooses itself is recorded on its own, and it belongs to whatever assistant message came last, which did not ask for it. With `announce`, Core records the call, or the whole batch, as one new assistant message that asked for it. A call that a model reply you committed with `ctx.events.assistant` asked for needs no announcement.
+`ctx.tools.execute(call, signal, options)` and `ctx.tools.batch(calls, signal, options)` take an optional third argument. Without it, a call that the loop chooses itself is recorded on its own. It is attached to the latest assistant message of the turn, which did not ask for it, or to the turn's input when there is no assistant message yet. With `announce`, Core records the call, or the whole batch, as one new assistant message that asked for it. A call that a model reply you committed with `ctx.events.assistant` asked for needs no announcement.
 
 ```ts
 // The loop chose this call itself: one assistant message with no text, and the call.
@@ -279,7 +281,7 @@ const results = await ctx.tools.batch(calls, signal, {
 **Replay.** Give every announced call a stable `invocationId`, and replay it with the same name, arguments and `announce` option. The receipt covers those three, not `content`. If the process died after the announcement was committed and before the tool was dispatched, the call is planned but never dispatched:
 
 - Replay it first, before you prepare a request or make any other model or tool call, and it runs once from the recorded call, in the step that planned it. No planning rows are written again.
-- Otherwise Core closes it with an error result whose code is `TOOL_NOT_STARTED`. That happens when its step ends, or before the next model request is prepared, so the history never holds the call without a result. A later replay of that id returns the recorded result without running the tool. To make the call anyway, announce it again under a new `invocationId`.
+- Otherwise Core closes it with an error result. That happens when its step ends, or before the next model request is prepared, so the history never holds the call without a result. The `tool/result` row in the history carries the code `TOOL_NOT_STARTED`, and the model reads the text `<name> was announced but did not run`. A later replay of that id does not run the tool; it returns a `ToolResult` with that text as its content and `isError: true`. A `ToolResult` has no `code`, so look for the code in the history, not on the result. To make the call anyway, announce it again under a new `invocationId`.
 
 A call that had been dispatched is not touched by any of this: it follows the usual rule for an uncertain call, so until Core's recovery settles it, `ctx.effects.status` reports `may-have-sent` and a replay is refused. An invocation whose receipt was written but whose message and call rows were not, because the process died between the two, stays refused; nothing ran, and a new `invocationId` starts again.
 

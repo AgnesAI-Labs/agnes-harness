@@ -403,6 +403,12 @@ describe('the tool catalog of a loop that names its tools', () => {
     )
   }
 
+  /** The names `tool_describe` has loaded in this session, in the order they were loaded. */
+  async function loadedNames(t: Harness) {
+    const rows = await t.session.scan({ type: 'x/core/tool-disclosed', toSeq: t.session.lastSeq })
+    return rows.map((row) => (row.data as { name: string }).name)
+  }
+
   /** The `tool_schema_hash` of every request the loop sent, in order. */
   async function schemaHashes(t: Harness) {
     const headers = await t.session.scan({ type: 'request/header', toSeq: t.session.lastSeq })
@@ -420,8 +426,7 @@ describe('the tool catalog of a loop that names its tools', () => {
       await disclose(t, 'remote_9')
       await send(t, NAMES)
       // Both loads happened, so a loop that followed the disclosure would have seen two new tools.
-      const loaded = await t.session.scan({ type: 'x/core/tool-disclosed', toSeq: t.session.lastSeq })
-      expect(loaded.map((row) => row.data)).toEqual([{ name: 'remote_5' }, { name: 'remote_9' }])
+      expect(await loadedNames(t)).toEqual(['remote_5', 'remote_9'])
       expect(t.provider.requests).toHaveLength(3)
       expect(new Set(t.provider.requests.map((request) => canonicalJson(request.tools))).size).toBe(1)
       expect(new Set(t.provider.requests.map((request) => request.system)).size).toBe(1)
@@ -436,6 +441,8 @@ describe('the tool catalog of a loop that names its tools', () => {
       await send(t, NAMES)
       await disclose(t, 'remote_5')
       await send(t, [...NAMES].reverse())
+      // The load happened between the two requests, so the equality below is not for lack of one.
+      expect(await loadedNames(t)).toEqual(['remote_5'])
       const [first, second] = t.provider.requests
       expect(canonicalJson(second?.tools)).toBe(canonicalJson(first?.tools))
       const [a, b] = await schemaHashes(t)
@@ -452,6 +459,22 @@ describe('the tool catalog of a loop that names its tools', () => {
       expect(toolNames(after)).toEqual(['remote_5', 'tool_describe', 'tool_search'])
       const [a, b] = await schemaHashes(t)
       expect(b).not.toBe(a)
+    })
+  })
+
+  it('keeps a tool loaded in an earlier turn listed when the loop passes no names, and not when it passes the same names', async () => {
+    await withLoop(async (t) => {
+      const first = await send(t, NAMES)
+      await disclose(t, 'remote_5')
+      expect((await t.ctx.events.finish('completed')).outcome).toBe('turn-ended')
+      await t.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'again' }] })
+      expect(await t.session.acceptInput()).toBe(true)
+      // The load belongs to the session, not to the turn that made it.
+      expect(await loadedNames(t)).toEqual(['remote_5'])
+      const named = await send(t, NAMES)
+      const followed = await send(t)
+      expect(canonicalJson(named.tools)).toBe(canonicalJson(first.tools))
+      expect(toolNames(followed)).toEqual(['remote_5', 'tool_describe', 'tool_search'])
     })
   })
 })
