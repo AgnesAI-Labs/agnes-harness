@@ -543,42 +543,47 @@ it('flushes a short first delta immediately and later short deltas while the pro
   })
 })
 
-it('wakes a paused provider when a bounded stream flush fails', async () => {
-  let release = () => {}
-  const paused = new Promise<void>((resolve) => {
-    release = resolve
-  })
-  const provider = fakeProvider([])
-  provider.infer = async function* (req) {
-    yield sentFor(req)
-    yield { type: 'text_delta', delta: 'first' }
-    yield { type: 'text_delta', delta: 'second' }
-    // Deliberately ignore the inference signal. The flush failure must still settle the owner.
-    await paused
-    yield usage()
-    yield { type: 'done', reason: 'stop' }
-  }
-  // Each clock read is ten seconds on, so the flush that follows the start writes a count row.
-  let now = 1_757_203_200_000
-  const { session, storage } = await open({ provider, clock: () => (now += 10_000) })
-  const commit = storage.commit.bind(storage)
-  let outputAppends = 0
-  vi.spyOn(storage, 'commit').mockImplementation(async (key, tx) => {
-    if (tx.events.some((event) => event.type === 'assistant/output')) {
-      outputAppends += 1
-      if (outputAppends === 2) throw new Error('output disk unavailable')
+it.each([false, true])(
+  'wakes a paused provider when a bounded stream flush fails (receipt failure: %s)',
+  async (failReceipt) => {
+    let release = () => {}
+    const paused = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const provider = fakeProvider([])
+    provider.infer = async function* (req) {
+      yield sentFor(req)
+      yield { type: 'text_delta', delta: 'first' }
+      yield { type: 'text_delta', delta: 'second' }
+      // Deliberately ignore the inference signal. The flush failure must still settle the owner.
+      await paused
+      yield usage()
+      yield { type: 'done', reason: 'stop' }
     }
-    return commit(key, tx)
-  })
-  await input(session)
-  const pending = session.runInference()
-  try {
-    await expect(pending).rejects.toThrow('output disk unavailable')
-  } finally {
-    release()
-  }
-  expect(outputAppends).toBe(2)
-})
+    // Each clock read is ten seconds on, so the flush that follows the start writes a count row.
+    let now = 1_757_203_200_000
+    const { session, storage } = await open({ provider, clock: () => (now += 10_000) })
+    const commit = storage.commit.bind(storage)
+    let outputAppends = 0
+    vi.spyOn(storage, 'commit').mockImplementation(async (key, tx) => {
+      if (failReceipt && tx.events.some((event) => event.type === 'cost/ledger'))
+        throw new Error('receipt disk unavailable')
+      if (tx.events.some((event) => event.type === 'assistant/output')) {
+        outputAppends += 1
+        if (outputAppends === 2) throw new Error('output disk unavailable')
+      }
+      return commit(key, tx)
+    })
+    await input(session)
+    const pending = session.runInference()
+    try {
+      await expect(pending).rejects.toThrow('output disk unavailable')
+    } finally {
+      release()
+    }
+    expect(outputAppends).toBe(2)
+  },
+)
 
 it('settles an inference whose provider ignores cancellation while waiting for its next event', async () => {
   let release = () => {}

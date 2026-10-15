@@ -1171,10 +1171,9 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
       retryable: !sessionSignal.aborted,
     }
   }
-  let settlementBodyFailed = false
   // The listener stays until the settling rows are admitted: a close that lands after the stream
   // has ended but before the settlement is written would otherwise take the whole text with it.
-  try {
+  const settle = async (): Promise<StepOutcome> => {
     cancelFlushTimer()
     try {
       await flush()
@@ -1424,17 +1423,23 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
           )
     })
     return { phase: planned.length ? 'tools' : truncated ? 'failure_drain' : 'checkpoint' }
+  }
+  let settlement: { ok: true; result: StepOutcome } | { ok: false; error: unknown }
+  try {
+    settlement = { ok: true, result: await settle() }
   } catch (error) {
-    settlementBodyFailed = true
-    throw error
+    settlement = { ok: false, error }
   } finally {
     sessionSignal.removeEventListener('abort', onSessionAbort)
-    if (!execution.settled) {
-      try {
-        await execution.commit(execution.rows(execution.outcome, execution.outcome !== 'ok'), (cur) => cur)
-      } catch (error) {
-        if (!settlementBodyFailed) throw error
-      }
+  }
+  if (!execution.settled) {
+    try {
+      await execution.commit(execution.rows(execution.outcome, execution.outcome !== 'ok'), (cur) => cur)
+    } catch (error) {
+      // Preserve the original failure if both settlement and its fallback fail.
+      if (settlement.ok) throw error
     }
   }
+  if (!settlement.ok) throw settlement.error
+  return settlement.result
 }
