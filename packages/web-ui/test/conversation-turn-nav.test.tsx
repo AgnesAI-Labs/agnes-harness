@@ -1,4 +1,7 @@
 /** @vitest-environment happy-dom */
+
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import type { UINode, UITurn } from '@agnes/protocol'
 import {
   currentTurn,
@@ -489,5 +492,36 @@ describe('turn navigator', () => {
     await act(async () => ticks()[1]?.focus())
     expect(card()?.hidden).toBe(false)
     expect(card()?.querySelector('[data-testid="turn-nav-bookmark"]')).toBeNull()
+  })
+})
+
+describe('turn navigator bookmark styling', () => {
+  const css = readFileSync(resolve(import.meta.dirname, '../src/conversation/messages.css'), 'utf8')
+  const rule = (selector: string) => {
+    const start = css.indexOf(`${selector} {`)
+    if (start < 0) throw new Error(`missing rule ${selector}`)
+    return css.slice(start, css.indexOf('}', start))
+  }
+
+  it('draws a bookmarked tick in the brand colour, thicker than the others', () => {
+    const tick = rule('.turn-nav-tick[data-bookmarked="true"]')
+    expect(tick).toContain('background: var(--agnes-brand-primary)')
+    expect(tick).toContain('height: 3px')
+    // Declared after the current/hover rule, so a current or hovered bookmark stays brand.
+    expect(css.indexOf('.turn-nav-tick[data-bookmarked="true"] {')).toBeGreaterThan(
+      css.indexOf('.turn-nav-tick:is([data-current="true"], [data-hot="true"])'),
+    )
+  })
+
+  it('puts the bookmark dot right of the tick, inside the rail, where scrolling cannot clip it', () => {
+    const dot = rule('.turn-nav-tick[data-bookmarked="true"]::before')
+    expect(dot).toContain('left: calc(100% + 4px)')
+    expect(dot).toContain('width: 6px')
+    expect(dot).toContain('background: var(--agnes-brand-primary)')
+    expect(dot).not.toMatch(/left:\s*-/)
+    // The dot (4px gap + 6px) fits in the rail's right padding.
+    expect(rule('.turn-nav-rail')).toContain('padding: var(--s8) var(--s16) var(--s8) var(--s4)')
+    // The hit area is unchanged.
+    expect(rule('.turn-nav-tick::after')).toContain('inset: -4px -10px -4px -4px')
   })
 })

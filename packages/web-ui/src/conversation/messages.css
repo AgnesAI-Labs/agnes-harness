@@ -126,15 +126,22 @@
   .turn-nav-tick:is([data-current="true"], [data-hot="true"]) {
     background: var(--agnes-text-primary);
   }
+  /* 书签：横线本身变成品牌色并加粗到 3px，右侧再放一个 6px 圆点。圆点落在整列右侧留白里，
+     不会被整列的滚动裁掉；当前一轮或悬停时仍是品牌色，靠长度区分。 */
+  .turn-nav-tick[data-bookmarked="true"] {
+    height: 3px;
+    background: var(--agnes-brand-primary);
+  }
   .turn-nav-tick[data-bookmarked="true"]::before {
     content: "";
     position: absolute;
-    left: -8px;
-    top: -1.5px;
-    width: 5px;
-    height: 5px;
+    left: calc(100% + 4px);
+    top: 50%;
+    width: 6px;
+    height: 6px;
     border-radius: 50%;
     background: var(--agnes-brand-primary);
+    transform: translateY(-50%);
   }
   .turn-nav-tick:focus-visible {
     outline: 2px solid var(--agnes-brand-focus-ring);
