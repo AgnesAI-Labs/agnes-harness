@@ -21,6 +21,7 @@ export interface DeviceView {
   available: boolean
   description: DeviceLink['registration']
   state: Record<string, Json>
+  sourceStates?: Record<string, boolean | null>
   health: 'ok' | 'attention' | 'bad'
   trust: 'trusted' | 'uncertain' | 'lost'
   position?: Position
@@ -130,6 +131,9 @@ export class Hub implements SouthEvents {
       available: link.available,
       description: link.registration,
       state: same ? prior.view.state : {},
+      sourceStates: same
+        ? (prior.view.sourceStates ?? {})
+        : Object.fromEntries((link.registration.sources ?? []).map((source) => [source.id, null])),
       health: 'ok',
       trust: 'uncertain',
       ...(link.registration.placement ? { position: link.registration.placement } : {}),
@@ -214,6 +218,8 @@ export class Hub implements SouthEvents {
     if (declaration.kind === 'image' && (!bytes || !['image/png', 'image/jpeg'].includes(mime ?? '')))
       throw new MhsError('invalid-image')
     validateObservation(declaration, data, bytes, mime)
+    live.view.sourceStates ??= {}
+    live.view.sourceStates[source] = true
     const jsonBytes = Buffer.byteLength(JSON.stringify(data))
     if (jsonBytes > 65536) throw new MhsError('oversize-data')
     const history = live.samples.get(source) ?? []
@@ -263,7 +269,12 @@ export class Hub implements SouthEvents {
     void this.watches.observe(device, source, data).catch(() => {})
   }
   progress(device: string, call: string, data: Json): void {
-    this.emit({ type: 'progress', device, call, data })
+    void this.journal
+      .running(call, device, data)
+      .then(() => {
+        this.emit({ type: 'progress', device, call, data })
+      })
+      .catch(() => {})
   }
   private releaseSamples(live: Live): void {
     for (const samples of live.samples.values())
@@ -374,7 +385,7 @@ export class Hub implements SouthEvents {
           /* Terminal/outbox remain recoverable on retry. */
         })
       return call.accepted
-        ? { ...accepted.operation, state: 'running' }
+        ? ((await this.journal.running(invocation.operationId, live.view.id)) ?? accepted.operation)
         : await this.journal.finish(invocation.operationId, {
             status: 'rejected',
             reason: call.reason ?? 'invalid',
@@ -444,6 +455,7 @@ export class Hub implements SouthEvents {
     await this.ports.authority.admit(subject, invocation.context)
     await this.active()
     if (this.pick(device).link !== live.link) throw new MhsError('stale-device')
+    const requestedSources = action === 'configure' ? object(object(input).sources ?? {}) : {}
     const accepted = await this.journal.accept(device, subject, invocation)
     if (!accepted.fresh) return accepted.operation
     try {
@@ -451,8 +463,25 @@ export class Hub implements SouthEvents {
         return this.journal.finish(invocation.operationId, { status: 'interrupted', reason: 'stop' })
       const params = action === 'set' ? { values: input } : object(input)
       const data = await live.link.request(`mhs/${action}`, params)
+      if (action === 'configure') {
+        const applied = object(object(data).sources ?? {})
+        live.view.sourceStates ??= {}
+        for (const [id, options] of Object.entries(applied)) {
+          if (
+            live.view.description.sources?.some((source) => source.id === id) &&
+            typeof object(options).on === 'boolean'
+          )
+            live.view.sourceStates[id] = object(options).on as boolean
+        }
+        this.emit({ type: 'configuration', device })
+      }
       return await this.journal.finish(invocation.operationId, { status: 'done', data: data as Json })
     } catch {
+      if (action === 'configure') {
+        live.view.sourceStates ??= {}
+        for (const id of Object.keys(requestedSources)) live.view.sourceStates[id] = null
+        this.emit({ type: 'configuration', device })
+      }
       return this.journal.finish(invocation.operationId, {
         status: 'unknown',
         reason: 'dispatch-unconfirmed',

@@ -29,6 +29,19 @@ class DeviceTests(unittest.IsolatedAsyncioTestCase):
         unsafe = Device(DESCRIPTION).tool("move", move)
         self.assertEqual(unsafe.call("one", "move", {"x": 1})[0]["reason"], "unsafe")
 
+    async def test_pause_progress_after_rest(self):
+        from agnes_mhs.device import Call
+        progress = []
+        call = Call("paused")
+        call.progress = lambda data: progress.append(data)
+        call.paused.clear()
+        checkpoint = asyncio.create_task(call.checkpoint())
+        await call.rested.wait()
+        self.assertEqual(progress, [{"state": "paused"}])
+        call.paused.set()
+        await checkpoint
+        self.assertEqual(progress[-1], {"state": "running"})
+
     async def test_manual_clamps_and_zeros_on_disconnect(self):
         seen = []
         class Safety:

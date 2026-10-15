@@ -66,6 +66,40 @@ describe('device-local boundaries', () => {
     expect(device.call('faulted', 'move', { x: 1 })).toMatchObject({ accepted: false, reason: 'unsafe' })
     expect(device.set({ lamp: true, battery: 1 })).toEqual({ values: { lamp: true }, refused: ['battery'] })
   })
+  it('reports paused only after reaching rest and reports running after resume', async () => {
+    vi.useFakeTimers()
+    let rested = false,
+      reach: () => void = () => {}
+    const gate = new Promise<void>((resolve) => {
+      reach = resolve
+    })
+    const device = new Device(
+      { ...description, tools: (description.tools ?? []).map((tool) => ({ ...tool, pausable: true })) },
+      {
+        arm() {},
+        async stop() {
+          rested = true
+        },
+      },
+    )
+    const progress: { data: unknown; rested: boolean }[] = []
+    device.onProgress = (_id, data) => {
+      progress.push({ data, rested })
+    }
+    device.tool('move', async (_args, call) => {
+      await gate
+      await call.checkpoint()
+      return null
+    })
+    const result = device.call('paused', 'move', { x: 1 })
+    const paused = device.pause('paused')
+    reach()
+    await paused
+    expect(progress).toEqual([{ data: { state: 'paused' }, rested: true }])
+    device.resume('paused')
+    expect(await result.result).toMatchObject({ status: 'done' })
+    expect(progress.at(-1)?.data).toEqual({ state: 'running' })
+  })
   it('clamps manual axes, zeros omitted axes, and expires local control within two seconds', async () => {
     vi.useFakeTimers()
     const stopped: string[] = []

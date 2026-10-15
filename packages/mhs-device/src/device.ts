@@ -272,6 +272,7 @@ export class Device {
         if (entry.paused) {
           if (rest) await rest()
           else if (tool.motion) await this.safety?.stop('pause')
+          this.onProgress?.(id, { state: 'paused' })
           entry.pauseAck?.()
           await Promise.race([
             new Promise<void>((r) => {
@@ -279,6 +280,7 @@ export class Device {
             }),
             interrupted,
           ])
+          this.onProgress?.(id, { state: 'running' })
         }
         controller.signal.throwIfAborted()
       },

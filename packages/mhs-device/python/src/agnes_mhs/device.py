@@ -24,8 +24,10 @@ class Call:
                 await rest()
             elif self.motion:
                 await self.safety.stop("pause")
+            self.progress({"state": "paused"})
             self.rested.set()
-        await self.paused.wait()
+            await self.paused.wait()
+            self.progress({"state": "running"})
         await asyncio.sleep(0)
 
 

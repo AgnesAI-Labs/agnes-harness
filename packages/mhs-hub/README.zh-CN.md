@@ -13,3 +13,5 @@
 每源最多保留 32 条 JSON 观测和一份二进制样本，每 profile 二进制总量最多 16 MiB。高频遥测、视频帧不写活动表。视频不进入模型；模型适配器经会话 request-media 处理静帧。gateway 媒体帧将长度前缀 JSON 与二进制放在同一帧，最大 1 MiB；丢帧后请求关键帧。设备协议的头/二进制配对仅在同一 Nerve socket 内完成。
 
 真实 Harness admission、managed-service 生命周期与浏览器 gateway 集成依赖对应的公开作者 API。本包不会用本地 role 字段、裸 Node socket 或任意 jobs/admin 访问替代这些 API。合成单测与 socket 测试仅证明本地软件行为；真实硬件与 Windows 服务仍需部署验收。
+
+浏览器查询提供可选的 `DeviceView.sourceStates`（true/false；尚未确认时为 null）及操作的 `startedAt`/`endedAt`、`phase` 和 `progress`。源状态由设备观测或 configure 确认回执更新；进度只能细化同一设备的既有活动操作，不能重新打开终态。SDK 在运动到达静止检查点后才报告暂停。这些是向后兼容的 MHS 投影，不改变原生批准或通用 Harness wire schema。

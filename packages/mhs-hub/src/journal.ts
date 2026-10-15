@@ -8,6 +8,10 @@ export type Operation = {
   device: string
   kind: 'action' | 'watch'
   state: 'accepted' | 'running' | 'terminal'
+  startedAt?: number
+  endedAt?: number
+  progress?: Json
+  phase?: 'running' | 'paused'
   outcome?: Outcome
   target?: WakeTarget
   sessionId?: string
@@ -59,6 +63,7 @@ export class Journal {
         device,
         kind: extra ? 'watch' : 'action',
         state: 'accepted',
+        startedAt: Date.now(),
         ...(invocation.target ? { target: invocation.target } : {}),
         ...(invocation.sessionId ? { sessionId: invocation.sessionId } : {}),
         ...(invocation.laneId ? { laneId: invocation.laneId } : {}),
@@ -66,6 +71,29 @@ export class Journal {
       tx.put(key, operation as unknown as Json, null)
       extra?.(tx)
       return { fresh: true, operation }
+    })
+  }
+  /** Device progress refines an admitted live operation; it cannot reopen a terminal receipt. */
+  async running(id: string, device: string, progress?: Json): Promise<Operation | undefined> {
+    return this.store.transaction((tx) => {
+      const key = `op/${digest(id)}`,
+        prior = tx.get(key)
+      if (!prior) return undefined
+      const operation = prior.value as unknown as Operation
+      if (operation.device !== device) return undefined
+      if (operation.state === 'terminal') return operation
+      const state =
+        progress !== null && typeof progress === 'object' && !Array.isArray(progress)
+          ? progress.state
+          : undefined
+      const next: Operation = {
+        ...operation,
+        state: 'running',
+        ...(progress === undefined ? {} : { progress }),
+        ...(state === 'paused' || state === 'running' ? { phase: state } : {}),
+      }
+      tx.put(key, next as unknown as Json, prior.revision)
+      return next
     })
   }
   async finish(id: string, outcome: Outcome, extra?: (tx: StoreTransaction) => void): Promise<Operation> {
@@ -76,7 +104,7 @@ export class Journal {
       const operation = prior.value as unknown as Operation
       extra?.(tx)
       if (operation.state === 'terminal') return operation
-      const next = { ...operation, state: 'terminal' as const, outcome }
+      const next = { ...operation, state: 'terminal' as const, outcome, endedAt: Date.now() }
       tx.put(key, next as unknown as Json, prior.revision)
       if (operation.target)
         tx.put(
