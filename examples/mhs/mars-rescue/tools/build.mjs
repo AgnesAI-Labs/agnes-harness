@@ -18,7 +18,12 @@ const result = await build({
   minify: true,
   write: !check,
 })
-const files = ['client/generated/runtime.js', 'client/generated/scene.js', 'client/generated/cameras.js', 'client/generated/browser-transport.js']
+const files = [
+  'client/generated/runtime.js',
+  'client/generated/scene.js',
+  'client/generated/cameras.js',
+  'client/generated/browser-transport.js',
+]
 const entries = []
 for (const path of files) {
   const existing = await readFile(new URL(`../${path}`, import.meta.url)).catch(() => undefined)
@@ -30,10 +35,14 @@ for (const path of files) {
     path,
     bytes: bytes.length,
     sha256: createHash('sha256').update(bytes).digest('hex'),
-    origin: (path.endsWith('/runtime.js') || path.endsWith('/browser-transport.js'))
-      ? 'Agnes simulation, MHS device SDK and bundled TypeBox'
-      : 'Project-authored procedural Mars scene',
-    license: (path.endsWith('/runtime.js') || path.endsWith('/browser-transport.js')) ? 'Apache-2.0 AND MIT' : 'Apache-2.0',
+    origin:
+      path.endsWith('/runtime.js') || path.endsWith('/browser-transport.js')
+        ? 'Agnes simulation, MHS device SDK and bundled TypeBox'
+        : 'Project-authored procedural Mars scene',
+    license:
+      path.endsWith('/runtime.js') || path.endsWith('/browser-transport.js')
+        ? 'Apache-2.0 AND MIT'
+        : 'Apache-2.0',
   })
 }
 const manifest = new URL('../assets/manifest.json', import.meta.url)

@@ -4,20 +4,11 @@
     "composite": false,
     "noEmit": true,
     "declaration": false,
-    "lib": [
-      "ES2023",
-      "DOM"
-    ],
+    "lib": ["ES2023", "DOM"],
     "jsx": "react-jsx",
-    "types": [
-      "node"
-    ]
+    "types": ["node"]
   },
-  "include": [
-    "src/**/*.ts",
-    "src/**/*.tsx",
-    "test/**/*.ts"
-  ],
+  "include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts"],
   "references": [
     {
       "path": "../../../packages/core"

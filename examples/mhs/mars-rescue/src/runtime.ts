@@ -1,4 +1,3 @@
-
 import type { Device } from '@agnes/mhs-device'
 import { MarsSimulation } from './simulation.js'
 import { DEVICE_IDS, type DeviceId } from './world.js'
