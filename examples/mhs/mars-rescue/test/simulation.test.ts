@@ -202,32 +202,39 @@ describe('profile-owned Mars runtime', () => {
     expect(runtime.snapshot()).toMatchObject({ status: 'unavailable', online: [] })
     await runtime.stop()
   })
-  it('aborts incomplete registration and closes a connection that arrives after Stop', async () => {
-    vi.useFakeTimers()
-    let connected!: (connection: MarsConnection) => void
-    const runtime = new MarsRuntime({
-      connect: () =>
-        new Promise((resolve) => {
-          connected = resolve
-        }),
-    })
-    const starting = runtime.start()
-    const outcome = starting.catch((error) => error)
-    await vi.advanceTimersByTimeAsync(1)
-    await runtime.stop()
-    let closed = false
-    connected({
-      ready: Promise.resolve(),
-      closed: new Promise(() => {}),
-      async close() {
-        closed = true
-      },
-    })
-    await outcome
-    expect(closed).toBe(true)
-    expect(runtime.snapshot()).toMatchObject({ status: 'stopped', online: [] })
-    expect(vi.getTimerCount()).toBe(0)
-  })
+  it.each(['stop', 'timeout'] as const)(
+    'aborts incomplete registration on %s and closes a late connection',
+    async (reason) => {
+      vi.useFakeTimers()
+      let connected!: (connection: MarsConnection) => void
+      const runtime = new MarsRuntime({
+        connect: () =>
+          new Promise((resolve) => {
+            connected = resolve
+          }),
+      })
+      const starting = runtime.start()
+      const outcome = starting.catch((error) => error)
+      await vi.advanceTimersByTimeAsync(1)
+      if (reason === 'stop') await runtime.stop()
+      else await vi.advanceTimersByTimeAsync(10_000)
+      let closed = false
+      connected({
+        ready: Promise.resolve(),
+        closed: new Promise(() => {}),
+        async close() {
+          closed = true
+        },
+      })
+      await outcome
+      expect(closed).toBe(true)
+      expect(runtime.snapshot()).toMatchObject({
+        status: reason === 'stop' ? 'stopped' : 'unavailable',
+        online: [],
+      })
+      expect(vi.getTimerCount()).toBe(0)
+    },
+  )
 })
 
 it('retries an uncertain Agent launch with the real facade ticket and the same operation', async () => {

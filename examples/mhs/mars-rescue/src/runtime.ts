@@ -58,12 +58,54 @@ export class MarsRuntime {
     })
     return this.startPromise
   }
+  private wait<T>(pending: Promise<T>, signal: AbortSignal, late?: (value: T) => void): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      let settled = false
+      const finish = () => {
+        settled = true
+        clearTimeout(timer)
+        signal.removeEventListener('abort', abort)
+      }
+      const abort = () => {
+        finish()
+        reject(new Error('connection-aborted'))
+      }
+      const timer = setTimeout(() => {
+        finish()
+        reject(new Error('connection-timeout'))
+      }, 10_000)
+      signal.addEventListener('abort', abort, { once: true })
+      void pending.then(
+        (value) => {
+          if (settled) {
+            late?.(value)
+            return
+          }
+          finish()
+          resolve(value)
+        },
+        (error) => {
+          if (!settled) {
+            finish()
+            reject(error)
+          }
+        },
+      )
+      if (signal.aborted) abort()
+    })
+  }
   private async open(controller: AbortController): Promise<void> {
     await this.simulation.reset()
     // Sequential registration keeps shutdown ownership explicit even when a later device fails.
     for (const id of DEVICE_IDS) {
       controller.signal.throwIfAborted()
-      const connection = await this.transport.connect(this.simulation.device(id), controller.signal)
+      const connection = await this.wait(
+        this.transport.connect(this.simulation.device(id), controller.signal),
+        controller.signal,
+        (late) => {
+          void late.close().catch(() => {})
+        },
+      )
       if (controller.signal.aborted) {
         await connection.close()
         controller.signal.throwIfAborted()
@@ -77,32 +119,7 @@ export class MarsRuntime {
           if (!controller.signal.aborted) void this.shutdown('unavailable').catch(() => {})
         },
       )
-      await new Promise<void>((resolve, reject) => {
-        const cleanup = () => {
-          clearTimeout(timer)
-          controller.signal.removeEventListener('abort', abort)
-        }
-        const abort = () => {
-          cleanup()
-          reject(new Error('connection-aborted'))
-        }
-        const timer = setTimeout(() => {
-          cleanup()
-          reject(new Error('connection-timeout'))
-        }, 10_000)
-        controller.signal.addEventListener('abort', abort, { once: true })
-        void connection.ready.then(
-          () => {
-            cleanup()
-            resolve()
-          },
-          (error) => {
-            cleanup()
-            reject(error)
-          },
-        )
-        if (controller.signal.aborted) abort()
-      })
+      await this.wait(connection.ready, controller.signal)
       controller.signal.throwIfAborted()
       this.online.add(id)
       this.changed()
