@@ -12,7 +12,7 @@ export interface OwnedStoreTxn {
   remove(key: string, expectedRevision: string): void
 }
 /** Bound by the storage owner to one installation/profile/package/service namespace. */
-export interface OwnedStore {
+export interface ManagedOwnedStore {
   transaction<T>(fn: (tx: OwnedStoreTxn) => T): Promise<T>
   scan(input: { prefix: string; limit: number; cursor?: string }): Promise<{
     rows: readonly { key: string; value: JsonValue; revision: string }[]
@@ -24,7 +24,7 @@ export interface ManagedServiceInit {
   readonly incarnation: string
   readonly scopeId: string
   readonly listeners: Readonly<Record<string, { host: '127.0.0.1'; port: number }>>
-  readonly store: OwnedStore
+  readonly store: ManagedOwnedStore
   readonly signal: AbortSignal
 }
 export interface ManagedServiceRuntime {

@@ -38,7 +38,7 @@ Profile 上下文没有 session、workspace、子任务取消、进程或任意 
 
 ## Owner 状态和通知
 
-声明 `capabilities.store: true` 后，profile 服务和已准入的插件工具可使用有界的 `context.store`。键值限制在 loader 选定的 owner/profile 命名空间内；单值最多 64 KiB，每个命名空间最多 10,000 个键和 16 MiB。`transaction` 同步提交；返回 Promise 会回滚，其后续异步代码也不能继续写入。Query 和准备阶段只能读取。接口不暴露 SQL 或其他 owner 的选择器。
+声明 `capabilities.store: true` 后，profile 服务和已准入的插件工具可使用有界的 `context.store`。键值限制在 loader 选定的 owner/profile 命名空间内；单值最多 64 KiB，每个命名空间最多 10,000 个键和 16 MiB。`transaction` 同步提交；返回 Promise 会回滚，其后续异步代码也不能继续写入。Query 和准备阶段只能读取。接口不暴露 SQL 或其他 owner 的选择器。同步 `OwnedStore` 与 `ManagedServiceInit` 提供的异步修订号存储 `ManagedOwnedStore` 各有独立语义；managed 进程直接使用其 runtime 所有的存储。
 
 声明 `capabilities.wake: true` 后，已准入的 session 工具获得 `context.wake.bind()`。Host 持久绑定 owner、包完整性、activation、session、原 lane 和 generation，返回值只含 `bindingId`。插件须把 target 与已接受的操作一起持久保存，并通过 owner store 的一个事务记录终态结果和 outbox 项。
 
