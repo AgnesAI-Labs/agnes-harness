@@ -583,8 +583,12 @@ export function toMessage(node: SurfaceNode, nonce: string, envelopeCache: Envel
   // identical turn over turn: the node's underlying event is immutable once appended, so nothing
   // here can make a cached wrapping stale. A miss wraps under this call's nonce and is cached
   // below, so new content still rotates nonce with whichever turn first sends it.
+  // Only ledger nodes (seq >= 1) are immutable, so only they can be memoized. Messages supplied by
+  // a loop carry synthetic non-positive sequence numbers that repeat from one call to the next;
+  // caching them by sequence would send the first call's text again on every later call.
+  const memoizable = node.seq > 0
   const memoKey = `${node.seq}\0${nonce}`
-  const cached = envelopeCache.get(memoKey)
+  const cached = memoizable ? envelopeCache.get(memoKey) : undefined
   const produced: string[] = []
   // One region per wrapped block, numbered within the node, so no two envelopes in the request
   // carry the same id — see wrapUntrusted. The count and order are a function of the node's own
@@ -666,7 +670,7 @@ export function toMessage(node: SurfaceNode, nonce: string, envelopeCache: Envel
     msg = { role: 'assistant', seq: node.seq, content }
   }
   // Locked in the first time this node is rendered, never again.
-  if (produced.length > 0 && !cached) envelopeCache.set(memoKey, produced)
+  if (memoizable && produced.length > 0 && !cached) envelopeCache.set(memoKey, produced)
   return msg
 }
 
