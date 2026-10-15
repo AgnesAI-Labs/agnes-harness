@@ -3,6 +3,7 @@ import type { LocaleCatalog } from './index.js'
 /** 组件内置可访问性文案。经 `ComposerDependencies.translate` 注入，命名空间 `@agnes/web-units`。 */
 export const composerLocaleCatalog: LocaleCatalog = {
   en: {
+    'composer.example.adopt': 'Adopt',
     'composer.extra.title': 'More controls',
     'composer.child.title': 'Sub-agents / workflows',
     'composer.child.metrics': 'Usage: {tokens} tokens · duration: {seconds} s',
@@ -109,6 +110,7 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.image.tooLarge': 'Attachments in one message must total no more than 100 MiB.',
   },
   'zh-CN': {
+    'composer.example.adopt': '采用',
     'composer.extra.title': '更多控件',
     'composer.child.title': '子代理 / 工作流',
     'composer.child.metrics': '用量：{tokens} tokens · 耗时：{seconds} 秒',

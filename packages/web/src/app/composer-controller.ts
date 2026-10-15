@@ -265,6 +265,7 @@ export function createComposerController(
                       context.t,
                     ),
       input: {
+        exampleHint: context.draftingNew && !context.readOnly,
         disabled:
           !available ||
           (!context.current && !context.draftingNew) ||
@@ -278,7 +279,7 @@ export function createComposerController(
             ? context.t('composer.placeholder.paused')
             : context.t('composer.placeholder.busy', { shortcut: shortcutLabel(['mod', 'enter']) })
           : context.t(
-              context.clientModules.commands.list().length
+              !context.draftingNew && context.clientModules.commands.list().length
                 ? 'composer.placeholder.idle'
                 : 'composer.placeholder.idleNoCommands',
             ),

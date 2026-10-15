@@ -76,7 +76,7 @@ export function createBusinessAgentSuggestions(read: () => Promise<PackageCatalo
           suggestions = { featured: featuredBusinessAgents(rows), total: rows.length }
           for (const listener of listeners) listener()
         })
-        // No admin access or no catalog: the new session keeps its plain task suggestions.
+        // No admin access or no catalog: the composer keeps its static placeholder.
         .catch(() => undefined)
         .finally(() => {
           reading = undefined
