@@ -14,7 +14,7 @@ import {
   SettingsToolbar,
   useUiText,
 } from '@agnes/web-ui'
-import { useEffect, useState } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 import { DiagnosticsRequestError } from './diagnostics-api.js'
 import { DIAGNOSTICS_NAMESPACE, diagnosticsCatalog } from './diagnostics-locale.js'
 
@@ -95,6 +95,7 @@ export function DoctorRows({
   version,
   node,
   service,
+  footerActions,
 }: {
   load(probe: boolean, signal: AbortSignal): Promise<DoctorResult>
   label?: string
@@ -102,6 +103,7 @@ export function DoctorRows({
   version?: string | undefined
   node?: string | undefined
   service: DoctorWorker
+  footerActions?: ReactNode
 }) {
   const { t: ux } = useUiText(DIAGNOSTICS_NAMESPACE, diagnosticsCatalog)
   const { t, locale } = useUiText(FIRST_RUN_NAMESPACE, firstRunCatalog)
@@ -167,10 +169,7 @@ export function DoctorRows({
             <span className="agnes-doctor-refresh" data-checking={busy}>
               <Icon name="refresh-cw" />
             </span>
-            {busy ? t('doctor.checking') : t('doctor.run')}
-          </Button>
-          <Button size="small" data-testid="doctor-probe-accounts" disabled={busy} onClick={() => run(true)}>
-            {t('doctor.probe')}
+            {t('doctor.run')}
           </Button>
         </>
       }
@@ -193,30 +192,32 @@ export function DoctorRows({
           </Button>
         </div>
       )}
-      <div className="agnes-doctor-heartbeat" data-checking={busy} data-state={service.status}>
-        <svg className="agnes-doctor-ecg" viewBox="0 0 600 34" preserveAspectRatio="none" aria-hidden="true">
-          <path d="M0 17 H220 l8 -10 l8 20 l8 -16 l6 6 H600" />
-        </svg>
-        <span className="agnes-doctor-service">
-          <Icon name="activity" />
-          <b>{ux('service')}</b> {service.text}
-        </span>
-        <span className="agnes-doctor-meta">
-          {[version, node ? `Node ${node}` : undefined].filter(Boolean).join(' · ')}
-          {checkedAt !== undefined && (
-            <>
-              {' '}
-              ·{' '}
-              <time data-testid="doctor-checked-at" dateTime={new Date(checkedAt).toISOString()}>
-                {minutes < 1
-                  ? t('doctor.justNow')
-                  : t('doctor.minutesAgo', { count: new Intl.NumberFormat(locale).format(minutes) })}
-              </time>
-            </>
-          )}
-        </span>
-      </div>
       <DoctorGroups
+        footer={
+          <div className="agnes-doctor-footer" data-checking={busy} data-state={service.status}>
+            <span className="agnes-doctor-service">
+              <span className="agnes-doctor-service-dot" aria-hidden="true" />
+              {ux('service')}
+              {service.text}
+            </span>
+            <span className="agnes-doctor-meta">
+              {[version, node ? `Node ${node}` : undefined].filter(Boolean).join(' · ')}
+              {checkedAt !== undefined && (
+                <>
+                  {' '}
+                  ·{' '}
+                  <time data-testid="doctor-checked-at" dateTime={new Date(checkedAt).toISOString()}>
+                    {minutes < 1
+                      ? t('doctor.justNow')
+                      : t('doctor.minutesAgo', { count: new Intl.NumberFormat(locale).format(minutes) })}
+                  </time>
+                </>
+              )}
+            </span>
+            <span className="agnes-doctor-footer-actions">{footerActions}</span>
+          </div>
+        }
+        onProbe={() => run(true)}
         report={report}
         busy={busy || !report}
         worker={worker}

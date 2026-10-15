@@ -1,5 +1,7 @@
 import type { DoctorResult } from '@agnes/protocol/gen/app-server'
+import type { ReactNode } from 'react'
 import type { Translate } from './locales/index.js'
+import { Button } from './ui/button.js'
 import { Icon } from './ui/icon.js'
 
 type Check = DoctorResult['checks'][number]
@@ -38,6 +40,8 @@ export function DoctorGroups({
   t,
   locale,
   onNavigate,
+  onProbe,
+  footer,
 }: {
   report?: DoctorResult | undefined
   busy: boolean
@@ -46,6 +50,8 @@ export function DoctorGroups({
   node?: string | undefined
   t: Translate
   locale: string
+  footer?: ReactNode
+  onProbe?(): void
   onNavigate(destination: string): void
 }) {
   const number = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 })
@@ -65,6 +71,7 @@ export function DoctorGroups({
       values.push(
         t('doctor.space', { available: space(check.availableBytes), total: space(check.totalBytes) }),
       )
+    if (check.id === 'accounts' && check.probed === true) values.push(t('doctor.probed'))
     if (check.status !== 'ok') values.push(t(`doctor.status.${check.status}`))
     return {
       id: check.id,
@@ -87,60 +94,82 @@ export function DoctorGroups({
   })
   return (
     <>
-      <div className="agnes-doctor-groups">
-        {GROUPS.map((group) => {
-          const rows = items.filter((item) => group.checks.some((id) => id === item.id))
-          const applicable = rows.filter((item) => item.status !== 'unavailable')
-          return (
-            <section
-              key={group.id}
-              className="agnes-doctor-group"
-              data-doctor-group={group.id}
-              aria-label={t(`doctor.group.${group.id}`)}
-            >
-              <h4>
-                <Icon name={group.icon} />
-                {t(`doctor.group.${group.id}`)}
-                <small data-testid="doctor-group-count">
-                  {busy
-                    ? '…'
-                    : `${applicable.filter((item) => item.status === 'ok').length}/${applicable.length}`}
-                </small>
-              </h4>
-              <ul>
-                {rows.map((item) => {
-                  const state = busy ? 'pending' : item.status
-                  const status = busy
-                    ? t('doctor.loading')
-                    : item.status === 'unavailable'
-                      ? item.value
-                      : t(`doctor.status.${item.status}`)
-                  return (
-                    <li
-                      key={item.id}
-                      data-testid={`doctor-check-${item.id}`}
-                      data-state={state}
-                      title={item.hint}
-                    >
-                      <span className="agnes-doctor-dot" aria-hidden="true" />
-                      <span>{item.name}</span>
-                      <span className="agnes-doctor-sr">{status}</span>
-                      {item.value && (
-                        <span
-                          className="agnes-doctor-value"
-                          data-testid="doctor-check-value"
-                          aria-hidden={busy || undefined}
-                        >
-                          {item.value}
-                        </span>
-                      )}
-                    </li>
-                  )
-                })}
-              </ul>
-            </section>
-          )
-        })}
+      <div className="agnes-doctor-card" data-checking={busy}>
+        <div className="agnes-doctor-groups">
+          {GROUPS.map((group) => {
+            const rows = items.filter((item) => group.checks.some((id) => id === item.id))
+            const applicable = rows.filter((item) => item.status !== 'unavailable')
+            return (
+              <section
+                key={group.id}
+                className="agnes-doctor-group"
+                data-doctor-group={group.id}
+                aria-label={t(`doctor.group.${group.id}`)}
+              >
+                <h4>
+                  <Icon name={group.icon} />
+                  {t(`doctor.group.${group.id}`)}
+                  <small
+                    data-testid="doctor-group-count"
+                    data-tone={
+                      applicable.some((item) => item.status === 'warn' || item.status === 'fail')
+                        ? 'warn'
+                        : 'ok'
+                    }
+                  >
+                    {busy
+                      ? '…'
+                      : `${applicable.filter((item) => item.status === 'ok').length}/${applicable.length}`}
+                  </small>
+                </h4>
+                <ul>
+                  {rows.map((item) => {
+                    const state = busy ? 'pending' : item.status
+                    const status = busy
+                      ? t('doctor.loading')
+                      : item.status === 'unavailable'
+                        ? item.value
+                        : t(`doctor.status.${item.status}`)
+                    return (
+                      <li
+                        key={item.id}
+                        data-testid={`doctor-check-${item.id}`}
+                        data-state={state}
+                        title={item.hint}
+                      >
+                        <span className="agnes-doctor-dot" aria-hidden="true" />
+                        <span>{item.name}</span>
+                        {item.id === 'accounts' && onProbe && (
+                          <Button
+                            type="text"
+                            size="small"
+                            className="agnes-doctor-probe"
+                            data-testid="doctor-probe-accounts"
+                            disabled={busy}
+                            onClick={onProbe}
+                          >
+                            {t('doctor.test')}
+                          </Button>
+                        )}
+                        <span className="agnes-doctor-sr">{status}</span>
+                        {item.value && (
+                          <span
+                            className="agnes-doctor-value"
+                            data-testid="doctor-check-value"
+                            aria-hidden={busy || undefined}
+                          >
+                            {item.value}
+                          </span>
+                        )}
+                      </li>
+                    )
+                  })}
+                </ul>
+              </section>
+            )
+          })}
+        </div>
+        {footer}
       </div>
       {!busy &&
         items
