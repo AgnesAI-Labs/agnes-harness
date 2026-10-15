@@ -74,7 +74,7 @@ import {
   packageDir,
   parseSource,
 } from './sources.js'
-import { claimStage, clearStage, readyStage, recoverStaging } from './staging.js'
+import { claimStage, clearStage, readyStage, recoverStaging, type StageKind } from './staging.js'
 import {
   commitPackage,
   type PackageCommitPoint,
@@ -292,11 +292,11 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
   }
   const ceiling = (lock: Lockfile): readonly string[] =>
     options.ceiling ?? lock.policySnapshot.capabilityCeiling
-  const stageFor = (profileDir: string): string => {
+  const stageFor = (profileDir: string, kind: StageKind = 'fetch'): string => {
     const root = dirname(packageDir(options.dataDir, profileName(profileDir), 'stage'))
     mkdirSync(root, { recursive: true })
     const stage = join(root, `.stage-${randomUUID()}`)
-    claimStage(stage)
+    claimStage(stage, kind)
     return stage
   }
   const annotate = (source: PackageSource, fetched: FetchedSource, profileDir: string): FetchedSource => {
@@ -443,7 +443,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
     for (const candidate of discoverLocalPlugins(options.localPlugins)) {
       lock = load(profileDir)
       seen.add(candidate.source.ref)
-      const stage = stageFor(profileDir)
+      const stage = stageFor(profileDir, 'copy')
       let id = candidate.name
       let declaredCapabilities: import('@agnes/protocol').PluginCapabilities | undefined
       let capabilityBlockers: InstalledPackage['blockers'] = []
@@ -1225,7 +1225,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
           const retained = previousPackageDir(store, id)
           if (hashDirectory(retained, { exclude: [] }) !== current.previous.treeIntegrity)
             throw new PackageError('E_LOCK_MISMATCH', 'previous package tree differs')
-          const stage = stageFor(profileDir)
+          const stage = stageFor(profileDir, 'copy')
           try {
             copyPackageTreeSync(retained, stage)
             readyStage(stage)
