@@ -164,6 +164,13 @@ export class LoopInvocations {
         )?.data as { toolUseId?: string } | undefined
     )?.toolUseId
   }
+  /** Whether `id` has a receipt for exactly this input; a receipt for another input is refused. */
+  async claimedFor(id: string, input: unknown): Promise<boolean> {
+    const previous = await this.record(id)
+    if (previous && previous.fingerprint !== sha256Hex(canonicalJson(input)))
+      throw new CoreError('E_RELATION', 'invocationId was reused for a different operation')
+    return previous !== undefined
+  }
   async settleTool(id: string, result: ToolResult): Promise<void> {
     const previous = await this.record(id)
     if (!previous) throw new CoreError('E_RELATION', 'Approval invocation is missing')

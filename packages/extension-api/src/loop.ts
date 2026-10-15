@@ -207,6 +207,22 @@ export interface LoopToolCall {
   args: JsonValue
 }
 
+/** Options of `tools.execute` and `tools.batch`. */
+export interface LoopToolCallOptions {
+  /**
+   * Record the call, or the whole batch, as one new assistant message that asked for it, written in
+   * the same ledger transaction as the call rows and before anything runs. `true`: an assistant
+   * message with no text, for a call the loop chose itself. `{ content }`: the text and thinking a
+   * model produced beside a call it authored and the loop now dispatches. Every call is checked
+   * first and nothing is written if one is refused; a turn with an unsettled call or effect is
+   * refused with `E_RELATION`. Each call still goes through approval and tool policy. A planned call
+   * that was never dispatched continues on replay with the same `invocationId` and `announce`, as
+   * long as no other tool or model call has opened a new step since. Omitted: the call is recorded on
+   * its own, as before.
+   */
+  readonly announce?: true | { readonly content: AssistantMessage['content'] }
+}
+
 /** Generic service reader. Host installs the deferred queue under its kind token. */
 export interface LoopServiceReader {
   get<S extends ServiceInstance, P extends ServicePorts>(
@@ -252,11 +268,15 @@ export interface GenericLoopPorts {
   }
   readonly tools: {
     /** Execution goes through the session's approval and tool policy path. */
-    execute(call: LoopToolCall, signal: AbortSignal): Promise<ToolResult>
+    execute(call: LoopToolCall, signal: AbortSignal, options?: LoopToolCallOptions): Promise<ToolResult>
     /** Independent calls may overlap; results preserve input order and policy controls concurrency.
      * A pending approval throws code=PARKED after siblings drain and the turn closes.
      */
-    batch(calls: readonly LoopToolCall[], signal: AbortSignal): Promise<readonly ToolResult[]>
+    batch(
+      calls: readonly LoopToolCall[],
+      signal: AbortSignal,
+      options?: LoopToolCallOptions,
+    ): Promise<readonly ToolResult[]>
     /** Resume only the original approval-bound call after input.resumeParked() opens it.
      * A rejected approval returns its durable refusal; an uncertain external effect is refused.
      * E_LANE_BUSY means this call still awaits its own approval continuation.

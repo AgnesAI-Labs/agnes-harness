@@ -139,6 +139,11 @@ Every `agnes.plugins[].apiRange` and `@agnes/extension-api` dependency range mov
   `side-call-cancel`, `side-call-revocation` and `side-call-estimated-cost`; they make side calls
   through the loop's own context against a payload-only adapter that the suite defines. Without the
   option the report is unchanged.
+- `LoopToolCallOptions` and an optional third parameter of `tools.execute` and `tools.batch`:
+  `announce` records the call, or the whole batch, as one new assistant message written in the same
+  transaction as the call rows, before anything runs; each call still goes through approval and tool
+  policy. A planned announced call that was never dispatched continues on replay with the same
+  `invocationId` while the step that planned it is open. Without `announce` nothing changes.
 
 ## 3.1.0
 

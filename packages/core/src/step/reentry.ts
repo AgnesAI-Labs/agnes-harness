@@ -1,11 +1,11 @@
-import { withPhase } from '@agnes/core-common/step/op-state'
+import { type ToolCallState, withPhase } from '@agnes/core-common/step/op-state'
 import type { PresetView } from '@agnes/core-common/step/preset'
 import { CoreError, type EventInput, type Seq } from '@agnes/core-common/types'
 import { isPending, normalizeApproval } from '@agnes/core-effects/effects/approval-answer'
 import { type NestedToolLease, NestedToolSchedulingError } from '@agnes/core-effects/effects/scheduler'
 import type { ToolResult } from '@agnes/extension-api'
 import { type JsonValue, minimumContextBudget, type ThinkingLevel } from '@agnes/protocol'
-import { resolveValidatedToolCallPolicy } from '../registry/tool-policy.js'
+import { type ResolvedToolPolicyEnvelope, resolveValidatedToolCallPolicy } from '../registry/tool-policy.js'
 import { assertThinking } from '../request/derive.js'
 import { modelAllowsTool } from './model-tools.js'
 import { operationDecisionPort } from './operation-decisions.js'
@@ -20,7 +20,7 @@ import type {
   SlotOperation,
 } from './session.js'
 import { toolArgumentError } from './tool-args.js'
-import { approveAndExecute, refuse } from './tools.js'
+import { approveAndExecute, type PlannedCall, refuse } from './tools.js'
 
 /** The six names a `{ replace: name }` Operation may stand in for. Closed, not a bare string. */
 export const CORE_OPS = ['Inbox', 'Budget', 'Inference', 'Approval', 'ToolExecution', 'StopGate'] as const
@@ -40,15 +40,7 @@ export async function invokeTool(
   s: SessionImpl,
   name: string,
   args: unknown,
-  o: {
-    signal?: AbortSignal
-    depth: number
-    parentEffectId?: string
-    invocationId?: string
-    nestedLease?: NestedToolLease
-    onPark?: (event: EventInput) => void
-    onAttachmentRead?: () => void
-  },
+  o: InvokeOptions,
 ): Promise<ToolResult> {
   if (o.depth > s.preset.depthLimit)
     throw new CoreError('E_DEPTH_EXCEEDED', `depth ${o.depth} exceeds ${s.preset.depthLimit}`)
@@ -59,83 +51,136 @@ export async function invokeTool(
   const cap = s.turnBudgetCap()
   if (cap !== null && s.state.creditsUsed > cap)
     throw Object.assign(new Error('BUDGET_EXCEEDED'), { code: 'BUDGET_EXCEEDED' })
+  const def = callableTool(s, t, name)
+  const ordinal = t.ordinal++
+  const toolUseId = s.d.ids.toolUseId(ordinal)
+  const policy = validatedCallPolicy(def, args)
+  const call = { toolUseId, name, args, ordinal, policy }
+  const seqs = await s.transition(toolCallRows(s, call, o), (cur, argsSeq) => {
+    if (cur?.phase.kind !== 'tools')
+      throw new CoreError('E_RELATION', 'nested tool call lost its tools phase')
+    return withPhase(cur, {
+      ...cur.phase,
+      batch: { ...cur.phase.batch, calls: [...cur.phase.batch.calls, plannedCallState(call, argsSeq, o)] },
+    })
+  })
+  const argsSeq = seqs[0]
+  if (argsSeq === undefined) throw new CoreError('E_RELATION', 'nested tool call commit returned no sequence')
+  return runPlannedTool(s, { toolUseId, name, args, ordinal, argsSeq, ...policy }, o)
+}
+
+type InvokeOptions = {
+  signal?: AbortSignal
+  depth: number
+  parentEffectId?: string
+  invocationId?: string
+  nestedLease?: NestedToolLease
+  onPark?: (event: EventInput) => void
+  onAttachmentRead?: () => void
+}
+type CallPlan = {
+  toolUseId: string
+  name: string
+  args: unknown
+  ordinal: number
+  policy: ResolvedToolPolicyEnvelope
+}
+type Turn = NonNullable<SessionImpl['turn']>
+
+/** The tool a call names, refused when the turn does not have it or the primary model may not use it. */
+export function callableTool(s: SessionImpl, t: Turn, name: string) {
   const def = t.snapshot.byName.get(name)
   if (!def) throw Object.assign(new Error(`unknown tool ${name}`), { code: 'TOOL_NOT_FOUND' })
   if (!modelAllowsTool(def, s.computerUseAllowed()))
     throw Object.assign(new Error('tool was not disclosed for the current primary model'), {
       code: 'TOOL_NOT_DISCLOSED',
     })
-  const ordinal = t.ordinal++
-  const toolUseId = s.d.ids.toolUseId(ordinal)
+  return def
+}
+
+/** The policy of a call whose arguments match the tool's parameters. */
+export function validatedCallPolicy(
+  def: ReturnType<typeof callableTool>,
+  args: unknown,
+): ResolvedToolPolicyEnvelope {
   const argumentError = toolArgumentError(def.parameters, args)
   if (argumentError)
     throw Object.assign(new Error(argumentError), {
       code: 'TOOL_ARGS_INVALID',
     })
-  const policy = resolveValidatedToolCallPolicy(def, args as JsonValue)
-  const seqs = await s.transition(
-    [
-      s.ev(
-        'tool/call',
-        {
-          toolUseId,
-          name,
-          args,
-          ordinal,
-          depth: o.depth,
-          ...(o.parentEffectId ? { parentEffectId: o.parentEffectId } : {}),
-          ...policy,
-        },
-        { origin: 'model' },
-      ),
-      ...(o.invocationId
-        ? [s.ev('x/core/loop-effect', { invocationId: o.invocationId, toolUseId }, { ignorable: true })]
-        : []),
-    ],
-    (cur, argsSeq) => {
-      if (cur?.phase.kind !== 'tools')
-        throw new CoreError('E_RELATION', 'nested tool call lost its tools phase')
-      return withPhase(cur, {
-        ...cur.phase,
-        batch: {
-          ...cur.phase.batch,
-          calls: [
-            ...cur.phase.batch.calls,
-            {
-              toolUseId,
-              name,
-              ordinal,
-              argsSeq,
-              status: 'planned',
-              replay: policy.resolvedPolicy.replay,
-              depth: o.depth,
-              ...(o.parentEffectId ? { parentEffectId: o.parentEffectId } : {}),
-              ...policy,
-            },
-          ],
-        },
-      })
-    },
-  )
-  const argsSeq = seqs[0]
-  if (argsSeq === undefined) throw new CoreError('E_RELATION', 'nested tool call commit returned no sequence')
+  return resolveValidatedToolCallPolicy(def, args as JsonValue)
+}
+
+/** The rows that record a call Core runs for a loop or a tool: the call, then its invocation link. */
+export function toolCallRows(
+  s: SessionImpl,
+  call: CallPlan,
+  o: { depth: number; parentEffectId?: string; invocationId?: string },
+): EventInput[] {
+  const { toolUseId, name, args, ordinal, policy } = call
+  return [
+    s.ev(
+      'tool/call',
+      {
+        toolUseId,
+        name,
+        args,
+        ordinal,
+        depth: o.depth,
+        ...(o.parentEffectId ? { parentEffectId: o.parentEffectId } : {}),
+        ...policy,
+      },
+      { origin: 'model' },
+    ),
+    ...(o.invocationId
+      ? [s.ev('x/core/loop-effect', { invocationId: o.invocationId, toolUseId }, { ignorable: true })]
+      : []),
+  ]
+}
+
+/** The batch entry of a call whose row was committed at `argsSeq`. */
+export function plannedCallState(
+  call: CallPlan,
+  argsSeq: Seq,
+  o: { depth: number; parentEffectId?: string },
+): ToolCallState {
+  const { toolUseId, name, ordinal, policy } = call
+  return {
+    toolUseId,
+    name,
+    ordinal,
+    argsSeq,
+    status: 'planned',
+    replay: policy.resolvedPolicy.replay,
+    depth: o.depth,
+    ...(o.parentEffectId ? { parentEffectId: o.parentEffectId } : {}),
+    ...policy,
+  }
+}
+
+/**
+ * Runs a call that is already planned in the batch through approval and execution. A pending
+ * approval marks the call as awaiting it, reports the park and throws `PARKED`.
+ */
+export async function runPlannedTool(
+  s: SessionImpl,
+  call: PlannedCall,
+  o: InvokeOptions,
+): Promise<ToolResult> {
+  const { toolUseId } = call
   let result: ToolResult
   let park: EventInput | undefined
   try {
     const outcome = await s.runNestedTool(
-      policy.resolvedPolicy.isConcurrencySafe,
+      call.resolvedPolicy.isConcurrencySafe === true,
       (nestedLease) =>
-        approveAndExecute(
-          s,
-          { toolUseId, name, args, ordinal, argsSeq, ...policy },
-          {
-            depth: o.depth,
-            nestedLease,
-            ...(o.parentEffectId ? { parentEffectId: o.parentEffectId } : {}),
-            ...(o.signal ? { signal: o.signal } : {}),
-            ...(o.onAttachmentRead ? { onAttachmentRead: o.onAttachmentRead } : {}),
-          },
-        ),
+        approveAndExecute(s, call, {
+          depth: o.depth,
+          nestedLease,
+          ...(o.parentEffectId ? { parentEffectId: o.parentEffectId } : {}),
+          ...(o.signal ? { signal: o.signal } : {}),
+          ...(o.onAttachmentRead ? { onAttachmentRead: o.onAttachmentRead } : {}),
+        }),
       o.nestedLease,
       o.signal ?? s.ac.signal,
     )

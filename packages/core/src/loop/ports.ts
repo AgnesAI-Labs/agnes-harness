@@ -10,6 +10,7 @@ import type {
   LoopRequest,
   LoopRequestOptions,
   LoopToolCall,
+  LoopToolCallOptions,
   ServiceInstance,
   ServicePorts,
 } from '@agnes/extension-api'
@@ -28,6 +29,7 @@ import { appendExtensionEvent, prepareLoopEvent } from '../step/ext-events.js'
 import { beforeStepGate, builtinBudgetPreflight, checkpointRoutine, stopGate } from '../step/gate.js'
 import { admitInferenceRequest, prepareInferenceRequest } from '../step/inference.js'
 import type { SessionImpl } from '../step/session.js'
+import { announcedTools } from './announce.js'
 import { loopChildStarts } from './child-starts.js'
 import { estimateLoopRequest } from './estimates.js'
 import { dispatchLoopEvent } from './events.js'
@@ -299,7 +301,9 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
       throw error
     }
   }
-  async function execute(call: LoopToolCall, signal: AbortSignal) {
+  const announced = announcedTools(s, { invocations, prepareTools, closeParked })
+  async function execute(call: LoopToolCall, signal: AbortSignal, options?: LoopToolCallOptions) {
+    if (options?.announce) return announced.execute(call, signal, options.announce)
     const releaseEffect = await s.controls.beginEffect()
     const done = s.beginLoopOperation()
     try {
@@ -503,7 +507,8 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
           releaseEffect()
         }
       },
-      async batch(calls, signal) {
+      async batch(calls, signal, options) {
+        if (options?.announce) return announced.batch(calls, signal, options.announce)
         const releaseEffect = await s.controls.beginEffect()
         const done = s.beginLoopOperation()
         try {

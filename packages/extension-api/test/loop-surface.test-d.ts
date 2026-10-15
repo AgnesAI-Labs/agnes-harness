@@ -5,6 +5,7 @@ import type {
   GenericLoopPorts,
   LoopContext,
   LoopFactory,
+  LoopToolCallOptions,
 } from '../src/index.js'
 
 it('splits the generic ports from the default-loop convenience edges', () => {
@@ -18,4 +19,16 @@ it('splits the generic ports from the default-loop convenience edges', () => {
   expectTypeOf<GenericLoopPorts['model']>().toHaveProperty('stream')
   expectTypeOf<GenericLoopPorts['tools']>().toHaveProperty('execute')
   expectTypeOf<LoopContext['turn']>().toHaveProperty('continuation')
+})
+
+it('takes an optional announce option on execute and batch', () => {
+  type Tools = GenericLoopPorts['tools']
+  expectTypeOf<Tools['execute']>().parameter(2).toEqualTypeOf<LoopToolCallOptions | undefined>()
+  expectTypeOf<Tools['batch']>().parameter(2).toEqualTypeOf<LoopToolCallOptions | undefined>()
+  expectTypeOf<NonNullable<LoopToolCallOptions['announce']>>().toEqualTypeOf<
+    true | { readonly content: Array<{ type: 'text'; text: string } | { type: 'thinking'; text: string }> }
+  >()
+  // An existing two-argument implementation still fits the port.
+  const execute: Tools['execute'] = async (_call, _signal) => ({ content: [] })
+  expectTypeOf(execute).toBeFunction()
 })
