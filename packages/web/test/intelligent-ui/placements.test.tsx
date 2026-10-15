@@ -179,13 +179,16 @@ describe('shared Intelligent UI placements', () => {
         expect(article?.textContent).toContain('Final')
         expect(article?.textContent).not.toContain('contract-review')
         expect(article?.textContent).not.toContain('a'.repeat(64))
-        expect(article?.querySelector('[data-testid="deliverable-open"]')?.textContent).toBe('Open')
+        if (article === workbenchCopy)
+          expect(article?.querySelector('[data-testid="deliverable-open"]')?.textContent).toBe('Open')
+        else {
+          expect(article?.querySelector('[data-testid="deliverable-open"]')).toBeNull()
+          expect(article?.querySelector('[data-testid="deliverable-target"]')).toBeTruthy()
+        }
         expect(article?.querySelector('[data-testid="deliverable-open-with"]')).toBeTruthy()
         expect(article?.querySelector('.deliverable-tile')?.getAttribute('data-type')).toBe('html')
       }
-      await act(async () =>
-        (articles[0]?.querySelector('[data-testid="deliverable-open"]') as HTMLButtonElement)?.click(),
-      )
+      await act(async () => (articles[0]?.querySelector('.deliverable-row') as HTMLElement)?.click())
       expect(loadPreview).toHaveBeenCalledWith({
         laneId: 'main',
         kind: 'html',
@@ -219,15 +222,18 @@ describe('shared Intelligent UI placements', () => {
         '*',
       )
       await act(async () =>
-        articles[1]?.querySelector<HTMLButtonElement>('[data-testid="deliverable-preview-close"]')?.click(),
+        articles[1]?.querySelector<HTMLButtonElement>('[data-testid="deliverable-open"]')?.click(),
       )
       expect(articles[1]?.querySelector('[data-testid="deliverable-preview"]')).toBeNull()
+      expect(articles[1]?.querySelector('[data-testid="deliverable-open"]')?.textContent).toBe('Open')
       await act(async () =>
         articles[0]?.querySelector<HTMLButtonElement>('[data-testid="deliverable-open-with"]')?.click(),
       )
       await act(async () =>
         document.querySelector<HTMLElement>('[data-testid="deliverable-download"]')?.click(),
       )
+      expect(articles[1]?.querySelector('[data-testid="deliverable-preview"]')).toBeNull()
+      expect(articles[0]?.querySelector('[data-testid="deliverable-preview"]')).toBeNull()
       expect(loadDownload).toHaveBeenCalledWith({
         laneId: 'main',
         artifact: { sha256: 'a'.repeat(64), size: 1024, mime: 'text/html' },
@@ -269,7 +275,9 @@ describe('shared Intelligent UI placements', () => {
     document.documentElement.lang = 'zh-CN'
     await act(async () => window.dispatchEvent(new CustomEvent('agnes:locale-changed')))
     expect(host.querySelector('[data-testid="turn-deliverables"]')?.getAttribute('aria-label')).toBe('交付物')
-    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="deliverable-open"]')?.click())
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="deliverable-target"]')?.click(),
+    )
     await cleanup()
     await act(async () =>
       resolve?.({ kind: 'markdown', content: 'Late', artifact: record.surface.data['file-0'], release }),

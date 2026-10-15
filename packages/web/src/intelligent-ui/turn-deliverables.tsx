@@ -167,16 +167,20 @@ export function TurnDeliverables({
           inAnswer={true}
         />
       ))}
-      {entries.length > 0 && <DeliverableGroup binding={binding} entries={entries} />}
+      {entries.length > 0 && (
+        <DeliverableGroup binding={binding} sessionId={client.sessionId} entries={entries} />
+      )}
     </UiLocaleProvider>
   )
 }
 
 function DeliverableGroup({
   binding,
+  sessionId,
   entries,
 }: {
   binding: UiPlacementBinding
+  sessionId: string
   entries: readonly TurnDeliverable[]
 }) {
   const { t } = useUiText(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
@@ -185,6 +189,7 @@ function DeliverableGroup({
     <ArtifactFile
       key={deliverableKey(entry)}
       {...(source ? { source } : {})}
+      sessionId={sessionId}
       file={entry.file}
       laneId={entry.lane}
       resources={binding.resources}

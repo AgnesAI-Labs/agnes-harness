@@ -144,7 +144,7 @@ it('shows one compact group with the earlier version folded, and no artifact ref
     )
     // Opening a conversation card hands the preview to the workbench copy of the same surface.
     await act(async () =>
-      cards[0]?.querySelector<HTMLButtonElement>('[data-testid="deliverable-open"]')?.click(),
+      cards[0]?.querySelector<HTMLButtonElement>('[data-testid="deliverable-target"]')?.click(),
     )
     expect(expand).toHaveBeenCalledWith('final', 1)
   } finally {
@@ -221,6 +221,7 @@ it('shows an earlier card with its time and size difference, and opens its own s
       root.render(
         createElement(ArtifactFile, {
           file,
+          sessionId: 's',
           laneId: 'main',
           resources: { documents: { load } } as never,
           placement: 'workbench',
@@ -237,12 +238,81 @@ it('shows an earlier card with its time and size difference, and opens its own s
     await act(async () => host.querySelector<HTMLElement>('[data-testid="deliverable-open"]')?.click())
     // The snapshot of this version, never the workspace file of that name.
     expect(load).toHaveBeenCalledWith({ laneId: 'main', artifact: file.artifact, kind: 'text' })
-    expect(host.querySelector('[data-testid="deliverable-preview-version"]')?.textContent).toBe(
-      `Same-name history · ${time}`,
-    )
+    // History stays in the card metadata; the preview has no duplicate toolbar.
+    expect(host.querySelector('.deliverable-preview-bar')).toBeNull()
+    expect(card?.querySelector('.deliverable-meta')?.textContent).toContain(time)
   } finally {
     await act(async () => root.unmount())
     locale.dispose()
+    host.remove()
+  }
+})
+
+it('closes loading previews, releases late results and keeps errors and unsupported files actionable', async () => {
+  let complete: ((value: unknown) => void) | undefined
+  const release = vi.fn()
+  const load = vi.fn(
+    () =>
+      new Promise<unknown>((resolve) => {
+        complete = resolve
+      }),
+  )
+  const resources = { documents: { load }, files: { load: vi.fn() } } as never
+  const host = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(host)
+  const file = {
+    name: 'notes.txt',
+    description: '',
+    artifact: { sha256: sha(1), size: 20, mime: 'text/plain' },
+  }
+  const show = (value = file, sessionId = 's') =>
+    act(async () =>
+      root.render(
+        createElement(ArtifactFile, {
+          file: value,
+          sessionId,
+          laneId: 'main',
+          resources,
+        }),
+      ),
+    )
+  const toggle = () => host.querySelector<HTMLButtonElement>('[data-testid="deliverable-open"]')!
+  const preview = () => host.querySelector('[data-testid="deliverable-preview"]')
+  try {
+    await show()
+    await act(async () => toggle().click())
+    expect(preview()?.textContent).toContain('Loading')
+    expect(toggle().disabled).toBe(false)
+    expect(toggle().getAttribute('aria-expanded')).toBe('true')
+    await act(async () => toggle().click())
+    expect(preview()).toBeNull()
+    await act(async () => complete?.({ kind: 'text', content: 'Late', release }))
+    expect(preview()).toBeNull()
+    expect(release).toHaveBeenCalledOnce()
+    load.mockImplementationOnce(async () => {
+      throw new Error('Synthetic unavailable')
+    })
+    await act(async () => toggle().click())
+    expect(preview()?.querySelector('[role="alert"]')?.textContent).toContain('could not be loaded')
+    expect(toggle().textContent).toBe('Close')
+    await act(async () => toggle().click())
+    expect(preview()).toBeNull()
+    await show({ ...file, artifact: { ...file.artifact, mime: 'application/zip' } })
+    await act(async () => toggle().click())
+    expect(preview()?.textContent).toContain('Preview is unavailable')
+    expect(host.querySelector('[data-testid="deliverable-open-with"]')).not.toBeNull()
+    await act(async () => toggle().click())
+    expect(preview()).toBeNull()
+    // A load belonging to a previous session never appears in its replacement.
+    await show(file)
+    await act(async () => toggle().click())
+    await show(file, 'other')
+    await act(async () => complete?.({ kind: 'text', content: 'Old session', release }))
+    expect(preview()).toBeNull()
+    expect(toggle().textContent).toBe('Open')
+    expect(release).toHaveBeenCalledTimes(2)
+  } finally {
+    await act(async () => root.unmount())
     host.remove()
   }
 })

@@ -124,7 +124,11 @@ export const openDeliverablesPanel = () => workbenchNavigation.open(DELIVERABLES
  * The 交付物 tab: the same cards as in the answer, the newest version of each file grouped by version,
  * earlier versions folded. Opening a card previews it right under the card.
  */
-export function WorkbenchDeliverables({
+export function WorkbenchDeliverables(props: { binding: UiPlacementBinding; context: UiExtensionContext }) {
+  return <SessionDeliverables key={sessionOf(props.context)} {...props} />
+}
+
+function SessionDeliverables({
   binding,
   context,
 }: {
@@ -136,6 +140,7 @@ export function WorkbenchDeliverables({
   const { t } = context
   const sessionId = sessionOf(context)
   const [chosen, setChosen] = useState<string>()
+  const [historyOpen, setHistoryOpen] = useState(false)
   if (!client || client.sessionId !== sessionId)
     return <SettingsState tone="empty">{t('workbench.deliverables.empty')}</SettingsState>
   const entries = sessionDeliverables(client.getSnapshot().surfaces)
@@ -152,6 +157,11 @@ export function WorkbenchDeliverables({
       onClickCapture={() => setChosen(entryKey(entry))}
     >
       <ArtifactFile
+        sessionId={client.sessionId}
+        onPreviewRequested={() => {
+          setChosen(entryKey(entry))
+          if (entry.version) setHistoryOpen(true)
+        }}
         file={entry.file}
         laneId={entry.lane}
         resources={binding.resources}
@@ -179,6 +189,8 @@ export function WorkbenchDeliverables({
           {earlier.length > 0 && (
             <Disclosure
               variant="plain"
+              open={historyOpen}
+              onOpenChange={setHistoryOpen}
               className="workbench-deliverables-earlier"
               data-testid="workbench-deliverables-earlier"
               summary={t('workbench.deliverables.earlier', { count: earlier.length })}

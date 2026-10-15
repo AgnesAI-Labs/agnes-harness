@@ -11,7 +11,7 @@ import {
   useUiText,
 } from '@agnes/web-ui'
 import { DocumentPreview, HtmlPreviewFrame } from '@agnes/web-ui/conversation'
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import {
   type DeliverableType,
   deliverableType,
@@ -58,47 +58,61 @@ const previewRequest = {
   },
 }
 // A request names the file by name and content: the same bytes under two names are two cards.
-const fileKey = (laneId: string, file: UiArtifactFileData) => `${laneId}:${file.name}:${file.artifact.sha256}`
+const fileKey = (sessionId: string, laneId: string, file: UiArtifactFileData) =>
+  JSON.stringify([sessionId, laneId, file.name, file.artifact.sha256])
+
+type ArtifactFileProps = {
+  file: UiArtifactFileData
+  sessionId: string
+  laneId: string
+  resources: ClientResourceService | undefined
+  placement?: 'inline' | 'workbench'
+  onShowInWorkbench?: (() => void) | undefined
+  onPreviewRequested?: (() => void) | undefined
+  earlier?: EarlierVersion | undefined
+  source?: string | undefined
+}
+type Preview =
+  | { status: 'loading' | 'failed' | 'unavailable' }
+  | { status: 'ready'; resource: ClientDocumentResource }
 
 /** Display uses the same session-authorized resource loaders as the workspace document dock. */
-export function ArtifactFile({
+export function ArtifactFile(props: ArtifactFileProps) {
+  return <ArtifactFileCard key={fileKey(props.sessionId, props.laneId, props.file)} {...props} />
+}
+
+function ArtifactFileCard({
   file,
+  sessionId,
   laneId,
   resources,
   placement = 'workbench',
   onShowInWorkbench,
+  onPreviewRequested,
   earlier,
   source,
-}: {
-  file: UiArtifactFileData
-  laneId: string
-  resources: ClientResourceService | undefined
-  placement?: 'inline' | 'workbench'
-  /** Present when this file also has a workbench copy: previews open there, not in the conversation. */
-  onShowInWorkbench?: (() => void) | undefined
-  /** An older copy of a name presented again with other content: its card says which and how. */
-  earlier?: EarlierVersion | undefined
-  /** Who presented the newest copy, shown when its same-name history came from someone else too. */
-  source?: string | undefined
-}) {
+}: ArtifactFileProps) {
   const { t, locale, hostT } = useUiText(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
   const owner = useMemo(
-    () => ({ file, laneId, resources, active: true, releases: new Set<() => void>() }),
-    [file, laneId, resources],
+    () => ({ resources, active: true, request: 0, loading: false, releases: new Set<() => void>() }),
+    [resources],
   )
-  const [preview, setPreview] = useState<ClientDocumentResource>()
-  const [opened, setOpened] = useState(false)
+  const [preview, setPreview] = useState<Preview>()
+  const opened = preview !== undefined
+  const row = useRef<HTMLElement>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
+  const previewId = useId()
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
   const [copied, setCopied] = useState(false)
   useEffect(() => {
     owner.active = true
     setPreview(undefined)
-    setOpened(false)
     setBusy(false)
     setFailed(false)
     return () => {
       owner.active = false
+      owner.request++
       for (const release of owner.releases) release()
       owner.releases.clear()
     }
@@ -143,45 +157,68 @@ export function ArtifactFile({
   )
     .filter(Boolean)
     .join(' · ')
-  const key = fileKey(laneId, file)
+  const key = fileKey(sessionId, laneId, file)
   const delegated = placement === 'inline' && !!onShowInWorkbench
 
+  const unavailable = !kind || size > PREVIEW_LIMIT
   async function show() {
-    setOpened(true)
-    if (!resources || !kind || size > PREVIEW_LIMIT || preview) return
-    setBusy(true)
-    setFailed(false)
+    if (!resources || owner.loading || (preview && preview.status !== 'failed')) return
+    if (unavailable) {
+      setPreview({ status: 'unavailable' })
+      return
+    }
+    const request = ++owner.request
+    owner.loading = true
+    setPreview({ status: 'loading' })
     try {
       const result = await resources.documents.load({ laneId, artifact: file.artifact, kind })
-      if (!owner.active) {
+      if (!owner.active || request !== owner.request) {
         result.release()
         return
       }
       owner.releases.add(result.release)
-      setPreview(result)
+      setPreview({ status: 'ready', resource: result })
     } catch {
-      if (owner.active) {
-        setFailed(true)
-        setOpened(false)
-      }
+      if (owner.active && request === owner.request) setPreview({ status: 'failed' })
     } finally {
-      if (owner.active) setBusy(false)
+      if (request === owner.request) owner.loading = false
     }
+  }
+  function close() {
+    owner.request++
+    owner.loading = false
+    if (preview?.status === 'ready') {
+      preview.resource.release()
+      owner.releases.delete(preview.resource.release)
+    }
+    setPreview(undefined)
   }
   function open() {
     if (delegated) {
       previewRequest.set(key)
       onShowInWorkbench?.()
-    } else if (opened) setOpened(false)
+    } else if (opened) close()
     else void show()
   }
-  // The workbench row opens the preview its conversation card asked for, then clears the request.
+  // Requests are session-scoped and consumed even if this card is already open.
   const requested = useSyncExternalStore(previewRequest.subscribe, previewRequest.get) === key
+  useEffect(
+    () => () => {
+      if (placement === 'inline' && previewRequest.get() === key) previewRequest.set(undefined)
+    },
+    [key, placement],
+  )
   // biome-ignore lint/correctness/useExhaustiveDependencies: a request is answered once, when it arrives
   useEffect(() => {
     if (!requested || placement !== 'workbench') return
     previewRequest.set(undefined)
+    onPreviewRequested?.()
     void show()
+    requestAnimationFrame(() => {
+      if (!owner.active) return
+      row.current?.scrollIntoView?.({ block: 'nearest' })
+      trigger.current?.focus({ preventScroll: true })
+    })
   }, [requested, placement])
   async function download() {
     if (!resources || busy) return
@@ -218,36 +255,78 @@ export function ArtifactFile({
       setCopied(false)
     }
   }
-  const unavailable = !kind || size > PREVIEW_LIMIT
+  const resource = preview?.status === 'ready' ? preview.resource : undefined
   return (
     <section
+      ref={row}
       className="deliverable-file"
       data-testid="deliverable-file"
       data-placement={placement}
       data-open={opened}
       {...(earlier ? { 'data-version': 'earlier' } : {})}
     >
-      <div className="deliverable-row">
+      {/* The real title button owns keyboard activation; selection and sibling actions stay independent. */}
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: keyboard activation belongs to the title button. */}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: sibling title button owns the accessible action, as in ListRow. */}
+      <div
+        className="deliverable-row"
+        onClick={
+          delegated
+            ? (event) => {
+                if (
+                  event.defaultPrevented ||
+                  !event.currentTarget.contains(event.target as Node) ||
+                  (event.target as Element).closest('button, a, [role="menuitem"]') ||
+                  window.getSelection()?.toString()
+                )
+                  return
+                trigger.current?.focus()
+                if (resources) open()
+              }
+            : undefined
+        }
+      >
         <span className="deliverable-tile" data-type={type} aria-hidden="true">
           <Icon name={TYPE_ICON[type]} />
         </span>
         <div className="deliverable-text">
           <h4 className="deliverable-name" title={file.name}>
-            {file.name}
+            {delegated ? (
+              <Button
+                ref={trigger}
+                appearance="ghost"
+                className="deliverable-target"
+                data-testid="deliverable-target"
+                disabled={!resources}
+                aria-label={`${t('ui.file.inWorkbench')}: ${file.name}`}
+                onClick={() => {
+                  if (!window.getSelection()?.toString()) open()
+                }}
+              >
+                {file.name}
+              </Button>
+            ) : (
+              file.name
+            )}
           </h4>
           <p className="deliverable-meta">{subtitle}</p>
         </div>
         <div className="deliverable-actions">
-          <Button
-            size="small"
-            className="deliverable-open"
-            data-testid="deliverable-open"
-            disabled={!resources || busy}
-            onClick={open}
-            {...(delegated ? {} : { 'aria-expanded': opened })}
-          >
-            {t('ui.file.openShort')}
-          </Button>
+          {!delegated && (
+            <Button
+              ref={trigger}
+              size="small"
+              className="deliverable-open"
+              data-testid="deliverable-open"
+              disabled={!resources || (!opened && busy)}
+              aria-busy={preview?.status === 'loading'}
+              onClick={open}
+              aria-expanded={opened}
+              aria-controls={opened ? previewId : undefined}
+            >
+              {t(opened ? 'ui.file.closeShort' : 'ui.file.openShort')}
+            </Button>
+          )}
           <Menu
             label={t('ui.file.openWith')}
             trigger={
@@ -290,44 +369,33 @@ export function ArtifactFile({
         </p>
       )}
       {opened && (
-        <div className="deliverable-preview" data-testid="deliverable-preview" data-kind={kind ?? 'none'}>
-          <div className="deliverable-preview-bar">
-            <span className="deliverable-preview-name">{file.name}</span>
-            {versionName && (
-              <span className="deliverable-preview-version" data-testid="deliverable-preview-version">
-                {t('ui.file.earlierLabel', { version: versionTime ?? versionName })}
-              </span>
-            )}
-            <IconButton
-              name="download"
-              label={t('ui.file.download')}
-              disabled={!resources || busy}
-              onClick={() => void download()}
-            />
-            <IconButton
-              name="x"
-              label={t('ui.file.close')}
-              data-testid="deliverable-preview-close"
-              onClick={() => setOpened(false)}
-            />
-          </div>
-          {unavailable ? (
+        <div
+          id={previewId}
+          className="deliverable-preview"
+          data-testid="deliverable-preview"
+          data-kind={kind ?? 'none'}
+        >
+          {preview.status === 'failed' ? (
+            <p className="deliverable-note" role="alert">
+              {t('ui.file.failed')}
+            </p>
+          ) : unavailable ? (
             <p className="deliverable-note" role="status">
               {t(size > PREVIEW_LIMIT ? 'ui.file.large' : 'ui.file.unsupported')}
             </p>
-          ) : !preview ? (
+          ) : !resource ? (
             <p className="deliverable-note" role="status">
               {t('ui.file.loading')}
             </p>
-          ) : preview.kind === 'html' ? (
-            <HtmlPreviewFrame key={file.artifact.sha256} html={preview.content ?? ''} title={file.name} />
+          ) : resource.kind === 'html' ? (
+            <HtmlPreviewFrame key={file.artifact.sha256} html={resource.content ?? ''} title={file.name} />
           ) : (
             <DocumentPreview
               // Source files are shown as source: a scrollable monospace block, never running text.
-              kind={preview.kind === 'text' ? 'code' : preview.kind}
+              kind={resource.kind === 'text' ? 'code' : resource.kind}
               title={file.name}
-              {...(preview.content === undefined ? {} : { content: preview.content })}
-              {...(preview.url === undefined ? {} : { resourceUrl: preview.url })}
+              {...(resource.content === undefined ? {} : { content: resource.content })}
+              {...(resource.url === undefined ? {} : { resourceUrl: resource.url })}
               t={hostT}
             />
           )}

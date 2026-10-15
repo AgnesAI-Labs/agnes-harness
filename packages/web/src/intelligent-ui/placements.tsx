@@ -379,6 +379,7 @@ export function BoundSurface({
       renderArtifact={(file) => (
         <ArtifactFile
           key={file.artifact.sha256}
+          sessionId={client.sessionId}
           file={file}
           laneId={record.lane}
           resources={binding.resources}
