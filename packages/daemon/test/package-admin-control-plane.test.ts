@@ -1475,6 +1475,20 @@ it('serializes effects per profile, allows another profile to proceed, and lets 
     authority,
   )
   expect(await operation(admin, profile, queued.operationId)).toMatchObject({ state: 'cancelled' })
+  // Cancelling an unknown operation is refused before it records anything in the journal.
+  await expect(
+    admin.call(
+      '_agnes/v1/packages.operation.cancel',
+      { profile, clientId, commandId: 'cancel-unknown', operationId: 'pkg-not-an-operation' },
+      authority,
+    ),
+  ).rejects.toMatchObject({ data: { reason: 'PACKAGE_OPERATION_UNAVAILABLE' } })
+  const journal = JSON.parse(
+    readFileSync(join(root, 'daemon', 'package-operations', 'operations.json'), 'utf8'),
+  )
+  expect(
+    journal.cancels.map((entry: { identity: { commandId: string } }) => entry.identity.commandId),
+  ).toEqual(['cancel-queued'])
   release()
   expect(await operation(admin, profile, first.operationId)).toMatchObject({ state: 'completed' })
   expect(await operation(admin, secondProfile, other.operationId)).toMatchObject({ state: 'completed' })

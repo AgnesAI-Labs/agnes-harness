@@ -8,6 +8,7 @@ import {
   type PackageInstalledDescriptor,
   type PackageOperation,
   type PackagePreview,
+  rpcError,
   validatePackageAdminData,
 } from '@agnes/protocol'
 import { renameWriteThrough } from '@agnes/system-node'
@@ -49,6 +50,35 @@ type Journal = { version: 1; operations: StoredPackageOperation[]; cancels: Stor
 
 const terminal = new Set<PackageOperationState>(['completed', 'failed', 'cancelled', 'rolled-back'])
 export const packageOperationTerminal = (state: PackageOperationState): boolean => terminal.has(state)
+
+/**
+ * A settled operation, and with it its command identity, stays for seven days: the window in which a
+ * client retries a lost receipt or reads the outcome back, even after a weekend away. Pending work is
+ * never reclaimed, and a cancel command lives as long as its operation.
+ */
+const RETENTION_MS = 7 * 86_400_000
+const CAPACITY = 10_000
+
+function reclaim(journal: Journal, now: string): void {
+  const at = Date.parse(now)
+  // An unreadable time keeps the record: `NaN >= RETENTION_MS` is false.
+  journal.operations = journal.operations.filter(
+    (entry) =>
+      !packageOperationTerminal(entry.operation.state) ||
+      !(at - Date.parse(entry.operation.updatedAt) >= RETENTION_MS),
+  )
+  const retained = new Set(journal.operations.map((entry) => entry.operation.operationId))
+  journal.cancels = journal.cancels.filter((entry) => retained.has(entry.operationId))
+}
+
+/** Every record left after reclaim is pending or inside its replay window, so a full journal stays full. */
+function refuseWhenFull(records: readonly unknown[]): void {
+  if (records.length >= CAPACITY)
+    throw rpcError('SEMANTIC_REJECTED', {
+      reason: 'E_PACKAGE_STATE',
+      detail: { reason: 'operation-journal-full' },
+    })
+}
 
 const paramsDataName: Record<PackageOperationKind, PackageAdminDataName> = {
   inspect: 'PackageInspectParams',
@@ -185,10 +215,10 @@ function validJournal(value: unknown): value is Journal {
     Object.keys(row).every((key) => ['version', 'operations', 'cancels'].includes(key)) &&
     row.version === 1 &&
     Array.isArray(row.operations) &&
-    row.operations.length <= 10_000 &&
+    row.operations.length <= CAPACITY &&
     row.operations.every(validStoredOperation) &&
     Array.isArray(row.cancels) &&
-    row.cancels.length <= 10_000 &&
+    row.cancels.length <= CAPACITY &&
     row.cancels.every(validCancel) &&
     new Set(row.operations.map((entry) => entry.operation.operationId)).size === row.operations.length
   )
@@ -204,17 +234,20 @@ export type CancelAdmission =
   | Readonly<{ state: 'conflict' }>
 
 export interface PackageOperationStore {
+  /** `now` (default: the wall clock) dates the reclaim of settled records; pass the caller's clock. */
   admit(input: {
     operation: PackageOperation
     identity: PackageOperationIdentity
     payloadHash: string
     request: PackageOperationRequest
+    now?: string
   }): Promise<OperationAdmission>
   admitCancel(input: {
     identity: PackageOperationIdentity
     payloadHash: string
     operationId: string
     params: Record<string, unknown>
+    now?: string
   }): Promise<CancelAdmission>
   get(profile: string, operationId: string): Promise<StoredPackageOperation | undefined>
   pending(): Promise<StoredPackageOperation[]>
@@ -236,8 +269,10 @@ export class FilePackageOperationStore implements PackageOperationStore {
     identity: PackageOperationIdentity
     payloadHash: string
     request: PackageOperationRequest
+    now?: string
   }): Promise<OperationAdmission> {
     return this.write(async (journal) => {
+      reclaim(journal, input.now ?? new Date().toISOString())
       const existing = journal.operations.find(
         (entry) =>
           entry.identity.principalId === input.identity.principalId &&
@@ -253,7 +288,7 @@ export class FilePackageOperationStore implements PackageOperationStore {
           return { state: 'conflict' }
         return { state: 'existing', record: clone(existing) }
       }
-      if (journal.operations.length >= 10_000) throw new Error('package operation journal is full')
+      refuseWhenFull(journal.operations)
       const record: StoredPackageOperation = {
         operation: clone(input.operation),
         identity: clone(input.identity),
@@ -271,8 +306,11 @@ export class FilePackageOperationStore implements PackageOperationStore {
     payloadHash: string
     operationId: string
     params: Record<string, unknown>
+    now?: string
   }): Promise<CancelAdmission> {
     return this.write(async (journal) => {
+      const { now = new Date().toISOString(), ...command } = input
+      reclaim(journal, now)
       const existing = journal.cancels.find(
         (entry) =>
           entry.identity.principalId === input.identity.principalId &&
@@ -284,8 +322,8 @@ export class FilePackageOperationStore implements PackageOperationStore {
           return { state: 'conflict' }
         return { state: 'existing', operationId: existing.operationId }
       }
-      if (journal.cancels.length >= 10_000) throw new Error('package operation journal is full')
-      const record: StoredCancel = clone(input)
+      refuseWhenFull(journal.cancels)
+      const record: StoredCancel = clone(command)
       if (!validCancel(record)) throw new Error('package cancellation admission is invalid')
       journal.cancels.push(record)
       return { state: 'new', operationId: input.operationId }

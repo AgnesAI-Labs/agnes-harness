@@ -1343,6 +1343,7 @@ class Service implements PackageAdminService {
       },
       payloadHash: effectPayload(method, params),
       request: { kind, params: structuredClone(params) },
+      now: operation.updatedAt,
     })
     if (admitted.state === 'conflict')
       throw rpcError('SEMANTIC_REJECTED', { reason: 'PACKAGE_COMMAND_ID_CONFLICT' })
@@ -1356,6 +1357,14 @@ class Service implements PackageAdminService {
   ): Promise<PackageOperationReceipt> {
     this.requireBoundClient('_agnes/v1/packages.operation.cancel', params, authority)
     await this.options.profileDirectory(params.profile)
+    // Ownership first: a cancel command is recorded only for an operation this client may cancel.
+    const record = await this.options.operations.get(params.profile, params.operationId)
+    if (
+      !record ||
+      record.identity.principalId !== authority.principalId ||
+      record.identity.clientId !== authority.clientId
+    )
+      throw rpcError('SEMANTIC_REJECTED', { reason: 'PACKAGE_OPERATION_UNAVAILABLE' })
     const command = await this.options.operations.admitCancel({
       identity: {
         principalId: authority.principalId,
@@ -1365,16 +1374,10 @@ class Service implements PackageAdminService {
       payloadHash: effectPayload('_agnes/v1/packages.operation.cancel', params),
       operationId: params.operationId,
       params: structuredClone(params),
+      now: this.options.clock(),
     })
     if (command.state === 'conflict')
       throw rpcError('SEMANTIC_REJECTED', { reason: 'PACKAGE_COMMAND_ID_CONFLICT' })
-    const record = await this.options.operations.get(params.profile, command.operationId)
-    if (
-      !record ||
-      record.identity.principalId !== authority.principalId ||
-      record.identity.clientId !== authority.clientId
-    )
-      throw rpcError('SEMANTIC_REJECTED', { reason: 'PACKAGE_OPERATION_UNAVAILABLE' })
     if (!packageOperationTerminal(record.operation.state)) {
       this.active
         .get(record.operation.operationId)
