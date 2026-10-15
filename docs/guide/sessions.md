@@ -14,9 +14,11 @@ A session contains task history, model selection, and execution state. A user re
 
 ## A damaged log tail
 
-Opening a SQLite ledger with a torn JSON/checksum tail preserves its verified prefix, durably quarantines the damaged raw rows and registers in a private `sessions.db.tail-<diagnosticId>.json` sidecar, and records a recovery diagnostic. The JSONL example similarly preserves exact damaged bytes in `store.jsonl.tail-<diagnosticId>.bin`. Web shows a localized notice with the diagnostic ID. Keep the sidecar when investigating a storage failure; it is not ordinary model context.
+SQLite histories are verified completely before session hooks, recovery, titles, tools or models can execute. An atomic append watermark also detects a removed tail. A corrupt row, a missing chain link or a mismatched head refuses the open without truncating stored evidence. Preserve the database for investigation; use the read-only history view when execution is unavailable. This product does not import old homes or migrate their ledgers.
 
-Outstanding effects are closed as unknown instead of being replayed, including normally replay-safe tools. Check the external result before requesting another operation. A valid event/transaction after damage, a missing chain link, or a damaged prefix referenced by a fork refuses automatic truncation. Unknown future format versions are refused explicitly; this recovery does not upgrade or migrate formats.
+Web can display an **unverified, read-only preview** while verification runs. Large stored payloads and inline media may appear as placeholders. The preview grants no execution authority; the live session replaces it only after verification succeeds. Recent-window and scan-budget markers identify omitted history. SDK `session.load(id, { onProgress })` reports verification and replay progress; `timeouts.loadIdle` (30 seconds) and `timeouts.loadHard` (10 minutes) independently bound a load. A timeout cancels that connection's pending load, and disconnect cancels outstanding verification.
+
+The JSONL persistence example has its own diagnostic sidecars; it does not define SQLite recovery policy.
 
 ## Find and resume a session
 
@@ -82,6 +84,10 @@ The official default goal plugin keeps a session objective on the ledger. In Web
 /goal followed by an objective also creates a goal; /goal in the CLI displays its status. Options precede the objective. The default allowance is ten automatic rounds without an additional credit limit. Resume grants a fresh round allowance while keeping spend. Editing preserves phase and spend. The model can report completion or a blocker with evidence through goal_update, and cannot raise limits or resume itself.
 
 Automatic rounds enter the next-turn inbox. Human controls take priority; stale rounds stop before model work. Completion, blockers, cancellation, errors and exhausted limits stop continuation. Credit checks occur between steps/turns; an in-flight response can exceed the goal limit, while normal model budget admission still applies. Unknown credit usage with a goal budget blocks continuation. Restored and forked active goals pause until explicit resume.
+
+For an exact raw export containing artifact references, use `node agnes.mjs export SESSION_ID --raw -o session.agnes`. Keep `session.agnes` together with `session.agnes.artifacts/`. The manifest binds the complete event stream and every declared original by size and SHA-256. Export reads originals through authenticated session/lane authority and checks their bytes; unavailable or mismatched originals refuse publication. Existing bundles are never overwritten. Redacted exports remain sharing formats and omit original bytes.
+
+Import the bundle with `node agnes.mjs import session.agnes --key NEW_SESSION_KEY`. All declarations, event sequences, transaction boundaries and sidecar bytes are checked before a target is reserved. Originals are then rechecked and written through the selected artifact seam. A failed append or activation rolls back the new target. Original files left by a failed store operation remain content-addressed orphans for ordinary retention. Native bundles use the current product's event schema and are bounded to 32 MiB per original and 256 MiB of declared originals; they are not a reader for another product's session format.
 
 ## Control running work
 

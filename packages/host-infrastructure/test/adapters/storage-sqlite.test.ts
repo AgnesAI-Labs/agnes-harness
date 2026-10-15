@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -38,6 +38,7 @@ describe('storage-sqlite', () => {
       'child_writer_gens',
       'cost_origins',
       'events',
+      'ledger_heads',
       'registers',
       'sessions',
       'writer_claims',
@@ -54,6 +55,32 @@ describe('storage-sqlite', () => {
     })
     expect(r).toEqual({ firstSeq: 1, seqs: [1, 2] })
     expect(await s.registers('k')).toEqual([{ register: 'op.state', key: 'main', seq: 2, data: { step: 1 } }])
+  })
+  it('reads bounded presentation rows without changing originals or admitting a removed tail', async () => {
+    const opts = {
+      storage: s,
+      key: 'lean',
+      writerRunId: 'reader',
+      ttlMs: 60_000,
+      ids: defaultIds(),
+      clock: () => now,
+      timers: { setTimeout: () => 0, clearTimeout() {} },
+    }
+    const log = await SessionLogImpl.open(opts)
+    const original = 'x'.repeat(64 * 1024)
+    await log.append([ev('user/message', { content: [{ type: 'text', text: original }] })])
+    await log.close()
+    const lean = await s.scanLean('lean', { limit: 1 })
+    expect(JSON.stringify(lean).length).toBeLessThan(2048)
+    expect((await s.scan('lean', { limit: 1 }))[0]?.data).toEqual({
+      content: [{ type: 'text', text: original }],
+    })
+    const raw = new DatabaseSync(join(dir, 'sessions.db'))
+    raw.prepare('DELETE FROM events WHERE session_key = ?').run('lean')
+    raw.close()
+    await expect(SessionLogImpl.open({ ...opts, writerRunId: 'bad' })).rejects.toMatchObject({
+      code: 'E_LEDGER_INTEGRITY',
+    })
   })
   it('drops the retired UI projection cache table when a database is opened', async () => {
     const legacy = mkdtempSync(join(tmpdir(), 'agnes-sqlite-ui-cache-'))
@@ -394,7 +421,7 @@ describe('storage-sqlite', () => {
     expect((await s.open('k', { writerRunId: 'r2', ttlMs: 1000 })).lastSeq).toBe(1)
   })
 
-  it('adds nullable integrity columns to a legacy events table without rewriting rows', async () => {
+  it('refuses a ledger without an append watermark without rewriting its rows', async () => {
     const file = join(dir, 'legacy.db')
     const legacy = new DatabaseSync(file)
     legacy.exec(`CREATE TABLE events (
@@ -410,8 +437,9 @@ describe('storage-sqlite', () => {
     legacy.close()
 
     const migrated = createSqliteStorage({ file, clock: () => now, tablesDir: join(dir, 'legacy-tables') })
-    const opened = await migrated.open('k', { writerRunId: 'new', ttlMs: 1000 })
-    expect(opened.lastSeq).toBe(1)
+    await expect(migrated.open('k', { writerRunId: 'new', ttlMs: 1000 })).rejects.toMatchObject({
+      code: 'E_LEDGER_INTEGRITY',
+    })
     expect(await migrated.scanIntegrity('k', { fromSeq: 1, toSeq: 1, limit: 10 })).toMatchObject([
       { sessionKey: 'k', event: { id: 'old', seq: 1 }, integrity: null },
     ])
@@ -517,8 +545,8 @@ describe('storage-sqlite', () => {
     await storage.close()
     rmSync(dir, { recursive: true, force: true })
   })
-  it.each(['json', 'checksum'])(
-    'quarantines a damaged %s tail, keeps the valid prefix, and persists a diagnostic notice',
+  it.each(['json', 'checksum', 'missing'])(
+    'refuses a damaged %s tail without altering the stored evidence',
     async (kind) => {
       const options = {
         storage: s,
@@ -539,27 +567,23 @@ describe('storage-sqlite', () => {
       db.prepare(
         kind === 'json'
           ? "UPDATE events SET data = '{' WHERE session_key = 'tail' AND seq = 3"
-          : "UPDATE events SET integrity_digest = 'bad' WHERE session_key = 'tail' AND seq = 3",
+          : kind === 'missing'
+            ? "DELETE FROM events WHERE session_key = 'tail' AND seq = 3"
+            : "UPDATE events SET integrity_digest = 'bad' WHERE session_key = 'tail' AND seq = 3",
       ).run()
       db.close()
-      const tracked = await openTracked({ ...options, writerRunId: 'reader' })
-      expect(tracked.log.recovery).toMatchObject({ validThroughSeq: 2, diagnosticId: expect.any(String) })
-      expect((await tracked.log.scan({ type: 'user/message', limit: 10 })).map((row) => row.data)).toEqual([
-        { content: [{ type: 'text', text: 'first' }] },
-        { content: [{ type: 'text', text: 'second' }] },
-      ])
-      const recovery = tracked.log.recovery
-      if (!recovery) throw new Error('Missing recovery report')
-      expect(JSON.parse(readFileSync(recovery.quarantineFile, 'utf8')).damaged).toHaveLength(1)
-      expect(statSync(recovery.quarantineFile).mode & 0o777).toBe(0o600)
-      expect((await tracked.log.scan({ type: 'x/core/ledger-tail-recovered', limit: 1 }))[0]?.data).toEqual(
-        recovery,
-      )
-      await tracked.log.close()
-      const reopened = await SessionLogImpl.open({ ...options, writerRunId: 'again' })
-      expect(reopened.recovery).toBeUndefined()
-      expect(reopened.lastSeq).toBe(3)
-      await reopened.close()
+      await expect(openTracked({ ...options, writerRunId: 'reader' })).rejects.toMatchObject({
+        code: 'E_LEDGER_INTEGRITY',
+      })
+      const evidence = new DatabaseSync(s.file)
+      expect(
+        evidence.prepare("SELECT COUNT(*) AS n FROM events WHERE session_key = 'tail'").get(),
+      ).toMatchObject({ n: kind === 'missing' ? 2 : 3 })
+      expect(
+        evidence.prepare("SELECT COUNT(*) AS n FROM writer_claims WHERE session_key = 'tail'").get(),
+      ).toMatchObject({ n: 0 })
+      evidence.close()
+      expect(readdirSync(dir).some((name) => name.includes('.tail-'))).toBe(false)
     },
   )
 

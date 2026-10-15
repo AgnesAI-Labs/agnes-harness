@@ -72,17 +72,24 @@ it.each([
   },
 )
 
-it('keeps the rows before a corrupt page and reports corruption', async () => {
-  const all = rows(1200)
-  const reader: SessionRowsReader = async (key, query) => {
-    if ((query.fromSeq ?? 1) > 500) throw new HostError('E_FORMAT_CORRUPT' as never, 'row 501 failed')
-    return readerOf(all)(key, query)
-  }
-  const view = await readSessionView(reader, 'damaged')
-  expect(view.lastSeq).toBe(500)
-  expect(view.timeline.nodes.length).toBeGreaterThan(0)
-  expect(view.notice).toMatchObject({ code: 'E_SESSION_CORRUPT', issue: 'corrupt', actions: ['new-session'] })
-})
+it.each(['E_FORMAT_CORRUPT', 'E_LEDGER_INTEGRITY'])(
+  'keeps rows before a corrupt page and reports %s',
+  async (code) => {
+    const all = rows(1200)
+    const reader: SessionRowsReader = async (key, query) => {
+      if ((query.fromSeq ?? 1) > 500) throw new HostError(code as never, 'row 501 failed')
+      return readerOf(all)(key, query)
+    }
+    const view = await readSessionView(reader, 'damaged')
+    expect(view.lastSeq).toBe(500)
+    expect(view.timeline.nodes.length).toBeGreaterThan(0)
+    expect(view.notice).toMatchObject({
+      code: 'E_SESSION_CORRUPT',
+      issue: 'corrupt',
+      actions: ['new-session'],
+    })
+  },
+)
 
 it('treats a gap in the sequence as corruption instead of skipping it', async () => {
   const all = rows(9).filter((row) => row.seq !== 5)

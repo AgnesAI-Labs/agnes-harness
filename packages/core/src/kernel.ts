@@ -188,6 +188,8 @@ export type SessionOptions = {
   seams?: Partial<SeamImplementations>
   cwd: string
   writerRunId: string
+  historySignal?: AbortSignal
+  onHistoryProgress?: (progress: { verifiedSeq: number; lastSeq: number }) => void
   lane?: string
   /** Host runtime identity carried unchanged into the assembled session. */
   workspaceRuntime?: SessionWorkspaceRuntime
@@ -206,6 +208,7 @@ export type SessionOptions = {
    * before the caller writes. For an importer filling the ledger verbatim: native rows point at each
    * other by sequence number. A resumed session ignores this and gets its hooks as always.
    */
+  requireNew?: boolean
   skipSessionStartHooks?: boolean
   /** Written into a new session's session/start; an importer's record of where the ledger came from. */
   imported?: SessionStart['imported']
@@ -407,6 +410,7 @@ export class Kernel {
     // silently runs that caller's work as the first caller's principal. The same holds one field
     // over for the writer lease, the working directory, the lane and the preset — a mismatch is a
     // deployment error, and it fails closed rather than resolving in the first caller's favour.
+    if (existing && so.requireNew) throw new CoreError('E_LANE_BUSY', 'import target is not fresh')
     if (existing) {
       const want = {
         actor: so.actor.id,
@@ -507,6 +511,10 @@ export class Kernel {
     try {
       tracked = await openTracked({
         storage: this.o.storage,
+        verification: {
+          ...(so.onHistoryProgress ? { onProgress: so.onHistoryProgress } : {}),
+          ...(so.historySignal ? { signal: so.historySignal } : {}),
+        },
         key,
         writerRunId: so.writerRunId,
         ttlMs: this.o.leaseTtlMs ?? 30_000,
@@ -528,6 +536,8 @@ export class Kernel {
     let memory: import('@agnes/extension-api').MemorySession | undefined
     let factoryPort: HookPort | undefined
     try {
+      so.historySignal?.throwIfAborted()
+      if (so.requireNew && !log.created) throw new CoreError('E_LANE_BUSY', 'import target is not fresh')
       let systemPrompt: import('./request/system-prompt.js').PinnedSystemPrompt | undefined
       let loopFactory: LoopFactory
       const promptPort = so.systemPrompt ?? this.o.systemPrompt
@@ -696,6 +706,7 @@ export class Kernel {
           // live without adding a second dispatch beside a fitted hooksFactory port.
           session.hooks = lifecyclePort(session, sessionHooks, logger)
         }
+        so.historySignal?.throwIfAborted()
         const reason = forked ? 'new' : session.state.session ? 'resume' : 'new'
         resumed = reason === 'resume'
         await session.start()

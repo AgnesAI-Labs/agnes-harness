@@ -1,7 +1,7 @@
 import '../provided-contracts.js'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
-import type { Kernel, WorkspaceInvocationPort } from '@agnes/core'
+import { type Kernel, leanEvents, type WorkspaceInvocationPort } from '@agnes/core'
 import { HostError } from '@agnes/host-common/errors'
 import { type ResolvedPreset, resolvePreset } from '@agnes/host-common/presets/resolve'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
@@ -358,15 +358,23 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
       }),
     readSessionView: (sessionKey, options) =>
       readSessionView(
-        (key, query) =>
-          a.kernel.o.storage.scan(key, {
-            ...(query.fromSeq === undefined ? {} : { fromSeq: query.fromSeq }),
-            ...(query.toSeq === undefined ? {} : { toSeq: query.toSeq }),
-            limit: query.limit,
-            order: query.order ?? 'asc',
-          }),
+        async (key, query) =>
+          leanEvents(
+            await (
+              a.kernel.o.storage.scanLean?.bind(a.kernel.o.storage) ??
+              a.kernel.o.storage.scan.bind(a.kernel.o.storage)
+            )(key, {
+              ...(query.fromSeq === undefined ? {} : { fromSeq: query.fromSeq }),
+              ...(query.toSeq === undefined ? {} : { toSeq: query.toSeq }),
+              limit: query.limit,
+              order: query.order ?? 'asc',
+            }),
+          ),
         sessionKey,
-        options,
+        {
+          budget: { events: 2000, bytes: 8 * 1024 * 1024, timeMs: 750 },
+          ...options,
+        },
       ),
     get provider() {
       return a.provider

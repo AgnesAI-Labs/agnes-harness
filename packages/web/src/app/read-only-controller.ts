@@ -61,6 +61,9 @@ export function createReadOnlyController(
   let latest = 0
   // The scan marker of the view on screen; the banner states it next to the refusal.
   let scan: ViewScan
+  let openingProgress:
+    | { id: string; phase: 'verifying' | 'replaying'; done: number; total: number }
+    | undefined
 
   /** Fetches a view and commits it in one step; false when a newer request or selection superseded it. */
   async function load(id: string, maxNodes: number, epoch: number): Promise<boolean> {
@@ -128,8 +131,32 @@ export function createReadOnlyController(
   function clear(): void {
     latest++
     context.readOnly = undefined
+    openingProgress = undefined
     appReadOnly.clear()
   }
 
-  return { show, loadEarlier, clear }
+  function progress(id: string, phase: 'verifying' | 'replaying', done: number, total: number): void {
+    openingProgress = { id, phase, done, total }
+    if (context.readOnly?.id !== id) return
+    const counts = total > 0 ? ` ${done}/${total}` : ''
+    const en = phase === 'verifying' ? 'Verifying before execution' : 'Loading verified history'
+    const zh = phase === 'verifying' ? '正在验证，完成后才能执行' : '正在加载已验证历史'
+    appReadOnly.show({
+      message: {
+        en: `Unverified history preview · ${en}${counts}`,
+        'zh-CN': `未经验证的历史预览 · ${zh}${counts}`,
+      },
+      actions: [],
+    })
+  }
+
+  async function preview(id: string, epoch: number): Promise<void> {
+    if (!(await load(id, PAGE, epoch))) return
+    const current = openingProgress?.id === id ? openingProgress : undefined
+    progress(id, current?.phase ?? 'verifying', current?.done ?? 0, current?.total ?? 0)
+    context.render()
+    context.renderControls()
+  }
+
+  return { show, preview, progress, loadEarlier, clear }
 }

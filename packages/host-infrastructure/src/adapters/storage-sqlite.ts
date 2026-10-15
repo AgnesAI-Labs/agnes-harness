@@ -20,13 +20,14 @@ import {
   type StorageAdapter,
   scanTruncated,
 } from '@agnes/core'
+import { leanEvents } from '@agnes/core-ledger'
 import type { PersistenceSqliteSchemaObject } from '@agnes/extension-api'
 import { assertSessionTreeTableName } from '@agnes/host-common/session-tree-schema'
 import { sqliteChildControl } from './child-control-sqlite.js'
 import { DDL } from './ddl.js'
-import { recoverSqliteTail } from './ledger-tail-recovery.js'
 import { assertOwnedSql, confineToOwnFile } from './sql-guard.js'
 import { syncCheckpointsToMedium } from './sqlite-durability.js'
+import { assertStoredHead } from './storage-sqlite-head.js'
 
 // Re-exported from the module that uses it: a caller wanting the schema reaches for the storage
 // adapter, not for a file whose name it would have to know.
@@ -72,6 +73,7 @@ export type CrashReclaimStore = {
   ): { opState: { seq: number; data: unknown } | undefined; seq: number } | null
 }
 export interface SqliteStorage extends StorageAdapter, ChildControlStore {
+  scanLean: NonNullable<StorageAdapter['scanLean']>
   readonly file: string
   /**
    * A package's own tables, on its own connection. A separate file is not by itself an isolation
@@ -205,6 +207,14 @@ export function ownerFile(owner: string): string {
   }
   return out
 }
+
+// SQLite checks stored size before transferring data to JS. A giant original or request is
+// represented by a small placeholder; raw scans and integrity scans always read the original.
+const LEAN_COLUMNS = `session_key, seq, ts, id, type, lane, v, actor, origin, trust,
+  register, ignorable, surface_op, source_event_seqs,
+  CASE WHEN octet_length(data) > 16384
+    THEN '{"content":[{"type":"text","text":"[Large stored event omitted from unverified preview]"}]}'
+    ELSE data END AS data`
 
 function rowToEvent(r: Row): Event {
   return {
@@ -404,7 +414,16 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
     return parentOf(key)?.boundarySeq ?? 0
   }
   /** Up to `take` matching rows, the parent prefix included; the caller decides what `take` means. */
-  function scanRows(key: SessionKey, qy: ScanQuery, take: number): Event[] {
+  function scanRows(
+    key: SessionKey,
+    qy: ScanQuery,
+    take: number,
+    lean = false,
+    seen = new Set<string>(),
+  ): Event[] {
+    if (seen.has(key) || seen.size >= 64)
+      throw new CoreError('E_LEDGER_INTEGRITY', 'invalid session ancestry')
+    seen.add(key)
     const parent = parentOf(key)
     const where: string[] = ['session_key = ?']
     const params: SqlParam[] = [key]
@@ -427,32 +446,64 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
     }
     const order = qy.order === 'desc' ? 'DESC' : 'ASC'
     const own = db
-      .prepare(`SELECT * FROM events WHERE ${where.join(' AND ')} ORDER BY seq ${order} LIMIT ?`)
+      .prepare(
+        `SELECT ${lean ? LEAN_COLUMNS : '*'} FROM events WHERE ${where.join(' AND ')} ORDER BY seq ${order} LIMIT ?`,
+      )
       .all(...params, take) as unknown as Row[]
-    let rows = own.map(rowToEvent)
+    let rows = lean ? leanEvents(own.map(rowToEvent)) : own.map(rowToEvent)
     if (parent) {
       const upper = qy.toSeq === undefined ? parent.boundarySeq : Math.min(qy.toSeq, parent.boundarySeq)
-      const prefix = scanRows(parent.key, { ...qy, toSeq: upper }, take)
+      const prefix = scanRows(parent.key, { ...qy, toSeq: upper }, take, lean, seen)
       rows = order === 'ASC' ? [...prefix, ...rows] : [...rows, ...prefix]
       rows = rows.slice(0, take)
     }
     return rows
   }
 
-  function scanIntegrityRows(key: SessionKey, qy: IntegrityScanQuery): IntegrityRow[] {
+  function scanIntegrityRows(
+    key: SessionKey,
+    qy: IntegrityScanQuery,
+    seen = new Set<string>(),
+  ): IntegrityRow[] {
+    if (seen.has(key) || seen.size >= 64)
+      throw new CoreError('E_LEDGER_INTEGRITY', 'invalid session ancestry')
+    seen.add(key)
+    const take = Math.min(qy.limit, MAX_LIMIT)
     const parent = parentOf(key)
+    const prefix =
+      parent && qy.fromSeq <= parent.boundarySeq
+        ? scanIntegrityRows(
+            parent.key,
+            { ...qy, toSeq: Math.min(qy.toSeq, parent.boundarySeq), limit: take },
+            seen,
+          )
+        : []
+    if (
+      prefix.length >= take ||
+      (parent &&
+        qy.fromSeq <= parent.boundarySeq &&
+        (prefix.at(-1)?.event.seq ?? 0) < Math.min(qy.toSeq, parent.boundarySeq))
+    )
+      return prefix
+    const from = Math.max(qy.fromSeq, parent ? parent.boundarySeq + 1 : 1)
+    const sizes = db
+      .prepare(
+        'SELECT seq, octet_length(data) AS size FROM events WHERE session_key = ? AND seq >= ? AND seq <= ? ORDER BY seq LIMIT ?',
+      )
+      .all(key, from, qy.toSeq, take - prefix.length) as Array<{ seq: number; size: number }>
+    let end = from - 1
+    let bytes = 0
+    for (const row of sizes) {
+      if (end >= from && bytes + row.size > 8 * 1024 * 1024) break
+      end = row.seq
+      bytes += row.size
+    }
     const own = db
       .prepare(
         'SELECT * FROM events WHERE session_key = ? AND seq >= ? AND seq <= ? ORDER BY seq ASC LIMIT ?',
       )
-      .all(key, qy.fromSeq, qy.toSeq, Math.min(qy.limit, MAX_LIMIT)) as unknown as Row[]
-    let rows = own.map(rowToIntegrity)
-    if (parent) {
-      const upper = Math.min(qy.toSeq, parent.boundarySeq)
-      const prefix = scanIntegrityRows(parent.key, { ...qy, toSeq: upper, limit: MAX_LIMIT })
-      rows = [...prefix, ...rows].slice(0, Math.min(qy.limit, MAX_LIMIT))
-    }
-    return rows
+      .all(key, from, end, take - prefix.length) as unknown as Row[]
+    return [...prefix, ...own.map(rowToIntegrity)]
   }
 
   const childControl = sqliteChildControl(db, tx, clock)
@@ -475,19 +526,12 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
         const version = (q.session.get(key) as { format_version: number }).format_version
         if (version !== LEDGER_FORMAT_VERSION) throw ledgerFormatError(key, version, opts.file)
         q.upsertLease.run(key, claim.writerRunId, clock() + claim.ttlMs, claim.ttlMs)
-        const recovery = recoverSqliteTail<Row>({
-          db,
-          key,
-          file: opts.file,
-          now: clock(),
-          decode: rowToIntegrity,
-          encodeKey: keyBytes,
-        })
+        // New-product histories are never salvaged into an executable prefix after damage.
+        assertStoredHead(db, key)
         const parent = parentOf(key)
         return {
           lastSeq: lastSeq(key),
           formatVersion: 1,
-          ...(recovery ? { recovery } : {}),
           ...(created ? { created: true } : {}),
           ...(parent ? { parent } : {}),
         }
@@ -552,6 +596,10 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
           }
           seqs.push(seq)
         }
+        if (seqs.length > 0)
+          db.prepare(
+            'INSERT INTO ledger_heads (session_key, seq, digest) VALUES (?, ?, ?) ON CONFLICT(session_key) DO UPDATE SET seq = excluded.seq, digest = excluded.digest',
+          ).run(key, seq, c.integrity?.at(-1)?.digest ?? null)
         if (c.opState) {
           const lane = keyBytes(c.opState.lane)
           if (c.opState.data === null) q.deleteRegister.run(key, 'op.state', lane)
@@ -581,6 +629,7 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
         q.deleteRegisters.run(key)
         q.deleteLease.run(key, runId)
         q.deleteSession.run(key)
+        db.prepare('DELETE FROM ledger_heads WHERE session_key = ?').run(key)
       })
     },
     async scan(key, qy) {
@@ -594,6 +643,11 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
       const rows = scanRows(key, qy, SCAN_PAGE_MAX + 1)
       if (rows.length > SCAN_PAGE_MAX) throw scanTruncated(qy)
       return rows
+    },
+    async scanLean(key, qy) {
+      if (!Number.isSafeInteger(qy.limit) || !qy.limit || qy.limit < 1 || qy.limit > SCAN_PAGE_MAX)
+        throw new CoreError('E_SCAN_UNBOUNDED', 'lean scan needs a bounded page')
+      return scanRows(key, qy, qy.limit, true)
     },
     async scanIntegrity(key, qy) {
       if (!Number.isSafeInteger(qy.limit) || qy.limit <= 0)

@@ -147,3 +147,21 @@ it('states which rows a truncated record shows', async () => {
     expect.objectContaining({ scan: expect.objectContaining({ fromSeq: 901, throughSeq: 1500 }) }),
   )
 })
+
+it('labels opening history as unverified and ignores a preview that finishes after live admission', async () => {
+  const { context, controller, pending } = setup()
+  const preview = controller.preview('A', 1)
+  await tick()
+  pending.get('A:200')?.(view('A'))
+  await preview
+  expect(context.readOnly?.id).toBe('A')
+  controller.clear()
+  expect(context.readOnly).toBeUndefined()
+  const late = controller.preview('B', 1)
+  await tick()
+  controller.clear()
+  context.projection = { sessionId: 'live' }
+  pending.get('B:200')?.(view('B'))
+  await late
+  expect(context.projection).toEqual({ sessionId: 'live' })
+})

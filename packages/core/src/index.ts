@@ -127,6 +127,7 @@ export type {
   WorkspacePublicationDispatch,
 } from '@agnes/core-effects/workspace/runtime'
 export { createWorkspaceInvocationPort } from '@agnes/core-effects/workspace/runtime'
+export { leanEvents } from '@agnes/core-ledger'
 export { CORE_CHECKS } from '@agnes/core-ledger/invariants/core-checks'
 export type { InvariantCheck, Violation } from '@agnes/core-ledger/invariants/registry'
 export { InvariantRegistry } from '@agnes/core-ledger/invariants/registry'

@@ -10,9 +10,11 @@
 
 ## 日志尾部损坏
 
-打开 JSON 或校验和损坏的 SQLite 日志尾部时，会保留已验证前缀，先将受损原始行及寄存器持久隔离到私有 `sessions.db.tail-<diagnosticId>.json` 文件，再记录恢复诊断。JSONL 示例将精确损坏字节保存在 `store.jsonl.tail-<diagnosticId>.bin`。Web 显示含诊断 ID 的本地化通知。调查存储故障时请保留隔离文件；它不会作为普通模型上下文发送。
+SQLite 历史必须完整验证后，才能执行会话 hook、恢复、标题生成、工具或模型。append 同事务写入的水位还会检测末尾被删除。损坏行、缺链或 head 不匹配都会拒绝打开，并保留原始证据，不自动截断。请保留数据库用于排查；无法执行时仍可使用只读历史视图。本产品不读取旧 home 或迁移旧日志。
 
-在途副作用按未知结果关闭，不会重放，包括通常可安全重放的工具。再次请求操作前，先核对外部实际结果。损坏后仍有有效事件/事务、完整性链缺行，或受损前缀被 fork 引用时，拒绝自动截断。未知未来格式版本明确拒绝；此恢复不升级或迁移格式。
+Web 可在验证时显示明确标注为**未经验证的只读预览**的历史；大载荷和内嵌媒体可能显示占位文本。预览不授予执行权限，验证通过后才由实时会话替换。历史窗口和扫描预算标记说明省略范围。SDK `session.load(id, { onProgress })` 提供验证及重放进度；`timeouts.loadIdle`（默认 30 秒）和 `timeouts.loadHard`（默认 10 分钟）分别限制无进展等待和总时长。超时会取消该连接的待完成加载，断连也会取消验证。
+
+JSONL persistence 示例有自己的诊断隔离文件，不代表 SQLite 的恢复策略。
 
 ## 找到并继续会话
 
@@ -82,3 +84,7 @@ Agent 工作时发送消息，默认排队为指引，在当前模型调用或�
 SDK：`session.controls()` 读取能力与状态；`steer(content)`、`editQueued(itemId, content)`、`removeQueued(itemId)`、`interrupt(itemId)`、`pause()`、`resume()` 和 `cancel()` 都走持久命令路径。Loop 通过 `LoopFactory.controls` 声明支持能力，省略即拒绝指引、打断和暂停。不带 `afterSeq` 时，`controls()` 只返回最新的至多 200 条事实（`facts[0].seq` 是该窗口中最早的 seq），窗口已满时 `factsMore` 为 true。读取历史请从 `afterSeq: 0` 开始。
 
 输入框上方的子代理树显示所属 workflow 和子代理会话的时长、Token 用量；未知值明确显示为未知。**停止子代理**协作式结束子代理当前轮，workflow 继续等待；发送继续消息后，同一子会话保留原有约束继续工作。SDK 使用 `stopChild(childId)` 和 `continueChild(childId, text)`。父、子控制事实保留人工操作者。外部子代理提供者声明自己的打断/继续能力，不支持的动作禁用。`controls({ afterSeq })` 通过 `factsThrough` 和 `factsMore` 分页读取完整控制历史。
+
+原件无损导出使用 `node agnes.mjs export SESSION_ID --raw -o session.agnes`，并将 `session.agnes` 与 `session.agnes.artifacts/` 一起保存。清单以 size 和 SHA-256 绑定完整事件流及每个声明原件；导出通过已认证的 session/lane 权限读取并核验原件。缺失、摘要不符或权限拒绝时不发布 bundle，已有 bundle 不会被覆盖。脱敏导出用于分享，不包含原件。
+
+使用 `node agnes.mjs import session.agnes --key NEW_SESSION_KEY` 导入。预留目标前先核验清单、序号、事务边界和全部 sidecar 原件；随后再次核验原件，并通过所选 artifact seam 写入。append 或激活失败会回滚新会话；已写入但未引用的内容寻址原件由普通保留机制回收。格式只支持当前产品的事件 schema，单个原件最多 32 MiB，声明原件总量最多 256 MiB，不提供其他产品格式或旧 home 的迁移。

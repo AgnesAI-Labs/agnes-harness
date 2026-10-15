@@ -750,3 +750,44 @@ it('carries validated loop, preset and ordered bundles on new-session metadata',
     await c.close()
   }
 })
+
+it('starts the load idle clock after initialization and cancels a stalled restore without creating a handle', async () => {
+  vi.useFakeTimers()
+  let finish!: () => void
+  const server = fakeEndpoint({
+    initialize: () =>
+      new Promise((resolve) =>
+        setTimeout(
+          () =>
+            resolve({
+              protocolVersion: 1,
+              agentCapabilities: {},
+              _meta: { agnes: { agnesVersion: 'test' } },
+            }),
+          25,
+        ),
+      ),
+    'session/load': () =>
+      new Promise<void>((resolve) => {
+        finish = resolve
+      }),
+  })
+  const client = createClient({
+    transport: { kind: 'inproc', endpoint: server.endpoint },
+    authProviders: providers,
+    timeouts: { initialize: 100, request: 5, loadIdle: 20, loadHard: 50 },
+  })
+  const restoring = client.restoreSession('s', '')
+  const result = restoring.catch((error: Error) => error.message)
+  await vi.advanceTimersByTimeAsync(25)
+  expect(server.calls.some((call) => call.method === 'session/load')).toBe(true)
+  await vi.advanceTimersByTimeAsync(21)
+  expect(await result).toContain('idle')
+  expect(server.calls).toContainEqual({
+    method: '_agnes/v1/session.loadingCancel',
+    params: { sessionId: 's' },
+  })
+  expect(client.sessions.has('s')).toBe(false)
+  finish()
+  await client.close()
+})

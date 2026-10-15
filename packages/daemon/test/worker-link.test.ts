@@ -395,3 +395,56 @@ describe('WorkerLink preview frames', () => {
     await vi.waitFor(() => expect(link.alive).toBe(false))
   })
 })
+
+it('routes load progress only to its pending open and sends cancellation without settling the open', async () => {
+  const { link, socket } = setup()
+  const controller = new AbortController()
+  const progress = vi.fn()
+  const pending = link.openSession(
+    's',
+    { binding: {} as never },
+    { historySignal: controller.signal, onHistoryProgress: progress },
+  )
+  const result = pending.catch((error: Error) => error.message)
+  const frame = JSON.parse(socket.writes.at(-1)!.toString().trim()) as { requestId: string }
+  socket.emit(
+    'data',
+    encodeFrame({
+      kind: 'session.loading',
+      requestId: frame.requestId,
+      sessionKey: 'other',
+      verifiedSeq: 1,
+      lastSeq: 2,
+    }),
+  )
+  socket.emit(
+    'data',
+    encodeFrame({
+      kind: 'session.loading',
+      requestId: frame.requestId,
+      sessionKey: 's',
+      verifiedSeq: 1,
+      lastSeq: 2,
+    }),
+  )
+  await vi.waitFor(() => expect(progress).toHaveBeenCalledWith({ verifiedSeq: 1, lastSeq: 2 }))
+  expect(progress).toHaveBeenCalledOnce()
+  expect(link.alive).toBe(true)
+  controller.abort()
+  expect(JSON.parse(socket.writes.at(-1)!.toString().trim())).toEqual({
+    kind: 'session.open.cancel',
+    requestId: frame.requestId,
+    sessionKey: 's',
+  })
+  socket.emit(
+    'data',
+    encodeFrame({
+      kind: 'reply',
+      requestId: frame.requestId,
+      sessionKey: 's',
+      error: { code: 'E_LEDGER_INTEGRITY', message: 'cancelled' },
+    }),
+  )
+  expect(await result).toContain('cancelled')
+  link.close()
+})

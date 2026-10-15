@@ -71,6 +71,7 @@ export type OpenLogOptions = {
   relationCheck?: (events: PreparedEvent[], log: SessionLogImpl, op: OpWrite | undefined) => void
   onAppended?: (events: Event[], extra: AppendedExtra) => void
   /** Folds the ledger while `open` verifies it: `page` receives every verified page in order, from seq 1. */
+  verification?: import('./integrity.js').VerificationOptions
   replay?: {
     page(events: Event[]): void
   }
@@ -180,6 +181,7 @@ export class SessionLogImpl {
         opened.lastSeq,
         pageYield,
         replay ? (events) => replay.page(events) : undefined,
+        o.verification,
       )
       const rows = await o.storage.registers(o.key)
       const log = new SessionLogImpl(
@@ -253,6 +255,9 @@ export class SessionLogImpl {
   }
   get faulted(): boolean {
     return this.faultedValue
+  }
+  get created(): boolean {
+    return this.createdOnOpen
   }
   get isClosed(): boolean {
     return this.closed

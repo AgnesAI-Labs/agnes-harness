@@ -133,6 +133,7 @@ export function classifyGenerationFailure(error: unknown): SessionVersionIssue |
     case 'E_COMPOSITION_BINDING_INVALID':
     case 'E_GENERATION_RESOURCE_INTEGRITY':
     case 'E_FORMAT_CORRUPT':
+    case 'E_LEDGER_INTEGRITY':
       return 'corrupt'
     default:
       return undefined

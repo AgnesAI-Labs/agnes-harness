@@ -1,4 +1,6 @@
 export const DDL = [
+  `CREATE TABLE IF NOT EXISTS ledger_heads (
+     session_key TEXT PRIMARY KEY, seq INTEGER NOT NULL, digest TEXT)`,
   // `lane` is a BLOB for the same reason `key` below is, and it is the same value: a lane is the
   // register key for every register except harness/entry and artifact/job. Read back through a TEXT
   // column a lane stops at its first NUL, so the durable event and the register it keys disagreed -

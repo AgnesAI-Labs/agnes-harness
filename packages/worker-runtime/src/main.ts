@@ -647,6 +647,10 @@ export async function runWorker(
       await shutdown(0)
       return
     }
+    if (frame.kind === 'session.open.cancel') {
+      hostedSessions?.cancelOpen(frame.requestId, frame.sessionKey)
+      return
+    }
     try {
       const result = await admitWorkerCommand(localGate, async () => {
         if (frame.kind === 'session.open') {

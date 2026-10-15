@@ -77,6 +77,8 @@ export class HostedSessions {
   private readonly stubs = new Map<string, HibernatedStub>()
   private readonly hibernating = new Map<string, Promise<void>>()
   private readonly waking = new Map<string, Promise<HostedSession>>()
+  private readonly cancelledOpens = new Set<string>()
+  private readonly openingAborts = new Map<string, { key: string; controller: AbortController }>()
   private closingAll = false
   private readonly clock: () => number
   private readonly sweeper: ReturnType<typeof setInterval> | undefined
@@ -139,10 +141,21 @@ export class HostedSessions {
       this.assertAuthority(hosted.session, binding, parent)
       return this.describe(hosted.session)
     }
+    const controller = new AbortController()
+    if (this.cancelledOpens.delete(`${frame.sessionKey}\0${frame.requestId}`)) controller.abort()
+    this.openingAborts.set(frame.requestId, { key: frame.sessionKey, controller })
     const opening = this.options.channel.run(frame.sessionKey, async () => {
       const session = await this.options.host
         .createSession({
           key: frame.sessionKey,
+          historySignal: controller.signal,
+          onHistoryProgress: (progress) =>
+            this.options.send({
+              kind: 'session.loading',
+              requestId: frame.requestId,
+              sessionKey: frame.sessionKey,
+              ...progress,
+            }),
           binding,
           ...(frame.params.preset ? { preset: frame.params.preset } : {}),
           ...(frame.params.bundles !== undefined ? { bundles: frame.params.bundles } : {}),
@@ -164,8 +177,15 @@ export class HostedSessions {
     try {
       return this.describe((await opening).session)
     } finally {
+      this.openingAborts.delete(frame.requestId)
       if (this.opening.get(frame.sessionKey) === opening) this.opening.delete(frame.sessionKey)
     }
+  }
+
+  cancelOpen(requestId: string, key: string): void {
+    const pending = this.openingAborts.get(requestId)
+    if (pending?.key === key) pending.controller.abort(new Error('session opening cancelled'))
+    else if (this.cancelledOpens.size < 512) this.cancelledOpens.add(`${key}\0${requestId}`)
   }
 
   private describe(session: HostSession): SessionOpenResult {
@@ -501,6 +521,8 @@ export class HostedSessions {
     const active = this.closing.get(sessionKey)
     if (active) return active
     const closing = (async () => {
+      for (const pending of this.openingAborts.values())
+        if (pending.key === sessionKey) pending.controller.abort()
       await this.opening.get(sessionKey)?.catch(() => undefined)
       while (this.hibernating.has(sessionKey) || this.waking.has(sessionKey)) {
         await this.hibernating.get(sessionKey)
@@ -534,6 +556,7 @@ export class HostedSessions {
 
   async closeAll(): Promise<void> {
     this.closingAll = true
+    for (const { controller } of this.openingAborts.values()) controller.abort()
     if (this.sweeper) clearInterval(this.sweeper)
     await Promise.allSettled(this.opening.values())
     await Promise.allSettled([...this.hibernating.values(), ...this.waking.values()])

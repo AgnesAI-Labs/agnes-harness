@@ -653,39 +653,79 @@ export function registerAcp(
     return { sessionId: entry.key }
   })
 
-  ep.register('session/load', async (params) => {
+  const loading = new Map<string, Set<AbortController>>()
+  ep.register('_agnes/v1/session.loadingCancel', async (params) => {
+    const { sessionId } = params as { sessionId: string }
+    requireOwner('session.loadingCancel', sessionId)
+    for (const controller of loading.get(sessionId) ?? [])
+      controller.abort(new Error('session loading cancelled'))
+    return {}
+  })
+
+  ep.register('session/load', async (params, call) => {
     const p = params as { sessionId: string; cwd: string }
     requireOwner('session/load', p.sessionId)
-    let entry = cx.registry.get(p.sessionId)
+    const controller = new AbortController()
+    const signal = AbortSignal.any([call.signal, controller.signal])
+    const pending = loading.get(p.sessionId) ?? new Set<AbortController>()
+    pending.add(controller)
+    loading.set(p.sessionId, pending)
     try {
-      const binding = await cx.workspaces.restoreBinding(p.sessionId, p.cwd || undefined)
-      // Calling open for a live entry is intentional: both registries must reject a different
-      // authority binding rather than ignoring it until the next restart.
-      entry = await cx.registry.open({
-        key: p.sessionId,
-        cwd: binding.canonicalRoot,
-        binding,
-        resume: true,
-      } as Parameters<typeof cx.registry.open>[0])
-    } catch (error) {
-      throwSessionOpenRpcError(error, p.sessionId)
+      let entry = cx.registry.get(p.sessionId)
+      try {
+        const binding = await cx.workspaces.restoreBinding(p.sessionId, p.cwd || undefined)
+        // Calling open for a live entry is intentional: both registries must reject a different
+        // authority binding rather than ignoring it until the next restart.
+        entry = await cx.registry.open({
+          key: p.sessionId,
+          cwd: binding.canonicalRoot,
+          binding,
+          resume: true,
+          historySignal: signal,
+          onHistoryProgress: (progress: { verifiedSeq: number; lastSeq: number }) => {
+            if (!signal.aborted)
+              ep.push(
+                notify('_agnes/v1/session.loading', {
+                  sessionId: p.sessionId,
+                  phase: 'verifying',
+                  ...progress,
+                }),
+              )
+          },
+        } as Parameters<typeof cx.registry.open>[0])
+      } catch (error) {
+        throwSessionOpenRpcError(error, p.sessionId)
+      }
+      if (!entry) throw rpcError('SESSION_NOT_FOUND', { sessionId: p.sessionId })
+      const feed = feedFor(entry)
+      // Paged and bounded: core refuses an unbounded scan (E_SCAN_UNBOUNDED), and a single page would
+      // silently truncate a long transcript at whatever limit was written here.
+      const lastSeq = entry.session.lastSeq
+      for (let from = 1; from <= lastSeq; from += 500) {
+        if (signal.aborted) throw new Error('session load disconnected')
+        feed.replayLoad(
+          (await entry.session.scan({
+            fromSeq: from,
+            toSeq: Math.min(lastSeq, from + 499),
+            limit: 500,
+          })) as EventEnvelope[],
+        )
+        ep.push(
+          notify('_agnes/v1/session.loading', {
+            sessionId: p.sessionId,
+            phase: 'replaying',
+            verifiedSeq: Math.min(lastSeq, from + 499),
+            lastSeq,
+          }),
+        )
+      }
+      // Whatever is streaming now is not in the transcript yet; the snapshot says it.
+      feed.previewResync()
+      return {}
+    } finally {
+      pending.delete(controller)
+      if (!pending.size) loading.delete(p.sessionId)
     }
-    if (!entry) throw rpcError('SESSION_NOT_FOUND', { sessionId: p.sessionId })
-    const feed = feedFor(entry)
-    // Paged and bounded: core refuses an unbounded scan (E_SCAN_UNBOUNDED), and a single page would
-    // silently truncate a long transcript at whatever limit was written here.
-    const lastSeq = entry.session.lastSeq
-    for (let from = 1; from <= lastSeq; from += 500)
-      feed.replayLoad(
-        (await entry.session.scan({
-          fromSeq: from,
-          toSeq: Math.min(lastSeq, from + 499),
-          limit: 500,
-        })) as EventEnvelope[],
-      )
-    // Whatever is streaming now is not in the transcript yet; the snapshot says it.
-    feed.previewResync()
-    return {}
   })
 
   ep.register('session/prompt', async (params, c) => {

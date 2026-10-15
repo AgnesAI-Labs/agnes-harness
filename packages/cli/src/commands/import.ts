@@ -1,10 +1,12 @@
 import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { importSession, OLDER_EXPORT_FORMAT } from '@agnes/bridges/convert'
 import { SessionAdmissionDenied } from '@agnes/daemon/local'
 import type { Host, HostSession } from '@agnes/host'
 import type { EventEnvelope, SessionStart } from '@agnes/protocol'
 import { CommandError, ExitCode, UsageError } from '../errors.js'
 import type { ParsedArgs, SessionAdmissionPort } from '../types.js'
+import { bundleOriginals, readNativeBundle } from './native-bundle.js'
 
 type Sink = { write(chunk: string | Uint8Array): unknown }
 export type ImportDeps = {
@@ -92,7 +94,9 @@ export async function importFile(parsed: ParsedArgs, deps: ImportDeps): Promise<
     throw new UsageError('import only runs in one-shot form (no --connect)')
   const file = parsed.positional[0]
   if (!file || parsed.positional.length !== 1) throw new UsageError('import expects exactly one file')
-  const converted = importSession((deps.readFile ?? readFileSync)(file), {
+  const bytes = (deps.readFile ?? readFileSync)(resolve(deps.cwd, file))
+  const bundle = await readNativeBundle(resolve(deps.cwd, file), bytes)
+  const converted = importSession(bundle?.raw ?? bytes, {
     from: parsed.from ?? 'auto',
     ...(parsed.key ? { sessionKey: parsed.key } : {}),
   })
@@ -108,6 +112,19 @@ export async function importFile(parsed: ParsedArgs, deps: ImportDeps): Promise<
         ? `${file} line ${hole.line}: this export comes from an older format (${hole.reason}); an agnes export must keep every row, and this build cannot import it`
         : `${file} line ${hole.line}: ${hole.reason}; an agnes export must keep every row -- re-export it with this build`,
     )
+  const originals = bundleOriginals(converted.events)
+  if (originals.length && !bundle) throw new CommandError('native import requires original artifact sidecars')
+  if (
+    bundle &&
+    (converted.events.at(-1)?.seq !== bundle.manifest.lastSeq ||
+      JSON.stringify(originals) !== JSON.stringify(bundle.manifest.originals))
+  )
+    throw new CommandError('native bundle ledger and original declarations disagree')
+  // Validate every transaction boundary before reserving or opening any target.
+  const body = converted.events
+    .filter((event) => event.type !== 'session/start')
+    .map(({ seq: _sequence, ...event }) => event)
+  const batches = importBatches(body)
   // No session_start hooks: an extension may record a row there (code-mode notes that no kernel is
   // alive yet), and anything after session/start would move the imported body off its sequence.
   let reservedNew = false
@@ -122,6 +139,7 @@ export async function importFile(parsed: ParsedArgs, deps: ImportDeps): Promise<
         cwd: reserved.binding.canonicalRoot,
         binding: reserved.binding,
         skipSessionStartHooks: true,
+        requireNew: true,
         ...(imported ? { imported } : {}),
       })
       .catch((error: unknown) => {
@@ -142,12 +160,16 @@ export async function importFile(parsed: ParsedArgs, deps: ImportDeps): Promise<
   try {
     if (session.lastSeq !== 1)
       throw new CommandError(`import target ${key} is not fresh (last sequence ${session.lastSeq})`)
-    const body = converted.events
-      .filter((event) => event.type !== 'session/start')
-      .map(({ seq: _sequence, ...event }) => event)
     let written = 0
     try {
-      for (const batch of importBatches(body)) {
+      for (const { ref } of originals) {
+        const bytes = await bundle?.readOriginal(ref)
+        if (!bytes) throw new Error('native bundle original is missing')
+        const stored = await session.d.runtime.artifactPut(bytes, { mime: ref.mime })
+        if (stored.sha256 !== ref.sha256 || stored.size !== ref.size || stored.mime !== ref.mime)
+          throw new Error('native import artifact store identity mismatch')
+      }
+      for (const batch of batches) {
         await session.append(batch)
         written += batch.length
       }

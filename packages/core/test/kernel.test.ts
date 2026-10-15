@@ -140,6 +140,20 @@ describe('Kernel (I1 assembly)', () => {
     ).rejects.toThrow('E_CLOSED')
     config = { personaPrefix: 'new persona' }
     const k2 = base({ storage, systemPrompt })
+    await expect(
+      k2.session('k1', { ...sessionOpts, writerRunId: 'fresh-only', requireNew: true }),
+    ).rejects.toThrow('not fresh')
+    expect(replayed).toEqual([])
+    const cancellation = new AbortController()
+    await expect(
+      k2.session('k1', {
+        ...sessionOpts,
+        writerRunId: 'cancelled-open',
+        historySignal: cancellation.signal,
+        onHistoryProgress: () => cancellation.abort(),
+      }),
+    ).rejects.toMatchObject({ code: 'E_CLOSED' })
+    expect(replayed).toEqual([])
     const again = await k2.session('k1', { ...sessionOpts, writerRunId: 'r2' })
     expect((await again.scan({ fromSeq: 1, limit: 5 })).map((e) => e.type)).toEqual(['session/start'])
     expect(again.lastSeq).toBe(1)

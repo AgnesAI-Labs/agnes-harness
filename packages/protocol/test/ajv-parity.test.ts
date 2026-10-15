@@ -609,6 +609,7 @@ const AGNES_DEFS: Record<string, TSchema> = {
   AuthClaimParams: AgnesGen.AuthClaimParams,
   AuthClaimResult: AgnesGen.AuthClaimResult,
   SessionEventParams: AgnesGen.SessionEventParams,
+  SessionLoadingParams: AgnesGen.SessionLoadingParams,
   SessionPreviewParams: AgnesGen.SessionPreviewParams,
   DaemonNotice: AgnesGen.DaemonNotice,
   // SlotName is a cross-file alias of model.json's closed seven-value enum, on the same footing as
@@ -3791,6 +3792,14 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { ...sessionEventOk, _meta: { 'ai.agnes.harness': { ...harnessMetaOk, phase: 'bogus' } } },
     ],
     note: 'valid and the first invalid reuse fixtures/methods/i1.jsonl (session-event-params-ok / session-event-params-row-missing-actor)',
+  },
+  SessionLoadingParams: {
+    note: 'bounded verification and replay progress',
+    valid: { sessionId: 's', phase: 'verifying', verifiedSeq: 5, lastSeq: 10 },
+    invalid: [
+      { sessionId: 's', phase: 'ready', verifiedSeq: 5, lastSeq: 10 },
+      { sessionId: 's', phase: 'verifying', verifiedSeq: -1, lastSeq: 10 },
+    ],
   },
   SessionPreviewParams: {
     valid: { sessionId: 's1', lane: 'main', effectId: 'e1', stream: 'text', offset: 0, delta: 'hi' },
@@ -8952,13 +8961,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     note: 'valid and the first invalid reuse fixtures/methods/i1.jsonl (auth-claim-params-windowed / auth-claim-params-mixed-shapes)',
   },
   '_agnes/v1/session.event': AGNES_SAMPLES.SessionEventParams as Sample,
-  '_agnes/v1/session.loading': {
-    valid: { sessionId: 's', phase: 'verifying', verifiedSeq: 5, lastSeq: 10 },
-    invalid: [
-      { sessionId: 's', phase: 'ready', verifiedSeq: 5, lastSeq: 10 },
-      { sessionId: 's', phase: 'verifying', verifiedSeq: -1, lastSeq: 10 },
-    ],
-  },
+  '_agnes/v1/session.loading': AGNES_SAMPLES.SessionLoadingParams as Sample,
   '_agnes/v1/session.loadingCancel': AGNES_SAMPLES.SessionIdParams as Sample,
   '_agnes/v1/session.preview': AGNES_SAMPLES.SessionPreviewParams as Sample,
   '_agnes/v1/daemon.notice': AGNES_SAMPLES.DaemonNotice as Sample,

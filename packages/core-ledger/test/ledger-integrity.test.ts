@@ -1,6 +1,6 @@
 import { defaultIds } from '@agnes/core-common/ids'
 import type { Event, EventInput, PreparedEvent } from '@agnes/core-common/types'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { LedgerIntegrityFailure, verifyIntegrityRows } from '../src/log/integrity.js'
 import { MemoryStorage } from '../src/log/memory-storage.js'
 import { type OpenLogOptions, SessionLogImpl } from '../src/log/session-log.js'
@@ -151,3 +151,49 @@ describe('ledger integrity', () => {
     await reopened.close()
   })
 })
+
+it.each(['cancel', 'idle', 'hard'] as const)(
+  'refuses %s verification before exposing registers or a late page',
+  async (mode) => {
+    vi.useFakeTimers()
+    try {
+      const storage = new MemoryStorage()
+      const log = await SessionLogImpl.open(options(storage))
+      await log.append([input('one')])
+      await log.close()
+      let release!: (rows: IntegrityRow[]) => void
+      const registers = vi.fn(() => storage.registers('k'))
+      const controller = new AbortController()
+      const pending = SessionLogImpl.open({
+        ...options(
+          wrapped(storage, {
+            scanIntegrity: () =>
+              new Promise((resolve) => {
+                release = resolve
+              }),
+            registers,
+          }),
+        ),
+        verification: {
+          signal: controller.signal,
+          idleTimeoutMs: mode === 'idle' ? 10 : 100,
+          hardTimeoutMs: mode === 'hard' ? 10 : 100,
+        },
+      })
+      const rejected = expect(pending).rejects.toMatchObject({
+        code: mode === 'cancel' ? 'E_CLOSED' : 'E_STORAGE_FAULT',
+      })
+      await vi.advanceTimersByTimeAsync(0)
+      if (mode === 'cancel') controller.abort()
+      else await vi.advanceTimersByTimeAsync(11)
+      await rejected
+      release(await storage.scanIntegrity('k', { fromSeq: 1, toSeq: 1, limit: 1 }))
+      await Promise.resolve()
+      expect(registers).not.toHaveBeenCalled()
+      const reopened = await SessionLogImpl.open(options(storage, 'after-failure'))
+      await reopened.close()
+    } finally {
+      vi.useRealTimers()
+    }
+  },
+)

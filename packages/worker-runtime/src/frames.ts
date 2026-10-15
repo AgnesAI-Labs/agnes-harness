@@ -236,6 +236,7 @@ export type CommandFrame = WorkerCommandFrame | SessionCommandFrame
 export type ReplyFrame = WorkerReplyFrame | SessionReplyFrame
 export type CloseFrame = { kind: 'close'; reason: string }
 export type WorkerToSupervisor =
+  | { kind: 'session.loading'; requestId: string; sessionKey: string; verifiedSeq: number; lastSeq: number }
   | WorkerHello
   | EventFrame
   | PreviewFrame
@@ -246,6 +247,7 @@ export type WorkerToSupervisor =
   | SessionReplyFrame
   | RequestFrame
 export type SupervisorToWorker =
+  | { kind: 'session.open.cancel'; requestId: string; sessionKey: string }
   | RuntimeStaleFrame
   | WorkerCommandFrame
   | SessionOpenFrame

@@ -53,12 +53,15 @@ export type CreateSessionOptions = {
   binding?: WorkspaceBinding
   credential?: unknown
   writerRunId?: string
+  historySignal?: AbortSignal
+  onHistoryProgress?: (progress: { verifiedSeq: number; lastSeq: number }) => void
   lane?: string
   /** Pinned seams are chosen by registered provider and repin only; a session cannot bring its own object. */
   seams?: Partial<Omit<SeamImplementations, PinnedSeamKind>>
   /** Creates a durable immutable-prefix child through Core's existing fork primitive. */
   parent?: { key: string; boundarySeq: Seq }
   /** See core's SessionOptions: a new session opens without `session_start`. In-process only (import). */
+  requireNew?: boolean
   skipSessionStartHooks?: boolean
   /** See core's SessionOptions: where an imported ledger came from. In-process only (import). */
   imported?: SessionStart['imported']
@@ -451,8 +454,11 @@ export async function createSession(
     policyDigest: policyDigest(profile),
     cwd,
     writerRunId: opts.writerRunId ?? randomUUID(),
+    ...(opts.historySignal ? { historySignal: opts.historySignal } : {}),
+    ...(opts.onHistoryProgress ? { onHistoryProgress: opts.onHistoryProgress } : {}),
     ...(opts.parent ? { parent: opts.parent } : {}),
     ...(opts.lane ? { lane: opts.lane } : {}),
+    ...(opts.requireNew ? { requireNew: true } : {}),
     ...(opts.skipSessionStartHooks ? { skipSessionStartHooks: true } : {}),
     ...(opts.imported ? { imported: opts.imported } : {}),
     ...(workspace

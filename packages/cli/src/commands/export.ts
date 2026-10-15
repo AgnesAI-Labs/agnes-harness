@@ -10,6 +10,7 @@ import { ExitCode, UsageError } from '../errors.js'
 import { renderHtml } from '../html/template.js'
 import type { ParsedArgs } from '../types.js'
 import { writeWindowsPrivateExport } from './export-private-file.js'
+import { bundleOriginals, writeNativeBundle } from './native-bundle.js'
 
 export type LedgerExport = {
   events: EventEnvelope[]
@@ -128,6 +129,7 @@ export async function readLedger(client: Client, id: string): Promise<LedgerExpo
         throw new Error(`event stream ended at ${events.at(-1)?.seq ?? 0} before export target ${lastSeq}`)
       }
       const { _meta: _ignored, ...envelope } = next.value
+      if (envelope.seq !== events.length + 1) throw new Error('export ledger sequence is not contiguous')
       events.push(envelope)
       if (envelope.seq >= lastSeq) break
       next = await iterator.next()
@@ -196,6 +198,19 @@ export async function exportSession(p: ParsedArgs, deps: ExportDeps, client: Cli
           ? exportClaudeCode(events, { cwd: p.raw ? deps.cwd : redact(deps.cwd, rules) })
           : formatAgnes(events)
 
+  const originals = p.raw && format === 'agnes' ? bundleOriginals(ledger.events) : []
+  if (originals.length > 0) {
+    if (!p.out || deps.writeFile)
+      throw new UsageError('raw exports with originals require a filesystem --out destination')
+    await writeNativeBundle(
+      isAbsolute(p.out) ? p.out : resolve(deps.cwd, p.out),
+      ledger.events,
+      bytes,
+      client,
+      id,
+    )
+    return ExitCode.OK
+  }
   if (p.out) {
     const path = isAbsolute(p.out) ? p.out : resolve(deps.cwd, p.out)
     await (deps.writeFile ?? writePrivateFile)(path, bytes)

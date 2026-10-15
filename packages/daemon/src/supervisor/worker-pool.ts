@@ -48,6 +48,8 @@ export type NoticeEmitter = {
 /** Immutable worker inputs selected when a session is first acquired. */
 export type WorkerProfile = Readonly<{ profile: ResolvedProfile; profileFile: string }>
 type SessionWorkerAcquireOptions = Readonly<{
+  historySignal?: AbortSignal
+  onHistoryProgress?: (progress: { verifiedSeq: number; lastSeq: number }) => void
   resume?: boolean
   cwd?: string
   binding?: WorkspaceBindingEnvelope
@@ -259,6 +261,8 @@ export class WorkerPool {
         slot.channels.delete(sessionKey)
         slot.sessions.delete(sessionKey)
       },
+      opts.onHistoryProgress,
+      opts.historySignal,
     )
     slot.channels.set(sessionKey, channel)
     try {

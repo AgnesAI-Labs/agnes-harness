@@ -94,6 +94,13 @@ export function verifyIntegrityRows(
   return state
 }
 
+export type VerificationOptions = {
+  signal?: AbortSignal
+  idleTimeoutMs?: number
+  hardTimeoutMs?: number
+  onProgress?: (progress: { verifiedSeq: number; lastSeq: number }) => void
+}
+
 /**
  * `yieldPage`, when given, is awaited between two pages; it is never called after the last one.
  * `onPage` receives each page's events in order, only after that page has been verified.
@@ -104,18 +111,61 @@ export async function verifyLedger(
   lastSeq: Seq,
   yieldPage?: () => void | Promise<void>,
   onPage?: (events: Event[]) => void,
+  options: VerificationOptions = {},
 ): Promise<IntegrityState> {
   let state = { ...EMPTY_STATE }
+  const idle = options.idleTimeoutMs ?? 30_000
+  const hard = options.hardTimeoutMs ?? 600_000
+  if (![idle, hard].every((ms) => Number.isSafeInteger(ms) && ms > 0))
+    throw new RangeError('verification timeouts must be positive safe integers')
+  const deadline = performance.now() + hard
+  const check = () => {
+    if (options.signal?.aborted) throw new CoreError('E_CLOSED', 'ledger verification cancelled')
+    if (performance.now() >= deadline)
+      throw new CoreError('E_STORAGE_FAULT', 'ledger verification hard timeout')
+  }
+  const progress = () => options.onProgress?.({ verifiedSeq: state.lastSeq, lastSeq })
+  check()
+  progress()
   while (state.lastSeq < lastSeq) {
     if (state.lastSeq > 0) await yieldPage?.()
-    const rows = await storage.scanIntegrity(key, {
-      fromSeq: state.lastSeq + 1,
-      toSeq: lastSeq,
-      limit: INTEGRITY_PAGE_SIZE,
+    check()
+    const pageStarted = performance.now()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let abort: (() => void) | undefined
+    const stopped = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new CoreError('E_STORAGE_FAULT', 'ledger verification timeout')),
+        Math.min(idle, deadline - performance.now()),
+      )
+      abort = () => reject(new CoreError('E_CLOSED', 'ledger verification cancelled'))
+      options.signal?.addEventListener('abort', abort, { once: true })
     })
+    let rows: IntegrityRow[]
+    try {
+      rows = await Promise.race([
+        storage.scanIntegrity(key, {
+          fromSeq: state.lastSeq + 1,
+          toSeq: lastSeq,
+          limit: INTEGRITY_PAGE_SIZE,
+        }),
+        stopped,
+      ])
+    } finally {
+      clearTimeout(timer)
+      if (abort) options.signal?.removeEventListener('abort', abort)
+    }
+    check()
     if (rows.length === 0) fail('ledger ended before advertised sequence', state.lastSeq + 1)
+    if (rows.length > INTEGRITY_PAGE_SIZE || (rows.at(-1)?.event.seq ?? 0) > lastSeq)
+      fail('ledger exceeds advertised page or sequence')
     state = verifyIntegrityRows(rows, state)
+    if (performance.now() - pageStarted >= idle)
+      throw new CoreError('E_STORAGE_FAULT', 'ledger verification idle timeout')
+    check()
     onPage?.(rows.map((row) => row.event))
+    check()
+    progress()
   }
   if (state.lastSeq !== lastSeq) fail('ledger exceeds advertised sequence', state.lastSeq)
   return state

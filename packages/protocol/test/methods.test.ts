@@ -272,6 +272,8 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/session.budget',
         '_agnes/v1/session.detach',
         '_agnes/v1/session.event',
+        '_agnes/v1/session.loading',
+        '_agnes/v1/session.loadingCancel',
         '_agnes/v1/session.fileUpload',
         '_agnes/v1/session.fork',
         '_agnes/v1/session.list',
@@ -325,6 +327,11 @@ describe('methods (I1 set)', () => {
       ].sort(),
     )
     expect(Object.keys(METHODS)).toHaveLength(195)
+    expect(METHODS['_agnes/v1/session.loading']).toMatchObject({ kind: 'notification', direction: 's2c' })
+    expect(METHODS['_agnes/v1/session.loadingCancel']).toMatchObject({
+      kind: 'notification',
+      direction: 'c2s',
+    })
     expect(METHODS['session/cancel']).toMatchObject({ kind: 'notification', direction: 'c2s' })
     expect(METHODS['session/request_permission']).toMatchObject({ kind: 'request', direction: 's2c' })
   })

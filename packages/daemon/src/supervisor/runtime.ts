@@ -336,6 +336,8 @@ class RemoteEntryView implements SessionEntry {
   }
 }
 
+type SessionOpenRequest = Parameters<Registry<SessionEntry>['open']>[0] & { resume?: boolean }
+
 export class SupervisorRegistry implements Registry<SessionEntry> {
   private readonly opening = new Map<
     string,
@@ -352,16 +354,7 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
     private readonly inner: WorkerRegistry,
     private readonly workspaces: SessionWorkspacePort,
   ) {}
-  async open(o: {
-    key?: string
-    cwd: string
-    binding?: WorkspaceBindingEnvelope
-    preset?: string
-    bundles?: readonly string[]
-    loop?: LoopSelection
-    credential?: unknown
-    resume?: boolean
-  }): Promise<SessionEntry> {
+  async open(o: SessionOpenRequest): Promise<SessionEntry> {
     if (o.key) {
       const pending = this.opening.get(o.key)
       if (pending) {
@@ -391,16 +384,7 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
     return this.openFresh(o)
   }
 
-  private async openFresh(o: {
-    key?: string
-    cwd: string
-    binding?: WorkspaceBindingEnvelope
-    preset?: string
-    bundles?: readonly string[]
-    loop?: LoopSelection
-    credential?: unknown
-    resume?: boolean
-  }): Promise<SessionEntry> {
+  private async openFresh(o: SessionOpenRequest): Promise<SessionEntry> {
     const persisted = o.key ? this.workspaces.get(o.key) : undefined
     if (o.key && persisted !== undefined && persisted !== o.cwd)
       throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: o.key })
