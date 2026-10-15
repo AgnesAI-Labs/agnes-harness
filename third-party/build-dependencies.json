@@ -127,6 +127,7 @@
       "purpose": "TypeScript declarations for the ws transport library.",
       "rationale": "Keeps daemon tests and SDK transport code checked against the installed ws API.",
       "consumers": [
+        "examples/mhs/mars-rescue",
         "packages/daemon",
         "packages/daemon-rpc",
         "packages/sdk",

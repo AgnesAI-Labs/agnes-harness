@@ -108,6 +108,7 @@ it.each([
       'client/generated/runtime.js',
       'client/generated/scene.js',
       'client/generated/cameras.js',
+      'client/generated/browser-transport.js',
     ])
       expect(readFileSync(join(into, file)).length).toBeGreaterThan(0)
   }

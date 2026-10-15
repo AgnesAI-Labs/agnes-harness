@@ -1,9 +1,18 @@
 {
   "client": {
     "entry": "./index.js",
-    "styles": ["./index.css"],
+    "styles": [
+      "./index.css"
+    ],
     "lifetime": "profile",
-    "examplePages": ["mars-rescue"],
-    "assets": ["./generated/runtime.js", "./generated/scene.js", "./generated/cameras.js"]
+    "examplePages": [
+      "mars-rescue"
+    ],
+    "assets": [
+      "./generated/runtime.js",
+      "./generated/scene.js",
+      "./generated/cameras.js",
+      "./generated/browser-transport.js"
+    ]
   }
 }

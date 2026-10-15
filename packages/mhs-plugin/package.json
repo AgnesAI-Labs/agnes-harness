@@ -118,6 +118,60 @@
               "maxBufferedBytes": 32768,
               "maxBytesPerSecond": 65536,
               "controlService": "mhs.lease"
+            },
+            {
+              "name": "mhs.producer",
+              "scope": "profile",
+              "lane": "events",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "fleet": {
+                    "type": "string",
+                    "minLength": 36,
+                    "maxLength": 36
+                  }
+                },
+                "required": [
+                  "fleet"
+                ],
+                "additionalProperties": false
+              },
+              "directions": [
+                "inbound",
+                "outbound"
+              ],
+              "producer": true,
+              "maxFrameBytes": 65536,
+              "maxBufferedBytes": 131072,
+              "maxBytesPerSecond": 262144
+            },
+            {
+              "name": "mhs.producer.media",
+              "scope": "profile",
+              "lane": "media",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "fleet": {
+                    "type": "string",
+                    "minLength": 36,
+                    "maxLength": 36
+                  }
+                },
+                "required": [
+                  "fleet"
+                ],
+                "additionalProperties": false
+              },
+              "directions": [
+                "inbound",
+                "outbound"
+              ],
+              "producer": true,
+              "maxFrameBytes": 1048576,
+              "maxBufferedBytes": 2097152,
+              "maxBytesPerSecond": 4194304
             }
           ],
           "services": [

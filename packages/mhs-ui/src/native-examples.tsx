@@ -155,7 +155,10 @@ export function nativeExamples(ctx: ClientContext): ExamplesPort {
             scenes.set(example.id, Scene)
           }
           const runtime = scene ? runtimes.get(example.id)?.runtime.getSnapshot() : undefined
-          if (runtime && state === 'installed') state = runtime.state
+          if (scene && example.installation === 'enabled' && !code) {
+            if (runtime) state = runtime.state
+            else if (state === 'running') state = 'installed'
+          }
           return {
             id: example.id,
             name: example.metadata.displayName,
@@ -195,9 +198,12 @@ export function nativeExamples(ctx: ClientContext): ExamplesPort {
     },
     async stop(id) {
       current()
-      await runtimes.get(id)?.runtime.stop()
-      await ctx.profile.examples.stop(id, crypto.randomUUID())
-      operations.delete(id)
+      try {
+        await runtimes.get(id)?.runtime.stop()
+      } finally {
+        await ctx.profile.examples.stop(id, crypto.randomUUID())
+        operations.delete(id)
+      }
     },
     async prepare(id, launchId) {
       current()

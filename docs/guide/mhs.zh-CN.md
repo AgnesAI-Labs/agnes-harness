@@ -79,4 +79,4 @@ MCP 桥保留 `readOnlyHint`、`destructiveHint` 与 `idempotentHint`，映射�
 
 ## 火星救援示例
 
-随包的[火星救援](../../examples/mhs/mars-rescue/README.zh-CN.md) 实现 11 台模拟设备及页内程序化 3D 场景。[火星指南](mars-world.zh-CN.md) 说明生命周期、业务 Agent 启动及集成状态。经审核的父设备传输仍待接线，单测不代表端到端启用或运动批准已通过。
+随包的[火星救援](../../examples/mhs/mars-rescue/README.zh-CN.md) 实现 11 台模拟设备及页内程序化 3D 场景。[火星指南](mars-world.zh-CN.md) 说明生命周期、业务 Agent 启动及集成状态。经审核的 producer 连接已接入安装后的父运行时，定向检查覆盖注册、原生批准、Stop 与停用；完整浏览器和物理设备验收仍是独立检查。

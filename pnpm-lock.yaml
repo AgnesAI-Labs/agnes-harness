@@ -126,24 +126,45 @@ importers:
       '@agnes/daemon-foundation':
         specifier: workspace:*
         version: link:../../../packages/daemon-foundation
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../../../packages/extension-api
+      '@agnes/host':
+        specifier: workspace:*
+        version: link:../../../packages/host
       '@agnes/host-extensions':
         specifier: workspace:*
         version: link:../../../packages/host-extensions
       '@agnes/host-infrastructure':
         specifier: workspace:*
         version: link:../../../packages/host-infrastructure
-      '@agnes/extension-api':
-        specifier: workspace:*
-        version: link:../../../packages/extension-api
       '@agnes/mhs-hub':
         specifier: workspace:*
         version: link:../../../packages/mhs-hub
+      '@agnes/package-manager':
+        specifier: workspace:*
+        version: link:../../../packages/package-manager
+      '@agnes/plugin-runtime':
+        specifier: workspace:*
+        version: link:../../../packages/plugin-runtime
+      '@agnes/protocol':
+        specifier: workspace:*
+        version: link:../../../packages/protocol
       '@agnes/sdk':
         specifier: workspace:*
         version: link:../../../packages/sdk
+      '@agnes/worker-runtime':
+        specifier: workspace:*
+        version: link:../../../packages/worker-runtime
+      '@types/ws':
+        specifier: 8.18.1
+        version: 8.18.1
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
+      ws:
+        specifier: 8.21.3
+        version: 8.21.3
 
   examples/packages/cordis-greeting:
     dependencies:

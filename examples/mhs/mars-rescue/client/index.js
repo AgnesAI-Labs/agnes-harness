@@ -1,15 +1,19 @@
 import { createElement as h, useEffect, useRef, useState } from 'react'
+import { createMarsExampleAccess } from './generated/browser-transport.js'
 import { MarsCameras } from './generated/cameras.js'
 import { MarsRuntime } from './generated/runtime.js'
 import { MarsScene, VIEWS } from './generated/scene.js'
 
 const PACKAGE = '@agnes-example/mars-rescue'
-/** Parent MHS supplies an explicitly reviewed, owner-bound connector. No browser URL fallback. */
+/** The child profile facade consumes an explicitly reviewed parent producer grant. No browser URL fallback. */
 export function apply(ctx) {
+  ctx.provide('mhsExampleAccess', createMarsExampleAccess(ctx.profile.streams))
   let cameras,
     captureTimer,
     releaseLock,
     disposed = false,
+    starting,
+    intent = 0,
     unavailable = 'Enable the reviewed MHS example device connection to start.'
   const lifetime = new AbortController()
   const hosts = new WeakSet()
@@ -37,58 +41,65 @@ export function apply(ctx) {
     typeof VideoEncoder !== 'undefined',
   )
   runtime.subscribe(notify)
-  const start = async () => {
-    try {
-      assertLive()
-      const access = ctx.get('mhsExampleAccess', false)
-      if (!access || typeof access.connect !== 'function')
-        throw new Error('E_MARS_REVIEWED_DEVICE_TRANSPORT_REQUIRED')
-      if (!releaseLock) {
-        if (!navigator.locks || !ctx.module.binding?.profileId) throw new Error('profile-lock-unavailable')
-        await new Promise((resolve, reject) => {
-          void navigator.locks
-            .request(`agnes:mars:${ctx.module.binding.profileId}`, { ifAvailable: true }, async (lock) => {
-              if (!lock) {
-                reject(new Error('example-running-in-another-tab'))
-                return
-              }
-              await new Promise((release) => {
-                releaseLock = release
-                resolve()
+  const start = () =>
+    (starting ??= (async () => {
+      const attempt = ++intent
+      try {
+        assertLive()
+        const access = ctx.get('mhsExampleAccess', false)
+        if (!access || typeof access.connect !== 'function')
+          throw new Error('E_MARS_REVIEWED_DEVICE_TRANSPORT_REQUIRED')
+        if (!releaseLock) {
+          if (!navigator.locks || !ctx.module.binding?.profileId) throw new Error('profile-lock-unavailable')
+          await new Promise((resolve, reject) => {
+            void navigator.locks
+              .request(`agnes:mars:${ctx.module.binding.profileId}`, { ifAvailable: true }, async (lock) => {
+                if (!lock) {
+                  reject(new Error('example-running-in-another-tab'))
+                  return
+                }
+                await new Promise((release) => {
+                  releaseLock = release
+                  resolve()
+                })
               })
-            })
-            .catch(reject)
-        })
-      }
-      cameras ??= new MarsCameras(runtime.simulation, document)
-      await cameras.capture(performance.now())
-      if (cameras.error) throw new Error('camera-renderer-unavailable')
-      assertLive()
-      await runtime.start()
-      assertLive()
-      clearInterval(captureTimer)
-      captureTimer = setInterval(() => {
-        if (runtime.snapshot().status !== 'ready') {
-          clearInterval(captureTimer)
-          cameras?.dispose()
-          cameras = undefined
-          release()
-          notify()
-          return
+              .catch(reject)
+          })
         }
-        void cameras.capture(performance.now()).then(notify)
-      }, 100)
-      unavailable = undefined
-    } catch {
-      await runtime?.stop().catch(() => {})
-      cameras?.dispose()
-      cameras = undefined
-      release()
-      unavailable = 'Device connection unavailable. Review the parent MHS connection, then retry.'
-    }
-    notify()
-  }
+        cameras ??= new MarsCameras(runtime.simulation, document)
+        await cameras.capture(performance.now())
+        if (cameras.error) throw new Error('camera-renderer-unavailable')
+        assertLive()
+        if (attempt !== intent) throw new Error('example-start-cancelled')
+        await runtime.start()
+        assertLive()
+        if (attempt !== intent) throw new Error('example-start-cancelled')
+        clearInterval(captureTimer)
+        captureTimer = setInterval(() => {
+          if (runtime.snapshot().status !== 'ready') {
+            clearInterval(captureTimer)
+            cameras?.dispose()
+            cameras = undefined
+            release()
+            notify()
+            return
+          }
+          void cameras.capture(performance.now()).then(notify)
+        }, 100)
+        unavailable = undefined
+      } catch {
+        await runtime?.stop().catch(() => {})
+        cameras?.dispose()
+        cameras = undefined
+        release()
+        unavailable = 'Device connection unavailable. Review the parent MHS connection, then retry.'
+      }
+      notify()
+    })().finally(() => {
+      starting = undefined
+    }))
   const stop = async () => {
+    intent++
     clearInterval(captureTimer)
     await runtime?.stop()
     cameras?.dispose()
@@ -122,6 +133,9 @@ export function apply(ctx) {
   }
   ctx.effect(() => ctx.availability.subscribe(bindingChanged))
   ctx.examplePages.register({ id: 'mars-rescue', component: Page })
+  ctx.effect(() => {
+    void start()
+  })
 
   const presentation = {
     getSnapshot: () => {

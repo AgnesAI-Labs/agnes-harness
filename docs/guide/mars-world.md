@@ -6,9 +6,9 @@ English | [简体中文](mars-world.zh-CN.md)
 
 The new Mars rescue example packages eleven simulated devices, a 3D scene inside the MHS page and rescue/sampling business-Agent launch declarations. It uses the MHS device SDK, not MCP. It is a new-product example, without migration from the former Mars world.
 
-The simulation and consumer ports are implemented. The reviewed parent MHS transport and production activation still need integration; do not interpret the package's presence as a successful device connection. Until that adapter is available, the example shows a connection refusal and does not mark devices online. No hardware or full end-to-end acceptance is claimed.
+The installed profile runtime and reviewed producer binding are implemented. Enable the local example to start its profile-owned simulation; Ready requires eleven actual Hub registrations. Missing or revoked child/parent authority refuses the connection. GPU, real-model and complete browser acceptance remain integration checks.
 
-On an integrated host, review and enable the local bundle under **MHS → Examples**, then Start. Choose a configured model with image and tool support. The example ships its procedural resources and notices, so first opening needs no model/texture download. `exampleOf` grants no parent service authority; review the explicit device connection. All movement retains native MHS approval.
+On an integrated host, review and enable the local bundle under **MHS → Examples**, then wait for Ready (or use Start/Retry after a failure). Choose a configured model with image and tool support. The example ships its procedural resources and notices, so first opening needs no model/texture download. `exampleOf` grants no parent service authority; review the explicit device connection. All movement retains native MHS approval.
 
 Use keys **1–9 / 0** for views, **L** for labels and **M** for the map. Leaving the scene or hiding the session workbench keeps the profile devices and model-camera rendering alive. Stop disconnects only this example fleet. Reset interrupts calls and restores simulation state while retaining registrations. Browser closure, lost transport, suspension or revocation stops the fleet; reconnection does not resume motion.
 

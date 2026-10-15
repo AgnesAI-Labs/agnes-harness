@@ -6,7 +6,7 @@ Eleven virtual devices, a procedural 3D Mars base inside the MHS example page, a
 
 This package targets the new plugin architecture and a clean AGH home. It does not migrate old Mars-world sessions. It ships its complete browser resources and licenses; opening it downloads no models, textures or Draco decoder. The original procedural scene replaces the old downloaded models, rather than redistributing those assets.
 
-**Integration status:** the simulation, profile runtime, scene and SDK contract tests are implemented. The reviewed parent device-transport binding is still required; the real MHS Examples tab and in-page scene host are wired. Until it is installed, Start reports an unavailable connection, devices do not appear online, and Agent launch is disabled. This is not a claim of working production activation or end-to-end acceptance.
+**Integration status:** the installed MHS profile runtime and reviewed browser producer binding are implemented. Enabling the example starts its profile-owned simulation; readiness requires eleven real Hub registrations. GPU/media and real-model browser acceptance remain separate checks.
 
 ## Installation and use
 
@@ -56,8 +56,10 @@ node examples/mhs/mars-rescue/tools/build.mjs
 
 Build tools use esbuild 0.28.2; browser resources are committed for offline installation. The resource manifest records exact bytes, SHA-256 and licensing; regenerate it after source changes. The full AGH distribution must retain `client`, `assets`, `skills`, `LICENSE` and `NOTICE`. Full browser/managed-runtime/approval checks belong to integration acceptance and are not established by these unit tests. There is no retained video demo from the former world; the source and view controls are the current review material pending integrated preview acceptance.
 
-The exported `createMarsHubTransport` adapter uses the real public Hub/DeviceLink contract for an embedded managed simulator. It requires an explicit reviewed-current-link check and refuses taking over an online fleet. Browser device stream transport remains the parent MHS adapter’s responsibility; Agent launch uses the integrated Examples host.
+The exported `createMarsHubTransport` adapter uses the real public Hub/DeviceLink contract for an embedded managed simulator. It requires an explicit reviewed-current-link check and refuses taking over an online fleet. The installed browser path uses the authenticated producer bridge; Agent launch uses the integrated Examples host.
 
-The managed-runtime check also uses the real `@agnes/sdk/managed-service` runtime, SQLite owned store and `startManagedMhsHub`; disabling the parent parks all eleven devices. No simulator-owned Hub or fake singleton is started. The integrated `registerMhsStreams` adapter supplies North event/media/control lanes; it does not supply the browser simulator producer described above.
+The managed-runtime check also uses the real `@agnes/sdk/managed-service` runtime, SQLite owned store and `startManagedMhsHub`; disabling the parent parks all eleven devices. No simulator-owned Hub or fake singleton is started. The installed runtime also registers the separately reviewed producer ingress; human control retains native motion admission.
 
 The authority/wake check uses real `createProfileServiceRuntime`, `createMhsNativeProfileAdapter`, `mhsOwnedStore`, Host SQLite persistence, `ProfileWakeBindings` and `BoundWakeService`/`JobsRepo`. Native AR1 answers allow or refuse Mars motion; a fake approval seam throws if invoked. A real watch queues an original-session/lane/generation notification, retains its job on re-enqueue through a recreated queue adapter, and refuses delivery after revocation. Inventory, local principal and original-session facts are synthetic test fixtures; actual worker/session input delivery remains an integration check.
+
+Producer heartbeats stop the local fleet within two seconds of a stalled channel. Resuming a suspended page also stops physics instead of catching up motion; Retry never replays a prior action.

@@ -89,4 +89,4 @@ Start with [backend plugins](../develop/backend.md), [MCP](mcp.md), and [full-st
 
 ## Mars rescue example
 
-The bundled [Mars rescue package](../../examples/mhs/mars-rescue/README.md) implements eleven simulated devices and an in-page procedural 3D scene. See the [Mars guide](mars-world.md) for lifecycle, business-Agent launch and integration status. Its reviewed parent device transport is still required; unit tests do not establish end-to-end activation or motion approval.
+The bundled [Mars rescue package](../../examples/mhs/mars-rescue/README.md) implements eleven simulated devices and an in-page procedural 3D scene. See the [Mars guide](mars-world.md) for lifecycle, business-Agent launch and integration status. Its reviewed producer binding now connects the installed parent runtime. Focused checks exercise registration, native approval, Stop and disable; full browser and physical-device acceptance remain separate.

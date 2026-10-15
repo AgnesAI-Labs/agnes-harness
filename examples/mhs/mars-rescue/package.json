@@ -39,11 +39,95 @@
         "export": "marsRescue",
         "apiRange": "^4.0.0",
         "inject": [
-          "skills"
+          "skills",
+          "profileRuntime"
         ],
         "capabilities": {
           "device": true,
-          "ui": true
+          "ui": true,
+          "store": true,
+          "managedServices": [
+            {
+              "id": "fleet",
+              "scope": "profile",
+              "artifact": {
+                "kind": "in-process"
+              },
+              "healthPath": "/health",
+              "listeners": [],
+              "startupTimeoutMs": 10000,
+              "shutdownTimeoutMs": 5000,
+              "apiVersion": "1.0.0",
+              "requires": [
+                {
+                  "extension": "plugin/91109187c405c716",
+                  "name": "mhs.producer",
+                  "range": "*"
+                },
+                {
+                  "extension": "plugin/91109187c405c716",
+                  "name": "mhs.producer.media",
+                  "range": "*"
+                }
+              ]
+            }
+          ],
+          "streams": [
+            {
+              "name": "mars.devices",
+              "scope": "profile",
+              "lane": "events",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "fleet": {
+                    "type": "string",
+                    "minLength": 36,
+                    "maxLength": 36
+                  }
+                },
+                "required": [
+                  "fleet"
+                ],
+                "additionalProperties": false
+              },
+              "directions": [
+                "inbound",
+                "outbound"
+              ],
+              "producer": true,
+              "maxFrameBytes": 65536,
+              "maxBufferedBytes": 131072,
+              "maxBytesPerSecond": 262144
+            },
+            {
+              "name": "mars.media",
+              "scope": "profile",
+              "lane": "media",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "fleet": {
+                    "type": "string",
+                    "minLength": 36,
+                    "maxLength": 36
+                  }
+                },
+                "required": [
+                  "fleet"
+                ],
+                "additionalProperties": false
+              },
+              "directions": [
+                "inbound",
+                "outbound"
+              ],
+              "producer": true,
+              "maxFrameBytes": 1048576,
+              "maxBufferedBytes": 2097152,
+              "maxBytesPerSecond": 4194304
+            }
+          ]
         },
         "runtime": "in-process"
       }
@@ -96,9 +180,9 @@
       ],
       "locales": {
         "zh-CN": {
-          "displayName": "火星救援",
-          "summary": "11 台模拟设备、页内火星基地与救援业务 Agent。",
-          "description": "模拟救援和采样任务，运动沿用 MHS 原生批准。没有连接物理设备。"
+          "displayName": "\u706b\u661f\u6551\u63f4",
+          "summary": "11 \u53f0\u6a21\u62df\u8bbe\u5907\u3001\u9875\u5185\u706b\u661f\u57fa\u5730\u4e0e\u6551\u63f4\u4e1a\u52a1 Agent\u3002",
+          "description": "\u6a21\u62df\u6551\u63f4\u548c\u91c7\u6837\u4efb\u52a1\uff0c\u8fd0\u52a8\u6cbf\u7528 MHS \u539f\u751f\u6279\u51c6\u3002\u6ca1\u6709\u8fde\u63a5\u7269\u7406\u8bbe\u5907\u3002"
         }
       }
     },
@@ -116,7 +200,14 @@
     "@agnes/core": "workspace:*",
     "@agnes/daemon-foundation": "workspace:*",
     "@agnes/host-extensions": "workspace:*",
-    "@agnes/host-infrastructure": "workspace:*"
+    "@agnes/host-infrastructure": "workspace:*",
+    "@agnes/host": "workspace:*",
+    "@agnes/package-manager": "workspace:*",
+    "@agnes/plugin-runtime": "workspace:*",
+    "@agnes/protocol": "workspace:*",
+    "@agnes/worker-runtime": "workspace:*",
+    "ws": "8.21.3",
+    "@types/ws": "8.18.1"
   },
   "peerDependenciesMeta": {
     "@agnes/web-client": {

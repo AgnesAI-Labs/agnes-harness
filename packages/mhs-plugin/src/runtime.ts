@@ -4,6 +4,7 @@ import { type Authority, type BoundWakes, Hub, North, type OwnedStore, South } f
 import { MHS_HUB_CHECK_SCHEMA, MHS_HUB_CONFIG_SCHEMA } from './config.js'
 import { createMhsNativeProfileAdapter } from './native-profile.js'
 import { mhsOwnedStore } from './owned-store.js'
+import { createMhsProducer } from './producer.js'
 import { type MhsConnector, registerMhsTools } from './tools.js'
 import { registerMhsStreams } from './transport.js'
 
@@ -128,6 +129,7 @@ export const mhsPlugin = {
     })
     const north = async () => (await resource.get()).north
     adapter.register(ctx, north)
+    const producer = createMhsProducer(north)
     const streams = ctx.profileRuntime.streams
     const disposeStreams = registerMhsStreams(
       north,
@@ -145,6 +147,26 @@ export const mhsPlugin = {
       },
       adapter.bindControl,
     )
+    const producers = [
+      streams.register('mhs.producer', async (input, context) => {
+        const running = await resource.get()
+        const signal = AbortSignal.any([context.signal, running.signal])
+        running.signal.addEventListener('abort', () => context.stream.close('runtime-replaced'), {
+          once: true,
+          signal: context.signal,
+        })
+        await producer.devices(input, { ...context, signal })
+      }),
+      streams.register('mhs.producer.media', async (input, context) => {
+        const running = await resource.get()
+        const signal = AbortSignal.any([context.signal, running.signal])
+        running.signal.addEventListener('abort', () => context.stream.close('runtime-replaced'), {
+          once: true,
+          signal: context.signal,
+        })
+        await producer.media(input, { ...context, signal })
+      }),
+    ]
     registerMhsTools(ctx, {
       north,
       invocation: (context, method, input) =>
@@ -154,6 +176,9 @@ export const mhsPlugin = {
         return context.wake.bind()
       },
     })
-    return disposeStreams
+    return () => {
+      for (const off of producers) off()
+      disposeStreams()
+    }
   },
 }

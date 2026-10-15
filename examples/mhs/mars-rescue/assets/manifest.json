@@ -23,6 +23,13 @@
       "sha256": "87be5346b3c86d0340a7b3946e466a4c49fe485cf07a9046995e1ff1d4cb5a18",
       "origin": "Project-authored procedural Mars scene",
       "license": "Apache-2.0"
+    },
+    {
+      "path": "client/generated/browser-transport.js",
+      "bytes": 57417,
+      "sha256": "d0977cf7fcb22424715e5e147d25b8f3befaddd8bc2ae5d6edf740d2c02a22ba",
+      "origin": "Agnes simulation, MHS device SDK and bundled TypeBox",
+      "license": "Apache-2.0 AND MIT"
     }
   ]
 }

@@ -48,10 +48,12 @@ it('binds a profile scene runtime, gates both launches, retains uncertain submis
     locale: { t: (key: string) => key },
     profile: {
       examples: {
+        stop: async () => {},
         list: async () => [
           {
             id,
             installation: 'enabled',
+            runtime: { state: 'running' },
             metadata: {
               displayName: 'Mars',
               description: 'Simulation',
