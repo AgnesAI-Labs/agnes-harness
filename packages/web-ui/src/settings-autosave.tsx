@@ -101,6 +101,7 @@ export function useAutosave<T>({
   // could land in either order and leave an older value stored. An edit made while a save is on its
   // way waits here; only the newest waiting edit is sent, once the save in flight settles.
   const inflight = useRef(false)
+  const writeOwner = useRef({})
   const writeGeneration = useRef(0)
   const queued = useRef<{ value: T; previous: T | undefined; undoable: boolean } | undefined>(undefined)
   const mounted = useRef(true)
@@ -128,8 +129,9 @@ export function useAutosave<T>({
       }
       const save = latest.current.save
       const work = () => save(value)
-      void (resourceKey ? queueResourceWrite(resourceKey, work) : work()).then(
+      void (resourceKey ? queueResourceWrite(resourceKey, work, writeOwner.current) : work()).then(
         () => {
+          if (generation !== writeGeneration.current) return
           if (mounted.current && undoable && previous !== undefined)
             undo?.push({
               revert: () => {

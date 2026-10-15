@@ -116,10 +116,10 @@ Badge, Tag, EmptyState, Skeleton, ListRow, Banner, Icon and SheetHandle remain c
 
 | `SettingsSubpageFrame` / `SettingsDrill` / `SettingsExpand` | A | 设置二级页 | 带 › 的行打开同一弹框内的二级页（顶部「‹ 返回」、浏览器后退与前进；`routeId` 为设置页提供 `?settings=<page>/<sub>`，`settings-subsection-<id>` 旧深链仍可打开）；`SettingsExpand` 在行下就地展开；`SettingsPage` 顶层自带二级页框架 |
 | `PushStack` / `PushPage` / `usePushStack` / `usePushNavigation` / `searchParamRoute` | Shared | 导航 | 唯一的「进入新页面」：区域内替换内容，顶部「‹ 返回」+ 面包屑，浏览器后退返回一级，`route` 让地址带上打开的页面（深链、刷新可直达）；`replace` 用于流程换步不留历史；设置二级页同用此引擎 |
-| `useResource` / `invalidateResource` / `setResource` / `trackPageRequest` | Shared | 数据 | 唯一的读接口钩子：本次页面会话内存缓存，再次进入先显示缓存、后台刷新（SWR）；写后按前缀失效；提交版本禁止旧读覆盖新写；`scopedResourceKey` 绑定 API 身份，`queueResourceWrite` 按资源串行写入；页面级请求驱动顶部进度条 |
+| `useResource` / `invalidateResource` / `setResource` / `trackPageRequest` | Shared | 数据 | 唯一的读接口钩子：本次页面会话内存缓存，再次进入先显示缓存、后台刷新（SWR）；写后按前缀失效；提交版本禁止旧读覆盖新写；`scopedResourceKey` 绑定 API 身份，`queueResourceWrite` 按资源串行写入，可选 owner 合并该编辑来源未发送的完整值并按最新意图排序；页面级请求驱动顶部进度条 |
 | `Loadable` / `TopProgress` | Shared | 加载 | 200 ms 内不显示；之后通用占位（可传形状）；3 s 后「仍在读取…」；失败显示原因 + 重试且不清空数据；内容淡入 160 ms（减少动态时不做）；全局 2px 顶部进度条 |
 | `SettingsBlock` / `SettingsTag` / `SettingsInfo` | A | 设置分组 | 分组标题是名词，右侧放分组操作；保存失败只在标题处显示「保存失败 · 重试」；读取失败一行 + 重试且不清空；同一套状态小标；说明文字收进名称旁 ⓘ |
-| `useAutosave` / `SettingsUndoScope` | A | 自动保存 | 开关/选择立即保存，文字停 1 秒或失焦保存；`resourceKey` 共用跨组件写队列；不显示「已保存」；⌘Z 在文本框外撤销最近一次保存 |
+| `useAutosave` / `SettingsUndoScope` | A | 自动保存 | 开关/选择立即保存，文字停 1 秒或失焦保存；`resourceKey` 共用跨组件写队列，同一实例的等待编辑只发送最新值；不显示「已保存」；⌘Z 在文本框外撤销最近一次保存 |
 | `SettingsPresetSelect` / `SettingsChips` / `SettingsChipToggle` | A | 人话取值 | 毫秒 ↔ 秒/分钟档位（默认 / 档位 / 自定义保留原值）；逗号列表 ↔ 标签；固定选项多选标签 |
 
 `preserveRouteParams(url)` keeps the existing `view` and `settings` level encoding when the host edits unrelated URL metadata; explicit `searchParamRoute().href()` changes its own route and preserves the other. / `preserveRouteParams(url)` 在宿主修改其他 URL 元数据时保留已有层级编码；`searchParamRoute().href()` 只改自身路由并保留另一路由。

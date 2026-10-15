@@ -16,9 +16,18 @@ export type ResourceState<T> = {
   loading: boolean
 }
 
+type ResourceWrite = {
+  owner: object | undefined
+  write(): Promise<unknown>
+  result: Promise<unknown>
+  resolve(value: unknown): void
+  reject(error: unknown): void
+}
+
 type Entry = {
   version: number
   writes: Promise<unknown> | undefined
+  pendingWrites: ResourceWrite[]
   state: ResourceState<unknown>
   /** The read running for this key, shared by everyone asking for it. */
   inflight: Promise<unknown> | undefined
@@ -38,6 +47,7 @@ function entry(key: string): Entry {
     found = {
       version: 0,
       writes: undefined,
+      pendingWrites: [],
       state: empty,
       inflight: undefined,
       stale: true,
@@ -187,17 +197,42 @@ export function useResource<T>(
   return { ...state, reload }
 }
 
-/** Serialize writes to the same scoped resource, including across unmount/remount. */
-export function queueResourceWrite<T>(key: string, write: () => Promise<T>): Promise<T> {
+/**
+ * Serialize writes to a resource, including across unmount/remount. An optional owner coalesces
+ * that editor's unsent replacements at the latest intent's position; ordinary operations stay FIFO.
+ * Use an owner only for full-value replacements of one value type. Coalesced promises settle
+ * with the latest replacement's outcome.
+ */
+export function queueResourceWrite<T>(key: string, write: () => Promise<T>, owner?: object): Promise<T> {
   const target = entry(key)
-  const result = target.writes ? target.writes.then(write, write) : Promise.resolve().then(write)
-  target.writes = result
-  void result
-    .finally(() => {
-      if (target.writes === result) target.writes = undefined
-    })
-    .catch(() => {})
-  return result
+  const pending = owner && target.pendingWrites.find((queued) => queued.owner === owner)
+  if (pending) {
+    pending.write = write
+    target.pendingWrites.splice(target.pendingWrites.indexOf(pending), 1)
+    target.pendingWrites.push(pending)
+    // One editor keeps the same value type for its replacements.
+    return pending.result as Promise<T>
+  }
+  let resolve!: (value: unknown) => void
+  let reject!: (error: unknown) => void
+  const result = new Promise<unknown>((yes, no) => {
+    resolve = yes
+    reject = no
+  })
+  void result.catch(() => {})
+  target.pendingWrites.push({ owner, write, result, resolve, reject })
+  if (!target.writes) startResourceWrite(target)
+  return result as Promise<T>
+}
+
+function startResourceWrite(target: Entry): void {
+  const next = target.pendingWrites.shift()
+  target.writes = next?.result
+  if (!next) return
+  void Promise.resolve()
+    .then(() => next.write())
+    .then(next.resolve, next.reject)
+    .then(() => startResourceWrite(target))
 }
 
 const scopes = new WeakMap<object, number>()
