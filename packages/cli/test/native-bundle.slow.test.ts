@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { importSession } from '@agnes/bridges/convert'
-import type { ArtifactReadParams, EventEnvelope } from '@agnes/protocol'
+import { type ArtifactReadParams, attachmentLink, type EventEnvelope } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk'
 import { expect, it } from 'vitest'
 import { formatAgnes } from '../src/commands/export.js'
@@ -38,9 +38,9 @@ it('exports and preflights 100 MiB of originals separately from the ledger', asy
       seq: converted.events.length + index + 1,
       ts: '2026-10-15T00:00:00Z',
       id: `01J6ZM2Q3R4S5T6V7W8X9Y0Z${String(index).padStart(2, '0')}`,
-      type: 'artifact/job',
+      type: 'user/message',
       lane: 'main',
-      data: { jobId: `original-${index}`, status: 'done', ref },
+      data: { kind: 'prompt', content: [attachmentLink(ref, `original-${index}.bin`)] },
       actor: { id: 'synthetic', org: 'local', role: 'owner', deptPath: [], attrs: {} },
       origin: 'system',
       trust: 'trusted' as const,

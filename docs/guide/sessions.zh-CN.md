@@ -87,4 +87,4 @@ SDK：`session.controls()` 读取能力与状态；`steer(content)`、`editQueue
 
 原件无损导出使用 `node agnes.mjs export SESSION_ID --raw -o session.agnes`，并将 `session.agnes` 与 `session.agnes.artifacts/` 一起保存。清单以 size 和 SHA-256 绑定完整事件流及每个声明原件；导出通过已认证的 session/lane 权限读取并核验原件。缺失、摘要不符或权限拒绝时不发布 bundle，已有 bundle 不会被覆盖。脱敏导出用于分享，不包含原件。
 
-使用 `node agnes.mjs import session.agnes --key NEW_SESSION_KEY` 导入。预留目标前先核验清单、序号、事务边界和全部 sidecar 原件；随后再次核验原件，并通过所选 artifact seam 写入。append 或激活失败会回滚新会话；已写入但未引用的内容寻址原件由普通保留机制回收。格式只支持当前产品的事件 schema，单个原件最多 32 MiB，声明原件总量最多 256 MiB，不提供其他产品格式或旧 home 的迁移。
+使用 `node agnes.mjs import session.agnes --key NEW_SESSION_KEY` 导入。预留目标前先核验清单、序号、事务边界和全部 sidecar 原件；随后再次核验原件，并通过所选 artifact seam 以新会话和 lane 的作用域获取 receipt、存储原件。引用事件持久化前，pending receipt 保护原件不被回收；持久化后再确认 receipt。append 或激活失败会回滚新会话；已写入但未引用的内容寻址原件由普通保留机制回收。格式只支持当前产品的事件 schema，单个原件最多 32 MiB，声明原件总量最多 256 MiB，不提供其他产品格式或旧 home 的迁移。

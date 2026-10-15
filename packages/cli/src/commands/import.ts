@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { importSession, OLDER_EXPORT_FORMAT } from '@agnes/bridges/convert'
 import { SessionAdmissionDenied } from '@agnes/daemon/local'
+import type { AttachmentReceipt, AttachmentScope } from '@agnes/extension-api'
 import type { Host, HostSession } from '@agnes/host'
 import type { EventEnvelope, SessionStart } from '@agnes/protocol'
 import { CommandError, ExitCode, UsageError } from '../errors.js'
@@ -161,11 +162,18 @@ export async function importFile(parsed: ParsedArgs, deps: ImportDeps): Promise<
     if (session.lastSeq !== 1)
       throw new CommandError(`import target ${key} is not fresh (last sequence ${session.lastSeq})`)
     let written = 0
+    const attachments = session.d.runtime.attachmentStore()
+    const receipts: Array<{ scope: AttachmentScope; receipt: AttachmentReceipt }> = []
     try {
-      for (const { ref } of originals) {
+      if (originals.length && !attachments) throw new Error('native import attachment storage unavailable')
+      for (const { lane, ref } of originals) {
         const bytes = await bundle?.readOriginal(ref)
         if (!bytes) throw new Error('native bundle original is missing')
-        const stored = await session.d.runtime.artifactPut(bytes, { mime: ref.mime })
+        const scope = { sessionKey: key, lane }
+        const receipt = await attachments?.store(scope, bytes, ref.mime, new AbortController().signal)
+        if (!receipt) throw new Error('native import attachment storage unavailable')
+        receipts.push({ scope, receipt })
+        const stored = receipt.artifact
         if (stored.sha256 !== ref.sha256 || stored.size !== ref.size || stored.mime !== ref.mime)
           throw new Error('native import artifact store identity mismatch')
       }
@@ -173,10 +181,13 @@ export async function importFile(parsed: ParsedArgs, deps: ImportDeps): Promise<
         await session.append(batch)
         written += batch.length
       }
+      for (const { scope, receipt } of receipts) await attachments?.confirm(scope, receipt.id)
     } catch (error) {
       const detail = (error as Error).message
+      // Keep pending roots until rollback has removed every possibly committed reference.
       try {
         await session.discardNewSession()
+        for (const { scope, receipt } of receipts) await attachments?.discard(scope, receipt.id)
       } catch (rollbackError) {
         const rollbackDetail = (rollbackError as Error).message
         throw new CommandError(

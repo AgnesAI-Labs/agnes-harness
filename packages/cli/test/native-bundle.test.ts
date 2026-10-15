@@ -2,8 +2,20 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createTestHost } from '@agnes/host/testkit'
-import type { ArtifactReadParams, EventEnvelope } from '@agnes/protocol'
+import { DatabaseSync } from 'node:sqlite'
+import {
+  createArtifactReadAuthorityPort,
+  createAuthenticatedArtifactReadHandler,
+  PersistentArtifactReadAuthorityIndex,
+} from '@agnes/daemon/local'
+import { createLocalArtifactReadStore } from '@agnes/host'
+import { baseSeamFactories, createTestHost } from '@agnes/host/testkit'
+import {
+  type ArtifactReadParams,
+  attachmentLink,
+  type EventEnvelope,
+  sessionArtifactRoots,
+} from '@agnes/protocol'
 import type { Client } from '@agnes/sdk'
 import { expect, it, vi } from 'vitest'
 import { parseArgs } from '../src/args.js'
@@ -41,56 +53,147 @@ const client = (bytes = original, sessionId = 's') =>
 
 it('round-trips current-product rows and original bytes through the public artifact seam', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'agnes-native-'))
-  // Content-addressed fake for the public seam; the default test seam returns a fixed identity.
-  const originals = new Map<string, Uint8Array>()
   const { host } = await createTestHost({
     dataDir: dir,
-    seams: {
-      artifacts: {
-        put: async (bytes, options) => {
-          const sha256 = createHash('sha256').update(bytes).digest('hex')
-          originals.set(sha256, bytes.slice())
-          return { sha256, size: bytes.length, mime: options?.mime ?? 'application/octet-stream' }
-        },
-        get: async (artifact) => {
-          const bytes = originals.get(artifact.sha256)
-          if (!bytes) throw new Error('missing original')
-          return bytes.slice()
-        },
-      },
-    },
+    seamFactories: { artifacts: baseSeamFactories.artifacts },
   })
   const admission = await memoryAdmission(host, dir)
   const source = await openAdmittedSession(host, admission, 'agnes:local:default:cli:dm:source', dir)
   try {
+    const store = source.d.runtime.attachmentStore()
+    expect(store).toBeDefined()
+    const scope = { sessionKey: source.key, lane: 'main' }
+    const receipt = await store?.store(scope, original, ref.mime, new AbortController().signal)
+    if (!receipt || !store) throw new Error('missing selected attachment store')
+    expect(receipt.artifact).toEqual(ref)
+    expect(await store.authorize({ ...scope, lane: 'other' }, receipt, new AbortController().signal)).toBe(
+      false,
+    )
+    const thumbnailBytes = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=',
+      'base64',
+    )
+    const thumbnailReceipt = await store.store(
+      scope,
+      thumbnailBytes,
+      'image/png',
+      new AbortController().signal,
+    )
+    expect(await store.pendingRoots()).toMatchObject({
+      complete: true,
+      roots: expect.arrayContaining([ref, thumbnailReceipt.artifact]),
+    })
     await source.append([
       {
-        type: 'artifact/job',
-        register: 'artifact/job',
-        data: { jobId: 'done', status: 'done', ref },
+        type: 'user/message',
+        data: {
+          kind: 'prompt',
+          content: [
+            attachmentLink(ref, 'original.txt', {
+              thumbnail: thumbnailReceipt.artifact,
+              receiptId: receipt.id,
+            }),
+          ],
+        },
         actor: source.d.actor,
         origin: 'system',
         trust: 'trusted',
       },
     ])
     const rows = (await source.scan({ limit: 50 })) as EventEnvelope[]
-    const path = join(dir, 'bundle.agnes')
-    await writeNativeBundle(path, rows, formatAgnes(rows), client(original, source.key), source.key)
-    const checked = await readNativeBundle(path, readFileSync(path))
-    expect(Buffer.from(checked?.raw ?? [])).toEqual(Buffer.from(formatAgnes(rows)))
-    expect(await checked?.readOriginal(ref)).toEqual(original)
-    const io = { stdout: { write: vi.fn() }, stderr: { write: vi.fn() } }
-    const key = 'agnes:local:default:cli:dm:imported'
-    await expect(
-      importFile(parseArgs(['import', path, '--key', key]), { env: {}, cwd: dir, host, admission, io }),
-    ).resolves.toBe(0)
-    const imported = await openAdmittedSession(host, admission, key, dir)
+    await store.confirm(scope, receipt.id)
+    await store.confirm(scope, thumbnailReceipt.id)
+    expect(await store.pendingRoots()).toEqual({ complete: true, roots: [] })
+    const authorityDb = new DatabaseSync(':memory:')
+    const authority = new PersistentArtifactReadAuthorityIndex({
+      name: 'authority',
+      exec: (sql) => {
+        authorityDb.exec(sql)
+      },
+      run: (sql, params = []) => ({
+        changes: Number(authorityDb.prepare(sql).run(...(params as never[])).changes),
+      }),
+      get: <T>(sql: string, params: readonly unknown[] = []) =>
+        authorityDb.prepare(sql).get(...(params as never[])) as T | undefined,
+      all: <T>(sql: string, params: readonly unknown[] = []) =>
+        authorityDb.prepare(sql).all(...(params as never[])) as T[],
+      transaction: (fn) => {
+        authorityDb.exec('BEGIN')
+        try {
+          const value = fn()
+          authorityDb.exec('COMMIT')
+          return value
+        } catch (error) {
+          authorityDb.exec('ROLLBACK')
+          throw error
+        }
+      },
+    })
     try {
-      expect(Buffer.from(await imported.d.runtime.artifactGet(ref))).toEqual(original)
-      const body = await imported.scan({ fromSeq: 2, limit: 50 })
-      expect(body).toEqual(rows.slice(1))
+      for (const row of rows)
+        for (const artifact of sessionArtifactRoots(row) ?? []) {
+          expect(
+            authority.append(
+              {
+                permission: 'append',
+                sessionId: source.key,
+                laneId: row.lane ?? 'main',
+                principalId: 'local',
+              },
+              { sessionId: source.key, laneId: row.lane ?? 'main', ownerId: 'local', artifact },
+            ),
+          ).toMatchObject({ ok: true })
+        }
+      const read = createAuthenticatedArtifactReadHandler({
+        authority: createArtifactReadAuthorityPort(authority),
+        artifacts: createLocalArtifactReadStore({ dataDir: dir, maxArtifactBytes: 1024 * 1024 }),
+        limits: { maxArtifactBytes: 1024 * 1024, maxResponseBytes: 1024 * 1024 },
+        operationTimeoutMs: 1000,
+      })
+      const caller = { principalId: 'local', sessionId: source.key, laneId: 'main', authKind: 'local' }
+      expect(
+        await read({ sessionId: source.key, laneId: 'other', artifact: ref }, { ...caller, laneId: 'other' }),
+      ).toMatchObject({ ok: false })
+      const realClient = {
+        call: async (_method: string, params: ArtifactReadParams) => {
+          const result = await read(params, caller)
+          return result.ok
+            ? { ...result, ...result.headers, base64: Buffer.from(result.body).toString('base64') }
+            : result
+        },
+      } as unknown as Client
+      const path = join(dir, 'bundle.agnes')
+      await writeNativeBundle(path, rows, formatAgnes(rows), realClient, source.key)
+      const checked = await readNativeBundle(path, readFileSync(path))
+      expect(Buffer.from(checked?.raw ?? [])).toEqual(Buffer.from(formatAgnes(rows)))
+      expect(await checked?.readOriginal(ref)).toEqual(original)
+      expect(await checked?.readOriginal(thumbnailReceipt.artifact)).toEqual(thumbnailBytes)
+      // The thumbnail remains intact while the original is damaged; it cannot satisfy verification.
+      writeFileSync(join(`${path}.artifacts`, ref.sha256), Buffer.alloc(original.length))
+      await expect(readNativeBundle(path, readFileSync(path))).rejects.toThrow('digest')
+      writeFileSync(join(`${path}.artifacts`, ref.sha256), original)
+      const io = { stdout: { write: vi.fn() }, stderr: { write: vi.fn() } }
+      const key = 'agnes:local:default:cli:dm:imported'
+      await expect(
+        importFile(parseArgs(['import', path, '--key', key]), { env: {}, cwd: dir, host, admission, io }),
+      ).resolves.toBe(0)
+      const imported = await openAdmittedSession(host, admission, key, dir)
+      try {
+        expect(Buffer.from(await imported.d.runtime.artifactGet(ref))).toEqual(original)
+        expect(Buffer.from(await imported.d.runtime.artifactGet(thumbnailReceipt.artifact))).toEqual(
+          thumbnailBytes,
+        )
+        const body = await imported.scan({ fromSeq: 2, limit: 50 })
+        expect(body).toEqual(rows.slice(1))
+        expect(await imported.d.runtime.attachmentStore()?.pendingRoots()).toEqual({
+          complete: true,
+          roots: [],
+        })
+      } finally {
+        await imported.close()
+      }
     } finally {
-      await imported.close()
+      authorityDb.close()
     }
   } finally {
     await source.close()
