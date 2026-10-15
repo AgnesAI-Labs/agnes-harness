@@ -360,6 +360,6 @@ export function assertBuiltinWebUnitContract(definition: WebUnitDefinition): voi
 
 for (const definition of BUILTIN_WEB_UNITS) assertBuiltinWebUnitContract(definition)
 
+export { attachmentErrorMessage } from './composer-errors.js'
 export { type ComposerReferences, createComposerReferences } from './reference-picker.js'
-
 export { WorkspaceDialog, type WorkspaceDialogState } from './workspace-dialog.js'
