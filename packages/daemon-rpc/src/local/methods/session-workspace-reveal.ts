@@ -1,4 +1,4 @@
-import { execFile, spawn } from 'node:child_process'
+import { macDesktopAvailable, revealWorkspaceDirectory } from '@agnes/daemon-foundation/desktop'
 import type { CallContext, LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import type { WorkspaceCatalog } from '@agnes/daemon-foundation/storage/workspaces'
 import { rpcError, type SessionRevealWorkspaceParams } from '@agnes/protocol'
@@ -19,30 +19,6 @@ export function desktopAvailable(platform: string, env: DesktopEnvironment): boo
   if (platform === 'linux') return Boolean(env.DISPLAY || env.WAYLAND_DISPLAY)
   if (platform === 'win32') return Boolean(env.SESSIONNAME && env.SESSIONNAME !== 'Services')
   return platform === 'darwin'
-}
-
-/** A macOS background/system bootstrap is not an interactive Aqua desktop. */
-async function macDesktopAvailable(signal: AbortSignal): Promise<boolean> {
-  return new Promise((resolve) => {
-    execFile(
-      '/bin/launchctl',
-      ['managername'],
-      { encoding: 'utf8', timeout: 1500, maxBuffer: 1024, signal },
-      (error, stdout) => resolve(!error && stdout.trim() === 'Aqua'),
-    )
-  })
-}
-
-async function revealWorkspaceDirectory(platform: string, root: string): Promise<void> {
-  const executable = platform === 'darwin' ? 'open' : platform === 'win32' ? 'explorer.exe' : 'xdg-open'
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(executable, [root], { detached: true, stdio: 'ignore', shell: false })
-    child.once('error', () => reject(rpcError('SEMANTIC_REJECTED', { code: 'WORKSPACE_REVEAL_FAILED' })))
-    child.once('spawn', () => {
-      child.unref()
-      resolve()
-    })
-  })
 }
 
 export function registerSessionWorkspaceReveal(

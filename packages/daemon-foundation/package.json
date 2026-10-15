@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./desktop": "./src/desktop.ts",
     "./composite-desired": "./src/composite-desired.ts",
     "./index": "./src/index.ts",
     "./jobs/repo": "./src/jobs/repo.ts",
