@@ -216,6 +216,20 @@ function applyTraceEventInner(state: TraceFoldState, event: EventEnvelope): void
         ;(step && step.endSeq === undefined ? step : state.root).children.push(span)
         return
       }
+      if (kind === 'side-call') {
+        // A model call a loop makes outside the conversation: a generation on the trace, but never a step's
+        // inference, so it does not become the active inference that request headers and sends attach to.
+        const span = register(
+          state,
+          makeSpan(`span:side-call:${effectId}`, 'generation', 'side call', event, {
+            effectId,
+            purpose: 'side-call',
+          }),
+        )
+        const step = state.currentStepId ? state.spans.get(state.currentStepId) : undefined
+        ;(step && step.endSeq === undefined ? step : state.root).children.push(span)
+        return
+      }
       return
     }
     case 'request/sent': {

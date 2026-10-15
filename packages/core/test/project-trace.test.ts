@@ -256,6 +256,194 @@ describe('projectUI trace fold', () => {
     expect(title).toBeDefined()
     expect(steps[0]?.children).not.toContain(title)
   })
+
+  describe('side calls', () => {
+    const sideCost = (
+      effectId: string,
+      extra: Record<string, unknown> = {},
+      timing: { durationMs: number } | undefined = { durationMs: 30 },
+    ) =>
+      event('cost/ledger', {
+        purpose: 'side-call',
+        effectId,
+        tokens: { input: 189, output: 12, cacheRead: 0, cacheWrite: 0 },
+        credits: 0.5,
+        creditSource: 'gateway',
+        model: 'side-model',
+        route: 'side-route',
+        adapter: 'side-adapter',
+        endpointHost: 'side.example',
+        ...(timing ? { timing } : {}),
+        ...extra,
+      })
+
+    it('mounts a side call as a generation under the open step and fills it from its cost row', async () => {
+      const events = [
+        event('turn/start', { turn: 1, trigger: 'prompt' }),
+        event('step/start', { turn: 1, step: 1 }),
+        event('effect/intent', { effectId: 'side:a', kind: 'side-call', replay: 'never' }),
+        sideCost('side:a'),
+        event('effect/settled', { effectId: 'side:a', outcome: 'ok', durationMs: 31 }),
+        event('effect/intent', { effectId: 'inf-1', kind: 'inference', replay: 'safe' }),
+        event('cost/ledger', {
+          purpose: 'inference',
+          effectId: 'inf-1',
+          tokens,
+          creditSource: 'estimated',
+          model: 'm',
+          timing: { durationMs: 8 },
+        }),
+        event('step/end', { turn: 1, step: 1 }),
+        event('turn/end', { reason: 'completed', lastAssistantSeq: null }),
+      ]
+      const root = timelineTrace(await projectUI(events, { sessionKey: 'trace-side-step' }))
+      const step = root.children.find((child) => child.kind === 'step')
+      const side = step?.children.find((child) => child.id === 'span:side-call:side:a')
+      expect(side).toMatchObject({
+        kind: 'generation',
+        effectId: 'side:a',
+        purpose: 'side-call',
+        model: 'side-model',
+        name: 'side-model',
+        status: 'completed',
+        durationMs: 30,
+        callSeq: 4,
+      })
+      expect(root.children.some((child) => child.id === 'span:side-call:side:a')).toBe(false)
+      // The conversation's own call is still the only inference generation in the step.
+      expect(byKind(root, 'generation').filter((span) => span.purpose === 'inference')).toHaveLength(1)
+    })
+
+    it('mounts a side call outside any open step on the turn root', async () => {
+      const events = [
+        event('turn/start', { turn: 1, trigger: 'prompt' }),
+        event('effect/intent', { effectId: 'side:early', kind: 'side-call', replay: 'never' }),
+        sideCost('side:early'),
+        event('step/start', { turn: 1, step: 1 }),
+        event('step/end', { turn: 1, step: 1 }),
+        event('effect/intent', { effectId: 'side:late', kind: 'side-call', replay: 'never' }),
+        sideCost('side:late'),
+        event('turn/end', { reason: 'completed', lastAssistantSeq: null }),
+      ]
+      const root = timelineTrace(await projectUI(events, { sessionKey: 'trace-side-root' }))
+      expect(root.children.filter((child) => child.kind === 'step')).toHaveLength(1)
+      expect(root.children.map((child) => child.id)).toEqual(
+        expect.arrayContaining(['span:side-call:side:early', 'span:side-call:side:late']),
+      )
+      for (const span of root.children.filter((child) => child.kind === 'generation'))
+        expect(span).toMatchObject({ purpose: 'side-call', status: 'completed' })
+      expect(byKind(root, 'step').flatMap((step) => step.children)).toEqual([])
+    })
+
+    it('closes the span on effect/settled, recording its code and duration', async () => {
+      const events = [
+        event('turn/start', { turn: 1, trigger: 'prompt' }),
+        event('step/start', { turn: 1, step: 1 }),
+        event('effect/intent', { effectId: 'side:slow', kind: 'side-call', replay: 'never' }),
+        event('effect/settled', {
+          effectId: 'side:slow',
+          outcome: 'error',
+          code: 'TIMEOUT',
+          durationMs: 200,
+        }),
+        sideCost('side:slow', { interrupted: true, creditSource: 'estimated' }, undefined),
+        event('step/end', { turn: 1, step: 1 }),
+        event('turn/end', { reason: 'completed', lastAssistantSeq: null }),
+      ]
+      const root = timelineTrace(await projectUI(events, { sessionKey: 'trace-side-settled' }))
+      const side = byKind(root, 'generation').find((span) => span.effectId === 'side:slow')
+      expect(side).toMatchObject({
+        status: 'failed',
+        durationMs: 200,
+        error: { code: 'TIMEOUT' },
+        model: 'side-model',
+        purpose: 'side-call',
+      })
+      expect(side?.endSeq).toBeDefined()
+      expect(side?.callSeq).toBeDefined()
+    })
+
+    it('leaves a side call without a settled row running, and closes it as cancelled when aborted', async () => {
+      const events = [
+        event('turn/start', { turn: 1, trigger: 'prompt' }),
+        event('step/start', { turn: 1, step: 1 }),
+        event('effect/intent', { effectId: 'side:open', kind: 'side-call', replay: 'never' }),
+        event('effect/intent', { effectId: 'side:stop', kind: 'side-call', replay: 'never' }),
+        event('effect/settled', { effectId: 'side:stop', outcome: 'aborted', durationMs: 5 }),
+      ]
+      const root = timelineTrace(await projectUI(events, { sessionKey: 'trace-side-open' }))
+      const spans = byKind(root, 'generation')
+      expect(spans.find((span) => span.effectId === 'side:open')).toMatchObject({ status: 'running' })
+      expect(spans.find((span) => span.effectId === 'side:stop')).toMatchObject({
+        status: 'cancelled',
+        durationMs: 5,
+      })
+    })
+
+    it('does not take the request header or send receipt of a conversation request running beside it', async () => {
+      const traceId = '12345678-1234-1234-1234-123456789abc'
+      const events = [
+        event('turn/start', { turn: 1, trigger: 'prompt' }),
+        event('step/start', { turn: 1, step: 1 }),
+        event('effect/intent', { effectId: 'inf-1', kind: 'inference', replay: 'safe' }),
+        event('effect/intent', { effectId: 'side:a', kind: 'side-call', replay: 'never' }),
+        event('request/sent', { requestTraceId: traceId }),
+        event('request/header', { model: 'main-model' }),
+        sideCost('side:a'),
+        event('cost/ledger', {
+          purpose: 'inference',
+          effectId: 'inf-1',
+          tokens,
+          creditSource: 'estimated',
+          model: 'main-model',
+          timing: { durationMs: 8 },
+        }),
+      ]
+      const root = timelineTrace(await projectUI(events, { sessionKey: 'trace-side-beside' }))
+      const spans = byKind(root, 'generation')
+      expect(spans.find((span) => span.effectId === 'inf-1')).toMatchObject({
+        model: 'main-model',
+        purpose: 'inference',
+        requestTraceId: traceId,
+      })
+      const side = spans.find((span) => span.effectId === 'side:a')
+      expect(side).toMatchObject({ model: 'side-model', purpose: 'side-call' })
+      expect(side).not.toHaveProperty('requestTraceId')
+    })
+
+    it('counts a side call in the turn usage without taking over the final model', async () => {
+      const events = [
+        event('turn/start', { turn: 1, trigger: 'prompt' }),
+        event('step/start', { turn: 1, step: 1 }),
+        event('effect/intent', { effectId: 'inf-1', kind: 'inference', replay: 'safe' }),
+        event('cost/ledger', {
+          purpose: 'inference',
+          effectId: 'inf-1',
+          tokens,
+          credits: 1,
+          creditSource: 'gateway',
+          model: 'main-model',
+          timing: { durationMs: 8 },
+        }),
+        event('effect/intent', { effectId: 'side:a', kind: 'side-call', replay: 'never' }),
+        sideCost('side:a'),
+        event('effect/settled', { effectId: 'side:a', outcome: 'ok' }),
+        event('step/end', { turn: 1, step: 1 }),
+        event('turn/end', { reason: 'completed', lastAssistantSeq: null }),
+      ]
+      const timeline = await projectUI(events, { sessionKey: 'trace-side-usage' })
+      const turn = timeline.turns[0]
+      if (!turn) throw new Error('expected one projected turn')
+      expect(validateAgainst(UITurnSchema, turn).ok).toBe(true)
+      expect(turn.usage.calls.map((call) => [call.id, call.purpose])).toEqual([
+        ['inf-1', 'inference'],
+        ['side:a', 'side-call'],
+      ])
+      expect(turn.usage.totals).toEqual({ input: 199, output: 14, cacheRead: 1, cacheWrite: 0, reasoning: 3 })
+      expect(turn.usage.credits?.amount).toBe(1.5)
+      expect(turn.finalModel).toBe('main-model')
+    })
+  })
 })
 
 function timelineTrace(timeline: { turns: Array<{ trace?: UISpan }> }): UISpan {

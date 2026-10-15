@@ -302,6 +302,7 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
         c.purpose !== 'title' &&
         c.purpose !== 'approval-guardian' &&
         c.purpose !== 'media' &&
+        c.purpose !== 'side-call' &&
         !c.interrupted &&
         !c.adjustment
       )

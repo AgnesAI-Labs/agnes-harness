@@ -46,6 +46,8 @@ const cost = (
   ...extra,
 })
 
+const gatewayBilling = (usdMicros: number) => ({ usdMicros, source: 'gateway', subscription: true })
+
 const input = (events: Event[], overrides: Partial<Parameters<typeof projectUsage>[0]> = {}) => ({
   events,
   upto: 99,
@@ -64,6 +66,8 @@ describe('projectUsage', () => {
     ['media', { input: 2048, output: 64 }, 0.75, { input: 2058, output: 66 }],
     // Its failed rows are all zero and its wide request can be larger or smaller than the context.
     ['compaction', { input: 9000, output: 900 }, 0.5, { input: 9010, output: 902 }],
+    // A model call made by a loop outside the conversation: it costs, but it is not the context.
+    ['side-call', { input: 4096, output: 128 }, 0.25, { input: 4106, output: 130 }],
   ] as const)(
     'counts %s cost without replacing the inference context anchor',
     (purpose, tokens, credits, totals) => {
@@ -76,6 +80,37 @@ describe('projectUsage', () => {
       })
     },
   )
+
+  it('keeps a large conversation anchor after side calls, while their spend and calls still count', () => {
+    const inference = row(
+      1,
+      cost('inference-1', { input: 180_000, output: 400 }, { credits: 2, billing: gatewayBilling(200) }),
+    )
+    const sideCalls = [
+      row(
+        2,
+        cost(
+          'side:1',
+          { input: 189, output: 12 },
+          { purpose: 'side-call', credits: 0.5, billing: gatewayBilling(50) },
+        ),
+      ),
+      row(
+        3,
+        cost(
+          'side:2',
+          { input: 40, output: 0 },
+          { purpose: 'side-call', credits: 0.25, creditSource: 'estimated', interrupted: true },
+        ),
+      ),
+    ]
+    expect(contextTokensAtCut([inference, ...sideCalls], 'main', 3)).toBe(180_400)
+    expect(projectUsage(input([inference, ...sideCalls]))).toMatchObject({
+      totals: { input: 180_229, output: 412, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+      credits: { amount: 2.75, source: 'estimated', complete: true },
+      cost: { usdMicros: 250 },
+    })
+  })
 
   it('anchors the context at the estimate a compaction leaves behind, until the next request', () => {
     const inference = row(1, cost('inference-1', { input: 10, output: 2, cacheRead: 3, cacheWrite: 4 }))
