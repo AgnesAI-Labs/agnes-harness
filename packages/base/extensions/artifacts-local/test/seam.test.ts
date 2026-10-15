@@ -328,3 +328,56 @@ it('discards cancelled publication without consuming another receipt or retainin
   ).rejects.toMatchObject({ code: 'ATTACHMENT_CANCELLED' })
   expect(await store.pendingRoots()).toEqual({ complete: true, roots: [] })
 })
+
+it('caches model-specific renditions and thumbnails under independent receipt roots without modifying originals', async () => {
+  const { createRequire } = await import('node:module')
+  const { decodeSafeImageBytes, USER_MESSAGE_IMAGE_LIMITS } = await import('@agnes/protocol-validation')
+  const sharp = createRequire(import.meta.url)('sharp') as typeof import('sharp')
+  const namespaces = new Map<string, Map<string, unknown>>()
+  const init = fakeSeamInit()
+  init.adapters.storage.namespace = (name) => {
+    let values = namespaces.get(name)
+    if (!values) {
+      values = new Map()
+      namespaces.set(name, values)
+    }
+    const rows = values
+    return {
+      get: (key) => structuredClone(rows.get(key)),
+      set: (key, value) => {
+        rows.set(key, structuredClone(value))
+      },
+      delete: (key) => {
+        rows.delete(key)
+      },
+      entries: () => [...rows].map(([key, value]) => ({ key, value: structuredClone(value) })),
+      transaction: (fn) => fn(),
+    }
+  }
+  const seam = await artifactsLocal(init)
+  const store = seam.attachments!
+  const source = await sharp({ create: { width: 128, height: 64, channels: 3, background: 'white' } })
+    .png()
+    .toBuffer()
+  const original = await seam.put(source, { mime: 'image/png' })
+  const scope = { sessionKey: 's', lane: 'main' },
+    signal = new AbortController().signal
+  const policy = { maxWidth: 32, maxHeight: 32, maxBytes: 4096, jpegQuality: 85 }
+  const first = await store.imageVersion!(scope, original, policy, signal)
+  expect(await store.imageVersion!(scope, original, policy, signal)).toEqual(first)
+  expect(
+    decodeSafeImageBytes(
+      { bytes: await seam.get(first.artifact), mimeType: 'image/png' },
+      USER_MESSAGE_IMAGE_LIMITS,
+    ),
+  ).toMatchObject({ width: 32, height: 16 })
+  const other = await store.imageVersion!(scope, original, { ...policy, maxWidth: 16, maxHeight: 16 }, signal)
+  expect(other.artifact.sha256).not.toBe(first.artifact.sha256)
+  expect([...(await seam.get(original))]).toEqual([...source])
+  expect((await store.pendingRoots()).roots).toEqual(expect.arrayContaining([first.artifact, other.artifact]))
+  expect(await store.authorize({ sessionKey: 's', lane: 'foreign' }, first, signal)).toBe(false)
+  await store.discard(scope, first.id)
+  const refreshed = await store.imageVersion!(scope, original, policy, signal)
+  expect(refreshed.id).not.toBe(first.id)
+  expect(refreshed.artifact).toEqual(first.artifact)
+})

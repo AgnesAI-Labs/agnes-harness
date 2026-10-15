@@ -1,5 +1,4 @@
 import { sha256Hex } from '@agnes/core-common/request/hash'
-import { scanPages } from '@agnes/core-ledger/log/scan-pages'
 import type { ToolResult } from '@agnes/extension-api'
 import { type ContentBlock, modelImageInputError, storedAttachment } from '@agnes/protocol'
 import { decodeSafeImages, USER_MESSAGE_IMAGE_LIMITS } from '@agnes/protocol-validation'
@@ -7,6 +6,7 @@ import { REQUEST_MEDIA_MIN_DIMENSION } from '../orchestrator/request-media.js'
 import { resolveModel } from '../step/inference.js'
 import { resolvedModelRecord } from '../step/model-tools.js'
 import type { SessionImpl } from '../step/session.js'
+import { attachmentIndex } from './attachment-index.js'
 import { sessionImageRef } from './inline-images.js'
 import { readSessionAttachment } from './session-files.js'
 
@@ -32,28 +32,14 @@ export async function readSessionImages(
     if (!Number.isSafeInteger(offset) || offset < 1 || !Number.isSafeInteger(limit) || limit < 1)
       return result('Invalid image list offset or limit.', true)
     const lines: string[] = []
-    let ordinal = 0
-    for await (const page of scanPages(
-      (q) => session.d.log.scan(q),
-      { type: 'user/message', lane: session.lane, toSeq: end },
-      10,
-    )) {
+    let ordinal = offset - 1
+    const indexed = await attachmentIndex(session)
+    for (const image of indexed.images.slice(offset - 1, offset + limit)) {
       abort()
-      for (const event of page) {
-        const content = (event.data as { content?: ContentBlock[] }).content ?? []
-        let index = 0
-        for (const block of content) {
-          if (block.type !== 'image' && !(storedAttachment(block) && block.attachment.image)) continue
-          index++
-          ordinal++
-          if (ordinal < offset) continue
-          if (lines.length === limit)
-            return result(
-              `${lines.join('\n')}\n[read session-image://list with offset=${ordinal} to continue]`,
-            )
-          lines.push(`${ordinal}. ${sessionImageRef(event.seq, index)}`)
-        }
-      }
+      ordinal++
+      if (lines.length === limit)
+        return result(`${lines.join('\n')}\n[read session-image://list with offset=${ordinal} to continue]`)
+      lines.push(`${ordinal}. ${sessionImageRef(image.seq, image.index)}`)
     }
     return result(lines.join('\n') || 'No images at this offset in this session.')
   }

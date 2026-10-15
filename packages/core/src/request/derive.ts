@@ -1165,6 +1165,7 @@ export function hashDerivedRequest(body: RequestBody, media?: RequestMediaHashMa
  */
 export function headerEquals(a: RequestHeaderData, b: RequestHeaderData): boolean {
   return (
+    (a.attachmentImagesOmittedThrough ?? 0) === (b.attachmentImagesOmittedThrough ?? 0) &&
     a.derived_hash === b.derived_hash &&
     a.tool_schema_hash === b.tool_schema_hash &&
     a.prompt_prefix_hash === b.prompt_prefix_hash &&

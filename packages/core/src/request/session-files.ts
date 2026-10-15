@@ -1,4 +1,3 @@
-import { scanPages } from '@agnes/core-ledger/log/scan-pages'
 import type { ToolContext } from '@agnes/extension-api'
 import {
   AttachmentError,
@@ -10,6 +9,7 @@ import {
 } from '@agnes/protocol'
 import { decodeAttachmentData, USER_MESSAGE_ATTACHMENT_LIMITS } from '@agnes/protocol-validation'
 import type { SessionImpl } from '../step/session.js'
+import { attachmentIndex } from './attachment-index.js'
 
 type UserFile = Extract<ContentBlock, { type: 'file' | 'resource_link' }> & { name: string; mimeType: string }
 const filesOf = (data: unknown): UserFile[] =>
@@ -48,31 +48,19 @@ export const readSessionAttachment = async (
       throw new Error('Invalid attachment list offset or limit.')
     const lines: string[] = []
     let used = 200
-    let ordinal = 0
-    for await (const page of scanPages(
-      (query) => session.d.log.scan(query),
-      { type: 'user/message', lane: session.lane, toSeq: end },
-      10,
-    )) {
+    let ordinal = offset - 1
+    const indexed = await attachmentIndex(session)
+    for (const file of indexed.files.slice(offset - 1, offset + limit)) {
       checkAbort()
-      for (const event of page) {
-        for (const [index, file] of filesOf(event.data).entries()) {
-          ordinal++
-          if (ordinal < offset) continue
-          const line = `${ordinal}. session-file://${event.seq}/${index + 1} ${JSON.stringify(file.name)} (${file.mimeType})`
-          const cost = new TextEncoder().encode(line).byteLength + 1
-          if (lines.length === limit || used + cost > maxBytes) {
-            lines.push(`[read session-file://list with offset=${ordinal} to continue]`)
-            return {
-              name: 'Attachments',
-              mimeType: 'text/plain',
-              bytes: new TextEncoder().encode(lines.join('\n')),
-            }
-          }
-          lines.push(line)
-          used += cost
-        }
+      ordinal++
+      const line = `${ordinal}. session-file://${file.seq}/${file.index} ${JSON.stringify(file.name)} (${file.mimeType})`
+      const cost = new TextEncoder().encode(line).byteLength + 1
+      if (lines.length === limit || used + cost > maxBytes) {
+        lines.push(`[read session-file://list with offset=${ordinal} to continue]`)
+        break
       }
+      lines.push(line)
+      used += cost
     }
     return {
       name: 'Attachments',

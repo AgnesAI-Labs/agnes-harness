@@ -65,7 +65,7 @@ export function selectInlineImages(
   const imageMessages = body.messages.filter(
     (m) => m.role === 'user' && m.content.some((b) => b.type === 'image'),
   )
-  const recent = new Set(imageMessages.slice(-3).map((m) => m.seq))
+  const recent = new Set(imageMessages.map((m) => m.seq))
   const selected = new Set<object>()
   let count = media.length
   const fresh = body.messages.flatMap((m) =>

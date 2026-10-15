@@ -1926,9 +1926,18 @@ importers:
         specifier: workspace:*
         version: link:../system-node
     devDependencies:
+      '@agnes/core':
+        specifier: workspace:*
+        version: link:../core
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
       '@agnes/host-infrastructure':
         specifier: workspace:*
         version: link:../host-infrastructure
+      '@agnes/sdk':
+        specifier: workspace:*
+        version: link:../sdk
 
   tools/e2e-web:
     dependencies:

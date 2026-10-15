@@ -94,6 +94,7 @@ export type {
   WorkspaceListParams,
   WorkspaceListResult,
 } from '@agnes/protocol'
+export * from './attachment-upload.js'
 export { type AuthProvider, jwtAuth, localAuth, portalIdentityAuth } from './auth.js'
 export * from './branding.js'
 export type {

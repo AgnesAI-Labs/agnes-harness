@@ -1,4 +1,4 @@
-import { attachmentSurface } from '../../request/attachment-surface.js'
+import { attachmentOmittedThrough, attachmentSurface } from '../../request/attachment-surface.js'
 import { estimateTokens } from '../model-tokens.js'
 
 export { estimateTokens } from '../model-tokens.js'
@@ -667,6 +667,7 @@ export async function prepareInferenceRequest(
     ...(requestMedia ? { media: requestMedia, mediaSessionKey: s.key } : {}),
     ...(auxiliaryVision ? { auxiliaryVision } : {}),
   })
+  if (attachmentOmittedThrough(s)) out.header.attachmentImagesOmittedThrough = attachmentOmittedThrough(s)
   if (slot === 'primary' && s.preset.model.maxTokens !== undefined) {
     const { request, derivedHash } = remintRequestWithMaxTokens(
       out.request,

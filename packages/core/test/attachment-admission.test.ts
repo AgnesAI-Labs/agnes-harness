@@ -1,9 +1,18 @@
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { AttachmentReceipt, AttachmentScope, AttachmentStore } from '@agnes/extension-api'
-import { attachmentLink, type ContentBlock, IncrementalSha256, storedAttachment } from '@agnes/protocol'
+import {
+  AttachmentError,
+  attachmentLink,
+  type ContentBlock,
+  IncrementalSha256,
+  storedAttachment,
+} from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
+import { visibleAttachmentRefs } from '../src/request/attachment-admission.js'
+import { attachmentIndex } from '../src/request/attachment-index.js'
 import { attachmentSurface } from '../src/request/attachment-surface.js'
 import { readSessionAttachment } from '../src/request/session-files.js'
+import { readSessionImages } from '../src/request/session-images.js'
 import { fakeProvider, textTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, openSession } from './helpers/open-session.js'
@@ -50,7 +59,15 @@ function fixture() {
     },
   }
   const seams = fakeSeams({
-    artifacts: { put, get: async (ref) => objects.get(ref.sha256)?.slice() ?? new Uint8Array(), attachments },
+    artifacts: {
+      put,
+      get: async (ref) => {
+        const bytes = objects.get(ref.sha256)
+        if (!bytes) throw new AttachmentError('ATTACHMENT_MISSING')
+        return bytes.slice()
+      },
+      attachments,
+    },
   })
   const provider = fakeProvider([textTurn('saved')])
   provider.models = () => [
@@ -70,7 +87,14 @@ function fixture() {
       contract_id: null,
     },
   ]
-  return { objects, pending, seams, provider, attachments }
+  return {
+    objects,
+    pending,
+    seams,
+    provider,
+    attachments,
+    imageInputTokenFallback: ({ imageCount }: { imageCount: number }) => ({ tokens: 128, imageCount }),
+  }
 }
 const inline = (text: string): ContentBlock => ({
   type: 'file',
@@ -220,6 +244,17 @@ describe('artifact-backed input admission', () => {
     const transient = await attachmentSurface(session, surface)
     expect(JSON.stringify(transient)).toContain(data)
     expect(JSON.stringify(surface)).not.toContain(data)
+    const forged = structuredClone(surface)
+    const forgedUser = forged.find((node) => node.kind === 'user')!
+    const forgedContent = (forgedUser.event.data as { content: ContentBlock[] }).content
+    forgedContent[0] = attachmentLink(
+      { sha256: 'f'.repeat(64), size: 68, mime: 'image/png' },
+      'foreign.png',
+      { image: { width: 1, height: 1 } },
+    )
+    await expect(attachmentSurface(session, forged)).rejects.toMatchObject({
+      code: 'ATTACHMENT_NOT_AUTHORIZED',
+    })
     const seq = surface.find((node) => node.kind === 'user')!.seq
     const original = await readSessionAttachment(
       session,
@@ -254,4 +289,140 @@ it('cancels a provider that ignores its signal without persisting input, and rej
   cancelled.abort()
   await expect(pending).rejects.toMatchObject({ detail: { code: 'ATTACHMENT_CANCELLED' } })
   expect(await log.scan({ type: 'inbox', limit: 10 })).toEqual([])
+})
+
+it('reuses bounded verified attachment metadata across long text history and only scans appended ranges', async () => {
+  const f = fixture()
+  const { session, log } = await openSession(f)
+  await session.enqueue('next-turn', { actor, content: [inline('indexed')] })
+  await session.acceptInput()
+  for (let page = 0; page < 4; page++)
+    await session.append(
+      Array.from({ length: 100 }, (_, index) =>
+        session.ev('user/message', {
+          kind: 'prompt',
+          content: [{ type: 'text', text: `text-${page}-${index}` }],
+        }),
+      ),
+    )
+  const snapshot = await attachmentIndex(session)
+  // A caller cannot mutate the cache's authority through a returned projection snapshot.
+  ;(snapshot.refs as Map<string, unknown>).clear()
+  const through = session.lastSeq
+  const scan = log.scan.bind(log)
+  // A storage adapter may enforce an I/O window after indexing. Repeated list/authority reads
+  // must work without requesting that historical range (no private-helper or call-count assertion).
+  const bounded = vi.spyOn(log, 'scan').mockImplementation((query = {}) => {
+    if ((query.fromSeq ?? 0) <= through && query.fromSeq !== query.toSeq)
+      throw new Error('historical storage window is closed')
+    return scan(query)
+  })
+  try {
+    for (let index = 0; index < 3; index++) {
+      expect((await visibleAttachmentRefs(session)).size).toBe(1)
+      const list = await readSessionAttachment(
+        session,
+        { path: 'session-file://list' },
+        new AbortController().signal,
+      )
+      expect(new TextDecoder().decode(list?.bytes)).toContain('report.txt')
+      expect(
+        await readSessionImages(session, { path: 'session-image://list' }, new AbortController().signal),
+      ).toMatchObject({ content: [{ type: 'text', text: 'No images at this offset in this session.' }] })
+    }
+    await session.enqueue('next-turn', { actor, content: [inline('incremental')] })
+    await session.append([session.ev('user/message', { kind: 'prompt', content: queued(session) })])
+    expect((await attachmentIndex(session)).files).toHaveLength(snapshot.files.length + 1)
+    expect((await visibleAttachmentRefs(session)).size).toBe(2)
+  } finally {
+    bounded.mockRestore()
+  }
+})
+
+it('keeps an omitted image prefix across model changes and verified reopen, preserving fresh originals', async () => {
+  const f = fixture(),
+    storage = new MemoryStorage()
+  const baseModels = f.provider.models
+  f.provider = fakeProvider(Array.from({ length: 5 }, () => textTurn('saved')))
+  f.provider.models = () => baseModels().map((m) => ({ ...m, inputLimits: { images: { maxPerRequest: 4 } } }))
+  const { session, log } = await openSession({ ...f, storage, key: 'image-prefix' })
+  const data = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+  for (let turn = 0; turn < 5; turn++) {
+    await session.enqueue('next-turn', { actor, content: [{ type: 'image', data, mimeType: 'image/png' }] })
+    await session.acceptInput()
+    expect(await session.run({ until: 'turn-end', signal: new AbortController().signal })).toMatchObject({
+      reason: 'completed',
+    })
+  }
+  const headers = await log.scan({ type: 'request/header', order: 'desc', limit: 1 })
+  expect(headers[0]?.data).toMatchObject({ attachmentImagesOmittedThrough: expect.any(Number) })
+  await log.close()
+  f.provider.models = baseModels
+  const reopened = await openSession({ ...f, storage, key: 'image-prefix', writerRunId: 'reopened' })
+  const transient = await attachmentSurface(reopened.session, reopened.session.surface())
+  const images = transient.filter(
+    (n) => n.kind === 'user' && JSON.stringify(n.event.data).includes('session-image://'),
+  )
+  expect(images.length).toBeGreaterThanOrEqual(2)
+  expect(JSON.stringify(images.slice(0, 2))).toContain('original not included')
+  const [original] = [...f.objects.values()]
+  expect(Buffer.from(original!).toString('base64')).toBe(data)
+  f.objects.clear()
+  await expect(attachmentSurface(reopened.session, reopened.session.surface())).rejects.toBeDefined()
+  await reopened.log.close()
+})
+
+it('degrades a missing historical original while retaining the current image and refusing corrupt history', async () => {
+  const f = fixture()
+  const { session } = await openSession(f)
+  const jpeg = Uint8Array.of(
+    255,
+    216,
+    255,
+    192,
+    0,
+    11,
+    8,
+    0,
+    1,
+    0,
+    1,
+    1,
+    1,
+    17,
+    0,
+    255,
+    218,
+    0,
+    8,
+    1,
+    1,
+    0,
+    0,
+    63,
+    0,
+    1,
+    2,
+    3,
+    255,
+    217,
+  )
+  await session.enqueue('next-turn', {
+    actor,
+    content: [{ type: 'image', data: Buffer.from(jpeg).toString('base64'), mimeType: 'image/jpeg' }],
+  })
+  await session.acceptInput()
+  await session.run({ until: 'turn-end', signal: new AbortController().signal })
+  const oldSha = new IncrementalSha256().update(jpeg).digest()
+  const data = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+  await session.enqueue('next-turn', { actor, content: [{ type: 'image', data, mimeType: 'image/png' }] })
+  await session.acceptInput()
+  f.objects.delete(oldSha)
+  const transient = JSON.stringify(await attachmentSurface(session, session.surface()))
+  expect(transient).toContain('original missing')
+  expect(transient).toContain(data)
+  f.objects.set(oldSha, new Uint8Array([9]))
+  await expect(attachmentSurface(session, session.surface())).rejects.toMatchObject({
+    code: 'ATTACHMENT_HASH_MISMATCH',
+  })
 })

@@ -27,6 +27,9 @@
   },
   "license": "Apache-2.0",
   "devDependencies": {
-    "@agnes/host-infrastructure": "workspace:*"
+    "@agnes/host-infrastructure": "workspace:*",
+    "@agnes/core": "workspace:*",
+    "@agnes/sdk": "workspace:*",
+    "@agnes/extension-api": "workspace:*"
   }
 }

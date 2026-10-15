@@ -1,5 +1,4 @@
 import { CoreError } from '@agnes/core-common/types'
-import { scanPages } from '@agnes/core-ledger/log/scan-pages'
 import type { AttachmentReceipt } from '@agnes/extension-api'
 import {
   type ArtifactRef,
@@ -15,21 +14,23 @@ import {
   decodeAttachmentData,
   decodeSafeImageBytes,
   SafeImageError,
+  USER_IMAGE_ORIGINAL_LIMITS,
   USER_MESSAGE_ATTACHMENT_LIMITS,
   USER_MESSAGE_IMAGE_LIMITS,
   validateStoredAttachment,
 } from '@agnes/protocol-validation'
 import { resolveModel } from '../step/inference.js'
 import type { SessionImpl } from '../step/session.js'
+import { attachmentImagePolicy } from './attachment-image-policy.js'
+import { attachmentIndex, attachmentIdentity as identity } from './attachment-index.js'
 import { attachmentOperation } from './attachment-operation.js'
 import { validateWorkspaceUploads } from './upload-admission.js'
 
-const identity = (ref: ArtifactRef) => JSON.stringify([ref.sha256, ref.size, ref.mime])
 const MAX_SESSION_BYTES = 2 * 1024 * 1024 * 1024
 
-/** Scan the owning log rather than a client index: fork prefixes and queued input count too. */
+/** Verified-log projection plus the live inbox: queued references are never cached as authority. */
 export async function visibleAttachmentRefs(session: SessionImpl): Promise<Map<string, ArtifactRef>> {
-  const refs = new Map<string, ArtifactRef>()
+  const refs = new Map((await attachmentIndex(session)).refs)
   const content = (blocks: ContentBlock[]) => {
     for (const block of blocks)
       if (storedAttachment(block)) {
@@ -38,16 +39,6 @@ export async function visibleAttachmentRefs(session: SessionImpl): Promise<Map<s
         if (block.attachment.thumbnail)
           refs.set(identity(block.attachment.thumbnail), block.attachment.thumbnail)
       }
-  }
-  for await (const page of scanPages(
-    (query) => session.d.log.scan(query),
-    { type: 'user/message', lane: session.lane, toSeq: session.lastSeq },
-    100,
-  )) {
-    for (const row of page) {
-      const data = row.data as { content?: ContentBlock[]; items?: { content: ContentBlock[] }[] }
-      content(data.content ?? [])
-    }
   }
   const inbox = session.latest('inbox') as { items?: { content: ContentBlock[] }[] } | undefined
   for (const item of inbox?.items ?? []) content(item.content)
@@ -151,21 +142,50 @@ export async function admitSessionAttachments(
         out.push(block)
         continue
       }
-      const { artifact, image, thumbnail } = link.attachment
+      let { artifact, image, thumbnail } = link.attachment
       if (artifact.size > USER_MESSAGE_ATTACHMENT_LIMITS.maxAggregateBytes)
         throw new AttachmentError('ATTACHMENT_BYTES')
       const bytes = await read(artifact)
       if (image) {
-        const decoded = decodeSafeImageBytes({ bytes, mimeType: artifact.mime }, USER_MESSAGE_IMAGE_LIMITS)
+        const decoded = decodeSafeImageBytes({ bytes, mimeType: artifact.mime }, USER_IMAGE_ORIGINAL_LIMITS)
         imageBytes += bytes.length
         imagePixels += decoded.pixels
         if (imageBytes > USER_MESSAGE_IMAGE_LIMITS.maxAggregateBytes)
           throw new AttachmentError('ATTACHMENT_BYTES')
-        if (imagePixels > USER_MESSAGE_IMAGE_LIMITS.maxAggregatePixels)
+        if (imagePixels > USER_IMAGE_ORIGINAL_LIMITS.maxAggregatePixels)
           throw new AttachmentError('ATTACHMENT_PIXELS')
+        let requestBytes = bytes
+        if (store?.imageVersion) {
+          const version = await attachmentOperation(
+            store.imageVersion(scope, artifact, attachmentImagePolicy(session), signal),
+            signal,
+          )
+          requestBytes = await read(version.artifact)
+          if (!thumbnail) {
+            const small = await attachmentOperation(
+              store.imageVersion(
+                scope,
+                artifact,
+                {
+                  maxWidth: 320,
+                  maxHeight: 320,
+                  maxBytes: 256 * 1024,
+                  jpegQuality: 75,
+                },
+                signal,
+              ),
+              signal,
+            )
+            created.push(small)
+            claimed.add(small.id)
+            thumbnail = small.artifact
+            link.attachment.thumbnail = thumbnail
+          }
+        }
+        decodeSafeImageBytes({ bytes: requestBytes, mimeType: artifact.mime }, USER_MESSAGE_IMAGE_LIMITS)
         const parts: string[] = []
-        for (let at = 0; at < bytes.length; at += 16384)
-          parts.push(String.fromCharCode(...bytes.subarray(at, at + 16384)))
+        for (let at = 0; at < requestBytes.length; at += 16384)
+          parts.push(String.fromCharCode(...requestBytes.subarray(at, at + 16384)))
         modelImages.push({ type: 'image', data: btoa(parts.join('')), mimeType: decoded.mime })
         if (decoded.width !== image.width || decoded.height !== image.height)
           throw new AttachmentError('ATTACHMENT_DATA')

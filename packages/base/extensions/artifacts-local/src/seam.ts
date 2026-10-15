@@ -3,6 +3,7 @@ import type { ArtifactRef, ArtifactsSeam } from '@agnes/core'
 import { AttachmentError } from '@agnes/protocol'
 import type { SeamFactory } from '../../../src/seam-init.js'
 import { createAttachmentStore } from './attachments.js'
+import { imageVersions } from './image-versions.js'
 import { createJobRunner } from './jobs.js'
 
 const ARTIFACTS = 'artifacts/sha256'
@@ -142,6 +143,11 @@ export const artifactsLocal: SeamFactory<ArtifactsSeam> = async (ctx) => {
     cancel: (jobId) => jobs.cancel(jobId),
   }
   const metadata = ctx.adapters.storage.namespace?.('attachments-v1')
-  if (metadata) Object.assign(seam, { attachments: createAttachmentStore(metadata, seam) })
+  if (metadata) {
+    const attachments = createAttachmentStore(metadata, seam)
+    const cache = ctx.adapters.storage.namespace?.('attachment-images-v1')
+    if (cache) attachments.imageVersion = imageVersions(attachments, seam, cache)
+    Object.assign(seam, { attachments })
+  }
   return seam
 }
