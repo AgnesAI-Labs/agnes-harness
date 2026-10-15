@@ -193,7 +193,9 @@ See [the standalone DAG example](../../examples/loops/dag-loop/README.md) for mo
 A call has two steps. `prepare` validates the options and returns a frozen `PreparedSideCall` that carries an estimate, so a loop can check the price before it spends anything. `invoke` sends the call. `status` reads a recorded call back.
 
 ```ts
-const prepared = await ctx.sideCall.prepare({
+const sideCall = ctx.sideCall
+if (!sideCall) return fallback()
+const prepared = await sideCall.prepare({
   label: 'jev.decide',
   target: { route: 'jev', model: modelId },
   payload: { state, questions },
@@ -202,20 +204,20 @@ const prepared = await ctx.sideCall.prepare({
   invocationId: `decide-${turnId}-${attempt}`,
 })
 if ((prepared.estimate.projectedCredits ?? 0) > creditLimit) return fallback()
-const result = await ctx.sideCall.invoke(prepared, signal)
+const result = await sideCall.invoke(prepared, signal)
 if (result.status === 'ok') return useAnswers(result.json)
 if (result.status === 'failed' && result.retryable) return retryWithNewId()
 return fallback()
 ```
 
-An option outside its range is refused at `prepare` and never truncated.
+`state`, `questions`, `modelId`, `turnId`, `attempt`, `creditLimit`, `signal`, `fallback`, `useAnswers` and `retryWithNewId` stand for the loop's own values and helpers. An option outside its range is refused at `prepare` and never truncated.
 
 | Option | Meaning |
 | --- | --- |
 | `label` | Your purpose tag, recorded with the call, for example `jev.decide`. Matches `/^[a-z][a-z0-9._-]{0,63}$/`. |
 | `target` | `{ route, model }`, both in the assembled model catalog. A slot name is not accepted. |
 | `deadlineMs` | Deadline for the whole call, raced by Core. 100 to 120000 milliseconds, default 10000. |
-| `system`, `messages`, `sampling` | Sent as written. `system` is at most 1 MiB. Only `user` and `assistant` messages are allowed; an assistant message carries no `toolCalls` and a `tool_result` block is refused. An image needs a target model that declares image input. |
+| `system`, `messages`, `sampling` | Sent as written. `system` is at most 1 MiB. Only `user` and `assistant` messages are allowed; an assistant message carries no `toolCalls` and a `tool_result` block is refused. An image needs a target model record whose `input` list includes `image`. |
 | `payload` | Structured JSON handed to the adapter unchanged as `RequestBody.payload`. At most 1 MiB of canonical JSON. |
 | `output` | `'json'` makes Core parse the returned text into `result.json`. Default `'text'`. |
 | `invocationId` | Stable id; the effect id is `side:<invocationId>`. Matches `/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,122}$/` and must not look like a credential. Core generates one when it is omitted. |
@@ -226,7 +228,7 @@ The adapter behind the target route declares what a request may carry in its `ca
 
 | Flag | Meaning for a side call |
 | --- | --- |
-| `imageInput` | The adapter reads image blocks. A side call with an image needs a target model that declares image input; otherwise `prepare` throws `E_ENVELOPE` with `detail.reason` `image-input`. |
+| `imageInput` | The adapter reads image blocks. `prepare` checks the target model record, not this flag: a side call with an image block needs a model record whose `input` list includes `image`; otherwise `prepare` throws `E_ENVELOPE` with `detail.reason` `image-input`. |
 | `tools` | The adapter handles tool calls. A side call never sends tools. |
 | `streaming` | The adapter streams events as they arrive. A side call works with streaming and non-streaming adapters alike and returns once, when the answer is complete. |
 | `payload` | The adapter reads `RequestBody.payload`. Without it the AI facade refuses a request that carries a payload before sending anything: the result is `failed` with `reason: 'adapter-error'`, `code: 'CONTRACT_MISMATCH'` and `dispatch: 'not-sent'`. |
@@ -252,7 +254,7 @@ Errors are thrown before anything is written, so a throw means nothing was recor
 - `prepare` throws `E_ENVELOPE` (`detail.reason`: `label`, `deadline`, `payload-size`, `messages`, `image-input` or `invocation-id`) for an out-of-range option, and `E_MODEL_UNKNOWN` (`target-unknown`) when the target is not in the provider's catalog. Further `E_ENVELOPE` reasons: `output` (neither `'text'` nor `'json'`), `system` (not a string of at most 1 MiB) and `sampling` (a key or value outside the request schema's ranges).
 - `invoke` throws `E_ENVELOPE` (`signal`) when its signal is not an `AbortSignal`.
 - `prepare` and `invoke` throw `E_RELATION` (`no-turn`) outside an open turn.
-- `invoke` throws `E_REQUEST_FROZEN` for a call prepared by another context or turn (`foreign`, `turn`) or when the catalog record or adapter identity changed after `prepare` (`target-changed`); `E_RELATION` when the `invocationId` already has a record with a different `requestHash` (`invocation-reused`) or is running in this process (`invocation-in-flight`); and `E_LANE_BUSY` (`CONTROL_PAUSED`) while the session is paused. The prepared call is not consumed and can be invoked again.
+- `invoke` throws `E_REQUEST_FROZEN` for a call prepared by another context or turn (`foreign`, `turn`) or when the catalog record or adapter identity changed after `prepare` (`target-changed`); `E_RELATION` when the `invocationId` already has a record with a different `requestHash` (`invocation-reused`) or is running in this process (`invocation-in-flight`); and `E_LANE_BUSY` (`CONTROL_PAUSED`) while the session is paused. After `E_LANE_BUSY` the prepared call is not consumed and can be invoked again.
 - Every method throws `E_CLOSED` once the session is closing or the loop's execution scope was revoked.
 - `ctx.events.finish` throws `E_RELATION` (`side-call-in-flight`) while a call is still unsettled. Calls may run concurrently within a turn; await them before you finish the turn.
 

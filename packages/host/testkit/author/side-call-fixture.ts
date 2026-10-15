@@ -37,6 +37,10 @@ export interface SideAdapter {
   mode: 'answer' | 'stall'
   /** Every request that reached the adapter. */
   readonly seen: readonly RequestBody[]
+  /** The signal each request was dispatched with, in the order of `seen`. */
+  readonly signals: readonly AbortSignal[]
+  /** Whether that signal was already aborted when the adapter started to answer (answer mode only). */
+  readonly answeredAborted: readonly boolean[]
   /** Settles when the first request has reached the adapter. */
   readonly arrived: Promise<void>
 }
@@ -52,6 +56,8 @@ class PayloadOnlyAdapter extends WireAdapter implements SideAdapter {
   override readonly acceptsPayload = true
   mode: 'answer' | 'stall' = 'answer'
   readonly seen: RequestBody[] = []
+  readonly signals: AbortSignal[] = []
+  readonly answeredAborted: boolean[] = []
   readonly arrived: Promise<void>
   #arrive!: () => void
 
@@ -76,6 +82,7 @@ class PayloadOnlyAdapter extends WireAdapter implements SideAdapter {
     options: AdapterStreamOptions,
   ): AsyncIterable<WireEvent> {
     this.seen.push(request)
+    this.signals.push(options.signal)
     options.reportSent?.({
       sentHash: createHash('sha256')
         .update(JSON.stringify(request.payload ?? null))
@@ -85,6 +92,7 @@ class PayloadOnlyAdapter extends WireAdapter implements SideAdapter {
     options.reportDispatch?.()
     this.#arrive()
     if (this.mode === 'stall') await new Promise<never>(() => undefined)
+    this.answeredAborted.push(options.signal.aborted)
     yield { type: 'text_delta', delta: SIDE_ANSWER }
     yield {
       type: 'usage',

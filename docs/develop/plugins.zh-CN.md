@@ -173,7 +173,9 @@ Agent Loop 负责调度与自身检查点状态。通过 `@agnes/extension-api` 
 一次调用分两步。`prepare` 校验选项，返回冻结的 `PreparedSideCall`，其中带估算，循环可以在花钱之前先看价格。`invoke` 发送调用。`status` 读回已记录的调用。
 
 ```ts
-const prepared = await ctx.sideCall.prepare({
+const sideCall = ctx.sideCall
+if (!sideCall) return fallback()
+const prepared = await sideCall.prepare({
   label: 'jev.decide',
   target: { route: 'jev', model: modelId },
   payload: { state, questions },
@@ -182,20 +184,20 @@ const prepared = await ctx.sideCall.prepare({
   invocationId: `decide-${turnId}-${attempt}`,
 })
 if ((prepared.estimate.projectedCredits ?? 0) > creditLimit) return fallback()
-const result = await ctx.sideCall.invoke(prepared, signal)
+const result = await sideCall.invoke(prepared, signal)
 if (result.status === 'ok') return useAnswers(result.json)
 if (result.status === 'failed' && result.retryable) return retryWithNewId()
 return fallback()
 ```
 
-超出范围的选项在 `prepare` 时被拒绝，不会被截断。
+`state`、`questions`、`modelId`、`turnId`、`attempt`、`creditLimit`、`signal`、`fallback`、`useAnswers` 和 `retryWithNewId` 代表循环自己的值和辅助函数。超出范围的选项在 `prepare` 时被拒绝，不会被截断。
 
 | 选项 | 含义 |
 | --- | --- |
 | `label` | 你自定的用途标签，随调用一起记录，例如 `jev.decide`。匹配 `/^[a-z][a-z0-9._-]{0,63}$/`。 |
 | `target` | `{ route, model }`，二者都必须在已装配的模型目录里。不接受槽位名。 |
 | `deadlineMs` | 整次调用的时限，由 Core 竞速。100 到 120000 毫秒，缺省 10000。 |
-| `system`、`messages`、`sampling` | 原样发出。`system` 至多 1 MiB。只允许 `user` 和 `assistant` 消息；assistant 消息不带 `toolCalls`，`tool_result` 块被拒绝。图片要求目标模型声明支持图片输入。 |
+| `system`、`messages`、`sampling` | 原样发出。`system` 至多 1 MiB。只允许 `user` 和 `assistant` 消息；assistant 消息不带 `toolCalls`，`tool_result` 块被拒绝。图片要求目标模型记录的 `input` 列表包含 `image`。 |
 | `payload` | 结构化 JSON，作为 `RequestBody.payload` 原样交给适配器。规范 JSON 至多 1 MiB。 |
 | `output` | `'json'` 让 Core 把返回文本解析成 `result.json`。缺省 `'text'`。 |
 | `invocationId` | 稳定 id，效果编号为 `side:<invocationId>`。匹配 `/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,122}$/`，且不得像凭据。省略时由 Core 生成。 |
@@ -206,7 +208,7 @@ return fallback()
 
 | 标志 | 对旁路调用的含义 |
 | --- | --- |
-| `imageInput` | 适配器读取图片块。带图片的旁路调用要求目标模型声明支持图片输入，否则 `prepare` 抛出 `E_ENVELOPE`，`detail.reason` 为 `image-input`。 |
+| `imageInput` | 适配器读取图片块。`prepare` 检查的是目标模型记录，不是这个标志：带图片块的旁路调用要求模型记录的 `input` 列表包含 `image`，否则 `prepare` 抛出 `E_ENVELOPE`，`detail.reason` 为 `image-input`。 |
 | `tools` | 适配器处理工具调用。旁路调用从不发送工具。 |
 | `streaming` | 适配器边生成边流式返回事件。旁路调用对流式和非流式适配器都适用，答案完整后返回一次。 |
 | `payload` | 适配器读取 `RequestBody.payload`。没有它时，AI 门面在发送前就拒绝带 payload 的请求：结果是 `failed`，`reason: 'adapter-error'`，`code: 'CONTRACT_MISMATCH'`，`dispatch: 'not-sent'`。 |

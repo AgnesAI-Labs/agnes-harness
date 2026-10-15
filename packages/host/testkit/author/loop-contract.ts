@@ -476,6 +476,7 @@ export async function verifyLoopExecutionContract(
         assert.equal(result.usage.creditSource, 'gateway')
         assert.equal(kit.adapter.seen.length, 1)
         assert.deepEqual(kit.adapter.seen[0]?.payload, { question: sentinel })
+        assert.deepEqual(kit.adapter.answeredAborted, [false], 'a call that succeeds is not told to stop')
         assert.ok(kit.provider.requests.every((body) => body.payload === undefined))
         const rows = await facts(session)
         const [cost, ...extra] = sideCosts(rows)
@@ -514,6 +515,7 @@ export async function verifyLoopExecutionContract(
         assert.equal(got.result.retryable, true)
         assert.equal(got.result.dispatch, 'may-have-sent')
         assert.ok(elapsedMs < 2000, 'the platform ends the call; the adapter never answers')
+        assert.ok(kit.adapter.signals[0]?.aborted, 'the adapter is told to stop at the deadline')
         const settled = sideSettled(await facts(session), 'contract-deadline')
         assert.deepEqual(
           settled.map((row) => [payload(row).outcome, payload(row).code]),
@@ -529,11 +531,14 @@ export async function verifyLoopExecutionContract(
       // The loop cutting its own call is a failure of that call; a stop of the whole session is a cancellation.
       const id = sessionStop ? 'contract-stop' : 'contract-cancel'
       got = {}
+      // Only the loop's own signal is ever aborted by the loop; in the stop variant the signal handed to
+      // `invoke` never fires, so the call can only end because Core also watches the session's signal.
       const own = new AbortController()
+      const idle = new AbortController()
       const stop = new AbortController()
-      const kit: Kit = start('stall', async (port, signal) => {
+      const kit: Kit = start('stall', async (port) => {
         got.prepared = await port.prepare(request(id))
-        const call = port.invoke(got.prepared, sessionStop ? signal : own.signal)
+        const call = port.invoke(got.prepared, sessionStop ? idle.signal : own.signal)
         await kit.adapter.arrived
         if (!sessionStop) own.abort()
         got.result = await call
@@ -551,6 +556,8 @@ export async function verifyLoopExecutionContract(
         assert.equal(got.result.reason, 'cancelled')
         assert.equal(got.result.retryable, false)
         assert.equal(got.result.dispatch, 'may-have-sent')
+        assert.equal(idle.signal.aborted, false)
+        assert.ok(kit.adapter.signals[0]?.aborted, 'the adapter is told to stop')
         const rows = await facts(session)
         assert.deepEqual(
           sideSettled(rows, id).map((row) => payload(row).outcome),
@@ -599,6 +606,7 @@ export async function verifyLoopExecutionContract(
           'the old caller is refused',
         )
         assert.equal(kit.adapter.seen.length, 1)
+        assert.ok(kit.adapter.signals[0]?.aborted, 'revoking the scope tells the adapter to stop')
         assert.ok(seen.back?.status === 'finished', 'the replacement reads the call back')
         const back = seen.back.result
         assert.ok(back.status === 'failed')
