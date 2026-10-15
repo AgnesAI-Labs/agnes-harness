@@ -140,10 +140,12 @@ export function createManagedServiceSupervisor(options: {
     binding.assertCurrent()
     binding.signal.throwIfAborted()
     const descriptor = structuredClone(descriptorCheck.value)
-    const leaseKey =
-      descriptor.scope === 'profile'
-        ? key
-        : JSON.stringify([options.installationId, binding.owner, descriptor.id])
+    const leaseKey = JSON.stringify([
+      options.installationId,
+      descriptor.scope === 'profile' ? binding.profileId : null,
+      binding.packageId,
+      descriptor.id,
+    ])
     const lease = acquireManagedLease(options.directory, leaseKey)
     if (lease.previous === 'active' || lease.previous === 'unknown') {
       lease.diagnose('shutdown-unconfirmed')
@@ -348,6 +350,7 @@ export function createManagedServiceSupervisor(options: {
           current &&
           current.status.state === 'ready' &&
           !current.signal.signal.aborted &&
+          current.binding.packageId === binding.packageId &&
           current.binding.revision === binding.revision &&
           current.binding.activationId === binding.activationId &&
           jcs(current.binding.descriptor) === jcs(binding.descriptor)

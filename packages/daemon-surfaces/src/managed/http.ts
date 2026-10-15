@@ -43,7 +43,7 @@ export function managedRequest(
       },
     )
     req.once('error', reject)
-    req.setTimeout(1000, () => req.destroy(new Error('managed endpoint timeout')))
+    req.setTimeout(body === undefined ? 1000 : 5000, () => req.destroy(new Error('managed endpoint timeout')))
     req.end(body === undefined ? undefined : JSON.stringify(body))
   })
 }

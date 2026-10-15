@@ -107,6 +107,9 @@ function fixture(d = declaration) {
     registrationAbort,
     admissionAbort,
     unregister,
+    get observedContext() {
+      return context
+    },
     advance(ms: number) {
       now += ms
     },
@@ -177,6 +180,13 @@ describe('authenticated stream broker', () => {
     })
     await expect(broker.open(f.actor, { ...f.request, name: control.name })).rejects.toThrow()
     broker.close()
+    const grant = await f.broker.open(f.actor, f.request)
+    const failed = peer()
+    failed.socket.send = (_data, done) => done(new Error('closed transport'))
+    const connection = f.broker.connect(f.actor, failed.socket)
+    connection.receive(json({ ticket: grant.ticket }), false)
+    expect(f.observedContext).toBeUndefined()
+    expect(failed.closed[0]).toEqual({ code: 1011, reason: 'unavailable' })
     f.broker.close()
   })
   it('keeps media bounded and independent of control; reliable events request reopen', async () => {

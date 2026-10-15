@@ -22,8 +22,20 @@ async function start(source = false) {
     signal: active.signal,
   }
   const broker = createPluginStreamBroker({
-    async authorize() {
-      return { signal: active.signal, assertCurrent() {} }
+    async authorize(_principal, request) {
+      if (
+        !source &&
+        (request.client?.rowId !== 'web:sample/plugin' ||
+          request.client.revision !== 'revision-one' ||
+          request.client.contentDigest !== `sha256-${'0'.repeat(64)}`)
+      )
+        throw new Error('immutable client roster refused')
+      return {
+        signal: active.signal,
+        assertCurrent() {
+          active.signal.throwIfAborted()
+        },
+      }
     },
   })
   broker.register({
@@ -128,6 +140,20 @@ describe('same-origin stream HTTP/WS gateway', () => {
       { cookie: '' },
       { 'x-agnes-stream-open': '' },
     ]) {
+      for (const patch of [
+        { client: { ...f.request.client, rowId: 'web:other/plugin' } },
+        { client: { ...f.request.client, revision: 'stale-revision' } },
+        { client: { ...f.request.client, contentDigest: `sha256-${'1'.repeat(64)}` } },
+        { owner: 'other/plugin' },
+        { scope: { kind: 'profile', profileId: 'other' } },
+      ]) {
+        const rejected = await fetch(`${f.origin}/_agnes/plugin-stream/open`, {
+          method: 'POST',
+          headers: f.headers,
+          body: JSON.stringify({ ...f.request, ...patch }),
+        })
+        expect(rejected.status).toBe(403)
+      }
       const res = await fetch(`${f.origin}/_agnes/plugin-stream/open`, {
         method: 'POST',
         headers: { ...f.headers, ...patch },

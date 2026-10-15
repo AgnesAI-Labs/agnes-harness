@@ -34,12 +34,14 @@ function fixture(
     activationId = 'active-one',
     spawns = 0,
     stopped = 0
+  let packageId = '@sample/plugin'
   const abort = new AbortController()
   const endpoints = new Map<
     number,
     { incarnation: string; listeners: readonly string[]; apiVersion: string; healthy: boolean }
   >()
   const events: string[] = []
+  const crashes: Array<() => void> = []
   const descriptor: ReviewedManagedService['descriptor'] = {
     id: 'sample',
     scope: 'profile',
@@ -61,7 +63,7 @@ function fixture(
       return {
         owner: s.owner,
         profileId: s.profileId,
-        packageId: '@sample/plugin',
+        packageId,
         revision,
         activationId,
         descriptor,
@@ -90,6 +92,7 @@ function fixture(
           const exited = new Promise<SurfaceExit>((resolve) => {
             settle = resolve
           })
+          crashes.push(() => settle({ code: 1, signal: null }))
           const port = 33000 + spawns
           endpoints.set(port, {
             incarnation: init.incarnation,
@@ -147,6 +150,9 @@ function fixture(
     revision(value: string) {
       revision = value
     },
+    setPackage(value: string) {
+      packageId = value
+    },
     activate() {
       activationId = 'active-two'
     },
@@ -155,6 +161,9 @@ function fixture(
     },
     unhealthy() {
       for (const e of endpoints.values()) e.healthy = false
+    },
+    crash(index: number) {
+      crashes[index]?.()
     },
   }
 }
@@ -174,6 +183,16 @@ describe('managed service supervisor', () => {
     await f.supervisor.stop(selector)
     expect(f.supervisor.signal(selector).aborted).toBe(true)
     expect(f.supervisor.status({ ...selector, profileId: 'two' })?.state).toBe('ready')
+    const otherSignal = f.supervisor.signal({ ...selector, profileId: 'two' })
+    f.crash(1)
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(otherSignal.aborted).toBe(true)
+    expect(f.spawns).toBe(2)
+    f.setPackage('@other/plugin')
+    const isolatedPackage = await f.supervisor.ensure(selector)
+    expect(isolatedPackage.instanceId).not.toBe(a.instanceId)
+    expect(f.spawns).toBe(3)
   })
   it('fails closed on an unrelated HTTP 200 and bounds auto-port retries without restoring old code', async () => {
     vi.useFakeTimers()

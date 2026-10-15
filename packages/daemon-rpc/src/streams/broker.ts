@@ -314,6 +314,7 @@ export function createPluginStreamBroker(options: {
             socket.send(JSON.stringify({ ready: true, streamId: ticket.id }), (error) => {
               if (error) stop('unavailable', 1011)
             })
+            channel.signal.throwIfAborted()
             const result = ticket.registration.handler(ticket.request.input, {
               scope: ticket.request.scope,
               actor: freezeJson(structuredClone(principal.actor)),
