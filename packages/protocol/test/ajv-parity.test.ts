@@ -57,8 +57,10 @@ import * as HooksGen from '../gen/ts/hooks.js'
 import * as IntelligentUiGen from '../gen/ts/intelligent-ui.js'
 import * as JobsGen from '../gen/ts/jobs.js'
 import * as LockfileGen from '../gen/ts/lockfile.js'
+import * as ManagedServiceGen from '../gen/ts/managed-service.js'
 import * as ModelGen from '../gen/ts/model.js'
 import * as PackageAdminGen from '../gen/ts/package-admin.js'
+import * as PluginStreamGen from '../gen/ts/plugin-stream.js'
 import * as PresetGen from '../gen/ts/preset.js'
 import * as ProfileGen from '../gen/ts/profile.js'
 import * as ProjectionGen from '../gen/ts/projection.js'
@@ -272,6 +274,10 @@ ajv.addSchema(slotsSchemaDoc)
 ajv.addSchema(presetSchemaDoc)
 ajv.addSchema(ProfileDoc)
 ajv.addSchema(LockfileDoc)
+const PluginStreamDoc = JSON.parse(readFileSync(`${pkgRoot}schema/plugin-stream.json`, 'utf8')) as Json
+const ManagedServiceDoc = JSON.parse(readFileSync(`${pkgRoot}schema/managed-service.json`, 'utf8')) as Json
+ajv.addSchema(PluginStreamDoc)
+ajv.addSchema(ManagedServiceDoc)
 ajv.addSchema(ExtensionManifestDoc)
 ajv.addSchema(DeployManifestDoc)
 ajv.addSchema(JobsDoc)
@@ -7148,6 +7154,10 @@ const AppSamples: Record<string, Sample> = {
     note: 'App Server boundary shape',
   },
 }
+const TransportSamples = JSON.parse(readFileSync(`${pkgRoot}test/transport-samples.json`, 'utf8')) as {
+  pluginStream: Record<string, Sample>
+  managedService: Record<string, Sample>
+}
 const SELF_OWNED_DOCS: Array<[string, Json, string, Record<string, Sample>]> = [
   [
     'intelligent-ui.json',
@@ -7183,6 +7193,18 @@ const SELF_OWNED_DOCS: Array<[string, Json, string, Record<string, Sample>]> = [
   ],
   ['deploy-manifest.json', DeployManifestDoc, 'https://agnes.ai/schema/deploy-manifest.json', DEPLOY_SAMPLES],
   ['jobs.json', JobsDoc, 'https://agnes.ai/schema/jobs.json', JOBS_SAMPLES],
+  [
+    'plugin-stream.json',
+    PluginStreamDoc,
+    'https://agnes.ai/schema/plugin-stream.json',
+    TransportSamples.pluginStream,
+  ],
+  [
+    'managed-service.json',
+    ManagedServiceDoc,
+    'https://agnes.ai/schema/managed-service.json',
+    TransportSamples.managedService,
+  ],
   ['authz.json', AuthzDoc, 'https://agnes.ai/schema/authz.json', TASK21_SAMPLES.authz],
   ['channel.json', ChannelDoc, 'https://agnes.ai/schema/channel.json', TASK21_SAMPLES.channel],
   ['bridge.json', BridgeDoc, 'https://agnes.ai/schema/bridge.json', TASK21_SAMPLES.bridge],
@@ -7416,6 +7438,20 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
   'https://agnes.ai/schema/extension-manifest.json': ExtensionManifestDefs,
   'https://agnes.ai/schema/deploy-manifest.json': DeployManifestDefs,
   'https://agnes.ai/schema/jobs.json': JobsDefs,
+  'https://agnes.ai/schema/plugin-stream.json': {
+    StreamScope: PluginStreamGen.StreamScope,
+    StreamDeclaration: PluginStreamGen.StreamDeclaration,
+    PluginStreamOpen: PluginStreamGen.PluginStreamOpen,
+    PluginStreamGrant: PluginStreamGen.PluginStreamGrant,
+    PluginStreamClose: PluginStreamGen.PluginStreamClose,
+    PluginStreamHello: PluginStreamGen.PluginStreamHello,
+    PluginStreamJsonFrame: PluginStreamGen.PluginStreamJsonFrame,
+  },
+  'https://agnes.ai/schema/managed-service.json': {
+    ManagedServiceDescriptor: ManagedServiceGen.ManagedServiceDescriptor,
+    ManagedServiceReady: ManagedServiceGen.ManagedServiceReady,
+    ManagedServiceStatus: ManagedServiceGen.ManagedServiceStatus,
+  },
 
   'https://agnes.ai/schema/authz.json': AuthzDefs,
   'https://agnes.ai/schema/channel.json': ChannelDefs,

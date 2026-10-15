@@ -1,0 +1,266 @@
+{
+  "pluginStream": {
+    "StreamScope": {
+      "valid": {
+        "kind": "profile",
+        "profileId": "synthetic"
+      },
+      "invalid": [
+        {},
+        {
+          "kind": "profile",
+          "profileId": ""
+        },
+        {
+          "kind": "session",
+          "profileId": "p",
+          "sessionId": "s"
+        }
+      ],
+      "note": "Transport schema boundary and fail-closed metadata"
+    },
+    "StreamDeclaration": {
+      "valid": {
+        "name": "sample.frames",
+        "scope": "profile",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "directions": ["outbound"],
+        "lane": "media",
+        "maxFrameBytes": 4096,
+        "maxBufferedBytes": 8192,
+        "maxBytesPerSecond": 16384
+      },
+      "invalid": [
+        {},
+        {
+          "name": "sample.frames",
+          "scope": "profile",
+          "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+          },
+          "directions": ["outbound"],
+          "lane": "media",
+          "maxFrameBytes": 1048577,
+          "maxBufferedBytes": 8192,
+          "maxBytesPerSecond": 16384
+        },
+        {
+          "name": "sample.frames",
+          "scope": "profile",
+          "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+          },
+          "directions": ["outbound", "outbound"],
+          "lane": "media",
+          "maxFrameBytes": 4096,
+          "maxBufferedBytes": 8192,
+          "maxBytesPerSecond": 16384
+        }
+      ],
+      "note": "Transport schema boundary and fail-closed metadata"
+    },
+    "PluginStreamOpen": {
+      "valid": {
+        "owner": "examples/sample",
+        "name": "sample.frames",
+        "scope": {
+          "kind": "profile",
+          "profileId": "synthetic"
+        },
+        "input": {}
+      },
+      "invalid": [
+        {},
+        {
+          "owner": "examples/sample",
+          "name": "sample.frames",
+          "scope": {
+            "kind": "profile",
+            "profileId": "synthetic"
+          },
+          "input": {},
+          "actor": "admin"
+        }
+      ],
+      "note": "Transport schema boundary and fail-closed metadata"
+    },
+    "PluginStreamGrant": {
+      "valid": {
+        "ticket": "synthetic",
+        "expiresAt": 1,
+        "path": "/_agnes/plugin-stream",
+        "streamId": 1,
+        "lane": "media"
+      },
+      "invalid": [
+        {},
+        {
+          "ticket": "synthetic",
+          "expiresAt": 1,
+          "path": "/external",
+          "streamId": 1,
+          "lane": "media"
+        }
+      ],
+      "note": "Transport schema boundary and fail-closed metadata"
+    },
+    "PluginStreamClose": {
+      "valid": {
+        "reason": "revoked"
+      },
+      "invalid": [
+        {},
+        {
+          "reason": "unknown"
+        }
+      ],
+      "note": "Transport schema boundary and fail-closed metadata"
+    },
+    "PluginStreamHello": {
+      "valid": {
+        "ticket": "synthetic"
+      },
+      "invalid": [
+        {},
+        {
+          "ticket": ""
+        }
+      ],
+      "note": "Transport schema boundary and fail-closed metadata"
+    },
+    "PluginStreamJsonFrame": {
+      "valid": {
+        "version": 1,
+        "streamId": 1,
+        "sequence": 0,
+        "kind": "json",
+        "data": {}
+      },
+      "invalid": [
+        {},
+        {
+          "version": 1,
+          "streamId": 1,
+          "sequence": -1,
+          "kind": "json",
+          "data": {}
+        }
+      ],
+      "note": "Transport schema boundary and fail-closed metadata"
+    }
+  },
+  "managedService": {
+    "ManagedServiceDescriptor": {
+      "valid": {
+        "id": "sample",
+        "scope": "profile",
+        "artifact": {
+          "kind": "node",
+          "entry": "./dist/server.mjs"
+        },
+        "healthPath": "/health",
+        "listeners": [
+          {
+            "name": "main",
+            "host": "127.0.0.1",
+            "port": "auto"
+          }
+        ],
+        "startupTimeoutMs": 30000,
+        "shutdownTimeoutMs": 5000,
+        "apiVersion": "1.0.0",
+        "requires": []
+      },
+      "invalid": [
+        {},
+        {
+          "id": "sample",
+          "scope": "profile",
+          "artifact": {
+            "kind": "node",
+            "entry": "./dist/server.mjs"
+          },
+          "healthPath": "/health",
+          "listeners": [
+            {
+              "name": "main",
+              "host": "127.0.0.1",
+              "port": "auto"
+            }
+          ],
+          "startupTimeoutMs": 30001,
+          "shutdownTimeoutMs": 5000,
+          "apiVersion": "1.0.0",
+          "requires": []
+        },
+        {
+          "id": "sample",
+          "scope": "profile",
+          "artifact": {
+            "kind": "node",
+            "entry": "./dist/server.mjs"
+          },
+          "healthPath": "/health",
+          "listeners": [
+            {
+              "name": "main",
+              "host": "0.0.0.0",
+              "port": "auto"
+            }
+          ],
+          "startupTimeoutMs": 30000,
+          "shutdownTimeoutMs": 5000,
+          "apiVersion": "1.0.0",
+          "requires": []
+        }
+      ],
+      "note": "Transport schema boundary and fail-closed metadata"
+    },
+    "ManagedServiceReady": {
+      "valid": {
+        "incarnation": "synthetic",
+        "apiVersion": "1.0.0",
+        "listeners": ["main"],
+        "storageReady": true,
+        "shutdownReady": true
+      },
+      "invalid": [
+        {},
+        {
+          "incarnation": "synthetic",
+          "apiVersion": "1.0.0",
+          "listeners": ["main"],
+          "storageReady": false,
+          "shutdownReady": true
+        }
+      ],
+      "note": "Transport schema boundary and fail-closed metadata"
+    },
+    "ManagedServiceStatus": {
+      "valid": {
+        "id": "sample",
+        "instanceId": "synthetic",
+        "revision": "revision",
+        "state": "ready"
+      },
+      "invalid": [
+        {},
+        {
+          "id": "sample",
+          "instanceId": "synthetic",
+          "revision": "revision",
+          "state": "unknown"
+        }
+      ],
+      "note": "Transport schema boundary and fail-closed metadata"
+    }
+  }
+}
