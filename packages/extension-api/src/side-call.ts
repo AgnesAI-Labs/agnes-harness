@@ -142,8 +142,10 @@ export type SideCallStatus =
  * Side model calls: a one-off model request to a chosen route and model, outside the main
  * conversation and its context. Two steps, so a loop can check the estimate before it spends.
  *
- * Errors are thrown before anything is written, so a throw means nothing was recorded, except for
- * `E_CLOSED` (see the last bullet):
+ * Errors from `prepare`, and from `invoke` before it sends, are thrown before anything is written, so
+ * such a throw means nothing was recorded. Once a call has been sent, how it ended comes back as a
+ * result, not a throw, with two exceptions: `E_CLOSED` (see the last bullet) and a failure of the
+ * ledger itself, after which the call reads back as `unknown` once the session reopens:
  * - `prepare` throws `E_ENVELOPE` (`detail.reason`: `label`, `deadline`, `payload-size`, `messages`,
  *   `image-input` or `invocation-id`) for an out-of-range option, and `E_MODEL_UNKNOWN`
  *   (`target-unknown`) when the target is not in the provider's catalog. `payload-size` also covers a
@@ -169,9 +171,10 @@ export type SideCallStatus =
  *   while a call is in flight, the call is still recorded (its intent, a late receipt and an
  *   estimated cost row), and the replacement context reads it back with `status`.
  *
- * Calls may run concurrently within a turn. A turn cannot finish while one is still unsettled
- * (`E_RELATION`, `side-call-in-flight`), and `ctx.turn.endStep` throws `E_RELATION` with no
- * `detail.reason` while a call is in flight.
+ * Calls may run concurrently within a turn. While a call is still unsettled, `ctx.events.finish`
+ * (`E_RELATION`, `side-call-in-flight`), `ctx.turn.endStep` (`E_RELATION` with no `detail.reason`),
+ * `ctx.events.assistant` and `tools.execute` / `tools.batch` with `announce` are refused. Await every
+ * call before you end the step or finish the turn.
  *
  * Core may add statuses or reasons to `SideCallResult` in a later release, so a loop treats an
  * unknown one as an error instead of relying on an exhaustive `switch`.

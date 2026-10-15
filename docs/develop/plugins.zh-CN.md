@@ -332,14 +332,14 @@ return fallback()
 
 后续版本中 Core 可能为 `SideCallResult` 新增状态或原因，所以遇到不认识的值要当作错误处理，不要依赖穷尽式 `switch`。
 
-错误都在写入任何内容之前抛出，所以抛出意味着什么都没有记录，唯一的例外是 `E_CLOSED`（见下面的列表）：
+`prepare` 的错误，以及 `invoke` 在发送之前的错误，都在写入任何内容之前抛出，所以这样的抛出意味着什么都没有记录。调用一旦发出，怎样结束都以结果返回，不再抛出，有两个例外：一是 `E_CLOSED`（见下面的列表），二是账本本身写入失败，会话重开后调用读回为 `unknown`：
 
 - `prepare` 对越界的选项抛出 `E_ENVELOPE`（`detail.reason`：`label`、`deadline`、`payload-size`、`messages`、`image-input` 或 `invocation-id`），目标不在 provider 目录里时抛出 `E_MODEL_UNKNOWN`（`target-unknown`）。`payload-size` 也用于嵌套超过 32 层的 payload，以及不是普通 JSON 数据的值，例如 `Date` 或类实例。另有几个 `E_ENVELOPE` 原因：`output`（既不是 `'text'` 也不是 `'json'`）、`system`（不是至多 1,048,576 个 UTF-16 码元的字符串）和 `sampling`（键或值超出请求 schema 的范围）。
 - `invoke` 的 signal 不是 `AbortSignal` 时抛出 `E_ENVELOPE`（`signal`）。`status` 收到不符合调用 id 格式、或像凭据的 id 时抛出 `E_ENVELOPE`（`invocation-id`）。
 - 不在已打开的回合内时，`prepare` 和 `invoke` 抛出 `E_RELATION`（`no-turn`）。只有回合结束时发现还有调用在进行、正在等它们结算的那段时间，`invoke` 才抛出 `E_RELATION`（`turn-closing`）；回合结束之后再发起的调用找不到回合，抛出 `no-turn`。
 - 调用由另一个上下文或回合准备时，`invoke` 抛出 `E_REQUEST_FROZEN`（`foreign`、`turn`）；`prepare` 之后目录记录、路由的 base URL 或适配器身份变了，同样抛出（`target-changed`）。`invocationId` 已有记录但 `requestHash` 不同时抛出 `E_RELATION`（`invocation-reused`），本进程内正在运行时也抛出 `E_RELATION`（`invocation-in-flight`）。会话暂停时抛出 `E_LANE_BUSY`（`CONTROL_PAUSED`），已准备的调用不被消耗，可以再次 `invoke`。
 - 会话正在关闭，或循环的执行作用域已被撤销后，每个方法都抛出 `E_CLOSED`。这是唯一可能在调用已发出之后才出现的错误：调用进行中作用域被撤销时，Core 仍会记录这次调用（意图行、迟到回执和估算成本行），替换后的上下文用 `status` 读回它。决定是否再次调用之前先读回；换一个新 id 重试，会为同一次调用付两次钱。
-- 还有调用没有结算时，`ctx.events.finish` 抛出 `E_RELATION`（`side-call-in-flight`）；调用仍在进行时，`ctx.turn.endStep` 抛出不带 `detail.reason` 的 `E_RELATION`。同一回合内的调用可以并发；结束步骤或回合之前先等它们完成。
+- 还有调用没有结算时，`ctx.events.finish`（`E_RELATION`，`side-call-in-flight`）、`ctx.turn.endStep`（不带 `detail.reason` 的 `E_RELATION`）、`ctx.events.assistant`，以及带 `announce` 的 `tools.execute` / `tools.batch` 都会被拒绝。同一回合内的调用可以并发；结束步骤或回合之前，先等每个调用完成。
 
 ### 调用 id、时限与重试
 
