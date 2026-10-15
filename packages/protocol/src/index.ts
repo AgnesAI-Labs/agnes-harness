@@ -237,7 +237,9 @@ export type { DeployManifest } from '../gen/ts/deploy-manifest.js'
 export type {
   Capabilities,
   ClientContribution,
+  ExampleLaunchDeclaration,
   ExtensionManifest,
+  HomeContributionDeclaration,
   PluginCategory,
   PluginMetadata,
   PluginMetadataLocale,
@@ -248,7 +250,6 @@ export type {
 export type { ServiceCapability } from '../gen/ts/extension-service.js'
 /** The one capabilities shape every plugin declares, bundled or installed. */
 export type PluginCapabilities = import('../gen/ts/extension-manifest.js').Capabilities
-export type { ExampleLaunchDeclaration, HomeContributionDeclaration } from '../gen/ts/extension-manifest.js'
 // Preset surface declarations; execution is supplied by the official Intelligent UI plugin.
 export type {
   UiAction,
