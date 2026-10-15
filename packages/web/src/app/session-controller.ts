@@ -61,6 +61,7 @@ export function createSessionController(
     | 'submissionGeneration'
     | 't'
     | 'titleRefresh'
+    | 'topbarRuntime'
     | 'transcriptMeta'
     | 'readOnlyController'
     | 'windowAtStart'
@@ -80,6 +81,7 @@ export function createSessionController(
     if (!options.created) context.references.clear()
     if (!options.preserveSending) context.submissionGeneration++
     let selectionReady = false
+    context.topbarRuntime.setStatus('', 'idle')
     context.sessionPending = true
     context.draftingNew = false
     context.renderControls()

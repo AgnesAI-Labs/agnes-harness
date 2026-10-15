@@ -34,10 +34,10 @@
   .sidebar-toggle {
     flex: 0 0 auto;
   }
-  /* The title and its workspace chip sit together at the left; the title gives way first. */
+  /* The title gives way first; the capsule and tabs keep their own space. */
   .task-heading {
     min-width: 0;
-    flex: 0 1 auto;
+    flex: 1 1 0;
     display: flex;
     align-items: center;
     gap: var(--s8);
@@ -56,7 +56,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .task-heading span {
+  .task-heading .topbar-agent {
     min-width: 0;
     overflow: hidden;
     color: var(--agnes-text-tertiary);
@@ -79,9 +79,6 @@
   .task-heading .topbar-agent > span {
     color: inherit;
   }
-  #status[data-state="running"] {
-    color: var(--agnes-text-emphasis);
-  }
   #status:is(
     [data-state="error"],
     [data-state="failed"],
@@ -90,6 +87,7 @@
     [data-state="max_steps"]
   ) {
     color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
   }
   /* The connection bar above the main area is the one place connection state shows. The top bar
    keeps `#connection` as the machine-readable state only. */
@@ -239,9 +237,6 @@
   }
   /* What a crowded bar gives up, in order: the title shortens first, then the Agent chip goes.
    The view switch and the action group always stay. */
-  .task-heading h1 {
-    min-width: min(6rem, 100%);
-  }
   @container topbar-row (max-width: 55rem) {
     .task-heading .topbar-agent {
       display: none;
@@ -274,23 +269,165 @@
   }
   #status {
     display: inline-flex;
+    flex: 0 0 auto;
+    min-width: 0;
+    max-width: calc(100% - var(--s8));
+    overflow: hidden;
+    height: 24px;
     align-items: center;
-    gap: var(--s4);
+    border-radius: var(--radius-pill);
+    background: var(--agnes-brand-emphasis-soft);
+    color: var(--agnes-text-emphasis);
+    font-size: var(--font-size-xs);
+    white-space: nowrap;
   }
-  #status::before {
-    content: "";
-    width: 6px;
-    height: 6px;
-    flex: 0 0 6px;
+  #status:focus-within {
+    outline: var(--focus-outline);
+    box-shadow: var(--focus-line);
+  }
+  #status .run-status-toggle {
+    display: inline-flex;
+    flex: 0 1 auto;
+    min-width: 0;
+    min-height: 0;
+    height: 24px;
+    gap: var(--s8);
+    padding: 0 var(--s8);
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: transparent;
+    color: inherit;
+    opacity: 1;
+    font: inherit;
+  }
+  #status .run-status-toggle:disabled {
+    cursor: default;
+  }
+  .run-status-dot {
+    position: relative;
+    width: 7px;
+    height: 7px;
+    flex: 0 0 7px;
     border-radius: var(--radius-full);
+    background: currentColor;
+  }
+  .run-status-breathe .run-status-dot::after {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    border-radius: inherit;
+    background: currentColor;
+    animation: run-status-breathe 1.8s ease-in-out infinite;
+  }
+  @keyframes run-status-breathe {
+    0%,
+    100% {
+      transform: scale(0.6);
+      opacity: 0.35;
+    }
+    50% {
+      transform: scale(1.25);
+      opacity: 0;
+    }
+  }
+  .run-status-phase {
+    display: inline-grid;
+    width: 12em;
+    min-width: 2em;
+    flex: 0 1 auto;
+    text-align: left;
+  }
+  .run-status-phase:lang(zh) {
+    width: 7em;
+  }
+  .run-status-word {
+    grid-area: 1 / 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .run-status-in {
+    animation: run-status-rise 260ms var(--motion-ease-out);
+  }
+  .run-status-out {
+    animation: run-status-exit 260ms var(--motion-ease-out) forwards;
+  }
+  @keyframes run-status-rise {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes run-status-exit {
+    to {
+      opacity: 0;
+      transform: translateY(-6px);
+    }
+  }
+  .run-status-time {
+    flex: 0 0 auto;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.75;
+  }
+  .run-status-action {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+    width: 0;
+    opacity: 0;
+    overflow: hidden;
+    visibility: hidden;
+    transition:
+      width var(--motion-long) var(--motion-spring),
+      opacity var(--transition);
+  }
+  #status[data-expanded="true"] .run-status-action {
+    width: var(--s24);
+    opacity: 1;
+    visibility: visible;
+  }
+  #status .run-status-stop {
+    display: grid;
+    place-items: center;
+    width: 20px;
+    min-width: 20px;
+    height: 20px;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-full);
+    background: var(--agnes-bg-hover);
+    color: inherit;
+  }
+  #status .run-status-stop:hover {
+    background: var(--agnes-bg-selected);
+  }
+  .run-status-square {
+    width: 7px;
+    height: 7px;
     background: currentColor;
   }
   #status:is([data-state="approval"], [data-state="parked"]) {
     color: var(--agnes-status-warning-text);
+    background: var(--agnes-status-warning-bg);
+  }
+  #status:is([data-state="approval"], [data-state="parked"]) .run-status-dot::after {
+    animation-duration: 1.1s;
+  }
+  #status[data-state="stopping"] {
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-surface);
+    border: var(--hairline) solid var(--agnes-line-primary);
   }
   #status:not(
     :is(
       [data-state="running"],
+      [data-state="stopping"],
       [data-state="error"],
       [data-state="failed"],
       [data-state="blocked"],
@@ -301,6 +438,27 @@
     )
   ) {
     display: none;
+  }
+  /* On narrow bars the title is already at zero; let the phase ellipsize further so the
+     timer and an in-flow stop button still fit beside the view tabs. */
+  @container topbar-row (max-width: 32rem) {
+    .run-status-phase {
+      min-width: 0;
+    }
+    #status .run-status-toggle {
+      gap: var(--s4);
+      padding-inline: var(--s4);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .run-status-dot::after,
+    .run-status-in,
+    .run-status-out {
+      animation: none;
+    }
+    .run-status-action {
+      transition: none;
+    }
   }
   @media (max-width: 900px) {
     /* The left bar keeps space for navigation and workbench actions before view tabs shrink. */

@@ -522,7 +522,7 @@ describe('migrated topbar region', () => {
     mount.setStatus('运行中', 'running')
     mount.setConnectionState('connected')
     expect(topbar.querySelector('#task-title')?.textContent).toBe('组件标题')
-    expect(topbar.querySelector('#status')?.textContent).toBe('运行中')
+    expect(topbar.querySelector('.run-status-phase > span:last-child')?.textContent).toBe('运行中')
     expect(topbar.querySelector<HTMLElement>('#status')?.dataset.state).toBe('running')
     expect(topbar.querySelector('#connection')?.textContent).toBe('本地后台已连接')
     const remove = slots.register(

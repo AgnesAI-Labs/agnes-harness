@@ -31,7 +31,7 @@ describe('rendered topbar region', () => {
     expect(topbar?.querySelector('#sidebar-toggle')).toBeInstanceOf(HTMLButtonElement)
     // No locale preference saved: the workbench defaults to English (assert the catalog default).
     expect(topbar?.querySelector('#task-title')?.textContent).toBe('New session')
-    expect(topbar?.querySelector('#status')?.textContent).toBe('Ready')
+    expect(topbar?.querySelector('.run-status-phase > span:last-child')?.textContent).toBe('Ready')
     expect(topbar?.querySelector('#connection')?.textContent).toBe('Connecting to the backend')
     // 「断开连接」按钮已移除：主动断开没有恢复路径（SDK 的 isClosed 一旦置真就锁死，
     // 且不会启动自动重连），留一个点了只能靠重启后台恢复的按钮是净损失。掉线仍由
@@ -48,7 +48,7 @@ describe('rendered topbar region', () => {
     handle?.setStatus('执行中', 'running')
     handle?.setConnectionState('connected')
     expect(topbar?.querySelector('#task-title')?.textContent).toBe('测试任务')
-    expect(topbar?.querySelector('#status')?.textContent).toBe('执行中')
+    expect(topbar?.querySelector('.run-status-phase > span:last-child')?.textContent).toBe('执行中')
     expect(topbar?.querySelector('#status')?.getAttribute('data-state')).toBe('running')
     expect(topbar?.querySelector('#connection')?.textContent).toBe('Local backend connected')
     expect(topbar?.querySelector('#connection')?.getAttribute('data-state')).toBe('connected')
@@ -195,6 +195,15 @@ describe('rendered topbar region', () => {
 
   it('collapses by the width of the bar: the Agent chip gives way to the title', () => {
     const css = readWebStyleSource(resolve(__dirname, '../public/style.css'))
+    // The title can shrink to zero, without growing a gap before the capsule on short titles.
+    // The capsule keeps its width; its inner text box paints the ellipsis.
+    expect(css).toMatch(/\.task-heading h1 \{[^}]*min-width: 0;[^}]*flex: 0 1 auto;/)
+    expect(css).not.toMatch(/\.task-heading span \{/)
+    expect(css).toMatch(/\.run-status-word \{[^}]*overflow: hidden;[^}]*text-overflow: ellipsis;/)
+    expect(css).toMatch(
+      /#status \{[^}]*flex: 0 0 auto;[^}]*max-width: calc\(100% - var\(--s8\)\);[^}]*overflow: hidden;/,
+    )
+    expect(css).toContain('@media (prefers-reduced-motion: reduce)')
     expect(css).toMatch(/\.topbar-row \{[^}]*container: topbar-row \/ inline-size/)
     const start = css.indexOf('@container topbar-row (max-width: 55rem) {')
     expect(start).toBeGreaterThan(-1)
