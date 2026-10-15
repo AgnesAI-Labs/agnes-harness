@@ -1199,6 +1199,78 @@ it('does not report cancellation after PackageManager committed desired state wh
   expect(clientModuleEvents).toMatchObject([{ profile, reason: 'activation', packageId: 'acme/pkg-a' }])
 })
 
+it('keeps a cancellation reported before the run starts its effect, and never runs the manager call', async () => {
+  const preview = await manager.inspect(profileDir, source)
+  await manager.install(profileDir, source, { expectedIntegrity: preview.integrity })
+  const row = (await manager.inventory(profileDir)).packages[0]
+  if (!row) throw new Error('setup install is missing')
+  await manager.trust(profileDir, row.id, {
+    integrity: row.entry.integrity,
+    capabilityHash: row.capabilityHash,
+  })
+  await manager.setEnabled(profileDir, row.id, true)
+
+  // Hold the disable inside its applied() check: the first inventory read after manager recovery.
+  let reached!: () => void
+  const deciding = new Promise<void>((resolve) => {
+    reached = resolve
+  })
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let held = false
+  const effects: string[] = []
+  const gated = {
+    ...manager,
+    inventory: async (...args: Parameters<PackageManager['inventory']>) => {
+      if (!held) {
+        held = true
+        reached()
+        await gate
+      }
+      return manager.inventory(...args)
+    },
+    setEnabled: async (...args: Parameters<PackageManager['setEnabled']>) => {
+      effects.push(`setEnabled:${args[2]}`)
+      return manager.setEnabled(...args)
+    },
+  } as PackageManager
+  const admin = service({ manager: gated })
+  await admin.recover()
+  const disabled = (await admin.call(
+    '_agnes/v1/packages.disable',
+    { profile, clientId, commandId: 'cancel-while-deciding', id: row.id },
+    authority,
+  )) as { operationId: string }
+  const states: string[] = []
+  admin.subscribe((value) => {
+    if (value.operationId === disabled.operationId) states.push(value.state)
+  })
+  await deciding
+  await admin.call(
+    '_agnes/v1/packages.operation.cancel',
+    { profile, clientId, commandId: 'cancel-deciding', operationId: disabled.operationId },
+    authority,
+  )
+  expect(await operation(admin, profile, disabled.operationId)).toMatchObject({ state: 'cancelled' })
+  const reported = states.length
+  release()
+
+  // Effects run in order per profile: once a later inspect settles, the cancelled run has ended.
+  const barrier = (await admin.call('_agnes/v1/packages.inspect', command('after-cancel'), authority)) as {
+    operationId: string
+  }
+  expect(await operation(admin, profile, barrier.operationId)).toMatchObject({ state: 'completed' })
+  expect(await operation(admin, profile, disabled.operationId)).toMatchObject({
+    state: 'cancelled',
+    error: { code: 'E_PACKAGE_CANCELLED' },
+  })
+  expect(states.slice(reported).filter((state) => state !== 'cancelled')).toEqual([])
+  expect(effects).toEqual([])
+  expect((await manager.inventory(profileDir)).packages[0]?.enabled).toBe(true)
+})
+
 it('keeps committed desired state and projects safe activation and unload-blocker failures', async () => {
   const preview = await manager.inspect(profileDir, source)
   await manager.install(profileDir, source, { expectedIntegrity: preview.integrity })

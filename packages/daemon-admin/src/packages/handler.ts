@@ -66,6 +66,7 @@ import {
 } from './client-modules.js'
 import {
   type PackageOperationKind,
+  type PackageOperationRecovery,
   type PackageOperationStore,
   packageOperationTerminal,
   type StoredPackageOperation,
@@ -1372,28 +1373,11 @@ class Service implements PackageAdminService {
       this.active
         .get(record.operation.operationId)
         ?.abort(new Error('package operation cancellation requested'))
-      const cancelled = await this.update(record.operation.operationId, (current) =>
-        withOperationState(current, {
-          state: current.operation.state,
-          now: this.options.clock(),
-          cancelRequested: true,
-        }),
-      )
-      // Queued work is terminal immediately. A manager call already inside its small atomic commit keeps
-      // running and reports its real terminal state rather than claiming cancellation prematurely.
-      if (cancelled.operation.state === 'received')
-        await this.update(record.operation.operationId, (current) =>
-          withOperationState(current, {
-            state: 'cancelled',
-            now: this.options.clock(),
-            error: {
-              code: 'E_PACKAGE_CANCELLED',
-              safeMessage: safeMessage.E_PACKAGE_CANCELLED,
-              blockers: [],
-            },
-            cancelRequested: true,
-          }),
-        )
+      // Decide in the same journal write that reads the record. Work that run() has not claimed by
+      // leaving `received` is terminal immediately. A manager call already inside its small atomic
+      // commit keeps running and reports its real terminal state rather than claiming cancellation
+      // prematurely.
+      await this.update(record.operation.operationId, (current) => this.cancellation(current))
     }
     return receipt(record.operation)
   }
@@ -1456,6 +1440,8 @@ class Service implements PackageAdminService {
         const id = pending.request.params.id
         const before = (await this.options.manager.inventory(directory)).packages.find((pkg) => pkg.id === id)
         if (before?.entry.source.type === 'local') {
+          // The reload is a manager write, so it starts only once run() has claimed the record.
+          if (!(await this.advance(operationId, 'switching'))) return
           await this.options.manager.refreshLocalPlugins(directory)
           const next = (await this.options.manager.inventory(directory)).packages.find((pkg) => pkg.id === id)
           if (!next || next.localFailure) throw new Error('E_PACKAGE_STATE: local source cannot reload')
@@ -1463,6 +1449,10 @@ class Service implements PackageAdminService {
       }
       const applied = await this.applied(pending, directory)
       if (applied === 'yes') {
+        // Already committed, so a cancel request no longer stops it; only a cancellation that
+        // finalized the still-`received` record does.
+        const state = pending.request.kind === 'remove' ? 'draining' : 'switching'
+        if (!(await this.advance(operationId, state, { committed: true }))) return
         const reconciliation = await this.reconcile(pending, controller.signal)
         if (reconciliation?.error) return await this.activationFailed(pending, directory, reconciliation)
         return await this.completeFromInventory(pending, directory, reconciliation)
@@ -1490,13 +1480,11 @@ class Service implements PackageAdminService {
             safeMessage: safeMessage.E_PACKAGE_STATE,
             blockers: [],
           })
-        executing = await this.update(operationId, (value) =>
-          withOperationState(value, {
-            state: 'staging',
-            now: this.options.clock(),
-            recovery: { rollbackTargetIntegrity: target },
-          }),
-        )
+        const staged = await this.advance(operationId, 'staging', {
+          recovery: { rollbackTargetIntegrity: target },
+        })
+        if (!staged) return
+        executing = staged
         execution = executing
       }
       if (executing.request.kind === 'remove' && !executing.recovery?.removeTargetIntegrity) {
@@ -1513,18 +1501,14 @@ class Service implements PackageAdminService {
             safeMessage: safeMessage.E_PACKAGE_STATE,
             blockers: [],
           })
-        executing = await this.update(operationId, (value) =>
-          withOperationState(value, {
-            state: 'draining',
-            now: this.options.clock(),
-            recovery: { ...value.recovery, removeTargetIntegrity: current.entry.integrity },
-          }),
-        )
+        const staged = await this.advance(operationId, 'draining', {
+          recovery: { ...executing.recovery, removeTargetIntegrity: current.entry.integrity },
+        })
+        if (!staged) return
+        executing = staged
         execution = executing
       }
-      await this.update(operationId, (value) =>
-        withOperationState(value, { state: this.startState(value.request.kind), now: this.options.clock() }),
-      )
+      if (!(await this.advance(operationId, this.startState(executing.request.kind)))) return
       const outcome = await this.invoke(executing, directory, controller.signal)
       if (outcome.kind === 'preview') {
         await this.update(operationId, (value) =>
@@ -2034,21 +2018,45 @@ class Service implements PackageAdminService {
     )
   }
 
-  private async cancelled(operationId: string): Promise<void> {
-    await this.update(operationId, (value) =>
-      packageOperationTerminal(value.operation.state)
-        ? value
-        : withOperationState(value, {
-            state: 'cancelled',
-            now: this.options.clock(),
-            error: {
-              code: 'E_PACKAGE_CANCELLED',
-              safeMessage: safeMessage.E_PACKAGE_CANCELLED,
-              blockers: [],
-            },
-            cancelRequested: true,
-          }),
+  /**
+   * A run() write before the manager commit. Cancel finalizes only a `received` record and decides in
+   * the same serialized journal write, so leaving `received` here is the claim that makes "run started"
+   * and "cancel finalized" exclusive. A terminal record is never advanced, nor a cancel-requested one
+   * unless the effect already committed. Either way run() gets `undefined` and stops, and a pending
+   * cancel request is finalized.
+   */
+  private async advance(
+    operationId: string,
+    state: PackageOperation['state'],
+    { committed, ...next }: { recovery?: PackageOperationRecovery; committed?: boolean } = {},
+  ): Promise<StoredPackageOperation | undefined> {
+    const stop = (value: StoredPackageOperation) =>
+      packageOperationTerminal(value.operation.state) || (!committed && value.cancelRequested === true)
+    const value = await this.update(operationId, (current) =>
+      stop(current) ? current : withOperationState(current, { state, now: this.options.clock(), ...next }),
     )
+    if (stop(value)) await this.cancelled(operationId)
+    return stop(value) ? undefined : value
+  }
+
+  private async cancelled(operationId: string): Promise<void> {
+    await this.update(operationId, (value) => this.cancellation(value, true))
+  }
+
+  /** A cancellation write: it finalizes unclaimed (`received`) work, or any work when asked. */
+  private cancellation(value: StoredPackageOperation, finalize = value.operation.state === 'received') {
+    if (packageOperationTerminal(value.operation.state)) return value
+    const error = {
+      code: 'E_PACKAGE_CANCELLED' as const,
+      safeMessage: safeMessage.E_PACKAGE_CANCELLED,
+      blockers: [],
+    }
+    return withOperationState(value, {
+      state: finalize ? 'cancelled' : value.operation.state,
+      now: this.options.clock(),
+      ...(finalize ? { error } : {}),
+      cancelRequested: true,
+    })
   }
 
   private async fail(operationId: string, error: PackageAdminError): Promise<void> {
