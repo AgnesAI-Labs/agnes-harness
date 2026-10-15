@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { localPluginRoots } from '../src/local-source.js'
 import { localWorkspaceTrustHash } from '../src/local-workspace-trust.js'
-import { emptyLock, readLock, writeLock } from '../src/lockfile.js'
+import { emptyLock, readLock, withLock, writeLock } from '../src/lockfile.js'
 import { createPackageManager } from '../src/manager.js'
 
 const roots: string[] = []
@@ -165,4 +165,38 @@ it('does not trust or enable discovered repository plugins before explicit revie
   expect((await f.manager.inventory(f.profileDir)).packages.find((p) => p.id === 'unreviewed')).toMatchObject(
     { trusted: false, enabled: false },
   )
+})
+
+it('rejects a rescan that lost the profile lock and retries it once the lock is free', async () => {
+  const f = setup()
+  const plugin = join(f.localPlugins.home, 'hello')
+  mkdirSync(plugin, { recursive: true })
+  writeFileSync(join(plugin, 'plugin.ts'), 'export default { apply() {} }')
+  await f.manager.refreshLocalPlugins(f.profileDir)
+  const integrity = () =>
+    readLock(f.profileDir, { profile: 'test', agnesVersion: '0.0.0' }).packages.hello?.integrity
+  const before = integrity()
+  writeFileSync(join(plugin, 'plugin.ts'), 'export default { apply() { /* edited */ } }')
+  // Create both roots and let fixture FS events drain before any fake-timer debounce exists.
+  mkdirSync(f.localPlugins.workspace, { recursive: true })
+  await new Promise((resolve) => setTimeout(resolve, 300))
+  const reloadPlugin = vi.fn(async (_id: string) => {})
+  const watcher = f.manager.watchLocalPlugins(f.profileDir, { reloadPlugin })
+  try {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'Date'], now: Date.now() })
+    let release!: () => void
+    const held = withLock(f.profileDir, () => new Promise<void>((resolve) => (release = resolve))) // an install
+    const refreshed = watcher.refresh().catch((error: unknown) => error)
+    await vi.advanceTimersByTimeAsync(10_200)
+    expect(await refreshed).toMatchObject({ detail: { reason: 'busy' } })
+    release()
+    await held
+    // No file event and no second Rescan: the watcher's own bounded retry commits the edit.
+    await vi.advanceTimersByTimeAsync(1_000)
+    await vi.waitFor(() => expect(reloadPlugin).toHaveBeenCalledWith('hello'))
+    expect(integrity()).not.toBe(before)
+  } finally {
+    vi.useRealTimers()
+    await watcher.close()
+  }
 })
