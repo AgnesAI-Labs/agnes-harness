@@ -216,6 +216,9 @@ describe('current profile authority', () => {
         await expect(runtime.call({ ...f.call, [key]: true }, 'granted')).rejects.toMatchObject({
           data: { code: 'INVALID_PARAMS' },
         })
+      await expect(
+        runtime.call({ ...f.call, sessionReads: ['owned-session'] }, 'granted'),
+      ).rejects.toMatchObject({ data: { code: 'CAPABILITY_DENIED' } })
       await expect(runtime.call(f.call, 'forged')).rejects.toThrow()
       expect(f.handler).not.toHaveBeenCalled()
     } finally {

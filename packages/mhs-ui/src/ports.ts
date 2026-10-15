@@ -9,11 +9,8 @@ export type Receipt =
   | { state: 'completed'; operationId: string; output: JsonValue }
   | { state: 'refused' | 'cancelled' | 'unknown'; operationId: string; code: string }
 /** Published Host facade; reads name both the declared service and its operation. */
-export interface HostProfileServices {
-  query(service: string, input: Record<string, unknown>): Promise<unknown>
-  effect(service: string, input: Record<string, unknown>, options: { operationId: string }): Promise<unknown>
-  readOperation(service: string, operationId: string): Promise<unknown>
-}
+export type HostProfileServices = ClientContext['profile']['services']
+
 export interface ProfileServices {
   query(name: string, input: JsonValue, options?: { signal?: AbortSignal }): Promise<unknown>
   effect(

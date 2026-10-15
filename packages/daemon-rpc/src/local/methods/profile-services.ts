@@ -15,8 +15,9 @@ export function registerProfileServices(
   runtime: Pick<Runtime, 'call' | 'readOperation' | 'listDecisions' | 'answerDecision'>,
   wakes?: BoundWakeService,
   barrier?: Host['activationBarrier'],
+  requireSessionRead?: (method: string, sessionId: string, call: CallContext) => void,
 ): void {
-  const serviceCredential = (call: CallContext, params: { extension: string; service: string }): unknown => {
+  const serviceCredential = (call: CallContext, params: { extension: string; service: string }) => {
     const { conn } = call
     if (conn.authKind === 'surface' && conn.surface && conn.credential)
       return {
@@ -61,7 +62,18 @@ export function registerProfileServices(
   }
   ep.register('_agnes/v1/extension.callScoped', (params, call) => {
     const p = params as ProfileServiceCallParams
-    const invoke = () => runtime.call(p, serviceCredential(call, p), call.signal)
+    const invoke = () => {
+      const sessionReads = Object.freeze([...(p.sessionReads ?? [])])
+      for (const sessionId of sessionReads) {
+        if (!requireSessionRead) throw rpcError('CAPABILITY_DENIED')
+        requireSessionRead('extension.callScoped', sessionId, call)
+      }
+      return runtime.call(
+        p,
+        { ...serviceCredential(call, p), ...(p.sessionReads !== undefined ? { sessionReads } : {}) },
+        call.signal,
+      )
+    }
     return barrier ? barrier.admit('service').run(invoke) : invoke()
   })
   ep.register('_agnes/v1/extension.readOperation', (params, call) => {

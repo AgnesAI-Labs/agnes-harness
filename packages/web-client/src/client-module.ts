@@ -107,7 +107,7 @@ export function clientModule(mod: ClientModule): {
       const profileCall = async (
         name: string,
         input: Record<string, unknown> | undefined,
-        options?: { operationId?: string; read?: boolean },
+        options?: { operationId?: string; read?: boolean; sessionReads?: readonly string[] },
       ) => {
         if (!agnes.profileCaller || !config.services?.includes(name))
           throw new Error(`client profile service is unavailable: ${name}`)
@@ -115,8 +115,12 @@ export function clientModule(mod: ClientModule): {
       }
       const profile = Object.freeze({
         services: Object.freeze({
-          query: async (name: string, input: Record<string, unknown>) => {
-            const value = await profileCall(name, input)
+          query: async (
+            name: string,
+            input: Record<string, unknown>,
+            options?: { sessionReads?: readonly string[] },
+          ) => {
+            const value = await profileCall(name, input, options)
             if (!value || typeof value !== 'object' || !('output' in value))
               throw new Error('Invalid profile query result')
             return value.output

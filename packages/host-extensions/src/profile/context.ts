@@ -16,6 +16,7 @@ export function profileServiceContext(input: {
   log: Logger
   alive(): void
   writable: boolean
+  sessionReads?: readonly string[]
   networkAllow: readonly string[]
   admission?: ServiceContext['admission']
 }): ServiceContext {
@@ -35,6 +36,12 @@ export function profileServiceContext(input: {
       activationId: input.activationId,
     }),
     ...(input.admission ? { admission: frozenJson(input.admission) } : {}),
+    sessionAccess: Object.freeze({
+      async requireRead(sessionId: string) {
+        alive()
+        if (!input.sessionReads?.includes(sessionId)) refuse()
+      },
+    }),
     cwd: '',
     timeoutMs: entry.capability.timeoutMs,
     ...(entry.declaredCapabilities?.store === true

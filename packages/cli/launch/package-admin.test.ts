@@ -288,7 +288,26 @@ it('relays only a same-origin typed browser service request and strips page-supp
       service: 'panel.report',
       input: {},
     })
+    const scoped = await fetch(`${origin}/api/client-modules/profile`, {
+      method: 'POST',
+      headers: { Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...profileCall,
+        input: { sessionId: 'owned-session' },
+        sessionReads: ['owned-session'],
+      }),
+    })
+    expect(scoped.status).toBe(200)
+    expect(mocks.request).toHaveBeenCalledWith('_agnes/v1/extension.callScoped', {
+      extension: 'plugin/0123456789abcdef',
+      service: 'panel.report',
+      input: { sessionId: 'owned-session' },
+      sessionReads: ['owned-session'],
+    })
     for (const body of [
+      { ...profileCall, sessionReads: ['duplicate', 'duplicate'] },
+      { ...profileCall, sessionReads: [''] },
+      { ...profileCall, read: true, operationId: 'one', sessionReads: ['owned-session'] },
       { ...profileCall, sessionId: 'forged' },
       { ...profileCall, actor: {} },
     ]) {

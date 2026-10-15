@@ -6376,9 +6376,27 @@ Object.assign(ServiceSamples, {
     note: 'Reviewed policy',
   },
   ProfileServiceCallParams: {
-    valid: { extension: 'acme/dashboard', service: 'report.query', input: {} },
-    invalid: [{ actor: 'forged' }],
-    note: 'Profile query',
+    valid: {
+      extension: 'acme/dashboard',
+      service: 'report.query',
+      input: {},
+      sessionReads: ['owned-session'],
+    },
+    invalid: [
+      { actor: 'forged' },
+      ...[
+        [''],
+        ['x'.repeat(513)],
+        ['duplicate', 'duplicate'],
+        Array.from({ length: 17 }, (_, n) => String(n)),
+      ].map((sessionReads) => ({
+        extension: 'acme/dashboard',
+        service: 'report.query',
+        input: {},
+        sessionReads,
+      })),
+    ],
+    note: 'Profile query requests bounded session read access; the authenticated ingress grants it',
   },
   ProfileServiceOperationParams: {
     valid: { extension: 'acme/dashboard', service: 'report.query', operationId: 'one' },

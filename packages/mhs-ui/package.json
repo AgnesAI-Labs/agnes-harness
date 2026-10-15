@@ -25,7 +25,12 @@
     "@types/react": "18.3.12",
     "@types/react-dom": "18.3.1",
     "react-dom": "18.3.1",
-    "esbuild": "0.28.2"
+    "esbuild": "0.28.2",
+    "@agnes/core": "workspace:*",
+    "@agnes/extension-api": "workspace:*",
+    "@agnes/host-extensions": "workspace:*",
+    "@agnes/mhs": "workspace:*",
+    "@agnes/sdk": "workspace:*"
   },
   "license": "Apache-2.0"
 }

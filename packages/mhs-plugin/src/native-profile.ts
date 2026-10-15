@@ -21,6 +21,17 @@ const inputSchema = {
   additionalProperties: false,
 } as const
 
+const activityInputSchema = {
+  type: 'object',
+  properties: {
+    device: { type: 'string', minLength: 1, maxLength: 256 },
+    limit: { type: 'integer', minimum: 1, maximum: 1000 },
+    cursor: { type: 'string', minLength: 1, maxLength: 512 },
+    sessionId: { type: 'string', minLength: 1, maxLength: 512 },
+  },
+  additionalProperties: false,
+} as const
+
 /** Managed composition supplies current activation; the Host supplies consumed native admission. */
 export function createMhsNativeProfileAdapter(assertActive: () => Promise<void>) {
   const contexts = new WeakMap<object, AdmissionSubject>()
@@ -65,11 +76,19 @@ export function createMhsNativeProfileAdapter(assertActive: () => Promise<void>)
           name: `mhs.${method}`,
           scope: 'profile',
           kind: 'query',
-          inputSchema,
+          inputSchema: method === 'activity' ? activityInputSchema : inputSchema,
           outputSchema: {},
           timeoutMs: 30000,
           maxResultBytes: 1048576,
-          handler: async (input) => ((await services.query(method, input)) ?? null) as Json,
+          async handler(input, context) {
+            const params = object(input)
+            if (method === 'activity' && typeof params.sessionId === 'string') {
+              if (!context.sessionAccess) throw new MhsError('session-access-required')
+              await context.sessionAccess.requireRead(params.sessionId)
+              context.signal.throwIfAborted()
+            }
+            return ((await services.query(method, input)) ?? null) as Json
+          },
         }),
       ),
       ...MHS_EFFECT_SERVICES.map(

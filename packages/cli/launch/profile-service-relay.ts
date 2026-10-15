@@ -32,7 +32,9 @@ export function profileServiceRelay(input: {
     const body = await input.body(request)
     if (
       !body ||
-      !Object.keys(body).every((key) => ['rowId', 'service', 'input', 'operationId', 'read'].includes(key)) ||
+      !Object.keys(body).every((key) =>
+        ['rowId', 'service', 'input', 'operationId', 'read', 'sessionReads'].includes(key),
+      ) ||
       typeof body.rowId !== 'string'
     ) {
       input.reply(response, 400, { error: httpRpcError(400, 'INVALID_REQUEST') })
@@ -56,10 +58,17 @@ export function profileServiceRelay(input: {
       }
       const method =
         body.read === true ? '_agnes/v1/extension.readOperation' : '_agnes/v1/extension.callScoped'
-      const call = body.read === true ? params : { ...params, input: body.input ?? {} }
+      const call =
+        body.read === true
+          ? params
+          : {
+              ...params,
+              input: body.input ?? {},
+              ...(body.sessionReads !== undefined ? { sessionReads: body.sessionReads } : {}),
+            }
       if (
         (body.read !== undefined && body.read !== true) ||
-        (body.read && body.input !== undefined) ||
+        (body.read && (body.input !== undefined || body.sessionReads !== undefined)) ||
         !validateMethod(method, 'params', call).ok
       ) {
         input.reply(response, 400, { error: httpRpcError(400, 'INVALID_REQUEST') })

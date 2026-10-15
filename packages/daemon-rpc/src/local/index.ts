@@ -602,6 +602,7 @@ export function createLocalEndpoint(
       },
       undefined,
       host.activationBarrier,
+      requireSessionOwner(cx),
     )
   registerExtensions(ep, {
     activationBarrier: cx.activationBarrier,

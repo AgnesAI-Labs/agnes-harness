@@ -100,6 +100,17 @@ export function createProfileServiceRuntime(deps: {
       )
     )
       throw rpcError('CAPABILITY_DENIED')
+    const requestedReads = 'input' in params ? (params.sessionReads ?? []) : []
+    if (
+      !Array.isArray(requestedReads) ||
+      requestedReads.length > 16 ||
+      (requestedReads.length > 0 && entry.capability.kind !== 'query') ||
+      requestedReads.some(
+        (sessionId) => typeof sessionId !== 'string' || !source.sessionReads?.includes(sessionId),
+      )
+    )
+      throw rpcError('CAPABILITY_DENIED')
+    const sessionReads = Object.freeze([...requestedReads])
     const actor = await actorFor(source.subjectCredential)
     const activationId = deps.activations.require(
       entry.owner,
@@ -125,7 +136,16 @@ export function createProfileServiceRuntime(deps: {
       return decision.effect
     }
     const principalPolicy = await authorize()
-    return { entry, actor, source: source.source, activationId, alive, authorize, principalPolicy }
+    return {
+      entry,
+      actor,
+      source: source.source,
+      activationId,
+      alive,
+      authorize,
+      principalPolicy,
+      sessionReads,
+    }
   }
   type Identity = Awaited<ReturnType<typeof resolve>>
   const context = (

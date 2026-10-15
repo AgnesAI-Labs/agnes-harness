@@ -6,7 +6,12 @@
     "jsx": "react-jsx",
     "jsxImportSource": "react"
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "test/**/*.tsx"],
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "test/**/*.ts",
+    "test/**/*.tsx"
+  ],
   "references": [
     {
       "path": "../protocol"
@@ -22,6 +27,24 @@
     },
     {
       "path": "../mhs-hub"
+    },
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../core/tsconfig.testkit.json"
+    },
+    {
+      "path": "../extension-api"
+    },
+    {
+      "path": "../host-extensions"
+    },
+    {
+      "path": "../mhs-plugin"
+    },
+    {
+      "path": "../sdk"
     }
   ]
 }

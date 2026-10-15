@@ -1126,21 +1126,21 @@ importers:
       '@agnes/core':
         specifier: workspace:*
         version: link:../core
-      '@agnes/host-extensions':
-        specifier: workspace:*
-        version: link:../host-extensions
       '@agnes/daemon-rpc':
         specifier: workspace:*
         version: link:../daemon-rpc
+      '@agnes/host-extensions':
+        specifier: workspace:*
+        version: link:../host-extensions
+      '@agnes/mhs-ui':
+        specifier: workspace:*
+        version: link:../mhs-ui
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
       '@agnes/sdk':
         specifier: workspace:*
         version: link:../sdk
-      '@agnes/mhs-ui':
-        specifier: workspace:*
-        version: link:../mhs-ui
 
   packages/mhs-ui:
     dependencies:
@@ -1163,16 +1163,31 @@ importers:
         specifier: 18.3.1
         version: 18.3.1
     devDependencies:
-      esbuild:
-        specifier: 0.28.2
-        version: 0.28.2
+      '@agnes/core':
+        specifier: workspace:*
+        version: link:../core
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
+      '@agnes/host-extensions':
+        specifier: workspace:*
+        version: link:../host-extensions
+      '@agnes/mhs':
+        specifier: workspace:*
+        version: link:../mhs-plugin
+      '@agnes/sdk':
+        specifier: workspace:*
+        version: link:../sdk
       '@types/react':
         specifier: 18.3.12
         version: 18.3.12
       '@types/react-dom':
         specifier: 18.3.1
         version: 18.3.1
-      'react-dom':
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
+      react-dom:
         specifier: 18.3.1
         version: 18.3.1(react@18.3.1)
 

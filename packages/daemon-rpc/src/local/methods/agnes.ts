@@ -619,9 +619,13 @@ export function apisFamilies(
 }
 
 /** The session-owner gate every session method runs; exported so diagnostics.events runs the same one. */
-export function requireSessionOwner(
-  cx: Pick<AgnesContext, 'sessionOwnership' | 'registry' | 'workspaces'>,
-): (method: string, sessionId: string, c: CallContext) => void {
+export function requireSessionOwner<
+  Context extends {
+    sessionOwnership?: Pick<NonNullable<AgnesContext['sessionOwnership']>, 'resolve'>
+    registry: Pick<AgnesContext['registry'], 'get'>
+    workspaces: Pick<AgnesContext['workspaces'], 'sessionPath'>
+  },
+>(cx: Context): (method: string, sessionId: string, c: CallContext) => void {
   return (method, sessionId, c) => {
     let owner: ReturnType<NonNullable<AgnesContext['sessionOwnership']>['resolve']>
     try {

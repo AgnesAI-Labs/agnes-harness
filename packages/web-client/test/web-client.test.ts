@@ -217,7 +217,7 @@ describe('clientModule fiber 绑定', () => {
     const received: unknown[] = []
     const { ctx } = await makeRegistry(undefined, undefined, async (module, name, input, options) => {
       received.push({ rowId: module.rowId, name, input, options })
-      return options
+      return options?.operationId
         ? { state: 'approval-required', operationId: options.operationId }
         : { output: { report: 'ready' } }
     })
@@ -240,6 +240,19 @@ describe('clientModule fiber 绑定', () => {
     await fiber
     try {
       expect(await profile?.services.query('report.read', {})).toEqual({ report: 'ready' })
+      expect(
+        await profile?.services.query(
+          'report.read',
+          { sessionId: 'owned-session' },
+          { sessionReads: ['owned-session'] },
+        ),
+      ).toEqual({ report: 'ready' })
+      expect(received).toContainEqual({
+        rowId: 'web:acme/reports',
+        name: 'report.read',
+        input: { sessionId: 'owned-session' },
+        options: { sessionReads: ['owned-session'] },
+      })
       expect(
         await profile?.services.effect('report.publish', { value: 1 }, { operationId: 'stable-one' }),
       ).toMatchObject({ state: 'approval-required', operationId: 'stable-one' })

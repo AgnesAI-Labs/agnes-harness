@@ -218,8 +218,8 @@ import { createMcpManageRequests } from './mcp-manage-requests.js'
 import { acquireDaemonMutationLock } from './mutation-lock.js'
 import { acquireOwnerLock } from './owner-lock.js'
 import { createPluginManageRequests } from './plugin-manage-requests.js'
-import { createProfileSurfaceController } from './profile-surfaces.js'
 import { createSupervisorProfileServices } from './profile-services.js'
+import { createProfileSurfaceController } from './profile-surfaces.js'
 import {
   CompositeRuntimeDelivery,
   deliverDesiredToWorkers,
@@ -2428,7 +2428,13 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           ? (resourceControl.unixAuthority ?? localResourceAuthority())
           : (resourceControl.webAuthority ?? denyResourceAuthority),
       )
-      registerProfileServices(ep, profilePorts.services, boundWakes, activationBarrier)
+      registerProfileServices(
+        ep,
+        profilePorts.services,
+        boundWakes,
+        activationBarrier,
+        requireSessionOwner(cx),
+      )
       registerExtensions(ep, {
         activationBarrier,
         journal,
