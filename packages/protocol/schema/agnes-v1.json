@@ -4999,7 +4999,7 @@
     "DiagnosticsCollectParams": {
       "type": "object",
       "additionalProperties": false,
-      "properties": {}
+      "properties": { "runtimeLog": { "type": "boolean" } }
     },
     "DiagnosticsCollectResult": {
       "type": "object",
@@ -5030,13 +5030,13 @@
         },
         "logs": {
           "type": "array",
-          "maxItems": 2,
+          "maxItems": 3,
           "items": {
             "type": "object",
             "additionalProperties": false,
             "required": ["name", "size", "text", "truncated", "missing"],
             "properties": {
-              "name": { "enum": ["daemon.jsonl", "host.jsonl"] },
+              "name": { "enum": ["daemon.jsonl", "host.jsonl", "runtime.jsonl"] },
               "size": { "type": "integer", "minimum": 0 },
               "text": { "type": "string" },
               "truncated": { "type": "boolean" },

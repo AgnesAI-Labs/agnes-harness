@@ -39,6 +39,12 @@ function errorsOf(r: ReturnType<typeof validateMethod>): ValidationError[] {
 }
 
 describe('methods (I1 set)', () => {
+  it('accepts optional runtime diagnostics without changing the legacy request', () => {
+    for (const params of [{}, { runtimeLog: true }, { runtimeLog: false }])
+      expect(validateMethod('_agnes/v1/diagnostics.collect', 'params', params)?.ok).toBe(true)
+    expect(validateMethod('_agnes/v1/diagnostics.collect', 'params', { runtimeLog: 'yes' })?.ok).toBe(false)
+  })
+
   it('carries file originals through standard ACP embedded resources and the submit envelope', () => {
     const blocks = [
       { type: 'file' as const, name: '资料 #%../video.mp4', mimeType: 'video/mp4', data: 'AAAAAA==' },
