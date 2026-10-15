@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest'
+import { ContentBlock as ContentBlockSchema } from '../gen/ts/session-v1.js'
 import {
+  attachmentLink,
   canAccessResourceControl,
   fromAcpPrompt,
   METHODS,
   toAcpPrompt,
   UI_PROJECTION_MAX_BYTES,
   type ValidationError,
+  validateAgainst,
   validateMethod,
   validateUserAttachments,
 } from '../src/index.js'
@@ -63,6 +66,24 @@ describe('methods (I1 set)', () => {
       { type: 'file', name: 'https://test.invalid/video', mimeType: 'application/octet-stream', data: '' },
     ])
     expect(() => validateUserAttachments(embedded)).not.toThrow()
+    const stored = attachmentLink({ sha256: 'b'.repeat(64), size: 3, mime: 'text/plain' }, 'report.txt', {
+      receiptId: '00000000-0000-4000-8000-000000000001',
+    })
+    const submit = (content: unknown[]) =>
+      validateMethod('_agnes/v1/submit', 'params', {
+        clientId: 'protocol-test',
+        kind: 'followUp',
+        commandId: 'c',
+        payload: { sessionId: 's', content },
+      })
+    expect(submit([stored]).ok).toBe(true)
+    expect(
+      validateAgainst(ContentBlockSchema, {
+        ...stored,
+        attachment: { artifact: { ...stored.attachment.artifact, size: -1 } },
+      }).ok,
+    ).toBe(false)
+    expect(JSON.stringify(stored)).not.toContain('base64')
     const uploaded = {
       type: 'resource_link' as const,
       name: '../contract.pdf',

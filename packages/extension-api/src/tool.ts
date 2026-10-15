@@ -302,6 +302,8 @@ export interface ToolContext {
     /** Zero-based byte offset; limit bounds bytes read from storage. */
     read(path: string, opts?: { offset?: number; limit?: number }): Promise<Bytes>
     write(path: string, data: Bytes | string): Promise<void>
+    /** Exclusive, no-follow creation. Refuse an existing entry or changed parent. No overwrite fallback. */
+    create?(path: string, data: Bytes): Promise<{ size: number; sha256: string }>
     list(path: string): Promise<FsEntry[]>
     stat(path: string): Promise<FsStat>
     /** Revision of a snapshot-backed read, when the filesystem supplies one. */
