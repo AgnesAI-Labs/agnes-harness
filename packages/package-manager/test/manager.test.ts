@@ -321,6 +321,23 @@ describe('PackageManager project trust', () => {
     expect(offered(manager)).toEqual([{ ...offer, state: 'trusted' }])
     writeFileSync(join(deployDir, 'notes.txt'), 'edited after trust')
     expect(offered(manager)).toEqual([{ ...offer, state: 'changed' }])
+    // Re-trust is the remedy for `changed`; it must leave every inventory read working.
+    await manager.trustWorkspace(profileDir, offer.deployDir)
+    expect(offered(manager)).toEqual([{ ...offer, state: 'trusted' }])
+    const retrusted = readLock(profileDir, { profile: 'enterprise', agnesVersion: '0.1.0' })
+    expect(retrusted.packages['xinwei/sales-analysis']?.previous).toBeNull()
+    const row = async () => (await manager.inventory(profileDir, { fresh: true })).packages[0]
+    await expect(row()).resolves.toMatchObject({
+      id: 'xinwei/sales-analysis',
+      blockers: [{ code: 'unknown-contribution', references: ['static-inventory-migration-required'] }],
+      verifiedRollbackTarget: null,
+    })
+    // A version/integrity-only previous left by an earlier re-trust stays a row fact, not a profile failure.
+    const legacy = retrusted.packages['xinwei/sales-analysis']
+    if (!legacy) throw new Error('missing workspace entry')
+    legacy.previous = { version: legacy.version, integrity: legacy.integrity }
+    writeLock(profileDir, retrusted)
+    await expect(row()).resolves.toMatchObject({ verifiedRollbackTarget: null })
 
     // A directory without a valid manifest, a hidden one and a symlink are never offered.
     mkdirSync(join(profileDir, 'deploy', 'empty'))

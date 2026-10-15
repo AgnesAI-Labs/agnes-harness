@@ -1446,7 +1446,8 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
             pkg,
             author,
             installed,
-            lock.packages[extension.id],
+            // A workspace entry has no store-retained tree to roll back to.
+            undefined,
           )
           verifyInstalledIntegrity(extension.id, entry, dir)
           runTrustGate({

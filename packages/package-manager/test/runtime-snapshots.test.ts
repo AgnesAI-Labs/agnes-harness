@@ -375,6 +375,13 @@ it('only exposes a rollback target after verifying the retained previous tree', 
   const update = await m.inspect(profile, source)
   await m.update(profile, id, source, { expectedIntegrity: update.integrity })
   expect((await m.inventory(profile)).packages[0]?.verifiedRollbackTarget?.version).toBe('1.0.0')
+  // Only a legacy entry may carry a version/integrity-only previous; a modern one fails closed.
+  const complete = readLock(profile, { profile: 'local-dev', agnesVersion: '0.1.0' }),
+    stripped = structuredClone(complete)
+  delete stripped.packages[id]?.previous?.treeIntegrity
+  writeLock(profile, stripped)
+  await expect(m.inventory(profile)).rejects.toMatchObject({ detail: { reason: 'previous-incomplete' } })
+  writeLock(profile, complete)
   const packages = join(root, 'profiles', 'local-dev', 'packages'),
     previous = readdirSync(packages).find((entry) => entry.startsWith('.previous-'))
   if (!previous) throw new Error('missing previous package directory')

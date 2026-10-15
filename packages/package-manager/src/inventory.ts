@@ -192,10 +192,14 @@ function verifiedRollbackTarget(
     !previous.state ||
     !previous.license ||
     !previous.trust
-  )
+  ) {
+    // A legacy entry's version/integrity-only previous names no retained tree: no rollback target,
+    // and the row already carries its migration blocker. A modern entry's previous must be complete.
+    if (entry.contributions === undefined) return null
     throw new PackageError('E_LOCK_MISMATCH', 'previous package snapshot is incomplete', {
       detail: { id, reason: 'previous-incomplete' },
     })
+  }
   const snapshot = { ...structuredClone(previous), previous: null } as LockEntry
   let verified: ReturnType<typeof verifyPackageDirectory>
   try {
