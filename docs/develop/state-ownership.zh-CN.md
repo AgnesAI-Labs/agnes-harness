@@ -69,8 +69,8 @@
 | 状态 | 权威（位置、格式） | 修改端口 | 读取方 | 副本（类别） | 不一致规则 | 恢复 |
 | --- | --- | --- | --- | --- | --- | --- |
 | B1 包锁 | Profile 目录下的 `agnes-lock.json`，读写均按 schema 校验（`packages/package-manager/src/lockfile.ts:23,73,98`） | 持有 profile 锁（`lockfile.ts:116`）的 `PackageManager`，经 `commitPackage` | Host 启动、daemon 管理面、信任闸门 | 已解析 Profile 的 `packages`（启动时的投影，`packages/host/src/runtime/profile/inputs.ts:88`）；已安装清单（投影） | 锁说了算；Profile 的 `packages` 是启动时快照，之后的安装经已发布目标到达会话，而不是经 Profile | 写入为临时文件加 rename |
-| B2 包目录树 | `<data>/profiles/<profile>/packages/<id>` 目录，完整性由锁条目（`treeIntegrity`）固定 | `commitPackage` 先暂存再 rename（`packages/package-manager/src/store.ts:242`） | 加载器、快照 | 运行时快照（不可变副本，D） | 目录树哈希必须等于锁中的 `treeIntegrity`，否则 `E_LOCK_MISMATCH`（`store.ts:262`） | 事务日志 `.agnes-package-transaction.json`（`store.ts:54`）由 `recoverPackageStore`（`store.ts:208`）重放，完成或回滚 |
-| B3 包审计 | 经 `appendPackageAudit` 追加的审计文件（`packages/package-manager/src/audit.ts`） | 在提交的 `finish` 内写入（`store.ts:151`） | 运维人员 | 无 | 审计是证据，不是状态 | 以 `eventId = transactionId` 幂等 |
+| B2 包目录树 | `<data>/profiles/<profile>/packages/<id>` 目录，完整性由锁条目（`treeIntegrity`）固定 | `commitPackage` 先暂存再 rename（`packages/package-manager/src/store.ts:253`） | 加载器、快照 | 运行时快照（不可变副本，D） | 目录树哈希必须等于锁中的 `treeIntegrity`，否则 `E_LOCK_MISMATCH`（`store.ts:273`） | 事务日志 `.agnes-package-transaction.json`（`store.ts:54`）由 `recoverPackageStore`（`store.ts:217`）重放，完成或回滚 |
+| B3 包审计 | 经 `appendPackageAudit` 追加的审计文件（`packages/package-manager/src/audit.ts`） | 在提交的 `finish` 内写入（`store.ts:160`） | 运维人员 | 无 | 审计是证据，不是状态 | 以 `eventId = transactionId` 幂等 |
 | B4 运行时快照（开发用与按用途的 pin） | `.agnes-runtime-snapshots.json` 加 `.runtime-snapshots/`（`packages/package-manager/src/runtime-snapshots.ts:131-133`） | 持有 profile 锁的 `pinRuntimeSnapshotStore`、`releaseRuntimePinStore`、`collectRuntimeSnapshotsStore` | 包管理面的 pin 检视；worker 通过无锁的 `runtimePluginSnapshots` 读取，失败时若有事务日志或锁/状态写入可以解释则重试，重试用尽后以 `runtime-source-stale` 拒绝 | 快照副本 | 状态文件列出已知目录；未知目录被拒绝（`assertKnownRuntimeDirectories`） | `recoverRuntimeSnapshotStore` 重放其日志（`runtime-snapshots.ts:591`）。“运行时状态从不决定生效版本”：锁决定 |
 | B5 包操作 | daemon 管理面存储中的操作日志（`packages/daemon-admin/src/packages/operations.ts:33`） | 包管理 handler | 管理客户端（轮询操作状态） | 无 | 操作记录是请求/响应账，不是安装状态 | 启动时重新调度未完成操作（`packages/daemon-admin/src/packages/handler.ts:532`） |
 | B6 本地开发源 | 作者指向的目录；以 `developmentSources` 读取 | `reloadPlugin` 发布（`packages/host/src/runtime/generation/host.ts:865`） | 代次宿主 | 内存中的 `developmentSources` 映射（缓存） | 下次重载时磁盘说了算 | 重启即丢失；由锁中的 `file:` 来源重新注册 |
@@ -207,7 +207,7 @@ pin 锁。`<pin>.json.lock` 是发布时已带所有者（`pid`、启动标识�
 3. **投影可丢弃。** 寄存器表、UI 时间线、历史索引、worker 快照或管理面快照都可以删除并重新计算而无损失。与权威不一致的那份，是被丢弃的那份（`tracker.ts:72-77`）。
 4. **期望与实际分开。** 日志和目标保存期望状态；worker 回报实际状态；没有任何路径由期望推导实际。
 5. **Pin 是选择，不是默认值。** 持久的 pin（代次、组合、资源集）固定该会话的行为。更改它须经显式迁移，检查兼容性与打开状态（`host.ts:922-960`）。
-6. **崩溃落在提交点的某一侧。** 多文件写入使用日志、link 或临时文件加 rename，并能在启动时恢复（`store.ts:208`、`runtime-snapshots-generations.ts:193`、`composite-target-store.ts:123`）。
+6. **崩溃落在提交点的某一侧。** 多文件写入使用日志、link 或临时文件加 rename，并能在启动时恢复（`store.ts:217`、`runtime-snapshots-generations.ts:193`、`composite-target-store.ts:123`）。已校验、待删除的包树或快照树先改名为其日志的 `.trash-<transactionId>` 再递归删除，因此恢复时可以不做树校验直接删掉删到一半的 trash；其他受损目录仍然拒绝。
 7. **身份不符则失败关闭。** 信任、完整性或指纹不再匹配的代次会被拒绝并保留 pin，绝不静默替换（`trust.ts:6`）。
 8. **生效标签要诚实。** 只有实时已应用 revision 等于已保存 revision 时才返回 `new-sessions`（`packages/daemon/src/supervisor/configuration.ts:22-27`）。
 

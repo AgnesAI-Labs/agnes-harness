@@ -386,9 +386,14 @@ it.each(['runtime-gc-prepared', 'runtime-gc-moved', 'runtime-gc-state-written'] 
         },
       }).collectRuntimeSnapshots(profile),
     ).rejects.toThrow('crash')
+    const committed = point === 'runtime-gc-state-written'
+    const runtimeRoot = dirname(pin.snapshot.directory)
+    const trash = () => readdirSync(runtimeRoot).filter((entry) => entry.startsWith('.trash-'))
+    // After commit only the journal's trash remains to delete; a crash part-way leaves it partial.
+    if (committed) rmSync(join(runtimeRoot, trash()[0] ?? 'missing-trash', 'data.json'))
     const fresh = manager()
     await fresh.recover(profile)
-    const committed = point === 'runtime-gc-state-written'
+    expect(trash()).toEqual([])
     expect(existsSync(pin.snapshot.directory)).toBe(!committed)
     expect((await fresh.collectRuntimeSnapshots(profile)).removed).toEqual(
       committed ? [] : [pin.snapshot.snapshotId],
