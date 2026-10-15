@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { fileURLToPath } from 'node:url'
-import { ScriptedProvider } from '@agnes/ai/testkit'
+import { fakeModel, ScriptedProvider } from '@agnes/ai/testkit'
 import { MemorySessionWorkspaces } from '@agnes/daemon-foundation/storage/lister'
 import { MemoryWorkspaceStore, WorkspaceCatalog } from '@agnes/daemon-foundation/storage/workspaces'
 import { createLocalEndpoint } from '@agnes/daemon-rpc/local/index'
@@ -40,6 +40,14 @@ it('runs two visible SDK item sessions, denies cross-item reads, and never resen
     held = false,
     calls = 0
   const first = new ScriptedProvider({
+    models: [
+      fakeModel({
+        id: 'm1',
+        route: 'gw',
+        maxTokens: 100,
+        cost: { input: 0, output: 2500, cacheRead: 0, cacheWrite: 0 },
+      }),
+    ],
     scripts: [
       tool('tool_describe', { name: 'read' }),
       tool('read', { path: 'a.txt' }),
@@ -163,6 +171,12 @@ it('runs two visible SDK item sessions, denies cross-item reads, and never resen
     expect(await recovered.resume(id)).toMatchObject({ status: 'unknown', successes: 1, uncertain: 1 })
     expect(await recovered.resume(id)).toMatchObject({ status: 'unknown', successes: 1, uncertain: 1 })
     expect(calls).toBe(before)
+    expect(await recovered.cancel(id)).toMatchObject({
+      status: 'unknown',
+      reserved: expect.closeTo(1, 9),
+      spent: 0.1,
+    })
+    expect(calls).toBe(before)
     expect((await recovered.repo.page(id))[1]).toMatchObject({
       state: 'unknown',
       attempts: [{ key: `${id}/2/0` }],
@@ -176,3 +190,76 @@ it('runs two visible SDK item sessions, denies cross-item reads, and never resen
     await rm(root, { recursive: true, force: true })
   }
 }, 20_000)
+
+it.each(['repair', 'multi-step'] as const)(
+  'binds real concurrent SDK %s turns to the remaining item and batch ceilings',
+  async (mode) => {
+    const provider = new ScriptedProvider({
+      models: [
+        fakeModel({
+          id: 'm1',
+          route: 'gw',
+          maxTokens: 100,
+          cost: { input: 0, output: 2500, cacheRead: 0, cacheWrite: 0 },
+        }),
+      ],
+      scripts: [
+        [
+          ...(mode === 'repair'
+            ? [{ type: 'text_delta' as const, delta: 'invalid' }]
+            : tool('tool_describe', { name: 'read' }).slice(0, 1)),
+          {
+            type: 'usage',
+            tokens: { input: 1, output: 80, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+            credits: 0.2,
+            creditSource: 'estimated',
+          },
+          { type: 'done', reason: mode === 'repair' ? 'stop' : 'toolUse' },
+        ],
+      ],
+      onExhausted: 'error',
+    })
+    const { nativeFixture } = await import('./native-fixture.js')
+    const f = await nativeFixture(provider)
+    try {
+      await f.service.start({
+        id,
+        dir: 'inputs',
+        spec: {
+          ...spec,
+          budget: 0.3,
+          itemBudget: 0.25,
+          itemTimeoutMs: 60_000,
+          schema: { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'] },
+        },
+      })
+      await f.engine.tick(id)
+      await vi.waitFor(
+        async () => {
+          await f.engine.tick(id)
+          expect((await f.engine.repo.status(id)).settled).toBe(2)
+        },
+        { timeout: 10_000 },
+      )
+      const manifest = await f.engine.repo.status(id)
+      expect(manifest.spent).toBeCloseTo(0.2)
+      expect(manifest.reserved).toBe(0)
+      expect(manifest.spent).toBeLessThanOrEqual(manifest.spec.budget)
+      const items = await f.engine.repo.page(id)
+      expect(items.every((item) => item.attempts.reduce((sum, a) => sum + a.charged, 0) <= 0.25)).toBe(true)
+      expect(provider.calls).toHaveLength(1)
+      expect(provider.calls[0]!.sampling?.maxTokens).toBe(100)
+      // A rejected zero-call turn still has authoritative zero billing; no fabricated free success.
+      expect(items[1]).toMatchObject({
+        state: 'failed',
+        attempts: [{ charged: 0, ceiling: expect.closeTo(0.05) }],
+      })
+      if (mode === 'repair')
+        expect(items[0]!.attempts.map((a) => a.ceiling)).toEqual([0.25, expect.closeTo(0.05)])
+      expect((await f.client.session.list({ limit: 10 })).items).toHaveLength(2)
+    } finally {
+      await f.close()
+    }
+  },
+  20_000,
+)

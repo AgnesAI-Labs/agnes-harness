@@ -50,10 +50,15 @@ stops new admission and retains its reservation. Disabling/upgrading closes admi
 active sessions. Process exit preserves progress. Output and billing transport failures remain
 unknown instead of being treated as successful or free work.
 
-Ordinary session costs are read through the public session usage projection. The batch budget stops
-further admission once reported spend reaches it; concurrent/in-flight turns can exceed it.
-`--item-budget` limits admission reservations, not a Host-enforced per-turn cap. Existing profile
-and session policy still applies. An omitted budget uses the largest safe numeric accounting bound.
+Ordinary session costs are read through the public session usage projection. Each prompt carries its
+reserved credit ceiling through the public SDK; Core durably binds that ceiling to the admitted turn
+and reserves conservative request costs before provider dispatch. Missing price bounds or budget
+storage refuse execution. Repairs share the remaining item allowance and original deadline. Unknown
+work retains its reservation. A server without hard-turn budget support is refused before prompting.
+Automatic title generation is suppressed for bounded turns. Existing profile and session policy still
+applies. An omitted budget uses the largest safe numeric accounting bound. The bound assumes the
+provider obeys its catalogued prices and output-token ceiling; inconsistent or missing billing remains
+unknown and never frees a reservation.
 
 Capture rejects symlinks, nonregular files, escapes and observed mutations. Hidden entries and the
 reserved `agh-batch` directory are excluded. Unsupported types remain original `skipped` rows with

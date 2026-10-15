@@ -112,6 +112,7 @@ describe('durable batch business state', () => {
     expect(await h.engine.tick(id)).toMatchObject({ status: 'failed', spent: 0.5, failures: 1 })
     const requests = [...h.executor.requests.values()]
     expect(requests).toHaveLength(2)
+    expect(requests.map((request) => request.ceiling)).toEqual([1, 0.75])
     expect(requests[1]!.child).toBe([...h.executor.receipts.values()][0]!.child)
     expect((await h.repo.page(id))[0]).toMatchObject({ state: 'invalid', error: 'invalid_output' })
   })
@@ -144,6 +145,7 @@ describe('durable batch business state', () => {
   ] as const)('refuses absent %s authority before persistence or dispatch', async (key) => {
     const h = harness()
     h.executor.authority[key] = false
+    if (key === 'hardBudget' || key === 'terminalBilling') Object.assign(h.executor, { sessionBacked: true })
     await expect(h.engine.begin(id, spec, inputs)).rejects.toMatchObject({
       code: 'E_BATCH_AUTHORITY_UNAVAILABLE',
     })
@@ -158,6 +160,7 @@ describe('durable batch business state', () => {
       { lane: 'other' },
     ]) {
       const h = harness()
+      if ('charged' in forged) Object.assign(h.executor, { sessionBacked: true })
       h.executor.reply = () => ({ state: 'completed', charged: 0.25, text: 'ok', inputRead: true, ...forged })
       await h.engine.begin(id, spec, inputs)
       await expect(h.engine.tick(id)).rejects.toThrow()

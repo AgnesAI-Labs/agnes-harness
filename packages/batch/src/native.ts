@@ -77,8 +77,8 @@ export class SessionExecutor implements Executor {
   readonly authority = {
     immutableInputOnly: true,
     durableIdempotency: true,
-    hardBudget: false,
-    terminalBilling: false,
+    hardBudget: true,
+    terminalBilling: true,
     bindingReceipts: false,
   }
   private readonly live = new Map<
@@ -205,7 +205,12 @@ export class SessionExecutor implements Executor {
         )
         started()
         signal.throwIfAborted()
-        const result = await session.prompt(input.prompt, { signal })
+        const result = await session.prompt(input.prompt, {
+          signal,
+          creditLimit: Math.min(input.ceiling, Math.floor(Number.MAX_SAFE_INTEGER / 1_000_000)),
+        })
+        if (result.reason === 'parked' || result.reason === 'interrupted')
+          throw new BatchError('E_BATCH_BILLING_UNKNOWN')
         const timeline = await session.projectUI()
         // The session's cumulative meter also survives repairs; subtract previous attempt charges.
         const prior = await this.store.scan({
@@ -219,9 +224,17 @@ export class SessionExecutor implements Executor {
           0,
         )
         const credits = timeline.usage?.credits
-        const total = credits?.complete ? credits.amount : undefined
+        // A budget refusal before the first model call has no cost rows. The committed terminal
+        // turn and its complete call projection prove zero; absent billing alone never does.
+        const zeroCallRefusal =
+          timeline.turns?.some(
+            (turn) =>
+              turn.endSeq === result.lastSeq && turn.reason === 'budget' && turn.usage.calls.length === 0,
+          ) && timeline.turns.every((turn) => turn.usage.calls.length === 0)
+        const total = credits?.complete ? credits.amount : zeroCallRefusal ? 0 : undefined
         if (typeof total !== 'number' || !Number.isFinite(total) || total < charged)
           throw new BatchError('E_BATCH_BILLING_UNKNOWN')
+        if (total - charged > input.ceiling) throw new BatchError('E_BATCH_BILLING_UNKNOWN')
         row.receipt.charged = total - charged
         if (result.reason === 'completed') {
           const view = await this.client.session.view(session.id, { maxNodes: 200 })

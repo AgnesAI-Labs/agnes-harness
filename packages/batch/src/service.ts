@@ -65,12 +65,9 @@ export class BatchService {
     if (
       !a.immutableInputOnly ||
       !a.durableIdempotency ||
-      (!this.binding.engine.executor.sessionBacked &&
-        (!a.immutableInputOnly ||
-          !a.durableIdempotency ||
-          !a.hardBudget ||
-          !a.terminalBilling ||
-          !a.bindingReceipts))
+      !a.hardBudget ||
+      !a.terminalBilling ||
+      (!this.binding.engine.executor.sessionBacked && !a.bindingReceipts)
     )
       throw new BatchError('E_BATCH_AUTHORITY_UNAVAILABLE')
     const inputs = await snapshotFolder({

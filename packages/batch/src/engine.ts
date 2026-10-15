@@ -17,6 +17,8 @@ function requireAuthority(executor: Executor): void {
   if (
     !executor.authority.immutableInputOnly ||
     !executor.authority.durableIdempotency ||
+    !executor.authority.hardBudget ||
+    !executor.authority.terminalBilling ||
     (!executor.sessionBacked &&
       (!Object.values(executor.authority).every((v) => v === true) ||
         ['immutableInputOnly', 'durableIdempotency', 'hardBudget', 'terminalBilling', 'bindingReceipts'].some(
@@ -247,11 +249,7 @@ ${a.number > 0 ? 'The previous answer was invalid. Correct its structure.' : ''}
         throw new BatchError('E_BATCH_RECEIPT_BINDING')
       a.binding = { job: receipt.job, session: receipt.session, frame: receipt.frame }
       if (item.state === 'unknown') m.uncertain--
-      if (
-        !Number.isFinite(receipt.charged) ||
-        receipt.charged < a.charged ||
-        (!this.executor.sessionBacked && receipt.charged > a.ceiling)
-      )
+      if (!Number.isFinite(receipt.charged) || receipt.charged < a.charged || receipt.charged > a.ceiling)
         throw new BatchError('E_BATCH_RECEIPT_BILLING')
       const delta = receipt.charged - a.charged
       m.spent += delta
@@ -279,7 +277,11 @@ ${a.number > 0 ? 'The previous answer was invalid. Correct its structure.' : ''}
           m.successes++
           m.failures = 0
         } else {
-          const left = Math.max(0, m.spec.budget - m.spent - m.reserved)
+          const itemLeft = Math.max(
+            0,
+            m.spec.itemBudget - item.attempts.reduce((sum, attempt) => sum + attempt.charged, 0),
+          )
+          const left = Math.min(itemLeft, Math.max(0, m.spec.budget - m.spent - m.reserved))
           if (
             receipt.state === 'completed' &&
             !outputLimit &&

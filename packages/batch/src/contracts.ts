@@ -108,7 +108,7 @@ export type Receipt = {
   inputRead?: boolean
 }
 export interface Executor {
-  /** Public ordinary-session connector: budgets stop admission after reported spend. */
+  /** Public ordinary-session connector, with durable prompt credit ceilings. */
   readonly sessionBacked?: true
   /** Host-verified capability; an arbitrary plugin/provider's assertion is insufficient. */
   readonly authority: {
