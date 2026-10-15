@@ -3,6 +3,7 @@ import type { LocaleCatalog } from '@agnes/web-client'
 /** 宿主编排面文案：重连、插件命令授权、审批卡、任务恢复、新建任务、模型/权限切换与连接事件。 */
 export const appLocaleCatalog: LocaleCatalog = {
   en: {
+    'app.notification.close': 'Dismiss notification',
     'app.reconnect.waiting':
       'Waiting for the backend to recover; the page reloads automatically. If only the backend restarted, re-run the Web start command as well.',
     'app.reconnect.reloading': 'Backend recovered; reloading the page…',
@@ -172,6 +173,7 @@ export const appLocaleCatalog: LocaleCatalog = {
       'The content is not shown in full ({count}). The hidden part takes effect with the call too, so this approval offers no “allow for the session”; only “allow once” or “reject”.',
   },
   'zh-CN': {
+    'app.notification.close': '关闭通知',
     'app.reconnect.waiting':
       '正在等待后台恢复，恢复后页面会自动重新载入。只重启了后台时，请同时重新运行 Web 启动命令。',
     'app.reconnect.reloading': '后台已恢复，正在重新载入页面…',

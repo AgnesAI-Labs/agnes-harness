@@ -1,5 +1,12 @@
 import { tr as t } from '@agnes/web-foundation/locale-bridge'
-import { Banner, Button, createExternalStore, useDocumentLanguage, useStoreSelector } from '@agnes/web-ui'
+import {
+  Banner,
+  Button,
+  createExternalStore,
+  Notifications,
+  useDocumentLanguage,
+  useStoreSelector,
+} from '@agnes/web-ui'
 import type { ReconnectPhase } from './reconnect.js'
 
 type RecoveryNotice = { message: string; error: string; disabled: boolean; retry(): void; create(): void }
@@ -13,6 +20,9 @@ type NoticeSnapshot = {
   actions?: readonly NoticeAction[]
 }
 const store = createExternalStore<NoticeSnapshot>({ text: '', kind: '' })
+const errors = createExternalStore<readonly { id: number; message: string }[]>([])
+let nextError = 0
+const dismissError = (id: number) => errors.set(errors.getSnapshot().filter((item) => item.id !== id))
 type ReadOnlyNoticeView = {
   message: Readonly<{ en: string; 'zh-CN': string }>
   actions: readonly { id: 'reopen' | 'new'; onSelect(): void }[]
@@ -29,6 +39,12 @@ const reconnectStore = createExternalStore<{
 
 /** Controllers own notices and their commands; the shell only renders their snapshots. */
 export const appNotice = {
+  clearErrors() {
+    errors.set([])
+  },
+  error(message: string) {
+    errors.set([...errors.getSnapshot(), { id: ++nextError, message }].slice(-5))
+  },
   setText(text: string) {
     store.set({ text, kind: store.getSnapshot().kind })
   },
@@ -77,52 +93,61 @@ export function setConnectionNotice(connection: ConnectionState) {
 
 export function AppNotice() {
   const view = useStoreSelector(store, (value) => value)
+  const notifications = useStoreSelector(errors, (value) => value)
+  useDocumentLanguage()
   return (
-    <p id="notice" role="alert" data-kind={view.kind}>
-      {view.recovery ? (
-        <>
-          <span data-recovery-message="">{t('app.recovery.hint', { message: view.recovery.message })}</span>
-          <Button
-            data-recovery-action="retry"
-            disabled={view.recovery.disabled}
-            onClick={view.recovery.retry}
-          >
-            {t('app.recovery.retry')}
-          </Button>{' '}
-          <Button
-            data-recovery-action="create"
-            disabled={view.recovery.disabled}
-            onClick={view.recovery.create}
-          >
-            {t('app.recovery.create')}
+    <>
+      <Notifications
+        items={notifications}
+        onDismiss={dismissError}
+        closeLabel={t('app.notification.close')}
+      />
+      <p id="notice" role="alert" data-kind={view.kind}>
+        {view.recovery ? (
+          <>
+            <span data-recovery-message="">{t('app.recovery.hint', { message: view.recovery.message })}</span>
+            <Button
+              data-recovery-action="retry"
+              disabled={view.recovery.disabled}
+              onClick={view.recovery.retry}
+            >
+              {t('app.recovery.retry')}
+            </Button>{' '}
+            <Button
+              data-recovery-action="create"
+              disabled={view.recovery.disabled}
+              onClick={view.recovery.create}
+            >
+              {t('app.recovery.create')}
+            </Button>
+            <span data-recovery-error="">{view.recovery.error ? ` ${view.recovery.error}` : ''}</span>
+          </>
+        ) : (
+          view.text
+        )}
+        {view.repair && (
+          <>
+            {' '}
+            <Button data-testid="credential-repair" onClick={view.repair}>
+              {t('session.error.openAccount')}
+            </Button>
+          </>
+        )}
+        {view.action && (
+          <>
+            {' '}
+            <Button data-testid="notice-action" onClick={view.action.run}>
+              {view.action.label}
+            </Button>
+          </>
+        )}
+        {view.actions?.map((action) => (
+          <Button key={action.label} data-testid="notice-stop-action" onClick={action.run}>
+            {action.label}
           </Button>
-          <span data-recovery-error="">{view.recovery.error ? ` ${view.recovery.error}` : ''}</span>
-        </>
-      ) : (
-        view.text
-      )}
-      {view.repair && (
-        <>
-          {' '}
-          <Button data-testid="credential-repair" onClick={view.repair}>
-            {t('session.error.openAccount')}
-          </Button>
-        </>
-      )}
-      {view.action && (
-        <>
-          {' '}
-          <Button data-testid="notice-action" onClick={view.action.run}>
-            {view.action.label}
-          </Button>
-        </>
-      )}
-      {view.actions?.map((action) => (
-        <Button key={action.label} data-testid="notice-stop-action" onClick={action.run}>
-          {action.label}
-        </Button>
-      ))}
-    </p>
+        ))}
+      </p>
+    </>
   )
 }
 

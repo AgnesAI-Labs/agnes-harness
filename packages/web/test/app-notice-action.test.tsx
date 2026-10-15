@@ -36,3 +36,38 @@ it('offers the next step beside a notice and drops it when the next notice arriv
   await act(async () => root.unmount())
   host.remove()
 })
+
+it('expires transient errors while preserving actionable notices and clears errors on pagehide', async () => {
+  ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+  vi.useFakeTimers()
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+  try {
+    await act(async () => {
+      root.render(createElement(AppNotice))
+      appNotice.setText('Repair required')
+      appNotice.repair(() => {})
+      appNotice.error('First transient error')
+      appNotice.error('Second transient error')
+    })
+    expect(document.querySelectorAll('.agh-notification')).toHaveLength(2)
+    await act(async () => vi.advanceTimersByTimeAsync(6000))
+    expect(document.querySelectorAll('.agh-notification')).toHaveLength(0)
+    expect(host.querySelector('#notice')?.textContent).toContain('Repair required')
+    expect(host.querySelector('[data-testid="credential-repair"]')).not.toBeNull()
+    await act(async () => appNotice.error('Before navigation'))
+    await act(async () => window.dispatchEvent(new Event('pagehide')))
+    expect(document.querySelectorAll('.agh-notification')).toHaveLength(0)
+    await act(async () => appNotice.error('After restore'))
+    expect(document.querySelector('.agh-notification')?.textContent).toContain('After restore')
+    const close = document.querySelector<HTMLButtonElement>('.agh-notification button')
+    expect(close?.getAttribute('aria-label')).toBeTruthy()
+    await act(async () => close?.click())
+    expect(document.querySelector('.agh-notification')).toBeNull()
+  } finally {
+    await act(async () => root.unmount())
+    host.remove()
+    vi.useRealTimers()
+  }
+})
