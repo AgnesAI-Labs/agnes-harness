@@ -101,34 +101,22 @@ describe('migrated empty-state region', () => {
     }, committed)
   })
 
-  it('names the product over its one-line promise and sends a picked starting point to the composer', async () => {
+  it('names the product over its promise without starter cards or suggestion copy', async () => {
     const slots = await registry()
     const section = document.createElement('section')
     section.id = 'empty-state'
     document.body.append(section)
     mounts.push(mountEmptyStateRegion(slots, section, { locale: zhLocaleService() }))
-    const picked: unknown[] = []
-    const listen = (event: Event) => picked.push((event as CustomEvent).detail)
-    document.addEventListener('agnes:compose-suggestion', listen)
-    try {
-      await vi.waitFor(() => {
-        const title = section.querySelector('#empty-state-title')
-        expect(title?.textContent).toBe('Agnes Harness')
-        expect(title?.getAttribute('translate')).toBe('no')
-        expect(section.querySelector('.empty-state-copy')?.textContent).toBe('以可信为根基，为真实世界而生。')
-        expect(section.querySelectorAll('[data-testid="task-suggestions"] button')).toHaveLength(3)
-      }, committed)
-      const prompts = section.querySelectorAll<HTMLButtonElement>('[data-testid="task-suggestions"] button')
-      expect(Array.from(prompts, (prompt) => prompt.textContent)).toEqual([
-        '介绍这个项目',
-        '检查潜在问题',
-        '补充实用测试',
-      ])
-      prompts[1]?.click()
-      expect(picked).toEqual(['检查潜在问题'])
-    } finally {
-      document.removeEventListener('agnes:compose-suggestion', listen)
-    }
+    await vi.waitFor(() => {
+      expect(section.querySelector('#empty-state-title')?.textContent).toBe('Agnes Harness')
+      expect(section.querySelector('.empty-state-copy')?.textContent).toBe('以可信为根基，为真实世界而生。')
+      expect(
+        section.querySelectorAll(
+          '[data-testid="agent-suggestion"], [data-testid="task-suggestions"], .empty-state-agents-note',
+        ),
+      ).toHaveLength(0)
+      expect(section.textContent).not.toContain('业务 Agent 是装好就能用')
+    }, committed)
   })
 
   it('allows a lower-priority replaceable unit without changing the outer section', async () => {

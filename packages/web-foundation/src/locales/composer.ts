@@ -3,9 +3,6 @@ import type { LocaleCatalog } from '@agnes/web-ui'
 /** 输入框、会话编排提示与工作区/会话错误说明。宿主组装 view 时渲染取词。 */
 export const composerLocaleCatalog: LocaleCatalog = {
   en: {
-    'composer.suggestion.project': 'Explain this project',
-    'composer.suggestion.issue': 'Find a possible bug',
-    'composer.suggestion.test': 'Add a useful test',
     'composer.child.title': 'Sub-agents / workflows',
     'composer.child.metrics': 'Usage: {tokens} tokens · duration: {seconds} s',
     'composer.child.unknown': 'Unknown',
@@ -147,9 +144,6 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'topbar.preparing': 'Preparing session',
   },
   'zh-CN': {
-    'composer.suggestion.project': '介绍这个项目',
-    'composer.suggestion.issue': '检查潜在问题',
-    'composer.suggestion.test': '补充实用测试',
     'composer.child.title': '子代理 / 工作流',
     'composer.child.metrics': '用量：{tokens} tokens · 耗时：{seconds} 秒',
     'composer.child.unknown': '未知',
