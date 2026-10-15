@@ -446,5 +446,5 @@ it('routes load progress only to its pending open and sends cancellation without
     }),
   )
   expect(await result).toContain('cancelled')
-  link.close()
+  link.close('test finished')
 })

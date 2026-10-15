@@ -13,6 +13,8 @@ import {
 import type { SharedSessionChannel } from './shared-session-channel.js'
 import { type TailHandle, tailSession } from './tail.js'
 
+type HistoryOpening = Pick<Parameters<Host['createSession']>[0], 'historySignal' | 'onHistoryProgress'>
+
 type HostedSession = {
   readonly session: HostSession
   readonly aborts: Map<string, AbortController>
@@ -125,60 +127,67 @@ export class HostedSessions {
     const closing = this.closing.get(frame.sessionKey)
     if (closing) await closing
     if (this.closingAll) throw new Error('shared worker is closing')
-    if (this.dormant(frame.sessionKey)) {
-      const woken = await this.acquire(frame.sessionKey)
-      this.assertAuthority(woken.session, binding, parent)
-      return this.describe(woken.session)
-    }
-    const existing = this.sessions.get(frame.sessionKey)
-    if (existing) {
-      this.assertAuthority(existing.session, binding, parent)
-      return this.describe(existing.session)
-    }
-    const pending = this.opening.get(frame.sessionKey)
-    if (pending) {
-      const hosted = await pending
-      this.assertAuthority(hosted.session, binding, parent)
-      return this.describe(hosted.session)
-    }
     const controller = new AbortController()
     if (this.cancelledOpens.delete(`${frame.sessionKey}\0${frame.requestId}`)) controller.abort()
     this.openingAborts.set(frame.requestId, { key: frame.sessionKey, controller })
-    const opening = this.options.channel.run(frame.sessionKey, async () => {
-      const session = await this.options.host
-        .createSession({
-          key: frame.sessionKey,
-          historySignal: controller.signal,
-          onHistoryProgress: (progress) =>
-            this.options.send({
-              kind: 'session.loading',
-              requestId: frame.requestId,
-              sessionKey: frame.sessionKey,
-              ...progress,
-            }),
-          binding,
-          ...(frame.params.preset ? { preset: frame.params.preset } : {}),
-          ...(frame.params.bundles !== undefined ? { bundles: frame.params.bundles } : {}),
-          ...(frame.params.loop ? { loop: frame.params.loop } : {}),
-          ...(parent ? { parent } : {}),
-        })
-        .catch((error: unknown) => {
-          if ((error as { code?: string })?.code === 'E_LOOP_MISSING')
-            throw rpcError('SEMANTIC_REJECTED', {
-              code: 'LOOP_MISSING',
-              reason: 'selected loop is not installed; install its pinned id and version',
-            })
-          throw error
-        })
-      const hosted = this.adopt(frame.sessionKey, session)
-      return hosted
-    })
-    this.opening.set(frame.sessionKey, opening)
+    const history: HistoryOpening = {
+      historySignal: controller.signal,
+      onHistoryProgress: (progress) =>
+        this.options.send({
+          kind: 'session.loading',
+          requestId: frame.requestId,
+          sessionKey: frame.sessionKey,
+          ...progress,
+        }),
+    }
     try {
-      return this.describe((await opening).session)
+      controller.signal.throwIfAborted()
+      if (this.dormant(frame.sessionKey)) {
+        const woken = await this.acquire(frame.sessionKey, history)
+        this.assertAuthority(woken.session, binding, parent)
+        return this.describe(woken.session)
+      }
+      const existing = this.sessions.get(frame.sessionKey)
+      if (existing) {
+        this.assertAuthority(existing.session, binding, parent)
+        return this.describe(existing.session)
+      }
+      const pending = this.opening.get(frame.sessionKey)
+      if (pending) {
+        const hosted = await pending
+        this.assertAuthority(hosted.session, binding, parent)
+        return this.describe(hosted.session)
+      }
+      const opening = this.options.channel.run(frame.sessionKey, async () => {
+        const session = await this.options.host
+          .createSession({
+            key: frame.sessionKey,
+            ...history,
+            binding,
+            ...(frame.params.preset ? { preset: frame.params.preset } : {}),
+            ...(frame.params.bundles !== undefined ? { bundles: frame.params.bundles } : {}),
+            ...(frame.params.loop ? { loop: frame.params.loop } : {}),
+            ...(parent ? { parent } : {}),
+          })
+          .catch((error: unknown) => {
+            if ((error as { code?: string })?.code === 'E_LOOP_MISSING')
+              throw rpcError('SEMANTIC_REJECTED', {
+                code: 'LOOP_MISSING',
+                reason: 'selected loop is not installed; install its pinned id and version',
+              })
+            throw error
+          })
+        const hosted = this.adopt(frame.sessionKey, session)
+        return hosted
+      })
+      this.opening.set(frame.sessionKey, opening)
+      try {
+        return this.describe((await opening).session)
+      } finally {
+        if (this.opening.get(frame.sessionKey) === opening) this.opening.delete(frame.sessionKey)
+      }
     } finally {
       this.openingAborts.delete(frame.requestId)
-      if (this.opening.get(frame.sessionKey) === opening) this.opening.delete(frame.sessionKey)
     }
   }
 
@@ -401,7 +410,7 @@ export class HostedSessions {
   }
 
   /** The open session for `key`, waking it from its stub if it hibernated. */
-  private async acquire(key: string): Promise<HostedSession> {
+  private async acquire(key: string, history: HistoryOpening = {}): Promise<HostedSession> {
     for (;;) {
       const hibernating = this.hibernating.get(key)
       if (hibernating) {
@@ -415,11 +424,11 @@ export class HostedSessions {
       const stub = this.stubs.get(key)
       // A session being closed is not woken: close would not see a wake that starts after it looked.
       if (!stub || this.closingAll || this.closing.has(key)) throw new Error(`session ${key} is not open`)
-      return this.wake(key, stub)
+      return this.wake(key, stub, history)
     }
   }
 
-  private wake(key: string, stub: HibernatedStub): Promise<HostedSession> {
+  private wake(key: string, stub: HibernatedStub, history: HistoryOpening = {}): Promise<HostedSession> {
     const started = this.clock()
     // No parent: the ledger records it, and this is the shape a reopen after restart takes.
     const woken = this.options.channel.run(key, async () => {
@@ -427,6 +436,7 @@ export class HostedSessions {
         key,
         binding: stub.binding,
         preset: stub.preset,
+        ...history,
       })
       if (stub.pluginGenerationId && session.pluginGenerationId !== stub.pluginGenerationId) {
         try {

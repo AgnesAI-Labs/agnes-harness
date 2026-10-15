@@ -18,7 +18,7 @@ describe('session open refusals for a version difference', () => {
     ['E_LEDGER_INTEGRITY', 'corrupt', ['new-session'], 'E_SESSION_CORRUPT'],
   ])(
     'answers %s with its direction, next actions and text in both languages',
-    (code, issue, actions, expectedCode) => {
+    (code, issue, actions, expectedCode = code) => {
       const failure = refusal(
         {
           code,

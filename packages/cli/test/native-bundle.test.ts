@@ -8,7 +8,7 @@ import {
   createAuthenticatedArtifactReadHandler,
   PersistentArtifactReadAuthorityIndex,
 } from '@agnes/daemon/local'
-import type { ArtifactsSeam } from '@agnes/extension-api'
+import type { ArtifactsSeam } from '@agnes/extension-api/seams'
 import { createLocalArtifactReadStore } from '@agnes/host'
 import { baseSeamFactories, createTestHost } from '@agnes/host/testkit'
 import {
@@ -31,6 +31,19 @@ const ref = {
   size: original.length,
   mime: 'text/plain',
 }
+const syntheticEvents = (): EventEnvelope[] => [
+  {
+    seq: 1,
+    ts: '2026-10-15T00:00:00Z',
+    id: '01J6ZM2Q3R4S5T6V7W8X9Y0ZAB',
+    type: 'user/message',
+    lane: 'main',
+    data: { content: [attachmentLink(ref, 'original.txt')] },
+    actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+    origin: 'principal',
+    trust: 'trusted',
+  },
+]
 const client = (bytes = original, sessionId = 's') =>
   ({
     call: async (_method: string, p: ArtifactReadParams) => {
@@ -241,7 +254,7 @@ it.each(['changed', 'missing', 'symlink', 'manifest', 'ledger'] as const)(
   async (mode) => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-native-refusal-'))
     const path = join(dir, 'bundle.agnes')
-    const events = [{ seq: 1, lane: 'main', data: { ref } }] as EventEnvelope[]
+    const events = syntheticEvents()
     try {
       await writeNativeBundle(path, events, formatAgnes(events), client(), 's')
       const target = join(`${path}.artifacts`, ref.sha256)
@@ -278,7 +291,7 @@ it.each(['changed', 'missing', 'symlink', 'manifest', 'ledger'] as const)(
 it('publishes nothing when the authorized original bytes have the wrong digest and preserves existing bundles', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'agnes-native-export-'))
   const path = join(dir, 'bundle.agnes')
-  const events = [{ seq: 1, lane: 'main', data: { ref } }] as EventEnvelope[]
+  const events = syntheticEvents()
   try {
     await expect(
       writeNativeBundle(path, events, formatAgnes(events), client(Buffer.alloc(original.length)), 's'),
@@ -290,9 +303,7 @@ it('publishes nothing when the authorized original bytes have the wrong digest a
     await expect(writeNativeBundle(path, events, formatAgnes(events), client(), 's')).rejects.toThrow()
     expect(readFileSync(path)).toEqual(before)
     expect(readFileSync(join(`${path}.artifacts`, ref.sha256))).toEqual(original)
-    expect(() => bundleOriginals([{ data: { uri: `artifact://${ref.sha256}` } }] as EventEnvelope[])).toThrow(
-      'identity',
-    )
+    expect(() => bundleOriginals([{ data: { uri: `artifact://${ref.sha256}` } }])).toThrow('identity')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
