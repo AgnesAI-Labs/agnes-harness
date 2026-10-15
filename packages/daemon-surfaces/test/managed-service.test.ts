@@ -175,6 +175,12 @@ describe('managed service supervisor', () => {
     expect(b.instanceId).toBe(a.instanceId)
     expect(f.spawns).toBe(1)
     expect(await f.supervisor.ensure(selector)).toEqual(a)
+    const connection = await f.supervisor.withInstance(selector, 1, async (value) => value)
+    expect(connection.instanceId).toBe(a.instanceId)
+    expect(connection.endpoint.host).toBe('127.0.0.1')
+    expect(JSON.stringify(a)).not.toContain(connection.incarnation)
+    await expect(f.supervisor.withInstance(selector, 2, async () => true)).rejects.toThrow('REFUSED')
+
     await expect(f.supervisor.ensure(selector, 2)).rejects.toThrow('REFUSED')
     const other = await f.supervisor.ensure({ ...selector, profileId: 'two' })
     expect(other.state).toBe('ready')

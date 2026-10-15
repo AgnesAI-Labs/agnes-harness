@@ -140,26 +140,26 @@ describe('same-origin stream HTTP/WS gateway', () => {
       { cookie: '' },
       { 'x-agnes-stream-open': '' },
     ]) {
-      for (const patch of [
-        { client: { ...f.request.client, rowId: 'web:other/plugin' } },
-        { client: { ...f.request.client, revision: 'stale-revision' } },
-        { client: { ...f.request.client, contentDigest: `sha256-${'1'.repeat(64)}` } },
-        { owner: 'other/plugin' },
-        { scope: { kind: 'profile', profileId: 'other' } },
-      ]) {
-        const rejected = await fetch(`${f.origin}/_agnes/plugin-stream/open`, {
-          method: 'POST',
-          headers: f.headers,
-          body: JSON.stringify({ ...f.request, ...patch }),
-        })
-        expect(rejected.status).toBe(403)
-      }
       const res = await fetch(`${f.origin}/_agnes/plugin-stream/open`, {
         method: 'POST',
         headers: { ...f.headers, ...patch },
         body: JSON.stringify(f.request),
       })
       expect(res.status).toBeGreaterThanOrEqual(400)
+    }
+    for (const patch of [
+      { client: { ...f.request.client, rowId: 'web:other/plugin' } },
+      { client: { ...f.request.client, revision: 'stale-revision' } },
+      { client: { ...f.request.client, contentDigest: `sha256-${'1'.repeat(64)}` } },
+      { owner: 'other/plugin' },
+      { scope: { kind: 'profile', profileId: 'other' } },
+    ]) {
+      const rejected = await fetch(`${f.origin}/_agnes/plugin-stream/open`, {
+        method: 'POST',
+        headers: f.headers,
+        body: JSON.stringify({ ...f.request, ...patch }),
+      })
+      expect(rejected.status).toBe(403)
     }
     const res = await fetch(`${f.origin}/_agnes/plugin-stream/open`, {
       method: 'POST',

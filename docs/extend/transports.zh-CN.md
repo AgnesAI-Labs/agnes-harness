@@ -24,7 +24,7 @@ daemon 集成从 `@agnes/daemon-rpc/streams` 导入 `createPluginStreamBroker`�
 
 从 `@agnes/sdk/streams` 使用 `createPluginStreamsClient`，由宿主绑定 owner、scope、精确名称与生命周期 signal。Node Surface 选择 `source: true` 并提供认证后的 `open` 和 `socket` 适配器；普通浏览器客户端使用同源 fetch 与 WebSocket。不能从任意页面配置生成 allowlist 或主体。
 
-daemon 从 `@agnes/daemon-surfaces/managed` 导入 `createManagedServiceSupervisor`，resolver 负责当前已审 package、activation、能力上限、依赖服务授权和不可变 artifact。每个 installation controller 持有一个 supervisor，不能每次 session apply 新建。`ensure(selector, apiMajor)` 合并并发启动；`signal(selector)` 在 shutdown 前撤销 live connector；`status(selector)` 只公开安全诊断。存储目录须由宿主选择且为私有目录。
+daemon 从 `@agnes/daemon-surfaces/managed` 导入 `createManagedServiceSupervisor`，resolver 负责当前已审 package、activation、能力上限、依赖服务授权和不可变 artifact。每个 installation controller 持有一个 supervisor，不能每次 session apply 新建。`ensure(selector, apiMajor)` 合并并发启动；`signal(selector)` 在 shutdown 前撤销 live connector；`status(selector)` 只公开安全诊断。存储目录须由宿主选择且为私有目录。daemon 适配器可通过 `withInstance(selector, apiMajor, connect)` 在回调内使用 ready 实例的私有 endpoint、incarnation、listeners 和撤权 signal；这些能力不得序列化到浏览器，也不能替代用户/动作授权。
 
 Node artifact 使用 `@agnes/sdk/managed-service` 的 `createManagedServiceRuntime`，从 supervisor 环境接收私有初始化，打开自己的命名空间存储，安装 `onShutdown`，绑定业务 listener，检查存储格式，然后调用 `ready({ apiVersion, listeners })`。OS bind 冲突须用退出码 **98** 报告；固定 listener 立即失败，auto 最多尝试三次。启动不重发历史效果。POSIX guardian 在 artifact 退出或父进程失联时终止自有进程组；Windows 复用 Surface Job Object 适配器。显式 detached 的外部进程仍由受信插件负责。
 

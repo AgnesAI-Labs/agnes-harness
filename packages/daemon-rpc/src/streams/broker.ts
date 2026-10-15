@@ -50,6 +50,8 @@ type Ticket = {
   admission: StreamAdmission
   id: number
   expiresAt: number
+  expiresTick: number
+  controlTick?: number
 }
 export function createPluginStreamBroker(options: {
   /** Must validate the immutable client allowlist, current owner activation, scope and effect grant. */
@@ -59,8 +61,10 @@ export function createPluginStreamBroker(options: {
     registration: StreamRegistration,
   ): Promise<StreamAdmission>
   now?: () => number
+  monotonicNow?: () => number
 }) {
   const now = options.now ?? Date.now
+  const tick = options.monotonicNow ?? (() => performance.now())
   const registrations = new Map<string, StreamRegistration>()
   const tickets = new Map<string, Ticket>()
   const registrationReleases = new Set<() => void>()
@@ -83,6 +87,7 @@ export function createPluginStreamBroker(options: {
     for (const [key, t] of tickets)
       if (
         t.expiresAt <= now() ||
+        t.expiresTick <= tick() ||
         t.principal.signal.aborted ||
         t.registration.signal.aborted ||
         t.admission.signal.aborted
@@ -105,7 +110,11 @@ export function createPluginStreamBroker(options: {
     )
       throw new PluginStreamError('REFUSED')
     t.admission.assertCurrent()
-    if (t.admission.control && t.admission.control.expiresAt <= now()) throw new PluginStreamError('REFUSED')
+    if (
+      t.admission.control &&
+      (t.admission.control.expiresAt <= now() || t.controlTick === undefined || t.controlTick <= tick())
+    )
+      throw new PluginStreamError('REFUSED')
   }
   return {
     register(input: StreamRegistration): () => void {
@@ -189,6 +198,10 @@ export function createPluginStreamBroker(options: {
         admission,
         id: nextId++,
         expiresAt: now() + 10000,
+        expiresTick: tick() + 10000,
+        ...(admission.control
+          ? { controlTick: tick() + Math.min(2147483647, admission.control.expiresAt - now()) }
+          : {}),
       }
       assertTicket(t, principal)
       const ticket = randomBytes(32).toString('base64url')
@@ -264,7 +277,7 @@ export function createPluginStreamBroker(options: {
             t = tickets.get(hello.value.ticket)
             // Consume before any callback or asynchronous operation; a failed attempt cannot replay it.
             tickets.delete(hello.value.ticket)
-            if (!t || t.expiresAt <= now()) throw new Error('expired ticket')
+            if (!t || t.expiresAt <= now() || t.expiresTick <= tick()) throw new Error('expired ticket')
             assertTicket(t, principal)
           } catch {
             stop('revoked', 1008)
@@ -306,7 +319,7 @@ export function createPluginStreamBroker(options: {
           if (ticket.admission.control) {
             expiry = setTimeout(
               () => stop('expired', 1008),
-              Math.max(0, Math.min(2147483647, ticket.admission.control.expiresAt - now())),
+              Math.max(0, Math.min(2147483647, (ticket.controlTick ?? tick()) - tick())),
             )
             expiry.unref?.()
           }

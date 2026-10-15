@@ -43,12 +43,14 @@ function peer() {
 }
 function fixture(d = declaration) {
   let now = 1000
+  let tick = 1000
   let current = true
   let context: StreamContext | undefined
   const registrationAbort = new AbortController(),
     admissionAbort = new AbortController()
   const broker = createPluginStreamBroker({
     now: () => now,
+    monotonicNow: () => tick,
     async authorize(p, req, registration) {
       if (
         req.owner !== 'sample/plugin' ||
@@ -112,6 +114,13 @@ function fixture(d = declaration) {
     },
     advance(ms: number) {
       now += ms
+      tick += Math.max(0, ms)
+    },
+    rollback(ms: number) {
+      now -= ms
+    },
+    advanceTick(ms: number) {
+      tick += ms
     },
     revoke() {
       current = false
@@ -139,6 +148,11 @@ describe('authenticated stream broker', () => {
     const admitted = f.hello(valid)
     expect(admitted.sent[0]).toContain('"ready":true')
     expect(f.hello(valid).closed[0]?.reason).toBe('revoked')
+    const rollback = await f.broker.open(f.actor, f.request)
+    f.advance(9000)
+    f.rollback(8000)
+    f.advanceTick(2000)
+    expect(f.hello(rollback).closed[0]?.reason).toBe('revoked')
     const pending = await f.broker.open(f.actor, f.request)
     f.unregister()
     expect(admitted.closed[0]?.reason).toBe('revoked')

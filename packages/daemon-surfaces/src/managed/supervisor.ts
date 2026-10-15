@@ -385,6 +385,48 @@ export function createManagedServiceSupervisor(options: {
       const record = records.get(key)
       if (record && !['stopped', 'failed'].includes(record.status.state)) await stopRecord(record, reason)
     },
+    /** Daemon-only connection capability for an already ready instance. Never serialize this to a client.
+     * It authenticates the managed process, not a user action; service/stream admission remains required. */
+    async withInstance<T>(
+      selector: ManagedServiceSelector,
+      apiMajor: number,
+      connect: (
+        connection: Readonly<{
+          instanceId: string
+          incarnation: string
+          endpoint: SurfaceEndpoint
+          listeners: NonNullable<ManagedServiceStatus['listeners']>
+          signal: AbortSignal
+        }>,
+      ) => T | Promise<T>,
+    ): Promise<T> {
+      const record = records.get(keyOf(selector))
+      if (
+        closed ||
+        !record ||
+        record.status.state !== 'ready' ||
+        !record.endpoint ||
+        record.signal.signal.aborted
+      )
+        throw new ManagedServiceError('UNAVAILABLE')
+      try {
+        record.binding.assertCurrent()
+        record.binding.signal.throwIfAborted()
+      } catch {
+        throw new ManagedServiceError('REFUSED')
+      }
+      if (Number(record.binding.descriptor.apiVersion.split('.')[0]) !== apiMajor)
+        throw new ManagedServiceError('REFUSED')
+      return connect(
+        Object.freeze({
+          instanceId: record.status.instanceId,
+          incarnation: record.incarnation,
+          endpoint: Object.freeze({ ...record.endpoint }),
+          listeners: structuredClone(record.status.listeners ?? {}),
+          signal: record.signal.signal,
+        }),
+      )
+    },
     status(selector: ManagedServiceSelector) {
       const r = records.get(keyOf(selector))
       return r ? snapshot(r) : undefined
