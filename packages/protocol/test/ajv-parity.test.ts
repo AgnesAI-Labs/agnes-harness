@@ -5963,6 +5963,33 @@ const EXTENSION_SAMPLES: Record<string, Sample> = {
     ],
     note: 'Client contribution: entry required, closed object, reserved fields stay arrays (P1a)',
   },
+  HomeContributionDeclaration: {
+    valid: { id: 'reports', placement: 'primary' },
+    invalid: [{ id: 'reports', placement: 'unknown' }, { placement: 'primary' }],
+    note: 'Navigation contribution has an explicit bounded identity and placement',
+  },
+  ExampleLaunchDeclaration: {
+    valid: {
+      id: 'example',
+      kind: 'business-agent',
+      title: 'Example',
+      bundle: 'acme/example',
+      preset: 'standard',
+      prompt: 'Start example',
+    },
+    invalid: [
+      { id: 'example' },
+      {
+        id: 'example',
+        kind: 'business-agent',
+        title: 'Example',
+        bundle: 'acme/example',
+        preset: 'standard',
+        prompt: '',
+      },
+    ],
+    note: 'Example launch requires the complete declarative input',
+  },
   ExtensionManifest: configSample('ExtensionManifest'),
   HookEvent: HOOKS_SAMPLES.HookEvent as Sample,
   UiSlotName: SLOTS_SAMPLES.UiSlotName as Sample,
@@ -6043,6 +6070,8 @@ const LockfileDefs: Record<string, TSchema> = {
   Capability: LockfileGen.Capability,
 }
 const ExtensionManifestDefs: Record<string, TSchema> = {
+  HomeContributionDeclaration: ExtensionManifestGen.HomeContributionDeclaration,
+  ExampleLaunchDeclaration: ExtensionManifestGen.ExampleLaunchDeclaration,
   UiComponentDeclaration: ExtensionManifestGen.UiComponentDeclaration,
   PluginCategory: ExtensionManifestGen.PluginCategory,
   PluginMetadata: ExtensionManifestGen.PluginMetadata,

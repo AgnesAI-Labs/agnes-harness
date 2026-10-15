@@ -124,13 +124,9 @@ it('round-trips current-product rows and original bytes through the public artif
     expect(await store.pendingRoots()).toEqual({ complete: true, roots: [] })
     const authorityDb = new DatabaseSync(':memory:')
     const authority = new PersistentArtifactReadAuthorityIndex({
-      name: 'authority',
-      exec: (sql) => {
-        authorityDb.exec(sql)
+      exec: (sql, params = []) => {
+        authorityDb.prepare(sql).run(...(params as never[]))
       },
-      run: (sql, params = []) => ({
-        changes: Number(authorityDb.prepare(sql).run(...(params as never[])).changes),
-      }),
       get: <T>(sql: string, params: readonly unknown[] = []) =>
         authorityDb.prepare(sql).get(...(params as never[])) as T | undefined,
       all: <T>(sql: string, params: readonly unknown[] = []) =>
