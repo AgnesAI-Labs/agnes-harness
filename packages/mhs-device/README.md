@@ -4,6 +4,8 @@
 
 `@agnes/mhs-device` owns the device-side MHS/MOS protocol, declaration schemas and TypeScript SDK. It has no dependency on Harness Core, Host or daemon internals. The Python distribution lives in [`python/`](python/). This is a new product format; it does not load or migrate old Hub state.
 
+Manual axes may declare `keys: [positive, negative]` as bounded UI hints. The client resolves these before role defaults, while the backend continues to enforce declared axis bounds and native control leases. MOS scan/IMU/pose/odometry angles use degrees; detection boxes are pixel corner coordinates `[x1,y1,x2,y2]`. Point records are interleaved float32 little-endian; grid payloads are north-up grayscale PNGs with bottom-left map origin.
+
 A device declares identity, resources, tools, state, sources, maps and optional manual axes. `schema.ts` is the schema source and infers the public TypeScript types. `pnpm --filter @agnes/mhs-device gen` emits the JSON schema and the identical Python package resource; `gen:check` verifies both.
 
 ```ts
