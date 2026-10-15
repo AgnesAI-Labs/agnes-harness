@@ -332,10 +332,18 @@ describe('validateModelSwitch', () => {
     it('refuses every slot, not only the primary one', async () => {
       const { assembled, profile } = await buildFixture()
       Object.assign(assembled, { modelAdapterCatalog: () => [entry({ payload: true, payloadOnly: true })] })
-      for (const slot of ['primary', 'fast', 'verifier'])
-        expect(() => validateModelSwitch(profile, assembled, { slot, route: 'gw', model: 'm' })).toThrow(
-          /E_MODEL_UNSUPPORTED/,
-        )
+      for (const slot of ['primary', 'fast', 'verifier']) {
+        let thrown: unknown
+        try {
+          validateModelSwitch(profile, assembled, { slot, route: 'gw', model: 'm' })
+        } catch (error) {
+          thrown = error
+        }
+        expect(thrown).toMatchObject({
+          code: 'E_MODEL_UNSUPPORTED',
+          detail: { slot, route: 'gw', payloadOnly: true },
+        })
+      }
     })
 
     it('judges a route by the adapter that serves it, even when a chat adapter names the same wire API', async () => {

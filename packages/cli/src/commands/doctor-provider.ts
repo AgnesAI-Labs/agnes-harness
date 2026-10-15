@@ -1,5 +1,5 @@
 import { runDoctor } from '@agnes/ai'
-import type { Host } from '@agnes/host'
+import { type Host, payloadOnlyRoutes } from '@agnes/host'
 import type { ConfigAccount } from '@agnes/protocol'
 import type { Section } from './doctor-local.js'
 
@@ -42,7 +42,7 @@ function safeReport(report: Awaited<ReturnType<typeof runDoctor>>): Awaited<Retu
 
 /** The caller owns the Host and closes it after all diagnostic sections finish. */
 export async function doctorProvider(
-  host: Pick<Host, 'provider' | 'profile'> | undefined,
+  host: Pick<Host, 'provider' | 'profile' | 'modelAdapterCatalog'> | undefined,
   options: Parameters<typeof runDoctor>[1] & {
     probe?: boolean
     json?: boolean
@@ -99,6 +99,20 @@ export async function doctorProvider(
         'credentials and selected-model inference not checked; rerun with --probe to opt in',
       ],
     }
+  // A route whose adapter answers payload requests only has no probe to run: it would always read as
+  // a failure. It is left out of what is probed, and named in the output so it is not mistaken for
+  // a route that was checked.
+  const skipped = payloadOnlyRoutes(host.modelAdapterCatalog(), host.profile.provider.routes ?? [])
+  const probed = new Set([...selected].filter((route) => !skipped.has(route)))
+  const skippedNote = skipped.size
+    ? [summary('payload-only routes not probed', [...selected].filter((route) => skipped.has(route)).sort())]
+    : []
+  if (probed.size === 0)
+    return {
+      name: 'provider',
+      status: 'warn',
+      detail: [...skippedNote, 'no route that takes conversations is configured; nothing was probed'],
+    }
   try {
     const selectedModels = new Map(
       (options.accounts ?? [])
@@ -107,13 +121,12 @@ export async function doctorProvider(
     )
     const scoped = {
       lookup: (route: string) => registry.lookup(route),
-      routes: () => registry.routes().filter((route) => selected.has(route.route)),
+      routes: () => registry.routes().filter((route) => probed.has(route.route)),
       models: () =>
         registry
           .models()
           .filter(
-            (model) =>
-              selected.has(model.route) && (selectedModels.get(model.route) ?? model.id) === model.id,
+            (model) => probed.has(model.route) && (selectedModels.get(model.route) ?? model.id) === model.id,
           ),
       seal: () => registry.seal(),
       fingerprint: () => registry.fingerprint(),
@@ -133,7 +146,7 @@ export async function doctorProvider(
       name: 'provider',
       status: report.ok ? 'ok' : 'fail',
       detail: report.ok
-        ? ['selected provider route and model inference verified']
+        ? ['selected provider route and model inference verified', ...skippedNote]
         : [
             ...(failedRoutes.length ? [summary('route probe failed', failedRoutes)] : []),
             ...(missingModels.length

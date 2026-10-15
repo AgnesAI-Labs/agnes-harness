@@ -4,6 +4,7 @@ export { FakeAdapter, fakeModel } from './fake-adapter.js'
 export type {
   FakeSystemOne,
   FakeSystemOneBehaviour,
+  FakeSystemOneOptions,
   FakeSystemOneScript,
   FakeSystemOneSeen,
 } from './fake-systemone.js'

@@ -64,7 +64,10 @@ export function materializeRoutes(
     const configured = declared.filter((route) => route.route !== 'demo' || route.api !== 'scripted')
     const decl =
       name === SENTINEL
-        ? (configured.find((route) => !payloadOnly.has(route.route)) ?? configured[0] ?? declared[0])
+        ? (configured.find((route) => !payloadOnly.has(route.route)) ??
+          declared.find((route) => !payloadOnly.has(route.route)) ??
+          configured[0] ??
+          declared[0])
         : byName.get(name)
     if (!decl)
       bad('unknown-route', `the profile declares no route ${name}`, { slot, route: name, preset: named })

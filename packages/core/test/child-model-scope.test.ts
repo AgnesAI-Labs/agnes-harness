@@ -62,45 +62,57 @@ const start = (parent: Awaited<ReturnType<typeof parentSession>>['parent'], mode
 describe('models a child agent can choose', () => {
   it('lists every model of the provider when the host limits nothing', async () => {
     const { kernel, parent } = await parentSession()
-    expect((await parent.d.children.models?.())?.map((model) => model.selector)).toEqual([
-      'gw/chat-1',
-      'jev/jev-1',
-      'mixed/mixed-1',
-    ])
-    await kernel.close()
+    try {
+      expect((await parent.d.children.models?.())?.map((model) => model.selector)).toEqual([
+        'gw/chat-1',
+        'jev/jev-1',
+        'mixed/mixed-1',
+      ])
+    } finally {
+      await kernel.close()
+    }
   })
 
   it('leaves out the models the host excludes, and keeps a mixed adapter', async () => {
     const { kernel, parent, provider } = await parentSession()
-    setChildModelScope(provider, noPayloadOnly)
-    expect((await parent.d.children.models?.())?.map((model) => model.selector)).toEqual([
-      'gw/chat-1',
-      'mixed/mixed-1',
-    ])
-    await kernel.close()
+    try {
+      setChildModelScope(provider, noPayloadOnly)
+      expect((await parent.d.children.models?.())?.map((model) => model.selector)).toEqual([
+        'gw/chat-1',
+        'mixed/mixed-1',
+      ])
+    } finally {
+      await kernel.close()
+    }
   })
 
   it('refuses to start a child on an excluded model, named by route, by id or by slot', async () => {
     const preset = presetDefaults()
     preset.model.route.fast = 'jev'
     const { kernel, parent, provider } = await parentSession(preset)
-    setChildModelScope(provider, noPayloadOnly)
-    for (const selector of ['jev/jev-1', 'jev-1', 'fast'])
-      await expect(start(parent, selector)).rejects.toMatchObject({
-        code: 'E_MODEL_UNKNOWN',
-        detail: { model: selector },
-      })
-    // The same selectors are accepted for models the host did not exclude.
-    for (const selector of ['gw/chat-1', 'mixed/mixed-1', 'mixed-1'])
-      expect((await start(parent, selector)).key).toBeDefined()
-    await kernel.close()
+    try {
+      setChildModelScope(provider, noPayloadOnly)
+      for (const selector of ['jev/jev-1', 'jev-1', 'fast'])
+        await expect(start(parent, selector)).rejects.toMatchObject({
+          code: 'E_MODEL_UNKNOWN',
+          detail: { model: selector },
+        })
+      // The same selectors are accepted for models the host did not exclude.
+      for (const selector of ['gw/chat-1', 'mixed/mixed-1', 'mixed-1'])
+        expect((await start(parent, selector)).key).toBeDefined()
+    } finally {
+      await kernel.close()
+    }
   })
 
   it('does not change what the provider publishes, so a side call can still target the model', async () => {
     const { kernel, provider } = await parentSession()
-    setChildModelScope(provider, noPayloadOnly)
-    expect(provider.models().map((model) => `${model.route}/${model.id}`)).toContain('jev/jev-1')
-    expect(resolvedModelRecord(provider, { route: 'jev', model: 'jev-1' })).toMatchObject({ id: 'jev-1' })
-    await kernel.close()
+    try {
+      setChildModelScope(provider, noPayloadOnly)
+      expect(provider.models().map((model) => `${model.route}/${model.id}`)).toContain('jev/jev-1')
+      expect(resolvedModelRecord(provider, { route: 'jev', model: 'jev-1' })).toMatchObject({ id: 'jev-1' })
+    } finally {
+      await kernel.close()
+    }
   })
 })

@@ -111,7 +111,19 @@ async function readText(req: IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString('utf8')
 }
 
-export async function startFakeSystemOne(script: FakeSystemOneScript = {}) {
+export type FakeSystemOneOptions = {
+  /**
+   * How long the server keeps an idle connection before closing it, and the `Keep-Alive: timeout`
+   * hint it sends (Node's default is 5 s). 0 keeps idle connections until the test closes them and
+   * sends no hint, so the only idle limit left is the client's own.
+   */
+  keepAliveTimeoutMs?: number
+}
+
+export async function startFakeSystemOne(
+  script: FakeSystemOneScript = {},
+  options: FakeSystemOneOptions = {},
+) {
   const seen: FakeSystemOneSeen[] = []
   const sockets = new Set<Socket>()
   const socketIds = new WeakMap<Socket, number>()
@@ -195,6 +207,7 @@ export async function startFakeSystemOne(script: FakeSystemOneScript = {}) {
     if (behaviour.delayMs) await new Promise((resolve) => setTimeout(resolve, behaviour.delayMs))
     respond(res, behaviour, entry)
   })
+  if (options.keepAliveTimeoutMs !== undefined) server.keepAliveTimeout = options.keepAliveTimeoutMs
   server.on('connection', (socket: Socket) => {
     accepts++
     socketIds.set(socket, accepts)

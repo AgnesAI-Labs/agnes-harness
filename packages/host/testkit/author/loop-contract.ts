@@ -500,7 +500,7 @@ export async function verifyLoopExecutionContract(
       got = {}
       let elapsedMs = Infinity
       const kit: Kit = start('stall', async (port, stop) => {
-        got.prepared = await port.prepare(request('contract-deadline', { deadlineMs: 100 }))
+        got.prepared = await port.prepare(request('contract-deadline', { deadlineMs: 1000 }))
         const began = performance.now()
         got.result = await port.invoke(got.prepared, stop)
         elapsedMs = performance.now() - began
@@ -634,7 +634,7 @@ export async function verifyLoopExecutionContract(
       const id = 'contract-estimate'
       got = {}
       const kit: Kit = start('stall', async (port, stop) => {
-        got.prepared = await port.prepare(request(id, { deadlineMs: 100 }))
+        got.prepared = await port.prepare(request(id, { deadlineMs: 1000 }))
         got.result = await port.invoke(got.prepared, stop)
         got.again = await port.invoke(got.prepared, stop)
         return undefined

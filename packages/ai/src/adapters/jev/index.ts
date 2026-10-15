@@ -28,6 +28,13 @@ export { JEV_WIRE_API }
 export const JEV_ADAPTER_VERSION = '1.0.0'
 
 type Network = { fetch: typeof globalThis.fetch; close(): Promise<void> }
+
+/**
+ * How long an idle pooled connection is kept. The questions of one decision loop are a few seconds
+ * apart, and the pool's own default (a few seconds) would close the connection between them and pay
+ * a new handshake each time. A hint from the server still takes precedence.
+ */
+const KEEP_ALIVE_MS = 60_000
 type RouteState = { decl: RouteDecl; url: URL; models: ModelRecord[]; network: Network }
 
 export type JevAdapterOptions = {
@@ -75,7 +82,9 @@ export class JevAdapter extends WireAdapter {
     const opened: Network[] = []
     try {
       for (const [name, route] of planned) {
-        const network = opts.network?.(route.decl) ?? createDeploymentFetch(route.decl.networkTimeouts)
+        const network =
+          opts.network?.(route.decl) ??
+          createDeploymentFetch({ ...route.decl.networkTimeouts, keepAliveTimeoutMs: KEEP_ALIVE_MS })
         opened.push(network)
         this.#routes.set(name, { ...route, network })
       }

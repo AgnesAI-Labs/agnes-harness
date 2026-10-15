@@ -226,7 +226,9 @@ describe('side model calls through the loop port', () => {
       const prepared = await t.port.prepare(options({ deadlineMs: 200 }))
       const started = performance.now()
       const result = await t.port.invoke(prepared, signal())
-      expect(performance.now() - started).toBeLessThan(400)
+      // A call that ignored the 200 ms deadline would run to the 10 s default; the ceiling only has to
+      // tell those apart, with room for a loaded machine.
+      expect(performance.now() - started).toBeLessThan(2000)
       const estimate = {
         tokens: expect.objectContaining({ input: prepared.estimate.inputTokens }),
         credits: prepared.estimate.projectedCredits,

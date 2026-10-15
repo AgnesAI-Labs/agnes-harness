@@ -116,7 +116,8 @@ describe('a turn that ends while a side call is in flight', () => {
       const { call } = await started(t)
       const began = performance.now()
       await t.ctx.turn.finishCancelled()
-      expect(performance.now() - began).toBeLessThan(1000)
+      // Settling a cut call is immediate; the ceiling is the settle bound (5 s) less a wide margin.
+      expect(performance.now() - began).toBeLessThan(3000)
       expect(t.session.op()).toBeNull()
       expect(await call).toMatchObject(cutByTurnEnd)
       const rows = await t.rows()
@@ -238,15 +239,15 @@ describe('a turn that ends while a side call is in flight', () => {
   })
 
   it('does not wait a second time when close ends the turn after its own drain', async () => {
-    await withSession({ script: stalled, extra: { closeDrainMs: 400 } }, async (t) => {
+    await withSession({ script: stalled, extra: { closeDrainMs: 1000 } }, async (t) => {
       const billing = holdSideBilling(t)
       const { call } = await started(t)
       const began = performance.now()
       await t.session.close()
       const closing = performance.now() - began
-      expect(closing).toBeGreaterThanOrEqual(390)
-      // Waiting again for the same call after the drain would take another full bound.
-      expect(closing).toBeLessThan(750)
+      expect(closing).toBeGreaterThanOrEqual(990)
+      // Waiting again for the same call after the drain would take another full bound (2 s in all).
+      expect(closing).toBeLessThan(1900)
       billing.release()
       // Close released the loop's scope before the call returned, so its caller sees the close.
       expect(await settledWith(call)).toMatchObject({ error: { code: 'E_CLOSED' } })

@@ -110,6 +110,17 @@ describe('materializeRoutes with payload-only adapters', () => {
     expect(materializeRoutes(preset, p, [jev]).primary).toEqual({ route: 'jev', model: 'jev-1' })
   })
 
+  it('falls back to the built-in demo rather than a payload-only route when nothing else is declared', () => {
+    const demo: RouteDecl = {
+      route: 'demo',
+      api: 'scripted',
+      baseUrl: 'https://demo.invalid',
+      models: [model('demo-model', 'demo')],
+    }
+    const p = profile([demo, route('jev', 'typesafe-systemone', 'jev-1')])
+    expect(materializeRoutes(preset, p, [jev]).primary).toEqual({ route: 'demo', model: 'demo-model' })
+  })
+
   it('still resolves a route that is named, whatever serves it', () => {
     const p = profile([route('jev', 'typesafe-systemone', 'jev-1'), route('gw', 'openai', 'chat-1')])
     const named = withRoute({ route: { primary: 'jev' } })
