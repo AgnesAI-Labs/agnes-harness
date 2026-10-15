@@ -10,6 +10,7 @@ import {
   IconTile,
   MetaText,
   PLUGIN_PRESENTATION_NAMESPACE,
+  pluginIconName,
   pluginPresentationCatalog,
   Select,
   SettingsDetails,
@@ -79,7 +80,7 @@ function MarketCard({
       data-testid="market-card"
     >
       <header>
-        <IconTile name="plug" />
+        <IconTile name={pluginIconName(item.id)} />
         <div>
           <h3>
             <Button
@@ -214,7 +215,7 @@ export function MarketTab({ view, t }: { view: PluginView; t: Text }) {
       ) : !rows.length ? (
         <EmptyState
           className="plugin-empty"
-          icon={<Icon name="plug" size={48} />}
+          icon={<Icon name="puzzle" size={48} />}
           title={view.query || view.kind || view.category || type ? t('market.none') : t('market.empty')}
           description={t('market.emptyHelp')}
         />

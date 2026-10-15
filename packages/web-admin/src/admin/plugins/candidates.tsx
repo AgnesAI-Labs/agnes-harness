@@ -313,7 +313,7 @@ export function CandidateInbox({
         <ListRow
           icon={
             <Icon
-              name={facts[value.candidateId]?.identity.type === 'plugin' ? 'plug' : 'file-text'}
+              name={facts[value.candidateId]?.identity.type === 'plugin' ? 'puzzle' : 'file-text'}
               size={20}
             />
           }
