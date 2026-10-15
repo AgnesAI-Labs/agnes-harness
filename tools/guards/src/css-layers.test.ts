@@ -44,6 +44,7 @@ it('keeps one canonical layer order and emits it once before the Web rules', () 
   expect(declarations).toEqual([policy.source])
   const app = readWebStyleSource(join(root, 'packages/web/public/style.css'))
   const ui = readWebUiStyleSource(join(root, 'packages/web-ui/src/tokens.css'))
+  expect(ui).not.toMatch(/@import\s/)
   expect(app.startsWith(`${order}\n`)).toBe(true)
   expect(`${app}\n${ui}`.split(order)).toHaveLength(2)
   for (const page of ['index', 'admin', 'resources']) {

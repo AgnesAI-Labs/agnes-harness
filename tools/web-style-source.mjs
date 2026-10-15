@@ -55,9 +55,12 @@ export function readWebUiStyleSource(file) {
     '\n' +
     readUiCss(join(dirname(file), 'components.css'))
       .replace('@import "./native.css";', '')
+      .replace('@import "./doctor-groups.css";', '')
       .replace('@import "./refinement.css";', '') +
     '\n' +
     readUiCss(join(dirname(file), 'native.css')) +
+    '\n' +
+    readUiCss(join(dirname(file), 'doctor-groups.css')) +
     '\n' +
     // The refinement layer comes last so its proportions settle equal-specificity rules.
     readUiCss(join(dirname(file), 'refinement.css'))

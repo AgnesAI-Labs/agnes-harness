@@ -245,6 +245,7 @@ beforeAll(async () => {
       readWebStyleSource(stylePath) +
         readUiCss(resolve(packageDirectory, '../web-ui/src/components.css')) +
         readUiCss(resolve(packageDirectory, '../web-ui/src/native.css')) +
+        readUiCss(resolve(packageDirectory, '../web-ui/src/doctor-groups.css')) +
         readUiCss(resolve(packageDirectory, '../web-ui/src/refinement.css')),
     ),
   )
