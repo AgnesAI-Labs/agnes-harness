@@ -431,8 +431,8 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       blockers?: InstalledPackage['blockers']
     }
   >()
+  // Ids whose committed local change has not been reloaded yet; only a successful reload clears one.
   const localPending = new Set<string>()
-  const localTrustPending = new Set<string>()
   const scanLocal = (profileDir: string): string[] => {
     if (!options.localPlugins) return []
     let lock = load(profileDir)
@@ -559,9 +559,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       localPending.add(id)
     }
     for (const ref of localFailures.keys()) if (!seen.has(ref)) localFailures.delete(ref)
-    const result = [...new Set([...changed, ...localTrustPending])]
-    localTrustPending.clear()
-    return result
+    return changed
   }
   const projectLocal = (inventory: InstalledInventory): InstalledInventory => {
     if (!options.localPlugins) return inventory
@@ -655,7 +653,13 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       if (!options.localPlugins) throw new Error('Local plugins roots are not configured')
       return watchLocalPlugins({
         roots: options.localPlugins,
-        scan: () => manager.refreshLocalPlugins(profileDir),
+        // Rescan also retries every reload still pending (a trust, a lost lock race) unless the
+        // plugin itself failed to activate; that failure stays until its source changes.
+        scan: async () => {
+          const changed = await manager.refreshLocalPlugins(profileDir)
+          const failed = new Set([...localFailures.values()].flatMap((f) => (f.activation ? [f.id] : [])))
+          return [...new Set([...changed, ...localPending])].filter((id) => !failed.has(id))
+        },
         reload: {
           async reloadPlugin(id) {
             const owner = reload ?? localReload
@@ -1403,7 +1407,6 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
             }
             if (entry.provenance) entry.provenance.trustDecision = 'confirmed'
             localPending.add(row.id)
-            localTrustPending.add(row.id)
           }
           const hash = confirmLocalWorkspace(profileDir, roots, lock, expectedHash)
           writeLock(profileDir, lock)

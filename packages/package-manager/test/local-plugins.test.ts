@@ -144,8 +144,22 @@ it('does not trust or enable discovered repository plugins before explicit revie
     ),
   )
   expect((await f.manager.inventory(f.profileDir)).packages.find((p) => p.id === 'unreviewed')).toMatchObject(
-    { trusted: true, enabled: true },
+    { trusted: true, enabled: true, localReloadRequired: true },
   )
+  // Another caller's scan (an admin reload) must not consume the trust's reload request.
+  await f.manager.refreshLocalPlugins(f.profileDir)
+  const reloadPlugin = vi.fn(async (_id: string) => {})
+  const watcher = f.manager.watchLocalPlugins(f.profileDir, { reloadPlugin })
+  try {
+    await watcher.refresh() // Settings → Local plugins → Rescan
+  } finally {
+    await watcher.close()
+  }
+  expect(reloadPlugin.mock.calls).toEqual([['unreviewed']])
+  expect(
+    (await f.manager.inventory(f.profileDir)).packages.find((p) => p.id === 'unreviewed')
+      ?.localReloadRequired,
+  ).toBeUndefined()
   writeFileSync(join(plugin, 'plugin.js'), "throw new Error('changed revision also needs trust')")
   await f.manager.refreshLocalPlugins(f.profileDir)
   expect((await f.manager.inventory(f.profileDir)).packages.find((p) => p.id === 'unreviewed')).toMatchObject(
