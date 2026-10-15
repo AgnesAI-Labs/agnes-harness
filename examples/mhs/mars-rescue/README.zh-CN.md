@@ -53,3 +53,5 @@ node examples/mhs/mars-rescue/tools/build.mjs
 ```
 
 构建使用 esbuild 0.28.2，浏览器产物随源码提交供离线安装。资源清单记录字节、SHA-256 和许可，源码变化后重建；AGH 发行包应完整携带 `client`、`assets`、`skills`、`LICENSE` 和 `NOTICE`。浏览器、受管理运行时和批准的完整检查属于集成验收，单测不能替代。旧版世界没有可复用演示视频；当前以源码及视角控制供审阅，仍待集成预览验收。
+
+导出的 `createMarsHubTransport` 使用真实公开 Hub/DeviceLink 合同接入受管理的嵌入式模拟器，要求显式审核后的 current-link 检查，并拒绝接管在线设备。浏览器流传输和原生启动授权仍由父 MHS 适配器负责。

@@ -8,6 +8,7 @@ export class MarsSimulation {
   private readonly velocities = new Map<DeviceId, { vx: number; wz: number }>()
   private readonly deadlines = new Map<DeviceId, number>()
   private readonly sleepers = new Set<{ id: DeviceId; wake(): void; reject(): void }>()
+  private readonly actions = new Set<Promise<Json>>()
   private clock = 0
   private stopped = false
   constructor(video = false) {
@@ -23,11 +24,18 @@ export class MarsSimulation {
       this.devices.set(id, device)
       device.update(structuredClone(INITIAL[id]))
       device.onManual = async (axes) => {
-        if (this.stopped) throw new Error('simulation-stopped')
+        if (this.stopped && Object.values(axes).some((value) => value !== 0))
+          throw new Error('simulation-stopped')
         this.velocities.set(id, { vx: axes.vx ?? 0, wz: axes.wz ?? 0 })
       }
       for (const t of device.description.tools ?? [])
-        device.tool(t.name, (args, call) => this.action(id, t.name, args, call))
+        device.tool(t.name, (args, call) => {
+          const action = this.action(id, t.name, args, call)
+          this.actions.add(action)
+          return action.finally(() => {
+            this.actions.delete(action)
+          })
+        })
     }
   }
   device(id: DeviceId): Device {
@@ -283,6 +291,7 @@ export class MarsSimulation {
     this.deadlines.clear()
     await Promise.all([...this.devices.values()].map((device) => device.stop('example-stop')))
     for (const sleeper of [...this.sleepers]) sleeper.reject()
+    await Promise.allSettled([...this.actions])
   }
   async reset(): Promise<void> {
     await this.stop()

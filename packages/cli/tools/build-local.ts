@@ -102,6 +102,7 @@ export async function copyBundledExamples(outputDirectory: string): Promise<void
           'dag',
           'provider.example.json',
         ].includes(file) ||
+        (family === 'mhs' && (file === 'src' || file === 'tools')) ||
         file.startsWith('README') ||
         (/\.(mjs|mts|json)$/.test(file) && file !== 'tsconfig.json'),
     )

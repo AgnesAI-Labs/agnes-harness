@@ -53,3 +53,5 @@ node examples/mhs/mars-rescue/tools/build.mjs
 ```
 
 Build tools use esbuild 0.28.2; browser resources are committed for offline installation. The resource manifest records exact bytes, SHA-256 and licensing; regenerate it after source changes. The full AGH distribution must retain `client`, `assets`, `skills`, `LICENSE` and `NOTICE`. Full browser/managed-runtime/approval checks belong to integration acceptance and are not established by these unit tests. There is no retained video demo from the former world; the source and view controls are the current review material pending integrated preview acceptance.
+
+The exported `createMarsHubTransport` adapter uses the real public Hub/DeviceLink contract for an embedded managed simulator. It requires an explicit reviewed-current-link check and refuses taking over an online fleet. Browser stream transport and native launch authorization remain the parent MHS adapter’s responsibility.

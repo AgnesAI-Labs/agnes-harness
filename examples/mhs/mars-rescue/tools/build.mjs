@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
+import { relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
-await build({
+const check = process.argv.includes('--check')
+const result = await build({
   absWorkingDir: root,
   entryPoints: ['src/runtime.ts', 'src/scene.ts', 'src/cameras.ts'],
   outdir: 'client/generated',
@@ -14,11 +16,16 @@ await build({
   target: 'es2023',
   legalComments: 'eof',
   minify: true,
+  write: !check,
 })
 const files = ['client/generated/runtime.js', 'client/generated/scene.js', 'client/generated/cameras.js']
 const entries = []
 for (const path of files) {
-  const bytes = await readFile(new URL(`../${path}`, import.meta.url))
+  const existing = await readFile(new URL(`../${path}`, import.meta.url)).catch(() => undefined)
+  const generated = result.outputFiles?.find((file) => relative(root, file.path) === path)?.contents
+  const bytes = check ? generated : existing
+  if (!bytes || (check && (!existing || !Buffer.from(bytes).equals(existing))))
+    throw new Error(`Stale browser resource: ${path}`)
   entries.push({
     path,
     bytes: bytes.length,
@@ -29,7 +36,8 @@ for (const path of files) {
     license: path.endsWith('/runtime.js') ? 'Apache-2.0 AND MIT' : 'Apache-2.0',
   })
 }
-await writeFile(
-  new URL('../assets/manifest.json', import.meta.url),
-  `${JSON.stringify({ version: 1, firstOpenNetworkDownloads: false, draco: null, resources: entries }, null, 2)}\n`,
-)
+const manifest = new URL('../assets/manifest.json', import.meta.url)
+const content = `${JSON.stringify({ version: 1, firstOpenNetworkDownloads: false, draco: null, resources: entries }, null, 2)}\n`
+if (check) {
+  if ((await readFile(manifest, 'utf8')) !== content) throw new Error('Stale resource manifest')
+} else await writeFile(manifest, content)

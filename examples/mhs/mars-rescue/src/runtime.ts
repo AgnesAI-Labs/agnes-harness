@@ -44,8 +44,8 @@ export class MarsRuntime {
     for (const listener of this.listeners) listener()
   }
   start(): Promise<void> {
-    if (this.startPromise) return this.startPromise
     if (this.stopPromise) return this.stopPromise.then(() => this.start())
+    if (this.startPromise) return this.startPromise
     this.status = 'starting'
     this.changed()
     const controller = new AbortController()

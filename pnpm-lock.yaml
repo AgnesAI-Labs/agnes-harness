@@ -108,6 +108,28 @@ importers:
         specifier: ^4.0.0
         version: link:../../../packages/extension-api
 
+  examples/mhs/mars-rescue:
+    dependencies:
+      '@agnes/mhs':
+        specifier: workspace:*
+        version: link:../../../packages/mhs-plugin
+      '@agnes/mhs-device':
+        specifier: workspace:*
+        version: link:../../../packages/mhs-device
+      '@agnes/web-client':
+        specifier: 0.0.0
+        version: link:../../../packages/web-client
+    devDependencies:
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../../../packages/extension-api
+      '@agnes/mhs-hub':
+        specifier: workspace:*
+        version: link:../../../packages/mhs-hub
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
+
   examples/packages/cordis-greeting:
     dependencies:
       '@agnes/plugin-runtime':

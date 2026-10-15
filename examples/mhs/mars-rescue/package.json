@@ -7,7 +7,9 @@
   "exports": {
     ".": "./index.mjs",
     "./runtime": "./src/runtime.ts",
-    "./simulation": "./src/simulation.ts"
+    "./simulation": "./src/simulation.ts",
+    "./hub-transport": "./src/hub-transport.ts",
+    "./access": "./src/access.ts"
   },
   "files": [
     "index.mjs",
@@ -22,13 +24,13 @@
     "tools"
   ],
   "peerDependencies": {
-    "@agnes/mhs-device": "0.0.0",
     "@agnes/web-client": "0.0.0"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run test --project fast --maxWorkers=1",
-    "build": "node tools/build.mjs"
+    "build": "node tools/build.mjs",
+    "gen:check": "node tools/build.mjs --check"
   },
   "agnes": {
     "plugins": [
@@ -107,17 +109,17 @@
     ]
   },
   "devDependencies": {
-    "esbuild": "0.28.2"
+    "esbuild": "0.28.2",
+    "@agnes/mhs-hub": "workspace:*",
+    "@agnes/extension-api": "workspace:*"
   },
   "peerDependenciesMeta": {
-    "@agnes/mhs-device": {
-      "optional": true
-    },
     "@agnes/web-client": {
       "optional": true
     }
   },
   "dependencies": {
-    "@agnes/mhs": "0.0.0"
+    "@agnes/mhs": "workspace:*",
+    "@agnes/mhs-device": "workspace:*"
   }
 }
