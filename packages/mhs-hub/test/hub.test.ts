@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
-import { type BoundWakes, Hub, Journal, North } from '../src/index.js'
+import { type BoundWakes, Hub, Journal, North, navigationFrom } from '../src/index.js'
 import { attach, authority, description, invocation, MemoryStore } from './fixtures.js'
 
 function setup(now?: () => number) {
@@ -17,6 +17,23 @@ function setup(now?: () => number) {
 }
 describe('Hub authority, tasks and recovery', () => {
   it('does not dispatch without trusted admission and never repeats a completed or unknown command', async () => {
+    expect(navigationFrom({ x: 1, y: 2 })).toEqual({ route: [], target: [1, 2] })
+    expect(navigationFrom({ target: { x: 3, y: 4 }, route: [[0, 0], { x: 1, y: 2 }, [2, 3]] })).toEqual({
+      target: [3, 4],
+      route: [
+        [0, 0],
+        [1, 2],
+        [2, 3],
+      ],
+    })
+    expect(
+      navigationFrom({
+        route: [
+          [NaN, 0],
+          [0, Infinity],
+        ],
+      }),
+    ).toBeUndefined()
     const { hub, store, wakes } = setup()
     const { link } = attach(hub)
     const dispatch = vi.spyOn(link, 'call')

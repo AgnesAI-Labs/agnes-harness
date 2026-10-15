@@ -319,15 +319,33 @@ describe('MHS approved device interactions', () => {
   it('picks point, two-point pose and polygon with keyboard coordinates and supports cancellation', async () => {
     const picked: unknown[] = [],
       cancel = vi.fn()
+    const routeDevice = devicesFrom([device()])[0]!
+    routeDevice.jobs = [
+      {
+        id: 'navigation',
+        state: 'running',
+        navigation: {
+          route: [
+            [2, 3],
+            [5, 6],
+          ],
+          target: [5, 6],
+        },
+      },
+    ]
     await mount(
       <WorldMap
         maps={[{ id: 'site', bounds: [0, 0, 10, 10] }]}
-        devices={[]}
+        devices={[routeDevice]}
         mode="pose"
         onPick={(v) => picked.push(v)}
         onCancel={cancel}
       />,
     )
+    expect(host.querySelector('g[aria-label="rover-01 route"] polyline')?.getAttribute('points')).toBe(
+      '10,80 20,70 50,40',
+    )
+    expect(host.querySelector('g[aria-label="rover-01 route"] circle')?.getAttribute('cx')).toBe('50')
     await act(async () => {
       fireEvent.change(getByLabelText(host, 'Map X'), { target: { value: '2' } })
       fireEvent.change(getByLabelText(host, 'Map Y'), { target: { value: '3' } })
