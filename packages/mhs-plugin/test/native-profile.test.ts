@@ -115,6 +115,12 @@ it('runs real MHS profile services through native AR1 and the Host owner store w
     expect(
       await runtime.call({ extension: owner, service: 'mhs.devices', input: {} }, credential),
     ).toMatchObject({ output: [{ id: 'rover' }] })
+    expect(
+      await runtime.call(
+        { extension: owner, service: 'mhs.operation', input: { operationId: 'missing' } },
+        credential,
+      ),
+    ).toEqual({ output: null })
     expect(await runtime.call(call, credential)).toMatchObject({ state: 'approval-required' })
     const pending = (await runtime.listDecisions(credential))[0]!
     expect(pending.request.spec.subject).toMatchObject({

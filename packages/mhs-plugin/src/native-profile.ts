@@ -52,7 +52,7 @@ export function createMhsNativeProfileAdapter(assertActive: () => Promise<void>)
           outputSchema: {},
           timeoutMs: 30000,
           maxResultBytes: 1048576,
-          handler: async (input) => (await services.query(method, input)) as Json,
+          handler: async (input) => ((await services.query(method, input)) ?? null) as Json,
         }),
       ),
       ...MHS_EFFECT_SERVICES.map(
