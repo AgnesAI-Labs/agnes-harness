@@ -34,6 +34,8 @@ The worker collects on startup, after writes and every five minutes; closing the
 
 Generated App Server methods are `_agnes/v1/systemPrompt.get`, `_agnes/v1/systemPrompt.save`, `_agnes/v1/trace.request` and `_agnes/v1/trace.clear`. The SDK exposes `client.systemPrompt.get/save` and `client.requestTrace.get/list/clear`. Default configuration reads require a server-granted, unscoped local `packages.read` permission; writes require `packages.activate` and a healthy, writable configuration control plane. A read-only administrator can inspect defaults but cannot save them. Ordinary Web connections have no configuration grant; use the administrative bridge. Session previews, capture reads, comparisons and clearing check durable session ownership. The admin bridge uses fixed routes, same-origin checks and administrative write permissions.
 
+Saves are conditional. The default-configuration snapshot carries `revision`, a hash of the stored value; send it back as `expectedRevision` with `systemPrompt.save`. If another window saved first, nothing is written and the save is refused with `CONFIG_REVISION_CONFLICT` (HTTP 409 on the admin bridge), whose `current` is the saved snapshot with its revision. Keep the draft, show the saved value, and save again against `current.revision` once the user confirms. A save without `expectedRevision` is unconditional, for older clients.
+
 ## Execution evidence
 
 Use **View execution evidence** in a trace call, **View execution record** on a tool row, **View source** on a deliverable or artifact, or **View drafting session** in plugin provenance. They open the same workspace panel. Identifiers, hashes and graph metadata are collapsed under **Technical details**. Escape closes the panel and returns focus to its entry.

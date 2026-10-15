@@ -34,6 +34,8 @@ Worker 在启动时、写入后及空闲期间每五分钟回收；关闭 Host �
 
 生成 schema 的 App Server 方法为 `_agnes/v1/systemPrompt.get`、`_agnes/v1/systemPrompt.save`、`_agnes/v1/trace.request` 和 `_agnes/v1/trace.clear`。SDK 提供 `client.systemPrompt.get/save` 与 `client.requestTrace.get/list/clear`。读取默认配置需要服务端授予的、无方法范围限制的本地 `packages.read` 权限；写入需要 `packages.activate` 及健康、可写的配置控制平面。只读管理员可检查默认配置但不能保存。普通 Web 连接没有配置权限，请使用管理桥。会话预览、采集读取、对比与清除检查持久会话归属。管理桥使用固定路由、同源检查与管理员写权限。
 
+保存是条件写入。默认配置快照带 `revision`（已存值的哈希），调用 `systemPrompt.save` 时作为 `expectedRevision` 传回。若另一个窗口已先保存，则不写入，并以 `CONFIG_REVISION_CONFLICT` 拒绝（管理桥返回 HTTP 409），其中 `current` 为已保存的快照及其 revision。客户端应保留草稿、展示已保存的值，经用户确认后以 `current.revision` 再次保存。不带 `expectedRevision` 的保存不做条件判断，供旧客户端使用。
+
 ## 执行依据
 
 在 trace 调用中点**查看执行依据**、工具行点**查看执行记录**、交付物或产物点**查看来源**，或在插件来源中点**查看起草会话**，会打开同一个工作区面板。标识符、哈希和图元数据默认折叠在**技术详情**中。Escape 关闭面板并将焦点归还入口。

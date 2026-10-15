@@ -433,7 +433,10 @@ export { type DoctorOptions, type DoctorProbe, runDoctor } from '@agnes/host-inf
 export { RequestTraceStore } from '@agnes/host-infrastructure/request-traces'
 export * from '@agnes/host-infrastructure/sandbox-readiness-manager'
 export * from '@agnes/host-infrastructure/session-workspace-runtime'
-export { SystemPromptSettingsStore } from '@agnes/host-infrastructure/system-prompt-settings'
+export {
+  promptConfigRevision,
+  SystemPromptSettingsStore,
+} from '@agnes/host-infrastructure/system-prompt-settings'
 export {
   resolveWorkspaceDirectory,
   type WorkspaceDirectory,

@@ -6,7 +6,7 @@ import {
 } from '@agnes/daemon-admin/packages/index'
 import type { CallContext, LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import type { Registry } from '@agnes/daemon-foundation/registry'
-import { RequestTraceStore, SystemPromptSettingsStore } from '@agnes/host'
+import { promptConfigRevision, RequestTraceStore, SystemPromptSettingsStore } from '@agnes/host'
 import {
   type ModelRequestClearParams,
   type ModelRequestParams,
@@ -43,6 +43,11 @@ export function registerPromptTrace(
     if (await deps.readOnly(context)) throw rpcError('SEMANTIC_REJECTED', { reason: 'E_ADMIN_READ_ONLY' })
     return reviewer.save(params as import('@agnes/protocol').AutoReviewConfig)
   })
+  // The profile defaults carry the revision a later save is made against; session previews do not.
+  const current = async (config: SystemPromptConfig): Promise<SystemPromptSnapshot> => ({
+    ...(await deps.preview(config)),
+    revision: promptConfigRevision(config),
+  })
   endpoint.register('_agnes/v1/systemPrompt.get', async (params, context) => {
     const { sessionId } = params as SystemPromptGetParams
     if (sessionId) {
@@ -61,12 +66,12 @@ export function registerPromptTrace(
         : pinned
     }
     requireLocalAdminAuthority(context, deps.authority, false)
-    return deps.preview(await settings.read())
+    return current(await settings.read())
   })
   endpoint.register('_agnes/v1/systemPrompt.save', async (params, context) => {
     requireLocalAdminAuthority(context, deps.authority, true)
     if (await deps.readOnly(context)) throw rpcError('SEMANTIC_REJECTED', { reason: 'E_ADMIN_READ_ONLY' })
-    const { config, confirmFullOverride } = params as SystemPromptSaveParams
+    const { config, confirmFullOverride, expectedRevision } = params as SystemPromptSaveParams
     if (
       config.fullOverride !== undefined &&
       (config.personaPrefix || config.personaSuffix || config.replyStyle)
@@ -78,8 +83,14 @@ export function registerPromptTrace(
     // Validate provider/preview before committing; a refused provider cannot poison new sessions.
     const snapshot = await deps.preview(config)
     try {
-      await settings.save(config, confirmFullOverride)
+      await settings.save(config, confirmFullOverride, expectedRevision)
     } catch (failure) {
+      const stored = (failure as { code?: string; current?: SystemPromptConfig }).current
+      if ((failure as { code?: string }).code === 'CONFIG_REVISION_CONFLICT' && stored)
+        throw rpcError('SEMANTIC_REJECTED', {
+          code: 'CONFIG_REVISION_CONFLICT',
+          current: await current(stored),
+        })
       throw rpcError('INVALID_PARAMS', {
         code:
           (failure as { code?: string }).code === 'CONFIG_INVALID_INPUT'
@@ -87,7 +98,7 @@ export function registerPromptTrace(
             : 'CONFIG_PERSIST_FAILED',
       })
     }
-    return snapshot
+    return { ...snapshot, revision: promptConfigRevision(config) }
   })
   endpoint.register('_agnes/v1/trace.request', async (params, context) => {
     const { sessionId, callId, compare } = params as ModelRequestParams

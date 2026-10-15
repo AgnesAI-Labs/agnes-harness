@@ -6842,6 +6842,10 @@
         },
         "confirmFullOverride": {
           "type": "boolean"
+        },
+        "expectedRevision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
         }
       }
     },
@@ -6864,6 +6868,10 @@
           }
         },
         "hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "revision": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
         },

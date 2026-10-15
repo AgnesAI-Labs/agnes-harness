@@ -138,3 +138,13 @@ export async function configurationReadOnly(readList: () => Promise<unknown>): P
     return true
   }
 }
+
+/**
+ * HTTP status for a refused configuration save. A save made against an older revision is a 409 whose
+ * body carries the current value, so the client keeps its draft, re-reads and confirms again.
+ */
+export function configurationFailureStatus(code: unknown): number {
+  if (code === 'CONFIG_INVALID_INPUT') return 400
+  if (code === 'CONFIG_REVISION_CONFLICT') return 409
+  return 502
+}
