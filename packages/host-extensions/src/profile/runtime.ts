@@ -466,6 +466,13 @@ export function createProfileServiceRuntime(deps: {
       if (
         !operation?.control ||
         operation.service !== params.service ||
+        operation.requestDigest !==
+          decisionSubjectDigest({
+            service: id.entry.capability.name,
+            input: operation.input,
+            actor: id.actor,
+            source: id.source,
+          }) ||
         operation.activationId !== id.activationId ||
         operation.control.expiresAt <= deps.clock() ||
         !['running', 'completed'].includes(operation.receipt.state)

@@ -68,6 +68,7 @@ function fixture() {
   activations.publish([{ owner, revision: 'snapshot-one' }])
   const wakes = new ProfileWakeBindings(meta.namespace('@host', 'wakes'), activations)
   let now = 1000,
+    resolvedActor = actor,
     enabled = true
   const handler = vi.fn(async (input: JsonValue, ctx: ServiceContext) => {
     ctx.store?.set('last', input)
@@ -128,9 +129,9 @@ function fixture() {
       seams: fakeSeams({
         principals: {
           resolve: async (credential) => ({
-            ...actor,
-            id: credential === 'other' ? 'other' : actor.id,
-            role: credential === 'agent' ? 'agent' : 'user',
+            ...resolvedActor,
+            id: credential === 'other' ? 'other' : resolvedActor.id,
+            role: credential === 'agent' ? 'agent' : resolvedActor.role,
           }),
           authorize: async () => ({ effect: 'allow', decisionId: 'permit', reason: 'fixture' }),
         },
@@ -168,6 +169,9 @@ function fixture() {
     make,
     call,
     audit,
+    setActor: (value: Actor) => {
+      resolvedActor = value
+    },
     time: (value: number) => {
       now = value
     },
@@ -442,6 +446,14 @@ describe('current profile authority', () => {
           'granted',
         ),
       ).toMatchObject({ grantId: receipt.controlGrant?.grantId, actor: { id: actor.id } })
+      f.setActor({ ...actor, attrs: { department: 'changed' } })
+      await expect(
+        runtime.authorizeControl(
+          { extension: owner, service: params.service, operationId: 'one' },
+          'granted',
+        ),
+      ).rejects.toThrow()
+      f.setActor(actor)
       f.time(2000)
       await expect(
         runtime.authorizeControl(
@@ -475,6 +487,19 @@ describe('current profile authority', () => {
         first.transaction(() => {
           first.set('accepted', false)
           throw new Error('rollback')
+        }),
+      ).toThrow()
+      expect(first.get('accepted')).toBe(true)
+      expect(() =>
+        first.transaction(() => {
+          try {
+            first.transaction(() => {
+              first.set('accepted', false)
+              throw new Error('nested rollback')
+            })
+          } catch {
+            /* An inner failure cannot be caught to commit a partial outer transaction. */
+          }
         }),
       ).toThrow()
       expect(first.get('accepted')).toBe(true)

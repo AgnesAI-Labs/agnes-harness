@@ -24,9 +24,11 @@ export function ownedStore(
     if (!writable) throw rpcError('CAPABILITY_DENIED')
   }
   let depth = 0
+  let failed = false
   const transaction = <T>(work: () => T): T => {
     const run = () => {
       assertLive()
+      if (!depth) failed = false
       const scope = { active: true }
       depth++
       try {
@@ -36,7 +38,11 @@ export function ownedStore(
           throw rpcError('INVALID_PARAMS')
         }
         assertLive()
+        if (failed) throw rpcError('INVALID_PARAMS')
         return result
+      } catch (error) {
+        failed = true
+        throw error
       } finally {
         scope.active = false
         depth--
