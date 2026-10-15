@@ -7,6 +7,7 @@ import {
   validateUserAttachments,
 } from '@agnes/protocol-validation'
 import { type ClipboardEvent, type DragEvent, useCallback, useLayoutEffect, useRef, useState } from 'react'
+import { attachmentErrorMessage } from '../composer-errors.js'
 import { useComposerUploads } from '../composer-uploads.js'
 import type { ComposerAttachmentBlock, ComposerImageBlock, ComposerProps, ComposerView } from './contracts.js'
 import {
@@ -137,7 +138,7 @@ export function useComposerAttachments({
 
   const addFiles = async (files: readonly File[]): Promise<void> => {
     if (imageDisabled) {
-      onError(new Error(imageHint))
+      onError(new Error(dependencies.translate('composer.attachment.unavailable')))
       return
     }
     // Prepare the draft's session before reading a mixed file/image batch: opening it clears the
@@ -159,8 +160,6 @@ export function useComposerAttachments({
       }
     }
     const t = dependencies.translate
-    // 这张表用于把「内容不是图片」与「读不出来」区分开，所以文案只算一次再比对。
-    const invalidImage = t('composer.image.invalid')
     const tooLargeMessage = t('composer.image.tooLarge')
     const accepted: File[] = []
     let acceptedImages = 0
@@ -272,7 +271,7 @@ export function useComposerAttachments({
             return
           }
           let pixels: number
-          try {
+          {
             const decoded = decodeSafeImageBytes({ bytes, mimeType: scaled.type }, IMAGE_PREVIEW_LIMITS)
             pixels = decoded.pixels
             if (
@@ -286,8 +285,6 @@ export function useComposerAttachments({
               onError(new Error(t('composer.image.modelLimit')))
               return
             }
-          } catch {
-            throw new Error(invalidImage)
           }
           const attachment: ComposerAttachment = {
             type: 'image',
@@ -303,11 +300,7 @@ export function useComposerAttachments({
           publishAttachments([...current, attachment])
         } catch (error) {
           if (readGeneration === generation.current)
-            onError(
-              error instanceof Error && error.message === invalidImage
-                ? error
-                : new Error(t('composer.image.readFailed')),
-            )
+            onError(new Error(attachmentErrorMessage(error, t) ?? t('composer.image.readFailed')))
         } finally {
           if (readGeneration === generation.current) {
             pendingCountRef.current -= 1
