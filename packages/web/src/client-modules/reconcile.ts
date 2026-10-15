@@ -1,4 +1,4 @@
-import { revokeContributionOwner } from '@agnes/web-client'
+import { revokeContributionOwner, updateContributionAvailability } from '@agnes/web-client'
 import {
   normalizeRuntimeError,
   type PluginRuntimeError,
@@ -294,6 +294,19 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
       if (blockedRows.has(rowId)) continue
       const state = stateOf(rowId)
       state.rosterPresent = true
+      if (
+        mod.binding &&
+        state.active?.binding &&
+        JSON.stringify(mod.binding) !== JSON.stringify(state.active.binding)
+      ) {
+        if (
+          mod.binding.owner !== state.active.binding.owner ||
+          (mod.binding.activationId !== state.active.binding.activationId &&
+            mod.binding.lifetime === 'profile')
+        )
+          revokeContributionOwner(registrationOwner(rowId, state))
+        else updateContributionAvailability(registrationOwner(rowId, state), mod.binding)
+      }
       const unchanged =
         state.active?.revision === mod.revision &&
         state.active.entryUrl === mod.entryUrl &&

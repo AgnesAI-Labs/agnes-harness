@@ -1,6 +1,9 @@
 @layer app {
   /* Home entries: the pages a person opens from the sidebar, above the workspace list. */
   .home-entries {
+    min-height: 0;
+    max-height: 60dvh;
+    overflow-y: auto;
     display: grid;
     gap: var(--s2);
     margin: var(--s8) 0 var(--s4);

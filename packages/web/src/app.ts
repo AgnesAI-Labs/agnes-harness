@@ -26,6 +26,7 @@ import { createReadOnlyController } from './app/read-only-controller.js'
 import { createSessionController } from './app/session-controller.js'
 import { createSubmissionController } from './app/submission-controller.js'
 import { createTurnController } from './app/turn-controller.js'
+import { readyRosterModules } from './client-modules/reconcile/roster.js'
 import { mountIntelligentUi } from './intelligent-ui/mount.js'
 import '@agnes/web-admin/settings/registry'
 import type {
@@ -777,38 +778,7 @@ const rosterSource: RosterSource = {
     // `rows` is the authoritative browser lifecycle surface.  The legacy
     // `modules` compatibility projection deliberately cannot carry every
     // immutable declaration, including the per-module service allow-list.
-    const modules = roster.rows.flatMap((row) => {
-      if (
-        !row.enabled ||
-        row.phase !== 'ready' ||
-        row.packageId === undefined ||
-        row.revision === undefined ||
-        row.entryUrl === undefined ||
-        row.styleUrls === undefined ||
-        row.slots === undefined ||
-        row.extIds === undefined
-      )
-        return []
-      return [
-        {
-          ...(row.intelligentComponents ? { intelligentComponents: row.intelligentComponents } : {}),
-          ...(row.binding ? { binding: row.binding } : {}),
-          ...(row.homeEntries ? { homeEntries: row.homeEntries } : {}),
-          ...(row.examplePages ? { examplePages: row.examplePages } : {}),
-          rowId: row.rowId,
-          packageId: row.packageId,
-          revision: row.revision,
-          entryUrl: row.entryUrl,
-          styleUrls: row.styleUrls,
-          slots: row.slots,
-          ...(row.slotCatalogVersion === undefined ? {} : { slotCatalogVersion: row.slotCatalogVersion }),
-          ...(row.contentDigest === undefined ? {} : { contentDigest: row.contentDigest }),
-          extIds: row.extIds,
-          services: row.services ?? [],
-          ...(row.publicConfig ? { publicConfig: row.publicConfig } : {}),
-        },
-      ]
-    })
+    const modules = readyRosterModules(roster.rows ?? [])
     return {
       revision: roster.revision,
       modules,
@@ -823,6 +793,8 @@ const claimSlotCard: ClaimResolver = (entry, extId) =>
 const references = composerReferences(prepareComposerSession, renderControls)
 let referenceSessionPending: Promise<Session> | undefined
 
+// Reserve host entries before installed modules can register their reviewed declarations.
+const removeHomeEntries = registerBuiltinHomeEntries()
 const clientModules = await startClientModules({
   agnes: client,
   claim: claimSlotCard,
@@ -1003,7 +975,6 @@ const statusCheck = mountStatusCheck({
 const settingsRegion = clientModules.settings as NonNullable<typeof clientModules.settings>
 if (!settingsRegion) throw new Error('missing settings region')
 // Home entries open full pages in the main area; the built-in three register like any plugin's.
-const removeHomeEntries = registerBuiltinHomeEntries()
 const homePages = mountHomePages(hosts.homePage, {
   locale: clientModules.locale,
   data: {

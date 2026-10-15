@@ -41,6 +41,7 @@ import { createClient, memoryJournal } from '@agnes/sdk'
 import type { PluginRebuiltEvent } from '@agnes/web/server'
 import { localPipeFactories } from '../src/boot/pipe-factory.js'
 import type { LocalBackend } from './backend.js'
+import { localClientExamples } from './client-examples.js'
 import { contextAdmin } from './context-admin.js'
 import { doctorAdmin } from './doctor-admin.js'
 
@@ -122,6 +123,7 @@ export function localPackageAdmin(
       ready = undefined
       throw error
     }))
+  const examples = localClientExamples(backend, client, initialize)
   // createAdminSurface validates each schema before dispatching this fixed typed mapping.
   const invoke = async (action: AdminSurfaceAction, params: unknown): Promise<unknown> => {
     await initialize()
@@ -527,6 +529,49 @@ export function localPackageAdmin(
             ? normalizeRpcError((error as { rpc: RpcError }).rpc)
             : httpRpcError(503, 'UNAVAILABLE'),
         })
+      }
+      return true
+    },
+    async handleClientExamples(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
+      const url = new URL(request.url ?? '/', origin)
+      if (url.pathname !== '/api/client-modules/examples') return false
+      if (
+        request.method !== 'POST' ||
+        url.search ||
+        request.headers.host !== new URL(origin).host ||
+        request.headers.origin !== origin
+      ) {
+        request.resume()
+        serviceReply(response, 403, { error: httpRpcError(403, 'CAPABILITY_DENIED') })
+        return true
+      }
+      const body = await jsonBody(request)
+      if (
+        !body ||
+        typeof body.rowId !== 'string' ||
+        !record(body.request) ||
+        Object.keys(body).some((key) => key !== 'rowId' && key !== 'request')
+      ) {
+        serviceReply(response, 400, { error: httpRpcError(400, 'INVALID_REQUEST') })
+        return true
+      }
+      try {
+        serviceReply(response, 200, await examples.call(body.rowId, body.request))
+      } catch (error) {
+        const code =
+          error instanceof Error &&
+          [
+            'E_PACKAGE_PREVIEW_STALE',
+            'E_PACKAGE_BLOCKED',
+            'E_PACKAGE_STATE',
+            'OUTCOME_UNKNOWN',
+            'INVALID_REQUEST',
+            'OVERLOADED',
+          ].includes(error.message)
+            ? error.message
+            : 'CAPABILITY_DENIED'
+        const status = code === 'CAPABILITY_DENIED' ? 403 : 409
+        serviceReply(response, status, { error: httpRpcError(status, code) })
       }
       return true
     },

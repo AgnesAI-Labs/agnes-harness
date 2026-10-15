@@ -26,6 +26,7 @@ const TINTS = 8
  * installed before the category existed still carries its old metadata.
  */
 export function isBusinessAgent(row: PackageCatalogDescriptor): boolean {
+  if (row.metadata?.category === 'example') return false
   return row.metadata?.category === 'business-agent' || row.id.startsWith(FDE_PREFIX)
 }
 

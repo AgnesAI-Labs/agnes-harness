@@ -83,6 +83,7 @@ const bundleJitiTransform: Plugin = {
 export async function copyBundledExamples(outputDirectory: string): Promise<void> {
   for (const { family, name } of BUNDLED_EXAMPLES) {
     const source = join(repoPackages, '..', 'examples', family, name)
+    if (!existsSync(join(source, 'package.json'))) continue
     const destination = join(outputDirectory, 'bundled-examples', family, name)
     await mkdir(destination, { recursive: true })
     const payload = (await readdir(source)).filter(
@@ -93,6 +94,10 @@ export async function copyBundledExamples(outputDirectory: string): Promise<void
           'fixtures',
           'skills',
           'client',
+          'assets',
+          'dist',
+          'resources',
+          'NOTICE',
           'mcp',
           'dag',
           'provider.example.json',

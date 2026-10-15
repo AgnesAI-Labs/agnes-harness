@@ -128,3 +128,93 @@ it('keeps every primary entry inline and enforces limits without replacing regis
     'placement',
   )
 })
+
+it('binds global entries to a declared active profile owner and revokes before fiber cleanup', async () => {
+  const { scopedHomeEntries, revokeContributionOwner, contributionAvailability } = await import(
+    '../src/contribution-scope.js'
+  )
+  const { homeEntries } = await import('../src/ui-registries.js')
+  const module = {
+    packageId: 'acme/parent',
+    revision: 'v1',
+    rowId: 'web:acme/parent',
+    binding: {
+      lifetime: 'profile' as const,
+      owner: 'web:acme/parent',
+      packageId: 'acme/parent',
+      integrity: 'v1',
+      profileId: 'test',
+      activationId: 'one',
+      availability: 'active' as const,
+    },
+    homeEntries: [{ id: 'owned', placement: 'primary' as const }],
+  }
+  const off: (() => void)[] = []
+  const entries = scopedHomeEntries(module, (dispose) => off.push(dispose))
+  const entry: HomeEntry = {
+    id: 'owned',
+    placement: 'primary',
+    order: 40,
+    icon: 'plug',
+    titleKey: 'Owned',
+    component: () => null,
+  }
+  const availability = contributionAvailability(module, (dispose) => off.push(dispose))
+  let observed = ''
+  availability.subscribe(() => {
+    observed = availability.getSnapshot()?.availability ?? ''
+  })
+  entries.register(entry)
+  expect(homeEntries.get('owned')).toBeDefined()
+  expect(() => entries.register({ ...entry, id: 'undeclared' })).toThrow('Undeclared')
+  expect(() =>
+    scopedHomeEntries({ ...module, binding: { ...module.binding, lifetime: 'session' } }, () => {}).register(
+      entry,
+    ),
+  ).toThrow('profile')
+  revokeContributionOwner(module.rowId)
+  expect(homeEntries.get('owned')).toBeUndefined()
+  expect(observed).toBe('disabled')
+  expect(() => entries.register(entry)).toThrow('profile')
+  for (const dispose of off) dispose()
+})
+
+it('renders only the host own declared example page and removes it on scope revocation', async () => {
+  const { scopedExamplePages } = await import('../src/example-pages.js')
+  const { revokeContributionOwner } = await import('../src/contribution-scope.js')
+  const identity = (packageId: string) => ({
+    packageId,
+    revision: 'v1',
+    rowId: `web:${packageId}`,
+    binding: {
+      lifetime: 'profile' as const,
+      owner: `web:${packageId}`,
+      packageId,
+      integrity: 'v1',
+      profileId: 'test',
+      activationId: 'one',
+      availability: 'active' as const,
+    },
+  })
+  const parent = identity('acme/parent')
+  const child = {
+    ...identity('acme/example'),
+    exampleOf: parent.packageId,
+    pageEntry: 'scene',
+    examplePages: ['scene'],
+  }
+  const cleanup: (() => void)[] = []
+  const effect = (off: () => void) => cleanup.push(off)
+  const pages = scopedExamplePages(child, effect)
+  const host = scopedExamplePages(parent, effect)
+  const other = scopedExamplePages(identity('acme/other'), effect)
+  const context = { t: (key: string) => key }
+  pages.register({ id: 'scene', component: () => null })
+  expect(host.render(child.packageId, context)).not.toBeNull()
+  expect(other.render(child.packageId, context)).toBeNull()
+  expect(() => pages.register({ id: 'undeclared', component: () => null })).toThrow('Undeclared')
+  revokeContributionOwner(child.rowId)
+  expect(host.render(child.packageId, context)).toBeNull()
+  expect(() => pages.register({ id: 'scene', component: () => null })).toThrow('Undeclared')
+  for (const off of cleanup) off()
+})

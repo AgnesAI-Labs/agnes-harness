@@ -1,12 +1,18 @@
 /** Client-module adapter: plugin registrations are owned by their Cordis fiber. */
 import type { Context } from '@agnes/cordis'
-import { type ContributionAvailability, scopedHomeEntries } from './contribution-scope.js'
+import { createExampleClient, type ExampleLaunches, type ExamplePackages } from '@agnes/sdk/browser'
+import {
+  type ContributionAvailability,
+  contributionAvailability,
+  scopedHomeEntries,
+} from './contribution-scope.js'
 import {
   DSH_SLOT_CATALOG_VERSION,
   getDshSlotDefinition,
   isPublicDshSlot,
   isRuntimeSupportedDshSlot,
 } from './dsh-slot-catalog.js'
+import { scopedExamplePages } from './example-pages.js'
 import { type RegisterOptions, SlotRegistry } from './registry.js'
 import {
   AgnesClientService,
@@ -38,6 +44,11 @@ export interface ClientContext extends Context {
   session: import('./services.js').SessionService
   theme: import('./services.js').ThemeService
   locale: import('./services.js').LocaleService
+  profile: Readonly<{
+    examples: ExamplePackages
+    launch: ExampleLaunches & { openPage(exampleId: string): void }
+  }>
+  examplePages: ReturnType<typeof scopedExamplePages>
   availability: ContributionAvailability
   homeEntries: ReturnType<typeof scopedHomeEntries>
   resources: ClientResourceService
@@ -152,10 +163,49 @@ export function clientModule(mod: ClientModule): {
         }),
         configurable: true,
       })
-      Object.defineProperty(ctx, 'availability', {
+      const availability = contributionAvailability(config, (off) => {
+        ctx.effect(() => off)
+      })
+      Object.defineProperty(ctx, 'availability', { value: availability, configurable: true })
+      const examplePages = scopedExamplePages(config, (off) => {
+        ctx.effect(() => off)
+      })
+      Object.defineProperty(ctx, 'examplePages', { value: examplePages, configurable: true })
+      const exampleClient = createExampleClient(async (request) => {
+        if (
+          availability.getSnapshot()?.lifetime !== 'profile' ||
+          availability.getSnapshot()?.availability !== 'active'
+        )
+          throw new Error('CAPABILITY_DENIED')
+        const response = await fetch('/api/client-modules/examples', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rowId: config.rowId, request }),
+        })
+        const value: unknown = await response.json()
+        if (!response.ok) {
+          const code = (value as { error?: { data?: { code?: unknown } } })?.error?.data?.code
+          throw new Error(
+            typeof code === 'string' &&
+              [
+                'E_PACKAGE_PREVIEW_STALE',
+                'E_PACKAGE_BLOCKED',
+                'E_PACKAGE_STATE',
+                'OUTCOME_UNKNOWN',
+                'INVALID_REQUEST',
+                'OVERLOADED',
+              ].includes(code)
+              ? code
+              : 'CAPABILITY_DENIED',
+          )
+        }
+        return value
+      })
+      Object.defineProperty(ctx, 'profile', {
         value: Object.freeze({
-          getSnapshot: () => config.binding,
-          subscribe: (_listener: () => void) => () => undefined,
+          examples: exampleClient.packages,
+          launch: Object.freeze({ ...exampleClient.launches, openPage: examplePages.open }),
         }),
         configurable: true,
       })

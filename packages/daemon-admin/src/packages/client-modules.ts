@@ -4,8 +4,8 @@ import { dirname, extname, join, posix, relative, resolve, sep } from 'node:path
 import { clientModuleRowIdForContribution, packageOfRow } from '@agnes/daemon-foundation/composite-desired'
 import { type CompositionPatch, CompositionSessionStore, compositionModuleAllowed } from '@agnes/host'
 import {
-  CLIENT_MAX_FILE_BYTES,
-  CLIENT_MAX_TOTAL_BYTES,
+  CLIENT_RESOURCE_MAX_FILE_BYTES,
+  CLIENT_RESOURCE_MAX_TOTAL_BYTES,
   type InstalledInventory,
   type InstalledPackage,
   isRuntimePackageEligible,
@@ -26,7 +26,12 @@ import {
   jcs,
 } from '@agnes/protocol'
 import { validUiComponentDeclaration } from '@agnes/protocol/intelligent-ui'
-import { init as initModuleLexer, parse as parseModule } from 'es-module-lexer'
+import { cleanRelative, collectSnapshotFiles, SERVABLE } from './client-asset-references.js'
+import {
+  combineContributionRosters,
+  contributionProjection,
+  reconcileContributionActivations,
+} from './contribution-roster.js'
 import type { PackageActivationObservation } from './handler.js'
 
 export const CLIENT_MODULE_RETENTION_MS = 30 * 60 * 1000
@@ -39,7 +44,6 @@ const PACKAGE_ID =
   /^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)?)$/
 const REVISION = /^(?:sha256-[a-f0-9]{64}|sha512-[A-Za-z0-9+/]{86}==)$/
 const GENERATION_ID = /^[a-f0-9-]{36}$/
-const SERVABLE = new Set(['.js', '.mjs', '.css', '.map'])
 const MAX_METADATA_BYTES = 1024 * 1024
 
 type ClientContribution = NonNullable<
@@ -70,6 +74,10 @@ type StoredDeclaration = Readonly<{
   services: readonly string[]
   backendRowId?: string
   intelligentComponents?: ClientContribution['intelligentComponents']
+  lifetime?: ClientContribution['lifetime']
+  homeEntries?: ClientContribution['homeEntries']
+  examplePages?: ClientContribution['examplePages']
+  assets?: ClientContribution['assets']
   publicConfig?: Readonly<Record<string, unknown>>
 }>
 type PackageState = Readonly<{
@@ -80,6 +88,7 @@ type PackageState = Readonly<{
 }>
 type ProfileState = Readonly<{
   version: 1
+  activations?: Readonly<Record<string, { identity: string; id: string; active: boolean }>>
   profile: string
   packages: Readonly<Record<string, PackageState>>
 }>
@@ -207,6 +216,19 @@ function isState(value: unknown, profile: string): value is ProfileState {
   if (!isRecord(value) || value.version !== 1 || value.profile !== profile || !isRecord(value.packages))
     return false
   if (Object.keys(value.packages).length > 256) return false
+  if (
+    value.activations !== undefined &&
+    (!isRecord(value.activations) ||
+      Object.keys(value.activations).length > 256 ||
+      Object.values(value.activations).some(
+        (item) =>
+          !isRecord(item) ||
+          typeof item.identity !== 'string' ||
+          typeof item.id !== 'string' ||
+          typeof item.active !== 'boolean',
+      ))
+  )
+    return false
   for (const [packageId, item] of Object.entries(value.packages)) {
     if (!PACKAGE_ID.test(packageId)) return false
     if (!isRecord(item) || !Array.isArray(item.retained)) return false
@@ -326,7 +348,7 @@ function isSnapshotManifest(value: unknown, packageId: string, revision: string)
         SERVABLE.has(extname(file.path).toLowerCase()) &&
         Number.isInteger(file.bytes) &&
         (file.bytes as number) >= 0 &&
-        (file.bytes as number) <= CLIENT_MAX_FILE_BYTES &&
+        (file.bytes as number) <= CLIENT_RESOURCE_MAX_FILE_BYTES &&
         typeof file.sha256 === 'string' &&
         /^[a-f0-9]{64}$/.test(file.sha256),
     )
@@ -358,18 +380,6 @@ function route(packageId: string, revision: string, path: string): string {
     .map((segment) => encodeURIComponent(segment))
     .join('/')
   return `/plugins/${packageId}/${encodedRevision(revision)}/${encodedPath}`
-}
-
-function cleanRelative(path: string): string | undefined {
-  const normalized = path.startsWith('./') ? path.slice(2) : path
-  if (
-    normalized === '' ||
-    normalized.includes('\\') ||
-    normalized.includes('\0') ||
-    normalized.split('/').some((segment) => segment === '' || segment === '.' || segment === '..')
-  )
-    return undefined
-  return normalized
 }
 
 function declarations(row: InstalledPackage): readonly ClientDeclaration[] {
@@ -527,6 +537,10 @@ function storedDeclaration(declared: ClientDeclaration): StoredDeclaration {
   return {
     moduleName: declared.moduleName,
     ...(declared.legacyRowIds.length ? { legacyRowIds: [...declared.legacyRowIds] } : {}),
+    ...(declared.client.lifetime ? { lifetime: declared.client.lifetime } : {}),
+    ...(declared.client.homeEntries ? { homeEntries: declared.client.homeEntries } : {}),
+    ...(declared.client.examplePages ? { examplePages: declared.client.examplePages } : {}),
+    ...(declared.client.assets ? { assets: declared.client.assets } : {}),
     entry: declared.entry,
     styles: [...declared.styles],
     slots: [...(declared.client.slots ?? [])],
@@ -697,7 +711,7 @@ async function verifySnapshot(
       const bytes = await readFile(target)
       if (bytes.length !== file.bytes || digest(bytes) !== file.sha256) return null
       total += bytes.length
-      if (total > CLIENT_MAX_TOTAL_BYTES) return null
+      if (total > CLIENT_RESOURCE_MAX_TOTAL_BYTES) return null
     } catch {
       return null
     }
@@ -774,86 +788,6 @@ async function pruneUntracked(root: string, state: ProfileState): Promise<boolea
   return changed
 }
 
-async function referencedAssets(path: string, bytes: Buffer): Promise<string[]> {
-  const extension = extname(path).toLowerCase()
-  if (extension !== '.js' && extension !== '.mjs' && extension !== '.css') return []
-  const text = bytes.toString('utf8')
-  const rawReferences: string[] = []
-  for (const match of text.matchAll(/[#@]\s*sourceMappingURL=([^\s*]+)/g))
-    if (match[1]) rawReferences.push(match[1])
-  if (extension === '.css') {
-    // Comments cannot contribute CSS dependencies. Removing them prevents a commented-out url()
-    // from turning a valid package into resources-invalid.
-    const css = text.replace(/\/\*[\s\S]*?\*\//g, '')
-    for (const pattern of [
-      /@import\s+(?:url\(\s*)?["']([^"']+)["']\s*\)?/g,
-      /url\(\s*["']?([^"')]+)["']?\s*\)/g,
-    ])
-      for (const match of css.matchAll(pattern)) if (match[1]) rawReferences.push(match[1])
-  } else {
-    await initModuleLexer
-    const [imports] = parseModule(text)
-    for (const imported of imports) if (imported.n !== undefined) rawReferences.push(imported.n)
-    // Asset URLs are not ESM imports, but the supported build output may use this standard form.
-    const codeWithoutComments = text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1')
-    for (const match of codeWithoutComments.matchAll(
-      /new\s+URL\s*\(\s*["']([^"']+)["']\s*,\s*import\.meta\.url\s*\)/g,
-    ))
-      if (match[1]) rawReferences.push(match[1])
-  }
-  const references: string[] = []
-  for (const reference of rawReferences) {
-    const raw = reference.split(/[?#]/, 1)[0]
-    if (!raw?.startsWith('.')) continue
-    const candidate = posix.normalize(posix.join(posix.dirname(path), raw))
-    if (cleanRelative(candidate) === candidate && SERVABLE.has(extname(candidate).toLowerCase()))
-      references.push(candidate)
-  }
-  return references
-}
-
-async function collectSnapshotFiles(
-  packageDirectory: string,
-  roots: readonly string[],
-): Promise<Map<string, Buffer> | null> {
-  let canonicalRoot: string
-  try {
-    canonicalRoot = await realpath(packageDirectory)
-  } catch {
-    return null
-  }
-  const queue = [...new Set(roots)]
-  const files = new Map<string, Buffer>()
-  let total = 0
-  while (queue.length) {
-    const path = queue.shift()
-    if (
-      !path ||
-      files.has(path) ||
-      cleanRelative(path) !== path ||
-      !SERVABLE.has(extname(path).toLowerCase())
-    )
-      continue
-    let target: string
-    let info: import('node:fs').Stats
-    try {
-      target = await realpath(resolve(canonicalRoot, path))
-      const rel = relative(canonicalRoot, target)
-      if (rel === '' || rel === '..' || rel.startsWith(`..${sep}`)) return null
-      info = await stat(target)
-    } catch {
-      return null
-    }
-    if (!info.isFile() || info.size > CLIENT_MAX_FILE_BYTES) return null
-    const bytes = await readFile(target)
-    total += bytes.length
-    if (total > CLIENT_MAX_TOTAL_BYTES) return null
-    files.set(path, bytes)
-    queue.push(...(await referencedAssets(path, bytes)))
-  }
-  return files.size ? files : null
-}
-
 async function publishSnapshot(input: {
   root: string
   row: InstalledPackage
@@ -870,7 +804,16 @@ async function publishSnapshot(input: {
   const staging = join(root, `_staging-${randomUUID()}`)
   const files = await collectSnapshotFiles(
     row.directory,
-    declarations.flatMap((declared) => [declared.entry, ...declared.styles]),
+    declarations.flatMap((declared) => [
+      declared.entry,
+      ...declared.styles,
+      ...(declared.client.assets ?? []).map((asset) =>
+        posix.join(
+          posix.dirname(declared.entry),
+          posix.relative(posix.dirname(declared.client.entry), asset),
+        ),
+      ),
+    ]),
   )
   if (!files) return 'invalid'
   const manifestFiles: SnapshotManifest['files'][number][] = []
@@ -1123,6 +1066,11 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
     const now = clock()
     const nowMs = now.getTime()
     let state = await readState(root, input.profile)
+    state = {
+      ...state,
+      activations: reconcileContributionActivations(state.activations, input.inventory.packages),
+    }
+
     let resourcesChanged = await pruneUntracked(root, state)
     let resourceFailure = false
     const packages: Record<string, PackageState> = {}
@@ -1214,7 +1162,7 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
         }
       }
     }
-    state = { version: 1, profile: input.profile, packages }
+    state = { ...state, packages }
 
     const modules: ClientModuleListResult['modules'] = []
     const rows: NonNullable<ClientModuleListResult['rows']> = []
@@ -1243,6 +1191,10 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
               moduleName: value.moduleName,
               legacyRowIds: [...(value.legacyRowIds ?? [])],
               client: {
+                ...(value.lifetime ? { lifetime: value.lifetime } : {}),
+                ...(value.homeEntries ? { homeEntries: value.homeEntries } : {}),
+                ...(value.examplePages ? { examplePages: value.examplePages } : {}),
+                ...(value.assets ? { assets: value.assets } : {}),
                 entry: value.entry,
                 slots: [...value.slots],
                 ...(value.legacyRowIds === undefined ? {} : { legacyRowIds: [...value.legacyRowIds] }),
@@ -1266,6 +1218,7 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
         ? declared.filter((item) => truth.active.get(item.rowId)?.revision === selectedRevision)
         : declared
       const activeDeclarations = selectedDeclarations.filter((item) => {
+        if (item.client.lifetime === 'profile' && selectedRevision !== installedRevision) return false
         if (!item.backendRowId) return true
         const backend = truth.backend.get(item.backendRowId)
         return backend?.packageId === row.id && backend.revision === selectedRevision
@@ -1426,6 +1379,14 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
         rows.push({
           rowId: item.rowId,
           moduleName: item.moduleName,
+          ...contributionProjection(
+            row,
+            item.client,
+            item.rowId,
+            selectedRevision,
+            input.profile,
+            state.activations?.[row.id]?.id,
+          ),
           packageId: row.id,
           enabled: true,
           phase: 'ready',
@@ -1481,19 +1442,19 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
   return {
     list: async (input) => {
       await pruneGenerationAssets(input)
-      if (input.sessionId) {
-        const pin = new RuntimeGenerationSnapshotStore(input.profileDirectory).session(input.sessionId)
-        if (pin) {
-          const roster = await generationRoster(input, pin.generationId)
-          const selection = new CompositionSessionStore(input.profileDirectory).read(input.sessionId)?.tree
-            .selection
-          return filterRoster(roster, selection)
-        }
-      }
       inputs.set(input.profile, input)
-      return serialize(input.profile, async () =>
-        filterRoster(await reconcile(input, true), options.composition?.(input.profile)),
-      ).catch((error: unknown) => {
+      return serialize(input.profile, async () => {
+        const current = filterRoster(await reconcile(input, true), options.composition?.(input.profile))
+        if (!input.sessionId) return current
+        const pin = new RuntimeGenerationSnapshotStore(input.profileDirectory).session(input.sessionId)
+        if (!pin) return current
+        const historical = await generationRoster(input, pin.generationId)
+        const selection = new CompositionSessionStore(input.profileDirectory).read(input.sessionId)?.tree
+          .selection
+        const selected = filterRoster(historical, selection)
+        const result = combineContributionRosters(current, selected)
+        return { ...result, revision: rosterRevision(result) }
+      }).catch((error: unknown) => {
         emitResourceFailure(input)
         throw error
       })

@@ -31,7 +31,7 @@ export {
 export type { ClientContext, ClientModule } from './client-module.js'
 export { clientModule } from './client-module.js'
 export type { ContributionAvailability } from './contribution-scope.js'
-export { revokeContributionOwner } from './contribution-scope.js'
+export { revokeContributionOwner, updateContributionAvailability } from './contribution-scope.js'
 export type { DshSlotDefinition, DshSlotName } from './dsh-slot-catalog.js'
 export {
   DSH_PUBLIC_SLOT_NAMES,
@@ -46,6 +46,7 @@ export {
   isPublicDshSlot,
   isRuntimeSupportedDshSlot,
 } from './dsh-slot-catalog.js'
+export type { ExamplePageContribution } from './example-pages.js'
 export type { ExternalSpecifier } from './externals.js'
 export { BUILDER_VERSION, externals } from './externals.js'
 export { factChainLinks, RegistrableLink, workbenchNavigation } from './fact-chain-links.js'

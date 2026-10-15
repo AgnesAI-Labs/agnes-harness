@@ -261,6 +261,7 @@ export async function runWebCommand(
         // service BFF first so its POST endpoint cannot be turned into an admin 405.
         handleLaunchHealth(request, response) ||
         (await adminHandler.handleClientService(request, response)) ||
+        (await adminHandler.handleClientExamples(request, response)) ||
         (await adminHandler.handleClientEffect(request, response)) ||
         (await adminHandler.handle(request, response)) ||
         (await resourceAdminHandler.handle(request, response)) ||

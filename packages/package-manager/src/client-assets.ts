@@ -138,8 +138,8 @@ export function normalizeClientContribution(client: ClientContribution): Normali
   return {
     ...(client.lifetime === undefined ? {} : { lifetime: client.lifetime }),
     ...(client.homeEntries === undefined ? {} : { homeEntries: client.homeEntries }),
-    ...(client.examplePages === undefined ? {} : { examplePages: client.examplePages }),
-    ...(client.assets === undefined ? {} : { assets: client.assets }),
+    ...(client.examplePages === undefined ? {} : { examplePages: set(client.examplePages) }),
+    ...(client.assets === undefined ? {} : { assets: set(client.assets.map(normalizeClientPath)) }),
     ...(client.id === undefined ? {} : { id: client.id }),
     entry: normalizeClientPath(client.entry),
     ...(client.intelligentComponents ? { intelligentComponents: client.intelligentComponents } : {}),
@@ -231,7 +231,7 @@ export function resolveClientAssets(
   return { entryPath, stylePaths: resolved.slice(1 + (client.assets?.length ?? 0)) }
 }
 
-/** web 下发通道只允许这四类扩展名（对应 text/javascript / text/css / application/json 三种 MIME）；与安装期白名单一致。 */
+/** Reviewed client code and scene resource formats; the immutable snapshot is the file allow-list. */
 export const CLIENT_MODULE_SERVABLE_EXTENSIONS: readonly string[] = CLIENT_ASSET_EXTENSIONS
 
 /** 包 id 的词法形态（与锁文件 schema 中的 id 模式一致）：一段，或 `scope/name` 两段。 */

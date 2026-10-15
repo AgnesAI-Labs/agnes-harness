@@ -420,7 +420,7 @@ describe('rendered sidebar region', () => {
   it('lists the built-in home entries first, opens the selected page and drops a disposed entry', async () => {
     const page = () => null
     const disposers = [
-      // Registered out of order and with a low order: a plugin entry still lists after the built-ins.
+      // Primary placement keeps built-ins first even when a secondary has a lower order.
       homeEntries.register({
         id: 'example.board',
         order: 1,
@@ -432,12 +432,21 @@ describe('rendered sidebar region', () => {
         homeEntries.register({
           id,
           order: 30 - index * 10,
+          placement: 'primary',
           icon: 'plug',
           titleKey: `home.entry.${id}`,
           ...(id === 'agents' ? { subtitleKey: 'home.entry.agents.sub' } : {}),
           component: page,
         }),
       ),
+      homeEntries.register({
+        id: 'primary.board',
+        order: 40,
+        placement: 'primary',
+        icon: 'puzzle',
+        titleKey: 'Primary board',
+        component: page,
+      }),
     ]
     try {
       runtime = await mountRenderedIndex({
@@ -463,6 +472,7 @@ describe('rendered sidebar region', () => {
         'home-entry-agents',
         'home-entry-plugins',
         'home-entry-automation',
+        'home-entry-primary.board',
         'home-entry-example.board',
       ])
       // The entries sit between the new-session action and the workspace list.
@@ -507,6 +517,7 @@ describe('rendered sidebar region', () => {
           )
         }
       })
+      expect(ids()).toContain('home-entry-primary.board')
       const more = getByRole(sidebar as HTMLElement, 'button', { name: runtime.locale.t('home.entry.more') })
       expect(more.getAttribute('aria-haspopup')).toBe('menu')
       flushSync(() => more.focus())

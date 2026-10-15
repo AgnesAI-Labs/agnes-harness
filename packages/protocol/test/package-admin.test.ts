@@ -194,6 +194,19 @@ describe('PM4 management contracts', () => {
         {
           rowId: 'web:acme/ui',
           moduleName: 'ui',
+          binding: {
+            lifetime: 'profile',
+            owner: 'web:acme/ui',
+            packageId: 'acme/ui',
+            integrity: 'sha256-revision',
+            profileId: 'test',
+            activationId: 'activation-1',
+            availability: 'active',
+          },
+          homeEntries: [{ id: 'board', placement: 'primary' }],
+          examplePages: ['scene'],
+          exampleOf: 'acme/host',
+          pageEntry: 'scene',
           packageId: 'acme/ui',
           enabled: true,
           phase: 'ready',
@@ -206,6 +219,10 @@ describe('PM4 management contracts', () => {
     expect(withRows.rows?.[0]?.intelligentComponents).toEqual(intelligentComponents)
     expect(withRows.modules[0]?.contentDigest).toBe(contentDigest)
     expect(withRows.rows?.[0]?.contentDigest).toBe(contentDigest)
+    expect(withRows.rows?.[0]?.binding).toMatchObject({ lifetime: 'profile', activationId: 'activation-1' })
+    expect(withRows.rows?.[0]?.homeEntries).toEqual([{ id: 'board', placement: 'primary' }])
+    expect(withRows.rows?.[0]?.examplePages).toEqual(['scene'])
+    expect(withRows.rows?.[0]?.exampleOf).toBe('acme/host')
     expect(withRows.rowAliases).toEqual({ 'web:acme/legacy': 'web:acme/ui' })
 
     const compatibility = projectClientModuleRows({

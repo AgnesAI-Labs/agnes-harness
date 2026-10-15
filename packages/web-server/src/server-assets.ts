@@ -53,12 +53,20 @@ export const SKIN_MIME: Record<string, string> = {
   '.woff2': 'font/woff2',
   '.woff': 'font/woff',
 }
-// Client module assets (`/plugins/*`) are executable code and styles served to the page, so their
-// extension allowlist is narrower than the skins one: exactly the module entry, its stylesheet and
-// source maps. An unknown extension is refused here rather than sniffed.
+// Client code and declared scene resources use fixed MIME types. The daemon snapshot enforces
+// path, hash and size admission; unknown formats are refused here rather than sniffed.
 export const CLIENT_MODULE_MIME: Record<string, string> = {
   '.js': 'text/javascript',
   '.mjs': 'text/javascript',
+  '.gltf': 'model/gltf+json',
+  '.glb': 'model/gltf-binary',
+  '.bin': 'application/octet-stream',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.ktx2': 'image/ktx2',
+  '.wasm': 'application/wasm',
   '.css': 'text/css',
   '.map': 'application/json',
 }

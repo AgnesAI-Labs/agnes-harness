@@ -116,6 +116,8 @@ export type CommandAuthorizer = (
  */
 export interface ModuleIdentity {
   /** Browser lifecycle/slot owner identity. Distinct rows of one package must not tear down each other. */
+  exampleOf?: string
+  pageEntry?: string
   binding?: ContributionBinding
   homeEntries?: readonly HomeContributionDeclaration[]
   examplePages?: readonly string[]

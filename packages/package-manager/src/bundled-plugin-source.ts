@@ -63,6 +63,7 @@ export const BUNDLED_EXAMPLES = Object.freeze(
       'recruiting-screen',
       'support-triage',
     ].map((name) => ({ family: 'fde', name })),
+    { family: 'mhs', name: 'mars-rescue' },
     ...['tool-panel', 'mcp-skills', 'dag-loop-adapter'].map((name) => ({ family: 'community', name })),
   ].map((example) => ({ ...example, ref: `file:./bundled-examples/${example.family}/${example.name}` })),
 )

@@ -249,6 +249,16 @@ export function projectClientModuleRows(result: P.ClientModuleListResult): P.Cli
         enabled: source.enabled,
         phase: source.phase,
       }
+      if (source.exampleOf !== undefined) row.exampleOf = source.exampleOf
+      if (source.pageEntry !== undefined) row.pageEntry = source.pageEntry
+      if (source.homeEntries !== undefined)
+        row.homeEntries = source.homeEntries.map(({ id, placement }) => ({ id, placement }))
+      if (source.examplePages !== undefined) row.examplePages = [...source.examplePages]
+      if (source.binding !== undefined) {
+        const { lifetime, owner, packageId, integrity, profileId, activationId, availability } =
+          source.binding
+        row.binding = { lifetime, owner, packageId, integrity, profileId, activationId, availability }
+      }
       if (source.packageId !== undefined) row.packageId = source.packageId
       if (source.revision !== undefined) row.revision = source.revision
       if (source.entryUrl !== undefined) row.entryUrl = source.entryUrl

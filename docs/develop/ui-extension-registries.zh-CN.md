@@ -59,3 +59,17 @@ register 返回幂等且绑定该注册项身份的卸载函数，须绑定到�
 ### 按需工作台面板
 
 `WorkbenchPanel.visibility` 缺省为 `always`。依赖会话内容的面板可选择 `contextual`，并以仅用于呈现的 `when(context)` 判断是否显示。`icon` 指定共享图标名；可选的 `title(context)` 提供内容标题。这些字段不改变授权。内置面板使用右侧工作台；`bottom` 仍可供插件使用。
+
+## Profile 首页入口与随包示例
+
+已安装模块通过 `ctx.homeEntries.register` 注册首页入口，同时在 `client.homeEntries` 声明相同条目，并设置 `client.lifetime: "profile"`。每个声明包含 `id` 和 `placement: "primary" | "secondary"`。内置页面同样显式声明 primary。primary 始终留在侧栏；secondary 超过三个时一起进入“更多”。组内按 order、ID 排序。重复 ID、超过 64 个入口或 32 个 primary 会拒绝新注册，保留已接纳条目。省略 placement 时仍为 secondary。
+
+daemon 名册提供 `binding`，包含 owner、包、integrity、profile、activation、lifetime 和 availability；`ctx.availability` 提供只读快照和订阅。profile 模块始终跟随当前启用状态，不随选中会话切换版本；session 模块保留固定的历史呈现。禁用在异步清理前撤销全局注册，已记录的会话内容仍可读。availability 只用于呈现，后端继续独立授权每个操作。应将 profile 页面与 session 历史渲染器拆成两个 client 贡献。受管理服务的健康状态与静态页面可用性分开。
+
+随包示例的 metadata 声明 `category: "example"`、指向宿主包的 `exampleOf`、可选 `pageEntry`，以及最多 32 个 `launches`。每项包含 `id`、`kind: "business-agent"`、`title`、`bundle`、`preset` 和最多 16 KiB 的 `prompt`，并显式声明父包依赖。此类包不进入业务 Agent 目录；发现关系不授予任何服务访问权限。
+
+profile 模块使用 `ctx.profile.examples.list/inspect/enable/read` 和 `ctx.profile.launch.prepare/start/openPage`。inspect 返回五分钟内有效、绑定调用方、activation、内容与能力的 review。enable 通过既有安装、信任和精确启用流程确认这些字节。launch 选择示例声明的 bundle 和 preset；同一 operation ID 只产生一个会话和一条耐久输入，丢失回执后仍可安全重试。缺少 bundle、preset、依赖，内容变化或 activation 撤销均拒绝执行。未知外部结果通过 read 保留，不自动重发。浏览器接口不接受包来源或任意管理方法。SDK 可通过 `createExampleClient` 和宿主认证 transport 使用相同窄接口。
+
+示例的 profile 模块通过 `ctx.examplePages.register` 注册声明的组件，父模块通过 `ctx.examplePages.render(exampleId, context)` 呈现，并订阅该注册表的快照。组件继续使用自己的模块作用域，不获得父包管理连接。模拟器生命周期应属于 profile 模块的 effect 作用域；切页只分离场景视图。示例禁用或所属浏览器关闭时释放连接并停止工作。会话 tab 复用已有 workbench panel API。
+
+场景资源声明在 `client.assets` 中，相对于与 entry 相同的描述文件目录。支持 glTF/GLB、二进制缓冲、PNG/JPEG/WebP、KTX2 和 WebAssembly。安装拒绝路径穿越和越界符号链接；不可变快照绑定每个文件的哈希和长度，读取时再次校验。代码继续受单文件 4 MiB、合计 16 MiB 限制；场景资源单文件最多 32 MiB、完整快照最多 128 MiB。不支持或超限的资源拒绝发布。解码器执行仍须满足部署 CSP，能够下发 wasm 文件不代表浏览器能够执行。示例应明确展示场景加载失败，不得据此伪报设备已就绪。
