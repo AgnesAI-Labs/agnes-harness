@@ -18,12 +18,17 @@ it.each([false, true])('discovers optional pinned helper even with broken exampl
   if (broken) mkdirSync(join(root, 'examples', 'packages'), { recursive: true })
   const catalog = await discoverLocalExamples(root)
   const result = await catalog.read({ offline: true })
-  expect(result.entries).toHaveLength(21)
+  expect(result.entries).toHaveLength(22)
   const examples = result.entries.filter((entry) => entry.sourceId === 'official-examples')
-  expect(examples).toHaveLength(17)
+  expect(examples).toHaveLength(18)
   expect(examples.filter((entry) => entry.id.startsWith('@agnes-fde/'))).toHaveLength(12)
   expect(examples.map((entry) => entry.id)).toEqual(
-    expect.arrayContaining(['@agnes-example/dag-loop', '@agnes-example/react-loop', '@community/tool-panel']),
+    expect.arrayContaining([
+      '@agnes-example/dag-loop',
+      '@agnes-example/react-loop',
+      '@agnes-example/mars-rescue',
+      '@community/tool-panel',
+    ]),
   )
   expect(
     examples.every((entry) => entry.integrity && entry.source.ref.startsWith('file:./bundled-examples/')),

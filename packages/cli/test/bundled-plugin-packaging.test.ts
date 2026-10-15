@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -92,9 +93,25 @@ it('ships all official example payloads with runnable community entries and no c
   roots.push(root)
   await copyBundledExamples(root)
   const families = await readdir(join(root, 'bundled-examples'))
-  expect(families.sort()).toEqual(['community', 'fde', 'loops'])
+  expect(families.sort()).toEqual(['community', 'fde', 'loops', 'mhs'])
   expect(await readdir(join(root, 'bundled-examples/fde'))).toHaveLength(12)
   expect(await readdir(join(root, 'bundled-examples/loops'))).toHaveLength(2)
+  expect(await readdir(join(root, 'bundled-examples/mhs'))).toEqual(['mars-rescue'])
+  const mars = join(root, 'bundled-examples/mhs/mars-rescue')
+  const manifest = JSON.parse(await readFile(join(mars, 'package.json'), 'utf8'))
+  expect(manifest.name).toBe('@agnes-example/mars-rescue')
+  for (const entry of Object.values(manifest.exports) as string[])
+    expect((await readFile(join(mars, entry))).length).toBeGreaterThan(0)
+  const files = await readdir(mars)
+  for (const excluded of ['test', 'node_modules', 'tsconfig.json']) expect(files).not.toContain(excluded)
+  expect(await readFile(join(mars, 'LICENSE'), 'utf8')).toContain('Apache')
+  expect(await readFile(join(mars, 'NOTICE'), 'utf8')).toContain('Mars')
+  const resources = JSON.parse(await readFile(join(mars, 'assets/manifest.json'), 'utf8'))
+  for (const resource of resources.resources) {
+    const bytes = await readFile(join(mars, resource.path))
+    expect(bytes.length).toBe(resource.bytes)
+    expect(createHash('sha256').update(bytes).digest('hex')).toBe(resource.sha256)
+  }
   for (const name of ['tool-panel', 'mcp-skills', 'dag-loop-adapter']) {
     const payload = join(root, 'bundled-examples/community', name)
     expect(await readFile(join(payload, 'dist/index.js'), 'utf8')).toContain('export')
