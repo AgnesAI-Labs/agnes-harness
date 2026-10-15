@@ -132,6 +132,8 @@ describe('renderDiagnosticsViewer', () => {
 
     expect(document.getElementById('tab-logs')?.textContent).toContain('worker runtime output')
     expect(document.getElementById('tab-logs')?.textContent).toContain('request audit')
+    expect(document.getElementById('tab-logs')?.textContent).toContain('Daemon request audit')
+    expect(document.getElementById('tab-logs')?.textContent).toContain('Daemon runtime')
 
     const traceText = document.getElementById('tab-trace')?.textContent ?? ''
     expect(traceText).toContain('root-call')

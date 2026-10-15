@@ -20,7 +20,7 @@ node agnes.mjs doctor provider --json
 
 `doctor credentials` 只检查 home、secrets、auth 和 locks 目录的元数据，不读取凭据值、不修改权限。它显示 POSIX 当前与所需权限，仅为当前用户拥有的普通文件或目录给出已转义的 `chmod` 建议。执行前核对目标；符号链接和其他用户拥有的路径需要单独排查。
 
-Web 诊断 ZIP 勾选日志后，`logs/runtime.jsonl` 包含当前及上一代轮转文件的有界运行输出，与 daemon/Host 请求审计分开保存。缺失日志会明确标出；只有旧 daemon 拒绝 runtime 参数时，才会用旧参数重试。
+Web 诊断 ZIP 勾选日志后，`logs/daemon-runtime.jsonl` 包含当前及上一代轮转文件的有界运行输出，与 `logs/daemon-request-audit.jsonl` 请求审计及 Host 日志分开保存。缺失日志会明确标出；只有旧 daemon 拒绝 runtime 参数时，才会用旧参数重试。
 
 | 现象 | 核对与处理 |
 | --- | --- |

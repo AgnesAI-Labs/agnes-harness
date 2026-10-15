@@ -168,8 +168,8 @@ export async function collectDiagnostics(
   // A failed item becomes a warning and `undefined`; only the user's own abort rejects the export.
   const rpc = async <T>(method: string, params: unknown, quiet = false): Promise<T | undefined> => {
     if (expired) return undefined
+    const requestSignal = AbortSignal.any([combined, AbortSignal.timeout(limits.rpcMs)])
     try {
-      const requestSignal = AbortSignal.any([combined, AbortSignal.timeout(limits.rpcMs)])
       const call = async (value: unknown) => {
         try {
           return await input.call(PREFIX + method, value, { signal: requestSignal })
@@ -190,7 +190,13 @@ export async function collectDiagnostics(
     } catch (error) {
       if (signal.aborted) throw abortError()
       if (total.aborted) expired = true
-      else if (!quiet) warnings.push(warnFor(method, error))
+      else if (!quiet)
+        warnings.push(
+          warnFor(
+            method,
+            requestSignal.aborted ? new DOMException('RPC deadline exceeded', 'TimeoutError') : error,
+          ),
+        )
       return undefined
     }
   }
@@ -278,7 +284,9 @@ export async function collectDiagnostics(
   }
   const daemonLog = tailOf('daemon.jsonl')
   const hostLog = tailOf('host.jsonl')
-  const runtimeLog = tailOf('runtime.jsonl')
+  const runtimeLog =
+    tailOf('runtime.jsonl') ??
+    (collected && effective.logs ? { size: 0, text: '', truncated: false, missing: true } : undefined)
   const missingLogs = [
     daemonLog?.missing && 'daemon.jsonl',
     hostLog?.missing && 'host.jsonl',
@@ -300,7 +308,7 @@ export async function collectDiagnostics(
     ...(effective.logs
       ? {
           logs: {
-            ...(daemonLog ? { daemon: daemonLog } : {}),
+            ...(daemonLog ? { requestAudit: daemonLog } : {}),
             ...(hostLog ? { host: hostLog } : {}),
             ...(runtimeLog ? { runtime: runtimeLog } : {}),
             browser: input.browserLog,
@@ -337,10 +345,11 @@ export async function collectDiagnostics(
   const json = (value: unknown) => JSON.stringify(value, null, 2)
   if (bundle.system) add('system.json', json(bundle.system))
   if (bundle.trace) add('trace.json', json(bundle.trace))
-  if (bundle.logs?.daemon && !bundle.logs.daemon.missing) add('logs/daemon.jsonl', bundle.logs.daemon.text)
+  if (bundle.logs?.requestAudit && !bundle.logs.requestAudit.missing)
+    add('logs/daemon-request-audit.jsonl', bundle.logs.requestAudit.text)
   if (bundle.logs?.host && !bundle.logs.host.missing) add('logs/host.jsonl', bundle.logs.host.text)
   if (bundle.logs?.runtime && !bundle.logs.runtime.missing)
-    add('logs/runtime.jsonl', bundle.logs.runtime.text)
+    add('logs/daemon-runtime.jsonl', bundle.logs.runtime.text)
   if (bundle.logs) add('logs/browser.json', json(bundle.logs.browser))
   if (ledger) add('events.jsonl', lines.length ? `${lines.join('\n')}\n` : '')
 

@@ -229,8 +229,11 @@ function Viewer({ bundle, locale }: { bundle: DiagnosticsBundle; locale: Diagnos
         </section>
         <section id="tab-logs" role="tabpanel" aria-labelledby="agh-tab-logs" hidden>
           {bundle.logs
-            ? (['daemon', 'host', 'runtime', 'browser'] as const).map((key) => {
-                const value = bundle.logs?.[key]
+            ? (['requestAudit', 'host', 'runtime', 'browser'] as const).map((key) => {
+                const value =
+                  key === 'requestAudit'
+                    ? (bundle.logs?.requestAudit ?? bundle.logs?.daemon)
+                    : bundle.logs?.[key]
                 if (!value) return null
                 const content =
                   'entries' in value
@@ -238,7 +241,11 @@ function Viewer({ bundle, locale }: { bundle: DiagnosticsBundle; locale: Diagnos
                     : value.text + (value.truncated ? `\n${labels.truncated}` : '')
                 return (
                   <div key={key}>
-                    <h3>{key}</h3>
+                    <h3>
+                      {key === 'requestAudit' || key === 'runtime'
+                        ? text(`diagnostics.viewer.log.${key}`)
+                        : key}
+                    </h3>
                     <pre>{content}</pre>
                   </div>
                 )

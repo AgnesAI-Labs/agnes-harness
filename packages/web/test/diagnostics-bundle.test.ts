@@ -75,6 +75,7 @@ const collectResult = {
   logs: [
     { name: 'daemon.jsonl', size: 10, text: '{"kind":"daemon"}\n', truncated: false, missing: false },
     { name: 'host.jsonl', size: 16, text: '{"kind":"host"}\n', truncated: false, missing: false },
+    { name: 'runtime.jsonl', size: 19, text: '{"kind":"runtime"}\n', truncated: false, missing: false },
   ],
 }
 const apisResult = {
@@ -169,8 +170,9 @@ describe('collectDiagnostics', () => {
       'index.html',
       'system.json',
       'trace.json',
-      'logs/daemon.jsonl',
+      'logs/daemon-request-audit.jsonl',
       'logs/host.jsonl',
+      'logs/daemon-runtime.jsonl',
       'logs/browser.json',
       'events.jsonl',
     ])
@@ -341,7 +343,7 @@ describe('collectDiagnostics', () => {
     for (const name of ['trace.json', 'events.jsonl', 'system.json'])
       expect(files.has(name), name).toBe(false)
     expect(files.has('logs/browser.json')).toBe(true)
-    expect(files.has('logs/daemon.jsonl')).toBe(true)
+    expect(files.has('logs/daemon-request-audit.jsonl')).toBe(true)
     expect(calls.some((c) => c.method === `${P}diagnostics.events`)).toBe(false)
     expect(out.bundle.trace).toBeUndefined()
     expect(out.bundle.system).toBeUndefined()
@@ -416,27 +418,36 @@ describe('collectDiagnostics', () => {
     })
   })
 
-  it('times out a hung RPC and still packages', async () => {
-    const methods: string[] = []
-    let lateRefusal: ((error: unknown) => void) | undefined
-    const call: RpcCall = (method) => {
-      methods.push(method)
-      return new Promise((_resolve, reject) => {
-        if (method === `${P}diagnostics.collect`) lateRefusal = reject
-      })
-    }
-    const out = await collectDiagnostics(input(call), ALL, new AbortController().signal, { rpcMs: 20 })
-    lateRefusal?.(new JsonRpcError(rpcError('INVALID_PARAMS')))
-    await Promise.resolve()
-    expect(methods.filter((method) => method === `${P}diagnostics.collect`)).toHaveLength(1)
-    expect(out.bundle.warnings).toEqual(
-      expect.arrayContaining([
-        { source: 'diagnostics.collect', reason: 'timeout' },
-        { source: 'diagnostics.events', reason: 'timeout' },
-      ]),
-    )
-    expect(readZip(out.zip).has('index.html')).toBe(true)
-  })
+  it.each([false, true])(
+    'times out an RPC and still packages (transport honors abort: %s)',
+    async (honorsAbort) => {
+      const methods: string[] = []
+      let lateRefusal: ((error: unknown) => void) | undefined
+      const call: RpcCall = (method, _params, options) => {
+        methods.push(method)
+        return new Promise((_resolve, reject) => {
+          if (method === `${P}diagnostics.collect`) lateRefusal = reject
+          if (honorsAbort)
+            options?.signal?.addEventListener(
+              'abort',
+              () => reject(new DOMException('cancelled', 'AbortError')),
+              { once: true },
+            )
+        })
+      }
+      const out = await collectDiagnostics(input(call), ALL, new AbortController().signal, { rpcMs: 20 })
+      lateRefusal?.(new JsonRpcError(rpcError('INVALID_PARAMS')))
+      await Promise.resolve()
+      expect(methods.filter((method) => method === `${P}diagnostics.collect`)).toHaveLength(1)
+      expect(out.bundle.warnings).toEqual(
+        expect.arrayContaining([
+          { source: 'diagnostics.collect', reason: 'timeout' },
+          { source: 'diagnostics.events', reason: 'timeout' },
+        ]),
+      )
+      expect(readZip(out.zip).has('index.html')).toBe(true)
+    },
+  )
 
   it('packages what it has when the total budget runs out', async () => {
     const call: RpcCall = () => new Promise(() => {})
@@ -497,7 +508,7 @@ describe('collectDiagnostics', () => {
       'diagnostics.collect': () => ({
         ...collectResult,
         logs: [
-          ...collectResult.logs,
+          ...collectResult.logs.filter((log) => log.name !== 'runtime.jsonl'),
           {
             name: 'runtime.jsonl',
             size: 80,
@@ -511,9 +522,12 @@ describe('collectDiagnostics', () => {
     const out = await collectDiagnostics(input(call), ALL, new AbortController().signal)
     expect(out.bundle.logs?.runtime).toMatchObject({ missing: false, truncated: true })
     const files = readZip(out.zip)
-    expect(files.get('logs/runtime.jsonl')).toContain('worker.stderr')
-    expect(files.get('logs/daemon.jsonl')).not.toContain('worker.stderr')
+    expect(files.get('logs/daemon-runtime.jsonl')).toContain('worker.stderr')
+    expect(files.get('logs/daemon-request-audit.jsonl')).not.toContain('worker.stderr')
     expect(files.get('index.html')).toContain('worker.stderr')
+    expect(files.get('index.html')).toContain('Daemon request audit')
+    expect(files.get('index.html')).toContain('Daemon runtime')
+    expect(out.bundle.logs?.requestAudit?.text).toContain('daemon')
     for (const value of files.values()) expect(value).not.toContain(SECRET_ERROR)
   })
 
@@ -523,7 +537,11 @@ describe('collectDiagnostics', () => {
       const { call, calls } = fake({
         ...standard(),
         'diagnostics.collect': (params) => {
-          if (!params.runtimeLog) return collectResult
+          if (!params.runtimeLog)
+            return {
+              ...collectResult,
+              logs: collectResult.logs.filter((log) => log.name !== 'runtime.jsonl'),
+            }
           if (code === 'transport') throw new Error('disconnected')
           throw new JsonRpcError(rpcError(code as 'INVALID_PARAMS'))
         },
@@ -533,6 +551,14 @@ describe('collectDiagnostics', () => {
       expect(requests.map((call) => call.params)).toEqual(
         code === 'INVALID_PARAMS' ? [{ runtimeLog: true }, {}] : [{ runtimeLog: true }],
       )
+      if (code === 'INVALID_PARAMS') {
+        expect(out.bundle.logs?.runtime?.missing).toBe(true)
+        expect(out.bundle.warnings).toEqual([
+          { source: 'logs', reason: 'unavailable', detail: 'runtime.jsonl' },
+        ])
+        expect(readZip(out.zip).has('logs/daemon-runtime.jsonl')).toBe(false)
+        expect(out.bundle.version).toBe('9.9.9')
+      }
       if (code !== 'INVALID_PARAMS')
         expect(out.bundle.warnings).toContainEqual(expect.objectContaining({ source: 'diagnostics.collect' }))
     },
@@ -552,15 +578,15 @@ describe('collectDiagnostics', () => {
       }),
     })
     const out = await collectDiagnostics(input(call), ALL, new AbortController().signal)
-    expect(out.bundle.logs?.daemon?.missing).toBe(true)
+    expect(out.bundle.logs?.requestAudit?.missing).toBe(true)
     expect(out.bundle.logs?.host?.missing).toBe(true)
     expect(out.bundle.logs?.runtime?.missing).toBe(true)
     expect(out.bundle.warnings).toContainEqual(
       expect.objectContaining({ source: 'logs', reason: 'unavailable' }),
     )
     const files = readZip(out.zip)
-    expect(files.has('logs/daemon.jsonl')).toBe(false)
-    expect(files.has('logs/runtime.jsonl')).toBe(false)
+    expect(files.has('logs/daemon-request-audit.jsonl')).toBe(false)
+    expect(files.has('logs/daemon-runtime.jsonl')).toBe(false)
     expect(files.has('logs/browser.json')).toBe(true)
   })
 

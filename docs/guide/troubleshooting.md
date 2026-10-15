@@ -22,7 +22,7 @@ node agnes.mjs doctor provider --json
 
 `doctor credentials` inspects metadata for the home, secrets, authentication and lock directories without reading credential values or changing permissions. It shows current and required POSIX modes and quotes a `chmod` suggestion only for an owned ordinary file or directory. Review the named target before applying it; links and foreign ownership need separate investigation.
 
-When exporting a Web diagnostic ZIP with logs selected, `logs/runtime.jsonl` contains bounded runtime output from the live and previous rotated log, separately from daemon/Host request audit. Missing logs are reported explicitly. Older daemons are retried without the runtime option only when they reject its parameters.
+When exporting a Web diagnostic ZIP with logs selected, `logs/daemon-runtime.jsonl` contains bounded runtime output from the live and previous rotated log, separately from request audit in `logs/daemon-request-audit.jsonl` and Host logs. Missing logs are reported explicitly. Older daemons are retried without the runtime option only when they reject its parameters.
 
 | Symptom | Check and next action |
 | --- | --- |
