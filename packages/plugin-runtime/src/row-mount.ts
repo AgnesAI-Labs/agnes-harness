@@ -12,7 +12,7 @@ import {
   type EntryMountAdapter,
   type EntryRow,
 } from '@agnes/cordis-loader'
-import { createTreeSnapshot } from './convergence.js'
+import { canonicalRowRevision } from './convergence.js'
 import { createBuiltinRowMountFactory } from './internal/host-mount.js'
 import { InternalMountGate } from './internal-gate.js'
 import { type FiberLease, FiberLeases } from './lease.js'
@@ -653,7 +653,7 @@ function originOf(mount: DescriptorSnapshot): Readonly<RowOrigin> {
     trustTier: mount.trustTier,
     packageId: mount.snapshot.packageId,
     snapshotId: mount.snapshot.snapshotId,
-    rowRevision: createTreeSnapshot([mount.boundRow]).hash,
+    rowRevision: canonicalRowRevision(mount.boundRow),
     rowId: mount.row.id,
     exportName: mount.snapshot.exportName,
     declaredProvides: Object.freeze([...mount.row.provides]),

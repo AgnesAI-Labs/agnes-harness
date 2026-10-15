@@ -426,21 +426,28 @@ describe('verified row contract', () => {
     await host.adapter.unmount(installation)
   })
 
-  it('allows verified builtin rows to listen to framework events', async () => {
-    const observed = vi.fn()
-    const builtinRow = row({ id: 'builtin:listener', plugin: 'builtin-listener' })
-    const entry = normalizePluginExport((ctx: Context) => {
-      ctx.on('internal/service', observed)
-    })
-    const host = createVerifiedRowHost({ builtinAllowedRowIds: [builtinRow.id] })
-    const root = new Context()
-    const mount = await host.builtin.create({ row: builtinRow, entry })
-    const installation = await host.adapter.mount(root, builtinRow, mount)
-    const dispose = root.provide('builtin-listener-test', true)
-    expect(observed).toHaveBeenCalled()
-    await dispose()
-    await host.adapter.unmount(installation)
-  })
+  it.each(['builtin:listener', 'ext:agnes/skills', 'ext:agnes/mcp-client'])(
+    'allows verified builtin row %s to mount with an origin revision and listen to framework events',
+    async (id) => {
+      const observed = vi.fn()
+      const builtinRow = row({ id, plugin: 'builtin-listener' })
+      const entry = normalizePluginExport((ctx: Context) => {
+        ctx.on('internal/service', observed)
+      })
+      const host = createVerifiedRowHost({ builtinAllowedRowIds: [builtinRow.id] })
+      const root = new Context()
+      const mount = await host.builtin.create({ row: builtinRow, entry })
+      const installation = await host.adapter.mount(root, builtinRow, mount)
+      expect(host.origins.lookup(host.adapter.fiber(installation))).toMatchObject({
+        rowId: id,
+        rowRevision: expect.stringMatching(/^[a-f0-9]{64}$/),
+      })
+      const dispose = root.provide('builtin-listener-test', true)
+      expect(observed).toHaveBeenCalled()
+      await dispose()
+      await host.adapter.unmount(installation)
+    },
+  )
 
   it('accepts the builtin desired identity without recomputing it and keeps cleanup idempotent', async () => {
     const base = row({ id: 'builtin:demo', plugin: 'builtin-demo' })
