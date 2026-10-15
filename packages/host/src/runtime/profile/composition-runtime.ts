@@ -36,6 +36,12 @@ import {
   type HostPublicationReport,
 } from '../lifecycle/host-facade.js'
 import { collectIdleContainers, createHostCallQueue, generationIdleMs } from '../lifecycle/host-idle.js'
+import {
+  createKernelFacade,
+  createSessionMapFacade,
+  type HostFacadeOverrides,
+} from '../lifecycle/host-routing.js'
+import { sessionHostRoutes } from '../lifecycle/session-host-routes.js'
 import { sessionKey } from '../sessions/session.js'
 import { compositionPresets } from './composition-presets.js'
 import { profileForComposition } from './composition-selection.js'
@@ -333,13 +339,16 @@ export async function createCompositionHost(
     writer.close()
     throw error
   }
-  const owner = (key: string): Container => {
-    const active =
-      sessionOwners.get(key) ?? [...containers.values()].find((container) => container.host.kernel.get(key))
-    if (active) return active
-    // Closed sessions keep their owner until the pin is released; a damaged intent must not block deletion.
+  const owner = (key: string, coldRead = true): Container => {
     const binding = store.readIfValid(key)
-    return (binding && containers.get(binding.tree.hash)) ?? initial
+    const active = binding
+      ? containers.get(binding.tree.hash)
+      : (sessionOwners.get(key) ??
+        [...containers.values()].find((container) => container.host.kernel.get(key)))
+    if (active) return active
+    if (binding && !coldRead) throw new Error('E_COMPOSITION_NOT_LIVE: open the bound session first')
+    // Shared storage and cold descriptors need no live container; deletion tolerates damaged pins.
+    return initial
   }
   const live = () => {
     const sessions = new Map([...containers.values()].flatMap(({ host }) => [...host.kernel.sessions]))
@@ -425,23 +434,23 @@ export async function createCompositionHost(
     if (legacyPublication && failure) throw failure
     return lastPublication
   }
-  const sessions = new Proxy(initial.host.kernel.sessions, {
-    get(_target, property) {
-      if (property === 'delete') return (key: string) => owner(key).host.kernel.sessions.delete(key)
-      const map = new Map([...containers.values()].flatMap(({ host }) => [...host.kernel.sessions]))
-      const value = Reflect.get(map, property, map)
-      return typeof value === 'function' ? value.bind(map) : value
-    },
-  })
-  const kernel = new Proxy(initial.host.kernel, {
-    get(target, property) {
-      if (property === 'sessions') return sessions
-      if (property === 'get') return (key: string) => owner(key).host.kernel.get(key)
-      const value = Reflect.get(target, property, target)
-      return typeof value === 'function' ? value.bind(target) : value
-    },
-  })
-  const overrides: Partial<Host> = {
+  const sessions = createSessionMapFacade(
+    initial.host.kernel.sessions,
+    (key) => owner(key).host.kernel.sessions,
+    () => [...containers.values()].map(({ host }) => host.kernel.sessions),
+  )
+  const kernel = createKernelFacade(
+    initial.host.kernel,
+    () => initial.host.kernel,
+    (key, coldRead = false) => owner(key, coldRead).host.kernel,
+    sessions,
+  )
+  const overrides: HostFacadeOverrides = {
+    ...sessionHostRoutes(
+      (key, coldRead = false) => owner(key, coldRead).host,
+      () => initial.host,
+      () => initial.host,
+    ),
     kernel,
     runtimeTargetSnapshot: () => latestTarget ?? initial.host.runtimeTargetSnapshot!(),
     ordinaryConvergence: () => convergence(),
@@ -576,7 +585,6 @@ export async function createCompositionHost(
           throw translateSessionFailure(error, key)
         }
       }),
-    sessionGeneration: (key) => generations.session(key)?.generationId,
     releaseSessionGeneration: (key) =>
       enqueue(async () => {
         const container = owner(key)
@@ -696,18 +704,12 @@ export async function createCompositionHost(
         }),
       }
     },
-    sessionCapabilities: (key) => owner(key).host.sessionCapabilities!(key),
-    sessionRuntime: (key) => owner(key).host.sessionRuntime!(key),
     setSessionPreset: (key, name) =>
       enqueue(async () => {
-        const result = await owner(key).host.setSessionPreset(key, name)
+        const result = await owner(key, false).host.setSessionPreset(key, name)
         publish()
         return result
       }),
-    validatePresetSwitch: (name, key) => owner(key ?? '').host.validatePresetSwitch(name, key),
-    validateModelSwitch: (selection, key) => owner(key ?? '').host.validateModelSwitch(selection, key),
-    callService: (params, ...args) => owner(params.sessionId).host.callService(params, ...args),
-    inspectService: (params, ...args) => owner(params.sessionId).host.inspectService(params, ...args),
     applyRuntimeTarget: (target) =>
       enqueue(async () => {
         await refreshTrust()

@@ -38,14 +38,15 @@ import {
   hostIsIdle,
   registerHostIdle,
 } from '../lifecycle/host-idle.js'
-import { applyLivePluginConfig, overlayLivePluginConfig } from '../lifecycle/live-plugin-config.js'
-import { sessionKey } from '../sessions/session.js'
 import {
-  type ChangeResult,
-  type ContainerHandle,
-  changeResult,
-  type SessionBinding,
-} from './change-result.js'
+  createKernelFacade,
+  createSessionMapFacade,
+  type HostFacadeOverrides,
+} from '../lifecycle/host-routing.js'
+import { applyLivePluginConfig, overlayLivePluginConfig } from '../lifecycle/live-plugin-config.js'
+import { sessionHostRoutes } from '../lifecycle/session-host-routes.js'
+import { sessionKey } from '../sessions/session.js'
+import { type ChangeResult, type ContainerHandle, changeResult, sessionBindingOf } from './change-result.js'
 import { assertMigrationSettled } from './migration-state.js'
 import { openGenerationStore } from './process-liveness.js'
 import { captureGenerationResources, createGenerationSkills, restoreGenerationRows } from './resources.js'
@@ -458,12 +459,23 @@ export async function createRuntimeGenerationHost(
       opening.delete(id)
     }
   }
+  const sessionBinding = (key: string) => sessionBindingOf(store.session(key))
   const openOwner = (key: string): Host | undefined => {
+    const pin = sessionBinding(key)
+    if (pin) return live.get(pin.generationId)?.host
     for (const generation of live.values()) if (generation.host.kernel.get(key)) return generation.host
     const head = current?.host ?? initial
     return head.kernel.get(key) ? head : undefined
   }
-  const owner = (key: string): Host => openOwner(key) ?? current?.host ?? initial
+  const owner = (key: string, coldRead = false): Host => {
+    const host = openOwner(key)
+    if (host) return host
+    if (sessionBinding(key)) {
+      if (coldRead) return current?.host ?? initial
+      throw new Error('E_GENERATION_NOT_LIVE: open the bound session before using its runtime')
+    }
+    return current?.host ?? initial
+  }
   const collect = async (retiredIds: ReadonlySet<string> = new Set()): Promise<void> => {
     if (collector) clearTimeout(collector)
     collector = undefined
@@ -646,25 +658,17 @@ export async function createRuntimeGenerationHost(
     })
   }
   // Keep the public Kernel coordination view valid for sessions hosted in any generation.
-  const sessions = new Proxy(initial.kernel.sessions, {
-    get(_map, property) {
-      const all = () =>
-        new Map([...live.values()].flatMap((generation) => [...generation.host.kernel.sessions]))
-      if (property === 'delete') return (key: string) => owner(key).kernel.sessions.delete(key)
-      const map = all(),
-        value = Reflect.get(map, property, map)
-      return typeof value === 'function' ? value.bind(map) : value
-    },
-  })
-  const kernel = new Proxy(initial.kernel, {
-    get(_kernel, property) {
-      if (property === 'sessions') return sessions
-      if (property === 'get') return (key: string) => owner(key).kernel.get(key)
-      const target = current?.host.kernel ?? initial.kernel,
-        value = Reflect.get(target, property, target)
-      return typeof value === 'function' ? value.bind(target) : value
-    },
-  })
+  const sessions = createSessionMapFacade(
+    initial.kernel.sessions,
+    (key) => owner(key, true).kernel.sessions,
+    () => [...live.values()].map(({ host }) => host.kernel.sessions),
+  )
+  const kernel = createKernelFacade(
+    initial.kernel,
+    () => (current?.host ?? initial).kernel,
+    (key, coldRead) => owner(key, coldRead).kernel,
+    sessions,
+  )
   const restoreRetainedClaims = (generation: LiveGeneration) => {
     const saved = rowsByGeneration.get(generation.snapshot.id)
     for (const row of generation.host.extensionRows.current()) {
@@ -922,7 +926,12 @@ export async function createRuntimeGenerationHost(
       throw error
     }
   }
-  const overrides: Partial<Host> = {
+  const overrides: HostFacadeOverrides = {
+    ...sessionHostRoutes(
+      owner,
+      () => current?.host ?? initial,
+      () => current?.host ?? initial,
+    ),
     kernel,
     pluginGenerationStatus: status,
     securityStatus: () => {
@@ -941,17 +950,7 @@ export async function createRuntimeGenerationHost(
         ? { generationId: id, seams: generation.host.seamBindings(), close: () => generation.host.close() }
         : undefined
     },
-    sessionBinding: (key): SessionBinding | undefined => {
-      const pin = store.session(key)
-      return pin
-        ? {
-            sessionKey: key,
-            generationId: pin.generationId,
-            ...(pin.loop ? { loop: pin.loop } : {}),
-            pinnedSeams: pin.seams ?? [],
-          }
-        : undefined
-    },
+    sessionBinding,
     sessionRuntime: (key) => {
       const host = openOwner(key)
       if (!host) {
@@ -1032,7 +1031,7 @@ export async function createRuntimeGenerationHost(
       }),
     releaseSessionGeneration: (key) =>
       enqueue(async () => {
-        if (owner(key).kernel.get(key))
+        if (owner(key, true).kernel.get(key))
           throw new Error('E_GENERATION_SESSION_OPEN: close the deleted session first')
         const pin = store.session(key)
         store.releaseSession(key)
@@ -1041,7 +1040,7 @@ export async function createRuntimeGenerationHost(
     migrateSessionGeneration: (key, context) =>
       enqueue(async () => {
         if (
-          owner(key).kernel.get(key) ||
+          owner(key, true).kernel.get(key) ||
           (await readLiveCompositionSessions(options.profileDir)).some(
             (session) => session.sessionKey === key,
           )
@@ -1064,7 +1063,7 @@ export async function createRuntimeGenerationHost(
           }
         }
         await assertMigrationSettled(
-          owner(key).kernel.o.storage,
+          owner(key, true).kernel.o.storage,
           key,
           pin.generationId,
           context?.recoveryRequired?.(),
@@ -1291,14 +1290,6 @@ export async function createRuntimeGenerationHost(
       if (!result) throw new Error('E_GENERATION_RESOURCE: Live resource consumer has no status')
       return result
     },
-    sessionCapabilities: (key) => owner(key).sessionCapabilities!(key),
-    setSessionPreset: (key, preset) => owner(key).setSessionPreset(key, preset),
-    validatePresetSwitch: (name, key) =>
-      (key ? owner(key) : (current?.host ?? initial)).validatePresetSwitch(name),
-    validateModelSwitch: (selection, key) =>
-      (key ? owner(key) : (current?.host ?? initial)).validateModelSwitch(selection),
-    callService: (params, ...rest) => owner(params.sessionId).callService(params, ...rest),
-    inspectService: (params, ...rest) => owner(params.sessionId).inspectService(params, ...rest),
     extensionRows: {
       current: () => (current?.host ?? initial).extensionRows.current(),
       prepare: (input) => {

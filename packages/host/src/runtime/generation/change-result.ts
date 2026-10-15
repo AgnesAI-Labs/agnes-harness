@@ -1,6 +1,6 @@
 import { PINNED_SEAM_KINDS } from '@agnes/extension-api/seams'
 import type { SeamBinding } from '@agnes/host-providers/assemble/seam-rows'
-import type { PinnedSeam } from '@agnes/package-manager'
+import type { PinnedSeam, SessionGenerationPin } from '@agnes/package-manager'
 
 /** A built generation container, with the implementation each seam kind was bound to. */
 export type ContainerHandle = Readonly<{
@@ -16,6 +16,17 @@ export type SessionBinding = Readonly<{
   loop?: Readonly<{ id: string; version: string }>
   pinnedSeams: readonly PinnedSeam[]
 }>
+
+export function sessionBindingOf(pin: SessionGenerationPin | undefined): SessionBinding | undefined {
+  return pin
+    ? {
+        sessionKey: pin.sessionKey,
+        generationId: pin.generationId,
+        ...(pin.loop ? { loop: pin.loop } : {}),
+        pinnedSeams: pin.seams ?? [],
+      }
+    : undefined
+}
 
 /** When a changed seam implementation reaches sessions. */
 export type SeamChangeEffect = 'applied' | 'new-sessions' | 'restart-required'

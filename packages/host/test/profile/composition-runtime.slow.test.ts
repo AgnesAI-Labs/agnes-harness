@@ -1089,6 +1089,12 @@ it('reclaims idle composition containers while preserving cold bindings', async 
     expect(retained).toBe(baseline)
     expect(host.sessionGeneration?.(names[0]!)).toBe(generation)
     const beforeReopen = created
+    expect(host.kernel.get(names[0]!)).toBeUndefined()
+    expect(() => host.kernel.session(names[0]!, {} as never)).toThrow('E_COMPOSITION_NOT_LIVE')
+    expect(() => host.memory(root, names[0]!)).toThrow('E_COMPOSITION_NOT_LIVE')
+    expect(
+      (await host.readSessionRows(names[0]!, { limit: 3 })).some((row) => row.type === 'session/start'),
+    ).toBe(true)
     const reopened = await host.createSession({ key: names[0]!, cwd: root })
     expect(created).toBeGreaterThan(beforeReopen)
     expect(reopened.pluginGenerationId).toBe(generation)

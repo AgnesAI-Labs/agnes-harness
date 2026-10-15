@@ -8,6 +8,8 @@ import {
 } from '@agnes/host-providers/profile/composition-state'
 import type { Host } from '../lifecycle/host.js'
 import { createHostFacade } from '../lifecycle/host-facade.js'
+import type { HostFacadeOverrides } from '../lifecycle/host-routing.js'
+import { sessionHostRoutes } from '../lifecycle/session-host-routes.js'
 import { describeCapabilitySession } from './session-capability-view.js'
 
 /** Keep legacy Hosts' behavior unchanged while exposing the same safe live inspection surface. */
@@ -35,7 +37,12 @@ export async function trackHostComposition(
   const timer = setInterval(publish, 1000)
   timer.unref()
   let closing: Promise<void> | undefined
-  const overrides: Partial<Host> = {
+  const overrides: HostFacadeOverrides = {
+    ...sessionHostRoutes(
+      () => host,
+      () => host,
+      () => host,
+    ),
     compositionSessions: live,
     async createSession(input) {
       if (input.bundles?.length) resolveComposition(profile, { sessionBundles: input.bundles })

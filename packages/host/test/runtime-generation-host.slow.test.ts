@@ -250,6 +250,8 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
       }).target
     await host.applyRuntimeTarget(target(one))
     const a = await host.createSession({ key: 'session-a', cwd: root })
+    const kernelAdmission = host.kernel.session
+    const pinnedHost = hostInspectionSource(host)
     expect(a.currentTools().resolve('skill_read')).toBeDefined()
     const firstId = a.pluginGenerationId
     await a.enqueue('next-turn', { actor: a.d.actor, content: [{ type: 'text', text: 'run the old code' }] })
@@ -268,6 +270,14 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
     await host.applyRuntimeTarget(target(one))
     await host.applyRuntimeTarget(target(two))
     const b = await host.createSession({ key: 'session-b', cwd: root })
+    const pinnedMemory = vi.spyOn(pinnedHost, 'memory').mockImplementation(() => {
+      throw new Error('pinned memory provider')
+    })
+    try {
+      expect(() => host!.memory(root, a.key)).toThrow('pinned memory provider')
+    } finally {
+      pinnedMemory.mockRestore()
+    }
     expect(a.currentTools().resolve('skill_read')).toBeDefined()
     expect(b.currentTools().resolve('skill_read')).toBeDefined()
     expect(a.pluginGenerationId).toBe(firstId)
@@ -399,6 +409,12 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
       version: '1.0.0',
     })
     expect(host.kernel.get(b.key)).toBeDefined()
+    expect(host.kernel.get(a.key)).toBeUndefined()
+    expect(() => kernelAdmission(a.key, {} as never)).toThrow('E_GENERATION_NOT_LIVE')
+    expect(() => host!.memory(root, a.key)).toThrow('E_GENERATION_NOT_LIVE')
+    expect(
+      (await host.readSessionRows(a.key, { limit: 3 })).some((row) => row.type === 'session/start'),
+    ).toBe(true)
     const collectedResume = await host.createSession({ key: a.key, cwd: root })
     expect(collectedResume.pluginGenerationId).toBe(firstId)
     await collectedResume.enqueue('next-turn', {

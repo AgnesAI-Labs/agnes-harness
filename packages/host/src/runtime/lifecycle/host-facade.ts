@@ -1,5 +1,6 @@
 import type { RuntimeConvergenceReport } from '@agnes/plugin-runtime/host'
 import type { Host } from './host.js'
+import { HOST_MEMBER_SCOPES, type HostFacadeOverrides, memberScope } from './host-routing.js'
 
 const sources = new WeakMap<Host, () => Host>()
 
@@ -14,10 +15,14 @@ export function hostInspectionSource(host: Host): Host {
 }
 
 /** Overrides own their properties, including replacements by embedders and instrumentation. */
-export function createHostFacade(base: Host, overrides: Partial<Host>, current = () => base): Host {
+export function createHostFacade(base: Host, overrides: HostFacadeOverrides, current = () => base): Host {
   const facade = new Proxy(base, {
     get(_target, property) {
+      const scope = memberScope(HOST_MEMBER_SCOPES, property, base, overrides, current())
+      if (!scope) return undefined
       if (Object.hasOwn(overrides, property)) return Reflect.get(overrides, property)
+      if (scope === 'session')
+        throw new Error(`E_HOST_SESSION_ROUTE: ${String(property)} requires an explicit binding owner`)
       const target = current(),
         value = Reflect.get(target, property, target)
       return typeof value === 'function'
