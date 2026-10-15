@@ -1,6 +1,5 @@
 import { MemoryStorage } from '@agnes/core'
 import { fakeSeams } from '@agnes/core/testkit'
-import type { PersistenceMetadataNamespace, PersistenceMetadataPort } from '@agnes/extension-api'
 import { ServiceRegistry } from '@agnes/host-extensions/ext-host/services'
 import { ProfileActivations } from '@agnes/host-extensions/profile/activation'
 import { ownedStore } from '@agnes/host-extensions/profile/owned-store'
@@ -9,37 +8,7 @@ import { Hub, North } from '@agnes/mhs-hub'
 import { expect, it } from 'vitest'
 import { attach } from '../../mhs-hub/test/fixtures.js'
 import { createMhsNativeProfileAdapter, mhsOwnedStore } from '../src/index.js'
-
-function metadata(): PersistenceMetadataPort {
-  const spaces = new Map<string, Map<string, unknown>>()
-  return {
-    namespace(owner, name): PersistenceMetadataNamespace {
-      const key = `${owner}/${name}`,
-        rows = spaces.get(key) ?? new Map<string, unknown>()
-      spaces.set(key, rows)
-      return {
-        get: (key) => structuredClone(rows.get(key)),
-        set: (key, value) => {
-          rows.set(key, structuredClone(value))
-        },
-        delete: (key) => {
-          rows.delete(key)
-        },
-        entries: () => [...rows].map(([key, value]) => ({ key, value: structuredClone(value) })),
-        transaction(work) {
-          const before = structuredClone(rows)
-          try {
-            return work()
-          } catch (error) {
-            rows.clear()
-            for (const [key, value] of before) rows.set(key, value)
-            throw error
-          }
-        },
-      }
-    },
-  }
-}
+import { metadata } from './profile-fixture.js'
 
 it('runs real MHS profile services through native AR1 and the Host owner store without fake approval proof', async () => {
   const meta = metadata(),

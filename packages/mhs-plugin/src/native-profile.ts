@@ -1,4 +1,4 @@
-import type { PluginContextFacets, ServiceContext, ServiceDef } from '@agnes/extension-api'
+import type { PluginContextFacets, ServiceContext, ServiceDef, StreamContext } from '@agnes/extension-api'
 import { type Json, MhsError, object, prepareArguments } from '@agnes/mhs-device'
 import { type AdmissionSubject, type Authority, digest, type North } from '@agnes/mhs-hub'
 import { MHS_EFFECT_SERVICES, MHS_QUERY_SERVICES, mhsServices } from './services.js'
@@ -24,6 +24,23 @@ const inputSchema = {
 /** Managed composition supplies current activation; the Host supplies consumed native admission. */
 export function createMhsNativeProfileAdapter(assertActive: () => Promise<void>) {
   const contexts = new WeakMap<object, AdmissionSubject>()
+  // Derived, bounded live capabilities only; durable approval remains in the Host AR1 journal.
+  const controls = new Map<
+    string,
+    {
+      device: string
+      leaseId: string
+      expiresAt: number
+      identity: string
+      signal: AbortSignal
+    }
+  >()
+  const identity = (context: Pick<StreamContext, 'actor' | 'source' | 'scope'>) =>
+    digest({ actor: context.actor, source: context.source, profileId: context.scope.profileId })
+  const pruneControls = () => {
+    for (const [id, binding] of controls)
+      if (binding.expiresAt <= Date.now() || binding.signal.aborted) controls.delete(id)
+  }
   const authority: Authority = {
     assertActive,
     async admit(subject, raw) {
@@ -123,7 +140,31 @@ export function createMhsNativeProfileAdapter(assertActive: () => Promise<void>)
                 operationId: admission.operationId,
               } as unknown as AdmissionSubject)
             try {
-              return ((await services.effect(method, input, context)) ?? null) as Json
+              const output = ((await services.effect(method, input, context)) ?? null) as Json
+              if (method === 'lease') {
+                context.signal.throwIfAborted()
+                await assertActive()
+                const grant = admission.controlGrant,
+                  lease = object(output)
+                if (
+                  !grant ||
+                  lease.operationId !== admission.operationId ||
+                  typeof lease.expiresAt !== 'number' ||
+                  typeof presentation.device !== 'string' ||
+                  context.scope?.kind !== 'profile'
+                )
+                  throw new MhsError('control-binding-mismatch')
+                pruneControls()
+                if (controls.size >= 10000) throw new MhsError('control-capacity')
+                controls.set(grant.grantId, {
+                  device: presentation.device,
+                  leaseId: admission.operationId,
+                  expiresAt: Math.min(grant.expiresAt, lease.expiresAt),
+                  identity: identity({ actor: context.actor, source: context.source, scope: context.scope }),
+                  signal: context.signal,
+                })
+              }
+              return output
             } finally {
               contexts.delete(context)
             }
@@ -135,6 +176,24 @@ export function createMhsNativeProfileAdapter(assertActive: () => Promise<void>)
   return {
     authority,
     definitions,
+    /** Pass directly to registerMhsStreams; the browser cannot select a device or Hub lease. */
+    async bindControl(context: StreamContext) {
+      context.signal.throwIfAborted()
+      await assertActive()
+      context.signal.throwIfAborted()
+      pruneControls()
+      const grant = context.control,
+        binding = grant && controls.get(grant.grantId)
+      if (
+        !grant ||
+        !binding ||
+        grant.expiresAt > binding.expiresAt ||
+        grant.expiresAt <= Date.now() ||
+        binding.identity !== identity(context)
+      )
+        throw new MhsError('control-admission-required')
+      return { grantId: grant.grantId, device: binding.device, leaseId: binding.leaseId }
+    },
     register(ctx: Pick<PluginContextFacets, 'services'>, north: North) {
       for (const definition of definitions(north)) ctx.services.register(definition)
     },

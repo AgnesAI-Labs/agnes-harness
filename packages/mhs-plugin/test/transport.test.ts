@@ -2,17 +2,23 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { MemoryStorage } from '@agnes/core'
+import { fakeSeams } from '@agnes/core/testkit'
 import {
   bindPluginStreams,
   createPluginStreamBroker,
   createRosterStreamAuthorizer,
   type StreamPrincipal,
 } from '@agnes/daemon-rpc/streams'
+import { ServiceRegistry } from '@agnes/host-extensions/ext-host/services'
+import { ProfileActivations } from '@agnes/host-extensions/profile/activation'
+import { createProfileServiceRuntime } from '@agnes/host-extensions/profile/runtime'
 import type { ClientModuleRosterRow, StreamDeclaration } from '@agnes/protocol'
 import { createManagedServiceRuntime } from '@agnes/sdk/managed-service'
 import { expect, it, vi } from 'vitest'
-import { attach, authority, invocation } from '../../mhs-hub/test/fixtures.js'
-import { registerMhsStreams, startManagedMhsHub } from '../src/index.js'
+import { attach } from '../../mhs-hub/test/fixtures.js'
+import { createMhsNativeProfileAdapter, registerMhsStreams, startManagedMhsHub } from '../src/index.js'
+import { metadata } from './profile-fixture.js'
 
 async function freePort() {
   const server = createServer()
@@ -68,18 +74,65 @@ it('runs the real Hub on the generic owned store/readiness and streams, parking 
       availability: 'active',
     },
   }
+  const meta = metadata(),
+    activations = new ProfileActivations(meta.namespace('@host', 'activation'))
+  const owner = 'sample/mhs'
+  activations.publish([{ owner, revision: 'revision' }])
+  const adapter = createMhsNativeProfileAdapter(async () => {
+    activations.require(owner, 'revision')
+  })
+  const activationId = activations.require(owner, 'revision')
+  if (!row.binding) throw new Error('missing profile binding')
+  row.binding = { ...row.binding, activationId }
+  const registry = new ServiceRegistry()
+  const credential = { kind: 'local' }
+  const native = createProfileServiceRuntime({
+    profileId: 'one',
+    registry,
+    activations,
+    metadata: meta,
+    storage: new MemoryStorage(),
+    authority: {
+      async resolve() {
+        return {
+          source: 'web',
+          subjectCredential: credential,
+          grants: [{ extension: owner, name: 'mhs.lease', range: '*' }],
+        }
+      },
+    },
+    seams: fakeSeams(),
+    log: { debug() {}, info() {}, warn() {}, error() {} },
+    clock: Date.now,
+    signal: lifetime.signal,
+    networkAllow: [],
+    audit() {},
+  })
   const broker = createPluginStreamBroker({
     authorize: createRosterStreamAuthorizer({
-      async resolve(_principal, request) {
-        if (request.name === 'mhs.control' && request.controlOperationId !== 'admitted-operation')
-          throw new Error('approval-required')
+      async resolve(authenticated, request) {
+        const grant =
+          request.name === 'mhs.control'
+            ? await native.authorizeControl(
+                {
+                  extension: owner,
+                  service: 'mhs.lease',
+                  operationId: request.controlOperationId ?? 'missing',
+                },
+                credential,
+              )
+            : undefined
+        if (grant && JSON.stringify(grant.actor) !== JSON.stringify(authenticated.actor))
+          throw new Error('actor-mismatch')
         return {
           current: () => row,
           signal: lifetime.signal,
-          assertScope() {},
-          ...(request.name === 'mhs.control'
-            ? { control: { grantId: 'admitted-grant', expiresAt: Date.now() + 30000 } }
-            : {}),
+          assertScope() {
+            activations.require(owner, 'revision', activationId)
+            if (request.scope.kind !== 'profile' || authenticated.profileId !== 'one')
+              throw new Error('profile-mismatch')
+          },
+          ...(grant ? { control: { grantId: grant.grantId, expiresAt: grant.expiresAt } } : {}),
         }
       },
     }),
@@ -87,10 +140,10 @@ it('runs the real Hub on the generic owned store/readiness and streams, parking 
   try {
     expect((await fetch(`http://127.0.0.1:${port}/health`, { headers })).status).toBe(503)
     const hub = await startManagedMhsHub(runtime, {
-      authority,
+      authority: adapter.authority,
       wakes: {
         async enqueue() {
-          return { wakeId: 'wake', state: 'queued' }
+          throw new Error('No original session target was bound')
         },
       },
     })
@@ -107,7 +160,47 @@ it('runs the real Hub on the generic owned store/readiness and streams, parking 
     device.onManual = async (value) => {
       axes.push(value)
     }
-    await hub.north.effect('lease', { device: 'rover' }, invocation('manual-lease'))
+    const definitions = adapter.definitions(hub.north)
+    for (const definition of definitions)
+      registry.registerRow(definition, {
+        owner,
+        packageId: 'sample-mhs',
+        integrity: 'revision',
+        version: '0.0.0',
+        signal: lifetime.signal,
+        assertAlive() {},
+        assertRunning() {},
+        consume() {},
+      })
+    const lease = {
+      extension: owner,
+      service: 'mhs.lease',
+      operationId: 'manual-lease',
+      input: { device: 'rover' },
+    }
+    expect(await native.call(lease, credential)).toMatchObject({ state: 'approval-required' })
+    await expect(
+      native.authorizeControl(
+        { extension: owner, service: 'mhs.lease', operationId: 'manual-lease' },
+        credential,
+      ),
+    ).rejects.toThrow()
+    const pending = (await native.listDecisions(credential))[0]!
+    await native.answerDecision(
+      {
+        handle: pending.handle,
+        revision: pending.revision,
+        commandId: 'review-lease',
+        response: { option: 'allowed-once', value: null },
+      },
+      credential,
+    )
+    expect(await native.call(lease, credential)).toMatchObject({ state: 'completed' })
+    const admitted = await native.authorizeControl(
+      { extension: owner, service: 'mhs.lease', operationId: 'manual-lease' },
+      credential,
+    )
+    Object.assign(principal, { actor: admitted.actor, source: admitted.source })
     const declarations: StreamDeclaration[] = (['media', 'events', 'control'] as const).map((lane) => ({
       name: `mhs.${lane}`,
       lane,
@@ -122,7 +215,7 @@ it('runs the real Hub on the generic owned store/readiness and streams, parking 
     const author = bindPluginStreams(broker, {
       owner: 'sample/mhs',
       profileId: 'one',
-      activationId: 'current',
+      activationId,
       signal: lifetime.signal,
       capabilities: {
         streams: declarations,
@@ -130,6 +223,15 @@ it('runs the real Hub on the generic owned store/readiness and streams, parking 
           {
             name: 'mhs.lease',
             kind: 'effect',
+            scope: 'profile',
+            controlLeaseMs: 30000,
+            effectPolicy: {
+              isDestructive: true,
+              isOpenWorld: true,
+              replay: 'never',
+              requiresApproval: 'always',
+              approvalScopes: [],
+            },
             inputSchema: { type: 'object', properties: {}, additionalProperties: false },
             outputSchema: {},
             timeoutMs: 1000,
@@ -137,14 +239,12 @@ it('runs the real Hub on the generic owned store/readiness and streams, parking 
           },
         ],
       },
-      assertCurrent() {},
+      assertCurrent() {
+        activations.require(owner, 'revision', activationId)
+      },
       compileInput: () => () => true,
     })
-    const release = registerMhsStreams(hub.north, author, async (context) => ({
-      grantId: context.control?.grantId ?? 'missing',
-      device: 'rover',
-      leaseId: 'manual-lease',
-    }))
+    const release = registerMhsStreams(hub.north, author, adapter.bindControl)
     async function open(name: string, input: Record<string, string>, pressure = 0) {
       const grant = await broker.open(principal, {
         owner: 'sample/mhs',
@@ -152,7 +252,7 @@ it('runs the real Hub on the generic owned store/readiness and streams, parking 
         scope: { kind: 'profile', profileId: 'one' },
         input,
         client: { rowId: row.rowId, revision: 'revision', contentDigest: `sha256-${'a'.repeat(64)}` },
-        ...(name === 'mhs.control' ? { controlOperationId: 'admitted-operation' } : {}),
+        ...(name === 'mhs.control' ? { controlOperationId: 'manual-lease' } : {}),
       })
       const sent: (string | Uint8Array)[] = []
       const peer = broker.connect(principal, {
@@ -164,8 +264,7 @@ it('runs the real Hub on the generic owned store/readiness and streams, parking 
         close() {},
       })
       peer.receive(new TextEncoder().encode(JSON.stringify({ ticket: grant.ticket })), false)
-      await Promise.resolve()
-      await Promise.resolve()
+      await new Promise<void>((resolve) => setImmediate(resolve))
       return { peer, sent, grant }
     }
     await expect(
@@ -176,7 +275,20 @@ it('runs the real Hub on the generic owned store/readiness and streams, parking 
         input: {},
         client: { rowId: row.rowId, revision: 'revision', contentDigest: `sha256-${'a'.repeat(64)}` },
       }),
-    ).rejects.toThrow('approval-required')
+    ).rejects.toThrow()
+    await expect(
+      broker.open(
+        { ...principal, actor: { ...principal.actor, id: 'another-human' } },
+        {
+          owner,
+          name: 'mhs.control',
+          scope: { kind: 'profile', profileId: 'one' },
+          input: {},
+          client: { rowId: row.rowId, revision: row.revision, contentDigest: row.contentDigest },
+          controlOperationId: 'manual-lease',
+        },
+      ),
+    ).rejects.toThrow('actor-mismatch')
     const media = await open('mhs.media', { device: 'rover', source: 'front' }, 2097152)
     const control = await open('mhs.control', { device: 'forged-browser-device' })
     hub.north.hub.observation('rover', 'front', { w: 1, h: 1 }, new Uint8Array([1, 2]), 'image/png')
@@ -206,8 +318,17 @@ it('runs the real Hub on the generic owned store/readiness and streams, parking 
     })
     expect(await result.json()).toEqual({ incarnation: 'private-proof', state: 'settled' })
     await expect(hub.north.query('devices', {})).rejects.toThrow('disabled')
+    activations.publish([])
+    await expect(
+      native.authorizeControl(
+        { extension: owner, service: 'mhs.lease', operationId: 'manual-lease' },
+        credential,
+      ),
+    ).rejects.toThrow()
+    await expect(open('mhs.events', {})).rejects.toThrow()
   } finally {
     broker.close()
+    await native.close()
     lifetime.abort()
     await stop?.()
     await runtime.close()
