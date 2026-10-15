@@ -58,7 +58,7 @@ function fixture() {
       exampleOf: 'acme/parent',
       launches: [launch],
     },
-  } as PackageCatalogDescriptor
+  } as unknown as PackageCatalogDescriptor
   const preview = {
     ...entry,
     capabilityHash: 'cap-1',
