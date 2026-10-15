@@ -365,3 +365,37 @@
   background: var(--agnes-bg-card);
   border-radius: var(--radius-md);
 }
+
+.mhs-root .mhs-axis-pad {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  padding: 0;
+  touch-action: none;
+  flex-shrink: 0;
+}
+.mhs-pad-cross {
+  position: absolute;
+  inset: 18px;
+  border: 1px dashed var(--agnes-line-emphasis);
+  border-radius: 50%;
+}
+.mhs-pad-thumb {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  top: calc(50% - 12px);
+  left: calc(50% - 12px);
+  border-radius: 50%;
+  background: var(--agnes-text-emphasis);
+  pointer-events: none;
+}
+.mhs-pad-label {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: var(--font-size-xs);
+  color: var(--agnes-text-secondary);
+}

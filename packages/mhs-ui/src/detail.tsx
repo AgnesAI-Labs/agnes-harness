@@ -1,6 +1,6 @@
 import { Button } from '@agnes/web-ui'
 import { Drive } from './drive.js'
-import { StateField, ToolForm } from './forms.js'
+import { JobView, StateField, ToolForm } from './forms.js'
 import { type Device, jsonText, record } from './model.js'
 import { HubHealth, Stop, useMhs } from './react.js'
 import { Observation } from './widgets.js'
@@ -39,6 +39,12 @@ export function DeviceDetail({ device, onBack }: { device: Device; onBack(): voi
           <Drive device={device} />
         </div>
         <div>
+          <section className="mhs-box">
+            <h3>{t('jobs')}</h3>
+            {device.jobs.map((job) => (
+              <JobView key={String(job.id)} operation={job} device={device.id} />
+            ))}
+          </section>
           <section className="mhs-box">
             <h3>{t('actions')}</h3>
             {device.tools.map((tool) => (

@@ -74,7 +74,8 @@ export function fake() {
     projectionListeners = new Set<() => void>(),
     effects: { name: string; input: JsonValue; operationId: string }[] = [],
     queries: { name: string; input: JsonValue }[] = [],
-    streams: Stream[] = []
+    streams: Stream[] = [],
+    opened: { name: string; input: JsonValue; operationId: string | undefined }[] = []
   let selected: string | undefined = 'session-a',
     nodes: unknown[] = [],
     currentDevices: unknown[] = [device()],
@@ -91,14 +92,28 @@ export function fake() {
       },
       async effect(name, input, { operationId }) {
         effects.push({ name, input, operationId })
-        return effectResult ?? { state: 'completed', operationId, output: { state: 'settled' } }
+        if (
+          effectResult?.state === 'completed' &&
+          effectResult.output &&
+          typeof effectResult.output === 'object' &&
+          !Array.isArray(effectResult.output) &&
+          'operationId' in effectResult.output
+        ) {
+          return name === 'mhs.lease'
+            ? { ...effectResult, operationId, output: { ...effectResult.output, operationId } }
+            : { state: 'completed', operationId, output: { state: 'settled' } }
+        }
+        return effectResult
+          ? { ...effectResult, operationId }
+          : { state: 'completed', operationId, output: { state: 'settled' } }
       },
       async readOperation(operationId) {
         return { state: 'refused', operationId, code: 'expired' }
       },
     },
     streams: {
-      async open() {
+      async open(name, input, options) {
+        opened.push({ name, input, operationId: options?.controlOperationId })
         const s = streams.length === 0 ? stream : new Stream()
         streams.push(s)
         return s
@@ -127,6 +142,7 @@ export function fake() {
     ports,
     stream,
     streams,
+    opened,
     effects,
     queries,
     set devices(value: unknown[]) {

@@ -4,9 +4,9 @@
 
 [项目首页](../../README.zh-CN.md) · [文档导航](../README.zh-CN.md) · [FDE 与应用场景](why-agh.zh-CN.md)
 
-> **预览：MCP 设备接缝与模拟巡检 bundle 已提供，不宣称 MHS 兼容。**
+> **源码预览：已有原生 MHS 设备 SDK、profile Hub、插件 factory 和浏览器模块；普通安装激活仍需要受管理服务、authority 与认证 stream 适配。物理设备尚未验收。**
 
-从巡检和运维到仪器协作，现场工作需要将设备状态、人的判断与业务流程连接起来。AGH 计划探索通过 MHS（Model Hardware Standard）接入物理设备，以 MCP（Model Context Protocol）作为设备连接层，让状态读取、操作请求和执行回执进入同一套任务流程。
+从巡检和运维到仪器协作，现场工作需要将设备状态、人的判断与业务流程连接起来。MHS 插件通过自己的版本化命令与 MOS 观测通道，把状态读取、操作请求和执行回执接入任务流程；MHS 不以 MCP 作为设备传输层。
 
 在 AGH 的[架构](../develop/architecture.zh-CN.md#大脑小脑记忆与身体)中，设备适配器连接任务编排与物理能力。设备及其控制器提供这些能力，AGH 提供任务编排、人工确认和记录。这一方向可以纳入使用同一软件底座的 FDE 交付。
 
@@ -26,15 +26,23 @@ flowchart LR
   Receipt --> AGH
 ```
 
-AGH 负责组织任务、授权交互和结果记录；适配层将设备能力接入任务流程；设备控制器负责实际动作与现场保护。AGH 的设备接入方向以 MCP（Model Context Protocol）为适配层基础——这是一套模型无关、有版本规范的协议，而不是厂商专属 SDK 或 ROS 桥接。仅完成一次 MCP 连接本身不构成 MHS 兼容性验证，因为目前没有可供认证的公开 MHS 规范。
+AGH 负责组织任务、授权交互和结果记录；适配层将设备能力接入任务流程；设备控制器负责实际动作与现场保护。[设备 SDK](../../packages/mhs-device/README.zh-CN.md) 维护声明和本地安全，[Hub](../../packages/mhs-hub/README.zh-CN.md) 维护设备状态与回执，[Harness 插件](../../packages/mhs-plugin/README.zh-CN.md) 消费通用 Host 接口。缺少受管理连接器时拒绝激活，浏览器不会直接连接裸 North 控制 socket。
 
-[device-inspection bundle](../../examples/fde/device-inspection/README.zh-CN.md) 已在本地模拟器展示“读取状态 → 识别异常 → 人工确认 → 受约束处置 → 核对回执”。具体型号、动作和失败处理需要单独实现与验证。
+独立的 MCP [device-inspection bundle](../../examples/fde/device-inspection/README.zh-CN.md) 已在本地模拟器展示“读取状态 → 识别异常 → 人工确认 → 受约束处置 → 核对回执”。具体型号、动作和失败处理需要单独实现与验证。
+
+## 浏览器工作台
+
+MHS 客户端提供固定一级入口，包含设备、地图、活动、接入、示例五个标签，以及设备详情、七种设备工具卡片和会话设备工作台。设备页面通过 profile services 读取与请求操作，查看或停止设备不创建隐藏会话。原生批准和设备人工控制租约由后端裁定；结果未知时可以只读核实状态，不会自动重发动作。
+
+活动采用 Hub 的七天窗口、最早可读时间和有界 cursor 分页；未选中会话时禁用当前会话筛选。工作台数量来自所选会话用过的设备，切换会话立即清空。详情展示已确认的源状态与最近操作摘要；SDK 在到达静止检查点后才报告暂停。地图支持声明的区域、地标、设备信任/离线标记，以及点、姿态和多边形目标。
+
+接入页展示 SDK 用法、声明与有界协议事件摘要；受管理健康、公开 SDK 地址、外部设置和一致性检查需要宿主拥有的诊断适配。示例使用经过审查的本地包启用/启动流程和已注册的页内场景，安装与运行分别显示。剩余接线边界见[浏览器合同](../../packages/mhs-ui/README.zh-CN.md)。
 
 ## 即将开放的内容
 
 | 内容 | 计划说明的范围 | 当前状态 |
 | --- | --- | --- |
-| 接入指南 | 设备能力描述、适配位置、身份与权限配置 | 即将开放 |
+| 接入指南 | [SDK](../../packages/mhs-device/README.zh-CN.md)、[Hub](../../packages/mhs-hub/README.zh-CN.md) 与[浏览器模块](../../packages/mhs-ui/README.zh-CN.md)合同 | 源码预览 |
 | 示例与复现步骤 | [模拟巡检](../../examples/fde/device-inspection/README.zh-CN.md)，默认 dry-run | 预览 |
 | 设备验证说明 | 支持型号、软件版本、验证环境与已知限制 | 即将开放 |
 
@@ -67,4 +75,4 @@ MCP 桥保留 `readOnlyHint`、`destructiveHint` 与 `idempotentHint`，映射�
 
 ## 当前状态摘要
 
-**预览接缝与模拟巡检示例已提供。** 经过验证的通用 MHS 适配器与受支持设备清单仍待后续交付。模拟器不证明 MHS 兼容或物理设备验收。实时控制与物理安全仍由设备控制器负责。
+**原生 MHS 源码模块与独立 MCP 巡检示例已提供。** 经过验证的通用 MHS 适配器与受支持设备清单仍待后续交付。模拟器不证明 MHS 兼容或物理设备验收。实时控制与物理安全仍由设备控制器负责。

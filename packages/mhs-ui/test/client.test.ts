@@ -10,11 +10,13 @@ import { deferred, device, fake, Stream } from './fixtures.js'
 afterEach(() => vi.useRealTimers())
 describe('owner-bound MHS browser data', () => {
   it('clears session devices synchronously and discards an old projection after a switch', async () => {
+    vi.useFakeTimers()
     const f = fake(),
       client = new MhsClient(f.ports),
       store = new MhsStore(client),
       stop = store.start()
-    await vi.waitFor(() => expect(store.read().status).toBe('ready'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(store.read().status).toBe('ready')
     f.setNodes([
       {
         kind: 'tool',
@@ -26,7 +28,8 @@ describe('owner-bound MHS browser data', () => {
         seq: 4,
       },
     ])
-    await vi.waitFor(() => expect([...usedDeviceIds(store.read().calls)]).toEqual(['rover-01']))
+    await vi.advanceTimersByTimeAsync(0)
+    expect([...usedDeviceIds(store.read().calls)]).toEqual(['rover-01'])
     const pending = deferred<unknown>()
     f.ports.session.projection.read = () => pending.promise
     f.setNodes([])

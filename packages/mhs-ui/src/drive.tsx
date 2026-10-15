@@ -1,20 +1,23 @@
 import { Button, Tooltip } from '@agnes/web-ui'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { type Axis, ManualController, roleKeys } from './manual.js'
+import { type Axis, ManualController, manualKey, roleKeys } from './manual.js'
 import { array, type Device, jsonText, number, record, text } from './model.js'
 import { ActionFeedback, useAction, useMhs } from './react.js'
 
 export function Drive({ device }: { device: Device }) {
   const { client, t } = useMhs(),
     action = useAction(),
+    stopAction = useAction(),
     [controller, setController] = useState<ManualController>(),
     [failure, setFailure] = useState(false)
+  const stopRunner = useRef(stopAction.run)
+  stopRunner.current = stopAction.run
   const current = useRef<ManualController>(),
     opening = useRef(false)
-  const manualKey = jsonText(device.manual)
+  const declarationKey = jsonText(device.manual)
   const axes = useMemo(
     (): Axis[] =>
-      array(record(JSON.parse(manualKey)).axes).map((v) => {
+      array(record(JSON.parse(declarationKey)).axes).map((v) => {
         const a = record(v)
         return {
           id: text(a.id),
@@ -23,7 +26,7 @@ export function Drive({ device }: { device: Device }) {
           ...(text(a.role) ? { role: text(a.role) } : {}),
         }
       }),
-    [manualKey],
+    [declarationKey],
   )
   const rate = number(device.manual.rate_hz, 30)
   const consumed = useRef(new Set<string>())
@@ -55,7 +58,14 @@ export function Drive({ device }: { device: Device }) {
           stream,
           axes,
           expiresAt,
-          () => client.effect('stop', { device: device.id }),
+          async () => {
+            const result = await stopRunner.current('stop', { device: device.id })
+            if (!result || result.state !== 'completed' || record(result.output).state !== 'settled') {
+              setFailure(true)
+              throw new Error('stop-unconfirmed')
+            }
+            return result
+          },
           Date.now,
           rate,
         )
@@ -127,7 +137,9 @@ export function Drive({ device }: { device: Device }) {
       <h3>{t('manual')}</h3>
       <p>{t('controlHelp')}</p>
       <Button
-        disabled={!device.available || action.pending || !!controller}
+        disabled={
+          !device.available || action.pending || stopAction.busy || stopAction.pending || !!controller
+        }
         loading={action.busy}
         onClick={() => {
           setFailure(false)
@@ -138,6 +150,7 @@ export function Drive({ device }: { device: Device }) {
       </Button>
       {controller && <Button onClick={release}>{t('release')}</Button>}
       <ActionFeedback action={action} />
+      <ActionFeedback action={stopAction} />
       {failure && <p role="alert">{t('unknown')}</p>}
       <fieldset
         className="mhs-drive"
@@ -154,11 +167,11 @@ export function Drive({ device }: { device: Device }) {
           if (e.code === 'Space') {
             e.preventDefault()
             if (controller) release()
-            else void client.effect('stop', { device: device.id }).catch(() => setFailure(true))
+            else void stopAction.run('stop', { device: device.id })
             return
           }
           if (e.ctrlKey || e.metaKey || e.altKey) return
-          const key = e.key.toLowerCase()
+          const key = manualKey(e.key)
           for (const axis of axes) {
             const keys = roleKeys[axis.role ?? '']
             if (keys?.includes(key)) {
@@ -169,7 +182,7 @@ export function Drive({ device }: { device: Device }) {
         }}
         onKeyUp={(e) => {
           for (const axis of axes) {
-            if (roleKeys[axis.role ?? '']?.includes(e.key.toLowerCase())) {
+            if (roleKeys[axis.role ?? '']?.includes(manualKey(e.key))) {
               e.preventDefault()
               controller?.set(axis.id, 0)
               controller?.zero()
@@ -177,6 +190,15 @@ export function Drive({ device }: { device: Device }) {
           }
         }}
       >
+        {(() => {
+          const horizontal =
+              axes.find((axis) => axis.role === 'turn') ?? axes.find((axis) => axis.role === 'yaw'),
+            vertical =
+              axes.find((axis) => axis.role === 'forward') ?? axes.find((axis) => axis.role === 'pitch')
+          return horizontal && vertical ? (
+            <AxisPad controller={controller} horizontal={horizontal} vertical={vertical} />
+          ) : null
+        })()}
         {axes.map((axis) => (
           <div key={axis.id} className="mhs-axis">
             <span>{axis.id}</span>
@@ -216,5 +238,66 @@ export function Drive({ device }: { device: Device }) {
         ))}
       </fieldset>
     </section>
+  )
+}
+
+function AxisPad({
+  controller,
+  horizontal,
+  vertical,
+}: {
+  controller: ManualController | undefined
+  horizontal: Axis
+  vertical: Axis
+}) {
+  const [position, setPosition] = useState({ x: 0, y: 0 })
+  useEffect(() => {
+    if (!controller) setPosition({ x: 0, y: 0 })
+  }, [controller])
+  const reset = () => {
+    controller?.zero()
+    setPosition({ x: 0, y: 0 })
+  }
+  const move = (element: HTMLElement, clientX: number, clientY: number) => {
+    const bounds = element.getBoundingClientRect()
+    if (!controller || bounds.width <= 0 || bounds.height <= 0) return
+    let x = ((clientX - bounds.left) / bounds.width) * 2 - 1,
+      y = ((clientY - bounds.top) / bounds.height) * 2 - 1
+    const length = Math.max(1, Math.hypot(x, y))
+    x /= length
+    y /= length
+    controller.set(horizontal.id, -x)
+    controller.set(vertical.id, -y)
+    setPosition({ x, y })
+  }
+  return (
+    <Button
+      className="mhs-axis-pad"
+      disabled={!controller}
+      aria-label={`${vertical.id} / ${horizontal.id}`}
+      onPointerDown={(event) => {
+        if (!controller) return
+        event.currentTarget.focus()
+        event.currentTarget.setPointerCapture(event.pointerId)
+        move(event.currentTarget, event.clientX, event.clientY)
+      }}
+      onPointerMove={(event) => {
+        if (event.currentTarget.hasPointerCapture(event.pointerId))
+          move(event.currentTarget, event.clientX, event.clientY)
+      }}
+      onPointerUp={reset}
+      onPointerCancel={reset}
+      onLostPointerCapture={reset}
+    >
+      <span className="mhs-pad-cross" aria-hidden="true" />
+      <span
+        className="mhs-pad-thumb"
+        aria-hidden="true"
+        style={{ transform: `translate(${position.x * 32}px, ${position.y * 32}px)` }}
+      />
+      <span className="mhs-pad-label">
+        {vertical.id} / {horizontal.id}
+      </span>
+    </Button>
   )
 }

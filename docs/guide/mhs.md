@@ -6,9 +6,9 @@ English | [简体中文](mhs.zh-CN.md)
 
 [Project home](../../README.md) · [Documentation](../README.md) · [FDE and use cases](why-agh.md)
 
-> **Preview: an MCP device integration seam and a simulated inspection bundle are available. No MHS compatibility is claimed.**
+> **Source preview: native MHS device SDKs, a profile-owned Hub, plugin factories and browser module are available. Normal installed activation still requires the managed-service, authority and authenticated-stream adapters. Physical-device acceptance is unverified.**
 
-From inspection and maintenance to instrument coordination, field work connects device state, human judgment, and business workflows. AGH plans to explore physical device integration through MHS (Model Hardware Standard), built on MCP (Model Context Protocol) as the device connection layer, bringing state reads, operation requests, and execution receipts into one task flow.
+From inspection and maintenance to instrument coordination, field work connects device state, human judgment, and business workflows. The MHS plugin uses its own versioned command and MOS observation channels to bring state reads, operation requests and execution receipts into that task flow. MHS does not use MCP as its device transport.
 
 In AGH's [architecture](../develop/architecture.md#brain-cerebellum-memory-and-body), device adapters connect task orchestration to physical capabilities. The devices and their controllers supply those capabilities, while AGH contributes task orchestration, human confirmation, and records. This direction can be part of an FDE deployment using the same software foundation.
 
@@ -30,9 +30,17 @@ flowchart LR
   Receipt --> AGH
 ```
 
-AGH organizes tasks, authorization interactions, and result records. An adapter connects device capabilities to task execution, while the device controller owns actual motion and site protections. AGH's device integration direction builds the adapter on MCP (Model Context Protocol), a model-agnostic, versioned protocol, rather than a vendor-specific SDK or a ROS bridge. A bare MCP connection alone does not demonstrate MHS compatibility, since no public MHS specification is open for certification.
+AGH organizes tasks, authorization interactions, and result records. An adapter connects device capabilities to task execution, while the device controller owns actual motion and site protections. The [device SDK](../../packages/mhs-device/README.md) owns device declarations and local safety, the [Hub](../../packages/mhs-hub/README.md) owns device state and receipts, and the [Harness plugin](../../packages/mhs-plugin/README.md) consumes generic Host services. An unsupported managed connector fails closed; a browser never opens a bare North control socket.
 
-The [device-inspection bundle](../../examples/fde/device-inspection/README.md) demonstrates read status → detect an anomaly → obtain human confirmation → perform a constrained action → verify the receipt in a local simulator. Each device model, action, and failure path needs its own implementation and validation.
+The separate MCP-based [device-inspection bundle](../../examples/fde/device-inspection/README.md) demonstrates read status → detect an anomaly → obtain human confirmation → perform a constrained action → verify the receipt in a local simulator. Each device model, action, and failure path needs its own implementation and validation.
+
+## Browser workbench
+
+The MHS client contributes a primary sidebar page with Devices, Map, Activity, Connect and Examples tabs, device detail, seven device-tool cards and a contextual session Devices workbench panel. Device lists and controls use profile services; viewing or stopping a device does not create a hidden chat session. Native approval and device-bound manual leases remain backend decisions. Unknown receipts offer read-only reconciliation rather than automatically dispatching another action.
+
+Activity uses the Hub's seven-day window, earliest available timestamp and bounded cursor pages. Its current-session filter is disabled when no session is selected. The workbench count reflects devices used in the selected session and clears on a switch. Device details show confirmed source states and recent operation summaries; the device SDK reports paused only after reaching rest. Maps support declared landmarks, device trust/offline markers and point, pose or polygon targets.
+
+Connect shows SDK usage, declarations and bounded protocol-event summaries. Managed health, public SDK endpoints, external settings and conformance require the host-owned diagnostics adapter. Examples use reviewed local package activation/launch and registered local scenes; installed and running are distinct states. See the [browser contract](../../packages/mhs-ui/README.md) for the remaining integration boundaries.
 
 <a id="即将开放的内容"></a>
 
@@ -40,13 +48,13 @@ The [device-inspection bundle](../../examples/fde/device-inspection/README.md) d
 
 | Content | Planned scope | Status |
 | --- | --- | --- |
-| Integration guide | Device capability descriptions, adapter placement, identity, and permissions | Coming soon |
+| Integration guide | [SDK](../../packages/mhs-device/README.md), [Hub](../../packages/mhs-hub/README.md) and [browser module](../../packages/mhs-ui/README.md) contracts | Source preview |
 | Examples and reproduction steps | [Simulated inspection](../../examples/fde/device-inspection/README.md), dry-run by default | Preview |
 | Device verification notes | Supported models, software versions, test environments, and known limits | Coming soon |
 
 Adapter designs, supported devices, and examples will be announced after validation. No opening date is set. Integration is exploratory: the simulator provides a software workflow example; no general-purpose MHS adapter or physical device has been validated.
 
-## Integration seam (preview)
+## Separate MCP inspection seam (preview)
 
 A package can declare `capabilities.device: true` on a plugin entry alongside its other capabilities. This adds the `device` review/policy atom to installation preview, capability hashes and allow/deny checks. It is an optional additive field: existing manifests retain their hash and behavior. It does not grant controller access, isolate plugin code or certify a device adapter.
 
@@ -77,4 +85,4 @@ Start with [backend plugins](../develop/backend.md), [MCP](mcp.md), and [full-st
 
 ## Current status at a glance
 
-**A preview seam and simulated inspection example are available.** A verified general-purpose MHS adapter and supported-device list remain future work. The simulator does not establish MHS compatibility or physical-device acceptance. Device controllers retain responsibility for real-time control and physical safety.
+**Native MHS source modules and a separate MCP inspection example are available.** A verified general-purpose MHS adapter and supported-device list remain future work. The simulator does not establish MHS compatibility or physical-device acceptance. Device controllers retain responsibility for real-time control and physical safety.

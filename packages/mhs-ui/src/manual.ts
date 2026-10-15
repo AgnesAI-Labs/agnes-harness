@@ -64,3 +64,11 @@ export const roleKeys: Readonly<Record<string, readonly [string, string]>> = {
   pitch: ['i', 'k'],
   yaw: ['j', 'l'],
 }
+
+export function manualKey(key: string): string {
+  const lower = key.toLowerCase()
+  return (
+    ({ arrowup: 'w', arrowdown: 's', arrowleft: 'a', arrowright: 'd' } as Record<string, string>)[lower] ??
+    lower
+  )
+}

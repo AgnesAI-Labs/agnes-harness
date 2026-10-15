@@ -261,9 +261,8 @@ import { useEffect, useState as useJobState } from 'react'
 import type { Receipt } from './ports.js'
 
 function Operation({ receipt, device }: { receipt: Receipt | undefined; device: string }) {
-  const { client, t } = useMhs(),
-    [operation, setOperation] = useJobState<Data>(),
-    action = useAction()
+  const { client } = useMhs(),
+    [operation, setOperation] = useJobState<Data>()
   const output = receipt?.state === 'completed' ? record(receipt.output) : {},
     operationId = text(output.id)
   useEffect(() => {
@@ -291,12 +290,19 @@ function Operation({ receipt, device }: { receipt: Receipt | undefined; device: 
     }
   }, [client, operationId])
   if (!operation) return null
+  return <JobView operation={operation} device={device} />
+}
+export function JobView({ operation, device }: { operation: Data; device: string }) {
+  const { t } = useMhs(),
+    action = useAction(),
+    operationId = text(operation.id)
   const state =
       text(operation.state) === 'terminal' ? 'terminal' : text(operation.phase) || text(operation.state),
     outcome = record(operation.outcome)
   return (
     <div role="status">
-      {text(outcome.status) || state} {text(outcome.reason)}
+      <strong>{text(operation.label) || operationId}</strong> · {text(outcome.status) || state}{' '}
+      {text(outcome.reason)}
       {typeof operation.startedAt === 'number' && (
         <Elapsed
           start={operation.startedAt}

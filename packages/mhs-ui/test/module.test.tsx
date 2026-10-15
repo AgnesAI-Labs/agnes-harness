@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { conversationCards, type HomeEntry, workbenchPanels } from '@agnes/web-client'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { apply, createMhsModule } from '../src/module.js'
 import type { MhsModuleContext } from '../src/ports.js'
 import { fake } from './fixtures.js'
@@ -55,12 +55,15 @@ function context(f: ReturnType<typeof fake>) {
     effects,
   }
 }
+afterEach(() => vi.useRealTimers())
 describe('profile contribution lifecycle', () => {
   it('keeps a primary home entry independent of session, scopes dock counts, and synchronously removes all registrations on disable', async () => {
+    vi.useFakeTimers()
     const f = fake(),
       c = context(f),
       dispose = createMhsModule(f.ports).apply(c.ctx)
-    await vi.waitFor(() => expect(c.registrations.get('mhs')?.badge?.getSnapshot()).toBe(1))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(c.registrations.get('mhs')?.badge?.getSnapshot()).toBe(1)
     expect(c.registrations.get('mhs')).toMatchObject({ placement: 'primary', order: 40 })
     expect(c.slots.size).toBe(7)
     f.setNodes([
@@ -75,7 +78,8 @@ describe('profile contribution lifecycle', () => {
     ])
     const panel = workbenchPanels.get('mhs.devices')
     const session = { sessionId: 'session-a' } as MhsModuleContext['session']
-    await vi.waitFor(() => expect(panel?.count?.read({ t: (key) => key, session })).toBe(1))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(panel?.count?.read({ t: (key) => key, session })).toBe(1)
     expect(
       panel?.count?.read({
         t: (key) => key,

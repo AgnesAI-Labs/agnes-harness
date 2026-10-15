@@ -8,6 +8,7 @@ export type Operation = {
   device: string
   kind: 'action' | 'watch'
   state: 'accepted' | 'running' | 'terminal'
+  label?: string
   startedAt?: number
   endedAt?: number
   progress?: Json
@@ -33,7 +34,15 @@ export class Journal {
   constructor(
     readonly store: OwnedStore,
     private readonly wakes: BoundWakes,
+    private readonly onChange?: (operation: Operation) => void,
   ) {}
+  private publish(operation: Operation) {
+    try {
+      this.onChange?.(operation)
+    } catch {
+      /* A presentation observer cannot change a committed receipt. */
+    }
+  }
   async read(id: string): Promise<Operation | undefined> {
     return this.store.transaction((tx) => tx.get(`op/${digest(id)}`)?.value as Operation | undefined)
   }
@@ -49,7 +58,7 @@ export class Journal {
       laneId: invocation.laneId ?? null,
       binding: invocation.target?.bindingId ?? null,
     })
-    return this.store.transaction((tx) => {
+    const accepted = await this.store.transaction((tx) => {
       const key = `op/${digest(invocation.operationId)}`
       const prior = tx.get(key)
       if (prior) {
@@ -64,6 +73,12 @@ export class Journal {
         kind: extra ? 'watch' : 'action',
         state: 'accepted',
         startedAt: Date.now(),
+        ...(subject &&
+        typeof subject === 'object' &&
+        !Array.isArray(subject) &&
+        typeof (subject as Record<string, unknown>).action === 'string'
+          ? { label: String((subject as Record<string, unknown>).action) }
+          : {}),
         ...(invocation.target ? { target: invocation.target } : {}),
         ...(invocation.sessionId ? { sessionId: invocation.sessionId } : {}),
         ...(invocation.laneId ? { laneId: invocation.laneId } : {}),
@@ -72,10 +87,12 @@ export class Journal {
       extra?.(tx)
       return { fresh: true, operation }
     })
+    this.publish(accepted.operation)
+    return accepted
   }
   /** Device progress refines an admitted live operation; it cannot reopen a terminal receipt. */
   async running(id: string, device: string, progress?: Json): Promise<Operation | undefined> {
-    return this.store.transaction((tx) => {
+    const updated = await this.store.transaction((tx) => {
       const key = `op/${digest(id)}`,
         prior = tx.get(key)
       if (!prior) return undefined
@@ -95,9 +112,11 @@ export class Journal {
       tx.put(key, next as unknown as Json, prior.revision)
       return next
     })
+    if (updated) this.publish(updated)
+    return updated
   }
   async finish(id: string, outcome: Outcome, extra?: (tx: StoreTransaction) => void): Promise<Operation> {
-    return this.store.transaction((tx) => {
+    const finished = await this.store.transaction((tx) => {
       const key = `op/${digest(id)}`
       const prior = tx.get(key)
       if (!prior) throw new MhsError('missing-operation')
@@ -122,12 +141,15 @@ export class Journal {
         )
       return next
     })
+    this.publish(finished)
+    return finished
   }
   async recover(): Promise<void> {
     await this.each('op/', async (row) => {
       const operation = row as unknown as Operation
       if (operation.state !== 'terminal' && operation.kind !== 'watch')
         await this.finish(operation.id, { status: 'unknown', reason: 'restart' })
+      else this.publish(operation)
     })
     await this.flush()
   }

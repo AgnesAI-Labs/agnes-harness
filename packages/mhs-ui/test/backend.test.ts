@@ -113,6 +113,9 @@ it('consumes the real SDK declaration, Hub/North query/effect outputs and binary
     startedAt: expect.any(Number),
     progress: { fraction: 0.4 },
   })
+  expect((await client.devices())[0]?.jobs).toContainEqual(
+    expect.objectContaining({ id: 'paused', phase: 'paused', state: 'running' }),
+  )
   await hub.journal.finish('paused', { status: 'done' })
   await hub.journal.running('paused', 'sensor-01', { state: 'running' })
   expect(await north.query('operation', { operationId: 'paused' })).toMatchObject({

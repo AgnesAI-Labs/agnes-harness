@@ -14,6 +14,13 @@ import type { MediaSample } from './media.js'
 import type { Authority, BoundWakes, DeviceLink, Invocation, OwnedStore, SouthEvents } from './ports.js'
 import { Watches } from './watches.js'
 
+export type JobSummary = Pick<
+  Operation,
+  'id' | 'device' | 'state' | 'label' | 'startedAt' | 'endedAt' | 'phase'
+> & {
+  progress?: number
+  outcome?: Pick<NonNullable<Operation['outcome']>, 'status' | 'reason'>
+}
 export interface DeviceView {
   id: string
   revision: string
@@ -22,6 +29,8 @@ export interface DeviceView {
   description: DeviceLink['registration']
   state: Record<string, Json>
   sourceStates?: Record<string, boolean | null>
+  /** Up to eight recent operations, without arguments, result payloads or wake/session identity. */
+  jobs?: JobSummary[]
   health: 'ok' | 'attention' | 'bad'
   trust: 'trusted' | 'uncertain' | 'lost'
   position?: Position
@@ -33,6 +42,7 @@ export class Hub implements SouthEvents {
   readonly activity: Activity
   readonly watches: Watches
   private readonly live = new Map<string, Live>()
+  private readonly recentJobs = new Map<string, JobSummary[]>()
   private readonly mediaListeners = new Set<(sample: MediaSample) => void>()
   private readonly listeners = new Set<(event: Json) => void>()
   private stopping = false
@@ -48,9 +58,49 @@ export class Hub implements SouthEvents {
       now?: () => number
     },
   ) {
-    this.journal = new Journal(ports.store, ports.wakes)
+    this.journal = new Journal(ports.store, ports.wakes, (operation) => this.remember(operation))
     this.activity = new Activity(ports.store, ports.now)
     this.watches = new Watches(this.journal, this.activity, () => this.snapshot(), ports.now)
+  }
+  private remember(operation: Operation) {
+    if (operation.kind !== 'action') return
+    const data =
+      operation.progress && typeof operation.progress === 'object' && !Array.isArray(operation.progress)
+        ? operation.progress
+        : {}
+    const fraction = typeof operation.progress === 'number' ? operation.progress : data.fraction
+    const job: JobSummary = {
+      id: operation.id,
+      device: operation.device,
+      state: operation.state,
+      ...(operation.label ? { label: operation.label } : {}),
+      ...(operation.startedAt !== undefined ? { startedAt: operation.startedAt } : {}),
+      ...(operation.endedAt !== undefined ? { endedAt: operation.endedAt } : {}),
+      ...(operation.phase ? { phase: operation.phase } : {}),
+      ...(typeof fraction === 'number' && Number.isFinite(fraction) && fraction >= 0 && fraction <= 1
+        ? { progress: fraction }
+        : {}),
+      ...(operation.outcome
+        ? {
+            outcome: {
+              status: operation.outcome.status,
+              ...(operation.outcome.reason ? { reason: operation.outcome.reason } : {}),
+            },
+          }
+        : {}),
+    }
+    const jobs = [job, ...(this.recentJobs.get(operation.device) ?? []).filter((row) => row.id !== job.id)]
+      .sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0) || a.id.localeCompare(b.id))
+      .slice(0, 8)
+    this.recentJobs.delete(operation.device)
+    this.recentJobs.set(operation.device, jobs)
+    if (this.recentJobs.size > 512) {
+      const oldest = this.recentJobs.keys().next().value
+      if (oldest) this.recentJobs.delete(oldest)
+    }
+    const live = this.live.get(operation.device)
+    if (live) live.view.jobs = jobs
+    this.emit({ type: 'operation', device: operation.device, operationId: operation.id })
   }
   async recover(): Promise<void> {
     await this.ports.store.transaction((tx) => {
@@ -131,6 +181,7 @@ export class Hub implements SouthEvents {
       available: link.available,
       description: link.registration,
       state: same ? prior.view.state : {},
+      jobs: this.recentJobs.get(id) ?? [],
       sourceStates: same
         ? (prior.view.sourceStates ?? {})
         : Object.fromEntries((link.registration.sources ?? []).map((source) => [source.id, null])),

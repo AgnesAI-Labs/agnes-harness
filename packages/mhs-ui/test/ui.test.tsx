@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { fireEvent, getByLabelText, getByRole, queryByRole } from '@testing-library/dom'
+import { fireEvent, getByLabelText, getByRole, queryByLabelText, queryByRole } from '@testing-library/dom'
 import { act, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -65,7 +65,7 @@ describe('MHS approved device interactions', () => {
             type: 'object',
             required: ['destination', 'mode'],
             properties: {
-              destination: { type: 'object' },
+              destination: { type: 'object', properties: { x: { type: 'number' } }, required: ['x'] },
               mode: { type: 'integer', enum: [1, 2] },
               enabled: { type: 'boolean' },
             },
@@ -128,7 +128,7 @@ describe('MHS approved device interactions', () => {
       </>,
       f,
     )
-    expect(queryByRole(host, 'textbox', { name: 'temperature' })).toBeNull()
+    expect(queryByLabelText(host, 'temperature')).toBeNull()
     expect(getByLabelText(host, 'speed')).toBeTruthy()
     await click(getByRole(host, 'button', { name: 'Turn on' }))
     expect(f.effects.at(-1)).toMatchObject({
@@ -160,6 +160,7 @@ describe('MHS approved device interactions', () => {
         axes: [
           { id: 'vx', min: -1, max: 1, role: 'forward' },
           { id: 'pitch', min: -30, max: 30, role: 'pitch' },
+          { id: 'wz', min: -90, max: 90, role: 'turn' },
         ],
         deadman_s: 0.5,
       },
@@ -173,18 +174,27 @@ describe('MHS approved device interactions', () => {
     }
     await mount(<Drive device={d} />, f)
     await click(getByRole(host, 'button', { name: 'Request control' }))
+    expect(f.opened[0]).toMatchObject({
+      name: 'mhs.control',
+      input: { device: d.id, leaseId: f.effects[0]?.operationId },
+      operationId: f.effects[0]?.operationId,
+    })
+    expect(getByRole(host, 'button', { name: 'vx / wz' })).toBeTruthy()
     const axis = getByRole(host, 'button', { name: 'vx +' })
     await act(async () => {
-      fireEvent.keyDown(axis, { key: 'w', code: 'KeyW' })
+      fireEvent.keyDown(axis, {
+        key: mode === 'space' ? 'ArrowUp' : 'w',
+        code: mode === 'space' ? 'ArrowUp' : 'KeyW',
+      })
       await vi.advanceTimersByTimeAsync(40)
     })
-    expect(f.stream.sent.at(-1)).toEqual({ type: 'manual', axes: { vx: 1, pitch: 0 } })
+    expect(f.stream.sent.at(-1)).toEqual({ type: 'manual', axes: { vx: 1, pitch: 0, wz: 0 } })
     await act(async () => {
       if (mode === 'space') fireEvent.keyDown(axis, { key: ' ', code: 'Space' })
       else window.dispatchEvent(new Event('blur'))
       await Promise.resolve()
     })
-    expect(f.stream.sent.at(-1)).toEqual({ type: 'manual', axes: { vx: 0, pitch: 0 } })
+    expect(f.stream.sent.at(-1)).toEqual({ type: 'manual', axes: { vx: 0, pitch: 0, wz: 0 } })
     expect(f.effects.at(-1)?.name).toBe('mhs.stop')
     expect(f.stream.closed).toBe(true)
   })
