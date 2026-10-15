@@ -60,8 +60,10 @@ it('keeps the account dialog close control anchored and the action footer visibl
   // selector must therefore win on specificity or the close control falls back into the left edge.
   expect(close).toContain('position: absolute')
   expect(close).toContain('right: 0.75rem')
-  // The settings column ends before the close control; only a narrow dialog reserves room for it.
-  expect(styleRule(css, '.agnes-settings-group-title')).toContain('max-width: var(--settings-frame)')
+  // The group title is the header line: it always leaves room for the dialog's close control.
+  expect(styleRule(css, '.agnes-settings-group-title')).toContain(
+    'padding: 0 var(--settings-header-end) 0 var(--settings-gutter)',
+  )
 
   // Only the middle section may scroll. Keeping the footer outside that scrollport prevents a
   // short browser window from clipping the save action below the dialog edge.

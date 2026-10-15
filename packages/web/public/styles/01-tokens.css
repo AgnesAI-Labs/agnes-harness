@@ -497,6 +497,9 @@
     --settings-column: 47.5rem;
     --settings-gutter: var(--s32);
     --settings-frame: calc(var(--settings-column) + 2 * var(--settings-gutter));
+    /* The settings header line: title (breadcrumb), page actions, then the dialog's close button. */
+    --settings-header-height: 3.375rem;
+    --settings-header-end: calc(var(--s16) + var(--control-height-sm) + var(--s12));
     /* Desktop-tool density: 28px buttons, popup buttons and icon buttons, 24px compact buttons,
      32px text fields; touch widths raise fields to the touch target. */
     --control-height: 1.75rem;

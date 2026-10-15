@@ -157,6 +157,30 @@ export function MemoryPanel({ canSave }: { canSave: boolean }) {
           label={t('files')}
           hint={`${t('fileCount', { count: files.length })} · ${t('usedShort', { used, limit })}`}
           description={t('filesHelp')}
+          // The open file's actions sit in the subpage's header line, beside ×.
+          actions={
+            file && (
+              <>
+                <Button
+                  size="small"
+                  data-testid="memory-reload"
+                  disabled={busy}
+                  onClick={() => void request({ cwd, file: file.path })}
+                >
+                  {t('reload')}
+                </Button>
+                <Button
+                  size="small"
+                  appearance="primary"
+                  data-testid="memory-save"
+                  disabled={!canSave || busy || content === file.content}
+                  onClick={() => void request({ cwd, file: file.path, content, baseHash: file.hash }, 'file')}
+                >
+                  {t('save')}
+                </Button>
+              </>
+            )
+          }
           onClick={() => {
             if (!file) void request({ cwd, file: 'MEMORY.md' })
           }}
@@ -181,34 +205,7 @@ export function MemoryPanel({ canSave }: { canSave: boolean }) {
             ))}
           </SettingsBlock>
           {file && (
-            <SettingsBlock
-              bare
-              label={<span translate="no">{file.path}</span>}
-              data-testid="memory-actions"
-              actions={
-                <>
-                  <Button
-                    size="small"
-                    data-testid="memory-reload"
-                    disabled={busy}
-                    onClick={() => void request({ cwd, file: file.path })}
-                  >
-                    {t('reload')}
-                  </Button>
-                  <Button
-                    size="small"
-                    appearance="primary"
-                    data-testid="memory-save"
-                    disabled={!canSave || busy || content === file.content}
-                    onClick={() =>
-                      void request({ cwd, file: file.path, content, baseHash: file.hash }, 'file')
-                    }
-                  >
-                    {t('save')}
-                  </Button>
-                </>
-              }
-            >
+            <SettingsBlock bare label={<span translate="no">{file.path}</span>} data-testid="memory-actions">
               {Boolean(fileError) && (
                 <Banner tone="error" role="alert" data-testid="memory-error">
                   {appServerErrorMessage(fileError, locale) ?? t('failed')}

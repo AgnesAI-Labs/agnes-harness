@@ -44,6 +44,8 @@ export function SettingsStaticPane({
       <SettingsUndoScope>
         <SettingsSubpageFrame
           routeId="general"
+          // The page's title is the breadcrumb's top level: 「通用 › 记忆文件」.
+          rootTitle={text('settings-shell.appearanceTitle', '通用')}
           header={
             <SettingsPageHeader
               className="agnes-settings-page-top"

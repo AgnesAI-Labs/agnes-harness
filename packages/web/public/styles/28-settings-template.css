@@ -7,6 +7,20 @@
   #config-form.settings-shell #settings-content-slots {
     container: settings-content / inline-size;
   }
+  /* A settings page outside the dialog has no close button to leave room for. */
+  .runtime-settings {
+    --settings-header-end: 0px;
+  }
+  /* The close button is centred on the header line. */
+  #config:has(.settings-shell) #config-close {
+    top: calc((var(--settings-header-height) - var(--control-height-sm)) / 2);
+    right: var(--s16);
+  }
+  /* The narrow screen's way back to the list (「设置」) has no place on a wide one, where the
+   rail is beside the page. */
+  .settings-shell #settings-content-slots > .agh-push-crumbs {
+    display: none;
+  }
   /* The pane spans the dialog; its header and body keep to the column themselves. */
   .settings-shell .settings-content {
     flex: 1 1 auto;
@@ -35,17 +49,27 @@
   .runtime-settings .agnes-settings-page:not([data-nested]) .agnes-settings-page-top {
     flex: 0 0 auto;
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
-    gap: var(--s16);
+    gap: var(--s12);
     box-sizing: border-box;
     width: 100%;
-    max-width: var(--settings-frame);
-    min-height: 0;
+    max-width: none;
+    min-height: var(--settings-header-height);
     margin: 0;
-    padding: var(--s24) var(--settings-gutter) 0;
+    /* The dialog's close button sits at the end of this line. */
+    padding: 0 var(--settings-header-end) 0 var(--settings-gutter);
     border: 0;
+    border-bottom: 1px solid var(--agnes-line-primary);
     background: var(--agnes-bg-surface);
+  }
+  /* The header line stays put: the body scrolls beneath it (also where a narrow pane scrolls as a
+   whole), opaque so nothing shows through. */
+  .settings-shell .settings-content .agnes-settings-page-top,
+  #settings-sections-pane .agnes-settings-page-top {
+    position: sticky;
+    top: 0;
+    z-index: 2;
   }
   /* A page rendered in a scrolling list keeps its header in view while the body moves under it. */
   .runtime-settings .agnes-settings-page:not([data-nested]) .agnes-settings-page-top {
@@ -54,7 +78,7 @@
     z-index: 1;
     max-width: none;
     padding-inline: 0;
-    padding-bottom: var(--s20);
+    margin-bottom: var(--s20);
   }
   .settings-shell .agnes-settings-page-heading > div:first-child,
   .runtime-settings .agnes-settings-page-heading > div:first-child {
@@ -62,7 +86,7 @@
     min-width: 0;
   }
   /* The dialog's generic heading rules are written against its id; the template outranks them. */
-  :is(#config-form, .runtime-settings) :is(.agnes-settings-group-title, .agnes-settings-page-heading h2) {
+  :is(#config-form, .runtime-settings) .agnes-settings-group-title {
     margin: 0;
     color: var(--agnes-text-primary);
     font-size: var(--font-size-xl);
@@ -70,12 +94,14 @@
     line-height: var(--line-lg);
     letter-spacing: 0;
   }
-  :is(#config-form, .runtime-settings) .agnes-settings-page-heading > div > p {
-    max-width: 60ch;
-    margin: var(--s4) 0 0;
-    color: var(--agnes-text-secondary);
-    font-size: var(--font-size-sm);
-    line-height: 1.6;
+  /* The header line's title: the breadcrumb's current level, at the line's size. */
+  :is(#config-form, .runtime-settings) .agnes-settings-page-heading .agh-push-crumb-current h2 {
+    margin: 0;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-md);
+    letter-spacing: 0;
   }
   .settings-shell .agnes-settings-page-heading > .agnes-settings-actions,
   .runtime-settings .agnes-settings-page-heading > .agnes-settings-actions {
@@ -87,10 +113,8 @@
   .agnes-settings-page-heading > .agnes-settings-actions:empty {
     display: none;
   }
-  /* The dialog's close button owns the top corner: a page's own actions sit on the description's
-   line, a row below it, as quiet small icons. */
+  /* A page's own actions sit on the header line, before the dialog's close button. */
   #settings-sections-pane .agnes-settings-page-top > .agnes-settings-actions {
-    align-self: flex-end;
     min-height: 0;
   }
   #settings-sections-pane .agnes-settings-page-top > .agnes-settings-actions .agh-btn--icon .icon {
@@ -102,10 +126,13 @@
    heading, only its description and actions. */
   .agnes-settings-group-title {
     flex: 0 0 auto;
+    display: flex;
+    align-items: center;
     box-sizing: border-box;
     width: 100%;
-    max-width: var(--settings-frame);
-    padding: var(--s24) var(--settings-gutter) 0;
+    max-width: none;
+    min-height: var(--settings-header-height);
+    padding: 0 var(--settings-header-end) 0 var(--settings-gutter);
   }
   .runtime-settings .agnes-settings-group-title {
     padding-inline: 0;
@@ -134,11 +161,13 @@
   }
   #settings-content-slots:has(> #settings-section-tabs:not([hidden])) .agnes-settings-page-heading,
   .runtime-settings > section:has(> .agnes-settings-section-tabs) .agnes-settings-page-heading {
-    align-items: center;
-    padding-top: var(--s16);
+    min-height: 0;
+    padding-block: var(--s12) 0;
+    padding-inline-end: var(--settings-gutter);
+    border-bottom: 0;
   }
-  #settings-content-slots:has(> #settings-section-tabs:not([hidden])) .agnes-settings-page-heading h2,
-  .runtime-settings > section:has(> .agnes-settings-section-tabs) .agnes-settings-page-heading h2 {
+  #settings-content-slots:has(> #settings-section-tabs:not([hidden])) .agnes-settings-page-heading nav,
+  .runtime-settings > section:has(> .agnes-settings-section-tabs) .agnes-settings-page-heading nav {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -146,17 +175,13 @@
     clip-path: inset(50%);
     white-space: nowrap;
   }
-  #settings-content-slots:has(> #settings-section-tabs:not([hidden])) .agnes-settings-page-heading > div > p,
-  .runtime-settings > section:has(> .agnes-settings-section-tabs) .agnes-settings-page-heading > div > p {
-    margin: 0;
-  }
-  /* A tabbed page with neither description nor actions starts straight at its body. */
+  /* A tabbed page without actions starts straight at its body. */
   #settings-content-slots:has(> #settings-section-tabs:not([hidden]))
-  .agnes-settings-page-heading:not(:has(p, .agnes-settings-actions > *)),
+  .agnes-settings-page-heading:not(:has(.agnes-settings-actions > *)),
   .runtime-settings
     > section:has(> .agnes-settings-section-tabs)
-    .agnes-settings-page-heading:not(:has(p, .agnes-settings-actions > *)) {
-    padding-block: 0 var(--s4);
+    .agnes-settings-page-heading:not(:has(.agnes-settings-actions > *)) {
+    padding-block: 0;
   }
 
   /* Body: the one vertical scroller of a page. */
@@ -372,35 +397,30 @@
     border-radius: var(--radius-sm) var(--radius-sm) 0 0;
   }
 
-  /* The first row of a narrow dialog leaves room for the close button; wide dialogs never need to,
-   because the column ends before it. */
-  @container settings-content (max-width: 54rem) {
-    .agnes-settings-group-title,
-    #settings-group-title[hidden] ~ #settings-pane-slots .settings-content .agnes-settings-page-top,
-    #settings-group-title[hidden] ~ #settings-sections-pane .agnes-settings-page-heading,
-    #settings-group-title[hidden] ~ #settings-pane-slots #plugin-list .agnes-settings-page-heading {
-      padding-inline-end: calc(var(--settings-gutter) + var(--s24));
-    }
-  }
-
   @media (max-width: 767px) {
     .settings-shell,
     .runtime-settings,
     .admin-page {
       --settings-gutter: var(--s16);
     }
+    /* One page at a time: 「设置」 leads back to the list; the page's header line names the page. */
+    .settings-shell #settings-content-slots > .agh-push-crumbs {
+      display: block;
+    }
+    .settings-shell
+      #settings-content-slots
+      > .agh-push-crumbs
+      :is(.agh-push-crumb-current, .agh-push-crumb-separator) {
+      display: none;
+    }
     .settings-shell .settings-content .agnes-settings-page-top,
     .runtime-settings .agnes-settings-page:not([data-nested]) .agnes-settings-page-top {
       flex-wrap: wrap;
-      padding-top: var(--s8);
     }
     .settings-shell .agnes-settings-page-heading > .agnes-settings-actions,
     .runtime-settings .agnes-settings-page-heading > .agnes-settings-actions {
       max-width: 100%;
       flex-wrap: wrap;
-    }
-    .agnes-settings-group-title {
-      padding-top: var(--s8);
     }
   }
 }
