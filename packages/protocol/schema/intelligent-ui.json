@@ -865,6 +865,9 @@
         }
       }
     },
+    "UiArtifactStatus": {
+      "enum": ["available", "not_found", "identity_mismatch", "reclaimed", "unavailable"]
+    },
     "UiSurfaceRecord": {
       "type": "object",
       "additionalProperties": false,
@@ -898,6 +901,12 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 256
+        },
+        "artifacts": {
+          "type": "object",
+          "maxProperties": 64,
+          "propertyNames": { "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,63}$" },
+          "additionalProperties": { "$ref": "#/$defs/UiArtifactStatus" }
         },
         "sources": {
           "type": "object",

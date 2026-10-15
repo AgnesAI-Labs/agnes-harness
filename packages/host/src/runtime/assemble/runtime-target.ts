@@ -407,6 +407,7 @@ export async function mountRuntimeTarget(
     sessionGeneration: (key) => deps.sessionGeneration?.(key),
   })
   const intelligentUi = createIntelligentUiBridge({
+    dataDir: ctx.dataDir,
     extensionHost: shared.extensionServices.current,
     profileDir: deps.profileDir,
     profileName: ctx.profile.name,

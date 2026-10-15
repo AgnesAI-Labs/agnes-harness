@@ -32,7 +32,7 @@ import { PLUGIN_ADMIN_PAGES } from './registry.js'
 import type { SchedulesApi } from './schedules.js'
 export type SettingsPage = string
 const groupIcons: Readonly<Record<string, IconName>> = {
-  plugins: 'plug',
+  plugins: 'puzzle',
   advanced: 'sliders-horizontal',
   tools: 'sliders-horizontal',
   automation: 'clock',
@@ -217,7 +217,7 @@ export function SettingsHub({
             aria-current={entry.id === page ? 'page' : undefined}
             onClick={() => navigate(entry.id)}
           >
-            <Icon name="plug" size={20} />
+            <Icon name="puzzle" size={20} />
             {sectionTitle(entry.id)}
             <small>{shellText(entry.groupTitleKey)}</small>
           </Button>

@@ -3,7 +3,7 @@ import { X_AGNES_UI_LIMITS as limits } from '@agnes/protocol/gen/intelligent-ui'
 /** Model guidance, also used to explain pre-effect data rejections. */
 export const UI_DATA_CONTRACTS = {
   'artifact-file':
-    'object {name,description,artifact:{sha256,size,mime}}. Use an existing authorized session artifact, never a URL or workspace path. Web offers safe preview and download.',
+    'object {name,description,artifact:{sha256,size,mime}}. Exact session/lane ref from artifacts.put; size is bytes. Never invent refs or use paths/URLs. present displays files automatically. Web preview/download.',
   text: 'string. Example: "Review summary".',
   status: 'string. Example: "Ready for review".',
   table: `array of <=${limits.tableRows} objects; rowKey values are unique nonempty strings <=128 chars, and every columns[].key is present. Example: [{"id":"r1","amount":12}] with rowKey="id" and columns for id,amount.`,

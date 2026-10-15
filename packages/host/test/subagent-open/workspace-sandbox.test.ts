@@ -51,7 +51,17 @@ class RoutedProvider implements Provider {
 
   constructor(parent: Script[], child: Script[]) {
     const models = [fakeModel({ route: 'gw', id: 'm1' })]
-    this.parent = new ScriptedProvider({ models, scripts: parent, onExhausted: 'error' })
+    this.parent = new ScriptedProvider({
+      models,
+      scripts: [
+        ...['subagent_fork', 'subagent_spawn', 'subagent_collect'].map((name) => (req: RequestBody) => {
+          expect(req.tools.some((tool) => tool.name === 'tool_describe')).toBe(true)
+          return toolCall('tool_describe', { name })
+        }),
+        ...parent,
+      ],
+      onExhausted: 'error',
+    })
     this.child = new ScriptedProvider({ models, scripts: child, onExhausted: 'error' })
   }
 
@@ -102,7 +112,7 @@ async function prompt(session: HostSession, value: string) {
 }
 
 type ToolResult = {
-  name?: string
+  toolUseId?: string
   code?: string
   isError?: boolean
   content?: Array<{ type: string; text?: string }>
@@ -110,7 +120,18 @@ type ToolResult = {
 
 async function toolResults(session: HostSession): Promise<ToolResult[]> {
   const rows = await session.scan({ type: 'tool/result', limit: 50 })
-  return rows.map((row) => row.data as ToolResult)
+  const calls = await session.scan({ type: 'tool/call', limit: 50 })
+  const discoveryIds = new Set(
+    calls.flatMap((row) => {
+      const call = row.data as { toolUseId: string; name: string }
+      return call.name === 'tool_describe' ? [call.toolUseId] : []
+    }),
+  )
+  const results = rows.map((row) => row.data as ToolResult)
+  const descriptions = results.filter((result) => discoveryIds.has(result.toolUseId ?? ''))
+  expect(descriptions).toHaveLength(3)
+  for (const result of descriptions) expect(result.isError).not.toBe(true)
+  return results.filter((result) => !discoveryIds.has(result.toolUseId ?? ''))
 }
 
 const textOf = (result: ToolResult | undefined): string =>

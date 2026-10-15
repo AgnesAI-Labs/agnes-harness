@@ -1,6 +1,6 @@
 /** @vitest-environment happy-dom */
-import type { SystemPromptSnapshot } from '@agnes/protocol'
-import { SettingsSubpageFrame } from '@agnes/web-ui'
+import type { SystemPromptSaveParams, SystemPromptSnapshot } from '@agnes/protocol'
+import { SettingsSubpageFrame, type UiLocale, UiLocaleProvider } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
@@ -15,22 +15,35 @@ import { systemPromptApi } from '../src/settings/system-prompt-api.js'
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
 function fixture(initial: SystemPromptSnapshot['config'] = {}) {
+  let revision = 0
+  let beforeSave: (() => Promise<void>) | undefined
   let snapshot: SystemPromptSnapshot = {
     config: initial,
     effect: 'new-sessions',
     hash: 'a'.repeat(64),
+    revision: '0'.repeat(64),
     preview: 'default-sections',
     sections: [{ id: 'persona', order: 1, source: 'plugin/persona.md', text: 'default' }],
   }
-  const writes: { config: SystemPromptSnapshot['config']; confirmFullOverride: boolean }[] = []
-  const api = systemPromptApi(async (_url, init) => {
+  const writes: SystemPromptSaveParams[] = []
+  const fetcher: typeof fetch = async (_url, init) => {
     if (init?.method) {
+      const competingSave = beforeSave
+      beforeSave = undefined
+      await competingSave?.()
       const input = JSON.parse(String(init.body))
       writes.push(input)
-      snapshot = { ...snapshot, config: input.config }
+      // Match the server's compatibility contract: absent revisions still allow legacy writes.
+      if (input.expectedRevision !== undefined && input.expectedRevision !== snapshot.revision)
+        return Response.json(
+          { error: { data: { code: 'CONFIG_REVISION_CONFLICT', current: snapshot } } },
+          { status: 409 },
+        )
+      snapshot = { ...snapshot, config: input.config, revision: (++revision).toString(16).padStart(64, '0') }
     }
     return Response.json(snapshot)
-  })
+  }
+  const api = systemPromptApi(fetcher)
   const host = document.createElement('div')
   document.body.append(host)
   const root = createRoot(host)
@@ -47,7 +60,21 @@ function fixture(initial: SystemPromptSnapshot['config'] = {}) {
   const button = (name: string) =>
     host.querySelector<HTMLButtonElement>(`[data-testid="system-prompt-${name}"]`)
   const click = async (name: string) => act(async () => button(name)!.click())
-  return { api, host, root, writes, field, input, button, click }
+  return {
+    api,
+    host,
+    root,
+    writes,
+    field,
+    input,
+    button,
+    click,
+    otherWindow: systemPromptApi(fetcher),
+    saved: () => snapshot,
+    beforeSave: (run: () => Promise<void>) => {
+      beforeSave = run
+    },
+  }
 }
 
 it('saves the General page instructions by themselves, maps the reply styles, and locks them under a full replacement', async () => {
@@ -86,6 +113,7 @@ it('saves the General page instructions by themselves, maps the reply styles, an
     expect(writes.at(-1)).toEqual({
       config: { personaPrefix: 'lead with the conclusion' },
       confirmFullOverride: false,
+      expectedRevision: '0'.repeat(64),
     })
     await choose('concise')
     expect(writes.at(-1)?.config).toEqual({
@@ -271,12 +299,20 @@ it('replaces the default prompt only after 「我已理解」 and 「应用替�
     expect(clean.button('override-save')?.disabled).toBe(true)
     await clean.click('confirm')
     await clean.click('override-save')
-    expect(clean.writes.at(-1)).toEqual({ config: { fullOverride: 'override' }, confirmFullOverride: true })
+    expect(clean.writes.at(-1)).toEqual({
+      config: { fullOverride: 'override' },
+      confirmFullOverride: true,
+      expectedRevision: '0'.repeat(64),
+    })
     expect(clean.host.querySelector('[data-testid="settings-drill-system-prompt"]')?.textContent).toContain(
       'In use',
     )
     await clean.click('override-reset')
-    expect(clean.writes.at(-1)).toEqual({ config: {}, confirmFullOverride: false })
+    expect(clean.writes.at(-1)).toEqual({
+      config: {},
+      confirmFullOverride: false,
+      expectedRevision: '1'.padStart(64, '0'),
+    })
     expect(clean.button('override-reset')).toBeNull()
   } finally {
     await act(async () => clean.root.unmount())
@@ -313,6 +349,7 @@ it('shares one prompt configuration: a replacement saved in run configuration lo
     config: stored,
     effect: 'new-sessions' as const,
     hash: 'a'.repeat(64),
+    revision: 'b'.repeat(64),
     preview: 'default-sections' as const,
     sections: [],
   })
@@ -414,44 +451,149 @@ it('shares one prompt configuration: a replacement saved in run configuration lo
   }
 })
 
-it('keeps a saved prompt when an earlier snapshot read returns', async () => {
-  const { usePromptSnapshot } = await import('../src/settings/prompt-config.js')
-  let release!: (value: SystemPromptSnapshot) => void
-  const old: SystemPromptSnapshot = {
-    config: { replyStyle: 'old' },
-    effect: 'new-sessions',
-    hash: 'a'.repeat(64),
-    preview: 'default-sections',
-    sections: [],
-  }
-  let reads = 0
-  const api = {
-    get: async () =>
-      ++reads === 1
-        ? new Promise<SystemPromptSnapshot>((resolve) => {
-            release = resolve
-          })
-        : old,
-    save: async ({ config }: { config: SystemPromptSnapshot['config'] }) => ({ ...old, config }),
-  } as ReturnType<typeof systemPromptApi>
-  let save!: ReturnType<typeof usePromptSnapshot>['save']
-  function Reader() {
-    const state = usePromptSnapshot(api)
-    save = state.save
-    return createElement('output', null, state.snapshot?.config.replyStyle)
-  }
-  const host = document.body.appendChild(document.createElement('div'))
-  const root = createRoot(host)
-  try {
-    await act(async () => root.render(createElement(Reader)))
-    await act(async () => {
-      await save((latest) => ({ ...latest, replyStyle: 'saved' }))
-    })
-    expect(host.textContent).toBe('saved')
-    await act(async () => release(old))
-    expect(host.textContent).toBe('saved')
-  } finally {
-    await act(async () => root.unmount())
-    host.remove()
-  }
-})
+it.each([
+  ['en', 'instructions'],
+  ['zh-CN', 'instructions'],
+  ['en', 'replacement'],
+  ['zh-CN', 'replacement'],
+] as const)(
+  'keeps the %s %s draft and exposes a GET/POST conflict until reload and resubmit',
+  async (locale: UiLocale, editor) => {
+    const f = fixture()
+    const source = {
+      getSnapshot: () => locale,
+      getVersion: () => 0,
+      subscribe: () => () => {},
+      t: (key: string) => key,
+      bind: () => (key: string) => key,
+    }
+    const instructions = editor === 'instructions'
+    const name = instructions ? 'personaPrefix' : 'fullOverride'
+    const draft = instructions ? 'window A instructions' : 'window A replacement'
+    try {
+      await act(async () =>
+        f.root.render(
+          createElement(
+            UiLocaleProvider,
+            { source },
+            inFrame(
+              instructions
+                ? createElement(CustomInstructions, { api: f.api, eager: true, permission: async () => true })
+                : createElement(PromptRows, { api: f.api, canSave: true }),
+            ),
+          ),
+        ),
+      )
+      if (!instructions) {
+        await act(async () =>
+          f.host.querySelector<HTMLButtonElement>('[data-testid="settings-drill-system-prompt"]')?.click(),
+        )
+        await f.click('override-on')
+      }
+      await f.input(name, draft)
+      // Window B commits after A's save-flow GET, immediately before A's POST reaches the store.
+      f.beforeSave(async () => {
+        const latest = await f.otherWindow.get()
+        if (!latest.revision) throw new Error('Missing fixture revision')
+        await f.otherWindow.save({
+          config: { fullOverride: 'window B replacement' },
+          confirmFullOverride: true,
+          expectedRevision: latest.revision,
+        })
+      })
+      if (instructions) {
+        await act(async () => f.field(name)?.dispatchEvent(new FocusEvent('focusout', { bubbles: true })))
+      } else {
+        await f.click('confirm')
+        await f.click('override-save')
+      }
+      await act(async () => {})
+      expect(f.writes.at(-1)?.expectedRevision).toBe('0'.repeat(64))
+      expect(f.saved().config).toEqual({ fullOverride: 'window B replacement' })
+      expect(f.field(name)?.value).toBe(draft)
+      const notice = f.host.querySelector('[data-testid="system-prompt-conflict"]')
+      expect(notice?.textContent).toContain(locale === 'en' ? 'Changed in another window' : '另一窗口已修改')
+      expect(f.host.querySelector('[data-testid="system-prompt-conflict-saved"]')?.textContent).toContain(
+        'window B replacement',
+      )
+      expect(notice?.getAttribute('role')).toBe('alert')
+      if (instructions) {
+        expect(f.field(name)?.disabled).toBe(true)
+        // Instructions cannot clear a replacement. B must explicitly restore the default first.
+        const latest = await f.otherWindow.get()
+        if (!latest.revision) throw new Error('Missing fixture revision')
+        await f.otherWindow.save({ config: {}, expectedRevision: latest.revision })
+      }
+      const revision = f.saved().revision
+      await f.click('conflict-reload')
+      expect(f.field(name)?.value).toBe(draft)
+      if (instructions) {
+        expect(f.field(name)?.disabled).toBe(false)
+        await act(async () =>
+          f.host.querySelector<HTMLButtonElement>('[data-testid="settings-save-retry"]')?.click(),
+        )
+      } else {
+        await f.click('confirm')
+        await f.click('override-save')
+      }
+      expect(f.writes.at(-1)?.expectedRevision).toBe(revision)
+      expect(f.saved().config).toEqual(instructions ? { personaPrefix: draft } : { fullOverride: draft })
+      expect(f.host.querySelector('[data-testid="system-prompt-conflict"]')).toBeNull()
+      expect(f.host.querySelector('[data-testid="settings-save-failed"]')).toBeNull()
+      expect(f.host.textContent).not.toMatch(/Saved successfully|保存成功/)
+    } finally {
+      await act(async () => f.root.unmount())
+      f.host.remove()
+    }
+  },
+)
+
+it.each([true, false])(
+  'keeps newer prompt reads and refuses an unconditional save (revision=%s)',
+  async (hasRevision) => {
+    const { usePromptSnapshot } = await import('../src/settings/prompt-config.js')
+    let release!: (value: SystemPromptSnapshot) => void
+    const old: SystemPromptSnapshot = {
+      config: { replyStyle: 'old' },
+      effect: 'new-sessions',
+      hash: 'a'.repeat(64),
+      ...(hasRevision ? { revision: 'b'.repeat(64) } : {}),
+      preview: 'default-sections',
+      sections: [],
+    }
+    let reads = 0
+    const api: ReturnType<typeof systemPromptApi> = {
+      session: async () => old,
+      get: async () =>
+        ++reads === 1
+          ? new Promise<SystemPromptSnapshot>((resolve) => {
+              release = resolve
+            })
+          : old,
+      save: vi.fn(async ({ config }: SystemPromptSaveParams) => ({ ...old, config })),
+    }
+    let save!: ReturnType<typeof usePromptSnapshot>['save']
+    function Reader() {
+      const state = usePromptSnapshot(api)
+      save = state.save
+      return createElement('output', null, state.snapshot?.config.replyStyle)
+    }
+    const host = document.body.appendChild(document.createElement('div'))
+    const root = createRoot(host)
+    try {
+      await act(async () => root.render(createElement(Reader)))
+      await act(async () => {
+        const saving = save((latest) => ({ ...latest, replyStyle: 'saved' }))
+        if (hasRevision) await saving
+        else await expect(saving).rejects.toThrow('Prompt revision unavailable')
+      })
+      expect(host.textContent).toBe(hasRevision ? 'saved' : 'old')
+      if (!hasRevision) expect(api.save).not.toHaveBeenCalled()
+      await act(async () => release(old))
+      expect(host.textContent).toBe(hasRevision ? 'saved' : 'old')
+    } finally {
+      await act(async () => root.unmount())
+      host.remove()
+    }
+  },
+)

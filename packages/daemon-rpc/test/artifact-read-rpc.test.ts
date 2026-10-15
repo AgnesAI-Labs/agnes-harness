@@ -139,6 +139,7 @@ describe('authenticated artifact read RPC', () => {
       'lane-a',
       artifact.sha256,
       expect.any(AbortSignal),
+      artifact.mime,
     )
   })
 

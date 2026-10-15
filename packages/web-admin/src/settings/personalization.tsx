@@ -27,6 +27,7 @@ import {
   useShown,
   withInstructions,
 } from './prompt-config.js'
+import { PromptConflictNotice } from './prompt-conflict.js'
 import { promptCatalog } from './system-prompt-locale.js'
 
 type Instruction = 'personaPrefix' | 'personaSuffix' | 'replyStyle'
@@ -66,7 +67,7 @@ export function CustomInstructions({
 }) {
   const { t } = useUiText(PROMPT_NAMESPACE, promptCatalog)
   const [ref, shown] = useShown(eager)
-  const { snapshot, busy, failed, save, reload } = usePromptSnapshot(api, shown)
+  const { snapshot, busy, failed, conflict, save, reload } = usePromptSnapshot(api, shown)
   const canSave = useCanSave(shown, permission)
   const config = useAutosave<SystemPromptConfig>({
     stored: snapshot?.config,
@@ -103,6 +104,7 @@ export function CustomInstructions({
           {t('replaced')}
         </Banner>
       )}
+      {conflict && <PromptConflictNotice current={conflict} reload={reload} />}
       <SettingsBlock
         label={t('personalization')}
         data-testid="custom-instructions"

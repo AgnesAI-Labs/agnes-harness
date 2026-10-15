@@ -1,4 +1,4 @@
-import type { UiArtifactFileData } from '@agnes/protocol/gen/intelligent-ui'
+import type { UiArtifactFileData, UiArtifactStatus } from '@agnes/protocol/gen/intelligent-ui'
 import type { ClientDocumentKind, ClientDocumentResource, ClientResourceService } from '@agnes/web-client'
 import {
   Button,
@@ -18,6 +18,14 @@ import {
   deliverableVersion,
   type EarlierVersion,
 } from './deliverable-labels.js'
+
+function resourceFailure(error: unknown): UiArtifactStatus {
+  const code = (error as { code?: string } | undefined)?.code
+  if (code === 'artifact_not_found') return 'not_found'
+  if (code === 'artifact_identity_mismatch' || code === 'artifact_forbidden') return 'identity_mismatch'
+  if (code === 'artifact_reclaimed') return 'reclaimed'
+  return 'unavailable'
+}
 
 const PREVIEW_LIMIT = 1024 * 1024
 
@@ -58,7 +66,8 @@ const previewRequest = {
   },
 }
 // A request names the file by name and content: the same bytes under two names are two cards.
-const fileKey = (laneId: string, file: UiArtifactFileData) => `${laneId}:${file.name}:${file.artifact.sha256}`
+const fileKey = (laneId: string, file: UiArtifactFileData) =>
+  `${laneId}:${file.name}:${file.artifact.sha256}:${file.artifact.size}:${file.artifact.mime}`
 
 /** Display uses the same session-authorized resource loaders as the workspace document dock. */
 export function ArtifactFile({
@@ -69,8 +78,16 @@ export function ArtifactFile({
   onShowInWorkbench,
   earlier,
   source,
+  artifactStatus,
+  onRetry,
+  recovered,
+  checking,
 }: {
   file: UiArtifactFileData
+  artifactStatus?: UiArtifactStatus | undefined
+  onRetry?: (() => void) | undefined
+  recovered?: boolean | undefined
+  checking?: boolean | undefined
   laneId: string
   resources: ClientResourceService | undefined
   placement?: 'inline' | 'workbench'
@@ -89,14 +106,14 @@ export function ArtifactFile({
   const [preview, setPreview] = useState<ClientDocumentResource>()
   const [opened, setOpened] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [failed, setFailed] = useState(false)
+  const [failed, setFailed] = useState<UiArtifactStatus>()
   const [copied, setCopied] = useState(false)
   useEffect(() => {
     owner.active = true
     setPreview(undefined)
     setOpened(false)
     setBusy(false)
-    setFailed(false)
+    setFailed(undefined)
     return () => {
       owner.active = false
       for (const release of owner.releases) release()
@@ -150,7 +167,7 @@ export function ArtifactFile({
     setOpened(true)
     if (!resources || !kind || size > PREVIEW_LIMIT || preview) return
     setBusy(true)
-    setFailed(false)
+    setFailed(undefined)
     try {
       const result = await resources.documents.load({ laneId, artifact: file.artifact, kind })
       if (!owner.active) {
@@ -159,9 +176,9 @@ export function ArtifactFile({
       }
       owner.releases.add(result.release)
       setPreview(result)
-    } catch {
+    } catch (error) {
       if (owner.active) {
-        setFailed(true)
+        setFailed(resourceFailure(error))
         setOpened(false)
       }
     } finally {
@@ -186,7 +203,7 @@ export function ArtifactFile({
   async function download() {
     if (!resources || busy) return
     setBusy(true)
-    setFailed(false)
+    setFailed(undefined)
     try {
       const result = await resources.files.load({ laneId, artifact: file.artifact })
       if (!owner.active) {
@@ -204,8 +221,8 @@ export function ArtifactFile({
       }
       const timer = setTimeout(release, 1000)
       owner.releases.add(release)
-    } catch {
-      if (owner.active) setFailed(true)
+    } catch (error) {
+      if (owner.active) setFailed(resourceFailure(error))
     } finally {
       if (owner.active) setBusy(false)
     }
@@ -218,6 +235,21 @@ export function ArtifactFile({
       setCopied(false)
     }
   }
+  const status = failed ?? artifactStatus
+  const permanent = status === 'not_found' || status === 'identity_mismatch' || status === 'reclaimed'
+  const note = checking
+    ? 'ui.file.checking'
+    : status === 'available'
+      ? undefined
+      : status === 'not_found'
+        ? 'ui.file.notFound'
+        : status === 'identity_mismatch'
+          ? 'ui.file.invalidReference'
+          : status === 'reclaimed'
+            ? 'ui.file.reclaimed'
+            : status === 'unavailable'
+              ? 'ui.file.failed'
+              : 'ui.file.unknown'
   const unavailable = !kind || size > PREVIEW_LIMIT
   return (
     <section
@@ -242,7 +274,7 @@ export function ArtifactFile({
             size="small"
             className="deliverable-open"
             data-testid="deliverable-open"
-            disabled={!resources || busy}
+            disabled={!resources || busy || permanent}
             onClick={open}
             {...(delegated ? {} : { 'aria-expanded': opened })}
           >
@@ -264,14 +296,14 @@ export function ArtifactFile({
                 id: 'workbench',
                 label: t('ui.file.previewInWorkbench'),
                 testId: 'deliverable-in-workbench',
-                disabled: !resources || busy,
+                disabled: !resources || busy || permanent,
                 onSelect: () => (delegated ? open() : void show()),
               },
               {
                 id: 'download',
                 label: t('ui.file.download'),
                 testId: 'deliverable-download',
-                disabled: !resources || busy,
+                disabled: !resources || busy || permanent,
                 onSelect: () => void download(),
               },
               {
@@ -284,10 +316,23 @@ export function ArtifactFile({
           />
         </div>
       </div>
-      {failed && (
-        <p className="deliverable-note" role="alert">
-          {t('ui.file.failed')}
+      {recovered && (
+        <p className="deliverable-note" role="status">
+          {t('ui.file.recovered')}
         </p>
+      )}
+      {note && (
+        <div
+          className="deliverable-note"
+          role={!checking && status && status !== 'available' ? 'alert' : 'status'}
+        >
+          {t(note)}
+          {status === 'unavailable' && onRetry && (
+            <Button size="small" onClick={onRetry}>
+              {t('ui.file.retry')}
+            </Button>
+          )}
+        </div>
       )}
       {opened && (
         <div className="deliverable-preview" data-testid="deliverable-preview" data-kind={kind ?? 'none'}>
@@ -301,7 +346,7 @@ export function ArtifactFile({
             <IconButton
               name="download"
               label={t('ui.file.download')}
-              disabled={!resources || busy}
+              disabled={!resources || busy || permanent}
               onClick={() => void download()}
             />
             <IconButton

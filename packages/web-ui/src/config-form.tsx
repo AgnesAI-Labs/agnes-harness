@@ -303,6 +303,9 @@ export function SchemaConfigForm({
     }
   }, [readOnly])
   const supported = configSchemaSupported(schema) && schema.type === 'object' && translatedFields(schema, t)
+  const formIssue = issues.find(
+    (issue) => issue.path === '' || issue.code === 'unknown' || issue.code === 'schema',
+  )
   async function run(action: ConfigAction | undefined, success: 'saved' | 'tested') {
     if (!action || readOnly || pending.current || !supported) return
     const errors = configIssues(schema, value)
@@ -352,11 +355,7 @@ export function SchemaConfigForm({
         issues={issues}
         prefix={testId}
       />
-      {issues.some((issue) => issue.code === 'unknown' || issue.code === 'schema') && (
-        <SettingsState tone="error">
-          {text(`error.${issues.find((issue) => issue.code === 'unknown' || issue.code === 'schema')?.code}`)}
-        </SettingsState>
-      )}
+      {formIssue && <SettingsState tone="error">{text(`error.${formIssue.code}`)}</SettingsState>}
       {(onSave || onTest) && (
         <SettingsToolbar>
           {onSave && !stickySave && (

@@ -52,6 +52,12 @@ Import author contracts from declared package exports. The [extension API root](
 | Plugin administration, SDK session selection, generation migration/publication APIs | experimental | Authenticated operations and durable backend bindings; browser modules receive no Node credential |
 | Extension fixtures and transport contract cases; provider/persistence conformance and plugin-runtime author helpers/testkit | experimental | Reusable checks, controlled probes and real Host integration; mocks are not deployment qualification |
 
+`@agnes/protocol` exposes `ARTIFACT_REGISTERED_EVENT` and `sessionArtifactRoots` for backend ledger projections. The parser accepts validated server ledger rows and returns reference candidates; session/lane ownership, metadata and byte checks remain server responsibilities. Tool artifact registration commits before `artifacts.put` returns, allowing immediate file-card publication through the existing Intelligent UI capability.
+
+Registration attests successful provider storage, not Web readability: `put` retains its general size/provider contract. The current Web adapter serves local CAS artifacts up to 32 MiB; remote-only, oversized or unsupported-MIME references cannot publish file cards, without blocking subsequent session events or recovery.
+
+Same bytes may have distinct valid MIME references; authorization and reads retain exact MIME and size checks. The authority index transactionally upgrades attested v1/v2 rows to v3 MIME-aware keys with lossless JSON-encoded MIME strings, without rewriting the ledger; older binaries cannot open the upgraded index. The index accepts storage references, including parameterized MIME metadata, independently of the strict HTTP Content-Type and byte-limit policy. An unsupported Web reference is refused at the file boundary. Digest-only internal readers refuse ambiguous MIME aliases.
+
 The stable tool context includes `tools.invoke/list`, `artifacts.put/get/submitJob/poll/cancel`, legacy `subagent.fork/spawn/collect/cancel/resume`, `plan.set`, `requestCompaction`, `progress`, `signal`, deadlines and lease/log views. Optional newer ports keep their experimental label above. `Disposer = () => void` belongs to synchronous extension registrations; provider unregister is separately `() => Promise<void>`. The [generated tool metadata reference](../../packages/extension-api/docs/tools-meta.md) records bounds (description 4096 UTF-16 units, parameter schema 262144 bytes/depth 32, text output default 32768 bytes with 4096–1048576 range).
 
 ## Loop operations and recovery

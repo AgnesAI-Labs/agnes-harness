@@ -1195,6 +1195,18 @@ export async function approveAndExecute(
             return readSessionAttachment(s, input, ac.signal)
           },
           progress: () => undefined,
+          registerArtifact: async (artifact) => {
+            await s.d.log.append([
+              s.ev(
+                'x/core/artifact.registered',
+                { artifact },
+                {
+                  ignorable: true,
+                  sourceEventSeqs: [call.argsSeq],
+                },
+              ),
+            ])
+          },
           artifactJobEvent: (job) =>
             s.d.log
               .append([

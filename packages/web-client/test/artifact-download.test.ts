@@ -53,5 +53,14 @@ it('downloads bounded authorized ranges, checks identity/digest, and releases th
     async () => ({ ok: true, status: 200, artifact: small, contentLength: 1, base64: 'eA==' }) as never,
   )
   await expect(downloadArtifact(client, 'session', 'main', small)).rejects.toThrow('digest mismatch')
+  for (const code of [
+    'artifact_not_found',
+    'artifact_reclaimed',
+    'artifact_identity_mismatch',
+    'artifact_unavailable',
+  ]) {
+    call.mockImplementation(async () => ({ ok: false, status: 500, code }) as never)
+    await expect(downloadArtifact(client, 'session', 'main', small)).rejects.toMatchObject({ code })
+  }
   expect(create).toHaveBeenCalledTimes(1)
 })

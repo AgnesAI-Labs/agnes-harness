@@ -7,6 +7,7 @@ import { testFsPolicy } from '@agnes/core/testkit'
 import type { ToolContext } from '@agnes/extension-api'
 import { PINNED_SEAM_KINDS } from '@agnes/extension-api/seams'
 import { createSqliteStorage } from '@agnes/host-infrastructure/adapters/storage-sqlite'
+import { SessionSandboxStore } from '@agnes/host-providers/profile/sandbox-state'
 import type { InferenceEvent, Provider } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -78,6 +79,66 @@ describe('createSession', () => {
     expect(start?.data).toMatchObject({ preset: 'standard', resolvedProfileHash: host.profile.hash })
     expect(start?.actor).toMatchObject({ role: 'owner', org: 'local' })
     await host.close()
+  })
+  it('resumes pre-record history through the workspace runtime under full local L1 isolation', async () => {
+    const dataDir = tmp()
+    const boot = () =>
+      createTestHost({
+        dataDir,
+        disableSessionTitle: true,
+        script: [
+          [
+            { type: 'text_delta', delta: 'resumed reply' },
+            { type: 'done', reason: 'stop' },
+          ],
+        ],
+        packages: {
+          '@agnes/base': {
+            sandboxWorkspaceProbe: async () => ({
+              name: 'seatbelt',
+              implementation: 'implemented',
+              probeState: 'ready',
+              execBackend: 'l1',
+              enforcement: { level: 'full', scope: ['file', 'network', 'process'] },
+              degraded: false,
+              confine: ({ argv }) => argv,
+            }),
+          },
+        },
+      })
+    const first = await boot()
+    let key: string
+    try {
+      const session = await first.host.createSession({ cwd: dataDir })
+      key = session.key
+      expect(await session.scan({ type: 'session/start', limit: 1 })).toHaveLength(1)
+    } finally {
+      await first.host.close()
+    }
+    // Keep the durable workspace and generation pins, but simulate history predating execution records.
+    new SessionSandboxStore(join(dataDir, 'profiles', 'local-dev')).release(key)
+    const second = await boot()
+    try {
+      const session = await second.host.createSession({ key, cwd: dataDir })
+      await session.enqueue('next-turn', {
+        content: [{ type: 'text', text: 'continue the old session' }],
+        actor: session.d.actor,
+      })
+      expect(await session.run({ until: 'turn-end', signal: new AbortController().signal })).toMatchObject({
+        reason: 'completed',
+      })
+      expect((await session.scan({ type: 'assistant/message', limit: 1 }))[0]?.data).toMatchObject({
+        content: [{ type: 'text', text: 'resumed reply' }],
+      })
+    } finally {
+      await second.host.close()
+    }
+    const third = await boot()
+    try {
+      await third.host.createSession({ key, cwd: dataDir })
+    } finally {
+      await third.host.close()
+    }
   })
   // The view the session runs on must not carry the sentinel: core's resolveModel reads
   // preset.model.route[slot], and a view still saying `default` writes a request/header naming a

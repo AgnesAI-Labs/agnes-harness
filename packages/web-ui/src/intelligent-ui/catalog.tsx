@@ -40,7 +40,7 @@ import { columnLabel, surfaceTitle, uiInstant, useNow } from './summary.js'
 import { uiObject } from './validate.js'
 
 export interface IntelligentCatalogProps {
-  renderArtifact?(file: UiArtifactFileData): ReactNode
+  renderArtifact?(file: UiArtifactFileData, componentId: string): ReactNode
   renderCustom?: CustomUiRenderer
   surface: UiSurface
   sources?: Readonly<Record<string, UiSourceStatus>>
@@ -203,7 +203,7 @@ function CatalogComponent(
   else if (component.kind === 'artifact-file') {
     const parsed = validateAgainst<UiArtifactFileData>(ArtifactFileSchema, surface.data[component.dataKey])
     content = parsed.ok ? (
-      (props.renderArtifact?.(parsed.value) ?? (
+      (props.renderArtifact?.(parsed.value, component.id) ?? (
         <p>
           {parsed.value.name} — {parsed.value.description}
         </p>

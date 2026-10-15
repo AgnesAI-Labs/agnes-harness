@@ -1,10 +1,12 @@
 import { types as utilTypes } from 'node:util'
 import type { TableHandle } from '@agnes/daemon-foundation/storage/table'
-import type { ArtifactRef } from '@agnes/protocol'
+import { type ArtifactRef, validateAgainst } from '@agnes/protocol'
+import { ArtifactRef as ArtifactRefSchema } from '@agnes/protocol/gen/agnes-v1'
 import type { ArtifactReadAuthorityPort } from './artifact-read.js'
 
+// Historical index rows admitted this bounded MIME range, independently of the public maxLength.
+const LEGACY_MIME = /^[a-z0-9][a-z0-9!#$&^_.+-]{0,63}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,127}$/u
 const HASH = /^[0-9a-f]{64}$/u
-const MIME = /^[a-z0-9][a-z0-9!#$&^_.+-]{0,63}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,127}$/u
 
 export type ArtifactAuthorityBinding = Readonly<{
   sessionId: string
@@ -45,17 +47,27 @@ type Row = {
 
 type SchemaRow = { type: unknown; name: unknown; tbl_name: unknown; sql: unknown }
 type SqlCapabilities = Pick<TableHandle, 'exec' | 'get' | 'all' | 'transaction'>
+// The table name is retained across the attested v1/v2 → v3 migration.
 const TABLE = 'artifact_read_authority_v1'
 const META = 'artifact_read_authority_meta'
-const VERSION = 1
+const VERSION = 3
 const MAX_ROWS = 4096
+// Protocol integers are JS numbers, including values outside SQLite's safe integer → JS range.
+// Keep malformed SQL values malformed rather than coercing text/blob metadata into a valid zero.
+const COLUMNS = `session_id, lane_id, owner_id, sha256,
+  CASE WHEN typeof(size) IN ('integer', 'real') THEN CAST(size AS REAL) ELSE NULL END AS size, mime`
 const META_DDL =
   'CREATE TABLE artifact_read_authority_meta (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)'
-const TABLE_DDL =
+const LEGACY_TABLE_DDL =
   'CREATE TABLE artifact_read_authority_v1 (' +
   'session_id TEXT NOT NULL, lane_id TEXT NOT NULL, owner_id TEXT NOT NULL, ' +
   'sha256 TEXT NOT NULL, size INTEGER NOT NULL, mime TEXT NOT NULL, ' +
   'PRIMARY KEY (session_id, lane_id, sha256))'
+const TABLE_DDL =
+  'CREATE TABLE artifact_read_authority_v1 (' +
+  'session_id TEXT NOT NULL, lane_id TEXT NOT NULL, owner_id TEXT NOT NULL, ' +
+  'sha256 TEXT NOT NULL, size INTEGER NOT NULL, mime TEXT NOT NULL, ' +
+  'PRIMARY KEY (session_id, lane_id, sha256, mime))'
 const INDEX_DDL =
   'CREATE INDEX artifact_read_authority_v1_lane ON artifact_read_authority_v1 (session_id, lane_id)'
 
@@ -102,17 +114,17 @@ function boundedIdentity(value: unknown): value is string {
 
 function snapshotRef(value: unknown): ArtifactRef | undefined {
   const ref = exactOwn(value, ['sha256', 'size', 'mime'])
-  if (
-    !ref ||
-    typeof ref.sha256 !== 'string' ||
-    !HASH.test(ref.sha256) ||
-    !Number.isSafeInteger(ref.size) ||
-    (ref.size as number) < 0 ||
-    typeof ref.mime !== 'string' ||
-    !MIME.test(ref.mime)
+  if (!ref) return undefined
+  // Storage metadata follows the public contract. HTTP header safety belongs to the read adapter.
+  const mime = ref.mime
+  if (typeof mime !== 'string') return undefined
+  // Preserve the old index's valid MIME bounds for historical roots, without changing HTTP policy.
+  const checked = validateAgainst<ArtifactRef>(
+    ArtifactRefSchema,
+    LEGACY_MIME.test(mime) ? { ...ref, mime: '' } : ref,
   )
-    return undefined
-  return Object.freeze({ sha256: ref.sha256, size: ref.size as number, mime: ref.mime })
+  if (!checked.ok) return undefined
+  return Object.freeze({ sha256: checked.value.sha256, size: checked.value.size, mime })
 }
 
 function snapshotBinding(value: unknown): ArtifactAuthorityBinding | undefined {
@@ -176,12 +188,24 @@ function permits(
   )
 }
 
-function decodeRow(row: Row): ArtifactAuthorityBinding | undefined {
+function decodeRow(row: Row, version = VERSION): ArtifactAuthorityBinding | undefined {
+  let mime: unknown = row.mime
+  if (typeof mime !== 'string') return undefined
+  if (version === VERSION) {
+    try {
+      mime = JSON.parse(mime)
+      if (JSON.stringify(mime) !== row.mime) return undefined
+    } catch {
+      return undefined
+    }
+  } else if (!LEGACY_MIME.test(mime) || !Number.isSafeInteger(row.size)) {
+    return undefined
+  }
   return snapshotBinding({
     sessionId: row.session_id,
     laneId: row.lane_id,
     ownerId: row.owner_id,
-    artifact: { sha256: row.sha256, size: row.size, mime: row.mime },
+    artifact: { sha256: row.sha256, size: row.size, mime },
   })
 }
 
@@ -193,10 +217,10 @@ function normalizedDdl(value: string): string {
     .toLowerCase()
 }
 
-function requireSchema(sql: SqlCapabilities): void {
+function requireSchema(sql: SqlCapabilities, version = VERSION): void {
   const allowed = new Map<string, Readonly<{ type: 'table' | 'index'; table: string; ddl: string | null }>>([
     [META, { type: 'table', table: META, ddl: META_DDL }],
-    [TABLE, { type: 'table', table: TABLE, ddl: TABLE_DDL }],
+    [TABLE, { type: 'table', table: TABLE, ddl: version === 1 ? LEGACY_TABLE_DDL : TABLE_DDL }],
     [`sqlite_autoindex_${TABLE}_1`, { type: 'index', table: TABLE, ddl: null }],
     ['artifact_read_authority_v1_lane', { type: 'index', table: TABLE, ddl: INDEX_DDL }],
   ])
@@ -224,9 +248,9 @@ function requireTempSchemaEmpty(sql: SqlCapabilities): void {
   if (rows.length !== 0) throw new Error('unexpected temporary schema inventory')
 }
 
-function requireSoleVersion(sql: SqlCapabilities): void {
+function requireSoleVersion(sql: SqlCapabilities, version = VERSION): void {
   const versions = sql.all<{ id: unknown; version: unknown }>(`SELECT id, version FROM ${META} ORDER BY id`)
-  if (versions.length !== 1 || versions[0]?.id !== 1 || versions[0].version !== VERSION)
+  if (versions.length !== 1 || versions[0]?.id !== 1 || versions[0].version !== version)
     throw new Error('incompatible schema version')
 }
 
@@ -247,14 +271,53 @@ function initialize(sql: SqlCapabilities): void {
       sql.exec(TABLE_DDL)
       sql.exec(INDEX_DDL)
       sql.exec(`INSERT INTO ${META} (id, version) VALUES (?, ?)`, [1, VERSION])
+    } else {
+      const version = sql.get<{ version: unknown }>(`SELECT version FROM ${META} WHERE id = 1`)?.version
+      if (version === 1 || version === 2) {
+        requireSchema(sql, version)
+        requireSoleVersion(sql, version)
+        const legacy = sql.all<Row>(`SELECT ${COLUMNS} FROM ${TABLE} LIMIT ${MAX_ROWS + 1}`)
+        const bindings = legacy.map((row) => decodeRow(row, version))
+        if (legacy.length > MAX_ROWS || bindings.some((binding) => !binding))
+          throw new Error('invalid legacy authority rows')
+        sql.exec(`ALTER TABLE ${TABLE} RENAME TO artifact_read_authority_migration`)
+        sql.exec('DROP INDEX artifact_read_authority_v1_lane')
+        sql.exec(TABLE_DDL)
+        sql.exec(INDEX_DDL)
+        for (const binding of bindings) {
+          if (!binding) throw new Error('invalid legacy authority row')
+          sql.exec(
+            `INSERT INTO ${TABLE} (session_id, lane_id, owner_id, sha256, size, mime) VALUES (?, ?, ?, ?, ?, ?)`,
+            [
+              binding.sessionId,
+              binding.laneId,
+              binding.ownerId,
+              binding.artifact.sha256,
+              binding.artifact.size,
+              JSON.stringify(binding.artifact.mime),
+            ],
+          )
+        }
+        sql.exec('DROP TABLE artifact_read_authority_migration')
+        sql.exec(`UPDATE ${META} SET version = ? WHERE id = 1`, [VERSION])
+      }
     }
     attestStore(sql)
     const rows = sql.all<Row>(
-      `SELECT session_id, lane_id, owner_id, sha256, size, mime FROM ${TABLE}
+      `SELECT ${COLUMNS} FROM ${TABLE}
        ORDER BY session_id, lane_id, sha256 LIMIT ${MAX_ROWS + 1}`,
     )
     if (rows.length > MAX_ROWS) throw new Error('authority row inventory exceeds limit')
-    for (const row of rows) if (!decodeRow(row)) throw new Error('invalid authority row')
+    const identities = new Map<string, ArtifactAuthorityBinding>()
+    for (const row of rows) {
+      const binding = decodeRow(row)
+      if (!binding) throw new Error('invalid authority row')
+      const key = JSON.stringify([binding.sessionId, binding.laneId, binding.artifact.sha256])
+      const prior = identities.get(key)
+      if (prior && (prior.ownerId !== binding.ownerId || prior.artifact.size !== binding.artifact.size))
+        throw new Error('conflicting content identity')
+      identities.set(key, binding)
+    }
   })
 }
 
@@ -299,14 +362,25 @@ export class PersistentArtifactReadAuthorityIndex {
     try {
       return this.sql.transaction(() => {
         attestStore(this.sql)
-        const existing = this.read(binding.sessionId, binding.laneId, binding.artifact.sha256)
+        if (this.hasConflict(binding)) return result(false, 'conflict')
+        const existing = this.read(
+          binding.sessionId,
+          binding.laneId,
+          binding.artifact.sha256,
+          binding.artifact.mime,
+        )
         if (existing)
           return sameBinding(existing, binding) ? result(true, 'already_present') : result(false, 'conflict')
         const count = this.sql.get<{ n: unknown }>(`SELECT COUNT(*) AS n FROM ${TABLE}`)?.n
         if (!Number.isSafeInteger(count) || (count as number) < 0 || (count as number) >= MAX_ROWS)
           throw new Error('authority row inventory limit reached')
         this.insert(binding)
-        const inserted = this.read(binding.sessionId, binding.laneId, binding.artifact.sha256)
+        const inserted = this.read(
+          binding.sessionId,
+          binding.laneId,
+          binding.artifact.sha256,
+          binding.artifact.mime,
+        )
         if (!inserted || !sameBinding(inserted, binding)) throw new Error('authority append lost its row')
         return result(true, 'appended')
       })
@@ -335,10 +409,22 @@ export class PersistentArtifactReadAuthorityIndex {
     try {
       return this.sql.transaction(() => {
         attestStore(this.sql)
-        const current = this.read(expected.sessionId, expected.laneId, expected.artifact.sha256)
+        const current = this.read(
+          expected.sessionId,
+          expected.laneId,
+          expected.artifact.sha256,
+          expected.artifact.mime,
+        )
         if (!current || !sameBinding(current, expected)) return result(false, 'conflict')
         if (sameBinding(expected, replacement)) return result(true, 'unchanged')
-        if (this.read(replacement.sessionId, replacement.laneId, replacement.artifact.sha256))
+        if (
+          this.read(
+            replacement.sessionId,
+            replacement.laneId,
+            replacement.artifact.sha256,
+            replacement.artifact.mime,
+          )
+        )
           return result(false, 'conflict')
         this.sql.exec(
           `DELETE FROM ${TABLE}
@@ -349,13 +435,19 @@ export class PersistentArtifactReadAuthorityIndex {
             expected.ownerId,
             expected.artifact.sha256,
             expected.artifact.size,
-            expected.artifact.mime,
+            JSON.stringify(expected.artifact.mime),
           ],
         )
-        if (this.read(expected.sessionId, expected.laneId, expected.artifact.sha256))
+        if (this.read(expected.sessionId, expected.laneId, expected.artifact.sha256, expected.artifact.mime))
           return result(false, 'conflict')
+        if (this.hasConflict(replacement)) throw new Error('conflicting content identity')
         this.insert(replacement)
-        const inserted = this.read(replacement.sessionId, replacement.laneId, replacement.artifact.sha256)
+        const inserted = this.read(
+          replacement.sessionId,
+          replacement.laneId,
+          replacement.artifact.sha256,
+          replacement.artifact.mime,
+        )
         if (!inserted || !sameBinding(inserted, replacement))
           throw new Error('authority replacement lost its row')
         return result(true, 'replaced')
@@ -374,7 +466,12 @@ export class PersistentArtifactReadAuthorityIndex {
     try {
       return this.sql.transaction(() => {
         attestStore(this.sql)
-        const existing = this.read(binding.sessionId, binding.laneId, binding.artifact.sha256)
+        const existing = this.read(
+          binding.sessionId,
+          binding.laneId,
+          binding.artifact.sha256,
+          binding.artifact.mime,
+        )
         if (!existing) return result(true, 'unchanged')
         if (!sameBinding(existing, binding)) return result(false, 'conflict')
         this.sql.exec(
@@ -386,10 +483,10 @@ export class PersistentArtifactReadAuthorityIndex {
             binding.ownerId,
             binding.artifact.sha256,
             binding.artifact.size,
-            binding.artifact.mime,
+            JSON.stringify(binding.artifact.mime),
           ],
         )
-        if (this.read(binding.sessionId, binding.laneId, binding.artifact.sha256))
+        if (this.read(binding.sessionId, binding.laneId, binding.artifact.sha256, binding.artifact.mime))
           throw new Error('authority revoke left its row behind')
         return result(true, 'revoked')
       })
@@ -398,34 +495,70 @@ export class PersistentArtifactReadAuthorityIndex {
     }
   }
 
-  resolve(sessionId: unknown, laneId: unknown, sha256: unknown): ArtifactAuthorityBinding | undefined {
+  resolve(
+    sessionId: unknown,
+    laneId: unknown,
+    sha256: unknown,
+    mime?: string,
+  ): ArtifactAuthorityBinding | undefined {
     if (
       !boundedIdentity(sessionId) ||
       !boundedIdentity(laneId) ||
       typeof sha256 !== 'string' ||
-      !HASH.test(sha256)
+      !HASH.test(sha256) ||
+      (mime !== undefined && !snapshotRef({ sha256, size: 0, mime }))
     )
       return undefined
     try {
       return this.sql.transaction(() => {
         attestStore(this.sql)
-        return this.read(sessionId, laneId, sha256)
+        return this.read(sessionId, laneId, sha256, mime)
       })
     } catch {
       throw new Error('artifact read authority index unavailable')
     }
   }
 
-  private read(sessionId: string, laneId: string, sha256: string): ArtifactAuthorityBinding | undefined {
-    const row = this.sql.get<Row>(
-      `SELECT session_id, lane_id, owner_id, sha256, size, mime
-       FROM ${TABLE} WHERE session_id = ? AND lane_id = ? AND sha256 = ?`,
+  private read(
+    sessionId: string,
+    laneId: string,
+    sha256: string,
+    mime?: string,
+  ): ArtifactAuthorityBinding | undefined {
+    // Inspect this digest's bounded aliases so malformed metadata cannot hide behind another key.
+    const rows = this.sql.all<Row>(
+      `SELECT ${COLUMNS} FROM ${TABLE}
+       WHERE session_id = ? AND lane_id = ? AND sha256 = ? LIMIT ${MAX_ROWS + 1}`,
       [sessionId, laneId, sha256],
     )
-    if (!row) return undefined
-    const binding = decodeRow(row)
-    if (!binding) throw new Error('artifact read authority index unavailable')
-    return binding
+    if (rows.length > MAX_ROWS) throw new Error('artifact read authority index unavailable')
+    const bindings = rows.map((row) => {
+      const binding = decodeRow(row)
+      if (!binding) throw new Error('artifact read authority index unavailable')
+      return binding
+    })
+    const first = bindings[0]
+    if (
+      first &&
+      bindings.some(
+        (binding) => binding.ownerId !== first.ownerId || binding.artifact.size !== first.artifact.size,
+      )
+    )
+      throw new Error('artifact read authority index unavailable')
+    // Digest-only legacy callers must never choose an arbitrary MIME alias.
+    return mime === undefined
+      ? bindings.length === 1
+        ? first
+        : undefined
+      : bindings.find((binding) => binding.artifact.mime === mime)
+  }
+
+  private hasConflict(binding: ArtifactAuthorityBinding): boolean {
+    return !!this.sql.get<{ found: number }>(
+      `SELECT 1 AS found FROM ${TABLE}
+       WHERE session_id = ? AND lane_id = ? AND sha256 = ? AND (owner_id <> ? OR size <> ?) LIMIT 1`,
+      [binding.sessionId, binding.laneId, binding.artifact.sha256, binding.ownerId, binding.artifact.size],
+    )
   }
 
   private insert(binding: ArtifactAuthorityBinding): void {
@@ -438,7 +571,7 @@ export class PersistentArtifactReadAuthorityIndex {
         binding.ownerId,
         binding.artifact.sha256,
         binding.artifact.size,
-        binding.artifact.mime,
+        JSON.stringify(binding.artifact.mime),
       ],
     )
   }
@@ -450,9 +583,9 @@ export function createArtifactReadAuthorityPort(
 ): ArtifactReadAuthorityPort {
   const resolve = index.resolve.bind(index)
   return Object.freeze({
-    async resolve(sessionId: string, laneId: string, sha256: string, signal: AbortSignal) {
+    async resolve(sessionId: string, laneId: string, sha256: string, signal: AbortSignal, mime?: string) {
       if (signal.aborted) throw new Error('artifact read authority lookup unavailable')
-      const binding = resolve(sessionId, laneId, sha256)
+      const binding = resolve(sessionId, laneId, sha256, mime)
       if (signal.aborted) throw new Error('artifact read authority lookup unavailable')
       if (!binding) return undefined
       return Object.freeze({

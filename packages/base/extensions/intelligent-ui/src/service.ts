@@ -13,6 +13,8 @@ import {
 } from '@agnes/protocol'
 import {
   UiActionParams,
+  UiArtifactFileData,
+  type UiArtifactStatus,
   UiCloseParams,
   UiReadParams,
   UiRefreshParams,
@@ -97,6 +99,31 @@ export function createIntelligentUiService(ports: IntelligentUiServicePorts): In
     })
     for (const fact of view.audits) await append(fact.name, fact.data)
     return view
+  }
+  const artifacts = async (surface: UiSurfaceRecord['surface'], signal: AbortSignal) => {
+    const statuses: Record<string, UiArtifactStatus> = {}
+    for (const component of surface.components) {
+      if ('fallback' in component || component.kind !== 'artifact-file') continue
+      signal.throwIfAborted()
+      const file = validateAgainst<UiArtifactFileData>(UiArtifactFileData, surface.data[component.dataKey])
+      let status: UiArtifactStatus = 'unavailable'
+      try {
+        status = !file.ok
+          ? 'identity_mismatch'
+          : cap.checkArtifact
+            ? await cap.checkArtifact(file.value.artifact, signal)
+            : 'unavailable'
+      } catch {
+        signal.throwIfAborted()
+      }
+      signal.throwIfAborted()
+      statuses[component.id] = status
+      if (status !== 'available')
+        rejectUiSource(
+          `UI_ARTIFACT_${status.toUpperCase()}` as import('./input-rejection.js').UiArtifactFailure,
+        )
+    }
+    return Object.keys(statuses).length ? { artifacts: statuses } : {}
   }
   const delivery = async (record: ActionRecord, signal: AbortSignal) => {
     if (!terminal(record) || record.deliveredSeq) return
@@ -306,6 +333,7 @@ export function createIntelligentUiService(ports: IntelligentUiServicePorts): In
       serial(async () => {
         signal.throwIfAborted()
         validateUiParameters(UiRenderParams, input)
+        input = structuredClone(input)
         validateSurface(input.surface, cap)
         const value = await state(),
           old = value.surfaces[input.surface.id]
@@ -317,7 +345,8 @@ export function createIntelligentUiService(ports: IntelligentUiServicePorts): In
           throw rpcError('SEMANTIC_REJECTED', { code: 'UI_LIMIT' })
         const view = await present(input.surface, signal, 'write', openSurfaceIds(value))
         if (view && !view.ok) rejectUiSource(view.code)
-        return storeSurface(
+        const checked = await artifacts(view?.surface ?? input.surface, signal)
+        const stored = await storeSurface(
           'surface.opened',
           {
             surface: structuredClone(input.surface),
@@ -330,11 +359,13 @@ export function createIntelligentUiService(ports: IntelligentUiServicePorts): In
           },
           value,
         )
+        return { ...stored, ...checked }
       }),
     update: (input, signal) =>
       serial(async () => {
         signal.throwIfAborted()
         validateUiParameters(UiUpdateParams, input)
+        input = structuredClone(input)
         validateSurface(input.surface, cap)
         const value = await state(),
           old = value.surfaces[input.surfaceId]
@@ -349,7 +380,15 @@ export function createIntelligentUiService(ports: IntelligentUiServicePorts): In
         if (blocked(value, input.surfaceId)) throw rpcError('SEMANTIC_REJECTED', { code: 'UI_BUSY' })
         const view = await present(input.surface, signal, 'write', openSurfaceIds(value))
         if (view && !view.ok) rejectUiSource(view.code)
-        return storeSurface('surface.updated', { ...old, surface: structuredClone(input.surface) }, value)
+        const checked = await artifacts(view?.surface ?? input.surface, signal)
+        return {
+          ...(await storeSurface(
+            'surface.updated',
+            { ...old, surface: structuredClone(input.surface) },
+            value,
+          )),
+          ...checked,
+        }
       }),
     close: (input, signal) =>
       serial(async () => {

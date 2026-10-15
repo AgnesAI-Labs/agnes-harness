@@ -52,6 +52,12 @@
 | 插件管理、SDK 会话选择、generation 迁移/发布 API | experimental | 认证操作与后台持久绑定；浏览器模块不获得 Node 凭据 |
 | Extension fixtures、transport cases、provider/persistence conformance、plugin-runtime 作者 helper/testkit | experimental | 可复用校验、受控 probe 与真实 Host 集成；mock 不是部署资格验证 |
 
+`@agnes/protocol` 为后台 ledger 投影导出 `ARTIFACT_REGISTERED_EVENT` 与 `sessionArtifactRoots`。解析器输入为已验证的服务端 ledger 记录，输出仅是候选引用；会话/lane 归属、元数据和字节校验仍由服务端负责。工具产物登记先于 `artifacts.put` 返回提交，插件可通过现有 Intelligent UI 能力立即发布文件卡片。
+
+登记确认 provider 成功存储，不承诺 Web 可读性：`put` 保留通用大小和 provider 合同。当前 Web adapter 读取本地 CAS，最多 32 MiB；远端独有或超限引用、Web 不支持的 MIME 不能发布文件卡片，但不阻断后续会话事件或恢复。
+
+同 bytes 可以有不同合法 MIME 引用；授权和读取始终比较精确 MIME 与 size。授权索引在事务中将严格认证的 v1/v2 行升级到按 MIME 区分的 v3，MIME 以 JSON 字符串保真保存，不修改 ledger；旧二进制不能打开升级后的索引。索引按存储合同接受引用（包括参数 MIME），不把该元数据直接作为 HTTP Content-Type；Web 安全过滤和字节上限保持独立，拒绝仅影响文件。内部仅 digest 读取在 MIME 别名有歧义时拒绝。
+
 stable 工具上下文包含 `tools.invoke/list`、`artifacts.put/get/submitJob/poll/cancel`、兼容 `subagent.fork/spawn/collect/cancel/resume`、`plan.set`、`requestCompaction`、`progress`、`signal`、deadline、lease/log 视图。可选的新端口保持上表 experimental 标签。`Disposer = () => void` 属于同步扩展注册；provider unregister 独立为 `() => Promise<void>`。[生成的工具元数据参考](../../packages/extension-api/docs/tools-meta.md)记录上限：description 4096 UTF-16 单元，参数 schema 262144 字节/深度 32，文本输出默认 32768 字节、范围 4096–1048576。
 
 ## Loop 操作与恢复

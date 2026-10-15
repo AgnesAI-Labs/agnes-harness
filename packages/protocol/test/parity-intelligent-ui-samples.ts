@@ -43,6 +43,7 @@ const record = {
   owner: 'plugin',
   lane: 'main',
   taskId: 't',
+  artifacts: { file: 'available' },
 }
 const sample = (valid: unknown, invalid: unknown[]) => ({
   valid,
@@ -116,7 +117,12 @@ export const intelligentUiSamples = {
     { ...receipt, seq: 0 },
     { ...receipt, duplicate: 'false' },
   ]),
-  UiSurfaceRecord: sample(record, [{ ...record, owner: '' }]),
+  UiArtifactStatus: sample('available', ['missing', 'loading', null]),
+  UiSurfaceRecord: sample(record, [
+    { ...record, owner: '' },
+    { ...record, artifacts: { file: 'missing' } },
+    { ...record, artifacts: { '1invalid': 'available' } },
+  ]),
   UiDataBinding: sample({ $source: 'ledger/rows', params: { account: 'cash' } }, [
     { $source: 'Ledger/rows', params: {} },
     { $source: 'ledger/rows' },

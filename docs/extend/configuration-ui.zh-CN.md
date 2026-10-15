@@ -64,7 +64,7 @@ const unregister = settingsSections.register({
 
 | API | 合同 |
 | --- | --- |
-| `ConfigSchema` | JSON / TypeBox JSON 子集：封闭对象、嵌套对象、必填项、字符串、布尔、有限数字/整数、enum 或 literal anyOf、字符串数组、范围/长度/条数、pattern 和去重 |
+| `ConfigSchema` | JSON / TypeBox JSON 子集：封闭对象、嵌套对象、必填项、字符串、布尔、有限数字/整数、enum 或 literal anyOf、字符串数组、范围/长度/条数、pattern、去重，以及受支持类型的 `not` 谓词 |
 | `SchemaConfigForm` | 受控草稿；保存/测试前验证；本地化字段错误；禁用/加载；安全操作失败提示；保留修改；卸载时提供 abort signal。不会自动请求、持久化、解析凭据或套用默认值 |
 | `SchemaConfigFields` | 同样的字段，不增加 form 和操作按钮，适配既有页面 handler |
 | `SchemaControl` | 单个共享原生控件，保留原页面 Field / checkbox 包装 |
@@ -72,6 +72,8 @@ const unregister = settingsSections.register({
 | `ProviderConfigForm` / `providerConfigSchemas` | 沙箱、上下文压缩约束来自生成的 preset schema；持久化选择来自生成的 profile schema。调用方提供权威值与有权限的 handler；没有 handler 时只读 |
 
 不支持的 keyword/union、开放对象、无效 pattern、循环、过深/过大声明和危险属性名会被拒绝。这不是完整 JSON Schema renderer：先解析可支持的属性 schema，再传入；不接受 `$ref`、任意 union、transform 或自由键映射。TypeBox symbol 不属于 JSON 声明。渲染期间保持声明对象稳定。`default` 仅为注释，调用方初始化草稿。
+
+`not` 谓词只校验被排除的组合，不声明控件；其中的对象谓词可以只约束部分字段。命中排除条件会阻止保存/测试并显示表单错误。Provider 表单保留生成的 TypeBox“一个对象与一个 `not` 谓词”的交集，包括沙箱禁止同时选择 `L0` 与 `allow-if-unimplemented` 的约束；其他交集仍不支持。后台验证继续作为权威。
 
 凭据字段只接受协议规定的 `secret://namespace/name` 引用。不要将明文凭据放进配置默认值、初始值、保存数据或测试日志。创建/替换凭据走专用的只写凭据存储 API；原搜索密钥入口继续独立使用该通道。MCP 保留 managed form、transport 特有检查、凭据引用验证和已审核创建流程。
 
