@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { satisfiesApiRange } from '@agnes/extension-api'
 import { afterEach, expect, it, vi } from 'vitest'
 import {
   BUNDLED_EXAMPLES,
@@ -93,6 +94,7 @@ it.each([
   const metadata = JSON.parse(readFileSync(join(into, 'package.json'), 'utf8'))
   expect(metadata.name).toBe(expected.id)
   if (expected.family === 'mhs') {
+    expect(satisfiesApiRange(metadata.dependencies['@agnes/mhs'], '0.0.0')).toBe(true)
     expect(metadata.agnes.metadata).toMatchObject({
       category: 'example',
       exampleOf: '@agnes/mhs',

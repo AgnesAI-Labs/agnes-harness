@@ -120,7 +120,7 @@
     }
   },
   "dependencies": {
-    "@agnes/mhs": "workspace:*",
+    "@agnes/mhs": "0.0.0",
     "@agnes/mhs-device": "workspace:*"
   }
 }
