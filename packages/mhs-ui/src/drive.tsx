@@ -50,7 +50,7 @@ export function Drive({ device }: { device: Device }) {
     void client
       .stream('control', { device: device.id, leaseId }, () => {}, abort.signal, receipt.operationId)
       .then(({ stream }) => {
-        if (abort.signal.aborted) return
+        if (abort.signal.aborted || client.abort.signal.aborted) return
         const control = new ManualController(
           stream,
           axes,

@@ -62,6 +62,7 @@ describe('profile contribution lifecycle', () => {
       dispose = createMhsModule(f.ports).apply(c.ctx)
     await vi.waitFor(() => expect(c.registrations.get('mhs')?.badge?.getSnapshot()).toBe(1))
     expect(c.registrations.get('mhs')).toMatchObject({ placement: 'primary', order: 40 })
+    expect(c.slots.size).toBe(7)
     f.setNodes([
       {
         kind: 'tool',
@@ -88,6 +89,7 @@ describe('profile contribution lifecycle', () => {
     ).toBe(true)
     c.disable()
     expect(c.registrations.size).toBe(0)
+    expect(c.slots.size).toBe(0)
     expect(workbenchPanels.get('mhs.devices')).toBeUndefined()
     expect(conversationCards.get('mhs.tools')).toBeUndefined()
     expect(f.stream.closed).toBe(true)

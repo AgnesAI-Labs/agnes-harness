@@ -1,3 +1,5 @@
+import { validateRegistration } from '@agnes/mhs-device'
+import type { DeviceView } from '@agnes/mhs-hub'
 import type { JsonValue } from '@agnes/protocol'
 
 /** UI projection, normalized from the Hub's versioned query; not a second device protocol. */
@@ -18,7 +20,7 @@ export type Device = {
   trust: string
   origin: string
   simulated: boolean | undefined
-  description: Data
+  description: DeviceView['description']
   fields: Data
   state: Data
   tools: Data[]
@@ -30,7 +32,7 @@ export function devicesFrom(value: unknown): Device[] {
   if (!Array.isArray(value)) throw new Error('invalid-device-projection')
   return value.map((raw): Device => {
     const d = record(raw),
-      desc = record(d.description),
+      desc = validateRegistration(d.description),
       info = record(desc.device),
       ui = record(desc.ui)
     if (

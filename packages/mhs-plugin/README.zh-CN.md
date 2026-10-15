@@ -13,3 +13,5 @@
 这是源码预览，不承诺公开发行或真实设备兼容。UI、随包示例、部署 supervision、原生批准呈现与 Windows 进程验收属于后续集成职责。参阅 [Hub 合同](../mhs-hub/README.zh-CN.md)与[设备 SDK](../mhs-device/README.zh-CN.md)。
 
 `startManagedMhsHub(runtime, { authority, wakes })` 使用通用 `ManagedServiceInit & ManagedServiceRuntime` 的真实 OwnedStore、device 监听端口、私有 ready 与 shutdown 生命周期。`registerMhsStreams(north, streams, bindControl)` 通过 `PluginStreamsPort` 注册 `mhs.media`、`mhs.events` 与 `mhs.control`；可信 binder 将已验证 grant 映射到确切设备与 Hub lease，浏览器输入不能选择控制目标。媒体恢复每条流每秒最多请求一次关键帧，控制断线会停止已绑定设备。进程内测试使用真实 Hub、通用存储和 gateway broker；当前默认插件仍因缺少安装级可信 connector 而拒绝激活，不代表已通过完整安装或浏览器验收。
+
+浏览器贡献由 [`@agnes/mhs-ui`](../mhs-ui/README.zh-CN.md) 实现，声明在 `agnes.client.json`，使用 profile 生命周期、primary MHS 入口和公开工具卡片槽。运行 `pnpm --filter @agnes/mhs build:client` 生成插件内的客户端资源。该构建不启动 Hub，也不替代当前 managed connector 与原生批准；缺少合同能力时仍拒绝激活。

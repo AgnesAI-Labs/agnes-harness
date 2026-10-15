@@ -66,7 +66,7 @@ export interface ExamplesPort {
   prepare?(id: string): Promise<{ launchTicket: string; presentation: unknown }>
   enable(id: string, reviewId?: string): Promise<void>
   stop(id: string): Promise<void>
-  launch(id: string, launchTicket?: string): Promise<void>
+  launch(id: string, launchTicket?: string): Promise<undefined | { sessionId: string }>
 }
 export interface MhsPorts {
   services: ProfileServices

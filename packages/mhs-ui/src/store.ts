@@ -16,6 +16,10 @@ export class MhsStore {
   private sessionEpoch = 0
   private refreshEpoch = 0
   private refreshPending = false
+  private refreshing = false
+  private refreshAgain = false
+  private reconnectTimer: ReturnType<typeof setTimeout> | undefined
+  private closeEvents: (() => void) | undefined
   private stopped = false
   private timer: ReturnType<typeof setTimeout> | undefined
   constructor(readonly client: MhsClient) {}
@@ -32,6 +36,12 @@ export class MhsStore {
     for (const listener of this.listeners) listener()
   }
   async refresh() {
+    if (this.stopped) return
+    if (this.refreshing) {
+      this.refreshAgain = true
+      return
+    }
+    this.refreshing = true
     const epoch = ++this.refreshEpoch
     try {
       const [devices, maps] = await Promise.all([this.client.devices(), this.client.query('maps')])
@@ -40,6 +50,12 @@ export class MhsStore {
       this.update({ status: 'ready', devices, maps: maps.map(record), error: undefined })
     } catch {
       if (!this.stopped && epoch === this.refreshEpoch) this.update({ status: 'failed', error: 'failed' })
+    } finally {
+      this.refreshing = false
+      if (this.refreshAgain) {
+        this.refreshAgain = false
+        this.queueRefresh()
+      }
     }
   }
   private queueRefresh = () => {
@@ -69,6 +85,34 @@ export class MhsStore {
       if (epoch === this.sessionEpoch) this.update({ calls: [] })
     }
   }
+  private async connectEvents() {
+    if (this.stopped) return
+    try {
+      const { stream, close } = await this.client.stream('events', {}, this.queueRefresh)
+      this.closeEvents = close
+      this.update({ streamError: undefined })
+      stream.onDisconnect(() => {
+        this.update({ streamError: 'disconnected' })
+        close()
+        this.reconnect()
+      })
+      stream.onDrop(() => {
+        this.update({ streamError: 'backpressure' })
+        this.queueRefresh()
+      })
+      this.queueRefresh()
+    } catch {
+      this.update({ streamError: 'unavailable' })
+      this.reconnect()
+    }
+  }
+  private reconnect() {
+    if (this.stopped || this.client.abort.signal.aborted) return
+    clearTimeout(this.reconnectTimer)
+    this.reconnectTimer = setTimeout(() => {
+      void this.connectEvents()
+    }, 1000)
+  }
   start(): () => void {
     this.sessionChanged()
     const offSession = this.client.ports.session.subscribe(this.sessionChanged)
@@ -76,21 +120,14 @@ export class MhsStore {
       void this.readSession()
     })
     void this.refresh()
-    void this.client
-      .stream('events', {}, this.queueRefresh)
-      .then(({ stream }) => {
-        stream.onDisconnect(() => this.update({ streamError: 'disconnected' }))
-        stream.onDrop(() => {
-          this.update({ streamError: 'backpressure' })
-          this.queueRefresh()
-        })
-      })
-      .catch(() => this.update({ streamError: 'unavailable' }))
+    void this.connectEvents()
     return () => {
       if (this.stopped) return
       ++this.sessionEpoch
       ++this.refreshEpoch
       clearTimeout(this.timer)
+      clearTimeout(this.reconnectTimer)
+      this.closeEvents?.()
       offSession()
       offProjection()
       this.client.dispose()
@@ -106,6 +143,7 @@ export function usedDeviceIds(calls: readonly ToolRecord[]): Set<string> {
   for (const call of calls) {
     if (call.device) ids.add(call.device)
     const result = record(call.result)
+    if (typeof result.device === 'string') ids.add(result.device)
     const device = record(result.device)
     if (typeof device.id === 'string') ids.add(device.id)
     // Listing devices is discovery, not evidence that each device has been used.

@@ -6,7 +6,7 @@ import { DeveloperPage } from './developer.js'
 import { ExamplesPage } from './examples.js'
 import { WorldMap } from './map.js'
 import { type Device, text } from './model.js'
-import { Stop, useMhs, useSnapshot } from './react.js'
+import { HubHealth, Stop, useMhs, useSnapshot } from './react.js'
 export function DeviceCard({ device }: { device: Device }) {
   const { openDevice, t } = useMhs(),
     numbers = Object.entries(device.state)
@@ -51,6 +51,7 @@ export function MhsPage({ selection }: { selection?: unknown }) {
     )
       setDeviceId(selection.device)
     else setDeviceId(undefined)
+    if (typeof selection === 'object' && selection !== null && 'exampleId' in selection) setTab('examples')
   }, [selection])
   const device = snapshot.devices.find((d) => d.id === deviceId)
   if (device)
@@ -114,6 +115,7 @@ export function MhsPage({ selection }: { selection?: unknown }) {
     <div className="mhs-root">
       <header className="mhs-header">
         <h2>MHS</h2>
+        <HubHealth />
         <span>
           {t('online')} {snapshot.devices.filter((d) => d.available).length}/{snapshot.devices.length}
         </span>
@@ -146,7 +148,20 @@ export function MhsPage({ selection }: { selection?: unknown }) {
           },
           { key: 'activity', label: t('mhs.activity'), children: <ActivityPage /> },
           { key: 'developer', label: t('mhs.developer'), children: <DeveloperPage /> },
-          { key: 'examples', label: t('mhs.examples'), children: <ExamplesPage /> },
+          {
+            key: 'examples',
+            label: t('mhs.examples'),
+            children: (
+              <ExamplesPage
+                {...(typeof selection === 'object' &&
+                selection !== null &&
+                'exampleId' in selection &&
+                typeof selection.exampleId === 'string'
+                  ? { initialScene: selection.exampleId }
+                  : {})}
+              />
+            ),
+          },
         ]}
       />
     </div>

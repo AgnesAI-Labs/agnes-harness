@@ -47,7 +47,7 @@ describe('owner-bound MHS browser data', () => {
     expect(f.projectionListeners.size).toBe(0)
   })
   it('does not turn a malformed/offline projection or listing into an online used device', () => {
-    expect(() => devicesFrom([{ id: 'x' }])).toThrow('invalid-device-projection')
+    expect(() => devicesFrom([{ id: 'x' }])).toThrow()
     expect(devicesFrom([{ ...device(), online: false, available: false }])[0]?.available).toBe(false)
     const calls = toolsFrom(
       TOOL_NAMES.map((name, i) => ({

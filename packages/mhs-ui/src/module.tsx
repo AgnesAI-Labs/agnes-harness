@@ -4,6 +4,7 @@ import { type ReactNode, useSyncExternalStore } from 'react'
 import { cardCall, SessionDevices, ToolCard } from './cards.js'
 import { MhsClient } from './client.js'
 import { catalog, type TextKey } from './locales.js'
+import { TOOL_NAMES, toolsFrom } from './model.js'
 import { nativeExamples } from './native-examples.js'
 import { MhsPage } from './page.js'
 import type { MhsModuleContext, MhsPorts } from './ports.js'
@@ -107,6 +108,20 @@ export function createMhsModule(ports: MhsPorts) {
             ),
           }),
         )
+        for (const name of TOOL_NAMES)
+          cleanup.push(
+            ctx.slots.register(
+              { name: 'tool.call.toolview', key: name, id: `mhs.${name}`, priority: 40 },
+              ({ owner }) => {
+                const call = toolsFrom([owner?.block])[0]
+                return call ? (
+                  <Provider>
+                    <ToolCard call={call} />
+                  </Provider>
+                ) : null
+              },
+            ),
+          )
         cleanup.push(
           conversationCards.register({
             id: 'mhs.tools',

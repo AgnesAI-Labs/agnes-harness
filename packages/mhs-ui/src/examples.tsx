@@ -9,6 +9,7 @@ export function ExamplesPage({ initialScene }: { initialScene?: string }) {
     [scene, setScene] = useState<string | undefined>(initialScene),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(false),
+    [createdSession, setCreatedSession] = useState<string>(),
     [review, setReview] = useState<{
       id: string
       action: 'enable' | 'launch'
@@ -16,6 +17,7 @@ export function ExamplesPage({ initialScene }: { initialScene?: string }) {
       presentation: unknown
     }>(),
     lock = useRef(false)
+  useEffect(() => setScene(initialScene), [initialScene])
   const query = useQuery(useCallback(async (signal: AbortSignal) => (port ? port.list(signal) : []), [port])),
     selected = query.value?.find((e) => e.id === scene)
   useEffect(() => port?.subscribe(query.retry), [port, query.retry])
@@ -40,7 +42,8 @@ export function ExamplesPage({ initialScene }: { initialScene?: string }) {
         setReview({ id: example.id, action, token: r.launchTicket, presentation: r.presentation })
         return
       }
-      await port[action](example.id, token)
+      const result = await port[action](example.id, token)
+      if (result && 'sessionId' in result) setCreatedSession(result.sessionId)
       setReview(undefined)
       query.retry()
     } catch {
@@ -121,6 +124,11 @@ export function ExamplesPage({ initialScene }: { initialScene?: string }) {
         </fieldset>
       )}
       <Button onClick={query.retry}>{t('retry')}</Button>
+      {createdSession && (
+        <p role="status">
+          {t('sessionCreated')} · <code>{createdSession}</code>
+        </p>
+      )}
       {error && <p role="alert">{t('unavailable')}</p>}
     </section>
   )

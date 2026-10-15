@@ -2,6 +2,15 @@
   "scope": "External dependencies directly used for building, testing, type checking or development.",
   "packages": [
     {
+      "name": "esbuild",
+      "version": "0.28.2",
+      "license": "MIT",
+      "source": "https://github.com/evanw/esbuild",
+      "purpose": "Bundle the MHS browser module and its device protocol dependencies.",
+      "rationale": "Reuses the workspace's pinned transitive bundler with only public Host frontend modules externalized.",
+      "consumers": ["packages/mhs-ui"]
+    },
+    {
       "name": "@hyzyla/pdfium",
       "version": "2.1.13",
       "license": "MIT",
@@ -88,7 +97,8 @@
         "packages/web-conversation",
         "packages/web-foundation",
         "packages/web-ui",
-        "packages/web-units"
+        "packages/web-units",
+        "packages/mhs-ui"
       ]
     },
     {
@@ -105,7 +115,8 @@
         "packages/web-conversation",
         "packages/web-foundation",
         "packages/web-ui",
-        "packages/web-units"
+        "packages/web-units",
+        "packages/mhs-ui"
       ]
     },
     {

@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./ports": "./src/ports.ts",
-    "./style.css": "./src/style.css"
+    "./style.css": "./src/style.css",
+    "./build": "./tools/build-client.mjs"
   },
   "scripts": {
     "typecheck": "tsc -b",
@@ -16,12 +17,15 @@
     "@agnes/protocol": "workspace:*",
     "@agnes/web-client": "workspace:*",
     "@agnes/web-ui": "workspace:*",
-    "react": "18.3.1"
+    "react": "18.3.1",
+    "@agnes/mhs-device": "workspace:*",
+    "@agnes/mhs-hub": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "18.3.12",
     "@types/react-dom": "18.3.1",
-    "react-dom": "18.3.1"
+    "react-dom": "18.3.1",
+    "esbuild": "0.28.2"
   },
   "license": "Apache-2.0"
 }

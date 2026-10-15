@@ -1,6 +1,27 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": { "rootDir": ".", "outDir": "dist", "jsx": "react-jsx", "jsxImportSource": "react" },
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist",
+    "jsx": "react-jsx",
+    "jsxImportSource": "react"
+  },
   "include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "test/**/*.tsx"],
-  "references": [{ "path": "../protocol" }, { "path": "../web-client" }, { "path": "../web-ui" }]
+  "references": [
+    {
+      "path": "../protocol"
+    },
+    {
+      "path": "../web-client"
+    },
+    {
+      "path": "../web-ui"
+    },
+    {
+      "path": "../mhs-device"
+    },
+    {
+      "path": "../mhs-hub"
+    }
+  ]
 }

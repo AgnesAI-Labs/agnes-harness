@@ -1,3 +1,4 @@
+import { decodeMedia } from '@agnes/mhs-hub/media'
 import { type Data, number, record, text } from './model.js'
 export type Sample = {
   device: string
@@ -8,16 +9,7 @@ export type Sample = {
   bytes?: Uint8Array
 }
 export function sampleFrom(frame: unknown): Sample {
-  let raw: unknown = frame,
-    bytes: Uint8Array | undefined
-  if (frame instanceof Uint8Array) {
-    if (frame.byteLength < 4 || frame.byteLength > 1 << 20) throw new Error('invalid-media-frame')
-    const length = new DataView(frame.buffer, frame.byteOffset, frame.byteLength).getUint32(0)
-    if (length > 65536 || length + 4 > frame.byteLength) throw new Error('invalid-media-frame')
-    raw = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(frame.subarray(4, length + 4)))
-    if (frame.byteLength > length + 4) bytes = frame.slice(length + 4)
-  }
-  const value = record(raw)
+  const value = record(frame instanceof Uint8Array ? decodeMedia(frame) : frame)
   if (
     !text(value.device) ||
     !text(value.source) ||
@@ -28,10 +20,10 @@ export function sampleFrom(frame: unknown): Sample {
   return {
     device: text(value.device),
     source: text(value.source),
-    at: number(value.at),
+    at: value.at,
     data: record(value.data),
     mime: text(value.mime),
-    ...(bytes ? { bytes } : {}),
+    ...(value.bytes instanceof Uint8Array ? { bytes: value.bytes } : {}),
   }
 }
 /** Own every decoder/frame/URL. One bounded latest frame; no replay after a drop. */
@@ -51,32 +43,42 @@ export class VideoView {
     }
     const data = sample.data,
       key = data.key === true || data.keyframe === true || data.type === 'key'
+    if (this.decoder?.state === 'closed') {
+      this.failed()
+      return
+    }
     if (!this.decoder) {
-      const codec = text(data.codec) || h264Codec(sample.bytes)
-      if (!codec.startsWith('avc1.')) {
+      try {
+        const codec = text(data.codec) || h264Codec(sample.bytes)
+        if (!codec.startsWith('avc1.')) {
+          this.failed()
+          return
+        }
+        this.decoder = new VideoDecoder({
+          output: (frame) => {
+            try {
+              if (frame.displayWidth * frame.displayHeight > 16_777_216) {
+                this.failed()
+                return
+              }
+              this.canvas.width = frame.displayWidth
+              this.canvas.height = frame.displayHeight
+              this.canvas.getContext('2d')?.drawImage(frame, 0, 0)
+            } finally {
+              frame.close()
+            }
+          },
+          error: () => {
+            this.needsKey = true
+            this.failed()
+          },
+        })
+        this.decoder.configure({ codec, optimizeForLatency: true })
+      } catch {
+        this.close()
         this.failed()
         return
       }
-      this.decoder = new VideoDecoder({
-        output: (frame) => {
-          try {
-            if (frame.displayWidth * frame.displayHeight > 16_777_216) {
-              this.failed()
-              return
-            }
-            this.canvas.width = frame.displayWidth
-            this.canvas.height = frame.displayHeight
-            this.canvas.getContext('2d')?.drawImage(frame, 0, 0)
-          } finally {
-            frame.close()
-          }
-        },
-        error: () => {
-          this.needsKey = true
-          this.failed()
-        },
-      })
-      this.decoder.configure({ codec, optimizeForLatency: true })
     }
     if (this.decoder.decodeQueueSize > 2) {
       this.needsKey = true

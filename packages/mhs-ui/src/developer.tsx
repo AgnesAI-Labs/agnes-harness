@@ -25,14 +25,25 @@ export function DeveloperPage() {
     // Only sanitized metadata from the owner-bound diagnostics stream is rendered.
     void client
       .stream(
-        'diagnostics',
+        'events',
         {},
         (frame) => {
           if (frame instanceof Uint8Array) return
           const m = record(frame)
-          if (typeof m.summary !== 'string') return
+          const summary =
+            typeof m.summary === 'string'
+              ? m.summary.slice(0, 2048)
+              : [text(m.type), text(m.device), text(m.source), text(m.call)].filter(Boolean).join(' ')
+          if (!summary) return
           setMessages((prior) =>
-            [...prior, { id: ++seq, protocol: text(m.protocol), summary: m.summary as string }].slice(-200),
+            [
+              ...prior,
+              {
+                id: ++seq,
+                protocol: text(m.protocol) || (m.type === 'observation' ? 'mos' : 'mhs'),
+                summary,
+              },
+            ].slice(-200),
           )
         },
         abort.signal,

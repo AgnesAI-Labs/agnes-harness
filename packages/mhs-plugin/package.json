@@ -8,7 +8,8 @@
   },
   "scripts": {
     "typecheck": "tsc -b",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:client": "node tools/build-client.mjs"
   },
   "dependencies": {
     "@agnes/mhs-device": "workspace:*",
@@ -30,7 +31,10 @@
         "runtime": "in-process",
         "default": false,
         "capabilities": {
-          "device": true
+          "device": true,
+          "ui": [
+            "client"
+          ]
         },
         "metadata": {
           "displayName": "MHS devices",
@@ -59,11 +63,18 @@
           "description": "通过受管理 Hub 与原生批准连接经审核的设备能力。"
         }
       }
-    }
+    },
+    "clientDescriptors": [
+      {
+        "rowId": "ext:agnes.mhs",
+        "path": "./agnes.client.json"
+      }
+    ]
   },
   "devDependencies": {
-    "@agnes/sdk": "workspace:*",
     "@agnes/daemon-rpc": "workspace:*",
-    "@agnes/protocol": "workspace:*"
+    "@agnes/mhs-ui": "workspace:*",
+    "@agnes/protocol": "workspace:*",
+    "@agnes/sdk": "workspace:*"
   }
 }

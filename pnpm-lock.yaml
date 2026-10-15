@@ -1132,9 +1132,18 @@ importers:
       '@agnes/sdk':
         specifier: workspace:*
         version: link:../sdk
+      '@agnes/mhs-ui':
+        specifier: workspace:*
+        version: link:../mhs-ui
 
   packages/mhs-ui:
     dependencies:
+      '@agnes/mhs-device':
+        specifier: workspace:*
+        version: link:../mhs-device
+      '@agnes/mhs-hub':
+        specifier: workspace:*
+        version: link:../mhs-hub
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
@@ -1148,6 +1157,9 @@ importers:
         specifier: 18.3.1
         version: 18.3.1
     devDependencies:
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
       '@types/react':
         specifier: 18.3.12
         version: 18.3.12

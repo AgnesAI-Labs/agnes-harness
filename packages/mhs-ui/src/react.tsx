@@ -54,10 +54,10 @@ export function ReceiptView({ receipt }: { receipt: Receipt | undefined }) {
   if (!receipt) return null
   const message = receiptMessage(receipt)
   return (
-    <div role="status" className="mhs-receipt" data-state={receipt.state}>
+    <div role="status" className="mhs-receipt" data-state={message === 'unknown' ? 'unknown' : receipt.state}>
       {receipt.state === 'approval-required'
         ? t('pending')
-        : receipt.state === 'unknown'
+        : receipt.state === 'unknown' || message === 'unknown'
           ? t('unknown')
           : message}
       <small>{receipt.operationId}</small>
@@ -162,5 +162,28 @@ export function Notice({ children }: { children: string }) {
     <Toast open={open} onDismiss={() => setOpen(false)}>
       {children}
     </Toast>
+  )
+}
+
+export function HubHealth() {
+  const { client, t } = useMhs(),
+    port = client.ports.developer
+  const status = useQuery(useCallback(async (signal: AbortSignal) => port?.status(signal), [port]))
+  useEffect(() => {
+    if (!status.value || !['starting', 'stopping'].includes(status.value.state)) return
+    const timer = setTimeout(status.retry, 2000)
+    return () => clearTimeout(timer)
+  }, [status.value, status.retry])
+  if (!port) return <span>{t('noDeveloper')}</span>
+  if (status.error)
+    return (
+      <span role="status">
+        {t('unavailable')} <Button onClick={status.retry}>{t('retry')}</Button>
+      </span>
+    )
+  return (
+    <span role="status">
+      Hub · {status.value?.state ?? t('loading')} {status.value?.code}
+    </span>
   )
 }

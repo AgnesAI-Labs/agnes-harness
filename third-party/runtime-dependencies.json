@@ -60,7 +60,8 @@
         "packages/web-conversation",
         "packages/web-foundation",
         "packages/web-ui",
-        "packages/web-units"
+        "packages/web-units",
+        "packages/mhs-ui"
       ]
     },
     {
@@ -288,7 +289,8 @@
         "packages/web-client",
         "packages/web-conversation",
         "packages/web-ui",
-        "packages/web-units"
+        "packages/web-units",
+        "packages/mhs-ui"
       ]
     },
     {

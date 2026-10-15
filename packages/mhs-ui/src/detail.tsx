@@ -2,7 +2,7 @@ import { Button } from '@agnes/web-ui'
 import { Drive } from './drive.js'
 import { StateField, ToolForm } from './forms.js'
 import { type Device, jsonText, record } from './model.js'
-import { Stop, useMhs } from './react.js'
+import { HubHealth, Stop, useMhs } from './react.js'
 import { Observation } from './widgets.js'
 export function DeviceDetail({ device, onBack }: { device: Device; onBack(): void }) {
   const { t } = useMhs()
@@ -12,6 +12,7 @@ export function DeviceDetail({ device, onBack }: { device: Device; onBack(): voi
         <Button onClick={onBack}>← {t('back')}</Button>
         <h2>{device.name}</h2>
         <code>{device.id}</code>
+        <HubHealth />
         <span>{t(device.online ? 'online' : 'offline')}</span>
         <Stop device={device.id} />
         <Stop />

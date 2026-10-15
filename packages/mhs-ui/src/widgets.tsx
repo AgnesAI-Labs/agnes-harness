@@ -4,7 +4,7 @@ import { type Sample, sampleFrom, VideoView } from './media.js'
 import { array, type Data, type Device, jsonText, number, record, text } from './model.js'
 import { ActionFeedback, useAction, useMhs } from './react.js'
 
-function Picture({ sample, kind }: { sample: Sample | undefined; kind: string }) {
+function Picture({ sample, kind, dropped }: { sample: Sample | undefined; kind: string; dropped: number }) {
   const { t } = useMhs(),
     canvas = useRef<HTMLCanvasElement>(null),
     decoder = useRef<VideoView>(),
@@ -19,6 +19,9 @@ function Picture({ sample, kind }: { sample: Sample | undefined; kind: string })
       decoder.current = undefined
     }
   }, [kind])
+  useEffect(() => {
+    if (dropped > 0) decoder.current?.dropped()
+  }, [dropped])
   useEffect(() => {
     if (!sample?.bytes) return
     if (kind === 'video') {
@@ -115,6 +118,7 @@ export function Observation({ source, device }: { source: Data; device: Device }
     [sample, setSample] = useState<Sample>(),
     [error, setError] = useState(false),
     [stale, setStale] = useState(false),
+    [dropped, setDropped] = useState(0),
     [confirmedOff, setConfirmedOff] = useState<boolean>(),
     requestedOff = useRef(false),
     action = useAction()
@@ -154,7 +158,10 @@ export function Observation({ source, device }: { source: Data; device: Device }
       )
       .then(({ stream }) => {
         stream.onDisconnect(() => setError(true))
-        stream.onDrop(() => setStale(true))
+        stream.onDrop(() => {
+          setStale(true)
+          setDropped((n) => n + 1)
+        })
       })
       .catch(() => {
         if (!abort.signal.aborted) setError(true)
@@ -195,7 +202,7 @@ export function Observation({ source, device }: { source: Data; device: Device }
           {(error || stale) && <p role="status">{t(error ? 'unavailable' : 'stale')}</p>}
           {!sample && <p>{t('waiting')}</p>}
           {['image', 'video'].includes(kind) ? (
-            <Picture sample={sample} kind={kind} />
+            <Picture sample={sample} kind={kind} dropped={dropped} />
           ) : kind === 'audio' ? (
             <Audio sample={sample} />
           ) : kind === 'scan' ? (

@@ -4,16 +4,18 @@ import { fireEvent, getByLabelText, getByRole, queryByRole } from '@testing-libr
 import { act, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ActivityPage } from '../src/activity.js'
 import { MhsClient } from '../src/client.js'
+import { DeviceDetail } from '../src/detail.js'
+import { Drive } from '../src/drive.js'
 import { ExamplesPage } from '../src/examples.js'
-import { StateField, ToolForm } from '../src/forms.js'
+import { ToolForm } from '../src/forms.js'
 import { catalog } from '../src/locales.js'
 import { pickValue, WorldMap } from '../src/map.js'
 import { devicesFrom } from '../src/model.js'
 import { MhsPage } from '../src/page.js'
-import { MhsProvider, ReceiptView, Stop } from '../src/react.js'
+import { MhsProvider, Stop } from '../src/react.js'
 import { MhsStore } from '../src/store.js'
+import { Observation } from '../src/widgets.js'
 import { device, fake } from './fixtures.js'
 
 let root: Root, host: HTMLElement, dispose: () => void
@@ -93,7 +95,7 @@ describe('MHS approved device interactions', () => {
     expect(host.textContent).toContain('Approval pending')
     expect(queryByRole(host, 'button', { name: 'Approve' })).toBeNull()
   })
-  it('rejects malformed optional JSON and does not save a readonly field from a device declaration', async () => {
+  it('rejects malformed optional JSON before dispatch', async () => {
     const d = devicesFrom([device()])[0]!
     await mount(
       <ToolForm
@@ -107,6 +109,83 @@ describe('MHS approved device interactions', () => {
     })
     expect(getByLabelText(host, 'data').getAttribute('aria-invalid')).toBe('true')
     expect(getByRole(host, 'button', { name: 'Run' }).hasAttribute('disabled')).toBe(true)
+  })
+  it('renders only writable settings and confirms source switches through the device receipt', async () => {
+    const d = devicesFrom([device()])[0]!
+    const f = fake()
+    f.receipt = {
+      state: 'completed',
+      operationId: 'configure',
+      output: { state: 'terminal', outcome: { status: 'done' } },
+    }
+    await mount(
+      <>
+        <DeviceDetail device={d} onBack={() => {}} />
+        <Observation
+          device={d}
+          source={{ id: 'front', kind: 'image', description: 'Camera', switchable: true, default: false }}
+        />
+      </>,
+      f,
+    )
+    expect(queryByRole(host, 'textbox', { name: 'temperature' })).toBeNull()
+    expect(getByLabelText(host, 'speed')).toBeTruthy()
+    await click(getByRole(host, 'button', { name: 'Turn on' }))
+    expect(f.effects.at(-1)).toMatchObject({
+      name: 'mhs.configure',
+      input: { device: d.id, params: { sources: { front: { on: true } } } },
+    })
+    expect(queryByRole(host, 'button', { name: 'Turn on' })).toBeNull()
+    expect(f.streams.length).toBeGreaterThan(0)
+  })
+  it('does not repeat an effect after native approval expires', async () => {
+    vi.useFakeTimers()
+    const f = fake()
+    f.receipt = { state: 'approval-required', operationId: 'pending-stop', decisionId: 'decision' }
+    await mount(<Stop />, f)
+    await click(getByRole(host, 'button', { name: 'Stop all' }))
+    expect(host.textContent).toContain('Approval pending')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(751)
+    })
+    expect(host.textContent).toContain('expired')
+    expect(f.effects).toHaveLength(1)
+  })
+  it('uses a backend lease for manual axes, then zeros and requests stop on focus loss', async () => {
+    vi.useFakeTimers()
+    const raw = device()
+    raw.description = {
+      ...raw.description,
+      manual: {
+        axes: [
+          { id: 'vx', min: -1, max: 1, role: 'forward' },
+          { id: 'pitch', min: -30, max: 30, role: 'pitch' },
+        ],
+        deadman_s: 0.5,
+      },
+    } as typeof raw.description
+    const d = devicesFrom([raw])[0]!,
+      f = fake()
+    f.receipt = {
+      state: 'completed',
+      operationId: 'lease',
+      output: { operationId: 'lease', expiresAt: Date.now() + 30000 },
+    }
+    await mount(<Drive device={d} />, f)
+    await click(getByRole(host, 'button', { name: 'Request control' }))
+    const axis = getByRole(host, 'button', { name: 'vx +' })
+    await act(async () => {
+      fireEvent.keyDown(axis, { key: 'w', code: 'KeyW' })
+      await vi.advanceTimersByTimeAsync(40)
+    })
+    expect(f.stream.sent.at(-1)).toEqual({ type: 'manual', axes: { vx: 1, pitch: 0 } })
+    await act(async () => {
+      window.dispatchEvent(new Event('blur'))
+      await Promise.resolve()
+    })
+    expect(f.stream.sent.at(-1)).toEqual({ type: 'manual', axes: { vx: 0, pitch: 0 } })
+    expect(f.effects.at(-1)?.name).toBe('mhs.stop')
+    expect(f.stream.closed).toBe(true)
   })
   it('keeps global stop available without a session and shows unknown rather than confirmed stopped', async () => {
     const f = fake()
@@ -187,6 +266,7 @@ describe('MHS approved device interactions', () => {
       prepare: async () => ({ launchTicket: 'ticket', presentation: { prompt: 'Rescue' } }),
       launch: async (_id, token) => {
         launched.push(token ?? '')
+        return undefined
       },
     }
     await mount(<ExamplesPage />, f)

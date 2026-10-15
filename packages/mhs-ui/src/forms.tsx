@@ -211,7 +211,7 @@ export function ToolForm({ device, tool }: { device: Device; tool: Data }) {
             </span>
             <Input
               id={`${id}-${key}`}
-              schema={record(raw)}
+              schema={{ ...record(raw), ui: record(record(record(tool.ui).params)[key]) }}
               value={values[key]}
               disabled={disabled}
               onChange={(v) => update(key, v)}
