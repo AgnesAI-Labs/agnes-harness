@@ -30,6 +30,16 @@ pnpm exec vitest run tools/guards/src tools/public-docs/examples.test.ts --maxWo
 
 CLI 启动测试仍要求启动和创建会话成功。共享 CI 机器上的耗时会写入任务摘要，不作为通过门槛。在稳定的性能测试机器上设置 `AGH_ENFORCE_BOOT_BUDGET=1`，再运行 `pnpm exec vitest run packages/cli/test/boot-budget.test.ts --maxWorkers=1`，即可执行 300 ms 门槛检查。
 
+包加载性能门位于 `tools/plugin-performance.slow.test.ts` 的 **gates real immutable package preparation** 用例。在性能测试机器上使用 Node 24 串行运行：
+
+```sh
+pnpm exec vitest run tools/plugin-performance.slow.test.ts --project heavy --maxWorkers=1 -t 'gates real immutable package preparation'
+```
+
+它安装、信任并固定 20 个合成包，每包包含 200 × 1 KiB 负载文件、模块、清单和两个 32 KiB 客户端资源。三轮分别测量冷/热 inventory、不可变快照、真实 Host 包装配阶段（在 native/provider 启动前停止）、只读客户端列表/资源，以及包 IO 期间 Surface 变更事件的路由发布时间。冷读使用新的 reader 和空的 loader/client 磁盘缓存，不清空操作系统缓存。Surface 传输使用合成 SDK 响应，订阅与路由查询使用生产代码；不代表已验证 daemon IPC 或浏览器渲染。
+
+每个样本检查 wall time（通常每阶段 10 秒、冷装配 15 秒、Surface 发布 1 秒）、事件循环间隔（250 ms）、进程峰值 RSS（1536 MiB，含准备与导入阶段的高水位）及采样 RSS 增量（256 MiB）。固定上限位于 `tools/package-load/metrics.ts`，是保守的回归预算，不是实测性能宣称。用例在预算断言前输出数据规模、机器、Node 和逐轮测量；将 `AGH_PERFORMANCE_OUTPUT` 设为仓库外路径，还会保存 `<path>.package-load.json`。调整上限前应审核同一 runner 的数据。热 loader 与普通/fresh inventory 读取仍须拒绝篡改字节。快速层 `tools/package-load.test.ts` 以单包规模验证真实路径及超预算拒绝，不表示大数据性能门已通过。
+
 在 Windows 上，检查符号链接越界的测试需要具备创建符号链接的权限（开发者模式或对应账户权限）。如果准备夹具时 `symlinkSync` 返回 `EPERM`，说明环境前提未满足，安全断言尚未执行。共享 CI 的启动耗时诊断在完整测试失败后仍会运行；测试未执行或任务取消时不会运行。
 
 ## 构建与真实本地进程
