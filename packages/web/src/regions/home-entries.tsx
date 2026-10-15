@@ -18,7 +18,8 @@ function EntryBadge({ badge, label }: { badge: HomeEntryBadge; label(count: numb
   )
 }
 
-const entryIcon = (entry: HomeEntry): IconName => (entry.icon in icons ? (entry.icon as IconName) : 'plug')
+const entryIcon = (entry: HomeEntry): IconName =>
+  Object.hasOwn(icons, entry.icon) ? (entry.icon as IconName) : 'puzzle'
 
 /** The home entries above the session list: the three built-in pages, then the ones plugins add. */
 export function HomeEntriesNav({ t, onSelect }: { t: Translate; onSelect?(): void }) {

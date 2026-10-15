@@ -28,7 +28,7 @@ import type { InstallReviewState } from './types.js'
 export function InstallReview({
   testId = 'install-review',
   getsTestId = 'install-review-gets',
-  icon = 'plug',
+  icon = 'puzzle',
   name,
   meta,
   lead,

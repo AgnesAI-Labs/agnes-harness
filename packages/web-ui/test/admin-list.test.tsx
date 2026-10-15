@@ -3,6 +3,8 @@ import type { PackageCatalogDescriptor } from '@agnes/protocol'
 import { act, createElement } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  Icon,
+  type IconName,
   isBuiltinPlugin,
   mountRegion,
   PluginList,
@@ -190,6 +192,13 @@ const purposeSource = (locale: 'en' | 'zh-CN'): UiLocaleSource => ({
 it.each(['en', 'zh-CN'] as const)(
   'shows arbitrary author purpose, source and registered chips in %s',
   (locale) => {
+    const purposeIcons: readonly (readonly [string, IconName])[] = [
+      ['@agnes/plugin-helper', 'puzzle'],
+      ['@agnes/document-reader', 'file-text'],
+      ['@agnes/skill-helper', 'sparkles'],
+      ['@agnes/mcp-helper', 'plug'],
+      ['constructor', 'puzzle'],
+    ]
     const host = document.createElement('div')
     const dispose = mountRegion(
       host,
@@ -199,7 +208,7 @@ it.each(['en', 'zh-CN'] as const)(
         createElement(PluginList, {
           ...listProps,
           tab: 'discover',
-          rows: [purposeRow],
+          rows: [purposeRow, ...purposeIcons.map(([id]) => ({ ...purposeRow, id }))],
           providesOf: () => ({
             provides: [{ kind: 'tool', id: 'read_report' }],
             appearsIn: ['chat'] as const,
@@ -222,7 +231,17 @@ it.each(['en', 'zh-CN'] as const)(
       locale === 'en' ? 'Includes: 1 Tools' : '包含：1 个工具',
     )
     // The source is the row's only badge.
-    expect(host.querySelectorAll('.agh-tag')).toHaveLength(1)
+    expect(host.querySelector('[data-plugin-id]')?.querySelectorAll('.agh-tag')).toHaveLength(1)
+    // Identical localized metadata cannot override a stable package identity.
+    for (const [id, name] of [[purposeRow.id, 'puzzle'], ...purposeIcons] as const) {
+      const expected = document.createElement('div')
+      const unmount = mountRegion(expected, createElement(Icon, { name, size: 20 }))
+      const row = [...host.querySelectorAll('[data-plugin-id]')].find(
+        (element) => element.getAttribute('data-plugin-id') === id,
+      )
+      expect(row?.querySelector('svg')?.outerHTML).toBe(expected.querySelector('svg')?.outerHTML)
+      unmount()
+    }
     dispose()
   },
 )

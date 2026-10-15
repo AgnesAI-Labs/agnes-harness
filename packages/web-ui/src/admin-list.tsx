@@ -5,7 +5,7 @@ import type { RuntimeStateView } from './admin-text.js'
 import { ADMIN_LIST_LOCALE_NAMESPACE, adminListLocaleCatalog } from './locales/admin-list.js'
 import { PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog } from './locales/plugin-presentation.js'
 import type { PluginPresentation } from './plugin-presentation.js'
-import { PluginPurposeBadges, PluginSourceBadge } from './plugin-purpose.js'
+import { PluginPurposeBadges, PluginSourceBadge, pluginIconName } from './plugin-purpose.js'
 import { SettingsDetails, SettingsList, SettingsState } from './settings-layout.js'
 import { Button } from './ui/button.js'
 import { EmptyState } from './ui/empty-state.js'
@@ -284,7 +284,7 @@ export function PluginList({
     return (
       <EmptyState
         className="plugin-empty admin-empty-state"
-        icon={<Icon name="plug" size={48} />}
+        icon={<Icon name="puzzle" size={48} />}
         title={title}
         description={copy}
         actions={emptyActions}
@@ -315,7 +315,7 @@ export function PluginList({
               data-plugin-version={item.version}
               data-tab={tab}
               data-highlighted={highlighted === item.id || undefined}
-              icon={<Icon name="plug" size={20} />}
+              icon={<Icon name={pluginIconName(item.id)} size={20} />}
               titleClassName="plugin-details-button"
               title={displayName}
               titleLabel={t('row.details', { id: displayName })}
