@@ -30,8 +30,8 @@ contracts, not properties a Loop or tool filter can establish.
 Input capture rejects symlinks, nonregular files, path escapes and observed file/directory changes.
 It stores immutable byte snapshots, not paths that a later child can reopen. Limits are 100,000 files,
 20 MiB per file, 256 MiB per capture by default, 200,000 enumerated entries and 32 directory levels.
-Hidden entries and unsupported extensions are excluded. Aborted captures may leave unreferenced
-artifacts; the artifact store owns their collection. Filesystem adapters remain responsible for
+Hidden entries, the reserved `agh-batch` results directory and unsupported extensions are excluded.
+Aborted captures may leave unreferenced artifacts; the artifact store owns their collection. Filesystem adapters remain responsible for
 hostile concurrent directory replacement and platform-specific guarantees.
 
 `attachmentSnapshots` consumes the public `AttachmentStore` and `AttachmentScope` contracts. It
@@ -50,8 +50,9 @@ admission at the configured threshold.
 
 Output schemas use a bounded subset: object/properties/required/additionalProperties, array/items,
 scalar types, numeric bounds, string/array length bounds, scalar enum/const, title/description and
-`$schema`. Other keywords, including regex, references, async validation, uniqueItems and combinators,
-are refused. Validation has fixed depth/node/work ceilings. Schemas cannot load external resources.
+`$schema`. Other keywords, including regex, references, async validation, `uniqueItems: true` and
+combinators, are refused. `uniqueItems: false` permits duplicates without pairwise comparison.
+Validation has fixed depth/node/work ceilings. Schemas cannot load external resources.
 
 Exports contain `results.jsonl`, `errors.jsonl`, `results.csv` and `summary.md`. CSV cells are quoted
 and spreadsheet formulas are prefixed; terminal control/formatting characters are removed from CSV

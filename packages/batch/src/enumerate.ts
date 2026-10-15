@@ -57,7 +57,23 @@ export async function snapshotFolder(input: {
     throw new BatchError('E_BATCH_INPUTS')
   if (input.extensions?.some((v) => !/^[a-z0-9]{1,10}$/u.test(v))) throw new BatchError('E_BATCH_INPUTS')
   const accepted = new Set(
-    input.extensions ?? ['txt', 'md', 'csv', 'json', 'jsonl', 'png', 'jpg', 'jpeg', 'webp', 'gif'],
+    input.extensions ?? [
+      'txt',
+      'md',
+      'csv',
+      'tsv',
+      'json',
+      'jsonl',
+      'log',
+      'xml',
+      'yaml',
+      'yml',
+      'png',
+      'jpg',
+      'jpeg',
+      'webp',
+      'gif',
+    ],
   )
   const files: Input[] = []
   let total = 0,
@@ -80,7 +96,7 @@ export async function snapshotFolder(input: {
       const path = join(folder, name),
         before = await lstat(path)
       if (before.isSymbolicLink()) throw new BatchError('E_BATCH_SYMLINK')
-      if (name.startsWith('.')) continue
+      if (name.startsWith('.') || name === 'agh-batch') continue
       if (before.isDirectory()) {
         await walk(path, depth + 1)
         continue

@@ -88,6 +88,40 @@ describe('batch thin client', () => {
     ).rejects.toThrow()
     expect(close).toHaveBeenCalledOnce()
   })
+  it('pages result and manifest responses and refuses repeated or unbounded cursors', async () => {
+    for (const verb of ['results', 'list']) {
+      const payloads: Record<string, unknown>[] = []
+      let page = 0
+      await batchCommand([verb, ...(verb === 'list' ? [] : [id])], {
+        cwd: '/workspace',
+        write() {},
+        connect: async () => ({
+          close: async () => {},
+          call: async (_verb, input) => {
+            payloads.push(input)
+            return ++page === 1
+              ? verb === 'list'
+                ? { rows: [], nextCursor: 'cursor:one' }
+                : { items: [], nextOffset: 3 }
+              : {}
+          },
+        }),
+      })
+      expect(payloads).toEqual(verb === 'list' ? [{}, { cursor: 'cursor:one' }] : [{ id }, { id, offset: 3 }])
+    }
+    for (const [verb, result] of [
+      ['list', { nextCursor: 'repeated' }],
+      ['results', { nextOffset: 100001 }],
+    ] as const) {
+      await expect(
+        batchCommand([verb, ...(verb === 'list' ? [] : [id])], {
+          cwd: '/workspace',
+          write() {},
+          connect: async () => ({ close: async () => {}, call: async () => result }),
+        }),
+      ).rejects.toThrow('cursor')
+    }
+  })
   it('reads bounded prompt/schema files before connecting and renders terminal controls inert', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'agh-batch-cli-unit-'))
     dirs.push(dir)

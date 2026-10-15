@@ -78,7 +78,13 @@ export class BatchService {
   }
   async list(cursor?: string) {
     const page = await this.binding.engine.repo.list(cursor)
-    return { ...page, rows: page.rows.map(batchStatus) }
+    return {
+      ...page,
+      rows: page.rows.map((manifest) => {
+        const { spec, digest: _digest, ...summary } = batchStatus(manifest)
+        return { ...summary, budget: spec.budget }
+      }),
+    }
   }
   async results(id: string, offset = 0, limit = 3) {
     if (limit > 3) throw new BatchError('E_BATCH_PAGE')

@@ -23,6 +23,7 @@ const keywords = new Set([
   'maxLength',
   'minItems',
   'maxItems',
+  'uniqueItems',
   'title',
   'description',
   '$schema',
@@ -50,6 +51,7 @@ export function compileSchema(input: unknown): (value: Json) => boolean {
       ['maxLength', ['string']],
       ['minItems', ['array']],
       ['maxItems', ['array']],
+      ['uniqueItems', ['array']],
       ['minimum', ['integer', 'number']],
       ['maximum', ['integer', 'number']],
     ] as const) {
@@ -65,6 +67,7 @@ export function compileSchema(input: unknown): (value: Json) => boolean {
       throw new BatchError('E_BATCH_SCHEMA')
     if (s.additionalProperties !== undefined && typeof s.additionalProperties !== 'boolean')
       inspect(s.additionalProperties, depth + 1)
+    if ('uniqueItems' in s && s.uniqueItems !== false) throw new BatchError('E_BATCH_SCHEMA_KEYWORD')
     if (s.type === 'array') {
       if (s.items === undefined) throw new BatchError('E_BATCH_SCHEMA')
       inspect(s.items, depth + 1)

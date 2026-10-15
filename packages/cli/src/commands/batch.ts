@@ -203,10 +203,30 @@ export async function batchCommand(rest: readonly string[], io: BatchIo): Promis
   io.signal?.throwIfAborted()
   const client = await io.connect({ cwd, ...(command.profile ? { profile: command.profile } : {}) })
   try {
+    const cursors = new Set<string>()
     for (;;) {
       io.signal?.throwIfAborted()
       const result = await client.call(command.verb === 'follow' ? 'status' : command.verb, payload)
       io.write(`${command.json ? JSON.stringify(result) : safe(JSON.stringify(result))}\n`)
+      if (
+        command.verb === 'list' &&
+        result !== null &&
+        typeof result === 'object' &&
+        'nextCursor' in result
+      ) {
+        const cursor = result.nextCursor
+        if (
+          typeof cursor !== 'string' ||
+          !cursor ||
+          cursor.length > 2048 ||
+          cursors.has(cursor) ||
+          cursors.size >= 10_000
+        )
+          throw new Error('Invalid batch list cursor')
+        cursors.add(cursor)
+        payload = { cursor }
+        continue
+      }
       if (
         command.verb === 'results' &&
         result !== null &&
@@ -214,7 +234,12 @@ export async function batchCommand(rest: readonly string[], io: BatchIo): Promis
         'nextOffset' in result
       ) {
         const next = result.nextOffset
-        if (typeof next !== 'number' || !Number.isSafeInteger(next) || next <= Number(payload.offset ?? 0))
+        if (
+          typeof next !== 'number' ||
+          !Number.isSafeInteger(next) ||
+          next <= Number(payload.offset ?? 0) ||
+          next > 100_000
+        )
           throw new Error('Invalid batch results cursor')
         payload = { ...payload, offset: next }
         continue

@@ -35,6 +35,8 @@ describe('input snapshots and bounded data exports', () => {
     await writeFile(join(root, 'items/a.txt'), 'alpha')
     await writeFile(join(root, 'items/.secret'), 'hidden')
     await writeFile(join(root, 'items/book.xlsx'), 'unsupported')
+    await mkdir(join(root, 'items/agh-batch'))
+    await writeFile(join(root, 'items/agh-batch/results.jsonl'), 'previous results')
     const blobs = new Map<string, Uint8Array>()
     const artifacts = {
       put: async (bytes: Uint8Array, meta: { digest: string }) => {
@@ -109,6 +111,14 @@ describe('input snapshots and bounded data exports', () => {
     expect(check({ pattern: '2' })).toBe(false)
     const own = compileSchema({ type: 'object', required: ['constructor'] })
     expect(own({})).toBe(false)
+    const duplicates = compileSchema({
+      type: 'object',
+      properties: {
+        rows: { type: 'array', items: { type: 'string' }, uniqueItems: false },
+      },
+    })
+    expect(duplicates({ rows: ['a', 'a'] })).toBe(true)
+    expect(duplicates({ rows: [1] })).toBe(false)
   })
   it('exports inert CSV/Markdown and JSON data with byte ceilings; rejects concurrent publication and existing targets', async () => {
     const { realpath } = await import('node:fs/promises')
