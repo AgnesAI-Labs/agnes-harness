@@ -31,7 +31,7 @@ function render(element: Parameters<typeof mountRegion>[1]) {
   return host
 }
 
-it('shows one header per screen: a nested page hands its description and actions to the outer one', () => {
+it('shows one header line per screen: a nested page hands its actions to the outer one', () => {
   const host = render(
     createElement(
       SettingsPage,
@@ -57,8 +57,10 @@ it('shows one header per screen: a nested page hands its description and actions
   const headers = host.querySelectorAll('header.agnes-settings-page-heading')
   expect(headers).toHaveLength(1)
   const header = headers[0]
-  expect(header?.closest('[data-testid]')?.getAttribute('data-testid')).toBe('outer')
-  expect(header?.querySelector('p')?.textContent).toBe('Keys used by tools.')
+  expect(header?.closest('[data-testid="outer"]')).not.toBeNull()
+  // The header line is the title alone: no description line under it.
+  expect(header?.querySelector('h2')?.textContent).toBe('Credentials')
+  expect(header?.textContent).not.toContain('Keys used by tools.')
   expect(
     [...(header?.querySelectorAll('.agnes-settings-actions [data-testid]') ?? [])].map((node) =>
       node.getAttribute('data-testid'),

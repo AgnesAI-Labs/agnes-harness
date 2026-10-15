@@ -35,8 +35,8 @@ const SubpageContext = createContext<SubpageFrame | undefined>(undefined)
 
 /**
  * A settings page that can drill into subpages: `header` is the page's own header, shown while no
- * subpage is open. A subpage replaces the header and the body in the same dialog; 「‹ 返回」, the
- * breadcrumb and the browser's back button return. The page body stays mounted, so its state
+ * subpage is open. A subpage replaces the header and the body in the same dialog; its header line is
+ * the breadcrumb (「通用 › 记忆文件」), whose levels and the browser's back button return. The page body stays mounted, so its state
  * survives. The stack is the shared push navigation (`usePushNavigation`) every page uses.
  */
 export function SettingsSubpageFrame({
@@ -202,8 +202,9 @@ export function SettingsInfo({ text }: { text: string }) {
 }
 
 /**
- * A row that opens a subpage: its name, a short hint, the current value and ›. The subpage's title,
- * one-line description and actions take the header while it is open; `children` is its body. The
+ * A row that opens a subpage: its name, a short hint, the current value and ›. The subpage's title
+ * (the breadcrumb's last level) and actions take the header line while it is open, the description
+ * is read to assistive tech only; `children` is its body. The
  * row's element is the deep-link target `settings-subsection-<id>`: revealing it opens the subpage.
  */
 export function SettingsDrill({
@@ -299,6 +300,7 @@ function SettingsSubpageHeader({
   const offset = frame.rootTitle === undefined ? 1 : 0
   return (
     <PushHeader
+      line
       className="config-heading agnes-settings-page-heading agnes-settings-page-top"
       title={title}
       crumbs={crumbs}

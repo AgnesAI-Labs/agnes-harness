@@ -18,19 +18,21 @@ import { Icon } from './ui/icon.js'
 import type { IconName } from './ui/icon-set.js'
 import { IconTile } from './ui/icon-tile.js'
 import { LOADABLE_DELAY_MS, LOADABLE_SLOW_MS } from './ui/loadable.js'
+import { PushHeader } from './ui/push-stack.js'
 import { SettingsInfo, SettingsSubpageFrame } from './ui/settings-subpages.js'
 import { Skeleton } from './ui/skeleton.js'
 
 type DataAttributes = { [name: `data-${string}`]: string | number | boolean | undefined }
 
 /** The header slots of the page a component is rendered in; nested pages fill them instead of repeating a header. */
-type SettingsPageFrame = { lead: HTMLElement | null; actions: HTMLElement | null }
+type SettingsPageFrame = { actions: HTMLElement | null }
 const SettingsPageFrameContext = createContext<SettingsPageFrame | undefined>(undefined)
 
 /**
- * The one settings page template: title, one-line description and page actions in the header,
- * then the body. A page rendered inside another page contributes its description and actions to
- * the outer header, so a screen never shows two titles.
+ * The one settings page template: one header line (the title, which is the breadcrumb's top level,
+ * then the page actions beside the dialog's ×) and the body. The description is read to assistive
+ * tech only. A page rendered inside another page contributes its actions to the outer header, so a
+ * screen never shows two titles.
  */
 export function SettingsPage({
   title,
@@ -60,9 +62,8 @@ export function SettingsPage({
     variant?: 'form' | 'list'
   }) {
   const nested = useContext(SettingsPageFrameContext) !== undefined
-  const [lead, setLead] = useState<HTMLElement | null>(null)
   const [actionsHost, setActionsHost] = useState<HTMLElement | null>(null)
-  const frame = useMemo(() => ({ lead, actions: actionsHost }), [lead, actionsHost])
+  const frame = useMemo(() => ({ actions: actionsHost }), [actionsHost])
   const body = (
     <>
       {banner}
@@ -84,7 +85,7 @@ export function SettingsPage({
       description={description}
       actions={actions}
       headingId={headingId}
-      slots={nested ? undefined : { lead: setLead, actions: setActionsHost }}
+      slots={nested ? undefined : { actions: setActionsHost }}
     />
   )
   return (
@@ -121,11 +122,7 @@ export function SettingsPageSlots({
   actions: HTMLElement | null
   children: ReactNode
 }) {
-  return (
-    <SettingsPageFrameContext.Provider value={{ lead: null, actions }}>
-      {children}
-    </SettingsPageFrameContext.Provider>
-  )
+  return <SettingsPageFrameContext.Provider value={{ actions }}>{children}</SettingsPageFrameContext.Provider>
 }
 /** Page-level actions declared from anywhere inside a page land in that page's header. */
 export function SettingsPageActions({ children }: { children: ReactNode }) {
@@ -133,11 +130,12 @@ export function SettingsPageActions({ children }: { children: ReactNode }) {
   if (!frame) return <div className="agnes-settings-actions">{children}</div>
   return frame.actions ? createPortal(children, frame.actions) : null
 }
-/** The page's one-line description, declared by the component that owns the copy. */
+/** A page description outside a settings page; inside one the header line shows no description. */
 export function SettingsPageDescription({ children }: { children: ReactNode }) {
   const frame = useContext(SettingsPageFrameContext)
   if (!frame) return <p className="agnes-settings-page-description">{children}</p>
-  return frame.lead ? createPortal(<p>{children}</p>, frame.lead) : null
+  // Inside a page the header line is the title alone; a description adds no second line.
+  return null
 }
 /** A titled part of a page. Its content sits below the heading, never inside a second frame. */
 export function SettingsSection({
@@ -632,7 +630,7 @@ export function SettingsPageHeader({
     actions?: ReactNode
     headingId?: string | undefined
     /** Set by SettingsPage: receives the header's description and actions hosts. */
-    slots?: { lead(node: HTMLElement | null): void; actions(node: HTMLElement | null): void } | undefined
+    slots?: { actions(node: HTMLElement | null): void } | undefined
   }) {
   const frame = useContext(SettingsPageFrameContext)
   // Inside another page the outer header already names the screen: keep the heading for
@@ -643,27 +641,31 @@ export function SettingsPageHeader({
         <h2 id={headingId} className="visually-hidden">
           {title}
         </h2>
-        {description && frame.lead && createPortal(<p>{description}</p>, frame.lead)}
         {actions && frame.actions && createPortal(actions, frame.actions)}
       </>
     )
+  // The page's one header line: its title (the breadcrumb's top level) and its actions; the
+  // description is read to assistive tech only.
   return (
-    <header
+    <PushHeader
       {...props}
+      line
       className={['config-heading', 'agnes-settings-page-heading', props.className].filter(Boolean).join(' ')}
-    >
-      <div ref={slots?.lead}>
-        <h2 id={headingId}>{title}</h2>
-        {description && <p>{description}</p>}
-      </div>
-      {(actions || slots) && (
-        <div className="agnes-settings-actions" ref={slots?.actions}>
-          {actions}
-        </div>
-      )}
-    </header>
+      testIds={{ header: 'settings-page-header' }}
+      title={title}
+      crumbs={[]}
+      description={description}
+      headingId={headingId}
+      autoFocus={false}
+      onBack={noop}
+      onCrumb={noop}
+      actions={actions}
+      actionsRef={slots?.actions}
+      actionsClassName="agnes-settings-actions"
+    />
   )
 }
+const noop = () => {}
 export function SettingsSaveBar({
   dirty,
   busy = false,
