@@ -250,6 +250,7 @@ export type {
 export type { ServiceCapability } from '../gen/ts/extension-service.js'
 /** The one capabilities shape every plugin declares, bundled or installed. */
 export type PluginCapabilities = import('../gen/ts/extension-manifest.js').Capabilities
+export { ATTACHMENT_ERROR_CODES, AttachmentError, type AttachmentErrorCode } from '@agnes/protocol-validation'
 // Preset surface declarations; execution is supplied by the official Intelligent UI plugin.
 export type {
   UiAction,
@@ -648,6 +649,7 @@ export type {
 export { SESSION_VERSION_CODES, sessionVersionNotice } from './session-version.js'
 export { IncrementalSha256, sha256Hex } from './sha256.js'
 export * from './slots.js'
+export * from './stored-attachments.js'
 export * from './surfaces.js'
 export type { ValidationError, ValidationResult } from './validate.js'
 export {

@@ -3,6 +3,7 @@ export type { SystemInput, SystemInputPresentation } from '@agnes/protocol'
 // 不合判 `E_API_RANGE`。
 
 export * from './api-range.js'
+export * from './attachments.js'
 export * from './child-agent.js'
 export type * from './child-control.js'
 export * from './common.js'

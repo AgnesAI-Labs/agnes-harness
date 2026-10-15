@@ -38,3 +38,29 @@ Configure `referenceLimits` on the Host options (`maxBytes`, `maxSourceBytes`, `
 Binary or over-limit files are refused. Ignore rules, sandbox authority and private state restrictions apply to both search and send-time reads. Session excerpts retain up to 24 indexed user/assistant messages and mark omissions. A file hash covers the complete file; a session hash covers its title and indexed excerpt snapshot at read time. Reference text is data in the user role, including any role or instruction strings inside the excerpt.
 
 Resolved reference blocks are ledgered separately as `system/untrusted` messages. Human text retains `principal/trusted` provenance. Requests wrap references in untrusted envelopes and the reviewer excludes them from human instructions. The accepted input seeds turn taint on `turn/start`, even though input messages precede that event.
+
+## Stored attachment contract
+
+Stored originals use the existing `resource_link` content block with `uri: artifact://<sha256>`,
+`name`, `mimeType` and an `attachment` object. `attachment.artifact` is the public
+`ArtifactRef` (`sha256`, `size`, `mime`); the URI and MIME must agree exactly. Optional
+`image: {width, height}` marks an image original. `thumbnail` is a separate `ArtifactRef`
+for a small PNG/JPEG, authorized and checked independently. `receiptId` identifies one
+pending upload; it grants access only in its original session and lane. A digest alone
+never grants access. Clients may retain these blocks without loading the bytes.
+
+The optional `ArtifactsSeam.attachments` capability owns bytes and durable, independent
+upload receipts through the selected persistence provider. Core accepts an exact reference
+already visible in its session/lane (including a fork's visible prefix), or a matching pending
+receipt. It confirms receipts only after the inbox commits. A failed or cancelled admission
+discards its own receipts; another upload of identical bytes remains independent. GC must
+include inboxes, fork prefixes, originals, thumbnails, request media, derivations and pending
+receipts; an incomplete root snapshot must block deletion.
+
+`ToolContext.fs.create` is optional exclusive creation: it rejects existing entries and
+symlink ancestors, applies the normal workspace write authorization and returns the actual
+written `size` and `sha256`. It must never fall back to overwriting `write`. This is the
+capability used for copying a session original with `read.save_to`.
+
+Attachment failures expose a stable `AttachmentError.code`; admission preserves it in
+`CoreError.detail.code`. Clients localize the code, not native filesystem or decoder errors.

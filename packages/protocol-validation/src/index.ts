@@ -1,3 +1,4 @@
+export * from './attachment-errors.js'
 export * from './attachments.js'
 export * from './json-data.js'
 export * from './model-images.js'
