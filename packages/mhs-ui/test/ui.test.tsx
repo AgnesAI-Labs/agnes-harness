@@ -13,7 +13,7 @@ import { Drive } from '../src/drive.js'
 import { ExamplesPage } from '../src/examples.js'
 import { alertLevel, Fields, keyFields, sourceGroup } from '../src/fields.js'
 import { ToolForm } from '../src/forms.js'
-import { gridBounds, MapGrid } from '../src/grid.js'
+import { gridBounds, gridSources, MapGrid } from '../src/grid.js'
 import { catalog, translate } from '../src/locales.js'
 import { axisKeys } from '../src/manual.js'
 import { pickValue, WorldMap } from '../src/map.js'
@@ -468,7 +468,7 @@ describe('declaration-driven MHS observation inventory', () => {
   it.each(rows)(
     'renders actual binary MOS %s frames and releases the subscription',
     async (kind, data, selector) => {
-      const d = devicesFrom([device()])[0]!,
+      const d = devicesFrom([{ ...device(), sourceStates: { source: false } }])[0]!,
         f = fake()
       await mount(
         <Observation
@@ -722,6 +722,11 @@ it('projects binary occupancy into its map frame and revokes the background on d
     bytes,
   }
   expect(gridBounds(sample)).toEqual([1, 2, 6, 12])
+  const idle = { ...d, sourceStates: { grid: false }, sources: [{ id: 'grid', kind: 'grid' }] }
+  expect(gridSources([idle], 'site')).toEqual([{ device: idle, source: 'grid' }])
+  expect(gridSources([{ ...idle, sources: [{ id: 'grid', kind: 'grid', default: false }] }], 'site')).toEqual(
+    [],
+  )
   await mount(
     <svg role="img" aria-label="Occupancy map">
       <MapGrid map="site" device={d} source="grid" xy={(x, y) => [x, 100 - y]} />

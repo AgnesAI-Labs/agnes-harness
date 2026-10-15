@@ -220,8 +220,6 @@ describe('Hub authority, tasks and recovery', () => {
       if (state && typeof state === 'object' && !Array.isArray(state)) configurations.push(state.on === true)
     }
     device.onObservation = () => true
-    await expect(hub.subscribeMedia('rover', 'video', () => {})).rejects.toThrow('source-off')
-    await hub.effect('configure', 'rover', { sources: { video: { on: true } } }, invocation('video-enable'))
     const first = await hub.subscribeMedia('rover', 'video', () => {})
     const second = await hub.subscribeMedia('rover', 'video', () => {})
     first()
@@ -229,8 +227,7 @@ describe('Hub authority, tasks and recovery', () => {
     expect(device.publish('video', { w: 1, h: 1, key: true }, new Uint8Array([1]))).toBe(true)
     second()
     second()
-    await Promise.resolve()
-    expect(configurations.at(-1)).toBe(false)
+    await vi.waitFor(() => expect(configurations.at(-1)).toBe(false))
     expect(device.publish('video', { w: 1, h: 1, key: true }, new Uint8Array([1]))).toBe(false)
     await expect(hub.manualLease('rover', { ...invocation('lease-bad'), context: {} })).rejects.toThrow()
     await hub.manualLease('rover', invocation('lease'))

@@ -96,8 +96,6 @@ export function gridSources(devices: readonly Device[], map: string) {
         .filter(
           (s) =>
             s.kind === 'grid' &&
-            device.sourceStates[text(s.id)] !== false &&
-            device.sourceStates[text(s.id)] !== null &&
             (device.sourceStates[text(s.id)] === true || s.default !== false) &&
             record(s.ui).hidden !== true,
         )

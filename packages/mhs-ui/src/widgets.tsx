@@ -155,7 +155,11 @@ export function Observation({ source, device }: { source: Data; device: Device }
   const sample = samples.latest
   // Only a confirmed backend source-state projection may label a source as off.
   const configured = device.sourceStates[text(source.id)],
-    off = configured === false || (configured === undefined && (confirmedOff ?? source.default === false)),
+    off =
+      (configured === false && (source.switchable === true || source.default === false)) ||
+      (configured === undefined && (confirmedOff ?? source.default === false)),
+    // A passive source may be idle until this view acquires demand. Explicit off still wins in the Hub.
+    subscribe = source.default !== false || configured === true || confirmedOff === false,
     kind = text(source.kind)
   useEffect(() => {
     const receipt = action.receipt
@@ -167,7 +171,7 @@ export function Observation({ source, device }: { source: Data; device: Device }
     setSamples({ history: [] })
     setError(false)
     setStale(false)
-    if (off || !device.online) return
+    if (!subscribe || !device.online) return
     const abort = new AbortController()
     let last = 0
     const timer = setInterval(() => setStale(last > 0 && Date.now() - last > 10_000), 1000)
@@ -219,7 +223,7 @@ export function Observation({ source, device }: { source: Data; device: Device }
       abort.abort()
       clearInterval(timer)
     }
-  }, [client, device.id, device.revision, device.online, source.id, off, kind])
+  }, [client, device.id, device.revision, device.online, source.id, subscribe, kind])
   const points = array(sample?.data.ranges),
     scanSpan = Math.max(1, ...points.slice(0, 2048).map((p) => number(p)))
   return (

@@ -72,6 +72,7 @@ it('encodes on demand at declared 20 Hz, separates stills/video, requests keys a
     sources.push(o.source)
     return true
   }
+  await sim.device('cam-base').configure({ view: { on: true, hz: 1 } })
   await camera.capture(0)
   expect(scenes.render).toHaveBeenCalledWith(
     expect.objectContaining({ eye: [-17, 0.6, 18], target: [-11, 0, 18] }),

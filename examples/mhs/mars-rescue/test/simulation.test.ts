@@ -182,6 +182,9 @@ describe('Mars base simulation', () => {
       return true
     }
     sim.tick(0.1)
+    expect(samples.some((s) => s.source === 'occupancy')).toBe(false)
+    await rover.configure({ occupancy: { on: true }, lidar: { on: true } })
+    sim.tick(0.1)
     expect(samples.find((s) => s.source === 'occupancy')?.bytes?.slice(0, 4)).toEqual(
       new Uint8Array([137, 80, 78, 71]),
     )

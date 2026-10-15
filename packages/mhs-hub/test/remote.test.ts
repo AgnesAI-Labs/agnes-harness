@@ -24,7 +24,7 @@ it('imports an exclusive remote fleet through local admission, stops on revoke a
   let finishMove = false
   const registration = {
     ...description,
-    tools: description.tools?.map((tool) => ({ ...tool, pausable: true })),
+    tools: (description.tools ?? []).map((tool) => ({ ...tool, pausable: true })),
   }
   const device = new Device(registration, { arm() {}, async stop() {} }),
     movements: number[] = []
