@@ -105,6 +105,9 @@ describe('MHS author adapters', () => {
       services.effect('call', { device: 'rover', tool: 'move', approved: true }, {}),
     ).rejects.toThrow('untrusted-authority')
     const streams = mhsStreams(new North(hub))
+    const revoked = new AbortController()
+    revoked.abort()
+    expect(() => streams.events(() => {}, revoked.signal)).toThrow()
     await expect(
       streams.control({ type: 'manual', axes: { vx: 1 } }, { device: 'rover', leaseId: 'invented' }),
     ).rejects.toThrow('lease-expired')

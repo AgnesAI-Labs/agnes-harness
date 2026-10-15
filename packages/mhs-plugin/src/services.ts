@@ -64,6 +64,7 @@ export function mhsStreams(north: North) {
       await north.hub.keyframe(binding.device, binding.source)
     },
     events(send: (event: unknown) => void, signal: AbortSignal): () => void {
+      signal.throwIfAborted()
       const dispose = north.hub.subscribe(send)
       signal.addEventListener('abort', dispose, { once: true })
       return () => {
