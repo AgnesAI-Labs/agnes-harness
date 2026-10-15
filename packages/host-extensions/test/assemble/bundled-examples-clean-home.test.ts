@@ -20,9 +20,12 @@ const examples = fileURLToPath(new URL('../../../../examples/', import.meta.url)
 const manifest = (path: string) => JSON.parse(readFileSync(join(examples, path, 'package.json'), 'utf8'))
 // The catalog's shipped examples, as a person starts them from the business agents page or market.
 // Examples written in TypeScript ship their build output, which a source checkout does not have.
-const shipped = BUNDLED_EXAMPLES.map((example) => `${example.family}/${example.name}`).filter((path) =>
-  existsSync(join(examples, path, String(manifest(path).exports))),
-)
+const shipped = BUNDLED_EXAMPLES.map((example) => `${example.family}/${example.name}`).filter((path) => {
+  const pkg = manifest(path)
+  const entry =
+    typeof pkg.exports === 'string' ? pkg.exports : (pkg.exports?.['.'] ?? pkg.main ?? './index.js')
+  return typeof entry === 'string' && existsSync(join(examples, path, entry))
+})
 let root: string, profile: string
 const nodePath = process.env.NODE_PATH
 /** Node's global lookup paths are computed from NODE_PATH; recompute them after changing it. */
