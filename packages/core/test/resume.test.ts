@@ -1,10 +1,18 @@
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import { type ToolCallState, withPhase } from '@agnes/core-common/step/op-state'
 import { type PresetView, presetDefaults } from '@agnes/core-common/step/preset'
+import type { Event, EventInput } from '@agnes/core-common/types'
 import type { SeamImplementations } from '@agnes/core-effects/effects/seams'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { SessionLogImpl } from '@agnes/core-ledger/log/session-log'
 import type { InferenceEvent, Provider } from '@agnes/protocol'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import {
+  createSideCallEffectPort,
+  type SideCallEffectAudit,
+  type SideCallEffectBinding,
+} from '../src/orchestrator/side-call-effect-port.js'
+import { checkSideCallCost } from '../src/orchestrator/side-call-terminal.js'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { fakeProvider, sentFor, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
@@ -842,4 +850,259 @@ describe('a run waiting behind a resume', () => {
     expect((await running).reason).toBe('completed')
     expect(stepped).toBe(true)
   })
+})
+
+const hash = (digit: string) => digit.repeat(64)
+const sideEffectId = 'side:call-1'
+const sideBinding = (over: Partial<SideCallEffectBinding> = {}): SideCallEffectBinding => ({
+  effectId: sideEffectId,
+  sessionKey: 'k',
+  lane: 'main',
+  auditBindingHash: hash('a'),
+  budgetBindingHash: hash('b'),
+  subjectHash: hash('c'),
+  requestDerivedHash: hash('d'),
+  route: 'side-route',
+  model: 'side-model',
+  ...over,
+})
+const sideAudit = (over: Partial<SideCallEffectAudit> = {}): SideCallEffectAudit => ({
+  label: 'sample.decide',
+  adapter: { id: 'sample-adapter', version: '1.0.0' },
+  api: 'sample-adapter',
+  endpointHost: 'models.example.com',
+  deadlineMs: 10_000,
+  output: 'json',
+  inputTokens: 120,
+  estimateSource: 'estimate',
+  projectedCredits: 0.5,
+  payloadBytes: 2048,
+  ...over,
+})
+
+type SideCallRows = 'valid' | 'missing' | 'untrusted' | 'hash-mismatch'
+
+/**
+ * A ledger killed with a side call outstanding: its intent row, and the binding row after it as the
+ * variant asks. With `inFlight` the main inference has also started and hangs, so the kill leaves
+ * both effects open; without it the turn is parked in its inference phase before any request goes
+ * out, so the side call is the only effect pending.
+ */
+async function crashWithSideCall(
+  o: { rows?: SideCallRows; audit?: SideCallEffectAudit; inFlight?: boolean } = {},
+) {
+  const storage = new MemoryStorage()
+  const a = await openSession({ provider: hangingModel(), storage })
+  await a.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
+  expect(await a.session.step()).toEqual({ outcome: 'running', phase: 'checkpoint' })
+  expect(await a.session.step()).toEqual({ outcome: 'running', phase: 'inference' })
+  const identity = sideBinding()
+  const audit = o.audit ?? sideAudit()
+  const rows = o.rows ?? 'valid'
+  if (rows === 'valid') await createSideCallEffectPort(a.session).begin(identity, audit)
+  else {
+    const external = rows === 'untrusted' ? { origin: 'external:fixture', trust: 'untrusted' } : {}
+    const intent: EventInput = {
+      ...a.session.ev('effect/intent', { effectId: sideEffectId, kind: 'side-call', replay: 'never' }),
+      ...external,
+    } as EventInput
+    const binding: EventInput = {
+      ...a.session.ev(
+        'x/core/side-call-intent',
+        {
+          version: 1,
+          binding: identity,
+          bindingHash: rows === 'hash-mismatch' ? hash('f') : sha256Hex(canonicalJson(identity)),
+          audit,
+        },
+        { ignorable: true },
+      ),
+      ...external,
+    } as EventInput
+    await a.session.append(rows === 'missing' ? [intent] : [intent, binding])
+  }
+  if (o.inFlight) {
+    void a.session.step().catch(() => undefined)
+    await new Promise((r) => setTimeout(r, 10))
+  }
+  await a.log.close()
+  return { storage, identity, phase: a.session.op()?.phase }
+}
+
+const reopenWithBilling = (storage: MemoryStorage) => {
+  const record = vi.fn(async () => undefined)
+  return {
+    record,
+    opened: openSession({
+      provider: fakeProvider([textTurn('ok')]),
+      storage,
+      key: 'k',
+      seams: fakeSeams({ billing: { record } }),
+    }),
+  }
+}
+
+const settledOf = async (log: SessionLogImpl, effectId: string): Promise<Event[]> =>
+  (await log.scan({ type: 'effect/settled', limit: 20 })).filter(
+    (event) => (event.data as { effectId?: string }).effectId === effectId,
+  )
+const costsOf = async (log: SessionLogImpl, effectId?: string): Promise<Event[]> =>
+  (await log.scan({ type: 'cost/ledger', limit: 20 })).filter(
+    (event) => effectId === undefined || (event.data as { effectId?: string }).effectId === effectId,
+  )
+
+describe('resume of an interrupted side call', () => {
+  it('settles it as unknown with one estimated cost row in the same commit and leaves the turn alone', async () => {
+    const { storage, identity, phase } = await crashWithSideCall()
+    const { record, opened } = reopenWithBilling(storage)
+    const { session, log } = await opened
+    const batches: Event[][] = []
+    session.onAppended((events) => batches.push(events))
+    expect((await session.resume()).actions).toEqual([{ effectId: sideEffectId, action: 'unknown' }])
+
+    const [cost] = await costsOf(log)
+    expect(await costsOf(log)).toHaveLength(1)
+    expect(cost?.data).toEqual({
+      purpose: 'side-call',
+      effectId: sideEffectId,
+      model: 'side-model',
+      tokens: { input: 120, output: 0, cacheRead: 0, cacheWrite: 0 },
+      credits: 0.5,
+      creditSource: 'estimated',
+      interrupted: true,
+      route: 'side-route',
+    })
+    expect(checkSideCallCost(cost as EventInput, identity)).toMatchObject({ purpose: 'side-call' })
+    const [settled] = await settledOf(log, sideEffectId)
+    expect(settled?.data).toEqual({ effectId: sideEffectId, outcome: 'unknown' })
+    // Cost first, then the settlement, in one append.
+    expect(batches.map((rows) => rows.map((row) => row.type))).toEqual([['cost/ledger', 'effect/settled']])
+
+    // No inference was retried or charged, and the program counter did not move.
+    expect((await costsOf(log)).map((row) => (row.data as { purpose: string }).purpose)).toEqual([
+      'side-call',
+    ])
+    expect(session.op()?.phase).toEqual(phase)
+    expect(session.op()?.phase).toMatchObject({ kind: 'inference', gen: { status: 'ready', attempt: 0 } })
+    expect(session.pendingEffects()).toEqual([])
+    expect(record).not.toHaveBeenCalled()
+    expect(await types(log)).not.toContain('x/core/invariant')
+
+    // The loop sees the same answer a later call for this id gets.
+    await expect(createSideCallEffectPort(session).status('call-1')).resolves.toMatchObject({
+      status: 'finished',
+      result: { status: 'unknown', reason: 'interrupted', replayed: true },
+    })
+  })
+
+  it('leaves the credits out of the cost row when the call had no price estimate', async () => {
+    const { storage } = await crashWithSideCall({ audit: sideAudit({ projectedCredits: null }) })
+    const { session, log } = await reopen(storage)
+    await session.resume()
+    const [cost] = await costsOf(log)
+    expect(cost?.data).not.toHaveProperty('credits')
+    expect(cost?.data).toMatchObject({ creditSource: 'estimated', interrupted: true })
+  })
+
+  it('does not disturb the retry of an inference that was in flight beside it', async () => {
+    const { storage } = await crashWithSideCall({ inFlight: true })
+    const { session, log } = await reopen(storage)
+    expect((await session.resume()).actions).toEqual([
+      { effectId: sideEffectId, action: 'unknown' },
+      { effectId: expect.any(String), action: 'retry' },
+    ])
+    expect(session.op()?.phase).toMatchObject({ kind: 'inference', gen: { status: 'ready', attempt: 1 } })
+    expect(
+      (await costsOf(log)).map((row) => {
+        const { purpose, model } = row.data as { purpose: string; model: string }
+        return [purpose, model]
+      }),
+    ).toEqual([
+      ['side-call', 'side-model'],
+      ['inference', 'primary'],
+    ])
+  })
+
+  it('settles it as unknown with its cost row when the session is closed', async () => {
+    const { storage, identity } = await crashWithSideCall()
+    const { record, opened } = reopenWithBilling(storage)
+    const { session, log } = await opened
+    const batches: Event[][] = []
+    session.onAppended((events) => batches.push(events))
+    expect((await session.resume({ mode: 'close' })).actions).toEqual([
+      { effectId: sideEffectId, action: 'unknown' },
+    ])
+    const [cost] = await costsOf(log)
+    expect(await costsOf(log)).toHaveLength(1)
+    expect(cost?.data).toMatchObject({
+      purpose: 'side-call',
+      effectId: sideEffectId,
+      tokens: { input: 120, output: 0, cacheRead: 0, cacheWrite: 0 },
+      credits: 0.5,
+      creditSource: 'estimated',
+      interrupted: true,
+    })
+    expect(checkSideCallCost(cost as EventInput, identity)).toMatchObject({ purpose: 'side-call' })
+    expect((await settledOf(log, sideEffectId))[0]?.data).toEqual({
+      effectId: sideEffectId,
+      outcome: 'unknown',
+    })
+    const commit = batches.map((rows) => rows.map((row) => row.type))
+    expect(commit).toHaveLength(1)
+    expect(commit[0]?.slice(0, 2)).toEqual(['cost/ledger', 'effect/settled'])
+    expect(commit[0]).toContain('turn/end')
+    expect(record).not.toHaveBeenCalled()
+    expect(session.pendingEffects()).toEqual([])
+  })
+
+  it('closes a side call and an inference that were both in flight', async () => {
+    const { storage } = await crashWithSideCall({ inFlight: true })
+    const { session, log } = await reopen(storage)
+    expect((await session.resume({ mode: 'close' })).actions).toEqual([
+      { effectId: sideEffectId, action: 'unknown' },
+      { effectId: expect.any(String), action: 'error' },
+    ])
+    expect((await costsOf(log)).map((row) => (row.data as { purpose: string }).purpose)).toEqual([
+      'side-call',
+    ])
+  })
+
+  describe.each(['continue', 'close'] as const)('in %s mode, without a trustworthy binding row', (mode) => {
+    it.each(['missing', 'untrusted', 'hash-mismatch'] as const)(
+      'settles it as unknown with no cost row and one diagnostic when the binding is %s',
+      async (rows) => {
+        const { storage } = await crashWithSideCall({ rows })
+        const { session, log } = await reopen(storage)
+        const report = await session.resume(mode === 'close' ? { mode } : {})
+        expect(report.actions).toEqual([{ effectId: sideEffectId, action: 'unknown' }])
+        expect(await costsOf(log)).toEqual([])
+        expect((await settledOf(log, sideEffectId)).map((row) => row.data)).toEqual([
+          { effectId: sideEffectId, outcome: 'unknown' },
+        ])
+        expect((await log.scan({ type: 'x/core/invariant', limit: 5 })).map((row) => row.data)).toEqual([
+          { kind: 'resume-side-call-binding-unusable', effectId: sideEffectId },
+        ])
+        expect(session.pendingEffects()).toEqual([])
+      },
+    )
+  })
+
+  it.each(['continue', 'close'] as const)(
+    'does not settle anything in %s mode when reading the binding row fails',
+    async (mode) => {
+      const { storage } = await crashWithSideCall()
+      const { session, log } = await reopen(storage)
+      const intentSeq = session.pendingEffects()[0]?.intentSeq
+      const scan = session.scan.bind(session)
+      vi.spyOn(session, 'scan').mockImplementation(async (query) => {
+        if (query.fromSeq === intentSeq && query.toSeq === (intentSeq as number) + 1)
+          throw new Error('storage unavailable')
+        return scan(query)
+      })
+      await expect(session.resume(mode === 'close' ? { mode } : {})).rejects.toThrow('storage unavailable')
+      expect(await settledOf(log, sideEffectId)).toEqual([])
+      expect(await costsOf(log)).toEqual([])
+      expect(session.pendingEffects().map((effect) => effect.effectId)).toEqual([sideEffectId])
+    },
+  )
 })

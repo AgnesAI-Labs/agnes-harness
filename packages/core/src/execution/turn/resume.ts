@@ -2,6 +2,7 @@ import { type OpStateObj, type ToolCallState, withPhase } from '@agnes/core-comm
 import type { EventInput, Seq } from '@agnes/core-common/types'
 import { scanAll, scanPages } from '@agnes/core-ledger/log/scan-pages'
 import type { EffectNode } from '@agnes/core-ledger/reduce/state'
+import { readSideCallBinding } from '../../orchestrator/side-call-effect-port.js'
 import {
   hasCompleteToolPolicyEnvelope,
   hasTrustedToolCallProvenance,
@@ -165,6 +166,36 @@ function settleUnknownSubtree(s: SessionImpl, n: EffectNode, events: EventInput[
     )
 }
 
+/**
+ * The rows that settle a side call the process died inside. It may already have reached the
+ * provider and is never replayed, so it settles as `unknown`, and its spend is unknown too: the cost
+ * row carries the estimate frozen into the call's binding row and goes ahead of the settlement in
+ * the same commit. Neither the billing seam nor the tree budget is reached from here. A binding row
+ * that is missing, not Core's own, or whose hash does not match gives no estimate to trust, so only
+ * the settlement is written and the gap is recorded. A storage failure reading the row is not that
+ * case and propagates, leaving the effect pending for the next resume.
+ */
+async function interruptedSideCallRows(s: SessionImpl, node: EffectNode): Promise<EventInput[]> {
+  const settled = s.ev('effect/settled', { effectId: node.effectId, outcome: 'unknown' })
+  const known = await readSideCallBinding(s, node.intentSeq, node.effectId)
+  if (!known) {
+    await s.diag('invariant', { kind: 'resume-side-call-binding-unusable', effectId: node.effectId })
+    return [settled]
+  }
+  const { binding, audit } = known
+  const cost = s.ev('cost/ledger', {
+    purpose: 'side-call',
+    effectId: node.effectId,
+    model: binding.model,
+    tokens: { input: audit.inputTokens, output: 0, cacheRead: 0, cacheWrite: 0 },
+    ...(audit.projectedCredits === null ? {} : { credits: audit.projectedCredits }),
+    creditSource: 'estimated',
+    interrupted: true,
+    route: binding.route,
+  })
+  return [cost, settled]
+}
+
 /** The `{ effectId, kind, tool?, replay }` shape `CHILD_INTERRUPTED`'s content lists each child as. */
 function effectSummary(n: EffectNode): Pick<EffectNode, 'effectId' | 'kind' | 'tool' | 'replay'> {
   return { effectId: n.effectId, kind: n.kind, ...(n.tool ? { tool: n.tool } : {}), replay: n.replay }
@@ -189,7 +220,8 @@ function actionForDecision(decision: ToolRecoveryDecision, replay?: string): Res
  * reading it.
  *
  * Each root effect is answered by the replay policy its tool declared, and an inference by the
- * retry budget the counter carries. What the effects have in common is the step: `runInference`
+ * retry budget the counter carries; media and side calls are never replayed, and settle as unknown.
+ * What the effects have in common is the step: `runInference`
  * opens one unconditionally, and the relation check refuses a second `step/start` while the first is
  * still held - so every exit that does not hand the step on to the tools phase closes it here, in
  * the same transaction as the settlement. Missing that close is what made a session killed
@@ -281,6 +313,14 @@ export async function resumeSession(s: SessionImpl, o: { mode?: ResumeMode } = {
       // routing it through the primary inference retry budget. Any observed spend remains owned by
       // the auxiliary terminal transaction and therefore keeps purpose=media.
       await s.transition([s.ev('effect/settled', { effectId: root.effectId, outcome: 'unknown' })], cur)
+      actions.push({ effectId: root.effectId, action: 'unknown' })
+      continue
+    }
+    if (root.kind === 'side-call') {
+      // Like media, a side call is never replayed and never goes through the primary inference
+      // retry budget, so the phase and its attempt counter stay as they were. The step is not this
+      // effect's: it is left open for the phase that owns it.
+      await s.transition(await interruptedSideCallRows(s, root), cur)
       actions.push({ effectId: root.effectId, action: 'unknown' })
       continue
     }
@@ -497,9 +537,10 @@ export async function resumeSession(s: SessionImpl, o: { mode?: ResumeMode } = {
  * turn - inference, tool, compaction, job, and each still-pending child under any of them - is
  * settled in place (an inference-kind node as `error`, since nobody is going to retry it; a
  * tool-kind node as `unknown`, with its own `TOOL_OUTCOME_UNKNOWN` closer, for the same reason a
- * plain resume writes one). A call that had not even reached that far - still `planned` or
- * `awaiting_approval` in the batch, with no `effect/intent` on the ledger at all - gets
- * `TOOL_NOT_STARTED` instead: there is no effect to settle, only a call to close. All of it lands
+ * plain resume writes one; a side-call node as `unknown`, after its estimated cost row). A call that
+ * had not even reached that far - still `planned` or `awaiting_approval` in the batch, with no
+ * `effect/intent` on the ledger at all - gets `TOOL_NOT_STARTED` instead: there is no effect to
+ * settle, only a call to close. All of it lands
  * in the one transaction `endTurn` writes: the settlements, the synthesized results, the step's own
  * close if one was open, and `turn/end{ reason: 'interrupted' }` tombstoning `op.state`. Nothing
  * here is resumed and nothing is re-run; a session closed this way is done, not paused.
@@ -558,8 +599,25 @@ export async function closeInterrupted(s: SessionImpl): Promise<ResumeReport> {
     )
     closedCalls.add(toolUseId)
   }
+  // Reading a side call's binding row is asynchronous and the settlement below is not, so the rows
+  // of every side call still open anywhere in the tree are read first.
+  const sideCallRows = new Map<string, EventInput[]>()
+  const readSideCalls = async (n: EffectNode): Promise<void> => {
+    for (const c of n.children) await readSideCalls(c)
+    if (n.kind === 'side-call') sideCallRows.set(n.effectId, await interruptedSideCallRows(s, n))
+  }
+  for (const root of s.pendingEffects()) await readSideCalls(root)
   const settleAll = (n: EffectNode): void => {
     for (const c of n.children) settleAll(c)
+    if (n.kind === 'side-call') {
+      events.push(
+        ...(sideCallRows.get(n.effectId) ?? [
+          s.ev('effect/settled', { effectId: n.effectId, outcome: 'unknown' }),
+        ]),
+      )
+      actions.push({ effectId: n.effectId, action: 'unknown' })
+      return
+    }
     if (n.kind === 'tool' && n.tool) {
       const call = stateCalls.get(n.tool.toolUseId)
       const ledger = ledgerCalls.get(n.tool.toolUseId)
