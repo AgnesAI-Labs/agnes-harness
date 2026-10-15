@@ -1928,7 +1928,7 @@
           "maxLength": 128
         },
         "kind": {
-          "enum": ["inference", "tool", "compaction", "job", "media"]
+          "enum": ["inference", "tool", "compaction", "job", "media", "side-call"]
         },
         "tool": {
           "type": "object",
@@ -1966,7 +1966,7 @@
         "required": ["kind", "replay"],
         "properties": {
           "kind": {
-            "const": "media"
+            "enum": ["media", "side-call"]
           },
           "replay": {
             "enum": ["safe", "idempotent"]
@@ -2120,10 +2120,22 @@
             "media",
             "tool",
             "title",
-            "approval-guardian"
+            "approval-guardian",
+            "side-call"
           ]
         },
         "sourceTurn": { "type": "integer", "minimum": 1 },
+        "route": { "type": "string", "maxLength": 128 },
+        "adapter": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id"],
+          "properties": {
+            "id": { "type": "string", "maxLength": 128 },
+            "version": { "type": "string", "maxLength": 64 }
+          }
+        },
+        "endpointHost": { "type": "string", "maxLength": 253 },
         "credits": {
           "type": "number",
           "minimum": 0

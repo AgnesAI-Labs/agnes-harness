@@ -12,7 +12,15 @@ export type AdminModelAdapter = Readonly<{
   /** Wire API may differ from the registered adapter identity. */
   wireApi: string
   sourcePackage: string
-  capabilities: Readonly<{ imageInput: boolean; tools: boolean; streaming: boolean }>
+  capabilities: Readonly<{
+    imageInput: boolean
+    tools: boolean
+    streaming: boolean
+    /** The adapter reads a request's `payload`. */
+    payload?: boolean
+    /** The adapter takes a request's `payload` instead of its messages; it also declares `payload`. */
+    payloadOnly?: boolean
+  }>
   label?: string
   models: readonly Readonly<{ id: string; label?: string; route?: string }>[]
 }>
@@ -118,10 +126,12 @@ export function isAdminModelAdapter(value: unknown): value is AdminModelAdapter 
     !Array.isArray(value.models) ||
     value.models.length > 4096 ||
     !record(value.capabilities) ||
-    !keys(value.capabilities, ['imageInput', 'tools', 'streaming']) ||
+    !keys(value.capabilities, ['imageInput', 'tools', 'streaming', 'payload', 'payloadOnly']) ||
     typeof value.capabilities.imageInput !== 'boolean' ||
     typeof value.capabilities.tools !== 'boolean' ||
-    typeof value.capabilities.streaming !== 'boolean'
+    typeof value.capabilities.streaming !== 'boolean' ||
+    (value.capabilities.payload !== undefined && typeof value.capabilities.payload !== 'boolean') ||
+    (value.capabilities.payloadOnly !== undefined && typeof value.capabilities.payloadOnly !== 'boolean')
   )
     return false
   return value.models.every(

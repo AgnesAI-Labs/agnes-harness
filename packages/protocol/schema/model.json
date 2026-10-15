@@ -135,6 +135,7 @@
         "system": { "type": "string", "maxLength": 1048576 },
         "messages": { "type": "array", "items": { "$ref": "#/$defs/RequestMessage" } },
         "tools": { "type": "array", "items": { "$ref": "#/$defs/ToolSchema" } },
+        "payload": { "$ref": "#/$defs/JsonValue" },
         "sampling": {
           "type": "object",
           "additionalProperties": false,
@@ -149,8 +150,8 @@
           "additionalProperties": false,
           "required": ["firstToken", "total"],
           "properties": {
-            "firstToken": { "type": "integer", "minimum": 1000 },
-            "total": { "type": "integer", "minimum": 1000 }
+            "firstToken": { "type": "integer", "minimum": 100 },
+            "total": { "type": "integer", "minimum": 100 }
           }
         },
         "sections": {

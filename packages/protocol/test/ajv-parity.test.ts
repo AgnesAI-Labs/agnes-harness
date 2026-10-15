@@ -1748,6 +1748,8 @@ const SESSION_SAMPLES: Record<string, Sample> = {
       { effectId: 'e1', kind: 'tool', replay: 'maybe' }, // enum
       { effectId: 'e1', kind: 'artifact', replay: 'safe' }, // enum: the pre-I2 kind vocabulary
       { effectId: 'e1', kind: 'media', replay: 'safe' }, // media is a never-replay auxiliary effect
+      { effectId: 'e1', kind: 'side-call', replay: 'safe' }, // a side call is never replayed either
+      { effectId: 'e1', kind: 'side-call', replay: 'idempotent' }, // the constraint covers both replayable modes
       { effectId: 'e1', kind: 'tool', replay: 'safe', tool: 'read' }, // tool is the object pair, not a bare name
       { effectId: 'e1', kind: 'tool', replay: 'safe', argsSeq: 0 }, // boundary: one below minimum:1
     ],
@@ -1829,6 +1831,14 @@ const SESSION_SAMPLES: Record<string, Sample> = {
       { ...costLedgerOk, tokens: { input: 1, output: 1, cacheRead: 0 } }, // missing cacheWrite
       { ...costLedgerOk, timing: { ttftMs: 1, wallMs: 2 } }, // additionalProperties:false on the closed timing keys
       { ...costLedgerOk, response: { status: '200' } }, // the response status is an integer
+      { ...costLedgerOk, route: rep(129) }, // boundary: one over maxLength:128
+      { ...costLedgerOk, endpointHost: rep(254) }, // boundary: one over maxLength:253
+      { ...costLedgerOk, endpointHost: 7 }, // the host is a string
+      { ...costLedgerOk, adapter: {} }, // missing required id
+      { ...costLedgerOk, adapter: { id: rep(129) } }, // boundary: one over maxLength:128
+      { ...costLedgerOk, adapter: { id: 'x', version: rep(65) } }, // boundary: one over maxLength:64
+      { ...costLedgerOk, adapter: { id: 'x', digest: 'd' } }, // additionalProperties:false
+      { ...costLedgerOk, slot: 'primary' }, // the row records no slot
     ],
     note: 'valid is the row core/src/step/inference.ts writes; credits is optional because only a gateway supplies one',
   },
@@ -2337,6 +2347,42 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     invalid: [
       { modelAdapters: [{ id: 'x' }] },
       { modelAdapters: [], secret: 'private' },
+      {
+        modelAdapters: [
+          {
+            id: 'adapter',
+            version: '1.0.0',
+            wireApi: 'wire',
+            sourcePackage: '@acme/adapter',
+            capabilities: { imageInput: false, tools: true, streaming: true, payload: 'yes' },
+            models: [],
+          },
+        ],
+      },
+      {
+        modelAdapters: [
+          {
+            id: 'adapter',
+            version: '1.0.0',
+            wireApi: 'wire',
+            sourcePackage: '@acme/adapter',
+            capabilities: { imageInput: false, tools: true, streaming: true, payloadOnly: 1 },
+            models: [],
+          },
+        ],
+      },
+      {
+        modelAdapters: [
+          {
+            id: 'adapter',
+            version: '1.0.0',
+            wireApi: 'wire',
+            sourcePackage: '@acme/adapter',
+            capabilities: { imageInput: false, tools: true, streaming: true, batch: true },
+            models: [],
+          },
+        ],
+      },
       {
         modelAdapters: [
           {
@@ -4341,7 +4387,8 @@ const MODEL_SAMPLES: Record<string, Sample> = {
       { ...modelRequestBody, sampling: { temperature: 2.5 } }, // boundary: maximum:2
       { ...modelRequestBody, sampling: { maxTokens: 0 } }, // boundary: minimum:1
       { ...modelRequestBody, sampling: { thinking: 'extreme' } }, // enum
-      { ...modelRequestBody, timeoutMs: { firstToken: 999, total: 60000 } }, // boundary: minimum:1000
+      { ...modelRequestBody, timeoutMs: { firstToken: 99, total: 60000 } }, // boundary: minimum:100
+      { ...modelRequestBody, timeoutMs: { firstToken: 30000, total: 99 } }, // boundary: minimum:100 on total
       { ...modelRequestBody, timeoutMs: { firstToken: 30000 } }, // missing required total
     ],
     note: 'hand-written; sampling and timeoutMs are optional closed objects, so both are exercised through the optional path',
@@ -10032,5 +10079,184 @@ describe('UITurn.trace is optional', () => {
 
   it('rejects an unknown span kind', () => {
     expect(validateAgainst(AgnesGen.UISpan, { ...trace, kind: 'span' }).ok).toBe(false)
+  })
+})
+
+describe('side-call protocol additions: ajv ↔ TypeBox parity', () => {
+  const catalogEntry = (capabilities: Json) => ({
+    modelAdapters: [
+      {
+        id: 'adapter',
+        version: '1.0.0',
+        wireApi: 'wire',
+        sourcePackage: '@acme/adapter',
+        capabilities,
+        models: [],
+      },
+    ],
+  })
+  const baseCapabilities = { imageInput: false, tools: false, streaming: false }
+  const uiSpanOk = {
+    id: 'span:side-call:e1',
+    kind: 'generation',
+    name: 'side call',
+    status: 'completed',
+    startSeq: 1,
+    startedAt: '2026-09-17T00:00:00.000Z',
+    children: [],
+  }
+  const uiTurnCallOk = { id: 'e1', seq: 1, purpose: 'inference', model: 'm', creditSource: 'estimated' }
+
+  // [file, def, label, sample, expected verdict]
+  const cases: Array<[string, string, string, unknown, boolean]> = [
+    [MODEL_ID, 'RequestBody', 'payload object', { ...modelRequestBody, payload: { a: 1 } }, true],
+    [
+      MODEL_ID,
+      'RequestBody',
+      'payload nested array',
+      { ...modelRequestBody, payload: [1, 'a', null, { b: [] }] },
+      true,
+    ],
+    [MODEL_ID, 'RequestBody', 'payload scalar', { ...modelRequestBody, payload: 'text' }, true],
+    [MODEL_ID, 'RequestBody', 'payload undefined', { ...modelRequestBody, payload: undefined }, true],
+    [
+      MODEL_ID,
+      'RequestBody',
+      'timeoutMs at the lowered floor',
+      { ...modelRequestBody, timeoutMs: { firstToken: 100, total: 100 } },
+      true,
+    ],
+    [
+      MODEL_ID,
+      'RequestBody',
+      'timeoutMs one below the floor',
+      { ...modelRequestBody, timeoutMs: { firstToken: 99, total: 100 } },
+      false,
+    ],
+    [
+      SESSION_ID,
+      'EffectIntent',
+      'side-call never',
+      { effectId: 'e1', kind: 'side-call', replay: 'never' },
+      true,
+    ],
+    [
+      SESSION_ID,
+      'EffectIntent',
+      'side-call safe',
+      { effectId: 'e1', kind: 'side-call', replay: 'safe' },
+      false,
+    ],
+    [
+      SESSION_ID,
+      'EffectIntent',
+      'side-call idempotent',
+      { effectId: 'e1', kind: 'side-call', replay: 'idempotent' },
+      false,
+    ],
+    [SESSION_ID, 'EffectIntent', 'media never', { effectId: 'e1', kind: 'media', replay: 'never' }, true],
+    [SESSION_ID, 'EffectIntent', 'media safe', { effectId: 'e1', kind: 'media', replay: 'safe' }, false],
+    [
+      SESSION_ID,
+      'EffectIntent',
+      'tool safe is unaffected',
+      { effectId: 'e1', kind: 'tool', replay: 'safe' },
+      true,
+    ],
+    [
+      SESSION_ID,
+      'CostLedger',
+      'side-call row with route, adapter and host',
+      {
+        ...costLedgerOk,
+        purpose: 'side-call',
+        route: 'jev',
+        adapter: { id: 'x' },
+        endpointHost: 'h',
+      },
+      true,
+    ],
+    [
+      SESSION_ID,
+      'CostLedger',
+      'adapter with version',
+      { ...costLedgerOk, purpose: 'side-call', adapter: { id: 'x', version: '1' } },
+      true,
+    ],
+    [SESSION_ID, 'CostLedger', 'inference row without the new fields', costLedgerOk, true],
+    [SESSION_ID, 'CostLedger', 'route at maxLength', { ...costLedgerOk, route: rep(128) }, true],
+    [
+      SESSION_ID,
+      'CostLedger',
+      'endpointHost at maxLength',
+      { ...costLedgerOk, endpointHost: rep(253) },
+      true,
+    ],
+    [
+      SESSION_ID,
+      'CostLedger',
+      'endpointHost over maxLength',
+      { ...costLedgerOk, endpointHost: rep(254) },
+      false,
+    ],
+    [
+      SESSION_ID,
+      'CostLedger',
+      'adapter id and version at maxLength',
+      { ...costLedgerOk, adapter: { id: rep(128), version: rep(64) } },
+      true,
+    ],
+    [AGNES_ID, 'UITurnCall', 'side-call purpose', { ...uiTurnCallOk, purpose: 'side-call' }, true],
+    [AGNES_ID, 'UITurnCall', 'unknown purpose', { ...uiTurnCallOk, purpose: 'side' }, false],
+    [AGNES_ID, 'UISpan', 'side-call purpose', { ...uiSpanOk, purpose: 'side-call' }, true],
+    [AGNES_ID, 'UISpan', 'unknown purpose', { ...uiSpanOk, purpose: 'side' }, false],
+    [
+      AGNES_ID,
+      'SessionAdapterCatalogResult',
+      'payload capabilities',
+      catalogEntry({ ...baseCapabilities, payload: true, payloadOnly: true }),
+      true,
+    ],
+    [
+      AGNES_ID,
+      'SessionAdapterCatalogResult',
+      'payload alone',
+      catalogEntry({ ...baseCapabilities, payload: true }),
+      true,
+    ],
+    [
+      AGNES_ID,
+      'SessionAdapterCatalogResult',
+      'capabilities without payload',
+      catalogEntry(baseCapabilities),
+      true,
+    ],
+    [
+      AGNES_ID,
+      'SessionAdapterCatalogResult',
+      'payload not boolean',
+      catalogEntry({ ...baseCapabilities, payload: 'yes' }),
+      false,
+    ],
+    [
+      AGNES_ID,
+      'SessionAdapterCatalogResult',
+      'payloadOnly not boolean',
+      catalogEntry({ ...baseCapabilities, payloadOnly: 'yes' }),
+      false,
+    ],
+    [
+      AGNES_ID,
+      'SessionAdapterCatalogResult',
+      'unknown capability key',
+      catalogEntry({ ...baseCapabilities, batch: true }),
+      false,
+    ],
+  ]
+
+  it.each(cases)('%s %s: %s', (fileId, name, _label, sample, expected) => {
+    const schema = DEFS_BY_FILE[fileId]?.[name]
+    if (!schema) throw new Error(`missing generated schema ${name}`)
+    assertParity({ schema, check: ajvDef(fileId, name) }, fileId, name, sample, expected)
   })
 })

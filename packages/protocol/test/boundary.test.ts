@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { isAdminModelAdapter } from '../src/index.js'
 
 const indexSrc = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8')
 const schemaDefNames = (file: string): string[] =>
@@ -503,5 +504,49 @@ describe('Task21 schema ownership', () => {
     expect(readFileSync(new URL('../schema/channel.json', import.meta.url), 'utf8')).not.toContain(
       'agnes-v1.json',
     )
+  })
+})
+
+describe('admin model adapter catalog guard', () => {
+  const adapter = {
+    id: 'adapter',
+    version: '1.0.0',
+    wireApi: 'wire',
+    sourcePackage: '@acme/adapter',
+    capabilities: { imageInput: false, tools: true, streaming: true },
+    models: [{ id: 'm', label: 'M', route: 'r' }],
+  }
+  const withCapabilities = (extra: Record<string, unknown>) => ({
+    ...adapter,
+    capabilities: { ...adapter.capabilities, ...extra },
+  })
+
+  it('accepts the three required capabilities alone', () => {
+    expect(isAdminModelAdapter(adapter)).toBe(true)
+  })
+
+  it('accepts the optional payload and payloadOnly capabilities', () => {
+    expect(isAdminModelAdapter(withCapabilities({ payload: true, payloadOnly: true }))).toBe(true)
+    expect(isAdminModelAdapter(withCapabilities({ payload: false }))).toBe(true)
+    expect(isAdminModelAdapter(withCapabilities({ payloadOnly: false }))).toBe(true)
+  })
+
+  it('rejects a non-boolean payload or payloadOnly', () => {
+    expect(isAdminModelAdapter(withCapabilities({ payload: 'yes' }))).toBe(false)
+    expect(isAdminModelAdapter(withCapabilities({ payloadOnly: 'yes' }))).toBe(false)
+    expect(isAdminModelAdapter(withCapabilities({ payload: 1 }))).toBe(false)
+    expect(isAdminModelAdapter(withCapabilities({ payloadOnly: null }))).toBe(false)
+  })
+
+  it('rejects any other capability key', () => {
+    expect(isAdminModelAdapter(withCapabilities({ batch: true }))).toBe(false)
+    expect(isAdminModelAdapter(withCapabilities({ payload: true, batch: true }))).toBe(false)
+  })
+
+  it('still requires the three original capabilities', () => {
+    for (const key of ['imageInput', 'tools', 'streaming']) {
+      const { [key]: _omitted, ...rest } = adapter.capabilities as Record<string, boolean>
+      expect(isAdminModelAdapter({ ...adapter, capabilities: { ...rest, payload: true } }), key).toBe(false)
+    }
   })
 })
