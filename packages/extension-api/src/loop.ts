@@ -213,12 +213,18 @@ export interface LoopToolCallOptions {
    * Record the call, or the whole batch, as one new assistant message that asked for it, written in
    * the same ledger transaction as the call rows and before anything runs. `true`: an assistant
    * message with no text, for a call the loop chose itself. `{ content }`: the text and thinking a
-   * model produced beside a call it authored and the loop now dispatches. Every call is checked
-   * first and nothing is written if one is refused; a turn with an unsettled call or effect is
-   * refused with `E_RELATION`. Each call still goes through approval and tool policy. A planned call
-   * that was never dispatched continues on replay with the same `invocationId` and `announce`, as
-   * long as no other tool or model call has opened a new step since. Omitted: the call is recorded on
-   * its own, as before.
+   * model produced beside a call it authored and the loop now dispatches. `content` is model output
+   * in the trusted assistant frame: scrubbed when a request is rendered, not wrapped as untrusted.
+   * Every call is checked first and nothing is written if one is refused, including a batch that
+   * repeats an `invocationId`; a turn with an unsettled call or effect is refused with `E_RELATION`.
+   * Each call still goes through approval and tool policy. Omitted: the call is recorded on its own.
+   *
+   * Replay takes the same `invocationId` and `announce`; the receipt covers the name, the arguments
+   * and `announce`, not `content`. A planned call that was never dispatched continues on replay only
+   * while the step that planned it is open, so after a reopen a loop replays its recorded announced
+   * invocations before any other model or tool call. Otherwise that call stays refused and its
+   * tool call stays in the history without a result. An invocation whose receipt was written but
+   * whose message and call rows were not (a crash between the two) stays refused as well.
    */
   readonly announce?: true | { readonly content: AssistantMessage['content'] }
 }

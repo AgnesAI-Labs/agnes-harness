@@ -5,6 +5,7 @@ import type {
   LoopContext,
   LoopDriver,
   LoopToolCall,
+  LoopToolCallOptions,
 } from '@agnes/extension-api'
 import { deferredQueueKind } from '../deferred-contract.js'
 import { drainDeferredToolInvocations } from '../deferred-invocations.js'
@@ -46,9 +47,9 @@ export function workflowDriver(
   Object.defineProperty(businessCtx, 'tools', {
     value: {
       ...ctx.tools,
-      async execute(call: LoopToolCall, signal: AbortSignal) {
+      async execute(call: LoopToolCall, signal: AbortSignal, callOptions?: LoopToolCallOptions) {
         options.guardToolCall?.(call, state)
-        const output = await ctx.tools.execute(call, signal)
+        const output = await ctx.tools.execute(call, signal, callOptions)
         if (options.recordToolResult?.(call, output, state)) await save()
         return output
       },
@@ -207,7 +208,11 @@ export function workflowDriver(
           ? Object.defineProperty(Object.create(businessCtx), 'tools', {
               value: {
                 ...businessCtx.tools,
-                async execute(call: LoopToolCall, callSignal: AbortSignal) {
+                async execute(
+                  call: LoopToolCall,
+                  callSignal: AbortSignal,
+                  callOptions?: LoopToolCallOptions,
+                ) {
                   const invocationId =
                     'workflow:' +
                     state.outputKey +
@@ -219,7 +224,7 @@ export function workflowDriver(
                     throw new Error('Approval receipt does not match the original call')
                   state.approvalCall = { ...call, invocationId }
                   await save()
-                  return businessCtx.tools.execute(state.approvalCall, callSignal)
+                  return businessCtx.tools.execute(state.approvalCall, callSignal, callOptions)
                 },
               },
             })

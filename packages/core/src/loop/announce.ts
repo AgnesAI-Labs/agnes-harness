@@ -40,7 +40,7 @@ export interface AnnounceDeps {
  * the same approval and execution path as any other.
  */
 export function announcedTools(s: SessionImpl, deps: AnnounceDeps) {
-  // A replayed call is not fenced again, so a second replay of the same id waits for none.
+  // A replay writes no new fence, so this keeps two replays of one id from running it twice.
   const resuming = new Set<string>()
   const run = async (
     calls: readonly LoopToolCall[],
@@ -57,13 +57,17 @@ export function announcedTools(s: SessionImpl, deps: AnnounceDeps) {
         ...call,
         invocationId: call.invocationId ?? s.d.ids.effectId(),
       }))
+      const ids = owned.map((call) => call.invocationId)
+      // Refused before any receipt is read or written: two calls under one id cannot be told apart,
+      // and the second one's fence would leave the id refused for good.
+      if (new Set(ids).size !== ids.length)
+        throw new CoreError('E_RELATION', 'An announced batch names the same invocationId more than once')
       const receipts = []
       for (const call of owned) receipts.push(await deps.invocations.status(call.invocationId))
       if (receipts.every((receipt) => receipt.status === 'not-sent'))
         return await announceNew(s, deps, owned, signal, announce, single)
       if (receipts.some((receipt) => receipt.status === 'not-sent'))
         throw new CoreError('E_RELATION', 'An announced batch mixes new and recorded invocations')
-      const ids = owned.map((call) => call.invocationId)
       if (ids.some((id) => resuming.has(id)))
         throw new CoreError('E_RELATION', 'Announced invocation is already resuming')
       for (const id of ids) resuming.add(id)

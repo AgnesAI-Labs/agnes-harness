@@ -143,7 +143,8 @@ Every `agnes.plugins[].apiRange` and `@agnes/extension-api` dependency range mov
   `announce` records the call, or the whole batch, as one new assistant message written in the same
   transaction as the call rows, before anything runs; each call still goes through approval and tool
   policy. A planned announced call that was never dispatched continues on replay with the same
-  `invocationId` while the step that planned it is open. Without `announce` nothing changes.
+  `invocationId` while the step that planned it is open, so after a reopen a loop replays it before
+  any other model or tool call. Without `announce` nothing changes.
 
 ## 3.1.0
 

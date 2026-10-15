@@ -420,6 +420,43 @@ describe('announced tool calls', () => {
     expect(await session.scan({ type: 'x/core/loop-invocation', limit: 10 })).toEqual([])
   })
 
+  it('refuses a batch that names one invocationId twice before writing anything', async () => {
+    let refused: unknown
+    let status: unknown
+    let fresh: readonly ToolResult[] = []
+    const written: number[] = []
+    const f = setup(
+      perTurn(async (ctx, s) => {
+        written.push(session.lastSeq)
+        refused = await ctx.tools
+          .batch(
+            [
+              { name: 'read', args: {}, invocationId: 'twice' },
+              { name: 'read', args: { n: 2 }, invocationId: 'twice' },
+            ],
+            s,
+            { announce: true },
+          )
+          .catch((error: unknown) => error)
+        written.push(session.lastSeq)
+        status = await ctx.effects.status('twice')
+        fresh = await ctx.tools.batch([{ name: 'read', args: {}, invocationId: 'once' }], s, {
+          announce: true,
+        })
+      }),
+    )
+    f.k.tools.add(readTool(), { source: 'test', trust: 'builtin' })
+    const session = await f.open('duplicate-ids')
+    await enqueue(session)
+    expect(await run(session)).toMatchObject({ reason: 'completed' })
+    expect(refused).toMatchObject({ code: 'E_RELATION', message: expect.stringContaining('more than once') })
+    expect(written[1]).toBe(written[0])
+    expect(status).toEqual({ status: 'not-sent', invocationId: 'twice' })
+    expect(fresh).toEqual([{ content: [{ type: 'text', text: 'read:{}' }] }])
+    expect(await session.scan({ type: 'assistant/message', limit: 10 })).toHaveLength(1)
+    expect(await session.scan({ type: 'tool/call', limit: 10 })).toHaveLength(1)
+  })
+
   it('refuses announced content other than text and thinking before writing anything', async () => {
     let refused: unknown
     const f = setup(
@@ -721,6 +758,10 @@ describe('replay after a crash', () => {
     expect(counter.n).toBe(0)
     expect(refused).toMatchObject({ code: 'E_RELATION', message: expect.stringContaining('reconcile') })
     expect(await session.scan({ type: 'assistant/message', limit: 10 })).toHaveLength(1)
+    // The stranded call keeps no result, even after the turn ends.
+    const [stranded] = await session.scan({ type: 'tool/call', limit: 1 })
+    const results = await session.scan({ type: 'tool/result', limit: 10 })
+    expect(results.map((row) => dataOf(row).toolUseId)).not.toContain(dataOf(stranded!).toolUseId)
   })
 
   it('keeps refusing to replay an unannounced call that may have been sent', async () => {

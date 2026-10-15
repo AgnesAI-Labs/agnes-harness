@@ -403,6 +403,44 @@ describe('official workflow state machine', () => {
     },
   )
 
+  it('passes a stage tool call option through to the loop port', async () => {
+    const f = fixture()
+    await withModel(f)
+    const seen: unknown[] = []
+    const execute = f.ctx.tools.execute
+    f.ctx.tools.execute = async (call, callSignal, options) => {
+      if (call.name.startsWith('business')) seen.push({ name: call.name, options })
+      return execute(call, callSignal)
+    }
+    const { factory } = definition({
+      stages: [
+        {
+          name: 'read',
+          async run(ctx, _state, stageSignal) {
+            await ctx.tools.execute({ name: 'business-read', args: {} }, stageSignal, { announce: true })
+            return { read: true }
+          },
+        },
+        {
+          name: 'write',
+          approval: true,
+          async run(ctx, _state, stageSignal) {
+            const announce = { content: [{ type: 'text' as const, text: 'writing' }] }
+            await ctx.tools.execute({ name: 'business-write', args: {} }, stageSignal, { announce })
+            return { written: true }
+          },
+        },
+      ],
+    })
+    const driver = await factory.create(f.ctx)
+    for (let i = 0; i < 10 && f.finishes.length === 0; i++) await driver.step(signal)
+    expect(f.finishes).toEqual(['completed'])
+    expect(seen).toEqual([
+      { name: 'business-read', options: { announce: true } },
+      { name: 'business-write', options: { announce: { content: [{ type: 'text', text: 'writing' }] } } },
+    ])
+  })
+
   it('refuses stop during approval park and refuses uncertain stage replay', async () => {
     const f = fixture()
     await withModel(f)
