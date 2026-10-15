@@ -3,6 +3,8 @@ import {
   type ExtensionManifest,
   inspectJsonData,
   validateExtensionManifest,
+  validateManagedServiceDescriptor,
+  validateStreamDeclaration,
 } from '@agnes/protocol'
 import { validUiComponentDeclaration } from '@agnes/protocol/intelligent-ui'
 import { parseSemver } from './api-range.js'
@@ -83,7 +85,12 @@ function clientProblems(value: ExtensionManifest, namespace: string): string[] {
     return ['home entry declarations must have unique ids and at most 32 primary entries']
   const components = client.intelligentComponents
   if (!components) return []
-  if ((client.slots?.length ?? 0) || (client.services?.length ?? 0) || (client.styles?.length ?? 0))
+  if (
+    (client.slots?.length ?? 0) ||
+    (client.services?.length ?? 0) ||
+    (client.styles?.length ?? 0) ||
+    (client.streams?.length ?? 0)
+  )
     return ['intelligentComponents modules must be self-contained and have no slots, services or styles']
   const seen = new Set<string>()
   for (const component of components) {
@@ -112,7 +119,33 @@ export function checkManifest(
     if (!result.value.apiRange.trim()) return { ok: false, problems: ['apiRange: must not be empty'] }
     if (!containedRelativePath(result.value.entry))
       return { ok: false, problems: ['entry: must be a relative path inside the package'] }
+    const transportProblems: string[] = []
+    for (const declaration of result.value.capabilities.streams ?? []) {
+      const checked = validateStreamDeclaration(declaration)
+      if (!checked.ok) transportProblems.push(...checked.errors.map((e) => e.message))
+      if (
+        declaration.controlService &&
+        !result.value.capabilities.services?.some(
+          (s) => s.name === declaration.controlService && s.kind === 'effect',
+        )
+      )
+        transportProblems.push('stream controlService must name an own effect service')
+    }
+    for (const descriptor of result.value.capabilities.managedServices ?? []) {
+      const checked = validateManagedServiceDescriptor(descriptor)
+      if (!checked.ok) transportProblems.push(...checked.errors.map((e) => e.message))
+    }
+    for (const name of result.value.contributes?.client?.streams ?? [])
+      if (!result.value.capabilities.streams?.some((s) => s.name === name))
+        transportProblems.push('client stream must be declared by its owner')
+    for (const values of [
+      result.value.capabilities.streams?.map((s) => s.name),
+      result.value.capabilities.managedServices?.map((s) => s.id),
+    ])
+      if (values && new Set(values).size !== values.length)
+        transportProblems.push('duplicate transport declaration')
     const problems = [
+      ...transportProblems,
       ...skinProblems(result.value),
       ...clientProblems(result.value, componentNamespace ?? result.value.id),
     ]

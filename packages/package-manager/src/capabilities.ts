@@ -8,7 +8,9 @@ export function manifestCapabilities(manifest: ExtensionManifest): string[] {
   const c = checked.value.capabilities
   return [
     ...(c.tools ? ['tools'] : []),
-    ...(['hooks', 'slots', 'resources', 'services', 'projections'] as const).filter((key) => c[key]?.length),
+    ...(
+      ['hooks', 'slots', 'resources', 'services', 'projections', 'streams', 'managedServices'] as const
+    ).filter((key) => c[key]?.length),
     ...(c.ui === true ? ['ui'] : []),
     ...(c.network?.length ? ['network'] : []),
     ...(c['network.publicRead'] === true ? ['network.publicRead'] : []),

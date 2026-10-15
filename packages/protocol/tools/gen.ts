@@ -449,6 +449,39 @@ function inlineImports(doc: JsonSchemaDoc, imports: ImportSpec[] | undefined): J
   return merged
 }
 
+// Imported declarations must also reach every generated manifest snapshot.
+for (const target of TARGETS) {
+  if (
+    target.schema === 'schema/extension-manifest.json' ||
+    target.imports?.some((entry) => entry.from === 'schema/extension-manifest.json')
+  ) {
+    target.imports ??= []
+    target.imports.push(
+      { from: 'schema/plugin-stream.json', defs: ['StreamDeclaration', 'StreamScope'] },
+      { from: 'schema/managed-service.json', defs: ['ManagedServiceDescriptor'] },
+    )
+    if (!target.imports.some((entry) => entry.from === 'schema/surface.json'))
+      target.imports.push({ from: 'schema/surface.json', defs: ['SurfaceArtifact', 'SurfaceServiceGrant'] })
+  }
+}
+TARGETS.push(
+  {
+    schema: 'schema/plugin-stream.json',
+    out: 'gen/ts/plugin-stream.ts',
+    module: 'PluginStreamSchema',
+    imports: [
+      { from: 'schema/tooldef.json', defs: ['ParametersSchema'] },
+      { from: 'schema/session-v1.json', defs: ['JsonValue'] },
+    ],
+  },
+  {
+    schema: 'schema/managed-service.json',
+    out: 'gen/ts/managed-service.ts',
+    module: 'ManagedServiceSchema',
+    imports: [{ from: 'schema/surface.json', defs: ['SurfaceArtifact', 'SurfaceServiceGrant'] }],
+  },
+)
+
 const check = process.argv.includes('--check')
 let dirty = 0
 for (const t of TARGETS) {

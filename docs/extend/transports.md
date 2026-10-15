@@ -1,0 +1,17 @@
+# Plugin streams and managed services
+
+[中文](transports.zh-CN.md) · [Extension guide](README.md)
+
+The optional `streams.v1` and `services.managed.v1` adapters provide authenticated streams and daemon-owned singleton processes. Existing session services and Surface HTTP routes keep their contracts. These capabilities must be explicitly reviewed and permitted by the profile ceiling; a pinned session cannot start an older global process.
+
+Declare streams in `capabilities.streams` and exact browser names in `contributes.client.streams`. A declaration selects one profile or session scope, one lane, directions and byte limits. Inbound frames require the control lane and an own effect `controlService`. The authority adapter must validate the current activation, immutable client roster, authenticated subject, scope, allowlist and live effect grant. Absence of this adapter refuses access. A source-authenticated Surface still needs a user subject and explicit service grants.
+
+Open with a same-origin JSON POST to `/_agnes/plugin-stream/open`, authenticated by the host adapter and its CSRF check. The response carries a single-use ticket, expiring after ten seconds. Connect to the fixed same-origin `/_agnes/plugin-stream` WebSocket and send `{ticket}` as the first text message within five seconds. Tickets never belong in URLs, logs or public configuration. Missing, null or foreign Origin is refused. Every socket carries one lane; reconnect always requires fresh admission.
+
+Binary frames contain a 20-byte network-order header: magic `AGS1`, version byte `1`, kind byte `1`, two zero reserved bytes, uint32 stream ID, uint32 sequence, uint32 payload size, then the payload in the same message. The complete frame is at most 1 MiB. JSON frames carry `version`, `streamId`, `sequence`, `kind: "json"` and `data`, and are at most 4 KiB. Sequence starts at zero independently in each direction; gaps permit media recovery, while replay and reordered input close the stream.
+
+Media drops under pressure and notifies the producer. Reliable events close with a reopen signal instead of silently dropping. Control has independent sockets, a 32 KiB buffer and 30-message/120 KiB per-second limit. Abort, revocation, expiry, handler failure and network close abort the handler and notify disconnect once. Plugins own resource cleanup and physical watchdogs; process termination is not proof that external effects settled.
+
+Declare immutable managed services in `capabilities.managedServices`. The daemon starts only reviewed artifacts, under an installation/profile/package/service lease independent of session generations. Profile scope is the default isolation boundary. Installation scope requires explicit administrator permission. Listeners bind loopback only; a fixed-port conflict fails immediately and automatic allocation retries at most three times. Health must echo the private incarnation, exact API version, bound listener names, storage readiness and installed shutdown handler. Neither a PID nor an unrelated HTTP 200 proves readiness.
+
+Disable revokes authority before shutdown. Cold upgrade drains and terminates the old process before starting the new revision; failure never restarts the old process or replays work. Unconfirmed shutdown stays visible in diagnostics. Runtime and storage adapters remain responsible for their owned resources; `OwnedStore` exposes only namespace-bound keys and transactions, never SQL or caller-selected paths.

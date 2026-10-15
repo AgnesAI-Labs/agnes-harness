@@ -11,7 +11,9 @@
         "tools": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["prefix"],
+          "required": [
+            "prefix"
+          ],
           "properties": {
             "prefix": {
               "type": "string",
@@ -51,7 +53,13 @@
         "resources": {
           "type": "array",
           "items": {
-            "enum": ["skill", "mcp", "kb", "datasource", "model"]
+            "enum": [
+              "skill",
+              "mcp",
+              "kb",
+              "datasource",
+              "model"
+            ]
           }
         },
         "network.publicRead": {
@@ -168,6 +176,22 @@
             "$ref": "projection.json#/$defs/ProjectionCapability"
           },
           "description": "Names must be distinct; validateExtensionManifest enforces name uniqueness even when descriptors differ."
+        },
+        "streams": {
+          "type": "array",
+          "items": {
+            "$ref": "plugin-stream.json#/$defs/StreamDeclaration"
+          },
+          "maxItems": 64,
+          "uniqueItems": true
+        },
+        "managedServices": {
+          "type": "array",
+          "items": {
+            "$ref": "managed-service.json#/$defs/ManagedServiceDescriptor"
+          },
+          "maxItems": 16,
+          "uniqueItems": true
         }
       }
     },
@@ -175,7 +199,11 @@
       "description": "One selectable UI skin. `css` is a package-relative stylesheet path; containment is enforced at load, and token-key membership in the generated whitelist is enforced by validateExtensionManifest rather than by this schema.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "name", "css"],
+      "required": [
+        "id",
+        "name",
+        "css"
+      ],
       "properties": {
         "id": {
           "description": "Skin id. Built-in theme words are reserved so a skin can never shadow light/dark/system/none.",
@@ -200,7 +228,10 @@
           "additionalProperties": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["light", "dark"],
+            "required": [
+              "light",
+              "dark"
+            ],
             "properties": {
               "light": {
                 "$ref": "#/$defs/SkinTokenValue"
@@ -224,7 +255,9 @@
       "description": "One in-page web client module (design WC1). `entry` is a package-relative ESM path that must export `apply`; the daemon serves the files from an immutable snapshot. Format checks only — not a security boundary. Declaring it requires capabilities.ui to contain 'client', and vice versa.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["entry"],
+      "required": [
+        "entry"
+      ],
       "properties": {
         "id": {
           "description": "Optional stable identity for this browser contribution. When omitted, the containing extension id is used.",
@@ -310,7 +343,10 @@
           }
         },
         "lifetime": {
-          "enum": ["profile", "session"],
+          "enum": [
+            "profile",
+            "session"
+          ],
           "description": "Defaults to session for legacy modules. Profile contributions always follow current activation, independently of the selected session."
         },
         "homeEntries": {
@@ -339,13 +375,30 @@
             "minLength": 1,
             "maxLength": 512
           }
+        },
+        "streams": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)*$"
+          },
+          "maxItems": 64,
+          "uniqueItems": true
         }
       }
     },
     "ExtensionManifest": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "version", "apiRange", "entry", "capabilities"],
+      "required": [
+        "id",
+        "version",
+        "apiRange",
+        "entry",
+        "capabilities"
+      ],
       "properties": {
         "id": {
           "type": "string",
@@ -367,7 +420,9 @@
           "type": "array",
           "uniqueItems": true,
           "items": {
-            "enum": ["skills"]
+            "enum": [
+              "skills"
+            ]
           },
           "description": "Live resource kinds consumed by this extension row. Resource refresh preserves pinned plugin code and reloads every declaring row."
         },
@@ -413,14 +468,19 @@
             "supports": {
               "type": "array",
               "items": {
-                "enum": ["in-process", "isolated"]
+                "enum": [
+                  "in-process",
+                  "isolated"
+                ]
               },
               "maxItems": 2,
               "minItems": 1,
               "uniqueItems": true
             }
           },
-          "required": ["supports"]
+          "required": [
+            "supports"
+          ]
         },
         "metadata": {
           "$ref": "#/$defs/PluginMetadata"
@@ -439,7 +499,13 @@
     "UiComponentDeclaration": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "propsSchema", "maxPropsBytes", "fallback", "accessibility"],
+      "required": [
+        "kind",
+        "propsSchema",
+        "maxPropsBytes",
+        "fallback",
+        "accessibility"
+      ],
       "properties": {
         "kind": {
           "type": "string",
@@ -473,7 +539,10 @@
         "accessibility": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["label", "keyboard"],
+          "required": [
+            "label",
+            "keyboard"
+          ],
           "properties": {
             "label": {
               "type": "string",
@@ -490,7 +559,12 @@
     "PluginMetadata": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["displayName", "summary", "description", "category"],
+      "required": [
+        "displayName",
+        "summary",
+        "description",
+        "category"
+      ],
       "properties": {
         "displayName": {
           "type": "string",
@@ -523,7 +597,9 @@
         "samplePrompt": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["en"],
+          "required": [
+            "en"
+          ],
           "properties": {
             "en": {
               "type": "string",
@@ -623,7 +699,10 @@
     "HomeContributionDeclaration": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "placement"],
+      "required": [
+        "id",
+        "placement"
+      ],
       "properties": {
         "id": {
           "type": "string",
@@ -631,14 +710,24 @@
           "maxLength": 128
         },
         "placement": {
-          "enum": ["primary", "secondary"]
+          "enum": [
+            "primary",
+            "secondary"
+          ]
         }
       }
     },
     "ExampleLaunchDeclaration": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "kind", "title", "bundle", "preset", "prompt"],
+      "required": [
+        "id",
+        "kind",
+        "title",
+        "bundle",
+        "preset",
+        "prompt"
+      ],
       "properties": {
         "id": {
           "type": "string",

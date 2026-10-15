@@ -284,6 +284,11 @@ export type {
 export type { JobSpec, JobStatus, Schedule } from '../gen/ts/jobs.js'
 export type { Lockfile, PackageLock } from '../gen/ts/lockfile.js'
 export type {
+  ManagedServiceDescriptor,
+  ManagedServiceReady,
+  ManagedServiceStatus,
+} from '../gen/ts/managed-service.js'
+export type {
   AiErrorCode,
   ContractManifest,
   ContractStamp,
@@ -398,6 +403,13 @@ export type {
   SkinReadParams,
   SkinReadResult,
 } from '../gen/ts/package-admin.js'
+export type {
+  PluginStreamClose,
+  PluginStreamGrant,
+  PluginStreamOpen,
+  StreamDeclaration,
+  StreamScope,
+} from '../gen/ts/plugin-stream.js'
 export type { PresetDoc } from '../gen/ts/preset.js'
 export type {
   ApprovalMode,
@@ -620,6 +632,7 @@ export {
   redactPluginConfig,
 } from './plugin-config-validation.js'
 export { type PluginFailureHelp, pluginFailureHelp } from './plugin-failure-help.js'
+export * from './plugin-transports.js'
 export { validateProjectionCapability, validateProjectionReadResult } from './projections.js'
 export * from './provider.js'
 export {

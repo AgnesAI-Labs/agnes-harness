@@ -59,6 +59,20 @@ describe('protocol src boundary', () => {
     expect(Object.keys(mod).sort()).toEqual(
       [
         'AGNES_ERRORS',
+        'PLUGIN_STREAM_PATH',
+        'PLUGIN_STREAM_OPEN_PATH',
+        'PLUGIN_STREAM_HEADER_BYTES',
+        'PLUGIN_STREAM_MAX_BYTES',
+        'validateStreamDeclaration',
+        'validatePluginStreamOpen',
+        'validatePluginStreamGrant',
+        'validatePluginStreamHello',
+        'validatePluginStreamJsonFrame',
+        'validateManagedServiceReady',
+        'validateManagedServiceDescriptor',
+        'encodePluginStreamBinary',
+        'decodePluginStreamBinary',
+
         'APPROVAL_REASONS',
         'AutoReviewConfig',
         'ToolReviewFact',
