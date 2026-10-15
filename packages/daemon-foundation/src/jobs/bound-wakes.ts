@@ -24,11 +24,12 @@ export class BoundWakeService {
     const wakeId = `wake:${createHash('sha256')
       .update(jcs({ owner: binding.producerOwner, bindingId: binding.bindingId, key: input.idempotencyKey }))
       .digest('hex')}`
+    const previous = this.deps.repo.get(wakeId)
     const now = this.deps.clock()
     this.deps.repo.insert({
       idempotencyKey: wakeId,
       sessionKey: binding.sessionId,
-      profileHash: this.deps.profileHash,
+      profileHash: previous?.profileHash ?? this.deps.profileHash,
       payload: {
         pluginNotification: {
           bindingId: binding.bindingId,

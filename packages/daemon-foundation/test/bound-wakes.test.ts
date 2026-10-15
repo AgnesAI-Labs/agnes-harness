@@ -36,11 +36,11 @@ describe('durable bound notifications', () => {
       if (credential !== 'producer' || bindingId !== binding.bindingId) throw rpcError('CAPABILITY_DENIED')
       return { binding, active }
     }
-    const make = () => {
+    const make = (profileHash = 'profile') => {
       const repo = new JobsRepo(tables.table('jobs'), () => now)
       return {
         repo,
-        service: new BoundWakeService({ repo, profileHash: 'profile', clock: () => now, resolve }),
+        service: new BoundWakeService({ repo, profileHash, clock: () => now, resolve }),
       }
     }
     let { repo, service } = make()
@@ -99,6 +99,8 @@ describe('durable bound notifications', () => {
       repo.settle(job.idempotencyKey, { status: 'completed', result: outcome })
       expect(committed.size).toBe(1)
       expect(await service.read(queued.wakeId, 'producer')).toMatchObject({ state: 'delivered' })
+      ;({ repo, service } = make('changed-profile-settings'))
+      expect(await service.enqueue(input, 'producer')).toMatchObject({ state: 'delivered' })
       active = false
       expect(await service.enqueue({ ...input, idempotencyKey: 'revoked' }, 'producer')).toMatchObject({
         state: 'refused',
