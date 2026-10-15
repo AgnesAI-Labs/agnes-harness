@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, lstatSync, mkdirSync, realpathSync, statSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { setImmediate } from 'node:timers/promises'
+import { setTimeout as delay, setImmediate } from 'node:timers/promises'
 import type { ExtensionManifest } from '@agnes/extension-api'
 import {
   type PackagePreview,
@@ -259,8 +259,11 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
     existsSync(directory) ? realpathSync(directory) : resolve(directory)
   // Small policy/lock files are change sentinels ONLY for joining a pending scan, never authority
   // for skipping byte verification. A scan itself always reads current policy and installed bytes.
-  const readBoundary = (directory: string): string =>
-    ['agnes-lock.json', 'plugin-capabilities.json', 'package-sources.json']
+  const readBoundary = (
+    directory: string,
+    files = ['agnes-lock.json', 'plugin-capabilities.json', 'package-sources.json'],
+  ): string =>
+    files
       .map((file) => {
         try {
           const stat = statSync(join(directory, file), { bigint: true })
@@ -704,13 +707,27 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
     },
     async runtimePluginSnapshots(profileDir) {
       const store = storeFor(profileDir)
+      // Package and runtime-snapshot writers publish a journal before moving any tree and replace
+      // the lock or runtime state when they commit; either explains a torn lock-free read.
+      const committed = () => readBoundary(profileDir, ['agnes-lock.json', '.agnes-runtime-snapshots.json'])
+      const transacting = () =>
+        ['.agnes-package-transaction.json', '.agnes-runtime-transaction.json'].some((file) =>
+          existsSync(join(profileDir, file)),
+        )
       for (let attempt = 0; attempt < 3; attempt++) {
-        const beforeLock = load(profileDir)
-        const before = readInventory(beforeLock, { ...store, ceiling: ceiling(beforeLock) })
-        const pins = listRuntimePinsStore(store)
-        const afterLock = load(profileDir)
-        const after = readInventory(afterLock, { ...store, ceiling: ceiling(afterLock) })
-        if (before.hash === after.hash) return runtimePluginSnapshotsFromPins(after, pins)
+        const boundary = committed()
+        try {
+          const beforeLock = load(profileDir)
+          const before = readInventory(beforeLock, { ...store, ceiling: ceiling(beforeLock) })
+          const pins = listRuntimePinsStore(store)
+          const afterLock = load(profileDir)
+          const after = readInventory(afterLock, { ...store, ceiling: ceiling(afterLock) })
+          if (before.hash === after.hash) return runtimePluginSnapshotsFromPins(after, pins)
+        } catch (error) {
+          // A failure no writer explains is tampering and stays fatal; otherwise let the writer finish.
+          if (!transacting() && committed() === boundary) throw error
+          await delay(50 * (attempt + 1))
+        }
       }
       throw new PackageError('E_LOCK_MISMATCH', 'runtime source changed during snapshot read', {
         detail: { reason: 'runtime-source-stale' },

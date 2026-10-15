@@ -118,6 +118,63 @@ it('lets a worker read validated active snapshots while a package effect owns th
   })
 })
 
+it.each([
+  'package update at old-moved',
+  'runtime pin at runtime-snapshot-moved',
+  'runtime GC at runtime-gc-moved',
+])('a lock-free snapshot read inside a %s resolves or reports runtime-source-stale', async (window) => {
+  await installTrusted()
+  const selected = await identity()
+  const request = {
+    pinId: 'candidate-v1',
+    operationId: 'candidate-v1',
+    packageId: id,
+    purpose: 'candidate' as const,
+    selector: {
+      kind: 'installed' as const,
+      expectedIntegrity: selected.integrity,
+      expectedTreeIntegrity: selected.treeIntegrity,
+    },
+  }
+  // The reader runs synchronously at the writer's checkpoint, as another process would interleave.
+  let read: Promise<unknown> | undefined
+  const readNow = () => {
+    read = manager()
+      .runtimePluginSnapshots(profile)
+      .then(
+        () => null,
+        (error: unknown) => error,
+      )
+  }
+  if (window === 'package update at old-moved') {
+    writeVersion('2.0.0', 'v2')
+    const next = await manager().inspect(profile, source)
+    await manager({ checkpoint: (point) => (point === 'old-moved' ? readNow() : undefined) }).update(
+      profile,
+      id,
+      source,
+      { expectedIntegrity: next.integrity },
+    )
+  } else if (window === 'runtime pin at runtime-snapshot-moved') {
+    await manager({
+      runtimeCheckpoint: (point) => (point === 'runtime-snapshot-moved' ? readNow() : undefined),
+    }).pinRuntimeSnapshot(profile, request)
+  } else {
+    const pin = await manager().pinRuntimeSnapshot(profile, request)
+    await manager().releaseRuntimePin(profile, {
+      pinId: pin.pinId,
+      expectedSnapshotId: pin.snapshot.snapshotId,
+    })
+    await manager({
+      runtimeCheckpoint: (point) => (point === 'runtime-gc-moved' ? readNow() : undefined),
+    }).collectRuntimeSnapshots(profile)
+  }
+  if (!read) throw new Error('the writer never reached its checkpoint')
+  const error = await read
+  // A legal writer is never reported as tampering; stale is the only transient refusal.
+  if (error) expect(error).toMatchObject({ detail: { reason: 'runtime-source-stale' } })
+})
+
 it('publishes a complete transaction journal before prepared without moving the package or lock', async () => {
   const before = readFileSync(join(profile, 'agnes-lock.json'), 'utf8')
   const points: string[] = []
@@ -361,6 +418,11 @@ it('fails closed and preserves unknown or damaged runtime directories', async ()
   rmSync(join(pin.snapshot.directory, 'tampered'))
   const unknown = join(dirname(pin.snapshot.directory), 'unknown-directory')
   mkdirSync(unknown)
+  // With no writer transaction in progress the lock-free reader stays fail-closed too.
+  await expect(m.runtimePluginSnapshots(profile)).rejects.toMatchObject({
+    code: 'E_PACKAGE_INTEGRITY',
+    detail: { reason: 'unknown-runtime-directory' },
+  })
   await expect(m.collectRuntimeSnapshots(profile)).rejects.toMatchObject({
     code: 'E_PACKAGE_INTEGRITY',
     detail: { reason: 'unknown-runtime-directory' },
