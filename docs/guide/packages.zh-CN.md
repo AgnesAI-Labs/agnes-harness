@@ -19,7 +19,7 @@ agh plugins add https://example.com/hello-tool.zip
 
 命令显示来源、内容摘要、能力哈希、能力范围、警告与阻断项。确认 `plugins add` 后安装、信任并启用核对过的确切版本。已明确授权的脚本可用 `--yes`；未确认的非交互调用会报出原因，并提示使用 `--yes`。旧的 `agh install` 仍保持未信任、停用。`agh plugins trust <id>` 自动读取已安装版本的哈希供确认，`agh plugins enable <id>` 启用前再次展示能力。
 
-管理页的“从来源安装”支持本地路径、Git URL 和归档 HTTPS 地址。本地路径指向 daemon 所在机器。`file:` 接受绝对路径、daemon 工作区外的文件夹、相对文件夹、`.tgz`/`.tar.gz`/`.tar` 与 ZIP。显式的相对 `file:` 仍从 daemon 工作区解析；CLI 裸路径从 CLI 当前目录解析。来源不能是符号链接。归档可直接包含包，或用单个目录包住它；越界路径、链接、特殊文件与过大的归档会被拒绝。HTTPS 下载不跟随重定向、不接受 URL 凭据。
+管理页的“从来源安装”支持本地路径、Git URL 和归档 HTTPS 地址。本地路径指向 daemon 所在机器。`file:` 接受绝对路径、daemon 工作区外的文件夹、相对文件夹、`.tgz`/`.tar.gz`/`.tar` 与 ZIP。显式的相对 `file:` 仍从 daemon 工作区解析；CLI 裸路径从 CLI 当前目录解析。来源不能是符号链接。归档可直接包含包，或用单个目录包住它；越界路径、链接、特殊文件与过大的归档会被拒绝。只有 npm 包可以包含 `node_modules`、`.git` 或 `fixtures/out`；含有这些目录的归档、URL 或 Git 内容会以原因 `excluded-directory` 被拒绝（文件夹来源会跳过它们），依赖请用 `agh plugins pack` 打包分享。HTTPS 下载不跟随重定向、不接受 URL 凭据。
 
 Git URL 可省略提交，或用 `#` 指定分支/标签。检查时固定提交，安装时校验预览内容摘要。Git 仓库必须包含可安装的插件入口与运行产物；获取过程不执行安装脚本。
 

@@ -67,6 +67,7 @@ const FATAL_INSPECTION_REASONS: ReadonlySet<string> = new Set([
   'source-identity',
   'adapter-metadata',
   'adapter-integrity',
+  'excluded-directory',
 ])
 /**
  * One classification for "this package's own contents are unusable": a PackageError raised by static

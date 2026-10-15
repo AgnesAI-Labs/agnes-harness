@@ -157,7 +157,14 @@ export function inspectVerifiedTree(
     (pkg.license ?? 'UNLICENSED') !== (fetched.license ?? 'UNLICENSED')
   )
     invalid('adapter-metadata')
-  if (input.source.type !== 'npm' && fetched.integrity !== treeIntegrity) invalid('adapter-integrity')
+  // Non-npm fetch digests skip node_modules, .git and fixtures/out, so a tree carrying them can
+  // never verify; say so instead of blaming the adapter. npm keeps its own registry digest.
+  if (input.source.type !== 'npm' && fetched.integrity !== treeIntegrity) {
+    if (fetched.integrity !== hashDirectory(input.dir)) invalid('adapter-integrity')
+    throw new PackageError('E_EXT_LOAD', 'only npm packages may contain node_modules, .git or fixtures/out', {
+      detail: { reason: 'excluded-directory' },
+    })
+  }
   const agnes = pkg.agnes ?? {}
   if (
     !agnes ||

@@ -26,6 +26,7 @@ import {
   readLock,
   writeLock,
 } from '../src/index.js'
+import { zip } from './fixtures/document-reader.js'
 
 const purpose = {
   displayName: 'File search',
@@ -403,7 +404,29 @@ it.each(['version', 'dependencies', 'integrity', 'license'] as const)(
     }
     await expect(manager({ sourceAdapters: [adapter] }).inspect(profile, source)).rejects.toMatchObject({
       code: 'E_PACKAGE_STATE',
+      ...(field === 'integrity' ? { detail: { reason: 'adapter-integrity' } } : {}),
     })
+    clean()
+  },
+)
+it.each([false, true])(
+  'refuses an archive carrying node_modules for that reason (carries: %s)',
+  async (carries) => {
+    // Non-npm fetch digests skip node_modules, .git and fixtures/out, so such a tree can never verify;
+    // that is not an adapter fault.
+    const files = ['package.json', 'index.ts'].map((name) => ({
+      name,
+      data: readFileSync(join(sourceDir, name)),
+    }))
+    if (carries) files.push({ name: 'node_modules/dep/index.js', data: Buffer.from('module.exports = 1\n') })
+    writeFileSync(join(root, 'candidate.zip'), zip(files))
+    const inspected = manager().inspect(profile, parseSource('file:./candidate.zip'))
+    if (carries)
+      await expect(inspected).rejects.toMatchObject({
+        code: 'E_PACKAGE_STATE',
+        detail: { reason: 'excluded-directory' },
+      })
+    else await expect(inspected).resolves.toMatchObject({ id: 'acme/pkg-a' })
     clean()
   },
 )
