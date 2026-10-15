@@ -12,9 +12,15 @@ const listen = (target: EventTarget, type: string, handler: (event: Event) => vo
   return () => target.removeEventListener(type, handler)
 }
 
-/** The page is going away (or entering the back/forward cache): release what must not outlive it. */
+/** A terminal navigation releases the app; BFCache freezes it for a later restore. */
 export function onPageHide(handler: () => void): void {
-  window.addEventListener('pagehide', handler, { once: true })
+  const finish = (event: PageTransitionEvent): void => {
+    if (event.persisted) return
+    window.removeEventListener('pagehide', finish)
+    handler()
+  }
+  // A persisted event must neither tear down the app nor consume the eventual teardown listener.
+  window.addEventListener('pagehide', finish)
 }
 
 /** The window regained focus. */
