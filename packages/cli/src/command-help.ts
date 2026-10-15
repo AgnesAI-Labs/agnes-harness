@@ -1,4 +1,5 @@
 import { usage } from './args.js'
+import { BATCH_USAGE } from './commands/batch.js'
 import { RUN_USAGE } from './commands/run.js'
 import type { Command } from './types.js'
 
@@ -10,6 +11,8 @@ export function commandHelp(command?: Command): string {
       return 'Usage: agh home info [--json]\nInspect the versioned home without writes. AGH_HOME selects the home.'
     case 'app-server':
       return 'Usage: agh app-server --stdio [--home <dir>] [--profile <name>] | schema --out <dir>\nAttach JSONL to the existing local daemon, or export the versioned protocol without starting one.'
+    case 'batch':
+      return BATCH_USAGE
     case 'run':
       return RUN_USAGE
     case 'diagnostics':

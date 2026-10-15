@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto'
 import type { PluginContextFacets, ServiceCapability, ServiceContext, ServiceDef } from '@agnes/extension-api'
-import type { JsonValue } from '@agnes/protocol'
+import { type JsonValue, jcs } from '@agnes/protocol'
 import { BatchError } from './contracts.js'
 import { validateSpec } from './schema.js'
 import type { BatchService } from './service.js'
@@ -29,11 +30,11 @@ function capability(verb: (typeof verbs)[number]): ServiceCapability {
           : verb === 'export'
             ? { id, out: { type: 'string', minLength: 1, maxLength: 4096 } }
             : { id }
-  return {
+  const common = {
     name: `batch.${verb}`,
-    kind: queries.has(verb) ? 'query' : 'effect',
+    scope: 'profile' as const,
     inputSchema: {
-      type: 'object',
+      type: 'object' as const,
       properties,
       required:
         verb === 'start'
@@ -43,19 +44,84 @@ function capability(verb: (typeof verbs)[number]): ServiceCapability {
             : verb === 'export'
               ? ['id', 'out']
               : ['id'],
-      additionalProperties: false,
+      additionalProperties: false as const,
     },
     outputSchema: {},
     timeoutMs: 30_000,
     maxResultBytes: 128 * 1024,
+  }
+  if (queries.has(verb)) return { ...common, kind: 'query' }
+  return {
+    ...common,
+    kind: 'effect',
+    ...(verb === 'cancel' ? { priority: 'urgent' as const } : {}),
+    effectPolicy: {
+      isDestructive: verb !== 'cancel',
+      isOpenWorld: true,
+      replay: 'never',
+      requiresApproval: verb === 'cancel' ? 'never' : 'always',
+      approvalScopes: [],
+    },
   }
 }
 export const BATCH_SERVICES = verbs.map(capability)
 function definition(verb: (typeof verbs)[number], connector: BatchConnector): ServiceDef {
   return {
     ...capability(verb),
+    ...(!queries.has(verb)
+      ? {
+          async prepare(input: JsonValue, context: ServiceContext) {
+            context.signal.throwIfAborted()
+            if (context.scope?.kind !== 'profile') throw new BatchError('E_BATCH_PROFILE_REQUIRED')
+            if (!input || typeof input !== 'object' || Array.isArray(input))
+              throw new BatchError('E_BATCH_REQUEST')
+            const binding = (await connector(context)).reviewBinding()
+            const spec = verb === 'start' ? validateSpec(input.spec) : undefined
+            const prepared = spec ? { ...input, spec } : input
+            return {
+              input: JSON.parse(JSON.stringify(prepared)) as JsonValue,
+              presentation: {
+                action: `batch.${verb}`,
+                workspaceRoot: binding.workspaceRoot,
+                id: String(input.id),
+                ...(spec
+                  ? {
+                      dir: String(input.dir),
+                      budget: spec.budget,
+                      concurrency: spec.concurrency,
+                      promptPreview: spec.prompt.slice(0, 512).replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, ' '),
+                      inputDigest: createHash('sha256')
+                        .update(jcs(prepared as unknown as JsonValue))
+                        .digest('hex'),
+                    }
+                  : {}),
+                ...(verb === 'export' ? { out: String(input.out) } : {}),
+              },
+            }
+          },
+        }
+      : {}),
     async handler(input, context) {
-      const service = await connector(context)
+      context.signal.throwIfAborted()
+      if (context.scope?.kind !== 'profile') throw new BatchError('E_BATCH_PROFILE_REQUIRED')
+      if (
+        !queries.has(verb) &&
+        (!context.admission ||
+          (verb !== 'cancel' && !context.admission.approval) ||
+          jcs(context.admission.prepared.input) !== jcs(input))
+      )
+        throw new BatchError('E_BATCH_NATIVE_ADMISSION_REQUIRED')
+      const service = (await connector(context)).withSignal(context.signal)
+      if (!queries.has(verb)) {
+        const presentation = context.admission!.prepared.presentation
+        if (
+          !presentation ||
+          typeof presentation !== 'object' ||
+          Array.isArray(presentation) ||
+          presentation.workspaceRoot !== service.reviewBinding().workspaceRoot
+        )
+          throw new BatchError('E_BATCH_BINDING_CHANGED')
+      }
       if (!input || typeof input !== 'object' || Array.isArray(input)) throw new BatchError('E_BATCH_REQUEST')
       // The Host validates the strict input schema before calling this handler.
       let output: unknown

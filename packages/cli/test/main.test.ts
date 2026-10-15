@@ -221,6 +221,7 @@ describe('main', () => {
       'plugins',
       'dev',
       'run',
+      'batch',
       'tools',
       'package',
       'install',
@@ -288,8 +289,10 @@ describe('main', () => {
     }
   }, 30_000)
 
-  it('rejects malformed computer-use lifecycle arguments before booting a daemon', async () => {
+  it('rejects malformed lifecycle arguments before booting a daemon', async () => {
     for (const argv of [
+      ['batch', 'start'],
+      ['batch', 'status', 'invalid'],
       ['computer-use', 'status', '--continue'],
       ['computer-use', 'status', '--profile', 'other'],
       ['computer-use', 'status', '--raw'],

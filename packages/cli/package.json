@@ -57,7 +57,8 @@
     "@agnes/web": "workspace:*",
     "@agnes/package-manager": "workspace:*",
     "@agnes/observability": "workspace:*",
-    "@agnes/error-sanitization": "workspace:*"
+    "@agnes/error-sanitization": "workspace:*",
+    "@agnes/host-extensions": "workspace:*"
   },
   "devDependencies": {
     "@agnes/extension-api": "workspace:*",

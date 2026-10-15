@@ -13,7 +13,7 @@ import {
   renderExport,
   snapshotFolder,
 } from '../src/index.js'
-import { FakeExecutor, id, inputs, MemoryStore, reference, spec } from './fakes.js'
+import { FakeExecutor, id, inputs, reference, spec, testStore } from './fakes.js'
 
 const roots: string[] = []
 const temp = async () => {
@@ -123,7 +123,7 @@ describe('input snapshots and bounded data exports', () => {
   it('exports inert CSV/Markdown and JSON data with byte ceilings; rejects concurrent publication and existing targets', async () => {
     const { realpath } = await import('node:fs/promises')
     const root = await realpath(await temp()),
-      repo = new Repository(new MemoryStore()),
+      repo = new Repository(testStore()),
       executor = new FakeExecutor()
     executor.reply = () => ({
       state: 'completed',
@@ -161,7 +161,7 @@ describe('input snapshots and bounded data exports', () => {
     })
   })
   it('does not export unsettled or unknown state', async () => {
-    const repo = new Repository(new MemoryStore())
+    const repo = new Repository(testStore())
     await repo.begin(id, spec, inputs, 1)
     await expect(renderExport(repo, id)).rejects.toMatchObject({ code: 'E_BATCH_NOT_TERMINAL' })
   })

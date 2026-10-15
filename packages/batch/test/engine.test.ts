@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { BatchEngine, Repository } from '../src/index.js'
-import { FakeExecutor, id, inputs, MemoryStore, reference, spec } from './fakes.js'
+import { FakeExecutor, id, inputs, reference, spec, testStore } from './fakes.js'
 
 const harness = () => {
-  const store = new MemoryStore(),
+  const store = testStore(),
     executor = new FakeExecutor(),
     repo = new Repository(store)
   let now = 1000
@@ -147,7 +147,7 @@ describe('durable batch business state', () => {
     await expect(h.engine.begin(id, spec, inputs)).rejects.toMatchObject({
       code: 'E_BATCH_AUTHORITY_UNAVAILABLE',
     })
-    expect(h.store.rows.size).toBe(0)
+    expect((await h.store.scan({ prefix: '', limit: 1 })).rows).toHaveLength(0)
   })
   it('refuses forged receipt binding and over-ceiling billing without settling success', async () => {
     for (const forged of [

@@ -38,10 +38,19 @@ CLI 模块只校验选项、读取有界提示词和 Schema 文件并调用后�
 既有 `agh run --batch` 流程保持独立。
 
 `startManagedBatch(runtime, ports)` 已消费真实受管理服务初始化、生命周期和事务型
-`OwnedStore` 接口；单例由通用 supervisor 持有，批插件不另建单例或监听端口。驱动先遍历
+`ManagedOwnedStore` 接口；单例由通用 supervisor 持有，批插件不另建单例或监听端口。驱动先遍历
 manifest 再修改状态，避免写入使分页 cursor 失效。disable/upgrade 先关闭接纳再取消；
 截止时间内无法获得结算回执时返回 unknown 并保留预算预留。进程退出保留耐久状态用于恢复。
 原生受限 child/job 派发、工作区与附件 scope 仍须由可信运行时注入。
 
 输入枚举保留 `agh-batch` 作为结果目录，不再将其中的旧导出作为输入。schema 支持
 `uniqueItems: false`，不执行两两比较；true 仍拒绝。
+
+服务已接入真实 profile query/effect：start、resume、export 由原生 AR1 审批接纳，cancel
+走 urgent lane，不获得新的执行权限。prepare 的规范输入绑定进 subject digest，handler 验证
+原生 admission 与对应输入。query 无需创建会话。profile 的小容量 store 不替代受管理服务 store。
+
+`agh batch` 入口通过 Node SDK 的 scoped service 调用。待批准或 running 回执返回退出码 3，
+unknown/refused 返回 1；CLI 不自行批准、不重放 unknown。批准后，使用输出的 batch id 加
+`--id` 重复同一 start；显式指定了 `--operation` 时也沿用原值。原生受限 child/job 连接器
+尚未安装时，入口明确拒绝服务调用。

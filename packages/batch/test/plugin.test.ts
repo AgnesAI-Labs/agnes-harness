@@ -16,7 +16,7 @@ import {
   Repository,
   startManagedBatch,
 } from '../src/index.js'
-import { FakeExecutor, id, inputs, MemoryStore, spec } from './fakes.js'
+import { FakeExecutor, id, inputs, spec, testStore } from './fakes.js'
 
 describe('batch plugin connector', () => {
   it('captures two real inputs and lets a recovered driver settle the immutable snapshots', async () => {
@@ -180,7 +180,7 @@ describe('batch plugin connector', () => {
   it.each([false, true])(
     'settles disable billing or preserves unknown at deadline (hung=%s)',
     async (hung) => {
-      const store = new MemoryStore(),
+      const store = testStore(),
         executor = new FakeExecutor()
       executor.reply = () => ({ state: 'running', charged: 0.2 })
       const engine = new BatchEngine(new Repository(store), executor)

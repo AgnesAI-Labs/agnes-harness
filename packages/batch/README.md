@@ -8,12 +8,15 @@ Host-enforced confined child/job execution. The package is not installed as a ru
 The test executor is synthetic and must never be registered as production authority.
 
 `createBatchPlugin(connector)` registers the declared `batch.*` query/effect services through the
-public plugin API. The connector resolves Host-admitted context to a bound `BatchService`; request
+public profile service API. Start, resume and export require native AR1 approval; cancel is an
+urgent effect which grants no new execution. Preparation binds canonical arguments into the native
+subject digest, and handlers require the admitted input and approval. Queries need no session.
+The connector resolves Host-admitted context to a bound `BatchService`; request
 data cannot select its owner or workspace. The default `batchPlugin` entry refuses installation
 with `E_BATCH_MANAGED_CONNECTOR_REQUIRED` until that runtime integration is supplied.
 
 `startManagedBatch(runtime, ports)` consumes the real `ManagedServiceInit`, `ManagedServiceRuntime`
-and transactional `OwnedStore` contracts. The supervisor supplies one profile-bound instance; batch
+and transactional `ManagedOwnedStore` contracts. The supervisor supplies one profile-bound instance; batch
 creates no separate singleton or listener. The driver serializes ticks, discovers manifests before
 mutating versioned store cursors, and registers shutdown before readiness. Disable/upgrade closes
 admission and cancels active work; a missed shutdown deadline returns unknown with reservations
@@ -61,6 +64,10 @@ An exclusive directory claim refuses existing targets and racing exporters. `com
 last; an interrupted directory without that file is incomplete and cannot be silently overwritten.
 The default total export ceiling is 64 MiB. Exports do not execute or trust model-authored content.
 
-The CLI command module is a transport client: it validates options, reads bounded prompt/schema files,
-and delegates enumeration, execution and export to the bound backend. `agh run --batch` remains a
+The `agh batch` dispatcher uses the Node SDK profile-service transport: it validates options, reads bounded prompt/schema files,
+and delegates enumeration, execution and export to the bound backend. Native approval-required or
+running receipts return exit code 3 with the operation and batch ids; unknown/refused receipts return
+1. After answering the native approval, repeat the exact start with `--id <batchId>` (and the same
+`--operation <operationId>` when explicitly selected). The CLI never answers approvals or retries
+unknown effects. A missing installed runtime connector fails through service admission. `agh run --batch` remains a
 separate supported headless workflow.

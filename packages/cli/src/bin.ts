@@ -383,6 +383,15 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
   let p: ReturnType<typeof parseArgs>
   try {
     p = parseArgs(argv)
+    if (p.command === 'batch' && !p.help) {
+      const { parseBatchArgs } = await import('./commands/batch.js')
+      const batch = parseBatchArgs(p.rest)
+      p = {
+        ...p,
+        ...(batch.cwd ? { cwd: batch.cwd } : {}),
+        ...(batch.profile ? { profile: batch.profile } : {}),
+      }
+    }
   } catch (e) {
     io.stderr.write(`${(e as Error).message}; run agh --help for usage\n`)
     return ExitCode.USAGE
@@ -454,6 +463,16 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     ...boot,
   }
   try {
+    if (p.command === 'batch') {
+      const { runBatchCli } = await import('./commands/batch-runtime.js')
+      return await runBatchCli(p.rest, io, (input) =>
+        bootDefault(
+          { ...p, cwd: input.cwd, ...(input.profile ? { profile: input.profile } : {}) },
+          { ...deps, signal: input.signal },
+          { useEmbedded: !production },
+        ),
+      )
+    }
     if (p.command === 'run') {
       const { runCommand } = await import('./commands/run.js')
       const { bootHeadless } = await import('./boot/headless.js')

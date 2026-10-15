@@ -153,7 +153,8 @@
     "@agnes/cli-tui",
     "@agnes/package-manager",
     "@agnes/observability",
-    "@agnes/error-sanitization"
+    "@agnes/error-sanitization",
+    "@agnes/host-extensions"
   ],
   "@agnes/channels": ["@agnes/protocol", "@agnes/sdk", "@agnes/system-node", "@agnes/daemon"],
   "@agnes/bridges": ["@agnes/protocol", "@agnes/sdk"],

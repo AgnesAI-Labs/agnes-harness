@@ -1,48 +1,27 @@
+import { DatabaseSync } from 'node:sqlite'
+import { createOwnedStore } from '@agnes/sdk/owned-store'
+import { afterEach } from 'vitest'
 import {
   BatchError,
   type Dispatch,
   type Executor,
   type Input,
   type InputReference,
-  type Json,
   type Receipt,
   type Spec,
   type Store,
-  type Stored,
-  type StoreTransaction,
 } from '../src/index.js'
 
-/** Transactional test adapter, deliberately not installed as a production authority provider. */
-export class MemoryStore implements Store {
-  rows = new Map<string, Stored>()
-  revision = 0
-  async scan(input: { prefix: string; limit: number; cursor?: string }) {
-    const rows = [...this.rows]
-      .filter(([key]) => key.startsWith(input.prefix) && (!input.cursor || key > input.cursor))
-      .sort(([a], [b]) => (a < b ? -1 : 1))
-    const selected = rows.slice(0, input.limit)
-    return {
-      rows: selected.map(([key, row]) => ({ key, ...structuredClone(row) })),
-      ...(rows.length > input.limit ? { nextCursor: selected.at(-1)![0] } : {}),
-    }
-  }
-  async transaction<T>(fn: (tx: StoreTransaction) => T): Promise<T> {
-    const next = structuredClone(this.rows)
-    const result = fn({
-      get: (key) => structuredClone(next.get(key)),
-      remove: (key, revision) => {
-        if (next.get(key)?.revision !== revision) throw new Error('CAS conflict')
-        next.delete(key)
-      },
-      put: (key, value, revision) => {
-        if ((next.get(key)?.revision ?? null) !== revision) throw new Error('CAS conflict')
-        if (Buffer.byteLength(JSON.stringify(value)) > 128 * 1024) throw new Error('value limit')
-        next.set(key, { value: structuredClone(value), revision: String(++this.revision) })
-      },
-    })
-    this.rows = next
-    return structuredClone(result)
-  }
+const databases = new Set<DatabaseSync>()
+afterEach(() => {
+  for (const database of databases) database.close()
+  databases.clear()
+})
+/** Actual SDK store in an isolated SQLite namespace; no production state or processes. */
+export function testStore(): Store {
+  const database = new DatabaseSync(':memory:')
+  databases.add(database)
+  return createOwnedStore(database, 'profile:unit/batch')
 }
 export const spec: Spec = {
   prompt: 'Count {{name}}',

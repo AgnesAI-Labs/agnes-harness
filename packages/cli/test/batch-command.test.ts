@@ -1,8 +1,12 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createClient, memoryJournal } from '@agnes/sdk'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { parseArgs } from '../src/args.js'
+import { commandHelp } from '../src/command-help.js'
 import { batchCommand, parseBatchArgs } from '../src/commands/batch.js'
+import { scopedBatchClient } from '../src/commands/batch-client.js'
 
 const id = 'b123456abcdef'
 const dirs: string[] = []
@@ -121,6 +125,58 @@ describe('batch thin client', () => {
         }),
       ).rejects.toThrow('cursor')
     }
+  })
+  it('dispatches batch grammar and help without treating it as a chat prompt', () => {
+    const rest = ['start', 'items', '--prompt', 'x', '--budget', '1']
+    expect(parseArgs(['batch', ...rest])).toMatchObject({ command: 'batch', rest })
+    expect(parseArgs(['batch', '--help'])).toMatchObject({ command: 'batch', help: true })
+    expect(commandHelp('batch')).toContain('agh batch start')
+  })
+  it('uses the actual SDK scoped facade and preserves native approval and unknown receipts', async () => {
+    const client = createClient({
+      transport: { kind: 'unix', path: '/synthetic-unused.sock' },
+      auth: { kind: 'local' },
+      journal: memoryJournal(),
+    })
+    const rpc = vi.spyOn(client, 'call')
+    const close = vi.fn(async () => {
+      await client.close()
+    })
+    const outputs: string[] = []
+    const io = {
+      cwd: '/workspace',
+      write: (text: string) => {
+        outputs.push(text)
+      },
+      connect: async () => scopedBatchClient(client, close),
+    }
+    rpc.mockResolvedValueOnce({ state: 'approval-required', operationId: `batch.start:${id}` })
+    const start = ['start', 'items', '--id', id, '--prompt', 'x', '--budget', '1', '--json']
+    expect(await batchCommand(start, io)).toBe(3)
+    expect(JSON.parse(outputs[0]!)).toMatchObject({ batchId: id, operation: { state: 'approval-required' } })
+    expect(rpc.mock.calls[0]).toMatchObject([
+      '_agnes/v1/extension.callScoped',
+      {
+        service: 'batch.start',
+        input: { id },
+        operationId: `batch.start:${id}`,
+      },
+    ])
+    const extension = (rpc.mock.calls[0]![1] as { extension: string }).extension
+    expect(extension).toMatch(/^plugin\/[a-f0-9]{16}$/u)
+    // Reuse the prepared business id and operation; never answer approval in the CLI.
+    rpc.mockResolvedValueOnce({
+      state: 'completed',
+      operationId: `batch.start:${id}`,
+      output: { id, status: 'running' },
+    })
+    expect(await batchCommand(start, io)).toBe(0)
+    expect(rpc.mock.calls[1]).toEqual(rpc.mock.calls[0])
+    rpc.mockResolvedValueOnce({ state: 'unknown', operationId: 'resume:one', code: 'OUTCOME_UNKNOWN' })
+    expect(await batchCommand(['resume', id, '--operation', 'resume:one'], io)).toBe(1)
+    expect(rpc.mock.calls).toHaveLength(3)
+    expect(close).toHaveBeenCalledTimes(3)
+    expect(rpc.mock.calls.flat()).not.toContain('_agnes/v1/profile.decisions.answer')
   })
   it('reads bounded prompt/schema files before connecting and renders terminal controls inert', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'agh-batch-cli-unit-'))

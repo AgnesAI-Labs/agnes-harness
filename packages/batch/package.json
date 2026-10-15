@@ -64,7 +64,15 @@
               },
               "outputSchema": {},
               "timeoutMs": 30000,
-              "maxResultBytes": 131072
+              "maxResultBytes": 131072,
+              "scope": "profile",
+              "effectPolicy": {
+                "isDestructive": true,
+                "isOpenWorld": true,
+                "replay": "never",
+                "requiresApproval": "always",
+                "approvalScopes": []
+              }
             },
             {
               "name": "batch.status",
@@ -84,7 +92,8 @@
               },
               "outputSchema": {},
               "timeoutMs": 30000,
-              "maxResultBytes": 131072
+              "maxResultBytes": 131072,
+              "scope": "profile"
             },
             {
               "name": "batch.results",
@@ -113,7 +122,8 @@
               },
               "outputSchema": {},
               "timeoutMs": 30000,
-              "maxResultBytes": 131072
+              "maxResultBytes": 131072,
+              "scope": "profile"
             },
             {
               "name": "batch.cancel",
@@ -133,7 +143,16 @@
               },
               "outputSchema": {},
               "timeoutMs": 30000,
-              "maxResultBytes": 131072
+              "maxResultBytes": 131072,
+              "scope": "profile",
+              "priority": "urgent",
+              "effectPolicy": {
+                "isDestructive": false,
+                "isOpenWorld": true,
+                "replay": "never",
+                "requiresApproval": "never",
+                "approvalScopes": []
+              }
             },
             {
               "name": "batch.resume",
@@ -153,7 +172,15 @@
               },
               "outputSchema": {},
               "timeoutMs": 30000,
-              "maxResultBytes": 131072
+              "maxResultBytes": 131072,
+              "scope": "profile",
+              "effectPolicy": {
+                "isDestructive": true,
+                "isOpenWorld": true,
+                "replay": "never",
+                "requiresApproval": "always",
+                "approvalScopes": []
+              }
             },
             {
               "name": "batch.list",
@@ -171,7 +198,8 @@
               },
               "outputSchema": {},
               "timeoutMs": 30000,
-              "maxResultBytes": 131072
+              "maxResultBytes": 131072,
+              "scope": "profile"
             },
             {
               "name": "batch.export",
@@ -197,7 +225,15 @@
               },
               "outputSchema": {},
               "timeoutMs": 30000,
-              "maxResultBytes": 131072
+              "maxResultBytes": 131072,
+              "scope": "profile",
+              "effectPolicy": {
+                "isDestructive": true,
+                "isOpenWorld": true,
+                "replay": "never",
+                "requiresApproval": "always",
+                "approvalScopes": []
+              }
             }
           ]
         },
@@ -212,6 +248,8 @@
   },
   "devDependencies": {
     "@agnes/base": "workspace:*",
-    "@agnes/sdk": "workspace:*"
+    "@agnes/sdk": "workspace:*",
+    "@agnes/core": "workspace:*",
+    "@agnes/host-extensions": "workspace:*"
   }
 }

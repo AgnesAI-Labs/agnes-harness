@@ -30,6 +30,13 @@ export type BatchBinding = {
 /** A narrow business service ready for an owner-bound, authority-enforcing runtime adapter. */
 export class BatchService {
   constructor(private readonly binding: BatchBinding) {}
+  /** Stable runtime binding displayed and revalidated by native effect preparation. */
+  reviewBinding(): { workspaceRoot: string } {
+    return { workspaceRoot: this.binding.workspaceRoot }
+  }
+  withSignal(signal: AbortSignal): BatchService {
+    return new BatchService({ ...this.binding, signal: AbortSignal.any([this.binding.signal, signal]) })
+  }
   async start(input: { id: string; dir: string; spec: Spec; extensions?: readonly string[] }) {
     this.binding.signal.throwIfAborted()
     checkId(input.id)
@@ -96,6 +103,7 @@ export class BatchService {
     return batchStatus(await this.binding.engine.cancel(id))
   }
   async resume(id: string) {
+    this.binding.signal.throwIfAborted()
     return batchStatus(await this.binding.engine.resume(id))
   }
   /** Called by the managed runtime's wake/driver, not by an untrusted child. */

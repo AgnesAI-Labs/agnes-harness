@@ -246,6 +246,12 @@ importers:
       '@agnes/base':
         specifier: workspace:*
         version: link:../base
+      '@agnes/core':
+        specifier: workspace:*
+        version: link:../core
+      '@agnes/host-extensions':
+        specifier: workspace:*
+        version: link:../host-extensions
       '@agnes/sdk':
         specifier: workspace:*
         version: link:../sdk
@@ -308,6 +314,9 @@ importers:
       '@agnes/host':
         specifier: workspace:*
         version: link:../host
+      '@agnes/host-extensions':
+        specifier: workspace:*
+        version: link:../host-extensions
       '@agnes/observability':
         specifier: workspace:*
         version: link:../observability

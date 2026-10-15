@@ -6,7 +6,9 @@
   },
   "include": ["test/**/*.ts"],
   "references": [
-    { "path": "../sdk" },
+    {
+      "path": "../sdk"
+    },
     {
       "path": "."
     },
@@ -15,6 +17,15 @@
     },
     {
       "path": "../base/tsconfig.testkit.json"
+    },
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../core/tsconfig.testkit.json"
+    },
+    {
+      "path": "../host-extensions"
     }
   ]
 }

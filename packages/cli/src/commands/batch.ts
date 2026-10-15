@@ -10,6 +10,8 @@ export const BATCH_USAGE = [
   '  [--concurrency <1-8>] [--item-timeout <1-3600 sec>] [--ext txt,png] [--cwd <dir>] [--profile <name>]',
   'agh batch status <id> [--watch] | follow <id> | results <id> | resume <id> | cancel <id> | list',
   'agh batch export <id> --out <folder> [--json]',
+  'Effects accept --operation <id>; start also accepts --id <batchId> for an exact native-approval retry.',
+  'Approval-required or running native operations return exit code 3; unknown effects are never replayed.',
   'All commands accept --json, --cwd and --profile. Work continues in the backend after the CLI closes.',
 ].join('\n')
 type Verb = 'start' | 'status' | 'follow' | 'results' | 'resume' | 'cancel' | 'list' | 'export' | 'help'
@@ -34,6 +36,8 @@ const stringFlags = [
   'cwd',
   'profile',
   'out',
+  'id',
+  'operation',
 ]
 const idPattern = /^b[0-9a-f]{12}$/u
 export function parseBatchArgs(rest: readonly string[]): BatchArgs {
@@ -72,6 +76,14 @@ export function parseBatchArgs(rest: readonly string[]): BatchArgs {
     if (!Array.isArray(v) || v.length !== 1 || !v[0]) throw new UsageError(`duplicate or empty --${key}`)
     options[key] = v[0]
   }
+  if (options.id && (verb !== 'start' || !idPattern.test(options.id)))
+    throw new UsageError('--id requires start and a batch id')
+  if (
+    options.operation &&
+    (!['start', 'resume', 'cancel', 'export'].includes(verb) ||
+      !/^[A-Za-z0-9:._-]{1,128}$/u.test(options.operation))
+  )
+    throw new UsageError('invalid --operation')
   if (values.watch && verb !== 'status') throw new UsageError('--watch requires status')
   if (verb === 'start') {
     if (
@@ -85,7 +97,7 @@ export function parseBatchArgs(rest: readonly string[]): BatchArgs {
     whole(options['item-timeout'], 600, 1, 3600)
   } else {
     for (const key of Object.keys(options))
-      if (!['cwd', 'profile', ...(verb === 'export' ? ['out'] : [])].includes(key))
+      if (!['cwd', 'profile', 'operation', ...(verb === 'export' ? ['out'] : [])].includes(key))
         throw new UsageError(`--${key} requires start`)
     if (verb === 'export' && !options.out) throw new UsageError('--out is required')
   }
@@ -142,7 +154,7 @@ async function boundedFile(path: string): Promise<string> {
 }
 /** CLI transport only. The backend owns all enumeration, budgets, state and execution decisions. */
 export interface BatchClient {
-  call(verb: string, input: Record<string, unknown>): Promise<unknown>
+  call(verb: string, input: Record<string, unknown>, options?: { operationId?: string }): Promise<unknown>
   close(): Promise<void>
 }
 export type BatchIo = {
@@ -184,7 +196,7 @@ export async function batchCommand(rest: readonly string[], io: BatchIo): Promis
     if (extensions && (extensions.length > 32 || extensions.some((s) => !/^[a-z0-9]{1,10}$/u.test(s))))
       throw new UsageError('invalid --ext')
     payload = {
-      id: `b${randomBytes(6).toString('hex')}`,
+      id: o.id ?? `b${randomBytes(6).toString('hex')}`,
       dir: command.target,
       spec: {
         prompt,
@@ -206,8 +218,18 @@ export async function batchCommand(rest: readonly string[], io: BatchIo): Promis
     const cursors = new Set<string>()
     for (;;) {
       io.signal?.throwIfAborted()
-      const result = await client.call(command.verb === 'follow' ? 'status' : command.verb, payload)
+      const result = await client.call(
+        command.verb === 'follow' ? 'status' : command.verb,
+        payload,
+        command.options.operation ? { operationId: command.options.operation } : undefined,
+      )
       io.write(`${command.json ? JSON.stringify(result) : safe(JSON.stringify(result))}\n`)
+      if (result && typeof result === 'object' && 'operation' in result) {
+        const operation = result.operation
+        if (!operation || typeof operation !== 'object' || !('state' in operation))
+          throw new Error('Invalid batch operation response')
+        return ['approval-required', 'running'].includes(String(operation.state)) ? 3 : 1
+      }
       if (
         command.verb === 'list' &&
         result !== null &&

@@ -1,5 +1,5 @@
 /** Batch-owned contracts. Runtime adapters must enforce authority, not trust a model's claims. */
-import type { AttachmentScope, OwnedStore, OwnedStoreTxn } from '@agnes/extension-api'
+import type { AttachmentScope, ManagedOwnedStore, OwnedStoreTxn } from '@agnes/extension-api'
 import type { ArtifactRef, JsonValue as Json } from '@agnes/protocol'
 
 export type { JsonValue as Json } from '@agnes/protocol'
@@ -58,7 +58,7 @@ export type Manifest = {
   stop?: 'cancelled' | 'budget_exhausted' | 'failed'
 }
 /** Real managed-service store, bound by the runtime to this installation/profile/service. */
-export type Store = OwnedStore
+export type Store = ManagedOwnedStore
 export type StoreTransaction = OwnedStoreTxn
 export type Stored = NonNullable<ReturnType<OwnedStoreTxn['get']>>
 export type Dispatch = {
