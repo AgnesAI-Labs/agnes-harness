@@ -4,6 +4,7 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { mcpStablePrefix } from '@agnes/base'
 import { createTestHost } from '@agnes/host/testkit'
 import {
   activeRuntimePinId,
@@ -170,6 +171,7 @@ it('a conversation approves registration and calls the real stdio server on its 
       call('mcp_manage', { action: 'prepare', definition }),
       () => call('mcp_manage', { action: 'commit', proposalId }),
       say,
+      call('tool_describe', { name: `${mcpStablePrefix('fixture')}echo` }),
       (request) => {
         const tool = request.tools.find((t) => t.name.endsWith('_echo'))
         expect(tool).toBeDefined()

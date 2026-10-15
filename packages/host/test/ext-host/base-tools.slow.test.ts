@@ -237,6 +237,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       scripts: [
         say('Still working'),
         say('More work remains'),
+        callTool('tool_describe', { name: 'goal_update' }),
         callTool('goal_update', { status: 'blocked', reason: 'Need credentials' }),
         say('Waiting'),
         callTool('goal_update', { status: 'complete', reason: 'Validated result' }),
@@ -275,20 +276,25 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       expect(turns.filter((row) => (row.data as { reason: string }).reason === 'completed')).toHaveLength(2)
       await prompt('/goal resume')
       await run()
+      expect(
+        (await session.scan({ type: 'tool/result', toSeq: session.lastSeq })).filter(
+          (row) => (row.data as { isError?: boolean }).isError,
+        ),
+      ).toEqual([])
       expect(await goal()).toMatchObject({ phase: 'blocked', reason: 'Need credentials' })
-      expect(provider.calls).toHaveLength(4)
+      expect(provider.calls).toHaveLength(5)
       await prompt('/goal pause')
       expect(await goal()).toMatchObject({ phase: 'paused' })
       await prompt('/goal edit --max-rounds 2 Deliver a patch')
       expect(await goal()).toMatchObject({ phase: 'paused', objective: 'Deliver a patch', maxRounds: 2 })
-      expect(provider.calls).toHaveLength(4)
+      expect(provider.calls).toHaveLength(5)
       await prompt('/goal resume')
       await run()
       expect(await goal()).toMatchObject({ phase: 'complete', reason: 'Validated result' })
-      expect(provider.calls).toHaveLength(6)
+      expect(provider.calls).toHaveLength(7)
       await prompt('/goal clear')
       expect(await goal()).toBeUndefined()
-      expect(provider.calls).toHaveLength(6)
+      expect(provider.calls).toHaveLength(7)
     } finally {
       await host.close()
     }
@@ -695,11 +701,13 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       disableSessionTitle: true,
       seams: {
         artifacts: {
-          put: async (bytes, meta) => ({
-            sha256: createHash('sha256').update(bytes).digest('hex'),
-            size: bytes.length,
-            mime: meta?.mime ?? 'application/octet-stream',
-          }),
+          put: async (bytes, meta) => {
+            const sha256 = createHash('sha256').update(bytes).digest('hex')
+            const shard = join(dataDir, 'artifacts', 'sha256', sha256.slice(0, 2))
+            mkdirSync(shard, { recursive: true })
+            writeFileSync(join(shard, sha256), bytes)
+            return { sha256, size: bytes.length, mime: meta?.mime ?? 'application/octet-stream' }
+          },
         },
       },
     })
@@ -714,6 +722,10 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         return session.run({ until: 'turn-end', signal: new AbortController().signal })
       }
       expect(await prompt('Present report')).toMatchObject({ reason: 'completed' })
+      const presented = (await session.scan({ type: 'tool/result', toSeq: session.lastSeq }))[0]?.data as
+        | { isError?: boolean }
+        | undefined
+      expect(presented?.isError, JSON.stringify(presented)).toBe(false)
       const events = await session.scan({ type: 'x/agnes/deliverables/presented', toSeq: session.lastSeq })
       expect(events).toHaveLength(1)
       expect(JSON.stringify(events)).toContain(
@@ -1382,7 +1394,12 @@ describe('a host assembled from a profile naming @agnes/base', () => {
     const dataDir = scratch()
     const provider = new ScriptedProvider({
       models: [fakeModel({ route: 'gw', id: 'm1' })],
-      scripts: [callFork('m1'), say('fork is running'), say('fork is running')],
+      scripts: [
+        callTool('tool_describe', { name: 'subagent_fork' }),
+        callFork('m1'),
+        say('fork is running'),
+        say('fork is running'),
+      ],
     })
     const { host } = await createTestHost({
       dataDir,
@@ -1410,9 +1427,12 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         session.run({ until: 'turn-end', signal: new AbortController().signal }),
       ).resolves.toMatchObject({ reason: 'completed' })
 
-      const result = (await session.scan({ type: 'tool/result', limit: 5 }))[0]?.data as
+      const results = await session.scan({ type: 'tool/result', limit: 5 })
+      expect(results[0]?.data).toMatchObject({ isError: false })
+      const result = results[1]?.data as
         | { isError?: boolean; content?: Array<{ type?: string; text?: string }> }
         | undefined
+      expect(result?.isError, JSON.stringify(result)).toBe(false)
       const started = result?.content?.[0]?.text?.match(
         /^started (.+); its result arrives as a notice, use subagent_send_message to follow up$/,
       )
@@ -1425,7 +1445,6 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         const answers = await child?.scan({ type: 'assistant/message', limit: 5 })
         expect(JSON.stringify(answers)).toContain('fork is running')
       })
-      expect(result).toMatchObject({ isError: false })
       expect(child?.preset.model.id.primary).toBe('m1')
       for (const request of provider.calls.slice(1))
         expect(request).toMatchObject({ route: 'gw', model: 'm1' })

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { loopKind } from '@agnes/extension-api'
+import { LOCAL_ARTIFACT_READ_MAX_BYTES } from '@agnes/host-artifacts/artifact-read-store'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
 import {
   capabilityHash,
@@ -417,8 +418,8 @@ it('lets a generic plugin publish registered artifacts immediately, reuse them, 
             },
             async execute(_args, context) {
               dataDir = context.session.workspaceRoot
-              const large = await context.artifacts.put(new Uint8Array(33 * 1024 * 1024))
-              expect(large.size).toBe(33 * 1024 * 1024)
+              const large = await context.artifacts.put(new Uint8Array(LOCAL_ARTIFACT_READ_MAX_BYTES + 1))
+              expect(large.size).toBe(LOCAL_ARTIFACT_READ_MAX_BYTES + 1)
               const remote = await context.artifacts.put(new TextEncoder().encode('remote fixture'), {
                 mime: 'application/x-remote-fixture',
               })
@@ -464,7 +465,8 @@ it('lets a generic plugin publish registered artifacts immediately, reuse them, 
   })
   try {
     const session = await kit.openSession()
-    expect((await session.invoke('publish_fixture', {})).isError).not.toBe(true)
+    const published = await session.invoke('publish_fixture', {})
+    expect(published.isError, JSON.stringify(published)).not.toBe(true)
     expect((await session.uiRead()).surfaces.map((row) => row.artifacts)).toEqual([
       { file: 'available' },
       { file: 'available' },
