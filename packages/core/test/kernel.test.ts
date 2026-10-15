@@ -1559,6 +1559,26 @@ describe('Kernel (registries wiring — Task 37b)', () => {
       }),
     ).rejects.toMatchObject({ code: 'E_CLOSED' })
     expect(replayed).toEqual([])
+    const lateCancellation = new AbortController()
+    let abortOnStart = true
+    k2.hooks.on(
+      'session_start',
+      async (_payload, ctx) => {
+        if (!abortOnStart) return
+        lateCancellation.abort(new Error('history loading cancelled during lifecycle'))
+        expect(ctx.signal.aborted).toBe(true)
+      },
+      meta('cancel-lifecycle'),
+    )
+    await expect(
+      k2.session('k1', {
+        ...sessionOpts,
+        writerRunId: 'cancelled-lifecycle',
+        historySignal: lateCancellation.signal,
+      }),
+    ).rejects.toThrow('history loading cancelled during lifecycle')
+    abortOnStart = false
+    replayed.length = 0
     const again = await k2.session('k1', { ...sessionOpts, writerRunId: 'r2' })
     expect(replayed).toEqual([
       { reason: 'resume', preset: again.preset.name, cwd: '/w', key: 'k1', replayed: true },

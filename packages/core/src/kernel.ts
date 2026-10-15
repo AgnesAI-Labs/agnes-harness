@@ -681,12 +681,16 @@ export class Kernel {
       if (children instanceof KernelChildren) bindChildFactory(session.key, children)
       const sessionHooks = this.createHookEngine(logger, preset)
       let resumed = false
+      const creationSignal = AbortSignal.any([
+        this.construction.signal,
+        ...(so.historySignal ? [so.historySignal] : []),
+      ])
       const cancelCreation = () => {
         void session.close().catch(() => undefined)
       }
-      this.construction.signal.addEventListener('abort', cancelCreation, { once: true })
+      creationSignal.addEventListener('abort', cancelCreation, { once: true })
       try {
-        this.construction.signal.throwIfAborted()
+        creationSignal.throwIfAborted()
         if (this.o.hooksFactory) {
           const hooks = this.o.hooksFactory(session, sessionHooks)
           if (
@@ -710,29 +714,32 @@ export class Kernel {
         const reason = forked ? 'new' : session.state.session ? 'resume' : 'new'
         resumed = reason === 'resume'
         await session.start()
-        this.construction.signal.throwIfAborted()
+        creationSignal.throwIfAborted()
         if (!(so.skipSessionStartHooks && reason === 'new'))
           await session.hooks.sessionStart?.({ reason, preset: session.preset.name, cwd: so.cwd })
-        this.construction.signal.throwIfAborted()
+        creationSignal.throwIfAborted()
+
+        if (registersRebuilt) await session.diag('registers-rebuilt', { sessionKey: key })
+        if (log.recovery) {
+          const [lastRecovery] = await log.scan({
+            type: 'x/core/ledger-tail-recovered',
+            order: 'desc',
+            limit: 1,
+          })
+          if (
+            (lastRecovery?.data as { diagnosticId?: unknown } | undefined)?.diagnosticId !==
+            log.recovery.diagnosticId
+          )
+            await log.append([session.ev('x/core/ledger-tail-recovered', log.recovery, { ignorable: true })])
+        }
+        this.sessions.set(key, session)
+        creationSignal.throwIfAborted()
+        if (resumed) await recoverChildCompletions(session)
+        creationSignal.throwIfAborted()
+        return session
       } finally {
-        this.construction.signal.removeEventListener('abort', cancelCreation)
+        creationSignal.removeEventListener('abort', cancelCreation)
       }
-      if (registersRebuilt) await session.diag('registers-rebuilt', { sessionKey: key })
-      if (log.recovery) {
-        const [lastRecovery] = await log.scan({
-          type: 'x/core/ledger-tail-recovered',
-          order: 'desc',
-          limit: 1,
-        })
-        if (
-          (lastRecovery?.data as { diagnosticId?: unknown } | undefined)?.diagnosticId !==
-          log.recovery.diagnosticId
-        )
-          await log.append([session.ev('x/core/ledger-tail-recovered', log.recovery, { ignorable: true })])
-      }
-      this.sessions.set(key, session)
-      if (resumed) await recoverChildCompletions(session)
-      return session
     } catch (error) {
       if (factoryPort) this.factoryHooks.delete(factoryPort)
       const failures: unknown[] = [error]
