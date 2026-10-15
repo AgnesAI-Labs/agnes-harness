@@ -677,6 +677,9 @@ importers:
       '@agnes/worker-runtime':
         specifier: workspace:*
         version: link:../worker-runtime
+      ws:
+        specifier: 8.21.3
+        version: 8.21.3
     devDependencies:
       '@agnes/ai':
         specifier: workspace:*
@@ -696,9 +699,6 @@ importers:
       '@types/ws':
         specifier: 8.18.1
         version: 8.18.1
-      ws:
-        specifier: 8.21.3
-        version: 8.21.3
 
   packages/daemon-surfaces:
     dependencies:
@@ -711,6 +711,9 @@ importers:
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@agnes/sdk':
+        specifier: workspace:*
+        version: link:../sdk
       '@agnes/system-node':
         specifier: workspace:*
         version: link:../system-node

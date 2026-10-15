@@ -1,10 +1,12 @@
 # Plugin streams and managed services
 
-[中文](transports.zh-CN.md) · [Extension guide](README.md)
+English | [简体中文](transports.zh-CN.md)
+
+[Extension guide](README.md)
 
 The optional `streams.v1` and `services.managed.v1` adapters provide authenticated streams and daemon-owned singleton processes. Existing session services and Surface HTTP routes keep their contracts. These capabilities must be explicitly reviewed and permitted by the profile ceiling; a pinned session cannot start an older global process.
 
-Declare streams in `capabilities.streams` and exact browser names in `contributes.client.streams`. A declaration selects one profile or session scope, one lane, directions and byte limits. Inbound frames require the control lane and an own effect `controlService`. The authority adapter must validate the current activation, immutable client roster, authenticated subject, scope, allowlist and live effect grant. Absence of this adapter refuses access. A source-authenticated Surface still needs a user subject and explicit service grants.
+Declare streams in `capabilities.streams` and exact browser names in `contributes.client.streams`. A declaration selects one profile or session scope, one lane, directions and byte limits. Inbound frames require the control lane and an own effect `controlService`. Browser opens also carry the immutable client `rowId`, `revision` and `contentDigest`; these are selectors to verify against the current roster, never self-asserted credentials. The authority adapter must validate the current activation, immutable client roster, authenticated subject, scope, allowlist and live effect grant. Absence of this adapter refuses access. A source-authenticated Surface still needs a user subject and explicit service grants.
 
 Open with a same-origin JSON POST to `/_agnes/plugin-stream/open`, authenticated by the host adapter and its CSRF check. The response carries a single-use ticket, expiring after ten seconds. Connect to the fixed same-origin `/_agnes/plugin-stream` WebSocket and send `{ticket}` as the first text message within five seconds. Tickets never belong in URLs, logs or public configuration. Missing, null or foreign Origin is refused. Every socket carries one lane; reconnect always requires fresh admission.
 
@@ -15,3 +17,15 @@ Media drops under pressure and notifies the producer. Reliable events close with
 Declare immutable managed services in `capabilities.managedServices`. The daemon starts only reviewed artifacts, under an installation/profile/package/service lease independent of session generations. Profile scope is the default isolation boundary. Installation scope requires explicit administrator permission. Listeners bind loopback only; a fixed-port conflict fails immediately and automatic allocation retries at most three times. Health must echo the private incarnation, exact API version, bound listener names, storage readiness and installed shutdown handler. Neither a PID nor an unrelated HTTP 200 proves readiness.
 
 Disable revokes authority before shutdown. Cold upgrade drains and terminates the old process before starting the new revision; failure never restarts the old process or replays work. Unconfirmed shutdown stays visible in diagnostics. Runtime and storage adapters remain responsible for their owned resources; `OwnedStore` exposes only namespace-bound keys and transactions, never SQL or caller-selected paths.
+
+## Adapter entry points
+
+The daemon integration imports `createPluginStreamBroker`, `bindPluginStreams`, `createPluginStreamGateway` and `createSourcePluginStreamGateway` from `@agnes/daemon-rpc/streams`. Pass a gateway to `createWebServer({ pluginStreams })`; unauthenticated configurations have no fallback route. The Node-only source gateway uses `/_agnes/plugin-stream/source` and `/_agnes/plugin-stream/source/open`, refuses browser Origin, and requires a source-auth/anti-replay adapter that also admits a user-subject grant. The browser and source paths do not share authentication shortcuts.
+
+Use `createPluginStreamsClient` from `@agnes/sdk/streams` with a host-bound owner, scope, exact names and lifecycle signal. Node Surface callers select `source: true` and supply authenticated `open` and `socket` adapters. Ordinary browser clients use same-origin fetch and WebSocket. The caller must not derive an allowlist or principal from arbitrary page configuration.
+
+The daemon imports `createManagedServiceSupervisor` from `@agnes/daemon-surfaces/managed` and supplies a resolver for the current reviewed package, activation, capability ceiling, required service grants and immutable artifact. Keep one supervisor per installation controller, not one per session apply. `ensure(selector, apiMajor)` joins concurrent starts; `signal(selector)` revokes live connectors before shutdown; `status(selector)` exposes safe diagnostics only. Its directory must be host-selected private storage.
+
+A Node artifact uses `createManagedServiceRuntime` from `@agnes/sdk/managed-service`. It receives private initialization through the supervisor environment, opens its own namespace-bound store, installs `onShutdown`, binds application listeners, checks its storage format, then calls `ready({ apiVersion, listeners })`. Report an OS bind conflict by exiting with code **98**; fixed listeners fail immediately and automatic listeners retry at most three times. Startup does not resend historical effects. The POSIX guardian kills the owned group on artifact exit or parent loss; Windows reuses the Surface Job Object adapter. Explicitly detached external processes remain trusted plugin code's responsibility.
+
+A process that could not be reaped keeps its lease and reports `shutdown-unconfirmed`. A daemon crash leaves a durable active marker: a new supervisor refuses to restart that instance until an operator has reconciled the old process and private state. This conservative refusal must not be treated as proof that an external effect stopped.

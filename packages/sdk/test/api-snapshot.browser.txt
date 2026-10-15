@@ -23,6 +23,7 @@ applyUITimelinePatch
 applyWindowedUITimelinePatch
 classify
 createClient
+createPluginStreamsClient
 encodeFrame
 jcs
 jwtAuth

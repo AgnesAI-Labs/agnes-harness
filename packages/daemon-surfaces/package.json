@@ -18,7 +18,9 @@
     "./surfaces/secret-resolver": "./src/surfaces/secret-resolver.ts",
     "./surfaces/security-headers": "./src/surfaces/security-headers.ts",
     "./surfaces/types": "./src/surfaces/types.ts",
-    "./surfaces/windows-runtime": "./src/surfaces/windows-runtime.ts"
+    "./surfaces/windows-runtime": "./src/surfaces/windows-runtime.ts",
+    "./managed": "./src/managed/index.ts",
+    "./managed-process": "./runtime/managed-process.mjs"
   },
   "scripts": {
     "typecheck": "tsc -b",
@@ -28,7 +30,8 @@
     "@agnes/host": "workspace:*",
     "@agnes/package-manager": "workspace:*",
     "@agnes/protocol": "workspace:*",
-    "@agnes/system-node": "workspace:*"
+    "@agnes/system-node": "workspace:*",
+    "@agnes/sdk": "workspace:*"
   },
   "license": "Apache-2.0",
   "devDependencies": {

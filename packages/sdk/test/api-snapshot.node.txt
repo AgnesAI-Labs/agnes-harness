@@ -7,6 +7,7 @@ FrameDecoder
 JsonRpcError
 MAX_DEFERRED_UI_OVERLAYS
 OPENING_RETRY_MS
+OwnedStoreError
 PREVIEW_MAX_CHARS
 PreviewMerger
 ProtocolViolation
@@ -24,7 +25,10 @@ applyWindowedUITimelinePatch
 classify
 createClient
 createExtensionClient
+createManagedServiceRuntime
+createOwnedStore
 createPackageAdminClient
+createPluginStreamsClient
 createRelay
 createResourceControlClient
 createSurfaceRelay
@@ -42,6 +46,7 @@ notifyListeners
 parseMessage
 portalIdentityAuth
 randomId
+readManagedServiceInitialization
 runHeadless
 signSourceAuth
 snapshotPending

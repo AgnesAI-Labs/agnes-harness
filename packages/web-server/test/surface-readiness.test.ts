@@ -27,7 +27,12 @@ it('serves the main Web while Surface paths are retryable, then distinguishes a 
     surfaceMountsReady: (path) => /^\/(?:plugins|admin|skins)(?:\/|$)/.test(path) || ready,
   })
   try {
-    expect((await fetch(web.url)).status).toBe(200)
+    const home = await fetch(web.url)
+    expect(home.status).toBe(200)
+    const csp = home.headers.get('content-security-policy')
+    expect(csp).toContain(web.url.replace(/^http/, 'ws'))
+    expect(csp).toContain("media-src 'self' blob:")
+    expect(csp).not.toContain('*')
     expect((await fetch(new URL('/app.js', web.url))).status).toBe(200)
     const pending = await fetch(new URL('/demo/version', web.url))
     expect(pending.status).toBe(503)

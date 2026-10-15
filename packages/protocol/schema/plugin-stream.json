@@ -136,6 +136,28 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 128
+        },
+        "client": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["rowId", "revision", "contentDigest"],
+          "properties": {
+            "rowId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^web:[^\\x00]{1,251}$"
+            },
+            "revision": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "contentDigest": {
+              "type": "string",
+              "pattern": "^sha256-[a-f0-9]{64}$"
+            }
+          }
         }
       }
     },

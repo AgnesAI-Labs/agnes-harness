@@ -1,4 +1,5 @@
 import type { TSchema } from '@sinclair/typebox'
+import type { Capabilities } from '../gen/ts/extension-manifest.js'
 import * as M from '../gen/ts/managed-service.js'
 import * as S from '../gen/ts/plugin-stream.js'
 import { inspectJsonData } from './json-data.js'
@@ -6,6 +7,8 @@ import { type ValidationResult, validateAgainst } from './validate.js'
 
 export const PLUGIN_STREAM_PATH = '/_agnes/plugin-stream'
 export const PLUGIN_STREAM_OPEN_PATH = '/_agnes/plugin-stream/open'
+export const PLUGIN_STREAM_SOURCE_PATH = '/_agnes/plugin-stream/source'
+export const PLUGIN_STREAM_SOURCE_OPEN_PATH = '/_agnes/plugin-stream/source/open'
 export const PLUGIN_STREAM_HEADER_BYTES = 20
 export const PLUGIN_STREAM_MAX_BYTES = 1_048_576
 function check<T>(schema: TSchema, value: unknown, maxBytes = 65536): ValidationResult<T> {
@@ -102,4 +105,27 @@ export function decodePluginStreamBinary(bytes: Uint8Array): {
     sequence: view.getUint32(12),
     payload: bytes.subarray(PLUGIN_STREAM_HEADER_BYTES),
   }
+}
+
+/** Semantic constraints shared by installed rows and bundled extension manifests. */
+export function transportCapabilityProblems(
+  value: Pick<Capabilities, 'streams' | 'managedServices' | 'services'>,
+): string[] {
+  const problems: string[] = []
+  for (const stream of value.streams ?? []) {
+    const checked = validateStreamDeclaration(stream)
+    if (!checked.ok) problems.push(...checked.errors.map((e) => e.message))
+    if (
+      stream.controlService &&
+      !value.services?.some((s) => s.name === stream.controlService && s.kind === 'effect')
+    )
+      problems.push('stream controlService must name an own effect service')
+  }
+  for (const descriptor of value.managedServices ?? []) {
+    const checked = validateManagedServiceDescriptor(descriptor)
+    if (!checked.ok) problems.push(...checked.errors.map((e) => e.message))
+  }
+  for (const names of [value.streams?.map((s) => s.name), value.managedServices?.map((s) => s.id)])
+    if (names && new Set(names).size !== names.length) problems.push('duplicate transport declaration')
+  return problems
 }

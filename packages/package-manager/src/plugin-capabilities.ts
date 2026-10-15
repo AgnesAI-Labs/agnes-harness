@@ -1,6 +1,13 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { type PackageBlocker, type PluginCapabilities, validatePackageAdminData } from '@agnes/protocol'
+import {
+  type JsonValue,
+  jcs,
+  type PackageBlocker,
+  type PluginCapabilities,
+  transportCapabilityProblems,
+  validatePackageAdminData,
+} from '@agnes/protocol'
 import { PackageError } from './errors.js'
 import { readStaticJson } from './integrity.js'
 
@@ -11,6 +18,7 @@ export function parsePluginCapabilities(value: unknown): PluginCapabilities | un
   const checked = validatePackageAdminData('PluginCapabilities', value)
   if (
     !checked.ok ||
+    transportCapabilityProblems(checked.ok ? (checked.value as PluginCapabilities) : {}).length > 0 ||
     // biome-ignore lint/suspicious/noControlCharactersInRegex: reject control bytes at the identifier or path boundary.
     capabilityAtoms(value as PluginCapabilities).some((atom) => /[\u0000-\u001f]/.test(atom))
   )
@@ -33,6 +41,8 @@ export function capabilityAtoms(value: PluginCapabilities | undefined): string[]
     ),
     ...(['model', 'childAgents', 'ui', 'device'] as const).filter((key) => value[key] === true),
     ...(value.uiData ?? []).map((permission) => `uiData:${permission}`),
+    ...(value.streams ?? []).map((stream) => `streams:${stream.scope}:${stream.name}:${stream.lane}`),
+    ...(value.managedServices ?? []).map((service) => `managedServices:${service.scope}:${service.id}`),
   ].sort()
 }
 
@@ -171,6 +181,14 @@ export function mergePluginCapabilities(
     const scopes = [...new Set(present.flatMap((capabilities) => capabilities.filesystem?.[access] ?? []))]
     if (present.some((capabilities) => capabilities.filesystem?.[access] !== undefined))
       merged.filesystem = { ...(merged.filesystem as object | undefined), [access]: scopes }
+  }
+  for (const key of ['streams', 'managedServices'] as const) {
+    if (present.some((c) => c[key] !== undefined)) {
+      const byValue = new Map<string, JsonValue>()
+      for (const capability of present)
+        for (const d of capability[key] ?? []) byValue.set(jcs(d), structuredClone(d))
+      merged[key] = [...byValue.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, d]) => d)
+    }
   }
   return merged as PluginCapabilities
 }

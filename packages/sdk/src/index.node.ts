@@ -118,3 +118,7 @@ export { unixTransport } from './transport/unix.node.js'
 export type { WebSocketLike, WsOptions } from './transport/ws.js'
 export { wsTransport } from './transport/ws.node.js'
 export * from './ui-projection-sync.js'
+
+export * from './plugin-streams.js'
+export * from './managed-service.node.js'
+export * from './owned-store.node.js'

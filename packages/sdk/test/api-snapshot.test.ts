@@ -65,6 +65,10 @@ describe('export surface snapshot (规格 §20.5, SDK Task 23)', () => {
   it('keeps every Node-only implementation outside the browser runtime surface', async () => {
     const nodeOnly = [
       'createRelay',
+      'createManagedServiceRuntime',
+      'readManagedServiceInitialization',
+      'createOwnedStore',
+      'OwnedStoreError',
       'fileJournal',
       'mintPortalIdentity',
       'stdioTransport',
@@ -119,6 +123,9 @@ describe('export surface snapshot (规格 §20.5, SDK Task 23)', () => {
       '.': { browser: './src/index.browser.ts', default: './src/index.node.ts' },
       './browser': './src/index.browser.ts',
       './composer-selection': './src/composer-selection.ts',
+      './streams': './src/plugin-streams.ts',
+      './managed-service': './src/managed-service.node.ts',
+      './owned-store': './src/owned-store.node.ts',
       './surface': { browser: './src/surface.browser.ts', default: './src/surface.node.ts' },
     })
     expect(parseComposerSelection({ permission: 'full' })).toEqual({ permission: 'full' })

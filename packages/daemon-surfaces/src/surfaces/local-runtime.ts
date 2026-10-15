@@ -39,6 +39,8 @@ export type LocalNodeRuntimeOptions = Readonly<{
   allocatePort?: () => number | Promise<number>
   spawn?: (executable: string, argv: readonly string[], options: SurfaceSpawnOptions) => SpawnedSurfaceProcess
   healthProbe?: HealthProbe
+  /** Trusted supervisor-only environment, never page input. Base Surface identity stays authoritative. */
+  environment?: (input: SurfaceRuntimeStart, endpoint: SurfaceEndpoint) => Readonly<Record<string, string>>
   cleanup?: (sourceId: string) => void | Promise<void>
 }>
 
@@ -62,6 +64,7 @@ export function createLocalNodeRuntime(options: LocalNodeRuntimeOptions = {}): S
         healthPath: input.surface.descriptor.healthPath,
       }
       const env = Object.freeze({
+        ...options.environment?.(input, endpoint),
         NODE_ENV: 'production',
         HOST: endpoint.host,
         PORT: String(endpoint.port),

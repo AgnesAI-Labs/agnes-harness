@@ -9,6 +9,7 @@ import { createPackageManager } from '../src/manager.js'
 import {
   capabilityAtoms,
   capabilityPolicyBlockers,
+  mergePluginCapabilities,
   parsePluginCapabilities,
 } from '../src/plugin-capabilities.js'
 import { fetchSource, hashDirectory, parseSource } from '../src/sources.js'
@@ -64,6 +65,51 @@ it('emits a uiData atom for each manifest permission', () => {
     'ui',
     'uiData:finance.differences.read',
   ])
+})
+
+it('reviews transport declarations as authority and binds descriptor changes to trust hashes', () => {
+  const stream = {
+    name: 'sample.frames',
+    scope: 'profile' as const,
+    inputSchema: { type: 'object' as const, properties: {}, additionalProperties: false as const },
+    directions: ['outbound' as const],
+    lane: 'media' as const,
+    maxFrameBytes: 4096,
+    maxBufferedBytes: 32768,
+    maxBytesPerSecond: 122880,
+  }
+  const service = {
+    id: 'sample',
+    scope: 'profile' as const,
+    artifact: { kind: 'node' as const, entry: './dist/server.mjs' },
+    healthPath: '/health',
+    listeners: [],
+    startupTimeoutMs: 1000,
+    shutdownTimeoutMs: 1000,
+    apiVersion: '1.0.0',
+    requires: [],
+  }
+  const declarations = { streams: [stream], managedServices: [service] }
+  expect(parsePluginCapabilities(declarations)).toEqual(declarations)
+  expect(mergePluginCapabilities([declarations, declarations])).toEqual(declarations)
+  expect(capabilityAtoms(declarations)).toEqual([
+    'managedServices:profile:sample',
+    'streams:profile:sample.frames:media',
+  ])
+  expect(capabilityPolicyBlockers(declarations, { deny: ['streams:*'] })).toHaveLength(1)
+  const old = capabilityHash({
+    dependencies: {},
+    declaredCapabilities: mergePluginCapabilities([declarations]) ?? {},
+  })
+  const changed = capabilityHash({
+    dependencies: {},
+    declaredCapabilities:
+      mergePluginCapabilities([{ ...declarations, streams: [{ ...stream, maxFrameBytes: 8192 }] }]) ?? {},
+  })
+  expect(old).not.toBe(changed)
+  expect(() =>
+    parsePluginCapabilities({ streams: [{ ...stream, lane: 'control', directions: ['inbound'] }] }),
+  ).toThrow('schema')
 })
 
 it('binds declarations to previews/trust and rejects newly disallowed enable requests', async () => {
