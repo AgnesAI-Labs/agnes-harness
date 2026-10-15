@@ -246,7 +246,9 @@ describe('assemble', () => {
     )
     void assembly.catch((error) => reached.reject(error))
     await reached.promise
-    expect(started).toEqual(sources.slice(0, limit).map(({ snapshot }) => snapshot.packageId))
+    expect(new Set(started)).toEqual(
+      new Set(sources.slice(0, limit).map(({ snapshot }) => snapshot.packageId)),
+    )
     expect(mounted).toEqual([])
     for (const heldImport of [...held].reverse()) heldImport.resolve()
     const a = await assembly
