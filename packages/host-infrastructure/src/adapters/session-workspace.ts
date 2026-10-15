@@ -172,6 +172,14 @@ export function createSessionWorkspaceAdapterFactory(
               return readRange(abs, opts)
             },
           }),
+          ...(localFsIo.createFile
+            ? {
+                createFile: (path: string, data: Uint8Array) => {
+                  if (closed) throw fault('workspace handle closed')
+                  return localFsIo.createFile!(path, data)
+                },
+              }
+            : {}),
           writeFile: (...args) => {
             if (closed)
               throw Object.assign(new Error('E_WORKSPACE_CLOSED: workspace handle closed'), {

@@ -1,5 +1,5 @@
 import type { ContentBlock, UINode } from '@agnes/protocol'
-import { uploadedAttachment } from '@agnes/protocol'
+import { storedAttachment, uploadedAttachment } from '@agnes/protocol'
 import { decodeSafeImage, USER_MESSAGE_IMAGE_LIMITS } from '@agnes/protocol-validation'
 import { Image } from 'antd'
 import { useEffect, useRef, useState } from 'react'
@@ -218,7 +218,10 @@ export function UserMessage({ node, t }: { node: Extract<UINode, { kind: 'user' 
 
 export function UserMessageFiles({ node }: { node: Extract<UINode, { kind: 'user' }> }) {
   const files = node.content.filter(
-    (block) => block.type === 'file' || (block.type === 'resource_link' && uploadedAttachment(block.uri)),
+    (block) =>
+      block.type === 'file' ||
+      storedAttachment(block) ||
+      (block.type === 'resource_link' && uploadedAttachment(block.uri)),
   )
   if (files.length === 0) return null
   const occurrences = new Map<string, number>()

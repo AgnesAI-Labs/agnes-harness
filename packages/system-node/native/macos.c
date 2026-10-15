@@ -253,6 +253,8 @@ static napi_value initialize(napi_env env, napi_value exports) {
   napi_set_named_property(env, exports, "abiVersion", abi);
   napi_create_function(env, "openCanonicalWritableFile", NAPI_AUTO_LENGTH, open_canonical_writable_file, NULL, &function);
   napi_set_named_property(env, exports, "openCanonicalWritableFile", function);
+  napi_create_function(env, "openCanonicalExclusiveFile", NAPI_AUTO_LENGTH, open_canonical_exclusive_file, NULL, &function);
+  napi_set_named_property(env, exports, "openCanonicalExclusiveFile", function);
   napi_create_function(env, "canonicalFs", NAPI_AUTO_LENGTH, canonical_fs, NULL, &function);
   napi_set_named_property(env, exports, "canonicalFs", function);
   napi_create_function(env, "openCanonicalFile", NAPI_AUTO_LENGTH, open_canonical_file, NULL, &function);

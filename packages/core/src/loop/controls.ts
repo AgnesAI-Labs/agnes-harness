@@ -3,6 +3,7 @@ import { CoreError, type EventInput, type Seq } from '@agnes/core-common/types'
 import { scanPages } from '@agnes/core-ledger/log/scan-pages'
 import type { Inbox } from '@agnes/core-ledger/reduce/shapes'
 import { type Actor, type ContentBlock, MAX_FRAME_BYTES } from '@agnes/protocol'
+import { commitSessionAttachments } from '../request/attachment-admission.js'
 import { validateUserMessageImages } from '../request/user-message-images.js'
 import { inboxEvent, inputMessageEvents } from '../step/inbox.js'
 import type { SessionImpl } from '../step/session.js'
@@ -174,16 +175,18 @@ export class SessionControls {
         ])
         throw new CoreError('E_RELATION', 'queued input is no longer pending', { itemId })
       }
-      const next = {
-        items: inbox.items.map((item) => (item.itemId === itemId ? { ...item, content } : item)),
-      }
-      if (new TextEncoder().encode(JSON.stringify(next)).byteLength > MAX_FRAME_BYTES - 4096)
-        throw new CoreError('E_ENVELOPE', 'Queued input is too large')
-      const result = await this.s.d.log.append([
-        inboxEvent(this.s.lane, actor, next),
-        this.fact('steer', 'edited', actor, { itemId, admissionId }),
-      ])
-      return result.firstSeq
+      return commitSessionAttachments(this.s, content, undefined, async (content) => {
+        const next = {
+          items: inbox.items.map((item) => (item.itemId === itemId ? { ...item, content } : item)),
+        }
+        if (new TextEncoder().encode(JSON.stringify(next)).byteLength > MAX_FRAME_BYTES - 4096)
+          throw new CoreError('E_ENVELOPE', 'Queued input is too large')
+        const result = await this.s.d.log.append([
+          inboxEvent(this.s.lane, actor, next),
+          this.fact('steer', 'edited', actor, { itemId, admissionId }),
+        ])
+        return result.firstSeq
+      })
     })
   }
 

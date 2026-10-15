@@ -8,6 +8,8 @@ const Path = Type.String({ minLength: 1, maxLength: 4096 })
 export const ReadParams = Type.Object(
   {
     path: Path,
+    save_to: Type.Optional(Path),
+    max_edge: Type.Optional(Type.Integer({ minimum: 8, maximum: 1456 })),
     offset: Type.Optional(Type.Integer({ minimum: 1 })),
     limit: Type.Optional(Type.Integer({ minimum: 1 })),
   },

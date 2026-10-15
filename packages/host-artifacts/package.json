@@ -15,7 +15,8 @@
     "./request-media-runtime": "./src/request-media-runtime.ts",
     "./trajectory-contract": "./src/trajectory-contract.ts",
     "./trajectory-lifecycle": "./src/trajectory-lifecycle.ts",
-    "./trajectory-network": "./src/trajectory-network.ts"
+    "./trajectory-network": "./src/trajectory-network.ts",
+    "./object-gc": "./src/object-gc.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",

@@ -102,6 +102,9 @@ async function mountTree(ctx: AssemblyContext, { pkgs, proc, presets }: Foundati
     platform: proc.adapters.platform,
     retention: seamContexts.retention,
     artifacts: { put: (bytes, meta) => seams.artifacts.put(bytes, { mime: meta.mime, name: meta.name }) },
+    ...(seams.artifacts.attachments
+      ? { pendingAttachments: () => seams.artifacts.attachments!.pendingRoots() }
+      : {}),
     rollback: ctx.rollback,
   })
   ctx.say('seams.assembled', { seams: ctx.profile.seams, fsDigest: proc.adapters.fs.fence().digest })

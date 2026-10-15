@@ -36,7 +36,7 @@ export async function computerUseArtifactRootSnapshot(
 ): Promise<ArtifactGcFiveSourceSnapshot> {
   if (!input.roots && input.candidateDigests.size !== 0)
     throw new Error('artifact GC durable root database is unavailable')
-  const epoch = input.roots ? 'ref-index-v1' : 'empty-v1'
+  const epoch = input.roots ? 'ref-index-v2' : 'empty-v1'
   const fixed = (source: 'ledger' | 'request-media', sourceRoots: readonly ArtifactRoot[]) => ({
     source,
     snapshot: async () => ({ complete: true as const, epoch, roots: sourceRoots }),
@@ -62,7 +62,12 @@ export async function computerUseArtifactRootSnapshot(
         snapshot: async () => ({
           complete: true as const,
           epoch: input.roots ? 'retention-v1' : 'empty-v1',
-          roots: input.roots ? roots(input.retention ?? new Set(), input.candidateDigests) : [],
+          roots: input.roots
+            ? roots(
+                new Set([...(input.retention ?? []), ...(input.roots?.attachments ?? [])]),
+                input.candidateDigests,
+              )
+            : [],
         }),
       },
       empty('rollback'),

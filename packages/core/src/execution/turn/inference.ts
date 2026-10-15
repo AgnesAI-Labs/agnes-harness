@@ -1,3 +1,4 @@
+import { attachmentSurface } from '../../request/attachment-surface.js'
 import { estimateTokens } from '../model-tokens.js'
 
 export { estimateTokens } from '../model-tokens.js'
@@ -515,7 +516,10 @@ export async function prepareInferenceRequest(
   )
   if (options.system !== undefined)
     merged.sections.push({ id: 'loop:system', order: 1000, source: 'loop', text: options.system })
-  const surface = options.messages ? loopRequestSurface(s, options.messages) : s.surface()
+  const surface = await attachmentSurface(
+    s,
+    options.messages ? loopRequestSurface(s, options.messages) : s.surface(),
+  )
   let requestMedia: LedgerPreparedRequestMedia | undefined
   let auxiliaryVision: ReturnType<typeof prepareAuxiliaryVisionDerivedText> | undefined
   const mediaRuntime = s.d.requestMedia

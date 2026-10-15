@@ -21,6 +21,11 @@ describe('Computer Use artifact root snapshot', () => {
     ])
     expect(first.roots.export.roots).toEqual([])
     expect(first.roots.retention.roots).toEqual([])
+    const attachment = await computerUseArtifactRootSnapshot({
+      ...input,
+      roots: { ...input.roots, attachments: new Set([ledger]) },
+    })
+    expect(attachment.roots.retention.roots).toEqual([{ sha256: ledger }])
     expect(first.roots.rollback.roots).toEqual([])
     expect(first.identity.hash).toMatch(/^[a-f0-9]{64}$/u)
     // The epoch no longer depends on ledger size; only the roots distinguish two snapshots.

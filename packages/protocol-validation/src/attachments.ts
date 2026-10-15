@@ -1,4 +1,6 @@
+import { AttachmentError } from './attachment-errors.js'
 import { decodeAttachmentData, USER_MESSAGE_IMAGE_LIMITS } from './safe-image.js'
+import { validateStoredAttachment } from './stored-attachments.js'
 
 export const USER_MESSAGE_ATTACHMENT_LIMITS = Object.freeze({
   maxCount: 50,
@@ -7,18 +9,36 @@ export const USER_MESSAGE_ATTACHMENT_LIMITS = Object.freeze({
 
 /** Applies to files and images together, independently of the model's image limits. */
 export function validateUserAttachments(
-  content: readonly { type: string; data?: string; name?: string; mimeType?: string; uri?: string }[],
+  content: readonly {
+    type: string
+    data?: string
+    name?: string
+    mimeType?: string
+    uri?: string
+    attachment?: unknown
+  }[],
 ): void {
   const attachments = content.filter(
     (block) =>
       block.type === 'file' ||
       block.type === 'image' ||
-      (block.type === 'resource_link' && block.uri?.startsWith('agnes-upload:')),
+      (block.type === 'resource_link' &&
+        (block.attachment !== undefined || block.uri?.startsWith('agnes-upload:'))),
   )
   if (attachments.length > USER_MESSAGE_ATTACHMENT_LIMITS.maxCount)
-    throw new Error('A message can hold at most 50 attachments.')
+    throw new AttachmentError(
+      'ATTACHMENT_COUNT',
+      'ATTACHMENT_COUNT: A message can hold at most 50 attachments.',
+    )
   let total = 0
   for (const block of attachments) {
+    if (block.type === 'resource_link' && block.attachment !== undefined) {
+      validateStoredAttachment(block)
+      total += block.attachment.artifact.size
+      if (!Number.isSafeInteger(total) || total > USER_MESSAGE_ATTACHMENT_LIMITS.maxAggregateBytes)
+        throw new AttachmentError('ATTACHMENT_BYTES')
+      continue
+    }
     if (block.type === 'resource_link') {
       if (
         !/^agnes-upload:\/\/[a-f0-9]{64}\/[a-f0-9]{64}\/[0-9]+\/[a-f0-9-]{36}$/u.test(block.uri ?? '') ||
@@ -51,10 +71,19 @@ export function validateUserAttachments(
     const decodedSize =
       (block.data.length / 4) * 3 - (block.data.endsWith('==') ? 2 : block.data.endsWith('=') ? 1 : 0)
     if (decodedSize > remaining)
-      throw new Error('Attachments in one message must total no more than 100 MiB.')
+      throw new AttachmentError(
+        'ATTACHMENT_BYTES',
+        'Attachments in one message must total no more than 100 MiB.',
+      )
     const bytes = decodeAttachmentData(block.data, Math.max(remaining, 1))
     total += bytes.byteLength
     if (total > USER_MESSAGE_ATTACHMENT_LIMITS.maxAggregateBytes)
-      throw new Error('Attachments in one message must total no more than 100 MiB.')
+      throw new AttachmentError(
+        'ATTACHMENT_BYTES',
+        'Attachments in one message must total no more than 100 MiB.',
+      )
   }
 }
+
+export * from './attachment-errors.js'
+export * from './stored-attachments.js'

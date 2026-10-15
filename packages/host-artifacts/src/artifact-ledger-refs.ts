@@ -3,7 +3,7 @@
  * for some row must bump it: every persisted reference index built under another value is dropped
  * and rebuilt, because its cursors vouch for prefixes extracted under the old rule.
  */
-export const ARTIFACT_REF_EXTRACTOR_VERSION = '1'
+export const ARTIFACT_REF_EXTRACTOR_VERSION = '2'
 
 const URI = /^artifact:\/\/([0-9a-f]{64})$/u
 const SHA256 = /^[0-9a-f]{64}$/u
@@ -71,8 +71,57 @@ export type LedgerRowRefs = Readonly<{
   ledger: ReadonlySet<string>
   requestMedia: ReadonlySet<string>
   toolImage: ReadonlySet<string>
+  attachments: ReadonlySet<string>
   turn?: Readonly<{ kind: 'start' | 'end'; lane: string }>
 }>
+
+/** Stored originals and their thumbnails may never be evicted by screenshot capacity policy. */
+function attachmentDigests(row: LedgerRefRow, data: unknown): ReadonlySet<string> {
+  const found = new Set<string>()
+  if (row.type !== 'user/message' && row.type !== 'inbox') return found
+  const value = data as { content?: unknown; items?: { content?: unknown }[] } | null
+  const blocks =
+    row.type === 'inbox'
+      ? Array.isArray(value?.items)
+        ? value.items.flatMap((item) => (Array.isArray(item.content) ? item.content : []))
+        : []
+      : Array.isArray(value?.content)
+        ? value.content
+        : []
+  for (const block of blocks) {
+    if (!block || typeof block !== 'object' || !('attachment' in block)) continue
+    const link = block as {
+      type?: unknown
+      uri?: unknown
+      mimeType?: unknown
+      attachment?: { artifact?: unknown; thumbnail?: unknown }
+    }
+    const artifact = link.attachment?.artifact as
+      | { sha256?: unknown; size?: unknown; mime?: unknown }
+      | undefined
+    if (
+      link.type !== 'resource_link' ||
+      !artifact ||
+      link.uri !== `artifact://${artifact.sha256}` ||
+      link.mimeType !== artifact.mime
+    )
+      throw new Error('artifact GC attachment metadata is malformed')
+    for (const value of [artifact, link.attachment?.thumbnail]) {
+      if (value === undefined) continue
+      const ref = value as { sha256?: unknown; size?: unknown; mime?: unknown }
+      if (
+        typeof ref.sha256 !== 'string' ||
+        !SHA256.test(ref.sha256) ||
+        !Number.isSafeInteger(ref.size) ||
+        (ref.size as number) < 0 ||
+        typeof ref.mime !== 'string'
+      )
+        throw new Error('artifact GC attachment reference is malformed')
+      found.add(ref.sha256)
+    }
+  }
+  return found
+}
 
 /**
  * The single extraction rule shared by the reference index and every full-ledger reader, so both
@@ -90,5 +139,11 @@ export function extractArtifactRefs(row: LedgerRefRow): LedgerRowRefs {
     (row.type === 'turn/start' || row.type === 'turn/end') && row.lane !== undefined
       ? { kind: row.type === 'turn/start' ? ('start' as const) : ('end' as const), lane: row.lane }
       : undefined
-  return { ledger, requestMedia, toolImage, ...(turn ? { turn } : {}) }
+  return {
+    ledger,
+    requestMedia,
+    toolImage,
+    attachments: attachmentDigests(row, data),
+    ...(turn ? { turn } : {}),
+  }
 }

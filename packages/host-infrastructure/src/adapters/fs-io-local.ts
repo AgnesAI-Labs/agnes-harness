@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { close, fstat, ftruncate, read, readFile, realpathSync, writeFile } from 'node:fs'
 import { promisify } from 'node:util'
 import { canonicalFs, openCanonicalFileSync, openCanonicalWritableFileSync } from '@agnes/system-node'
@@ -44,6 +45,25 @@ const primitives: FsIo = {
         count += result.bytesRead
       }
       return bytes.subarray(0, count)
+    } finally {
+      await closeFd(fd)
+    }
+  },
+  async createFile(abs, data) {
+    const fd = openCanonicalWritableFileSync(abs, true)
+    try {
+      await writeFd(fd, data)
+      const meta = await statFd(fd)
+      if (meta.size !== data.length) throw new Error('Exclusive create wrote an incomplete file')
+      const digest = createHash('sha256')
+      const window = new Uint8Array(Math.min(64 * 1024, data.length))
+      for (let at = 0; at < data.length; ) {
+        const { bytesRead } = await readFd(fd, window, 0, Math.min(window.length, data.length - at), at)
+        if (!bytesRead) throw new Error('Exclusive create verification failed')
+        digest.update(window.subarray(0, bytesRead))
+        at += bytesRead
+      }
+      return { size: meta.size, sha256: digest.digest('hex') }
     } finally {
       await closeFd(fd)
     }

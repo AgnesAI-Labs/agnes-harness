@@ -35,6 +35,9 @@ export function fencedFs(inner: FsOps, policy: FsPolicy): FsOps {
   return {
     read: async (path, opts) => inner.read(check(path), opts),
     write: async (path, data) => inner.write(check(path), data),
+    ...(inner.create
+      ? { create: async (path: string, data: Uint8Array) => inner.create!(check(path), data) }
+      : {}),
     list: async (path) => inner.list(check(path)),
     stat: async (path) => inner.stat(check(path)),
   }

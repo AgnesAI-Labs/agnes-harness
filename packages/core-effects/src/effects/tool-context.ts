@@ -86,6 +86,7 @@ export type FsOps = {
   preflight?(path: string, mode: 'read' | 'write'): Promise<void>
   read(path: string, opts?: { offset?: number; limit?: number }): Promise<Uint8Array>
   write(path: string, data: Uint8Array | string): Promise<void>
+  create?(path: string, data: Uint8Array): Promise<{ size: number; sha256: string }>
   list(path: string): Promise<FsEntry[]>
   stat(path: string): Promise<FsStat>
 }
@@ -508,6 +509,20 @@ export function buildToolContext(
     fs: {
       read: (path, options) => files.read(path, options),
       write: (path, content) => effects.write(() => files.write(path, content)),
+      ...(d.fsOps.create
+        ? {
+            create: (path: string, data: Uint8Array) =>
+              effects.write(async () => {
+                const bytes = data.slice()
+                await assertNotDenied(d.fsOps, path)
+                const snap = await d.runtime.checkpointSnapshot([path], stepId, d.workspace?.checkpoint)
+                if (!snap.ok)
+                  throw new CoreError('E_SEAM_MISSING', `checkpoint unavailable: ${snap.reason}`, { path })
+                call.signal.throwIfAborted()
+                return d.fsOps.create!(path, bytes)
+              }),
+          }
+        : {}),
       list: (path) => files.list(path),
       stat: (path) => files.stat(path),
       ...(files.revision ? { revision: (path: string) => files.revision!(path) } : {}),

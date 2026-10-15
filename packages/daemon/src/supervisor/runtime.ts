@@ -1112,7 +1112,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
               sessionOwnership,
               limits: {
                 maxArtifactBytes: Math.max(
-                  32 * 1024 * 1024,
+                  100 * 1024 * 1024,
                   o.profile.computerUse?.capture.maxBytesPerImage ?? 0,
                 ),
                 maxResponseBytes: Math.max(

@@ -16,8 +16,11 @@ export const ATTACHMENT_ERROR_CODES = [
 ] as const
 export type AttachmentErrorCode = (typeof ATTACHMENT_ERROR_CODES)[number]
 export class AttachmentError extends Error {
-  constructor(readonly code: AttachmentErrorCode) {
-    super(code)
+  constructor(
+    readonly code: AttachmentErrorCode,
+    message: string = code,
+  ) {
+    super(message)
     this.name = 'AttachmentError'
   }
 }

@@ -29,6 +29,7 @@ const linux = process.platform === 'linux' // guards-allow-platform: shared syst
 type Native = {
   openCanonicalFile?(path: string): number
   openCanonicalWritableFile?(path: string): number
+  openCanonicalExclusiveFile?(path: string): number
   canonicalFs?(operation: string, path: string, recursive: boolean, mode: number): Promise<unknown>
   listCanonicalDirectory?(path: string): string[]
   landlockAbi?(): number
@@ -785,8 +786,8 @@ export function listCanonicalDirectorySync(path: string): string[] {
 }
 
 /** Open without truncating; callers write and close this descriptor, never reopen the path. */
-export function openCanonicalWritableFileSync(path: string): number {
-  const implementation = native().openCanonicalWritableFile
+export function openCanonicalWritableFileSync(path: string, exclusive = false): number {
+  const implementation = exclusive ? native().openCanonicalExclusiveFile : native().openCanonicalWritableFile
   if (!implementation)
     throw Object.assign(new Error('Safe canonical write is unavailable'), { code: 'ENOSYS' })
   return implementation(filePath(path))

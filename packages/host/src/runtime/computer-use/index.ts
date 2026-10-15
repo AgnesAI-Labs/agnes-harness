@@ -1,11 +1,12 @@
 import { lstatSync } from 'node:fs'
 import { join } from 'node:path'
 import type { HostToolDispatchPort } from '@agnes/core'
-import type { Logger } from '@agnes/extension-api'
+import type { AttachmentRootSnapshot, Logger } from '@agnes/extension-api'
 import {
   type ComputerUseArtifactGcRuntime,
   createComputerUseArtifactGcRuntime,
 } from '@agnes/host-artifacts/computer-use-artifact-gc'
+import { createStoredObjectGc } from '@agnes/host-artifacts/object-gc'
 import { createPrivateArtifactStore } from '@agnes/host-artifacts/private-artifact-store'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { createComputerUseHostDispatchPort } from '@agnes/host-computer-use/computer-use/host-dispatch'
@@ -41,7 +42,9 @@ export type ComputerUseArtifactRetention = Readonly<{
     seamName: string,
   ): Pick<SeamInitContext, 'privateArtifactStore'> | Record<string, never>
   /** Starts the screenshot collector on a platform whose private artifact delete is enforced. */
-  startCollector(): ComputerUseArtifactGcRuntime | undefined
+  startCollector(
+    pendingAttachments?: () => Promise<AttachmentRootSnapshot>,
+  ): ComputerUseArtifactGcRuntime | undefined
 }>
 
 const retentionPlatform = (
@@ -54,11 +57,7 @@ const retentionPlatform = (
     ? platform.os
     : undefined
 
-/**
- * Keeps ordinary artifact writes and Host startup unchanged until Computer Use is enabled. Once
- * screenshots have existed, the coordinated writer and collector stay while it is disabled so old
- * private artifacts can still expire without racing a same-digest write in the shared CAS.
- */
+/** Private CAS publication and collection share one lock, including installations without Computer Use. */
 export function inspectComputerUseArtifacts(input: {
   profile: Pick<ResolvedProfile, 'computerUse'>
   dataDir: string
@@ -82,15 +81,24 @@ export function inspectComputerUseArtifacts(input: {
     metadataPresent,
     contextFor: (owner, seamName) => {
       const os = retentionPlatform(platform, nativePlatform)
-      return required && owner === '@agnes/base' && seamName === 'artifacts' && os
+      return owner === '@agnes/base' && seamName === 'artifacts' && os
         ? { privateArtifactStore: createPrivateArtifactStore(dataDir, os) }
         : {}
     },
-    startCollector: () => {
+    startCollector: (pendingAttachments) => {
       if (!collector && retentionPlatform(platform, nativePlatform)) {
-        collector = createComputerUseArtifactGcRuntime({
+        const objectGc = createStoredObjectGc({
+          dataDir,
+          ...(pendingAttachments ? { pendingRoots: pendingAttachments } : {}),
+          onError: (error) =>
+            input.log.error('Artifact object GC failed closed', {
+              message: error instanceof Error ? error.message : String(error),
+            }),
+        })
+        const computerUseGc = createComputerUseArtifactGcRuntime({
           dataDir,
           retention: profile.computerUse.retention,
+          ...(pendingAttachments ? { pendingAttachments } : {}),
           clock: input.clock,
           onError: (error) =>
             input.log.error('Computer Use artifact GC failed closed', {
@@ -99,6 +107,16 @@ export function inspectComputerUseArtifacts(input: {
           onPressure: (pressure) =>
             input.log.warn('Computer Use artifact storage is above its cap', pressure),
         })
+        collector = {
+          trigger: async () => {
+            await objectGc.trigger()
+            return computerUseGc.trigger()
+          },
+          close: async () => {
+            await objectGc.close()
+            await computerUseGc.close()
+          },
+        }
       }
       return collector
     },
@@ -124,16 +142,16 @@ export function mountComputerUse(input: {
   platform: HostPlatform
   retention: ComputerUseArtifactRetention & { metadataPresent: boolean }
   artifacts: ComputerUseArtifactSink
+  pendingAttachments?: () => Promise<AttachmentRootSnapshot>
   rollback: Rollback
 }): ComputerUseHost {
   const { profile, retention } = input
   let collector: ComputerUseArtifactGcRuntime | undefined
   const startCollector = (): void => {
-    collector = retention.startCollector()
+    collector = retention.startCollector(input.pendingAttachments)
   }
-  // Old screenshots still need collection even if the feature was disabled. A fresh profile
-  // should not open retention databases or start a collector before ever using the driver.
-  if (retention.metadataPresent) startCollector()
+  // Stored originals and old screenshots retain their collectors independently of driver activation.
+  if (retention.metadataPresent || input.pendingAttachments) startCollector()
   input.rollback.push('computer-use-artifact-gc', () => collector?.close())
   const lazy = createLazyComputerUseRuntime({
     ...(!profile.computerUse.enabled

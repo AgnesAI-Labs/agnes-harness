@@ -134,6 +134,7 @@ import type {
 } from '../orchestrator/request-media-surface.js'
 import { ResourceRegistry } from '../registry/resources.js'
 import type { RegistrySnapshot, ToolRegistry, ToolSource } from '../registry/tools.js'
+import { commitSessionAttachments, queuedInputSizeFloor } from '../request/attachment-admission.js'
 import type { PromptSection } from '../request/contribute.js'
 import { harnessSections, mergeContributions } from '../request/contribute.js'
 import type { ContractRef, DeriveOutput, RequestHeaderData } from '../request/derive.js'
@@ -1363,16 +1364,8 @@ export class SessionImpl {
         )
       // String lengths are a conservative UTF-8/JSON lower bound. Refuse a known-oversized
       // inbox before decoding large media or allocating its entire serialized frame.
-      let minimumBytes = 0
-      for (const item of [...cur.items, { content }]) {
-        if (!Array.isArray(item.content)) continue
-        for (const block of item.content) {
-          if (!block || typeof block !== 'object') continue
-          if ('data' in block && typeof block.data === 'string') minimumBytes += block.data.length
-          if (block.type === 'text' && typeof block.text === 'string') minimumBytes += block.text.length
-          if (minimumBytes > MAX_FRAME_BYTES - 4096) throw oversized()
-        }
-      }
+      if (queuedInputSizeFloor([...cur.items, { content }], MAX_FRAME_BYTES - 4096) > MAX_FRAME_BYTES - 4096)
+        throw oversized()
       validateUserMessageImages(content)
       if (content.some((block) => block.type === 'image')) {
         const target = resolveModel(this, 'primary')
@@ -1389,37 +1382,39 @@ export class SessionImpl {
           ? await this.scan({ type: 'turn/end', order: 'desc', limit: 1, lane: this.lane })
           : []
       const completed = (end?.data as { reason?: TurnEndReason } | undefined)?.reason === 'completed'
-      const item: InboxItem = {
-        itemId: this.d.ids.requestId(),
-        target: completed ? 'next-turn' : target,
-        content,
-        actor: msg.actor,
-        enqueuedAt: new Date(this.d.clock()).toISOString(),
-        ...(msg.commandId ? { commandId: msg.commandId } : {}),
-        ...(msg.admissionId ? { admissionId: msg.admissionId } : {}),
-        kind: msg.kind ?? (target === 'next-turn' ? 'prompt' : 'steer'),
-        ...(system ? { system } : {}),
-        ...(msg.titleLocale ? { titleLocale: msg.titleLocale } : {}),
-        trust: msg.origin === 'system' ? 'untrusted' : (msg.trust ?? 'trusted'),
-        ...(msg.origin ? { origin: msg.origin } : {}),
-      }
-      const nextInbox = inboxEvent(this.lane, this.d.actor, { items: [...cur.items, item] })
-      if (encoder.encode(JSON.stringify(nextInbox)).byteLength > MAX_FRAME_BYTES - 4096) throw oversized()
-      const r = await this.d.log.append([
-        nextInbox,
-        ...(item.kind === 'steer'
-          ? [this.controls.fact('steer', 'queued', msg.actor, { itemId: item.itemId })]
-          : []),
-        ...(msg.budget !== undefined
-          ? [
-              budgetOverrideEvent(INBOX_BUDGET_EVENT, this.d.actor, {
-                itemId: item.itemId,
-                creditsCap: msg.budget,
-              }),
-            ]
-          : []),
-      ])
-      return r.firstSeq
+      return commitSessionAttachments(this, content, msg.signal, async (content) => {
+        const item: InboxItem = {
+          itemId: this.d.ids.requestId(),
+          target: completed ? 'next-turn' : target,
+          content,
+          actor: msg.actor,
+          enqueuedAt: new Date(this.d.clock()).toISOString(),
+          ...(msg.commandId ? { commandId: msg.commandId } : {}),
+          ...(msg.admissionId ? { admissionId: msg.admissionId } : {}),
+          kind: msg.kind ?? (target === 'next-turn' ? 'prompt' : 'steer'),
+          ...(system ? { system } : {}),
+          ...(msg.titleLocale ? { titleLocale: msg.titleLocale } : {}),
+          trust: msg.origin === 'system' ? 'untrusted' : (msg.trust ?? 'trusted'),
+          ...(msg.origin ? { origin: msg.origin } : {}),
+        }
+        const nextInbox = inboxEvent(this.lane, this.d.actor, { items: [...cur.items, item] })
+        if (encoder.encode(JSON.stringify(nextInbox)).byteLength > MAX_FRAME_BYTES - 4096) throw oversized()
+        const r = await this.d.log.append([
+          nextInbox,
+          ...(item.kind === 'steer'
+            ? [this.controls.fact('steer', 'queued', msg.actor, { itemId: item.itemId })]
+            : []),
+          ...(msg.budget !== undefined
+            ? [
+                budgetOverrideEvent(INBOX_BUDGET_EVENT, this.d.actor, {
+                  itemId: item.itemId,
+                  creditsCap: msg.budget,
+                }),
+              ]
+            : []),
+        ])
+        return r.firstSeq
+      })
     })
   }
 
