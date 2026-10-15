@@ -1,4 +1,3 @@
-import { validateWorkspaceUploads } from './upload-admission.js'
 import { CoreError } from '@agnes/core-common/types'
 import { scanPages } from '@agnes/core-ledger/log/scan-pages'
 import type { AttachmentReceipt } from '@agnes/extension-api'
@@ -23,6 +22,7 @@ import {
 import { resolveModel } from '../step/inference.js'
 import type { SessionImpl } from '../step/session.js'
 import { attachmentOperation } from './attachment-operation.js'
+import { validateWorkspaceUploads } from './upload-admission.js'
 
 const identity = (ref: ArtifactRef) => JSON.stringify([ref.sha256, ref.size, ref.mime])
 const MAX_SESSION_BYTES = 2 * 1024 * 1024 * 1024

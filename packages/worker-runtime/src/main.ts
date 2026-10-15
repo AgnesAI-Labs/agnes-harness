@@ -3,7 +3,6 @@ import { createReadStream, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { Duplex } from 'node:stream'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { workerDomainFailure } from './worker-errors.js'
 import { createSkillCordisService } from '@agnes/resource-control-runtime'
 import {
   bootstrapWorkerResources,
@@ -15,6 +14,7 @@ import {
 import { reportWorkerBootFailure } from './boot-failure.js'
 import { generationExtensionRestorer } from './runtime-generation-restore.js'
 import { connectSupervisor } from './supervisor-connection.js'
+import { workerDomainFailure } from './worker-errors.js'
 
 export { scanSkills } from '@agnes/resource-control-worker'
 

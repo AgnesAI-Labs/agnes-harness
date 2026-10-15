@@ -293,15 +293,15 @@ describe('artifact authority ledger projection', () => {
         type: 'inbox',
         register: 'inbox',
         data: {
-          items: [
-            {
-              itemId: 'queued',
-              target: 'next-turn',
-              actor: event.actor,
-              enqueuedAt: event.ts,
-              content: [attachmentLink({ ...ref, mime: 'text/plain' }, 'queued.txt')],
-            },
-          ],
+          items: Array.from({ length: 6 }, (_, index) => ({
+            itemId: `queued-${index}`,
+            target: 'next-turn',
+            actor: event.actor,
+            enqueuedAt: event.ts,
+            content: Array.from({ length: 50 }, () =>
+              attachmentLink({ ...ref, mime: 'text/plain' }, 'queued.txt'),
+            ),
+          })),
         },
       },
       new AbortController().signal,

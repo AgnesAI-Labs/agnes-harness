@@ -205,9 +205,18 @@ export function createLocalArtifactReadStore(
       const path = join(artifactRoot, ref.sha256.slice(0, 2), ref.sha256)
       let handle: Awaited<ReturnType<typeof open>> | undefined
       try {
-        const observed = await lstat(path)
+        signal.throwIfAborted()
+        const found = await missingOrReclaimed(path, rawDataDir, ref.sha256)
+        if (found.kind === 'reclaimed') throw ARTIFACT_RECLAIMED_FAILURE
+        const observed = found.stat
         if (!observed.isFile() || observed.isSymbolicLink()) throw fixedFailure()
-        handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
+        try {
+          handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
+        } catch (error) {
+          if ((await missingOrReclaimed(path, rawDataDir, ref.sha256)).kind === 'reclaimed')
+            throw ARTIFACT_RECLAIMED_FAILURE
+          throw error
+        }
         const before = await handle.stat()
         if (
           !before.isFile() ||
@@ -240,7 +249,8 @@ export function createLocalArtifactReadStore(
         )
           throw fixedFailure()
         return result
-      } catch {
+      } catch (error) {
+        if (error === ARTIFACT_RECLAIMED_FAILURE && !signal.aborted) throw error
         throw fixedFailure()
       } finally {
         await handle?.close().catch(() => undefined)

@@ -1,6 +1,6 @@
-import { AttachmentError } from '@agnes/protocol'
 import { createHash } from 'node:crypto'
 import type { ArtifactRef, ArtifactsSeam } from '@agnes/core'
+import { AttachmentError } from '@agnes/protocol'
 import type { SeamFactory } from '../../../src/seam-init.js'
 import { createAttachmentStore } from './attachments.js'
 import { createJobRunner } from './jobs.js'

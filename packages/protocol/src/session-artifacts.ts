@@ -30,15 +30,17 @@ export function sessionArtifactRoots(
     const data = event.data as { content?: unknown[]; items?: { content?: unknown[] }[] }
     const blocks =
       event.type === 'inbox' ? (data.items ?? []).flatMap((item) => item.content ?? []) : (data.content ?? [])
-    const refs: ArtifactRef[] = []
+    const refs = new Map<string, ArtifactRef>()
     for (const block of blocks) {
       if (!block || typeof block !== 'object' || !('attachment' in block)) continue
       validateStoredAttachment(block)
-      refs.push(block.attachment.artifact)
-      if (block.attachment.thumbnail) refs.push(block.attachment.thumbnail)
+      for (const ref of [block.attachment.artifact, block.attachment.thumbnail])
+        if (ref) refs.set(JSON.stringify([ref.sha256, ref.size, ref.mime]), ref)
     }
-    if (refs.length > MAX_ROOTS) throw new Error('artifact roots invalid')
-    return refs
+    // An inbox aggregates independently bounded messages. Its ledger frame bounds the scan;
+    // a per-message root limit must not revoke authority when more input is queued.
+    if (event.type === 'user/message' && refs.size > MAX_ROOTS) throw new Error('artifact roots invalid')
+    return [...refs.values()]
   }
   if (event.type === 'request/header') {
     if (event.origin !== 'system' || event.trust !== 'trusted') return undefined
