@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createProvider, NullContractStore } from '@agnes/ai'
 import { FakeAdapter, fakeModel, fakeRequest } from '@agnes/ai/testkit'
+import { actor, fakeSeams, openSession } from '@agnes/core/testkit'
+import { type LoopFactory, loopCheckpointCodec } from '@agnes/extension-api'
 import type { RequestBody } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
 import { RequestTraceStore } from '../src/request-traces.js'
@@ -56,6 +58,7 @@ describe('local request snapshots', () => {
       const id = `ffffffff-ffff-ffff-ffff-${String(index).padStart(12, '0')}`
       await writeFile(join(dir, `${id}.call.json`), JSON.stringify({ ...value, id }))
     }
+    expect((await store.get('owned')).calls?.map((call) => call.id)).toEqual([first.id])
     const reopened = new RequestTraceStore(
       root,
       'local',
@@ -122,12 +125,28 @@ describe('local request snapshots', () => {
     expect(await reopened.metadata('other', first.id)).toBeNull()
     expect(await new RequestTraceStore(root, 'other').metadata('owned', first.id)).toBeNull()
     const [profile] = await readdir(join(root, 'model-requests'))
-    const files = await readdir(join(root, 'model-requests', profile!))
+    if (!profile) throw new Error('expected trace profile')
+    const files = await readdir(join(root, 'model-requests', profile))
     expect(files.filter((file) => file.startsWith(result.snapshot!.systemHash))).toHaveLength(1)
+    const callFile = join(root, 'model-requests', profile, `${second.id}.call.json`)
+    const original = await readFile(callFile, 'utf8')
+    // Legacy/external writers do not notify this already warm store.
+    const changed = JSON.parse(original)
+    changed.sessionHash = createHash('sha256').update('other').digest('hex')
+    await writeFile(callFile, JSON.stringify(changed))
+    expect((await reopened.get('owned')).calls?.map((call) => call.id)).toEqual([first.id])
+    expect((await reopened.get('other', second.id)).snapshot?.id).toBe(second.id)
+    await writeFile(callFile, '{invalid')
+    expect((await reopened.get('other')).calls).toEqual([])
+    await writeFile(callFile, original)
+    expect((await reopened.get('owned', second.id)).snapshot?.id).toBe(second.id)
     expect((await reopened.get('other', first.id)).snapshot).toBeNull()
     expect((await new RequestTraceStore(root, 'other').get('owned', first.id)).snapshot).toBeNull()
     expect(await reopened.clear('other', first.id)).toBe(false)
     expect(await reopened.clear('owned', first.id)).toBe(true)
+    await first.wire({ system: 'late body' })
+    await first.finish()
+    expect((await store.get('owned', first.id)).snapshot).toBeNull()
     expect((await reopened.get('owned', second.id)).snapshot?.system).toBe('synthetic persona')
     expect(await reopened.clear('owned', second.id)).toBe(true)
     expect(
@@ -167,6 +186,109 @@ describe('local request snapshots', () => {
     })
     expect(snapshot.attempts[0]).toMatchObject({ status: 'unknown', providerActualTokens: null, wire: null })
   })
+  it.each(['default', 'generic'] as const)(
+    'keeps actual ledger usage when cancellation interrupts trace finalization in the %s Loop',
+    async (loop) => {
+      let release!: () => void
+      let entered!: () => void
+      const held = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const finishing = new Promise<void>((resolve) => {
+        entered = resolve
+      })
+      const adapter = new FakeAdapter({
+        id: 'synthetic',
+        routes: [{ route: 'default', api: 'custom', baseUrl: 'https://invalid.test' }],
+        models: { default: [fakeModel({ id: 'm', route: 'default' })] },
+        script: () => [
+          { type: 'text_delta', delta: 'synthetic response' },
+          {
+            type: 'usage',
+            tokens: { input: 123, output: 17, cacheRead: 4, cacheWrite: 0 },
+            credits: 42,
+            creditSource: 'gateway',
+            billing: { usdMicros: 420, source: 'gateway', subscription: false },
+          },
+          { type: 'done', reason: 'stop' },
+        ],
+      })
+      const provider = createProvider({
+        adapters: [adapter],
+        routes: { primary: { route: 'default', model: 'm' } },
+        contract: new NullContractStore(),
+        secrets: () => 'synthetic',
+        clock: () => 0,
+        parserVersion: '1',
+        trace: {
+          begin: async () => ({
+            id: '00000000-0000-4000-8000-000000000001',
+            wire: async () => {},
+            event() {},
+            finish: async () => {
+              entered()
+              await held
+            },
+          }),
+        },
+      })
+      const codec = loopCheckpointCodec(1, () => null)
+      const generic: LoopFactory = {
+        id: 'test.trace-cancellation',
+        version: '1.0.0',
+        capabilities: ['model'],
+        codec,
+        create(ctx) {
+          return {
+            checkpoint: () => codec.encode(null),
+            cancel() {},
+            dispose() {},
+            async step(signal) {
+              if (!(await ctx.input.accept())) return { outcome: 'idle' }
+              await ctx.model.complete(await ctx.prepareRequest(), signal)
+              return ctx.events.finish('completed')
+            },
+          }
+        },
+        resume(ctx) {
+          return this.create(ctx)
+        },
+      }
+      const billing: unknown[] = []
+      const seams = fakeSeams()
+      seams.billing.record = async (row) => {
+        billing.push(row)
+      }
+      const { session, log } = await openSession({
+        provider,
+        seams,
+        ...(loop === 'generic' ? { loopFactory: generic } : {}),
+      })
+      try {
+        await session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'synthetic' }] })
+        const controller = new AbortController()
+        const running = session.run({ until: 'turn-end', signal: controller.signal })
+        await finishing
+        controller.abort()
+        expect((await running).reason).toBe('aborted')
+        const rows = await log.scan({ type: 'cost/ledger', limit: 10 })
+        expect(rows).toHaveLength(1)
+        expect(billing).toHaveLength(1)
+        expect(billing[0]).toMatchObject({ credits: 42, billing: { usdMicros: 420 } })
+        expect(rows[0]?.data).toMatchObject({
+          interrupted: true,
+          credits: 42,
+          creditSource: 'gateway',
+          billing: { usdMicros: 420 },
+          tokens: { input: 123, output: 17, cacheRead: 4 },
+        })
+        expect(rows[0]?.data).not.toHaveProperty('timing.finalizeMs')
+      } finally {
+        release()
+        await session.close()
+      }
+    },
+  )
   it('removes credentials and secret-like text while preserving declared tool properties', async () => {
     const root = await home()
     const store = new RequestTraceStore(root, 'local')
@@ -239,6 +361,26 @@ describe('local request snapshots', () => {
     refused.event({ type: 'done' })
     await refused.finish()
     expect((await quota.get('owned', refused.id)).snapshot).toBeNull()
+    const parallel = new RequestTraceStore(
+      root,
+      'parallel',
+      { ...limits, callBytes: 128 * 1024, totalBytes: 12 * 1024, calls: 16 },
+      () => now,
+    )
+    const rejected = await parallel.begin(request())
+    await rejected.wire({ tools: 'a'.repeat(7000), system: 'b'.repeat(7000) })
+    expect(await parallel.clear('owned', rejected.id)).toBe(false)
+    const afterRejected = await parallel.begin(request('next'))
+    await afterRejected.finish()
+    expect((await parallel.get('owned', rejected.id)).snapshot).toBeNull()
+    expect((await parallel.get('next', afterRejected.id)).snapshot?.system).toBe('synthetic persona')
+    const parallelDir = join(root, 'model-requests', createHash('sha256').update('parallel').digest('hex'))
+    const parallelBytes = (
+      await Promise.all(
+        (await readdir(parallelDir)).map(async (name) => (await stat(join(parallelDir, name))).size),
+      )
+    ).reduce((sum, size) => sum + size, 0)
+    expect(parallelBytes).toBeLessThanOrEqual(12 * 1024)
     const quotaDirectory = join(root, 'model-requests', createHash('sha256').update('quota').digest('hex'))
     const crashed = join(quotaDirectory, `${refused.id}.call.json.${refused.id}.tmp`)
     await writeFile(crashed, 'x'.repeat(limits.totalBytes))
