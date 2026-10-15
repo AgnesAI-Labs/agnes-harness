@@ -21,6 +21,57 @@ export const itemKey = (id: string, ordinal: number) =>
 export function load<T>(tx: StoreTransaction, key: string): T {
   const row = tx.get(key)
   if (!row) throw new BatchError('E_BATCH_NOT_FOUND')
+  const value = row.value
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new BatchError('E_BATCH_STORE')
+  if (key.startsWith('manifest/')) {
+    const { version, id, total, next, settled, active, spent, reserved, spec, status } = value
+    if (
+      version !== 1 ||
+      key !== `manifest/${id}` ||
+      typeof total !== 'number' ||
+      !Number.isSafeInteger(total) ||
+      total < 1 ||
+      total > 100_000 ||
+      typeof next !== 'number' ||
+      !Number.isSafeInteger(next) ||
+      next < 1 ||
+      next > total + 1 ||
+      typeof settled !== 'number' ||
+      !Number.isSafeInteger(settled) ||
+      settled < 0 ||
+      settled >= next ||
+      !Array.isArray(active) ||
+      active.length > 8 ||
+      active.length !== next - 1 - settled ||
+      new Set(active).size !== active.length ||
+      active.some((n) => typeof n !== 'number' || !Number.isSafeInteger(n) || n < 1 || n >= next) ||
+      !spec ||
+      typeof spec !== 'object' ||
+      Array.isArray(spec) ||
+      typeof spec.budget !== 'number' ||
+      typeof spent !== 'number' ||
+      !Number.isFinite(spent) ||
+      spent < 0 ||
+      typeof reserved !== 'number' ||
+      !Number.isFinite(reserved) ||
+      reserved < 0 ||
+      spent + reserved > spec.budget + 1e-9 ||
+      !['running', 'unknown', 'completed', 'failed', 'cancelled', 'budget_exhausted'].includes(String(status))
+    )
+      throw new BatchError('E_BATCH_STORE')
+  } else if (key.startsWith('batch/')) {
+    if (
+      typeof value.ordinal !== 'number' ||
+      !Number.isSafeInteger(value.ordinal) ||
+      value.ordinal < 1 ||
+      !Array.isArray(value.attempts) ||
+      value.attempts.length > 3 ||
+      !['pending', 'accepted', 'unknown', 'done', 'invalid', 'failed', 'cancelled'].includes(
+        String(value.state),
+      )
+    )
+      throw new BatchError('E_BATCH_STORE')
+  }
   return structuredClone(row.value) as T
 }
 export function save(tx: StoreTransaction, key: string, value: Manifest | Item): void {
@@ -76,6 +127,9 @@ export class Repository {
         settled: 0,
         successes: 0,
         failures: 0,
+        invalid: 0,
+        failed: 0,
+        cancelled: 0,
         spent: 0,
         reserved: 0,
         uncertain: 0,

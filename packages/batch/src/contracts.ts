@@ -1,5 +1,7 @@
 /** Batch-owned contracts. Runtime adapters must enforce authority, not trust a model's claims. */
-export type Json = null | boolean | number | string | Json[] | { [key: string]: Json }
+import type { JsonValue as Json } from '@agnes/protocol'
+
+export type { JsonValue as Json } from '@agnes/protocol'
 export type Input = { name: string; digest: string; size: number; artifact: string }
 export type Spec = {
   prompt: string
@@ -43,6 +45,9 @@ export type Manifest = {
   settled: number
   successes: number
   failures: number
+  invalid: number
+  failed: number
+  cancelled: number
   spent: number
   reserved: number
   uncertain: number

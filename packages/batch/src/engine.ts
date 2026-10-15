@@ -156,6 +156,7 @@ ${a.number > 0 ? 'The previous answer was invalid. Correct its structure without
       if (a.status !== 'outbox') return
       a.status = 'terminal'
       item.state = 'cancelled'
+      m.cancelled++
       item.error = 'not_dispatched'
       m.reserved = Math.max(0, m.reserved - a.ceiling)
       m.settled++
@@ -263,6 +264,9 @@ ${a.number > 0 ? 'The previous answer was invalid. Correct its structure without
                 : expired && receipt.state === 'cancelled'
                   ? 'deadline_exceeded'
                   : receipt.state
+            if (item.state === 'invalid') m.invalid++
+            if (item.state === 'failed') m.failed++
+            if (item.state === 'cancelled') m.cancelled++
             if (item.state !== 'cancelled') m.failures++
           }
         }
@@ -291,6 +295,7 @@ ${a.number > 0 ? 'The previous answer was invalid. Correct its structure without
             item.error = m.stop
             save(tx, itemKey(id, n), item)
           }
+          m.cancelled += m.total - m.next + 1
           m.settled = m.total
           m.next = m.total + 1
           m.status = m.stop

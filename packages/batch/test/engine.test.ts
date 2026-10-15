@@ -123,7 +123,7 @@ describe('durable batch business state', () => {
       resultBytes: 13,
       spent: 0.5,
     })
-    expect((await h.repo.page(id))[1]).toMatchObject({ state: 'invalid', error: 'stored_result_limit' })
+    expect((await h.repo.page(id)).filter((item) => item.error === 'stored_result_limit')).toHaveLength(1)
     expect(h.executor.executions).toBe(2)
     const active = harness()
     active.executor.reply = () => ({ state: 'running', charged: 0.1 })

@@ -7,7 +7,7 @@ import type { Repository } from './repository.js'
 
 // Strip terminal controls and encode Markdown metacharacters. JSONL remains ordinary JSON data.
 export const inertText = (value: string): string => value.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, ' ')
-const markdown = (s: string) => inertText(s).replace(/[&<>|`*_[\]\\!#]/gu, (c) => `&#${c.codePointAt(0)};`)
+const markdown = (s: string) => inertText(s).replace(/[\p{P}\p{S}]/gu, (c) => `&#${c.codePointAt(0)};`)
 export function csvCell(value: string): string {
   let text = inertText(value)
   if (/^[\s]*[=+\-@]/u.test(text)) text = `'${text}`

@@ -1,3 +1,4 @@
+import { inspectJsonData } from '@agnes/protocol'
 import { BatchError, type Json, type Spec } from './contracts.js'
 
 export const MAX_RESULT_BYTES = 32 * 1024
@@ -28,25 +29,11 @@ const keywords = new Set([
 ])
 const types = new Set(['object', 'array', 'string', 'number', 'integer', 'boolean', 'null'])
 
-function boundedJson(value: unknown): value is Json {
-  let nodes = 0
-  const parents = new Set<object>()
-  function visit(v: unknown, depth: number): boolean {
-    if (++nodes > 32768 || depth > 32) return false
-    if (scalar(v)) return true
-    if (!v || typeof v !== 'object' || parents.has(v)) return false
-    parents.add(v)
-    const ok = Object.values(v).every((child) => visit(child, depth + 1))
-    parents.delete(v)
-    return ok
-  }
-  return visit(value, 0)
-}
-
 /** A deliberately bounded JSON Schema subset: no regex, references, combinators or quadratic rules. */
-export function compileSchema(schema: Json): (value: Json) => boolean {
-  if (!boundedJson(schema) || Buffer.byteLength(JSON.stringify(schema)) > 32 * 1024)
-    throw new BatchError('E_BATCH_SCHEMA')
+export function compileSchema(input: unknown): (value: Json) => boolean {
+  const inspected = inspectJsonData(input, 32 * 1024)
+  if (!inspected.ok) throw new BatchError('E_BATCH_SCHEMA')
+  const schema = inspected.value
   let nodes = 0
   function inspect(s: unknown, depth: number): void {
     if (++nodes > 2048 || depth > 16 || !object(s) || !types.has(String(s.type)))
@@ -152,7 +139,9 @@ export function compileSchema(schema: Json): (value: Json) => boolean {
 }
 
 export function validateSpec(input: unknown): Spec {
-  const s = structuredClone(input)
+  const inspected = inspectJsonData(input, 64 * 1024)
+  if (!inspected.ok) throw new BatchError('E_BATCH_SPEC')
+  const s = inspected.value
   if (
     !object(s) ||
     typeof s.prompt !== 'string' ||
@@ -160,8 +149,9 @@ export function validateSpec(input: unknown): Spec {
     Buffer.byteLength(s.prompt) > 16_384
   )
     throw new BatchError('E_BATCH_SPEC')
+  const fields: Record<string, unknown> = s
   function number(key: string, low: number, high: number, integer: boolean): number {
-    const value = s[key]
+    const value = fields[key]
     if (
       typeof value !== 'number' ||
       !Number.isFinite(value) ||
@@ -173,7 +163,6 @@ export function validateSpec(input: unknown): Spec {
     return value
   }
   if (s.schema !== undefined) {
-    if (!boundedJson(s.schema)) throw new BatchError('E_BATCH_SCHEMA')
     compileSchema(s.schema)
   }
   return {
@@ -193,12 +182,8 @@ export function parseOutput(text: string, schema?: Json): Json | undefined {
   if (schema === undefined)
     return Buffer.byteLength(JSON.stringify({ text })) <= MAX_RESULT_BYTES ? { text } : undefined
   try {
-    const value: Json = JSON.parse(text)
-    return boundedJson(value) &&
-      Buffer.byteLength(JSON.stringify(value)) <= MAX_RESULT_BYTES &&
-      compileSchema(schema)(value)
-      ? value
-      : undefined
+    const checked = inspectJsonData(JSON.parse(text), MAX_RESULT_BYTES)
+    return checked.ok && compileSchema(schema)(checked.value) ? checked.value : undefined
   } catch {
     return undefined
   }

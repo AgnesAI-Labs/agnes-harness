@@ -1,9 +1,16 @@
 # Batch business service
 
+English | [简体中文](README.zh-CN.md)
+
 This package owns file manifests, item attempts, credit reservations, output validation and exports.
 It is under integration: a runtime adapter must supply an owner-bound store, immutable artifacts and
 Host-enforced confined child/job execution. The package is not installed as a runnable plugin yet.
 The test executor is synthetic and must never be registered as production authority.
+
+`createBatchPlugin(connector)` registers the declared `batch.*` query/effect services through the
+public plugin API. The connector resolves Host-admitted context to a bound `BatchService`; request
+data cannot select its owner or workspace. The default `batchPlugin` entry refuses installation
+with `E_BATCH_MANAGED_CONNECTOR_REQUIRED` until that runtime integration is supplied.
 
 `BatchService` binds one workspace and owner outside request data. The runtime drives `tick()` after
 startup and while work is active. A persisted intent is written before dispatch; lookup and dispatch

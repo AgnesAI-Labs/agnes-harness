@@ -1,10 +1,25 @@
 import { resolve } from 'node:path'
-import { BatchError, type Spec } from './contracts.js'
+import { BatchError, type Manifest, type Spec } from './contracts.js'
 import type { BatchEngine } from './engine.js'
 import { type SnapshotArtifacts, snapshotFolder } from './enumerate.js'
 import { publishExport, renderExport } from './export.js'
 import { checkId } from './repository.js'
 
+export function batchStatus(m: Manifest) {
+  return {
+    ...m,
+    counts: {
+      total: m.total,
+      pending: m.total - m.next + 1,
+      running: m.active.length - m.uncertain,
+      unknown: m.uncertain,
+      done: m.successes,
+      invalid: m.invalid,
+      failed: m.failed,
+      cancelled: m.cancelled,
+    },
+  }
+}
 /** Host-admitted workspace/owner binding; never construct this from service request parameters. */
 export type BatchBinding = {
   workspaceRoot: string
@@ -38,13 +53,14 @@ export class BatchService {
       ...(input.extensions ? { extensions: input.extensions } : {}),
     })
     this.binding.signal.throwIfAborted()
-    return this.binding.engine.begin(input.id, spec, inputs)
+    return batchStatus(await this.binding.engine.begin(input.id, spec, inputs))
   }
-  status(id: string) {
-    return this.binding.engine.repo.status(id)
+  async status(id: string) {
+    return batchStatus(await this.binding.engine.repo.status(id))
   }
-  list(cursor?: string) {
-    return this.binding.engine.repo.list(cursor)
+  async list(cursor?: string) {
+    const page = await this.binding.engine.repo.list(cursor)
+    return { ...page, rows: page.rows.map(batchStatus) }
   }
   async results(id: string, offset = 0, limit = 3) {
     if (limit > 3) throw new BatchError('E_BATCH_PAGE')
@@ -52,11 +68,11 @@ export class BatchService {
     const m = await this.status(id)
     return { items, ...(offset + items.length < m.total ? { nextOffset: offset + items.length } : {}) }
   }
-  cancel(id: string) {
-    return this.binding.engine.cancel(id)
+  async cancel(id: string) {
+    return batchStatus(await this.binding.engine.cancel(id))
   }
-  resume(id: string) {
-    return this.binding.engine.resume(id)
+  async resume(id: string) {
+    return batchStatus(await this.binding.engine.resume(id))
   }
   /** Called by the managed runtime's wake/driver, not by an untrusted child. */
   async tick(): Promise<void> {
