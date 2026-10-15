@@ -58,6 +58,7 @@ import { closeHost } from './lifecycle.js'
 // core does not export a type named `Session`; it exports SessionImpl and SessionLogImpl. Taking the
 // return type instead of pinning a name means a rename over there is not a break over here.
 export type HostSession = Awaited<ReturnType<Kernel['session']>> & {
+  readonly hasActiveProcesses?: () => boolean
   readonly intelligentUi?: Pick<
     import('@agnes/intelligent-ui-contract').IntelligentUiInstance,
     'action' | 'read' | 'refresh'

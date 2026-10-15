@@ -535,6 +535,7 @@ export async function createSession(
     if (explicit.length === 0) await session.setYolo(true, actor)
   }
   Object.assign(session, {
+    hasActiveProcesses: () => workspace?.runtime.hasActiveProcesses?.() ?? false,
     referenceResolvers: a.pluginTree.root.referenceResolvers,
     referenceSessions: referenceHistory(
       profile.dataDir,

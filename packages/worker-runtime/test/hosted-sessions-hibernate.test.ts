@@ -74,6 +74,18 @@ describe('HostedSessions hibernates idle sessions and wakes them on demand', () 
     expect(t.sent.filter((f) => f.kind === 'log')).not.toHaveLength(0)
   })
 
+  it('retains a session with a live process and hibernates after its cleanup completes', async () => {
+    const t = await setup()
+    const session = await t.open('busy-process')
+    let active = true
+    Object.assign(session, { hasActiveProcesses: () => active })
+    await t.idle()
+    expect(t.hibernated('busy-process')).toBe(false)
+    active = false
+    await t.idle()
+    expect(t.hibernated('busy-process')).toBe(true)
+  })
+
   it('does nothing when T is zero', async () => {
     const t = await realHosted({ idleCloseMs: 0, clock: () => Date.now() + 10 * T })
     cleanups.push(t.close)

@@ -25,6 +25,7 @@ export async function doctorPlatform(d: BootDeps): Promise<Section> {
           `PowerShell ${shell.version} (${shell.edition})`,
           `shell path ${shell.path}`,
           `native arguments ${shell.nativeArguments}`,
+          ...(shell.codePage ? [`console code page ${shell.codePage}`] : []),
         )
       } catch {
         return {

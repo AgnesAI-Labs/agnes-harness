@@ -12,12 +12,24 @@ export async function legacyProcess(
   if (windows) throw new Error('SANDBOX_UNAVAILABLE: Windows requires the Host process port')
   const argv = await ctx.sandbox.confine(raw)
   ctx.signal.throwIfAborted()
-  const env: Record<string, string> = {}
+  const env: Record<string, string> = { PYTHONUNBUFFERED: '1', PYTHONUTF8: '1' }
   for (const key of ['PATH', 'HOME', 'LANG', 'LC_ALL', 'TMPDIR', 'TEMP', 'TMP'])
     if (process.env[key] !== undefined) env[key] = process.env[key]!
   const child = spawn(argv[0]!, argv.slice(1), { cwd, env, detached: true, stdio: ['pipe', 'pipe', 'pipe'] })
-  const exited = new Promise<{ code: number | null }>((resolve) =>
-    child.once('close', (code) => resolve({ code })),
+  let ended = false,
+    cleanupError: Error | undefined
+  child.once('exit', () => {
+    try {
+      if (child.pid) process.kill(-child.pid, 'SIGKILL')
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ESRCH') cleanupError = error as Error
+    }
+  })
+  const exited = new Promise<import('@agnes/extension-api').ProcessExit>((resolve) =>
+    child.once('close', (code) => {
+      ended = true
+      resolve({ code, ...(cleanupError ? { error: cleanupError } : {}) })
+    }),
   )
   await new Promise<void>((resolve, reject) => {
     child.once('spawn', resolve)
@@ -47,15 +59,17 @@ export async function legacyProcess(
       throw new Error('legacy process is not a PTY')
     },
     signal: async (signal) => {
+      if (ended) return
       if (child.pid) process.kill(-child.pid, signal)
     },
     close: async () => {
       try {
-        if (child.pid) process.kill(-child.pid, 'SIGKILL')
+        if (!ended && child.pid) process.kill(-child.pid, 'SIGKILL')
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
       }
-      await exited
+      const result = await exited
+      if (result.error) throw result.error
     },
   }
 }

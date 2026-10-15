@@ -83,6 +83,7 @@ describe('prompt section order table', () => {
     'code-doctrine.md': 'code-doctrine',
     'coding-doctrine.md': 'coding-doctrine',
     'environment.md': 'environment',
+    'environment-powershell.md': 'environment',
     'persona.md': 'persona',
   }
   // Loaded directly by renderTools() (code-mode/environment.ts), not registered in PROMPT_SECTIONS:
@@ -150,6 +151,8 @@ const PROMPT_TEXT: Record<string, string> = {
     '- Keep output short. Report what changed, what you verified, and what is still open.',
     '- Leave the workspace consistent: no half-applied edits, no stray files.',
   ].join('\n'),
+  'environment-powershell':
+    "Run shell commands directly in the Host-selected PowerShell interpreter. Do not wrap them in another powershell/pwsh -Command. Use curl.exe when you need native curl, and PowerShell here-strings for multiline text. Use -Encoding utf8 for text file reads and writes. Follow the measured interpreter version: Windows PowerShell 5.1 does not support && or ||. Python commands receive UTF-8 and unbuffered output defaults. A timeout alone does not identify its cause; inspect captured output and current state before retrying. Never print a secret's value; check only whether it is set.",
   environment: [
     'Your situation on this request. Every line is a fact the harness measured; none of it is a guess.',
     '',
@@ -187,7 +190,7 @@ const PROMPT_TEXT: Record<string, string> = {
 
 describe('prompt text', () => {
   it('ships exactly the bytes recorded for every prompt, and records every prompt it ships', () => {
-    expect(Object.keys(PROMPT_TEXT).sort()).toEqual(shippedFiles.map((f) => f.replace(/\.md$/, '')))
+    expect(Object.keys(PROMPT_TEXT).sort()).toEqual(shippedFiles.map((f) => f.replace(/\.md$/, '')).sort())
     for (const [id, text] of Object.entries(PROMPT_TEXT)) expect(loadPrompt(id), id).toBe(text)
   })
 

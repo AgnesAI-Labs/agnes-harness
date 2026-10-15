@@ -289,6 +289,7 @@ export class HostedSessions {
 
   private quiet(key: string, hosted: HostedSession): boolean {
     const { session } = hosted
+    if (session.hasActiveProcesses?.()) return false
     if (hosted.inflight > 0 || hosted.aborts.size > 0 || this.options.channel.hasPending(key)) return false
     if (session.turn !== null || session.op() !== null || session.d.log.faulted) return false
     for (const { value } of session.state.registers.decisionStates.values())

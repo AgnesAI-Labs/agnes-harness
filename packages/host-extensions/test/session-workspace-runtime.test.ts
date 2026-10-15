@@ -41,6 +41,7 @@ async function runtime(
     confine?: (request: Readonly<{ argv: readonly string[]; cwd: string }>) => Promise<readonly string[]>
     hooks?: unknown
     services?: unknown
+    seam?: import('@agnes/core').SandboxSeam
   }> = {},
 ) {
   let digest: string | null = null
@@ -91,6 +92,7 @@ async function runtime(
         staticConfigHash: 'c'.repeat(64),
         caseSensitive: true,
       }),
+    ...(options.seam ? { fitSandbox: async () => options.seam! } : {}),
     openHooks: async () => {
       events.push('hooks-open')
       return options.hooks ?? 'hooks'
@@ -646,4 +648,61 @@ describe('SessionWorkspaceRuntimeTable', () => {
     expect(table.peek('pending-child')).toBeUndefined()
     await built.readiness.revoke()
   })
+})
+
+it('keeps session process activity across invocation return, including cleanup failure and owner isolation', async () => {
+  let finish!: (value: import('@agnes/extension-api').ProcessExit) => void
+  let opened!: (value: import('@agnes/extension-api').SandboxProcess) => void
+  const opening = new Promise<import('@agnes/extension-api').SandboxProcess>((resolve) => {
+    opened = resolve
+  })
+  let cleanupFails = true
+  const built = await runtime('process-owner', [], {
+    seam: {
+      enforcement: () => ({ level: 'none', scope: [] }),
+      forWorkspace: async () => {
+        throw new Error('not used')
+      },
+      confine: async (argv) => argv,
+      exec: async () => ({ code: 0, stdout: '', stderr: '', truncated: false }),
+      fsPolicy: () => policy(),
+      openProcess: () => opening,
+    },
+  })
+  const other = await runtime('other-owner')
+  const table = new SessionWorkspaceRuntimeTable()
+  const owner = await table.open(built.value.binding, async () => built.value)
+  const foreign = await table.open(other.value.binding, async () => other.value)
+  const launch = table
+    .invocation('process-owner')
+    .run((view) => view.hookSandbox().openProcess!({ argv: ['shell'], cwd: '/work' }))
+  await Promise.resolve()
+  expect(owner.hasActiveProcesses?.()).toBe(true)
+  expect(foreign.hasActiveProcesses?.()).toBe(false)
+  opened({
+    enforcement: { level: 'none', scope: [] },
+    exited: new Promise((resolve) => {
+      finish = resolve
+    }),
+    onOutput: () => () => {},
+    write: async () => {},
+    resize: async () => {},
+    signal: async () => {},
+    close: async () => {
+      if (cleanupFails) throw new Error('cleanup failed')
+    },
+  })
+  const process = await launch
+  expect(owner.hasActiveProcesses?.()).toBe(true)
+  finish({ code: 0, error: new Error('cleanup failed') })
+  await Promise.resolve()
+  expect(owner.hasActiveProcesses?.()).toBe(true)
+  await expect(process.close()).rejects.toThrow('cleanup failed')
+  cleanupFails = false
+  await process.close()
+  await process.close()
+  expect(owner.hasActiveProcesses?.()).toBe(false)
+  await table.closeAll()
+  await built.readiness.revoke()
+  await other.readiness.revoke()
 })

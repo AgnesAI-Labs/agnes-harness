@@ -8,6 +8,7 @@ export type PowerShellDescriptor = Readonly<{
   version: string
   edition: 'Desktop' | 'Core'
   nativeArguments: 'Legacy' | 'Standard' | 'Windows'
+  codePage?: number
 }>
 export type PowerShellCandidate = Readonly<{ path: string; family: '5.1' | '7' }>
 type Probe = (path: string) => Promise<PowerShellDescriptor>
@@ -24,12 +25,13 @@ export function resolveConfiguredPowerShell(env: NodeJS.ProcessEnv): Promise<Pow
 const execute = promisify(execFile)
 const probeScript = [
   "$ErrorActionPreference = 'Stop'",
+  '$codePage = [Console]::OutputEncoding.CodePage',
   '[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)',
   "$mode = 'Legacy'",
   'if (Test-Path variable:PSNativeCommandArgumentPassing) { $mode = [string]$PSNativeCommandArgumentPassing }',
   '@{ path = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName;',
   'version = $PSVersionTable.PSVersion.ToString(); edition = $PSVersionTable.PSEdition;',
-  'nativeArguments = $mode } | ConvertTo-Json -Compress',
+  'nativeArguments = $mode; codePage = $codePage } | ConvertTo-Json -Compress',
 ].join('\n')
 
 const absolutePath = (path: string): boolean =>
@@ -55,7 +57,8 @@ function checked(value: unknown): PowerShellDescriptor {
     (d.edition !== 'Desktop' && d.edition !== 'Core') ||
     (d.nativeArguments !== 'Legacy' && d.nativeArguments !== 'Standard' && d.nativeArguments !== 'Windows') ||
     (d.version.startsWith('5.1.') && (d.edition !== 'Desktop' || d.nativeArguments !== 'Legacy')) ||
-    (d.version.startsWith('7.') && d.edition !== 'Core')
+    (d.version.startsWith('7.') && d.edition !== 'Core') ||
+    (d.codePage !== undefined && (!Number.isSafeInteger(d.codePage) || Number(d.codePage) < 1))
   )
     throw new Error('invalid-probe')
   return Object.freeze({
@@ -63,6 +66,7 @@ function checked(value: unknown): PowerShellDescriptor {
     version: d.version,
     edition: d.edition,
     nativeArguments: d.nativeArguments,
+    ...(typeof d.codePage === 'number' ? { codePage: d.codePage } : {}),
   })
 }
 

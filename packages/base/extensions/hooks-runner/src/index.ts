@@ -269,6 +269,7 @@ export function preparedHooksRunnerExtension(
       const requireCommandPermission = (
         group: BoundGroup,
         commandSandbox: WorkspaceHookSandbox | undefined,
+        workspaceRoot?: string,
       ): void => {
         const enforcement = commandSandbox?.enforcement()
         if (commandSandbox && enforcement?.level !== 'none' && enforcement?.scope.includes('process')) return
@@ -283,7 +284,7 @@ export function preparedHooksRunnerExtension(
           enforcement?.level !== 'none' &&
           enforcement?.scope.includes('file') &&
           identity &&
-          init.trustedHookCommands?.allowsUnconfined(identity.source, identity.configDigest)
+          init.trustedHookCommands?.allowsUnconfined(identity.source, identity.configDigest, workspaceRoot)
         ) {
           const key = `${identity.source}:${identity.configDigest}`
           if (!unconfinedNotices.has(key)) {
@@ -360,7 +361,8 @@ export function preparedHooksRunnerExtension(
               AGNES_PLUGIN_ROOT: init.profile.dataDir,
             }
             for (const [index, hook] of group.hooks.entries()) {
-              if (hook.type === 'command') requireCommandPermission(group, commandSandbox)
+              if (hook.type === 'command')
+                requireCommandPermission(group, commandSandbox, hctx.session.workspaceRoot)
               const timeoutMs = Math.min(HOOK_TABLE[event].timeoutMs, (hook.timeout ?? 60) * 1000)
               const run = () =>
                 hook.type === 'http'

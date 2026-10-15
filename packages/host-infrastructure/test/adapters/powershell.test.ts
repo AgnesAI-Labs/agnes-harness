@@ -117,3 +117,12 @@ describe.runIf(process.platform === 'win32')('real Windows PowerShell probes', (
     })
   })
 })
+
+it('retains a measured console code page and rejects malformed encoding facts', async () => {
+  expect(
+    await resolvePowerShell('5.1', candidates, async () => ({ ...legacy, codePage: 936 })),
+  ).toMatchObject({ codePage: 936 })
+  await expect(
+    resolvePowerShell('5.1', candidates, async () => ({ ...legacy, codePage: -1 })),
+  ).rejects.toMatchObject({ code: 'E_POWERSHELL_UNAVAILABLE' })
+})

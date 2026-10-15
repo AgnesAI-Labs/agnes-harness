@@ -156,6 +156,7 @@ export function fakeToolContext(opts: FakeToolContextOpts = {}): FakeToolContext
       },
       async list(p: string) {
         const dir = abs(p).replace(/\/$/, '')
+        if (mem.files.has(dir)) throw Object.assign(new Error('not a directory'), { code: 'ENOTDIR' })
         const listFail = listErrors.get(dir)
         if (listFail)
           throw Object.assign(new Error(listFail.message ?? 'list failed'), { code: listFail.code })

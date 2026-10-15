@@ -6,6 +6,7 @@ import type { ProcessOutput, SandboxProcess, SandboxProcessRequest } from '@agne
 import { sandboxUnavailable } from '@agnes/extension-api'
 import { baseEnvironment } from './exec.js'
 import { createWin32Platform } from './platform.js'
+import { stopProcessGroup } from './process-group.js'
 
 declare const AGNES_PACKAGED_BUILTINS: boolean | undefined
 export function ptyRelayBinary(): string {
@@ -51,12 +52,26 @@ export async function openLocalProcess(request: SandboxProcessRequest): Promise<
   child.stdout!.on('data', (bytes: Buffer) => emit({ stream: 'stdout', text: stdout.write(bytes) }))
   child.stderr!.on('data', (bytes: Buffer) => emit({ stream: 'stderr', text: stderr.write(bytes) }))
   let ended = false
-  const exited = new Promise<{ code: number | null; signal?: string }>((resolve) => {
+  let stoppedProcesses: number | undefined, cleanupError: Error | undefined
+  child.once('exit', () => {
+    if (windows || request.pty || !child.pid) return
+    try {
+      stoppedProcesses = stopProcessGroup(child.pid)
+    } catch (error) {
+      cleanupError = error as Error
+    }
+  })
+  const exited = new Promise<import('@agnes/extension-api').ProcessExit>((resolve) => {
     child.once('close', (code, signal) => {
       ended = true
       emit({ stream: 'stdout', text: stdout.end() })
       emit({ stream: 'stderr', text: stderr.end() })
-      resolve({ code, ...(signal ? { signal } : {}) })
+      resolve({
+        code,
+        ...(signal ? { signal } : {}),
+        ...(cleanupError ? { error: cleanupError } : {}),
+        ...(stoppedProcesses === undefined ? {} : { stoppedProcesses }),
+      })
     })
   })
   await new Promise<void>((resolve, reject) => {
@@ -112,7 +127,8 @@ export async function openLocalProcess(request: SandboxProcessRequest): Promise<
     close() {
       closing ??= (async () => {
         await signal('SIGKILL')
-        await exited
+        const result = await exited
+        if (result.error) throw result.error
       })()
       return closing
     },

@@ -752,3 +752,38 @@ describe('PreCompact is an observer, never a compaction decision', () => {
     }
   })
 })
+
+it('checks degraded Hook grants against each invocation workspace under allow-if-unimplemented', async () => {
+  const init = fakeSeamInit({
+    platform: { shell: () => 'powershell', fs: () => ({ pathSep: '\\', caseSensitive: false }) },
+    preset: { sandbox: { on_unavailable: 'allow-if-unimplemented' } },
+  })
+  init.trustedHookCommands = {
+    allowsUnconfined: (source, digest, root) =>
+      source === 'workspace' && digest === 'sha256-command' && root === '/workspace/two',
+  }
+  const exec = vi.fn(async () => ({ code: 0, stdout: '{}', stderr: '', truncated: false }))
+  const state = fakeApi()
+  await extensionFactoryOf(preparedHooksRunnerExtension(init, { map, workspaceSnapshots: true }, []))(
+    state.api,
+  )
+  const handler = state.handlers.get('tool_call')!
+  const invocation = (root: string) => ({
+    ...context,
+    session: { ...context.session, workspaceRoot: root },
+    workspaceHooks: {
+      workspaceDigest: 'sha256-command',
+      policyRevision: 'revision',
+      hooks: [{ event: 'PreToolUse', hooks: [{ type: 'command', command: 'trusted' }] }],
+    },
+    [WORKSPACE_HOOK_SANDBOX]: sandbox(exec, { level: 'partial', scope: ['file'] }),
+  })
+  await expect(handler(toolCall('shell'), invocation('/workspace/one'))).rejects.toThrow(
+    'E_SANDBOX_UNAVAILABLE',
+  )
+  expect(exec).not.toHaveBeenCalled()
+  await expect(handler(toolCall('shell'), invocation('/workspace/two'))).resolves.toEqual({ allow: true })
+  expect(exec).toHaveBeenCalledWith(['$SHELL', 'trusted'], expect.objectContaining({ cwd: '/workspace/two' }))
+  exec.mockRejectedValueOnce(new Error('SANDBOX_UNAVAILABLE: Host denies'))
+  await expect(handler(toolCall('shell'), invocation('/workspace/two'))).rejects.toThrow('Host denies')
+})

@@ -14,7 +14,7 @@ import type {
   WorkspaceInvocationSource,
 } from '@agnes/core'
 import { createWorkspaceInvocationPort } from '@agnes/core'
-import type { HookInvocationSnapshot } from '@agnes/extension-api'
+import type { HookInvocationSnapshot, SandboxProcess } from '@agnes/extension-api'
 import { withSessionFileAccess } from '@agnes/host-common/session-file-access'
 import {
   assertWorkspaceBinding,
@@ -46,6 +46,8 @@ export type SessionWorkspaceRuntime = Readonly<{
   invocation?: WorkspaceInvocationPort
   /** Per-workspace fitted seam. Production factories always provide it before publication. */
   seam?: SandboxSeam
+  /** Host process handles keep an idle session resident until successful cleanup. */
+  hasActiveProcesses?(): boolean
   hooks?: unknown
   services?: unknown
 }>
@@ -239,6 +241,7 @@ function sameBinding(left: WorkspaceBinding, right: WorkspaceBinding): boolean {
 
 /** Owns publication, invocation leases, child aliases and the one reverse-order runtime cleanup. */
 export class SessionWorkspaceRuntimeTable implements ChildWorkspaceRuntimePort {
+  private readonly activeProcesses = new Map<string, number>()
   constructor(private readonly fullAccessFor: (sessionKey: string) => boolean = () => false) {}
 
   private readonly entries = new Map<string, RuntimeEntry>()
@@ -481,8 +484,42 @@ export class SessionWorkspaceRuntimeTable implements ChildWorkspaceRuntimePort {
       hookSandbox: {
         ...(sandbox.openProcess
           ? {
-              openProcess: (request: Parameters<NonNullable<typeof sandbox.openProcess>>[0]) =>
-                withAccess(() => sandbox.openProcess!(request)),
+              openProcess: async (request: Parameters<NonNullable<typeof sandbox.openProcess>>[0]) => {
+                this.activeProcesses.set(sessionKey, (this.activeProcesses.get(sessionKey) ?? 0) + 1)
+                let released = false
+                const release = () => {
+                  if (released) return
+                  released = true
+                  const left = (this.activeProcesses.get(sessionKey) ?? 1) - 1
+                  if (left) this.activeProcesses.set(sessionKey, left)
+                  else this.activeProcesses.delete(sessionKey)
+                }
+                try {
+                  const process = await withAccess(() => sandbox.openProcess!(request))
+                  void process.exited.then(
+                    (exit) => {
+                      if (!exit.error) release()
+                    },
+                    () => undefined,
+                  )
+                  const handle: SandboxProcess = {
+                    enforcement: process.enforcement,
+                    exited: process.exited,
+                    onOutput: (listener) => process.onOutput(listener),
+                    write: (text) => process.write(text),
+                    resize: (columns, rows) => process.resize(columns, rows),
+                    signal: (signal) => process.signal(signal),
+                    close: async () => {
+                      await process.close()
+                      release()
+                    },
+                  }
+                  return handle
+                } catch (error) {
+                  release()
+                  throw error
+                }
+              },
             }
           : {}),
         enforcement: () => sandbox.enforcement(),
@@ -504,6 +541,7 @@ export class SessionWorkspaceRuntimeTable implements ChildWorkspaceRuntimePort {
       ...runtime,
       identity: runtime.binding,
       invocation: this.invocation(sessionKey),
+      hasActiveProcesses: () => (this.activeProcesses.get(sessionKey) ?? 0) > 0,
     })
     runtimeOwnership.set(published, ownership)
     return published

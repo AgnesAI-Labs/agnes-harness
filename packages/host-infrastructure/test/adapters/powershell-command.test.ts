@@ -2,7 +2,11 @@ import { spawnSync } from 'node:child_process'
 import { win32 } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { type PowerShellDescriptor, probePowerShell } from '../../src/adapters/powershell.js'
-import { powerShellCommand, powerShellDescription } from '../../src/adapters/powershell-command.js'
+import {
+  powerShellCommand,
+  powerShellDescription,
+  windowsCommandLength,
+} from '../../src/adapters/powershell-command.js'
 
 const descriptor: PowerShellDescriptor = {
   path: 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
@@ -19,9 +23,7 @@ it('describes exactly the selected version, executable and native argument mode'
 })
 it('retains an overlong command for preparation after policy authorization', () => {
   const command = 'sensitive'.repeat(10_000)
-  expect(
-    Buffer.from(powerShellCommand(descriptor, command).at(-1) as string, 'base64').toString('utf16le'),
-  ).toContain(command)
+  expect(powerShellCommand(descriptor, command).at(-1)).toContain(command)
 })
 it.each(['', 'bad\0command'])('refuses an invalid command: %s', (command) => {
   expect(() => powerShellCommand(descriptor, command)).toThrow('invalid PowerShell command')
@@ -75,4 +77,18 @@ describe.runIf(process.platform === 'win32').each(realPaths)('real script execut
     expect(child.status).toBe(1)
     expect(child.stderr).toContain('fixture failure')
   })
+})
+
+it('selects text commands for Desktop, encoded commands for Core and measures quoted Windows argv', () => {
+  const desktop = powerShellCommand(descriptor, 'Write-Host 中文')
+  expect(desktop.at(-2)).toBe('-Command')
+  expect(desktop.at(-1)).toContain('PYTHONUNBUFFERED')
+  expect(desktop.at(-1)).toContain('Get-Content:Encoding')
+  const core = powerShellCommand({ ...descriptor, edition: 'Core', version: '7.6.0' }, 'Write-Host 中文')
+  expect(core.at(-2)).toBe('-EncodedCommand')
+  expect(Buffer.from(core.at(-1)!, 'base64').toString('utf16le')).toContain('Write-Host 中文')
+  expect(windowsCommandLength(['x', 'a b'])).toBe(7)
+  expect(windowsCommandLength(['x', 'a"b'])).toBe(8)
+  expect(windowsCommandLength(['x', ''])).toBe(4)
+  expect(windowsCommandLength(['x', '"'.repeat(15000)])).toBeGreaterThan(30000)
 })

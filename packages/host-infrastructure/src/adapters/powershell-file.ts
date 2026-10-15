@@ -2,7 +2,7 @@ import { closeSync, rmdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { windowsCreateTemporaryPrivateFileSync } from '@agnes/system-node'
 import type { PowerShellDescriptor } from './powershell.js'
-import { powerShellCommand } from './powershell-command.js'
+import { powerShellCommand, windowsCommandLength } from './powershell-command.js'
 import { createPowerShellDirectory } from './powershell-temporary.js'
 
 /** Called only after policy authorization. No stdin is consumed and no execution policy is changed. */
@@ -11,12 +11,12 @@ export function preparePowerShellFile(
   argv: string[],
 ): { argv: string[]; dispose(): void; scriptFile?: string } {
   const unchanged = { argv, dispose() {} }
-  if (!shell || argv.join(' ').length + 32 <= 30_000) return unchanged
+  if (!shell || windowsCommandLength(argv) <= 30_000) return unchanged
   const prefix = powerShellCommand(shell, 'x').slice(0, -1)
   if (argv.length !== prefix.length + 1 || prefix.some((value, i) => argv[i] !== value)) return unchanged
   const encoded = argv.at(-1) as string
-  const contents = Buffer.from(encoded, 'base64')
-  if (contents.length % 2 || contents.toString('base64') !== encoded)
+  const contents = Buffer.from(encoded, shell.edition === 'Desktop' ? 'utf16le' : 'base64')
+  if (contents.length % 2 || (shell.edition !== 'Desktop' && contents.toString('base64') !== encoded))
     throw Object.assign(new Error('Invalid encoded PowerShell script'), { code: 'E_SHELL_COMMAND' })
   const directory = createPowerShellDirectory()
   const scriptFile = join(directory, 'command.txt')

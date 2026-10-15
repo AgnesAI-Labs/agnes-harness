@@ -4,6 +4,7 @@ import type { FileChangeRecorder } from '../file-change.js'
 import { withFileLock } from '../guards/mutation-queue.js'
 import { observe, observedVersion, UNKNOWN_VERSION, versionOf } from '../guards/observed.js'
 import { looksTruncated } from '../guards/truncation.js'
+import { crlf, usesCrlf } from '../line-endings.js'
 import { normalizeWorkspacePath } from '../paths.js'
 import { isBinary, MAX_READ_BYTES } from './read.js'
 import { EditParams } from './schemas.js'
@@ -70,13 +71,16 @@ export function createEditTool(record?: FileChangeRecorder) {
             details: { code: 'FS_NOT_OBSERVED', path: args.path },
           }
         let text = original
+        const normalize = usesCrlf(original) ? crlf : (value: string) => value
         for (const [i, e] of args.edits.entries()) {
-          const n = occurrences(text, e.oldText)
+          const oldText = normalize(e.oldText)
+          const newText = normalize(e.newText)
+          const n = occurrences(text, oldText)
           if (n === 0) return fail(`edit ${i + 1}: oldText not found`)
           if (n > 1) return fail(`edit ${i + 1}: ambiguous (${n} matches); include more context`)
           // A function replacement, so `$&` and the other replacement patterns in newText stay
           // literal text instead of expanding into content the model never wrote.
-          text = text.replace(e.oldText, () => e.newText)
+          text = text.replace(oldText, () => newText)
         }
         const t = looksTruncated(original, text)
         if (t.truncated) return fail(`edit refused (truncation guard): ${t.reason}`)

@@ -10,6 +10,7 @@ import { createExecOutput } from './exec-output.js'
 import { createWindowsExec } from './exec-win32.js'
 import type { PowerShellDescriptor } from './powershell.js'
 import { openLocalProcess } from './process.js'
+import { stopProcessGroup } from './process-group.js'
 import { openWindowsProcess } from './process-win32.js'
 
 export type ExecResult = {
@@ -19,6 +20,7 @@ export type ExecResult = {
   truncated: boolean
   timedOut: boolean
   signal?: string
+  stoppedProcesses?: number
 }
 
 /**
@@ -215,6 +217,8 @@ export function createExec(
         let timedOut = false
         let cancelled = false
         let sig: string | undefined
+        let stoppedProcesses: number | undefined
+        let cleanupError: unknown
         const output = createExecOutput(max)
         child.stdout?.on('data', output.stdout)
         child.stderr?.on('data', output.stderr)
@@ -232,6 +236,15 @@ export function createExec(
           killGroup(child)
         }
         o.signal?.addEventListener('abort', onAbort, { once: true })
+        child.once('exit', () => {
+          if (opts.detached === false || child.pid === undefined) return
+          try {
+            stoppedProcesses = stopProcessGroup(child.pid)
+          } catch (error) {
+            cleanupError = error
+            killGroup(child)
+          }
+        })
         child.on('error', (e) => {
           closeBridge()
           clearTimeout(timer)
@@ -247,11 +260,16 @@ export function createExec(
           // Narrowed to a string before the spread: `signal ?? sig` is `string | undefined`, and an
           // optional property may not be handed an explicit undefined under this repo's settings.
           const ended: string | undefined = signal ?? sig
+          if (cleanupError) {
+            reject(cleanupError)
+            return
+          }
           resolve({
             code: code ?? -1,
             ...output.result(),
             timedOut,
             ...(ended === undefined ? {} : { signal: ended }),
+            ...(stoppedProcesses === undefined ? {} : { stoppedProcesses }),
           })
         })
         // A child that exits without draining stdin makes this write fail with EPIPE on the stream.

@@ -60,10 +60,31 @@ export type WalkReport = {
   denied: number
   unreadable: number
   oversize: number
+  binary: number
+  searched: number
+  failures: string[]
 }
 
 export function newWalkReport(): WalkReport {
-  return { truncated: false, skipped: new Set(), denied: 0, unreadable: 0, oversize: 0 }
+  return {
+    truncated: false,
+    skipped: new Set(),
+    denied: 0,
+    unreadable: 0,
+    oversize: 0,
+    binary: 0,
+    searched: 0,
+    failures: [],
+  }
+}
+
+export function unreadable(report: WalkReport, path: string, error: unknown): void {
+  report.unreadable++
+  const code = (error as { code?: unknown })?.code
+  if (report.failures.length < 10)
+    report.failures.push(
+      `${path}: ${typeof code === 'string' && /^[A-Z0-9_]+$/.test(code) ? code : 'read failed'}`,
+    )
 }
 
 export function walkNotes(report: WalkReport, maxEntries: number): string[] {
@@ -72,6 +93,8 @@ export function walkNotes(report: WalkReport, maxEntries: number): string[] {
   if (report.denied > 0)
     out.push(`[${report.denied} path(s) skipped: outside the workspace or denied by policy]`)
   if (report.unreadable > 0) out.push(`[${report.unreadable} path(s) could not be read]`)
+  out.push(...report.failures.map((failure) => `[${failure}]`))
+  if (report.binary) out.push(`[${report.binary} binary file(s) not searched]`)
   if (report.oversize > 0)
     out.push(`[${report.oversize} file(s) skipped: larger than ${MAX_READ_BYTES} bytes]`)
   if (report.truncated) out.push(`[stopped after ${maxEntries} entries; the tree was not fully walked]`)
@@ -109,6 +132,18 @@ export async function* walk(
   report: WalkReport,
   opts: { maxEntries: number },
 ): AsyncGenerator<WalkEntry> {
+  try {
+    const kind = (await ctx.fs.stat(root)).kind
+    if (kind === 'symlink') await ctx.fs.read(root, { limit: 1 })
+    if (kind === 'file' || kind === 'symlink') {
+      const label = ctx.platform.fs.pathSep === '\\' ? root.replaceAll('\\', '/') : root
+      yield { rel: label.split('/').pop() || root, abs: root, kind: 'file' }
+      return
+    }
+  } catch (error) {
+    unreadable(report, root, error)
+    return
+  }
   const base = root.replace(/\/+$/, '')
   const queue: string[] = ['']
   let seen = 0
@@ -117,8 +152,8 @@ export async function* walk(
     let entries: FsEntry[]
     try {
       entries = await ctx.fs.list(rel === '' ? root : `${base}/${rel}`)
-    } catch {
-      report.unreadable++
+    } catch (error) {
+      unreadable(report, rel === '' ? root : `${base}/${rel}`, error)
       continue
     }
     // Code points, not the machine's collation: a listing whose order moves with the host's locale

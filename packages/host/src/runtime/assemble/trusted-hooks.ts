@@ -5,7 +5,7 @@ import { type CommandHooksPolicy, validateCommandHooksPolicy } from '@agnes/prot
 import { samePlatformPath } from '../adapters/index.js'
 
 export type TrustedHookCommands = Readonly<{
-  allowsUnconfined(source: 'data' | 'workspace', configDigest: string): boolean
+  allowsUnconfined(source: 'data' | 'workspace', configDigest: string, workspaceRoot?: string): boolean
 }>
 
 export function trustedHookCommands(
@@ -22,19 +22,34 @@ export function trustedHookCommands(
   const grants = structuredClone(checked.value.trustedUnconfined)
   const paths = semantics.pathSep === '\\' ? win32 : posix
   const pinnedRoot = realpath(workspaceRoot)
-  const same = (path: string) => samePlatformPath(realpath(path), pinnedRoot, semantics.caseSensitive)
+  const pinnedGrants = grants.map((grant) => {
+    try {
+      return { grant, root: realpath(grant.workspaceRoot) }
+    } catch {
+      return undefined
+    }
+  })
   return Object.freeze({
-    allowsUnconfined(source: 'data' | 'workspace', configDigest: string): boolean {
+    allowsUnconfined(
+      source: 'data' | 'workspace',
+      configDigest: string,
+      invocationRoot = workspaceRoot,
+    ): boolean {
       try {
-        if (!same(workspaceRoot)) return false
-        return grants.some(
-          (grant) =>
+        if (!samePlatformPath(realpath(workspaceRoot), pinnedRoot, semantics.caseSensitive)) return false
+        const root = realpath(invocationRoot)
+        return pinnedGrants.some((entry) => {
+          if (!entry) return false
+          const { grant, root: original } = entry
+          return (
             grant.source === source &&
             grant.configDigest === configDigest &&
             paths.isAbsolute(grant.workspaceRoot) &&
             (semantics.pathSep !== '\\' || paths.parse(grant.workspaceRoot).root.length > 1) &&
-            same(grant.workspaceRoot),
-        )
+            samePlatformPath(root, original, semantics.caseSensitive) &&
+            samePlatformPath(realpath(grant.workspaceRoot), original, semantics.caseSensitive)
+          )
+        })
       } catch {
         return false
       }

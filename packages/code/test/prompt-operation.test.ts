@@ -46,9 +46,14 @@ const contribute = (ctx: OpContext) => {
 describe('the prompt operation', () => {
   it('reports the actual Host-selected interpreter while preserving the dialect fallback', () => {
     const description = 'PowerShell 5.1.26100.9444 (Desktop); native argument mode: Legacy'
-    const op = createPromptOperation({ adapters: { platform, shell: { description } } })
+    const op = createPromptOperation({
+      adapters: { platform: { ...platform, shell: () => 'powershell' }, shell: { description } },
+    })
     const environment = op.contribute?.(ctxFor({}))?.promptSections?.find((s) => s.id === 'environment')
     expect(environment?.text).toContain(description)
+    expect(environment?.text).toContain('curl.exe')
+    expect(environment?.text).toContain('5.1 does not support && or ||')
+    expect(contribute(ctxFor({})).find((s) => s.id === 'environment')?.text).not.toContain('curl.exe')
     expect(contribute(ctxFor({})).find((s) => s.id === 'environment')?.text).toContain('posix')
   })
   it('is a before-inference operation that contributes prompt text and the tail runtime context, nothing else', () => {

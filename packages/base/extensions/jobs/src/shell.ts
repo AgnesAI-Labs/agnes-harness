@@ -1,5 +1,6 @@
 import type { ToolContext, ToolResult } from '@agnes/extension-api'
 import { guardedResult } from '../../tools-core/src/guards/output.js'
+import { shellGuidance, timeoutGuidance } from '../../tools-core/src/shell-guidance.js'
 import type { ShellJobs } from './registry.js'
 
 export async function runShellJob(
@@ -23,6 +24,7 @@ export async function runShellJob(
         ? await jobs.startPersistent(args.command, args.cwd, ctx, args.shell, args.sessionId)
         : await jobs.start(args.command, args.cwd ?? ctx.cwd, ctx)
     id = started.id
+    const notes = shellGuidance(ctx, args.command)
     const requested = args.timeoutMs
     const waitMs = Math.min(
       typeof requested === 'number' && Number.isInteger(requested) && requested > 0
@@ -38,7 +40,7 @@ export async function runShellJob(
           content: [
             {
               type: 'text',
-              text: `[timed out after ${waitMs}ms; job ${id} and its process group were killed]`,
+              text: `${job.stdout}${job.stderr ? `\n[stderr]\n${job.stderr}` : ''}\n${notes.join('\n')}\n${timeoutGuidance(ctx, args.command, args.cwd ?? ctx.cwd, !job.stdout && !job.stderr)}\n[timed out after ${waitMs}ms; job ${id} and its process group were killed]`,
             },
           ],
           isError: true,
@@ -49,7 +51,7 @@ export async function runShellJob(
         content: [
           {
             type: 'text',
-            text: `background job ${id} started${args.background ? '' : ` (foreground wait reached ${waitMs}ms; the same process continues)`}; use job_output, job_list or job_kill`,
+            text: `${notes.length ? notes.join('\n') + '\n' : ''}background job ${id} started${args.background ? '' : ` (foreground wait reached ${waitMs}ms; the same process continues)`}; use job_output, job_list or job_kill`,
           },
         ],
         details: {
@@ -63,7 +65,11 @@ export async function runShellJob(
       structured: { jobId: id, status: job.status },
       ...(await guardedResult(
         ctx,
-        `${job.stdout}${job.stderr ? `\n[stderr]\n${job.stderr}` : ''}\n[exit ${job.code}]${job.truncated ? ' [capture limit reached]' : ''}`,
+        `${shellGuidance(ctx, args.command, job.stoppedProcesses)
+          .map((note) => `${note}\n`)
+          .join(
+            '',
+          )}${job.stdout}${job.stderr ? `\n[stderr]\n${job.stderr}` : ''}\n[exit ${job.code}]${job.truncated ? ' [capture limit reached]' : ''}`,
       )),
       ...(job.code === 0 ? {} : { isError: true }),
       details: {

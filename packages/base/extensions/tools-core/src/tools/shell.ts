@@ -3,6 +3,7 @@ import { defineTool } from '@agnes/plugin-runtime'
 import { type ShellJobs, standaloneShellJobs } from '../../../jobs/src/registry.js'
 import { runShellJob } from '../../../jobs/src/shell.js'
 import { guardedResult } from '../guards/output.js'
+import { shellGuidance, timeoutGuidance } from '../shell-guidance.js'
 import { ShellParams } from './schemas.js'
 
 export { SHELL_SENTINEL }
@@ -63,7 +64,11 @@ export function createShellTool(jobs?: ShellJobs) {
       let r: Awaited<ReturnType<typeof ctx.exec>>
       const startedAt = Date.now()
       try {
-        r = await ctx.exec([SHELL_SENTINEL, args.command], { cwd, timeoutMs })
+        r = await ctx.exec([SHELL_SENTINEL, args.command], {
+          cwd,
+          timeoutMs,
+          env: { PYTHONUNBUFFERED: '1', PYTHONUTF8: '1' },
+        })
       } catch (e) {
         // A refusal to launch (no interpreter, sandbox denial) is reported to the model as a failed
         // call, which it can react to, rather than as an exception that ends the turn.
@@ -72,7 +77,7 @@ export function createShellTool(jobs?: ShellJobs) {
           isError: true,
         }
       }
-      const parts: string[] = []
+      const parts: string[] = shellGuidance(ctx, args.command, r.stoppedProcesses)
       if (r.stdout) parts.push(r.stdout.replace(/\n$/, ''))
       if (r.stderr) parts.push(`[stderr]\n${r.stderr.replace(/\n$/, '')}`)
       // An executor that reports nothing (a third-party seam) still has the kernel's cut-off behind it,
@@ -82,6 +87,7 @@ export function createShellTool(jobs?: ShellJobs) {
         // Last line on purpose, and no exit line: the code of a killed command says nothing, and the UI
         // reads an `[exit N]` line only when it ends the text.
         if (r.truncated) parts.push('[output truncated by sandbox]')
+        parts.push(timeoutGuidance(ctx, args.command, cwd, !r.stdout && !r.stderr))
         parts.push(
           `[timed out after ${timeoutMs}ms${requested !== undefined && requested > timeoutMs ? ` (requested ${requested}ms, capped)` : ''}: the command and the processes in its process group were killed; the output above is what was captured, and the command may have taken partial effect. Check the current state before retrying, and split the work into shorter steps or ask for a longer timeoutMs (capped by the deployment).]`,
         )
