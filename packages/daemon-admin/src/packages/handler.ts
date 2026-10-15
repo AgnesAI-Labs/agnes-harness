@@ -534,9 +534,15 @@ class Service implements PackageAdminService {
   }
 
   private async recoverPending(): Promise<void> {
-    const pending = await this.options.operations.pending()
-    for (const operation of pending)
-      this.schedule(operation.operation.operationId, operation.operation.profile)
+    // The journal lives in the daemon home and is shared by every profile there. Recover only this
+    // daemon's scope: another profile's record stays pending for the daemon that owns it.
+    for (const { operation } of await this.options.operations.pending())
+      await Promise.resolve(operation.profile)
+        .then((profile) => this.options.profileDirectory(profile))
+        .then(
+          () => this.schedule(operation.operationId, operation.profile),
+          () => undefined,
+        )
   }
 
   async candidateForCommand(

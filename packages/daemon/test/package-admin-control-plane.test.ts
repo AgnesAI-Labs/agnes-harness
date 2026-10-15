@@ -1048,6 +1048,34 @@ it('replays a received install after a process crash without treating desired st
     request: { kind: 'install', params },
   })
 
+  // A daemon started for another profile of the same home shares this journal but not this scope. It
+  // leaves the record queued for its owner instead of failing it on the scope refusal.
+  const foreignEvents: PackageOperation[] = []
+  const foreign = createPackageAdminService({
+    manager,
+    profileDirectory: scopedPackageProfileDirectory({
+      profile: secondProfile,
+      profileDir: profileDirectory(secondProfile),
+      profilesRoot: join(root, 'profiles'),
+    }),
+    operations: new FilePackageOperationStore(join(root, 'daemon', 'package-operations')),
+    clientModules: recordingClientModules([]),
+    clock: () => now,
+  })
+  foreign.subscribe((value) => foreignEvents.push(value))
+  await foreign.recover()
+  for (let attempt = 0; attempt < 20 && foreignEvents.length === 0; attempt++)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  expect(foreignEvents).toEqual([])
+  expect(
+    (
+      await new FilePackageOperationStore(join(root, 'daemon', 'package-operations')).get(
+        profile,
+        operationId,
+      )
+    )?.operation.state,
+  ).toBe('received')
+
   // A new service instance is the post-crash process. The operation record was fsync-written before
   // the first process could enter PackageManager, and recovery now drives the real file install.
   const clientModuleEvents: ClientModulesChanged[] = []
