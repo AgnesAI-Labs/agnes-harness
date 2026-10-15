@@ -8,6 +8,7 @@ import {
   createAuthenticatedArtifactReadHandler,
   PersistentArtifactReadAuthorityIndex,
 } from '@agnes/daemon/local'
+import type { ArtifactsSeam } from '@agnes/extension-api'
 import { createLocalArtifactReadStore } from '@agnes/host'
 import { baseSeamFactories, createTestHost } from '@agnes/host/testkit'
 import {
@@ -53,9 +54,26 @@ const client = (bytes = original, sessionId = 's') =>
 
 it('round-trips current-product rows and original bytes through the public artifact seam', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'agnes-native-'))
+  let failConfirmationFor: string | undefined
   const { host } = await createTestHost({
     dataDir: dir,
-    seamFactories: { artifacts: baseSeamFactories.artifacts },
+    seamFactories: {
+      artifacts: async (init) => {
+        const seam = (await baseSeamFactories.artifacts(init)) as ArtifactsSeam
+        const attachments = seam.attachments
+        if (!attachments) throw new Error('missing local attachment capability')
+        return {
+          ...seam,
+          attachments: {
+            ...attachments,
+            confirm: async (scope, id) => {
+              if (scope.sessionKey === failConfirmationFor) throw new Error('synthetic confirmation failure')
+              await attachments.confirm(scope, id)
+            },
+          },
+        } satisfies ArtifactsSeam
+      },
+    },
   })
   const admission = await memoryAdmission(host, dir)
   const source = await openAdmittedSession(host, admission, 'agnes:local:default:cli:dm:source', dir)
@@ -191,6 +209,25 @@ it('round-trips current-product rows and original bytes through the public artif
         })
       } finally {
         await imported.close()
+      }
+      const failedKey = 'agnes:local:default:cli:dm:failed-import'
+      failConfirmationFor = failedKey
+      await expect(
+        importFile(parseArgs(['import', path, '--key', failedKey]), {
+          env: {},
+          cwd: dir,
+          host,
+          admission,
+          io,
+        }),
+      ).rejects.toThrow('rolled back')
+      failConfirmationFor = undefined
+      expect(await store.pendingRoots()).toEqual({ complete: true, roots: [] })
+      const retry = await openAdmittedSession(host, admission, failedKey, dir)
+      try {
+        expect(retry.lastSeq).toBe(1)
+      } finally {
+        await retry.close()
       }
     } finally {
       authorityDb.close()
