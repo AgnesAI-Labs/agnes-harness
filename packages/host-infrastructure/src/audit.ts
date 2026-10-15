@@ -34,6 +34,7 @@ export const AUDIT_KINDS = [
   'extension.loaded',
   'extension.registered',
   'extension.service-call',
+  'extension.profile-call',
   'extension.failed',
   'extension.reloaded',
   'extension.revoked',

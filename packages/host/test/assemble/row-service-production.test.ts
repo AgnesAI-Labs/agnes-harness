@@ -21,7 +21,7 @@ it('keeps a pinned row query service and denies it to new sessions when disabled
     entry,
     (await readFile(entry, 'utf8')).replace(
       '    ctx.services.register({',
-      "    ctx.services.register({ name: 'panel.report', scope: 'profile', kind: 'query', inputSchema: { type: 'object' }, outputSchema: { type: 'object' }, timeoutMs: 1000, maxResultBytes: 1024, async handler() { return { sessionless: true } } })\n    ctx.services.register({",
+      "    ctx.services.register({ name: 'panel.report', scope: 'profile', kind: 'query', inputSchema: { type: 'object', properties: {}, additionalProperties: false }, outputSchema: { type: 'object' }, timeoutMs: 1000, maxResultBytes: 1024, async handler() { return { sessionless: true } } })\n    ctx.services.register({",
     ),
   )
   const packageId = '@agnes-examples/client-service-panel'
