@@ -99,13 +99,23 @@ export function isRuntimePackageEligible(
 export function isSnapshotPackageEligible(row: Pick<InstalledPackage, 'trusted' | 'blockers'>): boolean {
   return row.trusted && row.blockers.length === 0
 }
+/** Cached static inspection is keyed by freshly hashed bytes, the full lock entry and ceiling.
+ * It never caches a tree's validity, trust decision, activation state or a failed inspection. */
+type VerifiedPackageDirectory = {
+  capabilityHash: string
+  blockers: readonly PackageBlocker[]
+  kinds?: readonly AgnesPluginKind[]
+}
+export type InventoryVerificationCache = Map<string, VerifiedPackageDirectory>
+
 /** Shared immutable-tree verification for installed inventory and runtime snapshots. */
 export function verifyPackageDirectory(
   id: string,
   entry: LockEntry,
   directory: string,
   ceiling: readonly string[],
-): { capabilityHash: string; blockers: readonly PackageBlocker[]; kinds?: readonly AgnesPluginKind[] } {
+  cache?: InventoryVerificationCache,
+): VerifiedPackageDirectory {
   const hash = capabilityHash(entry)
   if (
     entry.contributions === undefined ||
@@ -131,6 +141,14 @@ export function verifyPackageDirectory(
       code: 'E_PACKAGE_PROVENANCE',
     })
   const source = parseSource(entry.source.ref)
+  const key =
+    source.type !== 'workspace' && source.type !== 'local' && cache
+      ? canonical({ id, directory, entry, ceiling, treeIntegrity })
+      : undefined
+  if (key) {
+    const warm = cache?.get(key)
+    if (warm) return warm
+  }
   let checked: ReturnType<typeof inspectVerifiedTree>
   try {
     checked = inspectVerifiedTree(
@@ -172,16 +190,27 @@ export function verifyPackageDirectory(
     throw new PackageError('E_LOCK_MISMATCH', 'installed inventory metadata differs from lock', {
       detail: { id },
     })
-  return {
+  const result = freezeData({
     capabilityHash: hash,
     blockers: checked.preview.blockers,
     ...(checked.preview.kinds === undefined ? {} : { kinds: checked.preview.kinds }),
+  })
+  if (key && cache) {
+    const oldest = cache.keys().next().value
+    if (cache.size >= 128 && oldest !== undefined) cache.delete(oldest)
+    cache.set(key, result)
   }
+  return result
 }
 function verifiedRollbackTarget(
   id: string,
   entry: LockEntry,
-  options: { dataDir: string; profile: string; ceiling: readonly string[] },
+  options: {
+    dataDir: string
+    profile: string
+    ceiling: readonly string[]
+    verificationCache?: InventoryVerificationCache
+  },
 ): InstalledPackage['verifiedRollbackTarget'] {
   if (entry.previous === null) return null
   const previous = entry.previous
@@ -204,7 +233,13 @@ function verifiedRollbackTarget(
   const snapshot = { ...structuredClone(previous), previous: null } as LockEntry
   let verified: ReturnType<typeof verifyPackageDirectory>
   try {
-    verified = verifyPackageDirectory(id, snapshot, previousPackageDir(options, id), options.ceiling)
+    verified = verifyPackageDirectory(
+      id,
+      snapshot,
+      previousPackageDir(options, id),
+      options.ceiling,
+      options.verificationCache,
+    )
   } catch (error) {
     if (isReservedRowIdPackageError(error)) return null
     throw error
@@ -234,6 +269,7 @@ export function readInventory(
     dataDir: string
     profileDir: string
     ceiling?: readonly string[]
+    verificationCache?: InventoryVerificationCache
     builtinDirectory?: (id: string) => string | undefined
   },
 ): InstalledInventory {
@@ -275,6 +311,7 @@ export function readInventory(
         entry,
         directory,
         options.ceiling ?? lock.policySnapshot.capabilityCeiling,
+        options.verificationCache,
       )
       provenance = verifyCatalog(
         id,
@@ -341,6 +378,7 @@ export function readInventory(
         dataDir: options.dataDir,
         profile: lock.profile,
         ceiling: options.ceiling ?? lock.policySnapshot.capabilityCeiling,
+        ...(options.verificationCache ? { verificationCache: options.verificationCache } : {}),
       }),
     })
   }

@@ -32,7 +32,9 @@ export type SurfaceMountsSource = {
  * `agnes serve` process boundary, not a remote WSS client.
  */
 export function registerSurfaces(endpoint: LocalEndpoint, source: SurfaceMountsSource): void {
-  endpoint.register('_agnes/v1/surfaces.mounts', async (): Promise<SurfacesMountsResult> => {
+  endpoint.register('_agnes/v1/surfaces.mounts', async (_params, { conn }): Promise<SurfacesMountsResult> => {
+    // Subscribe before taking the snapshot so a concurrent lifecycle change cannot be missed.
+    conn.surfaceMountNotices = true
     const instances = source.snapshot()?.instances ?? []
     // I3 (final review, Important): shared healthy-instance filter with the since-retired
     // `supervisor.ts` `surfaceMountProxy` closure -- see `isRoutableSurfaceInstance`'s own doc.

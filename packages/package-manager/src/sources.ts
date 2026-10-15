@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import {
+  constants,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -11,6 +12,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs'
+import * as asyncFs from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { runIsolatedCommand } from '@agnes/package-isolation'
 import type { PackageProvenance } from '@agnes/protocol'
@@ -196,6 +198,86 @@ export function hashDirectory(dir: string, opts: { exclude?: string[]; signal?: 
     const inner = createHash('sha256').update(rel).update('\0').update(readFileSync(file)).digest()
     outer.update(inner)
   }
+  return `sha256-${outer.digest('hex')}`
+}
+
+/** Same wire digest and exclusions as hashDirectory; yields for filesystem IO and streams file bytes. */
+export async function hashDirectoryAsync(
+  dir: string,
+  opts: { exclude?: string[]; signal?: AbortSignal } = {},
+): Promise<string> {
+  checkCancelled(opts.signal)
+  let root: string
+  try {
+    if ((await asyncFs.lstat(dir)).isSymbolicLink())
+      throw sourceError('package directory is a symbolic link', 'symlink')
+    root = await asyncFs.realpath(dir)
+  } catch (error) {
+    if (error instanceof PackageError) throw error
+    throw sourceError('package directory is unavailable', 'directory-unavailable')
+  }
+  const rootStat = await asyncFs.stat(root)
+  if (!rootStat.isDirectory()) throw sourceError('package source is not a directory', 'not-directory')
+  const rules = normalizedExcludes(opts.exclude ?? [...DEFAULT_EXCLUDES])
+  const files: { rel: string; file: string }[] = []
+  const walk = async (current: string): Promise<void> => {
+    for (const entry of await asyncFs.readdir(current, { withFileTypes: true })) {
+      checkCancelled(opts.signal)
+      const file = join(current, entry.name)
+      const rel = relative(root, file).split(sep).join('/')
+      if (excluded(rel, rules)) continue
+      const stat = await asyncFs.lstat(file)
+      if (stat.isSymbolicLink()) throw sourceError('package tree contains a symbolic link', 'symlink')
+      if (stat.isDirectory()) await walk(file)
+      else if (stat.isFile()) files.push({ rel, file })
+      else throw sourceError('package tree contains a special entry', 'special-entry')
+    }
+  }
+  await walk(root)
+  const outer = createHash('sha256')
+  for (const { rel, file } of files.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0))) {
+    checkCancelled(opts.signal)
+    if (!contained(root, await asyncFs.realpath(file)))
+      throw sourceError('package file escapes its source tree', 'path-escape')
+    const handle = await asyncFs.open(
+      file,
+      constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
+    )
+    try {
+      const before = await handle.stat()
+      if (!before.isFile()) throw sourceError('package file changed while hashing', 'tree-changed')
+      const inner = createHash('sha256').update(rel).update('\0')
+      const chunk = new Uint8Array(256 * 1024)
+      for (;;) {
+        checkCancelled(opts.signal)
+        const { bytesRead } = await handle.read(chunk)
+        if (!bytesRead) break
+        inner.update(chunk.subarray(0, bytesRead))
+      }
+      const after = await handle.stat()
+      const linked = await asyncFs.lstat(file)
+      if (
+        linked.isSymbolicLink() ||
+        linked.ino !== before.ino ||
+        linked.dev !== before.dev ||
+        after.size !== before.size ||
+        after.mtimeMs !== before.mtimeMs ||
+        after.ctimeMs !== before.ctimeMs
+      )
+        throw sourceError('package file changed while hashing', 'tree-changed')
+      outer.update(inner.digest())
+    } finally {
+      await handle.close()
+    }
+  }
+  const finalRoot = await asyncFs.lstat(dir)
+  if (
+    finalRoot.isSymbolicLink() ||
+    finalRoot.ino !== rootStat.ino ||
+    finalRoot.dev !== rootStat.dev ||
+    (await asyncFs.realpath(dir)) !== root
+  )
+    throw sourceError('package directory changed while hashing', 'tree-changed')
   return `sha256-${outer.digest('hex')}`
 }
 

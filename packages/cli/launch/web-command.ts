@@ -225,10 +225,8 @@ export async function runWebCommand(
     admin = adminHandler
     resourceAdmin = resourceAdminHandler
     oauthAdmin = oauthAdminHandler
-    // Polls over the same private daemon connection package-admin/resource-admin use, refreshing every
-    // `SURFACE_MOUNT_REFRESH_MS` (spec RC1) so a Surface instance `agnesd` hot-updates after this
-    // process's boot is picked up within a bounded window instead of never -- see
-    // packages/cli/launch/surface-mounts.ts.
+    // A persistent private daemon connection receives lifecycle invalidations and re-reads the
+    // authoritative mount table; healthy idle launchers do not poll.
     // This creates the feed immediately; the first mount RPC runs in the background.
     mounts = await fetchSurfaceMountProxy(backend)
     web = await makeServer({

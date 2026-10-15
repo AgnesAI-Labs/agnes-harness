@@ -36,6 +36,7 @@ import {
   loadPackagePlugins,
   parseAgnesPluginEntries,
   preflightPackagePlugins,
+  preflightPackagePluginsAsync,
   type RuntimePluginSnapshot,
 } from '@agnes/package-manager'
 import type { PackageSnapshotCandidateRef } from '@agnes/plugin-runtime/host'
@@ -85,7 +86,15 @@ export type {
 export { RUNTIME_LANGUAGES } from '../contracts/package.js'
 /** Resolve the executable entry and static admission before any selected source is imported. */
 export function preflightRuntimePackage(source: Readonly<RuntimePluginSnapshot>) {
-  const metadata = preflightPackagePlugins(source)
+  return checkRuntimeMetadata(source, preflightPackagePlugins(source))
+}
+export async function preflightRuntimePackageAsync(source: Readonly<RuntimePluginSnapshot>) {
+  return checkRuntimeMetadata(source, await preflightPackagePluginsAsync(source))
+}
+function checkRuntimeMetadata(
+  source: Readonly<RuntimePluginSnapshot>,
+  metadata: ReturnType<typeof preflightPackagePlugins>,
+) {
   if (metadata.declarations.length) {
     packageEntry(source.snapshot.packageId, source.snapshot.directory)
     const pkg = JSON.parse(readFileSync(join(source.snapshot.directory, 'package.json'), 'utf8'))
