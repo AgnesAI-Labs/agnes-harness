@@ -5,7 +5,7 @@ import { Button } from './ui/button.js'
 
 /** Outer region isolation supplements, rather than replaces, SlotOutlet's plugin boundaries. */
 export class RegionErrorBoundary extends Component<
-  { region: string; children: ReactNode; owner?: Document },
+  { region: string; children: ReactNode; owner?: Document; message?: string },
   { failed: boolean; attempt: number }
 > {
   override state = { failed: false, attempt: 0 }
@@ -21,6 +21,7 @@ export class RegionErrorBoundary extends Component<
       return (
         <RegionFailure
           region={this.props.region}
+          message={this.props.message}
           owner={this.props.owner}
           retry={() => this.setState(({ attempt }) => ({ failed: false, attempt: attempt + 1 }))}
         />
@@ -36,15 +37,17 @@ function RegionFailure({
   region,
   retry,
   owner,
+  message,
 }: {
   region: string
   retry(): void
   owner: Document | undefined
+  message: string | undefined
 }) {
   useDocumentLanguage(owner)
   return (
     <div role="alert" data-agnes-region-error={region}>
-      {fallbackT('ui.regionError')}
+      {message ?? fallbackT('ui.regionError')}
       {' · '}
       <Button onClick={retry}>{fallbackT('ui.retry')}</Button>
     </div>

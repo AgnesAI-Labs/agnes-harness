@@ -2,7 +2,7 @@ import type { SessionJob, SessionJobsReadResult } from '@agnes/protocol'
 import type { Session } from '@agnes/sdk/browser'
 import type { UiExtensionContext } from '@agnes/web-client'
 import { appServerErrorMessage, Button, IconButton, Menu, SettingsState, StatusDot } from '@agnes/web-ui'
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { panelContext } from './context.js'
 import { terminalCount } from './tab-counts.js'
 import {
@@ -15,10 +15,7 @@ import {
   terminalShells,
 } from './terminal-preferences.js'
 import { TerminalTabs } from './terminal-tabs.js'
-
-const TerminalScreen = lazy(() =>
-  import('@agnes/web-ui/terminal').then((module) => ({ default: module.TerminalScreen })),
-)
+import { TerminalView } from './terminal-view.js'
 
 type Input = Parameters<Session['jobsControl']>[0]
 type PendingInput = {
@@ -307,83 +304,83 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
               />
             </div>
           )}
-          <Suspense
-            fallback={<SettingsState tone="loading">{t('workbench.terminal.loading')}</SettingsState>}
-          >
-            <TerminalScreen
-              key={`${session.id}:${job.id}`}
-              stdout={job.stdout ?? ''}
-              stderr={job.stderr ?? ''}
-              label={t('workbench.terminal.output')}
-              writable={human && running && !inputBlocked}
-              exitLine={
-                !running && job.code !== null ? t('workbench.terminal.exited', { code: job.code }) : undefined
-              }
-              exitTone={job.code === 0 ? 'neutral' : 'danger'}
-              onData={(text) => sendInput(job.id, text)}
-              onResize={(columns, rows) => {
-                const id = session.id
-                void session
-                  .jobsControl({ operation: 'resize', jobId: job.id, columns, rows })
-                  .catch((cause) => {
-                    if (scope.current === id)
-                      setError(
-                        appServerErrorMessage(cause, document.documentElement.lang) ?? t('workbench.error'),
-                      )
-                  })
-              }}
-            />
-          </Suspense>
+          <TerminalView
+            loading={t('workbench.terminal.loading')}
+            failure={t('workbench.terminal.loadFailed')}
+            key={`${session.id}:${job.id}`}
+            stdout={job.stdout ?? ''}
+            stderr={job.stderr ?? ''}
+            label={t('workbench.terminal.output')}
+            writable={human && running && !inputBlocked}
+            exitLine={
+              !running && job.code !== null ? t('workbench.terminal.exited', { code: job.code }) : undefined
+            }
+            exitTone={job.code === 0 ? 'neutral' : 'danger'}
+            onData={(text) => sendInput(job.id, text)}
+            onResize={(columns, rows) => {
+              const id = session.id
+              void session
+                .jobsControl({ operation: 'resize', jobId: job.id, columns, rows })
+                .catch((cause) => {
+                  if (scope.current === id)
+                    setError(
+                      appServerErrorMessage(cause, document.documentElement.lang) ?? t('workbench.error'),
+                    )
+                })
+            }}
+          />
           {!human && <div className="workbench-terminal-readonly">{t('workbench.terminal.readonly')}</div>}
         </div>
       ) : (
         <div className="workbench-terminal-empty" data-testid="terminal-empty">
-          <div className="workbench-terminal-guide">
-            <Button type="text" data-testid="terminal-new" disabled={busy} onClick={() => create(shell)}>
-              <span className="workbench-terminal-guide-icon" aria-hidden="true">
-                ›_
-              </span>
-              <span>
-                <strong>{t('workbench.terminal.new')}</strong>
-                <small>
-                  {t('workbench.terminal.description')} · {shell}
-                </small>
-              </span>
-            </Button>
-            <Menu
-              label={t('workbench.terminal.newMenu')}
-              items={menuItems}
-              trigger={<IconButton name="chevron-down" label={t('workbench.terminal.shell')} />}
-            />
+          <div className="workbench-terminal-empty-group">
+            <div className="workbench-terminal-guide">
+              <Button type="text" data-testid="terminal-new" disabled={busy} onClick={() => create(shell)}>
+                <span className="workbench-terminal-guide-icon" aria-hidden="true">
+                  ›_
+                </span>
+                <span>
+                  <strong>{t('workbench.terminal.new')}</strong>
+                  <small>
+                    {t('workbench.terminal.description')} · {shell}
+                  </small>
+                </span>
+              </Button>
+              <Menu
+                label={t('workbench.terminal.newMenu')}
+                items={menuItems}
+                trigger={<IconButton name="chevron-down" label={t('workbench.terminal.shell')} />}
+              />
+            </div>
+            {available.length > 0 && (
+              <section className="workbench-terminal-available" aria-label={availableTitle}>
+                <h4>{availableTitle}</h4>
+                <ul>
+                  {available.map((row) => (
+                    <li key={row.id}>
+                      <StatusDot
+                        tone={row.status === 'running' ? 'success' : row.code === 0 ? 'neutral' : 'danger'}
+                        running={row.status === 'running'}
+                      />
+                      <span className="workbench-terminal-name">{name(row)}</span>
+                      <span className="workbench-terminal-row-status">
+                        {t(`workbench.terminal.status.${row.status}`)}
+                      </span>
+                      <Button
+                        size="small"
+                        type="text"
+                        data-testid="terminal-attach"
+                        onClick={() => attach(row.id)}
+                      >
+                        {t('workbench.terminal.follow')}
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+            <footer className="workbench-terminal-footer">{t('workbench.terminal.detach')}</footer>
           </div>
-          {available.length > 0 && (
-            <section className="workbench-terminal-available" aria-label={availableTitle}>
-              <h4>{availableTitle}</h4>
-              <ul>
-                {available.map((row) => (
-                  <li key={row.id}>
-                    <StatusDot
-                      tone={row.status === 'running' ? 'success' : row.code === 0 ? 'neutral' : 'danger'}
-                      running={row.status === 'running'}
-                    />
-                    <span className="workbench-terminal-name">{name(row)}</span>
-                    <span className="workbench-terminal-row-status">
-                      {t(`workbench.terminal.status.${row.status}`)}
-                    </span>
-                    <Button
-                      size="small"
-                      type="text"
-                      data-testid="terminal-attach"
-                      onClick={() => attach(row.id)}
-                    >
-                      {t('workbench.terminal.follow')}
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-          <footer className="workbench-tab-footer">{t('workbench.terminal.detach')}</footer>
         </div>
       )}
     </section>

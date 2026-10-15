@@ -9,6 +9,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { workbenchLocaleCatalog } from '../src/workbench/locales.js'
 import { sessionCount } from '../src/workbench/tab-counts.js'
 import { TerminalPanel } from '../src/workbench/terminal-panel.js'
+import { TerminalView } from '../src/workbench/terminal-view.js'
 
 const job = (patch: Partial<SessionJob> = {}): SessionJob => ({
   id: 'job',
@@ -100,6 +101,11 @@ it('creates from the guide with the remembered shell, and the chevron and plus m
   await vi.waitFor(() => expect(host.querySelector('li')).not.toBeNull())
   expect(host.textContent).toContain('在会话工作区运行命令 · zsh')
   expect(host.textContent).toContain('关闭工作台后，进程仍会运行')
+  const group = host.querySelector('.workbench-terminal-empty-group')
+  if (!group) throw new Error('Missing centred guide group')
+  expect(group.querySelector('.workbench-terminal-guide')).not.toBeNull()
+  expect(group.querySelector('.workbench-terminal-available')).not.toBeNull()
+  expect(group.querySelector('footer')?.className).toBe('workbench-terminal-footer')
   click(within(host).getByLabelText('终端 shell'))
   await vi.waitFor(() => expect(document.querySelector('[role=menu]')).not.toBeNull())
   click(
@@ -119,7 +125,7 @@ it('creates from the guide with the remembered shell, and the chevron and plus m
     expect(host.querySelector('.workbench-terminal-readonly')?.textContent).toBe('Agent 正在使用 · 只读'),
   )
   expect(host.querySelector('[title="Agent 的任务 · 只读"]')).not.toBeNull()
-  expect(host.querySelector('input')?.disabled).toBe(true)
+  await vi.waitFor(() => expect(host.querySelector('input')?.disabled).toBe(true))
   const agentActions = await menu(host.querySelector('[aria-selected=true]') as HTMLElement, true)
   expect(agentActions.queryByText('重命名')).toBeNull()
   expect(agentActions.queryByText(/中断/)).toBeNull()
@@ -293,3 +299,48 @@ it('reads a tab count once per session watermark and lets an open panel share a 
   expect(count.read(context('s', 2))).toBe(5)
   stop()
 })
+
+it.each(['zh-CN', 'en'] as const)(
+  'contains a rejected lazy terminal load and retries with a fresh import (%s)',
+  async (language) => {
+    const originalLanguage = document.documentElement.lang
+    document.documentElement.lang = language
+    const diagnostics = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const host = document.createElement('div')
+    document.body.append(host)
+    hosts.push(host)
+    const t = createCatalogTranslator(workbenchLocaleCatalog, language)
+    const load = vi
+      .fn<() => Promise<typeof import('@agnes/web-ui/terminal')>>()
+      .mockRejectedValueOnce(new Error('synthetic chunk 404'))
+      .mockResolvedValue({ TerminalScreen: () => <output>Terminal ready</output> })
+    try {
+      renderRegion(
+        host,
+        <TerminalView
+          failure={t('workbench.terminal.loadFailed')}
+          loading={t('workbench.terminal.loading')}
+          load={load}
+          stdout=""
+          stderr=""
+          writable={false}
+          label="Terminal"
+          onData={() => {}}
+          onResize={() => {}}
+        />,
+      )
+      await vi.waitFor(() =>
+        expect(host.querySelector('[role=alert]')?.textContent).toContain(
+          language === 'zh-CN' ? '终端加载失败' : 'Terminal failed to load',
+        ),
+      )
+      expect(host.querySelector('[data-agnes-region-error="terminal"]')).not.toBeNull()
+      click(within(host).getByRole('button', { name: language === 'zh-CN' ? '重试' : 'Retry' }))
+      await vi.waitFor(() => expect(host.textContent).toContain('Terminal ready'))
+      expect(host.querySelector('[role=alert]')).toBeNull()
+    } finally {
+      diagnostics.mockRestore()
+      document.documentElement.lang = originalLanguage
+    }
+  },
+)

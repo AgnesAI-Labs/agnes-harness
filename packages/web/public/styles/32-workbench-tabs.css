@@ -192,14 +192,28 @@
     font-family: var(--font-mono);
   }
   .workbench-terminal-empty {
+    min-height: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    gap: var(--s16);
     padding: var(--s24);
     flex: 1;
     overflow: auto;
+  }
+  /* Auto margins centre the whole guide, and collapse when a short dock needs scrolling. */
+  .workbench-terminal-empty-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--s16);
+    width: min(100%, 22rem);
+    margin-block: auto;
+    flex-shrink: 0;
+  }
+  .workbench-terminal-footer {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    text-align: center;
   }
   .workbench-terminal-guide {
     display: flex;

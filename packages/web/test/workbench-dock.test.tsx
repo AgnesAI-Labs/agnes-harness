@@ -17,6 +17,10 @@ it('restores focus on Escape, resizes with keys, retires registrations and detac
   expect(/\.workbench-terminal,\s*\.workbench-terminal-job \{([^}]*)\}/.exec(css)?.[1]).not.toContain(
     'height: 100%',
   )
+  const emptyGroup = /\.workbench-terminal-empty-group \{([^}]*)\}/.exec(css)?.[1]
+  expect(emptyGroup).toContain('margin-block: auto;')
+  expect(emptyGroup).toContain('flex-shrink: 0;')
+  expect(/\.workbench-terminal-footer \{([^}]*)\}/.exec(css)?.[1]).not.toContain('border')
   localStorage.clear()
   document.body.innerHTML =
     '<div class="workbench-split"><div id="controls"></div><aside id="workbench-right" hidden><div id="workbench-right-content"></div></aside><aside id="workbench-bottom" hidden><div id="workbench-bottom-content"></div></aside></div>'
@@ -299,8 +303,19 @@ it('batches controller refreshes and isolates a failed right panel from the bott
     expect(rightHost.querySelector('[data-agnes-region-error="workbench-right"]')).not.toBeNull()
     expect(bottomHost.textContent).toContain('Bottom 101')
     expect(host.querySelector('[data-edge="right"]')).not.toBeNull()
+    expect(rightHost.querySelector('[role=tab]')).not.toBeNull()
+    const expand = rightHost.querySelector<HTMLButtonElement>('[aria-label="workbench.expand"]')
+    const close = rightHost.querySelector<HTMLButtonElement>('[aria-label="workbench.close"]')
+    expect(expand).not.toBeNull()
+    expect(close).not.toBeNull()
+    if (!expand || !close) throw new Error('Missing workbench chrome')
+    flushSync(() => expand.click())
+    expect(expand.getAttribute('aria-pressed')).toBe('true')
+    flushSync(() => close.click())
+    expect(document.getElementById('workbench-right')?.hidden).toBe(true)
+    flushSync(() => host.querySelector<HTMLButtonElement>('[data-edge="right"]')?.click())
     fail = false
-    flushSync(() => rightHost.querySelector<HTMLButtonElement>('button')?.click())
+    flushSync(() => rightHost.querySelector<HTMLButtonElement>('[data-agnes-region-error] button')?.click())
     expect(rightHost.textContent).toContain('Right 101')
   } finally {
     unmountWorkbench(host)
