@@ -111,14 +111,18 @@ export class MarsCameras {
             ? PLACES.pad
             : PLACES.habitat
     this.scene!.render({
-      eye: [p.x, p.z + (fixed ? 12 : 2), -p.y],
+      eye: [p.x, p.z + (source === 'hazcam' ? 0.6 : id === 'lab-01' ? 4 : fixed ? 12 : 2), -p.y],
       zoom: id === 'cam-base' ? Number(this.simulation.state(id).zoom) : 1,
       target:
-        source === 'down'
-          ? [p.x + 0.1, 0, -p.y]
-          : fixed
-            ? [look.x, 1, -look.y]
-            : [p.x + Math.cos(p.yaw) * 25, p.z + 1, -p.y - Math.sin(p.yaw) * 25],
+        source === 'hazcam'
+          ? [p.x + Math.cos(p.yaw) * 6, 0, -p.y - Math.sin(p.yaw) * 6]
+          : id === 'lab-01'
+            ? [PLACES.dock.x, 1, -PLACES.dock.y]
+            : source === 'down'
+              ? [p.x + 0.1, 0, -p.y]
+              : fixed
+                ? [look.x, 1, -look.y]
+                : [p.x + Math.cos(p.yaw) * 25, p.z + 1, -p.y - Math.sin(p.yaw) * 25],
     })
   }
   private async encode(

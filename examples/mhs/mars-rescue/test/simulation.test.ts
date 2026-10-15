@@ -199,6 +199,8 @@ describe('Mars base simulation', () => {
     await run(sim, 'monolith-01', 'go_to', { x: 20, y: -30, gait: 'roll' })
     expect(sim.state('monolith-01').gait).toBe('roll')
     await run(sim, 'hopper-01', 'take_off', { alt: 5 })
+    expect(await run(sim, 'hopper-01', 'fly_to', { x: 30, y: -20, alt: 8 })).toMatchObject({ status: 'done' })
+    expect(sim.pose('hopper-01')).toMatchObject({ z: 8 })
     await run(sim, 'hopper-01', 'land', { pad: 'landing pad' })
     expect(sim.pose('hopper-01')).toMatchObject({ ...PLACES.landing, z: 0 })
     expect(Number(sim.state('suit-01').o2_left)).toBeLessThan(18)

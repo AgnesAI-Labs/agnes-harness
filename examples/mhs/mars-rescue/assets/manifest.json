@@ -19,8 +19,8 @@
     },
     {
       "path": "client/generated/cameras.js",
-      "bytes": 16893,
-      "sha256": "2582a0ea1f6000befa5de2447fb84b8ac7041b6d849ed66b97527b935bdafa18",
+      "bytes": 17022,
+      "sha256": "1f993623502ebee5ab994e868a2c8517bb504a3a495a79b49bda0008be2b138c",
       "origin": "Project-authored procedural Mars scene",
       "license": "Apache-2.0"
     },
