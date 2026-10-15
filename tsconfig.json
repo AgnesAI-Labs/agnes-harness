@@ -303,6 +303,9 @@
     },
     {
       "path": "packages/mhs-plugin"
+    },
+    {
+      "path": "packages/mhs-ui"
     }
   ]
 }

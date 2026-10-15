@@ -49,6 +49,7 @@ describe('repo', () => {
       '@agnes/mhs',
       '@agnes/mhs-device',
       '@agnes/mhs-hub',
+      '@agnes/mhs-ui',
       '@agnes/model-adapters',
       '@agnes/observability',
       '@agnes/package-isolation',

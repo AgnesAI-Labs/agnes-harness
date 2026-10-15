@@ -74,6 +74,7 @@ const LAYER: Record<string, number> = {
   '@agnes/web-units': 2,
   // Author-facing browser API above sdk (web-client-modules WC6); react is a pinned peer, not a layer.
   '@agnes/web-client': 4,
+  '@agnes/mhs-ui': 5, // Device plugin browser module consumes only public frontend APIs.
   '@agnes/resource-control-contracts': -1,
   '@agnes/protocol-validation': -1,
   '@agnes/error-sanitization': -1,
