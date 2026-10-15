@@ -22,6 +22,7 @@ import {
   bounded,
   count,
   MAX_OUTPUT_TEXT,
+  MAX_RETRY_AFTER_MS,
   type SideCallEffectTerminal,
   type SideCallKnownReason,
   type SideCallNoSpendReason,
@@ -54,8 +55,20 @@ type Ending = Readonly<{
   reason?: SideCallKnownReason | SideCallNoSpendReason | SideCallUnknownReason
   code?: AiErrorCode
   retryable?: boolean
+  retryAfterMs?: number
   text?: string
 }>
+
+/**
+ * The wait the vendor asked for before a retry, when the adapter error carried one: rounded up to a
+ * whole millisecond and kept only up to the cap. Anything else is dropped, not treated as an error.
+ */
+function retryHint(error: Failure | undefined): { retryAfterMs?: number } {
+  const value = error?.retryAfterMs
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return {}
+  const ms = Math.ceil(value)
+  return ms <= MAX_RETRY_AFTER_MS ? { retryAfterMs: ms } : {}
+}
 
 const parses = (text: string) => {
   try {
@@ -95,6 +108,7 @@ function ending(
           reason: 'driver_not_sent',
           code: seen.error?.code ?? 'TRANSPORT',
           retryable: seen.error?.retryable ?? true,
+          ...retryHint(seen.error),
         }
   if (cut) return { kind: spent, interrupted: true, ...cutBy }
   if (seen.done && !seen.error) {
@@ -127,6 +141,7 @@ function ending(
     reason: seen.usage ? 'driver_failed' : 'adapter_error',
     code: seen.error?.code ?? 'TRANSPORT',
     retryable: seen.error?.retryable ?? true,
+    ...retryHint(seen.error),
   }
 }
 
@@ -165,6 +180,7 @@ function terminalOf(end: Ending, cost: Spend, latencyMs: number): SideCallEffect
     ...(end.reason ? { reason: end.reason } : {}),
     ...(end.code ? { code: end.code } : {}),
     ...(end.retryable === undefined ? {} : { retryable: end.retryable }),
+    ...(end.retryAfterMs === undefined ? {} : { retryAfterMs: end.retryAfterMs }),
     latencyMs,
   } as SideCallEffectTerminal
 }

@@ -21,6 +21,12 @@ export type Invalid = (message: string) => never
 type Snapshot = Readonly<Record<string, unknown>>
 
 export const MAX_OUTPUT_TEXT = 1_048_576
+/**
+ * The longest retry hint a side call keeps, in milliseconds: one hour. A vendor asking a caller to
+ * wait longer than that is not a hint a loop can act on within a turn; such a value, like any value
+ * that is not a whole non-negative number of milliseconds, is dropped rather than recorded.
+ */
+export const MAX_RETRY_AFTER_MS = 3_600_000
 const SETTLED_EVENT = 'effect/settled'
 const COST_EVENT = 'cost/ledger'
 
@@ -129,8 +135,9 @@ export type SideCallUnknownReason =
 /**
  * How a side call ended, as its terminal row records it. Known spend copies the observed usage,
  * unknown spend copies the estimate written to the cost row, and no spend means a zero cost row.
- * `code` and `retryable` are recorded where the result cannot derive them, and `text` is kept for a
- * success and for output that failed to parse. `interrupted` is false only for a call that ran to
+ * `code` and `retryable` are recorded where the result cannot derive them, an adapter error keeps the
+ * vendor's retry hint when it gave one, and `text` is kept for a success and for output that failed
+ * to parse. `interrupted` is false only for a call that ran to
  * completion: a success, or output that failed to parse.
  */
 export type SideCallEffectTerminal =
@@ -154,6 +161,7 @@ export type SideCallEffectTerminal =
           reason: SideCallKnownReason
           code?: AiErrorCode
           retryable?: boolean
+          retryAfterMs?: number
         }
     >
   | Readonly<
@@ -164,6 +172,7 @@ export type SideCallEffectTerminal =
         reason: SideCallNoSpendReason
         code?: AiErrorCode
         retryable?: boolean
+        retryAfterMs?: number
       }
     >
   | Readonly<
@@ -177,6 +186,7 @@ export type SideCallEffectTerminal =
           reason: SideCallUnknownReason
           code?: AiErrorCode
           retryable?: boolean
+          retryAfterMs?: number
         }
     >
 
@@ -227,6 +237,7 @@ const FIELD_ORDER = [
   'reason',
   'code',
   'retryable',
+  'retryAfterMs',
   'latencyMs',
 ]
 const MEDIA_KEY_SETS = [
@@ -332,6 +343,7 @@ const RULES: Readonly<Record<LedgerPurpose, TerminalRules>> = {
       if (rule?.code) required.push('code')
       else if (rule) optional.push('code')
       if (rule?.code === 'adapter') required.push('retryable')
+      if (rule?.code === 'adapter') optional.push('retryAfterMs')
       return { required, optional }
     },
   },
@@ -398,6 +410,8 @@ function field(
     case 'code':
       if (rule?.code === 'TIMEOUT') return value === 'TIMEOUT' ? value : undefined
       return AI_ERROR_CODES.includes(value as AiErrorCode) ? value : undefined
+    case 'retryAfterMs':
+      return count(value) && value <= MAX_RETRY_AFTER_MS ? value : undefined
     case 'retryable':
       return typeof value === 'boolean' ? value : undefined
     case 'latencyMs':
@@ -651,6 +665,7 @@ export function sideCallResult(
     reason: failure,
     ...(terminal.code === undefined ? {} : { code: terminal.code }),
     retryable: terminal.retryable ?? failure === 'deadline',
+    ...(terminal.retryAfterMs === undefined ? {} : { retryAfterMs: terminal.retryAfterMs }),
     dispatch: terminal.kind === 'no_spend' ? 'not-sent' : 'may-have-sent',
     ...(spent ? { usage: spent } : {}),
     latencyMs: terminal.latencyMs,

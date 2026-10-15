@@ -243,7 +243,7 @@ The built-in Jev adapter, registered as `typesafe-systemone`, declares `imageInp
 | `status` | Meaning |
 | --- | --- |
 | `ok` | `text`, the parsed `json` when `output` is `'json'`, `usage`, `latencyMs` and the vendor's `response` id and model. |
-| `failed` | `reason` is `deadline`, `cancelled`, `adapter-error` or `invalid-output`. `code` is the AI error code when there is one. `dispatch` is `not-sent` or `may-have-sent`. `usage` is present when the call settled through its normal terminal: the observed usage, or an estimate (`creditSource: 'estimated'`) when none was observed and the catalog has a price. A call closed because the loop's execution scope was revoked reports none, although its cost row is written. |
+| `failed` | `reason` is `deadline`, `cancelled`, `adapter-error` or `invalid-output`. `code` is the AI error code when there is one. `retryAfterMs` is present on an `adapter-error` when the vendor asked for a wait, for example a rate limit's `retry-after`: wait that many milliseconds before you retry with a new `invocationId`. `dispatch` is `not-sent` or `may-have-sent`. `usage` is present when the call settled through its normal terminal: the observed usage, or an estimate (`creditSource: 'estimated'`) when none was observed and the catalog has a price. A call closed because the loop's execution scope was revoked reports none, although its cost row is written. |
 | `refused` | `reason` is `budget` or `usage-unrecorded`. Nothing was written: no intent row, no cost row, no adapter call. |
 | `unknown` | `reason` is `interrupted`: the process stopped before the outcome was recorded, and the call may or may not have reached the vendor. It is never sent again. |
 

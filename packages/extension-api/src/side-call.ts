@@ -100,6 +100,13 @@ export type SideCallResult =
       code?: AiErrorCode
       /** `deadline` is retryable; `cancelled` and `invalid-output` are not; `adapter-error` follows the adapter's own flag. */
       retryable: boolean
+      /**
+       * Milliseconds the vendor asked the caller to wait before retrying, for an `adapter-error`
+       * only, and only when the vendor gave a hint (for example a rate limit's `retry-after`). Core
+       * does not retry; a loop that retries does so with a new `invocationId` and should wait this
+       * long first.
+       */
+      retryAfterMs?: number
       dispatch: 'not-sent' | 'may-have-sent'
       /**
        * Present when the call settled through its normal terminal: the observed usage, or an estimate

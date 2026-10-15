@@ -298,6 +298,29 @@ describe('side-call ledger rows', () => {
     await kernel.close()
   })
 
+  it('keeps a retry hint on an adapter-error terminal only, in whole milliseconds up to an hour', async () => {
+    const { kernel, session } = await setup('side-retry-hint')
+    const port = createSideCallEffectPort(session)
+    const identity = binding(session.key)
+    const limited = { ...unknownTerminal, reason: 'adapter_error', code: 'RATE_LIMIT', retryable: true }
+    const context = { invocationId: 'call-1', output: 'json', replayed: true } as const
+    for (const retryAfterMs of [0, 2500, 3_600_000]) {
+      const terminal = { ...limited, retryAfterMs } as SideCallEffectTerminal
+      expect((port.terminalRow(identity, terminal).data as { terminal: unknown }).terminal).toEqual(terminal)
+      expect(sideCallResult(terminal, context)).toMatchObject({ reason: 'adapter-error', retryAfterMs })
+    }
+    for (const retryAfterMs of [-1, 1.5, 3_600_001, Number.NaN, '2500'])
+      expect(() =>
+        port.terminalRow(identity, { ...limited, retryAfterMs } as unknown as SideCallEffectTerminal),
+      ).toThrow()
+    for (const other of [unknownTerminal, okTerminal])
+      expect(() =>
+        port.terminalRow(identity, { ...other, retryAfterMs: 2500 } as unknown as SideCallEffectTerminal),
+      ).toThrow()
+    expect(sideCallResult(limited as SideCallEffectTerminal, context)).not.toHaveProperty('retryAfterMs')
+    await kernel.close()
+  })
+
   it('commits cost, settlement and terminal in that order and refuses any other batch', async () => {
     const { kernel, session } = await setup('side-order')
     const port = createSideCallEffectPort(session)

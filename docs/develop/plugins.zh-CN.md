@@ -223,7 +223,7 @@ return fallback()
 | `status` | 含义 |
 | --- | --- |
 | `ok` | `text`；`output` 为 `'json'` 时还有解析后的 `json`；以及 `usage`、`latencyMs` 和厂商回报的 `response` id 与模型。 |
-| `failed` | `reason` 为 `deadline`、`cancelled`、`adapter-error` 或 `invalid-output`。有 AI 错误码时带 `code`。`dispatch` 为 `not-sent` 或 `may-have-sent`。调用经正常终态结算时带 `usage`：观察到的用量，或没有观察到用量且目录有价格时的估算（`creditSource: 'estimated'`）。因循环的执行作用域被撤销而收尾的调用不带 `usage`，但它的成本行已写入。 |
+| `failed` | `reason` 为 `deadline`、`cancelled`、`adapter-error` 或 `invalid-output`。有 AI 错误码时带 `code`。厂商要求等待时（例如限流的 `retry-after`），`adapter-error` 带 `retryAfterMs`：先等这么多毫秒，再用新的 `invocationId` 重试。`dispatch` 为 `not-sent` 或 `may-have-sent`。调用经正常终态结算时带 `usage`：观察到的用量，或没有观察到用量且目录有价格时的估算（`creditSource: 'estimated'`）。因循环的执行作用域被撤销而收尾的调用不带 `usage`，但它的成本行已写入。 |
 | `refused` | `reason` 为 `budget` 或 `usage-unrecorded`。什么都没写：没有意图行、没有成本行、没有调用适配器。 |
 | `unknown` | `reason` 为 `interrupted`：进程在记录结果之前停止，调用可能到达厂商，也可能没有。它不会被再次发送。 |
 

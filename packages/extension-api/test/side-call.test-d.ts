@@ -102,6 +102,11 @@ it('closes the result union over four statuses and one unknown reason', () => {
   expectTypeOf<Extract<SideCallResult, { status: 'failed' }>['dispatch']>().toEqualTypeOf<
     'not-sent' | 'may-have-sent'
   >()
+  expectTypeOf<Extract<SideCallResult, { status: 'failed' }>['retryAfterMs']>().toEqualTypeOf<
+    number | undefined
+  >()
+  expectTypeOf<Extract<SideCallResult, { status: 'ok' }>>().not.toHaveProperty('retryAfterMs')
+  expectTypeOf<Extract<SideCallResult, { status: 'refused' }>>().not.toHaveProperty('retryAfterMs')
   expectTypeOf<Extract<SideCallResult, { status: 'ok' }>['json']>().toEqualTypeOf<JsonValue | undefined>()
   expectTypeOf<SideCallStatus['status']>().toEqualTypeOf<'absent' | 'in-flight' | 'finished'>()
   expectTypeOf<Extract<SideCallStatus, { status: 'finished' }>['result']>().toEqualTypeOf<SideCallResult>()

@@ -2234,7 +2234,7 @@ describe('side model calls through the built-in typesafe-systemone adapter', () 
   it('leaves retries to the loop: each attempt is a new invocation with its own record', async () => {
     // Rate limited twice (429 with a retry-after header, then 529), then answered.
     const fake = await startJev(
-      (n) => [{ status: 429, headers: { 'retry-after': '0' } }, { status: 529 }][n] ?? { answers: CONFIDENT },
+      (n) => [{ status: 429, headers: { 'retry-after': '2' } }, { status: 529 }][n] ?? { answers: CONFIDENT },
     )
     const results: SideCallResult[] = []
     const replayed: SideCallResult[] = []
@@ -2260,6 +2260,10 @@ describe('side model calls through the built-in typesafe-systemone adapter', () 
         { status: 'ok', replayed: false },
       ])
       expect(replayed).toMatchObject([{ status: 'failed', code: 'RATE_LIMIT', replayed: true }])
+      // The vendor's retry-after reaches the loop, and its record replays it; the 529 gave none.
+      expect(results[0]).toHaveProperty('retryAfterMs', 2000)
+      expect(results[1]).not.toHaveProperty('retryAfterMs')
+      expect(replayed[0]).toHaveProperty('retryAfterMs', 2000)
       // One HTTP request per attempt, and none for the read-back.
       expect(fake.seen).toHaveLength(3)
       const rows = await rowsOf(session)

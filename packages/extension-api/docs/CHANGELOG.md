@@ -147,6 +147,11 @@ Every `agnes.plugins[].apiRange` and `@agnes/extension-api` dependency range mov
   reopen still runs that very call. Otherwise the call is closed with a `TOOL_NOT_STARTED` error
   result when its step ends (or before the next model request is prepared), and the loop can
   announce again with a new `invocationId`. Without `announce` nothing changes.
+- `SideCallResult` (`status: 'failed'`) has an optional `retryAfterMs`: for an `adapter-error` whose
+  vendor asked for a wait, such as a rate limit with `retry-after`, the milliseconds to wait before a
+  retry. It is a whole number up to one hour (a longer or invalid hint is dropped), recorded with the
+  call, so `status` and a replay return it too. Core still never retries; the loop retries with a new
+  `invocationId`.
 
 ## 3.1.0
 

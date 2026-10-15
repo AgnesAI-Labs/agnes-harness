@@ -227,6 +227,105 @@ describe('side call outcomes', () => {
   })
 })
 
+describe('the vendor retry hint', () => {
+  /** A rate-limited answer, after a usage report or not, with the retry hint under test. */
+  const limited = (retryAfterMs: number | undefined, withUsage = false): SideScript =>
+    async function* (request) {
+      yield sentFor(request)
+      if (withUsage) yield sideUsage()
+      yield {
+        type: 'error',
+        reason: 'error',
+        code: 'RATE_LIMIT',
+        message: 'too many requests',
+        retryable: true,
+        ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
+      }
+    }
+  const terminalOf = async (t: Harness) =>
+    (data(terminals(await t.rows())[0]) as { terminal: Record<string, unknown> }).terminal
+
+  it.each([
+    ['without usage', false, 'unknown_spend', 'adapter_error'],
+    ['after usage', true, 'known_spend', 'driver_failed'],
+  ] as const)(
+    'hands the hint of a rate-limited call %s to the loop, records it and replays it',
+    async (_name, withUsage, kind, reason) => {
+      await withSession({ script: limited(2500, withUsage) }, async (t) => {
+        const prepared = await t.port.prepare(options())
+        const result = await t.port.invoke(prepared, signal())
+        expect(result).toMatchObject({
+          status: 'failed',
+          reason: 'adapter-error',
+          code: 'RATE_LIMIT',
+          retryable: true,
+          retryAfterMs: 2500,
+          dispatch: 'may-have-sent',
+          replayed: false,
+        })
+        expect(await terminalOf(t)).toMatchObject({ kind, reason, code: 'RATE_LIMIT', retryAfterMs: 2500 })
+        expect(await t.port.status('call-1')).toEqual({
+          status: 'finished',
+          invocationId: 'call-1',
+          label: 'sample.decide',
+          requestHash: prepared.requestHash,
+          result: { ...result, replayed: true },
+        })
+        expect(await t.port.invoke(await t.port.prepare(options()), signal())).toEqual({
+          ...result,
+          replayed: true,
+        })
+        expect(t.provider.calls).toHaveLength(1)
+      })
+    },
+  )
+
+  it.each([
+    ['no hint', undefined, undefined],
+    ['a zero wait', 0, 0],
+    ['a fractional wait, rounded up', 1.2, 2],
+    ['a wait of exactly one hour', 3_600_000, 3_600_000],
+    ['a wait over one hour', 3_600_001, undefined],
+    ['a negative wait', -5, undefined],
+    ['a wait that is not a number', Number.NaN, undefined],
+    ['an infinite wait', Number.POSITIVE_INFINITY, undefined],
+  ])('keeps %s only as a whole number of milliseconds up to an hour', async (_name, given, kept) => {
+    await withSession({ script: limited(given) }, async (t) => {
+      const result = await t.port.invoke(await t.port.prepare(options()), signal())
+      const replayed = await t.port.status('call-1')
+      const terminal = await terminalOf(t)
+      expect(result).toMatchObject({ status: 'failed', reason: 'adapter-error', code: 'RATE_LIMIT' })
+      if (kept === undefined) {
+        expect(result).not.toHaveProperty('retryAfterMs')
+        expect(terminal).not.toHaveProperty('retryAfterMs')
+      } else {
+        expect(result).toHaveProperty('retryAfterMs', kept)
+        expect(terminal).toHaveProperty('retryAfterMs', kept)
+      }
+      expect(replayed).toMatchObject({ status: 'finished', result: { ...result, replayed: true } })
+    })
+  })
+
+  it('never puts a hint on a failure that is not an adapter error', async () => {
+    await withSession({ script: stalled }, async (t) => {
+      const result = await t.port.invoke(await t.port.prepare(options({ deadlineMs: 200 })), signal())
+      expect(result).toMatchObject({ status: 'failed', reason: 'deadline' })
+      expect(result).not.toHaveProperty('retryAfterMs')
+      expect(await terminalOf(t)).not.toHaveProperty('retryAfterMs')
+    })
+    await withSession({ script: stalled }, async (t) => {
+      const stop = new AbortController()
+      const running = t.port.invoke(await t.port.prepare(options()), stop.signal)
+      await vi.waitFor(() => expect(t.provider.calls).toHaveLength(1))
+      stop.abort()
+      const result = await running
+      expect(result).toMatchObject({ status: 'failed', reason: 'cancelled' })
+      expect(result).not.toHaveProperty('retryAfterMs')
+      expect(await terminalOf(t)).not.toHaveProperty('retryAfterMs')
+    })
+  })
+})
+
 describe('side call tree budget', () => {
   it('settles the hold at the reported credits after a success', async () => {
     await withSession({ preset: withTreeBudget() }, async (t) => {
