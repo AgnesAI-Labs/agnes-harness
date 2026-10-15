@@ -89,16 +89,6 @@ const tokenAt = (input: HTMLTextAreaElement) => {
   return { start: before.length - query.length - 1, end: input.selectionStart, query }
 }
 
-/** Edit that starts a reference at the caret, as if the user had typed `@`. */
-export function referenceStart(input: HTMLTextAreaElement): { start: number; end: number; text: string } {
-  const before = input.value.slice(0, input.selectionStart)
-  return {
-    start: input.selectionStart,
-    end: input.selectionEnd,
-    text: before && !/\s$/u.test(before) ? ' @' : '@',
-  }
-}
-
 /**
  * Folders among the found files: each parent folder whose name matches the query, ahead of the
  * files, so a folder can be named too. The search walks files; their folders come with them.

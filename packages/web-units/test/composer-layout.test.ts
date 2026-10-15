@@ -233,7 +233,7 @@ it('opens the workspace chooser from the row and hides the chip for a session wi
   expect(workspace?.hidden).toBe(true)
 })
 
-it('starts a reference from the add menu and removes the consumed query when one is chosen', async () => {
+it('opens files directly without changing the draft on cancel and still accepts typed references', async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true })
   try {
     const candidate = { source: 'file', id: 'docs/readme.md', label: 'readme.md' }
@@ -242,19 +242,39 @@ it('starts a reference from the add menu and removes the consumed query when one
     type(prompt, '看一下')
 
     const add = host.querySelector<HTMLButtonElement>('#composer-attach')
-    expect(add?.getAttribute('aria-label')).toBe('添加文件或引用')
-    add?.click()
-    const start = await vi.waitFor(() => {
-      const item = document.querySelector<HTMLElement>('[data-testid="composer-add-reference"]')
-      if (!item) throw new Error('add menu did not open')
-      return item
-    })
-    expect(document.querySelector('[data-testid="composer-add-file"]')?.textContent).toBe('上传文件…')
-    start.click()
+    const fileInput = host.querySelector<HTMLInputElement>('[data-testid="attachment-file-input"]')
+    if (!add || !fileInput) throw new Error('missing upload control')
+    const choose = vi.spyOn(fileInput, 'click').mockImplementation(() => {})
+    expect(add.getAttribute('aria-label')).toBe('上传文件')
+    expect(add.title).toBe('上传文件')
+    expect(add.hasAttribute('aria-haspopup')).toBe(false)
+    expect(add.hasAttribute('aria-expanded')).toBe(false)
+    add.click()
+    // The chooser must open inside the button's click, before any async work.
+    expect(choose).toHaveBeenCalledOnce()
+    expect(document.querySelector('[role="menu"]')).toBeNull()
+    expect(fileInput.multiple).toBe(true)
+    fileInput.dispatchEvent(new Event('cancel', { bubbles: true }))
+    await vi.waitFor(() => expect(handle.getDraft()).toBe('看一下'))
+    expect(handle.getAttachmentBlocks()).toEqual([])
+    expect(props.onDraftChange).toHaveBeenCalledExactlyOnceWith('看一下')
+    expect(props.onError).not.toHaveBeenCalled()
 
-    // The `@` is typed for the user after a separating space, and the picker takes over.
-    await vi.waitFor(() => expect(handle.getDraft()).toBe('看一下 @'))
-    expect(props.onDraftChange).toHaveBeenLastCalledWith('看一下 @')
+    for (const blocked of [
+      { ...idle, input: { ...idle.input, disabled: true } },
+      { ...idle, sending: true },
+      { ...idle, model: { ...idle.model, pending: true } },
+    ]) {
+      handle.render(blocked)
+      expect(add.getAttribute('aria-disabled')).toBe('true')
+      add.click()
+      expect(choose).toHaveBeenCalledOnce()
+    }
+    handle.render(idle)
+
+    // Typing `@` keeps the reference picker available without the former add menu.
+    prompt.focus()
+    type(prompt, '看一下 @')
     await vi.waitFor(() => expect(prompt.getAttribute('role')).toBe('combobox'))
     expect(document.activeElement).toBe(prompt)
     await vi.advanceTimersByTimeAsync(150)
