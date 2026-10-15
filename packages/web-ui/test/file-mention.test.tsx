@@ -21,11 +21,20 @@ afterEach(() => {
 
 describe('file mention links', () => {
   it('carries the real absolute path as a file URI, both ways', () => {
-    for (const path of ['/work/Work LLM/bootlab-new.html', '/tmp/报告 #1.md', 'C:/work/a b.txt']) {
+    for (const path of [
+      '/work/Work LLM/bootlab-new.html',
+      '/tmp/报告 #1.md',
+      'C:/work/a b.txt',
+      '/repo/a\\b',
+      '/repo/%5C#中文',
+      '//server/share/中文 a',
+    ]) {
       expect(fileMentionPath(fileMentionUri(path)), path).toBe(path)
     }
     expect(fileMentionUri('/work/Work LLM/a.html')).toBe('file:///work/Work%20LLM/a.html')
     expect(fileMentionUri('C:\\work\\a.txt')).toBe('file:///C:/work/a.txt')
+    expect(fileMentionPath(fileMentionUri('\\\\server\\share\\a.txt'))).toBe('//server/share/a.txt')
+    expect(fileMentionUri('/repo/a\\b')).toBe('file:///repo/a%5Cb')
     expect(fileMentionPath('agnes-upload://x')).toBeUndefined()
   })
 

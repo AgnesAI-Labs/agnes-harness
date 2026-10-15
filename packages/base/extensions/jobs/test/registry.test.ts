@@ -1,3 +1,4 @@
+import { resolve } from 'node:path'
 import type { ServiceContext } from '@agnes/extension-api'
 import { expect, it } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
@@ -70,7 +71,7 @@ it('refuses a query-side launch or a service without Host session identity', asy
 
 it('joins a launch racing session shutdown and never republishes its process', async () => {
   const jobs = new ShellJobs(),
-    ctx = fakeToolContext()
+    ctx = fakeToolContext({ cwd: resolve('/work/proj') })
   let release!: (handle: import('@agnes/extension-api').SandboxProcess) => void
   const opened = new Promise<import('@agnes/extension-api').SandboxProcess>((resolve) => {
     release = resolve
@@ -99,7 +100,7 @@ it('joins a launch racing session shutdown and never republishes its process', a
 
 it('keeps backend origin, isolates controls and reports slow or capped output without closing jobs on reads', async () => {
   const jobs = new ShellJobs(),
-    tool = fakeToolContext({ sessionKey: 'terminal-session' })
+    tool = fakeToolContext({ cwd: resolve('/work/proj'), sessionKey: 'terminal-session' })
   const processes: { emit(text: string): void; end(): void; input: string; closed: boolean }[] = []
   tool.sandbox.openProcess = async () => {
     let listener: (chunk: { stream: 'stdout'; text: string }) => void = () => {}

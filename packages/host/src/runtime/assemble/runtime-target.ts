@@ -210,7 +210,11 @@ function createPublisher(ctx: AssemblyContext, input: RuntimeTargetInput, shared
           )
           installToolProviders(root, origins)
           installCompactionEngines(root, origins)
-          installChildAgents(root, origins, ctx.providerSelections['child-agent'])
+          installChildAgents(root, origins, ctx.providerSelections['child-agent'], {
+            ...(proc.adapters.windowsNodeExecutable
+              ? { windowsNodeExecutable: proc.adapters.windowsNodeExecutable }
+              : {}),
+          })
           const sandboxProviders = installSandboxProviders(root, origins)
           root.providers.registerHost(
             sandboxKind,

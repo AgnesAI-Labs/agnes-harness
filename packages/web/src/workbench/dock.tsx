@@ -27,6 +27,7 @@ import {
   RIGHT_DEFAULT,
   RIGHT_MIN,
 } from './dock-size.js'
+import { mentionPanelPath } from './mention-path.js'
 import { useTabOverflow } from './tab-fit.js'
 
 type Layout = { rightOpen: boolean; bottomOpen: boolean; rightWidth: number; bottomHeight: number }
@@ -275,13 +276,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
     // the workspace opens by its relative path; any other path goes as is, and the panel applies its
     // usual visibility rules to it.
     const removeMentions = fileMentionLinks.register((mention) => {
-      const root = (context.data as WorkbenchContext)?.workspace?.path?.replace(/[\\/]+$/u, '')
-      const path =
-        root && mention.path === root
-          ? ''
-          : root && mention.path.startsWith(`${root}/`)
-            ? mention.path.slice(root.length + 1)
-            : mention.path
+      const path = mentionPanelPath((context.data as WorkbenchContext)?.workspace?.path, mention.path)
       if (!openPanel('files')) return false
       setSelection({ path, directory: mention.directory })
       return true

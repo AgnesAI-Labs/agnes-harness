@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { resetChildAgentAllowlists, setChildAgentAllowlist } from '@agnes/core'
 import type { ChildAgentEvent } from '@agnes/extension-api'
@@ -5,7 +6,7 @@ import { expect, it } from 'vitest'
 import { acpChildAgentProvider } from '../src/provider.js'
 
 const fixture = fileURLToPath(new URL('./fixture-agent.mjs', import.meta.url))
-const cwd = '/tmp'
+const cwd = tmpdir()
 
 function provider(env?: Record<string, string>, agnesWorkspace?: boolean) {
   return acpChildAgentProvider({

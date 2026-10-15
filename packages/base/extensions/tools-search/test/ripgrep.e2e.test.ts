@@ -16,10 +16,17 @@ describe('bundled ripgrep', () => {
     try {
       await mkdir(join(cwd, 'node_modules'))
       await mkdir(join(cwd, 'secrets'))
+      await mkdir(join(cwd, 'src', '中文 空格'), { recursive: true })
+      await writeFile(join(cwd, 'src', 'b.txt'), 'match direct')
+      await writeFile(join(cwd, 'src', '中文 空格', 'c.txt'), 'match nested')
       await writeFile(join(cwd, 'a.txt'), 'match one\nmatch two\nmatch three\n')
       await writeFile(join(cwd, 'node_modules', 'ignored.txt'), 'match hidden')
       await writeFile(join(cwd, 'secrets', 'private.txt'), 'match private')
-      await symlink(join(cwd, 'secrets'), join(cwd, 'link'))
+      await symlink(
+        join(cwd, 'secrets'),
+        join(cwd, 'link'),
+        process.platform === 'win32' ? 'junction' : 'dir',
+      )
       const ctx = fakeToolContext({ cwd })
       ctx.fs.stat = async (p) => {
         const s = await stat(p)
@@ -46,6 +53,19 @@ describe('bundled ripgrep', () => {
       const found = await ripgrepFindTool.execute({ pattern: '**/*.txt' }, ctx)
       expect(JSON.stringify(found)).toContain('a.txt')
       expect(JSON.stringify(found)).not.toContain('private.txt')
+      for (const [glob, included, excluded] of [
+        ['*.txt', 'a.txt', 'src/b.txt'],
+        ['src/?.txt', 'src/b.txt', 'src/中文 空格/c.txt'],
+        ['src/**/*.txt', 'src/中文 空格/c.txt', 'a.txt'],
+      ]) {
+        const find = await ripgrepFindTool.execute({ pattern: glob! }, ctx)
+        const grep = await ripgrepGrepTool.execute({ pattern: 'match', glob: glob! }, ctx)
+        for (const output of [find, grep]) {
+          expect(output.isError).toBeUndefined()
+          expect(JSON.stringify(output)).toContain(included!)
+          expect(JSON.stringify(output)).not.toContain(excluded!)
+        }
+      }
 
       // A backend can hand back an oversized listing even when individual matches are bounded.
       // Both the row spill and the ordinary output-guard path must refuse unreadable artifacts.

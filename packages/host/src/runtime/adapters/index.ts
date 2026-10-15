@@ -69,6 +69,7 @@ export type AdapterBundle = {
   exec: ExecAdapter
   platform: PlatformBackend
   readonly powerShell?: PowerShellDescriptor
+  readonly windowsNodeExecutable?: string
   secrets: SecretResolver
   /**
    * Atomically replaces the bootstrap fence with the sandbox seam's full policy. Validates the
@@ -444,6 +445,9 @@ export async function openAdapters(
     return {
       storage: openedStorage,
       ...(powerShell ? { powerShell } : {}),
+      ...(platform.os === 'win32' && platform.matches() && windowsNodeExecutable
+        ? { windowsNodeExecutable }
+        : {}),
       ...(transport ? { transport } : {}),
       openWorkspace: sessionWorkspaces.openWorkspace,
       openFence: sessionWorkspaces.openFence,

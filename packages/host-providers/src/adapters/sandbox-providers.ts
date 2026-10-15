@@ -8,6 +8,7 @@ import {
   type SandboxProviderCatalogEntry,
   type SandboxProviderConfig,
   type SandboxProviderInstance,
+  SHELL_STDIN_SENTINEL,
   sandboxKind,
   sandboxUnavailable,
 } from '@agnes/extension-api'
@@ -51,6 +52,7 @@ function freezeCapabilities(capabilities: SandboxCapabilities): SandboxCapabilit
   return Object.freeze({
     network: capabilities.network,
     ...(capabilities.programmatic === undefined ? {} : { programmatic: capabilities.programmatic }),
+    ...(capabilities.shellStdin === undefined ? {} : { shellStdin: capabilities.shellStdin }),
     fsWrite: Object.freeze(capabilities.fsWrite.map((scope) => Object.freeze({ path: scope.path }))),
     platform: Object.freeze([...capabilities.platform]),
     available: capabilities.available,
@@ -76,7 +78,8 @@ function validCapabilities(capabilities: SandboxCapabilities | undefined): boole
     typeof capabilities.available !== 'boolean' ||
     (capabilities.l1Implementation !== undefined &&
       !['implemented', 'unimplemented', 'unknown'].includes(capabilities.l1Implementation)) ||
-    (capabilities.programmatic !== undefined && typeof capabilities.programmatic !== 'boolean')
+    (capabilities.programmatic !== undefined && typeof capabilities.programmatic !== 'boolean') ||
+    (capabilities.shellStdin !== undefined && typeof capabilities.shellStdin !== 'boolean')
   )
     return false
   const enforcement = capabilities.enforcement
@@ -308,7 +311,9 @@ export class SandboxProviderRegistry extends Service {
                   joined.throwIfAborted()
                 }
                 opened.add(handle)
-                void handle.exited.then(() => opened.delete(handle))
+                void handle.exited.then((result) => {
+                  if (!result.error) opened.delete(handle)
+                })
                 return handle
               })
               opening.add(pending)
@@ -402,6 +407,11 @@ export function createSandboxDispatchExec(local: ExecAdapter, slot: SandboxProvi
         })
       if (!selected.capabilities.available || !selected.openProcess)
         throw sandboxUnavailable('the selected provider does not support interactive execution')
+      if (
+        argv[0] === SHELL_STDIN_SENTINEL &&
+        (argv.length !== 1 || opts.pty || selected.capabilities.shellStdin !== true)
+      )
+        throw sandboxUnavailable('the selected provider does not support configured stdin shells')
       if (opts.sandbox?.provider && opts.sandbox.provider !== selected.id)
         throw sandboxUnavailable('interactive provider binding differs')
       const actual =

@@ -27,6 +27,7 @@ export function createLocalSandboxProvider(
     network: true,
     l1Implementation: options.l1Implementation ?? 'unknown',
     programmatic: os !== 'win32',
+    shellStdin: os === 'win32',
     fsWrite: Object.freeze([]),
     platform,
     available: platform.length > 0,
@@ -70,7 +71,9 @@ export function createLocalSandboxProvider(
           })
           const bound = { ...handle, enforcement: actual }
           processes.add(bound)
-          void bound.exited.then(() => processes.delete(bound))
+          void bound.exited.then((result) => {
+            if (!result.error) processes.delete(bound)
+          })
           if (disposed) {
             await bound.close()
             throw sandboxUnavailable('workspace sandbox was disposed during launch')

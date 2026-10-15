@@ -1,5 +1,5 @@
 import type { Enforcement, SandboxSeam, SeamWorkspace } from '@agnes/core'
-import { type SandboxExecutionPolicy, SHELL_SENTINEL } from '@agnes/extension-api'
+import { type SandboxExecutionPolicy, SHELL_SENTINEL, SHELL_STDIN_SENTINEL } from '@agnes/extension-api'
 
 const fault = (code: string, message: string): Error & { code: string } =>
   Object.assign(new Error(`${code}: ${message}`), { code })
@@ -22,6 +22,7 @@ export function expandShell(
     (dialect !== 'posix' && dialect !== 'powershell')
   )
     throw new Error('invalid sandbox command')
+  if (argv[0] === SHELL_STDIN_SENTINEL) throw new Error('stdin shell requires openProcess')
   if (argv[0] !== SHELL_SENTINEL) return [...argv]
   // Never silently discard arguments or turn a missing command into successful empty execution.
   if (argv.length !== 2 || !argv[1]) throw new Error('invalid sandbox shell command')
@@ -63,11 +64,16 @@ async function bindRemote(workspace: SeamWorkspace): Promise<SandboxSeam> {
   await workspace.readiness.ready(workspace.signal)
   const bound: SandboxSeam = {
     forWorkspace: bindWorkspace,
-    exec: (cmd, opts) =>
-      workspace.exec(cmd, {
+    exec: (cmd, opts) => {
+      if (cmd[0] === SHELL_STDIN_SENTINEL)
+        return Promise.reject(
+          fault('SANDBOX_UNAVAILABLE', 'stdin shell requires a provider openProcess port'),
+        )
+      return workspace.exec(cmd, {
         ...opts,
         sandbox: { policyDigest: workspace.policy.digest, backend: 'remote' },
-      }),
+      })
+    },
     confine: async () => {
       throw new Error(
         'confine() is unavailable under a remote sandbox: use exec(), which runs on the remote host',
@@ -108,7 +114,12 @@ async function bindLocal(workspace: SeamWorkspace): Promise<SandboxSeam> {
       if (!workspace.openProcess)
         throw fault('SANDBOX_UNAVAILABLE', 'interactive process backend is unavailable')
       const cwd = request.cwd ?? workspace.root
-      const raw = expandShell([...request.argv], workspace.shell, workspace.shellCommand)
+      const stdinShell = request.argv[0] === SHELL_STDIN_SENTINEL
+      if (stdinShell && (request.argv.length !== 1 || request.pty || workspace.shell !== 'powershell'))
+        throw fault('SANDBOX_UNAVAILABLE', 'invalid configured stdin shell request')
+      const raw = stdinShell
+        ? [SHELL_STDIN_SENTINEL]
+        : expandShell([...request.argv], workspace.shell, workspace.shellCommand)
       const argv = external ? raw : [...(await backend.confine({ argv: raw, cwd }))]
       return workspace.openProcess(argv, {
         cwd,

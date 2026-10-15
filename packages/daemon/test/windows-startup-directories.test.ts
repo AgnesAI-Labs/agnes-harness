@@ -2,9 +2,10 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createCredentialStore } from '@agnes/host'
+import { getApiKeyProvider } from '@agnes/ai'
+import { createConfigurationService, createCredentialStore, initializeHomeLocked } from '@agnes/host'
 import { hasPrivateDaclSync } from '@agnes/system-node'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { runAgnesd } from '../src/supervisor/supervisor.js'
 
 describe.runIf(process.platform === 'win32')('Windows daemon startup directories', () => {
@@ -40,30 +41,82 @@ describe.runIf(process.platform === 'win32')('Windows daemon startup directories
     expect(reached).toBe(true)
   })
 
-  it('refuses a broad home before creating package or daemon state', async () => {
+  it('prepares older private directories before scope resolution reads saved credentials', async () => {
     const home = join(parent, 'home')
-    mkdirSync(home)
-    const systemRoot = process.env.SystemRoot
-    if (!systemRoot) throw new Error('SystemRoot missing')
-    const icacls = join(systemRoot, 'System32', 'icacls.exe')
-    execFileSync(icacls, [home, '/grant', '*S-1-1-0:R'], { windowsHide: true })
-    const before = execFileSync(icacls, [home], { windowsHide: true })
-    let reached = false
+    await initializeHomeLocked(home)
+    const provider = getApiKeyProvider('openai')
+    if (!provider) throw new Error('missing provider fixture')
+    const model = (await provider.createAdapter()).models(provider.route)[0]?.id
+    if (!model) throw new Error('missing model fixture')
+    const configuration = createConfigurationService({
+      home,
+      profile: 'local-dev',
+      request: async () =>
+        new Response(JSON.stringify({ data: [{ id: model }] }), {
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    })
+    await configuration.save({ providerId: 'openai', apiKey: 'synthetic-key', model, expectedRevision: 0 })
+    const ref = (await configuration.profileInput()).provider?.routes?.[0]?.credentialRef
+    if (!ref) throw new Error('missing credential fixture')
+    const secretDirectory = join(home, 'secrets')
+    execFileSync(
+      join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'icacls.exe'),
+      [secretDirectory, '/inheritance:e'],
+      { windowsHide: true },
+    )
+    expect(hasPrivateDaclSync(secretDirectory)).toBe(false)
+    const boundary = new Error('legacy credentials resolved')
     await expect(
       runAgnesd(
-        { home, dataDir: home, workspace: parent, profile: 'local-dev' },
+        { home, workspace: parent },
         {
           startProduction: async () => {
-            reached = true
-            throw new Error('unexpected supervisor startup')
+            expect(hasPrivateDaclSync(secretDirectory)).toBe(true)
+            expect(await createCredentialStore({ root: home }).read(ref)).toMatchObject({
+              value: 'synthetic-key',
+            })
+            throw boundary
           },
         },
       ),
-    ).rejects.toThrow()
-    expect(reached).toBe(false)
-    expect(readdirSync(home)).toEqual([])
-    expect(execFileSync(icacls, [home], { windowsHide: true })).toEqual(before)
+    ).rejects.toBe(boundary)
   })
+
+  it.each(['home', 'dataDir'])(
+    'refuses a broad %s before loading credentials or creating business state',
+    async (target) => {
+      const home = join(parent, 'home')
+      const dataDir = join(parent, 'data')
+      const unsafe = target === 'home' ? home : dataDir
+      mkdirSync(unsafe)
+      const systemRoot = process.env.SystemRoot
+      if (!systemRoot) throw new Error('SystemRoot missing')
+      const icacls = join(systemRoot, 'System32', 'icacls.exe')
+      execFileSync(icacls, [unsafe, '/grant', '*S-1-1-0:R'], { windowsHide: true })
+      const before = execFileSync(icacls, [unsafe], { windowsHide: true })
+      const resolveProfile = vi.fn(() => {
+        throw new Error('unexpected profile loading')
+      })
+      let reached = false
+      await expect(
+        runAgnesd(
+          { home, dataDir, workspace: parent, profile: 'local-dev' },
+          {
+            resolveProfile,
+            startProduction: async () => {
+              reached = true
+              throw new Error('unexpected supervisor startup')
+            },
+          },
+        ),
+      ).rejects.toThrow()
+      expect(reached).toBe(false)
+      expect(resolveProfile).not.toHaveBeenCalled()
+      expect(readdirSync(unsafe)).toEqual([])
+      expect(execFileSync(icacls, [unsafe], { windowsHide: true })).toEqual(before)
+    },
+  )
 
   it('removes the published generation and closes when a listener fails during publication', async () => {
     const failure = new Error('injected listener failure')

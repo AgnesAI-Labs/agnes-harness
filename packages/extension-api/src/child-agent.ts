@@ -121,13 +121,22 @@ export interface ChildAgentHandle {
 }
 
 /** Register through an ordinary Cordis plugin that injects `providers`. */
+export type ChildAgentProviderStartOptions = ChildAgentStartOptions &
+  Readonly<{
+    /** Host-injected launch resources. Not a model option or persisted child configuration. */
+    launch?: Readonly<{ windowsNodeExecutable?: string }>
+  }>
+
 export interface ChildAgentProvider {
   readonly id: string
   readonly version: string
   readonly capabilities: ChildAgentCapabilities
-  start(task: string, options: ChildAgentStartOptions): Promise<ChildAgentHandle>
+  start(task: string, options: ChildAgentProviderStartOptions): Promise<ChildAgentHandle>
   /** Reconnect an existing parent-scoped invocation; refuse when its identity is absent. */
-  adopt?(task: string, options: ChildAgentStartOptions & { invocationId: string }): Promise<ChildAgentHandle>
+  adopt?(
+    task: string,
+    options: ChildAgentProviderStartOptions & { invocationId: string },
+  ): Promise<ChildAgentHandle>
   /** Direct children this provider still tracks for one parent session. */
   list?(sessionKey: string): Promise<readonly ChildAgentListing[]>
 }

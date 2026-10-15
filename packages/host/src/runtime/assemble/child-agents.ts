@@ -14,6 +14,7 @@ import type {
   ChildAgentListing,
   ChildAgentParentScope,
   ChildAgentProvider,
+  ChildAgentProviderStartOptions,
   ChildAgentService,
   ChildAgentSessionService,
   ChildAgentStartOptions,
@@ -60,6 +61,7 @@ export class ChildAgentRegistry extends Service implements ChildAgentService {
     ctx: Context,
     private readonly origins?: RowOriginLookup,
     private readonly selection?: ProviderSelection,
+    private readonly launch: NonNullable<ChildAgentProviderStartOptions['launch']> = {},
   ) {
     super(ctx, 'childAgents')
     this.registry = installProviderRegistry(ctx, childAgentKind, (owner, source, provider) =>
@@ -187,11 +189,13 @@ export class ChildAgentRegistry extends Service implements ChildAgentService {
         return recovering
           ? record.provider.adopt!(task, {
               ...options,
+              launch: Object.freeze({ ...this.launch }),
               invocationId: options.invocationId!,
               signal: startSignal,
             })
           : record.provider.start(task, {
               ...options,
+              launch: Object.freeze({ ...this.launch }),
               signal: startSignal,
             })
       })
@@ -309,8 +313,9 @@ export function installChildAgents(
   root: Context,
   origins?: RowOriginLookup,
   selection?: ProviderSelection,
+  launch?: ChildAgentProviderStartOptions['launch'],
 ): ChildAgentRegistry {
-  return new ChildAgentRegistry(root, origins, selection)
+  return new ChildAgentRegistry(root, origins, selection, launch)
 }
 
 /** Supply the in-process child provider through the same ordinary row and registry as community providers. */

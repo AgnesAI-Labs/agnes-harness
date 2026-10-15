@@ -11,6 +11,7 @@ import {
   expandHome,
   fileSecretsDir,
   HostError,
+  initializeHomeLocked,
   type ResolvedProfile,
   readConfigurationProfileInputs,
   resolveProfile,
@@ -35,6 +36,8 @@ export type DaemonScopeOptions = {
   allowPackageRecovery?: boolean
   /** Recovery boot may resolve the Host profile without an unreadable package lock. */
   ignorePackageLock?: boolean
+  /** Startup only: prepare private initialization objects before configured credentials are read. */
+  initializeHome?: boolean
 }
 
 /** The canonical identity and filesystem locations of one local daemon scope. */
@@ -235,12 +238,22 @@ export async function resolveDaemonScope(options: DaemonScopeOptions = {}): Prom
   const home = await canonicalPath(options.home ?? agnesHome(env))
   const profile = profileName(profileValue)
   const workspace = await canonicalPath(workspaceValue)
-  if (options.dataDir !== undefined)
+  const explicitDataDir =
+    options.dataDir === undefined
+      ? undefined
+      : await canonicalPath(expandHome(options.dataDir, osHome), workspace)
+  if (options.initializeHome)
+    await initializeHomeLocked(
+      home,
+      profile,
+      explicitDataDir === undefined ? {} : { dataDir: explicitDataDir },
+    )
+  if (explicitDataDir !== undefined)
     return makeScope({
       home,
       profile,
       workspace,
-      dataDir: await canonicalPath(expandHome(options.dataDir, osHome), workspace),
+      dataDir: explicitDataDir,
     })
   try {
     const profileInput = {

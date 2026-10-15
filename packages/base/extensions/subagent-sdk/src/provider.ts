@@ -75,6 +75,7 @@ export function sdkChildAgentProvider(config: SdkChildEngineConfig): ChildAgentP
   if (config.protocol === 'acp') {
     const inner = acpChildAgentProvider({
       command: config.command,
+      ...(config.windowsBatch ? { windowsBatch: config.windowsBatch } : {}),
       ...(config.args ? { args: config.args } : {}),
       ...(config.env ? { env: config.env } : {}),
     })
@@ -99,8 +100,10 @@ export function sdkChildAgentProvider(config: SdkChildEngineConfig): ChildAgentP
       prepare(task, options, config, SDK_CHILD_PROVIDER_ID, capabilities)
       const proc = new EngineProcess({
         command: config.command,
+        ...(config.windowsBatch ? { windowsBatch: config.windowsBatch } : {}),
         args: [...(config.args ?? [])],
         cwd: options.cwd as string,
+        ...(options.launch ? { launch: options.launch } : {}),
         ...(config.env ? { env: config.env } : {}),
       })
       const handle = attachOneShot({
@@ -112,6 +115,13 @@ export function sdkChildAgentProvider(config: SdkChildEngineConfig): ChildAgentP
         interpret: interpretSdk,
         cancel: () => proc.write({ jsonrpc: '2.0', method: 'cancel' }),
       })
+      try {
+        await proc.ready
+        options.signal.throwIfAborted()
+      } catch (cause) {
+        await handle.dispose()
+        throw cause
+      }
       proc.write({
         jsonrpc: '2.0',
         id: 1,

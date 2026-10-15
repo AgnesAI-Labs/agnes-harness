@@ -133,10 +133,11 @@ PowerShell：
 
 ```powershell
 $env:AGH_HOME = Join-Path ([IO.Path]::GetTempPath()) ('agh-docs-' + [guid]::NewGuid().ToString('N'))
-New-Item -ItemType Directory -Path $env:AGH_HOME | Out-Null
 $env:AGNES_PROFILE = 'local-dev'
 node .\packages\cli\dist\local\agnes.mjs serve
 ```
+
+Windows 下请让 AGH 创建新 home，确保目录、布局标记和初始化锁从创建时就具备私有 ACL。启动会在业务写入前检查已有初始化对象。已知旧对象若访问授权本来就私有，允许固定继承状态，保留原有授权和内容；宽权限、链接及未知布局仍拒绝。被拒绝时保留原目录，另选尚未使用的路径。初始化不会递归修改会话或记忆文件，也不会修改已有父目录权限；macOS 和 Linux 保持原有目录、文件 mode 行为。
 
 普通长期使用可以不设置 `AGH_HOME`，默认是 `~/.agh`。每个规范化 AGH_HOME 只有一个后台；配置档和 dataDir 必须与运行实例一致。不同项目目录不是自动隔离的账号或后台。Unix socket 路径有限，实验 home 尽量短。默认 socket 路径过长时，后台会选择经过身份与权限校验的短临时目录；显式指定的 socket 路径过长时仍会拒绝启动。
 

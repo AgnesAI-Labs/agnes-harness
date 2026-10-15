@@ -201,7 +201,8 @@
     "@agnes/extension-api",
     "@agnes/package-manager",
     "@agnes/plugin-runtime",
-    "@agnes/protocol"
+    "@agnes/protocol",
+    "@agnes/system-node"
   ],
   "@agnes/host-infrastructure": [
     "@agnes/ai",

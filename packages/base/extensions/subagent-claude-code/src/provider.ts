@@ -85,11 +85,13 @@ export function claudeCodeChildAgentProvider(config: ClaudeCodeChildEngineConfig
       prepare(task, options, config)
       const proc = new EngineProcess({
         command: config.command,
+        ...(config.windowsBatch ? { windowsBatch: config.windowsBatch } : {}),
         args: engineArgs(config.args, task),
         cwd: options.cwd as string,
+        ...(options.launch ? { launch: options.launch } : {}),
         ...(config.env ? { env: config.env } : {}),
       })
-      return attachOneShot({
+      const handle = attachOneShot({
         idPrefix: 'claude-code',
         providerId: CLAUDE_CODE_CHILD_PROVIDER_ID,
         capabilities,
@@ -97,6 +99,14 @@ export function claudeCodeChildAgentProvider(config: ClaudeCodeChildEngineConfig
         process: proc,
         interpret: interpretClaude,
       })
+      try {
+        await proc.ready
+        options.signal.throwIfAborted()
+        return handle
+      } catch (cause) {
+        await handle.dispose()
+        throw cause
+      }
     },
   }
 }

@@ -1,15 +1,16 @@
 import type { PowerShellDescriptor } from './powershell.js'
 
+export const powerShellEncoding = [
+  '$OutputEncoding = [System.Text.UTF8Encoding]::new($false)',
+  '[Console]::InputEncoding = $OutputEncoding',
+  '[Console]::OutputEncoding = $OutputEncoding',
+  "$ProgressPreference = 'SilentlyContinue'",
+].join('\n')
+
 /** Set only this process's streams; leave script exit semantics and stdin ownership intact. */
 export function powerShellCommand(shell: PowerShellDescriptor, command: string): string[] {
   if (!command || command.includes('\0')) throw new Error('invalid PowerShell command')
-  const prelude = [
-    '$OutputEncoding = [System.Text.UTF8Encoding]::new($false)',
-    '[Console]::InputEncoding = $OutputEncoding',
-    '[Console]::OutputEncoding = $OutputEncoding',
-    "$ProgressPreference = 'SilentlyContinue'",
-  ].join('\n')
-  const encoded = Buffer.from(`${prelude}\n${command}`, 'utf16le').toString('base64')
+  const encoded = Buffer.from(`${powerShellEncoding}\n${command}`, 'utf16le').toString('base64')
   const argv = [
     shell.path,
     '-NoLogo',

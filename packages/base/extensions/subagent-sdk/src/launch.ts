@@ -8,11 +8,15 @@ export type EngineLaunch = {
   allow: readonly string[]
   /** Extra environment entries. The child still does not receive the rest of the parent environment. */
   env?: Readonly<Record<string, string>>
+  /** Trusted programmatic deployment config only; not part of saved/model settings. */
+  windowsBatch?: 'script' | 'argv-proxy'
 }
 
 export { commandAllowed }
 
 export function assertEngineLaunch(launch: EngineLaunch): void {
+  if (launch.windowsBatch !== undefined && !['script', 'argv-proxy'].includes(launch.windowsBatch))
+    throw new Error('invalid Windows child engine batch mode')
   if (!launch.enabled) throw new Error('child engine is disabled')
   if (!launch.command.trim()) throw new Error('child engine command is empty')
   if (!commandAllowed(launch.command, launch.allow))

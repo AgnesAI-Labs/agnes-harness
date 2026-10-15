@@ -143,10 +143,11 @@ In PowerShell:
 
 ```powershell
 $env:AGH_HOME = Join-Path ([IO.Path]::GetTempPath()) ('agh-docs-' + [guid]::NewGuid().ToString('N'))
-New-Item -ItemType Directory -Path $env:AGH_HOME | Out-Null
 $env:AGNES_PROFILE = 'local-dev'
 node .\packages\cli\dist\local\agnes.mjs serve
 ```
+
+On Windows, let AGH create the new home so its directories, layout marker and initialization lock have private ACLs from creation. Startup checks existing initialization objects before business writes. Known older objects whose access is already private may have inheritance frozen without changing their grants or contents; broad permissions, links and unknown layouts are refused. Preserve a rejected home and choose a new unused path. The initializer does not recursively change session or memory files, or change existing parent-directory permissions. macOS and Linux retain their existing directory and file mode behavior.
 
 For regular use, you may leave `AGH_HOME` unset; the default is `~/.agh`. A canonical AGH_HOME owns one daemon; profile and dataDir must match its running configuration. Different project directories do not automatically isolate accounts or background services. Keep experimental home paths short because Unix sockets have path limits. When the default socket path is too long, the daemon selects a short temporary directory after checking identity and permissions. An explicitly configured socket path that is too long is still rejected.
 

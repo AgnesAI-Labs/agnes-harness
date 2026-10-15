@@ -157,6 +157,7 @@ import {
   type HostSession,
   type TableStore as HostTableStore,
   initializeHome,
+  initializeHomeLocked,
   overlayChildEngineTarget,
   type PresetDoc,
   type ProcessIdentity,
@@ -198,7 +199,7 @@ import {
   writePackageSkillInventory,
 } from '@agnes/resource-control-daemon'
 import { type ActivationLinkPool, notifyLiveSessionWorkers } from '@agnes/resource-control-runtime'
-import { renameWriteThrough, windowsEnsurePrivateDirectorySync } from '@agnes/system-node'
+import { hasPrivateDaclSync, renameWriteThrough, windowsEnsurePrivateDirectorySync } from '@agnes/system-node'
 import {
   artifactMediaReadReply,
   composeDefaultProductionProjectedArtifactRead,
@@ -2811,14 +2812,20 @@ function secretsDirectory(profile: ResolvedProfile, config: DaemonConfig): strin
 }
 
 export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = {}): Promise<void> {
+  const platform = createPlatform().snapshot()
   const scope = await (deps.resolveScope ?? resolveDaemonScope)({
     env: process.env,
+    ...(platform.os === 'win32' ? { initializeHome: true } : {}),
     ...(args.home !== undefined ? { home: args.home } : {}),
     ...(args.profile !== undefined ? { profile: args.profile } : {}),
     ...(args.workspace !== undefined ? { workspace: args.workspace } : {}),
     ...(args.dataDir !== undefined ? { dataDir: args.dataDir } : {}),
   })
-  if (!deps.resolveScope) initializeHome(scope.home, scope.profile)
+  if (!deps.resolveScope) {
+    if (platform.os === 'win32')
+      await initializeHomeLocked(scope.home, scope.profile, { dataDir: scope.dataDir })
+    else initializeHome(scope.home, scope.profile)
+  }
   const resolver = deps.resolveProfile ?? resolveDaemonProfile
   const loadProfile = async (
     options: Parameters<typeof resolveDaemonProfile>[1] = {},
@@ -2835,7 +2842,6 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
   }
   const loaded = await loadProfile()
   const { profile, configuration } = loaded
-  const platform = createPlatform().snapshot()
   const reloadProfile = async (adminBundles?: readonly string[]): Promise<ResolvedProfile> => {
     return (await loadProfile({ configuration, ...(adminBundles !== undefined ? { adminBundles } : {}) }))
       .profile
@@ -2910,7 +2916,8 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
   const checkedProfileDir = await packageProfileDirectory(scope.profile)
   if (platform.os === 'win32') {
     for (const directory of [scope.home, scope.dataDir, join(scope.home, 'profiles'), checkedProfileDir])
-      windowsEnsurePrivateDirectorySync(directory)
+      if (!hasPrivateDaclSync(directory))
+        throw Object.assign(new Error('E_HOME_UNSAFE'), { code: 'E_HOME_UNSAFE' })
   } else await mkdir(checkedProfileDir, { recursive: true, mode: 0o700 })
   const profileDir = await packageProfileDirectory(scope.profile)
   let runtimeReferenceReader: PackageReferenceFactReader | undefined
