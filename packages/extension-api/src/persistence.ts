@@ -186,6 +186,8 @@ export interface PersistenceLedgerPort {
   renew(key: string, writerRunId: string, claim?: PersistenceLeaseClaim): Promise<void>
   release(key: string, writerRunId: string): Promise<void>
   scan(key: string, query: PersistenceScanQuery): Promise<PersistenceEventRecord[]>
+  /** Presentation-only rows. Never use these to verify, replay execution or export raw history. */
+  scanLean?(key: string, query: PersistenceScanQuery): Promise<PersistenceEventRecord[]>
   registers(key: string): Promise<PersistenceRegisterRow[]>
   close(): Promise<void>
   createChild?(parentKey: string, boundarySeq: number, childKey: string): Promise<void>

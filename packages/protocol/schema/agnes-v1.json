@@ -3040,6 +3040,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["sessionId", "readOnly", "lastSeq", "timeline", "history"],
+      "description": "A presentation-only preview. No integrity verification or execution authority is implied.",
       "properties": {
         "sessionId": {
           "type": "string",
