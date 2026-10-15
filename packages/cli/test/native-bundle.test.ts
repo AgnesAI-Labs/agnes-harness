@@ -18,9 +18,12 @@ const ref = {
   size: original.length,
   mime: 'text/plain',
 }
-const client = (bytes = original) =>
+const client = (bytes = original, sessionId = 's') =>
   ({
     call: async (_method: string, p: ArtifactReadParams) => {
+      expect(_method).toBe('_agnes/v1/artifact.read')
+      expect(p.sessionId).toBe(sessionId)
+      expect(p.range).toBe(`bytes=0-${ref.size - 1}`)
       expect(p.laneId).toBe('main')
       expect(p.artifact).toEqual(ref)
       return {
@@ -48,15 +51,15 @@ it('round-trips current-product rows and original bytes through the public artif
         register: 'artifact/job',
         data: { jobId: 'done', status: 'done', ref },
         actor: source.d.actor,
-        origin: 'core',
+        origin: 'system',
         trust: 'trusted',
       },
     ])
     const rows = (await source.scan({ limit: 50 })) as EventEnvelope[]
     const path = join(dir, 'bundle.agnes')
-    await writeNativeBundle(path, rows, formatAgnes(rows), client(), source.key)
+    await writeNativeBundle(path, rows, formatAgnes(rows), client(original, source.key), source.key)
     const checked = await readNativeBundle(path, readFileSync(path))
-    expect(checked?.raw).toEqual(formatAgnes(rows))
+    expect(Buffer.from(checked?.raw ?? [])).toEqual(Buffer.from(formatAgnes(rows)))
     expect(await checked?.readOriginal(ref)).toEqual(original)
     const io = { stdout: { write: vi.fn() }, stderr: { write: vi.fn() } }
     const key = 'agnes:local:default:cli:dm:imported'
@@ -65,7 +68,7 @@ it('round-trips current-product rows and original bytes through the public artif
     ).resolves.toBe(0)
     const imported = await openAdmittedSession(host, admission, key, dir)
     try {
-      expect(await imported.d.runtime.artifactGet(ref)).toEqual(original)
+      expect(Buffer.from(await imported.d.runtime.artifactGet(ref))).toEqual(original)
       const body = await imported.scan({ fromSeq: 2, limit: 50 })
       expect(body).toEqual(rows.slice(1))
     } finally {

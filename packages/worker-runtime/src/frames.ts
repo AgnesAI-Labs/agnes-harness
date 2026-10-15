@@ -18,6 +18,7 @@ export type SessionMethod =
   | 'removeQueuedInput'
   | 'run'
   | 'abort'
+  | 'verifyHistory'
   | 'scan'
   | 'latest'
   | 'projectUI'

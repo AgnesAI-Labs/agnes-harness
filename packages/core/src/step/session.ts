@@ -2289,6 +2289,8 @@ export class SessionImpl {
   discardNewSession(): Promise<void> {
     return this.d.log.discardNewSession()
   }
+  verifyHistory = (...args: Parameters<SessionLogImpl['verifyHistory']>) => this.d.log.verifyHistory(...args)
+
   scan(q: ScanQuery): Promise<Event[]> {
     return this.d.log.scan(q)
   }

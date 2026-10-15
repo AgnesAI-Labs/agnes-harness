@@ -505,14 +505,23 @@ export class WorkerLink {
   ): Promise<unknown> {
     if (!this.alive) return Promise.reject(new Error('worker link closed'))
     const requestId = `s${this.nextId++}`
-    return new Promise((resolve, reject) => {
+    const signal = options.historySignal
+    const cancel = () => {
+      if (this.alive && sessionKey) this.send({ kind: 'session.open.cancel', requestId, sessionKey })
+    }
+    const result = new Promise<unknown>((resolve, reject) => {
       const pending: {
         sessionKey?: string
         resolve: (value: unknown) => void
         reject: (error: unknown) => void
         onHistoryProgress?: WorkerCommandOptions['onHistoryProgress']
         timer?: ReturnType<typeof setTimeout>
-      } = { ...(sessionKey ? { sessionKey } : {}), resolve, reject }
+      } = {
+        ...(sessionKey ? { sessionKey } : {}),
+        resolve,
+        reject,
+        ...(options.onHistoryProgress ? { onHistoryProgress: options.onHistoryProgress } : {}),
+      }
       this.pending.set(requestId, pending)
       if (options.timeoutMs) {
         pending.timer = setTimeout(() => {
@@ -521,7 +530,10 @@ export class WorkerLink {
         pending.timer.unref()
       }
       this.send({ kind: 'command', requestId, ...(sessionKey ? { sessionKey } : {}), method, params })
+      signal?.addEventListener('abort', cancel, { once: true })
+      if (signal?.aborted) cancel()
     })
+    return result.finally(() => signal?.removeEventListener('abort', cancel))
   }
 
   close(reason: string): void {

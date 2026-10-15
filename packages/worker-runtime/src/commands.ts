@@ -427,6 +427,8 @@ export async function handleCommand(
     case 'abort':
       o.aborts.get(String(p.runId))?.abort()
       return {}
+    case 'verifyHistory':
+      return session.verifyHistory()
     case 'scan': {
       const rows = await session.scan(p as never)
       if (Buffer.byteLength(JSON.stringify(rows), 'utf8') > MAX_FRAME_BYTES - 4096)

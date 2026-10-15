@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { defaultIds, openTracked, SessionLogImpl } from '@agnes/core'
+import { defaultIds, openTracked, projectUI, SessionLogImpl } from '@agnes/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ev } from '../../../host/test/adapters/events.js'
 import { createSqliteStorage, DDL, ownerFile, type SqliteStorage } from '../../src/adapters/storage-sqlite.js'
@@ -68,10 +68,22 @@ describe('storage-sqlite', () => {
     }
     const log = await SessionLogImpl.open(opts)
     const original = 'x'.repeat(64 * 1024)
-    await log.append([ev('user/message', { content: [{ type: 'text', text: original }] })])
+    await log.append([
+      ev('user/message', { content: [{ type: 'text', text: original }] }),
+      ev(
+        'x/core/context-breakdown',
+        { sections: [{ id: 's', source: 'synthetic', content: original }] },
+        { ignorable: true },
+      ),
+    ])
     await log.close()
     const lean = await s.scanLean('lean', { limit: 1 })
     expect(JSON.stringify(lean).length).toBeLessThan(2048)
+    const diagnostic = await s.scanLean('lean', { fromSeq: 2, limit: 1 })
+    expect(diagnostic[0]?.type).toBe('x/agnes/preview-omitted')
+    await expect(projectUI([...lean, ...diagnostic], { sessionKey: 'lean' })).resolves.toMatchObject({
+      upto: 2,
+    })
     expect((await s.scan('lean', { limit: 1 }))[0]?.data).toEqual({
       content: [{ type: 'text', text: original }],
     })

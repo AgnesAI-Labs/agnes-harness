@@ -278,6 +278,22 @@ export class RemoteSession {
     )) as import('@agnes/protocol').SystemPromptSnapshot
   }
 
+  verifyHistory(
+    options: {
+      signal?: AbortSignal
+      onProgress?: (progress: { verifiedSeq: number; lastSeq: number }) => void
+    } = {},
+  ): Promise<number> {
+    return this.link.command(
+      'verifyHistory',
+      {},
+      {
+        ...(options.signal ? { historySignal: options.signal } : {}),
+        ...(options.onProgress ? { onHistoryProgress: options.onProgress } : {}),
+      },
+    ) as Promise<number>
+  }
+
   async scan(q: unknown): Promise<EventEnvelope[]> {
     const query = q as Record<string, unknown>
     try {

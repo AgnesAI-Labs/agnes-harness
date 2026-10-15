@@ -365,9 +365,10 @@ export function throwSessionOpenRpcError(error: unknown, sessionId = ''): never 
   if (e?.code === 'SANDBOX_UNAVAILABLE') throw rpcError('SEMANTIC_REJECTED', { code: 'SANDBOX_UNAVAILABLE' })
   // A session that cannot continue on this build says which way it differs and what the person can
   // do next, in both languages; the ledger stays readable and nothing was changed.
-  const versionIssue = (Object.entries(SESSION_VERSION_CODES) as [SessionVersionIssue, string][]).find(
-    ([, code]) => code === e?.code,
-  )?.[0]
+  const versionIssue =
+    (Object.entries(SESSION_VERSION_CODES) as [SessionVersionIssue, string][]).find(
+      ([, code]) => code === e?.code,
+    )?.[0] ?? (e?.code === 'E_LEDGER_INTEGRITY' ? 'corrupt' : undefined)
   if (versionIssue) {
     const detail = (e as { detail?: { sessionKey?: unknown; ledgerPath?: unknown; cause?: unknown } }).detail
     const notice = sessionVersionNotice(versionIssue, {
@@ -672,6 +673,7 @@ export function registerAcp(
     loading.set(p.sessionId, pending)
     try {
       let entry = cx.registry.get(p.sessionId)
+      const wasOpen = entry !== undefined
       try {
         const binding = await cx.workspaces.restoreBinding(p.sessionId, p.cwd || undefined)
         // Calling open for a live entry is intentional: both registries must reject a different
@@ -697,6 +699,24 @@ export function registerAcp(
         throwSessionOpenRpcError(error, p.sessionId)
       }
       if (!entry) throw rpcError('SESSION_NOT_FOUND', { sessionId: p.sessionId })
+      try {
+        if (wasOpen)
+          await entry.session.verifyHistory({
+            signal,
+            onProgress: (progress) => {
+              if (!signal.aborted)
+                ep.push(
+                  notify('_agnes/v1/session.loading', {
+                    sessionId: p.sessionId,
+                    phase: 'verifying',
+                    ...progress,
+                  }),
+                )
+            },
+          })
+      } catch (error) {
+        throwSessionOpenRpcError(error, p.sessionId)
+      }
       const feed = feedFor(entry)
       // Paged and bounded: core refuses an unbounded scan (E_SCAN_UNBOUNDED), and a single page would
       // silently truncate a long transcript at whatever limit was written here.

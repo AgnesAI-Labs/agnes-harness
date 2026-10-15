@@ -210,11 +210,19 @@ export function ownerFile(owner: string): string {
 
 // SQLite checks stored size before transferring data to JS. A giant original or request is
 // represented by a small placeholder; raw scans and integrity scans always read the original.
-const LEAN_COLUMNS = `session_key, seq, ts, id, type, lane, v, actor, origin, trust,
-  register, ignorable, surface_op, source_event_seqs,
-  CASE WHEN octet_length(data) > 16384
-    THEN '{"content":[{"type":"text","text":"[Large stored event omitted from unverified preview]"}]}'
-    ELSE data END AS data`
+const PREVIEW_CONTENT = '[{"type":"text","text":"[Large stored event omitted from unverified preview]"}]'
+const LEAN_COLUMNS = `session_key, seq, ts, id,
+  CASE WHEN octet_length(data) > 16384 AND type NOT IN ('user/message', 'assistant/message', 'tool/result')
+    THEN 'x/agnes/preview-omitted' ELSE type END AS type,
+  lane, v, actor, origin, trust, register, ignorable, surface_op, source_event_seqs,
+  CASE WHEN octet_length(data) <= 16384 THEN data
+    WHEN type = 'user/message' THEN json_object('content', json('${PREVIEW_CONTENT}'), 'kind', json_extract(data, '$.kind'))
+    WHEN type = 'assistant/message' THEN json_object('content', json('${PREVIEW_CONTENT}'), 'stopReason', json_extract(data, '$.stopReason'))
+    WHEN type = 'tool/result' THEN json_object(
+      'toolUseId', json_extract(data, '$.toolUseId'), 'content', json('${PREVIEW_CONTENT}'),
+      'isError', json_extract(data, '$.isError'), 'code', json_extract(data, '$.code'),
+      'cancelledBy', json_extract(data, '$.cancelledBy'), 'enforcement', json_extract(data, '$.enforcement'))
+    ELSE '{"content":${PREVIEW_CONTENT}}' END AS data`
 
 function rowToEvent(r: Row): Event {
   return {

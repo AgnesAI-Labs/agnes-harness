@@ -263,6 +263,30 @@ export class SessionLogImpl {
     return this.closed
   }
 
+  /** Recheck a live session before exporting it: a cached open is not proof of current stored bytes. */
+  async verifyHistory(options: import('./integrity.js').VerificationOptions = {}): Promise<number> {
+    await this.drain
+    this.guard()
+    const expected = { ...this.integrityState }
+    try {
+      const actual = await verifyLedger(
+        this.o.storage,
+        this.key,
+        expected.lastSeq,
+        pageYield,
+        undefined,
+        options,
+      )
+      if (actual.headDigest !== expected.headDigest || actual.legacyThroughSeq !== expected.legacyThroughSeq)
+        throw new LedgerIntegrityFailure('stored history differs from the live verified head')
+      this.guard()
+      return expected.lastSeq
+    } catch (error) {
+      if (error instanceof CoreError && error.code === 'E_LEDGER_INTEGRITY') this.markFaulted(error)
+      throw error
+    }
+  }
+
   /** Import-only compensation: existing sessions are refused and storage rechecks the writer lease. */
   async discardNewSession(): Promise<void> {
     this.guard()

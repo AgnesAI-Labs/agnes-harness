@@ -1,3 +1,5 @@
+import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { noticeParams } from '@agnes/daemon-foundation/local/attached'
 import { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import type { JsonRpcMessage } from '@agnes/daemon-foundation/rpc'
@@ -328,6 +330,21 @@ describe('local endpoint: ACP round trip', () => {
       .map((u) => u.content?.text ?? '')
       .join('')
     expect(said).toBe('hi')
+    const raw = new DatabaseSync(join(h.dataDir, 'sessions.db'))
+    raw
+      .prepare(
+        "UPDATE events SET data = json_set(data, '$.content[0].text', 'changed') WHERE session_key = ? AND type = 'user/message'",
+      )
+      .run(ok.result.sessionId)
+    raw.close()
+    await expect(
+      ep.handle({
+        jsonrpc: '2.0',
+        id: 5,
+        method: 'session/load',
+        params: { sessionId: ok.result.sessionId, cwd: h.dataDir, mcpServers: [] },
+      }),
+    ).resolves.toMatchObject({ error: { data: { code: 'E_SESSION_CORRUPT' } } })
     await h.close()
   })
 

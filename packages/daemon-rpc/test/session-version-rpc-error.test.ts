@@ -15,29 +15,33 @@ describe('session open refusals for a version difference', () => {
     ['E_SESSION_VERSION_NEWER', 'newer', ['upgrade']],
     ['E_SESSION_VERSION_OLDER', 'older', ['new-session', 'repin']],
     ['E_SESSION_CORRUPT', 'corrupt', ['new-session']],
-  ])('answers %s with its direction, next actions and text in both languages', (code, issue, actions) => {
-    const failure = refusal(
-      {
-        code,
-        detail: { sessionKey: 's-1', cause: 'E_SEAM_PIN_MISMATCH', ledgerPath: '/data/sessions.db' },
-      },
-      'different-request',
-    )
-    expect(failure.data).toMatchObject({
-      code,
-      issue,
-      actions,
-      reason: 'E_SEAM_PIN_MISMATCH',
-      localized: { en: expect.stringContaining('s-1'), 'zh-CN': expect.stringContaining('你') },
-    })
-    expect((failure.data.localized as { en: string }).en).toContain('/data/sessions.db')
-    const relayed = refusal({ code }, 's-1')
-    expect(relayed.data).toMatchObject({
-      code,
-      issue,
-      actions,
-      localized: { en: expect.stringContaining('s-1'), 'zh-CN': expect.stringContaining('s-1') },
-    })
-    expect(relayed.data.reason).toBeUndefined()
-  })
+    ['E_LEDGER_INTEGRITY', 'corrupt', ['new-session'], 'E_SESSION_CORRUPT'],
+  ])(
+    'answers %s with its direction, next actions and text in both languages',
+    (code, issue, actions, expectedCode) => {
+      const failure = refusal(
+        {
+          code,
+          detail: { sessionKey: 's-1', cause: 'E_SEAM_PIN_MISMATCH', ledgerPath: '/data/sessions.db' },
+        },
+        'different-request',
+      )
+      expect(failure.data).toMatchObject({
+        code: expectedCode ?? code,
+        issue,
+        actions,
+        reason: 'E_SEAM_PIN_MISMATCH',
+        localized: { en: expect.stringContaining('s-1'), 'zh-CN': expect.stringContaining('你') },
+      })
+      expect((failure.data.localized as { en: string }).en).toContain('/data/sessions.db')
+      const relayed = refusal({ code }, 's-1')
+      expect(relayed.data).toMatchObject({
+        code: expectedCode ?? code,
+        issue,
+        actions,
+        localized: { en: expect.stringContaining('s-1'), 'zh-CN': expect.stringContaining('s-1') },
+      })
+      expect(relayed.data.reason).toBeUndefined()
+    },
+  )
 })

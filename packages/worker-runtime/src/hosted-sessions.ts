@@ -236,6 +236,26 @@ export class HostedSessions {
   }
 
   async dispatch(frame: SessionCommandFrame): Promise<unknown> {
+    if (frame.method === 'verifyHistory')
+      return this.enter(frame.sessionKey, frame.method, async (hosted) => {
+        const controller = new AbortController()
+        if (this.cancelledOpens.delete(`${frame.sessionKey}\0${frame.requestId}`)) controller.abort()
+        this.openingAborts.set(frame.requestId, { key: frame.sessionKey, controller })
+        try {
+          return await hosted.session.verifyHistory({
+            signal: controller.signal,
+            onProgress: (progress) =>
+              this.options.send({
+                kind: 'session.loading',
+                requestId: frame.requestId,
+                sessionKey: frame.sessionKey,
+                ...progress,
+              }),
+          })
+        } finally {
+          this.openingAborts.delete(frame.requestId)
+        }
+      })
     const stub = this.stubs.get(frame.sessionKey)
     // A stub answers these itself: a listing or a stray cancel must not wake a session.
     if (stub && frame.method === 'ping')
