@@ -1,8 +1,8 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { fakeModel, ScriptedProvider } from '@agnes/ai/testkit'
-import { TOOLS_CORE } from '@agnes/base'
-import type { HostSession } from '@agnes/host'
+import { type HostSession, hostInspectionSource } from '@agnes/host'
 import { MAX_FRAME_BYTES, toAcpPrompt, UI_PROJECTION_MAX_BYTES, type UITimeline } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { diffUITimeline } from '../src/local/methods/agnes.js'
@@ -48,11 +48,10 @@ describe('session extras: budget, projectUI (real, per the 2026-09-10 revision n
         say('attachments handled'),
       ],
     })
-    const h = await openTestHost({ provider })
-    // This fixture has no installed extension manifests. Exercise the exported builtin definition.
-    const reader = TOOLS_CORE.find((tool) => tool.name === 'read')
-    if (!reader) throw new Error('builtin attachment reader is missing')
-    h.host.kernel.tools.add(reader, { source: 'agnes/tools-core', trust: 'builtin' })
+    const h = await openTestHost({
+      provider,
+      packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
+    })
     const ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
     const draining = (async () => {
       for await (const _ of ep.notifications) {
@@ -836,7 +835,7 @@ describe('session extras: list, preset/model switching and durable fork', () => 
   it('setYolo updates live permissions and the UI projection even without node changes', async () => {
     const h = await openTestHost()
     const setSessionYolo = vi.fn(async () => undefined)
-    Object.defineProperty(h.host, 'computerUse', {
+    Object.defineProperty(hostInspectionSource(h.host), 'computerUse', {
       configurable: true,
       value: Object.freeze({
         status: () => ({ status: 'ready' }),
@@ -909,7 +908,7 @@ describe('session extras: list, preset/model switching and durable fork', () => 
     const setSessionYolo = vi.fn(async (_session: unknown, enabled: boolean) => {
       if (enabled) throw new Error('injected driver switch failure')
     })
-    Object.defineProperty(h.host, 'computerUse', {
+    Object.defineProperty(hostInspectionSource(h.host), 'computerUse', {
       configurable: true,
       value: Object.freeze({ status: () => ({ status: 'ready' }), setSessionYolo }),
     })
