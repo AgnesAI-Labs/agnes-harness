@@ -3,7 +3,7 @@ import type { EffectHandle } from '@agnes/core-effects/effects/effect'
 import { armTimeout } from '@agnes/core-effects/effects/wrap'
 import type { PreparedSideCall, SideCallResult } from '@agnes/extension-api'
 import type { CostLedger } from '@agnes/extension-api/seams'
-import type { AiErrorCode, InferenceEvent, RequestBody } from '@agnes/protocol'
+import { type AiErrorCode, type InferenceEvent, type RequestBody, validateEvent } from '@agnes/protocol'
 import {
   reconcileTreeReservationHandle,
   releaseTreeReservationHandle,
@@ -20,6 +20,7 @@ import type {
 } from './side-call-effect-port.js'
 import {
   bounded,
+  checkSideCallSettlement,
   count,
   MAX_OUTPUT_TEXT,
   MAX_RETRY_AFTER_MS,
@@ -69,6 +70,10 @@ function retryHint(error: Failure | undefined): { retryAfterMs?: number } {
   const ms = Math.ceil(value)
   return ms <= MAX_RETRY_AFTER_MS ? { retryAfterMs: ms } : {}
 }
+
+// A probe envelope for checking a row's data before it is written; the log assigns the real values.
+const PROBE_TS = new Date(0).toISOString()
+const PROBE_ID = '0'.repeat(26)
 
 const parses = (text: string) => {
   try {
@@ -285,6 +290,18 @@ async function dispatch(
   const projected = prepared.estimate.projectedCredits
   const adapter = prepared.adapter
   const seen: Observed = { text: '', done: false }
+  const audited = {
+    route: binding.route,
+    ...(adapter
+      ? { adapter: { id: adapter.id, ...(adapter.version === null ? {} : { version: adapter.version }) } }
+      : {}),
+    ...(adapter?.endpointHost ? { endpointHost: adapter.endpointHost } : {}),
+  }
+  // Where the committed cost row's credits came from, for the tree budget settlement. A revoked call
+  // settles through the model execution alone, with the usage it saw.
+  let spendSource: 'gateway' | 'estimated' | undefined
+  const usageSource = () =>
+    seen.usage?.credits !== undefined && seen.usage.creditSource === 'gateway' ? 'gateway' : 'estimated'
   // The settlement row carries the code the terminal records, decided before the rows are built.
   let code: AiErrorCode | undefined
   const effect: EffectHandle = {
@@ -309,25 +326,12 @@ async function dispatch(
     purpose: 'side-call',
     unobserved: { inputTokens: audit.inputTokens, ...(projected === null ? {} : { credits: projected }) },
     settleTreeBudget: async (credits, costSeq) => {
-      if (hold)
-        await settleHold(
-          s,
-          hold,
-          credits,
-          costSeq,
-          seen.usage?.credits !== undefined ? seen.usage.creditSource : 'estimated',
-        )
+      if (hold) await settleHold(s, hold, credits, costSeq, spendSource ?? usageSource())
     },
     outcomeFromCaller: true,
     retry: false,
     replaceable: false,
-    extraCostFields: {
-      route: binding.route,
-      ...(adapter
-        ? { adapter: { id: adapter.id, ...(adapter.version === null ? {} : { version: adapter.version }) } }
-        : {}),
-      ...(adapter?.endpointHost ? { endpointHost: adapter.endpointHost } : {}),
-    },
+    extraCostFields: audited,
     write: (events) => effects.write(events),
   })
   let deadline = false
@@ -338,35 +342,81 @@ async function dispatch(
     execution.controller.abort()
   }, prepared.deadlineMs)
 
+  /**
+   * The batch Core writes when the adapter's own output cannot be recorded as given, for example an
+   * error code outside the protocol's set or a usage report of another shape. It is built from
+   * Core's values only, all checked before the intent was written, so it is always recordable: a
+   * transport failure that is not retryable, with an estimate if the request may have left and
+   * zero spend if it certainly did not.
+   */
+  function unreadable(): { batch: EventInput[]; terminal: SideCallEffectTerminal } {
+    const sent = execution.mayHaveSent
+    const end: Ending = {
+      kind: sent ? 'unknown_spend' : 'no_spend',
+      outcome: 'error',
+      interrupted: true,
+      reason: sent ? 'adapter_error' : 'driver_not_sent',
+      code: 'TRANSPORT',
+      retryable: false,
+    }
+    code = end.code
+    const credits = sent ? projected : 0
+    const cost = s.ev('cost/ledger', {
+      purpose: 'side-call',
+      effectId: binding.effectId,
+      model: binding.model,
+      tokens: { input: sent ? audit.inputTokens : 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      ...(credits === null ? {} : { credits }),
+      creditSource: 'estimated',
+      interrupted: true,
+      ...audited,
+    })
+    const terminal = terminalOf(end, cost.data as Spend, elapsed())
+    return { batch: [cost, effect.settle('error'), effects.terminalRow(binding, terminal)], terminal }
+  }
+
+  /**
+   * Refuses a batch the effect port or the ledger would refuse, by the same checks they apply, so
+   * a settlement is never sent without the terminal that has to go with it.
+   */
+  function recordable(batch: EventInput[]): void {
+    const terminalRow = batch[batch.length - 1] as EventInput
+    checkSideCallSettlement(batch, binding, (terminalRow.data as { bindingHash: string }).bindingHash)
+    for (const row of batch)
+      if (!validateEvent({ lane: s.lane, v: 1, ...row, ts: PROBE_TS, id: PROBE_ID, seq: 1 }).ok)
+        throw new CoreError('E_ENVELOPE', 'side-call settlement row does not match its schema')
+  }
+
   async function settle(): Promise<SideCallResult> {
     const stopping = s.op()?.control.status === 'cancel_requested'
-    const end = ending(execution, seen, deadline, stopping, audit.output)
-    code = end.code
-    const [row, ...rest] = execution.rows(end.outcome, end.interrupted) as [EventInput, ...EventInput[]]
-    // Usage that names no credits is priced at the frozen estimate, so the spend is never blank.
-    const cost =
-      seen.usage && (row.data as CostLedger).credits === undefined
-        ? {
-            ...row,
-            data: { ...(row.data as CostLedger), credits: projected ?? 0, creditSource: 'estimated' },
-          }
-        : row
-    const terminal = terminalOf(end, cost.data as Spend, elapsed())
-    let terminalRow: EventInput | undefined
-    let invalid: unknown
+    let batch: EventInput[]
+    let terminal: SideCallEffectTerminal
     try {
-      terminalRow = effects.terminalRow(binding, terminal)
-    } catch (error) {
-      invalid = error
+      const end = ending(execution, seen, deadline, stopping, audit.output)
+      code = end.code
+      const [row, ...rest] = execution.rows(end.outcome, end.interrupted) as [EventInput, ...EventInput[]]
+      // Usage that names no credits is priced at the frozen estimate, so the spend is never blank.
+      const cost =
+        seen.usage && (row.data as CostLedger).credits === undefined
+          ? {
+              ...row,
+              data: { ...(row.data as CostLedger), credits: projected ?? 0, creditSource: 'estimated' },
+            }
+          : row
+      terminal = terminalOf(end, cost.data as Spend, elapsed())
+      batch = [cost, ...rest, effects.terminalRow(binding, terminal)]
+      recordable(batch)
+    } catch {
+      ;({ batch, terminal } = unreadable())
     }
+    spendSource = ((batch[0] as EventInput).data as CostLedger).creditSource
     try {
-      await execution.commit(terminalRow ? [cost, ...rest, terminalRow] : [cost, ...rest], (cur) => cur)
+      await execution.commit(batch, (cur) => cur)
     } catch (error) {
       if (!(error instanceof CoreError && error.code === 'E_CLOSED')) throw error
       // The scope was revoked: the call closed with a late receipt and its output was not kept.
       return cancelled(prepared.invocationId, 'may-have-sent', elapsed())
     }
-    if (invalid) throw invalid
     return sideCallResult(terminal, {
       invocationId: prepared.invocationId,
       output: audit.output,
