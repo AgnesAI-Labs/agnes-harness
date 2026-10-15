@@ -1,8 +1,11 @@
-import type { ToolDef } from '@agnes/extension-api'
+import { canonicalJson } from '@agnes/core-common/request/hash'
+import { type LoopFactory, loopCheckpointCodec, type ToolDef } from '@agnes/extension-api'
 import { Type } from '@sinclair/typebox'
-import { expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
+import { createLoopContext } from '../src/loop/ports.js'
 import { AUTO_DEFER_MAX_TOOLS, ToolRegistry } from '../src/registry/tools.js'
 import { deferredToolsSection } from '../src/request/deferred-tools.js'
+import type { RequestHeaderData } from '../src/request/derive.js'
 import { discloseTools } from '../src/step/inference.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
@@ -311,3 +314,144 @@ it.each(['allowed-once', 'rejected'] as const)(
     }
   },
 )
+
+describe('the tool catalog of a loop that names its tools', () => {
+  const REMOTE_TOOLS = AUTO_DEFER_MAX_TOOLS + 1
+  /** A deferred tool that nothing in the turn discloses, and the two discovery tools. */
+  const NAMES = ['remote_3', 'tool_describe', 'tool_search']
+  const codec = loopCheckpointCodec(1, () => null)
+  const idle = () => ({
+    checkpoint: () => codec.encode(null),
+    cancel() {},
+    dispose() {},
+    step: async () => ({ outcome: 'idle' as const, phase: 'idle' }),
+  })
+  /** The session's pinned loop. The cases drive a loop context of their own, so its driver stays idle. */
+  const loopFactory: LoopFactory = {
+    id: 'test.stable-catalog',
+    version: '1.0.0',
+    capabilities: ['model', 'tools'],
+    codec,
+    create: idle,
+    resume: idle,
+  }
+  const signal = () => new AbortController().signal
+  const toolNames = (request: { tools: readonly { name: string }[] }) =>
+    request.tools.map((tool) => tool.name)
+
+  /**
+   * The two discovery tools are registered first and stay visible; then sixteen tools that defer
+   * together. Registered without the pair, or with fifteen tools, the group would stay visible and
+   * a catalog that never changes would prove nothing.
+   */
+  function catalogRegistry() {
+    const registry = new ToolRegistry()
+    const base = readTool() as ToolDef
+    const add = (tool: ToolDef) => registry.add(tool, { source: 'test', trust: 'builtin' })
+    add({ ...base, name: 'tool_search' })
+    add({
+      ...base,
+      name: 'tool_describe',
+      parameters: Type.Object({ name: Type.String() }),
+      async execute({ name }, ctx) {
+        if (!ctx.tools.disclose) throw new Error('expected tool disclosure port')
+        await ctx.tools.disclose(name)
+        return { content: [{ type: 'text', text: name }] }
+      },
+    })
+    for (let i = 0; i < REMOTE_TOOLS; i++)
+      add({
+        ...base,
+        name: `remote_${i}`,
+        meta: { ...base.meta, deferLoading: 'auto', discoveryGroup: 'Remote' },
+      })
+    return registry
+  }
+
+  type Harness = Awaited<ReturnType<typeof openLoop>>
+
+  async function openLoop() {
+    const provider = fakeProvider(Array.from({ length: 4 }, (_, i) => textTurn(`reply ${i + 1}`)))
+    const { session } = await openSession({ provider, registry: catalogRegistry(), loopFactory })
+    await session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'decide' }] })
+    expect(await session.acceptInput()).toBe(true)
+    return { session, provider, ctx: await createLoopContext(session) }
+  }
+
+  async function withLoop(body: (t: Harness) => Promise<void>) {
+    const t = await openLoop()
+    try {
+      await body(t)
+    } finally {
+      await t.session.close()
+    }
+  }
+
+  /** One model request of the loop. */
+  async function send(t: Harness, tools?: readonly string[]) {
+    const request = await t.ctx.prepareRequest(tools ? { tools } : {})
+    await t.ctx.model.complete(request, signal())
+    return request
+  }
+
+  /** The loop calls the discovery tool, which loads a deferred schema for the rest of the turn. */
+  async function disclose(t: Harness, name: string) {
+    await t.ctx.tools.execute(
+      { invocationId: `disclose-${name}`, name: 'tool_describe', args: { name } },
+      signal(),
+      { announce: true },
+    )
+  }
+
+  /** The `tool_schema_hash` of every request the loop sent, in order. */
+  async function schemaHashes(t: Harness) {
+    const headers = await t.session.scan({ type: 'request/header', toSeq: t.session.lastSeq })
+    return headers.map((row) => (row.data as RequestHeaderData).tool_schema_hash)
+  }
+
+  it('keeps the tool bytes and the tool_schema_hash of every request in a turn when the loop passes the same names', async () => {
+    await withLoop(async (t) => {
+      const first = await send(t, NAMES)
+      // The turn catalog is already settled: the sixteen tools are deferred as a group.
+      expect(first.system).toContain(`Remote — ${REMOTE_TOOLS} tools`)
+      expect(toolNames(first)).toEqual(NAMES)
+      await disclose(t, 'remote_5')
+      await send(t, NAMES)
+      await disclose(t, 'remote_9')
+      await send(t, NAMES)
+      // Both loads happened, so a loop that followed the disclosure would have seen two new tools.
+      const loaded = await t.session.scan({ type: 'x/core/tool-disclosed', toSeq: t.session.lastSeq })
+      expect(loaded.map((row) => row.data)).toEqual([{ name: 'remote_5' }, { name: 'remote_9' }])
+      expect(t.provider.requests).toHaveLength(3)
+      expect(new Set(t.provider.requests.map((request) => canonicalJson(request.tools))).size).toBe(1)
+      expect(new Set(t.provider.requests.map((request) => request.system)).size).toBe(1)
+      const hashes = await schemaHashes(t)
+      expect(hashes).toHaveLength(3)
+      expect(new Set(hashes).size).toBe(1)
+    })
+  })
+
+  it('does not depend on the order in which the names are listed', async () => {
+    await withLoop(async (t) => {
+      await send(t, NAMES)
+      await disclose(t, 'remote_5')
+      await send(t, [...NAMES].reverse())
+      const [first, second] = t.provider.requests
+      expect(canonicalJson(second?.tools)).toBe(canonicalJson(first?.tools))
+      const [a, b] = await schemaHashes(t)
+      expect(b).toBe(a)
+    })
+  })
+
+  it('changes between requests when the loop passes no names and a tool is loaded in between', async () => {
+    await withLoop(async (t) => {
+      const before = await send(t)
+      await disclose(t, 'remote_5')
+      const after = await send(t)
+      expect(toolNames(before)).toEqual(['tool_describe', 'tool_search'])
+      expect(toolNames(after)).toEqual(['remote_5', 'tool_describe', 'tool_search'])
+      const [a, b] = await schemaHashes(t)
+      expect(b).not.toBe(a)
+    })
+  })
+})

@@ -130,6 +130,8 @@ try {
 
 测试调用 `ctx.sideCall` 的 Loop 时，给 `driveLoop(factory, { sideCall })` 传入由测试编写的假 `LoopSideCallPort`；不传时 `ctx.sideCall` 是 `undefined`。要在真实执行路径上检查同一个 Loop，调用 `verifyLoopExecutionContract(factory, { sideCall: true })`，它会增加五项旁路调用检查；不传该选项时报告不变（见[执行契约套件](workflow-loops.zh-CN.md#执行契约套件)）。
 
+`driveLoop` 支持 `ctx.tools.execute` 和 `ctx.tools.batch` 的 `announce` 选项：它把这次调用（或这一批）在 `events` 里记成一个 `assistant/message` 事件，并把选项连同每次调用传给测试编写的 `tools.execute`。它不模拟被公告调用的重放（见[公告一次工具调用](../develop/plugins.zh-CN.md#公告一次工具调用)）。
+
 `runModelAdapter` 创建真实 adapter 实例，记录目录/事件并在 finally 中 dispose。[adapter 模板测试](../../templates/model-adapter/test/adapter.test.mjs)使用该合同。替换确定性回复时补上提供方 fixture 与故障脚本。浏览器挂载、MCP 连接、真实提供方和平台 sandbox 使用各自的集成验证。
 
 ## 经 Host 验证提供器

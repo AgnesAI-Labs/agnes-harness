@@ -93,6 +93,15 @@ Every `agnes.plugins[].apiRange` and `@agnes/extension-api` dependency range mov
   summary silently: the decision subject records `rewrite: { by, summary }` (the hook sources and
   the platform's summary), the timeline's approval node carries it as `rewrite`, and the Web
   approval card shows both.
+- Two requests of one loop that pass the same `LoopRequestOptions.tools` names carry the same tool
+  schemas, sorted by name whatever the order passed, and the same `tool_schema_hash` for the rest of
+  the turn, also when the model loads a deferred tool in between; across turns the same holds while
+  those tools' definitions are unchanged. Omitting `tools` follows the turn's current disclosure, which
+  can grow within a turn. The guarantee already held; it is now documented and covered by a contract
+  test.
+- A message a loop supplies in `LoopRequestOptions.messages` is no longer served from the session's
+  envelope memo: each request carries the text it was prepared with. Earlier, a later request in the
+  same session could resend the text of the first.
 
 ### Added
 

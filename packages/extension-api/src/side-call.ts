@@ -102,9 +102,10 @@ export type SideCallResult =
       retryable: boolean
       /**
        * Milliseconds the vendor asked the caller to wait before retrying, for an `adapter-error`
-       * only, and only when the vendor gave a hint (for example a rate limit's `retry-after`). Core
-       * does not retry; a loop that retries does so with a new `invocationId` and should wait this
-       * long first.
+       * only, and only when the vendor gave a hint (for example a rate limit's `retry-after`). A
+       * whole number of milliseconds up to one hour, rounded up; a longer or invalid hint is dropped,
+       * so an absent key does not mean the vendor asked for no wait. Core does not retry; a loop that
+       * retries does so with a new `invocationId` and should wait this long first.
        */
       retryAfterMs?: number
       dispatch: 'not-sent' | 'may-have-sent'
@@ -145,8 +146,9 @@ export type SideCallStatus =
  *   - `system`: `system` is not a string of at most 1 MiB;
  *   - `sampling`: `sampling` has a key or value outside the request schema's ranges.
  * - `invoke` throws `E_ENVELOPE` (`signal`) when its signal is not an `AbortSignal`.
- * - `prepare` and `invoke` throw `E_RELATION` (`no-turn`) outside an open turn, and `invoke` throws
- *   `E_RELATION` (`turn-closing`) once the turn has begun to end.
+ * - `prepare` and `invoke` throw `E_RELATION` (`no-turn`) outside an open turn. `invoke` throws
+ *   `E_RELATION` (`turn-closing`) only while a turn end that found calls in flight is waiting for
+ *   them to settle; a call made after the turn has ended finds no turn and throws `no-turn`.
  * - `invoke` throws `E_REQUEST_FROZEN` for a call prepared by another context or turn (`foreign`,
  *   `turn`) or when the catalog record or adapter identity changed after `prepare`
  *   (`target-changed`); `E_RELATION` when the `invocationId` already has a record with a different

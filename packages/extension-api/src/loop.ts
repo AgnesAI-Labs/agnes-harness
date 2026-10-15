@@ -97,6 +97,14 @@ export interface LoopTailNote {
    * tool calls is still running: a result recorded after the note is placed before it in later
    * requests. Default false: this request only, and the next request's history no longer extends
    * this one from the note on. Refused together with custom `messages`.
+   *
+   * Resuming: the committed note is part of the history, so preparing the request again under the
+   * same `invocationId` gives a different request, and sending it throws `E_RELATION`. Read
+   * `effects.status(invocationId)` and use the recorded result instead.
+   *
+   * Other slots: a committed note on a request for a slot other than `primary` (`fast`, `verifier`,
+   * `compaction`) is written into the main conversation history all the same, as Core's own runtime
+   * and hook notes are on such requests. Core does not check this; the loop is responsible for it.
    */
   readonly commit?: boolean
 }
@@ -105,7 +113,13 @@ export interface LoopRequestOptions {
   system?: string
   /** Omitted uses the visible post-compaction history. */
   messages?: RequestBody['messages']
-  /** Exact names from the turn's frozen catalog; omitted uses current disclosure. */
+  /**
+   * Exact names from the turn's frozen catalog; omitted uses current disclosure, which can grow
+   * within a turn when the model loads a deferred tool. Requests that pass the same names carry the
+   * same tool bytes (sorted by name, whatever the order passed) and the same `tool_schema_hash`
+   * within a turn, and across turns while those tools' definitions are unchanged. A name outside the
+   * catalog throws `E_ENVELOPE`.
+   */
   tools?: readonly string[]
   sampling?: RequestBody['sampling']
   invocationId?: string
