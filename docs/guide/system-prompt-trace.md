@@ -24,6 +24,8 @@ Capture details include adapter/version/API, endpoint without credentials or que
 
 The **Compare** selector starts at **None**. Choose **Previous request** to compare within this session. For comparison across sessions, select **Use this request as comparison** in the older request, open the new request, and choose **Pinned baseline**. Both owners are checked. The selection lasts only while the page is open. **Copy** is an explicit clipboard action: review content before copying.
 
+Capture retention uses a rebuildable in-memory metadata index under the existing cross-process configuration lock. A cold store reads and validates legacy call files; warm operations reconcile directory entries and file identities, re-reading changed or previously unreadable calls. Selected detail reads still validate and hydrate their content. This is not constant-time storage: metadata scans remain, and another process can invalidate the cache. Quotas, orphan-blob protection, clear and retention apply to the same call/blob files; no second persistent index or format migration is required.
+
 ## Privacy and retention
 
 Request bodies stay in private local storage under `AGH_HOME`, separated by profile and session. Credentials are excluded at the transport tap; values are redacted and validated before persistence. Secret detection is heuristic and cannot guarantee that all sensitive text is identified. Request and memory contents never enter telemetry or diagnostic exports; ordinary projections carry IDs, hashes and sizes.

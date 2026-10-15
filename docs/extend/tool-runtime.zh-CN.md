@@ -40,6 +40,8 @@ Core 继续负责主体授权、审批决策请求、沙箱、效果记录和恢
 
 何时延迟：每个可见 schema 都会随每次请求发送，模型很少用到的工具每一轮都在消耗 tokens。多数会话都会用到、或必须不经搜索直接调用的工具保持可见（省略 `deferLoading`）。偶尔使用的工具设为 `true`，例如历史查询或管理操作，schema 较大时尤其如此。数量取决于部署的一类工具设为 `'auto'`：turn 目录中的自动工具不超过 15 个且 schema 合计不超过约 4,000 tokens 时，Core 保持它们全部可见，超过任一上限则一起延迟。MCP 服务器默认使用 `'auto'`。延迟工具在一个会话中首次使用时多一次往返；工作流总是连续调用的一组工具应一起保持可见，而不是逐个加载。
 
+自动延迟还要求目录中存在模型可见、直接披露的 `tool_search` 与 `tool_describe`；仅支持图像输入或自身延迟披露的发现工具不满足条件。缺少这对发现工具时，所有 auto 工具保持可见，包括第三方 auto 工具；显式 `true`、`false` 声明不变。官方后台任务/PTY、子代理、计划任务、工作流和目标工具采用 auto 模式，交付物工具 `present`、日常工具与发现工具保持直接披露。
+
 设置 `meta.discoveryGroup` 为一行标签（最多 120 个字符），同属一组的延迟工具在列表中合为一行并显示数量，例如 `"Earlier sessions (search, read and trace past sessions)"`。`tool_search` 也会匹配这个标签。不设置时每个延迟工具单独一行。
 
 可选的 `meta.isPresentational: true` 表示效果只向用户公布展示状态，没有外部副作用。它不能与 `isDestructive` 或 `isOpenWorld` 同时为真。默认工具策略不会仅因 turn 被污染而升级一个非只读的 presentational 工具。`requiresApproval: always` 和破坏性审批档仍然询问。省略该标志时，工具仍受污染写入的审批约束。[工具元数据参考](../../packages/extension-api/docs/tools-meta.md) 与其他元数据键一起列出该标志。
