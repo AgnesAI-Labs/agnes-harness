@@ -178,12 +178,14 @@ describe('host boundaries', () => {
         true,
       )
   })
-  // Only platform-*.ts may ask what OS this is; everything else takes the answer from the backend.
-  it('process.platform and os.platform() appear only in the platform backends', () => {
-    for (const f of files) {
-      if (/platform-(posix|win32)\.ts$/.test(f)) continue
-      expect(read(f), f).not.toMatch(/process\.platform|os\.platform\(\)/)
-    }
+  // Private home initialization selects native ACLs before a platform backend can be assembled.
+  it('keeps OS detection in platform backends and private home initialization', () => {
+    const callers = files.filter((f) => /process\.platform|os\.platform\(\)/.test(read(f)))
+    expect(callers.map(modulePath)).toEqual([
+      'host-common/home-initialize.ts',
+      'host-infrastructure/adapters/platform-posix.ts',
+      'host-infrastructure/adapters/platform-win32.ts',
+    ])
   })
   it('index re-exports the documented surface for this iteration', async () => {
     const mod = (await import('@agnes/host')) as Record<string, unknown>
