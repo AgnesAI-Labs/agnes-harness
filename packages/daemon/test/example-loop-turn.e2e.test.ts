@@ -193,7 +193,12 @@ async function runExample(kind: 'react' | 'dag') {
     await sdk.initialize()
     stage = 'workspace trust'
     const runtime = () => sdk!.call<RuntimeAdminSnapshot>('_agnes/v1/sessionSelection.runtime', {})
-    const deployment = { deployDir, path: 'deploy/review', manifestId: 'review' }
+    const deployment = {
+      deployDir,
+      path: 'deploy/review',
+      manifestId: 'review',
+      trustHash: expect.stringMatching(/^sha256-[a-f0-9]{64}$/),
+    }
     expect((await runtime()).workspaceDeployments).toContainEqual({ ...deployment, state: 'untrusted' })
     const trust = await sdk.packages.trustWorkspace({
       profile: 'local-dev',

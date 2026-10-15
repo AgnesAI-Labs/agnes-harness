@@ -1407,6 +1407,11 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
           throw new PackageError('E_WORKSPACE_UNTRUSTED', 'profile policy denies workspace packages', {
             detail: { reason: 'policy-deny' },
           })
+        // Like the repository workspace above, a confirmation binds to the hash that was reviewed.
+        if (expectedHash !== undefined && expectedHash !== initialHash)
+          throw new PackageError('E_LOCK_MISMATCH', 'review the current workspace before trusting', {
+            code: 'E_PACKAGE_PREVIEW_STALE',
+          })
         const installed = stamp()
         const entries: Record<string, LockEntry> = {}
         for (const extension of manifest.extensions) {
