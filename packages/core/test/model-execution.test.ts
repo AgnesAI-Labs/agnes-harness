@@ -269,8 +269,18 @@ describe('model execution guarantees across Loop implementations', () => {
         if (scenario === 'throw-before-sent') throw new Error('synthetic pre-send failure')
         if (scenario !== 'no-sent') yield sentFor(request)
         yield { type: 'text_delta', delta: 'partial answer' }
-        if (['usage', 'usage-twice', 'provider-error', 'cancel-with-usage'].includes(scenario)) yield usage()
-        if (scenario === 'usage-twice') yield usage()
+        if (['usage', 'usage-twice', 'provider-error', 'cancel-with-usage'].includes(scenario))
+          yield {
+            ...usage(),
+            type: 'usage',
+            tokens: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0 },
+            credits: 2,
+            creditSource: 'gateway',
+            billing: { usdMicros: 250, source: 'gateway', subscription: false },
+            timing: { ttftMs: 12, durationMs: 30, firstOutputMs: 15 },
+          }
+        if (scenario === 'usage-twice')
+          yield { ...usage(), timing: { ttftMs: 12, durationMs: 30, firstOutputMs: 15 } }
         if (scenario === 'throw') throw new Error('synthetic provider failure')
         if (scenario.startsWith('cancel')) {
           stop.abort()
@@ -283,11 +293,13 @@ describe('model execution guarantees across Loop implementations', () => {
             code: 'TRANSPORT',
             message: 'synthetic failure',
             retryable: false,
+            timing: { outputMs: 20 },
             ...(scenario === 'error-tail-throw'
               ? { response: { status: 503, id: 'original-failure', headerNames: [] } }
               : {}),
           }
-        else if (scenario !== 'no-done') yield { type: 'done', reason: 'stop' }
+        else if (scenario !== 'no-done')
+          yield { type: 'done', reason: 'stop', timing: { providerCallMs: 50, finalizeMs: 10 } }
         if (scenario.endsWith('tail-throw')) throw new Error('synthetic tail failure')
       }
       const billing: unknown[] = []
@@ -327,7 +339,9 @@ describe('model execution guarantees across Loop implementations', () => {
           .map((row) => (row.data as { outcome: string }).outcome)
         expect(settled).toHaveLength(1)
         expect(costs[0]).toMatchObject({
-          creditSource: 'estimated',
+          creditSource: ['usage', 'provider-error', 'cancel-with-usage'].includes(scenario)
+            ? 'gateway'
+            : 'estimated',
           tokens: {
             output:
               scenario === 'usage' ||
@@ -340,6 +354,24 @@ describe('model execution guarantees across Loop implementations', () => {
                   : 4,
           },
         })
+        if (['usage', 'provider-error', 'cancel-with-usage'].includes(scenario)) {
+          for (const row of [costs[0], records[0]])
+            expect(row).toMatchObject({
+              credits: 2,
+              creditSource: 'gateway',
+              billing: { usdMicros: 250, source: 'gateway' },
+              timing: { ttftMs: 12, durationMs: 30, firstOutputMs: 15 },
+            })
+        }
+        if (['usage', 'usage-twice', 'done-tail-throw', 'no-usage'].includes(scenario))
+          for (const row of [costs[0], records[0]])
+            expect(row).toMatchObject({ timing: { providerCallMs: 50, finalizeMs: 10 } })
+        if (scenario === 'provider-error')
+          for (const row of [costs[0], records[0]]) expect(row).toMatchObject({ timing: { outputMs: 20 } })
+        if (scenario === 'cancel-with-usage') {
+          expect(costs[0]).toMatchObject({ interrupted: true })
+          expect(costs[0]).not.toHaveProperty('timing.finalizeMs')
+        }
         outcomes.push({ costs, records, settled })
       } finally {
         await f.session.close()

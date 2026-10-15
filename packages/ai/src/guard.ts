@@ -1,7 +1,9 @@
 import { type AiErrorCode, type InferenceEvent, validateAgainst } from '@agnes/protocol'
-import { ResponseMeta } from '@agnes/protocol/gen/model'
+import { ResponseMeta, Timing } from '@agnes/protocol/gen/model'
 
 type ErrorEvent = Extract<InferenceEvent, { type: 'error' }>
+const checkedTiming = (value: unknown): { timing?: Timing } =>
+  value !== undefined && validateAgainst(Timing, value).ok ? { timing: value as Timing } : {}
 
 /**
  * Whether a failure of each kind may be repeated. Ten of the eleven are decided here because they
@@ -57,6 +59,7 @@ export function normalizeError(e: ErrorEvent): ErrorEvent {
   if (retryable && e.retryAfterMs !== undefined) out.retryAfterMs = e.retryAfterMs
   if (e.requestId) out.requestId = e.requestId
   Object.assign(out, checkedResponse(e.response))
+  Object.assign(out, checkedTiming(e.timing))
   return out
 }
 
@@ -129,7 +132,10 @@ export async function* guardSequence(source: AsyncIterable<InferenceEvent>): Asy
         // A finished turn with no usage is a turn nobody can account for. It is reported as a
         // failure rather than passed on, because a caller that wrote it as a success would have a
         // completed turn and no cost row for it.
-        yield seenUsage && !pendingFailure ? ev : fail(pendingFailure ?? 'done without usage')
+        const { timing, ...done } = ev
+        yield seenUsage && !pendingFailure
+          ? { ...done, ...checkedTiming(timing) }
+          : fail(pendingFailure ?? 'done without usage')
         continue
       }
       if (ev.type === 'usage') {

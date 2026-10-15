@@ -42,6 +42,7 @@ import {
   cacheHealthView,
   initialCacheHealthState,
 } from './cache-health.js'
+import { callTiming } from './call-timing.js'
 import { clipUtf16 as clip } from './clip.js'
 import { SurfaceCache } from './surface.js'
 import { TurnProjection, turnsForNodes } from './turns.js'
@@ -925,14 +926,7 @@ export class UIProjectionCell {
           ...(cost.billing ? { billing: structuredClone(cost.billing) } : {}),
           model: cost.model,
           ...(cost.interrupted !== undefined ? { interrupted: cost.interrupted } : {}),
-          ...(cost.timing
-            ? {
-                timing: {
-                  ...(cost.timing.ttftMs !== undefined ? { ttftMs: cost.timing.ttftMs } : {}),
-                  ...(cost.timing.durationMs !== undefined ? { durationMs: cost.timing.durationMs } : {}),
-                },
-              }
-            : {}),
+          ...(cost.timing ? { timing: callTiming(cost.timing) } : {}),
           ...(cost.credits !== undefined ? { credits: cost.credits } : {}),
         })
         changed.add(id)

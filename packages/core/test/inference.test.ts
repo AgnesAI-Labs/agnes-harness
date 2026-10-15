@@ -1849,24 +1849,47 @@ it('persists reported request timing and restores the same usage details in UI p
         tokens: { input: 10, output: 5, cacheRead: 20, cacheWrite: 0, reasoning: 2 },
         credits: 1,
         creditSource: 'estimated',
-        timing: { ttftMs: 120, durationMs: 450 },
+        timing: { ttftMs: 120, durationMs: 450, firstOutputMs: 150 },
         billing: { usdMicros: 250, source: 'estimated', subscription: false },
         response: { status: 200, id: 'resp-1', model: 'served-model', headerNames: ['x-litellm-call-id'] },
       },
-      { type: 'done', reason: 'stop' },
+      {
+        type: 'done',
+        reason: 'stop',
+        timing: {
+          providerCallMs: 510,
+          prepareMs: 5,
+          captureMs: 40,
+          dispatchMs: 30,
+          firstOutputMs: 150,
+          outputMs: 320,
+          finalizeMs: 40,
+        },
+      },
     ],
   ])
   await session.runInference()
   const costs = await log.scan({ type: 'cost/ledger', limit: 10 })
   expect(costs[0]?.data).toMatchObject({
-    timing: { ttftMs: 120, durationMs: 450 },
+    timing: { ttftMs: 120, durationMs: 450, providerCallMs: 510, firstOutputMs: 150, finalizeMs: 40 },
     response: { status: 200, id: 'resp-1', model: 'served-model', headerNames: ['x-litellm-call-id'] },
   })
   const timeline = await session.projectUI()
   expect(timeline.nodes.find((node) => node.kind === 'cost')).toMatchObject({
     tokens: { input: 10, output: 5, cacheRead: 20, reasoning: 2 },
-    timing: { ttftMs: 120, durationMs: 450 },
+    timing: { ttftMs: 120, durationMs: 450, providerCallMs: 510, firstOutputMs: 150, finalizeMs: 40 },
     billing: { usdMicros: 250 },
+  })
+  expect(timeline.turns?.flatMap((turn) => turn.usage.calls)[0]).toMatchObject({
+    timing: {
+      providerCallMs: 510,
+      prepareMs: 5,
+      captureMs: 40,
+      dispatchMs: 30,
+      firstOutputMs: 150,
+      outputMs: 320,
+      finalizeMs: 40,
+    },
   })
   expect(timeline.usage).toMatchObject({
     reasoningComplete: true,

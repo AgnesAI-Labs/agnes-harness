@@ -1,4 +1,5 @@
 import type { CostLedger, EventEnvelope, UINode, UITurn, UITurnCall, UITurnUsage } from '@agnes/protocol'
+import { callTiming } from './call-timing.js'
 import { clipUtf16 } from './clip.js'
 import { createTraceState, hydrateTraceState, type TraceFoldState, traceFold } from './trace.js'
 
@@ -115,14 +116,7 @@ const callFrom = (event: EventEnvelope, row: CostLedger): UITurnCall => ({
   ...(row.credits !== undefined ? { credits: row.credits } : {}),
   ...(row.billing ? { billing: structuredClone(row.billing) } : {}),
   ...(row.interrupted !== undefined ? { interrupted: row.interrupted } : {}),
-  ...(row.timing
-    ? {
-        timing: {
-          ...(typeof row.timing.ttftMs === 'number' ? { ttftMs: row.timing.ttftMs } : {}),
-          ...(typeof row.timing.durationMs === 'number' ? { durationMs: row.timing.durationMs } : {}),
-        },
-      }
-    : {}),
+  ...(row.timing ? { timing: callTiming(row.timing) } : {}),
   ...(row.adjustment ? { adjustment: structuredClone(row.adjustment) } : {}),
 })
 

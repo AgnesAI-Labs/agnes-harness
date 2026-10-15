@@ -68,6 +68,159 @@ function mk(
 const run = () => ({ signal: new AbortController().signal, toolNames: [] })
 
 describe('createProvider', () => {
+  it.each([false, true])(
+    'measures capture, dispatch, visible output and cleanup (capture failure: %s)',
+    async (failCapture) => {
+      let now = 0
+      let finished = false
+      class TimedAdapter extends FakeAdapter {
+        override async *stream(
+          _route: string,
+          _req: RequestBody,
+          opts: import('../src/adapter.js').AdapterStreamOptions,
+        ): AsyncIterable<import('../src/adapter.js').WireEvent> {
+          try {
+            await opts.reportRequest?.({ synthetic: true })
+            opts.reportDispatch?.()
+            now += 30
+            yield { type: 'text_delta', delta: 'visible' }
+            now += 40
+            yield {
+              type: 'usage',
+              tokens: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+              creditSource: 'estimated',
+            }
+            now += 5
+            yield { type: 'done', reason: 'stop' }
+          } finally {
+            now += 11
+          }
+        }
+      }
+      const adapter = new TimedAdapter({
+        id: 'timed',
+        routes: [gwRoute],
+        models: { gw: [fakeModel({ id: 'flash', route: 'gw' })] },
+      })
+      const provider = createProvider({
+        adapters: [adapter],
+        routes: table,
+        contract: new NullContractStore(),
+        secrets: () => 'synthetic',
+        clock: () => now,
+        trace: {
+          begin: async () => {
+            now += 10
+            return {
+              id: 'trace',
+              event() {},
+              wire: async () => {
+                now += 7
+                if (failCapture) throw new Error('capture')
+              },
+              finish: async () => {
+                now += 13
+                finished = true
+              },
+            }
+          },
+        },
+      })
+      const events: InferenceEvent[] = []
+      for await (const event of provider.infer(body(), run())) {
+        if (event.type === 'usage') expect(finished).toBe(false)
+        if (event.type === 'done') expect(finished).toBe(true)
+        events.push(event)
+      }
+      expect(events.map((event) => event.type)).toEqual(['sent', 'text_delta', 'usage', 'done'])
+      expect(events.find((event) => event.type === 'usage')).toMatchObject({
+        timing: {
+          prepareMs: 0,
+          dispatchMs: 17,
+          firstOutputMs: 47,
+          ttftMs: 37,
+          durationMs: 77,
+        },
+      })
+      expect(events.find((event) => event.type === 'usage')).not.toHaveProperty('timing.finalizeMs')
+      expect(events.at(-1)).toMatchObject({
+        timing: {
+          prepareMs: 0,
+          captureMs: 30,
+          dispatchMs: 17,
+          firstOutputMs: 47,
+          outputMs: 45,
+          finalizeMs: 24,
+          providerCallMs: 116,
+        },
+      })
+    },
+  )
+
+  it('measures overlapping capture waits once and keeps the first dispatch across retries', async () => {
+    let now = 0
+    let releaseWire!: () => void
+    let releaseAttempt!: () => void
+    const wire = new Promise<void>((resolve) => {
+      releaseWire = resolve
+    })
+    const attempt = new Promise<void>((resolve) => {
+      releaseAttempt = resolve
+    })
+    const { adapter } = mk()
+    adapter.stream = async function* (_route, _request, opts) {
+      const first = opts.reportRequest?.({ synthetic: true })
+      now = 5
+      const second = opts.reportAttempt?.({
+        attemptId: 'synthetic',
+        index: 0,
+        status: 'not-sent',
+        adapter: { id: 'synthetic', version: null, api: 'synthetic', endpoint: null },
+      })
+      now = 10
+      releaseWire()
+      await first
+      now = 20
+      releaseAttempt()
+      await second
+      opts.reportDispatch?.()
+      now = 25
+      opts.reportDispatch?.()
+      now = 30
+      yield { type: 'media', kind: 'video_job', jobId: 'synthetic', status: 'running' }
+      now = 40
+      yield {
+        type: 'usage',
+        tokens: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+        creditSource: 'estimated',
+      }
+      yield { type: 'done', reason: 'stop' }
+    }
+    const provider = createProvider({
+      adapters: [adapter],
+      routes: table,
+      contract: new NullContractStore(),
+      secrets: () => 'synthetic',
+      clock: () => now,
+      trace: {
+        begin: async () => ({
+          id: 'trace',
+          wire: () => wire,
+          attempt: () => attempt,
+          event() {},
+          finish: async () => {},
+        }),
+      },
+    })
+    const events = await collect(provider.infer(body(), run()))
+    expect(events.at(-1)).toMatchObject({
+      type: 'done',
+      timing: { captureMs: 20, dispatchMs: 20, firstOutputMs: 30, outputMs: 10, providerCallMs: 40 },
+    })
+    // Media is a new visible-output observation, without inventing a legacy text/tool TTFT.
+    expect(events.find((event) => event.type === 'usage')).not.toHaveProperty('timing.ttftMs')
+  })
+
   it.each(['none', 'begin', 'event', 'finish'] as const)(
     'emits a complete stream even when passive capture fails at %s',
     async (failure) => {
@@ -105,6 +258,100 @@ describe('createProvider', () => {
       expect(adapter.calls[0]?.route).toBe('gw')
     },
   )
+
+  it.each(['sent', 'text_delta'] as const)(
+    'closes adapter and trace when the consumer returns after %s',
+    async (stop) => {
+      let adapterClosed = false
+      let traceClosed = false
+      const { adapter } = mk()
+      adapter.stream = async function* () {
+        try {
+          yield { type: 'text_delta', delta: 'visible' }
+          yield {
+            type: 'usage',
+            tokens: { input: 2, output: 1, cacheRead: 0, cacheWrite: 0 },
+            creditSource: 'gateway',
+          }
+          yield { type: 'done', reason: 'stop' }
+        } finally {
+          adapterClosed = true
+        }
+      }
+      const provider = createProvider({
+        adapters: [adapter],
+        routes: table,
+        contract: new NullContractStore(),
+        secrets: () => 'synthetic',
+        clock: () => 0,
+        trace: {
+          begin: async () => ({
+            id: 'trace',
+            wire: async () => {},
+            event() {},
+            finish: async () => {
+              traceClosed = true
+            },
+          }),
+        },
+      })
+      const seen: string[] = []
+      for await (const event of provider.infer(body(), run())) {
+        seen.push(event.type)
+        if (event.type === stop) break
+      }
+      expect(adapterClosed).toBe(true)
+      expect(traceClosed).toBe(true)
+      expect(seen).not.toContain('usage')
+      expect(seen).not.toContain('done')
+    },
+  )
+
+  it('exposes an adapter error before blocked trace cleanup and eventually closes both', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let entered!: () => void
+    const finishing = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    let closed = false
+    const { provider } = mk(
+      () => [{ type: 'error', reason: 'error', code: 'TRANSPORT', message: 'original', retryable: true }],
+      {
+        trace: {
+          begin: async () => ({
+            id: 'trace',
+            wire: async () => {},
+            event() {},
+            finish: async () => {
+              entered()
+              await gate
+              closed = true
+            },
+          }),
+        },
+      },
+    )
+    const stream = provider.infer(body(), run())[Symbol.asyncIterator]()
+    try {
+      expect((await stream.next()).value).toMatchObject({ type: 'sent' })
+      const error = (await stream.next()).value
+      expect(error).toMatchObject({ type: 'error', message: 'original' })
+      expect(error).not.toHaveProperty('timing.finalizeMs')
+      if (!stream.return) throw new Error('expected closable provider stream')
+      const returned = stream.return()
+      await finishing
+      expect(closed).toBe(false)
+      release()
+      await returned
+      expect(closed).toBe(true)
+    } finally {
+      release()
+      await stream.return?.()
+    }
+  })
 
   // Every failure this facade can hit reaches the caller as an event, because the caller is a
   // kernel step that has to write a turn either way: a throw out of the iterator would leave the
@@ -188,12 +435,20 @@ describe('createProvider', () => {
 
   // An adapter that simply stops is a transport failure, not a successful turn: the caller must
   // never read a truncated stream as a finished answer.
-  it('closes a stream that ended without a terminal event as a retryable transport error', async () => {
-    const { provider } = mk(() => [{ type: 'text_delta', delta: 'a' }])
-    const events = await collect(provider.infer(body(), run()))
-    expect(events.map((e) => e.type)).toEqual(['sent', 'text_delta', 'error'])
-    expect(events.at(-1)).toMatchObject({ type: 'error', code: 'TRANSPORT', retryable: true })
-  })
+  it.each(['a', '<thi'])(
+    'flushes %s and closes a stream without a terminal event as a retryable transport error',
+    async (delta) => {
+      const { provider } = mk(() => [{ type: 'text_delta', delta }])
+      const events = await collect(provider.infer(body(), run()))
+      expect(events.map((e) => e.type)).toEqual(['sent', 'text_delta', 'error'])
+      expect(events.at(-1)).toMatchObject({
+        type: 'error',
+        code: 'TRANSPORT',
+        retryable: true,
+        timing: { firstOutputMs: 0, outputMs: 0 },
+      })
+    },
+  )
 
   // An adapter that throws mid-stream is the same outcome as one that reported an error, and the
   // message is the error's name only: an adapter's exception text can quote request material.

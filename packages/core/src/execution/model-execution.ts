@@ -1,7 +1,7 @@
 import { CoreError, type EventInput, type Seq } from '@agnes/core-common/types'
 import type { EffectHandle, EffectOutcome } from '@agnes/core-effects/effects/effect'
 import type { CostLedger } from '@agnes/extension-api/seams'
-import type { InferenceEvent, RequestBody } from '@agnes/protocol'
+import type { InferenceEvent, RequestBody, Timing } from '@agnes/protocol'
 import { settleTreeSpend } from '../child/runtime-budget.js'
 import type { RequestHeaderData } from '../request/derive.js'
 import { runCoreReplacement } from '../step/reentry.js'
@@ -48,6 +48,7 @@ export class ModelExecution {
   readonly signal: AbortSignal
   private usage: Usage | undefined
   private error: Failure | undefined
+  private timing: Timing | undefined
   private text = ''
   private thinking = ''
   private providerIterator: AsyncIterator<InferenceEvent> | undefined
@@ -205,6 +206,7 @@ export class ModelExecution {
         }
         if (event.type === 'error') this.error = event
         if (event.type === 'done' || event.type === 'error') {
+          this.timing = event.timing
           // Resume past the terminal yield so provider wrappers can finish their receipt/recording.
           // return() would skip that normal completion; cancellation still interrupts a stuck drain.
           const tail = await interruptible(
@@ -273,7 +275,7 @@ export class ModelExecution {
   }
 
   rows(outcome: EffectOutcome, interrupted: boolean): EventInput[] {
-    const { usage, error, input } = this
+    const { usage, error, timing, input } = this
     if (this.cancellation.aborted) {
       outcome = 'aborted'
       interrupted = true
@@ -292,7 +294,7 @@ export class ModelExecution {
       ...(usage?.credits !== undefined ? { credits: usage.credits } : {}),
       creditSource: usage?.creditSource ?? 'estimated',
       ...(usage?.billing ? { billing: usage.billing } : {}),
-      ...(usage?.timing ? { timing: usage.timing } : {}),
+      ...(usage?.timing || timing ? { timing: { ...usage?.timing, ...timing } } : {}),
       ...(response ? { response } : {}),
       ...(interrupted ? { interrupted: true } : {}),
     }

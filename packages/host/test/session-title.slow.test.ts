@@ -150,7 +150,11 @@ async function fixture(
             : '这是完整的回答。',
         }
         yield usage(title)
-        yield { type: 'done', reason: 'stop' }
+        yield {
+          type: 'done',
+          reason: 'stop',
+          ...(title ? { timing: { providerCallMs: 50, finalizeMs: 10 } } : {}),
+        }
       },
     },
   })
@@ -207,6 +211,9 @@ it.each([undefined, 'en', 'zh-CN'] as const)(
     const timeline = await f.session.projectUI(undefined, { surface: 'web' })
     expect(timeline.usage?.totals.input).toBe(2015)
     expect(timeline.turns[0]?.usage.calls.filter((call) => call.purpose === 'title')).toHaveLength(1)
+    expect(timeline.turns[0]?.usage.calls.find((call) => call.purpose === 'title')).toMatchObject({
+      timing: { providerCallMs: 50, finalizeMs: 10 },
+    })
     expect(timeline.turns[1]?.usage.calls.filter((call) => call.purpose === 'title')).toHaveLength(0)
     expect(f.session.surface().map((node) => node.kind)).toEqual(['user', 'assistant', 'user', 'assistant'])
     const request = f.calls.find((call) => call.sessionKey.startsWith('title:')) as RequestBody
