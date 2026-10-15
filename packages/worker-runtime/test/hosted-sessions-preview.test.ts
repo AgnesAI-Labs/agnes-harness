@@ -128,7 +128,7 @@ describe('a worker shutting down mid-stream keeps what was streamed', () => {
       workspaceRoot: root,
     })
     const binding = {
-      version: 1,
+      version: 1 as const,
       sessionKey: 'cut',
       workspaceId: 'a'.repeat(64),
       revision: 1,
@@ -166,7 +166,10 @@ describe('a worker shutting down mid-stream keeps what was streamed', () => {
       // What the worker does when its daemon link closes: close every hosted session.
       await hosted.closeAll()
       await running
-      const reopened = await built.host.createSession({ key: 'cut', cwd: root })
+      const reopened = await built.host.createSession({
+        key: 'cut',
+        binding: built.host.acceptWorkspaceBinding(binding, 'cut'),
+      })
       const rows = (await reopened.scan({ type: 'assistant/output', limit: 10 })) as unknown as Array<{
         data: { state: string; content?: Array<{ type: string; text: string }>; estimatedTokens: number }
       }>
