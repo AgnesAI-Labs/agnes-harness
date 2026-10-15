@@ -24,6 +24,7 @@ import {
   SettingsSelect,
   SettingsState,
   Tag,
+  terminal,
   useAdvancedSettings,
   usePushStack,
 } from '@agnes/web-ui'
@@ -33,7 +34,7 @@ import type { HomePageData } from '../host.js'
 import { HomePageSection } from '../page-frame.js'
 import type { PluginView } from './admin-view.js'
 import { CAPABILITY_ICONS } from './capabilities.js'
-import { CAPABILITIES } from './route.js'
+import { CAPABILITIES, openPlugins, pluginPageId } from './route.js'
 import type { CapabilitySummaries } from './summaries.js'
 
 type Text = (key: string, vars?: Readonly<Record<string, string | number>>) => string
@@ -193,9 +194,34 @@ export function PluginToolbar({
 /** Status the whole page shares: recovery mode, held versions, and the controller's one notice line. */
 export function PluginStatus({ view, t, data }: { view: PluginView; t: Text; data: HomePageData }) {
   const notice = pluginNotice(view)
+  const pages = usePushStack()
+  // A check shows on the card that asked for it; everything else running is reachable from here.
+  const running = [...view.state.operations.values()].filter(
+    (operation) => operation.operation !== 'inspect' && !terminal(operation),
+  ).length
   return (
     <>
-      <PluginOperationFeedback operation={view.state.lastOperation} installed={view.state.installed} />
+      <PluginOperationFeedback
+        operation={view.state.lastOperation}
+        installed={view.state.installed}
+        onEnable={(id) => {
+          openPlugins('plugins')
+          pages.open(pluginPageId({ kind: 'plugin', id }))
+        }}
+      />
+      {running > 0 && (
+        <SettingsState data-testid="plugin-operations-indicator">
+          {view.t('operations.running', { count: running })}{' '}
+          <Button
+            appearance="link"
+            size="small"
+            data-testid="plugin-operations-open"
+            onClick={() => view.openOperations()}
+          >
+            {view.t('operations.open')}
+          </Button>
+        </SettingsState>
+      )}
       {view.state.context?.readOnly && (
         <Banner tone="warning" data-testid="plugin-recovery">
           <strong>{t('recovery.title')}</strong> {t('recovery.description')}

@@ -45,16 +45,16 @@ export const PLUGIN_VIEW_PARAM = 'view'
 
 /**
  * A page pushed over the plugins page: a built-in's detail, an installed plugin, a marketplace
- * entry, a skill or MCP server, a review item, running a skill in a new session (`run:<skill>`), or
- * one of the add forms (a plugin, an MCP server, a search service under 网页搜索). `operations` is the
- * detail that only follows running operations.
+ * entry, a skill or MCP server, a review item, running a skill in a new session (`run:<skill>`), the
+ * review of a checked install or update (`install:<id>`), or one of the add forms (a plugin, an MCP
+ * server, a search service under 网页搜索). `operations` lists running operations, on request.
  */
 export type PluginPage =
   | Readonly<{ kind: 'capability'; id: Capability }>
-  | Readonly<{ kind: 'plugin' | 'market' | 'skill' | 'mcp' | 'review' | 'run'; id: string }>
+  | Readonly<{ kind: 'plugin' | 'market' | 'skill' | 'mcp' | 'review' | 'run' | 'install'; id: string }>
   | Readonly<{ kind: 'add-plugin' | 'add-mcp' | 'operations' | 'search-engine' }>
 
-const ITEM_KINDS = ['plugin', 'market', 'skill', 'mcp', 'review', 'run'] as const
+const ITEM_KINDS = ['plugin', 'market', 'skill', 'mcp', 'review', 'run', 'install'] as const
 const FORM_KINDS = ['add-plugin', 'add-mcp', 'operations', 'search-engine'] as const
 
 /** The route segment for a page: `search`, `plugin:<id>`, `add-plugin`. */

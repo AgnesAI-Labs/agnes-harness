@@ -96,16 +96,17 @@ test('v3 local package install and enable requires consent and disable/uninstall
     .getByRole('textbox', { name: 'Source reference', exact: true })
     .fill(`file:${resolve('examples/packages/hot-tool-plugin')}`)
   await source.getByRole('button', { name: 'Check source', exact: true }).click()
+  const review = page.getByTestId('install-review')
+  await expect(review).toBeVisible()
   const consent = page.locator('#plugin-confirm')
-  await expect(consent).toBeVisible()
   const client = await runtime.connect()
   const installed = async () =>
     (await client.packages.list({ profile: 'local-dev' })).packages.find(
       (row) => row.id === '@agnes-examples/hot-tool-plugin',
     )
   expect(await installed()).toBeUndefined()
-  await expect(consent).toContainText('What it gets')
-  await consent.getByRole('button', { name: 'Install and enable', exact: true }).click()
+  await expect(review).toContainText('What it gets')
+  await review.getByRole('button', { name: 'Install and enable', exact: true }).click()
   await expect.poll(async () => (await installed())?.desired).toBe('enabled')
   const detail = page.locator('#plugin-detail')
   if (await detail.isVisible()) await page.getByTestId('push-back').click()

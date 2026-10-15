@@ -9,8 +9,8 @@ const DETAIL_KINDS = new Set(['plugin', 'market', 'operations'])
 
 /**
  * The plugin controller's detail and its 添加插件 form, as pages of the plugins page: an installed
- * plugin is `plugin:<id>`, a marketplace entry `market:<id>`, running operations `operations`, and
- * the form `add-plugin`.
+ * plugin is `plugin:<id>`, a marketplace entry `market:<id>`, running operations `operations` (opened
+ * from the page's activity line, never by an install), and the form `add-plugin`.
  */
 export function PluginPages({ view }: { view: PluginView | undefined }) {
   const latest = useRef(view)
@@ -46,7 +46,11 @@ export function PluginPages({ view }: { view: PluginView | undefined }) {
         current.selectItem(item)
         return 'opened'
       }
-      // Operations show by themselves while they run; a link to them after they finished is stale.
+      // Running operations open on request; a link to them after they finished is stale.
+      if (page?.kind === 'operations' && current.state.operations.size > 0) {
+        current.openOperations()
+        return 'opened'
+      }
       return 'missing'
     },
   })
