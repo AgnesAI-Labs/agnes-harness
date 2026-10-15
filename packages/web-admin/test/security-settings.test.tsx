@@ -77,7 +77,9 @@ it('saves the auto review rules as chips, toggles, a segment and second presets,
   await click(host, '[data-testid="settings-subpage-back"]')
   await click(host, '[data-testid="auto-review-overrides"]')
   await click(host, '[data-testid="auto-review-remove-override"]')
-  expect((writes.at(-1)?.overrides as { tool: string }[]).map((rule) => rule.tool)).toEqual(['write'])
+  expect(writes.at(-1)?.overrides).toEqual([
+    { tool: 'write', scopeHash: hash('b'), decision: 'deny', risk: 'medium' },
+  ])
   await click(host, '[data-testid="auto-review-clear-overrides"]')
   expect(writes.at(-1)?.overrides).toEqual([])
   expect(host.textContent).not.toMatch(/saved/i)
