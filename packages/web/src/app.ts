@@ -53,9 +53,7 @@ import { settingsCatalog } from '@agnes/web-admin/settings/locales'
 import { effectiveSessionPreset, permissionForSessionPreset } from '@agnes/web-admin/settings/session-choice'
 import { mountStatusCheck } from '@agnes/web-admin/settings/status-check'
 import { homeEntries, homeNavigation, settingsSections } from '@agnes/web-client'
-
 import type { LiveProjection } from '@agnes/web-conversation/live-projection'
-
 import {
   errorNotice,
   type KnownSessionModel,
@@ -66,6 +64,7 @@ import { workbenchLocaleCatalog } from '@agnes/web-conversation/workbench'
 import { installBrowserLogCapture } from '@agnes/web-foundation/browser-log'
 import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
 import { safeThemeStorage } from '@agnes/web-foundation/theme'
+import { attachmentErrorMessage } from '@agnes/web-units'
 import { appNotice, setConnectionNotice, setReconnectNotice } from './app-notices.js'
 import { mountAppShell } from './app-shell.js'
 import { archivedSessions } from './archived-sessions.js'
@@ -1429,6 +1428,8 @@ onSurfaceEvent('agnes:compose-suggestion', (event) => {
 })
 let sessionRecovery: { id: string; message: string } | undefined
 function errorMessage(error: unknown): string {
+  const attachment = attachmentErrorMessage(error, t)
+  if (attachment) return attachment
   // Provider values are redacted by settings before leaving that controller.
   const message = error instanceof Error ? error.message : t('app.error.fallback')
   const diagnostic =
@@ -1457,13 +1458,18 @@ function errorMessage(error: unknown): string {
 }
 function showError(error: unknown): void {
   const message = errorMessage(error)
+  const persistent =
+    error &&
+    typeof error === 'object' &&
+    'data' in error &&
+    (error.data as { code?: unknown } | undefined)?.code === 'CONFIG_CREDENTIAL_REJECTED'
   if (sessionRecovery) {
     renderSessionRecovery(message)
     notice.setKind('error')
-  } else {
+  } else if (persistent) {
     notice.setText(message)
     notice.setKind('error')
-  }
+  } else notice.error(message)
   if (newSessionDialog.open) newSessionDialog.update({ error: message })
   const data =
     error && typeof error === 'object' && 'data' in error
@@ -2194,6 +2200,7 @@ const stopSessionConfiguration = onBroadcast(
   sessionConfigurationChanged,
 )
 onPageHide(() => {
+  notice.clearErrors()
   intentionalClose = true
   stopConnectionEvents()
   stopSettingsTerminal()
