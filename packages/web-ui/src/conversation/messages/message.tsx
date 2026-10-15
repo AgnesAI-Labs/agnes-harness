@@ -71,7 +71,7 @@ export function nativeContent(
   const t = props.t ?? fallbackT
   switch (node.kind) {
     case 'user':
-      return <UserMessage node={node} t={t} />
+      return <UserMessage node={node} t={t} readAttachment={props.readAttachment} />
     case 'assistant':
       return (
         <AssistantMessage

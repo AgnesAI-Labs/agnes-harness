@@ -66,12 +66,19 @@ export function fileUploadRoute(origin: string, invoke?: FileUploadHandler) {
         if (request.headers['content-type'] !== 'application/json') throw new Error('UPLOAD_INVALID')
         input = JSON.parse((await readBody(request, 64 * 1024)).toString('utf8')) as FileUploadRequest
       }
+      if (url.searchParams.has('destination')) {
+        const destination = url.searchParams.get('destination')
+        if (destination !== 'original' && destination !== 'workspace') throw new Error('UPLOAD_INVALID')
+        input = { ...input, destination, laneId: url.searchParams.get('laneId') ?? '' }
+      }
       const result = await invoke(input)
       json(response, 200, result)
     } catch (error) {
       const reason = (error as { data?: { reason?: unknown } }).data?.reason ?? (error as Error).message
       const code =
-        typeof reason === 'string' && /^UPLOAD_[A-Z_]+$/u.test(reason) ? reason : 'UPLOAD_UNAVAILABLE'
+        typeof reason === 'string' && /^(UPLOAD|ATTACHMENT)_[A-Z_]+$/u.test(reason)
+          ? reason
+          : 'UPLOAD_UNAVAILABLE'
       json(
         response,
         code === 'UPLOAD_SIZE_LIMIT' || code === 'UPLOAD_CHUNK_LIMIT'

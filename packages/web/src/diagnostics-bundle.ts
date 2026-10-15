@@ -5,6 +5,7 @@ import type {
   EventEnvelope,
   UITimeline,
 } from '@agnes/protocol'
+import { type ContentBlock, storedAttachment } from '@agnes/protocol'
 import { redactDiagnostic, redactDiagnosticText } from '@agnes/web-foundation/diagnostics-redact'
 import { diagnosticsText } from '@agnes/web-units/diagnostics-locale'
 // 走诊断相关的子路径，而不是 @agnes/web-units 的包根 barrel：barrel 会连带导出整个 UI 组件树
@@ -68,7 +69,10 @@ function omitInlineMedia(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(omitInlineMedia)
   if (value === null || typeof value !== 'object') return value
   const record = value as Record<string, unknown>
-  if ((record.type === 'image' || record.type === 'audio') && typeof record.data === 'string')
+  if (
+    (record.type === 'image' || record.type === 'audio' || record.type === 'file') &&
+    typeof record.data === 'string'
+  )
     return { ...record, data: `[OMITTED:${record.type}:base64]` }
   if (record.type === 'base64' && typeof record.data === 'string')
     return { ...record, data: '[OMITTED:binary:base64]' }
@@ -111,6 +115,22 @@ function collectArtifacts(event: EventEnvelope, found: Map<string, DiagnosticsAr
     if (!found.has(key)) found.set(key, { ...item, lane, seq: event.seq })
   }
   const data = event.data as { media?: { manifest?: unknown }; content?: unknown } | null
+  if (event.type === 'user/message' || event.type === 'inbox') {
+    const value = event.data as { content?: ContentBlock[]; items?: { content?: ContentBlock[] }[] }
+    const blocks =
+      event.type === 'inbox'
+        ? (value.items ?? []).flatMap((item) => item.content ?? [])
+        : (value.content ?? [])
+    for (const block of blocks) {
+      if (!storedAttachment(block)) continue
+      for (const [ref, source] of [
+        [block.attachment.artifact, event.type === 'inbox' ? 'inbox-attachment' : 'user-attachment'],
+        [block.attachment.thumbnail, 'attachment-thumbnail'],
+      ] as const) {
+        if (ref) add({ sha256: ref.sha256, mime: ref.mime, source, uri: `artifact://${ref.sha256}` })
+      }
+    }
+  }
   if (event.type === 'request/header' && Array.isArray(data?.media?.manifest)) {
     for (const entry of data.media.manifest as Record<string, unknown>[]) {
       if (typeof entry?.sha256 !== 'string' || typeof entry.mime !== 'string') continue
@@ -212,7 +232,7 @@ export async function collectDiagnostics(
           const named = IMPORT_SOURCES.has(source) ? source : 'unknown'
           warnings.push({ source: 'session', reason: 'imported', detail: `imported from ${named}` })
         }
-        const line = JSON.stringify(redactDiagnostic(event))
+        const line = JSON.stringify(redactDiagnostic(omitInlineMedia(event)))
         bytes += encoder.encode(line).byteLength + 1
         if (bytes > limits.ledgerBytes) {
           truncated = true

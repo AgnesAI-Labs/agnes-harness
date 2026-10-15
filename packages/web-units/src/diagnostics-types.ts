@@ -21,7 +21,7 @@ export type DiagnosticsArtifact = {
   mime: string
   lane: string
   seq: number
-  source: 'request-media' | 'tool-result'
+  source: 'request-media' | 'tool-result' | 'user-attachment' | 'inbox-attachment' | 'attachment-thumbnail'
   uri?: string
 }
 

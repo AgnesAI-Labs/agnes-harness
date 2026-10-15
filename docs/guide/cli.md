@@ -64,3 +64,6 @@ When an approval card appears, inspect the tool, arguments, and scope, then choo
 | 130 / 143 / 129 | SIGINT / SIGTERM / SIGHUP |
 
 Implementation: [arguments and usage](../../packages/cli/src/args.ts), [exit codes](../../packages/cli/src/errors.ts), [TUI commands](../../packages/cli-tui/src/commands.ts).
+
+
+Use `/attach <path>` in the TUI to upload an original in bounded chunks and submit its receipt as a prompt. Paths may contain spaces. Errors preserve the backend attachment reason. The current session owns the receipt; switching sessions before the upload completes refuses submission.

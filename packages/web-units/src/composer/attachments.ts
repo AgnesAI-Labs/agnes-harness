@@ -1,4 +1,4 @@
-import { uploadedAttachment, userImagePolicy } from '@agnes/protocol'
+import { storedAttachment, uploadedAttachment, userImagePolicy } from '@agnes/protocol'
 import {
   decodeAttachmentData,
   decodeSafeImageBytes,
@@ -94,7 +94,7 @@ export function useComposerAttachments({
         let imageIndex = 0
         for (const image of blocks) {
           if (image.type === 'resource_link') {
-            const ref = uploadedAttachment(image.uri)
+            const ref = storedAttachment(image) ? image.attachment.artifact : uploadedAttachment(image.uri)
             if (!ref) throw new Error('Invalid uploaded attachment')
             restored.push({
               ...image,
@@ -143,11 +143,7 @@ export function useComposerAttachments({
     }
     // Prepare the draft's session before reading a mixed file/image batch: opening it clears the
     // composer generation. Restore existing inline cards with fresh preview URLs after that clear.
-    if (
-      prepareUploadSession &&
-      !view.hasSession &&
-      files.some((file) => !(policy.supported && nativeImageFile(file)))
-    ) {
+    if (prepareUploadSession && !view.hasSession && files.length > 0) {
       const saved = attachmentsRef.current.map(
         ({ id: _id, size: _size, pixels: _pixels, previewUrl: _preview, ...block }) => block,
       )
@@ -184,7 +180,9 @@ export function useComposerAttachments({
       }
       if (
         visual &&
-        attachmentsRef.current.filter((block) => block.type === 'image').length +
+        attachmentsRef.current.filter(
+          (block) => block.type === 'image' || (storedAttachment(block) && block.attachment.image),
+        ).length +
           pendingImageCountRef.current +
           acceptedImages >=
           policy.maxCount
@@ -197,9 +195,7 @@ export function useComposerAttachments({
     }
     if (accepted.length === 0) return
 
-    const streamed = uploads.available
-      ? accepted.filter((file) => !(policy.supported && nativeImageFile(file)))
-      : []
+    const streamed = uploads.available ? [...accepted] : []
     uploads.add(streamed)
     for (const file of streamed) accepted.splice(accepted.indexOf(file), 1)
     if (accepted.length === 0) return

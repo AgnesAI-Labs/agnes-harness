@@ -1,5 +1,5 @@
 import { inflateRawSync } from 'node:zlib'
-import { type EventEnvelope, rpcError, type UITimeline } from '@agnes/protocol'
+import { attachmentLink, type EventEnvelope, rpcError, type UITimeline } from '@agnes/protocol'
 import { JsonRpcError } from '@agnes/sdk/browser'
 import type { BrowserLog, DiagnosticsInclude } from '@agnes/web-units'
 import { describe, expect, it } from 'vitest'
@@ -560,4 +560,30 @@ describe('collectDiagnostics', () => {
     )
     expect(DIAGNOSTICS_LIMITS.zipBytes).toBe(64 * 1024 * 1024)
   })
+})
+
+it('collects paged user/inbox original and thumbnail references into the offline ZIP without inline bytes', async () => {
+  const original = { sha256: 'c'.repeat(64), size: 20000000, mime: 'image/png' }
+  const thumb = { sha256: 'd'.repeat(64), size: 10000, mime: 'image/jpeg' }
+  const content = [
+    attachmentLink(original, 'photo.png', { image: { width: 100, height: 100 }, thumbnail: thumb }),
+    { type: 'file', data: btoa('private original bytes'), name: 'inline.txt', mimeType: 'text/plain' },
+  ]
+  const { call } = fake(
+    standard([
+      [ev(1, 'user/message', { content })],
+      [ev(2, 'inbox', { items: [{ content }] }, { lane: 'review' })],
+    ]),
+  )
+  const out = await collectDiagnostics(input(call), ALL, new AbortController().signal)
+  expect(out.bundle.artifacts.map(({ lane, sha256, source }) => ({ lane, sha256, source }))).toEqual([
+    { lane: 'main', sha256: original.sha256, source: 'user-attachment' },
+    { lane: 'main', sha256: thumb.sha256, source: 'attachment-thumbnail' },
+    { lane: 'review', sha256: original.sha256, source: 'inbox-attachment' },
+    { lane: 'review', sha256: thumb.sha256, source: 'attachment-thumbnail' },
+  ])
+  const files = readZip(out.zip)
+  expect(files.get('index.html')).toContain(original.sha256)
+  for (const text of files.values()) expect(text).not.toContain(btoa('private original bytes'))
+  expect(files.get('events.jsonl')).toContain('[OMITTED:file:base64]')
 })

@@ -58,6 +58,13 @@
     overflow-wrap: anywhere;
   }
 
+  [data-agnes-conversation-messages] .user-message-attachment {
+    display: grid;
+    gap: var(--s4);
+    min-width: 0;
+    justify-items: start;
+  }
+
   [data-agnes-conversation-messages] .user-message-files small {
     color: var(--agnes-text-secondary);
     font-size: var(--font-size-xs);

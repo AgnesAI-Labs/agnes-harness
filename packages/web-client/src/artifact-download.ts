@@ -7,7 +7,9 @@ export async function downloadArtifact(
   sessionId: string,
   laneId: string,
   artifact: Pick<ArtifactRef, 'sha256' | 'size' | 'mime'>,
+  signal?: AbortSignal,
 ) {
+  signal?.throwIfAborted()
   artifact = { sha256: artifact.sha256, size: artifact.size, mime: artifact.mime }
   if (
     !/^[0-9a-f]{64}$/.test(artifact.sha256) ||
@@ -21,14 +23,20 @@ export async function downloadArtifact(
     throw new Error('invalid deliverable reference')
   const bytes = new Uint8Array(artifact.size)
   for (let start = 0; start < artifact.size || start === 0; start += ARTIFACT_READ_RPC_MAX_BYTES) {
+    signal?.throwIfAborted()
     const end = Math.min(start + ARTIFACT_READ_RPC_MAX_BYTES, artifact.size)
     const range = artifact.size > ARTIFACT_READ_RPC_MAX_BYTES ? `bytes=${start}-${end - 1}` : undefined
-    const result = await client.call<ArtifactReadResult>('_agnes/v1/artifact.read', {
-      sessionId,
-      laneId,
-      artifact,
-      ...(range ? { range } : {}),
-    })
+    const result = await client.call<ArtifactReadResult>(
+      '_agnes/v1/artifact.read',
+      {
+        sessionId,
+        laneId,
+        artifact,
+        ...(range ? { range } : {}),
+      },
+      signal ? { signal } : undefined,
+    )
+    signal?.throwIfAborted()
     if (!result.ok)
       throw Object.assign(new Error(`deliverable unavailable: ${result.code}`), { code: result.code })
     if (
@@ -46,6 +54,7 @@ export async function downloadArtifact(
     if (!artifact.size) break
   }
   const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes)
+  signal?.throwIfAborted()
   if ([...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('') !== artifact.sha256)
     throw new Error('deliverable digest mismatch')
   // HTML and unknown types download as bytes; active content never receives a same-origin document.

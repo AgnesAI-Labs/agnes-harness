@@ -9,6 +9,7 @@ import { Disclosure } from '../../ui/disclosure.js'
 import { type FileMention, FileMentionChip, fileMentionLinks, fileMentionOf } from '../../ui/file-mention.js'
 import { UserMessageReferences } from '../reference-chips.js'
 import { systemInputText } from '../user-presentation.js'
+import { AttachmentImage, type AttachmentReader } from './attachment-image.js'
 
 /** 缩略图固定 72×56，和输入框里的待发图片同尺寸：图片不再按原图比例把消息撑长。 */
 export const USER_MESSAGE_IMAGE_THUMBNAIL = { width: 72, height: 56 } as const
@@ -178,7 +179,15 @@ function MentionedText({ text, mentions, t }: { text: string; mentions: FileMent
   )
 }
 
-export function UserMessage({ node, t }: { node: Extract<UINode, { kind: 'user' }>; t: Translate }) {
+export function UserMessage({
+  node,
+  t,
+  readAttachment,
+}: {
+  node: Extract<UINode, { kind: 'user' }>
+  t: Translate
+  readAttachment?: AttachmentReader | undefined
+}) {
   const value = node.content
     .filter(
       (block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text' && !block.reference,
@@ -202,7 +211,7 @@ export function UserMessage({ node, t }: { node: Extract<UINode, { kind: 'user' 
     <>
       <p className="node-label">{t('timeline.userLabel')}</p>
       <UserMessageImages node={node} t={t} />
-      <UserMessageFiles node={node} />
+      <UserMessageFiles node={node} t={t} readAttachment={readAttachment} />
       <UserMessageReferences node={node} t={t} />
       <MentionedText
         text={value}
@@ -216,7 +225,15 @@ export function UserMessage({ node, t }: { node: Extract<UINode, { kind: 'user' 
   )
 }
 
-export function UserMessageFiles({ node }: { node: Extract<UINode, { kind: 'user' }> }) {
+export function UserMessageFiles({
+  node,
+  t = (key) => key,
+  readAttachment,
+}: {
+  node: Extract<UINode, { kind: 'user' }>
+  t?: Translate
+  readAttachment?: AttachmentReader | undefined
+}) {
   const files = node.content.filter(
     (block) =>
       block.type === 'file' ||
@@ -239,8 +256,14 @@ export function UserMessageFiles({ node }: { node: Extract<UINode, { kind: 'user
         occurrences.set(key, occurrence + 1)
         return (
           <li key={`${key}:${occurrence}`} title={'name' in file ? file.name : ''}>
-            <span>{'name' in file ? file.name : ''}</span>
-            <small>{'mimeType' in file ? file.mimeType : ''}</small>
+            {storedAttachment(file) ? (
+              <AttachmentImage file={file} read={readAttachment} t={t} />
+            ) : (
+              <>
+                <span>{'name' in file ? file.name : ''}</span>
+                <small>{'mimeType' in file ? file.mimeType : ''}</small>
+              </>
+            )}
           </li>
         )
       })}

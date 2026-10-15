@@ -8,6 +8,7 @@ import type {
 } from '@agnes/protocol'
 import type { Session } from '@agnes/sdk'
 import type { TuiApp } from './app.js'
+import { uploadLocalAttachment } from './attachment-upload.js'
 import { inheritFreshSession, writeComposerMemoryFile } from './composer-memory.js'
 import { type ExtendedKey, tt } from './locale-extended.js'
 import { applyPlanCommand } from './plan-mode.js'
@@ -46,6 +47,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     descriptionKey: 'commands.model',
   },
   { name: '/yolo', descriptionKey: 'commands.yolo' },
+  { name: '/attach', args: '<path>', descriptionKey: 'commands.attach' },
   { name: '/export', descriptionKey: 'commands.export' },
   { name: '/refine', descriptionKey: 'commands.refine' },
   { name: '/packages', descriptionKey: 'commands.packages' },
@@ -92,6 +94,7 @@ export type SessionChoice = {
 export type SlashResult = {
   text?: string
   prompt?: string
+  content?: ContentBlock[]
   details?: boolean
   /** Long-lived local output belongs in the transcript; omitted text is a short status notice. */
   presentation?: 'transcript'
@@ -170,6 +173,11 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
   if (opens && app.refuseSwitch()) return {}
   const s = app.session
   const c = s.client
+  if (cmd === '/attach') {
+    const path = line.trim().slice('/attach'.length).trim()
+    if (!path) throw new Error('Usage: /attach <path>')
+    return { content: [await uploadLocalAttachment(s, app.cwd, path, app.attachmentSignal)] }
+  }
   const computerUseStatus = async (): Promise<SlashResult> => {
     const report = await c.call<ComputerUseStatusResult>('_agnes/v1/computerUse.status', {})
     return { text: renderComputerUseStatus(report), presentation: 'transcript' }

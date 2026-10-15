@@ -20,6 +20,7 @@ export interface ConversationMarkdownState {
 }
 
 export interface ConversationMessagesProps {
+  readAttachment?: import('./attachment-image.js').AttachmentReader | undefined
   /** Locale-bound translate injected by the host; called during render, never cached. */
   t: Translate
   /** The controller-owned projection window, in source order. */

@@ -1,6 +1,6 @@
-import { validateMethod } from '@agnes/protocol'
+import { attachmentLink, fromAcpPrompt, validateMethod } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
-import { toSessionUpdate } from '../src/local/project.js'
+import { toSessionUpdate, toSessionUpdates } from '../src/local/project.js'
 
 const actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }
 const ev = (type: string, data: unknown) =>
@@ -172,4 +172,25 @@ describe('toSessionUpdate', () => {
       { content: 'c', priority: 'medium', status: 'pending' },
     ])
   })
+})
+
+it('replays every stored image/file reference as bounded valid ACP blocks without original bytes', () => {
+  const blocks = [
+    { type: 'text' as const, text: 'see attachments' },
+    attachmentLink({ sha256: 'a'.repeat(64), size: 20000000, mime: 'image/png' }, 'photo.png', {
+      image: { width: 100, height: 50 },
+    }),
+    attachmentLink({ sha256: 'b'.repeat(64), size: 40000000, mime: 'application/pdf' }, 'report.pdf'),
+  ]
+  const updates = toSessionUpdates(ev('user/message', { kind: 'prompt', content: blocks }), { replay: true })
+  expect(updates).toHaveLength(3)
+  expect(fromAcpPrompt(updates.map((update) => update.payload.content))).toEqual(blocks)
+  for (const update of updates)
+    expect(
+      validateMethod('session/update', 'params', {
+        sessionId: 's',
+        update: { sessionUpdate: update.sessionUpdate, ...update.payload },
+      }).ok,
+    ).toBe(true)
+  expect(JSON.stringify(updates).length).toBeLessThan(2048)
 })

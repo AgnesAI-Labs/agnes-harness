@@ -207,6 +207,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               ? {
                   type: block.type,
                   uri: block.uri,
+                  ...(block.attachment ? { attachment: structuredClone(block.attachment) } : {}),
                   ...(block.name ? { name: block.name } : {}),
                   ...(block.mimeType ? { mimeType: block.mimeType } : {}),
                 }

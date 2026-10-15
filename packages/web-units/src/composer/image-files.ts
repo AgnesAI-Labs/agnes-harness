@@ -1,9 +1,5 @@
 import { userImagePolicy } from '@agnes/protocol'
-import {
-  decodeSafeImageBytes,
-  USER_MESSAGE_ATTACHMENT_LIMITS,
-  USER_MESSAGE_IMAGE_LIMITS,
-} from '@agnes/protocol-validation'
+import { USER_MESSAGE_ATTACHMENT_LIMITS, USER_MESSAGE_IMAGE_LIMITS } from '@agnes/protocol-validation'
 import { createRegionHost } from '@agnes/web-ui'
 import type { ComposerAttachmentBlock } from './contracts.js'
 
@@ -31,7 +27,7 @@ export const IMAGE_MAX_EDGE = 1456
 
 /**
  * 把长边超过 IMAGE_MAX_EDGE 的图片缩到该边长，格式和文件名保持不变。只对超限的图动手；
- * 浏览器可读但严格校验不接受的 JPEG 也会重新编码；正常小图保持原样。
+ * 正常小图（包括 EOI 后带尾迹的 JPEG）保持原样。
  * canvas 不可用或编码失败时原样返回，交给服务端按原图判定。
  */
 export async function downscaleImageFile(file: File, policy = userImagePolicy(undefined)): Promise<File> {
@@ -54,16 +50,7 @@ export async function downscaleImageFile(file: File, policy = userImagePolicy(un
     )
     const encodedSize = 4 * Math.ceil(file.size / 3)
     if (ratio === 1 && encodedSize <= (policy.maxBase64Bytes ?? Infinity)) {
-      if (file.type !== 'image/jpeg') return file
-      try {
-        decodeSafeImageBytes(
-          { bytes: new Uint8Array(await file.arrayBuffer()), mimeType: file.type },
-          IMAGE_PREVIEW_LIMITS,
-        )
-        return file
-      } catch {
-        // 浏览器已成功解码；通过 canvas 去掉尾部附加数据等不兼容结构。
-      }
+      return file
     }
     const canvas = createRegionHost(document.body, 'canvas') as HTMLCanvasElement
     canvas.remove()

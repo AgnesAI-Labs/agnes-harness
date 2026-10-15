@@ -8,6 +8,7 @@ import { type Component, escapeControl, Text, VStack } from './component.js'
 import { Loader } from './components/loader.js'
 import { writeComposerMemoryFile } from './composer-memory.js'
 import { Editor } from './editor.js'
+import { formatTuiErrorNotice } from './error-notice.js'
 import { formatTurnSummary } from './format-usage.js'
 import { parseKey } from './keys.js'
 import { type Locale, t } from './locale.js'
@@ -37,59 +38,13 @@ import { ToolCard } from './views/tool-card.js'
 import { UsagePanel } from './views/usage-panel.js'
 import { WelcomeBanner } from './views/welcome-banner.js'
 
-// `data.reason` is opaque transport input, not a display contract. Only exact, local business
-// rejections get an actionable explanation; every other reason stays out of the terminal.
-const ACTIONABLE_ERROR_REASONS: Readonly<Record<string, string>> = {
-  'SEMANTIC_REJECTED:fork boundary must be a completed turn/end': 'Choose a completed turn/end sequence.',
-}
-
-// TURN_ERROR is daemon's envelope for a turn that ran and ended in `error`; the cause is that turn's
-// own stable code (AUTH, RATE_LIMIT, ...). Its message stays out of the terminal like any reason.
-const TURN_ERROR_ACTIONS: ReadonlyMap<string, string> = new Map([
-  ['AUTH', 'The provider refused this model or its credentials; pick another with /model or sign in again.'],
-])
-
-const stableCode = (raw: unknown): string =>
-  typeof raw === 'string' || typeof raw === 'number'
-    ? String(raw)
-        .replace(/[^A-Za-z0-9_.-]/g, '')
-        .slice(0, 64)
-    : ''
-
-/** Formats stable codes and only locally approved business rejection explanations. */
-export function formatTuiErrorNotice(error?: unknown): string {
-  try {
-    if (error === null || typeof error !== 'object') return 'Request failed. Try again.'
-    const value = error as {
-      code?: unknown
-      data?: { code?: unknown; kind?: unknown; reason?: unknown; error?: { code?: unknown } }
-    }
-    const data = value.data
-    const code = stableCode(data?.code ?? data?.kind ?? value.code)
-    if (!code) return 'Request failed. Try again.'
-    let reason: unknown
-    try {
-      if (code === 'TURN_ERROR' || code === 'CONFIG_CREDENTIAL_REJECTED') {
-        const turnCode = code === 'CONFIG_CREDENTIAL_REJECTED' ? 'AUTH' : stableCode(data?.error?.code)
-        if (turnCode) {
-          const turnAction = TURN_ERROR_ACTIONS.get(turnCode)
-          return turnAction ? `Request failed (${turnCode}): ${turnAction}` : `Request failed (${turnCode}).`
-        }
-      }
-      reason = data?.reason
-    } catch {
-      return `Request failed (${code}).`
-    }
-    const action = typeof reason === 'string' ? ACTIONABLE_ERROR_REASONS[`${code}:${reason}`] : undefined
-    if (action) return `Request failed (${code}): ${action}`
-    return `Request failed (${code}).`
-  } catch {
-    // Getters and Proxies are untrusted presentation input.
-    return 'Request failed. Try again.'
-  }
-}
+export { formatTuiErrorNotice } from './error-notice.js'
 
 export class TuiApp {
+  private attachmentController = new AbortController()
+  get attachmentSignal(): AbortSignal {
+    return this.attachmentController.signal
+  }
   private surfacePrompt: UiSurfaceRecord | undefined
   private surfaceCommand: Omit<UiActionParams, 'sessionId'> | undefined
   private readingSurfaces: Session | undefined
@@ -868,7 +823,12 @@ export class TuiApp {
    * through `runInput()` above, which owns the `.catch((error) => this.showError(error))`. */
   async command(text: string): Promise<void> {
     if (this.stopped) return
+    const owner = this.o.session
     const r = await runSlash(this, text)
+    if (r.content) {
+      if (this.stopped || owner !== this.o.session) throw new Error('ATTACHMENT_NOT_AUTHORIZED')
+      await this.submitBlocks(r.content)
+    }
     if (r.prompt) await this.submit(r.prompt)
     if (r.details && r.text !== undefined) {
       this.statusBar.setNotice(undefined)
@@ -929,6 +889,8 @@ export class TuiApp {
     this.surfaceVersions.clear()
     this.surfaceWatermark = 0
     this.surfaceReadAgain = false
+    this.attachmentController.abort()
+    this.attachmentController = new AbortController()
     this.o.session = next
     this.previews.reset()
     this.previewEffects.length = 0
@@ -1014,13 +976,23 @@ export class TuiApp {
       this.renderer.requestRender()
       return
     }
-    const blocks = attachmentsFrom(text)
+    await this.submitBlocks(attachmentsFrom(text))
+  }
+
+  private async submitBlocks(blocks: import('@agnes/protocol').ContentBlock[]): Promise<void> {
     if (this.busy) {
       // The daemon's followUp endpoint durably enqueues input, but this TUI has no background
       // turn runner to wake that queue after the current turn ends. Keep the draft locally and
       // dispatch it as an ordinary prompt on the first idle projection instead.
       this.pendingPrompts.push(blocks)
-      this.statusBar.setNotice(`Queued: ${escapeControl(text)}`)
+      this.statusBar.setNotice(
+        `Queued: ${escapeControl(
+          blocks
+            .filter((b) => b.type === 'text')
+            .map((b) => b.text)
+            .join(' ') || 'attachment',
+        )}`,
+      )
       this.renderer.requestRender()
       this.wakeQueuedPrompt()
       return
@@ -1083,12 +1055,15 @@ export class TuiApp {
   }
 
   async cancel(): Promise<void> {
+    this.attachmentController.abort()
+    this.attachmentController = new AbortController()
     if (this.busy) await this.o.session.cancel()
   }
 
   async stop(): Promise<void> {
     if (this.stopped) return
     this.stopped = true
+    this.attachmentController.abort()
     if (this.queuedWake) clearTimeout(this.queuedWake)
     this.queuedWake = undefined
     this.stopTicker()

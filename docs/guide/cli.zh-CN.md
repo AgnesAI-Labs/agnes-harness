@@ -56,3 +56,6 @@ TUI `/package` 与 shell `package` 的子命令集合不完全相同，例如更
 | 130 / 143 / 129 | SIGINT / SIGTERM / SIGHUP |
 
 实现依据：[参数与 usage](../../packages/cli/src/args.ts)、[退出码](../../packages/cli/src/errors.ts)、[TUI 命令](../../packages/cli-tui/src/commands.ts)。
+
+
+在 TUI 中使用 `/attach <path>` 分块上传原件，并将回执作为 prompt 提交。路径可含空格。失败保留后端附件原因；回执属于当前会话，上传完成前切换会话会拒绝提交。
