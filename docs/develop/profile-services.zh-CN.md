@@ -63,3 +63,15 @@ await client.extensions.wakes.enqueue({
 `context.admission.prepared` 是 Host 固定并冻结的准备结果，供领域适配器核对最终下发的参数与资源修订号。`store.scan({ prefix, limit, cursor? })` 按键分页返回 1–256 行，查询与准备阶段仍只有只读权限。
 
 准备结果和完整的原生审批请求各有 128 KiB 上限；合并后的原始参数、准备参数和展示数据超限时，会在 dispatch 前拒绝。审批卡显示完整的有界主体。
+
+## 当前 profile 的受管理资源
+
+已安装且受信任的插件可注入 `profileRuntime`，声明 profile 范围的 `managedServices`、`artifact: { kind: 'in-process' }`、经审查的回环监听地址和有界启停期限。`ctx.profileRuntime.register({ id, configSchema, defaultConfig, start, check? })` 只注册 factory；staged 与 pinned 树不启动资源，只有当前 profile 发布后才在共享 Host worker 中启动。替换先完成旧资源停机，`handle.get()` 拒绝过时或未就绪的资源。此路径属于受信任的进程内执行；Node/OCI artifact 仍使用独立进程 supervisor。
+
+`start(init)` 接收 owner 隔离存储、绑定通知、选定监听端口、已校验配置及生命周期 signal。绑定监听前须安装 `init.onShutdown`，恢复与绑定完成后才调用 `init.ready()`。停机须确认收敛，持久化的未确认停机标记阻止重新启动。通用 `listenerPorts` 配置仅能为 `auto` 监听选择端口，不能改变 host 或覆盖已审查的固定端口。
+
+Host 将 `<id>.status`、`<id>.configuration`、`<id>.check`、`<id>.retry`、`<id>.configure` 注册为普通 profile 服务，客户端须逐项列入 allowlist。状态只暴露公开监听地址；配置和重试保留原生批准。插件提供的 check 通过同一接口报告领域健康。
+
+流声明通过 `ctx.profileRuntime.streams.register(name, handler)` 注册。本地 launcher 将同源 stream gateway 经私有连接转接到共享 worker，分发前校验当前 roster、scope、输入 schema、actor 和原生控制 grant。浏览器不会获得 worker 私有端点及连接证明。通用传输实现位于 `@agnes/plugin-streams`，`@agnes/daemon-rpc/streams` 保留兼容入口。
+
+示例 facade 分开展示安装状态与受管理运行就绪状态。Stop 经插件管理禁用选中的已安装子示例；关系元数据仅筛选候选，不将父插件服务权限授予子插件。

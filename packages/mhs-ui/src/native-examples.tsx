@@ -18,6 +18,10 @@ export function nativeExamples(ctx: ClientContext): ExamplesPort {
                     ? 'failed'
                     : 'disabled',
             code: string | undefined
+          if (example.installation === 'enabled' && example.runtime) {
+            state = example.runtime.state === 'unavailable' ? 'installed' : example.runtime.state
+            code = example.runtime.code
+          }
           const operation = operations.get(example.id)
           if (operation) {
             const receipt = await ctx.profile.examples.read(operation)
@@ -57,8 +61,9 @@ export function nativeExamples(ctx: ClientContext): ExamplesPort {
       const operation = await ctx.profile.examples.enable(reviewId, crypto.randomUUID())
       operations.set(id, operation.operationId)
     },
-    async stop() {
-      throw new Error('example-runtime-unavailable')
+    async stop(id) {
+      await ctx.profile.examples.stop(id, crypto.randomUUID())
+      operations.delete(id)
     },
     async prepare(id) {
       const example = (await ctx.profile.examples.list()).find((e) => e.id === id),

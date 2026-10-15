@@ -1,8 +1,17 @@
-import { checkToolDef, type ToolContext } from '@agnes/extension-api'
+import { readFileSync } from 'node:fs'
+import { checkToolDef, managedServiceCapabilities, type ToolContext } from '@agnes/extension-api'
 import { Hub, North } from '@agnes/mhs-hub'
 import { describe, expect, it, vi } from 'vitest'
 import { attach, authority, invocation, MemoryStore } from '../../mhs-hub/test/fixtures.js'
-import { createMhsTools, mhsServices, mhsStreams, startMhsHub } from '../src/index.js'
+import {
+  createMhsNativeProfileAdapter,
+  createMhsTools,
+  MHS_HUB_CHECK_SCHEMA,
+  MHS_HUB_CONFIG_SCHEMA,
+  mhsServices,
+  mhsStreams,
+  startMhsHub,
+} from '../src/index.js'
 
 describe('MHS author adapters', () => {
   it('registers seven valid tools, keeps writes approved, and returns model stills through request-media', async () => {
@@ -61,6 +70,14 @@ describe('MHS author adapters', () => {
       'unwatch_device',
     ])
     for (const tool of tools) expect(checkToolDef(tool), tool.name).toEqual({ ok: true })
+    const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+    const declared = createMhsNativeProfileAdapter(async () => {})
+      .definitions(north)
+      .map(({ handler: _handler, prepare: _prepare, ...capability }) => capability)
+    expect(manifest.agnes.plugins[0].capabilities.services).toEqual([
+      ...declared,
+      ...managedServiceCapabilities('hub', MHS_HUB_CONFIG_SCHEMA, MHS_HUB_CHECK_SCHEMA),
+    ])
     for (const name of ['call_device', 'set_device'])
       expect(tools.find((t) => t.name === name)?.meta).toMatchObject({
         requiresApproval: 'always',

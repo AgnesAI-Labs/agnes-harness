@@ -225,7 +225,14 @@
       "source": "https://github.com/websockets/ws",
       "purpose": "WebSocket client transport and authenticated daemon listener.",
       "rationale": "Supplies the Node WebSocket implementation needed where the browser-native API is unavailable.",
-      "consumers": ["packages/daemon", "packages/daemon-rpc", "packages/sdk", "packages/mhs-hub"]
+      "consumers": [
+        "packages/daemon",
+        "packages/daemon-rpc",
+        "packages/sdk",
+        "packages/mhs-hub",
+        "packages/mhs-plugin",
+        "packages/plugin-streams"
+      ]
     },
     {
       "name": "yaml",

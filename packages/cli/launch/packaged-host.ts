@@ -292,6 +292,7 @@ export async function createPackagedHost(
     entryFile: string
   } & Pick<
     HostOptions,
+    | 'boundWakes'
     | 'skillResources'
     | 'skillInstall'
     | 'runtimePluginSnapshots'

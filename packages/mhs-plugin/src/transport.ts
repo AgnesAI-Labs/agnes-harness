@@ -31,11 +31,11 @@ export function startManagedMhsHub(
 /** Register MHS handlers on the generic gateway. The reviewed declarations own limits/scope.
  * bindControl resolves the exact admitted device and Hub lease; no authority comes from input. */
 export function registerMhsStreams(
-  north: North,
+  north: North | (() => Promise<North>),
   streams: PluginStreamsPort,
   bindControl: (context: StreamContext) => Promise<{ grantId: string; device: string; leaseId: string }>,
 ): () => void {
-  const handlers = mhsStreams(north)
+  const getHandlers = async () => mhsStreams(typeof north === 'function' ? await north() : north)
   const releases: (() => void)[] = []
   const owned = (context: StreamContext, release: () => void) => {
     if (context.signal.aborted) {
@@ -46,7 +46,9 @@ export function registerMhsStreams(
   }
   try {
     releases.push(
-      streams.register('mhs.events', (_input, context) => {
+      streams.register('mhs.events', async (_input, context) => {
+        const handlers = await getHandlers()
+        context.signal.throwIfAborted()
         owned(
           context,
           handlers.events((event) => context.stream.send(event as Json), context.signal),
@@ -55,6 +57,8 @@ export function registerMhsStreams(
     )
     releases.push(
       streams.register('mhs.media', async (input, context) => {
+        const handlers = await getHandlers()
+        context.signal.throwIfAborted()
         const data = object(input)
         if (typeof data.device !== 'string' || typeof data.source !== 'string')
           throw new MhsError('invalid-media-binding')
@@ -85,6 +89,7 @@ export function registerMhsStreams(
     )
     releases.push(
       streams.register('mhs.control', async (_input, context) => {
+        const handlers = await getHandlers()
         if (!context.control) throw new MhsError('control-admission-required')
         const binding = await bindControl(context)
         context.signal.throwIfAborted()

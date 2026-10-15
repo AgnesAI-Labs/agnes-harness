@@ -66,6 +66,8 @@ export function createHostServices(
     }),
   })
   const profileServices = createProfileServiceRuntime({
+    streams: proc.profileStreams,
+    managed: proc.profileManaged,
     barrier: ctx.activationBarrier,
     journalKey: `${ctx.dataDir}/profile:${ctx.profile.name}`,
     publishCurrent: input.publishProfileCurrent,

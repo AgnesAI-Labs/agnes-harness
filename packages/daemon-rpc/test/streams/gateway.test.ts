@@ -1,10 +1,13 @@
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import type { StreamContext } from '@agnes/extension-api'
+import {
+  createPluginStreamBroker,
+  createPluginStreamGateway,
+  type StreamPrincipal,
+} from '@agnes/plugin-streams'
 import { afterEach, describe, expect, it } from 'vitest'
 import { WebSocket } from 'ws'
-import { createPluginStreamBroker, type StreamPrincipal } from '../../src/streams/broker.js'
-import { createPluginStreamGateway } from '../../src/streams/gateway.js'
 
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => {

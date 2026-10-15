@@ -459,6 +459,7 @@ export function createManagedServiceSupervisor(options: {
   }
 }
 function deployment(binding: ReviewedManagedService, sourceId: string): ResolvedDeployment {
+  if (binding.descriptor.artifact.kind === 'in-process') throw new ManagedServiceError('REFUSED')
   return {
     id: 'managed',
     version: binding.descriptor.apiVersion,

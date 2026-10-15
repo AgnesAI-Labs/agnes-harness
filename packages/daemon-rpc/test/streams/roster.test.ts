@@ -1,7 +1,7 @@
+import type { StreamPrincipal, StreamRegistration } from '@agnes/plugin-streams'
+import { createRosterStreamAuthorizer } from '@agnes/plugin-streams'
 import type { ClientModuleRosterRow, PluginStreamOpen } from '@agnes/protocol'
 import { expect, it } from 'vitest'
-import type { StreamPrincipal, StreamRegistration } from '../../src/streams/broker.js'
-import { createRosterStreamAuthorizer } from '../../src/streams/roster.js'
 
 it('uses the real contribution binding and exact row allowlist, revoking stale profile and pinned clients', async () => {
   const signal = new AbortController().signal
@@ -88,6 +88,17 @@ it('uses the real contribution binding and exact row allowlist, revoking stale p
     expect(() => admission.assertCurrent()).toThrow()
     await expect(authorize(principal, request, registration)).rejects.toThrow()
   }
+  current = { ...row, binding: { ...row.binding, activationId: 'ui-epoch' } }
+  let backendEpoch = 'active'
+  const independent = createRosterStreamAuthorizer({
+    async resolve() {
+      return { current: () => current, backendActivationId: () => backendEpoch, signal, assertScope() {} }
+    },
+  })
+  const bridged = await independent(principal, request, registration)
+  bridged.assertCurrent()
+  backendEpoch = 'revoked'
+  expect(() => bridged.assertCurrent()).toThrow()
   current = row
   inScope = false
   expect(() => admission.assertCurrent()).toThrow('scope refused')

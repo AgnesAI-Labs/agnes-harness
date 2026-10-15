@@ -24,7 +24,12 @@
       "mhs.lease",
       "mhs.configure",
       "mhs.resume",
-      "mhs.cancel"
+      "mhs.cancel",
+      "hub.status",
+      "hub.configuration",
+      "hub.retry",
+      "hub.configure",
+      "hub.check"
     ],
     "projections": [],
     "publicConfig": {},

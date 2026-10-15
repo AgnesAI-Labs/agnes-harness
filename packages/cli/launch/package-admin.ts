@@ -44,6 +44,7 @@ import type { LocalBackend } from './backend.js'
 import { localClientExamples } from './client-examples.js'
 import { contextAdmin } from './context-admin.js'
 import { doctorAdmin } from './doctor-admin.js'
+import { pluginStreamProxy } from './plugin-stream-proxy.js'
 import { profileServiceRelay } from './profile-service-relay.js'
 
 const CLIENT_SERVICE_PATH = '/api/client-modules/service'
@@ -492,6 +493,13 @@ export function localPackageAdmin(
       await initialize()
       return await client.clientModules.callEffect(input)
     },
+    pluginStreams: pluginStreamProxy({
+      client,
+      origin,
+      profile: backend.scope.profile,
+      initialize,
+      body: jsonBody,
+    }),
     async handleClientService(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
       if (
         await profileServiceRelay({

@@ -1,3 +1,4 @@
+export * from './config.js'
 export * from './native-profile.js'
 export * from './owned-store.js'
 export * from './runtime.js'

@@ -49,7 +49,9 @@
     "./profile/runtime": "./src/profile/runtime.ts",
     "./profile/activation": "./src/profile/activation.ts",
     "./profile/owned-store": "./src/profile/owned-store.ts",
-    "./profile/wakes": "./src/profile/wakes.ts"
+    "./profile/wakes": "./src/profile/wakes.ts",
+    "./profile/managed": "./src/profile/managed.ts",
+    "./profile/streams": "./src/profile/streams.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",

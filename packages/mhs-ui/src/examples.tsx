@@ -22,7 +22,8 @@ export function ExamplesPage({ initialScene }: { initialScene?: string }) {
     selected = query.value?.find((e) => e.id === scene)
   useEffect(() => port?.subscribe(query.retry), [port, query.retry])
   useEffect(() => {
-    if (!query.value?.some((e) => e.state === 'starting')) return
+    if (!query.value?.some((e) => e.state === 'starting' || e.state === 'running' || e.state === 'installed'))
+      return
     const timer = setTimeout(query.retry, 1000)
     return () => clearTimeout(timer)
   }, [query.value, query.retry])

@@ -1,0 +1,49 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist/test",
+    "tsBuildInfoFile": "dist/tsconfig.test.tsbuildinfo"
+  },
+  "include": ["test/**/*.ts"],
+  "references": [
+    {
+      "path": "."
+    },
+    {
+      "path": "../host/tsconfig.testkit.json"
+    },
+    {
+      "path": "../host-extensions"
+    },
+    {
+      "path": "../sdk"
+    },
+    {
+      "path": "../daemon-rpc"
+    },
+    {
+      "path": "../mhs-ui"
+    },
+    {
+      "path": "../package-manager"
+    },
+    {
+      "path": "../plugin-runtime"
+    },
+    {
+      "path": "../worker-runtime"
+    },
+    {
+      "path": "../mhs-hub/tsconfig.test.json"
+    },
+    {
+      "path": "../core/tsconfig.testkit.json"
+    },
+    {
+      "path": "../cordis"
+    },
+    {
+      "path": "../web-client"
+    }
+  ]
+}

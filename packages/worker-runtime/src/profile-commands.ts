@@ -1,6 +1,7 @@
 import { enqueueSystemInput, type Host, type HostSession } from '@agnes/host'
 import { type Actor, rpcError } from '@agnes/protocol'
 import type { WorkerCommandFrame } from './frames.js'
+import { profileStreamEndpoint } from './profile-stream-server.js'
 
 export async function deliverBoundSystemInput(
   session: HostSession,
@@ -31,9 +32,25 @@ export async function profileServiceCommand(
 ): Promise<unknown> {
   const p = cmd.params
   switch (cmd.method) {
+    case 'profileManaged.status': {
+      const manager = host?.profileServices?.managed
+      if (!manager) throw rpcError('CAPABILITY_DENIED')
+      await manager.settle().catch(() => undefined)
+      return {
+        resources: manager
+          .statuses(String(p.packageId))
+          .map(({ id, state, code }) => ({ id, state, ...(code ? { code } : {}) })),
+      }
+    }
+    case 'profileStreams.endpoint':
+      if (!host) throw rpcError('CAPABILITY_DENIED')
+      return profileStreamEndpoint(host, String(p.origin))
     case 'boundWake.resolve':
       if (!host?.profileServices) throw rpcError('CAPABILITY_DENIED')
       return host.profileServices.resolveWake(String(p.bindingId), p.credential)
+    case 'boundWake.read':
+      if (!host?.profileServices) throw rpcError('CAPABILITY_DENIED')
+      return host.profileServices.readWake(String(p.bindingId))
     case 'boundWake.require':
       if (!host?.profileServices) throw rpcError('CAPABILITY_DENIED')
       return host.profileServices.requireWake(String(p.bindingId))
@@ -84,3 +101,8 @@ export async function profileServiceCommand(
       throw rpcError('CAPABILITY_DENIED')
   }
 }
+
+export const isProfileCommand = (method: string) =>
+  ['profileManaged.', 'profileStreams.', 'profileService.', 'boundWake.'].some((prefix) =>
+    method.startsWith(prefix),
+  )

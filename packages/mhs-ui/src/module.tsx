@@ -5,6 +5,7 @@ import { cardCall, SessionDevices, ToolCard } from './cards.js'
 import { MhsClient } from './client.js'
 import { catalog, type TextKey } from './locales.js'
 import { TOOL_NAMES, toolsFrom } from './model.js'
+import { nativeDeveloper } from './native-developer.js'
 import { nativeExamples } from './native-examples.js'
 import { MhsPage } from './page.js'
 import type { MhsModuleContext, MhsPorts } from './ports.js'
@@ -170,7 +171,7 @@ export function apply(ctx: ClientContext) {
     services: profileServices(ctx.profile.services),
     streams: ctx.profile.streams,
     session: ctx.session,
-    ...(ctx.profile.mhsDeveloper ? { developer: ctx.profile.mhsDeveloper } : {}),
-    examples: ctx.profile.mhsExamples ?? nativeExamples(ctx),
+    developer: nativeDeveloper(ctx),
+    examples: nativeExamples(ctx),
   }).apply(ctx)
 }

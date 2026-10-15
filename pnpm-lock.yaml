@@ -671,6 +671,9 @@ importers:
       '@agnes/observability':
         specifier: workspace:*
         version: link:../observability
+      '@agnes/plugin-streams':
+        specifier: workspace:*
+        version: link:../plugin-streams
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
@@ -1123,24 +1126,48 @@ importers:
         specifier: 0.34.33
         version: 0.34.33
     devDependencies:
+      '@agnes/cordis':
+        specifier: workspace:*
+        version: link:../cordis
       '@agnes/core':
         specifier: workspace:*
         version: link:../core
       '@agnes/daemon-rpc':
         specifier: workspace:*
         version: link:../daemon-rpc
+      '@agnes/host':
+        specifier: workspace:*
+        version: link:../host
       '@agnes/host-extensions':
         specifier: workspace:*
         version: link:../host-extensions
       '@agnes/mhs-ui':
         specifier: workspace:*
         version: link:../mhs-ui
+      '@agnes/package-manager':
+        specifier: workspace:*
+        version: link:../package-manager
+      '@agnes/plugin-runtime':
+        specifier: workspace:*
+        version: link:../plugin-runtime
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
       '@agnes/sdk':
         specifier: workspace:*
         version: link:../sdk
+      '@agnes/web-client':
+        specifier: workspace:*
+        version: link:../web-client
+      '@agnes/worker-runtime':
+        specifier: workspace:*
+        version: link:../worker-runtime
+      '@types/ws':
+        specifier: 8.18.1
+        version: 8.18.1
+      ws:
+        specifier: 8.21.3
+        version: 8.21.3
 
   packages/mhs-ui:
     dependencies:
@@ -1302,6 +1329,22 @@ importers:
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
+
+  packages/plugin-streams:
+    dependencies:
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
+      '@agnes/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      ws:
+        specifier: 8.21.3
+        version: 8.21.3
+    devDependencies:
+      '@types/ws':
+        specifier: 8.18.1
+        version: 8.18.1
 
   packages/protocol:
     dependencies:
@@ -1769,6 +1812,9 @@ importers:
       '@agnes/plugin-runtime':
         specifier: workspace:*
         version: link:../plugin-runtime
+      '@agnes/plugin-streams':
+        specifier: workspace:*
+        version: link:../plugin-streams
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol

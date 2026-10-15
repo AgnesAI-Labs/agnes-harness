@@ -64,6 +64,7 @@ const LAYER: Record<string, number> = {
   '@agnes/cordis': -1,
   '@agnes/cordis-loader': 0,
   '@agnes/plugin-runtime': 1,
+  '@agnes/plugin-streams': 2, // Pure authenticated transport shared by worker and daemon.
   '@agnes/web-slots': -1,
   // UI component layer (web-ui component system, spec 2026-09-24): the only package allowed to
   // import antd/@ant-design (enforced by ui-layer.test.ts). Sits just above protocol so it can

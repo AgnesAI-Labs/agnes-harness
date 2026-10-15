@@ -43,6 +43,8 @@ import { retainProfileJournal } from './shared-journal.js'
 
 export type ProfileServiceRuntime = ReturnType<typeof createProfileServiceRuntime>
 export function createProfileServiceRuntime(deps: {
+  streams?: import('./streams.js').ProfileStreams
+  managed?: import('./managed.js').ProfileManagedResources
   barrier?: import('../ext-host/activation-barrier.js').ExtensionActivationBarrier
   journalKey?: string
   publishCurrent?: () => void
@@ -469,6 +471,9 @@ export function createProfileServiceRuntime(deps: {
     return pending
   }
   return Object.freeze({
+    signal: deps.signal,
+    streams: deps.streams,
+    managed: deps.managed,
     publishCurrent() {
       deps.publishCurrent?.()
     },
@@ -543,6 +548,10 @@ export function createProfileServiceRuntime(deps: {
     revokeWakeSession(sessionId: string) {
       if (!deps.wakes || closed) throw rpcError('CAPABILITY_DENIED')
       deps.wakes.revokeSession(sessionId)
+    },
+    readWake(bindingId: string) {
+      if (!deps.wakes || closed || deps.signal.aborted) throw rpcError('CAPABILITY_DENIED')
+      return deps.wakes.read(bindingId)
     },
     requireWake(bindingId: string) {
       if (!deps.wakes || closed || deps.signal.aborted) throw rpcError('CAPABILITY_DENIED')

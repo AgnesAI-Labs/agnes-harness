@@ -26,6 +26,7 @@ export type ClientStream = Awaited<ReturnType<Streams['open']>>
 export interface HubStatus {
   state: 'starting' | 'ready' | 'stopping' | 'failed' | 'shutdown-unconfirmed'
   code?: string
+  devicePort?: number | 'auto'
   /** Public device SDK endpoints, never browser stream URLs or connection credentials. */
   endpoints?: { command: string; observation: string }
 }
@@ -33,7 +34,7 @@ export interface DeveloperPort {
   status(signal: AbortSignal): Promise<HubStatus>
   retry(): Promise<void>
   /** Host-owned, reviewed configuration interface. No direct socket or arbitrary URL fetch. */
-  configureExternal?(): Promise<void>
+  configure?(port?: number | 'auto'): Promise<void>
   check(
     device: string,
     signal: AbortSignal,
@@ -74,8 +75,6 @@ export type MhsModuleContext = ClientContext & {
   profile: {
     services: HostProfileServices
     streams: Streams
-    mhsDeveloper?: DeveloperPort
-    mhsExamples?: ExamplesPort
   }
   homeEntries: { register(entry: HomeEntry & { placement: 'primary' }): () => void }
   availability: {

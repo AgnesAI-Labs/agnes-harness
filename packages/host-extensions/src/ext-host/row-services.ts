@@ -23,6 +23,7 @@ import {
   validateSlotPayload,
 } from '@agnes/protocol'
 import { ResourceEntry as ResourceSchema } from '@agnes/protocol/gen/hooks'
+import { installProfileRuntime } from '../profile/row-runtime.js'
 import { compileExtensionSchema } from './json-schema.js'
 import { mapResult } from './map-result.js'
 import type { KernelPorts } from './ports.js'
@@ -64,6 +65,7 @@ export function createRowServiceHost(
   describePackage: (
     packageId: string,
     snapshotId: string,
+    exportName?: string,
   ) =>
     | Readonly<{
         version?: string
@@ -71,6 +73,7 @@ export function createRowServiceHost(
         declaredCapabilities?: import('@agnes/protocol').PluginCapabilities
       }>
     | undefined,
+  profileRuntime?: Parameters<typeof installProfileRuntime>[2],
 ) {
   let ports: KernelPorts | undefined
   const pending = new Set<() => void>()
@@ -78,6 +81,7 @@ export function createRowServiceHost(
 
   return Object.freeze({
     installRoot(root: Context, origins: RowOriginLookup): void {
+      if (profileRuntime) installProfileRuntime(root, origins, profileRuntime)
       const contribution: RowServiceContribution = {
         register(this: { ctx: Context }, def) {
           const found = nearestRow(this.ctx.fiber, origins)
@@ -92,7 +96,7 @@ export function createRowServiceHost(
           }
           alive()
           const owner = pluginRowSource(origin.rowId)
-          const description = describePackage(origin.packageId, origin.snapshotId)
+          const description = describePackage(origin.packageId, origin.snapshotId, origin.exportName)
           const version = description?.version ?? '0.0.0'
           return fiber.effect(() => {
             const ac = new AbortController()

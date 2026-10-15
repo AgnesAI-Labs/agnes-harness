@@ -31,7 +31,7 @@ import type { SessionCommandFrame, WorkerCommandFrame } from './frames.js'
 import { GRANT_COMMANDS, grantCommand } from './grant-commands.js'
 import type { McpRowRuntime } from './mcp-row-runtime.js'
 import { noticeConnectingMcp } from './mcp-turn-notice.js'
-import { deliverBoundSystemInput, profileServiceCommand } from './profile-commands.js'
+import { deliverBoundSystemInput, isProfileCommand, profileServiceCommand } from './profile-commands.js'
 import { sessionReferences } from './references.js'
 import { refreshSkills } from './skills-refresh.js'
 import { readToolDetailPage } from './tool-detail.js'
@@ -786,8 +786,7 @@ export async function handleServiceCommand(
     return { profileHash: (cmd.params.profile as ResolvedProfile).hash }
   }
   const p = cmd.params
-  if (cmd.method.startsWith('profileService.') || cmd.method.startsWith('boundWake.'))
-    return profileServiceCommand(host, cmd, aborts)
+  if (isProfileCommand(cmd.method)) return profileServiceCommand(host, cmd, aborts)
   switch (cmd.method) {
     case 'ping':
       return { ok: true }

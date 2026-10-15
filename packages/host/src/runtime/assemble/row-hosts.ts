@@ -98,10 +98,12 @@ export function createRowHosts(
     audit: say,
     order: extensionOrder,
     owners: extensionOwners,
-    describePackage: (packageId, snapshotId) => {
+    describePackage: (packageId, snapshotId, exportName) => {
       const description = pluginCatalogue.describe(packageId, snapshotId)
       const source = pluginCatalogue.get(packageId, snapshotId)
-      const declaredCapabilities = source ? readPluginCapabilities(source.snapshot.directory) : undefined
+      const declaredCapabilities = source
+        ? readPluginCapabilities(source.snapshot.directory, exportName)
+        : undefined
       return (
         description && {
           ...description,
@@ -110,11 +112,20 @@ export function createRowHosts(
       )
     },
   })
-  const rowServices = createRowServiceHost((packageId, snapshotId) => {
+  const describeServices = (packageId: string, snapshotId: string, exportName?: string) => {
     const description = pluginCatalogue.describe(packageId, snapshotId)
     const source = pluginCatalogue.get(packageId, snapshotId)
-    const declaredCapabilities = source ? readPluginCapabilities(source.snapshot.directory) : undefined
+    const declaredCapabilities = source
+      ? readPluginCapabilities(source.snapshot.directory, exportName)
+      : undefined
     return description && { ...description, ...(declaredCapabilities ? { declaredCapabilities } : {}) }
+  }
+  const rowServices = createRowServiceHost(describeServices, {
+    managed: proc.profileManaged,
+    streams: proc.profileStreams,
+    namespace: (owner, name) =>
+      proc.adapters.storage.metadata.namespace(owner, `profile:${ctx.profile.name}:${name}`),
+    describe: describeServices,
   })
   // Like a loader importing by name at update time: each target sees what is installed now.
   const refreshPluginCatalogue = async () => {

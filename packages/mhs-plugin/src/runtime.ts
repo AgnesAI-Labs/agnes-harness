@@ -1,7 +1,11 @@
 import type { PluginContextFacets } from '@agnes/extension-api'
-import { MhsError } from '@agnes/mhs-device'
+import { object } from '@agnes/mhs-device'
 import { type Authority, type BoundWakes, Hub, North, type OwnedStore, South } from '@agnes/mhs-hub'
+import { MHS_HUB_CHECK_SCHEMA, MHS_HUB_CONFIG_SCHEMA } from './config.js'
+import { createMhsNativeProfileAdapter } from './native-profile.js'
+import { mhsOwnedStore } from './owned-store.js'
 import { type MhsConnector, registerMhsTools } from './tools.js'
+import { registerMhsStreams } from './transport.js'
 
 export const MHS_HUB_API_VERSION = '1.0.0'
 
@@ -82,10 +86,74 @@ export function createMhsPlugin(connector: MhsConnector) {
     },
   }
 }
-/** The profile managed connector is not wired on older Hosts; refuse instead of bypassing it. */
+/** The installed plugin runs on the Host's current-profile managed resource owner. */
 export const mhsPlugin = {
-  inject: ['tools', 'hooks'],
-  apply(): never {
-    throw new MhsError('E_MHS_MANAGED_CONNECTOR_REQUIRED')
+  inject: ['tools', 'hooks', 'services', 'profileRuntime'],
+  apply(ctx: Pick<PluginContextFacets, 'tools' | 'hooks' | 'services' | 'profileRuntime'>) {
+    let current: (() => void) | undefined
+    const adapter = createMhsNativeProfileAdapter(async () => {
+      if (!current) throw new Error('hub-unavailable')
+      current()
+    })
+    const resource = ctx.profileRuntime.register({
+      id: 'hub',
+      configSchema: MHS_HUB_CONFIG_SCHEMA,
+      defaultConfig: { listenerPorts: { device: 'auto' } },
+      checkSchema: MHS_HUB_CHECK_SCHEMA,
+      async start(init) {
+        const deviceListener = init.listeners.device
+        if (!deviceListener) throw new Error('device-listener-required')
+        current = init.assertCurrent
+        const hub = await startMhsHub({
+          authority: adapter.authority,
+          wakes: init.wakes,
+          store: mhsOwnedStore(init.store),
+          devicePort: deviceListener.port,
+          signal: init.signal,
+          ready: async () => init.ready(),
+          onShutdown: (handler) => init.onShutdown((reason) => handler(reason, AbortSignal.timeout(5000))),
+        })
+        return { north: hub.north, signal: init.signal }
+      },
+      async check({ north }, input) {
+        const device = object(input).device
+        const devices = await north.hub.list()
+        const row = devices.find((d) => d.id === device)
+        return [
+          { name: 'registration', state: row ? 'passed' : 'failed' },
+          { name: 'connection', state: row?.available ? 'passed' : 'failed' },
+          { name: 'health', state: row?.health === 'ok' ? 'passed' : 'unknown' },
+        ]
+      },
+    })
+    const north = async () => (await resource.get()).north
+    adapter.register(ctx, north)
+    const streams = ctx.profileRuntime.streams
+    const disposeStreams = registerMhsStreams(
+      north,
+      {
+        register: (name, handler) =>
+          streams.register(name, async (input, context) => {
+            const running = await resource.get()
+            const signal = AbortSignal.any([context.signal, running.signal])
+            const close = () => context.stream.close('runtime-replaced')
+            running.signal.addEventListener('abort', close, { once: true, signal: context.signal })
+            if (running.signal.aborted) close()
+            signal.throwIfAborted()
+            await handler(input, { ...context, signal })
+          }),
+      },
+      adapter.bindControl,
+    )
+    registerMhsTools(ctx, {
+      north,
+      invocation: (context, method, input) =>
+        adapter.toolInvocation(context, method ?? '', input ?? {}, north),
+      async bindWake(context) {
+        if (!context.wake) throw new Error('wake-binding-unavailable')
+        return context.wake.bind()
+      },
+    })
+    return disposeStreams
   },
 }

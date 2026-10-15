@@ -8347,9 +8347,7 @@
     "PluginStreamsEndpointParams": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "origin"
-      ],
+      "required": ["origin"],
       "properties": {
         "origin": {
           "type": "string",
@@ -8361,11 +8359,7 @@
     "PluginStreamsEndpointResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "host",
-        "port",
-        "proof"
-      ],
+      "required": ["host", "port", "proof"],
       "properties": {
         "host": {
           "const": "127.0.0.1"
@@ -8384,9 +8378,7 @@
     "PluginRuntimeStatusParams": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "packageId"
-      ],
+      "required": ["packageId"],
       "properties": {
         "packageId": {
           "type": "string",
@@ -8398,9 +8390,7 @@
     "PluginRuntimeStatusResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "resources"
-      ],
+      "required": ["resources"],
       "properties": {
         "resources": {
           "type": "array",
@@ -8408,22 +8398,13 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "id",
-              "state"
-            ],
+            "required": ["id", "state"],
             "properties": {
               "id": {
                 "type": "string"
               },
               "state": {
-                "enum": [
-                  "starting",
-                  "ready",
-                  "stopping",
-                  "failed",
-                  "stopped"
-                ]
+                "enum": ["starting", "ready", "stopping", "failed", "stopped"]
               },
               "code": {
                 "type": "string"

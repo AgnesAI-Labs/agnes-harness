@@ -4,7 +4,7 @@
 
 [项目首页](../../README.zh-CN.md) · [文档导航](../README.zh-CN.md) · [FDE 与应用场景](why-agh.zh-CN.md)
 
-> **源码预览：已有原生 MHS 设备 SDK、profile Hub、插件 factory 和浏览器模块；普通安装激活仍需要受管理服务、authority 与认证 stream 适配。物理设备尚未验收。**
+> **源码预览：已有原生 MHS 设备 SDK、profile Hub、插件 factory 和浏览器模块；普通安装激活使用通用 profile 受管理运行时、原生 authority 和认证 stream。物理设备尚未验收。**
 
 从巡检和运维到仪器协作，现场工作需要将设备状态、人的判断与业务流程连接起来。MHS 插件通过自己的版本化命令与 MOS 观测通道，把状态读取、操作请求和执行回执接入任务流程；MHS 不以 MCP 作为设备传输层。
 
@@ -26,7 +26,7 @@ flowchart LR
   Receipt --> AGH
 ```
 
-AGH 负责组织任务、授权交互和结果记录；适配层将设备能力接入任务流程；设备控制器负责实际动作与现场保护。[设备 SDK](../../packages/mhs-device/README.zh-CN.md) 维护声明和本地安全，[Hub](../../packages/mhs-hub/README.zh-CN.md) 维护设备状态与回执，[Harness 插件](../../packages/mhs-plugin/README.zh-CN.md) 消费通用 Host 接口。缺少受管理连接器时拒绝激活，浏览器不会直接连接裸 North 控制 socket。
+AGH 负责组织任务、授权交互和结果记录；适配层将设备能力接入任务流程；设备控制器负责实际动作与现场保护。[设备 SDK](../../packages/mhs-device/README.zh-CN.md) 维护声明和本地安全，[Hub](../../packages/mhs-hub/README.zh-CN.md) 维护设备状态与回执，[Harness 插件](../../packages/mhs-plugin/README.zh-CN.md) 消费通用 Host 接口。Host 缺少 profile runtime 合同时拒绝激活，浏览器不会直接连接裸 North 控制 socket。
 
 独立的 MCP [device-inspection bundle](../../examples/fde/device-inspection/README.zh-CN.md) 已在本地模拟器展示“读取状态 → 识别异常 → 人工确认 → 受约束处置 → 核对回执”。具体型号、动作和失败处理需要单独实现与验证。
 

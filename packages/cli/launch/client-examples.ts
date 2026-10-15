@@ -27,6 +27,38 @@ export function localClientExamples(
     createExamplePackages({
       directory: join(backend.scope.daemonDir, 'example-launches'),
       backend: {
+        async runtime(exampleId) {
+          await initialize()
+          const result = await client.call<{ resources: { state: string; code?: string }[] }>(
+            '_agnes/v1/pluginRuntime.status',
+            { packageId: exampleId },
+          )
+          const failed = result.resources.find((row) => row.state === 'failed')
+          return failed
+            ? { state: 'failed', ...(failed.code ? { code: failed.code } : {}) }
+            : {
+                state:
+                  result.resources.length === 0
+                    ? 'unavailable'
+                    : result.resources.every((row) => row.state === 'ready')
+                      ? 'running'
+                      : result.resources.some((row) => row.state === 'starting')
+                        ? 'starting'
+                        : 'stopped',
+              }
+        },
+        async stop(exampleId, operationId) {
+          const current = (await admin.list({ profile })).packages.find((item) => item.id === exampleId)
+          if (!current) throw new Error('CAPABILITY_DENIED')
+          await settled(() =>
+            admin.disable({
+              profile,
+              id: exampleId,
+              clientId: awaitClientId,
+              commandId: `example-stop-${operationId}`,
+            }),
+          )
+        },
         async owner(rowId) {
           await initialize()
           const row = (await client.clientModules.list(profile)).rows.find((row) => row.rowId === rowId)

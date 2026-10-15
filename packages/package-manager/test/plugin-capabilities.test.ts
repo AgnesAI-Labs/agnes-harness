@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
@@ -11,6 +11,7 @@ import {
   capabilityPolicyBlockers,
   mergePluginCapabilities,
   parsePluginCapabilities,
+  readPluginCapabilities,
 } from '../src/plugin-capabilities.js'
 import { fetchSource, hashDirectory, parseSource } from '../src/sources.js'
 
@@ -89,14 +90,43 @@ it('reviews transport declarations as authority and binds descriptor changes to 
     apiVersion: '1.0.0',
     requires: [],
   }
-  const declarations = { streams: [stream], managedServices: [service] }
+  const declarations = {
+    store: true,
+    wake: true,
+    streams: [stream],
+    managedServices: [service],
+    services: [
+      {
+        name: 'sample.status',
+        scope: 'profile' as const,
+        kind: 'query' as const,
+        inputSchema: { type: 'object' as const, properties: {}, additionalProperties: false as const },
+        outputSchema: {},
+        timeoutMs: 1000,
+        maxResultBytes: 4096,
+      },
+    ],
+  }
   expect(parsePluginCapabilities(declarations)).toEqual(declarations)
   expect(mergePluginCapabilities([declarations, declarations])).toEqual(declarations)
   expect(capabilityAtoms(declarations)).toEqual([
     'managedServices:profile:sample',
+    'store',
     'streams:profile:sample.frames:media',
+    'wake',
   ])
   expect(capabilityPolicyBlockers(declarations, { deny: ['streams:*'] })).toHaveLength(1)
+  const f = fixture(),
+    file = join(f.source, 'package.json'),
+    manifest = JSON.parse(readFileSync(file, 'utf8'))
+  manifest.agnes.plugins = [
+    { apiRange: '^4.0.0', export: 'main', capabilities: declarations },
+    { apiRange: '^4.0.0', export: 'sibling', capabilities: { device: true, store: false, wake: false } },
+  ]
+  writeFileSync(file, JSON.stringify(manifest))
+  expect(readPluginCapabilities(f.source, 'main')).toEqual(declarations)
+  expect(readPluginCapabilities(f.source, 'sibling')).toEqual({ device: true, store: false, wake: false })
+  expect(readPluginCapabilities(f.source)).toMatchObject({ device: true, store: true, wake: true })
   const old = capabilityHash({
     dependencies: {},
     declaredCapabilities: mergePluginCapabilities([declarations]) ?? {},

@@ -1,8 +1,8 @@
 import type { StreamContext } from '@agnes/extension-api'
+import type { StreamSocket } from '@agnes/plugin-streams'
+import { createPluginStreamBroker, type StreamPrincipal } from '@agnes/plugin-streams'
 import { encodePluginStreamBinary, type PluginStreamGrant, type StreamDeclaration } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createPluginStreamBroker, type StreamPrincipal } from '../../src/streams/broker.js'
-import type { StreamSocket } from '../../src/streams/channel.js'
 
 const encoder = new TextEncoder()
 const json = (value: unknown) => encoder.encode(JSON.stringify(value))

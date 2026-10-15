@@ -168,6 +168,7 @@ function publishProfileActivations(
         : []
     }),
   )
+  void proc.profileManaged.publish().catch(() => undefined)
 }
 
 /** The publisher of the one ordinary tree: how rows are loaded, trusted, mounted and verified. */

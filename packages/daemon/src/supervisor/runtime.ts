@@ -218,6 +218,7 @@ import { createMcpManageRequests } from './mcp-manage-requests.js'
 import { acquireDaemonMutationLock } from './mutation-lock.js'
 import { acquireOwnerLock } from './owner-lock.js'
 import { createPluginManageRequests } from './plugin-manage-requests.js'
+import { registerPluginRuntimeIngress } from './plugin-runtime-ingress.js'
 import { createSupervisorProfileServices } from './profile-services.js'
 import { createProfileSurfaceController } from './profile-surfaces.js'
 import {
@@ -1217,6 +1218,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       onSessionFailure: (sessionKey, error) => registry.interrupt(sessionKey, error),
       ...(runtimeDelivery ? { runtimeDelivery } : {}),
       onRequest: async (sessionKey, f, workerSignal) => {
+        if (f.method === 'bound-wake') return profilePorts.ownedWake(f.params)
         if (f.method === 'plugin-manage' || f.method === 'plugin-manage-abort')
           return pluginManageRequests(sessionKey, f.requestId, f.method, f.params, workerSignal)
         if (f.method === 'mcp-manage' || f.method === 'mcp-manage-abort')
@@ -2060,17 +2062,14 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         profile: o.profile.name,
         ...(o.audit ? { audit: o.audit } : {}),
       })
+      registerPluginRuntimeIngress(ep, pool, transport)
       const feeds = new Map<string, Feed>()
       const attached = new Map<string, AttachedFeed>()
       const artifactReadConfigured = artifactRead !== undefined
       const factRead: (key: string) => ScanRead<import('@agnes/protocol').EventEnvelope> =
         o.sessionFactRead ?? ((key) => (query) => cx.registry.require(key).session.scan(query))
       const cx: AgnesContext = {
-        profileFeatures: [
-          'services.profile.v1',
-          'store.owned.v1',
-          ...(boundWakes ? ['jobs.bound-wake.v1'] : []),
-        ],
+        profileFeatures: profilePorts.features,
         sessionServices: { activationBarrier, journal, commandQueue, callService, inspectService },
         host,
         registry: supervisorRegistry,

@@ -1,4 +1,10 @@
-import type { PluginContextFacets, ServiceContext, ServiceDef, StreamContext } from '@agnes/extension-api'
+import type {
+  PluginContextFacets,
+  ServiceContext,
+  ServiceDef,
+  StreamContext,
+  ToolContext,
+} from '@agnes/extension-api'
 import { type Json, MhsError, object, prepareArguments } from '@agnes/mhs-device'
 import { type AdmissionSubject, type Authority, digest, type North } from '@agnes/mhs-hub'
 import { MHS_EFFECT_SERVICES, MHS_QUERY_SERVICES, mhsServices } from './services.js'
@@ -63,13 +69,20 @@ export function createMhsNativeProfileAdapter(assertActive: () => Promise<void>)
       if (!expected || digest(expected) !== digest(subject)) throw new MhsError('stale-admission')
     },
   }
-  const definitions = (north: North): ServiceDef[] => {
-    const services = mhsServices(north, async (raw) => {
+  const definitions = (north: North | (() => Promise<North>)): ServiceDef[] => {
+    const getNorth = async () => (typeof north === 'function' ? north() : north)
+    const invocation = async (raw: unknown) => {
       const context = raw as ServiceContext
       const admission = context.admission
       if (!admission || context.scope?.kind !== 'profile') throw new MhsError('approval-required')
       return { operationId: admission.operationId, context }
-    })
+    }
+    const services = {
+      query: async (method: string, input: Json) =>
+        mhsServices(await getNorth(), invocation).query(method, input),
+      effect: async (method: string, input: Json, context: ServiceContext) =>
+        mhsServices(await getNorth(), invocation).effect(method, input, context),
+    }
     return [
       ...MHS_QUERY_SERVICES.map(
         (method): ServiceDef => ({
@@ -112,7 +125,7 @@ export function createMhsNativeProfileAdapter(assertActive: () => Promise<void>)
           async prepare(raw) {
             await assertActive()
             const input = object(raw),
-              views = await north.hub.list()
+              views = await (await getNorth()).hub.list()
             const view =
               typeof input.device === 'string'
                 ? views.find((row) => row.id === input.device)
@@ -195,6 +208,50 @@ export function createMhsNativeProfileAdapter(assertActive: () => Promise<void>)
   return {
     authority,
     definitions,
+    async toolInvocation(
+      context: ToolContext,
+      name: string,
+      input: Record<string, unknown>,
+      getNorth: () => Promise<North>,
+    ) {
+      await assertActive()
+      context.signal.throwIfAborted()
+      const operationId = digest({
+        session: context.session.key,
+        lane: context.session.lane,
+        toolUseId: context.session.toolUseId,
+      })
+      if (name === 'call_device' || name === 'set_device') {
+        if (!context.approval) throw new MhsError('approval-required')
+        const views = await (await getNorth()).hub.list(),
+          available = views.filter((row) => row.available)
+        const device =
+          typeof input.device === 'string'
+            ? views.find((row) => row.id === input.device)
+            : available.length === 1
+              ? available[0]
+              : undefined
+        if (!device) throw new MhsError('device-required')
+        let value: Json
+        if (name === 'call_device') {
+          const tool = device.description.tools?.find((tool) => tool.name === input.tool)
+          if (!tool) throw new MhsError('unknown-tool')
+          value = {
+            tool: tool.name,
+            args: prepareArguments(tool.inputSchema, input.args ?? {}, []),
+            requested: object(input.args ?? {}) as Json,
+          }
+        } else value = object(input.values) as Json
+        contexts.set(context, {
+          operationId,
+          action: name === 'call_device' ? 'call' : 'set',
+          device: device.id,
+          revision: device.revision,
+          input: value,
+        })
+      }
+      return { operationId, context, sessionId: context.session.key, laneId: context.session.lane }
+    },
     /** Pass directly to registerMhsStreams; the browser cannot select a device or Hub lease. */
     async bindControl(context: StreamContext) {
       context.signal.throwIfAborted()
@@ -213,7 +270,7 @@ export function createMhsNativeProfileAdapter(assertActive: () => Promise<void>)
         throw new MhsError('control-admission-required')
       return { grantId: grant.grantId, device: binding.device, leaseId: binding.leaseId }
     },
-    register(ctx: Pick<PluginContextFacets, 'services'>, north: North) {
+    register(ctx: Pick<PluginContextFacets, 'services'>, north: North | (() => Promise<North>)) {
       for (const definition of definitions(north)) ctx.services.register(definition)
     },
   }

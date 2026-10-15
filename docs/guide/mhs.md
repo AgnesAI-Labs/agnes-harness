@@ -6,7 +6,7 @@ English | [简体中文](mhs.zh-CN.md)
 
 [Project home](../../README.md) · [Documentation](../README.md) · [FDE and use cases](why-agh.md)
 
-> **Source preview: native MHS device SDKs, a profile-owned Hub, plugin factories and browser module are available. Normal installed activation still requires the managed-service, authority and authenticated-stream adapters. Physical-device acceptance is unverified.**
+> **Source preview: native MHS device SDKs, a profile-owned Hub, plugin factories and browser module are available. Installed activation uses the generic profile managed runtime, native authority and authenticated streams. Physical-device acceptance is unverified.**
 
 From inspection and maintenance to instrument coordination, field work connects device state, human judgment, and business workflows. The MHS plugin uses its own versioned command and MOS observation channels to bring state reads, operation requests and execution receipts into that task flow. MHS does not use MCP as its device transport.
 
@@ -30,7 +30,7 @@ flowchart LR
   Receipt --> AGH
 ```
 
-AGH organizes tasks, authorization interactions, and result records. An adapter connects device capabilities to task execution, while the device controller owns actual motion and site protections. The [device SDK](../../packages/mhs-device/README.md) owns device declarations and local safety, the [Hub](../../packages/mhs-hub/README.md) owns device state and receipts, and the [Harness plugin](../../packages/mhs-plugin/README.md) consumes generic Host services. An unsupported managed connector fails closed; a browser never opens a bare North control socket.
+AGH organizes tasks, authorization interactions, and result records. An adapter connects device capabilities to task execution, while the device controller owns actual motion and site protections. The [device SDK](../../packages/mhs-device/README.md) owns device declarations and local safety, the [Hub](../../packages/mhs-hub/README.md) owns device state and receipts, and the [Harness plugin](../../packages/mhs-plugin/README.md) consumes generic Host services. A Host without the profile-runtime contract fails closed; a browser never opens a bare North control socket.
 
 The separate MCP-based [device-inspection bundle](../../examples/fde/device-inspection/README.md) demonstrates read status → detect an anomaly → obtain human confirmation → perform a constrained action → verify the receipt in a local simulator. Each device model, action, and failure path needs its own implementation and validation.
 

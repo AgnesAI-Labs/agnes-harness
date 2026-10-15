@@ -16,6 +16,9 @@ export function createRosterStreamAuthorizer(options: {
     registration: StreamRegistration,
   ): Promise<{
     current(): ClientModuleRosterRow | undefined
+    /** A separate Host runtime epoch when the contribution catalog has its own UI lifetime.
+     * Must be read from current backend authority, never from browser input. */
+    backendActivationId?(): string
     signal: AbortSignal
     assertScope(): void
     control?: StreamAdmission['control']
@@ -54,7 +57,8 @@ export function createRosterStreamAuthorizer(options: {
         binding.profileId !== request.scope.profileId ||
         binding.integrity !== row.revision ||
         binding.packageId !== row.packageId ||
-        binding.activationId !== registration.activationId ||
+        !binding.activationId ||
+        (selected.backendActivationId?.() ?? binding.activationId) !== registration.activationId ||
         binding.lifetime !== request.scope.kind ||
         (registration.declaration.directions.includes('inbound') &&
           (!request.controlOperationId || !selected.control?.grantId))

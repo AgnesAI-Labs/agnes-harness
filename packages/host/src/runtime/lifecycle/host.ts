@@ -177,7 +177,7 @@ export interface Host {
   readonly presets: Record<string, PresetDoc>
   /** Resolve an inbound credential through the deployment's fitted principals seam. Consumers use
    *  this for approval/participant actors instead of constructing ledger identities themselves. */
-  resolveActor(credential: unknown, surface: 'session' | 'approval'): Promise<Actor>
+  resolveActor(credential: unknown, surface: 'session' | 'approval' | 'service'): Promise<Actor>
   /** Authenticated worker-control decoder. Public RPC must never call this with caller data. */
   acceptWorkspaceBinding(
     envelope: AuthenticatedWorkspaceBindingEnvelope,

@@ -67,7 +67,10 @@ export type WorkerMethod =
   | 'memory.manage'
   | 'observability.health'
   | 'boundWake.resolve'
+  | 'boundWake.read'
   | 'boundWake.require'
+  | 'profileManaged.status'
+  | 'profileStreams.endpoint'
   | 'profileService.identity'
   | 'profileService.authorizeControl'
   | 'profileService.call'
@@ -190,6 +193,7 @@ export type RequestFrame = {
   sessionKey: string
   requestId: string
   method:
+    | 'bound-wake'
     | 'permission'
     | 'permission-abort'
     | 'notice'

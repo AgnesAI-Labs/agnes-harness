@@ -3,6 +3,7 @@
   "@agnes/cosmokit": [],
   "@agnes/cordis": ["@agnes/cosmokit"],
   "@agnes/cordis-loader": ["@agnes/cordis"],
+  "@agnes/plugin-streams": ["@agnes/extension-api", "@agnes/protocol"],
   "@agnes/plugin-runtime": ["@agnes/cordis", "@agnes/cordis-loader", "@agnes/extension-api"],
   "@agnes/web-slots": [],
   "@agnes/web-ui": ["@agnes/protocol", "@agnes/protocol-validation"],
@@ -44,7 +45,8 @@
     "@agnes/protocol",
     "@agnes/resource-control-runtime",
     "@agnes/resource-control-worker",
-    "@agnes/observability"
+    "@agnes/observability",
+    "@agnes/plugin-streams"
   ],
   "@agnes/resource-control-cli": [
     "@agnes/daemon",
@@ -303,7 +305,8 @@
     "@agnes/protocol",
     "@agnes/worker-runtime",
     "@agnes/observability",
-    "@agnes/extension-api"
+    "@agnes/extension-api",
+    "@agnes/plugin-streams"
   ],
   "@agnes/web-foundation": [
     "@agnes/error-sanitization",

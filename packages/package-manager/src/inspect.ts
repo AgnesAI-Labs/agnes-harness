@@ -260,11 +260,7 @@ export function inspectVerifiedTree(
     clientPaths.add(item.path)
     const plugin = plugins.find((entry) => entry.id === item.rowId)
     if (plugin?.runtime !== 'in-process') invalid('client-descriptor-row')
-    if (
-      !/^\.\/(?!\.{1,2}(?:\/|$))[^/\\:\0]+(?:\/(?!\.{1,2}(?:\/|$))[^/\\:\0]+)*\/agnes\.client\.json$/.test(
-        item.path,
-      )
-    )
+    if (!/^\.\/(?:(?!\.{1,2}(?:\/|$))[^/\\:\0]+\/)*agnes\.client\.json$/.test(item.path))
       invalid('client-descriptor-path')
     const descriptorPath = containedEntry(input.dir, item.path, 'file', 'package.json')
     const descriptor = readStaticJson(descriptorPath)

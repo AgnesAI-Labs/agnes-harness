@@ -58,8 +58,6 @@
 - `_agnes/v1/session.loading`
 - `_agnes/v1/session.loadingCancel`
 - `_agnes/v1/session.preview`
-- `_agnes/v1/session.loading`
-- `_agnes/v1/session.loadingCancel`
 - `_agnes/v1/daemon.notice`
 
 ### 会话内容、工作区与界面

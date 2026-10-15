@@ -26,17 +26,1012 @@
         "apiRange": "^4.0.0",
         "inject": [
           "tools",
-          "hooks"
+          "hooks",
+          "services",
+          "profileRuntime"
         ],
         "runtime": "in-process",
         "default": false,
         "capabilities": {
           "device": true,
-          "ui": [
-            "client"
-          ],
+          "ui": true,
           "store": true,
-          "wake": true
+          "wake": true,
+          "managedServices": [
+            {
+              "id": "hub",
+              "scope": "profile",
+              "artifact": {
+                "kind": "in-process"
+              },
+              "healthPath": "/health",
+              "listeners": [
+                {
+                  "name": "device",
+                  "host": "127.0.0.1",
+                  "port": "auto"
+                }
+              ],
+              "startupTimeoutMs": 30000,
+              "shutdownTimeoutMs": 5000,
+              "apiVersion": "1.0.0",
+              "requires": []
+            }
+          ],
+          "streams": [
+            {
+              "name": "mhs.events",
+              "lane": "events",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              },
+              "directions": [
+                "outbound"
+              ],
+              "maxFrameBytes": 4096,
+              "maxBufferedBytes": 32768,
+              "maxBytesPerSecond": 65536
+            },
+            {
+              "name": "mhs.media",
+              "lane": "media",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "device": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "device",
+                  "source"
+                ]
+              },
+              "directions": [
+                "outbound"
+              ],
+              "maxFrameBytes": 1048576,
+              "maxBufferedBytes": 2097152,
+              "maxBytesPerSecond": 4194304
+            },
+            {
+              "name": "mhs.control",
+              "lane": "control",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              },
+              "directions": [
+                "inbound"
+              ],
+              "maxFrameBytes": 4096,
+              "maxBufferedBytes": 32768,
+              "maxBytesPerSecond": 65536,
+              "controlService": "mhs.lease"
+            }
+          ],
+          "services": [
+            {
+              "name": "mhs.devices",
+              "scope": "profile",
+              "kind": "query",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "device": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "type": "string"
+                  },
+                  "args": {
+                    "type": "object"
+                  },
+                  "values": {
+                    "type": "object"
+                  },
+                  "params": {
+                    "type": "object"
+                  },
+                  "until": {
+                    "type": "object"
+                  },
+                  "timeout": {
+                    "type": "number"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "watch": {
+                    "type": "string"
+                  },
+                  "operationId": {
+                    "type": "string"
+                  },
+                  "sources": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576
+            },
+            {
+              "name": "mhs.read",
+              "scope": "profile",
+              "kind": "query",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "device": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "type": "string"
+                  },
+                  "args": {
+                    "type": "object"
+                  },
+                  "values": {
+                    "type": "object"
+                  },
+                  "params": {
+                    "type": "object"
+                  },
+                  "until": {
+                    "type": "object"
+                  },
+                  "timeout": {
+                    "type": "number"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "watch": {
+                    "type": "string"
+                  },
+                  "operationId": {
+                    "type": "string"
+                  },
+                  "sources": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576
+            },
+            {
+              "name": "mhs.maps",
+              "scope": "profile",
+              "kind": "query",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "device": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "type": "string"
+                  },
+                  "args": {
+                    "type": "object"
+                  },
+                  "values": {
+                    "type": "object"
+                  },
+                  "params": {
+                    "type": "object"
+                  },
+                  "until": {
+                    "type": "object"
+                  },
+                  "timeout": {
+                    "type": "number"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "watch": {
+                    "type": "string"
+                  },
+                  "operationId": {
+                    "type": "string"
+                  },
+                  "sources": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576
+            },
+            {
+              "name": "mhs.world",
+              "scope": "profile",
+              "kind": "query",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "device": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "type": "string"
+                  },
+                  "args": {
+                    "type": "object"
+                  },
+                  "values": {
+                    "type": "object"
+                  },
+                  "params": {
+                    "type": "object"
+                  },
+                  "until": {
+                    "type": "object"
+                  },
+                  "timeout": {
+                    "type": "number"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "watch": {
+                    "type": "string"
+                  },
+                  "operationId": {
+                    "type": "string"
+                  },
+                  "sources": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576
+            },
+            {
+              "name": "mhs.activity",
+              "scope": "profile",
+              "kind": "query",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "device": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1000
+                  },
+                  "cursor": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  },
+                  "sessionId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  }
+                },
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576
+            },
+            {
+              "name": "mhs.operation",
+              "scope": "profile",
+              "kind": "query",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "device": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "type": "string"
+                  },
+                  "args": {
+                    "type": "object"
+                  },
+                  "values": {
+                    "type": "object"
+                  },
+                  "params": {
+                    "type": "object"
+                  },
+                  "until": {
+                    "type": "object"
+                  },
+                  "timeout": {
+                    "type": "number"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "watch": {
+                    "type": "string"
+                  },
+                  "operationId": {
+                    "type": "string"
+                  },
+                  "sources": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576
+            },
+            {
+              "name": "mhs.call",
+              "scope": "profile",
+              "kind": "effect",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "device": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "type": "string"
+                  },
+                  "args": {
+                    "type": "object"
+                  },
+                  "values": {
+                    "type": "object"
+                  },
+                  "params": {
+                    "type": "object"
+                  },
+                  "until": {
+                    "type": "object"
+                  },
+                  "timeout": {
+                    "type": "number"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "watch": {
+                    "type": "string"
+                  },
+                  "operationId": {
+                    "type": "string"
+                  },
+                  "sources": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576,
+              "effectPolicy": {
+                "isDestructive": true,
+                "isOpenWorld": true,
+                "replay": "never",
+                "requiresApproval": "always",
+                "approvalScopes": []
+              }
+            },
+            {
+              "name": "mhs.set",
+              "scope": "profile",
+              "kind": "effect",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "device": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "type": "string"
+                  },
+                  "args": {
+                    "type": "object"
+                  },
+                  "values": {
+                    "type": "object"
+                  },
+                  "params": {
+                    "type": "object"
+                  },
+                  "until": {
+                    "type": "object"
+                  },
+                  "timeout": {
+                    "type": "number"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "watch": {
+                    "type": "string"
+                  },
+                  "operationId": {
+                    "type": "string"
+                  },
+                  "sources": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576,
+              "effectPolicy": {
+                "isDestructive": true,
+                "isOpenWorld": true,
+                "replay": "never",
+                "requiresApproval": "always",
+                "approvalScopes": []
+              }
+            },
+            {
+              "name": "mhs.stop",
+              "scope": "profile",
+              "kind": "effect",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "device": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "type": "string"
+                  },
+                  "args": {
+                    "type": "object"
+                  },
+                  "values": {
+                    "type": "object"
+                  },
+                  "params": {
+                    "type": "object"
+                  },
+                  "until": {
+                    "type": "object"
+                  },
+                  "timeout": {
+                    "type": "number"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "watch": {
+                    "type": "string"
+                  },
+                  "operationId": {
+                    "type": "string"
+                  },
+                  "sources": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576,
+              "priority": "urgent",
+              "effectPolicy": {
+                "isDestructive": false,
+                "isOpenWorld": true,
+                "replay": "never",
+                "requiresApproval": "never",
+                "approvalScopes": []
+              }
+            },
+            {
+              "name": "mhs.lease",
+              "scope": "profile",
+              "kind": "effect",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "device": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "type": "string"
+                  },
+                  "args": {
+                    "type": "object"
+                  },
+                  "values": {
+                    "type": "object"
+                  },
+                  "params": {
+                    "type": "object"
+                  },
+                  "until": {
+                    "type": "object"
+                  },
+                  "timeout": {
+                    "type": "number"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "watch": {
+                    "type": "string"
+                  },
+                  "operationId": {
+                    "type": "string"
+                  },
+                  "sources": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576,
+              "controlLeaseMs": 30000,
+              "effectPolicy": {
+                "isDestructive": true,
+                "isOpenWorld": true,
+                "replay": "never",
+                "requiresApproval": "always",
+                "approvalScopes": []
+              }
+            },
+            {
+              "name": "mhs.watch",
+              "scope": "profile",
+              "kind": "effect",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "device": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "type": "string"
+                  },
+                  "args": {
+                    "type": "object"
+                  },
+                  "values": {
+                    "type": "object"
+                  },
+                  "params": {
+                    "type": "object"
+                  },
+                  "until": {
+                    "type": "object"
+                  },
+                  "timeout": {
+                    "type": "number"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "watch": {
+                    "type": "string"
+                  },
+                  "operationId": {
+                    "type": "string"
+                  },
+                  "sources": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576,
+              "effectPolicy": {
+                "isDestructive": false,
+                "isOpenWorld": true,
+                "replay": "never",
+                "requiresApproval": "never",
+                "approvalScopes": []
+              }
+            },
+            {
+              "name": "mhs.unwatch",
+              "scope": "profile",
+              "kind": "effect",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "device": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "type": "string"
+                  },
+                  "args": {
+                    "type": "object"
+                  },
+                  "values": {
+                    "type": "object"
+                  },
+                  "params": {
+                    "type": "object"
+                  },
+                  "until": {
+                    "type": "object"
+                  },
+                  "timeout": {
+                    "type": "number"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "watch": {
+                    "type": "string"
+                  },
+                  "operationId": {
+                    "type": "string"
+                  },
+                  "sources": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576,
+              "effectPolicy": {
+                "isDestructive": false,
+                "isOpenWorld": true,
+                "replay": "never",
+                "requiresApproval": "never",
+                "approvalScopes": []
+              }
+            },
+            {
+              "name": "mhs.configure",
+              "scope": "profile",
+              "kind": "effect",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "device": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "type": "string"
+                  },
+                  "args": {
+                    "type": "object"
+                  },
+                  "values": {
+                    "type": "object"
+                  },
+                  "params": {
+                    "type": "object"
+                  },
+                  "until": {
+                    "type": "object"
+                  },
+                  "timeout": {
+                    "type": "number"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "watch": {
+                    "type": "string"
+                  },
+                  "operationId": {
+                    "type": "string"
+                  },
+                  "sources": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576,
+              "effectPolicy": {
+                "isDestructive": true,
+                "isOpenWorld": true,
+                "replay": "never",
+                "requiresApproval": "always",
+                "approvalScopes": []
+              }
+            },
+            {
+              "name": "mhs.resume",
+              "scope": "profile",
+              "kind": "effect",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "device": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "type": "string"
+                  },
+                  "args": {
+                    "type": "object"
+                  },
+                  "values": {
+                    "type": "object"
+                  },
+                  "params": {
+                    "type": "object"
+                  },
+                  "until": {
+                    "type": "object"
+                  },
+                  "timeout": {
+                    "type": "number"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "watch": {
+                    "type": "string"
+                  },
+                  "operationId": {
+                    "type": "string"
+                  },
+                  "sources": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576,
+              "effectPolicy": {
+                "isDestructive": true,
+                "isOpenWorld": true,
+                "replay": "never",
+                "requiresApproval": "always",
+                "approvalScopes": []
+              }
+            },
+            {
+              "name": "mhs.cancel",
+              "scope": "profile",
+              "kind": "effect",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "device": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "type": "string"
+                  },
+                  "args": {
+                    "type": "object"
+                  },
+                  "values": {
+                    "type": "object"
+                  },
+                  "params": {
+                    "type": "object"
+                  },
+                  "until": {
+                    "type": "object"
+                  },
+                  "timeout": {
+                    "type": "number"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "watch": {
+                    "type": "string"
+                  },
+                  "operationId": {
+                    "type": "string"
+                  },
+                  "sources": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576,
+              "effectPolicy": {
+                "isDestructive": true,
+                "isOpenWorld": true,
+                "replay": "never",
+                "requiresApproval": "always",
+                "approvalScopes": []
+              }
+            },
+            {
+              "name": "hub.status",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 65536,
+              "kind": "query"
+            },
+            {
+              "name": "hub.configuration",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 65536,
+              "kind": "query"
+            },
+            {
+              "name": "hub.check",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "device": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "device"
+                ],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 65536,
+              "kind": "query"
+            },
+            {
+              "name": "hub.retry",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 65536,
+              "kind": "effect",
+              "effectPolicy": {
+                "isDestructive": true,
+                "isOpenWorld": true,
+                "replay": "never",
+                "requiresApproval": "always",
+                "approvalScopes": []
+              }
+            },
+            {
+              "name": "hub.configure",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "listenerPorts": {
+                    "type": "object",
+                    "properties": {
+                      "device": {
+                        "anyOf": [
+                          {
+                            "const": "auto"
+                          },
+                          {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 65535
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "device"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "listenerPorts"
+                ],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 65536,
+              "kind": "effect",
+              "effectPolicy": {
+                "isDestructive": true,
+                "isOpenWorld": true,
+                "replay": "never",
+                "requiresApproval": "always",
+                "approvalScopes": []
+              }
+            }
+          ]
         },
         "metadata": {
           "displayName": "MHS devices",
@@ -45,9 +1040,9 @@
           "category": "developer",
           "locales": {
             "zh-CN": {
-              "displayName": "MHS 设备",
-              "summary": "通过受管理 Hub 与原生批准连接经审核的设备能力。",
-              "description": "通过受管理 Hub 与原生批准连接经审核的设备能力。"
+              "displayName": "MHS \u8bbe\u5907",
+              "summary": "\u901a\u8fc7\u53d7\u7ba1\u7406 Hub \u4e0e\u539f\u751f\u6279\u51c6\u8fde\u63a5\u7ecf\u5ba1\u6838\u7684\u8bbe\u5907\u80fd\u529b\u3002",
+              "description": "\u901a\u8fc7\u53d7\u7ba1\u7406 Hub \u4e0e\u539f\u751f\u6279\u51c6\u8fde\u63a5\u7ecf\u5ba1\u6838\u7684\u8bbe\u5907\u80fd\u529b\u3002"
             }
           }
         }
@@ -60,9 +1055,9 @@
       "category": "developer",
       "locales": {
         "zh-CN": {
-          "displayName": "MHS 设备",
-          "summary": "通过受管理 Hub 与原生批准连接经审核的设备能力。",
-          "description": "通过受管理 Hub 与原生批准连接经审核的设备能力。"
+          "displayName": "MHS \u8bbe\u5907",
+          "summary": "\u901a\u8fc7\u53d7\u7ba1\u7406 Hub \u4e0e\u539f\u751f\u6279\u51c6\u8fde\u63a5\u7ecf\u5ba1\u6838\u7684\u8bbe\u5907\u80fd\u529b\u3002",
+          "description": "\u901a\u8fc7\u53d7\u7ba1\u7406 Hub \u4e0e\u539f\u751f\u6279\u51c6\u8fde\u63a5\u7ecf\u5ba1\u6838\u7684\u8bbe\u5907\u80fd\u529b\u3002"
         }
       }
     },
@@ -71,7 +1066,10 @@
         "rowId": "ext:agnes.mhs",
         "path": "./agnes.client.json"
       }
-    ]
+    ],
+    "hostProvidedExternals": {
+      "@agnes/extension-api": "^4.0.0"
+    }
   },
   "devDependencies": {
     "@agnes/daemon-rpc": "workspace:*",
@@ -79,6 +1077,14 @@
     "@agnes/sdk": "workspace:*",
     "@agnes/protocol": "workspace:*",
     "@agnes/host-extensions": "workspace:*",
-    "@agnes/core": "workspace:*"
+    "@agnes/core": "workspace:*",
+    "@agnes/host": "workspace:*",
+    "@agnes/package-manager": "workspace:*",
+    "@agnes/plugin-runtime": "workspace:*",
+    "@agnes/worker-runtime": "workspace:*",
+    "ws": "8.21.3",
+    "@types/ws": "8.18.1",
+    "@agnes/cordis": "workspace:*",
+    "@agnes/web-client": "workspace:*"
   }
 }

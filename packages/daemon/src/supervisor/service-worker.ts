@@ -176,6 +176,10 @@ export function workerWakeBindings(
 ) {
   type Runtime = NonNullable<Host['profileServices']>
   return {
+    read: async (bindingId: string) => {
+      const link = await pool.acquireSharedWorker()
+      return (await link.command('boundWake.read', { bindingId })) as ReturnType<Runtime['readWake']>
+    },
     resolve: async (bindingId: string, credential: unknown) => {
       const link = await pool.acquireSharedWorker()
       const resolved = (await link.command('boundWake.resolve', { bindingId, credential })) as Awaited<

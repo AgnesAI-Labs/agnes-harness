@@ -159,12 +159,12 @@ export function capabilityPolicyBlockers(
 }
 
 const AUTHORITY_LISTS = ['network', 'exec', 'secrets', 'credentials', 'uiData'] as const
-const AUTHORITY_FLAGS = ['model', 'device', 'childAgents', 'ui'] as const
+const AUTHORITY_FLAGS = ['model', 'device', 'childAgents', 'ui', 'store', 'wake'] as const
 
 /**
  * The package-level view of its plugins' capabilities: the authority a package needs is the union of
- * what each plugin declares. Registration keys (tools, hooks, slots, ...) belong to one plugin and
- * are not merged.
+ * what each plugin declares, including service/transport contracts for review. Runtime callers
+ * select the exact verified export rather than granting a sibling row this union.
  */
 export function mergePluginCapabilities(
   declared: readonly (PluginCapabilities | undefined)[],
@@ -184,7 +184,7 @@ export function mergePluginCapabilities(
     if (present.some((capabilities) => capabilities.filesystem?.[access] !== undefined))
       merged.filesystem = { ...(merged.filesystem as object | undefined), [access]: scopes }
   }
-  for (const key of ['streams', 'managedServices'] as const) {
+  for (const key of ['services', 'streams', 'managedServices'] as const) {
     if (present.some((c) => c[key] !== undefined)) {
       const byValue = new Map<string, JsonValue>()
       for (const capability of present)
@@ -195,8 +195,19 @@ export function mergePluginCapabilities(
   return merged as PluginCapabilities
 }
 
-export function readPluginCapabilities(directory: string): PluginCapabilities | undefined {
+/** Package previews use the union; runtime registration must select its verified export. */
+export function readPluginCapabilities(
+  directory: string,
+  exportName?: string,
+): PluginCapabilities | undefined {
   const manifest = readStaticJson(join(directory, 'package.json'))
-  const plugins = (manifest.agnes as { plugins?: { capabilities?: unknown }[] } | undefined)?.plugins
-  return mergePluginCapabilities((plugins ?? []).map((entry) => parsePluginCapabilities(entry.capabilities)))
+  const plugins =
+    (manifest.agnes as { plugins?: { export?: string; capabilities?: unknown }[] } | undefined)?.plugins ?? []
+  if (exportName !== undefined) {
+    const entries = plugins.filter((entry) => entry.export === exportName)
+    if (entries.length !== 1)
+      throw new PackageError('E_EXT_LOAD', 'Plugin export capabilities are unavailable')
+    return parsePluginCapabilities(entries[0]?.capabilities)
+  }
+  return mergePluginCapabilities(plugins.map((entry) => parsePluginCapabilities(entry.capabilities)))
 }

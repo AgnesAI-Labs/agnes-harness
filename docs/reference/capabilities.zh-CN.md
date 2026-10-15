@@ -21,7 +21,6 @@
 | `cli.remote-and-extra-modes` | CLI 远程传输与额外模式 | partial | 本地 print/TUI 与 ACP 可用；显式 `--connect` 使用共享 daemon。其余管理命令仍遵循文档规定的本地或拒绝执行范围。 | 按模式补充实现 | `packages/cli/src/bin.ts` |
 | `sdk.optional-build-capabilities` | SDK 可选传输与认证构造 | wired | 入口未包含可选传输或认证实现时，`Unsupported` 是预期的类型化边界。 | 已完成；保留缺失能力时拒绝执行的行为 | `packages/sdk/src/errors.ts` |
 | `sandbox.bwrap-runtime-selection` | Bubblewrap 选择 | wired | 编译器叶子实现有意不作为默认 seam 直接使用，由运行时后端选择器探测并选择。 | 已完成；保留间接接入方式 | `packages/base/extensions/sandbox/src/backends/bwrap.ts` |
-| `mhs.managed-integration` | MHS 受管理插件启用 | partial | 设备 SDK、Hub 与七工具工厂可接受注入端口；经审核的 profile connector、原生授权及 managed gateway 接通前，默认启用明确拒绝。 | 接入通用公开服务接缝 | `packages/mhs-plugin/src/runtime.ts` |
 
 ## 会话命令传输
 
@@ -40,3 +39,5 @@
 平台支持范围见[已知限制](limitations.zh-CN.md)。本地测试和 CI 覆盖本身不能证明安装包、签名、外部服务或实体设备支持。运行时隔离、权限与进程身份需要在各目标平台分别验证。
 
 工具权限、计划退出及普通插件的会话确认使用公开 DecisionPort 和同一 session ledger。旧 ticket-store stub 已删除；其他领域继续自己的实际审核路径，没有可恢复切点的旧 parking 明确拒绝。见[决策恢复示例](../../examples/loops/decision-loop/README.md)。
+
+MHS 启用现已接入通用当前 profile 受管理运行时和认证流，参阅 [profile 服务](../develop/profile-services.zh-CN.md)。

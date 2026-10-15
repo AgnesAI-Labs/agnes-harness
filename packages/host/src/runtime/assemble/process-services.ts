@@ -5,6 +5,8 @@ import {
   type HostLockedPackageMutationRuntime,
 } from '@agnes/host-computer-use/computer-use/locked-package-mutation-runtime'
 import { ProfileActivations } from '@agnes/host-extensions/profile/activation'
+import { ProfileManagedResources } from '@agnes/host-extensions/profile/managed'
+import { ProfileStreams } from '@agnes/host-extensions/profile/streams'
 import { ProfileWakeBindings } from '@agnes/host-extensions/profile/wakes'
 import { createPlatform } from '@agnes/host-infrastructure/adapters/platform'
 import { createSessionGitWorktreeService } from '@agnes/host-infrastructure/git-worktrees'
@@ -20,6 +22,8 @@ import type { PackageSet } from './packages.js'
  * dispatch slot below is filled from that container's plugin tree; see the HOSTX report.
  */
 export type ProcessServices = Readonly<{
+  profileManaged: ProfileManagedResources
+  profileStreams: ProfileStreams
   profileWakes: ProfileWakeBindings
   profileActivations: ProfileActivations
   adapters: AdapterBundle
@@ -85,7 +89,22 @@ export async function openProcessServices(ctx: AssemblyContext, pkgs: PackageSet
   const profileActivations = new ProfileActivations(
     adapters.storage.metadata.namespace('@agnes/host', `activation:${ctx.profile.name}`),
   )
+  const profileManaged = new ProfileManagedResources(
+    `${dataDir}/profile:${ctx.profile.name}`,
+    deps.boundWakes ??
+      (() => ({
+        async enqueue() {
+          throw new Error('Bound wakes unavailable')
+        },
+        async read() {
+          throw new Error('Bound wakes unavailable')
+        },
+      })),
+  )
+  rollback.push('profile-managed', () => profileManaged.close())
   return {
+    profileManaged,
+    profileStreams: new ProfileStreams(ctx.profile.name, profileActivations),
     profileActivations,
     profileWakes: new ProfileWakeBindings(
       adapters.storage.metadata.namespace('@agnes/host', `wake:${ctx.profile.name}`),

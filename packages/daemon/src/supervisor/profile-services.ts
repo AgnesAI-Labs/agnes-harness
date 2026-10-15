@@ -30,12 +30,28 @@ export function createSupervisorProfileServices(input: {
       throw rpcError('CAPABILITY_DENIED')
   }
   const wakeBindings = workerWakeBindings(input.pool, profileAuthority)
+  const internalProducers = new WeakMap<object, { owner: string; integrity: string }>()
   const boundWakes = input.repo
     ? new BoundWakeService({
         repo: input.repo,
         profileHash: input.profileHash,
         clock: input.clock,
-        resolve: wakeBindings.resolve,
+        resolve: async (bindingId, credential) => {
+          const producer =
+            credential && typeof credential === 'object' ? internalProducers.get(credential) : undefined
+          if (!producer) return wakeBindings.resolve(bindingId, credential)
+          const binding = await wakeBindings.read(bindingId)
+          if (binding.producerOwner !== producer.owner || binding.producerIntegrity !== producer.integrity)
+            throw rpcError('CAPABILITY_DENIED')
+          let active = true
+          try {
+            await wakeBindings.require(bindingId)
+          } catch (error) {
+            if ((error as { data?: { code?: string } })?.data?.code !== 'CAPABILITY_DENIED') throw error
+            active = false
+          }
+          return { binding, active }
+        },
       })
     : undefined
   const boundWake = (job: Parameters<typeof deliverBoundWake>[0], signal: AbortSignal) =>
@@ -77,5 +93,32 @@ export function createSupervisorProfileServices(input: {
         return seq
       },
     })
-  return { services: workerProfileServices(input.pool, profileAuthority), boundWakes, boundWake }
+  const ownedWake = async (params: unknown) => {
+    const p = params as {
+      owner?: string
+      integrity?: string
+      action?: string
+      input?: import('@agnes/protocol').BoundWakeEnqueueParams
+      wakeId?: string
+    }
+    if (!boundWakes || typeof p.owner !== 'string' || typeof p.integrity !== 'string')
+      throw rpcError('CAPABILITY_DENIED')
+    const credential = {}
+    internalProducers.set(credential, { owner: p.owner, integrity: p.integrity })
+    try {
+      if (p.action === 'enqueue' && p.input) return await boundWakes.enqueue(p.input, credential)
+      if (p.action === 'read' && typeof p.wakeId === 'string')
+        return await boundWakes.read(p.wakeId, credential)
+      throw rpcError('INVALID_PARAMS')
+    } finally {
+      internalProducers.delete(credential)
+    }
+  }
+  return {
+    features: ['services.profile.v1', 'store.owned.v1', ...(boundWakes ? ['jobs.bound-wake.v1'] : [])],
+    ownedWake,
+    services: workerProfileServices(input.pool, profileAuthority),
+    boundWakes,
+    boundWake,
+  }
 }

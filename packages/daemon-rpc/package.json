@@ -51,7 +51,8 @@
     "@agnes/worker-runtime": "workspace:*",
     "@agnes/observability": "workspace:*",
     "@agnes/extension-api": "workspace:*",
-    "ws": "8.21.3"
+    "ws": "8.21.3",
+    "@agnes/plugin-streams": "workspace:*"
   },
   "license": "Apache-2.0",
   "devDependencies": {

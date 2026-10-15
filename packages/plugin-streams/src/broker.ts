@@ -60,6 +60,7 @@ export function createPluginStreamBroker(options: {
     request: PluginStreamOpen,
     registration: StreamRegistration,
   ): Promise<StreamAdmission>
+  resolveRegistration?(principal: StreamPrincipal, request: PluginStreamOpen): Promise<void>
   now?: () => number
   monotonicNow?: () => number
 }) {
@@ -166,6 +167,7 @@ export function createPluginStreamBroker(options: {
         throw new PluginStreamError('OVERLOADED')
       rate.count++
       rates.set(key, rate)
+      await options.resolveRegistration?.(principal, request)
       const registration = registrations.get(
         registrationKey(principal.profileId, request.owner, request.name),
       )

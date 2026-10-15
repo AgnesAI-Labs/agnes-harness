@@ -6,6 +6,7 @@ export function DeveloperPage() {
   const { client, t } = useMhs(),
     { devices } = useSnapshot(),
     [id, setId] = useState(''),
+    [devicePort, setDevicePort] = useState('auto'),
     [language, setLanguage] = useState('ts'),
     [paused, setPaused] = useState(false),
     [filter, setFilter] = useState('all'),
@@ -18,6 +19,15 @@ export function DeveloperPage() {
     status = useQuery(
       useCallback(async (signal: AbortSignal) => (port ? port.status(signal) : undefined), [port]),
     )
+  useEffect(() => {
+    if (status.value?.state !== 'starting' && status.value?.state !== 'stopping') return
+    const timer = setTimeout(status.retry, 1000)
+    return () => clearTimeout(timer)
+  }, [status.value?.state, status.retry])
+  const configuredPort = status.value?.devicePort
+  useEffect(() => {
+    if (configuredPort !== undefined) setDevicePort(String(configuredPort))
+  }, [configuredPort])
   const messageSequence = useRef(0)
   useEffect(() => {
     if (paused) return
@@ -121,6 +131,7 @@ export function DeveloperPage() {
                 </div>
               ))}
               <Button
+                disabled={status.value.state !== 'failed'}
                 onClick={() =>
                   void port
                     .retry()
@@ -130,8 +141,30 @@ export function DeveloperPage() {
               >
                 {t('retry')}
               </Button>
-              {port.configureExternal && (
-                <Button onClick={() => void port.configureExternal?.().catch(() => setFailed(true))}>
+              <label>
+                {t('devicePort')}
+                <input
+                  aria-label={t('devicePort')}
+                  value={devicePort}
+                  onChange={(event) => setDevicePort(event.target.value)}
+                  placeholder={t('automaticPort')}
+                />
+              </label>
+              {port.configure && (
+                <Button
+                  disabled={
+                    devicePort !== 'auto' &&
+                    (!Number.isInteger(Number(devicePort)) ||
+                      Number(devicePort) < 1 ||
+                      Number(devicePort) > 65535)
+                  }
+                  onClick={() =>
+                    void port
+                      .configure?.(devicePort === 'auto' ? 'auto' : Number(devicePort))
+                      .then(status.retry)
+                      .catch(() => setFailed(true))
+                  }
+                >
                   {t('external')}
                 </Button>
               )}

@@ -12,6 +12,7 @@ import {
   type WorkerResourceBootstrapInput,
 } from '@agnes/resource-control-worker'
 import { reportWorkerBootFailure } from './boot-failure.js'
+import { profileWakeProducer } from './profile-wake-producer.js'
 import { generationExtensionRestorer } from './runtime-generation-restore.js'
 import { connectSupervisor } from './supervisor-connection.js'
 import { workerDomainFailure } from './worker-errors.js'
@@ -90,6 +91,7 @@ import { createMcpStatusFrameBuffer } from './status-frame-buffer.js'
 
 /** Runtime capabilities already bootstrapped for this worker; reuse them without reconnecting. */
 export type WorkerHostSkillResources = Readonly<{
+  boundWakes?: NonNullable<HostOptions['boundWakes']>
   mcpManage?: NonNullable<HostOptions['mcpManage']>
   pluginManage?: NonNullable<HostOptions['pluginManage']>
   skillInstall?: NonNullable<HostOptions['skillInstall']>
@@ -230,6 +232,7 @@ export async function runWorker(
   }
 
   const sharedChannel = new SharedSessionChannel(send)
+  const boundWakes = profileWakeProducer(sharedChannel)
   const skillInstall: NonNullable<HostOptions['skillInstall']> = async (input, signal) => {
     if (input.sessionKey !== sharedChannel.currentSessionKey())
       throw new Error('Skill install session mismatch')
@@ -428,6 +431,7 @@ export async function runWorker(
     : deps.buildHost
       ? deps.buildHost(profile, prompter, {
           restoreGenerationExtension: generationExtensionRestorer(workerResourcesInput, sharedMcpOpener),
+          boundWakes,
           skillInstall,
           mcpManage,
           pluginManage,
@@ -464,6 +468,7 @@ export async function runWorker(
             allowUnresolvedProvider: true,
             log: deps.log ?? sessionLog,
             prompter,
+            boundWakes,
             skillInstall,
             mcpManage,
             pluginManage,

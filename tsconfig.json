@@ -306,6 +306,18 @@
     },
     {
       "path": "packages/mhs-ui"
+    },
+    {
+      "path": "packages/plugin-streams"
+    },
+    {
+      "path": "packages/mhs-plugin/tsconfig.test.json"
+    },
+    {
+      "path": "packages/mhs-device/tsconfig.test.json"
+    },
+    {
+      "path": "packages/mhs-hub/tsconfig.test.json"
     }
   ]
 }

@@ -32,6 +32,10 @@ type Operation = {
 }
 type State = { version: 1; reviews: Record<string, Review>; operations: Record<string, Operation> }
 export interface ExampleBackend {
+  runtime(
+    exampleId: string,
+  ): Promise<{ state: 'starting' | 'running' | 'failed' | 'stopped' | 'unavailable'; code?: string }>
+  stop(exampleId: string, commandId: string): Promise<void>
   owner(rowId: string): Promise<Owner>
   catalog(): Promise<readonly PackageCatalogDescriptor[]>
   installed(): Promise<readonly PackageInstalledDescriptor[]>
@@ -133,6 +137,7 @@ export function createExamplePackages(options: {
     async call(rowId: string, request: Record<string, unknown>): Promise<unknown> {
       const keys: Record<string, string[]> = {
         list: [],
+        stop: ['exampleId', 'operationId'],
         inspect: ['exampleId'],
         enable: ['reviewId', 'operationId'],
         read: ['operationId'],
@@ -162,27 +167,37 @@ export function createExamplePackages(options: {
         const who = await owner(rowId)
         const scope = identity(who)
         const state = read()
+        if (action === 'stop') {
+          const entry = (await entries(who)).find((entry) => entry.id === field(request.exampleId)) ?? deny()
+          const installed = (await backend.installed()).find((item) => item.id === entry.id)
+          if (!installed || installed.metadata?.exampleOf !== who.row.packageId) deny()
+          await backend.stop(entry.id, id(request.operationId))
+          return null
+        }
         if (action === 'list') {
           const installed = await backend.installed()
-          return (await entries(who)).map((entry) => {
-            const item = installed.find((item) => item.id === entry.id)
-            return {
-              id: entry.id,
-              version: entry.version,
-              integrity: entry.integrity,
-              metadata: entry.metadata,
-              bundled: true,
-              installation: !item
-                ? 'not-installed'
-                : item.actual === 'failed'
-                  ? 'failed'
-                  : item.desired === 'enabled' && item.actual === 'running'
-                    ? 'enabled'
-                    : item.desired === 'enabled'
-                      ? 'enabling'
-                      : 'disabled',
-            }
-          })
+          return Promise.all(
+            (await entries(who)).map(async (entry) => {
+              const item = installed.find((item) => item.id === entry.id)
+              return {
+                id: entry.id,
+                version: entry.version,
+                integrity: entry.integrity,
+                metadata: entry.metadata,
+                bundled: true,
+                runtime: item?.desired === 'enabled' ? await backend.runtime(entry.id) : { state: 'stopped' },
+                installation: !item
+                  ? 'not-installed'
+                  : item.actual === 'failed'
+                    ? 'failed'
+                    : item.desired === 'enabled' && item.actual === 'running'
+                      ? 'enabled'
+                      : item.desired === 'enabled'
+                        ? 'enabling'
+                        : 'disabled',
+              }
+            }),
+          )
         }
         if (action === 'inspect' || action === 'prepare') {
           const entry = (await entries(who)).find((entry) => entry.id === field(request.exampleId)) ?? deny()

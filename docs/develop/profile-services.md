@@ -59,3 +59,15 @@ The producer needs an exact source grant for its own owner and `wake.enqueue`; a
 A revoked target yields a terminal refusal; it is not transferred to another session or activation. Ordinary jobs APIs reject the internal notification payload. Preserve operation safety receipts and undelivered outbox items independently of any activity-display retention window.
 
 These APIs are trusted-plugin contracts, not isolation for arbitrary JavaScript. New scope, risk, lease, store and wake declarations are strict schema fields; an older Host rejects them rather than silently granting fallback authority.
+
+## Current-profile managed resources
+
+Installed, trusted plugins can inject `profileRuntime`. Declare a profile `managedServices` entry with `artifact: { kind: 'in-process' }`, reviewed loopback listeners and bounded startup/shutdown deadlines. `ctx.profileRuntime.register({ id, configSchema, defaultConfig, start, check? })` registers the factory; it does not start a resource in a staged or pinned tree. Only current profile publication starts it in the shared Host worker. Replacement drains the old resource first. `handle.get()` refuses obsolete or unready resources. This is trusted in-process execution; Node/OCI artifacts continue to use the separate process supervisor.
+
+`start(init)` receives an owner-scoped store, bound notifications, selected listeners, validated configuration and a lifecycle signal. Install `init.onShutdown` before opening listeners, and call `init.ready()` only after recovery and binding. Shutdown must confirm settlement; a persisted unconfirmed shutdown refuses restart. The generic `listenerPorts` configuration may select a port for an `auto` listener, but cannot change its host or override a reviewed fixed port.
+
+The Host registers `<id>.status`, `<id>.configuration`, `<id>.check`, `<id>.retry` and `<id>.configure` as ordinary profile services. Include the exact names in the client allowlist. Status exposes safe listener addresses; configuration and retry require native approval. A plugin-provided check reports domain health through this same facade.
+
+Declare streams and register them through `ctx.profileRuntime.streams.register(name, handler)`. The local launcher relays the same-origin stream gateway to the shared worker over a private connection. The current roster, scope, input schema, actor and native control grant are checked before dispatch. Browser code never receives the private worker endpoint or its connection proof. The generic transport implementation is shared in `@agnes/plugin-streams`; `@agnes/daemon-rpc/streams` remains a compatible entry.
+
+The examples facade reports installation and managed runtime readiness separately. Stop disables the selected installed child example through package administration; relationship metadata only selects eligible children and does not grant them a parent's service authority.

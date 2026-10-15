@@ -56,6 +56,7 @@ export type RowExtensionHostOptions = Readonly<{
   describePackage?(
     packageId: string,
     snapshotId: string,
+    exportName?: string,
   ):
     | Readonly<{
         version?: string
@@ -278,7 +279,7 @@ export function createRowExtensionHost(options: RowExtensionHostOptions) {
     const holder = sources.get(source)
     if (holder !== undefined && holder !== rowId)
       throw new HostError('E_EXT_LOAD', 'extension source is already held by another row')
-    const info = options.describePackage?.(origin.packageId, origin.snapshotId)
+    const info = options.describePackage?.(origin.packageId, origin.snapshotId, origin.exportName)
     const packageVersion = info?.version ?? origin.snapshotId
     const lease = leaseFor(manifestLikeFor(source, packageVersion), {
       ttlMs: ROW_BOUND_LEASE_TTL_MS,
