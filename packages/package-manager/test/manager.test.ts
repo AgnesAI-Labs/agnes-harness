@@ -19,7 +19,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { isPackageError } from '../src/errors.js'
 import { emptyLock, type Lockfile, readLock, writeLock } from '../src/lockfile.js'
 import { createPackageManager } from '../src/manager.js'
-import { type ExecFn, packageDir } from '../src/sources.js'
+import { type ExecFn, packageDir, parseSource } from '../src/sources.js'
 import { verifyWorkspace } from '../src/workspace.js'
 import { listWorkspaceDeployments } from '../src/workspace-deployments.js'
 
@@ -378,8 +378,24 @@ describe('PackageManager project trust', () => {
     expect(offered()).toEqual([])
   })
 
-  it('refuses identity drift, policy denial, and deploy directories outside the profile root', async () => {
-    const manager = createPackageManager({ dataDir, agnesVersion: '0.1.0' })
+  it('refuses id collisions, identity drift, policy denial, and outside directories', async () => {
+    const manager = createPackageManager({
+      dataDir,
+      agnesVersion: '0.1.0',
+      cwd: profileDir,
+      references: async () => [],
+    })
+    const lockBytes = () => readFileSync(join(profileDir, 'agnes-lock.json'), 'utf8')
+    // An id already installed from another source is never silently replaced by project trust.
+    const fileSource = parseSource('file:./deploy/xinwei/extensions/sales-analysis')
+    const preview = await manager.inspect(profileDir, fileSource)
+    await manager.install(profileDir, fileSource, { expectedIntegrity: preview.integrity })
+    const installed = lockBytes()
+    await expect(manager.trustWorkspace(profileDir, deployDir)).rejects.toThrow(/E_PACKAGE_STATE/)
+    expect(lockBytes()).toBe(installed)
+    expect(existsSync(packageDir(dataDir, 'enterprise', 'xinwei/sales-analysis'))).toBe(true)
+    await manager.remove(profileDir, 'xinwei/sales-analysis')
+
     writeFileSync(
       join(deployDir, 'extensions', 'sales-analysis', 'package.json'),
       JSON.stringify({ name: 'xinwei/other', version: '1.0.0', license: 'MIT' }),

@@ -1415,6 +1415,12 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
             throw new PackageError('E_EXT_LOAD', 'workspace extension path escapes its deploy directory', {
               detail: { reason: 'path-escape', id: extension.id },
             })
+          // Project trust never replaces a package another source installed; that needs remove first.
+          const existing = own(lock.packages, extension.id)
+          if (existing && existing.source.type !== 'workspace')
+            throw new PackageError('E_EXT_LOAD', 'package is already installed from another source', {
+              detail: { reason: 'already-installed', id: extension.id },
+            })
           const author = readBundledManifest(dir)
           const pkg = readPackageJson(dir)
           if (
