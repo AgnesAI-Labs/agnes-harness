@@ -81,6 +81,26 @@ export function installProfileRuntime(
       )
       return handle
     },
+    async connectProducer(this: { ctx: Context }, target, input, context) {
+      const row = resolve(this.ctx)
+      if (
+        !row.capabilities?.managedServices?.some(
+          (d) =>
+            d.scope === 'profile' &&
+            d.requires.some(
+              (g) => g.extension === target.extension && g.name === target.name && g.range === '*',
+            ),
+        )
+      )
+        throw rpcError('CAPABILITY_DENIED')
+      await deps.streams.forward(
+        { ...row, packageId: row.origin.packageId },
+        target.extension,
+        target.name,
+        input,
+        context,
+      )
+    },
     get streams(): PluginProfileRuntimePort['streams'] {
       throw new Error('unbound profile streams')
     },

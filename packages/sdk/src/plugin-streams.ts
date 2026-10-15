@@ -143,7 +143,7 @@ export function createPluginStreamsClient(options: {
       const stream: PluginStreamConnection = Object.freeze({
         send(frame: PluginStreamFrame) {
           if (closed || !ready) return 'closed'
-          if (grant.lane !== 'control') {
+          if (grant.lane !== 'control' && !grant.producer) {
             finish('protocol')
             return 'closed'
           }
@@ -168,11 +168,11 @@ export function createPluginStreamsClient(options: {
             }
             const bytes =
               typeof data === 'string' ? new TextEncoder().encode(data).byteLength : data.byteLength
-            if (bytes > 4096) {
+            if (bytes > (grant.producer ? (grant.maxFrameBytes ?? 4096) : 4096)) {
               finish('protocol')
               return 'closed'
             }
-            if (ws.bufferedAmount + bytes > 32768) {
+            if (ws.bufferedAmount + bytes > (grant.producer ? (grant.maxBufferedBytes ?? 32768) : 32768)) {
               finish('overloaded')
               return 'closed'
             }

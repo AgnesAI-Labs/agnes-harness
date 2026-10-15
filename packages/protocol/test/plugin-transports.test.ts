@@ -21,8 +21,14 @@ const declaration = {
 describe('plugin transport contracts', () => {
   it('admits bounded declarations and refuses inbound paths without effect authority', () => {
     expect(validateStreamDeclaration(declaration).ok).toBe(true)
+    expect(
+      validateStreamDeclaration({ ...declaration, producer: true, directions: ['inbound', 'outbound'] }).ok,
+    ).toBe(true)
     for (const patch of [
       { directions: ['inbound'] },
+      { producer: true, scope: 'session', directions: ['inbound'] },
+      { producer: true, lane: 'control', directions: ['inbound'], controlService: 'sample.effect' },
+      { producer: true, controlService: 'sample.effect', directions: ['inbound'] },
       { maxFrameBytes: 1048577 },
       { lane: 'control', directions: ['inbound'], maxFrameBytes: 4096, maxBufferedBytes: 32768 },
       { upstreamUrl: 'http://example.invalid' },

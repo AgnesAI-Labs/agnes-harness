@@ -30,7 +30,12 @@ export function validateStreamDeclaration(value: unknown): ValidationResult<S.St
       (d.directions.includes('inbound') && !d.controlService))
   )
     return invalid('control streams require bounded buffers and an authorized effect service')
-  if (d.lane !== 'control' && d.directions.includes('inbound'))
+  if (
+    d.producer &&
+    (d.scope !== 'profile' || d.lane === 'control' || d.controlService || !d.directions.includes('inbound'))
+  )
+    return invalid('producers require a profile data lane without control admission')
+  if (d.lane !== 'control' && d.directions.includes('inbound') && !d.producer)
     return invalid('inbound streams require the control lane')
   return result
 }

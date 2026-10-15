@@ -187,6 +187,7 @@ export function createPluginStreamBroker(options: {
       if (tickets.size >= 1024) throw new PluginStreamError('OVERLOADED')
       if (
         registration.declaration.directions.includes('inbound') &&
+        !registration.declaration.producer &&
         (!admission.control?.grantId ||
           !Number.isSafeInteger(admission.control.expiresAt) ||
           admission.control.expiresAt <= now())
@@ -214,6 +215,13 @@ export function createPluginStreamBroker(options: {
         path: PLUGIN_STREAM_PATH,
         streamId: t.id,
         lane: registration.declaration.lane,
+        ...(registration.declaration.producer
+          ? {
+              producer: true as const,
+              maxFrameBytes: registration.declaration.maxFrameBytes,
+              maxBufferedBytes: registration.declaration.maxBufferedBytes,
+            }
+          : {}),
       }
     },
     connect(principal: StreamPrincipal, socket: StreamSocket) {

@@ -270,6 +270,9 @@ describe('batch plugin connector', () => {
         },
       },
       profileRuntime: {
+        async connectProducer() {
+          throw new Error('no producer grant')
+        },
         register(definition) {
           managedId = definition.id
           return {

@@ -61,6 +61,7 @@ export function createRosterStreamAuthorizer(options: {
         (selected.backendActivationId?.() ?? binding.activationId) !== registration.activationId ||
         binding.lifetime !== request.scope.kind ||
         (registration.declaration.directions.includes('inbound') &&
+          !registration.declaration.producer &&
           (!request.controlOperationId || !selected.control?.grantId))
       )
         throw new PluginStreamError('REFUSED')

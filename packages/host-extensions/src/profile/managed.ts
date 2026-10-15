@@ -46,6 +46,7 @@ export class ProfileManagedResources {
   constructor(
     private readonly key: string,
     private readonly wakes: (owner: string, integrity: string) => BoundWakes,
+    private readonly current?: (owner: string, integrity: string, revision: string) => boolean,
   ) {}
   register<T>(input: {
     owner: string
@@ -78,6 +79,8 @@ export class ProfileManagedResources {
     const configKey = `managed-config:${input.definition.id}`
     const resource = () => {
       input.assert()
+      if (this.current && !this.current(input.owner, input.integrity, input.revision))
+        throw rpcError('CAPABILITY_DENIED')
       const current = profiles
         .get(this.key)
         ?.resources.find(
@@ -255,12 +258,24 @@ export class ProfileManagedResources {
   publish(reason: Reason = 'upgrade', force = false): Promise<void> {
     if (this.closed) return Promise.reject(rpcError('CAPABILITY_DENIED'))
     const previous = profiles.get(this.key)
-    const stamp = this.definitions
+    const definitions = this.definitions.filter(
+      (d) => !this.current || this.current(d.owner, d.integrity, d.revision),
+    )
+    const stamp = definitions
       .map((d) => `${d.owner}/${d.revision}/${d.definition.id}`)
       .sort()
       .join('\0')
     if (previous?.manager === this && previous.stamp === stamp && !force) return previous.draining
-    for (const r of previous?.resources ?? []) r.lifetime.abort(reason)
+    const retained =
+      previous?.manager === this && !force
+        ? previous.resources.filter((r) =>
+            definitions.some(
+              (d) => d.owner === r.owner && d.revision === r.revision && d.definition.id === r.id,
+            ),
+          )
+        : []
+    const retiring = (previous?.resources ?? []).filter((r) => !retained.includes(r))
+    for (const r of retiring) r.lifetime.abort(reason)
     const next = {
       manager: this,
       stamp,
@@ -270,10 +285,19 @@ export class ProfileManagedResources {
     profiles.set(this.key, next)
     next.draining = (async () => {
       await previous?.draining
-      await Promise.all(previous?.resources.map((r) => r.stop(reason)) ?? [])
+      await Promise.all(retiring.map((r) => r.stop(reason)))
       if (profiles.get(this.key) !== next || this.closed) return
-      next.resources = []
-      for (const definition of this.definitions) next.resources.push(await this.start(definition))
+      next.resources = retained
+      for (const definition of definitions)
+        if (
+          !retained.some(
+            (r) =>
+              r.owner === definition.owner &&
+              r.revision === definition.revision &&
+              r.id === definition.definition.id,
+          )
+        )
+          next.resources.push(await this.start(definition))
     })()
     void next.draining.catch(() => undefined)
     return next.draining

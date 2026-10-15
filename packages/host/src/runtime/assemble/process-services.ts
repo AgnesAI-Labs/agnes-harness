@@ -100,6 +100,14 @@ export async function openProcessServices(ctx: AssemblyContext, pkgs: PackageSet
           throw new Error('Bound wakes unavailable')
         },
       })),
+    (owner, integrity, revision) => {
+      try {
+        profileActivations.require(owner, integrity, undefined, revision)
+        return true
+      } catch {
+        return false
+      }
+    },
   )
   rollback.push('profile-managed', () => profileManaged.close())
   return {

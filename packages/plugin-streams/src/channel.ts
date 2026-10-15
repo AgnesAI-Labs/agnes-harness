@@ -194,7 +194,11 @@ export function createStreamChannel(options: {
       return
     }
     window()
-    if (inputBytes + bytes.byteLength > d.maxBytesPerSecond || inputCount >= 30) {
+    if (
+      inputBytes + bytes.byteLength > d.maxBytesPerSecond ||
+      inputCount >= (d.lane === 'control' ? 30 : 1024) ||
+      (d.lane === 'media' && !options.mediaBudget(bytes.byteLength))
+    ) {
       disconnect('overloaded', 1013)
       return
     }

@@ -75,3 +75,7 @@ Host 将 `<id>.status`、`<id>.configuration`、`<id>.check`、`<id>.retry`、`<
 流声明通过 `ctx.profileRuntime.streams.register(name, handler)` 注册。本地 launcher 将同源 stream gateway 经私有连接转接到共享 worker，分发前校验当前 roster、scope、输入 schema、actor 和原生控制 grant。浏览器不会获得 worker 私有端点及连接证明。通用传输实现位于 `@agnes/plugin-streams`，`@agnes/daemon-rpc/streams` 保留兼容入口。
 
 示例 facade 分开展示安装状态与受管理运行就绪状态。Stop 经插件管理禁用选中的已安装子示例；关系元数据仅筛选候选，不将父插件服务权限授予子插件。
+
+Profile 数据 producer 可在 events 或 media 通道的 inbound profile stream 上声明 `producer: true`。它保留认证 roster、精确 owner、activation、有界缓冲和撤销检查，不取得运动或控制权限。可信后端仅可按精确的 `managedServices.requires` grant（backend owner、stream 名称、range `*`）调用 `profileRuntime.connectProducer`。每次转接帧都复查 child 与 parent activation；现有 inbound control stream 仍要求已消费的原生 effect grant。
+
+`local-dev` 模板允许经审核的 store、wake、stream 与 managed-service 声明。现有 profile 已保存的能力上限仍然有效，不自动扩权，也不绕过包信任与 effect 批准。

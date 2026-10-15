@@ -1,6 +1,6 @@
 import type { JsonValue } from '@agnes/protocol'
 import type { BoundWakes, OwnedStore } from './profile-services.js'
-import type { PluginStreamsPort } from './streams.js'
+import type { PluginStreamsPort, StreamContext } from './streams.js'
 
 /** A trusted backend resource in the current profile worker. It is never session-owned. */
 export interface ProfileManagedInit {
@@ -32,6 +32,13 @@ export interface PluginProfileRuntimePort {
    * Registers generic `<id>.status`, `.retry`, `.configure` and `.check` profile services.
    * Configuration/retry retain native effect admission; status never returns private credentials. */
   register<T>(definition: ProfileManagedDefinition<T>): ProfileManagedHandle<T>
+  /** Forward an own authenticated producer stream to an explicitly reviewed managed `requires` grant.
+   * Both activations remain current on every frame; this never grants motion authority. */
+  connectProducer(
+    target: { extension: string; name: string },
+    input: JsonValue,
+    context: StreamContext,
+  ): Promise<void>
   readonly streams: PluginStreamsPort
 }
 

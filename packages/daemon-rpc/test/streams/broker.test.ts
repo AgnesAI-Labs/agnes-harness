@@ -129,6 +129,26 @@ function fixture(d = declaration) {
 }
 afterEach(() => vi.useRealTimers())
 describe('authenticated stream broker', () => {
+  it('admits a reviewed profile producer without motion authority and bounds/revokes its data lane', async () => {
+    const f = fixture({ ...declaration, directions: ['inbound', 'outbound'], producer: true })
+    try {
+      const grant = await f.broker.open(f.actor, f.request)
+      expect(grant).toMatchObject({ producer: true, lane: 'media', maxFrameBytes: declaration.maxFrameBytes })
+      const p = f.hello(grant)
+      expect(p.context.control).toBeUndefined()
+      const frames: unknown[] = []
+      p.context.stream.onFrame((frame) => frames.push(frame))
+      for (let i = 0; i < 40; i++)
+        p.connection.receive(encodePluginStreamBinary(grant.streamId, i, new Uint8Array([i])), true)
+      expect(frames).toHaveLength(40)
+      f.revoke()
+      p.connection.receive(encodePluginStreamBinary(grant.streamId, 40, new Uint8Array([40])), true)
+      expect(frames).toHaveLength(40)
+      expect(p.closed[0]?.reason).toBe('revoked')
+    } finally {
+      f.broker.close()
+    }
+  })
   it('atomically consumes tickets, binds subject/connection/profile and refuses expired or replaced owners', async () => {
     const f = fixture()
     for (const other of [

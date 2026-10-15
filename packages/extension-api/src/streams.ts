@@ -17,6 +17,8 @@ export interface StreamContext {
   readonly signal: AbortSignal
   readonly stream: PluginStream
   /** Verified by current authority; never a browser-supplied grant. */
+  /** Set only by the backend's reviewed cross-owner producer bridge. */
+  readonly producer?: Readonly<{ owner: string; packageId: string; integrity: string; activationId: string }>
   readonly control?: { readonly grantId: string; readonly expiresAt: number }
 }
 export type StreamHandler = (input: JsonValue, context: StreamContext) => void | Promise<void>

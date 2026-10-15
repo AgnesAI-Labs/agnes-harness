@@ -30,7 +30,12 @@ it('runs only the published resource, drains replacements, and refuses revival a
       throw new Error('unbound-target')
     },
   }
-  const one = new ProfileManagedResources('synthetic-singleton', () => wakes),
+  let current = true
+  const one = new ProfileManagedResources(
+      'synthetic-singleton',
+      () => wakes,
+      () => current,
+    ),
     two = new ProfileManagedResources('synthetic-singleton', () => wakes)
   const descriptor: ManagedServiceDescriptor = {
     id: 'server',
@@ -97,6 +102,32 @@ it('runs only the published resource, drains replacements, and refuses revival a
     expect(retries.map((result) => result.status).sort()).toEqual(['fulfilled', 'rejected'])
     expect((await first.get()).port).toBeGreaterThan(0)
     expect(running).toBe(1)
+    const originalPort = (await first.get()).port
+    const sibling = one.register({
+      ...input,
+      descriptor: { ...descriptor, id: 'sibling', listeners: [] },
+      definition: {
+        ...definition,
+        id: 'sibling',
+        async start(init) {
+          init.onShutdown(async () => ({ state: 'settled' }))
+          init.ready()
+          return { port: 0 }
+        },
+      },
+    })
+    await one.publish()
+    expect((await first.get()).port).toBe(originalPort)
+    sibling.release()
+    await one.publish()
+    expect((await first.get()).port).toBe(originalPort)
+    current = false
+    await one.publish()
+    expect(one.statuses('@example/server')).toEqual([])
+    await expect(first.get()).rejects.toThrow()
+    current = true
+    await one.publish()
+    expect((await first.get()).port).toBeGreaterThan(0)
     await two.publish()
     await expect(first.get()).rejects.toThrow()
     expect((await staged.get()).port).toBeGreaterThan(0)
