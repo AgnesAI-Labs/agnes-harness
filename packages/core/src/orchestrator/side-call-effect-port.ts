@@ -3,6 +3,7 @@ import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import { CoreError, type Event, type EventInput, type Seq } from '@agnes/core-common/types'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import type { SideCallStatus } from '@agnes/extension-api'
+import { AI_ERROR_CODES, type AiErrorCode } from '@agnes/protocol'
 import { sessionIdentity } from '../loop/scope.js'
 import type { SessionImpl } from '../step/session.js'
 import type {
@@ -550,15 +551,20 @@ type IndexEntry = {
   durable?: DurableBinding | undefined
 }
 
-/** One scan of the lane's side-call rows, including late receipts that closed a call's intent. */
-async function buildIndex(session: SessionImpl): Promise<Map<string, IndexEntry>> {
+/**
+ * Adds the lane's side-call rows from `fromSeq` to the head, including late receipts that closed a
+ * call's intent, and returns the last sequence scanned. A row already indexed at the same sequence
+ * is not a conflict, so a range can be scanned again.
+ */
+async function indexRows(session: SessionImpl, entries: Map<string, IndexEntry>, fromSeq: Seq): Promise<Seq> {
+  const toSeq = session.lastSeq
+  if (fromSeq > toSeq) return toSeq
   const events = await scanAll((query) => session.scan(query), {
     lane: session.lane,
-    fromSeq: (session.d.log.parent?.boundarySeq ?? 0) + 1,
-    toSeq: session.lastSeq,
+    fromSeq,
+    toSeq,
     type: [SIDE_CALL.intentEvent, SETTLED_EVENT, SIDE_CALL.terminal.event, LATE_RECEIPT_EVENT],
   })
-  const entries = new Map<string, IndexEntry>()
   const note = (
     effectId: unknown,
     field: 'intentSeq' | 'settledSeq' | 'terminalSeq' | 'receiptSeq',
@@ -566,7 +572,7 @@ async function buildIndex(session: SessionImpl): Promise<Map<string, IndexEntry>
   ) => {
     if (typeof effectId !== 'string' || !effectId.startsWith(SIDE_CALL_PREFIX)) return
     const entry = entries.get(effectId) ?? {}
-    if (entry[field] !== undefined) entry.conflict = true
+    if (entry[field] !== undefined && entry[field] !== seq) entry.conflict = true
     entry[field] = seq
     entries.set(effectId, entry)
   }
@@ -590,8 +596,11 @@ async function buildIndex(session: SessionImpl): Promise<Map<string, IndexEntry>
           note(effectId, 'receiptSeq', event.seq)
       }
   }
-  return entries
+  return toSeq
 }
+
+const inFlight = (entry: IndexEntry) =>
+  entry.settledSeq === undefined && entry.terminalSeq === undefined && entry.receiptSeq === undefined
 
 export type SideCallEffectPort = Readonly<{
   /**
@@ -606,8 +615,8 @@ export type SideCallEffectPort = Readonly<{
    * Appends one settlement batch, cost then settlement then terminal, after checking every row
    * against the terminal, and returns the sequence numbers in order; it fits a model execution's
    * `write` option. Once the loop scope is revoked a scoped writer turns the batch into a late
-   * receipt and throws `E_CLOSED`, so cost and settlement alone are accepted then, once the cost row
-   * is checked to be this call's own.
+   * receipt and throws `E_CLOSED`, so cost and settlement alone are accepted then, once both rows
+   * are checked to be this call's own.
    */
   write(events: EventInput[]): Promise<readonly Seq[]>
   /** What the ledger holds for an invocation: absent, in flight, or finished with its result. */
@@ -617,18 +626,30 @@ export type SideCallEffectPort = Readonly<{
 /**
  * The side-call effect port of one loop context. Build it over the loop-scoped session so that a
  * revoked write becomes a late receipt. The lane is scanned once, on first use; after that a call
- * reads only the rows it needs by sequence, and this port's own writes keep the index current.
+ * reads only the rows it needs by sequence, and this port's own writes keep the index current. A
+ * call another context left in flight, such as one whose execution was revoked, is settled by a row
+ * this port did not write, so `status` scans the rows added since its last scan before answering.
  */
 export function createSideCallEffectPort(session: SessionImpl): SideCallEffectPort {
   const fail: Invalid = SIDE_CALL.terminal.invalid
+  const own = new Set<string>()
+  let indexedTo = 0 as Seq
   let indexing: Promise<Map<string, IndexEntry>> | undefined
   const index = () =>
     (indexing ??= session
-      .locked(() => buildIndex(session))
+      .locked(async () => {
+        const entries = new Map<string, IndexEntry>()
+        indexedTo = await indexRows(session, entries, ((session.d.log.parent?.boundarySeq ?? 0) + 1) as Seq)
+        return entries
+      })
       .catch((error: unknown) => {
         indexing = undefined
         throw error
       }))
+  const catchUp = (entries: Map<string, IndexEntry>) =>
+    session.locked(async () => {
+      indexedTo = await indexRows(session, entries, (indexedTo + 1) as Seq)
+    })
   const durable = async (entry: IndexEntry, effectId: string): Promise<DurableBinding> => {
     if (entry.conflict || entry.intentSeq === undefined)
       throw relation('side-call effect has an ambiguous durable record', effectId)
@@ -694,6 +715,7 @@ export function createSideCallEffectPort(session: SessionImpl): SideCallEffectPo
         if (intentSeq === undefined) throw relation('side-call intent sequence is missing', binding.effectId)
         const durable = Object.freeze({ binding, audit, bindingHash: bindingHashOf(binding) })
         entries.set(binding.effectId, { intentSeq, durable })
+        own.add(binding.effectId)
         return intentSeq
       })
     },
@@ -708,32 +730,44 @@ export function createSideCallEffectPort(session: SessionImpl): SideCallEffectPo
         const settlements = events.filter((row) => row.type === SETTLED_EVENT)
         const effectId = settlements.length === 1 ? effectIdOf(settlements[0]?.data) : undefined
         const entry = typeof effectId === 'string' ? entries.get(effectId) : undefined
-        if (
-          !entry ||
-          entry.settledSeq !== undefined ||
-          entry.terminalSeq !== undefined ||
-          entry.receiptSeq !== undefined
-        )
+        if (!entry || !inFlight(entry))
           throw relation('side-call settlement has no in-flight intent', effectId)
         const known = await durable(entry, effectId as string)
         // Once the scope is revoked a scoped writer keeps only the cost row, adds a late receipt and
         // throws; a model execution settling on revocation sends cost and settlement alone.
         const receipt = !session.loopScope.alive && sessionIdentity(session) !== session
-        if (receipt && events.length === 2) checkSideCallCost(events[0] as EventInput, known.binding)
-        else checkSideCallSettlement(events, known.binding, known.bindingHash)
+        if (receipt && events.length === 2) {
+          checkSideCallCost(events[0] as EventInput, known.binding)
+          const settled = events[1] as EventInput
+          const data = ownData(settled.data, ['effectId', 'outcome'], ['code', 'durationMs'])
+          if (
+            settled.type !== SETTLED_EVENT ||
+            !trusted(settled) ||
+            settled.lane !== known.binding.lane ||
+            !data ||
+            data.effectId !== effectId ||
+            !['ok', 'error', 'aborted'].includes(data.outcome as string) ||
+            (data.code !== undefined && !AI_ERROR_CODES.includes(data.code as AiErrorCode)) ||
+            (data.durationMs !== undefined && !count(data.durationMs))
+          )
+            fail('side-call settlement does not belong to its call')
+        } else checkSideCallSettlement(events, known.binding, known.bindingHash)
         const committed = await session.append(events)
         entry.settledSeq = committed.seqs[1]
         entry.terminalSeq = committed.seqs[2]
+        own.delete(effectId as string)
         return committed.seqs
       })
     },
     async status(invocationId: string): Promise<SideCallStatus> {
       const effectId = sideCallEffectId(invocationId)
-      const entry = (await index()).get(effectId)
+      const entries = await index()
+      const pending = entries.get(effectId)
+      if (pending && inFlight(pending) && !own.has(effectId)) await catchUp(entries)
+      const entry = entries.get(effectId)
       if (!entry) return Object.freeze({ status: 'absent', invocationId })
       const known = await durable(entry, effectId)
-      if (entry.settledSeq === undefined && entry.terminalSeq === undefined && entry.receiptSeq === undefined)
-        return Object.freeze({ status: 'in-flight', invocationId })
+      if (inFlight(entry)) return Object.freeze({ status: 'in-flight', invocationId })
       return Object.freeze({
         status: 'finished',
         invocationId,

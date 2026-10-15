@@ -101,7 +101,11 @@ export type SideCallResult =
       /** `deadline` is retryable; `cancelled` and `invalid-output` are not; `adapter-error` follows the adapter's own flag. */
       retryable: boolean
       dispatch: 'not-sent' | 'may-have-sent'
-      /** Present when a cost row was written; an estimate (`creditSource: 'estimated'`) when no usage was observed. */
+      /**
+       * Present when the call settled through its normal terminal: the observed usage, or an estimate
+       * (`creditSource: 'estimated'`) when none was observed and the catalog has a price. A call closed
+       * because the loop's execution scope was revoked reports none, although its cost row is written.
+       */
       usage?: SideCallUsage
       latencyMs: number
       replayed: boolean

@@ -35,6 +35,7 @@ import { LoopInvocations } from './invocations.js'
 import { loopJobs } from './jobs.js'
 import { publicOutcome } from './outcome.js'
 import { scopeLoopContext, sessionForLoop } from './scope.js'
+import { createSideCallPort, sideCallInFlight } from './side-call.js'
 import { freezeView, loopTurnView } from './turn-view.js'
 import { loopWait } from './wait.js'
 
@@ -395,6 +396,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
     },
     jobs: loopJobs(s, invocations),
     effects: { status: (id) => invocations.status(id) },
+    sideCall: createSideCallPort(s),
     turn: {
       view: () => loopTurnView(s),
       async endStep() {
@@ -596,6 +598,11 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
         await s.locked(() => appendExtensionEvent(s, event, { loopTrigger: true }))
       },
       async finish(reason, error) {
+        // A side call settles inside its turn; ending the turn first would leave it unsettled.
+        if (sideCallInFlight(s))
+          throw new CoreError('E_RELATION', 'A side call is still in flight', {
+            reason: 'side-call-in-flight',
+          })
         if (reason !== 'completed') {
           const step = s.state.openStep.get(s.lane)
           await s.endTurn(reason, {

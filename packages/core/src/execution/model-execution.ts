@@ -151,6 +151,10 @@ export class ModelExecution {
   get settled(): boolean {
     return this.accounted
   }
+  /** False only when the request certainly did not reach the provider. */
+  get mayHaveSent(): boolean {
+    return this.dispatched
+  }
   private readonly turn
   private readonly op
 

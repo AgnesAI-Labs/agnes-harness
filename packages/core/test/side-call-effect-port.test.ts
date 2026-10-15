@@ -672,7 +672,7 @@ describe('side-call ledger rows', () => {
     await kernel.close()
   })
 
-  it('checks the cost row it keeps when revocation turns a settlement into a late receipt', async () => {
+  it('checks the cost and settlement rows it keeps when revocation turns them into a late receipt', async () => {
     const { kernel, session } = await setup('side-revoked-cost')
     const scoped = sessionForLoop(session)
     const port = createSideCallEffectPort(scoped)
@@ -680,6 +680,7 @@ describe('side-call ledger rows', () => {
     const intentSeq = await port.begin(identity, audit)
     const { cost, settled } = settlementRows(session, identity.effectId, okTerminal)
     const changed = (data: object) => ({ ...cost, data: { ...(cost.data as object), ...data } })
+    const settledWith = (data: object) => ({ ...settled, data: { ...(settled.data as object), ...data } })
     scoped.loopScope.revoke()
     const before = session.lastSeq
     for (const row of [
@@ -689,6 +690,15 @@ describe('side-call ledger rows', () => {
       external(cost),
     ])
       await expect(port.write([row as EventInput, settled])).rejects.toMatchObject({ code: 'E_ENVELOPE' })
+    for (const row of [
+      external(settled),
+      { ...settled, lane: 'other-lane' },
+      settledWith({ outcome: 'unknown' }),
+      settledWith({ code: 'NOT_A_CODE' }),
+      settledWith({ durationMs: -1 }),
+      settledWith({ note: 'extra' }),
+    ])
+      await expect(port.write([cost, row as EventInput])).rejects.toMatchObject({ code: 'E_ENVELOPE' })
     expect(session.lastSeq).toBe(before)
     const closed = { code: 'E_CLOSED', detail: { costSeq: before + 1 } }
     await expect(port.write([cost, settled])).rejects.toMatchObject(closed)
