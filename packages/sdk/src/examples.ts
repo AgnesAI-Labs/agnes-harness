@@ -6,6 +6,7 @@ export type ExampleView = Readonly<{
   integrity: string
   metadata: PluginMetadata
   bundled: boolean
+  runtime?: { state: 'starting' | 'running' | 'failed' | 'stopped' | 'unavailable'; code?: string }
   installation: 'not-installed' | 'disabled' | 'enabling' | 'enabled' | 'failed'
 }>
 export type ExampleReview = Readonly<{
@@ -21,6 +22,7 @@ export type ExampleOperation = Readonly<{
 }>
 export type ExampleRequest =
   | { action: 'list' }
+  | { action: 'stop'; exampleId: string; operationId: string }
   | { action: 'inspect'; exampleId: string }
   | { action: 'enable'; reviewId: string; operationId: string }
   | { action: 'read'; operationId: string }
@@ -31,6 +33,7 @@ export type ExampleRequest =
 export type ExampleTransport = (request: ExampleRequest) => Promise<unknown>
 export interface ExamplePackages {
   list(): Promise<readonly ExampleView[]>
+  stop(exampleId: string, operationId: string): Promise<void>
   inspect(exampleId: string): Promise<ExampleReview>
   enable(reviewId: string, operationId: string): Promise<{ operationId: string }>
   read(operationId: string): Promise<ExampleOperation>
@@ -48,6 +51,9 @@ export function createExampleClient(transport: ExampleTransport): {
   return {
     packages: {
       list: async () => (await transport({ action: 'list' })) as readonly ExampleView[],
+      stop: async (exampleId, operationId) => {
+        await transport({ action: 'stop', exampleId, operationId })
+      },
       inspect: async (exampleId) => (await transport({ action: 'inspect', exampleId })) as ExampleReview,
       enable: async (reviewId, operationId) =>
         (await transport({ action: 'enable', reviewId, operationId })) as { operationId: string },

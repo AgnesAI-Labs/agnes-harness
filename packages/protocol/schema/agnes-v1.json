@@ -8343,6 +8343,95 @@
         "costSource",
         "source"
       ]
+    },
+    "PluginStreamsEndpointParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "origin"
+      ],
+      "properties": {
+        "origin": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "PluginStreamsEndpointResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "host",
+        "port",
+        "proof"
+      ],
+      "properties": {
+        "host": {
+          "const": "127.0.0.1"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "proof": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "PluginRuntimeStatusParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "packageId"
+      ],
+      "properties": {
+        "packageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "PluginRuntimeStatusResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resources"
+      ],
+      "properties": {
+        "resources": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "state"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "state": {
+                "enum": [
+                  "starting",
+                  "ready",
+                  "stopping",
+                  "failed",
+                  "stopped"
+                ]
+              },
+              "code": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

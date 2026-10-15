@@ -9,6 +9,8 @@ import type { MethodName } from './methods.js'
 export type MethodTier = 'client' | 'admin'
 
 export const METHOD_TIERS: Record<MethodName, MethodTier> = {
+  '_agnes/v1/pluginRuntime.status': 'admin',
+  '_agnes/v1/pluginStreams.endpoint': 'admin',
   '_agnes/v1/admin.feedback': 'admin',
   '_agnes/v1/admin.credentials.list': 'admin',
   '_agnes/v1/admin.credentials.create': 'admin',

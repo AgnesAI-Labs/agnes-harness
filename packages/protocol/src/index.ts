@@ -123,6 +123,10 @@ export type {
   ParticipantListResult,
   ParticipantParams,
   PermissionWithdrawParams,
+  PluginRuntimeStatusParams,
+  PluginRuntimeStatusResult,
+  PluginStreamsEndpointParams,
+  PluginStreamsEndpointResult,
   SeqResult,
   SessionAdapterCatalogResult,
   SessionApprovalGrant,
@@ -609,6 +613,7 @@ export { attachmentErrorCode } from './attachment-errors.js'
 export * from './attachments.js'
 export { AutoReviewConfig, ToolReviewFact } from './auto-review.js'
 export * from './child-engine-document.js'
+export { CLIENT_PLATFORM_IMPORTS } from './client-platform-imports.js'
 export * from './codec/permission.js'
 export * from './codec/stop-reason.js'
 export * from './configs.js'

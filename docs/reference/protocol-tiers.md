@@ -55,6 +55,8 @@ What third-party clients rely on: sessions, submit, decisions and events. These 
 
 - `session/update`
 - `_agnes/v1/session.event`
+- `_agnes/v1/session.loading`
+- `_agnes/v1/session.loadingCancel`
 - `_agnes/v1/session.preview`
 - `_agnes/v1/session.loading`
 - `_agnes/v1/session.loadingCancel`
@@ -221,6 +223,8 @@ Package administration, resource control, configuration, scheduling, diagnostics
 - `_agnes/v1/extension.call`
 - `_agnes/v1/directory.upsert`
 - `_agnes/v1/apis.list`
+- `_agnes/v1/pluginRuntime.status`
+- `_agnes/v1/pluginStreams.endpoint`
 - `_agnes/v1/surfaces.mounts`
 
 ### Session defaults and selection

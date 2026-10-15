@@ -179,6 +179,8 @@ export type MethodName =
   | '_agnes/v1/apis.list'
   | '_agnes/v1/submit'
   | '_agnes/v1/submit.ack'
+  | '_agnes/v1/pluginRuntime.status'
+  | '_agnes/v1/pluginStreams.endpoint'
   | '_agnes/v1/surfaces.mounts'
   | 'authenticate'
   | 'session/load'
@@ -448,6 +450,11 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   // bridge createMountProxy's lookup() across the process boundary to `agnesd` (see
   // packages/daemon/src/local/methods/surfaces.ts and packages/cli/launch/web-command.ts). No
   // authKind restriction beyond LocalEndpoint's own initialize gate, same as workspace.list/add.
+  '_agnes/v1/pluginRuntime.status': clientRequest(A.PluginRuntimeStatusParams, A.PluginRuntimeStatusResult),
+  '_agnes/v1/pluginStreams.endpoint': clientRequest(
+    A.PluginStreamsEndpointParams,
+    A.PluginStreamsEndpointResult,
+  ),
   '_agnes/v1/surfaces.mounts': clientRequest(A.SurfacesMountsParams, A.SurfacesMountsResult),
   // Pulled forward from I3. daemon's dispatcher answers -32601 from this table before it reaches any
   // handler, so a method daemon registers and this table omits is unreachable rather than merely

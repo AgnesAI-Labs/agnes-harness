@@ -29,7 +29,15 @@
           "enum": ["profile", "installation"]
         },
         "artifact": {
-          "$ref": "surface.json#/$defs/SurfaceArtifact"
+          "oneOf": [
+            { "$ref": "surface.json#/$defs/SurfaceArtifact" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind"],
+              "properties": { "kind": { "const": "in-process" } }
+            }
+          ]
         },
         "healthPath": {
           "type": "string",

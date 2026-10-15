@@ -188,6 +188,8 @@ export interface AppServerMethods {
   "_agnes/v1/apis.list": { params: Static<typeof import("./agnes-v1.js").ApisListParams>; result: Static<typeof import("./agnes-v1.js").ApisListResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/submit": { params: Static<typeof import("./agnes-v1.js").SubmitParams>; result: Static<typeof import("./agnes-v1.js").Ack>; direction: "c2s"; kind: "request" }
   "_agnes/v1/submit.ack": { params: Static<typeof import("./agnes-v1.js").CommandAckParams>; result: Static<typeof import("./agnes-v1.js").Empty>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/pluginRuntime.status": { params: Static<typeof import("./agnes-v1.js").PluginRuntimeStatusParams>; result: Static<typeof import("./agnes-v1.js").PluginRuntimeStatusResult>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/pluginStreams.endpoint": { params: Static<typeof import("./agnes-v1.js").PluginStreamsEndpointParams>; result: Static<typeof import("./agnes-v1.js").PluginStreamsEndpointResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/surfaces.mounts": { params: Static<typeof import("./agnes-v1.js").SurfacesMountsParams>; result: Static<typeof import("./agnes-v1.js").SurfacesMountsResult>; direction: "c2s"; kind: "request" }
   "authenticate": { params: Static<typeof import("./acp.js").AuthenticateRequest>; result: Static<typeof import("./acp.js").AuthenticateResponse>; direction: "c2s"; kind: "request" }
   "session/load": { params: Static<typeof import("./acp.js").LoadSessionRequest>; result: Static<typeof import("./acp.js").LoadSessionResponse>; direction: "c2s"; kind: "request" }

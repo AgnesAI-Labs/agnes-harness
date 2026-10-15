@@ -4,6 +4,16 @@ API additions require a minor version; removals or semantic changes require a ma
 
 ## 4.0.0
 
+### Preview additions
+
+- Experimental `profileRuntime` facet for current-profile managed resources and declared streams,
+  with `managedServiceCapabilities` for the static status/configuration/check/retry/configure
+  service declarations. Trusted in-process services use an explicit `in-process` artifact kind;
+  node/OCI artifacts retain their process supervisor. Older Hosts refuse the unknown facet or
+  artifact kind. This unreleased preview keeps its API number; these additions need a minor
+  version before publication under the published-package compatibility policy.
+
+
 Every `agnes.plugins[].apiRange` and `@agnes/extension-api` dependency range moves from `^3.0.0` to
 `^4.0.0`; a `^3` range is refused with `E_API_RANGE`.
 

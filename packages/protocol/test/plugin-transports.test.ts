@@ -81,6 +81,15 @@ describe('plugin transport contracts', () => {
       requires: [],
     }
     expect(validateManagedServiceDescriptor(descriptor).ok).toBe(true)
+    expect(validateManagedServiceDescriptor({ ...descriptor, artifact: { kind: 'in-process' } }).ok).toBe(
+      true,
+    )
+    expect(
+      validateManagedServiceDescriptor({
+        ...descriptor,
+        artifact: { kind: 'in-process', entry: './arbitrary.js' },
+      }).ok,
+    ).toBe(false)
     expect(
       validateManagedServiceDescriptor({
         ...descriptor,
