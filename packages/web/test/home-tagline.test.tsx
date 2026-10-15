@@ -1,10 +1,11 @@
 /** @vitest-environment happy-dom */
+
+import { AnimatedTagline } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
-import { HomeTagline } from '../src/regions/home-tagline.js'
 
-;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
 const text = '以可信为根基，为真实世界而生。'
 afterEach(() => {
@@ -19,14 +20,14 @@ it('introduces each character once and replaces every animated span with visible
   document.body.append(host)
   const root = createRoot(host)
   try {
-    await act(async () => root.render(createElement(HomeTagline, { text })))
+    await act(async () => root.render(createElement(AnimatedTagline, { text })))
     const tag = host.firstElementChild as HTMLElement
     expect(tag.dataset.phase).toBe('intro')
     expect(tag.getAttribute('aria-label')).toBe(text)
     expect(tag.children).toHaveLength(Array.from(text).length)
     expect([...tag.children].every((char) => char.getAttribute('aria-hidden') === 'true')).toBe(true)
     await act(async () => vi.advanceTimersByTime(500))
-    await act(async () => root.render(createElement(HomeTagline, { text })))
+    await act(async () => root.render(createElement(AnimatedTagline, { text })))
     await act(async () => vi.advanceTimersByTime(800))
     expect(tag.dataset.phase).toBe('sheen')
     expect(tag.children).toHaveLength(0)
@@ -36,7 +37,7 @@ it('introduces each character once and replaces every animated span with visible
     expect(getComputedStyle(tag).display).not.toBe('none')
     expect(getComputedStyle(tag).visibility).not.toBe('hidden')
     expect(tag.hasAttribute('aria-label')).toBe(false)
-    await act(async () => root.render(createElement(HomeTagline, { text })))
+    await act(async () => root.render(createElement(AnimatedTagline, { text })))
     await act(async () => vi.advanceTimersByTime(10000))
     expect(tag.children).toHaveLength(0)
     expect(tag.textContent).toBe(text)
@@ -55,7 +56,7 @@ it('renders a static sentence for reduced motion without intro or sheen', async 
   const host = document.createElement('div')
   const root = createRoot(host)
   try {
-    await act(async () => root.render(createElement(HomeTagline, { text })))
+    await act(async () => root.render(createElement(AnimatedTagline, { text })))
     expect(host.firstElementChild?.getAttribute('data-phase')).toBe('static')
     expect(host.firstElementChild?.children).toHaveLength(0)
     expect(host.textContent).toBe(text)

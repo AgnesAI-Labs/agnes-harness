@@ -356,7 +356,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             </span>
             {example.complete && (
               <span className="composer-example-adopt">
-                <kbd>Tab</kbd> {t('composer.example.adopt')}
+                <kbd>{t('composer.example.tab')}</kbd> {t('composer.example.adopt')}
               </span>
             )}
           </div>

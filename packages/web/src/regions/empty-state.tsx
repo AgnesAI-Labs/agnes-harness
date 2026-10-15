@@ -6,12 +6,11 @@ import {
   SlotsProvider,
 } from '@agnes/web-client'
 import type { AntdRoot } from '@agnes/web-ui'
-import { createRegionRenderer } from '@agnes/web-ui'
+import { AnimatedTagline, createRegionRenderer } from '@agnes/web-ui'
 import { Welcome, XProvider } from '@agnes/web-ui/x'
 import { type ReactElement, useEffect } from 'react'
 import { businessAgentSuggestions } from '../pages/business-agents.js'
 import { EMPTY_STATE_DSH_CHILDREN, EMPTY_STATE_SLOT, type EmptyStateRegionMount } from './contracts.js'
-import { HomeTagline } from './home-tagline.js'
 
 const APP_BRAND = 'Agnes Harness'
 type EmptyStateText = (key: string, vars?: Readonly<Record<string, string | number>>) => string
@@ -56,7 +55,7 @@ export function EmptyStateBuiltin({ t = (key) => key }: { t?: EmptyStateText }):
               </span>
             </span>
           }
-          description={<HomeTagline text={t('app.emptyState.tagline')} />}
+          description={<AnimatedTagline className="empty-state-copy" text={t('app.emptyState.tagline')} />}
         />
       </XProvider>
     </div>

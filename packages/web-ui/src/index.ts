@@ -11,6 +11,7 @@ export {
   subscribeAdvancedSettings,
   useAdvancedSettings,
 } from './advanced-settings.js'
+export { AnimatedTagline } from './animated-tagline.js'
 export type { AntdRoot, RegionRenderer } from './antd-root.js'
 export {
   createAntdRoot,

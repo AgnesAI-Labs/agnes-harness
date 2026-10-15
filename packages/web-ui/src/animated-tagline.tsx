@@ -1,8 +1,8 @@
-import { useReducedMotion } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
+import { useReducedMotion } from './ui/overlay.js'
 
 /** Animated children must leave before background-clip paints the sentence's sheen. */
-export function HomeTagline({ text }: { text: string }) {
+export function AnimatedTagline({ text, className }: { text: string; className?: string }) {
   const reduce = useReducedMotion()
   const [introduced, setIntroduced] = useState(reduce)
   useEffect(() => {
@@ -20,7 +20,7 @@ export function HomeTagline({ text }: { text: string }) {
   const intro = !reduce && !introduced
   return (
     <span
-      className="empty-state-copy"
+      className={className}
       data-phase={reduce ? 'static' : intro ? 'intro' : 'sheen'}
       {...(intro ? { role: 'img', 'aria-label': text } : {})}
     >
