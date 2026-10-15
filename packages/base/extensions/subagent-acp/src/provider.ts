@@ -29,7 +29,7 @@ export const ACP_CHILD_CAPABILITIES: ChildAgentCapabilities = Object.freeze({
   toolFilter: false,
 })
 
-export type AcpChildAgentOptions = Omit<AcpCommand, 'cwd'> & {
+export type AcpChildAgentOptions = Omit<AcpCommand, 'cwd' | 'launch'> & {
   /** Send `_agnes/v1/workspace.add` before `session/new`. Required when the child is another agh. */
   agnesWorkspace?: boolean
 }
@@ -81,15 +81,19 @@ export function acpChildAgentProvider(options: AcpChildAgentOptions): ChildAgent
       if (!startOptions.cwd) throw new Error('acp child start requires a working directory')
       const acp = new AcpChildProcess({
         command: options.command,
+        ...(options.windowsBatch ? { windowsBatch: options.windowsBatch } : {}),
         ...(options.args ? { args: options.args } : {}),
         cwd: startOptions.cwd,
+        ...(startOptions.launch ? { launch: startOptions.launch } : {}),
         ...(options.env ? { env: options.env } : {}),
       })
       const abortStartup = () => {
-        void acp.kill()
+        void acp.kill().catch(() => undefined) // The startup catch below joins and reports cleanup.
       }
       startOptions.signal.addEventListener('abort', abortStartup, { once: true })
       try {
+        await acp.ready
+        startOptions.signal.throwIfAborted()
         await acp.request('initialize', {
           protocolVersion: 1,
           clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
@@ -155,7 +159,7 @@ function openSession(
     forget(options.sessionKey, id)
     options.signal.removeEventListener('abort', onAbort)
     queue.settle({ status: next, text })
-    void acp.kill()
+    void acp.kill().catch((error) => queue.fail(error))
   }
   const pump = () => {
     if (disposed || busy) return

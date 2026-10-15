@@ -20,6 +20,8 @@ export type SandboxCapabilities = Readonly<{
   network: boolean
   /** Supports bounded JSON request/reply on an owned process pipe. */
   programmatic?: boolean
+  /** Understands SHELL_STDIN_SENTINEL in openProcess using its configured shell. */
+  shellStdin?: boolean
   /** Write roots this provider enforces. Empty means writes are not confined. */
   fsWrite: readonly SandboxFsWriteScope[]
   platform: readonly SandboxPlatform[]
@@ -154,6 +156,8 @@ export type SandboxProviderCatalogEntry = Readonly<{
  * everywhere. The command line stays one argv element, exactly as the model wrote it.
  */
 export const SHELL_SENTINEL = '$SHELL'
+/** Open a persistent configured shell reading commands from stdin; openProcess only. */
+export const SHELL_STDIN_SENTINEL = '$SHELL_STDIN'
 
 /** Built-in host sandbox. Seatbelt, bubblewrap, or the current Windows posture. */
 export const LOCAL_SANDBOX_PROVIDER_ID = 'local'
@@ -175,7 +179,8 @@ export function validSandboxCapabilities(capabilities: SandboxCapabilities | und
     typeof capabilities.available !== 'boolean' ||
     (capabilities.l1Implementation !== undefined &&
       !['implemented', 'unimplemented', 'unknown'].includes(capabilities.l1Implementation)) ||
-    (capabilities.programmatic !== undefined && typeof capabilities.programmatic !== 'boolean')
+    (capabilities.programmatic !== undefined && typeof capabilities.programmatic !== 'boolean') ||
+    (capabilities.shellStdin !== undefined && typeof capabilities.shellStdin !== 'boolean')
   )
     return false
   const enforcement = capabilities.enforcement

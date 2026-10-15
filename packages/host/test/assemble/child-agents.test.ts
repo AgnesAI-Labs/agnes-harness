@@ -84,6 +84,36 @@ it('registers providers, refuses missing capabilities, and disposes handles on u
   await root.fiber.dispose()
 })
 
+it('overwrites caller launch fields with Host resources without changing the public start arguments', async () => {
+  const root = new Context()
+  const registry = installChildAgents(root, undefined, undefined, {
+    windowsNodeExecutable: 'C:\\trusted\\node.exe',
+  })
+  const demo = provider('launch-fixture', limited)
+  let seen: unknown
+  root.providers.registerHost(childAgentKind, '@agnes/base', {
+    ...demo.api,
+    start(task, options) {
+      seen = options.launch
+      return demo.api.start(task, options)
+    },
+  })
+  try {
+    const caller = {
+      signal: signal(),
+      sessionKey: 's',
+      cwd: '/tmp',
+      launch: { windowsNodeExecutable: 'C:\\untrusted.exe' },
+    }
+    const child = await registry.start('launch-fixture', 'task', caller)
+    expect(seen).toEqual({ windowsNodeExecutable: 'C:\\trusted\\node.exe' })
+    expect(caller.launch.windowsNodeExecutable).toBe('C:\\untrusted.exe')
+    await child.dispose()
+  } finally {
+    await root.fiber.dispose()
+  }
+})
+
 it('registers through the shared service and selects the configured default without overriding explicit ids', async () => {
   const selections = readProviderSelections({
     packages: [],

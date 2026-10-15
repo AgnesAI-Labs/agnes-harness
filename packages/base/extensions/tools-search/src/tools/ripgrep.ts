@@ -1,4 +1,4 @@
-import { basename, relative } from 'node:path'
+import { basename, relative, sep } from 'node:path'
 import type { ToolContext, ToolResult } from '@agnes/extension-api'
 import { defineTool } from '@agnes/plugin-runtime'
 import { guardedResult, refBlock, spillLocator } from '../../../tools-core/src/guards/output.js'
@@ -16,6 +16,11 @@ import {
   searchPathError,
   toolError,
 } from './walk.js'
+
+// Globs and search output use '/', while filesystem calls keep native paths.
+// On POSIX a backslash is a filename character, not a directory separator.
+const searchRelative = (root: string, path: string) =>
+  (relative(root, path) || basename(path)).split(sep).join('/')
 
 async function files(ctx: ToolContext, root: string): Promise<{ paths: string[]; notes: string[] }> {
   // --no-ignore preserves the existing tool's explicit skips; never follow symlinks.
@@ -99,7 +104,7 @@ export const ripgrepFindTool = defineTool({
       const listing = await files(ctx, root)
       const re = globToRegExp(args.pattern)
       const lines = listing.paths
-        .map((p) => relative(root, p) || basename(p))
+        .map((p) => searchRelative(root, p))
         .filter((p) => re.test(p))
         .sort()
       return result(ctx, lines, args.limit ?? 1000, listing.notes)
@@ -123,7 +128,7 @@ export const ripgrepGrepTool = defineTool({
     try {
       const listing = await files(ctx, root)
       const glob = args.glob ? globToRegExp(args.glob) : undefined
-      const paths = listing.paths.filter((p) => !glob || glob.test(relative(root, p) || basename(p)))
+      const paths = listing.paths.filter((p) => !glob || glob.test(searchRelative(root, p)))
       const lines: string[] = []
       let captured = 0
       // Batches bound argv and each executor capture. No model-controlled flag enters argv.
@@ -157,7 +162,7 @@ export const ripgrepGrepTool = defineTool({
           const text = item.data.lines?.text
           if (!p || text === undefined || !batch.includes(p)) continue
           const separator = item.type === 'match' ? ':' : '-'
-          const line = `${relative(root, p) || basename(p)}${separator}${item.data.line_number}${separator}${text.replace(/\r?\n$/, '')}`
+          const line = `${searchRelative(root, p)}${separator}${item.data.line_number}${separator}${text.replace(/\r?\n$/, '')}`
           captured += Buffer.byteLength(line, 'utf8')
           if (captured > 4 * 1024 * 1024) break
           lines.push(line)

@@ -1,5 +1,6 @@
+import { resolvePluginMetadata } from '@agnes/protocol'
 import { type LocaleService, SlotOutlet, type SlotRegistry, SlotsProvider } from '@agnes/web-client'
-import { createRegionRenderer } from '@agnes/web-ui'
+import { createRegionRenderer, useDocumentLanguage } from '@agnes/web-ui'
 import { ConversationUsage } from '@agnes/web-ui/conversation'
 import {
   Composer,
@@ -8,10 +9,11 @@ import {
   type ComposerRegionOptions,
   type ComposerView,
 } from '@agnes/web-units'
-import type { ReactElement } from 'react'
+import { type ReactElement, useSyncExternalStore } from 'react'
 import { flushSync } from 'react-dom'
 import { QuestionDock } from '../intelligent-ui/question-dock.js'
 import { LoopPicker } from '../loop-picker.js'
+import { businessAgentSuggestions } from '../pages/business-agents.js'
 import {
   COMPOSER_BAR_DSH_CHILDREN,
   COMPOSER_DEPENDENCIES,
@@ -35,6 +37,15 @@ export function ComposerDshFrame({
   options: ComposerRegionOptions
   dependencies: ComposerDependencies
 }): ReactElement {
+  const agents = useSyncExternalStore(
+    businessAgentSuggestions.subscribe,
+    businessAgentSuggestions.getSnapshot,
+  )
+  const language = useDocumentLanguage() === 'zh-CN' ? 'zh-CN' : 'en'
+  const examplePrompts = agents.featured.flatMap((row) => {
+    const prompt = resolvePluginMetadata(row.metadata, language)?.samplePrompt
+    return prompt ? [prompt] : []
+  })
   const outlet = (name: string) => <SlotOutlet name={name as never} hideWhenEmpty={true} />
   return (
     <SlotsProvider registry={registry}>
@@ -50,6 +61,7 @@ export function ComposerDshFrame({
           ref={setHandle}
           dependencies={dependencies}
           {...options}
+          examplePrompts={examplePrompts}
           slots={{
             attachments: outlet('conversation.input.attachments'),
             dock: (
@@ -137,13 +149,14 @@ export function mountComposerRegion(
       priority: 1,
       children: COMPOSER_BAR_DSH_CHILDREN,
     },
-    () =>
-      ComposerDshFrame({
-        registry,
-        setHandle,
-        options: composerOptions,
-        dependencies: composerDependencies,
-      }),
+    () => (
+      <ComposerDshFrame
+        registry={registry}
+        setHandle={setHandle}
+        options={composerOptions}
+        dependencies={composerDependencies}
+      />
+    ),
   )
   const removeBuiltin = registry.register(
     {

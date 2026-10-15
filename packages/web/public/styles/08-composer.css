@@ -2,33 +2,6 @@
   /* 空态判据取 `#empty-state` 的 hidden，与 app 的 shouldShowEmptyState 同一个信号。
    （`#transcript:empty` 永远不成立：React 树恒定渲染一个 `#transcript-content` 子节点。）
    输入框的高度由 Sender 按行数自适应，这里不再给空态单独定最小高度。 */
-  .empty-state-suggestions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: var(--s8);
-    margin-top: var(--s20);
-  }
-  /* Starter prompts read as chips you can pick, not as bold text. */
-  #empty-state .empty-state-suggestions .agh-btn:not(:disabled) {
-    padding-inline: var(--s12);
-    border-color: var(--agnes-line-emphasis);
-    border-radius: var(--radius-pill);
-    color: var(--agnes-text-secondary);
-    background: var(--agnes-bg-surface);
-    font-weight: var(--font-weight-regular);
-  }
-  #empty-state .empty-state-suggestions .agh-btn:hover:not(:disabled) {
-    border-color: var(--agnes-input-border-focus);
-    color: var(--agnes-text-emphasis);
-    background: var(--agnes-brand-emphasis-soft);
-  }
-  @media (max-width: 900px) {
-    .empty-state-suggestions button {
-      min-width: var(--s32);
-      min-height: var(--s32);
-    }
-  }
   /* 新会话（空态）：hero 与输入卡作为**一组**在剩余空间里垂直居中。两级绝对定位
    （.conversation-region-root 与 #empty-state）必须在空态下放开，hero 才撑得出真实
    高度；否则 shell 高度为 0，后面两份 auto 外边距无处可吃。顶栏在空态是绝对定位的
@@ -463,10 +436,74 @@
   }
   /* Insets follow the card's larger radius, so text and controls clear its corners. */
   .composer-content {
+    position: relative;
     padding: var(--s16) var(--s20) var(--s4);
   }
   .composer-footer {
     padding: var(--s4) var(--s10) var(--s10);
+  }
+  .composer-example-hint {
+    display: flex;
+    align-items: start;
+    position: absolute;
+    top: var(--s16);
+    inset-inline: var(--s20);
+    z-index: 2;
+    max-height: 3.2em;
+    overflow: hidden;
+    pointer-events: none;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-body);
+    line-height: 1.6;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  #composer[data-example-hint] #prompt::placeholder {
+    color: transparent;
+  }
+  .composer-example-text {
+    min-width: 0;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+  }
+  .composer-example-caret {
+    display: inline-block;
+    width: 1.5px;
+    height: 1em;
+    margin-inline-start: 1px;
+    vertical-align: -0.15em;
+    background: var(--agnes-brand-primary);
+    animation: home-example-blink 1s steps(1) infinite;
+  }
+  .composer-example-adopt {
+    flex: none;
+    display: inline-flex;
+    gap: var(--s4);
+    margin-inline-start: var(--s8);
+    padding: 0 var(--s4);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-xs);
+    white-space: nowrap;
+  }
+  .composer-example-adopt kbd {
+    font: inherit;
+  }
+  @keyframes home-example-blink {
+    50% {
+      opacity: 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .composer-example-hint {
+      display: none;
+    }
+    #composer[data-example-hint] #prompt::placeholder {
+      color: var(--agnes-text-tertiary);
+    }
   }
   #prompt {
     min-height: 0;

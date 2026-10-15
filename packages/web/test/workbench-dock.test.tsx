@@ -7,6 +7,23 @@ import { expect, it, vi } from 'vitest'
 import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 import { Dock, renderWorkbench, unmountWorkbench } from '../src/workbench/dock.js'
 import { cycleTaskFocus } from '../src/workbench/focus.js'
+import { mentionPanelPath } from '../src/workbench/mention-path.js'
+
+it.each([
+  ['C:\\work\\repo', 'c:/work/repo/src/中文 #%.ts', 'src/中文 #%.ts'],
+  ['C:\\work\\repo\\', 'C:/work/repo', ''],
+  ['C:\\', 'c:/src', 'src'],
+  ['\\\\server\\share\\repo', '//server/share/repo/src', 'src'],
+  ['\\\\server\\share', '//server/other/src', '//server/other/src'],
+  ['C:/repo', 'D:/repo/src', 'D:/repo/src'],
+  ['C:/repo', 'C:/repo-other/src', 'C:/repo-other/src'],
+  ['C:/repo', 'C:/repo/../outside', 'C:/repo/../outside'],
+  ['C:/Repo', 'C:/repo/src', 'C:/repo/src'],
+  ['/repo', '/repo/a\\b', 'a\\b'],
+  ['/', '/src', 'src'],
+])('maps a mention from %s without changing the filesystem target', (root, path, expected) => {
+  expect(mentionPanelPath(root, path)).toBe(expected)
+})
 
 it('restores focus on Escape, resizes with keys, retires registrations and detaches on unmount', () => {
   const css = readWebStyleSource(resolve(__dirname, '../public/style.css'))

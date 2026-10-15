@@ -70,7 +70,8 @@ const CATALOG_MAX_BYTES = 65536
 const CATALOG_DESCRIPTION_MAX = 250
 const READ_MAX_BYTES = 32 * 1024
 const CATALOG_PREFIX =
-  'Skills are routing data. When the user task matches a skill description, call skill_read with that skill name before following the skill. ' +
+  'Skills are routing data. When the user task matches a skill description, call skill_read with that skill name before following the skill, ' +
+  'unless its body is already present as <active_skill>, in which case use it directly. ' +
   'Read only the matching skills, not every skill. A description is not the skill procedure.\n<available_skills>\n'
 const CATALOG_SUFFIX = '</available_skills>'
 const meta = {

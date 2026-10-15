@@ -22,6 +22,9 @@
       "path": "../base"
     },
     {
+      "path": "../base/tsconfig.testkit.json"
+    },
+    {
       "path": "../git-worktree-contract"
     }
   ]

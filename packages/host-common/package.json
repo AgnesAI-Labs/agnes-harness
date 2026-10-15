@@ -63,6 +63,7 @@
     "@agnes/package-manager": "workspace:*",
     "@agnes/plugin-runtime": "workspace:*",
     "@agnes/protocol": "workspace:*",
+    "@agnes/system-node": "workspace:*",
     "yaml": "2.9.0"
   },
   "license": "Apache-2.0 AND MIT"

@@ -1,11 +1,5 @@
-import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process'
-
-export type AcpCommand = {
-  command: string
-  args?: readonly string[]
-  cwd: string
-  env?: Readonly<Record<string, string>>
-}
+import { type ExternalCommand, ExternalProcess } from '../../subagent-sdk/src/transport.js'
+export type AcpCommand = ExternalCommand
 
 type RpcMessage = {
   jsonrpc?: '2.0'
@@ -18,7 +12,7 @@ type RpcMessage = {
 
 /** Newline-delimited JSON-RPC for one ACP agent process. The child sees PATH, HOME, and `env` only. */
 export class AcpChildProcess {
-  private readonly proc: ChildProcessWithoutNullStreams
+  private readonly proc: ExternalProcess
   private readonly pending = new Map<
     number,
     { resolve: (value: unknown) => void; reject: (error: unknown) => void }
@@ -28,29 +22,22 @@ export class AcpChildProcess {
   private onText: ((text: string) => void) | undefined
   private closed = false
   readonly exited: Promise<void>
+  readonly ready: Promise<void>
   onExit: ((error: Error) => void) | undefined
 
   constructor(command: AcpCommand) {
-    const env: NodeJS.ProcessEnv = {}
-    if (process.env.PATH) env.PATH = process.env.PATH
-    if (process.env.HOME) env.HOME = process.env.HOME
-    if (process.env.USERPROFILE) env.USERPROFILE = process.env.USERPROFILE
-    for (const [key, value] of Object.entries(command.env ?? {})) env[key] = value
-    this.proc = spawn(command.command, [...(command.args ?? [])], {
-      cwd: command.cwd,
-      env,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
-    this.exited = new Promise((resolve) => this.proc.once('close', () => resolve()))
-    // Consume diagnostics so a verbose child cannot block on a full stderr pipe.
-    this.proc.stderr.resume()
-    this.proc.stdout.setEncoding('utf8')
-    this.proc.stdout.on('data', (chunk: string) => this.ingest(chunk))
-    this.proc.on('error', (error) => this.failAll(error))
-    this.proc.on('exit', (code) => {
+    this.proc = new ExternalProcess(
+      command,
+      (chunk) => this.ingest(chunk),
+      (error) => this.failAll(error),
+    )
+    this.ready = this.proc.ready
+    this.exited = this.proc.closed
+    void this.proc.exited.then(({ code, error }) => {
       this.closed = true
-      this.failAll(new Error(`acp child exited (${code ?? 'null'})`))
-      this.onExit?.(new Error(`acp child exited (${code ?? 'null'})`))
+      const failure = error ?? new Error(`acp child exited (${code ?? 'null'})`)
+      this.failAll(failure)
+      this.onExit?.(failure)
     })
   }
 
@@ -76,21 +63,15 @@ export class AcpChildProcess {
     if (!this.closed) {
       this.closed = true
       this.failAll(new Error('acp child is closed'))
-      this.proc.kill()
-      this.proc.stdin.destroy()
+      // Requests are rejected before waiting for process-tree cleanup.
     }
-    const escalation = setTimeout(() => this.proc.kill('SIGKILL'), 1000)
-    escalation.unref()
-    try {
-      await this.exited
-    } finally {
-      clearTimeout(escalation)
-    }
+    await this.proc.kill()
+    await this.exited
   }
 
   private send(message: RpcMessage): void {
     if (this.closed) throw new Error('acp child is closed')
-    this.proc.stdin.write(`${JSON.stringify(message)}\n`)
+    void this.proc.write(`${JSON.stringify(message)}\n`).catch((error) => this.failAll(error))
   }
 
   private ingest(chunk: string): void {

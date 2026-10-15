@@ -1,8 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import type { ProcessOutput, SandboxProcess } from '@agnes/extension-api'
+import { SHELL_STDIN_SENTINEL } from '@agnes/extension-api'
 
 export type ShellName = 'bash' | 'zsh' | 'pwsh'
-export function shellArgv(shell: ShellName, pty: boolean): string[] {
+export type PersistentShellName = ShellName | 'powershell'
+export function shellArgv(shell: PersistentShellName, pty: boolean): string[] {
+  if (shell === 'powershell' && !pty) return [SHELL_STDIN_SENTINEL]
   if (shell === 'pwsh')
     return pty
       ? ['pwsh', '-NoLogo', '-NoProfile']
@@ -20,7 +23,7 @@ export class PersistentShell {
   private exited = false
   constructor(
     private readonly process: SandboxProcess,
-    private readonly shell: ShellName,
+    private readonly shell: PersistentShellName,
   ) {
     void process.exited.then(() => {
       this.exited = true
@@ -86,7 +89,7 @@ export class PersistentShell {
         }
       }
       const script =
-        this.shell === 'pwsh'
+        this.shell === 'pwsh' || this.shell === 'powershell'
           ? `$global:LASTEXITCODE = 0; try { ${cwd ? 'Set-Location -LiteralPath ' + "'" + cwd.replaceAll("'", "''") + "' -ErrorAction Stop; " : ''}. ([scriptblock]::Create([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${Buffer.from(command).toString('base64')}')))); $aghJobCode = if ($?) { 0 } elseif ($LASTEXITCODE) { $LASTEXITCODE } else { 1 } } catch { [Console]::Error.WriteLine($_); $aghJobCode = 1 }; [Console]::Out.Write([char]30 + '${token}:' + $aghJobCode + [char]10 + (Get-Location).Path + [char]31); [Console]::Error.Write([char]30 + '${token}:' + [char]31)\n`
           : `${cwd ? 'builtin cd -- ' + quote(cwd) + ' && ' : ''}builtin eval -- ${quote(command)}\n__agh_job_code=$?; command printf '\\036${token}:%s\\n%s\\037' "$__agh_job_code" "$PWD"; command printf '\\036${token}:\\037' >&2\n`
       void this.process.write(script).catch((error: unknown) => finish(error))

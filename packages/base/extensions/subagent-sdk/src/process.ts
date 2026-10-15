@@ -1,13 +1,8 @@
-import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process'
+import { type EngineExit, type ExternalCommand, ExternalProcess } from './transport.js'
 
-export type EngineExit = { code: number | null; signal: NodeJS.Signals | null }
+export type { EngineExit } from './transport.js'
 
-export type EngineCommand = {
-  command: string
-  args: readonly string[]
-  cwd: string
-  env?: Readonly<Record<string, string>>
-}
+export type EngineCommand = ExternalCommand & { args: readonly string[] }
 
 /**
  * One child process. Stdout is newline-delimited JSON. The child receives PATH, HOME,
@@ -16,70 +11,38 @@ export type EngineCommand = {
  */
 export class EngineProcess {
   readonly exited: Promise<EngineExit>
+  readonly ready: Promise<void>
   onMessage: ((message: unknown) => void) | undefined
   onProtocolError: ((error: Error) => void) | undefined
-  private readonly proc: ChildProcessWithoutNullStreams
+  private readonly proc: ExternalProcess
   private buffer = ''
   private closed = false
-  private exitSettled = false
-  private resolveExit: (value: EngineExit) => void = () => undefined
 
   constructor(command: EngineCommand) {
-    const env: NodeJS.ProcessEnv = {}
-    if (process.env.PATH) env.PATH = process.env.PATH
-    if (process.env.HOME) env.HOME = process.env.HOME
-    if (process.env.USERPROFILE) env.USERPROFILE = process.env.USERPROFILE
-    for (const [key, value] of Object.entries(command.env ?? {})) env[key] = value
-    this.exited = new Promise((resolve) => {
-      this.resolveExit = resolve
-    })
-    this.proc = spawn(command.command, [...command.args], {
-      cwd: command.cwd,
-      env,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
-    const ignoreStreamError = () => undefined
-    this.proc.stdin.on('error', ignoreStreamError)
-    this.proc.stdout.on('error', ignoreStreamError)
-    this.proc.stderr.on('error', ignoreStreamError)
-    this.proc.stderr.resume()
-    this.proc.stdout.setEncoding('utf8')
-    this.proc.stdout.on('data', (chunk: string) => this.ingest(chunk))
-    this.proc.on('error', (error) => {
+    this.proc = new ExternalProcess(
+      command,
+      (chunk) => this.ingest(chunk),
+      (error) => {
+        this.closed = true
+        this.onProtocolError?.(error)
+      },
+    )
+    this.ready = this.proc.ready
+    this.exited = this.proc.exited
+    void this.exited.then((result) => {
       this.closed = true
-      this.onProtocolError?.(error)
-      this.settleExit({ code: null, signal: null })
-    })
-    this.proc.on('exit', (code, signal) => {
-      this.closed = true
-      this.settleExit({ code, signal })
+      if (result.error) this.onProtocolError?.(result.error)
     })
   }
 
   write(message: unknown): void {
     if (this.closed) throw new Error('child engine is closed')
-    this.proc.stdin.write(`${JSON.stringify(message)}\n`)
+    void this.proc.write(`${JSON.stringify(message)}\n`).catch((error) => this.onProtocolError?.(error))
   }
 
   async kill(): Promise<void> {
-    if (!this.closed) {
-      this.closed = true
-      this.proc.kill()
-      this.proc.stdin.destroy()
-    }
-    const escalation = setTimeout(() => this.proc.kill('SIGKILL'), 1000)
-    escalation.unref()
-    try {
-      await this.exited
-    } finally {
-      clearTimeout(escalation)
-    }
-  }
-
-  private settleExit(value: EngineExit): void {
-    if (this.exitSettled) return
-    this.exitSettled = true
-    this.resolveExit(value)
+    this.closed = true
+    await this.proc.kill()
   }
 
   private ingest(chunk: string): void {

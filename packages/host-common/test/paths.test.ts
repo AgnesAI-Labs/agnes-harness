@@ -11,6 +11,7 @@ import {
 } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { hasPrivateDaclSync } from '@agnes/system-node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { isHostError } from '../src/errors.js'
 import { initializeHome, initializeHomeLocked } from '../src/home-initialize.js'
@@ -239,6 +240,11 @@ describe('versioned home layout', () => {
     if (process.platform !== 'win32') {
       expect(lstatSync(home).mode & 0o777).toBe(0o700)
       expect(lstatSync(join(home, 'home-layout.json')).mode & 0o777).toBe(0o600)
+    } else {
+      for (const path of [home, join(home, 'home-layout.json'), ...Object.values(info.paths)]) {
+        if (path !== info.paths.packages) expect(hasPrivateDaclSync(path), path).toBe(true)
+      }
+      expect(hasPrivateDaclSync(join(concurrentHome, '..', '.concurrent.initialize.sqlite'))).toBe(true)
     }
   })
   it('refuses an occupied unversioned home without changing its files', () => {

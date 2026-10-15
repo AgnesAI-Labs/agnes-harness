@@ -865,6 +865,9 @@ importers:
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@agnes/system-node':
+        specifier: workspace:*
+        version: link:../system-node
       yaml:
         specifier: 2.9.0
         version: 2.9.0

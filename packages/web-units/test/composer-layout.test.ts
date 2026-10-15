@@ -1,6 +1,6 @@
 /** @vitest-environment happy-dom */
 import { createRegionRenderer, type RegionRenderer } from '@agnes/web-ui'
-import { createElement, createRef } from 'react'
+import { act, createElement, createRef } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { ComposerProps } from '../src/composer/contracts.js'
 import {
@@ -78,6 +78,8 @@ function key(prompt: HTMLTextAreaElement, init: KeyboardEventInit): KeyboardEven
 afterEach(() => {
   for (const region of regions.splice(0)) region.unmount()
   document.body.replaceChildren()
+  vi.useRealTimers()
+  vi.restoreAllMocks()
 })
 
 it('keeps message controls and context use in the card, the new-session workspace in the row under it', () => {
@@ -292,4 +294,96 @@ it('opens files directly without changing the draft on cancel and still accepts 
   } finally {
     vi.useRealTimers()
   }
+})
+
+it('cycles catalog tasks, adopts only a completed empty hint, and keeps ordinary Tab focus navigation', async () => {
+  vi.useFakeTimers()
+  const examples = ['Review the sample patch.', 'Read the sales CSV.'] as const
+  const { host, prompt, handle } = mount(
+    { examplePrompts: examples },
+    { ...idle, input: { ...idle.input, exampleHint: true } },
+  )
+  const hint = () => host.querySelector('.composer-example-hint')
+  expect(prompt.placeholder).toBe(idle.input.placeholder)
+  expect(hint()?.getAttribute('aria-hidden')).toBe('true')
+  expect(key(prompt, { key: 'Tab' }).defaultPrevented).toBe(false)
+  await act(async () => vi.advanceTimersByTime(55 * examples[0].length))
+  expect(hint()?.textContent).toContain(examples[0])
+  expect(hint()?.querySelector('kbd')?.textContent).toBe('Tab')
+  expect(key(prompt, { key: 'Tab', shiftKey: true }).defaultPrevented).toBe(false)
+  await act(async () =>
+    vi.advanceTimersByTime(2200 + Math.ceil(examples[0].length / 2) * 18 + 350 + 55 * examples[1].length),
+  )
+  expect(hint()?.textContent).toContain(examples[1])
+  await act(async () => {
+    prompt.focus()
+  })
+  prompt.value = 'a scripted draft'
+  expect(key(prompt, { key: 'Tab' }).defaultPrevented).toBe(false)
+  prompt.value = ''
+  let adopted: KeyboardEvent | undefined
+  await act(async () => {
+    adopted = key(prompt, { key: 'Tab' })
+  })
+  expect(adopted?.defaultPrevented).toBe(true)
+  expect(handle.getDraft()).toBe(examples[1])
+  expect(prompt.selectionStart).toBe(examples[1].length)
+  expect(prompt.selectionEnd).toBe(examples[1].length)
+  expect(hint()).toBeNull()
+  expect(key(prompt, { key: 'Tab' }).defaultPrevented).toBe(false)
+})
+
+it('stops on typing and paste, resumes only empty and unfocused, and stops for attachments', async () => {
+  vi.useFakeTimers()
+  const { host, prompt, handle } = mount(
+    { examplePrompts: ['Review the patch.'] },
+    { ...idle, input: { ...idle.input, exampleHint: true } },
+  )
+  const hint = () => host.querySelector('.composer-example-hint')
+  await act(async () => {
+    prompt.focus()
+    type(prompt, 'my task')
+  })
+  await act(async () => vi.advanceTimersByTime(5000))
+  expect(hint()).toBeNull()
+  await act(async () => {
+    type(prompt, '')
+  })
+  expect(hint()).toBeNull()
+  await act(async () => {
+    prompt.blur()
+  })
+  expect(hint()).not.toBeNull()
+  await act(async () => {
+    prompt.focus()
+    prompt.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, clipboardData: new DataTransfer() }))
+  })
+  expect(hint()).toBeNull()
+  await act(async () => {
+    prompt.blur()
+  })
+  expect(hint()).not.toBeNull()
+  await act(async () =>
+    handle.restoreAttachmentBlocks([
+      { type: 'file', name: 'notes.txt', data: 'aGVsbG8=', mimeType: 'text/plain' },
+    ]),
+  )
+  expect(hint()).toBeNull()
+  expect(key(prompt, { key: 'Tab' }).defaultPrevented).toBe(false)
+})
+
+it('uses the normal accessible placeholder and ordinary Tab under reduced motion', async () => {
+  const original = window.matchMedia.bind(window)
+  vi.spyOn(window, 'matchMedia').mockImplementation((query) => {
+    const media = original(query)
+    Object.defineProperty(media, 'matches', { value: query === '(prefers-reduced-motion: reduce)' })
+    return media
+  })
+  const { host, prompt } = mount(
+    { examplePrompts: ['Review the patch.'] },
+    { ...idle, input: { ...idle.input, exampleHint: true } },
+  )
+  expect(host.querySelector('.composer-example-hint')).toBeNull()
+  expect(prompt.placeholder).toBe(idle.input.placeholder)
+  expect(key(prompt, { key: 'Tab' }).defaultPrevented).toBe(false)
 })

@@ -18,7 +18,8 @@ export const FILE_MENTION_DIRECTORY_MIME = 'inode/directory'
 
 /** `file:///` URI of an absolute path: POSIX as is, a Windows drive path with forward slashes. */
 export function fileMentionUri(path: string): string {
-  const slashed = path.replace(/\\/g, '/')
+  const windows = /^[A-Za-z]:[\\/]/u.test(path) || /^\\\\[^\\]+\\/u.test(path) || /^\/\/[^/]+\//u.test(path)
+  const slashed = windows ? path.replace(/\\/g, '/') : path
   const absolute = slashed.startsWith('/') ? slashed : `/${slashed}`
   return `file://${absolute
     .split('/')

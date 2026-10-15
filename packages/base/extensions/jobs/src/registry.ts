@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { resolve as resolvePath } from 'node:path'
 import type { ProcessOutput, SandboxProcess, SessionChildJobs, ToolContext } from '@agnes/extension-api'
+import { SHELL_SENTINEL, SHELL_STDIN_SENTINEL } from '@agnes/extension-api'
 import { legacyProcess } from './legacy-process.js'
-import { PersistentShell, type ShellName, shellArgv } from './persistent-shell.js'
+import { PersistentShell, type PersistentShellName, type ShellName, shellArgv } from './persistent-shell.js'
 
 export interface ShellJobView {
   id: string
@@ -16,7 +17,7 @@ export interface ShellJobView {
   stdout: string
   stderr: string
   truncated: boolean
-  shell?: ShellName
+  shell?: PersistentShellName
   sessionId?: string
 }
 export type ProcessJobContext = Pick<ToolContext, 'session' | 'cwd' | 'signal' | 'fs'> & {
@@ -131,7 +132,7 @@ export class ShellJobs {
       throw new Error('job cwd must be readable')
     const opening = ctx.sandbox.openProcess
       ? ctx.sandbox.openProcess({ argv, cwd, signal: ctx.signal, ...(pty ? { pty } : {}) })
-      : pty || !('confine' in ctx.sandbox)
+      : pty || argv[0] === SHELL_STDIN_SENTINEL || !('confine' in ctx.sandbox)
         ? undefined
         : legacyProcess({ signal: ctx.signal, sandbox: ctx.sandbox }, argv, cwd)
     if (!opening) throw new Error('SANDBOX_UNAVAILABLE: this Host has no PTY process port')
@@ -164,10 +165,7 @@ export class ShellJobs {
     const call = `${owner(ctx)}\0${ctx.session.toolUseId}`
     const prior = this.calls.get(call)
     if (prior) return copy(this.get(ctx, prior))
-    const argv =
-      ctx.platform.shell === 'powershell'
-        ? ['pwsh', '-NoLogo', '-NoProfile', '-Command', command]
-        : ['sh', '-c', command]
+    const argv = ctx.platform.shell === 'powershell' ? [SHELL_SENTINEL, command] : ['sh', '-c', command]
     const handle = await this.open(ctx, argv, cwd)
     let job: Job
     try {
@@ -178,15 +176,16 @@ export class ShellJobs {
     }
     this.calls.set(call, job.view.id)
     const off = handle.onOutput((chunk) => this.append(job, chunk))
-    void handle.exited.then(({ code }) => {
+    void handle.exited.then(({ code, error }) => {
       off()
-      job.finish(code)
+      if (error) this.append(job, { stream: 'stderr', text: String(error) })
+      job.finish(error ? null : code)
     })
     return copy(job)
   }
   async openTerminal(
     ctx: ProcessJobContext,
-    shell: ShellName,
+    shell: PersistentShellName,
     cwd = ctx.cwd,
     dimensions = { columns: 100, rows: 30 },
     pty = true,
@@ -206,9 +205,10 @@ export class ShellJobs {
     }
     this.processes.set(job.view.id, handle)
     const off = handle.onOutput((chunk) => this.append(job, chunk))
-    void handle.exited.then(({ code }) => {
+    void handle.exited.then(({ code, error }) => {
       off()
-      job.finish(code)
+      if (error) this.append(job, { stream: 'stderr', text: String(error) })
+      job.finish(error ? null : code)
       this.processes.delete(job.view.id)
       this.shells.delete(job.view.id)
     })
@@ -219,27 +219,33 @@ export class ShellJobs {
     command: string,
     cwd: string | undefined,
     ctx: ToolContext,
-    shell: ShellName = ctx.platform.shell === 'powershell' ? 'pwsh' : 'bash',
+    shell?: ShellName,
     sessionId?: string,
   ): Promise<ShellJobView> {
     const call = `${owner(ctx)}\0${ctx.session.toolUseId}`
     const prior = this.calls.get(call)
     if (prior) return copy(this.get(ctx, prior))
+    const selected: PersistentShellName =
+      shell ?? (ctx.platform.shell === 'powershell' ? 'powershell' : 'bash')
     let session = sessionId
       ? this.get(ctx, sessionId)
       : [...this.table(ctx).values()].find(
           (job) =>
-            job.view.kind === 'shell-session' && job.view.shell === shell && job.view.status === 'running',
+            job.view.kind === 'shell-session' && job.view.shell === selected && job.view.status === 'running',
         )
     if (!session)
-      session = this.get(ctx, (await this.openTerminal(ctx, shell, cwd ?? ctx.cwd, undefined, false)).id)
+      session = this.get(ctx, (await this.openTerminal(ctx, selected, cwd ?? ctx.cwd, undefined, false)).id)
     const transport = this.shells.get(session.view.id)
     if (!transport || session.view.status !== 'running')
       throw new Error('shell session is closed or is not a persistent shell')
     if (transport.busy) throw new Error('SHELL_BUSY: wait for the running command before sending another')
     const job = this.add(
       ctx,
-      { ...this.view('shell', command, session.view.cwd), shell, sessionId: session.view.id },
+      {
+        ...this.view('shell', command, session.view.cwd),
+        shell: session.view.shell!,
+        sessionId: session.view.id,
+      },
       async () => {
         await this.kill(ctx, session!.view.id)
       },

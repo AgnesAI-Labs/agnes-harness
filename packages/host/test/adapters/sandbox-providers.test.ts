@@ -299,6 +299,10 @@ describe('sandbox providers', () => {
       pty: { columns: 91, rows: 31 },
     })
     expect(seen[3]).toMatchObject({ policy, enforcement, pty: { columns: 91, rows: 31 } })
+    await expect(dispatch.openProcess!(['$SHELL_STDIN'], { cwd, sandbox: binding })).rejects.toThrow(
+      /configured stdin shells/,
+    )
+    expect(seen).toHaveLength(4)
     await slot.selected!.dispose()
     expect(await handle.exited).toEqual({ code: 137 })
     await expect(dispatch.openProcess!(['bash'], { cwd, sandbox: binding })).rejects.toThrow(/disposed/)

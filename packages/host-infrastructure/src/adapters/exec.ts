@@ -10,6 +10,7 @@ import { createExecOutput } from './exec-output.js'
 import { createWindowsExec } from './exec-win32.js'
 import type { PowerShellDescriptor } from './powershell.js'
 import { openLocalProcess } from './process.js'
+import { openWindowsProcess } from './process-win32.js'
 
 export type ExecResult = {
   code: number
@@ -135,14 +136,27 @@ export function createExec(
     return {
       ...windows,
       openProcess: async (argv, options) => {
-        const handle = await openLocalProcess({ ...options, argv })
+        const handle = await openWindowsProcess(
+          { ...options, argv },
+          {
+            nodeExecutable: opts.windowsNodeExecutable!,
+            baseEnv: base,
+            ...(opts.windowsPowerShell ? { powerShell: opts.windowsPowerShell } : {}),
+          },
+        )
         interactive.add(handle)
-        void handle.exited.then(() => interactive.delete(handle))
+        void handle.exited.then((result) => {
+          if (!result.error) interactive.delete(handle)
+        })
         return handle
       },
       killAll: async () => {
-        await Promise.all([...interactive].map((handle) => handle.close()))
-        await windows.killAll()
+        const results = await Promise.allSettled([
+          ...[...interactive].map((handle) => handle.close()),
+          windows.killAll(),
+        ])
+        const errors = results.flatMap((result) => (result.status === 'rejected' ? [result.reason] : []))
+        if (errors.length) throw new AggregateError(errors, 'Windows process cleanup failed')
       },
     }
   }

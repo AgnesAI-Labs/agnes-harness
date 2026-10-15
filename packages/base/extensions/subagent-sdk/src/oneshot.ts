@@ -114,7 +114,7 @@ export function attachOneShot(input: {
     } catch {
       /* The process kill below is the cancellation. */
     }
-    void input.process.kill()
+    void input.process.kill().catch((error) => queue.fail(error))
     finish('interrupted')
     return Promise.resolve({ accepted: true })
   }

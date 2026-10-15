@@ -54,12 +54,110 @@
     text-wrap: balance;
   }
   .empty-state-copy {
+    display: inline-block;
     max-width: 30rem;
-    margin: var(--s12) 0 0;
-    color: var(--agnes-text-secondary);
-    font-size: var(--font-size-body);
-    line-height: 1.5rem;
-    text-wrap: pretty;
+    margin: 0;
+    padding-inline-start: 0.18em;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: 0.18em;
+    line-height: 1.6;
+    text-wrap: balance;
+  }
+  .empty-state-copy[data-phase="intro"] > span {
+    display: inline-block;
+    white-space: pre;
+    animation: home-tagline-rise 600ms cubic-bezier(0.2, 0.9, 0.3, 1) both;
+  }
+  @keyframes home-tagline-rise {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+      filter: blur(4px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+      filter: none;
+    }
+  }
+  @supports (background-clip: text) {
+    .empty-state-copy[data-phase="sheen"] {
+      background: linear-gradient(
+        100deg,
+        var(--agnes-text-primary) 0%,
+        var(--agnes-text-primary) 42%,
+        color-mix(in srgb, var(--agnes-text-primary) 65%, var(--agnes-brand-primary)) 50%,
+        var(--agnes-text-primary) 58%,
+        var(--agnes-text-primary) 100%
+      );
+      background-size: 260% 100%;
+      background-clip: text;
+      color: transparent;
+      animation: home-tagline-sheen 6s ease-in-out 2.2s infinite;
+    }
+  }
+  @keyframes home-tagline-sheen {
+    from {
+      background-position: 100% 0;
+    }
+    35%,
+    to {
+      background-position: -60% 0;
+    }
+  }
+  .empty-state-welcome::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: min(26.25rem, 100%);
+    aspect-ratio: 1;
+    border-radius: var(--radius-full);
+    background: radial-gradient(
+      circle,
+      color-mix(in srgb, var(--agnes-brand-primary) 9%, transparent),
+      transparent 65%
+    );
+    transform: translate(-50%, -62%);
+    animation: home-glow-drift 9s ease-in-out infinite;
+    pointer-events: none;
+    z-index: -1;
+  }
+  .empty-state-welcome {
+    position: relative;
+    isolation: isolate;
+  }
+  @keyframes home-glow-drift {
+    50% {
+      transform: translate(-48%, -58%) scale(1.06);
+    }
+  }
+  .empty-state-lockup .empty-brand-mark {
+    transition: transform 600ms cubic-bezier(0.3, 1.4, 0.5, 1);
+  }
+  .empty-state-lockup:hover .empty-brand-mark {
+    transform: rotate(-8deg) translateY(-1px);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .empty-state-welcome::before,
+    .empty-state-copy,
+    .empty-state-copy > span {
+      animation: none !important;
+    }
+    .empty-state-copy,
+    .empty-state-copy > span {
+      color: var(--agnes-text-primary) !important;
+      opacity: 1;
+      transform: none;
+      filter: none;
+    }
+    .empty-state-lockup .empty-brand-mark,
+    .empty-state-lockup:hover .empty-brand-mark {
+      transition: none;
+      transform: none;
+    }
   }
   /* 仅新收到的文字淡入；尾段重建时沿用已开始的进度，已读正文与布局保持稳定。
    时长和负延时由 text-reveal 提供，历史快照与选区释放后的积压内容直接显示。 */
