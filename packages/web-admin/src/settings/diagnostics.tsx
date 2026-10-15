@@ -58,7 +58,7 @@ export function errorKind(record: DiagnosticRecord): Filter {
 }
 
 /**
- * 运行时与诊断: status checks as rows with a state mark (重新检查, 测试模型账户), recent errors one line
+ * 运行时与诊断: status checks in four compact groups (重新检查, 测试模型账户), recent errors one line
  * each with repeats grouped (open one for its details and copy; 「查看全部」 is a subpage with a
  * filter), and 集成 (OTLP export and the runtime details as subpages). The page header copies a
  * summary and exports a redacted bundle after saying what it contains.
@@ -182,6 +182,7 @@ export function DiagnosticsPanel({
   const boundSessions = bundle?.generations.available
     ? bundle.generations.items.reduce((count, row) => count + row.boundSessions, 0)
     : undefined
+  const serviceStatus = bundle?.doctor.find((row) => row.name === 'daemon')?.status ?? 'ok'
   const workerStatus = bundle?.doctor.find((row) => row.name === 'worker')?.status
   const workerIdle = boundSessions === 0 && (!workerStatus || workerStatus === 'unavailable')
   const groups = groupErrors(bundle?.errors ?? [])
@@ -292,8 +293,16 @@ export function DiagnosticsPanel({
         <DoctorRows
           label={t('doctor')}
           load={loadChecks}
-          worker={workerIdle ? t('workerIdle') : t(`state.${workerStatus ?? 'unavailable'}`)}
-          version={bundle ? `${bundle.agh.version} · Node ${bundle.runtime.node}` : undefined}
+          worker={{
+            text: workerIdle ? t('workerIdle') : t(`state.${workerStatus ?? 'unavailable'}`),
+            status: workerStatus ?? 'unavailable',
+          }}
+          version={bundle?.agh.version}
+          node={bundle?.runtime.node}
+          service={{
+            text: serviceStatus === 'ok' ? t('running') : t(`state.${serviceStatus}`),
+            status: serviceStatus,
+          }}
         />
       ) : (
         <SettingsBlock label={t('doctor')} data-testid="diagnostics-worker-only">

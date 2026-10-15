@@ -55,6 +55,8 @@ See [troubleshooting](troubleshooting.md), [CLI reference](../reference/cli.md) 
 
 Open **Settings → Diagnostics** to view recent safe error records, copy a diagnostic ID, or find an older record by its exact ID. **Export diagnostic bundle** downloads the redacted JSON bundle; after a search, it selects that error. The page also shows worker health, generation counts and bound session counts. Technical details start collapsed.
 
+**Status check** groups the runtime, data and security, isolation, and connection checks into compact cards. The service strip shows versions and the age of the last check. Unavailable workers use a hollow dot and are excluded from group totals. Checks that need attention show repair guidance and a direct link when available. **Check again** refreshes local checks; **Test model accounts** also tests model connections and shows the result on the account line.
+
 The OTLP settings card edits enable, endpoint, content policy, batch/queue limits, timeout, shutdown policy and header secret references. **Test connection** sends synthetic traces, metrics and logs; it does not upload session content or save pending edits. **Save settings** persists a private configuration and applies it within one second. Last success, queue depth, failures and drops describe the App Server and the running session Worker separately. A missing or unreachable Worker is reported explicitly; health reads never start one. The local-owner administration method is `_agnes/v1/admin.observability`. Diagnostic bundles remain content-free.
 
 ## Model-call timing and auxiliary usage
