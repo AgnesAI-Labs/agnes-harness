@@ -84,6 +84,7 @@ export type SandboxExecResult = Readonly<{
   truncated: boolean
   timedOut: boolean
   signal?: string
+  stoppedProcesses?: number
   /** Actual confinement, never inferred from a provider id. */
   enforcement: SandboxEnforcement
 }>

@@ -140,6 +140,8 @@ export type ExecResult = {
    * was killed and the output is what it had printed so far. Absent means the executor did not say.
    */
   timedOut?: boolean
+  /** Descendants stopped when the foreground process exited; absent when not measured. */
+  stoppedProcesses?: number
 }
 export type FsEntry = { name: string; kind: 'file' | 'dir' | 'symlink' | 'other' }
 export type FsStat = { kind: FsEntry['kind']; size: number; mtimeMs: number }

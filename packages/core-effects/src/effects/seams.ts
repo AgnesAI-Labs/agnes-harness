@@ -102,7 +102,7 @@ export interface SeamWorkspace {
         enforcement?: import('@agnes/extension-api').SandboxEnforcement
       }>
     },
-  ) => Promise<{ code: number; stdout: string; stderr: string; truncated: boolean; timedOut?: boolean }>
+  ) => Promise<import('@agnes/extension-api').ExecResult>
   readonly openProcess?: (
     argv: string[],
     opts: Parameters<SeamWorkspace['exec']>[1] & {
@@ -128,7 +128,7 @@ export interface SandboxSeam {
       signal?: AbortSignal
       maxOutputBytes?: number
     },
-  ): Promise<{ code: number; stdout: string; stderr: string; truncated: boolean; timedOut?: boolean }>
+  ): Promise<import('@agnes/extension-api').ExecResult>
   // Wraps one argv into a confined argv. `exec` uses it internally, and it is the same opening a
   // tool that spawns its own process reaches through ToolContext.sandbox.
   confine(argv: string[]): Promise<string[]>
