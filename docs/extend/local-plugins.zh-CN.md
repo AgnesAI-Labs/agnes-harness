@@ -49,7 +49,7 @@ export default defineTool({
 
 `/admin/plugins` 显示 `local` 来源、安装/启用状态，以及带修复提示的失败状态。变更经过防抖，复制为新的不可变快照。删除源目录会禁用后续绑定，保留旧会话恢复需要的快照。
 
-Watcher 通过 `LocalPluginReload.reloadPlugin(id)` 调用代际管理者。daemon 已将该接口绑定到现有目标发布流程：worker 确认新目标后，新会话获得新版本，旧会话继续使用固定快照。存储和 sandbox 等基础后端仍需要重启。手动命令和冷恢复行为见[热重载指南](hot-reload.zh-CN.md)。失败的重载保留原激活并显示错误，不替换运行中会话的工具。扫描失败时重新扫描会报告错误，watcher 也会有限次自动重试。
+Watcher 通过 `LocalPluginReload.reloadPlugin(id)` 调用代际管理者。daemon 已将该接口绑定到现有目标发布流程：worker 确认新目标后，新会话获得新版本，旧会话继续使用固定快照。存储和 sandbox 等基础后端仍需要重启。手动命令和冷恢复行为见[热重载指南](hot-reload.zh-CN.md)。失败的重载保留原激活并显示错误，不替换运行中会话的工具。仅因 profile 锁被占用而失败的重载不算插件故障：插件保持待重载，重新扫描会再次重载。扫描失败时重新扫描会报告错误，watcher 也会有限次自动重试。
 
 嵌入者可配置 `createPackageManager({ localPlugins: localPluginRoots(home, workspace), ... })`，启动时调用 `refreshLocalPlugins(profileDir)`，再调用 `watchLocalPlugins(profileDir)`；用 `bindLocalPluginReload({ reloadPlugin })` 绑定代际服务，退出时关闭 watcher。重载实现必须经代际管理者发布新的快照和包状态，并处理删除、禁用及失败。
 

@@ -11,7 +11,7 @@ import {
 } from '@agnes/protocol'
 import type { PackageAuditSink } from './audit.js'
 import { copyPackageTreeSync } from './copy-tree.js'
-import { PackageError } from './errors.js'
+import { isPackageError, PackageError } from './errors.js'
 import { inspectStaged } from './inspect.js'
 import { canonical, capabilityHash, freezeData, own } from './integrity.js'
 import { type InstalledInventory, type InstalledPackage, readInventory } from './inventory.js'
@@ -670,8 +670,9 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
             inventoryReads.delete(profileKey(profileDir))
           },
         },
-        onError(id) {
-          if (!id) return
+        onError(id, error) {
+          // A reload that only lost the profile lock race stays pending for the next Rescan.
+          if (!id || (isPackageError(error, 'E_LOCK_MISMATCH') && error.detail.reason === 'busy')) return
           manager.reportLocalPluginFailure(profileDir, id)
         },
       })

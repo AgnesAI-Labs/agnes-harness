@@ -200,3 +200,49 @@ it('rejects a rescan that lost the profile lock and retries it once the lock is 
     await watcher.close()
   }
 })
+
+it('keeps a reload that lost the profile lock pending, and Rescan retries it once the lock is free', async () => {
+  const f = setup()
+  const plugin = join(f.localPlugins.home, 'hello')
+  mkdirSync(plugin, { recursive: true })
+  writeFileSync(join(plugin, 'plugin.ts'), 'export default { apply() {} }')
+  mkdirSync(f.localPlugins.workspace, { recursive: true })
+  await new Promise((resolve) => setTimeout(resolve, 300))
+  let release!: () => void
+  let holder: Promise<void> | undefined
+  let entered!: () => void
+  const reloadEntered = new Promise<void>((resolve) => (entered = resolve))
+  // Like the daemon binding, reload reads the inventory first; an install takes the lock in between.
+  const reloadPlugin = vi.fn(async (_id: string) => {
+    if (reloadPlugin.mock.calls.length === 1) {
+      holder = withLock(f.profileDir, () => new Promise<void>((resolve) => (release = resolve)))
+      entered()
+    }
+    await f.manager.inventory(f.profileDir, { fresh: true })
+  })
+  const row = async () =>
+    (await f.manager.inventory(f.profileDir, { fresh: true })).packages.find((p) => p.id === 'hello')
+  const watcher = f.manager.watchLocalPlugins(f.profileDir, { reloadPlugin })
+  try {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'Date'], now: Date.now() })
+    const first = watcher.refresh()
+    await reloadEntered
+    await vi.advanceTimersByTimeAsync(10_200)
+    await first
+    release()
+    await holder
+    vi.useRealTimers()
+    // A lost lock race is not the plugin's fault: no sticky failure, still waiting for its reload.
+    const busy = await row()
+    expect(busy?.localFailure).toBeUndefined()
+    expect(busy?.localReloadRequired).toBe(true)
+    await watcher.refresh() // Rescan with the source unchanged
+    expect(reloadPlugin).toHaveBeenCalledTimes(2)
+    const after = await row()
+    expect(after?.localFailure).toBeUndefined()
+    expect(after?.localReloadRequired).toBeUndefined()
+  } finally {
+    vi.useRealTimers()
+    await watcher.close()
+  }
+})
