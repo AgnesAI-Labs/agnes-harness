@@ -1269,7 +1269,9 @@ describe('a turn ended by its loop while a side call is in flight', () => {
     id: string,
     end: (ctx: LoopContext) => Promise<LoopStepOutcome>,
     behaviour: 'stall' | 'ignore-abort' = 'stall',
-    deadlineMs = 300,
+    // Far above the time a request takes to reach the adapter on a loaded machine, which includes
+    // the request trace capture: the end of the turn, not this deadline, must be what cuts the call.
+    deadlineMs = 5000,
   ) {
     const endpoint = new Endpoint()
     endpoint.behaviour = behaviour
@@ -1277,7 +1279,15 @@ describe('a turn ended by its loop while a side call is in flight', () => {
     const plan = script(async (port, signal, ctx) => {
       seen.call = call(port, id, signal, { deadlineMs })
       seen.call.catch(() => undefined)
-      await endpoint.entering(1)
+      // A call that ends before its request reaches the adapter must fail the case, not hold the
+      // step, and with it the turn, until the test times out.
+      await Promise.race([
+        endpoint.entering(1),
+        seen.call.then(
+          () => undefined,
+          () => undefined,
+        ),
+      ])
       const began = performance.now()
       try {
         return await end(ctx)
@@ -1289,6 +1299,7 @@ describe('a turn ended by its loop while a side call is in flight', () => {
     try {
       const session = await kit.open(`ended-${id}`)
       await runTurn(session)
+      expect(endpoint.signals, 'the call reached the adapter before its turn ended').toHaveLength(1)
       expect(session.op()).toBeNull()
       // The end of the turn cut the call before its own deadline and waited for its settlement.
       const outcome = await settledWith(seen.call as Promise<SideCallResult>)
