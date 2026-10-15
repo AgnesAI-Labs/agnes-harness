@@ -1,7 +1,17 @@
-import type { InstalledInventory, PackageManager, RuntimePin } from '@agnes/package-manager'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { ownsRow, rebuildDesiredFromInventory } from '@agnes/daemon-foundation/composite-desired'
+import type { InstalledInventory, InstalledPackage, PackageManager, RuntimePin } from '@agnes/package-manager'
 import { activeRuntimePinId } from '@agnes/package-manager'
-import { buildRuntimeTarget, createPluginRow, encodeRuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
-import { describe, expect, it, vi } from 'vitest'
+import {
+  buildRuntimeTarget,
+  createPluginRow,
+  decodeRuntimeTargetArtifact,
+  encodeRuntimeTargetArtifact,
+  type RuntimeTargetArtifact,
+} from '@agnes/plugin-runtime/host'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import { CompositeTargetStore } from '../src/storage/composite-target-store.js'
 import { createCompositeTargetActivation } from '../src/supervisor/publication/composite-target-activation.js'
@@ -157,6 +167,7 @@ describe('runtime active pin coordinator', () => {
       f.coordinator.publish(
         value,
         async () => {},
+        undefined,
         async () => {
           f.setTrusted(false)
           return {
@@ -243,4 +254,199 @@ describe('runtime active pin coordinator', () => {
     await activation.prepareRemoval?.('default', packageId)
     expect(f.active.has(activeRuntimePinId({ packageId, integrity }))).toBe(false)
   })
+})
+
+describe('concurrent reconcile publication', () => {
+  const alpha = 'acme/alpha'
+  const quill = 'acme/quill'
+  const directories: string[] = []
+
+  afterEach(() => {
+    for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
+  })
+
+  function packageDirectory(id: string): string {
+    const directory = mkdtempSync(join(tmpdir(), 'agnes-concurrent-reconcile-'))
+    directories.push(directory)
+    const plugins = [
+      { apiRange: '^4.0.0', export: 'main', id: `ext:${id}`, runtime: 'in-process', default: true },
+    ]
+    writeFileSync(
+      join(directory, 'package.json'),
+      `${JSON.stringify({ name: id, version: '1.0.0', agnes: { plugins } })}\n`,
+    )
+    return directory
+  }
+
+  function installed(id: string, directory: string, fill: string, enabled: boolean): InstalledPackage {
+    return {
+      id,
+      directory,
+      entry: {
+        version: '1.0.0',
+        integrity: `sha256-${fill.repeat(64)}`,
+        treeIntegrity: `sha256-${fill === 'a' ? 'b'.repeat(64) : 'f'.repeat(64)}`,
+        source: { kind: 'path', ref: directory },
+      } as unknown as InstalledPackage['entry'],
+      capabilityHash: 'capability',
+      trusted: true,
+      enabled,
+      contributions: [],
+      blockers: [],
+      verifiedRollbackTarget: null,
+    } as InstalledPackage
+  }
+
+  function reconcileFixture() {
+    const store = new CompositeTargetStore(sqliteTables().table('composite'), 'default')
+    const alphaDirectory = packageDirectory(alpha)
+    const quillDirectory = packageDirectory(quill)
+    let inventory: InstalledInventory = {
+      profile: 'default',
+      hash: 'h0',
+      packages: [installed(alpha, alphaDirectory, 'a', true)],
+    }
+    const active = new Map<string, RuntimePin>()
+    const manager = {
+      inventory: async () => inventory,
+      listRuntimePins: async () => [...active.values()],
+      pinRuntimeSnapshot: async (
+        _directory: string,
+        request: {
+          pinId: string
+          packageId: string
+          selector: { expectedIntegrity: string; expectedTreeIntegrity: string }
+        },
+      ) => {
+        const pin = {
+          pinId: request.pinId,
+          operationId: request.pinId,
+          purpose: 'active',
+          snapshot: {
+            snapshotId: request.selector.expectedIntegrity,
+            profile: 'default',
+            packageId: request.packageId,
+            integrity: request.selector.expectedIntegrity,
+            treeIntegrity: request.selector.expectedTreeIntegrity,
+            version: '1.0.0',
+            capabilityHash: 'capability',
+            directory: '/immutable/snapshot',
+            contributions: [],
+          },
+        } as unknown as RuntimePin
+        active.set(pin.pinId, pin)
+        return pin
+      },
+      releaseRuntimePin: async (_directory: string, request: { pinId: string }) => {
+        active.delete(request.pinId)
+      },
+      collectRuntimeSnapshots: async () => ({ removed: [], retained: [] }),
+    } as unknown as PackageManager
+    const coordinator = createRuntimePinCoordinator({ store, manager, profileDirectory: '/profile' })
+    let gate: Promise<void> | undefined
+    let release = () => {}
+    let probeEntered = false
+    const probe = async () => {
+      if (!gate) return
+      const held = gate
+      gate = undefined
+      probeEntered = true
+      await held
+    }
+    let publishCalls = 0
+    const activation = createCompositeTargetActivation({
+      store,
+      probe,
+      // The same wiring as the supervisor's activation, counting calls.
+      publish: (artifact, check, derivedFrom) => {
+        publishCalls++
+        return coordinator.publish(artifact, check, derivedFrom)
+      },
+      collectPins: coordinator.collect,
+      revokePackage: coordinator.revokePackage,
+      releaseRetiring: coordinator.releaseRetiring,
+      desiredFor: async ({ packageId, operation }) =>
+        rebuildDesiredFromInventory({
+          previous: store.desired(),
+          inventory: await manager.inventory('/profile'),
+          packageId,
+          operation,
+          configuration: (rowId) => store.configAudit.value(packageId, rowId),
+        }),
+    })
+    const reconcile = (id: string, operation: 'enable' | 'disable') =>
+      activation.reconcile({
+        profile: 'default',
+        packageId: id,
+        operationId: `${operation}:${id}`,
+        operation,
+        signal: new AbortController().signal,
+      })
+    return {
+      store,
+      reconcile,
+      /** An administrator disabled alpha and approved quill; both lockfile writes committed. */
+      disableAlphaAndApproveQuill() {
+        inventory = {
+          profile: 'default',
+          hash: 'h1',
+          packages: [
+            installed(alpha, alphaDirectory, 'a', false),
+            installed(quill, quillDirectory, 'e', true),
+          ],
+        }
+      },
+      armGate() {
+        gate = new Promise<void>((resolve) => {
+          release = resolve
+        })
+        probeEntered = false
+      },
+      releaseGate: () => release(),
+      probeEntered: () => probeEntered,
+      publishCalls: () => publishCalls,
+    }
+  }
+
+  function summary(target: RuntimeTargetArtifact | undefined) {
+    const rows = target ? decodeRuntimeTargetArtifact(target).tree.rows : []
+    return {
+      alphaDisabled: rows.filter((row) => ownsRow(row.plugin, alpha)).map((row) => row.disabled),
+      quillPresent: rows.some((row) => ownsRow(row.plugin, quill)),
+    }
+  }
+
+  async function waitFor(condition: () => boolean): Promise<void> {
+    for (let attempt = 0; attempt < 400; attempt++) {
+      if (condition()) return
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    }
+    throw new Error('condition did not become true')
+  }
+
+  it.each([false, true])(
+    'keeps a disable and a concurrent enable both in the desired target (overlapping=%s)',
+    async (overlapping) => {
+      const f = reconcileFixture()
+      expect((await f.reconcile(alpha, 'enable')).error).toBeUndefined()
+      expect(summary(f.store.desired())).toEqual({ alphaDisabled: [false], quillPresent: false })
+      f.disableAlphaAndApproveQuill()
+      if (overlapping) {
+        const before = f.publishCalls()
+        f.armGate()
+        const disable = f.reconcile(alpha, 'disable')
+        await waitFor(f.probeEntered)
+        // Quill derives from the target alpha has not replaced yet, then queues behind alpha's probe.
+        const enable = f.reconcile(quill, 'enable')
+        await waitFor(() => f.publishCalls() === before + 2)
+        f.releaseGate()
+        const [disabled, enabled] = await Promise.all([disable, enable])
+        expect([disabled.error, enabled.error]).toEqual([undefined, undefined])
+      } else {
+        expect((await f.reconcile(alpha, 'disable')).error).toBeUndefined()
+        expect((await f.reconcile(quill, 'enable')).error).toBeUndefined()
+      }
+      expect(summary(f.store.desired())).toEqual({ alphaDisabled: [true], quillPresent: true })
+    },
+  )
 })

@@ -135,10 +135,13 @@ export function createRuntimePinCoordinator(
     publish: (
       artifact: RuntimeTargetArtifact,
       probe: (target: RuntimeTargetArtifact) => Promise<void>,
+      /** The desired target the artifact was derived from, when derivation ran outside this lane. */
+      derivedFrom?: Readonly<{ digest: string | undefined }>,
       apply?: (target: RuntimeTargetArtifact) => Promise<RuntimeTargetApplyReceipt>,
     ) =>
       exclusive(async () => {
         const baseline = input.store.desired()?.digest
+        if (derivedFrom && derivedFrom.digest !== baseline) throw new Error('E_RUNTIME_TARGET_STALE')
         try {
           const inventoryHash = await ensure(artifact)
           await publishProbedRuntimeTarget({
