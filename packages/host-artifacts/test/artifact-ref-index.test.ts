@@ -377,7 +377,7 @@ describe('Computer Use artifact reference index', () => {
       attachments: new Set([indexed]),
     })
     locked.exec('ROLLBACK')
-    for (let seq = 3; seq <= 2003; seq += 1) fixture.row('s', seq)
+    for (let seq = 4; seq <= 2003; seq += 1) fixture.row('s', seq)
     locked.exec('BEGIN IMMEDIATE')
     await expect(verifyRootsUnderLedgerLock({ ledger: locked, index, candidates })).resolves.toBeUndefined()
     locked.exec('ROLLBACK')
