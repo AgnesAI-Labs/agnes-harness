@@ -9,6 +9,7 @@ export type ConfigSchema = Readonly<{
   items?: ConfigSchema
   enum?: readonly (string | number | boolean)[]
   anyOf?: readonly { const: string | number | boolean; type?: 'string' | 'number' | 'integer' | 'boolean' }[]
+  not?: ConfigSchema
   const?: string | number | boolean
   minimum?: number
   maximum?: number
@@ -42,6 +43,7 @@ const keys = new Set([
   'items',
   'enum',
   'anyOf',
+  'not',
   'const',
   'minimum',
   'maximum',
@@ -70,7 +72,7 @@ export const configChoices = (schema: ConfigSchema) =>
 export function configSchemaSupported(schema: ConfigSchema): boolean {
   const active = new Set<object>()
   let count = 0
-  function visit(value: unknown, depth: number): boolean {
+  function visit(value: unknown, depth: number, validationOnly = false): boolean {
     if (!object(value) || depth > 12 || ++count > 256 || active.has(value)) return false
     if (Object.keys(value).some((key) => !keys.has(key))) return false
     active.add(value)
@@ -160,9 +162,12 @@ export function configSchemaSupported(schema: ConfigSchema): boolean {
       )
         valid = false
     if (s.type === 'object') {
-      valid &&= object(s.properties) && s.additionalProperties === false
+      valid &&=
+        object(s.properties) &&
+        (s.additionalProperties === false || (validationOnly && s.additionalProperties === undefined))
       valid &&= Object.entries(s.properties ?? {}).every(
-        ([key, child]) => !['__proto__', 'prototype', 'constructor'].includes(key) && visit(child, depth + 1),
+        ([key, child]) =>
+          !['__proto__', 'prototype', 'constructor'].includes(key) && visit(child, depth + 1, validationOnly),
       )
       valid &&= !s.required || s.required.every((key) => Object.hasOwn(s.properties ?? {}, key))
     } else if (s.type === 'array')
@@ -172,6 +177,8 @@ export function configSchemaSupported(schema: ConfigSchema): boolean {
         !!choices ||
         s.const !== undefined ||
         ['string', 'boolean', 'number', 'integer'].includes(s.type ?? '')
+    // Negated predicates validate a subset of fields; they never declare rendered controls.
+    if (s.not !== undefined) valid &&= visit(s.not, depth + 1, true)
     active.delete(value)
     return valid
   }
@@ -189,7 +196,7 @@ export function configIssues(schema: ConfigSchema, value: unknown): readonly Con
   const issue = (path: string, code: ConfigIssue['code']) => {
     issues.push({ path, code })
   }
-  function check(s: ConfigSchema, data: unknown, path: string) {
+  function check(s: ConfigSchema, data: unknown, path: string, validationOnly = false) {
     const choices = configChoices(s)
     if (choices && !choices.includes(data as string)) {
       issue(path, 'choice')
@@ -204,16 +211,17 @@ export function configIssues(schema: ConfigSchema, value: unknown): readonly Con
         issue(path, 'type')
         return
       }
-      for (const key of Object.keys(data))
-        if (!Object.hasOwn(s.properties ?? {}, key))
-          issue(`${path}/${key.replace(/~/g, '~0').replace(/\//g, '~1')}`, 'unknown')
+      if (s.additionalProperties === false)
+        for (const key of Object.keys(data))
+          if (!Object.hasOwn(s.properties ?? {}, key))
+            issue(`${path}/${key.replace(/~/g, '~0').replace(/\//g, '~1')}`, 'unknown')
       for (const [key, child] of Object.entries(s.properties ?? {})) {
         const next = `${path}/${key.replace(/~/g, '~0').replace(/\//g, '~1')}`
         if (!Object.hasOwn(data, key) || data[key] === undefined) {
           if (s.required?.includes(key)) issue(next, 'required')
           continue
         }
-        check(child, data[key], next)
+        check(child, data[key], next, validationOnly)
       }
     } else if (s.type === 'array') {
       if (!Array.isArray(data)) {
@@ -226,13 +234,15 @@ export function configIssues(schema: ConfigSchema, value: unknown): readonly Con
         (s.uniqueItems && new Set(data).size !== data.length)
       )
         issue(path, 'range')
-      for (const [index, item] of data.entries()) if (s.items) check(s.items, item, `${path}/${index}`)
+      for (const [index, item] of data.entries())
+        if (s.items) check(s.items, item, `${path}/${index}`, validationOnly)
     } else if (s.type === 'string') {
       if (typeof data !== 'string') {
         issue(path, 'type')
         return
       }
-      if ((s.minLength !== undefined && data.length < s.minLength) || data.length > (s.maxLength ?? 65536)) {
+      const maximum = s.maxLength ?? (validationOnly ? Number.POSITIVE_INFINITY : 65536)
+      if ((s.minLength !== undefined && data.length < s.minLength) || data.length > maximum) {
         issue(path, 'range')
         return
       }
@@ -253,6 +263,13 @@ export function configIssues(schema: ConfigSchema, value: unknown): readonly Con
         issue(path, 'type')
       else if ((s.minimum !== undefined && data < s.minimum) || (s.maximum !== undefined && data > s.maximum))
         issue(path, 'range')
+    }
+    if (s.not) {
+      const before = issues.length
+      check(s.not, data, path, true)
+      const matches = issues.length === before
+      issues.length = before
+      if (matches) issue(path, 'choice')
     }
   }
   check(schema, value, '')

@@ -62,7 +62,25 @@ it('runs the fresh local-dev demo through registry and provider without credenti
       expect(events).toContainEqual(
         expect.objectContaining({ type: 'text_delta', delta: expect.stringContaining('[Demo model') }),
       )
-      expect(events.at(-1)).toEqual({ type: 'done', reason: 'stop' })
+      expect(events.at(-1)).toEqual({
+        type: 'done',
+        reason: 'stop',
+        timing: {
+          providerCallMs: expect.any(Number),
+          prepareMs: expect.any(Number),
+          firstOutputMs: expect.any(Number),
+          outputMs: expect.any(Number),
+          finalizeMs: expect.any(Number),
+        },
+      })
+      const terminal = events.at(-1)
+      if (terminal?.type !== 'done' || terminal.timing?.providerCallMs === undefined)
+        throw new Error('missing terminal call timing')
+      for (const elapsed of Object.values(terminal.timing)) {
+        expect(Number.isFinite(elapsed)).toBe(true)
+        expect(elapsed).toBeGreaterThanOrEqual(0)
+        expect(elapsed).toBeLessThanOrEqual(terminal.timing.providerCallMs)
+      }
     }
     const collector = await memoryCollector()
     vi.stubEnv('AGH_HOME', dataDir)

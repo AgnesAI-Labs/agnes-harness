@@ -79,13 +79,20 @@ describe('built-in base tools', () => {
         say('Waiting for your answer.'),
         () => callTool('present', { files: [{ path: 'report.txt', description: 'Review result' }] }),
         say('Here it is.'),
-        () =>
-          callTool('schedule_create', {
+        (request) => {
+          expect(request.tools.some((tool) => tool.name === 'schedule_create')).toBe(false)
+          expect(request.tools.some((tool) => tool.name === 'tool_describe')).toBe(true)
+          return callTool('tool_describe', { name: 'schedule_create' })
+        },
+        (request) => {
+          expect(request.tools.some((tool) => tool.name === 'schedule_create')).toBe(true)
+          return callTool('schedule_create', {
             title: 'Weather',
             prompt: 'Check the weather',
             selector: { daily: { time: '08:00', timeZone: 'Asia/Shanghai' } },
             target: 'current_session',
-          }),
+          })
+        },
         say('Scheduled.'),
       ],
       onExhausted: 'error',

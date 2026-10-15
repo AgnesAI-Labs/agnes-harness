@@ -7,7 +7,19 @@ import { useUiText } from './ui-locale.js'
 
 /** Use generated protocol constraints; metadata annotates presentation, never authorization. */
 function annotate(source: unknown, kind: string): ConfigSchema {
-  const schema = JSON.parse(JSON.stringify(source)) as ConfigSchema
+  let schema = JSON.parse(JSON.stringify(source)) as ConfigSchema & { allOf?: readonly ConfigSchema[] }
+  // TypeBox represents the generated object plus its exclusion as an intersection. Lift only
+  // this exact shape; other intersections retain their unsupported-schema refusal.
+  const [fields, exclusion] = schema.allOf ?? []
+  if (
+    Object.keys(schema).length === 1 &&
+    schema.allOf?.length === 2 &&
+    fields?.type === 'object' &&
+    fields.not === undefined &&
+    exclusion?.not &&
+    Object.keys(exclusion).length === 1
+  )
+    schema = { ...fields, not: exclusion.not }
   const properties = Object.fromEntries(
     Object.entries(schema.properties ?? {}).map(([name, field]) => [
       name,
@@ -18,7 +30,13 @@ function annotate(source: unknown, kind: string): ConfigSchema {
           ...(name === 'level'
             ? { optionKeys: { L0: 'level.L0', L1: 'level.L1', L2: 'level.L2' } }
             : name === 'on_unavailable'
-              ? { optionKeys: { deny: 'policy.deny', allow: 'policy.allow' } }
+              ? {
+                  optionKeys: {
+                    deny: 'policy.deny',
+                    allow: 'policy.allow',
+                    'allow-if-unimplemented': 'policy.allowIfUnimplemented',
+                  },
+                }
               : {}),
         },
       },
