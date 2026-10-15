@@ -203,6 +203,15 @@
       "purpose": "Scan main Web screens for WCAG A/AA accessibility violations in the merge gate.",
       "rationale": "Uses maintained axe rules in the same real browser as functional acceptance.",
       "consumers": ["."]
+    },
+    {
+      "name": "@testing-library/dom",
+      "version": "10.4.1",
+      "license": "MIT",
+      "source": "https://github.com/testing-library/dom-testing-library",
+      "purpose": "Accessible DOM queries and user interaction events for frontend component tests.",
+      "rationale": "Verifies the run-status capsule through rendered labels, focus and controls in the existing DOM test environment.",
+      "consumers": ["."]
     }
   ]
 }
