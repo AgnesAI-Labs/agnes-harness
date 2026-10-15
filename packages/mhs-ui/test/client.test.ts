@@ -119,7 +119,7 @@ describe('owner-bound MHS browser data', () => {
   it('closes a stream which finishes opening after disposal and rejects invalid binary framing', async () => {
     const f = fake(),
       pending = deferred<Stream>()
-    f.ports.streams.open = () => pending.promise
+    f.ports.streams = { open: () => pending.promise }
     const client = new MhsClient(f.ports),
       opened = client.stream('media', { device: 'rover-01', source: 'front' }, () => {})
     client.dispose()
