@@ -253,6 +253,9 @@ export type { ServiceCapability } from '../gen/ts/extension-service.js'
 export type PluginCapabilities = import('../gen/ts/extension-manifest.js').Capabilities
 
 export type {
+  BoundWakeEnqueueParams,
+  BoundWakeReadParams,
+  BoundWakeReceipt,
   ProfileDecisionAnswerParams,
   ProfileServiceCallParams,
   ProfileServiceCallResult,
@@ -610,6 +613,7 @@ export * from './codec/permission.js'
 export * from './codec/stop-reason.js'
 export * from './configs.js'
 export * from './constants.js'
+export * from './decision-journal.js'
 export { diagnosticRecords, observeDiagnostics, safeDiagnosticRecord } from './diagnostic-records.js'
 export { errorMessageKey, httpRpcError, normalizeRpcError } from './error-envelope.js'
 export * from './errors.js'

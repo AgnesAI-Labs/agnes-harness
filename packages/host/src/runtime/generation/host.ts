@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { relative, resolve as resolvePath } from 'node:path'
 import { providerRestartRequired } from '@agnes/extension-api'
 import { HostError } from '@agnes/host-common/errors'
@@ -123,6 +122,7 @@ export async function createRuntimeGenerationHost(
   const initialSkills = createGenerationSkills(options.skillResources)
   const initial = await factory(profile, {
     ...options,
+    profileAuthorityPublication: 'retained',
     ...(options.skillResources ? { skillResources: initialSkills.input } : {}),
     onGenerationBasePackages: (ids) => {
       for (const id of ids) basePackages.add(id)
@@ -233,6 +233,7 @@ export async function createRuntimeGenerationHost(
     const snapshot = snapshotTarget(target, await sourcesFor(target), options.skillResources, undefined, true)
     recordHead(snapshot.id)
     current = { snapshot, host: initial }
+    current.host.profileServices?.publishCurrent()
     live.set(snapshot.id, current)
     rowsByGeneration.set(snapshot.id, new Map(preparedRows))
     const binding = { id: snapshot.id }
@@ -324,6 +325,7 @@ export async function createRuntimeGenerationHost(
       { ...profile, packages, seams },
       {
         ...generationOptions,
+        profileAuthorityPublication: 'retained',
         generationBuiltinRows: targetRows(target).filter((row) => row.plugin.startsWith('builtin:')),
         onGenerationBasePackages: (ids) => {
           for (const id of ids) basePackages.add(id)
@@ -798,6 +800,7 @@ export async function createRuntimeGenerationHost(
     latestSkills = skillInput
     if (!codeChanged) {
       if (!extensionRows && !skills) await head.host.applyRuntimeTarget(target)
+      head.host.profileServices?.publishCurrent()
       lastChange = changeResult({ outcome: 'in-place', generationId: head.snapshot.id })
       return head.host.ordinaryConvergence()
     }
@@ -853,6 +856,7 @@ export async function createRuntimeGenerationHost(
       }
       throw error
     }
+    current.host.profileServices?.publishCurrent()
     recordHead(current.snapshot.id)
     // Publication has committed. Retirement failure belongs to the retired generation, and cannot
     // turn a successful head change into a rejected apply/compensation transaction.
@@ -1034,6 +1038,7 @@ export async function createRuntimeGenerationHost(
         if (owner(key, true).kernel.get(key))
           throw new Error('E_GENERATION_SESSION_OPEN: close the deleted session first')
         const pin = store.session(key)
+        ;(current?.host ?? initial).profileServices?.revokeWakeSession(key)
         store.releaseSession(key)
         await collect(new Set(pin ? [pin.generationId] : []))
       }),

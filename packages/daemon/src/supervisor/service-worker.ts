@@ -112,3 +112,95 @@ export function workerComputerUseStatusSource(
     setSessionYolo: async () => undefined,
   })
 }
+
+/** Current profile calls always use the shared worker, independent of any session pin. */
+export function workerProfileServices(
+  pool: Pick<WorkerPool, 'acquireSharedWorker'>,
+  gate?: (identity: { packageId: string; integrity: string }) => Promise<void>,
+) {
+  type Runtime = NonNullable<Host['profileServices']>
+  const command = async (
+    method: 'call' | 'readOperation' | 'listDecisions' | 'answerDecision' | 'authorizeControl' | 'identity',
+    call: unknown,
+    credential: unknown,
+  ): Promise<unknown> => {
+    const link = await pool.acquireSharedWorker()
+    return link.command(`profileService.${method}`, { call, credential }, { timeoutMs: 31000 })
+  }
+  return {
+    authorizeControl: (async (params, credential) => {
+      if (gate)
+        await gate(
+          (await command('identity', params, credential)) as Awaited<ReturnType<Runtime['serviceIdentity']>>,
+        )
+      return command('authorizeControl', params, credential)
+    }) as Runtime['authorizeControl'],
+    call: (async (params, credential, signal) => {
+      if (signal?.aborted) throw rpcError('REQUEST_TIMEOUT')
+      const link = await pool.acquireSharedWorker()
+      if (signal?.aborted) throw rpcError('REQUEST_TIMEOUT')
+      if (gate)
+        await gate(
+          (await link.command('profileService.identity', { call: params, credential })) as Awaited<
+            ReturnType<Runtime['serviceIdentity']>
+          >,
+        )
+      if (signal?.aborted) throw rpcError('REQUEST_TIMEOUT')
+      const callId = randomBytes(16).toString('hex')
+      const abort = () => {
+        void link.command('abortService', { callId }).catch(() => undefined)
+      }
+      signal?.addEventListener('abort', abort, { once: true })
+      try {
+        return await link.command(
+          'profileService.call',
+          { callId, call: params, credential },
+          { timeoutMs: 31000 },
+        )
+      } finally {
+        signal?.removeEventListener('abort', abort)
+      }
+    }) as Runtime['call'],
+    readOperation: (async (params, credential) =>
+      command('readOperation', params, credential)) as Runtime['readOperation'],
+    listDecisions: (async (credential) =>
+      command('listDecisions', {}, credential)) as Runtime['listDecisions'],
+    answerDecision: (async (params, credential) =>
+      command('answerDecision', params, credential)) as Runtime['answerDecision'],
+  }
+}
+
+export function workerWakeBindings(
+  pool: Pick<WorkerPool, 'acquireSharedWorker'>,
+  gate?: (identity: { packageId: string; integrity: string }) => Promise<void>,
+) {
+  type Runtime = NonNullable<Host['profileServices']>
+  return {
+    resolve: async (bindingId: string, credential: unknown) => {
+      const link = await pool.acquireSharedWorker()
+      const resolved = (await link.command('boundWake.resolve', { bindingId, credential })) as Awaited<
+        ReturnType<Runtime['resolveWake']>
+      >
+      if (gate) {
+        try {
+          await gate({
+            packageId: resolved.binding.producerPackageId ?? '',
+            integrity: resolved.binding.producerIntegrity,
+          })
+        } catch (error) {
+          if ((error as { data?: { code?: string } })?.data?.code !== 'CAPABILITY_DENIED') throw error
+          resolved.active = false
+        }
+      }
+      return resolved
+    },
+    require: async (bindingId: string) => {
+      const link = await pool.acquireSharedWorker()
+      const target = (await link.command('boundWake.require', { bindingId })) as ReturnType<
+        Runtime['requireWake']
+      >
+      if (gate) await gate({ packageId: target.producerPackageId ?? '', integrity: target.producerIntegrity })
+      return target
+    },
+  }
+}

@@ -134,6 +134,7 @@ describe('StorageLister', () => {
   it('answers preset: null when a session has no session/start row', async () => {
     const { tables, ins } = setUp()
     ins('agnes:t:a:cli:dm:1', 1, 'user/message', { content: [] })
+    ins('@profile/default', 1, 'decision/state', { native: true })
     const l = new StorageLister(tables.table('events'), tables.table('writer_claims'))
     const r = await l.list({})
     expect(r.items).toEqual([

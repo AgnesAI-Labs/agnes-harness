@@ -4,6 +4,7 @@ import { memoryKind, type SystemPromptProvider, sandboxKind, systemPromptKind } 
 import { installProviderRegistry, installProviders } from '@agnes/host-common/assemble/provider-registry'
 import { HostError } from '@agnes/host-common/errors'
 import type { HostPluginTreeBase } from '@agnes/host-extensions/assemble/seams-cordis'
+import { pluginRowSource } from '@agnes/host-extensions/ext-host/row-extension-host'
 import { createLocalSandboxProvider } from '@agnes/host-infrastructure/adapters/sandbox-local'
 import { persistenceProviderRegistry } from '@agnes/host-infrastructure/adapters/storage-provider'
 import { installHostPlatform } from '@agnes/host-providers/adapters/platform-provider'
@@ -27,6 +28,7 @@ import {
   isolateSessionOverlay,
   syncHotPolicyFromTarget,
 } from '@agnes/host-providers/runtime-hot-policy'
+import { pluginSnapshotIdentity } from '@agnes/host-providers/runtime-plugin-catalogue'
 import { sessionOverlayDesired } from '@agnes/host-providers/runtime-session-overlay'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
 import { RuntimeTargetPublisher } from '@agnes/host-providers/runtime-target-publisher'
@@ -36,6 +38,7 @@ import {
 } from '@agnes/host-providers/runtime-target-resource-bootstrap'
 import { developmentPluginRows } from '@agnes/package-manager'
 import type { RuntimeConvergenceReport, RuntimeTarget } from '@agnes/plugin-runtime/host'
+import { createTreeSnapshot } from '@agnes/plugin-runtime/host'
 import { compositionTools } from '../profile/composition-visibility.js'
 import { createExtensionServiceHost, type ExtensionServiceHost } from '../services/author-port.js'
 import { installGitWorktreeService } from '../services/git-worktrees.js'
@@ -55,6 +58,7 @@ import type { SkillState } from './skills.js'
 import { localSandboxImplementation, sandboxBackendPackages } from './workspace-runtime.js'
 
 export type RuntimeTargetHost = Readonly<{
+  publishProfileCurrent(): void
   publisher: RuntimeTargetPublisher<HostRuntimeTargetResources, IsolatedSessionOverlay>
   generationViews: Map<string, GenerationRegistries>
   rawSessionRuntime(sessionKey: string, runtimeRegistryRevision?: string): CurrentSessionRuntime
@@ -141,6 +145,29 @@ function createSessionViews(
     }
   }
   return { generationViews, rawSessionRuntime, sessionRuntimeView }
+}
+
+function publishProfileActivations(
+  proc: ProcessServices,
+  catalogue: RowHosts['pluginCatalogue'],
+  target: RuntimeTarget,
+): void {
+  proc.profileActivations.publish(
+    target.tree.rows.flatMap((row) => {
+      if (row.disabled) return []
+      const identity = pluginSnapshotIdentity(row.plugin)
+      const description = identity && catalogue.describe(identity.packageId, identity.snapshotId)
+      return description
+        ? [
+            {
+              owner: pluginRowSource(row.id),
+              revision: createTreeSnapshot([row]).hash,
+              integrity: description.integrity,
+            },
+          ]
+        : []
+    }),
+  )
 }
 
 /** The publisher of the one ordinary tree: how rows are loaded, trusted, mounted and verified. */
@@ -270,6 +297,8 @@ function createPublisher(ctx: AssemblyContext, input: RuntimeTargetInput, shared
       })
     },
     onPublished: (target) => {
+      if (deps.profileAuthorityPublication !== 'retained')
+        publishProfileActivations(proc, pluginCatalogue, target)
       const root = shared.publisher.get().current().value.current?.ordinary.pluginTree.root
       if (root) input.seamSet.adopt(root)
       syncHotPolicyFromTarget(hotPolicy, target)
@@ -477,6 +506,11 @@ export async function mountRuntimeTarget(
     await publisher.closeSessionScope(sessionKey)
   }
   return {
+    publishProfileCurrent: () => {
+      const target = publisher.current().value.current?.target
+      if (!target) throw new Error('Profile target unavailable')
+      publishProfileActivations(input.proc, input.hosts.pluginCatalogue, target)
+    },
     publisher: publisher,
     generationViews: shared.views.generationViews,
     rawSessionRuntime: shared.views.rawSessionRuntime,

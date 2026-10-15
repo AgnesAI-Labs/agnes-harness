@@ -797,6 +797,21 @@ const removeHomeEntries = registerBuiltinHomeEntries()
 const clientModules = await startClientModules({
   agnes: client,
   claim: claimSlotCard,
+  clientProfileCaller: async (module, service, input, options) => {
+    const response = await fetch('/api/client-modules/profile', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        rowId: module.rowId ?? module.packageId,
+        service,
+        ...(input === undefined ? {} : { input }),
+        ...options,
+      }),
+    })
+    if (!response.ok) throw new Error(t('app.plugin.serviceUnavailable'))
+    return response.json()
+  },
   clientServiceCaller: async (module, sessionId, service, input) => {
     const response = await fetch('/api/client-modules/service', {
       method: 'POST',

@@ -138,3 +138,16 @@ export interface ModuleIdentity {
   backendOwner?: string
   streams?: readonly string[]
 }
+
+export type ClientProfileCaller = (
+  module: ModuleIdentity,
+  service: string,
+  input: Record<string, unknown> | undefined,
+  options?: { operationId?: string; read?: boolean },
+) => Promise<unknown>
+
+export interface ClientProfileServices {
+  query(service: string, input: Record<string, unknown>): Promise<unknown>
+  effect(service: string, input: Record<string, unknown>, options: { operationId: string }): Promise<unknown>
+  readOperation(service: string, operationId: string): Promise<unknown>
+}

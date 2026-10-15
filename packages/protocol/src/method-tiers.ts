@@ -96,6 +96,8 @@ export const METHOD_TIERS: Record<MethodName, MethodTier> = {
   '_agnes/v1/mcp.servers.oauth.status': 'admin',
   '_agnes/v1/mcp.servers.oauth.status.set': 'admin',
   '_agnes/v1/extension.ack': 'admin',
+  '_agnes/v1/extension.wakes.enqueue': 'client',
+  '_agnes/v1/extension.wakes.read': 'client',
   '_agnes/v1/extension.callScoped': 'client',
   '_agnes/v1/extension.readOperation': 'client',
   '_agnes/v1/profile.decisions.list': 'client',

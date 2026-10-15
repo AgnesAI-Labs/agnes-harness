@@ -19,6 +19,7 @@ export class JobsService implements JobsPort {
     const validated = validateJobSpec(raw)
     if (!validated.ok) throw toRpcError(validated.errors)
     const spec = validated.value
+    if ('pluginNotification' in spec.payload) throw rpcError('CAPABILITY_DENIED')
     const isProtected = spec.protected === true || this.options.protectedNames?.(spec) === true
     if (isProtected && !context.local) {
       throw rpcError('CAPABILITY_DENIED', { reason: 'protected jobs are local-only' })

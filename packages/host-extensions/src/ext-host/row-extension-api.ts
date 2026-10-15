@@ -40,6 +40,10 @@ export const OBSERVE_HOOK_EVENTS: readonly HookEvent[] = Object.freeze(
 )
 
 export type RowExtensionApiInput = {
+  store?: () => import('@agnes/extension-api').OwnedStore
+  bindWake?: (
+    session: import('@agnes/extension-api').ToolContext['session'],
+  ) => Promise<import('@agnes/extension-api').WakeTarget>
   mcpManage?: (
     invocation: Pick<
       import('../resources/mcp-manage-port.js').McpManageInvocation,
@@ -188,10 +192,30 @@ export function buildRowExtensionAPI(input: RowExtensionApiInput): RowExtensionA
               const skillInstall = input.skillInstall
               const mcpManage = input.mcpManage
               const pluginManage = input.pluginManage
+              const bindWake = input.bindWake
               try {
                 return await execute(args, {
                   ...observePluginCapabilities(tctx, input.declaredCapabilities, log),
                   projections,
+                  ...(input.store && input.declaredCapabilities?.store === true
+                    ? { store: input.store() }
+                    : {}),
+                  ...(bindWake && input.declaredCapabilities?.wake === true
+                    ? {
+                        wake: Object.freeze({
+                          bind: async () => {
+                            lease.assertInvocationAlive()
+                            if (finished || callSignal.aborted)
+                              throw new Error('Wake binding invocation expired')
+                            const target = await bindWake(tctx.session)
+                            lease.assertInvocationAlive()
+                            if (finished || callSignal.aborted)
+                              throw new Error('Wake binding invocation expired')
+                            return target
+                          },
+                        }),
+                      }
+                    : {}),
                   ...(mcpManage
                     ? {
                         mcpManage: Object.freeze({

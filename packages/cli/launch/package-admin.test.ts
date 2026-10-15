@@ -19,6 +19,18 @@ const mocks = vi.hoisted(() => {
   const migrateSession = vi.fn(async () => ({ changed: true }))
   const treeGet = vi.fn(async () => ({ desired: null }))
   const treeList = vi.fn(async () => ({ desired: null }))
+  const clientModuleList = vi.fn(async () => ({
+    rows: [
+      {
+        rowId: 'web:acme/panel',
+        moduleName: 'plugin/0123456789abcdef',
+        enabled: true,
+        phase: 'ready',
+        services: ['panel.report'],
+        extIds: ['plugin/0123456789abcdef'],
+      },
+    ],
+  }))
   const clientModuleCallService = vi.fn(async () => ({ output: { ok: true } }))
   const clientModuleCallEffect = vi.fn(async () => ({ output: { changed: true } }))
   const surfaceMounts = vi.fn(async () => ({
@@ -54,6 +66,7 @@ const mocks = vi.hoisted(() => {
     publicationStatus,
     migrateSession,
     treeList,
+    clientModuleList,
     clientModuleCallService,
     clientModuleCallEffect,
     surfaceMounts,
@@ -88,6 +101,7 @@ vi.mock('@agnes/sdk', () => ({
     sessionSelection: mocks.sessionSelection,
     surfaces: { mounts: mocks.surfaceMounts },
     clientModules: {
+      list: mocks.clientModuleList,
       callService: mocks.clientModuleCallService,
       callEffect: mocks.clientModuleCallEffect,
     },
@@ -261,6 +275,43 @@ it('relays only a same-origin typed browser service request and strips page-supp
       service: 'panel.search',
       input: { text: 'hello', nested: { keep: 1 } },
     })
+    const profileCall = { rowId: 'web:acme/panel', service: 'panel.report', input: {} }
+    const profile = await fetch(`${origin}/api/client-modules/profile`, {
+      method: 'POST',
+      headers: { Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify(profileCall),
+    })
+    expect(profile.status).toBe(200)
+    expect(mocks.clientModuleList).toHaveBeenCalledWith('local-dev')
+    expect(mocks.request).toHaveBeenCalledWith('_agnes/v1/extension.callScoped', {
+      extension: 'plugin/0123456789abcdef',
+      service: 'panel.report',
+      input: {},
+    })
+    for (const body of [
+      { ...profileCall, sessionId: 'forged' },
+      { ...profileCall, actor: {} },
+    ]) {
+      const rejected = await fetch(`${origin}/api/client-modules/profile`, {
+        method: 'POST',
+        headers: { Origin: origin, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      expect(rejected.status).toBe(400)
+    }
+    const crossOrigin = await fetch(`${origin}/api/client-modules/profile`, {
+      method: 'POST',
+      headers: { Origin: 'https://untrusted.invalid', 'Content-Type': 'application/json' },
+      body: JSON.stringify(profileCall),
+    })
+    expect(crossOrigin.status).toBe(403)
+    mocks.clientModuleList.mockResolvedValueOnce({ rows: [] })
+    const removed = await fetch(`${origin}/api/client-modules/profile`, {
+      method: 'POST',
+      headers: { Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify(profileCall),
+    })
+    expect(removed.status).toBe(503)
     const forbidden = await fetch(`${origin}/api/client-modules/service`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Origin: origin },

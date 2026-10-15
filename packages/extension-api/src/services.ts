@@ -14,6 +14,7 @@ export interface ServiceContext {
   readonly admission?: Readonly<{
     operationId: string
     subjectDigest: string
+    controlGrant?: Readonly<{ grantId: string; expiresAt: number }>
     approval?: ToolContext['approval']
   }>
   readonly store?: import('./profile-services.js').OwnedStore

@@ -156,6 +156,7 @@ export function serviceInvoker(deps: ServiceInvocationDeps) {
       }
       alive()
       if (decision.effect !== 'allow') throw fail('CAPABILITY_DENIED')
+      if ((cap.scope ?? 'session') !== 'session') throw fail('CAPABILITY_DENIED')
       const input = inspectJsonData(params.input, 1048576)
       if (!input.ok || !entry.input(input.value)) throw fail('INVALID_PARAMS')
       try {

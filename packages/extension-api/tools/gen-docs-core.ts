@@ -132,7 +132,7 @@ export function generateAll(): Record<string, string> {
 
 ${schemaSummary(read('extension-service.json'), 'extension-service.json', 'ServiceCapability')}
 
-Register a declared name with registerService and a Promise-returning handler. Schemas are plain JSON data objects; Host compiles them. checkServiceDef validates metadata only and never executes the handler. Actor, source and requestId come from Host. Effect identity, grants, lease, timeout and result limits require Host/daemon wiring. Service has no session/model/UI access.
+Register a declared name with registerService and a Promise-returning handler. Schemas are plain JSON data objects; Host compiles them. checkServiceDef validates metadata only and never executes the handler. Actor, source and requestId come from Host. Host enforces source grants, policy, current activation, timeouts and result limits. Services default to session scope. Explicit profile services have no session or workspace ports; effects reuse durable native decisions and operation receipts. prepare is read-only and excluded from the static capability snapshot. See [profile services](../../../docs/develop/profile-services.md).
 `,
     'projections.md': `${header('projection.json')}# Extension Projections
 

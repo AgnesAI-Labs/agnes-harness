@@ -29,6 +29,7 @@ export type SchedulerRegistry = {
 }
 
 type SchedulerOptions = {
+  boundWake?: (job: JobRow, signal: AbortSignal) => Promise<{ reason: string; seq?: number }>
   repo: JobsRepo
   registry: SchedulerRegistry
   notices: Pick<NoticeSink, 'emit'>
@@ -202,6 +203,10 @@ export class Scheduler {
     signal: AbortSignal,
   ): Promise<{ seq?: number; reason?: string }> {
     signal.throwIfAborted()
+    if ('pluginNotification' in job.payload) {
+      if (!this.options.boundWake) return { reason: 'refused' }
+      return this.options.boundWake(job, signal)
+    }
     const prepared = await this.options.prepare?.(job, signal)
     const sessionKey = prepared?.sessionKey ?? job.sessionKey
     try {

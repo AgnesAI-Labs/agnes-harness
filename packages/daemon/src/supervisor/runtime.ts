@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
-import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { openDaemonScheduleDb } from '@agnes/base/schedule'
 import { createAppServerAdmin } from '@agnes/daemon-admin/app-server'
@@ -122,6 +122,7 @@ import { registerDoctor } from '@agnes/daemon-rpc/local/methods/doctor'
 import { executeJournaledEffect, registerExtensions } from '@agnes/daemon-rpc/local/methods/extensions'
 import { registerFactChain } from '@agnes/daemon-rpc/local/methods/fact-chain'
 import { registerFeedback } from '@agnes/daemon-rpc/local/methods/feedback'
+import { registerProfileServices } from '@agnes/daemon-rpc/local/methods/profile-services'
 import { registerPromptTrace } from '@agnes/daemon-rpc/local/methods/prompt-trace'
 import * as sessionPrefs from '@agnes/daemon-rpc/local/methods/session-preferences'
 import {
@@ -151,7 +152,6 @@ import {
   type Host,
   HostError,
   type HostSession,
-  type TableStore as HostTableStore,
   initializeHome,
   initializeHomeLocked,
   overlayChildEngineTarget,
@@ -195,7 +195,7 @@ import {
   writePackageSkillInventory,
 } from '@agnes/resource-control-daemon'
 import { type ActivationLinkPool, notifyLiveSessionWorkers } from '@agnes/resource-control-runtime'
-import { hasPrivateDaclSync, renameWriteThrough, windowsEnsurePrivateDirectorySync } from '@agnes/system-node'
+import { hasPrivateDaclSync, windowsEnsurePrivateDirectorySync } from '@agnes/system-node'
 import {
   artifactMediaReadReply,
   composeDefaultProductionProjectedArtifactRead,
@@ -219,6 +219,7 @@ import { acquireDaemonMutationLock } from './mutation-lock.js'
 import { acquireOwnerLock } from './owner-lock.js'
 import { createPluginManageRequests } from './plugin-manage-requests.js'
 import { createProfileSurfaceController } from './profile-surfaces.js'
+import { createSupervisorProfileServices } from './profile-services.js'
 import {
   CompositeRuntimeDelivery,
   deliverDesiredToWorkers,
@@ -250,6 +251,7 @@ import { type SkillWatcher, startSkillWatcher } from './skill-watcher.js'
 import { listenUnix } from './socket.js'
 import { prepareDaemonSocketPaths } from './socket-paths.js'
 import { watchWindowsStopRequest } from './stop-request.js'
+import { adaptHostTables, persistResolvedProfile } from './storage-adapters.js'
 import { webhookSessions } from './webhook-sessions.js'
 import { WorkerPool } from './worker-pool.js'
 import { PACKAGE_MANAGER_VERSION, workspaceDeployments } from './workspace-deployments.js'
@@ -639,20 +641,6 @@ export function supervisorLister(
       const cursor = all.length > limit && last ? JSON.stringify([last.at, last.key]) : undefined
       return { items, ...(cursor !== undefined ? { cursor } : {}) }
     },
-  }
-}
-
-/** Atomically replace the default profile consumed by workers acquired after activation. */
-async function persistResolvedProfile(file: string, profile: ResolvedProfile): Promise<void> {
-  await mkdir(dirname(file), { recursive: true })
-  const temporary = `${file}.${process.pid}.${randomBytes(8).toString('hex')}.tmp`
-  try {
-    const windows = createPlatform().os === 'win32'
-    await writeFile(temporary, JSON.stringify(profile), { mode: 0o600, ...(windows ? { flush: true } : {}) })
-    if (windows) await renameWriteThrough(temporary, file)
-    else await rename(temporary, file)
-  } finally {
-    await rm(temporary, { force: true }).catch(() => undefined)
   }
 }
 
@@ -1876,9 +1864,22 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         })
       : undefined
     if (schedules) startupCleanup.push(() => schedules.close())
+    const profilePorts = createSupervisorProfileServices({
+      runtime: o.packageRuntime,
+      profile: o.profile.name,
+      pool,
+      repo: jobsRepo,
+      profileHash: host.profile.hash,
+      clock,
+      ownership: sessionOwnership,
+      workspaces: workspaceCatalog,
+      registry,
+    })
+    const boundWakes = profilePorts.boundWakes
     const scheduler = jobsRepo
       ? new Scheduler({
           repo: jobsRepo,
+          boundWake: profilePorts.boundWake,
           registry: supervisorRegistry,
           notices,
           clock,
@@ -2065,6 +2066,11 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       const factRead: (key: string) => ScanRead<import('@agnes/protocol').EventEnvelope> =
         o.sessionFactRead ?? ((key) => (query) => cx.registry.require(key).session.scan(query))
       const cx: AgnesContext = {
+        profileFeatures: [
+          'services.profile.v1',
+          'store.owned.v1',
+          ...(boundWakes ? ['jobs.bound-wake.v1'] : []),
+        ],
         sessionServices: { activationBarrier, journal, commandQueue, callService, inspectService },
         host,
         registry: supervisorRegistry,
@@ -2422,6 +2428,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           ? (resourceControl.unixAuthority ?? localResourceAuthority())
           : (resourceControl.webAuthority ?? denyResourceAuthority),
       )
+      registerProfileServices(ep, profilePorts.services, boundWakes, activationBarrier)
       registerExtensions(ep, {
         activationBarrier,
         journal,
@@ -2642,24 +2649,6 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
 }
 
 type SupervisorHandle = Awaited<ReturnType<typeof startSupervisor>>
-
-/** Host uses `run(sql, params)` while daemon's older narrow port uses `exec(sql, params)`. */
-function adaptHostTables(store: HostTableStore): Pick<Tables, 'table'> {
-  return {
-    table(name: string): TableHandle {
-      const table = store.table(name)
-      return {
-        exec(sql, params = []) {
-          if (params.length) table.run(sql, params)
-          else table.exec(sql)
-        },
-        get: <T>(sql: string, params = []) => table.get<T>(sql, params),
-        all: <T>(sql: string, params = []) => table.all<T>(sql, params),
-        transaction: <T>(fn: () => T) => table.transaction(fn),
-      }
-    },
-  }
-}
 
 /**
  * Opens the Host-owned storage used by the real supervisor process and gives jobs an isolated

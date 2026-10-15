@@ -91,6 +91,7 @@ export type AssembleDeps = HostPaths &
     env?: NodeJS.ProcessEnv
     extensionIsolation?: ExtensionIsolationOptions
     extensionIsolationServices?: ExtensionIsolationServices
+    profileAuthorityPublication?: 'current' | 'retained'
     serviceAuthority?: ServiceAuthority
     /** Trusted deployment coordinator boundary; never exposed to extension code. */
     activationBarrier?: ExtensionActivationBarrier

@@ -10,6 +10,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import { CommandQueue } from '../src/local/command-queue.js'
 import { registerExtensions } from '../src/local/methods/extensions.js'
+import { registerProfileServices } from '../src/local/methods/profile-services.js'
 
 function endpoint(
   callService: Host['callService'],
@@ -409,4 +410,56 @@ describe('S5 extension.call daemon boundary', () => {
     expect(call).toHaveBeenCalledTimes(1)
     await queue.close()
   })
+})
+
+it('admits profile calls from authenticated source grants and keeps native decisions on the human ingress', async () => {
+  const { ep, queue, activationBarrier } = endpoint(async () => ({ output: null }))
+  const calls: unknown[] = []
+  registerProfileServices(
+    ep,
+    {
+      call: async (params, credential) => {
+        calls.push({ params, credential })
+        return { output: { ready: true } }
+      },
+      readOperation: async () => ({ state: 'unknown', operationId: 'stable' }),
+      listDecisions: async () => [],
+      answerDecision: async () => {
+        throw new Error('must require human ingress')
+      },
+    },
+    undefined,
+    activationBarrier,
+  )
+  try {
+    expect(
+      await ep.handle({
+        jsonrpc: '2.0',
+        id: 1,
+        method: '_agnes/v1/extension.callScoped',
+        params: { extension: 'agnes/reports', service: 'sales.list', input: {} },
+      }),
+    ).toMatchObject({ result: { output: { ready: true } } })
+    expect(calls[0]).toMatchObject({
+      credential: {
+        source: 'reports',
+        subjectCredential: { userId: 'alice' },
+        grants: [{ extension: 'agnes/reports', name: 'sales.list' }],
+      },
+    })
+    expect(
+      await ep.handle({
+        jsonrpc: '2.0',
+        id: 2,
+        method: '_agnes/v1/extension.callScoped',
+        params: { extension: 'agnes/reports', service: 'sales.list', input: {}, actor: { id: 'forged' } },
+      }),
+    ).toHaveProperty('error')
+    expect(
+      await ep.handle({ jsonrpc: '2.0', id: 3, method: '_agnes/v1/profile.decisions.list', params: {} }),
+    ).toMatchObject({ error: { data: { code: 'CAPABILITY_DENIED' } } })
+  } finally {
+    await ep.close()
+    await queue.close()
+  }
 })

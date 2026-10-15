@@ -6351,6 +6351,59 @@ const ServiceSamples: Record<string, Sample> = Object.fromEntries(
     },
   ]),
 )
+Object.assign(ServiceSamples, {
+  ProfileDecisionAnswerResult: SESSION_SAMPLES.DecisionCommandReceipt,
+  BoundWakeEnqueueParams: {
+    valid: {
+      target: { bindingId: 'binding' },
+      idempotencyKey: 'one',
+      event: { name: 'report.done', summary: 'Done' },
+    },
+    invalid: [{ sessionId: 'forged' }],
+    note: 'Bound target',
+  },
+  BoundWakeReadParams: { valid: { wakeId: 'wake' }, invalid: [{}], note: 'Owned wake receipt' },
+  BoundWakeReceipt: { valid: { wakeId: 'wake', state: 'queued' }, invalid: [{}], note: 'Durable wake' },
+  ServiceEffectPolicy: {
+    valid: {
+      isDestructive: true,
+      isOpenWorld: true,
+      replay: 'never',
+      requiresApproval: 'always',
+      approvalScopes: [],
+    },
+    invalid: [{}],
+    note: 'Reviewed policy',
+  },
+  ProfileServiceCallParams: {
+    valid: { extension: 'acme/dashboard', service: 'report.query', input: {} },
+    invalid: [{ actor: 'forged' }],
+    note: 'Profile query',
+  },
+  ProfileServiceOperationParams: {
+    valid: { extension: 'acme/dashboard', service: 'report.query', operationId: 'one' },
+    invalid: [{}],
+    note: 'Owned receipt',
+  },
+  ProfileServiceReceipt: {
+    valid: { operationId: 'one', state: 'unknown' },
+    invalid: [{}],
+    note: 'Effect receipt',
+  },
+  ProfileServiceCallResult: { valid: { output: {} }, invalid: [{}], note: 'Profile query or effect result' },
+  ProfileDecisionsListParams: { valid: {}, invalid: [{ actor: 'forged' }], note: 'Profile decisions' },
+  ProfileDecisionsListResult: { valid: { decisions: [] }, invalid: [{}], note: 'Profile decisions' },
+  ProfileDecisionAnswerParams: {
+    valid: {
+      handle: { id: 'one', sessionId: null, profileId: 'default' },
+      revision: 1,
+      commandId: 'answer',
+      response: { option: 'allowed-once', value: null },
+    },
+    invalid: [{}],
+    note: 'Authenticated answer',
+  },
+})
 for (const name of ['ExtensionCallParams', 'ExtensionCallResult', 'ExtensionAckParams', 'ExtensionCallError'])
   AGNES_SAMPLES[name] = ServiceSamples[name] as Sample
 
@@ -7421,6 +7474,17 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     ExtensionCallResult: ServiceGen.ExtensionCallResult,
     ExtensionAckParams: ServiceGen.ExtensionAckParams,
     ExtensionCallError: ServiceGen.ExtensionCallError,
+    ServiceEffectPolicy: ServiceGen.ServiceEffectPolicy,
+    ProfileServiceCallParams: ServiceGen.ProfileServiceCallParams,
+    ProfileServiceOperationParams: ServiceGen.ProfileServiceOperationParams,
+    ProfileServiceReceipt: ServiceGen.ProfileServiceReceipt,
+    ProfileServiceCallResult: ServiceGen.ProfileServiceCallResult,
+    ProfileDecisionsListParams: ServiceGen.ProfileDecisionsListParams,
+    ProfileDecisionsListResult: ServiceGen.ProfileDecisionsListResult,
+    ProfileDecisionAnswerParams: ServiceGen.ProfileDecisionAnswerParams,
+    BoundWakeEnqueueParams: ServiceGen.BoundWakeEnqueueParams,
+    BoundWakeReadParams: ServiceGen.BoundWakeReadParams,
+    BoundWakeReceipt: ServiceGen.BoundWakeReceipt,
   },
   'https://agnes.ai/schema/projection.json': {
     ProjectionCapability: ProjectionGen.ProjectionCapability,
@@ -7552,6 +7616,37 @@ describe('McpServerDescriptor: authorizationStatus field (mcp-oauth-authorizatio
 type MethodDefRef = { fileId: string; params: string; result?: string }
 
 const METHOD_DEF: Record<MethodName, MethodDefRef> = {
+  '_agnes/v1/extension.wakes.enqueue': {
+    fileId: 'https://agnes.ai/schema/extension-service.json',
+    params: 'BoundWakeEnqueueParams',
+    result: 'BoundWakeReceipt',
+  },
+  '_agnes/v1/extension.wakes.read': {
+    fileId: 'https://agnes.ai/schema/extension-service.json',
+    params: 'BoundWakeReadParams',
+    result: 'BoundWakeReceipt',
+  },
+  '_agnes/v1/extension.callScoped': {
+    fileId: 'https://agnes.ai/schema/extension-service.json',
+    params: 'ProfileServiceCallParams',
+    result: 'ProfileServiceCallResult',
+  },
+  '_agnes/v1/extension.readOperation': {
+    fileId: 'https://agnes.ai/schema/extension-service.json',
+    params: 'ProfileServiceOperationParams',
+    result: 'ProfileServiceReceipt',
+  },
+  '_agnes/v1/profile.decisions.list': {
+    fileId: 'https://agnes.ai/schema/extension-service.json',
+    params: 'ProfileDecisionsListParams',
+    result: 'ProfileDecisionsListResult',
+  },
+  '_agnes/v1/profile.decisions.answer': {
+    fileId: 'https://agnes.ai/schema/extension-service.json',
+    params: 'ProfileDecisionAnswerParams',
+    result: 'ProfileDecisionAnswerResult',
+  },
+
   '_agnes/v1/session.revealWorkspace': {
     fileId: AGNES_ID,
     params: 'SessionRevealWorkspaceParams',
@@ -8378,6 +8473,34 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
 }
 
 const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
+  '_agnes/v1/extension.wakes.enqueue': ServiceSamples.BoundWakeEnqueueParams as Sample,
+  '_agnes/v1/extension.wakes.read': ServiceSamples.BoundWakeReadParams as Sample,
+  '_agnes/v1/extension.callScoped': {
+    valid: { extension: 'acme/dashboard', service: 'report.query', input: {} },
+    invalid: [{ actor: 'forged' }],
+    note: 'Profile authority boundary',
+  },
+  '_agnes/v1/extension.readOperation': {
+    valid: { extension: 'acme/dashboard', service: 'report.query', operationId: 'one' },
+    invalid: [{ actor: 'forged' }],
+    note: 'Profile authority boundary',
+  },
+  '_agnes/v1/profile.decisions.list': {
+    valid: {},
+    invalid: [{ actor: 'forged' }],
+    note: 'Profile authority boundary',
+  },
+  '_agnes/v1/profile.decisions.answer': {
+    valid: {
+      handle: { id: 'one', sessionId: null, profileId: 'default' },
+      revision: 1,
+      commandId: 'answer',
+      response: { option: 'allowed-once', value: null },
+    },
+    invalid: [{ actor: 'forged' }],
+    note: 'Profile authority boundary',
+  },
+
   '_agnes/v1/admin.credentials.delete': {
     note: 'Write-only generic credential contract',
     valid: { id: 'secret://generic/11111111-1111-4111-8111-111111111111', force: true, confirm: true },
@@ -9121,6 +9244,12 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
 }
 
 const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
+  '_agnes/v1/extension.wakes.enqueue': ServiceSamples.BoundWakeReceipt as Sample,
+  '_agnes/v1/extension.wakes.read': ServiceSamples.BoundWakeReceipt as Sample,
+  '_agnes/v1/extension.callScoped': ServiceSamples.ProfileServiceCallResult as Sample,
+  '_agnes/v1/extension.readOperation': ServiceSamples.ProfileServiceReceipt as Sample,
+  '_agnes/v1/profile.decisions.list': ServiceSamples.ProfileDecisionsListResult as Sample,
+  '_agnes/v1/profile.decisions.answer': SESSION_SAMPLES.DecisionCommandReceipt as Sample,
   '_agnes/v1/admin.credentials.delete': {
     note: 'Metadata-only response',
     valid: {},

@@ -847,6 +847,7 @@ export class UIProjectionCell {
           )
         )
           break
+        if (value.handle.sessionId === null) break
         const old = this.approvals.get(value.handle.id)
         const result = value.result
         const node: ApprovalNode = {
@@ -1047,13 +1048,17 @@ export class UIProjectionCell {
         }
       : op === undefined && this.state.openTurn.has(this.lane)
         ? { turn: this.turn, step: this.step, phase: 'running' }
-        : parked
+        : parked?.handle.sessionId
           ? {
               turn: this.turn,
               step: this.step,
               phase: 'parked',
               parked: {
-                decisionRef: { ...parked.handle, revision: parked.revision },
+                decisionRef: {
+                  id: parked.handle.id,
+                  sessionId: parked.handle.sessionId!,
+                  revision: parked.revision,
+                },
                 expiresAt: parked.request.expiresAt ?? '',
               },
             }

@@ -10,6 +10,7 @@ import type {
 import { workerGeneration } from '@agnes/protocol'
 
 export type SessionMethod =
+  | 'deliverSystemInput'
   | 'enqueue'
   | 'control'
   | 'controlState'
@@ -65,6 +66,14 @@ export type WorkerMethod =
   | 'systemPrompt.defaults'
   | 'memory.manage'
   | 'observability.health'
+  | 'boundWake.resolve'
+  | 'boundWake.require'
+  | 'profileService.identity'
+  | 'profileService.authorizeControl'
+  | 'profileService.call'
+  | 'profileService.readOperation'
+  | 'profileService.listDecisions'
+  | 'profileService.answerDecision'
   | 'inspectService'
   | 'callService'
   | 'abortService'

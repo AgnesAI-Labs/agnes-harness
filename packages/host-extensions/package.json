@@ -45,7 +45,11 @@
     "./resources/skill-install": "./src/resources/skill-install.ts",
     "./resources/skill-preload": "./src/resources/skill-preload.ts",
     "./resources/skill-read-roots": "./src/resources/skill-read-roots.ts",
-    "./resources/skills": "./src/resources/skills.ts"
+    "./resources/skills": "./src/resources/skills.ts",
+    "./profile/runtime": "./src/profile/runtime.ts",
+    "./profile/activation": "./src/profile/activation.ts",
+    "./profile/owned-store": "./src/profile/owned-store.ts",
+    "./profile/wakes": "./src/profile/wakes.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",

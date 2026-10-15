@@ -23,6 +23,7 @@ export const HOST_MEMBER_SCOPES = {
   runtimeTargetSnapshot: 'deployment',
   activationBarrier: 'deployment',
   approvalGrants: 'deployment',
+  profileServices: 'deployment',
   callService: 'session',
   inspectService: 'session',
   applyModelProfile: 'deployment',

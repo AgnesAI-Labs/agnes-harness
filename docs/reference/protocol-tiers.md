@@ -81,6 +81,15 @@ What third-party clients rely on: sessions, submit, decisions and events. These 
 - `_agnes/v1/artifact.read`
 - `_agnes/v1/artifact.job.status`
 
+### Profile operations and bound notifications
+
+- `_agnes/v1/extension.callScoped`
+- `_agnes/v1/extension.readOperation`
+- `_agnes/v1/extension.wakes.enqueue`
+- `_agnes/v1/extension.wakes.read`
+- `_agnes/v1/profile.decisions.list`
+- `_agnes/v1/profile.decisions.answer`
+
 ## Admin contract
 
 Package administration, resource control, configuration, scheduling, diagnostics and computer use. These methods may evolve between releases; use the SDK rather than depending on their wire shape.

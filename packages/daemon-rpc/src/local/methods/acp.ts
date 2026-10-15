@@ -50,6 +50,7 @@ import { mapCore } from './agnes.js'
 import { throwWorkspaceRpcError } from './workspaces.js'
 
 export type LocalContext = {
+  profileFeatures?: readonly string[]
   host: Host
   registry: Registry<SessionEntry>
   prompter: PrompterRouter
@@ -552,6 +553,7 @@ export function registerAcp(
           agnesVersion: cx.agnesVersion,
           platform: process.platform, // guards-allow-platform: daemon handshake reports its own OS to clients.
           apis: 'call apis.list',
+          features: [...(cx.profileFeatures ?? [])],
         },
       },
     }

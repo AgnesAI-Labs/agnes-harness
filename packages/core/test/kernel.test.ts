@@ -122,6 +122,8 @@ describe('Kernel (I1 assembly)', () => {
     }
     const systemPrompt = { config: async () => config, resolve: () => promptProvider }
     const k = base({ storage, systemPrompt })
+    await expect(k.session('@profile/default', sessionOpts)).rejects.toThrow('E_ENVELOPE')
+    expect(k.sessions.size).toBe(0)
     const s = await k.session('k1', sessionOpts)
     config.personaPrefix = 'changed in place'
     expect((await s.systemPromptPreview()).config.personaPrefix).toBe('first persona')

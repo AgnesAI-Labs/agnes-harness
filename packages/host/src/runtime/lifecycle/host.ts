@@ -1,3 +1,5 @@
+import { CoreError } from '@agnes/core'
+import { isProfileDecisionJournal } from '@agnes/protocol'
 import '../provided-contracts.js'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
@@ -143,6 +145,7 @@ export interface Host {
   readonly activationBarrier: ExtensionActivationBarrier
   /** Authenticated management port. It is not registered as a model tool or extension service. */
   readonly approvalGrants: Assembled['approvalGrants']
+  readonly profileServices?: Assembled['profileServices']
   callService(
     params: ExtensionCallParams,
     credential: unknown,
@@ -293,6 +296,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
   const host: Host = {
     activationBarrier: a.activationBarrier,
     approvalGrants: a.approvalGrants,
+    profileServices: a.profileServices,
     callService: (params, credential, signal, effectAdmission) => {
       if (closed) throw markServicePreDispatchFailure(new HostError('E_HOST_CLOSED', 'host is closed'))
       let entered = false
@@ -440,6 +444,8 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
     acceptWorkspaceBinding: (envelope, expectedSessionKey) =>
       workspaceBindings.accept(envelope, expectedSessionKey),
     async createSession(o) {
+      if (o.key && isProfileDecisionJournal(o.key))
+        throw new CoreError('E_ENVELOPE', 'Reserved decision journal scope')
       // A lifecycle condition gets a lifecycle code. The old one raised E_SEAM_IMMUTABLE - the code
       // for "a seam implementation may not be swapped" - and the test only grepped /closed/, so the
       // mismatch was invisible from both sides.

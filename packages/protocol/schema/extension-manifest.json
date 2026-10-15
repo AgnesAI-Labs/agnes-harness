@@ -143,8 +143,14 @@
         "childAgents": {
           "type": "boolean"
         },
-        "wake": { "type": "boolean", "description": "Bound notifications to targets created by admitted session invocations." },
-        "store": { "type": "boolean", "description": "Bounded transactional JSON state in the plugin owner namespace." },
+        "wake": {
+          "type": "boolean",
+          "description": "Bound notifications to targets created by admitted session invocations."
+        },
+        "store": {
+          "type": "boolean",
+          "description": "Bounded transactional JSON state in the plugin owner namespace."
+        },
         "uiData": {
           "description": "Exact UI data-source permissions. Trust shows each value as the atom uiData:<value>. The capability hash covers this list; resolution accepts only an exact atom, never a glob.",
           "type": "array",

@@ -80,6 +80,8 @@ export type MethodName =
   | ResourceControlMethodName
   | '_agnes/v1/extension.ack'
   | '_agnes/v1/extension.call'
+  | '_agnes/v1/extension.wakes.enqueue'
+  | '_agnes/v1/extension.wakes.read'
   | '_agnes/v1/extension.callScoped'
   | '_agnes/v1/extension.readOperation'
   | '_agnes/v1/profile.decisions.list'
@@ -194,6 +196,14 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   ...PACKAGE_ADMIN_METHODS,
   ...RESOURCE_CONTROL_METHODS,
   '_agnes/v1/extension.ack': clientRequest(A.ExtensionAckParams, A.Empty),
+  '_agnes/v1/extension.wakes.enqueue': clientRequest(
+    ProfileServices.BoundWakeEnqueueParams,
+    ProfileServices.BoundWakeReceipt,
+  ),
+  '_agnes/v1/extension.wakes.read': clientRequest(
+    ProfileServices.BoundWakeReadParams,
+    ProfileServices.BoundWakeReceipt,
+  ),
   '_agnes/v1/extension.callScoped': clientRequest(
     ProfileServices.ProfileServiceCallParams,
     ProfileServices.ProfileServiceCallResult,
@@ -208,7 +218,7 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   ),
   '_agnes/v1/profile.decisions.answer': clientRequest(
     ProfileServices.ProfileDecisionAnswerParams,
-    ProfileServices.DecisionCommandReceipt,
+    ProfileServices.ProfileDecisionAnswerResult,
   ),
   '_agnes/v1/extension.call': clientRequest(A.ExtensionCallParams, A.ExtensionCallResult),
   '_agnes/v1/sessionSelection.loops': clientRequest(A.ConfigEmptyParams, A.SessionLoopCatalogResult),

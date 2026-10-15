@@ -1,8 +1,11 @@
 /** @vitest-environment happy-dom */
 
+import type { HostAgnesClient, LocaleService } from '@agnes/web-client'
 import { createElement } from 'react'
+import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { APPROVAL_SLOT } from '../src/region-slots.js'
+import { ProfileApprovals } from '../src/regions/profile-approvals.js'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
 
 // A render through the approval handle commits in a few milliseconds, but a loaded runner has
@@ -169,4 +172,55 @@ describe('rendered approval region', () => {
       expect(approval?.querySelector('p')?.textContent).toBe('恢复当前审批')
     }, committed)
   })
+})
+
+it('opens native profile approvals without a conversation and keeps a refused answer visible', async () => {
+  document.documentElement.innerHTML = '<head></head><body></body>'
+  const container = document.createElement('div')
+  document.body.append(container)
+  const root = createRoot(container)
+  const handle = { id: 'profile-decision', sessionId: null, profileId: 'default' }
+  const decision = {
+    handle,
+    revision: 1,
+    request: {
+      owner: 'plugin/report',
+      spec: {
+        prompt: 'Publish report?',
+        subject: { report: 'reviewed-one' },
+        options: ['allowed-once', 'rejected'],
+      },
+    },
+  }
+  const call = vi.fn(async (method: string) => {
+    if (method === '_agnes/v1/profile.decisions.list') return { decisions: [decision] }
+    throw new Error('stale decision refused')
+  })
+  const locale = { subscribe: () => () => undefined, getSnapshot: () => 'en' } as unknown as LocaleService
+  try {
+    root.render(createElement(ProfileApprovals, { client: { call } as unknown as HostAgnesClient, locale }))
+    await vi.waitFor(() => expect(container.querySelector('button')?.textContent).toContain('(1)'))
+    container.querySelector<HTMLButtonElement>('button')?.click()
+    const allow = () =>
+      [...document.querySelectorAll<HTMLButtonElement>('button')].find(
+        (button) => button.textContent === 'Allow once',
+      )
+    await vi.waitFor(() => expect(allow()).toBeTruthy())
+    expect(document.body.textContent).toContain('reviewed-one')
+    allow()?.click()
+    await vi.waitFor(() =>
+      expect(document.querySelector('[role="alert"]')?.textContent).toContain('Approval unavailable'),
+    )
+    expect(call).toHaveBeenCalledWith('_agnes/v1/profile.decisions.answer', {
+      handle,
+      revision: 1,
+      commandId: expect.any(String),
+      response: { option: 'allowed-once', value: null },
+    })
+    expect(allow()).toBeTruthy()
+  } finally {
+    root.unmount()
+    container.remove()
+    resetWebDom()
+  }
 })

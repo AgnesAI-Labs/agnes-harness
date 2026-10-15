@@ -83,7 +83,7 @@ async function mountTree(ctx: AssemblyContext, { pkgs, proc, presets }: Foundati
   const workspaceRuntime = createWorkspaceRuntimeFactory(ctx, pkgs, proc, presets, seamContexts, seams)
   const skillState = createSkillState(ctx, proc)
   const bootRows = buildBootRows(ctx, pkgs, presets, seamContexts)
-  const rowHosts = createRowHosts(ctx, pkgs, workspaceRuntime)
+  const rowHosts = createRowHosts(ctx, pkgs, workspaceRuntime, proc)
   const runtimeTarget = await mountRuntimeTarget(ctx, {
     pkgs,
     proc,
@@ -222,16 +222,18 @@ function publish(ctx: AssemblyContext, f: Foundation, t: Tree, c: Core, e: Exten
       rowExtensions.replacedBy,
     )
   ctx.say('host.ready', { hash: ctx.profile.hash, extensions: extensionStatus().length })
-  const { servicesInvocation, sessionConfiguration } = createHostServices(ctx, {
+  const { servicesInvocation, sessionConfiguration, profileServices } = createHostServices(ctx, {
     proc: f.proc,
     kernel: c.kernelStage.kernel,
     host: e.host,
+    publishProfileCurrent: t.runtimeTarget.publishProfileCurrent,
     seams: t.seams,
   })
   return {
     memory: c.kernelStage.memory,
     activationBarrier: ctx.activationBarrier,
     approvalGrants: t.approvalGrantControl.management,
+    profileServices,
     callService: servicesInvocation.call,
     inspectService: servicesInvocation.inspect,
     prepareService: servicesInvocation.prepare,

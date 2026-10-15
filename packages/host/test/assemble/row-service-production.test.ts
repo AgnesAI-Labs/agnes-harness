@@ -1,4 +1,4 @@
-import { cp, mkdtemp, rm } from 'node:fs/promises'
+import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -15,6 +15,14 @@ it('keeps a pinned row query service and denies it to new sessions when disabled
     fileURLToPath(new URL('../../../../examples/packages/client-service-panel/v1/', import.meta.url)),
     packageDirectory,
     { recursive: true },
+  )
+  const entry = join(packageDirectory, 'extensions/main/index.mjs')
+  await writeFile(
+    entry,
+    (await readFile(entry, 'utf8')).replace(
+      '    ctx.services.register({',
+      "    ctx.services.register({ name: 'panel.report', scope: 'profile', kind: 'query', inputSchema: { type: 'object' }, outputSchema: { type: 'object' }, timeoutMs: 1000, maxResultBytes: 1024, async handler() { return { sessionless: true } } })\n    ctx.services.register({",
+    ),
   )
   const packageId = '@agnes-examples/client-service-panel'
   const rowId = 'ext:examples/client-service-panel/runtime'
@@ -64,13 +72,17 @@ it('keeps a pinned row query service and denies it to new sessions when disabled
           return {
             source: 'client-web',
             subjectCredential: { kind: 'local' },
-            grants: [{ extension: owner, name: 'panel.version', range: '*' }],
+            grants: ['panel.version', 'panel.report'].map((name) => ({ extension: owner, name, range: '*' })),
           }
         },
       },
     })
     try {
       await host.applyRuntimeTarget(target(false))
+      const report = { extension: owner, service: 'panel.report', input: {} }
+      await expect(host.profileServices?.call(report, { kind: 'local' })).resolves.toMatchObject({
+        output: { sessionless: true },
+      })
       const session = await host.createSession({ cwd: dataDir, key: 'row-service' })
       await expect(
         host.callService(
@@ -79,6 +91,9 @@ it('keeps a pinned row query service and denies it to new sessions when disabled
         ),
       ).resolves.toEqual({ output: { version: '1.0.0' } })
       await host.applyRuntimeTarget(target(true))
+      await expect(host.profileServices?.call(report, { kind: 'local' })).rejects.toMatchObject({
+        data: { code: 'CAPABILITY_DENIED' },
+      })
       await expect(
         host.callService(
           { sessionId: session.key, extension: owner, service: 'panel.version', input: {} },
@@ -94,6 +109,9 @@ it('keeps a pinned row query service and denies it to new sessions when disabled
       ).rejects.toMatchObject({ data: { code: 'CAPABILITY_DENIED' } })
       await disabled.close()
       await host.applyRuntimeTarget(target(false))
+      await expect(host.profileServices?.call(report, { kind: 'local' })).resolves.toMatchObject({
+        output: { sessionless: true },
+      })
       await expect(
         host.callService(
           { sessionId: session.key, extension: owner, service: 'panel.version', input: {} },

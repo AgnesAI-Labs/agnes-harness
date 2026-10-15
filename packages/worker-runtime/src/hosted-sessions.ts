@@ -58,6 +58,7 @@ export const SESSION_SCOPED_WORKER_METHODS: readonly string[] = ['callService', 
 
 // Commands that change or run a session count as activity; reads, `ping` and a run-less `abort` do not.
 const ACTIVE_METHODS = new Set([
+  'deliverSystemInput',
   'enqueue',
   'run',
   'append',

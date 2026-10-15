@@ -50,10 +50,11 @@ afterEach(() => {
 async function makeRegistry(
   client = { sessions: { get: () => undefined } } as never,
   serviceCaller?: ConstructorParameters<typeof AgnesClientService>[2],
+  profileCaller?: ConstructorParameters<typeof AgnesClientService>[4],
 ) {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry)
-  new AgnesClientService(ctx, client, serviceCaller)
+  new AgnesClientService(ctx, client, serviceCaller, undefined, profileCaller)
   new CommandService(ctx, async () => true)
   const session = new SessionService(ctx, undefined, client)
   new ClientResourceService(ctx, client, session)
@@ -212,6 +213,45 @@ describe('clientModule fiber 绑定', () => {
     await fiber.dispose()
   })
 
+  it('offers profile services without a session and retains exact service allowlists and operation ids', async () => {
+    const received: unknown[] = []
+    const { ctx } = await makeRegistry(undefined, undefined, async (module, name, input, options) => {
+      received.push({ rowId: module.rowId, name, input, options })
+      return options
+        ? { state: 'approval-required', operationId: options.operationId }
+        : { output: { report: 'ready' } }
+    })
+    let profile: ClientContext['profile'] | undefined
+    const fiber = ctx.plugin(
+      clientModule({
+        apply(value) {
+          profile = value.profile
+        },
+      }),
+      {
+        packageId: 'acme/reports',
+        rowId: 'web:acme/reports',
+        revision: 'r1',
+        services: ['report.read', 'report.publish'],
+      },
+    )
+    await fiber
+    try {
+      expect(await profile?.services.query('report.read', {})).toEqual({ report: 'ready' })
+      expect(
+        await profile?.services.effect('report.publish', { value: 1 }, { operationId: 'stable-one' }),
+      ).toMatchObject({ state: 'approval-required', operationId: 'stable-one' })
+      expect(received).toContainEqual({
+        rowId: 'web:acme/reports',
+        name: 'report.publish',
+        input: { value: 1 },
+        options: { operationId: 'stable-one' },
+      })
+      await expect(profile?.services.query('foreign.read', {})).rejects.toThrow('unavailable')
+    } finally {
+      await fiber.dispose()
+    }
+  })
   it('fails closed before a current session exists', async () => {
     const caller = vi.fn()
     const { ctx } = await makeRegistry(undefined, caller)

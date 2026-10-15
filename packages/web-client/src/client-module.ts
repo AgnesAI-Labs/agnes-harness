@@ -47,6 +47,7 @@ export interface ClientContext extends Context {
   locale: import('./services.js').LocaleService
   profile: Readonly<{
     streams: ReturnType<typeof scopedProfileStreams>
+    services: import('./service-contracts.js').ClientProfileServices
     examples: ExamplePackages
     launch: ExampleLaunches & { openPage(exampleId: string): void }
   }>
@@ -102,6 +103,29 @@ export function clientModule(mod: ClientModule): {
           if (!sessionId) throw new Error('client service requires an active session')
           return await agnes.serviceCaller(config, sessionId, name, input)
         },
+      })
+      const profileCall = async (
+        name: string,
+        input: Record<string, unknown> | undefined,
+        options?: { operationId?: string; read?: boolean },
+      ) => {
+        if (!agnes.profileCaller || !config.services?.includes(name))
+          throw new Error(`client profile service is unavailable: ${name}`)
+        return agnes.profileCaller(config, name, input, options)
+      }
+      const profile = Object.freeze({
+        services: Object.freeze({
+          query: async (name: string, input: Record<string, unknown>) => {
+            const value = await profileCall(name, input)
+            if (!value || typeof value !== 'object' || !('output' in value))
+              throw new Error('Invalid profile query result')
+            return value.output
+          },
+          effect: (name: string, input: Record<string, unknown>, options: { operationId: string }) =>
+            profileCall(name, input, options),
+          readOperation: (name: string, operationId: string) =>
+            profileCall(name, undefined, { operationId, read: true }),
+        }),
       })
       const moduleAgnes = Object.freeze(
         Object.assign(Object.create(agnes.client) as import('./services.js').AgnesClient, {
@@ -209,6 +233,7 @@ export function clientModule(mod: ClientModule): {
           streams: scopedProfileStreams(config, availability, (off) => {
             ctx.effect(() => off)
           }),
+          services: profile.services,
           examples: exampleClient.packages,
           launch: Object.freeze({ ...exampleClient.launches, openPage: examplePages.open }),
         }),

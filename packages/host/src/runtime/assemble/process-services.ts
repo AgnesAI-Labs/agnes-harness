@@ -4,6 +4,8 @@ import {
   createHostLockedPackageMutationRuntime,
   type HostLockedPackageMutationRuntime,
 } from '@agnes/host-computer-use/computer-use/locked-package-mutation-runtime'
+import { ProfileActivations } from '@agnes/host-extensions/profile/activation'
+import { ProfileWakeBindings } from '@agnes/host-extensions/profile/wakes'
 import { createPlatform } from '@agnes/host-infrastructure/adapters/platform'
 import { createSessionGitWorktreeService } from '@agnes/host-infrastructure/git-worktrees'
 import type { SandboxProviderSlot } from '@agnes/host-providers/adapters/sandbox-providers'
@@ -18,6 +20,8 @@ import type { PackageSet } from './packages.js'
  * dispatch slot below is filled from that container's plugin tree; see the HOSTX report.
  */
 export type ProcessServices = Readonly<{
+  profileWakes: ProfileWakeBindings
+  profileActivations: ProfileActivations
   adapters: AdapterBundle
   /** The sandbox provider registry of the tree that is current, filled in by the runtime-target stage. */
   sandboxProviderSlot: SandboxProviderSlot
@@ -78,7 +82,15 @@ export async function openProcessServices(ctx: AssemblyContext, pkgs: PackageSet
   rollback.push('computer-use-locked-package-mutations', () => lockedPackageMutations.close())
   const secrets = (ref: string): string => adapters.secrets.resolve(ref)
   const nativePlatform = createPlatform().os
+  const profileActivations = new ProfileActivations(
+    adapters.storage.metadata.namespace('@agnes/host', `activation:${ctx.profile.name}`),
+  )
   return {
+    profileActivations,
+    profileWakes: new ProfileWakeBindings(
+      adapters.storage.metadata.namespace('@agnes/host', `wake:${ctx.profile.name}`),
+      profileActivations,
+    ),
     adapters,
     sandboxProviderSlot,
     skillReadRoots,

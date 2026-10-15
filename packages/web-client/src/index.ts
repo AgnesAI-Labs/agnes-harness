@@ -68,6 +68,8 @@ export type {
   ClientImageArtifact,
   ClientImageLoader,
   ClientImageResource,
+  ClientProfileCaller,
+  ClientProfileServices,
   ClientServiceApi,
   ClientServiceCaller,
   CommandAuthorizer,

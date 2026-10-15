@@ -39,6 +39,7 @@ import type {
 } from '@agnes/extension-api'
 import { ProviderError } from '@agnes/extension-api'
 import type { Actor, ApprovalMode, Provider, SessionStart } from '@agnes/protocol'
+import { isProfileDecisionJournal } from '@agnes/protocol'
 import { recoverChildCompletions } from './child/completion-notice.js'
 import { KernelChildren } from './child/factory.js'
 import { bindChildFactory } from './child/sessions.js'
@@ -384,6 +385,8 @@ export class Kernel {
   private closing?: Promise<void>
 
   session(key: SessionKey, so: SessionOptions): Promise<SessionImpl> {
+    if (isProfileDecisionJournal(key))
+      return Promise.reject(new CoreError('E_ENVELOPE', 'Reserved decision journal scope'))
     if (this.construction.signal.aborted) return Promise.reject(new CoreError('E_CLOSED', 'kernel closed'))
     const creating = this.openSession(key, so)
     this.creating.add(creating)

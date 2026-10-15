@@ -44,6 +44,7 @@ import type { LocalBackend } from './backend.js'
 import { localClientExamples } from './client-examples.js'
 import { contextAdmin } from './context-admin.js'
 import { doctorAdmin } from './doctor-admin.js'
+import { profileServiceRelay } from './profile-service-relay.js'
 
 const CLIENT_SERVICE_PATH = '/api/client-modules/service'
 const CLIENT_EFFECT_PATH = '/api/client-modules/effect'
@@ -492,6 +493,17 @@ export function localPackageAdmin(
       return await client.clientModules.callEffect(input)
     },
     async handleClientService(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
+      if (
+        await profileServiceRelay({
+          client,
+          origin,
+          profile: backend.scope.profile,
+          initialize,
+          body: jsonBody,
+          reply: serviceReply,
+        })(request, response)
+      )
+        return true
       const url = new URL(request.url ?? '/', origin)
       if (url.pathname !== CLIENT_SERVICE_PATH) return false
       if (

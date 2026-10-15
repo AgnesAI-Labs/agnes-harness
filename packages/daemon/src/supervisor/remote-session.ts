@@ -179,6 +179,10 @@ export class RemoteSession {
     return this.link.command('fileUpload', input)
   }
 
+  deliverSystemInput(params: Record<string, unknown>): Promise<number> {
+    return this.link.command('deliverSystemInput', params) as Promise<number>
+  }
+
   enqueue(target: 'next-turn' | 'next-step', msg: unknown): Promise<number> {
     return this.link.command('enqueue', { target, msg }) as Promise<number>
   }

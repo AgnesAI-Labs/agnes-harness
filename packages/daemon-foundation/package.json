@@ -31,7 +31,8 @@
     "./storage/source-auth-rotation": "./src/storage/source-auth-rotation.ts",
     "./storage/table": "./src/storage/table.ts",
     "./storage/workspaces": "./src/storage/workspaces.ts",
-    "./workspace-binding": "./src/workspace-binding.ts"
+    "./workspace-binding": "./src/workspace-binding.ts",
+    "./jobs/bound-wakes": "./src/jobs/bound-wakes.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",

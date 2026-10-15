@@ -81,6 +81,15 @@
 - `_agnes/v1/artifact.read`
 - `_agnes/v1/artifact.job.status`
 
+### Profile 操作与绑定通知
+
+- `_agnes/v1/extension.callScoped`
+- `_agnes/v1/extension.readOperation`
+- `_agnes/v1/extension.wakes.enqueue`
+- `_agnes/v1/extension.wakes.read`
+- `_agnes/v1/profile.decisions.list`
+- `_agnes/v1/profile.decisions.answer`
+
 ## 管理契约
 
 包管理、资源控制、配置、调度、诊断与计算机使用。这些方法可能随版本演进；请通过 SDK 使用，而不是依赖其线上结构。

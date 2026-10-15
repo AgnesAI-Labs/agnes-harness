@@ -61,7 +61,16 @@ function nearestRow(fiber: Fiber, origins: RowOriginLookup): BoundRow | undefine
  * again, including when the row never called ctx.extension().
  */
 export function createRowServiceHost(
-  describePackage: (packageId: string, snapshotId: string) => Readonly<{ version?: string }> | undefined,
+  describePackage: (
+    packageId: string,
+    snapshotId: string,
+  ) =>
+    | Readonly<{
+        version?: string
+        integrity?: string
+        declaredCapabilities?: import('@agnes/protocol').PluginCapabilities
+      }>
+    | undefined,
 ) {
   let ports: KernelPorts | undefined
   const pending = new Set<() => void>()
@@ -83,7 +92,8 @@ export function createRowServiceHost(
           }
           alive()
           const owner = pluginRowSource(origin.rowId)
-          const version = describePackage(origin.packageId, origin.snapshotId)?.version ?? '0.0.0'
+          const description = describePackage(origin.packageId, origin.snapshotId)
+          const version = description?.version ?? '0.0.0'
           return fiber.effect(() => {
             const ac = new AbortController()
             let release: (() => void) | undefined
@@ -92,6 +102,12 @@ export function createRowServiceHost(
               if (!ports) return
               release = ports.services.registerRow(def, {
                 owner,
+                ...(origin.rowRevision ? { activationRevision: origin.rowRevision } : {}),
+                packageId: origin.packageId,
+                integrity: description?.integrity ?? origin.snapshotId,
+                ...(description?.declaredCapabilities
+                  ? { declaredCapabilities: description.declaredCapabilities }
+                  : {}),
                 version,
                 signal: ac.signal,
                 assertAlive: alive,

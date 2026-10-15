@@ -275,6 +275,8 @@ export interface ToolContext {
     >
   }
   /** Backend-injected proof of the exact human approval consumed for this invocation. */
+  readonly store?: import('./profile-services.js').OwnedStore
+  readonly wake?: import('./profile-services.js').SessionWakePort
   readonly approval?: Readonly<{ requestId: string; subjectRevision: string; answeredBy: Actor }>
   readonly actor: Actor // recorded on the call; never the basis for an authorization decision
   /** Execution directory snapshot at the start of this call (or the explicitly requested operation).
