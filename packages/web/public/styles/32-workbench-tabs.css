@@ -83,17 +83,16 @@
     font-size: var(--font-size-xs);
   }
 
-  /* Terminal: pills for attached processes, a dark output area, one status bar under it. */
+  /* Terminal chrome stays quiet; the emulator uses the app's panel tokens. */
   .workbench-terminal-bar {
     display: flex;
     align-items: center;
-    gap: var(--s8);
-    padding: var(--s4) var(--s8);
-    border-block-end: 1px solid var(--agnes-line-hairline);
+    gap: var(--s4);
+    padding: var(--s8) var(--s8) 0;
     flex-shrink: 0;
   }
   .workbench-terminal-bar > .workbench-terminal-tabs {
-    flex: 1;
+    flex: 0 1 auto;
     min-width: 0;
     padding-inline: 0;
     align-items: center;
@@ -101,90 +100,80 @@
   .workbench-terminal-pill {
     display: inline-flex;
     align-items: center;
+    position: relative;
     flex-shrink: 0;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
   }
   .workbench-terminal-pill[data-active="true"] {
     background: var(--agnes-bg-fill);
   }
-  .workbench-terminal-pill > .agnes-ui-button,
-  .workbench-terminal-attach.agnes-ui-button {
-    gap: var(--s4);
+  .workbench-terminal-pill > .agh-btn--icon {
+    opacity: 0;
+  }
+  .workbench-terminal-pill:is(:hover, :focus-within, [data-active="true"]) > .agh-btn--icon {
+    opacity: 1;
+  }
+  .workbench-terminal-pill [role="tab"] {
+    gap: var(--s8);
     color: var(--agnes-text-secondary);
   }
   .workbench-terminal-tabs .workbench-terminal-pill [aria-selected="true"] {
     color: var(--agnes-text-primary);
     background: transparent;
   }
-  .workbench-terminal-attach.agnes-ui-button {
-    border: 1px dashed var(--agnes-line-primary);
+  .workbench-terminal-pill .agh-status-dot {
+    position: absolute;
+    inset-block-start: 2px;
+    inset-inline-start: 3px;
+  }
+  .workbench-terminal-prompt {
+    font-family: var(--font-mono);
   }
   .workbench-terminal-name {
     max-width: 12rem;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
   }
-  .workbench-terminal-owner {
-    padding: 0 var(--s4);
-    border: 1px solid var(--agnes-line-primary);
-    border-radius: var(--radius-xs);
-    color: var(--agnes-text-secondary);
-    font-size: 0.65625rem;
-    line-height: 1.4;
+  .workbench-terminal-pill:where([data-editing="true"]) .workbench-terminal-name {
+    visibility: hidden;
   }
-  .workbench-terminal-new {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--s4);
-    flex-shrink: 0;
+  .workbench-terminal-rename {
+    position: absolute;
+    inset-inline-start: 28px;
+    width: 8rem;
+    z-index: 1;
   }
-  .workbench-terminal-new > .ant-select {
-    width: 5.5rem;
-  }
-  .workbench-terminal-output.workbench-terminal-output {
+  .agh-terminal-screen {
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    padding: 10px;
+    overflow: hidden;
     color: var(--agnes-terminal-text);
     background: var(--agnes-terminal-bg);
-    caret-color: var(--agnes-terminal-text);
+    font: var(--font-size-sm) / 1.5 var(--font-mono);
   }
-  .workbench-terminal-output:disabled {
-    color: var(--agnes-terminal-muted);
+  .agh-terminal-screen .xterm {
+    height: 100%;
   }
-  .workbench-terminal-note {
-    margin: 0;
+  .workbench-terminal-note,
+  .workbench-terminal-readonly {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     padding: var(--s4) var(--s12);
     color: var(--agnes-terminal-muted);
     background: var(--agnes-terminal-bar);
     font-size: var(--font-size-xs);
-  }
-  .workbench-terminal-status {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--s4) var(--s8);
-    padding: var(--s4) var(--s8) var(--s4) var(--s12);
-    border-block-start: 1px solid var(--agnes-terminal-line);
-    color: var(--agnes-terminal-muted);
-    background: var(--agnes-terminal-bar);
-    font-size: var(--font-size-xs);
     flex-shrink: 0;
+    border-block-end: 1px solid var(--agnes-terminal-line);
   }
-  .workbench-terminal-status[data-tone="danger"] > [role="status"] {
-    color: var(--agnes-status-danger-text);
-  }
-  .workbench-terminal-cwd {
-    flex: 1;
-    min-width: 4rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-family: var(--font-mono);
-  }
-  .workbench-terminal-status > .agnes-ui-button {
-    color: var(--agnes-terminal-text);
-    border-color: var(--agnes-terminal-line);
-    background: var(--agnes-terminal-bg);
-    box-shadow: none;
+  .workbench-terminal-readonly {
+    margin: 0 var(--s8) var(--s8);
+    border-radius: var(--radius-md);
   }
   .workbench-terminal-details {
     display: grid;
@@ -205,46 +194,84 @@
   .workbench-terminal-empty {
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
-    gap: var(--s12);
-    padding: var(--s16) var(--s12);
+    align-items: center;
+    justify-content: center;
+    gap: var(--s16);
+    padding: var(--s24);
     flex: 1;
+    overflow: auto;
   }
-  .workbench-terminal-empty-title {
-    margin: 0;
-    color: var(--agnes-text-secondary);
+  .workbench-terminal-guide {
+    display: flex;
+    align-items: stretch;
+    border: 1px solid var(--agnes-line-hairline);
+    border-radius: var(--radius-lg);
+    width: min(100%, 22rem);
   }
-  .workbench-terminal-empty .workbench-terminal-available {
+  .workbench-terminal-guide > .agnes-ui-button {
+    height: auto;
+    flex: 1;
+    justify-content: flex-start;
+    gap: var(--s12);
+    padding: var(--s12);
+    text-align: start;
+    white-space: normal;
+  }
+  .workbench-terminal-guide strong {
     display: block;
-    width: 100%;
-    max-height: none;
+    font-size: var(--font-size-sm);
+  }
+  .workbench-terminal-guide small {
+    display: block;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+  }
+  .workbench-terminal-guide-icon {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+    border-radius: var(--radius-md);
+    background: var(--agnes-bg-fill);
+    font-family: var(--font-mono);
+  }
+  .workbench-terminal-guide > .agh-menu-anchor {
+    display: flex;
+    align-items: center;
+    border-inline-start: 1px solid var(--agnes-line-hairline);
+  }
+  .workbench-terminal-available {
+    width: min(100%, 22rem);
   }
   .workbench-terminal-available h4 {
     margin: 0 0 var(--s4);
-    color: var(--agnes-text-secondary);
+    color: var(--agnes-text-tertiary);
     font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
+    font-weight: var(--font-weight-regular);
   }
   .workbench-terminal-available ul {
     margin: 0;
     padding: 0;
     list-style: none;
-    border: 1px solid var(--agnes-line-hairline);
-    border-radius: var(--radius-md);
   }
   .workbench-terminal-available li {
     display: flex;
     align-items: center;
     gap: var(--s8);
-    padding: var(--s4) var(--s8);
+    padding: var(--s4);
   }
-  .workbench-terminal-available li + li {
-    border-block-start: 1px solid var(--agnes-line-hairline);
+  .workbench-terminal-available .workbench-terminal-name {
+    flex: 1;
   }
   .workbench-terminal-row-status {
-    flex: 1;
-    color: var(--agnes-text-secondary);
+    color: var(--agnes-text-tertiary);
     font-size: var(--font-size-xs);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .agh-terminal-screen .xterm-cursor {
+      animation: none;
+    }
   }
 
   /* Deliverables: the answer's cards under version headings; the opened card carries its preview. */
