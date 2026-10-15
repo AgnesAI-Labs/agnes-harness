@@ -55,7 +55,6 @@ export function load<T>(tx: StoreTransaction, key: string): T {
       typeof reserved !== 'number' ||
       !Number.isFinite(reserved) ||
       reserved < 0 ||
-      spent + reserved > spec.budget + 1e-9 ||
       !['running', 'unknown', 'completed', 'failed', 'cancelled', 'budget_exhausted'].includes(String(status))
     )
       throw new BatchError('E_BATCH_STORE')
@@ -66,7 +65,7 @@ export function load<T>(tx: StoreTransaction, key: string): T {
       value.ordinal < 1 ||
       !Array.isArray(value.attempts) ||
       value.attempts.length > 3 ||
-      !['pending', 'accepted', 'unknown', 'done', 'invalid', 'failed', 'cancelled'].includes(
+      !['pending', 'accepted', 'unknown', 'done', 'invalid', 'failed', 'cancelled', 'skipped'].includes(
         String(value.state),
       )
     )
@@ -100,20 +99,22 @@ export class Repository {
         !/^[a-f0-9]{64}$/u.test(file.digest) ||
         !Number.isSafeInteger(file.size) ||
         file.size < 0 ||
-        file.size > 20 * 1024 * 1024 ||
-        !file.artifact ||
-        file.artifact.sha256 !== file.digest ||
-        file.artifact.size !== file.size ||
-        !file.artifact.mime ||
-        !file.receipt?.id ||
-        !file.receipt.scope.sessionKey ||
-        !file.receipt.scope.lane ||
-        names.has(file.name) ||
-        scopes.has(JSON.stringify([file.receipt.scope.sessionKey, file.receipt.scope.lane]))
+        (!file.skip && file.size > 20 * 1024 * 1024) ||
+        (!file.workspace &&
+          !file.skip &&
+          (!file.artifact ||
+            file.artifact?.sha256 !== file.digest ||
+            file.artifact?.size !== file.size ||
+            !file.artifact?.mime ||
+            !file.receipt?.id ||
+            !file.receipt?.scope.sessionKey ||
+            !file.receipt?.scope.lane ||
+            scopes.has(JSON.stringify(file.receipt?.scope)))) ||
+        names.has(file.name)
       )
         throw new BatchError('E_BATCH_INPUTS')
       names.add(file.name)
-      scopes.add(JSON.stringify([file.receipt.scope.sessionKey, file.receipt.scope.lane]))
+      if (file.receipt) scopes.add(JSON.stringify(file.receipt.scope))
     }
     // Receipt ids are per-upload leases, not input identity. A retry can create another receipt
     // for the same immutable original and prepared child; it must resolve the accepted batch.
@@ -121,9 +122,11 @@ export class Repository {
       name: file.name,
       digest: file.digest,
       size: file.size,
-      mime: file.artifact.mime,
-      session: file.receipt.scope.sessionKey,
-      lane: file.receipt.scope.lane,
+      mime: file.artifact?.mime,
+      workspace: file.workspace,
+      skip: file.skip,
+      session: file.receipt?.scope.sessionKey,
+      lane: file.receipt?.scope.lane,
     }))
     const digest = createHash('sha256')
       .update(JSON.stringify({ spec, files: identity }))
@@ -150,6 +153,7 @@ export class Repository {
         invalid: 0,
         failed: 0,
         cancelled: 0,
+        skipped: 0,
         spent: 0,
         reserved: 0,
         uncertain: 0,

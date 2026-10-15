@@ -56,7 +56,7 @@
   ],
   "@agnes/history-index": [],
   "@agnes/extension-api": ["@agnes/protocol"],
-  "@agnes/batch": ["@agnes/extension-api", "@agnes/protocol"],
+  "@agnes/batch": ["@agnes/extension-api", "@agnes/protocol", "@agnes/sdk"],
   "@agnes/core": [
     "@agnes/protocol",
     "@agnes/protocol-validation",

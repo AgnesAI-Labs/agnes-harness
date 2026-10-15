@@ -242,6 +242,9 @@ importers:
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@agnes/sdk':
+        specifier: workspace:*
+        version: link:../sdk
     devDependencies:
       '@agnes/base':
         specifier: workspace:*
@@ -252,9 +255,21 @@ importers:
       '@agnes/host-extensions':
         specifier: workspace:*
         version: link:../host-extensions
-      '@agnes/sdk':
+      '@agnes/host':
         specifier: workspace:*
-        version: link:../sdk
+        version: link:../host
+      '@agnes/daemon-rpc':
+        specifier: workspace:*
+        version: link:../daemon-rpc
+      '@agnes/daemon-foundation':
+        specifier: workspace:*
+        version: link:../daemon-foundation
+      '@agnes/host-infrastructure':
+        specifier: workspace:*
+        version: link:../host-infrastructure
+      '@agnes/ai':
+        specifier: workspace:*
+        version: link:../ai
 
   packages/bridges:
     dependencies:

@@ -37,9 +37,13 @@ export function compileSchema(input: unknown): (value: Json) => boolean {
   const schema = inspected.value
   let nodes = 0
   function inspect(s: unknown, depth: number): void {
-    if (++nodes > 2048 || depth > 16 || !object(s) || !types.has(String(s.type)))
-      throw new BatchError('E_BATCH_SCHEMA')
-    if (Object.keys(s).some((k) => !keywords.has(k))) throw new BatchError('E_BATCH_SCHEMA_KEYWORD')
+    if (++nodes > 2048 || depth > 16 || !object(s)) throw new BatchError('E_BATCH_SCHEMA')
+    if (Object.keys(s).some((k) => !keywords.has(k)))
+      throw new BatchError(
+        'E_BATCH_SCHEMA_KEYWORD',
+        'Unsupported schema keyword: references, patterns and advanced combinators are refused',
+      )
+    if (!types.has(String(s.type))) throw new BatchError('E_BATCH_SCHEMA')
     if (s.properties !== undefined) {
       if (s.type !== 'object' || !object(s.properties)) throw new BatchError('E_BATCH_SCHEMA')
       for (const v of Object.values(s.properties)) inspect(v, depth + 1)
@@ -67,7 +71,11 @@ export function compileSchema(input: unknown): (value: Json) => boolean {
       throw new BatchError('E_BATCH_SCHEMA')
     if (s.additionalProperties !== undefined && typeof s.additionalProperties !== 'boolean')
       inspect(s.additionalProperties, depth + 1)
-    if ('uniqueItems' in s && s.uniqueItems !== false) throw new BatchError('E_BATCH_SCHEMA_KEYWORD')
+    if ('uniqueItems' in s && s.uniqueItems !== false)
+      throw new BatchError(
+        'E_BATCH_SCHEMA_KEYWORD',
+        'Unsupported schema keyword: references, patterns and advanced combinators are refused',
+      )
     if (s.type === 'array') {
       if (s.items === undefined) throw new BatchError('E_BATCH_SCHEMA')
       inspect(s.items, depth + 1)
@@ -88,8 +96,8 @@ export function compileSchema(input: unknown): (value: Json) => boolean {
       throw new BatchError('E_BATCH_SCHEMA')
     if ('const' in s && !scalar(s.const)) throw new BatchError('E_BATCH_SCHEMA')
   }
-  if (!object(schema) || schema.type !== 'object') throw new BatchError('E_BATCH_SCHEMA')
   inspect(schema, 0)
+  if (!object(schema) || schema.type !== 'object') throw new BatchError('E_BATCH_SCHEMA')
   return (value) => {
     let work = 0
     function matches(s: Record<string, unknown>, v: Json, depth: number): boolean {
@@ -170,8 +178,10 @@ export function validateSpec(input: unknown): Spec {
   }
   return {
     prompt: s.prompt,
-    budget: number('budget', 0.000001, 1_000_000, false),
-    itemBudget: number('itemBudget', 0.000001, 1_000_000, false),
+    ...(typeof s.out === 'string' ? { out: s.out } : {}),
+    ...(s.maxEdge !== undefined ? { maxEdge: number('maxEdge', 256, 1456, true) } : {}),
+    budget: number('budget', 0.000001, Number.MAX_SAFE_INTEGER, false),
+    itemBudget: number('itemBudget', 0.000001, Number.MAX_SAFE_INTEGER, false),
     concurrency: number('concurrency', 1, 8, true),
     maxRepairs: number('maxRepairs', 0, 2, true),
     failureLimit: number('failureLimit', 1, 100, true),

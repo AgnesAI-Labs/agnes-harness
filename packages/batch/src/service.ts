@@ -1,8 +1,9 @@
-import { resolve } from 'node:path'
+import { createHash } from 'node:crypto'
+import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { BatchError, type Manifest, type Spec } from './contracts.js'
 import type { BatchEngine } from './engine.js'
 import { type SnapshotArtifacts, snapshotFolder } from './enumerate.js'
-import { publishExport, renderExport } from './export.js'
+import { publishExport, publishProgress, renderExport } from './export.js'
 import { checkId } from './repository.js'
 
 export function batchStatus(m: Manifest) {
@@ -17,6 +18,7 @@ export function batchStatus(m: Manifest) {
       invalid: m.invalid,
       failed: m.failed,
       cancelled: m.cancelled,
+      skipped: m.skipped,
     },
   }
 }
@@ -43,13 +45,32 @@ export class BatchService {
     // Validate the spec and authority before reading files or creating artifact snapshots.
     const { validateSpec } = await import('./schema.js')
     const spec = validateSpec(input.spec)
+    const root = this.binding.workspaceRoot
+    if (this.binding.engine.executor.sessionBacked) {
+      const out = spec.out ?? `agh-batch/${input.id}`
+      const output = resolve(root, out),
+        source = resolve(root, input.dir)
+      const rel = relative(root, output)
+      if (
+        !rel ||
+        isAbsolute(rel) ||
+        rel.split(sep).some((p) => p === '..' || p.startsWith('.')) ||
+        (spec.out &&
+          (source === output || source.startsWith(`${output}${sep}`) || output.startsWith(`${source}${sep}`)))
+      )
+        throw new BatchError('E_BATCH_EXPORT_PATH')
+      spec.out = rel
+    }
     const a = this.binding.engine.executor.authority
     if (
       !a.immutableInputOnly ||
       !a.durableIdempotency ||
-      !a.hardBudget ||
-      !a.terminalBilling ||
-      !a.bindingReceipts
+      (!this.binding.engine.executor.sessionBacked &&
+        (!a.immutableInputOnly ||
+          !a.durableIdempotency ||
+          !a.hardBudget ||
+          !a.terminalBilling ||
+          !a.bindingReceipts))
     )
       throw new BatchError('E_BATCH_AUTHORITY_UNAVAILABLE')
     const inputs = await snapshotFolder({
@@ -74,10 +95,11 @@ export class BatchService {
       const stored = await this.binding.engine.repo.page(input.id, offset, 1000)
       for (const [index, item] of stored.entries()) {
         const captured = inputs[offset + index]
-        if (captured && captured.receipt.id !== item.input.receipt.id)
+        if (captured && captured.receipt?.id !== item.input.receipt?.id)
           await this.binding.artifacts.discard?.(captured)
       }
     }
+    if (spec.out) await this.progress(input.id)
     return batchStatus(accepted)
   }
   async status(id: string) {
@@ -100,11 +122,15 @@ export class BatchService {
     return { items, ...(offset + items.length < m.total ? { nextOffset: offset + items.length } : {}) }
   }
   async cancel(id: string) {
-    return batchStatus(await this.binding.engine.cancel(id))
+    const result = await this.binding.engine.cancel(id)
+    await this.progress(id)
+    return batchStatus(result)
   }
   async resume(id: string) {
     this.binding.signal.throwIfAborted()
-    return batchStatus(await this.binding.engine.resume(id))
+    const result = await this.binding.engine.resume(id)
+    await this.progress(id)
+    return batchStatus(result)
   }
   /** Called by the managed runtime's wake/driver, not by an untrusted child. */
   async tick(): Promise<void> {
@@ -113,17 +139,37 @@ export class BatchService {
     let cursor: string | undefined
     do {
       this.binding.signal.throwIfAborted()
-      const page = await this.list(cursor)
+      const page = await this.binding.engine.repo.list(cursor)
       for (const m of page.rows) {
         this.binding.signal.throwIfAborted()
-        if (m.status === 'running' || m.status === 'unknown') ids.push(m.id)
+        if (m.status === 'running' || m.status === 'unknown' || m.spec.out) ids.push(m.id)
       }
       cursor = page.nextCursor
     } while (cursor)
     for (const id of ids) {
       this.binding.signal.throwIfAborted()
       await this.binding.engine.tick(id)
+      await this.progress(id)
     }
+  }
+  private async progress(id: string): Promise<void> {
+    const manifest = await this.binding.engine.repo.status(id)
+    if (!manifest.spec.out) return
+    const signature = createHash('sha256').update(JSON.stringify(manifest)).digest('hex')
+    const key = `publication/${id}`
+    const published = await this.binding.engine.repo.store.transaction((tx) => tx.get(key)?.value)
+    if (
+      published &&
+      typeof published === 'object' &&
+      !Array.isArray(published) &&
+      published.signature === signature
+    )
+      return
+    const bundle = await renderExport(this.binding.engine.repo, id, 64 * 1024 * 1024, true)
+    await publishProgress(this.binding.workspaceRoot, manifest.spec.out, id, bundle)
+    await this.binding.engine.repo.store.transaction((tx) =>
+      tx.put(key, { signature }, tx.get(key)?.revision ?? null),
+    )
   }
   async export(id: string, out: string) {
     this.binding.signal.throwIfAborted()

@@ -6,8 +6,8 @@ import { parseArgs } from 'node:util'
 import { UsageError } from '../errors.js'
 
 export const BATCH_USAGE = [
-  'agh batch start <dir> --prompt <text> --budget <credits> [--item-budget <credits>] [--schema <file>]',
-  '  [--concurrency <1-8>] [--item-timeout <1-3600 sec>] [--ext txt,png] [--cwd <dir>] [--profile <name>]',
+  'agh batch start <dir> --prompt <text> [--budget <credits>] [--item-budget <credits>] [--schema <file>]',
+  '  [--concurrency <1-8>] [--item-timeout <60-3600 sec>] [--max-edge <256-1456>] [--out <folder>] [--ext txt,png] [--cwd <dir>] [--profile <name>]',
   'agh batch status <id> [--watch] | follow <id> | results <id> | resume <id> | cancel <id> | list',
   'agh batch export <id> --out <folder> [--json]',
   'Effects accept --operation <id>; start also accepts --id <batchId> for an exact native-approval retry.',
@@ -32,6 +32,7 @@ const stringFlags = [
   'schema',
   'concurrency',
   'item-timeout',
+  'max-edge',
   'ext',
   'cwd',
   'profile',
@@ -86,15 +87,12 @@ export function parseBatchArgs(rest: readonly string[]): BatchArgs {
     throw new UsageError('invalid --operation')
   if (values.watch && verb !== 'status') throw new UsageError('--watch requires status')
   if (verb === 'start') {
-    if (
-      (options.prompt === undefined) === (options['prompt-file'] === undefined) ||
-      options.budget === undefined ||
-      options.out
-    )
+    if ((options.prompt === undefined) === (options['prompt-file'] === undefined))
       throw new UsageError(BATCH_USAGE)
     for (const key of ['budget', 'item-budget']) if (options[key] !== undefined) positive(options[key]!, key)
-    whole(options.concurrency, 2, 1, 8)
-    whole(options['item-timeout'], 600, 1, 3600)
+    whole(options.concurrency, 4, 1, 8)
+    whole(options['item-timeout'], 600, 60, 3600)
+    whole(options['max-edge'], 1456, 256, 1456)
   } else {
     for (const key of Object.keys(options))
       if (!['cwd', 'profile', 'operation', ...(verb === 'export' ? ['out'] : [])].includes(key))
@@ -119,9 +117,9 @@ function positive(value: string, flag: string): number {
     !/^\d+(?:\.\d+)?$/u.test(value) ||
     !Number.isFinite(Number(value)) ||
     Number(value) < 0.000001 ||
-    Number(value) > 1_000_000
+    Number(value) > Number.MAX_SAFE_INTEGER
   )
-    throw new UsageError(`--${flag} requires a positive number up to 1000000`)
+    throw new UsageError(`--${flag} requires a positive safe number`)
   return Number(value)
 }
 function whole(value: string | undefined, fallback: number, low: number, high: number) {
@@ -192,18 +190,27 @@ export async function batchCommand(rest: readonly string[], io: BatchIo): Promis
       if (schema === null || typeof schema !== 'object' || Array.isArray(schema))
         throw new UsageError('schema must be an object')
     }
-    const extensions = o.ext?.split(',')
+    const extensions = o.ext
+      ?.split(',')
+      .map((s) => s.trim().toLowerCase().replace(/^\./u, ''))
+      .filter(Boolean)
     if (extensions && (extensions.length > 32 || extensions.some((s) => !/^[a-z0-9]{1,10}$/u.test(s))))
       throw new UsageError('invalid --ext')
     payload = {
       id: o.id ?? `b${randomBytes(6).toString('hex')}`,
       dir: command.target,
+      workspaceRoot: cwd,
       spec: {
         prompt,
-        budget: positive(o.budget!, 'budget'),
-        itemBudget: positive(o['item-budget'] ?? o.budget!, 'item-budget'),
-        concurrency: whole(o.concurrency, 2, 1, 8),
-        itemTimeoutMs: whole(o['item-timeout'], 600, 1, 3600) * 1000,
+        budget: o.budget ? positive(o.budget, 'budget') : Number.MAX_SAFE_INTEGER,
+        itemBudget: o['item-budget']
+          ? positive(o['item-budget'], 'item-budget')
+          : (o.budget ? positive(o.budget, 'budget') : Number.MAX_SAFE_INTEGER) /
+            whole(o.concurrency, 4, 1, 8),
+        concurrency: whole(o.concurrency, 4, 1, 8),
+        itemTimeoutMs: whole(o['item-timeout'], 600, 60, 3600) * 1000,
+        maxEdge: whole(o['max-edge'], 1456, 256, 1456),
+        ...(o.out ? { out: o.out } : {}),
         maxRepairs: 1,
         failureLimit: 5,
         ...(schema !== undefined ? { schema } : {}),
@@ -273,10 +280,10 @@ export async function batchCommand(rest: readonly string[], io: BatchIo): Promis
           : 0
       const state = status(result)
       if (state !== 'running') return state === 'completed' ? 0 : 1
-      if (io.sleep) await io.sleep(1000, io.signal)
+      if (io.sleep) await io.sleep(5000, io.signal)
       else {
         const { setTimeout } = await import('node:timers/promises')
-        await setTimeout(1000, undefined, { ...(io.signal ? { signal: io.signal } : {}) })
+        await setTimeout(5000, undefined, { ...(io.signal ? { signal: io.signal } : {}) })
       }
     }
   } finally {

@@ -26,6 +26,24 @@
     },
     {
       "path": "../host-extensions"
+    },
+    {
+      "path": "../host"
+    },
+    {
+      "path": "../daemon-rpc"
+    },
+    {
+      "path": "../daemon-foundation"
+    },
+    {
+      "path": "../host-infrastructure"
+    },
+    {
+      "path": "../ai"
+    },
+    {
+      "path": "../host/tsconfig.testkit.json"
     }
   ]
 }

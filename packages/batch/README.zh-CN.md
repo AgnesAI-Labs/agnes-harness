@@ -1,56 +1,62 @@
-# 批处理业务服务
+# 文件批处理
 
 [English](README.md) | 简体中文
 
-本包负责文件清单、逐项尝试、额度预留、输出校验和导出。目前处于运行时集成阶段，尚未安装为可运行插件。
-运行时适配器必须提供绑定所有者的存储、不可变原件，以及由 Host 强制隔离的子会话和任务执行。
-测试中的模拟执行器不得注册为生产权限提供方。
+`@agnes/batch` 负责输入快照、持久进度、结果校验和导出。已安装的 `batchPlugin` 使用当前
+profile 的托管单例与公开 Node SDK。每项任务创建普通可见会话，标题为
+`batch <id> · <file>`；会话工作区仅放该项输入文件的副本。现有工作区沙箱和文件策略负责
+隔离，后台会话拒绝权限请求。Core、Host、协议中没有新增批处理业务或授权。
 
-`createBatchPlugin(connector)` 通过公开插件 API 注册声明过的 `batch.*` 查询与效果服务。
-连接器从 Host 接纳的调用上下文取得绑定后的 `BatchService`，请求数据不能选择所有者或工作区。
-默认 `batchPlugin` 在接入运行时之前以 `E_BATCH_MANAGED_CONNECTOR_REQUIRED` 拒绝安装。
+启用 `ext:agnes.batch`，通过原生审批配置 `batchWorker.configure`：`workspaceRoot` 为输入
+工作区，`ownedArea` 为该安装/profile 专用数据目录，`socketPath` 为当前 profile 的本地
+SDK 地址。路径必须是绝对规范路径，数据目录与输入工作区不得互相包含。Windows 还需
+提供已验证的 `serverIdentity`（`pid`、`processStartId`）。配置不包含凭据。标准托管服务
+提供 `.status`、`.configuration`、`.retry`、`.check`，不会另起守护进程或监听器。
 
-`BatchService` 在请求之外绑定工作区和所有者。运行时在启动及有未完成任务时驱动 `tick()`。
-派发前持久化意图；响应丢失后使用原键查证和恢复。不确定结果保留额度并停止新派发，恢复操作不会重置该项或重放效果。
-取消必须持久封锁任务键，包括尚未受理的键；得到包含取消费用的最终计费回执后才发布批次终态。
-工具名称过滤和模型自述不能证明这些保障。
+```sh
+agh batch start inputs --prompt '总结 {{path}}，序号 {{ordinal}}' --schema result.schema.json
+agh batch start inputs --prompt-file template.txt --budget 5 --concurrency 4 --max-edge 1024 --out reports
+agh batch status b123456abcdef --watch
+agh batch results b123456abcdef --json
+agh batch resume b123456abcdef
+agh batch cancel b123456abcdef
+agh batch export b123456abcdef --out final-copy
+```
 
-文件采集拒绝符号链接、特殊文件、路径越界和已观察到的文件或目录变化，保存不可变字节快照。
-默认上限为十万文件、每件 20 MiB、总计 256 MiB、二十万目录项、32 层目录。
-隐藏项和不支持的扩展名不参与处理；中断后的无引用原件由原件存储回收。
-恶意并发替换目录及各平台文件保障仍须由文件系统适配器承担。
+启动、恢复、导出经过 profile 原生 AR1 审批；取消走独立紧急队列且不授予新执行权限。
+待审批/执行中返回退出码 3。审批后使用打印的 `--id` 重复完全相同的启动命令；如显式传入
+`--operation`，也须保持不变。未知操作不会重发。`--cwd` 必须匹配配置的输入工作区。
+`agh run --batch` 仍是独立的无界面运行方式。
 
-`attachmentSnapshots` 使用公开 `AttachmentStore`、`AttachmentScope` 合同，核验原件哈希、大小、
-MIME 与精确作用域回执，采集失败时丢弃本次回执。输入记录保留原件引用及回执作用域，执行回执必须匹配
-Host 预先绑定的会话和 lane。只有 Core 提交子会话 inbox 输入后才能确认附件；保存批次清单不构成确认。
-接入大批量或长任务前，运行时必须处理待确认原件的配额、到期和所有者存储配额，本包不会放宽提供方限额。
+默认并发 4、单项超时 600 秒（范围 60–3600）、图片边长 1456（256–1456）、结构错误修复
+一次，连续失败五项后停止。预算可选；默认导出到 `agh-batch/<id>`。`--ext` 支持逗号分隔、
+前导点、大小写和空格归一化。模板支持 `{{name}}`（文件名）、`{{path}}`（单项副本路径）和
+`{{ordinal}}`。图片读取指令将 `max_edge` 传给现有 B3 `read` 工具，由它负责有界解码与等比例缩图；工作区
+中的原始副本保持不变。
 
-并发尝试先从剩余额度预留硬上限。修复重新预留额度，沿用同一子会话、原件和原始截止时间。
-费用取自后台回执；每项输出最多 32 KiB，最多修复两次，连续失败达到阈值后停止派发。
-输出 Schema 只接受有界的对象、属性、必填、附加属性、数组元素、标量类型、数值范围、字符串和数组长度、
-标量枚举与常量，以及说明字段。拒绝正则、引用、异步、`uniqueItems: true` 和组合关键词，不加载外部资源。
+进度保存在专属 SQLite 中，使用真实 SDK 事务 owned store。在创建会话或提交提示词之前
+先持久化操作栅栏。每项操作保留有界修复尝试记录；修复复用原会话及截止时间。重新打开
+存储后，缺少持久终态的在途操作标记为 `unknown`，包括尚未取得回复的 outbox 意图，绝不
+自动重发。恢复只核对已有进度并继续安全的待办；不会重置未知项。未知项阻止继续派发，
+保留预算占用。禁用/升级先关闭入口再取消会话；进程退出保留进度。结果或计费读取失败
+保持未知，不会假定成功或免费。
 
-导出包含 JSONL 结果与错误、CSV 和摘要。CSV 引用单元格并封锁公式；人工可读文本去除终端控制字符。
-模型内容只保留为数据，不拼接到 Markdown 摘要。独占创建目录，拒绝已有目标和竞争导出；
-最后写入 `complete.json`。没有完成标记的目录视为中断，不自动覆盖；默认导出总上限为 64 MiB。
+费用来自公开会话 usage projection。预算用完后停止接受新项，但并发/在途会话可能超过
+批次预算。`--item-budget` 限制接单预留，不是 Host 强制单轮上限；已有 profile 和会话
+策略照常生效。省略预算时使用最大安全数值作为记账边界。
 
-CLI 模块只校验选项、读取有界提示词和 Schema 文件并调用后台；枚举、执行和导出由后台负责。
-既有 `agh run --batch` 流程保持独立。
+枚举拒绝符号链接、非普通文件、越界路径和观察到的变更。隐藏项和保留目录 `agh-batch`
+不参与。未知类型保留为 `skipped/unsupported_type`；文本超过 1 MiB、PNG/JPEG 超过
+20 MiB 保留为 `skipped/too_large`。上限为十万文件、二十万目录项、32 层目录、256 MiB
+快照总量。默认使用专属文件，不占 B3 pending receipt 配额；显式传入真实 B3 scope 的
+调用方仍可使用独立的 `attachmentSnapshots` 适配器。
 
-`startManagedBatch(runtime, ports)` 已消费真实受管理服务初始化、生命周期和事务型
-`ManagedOwnedStore` 接口；单例由通用 supervisor 持有，批插件不另建单例或监听端口。驱动先遍历
-manifest 再修改状态，避免写入使分页 cursor 失效。disable/upgrade 先关闭接纳再取消；
-截止时间内无法获得结算回执时返回 unknown 并保留预算预留。进程退出保留耐久状态用于恢复。
-原生受限 child/job 派发、工作区与附件 scope 仍须由可信运行时注入。
+单项结果上限 32 KiB，导出上限 64 MiB。JSON Schema 支持有界对象、属性、必填、额外属性、
+数组、标量类型、标量 enum/const、数值及长度范围和注释；引用、正则、复杂组合以及
+`uniqueItems: true` 会明确拒绝，schema 不会加载外部资源。
 
-输入枚举保留 `agh-batch` 作为结果目录，不再将其中的旧导出作为输入。schema 支持
-`uniqueItems: false`，不执行两两比较；true 仍拒绝。
-
-服务已接入真实 profile query/effect：start、resume、export 由原生 AR1 审批接纳，cancel
-走 urgent lane，不获得新的执行权限。prepare 的规范输入绑定进 subject digest，handler 验证
-原生 admission 与对应输入。query 无需创建会话。profile 的小容量 store 不替代受管理服务 store。
-
-`agh batch` 入口通过 Node SDK 的 scoped service 调用。待批准或 running 回执返回退出码 3，
-unknown/refused 返回 1；CLI 不自行批准、不重放 unknown。批准后，使用输出的 batch id 加
-`--id` 重复同一 start；显式指定了 `--operation` 时也沿用原值。原生受限 child/job 连接器
-尚未安装时，入口明确拒绝服务调用。
+导出包含 `results.jsonl`、`errors.jsonl`、`results.csv`、`summary.md`、批次归属标记及
+`progress.json`。后台增量输出已完成/跳过行，待办和运行中行暂不写入数据文件。每个文件
+原子替换，摘要标记最后写入，可识别中断的发布。重启仅复用同批次认领的目录；拒绝覆盖
+无关输出、隐藏路径或与输入树重叠的自定义输出。显式 export 只接受已结算终态，独占新
+目录并最后写 `complete.json`。CSV 转义并防公式注入，摘要不插入模型生成内容。

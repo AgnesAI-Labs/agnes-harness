@@ -1,73 +1,77 @@
-# Batch business service
+# File batches
 
 English | [简体中文](README.zh-CN.md)
 
-This package owns file manifests, item attempts, credit reservations, output validation and exports.
-It is under integration: a runtime adapter must supply an owner-bound store, immutable artifacts and
-Host-enforced confined child/job execution. The package is not installed as a runnable plugin yet.
-The test executor is synthetic and must never be registered as production authority.
+`@agnes/batch` owns file capture, durable item progress, validation and export. The installed
+`batchPlugin` uses the current-profile managed runtime and the public Node SDK. Each item is an
+ordinary visible conversation titled `batch <id> · <file>`, with its own workspace containing only
+that item's copied input. Workspace sandbox and file policy enforce confinement. Unattended
+sessions reject permission requests; the plugin never approves a workspace escape or a tool.
+No batch authority or business engine is added to Core, Host or protocol.
 
-`createBatchPlugin(connector)` registers the declared `batch.*` query/effect services through the
-public profile service API. Start, resume and export require native AR1 approval; cancel is an
-urgent effect which grants no new execution. Preparation binds canonical arguments into the native
-subject digest, and handlers require the admitted input and approval. Queries need no session.
-The connector resolves Host-admitted context to a bound `BatchService`; request
-data cannot select its owner or workspace. The default `batchPlugin` entry refuses installation
-with `E_BATCH_MANAGED_CONNECTOR_REQUIRED` until that runtime integration is supplied.
+Enable the package's `ext:agnes.batch` row, then configure its `batchWorker.configure` profile
+service with `workspaceRoot`, `ownedArea` and the current profile's local `socketPath`. Paths must
+be absolute and canonical. The private owned area must be disjoint from the source workspace;
+use a dedicated directory under the installation/profile's owned data area. On Windows also
+supply the verified local daemon `serverIdentity` (`pid`, `processStartId`). Configuration uses
+native AR1 approval and contains no credentials. `batchWorker.status`, `.configuration`, `.retry`
+and `.check` are the standard managed-service controls. No listener or extra daemon is started.
 
-`startManagedBatch(runtime, ports)` consumes the real `ManagedServiceInit`, `ManagedServiceRuntime`
-and transactional `ManagedOwnedStore` contracts. The supervisor supplies one profile-bound instance; batch
-creates no separate singleton or listener. The driver serializes ticks, discovers manifests before
-mutating versioned store cursors, and registers shutdown before readiness. Disable/upgrade closes
-admission and cancels active work; a missed shutdown deadline returns unknown with reservations
-intact. Process exit preserves durable work for reconciliation. Native confined dispatch, workspace
-and scoped artifact bindings remain required injected ports.
+```sh
+agh batch start inputs --prompt 'Summarize {{path}} ({{ordinal}})' --schema result.schema.json
+agh batch start inputs --prompt-file template.txt --budget 5 --concurrency 4 --max-edge 1024 --out reports
+agh batch status b123456abcdef --watch
+agh batch results b123456abcdef --json
+agh batch resume b123456abcdef
+agh batch cancel b123456abcdef
+agh batch export b123456abcdef --out final-copy
+```
 
-`BatchService` binds one workspace and owner outside request data. A persisted intent is written before dispatch; lookup and dispatch
-use the same key after an interrupted response. Missing evidence remains unknown and retains its
-credit reservation. Resume reconciles evidence; it does not reset an unknown item or replay effects.
-Cancellation fences the dispatch key, including a key that has never been accepted, and waits for a
-terminal billing receipt before publishing terminal state. These guarantees are mandatory adapter
-contracts, not properties a Loop or tool filter can establish.
+Start/resume/export use native profile effect admission; cancel is an urgent effect granting no
+new execution. Approval-required/running receipts return exit code 3. After answering the approval,
+repeat the exact start using its printed `--id` (and explicit `--operation` if supplied). Unknown
+native effects are never resent. `--cwd` must match the configured source workspace.
+`agh run --batch` remains a separate headless workflow.
 
-Input capture rejects symlinks, nonregular files, path escapes and observed file/directory changes.
-It stores immutable byte snapshots, not paths that a later child can reopen. Limits are 100,000 files,
-20 MiB per file, 256 MiB per capture by default, 200,000 enumerated entries and 32 directory levels.
-Hidden entries, the reserved `agh-batch` results directory and unsupported extensions are excluded.
-Aborted captures may leave unreferenced artifacts; the artifact store owns their collection. Filesystem adapters remain responsible for
-hostile concurrent directory replacement and platform-specific guarantees.
+Defaults: concurrency 4, timeout 600 seconds (60–3600), image edge 1456 (256–1456), one schema repair,
+five consecutive failures before stopping, optional credit budget, and output `agh-batch/<id>`.
+`--ext` accepts comma-separated extensions with optional leading dots and case/space normalization.
+Templates support `{{name}}` (basename), `{{path}}` (the item-only copied path), and `{{ordinal}}`.
+Image read instructions pass `max_edge` to the existing B3 `read` tool, which owns bounded decoding
+and aspect-preserving resize. Capture leaves source originals unchanged; copied bytes are checked before dispatch.
 
-`attachmentSnapshots` consumes the public `AttachmentStore` and `AttachmentScope` contracts. It
-checks the returned artifact hash, size, MIME and exact scoped receipt, and discards receipts from
-an unsuccessful capture. Input records retain their artifact reference and receipt scope; terminal
-execution receipts must match the prepared session and lane. Scope binding must come from Host.
-Only Core's committed child inbox input permits confirmation; a saved batch manifest does not.
-The runtime adapter must account for attachment pending-root quotas/expiry and owner-store quotas
-before accepting a large or long-lived batch. This package does not relax provider limits.
+The managed service uses the real transactional SDK owned store in its private SQLite database.
+An operation fence is committed before any session creation/prompt side effect. The stable item
+operation has bounded repair attempt records, and repairs reuse that item's session and deadline.
+On reopen, any accepted operation lacking a durable terminal result becomes `unknown`; even an
+outbox intent with no reply is never automatically dispatched again. Resume reconciles persisted
+progress and continues safe pending work; it never resets or reruns unknown items. Unknown work
+stops new admission and retains its reservation. Disabling/upgrading closes admission and cancels
+active sessions. Process exit preserves progress. Output and billing transport failures remain
+unknown instead of being treated as successful or free work.
 
-Every concurrent attempt reserves a hard credit ceiling from the remaining batch budget. Repairs
-reserve a new ceiling, retain the same child/input and share the original item deadline. Cancelled
-attempts are charged using backend receipts. Unknown work stops further admission. Output is at most
-32 KiB of JSON data per item; at most two repairs are allowed. Consecutive invalid/failed items stop
-admission at the configured threshold.
+Ordinary session costs are read through the public session usage projection. The batch budget stops
+further admission once reported spend reaches it; concurrent/in-flight turns can exceed it.
+`--item-budget` limits admission reservations, not a Host-enforced per-turn cap. Existing profile
+and session policy still applies. An omitted budget uses the largest safe numeric accounting bound.
 
-Output schemas use a bounded subset: object/properties/required/additionalProperties, array/items,
-scalar types, numeric bounds, string/array length bounds, scalar enum/const, title/description and
-`$schema`. Other keywords, including regex, references, async validation, `uniqueItems: true` and
-combinators, are refused. `uniqueItems: false` permits duplicates without pairwise comparison.
-Validation has fixed depth/node/work ceilings. Schemas cannot load external resources.
+Capture rejects symlinks, nonregular files, escapes and observed mutations. Hidden entries and the
+reserved `agh-batch` directory are excluded. Unsupported types remain original `skipped` rows with
+`unsupported_type`; text above 1 MiB or PNG/JPEG above 20 MiB remains `skipped` with `too_large`.
+Limits: 100,000 files, 200,000 directory entries, 32 directory levels and 256 MiB captured bytes.
+Snapshots use owned files, so large batches do not hold B3 pending receipts. The separately exported
+`attachmentSnapshots` adapter remains available to callers explicitly supplying a real B3 scope.
 
-Exports contain `results.jsonl`, `errors.jsonl`, `results.csv` and `summary.md`. CSV cells are quoted
-and spreadsheet formulas are prefixed; terminal control/formatting characters are removed from CSV
-and human summaries. Model content stays in data files and is never interpolated into the summary.
-An exclusive directory claim refuses existing targets and racing exporters. `complete.json` is written
-last; an interrupted directory without that file is incomplete and cannot be silently overwritten.
-The default total export ceiling is 64 MiB. Exports do not execute or trust model-authored content.
+Results are limited to 32 KiB each and 64 MiB per export. JSON Schema support is bounded to
+object/properties/required/additionalProperties, array/items, scalar types, scalar enum/const,
+numeric/string/array bounds and annotations. References, patterns, advanced combinators and
+`uniqueItems: true` are refused with a clear error; schemas cannot fetch resources.
 
-The `agh batch` dispatcher uses the Node SDK profile-service transport: it validates options, reads bounded prompt/schema files,
-and delegates enumeration, execution and export to the bound backend. Native approval-required or
-running receipts return exit code 3 with the operation and batch ids; unknown/refused receipts return
-1. After answering the native approval, repeat the exact start with `--id <batchId>` (and the same
-`--operation <operationId>` when explicitly selected). The CLI never answers approvals or retries
-unknown effects. A missing installed runtime connector fails through service admission. `agh run --batch` remains a
-separate supported headless workflow.
+The output directory contains `results.jsonl`, `errors.jsonl`, `results.csv`, `summary.md`, a batch
+ownership marker and `progress.json`. The driver exports settled rows incrementally, including
+skipped rows; pending/running items are omitted from data files. Individual files are atomically
+replaced and the digest marker is written last, so readers can detect an interrupted publication.
+Reopen resumes publication only into the same batch's claimed directory. Existing unrelated output,
+hidden paths and custom output overlapping the input tree are refused. Explicit `export` requires
+terminal settled state and exclusively claims a fresh destination, writing `complete.json` last.
+CSV cells are quoted and formula-prefixed; summaries do not interpolate model-authored content.

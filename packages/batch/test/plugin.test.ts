@@ -87,12 +87,12 @@ describe('batch plugin connector', () => {
       expect((await seam.attachments!.pendingRoots()).roots).toHaveLength(2)
       await writeFile(join(root, 'inputs/a.txt'), 'changed after snapshot')
       const captured = await binding.engine.repo.page(id)
-      expect(new TextDecoder().decode(await seam.get(captured[0]!.input.artifact))).toBe('alpha')
+      expect(new TextDecoder().decode(await seam.get(captured[0]!.input.artifact!))).toBe('alpha')
       const first = captured[0]!.input
       expect(
         await seam.attachments!.authorize(
           { sessionKey: 'other-child', lane: 'main' },
-          { id: first.receipt.id, artifact: first.artifact },
+          { id: first.receipt!.id, artifact: first.artifact! },
           init.signal,
         ),
       ).toBe(false)
@@ -225,7 +225,7 @@ describe('batch plugin connector', () => {
       })
     },
   )
-  it('registers valid query/effect definitions, cleans up partial registration, and refuses unconstrained installation', () => {
+  it('registers valid query/effect definitions, cleans up partial registration, and installs the public-session managed connector', () => {
     const active = new Map<string, ServiceDef>()
     const plugin = createBatchPlugin(async () => {
       throw new Error('no invocation')
@@ -259,7 +259,35 @@ describe('batch plugin connector', () => {
       }),
     ).toThrow('registration refused')
     expect(active.size).toBe(0)
-    expect(() => batchPlugin.apply()).toThrow('E_BATCH_MANAGED_CONNECTOR_REQUIRED')
+    let managedId = ''
+    const installed = batchPlugin.apply({
+      services: {
+        register: (def) => {
+          active.set(def.name, def)
+          return () => {
+            active.delete(def.name)
+          }
+        },
+      },
+      profileRuntime: {
+        register(definition) {
+          managedId = definition.id
+          return {
+            async get() {
+              throw new Error('not invoked')
+            },
+          }
+        },
+        streams: {
+          register() {
+            throw new Error('no streams')
+          },
+        },
+      },
+    })
+    expect(managedId).toBe('batchWorker')
+    expect(active.has('batch.start')).toBe(true)
+    installed()
     expect(() =>
       attachmentSnapshots(
         undefined,

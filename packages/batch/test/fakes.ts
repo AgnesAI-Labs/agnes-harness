@@ -75,8 +75,8 @@ export class FakeExecutor implements Executor {
       inputDigest: request.input.digest,
       child,
       job: `job:${request.key}`,
-      session: request.input.receipt.scope.sessionKey,
-      lane: request.input.receipt.scope.lane,
+      session: request.input.receipt!.scope.sessionKey,
+      lane: request.input.receipt!.scope.lane,
       frame: `frame:${request.key}`,
       charged: 0,
       state: 'running',
@@ -108,7 +108,7 @@ export class FakeExecutor implements Executor {
     if (
       !request ||
       !receipt ||
-      artifact.sha256 !== request.input.artifact.sha256 ||
+      artifact!.sha256 !== request.input.artifact!.sha256 ||
       Object.entries(binding).some(([k, v]) => receipt[k as keyof Receipt] !== v)
     )
       throw new Error('E_INPUT_DENIED')

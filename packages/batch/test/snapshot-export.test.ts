@@ -26,7 +26,7 @@ afterEach(async () => {
 })
 
 describe('input snapshots and bounded data exports', () => {
-  it('snapshots sorted immutable inputs, excludes unsupported/hidden files, and refuses file or ancestor symlinks', async () => {
+  it('snapshots sorted immutable inputs, retains unsupported rows and excludes hidden files, and refuses file or ancestor symlinks', async () => {
     // Canonicalize macOS /var -> /private/var before testing workspace containment.
     const { realpath } = await import('node:fs/promises')
     const root = await realpath(await temp())
@@ -35,6 +35,7 @@ describe('input snapshots and bounded data exports', () => {
     await writeFile(join(root, 'items/a.txt'), 'alpha')
     await writeFile(join(root, 'items/.secret'), 'hidden')
     await writeFile(join(root, 'items/book.xlsx'), 'unsupported')
+    await writeFile(join(root, 'items/big.txt'), Buffer.alloc(1024 * 1024 + 1))
     await mkdir(join(root, 'items/agh-batch'))
     await writeFile(join(root, 'items/agh-batch/results.jsonl'), 'previous results')
     const blobs = new Map<string, Uint8Array>()
@@ -45,7 +46,13 @@ describe('input snapshots and bounded data exports', () => {
       },
     }
     const files = await snapshotFolder({ id, root, dir: 'items', artifacts })
-    expect(files.map((f) => f.name)).toEqual(['a.txt', 'b.txt'])
+    expect(files.map((f) => f.name)).toEqual(['a.txt', 'b.txt', 'big.txt', 'book.xlsx'])
+    expect(files[2]).toMatchObject({ skip: 'too_large' })
+    expect(files[3]).toMatchObject({ skip: 'unsupported_type' })
+    const engine = new BatchEngine(new Repository(testStore()), new FakeExecutor())
+    await engine.begin(id, spec, files)
+    expect(await engine.tick(id)).toMatchObject({ status: 'completed', successes: 2, skipped: 2 })
+    expect((await renderExport(engine.repo, id)).files['errors.jsonl']).toContain('unsupported_type')
     await writeFile(join(root, 'items/a.txt'), 'changed')
     expect(Buffer.from(blobs.get(files[0]!.digest)!).toString()).toBe('alpha')
     await symlink(join(root, 'items/a.txt'), join(root, 'items/link.txt'))

@@ -57,12 +57,41 @@ describe('batch thin client', () => {
     ).toBe(0)
     expect(calls[0]).toMatchObject({
       verb: 'start',
-      input: { dir: 'missing-folder', spec: { budget: 2, concurrency: 2 } },
+      input: { dir: 'missing-folder', spec: { budget: 2, concurrency: 4 } },
     })
     expect(calls[0]!.input.id).toMatch(/^b[0-9a-f]{12}$/u)
     expect(connect).toHaveBeenCalledWith({ cwd: '/workspace', profile: 'synthetic' })
     expect(close).toHaveBeenCalledOnce()
     expect(JSON.parse(output[0]!)).toMatchObject({ status: 'running' })
+    await batchCommand(
+      [
+        'start',
+        'inputs',
+        '--prompt',
+        '{{path}} {{name}} {{ordinal}}',
+        '--max-edge',
+        '1024',
+        '--out',
+        'reports',
+        '--ext',
+        ' .TXT, .Jpg ',
+      ],
+      { cwd: '/workspace', write() {}, connect },
+    )
+    expect(calls[1]).toMatchObject({
+      input: {
+        workspaceRoot: '/workspace',
+        extensions: ['txt', 'jpg'],
+        spec: {
+          budget: Number.MAX_SAFE_INTEGER,
+          concurrency: 4,
+          itemTimeoutMs: 600000,
+          maxEdge: 1024,
+          out: 'reports',
+          itemBudget: Number.MAX_SAFE_INTEGER / 4,
+        },
+      },
+    })
   })
   it('follows status with bounded polls and closes on terminal state, failure or abort', async () => {
     for (const end of ['completed', 'failed', 'unknown']) {

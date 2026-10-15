@@ -5,7 +5,7 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { BatchError, type Input, type InputReference } from './contracts.js'
 
 export interface SnapshotArtifacts {
-  /** Stores immutable bytes and returns an opaque artifact identity, not a writable path. */
+  /** Captures original bytes in owned files or in a real scoped B3 artifact store. */
   put(bytes: Uint8Array, metadata: { batch: string; digest: string; name: string }): Promise<InputReference>
   discard?(input: InputReference): Promise<void>
 }
@@ -71,8 +71,6 @@ export async function snapshotFolder(input: {
       'png',
       'jpg',
       'jpeg',
-      'webp',
-      'gif',
     ],
   )
   const files: Input[] = []
@@ -102,9 +100,40 @@ export async function snapshotFolder(input: {
         continue
       }
       if (!before.isFile()) throw new BatchError('E_BATCH_FILE')
-      if (!accepted.has(name.split('.').at(-1)!.toLowerCase())) continue
-      if (files.length >= maxFiles || before.size > 20 * 1024 * 1024 || total + before.size > maxTotalBytes)
-        throw new BatchError('E_BATCH_INPUT_LIMIT')
+      if (files.length >= maxFiles) throw new BatchError('E_BATCH_INPUT_LIMIT')
+      const extension = name.split('.').at(-1)!.toLowerCase()
+      const supported = new Set([
+        'txt',
+        'md',
+        'csv',
+        'tsv',
+        'json',
+        'jsonl',
+        'log',
+        'xml',
+        'yaml',
+        'yml',
+        'png',
+        'jpg',
+        'jpeg',
+      ])
+      const image = ['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(extension)
+      if (input.extensions?.length && !accepted.has(extension)) continue
+      const skip = !supported.has(extension)
+        ? 'unsupported_type'
+        : before.size > (image ? 20 : 1) * 1024 * 1024
+          ? 'too_large'
+          : undefined
+      if (skip) {
+        files.push({
+          name: relative(dir, path).split(sep).join('/'),
+          size: before.size,
+          digest: '0'.repeat(64),
+          skip,
+        })
+        continue
+      }
+      if (total + before.size > maxTotalBytes) throw new BatchError('E_BATCH_INPUT_LIMIT')
       const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
       let bytes: Buffer
       try {

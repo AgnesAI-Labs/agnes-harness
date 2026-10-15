@@ -43,7 +43,7 @@ export function attachmentSnapshots(
       }
     },
     async discard(input) {
-      await provider.discard(input.receipt.scope, input.receipt.id)
+      if (input.receipt) await provider.discard(input.receipt.scope, input.receipt.id)
     },
   }
 }

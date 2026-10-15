@@ -22,6 +22,7 @@ export async function startManagedBatch(
   const admission = new AbortController()
   let stopping = false
   const executor: Executor = {
+    ...(ports.executor.sessionBacked ? { sessionBacked: true as const } : {}),
     get authority() {
       return stopping ? { ...ports.executor.authority, durableIdempotency: false } : ports.executor.authority
     },
@@ -101,6 +102,9 @@ export async function startManagedBatch(
     return {
       service,
       tick,
+      async drain() {
+        await current?.catch(() => undefined)
+      },
       stop,
       get lastError() {
         return lastError

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import type { PluginContextFacets, ServiceCapability, ServiceContext, ServiceDef } from '@agnes/extension-api'
 import { type JsonValue, jcs } from '@agnes/protocol'
 import { BatchError } from './contracts.js'
+import { BATCH_CONFIG_SCHEMA, startProfileBatch } from './runtime.js'
 import { validateSpec } from './schema.js'
 import type { BatchService } from './service.js'
 
@@ -15,6 +16,7 @@ function capability(verb: (typeof verbs)[number]): ServiceCapability {
     verb === 'start'
       ? {
           id,
+          workspaceRoot: { type: 'string', minLength: 1, maxLength: 4096 },
           dir: { type: 'string', minLength: 1, maxLength: 4096 },
           spec: { type: 'object' },
           extensions: { type: 'array', maxItems: 32, items: { type: 'string', pattern: '^[a-z0-9]{1,10}$' } },
@@ -112,6 +114,15 @@ function definition(verb: (typeof verbs)[number], connector: BatchConnector): Se
       )
         throw new BatchError('E_BATCH_NATIVE_ADMISSION_REQUIRED')
       const service = (await connector(context)).withSignal(context.signal)
+      if (
+        verb === 'start' &&
+        input &&
+        typeof input === 'object' &&
+        !Array.isArray(input) &&
+        input.workspaceRoot !== undefined &&
+        input.workspaceRoot !== service.reviewBinding().workspaceRoot
+      )
+        throw new BatchError('E_BATCH_BINDING_CHANGED')
       if (!queries.has(verb)) {
         const presentation = context.admission!.prepared.presentation
         if (
@@ -174,10 +185,16 @@ export function createBatchPlugin(connector: BatchConnector) {
     },
   }
 }
-/** Older Hosts must refuse installation instead of starting unconstrained child sessions. */
+/** Installed profile singleton, using the public SDK rather than a child dispatch seam. */
 export const batchPlugin = {
-  inject: ['services'],
-  apply(): never {
-    throw new BatchError('E_BATCH_MANAGED_CONNECTOR_REQUIRED')
+  inject: ['services', 'profileRuntime'],
+  apply(context: Pick<PluginContextFacets, 'services' | 'profileRuntime'>) {
+    const resource = context.profileRuntime.register({
+      id: 'batchWorker',
+      configSchema: BATCH_CONFIG_SCHEMA,
+      defaultConfig: {},
+      start: startProfileBatch,
+    })
+    return createBatchPlugin(async () => resource.get()).apply(context)
   },
 }

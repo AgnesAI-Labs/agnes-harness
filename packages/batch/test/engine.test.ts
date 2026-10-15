@@ -29,10 +29,10 @@ describe('durable batch business state', () => {
     })
     const [first, second] = [...h.executor.receipts.values()]
     const a = [...h.executor.requests.values()][0]!
-    expect(h.executor.read(first!.key, first!, a.input.artifact)).toBe('a.txt')
-    expect(() => h.executor.read(first!.key, second!, a.input.artifact)).toThrow('E_INPUT_DENIED')
+    expect(h.executor.read(first!.key, first!, a.input.artifact!)).toBe('a.txt')
+    expect(() => h.executor.read(first!.key, second!, a.input.artifact!)).toThrow('E_INPUT_DENIED')
     expect(() => h.executor.read(first!.key, first!, inputs[1]!.artifact)).toThrow('E_INPUT_DENIED')
-    expect(() => h.executor.read(first!.key, { ...first!, frame: 'forged' }, a.input.artifact)).toThrow(
+    expect(() => h.executor.read(first!.key, { ...first!, frame: 'forged' }, a.input.artifact!)).toThrow(
       'E_INPUT_DENIED',
     )
     await new BatchEngine(new Repository(h.store), h.executor).resume(id)

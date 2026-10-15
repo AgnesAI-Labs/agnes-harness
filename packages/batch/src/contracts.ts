@@ -3,7 +3,14 @@ import type { AttachmentScope, ManagedOwnedStore, OwnedStoreTxn } from '@agnes/e
 import type { ArtifactRef, JsonValue as Json } from '@agnes/protocol'
 
 export type { JsonValue as Json } from '@agnes/protocol'
-export type InputReference = { artifact: ArtifactRef; receipt: { id: string; scope: AttachmentScope } }
+export type InputReference = {
+  artifact?: ArtifactRef
+  receipt?: { id: string; scope: AttachmentScope }
+  /** Immutable original copied under the managed service's private area, never a B3 lease. */
+  workspace?: string
+  path?: string
+  skip?: 'unsupported_type' | 'too_large'
+}
 export type Input = InputReference & { name: string; digest: string; size: number }
 export type Spec = {
   prompt: string
@@ -13,9 +20,19 @@ export type Spec = {
   concurrency: number
   maxRepairs: number
   failureLimit: number
+  maxEdge?: number
+  out?: string
   schema?: Json
 }
-export type ItemState = 'pending' | 'accepted' | 'done' | 'invalid' | 'failed' | 'cancelled' | 'unknown'
+export type ItemState =
+  | 'pending'
+  | 'accepted'
+  | 'done'
+  | 'invalid'
+  | 'failed'
+  | 'cancelled'
+  | 'unknown'
+  | 'skipped'
 export type Attempt = {
   key: string
   number: number
@@ -50,6 +67,7 @@ export type Manifest = {
   invalid: number
   failed: number
   cancelled: number
+  skipped: number
   spent: number
   reserved: number
   uncertain: number
@@ -62,6 +80,7 @@ export type Store = ManagedOwnedStore
 export type StoreTransaction = OwnedStoreTxn
 export type Stored = NonNullable<ReturnType<OwnedStoreTxn['get']>>
 export type Dispatch = {
+  operationId: string
   key: string
   batch: string
   ordinal: number
@@ -70,6 +89,7 @@ export type Dispatch = {
   prompt: string
   ceiling: number
   deadline: number
+  maxEdge?: number
   /** Repairs must continue the exact child, without widening input authority. */
   child?: string
 }
@@ -88,6 +108,8 @@ export type Receipt = {
   inputRead?: boolean
 }
 export interface Executor {
+  /** Public ordinary-session connector: budgets stop admission after reported spend. */
+  readonly sessionBacked?: true
   /** Host-verified capability; an arbitrary plugin/provider's assertion is insufficient. */
   readonly authority: {
     immutableInputOnly: boolean

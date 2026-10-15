@@ -19,15 +19,18 @@ export async function renderExport(
   repo: Repository,
   id: string,
   maxBytes = 64 * 1024 * 1024,
+  incremental = false,
 ): Promise<ExportBundle> {
   const m = await repo.status(id)
-  if (m.status === 'running' || m.status === 'unknown') throw new BatchError('E_BATCH_NOT_TERMINAL')
+  if (!incremental && (m.status === 'running' || m.status === 'unknown'))
+    throw new BatchError('E_BATCH_NOT_TERMINAL')
   const results: string[] = [],
     errors: string[] = [],
     csv = ['"ordinal","name","status","output"']
   let size = 0
   for (let offset = 0; offset < m.total; offset += 1000) {
     for (const item of await repo.page(id, offset, 1000)) {
+      if (incremental && ['pending', 'accepted'].includes(item.state)) continue
       const row = {
         ordinal: item.ordinal,
         name: item.input.name,
@@ -131,5 +134,73 @@ export async function publishExport(root: string, target: string, bundle: Export
   } finally {
     await handle.close()
     await unlink(lock)
+  }
+}
+
+const publications = new Map<string, Promise<void>>()
+/** Atomic files plus a last-written digest marker make every incremental snapshot inspectable.
+ * Reopen reuses only this batch's exclusively claimed directory; unrelated output is refused. */
+export async function publishProgress(
+  root: string,
+  target: string,
+  id: string,
+  bundle: ExportBundle,
+): Promise<void> {
+  const dest = resolve(root, target)
+  const previous = publications.get(dest) ?? Promise.resolve()
+  const work = previous
+    .catch(() => {})
+    .then(async () => {
+      const { readFile, rename } = await import('node:fs/promises')
+      const rel = relative(root, dest)
+      if (!rel || isAbsolute(rel) || rel.split(sep).some((p) => p === '..' || p.startsWith('.')))
+        throw new BatchError('E_BATCH_EXPORT_PATH')
+      await mkdir(dirname(dest), { recursive: true, mode: 0o700 })
+      if ((await realpath(dirname(dest))) !== dirname(dest)) throw new BatchError('E_BATCH_EXPORT_PATH')
+      try {
+        await mkdir(dest, { mode: 0o700 })
+        const owner = await open(resolve(dest, 'batch.json'), 'wx', 0o600)
+        try {
+          await owner.writeFile(JSON.stringify({ version: 1, id }))
+          await owner.sync()
+        } finally {
+          await owner.close()
+        }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+      }
+      if (
+        (await realpath(dest)) !== dest ||
+        (await readFile(resolve(dest, 'batch.json'), 'utf8')) !== JSON.stringify({ version: 1, id })
+      )
+        throw new BatchError('E_BATCH_EXPORT_EXISTS')
+      const identity = await lstat(dest)
+      for (const [name, text] of Object.entries({
+        ...bundle.files,
+        'progress.json': JSON.stringify({ version: 1, id, digest: bundle.digest }),
+      })) {
+        const current = await lstat(dest)
+        if (current.ino !== identity.ino || current.dev !== identity.dev || (await realpath(dest)) !== dest)
+          throw new BatchError('E_BATCH_EXPORT_PATH')
+        const temporary = resolve(dest, `${name}.${crypto.randomUUID()}.tmp`)
+        const file = await open(temporary, 'wx', 0o600)
+        try {
+          await file.writeFile(text)
+          await file.sync()
+        } finally {
+          await file.close()
+        }
+        try {
+          await rename(temporary, resolve(dest, name))
+        } finally {
+          await unlink(temporary).catch(() => {})
+        }
+      }
+    })
+  publications.set(dest, work)
+  try {
+    await work
+  } finally {
+    if (publications.get(dest) === work) publications.delete(dest)
   }
 }

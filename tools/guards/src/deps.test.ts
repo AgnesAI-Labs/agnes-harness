@@ -54,7 +54,7 @@ describe('dependency allowlist (dependencies point one way, downward)', () => {
 // therefore 9 here, with channels/bridges still together on 8, which lets every existing and
 // previously approved dependency in the code pass.
 const LAYER: Record<string, number> = {
-  '@agnes/batch': 2, // Batch business state consumes only public author and protocol contracts.
+  '@agnes/batch': 4, // Application plugin composes public SDK sessions and author contracts.
   '@agnes/mhs-device': 0, // Device protocol and SDK have no Harness dependencies.
   '@agnes/mhs-hub': 1, // Device-facing Hub owns physical integration.
   '@agnes/mhs': 2, // Plugin consumes the Hub and public author API.
