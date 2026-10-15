@@ -40,6 +40,24 @@ export interface DeveloperPort {
     signal: AbortSignal,
   ): Promise<readonly { name: string; state: 'passed' | 'failed' | 'unknown'; detail?: string }[]>
 }
+/** Scene runtime facts are presentation; backend services still own device admission. */
+export interface ExampleRuntime {
+  getSnapshot(): {
+    state: 'starting' | 'running' | 'stopped' | 'unavailable'
+    connected: number
+    total: number
+  }
+  subscribe(listener: () => void): () => void
+  stop(): Promise<void>
+}
+/** Passed through the registered page's existing context.data; never owns the runtime. */
+export interface ExampleSceneHost {
+  kind: 'agnes.mhs-example-scene/v1'
+  profileId: string
+  exampleId: string
+  bindRuntime(runtime: ExampleRuntime, signal: AbortSignal): () => void
+  launch(launchId: string): void
+}
 export interface ExampleView {
   id: string
   name: string
@@ -49,14 +67,16 @@ export interface ExampleView {
   connected?: number
   total?: number
   /** Resolved local scene contribution. Never an arbitrary iframe or remote URL. */
-  Scene?: ComponentType<{ onClose(): void }>
+  Scene?: ComponentType<{ onClose(): void; onLaunch?(launchId: string): void }>
+  launches?: readonly { id: string; title: string }[]
+  requiresRuntime?: boolean
 }
 export interface ExamplesPort {
   list(signal: AbortSignal): Promise<readonly ExampleView[]>
   subscribe(listener: () => void): () => void
   /** Activation/launch retain native package review and bounded launch authorization. */
   inspect?(id: string): Promise<{ reviewId: string; presentation: unknown }>
-  prepare?(id: string): Promise<{ launchTicket: string; presentation: unknown }>
+  prepare?(id: string, launchId?: string): Promise<{ launchTicket: string; presentation: unknown }>
   enable(id: string, reviewId?: string): Promise<void>
   stop(id: string): Promise<void>
   launch(id: string, launchTicket?: string): Promise<undefined | { sessionId: string }>

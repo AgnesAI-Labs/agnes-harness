@@ -291,7 +291,9 @@ describe('MHS approved device interactions', () => {
   it('uses reviewed example enable/launch tokens and embeds the registered local scene', async () => {
     const f = fake(),
       enabled: string[] = [],
-      launched: string[] = []
+      launched: string[] = [],
+      prepared: string[] = [],
+      stopped: string[] = []
     f.ports.examples = {
       list: async () => [{ id: 'mars', name: 'Mars', description: 'Rescue', state: 'disabled' }],
       subscribe: () => () => {},
@@ -299,8 +301,13 @@ describe('MHS approved device interactions', () => {
       enable: async (_id, token) => {
         enabled.push(token ?? '')
       },
-      stop: async () => {},
-      prepare: async () => ({ launchTicket: 'ticket', presentation: { prompt: 'Rescue' } }),
+      stop: async (id) => {
+        stopped.push(id)
+      },
+      prepare: async (_id, launchId) => {
+        prepared.push(launchId ?? 'rescue')
+        return { launchTicket: 'ticket', presentation: { prompt: 'Rescue' } }
+      },
       launch: async (_id, token) => {
         launched.push(token ?? '')
         return undefined
@@ -317,15 +324,35 @@ describe('MHS approved device interactions', () => {
         name: 'Mars',
         description: 'Rescue',
         state: 'running',
-        Scene: () => <p>Local Mars scene</p>,
+        launches: [
+          { id: 'rescue', title: 'Rescue Agent' },
+          { id: 'sample', title: 'Sample Agent' },
+        ],
+        Scene: ({ onLaunch }) => (
+          <>
+            <p>Local Mars scene</p>
+            <button type="button" onClick={() => onLaunch?.('sample')}>
+              Collect sample
+            </button>
+          </>
+        ),
       },
     ]
     await click(getByRole(host, 'button', { name: 'Retry' }))
-    await click(getByRole(host, 'button', { name: 'Start a session' }))
+    await click(getByRole(host, 'button', { name: 'Rescue Agent' }))
     expect(launched).toEqual([])
     await click(getByRole(host, 'button', { name: 'Run' }))
     expect(launched).toEqual(['ticket'])
     await click(getByRole(host, 'button', { name: 'Open scene' }))
     expect(host.textContent).toContain('Local Mars scene')
+    await click(getByRole(host, 'button', { name: 'Collect sample' }))
+    expect(prepared).toEqual(['rescue', 'sample'])
+    expect(launched).toEqual(['ticket'])
+    await click(getByRole(host, 'button', { name: 'Run' }))
+    expect(launched).toEqual(['ticket', 'ticket'])
+    expect(host.textContent).toContain('Local Mars scene')
+    await click(getByRole(host, 'button', { name: 'Examples' }))
+    await click(getByRole(host, 'button', { name: 'Stop example' }))
+    expect(stopped).toEqual(['mars'])
   })
 })

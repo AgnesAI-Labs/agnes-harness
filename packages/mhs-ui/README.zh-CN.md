@@ -15,3 +15,5 @@ Activity 支持 1–1,000 的条数上限和最多 512 字符的 opaque cursor�
 安装模块将开发诊断绑定到通用受管理服务接口，将示例状态和 Stop 绑定到原生示例 facade；未注册运行资源的子示例仅显示已安装。实际宿主审批、设备安全、浏览器媒体/GPU 和发行安装流程仍需集成验收。
 
 真实 Host 适配器保留待审批提案的不可变输入和原 operation id，协调时仅重试该提案，直至原生审批完成。运行中、已完成、已拒绝及 unknown 操作只查询回执，不重发。卸载会取消待审批重试，最多保留 1,024 条操作关联。原生批准入口位于 Web 侧栏的操作审批区。
+
+本地场景模块可读取既有 `context.data` 中的 `ExampleSceneHost`，须核对 kind 为 `agnes.mhs-example-scene/v1` 且 exampleId 匹配。用子模块 profile 寿命 signal 绑定 `ExampleRuntime`，视图卸载不释放运行时。宿主投影状态与连接数、去重订阅，在父模块撤销时停止，并拒绝重复绑定；这些事实不赋予后端批准。标签与场景中的各个 launch 选项使用相同父级 review。结果未知时，在 profile/activation 隔离的 session storage 保留 ticket 与 operation ID，父页面重载后也不换新请求。
