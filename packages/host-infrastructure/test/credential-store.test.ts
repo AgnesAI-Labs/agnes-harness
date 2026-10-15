@@ -325,13 +325,41 @@ it.skipIf(process.platform === 'win32')(
       writeFileSync(file, 'not-json-private-fixture', { mode: 0o600 })
       symlinkSync(outside, join(home, 'auth'))
       let rows = await inspectCredentialMetadata(home)
-      expect(rows).toContainEqual({ target: file, part: 'secrets', check: 'ok', mode: '0600' })
+      expect(rows).toContainEqual({
+        target: file,
+        part: 'secrets',
+        check: 'ok',
+        mode: '0600',
+        expectedMode: '0600',
+      })
       expect(rows).toContainEqual(expect.objectContaining({ target: join(home, 'auth'), check: 'unsafe' }))
       expect(rows.some((row) => row.target.startsWith(outside))).toBe(false)
       expect(JSON.stringify(rows)).not.toContain('not-json-private-fixture')
+      expect(rows).toContainEqual(expect.objectContaining({ target: join(home, 'locks'), check: 'missing' }))
+      mkdirSync(join(home, 'locks'), { mode: 0o700 })
+      const lock = join(home, 'locks', 'credential.lock')
+      writeFileSync(lock, 'private-lock-canary', { mode: 0o644 })
       chmodSync(file, 0o644)
       rows = await inspectCredentialMetadata(home)
-      expect(rows).toContainEqual({ target: file, part: 'secrets', check: 'unsafe', mode: '0644' })
+      expect(rows).toContainEqual({
+        target: file,
+        part: 'secrets',
+        check: 'unsafe',
+        mode: '0644',
+        expectedMode: '0600',
+        repair: 'chmod',
+      })
+      expect(rows).toContainEqual(
+        expect.objectContaining({
+          target: lock,
+          part: 'locks',
+          check: 'unsafe',
+          expectedMode: '0600',
+          repair: 'chmod',
+        }),
+      )
+      expect(rows.find((row) => row.part === 'auth')).not.toHaveProperty('repair')
+      expect(JSON.stringify(rows)).not.toContain('private-lock-canary')
       expect(lstatSync(file).mode & 0o777).toBe(0o644)
     } finally {
       rmSync(home, { recursive: true, force: true })

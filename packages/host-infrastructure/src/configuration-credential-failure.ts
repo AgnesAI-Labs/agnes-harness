@@ -2,6 +2,7 @@ import { lstatSync } from 'node:fs'
 import { join, sep } from 'node:path'
 import { fileSecretsDir } from '@agnes/host-common/paths'
 import { CredentialStoreError } from './adapters/credential-files.js'
+import { createPlatform } from './adapters/platform.js'
 import { createFileAudit } from './audit.js'
 import { ConfigurationError, type CredentialDiagnostic } from './configuration-error.js'
 
@@ -56,12 +57,20 @@ function credentialDiagnostic(
         ? 'secrets'
         : error.path.startsWith(join(home, 'auth') + sep) || error.path === join(home, 'auth')
           ? 'auth'
-          : 'store'
+          : error.path.startsWith(join(home, 'locks') + sep) || error.path === join(home, 'locks')
+            ? 'locks'
+            : 'store'
   let mode: string | undefined
+  let expectedMode: string | undefined
   try {
-    if (error.path) mode = (lstatSync(error.path).mode & 0o7777).toString(8).padStart(4, '0')
+    if (error.path) {
+      const stat = lstatSync(error.path)
+      mode = (stat.mode & 0o7777).toString(8).padStart(4, '0')
+      if (!stat.isSymbolicLink() && createPlatform().os !== 'win32')
+        expectedMode = stat.isDirectory() ? '0700' : stat.isFile() ? '0600' : undefined
+    }
   } catch {
     /* The check may concern a missing target. */
   }
-  return { part, check: error.reason, ...(mode ? { mode } : {}) }
+  return { part, check: error.reason, ...(mode ? { mode } : {}), ...(expectedMode ? { expectedMode } : {}) }
 }

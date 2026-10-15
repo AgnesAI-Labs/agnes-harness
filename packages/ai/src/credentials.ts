@@ -22,8 +22,8 @@ export function isUsableCredential(value: string): boolean {
  * request path entirely.
  *
  * A lookup that throws and one that answers with an empty or whitespace-only string are the same
- * outcome — no usable credential — and all of them stop assembly. The error names the route and the reference only: the value,
- * and anything the store said while failing, never travel, because this error is going to be logged.
+ * outcome — no usable credential — and all of them stop assembly. The error names the route, reference and allowlisted refusal metadata. Secret values,
+ * paths and arbitrary store messages never travel, because this error is going to be logged.
  */
 export type CredentialResolutionOptions = Readonly<{
   /**
@@ -34,6 +34,28 @@ export type CredentialResolutionOptions = Readonly<{
   optionalRefs?: ReadonlySet<string>
 }>
 
+// Read data descriptors only: store errors are untrusted and may have throwing accessors.
+function credentialRefusal(cause: unknown): Record<string, string> {
+  const result: Record<string, string> = {}
+  const allowed = {
+    reason: ['private-file', 'mode', 'schema', 'bad-ref'],
+    part: ['store', 'namespace', 'file'],
+    check: ['symlink', 'not-directory', 'not-private'],
+  }
+  try {
+    if (!cause || typeof cause !== 'object') return result
+    const detail: unknown = Object.getOwnPropertyDescriptor(cause, 'detail')?.value
+    if (!detail || typeof detail !== 'object') return result
+    for (const [key, words] of Object.entries(allowed)) {
+      const value: unknown = Object.getOwnPropertyDescriptor(detail, key)?.value
+      if (typeof value === 'string' && words.includes(value)) result[key] = value
+    }
+  } catch {
+    return {}
+  }
+  return result
+}
+
 export function resolveCredentials(
   adapters: WireAdapter[],
   secrets: (ref: string) => string,
@@ -42,22 +64,24 @@ export function resolveCredentials(
   for (const adapter of adapters) {
     for (const decl of adapter.routes()) {
       if (!decl.credentialRef) continue
-      const failure = new AiSetupError('SECRET_UNRESOLVED', {
-        route: decl.route,
-        ref: decl.credentialRef,
-      })
+      const failure = (cause?: unknown) =>
+        new AiSetupError('SECRET_UNRESOLVED', {
+          route: decl.route,
+          ref: decl.credentialRef,
+          ...credentialRefusal(cause),
+        })
       let value: string
       try {
         value = secrets(decl.credentialRef)
-      } catch {
+      } catch (cause) {
         if (options.optionalRefs?.has(decl.credentialRef)) continue
-        throw failure
+        throw failure(cause)
       }
       // Empty, whitespace-only and invisible-only are the same outcome: nothing that can
       // authenticate a request.
       if (!isUsableCredential(value)) {
         if (options.optionalRefs?.has(decl.credentialRef)) continue
-        throw failure
+        throw failure()
       }
       adapter.bindCredential(decl.route, value)
     }

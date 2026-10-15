@@ -178,6 +178,7 @@ it('projects only allowlisted credential metadata and never arbitrary codes or p
         part: 'secrets',
         check: 'mode',
         mode: '0644',
+        expectedMode: '0600',
         path: '/private/fixture',
         body: 'synthetic-private',
       },
@@ -187,7 +188,13 @@ it('projects only allowlisted credential metadata and never arbitrary codes or p
   const response = await request(ep, '_agnes/v1/config.get')
   expect(response).toMatchObject({
     error: {
-      data: { reason: 'CONFIG_CREDENTIAL_PERMISSIONS', part: 'secrets', check: 'mode', mode: '0644' },
+      data: {
+        reason: 'CONFIG_CREDENTIAL_PERMISSIONS',
+        part: 'secrets',
+        check: 'mode',
+        mode: '0644',
+        expectedMode: '0600',
+      },
     },
   })
   expect(JSON.stringify(response)).not.toContain('/private/fixture')
@@ -200,6 +207,14 @@ it('projects only allowlisted credential metadata and never arbitrary codes or p
   expect(malformed).toMatchObject({ error: { data: { reason: 'CONFIG_CREDENTIAL_PERMISSIONS' } } })
   expect(JSON.stringify(malformed)).not.toContain('synthetic-private')
   expect(JSON.stringify(malformed)).not.toContain('"part"')
+  configuration.get.mockRejectedValueOnce({
+    code: 'CONFIG_CREDENTIAL_PERMISSIONS',
+    credential: { part: 'locks', check: 'mode', mode: '0644', expectedMode: 'unreviewed-private' },
+  })
+  const lockFailure = await request(ep, '_agnes/v1/config.get')
+  expect(lockFailure).toMatchObject({ error: { data: { part: 'locks', check: 'mode', mode: '0644' } } })
+  expect(JSON.stringify(lockFailure)).not.toContain('expectedMode')
+  expect(JSON.stringify(lockFailure)).not.toContain('unreviewed-private')
   configuration.get.mockRejectedValueOnce({
     code: 'CONFIG_UNREVIEWED',
     credential: { part: 'private', check: 'private', mode: 'secret' },

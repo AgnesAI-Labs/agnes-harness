@@ -74,7 +74,9 @@ export function registerConfiguration(
           : 'CONFIG_FAILED'
       const detail =
         error && typeof error === 'object' && 'credential' in error
-          ? (error.credential as { part?: unknown; check?: unknown; mode?: unknown } | undefined)
+          ? (error.credential as
+              | { part?: unknown; check?: unknown; mode?: unknown; expectedMode?: unknown }
+              | undefined)
           : undefined
       const checks = [
         'bad-ref',
@@ -96,10 +98,13 @@ export function registerConfiguration(
         reason.startsWith('CONFIG_CREDENTIAL_') &&
         detail &&
         typeof detail.part === 'string' &&
-        ['home', 'secrets', 'auth', 'store'].includes(detail.part) &&
+        ['home', 'secrets', 'auth', 'locks', 'store'].includes(detail.part) &&
         typeof detail.check === 'string' &&
         checks.includes(detail.check)
           ? {
+              ...(detail.expectedMode === '0600' || detail.expectedMode === '0700'
+                ? { expectedMode: detail.expectedMode }
+                : {}),
               part: detail.part,
               check: detail.check,
               ...(typeof detail.mode === 'string' && /^[0-7]{4}$/.test(detail.mode)

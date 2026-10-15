@@ -6,9 +6,11 @@ import { createPlatform } from './platform.js'
 
 export type CredentialMetadata = {
   target: string
-  part: 'home' | 'secrets' | 'auth'
+  part: 'home' | 'secrets' | 'auth' | 'locks'
   check: 'ok' | 'missing' | 'unsafe' | 'io' | 'limit'
   mode?: string
+  expectedMode?: string
+  repair?: 'chmod'
 }
 /** Local diagnostic only: no file is opened, no permissions are changed, and links are not followed. */
 export async function inspectCredentialMetadata(home: string): Promise<CredentialMetadata[]> {
@@ -31,7 +33,23 @@ export async function inspectCredentialMetadata(home: string): Promise<Credentia
           ? hasPrivateDaclSync(target)
           : stat.uid === enforcement.ownerUid &&
             (stat.mode & 0o7777) === (stat.isDirectory() ? 0o700 : 0o600))
-      rows.push({ target, part, check: safe ? 'ok' : 'unsafe', mode })
+      rows.push({
+        target,
+        part,
+        check: safe ? 'ok' : 'unsafe',
+        mode,
+        ...(enforcement.mechanism === 'posix-mode-owner' && (stat.isDirectory() || stat.isFile())
+          ? { expectedMode: stat.isDirectory() ? '0700' : '0600' }
+          : {}),
+        ...(!safe &&
+        enforcement.level === 'full' &&
+        enforcement.mechanism === 'posix-mode-owner' &&
+        stat.uid === enforcement.ownerUid &&
+        !stat.isSymbolicLink() &&
+        (stat.isDirectory() || (stat.isFile() && stat.nlink === 1))
+          ? { repair: 'chmod' as const }
+          : {}),
+      })
       if (safe && descend && stat.isDirectory()) {
         for (const name of await readdir(target)) {
           if (remaining <= 0) {
@@ -51,6 +69,6 @@ export async function inspectCredentialMetadata(home: string): Promise<Credentia
   }
   await visit(home, 'home', false)
   if (rows[0]?.check === 'ok')
-    for (const part of ['secrets', 'auth'] as const) await visit(join(home, part), part, true)
+    for (const part of ['secrets', 'auth', 'locks'] as const) await visit(join(home, part), part, true)
   return rows
 }

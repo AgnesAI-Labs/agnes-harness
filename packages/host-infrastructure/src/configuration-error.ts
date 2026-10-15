@@ -1,9 +1,10 @@
 import type { CredentialStoreReason } from './adapters/credential-files.js'
 
 export type CredentialDiagnostic = {
-  part: 'home' | 'secrets' | 'auth' | 'store'
+  part: 'home' | 'secrets' | 'auth' | 'locks' | 'store'
   check: CredentialStoreReason
   mode?: string
+  expectedMode?: string
 }
 
 /** Fixed setup failures exposed to the local configuration RPC.  Messages never contain input. */

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { initializeHome } from '@agnes/host'
@@ -59,6 +59,30 @@ describe('doctor command aggregation', () => {
     expect(JSON.parse(json.text)).toEqual(json.json)
     expect(json.text).not.toContain('minimal_inference')
   })
+
+  it.skipIf(process.platform === 'win32')(
+    'locates unsafe credential directories, files and locks with safe repair hints',
+    async () => {
+      const d = deps()
+      chmodSync(d.home, 0o700)
+      const provider = join(d.home, 'secrets', "provider's")
+      mkdirSync(provider, { recursive: true, mode: 0o700 })
+      chmodSync(join(d.home, 'secrets'), 0o700)
+      const file = join(provider, 'default')
+      writeFileSync(file, 'doctor-private-canary', { mode: 0o644 })
+      mkdirSync(join(d.home, 'locks'), { mode: 0o755 })
+      const result = await doctorCommand(parseArgs(['doctor', 'credentials']), d)
+      expect(result.exitCode).toBe(1)
+      expect(result.text).toContain('expectedMode=0600')
+      expect(result.text).toContain('expectedMode=0700')
+      expect(result.text).toContain('chmod -- 0600')
+      expect(result.text).toContain('chmod -- 0700')
+      expect(result.text).toContain("provider'\"'\"'s")
+      expect(result.text).toContain('locks: unsafe')
+      expect(result.text).not.toContain('doctor-private-canary')
+      expect(readFileSync(file, 'utf8')).toBe('doctor-private-canary')
+    },
+  )
 
   it('fails default provider doctor for an enabled account whose credential is absent', async () => {
     const d = deps()

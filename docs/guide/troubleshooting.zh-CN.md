@@ -18,6 +18,10 @@ node agnes.mjs doctor provider --json
 
 `doctor storage` 会建立并清理临时探测数据库；它不修复现有数据。`doctor provider --probe` 则会调用模型，排错时不要无意添加。
 
+`doctor credentials` 只检查 home、secrets、auth 和 locks 目录的元数据，不读取凭据值、不修改权限。它显示 POSIX 当前与所需权限，仅为当前用户拥有的普通文件或目录给出已转义的 `chmod` 建议。执行前核对目标；符号链接和其他用户拥有的路径需要单独排查。
+
+Web 诊断 ZIP 勾选日志后，`logs/runtime.jsonl` 包含当前及上一代轮转文件的有界运行输出，与 daemon/Host 请求审计分开保存。缺失日志会明确标出；只有旧 daemon 拒绝 runtime 参数时，才会用旧参数重试。
+
 | 现象 | 核对与处理 |
 | --- | --- |
 | Node 太旧/SQLite 模块错误 | 确认 Node >=24.10；默认 shell 与构建使用的 Node 可能不同 |

@@ -37,7 +37,23 @@ export function configurationReason(error: unknown, t: (key: string) => string =
     'data' in error && error.data !== null && typeof error.data === 'object' ? error.data : undefined
   const reason = data && 'reason' in data && typeof data.reason === 'string' ? data.reason : undefined
   const key = reason === undefined ? undefined : CONFIGURATION_REASON_KEYS[reason]
-  return key === undefined ? undefined : t(key)
+  if (key === undefined) return undefined
+  const message = t(key)
+  if (!reason?.startsWith('CONFIG_CREDENTIAL_') || !data) return message
+  const metadata = data as { part?: unknown; check?: unknown; mode?: unknown; expectedMode?: unknown }
+  const parts = ['home', 'secrets', 'auth', 'locks', 'store']
+  if (typeof metadata.part !== 'string' || !parts.includes(metadata.part) || metadata.check !== 'mode')
+    return message
+  const mode =
+    typeof metadata.mode === 'string' && /^[0-7]{4}$/.test(metadata.mode) ? metadata.mode : undefined
+  const expected =
+    metadata.expectedMode === '0600' || metadata.expectedMode === '0700' ? metadata.expectedMode : undefined
+  return [
+    message,
+    t(`settings.config.part.${metadata.part}`),
+    ...(mode ? [`${t('settings.config.currentMode')}: ${mode}`] : []),
+    ...(expected ? [`${t('settings.config.expectedMode')}: ${expected}`] : []),
+  ].join(' · ')
 }
 
 export type SettingsElements = {
