@@ -77,6 +77,11 @@ describe('MHS approved device interactions', () => {
     details.open = true
     expect(getByRole(host, 'button', { name: 'Run' }).hasAttribute('disabled')).toBe(true)
     await act(async () => {
+      fireEvent.change(getByLabelText(host, 'destination *'), { target: { value: '{}' } })
+      fireEvent.change(getByLabelText(host, 'mode *'), { target: { value: '2' } })
+    })
+    expect(getByRole(host, 'button', { name: 'Run' }).hasAttribute('disabled')).toBe(true)
+    await act(async () => {
       fireEvent.change(getByLabelText(host, 'destination *'), { target: { value: '{"x":4}' } })
       fireEvent.change(getByLabelText(host, 'mode *'), { target: { value: '2' } })
     })

@@ -1,3 +1,4 @@
+import { prepareArguments } from '@agnes/mhs-device'
 import { Button } from '@agnes/web-ui'
 import { useId, useState } from 'react'
 import { type PickMode, WorldMap } from './map.js'
@@ -28,9 +29,15 @@ export function validValue(schema: Data, value: unknown): boolean {
         value.length <= number(schema.maxLength, 4096)
       )
     case 'object':
-      return value !== null && typeof value === 'object' && !Array.isArray(value)
-    case 'array':
-      return Array.isArray(value)
+    case 'array': {
+      try {
+        const notes: string[] = []
+        prepareArguments(schema, value, notes)
+        return notes.length === 0
+      } catch {
+        return false
+      }
+    }
     default:
       return true
   }
