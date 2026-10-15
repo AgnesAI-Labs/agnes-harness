@@ -1,5 +1,6 @@
+import { bootDefault, type DefaultBootDeps } from '../boot/default.js'
 import { SIGNAL_EXIT_CODES } from '../errors.js'
-import type { Booted } from '../types.js'
+import type { Booted, ParsedArgs } from '../types.js'
 import { batchCommand } from './batch.js'
 import { scopedBatchClient } from './batch-client.js'
 
@@ -50,4 +51,20 @@ export async function runBatchCli(
   } finally {
     for (const [name, handler] of handlers) signals.off(name, handler)
   }
+}
+
+/** Entry dispatch has no session creation or batch business logic. */
+export function dispatchBatchCli(
+  parsed: ParsedArgs,
+  io: { cwd: string; stdout: NodeJS.WritableStream; signals?: NodeJS.EventEmitter },
+  deps: DefaultBootDeps,
+  useEmbedded: boolean,
+): Promise<number> {
+  return runBatchCli(parsed.rest, io, (input) =>
+    bootDefault(
+      { ...parsed, cwd: input.cwd, ...(input.profile ? { profile: input.profile } : {}) },
+      { ...deps, signal: input.signal },
+      { useEmbedded },
+    ),
+  )
 }

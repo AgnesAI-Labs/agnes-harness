@@ -1,12 +1,15 @@
+import { EventEmitter } from 'node:events'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PassThrough } from 'node:stream'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { parseArgs } from '../src/args.js'
 import { commandHelp } from '../src/command-help.js'
 import { batchCommand, parseBatchArgs } from '../src/commands/batch.js'
 import { scopedBatchClient } from '../src/commands/batch-client.js'
+import { runBatchCli } from '../src/commands/batch-runtime.js'
 
 const id = 'b123456abcdef'
 const dirs: string[] = []
@@ -177,6 +180,47 @@ describe('batch thin client', () => {
     expect(rpc.mock.calls).toHaveLength(3)
     expect(close).toHaveBeenCalledTimes(3)
     expect(rpc.mock.calls.flat()).not.toContain('_agnes/v1/profile.decisions.answer')
+  })
+  it('closes only the CLI connection on interrupt and removes signal handlers', async () => {
+    const signals = new EventEmitter(),
+      stdout = new PassThrough()
+    const client = createClient({
+      transport: { kind: 'unix', path: '/synthetic-unused.sock' },
+      auth: { kind: 'local' },
+      journal: memoryJournal(),
+    })
+    let started!: () => void
+    const ready = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    let reject!: (error: Error) => void
+    const rpc = vi.spyOn(client, 'call').mockImplementation(
+      () =>
+        new Promise<never>((_resolve, fail) => {
+          reject = fail
+          started()
+        }),
+    )
+    const close = vi.fn(async () => {
+      reject(new Error('connection closed'))
+      await client.close()
+    })
+    const result = runBatchCli(['follow', id], { cwd: '/workspace', stdout, signals }, async () => ({
+      client,
+      close,
+      profileName: 'synthetic',
+      resolvedProfileHash: null,
+      bootMs: 0,
+      form: 'connect',
+    }))
+    await ready
+    signals.emit('SIGINT')
+    expect(await result).toBe(130)
+    expect(close).toHaveBeenCalledOnce()
+    expect(rpc).toHaveBeenCalledOnce()
+    expect(rpc.mock.calls[0]).toMatchObject(['_agnes/v1/extension.callScoped', { service: 'batch.status' }])
+    for (const name of ['SIGINT', 'SIGTERM', 'SIGHUP']) expect(signals.listenerCount(name)).toBe(0)
+    stdout.destroy()
   })
   it('reads bounded prompt/schema files before connecting and renders terminal controls inert', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'agh-batch-cli-unit-'))

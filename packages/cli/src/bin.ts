@@ -20,12 +20,12 @@ import {
   runResourceCliCommand,
 } from '@agnes/resource-control-cli'
 import { TransportClosed } from '@agnes/sdk'
-import { parseArgs, resolveMode } from './args.js'
 import { ensureLocalBackend } from './boot/backend.js'
 import { bootDefault } from './boot/default.js'
 import { makeEphemeralHome, profileNameFrom, resolveHome } from './boot/inputs.js'
 import { bootLocal, type LocalBootDeps } from './boot/local.js'
 import { installSignalLadder } from './boot/signals.js'
+import { dispatchBatchCli, prepareCommandArgs, resolveMode } from './command-entry.js'
 import { commandHelp } from './command-help.js'
 import { type ConfigWizardIO, runConfigurationWizard } from './config-wizard.js'
 import {
@@ -380,25 +380,13 @@ function ephemeralHome(io: MainIO, ladderInstalled: () => boolean): { home: stri
  * package loader. It is not a general escape hatch: nothing else about the run is injectable here.
  */
 export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDeps> = {}): Promise<number> {
-  let p: ReturnType<typeof parseArgs>
+  let p: ReturnType<typeof prepareCommandArgs>
   try {
-    p = parseArgs(argv)
-    if (p.command === 'batch' && !p.help) {
-      const { parseBatchArgs } = await import('./commands/batch.js')
-      const batch = parseBatchArgs(p.rest)
-      p = {
-        ...p,
-        ...(batch.cwd ? { cwd: batch.cwd } : {}),
-        ...(batch.profile ? { profile: batch.profile } : {}),
-      }
-    }
+    p = prepareCommandArgs(argv, io.cwd)
   } catch (e) {
     io.stderr.write(`${(e as Error).message}; run agh --help for usage\n`)
     return ExitCode.USAGE
   }
-  // A relative --cwd means relative to where the user typed it. Left raw, it reaches the daemon,
-  // which resolves it against its own working directory (WORKSPACE_INVALID, or an empty listing).
-  if (p.cwd !== undefined) p = { ...p, cwd: resolve(io.cwd, p.cwd) }
   if (p.version) {
     io.stdout.write(`agh ${io.agnesVersion} node ${process.versions.node} protocol _agnes/v1\n`)
     return ExitCode.OK
@@ -463,16 +451,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     ...boot,
   }
   try {
-    if (p.command === 'batch') {
-      const { runBatchCli } = await import('./commands/batch-runtime.js')
-      return await runBatchCli(p.rest, io, (input) =>
-        bootDefault(
-          { ...p, cwd: input.cwd, ...(input.profile ? { profile: input.profile } : {}) },
-          { ...deps, signal: input.signal },
-          { useEmbedded: !production },
-        ),
-      )
-    }
+    if (p.command === 'batch') return await dispatchBatchCli(p, io, deps, !production)
     if (p.command === 'run') {
       const { runCommand } = await import('./commands/run.js')
       const { bootHeadless } = await import('./boot/headless.js')
