@@ -353,6 +353,9 @@
     display: none;
   }
 
+  .sidebar-footer > .agh-tooltip-anchor {
+    display: flex;
+  }
   .sidebar-footer #settings {
     width: 100%;
     justify-content: flex-start;

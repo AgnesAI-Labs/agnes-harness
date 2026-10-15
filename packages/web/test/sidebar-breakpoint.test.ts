@@ -48,4 +48,33 @@ describe('sidebar narrow breakpoint', () => {
     // 抽屉覆盖 `<= N`，rail 覆盖 `>= N + 1`。中间留空的话又会回到「两边都不管」的状态。
     expect(railBreakpoint()).toBe(drawerBreakpoint() + 1)
   })
+
+  it('centers every rail action in the same square hit area and hides only its copy', () => {
+    const flat = css.replace(/\s+/g, ' ')
+    const rule = (selector: string) => {
+      const start = flat.indexOf(`${selector} {`)
+      expect(start, selector).toBeGreaterThan(-1)
+      return flat.slice(start + selector.length + 2, flat.indexOf('}', start))
+    }
+    const buttons = rule('body.sidebar-collapsed .sidebar :is(#new, .home-entry, .sidebar-footer button)')
+    for (const declaration of [
+      'width: 2.25rem;',
+      'height: 2.25rem;',
+      'min-height: 2.25rem;',
+      'padding: 0;',
+      'justify-content: center;',
+    ])
+      expect(buttons).toContain(declaration)
+    expect(rule('body.sidebar-collapsed :is(.sidebar-actions, .home-entries, .sidebar-footer)')).toContain(
+      'width: 2.25rem;',
+    )
+    expect(rule('body.sidebar-collapsed .sidebar-actions #new')).toContain('box-shadow: none;')
+    expect(
+      rule(
+        'body.sidebar-collapsed .home-entry :is(.home-entry-label, .home-entry-badge), body.sidebar-collapsed .sidebar-footer button span',
+      ),
+    ).toContain('display: none;')
+    expect(rule('body.sidebar-collapsed .sidebar')).toContain('align-items: center;')
+    expect(rule('.sidebar-backdrop, .sidebar-close')).toContain('display: none;')
+  })
 })

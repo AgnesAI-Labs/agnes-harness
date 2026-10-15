@@ -2,6 +2,7 @@
 
 import type { PageSessionMeta, WorkspaceEntry } from '@agnes/protocol'
 import { homeEntries, homeNavigation } from '@agnes/web-client'
+import { getByRole } from '@testing-library/dom'
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -40,6 +41,7 @@ describe('rendered sidebar region', () => {
     resetWebDom()
     // 折叠记录是模块级状态并写入本地存储，不清会在用例之间串。
     resetCollapsedGroups()
+    vi.unstubAllGlobals()
   })
 
   it('renders the component-owned navigation, workspace folders, menus, and actions', async () => {
@@ -87,12 +89,26 @@ describe('rendered sidebar region', () => {
     await vi.waitFor(() =>
       expect(sidebar?.querySelector('.session-menu-trigger')?.getAttribute('aria-expanded')).toBe('false'),
     )
-    sidebar?.querySelector<HTMLButtonElement>('#new')?.click()
     sidebar?.querySelector<HTMLButtonElement>('#workspace-add')?.click()
-    sidebar?.querySelector<HTMLButtonElement>('#settings')?.click()
-    expect(newSession).toHaveBeenCalledOnce()
+    for (const collapsed of [true, false]) {
+      document.getElementById('sidebar-toggle')?.click()
+      expect(document.body.classList.contains('sidebar-collapsed')).toBe(collapsed)
+      // happy-dom does not suppress clicks on inert trees, so assert the browser gate explicitly.
+      expect((sidebar as HTMLElement).inert).toBe(false)
+      for (const name of ['New session', 'Settings']) {
+        const button = getByRole(sidebar as HTMLElement, 'button', { name })
+        flushSync(() => button.focus())
+        expect(document.activeElement).toBe(button)
+        await vi.waitFor(() => {
+          const tooltip = document.getElementById(button.getAttribute('aria-describedby') ?? '')
+          expect(tooltip?.textContent).toBe(name)
+        })
+        button.click()
+      }
+    }
+    expect(newSession).toHaveBeenCalledTimes(2)
     expect(addWorkspace).toHaveBeenCalledOnce()
-    expect(openSettings).toHaveBeenCalledOnce()
+    expect(openSettings).toHaveBeenCalledTimes(2)
     flushSync(() => sidebar?.querySelector<HTMLButtonElement>('.session-menu-trigger')?.click())
     await vi.waitFor(() =>
       expect(sidebar?.querySelector('.session-menu-trigger')?.getAttribute('aria-expanded')).toBe('true'),
@@ -384,7 +400,7 @@ describe('rendered sidebar region', () => {
     const toggle = document.getElementById('sidebar-toggle') as HTMLButtonElement
     toggle.click()
     expect(document.body.classList.contains('sidebar-collapsed')).toBe(true)
-    expect((document.querySelector('aside.sidebar') as HTMLElement | null)?.inert).toBe(true)
+    expect((document.querySelector('aside.sidebar') as HTMLElement | null)?.inert).toBe(false)
     toggle.click()
     expect(document.body.classList.contains('sidebar-collapsed')).toBe(false)
     expect((document.querySelector('aside.sidebar') as HTMLElement | null)?.inert).toBe(false)
@@ -418,6 +434,7 @@ describe('rendered sidebar region', () => {
           order: 30 - index * 10,
           icon: 'plug',
           titleKey: `home.entry.${id}`,
+          ...(id === 'agents' ? { subtitleKey: 'home.entry.agents.sub' } : {}),
           component: page,
         }),
       ),
@@ -454,19 +471,86 @@ describe('rendered sidebar region', () => {
         sidebar?.querySelector('#new')?.compareDocumentPosition(entries as Node) ??
           0 & Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy()
-      flushSync(() =>
-        sidebar?.querySelector<HTMLButtonElement>('[data-testid="home-entry-plugins"]')?.click(),
-      )
-      expect(homeNavigation.getSnapshot()).toEqual({ id: 'plugins' })
-      expect(sidebar?.querySelector('[data-testid="home-entry-plugins"]')?.getAttribute('aria-current')).toBe(
-        'page',
-      )
+      for (const collapsed of [true, false]) {
+        document.getElementById('sidebar-toggle')?.click()
+        expect(document.body.classList.contains('sidebar-collapsed')).toBe(collapsed)
+        expect((sidebar as HTMLElement).inert).toBe(false)
+        for (const id of BUILTIN_HOME_ENTRIES) {
+          const title = runtime.locale.t(`home.entry.${id}`)
+          const name = id === 'agents' ? `${title} · ${runtime.locale.t('home.entry.agents.sub')}` : title
+          const button = getByRole(sidebar as HTMLElement, 'button', { name })
+          flushSync(() => button.focus())
+          expect(document.activeElement).toBe(button)
+          await vi.waitFor(() => {
+            const tooltip = document.getElementById(button.getAttribute('aria-describedby') ?? '')
+            expect(tooltip?.textContent).toBe(name)
+          })
+          flushSync(() => button.click())
+          expect(homeNavigation.getSnapshot()).toEqual({ id })
+          expect(sidebar?.querySelectorAll('.home-entry[aria-current="page"]')).toHaveLength(1)
+          expect(button.getAttribute('aria-current')).toBe('page')
+        }
+        flushSync(() => homeNavigation.close())
+        expect(sidebar?.querySelector('.home-entry[aria-current="page"]')).toBeNull()
+      }
+      // The overflow entry keeps its menu keyboard contract when wrapped in a tooltip.
+      flushSync(() => {
+        for (let index = 0; index < 3; index++) {
+          disposers.push(
+            homeEntries.register({
+              id: `example.extra-${index}`,
+              order: 40 + index,
+              icon: 'puzzle',
+              titleKey: `Extra ${index}`,
+              component: page,
+            }),
+          )
+        }
+      })
+      const more = getByRole(sidebar as HTMLElement, 'button', { name: runtime.locale.t('home.entry.more') })
+      expect(more.getAttribute('aria-haspopup')).toBe('menu')
+      flushSync(() => more.focus())
+      flushSync(() => more.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })))
+      await vi.waitFor(() => expect(getByRole(document.body, 'menuitem', { name: 'Board' })).toBeTruthy())
+      flushSync(() => getByRole(document.body, 'menuitem', { name: 'Board' }).click())
+      expect(homeNavigation.getSnapshot()).toEqual({ id: 'example.board' })
       flushSync(() => disposers[0]?.())
       expect(ids()).not.toContain('home-entry-example.board')
     } finally {
       homeNavigation.close()
       for (const dispose of disposers) dispose()
     }
+  })
+
+  it('inerts only the off-screen narrow drawer and resyncs when the viewport changes', async () => {
+    const media = window.matchMedia('(max-width: 900px)')
+    let narrow = true
+    Object.defineProperty(media, 'matches', { get: () => narrow })
+    const matchMedia = window.matchMedia.bind(window)
+    vi.stubGlobal('matchMedia', (query: string) =>
+      query === '(max-width: 900px)' ? media : matchMedia(query),
+    )
+    const openSettings = vi.fn()
+    runtime = await mountRenderedIndex({ sidebar: { actions: { openSettings } } })
+    const sidebar = document.querySelector<HTMLElement>('aside.sidebar') as HTMLElement
+    const main = document.querySelector('main') as HTMLElement
+    expect(sidebar.inert).toBe(true)
+    document.getElementById('sidebar-toggle')?.click()
+    expect(sidebar.inert).toBe(false)
+    expect(main.inert).toBe(true)
+    getByRole(sidebar, 'button', { name: 'Settings' }).click()
+    expect(openSettings).toHaveBeenCalledOnce()
+    document.getElementById('sidebar-close')?.click()
+    expect(sidebar.inert).toBe(true)
+    expect(main.inert).toBe(false)
+    document.body.classList.add('sidebar-collapsed')
+    narrow = false
+    media.dispatchEvent(new Event('change'))
+    expect(sidebar.inert).toBe(false)
+    expect(main.inert).toBe(false)
+    narrow = true
+    media.dispatchEvent(new Event('change'))
+    expect(sidebar.inert).toBe(true)
   })
 
   it('switches the list to archived sessions and restores one from there', async () => {

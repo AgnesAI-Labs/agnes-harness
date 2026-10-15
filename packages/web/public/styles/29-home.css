@@ -21,6 +21,9 @@
     line-height: 1.25rem;
     transition: none;
   }
+  .home-entries .agh-menu-anchor {
+    width: 100%;
+  }
   .home-entry:hover:not(:disabled) {
     border-color: transparent;
     color: var(--agnes-text-primary);

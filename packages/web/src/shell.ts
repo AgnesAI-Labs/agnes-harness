@@ -21,7 +21,9 @@ export function bindSidebar(narrow: MediaQueryList): { close(): void; dismiss():
     toggle.setAttribute('aria-expanded', String(visible))
     toggle.setAttribute('aria-label', visible ? tr('shell.collapseNav') : tr('shell.openNav'))
     const sidebar = document.querySelector<HTMLElement>('.sidebar')
-    if (sidebar) sidebar.inert = !visible
+    // A collapsed desktop sidebar is still an interactive rail. Only the closed mobile
+    // drawer is off-screen and must leave the keyboard/accessibility tree.
+    if (sidebar) sidebar.inert = narrow.matches && !visible
     const main = document.querySelector('main')
     if (main) main.inert = narrow.matches && visible
   }
