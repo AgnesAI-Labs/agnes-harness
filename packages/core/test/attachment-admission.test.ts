@@ -241,7 +241,7 @@ describe('artifact-backed input admission', () => {
     })
     await session.acceptInput()
     const surface = session.surface()
-    const transient = await attachmentSurface(session, surface)
+    const { surface: transient } = await attachmentSurface(session, surface)
     expect(JSON.stringify(transient)).toContain(data)
     expect(JSON.stringify(surface)).not.toContain(data)
     const forged = structuredClone(surface)
@@ -359,7 +359,7 @@ it('keeps an omitted image prefix across model changes and verified reopen, pres
   await log.close()
   f.provider.models = baseModels
   const reopened = await openSession({ ...f, storage, key: 'image-prefix', writerRunId: 'reopened' })
-  const transient = await attachmentSurface(reopened.session, reopened.session.surface())
+  const { surface: transient } = await attachmentSurface(reopened.session, reopened.session.surface())
   const images = transient.filter(
     (n) => n.kind === 'user' && JSON.stringify(n.event.data).includes('session-image://'),
   )
@@ -409,7 +409,14 @@ it('degrades a missing historical original while retaining the current image and
   )
   await session.enqueue('next-turn', {
     actor,
-    content: [{ type: 'image', data: Buffer.from(jpeg).toString('base64'), mimeType: 'image/jpeg' }],
+    content: [
+      { type: 'image', data: Buffer.from(jpeg).toString('base64'), mimeType: 'image/jpeg' },
+      {
+        type: 'image',
+        data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+        mimeType: 'image/png',
+      },
+    ],
   })
   await session.acceptInput()
   await session.run({ until: 'turn-end', signal: new AbortController().signal })
@@ -418,9 +425,22 @@ it('degrades a missing historical original while retaining the current image and
   await session.enqueue('next-turn', { actor, content: [{ type: 'image', data, mimeType: 'image/png' }] })
   await session.acceptInput()
   f.objects.delete(oldSha)
-  const transient = JSON.stringify(await attachmentSurface(session, session.surface()))
+  const projected = await attachmentSurface(session, session.surface())
+  const oldSeq = session.surface().find((node) => node.kind === 'user')!.seq
+  const transient = JSON.stringify(projected.surface)
   expect(transient).toContain('original missing')
   expect(transient).toContain(data)
+  expect(await session.run({ until: 'turn-end', signal: new AbortController().signal })).toMatchObject({
+    reason: 'completed',
+  })
+  const shown = f.provider.requests
+    .at(-1)
+    ?.messages.find((message) =>
+      JSON.stringify(message).includes(`session-image://${oldSeq}/1; original missing`),
+    )
+  expect(JSON.stringify(shown)).toContain(`session-image://${oldSeq}/1; original missing`)
+  expect(JSON.stringify(shown)).toContain(`session-image://${oldSeq}/2; pixels`)
+  expect(shown?.content.filter((block) => block.type === 'image')).toHaveLength(1)
   f.objects.set(oldSha, new Uint8Array([9]))
   await expect(attachmentSurface(session, session.surface())).rejects.toMatchObject({
     code: 'ATTACHMENT_HASH_MISMATCH',

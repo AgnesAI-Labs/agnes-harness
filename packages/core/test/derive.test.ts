@@ -2072,6 +2072,23 @@ it('selects image history by model limits while preserving references, text, has
   expect(text).toContain('description 1')
   expect(JSON.stringify(surface)).toBe(original)
   expect(deriveRequest(input).header.derived_hash).toBe(out.header.derived_hash)
+  const wideModel = { ...model, inputLimits: { images: { maxPerRequest: 8 } } } as typeof model
+  const legacy = deriveRequest({ ...input, inlineImages: { model: wideModel, canRead: true } })
+  expect(legacy.request.messages.flatMap((m) => m.content.filter((b) => b.type === 'image'))).toHaveLength(4)
+  const preselected = new Map(
+    surface
+      .filter((n) => n.kind === 'user')
+      .slice(-7)
+      .map((n) => [n.seq, [1]]),
+  )
+  preselected.set(surface.at(-1)!.seq, [2, 3])
+  const stored = deriveRequest({
+    ...input,
+    inlineImages: { model: wideModel, canRead: true, selectedImageIndices: preselected },
+  })
+  expect(stored.request.messages.flatMap((m) => m.content.filter((b) => b.type === 'image'))).toHaveLength(8)
+  expect(JSON.stringify(stored.request.messages.at(-1))).toContain(`session-image://${surface.at(-1)!.seq}/2`)
+  expect(JSON.stringify(stored.request.messages.at(-1))).toContain(`session-image://${surface.at(-1)!.seq}/3`)
   const switched = deriveRequest({
     ...input,
     surface: computeSurface(rows.slice(0, -1), {}),

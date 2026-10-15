@@ -17,13 +17,14 @@ const omitted = new WeakMap<SessionImpl, number>()
 export const attachmentOmittedThrough = (session: SessionImpl) => omitted.get(session) ?? 0
 
 /** Original references stay immutable. Only transient provider input receives selected renditions.
- * Omission removes an oldest whole-message prefix, in two-image steps where possible. Its watermark
+ * Omission removes an oldest whole-message prefix, in half-window steps where possible. Its watermark
  * travels with request/header, so a model change, cache eviction or restart cannot revive old pixels.
  */
 export async function attachmentSurface(
   session: SessionImpl,
   surface: readonly SurfaceNode[],
-): Promise<SurfaceNode[]> {
+): Promise<{ surface: SurfaceNode[]; imageIndices: ReadonlyMap<number, readonly number[]> }> {
+  const imageIndices = new Map<number, number[]>()
   if (
     !surface.some(
       (node) =>
@@ -31,7 +32,7 @@ export async function attachmentSurface(
         (node.event.data as { content?: ContentBlock[] }).content?.some(storedAttachment),
     )
   )
-    return [...surface]
+    return { surface: [...surface], imageIndices }
   const indexed = await attachmentIndex(session)
   let cut = Math.max(indexed.omittedThrough, attachmentOmittedThrough(session))
   const target = resolveModel(session, 'primary')
@@ -56,7 +57,8 @@ export async function attachmentSurface(
     throw new AttachmentError('ATTACHMENT_COUNT')
   const candidates = nodes.filter((n) => n.seq > cut || n.seq >= freshStart)
   let count = candidates.reduce((n, row) => n + counts(row), 0)
-  const roundedCap = Math.max(0, cap - Math.max(0, Math.ceil((count - cap) / 2) * 2 - (count - cap)))
+  const step = Math.max(1, Math.ceil(cap / 2))
+  const roundedCap = Math.max(0, cap - Math.max(0, Math.ceil((count - cap) / step) * step - (count - cap)))
   let prefixCount = 0
   for (const node of candidates) {
     if (node.seq >= freshStart) continue
@@ -75,11 +77,15 @@ export async function attachmentSurface(
     const current = node.seq >= freshStart
     if (node.seq <= cut && !current) continue
     const content: ContentBlock[] = []
+    const indices: number[] = []
     let index = 0,
       nodeBytes = 0,
       nodePixels = 0
     for (const block of (node.event.data as { content?: ContentBlock[] }).content ?? []) {
-      if (block.type === 'image') index++
+      if (block.type === 'image') {
+        index++
+        indices.push(index)
+      }
       if (!storedAttachment(block) || !block.attachment.image) {
         content.push(block)
         continue
@@ -137,6 +143,7 @@ export async function attachmentSurface(
         nodeBytes += bytes.length
         nodePixels += image.pixels
         content.push({ type: 'image', data: encodeBase64(bytes), mimeType: image.mime })
+        indices.push(index)
       } catch (error) {
         session.ac.signal.throwIfAborted()
         // Corrupt bytes or authority failures stay fatal. Only absent historical originals degrade.
@@ -162,10 +169,11 @@ export async function attachmentSurface(
       bytesUsed += nodeBytes
       pixelsUsed += nodePixels
       hydrated.set(node, content)
+      imageIndices.set(node.seq, indices)
     }
   }
   omitted.set(session, cut)
-  return surface.map((node) => {
+  const projected = surface.map((node) => {
     if (node.kind !== 'user') return node
     const data = node.event.data as { content?: ContentBlock[] }
     let index = 0
@@ -191,6 +199,8 @@ export async function attachmentSurface(
       },
     }
   })
+  for (const seq of imageIndices.keys()) if (seq <= cut && seq < freshStart) imageIndices.delete(seq)
+  return { surface: projected, imageIndices }
 }
 function encodeBase64(bytes: Uint8Array): string {
   const parts: string[] = []

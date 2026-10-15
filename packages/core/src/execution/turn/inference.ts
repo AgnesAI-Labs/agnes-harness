@@ -516,7 +516,7 @@ export async function prepareInferenceRequest(
   )
   if (options.system !== undefined)
     merged.sections.push({ id: 'loop:system', order: 1000, source: 'loop', text: options.system })
-  const surface = await attachmentSurface(
+  const { surface, imageIndices } = await attachmentSurface(
     s,
     options.messages ? loopRequestSurface(s, options.messages) : s.surface(),
   )
@@ -636,6 +636,7 @@ export async function prepareInferenceRequest(
     kind: 'turn',
     inlineImages: {
       model: inlineImageModel,
+      selectedImageIndices: imageIndices,
       canRead: Boolean(s.d.requestMedia && disclosed.some((tool) => tool.name === 'read')),
     },
     merged,
