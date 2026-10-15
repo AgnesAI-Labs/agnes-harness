@@ -69,6 +69,9 @@ export function surfaceDeliverables(record: UiSurfaceRecord): TurnDeliverable[] 
       ? [
           {
             file: parsed.value,
+            artifactStatus: (
+              record.artifacts as Record<string, import('@agnes/protocol').UiArtifactStatus> | undefined
+            )?.[component.id],
             surfaceId: surface.id,
             componentId: component.id,
             owner: record.owner,
@@ -181,11 +184,20 @@ function DeliverableGroup({
 }) {
   const { t } = useUiText(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
   const groups = groupDeliverables(entries)
-  const card = (entry: TurnDeliverable & { version?: EarlierVersion }, source?: string) => (
+  const snapshot = binding.getSnapshot()?.getSnapshot()
+  const card = (
+    entry: TurnDeliverable & { version?: EarlierVersion },
+    source?: string,
+    recovered = false,
+  ) => (
     <ArtifactFile
       key={deliverableKey(entry)}
       {...(source ? { source } : {})}
       file={entry.file}
+      artifactStatus={snapshot?.error ? 'unavailable' : entry.artifactStatus}
+      checking={snapshot?.ready === false && !snapshot.error}
+      recovered={recovered}
+      onRetry={() => void binding.getSnapshot()?.refresh()}
       laneId={entry.lane}
       resources={binding.resources}
       placement="inline"
@@ -205,9 +217,9 @@ function DeliverableGroup({
         <p className="turn-deliverables-head">{t('ui.deliverables.count', { count: groups.length })}</p>
       )}
       <ul className="turn-deliverables-list">
-        {groups.map(({ latest, earlier, mixedSources }) => (
+        {groups.map(({ latest, earlier, mixedSources, recovered }) => (
           <li key={latest.file.name} className="turn-deliverable">
-            {card(latest, mixedSources ? deliverableProducer(latest) : undefined)}
+            {card(latest, mixedSources ? deliverableProducer(latest) : undefined, recovered)}
             {earlier.length > 0 && (
               <Disclosure
                 variant="plain"

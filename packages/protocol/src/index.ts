@@ -254,6 +254,7 @@ export type {
   UiActionStatus,
   UiArgument,
   UiArtifactFileData,
+  UiArtifactStatus,
   UiChartSeries,
   UiCloseParams,
   UiColumn,
@@ -627,6 +628,7 @@ export * from './runtime-target-artifact.js'
 export * from './schedules.js'
 export * from './sequence.js'
 export { validateExtensionCall, validateExtensionCallError, validateServiceCapability } from './services.js'
+export { ARTIFACT_REGISTERED_EVENT, sessionArtifactRoots } from './session-artifacts.js'
 export * from './session-capabilities.js'
 export { parseSessionBundles } from './session-composition.js'
 export * from './session-runtime.js'

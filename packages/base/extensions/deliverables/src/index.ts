@@ -52,7 +52,7 @@ export default defineAgnesPlugin({
         defineTool({
           name: 'present',
           description:
-            'Register existing workspace files as deliverables. Copies the files into session artifacts for durable surface lists and authorized artifact reads. Does not create files. Use ask_user_question for a question or choice, and ui_render for tables, charts, forms or dashboards in the UI instead. Each file must be readable, regular and at most 32 MiB; the total per call is also limited to 32 MiB.',
+            'Register existing workspace files as deliverables. Copies the files into session artifacts for durable surface lists and authorized artifact reads. Automatically displays the files as artifact-file cards; do not call ui_render again for these files. Does not create files. Use ask_user_question for a question or choice, and ui_render for tables, charts, forms or dashboards in the UI instead. Each file must be readable, regular and at most 32 MiB; the total per call is also limited to 32 MiB.',
           parameters: Type.Object(
             {
               files: Type.Array(

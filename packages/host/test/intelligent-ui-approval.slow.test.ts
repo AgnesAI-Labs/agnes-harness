@@ -356,3 +356,146 @@ it('updates revision 2 through custom Loop tool ports after approval in one turn
     await kit.dispose()
   }
 })
+
+it('lets a generic plugin publish registered artifacts immediately, reuse them, and refuses another session after cold reopen', async () => {
+  const { createHash } = await import('node:crypto')
+  const { mkdir, writeFile } = await import('node:fs/promises')
+  const { createAuthorTestkit } = await import('@agnes/host/author-testkit')
+  let dataDir = ''
+  const remoteBytes = new Map<string, Uint8Array>()
+  let ref!: import('@agnes/protocol').ArtifactRef
+  const fileSurface = (id: string, artifact = ref): UiSurface => ({
+    id,
+    revision: 1,
+    title: 'Synthetic file',
+    placement: { inline: true, workbench: true },
+    components: [{ id: 'file', kind: 'artifact-file', dataKey: 'file' }],
+    data: { file: { name: 'demo.html', description: '', artifact } },
+    actions: [],
+  })
+  const kit = await createAuthorTestkit({
+    version: '1.0.0',
+    packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
+    seams: {
+      artifacts: {
+        put: async (bytes, meta) => {
+          const sha256 = createHash('sha256').update(bytes).digest('hex')
+          const shard = join(dataDir, 'artifacts', 'sha256', sha256.slice(0, 2))
+          // A valid provider may store bytes outside the local Web adapter.
+          if (meta?.mime !== 'application/x-remote-fixture') {
+            await mkdir(shard, { recursive: true })
+            await writeFile(join(shard, sha256), bytes)
+          } else {
+            remoteBytes.set(sha256, bytes.slice())
+          }
+          return { sha256, size: bytes.byteLength, mime: meta?.mime ?? 'application/octet-stream' }
+        },
+        get: async (ref) => {
+          const bytes = remoteBytes.get(ref.sha256)
+          if (!bytes) throw new Error('synthetic remote object missing')
+          return bytes.slice()
+        },
+      },
+    },
+    plugin: defineAgnesPlugin({
+      inject: ['tools'],
+      apply(ctx) {
+        ctx.tools.register(
+          defineTool({
+            name: 'publish_fixture',
+            description: 'Publish synthetic plugin output',
+            parameters: Type.Object({}),
+            meta: {
+              isReadOnly: true,
+              isDestructive: false,
+              isConcurrencySafe: false,
+              isOpenWorld: false,
+              replay: 'idempotent',
+              requiresApproval: 'never',
+              deferLoading: false,
+              costHint: {},
+            },
+            async execute(_args, context) {
+              dataDir = context.session.workspaceRoot
+              const large = await context.artifacts.put(new Uint8Array(33 * 1024 * 1024))
+              expect(large.size).toBe(33 * 1024 * 1024)
+              const remote = await context.artifacts.put(new TextEncoder().encode('remote fixture'), {
+                mime: 'application/x-remote-fixture',
+              })
+              expect(await context.artifacts.get(remote)).toEqual(new TextEncoder().encode('remote fixture'))
+              const parameterized = await context.artifacts.put(
+                new TextEncoder().encode('parameter fixture'),
+                {
+                  mime: 'text/plain; charset=utf-8',
+                },
+              )
+              expect(parameterized.mime).toBe('text/plain; charset=utf-8')
+              for (const [id, artifact] of [
+                ['large', large],
+                ['remote', remote],
+                ['parameterized', parameterized],
+              ] as const) {
+                expect(
+                  await context.tools.invoke('ui_render', { surface: fileSurface(id, artifact) }),
+                ).toMatchObject({
+                  isError: true,
+                  structured: { code: 'UI_ARTIFACT_UNAVAILABLE', published: false },
+                })
+              }
+              const bytes = new TextEncoder().encode('<h1>合成交付物</h1>')
+              ref = await context.artifacts.put(bytes, {
+                mime: 'text/html',
+              })
+              const rendered = await context.tools.invoke('ui_render', {
+                surface: fileSurface('plugin-file'),
+              })
+              expect(rendered.isError, JSON.stringify(rendered)).not.toBe(true)
+              const alias = await context.artifacts.put(bytes, { mime: 'text/plain' })
+              expect(alias).toEqual({ ...ref, mime: 'text/plain' })
+              expect(
+                await context.tools.invoke('ui_render', { surface: fileSurface('plugin-alias', alias) }),
+              ).not.toMatchObject({ isError: true })
+              return { content: [{ type: 'ref', ref }] }
+            },
+          }),
+        )
+      },
+    }),
+  })
+  try {
+    const session = await kit.openSession()
+    expect((await session.invoke('publish_fixture', {})).isError).not.toBe(true)
+    expect((await session.uiRead()).surfaces.map((row) => row.artifacts)).toEqual([
+      { file: 'available' },
+      { file: 'available' },
+    ])
+    expect((await session.invoke('ui_render', { surface: fileSurface('plugin-reuse') })).isError).not.toBe(
+      true,
+    )
+    const other = await kit.openSession()
+    const refused = await other.invoke('ui_render', { surface: fileSurface('other-session') })
+    expect(refused).toMatchObject({
+      isError: true,
+      structured: { code: 'UI_ARTIFACT_NOT_FOUND', published: false },
+    })
+    expect((await other.uiRead()).surfaces).toHaveLength(0)
+    await session.close()
+    const resumed = await kit.openSession({ key: session.key })
+    expect((await resumed.uiRead()).surfaces.map((row) => row.artifacts)).toEqual([
+      { file: 'available' },
+      { file: 'available' },
+      { file: 'available' },
+    ])
+    const bad = fileSurface('bad-size')
+    bad.data.file = { name: 'demo.html', description: '', artifact: { ...ref, size: ref.size - 1 } }
+    expect(await resumed.invoke('ui_render', { surface: bad })).toMatchObject({
+      isError: true,
+      structured: { code: 'UI_ARTIFACT_IDENTITY_MISMATCH', published: false },
+    })
+    expect(
+      (await resumed.facts()).filter((row) => row.type === 'x/agnes/intelligent-ui/surface.opened'),
+    ).toHaveLength(3)
+  } finally {
+    await kit.dispose()
+  }
+})

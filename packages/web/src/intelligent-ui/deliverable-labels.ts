@@ -1,4 +1,4 @@
-import type { UiArtifactFileData } from '@agnes/protocol/gen/intelligent-ui'
+import type { UiArtifactFileData, UiArtifactStatus } from '@agnes/protocol/gen/intelligent-ui'
 
 /** What a file is, in the words a reader uses: it picks the tile's icon and colour. */
 export type DeliverableType = 'markdown' | 'html' | 'pdf' | 'sheet' | 'image' | 'code' | 'text' | 'file'
@@ -61,6 +61,7 @@ export function deliverableVersion(
 }
 
 export type TurnDeliverable = {
+  artifactStatus?: UiArtifactStatus | undefined
   file: UiArtifactFileData
   surfaceId: string
   /** The component that lists it: one surface may list the same bytes under two names, or twice. */
@@ -106,7 +107,10 @@ export type EarlierVersion = {
 }
 
 const sameContent = (a: TurnDeliverable, b: TurnDeliverable) =>
-  a.file.name === b.file.name && a.file.artifact.sha256 === b.file.artifact.sha256
+  a.file.name === b.file.name &&
+  a.file.artifact.sha256 === b.file.artifact.sha256 &&
+  a.file.artifact.size === b.file.artifact.size &&
+  a.file.artifact.mime === b.file.artifact.mime
 
 /** How `earlier` differs from `latest`; `ordinal` is its place in the name's history, oldest first. */
 export function earlierVersion(
@@ -135,6 +139,7 @@ export function groupDeliverables(entries: readonly TurnDeliverable[]): {
   latest: TurnDeliverable
   earlier: (TurnDeliverable & { version: EarlierVersion })[]
   mixedSources: boolean
+  recovered: boolean
 }[] {
   const byName = new Map<string, TurnDeliverable[]>()
   for (const entry of [...entries].sort((a, b) => a.order - b.order)) {
@@ -147,13 +152,27 @@ export function groupDeliverables(entries: readonly TurnDeliverable[]): {
     const versions = presented.filter(
       (entry, index) => !presented.slice(index + 1).some((later) => sameContent(entry, later)),
     )
-    const latest = versions.at(-1)!
+    // Only proven permanent failures can yield to a verified prior copy.
+    // Unknown/loading or a temporary failure stays visible and never implies a version choice.
+    const newest = versions.at(-1)!
+    const candidate = [...versions]
+      .reverse()
+      .find(
+        (entry) =>
+          !['not_found', 'identity_mismatch', 'reclaimed'].includes(entry.artifactStatus ?? 'unknown'),
+      )
+    const latest = candidate?.artifactStatus === 'available' ? candidate : newest
     const earlier = versions
-      .slice(0, -1)
+      .filter((entry) => entry !== latest)
       .map((entry, index) => ({ ...entry, version: earlierVersion(entry, latest, index + 1) }))
       .reverse()
     const source = deliverableProducer(latest)
-    return { latest, earlier, mixedSources: earlier.some((entry) => entry.version.source !== source) }
+    return {
+      latest,
+      earlier,
+      recovered: latest !== versions.at(-1),
+      mixedSources: earlier.some((entry) => entry.version.source !== source),
+    }
   })
 }
 
@@ -182,4 +201,4 @@ export function deliverableVersions(
  * The hash alone names content, not a row — two names for the same bytes are two deliverables.
  */
 export const deliverableKey = (entry: Pick<TurnDeliverable, 'surfaceId' | 'componentId' | 'file'>) =>
-  `${entry.surfaceId}:${entry.componentId ?? ''}:${entry.file.name}:${entry.file.artifact.sha256}`
+  `${entry.surfaceId}:${entry.componentId ?? ''}:${entry.file.name}:${entry.file.artifact.sha256}:${entry.file.artifact.size}:${entry.file.artifact.mime}`
