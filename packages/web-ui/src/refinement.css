@@ -49,7 +49,7 @@
     align-items: center;
     gap: var(--s8);
   }
-  :is(.agh-page-title, .agnes-settings-page > .agnes-settings-page-heading h2) {
+  :is(.agh-page-title, .agnes-settings-page > .agnes-settings-page-heading h2, .agnes-settings-page-top h2) {
     margin: 0;
     color: var(--agnes-text-primary);
     font-size: var(--font-size-title);
@@ -59,7 +59,11 @@
     text-wrap: balance;
     overflow-wrap: anywhere;
   }
-  :is(.agh-page-description, .agnes-settings-page > .agnes-settings-page-heading p) {
+  :is(
+    .agh-page-description,
+    .agnes-settings-page > .agnes-settings-page-heading p,
+    .agnes-settings-page-top > div > p
+  ) {
     max-width: 60ch;
     margin: 6px 0 0;
     color: var(--agnes-text-secondary);
@@ -139,7 +143,7 @@
       corner-shape: var(--corner-shape);
       border-radius: calc(var(--radius-card) * var(--corner-scale));
     }
-    :where(dialog:not(.agh-drawer)),
+    :where(dialog:not(.agh-drawer):not([data-presentation="page"])),
     .agh-dialog .ant-modal-container,
     .agh-dialog .ant-modal-content {
       corner-shape: var(--corner-shape);
@@ -541,7 +545,7 @@
       animation-timing-function: var(--motion-ease-out);
     }
     @media (min-width: 768px) {
-      :where(dialog[open]:not(.agh-drawer)) {
+      :where(dialog[open]:not(.agh-drawer):not([data-presentation="page"])) {
         animation: agh-pop-in var(--motion-long) var(--motion-spring);
       }
     }

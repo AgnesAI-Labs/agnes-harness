@@ -29,8 +29,15 @@ import {
   type RuntimeTarget,
   type RuntimeTargetArtifact,
 } from '@agnes/plugin-runtime/host'
+import { combinedSecurityStatus } from '../lifecycle/admin-security-status.js'
 import type { Host, HostOptions } from '../lifecycle/host.js'
 import { createHostFacade } from '../lifecycle/host-facade.js'
+import {
+  createHostCallQueue,
+  generationIdleMs,
+  hostIsIdle,
+  registerHostIdle,
+} from '../lifecycle/host-idle.js'
 import { applyLivePluginConfig, overlayLivePluginConfig } from '../lifecycle/live-plugin-config.js'
 import { sessionKey } from '../sessions/session.js'
 import {
@@ -125,14 +132,10 @@ export async function createRuntimeGenerationHost(
   })
   let current: LiveGeneration | undefined
   let closed = false
-  let queue: Promise<unknown> = Promise.resolve()
+  const calls = createHostCallQueue(() => closed)
   let closing: Promise<void> | undefined
   const idleSince = new Map<Host, number>()
-  const configuredIdle = profile.limits['worker.generation_idle_close_ms']
-  const idleMs =
-    typeof configuredIdle === 'number' && Number.isSafeInteger(configuredIdle) && configuredIdle >= 0
-      ? configuredIdle
-      : 60_000
+  const idleMs = generationIdleMs(profile.limits)
   let collector: ReturnType<typeof setTimeout> | undefined
   for (const id of profile.packages
     .filter((pkg) => Object.values(profile.adapters).includes(pkg.id))
@@ -467,11 +470,13 @@ export async function createRuntimeGenerationHost(
     const retired = new Set(retiredIds)
     const errors: unknown[] = []
     const now = Date.now()
+    let busy = false
     const referenced = new Set(store.sessions().map((pin) => live.get(pin.generationId)?.host))
     const hosts = new Set([...live.values()].map((generation) => generation.host))
     for (const host of hosts) {
-      if (host === current?.host || host.kernel.sessions.size > 0) {
+      if (host === current?.host || !hostIsIdle(host)) {
         idleSince.delete(host)
+        busy ||= host !== current?.host && host.kernel.sessions.size === 0
         continue
       }
       const since = idleSince.get(host) ?? now
@@ -494,29 +499,21 @@ export async function createRuntimeGenerationHost(
           retired.add(id)
         }
     }
-    if (!closed && idleSince.size) {
+    if (!closed && (idleSince.size || busy)) {
       const next = Math.min(...[...idleSince.values()].map((since) => since + idleMs))
       collector = setTimeout(
         () => {
           collector = undefined
           void enqueue(collect).catch(() => undefined)
         },
-        Math.min(2_147_483_647, Math.max(1, next - Date.now())),
+        Math.min(2_147_483_647, Math.max(1, Math.min(next - Date.now(), busy ? 1000 : Infinity))),
       )
       collector.unref()
     }
     await store.collect(new Set([...live.keys(), ...opening.keys()]), retired)
     if (errors.length) throw new AggregateError(errors, 'generation collection failed')
   }
-  const enqueue = <T>(run: () => Promise<T>): Promise<T> => {
-    if (closed) return Promise.reject(new HostError('E_HOST_CLOSED', 'host is closed'))
-    const next = queue.then(() => {
-      if (closed) throw new HostError('E_HOST_CLOSED', 'host is closed')
-      return run()
-    })
-    queue = next.catch(() => undefined)
-    return next
-  }
+  const enqueue = calls.enqueue
   const requiresRestart = (host: Host, id: string): boolean =>
     basePackages.has(id) ||
     host.providers
@@ -931,10 +928,10 @@ export async function createRuntimeGenerationHost(
     securityStatus: () => {
       const head = (current?.host ?? initial).securityStatus?.()
       if (!head) throw new Error('Security status is unavailable')
-      return {
-        ...head,
-        workspaces: [...live.values()].flatMap(({ host }) => host.securityStatus?.().workspaces ?? []),
-      }
+      return combinedSecurityStatus(
+        head,
+        [...live.values()].flatMap(({ host }) => host.securityStatus?.() ?? []),
+      )
     },
     sessionGeneration: (key) => store.session(key)?.generationId,
     lastChange: () => lastChange,
@@ -1345,7 +1342,7 @@ export async function createRuntimeGenerationHost(
       for (const generation of live.values()) claim(generation.host)
       for (const close of hosts.values()) void close.catch(() => undefined)
       closing = (async () => {
-        await queue
+        await calls.drain()
         await Promise.allSettled(opening.values())
         for (const generation of live.values()) claim(generation.host)
         const results = await Promise.allSettled(hosts.values())
@@ -1362,5 +1359,9 @@ export async function createRuntimeGenerationHost(
     await initial.close().catch(() => undefined)
     throw error
   }
-  return createHostFacade(initial, overrides, () => current?.host ?? initial)
+  return registerHostIdle(
+    createHostFacade(initial, overrides, () => current?.host ?? initial),
+    () =>
+      calls.pending === 0 && opening.size === 0 && [...live.values()].every(({ host }) => hostIsIdle(host)),
+  )
 }

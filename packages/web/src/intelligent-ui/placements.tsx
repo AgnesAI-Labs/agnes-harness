@@ -12,7 +12,6 @@ import {
   IntelligentSurface,
   intelligentUiCatalog,
   isDeliverableList,
-  isTextOnly,
   Menu,
   rendersInAnswer,
   SettingsState,
@@ -445,8 +444,7 @@ export function newSurfacePlacements(
     if (record.status !== 'open') continue
     showConversation = true
     // Only a workbench-only view opens the workbench; anything shown in the answer waits to be asked.
-    if (record.surface.placement.workbench && !record.surface.placement.inline && !isTextOnly(record.surface))
-      showWorkbench = true
+    if (record.surface.placement.workbench && !record.surface.placement.inline) showWorkbench = true
   }
   return { keys, showConversation, showWorkbench }
 }

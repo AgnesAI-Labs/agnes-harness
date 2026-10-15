@@ -7,6 +7,7 @@ import type {
   ChildAgentParentScope,
   ChildAgentSessionService,
 } from '@agnes/extension-api'
+import type { LoopScope } from '../step/loop-deadline.js'
 import type { SessionImpl } from '../step/session.js'
 
 /** Read the parent's current ceiling, including already held/settled tree spend. */
@@ -39,8 +40,9 @@ export class LoopChildren {
   constructor(private readonly s: SessionImpl) {
     this.port = Object.freeze({
       start: (task, options = {}) =>
-        this.owned(async () => {
+        this.owned(async (scope) => {
           const budget = await remainingBudget(s)
+          scope.assertAlive()
           this.lifetime.signal.throwIfAborted()
           this.bind()
           const service = this.required()
@@ -111,11 +113,12 @@ export class LoopChildren {
     if (!this.bound) throw new CoreError('E_RELATION', 'No child is owned by this loop session')
     return this.bound
   }
-  private async owned<T>(work: () => Promise<T>): Promise<T> {
+  private async owned<T>(work: (scope: LoopScope) => Promise<T>): Promise<T> {
+    const scope = this.s.loopScope
     const done = this.s.beginLoopOperation()
     try {
       this.lifetime.signal.throwIfAborted()
-      return await work()
+      return await work(scope)
     } finally {
       done()
     }

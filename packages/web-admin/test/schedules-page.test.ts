@@ -1,11 +1,26 @@
 /** @vitest-environment happy-dom */
+
+import { clearResources, PushStack, searchParamRoute } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { automationCatalog } from '../src/settings/automation-locale.js'
 import { settingsCatalog } from '../src/settings/locales.js'
-import { draftOf, emptyDraft, selectorOf, targetOf } from '../src/settings/schedule-form.js'
-import { rowsOf, scheduleChoices } from '../src/settings/schedule-model.js'
+import {
+  draftOf,
+  emptyDraft,
+  MIN_EVERY_SECONDS,
+  presetName,
+  selectorOf,
+  targetOf,
+} from '../src/settings/schedule-form.js'
+import { rowsOf, type ScheduleRow, scheduleChoices } from '../src/settings/schedule-model.js'
+import {
+  SCHEDULE_ACTIVE_REFRESH_MS,
+  SCHEDULE_IDLE_REFRESH_MS,
+  schedulesActive,
+  useScheduleRefresh,
+} from '../src/settings/schedule-refresh.js'
 import { nextRun } from '../src/settings/schedule-text.js'
 import {
   describeSchedule,
@@ -26,6 +41,8 @@ const roots: Root[] = []
 afterEach(async () => {
   for (const root of roots.splice(0)) await act(async () => root.unmount())
   document.body.replaceChildren()
+  clearResources()
+  history.replaceState(null, '', '/')
 })
 
 async function mount(node: ReturnType<typeof createElement>) {
@@ -33,7 +50,8 @@ async function mount(node: ReturnType<typeof createElement>) {
   document.body.append(host)
   const root = createRoot(host)
   roots.push(root)
-  await act(async () => root.render(node))
+  // The page sits in 自动化, whose new and edit forms open as pages inside it.
+  await act(async () => root.render(createElement(PushStack, { rootTitle: 'Automation' }, node)))
   return host
 }
 
@@ -393,6 +411,249 @@ it('round-trips a task through the form and orders Agnes AI models first', () =>
   expect(emptyDraft({ now: 0 }).target).toBe('new-session')
 })
 
+it('keeps the saved loop, ordered bundles and model when only the title changes (B03)', async () => {
+  const saved = {
+    kind: 'new-session' as const,
+    cwd: '/synthetic',
+    loop: { id: 'agent', version: '1' },
+    bundles: ['policy-b', 'policy-a'],
+    model: { route: 'r', model: 'm' },
+  }
+  const [row] = rowsOf({ schedules: [{ ...report, target: saved }] })
+  if (!row) throw new Error('row')
+  // The catalog could not be read: nothing is rebuilt from an empty list.
+  const none = scheduleChoices({})
+  expect(targetOf({ ...draftOf(row, none, 0), title: 'Renamed' }, none)).toEqual(saved)
+  // The catalog lists the loop with different default bundles: the saved order still wins.
+  const catalog = scheduleChoices({
+    loops: [{ id: 'agent', version: '1', label: 'Agent', sourcePackage: '@agnes-fde/agent' }],
+    bundles: [{ id: 'catalog-default', sourcePackage: '@agnes-fde/agent' }],
+    adapters: [{ id: 'x', models: [{ id: 'other', route: 'x' }] }],
+    accounts: [{ route: 'x', label: 'X', providerId: 'x' }],
+  })
+  const draft = draftOf(row, catalog, 0)
+  expect(targetOf(draft, catalog)).toEqual(saved)
+  // Choosing the default on purpose clears the field; choosing another entry rebuilds it.
+  const cleared = targetOf({ ...draft, mode: '', model: '' }, catalog)
+  expect(cleared).toEqual({ kind: 'new-session', cwd: '/synthetic' })
+  const other = catalog.models[0]
+  if (!other) throw new Error('model')
+  // Only a new-session target names a model; anything else here is a failure of its own.
+  const rebuilt = targetOf({ ...draft, model: other.key }, catalog)
+  if (rebuilt.kind !== 'new-session') throw new Error('expected a new-session target')
+  expect(rebuilt.model).toEqual({ route: 'x', model: 'other' })
+  expect(rebuilt).toEqual({ ...saved, model: { route: 'x', model: 'other' } })
+  // End to end: a title-only edit sends the saved target back unchanged, even when choices fail.
+  const upsert = vi.fn(async () => standup)
+  const host = await mount(
+    createElement(SchedulesPage, {
+      api: api([{ ...report, target: saved }], {
+        upsert,
+        choices: async () => {
+          throw new Error('catalog unavailable')
+        },
+      }),
+      t,
+    }),
+  )
+  await vi.waitFor(() => expect(host.querySelector('[data-testid="schedules-row"]')).not.toBeNull())
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="schedules-row"] button')?.click(),
+  )
+  expect(document.querySelector('[data-testid="schedules-mode-saved"]')?.textContent).toContain(
+    'saved, not available now',
+  )
+  fill('schedules-title', 'Renamed')
+  await submit()
+  expect(upsert).toHaveBeenCalledWith(expect.objectContaining({ title: 'Renamed', target: saved }))
+})
+
+it('keeps a period of seconds exact instead of rounding it to minutes (F03)', () => {
+  const every = (seconds: number) => {
+    const [row] = rowsOf({ schedules: [{ ...report, selector: { every_seconds: seconds } }] })
+    if (!row) throw new Error('row')
+    return draftOf(row, scheduleChoices({}), 0)
+  }
+  expect(every(90)).toMatchObject({ every: '90', unit: 'seconds' })
+  expect(selectorOf({ ...every(90), title: 'Renamed' })).toEqual({ every_seconds: 90 })
+  expect(selectorOf(every(120))).toEqual({ every_seconds: 120 })
+  expect(every(120)).toMatchObject({ every: '2', unit: 'minutes' })
+  expect(selectorOf(every(7200))).toEqual({ every_seconds: 7200 })
+  expect(MIN_EVERY_SECONDS).toBe(60)
+})
+
+it('says the shortest period instead of saving one the service refuses (F03)', async () => {
+  await mount(createElement(SchedulesPage, { api: api(), t }))
+  await click('schedules-new')
+  await click('schedules-kind-every')
+  fill('schedules-unit', 'seconds')
+  fill('schedules-when', '30')
+  expect(document.body.textContent).toContain('Runs at most every 60 seconds.')
+  expect(
+    must(document.querySelector<HTMLButtonElement>('[data-testid="schedules-create"]'), 'create').disabled,
+  ).toBe(true)
+  fill('schedules-when', '90')
+  expect(document.body.textContent).not.toContain('Runs at most every 60 seconds.')
+})
+
+it('names permission presets the way settings does, keeping unknown ones by id (S02)', async () => {
+  const zh = (key: string) => settingsCatalog['zh-CN']?.[key] ?? key
+  expect(presetName('workspace-write', zh)).toBe('可修改工作区')
+  expect(presetName('read-only', t)).toBe('Read only')
+  expect(presetName('acme-strict', zh)).toBe('acme-strict')
+  await mount(
+    createElement(SchedulesPage, {
+      api: api([], { choices: async () => scheduleChoices({ presets: ['workspace-write', 'acme-strict'] }) }),
+      t,
+    }),
+  )
+  await click('schedules-new')
+  const options = [...document.querySelectorAll('[data-testid="schedules-preset"] option')].map(
+    (option) => option.textContent,
+  )
+  expect(options.slice(1)).toEqual(['Edit workspace', 'acme-strict'])
+})
+
+it('keeps run and approval states current while the page is open, and rests while it is hidden (F04)', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+  vi.setSystemTime(Date.parse('2026-10-14T08:00:00Z'))
+  let visibility: DocumentVisibilityState = 'visible'
+  const visible = vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility)
+  try {
+    const idle = { ...report, nextRunAt: Date.parse('2026-10-15T08:00:00Z') }
+    const running = { ...idle, runs: [{ at: Date.parse('2026-10-14T07:59:00Z'), outcome: 'running' }] }
+    let rows: unknown[] = [running]
+    const list = vi.fn(async () => ({ schedules: rows }))
+    await mount(createElement(SchedulesPage, { api: api([], { list }), t }))
+    expect(list).toHaveBeenCalledTimes(1)
+    // A run in progress is re-read quickly, so «waiting for approval» or «done» shows on its own.
+    await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_ACTIVE_REFRESH_MS))
+    expect(list).toHaveBeenCalledTimes(2)
+    rows = [{ ...running, runs: [{ ...running.runs[0], outcome: 'waiting_approval' }] }]
+    await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_ACTIVE_REFRESH_MS))
+    expect(document.body.textContent).toContain(ux('outcome.waiting_approval'))
+    // Nothing happening: the list still refreshes, but slowly.
+    rows = [idle]
+    await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_ACTIVE_REFRESH_MS))
+    const settled = list.mock.calls.length
+    await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_ACTIVE_REFRESH_MS))
+    expect(list).toHaveBeenCalledTimes(settled)
+    await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_IDLE_REFRESH_MS))
+    expect(list).toHaveBeenCalledTimes(settled + 1)
+    // Hidden pages do not poll; coming back reads at once.
+    visibility = 'hidden'
+    await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_IDLE_REFRESH_MS * 3))
+    expect(list).toHaveBeenCalledTimes(settled + 1)
+    visibility = 'visible'
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'))
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(list).toHaveBeenCalledTimes(settled + 2)
+    // «Run now» polls quickly until the run shows, even before the list says it is running.
+    await click('schedules-actions')
+    await click('schedules-run-now')
+    const afterRun = list.mock.calls.length
+    await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_ACTIVE_REFRESH_MS))
+    expect(list).toHaveBeenCalledTimes(afterRun + 1)
+  } finally {
+    visible.mockRestore()
+    vi.useRealTimers()
+  }
+})
+
+describe('polling lifetime (N02)', () => {
+  const now = Date.parse('2026-10-15T08:00:00Z')
+  const idleRow = () => {
+    const [row] = rowsOf({ schedules: [{ ...report, nextRunAt: now + 3_600_000 }] })
+    if (!row) throw new Error('row')
+    return row
+  }
+  /** A refresh whose answer the test releases, so a read can still be open at cleanup. */
+  function slowRefresh() {
+    const pending: Array<{ resolve(): void; reject(error: Error): void }> = []
+    const refresh = vi.fn(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          pending.push({ resolve, reject })
+        }),
+    )
+    return { refresh, pending }
+  }
+  function Probe(props: { refresh: () => Promise<void>; rows: ScheduleRow[] }) {
+    useScheduleRefresh(props.refresh, props.rows, true)
+    return null
+  }
+  const withClock = async (body: () => Promise<void>) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    vi.setSystemTime(now)
+    try {
+      await body()
+    } finally {
+      vi.useRealTimers()
+    }
+  }
+
+  for (const outcome of ['succeeds', 'fails'] as const)
+    it(`starts no new poll when a read still open at unmount ${outcome} later`, () =>
+      withClock(async () => {
+        const { refresh, pending } = slowRefresh()
+        const host = document.createElement('div')
+        const root = createRoot(host)
+        await act(async () => root.render(createElement(Probe, { refresh, rows: [idleRow()] })))
+        await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_IDLE_REFRESH_MS))
+        expect(refresh).toHaveBeenCalledTimes(1)
+        await act(async () => root.unmount())
+        await act(async () => {
+          const read = pending[0]
+          if (outcome === 'succeeds') read?.resolve()
+          else read?.reject(new Error('network'))
+          await vi.advanceTimersByTimeAsync(0)
+        })
+        expect(vi.getTimerCount()).toBe(0)
+        await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_IDLE_REFRESH_MS * 4))
+        expect(refresh).toHaveBeenCalledTimes(1)
+      }))
+
+  it('keeps one polling chain when the pace changes while a read is open', () =>
+    withClock(async () => {
+      const { refresh, pending } = slowRefresh()
+      const host = document.createElement('div')
+      const root = createRoot(host)
+      const idle = idleRow()
+      const due = { ...idle, nextRunAt: now + 10_000 }
+      await act(async () => root.render(createElement(Probe, { refresh, rows: [idle] })))
+      await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_IDLE_REFRESH_MS))
+      expect(refresh).toHaveBeenCalledTimes(1)
+      // The list turns active while that read is still open: the quick chain takes over.
+      await act(async () => root.render(createElement(Probe, { refresh, rows: [due] })))
+      await act(async () => {
+        pending[0]?.resolve()
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(vi.getTimerCount()).toBe(1)
+      await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_ACTIVE_REFRESH_MS))
+      expect(refresh).toHaveBeenCalledTimes(2)
+      await act(async () => {
+        pending[1]?.resolve()
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(vi.getTimerCount()).toBe(1)
+      await act(async () => root.unmount())
+      expect(vi.getTimerCount()).toBe(0)
+    }))
+})
+
+it('counts a task as active while it runs, waits for approval or is about to run', () => {
+  const now = Date.parse('2026-10-14T08:00:00Z')
+  const [row] = rowsOf({ schedules: [{ ...report, nextRunAt: now + 3_600_000 }] })
+  if (!row) throw new Error('row')
+  expect(schedulesActive([row], now)).toBe(false)
+  expect(schedulesActive([{ ...row, nextRunAt: now + 30_000 }], now)).toBe(true)
+  expect(schedulesActive([{ ...row, status: 'paused', nextRunAt: now + 30_000 }], now)).toBe(false)
+  expect(schedulesActive([{ ...row, runs: [{ at: now, outcome: 'waiting_approval' }] }], now)).toBe(true)
+})
+
 it('previews the next run in this computer’s time', () => {
   const now = new Date(2026, 9, 14, 10, 0).getTime()
   const zone = localTimeZone()
@@ -433,4 +694,46 @@ it('lists this session’s tasks in the runtime dialog and links to the automati
     }),
   )
   expect(quiet.querySelector('[data-testid="session-schedules"]')).toBeNull()
+})
+
+it('opens a new task as a page inside 自动化, with back, a breadcrumb and a link of its own', async () => {
+  const host = await mount(createElement(SchedulesPage, { api: api(), t }))
+  await click('schedules-new', host)
+  expect(document.querySelector('form#schedules-editor')).not.toBeNull()
+  expect([...host.querySelectorAll('.agh-push-crumbs li')].map((item) => item.textContent)).toEqual([
+    'Automation',
+    ux('newSchedule'),
+  ])
+  expect(host.querySelector('[data-testid="schedules-page"]')?.closest('[hidden]')).not.toBeNull()
+  // The browser's back button leaves the form.
+  await act(async () => {
+    history.replaceState({ agnesPushPage: 0 }, '')
+    window.dispatchEvent(new PopStateEvent('popstate', { state: { agnesPushPage: 0 } }))
+  })
+  expect(document.querySelector('form#schedules-editor')).toBeNull()
+  expect(host.querySelector('[data-testid="schedules-page"]')?.closest('[hidden]')).toBeNull()
+})
+
+it('opens a task named by a link once its row is read, and archives it through the shared confirmation', async () => {
+  history.replaceState(null, '', `/?view=schedule-${standup.id}`)
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+  roots.push(root)
+  const daemon = api([], { list: vi.fn(async () => ({ schedules: [standup] })) })
+  await act(async () =>
+    root.render(
+      createElement(
+        PushStack,
+        { rootTitle: 'Automation', route: searchParamRoute('view') },
+        createElement(SchedulesPage, { api: daemon, t }),
+      ),
+    ),
+  )
+  await vi.waitFor(() =>
+    expect(document.querySelector<HTMLInputElement>('[data-testid="schedules-title"]')?.value).toBe(
+      'Standup',
+    ),
+  )
+  expect(document.querySelector('[data-testid="schedules-save"]')).not.toBeNull()
 })

@@ -18,6 +18,7 @@ import type { SettingsNavigationEntry, SettingsRegionHandle } from '../src/setti
 const roots: Root[] = []
 const englishText: Record<string, string> = {
   'settings-shell.appearanceTitle': 'General',
+  'settings-shell.appearanceGroup': 'Appearance',
   'settings-shell.fontScale': 'Font size',
   'shell.install': 'Install from source',
   'button.refresh': 'Refresh Skill catalog',
@@ -34,6 +35,7 @@ const enT = (key: string): string => englishText[key] ?? key
 afterEach(() => {
   while (roots.length) roots.pop()?.unmount()
   document.body.replaceChildren()
+  history.replaceState(null, '', '/')
   document.documentElement.lang = 'en'
   setAdvancedSettingsShown(false)
 })
@@ -143,8 +145,8 @@ describe('independent core web-unit implementations', () => {
       ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
     expect(document.activeElement?.getAttribute('data-settings-section')).toBe('second')
     expect(host.querySelector('#config-form')?.getAttribute('data-settings-section')).toBe('second')
-    // The dialog keeps its page in its own state; the address is not written.
-    expect(new URL(location.href).searchParams.has('settings')).toBe(false)
+    // The address owns the selected page, including sections supplied by replacement units.
+    expect(new URL(location.href).searchParams.get('settings')).toBe('second')
     const nativeControl = host.querySelector('#model-settings')
     const tabControl = host.querySelector('#settings-section-tab-second')
     const content = host.querySelector('#settings-content-slots')
@@ -199,8 +201,8 @@ describe('independent core web-unit implementations', () => {
     link.click()
     expect(host.querySelector<HTMLElement>('#model-settings-pane')?.hidden).toBe(false)
     expect(sections()?.hidden).toBe(true)
-    expect(new URL(location.href).searchParams.has('settings')).toBe(false)
-    expect(new URL(location.href).hash).toBe('')
+    expect(new URL(location.href).searchParams.get('settings')).toBe('model')
+    expect(new URL(location.href).hash).toBe('#auxiliary-models')
     host
       .querySelector('#config-form')
       ?.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'second', bubbles: true }))
@@ -312,7 +314,7 @@ describe('independent core web-unit implementations', () => {
     // An old link to an advanced page still opens it; the switch stays the reader's choice.
     form.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'context', bubbles: true }))
     expect(form.dataset.settingsSection).toBe('models')
-    expect(new URL(location.href).searchParams.has('settings')).toBe(false)
+    expect(new URL(location.href).searchParams.get('settings')).toBe('models')
     expect(new URL(location.href).hash).toBe('')
     expect(host.querySelector<HTMLElement>('#settings-sections-pane')?.hidden).toBe(false)
     expect(host.querySelector('#settings-advanced')).toBeNull()
@@ -340,7 +342,7 @@ describe('independent core web-unit implementations', () => {
     expect(revealed).toHaveLength(1)
     frame.mockRestore()
     expect(form.dataset.settingsSection).toBe('models')
-    expect(new URL(location.href).searchParams.has('settings')).toBe(false)
+    expect(new URL(location.href).searchParams.get('settings')).toBe('models')
     host.querySelector<HTMLButtonElement>('#settings-back')?.click()
     expect(form.dataset.settingsView).toBe('list')
     expect(document.activeElement?.getAttribute('data-settings-section')).toBe('models')
@@ -377,12 +379,17 @@ describe('independent core web-unit implementations', () => {
     // 语言切换必须留在通用设置里：合并 origin/main 时它一度被整段冲掉，
     // 而当时的用例断言被改成只查配色和字号，回归没有被兜住。
     // The language and skin controls are pickers filled at run time, not options written here.
-    expect(host.querySelector('[aria-label="Language"] select#locale-select')).toBeInstanceOf(
-      HTMLSelectElement,
-    )
+    const languageRow = host.querySelector('select#locale-select')?.closest('.agnes-settings-item')
+    expect(languageRow?.querySelector('.agnes-settings-item-label')?.textContent).toBe('Language')
     expect(host.querySelector('select#skin-select + #skin-option-items')).toBeTruthy()
     expect(host.querySelector('input[name="agnes-locale"], input[name="agnes-skin"]')).toBeNull()
-    expect(host.querySelector('[aria-label="Language"] legend')?.textContent).toBe('Language')
+    // Appearance is one labelled group of rows; the advanced switch is the page's last row.
+    expect(host.querySelector('.appearance-group h3')?.textContent).toContain('Appearance')
+    expect(
+      [...host.querySelectorAll('#appearance-settings-pane .agnes-settings-block')]
+        .at(-1)
+        ?.querySelector('[data-testid="settings-advanced-switch"]'),
+    ).toBeTruthy()
   })
 
   it('keeps the conversation child contract in the web-units package', () => {

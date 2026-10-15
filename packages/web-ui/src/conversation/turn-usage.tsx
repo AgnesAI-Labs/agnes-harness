@@ -62,6 +62,7 @@ export const TurnUsagePanel = forwardRef<HTMLDivElement, TurnUsagePanelProps>(fu
   const source = (value: 'gateway' | 'estimated') =>
     t(value === 'estimated' ? 'cost.source.estimated' : 'cost.source.gateway')
   const calls = turn.usage.calls.filter(listedCall)
+  const titleCalls = calls.filter((call) => call.purpose === 'title').length
   const estimated =
     cost?.source === 'estimated' ||
     (!cost && credits?.source === 'estimated') ||
@@ -124,7 +125,11 @@ export const TurnUsagePanel = forwardRef<HTMLDivElement, TurnUsagePanelProps>(fu
               summary={
                 <span className="turn-usage-calls-title">
                   {chevron}
-                  <span>{t('turnactions.usage.callDetails')}</span>
+                  <span>
+                    {calls[0].purpose === 'title'
+                      ? t('turnactions.usage.backgroundTitleAria')
+                      : t('turnactions.usage.callDetails')}
+                  </span>
                 </span>
               }
               summaryProps={{ 'data-testid': 'turn-usage-call-details', 'aria-label': t('cost.detailsAria') }}
@@ -140,7 +145,10 @@ export const TurnUsagePanel = forwardRef<HTMLDivElement, TurnUsagePanelProps>(fu
               summary={
                 <span className="turn-usage-calls-title">
                   {chevron}
-                  <span>{t('turnactions.usage.calls', { count: calls.length })}</span>
+                  <span>
+                    {t('turnactions.usage.calls', { count: calls.length })}
+                    {titleCalls > 0 ? t('turnactions.usage.includesTitles', { count: titleCalls }) : ''}
+                  </span>
                   <span className="turn-usage-calls-hint" data-when="closed">
                     {t('turnactions.usage.callsShow')}
                   </span>
@@ -168,7 +176,9 @@ export const TurnUsagePanel = forwardRef<HTMLDivElement, TurnUsagePanelProps>(fu
                       <span className="turn-call-row">
                         <span className="turn-call-n">
                           {chevron}
-                          {index + 1}
+                          {call.purpose === 'title'
+                            ? t('turnactions.usage.backgroundTitle')
+                            : calls.slice(0, index + 1).filter((entry) => entry.purpose !== 'title').length}
                         </span>
                         <span>{call.tokens ? compact(call.tokens.input) : '—'}</span>
                         <span>{call.tokens ? compact(call.tokens.output) : '—'}</span>
@@ -191,7 +201,13 @@ export const TurnUsagePanel = forwardRef<HTMLDivElement, TurnUsagePanelProps>(fu
                       </span>
                     }
                     summaryProps={{
-                      'aria-label': t('turnactions.usage.callAria', { index: index + 1 }),
+                      'aria-label':
+                        call.purpose === 'title'
+                          ? t('turnactions.usage.backgroundTitleAria')
+                          : t('turnactions.usage.callAria', {
+                              index: calls.slice(0, index + 1).filter((entry) => entry.purpose !== 'title')
+                                .length,
+                            }),
                     }}
                   >
                     <CallDetails call={call} t={t} />

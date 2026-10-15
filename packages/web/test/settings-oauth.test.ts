@@ -115,7 +115,7 @@ async function setup(
   expect((doc.getElementById('config-provider') as unknown as HTMLSelectElement).value).not.toBe('')
   ;(doc.getElementById('config-account-name') as unknown as HTMLInputElement).value = 'Work account'
   const panel = must(doc.querySelector('section[aria-label="订阅登录"]'))
-  expect(panel.closest('#account-dialog')).not.toBeNull()
+  expect(panel.closest('.account-page-host, #account-dialog')).not.toBeNull()
   const button = (label: string) =>
     must([...panel.querySelectorAll('button')].find((b) => b.textContent === label))
   return {
@@ -365,7 +365,7 @@ it('submits a blank Copilot enterprise prompt and keeps focus inside the account
       answer: '',
     }),
   )
-  expect(input.closest('#account-dialog')).not.toBeNull()
+  expect(input.closest('.account-page-host, #account-dialog')).not.toBeNull()
   h.controller.close()
 })
 

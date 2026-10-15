@@ -12,14 +12,15 @@ const source = (value: 'gateway' | 'estimated', t: Translate) =>
 const time = (n: number, t: Translate) =>
   n < 1000 ? `${n} ms` : t('cost.time.s', { n: (n / 1000).toFixed(2) })
 type Rows = Array<[string, string]>
-const purposeKeys: Record<string, string> = {
-  inference: 'cost.purpose.inference',
-  compaction: 'cost.purpose.compaction',
-  subagent: 'cost.purpose.subagent',
-  verifier: 'cost.purpose.verifier',
-  media: 'cost.purpose.media',
-  tool: 'cost.purpose.tool',
-}
+const purposeKeys = new Map([
+  ['inference', 'cost.purpose.inference'],
+  ['title', 'cost.purpose.title'],
+  ['compaction', 'cost.purpose.compaction'],
+  ['subagent', 'cost.purpose.subagent'],
+  ['verifier', 'cost.purpose.verifier'],
+  ['media', 'cost.purpose.media'],
+  ['tool', 'cost.purpose.tool'],
+])
 
 export function costSummary(node: CostNode, t: Translate = fallbackT): string {
   const parts = node.tokens
@@ -56,7 +57,7 @@ export function costDetails(
   money: (usdMicros: number) => string = usd,
 ): Rows {
   const purpose = node.purpose ?? ''
-  const purposeKey = Object.hasOwn(purposeKeys, purpose) ? purposeKeys[purpose] : undefined
+  const purposeKey = purposeKeys.get(purpose)
   return [
     [t('cost.rows.range'), purposeKey === undefined ? t('cost.rows.singleRecord') : t(purposeKey)],
     ...(node.model ? [[t('cost.rows.model'), node.model] as [string, string]] : []),
@@ -77,6 +78,20 @@ export function costDetails(
         ? t('cost.rows.notProvided')
         : `${credits(node.credits)} credits · ${source(node.source, t)}`,
     ],
+    ...(
+      [
+        'providerCallMs',
+        'prepareMs',
+        'captureMs',
+        'dispatchMs',
+        'firstOutputMs',
+        'outputMs',
+        'finalizeMs',
+      ] as const
+    ).map((key): [string, string] => [
+      t(`cost.rows.${key}`),
+      node.timing?.[key] === undefined ? t('cost.rows.notProvided') : time(node.timing[key], t),
+    ]),
     ...(node.timing?.ttftMs !== undefined
       ? [[t('cost.rows.ttft'), time(node.timing.ttftMs, t)] as [string, string]]
       : []),

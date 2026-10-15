@@ -31,7 +31,7 @@ const meta = {
   isOpenWorld: true,
   replay: 'never' as const,
 
-  deferLoading: false,
+  deferLoading: 'auto' as const,
   requiresApproval: 'never' as const,
 }
 

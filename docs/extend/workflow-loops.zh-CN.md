@@ -98,3 +98,24 @@ helper 首先插入计划关卡。公开 turn view 包含 Plan mode 时，通过
 工作流 checkpoint 使用 codec 1，并绑定工作流身份与阶段数。改变阶段、设置或依据含义时须更新 Loop 版本。FDE 现在选择 5.0.0，旧 codec 被拒绝，已有会话保留 pinned 代码；不提供旧 checkpoint 转换。
 
 从 `@agnes/host/author-testkit` 调用 `driveLoop(workflow.factory, { inputs, replies, tools })` 做确定性 fast 测试；真实会话决策、授权和延迟队列使用完整 author testkit。进程测试放 heavy tier。官方 helper 单测覆盖阶段推进、两种确认、审批停驻/恢复、停止、未知结果、结构化通知和幂等恢复。从 [Loop 模板](../../templates/loop/) 开始。
+
+每个 `LoopContext` 绑定一个执行代。超时、替换或释放会永久撤销其写端口（`E_CLOSED`）；保留旧 context 不能获得后续轮次的执行权限。Core 在账本最终提交入口再次检查排队的写操作。晚到的真实 effect 回执仍关联原 effect；替代 Loop 可通过 `effects.status(invocationId)` 读取，冷恢复后同样可读。晚到回执不会重开旧轮次，也不会提交旧 driver 的助手消息或检查点。
+
+默认 Loop 与通用 `model.stream()` / `model.complete()` 共用 Core 的模型传输及结算机制。每个已派发请求都会产生一条费用记录和一次计费写入，包括提供方错误及取消。缺少 usage 时采用相同的 token 估算及 `creditSource: estimated`；usage 表示请求累计总量，重复报告以最后一次为准。即使提供方忽略信号，取消也会停止等待。计费记录不可用时，同一轮次的后续模型派发会被拒绝。Loop 仍自行选择重试、压缩及后续调用。
+
+
+### 执行契约套件
+
+Loop 作者可以运行与默认 Loop 相同、由真实 Core 执行的检查：
+
+```ts
+import { verifyLoopExecutionContract } from '@agnes/host/author-testkit'
+import { myLoopFactory } from './my-loop.js'
+
+await verifyLoopExecutionContract(myLoopFactory)
+```
+
+套件使用合成 provider、工具和存储，检查取消、审批拒绝、usage 与缺失 usage 的结算、
+未知结果、冷恢复、过期 scope 拒绝以及两代 Loop 并存。工厂需处理普通文字提示和模型工具调用；
+自定义规划语言可在传入的工厂中适配。过期 scope 场景等待真实 deadline，请放在 heavy 测试层运行。
+这是 Host testkit 的新增出口，不改变 extension-api 契约版本。

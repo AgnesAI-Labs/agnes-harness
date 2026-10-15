@@ -6,6 +6,7 @@ import {
   ConversationMessages,
   type ConversationMessagesProps,
   type ConversationProjectionStore,
+  ConversationToolCard,
   createConversationProjectionStore,
   useConversationProjection,
 } from '@agnes/web-ui/conversation'
@@ -669,3 +670,66 @@ it.each([
     )
   },
 )
+
+describe('reconciliation and calls that never ran', () => {
+  it('records a reconciliation as the fact confirmed, never as a permission granted', async () => {
+    const asked: UINode = {
+      kind: 'approval',
+      id: 'reconcile',
+      seq: 5,
+      state: 'pending',
+      summary: 'did mcp_manage happen? allowed = it happened, rejected = it did not',
+      risk: 'unknown',
+      options: ['allow_once', 'reject_once'],
+      reconcile: { tool: 'mcp_manage' },
+    }
+    const store = createConversationProjectionStore({ sessionId: 'session', nodes: [asked] })
+    await mount(store)
+    const row = () => item('reconcile')
+    expect(row()?.querySelector('.tool-status')?.textContent).toBe('等你确认是否执行了')
+    expect(row()?.querySelector('.approval-summary')?.textContent).toBe(
+      '这个操作执行了吗？mcp_manage 已经发出，但没收到结果',
+    )
+    expect(row()?.textContent).not.toContain('did mcp_manage happen')
+    await update(store, [
+      { ...asked, state: 'decided', decision: { verdict: 'allowed-session', via: 'human' } } as UINode,
+    ])
+    expect(row()?.querySelector('.tool-status')?.textContent).toBe('你确认：执行了')
+    expect(row()?.getAttribute('aria-label')).toBe('你确认：执行了')
+    expect(row()?.textContent).not.toContain('已允许本会话执行')
+    await update(store, [
+      {
+        ...asked,
+        state: 'decided',
+        decision: { verdict: 'rejected', via: 'human', reason: 'user-rejected' },
+      } as UINode,
+    ])
+    expect(row()?.querySelector('.tool-status')?.textContent).toBe('你确认：没执行')
+    // «It did not run» is a fact, not a refusal: the row is not drawn as cancelled.
+    expect(row()?.querySelector('[data-state="cancelled"]')).toBeNull()
+  })
+
+  it("says a call the turn never carried out was not run, and keeps a running turn's plan quiet", async () => {
+    const planned: Extract<UINode, { kind: 'tool' }> = {
+      kind: 'tool',
+      id: 'list',
+      seq: 6,
+      toolUseId: 'call-2',
+      name: 'mcp_manage',
+      status: 'planned',
+      summary: 'mcp_manage',
+      argsPreview: '{"action":"list"}',
+    }
+    await act(async () =>
+      root.render(createElement(ConversationToolCard, { node: planned, t, turnStatus: 'waiting' })),
+    )
+    const card = host.querySelector<HTMLElement>('[data-agnes-tool-card]')
+    expect(card?.dataset.notRun).toBe('true')
+    expect(card?.textContent).toContain('未执行')
+    await act(async () =>
+      root.render(createElement(ConversationToolCard, { node: planned, t, turnStatus: 'running' })),
+    )
+    expect(host.querySelector<HTMLElement>('[data-agnes-tool-card]')?.dataset.notRun).toBeUndefined()
+    expect(host.textContent).not.toContain('未执行')
+  })
+})

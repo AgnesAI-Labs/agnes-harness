@@ -29,8 +29,11 @@ export interface ApprovalView {
   preview?: string
   actions: readonly ApprovalAction[]
   disabled: boolean
-  /** Presentation marker for plan approval; the supplied actions remain authoritative. */
-  kind?: 'plan'
+  /**
+   * Presentation marker; the supplied actions remain authoritative. `reconcile`: Core asks whether a
+   * call that lost its result ran. `answered`: already answered, waiting for the Agent to continue.
+   */
+  kind?: 'plan' | 'reconcile' | 'answered'
 }
 
 export interface ApprovalHandle {
@@ -119,6 +122,7 @@ export const Approval = forwardRef<ApprovalHandle, ApprovalProps>(function Appro
           data-approval-key={view.key}
           data-testid={view.kind === 'plan' ? 'plan-approval-card' : 'approval-card'}
           data-risk={view.risk}
+          {...(view.kind ? { 'data-kind': view.kind } : {})}
           role="region"
           tabIndex={-1}
           aria-label={view.title}

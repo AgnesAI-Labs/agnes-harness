@@ -11,7 +11,6 @@ import type {
   ClientReconciler,
   ClientRoster,
   PackageState,
-  PreparedClientStyles,
   ReadyClientModule,
   ReconcilerOptions,
 } from './reconcile/contracts.js'
@@ -128,7 +127,8 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
     if (state?.phase !== 'active') return
     fail(entry.owner, state, 'render')
   })
-  const { applyTarget, drainFiber, disposeCleanup } = createReconcileLifecycle({
+  const { applyTarget, disposeCleanup } = createReconcileLifecycle({
+    identity: () => source.identity?.(),
     ctx,
     registry,
     timeouts,
@@ -230,7 +230,7 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
    * returns as soon as the work is enqueued: planning never awaits an import, a stylesheet fetch,
    * an apply or a teardown, so one slow module cannot delay another module's change.
    */
-  function plan(roster: ClientRoster): Promise<void>[] {
+  function plan(roster: ClientRoster, reload?: { packageId: string; revision: string }): Promise<void>[] {
     const wanted = new Map(
       roster.modules.filter((mod) => !mod.intelligentComponents?.length).map((mod) => [rowKey(mod), mod]),
     )
@@ -297,27 +297,47 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
         state.target?.revision === mod.revision &&
         state.target.entryUrl === mod.entryUrl &&
         (state.phase === 'loading' || state.phase === 'active')
-      if (unchanged || pending) continue
+      const forced = reload?.packageId === mod.packageId && reload.revision === mod.revision
+      if (!forced && (unchanged || pending)) continue
       waits.push(applyTarget(rowId, state, mod))
     }
     return waits
   }
 
-  // Roster reads are serialized so two notifications cannot plan against each other's half-applied
-  // state; the work they enqueue stays outside that critical section.
+  // Queries may overlap; only the newest request in the same selection may commit. Planning
+  // is ordered, while each module keeps its independent lifecycle/loading queue.
   let planning: Promise<void> = Promise.resolve()
-  function runDiff(): Promise<void> {
-    const planned = planning.then(async (): Promise<Promise<void>[]> => {
-      try {
-        return plan(await source.list())
-      } catch {
-        // 名册读取失败保持现状：失败不能伪造 ready（WC10），下次触发再对账。
-        return []
+  let generation = 0
+  let scope: string | undefined
+  function runDiff(reload?: { packageId: string; revision: string }): Promise<void> {
+    const request = ++generation
+    const identity = source.identity?.()
+    if (identity !== scope) {
+      scope = identity
+      // Retire pending work from the old scope. Active root modules stay mounted until the
+      // authoritative roster changes them; a session switch alone must not tear down their UI.
+      for (const [rowId, state] of packages) {
+        if (state.phase !== 'loading') continue
+        state.epoch++
+        state.target = undefined
+        setPhase(rowId, state, state.active ? 'active' : 'idle')
       }
-    })
-    planning = planned.then(
-      () => undefined,
-      () => undefined,
+    }
+    const read = Promise.resolve().then(() => source.list())
+    const planned = read.then(
+      (roster) => {
+        const commit = planning.then(() => {
+          if (request !== generation || identity !== source.identity?.()) return []
+          source.commit?.(roster)
+          return plan(roster, reload)
+        })
+        planning = commit.then(
+          () => undefined,
+          () => undefined,
+        )
+        return commit
+      },
+      () => [],
     )
     return planned.then(async (waits) => {
       await Promise.allSettled(waits)
@@ -327,33 +347,7 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
   return {
     reconcileNow: () => runDiff(),
     invalidate: () => runDiff(),
-    async reload(packageId, revision) {
-      const roster = await source.list()
-      const targets = roster.modules.filter(
-        (module) =>
-          !module.intelligentComponents?.length &&
-          module.packageId === packageId &&
-          module.revision === revision,
-      )
-      // An out-of-order event may refer to a snapshot that was subsequently revoked. Reconcile
-      // the authoritative roster in that case, rather than reviving the event's package.
-      if (targets.length === 0) {
-        await runDiff()
-        return
-      }
-      const pending: Promise<void>[] = []
-      // `applyTarget` preloads before it drains/disposes the old fiber; this explicit path bypasses
-      // the normal same-revision idempotency gate. Keep the old active identity until
-      // prefetch succeeds so a transient build/import failure leaves the old UI serving while the
-      // next frame remains retryable.
-      for (const target of targets) {
-        const key = rowKey(target)
-        const state = stateOf(key)
-        state.rosterPresent = true
-        pending.push(applyTarget(key, state, target))
-      }
-      await Promise.all(pending)
-    },
+    reload: (packageId, revision) => runDiff({ packageId, revision }),
     snapshot() {
       return statuses.snapshot()
     },

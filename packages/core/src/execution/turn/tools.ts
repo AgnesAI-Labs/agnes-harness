@@ -51,7 +51,13 @@ import {
   toolDecisionSource,
 } from './tool-decision.js'
 import { discloseTool } from './tool-disclosure.js'
-import { unknownOutcomeRows, unrecordedParkEvents } from './unknown-outcome.js'
+import {
+  notStartedResults,
+  reconciledMessage,
+  unknownOutcomeMessage,
+  unknownOutcomeRows,
+  unrecordedParkEvents,
+} from './unknown-outcome.js'
 
 export type ExecOpts = {
   depth: number
@@ -187,25 +193,6 @@ function updateCall(op: OpStateObj | null, toolUseId: string, patch: ToolCallPat
 
 function dispatchErrorResult(code: string, message: string): ToolResult {
   return { content: [{ type: 'text', text: message }], isError: true, details: { code } }
-}
-
-/**
- * Model-facing text for a mutation call whose outcome stays unknown. A deadline or a cancel is ours
- * and is named as such, so it is not mistaken for a lost transport and retried blindly.
- */
-function unknownOutcomeMessage(name: string, cause: 'timeout' | 'cancelled' | undefined, ms: number): string {
-  if (!cause) return `the outcome of ${name} is unknown after dispatch`
-  const why =
-    cause === 'timeout'
-      ? `exceeded the ${ms} ms limit for one call and was aborted`
-      : 'was cancelled while running'
-  return (
-    `the outcome of ${name} is unknown: it ${why}, so it may have taken partial effect. ` +
-    'Inspect the current state before retrying; do not rerun it unchanged.' +
-    (cause === 'timeout'
-      ? ' Split it into shorter steps, or run it in the background if the tool offers that.'
-      : '')
-  )
 }
 
 /**
@@ -1410,17 +1397,18 @@ export async function approveAndExecute(
         const reconciliation = await unknownOutcomeRows(s, call.toolUseId, call.name)
         const result = await settleSyntheticDispatch(s, call, effect, attempt, 'may_have_sent', decisionId, {
           code: 'TOOL_OUTCOME_UNKNOWN',
-          reconciliation,
-          message: unknownOutcomeMessage(
-            call.name,
-            timedOut ? 'timeout' : cancelled ? 'cancelled' : undefined,
-            timeoutMs,
-          ),
+          reconciliation: reconciliation.rows,
+          message:
+            unknownOutcomeMessage(
+              call.name,
+              timedOut ? 'timeout' : cancelled ? 'cancelled' : undefined,
+              timeoutMs,
+            ) + reconciledMessage(reconciliation.answer),
           outcome: 'unknown',
         })
         return {
           result,
-          ...(reconciliation[0] ? { park: reconciliation[0] } : {}),
+          ...(reconciliation.park ? { park: reconciliation.park } : {}),
         }
       }
       if (timedOut || cancelled) {
@@ -1643,6 +1631,9 @@ export async function runToolsPhase(s: SessionImpl): Promise<StepOutcome> {
   })
   const callsById = new Map(rows.map((e) => [(e.data as { toolUseId: string }).toolUseId, e]))
   const parks: EventInput[] = []
+  // Calls the batch never started because an earlier one parked the turn. They are closed with the
+  // park, not left planned: the continuation reopens only the parked call.
+  const skipped: typeof pending = []
   const runtime = await s.toolRuntime()
   const runtimeCalls = [...pending]
     .sort((a, b) => a.ordinal - b.ordinal)
@@ -1658,7 +1649,10 @@ export async function runToolsPhase(s: SessionImpl): Promise<StepOutcome> {
       dispatch: async (input, signal): Promise<ToolResult> => {
         const c = pending.find((call) => call.toolUseId === input.id)
         if (!c) throw new CoreError('E_RELATION', 'runtime dispatched an unknown call')
-        if (parks.length) return errorResult('parked')
+        if (parks.length) {
+          skipped.push(c)
+          return errorResult('parked')
+        }
         // The row the arguments live on is not in the scanned window, which means the counter and
         // the ledger disagree about this batch. There is no `tool/call` here to answer, so there is
         // no `tool/result` to write either: the call is dropped loudly rather than executed with
@@ -1814,10 +1808,12 @@ export async function runToolsPhase(s: SessionImpl): Promise<StepOutcome> {
       if (deferredClosers.length) await s.append(deferredClosers)
       return finishAborted(s)
     }
+    const notStarted = notStartedResults(s, skipped)
     await s.endTurn('parked', {
       events: [
         ...unrecordedParkEvents(s, parks),
         ...deferredClosers,
+        ...notStarted,
         s.ev('step/end', { turn: cur.meta.turn, step: cur.step }),
       ],
     })

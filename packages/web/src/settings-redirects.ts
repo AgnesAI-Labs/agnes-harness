@@ -1,3 +1,4 @@
+import { preserveRouteParams, searchParamRoute } from '@agnes/web-ui'
 import { type SettingsMoveTarget, settingsMoved, settingsRoute } from '@agnes/web-units'
 
 /** The new home of the page an old `?settings=<id>` link names, when it left the settings dialog. */
@@ -22,7 +23,7 @@ export function rewriteMovedSettingsLink(): SettingsMoveTarget | undefined {
   if (target.tab) url.searchParams.set('tab', target.tab)
   else url.searchParams.delete('tab')
   if (url.hash.startsWith('#settings-subsection-')) url.hash = ''
-  history.replaceState(history.state, '', url)
+  history.replaceState(history.state, '', preserveRouteParams(url))
   return target
 }
 
@@ -41,7 +42,7 @@ export function openMovedSettingsLink(
   const url = new URL(location.href)
   if (url.searchParams.get('settings') === id) {
     url.searchParams.delete('settings')
-    history.replaceState(history.state, '', url)
+    history.replaceState(history.state, '', preserveRouteParams(url))
   }
   return true
 }
@@ -64,8 +65,9 @@ export function clearSettingsLink(): void {
   const url = new URL(location.href)
   if (!url.searchParams.has('settings')) return
   url.searchParams.delete('settings')
+  url.searchParams.delete('account')
   if (url.hash.startsWith('#settings-subsection-')) url.hash = ''
-  history.replaceState(history.state, '', url)
+  history.replaceState(history.state, '', preserveRouteParams(url))
 }
 
 /**
@@ -76,19 +78,23 @@ export function needsModelNotice(state: { modelsRead: boolean; models: number; a
   return state.modelsRead && state.models === 0 && state.accounts > 0
 }
 
-/**
- * A settings link is followed once: read the page and subsection it names, then take both out of
- * the address, so a refresh shows the workbench instead of opening the dialog again. Other
- * fragments stay.
- */
+/** Read the settings route, normalizing legacy page/anchor links without consuming it. */
 export function consumeSettingsLink(): { id: string; anchor: string } {
+  const address = searchParamRoute('settings')
+  const levels = address.read()
+  const requested = levels[0] ?? ''
+  const route = settingsRoute(requested)
   const url = new URL(location.href)
-  const id = url.searchParams.get('settings') ?? ''
   const subsection = url.hash.startsWith('#settings-subsection-')
-  const anchor = id && subsection ? url.hash.slice(1) : ''
-  if (!url.searchParams.has('settings') && !subsection) return { id, anchor }
-  url.searchParams.delete('settings')
-  if (subsection) url.hash = ''
-  history.replaceState(history.state, '', url)
-  return { id, anchor }
+  const anchor = requested ? (subsection ? url.hash.slice(1) : (route.anchor ?? '')) : ''
+  if (requested) {
+    const subpages = levels.slice(1)
+    history.replaceState(history.state, '', address.href([route.id, ...subpages]))
+  }
+  if (subsection && !requested) {
+    const normalized = new URL(location.href)
+    normalized.hash = ''
+    history.replaceState(history.state, '', normalized)
+  }
+  return { id: route.id, anchor }
 }

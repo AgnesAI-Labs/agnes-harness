@@ -35,13 +35,14 @@ import { SlotFillView as SlotFillSchema } from '@agnes/protocol/gen/agnes-v1'
 import { contextAnchorOf } from '../reduce/anchor.js'
 import { reduce } from '../reduce/reducer.js'
 import { initialState, type LedgerState } from '../reduce/state.js'
-import { type ApprovalNode, approvalSubject } from './approval-subject.js'
+import { type ApprovalNode, approvalSubject, reconcileTool } from './approval-subject.js'
 import {
   applyCacheHealthEvent,
   type CacheHealthState,
   cacheHealthView,
   initialCacheHealthState,
 } from './cache-health.js'
+import { callTiming } from './call-timing.js'
 import { clipUtf16 as clip } from './clip.js'
 import { SurfaceCache } from './surface.js'
 import { TurnProjection, turnsForNodes } from './turns.js'
@@ -860,6 +861,10 @@ export class UIProjectionCell {
                 : 'pending',
           summary: clip(value.request.spec.prompt, 4096),
           ...approvalSubject(value.request.spec.subject),
+          // Core asking whether a call that lost its result ran: a reconciliation, not a permission.
+          ...(value.request.owner === 'core/unknown-outcome'
+            ? { reconcile: { tool: reconcileTool(value.request.spec.subject) } }
+            : {}),
           options: value.request.spec.options.map((option) =>
             option === 'allowed-once'
               ? 'allow_once'
@@ -921,14 +926,7 @@ export class UIProjectionCell {
           ...(cost.billing ? { billing: structuredClone(cost.billing) } : {}),
           model: cost.model,
           ...(cost.interrupted !== undefined ? { interrupted: cost.interrupted } : {}),
-          ...(cost.timing
-            ? {
-                timing: {
-                  ...(cost.timing.ttftMs !== undefined ? { ttftMs: cost.timing.ttftMs } : {}),
-                  ...(cost.timing.durationMs !== undefined ? { durationMs: cost.timing.durationMs } : {}),
-                },
-              }
-            : {}),
+          ...(cost.timing ? { timing: callTiming(cost.timing) } : {}),
           ...(cost.credits !== undefined ? { credits: cost.credits } : {}),
         })
         changed.add(id)

@@ -1,4 +1,4 @@
-import type { Fiber } from './fiber.js'
+import { CordisError, FiberState, type Fiber } from './fiber.js'
 
 export type AwaitableFiber = Fiber & PromiseLike<Fiber>
 
@@ -69,9 +69,16 @@ export async function abortMountingFiber(fiber: Fiber): Promise<void> {
   await control.abort()
 }
 
-export function asAwaitableFiber(fiber: Fiber): AwaitableFiber {
+export function asAwaitableFiber(fiber: Fiber, requireLoaded = true): AwaitableFiber {
   const wrapped = Object.create(fiber) as AwaitableFiber
   // biome-ignore lint/suspicious/noThenProperty: Cordis intentionally exposes awaitable fibers.
-  wrapped.then = (onFulfilled, onRejected) => fiber.await().then(onFulfilled, onRejected)
+  wrapped.then = (onFulfilled, onRejected) => fiber.await().then(() => {
+    fiber.assertActive()
+    if (requireLoaded && fiber.state === FiberState.PENDING) {
+      throw new CordisError('DEPENDENCY_UNAVAILABLE',
+        `plugin ${fiber.name} is waiting for dependencies: ${Object.keys(fiber.inject).join(', ')}`)
+    }
+    return fiber
+  }).then(onFulfilled, onRejected)
   return wrapped
 }

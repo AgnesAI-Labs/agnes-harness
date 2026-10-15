@@ -23,6 +23,7 @@ afterEach(() => {
   disposeMarkup?.()
   disposeMarkup = undefined
   vi.unstubAllGlobals()
+  history.replaceState(null, '', '/')
   window?.happyDOM.abort()
   window = undefined
 })
@@ -102,7 +103,9 @@ async function setup(accounts: ConfigAccount[] = [account('work'), account('pers
       ;(trigger as unknown as HTMLButtonElement | null)?.click()
       await vi.waitFor(() => expect(doc.querySelector('[role="menuitem"]')).not.toBeNull())
       node =
-        [...doc.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent === action) ?? null
+        [...doc.querySelectorAll('[role="menuitem"]')].find(
+          (item) => item.textContent === action || item.getAttribute('aria-label') === action,
+        ) ?? null
     }
     if (!node) throw new Error(`missing ${selector}`)
     ;(node as unknown as HTMLButtonElement).click()
@@ -227,7 +230,10 @@ it('selects an exact account, clears transient keys and sends account-scoped tes
   expect(h.doc.querySelector('.config-account[data-selected=true] .config-account-select')?.textContent).toBe(
     'personal',
   )
-  expect((h.doc.getElementById('account-dialog') as unknown as HTMLDialogElement).open).toBe(true)
+  // Editing opens the account's page in the settings dialog, with the account form in it.
+  await vi.waitFor(() =>
+    expect(h.doc.querySelector('[data-testid="account-page-edit"] #config-api-key')).not.toBeNull(),
+  )
   expect(h.doc.getElementById('config-detail-title')?.textContent).toBe('账户详情')
   expect(h.doc.getElementById('config-account-context')?.textContent).toBe('编辑连接与默认模型')
   expect(h.input('config-api-key').value).toBe('')

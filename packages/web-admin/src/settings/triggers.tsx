@@ -7,13 +7,15 @@ import type {
 import { useCredentialOptions } from '@agnes/resource-control-web/credentials'
 import {
   Button,
-  Dialog,
+  ConfirmDialog,
   EmptyState,
   Field,
   Icon,
   IconButton,
   ListRow,
+  Loadable,
   Menu,
+  PushPage,
   SettingsDetails,
   SettingsGroup,
   SettingsInput,
@@ -27,7 +29,10 @@ import {
   SettingsTextArea,
   StateSwitch,
   StatusDot,
+  setResource,
   Tag,
+  usePushStack,
+  useResource,
   useUiText,
 } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
@@ -64,6 +69,11 @@ export async function triggersRequest(input: WebhookRequest, signal?: AbortSigna
   if (!response.ok) throw new Error('Trigger request failed')
   return response.json()
 }
+const TRIGGERS_KEY = 'triggers:list'
+const TRIGGER_PAGE = 'trigger-'
+const NEW_TRIGGER = 'trigger-new'
+type TriggersRead = { snapshot: WebhookSnapshot | undefined; workspaces: string[] }
+
 export function TriggersPanel({
   canSave,
   actionsHost,
@@ -76,14 +86,33 @@ export function TriggersPanel({
   actionsHost?: HTMLElement | null | undefined
 }) {
   const { t } = useUiText('@agnes/web/triggers', triggersCatalog)
-  const [formOpen, setFormOpen] = useState(false)
+  // New and edit open as pages inside 自动化: the open page is the address (`view=trigger-…`).
+  const nav = usePushStack()
+  const top = nav.stack.at(-1)
+  const formOpen = top?.startsWith(TRIGGER_PAGE) === true
+  const editing = formOpen && top !== NEW_TRIGGER
   const credentials = useCredentialOptions(formOpen)
   const [removing, setRemoving] = useState<string>()
   const lifetime = useRef<AbortController>()
-  const [snapshot, setSnapshot] = useState<WebhookSnapshot>()
-  const [workspaces, setWorkspaces] = useState<string[]>([])
+  // The rules and the workspaces a rule may target: one cached read, shown at once on a return visit.
+  const list = useResource<TriggersRead>(TRIGGERS_KEY, async () => {
+    const [result, context] = await Promise.all([
+      triggersRequest({ action: 'list' }, lifetime.current?.signal),
+      contextRequest({}, fetch, lifetime.current?.signal),
+    ])
+    return {
+      snapshot: result.snapshot,
+      workspaces: context.workspaces.filter((item) => item.available).map((item) => item.path),
+    }
+  })
+  const snapshot = list.data?.snapshot
+  const workspaces = list.data?.workspaces ?? []
+  /** The settings fields edit the read value in place until they are saved. */
+  const setSnapshot = (next: WebhookSnapshot) =>
+    setResource<TriggersRead>(TRIGGERS_KEY, { snapshot: next, workspaces })
   const [rule, setRule] = useState<WebhookRule>(blank(''))
-  const [editing, setEditing] = useState(false)
+  /** The page whose rule the form holds; a link opened directly fills it once the rule is read. */
+  const prepared = useRef<string>()
   const [filters, setFilters] = useState('{"$.action":"opened"}')
   const [bundles, setBundles] = useState('')
   const [payload, setPayload] = useState(() =>
@@ -96,32 +125,42 @@ export function TriggersPanel({
       2,
     ),
   )
-  const [busy, setBusy] = useState(true)
+  const [busy, setBusy] = useState(false)
   const [error, setError] = useState(false)
   const [notice, setNotice] = useState('')
   useSettingsOverlay(formOpen || !!removing)
   useEffect(() => {
     const abort = new AbortController()
     lifetime.current = abort
-    void Promise.all([
-      triggersRequest({ action: 'list' }, abort.signal),
-      contextRequest({}, fetch, abort.signal),
-    ])
-      .then(([result, context]) => {
-        if (abort.signal.aborted) return
-        setSnapshot(result.snapshot)
-        const paths = context.workspaces.filter((item) => item.available).map((item) => item.path)
-        setWorkspaces(paths)
-        setRule(blank(paths[0] ?? ''))
-      })
-      .catch(() => {
-        if (!abort.signal.aborted) setError(true)
-      })
-      .finally(() => {
-        if (!abort.signal.aborted) setBusy(false)
-      })
     return () => abort.abort()
   }, [])
+  const openRule = (item: WebhookRule) => {
+    prepared.current = `${TRIGGER_PAGE}${item.id}`
+    setRule(item)
+    setFilters(JSON.stringify(item.filters, null, 2))
+    setBundles(item.bundles.join(', '))
+  }
+  const openBlank = () => {
+    prepared.current = NEW_TRIGGER
+    setRule(blank(workspaces[0] ?? ''))
+    setFilters('{"$.action":"opened"}')
+    setBundles('')
+  }
+  // A link (or a reload) that names the form opens it here: a new rule at once, a rule once it is read.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the form is prepared once per opened page.
+  useEffect(() => {
+    if (!formOpen || !top) {
+      prepared.current = undefined
+      return
+    }
+    if (prepared.current === top) return
+    if (top === NEW_TRIGGER) {
+      if (list.data) openBlank()
+      return
+    }
+    const item = snapshot?.rules.find((candidate) => `${TRIGGER_PAGE}${candidate.id}` === top)
+    if (item) openRule(item)
+  }, [formOpen, top, snapshot, list.data])
   async function request(input: WebhookRequest) {
     if (busy) return
     setBusy(true)
@@ -133,9 +172,10 @@ export function TriggersPanel({
         ? result
         : await triggersRequest({ action: 'list' }, lifetime.current?.signal)
       if (lifetime.current?.signal.aborted) return
-      setSnapshot(refreshed.snapshot)
+      if (refreshed.snapshot)
+        setResource<TriggersRead>(TRIGGERS_KEY, { snapshot: refreshed.snapshot, workspaces })
       setNotice(result.delivery?.status ?? 'saved')
-      if (input.action === 'upsert') setFormOpen(false)
+      if (input.action === 'upsert') nav.back()
       if (input.action === 'delete') setRemoving(undefined)
     } catch {
       if (!lifetime.current?.signal.aborted) setError(true)
@@ -178,11 +218,8 @@ export function TriggersPanel({
       data-testid="trigger-new"
       disabled={!canSave || busy}
       onClick={() => {
-        setRule(blank(workspaces[0] ?? ''))
-        setEditing(false)
-        setFilters('{"$.action":"opened"}')
-        setBundles('')
-        setFormOpen(true)
+        openBlank()
+        nav.open(NEW_TRIGGER)
       }}
     >
       {t('new')}
@@ -222,7 +259,14 @@ export function TriggersPanel({
           {t(notice)}
         </SettingsState>
       )}
-      {!snapshot && busy && <SettingsState tone="loading">{t('loading')}</SettingsState>}
+      <Loadable
+        loading={list.loading}
+        error={list.error}
+        hasData={!!snapshot}
+        onRetry={list.reload}
+        errorText={t('failed')}
+        shape="rows"
+      />
       {snapshot && (
         <SettingsGroup>
           {/* The one switch a person needs; it applies at once. */}
@@ -334,11 +378,8 @@ export function TriggersPanel({
                         data-testid={`trigger-edit-${item.id}`}
                         disabled={busy}
                         onClick={() => {
-                          setRule(item)
-                          setEditing(true)
-                          setFormOpen(true)
-                          setFilters(JSON.stringify(item.filters, null, 2))
-                          setBundles(item.bundles.join(', '))
+                          openRule(item)
+                          nav.open(`${TRIGGER_PAGE}${item.id}`)
                         }}
                       >
                         {t('edit')}
@@ -441,33 +482,7 @@ export function TriggersPanel({
           )}
         </SettingsSection>
       )}
-      <Dialog
-        focusable={{ focusTriggerAfterClose: false }}
-        scrollLock={false}
-        getContainer={() => document.body}
-        open={formOpen}
-        title={editing ? t('editTitle') : t('new')}
-        onCancel={() => {
-          if (!busy) setFormOpen(false)
-        }}
-        footer={
-          <>
-            <Button disabled={busy} onClick={() => setFormOpen(false)}>
-              {t('cancel')}
-            </Button>
-            <Button
-              appearance="primary"
-              htmlType="submit"
-              form="trigger-editor"
-              data-testid="trigger-save"
-              disabled={!canSave || busy}
-              loading={busy}
-            >
-              {t('save')}
-            </Button>
-          </>
-        }
-      >
+      <PushPage id={formOpen && top ? top : NEW_TRIGGER} title={editing ? t('editTitle') : t('new')}>
         <p className="automation-dialog-lead">{t('formLead')}</p>
         <form
           id="trigger-editor"
@@ -669,38 +684,38 @@ export function TriggersPanel({
             {t('test')}
           </Button>
         </SettingsDetails>
-      </Dialog>
-      <Dialog
-        focusable={{ focusTriggerAfterClose: false }}
-        scrollLock={false}
-        getContainer={() => document.body}
+        <div className="home-push-actions">
+          <Button disabled={busy} onClick={nav.back}>
+            {t('cancel')}
+          </Button>
+          <Button
+            appearance="primary"
+            htmlType="submit"
+            form="trigger-editor"
+            data-testid="trigger-save"
+            disabled={!canSave || busy}
+            loading={busy}
+          >
+            {t('save')}
+          </Button>
+        </div>
+      </PushPage>
+      <ConfirmDialog
         open={!!removing}
         title={t('removeTitle')}
-        onCancel={() => {
-          if (!busy) setRemoving(undefined)
+        confirmLabel={t('remove')}
+        cancelLabel={t('cancel')}
+        destructive
+        busy={busy}
+        testIds={{ confirm: 'trigger-remove-confirm' }}
+        onCancel={() => setRemoving(undefined)}
+        onConfirm={() => {
+          if (removing) void request({ action: 'delete', ruleId: removing })
         }}
-        footer={
-          <>
-            <Button disabled={busy} onClick={() => setRemoving(undefined)}>
-              {t('cancel')}
-            </Button>
-            <Button
-              danger
-              dangerFilled
-              data-testid="trigger-remove-confirm"
-              loading={busy}
-              onClick={() => {
-                if (removing) void request({ action: 'delete', ruleId: removing })
-              }}
-            >
-              {t('remove')}
-            </Button>
-          </>
-        }
       >
         <p>{t('removeHelp')}</p>
         {error && <SettingsState tone="error">{t('failed')}</SettingsState>}
-      </Dialog>
+      </ConfirmDialog>
     </section>
   )
 }

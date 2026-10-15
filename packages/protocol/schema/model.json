@@ -337,6 +337,41 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "providerCallMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Provider invocation wall time through adapter and capture cleanup; not the enclosing turn or provider service time."
+        },
+        "prepareMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Provider-local preparation before capture begins; excludes upstream context preparation."
+        },
+        "captureMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Union of blocking trace-capture intervals, including cleanup. Overlaps the other intervals; do not add again."
+        },
+        "dispatchMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Offset from provider entry to the first observed transport dispatch, after request capture. Absent without a transport observation."
+        },
+        "firstOutputMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Offset from provider entry to first decoded caller-visible text, thinking, tool or media output."
+        },
+        "outputMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Wall time from first visible output to observing the terminal outcome, including intervening local work."
+        },
+        "finalizeMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Wall time from terminal observation to adapter and trace cleanup completion."
+        },
         "ttftMs": { "type": "integer", "minimum": 0 },
         "durationMs": { "type": "integer", "minimum": 0 }
       }
@@ -419,6 +454,7 @@
           "required": ["type", "reason"],
           "properties": {
             "type": { "const": "done" },
+            "timing": { "$ref": "#/$defs/Timing" },
             "reason": { "enum": ["stop", "length", "toolUse"] }
           }
         },
@@ -428,6 +464,7 @@
           "required": ["type", "reason", "code", "message", "retryable"],
           "properties": {
             "type": { "const": "error" },
+            "timing": { "$ref": "#/$defs/Timing" },
             "reason": { "enum": ["aborted", "error"] },
             "code": { "$ref": "#/$defs/AiErrorCode" },
             "message": { "type": "string", "maxLength": 4096 },

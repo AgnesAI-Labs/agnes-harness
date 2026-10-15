@@ -34,6 +34,8 @@ export function AgentsPage({ context }: { context: UiExtensionContext }) {
           <span className="home-page-title-note">{context.t('home.entry.agents.sub')}</span>
         </>
       }
+      // Starting an agent opens its page inside this one: Agent FDE › the agent.
+      pushTitle={`${context.t('home.entry.agents')} ${context.t('home.entry.agents.sub')}`}
       description={t('description')}
       actions={
         <IconButton

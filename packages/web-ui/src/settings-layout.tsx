@@ -10,12 +10,15 @@ import { createPortal } from 'react-dom'
 
 import { useAdvancedSettings } from './advanced-settings.js'
 import { fallbackT } from './locales/index.js'
+import { SettingsUndoScope } from './settings-autosave.js'
 import { Button } from './ui/button.js'
 import { CopyButton } from './ui/copy-button.js'
 import { Disclosure, type DisclosureProps, NestedSurfaceContext } from './ui/disclosure.js'
 import { Icon } from './ui/icon.js'
 import type { IconName } from './ui/icon-set.js'
 import { IconTile } from './ui/icon-tile.js'
+import { LOADABLE_DELAY_MS, LOADABLE_SLOW_MS } from './ui/loadable.js'
+import { SettingsInfo, SettingsSubpageFrame } from './ui/settings-subpages.js'
 import { Skeleton } from './ui/skeleton.js'
 
 type DataAttributes = { [name: `data-${string}`]: string | number | boolean | undefined }
@@ -34,6 +37,7 @@ export function SettingsPage({
   description,
   actions,
   headingId,
+  routeId,
   bodyClassName,
   banner,
   toolbar,
@@ -47,6 +51,8 @@ export function SettingsPage({
     description?: ReactNode
     actions?: ReactNode
     headingId?: string
+    /** Canonical settings page identity; its subpages become URL levels. */
+    routeId?: string | undefined
     bodyClassName?: string
     banner?: ReactNode
     toolbar?: ReactNode
@@ -61,9 +67,25 @@ export function SettingsPage({
     <>
       {banner}
       {toolbar}
-      <div className={['agnes-settings-stack', bodyClassName].filter(Boolean).join(' ')}>{children}</div>
+      <div
+        className={['agnes-settings-stack', !nested && 'agnes-settings-page-body', bodyClassName]
+          .filter(Boolean)
+          .join(' ')}
+      >
+        {children}
+      </div>
       {saveBar}
     </>
+  )
+  const header = (
+    <SettingsPageHeader
+      className={nested ? undefined : 'agnes-settings-page-top'}
+      title={title}
+      description={description}
+      actions={actions}
+      headingId={headingId}
+      slots={nested ? undefined : { lead: setLead, actions: setActionsHost }}
+    />
   )
   return (
     <section
@@ -72,17 +94,18 @@ export function SettingsPage({
       data-nested={nested || undefined}
       className={['agnes-settings-page', props.className].filter(Boolean).join(' ')}
     >
-      <SettingsPageHeader
-        title={title}
-        description={description}
-        actions={actions}
-        headingId={headingId}
-        slots={nested ? undefined : { lead: setLead, actions: setActionsHost }}
-      />
       {nested ? (
-        body
+        <>
+          {header}
+          {body}
+        </>
       ) : (
-        <SettingsPageFrameContext.Provider value={frame}>{body}</SettingsPageFrameContext.Provider>
+        // A top-level page drills into subpages and undoes its last saved change with ⌘Z.
+        <SettingsUndoScope>
+          <SettingsSubpageFrame header={header} rootTitle={title} routeId={routeId}>
+            <SettingsPageFrameContext.Provider value={frame}>{body}</SettingsPageFrameContext.Provider>
+          </SettingsSubpageFrame>
+        </SettingsUndoScope>
       )}
     </section>
   )
@@ -159,8 +182,10 @@ export function SettingsGroup({ children, ...props }: HTMLAttributes<HTMLDivElem
 export function SettingsItem({
   label,
   description,
+  info,
   labelId,
   icon,
+  leading,
   stacked = false,
   children,
   ...props
@@ -168,8 +193,12 @@ export function SettingsItem({
   DataAttributes & {
     label: ReactNode
     description?: ReactNode
+    /** The longer explanation, behind an ⓘ beside the name. */
+    info?: string | undefined
     labelId?: string
     icon?: IconName
+    /** Before the icon: a drag handle or a logo tile. */
+    leading?: ReactNode
     stacked?: boolean
   }) {
   return (
@@ -178,10 +207,12 @@ export function SettingsItem({
       data-stacked={stacked || undefined}
       className={['agnes-settings-item', props.className].filter(Boolean).join(' ')}
     >
+      {leading}
       {icon && <IconTile name={icon} />}
       <div className="agnes-settings-item-copy">
         <div className="agnes-settings-item-label" id={labelId}>
           {label}
+          {info && <SettingsInfo text={info} />}
         </div>
         {description && <div className="agnes-settings-item-description">{description}</div>}
       </div>
@@ -236,9 +267,31 @@ export function SettingsState({
       aria-live={props['aria-live'] ?? 'polite'}
       aria-busy={props['aria-busy'] ?? (tone === 'loading' || undefined)}
     >
-      {tone === 'loading' && <Skeleton />}
-      {children}
+      {tone === 'loading' ? <LoadingState>{children}</LoadingState> : children}
     </div>
+  )
+}
+
+/**
+ * A read in progress, the shared way (DESIGN v4 「统一加载」): nothing for 200 ms, then quiet grey lines,
+ * and 「仍在读取…」 only after 3 s. What is being read is announced, not printed on its own line.
+ */
+function LoadingState({ children }: { children?: ReactNode }) {
+  const [phase, setPhase] = useState<'hidden' | 'shown' | 'slow'>('hidden')
+  useEffect(() => {
+    const show = setTimeout(() => setPhase('shown'), LOADABLE_DELAY_MS)
+    const slow = setTimeout(() => setPhase('slow'), LOADABLE_SLOW_MS)
+    return () => {
+      clearTimeout(show)
+      clearTimeout(slow)
+    }
+  }, [])
+  return (
+    <>
+      {phase !== 'hidden' && <Skeleton />}
+      <span className="agh-visually-hidden">{children}</span>
+      {phase === 'slow' && <span className="agnes-settings-state-slow">{fallbackT('ui.stillLoading')}</span>}
+    </>
   )
 }
 export const SettingsInput = forwardRef<

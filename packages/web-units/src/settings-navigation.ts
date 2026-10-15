@@ -5,12 +5,25 @@ const merged: Readonly<Record<string, readonly [string, string]>> = {
   bundles: ['models', 'bundles'],
   'system-prompt': ['models', 'system-prompt'],
   context: ['models', 'context'],
-  // The loop is chosen in 新会话默认; memory and instructions are the General page's 个性化.
-  execution: ['models', 'models'],
+  // Adding an account is a page of 模型与账户.
+  'add-account': ['model', 'add-account'],
+  // Subpages of 权限与安全 open from their rows.
+  'auto-review': ['security', 'auto-review'],
+  'approval-rules': ['security', 'approval-rules'],
+  isolation: ['security', 'isolation'],
+  // Subpages of 运行配置 open from their rows.
+  'prompt-preview': ['models', 'prompt-preview'],
+  'agent-fde': ['models', 'bundles'],
+  'session-slots': ['models', 'session-slots'],
+  // The loop is chosen in 新会话默认 → 执行方式; memory and instructions are the General page's 个性化.
+  execution: ['models', 'session-loop'],
   personalization: ['general', 'personalization'],
   memory: ['general', 'memory'],
   'custom-instructions': ['general', 'custom-instructions'],
-  providers: ['diagnostics', 'providers'],
+  providers: ['diagnostics', 'runtime-details'],
+  'runtime-details': ['diagnostics', 'runtime-details'],
+  otlp: ['diagnostics', 'otlp'],
+  errors: ['diagnostics', 'errors'],
   // Credentials are the lower half of the permissions page.
   credentials: ['security', 'credentials'],
 }
@@ -123,6 +136,11 @@ export function matchesSettings(query: string, text: string): boolean {
 export function revealSettingsAnchor(anchor: string): void {
   const node = document.getElementById(anchor)
   if (!node) return
+  // A row that opens a subpage is revealed by opening that subpage.
+  if (node.dataset.settingsDrill !== undefined) {
+    if (node.getAttribute('aria-expanded') !== 'true') node.click()
+    return
+  }
   for (let current: HTMLElement | null = node; current; current = current.parentElement)
     if (current instanceof HTMLDetailsElement) current.open = true
     else if (current.classList.contains('agh-disclosure')) setDisclosureOpen(current, true)

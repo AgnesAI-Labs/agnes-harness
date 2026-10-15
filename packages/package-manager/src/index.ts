@@ -21,6 +21,7 @@ export type { PackageLifecycleActivation, PackageReferences, TrustDecision } fro
 export * from './local-examples-catalog.js'
 export * from './local-source.js'
 export * from './local-watcher.js'
+export * from './local-workspace-trust.js'
 export * from './lock-state.js'
 export * from './lockfile.js'
 export * from './manager.js'

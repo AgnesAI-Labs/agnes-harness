@@ -5,9 +5,11 @@ import {
   createDocumentLocaleSource,
   hasPermission,
   IconButton,
+  Loadable,
   type LocaleTranslator,
   SettingsPage as SettingsPageLayout,
   SettingsState,
+  trackPageRequest,
   UiLocaleProvider,
   type UiLocaleSource,
   useUiText,
@@ -102,7 +104,7 @@ function SettingsPageHost({
     let current = true
     setAdminBusy(true)
     setAdminFailed(false)
-    void load()
+    void trackPageRequest(load())
       .then(
         (value) => {
           if (!current) return
@@ -145,8 +147,7 @@ function SettingsPageHost({
     setBusy(false)
     if (!api || !needsRuntimeCatalog) return
     setBusy(true)
-    void api
-      .runtime()
+    void trackPageRequest(api.runtime())
       .then((value) => {
         if (current) setSnapshot(value)
       })
@@ -208,6 +209,9 @@ function SettingsPageHost({
   return (
     <div data-testid={`settings-page-${section.id}`} id={`settings-hub-panel-${section.id}`}>
       <SettingsPageLayout
+        // Another page starts at its top level, not inside the last page's subpage.
+        key={section.id}
+        routeId={section.id}
         title={title}
         actions={
           needsRuntimeCatalog || adminFailed ? (
@@ -224,9 +228,7 @@ function SettingsPageHost({
         }
       >
         {needsRuntimeCatalog && (adminBusy || busy) && !snapshot && (
-          <SettingsState tone="loading" data-testid="settings-catalog-state">
-            {t('loading')}
-          </SettingsState>
+          <Loadable loading hasData={false} shape="rows" />
         )}
         {(adminFailed || (needsRuntimeCatalog && failed)) && (
           <Banner tone="error" data-testid="settings-catalog-state">

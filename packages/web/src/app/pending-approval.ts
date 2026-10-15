@@ -25,6 +25,34 @@ export function pendingApproval(
       !item.consumption,
   )
   if (!value?.request.spec.options.every((option) => Object.hasOwn(options, option))) return
+  return approvalNode(value, ref, 'pending')
+}
+
+/**
+ * A decision someone already answered whose turn has not picked the answer up yet: the composer
+ * says it was answered and the Agent will continue, never that the approval failed to load.
+ */
+export function answeredApproval(
+  decisions: readonly DecisionSnapshot[],
+  ref: NonNullable<ApprovalNode['decisionRef']>,
+): ApprovalNode | undefined {
+  const value = decisions.find(
+    (item) =>
+      item.handle.sessionId === ref.sessionId &&
+      item.handle.id === ref.id &&
+      item.result?.reason === 'answered' &&
+      !item.invalidation &&
+      !item.consumption,
+  )
+  if (!value?.request.spec.options.every((option) => Object.hasOwn(options, option))) return
+  return approvalNode(value, ref, 'decided')
+}
+
+function approvalNode(
+  value: DecisionSnapshot,
+  ref: NonNullable<ApprovalNode['decisionRef']>,
+  state: 'pending' | 'decided',
+): ApprovalNode {
   const { spec, expiresAt } = value.request
   const subject =
     spec.subject !== null && typeof spec.subject === 'object' && !Array.isArray(spec.subject)
@@ -36,7 +64,7 @@ export function pendingApproval(
     kind: 'approval',
     id: ref.id,
     seq: 0,
-    state: 'pending',
+    state,
     decisionRef: ref,
     summary: spec.prompt,
     risk: risk === 'destructive' || risk === 'always' || risk === 'budget' ? risk : 'unknown',
@@ -44,6 +72,13 @@ export function pendingApproval(
     // Show the complete decision subject, including the tool arguments and original summary.
     subjectText: JSON.stringify(spec.subject, null, 2),
     ...(expiresAt ? { expiresAt } : {}),
+    // Core asking whether a call that lost its result ran: a reconciliation, not a permission.
+    ...(value.request.owner === 'core/unknown-outcome'
+      ? { reconcile: { tool: typeof subject?.name === 'string' && subject.name ? subject.name : 'tool' } }
+      : {}),
+    ...(state === 'decided' && value.result?.reason === 'answered'
+      ? { decision: { verdict: value.result.response.option, via: 'human' } }
+      : {}),
     ...(rewrite &&
     typeof rewrite === 'object' &&
     !Array.isArray(rewrite) &&

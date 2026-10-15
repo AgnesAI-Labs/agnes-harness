@@ -101,7 +101,7 @@ function nestedCallGraph(o: OpStateObj, rootEffectId: string): ToolCallState[] {
 /**
  * What to do about a call whose outcome nobody saw. It is asked as an approval because it is a
  * judgement only a person can make - the side effect may or may not have happened - and the turn
- * stops there. A pending answer returns through approval-callback and `continueParked`: allowed
+ * stops there while it is open. A pending answer returns through approval-callback and `continueParked`: allowed
  * acknowledges that it happened, while rejected records that it did not. Neither verdict replays
  * the never-replay tool.
  *
@@ -109,8 +109,14 @@ function nestedCallGraph(o: OpStateObj, rootEffectId: string): ToolCallState[] {
  * opened is still open here and a `turn/end` beside an open step is refused.
  */
 async function askUnknownOutcome(s: SessionImpl, toolUseId: string, name: string): Promise<void> {
-  const rows = await unknownOutcomeRows(s, toolUseId, name)
-  await closeTurn(s, 'parked', { events: rows })
+  const reconciliation = await unknownOutcomeRows(s, toolUseId, name)
+  if (reconciliation.park) {
+    await closeTurn(s, 'parked', { events: reconciliation.rows })
+    return
+  }
+  // Answered while recovery waited (or before the crash): the answer is consumed here and the
+  // resumed turn carries on, exactly as it does when the same answer arrives during a live batch.
+  await s.transition(reconciliation.rows, (cur) => cur)
 }
 
 /** A synthesized `tool/result` closing a call the resume path is answering for, not the tool itself. */

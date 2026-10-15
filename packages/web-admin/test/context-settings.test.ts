@@ -1,11 +1,13 @@
 /** @vitest-environment happy-dom */
+
+import { SettingsSubpageFrame } from '@agnes/web-ui'
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
 import { ContextPanel } from '../src/settings/context.js'
 
-it('loads and saves installation context, previews workspace rules and composes a slash Skill request', async () => {
+it('saves each context change by itself, as presets and chips, and previews a workspace’s rules in a subpage', async () => {
   const config = {
     rulesEnabled: true,
     timeEnabled: true,
@@ -50,13 +52,46 @@ it('loads and saves installation context, previews workspace rules and composes 
   document.body.append(host)
   const root = createRoot(host)
   const control = (id: string) => host.querySelector(`[data-testid="${id}"]`) as HTMLInputElement
+  const saved = () => requests.filter((request) => request.config)
   try {
-    flushSync(() => root.render(createElement(ContextPanel, { canSave: true })))
-    await vi.waitFor(() => expect(control('context-zone')?.value).toBe('UTC'))
-    // Nothing is edited yet, so there is nothing to save.
-    expect((control('context-save') as unknown as HTMLButtonElement).disabled).toBe(true)
+    flushSync(() =>
+      root.render(
+        createElement(SettingsSubpageFrame, { header: null }, createElement(ContextPanel, { canSave: true })),
+      ),
+    )
+    await vi.waitFor(() => expect(control('context-rules-enabled')).not.toBeNull())
+    // Nothing to press: each change saves itself.
+    expect(host.querySelector('[data-testid="context-save"]')).toBeNull()
+    flushSync(() => control('context-time-enabled').click())
+    await vi.waitFor(() => expect(saved().at(-1)?.config).toMatchObject({ timeEnabled: false }))
+    flushSync(() => control('context-time-enabled').click())
+    await vi.waitFor(() => expect(saved().at(-1)?.config).toMatchObject({ timeEnabled: true }))
+    // The refresh is a preset: 10 minutes is stored as 600000 ms.
+    const interval = control('context-interval') as unknown as HTMLSelectElement
+    expect(interval.value).toBe('600000')
+    flushSync(() => {
+      interval.value = '0'
+      interval.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await vi.waitFor(() => expect(saved().at(-1)?.config).toMatchObject({ refreshIntervalMs: 0 }))
+    // Skill folders are chips: a typed path is added with Enter.
+    const folder = host.querySelector<HTMLInputElement>('[data-testid="context-skill-roots"] input')!
+    flushSync(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+        folder,
+        '/opt/team-skills',
+      )
+      folder.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    flushSync(() => folder.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    await vi.waitFor(() =>
+      expect(saved().at(-1)?.config).toMatchObject({ customSkillRoots: ['/opt/team-skills'] }),
+    )
+    // The rules a workspace loads are a subpage; choosing a workspace reads them at once.
     expect(host.querySelector('[data-testid="context-rule-files"]')).toBeNull()
-    // Choosing a workspace reads its rules at once.
+    flushSync(() => control('context-rules-view').click())
+    // The subpage moves focus to its title once it has opened.
+    await new Promise((resolve) => setTimeout(resolve, 0))
     flushSync(() =>
       host.querySelector('#context-workspace')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })),
     )
@@ -67,41 +102,22 @@ it('loads and saves installation context, previews workspace rules and composes 
     flushSync(() => workspace?.click())
     await vi.waitFor(() => expect(host.querySelector('[data-testid="context-rule-files"]')).not.toBeNull())
     expect(requests.at(-1)).toEqual({ cwd: '/synthetic/project' })
-    // Each rule file is a row; its text opens inside a code block that can be copied.
-    await vi.waitFor(() =>
-      expect(host.querySelector('[data-testid="context-rule-files"] .agh-disclosure-summary')).not.toBeNull(),
+    // Each rule file is a row; its text opens in place, in a code block that can be copied.
+    const row = host.querySelector<HTMLButtonElement>(
+      '[data-testid="context-rule-files"] button.agnes-settings-drill',
     )
-    flushSync(() =>
-      host.querySelector<HTMLElement>('[data-testid="context-rule-files"] .agh-disclosure-summary')?.click(),
-    )
+    expect(row?.textContent).toContain('AGENTS.md')
+    flushSync(() => row?.click())
     await vi.waitFor(() => expect(host.textContent).toContain('Follow project conventions'))
     expect(
       host.querySelector('[data-testid="context-rule-files"] .agnes-settings-code button'),
     ).not.toBeNull()
-    flushSync(() => {
-      const input = control('context-skill-roots')
-      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(
-        input,
-        '/opt/team-skills',
-      )
-      input.dispatchEvent(new Event('input', { bubbles: true }))
-    })
-    flushSync(() => control('context-save').click())
-    await vi.waitFor(() =>
-      expect(
-        requests.some(
-          (r) => (r.config as typeof config | undefined)?.customSkillRoots[0] === '/opt/team-skills',
-        ),
-      ).toBe(true),
-    )
-    flushSync(() => {
-      const input = control('context-skill-name')
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, 'review')
-      input.dispatchEvent(new Event('input', { bubbles: true }))
-    })
-    expect(control('context-skill-invoke').getAttribute('href')).toContain('prompt=%2Fskill+invoke+review')
-    await vi.waitFor(() => expect(control('context-panel').getAttribute('aria-busy')).toBe('false'))
+    // 运行技能 is no longer here; it is on each skill of the plugins page.
+    expect(host.querySelector('[data-testid="context-skill-invoke"]')).toBeNull()
     malformed = true
+    await vi.waitFor(() =>
+      expect((control('context-refresh') as unknown as HTMLButtonElement).disabled).toBe(false),
+    )
     flushSync(() => control('context-refresh').click())
     await vi.waitFor(() => expect(host.querySelector('[role="alert"]')).not.toBeNull())
     expect(host.textContent).toContain('Follow project conventions')

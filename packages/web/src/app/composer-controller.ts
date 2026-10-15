@@ -12,12 +12,15 @@ import {
   shouldShowEmptyState,
 } from '@agnes/web-conversation/presentation'
 import type { WorkbenchContext } from '@agnes/web-conversation/workbench'
-import { shortcutLabel } from '@agnes/web-ui'
+import { shortcutLabel, trackPageRequest } from '@agnes/web-ui'
 import type { AppSessionContext } from '../app.js'
 import { rememberWebComposer } from '../composer-memory.js'
 import { loopIdentity, updateLoopPicker } from '../loop-picker.js'
 import { webView } from '../view.js'
 import { renderWorkbench, unmountWorkbench } from '../workbench/dock.js'
+
+/** Ends the progress of the session being opened, while one is. */
+let endSessionRead: (() => void) | undefined
 
 export function createComposerController(
   context: Pick<
@@ -143,6 +146,17 @@ export function createComposerController(
     // 切换会话加载期间的视觉态：旧画面降不透明度提示「正在准备」，新投影就绪后
     // 由 sessionPending = false 的那次 renderControls 平滑恢复。
     document.body.classList.toggle('session-switching', context.sessionPending)
+    // Opening a session is a page-level read: the top progress bar runs until it is ready.
+    if (context.sessionPending && !endSessionRead)
+      void trackPageRequest(
+        new Promise<void>((resolve) => {
+          endSessionRead = resolve
+        }),
+      )
+    else if (!context.sessionPending && endSessionRead) {
+      endSessionRead()
+      endSessionRead = undefined
+    }
     const available = context.connected
     const busy = context.projection ? webView(context.projection, undefined, context.t).busy : false
     const images = context.composerRuntime.getAttachmentBlocks()

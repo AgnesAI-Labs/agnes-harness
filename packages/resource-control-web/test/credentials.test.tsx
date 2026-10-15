@@ -2,7 +2,7 @@
 
 import type { AdminCredentialMetadata } from '@agnes/protocol/gen/app-server'
 
-import { mountRegion } from '@agnes/web-ui'
+import { mountRegion, SettingsPage } from '@agnes/web-ui'
 import { act } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { CredentialsPage } from '../src/credentials.js'
@@ -241,6 +241,53 @@ it('rejects value echoes and reduces permission, storage and read-only failures 
   try {
     expect(node('credentials-error').textContent).toContain('unavailable')
     expect(cleanDom()).toBe(true)
+  } finally {
+    await act(async () => dispose())
+  }
+})
+
+it('opens the editor as a page of the settings page it is part of, closes it on save, and drops the draft on 返回', async () => {
+  let items: AdminCredentialMetadata[] = []
+  const fetcher: typeof fetch = vi.fn(async (input, init) => {
+    const path = String(input)
+    const body = init?.body ? JSON.parse(String(init.body)) : {}
+    if (path.endsWith('/context')) return Response.json(context)
+    if (path === '/admin/api/credentials') return Response.json({ items })
+    items = [{ ...item, label: body.label }]
+    return Response.json(items[0])
+  })
+  const host = document.body.appendChild(document.createElement('div'))
+  let dispose!: () => void
+  await act(async () => {
+    dispose = mountRegion(
+      host,
+      <SettingsPage title="Permissions & security">
+        <CredentialsPage api={new CredentialsApi(fetcher)} section />
+      </SettingsPage>,
+    )
+  })
+  try {
+    await click('credential-create')
+    // A page, not a dialog: the editor sits in the settings page's subpage.
+    expect(
+      document.querySelector('[data-testid="settings-subpage-credential"] [data-testid="credential-editor"]'),
+    ).not.toBeNull()
+    expect(document.querySelector('.agh-dialog [data-testid="credential-editor"]')).toBeNull()
+    await fill('credential-label', 'Service key')
+    await fill('credential-value', canary)
+    await click('credential-save')
+    await act(async () => {})
+    expect(document.querySelector('[data-testid="credential-editor"]')).toBeNull()
+    expect(document.querySelectorAll('[data-testid="credential-row"]')).toHaveLength(1)
+    expect(cleanDom()).toBe(true)
+    // 返回 leaves the page and drops what was typed.
+    await click('credential-create')
+    await fill('credential-label', 'Half typed')
+    await click('settings-subpage-back')
+    await act(async () => window.dispatchEvent(new PopStateEvent('popstate', { state: {} })))
+    expect(document.querySelector('[data-testid="credential-editor"]')).toBeNull()
+    await click('credential-create')
+    expect(node<HTMLInputElement>('credential-label').value).toBe('')
   } finally {
     await act(async () => dispose())
   }

@@ -19,7 +19,10 @@ const MOVED_TO_SETTINGS: Readonly<Record<string, string>> = {
   context: 'general',
 }
 
-/** `?page=plugins&tab=<tab>`; a built-in capability's detail is `tab=plugins.<capability>`. */
+/**
+ * `?page=plugins&tab=<tab>`. An older link names a built-in as `tab=plugins.<capability>`; the page
+ * opens it as a pushed page (`view=<capability>`).
+ */
 export function pluginsRoute(selection: unknown): PluginsRoute {
   const raw = (selection as { tab?: unknown } | undefined)?.tab
   if (typeof raw !== 'string') return { tab: 'plugins' }
@@ -33,6 +36,74 @@ export function pluginsRoute(selection: unknown): PluginsRoute {
   return { tab: PLUGIN_TABS.find((id) => id === raw) ?? 'plugins' }
 }
 
-export function openPlugins(tab: PluginTab, capability?: Capability): void {
-  homeNavigation.open('plugins', { tab: capability ? `${CAPABILITY_PREFIX}${capability}` : tab })
+export function openPlugins(tab: PluginTab): void {
+  homeNavigation.open('plugins', { tab })
+}
+
+/** The address parameter that names the pages pushed over the plugins page. */
+export const PLUGIN_VIEW_PARAM = 'view'
+
+/**
+ * A page pushed over the plugins page: a built-in's detail, an installed plugin, a marketplace
+ * entry, a skill or MCP server, a review item, running a skill in a new session (`run:<skill>`), or
+ * one of the add forms (a plugin, an MCP server, a search service under 网页搜索). `operations` is the
+ * detail that only follows running operations.
+ */
+export type PluginPage =
+  | Readonly<{ kind: 'capability'; id: Capability }>
+  | Readonly<{ kind: 'plugin' | 'market' | 'skill' | 'mcp' | 'review' | 'run'; id: string }>
+  | Readonly<{ kind: 'add-plugin' | 'add-mcp' | 'operations' | 'search-engine' }>
+
+const ITEM_KINDS = ['plugin', 'market', 'skill', 'mcp', 'review', 'run'] as const
+const FORM_KINDS = ['add-plugin', 'add-mcp', 'operations', 'search-engine'] as const
+
+/** The route segment for a page: `search`, `plugin:<id>`, `add-plugin`. */
+export function pluginPageId(page: PluginPage): string {
+  if (page.kind === 'capability') return page.id
+  return 'id' in page ? `${page.kind}:${page.id}` : page.kind
+}
+
+/** The page a route segment names, or undefined for one this page does not know. */
+export function pluginPage(segment: string): PluginPage | undefined {
+  const capability = CAPABILITIES.find((id) => id === segment)
+  if (capability) return { kind: 'capability', id: capability }
+  const form = FORM_KINDS.find((kind) => kind === segment)
+  if (form) return { kind: form }
+  const colon = segment.indexOf(':')
+  if (colon < 1 || colon === segment.length - 1) return undefined
+  const kind = ITEM_KINDS.find((known) => known === segment.slice(0, colon))
+  return kind ? { kind, id: segment.slice(colon + 1) } : undefined
+}
+
+/** The tab a page is opened from; its list stays under it. Undefined keeps the current tab. */
+export function pluginPageTab(page: PluginPage): PluginTab | undefined {
+  switch (page.kind) {
+    case 'capability':
+    case 'plugin':
+      return 'plugins'
+    case 'market':
+      return 'market'
+    case 'skill':
+    case 'run':
+      return 'skills'
+    case 'mcp':
+    case 'add-mcp':
+      return 'mcp'
+    case 'review':
+      return 'review'
+    default:
+      return undefined
+  }
+}
+
+/**
+ * An address written before details were pages names a built-in by its tab
+ * (`tab=plugins.<capability>`). Its page is pushed now: this is the plain plugins address to put in
+ * its place, after which the page opens over it, so back returns to the list.
+ */
+export function plainPluginsAddress(href: string): string {
+  const url = new URL(href)
+  url.searchParams.set('tab', 'plugins')
+  url.searchParams.delete(PLUGIN_VIEW_PARAM)
+  return `${url.pathname}${url.search}${url.hash}`
 }

@@ -45,10 +45,12 @@ export default defineTool({
 
 使用已有的 jiti 即时转译 TypeScript，无需编译。不会自动猜测缺失的 dist 入口，也不会安装依赖；外部依赖必须能由运行时解析。作者 API 和 TypeBox 使用 Host 的模块。快照不包含 `node_modules`、`.git`，拒绝插件中的符号链接。
 
-将代码放入这些目录表示信任其在进程内运行。首次发现会安装、信任并启用插件；已有的禁用选择保留。会话审批约束创建工具和工具调用，但不隔离插件初始化代码。包标识冲突会失败，不会自动覆盖现有包。
+主动放入运行 home 的插件目录代表授权可信执行。仓库 `.agh/plugins` 只采集清单，不导入入口，初次发现时禁用且未信任。在 设置 → 运行详情 → 本地插件 中查看仓库插件数量，审核后确认“信任”；SDK/API 使用 `packages.trustWorkspace` 和服务端提供的仓库路径。重新扫描后，已批准快照可供新会话加载。修改仓库插件字节会撤销信任，需要再次确认；未变更的已审核插件保留禁用选择。确认还绑定当前 `.agh/hooks.json` 摘要，hooks 编辑后须重新审核。插件是完全受信任的代码，以用户权限运行。后续工具调用审批不隔离模块初始化代码。
 
 `/admin/plugins` 显示 `local` 来源、安装/启用状态，以及带修复提示的失败状态。变更经过防抖，复制为新的不可变快照。删除源目录会禁用后续绑定，保留旧会话恢复需要的快照。
 
 Watcher 通过 `LocalPluginReload.reloadPlugin(id)` 调用代际管理者。daemon 已将该接口绑定到现有目标发布流程：worker 确认新目标后，新会话获得新版本，旧会话继续使用固定快照。存储和 sandbox 等基础后端仍需要重启。手动命令和冷恢复行为见[热重载指南](hot-reload.zh-CN.md)。失败的重载保留原激活并显示错误，不替换运行中会话的工具。
 
 嵌入者可配置 `createPackageManager({ localPlugins: localPluginRoots(home, workspace), ... })`，启动时调用 `refreshLocalPlugins(profileDir)`，再调用 `watchLocalPlugins(profileDir)`；用 `bindLocalPluginReload({ reloadPlugin })` 绑定代际服务，退出时关闭 watcher。重载实现必须经代际管理者发布新的快照和包状态，并处理删除、禁用及失败。
+
+本地仓库的信任选项包含 `trustHash`，调用 `packages.trustWorkspace` 时作为 `expectedHash` 传入；缺失或过期摘要以 `E_PACKAGE_PREVIEW_STALE` 拒绝信任。仓库 package 生命周期脚本、Skill 附带代码、仓库 MCP JSON 不会在启动时自动执行；托管 MCP 进程仍须单独显式授权。

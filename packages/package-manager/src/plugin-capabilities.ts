@@ -36,6 +36,26 @@ export function capabilityAtoms(value: PluginCapabilities | undefined): string[]
   ].sort()
 }
 
+/** Category ceiling is an admission check on declarations, never JavaScript isolation. */
+export function pluginCapabilityCategories(value: PluginCapabilities | undefined): string[] {
+  if (!value) return []
+  return Object.entries(value)
+    .flatMap(([key, declared]) => {
+      if (key === 'filesystem')
+        return ['read', 'write']
+          .filter((access) => value.filesystem?.[access as 'read' | 'write']?.length)
+          .map((access) => `filesystem.${access}`)
+      if (
+        declared === true ||
+        (Array.isArray(declared) && declared.length) ||
+        (declared && typeof declared === 'object' && !Array.isArray(declared))
+      )
+        return [key]
+      return []
+    })
+    .sort()
+}
+
 export function readPluginCapabilityPolicy(profileDir: string): PluginCapabilityPolicy {
   const file = join(profileDir, 'plugin-capabilities.json')
   if (!existsSync(file)) return {}

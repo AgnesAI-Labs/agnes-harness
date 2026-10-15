@@ -1,3 +1,4 @@
+import { hostPortRequest } from '@agnes/core'
 import {
   checkToolDef,
   type Disposer,
@@ -12,6 +13,7 @@ import {
 import type { ExtensionAPI } from '@agnes/extension-api/host'
 import { inspectJsonData, isHookEvent, type PluginCapabilities } from '@agnes/protocol'
 import { observePluginCapabilities } from '../plugin-capability-observer.js'
+import { refusedForParameters } from '../resources/management-refusal.js'
 import type { Lease } from './lease.js'
 import type { KernelPorts, RegMeta } from './ports.js'
 import { projectionReader } from './projection-reader.js'
@@ -32,7 +34,7 @@ function readOnlyReplay(classify: NonNullable<ToolDef['classify']>): NonNullable
   }
 }
 
-/** Hook events whose kernel table entry is observe-only; a plugin row may listen to these and nothing else. */
+/** Observe-category events used by the synthetic status manifest. registerHook also accepts transform/intercept events. */
 export const OBSERVE_HOOK_EVENTS: readonly HookEvent[] = Object.freeze(
   (Object.keys(HOOK_TABLE) as HookEvent[]).filter((event) => HOOK_TABLE[event].category === 'observe'),
 )
@@ -86,7 +88,8 @@ export type RowExtensionApiInput = {
 
 /**
  * The backend behind an installed plugin row's `tools`, `hooks`, `eventLog` and `self` facets. There is no manifest for a
- * plugin row, so nothing here reads one; the lease and the fixed rules below are the whole policy.
+ * plugin row, so nothing here reads one. Declared capabilities support review and diagnostics, not hook-registration
+ * enforcement. Plugins are fully trusted code running with the user's rights; leases own resource lifetime.
  */
 export type RowExtensionApi = Readonly<{
   ctx: ExtensionContext
@@ -200,13 +203,18 @@ export function buildRowExtensionAPI(input: RowExtensionApiInput): RowExtensionA
                               if (tctx.session.depth !== 0) throw new Error('Subagents cannot manage MCP')
                             }
                             assertLive()
-                            const result = await mcpManage(
-                              {
-                                input: structuredClone(request),
-                                toolUseId: tctx.session.toolUseId,
-                                sessionKey: tctx.session.key,
-                              },
-                              callSignal,
+                            const result = await hostPortRequest(
+                              tctx,
+                              () =>
+                                mcpManage(
+                                  {
+                                    input: structuredClone(request),
+                                    toolUseId: tctx.session.toolUseId,
+                                    sessionKey: tctx.session.key,
+                                  },
+                                  callSignal,
+                                ),
+                              refusedForParameters('mcp_manage'),
                             )
                             assertLive()
                             return result
@@ -225,14 +233,19 @@ export function buildRowExtensionAPI(input: RowExtensionApiInput): RowExtensionA
                               if (tctx.session.depth !== 0) throw new Error('Subagents cannot manage plugins')
                             }
                             assertLive()
-                            const result = await pluginManage(
-                              {
-                                input: structuredClone(request),
-                                toolUseId: tctx.session.toolUseId,
-                                turn: tctx.session.turn ?? 0,
-                                sessionKey: tctx.session.key,
-                              },
-                              callSignal,
+                            const result = await hostPortRequest(
+                              tctx,
+                              () =>
+                                pluginManage(
+                                  {
+                                    input: structuredClone(request),
+                                    toolUseId: tctx.session.toolUseId,
+                                    turn: tctx.session.turn ?? 0,
+                                    sessionKey: tctx.session.key,
+                                  },
+                                  callSignal,
+                                ),
+                              refusedForParameters('plugin management'),
                             )
                             assertLive()
                             return result

@@ -114,6 +114,7 @@ export class WorkspaceHookLoader {
   constructor(
     private readonly fs: HookFs,
     private readonly policyRevision: () => string,
+    private readonly isTrusted: (digest: string) => boolean = () => false,
   ) {}
 
   async snapshot(signal?: AbortSignal): Promise<HookInvocationSnapshot> {
@@ -156,6 +157,12 @@ export class WorkspaceHookLoader {
     if (!sameIdentity(before, after) || after.size !== bytes.byteLength) throw failure('hooks-read-race')
 
     const digest = `sha256-${createHash('sha256').update(bytes).digest('hex')}`
+    if (!this.isTrusted(digest))
+      return Object.freeze({
+        workspaceDigest: digest,
+        policyRevision,
+        hooks: Object.freeze([]),
+      })
     const hooks = this.cached?.digest === digest ? this.cached.hooks : parseHooks(bytes)
     if (this.cached?.digest !== digest) this.cached = Object.freeze({ digest, hooks })
     return Object.freeze({

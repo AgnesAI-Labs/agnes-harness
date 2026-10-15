@@ -229,7 +229,7 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
   expect(
     (await client.packages.list({ profile: 'local-dev' })).packages.some((p) => p.id === draft.packageId),
   ).toBe(false)
-  await pluginPage.getByTestId('candidate-back').click()
+  await pluginPage.getByTestId('push-back').click()
   await pluginPage
     .locator(`li[data-candidate-id="${draft.candidateId}"]`)
     .getByTestId('candidate-open')
@@ -329,7 +329,7 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     .getByRole('button', { name: 'Reject candidate', exact: true })
     .click()
   await expect(skillReview.getByTestId('candidate-state')).toHaveText('Rejected')
-  await pluginPage.getByTestId('candidate-back').click()
+  await pluginPage.getByTestId('push-back').click()
   await expect(page.getByTestId('home-page-plugins').getByTestId('candidate-list').locator('li')).toHaveCount(
     0,
   )
@@ -442,7 +442,7 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     await pluginTab(page, 'versions').click()
     await expect(page.getByTestId('plugin-drain-summary')).toHaveCount(1)
     await expect(page.getByTestId('plugin-drain-summary')).not.toContainText('@agnes/')
-    await page.locator('#plugin-detail .plugin-detail-close').click()
+    await page.getByTestId('push-back').click()
     await reviewType('plugin')
     await expand(pluginPage.getByTestId('candidate-history'))
     // Assert real timestamps above; normalize only elapsed text for stable screenshots.

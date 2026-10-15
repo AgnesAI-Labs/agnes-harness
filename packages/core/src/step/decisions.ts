@@ -151,7 +151,7 @@ export class DecisionCommands {
   private due(value: DecisionSnapshot): boolean {
     return value.request.expiresAt !== null && this.s.clock() >= Date.parse(value.request.expiresAt)
   }
-  private async expire(value: DecisionSnapshot): Promise<DecisionSnapshot> {
+  private async expire(value: DecisionSnapshot, source?: DecisionSource): Promise<DecisionSnapshot> {
     if (
       !this.due(value) ||
       value.consumption ||
@@ -167,7 +167,11 @@ export class DecisionCommands {
         ? { invalidation: { at, code: 'deadline' } }
         : { result: { reason: 'expired', at, code: 'deadline' } }),
     }
-    await this.write(next)
+    await this.write(
+      next,
+      () => this.live(source),
+      () => this.live(source),
+    )
     return next
   }
   port(input: DecisionSource): DecisionPort {
@@ -206,7 +210,7 @@ export class DecisionCommands {
         )
           fail('KEY_CONFLICT')
         this.read(existing.value.handle, source)
-        await this.expire(existing.value)
+        await this.expire(existing.value, source)
         return detached(existing.value.handle)
       }
       const now = this.s.clock()
@@ -291,7 +295,7 @@ export class DecisionCommands {
   get(handle: DecisionHandle, source?: DecisionSource): Promise<DecisionSnapshot> {
     return this.s.transact(async () => {
       this.live()
-      return detached(await this.expire(this.read(handle, source)))
+      return detached(await this.expire(this.read(handle, source), source))
     })
   }
   async list(): Promise<DecisionSnapshot[]> {

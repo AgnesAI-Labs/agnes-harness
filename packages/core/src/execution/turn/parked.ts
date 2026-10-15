@@ -1,6 +1,7 @@
 import { newOpState, type OpStateObj, type ToolCallState } from '@agnes/core-common/step/op-state'
 import { CoreError } from '@agnes/core-common/types'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
+import type { DecisionSnapshot } from '@agnes/extension-api'
 import type { ExecutionDomain, ResolvedToolCallPolicy } from '@agnes/protocol'
 import {
   hasAuthenticToolPolicyHash,
@@ -48,6 +49,10 @@ export async function continueParked(s: SessionImpl): Promise<'opened' | 'waitin
       continue
     const snapshot = await s.decisions.get(value.handle)
     if (!snapshot.result && !snapshot.invalidation) continue
+    // The turn parked on "did it happen?" and the answer came afterwards: reopen that turn with the
+    // answer, so the model carries on from it instead of waiting for the next user message.
+    if (value.request.owner === 'core/unknown-outcome' && snapshot.result?.reason === 'answered')
+      if (!snapshot.invalidation) return reopenAfterReconciliation(s, snapshot)
     if (snapshot.result?.reason === 'answered' && !snapshot.invalidation)
       await s.locked(async () => {
         await s.d.log.append([
@@ -278,4 +283,60 @@ export async function continueParked(s: SessionImpl): Promise<'opened' | 'waitin
     return 'opened'
   }
   return false
+}
+
+/**
+ * Opens the continuation of a turn that parked on an unknown-outcome question once it is answered.
+ * The start, the consumption and the note naming the answer commit together, so a restart either
+ * sees the question still answered-and-open (and reopens here) or the continuation already running.
+ * The never-replay call itself is not run again: its unknown result stays, and the note tells the
+ * model which way the person settled it.
+ */
+async function reopenAfterReconciliation(s: SessionImpl, snapshot: DecisionSnapshot): Promise<'opened'> {
+  const toolUseId = snapshot.request.operationId
+  const call = s.state.toolCalls.get(toolUseId)
+  if (!call || call.lane !== s.lane) throw new CoreError('E_RELATION', 'DECISION_CALL_MISSING')
+  const name = (snapshot.request.spec.subject as { name?: unknown }).name
+  const tool = typeof name === 'string' ? name : 'the call'
+  const happened =
+    snapshot.result?.reason === 'answered' && snapshot.result.response.option.startsWith('allowed')
+  const turn = s.lastTurnNumber() + 1
+  await s.transition(
+    () => [
+      s.ev('turn/start', {
+        turn,
+        trigger: 'approval-resume',
+        continues: { turn: call.turn, step: call.step, toolUseId, requestId: snapshot.handle.id },
+      }),
+      ...domainDecisionEvents(s, snapshot, domainDecisionSource(s, 'unknown-outcome', toolUseId)),
+      s.ev('user/message', {
+        content: [
+          {
+            type: 'text',
+            text: happened
+              ? `The outcome of ${tool} was unknown. The user confirmed that ${tool} happened; do not run it again.`
+              : `The outcome of ${tool} was unknown. The user confirmed that ${tool} did not happen; check the current state before trying again.`,
+          },
+        ],
+        kind: 'runtime_context',
+      }),
+    ],
+    (cur, seq) => {
+      if (cur) throw new CoreError('E_LANE_BUSY', 'continuation lane occupied')
+      return newOpState(
+        {
+          turn,
+          lane: s.lane,
+          acceptedAt: new Date(s.d.clock()).toISOString(),
+          triggerSeq: seq,
+          presetName: s.preset.name,
+          profileHash: s.d.resolvedProfileHash,
+          depthLimit: s.preset.depthLimit,
+        },
+        seq,
+      )
+    },
+  )
+  await s.rehydrateTurn(s.op() as OpStateObj)
+  return 'opened'
 }

@@ -9,6 +9,7 @@ import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
 import type { IntelligentUiClient } from '../../src/intelligent-ui/client.js'
+import { deliverableKey, deliverableProducer } from '../../src/intelligent-ui/deliverable-labels.js'
 import type { UiPlacementBinding } from '../../src/intelligent-ui/placements.js'
 import { attachTurnDeliverables, TurnDeliverables } from '../../src/intelligent-ui/turn-deliverables.js'
 import {
@@ -62,6 +63,12 @@ const surfaces = [
   ]),
   fileList('trip', 20, [{ name: 'trip.md', description: 'travel: review draft', sha: sha(5) }]),
   fileList('notes', 22, [{ name: 'notes.txt', description: 'meeting notes', sha: sha(6) }], {
+    inline: false,
+    workbench: true,
+    preferred: 'workbench',
+  }),
+  // An inline-only file list stays in its answer and never appears in this tab.
+  fileList('aside', 23, [{ name: 'aside.txt', description: 'scratch', sha: sha(7) }], {
     inline: true,
     workbench: false,
     preferred: 'inline',
@@ -170,8 +177,10 @@ it('shows conversation-style cards under group headings and previews the opened 
     expect(cards[0]?.querySelector('[data-testid="deliverable-open-with"]')).not.toBeNull()
     const earlier = panel.querySelector('[data-testid="workbench-deliverables-earlier"]') as HTMLElement
     expect(earlier.dataset.open).toBe('false')
-    expect(earlier.querySelector('.agh-disclosure-summary')?.textContent).toBe('早期版本 · 1')
-    expect(panel.textContent).not.toContain('crm-assistant')
+    expect(earlier.querySelector('.agh-disclosure-summary')?.textContent).toBe('同名文件历史 · 1')
+    // The version is said in plain words; the package only names whose copy a history entry is.
+    expect([...cards].map((card) => card.textContent).join(' ')).not.toContain('crm-assistant')
+    expect(earlier.querySelector('.deliverable-meta')?.textContent).toContain('From crm-assistant')
     await act(async () =>
       cards[0]?.querySelector<HTMLButtonElement>('[data-testid="deliverable-open"]')?.click(),
     )
@@ -260,7 +269,7 @@ it('the tab shows no earlier version for an identical repeat, and labels a chang
       ),
     )
   try {
-    // Presented twice with the same bytes: one file, no «早期版本».
+    // Presented twice with the same bytes: one file, no «同名文件历史».
     await show([presented('a', 10, sha(7), 15_155, at), presented('b', 11, sha(7), 15_155, at + 60_000)])
     expect(host.querySelectorAll('[data-testid="deliverable-file"]')).toHaveLength(1)
     expect(host.querySelector('[data-testid="workbench-deliverables-earlier"]')).toBeNull()
@@ -271,7 +280,7 @@ it('the tab shows no earlier version for an identical repeat, and labels a chang
     )
     expect(earlier?.getAttribute('data-version')).toBe('earlier')
     expect(earlier?.querySelector('.deliverable-meta')?.textContent).toBe(
-      `Version from ${time} · 1.2 KiB smaller than the latest`,
+      `From deliverables · Presented at ${time} · 1.2 KiB smaller than the newest`,
     )
   } finally {
     await act(async () => root.unmount())
@@ -304,4 +313,90 @@ it('links a file to its artifact record, else to the tool call its file list was
   })
   expect(deliverableSource({ nodes: [tool('before', 10, 12)] } as never, entry, client, 's')).toBeUndefined()
   expect(deliverableSource(undefined, entry, client, 's')).toBeUndefined()
+})
+
+it('keeps two names for the same bytes as two cards with their own selection', async () => {
+  const twins = fileList('twins', 30, [
+    { name: 'report.md', description: 'crm-assistant: final', sha: sha(9) },
+    { name: 'report-copy.md', description: 'crm-assistant: final', sha: sha(9) },
+  ])
+  const entries = sessionDeliverables([twins])
+  expect(new Set(entries.map((entry) => deliverableKey(entry))).size).toBe(2)
+  const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const host = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(host)
+  const t = createCatalogTranslator(workbenchLocaleCatalog, 'en')
+  try {
+    await act(async () =>
+      root.render(
+        createElement(WorkbenchDeliverables, {
+          binding: binding([twins]),
+          context: { t, data: { session: { id: 's' } } },
+        }),
+      ),
+    )
+    const items = [...host.querySelectorAll<HTMLElement>('.workbench-deliverables-group li')]
+    expect(items.map((item) => item.querySelector('.deliverable-name')?.textContent)).toEqual([
+      'report.md',
+      'report-copy.md',
+    ])
+    await act(async () => items[1]?.querySelector<HTMLElement>('.deliverable-name')?.click())
+    expect(items.map((item) => item.dataset.chosen)).toEqual(['false', 'true'])
+    // React saw two distinct keys: no duplicate-key warning.
+    expect(errors.mock.calls.flat().join(' ')).not.toContain('same key')
+  } finally {
+    await act(async () => root.unmount())
+    host.remove()
+    errors.mockRestore()
+  }
+})
+
+it('calls same-name files a history, not versions, and says who presented each copy', async () => {
+  const mine = fileList('crm', 40, [{ name: 'report.md', description: 'crm-assistant: final', sha: sha(1) }])
+  const theirs = {
+    ...fileList('travel', 41, [{ name: 'report.md', description: 'travel-planner: final', sha: sha(2) }]),
+    lane: 'sub-7',
+  } as UiSurfaceRecord
+  const plain = {
+    ...fileList('plain', 42, [{ name: 'notes.md', description: '', sha: sha(3) }]),
+    owner: 'deliverables',
+  }
+  expect(deliverableProducer(sessionDeliverables([mine])[0]!)).toBe('crm-assistant')
+  expect(deliverableProducer(sessionDeliverables([theirs])[0]!)).toBe('travel-planner · sub-7')
+  expect(deliverableProducer(sessionDeliverables([plain as UiSurfaceRecord])[0]!)).toBe('deliverables')
+  const host = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(host)
+  const t = createCatalogTranslator(workbenchLocaleCatalog, 'zh-CN')
+  const show = (records: UiSurfaceRecord[]) =>
+    act(async () =>
+      root.render(
+        createElement(WorkbenchDeliverables, {
+          binding: binding(records),
+          context: { t, data: { session: { id: 's' } } },
+        }),
+      ),
+    )
+  try {
+    await show([mine, theirs])
+    const newest = host.querySelector('.workbench-deliverables-group [data-testid="deliverable-file"]')
+    // Two producers for one name: the newest copy says whose it is, and so does its history entry.
+    expect(newest?.querySelector('.deliverable-meta')?.textContent).toBe(
+      'From travel-planner · sub-7 · Final · 24.6 KiB',
+    )
+    const history = host.querySelector('[data-testid="workbench-deliverables-earlier"]')
+    expect(history?.querySelector('.agh-disclosure-summary')?.textContent).toBe('同名文件历史 · 1')
+    expect(history?.querySelector('.deliverable-meta')?.textContent).toContain('From crm-assistant')
+    // One producer throughout: the newest copy needs no «from».
+    const again = fileList('crm-2', 43, [
+      { name: 'report.md', description: 'crm-assistant: final', sha: sha(4) },
+    ])
+    await show([mine, again])
+    expect(
+      host.querySelector('.workbench-deliverables-group [data-testid="deliverable-file"] .deliverable-meta')
+        ?.textContent,
+    ).toBe('Final · 24.6 KiB')
+  } finally {
+    await act(async () => root.unmount())
+    host.remove()
+  }
 })

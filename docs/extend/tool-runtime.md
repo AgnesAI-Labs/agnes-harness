@@ -49,6 +49,8 @@ Set `meta.deferLoading: true` to omit a tool's schema from the initial model req
 
 When to defer: every visible schema is sent with every request, so a tool the model rarely needs costs tokens on every turn. Keep a tool visible (omit `deferLoading`) when it is used in most sessions or must be called without a search first. Use `true` for occasional tools, such as history lookups or admin actions, especially with large schemas. Use `'auto'` for a family whose size depends on the deployment: core keeps all auto tools visible while the turn catalog holds at most 15 of them and their schemas stay under about 4,000 tokens, and defers them together past either limit. MCP servers use `'auto'` by default. A deferred tool costs one extra round trip the first time it is used in a session; tools a workflow always calls in sequence should stay visible together rather than each be loaded separately.
 
+Auto deferral also requires model-visible, eager `tool_search` and `tool_describe` in the catalog; image-only or themselves deferred discovery tools do not qualify. Without this discovery pair, auto tools remain visible, including third-party auto tools. Explicit `true` and `false` declarations are unchanged. Official job/PTY, subagent, schedule, workflow and goal tools use auto mode; `present`, daily tools and discovery stay eager.
+
 Set `meta.discoveryGroup` to a one-line label (at most 120 characters) to list deferred tools that belong together as a single line with their count, such as `"Earlier sessions (search, read and trace past sessions)"`. `tool_search` also matches that label. Without it, each deferred tool gets its own line.
 
 ## Model-assisted policies

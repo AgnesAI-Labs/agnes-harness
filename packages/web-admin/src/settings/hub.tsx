@@ -12,6 +12,7 @@ import {
   Icon,
   IconButton,
   type IconName,
+  PushCrumbs,
   SettingsInput,
   SettingsPage as SettingsPageLayout,
   SettingsState,
@@ -182,7 +183,9 @@ export function SettingsHub({
     history.replaceState(history.state, '', url)
     if (route.anchor) requestAnimationFrame(() => revealSettingsAnchor(route.anchor ?? ''))
     if (!tabFocused && window.matchMedia('(max-width: 767px)').matches)
-      requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('.settings-back')?.focus())
+      requestAnimationFrame(() =>
+        document.querySelector<HTMLButtonElement>('[data-testid="settings-back"]')?.focus(),
+      )
   }
   const groups = hubNavigationGroups(hubEntries())
   const groupEntries = hubEntries().filter(
@@ -302,19 +305,18 @@ export function SettingsHub({
       <section data-testid={`settings-page-${page}`} aria-label={sectionTitle(page)}>
         {!embedded && (
           <>
-            <Button
-              appearance="ghost"
-              className="settings-back"
-              data-testid="settings-back"
-              onClick={() => {
+            {/* A narrow screen shows one page; the breadcrumb leads back to the list (「‹ 设置 › 当前页」). */}
+            <PushCrumbs
+              title={sectionTitle(page)}
+              crumbs={[shellText('settings-shell.root')]}
+              backTestId="settings-back"
+              onBack={() => {
                 setDetail(false)
                 requestAnimationFrame(() =>
                   document.querySelector<HTMLButtonElement>('.settings-rail [aria-current="page"]')?.focus(),
                 )
               }}
-            >
-              {shellText('settings-shell.back')}
-            </Button>
+            />
             {groupEntries.length > 1 && (
               <h2 className="agnes-settings-group-title">
                 {shellText(groupEntries[0]?.groupTitleKey ?? '')}

@@ -1,6 +1,22 @@
 import type { ConfigAccount, ConfigSaveInput } from '@agnes/protocol'
 import type { ConfigSchema, Translate } from '@agnes/web-ui'
-import { configIssues, Disclosure, renderRegion, SchemaConfigFields, unmountRegion } from '@agnes/web-ui'
+import {
+  configIssues,
+  renderRegion,
+  SettingsBlock,
+  SettingsItem,
+  SettingsPresetSelect,
+  secondPresets,
+  unmountRegion,
+} from '@agnes/web-ui'
+
+const NETWORK_KEYS = ['connectMs', 'requestMs', 'streamIdleMs'] as const
+/** Second presets per timeout; 自定义 keeps any other stored value. */
+const PRESETS: Readonly<Record<(typeof NETWORK_KEYS)[number], readonly number[]>> = {
+  connectMs: [5, 10, 30],
+  requestMs: [30, 60, 120, 300],
+  streamIdleMs: [30, 60, 120, 300],
+}
 
 export const accountNetworkSchema: ConfigSchema = {
   type: 'object',
@@ -32,27 +48,35 @@ export function accountNetworkFields(root: HTMLElement | null, t: Translate, onC
     if (!root) return
     renderRegion(
       root,
-      <Disclosure
-        variant="plain"
-        data-testid="account-network-details"
-        summary={t('accounts.network.legend')}
+      <SettingsBlock
+        label={t('accounts.network.legend')}
+        data-testid="account-network-timeouts"
+        aria-disabled={disabled || undefined}
       >
-        <fieldset className="config-section" disabled={disabled} data-testid="account-network-timeouts">
-          <legend>{t('accounts.network.legend')}</legend>
-          <p className="field-hint form-field-wide">{t('accounts.network.hint')}</p>
-          <SchemaConfigFields
-            schema={accountNetworkSchema}
-            value={value}
-            issues={configIssues(accountNetworkSchema, normalized())}
-            onChange={(next) => {
-              value = next
-              render()
-              onChange()
-            }}
-            t={t}
-          />
-        </fieldset>
-      </Disclosure>,
+        {NETWORK_KEYS.map((key) => (
+          <SettingsItem key={key} label={t(`accounts.network.${key}`)}>
+            <SettingsPresetSelect
+              id={`account-network-${key}`}
+              data-testid={`account-network-${key}`}
+              label={t(`accounts.network.${key}`)}
+              defaultLabel={t('accounts.network.default')}
+              disabled={disabled}
+              value={typeof value[key] === 'number' ? (value[key] as number) : undefined}
+              presets={secondPresets(PRESETS[key], (count) => t('accounts.network.seconds', { count }))}
+              unit={t('accounts.network.secondUnit')}
+              scale={1000}
+              onChange={(next) => {
+                const updated = { ...value }
+                if (next === undefined) delete updated[key]
+                else updated[key] = next
+                value = updated
+                render()
+                onChange()
+              }}
+            />
+          </SettingsItem>
+        ))}
+      </SettingsBlock>,
     )
   }
   return {

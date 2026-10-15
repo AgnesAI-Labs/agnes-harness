@@ -76,7 +76,8 @@ export interface ToolMeta {
    * Omitted/false means available in initial model discovery; true keeps the schema out of model
    * requests until `tool_describe` loads it. `'auto'` lets core decide per turn: auto tools stay
    * visible while the turn catalog holds at most 15 of them and their schemas stay under about 4000
-   * tokens, and are all deferred together once either limit is exceeded.
+   * tokens. Past either limit they defer together only if model-visible, eager tool_search and
+   * tool_describe are available without an image-input requirement. Otherwise auto remains eager.
    */
   deferLoading?: boolean | 'auto' | undefined
   /**

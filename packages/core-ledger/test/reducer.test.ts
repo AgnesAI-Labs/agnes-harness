@@ -42,6 +42,32 @@ const opstate = (step: number) => ({
   phase: { kind: 'checkpoint', continuation: 'need_assistant', triggerSeq: 1 },
 })
 
+describe('late original-effect receipts', () => {
+  it('settles only trusted receipts linked to the original intent, including on cold fold', () => {
+    const intent = ev(
+      'effect/intent',
+      { effectId: 'late', kind: 'inference', replay: 'never' },
+      { origin: 'system' },
+    )
+    const base = foldEvents([intent])
+    const data = { version: 1, effects: [{ effectId: 'late', outcome: 'aborted' }], receipts: [] }
+    for (const extra of [
+      { origin: 'extension:test', sourceEventSeqs: [intent.seq] },
+      { origin: 'system', trust: 'untrusted' as const, sourceEventSeqs: [intent.seq] },
+      { origin: 'system', sourceEventSeqs: [intent.seq + 100] },
+    ])
+      expect(reduce(base, ev('x/core/late-effect-receipt', data, extra)).pendingEffects.has('late')).toBe(
+        true,
+      )
+    const receipt = ev('x/core/late-effect-receipt', data, {
+      origin: 'system',
+      sourceEventSeqs: [intent.seq],
+    })
+    expect(reduce(base, receipt).pendingEffects.size).toBe(0)
+    expect(foldEvents([intent, receipt]).pendingEffects.size).toBe(0)
+  })
+})
+
 describe('contextAnchorOf', () => {
   const tokens = { input: 10, output: 5, cacheRead: 3, cacheWrite: 2 }
   const row = (extra: object) => ev('cost/ledger', { purpose: 'inference', effectId: 'e', tokens, ...extra })

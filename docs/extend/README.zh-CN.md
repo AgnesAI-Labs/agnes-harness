@@ -4,6 +4,8 @@
 
 [文档](../README.zh-CN.md) · [按角色选择类型](choose-a-plugin-type.zh-CN.md) · [五分钟入门](quickstart.zh-CN.md) · [测试你的插件](testing.zh-CN.md) · [导入选择图](imports.zh-CN.md)
 
+插件是完全受信任的代码，以用户权限运行。能力声明用于准入审核，不限制任意 JavaScript，也不强制 hook 白名单。`ctx.hooks.register` 接受受支持的 observe、transform、intercept hooks，不按声明的 `hooks` 列表限制注册。只授权你愿意执行的代码。
+
 [工具运行时与权限策略](tool-runtime.zh-CN.md) · [循环事件](loop-events.zh-CN.md) · [业务工作流](workflow-loops.zh-CN.md)
 
 选择负责目标行为的最小模板。五个[模板](../../templates/)都是独立包，提供构建与测试脚本，只通过公开包出口导入。SDK 目前仍为源码预览；入门指南提供正式包发布前的本地 SDK 连接方式。

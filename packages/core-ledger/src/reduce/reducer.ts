@@ -197,11 +197,11 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
         if (durable) {
           if (
             d?.trigger !== 'approval-resume' ||
-            !['core/tool-permission', 'core/gate'].includes(durable.request.owner) ||
+            !['core/tool-permission', 'core/gate', 'core/unknown-outcome'].includes(durable.request.owner) ||
             durable.request.sourcePackage !== '@agnes/core' ||
             durable.request.lane !== lane ||
             durable.consumption ||
-            (durable.request.owner === 'core/tool-permission' &&
+            (['core/tool-permission', 'core/unknown-outcome'].includes(durable.request.owner) &&
               durable.request.operationId !== (d?.continues as { toolUseId?: string })?.toolUseId)
           )
             throw new CoreError('E_RELATION', 'continuation does not match the original decision gate', {
@@ -297,6 +297,20 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
         ...(i.argsSeq === undefined ? {} : { argsSeq: i.argsSeq }),
         ...(i.slot === undefined ? {} : { slot: i.slot }),
       })
+      break
+    }
+    case 'x/core/late-effect-receipt': {
+      if (e.origin !== 'system' || e.trust !== 'trusted' || d?.version !== 1 || !Array.isArray(d.effects))
+        break
+      for (const receipt of d.effects) {
+        if (!receipt || typeof receipt !== 'object') continue
+        const { effectId, outcome } = receipt as { effectId?: unknown; outcome?: unknown }
+        if (typeof effectId !== 'string' || !['ok', 'error', 'aborted', 'unknown'].includes(String(outcome)))
+          continue
+        const pending = s.pendingEffects.get(effectId)
+        if (pending?.lane === lane && e.sourceEventSeqs?.includes(pending.intentSeq))
+          remove('pendingEffects', effectId)
+      }
       break
     }
     case 'effect/settled':

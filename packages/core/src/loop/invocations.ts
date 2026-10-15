@@ -4,6 +4,7 @@ import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import type { LoopCheckpoint, LoopEffectStatus, ToolResult } from '@agnes/extension-api'
 import type { InferenceEvent } from '@agnes/protocol'
 import type { SessionImpl } from '../step/session.js'
+import { lateToolResponse } from './late-receipt.js'
 
 const EVENT = 'x/core/loop-invocation'
 type Record = {
@@ -70,6 +71,8 @@ export class LoopInvocations {
       )
     const toolUseId = (link?.data as { toolUseId?: string } | undefined)?.toolUseId
     if (toolUseId) {
+      const late = await lateToolResponse(this.s, toolUseId)
+      if (late) return { status: 'responded', invocationId: id, checkpoint: row.checkpoint, result: late }
       const results = await scanAll((query) => this.s.d.log.scan(query), {
         type: 'tool/result',
         lane: this.s.lane,

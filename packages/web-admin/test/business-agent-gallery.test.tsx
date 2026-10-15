@@ -1,5 +1,6 @@
 /** @vitest-environment happy-dom */
 import type { PackageCatalogDescriptor, PackageInstalledDescriptor, PackageOperation } from '@agnes/protocol'
+import { clearResources, PushStack, searchParamRoute } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -19,6 +20,8 @@ const roots: Root[] = []
 afterEach(async () => {
   for (const root of roots.splice(0)) await act(async () => root.unmount())
   document.body.replaceChildren()
+  clearResources()
+  history.replaceState(null, '', '/')
 })
 
 const ID = '@agnes-fde/data-report'
@@ -145,7 +148,16 @@ async function mount(
   document.body.append(host)
   const root = createRoot(host)
   roots.push(root)
-  await act(async () => root.render(createElement(Page)))
+  // Agent FDE is a page whose starts open as pages inside it, named in `?view=`.
+  await act(async () =>
+    root.render(
+      createElement(
+        PushStack,
+        { rootTitle: 'Agent FDE', route: searchParamRoute('view') },
+        createElement(Page),
+      ),
+    ),
+  )
   await vi.waitFor(() => expect(host.querySelector('[data-testid="business-agents-gallery"]')).not.toBeNull())
   return host
 }
@@ -234,4 +246,31 @@ it('marks the card another surface points at, and starts it when asked to', asyn
   // The same confirmation as the card's own button: nothing is installed before the user agrees.
   await vi.waitFor(() => expect(document.querySelector('[data-testid="agent-start-confirm"]')).not.toBeNull())
   expect(started.calls).toEqual(['inspect'])
+})
+
+it('opens a start as a page inside Agent FDE, and 返回 cancels it before anything is installed', async () => {
+  const kit = setup()
+  const host = await mount(kit.source, () => {})
+  await click('[data-testid="business-agent-start-data-report"]')
+  await vi.waitFor(() => expect(document.querySelector('[data-testid="agent-start-confirm"]')).not.toBeNull())
+  expect(new URL(location.href).searchParams.get('view')).toBe('agent-data-report')
+  expect([...host.querySelectorAll('.agh-push-crumbs li')].map((item) => item.textContent)).toEqual([
+    'Agent FDE',
+    'Data report',
+  ])
+  // The gallery is still there, hidden, under the page.
+  expect(host.querySelector('[data-testid="business-agents-gallery"]')?.closest('[hidden]')).not.toBeNull()
+  // No dialog: the start is the page.
+  expect(document.querySelector('[role="dialog"]')).toBeNull()
+  await click('[data-testid="push-back"]')
+  await vi.waitFor(() => expect(document.querySelector('[data-testid="agent-start-confirm"]')).toBeNull())
+  expect(kit.calls).toEqual(['inspect'])
+})
+
+it('opens the start of an agent from a link that names its page', async () => {
+  history.replaceState(null, '', '/?page=agents&view=agent-data-report')
+  const kit = setup()
+  await mount(kit.source, () => {})
+  await vi.waitFor(() => expect(document.querySelector('[data-testid="agent-start-confirm"]')).not.toBeNull())
+  expect(kit.calls).toEqual(['inspect'])
 })

@@ -175,7 +175,6 @@ export async function packPlugin(folder: string, output?: string): Promise<strin
         ...(pkg.license === undefined ? {} : { license: pkg.license }),
         dependencies: pkg.dependencies,
       },
-      ceiling: [],
     })
     if (result.preview.blockers.length)
       throw new PackageError(

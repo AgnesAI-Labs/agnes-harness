@@ -12,6 +12,7 @@ import {
   createDocumentLocaleSource,
   createSelectPicker,
   createUiTranslator,
+  isPageDialog,
   type LocaleTranslator,
   McpDetailContent,
   RESOURCE_DETAIL_LOCALE_NAMESPACE,
@@ -28,6 +29,7 @@ import {
   resourceListLocaleCatalog,
   type SelectPicker,
   SkillDetailContent,
+  showDialogHost,
   UiLocaleProvider,
   type UiLocaleSource,
   unmountRegion,
@@ -276,9 +278,8 @@ class ResourceAdminPage {
     const requestWorkspace = this.#workspaceId
     this.#loadState = 'loading'
     this.render()
-    if (!preserveNotice) {
-      this.setNotice('notice.loading')
-    }
+    // The list shows its own placeholder while it reads; the notice line stays for outcomes.
+    if (!preserveNotice) this.setNotice(undefined)
     try {
       const context = this.#context ?? (await ResourceAdminApi.context())
       if (this.lifetime.signal.aborted) return
@@ -321,15 +322,12 @@ class ResourceAdminPage {
     this.#detailTrigger = trigger
     this.render()
   }
-  /** 详情是模态框：打开一次即可，重复 render 不能反复 showModal（会抛 InvalidStateError）。 */
+  /** 详情打开一次即可：重复 render 不能反复打开（showModal 会抛 InvalidStateError）。 */
   openDetail(label: string): void {
     detail.setAttribute('aria-label', label)
-    if (detail.open) return
-    try {
-      detail.showModal()
-    } catch {
-      detail.setAttribute('open', '')
-    }
+    // The page holding the detail names it in its address by this id.
+    detail.dataset.resourceId = this.#selected ?? ''
+    showDialogHost(detail)
   }
   #closeDetailDialog(): void {
     if (!detail.open) return
@@ -865,7 +863,7 @@ function openMcpDialog(server?: McpServerDescriptor, t: LocaleTranslator = activ
     : t('form.title.create')
   $('mcp-id', 'input').disabled = !!server
   $('mcp-error', 'p').textContent = ''
-  dialog.showModal()
+  showDialogHost(dialog)
   const focus = server
     ? $('mcp-name', 'input')
     : (document.getElementById('mcp-method-local') ?? $('mcp-name', 'input'))
@@ -907,6 +905,8 @@ export type ResourceAdminMount = Readonly<{
   setWorkspace(workspaceId?: string): Promise<void>
   /** 设置页把「技能」和「MCP」做成两条独立 Tab，由宿主决定打开哪一类。 */
   setTab(tab: Tab): void
+  /** Open one resource's detail, as a click on its row does. */
+  select(resourceId: string): void
   sync(scope: ResourceScope, options?: { refresh?: boolean }): Promise<void>
 }>
 
@@ -1021,13 +1021,14 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
         'sandboxProfile' in definition
           ? '\n' + activeResourceText('sandbox.' + definition.sandboxProfile)
           : ''
-      // Close the form host before confirmation; the draft remains in the mounted form.
-      dialog.close()
+      // A modal form closes before its confirmation; the draft remains in the mounted form. A form
+      // shown as a page stays where it is, under the confirmation.
+      if (!isPageDialog(dialog)) dialog.close()
       let confirmed = false
       try {
         confirmed = await page.confirm(summary + sandboxSummary)
       } finally {
-        if (!confirmed && !stop.signal.aborted) dialog.showModal()
+        if (!confirmed && !stop.signal.aborted) showDialogHost(dialog)
       }
       if (!confirmed) return
       let receipt: ResourceOperationReceipt
@@ -1036,11 +1037,12 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
           ? await page.api().mcpUpdate(editing.serverId, editing.revision, definition)
           : await page.api().mcpCreate(definition)
       } catch (cause) {
-        if (!stop.signal.aborted) dialog.showModal()
+        if (!stop.signal.aborted) showDialogHost(dialog)
         throw cause
       }
       if (stop.signal.aborted) return
       editing = undefined
+      if (dialog.open) dialog.close()
       await page.track(receipt)
       // track() already reported success generically; a new server still needs an explicit enable.
       if (creating && notice.dataset.kind === 'success')
@@ -1085,6 +1087,7 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
     },
     setWorkspace: (id) => page.setWorkspace(id),
     setTab: (tab) => page.setTab(tab),
+    select: (resourceId) => page.select(resourceId),
     sync: (scope, options) => page.sync(scope, options),
   }
 }

@@ -598,7 +598,7 @@ export class SessionImpl {
   // this: both are set while a crashed turn waits to be continued, with nothing running.
   private activeOps = 0
   private readonly activeWork = new Set<Promise<unknown>>()
-  readonly loopScope = new LoopScope()
+  loopScope = new LoopScope()
   private resuming: Promise<unknown> | undefined
   private running: Promise<TurnOutcome> | undefined
   // The error the last turn/end row carried, for run() to hand back with its outcome. Phases report
@@ -726,12 +726,14 @@ export class SessionImpl {
   }
 
   loopDecisionSource(): DecisionSource {
+    const scope = this.loopScope
     return this.decisions.bindSource({
       owner: this.loop.id,
       sourcePackage: this.d.loopSourcePackage ?? this.loop.id,
       packageVersion: this.loop.version,
       operationId: `loop:${this.loop.id}`,
       alive: () => {
+        scope.assertAlive()
         if (this.closingOrClosed) throw new CoreError('E_CLOSED', 'Session closed')
       },
     })
@@ -1793,6 +1795,7 @@ export class SessionImpl {
     // process-local and is consumed before either the built-in or a replacement is entered.
     this.assertToolDispatchAvailable(dispatch.executionDomain)
     const runtime = await this.toolRuntime()
+    this.loopScope.assertAlive()
     const binding = { ...started, owner: this.executePermitOwner, attempt: dispatch.attempt }
     const permit = this.executePermits.issue(binding)
     this.executePermits.consume(permit, binding)
@@ -1903,7 +1906,13 @@ export class SessionImpl {
    * resume in progress first, and counts while it waits, so no second resume can start before it.
    */
   /** Public-port invocation ownership: close waits even when a driver forgets to await a call. */
+  trackEffectReceipt(work: Promise<void>): void {
+    this.activeWork.add(work)
+    void work.finally(() => this.activeWork.delete(work)).catch(() => undefined)
+  }
+
   beginLoopOperation(): () => void {
+    this.loopScope.assertAlive()
     if (this.closing) throw new CoreError('E_CLOSED', 'session closed')
     let done!: () => void
     const work = new Promise<void>((resolve) => {
@@ -1973,6 +1982,7 @@ export class SessionImpl {
     this.ac = new AbortController()
     disposeLoopContext(ctx)
     this.decisions.renewScope()
+    this.loopScope = new LoopScope()
     const fresh = await createLoopContext(this, true)
     this.loopContext = fresh
     this.loopDriver = await this.d.loopFactory.resume(fresh, checkpoint, this.ac.signal)

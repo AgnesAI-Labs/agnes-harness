@@ -63,6 +63,8 @@ export function deliverableVersion(
 export type TurnDeliverable = {
   file: UiArtifactFileData
   surfaceId: string
+  /** The component that lists it: one surface may list the same bytes under two names, or twice. */
+  componentId?: string
   revision: number
   lane: string
   /** Workbench copy exists, so a preview opens there. */
@@ -71,6 +73,22 @@ export type TurnDeliverable = {
   order: number
   /** When it was presented (epoch ms), when the surface records it. */
   presentedAt?: number
+  /** The surface's owner: the plugin or tool that presented it. */
+  owner?: string
+}
+
+/**
+ * Who presented a file, in the words a reader recognises: the package its description names
+ * ("crm-assistant: final"), else the surface owner, with the lane when it is not the main one.
+ * Files of one name are only grouped by that name; this says whose each copy is.
+ */
+export function deliverableProducer(
+  entry: Pick<TurnDeliverable, 'file' | 'owner' | 'lane'>,
+): string | undefined {
+  const named = /^([^\s:]+):\s+\S/.exec(entry.file.description)?.[1]
+  const who = named ?? entry.owner
+  if (!who) return undefined
+  return entry.lane && entry.lane !== 'main' ? `${who} · ${entry.lane}` : who
 }
 
 /** How an earlier version differs from the file's latest one, for its card and preview. */
@@ -83,6 +101,8 @@ export type EarlierVersion = {
   sizeDelta: number
   /** Its description says the same as the latest one's, so the card leaves it out. */
   sameDescription: boolean
+  /** Who presented this copy; same-name files are not proven to be versions of one another. */
+  source?: string
 }
 
 const sameContent = (a: TurnDeliverable, b: TurnDeliverable) =>
@@ -94,22 +114,28 @@ export function earlierVersion(
   latest: TurnDeliverable,
   ordinal: number,
 ): EarlierVersion {
+  const source = deliverableProducer(earlier)
   return {
     ...(earlier.presentedAt === undefined ? {} : { presentedAt: earlier.presentedAt }),
     ordinal,
     sizeDelta: earlier.file.artifact.size - latest.file.artifact.size,
     sameDescription: earlier.file.description.trim() === latest.file.description.trim(),
+    ...(source ? { source } : {}),
   }
 }
 
 /**
  * One entry per file name, newest first in each name's history. The list keeps the order in which
- * names first appeared, so a new version does not move its file around the group. Presenting the
- * same bytes again is not a new version: only the newest presentation of each content is kept.
+ * names first appeared, so a newer copy does not move its file around the group. Presenting the
+ * same bytes again adds nothing: only the newest presentation of each content is kept. The API
+ * has no lineage, so a name's history is only "files of this name", each saying who presented it;
+ * `mixedSources` marks a history whose copies came from more than one producer.
  */
-export function groupDeliverables(
-  entries: readonly TurnDeliverable[],
-): { latest: TurnDeliverable; earlier: (TurnDeliverable & { version: EarlierVersion })[] }[] {
+export function groupDeliverables(entries: readonly TurnDeliverable[]): {
+  latest: TurnDeliverable
+  earlier: (TurnDeliverable & { version: EarlierVersion })[]
+  mixedSources: boolean
+}[] {
   const byName = new Map<string, TurnDeliverable[]>()
   for (const entry of [...entries].sort((a, b) => a.order - b.order)) {
     const list = byName.get(entry.file.name)
@@ -126,7 +152,8 @@ export function groupDeliverables(
       .slice(0, -1)
       .map((entry, index) => ({ ...entry, version: earlierVersion(entry, latest, index + 1) }))
       .reverse()
-    return { latest, earlier }
+    const source = deliverableProducer(latest)
+    return { latest, earlier, mixedSources: earlier.some((entry) => entry.version.source !== source) }
   })
 }
 
@@ -150,5 +177,9 @@ export function deliverableVersions(
   for (const entry of entries) if (!shown.has(entry)) out.set(deliverableKey(entry), 'hidden')
   return out
 }
-export const deliverableKey = (entry: Pick<TurnDeliverable, 'surfaceId' | 'file'>) =>
-  `${entry.surfaceId}:${entry.file.name}:${entry.file.artifact.sha256}`
+/**
+ * A presented file's identity: its surface, the component listing it, its name and its content.
+ * The hash alone names content, not a row — two names for the same bytes are two deliverables.
+ */
+export const deliverableKey = (entry: Pick<TurnDeliverable, 'surfaceId' | 'componentId' | 'file'>) =>
+  `${entry.surfaceId}:${entry.componentId ?? ''}:${entry.file.name}:${entry.file.artifact.sha256}`

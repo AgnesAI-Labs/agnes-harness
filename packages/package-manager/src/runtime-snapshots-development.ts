@@ -22,7 +22,6 @@ export function readDevelopmentPlugin(directory: string, profile: string): Runti
       license: (pkg.license as string | undefined) ?? 'UNLICENSED',
       dependencies: (pkg.dependencies ?? {}) as Record<string, string>,
     },
-    ceiling: [],
   })
   if (!preview.capabilityHash) throw new Error('E_PLUGIN_RELOAD_METADATA: package has no capability hash')
   if (preview.blockers.length)

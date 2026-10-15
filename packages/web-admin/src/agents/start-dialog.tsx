@@ -2,14 +2,16 @@ import type { PackageBlocker, PackageInstalledDescriptor, PackagePreview } from 
 import {
   Banner,
   Button,
-  Dialog,
   Icon,
   type IconName,
+  Loadable,
+  PushPage,
   SettingsGroup,
   SettingsItem,
   SettingsState,
   SettingsTechnicalDetails,
   Tag,
+  usePushStack,
   useUiText,
 } from '@agnes/web-ui'
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
@@ -156,6 +158,9 @@ type Phase =
       failure: StartFailure
     }
 
+/** The page a start opens inside Agent FDE: `agent-<slug>`, so a link opens the agent's start. */
+export const agentPageId = (agent: Pick<BusinessAgent, 'slug'>) => `agent-${agent.slug}`
+
 export type BusinessAgentStart = {
   /** Begins (or reopens) one-click start for an agent. `quiet` skips the dialog unless something needs the user. */
   start(agent: BusinessAgent, options?: { quiet?: boolean }): void
@@ -163,8 +168,10 @@ export type BusinessAgentStart = {
   startingId: string | undefined
   /** Package id whose last start stopped at a step. */
   failedId: string | undefined
-  /** Render once, anywhere in the page. */
+  /** Render once, anywhere in the page: the start's page while it is open. */
   dialog: ReactNode
+  /** The page of the start in progress, if any. */
+  pageId: string | undefined
 }
 
 /**
@@ -182,7 +189,15 @@ export function useBusinessAgentStart(options: {
 }): BusinessAgentStart {
   const { t } = useUiText(AGENTS_NAMESPACE, agentsCatalog)
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' })
-  const [visible, setVisible] = useState(false)
+  // The start shows as a page inside Agent FDE (Agent FDE › the agent); its page is the address.
+  const nav = usePushStack()
+  const navRef = useRef(nav)
+  navRef.current = nav
+  const show = useCallback((agent: BusinessAgent) => navRef.current.open(agentPageId(agent)), [])
+  const hide = useCallback((agent: BusinessAgent) => {
+    if (navRef.current.stack.at(-1) === agentPageId(agent)) navRef.current.back()
+  }, [])
+  const visible = phase.kind !== 'idle' && nav.stack.includes(agentPageId(phase.agent))
   const abort = useRef<AbortController>()
   const latest = useRef(options)
   latest.current = options
@@ -201,10 +216,10 @@ export function useBusinessAgentStart(options: {
         progress: { ...progress, [failure.step]: 'failed' },
         failure,
       })
-      setVisible(true)
+      show(agent)
       latest.current.onChanged?.()
     },
-    [],
+    [show],
   )
 
   const run = useCallback(
@@ -226,7 +241,7 @@ export function useBusinessAgentStart(options: {
           if (signal.aborted) return
           latest.current.onChanged?.()
           setPhase({ kind: 'idle' })
-          setVisible(false)
+          hide(agent)
           ;(latest.current.openSession ?? openStartedSession)({ ...target, prompt: agent.samplePrompt })
         },
         (error: unknown) => {
@@ -234,7 +249,7 @@ export function useBusinessAgentStart(options: {
         },
       )
     },
-    [fail],
+    [fail, hide],
   )
 
   const begin = useCallback(
@@ -245,7 +260,7 @@ export function useBusinessAgentStart(options: {
       const controller = new AbortController()
       abort.current = controller
       setPhase({ kind: 'planning', agent })
-      setVisible(!quiet)
+      if (!quiet) show(agent)
       void planBusinessAgentStart(api, agent.entry, { signal: controller.signal }).then(
         (plan) => {
           if (controller.signal.aborted) return
@@ -258,29 +273,41 @@ export function useBusinessAgentStart(options: {
           // Nothing new to consent to: an already trusted package, or the version just confirmed.
           if (!planBlocked(plan) && (settled || same)) return run(agent, plan, controller.signal)
           setPhase({ kind: 'confirm', agent, plan })
-          setVisible(true)
+          show(agent)
         },
         (error: unknown) => {
           if (!controller.signal.aborted) fail(agent, undefined, idle, error)
         },
       )
     },
-    [fail, run],
+    [fail, run, show],
   )
 
   const close = () => {
-    if (phase.kind === 'running' || phase.kind === 'failed') return setVisible(false)
+    if (phase.kind === 'idle') return
+    const agent = phase.agent
+    hide(agent)
+    // A running or stopped start keeps going (or keeps its result) in the background.
+    if (phase.kind === 'running' || phase.kind === 'failed') return
     abort.current?.abort()
     setPhase({ kind: 'idle' })
-    setVisible(false)
   }
+  // Leaving the page another way (back, a breadcrumb) is the same as cancelling it.
+  const shown = useRef<string>()
+  useEffect(() => {
+    const id = phase.kind === 'idle' ? undefined : agentPageId(phase.agent)
+    if (id && nav.stack.includes(id)) shown.current = id
+    else if (id && shown.current === id && (phase.kind === 'planning' || phase.kind === 'confirm')) {
+      shown.current = undefined
+      abort.current?.abort()
+      setPhase({ kind: 'idle' })
+    }
+  }, [nav.stack, phase])
 
   const start: BusinessAgentStart['start'] = (agent, startOptions) => {
-    // A second click on the same agent brings its dialog back instead of starting twice.
-    if (phase.kind !== 'idle' && phase.agent.entry.id === agent.entry.id && phase.kind !== 'failed')
-      return setVisible(true)
-    if (phase.kind === 'failed' && phase.agent.entry.id === agent.entry.id) return setVisible(true)
-    if (phase.kind === 'running') return setVisible(true)
+    // A second click on the same agent brings its page back instead of starting twice.
+    if (phase.kind !== 'idle' && phase.agent.entry.id === agent.entry.id) return show(agent)
+    if (phase.kind === 'running') return show(phase.agent)
     begin(agent, startOptions?.quiet === true)
   }
 
@@ -306,7 +333,7 @@ export function useBusinessAgentStart(options: {
       data-testid="agent-start-plugins"
       onClick={() => {
         const agent = phase.agent
-        setVisible(false)
+        hide(agent)
         plugins(agent)
       }}
     >
@@ -314,173 +341,172 @@ export function useBusinessAgentStart(options: {
     </Button>
   )
 
-  const dialog = (
-    <Dialog
-      open={visible && phase.kind !== 'idle'}
-      size="md"
-      getContainer={() => document.body}
-      focusable={{ focusTriggerAfterClose: true }}
-      onCancel={close}
-      data-testid="agent-start-dialog"
-      title={
-        phase.kind === 'idle' ? undefined : (
-          <h2 className="agent-start-title">
-            <span className="agent-tile" data-tint={phase.agent.tint} aria-hidden="true" translate="no">
-              {phase.agent.glyph}
-            </span>
-            {t(
-              phase.kind === 'planning'
-                ? 'dialog.checking'
-                : phase.kind === 'confirm'
-                  ? 'dialog.confirm'
-                  : phase.kind === 'running'
-                    ? 'dialog.running'
-                    : 'dialog.failed',
-              { name },
-            )}
-          </h2>
-        )
-      }
-      footer={
-        phase.kind === 'confirm' ? (
-          <>
-            {pluginsLink}
-            <span className="agent-start-spacer" />
-            <Button data-testid="agent-start-cancel" onClick={close}>
-              {t('dialog.cancel')}
-            </Button>
-            <Button
-              appearance="primary"
-              data-testid="agent-start-confirm"
-              disabled={planBlocked(phase.plan)}
-              onClick={() => abort.current && run(phase.agent, phase.plan, abort.current.signal)}
-            >
-              {t(actionKey(phase.plan))}
-            </Button>
-          </>
-        ) : phase.kind === 'running' ? (
-          <Button appearance="ghost" data-testid="agent-start-background" onClick={close}>
-            {t('dialog.background')}
-          </Button>
-        ) : phase.kind === 'failed' ? (
-          <>
-            {pluginsLink}
-            <span className="agent-start-spacer" />
-            <Button data-testid="agent-start-close" onClick={close}>
-              {t('dialog.close')}
-            </Button>
-            <Button
-              appearance="primary"
-              data-testid="agent-start-retry"
-              onClick={() => {
-                const last = phase.plan?.preview ?? phase.plan?.installed
-                begin(
-                  phase.agent,
-                  false,
-                  last
-                    ? {
-                        integrity: last.integrity,
-                        ...(last.capabilityHash ? { capabilityHash: last.capabilityHash } : {}),
-                      }
-                    : undefined,
-                )
-              }}
-            >
-              {t('dialog.retry')}
-            </Button>
-          </>
-        ) : (
-          <Button data-testid="agent-start-cancel" onClick={close}>
-            {t('dialog.cancel')}
-          </Button>
-        )
-      }
-    >
-      {phase.kind === 'planning' && (
-        <SettingsState tone="loading">{t('dialog.checking', { name })}</SettingsState>
-      )}
-      {phase.kind === 'confirm' && reviewed && (
-        <div className="agnes-settings-stack agent-start-body">
-          <p className="agent-start-identity" translate="no">
-            {reviewed.id} · {reviewed.version}
-          </p>
-          {promises.length > 0 && (
-            <section aria-labelledby="agent-start-promises">
-              <h3 id="agent-start-promises">{t('dialog.promises')}</h3>
-              <SettingsGroup data-testid="agent-start-promises">
-                {promises.map((row) => (
-                  <SettingsItem key={row.title} icon={row.icon} label={row.title} description={row.detail} />
-                ))}
-              </SettingsGroup>
-            </section>
+  const dialog =
+    phase.kind === 'idle' ? null : (
+      <PushPage
+        id={agentPageId(phase.agent)}
+        title={phase.agent.name}
+        description={t(
+          phase.kind === 'planning'
+            ? 'dialog.checking'
+            : phase.kind === 'confirm'
+              ? 'dialog.confirm'
+              : phase.kind === 'running'
+                ? 'dialog.running'
+                : 'dialog.failed',
+          { name },
+        )}
+      >
+        <div className="agent-start-page" data-testid="agent-start-dialog">
+          {phase.kind === 'planning' && <Loadable loading hasData={false} shape="rows" />}
+          {phase.kind === 'confirm' && reviewed && (
+            <div className="agnes-settings-stack agent-start-body">
+              <p className="agent-start-identity" translate="no">
+                {reviewed.id} · {reviewed.version}
+              </p>
+              {promises.length > 0 && (
+                <section aria-labelledby="agent-start-promises">
+                  <h3 id="agent-start-promises">{t('dialog.promises')}</h3>
+                  <SettingsGroup data-testid="agent-start-promises">
+                    {promises.map((row) => (
+                      <SettingsItem
+                        key={row.title}
+                        icon={row.icon}
+                        label={row.title}
+                        description={row.detail}
+                      />
+                    ))}
+                  </SettingsGroup>
+                </section>
+              )}
+              <section aria-labelledby="agent-start-gets">
+                <h3 id="agent-start-gets">{t('dialog.gets')}</h3>
+                {gets.length ? (
+                  <SettingsGroup data-testid="agent-start-gets">
+                    {gets.map((row) => (
+                      <SettingsItem
+                        key={row.title}
+                        icon={row.icon}
+                        label={row.title}
+                        description={row.detail}
+                      >
+                        {row.caution ? <Tag tone="warn">{t('gets.caution')}</Tag> : undefined}
+                      </SettingsItem>
+                    ))}
+                  </SettingsGroup>
+                ) : (
+                  <SettingsState>
+                    {t(reviewed.declaredCapabilities ? 'gets.none' : 'gets.undeclared')}
+                  </SettingsState>
+                )}
+              </section>
+              {blockers.length > 0 && (
+                <Banner tone="error" data-testid="agent-start-blocked">
+                  {t('dialog.blocked', {
+                    reasons: [...new Set(blockers.map((item) => t(`blocker.${item.code}`)))].join('、'),
+                  })}
+                </Banner>
+              )}
+              {phase.agent.entry.presentation?.origin === 'example' && (
+                <Banner tone="info">{t('dialog.demo')}</Banner>
+              )}
+              <SettingsTechnicalDetails>
+                <p className="agent-start-technical" translate="no">
+                  {[
+                    reviewed.integrity,
+                    'license' in reviewed ? reviewed.license : phase.agent.entry.license,
+                    signed === undefined ? undefined : t(signed ? 'tech.signed' : 'tech.unsigned'),
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </p>
+              </SettingsTechnicalDetails>
+            </div>
           )}
-          <section aria-labelledby="agent-start-gets">
-            <h3 id="agent-start-gets">{t('dialog.gets')}</h3>
-            {gets.length ? (
-              <SettingsGroup data-testid="agent-start-gets">
-                {gets.map((row) => (
-                  <SettingsItem key={row.title} icon={row.icon} label={row.title} description={row.detail}>
-                    {row.caution ? <Tag tone="warn">{t('gets.caution')}</Tag> : undefined}
-                  </SettingsItem>
-                ))}
-              </SettingsGroup>
+          {phase.kind === 'running' && (
+            <div className="agnes-settings-stack agent-start-body">
+              <StartSteps progress={phase.progress} t={t} />
+              <p className="agent-start-help" role="status">
+                {t('dialog.runningHelp')}
+              </p>
+            </div>
+          )}
+          {phase.kind === 'failed' && (
+            <div className="agnes-settings-stack agent-start-body">
+              <StartSteps progress={phase.progress} t={t} />
+              <Banner tone="error" data-testid="agent-start-error">
+                <strong>{t(`fail.${phase.failure.step}`)}</strong>
+                <span>
+                  {phase.failure.detail ?? t(`reason.${phase.failure.code}`)}
+                  {phase.failure.hint ? ` ${phase.failure.hint}` : ''}
+                </span>
+              </Banner>
+              <p className="agent-start-help">{t(`fail.kept.${phase.failure.step}`)}</p>
+            </div>
+          )}
+          <div className="home-push-actions agent-start-actions">
+            {phase.kind === 'confirm' ? (
+              <>
+                {pluginsLink}
+                <span className="agent-start-spacer" />
+                <Button data-testid="agent-start-cancel" onClick={close}>
+                  {t('dialog.cancel')}
+                </Button>
+                <Button
+                  appearance="primary"
+                  data-testid="agent-start-confirm"
+                  disabled={planBlocked(phase.plan)}
+                  onClick={() => abort.current && run(phase.agent, phase.plan, abort.current.signal)}
+                >
+                  {t(actionKey(phase.plan))}
+                </Button>
+              </>
+            ) : phase.kind === 'running' ? (
+              <Button appearance="ghost" data-testid="agent-start-background" onClick={close}>
+                {t('dialog.background')}
+              </Button>
+            ) : phase.kind === 'failed' ? (
+              <>
+                {pluginsLink}
+                <span className="agent-start-spacer" />
+                <Button data-testid="agent-start-close" onClick={close}>
+                  {t('dialog.close')}
+                </Button>
+                <Button
+                  appearance="primary"
+                  data-testid="agent-start-retry"
+                  onClick={() => {
+                    const last = phase.plan?.preview ?? phase.plan?.installed
+                    begin(
+                      phase.agent,
+                      false,
+                      last
+                        ? {
+                            integrity: last.integrity,
+                            ...(last.capabilityHash ? { capabilityHash: last.capabilityHash } : {}),
+                          }
+                        : undefined,
+                    )
+                  }}
+                >
+                  {t('dialog.retry')}
+                </Button>
+              </>
             ) : (
-              <SettingsState>
-                {t(reviewed.declaredCapabilities ? 'gets.none' : 'gets.undeclared')}
-              </SettingsState>
+              <Button data-testid="agent-start-cancel" onClick={close}>
+                {t('dialog.cancel')}
+              </Button>
             )}
-          </section>
-          {blockers.length > 0 && (
-            <Banner tone="error" data-testid="agent-start-blocked">
-              {t('dialog.blocked', {
-                reasons: [...new Set(blockers.map((item) => t(`blocker.${item.code}`)))].join('、'),
-              })}
-            </Banner>
-          )}
-          {phase.agent.entry.presentation?.origin === 'example' && (
-            <Banner tone="info">{t('dialog.demo')}</Banner>
-          )}
-          <SettingsTechnicalDetails>
-            <p className="agent-start-technical" translate="no">
-              {[
-                reviewed.integrity,
-                'license' in reviewed ? reviewed.license : phase.agent.entry.license,
-                signed === undefined ? undefined : t(signed ? 'tech.signed' : 'tech.unsigned'),
-              ]
-                .filter(Boolean)
-                .join(' · ')}
-            </p>
-          </SettingsTechnicalDetails>
+          </div>
         </div>
-      )}
-      {phase.kind === 'running' && (
-        <div className="agnes-settings-stack agent-start-body">
-          <StartSteps progress={phase.progress} t={t} />
-          <p className="agent-start-help" role="status">
-            {t('dialog.runningHelp')}
-          </p>
-        </div>
-      )}
-      {phase.kind === 'failed' && (
-        <div className="agnes-settings-stack agent-start-body">
-          <StartSteps progress={phase.progress} t={t} />
-          <Banner tone="error" data-testid="agent-start-error">
-            <strong>{t(`fail.${phase.failure.step}`)}</strong>
-            <span>
-              {phase.failure.detail ?? t(`reason.${phase.failure.code}`)}
-              {phase.failure.hint ? ` ${phase.failure.hint}` : ''}
-            </span>
-          </Banner>
-          <p className="agent-start-help">{t(`fail.kept.${phase.failure.step}`)}</p>
-        </div>
-      )}
-    </Dialog>
-  )
+      </PushPage>
+    )
 
   return {
     start,
     startingId: phase.kind === 'planning' || phase.kind === 'running' ? phase.agent.entry.id : undefined,
     failedId: phase.kind === 'failed' ? phase.agent.entry.id : undefined,
     dialog,
+    pageId: phase.kind === 'idle' ? undefined : agentPageId(phase.agent),
   }
 }

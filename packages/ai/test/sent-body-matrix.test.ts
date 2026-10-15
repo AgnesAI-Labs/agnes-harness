@@ -194,7 +194,7 @@ it.each(apis)('%s reports final real HTTP bodies on defaults, errors and recover
       return { events, body: JSON.parse(body.toString()) as Record<string, unknown> }
     }
     const first = await execute()
-    expect(first.events.at(-1)).toEqual({ type: 'done', reason: 'stop' })
+    expect(first.events.at(-1)).toMatchObject({ type: 'done', reason: 'stop' })
     expect(first.events.find((e) => e.type === 'usage')).toMatchObject({ response: { status: 200 } })
     if (api === 'openai-completions')
       expect(first.events.find((e) => e.type === 'usage')).toMatchObject({
@@ -206,10 +206,10 @@ it.each(apis)('%s reports final real HTTP bodies on defaults, errors and recover
     expect(failed.events.at(-1)).toMatchObject({ type: 'error', response: { status: 503 } })
     fail = false
     const recovered = await execute('m', 'recovered system')
-    expect(recovered.events.at(-1)).toEqual({ type: 'done', reason: 'stop' })
+    expect(recovered.events.at(-1)).toMatchObject({ type: 'done', reason: 'stop' })
     if (api.endsWith('responses')) {
       const compatible = await execute('compat')
-      expect(compatible.events.at(-1)).toEqual({ type: 'done', reason: 'stop' })
+      expect(compatible.events.at(-1)).toMatchObject({ type: 'done', reason: 'stop' })
       expect(first.body.input).toEqual(
         expect.arrayContaining([expect.objectContaining({ role: 'developer' })]),
       )
@@ -220,7 +220,7 @@ it.each(apis)('%s reports final real HTTP bodies on defaults, errors and recover
     if (api === 'mistral-conversations') {
       expect(first.body).not.toHaveProperty('max_tokens')
       const sampled = await execute('m', 'sampled system', 64)
-      expect(sampled.events.at(-1)).toEqual({ type: 'done', reason: 'stop' })
+      expect(sampled.events.at(-1)).toMatchObject({ type: 'done', reason: 'stop' })
       expect(sampled.body).toHaveProperty('max_tokens', 64)
       expect(sampled.body).not.toHaveProperty('maxTokens')
     }

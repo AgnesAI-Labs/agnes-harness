@@ -46,6 +46,10 @@ export interface ClientRoster {
 
 /** 名册源契约；P1a 落地后由 SDK 客户端实现。 */
 export interface RosterSource {
+  /** Profile, session and selection generation of the current query scope. */
+  identity?(): string
+  /** Publish roster-derived facts only after the reconciler accepts this query. */
+  commit?(roster: ClientRoster): void
   list(): Promise<ClientRoster>
 }
 

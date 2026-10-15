@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { localPluginRoots } from '../src/local-source.js'
-import { emptyLock, writeLock } from '../src/lockfile.js'
+import { localWorkspaceTrustHash } from '../src/local-workspace-trust.js'
+import { emptyLock, readLock, writeLock } from '../src/lockfile.js'
 import { createPackageManager } from '../src/manager.js'
 
 const roots: string[] = []
@@ -93,7 +94,7 @@ it('calls the generation reload port once per changed package and closes watchin
   f.manager.bindLocalPluginReload({ reloadPlugin })
   const watcher = f.manager.watchLocalPlugins(f.profileDir)
   try {
-    const plugin = join(f.localPlugins.workspace, 'hello')
+    const plugin = join(f.localPlugins.home, 'hello')
     mkdirSync(plugin)
     writeFileSync(join(plugin, 'plugin.js'), 'export default { apply() {} }')
     await watcher.refresh()
@@ -113,4 +114,41 @@ it('never discovers the private authoring area even when configured as a local r
   writeFileSync(join(root, 'ready-tool/plugin.ts'), 'export default {apply(){}}\n')
   const { discoverLocalPlugins } = await import('../src/local-source.js')
   expect(discoverLocalPlugins({ home: root, workspace: root })).toEqual([])
+})
+
+it('does not trust or enable discovered repository plugins before explicit review', async () => {
+  const f = setup()
+  const plugin = join(f.localPlugins.workspace, 'unreviewed')
+  mkdirSync(plugin, { recursive: true })
+  writeFileSync(join(plugin, 'plugin.js'), "throw new Error('must not evaluate before trust')")
+  await f.manager.refreshLocalPlugins(f.profileDir)
+  const item = (await f.manager.inventory(f.profileDir)).packages.find((p) => p.id === 'unreviewed')
+  expect(item).toMatchObject({ trusted: false, enabled: false })
+  await expect(f.manager.setEnabled(f.profileDir, 'unreviewed', true)).rejects.toMatchObject({
+    code: 'E_PACKAGE_TRUST',
+  })
+  const hashBeforeEdit = localWorkspaceTrustHash(
+    f.localPlugins,
+    readLock(f.profileDir, { profile: 'test', agnesVersion: '0.0.0' }),
+  )
+  writeFileSync(join(plugin, 'plugin.js'), "throw new Error('changed before confirmation')")
+  await expect(
+    f.manager.trustWorkspace(f.profileDir, join(f.root, 'workspace'), hashBeforeEdit),
+  ).rejects.toMatchObject({ code: 'E_PACKAGE_PREVIEW_STALE' })
+  await f.manager.trustWorkspace(
+    f.profileDir,
+    join(f.root, 'workspace'),
+    localWorkspaceTrustHash(
+      f.localPlugins,
+      readLock(f.profileDir, { profile: 'test', agnesVersion: '0.0.0' }),
+    ),
+  )
+  expect((await f.manager.inventory(f.profileDir)).packages.find((p) => p.id === 'unreviewed')).toMatchObject(
+    { trusted: true, enabled: true },
+  )
+  writeFileSync(join(plugin, 'plugin.js'), "throw new Error('changed revision also needs trust')")
+  await f.manager.refreshLocalPlugins(f.profileDir)
+  expect((await f.manager.inventory(f.profileDir)).packages.find((p) => p.id === 'unreviewed')).toMatchObject(
+    { trusted: false, enabled: false },
+  )
 })

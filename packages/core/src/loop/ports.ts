@@ -14,7 +14,8 @@ import type {
   ServicePorts,
 } from '@agnes/extension-api'
 import type { ContentBlock, InferenceEvent, RequestBody } from '@agnes/protocol'
-import { releaseTreeReservation, settleTreeSpend } from '../child/runtime-budget.js'
+import { releaseTreeReservation } from '../child/runtime-budget.js'
+import { ModelExecution } from '../execution/model-execution.js'
 import { approvalContinuation, continueParked } from '../execution/turn/parked.js'
 import { approveAndExecute } from '../execution/turn/tools.js'
 import { unrecordedParkEvents } from '../execution/turn/unknown-outcome.js'
@@ -33,6 +34,7 @@ import { dispatchLoopEvent } from './events.js'
 import { LoopInvocations } from './invocations.js'
 import { loopJobs } from './jobs.js'
 import { publicOutcome } from './outcome.js'
+import { scopeLoopContext, sessionForLoop } from './scope.js'
 import { freezeView, loopTurnView } from './turn-view.js'
 import { loopWait } from './wait.js'
 
@@ -45,6 +47,7 @@ const CHECKPOINT_EVENT = 'x/core/loop-checkpoint'
 
 /** Fit public operations without handing an independent driver the default scheduler. */
 export async function createLoopContext(s: SessionImpl, restoreCheckpoint = false): Promise<LoopContext> {
+  s = sessionForLoop(s)
   const decisionSource = s.loopDecisionSource()
   let checkpoint: LoopCheckpoint | null = null
   // Next-step inputs claimed after the restored checkpoint: the driver never recorded them, so they
@@ -155,6 +158,8 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
     const releaseEffect = await s.controls.beginEffect()
     const done = s.beginLoopOperation()
     try {
+      if (s.turn?.ledgerFailed)
+        throw new CoreError('E_BUDGET', 'usage ledger unavailable; refusing inference')
       const binding = prepared.get(request)
       if (!binding || binding.turnId !== requireOp().meta.turn)
         throw new CoreError('E_REQUEST_FROZEN', 'Model request must be prepared by this turn')
@@ -177,11 +182,16 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
       await ensureStep(true)
       await invocations.claim(binding.invocationId, request)
       const events: InferenceEvent[] = []
+      let settled = false
       for await (const event of streamWire(admitted.wire, admitted.output, signal, binding.invocationId)) {
         events.push(event)
+        if (event.type === 'done' || event.type === 'error') {
+          await invocations.settle(binding.invocationId, request, events)
+          settled = true
+        }
         yield event
       }
-      await invocations.settle(binding.invocationId, request, events)
+      if (!settled) await invocations.settle(binding.invocationId, request, events)
     } finally {
       await releaseTreeReservation(s)
       done()
@@ -202,6 +212,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
       effect.intent,
     ]
     const op = requireOp()
+    const memory = s.turn
     const seqs = await s.transition(
       pre,
       withPhase(op, {
@@ -211,86 +222,37 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
     )
     const headerSeq = seqs[pre.length - 2]!
     const intentSeq = seqs[pre.length - 1]!
-    if (s.turn) {
-      s.turn.lastHeader = output.header
-      s.turn.lastHeaderSeq = headerSeq
+    if (memory) {
+      memory.lastHeader = output.header
+      memory.lastHeaderSeq = headerSeq
     }
-    let sent = false
-    let settled = false
-    let failed = false
-    let completed = false
+    const execution = new ModelExecution(s, {
+      wire: request,
+      header: output.header,
+      effect,
+      headerSeq,
+      intentSeq,
+      signal,
+      publicIterator: true,
+      turnId: op.meta.turn,
+      step: op.step,
+      memory,
+    })
     let stopReason = 'end_turn'
-    const content: Array<{ type: 'text' | 'thinking'; text: string }> = []
     try {
-      for await (const event of s.d.provider.infer(request, {
-        signal,
-        toolNames: request.tools.map((tool) => tool.name),
-      })) {
-        if (event.type === 'sent') {
-          if (
-            sent ||
-            event.stamp.derived_hash !== request.derivedHash ||
-            event.stamp.contract_id !== output.header.contract_id ||
-            event.stamp.parser_version !== output.header.parser_version ||
-            event.stamp.tool_schema_hash !== output.header.tool_schema_hash ||
-            event.stamp.model.id !== request.model ||
-            event.stamp.model.route !== request.route
-          )
-            throw new CoreError('E_ENVELOPE', 'Provider sent stamp does not match prepared request')
-          await s.d.log.append([
-            s.ev('request/sent', event.stamp, { sourceEventSeqs: [headerSeq, intentSeq] }),
-          ])
-          sent = true
-        } else if (!sent && event.type !== 'error')
-          throw new CoreError('E_ENVELOPE', 'Provider response is missing a sent stamp')
-        s.loopScope.note()
-        if (event.type === 'error') failed = true
-        if (event.type === 'done') completed = true
-        if (event.type === 'done')
+      for await (const event of execution.stream()) {
+        if (event.type === 'done') {
           stopReason =
             event.reason === 'length' ? 'max_tokens' : event.reason === 'toolUse' ? 'tool_use' : 'end_turn'
-        if (event.type === 'text_delta' || event.type === 'thinking_delta')
-          content.push({ type: event.type === 'text_delta' ? 'text' : 'thinking', text: event.delta })
-        if (event.type === 'usage') {
-          const op = requireOp()
-          const { type: _type, ...usage } = event
-          const spend = {
-            ...usage,
-            purpose: 'inference' as const,
-            model: request.model,
-            sessionKey: s.key,
-            lane: s.lane,
-            turn: op.meta.turn,
-            step: op.step,
-            effectId: effect.effectId,
-            slot: request.slot,
-          }
-          const {
-            seqs: [costSeq],
-          } = await s.d.log.append([
-            s.ev('cost/ledger', {
-              ...usage,
-              purpose: 'inference',
-              model: request.model,
-              effectId: effect.effectId,
-            }),
-          ])
-          await settleTreeSpend(s, usage.credits, costSeq!)
-          if (!(await s.d.runtime.billingRecord(spend))) {
-            if (s.turn) s.turn.ledgerFailed = true
-            throw new Error('Loop model usage could not be recorded')
-          }
         }
+        if (event.type === 'done' || event.type === 'error')
+          await execution.commit(execution.rows(execution.outcome, execution.outcome !== 'ok'), (cur) => cur)
         yield event
       }
-      if (!failed && !signal.aborted && (!sent || !completed))
-        throw new CoreError('E_ENVELOPE', 'Provider response ended without sent/done events')
-      if (!failed && !signal.aborted)
-        await dispatchLoopEvent(s, 'after_model_response', { content, stopReason }, signal)
-      await s.d.log.append([effect.settle(signal.aborted ? 'aborted' : failed ? 'error' : 'ok')])
-      settled = true
+      if (execution.outcome === 'ok')
+        await dispatchLoopEvent(s, 'after_model_response', { content: execution.content, stopReason }, signal)
     } finally {
-      if (!settled) await s.d.log.append([effect.settle(signal.aborted ? 'aborted' : 'error')])
+      await execution.commit(execution.rows(execution.outcome, execution.outcome !== 'ok'), (cur) => cur)
     }
   }
   async function prepareTools(signal: AbortSignal): Promise<void> {
@@ -732,8 +694,10 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
         }),
     },
   }
-  cleanup.set(ctx, () => {
+  const scoped = scopeLoopContext(ctx, s.loopScope)
+  cleanup.set(scoped, () => {
+    s.loopScope.revoke()
     waiting.dispose()
   })
-  return ctx
+  return scoped
 }

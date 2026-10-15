@@ -21,6 +21,8 @@ export type WireEvent =
 export type AdapterStreamOptions = {
   /** Called before network I/O with the actual serialized body digest, never credentials. */
   reportSent?: (report: SentReport) => void
+  /** Immediately before actual transport dispatch, after local request capture. */
+  reportDispatch?: () => void
   reportRequest?: (body: unknown, attemptId?: string) => Promise<void>
   reportAttempt?: (event: import('@agnes/extension-api').ModelAdapterAttemptObservation) => Promise<void>
   signal: AbortSignal

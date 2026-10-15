@@ -50,6 +50,7 @@ export function loopChildStarts(s: SessionImpl, children: ChildAgentSessionServi
       throw new CoreError('E_UNSUPPORTED', 'Child provider cannot adopt this invocation')
     signal = AbortSignal.any([signal, s.ac.signal])
     signal.throwIfAborted()
+    s.loopScope.assertAlive()
     const handle = await children.adoptStart(row.task, {
       ...row.options,
       invocationId: id,
@@ -98,6 +99,7 @@ export function loopChildStarts(s: SessionImpl, children: ChildAgentSessionServi
         }
         const row: Start = { invocationId: id, task, options: saved, fingerprint }
         await record(row)
+        s.loopScope.assertAlive()
         const handle = await children.start(task, { ...options, invocationId: id, signal })
         await record({ ...row, childId: handle.id, providerId: handle.providerId })
         handles.set(id, handle)

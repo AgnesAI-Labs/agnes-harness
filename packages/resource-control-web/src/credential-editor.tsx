@@ -16,12 +16,15 @@ export function CredentialEditor({
   mode,
   onCancel,
   onSaved,
+  layout = 'dialog',
 }: {
   api: CredentialsApi
   item?: AdminCredentialMetadata
   mode: 'create' | 'rename' | 'replace'
   onCancel(): void
   onSaved(item: AdminCredentialMetadata): void
+  /** `page`: the form is the body of a settings page (its title is the page's), not a dialog. */
+  layout?: 'dialog' | 'page'
 }) {
   const { t } = useUiText('@agnes/credentials', credentialsCatalog)
   const [container] = useState(() => getOverlayContainer(document.activeElement as HTMLElement))
@@ -66,6 +69,91 @@ export function CredentialEditor({
       if (active.current) setBusy(false)
     }
   }
+  const footer = (
+    <>
+      <Button data-testid="credential-cancel" disabled={busy} onClick={onCancel}>
+        {t('cancel')}
+      </Button>
+      <Button
+        appearance="primary"
+        data-testid="credential-save"
+        loading={busy}
+        disabled={busy || (mode !== 'replace' && !label.trim())}
+        onClick={() => {
+          document
+            .getElementById('credential-editor-form')
+            ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+        }}
+      >
+        {t('save')}
+      </Button>
+    </>
+  )
+  const form = (
+    <form
+      id="credential-editor-form"
+      data-testid="credential-editor"
+      onSubmit={(event) => {
+        event.preventDefault()
+        void save()
+      }}
+    >
+      {error && (
+        <Banner tone="error" data-testid="credential-error">
+          {t(`error.${error}`)}
+        </Banner>
+      )}
+      {mode !== 'replace' && (
+        <Field label={t('label')}>
+          <SettingsInput
+            id="credential-label"
+            data-testid="credential-label"
+            value={label}
+            maxLength={128}
+            required
+            disabled={busy}
+            autoFocus
+            onChange={(event) => setLabel(event.target.value)}
+          />
+        </Field>
+      )}
+      {mode !== 'rename' && (
+        <>
+          <Field label={t('value')} hint={t('hint')}>
+            <SettingsInput
+              ref={value}
+              id="credential-value"
+              data-testid="credential-value"
+              type={visible ? 'text' : 'password'}
+              autoComplete="new-password"
+              maxLength={65536}
+              required
+              disabled={busy}
+              autoFocus={mode === 'replace'}
+            />
+          </Field>
+          <Button
+            data-testid="credential-show"
+            aria-pressed={visible}
+            disabled={busy}
+            onClick={() => setVisible((current) => !current)}
+          >
+            {t(visible ? 'hide' : 'show')}
+          </Button>
+        </>
+      )}
+    </form>
+  )
+  if (layout === 'page')
+    return (
+      <div className="agnes-settings-stack credential-editor-page">
+        {form}
+        <div className="agnes-settings-apply">
+          <span />
+          {footer}
+        </div>
+      </div>
+    )
   return (
     <Dialog
       getContainer={() => container}
@@ -81,80 +169,9 @@ export function CredentialEditor({
           onCancel()
         }
       }}
-      footer={
-        <>
-          <Button data-testid="credential-cancel" disabled={busy} onClick={onCancel}>
-            {t('cancel')}
-          </Button>
-          <Button
-            appearance="primary"
-            data-testid="credential-save"
-            loading={busy}
-            disabled={busy || (mode !== 'replace' && !label.trim())}
-            onClick={() => {
-              document
-                .getElementById('credential-editor-form')
-                ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
-            }}
-          >
-            {t('save')}
-          </Button>
-        </>
-      }
+      footer={footer}
     >
-      <form
-        id="credential-editor-form"
-        data-testid="credential-editor"
-        onSubmit={(event) => {
-          event.preventDefault()
-          void save()
-        }}
-      >
-        {error && (
-          <Banner tone="error" data-testid="credential-error">
-            {t(`error.${error}`)}
-          </Banner>
-        )}
-        {mode !== 'replace' && (
-          <Field label={t('label')}>
-            <SettingsInput
-              id="credential-label"
-              data-testid="credential-label"
-              value={label}
-              maxLength={128}
-              required
-              disabled={busy}
-              autoFocus
-              onChange={(event) => setLabel(event.target.value)}
-            />
-          </Field>
-        )}
-        {mode !== 'rename' && (
-          <>
-            <Field label={t('value')} hint={t('hint')}>
-              <SettingsInput
-                ref={value}
-                id="credential-value"
-                data-testid="credential-value"
-                type={visible ? 'text' : 'password'}
-                autoComplete="new-password"
-                maxLength={65536}
-                required
-                disabled={busy}
-                autoFocus={mode === 'replace'}
-              />
-            </Field>
-            <Button
-              data-testid="credential-show"
-              aria-pressed={visible}
-              disabled={busy}
-              onClick={() => setVisible((current) => !current)}
-            >
-              {t(visible ? 'hide' : 'show')}
-            </Button>
-          </>
-        )}
-      </form>
+      {form}
     </Dialog>
   )
 }

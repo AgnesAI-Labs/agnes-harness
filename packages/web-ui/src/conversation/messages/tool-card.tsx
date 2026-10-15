@@ -1,3 +1,4 @@
+import type { UITurn } from '@agnes/protocol'
 import { type ReactNode, useLayoutEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import type { Translate } from '../../locales/index.js'
@@ -53,6 +54,7 @@ export function ConversationToolCard({
   presentation,
   resultAppendix,
   t = fallbackT,
+  turnStatus,
 }: {
   node: ToolNode
   icon?: ReactNode
@@ -60,6 +62,8 @@ export function ConversationToolCard({
   presentation?: { name: string; summary: string } | undefined
   resultAppendix?: string | undefined
   t?: Translate
+  /** How the turn holding the call stands; a call still planned when the turn stopped never ran. */
+  turnStatus?: UITurn['status'] | undefined
 }) {
   const [expanded, setExpanded] = useState(false)
   const cardHost = useRef<HTMLDivElement>(null)
@@ -74,6 +78,8 @@ export function ConversationToolCard({
   const remainder = summary.startsWith(node.name) ? summary.slice(node.name.length).trim() : summary
   const meaningful =
     summary && summary !== node.name && remainder && !remainder.startsWith('{') && !remainder.startsWith('[')
+  // Declared in a step the turn did not carry out (it stopped, waits or moved on): it never ran.
+  const notRun = node.status === 'planned' && turnStatus !== undefined && turnStatus !== 'running'
   const outcome = toolOutcome(node, t)
   const step = toolStep(node, t, interaction)
   // The row already names the tool and how it ended; the detail is what went in and what came out.
@@ -103,17 +109,18 @@ export function ConversationToolCard({
         ? 'failed'
         : node.status === 'awaiting_approval'
           ? 'attention'
-          : node.status === 'cancelled'
+          : node.status === 'cancelled' || notRun
             ? 'cancelled'
             : undefined
-  // Success is silent; only a step that failed, waits or was cancelled says so.
-  const note = state && state !== 'running' ? outcome.label : undefined
+  // Success is silent; only a step that failed, waits, was cancelled or never ran says so.
+  const note = notRun ? t('tool.status.notRun') : state && state !== 'running' ? outcome.label : undefined
   const target = step.target || (meaningful ? summary : '')
   return (
     <div
       ref={cardHost}
       data-agnes-tool-card=""
       data-status={node.status}
+      {...(notRun ? { 'data-not-run': 'true' } : {})}
       data-expanded={expanded ? 'true' : undefined}
     >
       <ActivityRow

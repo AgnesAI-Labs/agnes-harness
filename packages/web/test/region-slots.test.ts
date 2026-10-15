@@ -368,6 +368,11 @@ describe('migrated settings panes', () => {
   })
 
   it('keeps every pane rendered after the locale changes', async () => {
+    // The group's explanation sits behind its ⓘ: a note named by the localized text.
+    const intro = () =>
+      config
+        .querySelector('#appearance-settings-pane .appearance-group [role="note"]')
+        ?.getAttribute('aria-label')
     const slots = await registry()
     const config = document.createElement('dialog')
     config.id = 'config'
@@ -376,11 +381,8 @@ describe('migrated settings panes', () => {
     const mount = mountSettingsPaneRegion(slots, config, {}, locale)
     mounts.push(mount)
 
-    await vi.waitFor(
-      () =>
-        expect(config.querySelector('#appearance-settings-pane')?.textContent).toContain('界面外观和语言'),
-      committed,
-    )
+    await vi.waitFor(() => expect(intro()).toContain('界面外观和语言'), committed)
+    expect(config.querySelector('#appearance-settings-pane')?.textContent).toContain('通用')
     expect(config.querySelector('#model-settings-pane')?.textContent).toContain('模型与账户')
     const hosts = [
       ...config.querySelectorAll<HTMLElement>('[data-agnes-settings-pane-slot], [data-agnes-dsh-slot]'),
@@ -394,13 +396,8 @@ describe('migrated settings panes', () => {
     dark?.focus()
     locale.setLocale('en')
     // Locale reconciliation keeps independent roots, controller bindings and the selected pane alive.
-    await vi.waitFor(
-      () =>
-        expect(config.querySelector('#appearance-settings-pane')?.textContent).toContain(
-          'Appearance and language',
-        ),
-      committed,
-    )
+    await vi.waitFor(() => expect(intro()).toContain('Appearance and language'), committed)
+    expect(config.querySelector('#appearance-settings-pane')?.textContent).toContain('General')
     // The pane's own copy follows the language; language names come from the picker, filled at run time.
     expect(config.querySelector('#appearance-settings-pane')?.textContent).toContain('Font size')
     // 模型面板的标题与说明也要跟着切换，而不是停在挂载时的语言。
@@ -415,7 +412,8 @@ describe('migrated settings panes', () => {
     expect(dark?.checked).toBe(true)
     expect(document.activeElement).toBe(dark)
     locale.setLocale('zh-CN')
-    expect(config.querySelector('#appearance-settings-pane')?.textContent).toContain('界面外观和语言')
+    expect(intro()).toContain('界面外观和语言')
+    expect(config.querySelector('#appearance-settings-pane')?.textContent).toContain('通用')
     for (const host of hosts) expect(config.querySelector(`#${host.id}`)).toBe(host)
   })
 

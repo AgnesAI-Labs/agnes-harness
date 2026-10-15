@@ -1,5 +1,15 @@
 import { type SystemPromptSaveParams, type SystemPromptSnapshot, validateAgainst } from '@agnes/protocol'
 import { SystemPromptSnapshot as Schema } from '@agnes/protocol/gen/agnes-v1'
+/**
+ * A save made against a revision that is no longer stored: another window saved first. `current` is
+ * that saved value with its revision; keep the draft, show `current`, and save again against it.
+ */
+export class SystemPromptConflict extends Error {
+  constructor(readonly current: SystemPromptSnapshot) {
+    super('Prompt changed elsewhere')
+  }
+}
+
 export function systemPromptApi(fetcher: typeof fetch = fetch) {
   async function call(
     input?: SystemPromptSaveParams,
@@ -22,6 +32,14 @@ export function systemPromptApi(fetcher: typeof fetch = fetch) {
       },
     )
     const result: unknown = await response.json()
+    const conflict = (result as { error?: { data?: { code?: unknown; current?: unknown } } } | null)?.error
+      ?.data
+    if (
+      response.status === 409 &&
+      conflict?.code === 'CONFIG_REVISION_CONFLICT' &&
+      validateAgainst(Schema, conflict.current).ok
+    )
+      throw new SystemPromptConflict(conflict.current as SystemPromptSnapshot)
     if (!response.ok || !validateAgainst(Schema, result).ok) throw new Error('Prompt unavailable')
     return result as SystemPromptSnapshot
   }

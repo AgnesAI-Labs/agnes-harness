@@ -38,7 +38,13 @@ export const RuntimeSecurityStatus = Type.Object(
         os: text,
         l1: Type.Object(
           {
-            level: Type.Union([Type.Literal('full'), Type.Literal('partial'), Type.Literal('unavailable')]),
+            /** `unprobed`: no workspace sandbox probe has run in this daemon yet; nothing is known. */
+            level: Type.Union([
+              Type.Literal('full'),
+              Type.Literal('partial'),
+              Type.Literal('unavailable'),
+              Type.Literal('unprobed'),
+            ]),
             scope: strings,
             reason: Type.Optional(text),
           },
@@ -140,6 +146,9 @@ export const RuntimeAdminSnapshot = Type.Object(
             deployDir: Type.String({ minLength: 1, maxLength: 4096 }),
             path: text,
             manifestId: text,
+            trustHash: Type.Optional(Type.String({ pattern: '^sha256-[a-f0-9]{64}$' })),
+            pluginCount: Type.Optional(Type.Integer({ minimum: 0, maximum: 4096 })),
+            hasHooks: Type.Optional(Type.Boolean()),
             state: Type.Union([Type.Literal('untrusted'), Type.Literal('trusted'), Type.Literal('changed')]),
           },
           { additionalProperties: false },

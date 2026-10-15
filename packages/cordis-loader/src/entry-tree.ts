@@ -9,7 +9,13 @@ export type InstallationUpdateResult =
   | Readonly<{ status: 'removed'; cause: unknown; fatal: true }>
 
 export interface EntryMountAdapter<TImported, TInstallation> {
-  mount(parent: Context, row: Readonly<EntryRow>, imported: TImported): Promise<TInstallation>
+  /** The signal revokes an in-flight mount when its transaction deadline expires. */
+  mount(
+    parent: Context,
+    row: Readonly<EntryRow>,
+    imported: TImported,
+    signal?: AbortSignal,
+  ): Promise<TInstallation>
   update(current: TInstallation, row: Readonly<EntryRow>): Promise<InstallationUpdateResult>
   unmount(current: TInstallation): Promise<void>
   /** Host-only cleanup for a prepared mount that has not reached `mount()` yet. */
@@ -456,10 +462,10 @@ export class EntryTree<TImported, TInstallation> {
           }
         }
         try {
-          const installation = await this.#step(
-            this.#adapter.mount(this.#parent, operation.next as Readonly<EntryRow>, imported),
+          const installation = await this.#mountStep(
+            operation.next as Readonly<EntryRow>,
+            imported,
             timeoutMs,
-            `mount ${operation.id}`,
           )
           records.push({ kind: 'mount', id: operation.id, installation })
           working.set(operation.id, { row: operation.next as Readonly<EntryRow>, installation })
@@ -608,10 +614,7 @@ export class EntryTree<TImported, TInstallation> {
       }
       try {
         const imported = await this.#freshCompensationImport(prepared, record.previous.row)
-        const installation = await step(
-          this.#adapter.mount(this.#parent, record.previous.row, imported),
-          `mount ${record.id}`,
-        )
+        const installation = await this.#mountStep(record.previous.row, imported, timeoutMs)
         restored.set(record.id, { row: record.previous.row, installation })
       } catch (error) {
         errors.push(error)
@@ -631,10 +634,7 @@ export class EntryTree<TImported, TInstallation> {
         try {
           await step(this.#adapter.unmount(record.previous.installation), `unmount ${record.id}`)
           const imported = await this.#freshCompensationImport(prepared, record.previous.row)
-          const installation = await step(
-            this.#adapter.mount(this.#parent, record.previous.row, imported),
-            `mount ${record.id}`,
-          )
+          const installation = await this.#mountStep(record.previous.row, imported, timeoutMs)
           restored.set(record.id, { row: record.previous.row, installation })
         } catch (restoreError) {
           errors.push(new AggregateError([error, restoreError], `row ${record.id} config recovery failed`))
@@ -654,13 +654,38 @@ export class EntryTree<TImported, TInstallation> {
     return this.#tainted
   }
 
-  async #step<T>(work: Promise<T>, timeoutMs: number | undefined, label: string): Promise<T> {
+  async #mountStep(row: Readonly<EntryRow>, imported: TImported, timeoutMs: number | undefined) {
+    const abort = new AbortController()
+    const work = this.#adapter.mount(this.#parent, row, imported, abort.signal)
+    return this.#step(work, timeoutMs, `mount ${row.id}`, (error) => {
+      abort.abort(error)
+      // Adapters that cannot cancel still transfer ownership of a late result.
+      // It must never become an untracked live installation after compensation.
+      void work
+        .then(
+          (installation) => this.#adapter.unmount(installation),
+          () => {},
+        )
+        .catch((error) => {
+          this.#parent.logger.error(error)
+        })
+    })
+  }
+
+  async #step<T>(
+    work: Promise<T>,
+    timeoutMs: number | undefined,
+    label: string,
+    abandon?: (error: EntryTreeError) => void,
+  ): Promise<T> {
     if (timeoutMs === undefined) return work
     let timer: ReturnType<typeof setTimeout> | undefined
     const deadline = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
         this.#tainted = true
-        reject(new EntryTreeError('E_ROW_STUCK', `${label} did not settle within ${timeoutMs}ms`))
+        const error = new EntryTreeError('E_ROW_STUCK', `${label} did not settle within ${timeoutMs}ms`)
+        abandon?.(error)
+        reject(error)
       }, timeoutMs)
     })
     try {

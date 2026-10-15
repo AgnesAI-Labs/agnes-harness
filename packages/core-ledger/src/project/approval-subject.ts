@@ -24,3 +24,9 @@ export function approvalSubject(subject: unknown): Pick<ApprovalNode, 'risk' | '
       : {}),
   }
 }
+
+/** The tool a core/unknown-outcome decision asks about, as Core named it in the subject. */
+export function reconcileTool(subject: unknown): string {
+  const name = (subject as { name?: unknown } | null)?.name
+  return typeof name === 'string' && name ? name.slice(0, 256) : 'tool'
+}

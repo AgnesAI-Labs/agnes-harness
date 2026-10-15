@@ -317,7 +317,7 @@ describe('trace panel', () => {
       .mockResolvedValue({
         call: { toolUseId: 'call-1', name: 'bash', args: { command: 'new session' }, ordinal: 0 },
       })
-    const { root, panel } = mount(true, readToolDetail)
+    const { root, panel, toggle } = mount(true, readToolDetail)
     panel.render(nodes, [turn(sampleTrace, ['u1', 'c1', 'a1', 't1'])], {
       hasEarlier: false,
       sessionId: 'old',
@@ -331,6 +331,8 @@ describe('trace panel', () => {
       hasEarlier: false,
       sessionId: 'new',
     })
+    // Another session opens on its own view (the conversation); open its trace as a person would.
+    flushSync(() => toggle.click())
     expect(root.querySelector('.trace-inspector')?.hasAttribute('hidden')).toBe(true)
     root.querySelector<HTMLButtonElement>('[data-trace-row-id="t1"]')?.click()
     ;[...root.querySelectorAll<HTMLButtonElement>('.trace-tab')]

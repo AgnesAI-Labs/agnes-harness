@@ -8,6 +8,7 @@ import { PARSER_VERSION } from './decode/rules/index.js'
 import type { DecodeContext } from './decode/types.js'
 import { AiSetupError } from './errors.js'
 import { checkedResponse, guardSequence } from './guard.js'
+import { InferenceTiming } from './inference-timing.js'
 import { buildRegistry, type Registry } from './registry.js'
 import { resolveSelection, SlotUnresolved } from './route.js'
 import { buildStamp, renderPrefixedPrompt, type SentReport } from './stamp.js'
@@ -51,6 +52,7 @@ export async function* runInference(
   req: RequestBody,
   opts: Parameters<Provider['infer']>[1],
 ): AsyncIterable<InferenceEvent> {
+  const timing = new InferenceTiming(deps.clock)
   let resolved: ReturnType<typeof resolveSelection>
   try {
     resolved = resolveSelection(deps.registry, req.slot, req.route, req.model)
@@ -106,6 +108,7 @@ export async function* runInference(
       },
       ...wireReq.sections,
     ]
+  timing.prepared()
   let trace: ModelRequestTraceHandle | undefined
   try {
     let endpoint: string | null = null
@@ -115,12 +118,16 @@ export async function* runInference(
     } catch {
       /* Non-HTTP adapters have no endpoint identifier. */
     }
-    trace = await deps.trace?.begin(wireReq, {
-      id: hit.adapter.id,
-      version: hit.adapter.version ?? null,
-      api: hit.decl.api,
-      endpoint,
-    })
+    const traceStore = deps.trace
+    if (traceStore)
+      trace = await timing.capture(() =>
+        traceStore.begin(wireReq, {
+          id: hit.adapter.id,
+          version: hit.adapter.version ?? null,
+          api: hit.decl.api,
+          endpoint,
+        }),
+      )
   } catch {
     /* Passive local capture cannot interrupt a request. */
   }
@@ -143,27 +150,30 @@ export async function* runInference(
       },
     }
   }
-  // The clock starts where the turn does. Both figures on the timing block are measured from here,
-  // so they describe the same interval a caller timing this call from outside would have measured.
+  // Preserve the legacy adapter-start-to-output/usage samples; new fields include local capture.
   const startedAt = deps.clock()
   let ttftMs: number | undefined
   const markFirstToken = () => {
+    timing.output()
     if (ttftMs === undefined) ttftMs = Math.max(0, Math.round(deps.clock() - startedAt))
   }
   const streamOpts = {
+    reportDispatch: () => timing.dispatched(),
     reportSent: (report: SentReport) => {
       if (!sentEmitted) sentReport = structuredClone(report)
     },
     reportAttempt: async (event: import('@agnes/extension-api').ModelAdapterAttemptObservation) => {
       try {
-        await trace?.attempt?.(event)
+        const attempt = trace?.attempt?.bind(trace)
+        if (attempt) await timing.capture(() => attempt(event))
       } catch {
         /* Passive attempt observation. */
       }
     },
     reportRequest: async (body: unknown, attemptId?: string) => {
       try {
-        await trace?.wire(body, attemptId)
+        const handle = trace
+        if (handle) await timing.capture(() => handle.wire(body, attemptId))
       } catch {
         /* A failed capture never changes transport. */
       }
@@ -187,6 +197,7 @@ export async function* runInference(
     return r.events
   }
   let terminal = false
+  let outcome: Extract<InferenceEvent, { type: 'done' | 'error' }> | undefined
   try {
     for await (const ev of hit.adapter.stream(resolved.route, wireReq, streamOpts)) {
       if (!sentEmitted) yield emitSent()
@@ -250,20 +261,33 @@ export async function* runInference(
           credits: ev.credits ?? estimateCredits(resolved.model, ev.tokens, deps.creditsPerUsd),
           ...(safeBilling ? { billing: safeBilling } : {}),
           timing: {
+            ...timing.snapshot(false),
             ...(ttftMs !== undefined ? { ttftMs } : {}),
             durationMs: Math.max(0, Math.round(deps.clock() - startedAt)),
           },
         }
         continue
       }
-      if (ev.type === 'done' || ev.type === 'error') terminal = true
+      if (ev.type === 'done' || ev.type === 'error') {
+        terminal = true
+        timing.ended()
+        if (ev.type === 'error') yield { ...ev, timing: timing.snapshot(false) }
+        else outcome = ev
+        break
+      }
+      if (ev.type === 'media') timing.output()
       yield ev
     }
     if (!sentEmitted) yield emitSent()
     if (!terminal) {
-      for (const e of flush()) yield e
+      for (const e of flush()) {
+        timing.output()
+        yield e
+      }
       recordEvent({ type: 'error', reason: 'error', code: 'TRANSPORT' })
+      timing.ended()
       yield {
+        timing: timing.snapshot(false),
         type: 'error',
         reason: 'error',
         code: 'TRANSPORT',
@@ -281,7 +305,9 @@ export async function* runInference(
         reason: opts.signal.aborted ? 'aborted' : 'error',
         code: opts.signal.aborted ? 'ABORTED' : 'TRANSPORT',
       })
+      timing.ended()
       yield {
+        timing: timing.snapshot(false),
         type: 'error',
         reason: opts.signal.aborted ? 'aborted' : 'error',
         code: opts.signal.aborted ? 'ABORTED' : 'TRANSPORT',
@@ -291,11 +317,13 @@ export async function* runInference(
     }
   } finally {
     try {
-      await trace?.finish()
+      const handle = trace
+      if (handle) await timing.capture(() => handle.finish())
     } catch {
       /* Local storage failure is isolated from inference. */
     }
   }
+  if (outcome) yield { ...outcome, timing: timing.snapshot(true) }
 }
 
 /**

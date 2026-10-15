@@ -956,9 +956,13 @@
     min-width: 2rem;
     min-height: 2rem;
   }
+  /* A trace with nothing recorded says so in the middle of its pane, not in a corner. */
   .trace-empty {
     grid-row: 4;
+    align-self: center;
+    justify-self: center;
     margin: var(--s24) var(--s20);
+    text-align: center;
   }
   .trace-badge.kind-ui {
     color: var(--agnes-status-info-text);

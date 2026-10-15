@@ -5,6 +5,8 @@ import { createRoot } from 'react-dom/client'
 import { expect, it } from 'vitest'
 import { RuntimeInfo } from '../src/session-runtime-dialog.js'
 import {
+  GRANT_RETRY_LIMIT,
+  grantsFailure,
   groupTools,
   orderGrants,
   SessionGrantList,
@@ -150,10 +152,87 @@ it('puts session allowances before standing ones and drops revoked grants', () =
   expect(result.map((item) => item.toolId)).toEqual(['edit', 'shell', 'write'])
 })
 
-it('shows no section when the daemon cannot list what the session may do', async () => {
-  const view = await mount(createElement(SessionGrantList, { grants: 'unavailable', onRevoke() {}, t: enT }))
-  expect(view.host.textContent).toBe('')
+it('says why the allowances could not be read instead of hiding them (F09)', async () => {
+  expect(grantsFailure({ code: -32006 })).toBe('denied')
+  expect(grantsFailure(new Error('socket closed'))).toBe('unavailable')
+  const retries: number[] = []
+  const view = await mount(
+    createElement(SessionGrantList, {
+      grants: { failed: 'denied', retries: 0 },
+      onRevoke() {},
+      onRetry: () => retries.push(1),
+      t: enT,
+    }),
+  )
+  const failed = () => view.host.querySelector('[data-testid="session-runtime-grants-failed"]')
+  expect(failed()?.textContent).toContain(enT('session.runtime.grantsDenied'))
+  // A refusal is not something a retry fixes.
+  expect(view.host.querySelector('[data-testid="session-runtime-grants-retry"]')).toBeNull()
+  await view.render(
+    createElement(SessionGrantList, {
+      grants: { failed: 'unavailable', retries: 0 },
+      onRevoke() {},
+      onRetry: () => retries.push(1),
+      t: enT,
+    }),
+  )
+  expect(failed()?.textContent).toContain(enT('session.runtime.grantsUnavailable'))
+  expect(failed()?.textContent).not.toContain(enT('session.runtime.grantsEmpty'))
+  await act(async () =>
+    view.host.querySelector<HTMLButtonElement>('[data-testid="session-runtime-grants-retry"]')?.click(),
+  )
+  expect(retries).toHaveLength(1)
+  await view.render(
+    createElement(SessionGrantList, {
+      grants: { failed: 'unavailable', retries: GRANT_RETRY_LIMIT },
+      onRevoke() {},
+      onRetry() {},
+      t: enT,
+    }),
+  )
+  expect(failed()?.textContent).toContain(enT('session.runtime.grantsLater'))
+  expect(view.host.querySelector('[data-testid="session-runtime-grants-retry"]')).toBeNull()
   await view.close()
+})
+
+it('retries a failed allowance read from the dialog until it succeeds or the limit is reached (F09)', async () => {
+  const { createRuntimeDialog } = await import('../src/session-runtime-dialog.js')
+  const { vi } = await import('vitest')
+  const sessionGrants = vi
+    .fn()
+    .mockRejectedValueOnce(new Error('worker unavailable'))
+    .mockResolvedValueOnce({ grants: [grant('shell')] })
+  const client = {
+    session: { runtime: async () => descriptor('gen-1') },
+    call: vi.fn(async () => ({ tools: [] })),
+    approval: { sessionGrants },
+  } as unknown as import('@agnes/sdk/browser').Client
+  const dialog = createRuntimeDialog({ client, translate: enT, error: vi.fn() })
+  await act(async () => dialog.open('s', document.createElement('button')))
+  const failed = () => document.querySelector('[data-testid="session-runtime-grants-failed"]')
+  await vi.waitFor(() => expect(failed()?.textContent).toContain(enT('session.runtime.grantsUnavailable')))
+  await act(async () =>
+    document.querySelector<HTMLButtonElement>('[data-testid="session-runtime-grants-retry"]')?.click(),
+  )
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-testid="session-runtime-grant"]')).not.toBeNull(),
+  )
+  expect(sessionGrants).toHaveBeenCalledTimes(2)
+  expect(failed()).toBeNull()
+  // Each manual retry counts; after the limit the dialog asks to come back later.
+  sessionGrants.mockRejectedValue(new Error('still down'))
+  await act(async () => dialog.open('s', document.createElement('button')))
+  for (let attempt = 0; attempt < GRANT_RETRY_LIMIT; attempt++) {
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-testid="session-runtime-grants-retry"]')).not.toBeNull(),
+    )
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[data-testid="session-runtime-grants-retry"]')?.click(),
+    )
+  }
+  await vi.waitFor(() => expect(failed()?.textContent).toContain(enT('session.runtime.grantsLater')))
+  expect(document.querySelector('[data-testid="session-runtime-grants-retry"]')).toBeNull()
+  await act(async () => dialog.dispose())
 })
 
 it('labels session and always allowances apart, revokes by grant id, and has an honest empty state', async () => {

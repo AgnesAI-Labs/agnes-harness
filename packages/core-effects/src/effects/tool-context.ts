@@ -22,8 +22,8 @@ import type {
 import { unavailableDecisions, unavailableProjections } from '@agnes/extension-api'
 import type { Actor } from '@agnes/protocol'
 import type { CheckpointWorkspaceContext, WorkspaceHookSandbox } from '../workspace/runtime.js'
+import { ToolEffectScope } from './effect-scope.js'
 import { assertNotDenied } from './fs-guard.js'
-import { MemoryEffectScope } from './memory-rejection.js'
 import type { SeamRuntime } from './wrap.js'
 
 export type ChildStatus = {
@@ -166,7 +166,8 @@ export function buildToolContext(
 ): ToolContext {
   const stepId = `${d.turn}/${d.step}`
   const publicFetch = d.publicFetch
-  const memoryEffects = d.memory ? new MemoryEffectScope() : undefined
+  // Every call gets one: a memory write and a Host-owned port can both prove a refusal before effect.
+  const effects = new ToolEffectScope()
   const workspaceFiles: FsOps = {
     read: (path, opts) => d.fsOps.read(path, opts),
     // A write is snapshotted before it happens, so a rewind has something to go back to. An
@@ -175,7 +176,7 @@ export function buildToolContext(
     // write is about to be refused for - asked, not decided here, and a missing file is not a
     // refusal because the path being written may not exist yet.
     write: async (path, data) => {
-      memoryEffects?.beginEffect()
+      effects.beginEffect()
       await assertNotDenied(d.fsOps, path)
       const snap = await d.runtime.checkpointSnapshot([path], stepId, d.workspace?.checkpoint)
       if (!snap.ok) throw new CoreError('E_SEAM_MISSING', `checkpoint unavailable: ${snap.reason}`, { path })
@@ -199,7 +200,7 @@ export function buildToolContext(
             throw new CoreError('E_RELATION', 'memory proposal source mismatch')
           const result = await d.memory!.approve(proposal)
           if (result.status !== 'approved')
-            memoryEffects!.reject({
+            effects.reject({
               code: result.status === 'rejected' ? 'MEMORY_APPROVAL_REJECTED' : 'MEMORY_APPROVAL_UNANSWERED',
               message:
                 result.status === 'rejected'
@@ -208,7 +209,7 @@ export function buildToolContext(
               path: proposal.path,
             })
           // Once admitted, even a CAS conflict or failed metadata receipt stays uncertain.
-          memoryEffects!.beginEffect()
+          effects.beginEffect()
           return result
         },
       )
@@ -493,22 +494,21 @@ export function buildToolContext(
     },
     log: d.log,
   }
-  if (!memoryEffects) return context
-  return memoryEffects.bind({
-    ...memoryEffects.guard(context, ['exec', 'requestCompaction']),
+  return effects.bind({
+    ...effects.guard(context, ['exec', 'requestCompaction']),
     fs: {
       read: (path, options) => files.read(path, options),
-      write: (path, content) => memoryEffects.write(() => files.write(path, content)),
+      write: (path, content) => effects.write(() => files.write(path, content)),
       list: (path) => files.list(path),
       stat: (path) => files.stat(path),
       ...(files.revision ? { revision: (path: string) => files.revision!(path) } : {}),
     },
-    net: memoryEffects.guard(context.net),
-    sandbox: memoryEffects.guard(context.sandbox, ['openProcess']),
-    tools: memoryEffects.guard(context.tools, ['invoke']),
-    artifacts: memoryEffects.guard(context.artifacts),
-    subagent: memoryEffects.guard(context.subagent),
-    decisions: memoryEffects.guard(context.decisions),
-    plan: memoryEffects.guard(context.plan),
+    net: effects.guard(context.net),
+    sandbox: effects.guard(context.sandbox, ['openProcess']),
+    tools: effects.guard(context.tools, ['invoke']),
+    artifacts: effects.guard(context.artifacts),
+    subagent: effects.guard(context.subagent),
+    decisions: effects.guard(context.decisions),
+    plan: effects.guard(context.plan),
   })
 }

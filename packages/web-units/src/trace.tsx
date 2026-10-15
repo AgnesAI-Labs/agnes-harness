@@ -22,6 +22,7 @@ import {
 import type { LoadArtifact, ReadFactChain } from './trace-provenance.js'
 import { TraceSplitter, useInspectorWidth } from './trace-splitter.js'
 import { TraceToolbar } from './trace-toolbar.js'
+import { createTraceViewMemory } from './trace-view-memory.js'
 
 export { buildTraceRows, durationLabel, type TraceRow, traceRowBuilder } from './trace-model.js'
 
@@ -138,6 +139,10 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
 ) {
   const store = options.store ?? sessionStorage
   const open = useRef(store.getItem(TRACE_PANEL_STORAGE_KEY) === 'open')
+  // The view is chosen per session; `decided` is the session (and whether it had records) it was
+  // last chosen for, so a new session or one with nothing recorded opens on the conversation.
+  const memory = useRef(createTraceViewMemory(store, open.current)).current
+  const decided = useRef<{ key: string | undefined; records: boolean } | undefined>(undefined)
   type Snapshot = {
     nodes: readonly UINode[]
     turns: readonly UITurn[]
@@ -316,7 +321,10 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
       else options.chatToggle.setAttribute('aria-pressed', next ? 'false' : 'true')
     }
     if (options.conversation) options.conversation.hidden = next
-    if (persist) store.setItem(TRACE_PANEL_STORAGE_KEY, next ? 'open' : 'closed')
+    if (persist) {
+      store.setItem(TRACE_PANEL_STORAGE_KEY, next ? 'open' : 'closed')
+      memory.remember(decided.current?.key, next)
+    }
   }
   const applyOpenRef = useRef(applyOpen)
   applyOpenRef.current = applyOpen
@@ -336,6 +344,14 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
     ref,
     () => ({
       render(nodes, turns = [], meta) {
+        const key = meta?.sessionId
+        const records = nodes.length > 0
+        const last = decided.current
+        if (!last || last.key !== key || (!last.records && records)) {
+          decided.current = { key, records }
+          const next = memory.viewFor(key, records)
+          if (next !== open.current) applyOpenRef.current(next, false)
+        }
         if (!open.current) {
           latest.current = { nodes, turns, meta }
           return
@@ -446,7 +462,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
         return open.current
       },
     }),
-    [options.readFactChain],
+    [options.readFactChain, memory],
   )
   const timelineModel = useMemo(
     () => buildGantt(snapshot.turns, snapshot.nodes, rows, timelineMode),

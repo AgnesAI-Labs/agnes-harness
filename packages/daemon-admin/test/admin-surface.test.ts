@@ -756,3 +756,35 @@ it('gates generic credential routes with permissions, live read-only state and m
     ).status,
   ).toBe(403)
 })
+
+it('answers a prompt save made against an older revision with 409 and the current value', async () => {
+  const current: import('@agnes/protocol').SystemPromptSnapshot = {
+    config: { personaPrefix: 'saved elsewhere' },
+    sections: [],
+    hash: 'a'.repeat(64),
+    revision: 'b'.repeat(64),
+    effect: 'new-sessions',
+    preview: 'default-sections',
+  }
+  const bridge = {
+    get: async () => current,
+    save: async (): Promise<import('@agnes/protocol').SystemPromptSnapshot> => {
+      throw {
+        code: -32010,
+        message: 'SEMANTIC_REJECTED',
+        data: { code: 'CONFIG_REVISION_CONFLICT', current },
+      }
+    },
+  }
+  const s = await server(undefined, undefined, { systemPrompt: bridge })
+  await s.login()
+  await s.request('context')
+  const response = await s.selectionRequest('system-prompt', 'POST', {
+    config: { personaPrefix: 'mine' },
+    expectedRevision: 'c'.repeat(64),
+  })
+  expect(response.status).toBe(409)
+  expect(await response.json()).toMatchObject({
+    error: { data: { code: 'CONFIG_REVISION_CONFLICT', current } },
+  })
+})

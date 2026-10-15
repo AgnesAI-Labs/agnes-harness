@@ -123,26 +123,16 @@
     gap: var(--s8);
     overflow: visible;
   }
-  /* An account is a row of the account list: key tile, name over its service and model, then
-   its state and the row menu. */
+  /* An account is one row: logo, name over its default model and count, its state, then the menu. */
   .config-account {
-    min-width: 0;
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    grid-template-areas:
-      "tile identity actions"
-      "tile meta actions";
-    align-items: center;
-    justify-items: stretch;
-    gap: 0 var(--s12);
     transition: background-color var(--transition-fast);
   }
-  .config-account > .agh-icon-tile {
-    grid-area: tile;
+  .config-account[data-enabled="false"] > :not(.config-account-actions) {
+    opacity: 0.6;
   }
   .config-account:hover,
   .config-account[data-selected="true"] {
-    background: var(--agnes-bg-card);
+    background: var(--agnes-bg-hover);
   }
   .config-account-select {
     min-width: 0;
@@ -150,7 +140,6 @@
     display: flex;
     align-items: center;
     justify-content: flex-start;
-    grid-area: identity;
     gap: var(--s8);
     padding: 0;
     overflow: hidden;
@@ -171,7 +160,6 @@
     box-shadow: none;
   }
   .config-account-meta {
-    grid-area: meta;
     display: flex;
     align-items: center;
     flex-wrap: wrap;
@@ -191,7 +179,6 @@
     flex: 0 0 auto;
   }
   .config-account-actions {
-    grid-area: actions;
     display: flex;
     flex-wrap: wrap;
     justify-content: flex-end;
@@ -395,7 +382,7 @@
       min-height: var(--control-height-touch);
     }
   }
-  #account-dialog .account-dialog-close {
+  :is(#account-dialog, .account-page-host) .account-dialog-close {
     position: absolute;
     top: 0.75rem;
     right: 0.75rem;
@@ -409,30 +396,30 @@
     overflow: hidden;
   }
   /* 只有表单内容滚动，标题与操作区始终保留在弹窗可视范围内。 */
-  #account-dialog .config-detail-grid {
+  :is(#account-dialog, .account-page-host) .config-detail-grid {
     min-height: 0;
     flex: 1 1 auto;
     padding: 0.875rem var(--s20) var(--s16);
     overflow-y: auto;
     overscroll-behavior: contain;
   }
-  #account-dialog .config-detail-heading {
+  :is(#account-dialog, .account-page-host) .config-detail-heading {
     min-height: auto;
     display: grid;
     gap: 0.125rem;
     padding: var(--s20) var(--s48) 0.875rem var(--s20);
   }
-  #account-dialog .config-detail-heading .eyebrow {
+  :is(#account-dialog, .account-page-host) .config-detail-heading .eyebrow {
     display: none;
   }
-  #account-dialog .config-detail-heading h3 {
+  :is(#account-dialog, .account-page-host) .config-detail-heading h3 {
     margin: 0;
     color: var(--agnes-text-primary);
     font-size: var(--font-size-md);
     font-weight: 500;
     line-height: 1.5rem;
   }
-  #account-dialog #config-account-context {
+  :is(#account-dialog, .account-page-host) #config-account-context {
     max-width: none;
     margin: 0;
     color: var(--agnes-text-tertiary);
@@ -440,7 +427,7 @@
     line-height: 1.6;
     text-align: start;
   }
-  #account-dialog .config-detail-footer {
+  :is(#account-dialog, .account-page-host) .config-detail-footer {
     position: static;
     flex: 0 0 auto;
   }
@@ -483,7 +470,7 @@
     color: var(--agnes-text-tertiary);
     font-size: var(--font-size-xs);
   }
-  #account-dialog .oauth-controls {
+  :is(#account-dialog, .account-page-host) .oauth-controls {
     display: grid;
     gap: var(--s12);
     padding: 0.875rem;
@@ -491,33 +478,33 @@
     border-radius: var(--radius-md);
     background: var(--agnes-bg-card);
   }
-  #account-dialog .oauth-controls[hidden] {
+  :is(#account-dialog, .account-page-host) .oauth-controls[hidden] {
     display: none;
   }
-  #account-dialog .oauth-actions {
+  :is(#account-dialog, .account-page-host) .oauth-actions {
     display: flex;
     flex-wrap: wrap;
     gap: var(--s8);
   }
-  #account-dialog .oauth-actions button {
+  :is(#account-dialog, .account-page-host) .oauth-actions button {
     flex: 1 1 8rem;
   }
-  #account-dialog .oauth-status {
+  :is(#account-dialog, .account-page-host) .oauth-status {
     min-height: 1.125rem;
     margin: 0;
     color: var(--agnes-text-tertiary);
     font-size: var(--font-size-xs);
     line-height: 1.6;
   }
-  #account-dialog :is(.oauth-status, .oauth-links):empty {
+  :is(#account-dialog, .account-page-host) :is(.oauth-status, .oauth-links):empty {
     display: none;
   }
-  #account-dialog .oauth-links a {
+  :is(#account-dialog, .account-page-host) .oauth-links a {
     color: var(--agnes-text-emphasis);
     font-size: var(--font-size-sm);
     font-weight: 500;
   }
-  #account-dialog .oauth-prompt[hidden] {
+  :is(#account-dialog, .account-page-host) .oauth-prompt[hidden] {
     display: none;
   }
   :is(#config-form, #account-dialog) .config-validation-section .config-validation-controls {
@@ -688,7 +675,7 @@
     #config-save {
       width: 100%;
     }
-    #account-dialog .config-detail-footer {
+    :is(#account-dialog, .account-page-host) .config-detail-footer {
       flex-direction: column;
     }
   }
@@ -895,7 +882,18 @@
     min-width: min(14rem, 100%);
   }
   .appearance-picker > :is(.agnes-settings-input, .select-picker-trigger) {
-    width: min(16rem, 100%);
+    width: 100%;
+  }
+  /* In a settings row the pickers and segments take the shared control column. */
+  .agnes-settings-item-control > .appearance-picker {
+    justify-items: stretch;
+  }
+  .agnes-settings-item-control > .appearance-choices > .appearance-option {
+    flex: 1 1 0;
+    justify-content: center;
+  }
+  .agnes-settings-item-control > .appearance-thumbs {
+    justify-content: space-between;
   }
   .appearance-picker p.appearance-option-hint {
     margin: 0;
@@ -911,43 +909,36 @@
     cursor: pointer;
   }
 
-  /* Colour scheme: a section of its own above the rows, three thumbnails that are the radios. */
-  .appearance-options.appearance-schemes {
-    /* Sized by its thumbnails: a fixed minimum would let a full page squeeze the row under them. */
-    min-height: auto;
-    flex-direction: column;
-    align-items: stretch;
-    justify-content: flex-start;
+  /* 个性化 and 记忆 are two groups of the General page, a page rhythm apart. */
+  .agnes-settings-personalization,
+  #settings-subsection-custom-instructions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s24);
+  }
+  #settings-subsection-custom-instructions {
     gap: var(--s8);
+  }
+  /* A row's choices sit in a fieldset that draws nothing of its own. */
+  fieldset.agnes-settings-fieldset {
+    min-width: 0;
+    margin: 0;
     padding: 0;
     border: 0;
-  }
-  .appearance-schemes > legend {
-    float: none;
-    margin-inline-start: var(--s4);
-    color: var(--agnes-text-secondary);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-semibold);
-  }
-  /* 个性化 holds two titled groups: its own title reads one step larger, the groups sit apart. */
-  .agnes-settings-personalization {
-    gap: var(--s16);
-  }
-  .agnes-settings-personalization > .agnes-settings-section-heading h3 {
-    font-size: var(--font-size-md);
   }
   .appearance-thumbs {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--s12);
+    justify-content: flex-end;
+    gap: var(--s10);
   }
   .appearance-thumbs .appearance-option {
     flex-direction: column;
     align-items: center;
-    gap: var(--s8);
+    gap: var(--s4);
     padding: 0;
     color: var(--agnes-text-secondary);
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-xs);
   }
   .appearance-thumbs .appearance-option:hover,
   .appearance-thumbs .appearance-option:has(input:checked) {
@@ -974,9 +965,9 @@
   }
   .agh-scheme-thumbnail {
     display: block;
-    width: 7rem;
-    height: 4.5rem;
-    border-radius: var(--radius-card);
+    width: 3.875rem;
+    height: 2.5rem;
+    border-radius: var(--radius-control);
     box-shadow: 0 0 0 1px var(--agnes-line-primary);
   }
   .appearance-thumbs .appearance-option:has(input:checked) .agh-scheme-thumbnail {
@@ -1001,11 +992,29 @@
     cursor: pointer;
   }
 
+  /* On a settings page the page header names the account form, so the form drops its own title
+   bar and the dialog's dividers: the steps follow the page description, 取消 / 继续 close the page. */
+  :is(#account-dialog, .account-page-host) .account-dialog-body[data-page] .config-detail-heading {
+    display: none;
+  }
+  :is(#account-dialog, .account-page-host) .account-dialog-body[data-page] {
+    max-height: none;
+    overflow: visible;
+  }
+  :is(#account-dialog, .account-page-host) .account-dialog-body[data-page] .config-detail-grid {
+    padding: 0;
+    overflow: visible;
+  }
+  :is(#account-dialog, .account-page-host) .account-dialog-body[data-page] .config-detail-footer {
+    padding: var(--s16) 0 0;
+    border-top: 0;
+    background: transparent;
+  }
   /* Account setup shares one stable native region in settings and the first-run guide. */
   #account-dialog {
     width: min(560px, calc(100vw - var(--s32)));
   }
-  #account-dialog .account-dialog-body .config-section,
+  :is(#account-dialog, .account-page-host) .account-dialog-body .config-section,
   .account-dialog-body[data-inline="true"] .config-section {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--s12);
@@ -1063,10 +1072,10 @@
   }
   /* In the dialog the tiles choose the provider and the title names it; the select stays for the
    first-run guide, which shows no tiles. */
-  #account-dialog .account-provider-step {
+  :is(#account-dialog, .account-page-host) .account-provider-step {
     display: none;
   }
-  #account-dialog .account-key-help {
+  :is(#account-dialog, .account-page-host) .account-key-help {
     margin-block: 0;
   }
   /* A provider tile: its name, and under it how it connects. */
@@ -1213,14 +1222,14 @@
       max-width: none;
       margin: auto 0 0;
     }
-    #account-dialog .config-detail-footer {
+    :is(#account-dialog, .account-page-host) .config-detail-footer {
       flex-direction: column;
     }
-    #account-dialog .config-detail-footer .agnes-settings-actions {
+    :is(#account-dialog, .account-page-host) .config-detail-footer .agnes-settings-actions {
       justify-content: flex-end;
       flex-wrap: wrap;
     }
-    #account-dialog #config-save {
+    :is(#account-dialog, .account-page-host) #config-save {
       width: auto;
     }
     #config-account-advanced > .agh-disclosure-summary,

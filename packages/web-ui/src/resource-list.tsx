@@ -24,6 +24,16 @@ export function setResourcePackageNames(resolve: ((id: string) => string | undef
   packageNames = resolve
 }
 
+let skillRunner: ((name: string) => void) | undefined
+/**
+ * The plugins page offers 「在新会话中运行」 on each skill that is on: it registers what running a
+ * skill does (ask for arguments, then open a new session), since the list's controller cannot
+ * reach the page. Without a runner the row offers no such action.
+ */
+export function setResourceSkillRunner(run: ((name: string) => void) | undefined): void {
+  skillRunner = run
+}
+
 export type ResourceItem = SkillDescriptor | import('@agnes/protocol').McpServerDescriptor
 
 export type ResourceTab = 'skills' | 'mcp'
@@ -354,6 +364,16 @@ export function ResourceRow({
               label={t('skills.actions')}
               trigger={<IconButton name="ellipsis" label={t('skills.actions')} />}
               items={[
+                ...(skillRunner && enabled
+                  ? [
+                      {
+                        id: 'run',
+                        testId: 'skill-run',
+                        label: t('skills.run'),
+                        onSelect: () => skillRunner?.(item.name),
+                      },
+                    ]
+                  : []),
                 { id: 'details', label: t('skills.details'), onSelect: () => onOpen(item) },
                 ...(menuItems ?? []),
               ]}

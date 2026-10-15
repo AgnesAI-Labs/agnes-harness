@@ -482,6 +482,7 @@ export class PiAdapter extends WireAdapter {
         }
         observed.adapter.endpoint = `${new URL(request.url).origin}${new URL(request.url).pathname}`
         observed.status = 'sent'
+        opts.reportDispatch?.()
         const response = await network.fetch(request)
         Object.assign(wire, responseMeta(response))
         return response

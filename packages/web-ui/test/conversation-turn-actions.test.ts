@@ -319,7 +319,7 @@ it('lists several model calls in a table with right-aligned numbers, a cost shar
         billingComplete: true,
         calls: [
           call('a', 1, 1400, 330, 888),
-          call('b', 2, 182, 304, 509),
+          { ...call('b', 2, 182, 304, 509), purpose: 'title' },
           call('c', 3, 247, 346, 581),
           call('d', 4, 232, 14, 90),
         ],
@@ -336,14 +336,16 @@ it('lists several model calls in a table with right-aligned numbers, a cost shar
   // Same source as the cost: credits are a plain note.
   expect(text('.turn-usage-credits')).toBe('0.002068 credits')
   const calls = required<HTMLElement>('[data-testid="turn-usage-calls"]')
-  expect(calls.textContent).toBe('4 次模型调用点击展开收起')
+  expect(calls.textContent).toBe('4 次模型调用（含 1 次后台标题）点击展开收起')
   const row = (n: number) =>
     Array.from(
       host.querySelectorAll(`[data-testid="turn-call-${n}"] > .agh-disclosure-summary .turn-call-row > span`),
     ).map((cell) => cell.textContent)
   expect(row(1)).toEqual(['1', '1.4K', '330', '$0.000888', ''])
   // Every cost has the total's six decimals.
-  expect(row(4)).toEqual(['4', '232', '14', '$0.000090', ''])
+  expect(row(2)[0]).toBe('标题')
+  expect(row(3)[0]).toBe('2')
+  expect(row(4)).toEqual(['3', '232', '14', '$0.000090', ''])
   expect(row(1)[3]).toBe('$0.000888')
   // The chevron sits in the same summary as the text, never on a line of its own.
   expect(calls.querySelector('.turn-usage-calls-title > .turn-usage-chevron')).not.toBeNull()
@@ -360,11 +362,11 @@ it('lists several model calls in a table with right-aligned numbers, a cost shar
     host.querySelector('[data-testid="turn-call-1"] .agh-disclosure-summary')?.textContent,
   ).not.toContain('估算')
   // A row opens the call's own details, as before.
-  await act(async () =>
-    host.querySelector<HTMLElement>('[data-testid="turn-call-1"] > .agh-disclosure-summary')!.click(),
-  )
+  const callSummary = host.querySelector<HTMLElement>('[data-testid="turn-call-1"] > .agh-disclosure-summary')
+  if (!callSummary) throw new Error('expected call disclosure')
+  await act(async () => callSummary.click())
   const details = text('[data-testid="turn-call-1"] .usage-grid') ?? ''
-  expect(details).toContain('首次输出等待420 ms')
+  expect(details).toContain('初始采集后的首次输出等待420 ms')
   expect(details).toContain('1,400')
   // The call's own details print its cost with the panel's precision too.
   expect(details).toContain('$0.000888 · 估算')

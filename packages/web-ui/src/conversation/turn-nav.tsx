@@ -122,17 +122,19 @@ export function TurnNav({
   const [focusWithin, setFocusWithin] = useState(false)
   const [focusIndex, setFocusIndex] = useState<number | undefined>(undefined)
   const [layout, setLayout] = useState({ hidden: true, paneHeight: 0 })
-  // An unsaved list, valid only while the host still reports the list it was based on.
-  const [optimistic, setOptimistic] = useState<
-    { base: readonly string[] | undefined; list: readonly string[] } | undefined
-  >(undefined)
+  // The newest unsaved list and the change that made it. It stays until that change settles: an
+  // earlier change's response never replaces it, and only its own failure rolls it back.
+  const [optimistic, setOptimistic] = useState<{ version: number; list: readonly string[] } | undefined>(
+    undefined,
+  )
+  const changeVersion = useRef(0)
   const [failed, setFailed] = useState(false)
   const [cardTop, setCardTop] = useState(0)
   const rail = useRef<HTMLElement>(null)
   const card = useRef<HTMLDivElement>(null)
   const ticks = useRef<(HTMLElement | null)[]>([])
   const hideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const marks = optimistic && optimistic.base === bookmarks ? optimistic.list : bookmarks
+  const marks = optimistic?.list ?? bookmarks
   const host = viewport?.parentElement ?? null
   const count = entries.length
   const gap = tickGap(count, layout.paneHeight)
@@ -292,14 +294,20 @@ export function TurnNav({
   }
   const toggle = (entry: TurnNavEntry) => {
     if (!marks || !onBookmarksChange) return
-    const previous = marks
-    const next = toggleBookmark(previous, entry.id)
-    setOptimistic({ base: bookmarks, list: next })
+    const next = toggleBookmark(marks, entry.id)
+    const version = ++changeVersion.current
+    setOptimistic({ version, list: next })
     setFailed(false)
-    onBookmarksChange(next).catch(() => {
-      setOptimistic({ base: bookmarks, list: previous })
-      setFailed(true)
-    })
+    const settle = (ok: boolean) => {
+      // A newer change owns the list on screen; this one's outcome no longer decides it.
+      if (changeVersion.current !== version) return
+      setOptimistic(undefined)
+      if (!ok) setFailed(true)
+    }
+    onBookmarksChange(next).then(
+      () => settle(true),
+      () => settle(false),
+    )
   }
   const still = reducedMotion()
   const tabStop = focusIndex ?? current

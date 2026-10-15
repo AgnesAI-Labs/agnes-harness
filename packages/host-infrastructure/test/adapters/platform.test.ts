@@ -25,6 +25,8 @@ describe('platform backends', () => {
   it('does not promote sandbox executable presence, only a completed full-boundary report', async () => {
     const p = createPosixPlatform()
     await p.probe()
+    // A placeholder, not a measurement: status readers must not show it as a failed probe.
+    expect(p.sandboxProbed()).toBe(false)
     expect(p.capability('sandbox.l1')).toMatchObject({
       level: 'unavailable',
       reason: expect.stringContaining('full-boundary probe'),
@@ -35,6 +37,7 @@ describe('platform backends', () => {
       name: 'seatbelt',
       enforcement: { level: 'full', scope: ['file', 'network', 'process'] },
     })
+    expect(p.sandboxProbed()).toBe(true)
     expect(p.capability('sandbox.l1')).toEqual({
       level: 'full',
       scope: ['file', 'process'],
@@ -47,8 +50,19 @@ describe('platform backends', () => {
     })
 
     p.recordSandboxBackend({ name: 'none', enforcement: { level: 'none', scope: [] } })
-    expect(p.capability('sandbox.l1').level).toBe('unavailable')
+    expect(p.sandboxProbed()).toBe(true)
+    expect(p.capability('sandbox.l1')).toMatchObject({
+      level: 'unavailable',
+      reason: 'no runnable OS sandbox backend passed its full-boundary probe',
+    })
     expect(p.capability('sandbox.network').level).toBe('unavailable')
+  })
+  it('a Windows backend has no sandbox to probe, so its answer is final once probe() ran', async () => {
+    const w = createWin32Platform()
+    expect(w.sandboxProbed()).toBe(false)
+    await w.probe()
+    expect(w.sandboxProbed()).toBe(true)
+    expect(w.capability('sandbox.l1')).toMatchObject({ level: 'unavailable', reason: expect.any(String) })
   })
   it('the capability id set is closed at seven, and each backend answers for every one', async () => {
     expect([...CAPABILITY_IDS].sort()).toEqual([

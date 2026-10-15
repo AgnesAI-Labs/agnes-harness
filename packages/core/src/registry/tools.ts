@@ -167,7 +167,8 @@ function schemaTokens(def: ToolDef): number {
  * Settles `deferLoading: 'auto'` for one snapshot, so every reader of a turn catalog sees a plain
  * boolean. Auto tools are judged together: while the model-visible ones are few and small enough
  * they stay visible as eager tools, and past either limit they are all deferred and found through
- * `tool_search`. One shared decision keeps the cached request prefix stable until the auto set
+ * `tool_search` when both discovery tools are reachable eagerly; otherwise auto stays visible.
+ * One shared decision keeps the cached request prefix stable until the auto set
  * itself changes. A tool loaded by `tool_describe` stays loaded through core's disclosure record.
  */
 export function resolveAutoDeferral<T extends ToolDef>(defs: readonly T[]): T[] {
@@ -176,7 +177,19 @@ export function resolveAutoDeferral<T extends ToolDef>(defs: readonly T[]): T[] 
   const counted = auto.filter((def) => def.meta.modelVisible !== false)
   let tokens = 0
   for (const def of counted) tokens += schemaTokens(def)
-  const defer = counted.length > AUTO_DEFER_MAX_TOOLS || tokens > AUTO_DEFER_MAX_TOKENS
+  // Auto is a payload optimization, not permission to hide capabilities in a distribution
+  // without a reachable discovery path. Explicit author choices remain untouched.
+  const discoveryReady = ['tool_search', 'tool_describe'].every((name) =>
+    defs.some(
+      (def) =>
+        def.name === name &&
+        def.meta.modelVisible !== false &&
+        def.meta.requiresImageInput !== true &&
+        def.meta.deferLoading !== true &&
+        def.meta.deferLoading !== 'auto',
+    ),
+  )
+  const defer = discoveryReady && (counted.length > AUTO_DEFER_MAX_TOOLS || tokens > AUTO_DEFER_MAX_TOKENS)
   return defs.map((def) =>
     def.meta.deferLoading === 'auto'
       ? { ...def, meta: Object.freeze({ ...def.meta, deferLoading: defer }) }

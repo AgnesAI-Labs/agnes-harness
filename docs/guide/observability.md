@@ -56,3 +56,23 @@ See [troubleshooting](troubleshooting.md), [CLI reference](../reference/cli.md) 
 Open **Settings → Diagnostics** to view recent safe error records, copy a diagnostic ID, or find an older record by its exact ID. **Export diagnostic bundle** downloads the redacted JSON bundle; after a search, it selects that error. The page also shows worker health, generation counts and bound session counts. Technical details start collapsed.
 
 The OTLP settings card edits enable, endpoint, content policy, batch/queue limits, timeout, shutdown policy and header secret references. **Test connection** sends synthetic traces, metrics and logs; it does not upload session content or save pending edits. **Save settings** persists a private configuration and applies it within one second. Last success, queue depth, failures and drops describe the App Server and the running session Worker separately. A missing or unreachable Worker is reported explicitly; health reads never start one. The local-owner administration method is `_agnes/v1/admin.observability`. Diagnostic bundles remain content-free.
+
+## Model-call timing and auxiliary usage
+
+Call details distinguish the enclosing turn duration from provider-call observations. All new fields are optional milliseconds measured on one provider clock; missing observations and old records remain unknown.
+
+| Field | Observation |
+| --- | --- |
+| `prepareMs` | Provider entry to completion of its local request preparation, before initial capture; excludes Core context preparation. |
+| `dispatchMs` | Offset from provider entry to the first observed transport dispatch, after request capture. An offset, not an extra stage duration. |
+| `firstOutputMs` | Offset from provider entry to the first decoded output visible to the caller, including reasoning, tools or media; not pure service-side TTFT. |
+| `outputMs` | First visible output to the adapter terminal event. |
+| `finalizeMs` | Adapter terminal event through adapter and trace cleanup. |
+| `providerCallMs` | Provider entry through cleanup, not the whole turn. |
+| `captureMs` | Union of time spent awaiting capture hooks, including failures and overlapping callbacks; overlaps the other fields and must not be added again. |
+
+Existing `ttftMs` and `durationMs` retain their sampling points after initial capture and at first decoded text/tool output and usage respectively. They include local adapter work and are not provider-service-only measurements. No new stages are reconstructed from old samples or ledger timestamps.
+
+`usage` is delivered as soon as observed so cancellation cannot discard a known bill while cleanup waits. Normal `done` may carry final timing; errors remain immediately visible with only known timing, and cleanup runs in `finally`. Terminal timing is validated and no subsequent event is emitted. Core uses the same ModelExecution transport and settlement for default and generic Loops: it retains usage immediately and merges terminal timing into the same cost record, with one billing record. Cancellation settles known real usage without waiting for provider cleanup. Background title accounting also merges terminal timing into its existing cost record. Cancellation before completion leaves unobserved final fields unknown.
+
+The usage panel labels background title calls separately from numbered reply calls, including in the collapsed summary. Their real tokens, credits and charges remain part of totals; a title call is not a second reply inference round.

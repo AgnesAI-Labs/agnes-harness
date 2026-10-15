@@ -1372,3 +1372,41 @@ describe('runtime-context user/message projection', () => {
     expect(kind(nodes, 'context')).toHaveLength(0)
   })
 })
+
+it('marks a core/unknown-outcome decision as a reconciliation of the tool it asks about', async () => {
+  let seq = 0
+  const event = (type: string, data: Event['data'], extra: Partial<Event> = {}): Event => {
+    seq += 1
+    return {
+      seq,
+      ts: new Date(Date.UTC(2026, 8, 13, 0, 0, seq)).toISOString(),
+      id: `01K0000000000000000001${String(seq).padStart(4, '0')}`,
+      type,
+      data,
+      actor,
+      origin: 'system',
+      trust: 'trusted',
+      ...extra,
+    }
+  }
+  const reconcile = pendingDecision('reconcile-1', {
+    operationId: 'tool-1',
+    owner: 'core/unknown-outcome',
+    subject: { toolUseId: 'tool-1', name: 'mcp_manage', turn: 1, step: 1, risk: 'unknown' },
+  })
+  const permission = pendingDecision('approval-2', { operationId: 'tool-2' })
+  const timeline = await projectUI(
+    [
+      event('turn/start', { turn: 1, trigger: 'prompt' }),
+      event('tool/call', { toolUseId: 'tool-1', name: 'mcp_manage', args: {}, ordinal: 0 }),
+      event('decision/state', reconcile, { register: 'decision/state' }),
+      event('tool/call', { toolUseId: 'tool-2', name: 'shell', args: {}, ordinal: 1 }),
+      event('decision/state', permission, { register: 'decision/state' }),
+    ],
+    { sessionKey: 'reconcile', lane: 'main' },
+  )
+  const [asked, permitted] = kind(timeline.nodes, 'approval')
+  expect(asked).toMatchObject({ state: 'pending', reconcile: { tool: 'mcp_manage' } })
+  expect(permitted?.reconcile).toBeUndefined()
+  expect(validateAgainst(UITimeline, { ...timeline, generation: 1 }).ok).toBe(true)
+})

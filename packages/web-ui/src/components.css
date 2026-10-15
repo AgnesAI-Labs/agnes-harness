@@ -221,6 +221,196 @@
     outline: var(--focus-outline);
     outline-offset: 1px;
   }
+  /* Push pages: an opened page takes the region; 「‹ 返回」 and the breadcrumb lead back. */
+  .agh-push-stack {
+    min-width: 0;
+  }
+  .agh-push-root[hidden],
+  .agh-push-header-host[hidden],
+  .agh-push-body[hidden] {
+    display: none;
+  }
+  .agh-push-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--s16);
+    margin-bottom: var(--s16);
+  }
+  .agh-push-heading {
+    min-width: 0;
+  }
+  .agh-push-heading h2 {
+    margin: var(--s4) 0 0;
+    color: var(--agnes-text-primary);
+    font-size: 1.25rem;
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.75rem;
+  }
+  .agh-push-heading h2:focus {
+    outline: none;
+  }
+  .agh-push-heading > p {
+    margin: var(--s4) 0 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .agh-push-crumbs ol {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--s2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-sm);
+  }
+  .agh-push-crumbs li {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s2);
+    min-width: 0;
+  }
+  .agh-push-crumb {
+    padding: 0;
+    border: 0;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    cursor: pointer;
+  }
+  .agh-push-crumb {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s2);
+  }
+  .agh-push-crumb:disabled {
+    cursor: default;
+    opacity: 0.6;
+  }
+  .agh-push-crumb:hover:not(:disabled) {
+    color: var(--agnes-text-primary);
+    text-decoration: underline;
+  }
+  .agh-push-crumb:focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+  /* The ‹ that opens the breadcrumb: the way back starts here. */
+  .agh-push-crumb-lead {
+    width: 0.875rem;
+    height: 0.875rem;
+  }
+  .agh-push-crumb-separator {
+    width: 0.75rem;
+    height: 0.75rem;
+  }
+  .agh-push-crumb-current {
+    color: var(--agnes-text-secondary);
+  }
+  .agh-push-actions {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+  }
+  /* Loading: a quiet placeholder after 200 ms, words only once it is slow, a fade on arrival. */
+  .agh-loadable-placeholder {
+    display: grid;
+    gap: var(--s12);
+  }
+  .agh-loadable-shapes {
+    display: grid;
+    gap: var(--s8);
+  }
+  .agh-loadable-placeholder[data-shape="cards"] .agh-loadable-shapes {
+    grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+    gap: var(--s12);
+  }
+  .agh-loadable-shape {
+    display: block;
+    height: 0.875rem;
+    border-radius: var(--radius-sm);
+    background: var(--agnes-bg-fill);
+  }
+  .agh-loadable-shape:nth-child(3n) {
+    width: 62%;
+  }
+  .agh-loadable-placeholder[data-shape="rows"] .agh-loadable-shape {
+    height: 2.5rem;
+    width: auto;
+  }
+  .agh-loadable-placeholder[data-shape="cards"] .agh-loadable-shape {
+    height: 9rem;
+    width: auto;
+    border-radius: var(--radius-card);
+  }
+  .agh-loadable-status {
+    margin: 0;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-sm);
+  }
+  .agh-loadable-error {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    margin-bottom: var(--s12);
+    padding: var(--s8) var(--s12);
+    border-radius: var(--radius-md);
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
+    font-size: var(--font-size-sm);
+  }
+  .agh-loadable-content[data-fade] {
+    animation: agh-loadable-fade 160ms ease-out;
+  }
+  @keyframes agh-loadable-fade {
+    from {
+      opacity: 0;
+    }
+  }
+  /* The one progress indicator for page reads: 2px along the top of the window. */
+  .agh-top-progress {
+    position: fixed;
+    z-index: 2000;
+    inset: 0 0 auto;
+    height: 2px;
+    pointer-events: none;
+    opacity: 0;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      var(--agnes-brand-primary) 40%,
+      var(--agnes-brand-primary) 60%,
+      transparent
+    );
+    background-size: 50% 100%;
+    background-repeat: no-repeat;
+    transition: opacity 200ms ease;
+  }
+  .agh-top-progress[data-active] {
+    opacity: 1;
+    animation: agh-top-progress 1.2s ease-in-out infinite;
+  }
+  @keyframes agh-top-progress {
+    from {
+      background-position: -50% 0;
+    }
+    to {
+      background-position: 150% 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .agh-loadable-content[data-fade],
+    .agh-top-progress[data-active] {
+      animation: none;
+    }
+    .agh-top-progress[data-active] {
+      background: var(--agnes-brand-primary);
+    }
+  }
   .agh-tag {
     display: inline-flex;
     align-items: center;
@@ -436,16 +626,20 @@
   .agnes-settings-page[data-layout="list"] {
     max-width: 960px;
   }
-  .agnes-settings-page > .agnes-settings-page-heading {
+  .agnes-settings-page > .agnes-settings-page-heading,
+  .agnes-settings-page .agnes-settings-page-top {
     margin-bottom: var(--s24);
   }
-  .agnes-settings-page > .agnes-settings-page-heading h2 {
+  .agnes-settings-page > .agnes-settings-page-heading h2,
+  .agnes-settings-page .agnes-settings-page-top h2 {
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
     line-height: var(--line-md);
   }
   .agnes-settings-page > .agnes-settings-toolbar,
-  .agnes-settings-page > .agh-banner {
+  .agnes-settings-page > .agh-banner,
+  .agnes-settings-subpage-main > .agnes-settings-toolbar,
+  .agnes-settings-subpage-main > .agh-banner {
     margin-bottom: var(--s16);
   }
   .agh-settings-toolbar-search {
@@ -675,8 +869,8 @@
     gap: var(--s4);
     line-height: var(--line-sm);
   }
-  /* Same three sizes for native modal shells and React confirmations. */
-  :where(dialog:not(.agh-drawer)) {
+  /* Same three sizes for native modal shells and React confirmations. A host shown as a page has none. */
+  :where(dialog:not(.agh-drawer):not([data-presentation="page"])) {
     width: min(560px, calc(100vw - var(--s32)));
     border-radius: var(--radius-modal);
     box-shadow: var(--elevation-2);
@@ -886,7 +1080,7 @@
   }
   @media (max-width: 767px) {
     /* Native hosts retain their IDs and controllers; dimensions supersede desktop ID widths. */
-    dialog:not(.agh-drawer):not(.lightbox)[open] {
+    dialog:not(.agh-drawer):not(.lightbox):not([data-presentation="page"])[open] {
       --dialog-max-height: min(46rem, calc(100dvh - var(--s16) - var(--control-height-touch)));
       display: flex;
       flex-direction: column;
@@ -1721,7 +1915,7 @@
     margin-inline-start: var(--s12);
   }
   .agnes-settings-item:not([data-stacked]) > .agnes-settings-item-control > :is(select, .agnes-ui-select) {
-    width: 14rem;
+    width: 100%;
     max-width: 100%;
   }
   .agnes-settings-item[data-stacked] > .agnes-settings-item-control {
@@ -2009,5 +2203,537 @@
     .agnes-settings-item-control {
       justify-content: flex-start;
     }
+  }
+
+  /* ── Settings v4: labelled groups, drill rows, subpages, chips ─────────────── */
+  .agnes-settings-block {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s4);
+    min-width: 0;
+  }
+  .agnes-settings-block-label {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    min-height: var(--s24);
+    padding-inline: var(--s4);
+  }
+  .agnes-settings-block-label > h3 {
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-sm);
+  }
+  .agnes-settings-block-actions {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--s4);
+    margin-inline-start: auto;
+  }
+  .agnes-settings-save-failed {
+    color: var(--agnes-status-danger-text);
+    font-size: var(--font-size-xs);
+  }
+  .agnes-settings-save-failed > button,
+  .agnes-settings-read-failed > button {
+    padding: 0;
+    border: 0;
+    color: var(--agnes-brand-primary);
+    background: none;
+    font: inherit;
+    cursor: pointer;
+  }
+  .agnes-settings-read-failed {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    padding: var(--s8) var(--s12);
+    border-radius: var(--radius-control);
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
+    font-size: var(--font-size-sm);
+  }
+  /* A drill row is a button that reads as a row: name left, value and chevron right. */
+  .agnes-settings-drill {
+    width: 100%;
+    border: 0;
+    border-radius: 0;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+  .agnes-settings-drill:hover:not(:disabled) {
+    background: var(--agnes-bg-hover);
+  }
+  .agnes-settings-drill:focus-visible {
+    outline: none;
+    box-shadow: inset var(--focus-line);
+  }
+  .agnes-settings-drill:disabled {
+    cursor: default;
+    opacity: 0.6;
+  }
+  .agnes-settings-group > :first-child > .agnes-settings-drill,
+  .agnes-settings-group > .agnes-settings-drill:first-child {
+    border-start-start-radius: var(--radius-card);
+    border-start-end-radius: var(--radius-card);
+  }
+  .agnes-settings-group > :last-child > .agnes-settings-drill:last-of-type,
+  .agnes-settings-group > .agnes-settings-drill:last-child {
+    border-end-start-radius: var(--radius-card);
+    border-end-end-radius: var(--radius-card);
+  }
+  .agnes-settings-value {
+    display: inline-flex;
+    flex: 0 1 auto;
+    align-items: center;
+    gap: var(--s4);
+    min-width: 0;
+    margin-inline-start: auto;
+    overflow: hidden;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agnes-settings-chevron {
+    flex: 0 0 auto;
+    color: var(--agnes-text-tertiary);
+  }
+  .agnes-settings-expand-body {
+    padding: var(--s8) var(--s16) var(--s12);
+    background: var(--agnes-bg-subtle);
+  }
+  .agnes-settings-info {
+    display: inline-flex;
+    margin-inline-start: var(--s4);
+    color: var(--agnes-text-tertiary);
+    vertical-align: -2px;
+    cursor: help;
+  }
+  .agnes-settings-info:focus-visible {
+    border-radius: var(--radius-full);
+    outline: none;
+    box-shadow: var(--focus-line);
+  }
+  .agnes-settings-info > .icon {
+    width: 14px;
+    height: 14px;
+  }
+  .agnes-settings-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 var(--s4);
+    border-radius: var(--radius-sm);
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-subtle);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-sm);
+    white-space: nowrap;
+  }
+  .agnes-settings-tag[data-tone="ok"] {
+    color: var(--agnes-status-success-text);
+    background: var(--agnes-status-success-bg);
+  }
+  .agnes-settings-tag[data-tone="warn"] {
+    color: var(--agnes-status-warning-text);
+    background: var(--agnes-status-warning-bg);
+  }
+  .agnes-settings-tag[data-tone="error"] {
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
+  }
+  .agnes-settings-tag[data-tone="brand"] {
+    color: var(--agnes-brand-primary);
+    background: var(--agnes-brand-emphasis-soft);
+  }
+  .agnes-settings-chips {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--s4);
+    min-width: 0;
+    max-width: 24rem;
+  }
+  .agnes-settings-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s4);
+    min-height: var(--s24);
+    padding: 0 var(--s8);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-full);
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-surface);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+  }
+  .agnes-settings-chip[data-on="true"] {
+    border-color: var(--agnes-brand-primary);
+    color: var(--agnes-brand-primary);
+    background: var(--agnes-brand-emphasis-soft);
+  }
+  .agnes-settings-chip > button {
+    display: inline-grid;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    color: inherit;
+    background: none;
+    cursor: pointer;
+  }
+  .agnes-settings-chip > button > .icon {
+    width: 12px;
+    height: 12px;
+  }
+  .agnes-settings-chip-input {
+    width: 9rem;
+    min-height: var(--s24);
+    padding: 0 var(--s8);
+    border: 1px dashed var(--agnes-line-primary);
+    border-radius: var(--radius-full);
+    color: var(--agnes-text-primary);
+    background: transparent;
+    font: inherit;
+    font-size: var(--font-size-sm);
+  }
+  .agnes-settings-chip-input:focus {
+    border-style: solid;
+    border-color: var(--agnes-brand-primary);
+    outline: none;
+  }
+  .agnes-settings-preset,
+  .agnes-settings-preset-custom {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s4);
+  }
+  .agnes-settings-preset-custom > input {
+    width: 6rem;
+    text-align: end;
+  }
+  /* The subpage frame and undo scope add no boxes of their own: the page lays out its header and
+   body as before. */
+  .agnes-settings-undo-scope,
+  .agnes-settings-subpage-frame,
+  .agnes-settings-subpage-main:not([hidden]),
+  .agnes-settings-subpage-main-header:not([hidden]),
+  .agnes-settings-subpage-header:not([hidden]) {
+    display: contents;
+  }
+  .agnes-settings-back {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s2);
+    margin: 0 0 var(--s4) calc(-1 * var(--s4));
+    padding: var(--s2) var(--s4);
+    border: 0;
+    border-radius: var(--radius-control);
+    color: var(--agnes-brand-primary);
+    background: none;
+    font: inherit;
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+  }
+  .agnes-settings-back:hover {
+    background: var(--agnes-bg-hover);
+  }
+  .agnes-settings-back:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-line);
+  }
+  .agnes-settings-subpage-header h2:focus {
+    outline: none;
+  }
+  .agnes-settings-subpage-body:not([hidden]) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+    gap: var(--s16);
+  }
+  /* A text area that is the first row of a group has no frame of its own. */
+  .agnes-settings-group > textarea.agnes-settings-bare {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 5.5rem;
+    padding: var(--s12) var(--s16);
+    border: 0;
+    border-radius: var(--radius-card) var(--radius-card) 0 0;
+    color: var(--agnes-text-primary);
+    background: transparent;
+    font: inherit;
+    line-height: 1.6;
+    resize: vertical;
+  }
+  .agnes-settings-group > textarea.agnes-settings-bare:focus {
+    outline: none;
+    background: var(--agnes-bg-subtle);
+  }
+  /* A page in the navigation that needs attention carries one small dot. */
+  [data-attention]::after {
+    content: "";
+    flex: 0 0 auto;
+    width: 6px;
+    height: 6px;
+    margin-inline-start: auto;
+    border-radius: var(--radius-full);
+    background: var(--agnes-status-warning-solid);
+  }
+  [data-attention="error"]::after {
+    background: var(--agnes-status-danger-solid);
+  }
+
+  /* A short note under a group: what happens elsewhere, in one muted line. */
+  .agnes-settings-note {
+    margin: 0;
+    padding-inline: var(--s4);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: 1.6;
+  }
+  /* A value that is text the user wrote: one line, cut with an ellipsis. */
+  .agnes-settings-value-text {
+    display: inline-block;
+    max-width: 16rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* A field holding file or prompt text reads in the monospace face. */
+  .agnes-settings-code-input {
+    width: 100%;
+    min-height: 10rem;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+  }
+
+  /* The one place a consequential change is confirmed: what it does on the left, the action right. */
+  .agnes-settings-apply {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--s8);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .agnes-settings-apply > :first-child {
+    margin-inline-end: auto;
+  }
+  .agnes-settings-toolbar-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s8);
+  }
+  .agnes-settings-spacer {
+    flex: 1 1 auto;
+  }
+  .agnes-settings-anchor {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    outline: none;
+  }
+  .agnes-settings-item[draggable="true"] {
+    cursor: grab;
+  }
+  .agnes-settings-item[data-dragging] {
+    opacity: 0.5;
+  }
+  .agnes-settings-drag {
+    cursor: grab;
+  }
+
+  /* Three permission modes as cards side by side; the chosen one is outlined in the accent. */
+  fieldset.agnes-settings-modes {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--s8);
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .agnes-settings-modes > div {
+    display: grid;
+    min-width: 0;
+  }
+  .agnes-settings-modes .appearance-option {
+    align-items: flex-start;
+    height: 100%;
+    box-sizing: border-box;
+    padding: var(--s10) var(--s12);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-group);
+  }
+  .agnes-settings-modes .appearance-option:has(input:checked) {
+    border-color: var(--agnes-brand-primary);
+    background: var(--agnes-bg-group);
+    box-shadow: 0 0 0 3px var(--agnes-brand-emphasis-soft);
+  }
+  @media (max-width: 639px) {
+    fieldset.agnes-settings-modes {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  .agnes-settings-number {
+    width: 4.5rem;
+    text-align: end;
+  }
+
+  /* A provider's logo tile: its initial on one of six stable colours. */
+  .agnes-settings-logo {
+    display: grid;
+    flex: 0 0 auto;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: var(--radius-control);
+    color: var(--agnes-text-inverse);
+    background: var(--agnes-brand-primary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+  }
+  .agnes-settings-logo[data-hue="1"] {
+    background: var(--agnes-status-info-solid);
+  }
+  .agnes-settings-logo[data-hue="2"] {
+    background: var(--agnes-status-success-solid);
+  }
+  .agnes-settings-logo[data-hue="3"] {
+    background: var(--agnes-status-warning-solid);
+  }
+  .agnes-settings-logo[data-hue="4"] {
+    background: var(--agnes-status-danger-solid);
+  }
+  .agnes-settings-logo[data-hue="5"] {
+    background: var(--agnes-text-secondary);
+  }
+
+  /* A drill row stays one line at any width: the value gives way, the chevron stays at the end. */
+  .agnes-settings-item.agnes-settings-drill {
+    flex-wrap: nowrap;
+  }
+  .agnes-settings-drill > .agnes-settings-value {
+    flex: 0 1 auto;
+    max-width: 55%;
+  }
+
+  /* An ID shown only because no name exists: small and monospace, never a title. */
+  .agnes-settings-id {
+    color: var(--agnes-text-secondary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-regular);
+    overflow-wrap: anywhere;
+  }
+  .agnes-settings-drag:not(:disabled) {
+    cursor: grab;
+  }
+  .agnes-settings-drag:disabled {
+    opacity: 0.35;
+  }
+
+  /* One control column for every settings row: a select, text field, picker or segmented choice
+   fills the same width, so their left edges line up down the page. Switches, ›, plain values,
+   number fields and chips keep their own size at the right. Narrow rows give the column less. */
+  .agnes-settings-item:not([data-stacked])
+  > .agnes-settings-item-control:has(
+    > :is(
+        select,
+        .agnes-ui-select,
+        input:not([type="checkbox"], [type="radio"], [type="number"]),
+        .agh-segmented,
+        .agnes-settings-preset,
+        .appearance-picker,
+        .appearance-choices,
+        .appearance-thumbs
+      )
+  ) {
+    flex: 0 1 260px;
+    width: 260px;
+    min-width: min(10rem, 50%);
+    max-width: 100%;
+    justify-content: stretch;
+  }
+  .agnes-settings-item:not([data-stacked])
+    > .agnes-settings-item-control
+    > :is(
+      select,
+      .agnes-ui-select,
+      input:not([type="checkbox"], [type="radio"], [type="number"]),
+      .agh-segmented,
+      .agnes-settings-preset,
+      .appearance-picker,
+      .appearance-choices,
+      .appearance-thumbs
+    ) {
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+  /* A segmented choice spans the column with equal segments. */
+  .agnes-settings-item-control > .agh-segmented {
+    display: flex;
+  }
+  .agnes-settings-item-control > .agh-segmented > .agh-segmented-option {
+    flex: 1 1 0;
+    justify-content: center;
+    min-width: 0;
+    padding-inline: var(--s4);
+  }
+  /* On a narrow screen the control takes the whole row under its name, for every such row alike. */
+  @media (max-width: 639px) {
+    .agnes-settings-item:not([data-stacked]):has(
+        > .agnes-settings-item-control
+          > :is(
+            select,
+            .agnes-ui-select,
+            input:not([type="checkbox"], [type="radio"], [type="number"]),
+            .agh-segmented,
+            .agnes-settings-preset,
+            .appearance-picker,
+            .appearance-choices,
+            .appearance-thumbs
+          )
+      ) {
+      flex-wrap: wrap;
+    }
+    .agnes-settings-item:not([data-stacked])
+      > .agnes-settings-item-control:has(
+        > :is(
+            select,
+            .agnes-ui-select,
+            input:not([type="checkbox"], [type="radio"], [type="number"]),
+            .agh-segmented,
+            .agnes-settings-preset,
+            .appearance-picker,
+            .appearance-choices,
+            .appearance-thumbs
+          )
+      ) {
+      flex-basis: 100%;
+      width: 100%;
+      margin-inline-start: 0;
+    }
+  }
+  .agnes-settings-item-control > .agnes-settings-preset > select {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .agnes-settings-drill[hidden] {
+    display: none;
   }
 }

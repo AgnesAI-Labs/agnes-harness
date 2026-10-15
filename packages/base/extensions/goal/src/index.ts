@@ -12,7 +12,7 @@ const meta = {
   isOpenWorld: false,
   replay: 'idempotent' as const,
   costHint: {},
-  deferLoading: false,
+  deferLoading: 'auto' as const,
   requiresApproval: 'never' as const,
 }
 export default defineAgnesPlugin({

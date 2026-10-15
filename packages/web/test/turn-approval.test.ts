@@ -274,3 +274,101 @@ it('formats expiry in the UI language as a relative duration instead of ISO', ()
   expect(approvalExpiry(expiry, enT, now)).toBe('Expires in 24 hours')
   expect(approvalExpiry(expiry, zhT, now + 86400000)).toBe('已过期')
 })
+
+const reconcileSnapshot = {
+  ...snapshot,
+  request: {
+    ...snapshot.request,
+    owner: 'core/unknown-outcome',
+    spec: {
+      ...snapshot.request.spec,
+      prompt: 'did mcp_manage happen? allowed = it happened, rejected = it did not',
+      subject: { toolUseId: 't1', name: 'mcp_manage', turn: 1, step: 2, risk: 'unknown' },
+    },
+  },
+} as unknown as DecisionSnapshot
+
+it('asks whether a call that lost its result ran, in plain words, with «执行了 / 没执行»', async () => {
+  const { controller, list, decide } = await harness()
+  list.mockResolvedValue({ decisions: [reconcileSnapshot] })
+  controller.searchApproval(3)
+  await vi.waitFor(() => expect(document.querySelectorAll('[data-approval-action]')).toHaveLength(2))
+  const card = document.querySelector('[data-testid="approval-card"]')
+  expect(card?.getAttribute('data-kind')).toBe('reconcile')
+  expect(card?.querySelector('h2')?.textContent).toBe('这个操作执行了吗？')
+  expect(card?.textContent).toContain('mcp_manage 已经发出，但没收到结果')
+  // Neither the raw English prompt nor the bookkeeping subject is shown.
+  expect(card?.textContent).not.toContain('did mcp_manage happen')
+  expect(document.querySelector('[data-testid="approval-preview"]')).toBeNull()
+  const buttons = [...document.querySelectorAll<HTMLButtonElement>('[data-approval-action]')]
+  expect(buttons.map((button) => [button.dataset.approvalAction, button.textContent])).toEqual([
+    ['durable:allowed-once', '执行了'],
+    ['durable:rejected', '没执行'],
+  ])
+  buttons[1]?.click()
+  await vi.waitFor(() =>
+    expect(decide).toHaveBeenCalledWith({
+      ...ref,
+      commandId: 'pending:1:rejected',
+      response: { option: 'rejected', value: null },
+    }),
+  )
+})
+
+it('says an answered, not yet consumed decision is waiting for the Agent, never that it failed to load', async () => {
+  const { controller, list, showError } = await harness()
+  const answered = {
+    ...reconcileSnapshot,
+    result: {
+      reason: 'answered',
+      response: { option: 'allowed-once', value: null },
+      answeredBy: { id: 'me' },
+    },
+  } as unknown as DecisionSnapshot
+  list.mockResolvedValue({ decisions: [answered] })
+  controller.searchApproval()
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-testid="approval-card"]')?.getAttribute('data-kind')).toBe(
+      'answered',
+    ),
+  )
+  const card = document.querySelector('[data-testid="approval-card"]')
+  expect(card?.querySelector('h2')?.textContent).toBe('已回答，等待 Agent 继续')
+  expect(card?.textContent).toContain('你确认：执行了')
+  expect(card?.textContent).not.toContain('暂时无法加载审批')
+  // No backend action resumes it yet: a status, not a button.
+  expect(document.querySelectorAll('[data-approval-action]')).toHaveLength(0)
+  expect(showError).not.toHaveBeenCalled()
+})
+
+it('reads the answered state straight from the transcript while the turn is still parked', async () => {
+  const { context, controller, list } = await harness()
+  context.projection = timeline([
+    {
+      ...approval,
+      state: 'decided',
+      reconcile: { tool: 'mcp_manage' },
+      decision: { verdict: 'rejected', via: 'human', reason: 'user-rejected' },
+    },
+  ])
+  controller.renderApproval()
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-testid="approval-card"]')?.getAttribute('data-kind')).toBe(
+      'answered',
+    ),
+  )
+  const card = document.querySelector('[data-testid="approval-card"]')
+  expect(card?.textContent).toContain('你确认：没执行')
+  expect(list).not.toHaveBeenCalled()
+})
+
+it('settles the search and offers «定位审批» again when the decision lookup throws at once', async () => {
+  const { controller, list, showError } = await harness()
+  list.mockImplementation(() => {
+    throw new Error('not connected')
+  })
+  controller.searchApproval()
+  await vi.waitFor(() => expect(document.querySelector('[data-approval-action="locate"]')).not.toBeNull())
+  expect(document.querySelector('[data-testid="approval-card"]')?.textContent).toContain('有一项审批等待处理')
+  expect(showError).toHaveBeenCalledWith(expect.objectContaining({ message: 'not connected' }))
+})

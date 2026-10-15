@@ -133,6 +133,8 @@ function fakePlatform(caps: Record<string, CapabilityLevel['level']>): PlatformB
     terminal: () => ({ color: false }),
     async probe() {},
     recordSandboxBackend() {},
+    // The test states the capabilities, so they count as measured.
+    sandboxProbed: () => true,
     killTree() {},
     capability: level,
     snapshot: () => ({ os: real.os, arch: 'x64', capabilities: caps }),

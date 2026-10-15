@@ -1,5 +1,6 @@
 import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import type { ChildAgentToolFilter } from '@agnes/extension-api'
+import { sessionIdentity } from '../loop/scope.js'
 import { type RegistrySnapshot, ToolRegistry } from '../registry/tools.js'
 
 export function narrowChildToolFilter(
@@ -56,8 +57,8 @@ export class ChildToolRegistry extends ToolRegistry {
 
 const sessionFilters = new WeakMap<object, ChildAgentToolFilter>()
 export function childSessionToolFilter(session: object): ChildAgentToolFilter | undefined {
-  return sessionFilters.get(session)
+  return sessionFilters.get(sessionIdentity(session))
 }
 export function bindChildSessionToolFilter(session: object, filter: ChildAgentToolFilter): void {
-  sessionFilters.set(session, filter)
+  sessionFilters.set(sessionIdentity(session), filter)
 }

@@ -21,7 +21,7 @@ export function isDeliverableList(surface: Pick<UiSurface, 'components'>): boole
   )
 }
 
-/** Only words and nothing to act on: it belongs in the conversation, never only in the workbench. */
+/** Only words and nothing to act on: when it may show inline, it is read in the answer. */
 export function isTextOnly(surface: Pick<UiSurface, 'components' | 'actions'>): boolean {
   return (
     surface.components.length > 0 &&
@@ -31,15 +31,16 @@ export function isTextOnly(surface: Pick<UiSurface, 'components' | 'actions'>): 
 }
 
 /**
- * A card inside the answer that produced it, between its text and its action row: any surface that
- * may show inline and does not prefer the workbench, and any text-only surface. Files and questions
- * have their own places.
+ * A card inside the answer that produced it, between its text and its action row: a surface that may
+ * show inline and does not prefer the workbench, or one that is only text and may show inline. A
+ * workbench-only surface never enters the answer, text or not. Files and questions have their own
+ * places.
  */
 export function rendersInAnswer(
   surface: Pick<UiSurface, 'placement' | 'components' | 'actions' | 'data'>,
 ): boolean {
   if (isDeliverableList(surface) || questionForm(surface)) return false
-  return isTextOnly(surface) || (surface.placement.inline && surface.placement.preferred !== 'workbench')
+  return surface.placement.inline && (isTextOnly(surface) || surface.placement.preferred !== 'workbench')
 }
 
 /** A surface whose complete view lives in the workbench is docked in the conversation as a one-line chip. */

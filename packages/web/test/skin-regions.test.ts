@@ -38,8 +38,10 @@ const EXPECTED: Record<string, Record<string, readonly [string, number]>> = {
     // Every icon glyph, so a skin can restyle or replace them without reaching for `.icon`.
     // Counts the composed shell's glyphs, including the workspace chooser, the report-problem action,
     // the top bar's overflow menu, the empty session list's illustration, and the session list's
-    // search and filter actions, and the trace toolbar's fold-all chevron and ⋯ menu.
-    icon: ['svg', 34],
+    // search and filter actions, the trace toolbar's fold-all chevron and ⋯ menu, and the General
+    // the settings pages' ⓘ explanations (General twice, the accounts label once), and the chevrons
+    // of the two hidden account page rows.
+    icon: ['svg', 39],
     // 插件详情、资源详情和账户详情/新增都使用独立模态框。
     dialog: ['dialog', 9],
     'settings-pane': ['section', 3],

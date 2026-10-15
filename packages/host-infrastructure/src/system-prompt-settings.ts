@@ -7,6 +7,25 @@ import { SystemPromptConfig as Schema } from '@agnes/protocol/gen/agnes-v1'
 
 export const promptConfigHash = (value: unknown): string =>
   createHash('sha256').update(JSON.stringify(value)).digest('hex')
+/**
+ * The version a client read, for a conditional save. It names the stored value, so two windows that
+ * read the same settings hold the same revision and the first save changes it for the other.
+ */
+export const promptConfigRevision = (config: SystemPromptConfig): string => promptConfigHash(config)
+
+/** One writer per settings file at a time, across every store instance in this process. */
+const saving = new Map<string, Promise<unknown>>()
+function exclusive<T>(file: string, run: () => Promise<T>): Promise<T> {
+  const next = (saving.get(file) ?? Promise.resolve()).catch(() => undefined).then(run)
+  saving.set(file, next)
+  void next
+    .finally(() => {
+      if (saving.get(file) === next) saving.delete(file)
+    })
+    .catch(() => undefined)
+  return next
+}
+
 /** Deployment-local defaults. Sessions persist their detached copy rather than rereading this file. */
 export class SystemPromptSettingsStore {
   private readonly dir: string
@@ -28,7 +47,16 @@ export class SystemPromptSettingsStore {
       throw Object.assign(new Error('CONFIG_INVALID_STATE'), { code: 'CONFIG_INVALID_STATE' })
     }
   }
-  async save(config: SystemPromptConfig, confirmed = false): Promise<SystemPromptConfig> {
+  /**
+   * Saves the whole configuration. With `expectedRevision`, the save happens only while the stored
+   * value still has that revision; otherwise it is refused with `CONFIG_REVISION_CONFLICT` and the
+   * current value, and nothing is written.
+   */
+  async save(
+    config: SystemPromptConfig,
+    confirmed = false,
+    expectedRevision?: string,
+  ): Promise<SystemPromptConfig> {
     if (
       !validateAgainst(Schema, config).ok ||
       (config.fullOverride !== undefined &&
@@ -38,14 +66,24 @@ export class SystemPromptSettingsStore {
     const text = JSON.stringify(config)
     if (Buffer.byteLength(text) > 1024 * 1024)
       throw Object.assign(new Error('CONFIG_INVALID_INPUT'), { code: 'CONFIG_INVALID_INPUT' })
-    await mkdir(this.dir, { recursive: true, mode: 0o700 })
-    const temporary = `${this.file}.${randomUUID()}.tmp`
-    try {
-      await writeFile(temporary, text, { mode: 0o600, flag: 'wx' })
-      await rename(temporary, this.file)
-    } finally {
-      await unlink(temporary).catch(() => undefined)
-    }
-    return structuredClone(config)
+    return exclusive(this.file, async () => {
+      if (expectedRevision !== undefined) {
+        const current = await this.read()
+        if (promptConfigRevision(current) !== expectedRevision)
+          throw Object.assign(new Error('CONFIG_REVISION_CONFLICT'), {
+            code: 'CONFIG_REVISION_CONFLICT',
+            current,
+          })
+      }
+      await mkdir(this.dir, { recursive: true, mode: 0o700 })
+      const temporary = `${this.file}.${randomUUID()}.tmp`
+      try {
+        await writeFile(temporary, text, { mode: 0o600, flag: 'wx' })
+        await rename(temporary, this.file)
+      } finally {
+        await unlink(temporary).catch(() => undefined)
+      }
+      return structuredClone(config)
+    })
   }
 }

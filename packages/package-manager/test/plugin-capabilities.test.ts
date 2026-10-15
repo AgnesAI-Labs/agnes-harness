@@ -69,16 +69,22 @@ it('emits a uiData atom for each manifest permission', () => {
 it('binds declarations to previews/trust and rejects newly disallowed enable requests', async () => {
   const f = fixture(),
     source = parseSource('file:' + f.source)
-  const preview = await f.manager.inspect(f.profile, source)
+  const admitted = createPackageManager({
+    dataDir: join(f.root, 'data'),
+    cwd: f.profile,
+    agnesVersion: '0.0.0',
+    ceiling: ['exec', 'network'],
+  })
+  const preview = await admitted.inspect(f.profile, source)
   expect(preview.declaredCapabilities).toEqual({ network: ['api.example.com'], exec: ['node'] })
   expect(preview.capabilityDiff.added).toContain('exec:node')
-  await f.manager.install(f.profile, source, { expectedIntegrity: preview.integrity })
-  await f.manager.trust(f.profile, preview.id, {
+  await admitted.install(f.profile, source, { expectedIntegrity: preview.integrity })
+  await admitted.trust(f.profile, preview.id, {
     integrity: preview.integrity,
     capabilityHash: preview.capabilityHash!,
   })
-  const row = (await f.manager.inventory(f.profile)).packages[0]!
-  const pin = await f.manager.pinRuntimeSnapshot(f.profile, {
+  const row = (await admitted.inventory(f.profile)).packages[0]!
+  const pin = await admitted.pinRuntimeSnapshot(f.profile, {
     pinId: 'declared-test',
     operationId: 'declared-test',
     packageId: preview.id,
@@ -91,14 +97,14 @@ it('binds declarations to previews/trust and rejects newly disallowed enable req
   })
   expect(pin.snapshot.capabilityHash).toBe(preview.capabilityHash)
   writeFileSync(join(f.profile, 'plugin-capabilities.json'), JSON.stringify({ deny: ['network:*'] }))
-  expect((await f.manager.inventory(f.profile)).packages[0]?.blockers).toContainEqual({
+  expect((await admitted.inventory(f.profile)).packages[0]?.blockers).toContainEqual({
     code: 'policy',
     references: ['capability-blocked', 'network:api.example.com'],
   })
-  await expect(f.manager.setEnabled(f.profile, preview.id, true)).rejects.toMatchObject({
+  await expect(admitted.setEnabled(f.profile, preview.id, true)).rejects.toMatchObject({
     code: 'E_PACKAGE_BLOCKED',
   })
-  expect((await f.manager.inspect(f.profile, source)).blockers[0]?.code).toBe('policy')
+  expect((await admitted.inspect(f.profile, source)).blockers[0]?.code).toBe('policy')
 })
 
 it('keeps legacy hashes, rejects malformed declarations/policies and covers wildcard requests conservatively', () => {
@@ -150,4 +156,18 @@ it('pins an unqualified git URL in the preview without executing the plugin', as
   const preview = inspectStaged({ dir, fetched, source: fetched.source!, ceiling: [] }).preview
   expect(preview.source).toEqual(fetched.source)
   expect(preview.integrity).toBe(hashDirectory(dir))
+})
+
+it('enforces the profile ceiling during inspection and install before executing package code', async () => {
+  const f = fixture()
+  const source = parseSource('file:' + f.source)
+  const preview = await f.manager.inspect(f.profile, source)
+  expect(preview.blockers).toContainEqual({
+    code: 'policy',
+    references: ['capability-ceiling', 'exec', 'network'],
+  })
+  await expect(
+    f.manager.install(f.profile, source, { expectedIntegrity: preview.integrity }),
+  ).rejects.toMatchObject({ code: 'E_PACKAGE_BLOCKED' })
+  expect((await f.manager.inventory(f.profile)).packages).toEqual([])
 })

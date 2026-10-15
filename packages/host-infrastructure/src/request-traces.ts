@@ -18,6 +18,13 @@ const digest = (value: string): string => createHash('sha256').update(value).dig
 const secretKey =
   /^(?:authorization|proxy-authorization|cookie|set-cookie|headers|credentials?|(?:x[-_]?)?api[-_]?key|password|secret|client[-_]?secret|private[-_]?key|token|access[-_]?token|refresh[-_]?token)$/i
 const queues = new Map<string, Promise<unknown>>()
+// Do not release the process lock while a rejected sibling still writes files or updates the index.
+async function settled<T>(tasks: Promise<T>[]): Promise<T[]> {
+  return (await Promise.allSettled(tasks)).map((result) => {
+    if (result.status === 'rejected') throw result.reason
+    return result.value
+  })
+}
 /** Redact values, preserve tool-schema property declarations, and never retain binary contents. */
 export function redactRequest(value: unknown, depth = 0, key = ''): JsonValue {
   if (depth > 64) return '[OMITTED:depth]'
@@ -97,9 +104,39 @@ function validRecord(value: unknown, id: string): value is CallRecord {
     attempts,
   }).ok
 }
+type IndexedCall = Pick<CallRecord, 'id' | 'createdAt' | 'sessionHash'> & {
+  params: { kind: string; model: string }
+  refs: string[]
+}
+const references = (rows: IndexedCall[]) => new Set(rows.flatMap((row) => row.refs))
+function indexCall(row: CallRecord): IndexedCall {
+  const params = row.params && typeof row.params === 'object' && !Array.isArray(row.params) ? row.params : {}
+  return {
+    id: row.id,
+    createdAt: row.createdAt,
+    sessionHash: row.sessionHash,
+    params: { kind: String(params.kind ?? '').slice(0, 64), model: String(params.model ?? '').slice(0, 512) },
+    refs: [
+      ...new Set([
+        row.systemHash,
+        row.toolsHash,
+        row.sectionsHash,
+        ...(row.wireHash ? [row.wireHash] : []),
+        ...(row.wireRefs ?? []),
+        ...row.attempts.flatMap((attempt) => [
+          ...(attempt.wireHash ? [attempt.wireHash] : []),
+          ...(attempt.wireRefs ?? []),
+        ]),
+      ]),
+    ],
+  }
+}
 /** Local private content store. Retention is scoped to a profile; no audit/telemetry integration. */
 export class RequestTraceStore implements ModelRequestTrace {
   private readonly dir: string
+  private reservedBytes = 0
+  private admissionFailed = false
+  private files = new Map<string, { signature: string; size: number; mtimeMs: number; row?: IndexedCall }>()
   constructor(
     dataDir: string,
     profile: string,
@@ -114,16 +151,19 @@ export class RequestTraceStore implements ModelRequestTrace {
   ) {
     this.dir = join(dataDir, 'model-requests', digest(profile))
   }
-  private async serial<T>(action: () => Promise<T>, mutation = true): Promise<T> {
+  private async serial<T>(action: () => Promise<T>): Promise<T> {
     const previous = queues.get(this.dir) ?? Promise.resolve()
     const next = previous
       .catch(() => undefined)
       .then(async () => {
-        if (!mutation) return action()
         await mkdir(this.dir, { recursive: true, mode: 0o700 })
         // Sessions can live in different workers. Hold one crash-released process lock over blob,
         // record and GC mutations so a collector never removes another worker's pending blobs.
-        return withConfigurationLock(`${this.dir}.lock.sqlite`, action)
+        return withConfigurationLock(`${this.dir}.lock.sqlite`, async () => {
+          await this.reconcile()
+          this.admissionFailed = false
+          return action()
+        })
       })
     queues.set(this.dir, next)
     try {
@@ -132,29 +172,32 @@ export class RequestTraceStore implements ModelRequestTrace {
       if (queues.get(this.dir) === next) queues.delete(this.dir)
     }
   }
-  private async write(file: string, value: unknown): Promise<void> {
+  private async write(file: string, value: CallRecord): Promise<void> {
     const text = JSON.stringify(value)
     if (Buffer.byteLength(text) > this.limits.callBytes) throw new Error('CAPTURE_LIMIT')
     // The temporary replacement coexists with the old row until rename; charge its full size.
-    await this.admit(Buffer.byteLength(text))
+    this.admit(Buffer.byteLength(text))
     const tmp = `${file}.${randomUUID()}.tmp`
+    this.reservedBytes += Buffer.byteLength(text)
     try {
       await writeFile(tmp, text, { flag: 'wx', mode: 0o600 })
       await rename(tmp, file)
+      await this.track(file.slice(this.dir.length + 1), indexCall(value))
+    } catch (error) {
+      this.admissionFailed = true
+      throw error
     } finally {
+      this.reservedBytes -= Buffer.byteLength(text)
       await unlink(tmp).catch(() => undefined)
     }
   }
-  private async admit(bytes: number): Promise<void> {
-    const files = await readdir(this.dir)
-    const total = (
-      await Promise.all(
-        files
-          .filter((name) => name.endsWith('.json') || name.endsWith('.tmp'))
-          .map((name) => stat(join(this.dir, name)).then((value) => value.size)),
-      )
-    ).reduce((sum, size) => sum + size, 0)
-    if (total + Math.max(0, bytes) > this.limits.totalBytes) throw new Error('CAPTURE_LIMIT')
+  private admit(bytes: number): void {
+    // A failed write/stat may leave unindexed bytes. Refuse later sibling admissions until the
+    // entire transaction settles and the next locked reconciliation measures those remnants.
+    if (this.admissionFailed) throw new Error('CAPTURE_LIMIT')
+    const total = [...this.files.values()].reduce((sum, file) => sum + file.size, 0)
+    if (total + this.reservedBytes + Math.max(0, bytes) > this.limits.totalBytes)
+      throw new Error('CAPTURE_LIMIT')
   }
   private async blob(value: unknown): Promise<string> {
     const text = JSON.stringify(value)
@@ -166,11 +209,18 @@ export class RequestTraceStore implements ModelRequestTrace {
     } catch {
       /* New content. */
     }
-    await this.admit(Buffer.byteLength(text))
+    this.admit(Buffer.byteLength(text))
+    this.reservedBytes += Buffer.byteLength(text)
     try {
       await writeFile(join(this.dir, `${hash}.blob.json`), text, { flag: 'wx', mode: 0o600 })
+      await this.track(`${hash}.blob.json`)
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+        this.admissionFailed = true
+        throw error
+      }
+    } finally {
+      this.reservedBytes -= Buffer.byteLength(text)
     }
     return hash
   }
@@ -182,30 +232,59 @@ export class RequestTraceStore implements ModelRequestTrace {
     if (digest(text) !== hash) throw new Error('Corrupt blob')
     return JSON.parse(text) as JsonValue
   }
-  private async records(): Promise<CallRecord[]> {
-    let files: string[]
+  private async readRecord(id: string): Promise<CallRecord | undefined> {
     try {
-      files = await readdir(this.dir)
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
-      throw error
+      const file = join(this.dir, `${id}.call.json`)
+      if ((await stat(file)).size > this.limits.callBytes) return
+      const text = await readFile(file, 'utf8')
+      if (Buffer.byteLength(text) > this.limits.callBytes) return
+      const row: unknown = JSON.parse(text)
+      if (validRecord(row, id)) return row
+    } catch {
+      /* Corrupt or concurrently replaced legacy content is unavailable. */
     }
-    const records: CallRecord[] = []
-    for (const file of files.filter((name) => /^[a-f0-9-]{36}\.call\.json$/.test(name))) {
-      try {
-        if ((await stat(join(this.dir, file))).size > this.limits.callBytes) continue
-        const text = await readFile(join(this.dir, file), 'utf8')
-        if (Buffer.byteLength(text) > this.limits.callBytes) continue
-        const row: unknown = JSON.parse(text)
-        if (validRecord(row, file.slice(0, -10))) records.push(row)
-      } catch {
-        /* An atomic replacement/read race has no content to expose. */
-      }
+  }
+  private async track(name: string, row?: IndexedCall) {
+    const info = await stat(join(this.dir, name))
+    const entry = {
+      signature: `${info.ino}:${info.ctimeMs}:${info.mtimeMs}:${info.size}`,
+      size: info.size,
+      mtimeMs: info.mtimeMs,
+      ...(row ? { row } : {}),
     }
-    return records.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+    this.files.set(name, entry)
+    return entry
+  }
+  /** A derived cache only: old writers and collectors need not know it exists. */
+  private async reconcile(): Promise<void> {
+    const names = (await readdir(this.dir)).filter((name) => name.endsWith('.json') || name.endsWith('.tmp'))
+    const found = new Set(names)
+    for (const name of this.files.keys()) if (!found.has(name)) this.files.delete(name)
+    for (let offset = 0; offset < names.length; offset += 32)
+      await settled(
+        names.slice(offset, offset + 32).map(async (name) => {
+          const previous = this.files.get(name)
+          const current = await this.track(name)
+          if (previous?.signature === current.signature && previous.row) {
+            current.row = previous.row
+          } else if (/^[a-f0-9-]{36}\.call\.json$/.test(name)) {
+            const row = await this.readRecord(name.slice(0, -10))
+            if (row) current.row = indexCall(row)
+          }
+        }),
+      )
+  }
+  private async remove(name: string): Promise<void> {
+    await unlink(join(this.dir, name))
+    this.files.delete(name)
+  }
+  private records(): IndexedCall[] {
+    return [...this.files.values()]
+      .flatMap((file) => (file.row ? [file.row] : []))
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
   }
   private async gc(): Promise<void> {
-    const records = await this.records()
+    const records = this.records()
     let retained = records
       .filter((row) => this.clock() - Date.parse(row.createdAt) <= this.limits.ttlMs)
       .slice(-this.limits.calls)
@@ -219,32 +298,18 @@ export class RequestTraceStore implements ModelRequestTrace {
         return count <= Math.min(128, this.limits.calls)
       })
       .reverse()
-    const files = await readdir(this.dir)
-    for (const name of files)
+    for (const [name, info] of this.files)
       if (
         /^[a-f0-9-]{36}\.call\.json\.[a-f0-9-]{36}\.tmp$/.test(name) &&
-        this.clock() - (await stat(join(this.dir, name))).mtimeMs > this.limits.ttlMs
+        this.clock() - info.mtimeMs > this.limits.ttlMs
       )
-        await unlink(join(this.dir, name))
-    const sizes = new Map<string, number>()
-    for (const name of files)
-      if (/^(?:[a-f0-9]{64}\.blob|[a-f0-9-]{36}\.call)\.json$/.test(name))
-        sizes.set(name, (await stat(join(this.dir, name))).size)
-    const references = (rows: CallRecord[]) =>
-      new Set(
-        rows.flatMap((row) => [
-          row.systemHash,
-          row.toolsHash,
-          row.sectionsHash,
-          ...(row.wireHash ? [row.wireHash] : []),
-          ...(row.wireRefs ?? []),
-          ...(row.attempts ?? []).flatMap((attempt) => [
-            ...(attempt.wireHash ? [attempt.wireHash] : []),
-            ...(attempt.wireRefs ?? []),
-          ]),
-        ]),
-      )
-    const size = (rows: CallRecord[]) =>
+        await this.remove(name)
+    const sizes = new Map(
+      [...this.files]
+        .filter(([name]) => /^(?:[a-f0-9]{64}\.blob|[a-f0-9-]{36}\.call)\.json$/.test(name))
+        .map(([name, info]) => [name, info.size]),
+    )
+    const size = (rows: IndexedCall[]) =>
       rows.reduce((sum, row) => sum + (sizes.get(`${row.id}.call.json`) ?? 0), 0) +
       [...references(rows)].reduce((sum, hash) => sum + (sizes.get(`${hash}.blob.json`) ?? 0), 0)
     // Shared content counts against each session that references it; no session can consume
@@ -259,23 +324,29 @@ export class RequestTraceStore implements ModelRequestTrace {
     while (retained.length && size(retained) > this.limits.totalBytes) retained = retained.slice(1)
     const calls = new Set(retained.map((row) => row.id))
     const blobs = references(retained)
-    for (const name of sizes.keys()) {
+    for (const [name, info] of this.files) {
+      if (!sizes.has(name)) continue
       const keep = name.endsWith('.call.json') ? calls.has(name.slice(0, -10)) : blobs.has(name.slice(0, -10))
       // Expired rows release references; young unreferenced blobs survive until retention expires.
       // Admission refuses new captures rather than deleting another recent call's shared body.
-      if (
-        !keep &&
-        (name.endsWith('.call.json') ||
-          this.clock() - (await stat(join(this.dir, name))).mtimeMs > this.limits.ttlMs)
-      )
-        await unlink(join(this.dir, name))
+      if (!keep && (name.endsWith('.call.json') || this.clock() - info.mtimeMs > this.limits.ttlMs))
+        await this.remove(name)
     }
   }
   /** Worker-owned retention lifecycle; daemon reads never start a collector. */
   start(): () => void {
     let stopped = false
+    let pending = false
     const collect = () => {
-      if (!stopped) void this.serial(() => this.gc()).catch(() => undefined)
+      if (stopped || pending) return
+      pending = true
+      void this.serial(async () => {
+        if (!stopped) await this.gc()
+      })
+        .catch(() => undefined)
+        .finally(() => {
+          pending = false
+        })
     }
     collect()
     const timer = setInterval(collect, 5 * 60 * 1000)
@@ -402,7 +473,7 @@ export class RequestTraceStore implements ModelRequestTrace {
         })
       } catch (error) {
         if ((error as Error).message !== 'CAPTURE_LIMIT') throw error
-        await this.serial(() => unlink(join(this.dir, `${id}.call.json`)).catch(() => undefined))
+        await this.serial(() => this.remove(`${id}.call.json`).catch(() => undefined))
         row = undefined
       }
     }
@@ -478,11 +549,11 @@ export class RequestTraceStore implements ModelRequestTrace {
                 refs.add(hash)
                 return ['ref', hash]
               }
-              if (Array.isArray(value)) return ['array', await Promise.all(value.map((item) => pack(item)))]
+              if (Array.isArray(value)) return ['array', await settled(value.map((item) => pack(item)))]
               if (value && typeof value === 'object')
                 return [
                   'object',
-                  await Promise.all(
+                  await settled(
                     Object.entries(value).map(async ([name, child]) => [name, await pack(child, name)]),
                   ),
                 ]
@@ -528,7 +599,7 @@ export class RequestTraceStore implements ModelRequestTrace {
           if ((error as Error).message !== 'CAPTURE_LIMIT') throw error
           // A profile cap must not leave a retained logical row claiming its adapter has no tap.
           // Recent orphan blobs remain subject to TTL; no late attempt may resurrect this call.
-          await this.serial(() => unlink(join(this.dir, `${id}.call.json`)).catch(() => undefined))
+          await this.serial(() => this.remove(`${id}.call.json`).catch(() => undefined))
           row = undefined
         }
       },
@@ -570,24 +641,13 @@ export class RequestTraceStore implements ModelRequestTrace {
   async clear(sessionKey: string, callId: string): Promise<boolean> {
     if (!/^[a-f0-9-]{36}$/.test(callId)) return false
     return this.serial(async () => {
-      const records = await this.records()
+      const records = this.records()
       const row = records.find((value) => value.id === callId && value.sessionHash === digest(sessionKey))
       if (!row) return false
-      await unlink(join(this.dir, `${row.id}.call.json`))
-      const refs = (value: CallRecord) => [
-        value.systemHash,
-        value.sectionsHash,
-        value.toolsHash,
-        ...(value.wireHash ? [value.wireHash] : []),
-        ...(value.wireRefs ?? []),
-        ...(value.attempts ?? []).flatMap((attempt) => [
-          ...(attempt.wireHash ? [attempt.wireHash] : []),
-          ...(attempt.wireRefs ?? []),
-        ]),
-      ]
-      const retained = new Set(records.filter((value) => value.id !== callId).flatMap(refs))
-      for (const hash of new Set(refs(row)))
-        if (!retained.has(hash)) await unlink(join(this.dir, `${hash}.blob.json`)).catch(() => undefined)
+      await this.remove(`${row.id}.call.json`)
+      const retained = references(records.filter((value) => value.id !== callId))
+      for (const hash of row.refs)
+        if (!retained.has(hash)) await this.remove(`${hash}.blob.json`).catch(() => undefined)
       return true
     })
   }
@@ -601,13 +661,15 @@ export class RequestTraceStore implements ModelRequestTrace {
   } | null> {
     if (!/^[a-f0-9-]{36}$/.test(callId)) return null
     return this.serial(async () => {
-      const row = (await this.records()).find(
+      const indexed = this.records().find(
         (value) =>
           value.id === callId &&
           value.sessionHash === digest(sessionKey) &&
           this.clock() - Date.parse(value.createdAt) <= this.limits.ttlMs,
       )
-      if (!row) return null
+      if (!indexed) return null
+      const row = await this.readRecord(indexed.id)
+      if (!row || row.sessionHash !== digest(sessionKey)) return null
       const params =
         row.params && typeof row.params === 'object' && !Array.isArray(row.params) ? row.params : {}
       return {
@@ -638,14 +700,14 @@ export class RequestTraceStore implements ModelRequestTrace {
           wireUnavailable: attempt.wireUnavailable,
         })),
       }
-    }, false)
+    })
   }
   async get(sessionKey: string, callId?: string): Promise<import('@agnes/protocol').ModelRequestResult> {
     if (callId && !/^[a-f0-9-]{36}$/.test(callId))
       return { snapshot: null, previous: null, unavailable: 'not-retained' }
     return this.serial(async () => {
       // Reads never collect: the daemon reader may race the worker writer in another process.
-      const records = (await this.records()).filter(
+      const records = this.records().filter(
         (row) =>
           row.sessionHash === digest(sessionKey) &&
           this.clock() - Date.parse(row.createdAt) <= this.limits.ttlMs,
@@ -654,20 +716,17 @@ export class RequestTraceStore implements ModelRequestTrace {
         return {
           snapshot: null,
           previous: null,
-          calls: records.slice(-256).map((row) => {
-            const params =
-              row.params && typeof row.params === 'object' && !Array.isArray(row.params) ? row.params : {}
-            return {
-              id: row.id,
-              createdAt: row.createdAt,
-              kind: String(params.kind ?? '').slice(0, 64),
-              model: String(params.model ?? '').slice(0, 512),
-            }
-          }),
+          calls: records.slice(-256).map((row) => ({
+            id: row.id,
+            createdAt: row.createdAt,
+            ...row.params,
+          })),
         }
       const index = records.findIndex((row) => row.id === callId)
       if (index < 0) return { snapshot: null, previous: null, unavailable: 'not-retained' }
-      const hydrate = async (row: CallRecord): Promise<ModelRequestSnapshot> => {
+      const hydrate = async (entry: IndexedCall | undefined): Promise<ModelRequestSnapshot> => {
+        const row = entry && (await this.readRecord(entry.id))
+        if (!row || row.sessionHash !== digest(sessionKey)) throw new Error('Invalid record')
         const { sessionHash: _owner, wireHash, wireRefs: _refs, attempts, ...record } = row
         const unpack = async (encoded: JsonValue, depth = 0): Promise<JsonValue> => {
           if (depth > 64 || !Array.isArray(encoded)) throw new Error('Invalid wire content')
@@ -678,7 +737,7 @@ export class RequestTraceStore implements ModelRequestTrace {
             return Promise.all(content.map((item) => unpack(item, depth + 1)))
           if (tag === 'object' && Array.isArray(content))
             return Object.fromEntries(
-              await Promise.all(
+              await settled(
                 content.map(async (item) => {
                   if (!Array.isArray(item) || typeof item[0] !== 'string' || item.length !== 2)
                     throw new Error('Invalid wire entry')
@@ -694,7 +753,7 @@ export class RequestTraceStore implements ModelRequestTrace {
           tools: await this.readBlob(row.toolsHash),
           sections: await this.readBlob(row.sectionsHash),
           wire: wireHash ? await unpack(await this.readBlob(wireHash)) : null,
-          attempts: await Promise.all(
+          attempts: await settled(
             attempts.map(async ({ wireHash, wireRefs: _refs, ...attempt }) => ({
               ...attempt,
               wire: wireHash ? await unpack(await this.readBlob(wireHash)) : null,
@@ -706,13 +765,13 @@ export class RequestTraceStore implements ModelRequestTrace {
       }
       try {
         return {
-          snapshot: await hydrate(records[index]!),
-          previous: index ? await hydrate(records[index - 1]!) : null,
+          snapshot: await hydrate(records[index]),
+          previous: index ? await hydrate(records[index - 1]) : null,
         }
       } catch {
         return { snapshot: null, previous: null, unavailable: 'capture-failed' }
       }
-    }, false)
+    })
   }
 }
 

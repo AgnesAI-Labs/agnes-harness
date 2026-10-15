@@ -4,6 +4,8 @@
 
 [架构](architecture.zh-CN.md) · [状态归属](state-ownership.zh-CN.md) · [源码导航](source-map.zh-CN.md) · [作者指南](../extend/README.zh-CN.md) · [v0.1 合同](contracts-v0.1.zh-CN.md)
 
+插件是完全受信任的代码，以用户权限运行。能力声明用于准入审核，不限制任意 JavaScript，也不强制 hook 白名单。`ctx.hooks.register` 接受受支持的 observe、transform、intercept hooks，不按声明的 `hooks` 列表限制注册。只授权你愿意执行的代码。
+
 内核保存会话事实，负责账本写入、effect、授权与恢复；可替换的算法通过操作端口运行。Host 将包加载到 Cordis，管理注册项与实例，再把选中的 provider 交给 Core。普通后端插件作为受信任的进程内代码执行；组合机制不会隔离任意插件代码。
 
 ```mermaid
@@ -110,6 +112,10 @@ composition 发布采用逐容器收敛。`applyRuntimeTarget` 与 `extensionRow
 
 ### 历史会话留存
 
+额外 composition 容器（含其当前 generation）也使用同一 idle 时限。只有全部 session、在途调用和
+retained invocation lease 都已释放，才允许回收；初始控制容器保持存活。持久 composition binding
+与代码快照继续保留，重开时重建原 composition 并接入当前 live resources。
+
 代码快照按持久会话 pin 留存，包含闲置历史。关闭、休眠不会使 pin 过期，也不会按时间自动升级。内存生命周期单独计算：当前容器保持存活，旧容器只在拥有打开的会话时保活。最后一个会话关闭或休眠后，Host 等待 `limits["worker.generation_idle_close_ms"]` 再关闭容器（默认 60,000 毫秒，非负整数，0 表示立即回收）。不阻止进程退出的定时器会执行回收，无需再次发布。恢复已回收的 generation 时，`resolve(id)` 从保留的快照重建原代码，并加载当前受信的动态资源。特权会话协调器关闭会话并排除并发准入后，可调用 `Host.migrateSessionGeneration(sessionKey)`，将该会话迁移到原 composition 的当前 generation；账本、loop id/version 与 composition binding 保留。两个快照必须存在且兼容，目标须解析相同 loop。打开中的会话、缺失快照或不兼容部署在修改 pin 前被拒绝。迁移幂等，返回 `{ previousGenerationId, generationId, changed }`。
 
 最后一个 pin 迁出，或删除会话后调用 `releaseSessionGeneration`，会触发旧容器释放与快照清理。其他存活 worker 所属归档保守保留，直到所属 worker 清理或退出。迁移显式改变插件实现，不承诺迁移插件自行定义的状态/checkpoint schema。关闭历史会话后，可运行 `agh sessions migrate <key> [--profile <name>] [--json]`。daemon 核验认证会话归属与 `packages.activate`，并在 worker 回应或退出前阻止该 key 的并发准入。打开中或恢复中的会话被拒绝，不中断当前轮。没有自动迁移或模型工具。
@@ -122,7 +128,7 @@ Node SDK 提供 `client.packages.migrateSession({ profile, clientId, commandId, 
 
 ## Provider 合同与迁移
 
-每种 kind 都使用其精确的不变 token，`register`/`resolve` 从 token 推断 provider 类型；自定义 kind 使用 `defineKind<T>()` 创建并由服务安装的同一个 token，同名但不同身份的 token 会被拒绝。provider version 必须是 semver，内置 persistence 从 `1` 改为 `1.0.0`；package version、契约 apiRange、checkpoint codecVersion 与代码摘要各自独立。Extension API 为 `2.0.0`；旧插件需要迁移删除的作者入口。
+每种 kind 都使用其精确的不变 token，`register`/`resolve` 从 token 推断 provider 类型；自定义 kind 使用 `defineKind<T>()` 创建并由服务安装的同一个 token，同名但不同身份的 token 会被拒绝。provider version 必须是 semver，内置 persistence 从 `1` 改为 `1.0.0`；package version、契约 apiRange、checkpoint codecVersion 与代码摘要各自独立。Extension API 为 `4.0.0`；旧插件需要迁移删除的作者入口。
 
 服务提供者共用这套注册表。`defineKind({ bind })` 增加基数、实例作用域和最大端口授权（`ledger`、`input`、`projections`）。Host 安装一份只能缩小授权的描述，并通过 `ctx.providers` 准入当前 callback。包身份来自加载器，owner 来自清单。每次获准的调用各自打开实例。callback、generation 或 dispose 之后继续使用句柄会失败关闭。进程级共享仍留在已经做引用计数的功能里。
 
@@ -134,7 +140,7 @@ UI 数据源是同一合同包里的另一个 kind：`ui-data-source`。基数�
 
 Git worktree 是每个规范工作区一个、作用域为 workspace 的提供者。Host 与内置子 Agent 共用 `@agnes/git-worktree-contract` 的 `gitWorktreeKind`。Host 注册该提供者，插件不能注册。子 Agent 在工具调用期间用 `providers.bindOwn` 绑定它。Git 元数据留在 host-infrastructure，子 Agent 得不到 shell 或 argv 端口。
 
-文件系统加载的每个普通 `agnes.plugins` 条目必须声明 `apiRange`（如 `"^2.0.0"`），Host 在执行模块代码前核验，不再依赖可选的 `hostProvidedExternals`。`ModelAdapter.wireApi` 表示线路格式，也是 adapter 目录唯一的格式字段；`Route.api` 选择注册 id。
+文件系统加载的每个普通 `agnes.plugins` 条目必须声明 `apiRange`（如 `"^4.0.0"`），Host 在执行模块代码前核验，不再依赖可选的 `hostProvidedExternals`。`ModelAdapter.wireApi` 表示线路格式，也是 adapter 目录唯一的格式字段；`Route.api` 选择注册 id。
 
 `ProviderError` 独立于闭合的 extension 调用错误集，稳定 code 为 `E_PROVIDER_DUPLICATE`、`E_PROVIDER_UNKNOWN`、`E_PROVIDER_INVALID`、`E_PROVIDER_INCOMPATIBLE`、`E_PROVIDER_UNAVAILABLE`，携带 kind/provider/operation/retryable/hint/cause。unregister 返回幂等、可等待的 Promise。model、compaction、tool-runtime、policy 的 owner 禁止新准入，取消并等待创建与调用完成，再 dispose 实例、cleanup 注册资源；清理失败聚合返回，不吞错。
 

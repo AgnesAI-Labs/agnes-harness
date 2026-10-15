@@ -2,8 +2,8 @@ import { canonicalJson } from '@agnes/core-common/request/hash'
 import { CoreError } from '@agnes/core-common/types'
 import type { ToolContext, ToolResult, ToolRuntime } from '@agnes/extension-api'
 import { type ExecutionDomain, inspectJsonData } from '@agnes/protocol'
+import { attestedRejection } from './effect-scope.js'
 import type { ExecuteAttempt } from './execute-permits.js'
-import { memoryRejection } from './memory-rejection.js'
 
 /** Bounded diagnostic data; only platform-owned ports can attest no effect. */
 export type RejectedBeforeEffectError = Readonly<{
@@ -13,6 +13,8 @@ export type RejectedBeforeEffectError = Readonly<{
   expected?: string
   issues?: Array<{ path: string; expected: string }>
 }>
+
+export { hostPortRequest } from './effect-scope.js'
 
 export type HostDispatchObservation =
   | Readonly<{ phase: 'responded'; result: ToolResult }>
@@ -375,7 +377,7 @@ export async function dispatchTool(input: DispatchInput): Promise<HostDispatchOb
         ? { phase: 'responded', result }
         : invalidObservation('workspace tool returned an invalid ToolResult')
     } catch (error) {
-      const refusal = memoryRejection(input.context, error)
+      const refusal = attestedRejection(input.context, error)
       const diagnostic = refusal && rejectedBeforeEffect(refusal)
       return diagnostic
         ? { phase: 'rejected_before_effect', error: diagnostic }

@@ -141,10 +141,10 @@ describe('views inside the answer', () => {
         view.host.querySelector('[data-testid="intelligent-ui-inline"] [data-testid^="ui-surface-"]'),
       ).toBeNull()
       expect(newSurfacePlacements(new Set(), [outline()]).showWorkbench).toBe(false)
-      // A text-only view stays in the conversation even when its author asked for the workbench only.
+      // A workbench-only view follows its placement, text or not: it opens the workbench once.
       const workbenchOnly = outline()
       workbenchOnly.surface.placement = { inline: false, workbench: true }
-      expect(newSurfacePlacements(new Set(), [workbenchOnly]).showWorkbench).toBe(false)
+      expect(newSurfacePlacements(new Set(), [workbenchOnly]).showWorkbench).toBe(true)
     } finally {
       await view.cleanup()
     }
@@ -207,6 +207,22 @@ describe('views inside the answer', () => {
       ).not.toBeNull()
     } finally {
       height.mockRestore()
+      await view.cleanup()
+    }
+  })
+})
+
+describe('placement flags on the special paths', () => {
+  it('keeps a workbench-only text view out of the answer and points at it from the conversation', async () => {
+    const record = outline()
+    record.surface.placement = { inline: false, workbench: true }
+    const view = await mount({ records: [record] })
+    try {
+      expect(inTurn(view.host, 'outline')).toBeNull()
+      expect(
+        view.host.querySelector('[data-testid="intelligent-ui-inline"] [data-testid="ui-surface-outline"]'),
+      ).not.toBeNull()
+    } finally {
       await view.cleanup()
     }
   })

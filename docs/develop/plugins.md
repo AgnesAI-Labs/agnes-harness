@@ -6,6 +6,8 @@ English | [简体中文](plugins.zh-CN.md)
 
 [Documentation](../README.md) · [Backend tool tutorial](backend.md)
 
+Plugins are fully trusted code running with the user's rights. Capability declarations are reviewed at admission; they do not restrict arbitrary JavaScript or enforce a hook allowlist. `ctx.hooks.register` accepts the supported observe, transform and intercept hooks regardless of the declared `hooks` list. Use only code you intend to authorize.
+
 Turn a business function into an agent tool, capture a task method as a Skill, or add your own workbench interface. AGH provides extension entry points and a package lifecycle so you can grow from one plugin into an application. Choose an entry point below, then learn how dependencies and execution fit together.
 
 <a id="在会话中创建第一个插件"></a>
@@ -179,3 +181,5 @@ Choose a loop for a new session with the profile's `providers.loop: { provider: 
 [The plan-execute example](../../examples/loops/plan-execute-loop/README.md) is a non-ReAct state machine typed as `GenericLoopFactory`: it plans, asks a person through `DecisionPort`, executes steps, absorbs a structured child-completed `system` input and finishes honestly on rejection, cancellation or an unknown outcome. Its test is the conformance reference for the generic surface.
 
 See [the standalone DAG example](../../examples/loops/dag-loop/README.md) for model planning, parallel tool waves, joins and guarded checkpoint recovery. It imports no Core or Host scheduling internals.
+
+`await ctx.plugin(...)` (and prepared awaitable fibers) rejects with `DEPENDENCY_UNAVAILABLE` if required services are still missing, including dependency cycles. The fiber remains pending and can activate when services arrive. `Fiber.await()` waits for current lifecycle work to settle and may return a pending fiber; inspect its state before treating it as loaded. Detached async event failures are logged with the listener owner; awaited dispatch failures still propagate.

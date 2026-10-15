@@ -10,6 +10,8 @@ import { Button, Disclosure, Icon, SettingsState, UiLocaleProvider } from '@agne
 import { useState, useSyncExternalStore } from 'react'
 import { ArtifactFile } from './artifact-file.js'
 import {
+  deliverableKey,
+  deliverableProducer,
   deliverableVersion,
   type EarlierVersion,
   groupDeliverables,
@@ -21,19 +23,26 @@ import { surfaceDeliverables } from './turn-deliverables.js'
 export const DELIVERABLES_PANEL = 'deliverables'
 type Group = 'final' | 'review' | 'other'
 const GROUPS: readonly Group[] = ['final', 'review', 'other']
-const entryKey = (entry: TurnDeliverable) => `${entry.surfaceId}:${entry.file.artifact.sha256}`
+const entryKey = deliverableKey
 
-/** Every file the session's file lists hand over, oldest first; a later entry is a newer version. */
+/**
+ * Every file the session's workbench file lists hand over, oldest first; a later entry is a newer
+ * version. An inline-only file list stays in its answer.
+ */
 export function sessionDeliverables(surfaces: readonly UiSurfaceRecord[]): TurnDeliverable[] {
-  return surfaces.flatMap(surfaceDeliverables).sort((a, b) => a.order - b.order)
+  return surfaces
+    .flatMap(surfaceDeliverables)
+    .filter((entry) => entry.workbench)
+    .sort((a, b) => a.order - b.order)
 }
 
 /**
- * The newest version of each file, grouped by the version its description names (最终版 / 审阅稿),
- * and every older version in one folded list.
+ * The newest copy of each file name, grouped by the version its description names (最终版 / 审阅稿),
+ * and every older copy of a name in one folded «同名文件历史». A newest copy whose history came from
+ * another producer carries `source`, so its card says whose it is.
  */
 export function deliverableGroups(entries: readonly TurnDeliverable[]): {
-  groups: { group: Group; entries: TurnDeliverable[] }[]
+  groups: { group: Group; entries: (TurnDeliverable & { source?: string })[] }[]
   earlier: (TurnDeliverable & { version: EarlierVersion })[]
 } {
   const named = groupDeliverables(entries)
@@ -45,7 +54,12 @@ export function deliverableGroups(entries: readonly TurnDeliverable[]): {
   return {
     groups: GROUPS.map((group) => ({
       group,
-      entries: named.map((item) => item.latest).filter((entry) => groupOf(entry) === group),
+      entries: named
+        .map(({ latest, mixedSources }) => {
+          const source = mixedSources ? deliverableProducer(latest) : undefined
+          return source ? { ...latest, source } : latest
+        })
+        .filter((entry) => groupOf(entry) === group),
     })).filter((item) => item.entries.length > 0),
     earlier: named.flatMap((item) => item.earlier),
   }
@@ -130,7 +144,7 @@ export function WorkbenchDeliverables({
   const current = entries.find((entry) => entryKey(entry) === chosen) ?? newest
   const timeline = (context.data as { timeline?: UITimeline } | undefined)?.timeline
   const source = current && sessionId ? deliverableSource(timeline, current, client, sessionId) : undefined
-  const card = (entry: TurnDeliverable & { version?: EarlierVersion }) => (
+  const card = (entry: TurnDeliverable & { version?: EarlierVersion; source?: string }) => (
     // biome-ignore lint/a11y/noStaticElementInteractions: a click inside a card only marks it as the one the footer names.
     <li
       key={entryKey(entry)}
@@ -143,6 +157,7 @@ export function WorkbenchDeliverables({
         resources={binding.resources}
         placement="workbench"
         {...(entry.version ? { earlier: entry.version } : {})}
+        {...(entry.source ? { source: entry.source } : {})}
       />
     </li>
   )

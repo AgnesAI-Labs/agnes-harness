@@ -1,7 +1,18 @@
 import type { ResourceAdminMount } from '@agnes/resource-control-web/admin'
-import { Banner, Button, Icon, setResourcePackageNames } from '@agnes/web-ui'
+import {
+  Banner,
+  Button,
+  Icon,
+  setResourcePackageNames,
+  setResourceSkillRunner,
+  usePushStack,
+} from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
+import { usePageProgress } from './admin-view.js'
+import { type HostedOpen, HostedPage, useHostedDialog } from './hosted-pages.js'
+import { pluginPage, pluginPageId } from './route.js'
 import { SkillFolders } from './skill-folders.js'
+import { SkillRunPage } from './skill-run.js'
 
 type Text = (key: string, vars?: Readonly<Record<string, string | number>>) => string
 
@@ -25,9 +36,17 @@ export function ResourcesTab({
 }) {
   const names = useRef(packageName)
   names.current = packageName
+  // A skill that is on can be run in a new session from its row's menu (this replaces 运行技能 in settings).
+  const pages = usePushStack()
+  const openPage = useRef(pages.open)
+  openPage.current = pages.open
   useEffect(() => {
     setResourcePackageNames((id) => names.current(id))
-    return () => setResourcePackageNames(undefined)
+    setResourceSkillRunner((name) => openPage.current(pluginPageId({ kind: 'run', id: name })))
+    return () => {
+      setResourcePackageNames(undefined)
+      setResourceSkillRunner(undefined)
+    }
   }, [])
   const list = useRef<HTMLElement>(null)
   const notice = useRef<HTMLParagraphElement>(null)
@@ -37,6 +56,9 @@ export function ResourcesTab({
   const scope = useRef({ tab, workspaceId })
   scope.current = { tab, workspaceId }
   const [failed, setFailed] = useState(false)
+  // The controller's first read has finished: a link to one resource can be followed from here.
+  const [loaded, setLoaded] = useState(false)
+  usePageProgress(!loaded && !failed)
   useEffect(() => {
     let alive = true
     void import('@agnes/resource-control-web/admin').then(
@@ -52,6 +74,9 @@ export function ResourcesTab({
             refresh: refresh.current,
             create: create.current,
           },
+        })
+        void mounted.current.ready.finally(() => {
+          if (alive) setLoaded(true)
         })
       },
       () => {
@@ -76,8 +101,49 @@ export function ResourcesTab({
       current = false
     }
   }, [tab, workspaceId])
+  const kind = tab === 'skills' ? 'skill' : 'mcp'
+  const detail = useHostedDialog({
+    id: 'resource-detail',
+    ready: loaded,
+    owns: (segment) => pluginPage(segment)?.kind === kind,
+    pageOf: (host) => pluginPageId({ kind, id: host.dataset.resourceId ?? '' }),
+    open: (segment): HostedOpen => {
+      const page = pluginPage(segment)
+      if (!mounted.current || !loaded) return 'pending'
+      if (page?.kind !== kind) return 'missing'
+      mounted.current.select(page.id)
+      // A resource that is not in the list does not open: leave its page instead of showing nothing.
+      return document.querySelector<HTMLDialogElement>('#resource-detail')?.open ? 'opened' : 'missing'
+    },
+  })
+  const form = useHostedDialog({
+    id: 'mcp-dialog',
+    ready: loaded,
+    owns: (segment) => tab === 'mcp' && segment === 'add-mcp',
+    pageOf: () => 'add-mcp',
+    open: (): HostedOpen => {
+      if (!loaded) return 'pending'
+      if (!create.current || create.current.disabled) return 'missing'
+      create.current.click()
+      return 'opened'
+    },
+  })
+  const title = (segment: string) =>
+    segment === 'add-mcp'
+      ? (document.getElementById('mcp-dialog-title')?.textContent ?? t('mcp.add'))
+      : (detail?.getAttribute('aria-label') ?? '')
   return (
     <div className="plugins-page-resources" data-resource-tab={tab}>
+      {pages.stack
+        .filter((segment) => (tab === 'mcp' && segment === 'add-mcp') || pluginPage(segment)?.kind === kind)
+        .map((segment) => (
+          <HostedPage
+            key={segment}
+            segment={segment}
+            host={segment === 'add-mcp' ? form : detail}
+            title={title(segment)}
+          />
+        ))}
       {failed && <Banner tone="error">{t('resource.failed')}</Banner>}
       <div className="plugins-page-toolbar" data-kind="mcp" hidden={tab !== 'mcp'}>
         <p className="agnes-settings-page-description">{t('mcp.description')}</p>
@@ -101,6 +167,10 @@ export function ResourcesTab({
       <section ref={list} className="plugin-list" aria-live="polite" />
       {/* Saving the folder list asks for a rescan through the controller's own confirmed refresh. */}
       {tab === 'skills' && <SkillFolders t={t} canSave={canSave} onSaved={() => refresh.current?.click()} />}
+      {pages.stack.map((segment) => {
+        const page = pluginPage(segment)
+        return page?.kind === 'run' ? <SkillRunPage key={segment} name={page.id} t={t} /> : null
+      })}
     </div>
   )
 }

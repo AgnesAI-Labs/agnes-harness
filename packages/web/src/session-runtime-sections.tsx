@@ -1,4 +1,4 @@
-import type { SessionApprovalGrant, SessionToolsResult } from '@agnes/protocol'
+import { AGNES_ERRORS, type SessionApprovalGrant, type SessionToolsResult } from '@agnes/protocol'
 import type { Translate } from '@agnes/web-conversation/presentation'
 import {
   Button,
@@ -13,8 +13,26 @@ import {
 } from '@agnes/web-ui'
 
 type Tool = SessionToolsResult['tools'][number]
-/** Undefined while the daemon has not answered; `unavailable` when it could not list them. */
-export type SessionGrants = readonly SessionApprovalGrant[] | 'unavailable' | undefined
+/**
+ * Undefined while the daemon has not answered. A failed read says why: `denied` when this viewer may
+ * not list them, `unavailable` when the read itself failed. Neither means there are none.
+ */
+export type SessionGrants =
+  | readonly SessionApprovalGrant[]
+  | { failed: 'denied' | 'unavailable'; retries: number }
+  | undefined
+/** Manual retries offered for a temporary failure before the dialog asks to come back later. */
+export const GRANT_RETRY_LIMIT = 3
+
+/** A refusal (no right to read this session's grants) is told apart from a read that failed. */
+export function grantsFailure(error: unknown): 'denied' | 'unavailable' {
+  const code = (error as { code?: unknown } | null)?.code
+  return code === AGNES_ERRORS.CAPABILITY_DENIED ||
+    code === AGNES_ERRORS.AUTH_INVALID ||
+    code === AGNES_ERRORS.CLAIM_DENIED
+    ? 'denied'
+    : 'unavailable'
+}
 
 /** Session allowances lead, then standing ones; newest first within each. */
 export const orderGrants = (grants: readonly SessionApprovalGrant[]): SessionApprovalGrant[] =>
@@ -38,15 +56,15 @@ export function SessionGrantList({
   grants,
   revoking,
   onRevoke,
+  onRetry,
   t,
 }: {
   grants: SessionGrants
   revoking?: string | undefined
   onRevoke(grant: SessionApprovalGrant): void
+  onRetry?: (() => void) | undefined
   t: Translate
 }) {
-  // A daemon that cannot list them has nothing to show or undo here.
-  if (grants === 'unavailable') return null
   return (
     <SettingsSection
       title={t('session.runtime.grants')}
@@ -55,6 +73,23 @@ export function SessionGrantList({
     >
       {grants === undefined ? (
         <SettingsState tone="loading">{t('session.runtime.grantsLoading')}</SettingsState>
+      ) : 'failed' in grants ? (
+        <SettingsState tone="error" role="alert" data-testid="session-runtime-grants-failed">
+          <p>
+            {t(
+              grants.failed === 'denied'
+                ? 'session.runtime.grantsDenied'
+                : grants.retries >= GRANT_RETRY_LIMIT
+                  ? 'session.runtime.grantsLater'
+                  : 'session.runtime.grantsUnavailable',
+            )}
+          </p>
+          {grants.failed === 'unavailable' && onRetry && grants.retries < GRANT_RETRY_LIMIT ? (
+            <Button size="small" data-testid="session-runtime-grants-retry" onClick={onRetry}>
+              {t('session.runtime.grantsRetry')}
+            </Button>
+          ) : null}
+        </SettingsState>
       ) : grants.length === 0 ? (
         <SettingsState>{t('session.runtime.grantsEmpty')}</SettingsState>
       ) : (

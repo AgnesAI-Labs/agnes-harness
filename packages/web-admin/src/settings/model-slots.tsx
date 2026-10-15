@@ -8,6 +8,7 @@ import {
   AuxiliaryModelFields,
   Banner,
   Button,
+  Loadable,
   SettingsAdvanced,
   SettingsState,
   type Translate,
@@ -184,7 +185,7 @@ export function ModelSlotsPanel({
           }}
         />
       ) : (
-        !message && <SettingsState tone="loading">{t('modelSettings.slots.loading')}</SettingsState>
+        !message && <Loadable loading hasData={false} shape="rows" />
       )}
       {message === 'saved' && (
         <SettingsState tone="success" data-testid="model-slots-status">

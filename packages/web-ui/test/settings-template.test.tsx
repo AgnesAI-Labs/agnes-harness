@@ -57,7 +57,7 @@ it('shows one header per screen: a nested page hands its description and actions
   const headers = host.querySelectorAll('header.agnes-settings-page-heading')
   expect(headers).toHaveLength(1)
   const header = headers[0]
-  expect(header?.parentElement?.getAttribute('data-testid')).toBe('outer')
+  expect(header?.closest('[data-testid]')?.getAttribute('data-testid')).toBe('outer')
   expect(header?.querySelector('p')?.textContent).toBe('Keys used by tools.')
   expect(
     [...(header?.querySelectorAll('.agnes-settings-actions [data-testid]') ?? [])].map((node) =>

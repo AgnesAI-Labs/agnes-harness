@@ -24,6 +24,13 @@ export interface QuestionCardProps {
   locked: boolean
   submitting: boolean
   failed: boolean
+  /**
+   * The card cannot go on as it is: `review` re-reads a changed or closed question, `resend` sends the
+   * unconfirmed submission again with its own commandId, `retry` repeats a failure the backend marked
+   * safe; `unknown` stays locked; `rejected` may be answered again.
+   */
+  recovery?: { kind: 'review' | 'resend' | 'retry' | 'unknown' | 'rejected'; message?: string } | undefined
+  onRecover?: (() => void) | undefined
   onAnswers(answers: QuestionAnswers): void
   onSubmit(answers: QuestionAnswers): void
   /** For tests; the card otherwise reads the clock itself. */
@@ -197,9 +204,13 @@ export function QuestionCard(props: QuestionCardProps) {
           </div>
           <footer className="agnes-question-foot">
             <span className="agnes-question-hint" aria-live="polite">
-              {props.failed ? (
+              {props.recovery && props.recovery.kind !== 'rejected' ? (
+                <span className="agnes-question-error" role="alert" data-testid="question-recovery">
+                  {t(`ui.question.recover.${props.recovery.kind}`)}
+                </span>
+              ) : props.failed ? (
                 <span className="agnes-question-error" role="alert">
-                  {t('ui.question.failed')}
+                  {props.recovery?.message ?? t('ui.question.failed')}
                 </span>
               ) : current.multiple && Array.isArray(answers[current.id]) && answers[current.id]!.length ? (
                 t('ui.question.selected', { count: answers[current.id]!.length })
@@ -214,6 +225,11 @@ export function QuestionCard(props: QuestionCardProps) {
                 </>
               )}
             </span>
+            {props.recovery && ['review', 'resend', 'retry'].includes(props.recovery.kind) && (
+              <Button htmlType="button" size="small" data-testid="question-recover" onClick={props.onRecover}>
+                {t(`ui.question.recover.${props.recovery.kind}Action`)}
+              </Button>
+            )}
             {step > 0 && (
               <Button
                 htmlType="button"

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context, type Fiber } from '../../cordis/src/index.js'
 import {
   buildMountIdentity,
@@ -347,11 +347,17 @@ describe('EntryTree host transaction on a live tree', () => {
   function transactionHarness(options: { hangMountOf?: string; failMountOf?: string } = {}) {
     const parent = new Context()
     const events: string[] = []
+    let finishMount: (() => void) | undefined
+    let mountSignal: AbortSignal | undefined
     const importer: EntryImporter<Imported> = async (entry) => ({ plugin: entry.plugin })
     const adapter: EntryMountAdapter<Imported, Installation> = {
-      async mount(_parent, entry) {
+      async mount(_parent, entry, _imported, signal) {
+        if (entry.mountRevision === options.hangMountOf) mountSignal = signal
         events.push(`mount:${entry.id}:${entry.mountRevision}`)
-        if (entry.mountRevision === options.hangMountOf) return new Promise<Installation>(() => undefined)
+        if (entry.mountRevision === options.hangMountOf)
+          await new Promise<void>((resolve) => {
+            finishMount = resolve
+          })
         if (entry.mountRevision === options.failMountOf) throw new Error('start failed')
         return { id: `${entry.id}:${entry.mountRevision}`, fiber: parent.fiber }
       },
@@ -366,7 +372,13 @@ describe('EntryTree host transaction on a live tree', () => {
       },
     }
     const tree = new EntryTree(parent, importer, adapter)
-    return { events, tree, transaction: createEntryTreeHostTransaction(tree) }
+    return {
+      events,
+      tree,
+      transaction: createEntryTreeHostTransaction(tree),
+      finishMount: () => finishMount?.(),
+      mountSignal: () => mountSignal,
+    }
   }
 
   it('replace unmounts the old installation before mounting the new one', async () => {
@@ -388,16 +400,35 @@ describe('EntryTree host transaction on a live tree', () => {
     expect(tree.currentRows().map((r) => r.mountRevision)).toEqual(['v1'])
   })
 
-  it('a hung mount times out, compensates and taints the tree', async () => {
-    const { tree, transaction } = transactionHarness({ hangMountOf: 'v2' })
-    await tree.apply([row('a', 1, 'v1')])
-    expect(tree.tainted).toBe(false)
-    const failure = await transaction
-      .apply(await transaction.prepare([row('a', 1, 'v2')], { stepTimeoutMs: 20 }))
-      .catch((error: unknown) => error)
-    expect(failure).toMatchObject({ code: 'E_ROW_TRANSACTION' })
-    expect((failure as Error).cause).toMatchObject({ code: 'E_ROW_STUCK' })
-    expect(tree.tainted).toBe(true)
-    expect(tree.currentRows().map((r) => r.mountRevision)).toEqual(['v1'])
-  })
+  it.each(['never', 'late'] as const)(
+    'a %s mount times out, compensates and cannot leave a ghost installation',
+    async (settlement) => {
+      vi.useFakeTimers()
+      try {
+        const { events, tree, transaction, finishMount, mountSignal } = transactionHarness({
+          hangMountOf: 'v2',
+        })
+        await tree.apply([row('a', 1, 'v1')])
+        expect(tree.tainted).toBe(false)
+        const pending = transaction
+          .apply(await transaction.prepare([row('a', 1, 'v2')], { stepTimeoutMs: 20 }))
+          .catch((error: unknown) => error)
+        await vi.advanceTimersByTimeAsync(20)
+        const failure = await pending
+        expect(failure).toMatchObject({ code: 'E_ROW_TRANSACTION' })
+        expect((failure as Error).cause).toMatchObject({ code: 'E_ROW_STUCK' })
+        expect(tree.tainted).toBe(true)
+        expect(mountSignal()?.aborted).toBe(true)
+        expect(tree.currentRows().map((r) => r.mountRevision)).toEqual(['v1'])
+        if (settlement === 'late') {
+          finishMount()
+          await vi.advanceTimersByTimeAsync(0)
+          expect(events).toContain('unmount:a:v2')
+          expect(tree.currentRows().map((r) => r.mountRevision)).toEqual(['v1'])
+        }
+      } finally {
+        vi.useRealTimers()
+      }
+    },
+  )
 })

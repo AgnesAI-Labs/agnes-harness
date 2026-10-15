@@ -15,7 +15,16 @@ import type { PluginView } from '../src/pages/plugins/admin-view.js'
 import { MarketTab, marketTypes } from '../src/pages/plugins/market-tab.js'
 import { pluginsPageCatalog } from '../src/pages/plugins/page-locale.js'
 import { isBusinessAgent, isExperimental, orderInstalled } from '../src/pages/plugins/plugins-tab.js'
-import { CAPABILITIES, PLUGIN_TABS, pluginsRoute } from '../src/pages/plugins/route.js'
+import {
+  CAPABILITIES,
+  PLUGIN_TABS,
+  type PluginPage,
+  plainPluginsAddress,
+  pluginPage,
+  pluginPageId,
+  pluginPageTab,
+  pluginsRoute,
+} from '../src/pages/plugins/route.js'
 import { SkillFolders } from '../src/pages/plugins/skill-folders.js'
 
 afterEach(() => document.body.replaceChildren())
@@ -73,6 +82,65 @@ describe('plugins page route', () => {
   it('falls back to the plugins tab for anything it does not know', () => {
     for (const tab of ['discover', 'plugins.unknown', '', 7, null])
       expect(pluginsRoute({ tab })).toEqual({ tab: 'plugins' })
+  })
+})
+
+describe('plugins page pushed pages', () => {
+  const pages: readonly PluginPage[] = [
+    { kind: 'capability', id: 'search' },
+    { kind: 'plugin', id: '@agnes/plugin-attachments' },
+    { kind: 'market', id: 'fde-crm' },
+    { kind: 'skill', id: 'skill:workspace:review' },
+    { kind: 'mcp', id: 'github' },
+    { kind: 'review', id: 'cand-1' },
+    { kind: 'run', id: 'code-review' },
+    { kind: 'add-plugin' },
+    { kind: 'add-mcp' },
+    { kind: 'operations' },
+    { kind: 'search-engine' },
+  ]
+
+  it('names each page by one route segment and reads it back', () => {
+    for (const page of pages) expect(pluginPage(pluginPageId(page))).toEqual(page)
+    expect(pluginPageId({ kind: 'plugin', id: 'a' })).toBe('plugin:a')
+    expect(pluginPageId({ kind: 'add-mcp' })).toBe('add-mcp')
+    // A package id keeps its `/`: the address encodes each level on its own.
+    expect(pluginPageId({ kind: 'plugin', id: '@agnes/plugin-helper' })).toBe('plugin:@agnes/plugin-helper')
+    // An id keeps everything after the first colon, so resource ids with colons survive.
+    expect(pluginPage('skill:skill:workspace:review')).toEqual({
+      kind: 'skill',
+      id: 'skill:workspace:review',
+    })
+  })
+
+  it('does not name a page for a segment it does not know', () => {
+    for (const segment of ['', 'plugin:', ':x', 'unknown:x', 'memory', 'execution', 'toString', 'plugin'])
+      expect(pluginPage(segment), segment).toBeUndefined()
+  })
+
+  it('keeps each page under the tab it is opened from', () => {
+    expect(pages.map((page) => pluginPageTab(page))).toEqual([
+      'plugins',
+      'plugins',
+      'market',
+      'skills',
+      'mcp',
+      'review',
+      'skills',
+      undefined,
+      'mcp',
+      undefined,
+      undefined,
+    ])
+  })
+
+  it('puts the plain plugins address in place of an old link to a built-in, keeping everything else', () => {
+    expect(plainPluginsAddress('http://x/?page=plugins&tab=plugins.search&session=s1#h')).toBe(
+      '/?page=plugins&tab=plugins&session=s1#h',
+    )
+    expect(plainPluginsAddress('http://x/?page=plugins&tab=plugins.search&view=plugin%3Aa')).toBe(
+      '/?page=plugins&tab=plugins',
+    )
   })
 })
 

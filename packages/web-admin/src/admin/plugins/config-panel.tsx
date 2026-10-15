@@ -8,6 +8,7 @@ import {
   PluginSchemaFields,
   pluginSchemaDefault,
   SettingsSelect,
+  SettingsState,
   SettingsToolbar,
   useUiText,
 } from '@agnes/web-ui'
@@ -145,7 +146,7 @@ export function PluginConfigPanel({
           )}
         </p>
       )}
-      {!snapshot && !notice && <p role="status">{t('loading')}</p>}
+      {!snapshot && !notice && <SettingsState tone="loading">{t('loading')}</SettingsState>}
       {snapshot && !entry && <p>{t('empty')}</p>}
       <SettingsToolbar>
         <Button htmlType="button" disabled={saving} onClick={() => setLoadVersion((value) => value + 1)}>

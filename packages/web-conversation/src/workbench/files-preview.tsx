@@ -36,6 +36,8 @@ export function FilePreview({
   context,
   path,
   file,
+  error = '',
+  retry,
   change,
   workspace,
   wrap,
@@ -44,6 +46,9 @@ export function FilePreview({
   context: UiExtensionContext
   path: string
   file: SessionWorkspaceReadResult | undefined
+  /** Why this file could not be read; the panel's folder listing reports its own failures. */
+  error?: string
+  retry?: () => void
   change: SessionChange | undefined
   workspace: string | undefined
   wrap: boolean
@@ -132,6 +137,21 @@ export function FilePreview({
             </span>
           )}
         </p>
+      )}
+      {error && (
+        <SettingsState tone="error" data-testid="file-read-error">
+          {error}
+          {retry && (
+            <Button size="small" data-testid="file-read-retry" onClick={retry}>
+              {t('workbench.retry')}
+            </Button>
+          )}
+        </SettingsState>
+      )}
+      {!file && !error && (
+        <SettingsState tone="loading" data-testid="file-read-loading">
+          {t('workbench.files.reading')}
+        </SettingsState>
       )}
       {file?.binary && <SettingsState tone="empty">{t('workbench.files.binary')}</SettingsState>}
       {file?.truncated && <SettingsState tone="empty">{t('workbench.files.large')}</SettingsState>}

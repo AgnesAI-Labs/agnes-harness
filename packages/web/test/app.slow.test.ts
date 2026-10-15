@@ -52,6 +52,21 @@ vi.mock('@agnes/web-admin/settings', async (importOriginal) => {
   }
 })
 
+const selectionController = vi.hoisted(() => ({
+  open: undefined as ((id: string) => Promise<void>) | undefined,
+}))
+vi.mock('../src/app/session-controller.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/app/session-controller.js')>()
+  return {
+    ...actual,
+    createSessionController: (context: Parameters<typeof actual.createSessionController>[0]) => {
+      const controller = actual.createSessionController(context)
+      selectionController.open = controller.open
+      return controller
+    },
+  }
+})
+
 const binding = vi.hoisted(() => ({
   bindWebSession: vi.fn(),
   loadWebSession: vi.fn(),
@@ -288,8 +303,9 @@ function modelMenu(): HTMLElement {
 }
 
 afterEach(async () => {
-  window.dispatchEvent(new Event('pagehide'))
-  await Promise.resolve()
+  await act(async () => {
+    window.dispatchEvent(new Event('pagehide'))
+  })
   vi.resetModules()
   vi.clearAllMocks()
   binding.loadWebSession.mockReset()
@@ -2176,13 +2192,13 @@ describe('web session selection', () => {
     composer.value = '尚未发送的草稿'
     composer.dispatchEvent(new Event('input', { bubbles: true }))
     const removeItemId = pendingInputs[1]?.itemId
-    const remove = document.querySelector<HTMLButtonElement>(
-      '.composer-queue li:nth-child(2) .composer-queue-remove',
-    )
+    // Delete is the line's icon action: named for the message it removes, its tooltip says 删除.
+    const remove = document
+      .querySelectorAll<HTMLElement>('[data-testid="queued-steer"]')[1]
+      ?.querySelector<HTMLButtonElement>('[data-testid="queued-steer-withdraw"]')
     if (!remove) throw new Error('missing queued input deletion')
     expect(remove.type).toBe('button')
-    expect(remove.textContent).toBe('删除')
-    expect(remove.getAttribute('aria-label')).toBe('删除第 2 条待执行消息')
+    expect(remove.getAttribute('aria-label')).toBe('删除第 2 条消息')
     expect(cancel.disabled).toBe(false)
     expect(running.cancel).not.toHaveBeenCalled()
     const removing = deferred<number>()
@@ -2191,8 +2207,8 @@ describe('web session selection', () => {
     remove.click()
     expect(running.removeQueued).toHaveBeenCalledExactlyOnceWith(removeItemId)
     expect(remove.disabled).toBe(true)
+    // In flight it spins in place of its icon; the state is aria-busy, not a changed label.
     expect(remove.getAttribute('aria-busy')).toBe('true')
-    expect(remove.textContent).toBe('正在删除…')
     expect(
       Array.from(document.querySelectorAll<HTMLButtonElement>('.composer-queue button')).every(
         (button) => button.disabled,
@@ -2874,6 +2890,8 @@ describe('incremental opening', () => {
       },
       workspace: { list: vi.fn(async () => ({ items: [] })) },
       session: { list, load: vi.fn(async () => old) },
+      // Like every other client double here since approvals are looked up by decision: none pending.
+      approval: { list: vi.fn(async () => ({ decisions: [] })), decide: vi.fn(async () => undefined) },
       ...clientOverrides,
     })
     binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
@@ -2930,24 +2948,86 @@ describe('incremental opening', () => {
     await vi.waitFor(() => expect(notice.dataset.kind).toBe('session-recovery'))
   })
 
-  it('points to a pending approval before the loaded window without offering a verdict', async () => {
-    await bootWith(async () => ({
-      ...idleTimeline('old'),
-      upto: 9,
-      opState: {
-        turn: 1,
-        step: 1,
-        phase: 'tools',
-        parked: {
-          decisionRef: { sessionId: 's', id: 't-1', revision: 1 },
-          expiresAt: '2026-09-25T00:00:00Z',
+  it('keeps the selected session when failed opening cleanup finishes late', async () => {
+    const cleanup = deferred<void>()
+    const next = session('next', async () => idleTimeline('next'))
+    const { old } = await bootWith(
+      async () => {
+        throw new Error('old opening failed')
+      },
+      true,
+      (old) => old.detach.mockImplementationOnce(() => cleanup.promise),
+      {
+        session: {
+          list: vi.fn(async () => ({
+            items: [
+              { sessionId: 'old', title: 'Old' },
+              { sessionId: 'next', title: 'Next' },
+            ],
+          })),
         },
       },
-    }))
+    )
+    await vi.waitFor(() => expect(old.detach).toHaveBeenCalled())
+    binding.loadWebSession.mockResolvedValue({ session: next, offPermission: vi.fn() })
+    await vi.waitFor(() => expect(document.querySelector('[data-session="next"]')).not.toBeNull())
+    const opening = selectionController.open?.('next')
+    await opening
+    await vi.waitFor(() => expect(next.projectUIOpening).toHaveBeenCalled())
+    await vi.waitFor(() => expect(document.getElementById('task-title')?.textContent).toBe('Next'))
+    cleanup.resolve()
+    await act(async () => cleanup.promise)
+    expect(document.getElementById('notice')?.dataset.kind).not.toBe('session-recovery')
+    expect(document.getElementById('notice')?.textContent).not.toContain('old opening failed')
+    expect(document.getElementById('task-title')?.textContent).toBe('Next')
+    expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false)
+  })
+
+  it('restores the settings page and subpage named by the startup address', async () => {
+    await bootWith(
+      async () => idleTimeline('old'),
+      true,
+      () => {
+        history.replaceState(null, '', '/?session=old&settings=model/add-account')
+      },
+    )
+    await vi.waitFor(() => expect((document.getElementById('config') as HTMLDialogElement).open).toBe(true))
+    await vi.waitFor(() => expect(document.querySelector('[data-testid="account-page-add"]')).not.toBeNull())
+    expect(new URL(location.href).searchParams.get('settings')).toBe('model/add-account')
+    expect(new URL(location.href).searchParams.get('session')).toBe('old')
+  })
+
+  it('points to a pending approval before the loaded window without offering a verdict', async () => {
+    const decisions = vi.fn(async () => ({ decisions: [] }))
+    await bootWith(
+      async () => ({
+        ...idleTimeline('old'),
+        upto: 9,
+        opState: {
+          turn: 1,
+          step: 1,
+          phase: 'tools',
+          parked: {
+            decisionRef: { sessionId: 's', id: 't-1', revision: 1 },
+            expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          },
+        },
+      }),
+      true,
+      undefined,
+      { approval: { list: decisions, decide: vi.fn(async () => undefined) } },
+    )
     const approval = document.getElementById('approval') as HTMLElement
+    // The automatic search of earlier pages ends without the decision: the card says where it is.
     await vi.waitFor(() => expect(approval.textContent).toContain('有一项审批等待处理'))
+    expect(approval.textContent).not.toContain('已过期')
     const buttons = [...approval.querySelectorAll('button')].map((button) => button.textContent)
     expect(buttons).toEqual(['定位审批'])
+    // «定位审批» looks the decision up again, by its id, instead of giving up.
+    const lookups = decisions.mock.calls.length
+    approval.querySelector('button')?.click()
+    await vi.waitFor(() => expect(decisions.mock.calls.length).toBeGreaterThan(lookups))
+    expect(decisions).toHaveBeenLastCalledWith('s')
   })
 
   const parkedTimeline = (): UITimeline => ({
@@ -2957,7 +3037,10 @@ describe('incremental opening', () => {
       turn: 1,
       step: 1,
       phase: 'tools',
-      parked: { decisionRef: { sessionId: 's', id: 't-1', revision: 1 }, expiresAt: '2026-09-25T00:00:00Z' },
+      parked: {
+        decisionRef: { sessionId: 's', id: 't-1', revision: 1 },
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      },
     },
   })
 

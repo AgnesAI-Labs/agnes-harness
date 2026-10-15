@@ -13,7 +13,13 @@ import {
 } from '@agnes/web-ui'
 import { useEffect, useMemo, useSyncExternalStore } from 'react'
 import { ArtifactFile } from './artifact-file.js'
-import { type EarlierVersion, groupDeliverables, type TurnDeliverable } from './deliverable-labels.js'
+import {
+  deliverableKey,
+  deliverableProducer,
+  type EarlierVersion,
+  groupDeliverables,
+  type TurnDeliverable,
+} from './deliverable-labels.js'
 import { BoundSurface, type UiPlacementBinding } from './placements.js'
 import { openDeliverablesPanel } from './workbench-deliverables.js'
 
@@ -64,6 +70,8 @@ export function surfaceDeliverables(record: UiSurfaceRecord): TurnDeliverable[] 
           {
             file: parsed.value,
             surfaceId: surface.id,
+            componentId: component.id,
+            owner: record.owner,
             revision: surface.revision,
             lane: record.lane,
             workbench: surface.placement.workbench,
@@ -173,9 +181,10 @@ function DeliverableGroup({
 }) {
   const { t } = useUiText(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
   const groups = groupDeliverables(entries)
-  const card = (entry: TurnDeliverable & { version?: EarlierVersion }) => (
+  const card = (entry: TurnDeliverable & { version?: EarlierVersion }, source?: string) => (
     <ArtifactFile
-      key={`${entry.surfaceId}:${entry.file.artifact.sha256}`}
+      key={deliverableKey(entry)}
+      {...(source ? { source } : {})}
       file={entry.file}
       laneId={entry.lane}
       resources={binding.resources}
@@ -196,9 +205,9 @@ function DeliverableGroup({
         <p className="turn-deliverables-head">{t('ui.deliverables.count', { count: groups.length })}</p>
       )}
       <ul className="turn-deliverables-list">
-        {groups.map(({ latest, earlier }) => (
+        {groups.map(({ latest, earlier, mixedSources }) => (
           <li key={latest.file.name} className="turn-deliverable">
-            {card(latest)}
+            {card(latest, mixedSources ? deliverableProducer(latest) : undefined)}
             {earlier.length > 0 && (
               <Disclosure
                 variant="plain"
@@ -208,7 +217,7 @@ function DeliverableGroup({
               >
                 <ul className="turn-deliverables-list">
                   {earlier.map((entry) => (
-                    <li key={`${entry.surfaceId}:${entry.file.artifact.sha256}`}>{card(entry)}</li>
+                    <li key={deliverableKey(entry)}>{card(entry)}</li>
                   ))}
                 </ul>
               </Disclosure>

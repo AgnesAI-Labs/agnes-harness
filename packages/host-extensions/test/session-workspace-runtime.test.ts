@@ -400,7 +400,9 @@ describe('SessionWorkspaceRuntimeTable', () => {
     const events: string[] = []
     const built = await runtime('session-a', events)
     const table = new SessionWorkspaceRuntimeTable()
+    expect(table.isIdle).toBe(true)
     await table.open(built.value.binding, async () => built.value)
+    expect(table.isIdle).toBe(false)
     let releaseInvocation!: () => void
     const held = new Promise<void>((resolve) => {
       releaseInvocation = resolve
@@ -420,9 +422,11 @@ describe('SessionWorkspaceRuntimeTable', () => {
     })
     await Promise.resolve()
     expect(settled).toBe(false)
+    expect(table.isIdle).toBe(false)
     releaseInvocation()
     await invocation
     await closing
+    expect(table.isIdle).toBe(true)
     expect(table.close('session-a')).toBe(closing)
     expect(events).toContain('workspace')
     await built.readiness.revoke()

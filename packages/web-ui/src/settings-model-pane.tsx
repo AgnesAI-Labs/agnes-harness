@@ -1,8 +1,54 @@
-import type { ReactNode } from 'react'
+import { type ReactNode, useLayoutEffect, useRef, useSyncExternalStore } from 'react'
 import { fallbackT, type Translate } from './locales/index.js'
-import { SettingsPage, SettingsSection } from './settings-layout.js'
+import { SettingsPage } from './settings-layout.js'
 import { Button } from './ui/button.js'
 import { Icon } from './ui/icon.js'
+import { SettingsBlock } from './ui/settings-controls.js'
+import { SettingsDrill, SettingsInfo } from './ui/settings-subpages.js'
+
+/** What shows the account form inside a settings page: the account controller registers it. */
+export type SettingsAccountPage = {
+  /** Put the form into `host`; the returned function takes it back when the page closes. */
+  attach(host: HTMLElement, mode: 'add' | 'edit', accountId?: string | null): () => void
+}
+let accountPage: SettingsAccountPage | undefined
+const accountPageListeners = new Set<() => void>()
+/**
+ * The account controller owns the form and its fields; adding or editing an account opens a page
+ * of the settings dialog that borrows the form, instead of a centred dialog.
+ */
+export function setSettingsAccountPage(page: SettingsAccountPage | undefined): void {
+  accountPage = page
+  for (const listener of accountPageListeners) listener()
+}
+/** The settings drill ids of the two account pages, for opening them by their row. */
+export const ACCOUNT_PAGE_IDS = { add: 'add-account', edit: 'account' } as const
+
+function AccountPageHost({ mode }: { mode: 'add' | 'edit' }) {
+  const host = useRef<HTMLDivElement>(null)
+  const page = useSyncExternalStore(
+    (listener) => {
+      accountPageListeners.add(listener)
+      return () => {
+        accountPageListeners.delete(listener)
+      }
+    },
+    () => accountPage,
+  )
+  const accountId = useSyncExternalStore(
+    (listener) => {
+      window.addEventListener('popstate', listener)
+      return () => window.removeEventListener('popstate', listener)
+    },
+    () => new URL(location.href).searchParams.get('account'),
+  )
+  useLayoutEffect(() => {
+    const node = host.current
+    if (!node || !page) return
+    return page.attach(node, mode, accountId)
+  }, [mode, page, accountId])
+  return <div ref={host} className="account-page-host" data-testid={`account-page-${mode}`} />
+}
 
 export function SettingsModelPane({
   beforeAccounts,
@@ -15,11 +61,11 @@ export function SettingsModelPane({
 }) {
   return (
     <SettingsPage
+      routeId="model"
       id="model-settings-pane"
       className="settings-content"
       data-agnes-region="settings-pane"
       title={t('settings-shell.modelTitle')}
-      description={t('settings-shell.modelIntro')}
       headingId="config-title"
       bodyClassName="config-workspace"
       actions={
@@ -36,20 +82,42 @@ export function SettingsModelPane({
       }
     >
       {beforeAccounts}
-      <SettingsSection
+      <SettingsBlock
+        bare
         className="config-accounts-section"
         aria-label={t('settings-shell.accountsAria')}
-        title={t('settings-shell.accountsTitle')}
+        label={
+          <>
+            {t('settings-shell.accountsTitle')}
+            <SettingsInfo text={t('settings-shell.accountsNote')} />
+          </>
+        }
       >
         <div
           id="config-accounts"
           data-empty-text={t('accounts.empty')}
           data-loading-text={t('accounts.loading')}
         />
-        <p className="config-list-note">{t('settings-shell.accountsNote')}</p>
-      </SettingsSection>
+      </SettingsBlock>
       <div id="config-auxiliary-models" />
       {afterAccounts}
+      {/* The two account pages open from the header button and from a row; their rows stay hidden. */}
+      <SettingsDrill
+        id={ACCOUNT_PAGE_IDS.add}
+        hidden
+        label={t('settings-shell.addAccount')}
+        description={t('accounts.addContext')}
+      >
+        <AccountPageHost mode="add" />
+      </SettingsDrill>
+      <SettingsDrill
+        id={ACCOUNT_PAGE_IDS.edit}
+        hidden
+        label={t('accounts.title')}
+        description={t('accounts.context')}
+      >
+        <AccountPageHost mode="edit" />
+      </SettingsDrill>
     </SettingsPage>
   )
 }

@@ -42,8 +42,10 @@ export async function preferences(page: Page, locale = 'en', theme = 'light') {
 }
 
 export async function settings(page: Page, locale = 'en') {
-  await sidebar(page)
-  await page.getByRole('button', { name: locale === 'en' ? 'Settings' : '设置', exact: true }).click()
+  if (!(await page.locator('#config').isVisible())) {
+    await sidebar(page)
+    await page.getByRole('button', { name: locale === 'en' ? 'Settings' : '设置', exact: true }).click()
+  }
   // A reopened phone dialog retains its last detail page; return through its real navigation.
   await expect(page.locator('#config')).toBeVisible()
   const back = page.getByTestId('settings-back')
@@ -54,6 +56,11 @@ export async function settings(page: Page, locale = 'en') {
 /** Open a disclosure through its rendered control, including the React disclosure used by v3. */
 export async function expand(root: import('@playwright/test').Locator) {
   await expect(root).toBeVisible()
+  if (await root.evaluate((node) => node.matches('button[data-settings-drill]'))) {
+    if ((await root.getAttribute('aria-expanded')) !== 'true') await root.click()
+    await expect(root).toHaveAttribute('aria-expanded', 'true')
+    return
+  }
   const toggle = root.locator(':scope > summary, :scope > .agh-disclosure-summary').first()
   const native = (await root.evaluate((node) => node.tagName)) === 'DETAILS'
   const open = native
@@ -75,13 +82,6 @@ export async function expandActivityGroups(turn: import('@playwright/test').Loca
 }
 
 export async function sidebar(page: Page) {
-  const capability = page.getByRole('dialog').filter({
-    has: page.locator('[data-testid^="home-page-plugins-"]'),
-  })
-  if (await capability.isVisible()) {
-    await capability.getByRole('button', { name: /^(Close|关闭)$/, exact: true }).click()
-    await expect(capability).toBeHidden()
-  }
   if (!(await page.locator('#settings').isVisible())) await page.locator('#sidebar-toggle').click()
 }
 

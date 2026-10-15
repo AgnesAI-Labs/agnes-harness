@@ -961,6 +961,9 @@ it('reports disposal failure without reusing the sealed container, and can cold 
     const session = await host.createSession({ key: 'dispose', cwd: root })
     const generationId = session.pluginGenerationId
     const source = hostInspectionSource(host)
+    const call = source.activationBarrier.admit('service')
+    const retained = call.retain()
+    call.finish()
     const close = source.close.bind(source)
     vi.spyOn(source, 'close').mockImplementationOnce(async () => {
       await close()
@@ -976,6 +979,20 @@ it('reports disposal failure without reusing the sealed container, and can cold 
     ).toMatchObject({ state: 'draining', openSessions: 1, live: true })
     await session.close()
     await host.collectPluginGenerations?.()
+    try {
+      expect(
+        host.pluginGenerationStatus?.().generations.find((item) => item.id === generationId),
+      ).toMatchObject({ live: true, openSessions: 0 })
+    } finally {
+      retained.finish()
+    }
+    await vi.waitFor(
+      () =>
+        expect(
+          host.pluginGenerationStatus?.().generations.find((item) => item.id === generationId),
+        ).toMatchObject({ state: 'failed', live: false }),
+      { timeout: 5000 },
+    )
     expect(
       host.pluginGenerationStatus?.().generations.find((item) => item.id === generationId),
     ).toMatchObject({

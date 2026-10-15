@@ -12,6 +12,7 @@ export { driveLoop, runModelAdapter, scriptedModel } from '@agnes/plugin-runtime
 export { createPluginTestRegistration } from '../plugin-registration.js'
 export type { FaultServer, ModelFault } from './fault-server.js'
 export { startModelFaultServer } from './fault-server.js'
+export { type LoopContractReport, verifyLoopExecutionContract } from './loop-contract.js'
 export type { ModelFixture, RecordingOptions } from './model-replay.js'
 export { recordModelFixture, replayModelFixture } from './model-replay.js'
 

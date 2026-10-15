@@ -3403,6 +3403,15 @@
                 "enum": ["allow_once", "allow_always", "allow_permanent", "reject_once"]
               }
             },
+            "reconcile": {
+              "type": "object",
+              "description": "Present when Core asks whether a tool call whose result never arrived actually ran (decision owner core/unknown-outcome): the tool it asks about. The allowed options mean it ran; rejected means it did not.",
+              "additionalProperties": false,
+              "required": ["tool"],
+              "properties": {
+                "tool": { "type": "string", "maxLength": 256 }
+              }
+            },
             "rewrite": {
               "type": "object",
               "description": "Present when an approval_request hook rewrote the summary or context: the platform's own summary and the hook sources that rewrote it.",
@@ -3516,6 +3525,41 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
+                "providerCallMs": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Provider invocation wall time through adapter and capture cleanup; not the enclosing turn or provider service time."
+                },
+                "prepareMs": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Provider-local preparation before capture begins; excludes upstream context preparation."
+                },
+                "captureMs": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Union of blocking trace-capture intervals, including cleanup. Overlaps the other intervals; do not add again."
+                },
+                "dispatchMs": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Offset from provider entry to the first observed transport dispatch, after request capture. Absent without a transport observation."
+                },
+                "firstOutputMs": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Offset from provider entry to first decoded caller-visible text, thinking or tool output."
+                },
+                "outputMs": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Wall time from first visible output to observing the terminal outcome, including intervening local work."
+                },
+                "finalizeMs": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Wall time from terminal observation to adapter and trace cleanup completion."
+                },
                 "ttftMs": {
                   "type": "integer",
                   "minimum": 0
@@ -3879,6 +3923,41 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "providerCallMs": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Provider invocation wall time through adapter and capture cleanup; not the enclosing turn or provider service time."
+            },
+            "prepareMs": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Provider-local preparation before capture begins; excludes upstream context preparation."
+            },
+            "captureMs": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Union of blocking trace-capture intervals, including cleanup. Overlaps the other intervals; do not add again."
+            },
+            "dispatchMs": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Offset from provider entry to the first observed transport dispatch, after request capture. Absent without a transport observation."
+            },
+            "firstOutputMs": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Offset from provider entry to first decoded caller-visible text, thinking or tool output."
+            },
+            "outputMs": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Wall time from first visible output to observing the terminal outcome, including intervening local work."
+            },
+            "finalizeMs": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Wall time from terminal observation to adapter and trace cleanup completion."
+            },
             "ttftMs": {
               "type": "integer",
               "minimum": 0
@@ -6833,6 +6912,10 @@
         },
         "confirmFullOverride": {
           "type": "boolean"
+        },
+        "expectedRevision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
         }
       }
     },
@@ -6855,6 +6938,10 @@
           }
         },
         "hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "revision": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
         },

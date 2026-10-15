@@ -1,10 +1,13 @@
 import {
   SchemeThumbnail,
+  SettingsBlock,
   SettingsChoice,
-  SettingsGroup,
+  SettingsInfo,
   SettingsItem,
   SettingsOptionSelect,
   SettingsPageHeader,
+  SettingsSubpageFrame,
+  SettingsUndoScope,
   StateSwitch,
   setAdvancedSettingsShown,
   useAdvancedSettings,
@@ -38,109 +41,118 @@ export function SettingsStaticPane({
       data-agnes-region="settings-pane"
       hidden
     >
-      <SettingsPageHeader
-        title={<span>{text('settings-shell.appearanceTitle', '通用')}</span>}
-        description={
-          <span>{text('settings-shell.appearanceIntro', '界面外观和语言；只保存在这台电脑上。')}</span>
-        }
-      />
-      <div className="config-workspace">
-        <SettingsDshHost name="settings.general.item" />
-        {/* Each setting is one row: its name on the left, its control on the right. Skins and
-         languages are lists read at run time, so they are pickers, not fixed segments. */}
-        <fieldset
-          className="appearance-options appearance-schemes"
-          aria-label={text('settings-shell.palette', '配色')}
+      <SettingsUndoScope>
+        <SettingsSubpageFrame
+          routeId="general"
+          header={
+            <SettingsPageHeader
+              className="agnes-settings-page-top"
+              title={<span>{text('settings-shell.appearanceTitle', '通用')}</span>}
+            />
+          }
         >
-          <legend>{text('settings-shell.palette', '配色')}</legend>
-          <div className="appearance-thumbs">
-            <SettingsChoice
-              type="radio"
-              name="agnes-theme"
-              value="system"
-              preview={<SchemeThumbnail scheme="system" />}
-              label={<span>{text('settings-shell.paletteSystem', '跟随系统')}</span>}
-              hint={<span>{text('settings-shell.paletteSystemHint', '随操作系统的深浅色设置自动切换')}</span>}
-            />
-            <SettingsChoice
-              type="radio"
-              name="agnes-theme"
-              value="light"
-              preview={<SchemeThumbnail scheme="light" />}
-              label={<span>{text('settings-shell.paletteLight', '浅色')}</span>}
-              hint={<span>{text('settings-shell.paletteLightHint', '始终使用浅色界面')}</span>}
-            />
-            <SettingsChoice
-              type="radio"
-              name="agnes-theme"
-              value="dark"
-              preview={<SchemeThumbnail scheme="dark" />}
-              label={<span>{text('settings-shell.paletteDark', '深色')}</span>}
-              hint={<span>{text('settings-shell.paletteDarkHint', '始终使用深色界面')}</span>}
-            />
+          <div className="config-workspace">
+            <SettingsDshHost name="settings.general.item" />
+            {/* One row per setting: name left, control right. Skins and languages are lists read
+             at run time, so they are pickers. */}
+            <SettingsBlock
+              label={
+                <>
+                  {text('settings-shell.appearanceGroup', '外观')}
+                  <SettingsInfo
+                    text={text('settings-shell.appearanceIntro', '界面外观和语言；只保存在这台电脑上。')}
+                  />
+                </>
+              }
+              className="appearance-group"
+            >
+              <SettingsItem label={text('settings-shell.palette', '配色')}>
+                <fieldset
+                  className="appearance-thumbs agnes-settings-fieldset"
+                  aria-label={text('settings-shell.palette', '配色')}
+                >
+                  <SettingsChoice
+                    type="radio"
+                    name="agnes-theme"
+                    value="system"
+                    preview={<SchemeThumbnail scheme="system" />}
+                    label={<span>{text('settings-shell.paletteSystem', '跟随系统')}</span>}
+                  />
+                  <SettingsChoice
+                    type="radio"
+                    name="agnes-theme"
+                    value="light"
+                    preview={<SchemeThumbnail scheme="light" />}
+                    label={<span>{text('settings-shell.paletteLight', '浅色')}</span>}
+                  />
+                  <SettingsChoice
+                    type="radio"
+                    name="agnes-theme"
+                    value="dark"
+                    preview={<SchemeThumbnail scheme="dark" />}
+                    label={<span>{text('settings-shell.paletteDark', '深色')}</span>}
+                  />
+                </fieldset>
+              </SettingsItem>
+              <SettingsItem label={text('settings-shell.skin', '皮肤')} labelId="skin-select-label">
+                <span className="appearance-picker">
+                  <SettingsOptionSelect id="skin-select" aria-labelledby="skin-select-label" />
+                  <span id="skin-option-items" />
+                </span>
+              </SettingsItem>
+              <SettingsItem label={text('settings-shell.fontScale', '字号')}>
+                <fieldset
+                  className="appearance-choices agnes-settings-fieldset"
+                  aria-label={text('settings-shell.fontScale', '字号')}
+                >
+                  <SettingsChoice
+                    type="radio"
+                    name="agnes-font-scale"
+                    value="small"
+                    label={<span>{text('settings-shell.fontSmall', '小')}</span>}
+                  />
+                  <SettingsChoice
+                    type="radio"
+                    name="agnes-font-scale"
+                    value="normal"
+                    label={<span>{text('settings-shell.fontNormal', '标准')}</span>}
+                  />
+                  <SettingsChoice
+                    type="radio"
+                    name="agnes-font-scale"
+                    value="large"
+                    label={<span>{text('settings-shell.fontLarge', '大')}</span>}
+                  />
+                </fieldset>
+              </SettingsItem>
+              <SettingsItem
+                label={text('settings.appearance.language', '语言')}
+                labelId="locale-select-label"
+              >
+                <span className="appearance-picker">
+                  <SettingsOptionSelect id="locale-select" aria-labelledby="locale-select-label" />
+                </span>
+              </SettingsItem>
+            </SettingsBlock>
+            {extras}
+            <SettingsBlock>
+              <SettingsItem
+                label={<span>{text('settings-shell.showAdvanced', '显示高级设置')}</span>}
+                info={text('settings-shell.showAdvancedHelp', '运行配置、诊断和各页里的高级选项。')}
+              >
+                <StateSwitch
+                  id="settings-advanced-switch"
+                  testId="settings-advanced-switch"
+                  label={text('settings-shell.showAdvanced', '显示高级设置')}
+                  checked={advanced}
+                  disabled={false}
+                  onToggle={setAdvancedSettingsShown}
+                />
+              </SettingsItem>
+            </SettingsBlock>
           </div>
-        </fieldset>
-        <SettingsGroup className="appearance-group">
-          <fieldset className="appearance-options" aria-label={text('settings-shell.skin', '皮肤')}>
-            <legend>{text('settings-shell.skin', '皮肤')}</legend>
-            <div className="appearance-picker">
-              <SettingsOptionSelect id="skin-select" />
-              <div id="skin-option-items" />
-            </div>
-          </fieldset>
-          <fieldset className="appearance-options" aria-label={text('settings-shell.fontScale', '字号')}>
-            <legend>{text('settings-shell.fontScale', '字号')}</legend>
-            <div className="appearance-choices">
-              <SettingsChoice
-                type="radio"
-                name="agnes-font-scale"
-                value="small"
-                label={<span>{text('settings-shell.fontSmall', '小')}</span>}
-                hint={<span>{text('settings-shell.fontSmallHint', '界面整体缩小一档')}</span>}
-              />
-              <SettingsChoice
-                type="radio"
-                name="agnes-font-scale"
-                value="normal"
-                label={<span>{text('settings-shell.fontNormal', '标准')}</span>}
-                hint={<span>{text('settings-shell.fontNormalHint', '默认字号')}</span>}
-              />
-              <SettingsChoice
-                type="radio"
-                name="agnes-font-scale"
-                value="large"
-                label={<span>{text('settings-shell.fontLarge', '大')}</span>}
-                hint={<span>{text('settings-shell.fontLargeHint', '界面整体放大一档')}</span>}
-              />
-            </div>
-          </fieldset>
-          <fieldset className="appearance-options" aria-label={text('settings.appearance.language', '语言')}>
-            <legend>{text('settings.appearance.language', '语言')}</legend>
-            <div className="appearance-picker">
-              <SettingsOptionSelect id="locale-select" />
-            </div>
-          </fieldset>
-        </SettingsGroup>
-        {extras}
-        <SettingsGroup>
-          <SettingsItem
-            icon="sliders-horizontal"
-            label={<span>{text('settings-shell.showAdvanced', '显示高级设置')}</span>}
-            description={
-              <span>{text('settings-shell.showAdvancedHelp', '运行配置、诊断和各页里的高级选项。')}</span>
-            }
-          >
-            <StateSwitch
-              id="settings-advanced-switch"
-              testId="settings-advanced-switch"
-              label={text('settings-shell.showAdvanced', '显示高级设置')}
-              checked={advanced}
-              disabled={false}
-              onToggle={setAdvancedSettingsShown}
-            />
-          </SettingsItem>
-        </SettingsGroup>
-      </div>
+        </SettingsSubpageFrame>
+      </SettingsUndoScope>
     </section>
   )
 }

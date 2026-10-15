@@ -376,7 +376,7 @@ A surface with both `placement.inline` and `placement.workbench` displays a summ
 
 ### Artifact file cards
 
-The `artifact-file` component binds `dataKey` to `{name, description, artifact: {sha256, size, mime}}`. It accepts a session artifact identity, never a path or URL. Web shows the filename, description, type and formatted size in both placements, with preview and download controls. It reuses the session/lane-authorized resource loaders and releases loaded resources on unmount. HTML preview uses the existing document sanitizer; it cannot execute scripts or fetch external resources. Unsupported file types and files above the existing 1 MiB preview limit remain downloadable (up to the existing 32 MiB download limit).
+The `artifact-file` component binds `dataKey` to `{name, description, artifact: {sha256, size, mime}}`. It accepts a session artifact identity, never a path or URL. Web shows the filename, description, type and formatted size in each placement the surface enables (the answer that produced it when `inline`, the deliverables tab when `workbench`), with preview and download controls. It reuses the session/lane-authorized resource loaders and releases loaded resources on unmount. HTML preview uses the existing document sanitizer; it cannot execute scripts or fetch external resources. Unsupported file types and files above the existing 1 MiB preview limit remain downloadable (up to the existing 32 MiB download limit).
 
 `UiSurface.titleKey` is optional: Web resolves it through the Intelligent UI locale catalog, while `title` remains the required fallback for other clients. The built-in deliverables surface uses `ui.deliverables`. Existing surface components and persisted records remain valid.
 

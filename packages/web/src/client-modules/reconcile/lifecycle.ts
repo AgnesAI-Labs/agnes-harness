@@ -19,6 +19,7 @@ import { withTimeout } from './styles.js'
 
 export interface ReconcileLifecycleContext {
   ctx: Context
+  identity(): string | undefined
   registry: { spec?: (name: string) => unknown } | undefined
   timeouts: { import: number; styles: number; apply: number; dispose: number }
   importer: ModuleImporter
@@ -131,6 +132,8 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
 
   function applyTarget(rowId: string, state: PackageState, target: ReadyClientModule): Promise<void> {
     const epoch = ++state.epoch
+    const identity = context.identity()
+    const current = () => epoch === state.epoch && identity === context.identity()
     state.packageId = target.packageId
     state.target = target
     setPhase(rowId, state, 'loading')
@@ -139,7 +142,7 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
       let stagedStyles: PreparedClientStyles | undefined
       try {
         if (state.cleanupPending && !(await disposeCleanup(rowId, state))) {
-          if (epoch === state.epoch) fail(rowId, state, 'dispose')
+          if (current()) fail(rowId, state, 'dispose')
           return
         }
         // A timed-out disposer may still be unwinding.  Do not let the next retry mount a new
@@ -149,7 +152,7 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
         const catalogError = validateCatalogContract(target)
         const unsupportedSlot = target.slots.find((slot) => registry?.spec && !registry.spec(slot))
         if (catalogError !== undefined || unsupportedSlot !== undefined) {
-          if (epoch === state.epoch) fail(rowId, state, 'unsupported-slot')
+          if (current()) fail(rowId, state, 'unsupported-slot')
           return
         }
         await lifecycle('invalidate', rowId)
@@ -171,7 +174,7 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
               : styles.status === 'rejected'
                 ? styles.reason
                 : undefined
-          if (epoch === state.epoch)
+          if (current())
             fail(
               rowId,
               state,
@@ -187,7 +190,7 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
         stagedStyles = styles.value
       } catch (error) {
         stagedStyles?.dispose()
-        if (epoch === state.epoch)
+        if (current())
           fail(
             rowId,
             state,
@@ -201,11 +204,11 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
           mod === null ||
           typeof (mod as Record<string, unknown>).apply !== 'function'
         ) {
-          if (epoch === state.epoch) fail(rowId, state, 'module-shape')
+          if (current()) fail(rowId, state, 'module-shape')
           stagedStyles.dispose()
           return
         }
-        if (epoch !== state.epoch) {
+        if (!current()) {
           stagedStyles.dispose()
           return
         }
@@ -232,7 +235,7 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
             stagedStyles.dispose()
             state.cleanup = { fiber: old, styles: oldStyles }
             state.cleanupPending = Boolean(old || oldStyles)
-            if (epoch === state.epoch)
+            if (current())
               fail(
                 rowId,
                 state,
@@ -244,7 +247,7 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
         await lifecycle('remove-styles', rowId)
         oldStyles?.dispose()
         state.ownerRowId = undefined
-        if (epoch !== state.epoch) {
+        if (!current()) {
           stagedStyles.dispose()
           try {
             removeOwner(oldOwnerRowId)
@@ -285,10 +288,10 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
         } catch {
           await discardUncommitted(fiber, rowId)
           stagedStyles.dispose()
-          if (epoch === state.epoch) fail(rowId, state, 'apply')
+          if (current()) fail(rowId, state, 'apply')
           return
         }
-        if (epoch !== state.epoch) {
+        if (!current()) {
           await discardUncommitted(fiber, rowId)
           stagedStyles.dispose()
           return
@@ -301,7 +304,7 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
         setPhase(rowId, state, 'active')
       } catch (error) {
         stagedStyles?.dispose()
-        if (epoch === state.epoch)
+        if (current())
           fail(
             rowId,
             state,

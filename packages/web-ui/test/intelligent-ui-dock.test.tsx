@@ -99,7 +99,7 @@ describe('docked surface summary', () => {
     expect(docksInConversation({ ...one, placement: workbench })).toBe(true)
     expect(rendersInAnswer({ ...one, placement: workbench })).toBe(false)
     expect(docksInConversation({ ...one, placement: { inline: false, workbench: true } })).toBe(true)
-    // Words with nothing to act on stay in the conversation, whatever the author preferred.
+    // Words with nothing to act on read in the answer when they may show inline; placement still decides.
     const note = {
       ...one,
       placement: { inline: false, workbench: true },
@@ -107,8 +107,14 @@ describe('docked surface summary', () => {
       data: { note: 'D1 新街口 | D2 玄武湖' },
     } as typeof one
     expect(isTextOnly(note)).toBe(true)
-    expect(rendersInAnswer(note)).toBe(true)
-    expect(docksInConversation(note)).toBe(false)
+    expect(rendersInAnswer(note)).toBe(false)
+    expect(docksInConversation(note)).toBe(true)
+    const inlineNote = {
+      ...note,
+      placement: { inline: true, workbench: true, preferred: 'workbench' },
+    } as typeof one
+    expect(rendersInAnswer(inlineNote)).toBe(true)
+    expect(docksInConversation(inlineNote)).toBe(false)
     const files = {
       ...one,
       components: [{ id: 'file', kind: 'artifact-file', dataKey: 'file' }],

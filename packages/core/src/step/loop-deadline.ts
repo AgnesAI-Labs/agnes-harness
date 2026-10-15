@@ -14,9 +14,19 @@ export class LoopScope {
   private readonly waits = new Set<symbol>()
   private activity = 0
   private expired = false
+  private revoked = false
+
+  get alive(): boolean {
+    return !this.revoked
+  }
+
+  assertAlive(): void {
+    if (this.revoked) throw new CoreError('E_CLOSED', 'Loop execution scope STOPPED: revoked')
+  }
 
   /** Registers a port call; the returned function ends it, and so does revoking the scope. */
   own(end: () => void): () => void {
+    this.assertAlive()
     const finish = () => {
       if (this.operations.delete(finish)) end()
     }
@@ -34,6 +44,7 @@ export class LoopScope {
    * platform timer. The step deadline does not run during it, and its end counts as activity.
    */
   beginWait(): () => void {
+    this.assertAlive()
     const wait = Symbol()
     this.waits.add(wait)
     return () => {
@@ -57,6 +68,7 @@ export class LoopScope {
 
   /** Cancellation revokes pending ports without turning a user stop into an idle timeout error. */
   revoke(): void {
+    this.revoked = true
     for (const finish of [...this.operations]) finish()
     this.waits.clear()
   }

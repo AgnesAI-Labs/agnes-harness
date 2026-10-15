@@ -2,6 +2,7 @@ import { type PageSessionMeta, readSessionTitle, type UITurn, type WorkspaceEntr
 import type { LedgerEvent, PermissionOutcome, Session } from '@agnes/sdk/browser'
 import { createLiveProjection } from '@agnes/web-conversation/live-projection'
 import type { KnownSessionModel } from '@agnes/web-conversation/presentation'
+import { preserveRouteParams } from '@agnes/web-ui'
 import type { AppSessionContext } from '../app.js'
 import { forkTitle } from '../session-actions.js'
 import { bindWebSession, loadWebSession } from '../session-binding.js'
@@ -111,9 +112,11 @@ export function createSessionController(
     context.liveApproval = undefined
     try {
       const stopped = await stopWithTimeout(context.stopEvents)
-      context.stopEvents = undefined
-      context.live = undefined
-      if (!stopped) {
+      if (epoch === context.selection) {
+        context.stopEvents = undefined
+        context.live = undefined
+      }
+      if (!stopped && epoch === context.selection) {
         context.notice.setText(context.t('app.notice.oldSessionClosing'))
         context.notice.setKind('warning')
       }
@@ -127,7 +130,7 @@ export function createSessionController(
             finish: (answer: PermissionOutcome) => {
               permissionContext.signal.removeEventListener('abort', reject)
               if (context.liveApproval === pending) context.liveApproval = undefined
-              context.render()
+              if (epoch === context.selection) context.render()
               resolve(permissionContext.signal.aborted ? { unanswered: 'detached' } : answer)
             },
           }
@@ -202,7 +205,8 @@ export function createSessionController(
       url.searchParams.set('session', id)
       const settingsHash =
         url.searchParams.has('settings') && url.hash.startsWith('#settings-subsection-') ? url.hash : ''
-      history.replaceState(null, '', `${url.pathname}${url.search}${settingsHash}`)
+      url.hash = settingsHash
+      history.replaceState(null, '', preserveRouteParams(url))
       context.offPermission = binding.offPermission
       let opened = false
       const selected = () => context.current === loaded && epoch === context.selection
@@ -261,7 +265,10 @@ export function createSessionController(
           })
         },
         event(event) {
-          if (selected()) void followEvent(loaded, event).catch(context.showError)
+          if (selected())
+            void followEvent(loaded, event).catch((error) => {
+              if (selected()) context.showError(error)
+            })
         },
         error(error) {
           if (selected()) context.showError(error)
@@ -292,18 +299,20 @@ export function createSessionController(
         context.modelChangePending = false
         context.offPermission?.()
         context.offPermission = undefined
+        const stop = context.stopEvents
+        context.stopEvents = undefined
+        context.live = undefined
         try {
-          await stopWithTimeout(context.stopEvents)
+          await stopWithTimeout(stop)
         } catch {
           // The original loading failure is the useful error for this selection.
         }
-        context.stopEvents = undefined
-        context.live = undefined
         try {
           await failed?.detach()
         } catch {
           // The failed binding is already unavailable to the composer.
         }
+        if (epoch !== context.selection) return
         // 加载失败没有可保留的画面：清空转录区回到空态，错误走 #notice。
         context.renderer.reset()
         if (options.preserveSending) {
@@ -320,6 +329,7 @@ export function createSessionController(
           (await context.readOnlyController.show(id, error, epoch))
         )
           return
+        if (epoch !== context.selection) return
         context.render()
         if (!options.created && !options.preserveSending) {
           context.showSessionRecovery(error, id)
@@ -353,16 +363,20 @@ export function createSessionController(
 
   /** What watching the event stream used to do per event: titles, the list, the run receipt. */
   async function followEvent(session: Session, event: LedgerEvent): Promise<void> {
+    const epoch = context.selection
+    const showError = (error: unknown) => {
+      if (context.selection === epoch && context.current === session) context.showError(error)
+    }
     if (['inbox', 'x/core/control', 'x/core/pause-state', 'turn/start', 'turn/end'].includes(event.type))
-      void context.refreshSessionControls(session).catch(context.showError)
+      void context.refreshSessionControls(session).catch(showError)
     const title = readSessionTitle(event)
     if (title?.status === 'generated') {
       // The list owns user overrides; a late automatic event cannot overwrite one.
-      await context.list().catch(context.showError)
+      await context.list().catch(showError)
       context.titleRefresh.stop(session.id)
     } else if (title?.status === 'failed') context.titleRefresh.stop(session.id)
     // A new message makes this the most recently chatted session; the daemon now lists it first.
-    if (event.type === 'user/message') void context.list().catch(context.showError)
+    if (event.type === 'user/message') void context.list().catch(showError)
     if (
       event.type === 'turn/end' &&
       (event.data as { reason?: string }).reason === 'completed' &&
@@ -373,11 +387,14 @@ export function createSessionController(
   }
 
   async function forkTurn(turn: UITurn): Promise<void> {
+    const epoch = context.selection
     const parent = context.current
     if (!parent || !turn.forkable || turn.endSeq === undefined || context.projection?.opState !== null)
       throw new Error(context.t('app.fork.notIdle'))
     const forked = await context.client.session.fork(parent.id, turn.endSeq)
+    if (context.selection !== epoch || context.current !== parent) return
     await open(forked.id, { created: forked })
+    if (context.selection !== epoch + 1 || context.current?.id !== forked.id) return
     context.notice.setText(context.t('app.fork.created'))
     context.notice.setKind('')
     context.composerRuntime.focus()

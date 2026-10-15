@@ -21,7 +21,7 @@ const meta = {
   isOpenWorld: true,
   replay: 'never' as const,
   costHint: {},
-  deferLoading: false,
+  deferLoading: 'auto' as const,
 }
 
 export function createPtyTools(jobs: ShellJobs) {

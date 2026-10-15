@@ -1,4 +1,5 @@
 import { settingsSections } from '@agnes/web-client'
+import { isPageDialog, showDialogHost } from '@agnes/web-ui'
 
 export function element<K extends keyof HTMLElementTagNameMap>(id: string, tag: K): HTMLElementTagNameMap[K] {
   const found = document.getElementById(id)
@@ -12,11 +13,14 @@ export function button(id: string): HTMLButtonElement {
 
 export function setDialog(dialog: HTMLDialogElement, open: boolean, focus?: HTMLElement): void {
   if (open) {
+    // A confirmation sits over the page it asks about; a page replaces another page.
+    const page = isPageDialog(dialog)
     for (const other of document.querySelectorAll('dialog[open]')) {
       if (other === dialog) continue
       // The settings dialog is the page these dialogs belong to: closing it left the user with
       // nothing on screen after every source check, confirmation or detail view.
       if (other.id === 'config') continue
+      if (other instanceof HTMLDialogElement && isPageDialog(other) !== page) continue
       try {
         if (other instanceof HTMLDialogElement && other.open) other.close()
         else other.removeAttribute('open')
@@ -25,13 +29,7 @@ export function setDialog(dialog: HTMLDialogElement, open: boolean, focus?: HTML
       }
     }
   }
-  if (open && !dialog.open) {
-    try {
-      dialog.showModal()
-    } catch {
-      dialog.setAttribute('open', '')
-    }
-  }
+  if (open) showDialogHost(dialog)
   if (!open && dialog.open) {
     try {
       dialog.close()

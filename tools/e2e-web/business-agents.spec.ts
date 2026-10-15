@@ -28,7 +28,9 @@ test('fresh Demo home starts an FDE bundle from the business agents page', async
   const card = page.getByTestId('business-agent-code-review')
   await expect(card.getByTestId('business-agent-sample')).toContainText('Review the sample patch')
   await page.getByTestId('business-agent-start-code-review').click()
-  await expect(page.getByTestId('agent-start-dialog').getByRole('dialog')).toBeVisible()
+  // The start is a page inside Agent FDE (Agent FDE › the agent), not a dialog.
+  await expect(page.getByTestId('agent-start-dialog')).toBeVisible()
+  await expect(page.getByTestId('push-header')).toContainText('Agent FDE')
   expect((await client.packages.list({ profile: 'local-dev' })).packages.map((row) => row.id)).not.toContain(
     '@agnes-fde/code-review',
   )

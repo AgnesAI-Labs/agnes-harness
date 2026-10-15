@@ -23,6 +23,8 @@ export type ModelAdapterStreamOptions = {
   /** Optional final serialized JSON; omit authentication and transport options. */
   reportRequest?: (body: unknown, attemptId?: string) => Promise<void>
   reportAttempt?: (event: import('./system-prompt.js').ModelAdapterAttemptObservation) => Promise<void>
+  /** Observe actual transport dispatch after any local request capture; absent means unknown. */
+  reportDispatch?: () => void
   reportSent?: (report: { sentHash: string; transforms: ContractStamp['transforms'] }) => void
 }
 

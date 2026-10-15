@@ -402,7 +402,7 @@
   /* One row per call: #, input, output, cost and its share of the cost; numbers right-aligned. */
   .turn-call-row {
     display: grid;
-    grid-template-columns: 2rem repeat(3, minmax(0, 1fr)) 3.625rem;
+    grid-template-columns: 3.25rem repeat(2, minmax(0, 1fr)) minmax(max-content, 1fr) 3.625rem;
     align-items: center;
     gap: var(--s8);
     width: 100%;
@@ -464,7 +464,7 @@
   .turn-call .usage-grid,
   .turn-usage-calls.call-usage .usage-grid {
     display: grid;
-    grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
     gap: 2px var(--s12);
     margin: 0 0 var(--s8);
     color: var(--agnes-text-tertiary);

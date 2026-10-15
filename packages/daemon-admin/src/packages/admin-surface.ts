@@ -33,7 +33,7 @@ import {
   SystemPromptSnapshot,
 } from '@agnes/protocol/gen/agnes-v1'
 
-import { configurationReadOnly } from './permissions.js'
+import { configurationFailureStatus, configurationReadOnly } from './permissions.js'
 
 const PREFIX = '/admin/plugins/api/'
 // Exported so tests can assert this stays in lockstep with the Web BFF client's own hand-maintained
@@ -478,7 +478,7 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
               record(failure) && typeof failure.code === 'number' && record(failure.data)
                 ? normalizeRpcError(failure as unknown as RpcError)
                 : httpRpcError(502, 'E_ADMIN_BACKEND')
-            reply(response, envelope.data?.code === 'CONFIG_INVALID_INPUT' ? 400 : 502, { error: envelope })
+            reply(response, configurationFailureStatus(envelope.data?.code), { error: envelope })
           }
           return true
         }

@@ -4,8 +4,8 @@ import {
   Banner,
   Button,
   type ConfigIssue,
+  ConfirmDialog,
   configIssues,
-  Dialog,
   EmptyState,
   Field,
   Icon,
@@ -13,6 +13,7 @@ import {
   IconTile,
   ListRow,
   Menu,
+  PushPage,
   SchemaControl,
   SearchBar,
   Segmented,
@@ -26,9 +27,11 @@ import {
   SettingsSection,
   SettingsState,
   SettingsTechnicalDetails,
+  SettingsToolbar,
   StateSwitch,
   setDisclosureOpen,
   Tag,
+  usePushStack,
   useUiText,
 } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
@@ -37,6 +40,8 @@ import { searchConfigSchema } from './config-schemas.js'
 import { useSettingsOverlay } from './overlay.js'
 import { SEARCH_NAMESPACE, searchCatalog } from './search-locale.js'
 
+/** The page that adds or edits a search service, pushed over 网页搜索. */
+const EDITOR_PAGE = 'search-engine'
 const PROVIDER_IDS = ['brave', 'tavily', 'exa', 'perplexity', 'searxng'] as const
 type ProviderId = (typeof PROVIDER_IDS)[number]
 type SearchRow = {
@@ -120,7 +125,12 @@ export function SearchPanel({
 }) {
   const { t: ux } = useUiText(SEARCH_NAMESPACE, searchCatalog)
   const lifetime = useRef<AbortController>()
-  const [editor, setEditor] = useState(false)
+  // Adding or editing a service is a page over 网页搜索 (`search-engine`), not a dialog.
+  const pages = usePushStack()
+  const editor = pages.stack.at(-1) === EDITOR_PAGE
+  const leaveEditor = () => {
+    if (pages.stack.at(-1) === EDITOR_PAGE) pages.back()
+  }
   const [confirmClear, setConfirmClear] = useState<SearchRow>()
   const [reload, setReload] = useState(0)
   const [elapsed, setElapsed] = useState<number>()
@@ -143,7 +153,7 @@ export function SearchPanel({
   const [issues, setIssues] = useState<readonly ConfigIssue[]>([])
   const invalid = (name: string) => issues.some((issue) => issue.path === `/${name}`)
   const [hits, setHits] = useState<SearchHit[]>([])
-  useSettingsOverlay(editor || !!confirmClear)
+  useSettingsOverlay(!!confirmClear)
   const selected = status?.providers.find((row) => row.id === providerId)
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: the retry counter explicitly starts a fresh read.
@@ -251,7 +261,7 @@ export function SearchPanel({
       flushSync(() => setApiKey(''))
       setStatus(value)
       setNotice('searchSaved')
-      setEditor(false)
+      leaveEditor()
     } catch (error) {
       if (lifetime.current?.signal.aborted) return
       setErrorEnvelope((error as { envelope?: unknown })?.envelope)
@@ -368,7 +378,7 @@ export function SearchPanel({
     setApiKey('')
     setError('')
     setIssues([])
-    setEditor(true)
+    pages.open(EDITOR_PAGE)
   }
   const problem = failed
     ? t('searchUnavailable')
@@ -577,34 +587,7 @@ export function SearchPanel({
           </dl>
         </SettingsTechnicalDetails>
       )}
-      <Dialog
-        focusable={{ focusTriggerAfterClose: false }}
-        scrollLock={false}
-        getContainer={() => document.body}
-        open={editor}
-        destroyOnHidden
-        title={ux(selected && configured(selected) ? 'editTitle' : 'add')}
-        onCancel={() => {
-          if (!busy) setEditor(false)
-        }}
-        footer={
-          <>
-            <Button disabled={busy} onClick={() => setEditor(false)}>
-              {ux('cancel')}
-            </Button>
-            <Button
-              appearance="primary"
-              htmlType="submit"
-              form="search-settings-editor"
-              data-testid="search-save"
-              disabled={!canSave || busy}
-              loading={busy}
-            >
-              {t('searchSave')}
-            </Button>
-          </>
-        }
-      >
+      <PushPage id={EDITOR_PAGE} title={ux(selected && configured(selected) ? 'editTitle' : 'add')}>
         <form id="search-settings-editor" className="capability-form" onSubmit={(event) => void save(event)}>
           <Field label={ux('provider')}>
             <Segmented
@@ -711,38 +694,37 @@ export function SearchPanel({
             {appServerErrorMessage(errorEnvelope, document.documentElement.lang) ?? t(error)}
           </SettingsState>
         )}
-      </Dialog>
-      <Dialog
-        focusable={{ focusTriggerAfterClose: false }}
-        scrollLock={false}
-        getContainer={() => document.body}
+        <SettingsToolbar className="capability-save">
+          <Button disabled={busy} onClick={leaveEditor}>
+            {ux('cancel')}
+          </Button>
+          <Button
+            appearance="primary"
+            htmlType="submit"
+            form="search-settings-editor"
+            data-testid="search-save"
+            disabled={!canSave || busy}
+            loading={busy}
+          >
+            {t('searchSave')}
+          </Button>
+        </SettingsToolbar>
+      </PushPage>
+      <ConfirmDialog
         open={!!confirmClear}
         title={t('searchClearKey')}
-        onCancel={() => {
-          if (!busy) setConfirmClear(undefined)
+        destructive
+        busy={busy}
+        confirmLabel={t('searchClearKey')}
+        testIds={{ confirm: 'search-clear-confirm' }}
+        onCancel={() => setConfirmClear(undefined)}
+        onConfirm={() => {
+          if (confirmClear) void changeRow(confirmClear, { clearKey: true })
         }}
-        footer={
-          <>
-            <Button disabled={busy} onClick={() => setConfirmClear(undefined)}>
-              {ux('cancel')}
-            </Button>
-            <Button
-              danger
-              dangerFilled
-              loading={busy}
-              data-testid="search-clear-confirm"
-              onClick={() => {
-                if (confirmClear) void changeRow(confirmClear, { clearKey: true })
-              }}
-            >
-              {t('searchClearKey')}
-            </Button>
-          </>
-        }
       >
         <p>{ux('clearHelp')}</p>
         {error && <SettingsState tone="error">{t(error)}</SettingsState>}
-      </Dialog>
+      </ConfirmDialog>
     </section>
   )
 }

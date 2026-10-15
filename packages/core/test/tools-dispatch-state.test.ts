@@ -524,7 +524,11 @@ describe('durable tool dispatch state', () => {
       code: 'TOOL_OUTCOME_UNKNOWN',
       isError: true,
       // A genuine transport failure keeps the plain wording: no timeout or cancel is claimed.
-      content: [{ text: 'the outcome of computer_use is unknown after dispatch' }],
+      content: [
+        {
+          text: 'the outcome of computer_use is unknown after dispatch. The user confirmed that it happened; do not run it again.',
+        },
+      ],
     })
     expect(
       (await opened.log.scan({ type: 'effect/settled', order: 'desc', limit: 1 }))[0]?.data,

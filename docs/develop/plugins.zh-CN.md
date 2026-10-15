@@ -4,6 +4,8 @@
 
 [文档导航](../README.zh-CN.md) · [后端工具教程](backend.zh-CN.md)
 
+插件是完全受信任的代码，以用户权限运行。能力声明用于准入审核，不限制任意 JavaScript，也不强制 hook 白名单。`ctx.hooks.register` 接受受支持的 observe、transform、intercept hooks，不按声明的 `hooks` 列表限制注册。只授权你愿意执行的代码。
+
 把业务函数变成 Agent 工具，把任务方法整理为 Skill，或为工作台加上自己的界面。AGH 为这些能力提供扩展入口与包生命周期，帮助你从一个插件逐步组合出应用。本文先帮你选入口，再解释依赖与运行方式。
 
 ## 在会话中创建第一个插件
@@ -159,3 +161,5 @@ Agent Loop 负责调度与自身检查点状态。通过 `@agnes/extension-api` 
 遵守取消信号，dispose 必须幂等。会话关闭先停止准入，再取消并等待活跃驱动/工具工作，允许最终写入，然后关闭 hooks、账本与工作区租约。释放非活跃的账本续点会保留其恢复能力。
 
 新会话选择优先级为显式参数、管理端默认值、配置档的 `providers.loop: { provider, version? }`、`agnes.default@1.0.0`。SDK 使用 `client.createSession({ cwd, loop })` 或 `client.session.new({ cwd, loop })`，CLI 使用 `agh -p "提示词" --loop example.dag@1.0.0`。开始记录固定循环身份；默认值变更仅影响新会话。旧会话映射到默认身份，缺失时明确失败，不会替换循环。参见[计划-执行示例](../../examples/loops/plan-execute-loop/README.md)：非 ReAct 状态机，声明为 `GenericLoopFactory`，通过 `DecisionPort` 请求真人批准，吸收结构化 child-completed `system` 输入，并在拒绝、取消或结果未知时如实结束，其测试是通用端口的一致性参照。参见[独立 DAG 示例](../../examples/loops/dag-loop/README.md)：模型规划、并行波次、依赖汇合与恢复均只依赖公共端口。
+
+`await ctx.plugin(...)`（及 prepared awaitable fiber）在所需服务尚未就绪时以 `DEPENDENCY_UNAVAILABLE` 拒绝，包括循环依赖。fiber 保持 pending，服务到达后仍可激活。`Fiber.await()` 等待当前生命周期迁移稳定，可能返回 pending fiber；判断已加载前须检查状态。异步事件的脱离等待失败通过监听器所属 logger 记录；被等待的分派仍传播错误。

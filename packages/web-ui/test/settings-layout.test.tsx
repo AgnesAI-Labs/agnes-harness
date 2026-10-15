@@ -55,13 +55,19 @@ it('keeps page hooks and lays out heading, notice, toolbar, body and dirty actio
     ),
   )
   expect(host.querySelector('#existing-pane')?.getAttribute('data-agnes-region')).toBe('settings-pane')
-  expect([...host.querySelector('#existing-pane')!.children].map((node) => node.tagName)).toEqual([
-    'HEADER',
-    'DIV',
-    'DIV',
-    'DIV',
-    'DIV',
-  ])
+  // Header, notice, toolbar, body and save bar, in that order (the subpage frame adds no boxes).
+  const page = host.querySelector('#existing-pane')!
+  const parts = [
+    'header.agnes-settings-page-top',
+    '.agh-banner',
+    '.agnes-settings-toolbar',
+    '.agnes-settings-page-body',
+    '.agh-settings-save-bar',
+  ].map((selector) => page.querySelector(selector))
+  expect(parts.every(Boolean)).toBe(true)
+  for (const [index, part] of parts.entries())
+    if (index > 0)
+      expect(parts[index - 1]!.compareDocumentPosition(part!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   expect(host.querySelector('#existing-title')?.textContent).toBe('Settings')
   const actions = host.querySelectorAll<HTMLButtonElement>('.agh-settings-save-bar button')
   expect([...actions].map((node) => node.textContent)).toEqual(['Discard', 'Save'])
@@ -191,12 +197,16 @@ it('closes the detail drawer on Escape and returns focus to its trigger', async 
   expect(document.activeElement).toBe(trigger)
 })
 
-it('announces loading once, marks it busy and removes the decorative skeleton after completion', async () => {
+it('announces loading once, marks it busy, shows the skeleton after 200 ms and removes it after completion', async () => {
   const { SettingsState, renderRegion } = await import('../src/index.js')
   const host = render(createElement(SettingsState, { tone: 'loading' }, 'Loading skills…'))
   expect(host.querySelector('[role="status"]')?.textContent).toBe('Loading skills…')
   expect(host.querySelector('[role="status"]')?.getAttribute('aria-busy')).toBe('true')
-  expect(host.querySelector('.agh-skeleton')?.getAttribute('aria-hidden')).toBe('true')
+  // The shared loading rule: nothing on screen for 200 ms, then the decorative skeleton.
+  expect(host.querySelector('.agh-skeleton')).toBeNull()
+  await vi.waitFor(() =>
+    expect(host.querySelector('.agh-skeleton')?.getAttribute('aria-hidden')).toBe('true'),
+  )
   renderRegion(host, createElement(SettingsState, { tone: 'success' }, 'Loaded'))
   expect(host.querySelector('.agh-skeleton')).toBeNull()
   expect(host.querySelector('[role="status"]')?.getAttribute('aria-busy')).toBeNull()

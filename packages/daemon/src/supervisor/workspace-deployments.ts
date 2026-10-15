@@ -1,4 +1,9 @@
-import { listWorkspaceDeployments, readLock } from '@agnes/package-manager'
+import {
+  listWorkspaceDeployments,
+  localWorkspaceDeployment,
+  type PackageManager,
+  readLock,
+} from '@agnes/package-manager'
 
 /**
  * The build label the daemon's PackageManager stamps into a lock it creates. `0.0.0` is the
@@ -9,12 +14,20 @@ export const PACKAGE_MANAGER_VERSION = '0.0.0'
 
 /** Offered from the same lock `packages.trustWorkspace` will then write. */
 export async function workspaceDeployments(
-  runtime: { profileDirectory(profile: string): string | Promise<string> } | undefined,
+  runtime:
+    | {
+        profileDirectory(profile: string): string | Promise<string>
+        manager?: Pick<PackageManager, 'localPluginRoots'>
+      }
+    | undefined,
   profile: string,
 ) {
   if (!runtime) return []
   const directory = await runtime.profileDirectory(profile)
-  return listWorkspaceDeployments(directory, () =>
-    readLock(directory, { profile, agnesVersion: PACKAGE_MANAGER_VERSION }),
-  )
+  const roots = runtime.manager?.localPluginRoots
+  const lock = () => readLock(directory, { profile, agnesVersion: PACKAGE_MANAGER_VERSION })
+  return [
+    ...listWorkspaceDeployments(directory, lock),
+    ...(roots ? localWorkspaceDeployment(directory, roots, lock()) : []),
+  ]
 }
