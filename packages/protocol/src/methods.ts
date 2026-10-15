@@ -179,6 +179,7 @@ export type MethodName =
   | '_agnes/v1/session.detach'
   | '_agnes/v1/auth.claim'
   | '_agnes/v1/session.event'
+  | '_agnes/v1/session.loading'
   | '_agnes/v1/session.preview'
   | '_agnes/v1/daemon.notice'
 
@@ -456,6 +457,7 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   // reads them, so does the conformance runner, and so does the server before it puts the frame on
   // the wire - daemon's LocalEndpoint refuses an s2c frame this table's schema rejects.
   '_agnes/v1/session.event': { kind: 'notification', direction: 's2c', params: A.SessionEventParams },
+  '_agnes/v1/session.loading': { kind: 'notification', direction: 's2c', params: A.SessionLoadingParams },
   '_agnes/v1/session.preview': { kind: 'notification', direction: 's2c', params: A.SessionPreviewParams },
   '_agnes/v1/daemon.notice': { kind: 'notification', direction: 's2c', params: A.DaemonNotice },
 }

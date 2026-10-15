@@ -3036,6 +3036,16 @@
         }
       }
     },
+    "SessionLoadingParams": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sessionId", "phase", "verifiedSeq", "lastSeq"],
+      "properties": {
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "phase": { "enum": ["verifying", "replaying"] },
+        "verifiedSeq": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "lastSeq": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+      }
+    },
     "SessionViewResult": {
       "type": "object",
       "additionalProperties": false,

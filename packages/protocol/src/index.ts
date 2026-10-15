@@ -152,6 +152,7 @@ export type {
   SessionMeta,
   SessionPreferences,
   SessionPreviewParams,
+  SessionLoadingParams,
   SessionProjectUIHistoryParams,
   SessionProjectUIOpeningParams,
   SessionProjectUIParams,
