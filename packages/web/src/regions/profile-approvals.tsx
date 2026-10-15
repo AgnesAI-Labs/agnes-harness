@@ -90,7 +90,7 @@ export function ProfileApprovals({ client, locale }: { client: HostAgnesClient; 
               summary: snapshot.request.spec.prompt,
               impact: zh ? '仅授权本次操作' : 'Authorize this operation once',
               risk: 'always',
-              preview: JSON.stringify(snapshot.request.spec.subject, null, 2).slice(0, 8192),
+              preview: JSON.stringify(snapshot.request.spec.subject, null, 2),
               disabled: busy,
               actions: snapshot.request.spec.options
                 .filter((option) => ['allowed-once', 'rejected'].includes(option))

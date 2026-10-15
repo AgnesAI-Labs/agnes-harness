@@ -227,6 +227,11 @@ describe('current profile authority', () => {
       })
       expect(await runtime.call(f.call, 'granted')).toEqual(pending)
       const snapshot = (await runtime.listDecisions('human'))[0]!
+      expect(snapshot.request.spec.subject).toMatchObject({
+        input: { value: 1 },
+        preparedInput: { value: 1 },
+        resourceRevision: null,
+      })
       await expect(
         runtime.answerDecision(
           {
