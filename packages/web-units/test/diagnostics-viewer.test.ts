@@ -113,7 +113,13 @@ describe('renderDiagnosticsViewer', () => {
   })
 
   it('executes the viewer script', () => {
-    const bundle = makeBundle({ trace: twoLevelTimeline() })
+    const bundle = makeBundle({
+      trace: twoLevelTimeline(),
+      logs: {
+        daemon: { size: 10, text: 'request audit', missing: false, truncated: false },
+        runtime: { size: 20, text: 'worker runtime output', missing: false, truncated: true },
+      },
+    })
     const html = renderDiagnosticsViewer(bundle)
     document.documentElement.innerHTML = html
     const scripts = Array.from(document.querySelectorAll('script'))
@@ -124,7 +130,8 @@ describe('renderDiagnosticsViewer', () => {
     const tabLabels = Array.from(document.querySelectorAll('#agh-tabs button')).map((b) => b.textContent)
     expect(tabLabels).toEqual(['Overview', 'Conversation', 'Trace', 'Logs', 'System', 'Artifacts'])
 
-    expect(document.getElementById('tab-logs')?.textContent).toContain('Not included')
+    expect(document.getElementById('tab-logs')?.textContent).toContain('worker runtime output')
+    expect(document.getElementById('tab-logs')?.textContent).toContain('request audit')
 
     const traceText = document.getElementById('tab-trace')?.textContent ?? ''
     expect(traceText).toContain('root-call')

@@ -228,6 +228,36 @@ describe('diagnostics.export', () => {
 })
 
 describe('diagnostics.collect', () => {
+  it('combines rotated runtime output within one budget, redacts both and handles a missing live log', async () => {
+    const dataDir = tempDataDir()
+    const { ep } = await setup({ dataDir })
+    const read = async () =>
+      (
+        await call<DiagnosticsCollectResult>(ep, '_agnes/v1/diagnostics.collect', { runtimeLog: true })
+      ).result?.logs.find((log) => log.name === 'runtime.jsonl')
+    expect(await read()).toMatchObject({ missing: true, size: 0, text: '' })
+    const row = (kind: string) => JSON.stringify({ kind, detail: { password: 'rotation-canary' } }) + '\n'
+    const previous = join(dataDir, 'audit', 'runtime.jsonl.1')
+    writeFileSync(previous, row('previous'))
+    expect(await read()).toMatchObject({ missing: false, text: expect.stringContaining('previous') })
+    writeFileSync(join(dataDir, 'audit', 'runtime.jsonl'), row('live'))
+    const both = await read()
+    expect(both?.text.split('\n').map((line) => JSON.parse(line).kind)).toEqual(['previous', 'live'])
+    expect(both?.text).not.toContain('rotation-canary')
+    writeFileSync(previous, row('old').repeat(24000))
+    const bounded = await read()
+    expect(bounded?.truncated).toBe(true)
+    expect(Buffer.byteLength(bounded?.text ?? '')).toBeLessThanOrEqual(1024 * 1024)
+    expect(bounded?.text.split('\n').at(-1)).toContain('live')
+    expect(bounded?.text).not.toContain('rotation-canary')
+    for (const line of bounded?.text.split('\n') ?? []) expect(() => JSON.parse(line)).not.toThrow()
+    expect(
+      (await call<DiagnosticsCollectResult>(ep, '_agnes/v1/diagnostics.collect', {})).result?.logs.map(
+        (log) => log.name,
+      ),
+    ).toEqual(['daemon.jsonl', 'host.jsonl'])
+  })
+
   it('collect rejects non-local owner', async () => {
     const { ep } = await setup({ dataDir: tempDataDir() })
     ep.conn.authKind = 'jwt'

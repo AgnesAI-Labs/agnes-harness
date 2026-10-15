@@ -64,12 +64,17 @@ function redactLine(line: string): string {
   }
 }
 
-async function readTail(dataDir: string | undefined, name: Log['name']): Promise<Log> {
+async function readTail(
+  dataDir: string | undefined,
+  name: Log['name'],
+  budget = TAIL_BYTES,
+  fileName: string = name,
+): Promise<Log> {
   const missing: Log = { name, size: 0, text: '', truncated: false, missing: true }
   if (dataDir === undefined) return missing
   let fh: Awaited<ReturnType<typeof open>> | undefined
   try {
-    const path = join(dataDir, 'audit', name)
+    const path = join(dataDir, 'audit', fileName)
     const before = await lstat(path)
     if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1) return missing
     fh = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0))
@@ -85,7 +90,7 @@ async function readTail(dataDir: string | undefined, name: Log['name']): Promise
   }
   try {
     const { size } = await fh.stat()
-    const start = Math.max(0, size - TAIL_BYTES)
+    const start = Math.max(0, size - budget)
     const buf = Buffer.alloc(size - start)
     const { bytesRead } = await fh.read(buf, 0, buf.length, start)
     let text = buf.subarray(0, bytesRead).toString('utf8')
@@ -95,6 +100,24 @@ async function readTail(dataDir: string | undefined, name: Log['name']): Promise
     return { name, size, text: lines.map(redactLine).join('\n'), truncated: start > 0, missing: false }
   } finally {
     await fh.close()
+  }
+}
+
+/** Runtime output and request audit remain separate; rotation shares one raw-byte budget. */
+async function runtimeTail(dataDir: string | undefined): Promise<Log> {
+  const live = await readTail(dataDir, 'runtime.jsonl')
+  const previous = await readTail(
+    dataDir,
+    'runtime.jsonl',
+    Math.max(0, TAIL_BYTES - live.size),
+    'runtime.jsonl.1',
+  )
+  return {
+    name: 'runtime.jsonl',
+    size: previous.size + live.size,
+    text: [previous.text, live.text].filter(Boolean).join('\n'),
+    truncated: previous.truncated || live.truncated,
+    missing: previous.missing && live.missing,
   }
 }
 
@@ -273,7 +296,7 @@ export function registerDiagnostics(
       ...LOGS,
       ...((params as DiagnosticsCollectParams).runtimeLog ? ['runtime.jsonl' as const] : []),
     ])
-      logs.push(await readTail(deps.dataDir, name))
+      logs.push(await (name === 'runtime.jsonl' ? runtimeTail(deps.dataDir) : readTail(deps.dataDir, name)))
     return {
       collectedAt: new Date(c.clock()).toISOString(),
       agh: { version: typeof AGNES_VERSION === 'string' ? AGNES_VERSION : 'dev' },

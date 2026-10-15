@@ -229,7 +229,7 @@ function Viewer({ bundle, locale }: { bundle: DiagnosticsBundle; locale: Diagnos
         </section>
         <section id="tab-logs" role="tabpanel" aria-labelledby="agh-tab-logs" hidden>
           {bundle.logs
-            ? (['daemon', 'host', 'browser'] as const).map((key) => {
+            ? (['daemon', 'host', 'runtime', 'browser'] as const).map((key) => {
                 const value = bundle.logs?.[key]
                 if (!value) return null
                 const content =

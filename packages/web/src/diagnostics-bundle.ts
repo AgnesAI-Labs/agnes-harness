@@ -169,11 +169,24 @@ export async function collectDiagnostics(
   const rpc = async <T>(method: string, params: unknown, quiet = false): Promise<T | undefined> => {
     if (expired) return undefined
     try {
-      return (await withTimeout(
-        input.call(PREFIX + method, params, { signal: combined }),
-        limits.rpcMs,
-        combined,
-      )) as T
+      const requestSignal = AbortSignal.any([combined, AbortSignal.timeout(limits.rpcMs)])
+      const call = async (value: unknown) => {
+        try {
+          return await input.call(PREFIX + method, value, { signal: requestSignal })
+        } catch (error) {
+          const e = error as { code?: unknown; data?: { code?: unknown } } | null
+          if (
+            !requestSignal.aborted &&
+            method === 'diagnostics.collect' &&
+            effective.logs &&
+            (value as { runtimeLog?: boolean }).runtimeLog &&
+            (e?.code === -32602 || e?.code === 'INVALID_PARAMS' || e?.data?.code === 'INVALID_PARAMS')
+          )
+            return input.call(PREFIX + method, {}, { signal: requestSignal })
+          throw error
+        }
+      }
+      return (await withTimeout(call(params), limits.rpcMs, combined)) as T
     } catch (error) {
       if (signal.aborted) throw abortError()
       if (total.aborted) expired = true
@@ -189,15 +202,11 @@ export async function collectDiagnostics(
   const effective = { ...include, conversation: include.conversation && sessionId !== null }
   const [collected, apis, config] = await Promise.all([
     // Always read for bundle.version, but a failure only matters when logs or system were selected.
-    (async () =>
-      (effective.logs
-        ? await rpc<DiagnosticsCollectResult>('diagnostics.collect', { runtimeLog: true }, true)
-        : undefined) ??
-      (await rpc<DiagnosticsCollectResult>(
-        'diagnostics.collect',
-        {},
-        !(effective.logs || effective.system),
-      )))(),
+    rpc<DiagnosticsCollectResult>(
+      'diagnostics.collect',
+      effective.logs ? { runtimeLog: true } : {},
+      !(effective.logs || effective.system),
+    ),
     effective.system ? rpc<ApisListResult>('apis.list', {}) : undefined,
     effective.system ? rpc<unknown>('config.get', {}) : undefined,
   ])
@@ -269,7 +278,12 @@ export async function collectDiagnostics(
   }
   const daemonLog = tailOf('daemon.jsonl')
   const hostLog = tailOf('host.jsonl')
-  const missingLogs = [daemonLog?.missing && 'daemon.jsonl', hostLog?.missing && 'host.jsonl'].filter(Boolean)
+  const runtimeLog = tailOf('runtime.jsonl')
+  const missingLogs = [
+    daemonLog?.missing && 'daemon.jsonl',
+    hostLog?.missing && 'host.jsonl',
+    runtimeLog?.missing && 'runtime.jsonl',
+  ].filter(Boolean)
   if (effective.logs && missingLogs.length)
     warnings.push({ source: 'logs', reason: 'unavailable', detail: missingLogs.join(', ') })
   const bundle: DiagnosticsBundle = redactDiagnostic({
@@ -288,6 +302,7 @@ export async function collectDiagnostics(
           logs: {
             ...(daemonLog ? { daemon: daemonLog } : {}),
             ...(hostLog ? { host: hostLog } : {}),
+            ...(runtimeLog ? { runtime: runtimeLog } : {}),
             browser: input.browserLog,
           },
         }
@@ -324,6 +339,8 @@ export async function collectDiagnostics(
   if (bundle.trace) add('trace.json', json(bundle.trace))
   if (bundle.logs?.daemon && !bundle.logs.daemon.missing) add('logs/daemon.jsonl', bundle.logs.daemon.text)
   if (bundle.logs?.host && !bundle.logs.host.missing) add('logs/host.jsonl', bundle.logs.host.text)
+  if (bundle.logs?.runtime && !bundle.logs.runtime.missing)
+    add('logs/runtime.jsonl', bundle.logs.runtime.text)
   if (bundle.logs) add('logs/browser.json', json(bundle.logs.browser))
   if (ledger) add('events.jsonl', lines.length ? `${lines.join('\n')}\n` : '')
 

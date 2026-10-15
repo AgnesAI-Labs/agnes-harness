@@ -37,7 +37,7 @@ export type DiagnosticsBundle = {
   trace?: UITimeline
   events?: { file: 'events.jsonl'; count: number; lastSeq: number; truncated: boolean }
   artifacts: DiagnosticsArtifact[]
-  logs?: { daemon?: LogTail; host?: LogTail; browser?: BrowserLog }
+  logs?: { daemon?: LogTail; host?: LogTail; runtime?: LogTail; browser?: BrowserLog }
   system?: {
     agh?: unknown
     runtime?: unknown

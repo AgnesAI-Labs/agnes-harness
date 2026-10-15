@@ -417,8 +417,18 @@ describe('collectDiagnostics', () => {
   })
 
   it('times out a hung RPC and still packages', async () => {
-    const call: RpcCall = () => new Promise(() => {})
+    const methods: string[] = []
+    let lateRefusal: ((error: unknown) => void) | undefined
+    const call: RpcCall = (method) => {
+      methods.push(method)
+      return new Promise((_resolve, reject) => {
+        if (method === `${P}diagnostics.collect`) lateRefusal = reject
+      })
+    }
     const out = await collectDiagnostics(input(call), ALL, new AbortController().signal, { rpcMs: 20 })
+    lateRefusal?.(new JsonRpcError(rpcError('INVALID_PARAMS')))
+    await Promise.resolve()
+    expect(methods.filter((method) => method === `${P}diagnostics.collect`)).toHaveLength(1)
     expect(out.bundle.warnings).toEqual(
       expect.arrayContaining([
         { source: 'diagnostics.collect', reason: 'timeout' },
@@ -481,6 +491,53 @@ describe('collectDiagnostics', () => {
     )
   })
 
+  it('exports runtime output separately from request audit and redacts ZIP and viewer content', async () => {
+    const { call } = fake({
+      ...standard(),
+      'diagnostics.collect': () => ({
+        ...collectResult,
+        logs: [
+          ...collectResult.logs,
+          {
+            name: 'runtime.jsonl',
+            size: 80,
+            truncated: true,
+            missing: false,
+            text: JSON.stringify({ kind: 'worker.stderr', password: SECRET_ERROR }),
+          },
+        ],
+      }),
+    })
+    const out = await collectDiagnostics(input(call), ALL, new AbortController().signal)
+    expect(out.bundle.logs?.runtime).toMatchObject({ missing: false, truncated: true })
+    const files = readZip(out.zip)
+    expect(files.get('logs/runtime.jsonl')).toContain('worker.stderr')
+    expect(files.get('logs/daemon.jsonl')).not.toContain('worker.stderr')
+    expect(files.get('index.html')).toContain('worker.stderr')
+    for (const value of files.values()) expect(value).not.toContain(SECRET_ERROR)
+  })
+
+  it.each(['INVALID_PARAMS', 'CAPABILITY_DENIED', 'INTERNAL_ERROR', 'METHOD_NOT_FOUND', 'transport'])(
+    'retries legacy diagnostics.collect only for INVALID_PARAMS (%s)',
+    async (code) => {
+      const { call, calls } = fake({
+        ...standard(),
+        'diagnostics.collect': (params) => {
+          if (!params.runtimeLog) return collectResult
+          if (code === 'transport') throw new Error('disconnected')
+          throw new JsonRpcError(rpcError(code as 'INVALID_PARAMS'))
+        },
+      })
+      const out = await collectDiagnostics(input(call), ALL, new AbortController().signal)
+      const requests = calls.filter((call) => call.method === `${P}diagnostics.collect`)
+      expect(requests.map((call) => call.params)).toEqual(
+        code === 'INVALID_PARAMS' ? [{ runtimeLog: true }, {}] : [{ runtimeLog: true }],
+      )
+      if (code !== 'INVALID_PARAMS')
+        expect(out.bundle.warnings).toContainEqual(expect.objectContaining({ source: 'diagnostics.collect' }))
+    },
+  )
+
   it('keeps missing logs in the bundle and warns', async () => {
     const missing = { size: 0, text: '', truncated: false, missing: true }
     const { call } = fake({
@@ -490,17 +547,20 @@ describe('collectDiagnostics', () => {
         logs: [
           { name: 'daemon.jsonl', ...missing },
           { name: 'host.jsonl', ...missing },
+          { name: 'runtime.jsonl', ...missing },
         ],
       }),
     })
     const out = await collectDiagnostics(input(call), ALL, new AbortController().signal)
     expect(out.bundle.logs?.daemon?.missing).toBe(true)
     expect(out.bundle.logs?.host?.missing).toBe(true)
+    expect(out.bundle.logs?.runtime?.missing).toBe(true)
     expect(out.bundle.warnings).toContainEqual(
       expect.objectContaining({ source: 'logs', reason: 'unavailable' }),
     )
     const files = readZip(out.zip)
     expect(files.has('logs/daemon.jsonl')).toBe(false)
+    expect(files.has('logs/runtime.jsonl')).toBe(false)
     expect(files.has('logs/browser.json')).toBe(true)
   })
 
