@@ -498,7 +498,8 @@ describe('composer image attachments', () => {
     expect(attach.getAttribute('aria-describedby')).toBe('composer-image-hint')
     await act(async () => attach.blur())
     await act(async () => attach.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
-    await vi.waitFor(() => expect(document.querySelector('.agh-tooltip')?.textContent).toContain(hint))
+    await vi.waitFor(() => expect(attach.getAttribute('aria-describedby')).not.toBe('composer-image-hint'))
+    expect(document.querySelector('.agh-tooltip')?.textContent).toContain(hint)
   })
 
   it('reports pixel overflow as a size error without enqueuing an invalid-image card', async () => {
