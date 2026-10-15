@@ -26,6 +26,7 @@ import {
   readLock,
   writeLock,
 } from '../src/index.js'
+import { zip } from './fixtures/document-reader.js'
 
 const purpose = {
   displayName: 'File search',
@@ -171,15 +172,21 @@ it('rejects stale previews without any lock/store change', async () => {
   expect(existsSync(packageDir(root, 'local-dev', preview.id))).toBe(false)
   clean()
 })
-it('never replaces an installed package through install', async () => {
-  const m = manager(),
-    p = await m.inspect(profile, source)
-  await m.install(profile, source, { expectedIntegrity: p.integrity })
-  const before = lockBytes()
-  await expect(m.install(profile, source, { expectedIntegrity: p.integrity })).rejects.toThrow('use update')
-  expect(lockBytes()).toBe(before)
-  clean()
-})
+it.each(['acme/pkg-a', 'constructor'])(
+  'never replaces an installed package %s through install',
+  async (name) => {
+    // Lock membership is own-property only: "constructor" is a valid id, not Object.prototype's.
+    pkg({ name, dependencies: { 'acme/dependency': '^1.0' } })
+    const m = manager(),
+      p = await m.inspect(profile, source)
+    expect(p.id).toBe(name)
+    await m.install(profile, source, { expectedIntegrity: p.integrity })
+    const before = lockBytes()
+    await expect(m.install(profile, source, { expectedIntegrity: p.integrity })).rejects.toThrow('use update')
+    expect(lockBytes()).toBe(before)
+    clean()
+  },
+)
 it('reads the non-executable contribution kinds and detects grant/dependency differences', async () => {
   mkdirSync(join(sourceDir, 'dist'))
   writeFileSync(join(sourceDir, 'dist', 'server.mjs'), 'throw Error()')
@@ -397,7 +404,29 @@ it.each(['version', 'dependencies', 'integrity', 'license'] as const)(
     }
     await expect(manager({ sourceAdapters: [adapter] }).inspect(profile, source)).rejects.toMatchObject({
       code: 'E_PACKAGE_STATE',
+      ...(field === 'integrity' ? { detail: { reason: 'adapter-integrity' } } : {}),
     })
+    clean()
+  },
+)
+it.each([false, true])(
+  'refuses an archive carrying node_modules for that reason (carries: %s)',
+  async (carries) => {
+    // Non-npm fetch digests skip node_modules, .git and fixtures/out, so such a tree can never verify;
+    // that is not an adapter fault.
+    const files = ['package.json', 'index.ts'].map((name) => ({
+      name,
+      data: readFileSync(join(sourceDir, name)),
+    }))
+    if (carries) files.push({ name: 'node_modules/dep/index.js', data: Buffer.from('module.exports = 1\n') })
+    writeFileSync(join(root, 'candidate.zip'), zip(files))
+    const inspected = manager().inspect(profile, parseSource('file:./candidate.zip'))
+    if (carries)
+      await expect(inspected).rejects.toMatchObject({
+        code: 'E_PACKAGE_STATE',
+        detail: { reason: 'excluded-directory' },
+      })
+    else await expect(inspected).resolves.toMatchObject({ id: 'acme/pkg-a' })
     clean()
   },
 )

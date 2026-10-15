@@ -287,7 +287,7 @@ it('serves the fixed resource management page and fails its BFF closed without a
   }
 })
 
-it('serves esbuild shared chunks and still rejects arbitrary files', async () => {
+it('serves esbuild shared and lazy entry chunks and still rejects arbitrary files', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agnes-web-chunk-'))
   const port = await availablePort()
   const server = await createWebServer({
@@ -309,6 +309,26 @@ it('serves esbuild shared chunks and still rejects arbitrary files', async () =>
     await writeFile(join(root, 'secret.png'), 'not an allowlisted asset\n')
     // Code splitting emits hashed chunks that every lazy pane imports at runtime; a 404 here would
     // break the admin panels only once the user opened them, so pin the route.
+    for (const name of [
+      'terminal-L5S4GH6L.js',
+      'future-panel-A1B2C3D4.js',
+      'future-panel-A1B2C3D4.css',
+      'terminal-L5S4GH6L.js.map',
+    ]) {
+      await writeFile(join(root, name), name.endsWith('.map') ? '{}' : '/* lazy asset */')
+      const response = await fetch(`${server.url}/${name}`)
+      expect(response.status, name).toBe(200)
+      expect(await response.text()).toBeTruthy()
+      expect(response.headers.get('content-security-policy')).toContain("script-src 'self'")
+    }
+    for (const name of [
+      'terminal.js',
+      'terminal-short.js',
+      'terminal-L5S4GH6L.txt',
+      'private/terminal-L5S4GH6L.js',
+    ]) {
+      expect((await fetch(`${server.url}/${name}`)).status, name).toBe(404)
+    }
     const chunk = await fetch(`${server.url}/chunk-ABCDEF12.js`)
     expect(chunk.status).toBe(200)
     expect(await chunk.text()).toContain('shared')

@@ -144,15 +144,24 @@ describe('local production artifact read store', () => {
       expect(() => createLocalArtifactReadStore(input)).toThrow('artifact bytes unavailable')
   })
 
-  it('refuses artifact identities above the local read hard cap before opening bytes', async () => {
+  it('refuses storage identities outside the local Web capability before opening bytes', async () => {
     const item = await fixture()
     const store = createLocalArtifactReadStore({
       dataDir: item.dataDir,
       maxArtifactBytes: LOCAL_ARTIFACT_READ_MAX_BYTES,
     })
-    await expect(
-      store.get({ ...item.ref, size: LOCAL_ARTIFACT_READ_MAX_BYTES + 1 }, new AbortController().signal),
-    ).rejects.toThrow('artifact bytes unavailable')
+    const signal = new AbortController().signal
+    for (const metadata of [
+      { size: LOCAL_ARTIFACT_READ_MAX_BYTES + 1 },
+      { size: 2 ** 53 },
+      { mime: 'text/plain; charset=utf-8' },
+      { mime: 'text/plain\n' },
+      { mime: 'text/plain\r\nX-Fixture: synthetic' },
+    ]) {
+      const ref = { ...item.ref, ...metadata }
+      await expect(store.get(ref, signal)).rejects.toThrow('artifact bytes unavailable')
+      expect(await store.status(ref, signal)).toBe('unavailable')
+    }
   })
 
   it('tells a screenshot reclaimed by retention apart from a missing one', async () => {
@@ -171,7 +180,10 @@ describe('local production artifact read store', () => {
     await tombstone(item.bytes.byteLength)
     // Bytes present win over the tombstone.
     await expect(store.get(item.ref, signal)).resolves.toEqual(item.bytes)
+    await expect(store.status(item.ref, signal)).resolves.toBe('available')
+    await expect(store.status({ ...item.ref, size: 1 }, signal)).resolves.toBe('identity_mismatch')
     await rm(item.path)
+    await expect(store.status(item.ref, signal)).resolves.toBe('reclaimed')
     await expect(store.inspect(image, signal)).resolves.toEqual({ ...image, size: item.bytes.byteLength })
     await expect(store.get(item.ref, signal)).rejects.toBe(ARTIFACT_RECLAIMED_FAILURE)
     // A tombstone claiming more than the read ceiling is not trusted for a reference.

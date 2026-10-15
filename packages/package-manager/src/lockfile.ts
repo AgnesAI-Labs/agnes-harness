@@ -185,6 +185,8 @@ export async function withLock<T>(
           'E_LOCK_MISMATCH',
           `could not acquire the package lock ${lockFile}; if no AGH process is running, remove that file and retry`,
           {
+            // Another holder is alive; this is contention, not an integrity failure.
+            code: 'E_PACKAGE_BUSY',
             source: { file: 'agnes-lock.json' },
             detail: {
               reason: 'busy',

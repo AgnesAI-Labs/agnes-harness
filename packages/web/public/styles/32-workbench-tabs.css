@@ -83,108 +83,153 @@
     font-size: var(--font-size-xs);
   }
 
-  /* Terminal: pills for attached processes, a dark output area, one status bar under it. */
+  /* Terminal chrome stays quiet; the emulator uses the app's panel tokens. */
+  .workbench-terminal {
+    container-type: inline-size;
+  }
+  .workbench-terminal-body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+  }
   .workbench-terminal-bar {
+    width: 168px;
+    flex: none;
+    overflow: auto;
+    background: var(--agnes-bg-subtle);
+    border-inline-end: 1px solid var(--agnes-line-hairline);
+    padding: var(--s4);
+  }
+  .workbench-terminal-group {
     display: flex;
     align-items: center;
-    gap: var(--s8);
+    justify-content: space-between;
     padding: var(--s4) var(--s8);
-    border-block-end: 1px solid var(--agnes-line-hairline);
-    flex-shrink: 0;
+    font-size: var(--font-size-xs);
+    color: var(--agnes-text-secondary);
   }
-  .workbench-terminal-bar > .workbench-terminal-tabs {
-    flex: 1;
-    min-width: 0;
-    padding-inline: 0;
-    align-items: center;
+  .workbench-terminal-bar .workbench-terminal-tabs {
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    gap: var(--s2);
+    overflow: visible;
   }
   .workbench-terminal-pill {
-    display: inline-flex;
+    display: flex;
     align-items: center;
-    flex-shrink: 0;
-    border-radius: var(--radius-sm);
+    position: relative;
+    border-radius: var(--radius-md);
+    min-width: 0;
   }
   .workbench-terminal-pill[data-active="true"] {
     background: var(--agnes-bg-fill);
   }
-  .workbench-terminal-pill > .agnes-ui-button,
-  .workbench-terminal-attach.agnes-ui-button {
+  .workbench-terminal-pill > .agh-btn--icon {
+    opacity: 0;
+    flex: none;
+  }
+  .workbench-terminal-pill:is(:hover, :focus-within, [data-active="true"]) > .agh-btn--icon {
+    opacity: 1;
+  }
+  .workbench-terminal-pill > span:first-child {
+    flex: 1;
+    min-width: 0;
+  }
+  .workbench-terminal-pill .agh-menu-anchor {
+    display: block;
+  }
+  .workbench-terminal-pill [role="option"] {
+    width: 100%;
+    display: flex;
     gap: var(--s4);
+    padding-inline: var(--s4);
     color: var(--agnes-text-secondary);
   }
   .workbench-terminal-tabs .workbench-terminal-pill [aria-selected="true"] {
     color: var(--agnes-text-primary);
     background: transparent;
   }
-  .workbench-terminal-attach.agnes-ui-button {
-    border: 1px dashed var(--agnes-line-primary);
+  .workbench-terminal-prompt:empty {
+    display: none;
   }
   .workbench-terminal-name {
-    max-width: 12rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .workbench-terminal-owner {
-    padding: 0 var(--s4);
-    border: 1px solid var(--agnes-line-primary);
-    border-radius: var(--radius-xs);
-    color: var(--agnes-text-secondary);
-    font-size: 0.65625rem;
-    line-height: 1.4;
-  }
-  .workbench-terminal-new {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--s4);
-    flex-shrink: 0;
-  }
-  .workbench-terminal-new > .ant-select {
-    width: 5.5rem;
-  }
-  .workbench-terminal-output.workbench-terminal-output {
-    color: var(--agnes-terminal-text);
-    background: var(--agnes-terminal-bg);
-    caret-color: var(--agnes-terminal-text);
-  }
-  .workbench-terminal-output:disabled {
-    color: var(--agnes-terminal-muted);
-  }
-  .workbench-terminal-note {
-    margin: 0;
-    padding: var(--s4) var(--s12);
-    color: var(--agnes-terminal-muted);
-    background: var(--agnes-terminal-bar);
-    font-size: var(--font-size-xs);
-  }
-  .workbench-terminal-status {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--s4) var(--s8);
-    padding: var(--s4) var(--s8) var(--s4) var(--s12);
-    border-block-start: 1px solid var(--agnes-terminal-line);
-    color: var(--agnes-terminal-muted);
-    background: var(--agnes-terminal-bar);
-    font-size: var(--font-size-xs);
-    flex-shrink: 0;
-  }
-  .workbench-terminal-status[data-tone="danger"] > [role="status"] {
-    color: var(--agnes-status-danger-text);
-  }
-  .workbench-terminal-cwd {
     flex: 1;
-    min-width: 4rem;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
   }
-  .workbench-terminal-status > .agnes-ui-button {
+  .workbench-terminal-runtime {
+    font: 10px var(--font-mono);
+    color: var(--agnes-text-tertiary);
+    white-space: nowrap;
+  }
+  .workbench-terminal-pill:where([data-editing="true"]) .workbench-terminal-name {
+    visibility: hidden;
+  }
+  .workbench-terminal-rename {
+    position: absolute;
+    inset-inline-start: 20px;
+    width: 7rem;
+    z-index: 1;
+  }
+  @container (max-width: 560px) {
+    .workbench-terminal-body {
+      flex-direction: column;
+    }
+    .workbench-terminal-bar {
+      display: flex;
+      width: auto;
+      max-width: 100%;
+      overflow-x: auto;
+      border-inline-end: 0;
+      border-block-end: 1px solid var(--agnes-line-hairline);
+    }
+    .workbench-terminal-bar .workbench-terminal-tabs {
+      flex-direction: row;
+    }
+    .workbench-terminal-tabs > div {
+      flex: none;
+    }
+    .workbench-terminal-tabs .workbench-terminal-group {
+      display: none;
+    }
+    .workbench-terminal-pill {
+      min-width: 120px;
+    }
+  }
+  .agh-terminal-screen {
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    padding: 10px;
+    overflow: hidden;
     color: var(--agnes-terminal-text);
-    border-color: var(--agnes-terminal-line);
     background: var(--agnes-terminal-bg);
-    box-shadow: none;
+    font: var(--font-size-sm) / 1.5 var(--font-mono);
+  }
+  .agh-terminal-screen .xterm {
+    height: 100%;
+  }
+  .workbench-terminal-note,
+  .workbench-terminal-readonly {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--s4) var(--s12);
+    color: var(--agnes-terminal-muted);
+    background: var(--agnes-terminal-bar);
+    font-size: var(--font-size-xs);
+    flex-shrink: 0;
+    border-block-end: 1px solid var(--agnes-terminal-line);
+  }
+  .workbench-terminal-readonly {
+    margin: 0 var(--s8) var(--s8);
+    border-radius: var(--radius-md);
   }
   .workbench-terminal-details {
     display: grid;
@@ -203,48 +248,18 @@
     font-family: var(--font-mono);
   }
   .workbench-terminal-empty {
+    min-height: 0;
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
-    gap: var(--s12);
-    padding: var(--s16) var(--s12);
-    flex: 1;
-  }
-  .workbench-terminal-empty-title {
-    margin: 0;
-    color: var(--agnes-text-secondary);
-  }
-  .workbench-terminal-empty .workbench-terminal-available {
-    display: block;
-    width: 100%;
-    max-height: none;
-  }
-  .workbench-terminal-available h4 {
-    margin: 0 0 var(--s4);
-    color: var(--agnes-text-secondary);
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
-  }
-  .workbench-terminal-available ul {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    border: 1px solid var(--agnes-line-hairline);
-    border-radius: var(--radius-md);
-  }
-  .workbench-terminal-available li {
-    display: flex;
     align-items: center;
-    gap: var(--s8);
-    padding: var(--s4) var(--s8);
-  }
-  .workbench-terminal-available li + li {
-    border-block-start: 1px solid var(--agnes-line-hairline);
-  }
-  .workbench-terminal-row-status {
+    padding: var(--s24);
     flex: 1;
-    color: var(--agnes-text-secondary);
-    font-size: var(--font-size-xs);
+    overflow: auto;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .agh-terminal-screen .xterm-cursor {
+      animation: none;
+    }
   }
 
   /* Deliverables: the answer's cards under version headings; the opened card carries its preview. */

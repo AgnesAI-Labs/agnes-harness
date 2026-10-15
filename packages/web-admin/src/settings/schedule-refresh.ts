@@ -72,6 +72,7 @@ export function useScheduleRefresh(
     reschedule.current = schedule
     document.addEventListener('visibilitychange', wake)
     window.addEventListener('online', wake)
+    window.addEventListener('focus', wake)
     schedule()
     return () => {
       alive = false
@@ -79,6 +80,7 @@ export function useScheduleRefresh(
       reschedule.current = () => undefined
       document.removeEventListener('visibilitychange', wake)
       window.removeEventListener('online', wake)
+      window.removeEventListener('focus', wake)
     }
   }, [enabled, quick])
   return {

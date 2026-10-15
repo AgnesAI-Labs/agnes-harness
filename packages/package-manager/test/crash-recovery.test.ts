@@ -12,7 +12,7 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { afterEach, beforeEach, expect, it } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { appendPackageAudit } from '../src/audit.js'
 import {
   createPackageManager,
@@ -33,6 +33,12 @@ import {
   recoverPackageStore,
 } from '../src/store.js'
 
+// Fault injection only: lets a test stop a recursive delete part-way, as a killed process would.
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  return { ...actual, rmSync: vi.fn(actual.rmSync) }
+})
+const { rmSync: realRmSync } = await vi.importActual<typeof import('node:fs')>('node:fs')
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
 let root: string, profile: string, store: PackageStore, old: LockEntry, dest: string
 const points: PackageCommitPoint[] = [
@@ -75,23 +81,26 @@ beforeEach(async () => {
     now: () => '2026-09-13T00:00:00Z',
   }
 })
-afterEach(() => rmSync(root, { recursive: true, force: true }))
-function candidate() {
+afterEach(() => {
+  vi.mocked(rmSync).mockImplementation(realRmSync)
+  rmSync(root, { recursive: true, force: true })
+})
+function candidate(version = '1.1.0', current: LockEntry = old) {
   const stage = join(dirname(dest), `.stage-${randomUUID()}`)
   cpSync(dest, stage, { recursive: true })
   for (const filename of ['package.json']) {
     const file = join(stage, filename),
       data = JSON.parse(readFileSync(file, 'utf8'))
-    data.version = '1.1.0'
+    data.version = version
     writeFileSync(file, JSON.stringify(data))
   }
   const hash = hashDirectory(stage, { exclude: [] }),
     next = {
-      ...structuredClone(old),
-      version: '1.1.0',
+      ...structuredClone(current),
+      version,
       integrity: hash,
       treeIntegrity: hash,
-      previous: previousSnapshot(old),
+      previous: previousSnapshot(current),
     } as LockEntry
   return { stage, next }
 }
@@ -179,6 +188,53 @@ it.each(['missing', 'changed'])(
     expect(hashDirectory(dest, { exclude: [] })).toBe(next.treeIntegrity)
   },
 )
+// The retained previous (update) or the old tree (remove) is obsolete once the lock commits. A crash
+// part-way through deleting it must recover; a tree damaged before the transaction discarded it is refused.
+it.each([
+  ['remove', 'during its delete', true],
+  ['update', 'during its delete', true],
+  ['update', 'before it was discarded', false],
+] as const)('%s with its obsolete tree damaged %s recovers: %s', (operation, when, recovers) => {
+  let next: LockEntry | null = null,
+    stage: string | undefined
+  if (operation === 'update') {
+    const first = candidate()
+    commitPackage(store, load(), 'acme/pkg-a', first.next, 'update', first.stage)
+    ;({ next, stage } = candidate('1.2.0', first.next))
+  }
+  const crashes = { ...store, checkpoint: (_point: PackageCommitPoint) => {} }
+  if (when === 'during its delete')
+    vi.mocked(rmSync).mockImplementation((path, options) => {
+      if (!options?.recursive || dirname(String(path)) !== dirname(dest)) return realRmSync(path, options)
+      vi.mocked(rmSync).mockImplementation(realRmSync)
+      realRmSync(join(String(path), 'package.json'))
+      throw Error('crash')
+    })
+  else
+    crashes.checkpoint = (point) => {
+      if (point !== 'audit-written') return
+      realRmSync(join(previousPackageDir(store, 'acme/pkg-a'), 'package.json'))
+      throw Error('crash')
+    }
+  expect(() => commitPackage(crashes, load(), 'acme/pkg-a', next, operation, stage)).toThrow('crash')
+  vi.mocked(rmSync).mockImplementation(realRmSync)
+  const journal = join(profile, '.agnes-package-transaction.json')
+  if (!recovers) {
+    expect(() => recoverPackageStore(store)).toThrow('requires recovery')
+    expect(existsSync(journal)).toBe(true)
+    return
+  }
+  recoverPackageStore(store)
+  recoverPackageStore(store)
+  expect(existsSync(journal)).toBe(false)
+  expect(readdirSync(dirname(dest)).filter((x) => /^\.(trash|transaction)-/.test(x))).toEqual([])
+  expect(load().packages['acme/pkg-a']?.version).toBe(next?.version)
+  if (next)
+    expect(hashDirectory(previousPackageDir(store, 'acme/pkg-a'), { exclude: [] })).toBe(
+      next.previous?.treeIntegrity,
+    )
+  else expect(existsSync(dest)).toBe(false)
+})
 it('rejects oversized journal before any side effect and validates write shape just like recovery', () => {
   const lock = load(),
     large = structuredClone(old)

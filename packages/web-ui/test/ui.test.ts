@@ -91,8 +91,8 @@ describe('web-ui public component layer', () => {
     expect(ui.Field).toBeTypeOf('function')
     const { SettingsModelPane } = await import('../src/index.js')
     for (const [locale, empty, loading] of [
-      ['en', 'No saved model accounts yet.', 'Loading configuration…'],
-      ['zh-CN', '还没有已保存的模型账户。', '正在读取配置…'],
+      ['en', 'Connect a model to start working', 'Loading configuration…'],
+      ['zh-CN', '连接一个模型，就能开始工作', '正在读取配置…'],
     ]) {
       document.documentElement.lang = locale!
       const unmount = ui.mountRegion(

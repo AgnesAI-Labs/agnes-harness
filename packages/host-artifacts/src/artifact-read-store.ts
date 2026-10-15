@@ -5,6 +5,7 @@ import { lstat, open } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
 import { types as utilTypes } from 'node:util'
 import type { ArtifactRef } from '@agnes/protocol'
+import type { UiArtifactStatus } from '@agnes/protocol/gen/intelligent-ui'
 import { readComputerUseTombstone } from './computer-use-marker.js'
 
 const HASH = /^[0-9a-f]{64}$/u
@@ -14,6 +15,7 @@ const MIME = /^[a-z0-9][a-z0-9!#$&^_.+-]{0,63}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,127}
 export const LOCAL_ARTIFACT_READ_MAX_BYTES = 32 * 1024 * 1024
 
 export type LocalArtifactReadStore = Readonly<{
+  status(ref: ArtifactRef, signal: AbortSignal): Promise<UiArtifactStatus>
   get(ref: ArtifactRef, signal: AbortSignal): Promise<Uint8Array>
   inspect(identity: Readonly<{ sha256: string; mime: string }>, signal: AbortSignal): Promise<ArtifactRef>
 }>
@@ -122,6 +124,19 @@ export function createLocalArtifactReadStore(
   const artifactRoot = resolve(rawDataDir, 'artifacts', 'sha256')
   const maxArtifactBytes = maximum as number
   return Object.freeze({
+    async status(value, signal) {
+      const ref = snapshotRef(value, maxArtifactBytes)
+      if (!ref || signal.aborted) return 'unavailable'
+      try {
+        const path = join(artifactRoot, ref.sha256.slice(0, 2), ref.sha256)
+        const found = await missingOrReclaimed(path, rawDataDir, ref.sha256)
+        if (signal.aborted) return 'unavailable'
+        if (found.kind === 'reclaimed') return 'reclaimed'
+        return found.stat.isFile() && found.stat.size === ref.size ? 'available' : 'identity_mismatch'
+      } catch (error) {
+        return (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'not_found' : 'unavailable'
+      }
+    },
     async inspect(value: Readonly<{ sha256: string; mime: string }>, signal: AbortSignal) {
       try {
         if (

@@ -1,5 +1,7 @@
 /** @vitest-environment happy-dom */
+
 import type { DiagnosticsExportResult } from '@agnes/protocol'
+import type { DoctorResult } from '@agnes/protocol/gen/app-server'
 import { SettingsSubpageFrame } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -47,6 +49,7 @@ const bundle: DiagnosticsExportResult = {
 }
 async function mount(api: ReturnType<typeof diagnosticsApi>, download = vi.fn()) {
   const host = document.createElement('form')
+  host.id = 'config-form'
   document.body.append(host)
   const root = createRoot(host)
   roots.push(root)
@@ -67,7 +70,10 @@ it.each([false, true])(
     const fetcher = vi.fn<typeof fetch>(async (url, init) => {
       if (String(url).endsWith('/doctor'))
         return Response.json({
-          checks: [{ id: 'node', status: 'ok', fixHintKey: 'doctor.fix.node' }],
+          checks: [
+            { id: 'node', status: 'ok', fixHintKey: 'doctor.fix.node' },
+            { id: 'accounts', status: 'ok', fixHintKey: 'doctor.fix.accounts' },
+          ],
           status: 'ok',
         })
       return Response.json(init?.method ? bundle : { bundle, doctorAvailable })
@@ -129,7 +135,7 @@ it.each([false, true])(
       const selfCheck = host.querySelector('[data-testid="diagnostics-doctor"]')
       if (!selfCheck) throw new Error('Missing self-check block')
       expect(selfCheck.querySelector('[data-testid="doctor-check-node"]')?.textContent).toBe(
-        'Node.js runtimeReady',
+        'Node.js runtimeReady24',
       )
       expect(JSON.parse(String(fetcher.mock.calls.at(-1)?.[1]?.body))).toEqual({ probeAccounts: false })
       await act(async () =>
@@ -145,11 +151,9 @@ it.each([false, true])(
       await act(async () =>
         selfCheck.querySelector<HTMLButtonElement>('[data-testid="diagnostics-doctor-run"]')?.click(),
       )
-      expect(
-        selfCheck
-          .querySelector('[data-testid="doctor-check-node"] .agnes-settings-tag')
-          ?.getAttribute('data-tone'),
-      ).toBe('warn')
+      expect(selfCheck.querySelector('[data-testid="doctor-check-node"]')?.getAttribute('data-state')).toBe(
+        'warn',
+      )
       await act(async () =>
         host.querySelector<HTMLButtonElement>('[data-testid="diagnostics-summary-copy"]')?.click(),
       )
@@ -165,7 +169,7 @@ it.each([false, true])(
       await act(async () =>
         selfCheck.querySelector<HTMLButtonElement>('[data-testid="diagnostics-doctor-run"]')?.click(),
       )
-      expect(selfCheck.querySelector('[role="alert"]')?.textContent).toBe(
+      expect(selfCheck.querySelector('[role="alert"]')?.textContent).toContain(
         'You do not have permission for this operation.',
       )
     }
@@ -249,4 +253,182 @@ it('renders safe translated failures, rejects invalid DTOs, and cancels an unmou
     'No Worker is currently running',
   )
   expect(idle.querySelector('[data-testid="otlp-state"]')?.textContent).toContain('Disabled')
+})
+
+const checkIds = [
+  'node',
+  'native',
+  'home',
+  'permissions',
+  'credentials',
+  'disk',
+  'sandbox',
+  'mcp',
+  'connection',
+  'accounts',
+  'plugins',
+] as const
+const healthy: DoctorResult = {
+  status: 'ok',
+  checks: checkIds.map((id) => ({ id, status: 'ok', fixHintKey: `doctor.fix.${id}` })),
+}
+function healthApi(report: DoctorResult, worker = 'unavailable', service = 'ok') {
+  return diagnosticsApi(async (url) =>
+    Response.json(
+      String(url).endsWith('/doctor')
+        ? report
+        : {
+            bundle: {
+              ...bundle,
+              doctor: [
+                { name: 'worker', status: worker },
+                { name: 'daemon', status: service },
+              ],
+            },
+            doctorAvailable: true,
+          },
+    ),
+  )
+}
+it('groups each check once, excludes unavailable workers, and shows only supplied values and actionable fixes', async () => {
+  const report: DoctorResult = {
+    ...healthy,
+    checks: healthy.checks.map((check) => ({
+      ...check,
+      ...(check.id === 'disk' ? { availableBytes: 2 * 1024 ** 3, totalBytes: 8 * 1024 ** 3 } : {}),
+      ...(check.id === 'accounts' ? { status: 'warn', count: 0, probed: false } : {}),
+      ...(check.id === 'plugins' || check.id === 'native' ? { status: 'fail' } : {}),
+    })),
+  }
+  const host = await mount(healthApi(report, 'unavailable', 'warn'))
+  expect(host.querySelector('.agnes-doctor-footer')?.getAttribute('data-state')).toBe('warn')
+  expect(host.querySelector('.agnes-doctor-service')?.textContent).toContain('Needs attention')
+  expect(host.querySelector('.agnes-doctor-ecg')).toBeNull()
+  expect(host.querySelector('.agnes-doctor-footer [data-testid=diagnostics-summary-copy]')).not.toBeNull()
+  expect(host.querySelector('.agnes-doctor-footer [data-testid=diagnostics-export]')).not.toBeNull()
+  expect(host.querySelectorAll('.agnes-doctor-card')).toHaveLength(1)
+  expect(
+    host.querySelector('[data-testid=doctor-check-accounts] [data-testid=doctor-probe-accounts]'),
+  ).not.toBeNull()
+  const groups = [...host.querySelectorAll('[data-doctor-group]')]
+  expect(
+    groups.map((group) => [
+      group.getAttribute('data-doctor-group'),
+      group.querySelector('[data-testid="doctor-group-count"]')?.textContent,
+    ]),
+  ).toEqual([
+    ['environment', '1/2'],
+    ['data', '4/4'],
+    ['isolation', '2/2'],
+    ['connection', '1/3'],
+  ])
+  expect(groups[0]?.querySelector('small')?.getAttribute('data-tone')).toBe('warn')
+  expect(groups[1]?.querySelector('small')?.getAttribute('data-tone')).toBe('ok')
+  for (const id of [...checkIds, 'worker'])
+    expect(host.querySelectorAll(`[data-testid="doctor-check-${id}"]`)).toHaveLength(1)
+  const row = (id: string) => {
+    const element = host.querySelector(`[data-testid="doctor-check-${id}"]`)
+    if (!element) throw new Error(`Missing check ${id}`)
+    return element
+  }
+  expect(row('node').textContent).toContain('24')
+  expect(row('disk').textContent).toContain('2 GiB available of 8 GiB')
+  expect(row('accounts').textContent).toContain('0 configured')
+  expect(row('accounts').getAttribute('title')).toBe('Connection has not been tested in this check.')
+  expect(row('home').querySelector('[data-testid="doctor-check-value"]')).toBeNull()
+  expect(row('worker').textContent).toContain('Unavailable')
+  expect(row('worker').getAttribute('data-state')).toBe('unavailable')
+  const fixes = [...host.querySelectorAll('[data-testid="doctor-fix"]')]
+  expect(fixes).toHaveLength(3)
+  expect(fixes.find((fix) => fix.textContent?.includes('Native helpers'))?.textContent).toContain(
+    'Rebuild the native helpers',
+  )
+  expect(fixes.find((fix) => fix.textContent?.includes('Native helpers'))?.querySelector('a')).toBeNull()
+  expect(fixes.flatMap((fix) => [...fix.querySelectorAll('a')].map((a) => a.getAttribute('href')))).toEqual([
+    '?settings=model',
+    '?settings=plugins',
+  ])
+  const route = vi.fn()
+  host.addEventListener('agnes:settings-route', (event) => route((event as CustomEvent).detail))
+  await act(async () => host.querySelector<HTMLAnchorElement>('a[href="?settings=model"]')?.click())
+  expect(route).toHaveBeenCalledWith('model')
+  const ok = await mount(healthApi(healthy, 'ok'))
+  expect(ok.querySelector('[data-testid="doctor-fix"]')).toBeNull()
+  expect(ok.querySelector('.agnes-doctor-service')?.textContent).toContain('Running')
+  expect(
+    ok.querySelector('[data-doctor-group="environment"] [data-testid="doctor-group-count"]')?.textContent,
+  ).toBe('3/3')
+})
+it('keeps pending groups in place, announces completion, refreshes time, probes accounts and retries failures', async () => {
+  vi.useFakeTimers()
+  try {
+    let finish: ((value: DoctorResult) => void) | undefined
+    const api = healthApi(healthy)
+    api.doctor = vi.fn(
+      () =>
+        new Promise<DoctorResult>((resolve) => {
+          finish = resolve
+        }),
+    )
+    const host = await mount(api)
+    const run = host.querySelector<HTMLButtonElement>('[data-testid="diagnostics-doctor-run"]')
+    if (!run) throw new Error('Missing check action')
+    expect(host.querySelectorAll('[data-doctor-group]')).toHaveLength(4)
+    expect(host.querySelectorAll('[data-state="pending"]')).toHaveLength(12)
+    expect(run.getAttribute('aria-busy')).toBe('true')
+    expect(host.querySelector('[data-testid="doctor-announcement"]')?.textContent).toBe('')
+    await act(async () => finish?.(healthy))
+    expect(run.getAttribute('aria-busy')).toBe('false')
+    expect(host.querySelector('[data-testid="doctor-announcement"]')?.textContent).toContain(
+      'Status check complete.',
+    )
+    expect(host.querySelector('[data-testid="doctor-checked-at"]')?.textContent).toBe('Just now')
+    await act(async () => vi.advanceTimersByTime(120000))
+    expect(host.querySelector('[data-testid="doctor-checked-at"]')?.textContent).toBe('2 minutes ago')
+    await act(async () => run.click())
+    expect(host.querySelectorAll('[data-state="pending"]')).toHaveLength(12)
+    await act(async () => finish?.(healthy))
+    expect(host.querySelector('[data-testid="doctor-checked-at"]')?.textContent).toBe('Just now')
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="doctor-probe-accounts"]')?.click(),
+    )
+    expect(api.doctor).toHaveBeenLastCalledWith(expect.any(AbortSignal), true)
+    await act(async () =>
+      finish?.({
+        status: 'fail',
+        checks: healthy.checks.map((check) =>
+          check.id === 'accounts' ? { ...check, status: 'fail', probed: true, count: 1 } : check,
+        ),
+      }),
+    )
+    const account = host.querySelector('[data-testid="doctor-check-accounts"]')
+    if (!account) throw new Error('Missing account check')
+    expect(account.textContent).toContain('Check failed')
+    expect(account.getAttribute('title')).toBeNull()
+    vi.mocked(api.doctor).mockRejectedValueOnce(new Error('private failure'))
+    await act(async () => run.click())
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+      'Diagnostics could not be loaded. Try again.',
+    )
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="doctor-retry"]')?.click())
+    await act(async () => finish?.(healthy))
+    expect(host.querySelector('[role="alert"]')).toBeNull()
+    const failedApi = healthApi(healthy)
+    failedApi.doctor = vi.fn().mockRejectedValue(new Error('private failure'))
+    const failed = await mount(failedApi)
+    expect(failed.querySelector('[role="alert"]')?.textContent).toContain('Diagnostics could not be loaded')
+    expect(failed.querySelectorAll('[data-state="pending"]')).toHaveLength(12)
+    expect(failed.querySelector('[data-testid="doctor-fix"]')).toBeNull()
+    expect(failed.querySelector('[data-testid="doctor-checked-at"]')).toBeNull()
+    expect(failed.querySelector('[data-testid="doctor-retry"]')).not.toBeNull()
+    await act(async () => roots.pop()?.unmount())
+    await act(async () => run.click())
+    const pendingSignal = vi.mocked(api.doctor).mock.calls.at(-1)?.[0]
+    await act(async () => roots.pop()?.unmount())
+    expect(pendingSignal?.aborted).toBe(true)
+    await act(async () => finish?.(healthy))
+    expect(host.textContent).toBe('')
+  } finally {
+    vi.useRealTimers()
+  }
 })

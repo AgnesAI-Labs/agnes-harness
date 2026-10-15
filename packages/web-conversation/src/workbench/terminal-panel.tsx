@@ -1,23 +1,39 @@
 import type { SessionJob, SessionJobsReadResult } from '@agnes/protocol'
 import type { Session } from '@agnes/sdk/browser'
 import type { UiExtensionContext } from '@agnes/web-client'
-import {
-  appServerErrorMessage,
-  Button,
-  Icon,
-  IconButton,
-  Popover,
-  Select,
-  SettingsState,
-  SettingsTextArea,
-  StatusDot,
-  type StatusDotTone,
-  terminalKey,
-  terminalScreen,
-} from '@agnes/web-ui'
+import { appServerErrorMessage, Button, ConfirmDialog, IconButton, Menu, SettingsState } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
 import { panelContext } from './context.js'
 import { terminalCount } from './tab-counts.js'
+import {
+  readTerminalShell,
+  rememberTerminalNames,
+  rememberTerminalShell,
+  terminalStorageKey as storageKey,
+  type TerminalShell,
+  terminalNames,
+  terminalShells,
+} from './terminal-preferences.js'
+import { TerminalTabs } from './terminal-tabs.js'
+import { TerminalView } from './terminal-view.js'
+
+const closedSessions = new Set<string>()
+const openingSessions = new Set<string>()
+function wasClosed(id: string) {
+  try {
+    return localStorage.getItem(`${storageKey(id)}.closed`) === 'true'
+  } catch {
+    return closedSessions.has(id)
+  }
+}
+function markClosed(id: string) {
+  closedSessions.add(id)
+  try {
+    localStorage.setItem(`${storageKey(id)}.closed`, 'true')
+  } catch {
+    /* memory fallback */
+  }
+}
 
 type Input = Parameters<Session['jobsControl']>[0]
 type PendingInput = {
@@ -27,7 +43,6 @@ type PendingInput = {
   sending: boolean
   text: string
 }
-const storageKey = (id: string) => `agnes.workbench.terminals.${id}`
 function attachments(id: string): string[] | undefined {
   try {
     const value: unknown = JSON.parse(localStorage.getItem(storageKey(id)) ?? 'null')
@@ -44,12 +59,13 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
     { t } = context
   const sessionId = session?.id
   const [snapshot, setSnapshot] = useState<SessionJobsReadResult>({ jobs: [], completions: [] })
+  const snapshotRef = useRef(snapshot)
+  snapshotRef.current = snapshot
   const [ids, setIds] = useState<string[]>([]),
     [active, setActive] = useState('')
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(false),
     [inputBlocked, setInputBlocked] = useState(false)
-  const outputElement = useRef<HTMLTextAreaElement>(null)
   const pendingInput = useRef<PendingInput | undefined>(undefined)
   useEffect(() => {
     const queue: PendingInput = {
@@ -65,14 +81,26 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
       queue.text = '' // Detach discards unsent UI input; an accepted send and the process remain owned by the session.
     }
   }, [sessionId, active])
-  const [size, setSize] = useState({ columns: 100, rows: 30 })
   const [refresh, setRefresh] = useState(0)
-  const [shell, setShell] = useState<'bash' | 'zsh' | 'pwsh'>('bash')
+  const [shell, setShell] = useState(readTerminalShell)
+  const [names, setNames] = useState<Record<string, string>>({})
+  const [terminate, setTerminate] = useState<{ job: SessionJob; detach: boolean }>()
+  const removed = useRef(new Set<string>())
+  const [notice, setNotice] = useState('')
+  const [dismissed, setDismissed] = useState('')
   const scope = useRef(session?.id),
     restored = useRef(false)
   scope.current = session?.id
   useEffect(() => {
     restored.current = false
+    try {
+      removed.current = new Set(
+        JSON.parse(localStorage.getItem(`${storageKey(sessionId ?? '')}.removed`) ?? '[]'),
+      )
+    } catch {
+      removed.current = new Set()
+    }
+    setTerminate(undefined)
     const stored = sessionId ? attachments(sessionId) : []
     setBusy(false)
     setInputBlocked(false)
@@ -80,6 +108,7 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
     setActive(stored?.[0] ?? '')
     setSnapshot({ jobs: [], completions: [] })
     setError('')
+    setNames(sessionId ? terminalNames(sessionId) : {})
   }, [sessionId])
   // biome-ignore lint/correctness/useExhaustiveDependencies: a completed control receipt restarts polling immediately.
   useEffect(() => {
@@ -96,18 +125,65 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
           if (!active || !restored.current) throw cause
           value = await session.jobsRead()
           if (value.jobs.some((job) => job.id === active)) throw cause
-          if (alive) setActive('') // A completed job may have been evicted by the bounded registry.
+          const cached = snapshotRef.current.jobs.find(
+            (row) => row.id === active && row.owner === 'agent' && row.status !== 'running',
+          )
+          if (cached) value = { ...value, job: cached }
+          else if (alive) setActive('') // Only a human terminal without cached output is detached on eviction.
         }
         if (!alive) return
-        setSnapshot(value)
+        setSnapshot((previous) => ({
+          ...value,
+          jobs: [
+            ...value.jobs.map((row) => ({
+              ...previous.jobs.find((known) => known.id === row.id),
+              ...(previous.job?.id === row.id ? previous.job : {}),
+              ...row,
+              ...(value.job?.id === row.id ? value.job : {}),
+            })),
+            ...previous.jobs.filter(
+              (row) => row.owner === 'agent' && !value.jobs.some((next) => next.id === row.id),
+            ),
+          ],
+        }))
         terminalCount.set(session.id, value.jobs.length)
         setError('')
         if (!restored.current) {
           restored.current = true
-          const initial =
-            attachments(session.id) ?? value.jobs.filter((job) => job.owner === 'human').map((job) => job.id)
-          setIds(initial.filter((id) => value.jobs.some((job) => job.id === id)))
-          setActive(initial.find((id) => value.jobs.some((job) => job.id === id)) ?? '')
+          const stored = attachments(session.id)
+          const initial = value.jobs
+            .filter(
+              (job) =>
+                !removed.current.has(job.id) &&
+                (job.owner === 'agent' ||
+                  job.status === 'running' ||
+                  !wasClosed(session.id) ||
+                  stored?.includes(job.id)),
+            )
+            .map((job) => job.id)
+          setIds(initial)
+          setActive(
+            initial.find((id) => value.jobs.some((job) => job.id === id && job.owner === 'human')) ??
+              initial[0] ??
+              '',
+          )
+          if (
+            !value.jobs.some((job) => job.owner === 'human') &&
+            !wasClosed(session.id) &&
+            !openingSessions.has(session.id)
+          ) {
+            openingSessions.add(session.id) // Share an in-flight open across remounts.
+            void control({ operation: 'open', shell: readTerminalShell(), columns: 100, rows: 30 }).finally(
+              () => openingSessions.delete(session.id),
+            )
+          }
+        } else {
+          setIds((known) => [
+            ...known,
+            ...value.jobs
+              .filter((row) => !known.includes(row.id) && !removed.current.has(row.id))
+              .map((row) => row.id),
+          ])
         }
       } catch (cause) {
         if (alive)
@@ -136,6 +212,15 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
     setActive(id)
   }
   const detach = (id: string) => {
+    if (sessionId && snapshot.jobs.some((row) => row.id === id && row.owner === 'human'))
+      markClosed(sessionId)
+    removed.current.add(id)
+    if (sessionId)
+      try {
+        localStorage.setItem(`${storageKey(sessionId)}.removed`, JSON.stringify([...removed.current]))
+      } catch {
+        /* memory only */
+      }
     setIds((values) => values.filter((value) => value !== id))
     setActive((value) =>
       value === id
@@ -181,8 +266,9 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
   const sendInput = (jobId: string, text: string) => {
     const queue = pendingInput.current
     if (!queue?.alive || queue.sessionId !== sessionId || queue.jobId !== jobId) return
-    if (queue.text.length + text.length > 65536) {
-      setError(t('workbench.terminal.inputFull'))
+    if (new TextEncoder().encode(queue.text + text).length > 65536) {
+      setDismissed('')
+      setNotice(t('workbench.terminal.inputFull'))
       return
     }
     queue.text += text
@@ -201,74 +287,36 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
       queue.sending = false
     })()
   }
-  const tabs = ids.flatMap((id) => snapshot.jobs.filter((job) => job.id === id))
+  const tabs = ids
+    .flatMap((id) => snapshot.jobs.filter((job) => job.id === id))
+    .sort((a, b) => Number(a.owner === 'agent') - Number(b.owner === 'agent'))
   const job: SessionJob | undefined =
     snapshot.job?.id === active ? snapshot.job : snapshot.jobs.find((row) => row.id === active)
   const human = job?.owner === 'human',
     running = job?.status === 'running'
-  const output = job ? terminalScreen((job.stdout ?? '') + (job.stderr ?? ''), size.columns, size.rows) : ''
+  // biome-ignore lint/correctness/useExhaustiveDependencies: notices belong to the active session attachment.
   useEffect(() => {
-    const element = outputElement.current
-    if (element) element.scrollTop = output ? element.scrollHeight : 0
-  }, [output])
-  const jobId = job?.id
-  useEffect(() => {
-    const element = outputElement.current
-    if (!element || !session || !human || !running || !jobId || typeof ResizeObserver === 'undefined') return
-    let timer: ReturnType<typeof setTimeout> | undefined,
-      alive = true
-    const observer = new ResizeObserver(() => {
-      clearTimeout(timer)
-      timer = setTimeout(() => {
-        const rect = element.getBoundingClientRect(),
-          style = getComputedStyle(element)
-        if (!rect.width || !rect.height) return
-        const dimensions = {
-          columns: Math.max(
-            1,
-            Math.min(1000, Math.floor((rect.width - 24) / (parseFloat(style.fontSize) * 0.6))),
-          ),
-          rows: Math.max(1, Math.min(1000, Math.floor((rect.height - 16) / parseFloat(style.lineHeight)))),
-        }
-        setSize(dimensions)
-        void session.jobsControl({ operation: 'resize', jobId, ...dimensions }).catch((cause) => {
-          if (alive)
-            setError(appServerErrorMessage(cause, document.documentElement.lang) ?? t('workbench.error'))
-        })
-      }, 200)
-    })
-    observer.observe(element)
-    return () => {
-      alive = false
-      observer.disconnect()
-      clearTimeout(timer)
-    }
-  }, [session, jobId, human, running, t])
+    setNotice('')
+    setDismissed('')
+  }, [active, sessionId])
   if (!session) return <SettingsState tone="empty">{t('workbench.session')}</SettingsState>
-  const available = snapshot.jobs.filter((row) => !ids.includes(row.id))
-  const name = (row: SessionJob) => row.shell ?? row.command
-  const ownerTag = (row: SessionJob) => (
-    <span className="workbench-terminal-owner">{t(`workbench.terminal.owner.${row.owner}`)}</span>
-  )
-  const newTerminal = (
-    <span className="workbench-terminal-new">
-      <Select
-        aria-label={t('workbench.terminal.shell')}
-        value={shell}
-        onChange={setShell}
-        options={['bash', 'zsh', 'pwsh'].map((value) => ({ value, label: value }))}
-      />
-      <Button
-        size="small"
-        disabled={busy}
-        data-testid="terminal-new"
-        onClick={() => void control({ operation: 'open', shell, columns: 100, rows: 30 })}
-      >
-        <Icon name="plus" />
-        {t('workbench.terminal.new')}
-      </Button>
-    </span>
-  )
+
+  const name = (row: SessionJob) =>
+    names[row.id] ?? (row.owner === 'human' ? (row.shell ?? row.command) : row.command)
+  const create = (choice: TerminalShell) => {
+    setShell(choice)
+    rememberTerminalShell(choice)
+    void control({ operation: 'open', shell: choice, columns: 100, rows: 30 })
+  }
+  const menuItems = [
+    ...terminalShells.map((choice) => ({
+      id: choice,
+      label: `${t('workbench.terminal.new')} · ${choice}${choice === shell ? ` · ${t('workbench.terminal.lastUsed')}` : ''}`,
+      disabled: busy,
+      onSelect: () => create(choice),
+    })),
+  ]
+  const warning = notice || (job?.truncated ? t('workbench.terminal.truncated') : '')
   return (
     <section
       className="workbench-terminal"
@@ -276,204 +324,129 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
       aria-label={t('workbench.terminal.title')}
     >
       {error && <SettingsState tone="error">{error}</SettingsState>}
-      {tabs.length > 0 && (
+      <div className="workbench-terminal-body">
         <div className="workbench-terminal-bar">
-          <div role="tablist" aria-label={t('workbench.terminal.tabs')} className="workbench-terminal-tabs">
-            {tabs.map((tab, index) => (
-              <span key={tab.id} className="workbench-terminal-pill" data-active={active === tab.id}>
-                <Button
-                  type="text"
-                  size="small"
-                  role="tab"
-                  id={`terminal-tab-${tab.id}`}
-                  aria-controls="terminal-job-content"
-                  aria-selected={active === tab.id}
-                  tabIndex={active === tab.id ? 0 : -1}
-                  onClick={() => setActive(tab.id)}
-                  onKeyDown={(event) => {
-                    const step = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : 0
-                    if (!step && event.key !== 'Home' && event.key !== 'End') return
-                    event.preventDefault()
-                    const next =
-                      tabs[
-                        event.key === 'Home'
-                          ? 0
-                          : event.key === 'End'
-                            ? tabs.length - 1
-                            : (index + step + tabs.length) % tabs.length
-                      ]
-                    if (next) {
-                      setActive(next.id)
-                      document.getElementById(`terminal-tab-${next.id}`)?.focus()
-                    }
-                  }}
-                >
-                  <StatusDot tone={jobTone(tab.status)} running={tab.status === 'running'} />
-                  <span className="workbench-terminal-name">{name(tab)}</span>
-                  {ownerTag(tab)}
-                </Button>
-                {active === tab.id && (
-                  <IconButton
-                    name="x"
-                    data-testid="terminal-tab-close"
-                    disabled={busy}
-                    label={t(
-                      tab.owner === 'human' ? 'workbench.terminal.close' : 'workbench.terminal.unfollow',
-                    )}
-                    onClick={() =>
-                      tab.owner === 'human' && tab.status === 'running'
-                        ? void control({ operation: 'kill', jobId: tab.id }, tab.id)
-                        : detach(tab.id)
-                    }
-                  />
-                )}
-              </span>
-            ))}
-            {available.map((row) => (
-              <Button
-                key={row.id}
-                type="text"
-                size="small"
-                className="workbench-terminal-attach"
-                data-testid="terminal-attach"
-                aria-label={`${t('workbench.terminal.follow')} · ${name(row)} · ${t(`workbench.terminal.owner.${row.owner}`)}`}
-                onClick={() => attach(row.id)}
-              >
-                <Icon name="plus" />
-                <span className="workbench-terminal-name">{name(row)}</span>
-                {ownerTag(row)}
-              </Button>
-            ))}
-          </div>
-          {newTerminal}
-        </div>
-      )}
-      {job ? (
-        <div
-          role="tabpanel"
-          id="terminal-job-content"
-          aria-labelledby={`terminal-tab-${job.id}`}
-          className="workbench-terminal-job"
-        >
-          {job.truncated && (
-            <p className="workbench-terminal-note" role="status">
-              {t('workbench.terminal.truncated')}
-            </p>
-          )}
-          <SettingsTextArea
-            presentation="plain"
-            ref={outputElement}
-            className="workbench-terminal-output"
-            data-testid="workbench-terminal-output"
-            aria-label={t('workbench.terminal.output')}
-            readOnly
-            disabled={inputBlocked}
-            value={output}
-            spellCheck={false}
-            onKeyDown={(event) => {
-              if (!human || !running || event.key === 'Escape') return
-              const text = terminalKey(event)
-              if (text === undefined) return
-              event.preventDefault()
-              sendInput(job.id, text)
-            }}
-            onPaste={(event) => {
-              if (!human || !running) return
-              event.preventDefault()
-              sendInput(job.id, event.clipboardData.getData('text/plain').slice(0, 65536))
-            }}
-          />
-          <div className="workbench-terminal-status" data-tone={jobTone(job.status)}>
-            <StatusDot tone={jobTone(job.status)} running={running} />
-            <span role="status">
-              {t(`workbench.terminal.status.${job.status}`)}
-              {job.code !== null && ` · ${t('workbench.terminal.exit', { code: job.code })}`}
-            </span>
-            <span className="workbench-terminal-cwd" title={job.cwd}>
-              {job.cwd}
-            </span>
-            {human && (
-              <>
-                <Button
-                  size="small"
-                  disabled={busy || !running}
-                  data-testid="terminal-interrupt"
-                  onClick={() => void control({ operation: 'signal', jobId: job.id, signal: 'SIGINT' })}
-                >
-                  {t('workbench.terminal.interrupt')}
-                </Button>
-                <Button
-                  size="small"
-                  disabled={busy || !running}
-                  data-testid="terminal-kill"
-                  onClick={() => void control({ operation: 'kill', jobId: job.id })}
-                >
-                  {t('workbench.terminal.kill')}
-                </Button>
-              </>
-            )}
-            <Popover
-              trigger="click"
-              placement="topRight"
-              content={
-                <dl className="workbench-terminal-details" data-testid="terminal-details-content">
-                  <dt>{t('workbench.terminal.session')}</dt>
-                  <dd>{job.ownerSessionId}</dd>
-                  <dt>{t('workbench.terminal.id')}</dt>
-                  <dd>{job.id}</dd>
-                  <dt>{t('workbench.terminal.cwd')}</dt>
-                  <dd>{job.cwd}</dd>
-                </dl>
+          <div className="workbench-terminal-group">
+            {t('workbench.terminal.title')}
+            <Menu
+              label={t('workbench.terminal.newMenu')}
+              triggerMode="contextMenu"
+              items={menuItems}
+              trigger={
+                <IconButton
+                  name="plus"
+                  data-testid="terminal-new"
+                  label={`${t('workbench.terminal.new')} (${shell})`}
+                  disabled={busy}
+                  onClick={() => create(shell)}
+                />
               }
-            >
-              <Button
-                size="small"
-                data-testid="terminal-details"
-                aria-label={t('workbench.terminal.details')}
-              >
-                {t('workbench.terminal.detailsShort')}
-              </Button>
-            </Popover>
+            />
           </div>
+
+          <TerminalTabs
+            tabs={tabs}
+            active={active}
+            busy={busy}
+            t={t}
+            name={name}
+            select={setActive}
+            rename={(id, value) => {
+              const next = { ...names, [id]: value }
+              setNames(next)
+              rememberTerminalNames(session.id, next)
+            }}
+            close={(tab) =>
+              tab.owner === 'human' && tab.status === 'running'
+                ? setTerminate({ job: tab, detach: true })
+                : detach(tab.id)
+            }
+            interrupt={(tab) => void control({ operation: 'signal', jobId: tab.id, signal: 'SIGINT' })}
+            kill={(tab) => setTerminate({ job: tab, detach: false })}
+          />
         </div>
-      ) : (
-        <div className="workbench-terminal-empty" data-testid="terminal-empty">
-          <p className="workbench-terminal-empty-title">{t('workbench.terminal.empty')}</p>
-          {available.length > 0 && (
-            <section className="workbench-terminal-available" aria-label={t('workbench.terminal.available')}>
-              <h4>{t('workbench.terminal.available')}</h4>
-              <ul>
-                {available.map((row) => (
-                  <li key={row.id}>
-                    <StatusDot tone={jobTone(row.status)} running={row.status === 'running'} />
-                    <span className="workbench-terminal-name">{name(row)}</span>
-                    {ownerTag(row)}
-                    <span className="workbench-terminal-row-status">
-                      {t(`workbench.terminal.status.${row.status}`)}
-                    </span>
-                    <Button size="small" data-testid="terminal-attach" onClick={() => attach(row.id)}>
-                      {t('workbench.terminal.follow')}
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-          {newTerminal}
-        </div>
-      )}
-      <footer className="workbench-tab-footer">{t('workbench.terminal.detach')}</footer>
+        {job ? (
+          <section
+            id="terminal-job-content"
+            aria-labelledby={`terminal-tab-${job.id}`}
+            className="workbench-terminal-job"
+          >
+            {warning && dismissed !== warning && (
+              <div className="workbench-terminal-note" role="status">
+                {warning}
+                <IconButton
+                  name="x"
+                  label={t('workbench.terminal.dismiss')}
+                  onClick={() => {
+                    setDismissed(warning)
+                    setNotice('')
+                  }}
+                />
+              </div>
+            )}
+            <TerminalView
+              loading={t('workbench.terminal.loading')}
+              failure={t('workbench.terminal.loadFailed')}
+              key={`${session.id}:${job.id}`}
+              stdout={job.stdout ?? ''}
+              stderr={job.stderr ?? ''}
+              label={t('workbench.terminal.output')}
+              writable={human && running && !inputBlocked}
+              exitLine={
+                !running && job.code !== null ? t('workbench.terminal.exited', { code: job.code }) : undefined
+              }
+              exitTone={job.code === 0 ? 'neutral' : 'danger'}
+              onData={(text) => sendInput(job.id, text)}
+              onResize={(columns, rows) => {
+                const id = session.id
+                void session
+                  .jobsControl({ operation: 'resize', jobId: job.id, columns, rows })
+                  .catch((cause) => {
+                    if (scope.current === id)
+                      setError(
+                        appServerErrorMessage(cause, document.documentElement.lang) ?? t('workbench.error'),
+                      )
+                  })
+              }}
+            />
+            {!human && (
+              <div className="workbench-terminal-readonly">
+                {t('workbench.terminal.readonly')}
+                <Button type="text" size="small" onClick={() => detach(job.id)}>
+                  {t('workbench.terminal.remove')}
+                </Button>
+              </div>
+            )}
+          </section>
+        ) : (
+          <div className="workbench-terminal-empty" data-testid="terminal-empty">
+            <Button type="text" disabled={busy} onClick={() => create(shell)}>
+              + {t('workbench.terminal.new')}
+            </Button>
+          </div>
+        )}
+      </div>
+      <ConfirmDialog
+        open={!!terminate}
+        title={t('workbench.terminal.kill')}
+        confirmLabel={t('workbench.terminal.kill')}
+        destructive
+        busy={busy}
+        onCancel={() => setTerminate(undefined)}
+        onConfirm={() => {
+          if (!terminate) return
+          const target = terminate
+          markClosed(session.id)
+          void control(
+            { operation: 'kill', jobId: target.job.id },
+            target.detach ? target.job.id : undefined,
+          ).then((ok) => {
+            if (ok) setTerminate((current) => (current === target ? undefined : current))
+          })
+        }}
+      >
+        {terminate ? name(terminate.job) : ''}
+      </ConfirmDialog>
     </section>
   )
-}
-
-/** Running is live, a finished process is quiet, and only a failure is red. */
-function jobTone(status: SessionJob['status']): StatusDotTone {
-  return status === 'running'
-    ? 'success'
-    : status === 'failed'
-      ? 'danger'
-      : status === 'killed'
-        ? 'warning'
-        : 'neutral'
 }

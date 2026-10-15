@@ -16,6 +16,7 @@ import {
   canonical,
   capabilityHash,
   freezeData,
+  own,
   readStaticJson,
   snapshotHash,
   syncDirectory,
@@ -496,7 +497,7 @@ function select(
     entry = row.entry
     directory = row.directory
   } else {
-    const current = lock.packages[request.packageId]
+    const current = own(lock.packages, request.packageId)
     if (!current?.previous?.treeIntegrity || !current.previous.source)
       stateFailure('previous-snapshot-missing')
     entry = { ...structuredClone(current.previous), previous: null } as LockEntry
@@ -596,9 +597,12 @@ export function recoverRuntimeSnapshotStore(s: RuntimeSnapshotStore): void {
     return
   }
   const state = readState(s),
-    journal = readJournal(s)
+    journal = readJournal(s),
+    trash = join(root, `.trash-${journal.transactionId}`)
   mkdirSync(root, { recursive: true })
   if (journal.kind === 'create') {
+    // Only a verified abandoned copy enters this journal's trash; a partial delete of it is expected.
+    rmSync(trash, { recursive: true, force: true })
     const destination = snapshotDir(s, journal.snapshot.snapshotId),
       stage = join(root, journal.stage),
       committed = state.pins[journal.pin.pinId]
@@ -614,7 +618,8 @@ export function recoverRuntimeSnapshotStore(s: RuntimeSnapshotStore): void {
       if (state.snapshots[journal.snapshot.snapshotId]) integrityFailure('runtime-journal-state-mismatch')
       if (present(destination)) {
         exactTree(destination, journal.snapshot.treeIntegrity)
-        rmSync(destination, { recursive: true })
+        renameSync(destination, trash)
+        rmSync(trash, { recursive: true })
       }
       // The journal owns this UUID stage before copying starts, so a partial copy is safe to remove.
       if (present(stage)) rmSync(stage, { recursive: true })
@@ -623,14 +628,11 @@ export function recoverRuntimeSnapshotStore(s: RuntimeSnapshotStore): void {
     return
   }
   const destination = snapshotDir(s, journal.snapshot.snapshotId),
-    trash = join(root, journal.trash),
     committed = !state.snapshots[journal.snapshot.snapshotId]
   if (committed) {
     if (present(destination)) integrityFailure('runtime-gc-destination-after-commit')
-    if (present(trash)) {
-      exactTree(trash, journal.snapshot.treeIntegrity)
-      rmSync(trash, { recursive: true })
-    }
+    // Collected and verified before the state commit; a crash part-way through its delete is expected.
+    rmSync(trash, { recursive: true, force: true })
   } else if (present(trash)) {
     if (present(destination)) integrityFailure('runtime-gc-path-collision')
     exactTree(trash, journal.snapshot.treeIntegrity)
@@ -663,7 +665,7 @@ export function pinRuntimeSnapshotStore(
   const requestHash = validateRequest(s, request),
     state = readState(s)
   assertKnownRuntimeDirectories(s, state)
-  if (!lock.packages[request.packageId]) stateFailure('package-not-installed')
+  if (!own(lock.packages, request.packageId)) stateFailure('package-not-installed')
   const prior = state.pins[request.pinId]
   if (prior) {
     if (
@@ -746,7 +748,7 @@ export function resolveRuntimePinStore(
   if (request.expectedSnapshotId !== undefined && pin.snapshotId !== request.expectedSnapshotId)
     integrityFailure('pin-snapshot-stale')
   if (lock) {
-    const current = lock.packages[pin.packageId]
+    const current = own(lock.packages, pin.packageId)
     if (!current) stateFailure('package-not-found')
     if (current.state.trusted === null || (packageEligible && !packageEligible(pin.packageId)))
       stateFailure('package-not-eligible')

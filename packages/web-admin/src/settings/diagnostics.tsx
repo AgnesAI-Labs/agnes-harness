@@ -7,13 +7,13 @@ import {
   Dialog,
   FIRST_RUN_NAMESPACE,
   firstRunCatalog,
+  Icon,
   Segmented,
   SettingsBlock,
   SettingsDrill,
   SettingsExpand,
   SettingsInput,
   SettingsItem,
-  SettingsPageActions,
   SettingsState,
   trackPageRequest,
   useUiText,
@@ -58,7 +58,7 @@ export function errorKind(record: DiagnosticRecord): Filter {
 }
 
 /**
- * 运行时与诊断: status checks as rows with a state mark (重新检查, 测试模型账户), recent errors one line
+ * 运行时与诊断: status checks in four compact groups (重新检查, 测试模型账户), recent errors one line
  * each with repeats grouped (open one for its details and copy; 「查看全部」 is a subpage with a
  * filter), and 集成 (OTLP export and the runtime details as subpages). The page header copies a
  * summary and exports a redacted bundle after saying what it contains.
@@ -182,6 +182,7 @@ export function DiagnosticsPanel({
   const boundSessions = bundle?.generations.available
     ? bundle.generations.items.reduce((count, row) => count + row.boundSessions, 0)
     : undefined
+  const serviceStatus = bundle?.doctor.find((row) => row.name === 'daemon')?.status ?? 'ok'
   const workerStatus = bundle?.doctor.find((row) => row.name === 'worker')?.status
   const workerIdle = boundSessions === 0 && (!workerStatus || workerStatus === 'unavailable')
   const groups = groupErrors(bundle?.errors ?? [])
@@ -245,41 +246,48 @@ export function DiagnosticsPanel({
           .includes(needle))
     )
   })
+  const footerActions = (
+    <>
+      <Button
+        type="text"
+        size="small"
+        data-testid="diagnostics-summary-copy"
+        disabled={!bundle}
+        onClick={() => {
+          if (!bundle) return
+          const summary = [
+            t('title'),
+            `${t('recent')}: ${bundle.errors.length}`,
+            ...(doctorChecks
+              ? doctorChecks.map(
+                  (check) =>
+                    `${doctorText(`doctor.check.${check.id}`)}: ${doctorText(`doctor.status.${check.status}`)}`,
+                )
+              : bundle.doctor.map(
+                  (check) =>
+                    `${t(`check.${check.name}`) === `check.${check.name}` ? t('otherCheck') : t(`check.${check.name}`)}: ${t(`state.${check.status}`)}`,
+                )),
+          ].join('\n')
+          copy(summary, 'summaryCopied')
+        }}
+      >
+        <Icon name="copy" />
+        {t('copySummary')}
+      </Button>
+      <Button
+        type="text"
+        size="small"
+        data-testid="diagnostics-export"
+        disabled={busy || !bundle}
+        onClick={() => setExporting(true)}
+      >
+        <Icon name="download" />
+        {t('export')}
+      </Button>
+    </>
+  )
   return (
     <>
-      <SettingsPageActions>
-        <Button
-          data-testid="diagnostics-summary-copy"
-          disabled={!bundle}
-          onClick={() => {
-            if (!bundle) return
-            const summary = [
-              t('title'),
-              `${t('recent')}: ${bundle.errors.length}`,
-              ...(doctorChecks
-                ? doctorChecks.map(
-                    (check) =>
-                      `${doctorText(`doctor.check.${check.id}`)}: ${doctorText(`doctor.status.${check.status}`)}`,
-                  )
-                : bundle.doctor.map(
-                    (check) =>
-                      `${t(`check.${check.name}`) === `check.${check.name}` ? t('otherCheck') : t(`check.${check.name}`)}: ${t(`state.${check.status}`)}`,
-                  )),
-            ].join('\n')
-            copy(summary, 'summaryCopied')
-          }}
-        >
-          {t('copySummary')}
-        </Button>
-        <Button
-          appearance="primary"
-          data-testid="diagnostics-export"
-          disabled={busy || !bundle}
-          onClick={() => setExporting(true)}
-        >
-          {t('exportReviewAction')}
-        </Button>
-      </SettingsPageActions>
       {notice && (
         <SettingsState
           tone={notice === 'invalid' || notice === 'copyFailed' ? 'error' : 'success'}
@@ -290,13 +298,23 @@ export function DiagnosticsPanel({
       )}
       {doctorAvailable ? (
         <DoctorRows
+          footerActions={footerActions}
           label={t('doctor')}
           load={loadChecks}
-          worker={workerIdle ? t('workerIdle') : t(`state.${workerStatus ?? 'unavailable'}`)}
-          version={bundle ? `${bundle.agh.version} · Node ${bundle.runtime.node}` : undefined}
+          worker={{
+            text: workerIdle ? t('workerIdle') : t(`state.${workerStatus ?? 'unavailable'}`),
+            status: workerStatus ?? 'unavailable',
+          }}
+          version={bundle?.agh.version}
+          node={bundle?.runtime.node}
+          service={{
+            text: serviceStatus === 'ok' ? t('running') : t(`state.${serviceStatus}`),
+            status: serviceStatus,
+          }}
         />
       ) : (
         <SettingsBlock label={t('doctor')} data-testid="diagnostics-worker-only">
+          <div className="agnes-doctor-footer">{footerActions}</div>
           <SettingsItem label={t('worker')}>
             <span className="agnes-settings-value" data-testid="diagnostics-worker">
               {workerIdle ? t('workerIdle') : t(`state.${workerStatus ?? 'unavailable'}`)}

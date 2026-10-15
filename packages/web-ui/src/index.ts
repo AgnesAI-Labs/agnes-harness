@@ -37,6 +37,7 @@ export {
   useResource,
 } from './data/resource.js'
 export * from './diagnostics-dialog.js'
+export { DoctorGroups, type DoctorWorker } from './doctor-groups.js'
 export { bindAutoDismissDisclosure, bindDismissibleDialog } from './dom/dialog-binding.js'
 export { cancelDialogHost, isPageDialog, releaseDialogModal, showDialogHost } from './dom/dialog-host.js'
 export { bindDialogSheets } from './dom/dialog-sheets.js'

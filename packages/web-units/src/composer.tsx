@@ -1,5 +1,5 @@
 import { USER_MESSAGE_ATTACHMENT_LIMITS } from '@agnes/protocol-validation'
-import { Button, Icon, Menu, SettingsInput, Tooltip } from '@agnes/web-ui'
+import { Button, Icon, SettingsInput, Tooltip } from '@agnes/web-ui'
 import { Sender, type SenderInputAttributes, type SenderRef, XProvider } from '@agnes/web-ui/x'
 import {
   type ChangeEvent,
@@ -30,7 +30,7 @@ import { ComposerExtras } from './composer/extras.js'
 import { FileMentionLayer, mentionTokens, useFileMentions } from './composer/file-mentions.js'
 import type { ComposerAttachment } from './composer/image-files.js'
 import { renderComposerQueue } from './composer/queue.js'
-import { ReferencePicker, referenceStart } from './reference-picker.js'
+import { ReferencePicker } from './reference-picker.js'
 
 const INPUT_ATTRIBUTES: SenderInputAttributes = {
   id: 'prompt',
@@ -244,11 +244,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       htmlType="button"
       appearance="ghost"
       size="small"
-      aria-label={t(references ? 'composer.add.label' : 'composer.attachment.add')}
+      aria-label={t('composer.attachment.add')}
       aria-describedby="composer-image-hint"
       aria-disabled={imageDisabled || attachmentsFull}
-      title={references ? t('composer.add.label') : imageHint}
-      {...(references ? {} : { onClick: chooseFiles })}
+      title={t('composer.attachment.add')}
+      onClick={chooseFiles}
     >
       <Icon name="plus" size={18} />
     </Button>
@@ -381,33 +381,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             }
             footer={
               <div className="composer-controls">
-                {references ? (
-                  <Menu
-                    label={t('composer.add.label')}
-                    trigger={addButton}
-                    items={[
-                      {
-                        id: 'file',
-                        label: t('composer.add.file'),
-                        testId: 'composer-add-file',
-                        onSelect: chooseFiles,
-                      },
-                      {
-                        id: 'reference',
-                        label: t('composer.add.reference'),
-                        testId: 'composer-add-reference',
-                        disabled: imageDisabled,
-                        onSelect: () => {
-                          if (!prompt.current) return
-                          const { start, end, text } = referenceStart(prompt.current)
-                          editDraft(start, end, text)
-                        },
-                      },
-                    ]}
-                  />
-                ) : (
-                  addButton
-                )}
+                {addButton}
                 {slots?.permission}
                 <dependencies.PermissionPicker
                   state={view.permission}

@@ -1029,6 +1029,7 @@ const homePages = mountHomePages(hosts.homePage, {
 const stopHomeRouting = bindHomeRouting()
 const topbarRuntime = clientModules.topbar as NonNullable<typeof clientModules.topbar>
 if (!topbarRuntime) throw new Error('missing topbar region')
+topbarRuntime.setStopAction(handleComposerCancel)
 const approvalRuntime = clientModules.approval as NonNullable<typeof clientModules.approval>
 if (!approvalRuntime) throw new Error('missing approval region')
 const composerRuntime = clientModules.composer as NonNullable<typeof clientModules.composer>
@@ -1260,6 +1261,7 @@ function updateTitle(id: string, title: string): void {
   if (current?.id === id) topbarRuntime.setTaskTitle(title)
   updateSidebar()
 }
+let runtimePlatform: string | undefined
 let sessionRows: PageSessionMeta['items'] = []
 let workspaceRows: WorkspaceEntry[] = []
 let sessionNext: string | undefined
@@ -1273,6 +1275,7 @@ let liveApproval:
 function updateSidebar(): void {
   clientModules.sidebar?.update({
     sessions: sessionRows,
+    ...(runtimePlatform ? { runtimePlatform } : {}),
     workspaces: workspaceRows,
     labels: sessionLabels,
     locale: clientModules.locale.getSnapshot(),
@@ -1434,8 +1437,15 @@ for (const action of ['rename', 'runtime'] as const)
   onSurfaceEvent(`agnes:${action}-current-session`, (event) => {
     if (!current || draftingNew || sessionPending) return
     const trigger = event.target
-    if (trigger instanceof HTMLElement)
-      void sessionActions.act(action, current.id, trigger.textContent ?? '', trigger)
+    if (!(trigger instanceof HTMLElement)) return
+    if (action === 'rename') {
+      const title = trigger.textContent ?? ''
+      topbarRuntime.editTitle({
+        sessionId: current.id,
+        title,
+        save: sessionActions.renameInline(current.id, title),
+      })
+    } else void sessionActions.act(action, current.id, trigger.textContent ?? '', trigger)
   })
 onSurfaceEvent('agnes:compose-suggestion', (event) => {
   if ((current && !draftingNew) || sessionPending || !(event instanceof CustomEvent)) return
@@ -2240,7 +2250,7 @@ run(async () => {
   if (!wsUrl) throw new Error(t('app.ws.unavailable'))
   // A first connection that fails never reports `closed`; the page may hold a stale daemon address.
   try {
-    await client.initialize()
+    runtimePlatform = (await client.initialize()).platform
   } catch (error) {
     if (!intentionalClose) reconnect.start()
     throw error

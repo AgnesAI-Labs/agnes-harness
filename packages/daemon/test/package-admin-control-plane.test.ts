@@ -8,6 +8,7 @@ import {
   activeRuntimePinId,
   createPackageManager,
   emptyLock,
+  PackageError,
   type PackageManager,
   packageDir,
   parseSource,
@@ -676,6 +677,39 @@ it('fails a composite update on a stale active baseline before changing desired 
   expect((await manager.inventory(profileDir)).packages[0]?.entry.integrity).toBe(installed.entry.integrity)
 })
 
+it.each([false, true])(
+  'fails an enable on a stale installed baseline even when the package is already enabled (enabled=%s)',
+  async (alreadyEnabled) => {
+    const preview = await manager.inspect(profileDir, source)
+    await manager.install(profileDir, source, { expectedIntegrity: preview.integrity })
+    const row = (await manager.inventory(profileDir)).packages[0]
+    if (!row) throw new Error('setup install is missing')
+    await manager.trust(profileDir, row.id, {
+      integrity: row.entry.integrity,
+      capabilityHash: row.capabilityHash,
+    })
+    if (alreadyEnabled) await manager.setEnabled(profileDir, row.id, true)
+    const admin = service()
+    const accepted = (await admin.call(
+      '_agnes/v1/packages.enable',
+      {
+        profile,
+        clientId,
+        commandId: 'stale-enable',
+        id: row.id,
+        expectedInstalledIntegrity: `sha256-${'1'.repeat(64)}`,
+      },
+      authority,
+    )) as { operationId: string }
+    expect(await operation(admin, profile, accepted.operationId)).toMatchObject({
+      state: 'failed',
+      retryable: true,
+      error: { code: 'E_PACKAGE_PREVIEW_STALE' },
+    })
+    expect((await manager.inventory(profileDir)).packages[0]?.enabled).toBe(alreadyEnabled)
+  },
+)
+
 it('keeps update and rollback trust, desired state, and activation under one command identity', async () => {
   const first = await manager.inspect(profileDir, source)
   await manager.install(profileDir, source, { expectedIntegrity: first.integrity })
@@ -1047,6 +1081,34 @@ it('replays a received install after a process crash without treating desired st
     request: { kind: 'install', params },
   })
 
+  // A daemon started for another profile of the same home shares this journal but not this scope. It
+  // leaves the record queued for its owner instead of failing it on the scope refusal.
+  const foreignEvents: PackageOperation[] = []
+  const foreign = createPackageAdminService({
+    manager,
+    profileDirectory: scopedPackageProfileDirectory({
+      profile: secondProfile,
+      profileDir: profileDirectory(secondProfile),
+      profilesRoot: join(root, 'profiles'),
+    }),
+    operations: new FilePackageOperationStore(join(root, 'daemon', 'package-operations')),
+    clientModules: recordingClientModules([]),
+    clock: () => now,
+  })
+  foreign.subscribe((value) => foreignEvents.push(value))
+  await foreign.recover()
+  for (let attempt = 0; attempt < 20 && foreignEvents.length === 0; attempt++)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  expect(foreignEvents).toEqual([])
+  expect(
+    (
+      await new FilePackageOperationStore(join(root, 'daemon', 'package-operations')).get(
+        profile,
+        operationId,
+      )
+    )?.operation.state,
+  ).toBe('received')
+
   // A new service instance is the post-crash process. The operation record was fsync-written before
   // the first process could enter PackageManager, and recovery now drives the real file install.
   const clientModuleEvents: ClientModulesChanged[] = []
@@ -1108,6 +1170,37 @@ it('projects manager diagnostics with fixed safe text instead of package-provide
     error: { code: 'E_PACKAGE_SOURCE', safeMessage: 'The package source could not be accepted.' },
   })
   expect(JSON.stringify(failed)).not.toContain(root)
+
+  // Profile lock contention is a retryable refusal with its own safe text, for effects and reads alike.
+  const busy = () =>
+    new PackageError('E_LOCK_MISMATCH', `could not acquire the package lock under ${root}`, {
+      code: 'E_PACKAGE_BUSY',
+      detail: { reason: 'busy', lockPath: join(profileDir, '.agnes-lock.lock') },
+    })
+  const contended = service({
+    manager: { ...manager, install: async () => Promise.reject(busy()) } as PackageManager,
+  })
+  const busyReceipt = (await contended.call(
+    '_agnes/v1/packages.install',
+    { ...command('busy-install'), expectedIntegrity: preview.integrity },
+    authority,
+  )) as { operationId: string }
+  const refused = await operation(contended, profile, busyReceipt.operationId)
+  expect(refused).toMatchObject({
+    state: 'failed',
+    retryable: true,
+    error: {
+      code: 'E_PACKAGE_BUSY',
+      safeMessage: 'Another package operation is using this profile. Try again shortly.',
+    },
+  })
+  expect(JSON.stringify(refused)).not.toContain(root)
+  const busyReads = service({
+    manager: { ...manager, inventory: async () => Promise.reject(busy()) } as PackageManager,
+  })
+  await expect(busyReads.call('_agnes/v1/packages.list', { profile }, authority)).rejects.toMatchObject({
+    data: { reason: 'E_PACKAGE_BUSY' },
+  })
 })
 
 it('does not report cancellation after PackageManager committed desired state while activation aborts', async () => {
@@ -1165,6 +1258,78 @@ it('does not report cancellation after PackageManager committed desired state wh
     (await manager.inventory(profileDir)).packages.find((entry) => entry.id === 'acme/pkg-a')?.enabled,
   ).toBe(true)
   expect(clientModuleEvents).toMatchObject([{ profile, reason: 'activation', packageId: 'acme/pkg-a' }])
+})
+
+it('keeps a cancellation reported before the run starts its effect, and never runs the manager call', async () => {
+  const preview = await manager.inspect(profileDir, source)
+  await manager.install(profileDir, source, { expectedIntegrity: preview.integrity })
+  const row = (await manager.inventory(profileDir)).packages[0]
+  if (!row) throw new Error('setup install is missing')
+  await manager.trust(profileDir, row.id, {
+    integrity: row.entry.integrity,
+    capabilityHash: row.capabilityHash,
+  })
+  await manager.setEnabled(profileDir, row.id, true)
+
+  // Hold the disable inside its applied() check: the first inventory read after manager recovery.
+  let reached!: () => void
+  const deciding = new Promise<void>((resolve) => {
+    reached = resolve
+  })
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let held = false
+  const effects: string[] = []
+  const gated = {
+    ...manager,
+    inventory: async (...args: Parameters<PackageManager['inventory']>) => {
+      if (!held) {
+        held = true
+        reached()
+        await gate
+      }
+      return manager.inventory(...args)
+    },
+    setEnabled: async (...args: Parameters<PackageManager['setEnabled']>) => {
+      effects.push(`setEnabled:${args[2]}`)
+      return manager.setEnabled(...args)
+    },
+  } as PackageManager
+  const admin = service({ manager: gated })
+  await admin.recover()
+  const disabled = (await admin.call(
+    '_agnes/v1/packages.disable',
+    { profile, clientId, commandId: 'cancel-while-deciding', id: row.id },
+    authority,
+  )) as { operationId: string }
+  const states: string[] = []
+  admin.subscribe((value) => {
+    if (value.operationId === disabled.operationId) states.push(value.state)
+  })
+  await deciding
+  await admin.call(
+    '_agnes/v1/packages.operation.cancel',
+    { profile, clientId, commandId: 'cancel-deciding', operationId: disabled.operationId },
+    authority,
+  )
+  expect(await operation(admin, profile, disabled.operationId)).toMatchObject({ state: 'cancelled' })
+  const reported = states.length
+  release()
+
+  // Effects run in order per profile: once a later inspect settles, the cancelled run has ended.
+  const barrier = (await admin.call('_agnes/v1/packages.inspect', command('after-cancel'), authority)) as {
+    operationId: string
+  }
+  expect(await operation(admin, profile, barrier.operationId)).toMatchObject({ state: 'completed' })
+  expect(await operation(admin, profile, disabled.operationId)).toMatchObject({
+    state: 'cancelled',
+    error: { code: 'E_PACKAGE_CANCELLED' },
+  })
+  expect(states.slice(reported).filter((state) => state !== 'cancelled')).toEqual([])
+  expect(effects).toEqual([])
+  expect((await manager.inventory(profileDir)).packages[0]?.enabled).toBe(true)
 })
 
 it('keeps committed desired state and projects safe activation and unload-blocker failures', async () => {
@@ -1310,6 +1475,20 @@ it('serializes effects per profile, allows another profile to proceed, and lets 
     authority,
   )
   expect(await operation(admin, profile, queued.operationId)).toMatchObject({ state: 'cancelled' })
+  // Cancelling an unknown operation is refused before it records anything in the journal.
+  await expect(
+    admin.call(
+      '_agnes/v1/packages.operation.cancel',
+      { profile, clientId, commandId: 'cancel-unknown', operationId: 'pkg-not-an-operation' },
+      authority,
+    ),
+  ).rejects.toMatchObject({ data: { reason: 'PACKAGE_OPERATION_UNAVAILABLE' } })
+  const journal = JSON.parse(
+    readFileSync(join(root, 'daemon', 'package-operations', 'operations.json'), 'utf8'),
+  )
+  expect(
+    journal.cancels.map((entry: { identity: { commandId: string } }) => entry.identity.commandId),
+  ).toEqual(['cancel-queued'])
   release()
   expect(await operation(admin, profile, first.operationId)).toMatchObject({ state: 'completed' })
   expect(await operation(admin, secondProfile, other.operationId)).toMatchObject({ state: 'completed' })

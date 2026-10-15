@@ -20,6 +20,7 @@
     "./local/methods/config": "./src/local/methods/config.ts",
     "./local/methods/diagnostics": "./src/local/methods/diagnostics.ts",
     "./local/methods/extensions": "./src/local/methods/extensions.ts",
+    "./local/methods/session-workspace-reveal": "./src/local/methods/session-workspace-reveal.ts",
     "./local/methods/session-preferences": "./src/local/methods/session-preferences.ts",
     "./local/methods/session-selection": "./src/local/methods/session-selection.ts",
     "./local/methods/surfaces": "./src/local/methods/surfaces.ts",

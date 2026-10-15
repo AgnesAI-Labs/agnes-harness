@@ -260,11 +260,6 @@
     border-radius: 0;
     font-weight: var(--font-weight-medium);
   }
-  @media (max-width: 767px) {
-    .workbench-toggle-label {
-      display: none;
-    }
-  }
   @media (max-width: 900px) {
     #workbench-right .workbench-dock-heading button,
     #workbench-bottom .workbench-dock-heading button {

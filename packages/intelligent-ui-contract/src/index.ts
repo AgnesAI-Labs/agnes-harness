@@ -12,9 +12,11 @@ import {
 } from '@agnes/extension-api'
 import type {
   Actor,
+  ArtifactRef,
   JsonValue,
   UiActionParams,
   UiActionReceipt,
+  UiArtifactStatus,
   UiCloseParams,
   UiReadParams,
   UiReadResult,
@@ -103,6 +105,8 @@ export interface UiDeferredQueue {
  * the deferred queue, pinned component declarations, and tool schemas stay here.
  */
 export interface IntelligentUiCapabilities extends IntelligentUiCatalog {
+  /** Host checks trusted session/lane roots and metadata; never grants from UI data. */
+  checkArtifact?(ref: ArtifactRef, signal: AbortSignal): Promise<UiArtifactStatus>
   taskId(): string
   supportsDeferredInvocations: boolean
   queue: UiDeferredQueue

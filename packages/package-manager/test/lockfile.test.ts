@@ -185,8 +185,15 @@ describe('lockfile', () => {
     try {
       const attempt = withLock(dir, async () => 'never').catch((error: unknown) => error)
       await vi.advanceTimersByTimeAsync(11_000)
-      const error = (await attempt) as { message: string; detail: Record<string, unknown> }
+      const error = (await attempt) as {
+        code: string
+        legacyCode: string
+        message: string
+        detail: Record<string, unknown>
+      }
       expect(error.message).toContain(lock)
+      // Contention with a live holder is retryable, not a verification failure.
+      expect([error.code, error.legacyCode]).toEqual(['E_PACKAGE_BUSY', 'E_LOCK_MISMATCH'])
       expect(error.detail).toMatchObject({ reason: 'busy', lockPath: lock })
       expect(String(error.detail.recovery)).toContain('delete the lock file')
     } finally {

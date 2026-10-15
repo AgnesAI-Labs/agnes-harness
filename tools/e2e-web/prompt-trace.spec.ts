@@ -80,7 +80,7 @@ for (const locale of ['en', 'zh-CN'])
       }
       await page.getByTestId('trace-view-chat').click()
       await expect(page.getByTestId('conversation-turn')).toBeVisible()
-      await page.getByTestId('turn-view-trace').last().click()
+      await page.locator('#view-trace').click()
       await expect(page.getByTestId('request-trace')).toBeVisible()
       await page.locator('#trace-timeline-mode').selectOption('sequence')
       await translated(page)

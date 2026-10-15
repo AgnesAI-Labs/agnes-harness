@@ -38,6 +38,7 @@ const CLIENT_PARENT_CHILD_DECLARATION_VERSION = 'dsh-parent-child/v1'
 const PACKAGE_ID =
   /^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)?)$/
 const REVISION = /^(?:sha256-[a-f0-9]{64}|sha512-[A-Za-z0-9+/]{86}==)$/
+const GENERATION_ID = /^[a-f0-9-]{36}$/
 const SERVABLE = new Set(['.js', '.mjs', '.css', '.map'])
 const MAX_METADATA_BYTES = 1024 * 1024
 
@@ -238,7 +239,8 @@ function isState(value: unknown, profile: string): value is ProfileState {
     if (item.declarations !== undefined) {
       if (!isRecord(item.declarations) || Object.keys(item.declarations).length > 16) return false
       for (const [revision, declarations] of Object.entries(item.declarations)) {
-        if (!REVISION.test(revision) || !isRecord(declarations) || Object.keys(declarations).length > 16)
+        // The same per-revision row bound as the snapshot manifest the declarations describe.
+        if (!REVISION.test(revision) || !isRecord(declarations) || Object.keys(declarations).length > 64)
           return false
         for (const [rowId, declaration] of Object.entries(declarations)) {
           if (!rowId.startsWith('web:') || !isRecord(declaration)) return false
@@ -725,6 +727,14 @@ async function snapshotBytes(root: string, state: ProfileState): Promise<number>
   return total
 }
 
+/** Declarations only for the revisions a package state still tracks, so the map stays bounded. */
+function trackedDeclarations(item: PackageState): PackageState {
+  if (!item.declarations) return item
+  const revisions = [item.current, ...item.retained.map((entry) => entry.revision)]
+  const kept = Object.entries(item.declarations).filter(([revision]) => revisions.includes(revision))
+  return { ...item, declarations: Object.fromEntries(kept) }
+}
+
 async function pruneUntracked(root: string, state: ProfileState): Promise<boolean> {
   const tracked = new Set<string>()
   for (const [packageId, item] of Object.entries(state.packages))
@@ -751,6 +761,8 @@ async function pruneUntracked(root: string, state: ProfileState): Promise<boolea
     if (depth >= 3) return
     for (const entry of entries) {
       if (!entry.isDirectory()) continue
+      // A generation registry owns `generations/<id>` and prunes it in its own serialization domain.
+      if (directory === join(root, 'generations') && GENERATION_ID.test(entry.name)) continue
       const child = join(directory, entry.name)
       if (entry.name.startsWith('_staging-')) {
         await rm(child, { recursive: true, force: true })
@@ -945,7 +957,7 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
       throw error
     })
     for (const id of directories) {
-      if (!/^[a-f0-9-]{36}$/.test(id) || referenced.has(id)) continue
+      if (!GENERATION_ID.test(id) || referenced.has(id)) continue
       const key = `${input.profile}:${id}`
       generationRegistries.get(key)?.close()
       generationRegistries.delete(key)
@@ -1434,6 +1446,10 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
         })
       }
     }
+    const bounded = Object.entries(state.packages).map(([id, item]) => [id, trackedDeclarations(item)])
+    state = { ...state, packages: Object.fromEntries(bounded) }
+    // An unreadable state reads back as empty and prunes every snapshot, so refuse to persist it.
+    if (!isState(state, input.profile)) throw new Error('client-module state exceeds its persisted bounds')
     await writeAtomic(join(root, STATE_FILE), state)
     resourceFailures.set(input.profile, resourceFailure)
     scheduleExpiry(input.profile, state)

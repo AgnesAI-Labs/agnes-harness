@@ -1,6 +1,7 @@
 import { TOOL_DESCRIPTION_MAX_LENGTH, type ToolDef } from '@agnes/extension-api'
 import type { ExtensionAPI } from '@agnes/extension-api/host'
 import type {
+  IntelligentUiCapabilities,
   IntelligentUiInstance,
   UiSourceResolveInput,
   UiSourceResolveResult,
@@ -134,6 +135,7 @@ function fixture(
   const rows: EventEnvelope[] = [],
     calls = new Map<string, DeferredInvocationReceipt>(),
     deliveries = new Map<string, number>()
+  let checker: IntelligentUiCapabilities['checkArtifact'] = async () => 'not_found'
   let service: IntelligentUiInstance,
     available = true,
     now = 100000,
@@ -271,6 +273,7 @@ function fixture(
         },
       },
       capabilities: {
+        checkArtifact: (ref, signal) => checker!(ref, signal),
         taskId: () => 'task',
         supportsDeferredInvocations: true,
         components: () => components,
@@ -289,6 +292,9 @@ function fixture(
   restart()
   return {
     rows,
+    checkArtifact: (value: NonNullable<IntelligentUiCapabilities['checkArtifact']>) => {
+      checker = value
+    },
     calls,
     bindInvocation: (id: string) => (invocation = id),
     deliveries,
@@ -1334,4 +1340,144 @@ describe('bound UI data sources', () => {
     ).rejects.toMatchObject({ data: { code: 'UI_BUSY' } })
     expect(calls).toBe(before)
   })
+})
+
+it('refuses an unregistered artifact before publishing render or update', async () => {
+  const f = fixture()
+  const file = {
+    ...surface(),
+    components: [{ id: 'file', kind: 'artifact-file' as const, dataKey: 'file' }],
+    actions: [],
+    data: {
+      file: {
+        name: 'demo.html',
+        description: '',
+        artifact: { sha256: 'f'.repeat(64), size: 20990, mime: 'text/html' },
+      },
+    },
+  }
+  await expect(f.service().render({ surface: file }, signal)).rejects.toMatchObject({
+    data: { code: 'UI_ARTIFACT_NOT_FOUND' },
+  })
+  expect(f.rows.some((row) => row.type.endsWith('/surface.opened'))).toBe(false)
+  await f.service().render({ surface: surface() }, signal)
+  const before = f.rows.length
+  await expect(
+    f
+      .service()
+      .update({ surfaceId: file.id, expectedRevision: 1, surface: { ...file, revision: 2 } }, signal),
+  ).rejects.toMatchObject({ data: { code: 'UI_ARTIFACT_NOT_FOUND' } })
+  expect(f.rows.slice(before).some((row) => row.type.endsWith('/surface.updated'))).toBe(false)
+})
+
+it('validates file metadata after source resolution and isolates historical file failures on read', async () => {
+  const f = fixture()
+  const ref = { sha256: 'a'.repeat(64), size: 22579, mime: 'text/html' }
+  const file = (): UiSurface => ({
+    ...surface(),
+    components: [{ id: 'file', kind: 'artifact-file', dataKey: 'file' }],
+    actions: [],
+    data: { file: { name: 'demo.html', description: '', artifact: ref } },
+  })
+  f.checkArtifact(async (value) =>
+    value.sha256 !== ref.sha256
+      ? 'not_found'
+      : value.size !== ref.size || value.mime !== ref.mime
+        ? 'identity_mismatch'
+        : 'available',
+  )
+  const good = await f.service().render({ surface: file() }, signal)
+  expect(good.artifacts).toEqual({ file: 'available' })
+  for (const changed of [{ sha256: 'b'.repeat(64) }, { size: 20990 }, { mime: 'text/plain' }]) {
+    const next = file()
+    next.revision = 2
+    next.data.file = { name: 'demo.html', description: '', artifact: { ...ref, ...changed } }
+    const before = f.rows.length
+    await expect(
+      f.service().update({ surfaceId: next.id, expectedRevision: 1, surface: next }, signal),
+    ).rejects.toMatchObject({
+      data: { code: changed.sha256 ? 'UI_ARTIFACT_NOT_FOUND' : 'UI_ARTIFACT_IDENTITY_MISMATCH' },
+    })
+    expect(f.rows.slice(before).some((row) => row.type.endsWith('/surface.updated'))).toBe(false)
+    next.id = `other-${f.rows.length}-${Object.keys(changed)[0]}`
+    next.revision = 1
+    await expect(f.service().render({ surface: next }, signal)).rejects.toMatchObject({
+      data: { code: changed.sha256 ? 'UI_ARTIFACT_NOT_FOUND' : 'UI_ARTIFACT_IDENTITY_MISMATCH' },
+    })
+    expect(f.rows.slice(before).some((row) => row.type.endsWith('/surface.opened'))).toBe(false)
+  }
+  // Synthetic old bad row remains intact and cannot fail the page or refresh.
+  const old = file()
+  old.id = 'old-invalid'
+  old.data.file = { name: 'demo.html', description: '', artifact: { ...ref, sha256: 'f'.repeat(64) } }
+  f.row('surface.opened', { record: { ...good, surface: old } })
+  f.checkArtifact(async (value) => (value.sha256 === ref.sha256 ? 'available' : 'not_found'))
+  f.restart()
+  expect(
+    (await f.service().read({ sessionId: 'session' }, signal)).surfaces.map((row) => row.surface.id),
+  ).toEqual([good.surface.id, old.id])
+  expect((await f.service().refresh({ sessionId: 'session', surfaceId: old.id }, signal)).surface.id).toBe(
+    old.id,
+  )
+  const bound = file()
+  bound.id = 'source-file'
+  bound.components.push({ id: 'status', kind: 'status', dataKey: 'status' })
+  bound.data.status = { $source: 'fixture/files', params: {} }
+  f.source(async (request) => ({
+    ok: true,
+    surface: { ...request.surface, data: { ...file().data, status: 'resolved' } },
+    sources: {},
+    audits: [],
+  }))
+  f.checkArtifact(async () => 'identity_mismatch')
+  await expect(f.service().render({ surface: bound }, signal)).rejects.toMatchObject({
+    data: { code: 'UI_ARTIFACT_IDENTITY_MISMATCH' },
+  })
+  f.checkArtifact(async (_ref, checking) => {
+    checking.throwIfAborted()
+    return 'available'
+  })
+  const cancelled = new AbortController()
+  cancelled.abort()
+  const before = f.rows.length
+  await expect(f.service().render({ surface: bound }, cancelled.signal)).rejects.toThrow()
+  expect(f.rows).toHaveLength(before)
+  const during = new AbortController()
+  f.checkArtifact(async () => {
+    during.abort()
+    return 'available'
+  })
+  await expect(f.service().render({ surface: bound }, during.signal)).rejects.toThrow()
+  expect(f.rows).toHaveLength(before)
+})
+
+it('publishes the checked input snapshot when a caller changes its object during an asynchronous check', async () => {
+  const f = fixture()
+  const original: UiSurface = {
+    ...surface(),
+    id: 'snapshot-file',
+    components: [{ id: 'file', kind: 'artifact-file', dataKey: 'file' }],
+    actions: [],
+    data: {
+      file: {
+        name: 'demo.html',
+        description: '',
+        artifact: { sha256: 'a'.repeat(64), size: 3, mime: 'text/html' },
+      },
+    },
+  }
+  f.checkArtifact(async () => {
+    original.data.file = {
+      name: 'demo.html',
+      description: '',
+      artifact: { sha256: 'f'.repeat(64), size: 99, mime: 'text/html' },
+    }
+    return 'available'
+  })
+  const stored = await f.service().render({ surface: original }, signal)
+  expect(stored.surface.data.file).toMatchObject({ artifact: { sha256: 'a'.repeat(64), size: 3 } })
+  f.restart()
+  expect(
+    (await f.service().read({ sessionId: 'session' }, signal)).surfaces[0]?.surface.data.file,
+  ).toMatchObject({ artifact: { sha256: 'a'.repeat(64), size: 3 } })
 })

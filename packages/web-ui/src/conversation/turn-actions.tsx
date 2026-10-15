@@ -12,6 +12,7 @@ import { fallbackT, type Translate } from '../locales/index.js'
 import { createSettingsControl } from '../settings-control-templates.js'
 import { Button } from '../ui/button.js'
 import { Disclosure } from '../ui/disclosure.js'
+import { Icon as SharedIcon } from '../ui/icon.js'
 import { Actions } from '../x/index.js'
 import { TurnUsagePanel } from './turn-usage.js'
 import { ConversationXScope } from './x-scope.js'
@@ -299,7 +300,7 @@ export function ConversationTurnActions({
           disabled={pendingId === turn.id || !turn.forkable || !onFork}
           onClick={fork}
         >
-          <Icon paths={['M6 3v5a4 4 0 0 0 4 4h8', 'm14 8 4 4-4 4', 'M6 21v-5a4 4 0 0 1 4-4']} />
+          <SharedIcon name="split" />
         </Button>
       ),
     },
@@ -339,24 +340,6 @@ export function ConversationTurnActions({
             duration={duration}
             settled={settled}
             t={t}
-            footer={
-              // This turn in the execution trace: the panel's last line, not a button in the bar.
-              <Button
-                htmlType="button"
-                appearance="link"
-                size="small"
-                className="turn-usage-trace"
-                data-testid="turn-view-trace"
-                onClick={() => {
-                  setUsageOpen(false)
-                  footer.current?.dispatchEvent(
-                    new CustomEvent('agnes:trace-turn', { bubbles: true, detail: { turnId: turn.id } }),
-                  )
-                }}
-              >
-                {t('turnactions.trace')}
-              </Button>
-            }
           />
         </Disclosure>
         <span className="turn-feedback" role="status">

@@ -45,9 +45,11 @@ export type CompositeTargetActivationOptions = Readonly<{
   lifecycleEligible?(packageId: string): boolean
   /** The isolated worker probe that must accept an artifact before it becomes desired. */
   probe?(artifact: RuntimeTargetArtifact): Promise<void>
+  /** `derivedFrom` is the desired target `artifact` was derived from; a changed one must refuse as stale. */
   publish?(
     artifact: RuntimeTargetArtifact,
     probe: (artifact: RuntimeTargetArtifact) => Promise<void>,
+    derivedFrom: Readonly<{ digest: string | undefined }>,
   ): Promise<void>
   collectPins?(): Promise<void>
   collectGenerations?(): Promise<void>
@@ -279,22 +281,37 @@ export function createCompositeTargetActivation(
       }
       await options.revertFailedDesired?.()
       let next: RuntimeTargetArtifact | undefined
-      if (input.operation === 'rollback') {
-        if (options.lifecycleEligible && !options.lifecycleEligible(input.packageId))
-          return { actual: 'failed', error: unavailable }
-        next = options.store.previous()
-      } else {
-        next =
-          (await options.desiredFor?.({
-            profile: input.profile,
-            packageId: input.packageId,
-            operation: input.operation,
-          })) ?? options.store.desired()
+      // Derivation runs outside the publication lane, so a concurrent operation can publish first.
+      // Its CAS baseline is the desired target it read; on a stale refusal derive again from the new one.
+      for (let attempt = 1; ; attempt++) {
+        const derivedFrom = { digest: options.store.desired()?.digest }
+        if (input.operation === 'rollback') {
+          if (options.lifecycleEligible && !options.lifecycleEligible(input.packageId))
+            return { actual: 'failed', error: unavailable }
+          next = options.store.previous()
+        } else {
+          next =
+            (await options.desiredFor?.({
+              profile: input.profile,
+              packageId: input.packageId,
+              operation: input.operation,
+            })) ?? options.store.desired()
+        }
+        if (!next) return { actual: 'failed', error: unavailable }
+        try {
+          if (options.publish) await options.publish(next, probe, derivedFrom)
+          else {
+            if (options.store.desired()?.digest !== derivedFrom.digest)
+              throw new Error('E_RUNTIME_TARGET_STALE')
+            dropUnpinnedLastGood(options.store, input.packageId, next)
+            await publishProbedRuntimeTarget({ store: options.store, artifact: next, probe })
+          }
+          break
+        } catch (error) {
+          if (attempt >= 3 || !(error instanceof Error) || error.message !== 'E_RUNTIME_TARGET_STALE')
+            throw error
+        }
       }
-      if (!next) return { actual: 'failed', error: unavailable }
-      if (!options.publish) dropUnpinnedLastGood(options.store, input.packageId, next)
-      if (options.publish) await options.publish(next, probe)
-      else await publishProbedRuntimeTarget({ store: options.store, artifact: next, probe })
       await options.deliver?.(next)
       options.store.clearPackageFailure(input.packageId)
       if (!wait) {

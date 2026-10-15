@@ -102,18 +102,34 @@ function matches(pattern: string, value: string): boolean {
   return p === pattern.length
 }
 
+/** `network:host` for a `network:host:port` atom; undefined for any other atom. */
+function networkHost(atom: string): string | undefined {
+  if (!atom.startsWith('network:')) return undefined
+  const scope = atom.slice('network:'.length)
+  const port = scope.lastIndexOf(':')
+  return port < 0 ? undefined : `network:${scope.slice(0, port)}`
+}
+
 /** Deny is conservative: a wildcard request cannot conceal a narrower denied scope. */
 export function capabilityPolicyBlockers(
   declarations: PluginCapabilities | undefined,
   policy: PluginCapabilityPolicy,
 ): PackageBlocker[] {
   const blocked = capabilityAtoms(declarations).filter((atom) => {
-    const denied = (policy.deny ?? []).some(
-      (rule) =>
-        matches(rule.startsWith('network:') ? rule.toLowerCase() : rule, atom) ||
-        matches(atom, rule.startsWith('network:') ? rule.toLowerCase() : rule) ||
-        (atom.includes('*') && rule.includes('*') && atom.split(':')[0] === rule.split(':')[0]),
-    )
+    const host = networkHost(atom)
+    const denied = (policy.deny ?? []).some((rule) => {
+      const normalized = rule.startsWith('network:') ? rule.toLowerCase() : rule
+      return (
+        matches(normalized, atom) ||
+        matches(atom, normalized) ||
+        (atom.includes('*') && rule.includes('*') && atom.split(':')[0] === rule.split(':')[0]) ||
+        // A host declared without a port reaches every port, so a port-less host rule denies them all.
+        (host !== undefined &&
+          normalized.startsWith('network:') &&
+          !normalized.slice('network:'.length).includes(':') &&
+          (matches(normalized, host) || matches(host, normalized)))
+      )
+    })
     const allowed =
       policy.allow === undefined ||
       policy.allow.some(

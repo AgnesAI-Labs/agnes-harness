@@ -762,6 +762,29 @@
     min-width: 0;
     padding: var(--s8) var(--s12);
   }
+  .deliverable-file[data-placement="inline"]:has(.deliverable-target) .deliverable-row {
+    cursor: pointer;
+  }
+  .deliverable-file .deliverable-target.agh-btn {
+    display: inline;
+    height: auto;
+    min-height: 0;
+    max-width: 100%;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-sm);
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    text-align: start;
+    user-select: text;
+  }
+  .deliverable-target > span {
+    user-select: text;
+  }
+  .deliverable-actions > .agh-menu-anchor:first-child {
+    border-inline-start: 0;
+  }
   /* The tile says what kind of file it is by icon and hue. */
   .deliverable-tile {
     --deliverable-hue: var(--agnes-text-secondary);
@@ -959,38 +982,12 @@
     color: var(--agnes-text-secondary);
     font-size: var(--font-size-sm);
   }
-  /* The preview sits under its row with a slim bar of its own: what is shown, download, close. */
+  /* The card owns its actions; preview content follows the row directly. */
   .deliverable-preview {
     display: flex;
     flex-direction: column;
     min-width: 0;
     border-top: 1px solid var(--agnes-line-primary);
-  }
-  .deliverable-preview-bar {
-    display: flex;
-    align-items: center;
-    gap: var(--s4);
-    padding: var(--s4) var(--s8) var(--s4) var(--s12);
-    border-bottom: 1px solid var(--agnes-line-primary);
-    background: var(--agnes-bg-fill);
-  }
-  .deliverable-preview-version {
-    flex: none;
-    padding: 0 var(--s4);
-    border-radius: var(--radius-sm);
-    color: var(--agnes-status-warning-text);
-    background: var(--agnes-status-warning-bg);
-    font-size: var(--font-size-xs);
-    white-space: nowrap;
-  }
-  .deliverable-preview-name {
-    flex: 1 1 0;
-    min-width: 0;
-    overflow: hidden;
-    color: var(--agnes-text-secondary);
-    font-size: var(--font-size-xs);
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
   .deliverable-preview > .deliverable-note {
     padding: var(--s12);

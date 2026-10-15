@@ -1049,6 +1049,34 @@
     overflow: visible;
   }
   /* Popular providers, then the rest in a fold. */
+  .config-account-add.agnes-ui-button {
+    width: 100%;
+    min-height: 58px;
+    justify-content: flex-start;
+    padding: 12px 16px;
+    border: 1px dashed var(--agnes-line-primary);
+    border-radius: var(--radius-md);
+    color: var(--agnes-text-secondary);
+  }
+  .config-accounts-welcome {
+    padding: 24px;
+  }
+  .config-accounts-welcome .account-provider-choices {
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  }
+  .config-accounts-welcome [data-provider="agnes-ai"] {
+    border-color: var(--agnes-brand-primary);
+    background: var(--agnes-brand-emphasis-soft);
+  }
+  .config-accounts-demo {
+    margin: 16px 0 0;
+    text-align: center;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+  }
+  .config-auxiliary-disabled {
+    opacity: 0.55;
+  }
   .account-provider-groups {
     display: grid;
     gap: var(--s8);

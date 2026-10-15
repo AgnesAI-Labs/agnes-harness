@@ -1,5 +1,5 @@
 import type { PageSessionMeta, WorkspaceEntry } from '@agnes/protocol'
-import { Button, Icon, IconButton, Kbd } from '@agnes/web-ui'
+import { Button, Icon, IconButton, Kbd, Tooltip } from '@agnes/web-ui'
 import {
   forwardRef,
   type ReactNode,
@@ -13,9 +13,11 @@ import {
 } from 'react'
 import type { Translate } from './locales/index.js'
 import { isNewSessionShortcut, newSessionShortcutKeys } from './session-groups.js'
-export type SessionAction = 'rename' | 'fork' | 'archive'
+export type SessionAction = 'rename' | 'fork' | 'archive' | 'runtime' | 'revealWorkspace'
 
 export interface SidebarNavigationOptions {
+  runtimePlatform?: string
+
   sessions: PageSessionMeta['items']
   workspaces: readonly WorkspaceEntry[]
   currentId?: string
@@ -47,6 +49,8 @@ export interface SidebarDependencies {
 }
 
 export interface SidebarState {
+  runtimePlatform?: string
+
   sessions: PageSessionMeta['items']
   workspaces: readonly WorkspaceEntry[]
   labels: ReadonlyMap<string, string>
@@ -235,19 +239,21 @@ const SidebarBuiltin = forwardRef<
         />
       </div>
       <div className="sidebar-actions">
-        <Button
-          id="new"
-          ref={newButton}
-          appearance="secondary"
-          aria-keyshortcuts="Meta+Shift+O Control+Shift+O"
-          aria-label={t('sidebar.newSession')}
-          disabled={current.newDisabled}
-          onClick={() => actions.newSession()}
-        >
-          <Icon name="plus" />
-          <span>{t('sidebar.newSession')}</span>
-          <Kbd aria-hidden="true" keys={newSessionShortcutKeys(globalThis.navigator?.platform ?? '')} />
-        </Button>
+        <Tooltip title={t('sidebar.newSession')}>
+          <Button
+            id="new"
+            ref={newButton}
+            appearance="secondary"
+            aria-keyshortcuts="Meta+Shift+O Control+Shift+O"
+            aria-label={t('sidebar.newSession')}
+            disabled={current.newDisabled}
+            onClick={() => actions.newSession()}
+          >
+            <Icon name="plus" />
+            <span>{t('sidebar.newSession')}</span>
+            <Kbd aria-hidden="true" keys={newSessionShortcutKeys(globalThis.navigator?.platform ?? '')} />
+          </Button>
+        </Tooltip>
       </div>
       {slots?.entries}
       <div className="sidebar-section-heading">
@@ -268,6 +274,7 @@ const SidebarBuiltin = forwardRef<
           workspaces: current.workspaces,
           labels: current.labels,
           runningIds: running,
+          ...(current.runtimePlatform ? { runtimePlatform: current.runtimePlatform } : {}),
           ...(current.currentId ? { currentId: current.currentId } : {}),
           disabled: current.sessionPending,
           newDisabled: current.newDisabled,
@@ -281,10 +288,17 @@ const SidebarBuiltin = forwardRef<
       {slots?.panellist}
       <div className="sidebar-footer">
         {slots?.footerAction}
-        <Button id="settings" appearance="ghost" onClick={actions.openSettings}>
-          <Icon name="settings" />
-          <span>{t('sidebar.settings')}</span>
-        </Button>
+        <Tooltip title={t('sidebar.settings')}>
+          <Button
+            id="settings"
+            appearance="ghost"
+            aria-label={t('sidebar.settings')}
+            onClick={actions.openSettings}
+          >
+            <Icon name="settings" />
+            <span>{t('sidebar.settings')}</span>
+          </Button>
+        </Tooltip>
         {slots?.settings}
       </div>
     </div>

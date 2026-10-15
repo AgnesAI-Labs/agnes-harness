@@ -10,6 +10,7 @@ import {
   Button,
   Loadable,
   SettingsAdvanced,
+  SettingsItem,
   SettingsState,
   type Translate,
 } from '@agnes/web-ui'
@@ -220,5 +221,15 @@ export function modelSlotsPanel(
   configuration: { revision?: number; accounts?: readonly ModelSlotAccount[] } | undefined,
   t: Translate,
 ) {
+  if (configuration?.accounts?.length === 0)
+    return (
+      <SettingsItem
+        label={t('modelSettings.slots.title')}
+        aria-disabled="true"
+        className="config-auxiliary-disabled"
+      >
+        <span>{t('accounts.auxiliaryEmpty')}</span>
+      </SettingsItem>
+    )
   return <ModelSlotsPanel key={configuration?.revision ?? 0} t={t} accounts={configuration?.accounts ?? []} />
 }

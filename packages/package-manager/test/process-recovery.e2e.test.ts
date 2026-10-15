@@ -12,9 +12,16 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { expect, it } from 'vitest'
-import { createPackageManager, emptyLock, parseSource, writeLock } from '../src/index.js'
+import {
+  createPackageManager,
+  emptyLock,
+  localPluginRoots,
+  packageDir,
+  parseSource,
+  writeLock,
+} from '../src/index.js'
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
 const points = [
@@ -88,3 +95,56 @@ it.each(points)('recovers after an actual child exits at %s without running fina
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+it('recovers after an actual child exits while a local scan holds an unready in-process copy', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'agnes-process-local-crash-')),
+    profile = join(root, 'profiles', 'test'),
+    src = join(dirname(fileURLToPath(import.meta.url)), '..', 'src')
+  try {
+    mkdirSync(profile, { recursive: true })
+    const seams = ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals']
+    writeLock(profile, {
+      ...emptyLock('test', '0.0.0'),
+      resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
+      seams: Object.fromEntries(seams.map((name) => [name, { provider: 'local' }])),
+    })
+    const roots = localPluginRoots(join(root, 'home'), join(root, 'workspace'))
+    mkdirSync(join(roots.home, 'hello'), { recursive: true })
+    writeFileSync(join(roots.home, 'hello', 'plugin.ts'), 'export default { apply() {} }')
+    // The first clock read follows the in-process copy and precedes readyStage; exit skips every finally.
+    const script = join(root, 'child.mts')
+    writeFileSync(
+      script,
+      [
+        `import { createPackageManager, localPluginRoots } from ${JSON.stringify(pathToFileURL(join(src, 'index.ts')).href)}`,
+        `const root = ${JSON.stringify(root)}`,
+        "const m = createPackageManager({ dataDir: root + '/data', agnesVersion: '0.0.0',",
+        "  localPlugins: localPluginRoots(root + '/home', root + '/workspace'), now: () => process.exit(74) })",
+        "await m.refreshLocalPlugins(root + '/profiles/test')",
+        'process.exit(75)',
+      ].join('\n'),
+    )
+    const child = spawnSync(process.execPath, ['--import', 'tsx', script], {
+      encoding: 'utf8',
+      timeout: 30000,
+    })
+    expect(child.status, child.stderr).toBe(74)
+    const staging = dirname(packageDir(join(root, 'data'), 'test', 'stage'))
+    expect(readdirSync(staging).filter((name) => /^\.stage-.*\.owner$/.test(name))).toHaveLength(1)
+    const lock = join(profile, '.agnes-lock.lock')
+    expect(() => process.kill(Number(readFileSync(lock, 'utf8')), 0)).toThrow()
+    // Age the abandoned lock rather than sleeping 30 seconds; PID death is independently verified.
+    const aged = new Date(Date.now() - 60000)
+    utimesSync(lock, aged, aged)
+    const fresh = createPackageManager({
+      dataDir: join(root, 'data'),
+      agnesVersion: '0.0.0',
+      localPlugins: roots,
+    })
+    await expect(fresh.inventory(profile, { fresh: true })).resolves.toBeDefined()
+    await expect(fresh.refreshLocalPlugins(profile)).resolves.toEqual(['hello'])
+    expect(readdirSync(staging).filter((name) => name.startsWith('.stage-'))).toEqual([])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 60000)

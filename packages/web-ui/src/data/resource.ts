@@ -161,11 +161,16 @@ export function clearResources(): void {
 export function useResource<T>(
   key: string | undefined,
   fetch: () => Promise<T>,
-  options: { page?: boolean } = {},
+  options: {
+    page?: boolean
+    /** Polling owners can handle focus/visibility themselves to avoid duplicate reads. */
+    revalidateOnFocus?: boolean
+  } = {},
 ): ResourceState<T> & { reload(): void } {
   const fetchRef = useRef(fetch)
   fetchRef.current = fetch
   const page = options.page ?? true
+  const revalidateOnFocus = options.revalidateOnFocus ?? true
   const subscribe = useCallback(
     (listener: () => void) => {
       if (!key) return () => {}
@@ -187,7 +192,17 @@ export function useResource<T>(
     target.page = page
     // Shown from cache at once; read again behind it (on every mount, and when invalidated).
     void revalidate(key)
-  }, [key, page])
+    if (!revalidateOnFocus) return
+    const refresh = () => {
+      if (document.visibilityState !== 'hidden') void revalidate(key)
+    }
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [key, page, revalidateOnFocus])
   const reload = useCallback(() => {
     if (!key) return
     const target = entry(key)

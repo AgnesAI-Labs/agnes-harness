@@ -13,7 +13,6 @@ import {
   RegionErrorBoundary,
   type RegionRenderer,
   Tabs,
-  Toast,
   Tooltip,
 } from '@agnes/web-ui'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
@@ -175,8 +174,6 @@ export function Dock({ context }: { context: UiExtensionContext }) {
   const [expanded, setExpanded] = useState(false)
   const [rightMax, setRightMax] = useState(() => maxRightWidth(window.innerWidth))
   const rightWidth = clampRightWidth(layout.rightWidth, rightMax)
-  const [copyMessage, setCopyMessage] = useState('')
-  const [copyFailed, setCopyFailed] = useState(false)
   useEffect(() => {
     if (!bottomAvailable) setLayout((value) => (value.bottomOpen ? { ...value, bottomOpen: false } : value))
   }, [bottomAvailable])
@@ -393,44 +390,9 @@ export function Dock({ context }: { context: UiExtensionContext }) {
         ? { rightWidth: clampRightWidth(next, rightMax) }
         : { bottomHeight: clampBottomHeight(next, maxBottomHeight(window.innerHeight)) }),
     }))
-  const workspace = workbench?.workspace
-  const copyWorkspace = async () => {
-    if (!workspace) return
-    try {
-      if (!navigator.clipboard) throw new Error('Clipboard unavailable')
-      await navigator.clipboard.writeText(workspace.path)
-      setCopyFailed(false)
-      setCopyMessage(t('workbench.copied'))
-    } catch {
-      setCopyFailed(true)
-      setCopyMessage(t('workbench.copyFailed'))
-    }
-  }
   const controlsView = (
     <div ref={controls} className="workbench-controls">
-      <Toast
-        tone={copyFailed ? 'error' : 'success'}
-        open={!!copyMessage}
-        onDismiss={() => setCopyMessage('')}
-      >
-        {copyMessage}
-      </Toast>
-      {/* The sidebar already shows the workspace; copying its path is a "more" menu entry that
-          presses this hidden button, which keeps the action and its toast here. */}
-      {workspace && (
-        <Button
-          appearance="ghost"
-          size="small"
-          htmlType="button"
-          id="workspace-copy-path"
-          hidden
-          tabIndex={-1}
-          aria-label={t('workbench.workspace')}
-          title={workspace.path}
-          onClick={() => void copyWorkspace()}
-        />
-      )}
-      {edges.map((edge) => {
+      {[...edges].reverse().map((edge) => {
         const entries = workbenchPanels
           .entries()
           .filter(
@@ -452,6 +414,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
                 data-testid={`workbench-${edge}-toggle`}
                 aria-controls={`workbench-${edge}`}
                 aria-expanded={open}
+                aria-pressed={open}
                 aria-label={t(`workbench.${edge}`)}
                 onClick={() => {
                   rememberFocus(edge)
@@ -468,88 +431,87 @@ export function Dock({ context }: { context: UiExtensionContext }) {
                     )
                 }}
               >
-                <Icon name={edge === 'right' ? 'panel-right' : 'terminal'} size={18} />
-                <span className="workbench-toggle-label">{t(`workbench.${edge}`)}</span>
+                <span className="workbench-toggle-icon" aria-hidden="true">
+                  <Icon name={edge === 'right' ? 'panel-right' : 'terminal'} size={18} />
+                  {edge === 'right' && <span className="workbench-toggle-pane" />}
+                </span>
               </Button>
             </Tooltip>
             {host &&
               createPortal(
-                <RegionErrorBoundary region={`workbench-${edge}`}>
-                  <div className="workbench-dock-body">
-                    <hr
-                      className="workbench-resize"
-                      hidden={edge === 'right' && expanded}
-                      tabIndex={0}
-                      aria-label={t('workbench.resize')}
-                      aria-orientation={edge === 'right' ? 'vertical' : 'horizontal'}
-                      aria-valuemin={edge === 'right' ? RIGHT_MIN : BOTTOM_MIN}
-                      aria-valuemax={edge === 'right' ? rightMax : maxBottomHeight(window.innerHeight)}
-                      aria-valuenow={size(edge)}
-                      title={t('workbench.resizeHint')}
-                      onDoubleClick={() => resizeTo(edge, edge === 'right' ? RIGHT_DEFAULT : BOTTOM_DEFAULT)}
-                      onKeyDown={(event) => {
-                        if (['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'].includes(event.key)) {
-                          event.preventDefault()
-                          resizeTo(
-                            edge,
-                            size(edge) + (['ArrowLeft', 'ArrowUp'].includes(event.key) ? 16 : -16),
-                          )
-                        }
-                      }}
-                      onPointerDown={(event) => {
+                <div className="workbench-dock-body">
+                  <hr
+                    className="workbench-resize"
+                    hidden={edge === 'right' && expanded}
+                    tabIndex={0}
+                    aria-label={t('workbench.resize')}
+                    aria-orientation={edge === 'right' ? 'vertical' : 'horizontal'}
+                    aria-valuemin={edge === 'right' ? RIGHT_MIN : BOTTOM_MIN}
+                    aria-valuemax={edge === 'right' ? rightMax : maxBottomHeight(window.innerHeight)}
+                    aria-valuenow={size(edge)}
+                    title={t('workbench.resizeHint')}
+                    onDoubleClick={() => resizeTo(edge, edge === 'right' ? RIGHT_DEFAULT : BOTTOM_DEFAULT)}
+                    onKeyDown={(event) => {
+                      if (['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'].includes(event.key)) {
                         event.preventDefault()
-                        const element = event.currentTarget
-                        element.setPointerCapture(event.pointerId)
-                        // Measured from where the drag began, so the edge stays under the pointer
-                        // after it has been pushed past a limit and comes back.
-                        const origin = edge === 'right' ? event.clientX : event.clientY
-                        const start = size(edge)
-                        element.dataset.dragging = 'true'
-                        const move = (next: PointerEvent) =>
-                          resizeTo(edge, start + origin - (edge === 'right' ? next.clientX : next.clientY))
-                        const end = () => {
-                          delete element.dataset.dragging
-                          element.removeEventListener('pointermove', move)
-                          element.removeEventListener('pointerup', end)
-                          element.removeEventListener('pointercancel', end)
-                        }
-                        element.addEventListener('pointermove', move)
-                        element.addEventListener('pointerup', end)
-                        element.addEventListener('pointercancel', end)
-                      }}
+                        resizeTo(edge, size(edge) + (['ArrowLeft', 'ArrowUp'].includes(event.key) ? 16 : -16))
+                      }
+                    }}
+                    onPointerDown={(event) => {
+                      event.preventDefault()
+                      const element = event.currentTarget
+                      element.setPointerCapture(event.pointerId)
+                      // Measured from where the drag began, so the edge stays under the pointer
+                      // after it has been pushed past a limit and comes back.
+                      const origin = edge === 'right' ? event.clientX : event.clientY
+                      const start = size(edge)
+                      element.dataset.dragging = 'true'
+                      const move = (next: PointerEvent) =>
+                        resizeTo(edge, start + origin - (edge === 'right' ? next.clientX : next.clientY))
+                      const end = () => {
+                        delete element.dataset.dragging
+                        element.removeEventListener('pointermove', move)
+                        element.removeEventListener('pointerup', end)
+                        element.removeEventListener('pointercancel', end)
+                      }
+                      element.addEventListener('pointermove', move)
+                      element.addEventListener('pointerup', end)
+                      element.addEventListener('pointercancel', end)
+                    }}
+                  />
+                  <div className="workbench-dock-heading">
+                    <DockTabs
+                      edge={edge}
+                      label={t(`workbench.${edge}`)}
+                      more={t('workbench.more')}
+                      tabs={entries.map((panel) => ({
+                        id: panel.id,
+                        title: panel.title?.(context) ?? t(panel.titleKey),
+                        icon: sharedIcon(panel.icon) ? panel.icon : undefined,
+                        count: panel.count?.read(context),
+                      }))}
+                      activeId={active?.id}
+                      select={(id) => setSelected((value) => ({ ...value, [edge]: id }))}
+                      open={openPanel}
                     />
-                    <div className="workbench-dock-heading">
-                      <DockTabs
-                        edge={edge}
-                        label={t(`workbench.${edge}`)}
-                        more={t('workbench.more')}
-                        tabs={entries.map((panel) => ({
-                          id: panel.id,
-                          title: panel.title?.(context) ?? t(panel.titleKey),
-                          icon: sharedIcon(panel.icon) ? panel.icon : undefined,
-                          count: panel.count?.read(context),
-                        }))}
-                        activeId={active?.id}
-                        select={(id) => setSelected((value) => ({ ...value, [edge]: id }))}
-                        open={openPanel}
+                    <div id={`workbench-header-actions-${edge}`} className="workbench-header-actions" />
+                    {edge === 'right' && (
+                      <IconButton
+                        name="maximize-2"
+                        label={t(expanded ? 'workbench.collapse' : 'workbench.expand')}
+                        aria-pressed={expanded}
+                        onClick={() => setExpanded((value) => !value)}
                       />
-                      <div id={`workbench-header-actions-${edge}`} className="workbench-header-actions" />
-                      {edge === 'right' && (
-                        <IconButton
-                          name="maximize-2"
-                          label={t(expanded ? 'workbench.collapse' : 'workbench.expand')}
-                          aria-pressed={expanded}
-                          onClick={() => setExpanded((value) => !value)}
-                        />
-                      )}
-                      <IconButton name="x" label={t('workbench.close')} onClick={() => close(edge)} />
-                    </div>
-                    <div
-                      role="tabpanel"
-                      id={`workbench-panel-${edge}`}
-                      aria-labelledby={active ? `workbench-tab-${active.id}` : undefined}
-                      className="workbench-panel-content"
-                    >
+                    )}
+                    <IconButton name="x" label={t('workbench.close')} onClick={() => close(edge)} />
+                  </div>
+                  <div
+                    role="tabpanel"
+                    id={`workbench-panel-${edge}`}
+                    aria-labelledby={active ? `workbench-tab-${active.id}` : undefined}
+                    className="workbench-panel-content"
+                  >
+                    <RegionErrorBoundary key={active?.id} region={`workbench-${edge}`}>
                       {!Component && open && (
                         <EmptyState
                           icon={<Icon name="panel-right" />}
@@ -587,9 +549,9 @@ export function Dock({ context }: { context: UiExtensionContext }) {
                           headerId={`workbench-header-actions-${edge}`}
                         />
                       )}
-                    </div>
+                    </RegionErrorBoundary>
                   </div>
-                </RegionErrorBoundary>,
+                </div>,
                 host,
               )}
           </span>

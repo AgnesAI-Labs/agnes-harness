@@ -11,14 +11,21 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-function renderMenu() {
+function renderMenu(platform?: string) {
   const host = document.createElement('div')
   document.body.append(host)
   const select = vi.fn()
   const dispose = mountRegion(
     host,
     <div className="session-row">
-      <SessionMenu id="visible" title="名称 visible" disabled={false} t={zhT} action={select} />
+      <SessionMenu
+        id="visible"
+        title="名称 visible"
+        disabled={false}
+        platform={platform}
+        t={zhT}
+        action={select}
+      />
     </div>,
   )
   cleanups.push(dispose)
@@ -56,15 +63,21 @@ it('labels the trigger for assistive technology and starts collapsed', () => {
   expect(trigger.querySelector('svg')).not.toBeNull()
 })
 
-it('portals one menu with four icon-led items and marks the trigger expanded', async () => {
+it('portals one menu with five icon-led items and marks the trigger expanded', async () => {
   const { host, trigger, open } = renderMenu()
   const panel = await open()
   expect(host.contains(panel)).toBe(false)
   expect(document.body.contains(panel)).toBe(true)
   expect(panel.getAttribute('role')).toBe('menu')
   const items = [...panel.querySelectorAll<HTMLElement>('[role="menuitem"]')]
-  expect(items.map((item) => item.textContent)).toEqual(['重命名…', '运行信息', '分叉会话', '归档会话'])
-  expect(items.map((item) => item.querySelector('svg') !== null)).toEqual([true, true, true, true])
+  expect(items.map((item) => item.textContent)).toEqual([
+    '重命名…',
+    '运行信息',
+    '打开文件夹',
+    '分叉会话',
+    '归档会话',
+  ])
+  expect(items.map((item) => item.querySelector('svg') !== null)).toEqual([true, true, true, true, true])
   expect(trigger.getAttribute('aria-expanded')).toBe('true')
   expect(document.activeElement).toBe(items[0])
 })
@@ -118,4 +131,19 @@ it('removes a portalled menu and row state when the sidebar unmounts', async () 
   expect(document.querySelector('[role=menu]')).toBeNull()
   expect(row.hasAttribute('data-menu-open')).toBe(false)
   expect(trigger.isConnected).toBe(false)
+})
+
+it.each([
+  ['darwin', '在访达中打开'],
+  ['win32', '在资源管理器中打开'],
+  ['linux', '打开文件夹'],
+])('uses the daemon %s platform label and dispatches only a session id', async (platform, label) => {
+  const { open, select, trigger } = renderMenu(platform)
+  const panel = await open()
+  const item = [...panel.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+    (entry) => entry.textContent === label,
+  )
+  expect(item).toBeTruthy()
+  item?.click()
+  expect(select).toHaveBeenCalledWith('revealWorkspace', 'visible', '名称 visible', trigger)
 })

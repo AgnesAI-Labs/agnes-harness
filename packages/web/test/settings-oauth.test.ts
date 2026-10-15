@@ -109,7 +109,7 @@ async function setup(
   const doc = window.document
   if (options.snapshot) must(doc.querySelector<HappyButton>('.config-account-select')).click()
   else {
-    must(doc.querySelector<HappyButton>('#config-add-account')).click()
+    must(doc.querySelector<HappyButton>('.config-accounts-welcome [data-provider=more]')).click()
     must(doc.querySelector<HappyButton>('#config-save')).click()
   }
   expect((doc.getElementById('config-provider') as unknown as HTMLSelectElement).value).not.toBe('')

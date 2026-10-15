@@ -6,15 +6,15 @@ import { basename, join } from 'node:path'
 import { jcs } from '@agnes/protocol'
 import * as systemNode from '@agnes/system-node'
 import { afterEach, expect, it, vi } from 'vitest'
-import { FilePackageOperationStore } from '../src/packages/operations.js'
+import { FilePackageOperationStore, withOperationState } from '../src/packages/operations.js'
 
 const roots: string[] = []
 afterEach(async () => {
   vi.restoreAllMocks()
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
 })
-function cancel(commandId: string) {
-  const params = { profile: 'local-dev', operationId: 'op-1', clientId: 'client', commandId }
+function cancel(commandId: string, operationId = 'op-1') {
+  const params = { profile: 'local-dev', operationId, clientId: 'client', commandId }
   const { clientId, commandId: command, ...payload } = params
   return {
     identity: { principalId: 'owner', clientId, commandId: command },
@@ -23,6 +23,34 @@ function cancel(commandId: string) {
     payloadHash: createHash('sha256')
       .update(jcs({ method: '_agnes/v1/packages.operation.cancel', payload }))
       .digest('hex'),
+  }
+}
+function inspect(operationId: string, at: string) {
+  const params = {
+    profile: 'local-dev',
+    clientId: 'client',
+    commandId: operationId,
+    source: { type: 'file' as const, ref: 'file:./candidate' },
+  }
+  const { clientId, commandId, ...payload } = params
+  return {
+    operation: {
+      operationId,
+      profile: 'local-dev',
+      operation: 'inspect' as const,
+      state: 'received' as const,
+      cancellable: true,
+      retryable: false,
+      progress: 0,
+      startedAt: at,
+      updatedAt: at,
+    },
+    identity: { principalId: 'owner', clientId, commandId },
+    payloadHash: createHash('sha256')
+      .update(jcs({ method: '_agnes/v1/packages.inspect', payload }))
+      .digest('hex'),
+    request: { kind: 'inspect' as const, params },
+    now: at,
   }
 }
 it.each(['before', 'after'] as const)(
@@ -34,6 +62,8 @@ it.each(['before', 'after'] as const)(
     const store = new FilePackageOperationStore(directory)
     expect(await store.pending()).toEqual([])
     expect(existsSync(directory)).toBe(false)
+    // A cancel command is kept only while the operation it names is in the journal.
+    await store.admit(inspect('op-1', new Date().toISOString()))
     await store.admitCancel(cancel('first'))
     const replace = systemNode.renameWriteThrough
     const fault = vi.spyOn(systemNode, 'renameWriteThrough').mockImplementation(async (...args) => {
@@ -58,3 +88,35 @@ it.each(['before', 'after'] as const)(
     ])
   },
 )
+
+it('reclaims a settled operation and its cancel commands seven days after it settles, never pending work', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agnes-operation-retention-'))
+  roots.push(root)
+  const store = new FilePackageOperationStore(join(root, 'operations'))
+  const settledAt = '2026-09-13T00:00:00.000Z'
+  const at = (offset: number) => new Date(Date.parse(settledAt) + offset).toISOString()
+  await store.admit(inspect('op-settled', settledAt))
+  await store.update('op-settled', (current) =>
+    withOperationState(current, { state: 'completed', now: settledAt }),
+  )
+  await store.admitCancel({ ...cancel('cancel-settled', 'op-settled'), now: settledAt })
+  await store.admit(inspect('op-pending', settledAt))
+
+  // Inside the window a retried command still finds its record.
+  const inside = at(7 * 86_400_000 - 1)
+  expect((await store.admit(inspect('op-settled', inside))).state).toBe('existing')
+  expect((await store.admitCancel({ ...cancel('cancel-settled', 'op-settled'), now: inside })).state).toBe(
+    'existing',
+  )
+
+  // From seven days after it settled, the next admission reclaims the record and its cancel command.
+  const after = at(7 * 86_400_000)
+  expect((await store.admit(inspect('op-next', after))).state).toBe('new')
+  expect(await store.get('local-dev', 'op-settled')).toBeUndefined()
+  expect((await store.pending()).map((record) => record.operation.operationId)).toEqual([
+    'op-pending',
+    'op-next',
+  ])
+  const saved = JSON.parse(await readFile(join(root, 'operations', 'operations.json'), 'utf8'))
+  expect(saved.cancels).toEqual([])
+})

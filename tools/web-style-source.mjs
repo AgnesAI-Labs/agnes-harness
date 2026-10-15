@@ -1,6 +1,12 @@
 import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+const require = createRequire(import.meta.url)
+const xtermCss = require.resolve('@xterm/xterm/css/xterm.css', {
+  paths: [join(import.meta.dirname, '../packages/web-ui')],
+})
 
 const layers = join(dirname(fileURLToPath(import.meta.url)), '../packages/web-ui/src/layers.css')
 
@@ -43,13 +49,18 @@ export function readWebStyleSource(manifest) {
 export function readWebUiStyleSource(file) {
   const source = readUiCss(file)
   return (
+    inCssLayer(readFileSync(xtermCss, 'utf8'), 'vendor') +
+    '\n' +
     source.replace('@import "./components.css";', '') +
     '\n' +
     readUiCss(join(dirname(file), 'components.css'))
       .replace('@import "./native.css";', '')
+      .replace('@import "./doctor-groups.css";', '')
       .replace('@import "./refinement.css";', '') +
     '\n' +
     readUiCss(join(dirname(file), 'native.css')) +
+    '\n' +
+    readUiCss(join(dirname(file), 'doctor-groups.css')) +
     '\n' +
     // The refinement layer comes last so its proportions settle equal-specificity rules.
     readUiCss(join(dirname(file), 'refinement.css'))

@@ -1,6 +1,10 @@
 import type { Context } from '@agnes/cordis'
 import { scanAll } from '@agnes/core'
 import { ProviderError, unavailableProjections } from '@agnes/extension-api'
+import {
+  createLocalArtifactReadStore,
+  LOCAL_ARTIFACT_READ_MAX_BYTES,
+} from '@agnes/host-artifacts/artifact-read-store'
 import type { ServiceCall, ServiceDescriptor } from '@agnes/host-common/assemble/service-binding'
 import {
   DEFERRED_INVOCATION_EVENT,
@@ -43,6 +47,7 @@ import {
 } from '../services/session-ports.js'
 import { deferredQueueFor } from './deferred-invocations.js'
 import { enqueueSystemInput } from './system-input.js'
+import { createUiArtifactChecker, withUiArtifactStatuses } from './ui-artifacts.js'
 import { readUiComponentDeclarations } from './ui-component-declarations.js'
 import {
   dropUiDataSourceCache,
@@ -113,6 +118,7 @@ async function confirmDeferredSource(
  * The deferred queue is the host session service. This bridge is one deferred-producer owner.
  */
 export function createIntelligentUiBridge(input: {
+  dataDir: string
   extensionHost: ExtensionServiceHost
   profileDir: string
   profileName: string
@@ -121,6 +127,9 @@ export function createIntelligentUiBridge(input: {
   session: (key: string) => HostSession | undefined
   providers: () => UiDataSourceCatalog
 }) {
+  const checkArtifact = createUiArtifactChecker(
+    createLocalArtifactReadStore({ dataDir: input.dataDir, maxArtifactBytes: LOCAL_ARTIFACT_READ_MAX_BYTES }),
+  )
   const sourceCache = new Map<string, UiDataSourceCacheEntry>()
   const sourceValidators = new Map<string, ((data: unknown) => boolean) | 'invalid'>()
   let hooked = false
@@ -294,6 +303,8 @@ export function createIntelligentUiBridge(input: {
       })
       if (!found) denied()
       return {
+        checkArtifact: (ref: import('@agnes/protocol').ArtifactRef, signal: AbortSignal) =>
+          checkArtifact(requireSession(session.key, session.lane), ref, signal),
         taskId: () => {
           const live = requireSession(session.key, session.lane)
           return `${live.key}:${live.lane}:turn:${live.lastTurnNumber()}`
@@ -396,11 +407,26 @@ export function createIntelligentUiBridge(input: {
         }
       | undefined {
       if (!enabled()) return undefined
+      const decorate = (record: UiSurfaceRecord, signal: AbortSignal) =>
+        withUiArtifactStatuses(
+          record,
+          async (ref, checking) => {
+            if (record.lane !== session.lane) return 'not_found'
+            return checkArtifact(requireSession(session.key, session.lane), ref, checking)
+          },
+          signal,
+        )
       return {
         action: (params, actor, signal) =>
           run(session, actor, signal, (ui) => ui.action(params, actor, signal)),
-        read: (params, signal) => run(session, READER, signal, (ui) => ui.read(params, signal)),
-        refresh: (params, signal) => run(session, READER, signal, (ui) => ui.refresh(params, signal)),
+        read: async (params, signal) => {
+          const page = await run(session, READER, signal, (ui) => ui.read(params, signal))
+          const surfaces: UiSurfaceRecord[] = []
+          for (const record of page.surfaces) surfaces.push(await decorate(record, signal))
+          return { ...page, surfaces }
+        },
+        refresh: async (params, signal) =>
+          decorate(await run(session, READER, signal, (ui) => ui.refresh(params, signal)), signal),
       }
     },
     attach(root: Context, origins: RowOriginLookup | undefined, deferred: DeferredInvocationsService): void {

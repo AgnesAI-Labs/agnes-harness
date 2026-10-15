@@ -1,8 +1,10 @@
 /** @vitest-environment happy-dom */
 
+import './terminal-fixture.js'
 import type { Session } from '@agnes/sdk/browser'
 import { factChainLinks, fileViewerActions } from '@agnes/web-client'
 import { createCatalogTranslator, renderRegion, unmountRegion } from '@agnes/web-ui'
+import { within } from '@testing-library/dom'
 import { flushSync } from 'react-dom'
 import { expect, it, vi } from 'vitest'
 import { ChangesPanel, ReviewFileAction } from '../src/workbench/changes-panel.js'
@@ -146,19 +148,21 @@ it('orders rapid terminal input, drops unsent input on detach and restores read-
   }
   try {
     renderRegion(host, <TerminalPanel context={context} />)
-    await vi.waitFor(() => expect(host.querySelector('textarea')?.value).toBe('human output'))
-    expect(host.querySelector('[data-testid="terminal-kill"]')).not.toBeNull()
+    await vi.waitFor(() =>
+      expect(host.querySelector('[data-testid=terminal-fixture-raw]')?.textContent).toBe('human output'),
+    )
+
     const type = (keys: string[]) => {
       flushSync(() => {
         for (const key of keys)
-          host.querySelector('textarea')?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+          host.querySelector('input')?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
       })
     }
     holdInput = true
     type(['a', 'b', 'c', 'Enter'])
     await vi.waitFor(() => expect(releaseInput).toBeTypeOf('function'))
     expect(human.stdout).toBe('human output')
-    expect(host.querySelector('textarea')?.disabled).toBe(false)
+    expect(host.querySelector('input')?.disabled).toBe(false)
     releaseHeldInput()
     await vi.waitFor(() => expect(human.stdout).toBe('human outputabc\r'))
     holdInput = true
@@ -168,7 +172,7 @@ it('orders rapid terminal input, drops unsent input on detach and restores read-
     await vi.waitFor(() => expect(releaseInput).toBeTypeOf('function'))
     const paste = new Event('paste', { bubbles: true, cancelable: true })
     Object.defineProperty(paste, 'clipboardData', { value: { getData: () => 'A'.repeat(65536) } })
-    flushSync(() => host.querySelector('textarea')?.dispatchEvent(paste))
+    flushSync(() => host.querySelector('input')?.dispatchEvent(paste))
     type(['e'])
     expect(host.textContent).toContain(context.t('workbench.terminal.inputFull'))
     releaseHeldInput()
@@ -184,19 +188,26 @@ it('orders rapid terminal input, drops unsent input on detach and restores read-
     expect(human.status).toBe('running')
     expect(agent.status).toBe('running')
     renderRegion(host, <TerminalPanel context={context} />)
-    await vi.waitFor(() => expect(host.querySelector('textarea')?.value).toBe('xuman outputabc'))
-    const follow = host.querySelector<HTMLButtonElement>('[data-testid="terminal-attach"]')
-    expect(follow?.getAttribute('aria-label')).toBe('Attach · bash · Agent')
-    if (!follow) throw new Error('missing agent follow action')
-    flushSync(() => follow.click())
-    await vi.waitFor(() => expect(host.querySelector('textarea')?.value).toBe('agent output'))
+    await vi.waitFor(() =>
+      expect(host.querySelector('[data-testid=terminal-fixture-raw]')?.textContent).toBe(
+        'human outputabc\rx',
+      ),
+    )
+    flushSync(() => (host.querySelector(`#terminal-tab-${agent.id}`) as HTMLButtonElement | null)?.click())
+    await vi.waitFor(() =>
+      expect(host.querySelector('[data-testid=terminal-fixture-raw]')?.textContent).toBe('agent output'),
+    )
     expect(host.querySelector('[data-testid="terminal-kill"]')).toBeNull()
     expect(host.querySelector('[data-testid="terminal-interrupt"]')).toBeNull()
-    flushSync(() => (host.querySelector('[data-testid="terminal-tab-close"]') as HTMLButtonElement).click())
+    flushSync(() =>
+      (
+        host.querySelector('[data-active=true] [data-testid="terminal-tab-close"]') as HTMLButtonElement
+      ).click(),
+    )
     expect(agent.status).toBe('running')
-    flushSync(() => (host.querySelector('[role=tab]') as HTMLButtonElement).click())
+    flushSync(() => (host.querySelector('[role=option]') as HTMLButtonElement).click())
     evicted = true
-    await vi.waitFor(() => expect(host.querySelector('[role=tab]')).toBeNull(), { timeout: 2500 })
+    await vi.waitFor(() => expect(host.querySelector('[role=option]')).toBeNull(), { timeout: 2500 })
     expect(host.textContent).not.toContain('Job was evicted')
   } finally {
     unmountRegion(host)
@@ -207,67 +218,67 @@ it('orders rapid terminal input, drops unsent input on detach and restores read-
 
 it('renders kill receipts immediately, confirms close and selects the remaining terminal', async () => {
   localStorage.clear()
-  const job = {
-    id: 'human-close',
+  const jobs = ['first', 'second'].map((id) => ({
+    id,
     owner: 'human' as const,
     ownerSessionId: 's',
     kind: 'pty' as const,
     command: 'bash',
     cwd: '/workspace',
-    status: 'running' as const,
-    code: null,
+    status: 'running' as 'running' | 'killed',
+    code: null as number | null,
     truncated: false,
-    stdout: 'Live terminal output',
+    stdout: `${id} output`,
     stderr: '',
-  }
-  const other = { ...job, id: 'human-other', stdout: 'Other terminal output' }
-  let confirm: (() => void) | undefined,
-    holdPolling = false
+  }))
+  let holdPolling = false
   const jobsControl = vi.fn(async (input: { jobId: string }) => {
-    await new Promise<void>((resolve) => {
-      confirm = resolve
-    })
-    return { output: { ...(input.jobId === job.id ? job : other), status: 'killed' as const } }
+    const row = jobs.find((row) => row.id === input.jobId)
+    if (!row) throw new Error('Missing job')
+    row.status = 'killed'
+    row.code = -1
+    holdPolling = true
+    return { output: { ...row } }
   })
   const session = {
     id: 's',
     jobsRead: async (id?: string) => {
       if (holdPolling) await new Promise<void>(() => {})
-      return { jobs: [job, other], completions: [], job: id === other.id ? other : job }
+      return { jobs, completions: [], job: jobs.find((row) => row.id === id) }
     },
     jobsControl,
   } as unknown as Session
   const host = document.createElement('div')
   document.body.append(host)
-  const context = {
-    t: createCatalogTranslator(workbenchLocaleCatalog, 'en'),
-    data: { session, disabled: false },
-  }
   try {
-    renderRegion(host, <TerminalPanel context={context} />)
-    await vi.waitFor(() => expect(host.querySelector('textarea')?.value).toContain('Live terminal output'))
-    flushSync(() => (host.querySelector('[data-testid=terminal-kill]') as HTMLButtonElement).click())
-    expect(host.querySelector('[role=status]')?.textContent).toBe('Running')
-    expect(host.querySelector('textarea')?.disabled).toBe(true)
-    holdPolling = true
-    confirm?.()
-    await vi.waitFor(() => expect(host.querySelector('[role=status]')?.textContent).toBe('Killed'))
-    expect(jobsControl).toHaveBeenCalledWith({ operation: 'kill', jobId: job.id })
-    unmountRegion(host)
-    holdPolling = false
-    renderRegion(host, <TerminalPanel context={context} />)
-    await vi.waitFor(() => expect(host.querySelector('[data-testid=terminal-tab-close]')).not.toBeNull())
+    renderRegion(
+      host,
+      <TerminalPanel
+        context={{
+          t: createCatalogTranslator(workbenchLocaleCatalog, 'en'),
+          data: { session, disabled: false },
+        }}
+      />,
+    )
+    await vi.waitFor(() => expect(host.textContent).toContain('first output'))
+    flushSync(() =>
+      host
+        .querySelector('[role=option]')
+        ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true })),
+    )
+    await vi.waitFor(() => expect(document.querySelector('[data-testid=terminal-kill]')).not.toBeNull())
+    flushSync(() => (document.querySelector('[data-testid=terminal-kill]') as HTMLElement).click())
+    expect(jobsControl).not.toHaveBeenCalled()
+    flushSync(() => within(document.body).getByRole('button', { name: 'Kill process' }).click())
+    await vi.waitFor(() => expect(host.textContent).toContain('Process exited (-1)'))
+    await vi.waitFor(() =>
+      expect(host.querySelector<HTMLButtonElement>('[data-testid=terminal-tab-close]')?.disabled).toBe(false),
+    )
     flushSync(() => (host.querySelector('[data-testid=terminal-tab-close]') as HTMLButtonElement).click())
-    expect(host.querySelector('[role=tab]')).not.toBeNull()
-    confirm?.()
-    await vi.waitFor(() => expect(host.querySelectorAll('[role=tab]')).toHaveLength(1))
-    expect(host.querySelector('[role=tab]')?.getAttribute('aria-selected')).toBe('true')
-    await vi.waitFor(() => expect(host.querySelector('textarea')?.value).toContain('Other terminal output'))
-    flushSync(() => (host.querySelector('[data-testid=terminal-tab-close]') as HTMLButtonElement).click())
-    expect(host.querySelector('[role=tab]')).not.toBeNull()
-    expect(jobsControl).toHaveBeenLastCalledWith({ operation: 'kill', jobId: other.id })
-    confirm?.()
-    await vi.waitFor(() => expect(host.querySelector('[role=tab]')).toBeNull())
+    await vi.waitFor(() => expect(host.querySelectorAll('[role=option]')).toHaveLength(1))
+    await vi.waitFor(() => expect(host.textContent).toContain('second output'))
+    expect(host.querySelector('[role=option]')?.getAttribute('aria-selected')).toBe('true')
+    expect(jobsControl).toHaveBeenCalledWith({ operation: 'kill', jobId: 'first' })
   } finally {
     unmountRegion(host)
     host.remove()

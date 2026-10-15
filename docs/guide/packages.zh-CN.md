@@ -19,7 +19,7 @@ agh plugins add https://example.com/hello-tool.zip
 
 命令显示来源、内容摘要、能力哈希、能力范围、警告与阻断项。确认 `plugins add` 后安装、信任并启用核对过的确切版本。已明确授权的脚本可用 `--yes`；未确认的非交互调用会报出原因，并提示使用 `--yes`。旧的 `agh install` 仍保持未信任、停用。`agh plugins trust <id>` 自动读取已安装版本的哈希供确认，`agh plugins enable <id>` 启用前再次展示能力。
 
-管理页的“从来源安装”支持本地路径、Git URL 和归档 HTTPS 地址。本地路径指向 daemon 所在机器。`file:` 接受绝对路径、daemon 工作区外的文件夹、相对文件夹、`.tgz`/`.tar.gz`/`.tar` 与 ZIP。显式的相对 `file:` 仍从 daemon 工作区解析；CLI 裸路径从 CLI 当前目录解析。来源不能是符号链接。归档可直接包含包，或用单个目录包住它；越界路径、链接、特殊文件与过大的归档会被拒绝。HTTPS 下载不跟随重定向、不接受 URL 凭据。
+管理页的“从来源安装”支持本地路径、Git URL 和归档 HTTPS 地址。本地路径指向 daemon 所在机器。`file:` 接受绝对路径、daemon 工作区外的文件夹、相对文件夹、`.tgz`/`.tar.gz`/`.tar` 与 ZIP。显式的相对 `file:` 仍从 daemon 工作区解析；CLI 裸路径从 CLI 当前目录解析。来源不能是符号链接。归档可直接包含包，或用单个目录包住它；越界路径、链接、特殊文件与过大的归档会被拒绝。只有 npm 包可以包含 `node_modules`、`.git` 或 `fixtures/out`；含有这些目录的归档、URL 或 Git 内容会以原因 `excluded-directory` 被拒绝（文件夹来源会跳过它们），依赖请用 `agh plugins pack` 打包分享。HTTPS 下载不跟随重定向、不接受 URL 凭据。
 
 Git URL 可省略提交，或用 `#` 指定分支/标签。检查时固定提交，安装时校验预览内容摘要。Git 仓库必须包含可安装的插件入口与运行产物；获取过程不执行安装脚本。
 
@@ -75,7 +75,7 @@ profile 的 `policy.capabilityCeiling` 在安装时检查每个插件声明的�
 }
 ```
 
-策略词汇为 `network:<host>`、`filesystem.read:<scope>`、`filesystem.write:<scope>`、`exec:<command>`、`secrets:<name>`、`credentials:<name>`、`model`、`childAgents`、`ui`。省略 allow 表示除 deny 外均允许；空 allow 表示全部拒绝。deny 优先，宽泛请求不能绕过更窄的拒绝规则。错误策略拒绝操作。检查、安装、信任与启用读取同一策略；后续收紧策略会阻止不符合要求的包进入新激活，不删除其数据。
+策略词汇为 `network:<host>`（或 `network:<host>:<port>`）、`filesystem.read:<scope>`、`filesystem.write:<scope>`、`exec:<command>`、`secrets:<name>`、`credentials:<name>`、`model`、`childAgents`、`ui`。省略 allow 表示除 deny 外均允许；空 allow 表示全部拒绝。deny 优先，宽泛请求不能绕过更窄的拒绝规则；不带端口的拒绝规则覆盖该主机的所有端口。错误策略拒绝操作。检查、安装、信任与启用读取同一策略；后续收紧策略会阻止不符合要求的包进入新激活，不删除其数据。
 
 这是社区信任模型：能力声明用于审核受信任代码，不构成隔离沙箱。Host 在工具 exec/沙箱启动、网络 fetch、文件访问边界记录未声明使用，不记录命令参数、目标或秘密值。现有沙箱与网络授权仍决定是否执行。直接使用 Node API、插件初始化和注入服务内部的调用不在该观察范围内。
 

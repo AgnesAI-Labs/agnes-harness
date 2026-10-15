@@ -2,7 +2,7 @@ import type { SystemPromptConfig } from '@agnes/protocol'
 import { hasPermission, queueResourceWrite, scopedResourceKey, setResource, useResource } from '@agnes/web-ui'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { PluginAdminApi } from '../admin/plugins/api.js'
-import { systemPromptApi } from './system-prompt-api.js'
+import { SystemPromptConflict, systemPromptApi } from './system-prompt-api.js'
 
 export const PROMPT_NAMESPACE = '@agnes/web/system-prompt'
 export const browserPromptApi = systemPromptApi()
@@ -20,23 +20,48 @@ export class PromptReplacedError extends Error {
  * The shared prompt configuration: read when a surface shows it (again on `reload`). `save` reads
  * the latest stored configuration first and applies only the caller's change to it, so a surface
  * never writes back fields another surface changed meanwhile; the result reaches every surface.
+ * A conditional save also refuses a competing write after that read. Publish its saved value for
+ * review while the editor keeps its own draft; only a successful resubmission clears the conflict.
  */
 export function usePromptSnapshot(api: PromptApi, enabled = true) {
   const key = scopedResourceKey(api, 'settings:prompt')
   const state = useResource(enabled ? key : undefined, () => api.get())
+  const [conflict, setConflict] = useState<SystemPromptConflict['current']>()
   const save = useCallback(
     (change: (latest: SystemPromptConfig) => SystemPromptConfig, confirmFullOverride = false) =>
       queueResourceWrite(key, async () => {
         const latest = await api.get()
         // A current snapshot also exposes a replacement that refuses this draft's save.
         setResource(key, latest)
-        const result = await api.save({ config: change(latest.config), confirmFullOverride })
-        setResource(key, result)
-        return result
+        // Session previews may omit revisions; a settings write must never fall back to an unconditional save.
+        if (latest.revision === undefined) throw new Error('Prompt revision unavailable')
+        try {
+          const result = await api.save({
+            config: change(latest.config),
+            confirmFullOverride,
+            expectedRevision: latest.revision,
+          })
+          setResource(key, result)
+          setConflict(undefined)
+          return result
+        } catch (error) {
+          if (error instanceof SystemPromptConflict) {
+            setResource(key, error.current)
+            setConflict(error.current)
+          }
+          throw error
+        }
       }),
     [api, key],
   )
-  return { snapshot: state.data, busy: state.loading, failed: !!state.error, save, reload: state.reload }
+  return {
+    snapshot: state.data,
+    busy: state.loading,
+    failed: !!state.error,
+    conflict: conflict ? (state.data ?? conflict) : undefined,
+    save,
+    reload: state.reload,
+  }
 }
 
 const INSTRUCTIONS = ['personaPrefix', 'personaSuffix', 'replyStyle'] as const

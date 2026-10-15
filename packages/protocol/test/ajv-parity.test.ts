@@ -571,6 +571,8 @@ const AGNES_DEFS: Record<string, TSchema> = {
   CompactOutcome: AgnesGen.CompactOutcome,
   ErrorData: AgnesGen.ErrorData,
   SessionIdParams: AgnesGen.SessionIdParams,
+  SessionRevealWorkspaceParams: AgnesGen.SessionRevealWorkspaceParams,
+  SessionRevealWorkspaceResult: AgnesGen.SessionRevealWorkspaceResult,
   SessionJob: AgnesGen.SessionJob,
   SessionJobsReadParams: AgnesGen.SessionJobsReadParams,
   SessionJobsReadResult: AgnesGen.SessionJobsReadResult,
@@ -1995,6 +1997,16 @@ const REVIEW_RESULT = {
 }
 
 const AGNES_SAMPLES: Record<string, Sample> = {
+  SessionRevealWorkspaceParams: {
+    valid: { sessionId: 's' },
+    invalid: [{}, { sessionId: '' }, { sessionId: 's', path: '/untrusted' }],
+    note: 'only a session identity, never a client path',
+  },
+  SessionRevealWorkspaceResult: {
+    valid: { opened: true },
+    invalid: [{}, { opened: false }, { opened: true, path: '/private' }],
+    note: 'native opener launch receipt contains no private path',
+  },
   SessionControlsParams: {
     note: 'bounded control fact cursor',
     valid: { sessionId: 's1', afterSeq: 0 },
@@ -7512,6 +7524,11 @@ describe('McpServerDescriptor: authorizationStatus field (mcp-oauth-authorizatio
 type MethodDefRef = { fileId: string; params: string; result?: string }
 
 const METHOD_DEF: Record<MethodName, MethodDefRef> = {
+  '_agnes/v1/session.revealWorkspace': {
+    fileId: AGNES_ID,
+    params: 'SessionRevealWorkspaceParams',
+    result: 'SessionRevealWorkspaceResult',
+  },
   '_agnes/v1/admin.credentials.delete': {
     fileId: 'https://agnes.ai/schema/app-server-v1',
     params: 'AdminCredentialDelete',
@@ -8751,6 +8768,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     invalid: [{ path: '/other' }],
     note: 'rescan uses configured roots',
   },
+  '_agnes/v1/session.revealWorkspace': AGNES_SAMPLES.SessionRevealWorkspaceParams as Sample,
   '_agnes/v1/session.runtime': {
     valid: { sessionId: 's' },
     invalid: [{}, { sessionId: '' }, { sessionId: 's', extra: true }],
@@ -9387,6 +9405,7 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/sessionSelection.modelAdapters': AGNES_SAMPLES.SessionAdapterCatalogResult as Sample,
   '_agnes/v1/sessionSelection.defaults.get': AGNES_SAMPLES.SessionDefaultsState as Sample,
   '_agnes/v1/sessionSelection.defaults.save': AGNES_SAMPLES.SessionDefaultsState as Sample,
+  '_agnes/v1/session.revealWorkspace': AGNES_SAMPLES.SessionRevealWorkspaceResult as Sample,
   '_agnes/v1/session.runtime': {
     valid: {
       sessionKey: 's',

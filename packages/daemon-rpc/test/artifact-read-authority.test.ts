@@ -49,13 +49,26 @@ describe('durable artifact read authority index', () => {
       const initial = new PersistentArtifactReadAuthorityIndex(initialTables.table('artifact-read-authority'))
       expect(initial.append(writer('append'), binding())).toEqual({ ok: true, code: 'appended' })
       expect(initial.append(writer('append'), binding())).toEqual({ ok: true, code: 'already_present' })
+      const alias = binding({ ...first, mime: 'text/plain; charset=utf-8' })
+      expect(initial.append(writer('append'), alias)).toEqual({ ok: true, code: 'appended' })
+      expect(
+        initial.append(writer('append'), binding({ ...first, size: first.size + 1, mime: 'text/html' })),
+      ).toMatchObject({ ok: false, code: 'conflict' })
+      expect(
+        initial.append(
+          { ...writer('append'), principalId: 'other-owner' },
+          { ...alias, ownerId: 'other-owner' },
+        ),
+      ).toMatchObject({ ok: false, code: 'conflict' })
       await initialTables.close()
 
       const reopenedTables = sqliteTables(file)
       const reopened = new PersistentArtifactReadAuthorityIndex(
         reopenedTables.table('artifact-read-authority'),
       )
-      expect(reopened.resolve('session-a', 'lane-a', first.sha256)).toEqual(binding())
+      expect(reopened.resolve('session-a', 'lane-a', first.sha256)).toBeUndefined()
+      expect(reopened.resolve('session-a', 'lane-a', first.sha256, first.mime)).toEqual(binding())
+      expect(reopened.resolve('session-a', 'lane-a', first.sha256, alias.artifact.mime)).toEqual(alias)
       expect(reopened.resolve('session-b', 'lane-a', first.sha256)).toBeUndefined()
       await reopenedTables.close()
     } finally {
@@ -63,49 +76,98 @@ describe('durable artifact read authority index', () => {
     }
   })
 
-  it('initializes and reopens through the production package-table adapter without PRAGMA', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'agnes-artifact-authority-host-'))
-    const open = () =>
-      createSqliteStorage({
-        file: join(directory, 'sessions.sqlite'),
-        tablesDir: join(directory, 'tables'),
-      })
-    let storage = open()
-    try {
-      const initial = new PersistentArtifactReadAuthorityIndex(
-        adaptHostTable(
-          storage.tables('@agnes/daemon/artifact-read-authority-test').table('artifact_read_authority'),
-        ),
-      )
-      expect(initial.append(writer('append'), binding())).toEqual({ ok: true, code: 'appended' })
-      await storage.close()
+  it.each([1, 2])(
+    'migrates v%i and reopens through the production package-table adapter without PRAGMA',
+    async (version) => {
+      const directory = await mkdtemp(join(tmpdir(), 'agnes-artifact-authority-host-'))
+      const open = () =>
+        createSqliteStorage({
+          file: join(directory, 'sessions.sqlite'),
+          tablesDir: join(directory, 'tables'),
+        })
+      let storage = open()
+      try {
+        const legacyArtifact = { ...first, mime: `${'a'.repeat(64)}/${'b'.repeat(127)}` }
+        const expected = binding(legacyArtifact)
+        const legacy = storage
+          .tables('@agnes/daemon/artifact-read-authority-test')
+          .table('artifact_read_authority')
+        legacy.exec(
+          'CREATE TABLE artifact_read_authority_meta (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)',
+        )
+        legacy.exec(
+          `CREATE TABLE artifact_read_authority_v1 (session_id TEXT NOT NULL, lane_id TEXT NOT NULL, owner_id TEXT NOT NULL, sha256 TEXT NOT NULL, size INTEGER NOT NULL, mime TEXT NOT NULL, PRIMARY KEY (session_id, lane_id, sha256${version === 2 ? ', mime' : ''}))`,
+        )
+        legacy.exec(
+          'CREATE INDEX artifact_read_authority_v1_lane ON artifact_read_authority_v1 (session_id, lane_id)',
+        )
+        legacy.run('INSERT INTO artifact_read_authority_meta (id, version) VALUES (?, ?)', [1, version])
+        legacy.run('INSERT INTO artifact_read_authority_v1 VALUES (?, ?, ?, ?, ?, ?)', [
+          'session-a',
+          'lane-a',
+          'owner-a',
+          first.sha256,
+          first.size,
+          legacyArtifact.mime,
+        ])
+        legacy.run('UPDATE artifact_read_authority_v1 SET size = ?', [-1])
+        expect(() => new PersistentArtifactReadAuthorityIndex(adaptHostTable(legacy))).toThrow(
+          'artifact read authority index unavailable',
+        )
+        expect(legacy.get<{ version: number }>('SELECT version FROM artifact_read_authority_meta')).toEqual({
+          version,
+        })
+        legacy.run('UPDATE artifact_read_authority_v1 SET size = ?', [first.size])
+        const adapter = adaptHostTable(legacy)
+        expect(
+          () =>
+            new PersistentArtifactReadAuthorityIndex({
+              ...adapter,
+              exec(sql, params) {
+                if (sql.startsWith('INSERT INTO artifact_read_authority_v1 ('))
+                  throw new Error('synthetic migration interruption')
+                adapter.exec(sql, params)
+              },
+            }),
+        ).toThrow('artifact read authority index unavailable')
+        expect(legacy.get<{ version: number }>('SELECT version FROM artifact_read_authority_meta')).toEqual({
+          version,
+        })
+        expect(legacy.get<{ size: number }>('SELECT size FROM artifact_read_authority_v1')).toEqual({
+          size: first.size,
+        })
+        const initial = new PersistentArtifactReadAuthorityIndex(adapter)
+        expect(initial.resolve('session-a', 'lane-a', first.sha256, legacyArtifact.mime)).toEqual(expected)
+        expect(initial.append(writer('append'), expected)).toEqual({ ok: true, code: 'already_present' })
+        await storage.close()
 
-      storage = open()
-      const owner = storage
-        .tables('@agnes/daemon/artifact-read-authority-test')
-        .table('artifact_read_authority')
-      const reopened = new PersistentArtifactReadAuthorityIndex(adaptHostTable(owner))
-      expect(reopened.resolve('session-a', 'lane-a', first.sha256)).toEqual(binding())
-      owner.exec(
-        `CREATE TEMP TRIGGER artifact_read_authority_temp_mutate
+        storage = open()
+        const owner = storage
+          .tables('@agnes/daemon/artifact-read-authority-test')
+          .table('artifact_read_authority')
+        const reopened = new PersistentArtifactReadAuthorityIndex(adaptHostTable(owner))
+        expect(reopened.resolve('session-a', 'lane-a', first.sha256)).toEqual(expected)
+        owner.exec(
+          `CREATE TEMP TRIGGER artifact_read_authority_temp_mutate
          AFTER DELETE ON artifact_read_authority_v1
          BEGIN UPDATE artifact_read_authority_v1 SET owner_id = 'attacker'; END`,
-      )
-      expect(reopened.replace(writer('replace'), binding(), binding(second))).toEqual({
-        ok: false,
-        code: 'storage_unavailable',
-      })
-      expect(
-        owner.get<{ owner_id: unknown; sha256: unknown }>(
-          'SELECT owner_id, sha256 FROM artifact_read_authority_v1 WHERE session_id = ? AND lane_id = ?',
-          ['session-a', 'lane-a'],
-        ),
-      ).toEqual({ owner_id: 'owner-a', sha256: first.sha256 })
-    } finally {
-      await storage.close()
-      await rm(directory, { recursive: true, force: true })
-    }
-  })
+        )
+        expect(reopened.replace(writer('replace'), binding(), binding(second))).toEqual({
+          ok: false,
+          code: 'storage_unavailable',
+        })
+        expect(
+          owner.get<{ owner_id: unknown; sha256: unknown }>(
+            'SELECT owner_id, sha256 FROM artifact_read_authority_v1 WHERE session_id = ? AND lane_id = ?',
+            ['session-a', 'lane-a'],
+          ),
+        ).toEqual({ owner_id: 'owner-a', sha256: first.sha256 })
+      } finally {
+        await storage.close()
+        await rm(directory, { recursive: true, force: true })
+      }
+    },
+  )
 
   it('enforces append and replace authority without crossing session, lane, or owner', () => {
     const tables = sqliteTables()
@@ -207,6 +269,9 @@ describe('durable artifact read authority index', () => {
       new Proxy(binding(), { get: trap }),
       { ...binding(), artifact: { ...first, extra: 'secret' } },
       { ...binding(), artifact: { ...first, sha256: first.sha256.toUpperCase() } },
+      ...[{ mime: 'x'.repeat(129) }, { size: -1 }, { size: 0.5 }, { size: NaN }, { size: Infinity }].map(
+        (value) => binding({ ...first, ...value }),
+      ),
     ]
     for (const sample of samples) {
       const outcome = index.append(writer('append'), sample)
@@ -262,14 +327,30 @@ describe('durable artifact read authority index', () => {
     const tables = sqliteTables()
     const raw = tables.table('artifact-read-authority')
     const index = new PersistentArtifactReadAuthorityIndex(raw)
-    raw.exec(
-      `INSERT INTO artifact_read_authority_v1 (session_id, lane_id, owner_id, sha256, size, mime)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      ['session-a', 'lane-a', 'owner-a', first.sha256, -1, 'Bearer/sk-database-secret'],
-    )
-    expect(() => index.resolve('session-a', 'lane-a', first.sha256)).toThrow(
-      'artifact read authority index unavailable',
-    )
+    for (const [size, mime] of [
+      [-1, JSON.stringify(first.mime)],
+      [0.5, JSON.stringify(first.mime)],
+      ['not-a-number', JSON.stringify(first.mime)],
+      [new Uint8Array([0]), JSON.stringify(first.mime)],
+      [Infinity, JSON.stringify(first.mime)],
+      [first.size, 'not-json'],
+      [first.size, `${JSON.stringify(first.mime)} `],
+      [first.size, JSON.stringify('x'.repeat(129))],
+      [first.size, JSON.stringify({ mime: first.mime })],
+    ]) {
+      raw.exec('DELETE FROM artifact_read_authority_v1')
+      raw.exec(
+        `INSERT INTO artifact_read_authority_v1 (session_id, lane_id, owner_id, sha256, size, mime)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        ['session-a', 'lane-a', 'owner-a', first.sha256, size, mime],
+      )
+      expect(() => index.resolve('session-a', 'lane-a', first.sha256)).toThrow(
+        'artifact read authority index unavailable',
+      )
+      expect(() => new PersistentArtifactReadAuthorityIndex(raw)).toThrow(
+        'artifact read authority index unavailable',
+      )
+    }
 
     let fail = false
     const failureTables = sqliteTables()
@@ -283,7 +364,10 @@ describe('durable artifact read authority index', () => {
         if (fail) throw new Error(`Bearer sk-storage-secret ${sql} ${String(params)}`)
         return failureRaw.get(sql, params)
       },
-      all: (sql, params) => failureRaw.all(sql, params),
+      all: (sql, params) => {
+        if (fail) throw new Error('synthetic storage unavailable')
+        return failureRaw.all(sql, params)
+      },
       transaction: (fn) => failureRaw.transaction(fn),
     }
     const unavailable = new PersistentArtifactReadAuthorityIndex(failing)
@@ -341,7 +425,7 @@ describe('durable artifact read authority index', () => {
     const versionTables = sqliteTables()
     const versionTable = versionTables.table('artifact-read-authority')
     new PersistentArtifactReadAuthorityIndex(versionTable)
-    versionTable.exec('UPDATE artifact_read_authority_meta SET version = 2 WHERE id = 1')
+    versionTable.exec('UPDATE artifact_read_authority_meta SET version = 999 WHERE id = 1')
     expect(() => new PersistentArtifactReadAuthorityIndex(versionTable)).toThrow(
       'artifact read authority index unavailable',
     )
@@ -369,7 +453,7 @@ describe('durable artifact read authority index', () => {
        )
        INSERT INTO artifact_read_authority_v1
        (session_id, lane_id, owner_id, sha256, size, mime)
-       SELECT 'session-' || n, 'lane', 'owner', printf('%064x', n), 1, 'application/octet-stream'
+       SELECT 'session-' || n, 'lane', 'owner', printf('%064x', n), 1, '"application/octet-stream"'
        FROM rows`,
     )
     expect(new PersistentArtifactReadAuthorityIndex(capTable)).toBeDefined()
@@ -380,7 +464,7 @@ describe('durable artifact read authority index', () => {
     capTable.exec(
       `INSERT INTO artifact_read_authority_v1
        (session_id, lane_id, owner_id, sha256, size, mime)
-       VALUES ('overflow', 'lane', 'owner', '${'f'.repeat(64)}', 1, 'application/octet-stream')`,
+       VALUES ('overflow', 'lane', 'owner', '${'f'.repeat(64)}', 1, '"application/octet-stream"')`,
     )
     expect(() => new PersistentArtifactReadAuthorityIndex(capTable)).toThrow(
       'artifact read authority index unavailable',

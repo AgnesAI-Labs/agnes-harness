@@ -72,11 +72,14 @@ export function listWorkspaceDeployments(
       const manifest = readDeployManifest(deployDir)
       if (!supportsHarness(manifest)) continue
       const signed = lock.workspace?.path === path ? lock.workspace : undefined
+      // Trust binds to this hash, so a confirmation cannot cover files that changed after the offer.
+      const trustHash = hashWorkspace(deployDir)
       deployments.push({
         deployDir,
         path,
         manifestId: manifest.id,
-        state: !signed ? 'untrusted' : hashWorkspace(deployDir) === signed.hash ? 'trusted' : 'changed',
+        trustHash,
+        state: !signed ? 'untrusted' : trustHash === signed.hash ? 'trusted' : 'changed',
       })
     } catch {
       // Not a deploy directory, or one trust would refuse: nothing to offer.

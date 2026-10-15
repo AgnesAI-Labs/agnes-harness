@@ -19,8 +19,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { isPackageError } from '../src/errors.js'
 import { emptyLock, type Lockfile, readLock, writeLock } from '../src/lockfile.js'
 import { createPackageManager } from '../src/manager.js'
-import { type ExecFn, packageDir } from '../src/sources.js'
-import { verifyWorkspace } from '../src/workspace.js'
+import { type ExecFn, packageDir, parseSource } from '../src/sources.js'
+import { hashWorkspace, verifyWorkspace } from '../src/workspace.js'
 import { listWorkspaceDeployments } from '../src/workspace-deployments.js'
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
@@ -307,7 +307,10 @@ describe('PackageManager project trust', () => {
         readLock(profileDir, { profile: 'enterprise', agnesVersion: '0.1.0' }),
       )
     const offer = { deployDir: realpathSync(deployDir), path: 'deploy/xinwei', manifestId: 'xinwei' }
-    expect(offered(manager)).toEqual([{ ...offer, state: 'untrusted' }])
+    const shown = offered(manager)[0]?.trustHash
+    expect(offered(manager)).toEqual([
+      { ...offer, trustHash: expect.stringMatching(/^sha256-[a-f0-9]{64}$/), state: 'untrusted' },
+    ])
     expect(
       validateAgainst(RuntimeAdminSnapshot, {
         providers: [],
@@ -316,11 +319,30 @@ describe('PackageManager project trust', () => {
         workspaceDeployments: offered(manager),
       }).ok,
     ).toBe(true)
-    // What is offered is what trust takes.
-    await manager.trustWorkspace(profileDir, offer.deployDir)
-    expect(offered(manager)).toEqual([{ ...offer, state: 'trusted' }])
+    // What is offered is what trust takes, bound to the hash the offer showed.
+    await manager.trustWorkspace(profileDir, offer.deployDir, shown)
+    expect(offered(manager)).toEqual([{ ...offer, trustHash: shown, state: 'trusted' }])
     writeFileSync(join(deployDir, 'notes.txt'), 'edited after trust')
-    expect(offered(manager)).toEqual([{ ...offer, state: 'changed' }])
+    const edited = offered(manager)[0]?.trustHash
+    expect(edited).not.toBe(shown)
+    expect(offered(manager)).toEqual([{ ...offer, trustHash: edited, state: 'changed' }])
+    // Re-trust is the remedy for `changed`; it must leave every inventory read working.
+    await manager.trustWorkspace(profileDir, offer.deployDir, edited)
+    expect(offered(manager)).toEqual([{ ...offer, trustHash: edited, state: 'trusted' }])
+    const retrusted = readLock(profileDir, { profile: 'enterprise', agnesVersion: '0.1.0' })
+    expect(retrusted.packages['xinwei/sales-analysis']?.previous).toBeNull()
+    const row = async () => (await manager.inventory(profileDir, { fresh: true })).packages[0]
+    await expect(row()).resolves.toMatchObject({
+      id: 'xinwei/sales-analysis',
+      blockers: [{ code: 'unknown-contribution', references: ['static-inventory-migration-required'] }],
+      verifiedRollbackTarget: null,
+    })
+    // A version/integrity-only previous left by an earlier re-trust stays a row fact, not a profile failure.
+    const legacy = retrusted.packages['xinwei/sales-analysis']
+    if (!legacy) throw new Error('missing workspace entry')
+    legacy.previous = { version: legacy.version, integrity: legacy.integrity }
+    writeLock(profileDir, retrusted)
+    await expect(row()).resolves.toMatchObject({ verifiedRollbackTarget: null })
 
     // A directory without a valid manifest, a hidden one and a symlink are never offered.
     mkdirSync(join(profileDir, 'deploy', 'empty'))
@@ -361,8 +383,34 @@ describe('PackageManager project trust', () => {
     expect(offered()).toEqual([])
   })
 
-  it('refuses identity drift, policy denial, and deploy directories outside the profile root', async () => {
-    const manager = createPackageManager({ dataDir, agnesVersion: '0.1.0' })
+  it('refuses id collisions, stale reviewed hashes, identity drift, policy denial, and outside directories', async () => {
+    const manager = createPackageManager({
+      dataDir,
+      agnesVersion: '0.1.0',
+      cwd: profileDir,
+      references: async () => [],
+    })
+    const lockBytes = () => readFileSync(join(profileDir, 'agnes-lock.json'), 'utf8')
+    // An id already installed from another source is never silently replaced by project trust.
+    const fileSource = parseSource('file:./deploy/xinwei/extensions/sales-analysis')
+    const preview = await manager.inspect(profileDir, fileSource)
+    await manager.install(profileDir, fileSource, { expectedIntegrity: preview.integrity })
+    const installed = lockBytes()
+    await expect(manager.trustWorkspace(profileDir, deployDir)).rejects.toThrow(/E_PACKAGE_STATE/)
+    expect(lockBytes()).toBe(installed)
+    expect(existsSync(packageDir(dataDir, 'enterprise', 'xinwei/sales-analysis'))).toBe(true)
+    await manager.remove(profileDir, 'xinwei/sales-analysis')
+
+    // Confirmation binds to the hash that was reviewed; a stale one changes nothing.
+    const reviewed = lockBytes()
+    await expect(
+      manager.trustWorkspace(profileDir, deployDir, `sha256-${'1'.repeat(64)}`),
+    ).rejects.toMatchObject({ code: 'E_PACKAGE_PREVIEW_STALE' })
+    expect(lockBytes()).toBe(reviewed)
+    await expect(manager.trustWorkspace(profileDir, deployDir, hashWorkspace(deployDir))).resolves.toEqual({
+      hash: hashWorkspace(deployDir),
+    })
+
     writeFileSync(
       join(deployDir, 'extensions', 'sales-analysis', 'package.json'),
       JSON.stringify({ name: 'xinwei/other', version: '1.0.0', license: 'MIT' }),

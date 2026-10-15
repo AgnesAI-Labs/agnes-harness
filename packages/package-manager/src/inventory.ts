@@ -67,6 +67,7 @@ const FATAL_INSPECTION_REASONS: ReadonlySet<string> = new Set([
   'source-identity',
   'adapter-metadata',
   'adapter-integrity',
+  'excluded-directory',
 ])
 /**
  * One classification for "this package's own contents are unusable": a PackageError raised by static
@@ -192,10 +193,14 @@ function verifiedRollbackTarget(
     !previous.state ||
     !previous.license ||
     !previous.trust
-  )
+  ) {
+    // A legacy entry's version/integrity-only previous names no retained tree: no rollback target,
+    // and the row already carries its migration blocker. A modern entry's previous must be complete.
+    if (entry.contributions === undefined) return null
     throw new PackageError('E_LOCK_MISMATCH', 'previous package snapshot is incomplete', {
       detail: { id, reason: 'previous-incomplete' },
     })
+  }
   const snapshot = { ...structuredClone(previous), previous: null } as LockEntry
   let verified: ReturnType<typeof verifyPackageDirectory>
   try {

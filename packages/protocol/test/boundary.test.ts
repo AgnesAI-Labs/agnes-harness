@@ -187,6 +187,8 @@ describe('protocol src boundary', () => {
         'AGNES_NS',
         'AI_ERROR_CODES',
         'ARTIFACT_READ_RPC_MAX_BYTES',
+        'ARTIFACT_REGISTERED_EVENT',
+        'sessionArtifactRoots',
         'CURRENT_V',
         'DEFAULT_JSON_DATA_MAX_BYTES',
         'DSH_WEB_CLIENT_SLOT_CATALOG_VERSION',

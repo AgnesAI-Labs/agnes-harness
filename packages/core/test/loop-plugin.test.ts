@@ -1315,6 +1315,126 @@ it.each(['none', 'after-result', 'before-call'] as const)(
   },
 )
 
+it.each(['responded', 'may-have-sent', 'different-request'] as const)(
+  'deduplicates model invocations when admission races with %s',
+  async (race) => {
+    const barrier = () => {
+      let resolve!: () => void
+      const promise = new Promise<void>((done) => {
+        resolve = done
+      })
+      return { promise, resolve }
+    }
+    const counting = [barrier(), barrier()] as const
+    const admitted = [barrier(), barrier()] as const
+    const sending = barrier()
+    const respond = barrier()
+    const provider = fakeProvider([textTurn('one response')])
+    provider.models = () => [model]
+    let counts = 0
+    provider.count = async (request) => {
+      const index = counts++
+      counting[index]?.resolve()
+      await admitted[index]?.promise
+      return { tokens: 10, source: 'provider', boundHash: request.derivedHash }
+    }
+    const infer = provider.infer.bind(provider)
+    provider.infer = async function* (request, options) {
+      for await (const event of infer(request, options)) {
+        yield event
+        if (event.type === 'sent') {
+          sending.resolve()
+          await respond.promise
+        }
+      }
+    }
+    const loops = defaultLoops()
+    const loop: LoopFactory = {
+      ...echo,
+      id: 'test.model-receipts',
+      create(ctx) {
+        return {
+          ...echoDriver(ctx),
+          async step(signal) {
+            await ctx.input.accept()
+            const invocationId = 'stable-model'
+            const request = await ctx.prepareRequest({ invocationId, tools: [], messages: [] })
+            const changed = await ctx.prepareRequest({
+              invocationId,
+              tools: [],
+              messages: [],
+              system: 'different request',
+            })
+            const first = ctx.model.complete(request, signal)
+            await counting[0].promise
+            const second = ctx.model.complete(race === 'different-request' ? changed : request, signal)
+            // Both streams passed not-sent and are held at the public provider count boundary.
+            await counting[1].promise
+            admitted[0].resolve()
+            await sending.promise
+            if (race === 'may-have-sent') {
+              expect(await ctx.effects.status(invocationId)).toMatchObject({ status: 'may-have-sent' })
+              const refused = expect(second).rejects.toMatchObject({
+                code: 'E_RELATION',
+                message: expect.stringContaining('reconcile'),
+              })
+              admitted[1].resolve()
+              await refused
+            }
+            respond.resolve()
+            const result = await first
+            expect(result).toEqual(
+              textTurn('one response').map((event) =>
+                event.type === 'sent' ? sentFor(request, event) : event,
+              ),
+            )
+            if (race !== 'may-have-sent') {
+              const replay =
+                race === 'responded'
+                  ? expect(second).resolves.toEqual(result)
+                  : expect(second).rejects.toMatchObject({
+                      code: 'E_RELATION',
+                      message: expect.stringContaining('different operation'),
+                    })
+              admitted[1].resolve()
+              await replay
+            }
+            expect(await ctx.model.complete(request, signal)).toEqual(result)
+            await expect(ctx.model.complete(changed, signal)).rejects.toMatchObject({ code: 'E_RELATION' })
+            expect(await ctx.effects.status(invocationId)).toMatchObject({ status: 'responded', result })
+            return ctx.events.finish('completed')
+          },
+        }
+      },
+    }
+    loops.register('@test/model-receipts', loop)
+    const preset = presetDefaults()
+    // Isolate invocation dispatch from the session-scoped tree reservation mechanism.
+    preset.treeBudgetCredits = null
+    preset.budget.preflight = 'count'
+    const k = kernel(new MemoryStorage(), loops, { provider, preset })
+    try {
+      const session = await k.session('model-receipts', { ...options, loop })
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'run' }], actor })
+      const outcome = await session.run({ until: 'turn-end', signal: new AbortController().signal })
+      expect(outcome, JSON.stringify(outcome)).toMatchObject({ reason: 'completed' })
+      expect(provider.requests).toHaveLength(1)
+      const rows = await session.scan({ fromSeq: 1, limit: 200 })
+      expect(rows.filter((row) => row.type === 'x/core/loop-invocation').map((row) => row.data)).toEqual([
+        expect.objectContaining({ invocationId: 'stable-model', status: 'may-have-sent' }),
+        expect.objectContaining({ invocationId: 'stable-model', status: 'responded' }),
+      ])
+      expect(rows.filter((row) => row.type === 'x/core/loop-effect')).toHaveLength(1)
+      expect(rows.filter((row) => row.type === 'effect/intent')).toHaveLength(1)
+      expect(rows.filter((row) => row.type === 'effect/settled')).toHaveLength(1)
+    } finally {
+      for (const gate of admitted) gate.resolve()
+      respond.resolve()
+      await k.close()
+    }
+  },
+)
+
 it.each(['deny', 'quote'] as const)(
   'admits the prepared custom request against its actual content with %s disposition',
   async (onExceed) => {

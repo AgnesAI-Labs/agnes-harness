@@ -95,9 +95,9 @@ export function fileName(requestUrl: string): string {
           ? 'resources.html'
           : // URL paths use forward slashes on every OS; disk paths are joined only when reading.
             posix.normalize(pathname).replace(/^[/\\]+/, '')
-  // esbuild 的 splitting 会为动态 import() 产出带哈希的共享 chunk。它们与入口同为同源静态资源，
-  // 所以用固定模式放行，而不是把路径校验放宽成任意文件。
-  const isChunk = /^chunk-[A-Za-z0-9_-]+\.(?:js|css)(\.map)?$/.test(file)
+  // esbuild names shared chunks chunk-<hash> and lazy entries <module>-<hash>.
+  // Accept either generated name, without allowing arbitrary scripts or nested paths.
+  const isChunk = /^[A-Za-z0-9_-]+-[A-Z0-9]{8}\.(?:js|css)(\.map)?$/.test(file)
   // WC5：/vendor/* 平台共享单例命名空间——入口文件名固定（import map 的映射目标），共享 chunk
   // 走 chunk- 哈希模式；命名空间内不允许任意文件，不放宽成目录列举。
   const vendorEntry = /^vendor\/([a-z0-9-]+)\.js(?:\.map)?$/.exec(file)?.[1]

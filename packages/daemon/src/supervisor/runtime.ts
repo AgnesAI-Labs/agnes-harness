@@ -244,7 +244,8 @@ import {
   workerServiceCaller,
   workerServiceInspector,
 } from './service-worker.js'
-import { recencyCursor, registerWorkerSessionReads } from './session-reads.js'
+import { registerSessionMethods } from './session-methods.js'
+import { recencyCursor } from './session-reads.js'
 import { keepSharedWorker, type SharedWorkerKeeper } from './shared-keeper.js'
 import { createSkillInstallRequests } from './skill-install-requests.js'
 import { type SkillWatcher, startSkillWatcher } from './skill-watcher.js'
@@ -1709,7 +1710,8 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
                         }
                       }
                     : undefined
-                if (pinCoordinator) await pinCoordinator.publish(artifact, runtimeTargetProbe, apply)
+                if (pinCoordinator)
+                  await pinCoordinator.publish(artifact, runtimeTargetProbe, undefined, apply)
                 else
                   await publishProbedRuntimeTarget({
                     store: runtimeStore,
@@ -2189,7 +2191,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         effectivePackageAdmin?.service,
       )
       sessionPrefs.registerSessionPreferences(ep, lister, preferences)
-      registerWorkerSessionReads(ep, pool, requireSessionOwner(cx))
+      registerSessionMethods(ep, pool, cx)
       registerWorkspaces(ep, workspaceCatalog)
       registerAcp(ep, cx, feeds, attached)
       registerAgnes(ep, cx, feeds, attached)

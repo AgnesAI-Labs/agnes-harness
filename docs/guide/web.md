@@ -12,6 +12,8 @@ The Web workbench brings tasks, history, and administration into one local inter
 
 The main Web listener starts while its first Surface mount-table query runs in the background. Until that query succeeds, unknown Surface paths return HTTP 503 with a retry hint. A successful empty table means no mount; later query failures retain the last successful table. Refreshes do not overlap, and shutdown waits for the active query and its connection cleanup.
 
+The topbar switches between Conversation and Trace with a sliding pill; the Trace activity dot appears while a turn is in flight. Its bug button opens Report a problem directly, and the rightmost icon toggles the workbench. Runtime info is in each sidebar session menu. That menu also offers Open in Finder (macOS), Open in File Explorer (Windows), or Open folder (Linux), named for the daemon’s platform. It opens only that session’s bound workspace on the daemon’s local desktop. Remote connections, headless desktops and missing workspaces return an error notice.
+
 ## Start and connect
 
 ```sh
@@ -44,7 +46,9 @@ Session and approval traffic uses the browser SDK's direct WebSocket connection 
 
 The sidebar files sessions under their workspace folder, newest first, and shows a dot beside a session whose turn is running. Click a folder to collapse or expand it; the browser remembers the choice. The plus button on a folder row starts a session in that workspace, and the folder button beside the Workspaces heading adds a workspace. Press Shift+Cmd+O (Shift+Ctrl+O on Windows and Linux) to start a new session. The top bar shows the session title, its Agent and a runtime information button, followed by the Conversation/Trace switch and the workbench toggles.
 
-The thin ticks along the left edge of the conversation are the prompt navigator: one per prompt you sent, with the one you are reading drawn longer and darker. Ticks near the pointer lengthen; hover one to preview that prompt and the start of its answer, and click to jump to it with a brief highlight. Press Option+↑ / Option+↓ (Alt+↑ / Alt+↓ on Windows and Linux) for the previous or next prompt; when the window is narrow or the workbench leaves no room on the left, the ticks hide and the shortcuts still work. The bookmark button on the preview marks a prompt; bookmarks are saved with the session and show as a small dot beside the tick.
+On desktop, collapsing the sidebar keeps an icon rail for New session, Agent · FDE, Plugins, Automation and Settings. The icons keep the same actions, show their labels on hover or keyboard focus, and mark the current page. On narrow screens, closing the sidebar hides the drawer instead.
+
+The thin ticks along the left edge of the conversation are the prompt navigator: one per prompt you sent, with the one you are reading drawn darker. All ticks stay short until the pointer enters the navigator, then nearby ticks lengthen; hover one to preview that prompt and the start of its answer, and click to jump to it with a brief highlight. Press Option+↑ / Option+↓ (Alt+↑ / Alt+↓ on Windows and Linux) for the previous or next prompt; when the window is narrow or the workbench leaves no room on the left, the ticks hide and the shortcuts still work. The bookmark button on the preview marks a prompt; bookmarks are saved with the session and show as a small dot beside the tick.
 
 The first message proceeds once the new session is ready; refreshing the sidebar does not block sending. A sidebar refresh failure is reported separately and does not restore an already submitted message as a draft.
 Resource updates discovered during startup are prepared while the worker is idle. Updates discovered during a running turn remain deferred until before the next turn. Repeated Skill scans with unchanged resources do not trigger another worker reload.
@@ -126,7 +130,11 @@ Implementation: [Web entry](../../packages/web/src/serve-entry.ts), [application
 
 ## Terminal and background jobs
 
-Open a session, then use the terminal tab in the workbench’s bottom panel to create a terminal. No session ID is required. Focus the output to type, paste, use arrow keys or Ctrl+C. Refresh reconnects to the same PTY. Closing a tab detaches its UI; the explicit kill action ends the human-owned terminal and its process. Shell selection affects new terminals only. The text terminal supports cursor movement and line clearing, but does not emulate graphical terminal extensions.
+Open a session and select **Terminal** in the workbench. The guide card starts a terminal with your last-used shell (zsh on macOS, pwsh on Windows, bash otherwise). Its chevron lets you choose another shell. With tabs open, **+** starts the remembered shell; right-click, long-press, or press Shift+F10 on **+** to choose a shell or attach an Agent job.
+
+The xterm.js screen follows the app theme, preserves ANSI/OSC colors and fits the PTY when the panel resizes. Focus it to type, paste (up to 64 KiB of UTF-8 per paste), use arrow keys or Ctrl+C. Refresh reconnects to the same PTY. Double-click a human terminal's tab name, or choose **Rename** from its menu, to rename it; Enter or blur saves and Escape cancels. Names are stored in this browser per session.
+
+Right-click a tab or press Shift+F10 to interrupt, inspect its session/job/working directory, or kill a human terminal. Its **×** ends a running process and closes the tab; an Agent tab's **×** only stops following. Closing the workbench detaches the UI and leaves processes running. Agent jobs are read-only. Exit codes appear at the end of the screen with a grey tab dot for zero or red for nonzero. Capped-output and input-full notices appear in a dismissible strip. Output uses bounded snapshots: text missed between polls or before the retained tail cannot be recovered.
 
 The legacy `/?settings=terminal` link opens the terminal in an available session workbench. If no session is open, it closes settings and asks you to open a session to use the terminal.
 

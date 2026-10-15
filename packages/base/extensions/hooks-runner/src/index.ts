@@ -272,24 +272,26 @@ export function preparedHooksRunnerExtension(
       ): void => {
         const enforcement = commandSandbox?.enforcement()
         if (commandSandbox && enforcement?.level !== 'none' && enforcement?.scope.includes('process')) return
-        const policy = init.profile.preset.sandbox
         const identity = group.configuration
+        // The fitted exec capability enforces Host's live sandbox decision (including required,
+        // unavailable backends and revoked bindings). Do not reinterpret preset policy here:
+        // this check adds exact Hook trust; it cannot grant permission to start a process.
         if (
           init.adapters.platform.fs().pathSep === '\\' &&
           init.adapters.platform.shell() === 'powershell' &&
           commandSandbox &&
           enforcement?.level !== 'none' &&
           enforcement?.scope.includes('file') &&
-          isRecord(policy) &&
-          (policy.required === undefined || policy.required === false) &&
-          policy.on_unavailable === 'allow' &&
           identity &&
           init.trustedHookCommands?.allowsUnconfined(identity.source, identity.configDigest)
         ) {
           const key = `${identity.source}:${identity.configDigest}`
           if (!unconfinedNotices.has(key)) {
             unconfinedNotices.add(key)
-            plugin.self.log.warn('trusted Hook commands run without process isolation', { ...identity })
+            plugin.self.log.warn(
+              'trusted Hook commands have no process isolation; Host execution policy still applies',
+              { ...identity },
+            )
           }
           return
         }

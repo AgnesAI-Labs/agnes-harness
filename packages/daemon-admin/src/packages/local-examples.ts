@@ -59,6 +59,31 @@ export async function discoverLocalExamples(workspace: string): Promise<LocalExa
     )
   }
   const catalog = createCatalog(sources, { priority: sources.map((source) => source.id) })
-  await catalog.read()
-  return catalog
+  // These sources are shipped or repository content, so their bytes do not go stale, yet the catalog
+  // expires every snapshot after ttlMs and daemon readers stay offline. Reload once a source that had
+  // loaded expires. A source that failed to load is not retried per read (a reload hashes every
+  // source); it stays unavailable until the daemon restarts.
+  let loaded = new Set<string>()
+  const online = async (signal?: AbortSignal) => {
+    const result = await catalog.read(signal ? { signal } : {})
+    loaded = new Set(
+      result.sources.filter((source) => source.status !== 'unavailable').map((source) => source.sourceId),
+    )
+    return result
+  }
+  await online()
+  // The catalog refuses overlapping reads, and a reload awaits its sources: serialize every read.
+  let tail: Promise<unknown> = Promise.resolve()
+  const read: LocalExamplesCatalog['read'] = (input = {}) => {
+    const next = tail.then(async () => {
+      if (!input.offline) return online(input.signal)
+      const result = await catalog.read(input)
+      return result.sources.some((source) => source.status === 'unavailable' && loaded.has(source.sourceId))
+        ? online(input.signal)
+        : result
+    })
+    tail = next.catch(() => undefined)
+    return next
+  }
+  return Object.freeze({ read })
 }

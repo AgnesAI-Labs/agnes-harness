@@ -250,12 +250,12 @@
     /* A rendered HTML file is a page: it keeps a white canvas in both themes. */
     --agnes-document-page-bg: var(--agnes-color-gray-0);
 
-    /* The workbench terminal stays dark in both themes, so its output reads as a terminal. */
-    --agnes-terminal-bg: var(--agnes-color-gray-900);
-    --agnes-terminal-bar: var(--agnes-color-gray-850);
-    --agnes-terminal-line: var(--agnes-color-gray-700);
-    --agnes-terminal-text: var(--agnes-color-gray-125);
-    --agnes-terminal-muted: var(--agnes-color-gray-300);
+    /* Preserve terminal skin hooks while following the surrounding panel theme. */
+    --agnes-terminal-bg: var(--agnes-bg-app-content);
+    --agnes-terminal-bar: var(--agnes-bg-hover);
+    --agnes-terminal-line: var(--agnes-line-hairline);
+    --agnes-terminal-text: var(--agnes-text-primary);
+    --agnes-terminal-muted: var(--agnes-text-secondary);
   }
 
   /* ═══════════════════════════════════════════════════════════════════════
@@ -407,11 +407,11 @@
     --agnes-file-type-other: var(--agnes-color-gray-500);
     --agnes-document-page-bg: var(--agnes-color-gray-0);
 
-    --agnes-terminal-bg: var(--agnes-color-gray-950);
-    --agnes-terminal-bar: var(--agnes-color-gray-925);
-    --agnes-terminal-line: var(--agnes-color-gray-750);
-    --agnes-terminal-text: var(--agnes-color-gray-125);
-    --agnes-terminal-muted: var(--agnes-color-gray-300);
+    --agnes-terminal-bg: var(--agnes-bg-app-content);
+    --agnes-terminal-bar: var(--agnes-bg-hover);
+    --agnes-terminal-line: var(--agnes-line-hairline);
+    --agnes-terminal-text: var(--agnes-text-primary);
+    --agnes-terminal-muted: var(--agnes-text-secondary);
   }
 
   /* ═══════════════════════════════════════════════════════════════════════

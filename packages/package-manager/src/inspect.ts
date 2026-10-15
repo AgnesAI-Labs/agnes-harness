@@ -13,7 +13,7 @@ import {
 import { normalizeClientContribution, resolveClientAssets } from './client-assets.js'
 import { containedEntry } from './entry-path.js'
 import { PackageError } from './errors.js'
-import { canonical, capabilityHash, freezeData, readStaticJson, snapshotHash } from './integrity.js'
+import { canonical, capabilityHash, freezeData, own, readStaticJson, snapshotHash } from './integrity.js'
 import type { LockEntry } from './lockfile.js'
 import { presentPluginRows } from './package-presentation.js'
 import {
@@ -107,7 +107,7 @@ function diff(
       })
       .sort(),
     dependenciesAdded: Object.keys(dependencies)
-      .filter((key) => previous?.dependencies[key] !== dependencies[key])
+      .filter((key) => (previous && own(previous.dependencies, key)) !== dependencies[key])
       .sort(),
     serviceGrantsAdded: [...new Map(grants.map((g) => [canonical(g), g])).values()].sort((a, b) =>
       compare(canonical(a), canonical(b)),
@@ -157,7 +157,14 @@ export function inspectVerifiedTree(
     (pkg.license ?? 'UNLICENSED') !== (fetched.license ?? 'UNLICENSED')
   )
     invalid('adapter-metadata')
-  if (input.source.type !== 'npm' && fetched.integrity !== treeIntegrity) invalid('adapter-integrity')
+  // Non-npm fetch digests skip node_modules, .git and fixtures/out, so a tree carrying them can
+  // never verify; say so instead of blaming the adapter. npm keeps its own registry digest.
+  if (input.source.type !== 'npm' && fetched.integrity !== treeIntegrity) {
+    if (fetched.integrity !== hashDirectory(input.dir)) invalid('adapter-integrity')
+    throw new PackageError('E_EXT_LOAD', 'only npm packages may contain node_modules, .git or fixtures/out', {
+      detail: { reason: 'excluded-directory' },
+    })
+  }
   const agnes = pkg.agnes ?? {}
   if (
     !agnes ||

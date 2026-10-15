@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, lstatSync, mkdirSync, realpathSync, statSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { setImmediate } from 'node:timers/promises'
+import { setTimeout as delay, setImmediate } from 'node:timers/promises'
 import type { ExtensionManifest } from '@agnes/extension-api'
 import {
   type PackagePreview,
@@ -11,9 +11,9 @@ import {
 } from '@agnes/protocol'
 import type { PackageAuditSink } from './audit.js'
 import { copyPackageTreeSync } from './copy-tree.js'
-import { PackageError } from './errors.js'
+import { isPackageError, PackageError } from './errors.js'
 import { inspectStaged } from './inspect.js'
-import { canonical, capabilityHash, freezeData } from './integrity.js'
+import { canonical, capabilityHash, freezeData, own } from './integrity.js'
 import { type InstalledInventory, type InstalledPackage, readInventory } from './inventory.js'
 import {
   assertNoReferences,
@@ -74,7 +74,7 @@ import {
   packageDir,
   parseSource,
 } from './sources.js'
-import { claimStage, clearStage, readyStage, recoverStaging } from './staging.js'
+import { claimStage, clearStage, readyStage, recoverStaging, type StageKind } from './staging.js'
 import {
   commitPackage,
   type PackageCommitPoint,
@@ -218,7 +218,7 @@ function verifyIdentity(
 }
 
 function entryOf(lock: Lockfile, id: string): LockEntry {
-  const entry = lock.packages[id]
+  const entry = own(lock.packages, id)
   if (!entry)
     throw new PackageError('E_DEP_MISSING', `${id} is not installed`, {
       detail: { id, reason: 'not-installed' },
@@ -259,8 +259,11 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
     existsSync(directory) ? realpathSync(directory) : resolve(directory)
   // Small policy/lock files are change sentinels ONLY for joining a pending scan, never authority
   // for skipping byte verification. A scan itself always reads current policy and installed bytes.
-  const readBoundary = (directory: string): string =>
-    ['agnes-lock.json', 'plugin-capabilities.json', 'package-sources.json']
+  const readBoundary = (
+    directory: string,
+    files = ['agnes-lock.json', 'plugin-capabilities.json', 'package-sources.json'],
+  ): string =>
+    files
       .map((file) => {
         try {
           const stat = statSync(join(directory, file), { bigint: true })
@@ -289,11 +292,11 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
   }
   const ceiling = (lock: Lockfile): readonly string[] =>
     options.ceiling ?? lock.policySnapshot.capabilityCeiling
-  const stageFor = (profileDir: string): string => {
+  const stageFor = (profileDir: string, kind: StageKind = 'fetch'): string => {
     const root = dirname(packageDir(options.dataDir, profileName(profileDir), 'stage'))
     mkdirSync(root, { recursive: true })
     const stage = join(root, `.stage-${randomUUID()}`)
-    claimStage(stage)
+    claimStage(stage, kind)
     return stage
   }
   const annotate = (source: PackageSource, fetched: FetchedSource, profileDir: string): FetchedSource => {
@@ -398,7 +401,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
     stage: string,
     operation: 'add' | 'rollback',
   ) => {
-    const current = lock.packages[id]
+    const current = own(lock.packages, id)
     if (current && (options.references || lock.workspace))
       await assertNoReferences(
         storeFor(profileDir),
@@ -428,8 +431,8 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       blockers?: InstalledPackage['blockers']
     }
   >()
+  // Ids whose committed local change has not been reloaded yet; only a successful reload clears one.
   const localPending = new Set<string>()
-  const localTrustPending = new Set<string>()
   const scanLocal = (profileDir: string): string[] => {
     if (!options.localPlugins) return []
     let lock = load(profileDir)
@@ -440,7 +443,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
     for (const candidate of discoverLocalPlugins(options.localPlugins)) {
       lock = load(profileDir)
       seen.add(candidate.source.ref)
-      const stage = stageFor(profileDir)
+      const stage = stageFor(profileDir, 'copy')
       let id = candidate.name
       let declaredCapabilities: import('@agnes/protocol').PluginCapabilities | undefined
       let capabilityBlockers: InstalledPackage['blockers'] = []
@@ -456,7 +459,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
           )
         )
           throw new Error('local package identity changed; remove its previous installation first')
-        const current = lock.packages[id]
+        const current = own(lock.packages, id)
         if (current && current.source.ref !== candidate.source.ref)
           throw new Error('package identity collision')
         const checked = inspectStaged({
@@ -556,9 +559,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       localPending.add(id)
     }
     for (const ref of localFailures.keys()) if (!seen.has(ref)) localFailures.delete(ref)
-    const result = [...new Set([...changed, ...localTrustPending])]
-    localTrustPending.clear()
-    return result
+    return changed
   }
   const projectLocal = (inventory: InstalledInventory): InstalledInventory => {
     if (!options.localPlugins) return inventory
@@ -637,7 +638,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
     },
     reportLocalPluginFailure(profileDir, id) {
       inventoryReads.delete(profileKey(profileDir))
-      const entry = load(profileDir).packages[id]
+      const entry = own(load(profileDir).packages, id)
       if (entry?.source.type === 'local')
         localFailures.set(entry.source.ref, {
           id,
@@ -652,7 +653,13 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       if (!options.localPlugins) throw new Error('Local plugins roots are not configured')
       return watchLocalPlugins({
         roots: options.localPlugins,
-        scan: () => manager.refreshLocalPlugins(profileDir),
+        // Rescan also retries every reload still pending (a trust, a lost lock race) unless the
+        // plugin itself failed to activate; that failure stays until its source changes.
+        scan: async () => {
+          const changed = await manager.refreshLocalPlugins(profileDir)
+          const failed = new Set([...localFailures.values()].flatMap((f) => (f.activation ? [f.id] : [])))
+          return [...new Set([...changed, ...localPending])].filter((id) => !failed.has(id))
+        },
         reload: {
           async reloadPlugin(id) {
             const owner = reload ?? localReload
@@ -663,8 +670,9 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
             inventoryReads.delete(profileKey(profileDir))
           },
         },
-        onError(id) {
-          if (!id) return
+        onError(id, error) {
+          // A reload that only lost the profile lock race stays pending for the next Rescan.
+          if (!id || (isPackageError(error, 'E_LOCK_MISMATCH') && error.detail.reason === 'busy')) return
           manager.reportLocalPluginFailure(profileDir, id)
         },
       })
@@ -704,13 +712,27 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
     },
     async runtimePluginSnapshots(profileDir) {
       const store = storeFor(profileDir)
+      // Package and runtime-snapshot writers publish a journal before moving any tree and replace
+      // the lock or runtime state when they commit; either explains a torn lock-free read.
+      const committed = () => readBoundary(profileDir, ['agnes-lock.json', '.agnes-runtime-snapshots.json'])
+      const transacting = () =>
+        ['.agnes-package-transaction.json', '.agnes-runtime-transaction.json'].some((file) =>
+          existsSync(join(profileDir, file)),
+        )
       for (let attempt = 0; attempt < 3; attempt++) {
-        const beforeLock = load(profileDir)
-        const before = readInventory(beforeLock, { ...store, ceiling: ceiling(beforeLock) })
-        const pins = listRuntimePinsStore(store)
-        const afterLock = load(profileDir)
-        const after = readInventory(afterLock, { ...store, ceiling: ceiling(afterLock) })
-        if (before.hash === after.hash) return runtimePluginSnapshotsFromPins(after, pins)
+        const boundary = committed()
+        try {
+          const beforeLock = load(profileDir)
+          const before = readInventory(beforeLock, { ...store, ceiling: ceiling(beforeLock) })
+          const pins = listRuntimePinsStore(store)
+          const afterLock = load(profileDir)
+          const after = readInventory(afterLock, { ...store, ceiling: ceiling(afterLock) })
+          if (before.hash === after.hash) return runtimePluginSnapshotsFromPins(after, pins)
+        } catch (error) {
+          // A failure no writer explains is tampering and stays fatal; otherwise let the writer finish.
+          if (!transacting() && committed() === boundary) throw error
+          await delay(50 * (attempt + 1))
+        }
       }
       throw new PackageError('E_LOCK_MISMATCH', 'runtime source changed during snapshot read', {
         detail: { reason: 'runtime-source-stale' },
@@ -866,12 +888,12 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       try {
         const fetched = await acquire(source, stage, op, profileDir)
         const lock = load(profileDir)
-        const pkg = readPackageJson(stage)
+        const previous = own(lock.packages, readPackageJson(stage).name)
         const { preview } = inspectStaged({
           dir: stage,
           source: fetched.source ?? source,
           fetched,
-          ...(lock.packages[pkg.name] ? { previous: lock.packages[pkg.name] } : {}),
+          ...(previous ? { previous } : {}),
           ceiling: ceiling(lock),
           capabilityPolicy: readPluginCapabilityPolicy(profileDir),
           ...(op.signal ? { signal: op.signal } : {}),
@@ -919,7 +941,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
               capabilityPolicy: readPluginCapabilityPolicy(profileDir),
               ...(op.signal ? { signal: op.signal } : {}),
             })
-            if (lock.packages[preview.id])
+            if (own(lock.packages, preview.id))
               throw new PackageError('E_EXT_LOAD', 'package is already installed; use update')
             if (preview.blockers.length)
               throw new PackageError('E_API_RANGE', 'package installation is blocked', {
@@ -991,7 +1013,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
             pkg,
             manifest,
             installed,
-            lock.packages[pkg.name],
+            own(lock.packages, pkg.name),
           )
           if (addOptions.trust === 'verify') {
             runTrustGate({
@@ -1004,7 +1026,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
             })
             entry.state.trusted = installed
           }
-          if (lock.packages[pkg.name]?.contributions !== undefined)
+          if (own(lock.packages, pkg.name)?.contributions !== undefined)
             throw new PackageError('E_EXT_LOAD', 'modern package requires digest-bound update')
           await commitLegacyStage(profileDir, lock, pkg.name, entry, stage, 'add')
           return entry
@@ -1154,7 +1176,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
         if (options.references || lock.workspace)
           await assertNoReferences(store, lock, id, 'remove', options.references)
         const dependents = Object.entries(lock.packages)
-          .filter(([candidate, value]) => candidate !== id && id in value.dependencies)
+          .filter(([candidate, value]) => candidate !== id && Object.hasOwn(value.dependencies, id))
           .map(([candidate]) => candidate)
           .sort()
         if (dependents.length)
@@ -1203,7 +1225,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
           const retained = previousPackageDir(store, id)
           if (hashDirectory(retained, { exclude: [] }) !== current.previous.treeIntegrity)
             throw new PackageError('E_LOCK_MISMATCH', 'previous package tree differs')
-          const stage = stageFor(profileDir)
+          const stage = stageFor(profileDir, 'copy')
           try {
             copyPackageTreeSync(retained, stage)
             readyStage(stage)
@@ -1369,7 +1391,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
               throw new PackageError('E_API_RANGE', 'workspace plugin is blocked', {
                 detail: { blockers: row.blockers },
               })
-            const entry = lock.packages[row.id]!
+            const entry = own(lock.packages, row.id)!
             // This explicit group decision permits bare local author code too;
             // unlike downloaded packages, its license may be UNLICENSED.
             entry.state.trusted = stamp()
@@ -1386,7 +1408,6 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
             }
             if (entry.provenance) entry.provenance.trustDecision = 'confirmed'
             localPending.add(row.id)
-            localTrustPending.add(row.id)
           }
           const hash = confirmLocalWorkspace(profileDir, roots, lock, expectedHash)
           writeLock(profileDir, lock)
@@ -1407,6 +1428,11 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
           throw new PackageError('E_WORKSPACE_UNTRUSTED', 'profile policy denies workspace packages', {
             detail: { reason: 'policy-deny' },
           })
+        // Like the repository workspace above, a confirmation binds to the hash that was reviewed.
+        if (expectedHash !== undefined && expectedHash !== initialHash)
+          throw new PackageError('E_LOCK_MISMATCH', 'review the current workspace before trusting', {
+            code: 'E_PACKAGE_PREVIEW_STALE',
+          })
         const installed = stamp()
         const entries: Record<string, LockEntry> = {}
         for (const extension of manifest.extensions) {
@@ -1414,6 +1440,12 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
           if (!contained(workspace.deployDir, dir))
             throw new PackageError('E_EXT_LOAD', 'workspace extension path escapes its deploy directory', {
               detail: { reason: 'path-escape', id: extension.id },
+            })
+          // Project trust never replaces a package another source installed; that needs remove first.
+          const existing = own(lock.packages, extension.id)
+          if (existing && existing.source.type !== 'workspace')
+            throw new PackageError('E_EXT_LOAD', 'package is already installed from another source', {
+              detail: { reason: 'already-installed', id: extension.id },
             })
           const author = readBundledManifest(dir)
           const pkg = readPackageJson(dir)
@@ -1446,7 +1478,8 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
             pkg,
             author,
             installed,
-            lock.packages[extension.id],
+            // A workspace entry has no store-retained tree to roll back to.
+            undefined,
           )
           verifyInstalledIntegrity(extension.id, entry, dir)
           runTrustGate({

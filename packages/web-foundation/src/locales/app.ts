@@ -31,7 +31,7 @@ export const appLocaleCatalog: LocaleCatalog = {
     'app.readOnly.truncated':
       'This record is too large to read whole: only events {from}–{through} are shown, and earlier events were not read.',
     'app.status.newTask': 'New task',
-    'app.status.stoppingWait': 'Requesting stop; waiting for the backend to confirm',
+    'app.status.stoppingWait': 'Stopping…',
     'app.stop.unconfirmed':
       'The backend has not confirmed the stop. You can type again, retry stopping, or force the turn to end.',
     'app.stop.retry': 'Retry stop',
@@ -199,11 +199,11 @@ export const appLocaleCatalog: LocaleCatalog = {
     'app.readOnly.truncated':
       '这份记录太大，无法完整读取：仅显示第 {from}–{through} 条事件，更早的事件未读取。',
     'app.status.newTask': '新任务',
-    'app.status.stoppingWait': '正在请求停止，等待后台确认',
+    'app.status.stoppingWait': '正在停止…',
     'app.stop.unconfirmed': '后台尚未确认停止。输入已恢复，可以重试停止或强制结束当前轮。',
     'app.stop.retry': '重试停止',
     'app.stop.force': '强制结束',
-    'app.status.awaitingApproval': '等待审批',
+    'app.status.awaitingApproval': '等待你审批',
     'app.approval.searching': '正在查找待处理的审批…',
     'app.approval.parkedTitle': '有一项审批等待处理',
     'app.approval.parkedSummary': '这项审批在较早的记录里。{expiry}',

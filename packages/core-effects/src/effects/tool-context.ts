@@ -137,6 +137,7 @@ export type ToolContextDeps = {
   imageInput?: ToolContext['session']['imageInput']
   readAttachment?: ToolContext['session']['readAttachment']
   progress(note: string): void
+  registerArtifact?(ref: ArtifactRef): Promise<void>
   artifactJobEvent(job: ArtifactJob): Promise<void>
   lease: { remainingMs(): number }
 }
@@ -332,7 +333,15 @@ export function buildToolContext(
       ...(d.discloseTool ? { disclose: (name: string) => d.discloseTool!(name, call.signal) } : {}),
     },
     artifacts: {
-      put: (bytes, meta) => d.runtime.artifactPut(bytes, meta) as Promise<ArtifactRef>,
+      put: async (bytes, meta) => {
+        call.signal.throwIfAborted()
+        if (!d.registerArtifact) throw new Error('Session artifact registration unavailable')
+        const ref = (await d.runtime.artifactPut(bytes, meta)) as ArtifactRef
+        call.signal.throwIfAborted()
+        await d.registerArtifact(ref)
+        call.signal.throwIfAborted()
+        return ref
+      },
       get: (ref) => d.runtime.artifactGet(ref),
       submitJob: async (spec) => {
         // A tool cannot name another session. Explicitly write trusted identity after the spread,

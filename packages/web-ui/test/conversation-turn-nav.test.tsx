@@ -129,16 +129,17 @@ describe('turn navigator model', () => {
     ])
   })
 
-  it('lengthens ticks near the pointer, keeps the current one long and holds still under reduced motion', () => {
+  it('keeps all ticks short at rest and only lengthens near the pointer without reduced motion', () => {
     expect(tickWidth(undefined, false, false)).toBe(12)
-    expect(tickWidth(undefined, true, false)).toBe(22)
+    expect(tickWidth(undefined, true, false)).toBe(12)
+    expect(tickWidth(undefined, true, true)).toBe(12)
     expect(tickWidth(0, false, false)).toBe(30)
     expect(tickWidth(20, false, false)).toBe(21)
     expect(tickWidth(-20, false, false)).toBe(21)
     expect(tickWidth(40, false, false)).toBe(12)
     expect(tickWidth(90, true, false)).toBe(22)
     expect(tickWidth(0, false, true)).toBe(12)
-    expect(tickWidth(0, true, true)).toBe(22)
+    expect(tickWidth(0, true, true)).toBe(12)
   })
 
   it('compresses the gap above 40 prompts and keeps the rail within 60% of the pane', () => {
@@ -253,8 +254,7 @@ describe('turn navigator', () => {
       '第 3 轮：问题 3',
     ])
     expect(ticks()[0]?.getAttribute('aria-current')).toBe('location')
-    expect(ticks()[0]?.style.width).toBe('22px')
-    expect(ticks()[1]?.style.width).toBe('12px')
+    expect(ticks().map((tick) => tick.style.width)).toEqual(['12px', '12px', '12px'])
     // Only the current tick is a tab stop; arrows move between the others.
     expect(ticks().map((tick) => tick.tabIndex)).toEqual([0, -1, -1])
   })
@@ -271,6 +271,7 @@ describe('turn navigator', () => {
     })
     expect(ticks()[2]?.getAttribute('aria-current')).toBe('location')
     expect(ticks()[0]?.hasAttribute('aria-current')).toBe(false)
+    expect(ticks().map((tick) => tick.style.width)).toEqual(['12px', '12px', '12px'])
   })
 
   it('hides for one prompt, a narrow window and a gutter taken by the workbench', async () => {
@@ -290,6 +291,7 @@ describe('turn navigator', () => {
   })
 
   it('magnifies ticks near the pointer and previews the hovered prompt', async () => {
+    vi.useFakeTimers()
     await render(5)
     const first = ticks()[0]
     if (!first) throw new Error('missing tick')
@@ -306,6 +308,23 @@ describe('turn navigator', () => {
     expect(card()?.querySelector('[data-testid="turn-nav-card-prompt"]')?.textContent).toBe('问题 3')
     expect(card()?.querySelector('[data-testid="turn-nav-card-reply"]')?.textContent).toBe('回答 3 第一段')
     expect(card()?.querySelector('[data-testid="turn-nav-card-more"]')?.textContent).toBe('第二段 3')
+    // Leaving the rail restores every length immediately; the card stays briefly so it is reachable.
+    await act(async () => {
+      nav?.dispatchEvent(new PointerEvent('pointerout', { bubbles: true, relatedTarget: card() }))
+    })
+    expect(ticks().map((tick) => tick.style.width)).toEqual(Array(5).fill('12px'))
+    await act(async () => {
+      card()?.dispatchEvent(new PointerEvent('pointerover', { bubbles: true, relatedTarget: nav }))
+      vi.advanceTimersByTime(200)
+    })
+    expect(card()?.hidden).toBe(false)
+    await act(async () => {
+      card()?.dispatchEvent(new PointerEvent('pointerout', { bubbles: true, relatedTarget: document.body }))
+      vi.advanceTimersByTime(200)
+    })
+    expect(card()?.hidden).toBe(true)
+    expect(ticks().every((tick) => tick.dataset.hot === undefined)).toBe(true)
+    expect(ticks().map((tick) => tick.style.width)).toEqual(Array(5).fill('12px'))
   })
 
   it('does not magnify under reduced motion', async () => {
@@ -319,7 +338,7 @@ describe('turn navigator', () => {
         .querySelector('nav')
         ?.dispatchEvent(new PointerEvent('pointermove', { clientY: 113.5, bubbles: true }))
     })
-    expect(ticks().map((tick) => tick.style.width)).toEqual(['22px', '12px', '12px'])
+    expect(ticks().map((tick) => tick.style.width)).toEqual(['12px', '12px', '12px'])
     await act(async () => ticks()[2]?.click())
     expect(scrollTo).toHaveBeenLastCalledWith({ top: 784, behavior: 'auto' })
   })

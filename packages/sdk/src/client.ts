@@ -127,7 +127,11 @@ export type CreateClientOptions = {
   transportFactories?: Partial<Record<TransportOption['kind'], (opt: TransportOption) => TransportFactory>>
 }
 
-export type InitializeInfo = { agnesVersion: string; capabilities: Record<string, unknown> }
+export type InitializeInfo = {
+  agnesVersion: string
+  capabilities: Record<string, unknown>
+  platform?: string
+}
 
 export type CallOptions = {
   /** Existing bridge proof envelope; method parameters remain credential-free. */
@@ -141,7 +145,7 @@ export type CallOptions = {
 type InitializeResponseBody = {
   protocolVersion: number
   agentCapabilities?: Record<string, unknown>
-  _meta?: { agnes?: { agnesVersion?: string } }
+  _meta?: { agnes?: { agnesVersion?: string; platform?: string } }
 }
 
 function knownMethod(method: string): method is MethodName {
@@ -689,6 +693,7 @@ export class Client {
       if (r.protocolVersion !== 1) throw new ProtocolViolation('unsupported negotiated protocol version')
       return {
         agnesVersion: r._meta?.agnes?.agnesVersion ?? 'unknown',
+        ...(typeof r._meta?.agnes?.platform === 'string' ? { platform: r._meta.agnes.platform } : {}),
         capabilities: r.agentCapabilities ?? {},
       }
     } finally {

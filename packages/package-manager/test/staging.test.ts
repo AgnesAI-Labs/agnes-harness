@@ -27,6 +27,36 @@ it('preserves a live inspector and refuses dead unfinished fetch rather than gue
   }
 })
 
+// Only this process ever writes an in-process copy, so its dead owner's partial stage is garbage.
+// An external fetch may have left children behind, and a marker without a kind predates the field.
+it.each([
+  ['an in-process copy', 'copy', true],
+  ['an external fetch', 'fetch', false],
+  ['a marker without a kind', undefined, false],
+] as const)(
+  'a dead owner of an unready stage holding %s (kind %s) is cleared: %s',
+  (_label, kind, cleared) => {
+    const root = mkdtempSync(join(tmpdir(), 'agnes-stage-kind-'))
+    try {
+      const stage = join(root, `.stage-${randomUUID()}`)
+      mkdirSync(stage)
+      writeFileSync(join(stage, 'partial'), 'copied part-way')
+      const child = spawnSync(process.execPath, ['-e', 'process.exit(0)'])
+      if (!child.pid) throw Error('missing pid')
+      writeFileSync(
+        `${stage}.owner`,
+        JSON.stringify({ pid: child.pid, ready: false, ...(kind ? { kind } : {}) }),
+      )
+      if (cleared) recoverStaging(root)
+      else expect(() => recoverStaging(root)).toThrow('unfinished adapter staging')
+      expect(existsSync(stage)).toBe(!cleared)
+      expect(existsSync(`${stage}.owner`)).toBe(!cleared)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  },
+)
+
 it('does not rewrite a sidecar belonging to an unrelated fetch destination', () => {
   const root = mkdtempSync(join(tmpdir(), 'agnes-stage-sidecar-')),
     target = join(root, 'output')

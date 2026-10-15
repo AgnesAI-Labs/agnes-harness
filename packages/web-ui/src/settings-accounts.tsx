@@ -1,4 +1,5 @@
 import type { ConfigAccount, ConfigAccountInput } from '@agnes/protocol'
+import type { ReactNode } from 'react'
 import { fallbackT, type Translate } from './locales/index.js'
 import { SettingsGroup, SettingsState } from './settings-layout.js'
 import { Badge } from './ui/badge.js'
@@ -16,6 +17,9 @@ export type SettingsAccountsProps = {
   disabled: boolean
   phase?: 'idle' | 'loading' | 'ready' | 'empty' | 'error'
   onRetry?(): void
+  onAdd?(): void
+  providerChoices?: ReactNode
+  onDemo?(): void
   saved?: boolean
   onDismissSaved?(): void
   editingId?: string | undefined
@@ -45,6 +49,9 @@ export function SettingsAccounts({
   disabled,
   phase,
   onRetry,
+  onAdd,
+  providerChoices,
+  onDemo,
   saved = false,
   onDismissSaved,
   editingId,
@@ -170,11 +177,20 @@ export function SettingsAccounts({
       </Toast>
       {phase === 'loading' && <Loadable loading hasData={false} shape="rows" />}
       {phase === 'empty' && (
-        <EmptyState
-          icon={<Icon name="key-round" size={48} />}
-          title={t('accounts.empty')}
-          description={t('accounts.emptyHelp')}
-        />
+        <SettingsGroup className="config-accounts-welcome">
+          <EmptyState
+            icon={<Icon name="sparkles" size={48} />}
+            title={t('accounts.empty')}
+            description={t('accounts.emptyHelp')}
+          />
+          {providerChoices}
+          <p className="config-accounts-demo">
+            {t('accounts.or')}{' '}
+            <Button type="text" title={t('accounts.demoHelp')} onClick={onDemo}>
+              {t('accounts.demo')}
+            </Button>
+          </p>
+        </SettingsGroup>
       )}
       {phase === 'error' && (
         <SettingsState tone="error">
@@ -182,7 +198,21 @@ export function SettingsAccounts({
           <Button onClick={onRetry}>{t('accounts.retryRead')}</Button>
         </SettingsState>
       )}
-      {rows.length > 0 && <SettingsGroup className="config-account-list">{rows}</SettingsGroup>}
+      {(rows.length > 0 || phase === 'ready') && (
+        <SettingsGroup className="config-account-list">
+          {rows}
+          <Button
+            id="config-add-account"
+            className="config-account-add"
+            type="text"
+            disabled={disabled}
+            onClick={onAdd}
+          >
+            <Icon name="plus" />
+            {t('settings-shell.addAccount')}
+          </Button>
+        </SettingsGroup>
+      )}
     </>
   )
 }

@@ -9,7 +9,7 @@ import {
 import type { ReactNode } from 'react'
 import { renderAppDialogs } from './app-dialogs.js'
 import { AppNotice, ConnectionBar, ReadOnlyNotice } from './app-notices.js'
-import { SessionMore, SessionViews } from './regions/session-views.js'
+import { SessionReport, SessionViews } from './regions/session-views.js'
 
 /** The elements AppShell renders for controller-owned regions to mount into. */
 export type ShellHosts = {
@@ -83,16 +83,16 @@ export function AppShell({ children, hosts }: { children?: ReactNode; hosts?: Pa
                 <SessionViews chatRef={hold('viewChat')} traceRef={hold('viewTrace')} />
               </RegionErrorBoundary>
             </div>
-            {/* One group of icon buttons: the workbench toggles, then the menu of everything else. */}
+            {/* Report first; the workbench stays next to the panel it opens. */}
             <div className="topbar-actions">
-              <div ref={hold('dockControls')} id="workbench-controls"></div>
-              <span className="topbar-more-anchor">
+              <span className="topbar-report-anchor">
                 <RegionErrorBoundary region="topbar">
-                  <SessionMore />
+                  <SessionReport />
                 </RegionErrorBoundary>
-                {/* The goal popover opens from the menu; its own toggle sits under the menu button. */}
+                {/* Keep the Goal command/composer host; it has no topbar menu entry. */}
                 <div ref={hold('goal')} id="session-goal-host" className="session-goal-host" />
               </span>
+              <div ref={hold('dockControls')} id="workbench-controls"></div>
             </div>
           </div>
         </header>

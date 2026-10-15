@@ -375,6 +375,10 @@ Intelligent UI 是 `@agnes/intelligent-ui-contract` 的 `intelligentUiKind`：�
 
 `artifact-file` 组件的 `dataKey` 指向 `{name, description, artifact: {sha256, size, mime}}`。只接受会话产物标识，不接受路径或 URL。Web 在对话和工作台均显示文件名、描述、类型、格式化大小及预览、下载入口，复用会话/lane 授权的资源加载器，在卸载时释放资源。HTML 预览沿用已有文档清洗器，不能执行脚本或请求外部资源。不支持预览的类型以及超过现有 1 MiB 预览限制的文件仍可下载（沿用 32 MiB 下载限制）。
 
+Host 发布时会对照可信的会话/lane 登记，校验完整 SHA-256、字节大小与 MIME。`ToolContext.artifacts.put` 返回前先持久化 Core 登记，因此插件可立即将其引用传给 `ui_render` 或 `ui_update`。`present` 已自动创建文件卡片。引用校验失败不产生成功 surface 事件；`UI_ARTIFACT_NOT_FOUND`、`UI_ARTIFACT_IDENTITY_MISMATCH`、`UI_ARTIFACT_RECLAIMED` 与 `UI_ARTIFACT_UNAVAILABLE` 分别表示未登记、元数据不符、已回收与可重试的可用性故障。
+
+读取和刷新会按组件 id 附带可选 `UiSurfaceRecord.artifacts`，状态为 `available`、`not_found`、`identity_mismatch`、`reclaimed` 或 `unavailable`。这是后台对当前状态的检查，不改写 ledger、不增加授权；列表仅检查元数据，不逐文件下载正文。旧可信引用仍受支持，surface 数据不能自行授予读取权限。单个错误文件不会使整页失败；缺少状态表示未知。仅当较新展示明确失效时，才展示较早且已验证可用的文件，并显示明确提示；暂时故障和未知状态不会静默切换版本。原错误卡片仍保留在同名历史中。
+
 `UiSurface.titleKey` 为可选字段，Web 使用 Intelligent UI 语言目录解析；必填 `title` 仍供其他客户端显示。内置交付物使用 `ui.deliverables`。原有组件及持久记录继续有效。
 
 ### 动作回执展示

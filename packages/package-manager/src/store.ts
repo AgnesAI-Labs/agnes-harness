@@ -5,7 +5,7 @@ import { validateLockfile } from '@agnes/protocol'
 import { renameWriteThroughSync } from '@agnes/system-node'
 import { appendPackageAudit, type PackageAuditSink } from './audit.js'
 import { PackageError } from './errors.js'
-import { canonical, readStaticJson, snapshotHash, syncDirectory } from './integrity.js'
+import { canonical, own, readStaticJson, snapshotHash, syncDirectory } from './integrity.js'
 import { type LockEntry, type Lockfile, readLock, writeLock } from './lockfile.js'
 import { hashDirectory, packageDir } from './sources.js'
 
@@ -89,7 +89,16 @@ function paths(s: PackageStore, j: Journal) {
     backup: join(root, `.transaction-${j.transactionId}`),
     stage: j.stage === null ? null : join(root, j.stage),
     previous: previousPackageDir(s, j.id),
+    trash: join(root, `.trash-${j.transactionId}`),
   }
+}
+/**
+ * Deletes a tree the caller has just verified. It is first renamed to this journal's trash, so a
+ * crash part-way through the recursive delete leaves only a tree recovery may drop unchecked.
+ */
+function discard(p: ReturnType<typeof paths>, path: string): void {
+  renameSync(path, p.trash)
+  rmSync(p.trash, { recursive: true })
 }
 function checked(s: PackageStore, lock: Lockfile, raw: Record<string, unknown>): Journal {
   if (
@@ -183,22 +192,22 @@ function finish(s: PackageStore, j: Journal): void {
       if (present(p.previous)) {
         const previousExpected = j.old.previous?.treeIntegrity
         if (!previousExpected || tree(p.previous) !== previousExpected) fail('previous-mismatch')
-        rmSync(p.previous, { recursive: true })
+        discard(p, p.previous)
       }
       renameSync(p.backup, p.previous)
-    } else rmSync(p.backup, { recursive: true })
+    } else discard(p, p.backup)
   }
   if (j.next === null && present(p.previous)) {
     const expected = j.old?.previous?.treeIntegrity
     if (!expected || tree(p.previous) !== expected) fail('previous-mismatch')
-    rmSync(p.previous, { recursive: true })
+    discard(p, p.previous)
   }
   if (moves && j.next !== null && j.old !== null) exact(p.previous, j.oldTree)
   syncDirectory(dirname(p.dest))
   s.checkpoint?.('previous-saved')
   if (p.stage && present(p.stage)) {
     exact(p.stage, j.nextTree)
-    rmSync(p.stage, { recursive: true })
+    discard(p, p.stage)
   }
   rmSync(journalPath(s))
   syncDirectory(s.profileDir)
@@ -210,7 +219,9 @@ export function recoverPackageStore(s: PackageStore): void {
   const lock = readLock(s.profileDir, { profile: s.profile, agnesVersion: s.agnesVersion }),
     j = checked(s, lock, readStaticJson(journalPath(s))),
     p = paths(s, j)
-  const current = lock.packages[j.id] ?? null
+  // Only this journal names its trash, and only verified trees enter it: a partial delete is expected.
+  rmSync(p.trash, { recursive: true, force: true })
+  const current = own(lock.packages, j.id) ?? null
   if (canonical(current) === canonical(j.next)) {
     finish(s, j)
     return
@@ -221,18 +232,18 @@ export function recoverPackageStore(s: PackageStore): void {
       exact(p.backup, j.oldTree)
       if (present(p.dest)) {
         exact(p.dest, j.nextTree)
-        rmSync(p.dest, { recursive: true })
+        discard(p, p.dest)
       }
       renameSync(p.backup, p.dest)
     } else if (j.old === null) {
       if (present(p.dest)) {
         exact(p.dest, j.nextTree)
-        rmSync(p.dest, { recursive: true })
+        discard(p, p.dest)
       }
     } else exact(p.dest, j.oldTree)
     if (p.stage && present(p.stage)) {
       exact(p.stage, j.nextTree)
-      rmSync(p.stage, { recursive: true })
+      discard(p, p.stage)
     }
   } else exact(p.dest, j.oldTree)
   rmSync(journalPath(s))
@@ -257,7 +268,7 @@ export function commitPackage(
     }
   if (existsSync(journalPath(s))) fail('pending-transaction')
   const dest = packageDir(s.dataDir, s.profile, id),
-    old = lock.packages[id] ?? null
+    old = own(lock.packages, id) ?? null
   for (const other of Object.keys(lock.packages))
     if (other !== id && packageDir(s.dataDir, s.profile, other) === dest) fail('package-path-collision')
   if (old === null && present(dest)) fail('unowned-directory')

@@ -10,13 +10,16 @@ import { cycleTaskFocus } from '../src/workbench/focus.js'
 
 it('restores focus on Escape, resizes with keys, retires registrations and detaches on unmount', () => {
   const css = readWebStyleSource(resolve(__dirname, '../public/style.css'))
-  // Short docks must scroll terminal controls together, instead of shrinking the job below them.
+  // A short dock gives the emulator a bounded viewport so fit can resize the PTY.
   const terminalJob = [...css.matchAll(/\.workbench-terminal-job \{([^}]*)\}/g)].at(-1)?.[1]
-  expect(terminalJob).toContain('flex: 1 0 auto')
-  expect(terminalJob).toContain('min-height: min-content')
+  expect(terminalJob).toContain('flex: 1;')
+  expect(terminalJob).toContain('min-height: 0')
   expect(/\.workbench-terminal,\s*\.workbench-terminal-job \{([^}]*)\}/.exec(css)?.[1]).not.toContain(
     'height: 100%',
   )
+  expect(css).toContain('@container (max-width: 560px)')
+  expect(/\.workbench-terminal-bar \{([^}]*)\}/.exec(css)?.[1]).toContain('width: 168px')
+  expect(css).toContain('flex-direction: row;')
   localStorage.clear()
   document.body.innerHTML =
     '<div class="workbench-split"><div id="controls"></div><aside id="workbench-right" hidden><div id="workbench-right-content"></div></aside><aside id="workbench-bottom" hidden><div id="workbench-bottom-content"></div></aside></div>'
@@ -55,7 +58,11 @@ it('restores focus on Escape, resizes with keys, retires registrations and detac
     expect(document.getElementById('workbench-tab-test.second')).toBeNull()
     renderRegion(host, <Dock context={{ t: (key) => key, data: 'show' }} />)
     const toggle = host.querySelector('[data-edge="right"]') as HTMLButtonElement
+    expect(toggle.textContent).toBe('')
+    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+    expect(toggle.querySelector('.workbench-toggle-pane')).not.toBeNull()
     flushSync(() => toggle.click())
+    expect(toggle.getAttribute('aria-pressed')).toBe('true')
     const dock = document.getElementById('workbench-right') as HTMLElement
     expect(dock.hidden).toBe(false)
     flushSync(() => (dock.querySelector('[data-testid="navigate-review"]') as HTMLButtonElement).click())
@@ -295,8 +302,19 @@ it('batches controller refreshes and isolates a failed right panel from the bott
     expect(rightHost.querySelector('[data-agnes-region-error="workbench-right"]')).not.toBeNull()
     expect(bottomHost.textContent).toContain('Bottom 101')
     expect(host.querySelector('[data-edge="right"]')).not.toBeNull()
+    expect(rightHost.querySelector('[role=tab]')).not.toBeNull()
+    const expand = rightHost.querySelector<HTMLButtonElement>('[aria-label="workbench.expand"]')
+    const close = rightHost.querySelector<HTMLButtonElement>('[aria-label="workbench.close"]')
+    expect(expand).not.toBeNull()
+    expect(close).not.toBeNull()
+    if (!expand || !close) throw new Error('Missing workbench chrome')
+    flushSync(() => expand.click())
+    expect(expand.getAttribute('aria-pressed')).toBe('true')
+    flushSync(() => close.click())
+    expect(document.getElementById('workbench-right')?.hidden).toBe(true)
+    flushSync(() => host.querySelector<HTMLButtonElement>('[data-edge="right"]')?.click())
     fail = false
-    flushSync(() => rightHost.querySelector<HTMLButtonElement>('button')?.click())
+    flushSync(() => rightHost.querySelector<HTMLButtonElement>('[data-agnes-region-error] button')?.click())
     expect(rightHost.textContent).toContain('Right 101')
   } finally {
     unmountWorkbench(host)
