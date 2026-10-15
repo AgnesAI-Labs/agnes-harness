@@ -20,6 +20,8 @@ Disable revokes authority before shutdown. Cold upgrade drains and terminates th
 
 ## Adapter entry points
 
+`createRosterStreamAuthorizer` consumes the real `ClientModuleRosterRow` contribution binding and immutable `streams` allowlist. The authority resolver supplies a current row reader, revocation signal and session/lane/source check; inbound streams also require a consumed effect grant bound to that exact operation and declaration. Checks repeat at ticket consumption and every frame. History-only pins, another same-package row, stale snapshots and stale activations refuse. The browser exposes `ctx.profile.streams.open(name, input, options)` for active profile contributions; immediate owner revocation aborts pending and live connections.
+
 The daemon integration imports `createPluginStreamBroker`, `bindPluginStreams`, `createPluginStreamGateway` and `createSourcePluginStreamGateway` from `@agnes/daemon-rpc/streams`. Pass a gateway to `createWebServer({ pluginStreams })`; unauthenticated configurations have no fallback route. The Node-only source gateway uses `/_agnes/plugin-stream/source` and `/_agnes/plugin-stream/source/open`, refuses browser Origin, and requires a source-auth/anti-replay adapter that also admits a user-subject grant. The browser and source paths do not share authentication shortcuts.
 
 Use `createPluginStreamsClient` from `@agnes/sdk/streams` with a host-bound owner, scope, exact names and lifecycle signal. Node Surface callers select `source: true` and supply authenticated `open` and `socket` adapters. Ordinary browser clients use same-origin fetch and WebSocket. The caller must not derive an allowlist or principal from arbitrary page configuration.

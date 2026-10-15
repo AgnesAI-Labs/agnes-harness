@@ -2753,6 +2753,13 @@
             "maxLength": 128
           }
         },
+        "streams": {
+          "description": "Immutable same-owner stream allowlist; current activation and exact snapshot are also required.",
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "type": "string", "maxLength": 128, "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)*$" }
+        },
         "services": {
           "description": "Immutable manifest-declared same-extension query service names. This projection is a browser UX/API allow-list, never a credential or arbitrary RPC route.",
           "type": "array",

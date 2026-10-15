@@ -341,7 +341,7 @@ describe('client module immutable snapshots', () => {
           id: owner,
           rowId: 'ext:acme/panel',
           path: './agnes.client.json',
-          client: { entry: './dist/index.js', services: ['panel.search'] },
+          client: { entry: './dist/index.js', services: ['panel.search'], streams: ['panel.events'] },
         },
       ],
     } as InstalledPackage
@@ -383,6 +383,7 @@ describe('client module immutable snapshots', () => {
         moduleName: owner,
         extIds: [owner],
         services: ['panel.search'],
+        streams: ['panel.events'],
         phase: 'ready',
       },
     ])

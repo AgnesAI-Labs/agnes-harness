@@ -60,5 +60,10 @@
         }
       }
     }
+  },
+  "devDependencies": {
+    "@agnes/sdk": "workspace:*",
+    "@agnes/daemon-rpc": "workspace:*",
+    "@agnes/protocol": "workspace:*"
   }
 }

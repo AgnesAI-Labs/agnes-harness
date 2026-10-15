@@ -161,7 +161,7 @@ export async function createManagedServiceRuntime(options: {
     ready = false
     shutdown ??= (async () => {
       const timeout = AbortSignal.timeout(5000)
-      lifetime.abort('shutdown')
+      lifetime.abort(input.reason)
       let state: 'settled' | 'unknown' = 'unknown'
       try {
         const result = await Promise.race([

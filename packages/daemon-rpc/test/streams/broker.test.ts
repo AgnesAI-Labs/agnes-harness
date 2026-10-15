@@ -272,9 +272,10 @@ describe('authenticated stream broker', () => {
       const frames: unknown[] = []
       let disconnects = 0
       remote.context.stream.onFrame((frame) => frames.push(frame))
-      remote.context.stream.onDisconnect(() => {
+      const off = remote.context.stream.onDisconnect(() => {
         disconnects++
       })
+      remote.context.signal.addEventListener('abort', off, { once: true })
       const frame = encodePluginStreamBinary(grant.streamId, 0, new Uint8Array([4]))
       remote.connection.receive(frame, true)
       expect(frames).toEqual([new Uint8Array([4])])

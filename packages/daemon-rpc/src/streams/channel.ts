@@ -68,15 +68,16 @@ export function createStreamChannel(options: {
     stopped = true
     stopReason = reason
     options.signal.removeEventListener('abort', revoke)
+    const notifications = [...disconnects]
+    disconnects.clear()
     abort.abort(reason)
     frames.clear()
     drops.clear()
     options.released()
-    for (const fn of disconnects)
+    for (const fn of notifications)
       void Promise.resolve()
         .then(() => fn({ reason }))
         .catch(() => undefined)
-    disconnects.clear()
     // Application close reasons never carry plugin exception text or credentials.
     try {
       socket.close(code, reason)

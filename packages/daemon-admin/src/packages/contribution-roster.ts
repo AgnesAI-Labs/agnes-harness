@@ -117,3 +117,16 @@ export function combineContributionRosters(
   }
   return result
 }
+
+/** Reviewed client declarations retained with an immutable asset snapshot and reprojected on restore. */
+export function clientContributionDeclarations(
+  client: Pick<ClientContribution, 'lifetime' | 'homeEntries' | 'examplePages' | 'assets' | 'streams'>,
+) {
+  return {
+    ...(client.lifetime ? { lifetime: client.lifetime } : {}),
+    ...(client.homeEntries ? { homeEntries: client.homeEntries } : {}),
+    ...(client.examplePages ? { examplePages: client.examplePages } : {}),
+    ...(client.assets ? { assets: client.assets } : {}),
+    ...(client.streams ? { streams: [...client.streams] } : {}),
+  }
+}

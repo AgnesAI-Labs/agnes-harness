@@ -1122,6 +1122,16 @@ importers:
       '@sinclair/typebox':
         specifier: 0.34.33
         version: 0.34.33
+    devDependencies:
+      '@agnes/daemon-rpc':
+        specifier: workspace:*
+        version: link:../daemon-rpc
+      '@agnes/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@agnes/sdk':
+        specifier: workspace:*
+        version: link:../sdk
 
   packages/model-adapters:
     dependencies:

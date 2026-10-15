@@ -68,6 +68,7 @@ describe('managed service SDK runtime', () => {
       expect(await result.json()).toEqual({ incarnation: 'synthetic-proof', state: 'settled' })
     expect(shutdowns).toBe(1)
     expect(runtime.signal.aborted).toBe(true)
+    expect(runtime.signal.reason).toBe('disable')
     expect((await runtime.store.scan({ prefix: '', limit: 1 })).rows[0]?.value).toEqual({ reason: 'disable' })
     expect((await fetch(health, { headers })).status).toBe(503)
   })

@@ -278,6 +278,8 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
               : { slotCatalogVersion: target.slotCatalogVersion }),
             ...(target.contentDigest === undefined ? {} : { contentDigest: target.contentDigest }),
             ...(target.services === undefined ? {} : { services: target.services }),
+            ...(target.backendOwner ? { backendOwner: target.backendOwner } : {}),
+            ...(target.streams ? { streams: target.streams } : {}),
             ...(target.publicConfig === undefined ? {} : { publicConfig: target.publicConfig }),
           })
           fiber = created

@@ -28,6 +28,7 @@ import {
 import { validUiComponentDeclaration } from '@agnes/protocol/intelligent-ui'
 import { cleanRelative, collectSnapshotFiles, SERVABLE } from './client-asset-references.js'
 import {
+  clientContributionDeclarations,
   combineContributionRosters,
   contributionProjection,
   reconcileContributionActivations,
@@ -72,6 +73,7 @@ type StoredDeclaration = Readonly<{
   slotCatalogVersion?: string
   extIds: readonly string[]
   services: readonly string[]
+  streams?: ClientContribution['streams']
   backendRowId?: string
   intelligentComponents?: ClientContribution['intelligentComponents']
   lifetime?: ClientContribution['lifetime']
@@ -537,10 +539,7 @@ function storedDeclaration(declared: ClientDeclaration): StoredDeclaration {
   return {
     moduleName: declared.moduleName,
     ...(declared.legacyRowIds.length ? { legacyRowIds: [...declared.legacyRowIds] } : {}),
-    ...(declared.client.lifetime ? { lifetime: declared.client.lifetime } : {}),
-    ...(declared.client.homeEntries ? { homeEntries: declared.client.homeEntries } : {}),
-    ...(declared.client.examplePages ? { examplePages: declared.client.examplePages } : {}),
-    ...(declared.client.assets ? { assets: declared.client.assets } : {}),
+    ...clientContributionDeclarations(declared.client),
     entry: declared.entry,
     styles: [...declared.styles],
     slots: [...(declared.client.slots ?? [])],
@@ -1191,10 +1190,7 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
               moduleName: value.moduleName,
               legacyRowIds: [...(value.legacyRowIds ?? [])],
               client: {
-                ...(value.lifetime ? { lifetime: value.lifetime } : {}),
-                ...(value.homeEntries ? { homeEntries: value.homeEntries } : {}),
-                ...(value.examplePages ? { examplePages: value.examplePages } : {}),
-                ...(value.assets ? { assets: value.assets } : {}),
+                ...clientContributionDeclarations(value),
                 entry: value.entry,
                 slots: [...value.slots],
                 ...(value.legacyRowIds === undefined ? {} : { legacyRowIds: [...value.legacyRowIds] }),
@@ -1400,6 +1396,7 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
           contentDigest,
           extIds: [...item.extIds],
           services: [...(item.client.services ?? [])],
+          ...(item.client.streams ? { streams: [...item.client.streams] } : {}),
           ...(item.client.intelligentComponents
             ? { intelligentComponents: item.client.intelligentComponents }
             : {}),

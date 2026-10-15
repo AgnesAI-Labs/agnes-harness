@@ -32,6 +32,8 @@ export function readyRosterModules(rows: readonly ClientModuleRosterRow[]): Read
         ...(row.contentDigest === undefined ? {} : { contentDigest: row.contentDigest }),
         extIds: row.extIds,
         services: row.services ?? [],
+        backendOwner: row.moduleName,
+        streams: row.streams ?? [],
         ...(row.publicConfig ? { publicConfig: row.publicConfig } : {}),
       },
     ]

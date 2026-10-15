@@ -13,6 +13,7 @@ import {
   isRuntimeSupportedDshSlot,
 } from './dsh-slot-catalog.js'
 import { scopedExamplePages } from './example-pages.js'
+import { scopedProfileStreams } from './profile-streams.js'
 import { type RegisterOptions, SlotRegistry } from './registry.js'
 import {
   AgnesClientService,
@@ -45,6 +46,7 @@ export interface ClientContext extends Context {
   theme: import('./services.js').ThemeService
   locale: import('./services.js').LocaleService
   profile: Readonly<{
+    streams: ReturnType<typeof scopedProfileStreams>
     examples: ExamplePackages
     launch: ExampleLaunches & { openPage(exampleId: string): void }
   }>
@@ -204,6 +206,9 @@ export function clientModule(mod: ClientModule): {
       })
       Object.defineProperty(ctx, 'profile', {
         value: Object.freeze({
+          streams: scopedProfileStreams(config, availability, (off) => {
+            ctx.effect(() => off)
+          }),
           examples: exampleClient.packages,
           launch: Object.freeze({ ...exampleClient.launches, openPage: examplePages.open }),
         }),

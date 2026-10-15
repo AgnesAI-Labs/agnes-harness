@@ -877,3 +877,65 @@ describe('SlotOutlet', () => {
     vi.restoreAllMocks()
   })
 })
+
+it('binds profile streams to the accepted roster and aborts pending opens on immediate owner revocation', async () => {
+  const { revokeContributionOwner } = await import('../src/contribution-scope.js')
+  const { ctx } = await makeRegistry()
+  let streams: ClientContext['profile']['streams'] | undefined
+  const binding = {
+    lifetime: 'profile' as const,
+    owner: 'web:sample-stream',
+    packageId: 'sample-stream',
+    integrity: 'r1',
+    profileId: 'one',
+    activationId: 'active',
+    availability: 'active' as const,
+  }
+  const fiber = await ctx.plugin(
+    clientModule({
+      apply(cctx) {
+        streams = cctx.profile.streams
+      },
+    }),
+    {
+      packageId: 'sample-stream',
+      rowId: binding.owner,
+      revision: 'r1',
+      contentDigest: `sha256-${'a'.repeat(64)}`,
+      backendOwner: 'sample/plugin',
+      streams: ['sample.events'],
+      binding,
+    },
+  )
+  let requestSignal: AbortSignal | undefined
+  let requestBody: unknown
+  const network = vi.fn(async (_url: string, init: RequestInit) => {
+    requestBody = JSON.parse(String(init.body))
+    requestSignal = init.signal as AbortSignal
+    return new Promise<Response>((_resolve, reject) =>
+      requestSignal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true }),
+    )
+  })
+  vi.stubGlobal('fetch', network)
+  try {
+    if (!streams) throw new Error('streams not bound')
+    await expect(streams.open('undeclared', {})).rejects.toThrow('unavailable')
+    expect(network).not.toHaveBeenCalled()
+    const pending = streams.open('sample.events', {})
+    expect(requestBody).toEqual({
+      owner: 'sample/plugin',
+      name: 'sample.events',
+      input: {},
+      scope: { kind: 'profile', profileId: 'one' },
+      client: { rowId: binding.owner, revision: 'r1', contentDigest: `sha256-${'a'.repeat(64)}` },
+    })
+    const refused = expect(pending).rejects.toThrow('aborted')
+    revokeContributionOwner(binding.owner)
+    expect(requestSignal?.aborted).toBe(true)
+    await refused
+    await expect(streams.open('sample.events', {})).rejects.toThrow('unavailable')
+  } finally {
+    vi.unstubAllGlobals()
+    await fiber.dispose()
+  }
+})

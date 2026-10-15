@@ -134,4 +134,7 @@ export interface ModuleIdentity {
   publicConfig?: Readonly<Record<string, unknown>>
   /** Immutable manifest allow-list for own-extension query services. */
   services?: readonly string[]
+  /** Exact same-row backend owner and stream allowlist from the verified roster. */
+  backendOwner?: string
+  streams?: readonly string[]
 }
