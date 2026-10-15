@@ -133,7 +133,7 @@ Damage is never treated as absence. Every durable metadata file is decoded from 
 
 Pin lock. `<pin>.json.lock` is a file published with its owner (`pid`, start id, token) already inside it. It is taken over only when the owner's pid is gone, never by age: a paused holder or a slow disk keeps it and contenders end in `E_GENERATION_PIN_BUSY` naming the owner. Release removes the lock only while it still carries the releasing holder's token. A pid reused by an unrelated process keeps the lock until it is removed by hand; the start id is recorded but cannot be compared synchronously.
 
-Remaining limits. Power-loss behaviour is by construction, not tested with fault injection. The package lock (`.agnes-lock.lock`) is published with its owner already inside it and reclaimed only after 30 s with a dead or absent owner; it compares bare pids.
+Remaining limits. Power-loss behaviour is by construction, not tested with fault injection. The package lock (`.agnes-lock.lock`) is published with its owner already inside it and reclaimed only after 30 s with a dead or absent owner; it compares bare pids. A waiter that cannot acquire it within 10 s while the owner is alive is refused with the retryable `E_PACKAGE_BUSY` (`detail.reason: 'busy'`), never as an integrity failure.
 
 ## E. Resource catalogs and model configuration
 

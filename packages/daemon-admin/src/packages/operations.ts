@@ -428,7 +428,9 @@ export function withOperationState(
           : {}),
     state: next.state,
     cancellable: !packageOperationTerminal(next.state) && !['switching', 'draining'].includes(next.state),
-    retryable: next.state === 'failed' && next.error?.code === 'E_PACKAGE_PREVIEW_STALE',
+    retryable:
+      next.state === 'failed' &&
+      (next.error?.code === 'E_PACKAGE_PREVIEW_STALE' || next.error?.code === 'E_PACKAGE_BUSY'),
     progress: next.progress ?? current.operation.progress,
     updatedAt: next.now,
     ...(next.preview ? { preview: next.preview } : {}),

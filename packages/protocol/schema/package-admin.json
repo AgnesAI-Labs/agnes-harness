@@ -1464,7 +1464,8 @@
             "E_PACKAGE_PREVIEW_STALE",
             "E_PACKAGE_CANCELLED",
             "E_PACKAGE_PROVENANCE",
-            "E_PACKAGE_SOURCE_POLICY"
+            "E_PACKAGE_SOURCE_POLICY",
+            "E_PACKAGE_BUSY"
           ]
         },
         "safeMessage": {

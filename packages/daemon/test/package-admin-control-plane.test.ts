@@ -8,6 +8,7 @@ import {
   activeRuntimePinId,
   createPackageManager,
   emptyLock,
+  PackageError,
   type PackageManager,
   packageDir,
   parseSource,
@@ -1108,6 +1109,37 @@ it('projects manager diagnostics with fixed safe text instead of package-provide
     error: { code: 'E_PACKAGE_SOURCE', safeMessage: 'The package source could not be accepted.' },
   })
   expect(JSON.stringify(failed)).not.toContain(root)
+
+  // Profile lock contention is a retryable refusal with its own safe text, for effects and reads alike.
+  const busy = () =>
+    new PackageError('E_LOCK_MISMATCH', `could not acquire the package lock under ${root}`, {
+      code: 'E_PACKAGE_BUSY',
+      detail: { reason: 'busy', lockPath: join(profileDir, '.agnes-lock.lock') },
+    })
+  const contended = service({
+    manager: { ...manager, install: async () => Promise.reject(busy()) } as PackageManager,
+  })
+  const busyReceipt = (await contended.call(
+    '_agnes/v1/packages.install',
+    { ...command('busy-install'), expectedIntegrity: preview.integrity },
+    authority,
+  )) as { operationId: string }
+  const refused = await operation(contended, profile, busyReceipt.operationId)
+  expect(refused).toMatchObject({
+    state: 'failed',
+    retryable: true,
+    error: {
+      code: 'E_PACKAGE_BUSY',
+      safeMessage: 'Another package operation is using this profile. Try again shortly.',
+    },
+  })
+  expect(JSON.stringify(refused)).not.toContain(root)
+  const busyReads = service({
+    manager: { ...manager, inventory: async () => Promise.reject(busy()) } as PackageManager,
+  })
+  await expect(busyReads.call('_agnes/v1/packages.list', { profile }, authority)).rejects.toMatchObject({
+    data: { reason: 'E_PACKAGE_BUSY' },
+  })
 })
 
 it('does not report cancellation after PackageManager committed desired state while activation aborts', async () => {

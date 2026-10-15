@@ -15,6 +15,7 @@ type OperationErrorCode =
   | 'E_PACKAGE_CANCELLED'
   | 'E_PACKAGE_PROVENANCE'
   | 'E_PACKAGE_SOURCE_POLICY'
+  | 'E_PACKAGE_BUSY'
 export type PackageErrorCode = (typeof DOMAIN_CODES)[keyof typeof DOMAIN_CODES] | OperationErrorCode
 export type LegacyPackageCode = keyof typeof DOMAIN_CODES
 export type PackageErrorSource = {

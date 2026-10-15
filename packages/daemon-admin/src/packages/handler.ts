@@ -203,6 +203,7 @@ const safeMessage: Record<PackageAdminError['code'], string> = {
   E_PACKAGE_BLOCKED: 'The package operation is blocked by active references or policy.',
   E_PACKAGE_PREVIEW_STALE: 'The preview no longer matches the package source.',
   E_PACKAGE_CANCELLED: 'The package operation was cancelled.',
+  E_PACKAGE_BUSY: 'Another package operation is using this profile. Try again shortly.',
 }
 const safeWarningMessage = {
   'unverified-provenance': 'Package provenance has not been independently verified.',
