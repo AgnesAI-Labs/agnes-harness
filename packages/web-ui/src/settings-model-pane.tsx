@@ -1,8 +1,6 @@
 import { type ReactNode, useLayoutEffect, useRef, useSyncExternalStore } from 'react'
 import { fallbackT, type Translate } from './locales/index.js'
 import { SettingsPage } from './settings-layout.js'
-import { Button } from './ui/button.js'
-import { Icon } from './ui/icon.js'
 import { SettingsBlock } from './ui/settings-controls.js'
 import { SettingsDrill, SettingsInfo } from './ui/settings-subpages.js'
 
@@ -68,18 +66,6 @@ export function SettingsModelPane({
       title={t('settings-shell.modelTitle')}
       headingId="config-title"
       bodyClassName="config-workspace"
-      actions={
-        // The page's primary action sits in its header, inside the column and clear of the close button.
-        <Button
-          id="config-add-account"
-          appearance="primary"
-          htmlType="button"
-          aria-label={t('settings-shell.addAccount')}
-        >
-          <Icon name="plus" />
-          <span>{t('settings-shell.addAccount')}</span>
-        </Button>
-      }
     >
       {beforeAccounts}
       <SettingsBlock
@@ -101,7 +87,7 @@ export function SettingsModelPane({
       </SettingsBlock>
       <div id="config-auxiliary-models" />
       {afterAccounts}
-      {/* The two account pages open from the header button and from a row; their rows stay hidden. */}
+      {/* The two account pages open from the add row and from an account row; their rows stay hidden. */}
       <SettingsDrill
         id={ACCOUNT_PAGE_IDS.add}
         hidden

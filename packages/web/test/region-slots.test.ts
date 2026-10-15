@@ -387,9 +387,7 @@ describe('migrated settings panes', () => {
     const hosts = [
       ...config.querySelectorAll<HTMLElement>('[data-agnes-settings-pane-slot], [data-agnes-dsh-slot]'),
     ]
-    const refresh = config.querySelector<HTMLButtonElement>('#config-add-account')
-    const refreshed = vi.fn()
-    refresh?.addEventListener('click', refreshed)
+    const accounts = config.querySelector('#config-accounts')
     mount.open('appearance')
     const dark = config.querySelector<HTMLInputElement>('input[name="agnes-theme"][value="dark"]')
     dark?.click()
@@ -404,9 +402,8 @@ describe('migrated settings panes', () => {
     expect(config.querySelector('#model-settings-pane')?.textContent).toContain('Models & accounts')
     expect(config.querySelector('#model-settings-pane')?.textContent).not.toContain('模型与账户')
     for (const host of hosts) expect(config.querySelector(`#${host.id}`)).toBe(host)
-    expect(config.querySelector('#config-add-account')).toBe(refresh)
-    refresh?.click()
-    expect(refreshed).toHaveBeenCalledOnce()
+    expect(config.querySelector('#config-accounts')).toBe(accounts)
+    expect(config.querySelector('#model-settings-pane .agnes-settings-header button')).toBeNull()
     expect(config.querySelector('#appearance-settings-pane')?.hasAttribute('hidden')).toBe(false)
     expect(config.querySelector('#model-settings-pane')?.hasAttribute('hidden')).toBe(true)
     expect(dark?.checked).toBe(true)
@@ -440,7 +437,7 @@ describe('migrated settings panes', () => {
       expect(
         config.querySelector('#fixture-settings-footer-content')?.closest('.config-workspace'),
       ).toBeTruthy()
-      expect(config.querySelector('#config-add-account')).toBeTruthy()
+      expect(config.querySelector('#config-accounts')).toBeTruthy()
       expect(config.querySelector('#account-dialog')).toBeTruthy()
     }, committed)
 

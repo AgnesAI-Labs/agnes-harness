@@ -138,7 +138,7 @@ describe('settings controller', () => {
     const opening = settings.open()
 
     expect(node('config-state').textContent).toBe('正在读取配置…')
-    expect(node('config-add-account').disabled).toBe(true)
+    expect(fixtureWindow.document.getElementById('config-add-account')).toBeNull()
     expect(node('config-retry').hidden).toBe(true)
 
     snapshotRequest.resolve({ ...snapshot, accounts: [] })
@@ -191,7 +191,7 @@ describe('settings controller', () => {
     await settings.open()
     expect(node('config-state').textContent).toBe('配置读取失败，请重试。')
     expect(node('config-retry').hidden).toBe(false)
-    expect(node('config-add-account').disabled).toBe(true)
+    expect(fixtureWindow.document.getElementById('config-add-account')).toBeNull()
 
     settings.setConnected(true)
     await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(1))
