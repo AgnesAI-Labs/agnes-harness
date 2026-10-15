@@ -24,7 +24,7 @@ ctx.services.register({
 })
 ```
 
-Preparation must be bounded and read-only. It receives query authority. The Host binds the original and prepared inputs, resource revision, reviewed policy, actor, source, package integrity and current activation to the decision. A changed subject needs a new operation id and approval. Never interpret an input field such as `approved`, `role` or `actor` as authority.
+Preparation must be bounded and read-only. Prepared data and the complete native decision request are each limited to 128 KiB; oversized review data is refused before dispatch. It receives query authority. The Host binds the original and prepared inputs, resource revision, reviewed policy, actor, source, package integrity and current activation to the decision. A changed subject needs a new operation id and approval. Never interpret an input field such as `approved`, `role` or `actor` as authority.
 
 In a client module, use `ctx.profile.services.query(name, input)`, `effect(name, input, { operationId })` and `readOperation(name, operationId)`. The same-origin relay checks the current ready row and its exact service allowlist. Profile identity and backend owner are selected by the server. Node clients use `client.extensions.callScoped` and `readOperation` under their authenticated source grants.
 

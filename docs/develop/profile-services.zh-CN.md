@@ -59,3 +59,5 @@ await client.extensions.wakes.enqueue({
 这些接口面向可信插件，不隔离任意 JavaScript。Scope、风险、lease、store 和 wake 都是严格 schema 声明，旧 Host 会拒绝不认识的声明，不会静默放宽权限。
 
 `context.admission.prepared` 是 Host 固定并冻结的准备结果，供领域适配器核对最终下发的参数与资源修订号。`store.scan({ prefix, limit, cursor? })` 按键分页返回 1–256 行，查询与准备阶段仍只有只读权限。
+
+准备结果和完整的原生审批请求各有 128 KiB 上限；合并后的原始参数、准备参数和展示数据超限时，会在 dispatch 前拒绝。审批卡显示完整的有界主体。
