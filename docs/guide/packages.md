@@ -77,7 +77,7 @@ Administrators can create `plugin-capabilities.json` beside the profile's `agnes
 }
 ```
 
-The policy vocabulary is `network:<host>`, `filesystem.read:<scope>`, `filesystem.write:<scope>`, `exec:<command>`, `secrets:<name>`, `credentials:<name>`, `model`, `childAgents`, and `ui`. Omit `allow` to allow all declared requests except deny rules; `allow: []` allows none. Deny wins. A wildcard request cannot hide a narrower denied scope. Malformed policy fails closed. Inspection, installation, trust and enable read this policy; changing it blocks disallowed installed packages from new activation without deleting their data.
+The policy vocabulary is `network:<host>` (or `network:<host>:<port>`), `filesystem.read:<scope>`, `filesystem.write:<scope>`, `exec:<command>`, `secrets:<name>`, `credentials:<name>`, `model`, `childAgents`, and `ui`. Omit `allow` to allow all declared requests except deny rules; `allow: []` allows none. Deny wins. A wildcard request cannot hide a narrower denied scope, and a deny rule without a port covers that host on every port. Malformed policy fails closed. Inspection, installation, trust and enable read this policy; changing it blocks disallowed installed packages from new activation without deleting their data.
 
 This is the community trust model. Declarations help review trusted code; they are not a security sandbox. Host-observed tool exec/sandbox launches, network fetches and filesystem access report undeclared use in plugin logs, without recording command arguments, targets or credential values. Existing sandbox and egress authorization still decide whether an operation runs. Direct Node APIs, plugin initialization and injected service implementations are outside this observation boundary.
 

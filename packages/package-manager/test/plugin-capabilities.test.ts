@@ -120,6 +120,19 @@ it('keeps legacy hashes, rejects malformed declarations/policies and covers wild
   expect(capabilityPolicyBlockers({ device: true }, { deny: ['device'] })).toHaveLength(1)
   expect(capabilityPolicyBlockers({ device: true }, { allow: ['device'] })).toEqual([])
   expect(capabilityPolicyBlockers({ network: ['*'] }, { deny: ['network:private.example'] })).toHaveLength(1)
+  // A port-less host rule covers every port of that host; a ported rule stays specific to its port.
+  expect(
+    capabilityPolicyBlockers({ network: ['evil.example:443'] }, { deny: ['network:evil.example'] }),
+  ).toHaveLength(1)
+  expect(
+    capabilityPolicyBlockers({ network: ['*.example:443'] }, { deny: ['network:evil.example'] }),
+  ).toHaveLength(1)
+  expect(
+    capabilityPolicyBlockers({ network: ['evil.example:443'] }, { deny: ['network:evil.example:8443'] }),
+  ).toEqual([])
+  expect(
+    capabilityPolicyBlockers({ network: ['evil.example.com:443'] }, { deny: ['network:evil.example'] }),
+  ).toEqual([])
   expect(
     capabilityPolicyBlockers({ filesystem: { write: ['workspace/*'] } }, { allow: ['filesystem.read:*'] }),
   ).toHaveLength(1)

@@ -75,7 +75,7 @@ profile 的 `policy.capabilityCeiling` 在安装时检查每个插件声明的�
 }
 ```
 
-策略词汇为 `network:<host>`、`filesystem.read:<scope>`、`filesystem.write:<scope>`、`exec:<command>`、`secrets:<name>`、`credentials:<name>`、`model`、`childAgents`、`ui`。省略 allow 表示除 deny 外均允许；空 allow 表示全部拒绝。deny 优先，宽泛请求不能绕过更窄的拒绝规则。错误策略拒绝操作。检查、安装、信任与启用读取同一策略；后续收紧策略会阻止不符合要求的包进入新激活，不删除其数据。
+策略词汇为 `network:<host>`（或 `network:<host>:<port>`）、`filesystem.read:<scope>`、`filesystem.write:<scope>`、`exec:<command>`、`secrets:<name>`、`credentials:<name>`、`model`、`childAgents`、`ui`。省略 allow 表示除 deny 外均允许；空 allow 表示全部拒绝。deny 优先，宽泛请求不能绕过更窄的拒绝规则；不带端口的拒绝规则覆盖该主机的所有端口。错误策略拒绝操作。检查、安装、信任与启用读取同一策略；后续收紧策略会阻止不符合要求的包进入新激活，不删除其数据。
 
 这是社区信任模型：能力声明用于审核受信任代码，不构成隔离沙箱。Host 在工具 exec/沙箱启动、网络 fetch、文件访问边界记录未声明使用，不记录命令参数、目标或秘密值。现有沙箱与网络授权仍决定是否执行。直接使用 Node API、插件初始化和注入服务内部的调用不在该观察范围内。
 
