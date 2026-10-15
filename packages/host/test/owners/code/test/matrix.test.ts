@@ -65,8 +65,11 @@ describe('preset matrix through the host resolver', () => {
       on_unavailable: string
       timeout_ms: number
     }
-    expect(approval.command_policy).toHaveLength(1)
-    expect(approval.command_policy[0]).toMatchObject({ tool: 'edit|write', action: 'allow' })
+    const inherited = resolvePreset('standard', docs).doc.approval as typeof approval
+    expect(approval.command_policy).toEqual(inherited.command_policy)
+    expect(approval.command_policy).toContainEqual(
+      expect.objectContaining({ tool: 'edit|write', action: 'allow' }),
+    )
     // Deep merge, not replacement: claw's own key wins and base's sibling keys survive beside it.
     expect(approval.on_unavailable).toBe('park')
     expect(approval.timeout_ms).toBe(60000)

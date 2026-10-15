@@ -12,6 +12,7 @@ import {
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { openLocalProcess } from '@agnes/host-infrastructure/adapters/process'
 import { expect, it } from 'vitest'
 import { seatbeltDenyNetworkArgv } from '../src/sandbox-seatbelt.js'
 
@@ -89,3 +90,28 @@ seatbelt('blocks a real loopback request whose unconfined control reaches the se
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }
 })
+
+it.runIf(existsSync('/usr/bin/sandbox-exec') && existsSync('/bin/zsh'))(
+  'preserves controlling-TTY job control in a confined interactive shell',
+  async () => {
+    const handle = await openLocalProcess({
+      argv: seatbeltDenyNetworkArgv(['/bin/zsh', '-f', '-i'], { allowPaths: [], denyPaths: [] }),
+      cwd: tmpdir(),
+      env: { HOME: tmpdir() },
+      pty: { columns: 80, rows: 24 },
+    })
+    let output = ''
+    handle.onOutput((chunk) => {
+      output += chunk.text
+    })
+    try {
+      await handle.write('tty; print -r -- control-$options[monitor]; exit\r')
+      await handle.exited
+      expect(output).toMatch(/\/dev\/tty[^\s]+/)
+      expect(output).toContain('control-on')
+      expect(output).not.toMatch(/can't set tty pgrp|no job control/i)
+    } finally {
+      await handle.close()
+    }
+  },
+)

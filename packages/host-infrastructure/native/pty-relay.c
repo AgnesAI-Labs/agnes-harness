@@ -53,14 +53,25 @@ static int copy_all(int fd, const char *data, size_t size) {
 int main(int argc, char **argv) {
   if (argc < 4) return 125;
   struct winsize size = { .ws_col = (unsigned short)atoi(argv[1]), .ws_row = (unsigned short)atoi(argv[2]) };
-  int master;
-  child = forkpty(&master, NULL, NULL, &size);
-  if (child < 0) { perror("forkpty"); return 125; }
+  int master, slave;
+  if (openpty(&master, &slave, NULL, NULL, &size) < 0) { perror("openpty"); return 125; }
+  child = fork();
+  if (child < 0) { perror("fork"); close(master); close(slave); return 125; }
   if (child == 0) {
+    close(master);
+    /* Do not exec a shell unless it owns both its session and the controlling PTY.
+       Check these steps explicitly: a best-effort login_tty leaves job control broken. */
+    if (setsid() < 0 || ioctl(slave, TIOCSCTTY, 0) < 0 || tcsetpgrp(slave, getpgrp()) < 0) {
+      perror("controlling tty"); _exit(125);
+    }
+    for (int fd = 0; fd < 3; fd++)
+      if (dup2(slave, fd) < 0) { perror("dup2"); _exit(125); }
+    if (slave > 2) close(slave);
     close(3);
     execvp(argv[3], argv + 3);
     perror("execvp"); _exit(127);
   }
+  close(slave);
   signal(SIGPIPE, SIG_IGN);
   struct pollfd fds[] = {{0, POLLIN, 0}, {master, POLLIN, 0}, {3, POLLIN, 0}};
   char buffer[8192], control[256], input[65536]; size_t used = 0, input_size = 0;

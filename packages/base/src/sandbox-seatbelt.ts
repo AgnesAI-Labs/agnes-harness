@@ -35,6 +35,9 @@ export function seatbeltDenyNetworkArgv(
     '(deny default)',
     '(allow process*)',
     '(allow sysctl-read)',
+    // Job control changes only the foreground group of the caller's controlling terminal
+    // (the kernel enforces session ownership). No device writes or other ioctls are granted.
+    '(allow file-ioctl (require-all (regex #"^/dev/tty(s[0-9]+)?$") (ioctl-command TIOCSPGRP)))',
     ...(policy.readPaths
       ? [
           ...[...parents].map((path) => `(allow file-read-metadata (literal ${quote(path)}))`),
