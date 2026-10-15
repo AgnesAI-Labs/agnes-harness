@@ -10,7 +10,7 @@ The Web workbench brings tasks, history, and administration into one local inter
 
 <a id="启动与连接"></a>
 
-Transient errors appear in the top-right notification stack. Each expires after six seconds or can be dismissed with its labelled close button. Recovery, approval and account-repair actions remain visible until resolved. Attachment hints use the shared tooltip on hover and keyboard focus; attachment failures distinguish size, pixels, file type and invalid data in the current language.
+Transient errors appear in the top-right notification stack. Each expires after six seconds or can be dismissed with its labelled close button. Recovery, approval and account-repair actions remain visible until resolved. Stored artifact attachments retain their file labels in history; their internal URIs are not direct download links. Attachment hints use the shared tooltip on hover and keyboard focus; attachment failures distinguish size, pixels, file type and invalid data in the current language.
 
 The main Web listener starts while its first Surface mount-table query runs in the background. Until that query succeeds, unknown Surface paths return HTTP 503 with a retry hint. A successful empty table means no mount; later query failures retain the last successful table. A persistent local connection receives lifecycle invalidations and reconnect events, then re-reads the authoritative table; healthy idle connections do not poll. Failed reads retry without overlap. Shutdown cancels the connection and drains the active read.
 

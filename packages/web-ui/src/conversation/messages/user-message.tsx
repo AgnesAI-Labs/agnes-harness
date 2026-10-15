@@ -221,7 +221,8 @@ export function UserMessageFiles({ node }: { node: Extract<UINode, { kind: 'user
     (block) =>
       block.type === 'file' ||
       storedAttachment(block) ||
-      (block.type === 'resource_link' && uploadedAttachment(block.uri)),
+      (block.type === 'resource_link' &&
+        (uploadedAttachment(block.uri) || /^artifact:\/\/[a-f0-9]{64}$/u.test(block.uri))),
   )
   if (files.length === 0) return null
   const occurrences = new Map<string, number>()
