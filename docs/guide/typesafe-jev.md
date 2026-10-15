@@ -79,7 +79,7 @@ if (result.status === 'failed' && result.retryable) {
 return fallback()
 ```
 
-`payload` is limited to 1 MiB, `deadlineMs` to 100–120000 ms (default 10000), and the deadline covers the whole call. See `packages/extension-api/src/side-call.ts` for the full contract, including `status` and the `unknown` and `refused` outcomes.
+`payload` is limited to 1 MiB, `deadlineMs` to 100–120000 ms (default 10000), and the deadline covers the whole call. See [Side model calls from a loop](../develop/plugins.md#side-model-calls-from-a-loop) for the full contract, including `status` and the `unknown` and `refused` outcomes.
 
 ## Limits
 

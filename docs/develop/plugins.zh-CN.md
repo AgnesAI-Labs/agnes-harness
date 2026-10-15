@@ -145,7 +145,7 @@ Agent Loop 负责调度与自身检查点状态。通过 `@agnes/extension-api` 
 
 循环还可以向另一个模型发一次性请求，而不触碰对话；见[循环的旁路模型调用](#循环的旁路模型调用)。循环自己选定、没有模型回复在背后的工具调用，可以连同它自己的助手消息一起记录；见[公告一次工具调用](#公告一次工具调用)。
 
-`LoopContext` 由两个有文档的面合成。`GenericLoopPorts` 是可替换循环所需的全部端口（模型、工具、决策、副作用回执、输入、事件、检查点、等待/唤醒、作业、子代理、压缩）；把工厂声明为 `GenericLoopFactory` 即证明它不依赖其他端口。`DefaultLoopConvenience`（`turn.continuation`/`checkpoint`/`finishCancelled`/`finishFailure`、`model.respond`、`tools.drain`、`wait.poll`）是绑定 Core ReAct 阶段的粗粒度边，只有默认循环应当依赖。
+`LoopContext` 由两个有文档的面合成。`GenericLoopPorts` 是可替换循环所需的全部端口（模型、带 `announce` 选项的工具、通过 `sideCall.prepare/invoke/status` 发起的旁路模型调用、决策、副作用回执、输入、事件、检查点、等待/唤醒、作业、子代理、压缩）；把工厂声明为 `GenericLoopFactory` 即证明它不依赖其他端口。`DefaultLoopConvenience`（`turn.continuation`/`checkpoint`/`finishCancelled`/`finishFailure`、`model.respond`、`tools.drain`、`wait.poll`）是绑定 Core ReAct 阶段的粗粒度边，只有默认循环应当依赖。
 
 受控的 `turn.checkpoint`、`model.respond`、`tools.drain` 与延迟等待便捷端口，以及压缩，维护 Core 的账本和恢复不变量。调度器通过 `ctx.turn.continuation()` 选择下一条边，无须接触私有程序计数器；Core 可能新增 continuation 阶段，因此循环必须把未知的 `LoopContinuation` 值视为错误，不能依赖穷尽式 switch。`@agnes/loop-default` 只使用公共上下文，由 Base 发行包的普通插件行注册。`checkpointMode: 'ledger'` 使用 Core 恢复并接受没有驱动检查点的历史会话。有状态驱动默认使用 `'driver'` 模式，恢复前校验 codec 版本。Host 为 `ctx.children` 绑定父会话的 `ChildAgentSessionService`，提供 start/list/message/interrupt/result/events/dispose。省略 providerId 使用 child-agent 配置；每次 start 都检查当前允许名单，继承父工作区、固定代码 generation、预算和工具过滤，子选项只能收窄这些约束。会话关闭会取消并等待已启动或正在启动的子代理清理完成。
 
@@ -298,8 +298,8 @@ return fallback()
 | `label` | 你自定的用途标签，随调用一起记录，例如 `jev.decide`。匹配 `/^[a-z][a-z0-9._-]{0,63}$/`。 |
 | `target` | `{ route, model }`，二者都必须在已装配的模型目录里。不接受槽位名。 |
 | `deadlineMs` | 整次调用的时限，由 Core 竞速。100 到 120000 毫秒，缺省 10000。 |
-| `system`、`messages`、`sampling` | 原样发出。`system` 至多 1 MiB。只允许 `user` 和 `assistant` 消息；assistant 消息不带 `toolCalls`，`tool_result` 块被拒绝。图片要求目标模型记录的 `input` 列表包含 `image`。 |
-| `payload` | 结构化 JSON，作为 `RequestBody.payload` 原样交给适配器。规范 JSON 至多 1 MiB。 |
+| `system`、`messages`、`sampling` | 原样发出。`system` 至多 1,048,576 个 UTF-16 码元。只允许 `user` 和 `assistant` 消息；assistant 消息不带 `toolCalls`，`tool_result` 块被拒绝。图片要求目标模型记录的 `input` 列表包含 `image`。 |
+| `payload` | 结构化 JSON，作为 `RequestBody.payload` 原样交给适配器。只接受普通 JSON 数据：规范 JSON 至多 1 MiB，嵌套不超过 32 层，不能含 `Date` 或类实例。违反其中任何一条，都以 `payload-size` 拒绝。 |
 | `output` | `'json'` 让 Core 把返回文本解析成 `result.json`。缺省 `'text'`。 |
 | `invocationId` | 稳定 id，效果编号为 `side:<invocationId>`。匹配 `/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,122}$/`，且不得像凭据。省略时由 Core 生成。 |
 
@@ -319,7 +319,7 @@ return fallback()
 
 ### 结果与错误
 
-`invoke` 返回一个结果。厂商、时钟或调用方对一次调用做的任何事，都以状态返回；`invoke` 只在用法错误时抛出，而此时什么都没有写入。
+`invoke` 返回一个结果。厂商、时钟或调用方对一次调用做的任何事，都以状态返回；`invoke` 只在用法错误时抛出，而此时什么都没有写入；`E_CLOSED` 除外，循环的作用域被撤销时，它也可能终结一个已经发出的调用，替换后的上下文用 `status` 读回该调用。
 
 | `status` | 含义 |
 | --- | --- |
@@ -330,14 +330,16 @@ return fallback()
 
 `failed` 结果的 `retryable`：`deadline` 为 true，`cancelled` 和 `invalid-output` 为 false，`adapter-error` 沿用适配器自己的标志。
 
-错误都在写入任何内容之前抛出，所以抛出意味着什么都没有记录：
+后续版本中 Core 可能为 `SideCallResult` 新增状态或原因，所以遇到不认识的值要当作错误处理，不要依赖穷尽式 `switch`。
 
-- `prepare` 对越界的选项抛出 `E_ENVELOPE`（`detail.reason`：`label`、`deadline`、`payload-size`、`messages`、`image-input` 或 `invocation-id`），目标不在 provider 目录里时抛出 `E_MODEL_UNKNOWN`（`target-unknown`）。另有几个 `E_ENVELOPE` 原因：`output`（既不是 `'text'` 也不是 `'json'`）、`system`（不是至多 1 MiB 的字符串）和 `sampling`（键或值超出请求 schema 的范围）。
-- `invoke` 的 signal 不是 `AbortSignal` 时抛出 `E_ENVELOPE`（`signal`）。
+错误都在写入任何内容之前抛出，所以抛出意味着什么都没有记录，唯一的例外是 `E_CLOSED`（见下面的列表）：
+
+- `prepare` 对越界的选项抛出 `E_ENVELOPE`（`detail.reason`：`label`、`deadline`、`payload-size`、`messages`、`image-input` 或 `invocation-id`），目标不在 provider 目录里时抛出 `E_MODEL_UNKNOWN`（`target-unknown`）。`payload-size` 也用于嵌套超过 32 层的 payload，以及不是普通 JSON 数据的值，例如 `Date` 或类实例。另有几个 `E_ENVELOPE` 原因：`output`（既不是 `'text'` 也不是 `'json'`）、`system`（不是至多 1,048,576 个 UTF-16 码元的字符串）和 `sampling`（键或值超出请求 schema 的范围）。
+- `invoke` 的 signal 不是 `AbortSignal` 时抛出 `E_ENVELOPE`（`signal`）。`status` 收到不符合调用 id 格式、或像凭据的 id 时抛出 `E_ENVELOPE`（`invocation-id`）。
 - 不在已打开的回合内时，`prepare` 和 `invoke` 抛出 `E_RELATION`（`no-turn`）。只有回合结束时发现还有调用在进行、正在等它们结算的那段时间，`invoke` 才抛出 `E_RELATION`（`turn-closing`）；回合结束之后再发起的调用找不到回合，抛出 `no-turn`。
-- 调用由另一个上下文或回合准备时，`invoke` 抛出 `E_REQUEST_FROZEN`（`foreign`、`turn`）；`prepare` 之后目录记录或适配器身份变了，同样抛出（`target-changed`）。`invocationId` 已有记录但 `requestHash` 不同时抛出 `E_RELATION`（`invocation-reused`），本进程内正在运行时也抛出 `E_RELATION`（`invocation-in-flight`）。会话暂停时抛出 `E_LANE_BUSY`（`CONTROL_PAUSED`），已准备的调用不被消耗，可以再次 `invoke`。
-- 会话正在关闭，或循环的执行作用域已被撤销后，每个方法都抛出 `E_CLOSED`。
-- 还有调用没有结算时，`ctx.events.finish` 抛出 `E_RELATION`（`side-call-in-flight`）。同一回合内的调用可以并发；结束回合之前先等它们完成。
+- 调用由另一个上下文或回合准备时，`invoke` 抛出 `E_REQUEST_FROZEN`（`foreign`、`turn`）；`prepare` 之后目录记录、路由的 base URL 或适配器身份变了，同样抛出（`target-changed`）。`invocationId` 已有记录但 `requestHash` 不同时抛出 `E_RELATION`（`invocation-reused`），本进程内正在运行时也抛出 `E_RELATION`（`invocation-in-flight`）。会话暂停时抛出 `E_LANE_BUSY`（`CONTROL_PAUSED`），已准备的调用不被消耗，可以再次 `invoke`。
+- 会话正在关闭，或循环的执行作用域已被撤销后，每个方法都抛出 `E_CLOSED`。这是唯一可能在调用已发出之后才出现的错误：调用进行中作用域被撤销时，Core 仍会记录这次调用（意图行、迟到回执和估算成本行），替换后的上下文用 `status` 读回它。决定是否再次调用之前先读回；换一个新 id 重试，会为同一次调用付两次钱。
+- 还有调用没有结算时，`ctx.events.finish` 抛出 `E_RELATION`（`side-call-in-flight`）；调用仍在进行时，`ctx.turn.endStep` 抛出不带 `detail.reason` 的 `E_RELATION`。同一回合内的调用可以并发；结束步骤或回合之前先等它们完成。
 
 ### 调用 id、时限与重试
 
@@ -350,6 +352,8 @@ Core 和适配器都不重试旁路调用。重试由循环决定：换一个新
 ### 平台处理的部分
 
 每个已发送的调用留下一行用途为 `side-call` 的成本行，计入额度和预算。它记录观察到的用量；没有观察到花费时（时限到、被取消、没有用量的适配器错误），记录 `prepare` 给出的估算价。账本保存摘要和审计元数据（标签、路由、适配器、端点主机），不保存请求内容。
+
+会话额度和目标额度只在步骤之间检查，所以拦不住同一步骤内的多次旁路调用。发送之前，Core 只在估算超过单次请求上限、或树预算已没有余量时拒绝调用，结果是 `refused`，原因 `budget`。一旦设置了单次请求上限，没有目录价格的目标一定被拒绝，因为无法证明它的估算在上限之内。在一个步骤里发多次调用的循环，应自己计数或设上限，或者配置树预算。
 
 撤销、用户 Stop、会话关闭和回合结束，不需要循环写任何代码。它们都会切断仍在进行的调用并记录。调用进行中回合结束时（例如步骤抛出异常，或循环把回合作为取消结束），回合先等这条记录写完再结束，最多等五秒。如果调用进行中循环的执行作用域被撤销（例如循环被替换），Core 用迟到回执收尾，旧上下文的方法抛出 `E_CLOSED`。替换后的新一代用 `status` 读回这条记录。把 `E_CLOSED` 和 `cancelled` 结果都当作本步骤的结束。
 

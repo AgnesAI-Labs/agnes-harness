@@ -101,7 +101,7 @@ export type CostLedger = {
   route?: string
   /** Identity of the model adapter behind the route, when the provider publishes one. */
   adapter?: { id: string; version?: string }
-  /** Host name of the endpoint the call was sent to. */
+  /** Host of the endpoint the call was sent to, as `URL.host` gives it: the name, and the port when the URL has one. */
   endpointHost?: string
 }
 export type BillingRow = CostLedger & { sessionKey: string; lane: string; turn: number; step: number }

@@ -17,14 +17,18 @@ export interface SideCallOptions {
   target: SideCallTarget
   /** Deadline for the whole call, raced by Core. 100 to 120000 milliseconds, default 10000. */
   deadlineMs?: number
-  /** Sent as is. At most 1 MiB (the request schema limit). */
+  /** Sent as is. At most 1,048,576 UTF-16 code units (the request schema limit). */
   system?: string
   /**
    * Only `user` and `assistant` messages are allowed; an assistant message carries no `toolCalls`
    * and a `tool_result` block is refused. An image requires a target model that declares image input.
    */
   messages?: RequestBody['messages']
-  /** Structured payload handed to the adapter unchanged as `RequestBody.payload`. At most 1 MiB of canonical JSON. */
+  /**
+   * Structured payload handed to the adapter unchanged as `RequestBody.payload`. Plain JSON data
+   * only: at most 1 MiB of canonical JSON, nested at most 32 levels deep, and no `Date` or class
+   * instance. A payload that breaks one of these is refused as `payload-size`.
+   */
   payload?: JsonValue
   sampling?: RequestBody['sampling']
   /** `'json'` makes Core parse the returned text into a `JsonValue`. Default `'text'`. */
@@ -138,28 +142,39 @@ export type SideCallStatus =
  * Side model calls: a one-off model request to a chosen route and model, outside the main
  * conversation and its context. Two steps, so a loop can check the estimate before it spends.
  *
- * Errors are thrown before anything is written, so a throw means nothing was recorded:
+ * Errors are thrown before anything is written, so a throw means nothing was recorded, except for
+ * `E_CLOSED` (see the last bullet):
  * - `prepare` throws `E_ENVELOPE` (`detail.reason`: `label`, `deadline`, `payload-size`, `messages`,
  *   `image-input` or `invocation-id`) for an out-of-range option, and `E_MODEL_UNKNOWN`
- *   (`target-unknown`) when the target is not in the provider's catalog. Further `E_ENVELOPE` reasons:
+ *   (`target-unknown`) when the target is not in the provider's catalog. `payload-size` also covers a
+ *   payload nested deeper than 32 levels and one that is not plain JSON data (a `Date` or a class
+ *   instance). Further `E_ENVELOPE` reasons:
  *   - `output`: `output` is neither `'text'` nor `'json'`;
- *   - `system`: `system` is not a string of at most 1 MiB;
+ *   - `system`: `system` is not a string of at most 1,048,576 UTF-16 code units;
  *   - `sampling`: `sampling` has a key or value outside the request schema's ranges.
- * - `invoke` throws `E_ENVELOPE` (`signal`) when its signal is not an `AbortSignal`.
+ * - `invoke` throws `E_ENVELOPE` (`signal`) when its signal is not an `AbortSignal`. `status` throws
+ *   `E_ENVELOPE` (`invocation-id`) for an id that does not match the invocation id pattern or looks
+ *   like a credential.
  * - `prepare` and `invoke` throw `E_RELATION` (`no-turn`) outside an open turn. `invoke` throws
  *   `E_RELATION` (`turn-closing`) only while a turn end that found calls in flight is waiting for
  *   them to settle; a call made after the turn has ended finds no turn and throws `no-turn`.
  * - `invoke` throws `E_REQUEST_FROZEN` for a call prepared by another context or turn (`foreign`,
- *   `turn`) or when the catalog record or adapter identity changed after `prepare`
- *   (`target-changed`); `E_RELATION` when the `invocationId` already has a record with a different
- *   `requestHash` (`invocation-reused`) or is running in this process (`invocation-in-flight`); and
- *   `E_LANE_BUSY` (`CONTROL_PAUSED`) while the session is paused; the prepared call is not
- *   consumed and can be invoked again.
+ *   `turn`) or when the catalog record, the route's base URL or the adapter identity changed after
+ *   `prepare` (`target-changed`); `E_RELATION` when the `invocationId` already has a record with a
+ *   different `requestHash` (`invocation-reused`) or is running in this process
+ *   (`invocation-in-flight`); and `E_LANE_BUSY` (`CONTROL_PAUSED`) while the session is paused; the
+ *   prepared call is not consumed and can be invoked again.
  * - Every method throws `E_CLOSED` once the session is closing or the loop's execution scope was
- *   revoked.
+ *   revoked. This is the one error that can arrive after a call was sent: when the scope is revoked
+ *   while a call is in flight, the call is still recorded (its intent, a late receipt and an
+ *   estimated cost row), and the replacement context reads it back with `status`.
  *
  * Calls may run concurrently within a turn. A turn cannot finish while one is still unsettled
- * (`E_RELATION`, `side-call-in-flight`).
+ * (`E_RELATION`, `side-call-in-flight`), and `ctx.turn.endStep` throws `E_RELATION` with no
+ * `detail.reason` while a call is in flight.
+ *
+ * Core may add statuses or reasons to `SideCallResult` in a later release, so a loop treats an
+ * unknown one as an error instead of relying on an exhaustive `switch`.
  */
 export interface LoopSideCallPort {
   prepare(options: SideCallOptions): Promise<PreparedSideCall>

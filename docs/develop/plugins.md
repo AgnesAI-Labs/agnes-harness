@@ -161,7 +161,7 @@ Assign stable `invocationId` values to model preparations and tool calls. `ctx.e
 
 A loop can also send a one-off request to another model without touching the conversation; see [Side model calls from a loop](#side-model-calls-from-a-loop). A tool call that the loop chooses itself, with no model reply behind it, can be recorded together with its own assistant message; see [Announcing a tool call](#announcing-a-tool-call).
 
-`LoopContext` is the union of two documented surfaces. `GenericLoopPorts` carries everything a replaceable loop needs (model, tools, decisions, effect receipts, inputs, events, checkpoints, wait/wake, jobs, children, compaction); type a factory as `GenericLoopFactory` to prove it needs nothing else. `DefaultLoopConvenience` (`turn.continuation`/`checkpoint`/`finishCancelled`/`finishFailure`, `model.respond`, `tools.drain`, `wait.poll`) is the coarse edge set tied to Core's ReAct stages; only the default loop should depend on it.
+`LoopContext` is the union of two documented surfaces. `GenericLoopPorts` carries everything a replaceable loop needs (model, tools with their `announce` option, side model calls through `sideCall.prepare/invoke/status`, decisions, effect receipts, inputs, events, checkpoints, wait/wake, jobs, children, compaction); type a factory as `GenericLoopFactory` to prove it needs nothing else. `DefaultLoopConvenience` (`turn.continuation`/`checkpoint`/`finishCancelled`/`finishFailure`, `model.respond`, `tools.drain`, `wait.poll`) is the coarse edge set tied to Core's ReAct stages; only the default loop should depend on it.
 
 The controlled `turn.checkpoint`, `model.respond`, `tools.drain` and deferred-wait convenience ports, with compaction, preserve Core's ledger and recovery invariants. A scheduler can select these edges through `ctx.turn.continuation()` without accessing a private program counter; Core may add continuation stages additively, so a loop must treat an unknown `LoopContinuation` value as an error rather than rely on an exhaustive switch. `@agnes/loop-default` does this using only the public context; the Base distribution registers it as an ordinary plugin row. Its `checkpointMode: 'ledger'` uses Core continuation recovery and accepts historical sessions without driver checkpoints. Stateful drivers use the default `'driver'` mode and reject unsupported codec versions before resumed work. Host fits `ctx.children` with a parent-bound `ChildAgentSessionService` supporting start/list/message/interrupt/result/events/dispose. An omitted providerId uses the child-agent configuration; every start checks the current allowlist and inherits the parent workspace, pinned code generation, budget and tool filter. Child options can only narrow those constraints. Session close cancels and joins running or starting children before closing the log.
 
@@ -318,8 +318,8 @@ return fallback()
 | `label` | Your purpose tag, recorded with the call, for example `jev.decide`. Matches `/^[a-z][a-z0-9._-]{0,63}$/`. |
 | `target` | `{ route, model }`, both in the assembled model catalog. A slot name is not accepted. |
 | `deadlineMs` | Deadline for the whole call, raced by Core. 100 to 120000 milliseconds, default 10000. |
-| `system`, `messages`, `sampling` | Sent as written. `system` is at most 1 MiB. Only `user` and `assistant` messages are allowed; an assistant message carries no `toolCalls` and a `tool_result` block is refused. An image needs a target model record whose `input` list includes `image`. |
-| `payload` | Structured JSON handed to the adapter unchanged as `RequestBody.payload`. At most 1 MiB of canonical JSON. |
+| `system`, `messages`, `sampling` | Sent as written. `system` is at most 1,048,576 UTF-16 code units. Only `user` and `assistant` messages are allowed; an assistant message carries no `toolCalls` and a `tool_result` block is refused. An image needs a target model record whose `input` list includes `image`. |
+| `payload` | Structured JSON handed to the adapter unchanged as `RequestBody.payload`. Plain JSON data only: at most 1 MiB of canonical JSON, nested at most 32 levels deep, and no `Date` or class instance. A payload that breaks one of these is refused as `payload-size`. |
 | `output` | `'json'` makes Core parse the returned text into `result.json`. Default `'text'`. |
 | `invocationId` | Stable id; the effect id is `side:<invocationId>`. Matches `/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,122}$/` and must not look like a credential. Core generates one when it is omitted. |
 
@@ -339,7 +339,7 @@ The built-in Jev adapter, registered as `typesafe-systemone`, declares `imageInp
 
 ### Results and errors
 
-`invoke` returns a result. Whatever the vendor, the clock or the caller can do to a call comes back as a status; `invoke` throws only for misuse, and then nothing was written.
+`invoke` returns a result. Whatever the vendor, the clock or the caller can do to a call comes back as a status; `invoke` throws only for misuse, and then nothing was written, except for `E_CLOSED`, which can also end a call that was already sent when the loop's scope is revoked; the replacement context reads that call back with `status`.
 
 | `status` | Meaning |
 | --- | --- |
@@ -350,14 +350,16 @@ The built-in Jev adapter, registered as `typesafe-systemone`, declares `imageInp
 
 `retryable` on a `failed` result is true for `deadline`, false for `cancelled` and `invalid-output`, and follows the adapter's own flag for `adapter-error`.
 
-Errors are thrown before anything is written, so a throw means nothing was recorded:
+Core may add statuses or reasons to `SideCallResult` in a later release, so treat an unknown one as an error instead of relying on an exhaustive `switch`.
 
-- `prepare` throws `E_ENVELOPE` (`detail.reason`: `label`, `deadline`, `payload-size`, `messages`, `image-input` or `invocation-id`) for an out-of-range option, and `E_MODEL_UNKNOWN` (`target-unknown`) when the target is not in the provider's catalog. Further `E_ENVELOPE` reasons: `output` (neither `'text'` nor `'json'`), `system` (not a string of at most 1 MiB) and `sampling` (a key or value outside the request schema's ranges).
-- `invoke` throws `E_ENVELOPE` (`signal`) when its signal is not an `AbortSignal`.
+Errors are thrown before anything is written, so a throw means nothing was recorded, with the one exception of `E_CLOSED` (see the list below):
+
+- `prepare` throws `E_ENVELOPE` (`detail.reason`: `label`, `deadline`, `payload-size`, `messages`, `image-input` or `invocation-id`) for an out-of-range option, and `E_MODEL_UNKNOWN` (`target-unknown`) when the target is not in the provider's catalog. `payload-size` also covers a payload nested deeper than 32 levels and one that is not plain JSON data, such as a `Date` or a class instance. Further `E_ENVELOPE` reasons: `output` (neither `'text'` nor `'json'`), `system` (not a string of at most 1,048,576 UTF-16 code units) and `sampling` (a key or value outside the request schema's ranges).
+- `invoke` throws `E_ENVELOPE` (`signal`) when its signal is not an `AbortSignal`. `status` throws `E_ENVELOPE` (`invocation-id`) for an id that does not match the invocation id pattern or looks like a credential.
 - `prepare` and `invoke` throw `E_RELATION` (`no-turn`) outside an open turn. `invoke` throws `E_RELATION` (`turn-closing`) only while a turn end that found calls in flight is waiting for them to settle; a call made after the turn has ended finds no turn and throws `no-turn`.
-- `invoke` throws `E_REQUEST_FROZEN` for a call prepared by another context or turn (`foreign`, `turn`) or when the catalog record or adapter identity changed after `prepare` (`target-changed`); `E_RELATION` when the `invocationId` already has a record with a different `requestHash` (`invocation-reused`) or is running in this process (`invocation-in-flight`); and `E_LANE_BUSY` (`CONTROL_PAUSED`) while the session is paused. After `E_LANE_BUSY` the prepared call is not consumed and can be invoked again.
-- Every method throws `E_CLOSED` once the session is closing or the loop's execution scope was revoked.
-- `ctx.events.finish` throws `E_RELATION` (`side-call-in-flight`) while a call is still unsettled. Calls may run concurrently within a turn; await them before you finish the turn.
+- `invoke` throws `E_REQUEST_FROZEN` for a call prepared by another context or turn (`foreign`, `turn`) or when the catalog record, the route's base URL or the adapter identity changed after `prepare` (`target-changed`); `E_RELATION` when the `invocationId` already has a record with a different `requestHash` (`invocation-reused`) or is running in this process (`invocation-in-flight`); and `E_LANE_BUSY` (`CONTROL_PAUSED`) while the session is paused. After `E_LANE_BUSY` the prepared call is not consumed and can be invoked again.
+- Every method throws `E_CLOSED` once the session is closing or the loop's execution scope was revoked. This is the one error that can arrive after a call was sent: when the scope is revoked while a call is in flight, Core still records the call (its intent, a late receipt and an estimated cost row), and the replacement context reads it back with `status`. Read it back before you decide to call again; a retry under a new id would pay for the call twice.
+- `ctx.events.finish` throws `E_RELATION` (`side-call-in-flight`) while a call is still unsettled, and `ctx.turn.endStep` throws `E_RELATION` with no `detail.reason` while a call is in flight. Calls may run concurrently within a turn; await them before you end the step or finish the turn.
 
 ### Invocation ids, the deadline and retries
 
@@ -370,6 +372,8 @@ Neither Core nor the adapter retries a side call. The loop owns that decision: c
 ### What the platform handles
 
 Every call that was sent leaves one cost row with purpose `side-call` that counts toward credit limits and budgets. It records the observed usage or, when the spend was not seen (a deadline, a cancellation, an adapter error without usage), an estimate priced from `prepare`. The ledger keeps digests and audit metadata such as the label, route, adapter and endpoint host, not the request content.
+
+Session and goal limits are checked between steps, so they do not stop several side calls made within one step. Before it sends, Core refuses a call only when its estimate is above the per-request cap or when a tree budget has no room left; the result is `refused` with reason `budget`. Once a per-request cap is set, a target with no catalog price is always refused, because its estimate cannot be shown to fit. A loop that makes several calls in one step should count or cap its own calls, or run under a tree budget.
 
 Revocation, a user Stop, session close and the end of the turn need no code in the loop. Each of them cuts a call that is still in flight and records it. A turn that ends while a call is in flight, for example because a step threw or the loop ended the turn as cancelled, waits up to five seconds for that record before it ends. If the loop's execution scope is revoked while a call is in flight, for example because the loop was replaced, Core closes the call with a late receipt and the old context's methods throw `E_CLOSED`. A replacement generation reads that record back with `status`. Treat `E_CLOSED` and a `cancelled` result as the end of the step.
 

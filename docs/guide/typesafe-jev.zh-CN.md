@@ -79,7 +79,7 @@ if (result.status === 'failed' && result.retryable) {
 return fallback()
 ```
 
-`payload` 上限 1 MiB，`deadlineMs` 范围 100–120000 毫秒（默认 10000），时限覆盖整次调用。完整契约见 `packages/extension-api/src/side-call.ts`，包括 `status` 以及 `unknown`、`refused` 两种结果。
+`payload` 上限 1 MiB，`deadlineMs` 范围 100–120000 毫秒（默认 10000），时限覆盖整次调用。完整契约见[循环的旁路模型调用](../develop/plugins.zh-CN.md#循环的旁路模型调用)，包括 `status` 以及 `unknown`、`refused` 两种结果。
 
 ## 限制
 

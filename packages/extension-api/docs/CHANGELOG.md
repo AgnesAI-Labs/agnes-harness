@@ -102,6 +102,14 @@ Every `agnes.plugins[].apiRange` and `@agnes/extension-api` dependency range mov
 - A message a loop supplies in `LoopRequestOptions.messages` is no longer served from the session's
   envelope memo: each request carries the text it was prepared with. Earlier, a later request in the
   same session could resend the text of the first.
+- When a usage event gives no `credits`, the AI facade takes them from the gateway's billing (a
+  `billing` of source `gateway` that is not a subscription) and reports the source `gateway`;
+  otherwise it prices the request from the catalog and reports `estimated`. An adapter's own
+  `creditSource` label is ignored unless the same event also gives `credits`, so an adapter that
+  prices a request itself sets both.
+- `timeoutMs.firstToken` and `timeoutMs.total` in the options a model adapter receives can be as low
+  as 100 ms (a side call's `deadlineMs` sets them), where they used to be at least 1000 ms. An adapter
+  must not assume a larger value.
 
 ### Added
 
@@ -162,6 +170,10 @@ Every `agnes.plugins[].apiRange` and `@agnes/extension-api` dependency range mov
   retry. It is a whole number up to one hour (a longer or invalid hint is dropped), recorded with the
   call, so `status` and a replay return it too. Core still never retries; the loop retries with a new
   `invocationId`.
+- `driveLoop` in `@agnes/plugin-runtime/testkit` (re-exported by `@agnes/host/author-testkit`) honours
+  the `announce` option of `tools.execute` and `tools.batch`: it first records the call, or the batch,
+  as one `assistant/message` event with `stopReason: 'tool_use'`, and passes the option on to the
+  test's tool port with each call. Replay is not simulated.
 
 ## 3.1.0
 
