@@ -60,6 +60,35 @@ describe('Hub authority, tasks and recovery', () => {
     expect((await request).outcome).toMatchObject({ status: 'interrupted', reason: 'stop' })
     expect(raceDispatch).not.toHaveBeenCalled()
   })
+  it('projects the resource holder as job/tool/caller and refuses manually disabled tool needs', async () => {
+    const { hub } = setup()
+    let finish!: () => void
+    const work = new Promise<null>((r) => {
+      finish = () => r(null)
+    })
+    attach(hub, {
+      result: work,
+      registration: {
+        ...description,
+        tools: (description.tools ?? []).map((tool) => ({ ...tool, needs: ['motors'] })),
+      },
+    })
+    try {
+      await hub.call('rover', 'move', { x: 1 }, invocation('holder'))
+      const busy = await hub.call('rover', 'move', { x: 1 }, invocation('busy'))
+      expect(busy.outcome).toMatchObject({
+        status: 'rejected',
+        reason: 'busy',
+        holder: { job: 'holder', tool: 'move', caller: 'agent' },
+      })
+      await hub.effect('configure', 'rover', { sources: { motors: { on: false } } }, invocation('source-off'))
+      const missing = await hub.call('rover', 'move', { x: 1 }, invocation('needs'))
+      expect(missing.outcome).toMatchObject({ status: 'rejected', reason: 'needs', needs: ['motors'] })
+    } finally {
+      finish()
+      await hub.shutdown()
+    }
+  })
   it('commits terminal and outbox together and retries notification with a stable bound identity', async () => {
     const { hub, store } = setup()
     await hub.journal.accept('rover', {}, invocation('long'))
@@ -395,7 +424,13 @@ describe('Hub source and world contracts', () => {
     expect((await hub.read('rover')).device.positionReason).toBe('odometry-disagreement')
     hub.observation('rover', 'pose', { map: 'site', x: 5, y: 1, yaw: 0, ok: false })
     expect((await hub.read('rover')).device.trust).toBe('uncertain')
-    now += 11_000
+    hub.observation('rover', 'pose', { map: 'site', x: 5, y: 1, yaw: 0, ok: true })
+    now += 3001
+    expect((await hub.read('rover')).device).toMatchObject({
+      trust: 'uncertain',
+      positionReason: 'stale-position',
+    })
+    now += 7000
     expect((await hub.read('rover')).device.trust).toBe('lost')
     await hub.shutdown()
   })

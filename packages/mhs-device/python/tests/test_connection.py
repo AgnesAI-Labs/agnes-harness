@@ -94,3 +94,15 @@ class ConnectionTests(unittest.IsolatedAsyncioTestCase):
                         await asyncio.wait_for(connect_device(device, f"ws://127.0.0.1:{server.sockets[0].getsockname()[1]}"), 2)
                     self.assertTrue(device.closed)
                     self.assertIsNone(device.clip("bad"))
+
+    async def test_refuses_mismatched_registration_reply(self):
+        async def handler(ws):
+            await ws.recv()
+            await ws.send(json.dumps({"jsonrpc": "2.0", "id": "unrelated", "result": {}}))
+            await ws.wait_closed()
+        device = Device({"protocol": "mhs/v1", "device": {"id": "refusal", "kind": "sensor"}})
+        async with serve(handler, "127.0.0.1", 0, subprotocols=["mhs.v1"]) as server:
+            from agnes_mhs import MhsError
+            with self.assertRaisesRegex(MhsError, "registration-refused"):
+                await asyncio.wait_for(connect_device(device, f"ws://127.0.0.1:{server.sockets[0].getsockname()[1]}"), 2)
+            self.assertTrue(device.closed)

@@ -98,7 +98,7 @@ it('runs the real Hub on the generic owned store/readiness and streams, parking 
         return {
           source: 'web',
           subjectCredential: credential,
-          grants: [{ extension: owner, name: 'mhs.lease', range: '*' }],
+          grants: ['mhs.lease', 'mhs.clip'].map((name) => ({ extension: owner, name, range: '*' })),
         }
       },
     },
@@ -112,17 +112,16 @@ it('runs the real Hub on the generic owned store/readiness and streams, parking 
   const broker = createPluginStreamBroker({
     authorize: createRosterStreamAuthorizer({
       async resolve(authenticated, request) {
-        const grant =
-          request.name === 'mhs.control'
-            ? await native.authorizeControl(
-                {
-                  extension: owner,
-                  service: 'mhs.lease',
-                  operationId: request.controlOperationId ?? 'missing',
-                },
-                credential,
-              )
-            : undefined
+        const grant = ['mhs.control', 'mhs.clip'].includes(request.name)
+          ? await native.authorizeControl(
+              {
+                extension: owner,
+                service: request.name === 'mhs.clip' ? 'mhs.clip' : 'mhs.lease',
+                operationId: request.controlOperationId ?? 'missing',
+              },
+              credential,
+            )
+          : undefined
         if (grant && JSON.stringify(grant.actor) !== JSON.stringify(authenticated.actor))
           throw new Error('actor-mismatch')
         return {

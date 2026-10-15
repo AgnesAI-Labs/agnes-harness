@@ -29,3 +29,5 @@
 音频通过独立的原生审批 `mhs.clip` 能力发送，绑定设备 revision、clip id、PCM16 采样率/声道、字节数与 SHA-256。二进制 stream 只可用一次，最多 1 MiB，30 秒过期；Stop、断线和替换撤销。South 有序发送 Nerve 头与 payload，并在 2 秒内等待 SDK 的 `mhs/clip-received`。`sent` 仅确认缓存，播放与工具完成另有回执。不支持 clip 的 reviewed producer bridge 会拒绝。
 
 音频上传使用有序 2 KiB 二进制分块，遵守现有 control 通道 4 KiB/每秒 30 帧合同；浏览器按 40 ms 间隔发送。Hub 按审批的 hash 聚合最多 1 MiB 后再发送给设备；部分、超量、过期和重复上传不能触发设备工具。
+
+资源拒绝回执通过 `holder.job` 标识占用操作，同时保留设备 call id、工具和展示用 caller 标签；声明 source 不可用时返回明确的 needs 拒绝。

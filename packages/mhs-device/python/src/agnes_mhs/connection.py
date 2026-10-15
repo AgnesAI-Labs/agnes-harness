@@ -22,7 +22,7 @@ async def connect_device(device, base):
                 await command.send(json.dumps({"jsonrpc": "2.0", "id": "register", "method": "mhs/register", "params": device.description}))
                 registered = json.loads(await asyncio.wait_for(command.recv(), 5))
                 validate_wire(registered, "commandResponse")
-                if "result" not in registered:
+                if registered.get("id") != "register" or not isinstance(registered.get("result"), dict):
                     raise MhsError("registration-refused")
                 async with connect(url("/ws/nerve"), subprotocols=["mhs.v1"], max_size=16 << 20, ping_interval=2, ping_timeout=3) as nerve:
                     await nerve.send(json.dumps({"type": "hello", "device": device.description["device"]["id"]}))

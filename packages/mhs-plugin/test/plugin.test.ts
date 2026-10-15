@@ -170,8 +170,15 @@ describe('MHS author adapters', () => {
       },
     )
     if (!context) throw new Error('context hook missing')
+    for (let n = 0; n < 40; n++)
+      hub.online({
+        ...link,
+        registration: { ...link.registration, device: { id: `context-${n}`, kind: 'sensor' } },
+      })
     const result = (await context()).additionalContext ?? ''
     expect(Buffer.byteLength(result)).toBeLessThanOrEqual(6000)
+    expect(result).not.toContain('context-39:')
+    expect(result).toContain('Use list_devices for more.')
     const deviceStart = result.indexOf('rover:')
     expect(deviceStart).toBeGreaterThan(result.indexOf('Map site'))
     expect(Buffer.byteLength(result.slice(0, deviceStart))).toBeLessThanOrEqual(3000)

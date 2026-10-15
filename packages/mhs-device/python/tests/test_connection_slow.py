@@ -43,3 +43,23 @@ class ConnectionTimingTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
+
+    async def test_execution_deadline_includes_time_queued_for_a_resource(self):
+        device = Device({"protocol": "mhs/v1", "device": {"id": "queued", "kind": "sensor"},
+            "resources": {"worker": "queue"}, "tools": [
+                {"name": "block", "description": "Hold worker", "timeout": 1, "uses": ["worker"], "inputSchema": {"type": "object"}},
+                {"name": "quick", "description": "Short deadline", "timeout": .02, "uses": ["worker"], "inputSchema": {"type": "object"}}]})
+        gate = asyncio.Event()
+        async def block(args, call):
+            await gate.wait()
+        async def quick(args, call):
+            return "must not start while queued"
+        device.tool("block", block).tool("quick", quick)
+        _, first = device.call("first", "block", {})
+        _, queued = device.call("queued", "quick", {})
+        try:
+            self.assertEqual(await queued, {"status": "error", "reason": "timeout"})
+        finally:
+            gate.set()
+            await first
+            await device.disconnect()

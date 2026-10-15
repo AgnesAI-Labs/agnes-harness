@@ -29,3 +29,5 @@ Fixed placement is trusted while available. Dynamic fixes become uncertain after
 Clip sending requires a separate native-approved `mhs.clip` capability bound to device revision, clip id, PCM16 rate/channels, byte count and SHA-256. The one-use binary stream accepts at most 1 MiB, expires after 30 seconds, and is revoked by Stop, disconnect or replacement. South sends the Nerve header and payload in order and waits up to 2 seconds for the SDK's `mhs/clip-received` notification. A `sent` receipt confirms caching, not playback or tool completion. Reviewed producer bridges without clip support refuse the operation.
 
 Clip uploads use ordered 2 KiB binary chunks on the existing 4 KiB/30-frame-per-second control contract. The browser paces chunks at 40 ms, and the Hub assembles at most 1 MiB under the approved hash before sending it to the device. Partial, excess, expired or repeated uploads cannot trigger a device tool.
+
+Resource refusal receipts expose the holding operation as `holder.job`, alongside the device call id, tool and descriptive caller label; unavailable declared source needs remain a typed refusal.

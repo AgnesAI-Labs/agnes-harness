@@ -489,6 +489,9 @@ export class Hub implements SouthEvents {
         .then(async (outcome) => {
           await this.journal.finish(invocation.operationId, {
             ...outcome,
+            ...(outcome.holder && 'call' in outcome.holder
+              ? { holder: { ...outcome.holder, job: outcome.holder.call } }
+              : {}),
             ...(notes.length ? { notes } : {}),
           })
           this.emit({ type: 'terminal', operationId: invocation.operationId })
@@ -511,7 +514,9 @@ export class Hub implements SouthEvents {
         : await this.journal.finish(invocation.operationId, {
             status: 'rejected',
             reason: call.reason ?? 'invalid',
-            ...(call.holder ? { holder: call.holder } : {}),
+            ...(call.holder
+              ? { holder: 'call' in call.holder ? { ...call.holder, job: call.holder.call } : call.holder }
+              : {}),
             ...(call.needs ? { needs: call.needs } : {}),
           })
     } catch {
