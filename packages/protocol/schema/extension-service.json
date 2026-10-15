@@ -8,14 +8,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "name",
-            "kind",
-            "inputSchema",
-            "outputSchema",
-            "timeoutMs",
-            "maxResultBytes"
-          ],
+          "required": ["name", "kind", "inputSchema", "outputSchema", "timeoutMs", "maxResultBytes"],
           "properties": {
             "name": {
               "type": "string",
@@ -23,10 +16,7 @@
               "maxLength": 128
             },
             "kind": {
-              "enum": [
-                "query",
-                "effect"
-              ]
+              "enum": ["query", "effect"]
             },
             "inputSchema": {
               "$ref": "tooldef.json#/$defs/ParametersSchema"
@@ -51,21 +41,12 @@
               "const": "session"
             },
             "priority": {
-              "enum": [
-                "normal",
-                "urgent"
-              ]
+              "enum": ["normal", "urgent"]
             },
             "effectPolicy": {
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "isDestructive",
-                "isOpenWorld",
-                "replay",
-                "requiresApproval",
-                "approvalScopes"
-              ],
+              "required": ["isDestructive", "isOpenWorld", "replay", "requiresApproval", "approvalScopes"],
               "properties": {
                 "isDestructive": {
                   "type": "boolean"
@@ -74,17 +55,10 @@
                   "type": "boolean"
                 },
                 "replay": {
-                  "enum": [
-                    "never",
-                    "idempotent"
-                  ]
+                  "enum": ["never", "idempotent"]
                 },
                 "requiresApproval": {
-                  "enum": [
-                    "never",
-                    "destructive",
-                    "always"
-                  ]
+                  "enum": ["never", "destructive", "always"]
                 },
                 "approvalScopes": {
                   "type": "array",
@@ -107,15 +81,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "name",
-            "kind",
-            "inputSchema",
-            "outputSchema",
-            "timeoutMs",
-            "maxResultBytes",
-            "scope"
-          ],
+          "required": ["name", "kind", "inputSchema", "outputSchema", "timeoutMs", "maxResultBytes", "scope"],
           "properties": {
             "name": {
               "type": "string",
@@ -148,21 +114,12 @@
               "const": "profile"
             },
             "priority": {
-              "enum": [
-                "normal",
-                "urgent"
-              ]
+              "enum": ["normal", "urgent"]
             },
             "effectPolicy": {
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "isDestructive",
-                "isOpenWorld",
-                "replay",
-                "requiresApproval",
-                "approvalScopes"
-              ],
+              "required": ["isDestructive", "isOpenWorld", "replay", "requiresApproval", "approvalScopes"],
               "properties": {
                 "isDestructive": {
                   "type": "boolean"
@@ -171,17 +128,10 @@
                   "type": "boolean"
                 },
                 "replay": {
-                  "enum": [
-                    "never",
-                    "idempotent"
-                  ]
+                  "enum": ["never", "idempotent"]
                 },
                 "requiresApproval": {
-                  "enum": [
-                    "never",
-                    "destructive",
-                    "always"
-                  ]
+                  "enum": ["never", "destructive", "always"]
                 },
                 "approvalScopes": {
                   "type": "array",
@@ -246,21 +196,12 @@
               "const": "profile"
             },
             "priority": {
-              "enum": [
-                "normal",
-                "urgent"
-              ]
+              "enum": ["normal", "urgent"]
             },
             "effectPolicy": {
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "isDestructive",
-                "isOpenWorld",
-                "replay",
-                "requiresApproval",
-                "approvalScopes"
-              ],
+              "required": ["isDestructive", "isOpenWorld", "replay", "requiresApproval", "approvalScopes"],
               "properties": {
                 "isDestructive": {
                   "type": "boolean"
@@ -269,17 +210,10 @@
                   "type": "boolean"
                 },
                 "replay": {
-                  "enum": [
-                    "never",
-                    "idempotent"
-                  ]
+                  "enum": ["never", "idempotent"]
                 },
                 "requiresApproval": {
-                  "enum": [
-                    "never",
-                    "destructive",
-                    "always"
-                  ]
+                  "enum": ["never", "destructive", "always"]
                 },
                 "approvalScopes": {
                   "type": "array",
@@ -304,12 +238,7 @@
     "ExtensionCallParams": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "sessionId",
-        "extension",
-        "service",
-        "input"
-      ],
+      "required": ["sessionId", "extension", "service", "input"],
       "properties": {
         "sessionId": {
           "type": "string",
@@ -341,9 +270,7 @@
     "ExtensionCallResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "output"
-      ],
+      "required": ["output"],
       "properties": {
         "output": {
           "$ref": "session-v1.json#/$defs/JsonValue"
@@ -353,11 +280,7 @@
     "ExtensionAckParams": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "extension",
-        "service",
-        "commandId"
-      ],
+      "required": ["extension", "service", "commandId"],
       "properties": {
         "extension": {
           "type": "string",
@@ -380,11 +303,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "code",
-            "message",
-            "data"
-          ],
+          "required": ["code", "message", "data"],
           "properties": {
             "code": {
               "const": -32001
@@ -395,9 +314,7 @@
             "data": {
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "code"
-              ],
+              "required": ["code"],
               "properties": {
                 "code": {
                   "const": "OVERLOADED"
@@ -409,11 +326,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "code",
-            "message",
-            "data"
-          ],
+          "required": ["code", "message", "data"],
           "properties": {
             "code": {
               "const": -32006
@@ -424,9 +337,7 @@
             "data": {
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "code"
-              ],
+              "required": ["code"],
               "properties": {
                 "code": {
                   "const": "CAPABILITY_DENIED"
@@ -438,11 +349,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "code",
-            "message",
-            "data"
-          ],
+          "required": ["code", "message", "data"],
           "properties": {
             "code": {
               "const": -32602
@@ -453,9 +360,7 @@
             "data": {
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "code"
-              ],
+              "required": ["code"],
               "properties": {
                 "code": {
                   "const": "INVALID_PARAMS"
@@ -467,11 +372,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "code",
-            "message",
-            "data"
-          ],
+          "required": ["code", "message", "data"],
           "properties": {
             "code": {
               "const": -32011
@@ -482,9 +383,7 @@
             "data": {
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "code"
-              ],
+              "required": ["code"],
               "properties": {
                 "code": {
                   "const": "ID_CONFLICT"
@@ -496,11 +395,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "code",
-            "message",
-            "data"
-          ],
+          "required": ["code", "message", "data"],
           "properties": {
             "code": {
               "const": -32012
@@ -511,9 +406,7 @@
             "data": {
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "code"
-              ],
+              "required": ["code"],
               "properties": {
                 "code": {
                   "const": "REQUEST_TIMEOUT"
@@ -525,11 +418,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "code",
-            "message",
-            "data"
-          ],
+          "required": ["code", "message", "data"],
           "properties": {
             "code": {
               "const": -32603
@@ -540,15 +429,10 @@
             "data": {
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "code"
-              ],
+              "required": ["code"],
               "properties": {
                 "code": {
-                  "enum": [
-                    "INTERNAL_ERROR",
-                    "E_WORKSPACE_REQUIRED"
-                  ]
+                  "enum": ["INTERNAL_ERROR", "E_WORKSPACE_REQUIRED"]
                 }
               }
             }
@@ -557,11 +441,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "code",
-            "message",
-            "data"
-          ],
+          "required": ["code", "message", "data"],
           "properties": {
             "code": {
               "const": -32013
@@ -572,9 +452,7 @@
             "data": {
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "code"
-              ],
+              "required": ["code"],
               "properties": {
                 "code": {
                   "const": "OUTCOME_UNKNOWN"
@@ -588,13 +466,7 @@
     "ServiceEffectPolicy": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "isDestructive",
-        "isOpenWorld",
-        "replay",
-        "requiresApproval",
-        "approvalScopes"
-      ],
+      "required": ["isDestructive", "isOpenWorld", "replay", "requiresApproval", "approvalScopes"],
       "properties": {
         "isDestructive": {
           "type": "boolean"
@@ -603,17 +475,10 @@
           "type": "boolean"
         },
         "replay": {
-          "enum": [
-            "never",
-            "idempotent"
-          ]
+          "enum": ["never", "idempotent"]
         },
         "requiresApproval": {
-          "enum": [
-            "never",
-            "destructive",
-            "always"
-          ]
+          "enum": ["never", "destructive", "always"]
         },
         "approvalScopes": {
           "type": "array",
@@ -629,11 +494,7 @@
     "ProfileServiceCallParams": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "extension",
-        "service",
-        "input"
-      ],
+      "required": ["extension", "service", "input"],
       "properties": {
         "extension": {
           "type": "string",
@@ -666,11 +527,7 @@
     "ProfileServiceOperationParams": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "extension",
-        "service",
-        "operationId"
-      ],
+      "required": ["extension", "service", "operationId"],
       "properties": {
         "extension": {
           "type": "string",
@@ -691,20 +548,10 @@
     "ProfileServiceReceipt": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "state",
-        "operationId"
-      ],
+      "required": ["state", "operationId"],
       "properties": {
         "state": {
-          "enum": [
-            "approval-required",
-            "running",
-            "completed",
-            "refused",
-            "cancelled",
-            "unknown"
-          ]
+          "enum": ["approval-required", "running", "completed", "refused", "cancelled", "unknown"]
         },
         "operationId": {
           "type": "string",
@@ -724,10 +571,7 @@
         "controlGrant": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "grantId",
-            "expiresAt"
-          ],
+          "required": ["grantId", "expiresAt"],
           "properties": {
             "grantId": {
               "type": "string",
@@ -762,9 +606,7 @@
     "ProfileDecisionsListResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "decisions"
-      ],
+      "required": ["decisions"],
       "properties": {
         "decisions": {
           "type": "array",
@@ -778,12 +620,7 @@
     "ProfileDecisionAnswerParams": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "handle",
-        "revision",
-        "commandId",
-        "response"
-      ],
+      "required": ["handle", "revision", "commandId", "response"],
       "properties": {
         "handle": {
           "$ref": "session-v1.json#/$defs/DecisionHandle"
@@ -816,9 +653,7 @@
               "maxLength": 256
             }
           },
-          "required": [
-            "bindingId"
-          ]
+          "required": ["bindingId"]
         },
         "idempotencyKey": {
           "type": "string",
@@ -842,23 +677,13 @@
               "$ref": "session-v1.json#/$defs/JsonValue"
             }
           },
-          "required": [
-            "name",
-            "summary"
-          ]
+          "required": ["name", "summary"]
         },
         "delivery": {
-          "enum": [
-            "next-turn",
-            "follow-steer"
-          ]
+          "enum": ["next-turn", "follow-steer"]
         }
       },
-      "required": [
-        "target",
-        "idempotencyKey",
-        "event"
-      ]
+      "required": ["target", "idempotencyKey", "event"]
     },
     "BoundWakeReadParams": {
       "type": "object",
@@ -870,9 +695,7 @@
           "maxLength": 256
         }
       },
-      "required": [
-        "wakeId"
-      ]
+      "required": ["wakeId"]
     },
     "BoundWakeReceipt": {
       "type": "object",
@@ -884,11 +707,7 @@
           "maxLength": 256
         },
         "state": {
-          "enum": [
-            "queued",
-            "delivered",
-            "refused"
-          ]
+          "enum": ["queued", "delivered", "refused"]
         },
         "code": {
           "type": "string",
@@ -896,10 +715,7 @@
           "maxLength": 256
         }
       },
-      "required": [
-        "wakeId",
-        "state"
-      ]
+      "required": ["wakeId", "state"]
     },
     "ProfileDecisionAnswerResult": {
       "$ref": "session-v1.json#/$defs/DecisionCommandReceipt"

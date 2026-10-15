@@ -119,27 +119,16 @@
                           "$ref": "session-v1.json#/$defs/JsonValue"
                         }
                       },
-                      "required": [
-                        "name",
-                        "summary"
-                      ]
+                      "required": ["name", "summary"]
                     },
                     "delivery": {
-                      "enum": [
-                        "next-turn",
-                        "follow-steer"
-                      ]
+                      "enum": ["next-turn", "follow-steer"]
                     }
                   },
-                  "required": [
-                    "bindingId",
-                    "event"
-                  ]
+                  "required": ["bindingId", "event"]
                 }
               },
-              "required": [
-                "pluginNotification"
-              ]
+              "required": ["pluginNotification"]
             },
             {
               "type": "object",
