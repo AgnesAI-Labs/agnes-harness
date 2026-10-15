@@ -52,7 +52,10 @@ export function apply(ctx) {
           {
             connect: (device, signal) => {
               assertLive()
-              return access.connect(PACKAGE, device, signal)
+              const currentAccess = ctx.get('mhsExampleAccess', false)
+              if (typeof currentAccess?.connect !== 'function')
+                throw new Error('example-connection-unavailable')
+              return currentAccess.connect(PACKAGE, device, signal)
             },
           },
           typeof VideoEncoder !== 'undefined',

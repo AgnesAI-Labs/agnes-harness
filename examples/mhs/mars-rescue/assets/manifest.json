@@ -5,8 +5,8 @@
   "resources": [
     {
       "path": "client/generated/runtime.js",
-      "bytes": 138707,
-      "sha256": "692cb3f3bf7839054acdc8dbcbb6eec84fcbb6f996bb9666195bddad20a7d488",
+      "bytes": 138774,
+      "sha256": "6b4a4b0427298377f4f9ea0da790d66a81c38039fb74ae937afd32a65da4d305",
       "origin": "Agnes simulation, MHS device SDK and bundled TypeBox",
       "license": "Apache-2.0 AND MIT"
     },
@@ -19,8 +19,8 @@
     },
     {
       "path": "client/generated/cameras.js",
-      "bytes": 12511,
-      "sha256": "43c9e00bad980e44bfae56fcbb69cd5e9dd2527a570222bbe3d679f3d87fb1a2",
+      "bytes": 12499,
+      "sha256": "87be5346b3c86d0340a7b3946e466a4c49fe485cf07a9046995e1ff1d4cb5a18",
       "origin": "Project-authored procedural Mars scene",
       "license": "Apache-2.0"
     }

@@ -82,6 +82,7 @@ describe('Mars base simulation', () => {
     await run(sim, 'lab-01', 'unload_rover')
     await run(sim, 'lab-01', 'analyze', { sample: 'rock-1' })
     await run(sim, 'comms-01', 'point', { target: 'earth' })
+    expect(await run(sim, 'comms-01', 'send', { report: '' })).toMatchObject({ status: 'error' })
     const report = String(sim.state('lab-01').last_result)
     expect(await run(sim, 'comms-01', 'send', { report })).toMatchObject({ status: 'done' })
     expect(sim.state('comms-01').last_report).toContain('synthetic')

@@ -259,6 +259,7 @@ export class MarsSimulation {
         d.update({ target: args.target!, link: true })
         break
       case 'send':
+        if (typeof args.report !== 'string' || !args.report.trim()) throw new Error('empty-report')
         if (!state.link || !state.window) throw new Error('no-link-window')
         d.update({ last_report: args.report! })
         break

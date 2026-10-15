@@ -72,7 +72,7 @@ export const TOOLS: Partial<Record<DeviceId, DeviceTool[]>> = {
   ],
   'comms-01': [
     tool('point', { target: choice('earth', 'orbiter') }, true),
-    tool('send', { report: { type: 'string', minLength: 1, maxLength: 4096 } }),
+    tool('send', { report: { type: 'string', maxLength: 4096 } }),
   ],
   'cam-base': [
     tool('look_at', { preset: choice('overview', 'field', 'dock', 'pad') }, true),
