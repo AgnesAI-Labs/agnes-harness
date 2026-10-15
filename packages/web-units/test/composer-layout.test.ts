@@ -248,7 +248,13 @@ it('opens files directly without changing the draft on cancel and still accepts 
     if (!add || !fileInput) throw new Error('missing upload control')
     const choose = vi.spyOn(fileInput, 'click').mockImplementation(() => {})
     expect(add.getAttribute('aria-label')).toBe('上传文件')
-    expect(add.title).toBe('上传文件')
+    expect(add.title).toBe('')
+    await act(async () => add.focus())
+    await vi.waitFor(() =>
+      expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(
+        host.querySelector('#composer-image-hint')?.textContent,
+      ),
+    )
     expect(add.hasAttribute('aria-haspopup')).toBe(false)
     expect(add.hasAttribute('aria-expanded')).toBe(false)
     add.click()
