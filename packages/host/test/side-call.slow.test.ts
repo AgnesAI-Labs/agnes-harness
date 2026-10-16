@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto'
 import { closeSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import { getApiKeyProvider } from '@agnes/ai'
 import {
   assertLoopbackOnly,
   type FakeSystemOne,
@@ -35,12 +37,16 @@ import {
   type SideCallResult,
   type SideCallStatus,
 } from '@agnes/extension-api'
+import type { RuntimeProfileManifest } from '@agnes/host-common/profile/types'
+import { createCredentialStore } from '@agnes/host-infrastructure/adapters/credential-store'
+import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
 import { defaultLoopFactory } from '@agnes/loop-default'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import type { JsonValue, RequestBody, RouteDecl } from '@agnes/protocol'
 import { createPrivateDirectorySync, createPrivateFileSync } from '@agnes/system-node'
 import { Type } from '@sinclair/typebox'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { payloadOnlyRoutes } from '../src/index.js'
 import type { HostSession } from '../src/runtime/lifecycle/host.js'
 import type { SessionRecovery } from '../src/runtime/sessions/session.js'
 import { createTestHost } from '../testkit/index.js'
@@ -1472,6 +1478,8 @@ type JevBoot = {
   mainContextWindow?: number
   /** A per-request credit cap, which makes Core run its budget preflight before every model step. */
   perRequestCap?: number
+  /** Wins over the default user layer: the configuration overlay becomes the whole account layer. */
+  userLayer?: RuntimeProfileManifest
 }
 
 /** One process: a real host whose profile declares the Jev route first and the conversation route second. */
@@ -1507,7 +1515,7 @@ async function bootJev(dataDir: string, fake: FakeSystemOne, o: JevBoot) {
       },
     },
     profileInputs: {
-      user: {
+      user: o.userLayer ?? {
         name: 'local-dev',
         provider: {
           package: '@agnes/ai',
@@ -2366,6 +2374,103 @@ describe('side model calls through the built-in typesafe-systemone adapter', () 
         expect(violations(await rowsOf(t.session))).toEqual([])
       } finally {
         await t.kit.host.close()
+      }
+    })
+  })
+
+  describe('a route saved through the configuration service', () => {
+    it('serves side calls from the saved account and stays out of every conversation surface', async () => {
+      const fake = await startJev({ answers: CONFIDENT })
+      const dataDir = scratch()
+      const openai = getApiKeyProvider('openai')
+      if (!openai) throw new Error('openai registry entry missing')
+      const chatModel = (await openai.createAdapter()).models('openai')[0]?.id
+      if (!chatModel) throw new Error('openai catalogue is empty')
+      // The chat account's save probe asks the provider's models endpoint; a loopback stand-in serves it.
+      const server = createServer((request, response) => {
+        if (request.url !== '/v1/models') {
+          response.writeHead(404)
+          response.end()
+          return
+        }
+        response.writeHead(200, { 'content-type': 'application/json' })
+        response.end(JSON.stringify({ object: 'list', data: [{ id: chatModel }] }))
+      })
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+      const address = server.address()
+      if (address === null || typeof address === 'string') throw new Error('fixture did not bind')
+      try {
+        // The two accounts the settings page saves: one chat account, then the payload-only entry.
+        const credentialRef = 'secret://generic/11111111-1111-4111-8111-111111111111'
+        await createCredentialStore({ root: dataDir }).putGeneric(credentialRef, JEV_KEY, {
+          label: 'Jev',
+          createdAt: '2026-10-16T00:00:00.000Z',
+        })
+        const configuration = createConfigurationService({ home: dataDir, profile: 'local-dev' })
+        const chat = await configuration.save({
+          providerId: 'openai',
+          accountId: 'chat',
+          label: 'Chat',
+          baseUrl: `http://127.0.0.1:${address.port}/v1`,
+          apiKey: 'sk-test-value',
+          model: chatModel,
+          expectedRevision: 0,
+        })
+        await configuration.save({
+          providerId: 'typesafe-systemone',
+          accountId: 'jev',
+          label: 'Jev',
+          baseUrl: fake.url,
+          credentialRef,
+          model: JEV.model,
+          models: [
+            {
+              id: JEV.model,
+              name: 'Jev 1.13 (2026-09-17)',
+              contextWindow: 64000,
+              maxTokens: 32768,
+              cost: { input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0 },
+            },
+          ],
+          expectedRevision: chat.revision,
+        })
+        expect(chat.defaultAccountId).toBe('chat')
+        // The automatic fast slot follows the chat account; the saved payload-only route is never in it.
+        expect((await configuration.modelSlots()).auto?.fast?.route).toBe('account-chat')
+        const overlay = await configuration.profileInput()
+        expect(overlay.provider?.routes?.map((row) => row.route)).toEqual(['account-chat', 'account-jev'])
+
+        const results: SideCallResult[] = []
+        const kit = await bootJev(dataDir, fake, {
+          loop: decidingLoop(
+            askBeforeReply(results, () => ({ target: { route: 'account-jev', model: JEV.model } })),
+          ),
+          // Production applies the configuration overlay over the user layer; the user file is empty here.
+          userLayer: { name: 'local-dev', ...overlay },
+        })
+        try {
+          const session = await kit.open('configured-side')
+          expect(session.preset.model.route.primary).toBe('account-chat')
+          expect(Object.values(session.preset.model.route)).not.toContain('account-jev')
+          const choices = (await session.d.children.models?.())?.map((model) => model.selector) ?? []
+          expect(choices.filter((selector) => selector.startsWith('account-jev/'))).toEqual([])
+          expect(choices).toContain(`account-chat/${chatModel}`)
+          expect(
+            payloadOnlyRoutes(kit.host.modelAdapterCatalog(), kit.host.profile.provider.routes ?? []),
+          ).toEqual(new Set(['account-jev']))
+          expect((await runTurn(session)).reason).toBe('completed')
+          expect(results.map((result) => result.status)).toEqual(['ok'])
+          expect(fake.seen.map((seen) => [seen.path, seen.authorization])).toEqual([
+            ['/v1/systemone', `Bearer ${JEV_KEY}`],
+          ])
+          const rows = await rowsOf(session)
+          expect(conversationCosts(rows)).toEqual([])
+          expect(violations(rows)).toEqual([])
+        } finally {
+          await kit.host.close()
+        }
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()))
       }
     })
   })
