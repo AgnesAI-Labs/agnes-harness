@@ -1211,7 +1211,7 @@ describe('web session selection', () => {
     control('model').click()
   }, 20_000)
 
-  it('refreshes saved catalogs and rejects a late catalog after the user starts a draft', async () => {
+  it('scopes saved catalogs to drafts and rejects late catalogs from earlier drafts', async () => {
     installPublicFixture()
     const old = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
     const apis = vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } }))
@@ -1238,7 +1238,7 @@ describe('web session selection', () => {
       'fetch',
       vi.fn<typeof fetch>(async (url) => {
         if (url === '/admin/api/loops') {
-          if (++loopReads === 1) return stale.promise
+          if (++loopReads === 2) return stale.promise
           return Response.json({ revision: 2, defaults: { preset: 'full-access' }, loops: [] })
         }
         if (url === '/admin/api/model-adapters') return Response.json({ modelAdapters: [] })
@@ -1257,14 +1257,25 @@ describe('web session selection', () => {
         return Response.json({ available: false })
       }),
     )
+    const newButton = () => document.getElementById('new') as HTMLButtonElement
     window.dispatchEvent(new CustomEvent('agnes:session-configuration-changed'))
+    await vi.waitFor(() => expect(apis).toHaveBeenCalledTimes(2))
+    expect(loopReads).toBe(0)
+    newButton().click()
     await vi.waitFor(() => expect(loopReads).toBe(1))
-    document.getElementById('new')?.click()
+    await vi.waitFor(() => expect(newButton().disabled).toBe(false))
+    const workspaceDialog = document.getElementById('new-session') as HTMLDialogElement
+    workspaceDialog.dispatchEvent(new Event('cancel', { cancelable: true }))
+    window.dispatchEvent(new CustomEvent('agnes:session-configuration-changed'))
+    await vi.waitFor(() => expect(loopReads).toBe(2))
+    newButton().click()
+    await vi.waitFor(() => expect(loopReads).toBe(3))
+    await vi.waitFor(() => expect(newButton().disabled).toBe(false))
     await vi.waitFor(() =>
       expect(document.querySelector('[data-permission-label]')?.textContent).toBe('完全访问'),
     )
     stale.resolve(Response.json({ revision: 1, defaults: { preset: 'read-only' }, loops: [] }))
-    await vi.waitFor(() => expect(apis).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(apis).toHaveBeenCalledTimes(3))
     expect(document.querySelector('[data-permission-label]')?.textContent).toBe('完全访问')
   })
 
