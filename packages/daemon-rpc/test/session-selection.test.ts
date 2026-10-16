@@ -6,7 +6,7 @@ import {
   localWebSkinReadAuthority,
 } from '@agnes/daemon-admin/packages/permissions'
 import { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
-import { createConfigurationService, type Host } from '@agnes/host'
+import { createConfigurationService, createCredentialStore, type Host } from '@agnes/host'
 import { expect, it } from 'vitest'
 import {
   hostSessionCatalog,
@@ -183,6 +183,80 @@ it('lists a payload-only adapter without models and refuses its models as the de
     expect(await configuration.sessionDefaults()).toEqual({ revision: 0, defaults: {} })
     // A mixed adapter takes messages too, so its model stays selectable.
     expect(await save('mixed', 'mixed-1')).toMatchObject({ result: { revision: 1 } })
+  } finally {
+    await ep.close()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+it('projects no conversation models for the route a saved configuration account produced', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'agnes-selection-'))
+  const configuration = createConfigurationService({ home, profile: 'local-dev' })
+  const credentialRef = 'secret://generic/11111111-1111-4111-8111-111111111111'
+  await createCredentialStore({ root: home }).putGeneric(credentialRef, 'jev-test-key', {
+    label: 'Jev',
+    createdAt: '2026-10-16T00:00:00.000Z',
+  })
+  await configuration.save({
+    providerId: 'typesafe-systemone',
+    accountId: 'jev',
+    label: 'Jev',
+    credentialRef,
+    model: 'typesafe/jev-1.13-20260917',
+    models: [{ id: 'typesafe/jev-1.13-20260917', name: 'Jev 1.13', contextWindow: 65536, maxTokens: 32768 }],
+    expectedRevision: 0,
+  })
+  const generated = (await configuration.profileInput()).provider?.routes ?? []
+  expect(generated.map((decl) => [decl.route, decl.api])).toEqual([['account-jev', 'typesafe-systemone']])
+  const entry = (id: string, wireApi: string, capabilities: Record<string, boolean>) => ({
+    id,
+    version: '1.0.0',
+    wireApi,
+    sourcePackage: '@acme/adapter',
+    capabilities: { imageInput: false, tools: false, streaming: false, ...capabilities },
+  })
+  const jev = entry('typesafe-systemone', 'typesafe-systemone', { payload: true, payloadOnly: true })
+  const chat = entry('chat', 'chat-wire', { tools: true, streaming: true })
+  const host = {
+    profile: {
+      presets: { default: 'standard', allowed: ['standard'] },
+      provider: { routes: [...generated, { route: 'chat-route', api: 'chat' }] },
+    },
+    kernel: { loops: { catalog: () => [] } },
+    modelAdapterCatalog: () => [chat, jev],
+    provider: {
+      models: () => [
+        { id: 'typesafe/jev-1.13-20260917', route: 'account-jev', api: 'typesafe-systemone' },
+        { id: 'chat-1', route: 'chat-route', api: 'chat-wire' },
+      ],
+    },
+  } as unknown as Host
+  const service = sessionSelectionProvider(configuration, () => hostSessionCatalog(host))
+  const ep = new LocalEndpoint({ clock: Date.now, principalId: 'owner' })
+  ep.conn.initialized = true
+  ep.conn.authKind = 'local'
+  ep.conn.credentialKind = 'local'
+  registerSessionSelection(ep, service, localPackageAdminAuthority())
+  const request = (method: string, params: unknown = {}) =>
+    ep.handle({ jsonrpc: '2.0', id: 1, method: `_agnes/v1/sessionSelection.${method}`, params })
+  try {
+    expect(await request('modelAdapters')).toMatchObject({
+      result: {
+        modelAdapters: [
+          { ...chat, models: [{ id: 'chat-1', route: 'chat-route' }] },
+          { ...jev, models: [] },
+        ],
+      },
+    })
+    expect(
+      await request('defaults.save', {
+        revision: 0,
+        defaults: {
+          providers: { 'model-adapter': { provider: 'typesafe-systemone', version: '1.0.0' } },
+          model: 'typesafe/jev-1.13-20260917',
+        },
+      }),
+    ).toMatchObject({ error: { data: { reason: 'CONFIG_MODEL_UNAVAILABLE' } } })
   } finally {
     await ep.close()
     await rm(home, { recursive: true, force: true })

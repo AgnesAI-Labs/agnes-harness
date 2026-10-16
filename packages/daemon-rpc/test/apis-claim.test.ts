@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fakeModel, ScriptedProvider } from '@agnes/ai/testkit'
 import { MemoryClaims } from '@agnes/daemon-foundation/local/ports'
+import { createConfigurationService, createCredentialStore } from '@agnes/host'
 import { createTestHost } from '@agnes/host/testkit'
 import { type ApisListResult, METHODS, userImagePolicy, validateAgainst } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
@@ -276,6 +277,70 @@ describe('apis.list / auth.claim', () => {
 
     it('omits a model served by the built-in payload-only adapter', async () => {
       expect(await listed()).toEqual(['gw/m1'])
+    })
+
+    it('omits the model on a route a saved configuration account produced', async () => {
+      const home = mkdtempSync(join(tmpdir(), 'agnes-apis-'))
+      try {
+        const configuration = createConfigurationService({ home, profile: 'local-dev' })
+        const credentialRef = 'secret://generic/11111111-1111-4111-8111-111111111111'
+        await createCredentialStore({ root: home }).putGeneric(credentialRef, 'jev-test-key', {
+          label: 'Jev',
+          createdAt: '2026-10-16T00:00:00.000Z',
+        })
+        await configuration.save({
+          providerId: 'typesafe-systemone',
+          accountId: 'jev',
+          label: 'Jev',
+          credentialRef,
+          model: jevModel.id,
+          models: [{ id: jevModel.id, name: 'Jev 1.13', contextWindow: 65536, maxTokens: 32768 }],
+          expectedRevision: 0,
+        })
+        const generated = (await configuration.profileInput()).provider?.routes ?? []
+        expect(generated.map((decl) => [decl.route, decl.api])).toEqual([
+          ['account-jev', 'typesafe-systemone'],
+        ])
+        const savedModel = fakeModel({ ...jevModel, route: 'account-jev' })
+        const h = await openTestHost({
+          provider: new ScriptedProvider({ scripts: [say('hello')], models: [chatModel, savedModel] }),
+          profileInputs: {
+            user: {
+              name: 'local-dev',
+              provider: {
+                package: '@agnes/ai',
+                routes: [
+                  {
+                    route: 'gw',
+                    api: 'openai-completions',
+                    baseUrl: 'http://127.0.0.1:1/v1',
+                    models: [chatModel],
+                  },
+                  ...generated,
+                ],
+              },
+            },
+          },
+        })
+        const ep = createLocalEndpoint(h.host, { clock: () => Date.now(), workspaces: h.workspaces })
+        try {
+          await ep.handle(init)
+          const r = (await ep.handle({
+            jsonrpc: '2.0',
+            id: 2,
+            method: '_agnes/v1/apis.list',
+            params: {},
+          })) as { result: ApisListResult }
+          expect((r.result.profile.models ?? []).map((model) => `${model.route}/${model.id}`)).toEqual([
+            'gw/m1',
+          ])
+        } finally {
+          await ep.close()
+          await h.close()
+        }
+      } finally {
+        rmSync(home, { recursive: true, force: true })
+      }
     })
 
     it('keeps the models of an adapter that takes a payload and messages', async () => {
