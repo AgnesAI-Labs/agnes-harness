@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { createExamplePackages } from '@agnes/daemon/packages'
-import type { PackageOperationReceipt, RuntimeAdminSnapshot } from '@agnes/protocol'
+import type { PackageOperationReceipt } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk'
 import type { LocalBackend } from './backend.js'
 
@@ -176,9 +176,11 @@ export function localClientExamples(
           }
         },
         async validateLaunch(example, launch) {
-          const runtime = await client.call<RuntimeAdminSnapshot>('_agnes/v1/sessionSelection.runtime', {})
+          // An explicit example launch selects its own installed bundle; the default Host need
+          // not have that bundle active. The catalog still binds it to this exact package.
+          const bundles = await client.request('_agnes/v1/admin.bundles.get', {})
           if (
-            !runtime.bundles?.some(
+            !bundles.catalog?.some(
               (bundle) => bundle.id === launch.bundle && bundle.sourcePackage === example.id,
             ) ||
             !example.presentation?.presets?.some(

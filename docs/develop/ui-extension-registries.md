@@ -33,6 +33,8 @@ Use `ConversationCardLayout` for the surface and `SettingsState` for feedback. C
 
 ### Home entries
 
+Declared primary profile entries keep a host-owned loading page while a runtime generation awaits activation or its backend revision. The old module and its authority are revoked immediately; a ready roster replaces the loading page. Disabled, removed or failed contributions lose the entry.
+
 `homeEntries` lists the pages a person opens from the home sidebar. A registration has `{ id, icon, titleKey, order, component }`, with optional `subtitleKey` (a quiet second label) and `badge`. Selecting the entry shows `component` as a full page in the main area in place of the conversation; the sidebar stays. The built-in Business agents, Plugins and Automation entries register through the same registry. Entries from plugins list after those three whatever `order` they declare, sorted by `order` then ID; more than three collapse into one “More” menu. Disposing the registration removes the entry, and a page that was showing returns to the conversation.
 
 ```tsx

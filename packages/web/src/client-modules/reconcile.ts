@@ -246,7 +246,25 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
       roster.modules.filter((mod) => !mod.intelligentComponents?.length).map((mod) => [rowKey(mod), mod]),
     )
     const blockedRows = migrateRosterAliases(roster.rowAliases, wanted)
-    navigation.retain(new Set([...wanted.keys()].filter((id) => !blockedRows.has(id))))
+    // A generation rebuild can withdraw executable rows before their replacement is ready.
+    // Keep only their host-owned declarations; old module authority is still revoked below.
+    const transitioning = new Set(
+      roster.statuses
+        .filter(
+          (status) =>
+            status.state === 'pending-activation' ||
+            (status.state === 'blocked' && status.reason === 'backend-revision-unavailable'),
+        )
+        .map((status) => status.packageId),
+    )
+    const suspended = new Set(
+      [...packages]
+        .filter(
+          ([id, state]) => !wanted.has(id) && !blockedRows.has(id) && transitioning.has(state.packageId),
+        )
+        .map(([id]) => id),
+    )
+    navigation.retain(new Set([...wanted.keys(), ...suspended].filter((id) => !blockedRows.has(id))))
     const waits: Promise<void>[] = []
     // 名册不再列出的包：dispose（级联撤销注册项）；模块记录本身驻留（B1）。
     for (const [rowId, state] of packages) {
@@ -257,6 +275,8 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
       ) {
         state.rosterPresent = false
         const removalEpoch = ++state.epoch
+        const previous = state.active ?? state.target
+        const declaration = previous && navigation.describe(previous)
         state.target = undefined
         state.cleanup = {
           fiber: state.cleanup.fiber ?? state.fiber,
@@ -272,6 +292,7 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
         try {
           const ownerRowId = registrationOwner(rowId, state)
           removeOwner(ownerRowId)
+          if (declaration && suspended.has(rowId)) navigation.prepare(rowId, declaration, () => {})
         } catch {
           console.warn('[client-modules] 名册撤回时回收模块注册项失败')
         }
@@ -301,6 +322,19 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
       if (blockedRows.has(rowId)) continue
       const state = stateOf(rowId)
       state.rosterPresent = true
+      const unchanged =
+        state.active?.revision === mod.revision &&
+        state.active.entryUrl === mod.entryUrl &&
+        JSON.stringify(state.active.binding) === JSON.stringify(mod.binding) &&
+        state.phase === 'active'
+      const pending =
+        state.target?.revision === mod.revision &&
+        state.target.entryUrl === mod.entryUrl &&
+        JSON.stringify(state.target.binding) === JSON.stringify(mod.binding) &&
+        (state.phase === 'loading' || state.phase === 'active')
+      const forced = reload?.packageId === mod.packageId && reload.revision === mod.revision
+      if (!forced && (unchanged || pending)) continue
+      const declaration = navigation.describe(mod)
       if (
         mod.binding &&
         state.active?.binding &&
@@ -314,25 +348,18 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
           revokeContributionOwner(registrationOwner(rowId, state))
         else updateContributionAvailability(registrationOwner(rowId, state), mod.binding)
       }
-      const unchanged =
-        state.active?.revision === mod.revision &&
-        state.active.entryUrl === mod.entryUrl &&
-        JSON.stringify(state.active.binding) === JSON.stringify(mod.binding) &&
-        state.phase === 'active'
-      const pending =
-        state.target?.revision === mod.revision &&
-        state.target.entryUrl === mod.entryUrl &&
-        JSON.stringify(state.target.binding) === JSON.stringify(mod.binding) &&
-        (state.phase === 'loading' || state.phase === 'active')
-      const forced = reload?.packageId === mod.packageId && reload.revision === mod.revision
-      if (!forced && (unchanged || pending)) continue
       try {
+        if (state.active) removeOwner(registrationOwner(rowId, state))
         if (
-          !state.active &&
           state.phase !== 'failed' &&
-          navigation.prepare(rowId, mod, () => {
-            void runDiff()
-          })
+          navigation.prepare(
+            rowId,
+            declaration,
+            () => {
+              void runDiff()
+            },
+            Boolean(state.active),
+          )
         )
           continue
       } catch {
