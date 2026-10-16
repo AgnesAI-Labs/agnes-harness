@@ -25,6 +25,8 @@
 }
 ```
 
+若客户端使用 `streams`，须在绑定后端行的 `capabilities.streams` 中逐一声明。检查与打包依据该行的能力进行校验；同包其他行的声明不能授权此客户端。stream 的 scope 变更需要重新作出信任决定。
+
 包声明见[package.json](../../examples/packages/client-panel/v1/package.json)，完整客户端描述见[agnes.client.json](../../examples/packages/client-panel/v1/extensions/main/agnes.client.json)。客户端 entry 相对于描述文件定位，是浏览器可执行的原生 ESM：
 
 ```js

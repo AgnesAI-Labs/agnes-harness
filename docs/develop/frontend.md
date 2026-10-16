@@ -29,6 +29,8 @@ The package declares a backend Cordis row with `agnes.plugins`, then binds a bro
 }
 ```
 
+If the client uses `streams`, declare each stream in the bound backend row's `capabilities.streams`. Inspection and packing validate against that row's capabilities; a sibling row's declarations do not authorize the client. Stream scope changes require a new trust decision.
+
 See [package.json](../../examples/packages/client-panel/v1/package.json) and the complete [agnes.client.json](../../examples/packages/client-panel/v1/extensions/main/agnes.client.json). The client entry is resolved relative to the descriptor and must be native ESM executable by the browser:
 
 ```js

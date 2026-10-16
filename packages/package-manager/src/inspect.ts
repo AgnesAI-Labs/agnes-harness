@@ -275,7 +275,9 @@ export function inspectVerifiedTree(
         version: pkg.version,
         apiRange: '*',
         entry: './index.mjs',
-        capabilities: { ui: true },
+        // Keep the descriptor binding's implicit UI marker, but validate every declared capability
+        // against this exact owner. Neither a sibling row nor the descriptor can supply authority.
+        capabilities: { ui: true, ...plugin.capabilities },
         contributes: {
           ...(descriptor.client === undefined ? {} : { client: descriptor.client }),
           ...(descriptor.skins === undefined ? {} : { skins: descriptor.skins }),
