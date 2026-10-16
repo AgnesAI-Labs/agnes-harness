@@ -6,7 +6,7 @@
 
 **流程：** 读取状态 → 检测异常 → 人工确认 → 受约束动作 → 回执与状态验证。
 
-受 MHS 启发，不宣称 MHS 兼容。dry_run 默认为 true：温度保持 38 °C，回执标为 preview-only。仅接受 20–30 的 targetC、新鲜 expectedVersion 和受约束幂等键。显式 dry_run:false 也只改变本地模拟状态；回执仅存于进程中。
+本地设备模拟。dry_run 默认为 true：温度保持 38 °C，回执标为 preview-only。仅接受 20–30 的 targetC、新鲜 expectedVersion 和受约束幂等键。显式 dry_run:false 也只改变本地模拟状态；回执仅存于进程中。
 
 ## 包含组件
 

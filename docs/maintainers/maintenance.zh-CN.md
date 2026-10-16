@@ -11,7 +11,6 @@
 - 先说明 AGH 能帮助使用者完成什么，并提供清晰的体验、开发与反馈入口。能力描述应能落到教程、实现或可复现证据。
 - 两份 README 和每组中英文文档在项目定位、支持范围、命令与协作政策上保持一致。
 - 描述具体场景，不使用缺乏依据的性能数字、客户案例或兼容性承诺。
-- MHS 方向与开放状态统一维护在[设备方向](../guide/mhs.zh-CN.md)。“即将开放”指 AGH 的接入指南与示例。
 - 第三方许可和归属保留在 LICENSE、NOTICE 与[许可边界](provenance.zh-CN.md)中。研究叙事、内部任务与写作参考不进入用户指南。
 
 ## 随代码更新
@@ -55,4 +54,4 @@ README 与架构说明共用[英文](../assets/architecture.svg)和[中文](../a
 
 ## README 演示素材
 
-[`docs/assets/readme/`](../assets/readme/) 中的横幅、动图与截图从本地实例录制，录制时使用隔离的 `AGH_HOME`、合成的示例工作区和已配置的模型；任何一帧都不得出现凭据、个人路径或客户数据。采用某次录制前，先核对画面中每个回答是否正确，字幕不超出指南与[已知限制](../reference/limitations.zh-CN.md)的表述。两个版本各有一套素材：英文 README 使用英文界面和英文提问录制的 `banner.png`、`hero.gif`、`plugins.gif`、`terminal.gif`、`trajectory.png`，中文 README 使用中文界面录制的 `*.zh-CN.*` 文件。界面或所演示的流程变化后，需要重新录制。动画介绍是渲染出的动态图形而不是录屏：英文 README 使用全英文文字的 `trailer.webp`，中文 README 使用中文版 `trailer.zh-CN.webp`。角色、支持状态或 FDE、MHS 表述变化时，两个版本需要与架构图一起更新，保持表述一致。
+[`docs/assets/readme/`](../assets/readme/) 中的横幅、动图与截图从本地实例录制，录制时使用隔离的 `AGH_HOME`、合成的示例工作区和已配置的模型；任何一帧都不得出现凭据、个人路径或客户数据。采用某次录制前，先核对画面中每个回答是否正确，字幕不超出指南与[已知限制](../reference/limitations.zh-CN.md)的表述。两个版本各有一套素材：英文 README 使用英文界面和英文提问录制的 `banner.png`、`hero.gif`、`plugins.gif`、`terminal.gif`、`trajectory.png`，中文 README 使用中文界面录制的 `*.zh-CN.*` 文件。界面或所演示的流程变化后，需要重新录制。

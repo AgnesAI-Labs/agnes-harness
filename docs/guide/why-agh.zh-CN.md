@@ -71,12 +71,6 @@ flowchart LR
 
 普通第三方插件运行在受信进程中；选择插件时需要审核其代码与来源。各机制的职责和平台适用范围见[安全与信任](security.zh-CN.md)。
 
-## 从数字业务走向设备现场
-
-AGH 计划探索 MHS（Model Hardware Standard）接入，将设备状态、人工确认和执行回执组织进任务流程，面向巡检、仪器协作和现场运维积累可复用的集成方式。
-
-[模拟设备 bundle](../../examples/fde/device-inspection/README.zh-CN.md) 已展示状态读取 → 异常判断 → 人工确认 → 受约束动作 → 回执验证。它受 MHS 启发，不宣称 MHS 兼容；接缝处于预览阶段，经过验证的硬件适配器仍待后续交付。 [了解设备接入方向 →](mhs.zh-CN.md)
-
 ## 带着你的问题开始
 
 - **先体验**：[三个示例](demo.zh-CN.md) → [首次运行](quickstart.zh-CN.md)。

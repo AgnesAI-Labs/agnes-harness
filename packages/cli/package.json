@@ -33,7 +33,6 @@
     "build:runtime": "tsx ../base/tools/package-isolation-runtime.ts --output dist/agnes-runtime",
     "build:sea": "node sea/build.mjs",
     "build:local": "tsx tools/build-local.ts",
-    "build:bundled-plugins": "tsx tools/build-bundled-plugins.ts",
     "pack:npx": "tsx ../../tools/release/pack-npx.ts",
     "dev:web": "tsx tools/web-local.ts",
     "start": "node dist/local/agnes.mjs",

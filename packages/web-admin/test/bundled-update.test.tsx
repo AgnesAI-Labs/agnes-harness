@@ -28,10 +28,10 @@ it.each(['en', 'zh-CN'])(
       document.body.append(dialog)
     }
     const installed: PackageInstalledDescriptor = {
-      id: '@agnes/mhs',
+      id: '@agnes/plugin-helper',
       version: '1.0.0',
       integrity: `sha256-${'a'.repeat(64)}`,
-      source: { type: 'file', ref: 'file:./bundled-plugins/mhs' },
+      source: { type: 'file', ref: 'file:./bundled-plugins/plugin-helper' },
       trusted: true,
       desired: 'enabled',
       actual: 'running',
@@ -73,7 +73,9 @@ it.each(['en', 'zh-CN'])(
       expect(page.availableBundledUpdate(installed)).toEqual(candidate)
       expect(bundledUpdate({ ...installed, integrity: candidate.integrity }, [candidate])).toBeUndefined()
       expect(
-        bundledUpdate({ ...installed, source: { type: 'file', ref: 'file:./custom-mhs' } }, [candidate]),
+        bundledUpdate({ ...installed, source: { type: 'file', ref: 'file:./custom-plugin-helper' } }, [
+          candidate,
+        ]),
       ).toBeUndefined()
       const view = page.viewContext()
       await act(async () =>

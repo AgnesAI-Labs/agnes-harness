@@ -76,7 +76,6 @@ Include only the minimum information needed. Conversations, complete databases, 
 pnpm install --frozen-lockfile
 pnpm --filter @agnes/host build:native
 pnpm --filter @agnes/system-node build:native
-pnpm --filter @agnes/cli build:bundled-plugins
 pnpm typecheck
 pnpm lint
 pnpm gen:check

@@ -6,7 +6,7 @@
 
 用 CLI 和 Web 跑通任务，用插件接入业务能力，用 Skills 积累方法，再为岗位打造自己的界面。从下面选择一条路径开始。
 
-[项目首页](../README.zh-CN.md) · [为什么选择 AGH](guide/why-agh.zh-CN.md) · [体验示例](guide/demo.zh-CN.md) · [设备接入（预览）](guide/mhs.zh-CN.md)
+[项目首页](../README.zh-CN.md) · [为什么选择 AGH](guide/why-agh.zh-CN.md) · [体验示例](guide/demo.zh-CN.md)
 
 
 [三个产品演示](guide/demos.zh-CN.md)
@@ -54,7 +54,7 @@
 
 ## 构建与深入了解
 
-- **场景与方法**：[FDE 与应用场景](guide/why-agh.zh-CN.md) · [MHS 与设备接入](guide/mhs.zh-CN.md)。
+- **场景与方法**：[FDE 与应用场景](guide/why-agh.zh-CN.md)。
 - **精确接口**：[命令参考](reference/cli.zh-CN.md) · [配置参考](reference/configuration.zh-CN.md) · [API 与 Schema](reference/api.zh-CN.md)。
 - **旁路模型调用**：[TypeSafe Jev 适配器](guide/typesafe-jev.zh-CN.md) · [编写循环插件](develop/plugins.zh-CN.md)。
 - **支持与反馈**：[支持范围](reference/limitations.zh-CN.md) · [反馈与开发协作](develop/contributing.zh-CN.md) · [安全报告](../SECURITY.md)。

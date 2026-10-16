@@ -296,28 +296,7 @@
       "path": "packages/core-ledger/tsconfig.testkit.json"
     },
     {
-      "path": "packages/mhs-device"
-    },
-    {
-      "path": "packages/mhs-hub"
-    },
-    {
-      "path": "packages/mhs-plugin"
-    },
-    {
-      "path": "packages/mhs-ui"
-    },
-    {
       "path": "packages/plugin-streams"
-    },
-    {
-      "path": "packages/mhs-plugin/tsconfig.test.json"
-    },
-    {
-      "path": "packages/mhs-device/tsconfig.test.json"
-    },
-    {
-      "path": "packages/mhs-hub/tsconfig.test.json"
     },
     {
       "path": "packages/batch"

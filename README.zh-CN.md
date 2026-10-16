@@ -36,10 +36,6 @@ AGH 是面向开发者与现场交付团队的开源开发者预览版。CLI、W
 
 截图使用当前界面与合成浏览器测试数据。可运行演示默认使用全新隔离 home 和确定性本地模型，不发送外部业务消息。只要持久会话仍引用旧代码，旧版本就会保留，包括闲置历史会话。
 
-观看原版火星救援演示：Agent 协调 11 台模拟设备，寻找宇航员并经气闸带回基地。视频展示旧版 Mars World；新版插件示例有自己的场景与集成限制，尚未完整复现视频中的全部功能。在已集成的 Host 中，按照[当前火星救援指南](docs/guide/mars-world.zh-CN.md)审核并启用本地示例，连接 11 台设备，再用支持图片和工具调用的模型尝试救援/采样任务，无需实体硬件。
-
-[![原版火星救援视频预览——点击在 YouTube 观看中文演示](docs/assets/readme/mars-rescue.zh-CN.svg)](https://youtu.be/QbmD2KVli5Y)
-
 <a id="new-product-clean-home"></a>
 
 ## 新产品与旧环境
@@ -78,7 +74,7 @@ node agnes.mjs serve
 - **受信代码：** 普通后端插件在进程内运行。能力审阅、来源校验、审批和命令/MCP 沙箱不隔离任意插件 JavaScript。
 - **预览发行：** 当前可从源码构建，没有公开 npm 发行、消费者安装程序或自动升级承诺。预览期间 API 与配置可能变化。
 - **平台：** macOS 和 Linux 已有持续维护的原生、进程与浏览器检查。Windows 尚未经完整端到端验收，也没有已验证的 L1 命令沙箱。Linux 暂不支持 Computer Use。
-- **实验能力：** Provider/Agent Loop API、子引擎、程序化 cell（尤其无状态 CPython）与 MHS 启发的设备接入需要按部署验证。设备示例是模拟器，不是认证硬件适配器。
+- **实验能力：** Provider/Agent Loop API、子引擎、程序化 cell（尤其无状态 CPython）需要按部署验证。
 
 [支持范围](docs/reference/limitations.zh-CN.md) · [安全](docs/guide/security.zh-CN.md) · [验证](docs/maintainers/verification.zh-CN.md) · [网络部署](docs/guide/deployment.zh-CN.md)
 

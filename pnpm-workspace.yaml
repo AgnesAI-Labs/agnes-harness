@@ -6,7 +6,6 @@ packages:
   - examples/loops/dag-loop
   - examples/loops/react-loop
   - examples/loops/plan-execute-loop
-  - examples/mhs/mars-rescue
   - examples/demos
   - examples/persistence
   - examples/sandbox/docker

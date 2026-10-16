@@ -24,7 +24,6 @@ import { bundledManifests } from './bundled-manifests.mjs'
 import { bundledPackageVersion, stampBundledPackageVersion } from './bundled-version.js'
 import { checkPackagedClientModules } from './client-module-check.js'
 import { prepareDocumentReader } from './document-reader.js'
-import { prepareMhsPackage } from './mhs-package.js'
 import { copyPluginPackRuntime } from './plugin-pack-runtime.js'
 import { copyRipgrep } from './ripgrep.js'
 import { copySystemRuntime, withBuiltSystemRuntime } from './windows-runtime.js'
@@ -47,18 +46,15 @@ export async function copyComputerUseNotice(outputDirectory: string): Promise<vo
 export async function copyBundledPlugins(outputDirectory: string, version = '0.0.0'): Promise<void> {
   for (const { name: helper } of DEFAULT_ENABLED_BUNDLED_PACKAGES) {
     const destination = join(outputDirectory, 'bundled-plugins', helper)
-    if (helper === 'mhs') await prepareMhsPackage(destination)
-    else {
-      const source = join(repoPackages, 'package-manager', 'bundled-plugins', helper)
-      await mkdir(destination, { recursive: true })
-      for (const name of ['package.json', 'index.mjs', 'src', 'README.md', 'LICENSE'])
-        await cp(join(source, name), join(destination, name), {
-          recursive: true,
-          force: false,
-          errorOnExist: true,
-        })
-      if (helper === 'document-reader') await prepareDocumentReader(destination)
-    }
+    const source = join(repoPackages, 'package-manager', 'bundled-plugins', helper)
+    await mkdir(destination, { recursive: true })
+    for (const name of ['package.json', 'index.mjs', 'src', 'README.md', 'LICENSE'])
+      await cp(join(source, name), join(destination, name), {
+        recursive: true,
+        force: false,
+        errorOnExist: true,
+      })
+    if (helper === 'document-reader') await prepareDocumentReader(destination)
     await stampBundledPackageVersion(destination, version)
     await checkPackagedClientModules(destination)
   }
@@ -116,7 +112,6 @@ export async function copyBundledExamples(outputDirectory: string, version = '0.
           'dag',
           'provider.example.json',
         ].includes(file) ||
-        (family === 'mhs' && (file === 'src' || file === 'tools')) ||
         file.startsWith('README') ||
         (/\.(mjs|mts|json)$/.test(file) && file !== 'tsconfig.json'),
     )

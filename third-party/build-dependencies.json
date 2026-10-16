@@ -62,7 +62,7 @@
       "source": "https://github.com/biomejs/biome",
       "purpose": "Repository formatting and static lint checks.",
       "rationale": "Provides one deterministic formatter and linter for the TypeScript workspace.",
-      "consumers": [".", "examples/mhs/mars-rescue"]
+      "consumers": ["."]
     },
     {
       "name": "@types/node",
@@ -88,8 +88,7 @@
         "packages/web-conversation",
         "packages/web-foundation",
         "packages/web-ui",
-        "packages/web-units",
-        "packages/mhs-ui"
+        "packages/web-units"
       ]
     },
     {
@@ -106,8 +105,7 @@
         "packages/web-conversation",
         "packages/web-foundation",
         "packages/web-ui",
-        "packages/web-units",
-        "packages/mhs-ui"
+        "packages/web-units"
       ]
     },
     {
@@ -126,15 +124,7 @@
       "source": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/ws",
       "purpose": "TypeScript declarations for the ws transport library.",
       "rationale": "Keeps daemon tests and SDK transport code checked against the installed ws API.",
-      "consumers": [
-        "examples/mhs/mars-rescue",
-        "packages/daemon",
-        "packages/daemon-rpc",
-        "packages/sdk",
-        "packages/mhs-hub",
-        "packages/mhs-plugin",
-        "packages/plugin-streams"
-      ]
+      "consumers": ["packages/daemon", "packages/daemon-rpc", "packages/sdk", "packages/plugin-streams"]
     },
     {
       "name": "@xterm/headless",

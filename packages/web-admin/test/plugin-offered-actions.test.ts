@@ -17,7 +17,7 @@ const plugin = (ref: string, origin: string) =>
   }) as unknown as PackageInstalledDescriptor
 
 it('never offers to uninstall what ships with the product, and keeps its other actions', () => {
-  for (const name of ['skill-helper', 'mhs']) {
+  for (const name of ['skill-helper', 'mcp-helper', 'plugin-helper', 'document-reader']) {
     const offered = offeredActions(page)({
       ...plugin(`file:./bundled-plugins/${name}`, 'official'),
       id: `@agnes/${name}`,

@@ -62,7 +62,3 @@ following material retains its original notices and license terms:
 This NOTICE is informational and does not modify any license. It records known
 source-tree attributions; a separately distributed binary or package must also
 be checked against its actual bundled dependencies and assets.
-
-Mars rescue offline models and textures include NASA 3D Resources and Poly Haven
-CC0 assets. See examples/mhs/mars-rescue/NOTICE and its assets/third-party.json
-for source URLs, individual creators, terms and derived-geometry attribution.

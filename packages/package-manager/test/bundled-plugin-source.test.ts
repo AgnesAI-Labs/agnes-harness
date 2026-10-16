@@ -39,14 +39,16 @@ it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
     const metadata = JSON.parse(readFileSync(join(into, 'package.json'), 'utf8'))
     expect(metadata.name).toBe(helper.id)
     expect(metadata.version).not.toBe('0.0.0')
-    if (helper.name === 'mhs') {
+    {
       // An offline runtime payload must carry domain dependencies; only public Host SDKs are external.
       const compiled = await build({
-        entryPoints: [join(into, metadata.exports['.'])],
+        entryPoints: [
+          join(into, typeof metadata.exports === 'string' ? metadata.exports : metadata.exports['.']),
+        ],
         bundle: true,
         platform: 'node',
         format: 'esm',
-        external: Object.keys(metadata.agnes.hostProvidedExternals),
+        external: Object.keys(metadata.agnes.hostProvidedExternals ?? {}),
         write: false,
       })
       expect(compiled.outputFiles[0]?.contents.byteLength).toBeGreaterThan(0)
@@ -56,7 +58,7 @@ it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
     expect(fetched.integrity).toBe(hashDirectory(join(source.root, source.path)))
     expect(exec).not.toHaveBeenCalled()
     expect(bundledPluginSource('file:./ordinary')).toBeUndefined()
-    expect(bundledPluginSource('file:./bundled-plugins/mhs/../impostor')).toBeUndefined()
+    expect(bundledPluginSource('file:./bundled-plugins/plugin-helper/../impostor')).toBeUndefined()
     expect(bundledPluginSourceRoot('file:./ordinary')).toBeUndefined()
     if (helper.name === 'skill-helper') expect(existsSync(join(into, 'src', 'sources.mjs'))).toBe(true)
   },
@@ -95,7 +97,7 @@ it.each(BUNDLED_HELPERS)(
 
 it.each([
   { family: 'loops', name: 'dag-loop', id: '@agnes-example/dag-loop' },
-  { family: 'mhs', name: 'mars-rescue', id: '@agnes-example/mars-rescue' },
+  { family: 'community', name: 'tool-panel', id: '@community/tool-panel' },
 ])('fetches bundled $family/$name offline without using a workspace impostor', async (expected) => {
   const root = fixture()
   const example = BUNDLED_EXAMPLES.find(
@@ -111,25 +113,6 @@ it.each([
   await fetchSource(parseSource(example.ref), into, { cwd: root, exec })
   const metadata = JSON.parse(readFileSync(join(into, 'package.json'), 'utf8'))
   expect(metadata.name).toBe(expected.id)
-  if (expected.family === 'mhs') {
-    expect(metadata.dependencies['@agnes/mhs']).toBe('0.1.0-alpha.0')
-    expect(metadata.agnes.metadata).toMatchObject({
-      category: 'example',
-      exampleOf: '@agnes/mhs',
-      pageEntry: 'mars-rescue',
-    })
-    for (const file of [
-      'LICENSE',
-      'NOTICE',
-      'assets/TYPEBOX-LICENSE.txt',
-      'skills/rescue/SKILL.md',
-      'client/generated/runtime.js',
-      'client/generated/scene.js',
-      'client/generated/cameras.js',
-      'client/generated/browser-transport.js',
-    ])
-      expect(readFileSync(join(into, file)).length).toBeGreaterThan(0)
-  }
   expect(bundledExampleSource('file:./bundled-examples/loops/dag-loop/../../impostor')).toBeUndefined()
   expect(exec).not.toHaveBeenCalled()
 })

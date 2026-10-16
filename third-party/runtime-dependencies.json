@@ -9,15 +9,13 @@
       "purpose": "Bundle shareable plugins, SDK browser checks, Web clients, isolated hooks runners and reviewed authoring tests.",
       "rationale": "Reuse the repository bundler so the receiving machine needs no plugin dependency installation.",
       "consumers": [
-        "examples/mhs/mars-rescue",
         "packages/base",
         "packages/cli",
         "packages/daemon-admin",
         "packages/package-manager",
         "packages/sdk",
         "packages/web",
-        "packages/web-ui",
-        "packages/mhs-ui"
+        "packages/web-ui"
       ]
     },
     {
@@ -62,8 +60,7 @@
         "packages/web-conversation",
         "packages/web-foundation",
         "packages/web-ui",
-        "packages/web-units",
-        "packages/mhs-ui"
+        "packages/web-units"
       ]
     },
     {
@@ -124,9 +121,7 @@
         "packages/plugin-runtime",
         "packages/protocol",
         "packages/protocol-validation",
-        "packages/resource-control-contracts",
-        "packages/mhs-device",
-        "packages/mhs-plugin"
+        "packages/resource-control-contracts"
       ]
     },
     {
@@ -226,15 +221,7 @@
       "source": "https://github.com/websockets/ws",
       "purpose": "WebSocket client transport and authenticated daemon listener.",
       "rationale": "Supplies the Node WebSocket implementation needed where the browser-native API is unavailable.",
-      "consumers": [
-        "examples/mhs/mars-rescue",
-        "packages/daemon",
-        "packages/daemon-rpc",
-        "packages/sdk",
-        "packages/mhs-hub",
-        "packages/mhs-plugin",
-        "packages/plugin-streams"
-      ]
+      "consumers": ["packages/daemon", "packages/daemon-rpc", "packages/sdk", "packages/plugin-streams"]
     },
     {
       "name": "yaml",
@@ -299,8 +286,7 @@
         "packages/web-client",
         "packages/web-conversation",
         "packages/web-ui",
-        "packages/web-units",
-        "packages/mhs-ui"
+        "packages/web-units"
       ]
     },
     {

@@ -38,7 +38,6 @@ For CSS and token customization, see [skin development](skins.md).
 
 Choose the path closest to your need. [Plugin management](../guide/packages.md) covers the shared installation and trust flow, so each interface does not need its own backend infrastructure.
 
-See [MHS and devices](../guide/mhs.md) for the physical-device direction; a simulated inspection bundle is available; hardware validation remains future work. The table covers existing software extension entry points.
 
 <a id="cordis-在其中做什么"></a>
 

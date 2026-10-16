@@ -28,6 +28,18 @@ vi.mock('../../package-manager/src/bundled-plugin-source.js', async (original) =
   const module = await original<typeof import('../../package-manager/src/bundled-plugin-source.js')>()
   return {
     ...module,
+    DEFAULT_ENABLED_BUNDLED_PACKAGES: [
+      ...module.DEFAULT_ENABLED_BUNDLED_PACKAGES,
+      {
+        name: 'test-console',
+        id: '@agnes/test-console',
+        version: '0.1.0-alpha.0',
+        license: 'Apache-2.0',
+        ref: 'file:./bundled-plugins/test-console',
+        sourcePath: 'test-console',
+        freshOnly: true,
+      },
+    ],
     bundledPluginSource: (ref: string) => payloads.get(ref) ?? module.bundledPluginSource(ref),
   }
 })
@@ -36,7 +48,7 @@ afterEach(() => {
   payloads.clear()
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
-function setup() {
+function setup(restrictCeiling = false) {
   const root = mkdtempSync(join(tmpdir(), 'agh-default-helpers-'))
   roots.push(root)
   const profileDir = join(root, 'profiles', 'local-dev')
@@ -51,16 +63,67 @@ function setup() {
     exec,
     references: async () => [],
   })
-  // Source checkouts need not have built browser assets. Use inert fixture assets for static
-  // package inspection; no worker or browser is launched by these unit tests.
-  const mhsRef = 'file:./bundled-plugins/mhs'
-  const mhsSource = bundledPluginSource(mhsRef)!
-  const mhsPayload = join(root, 'mhs-payload')
-  cpSync(join(mhsSource.root, mhsSource.path), mhsPayload, { recursive: true })
-  mkdirSync(join(mhsPayload, 'dist/client'), { recursive: true })
-  writeFileSync(join(mhsPayload, 'dist/client/index.js'), 'export {}')
-  writeFileSync(join(mhsPayload, 'dist/client/style.css'), '')
-  payloads.set(mhsRef, { root, path: 'mhs-payload' })
+  // A synthetic fresh-only release default exercises profile navigation without a product plugin.
+  const payload = join(root, 'console-payload')
+  mkdirSync(join(payload, 'client'), { recursive: true })
+  writeFileSync(
+    join(payload, 'package.json'),
+    JSON.stringify({
+      name: '@agnes/test-console',
+      version: '0.1.0-alpha.0',
+      type: 'module',
+      license: 'Apache-2.0',
+      exports: { '.': './index.mjs' },
+      agnes: {
+        plugins: [
+          {
+            id: 'ext:fixture.console',
+            export: 'consolePlugin',
+            apiRange: '^4.0.0',
+            inject: ['services'],
+            runtime: 'in-process',
+            capabilities: {
+              ui: true,
+              streams: ['events', 'media'].map((lane) => ({
+                name: `reports.${lane}`,
+                lane,
+                scope: 'profile',
+                inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+                directions: ['outbound'],
+                maxFrameBytes: 4096,
+                maxBufferedBytes: 8192,
+                maxBytesPerSecond: 16384,
+              })),
+            },
+          },
+        ],
+        clientDescriptors: [{ rowId: 'ext:fixture.console', path: './agnes.client.json' }],
+      },
+    }),
+  )
+  writeFileSync(join(payload, 'index.mjs'), 'export const consolePlugin = { apply() {} }')
+  writeFileSync(join(payload, 'client/index.js'), 'export {}')
+  writeFileSync(
+    join(payload, 'agnes.client.json'),
+    JSON.stringify({
+      client: {
+        entry: './client/index.js',
+        lifetime: 'profile',
+        services: [],
+        streams: ['reports.events', 'reports.media'],
+        slots: [],
+        slotCatalogVersion: 'dsh-client-slots/v1',
+        homeEntries: [
+          {
+            id: 'console',
+            placement: 'primary',
+            navigation: { title: 'Reports', icon: 'file-text', order: 40 },
+          },
+        ],
+      },
+    }),
+  )
+  payloads.set('file:./bundled-plugins/test-console', { root, path: 'console-payload' })
   const initializePolicy = async () => {
     const current = readLock(profileDir, { profile: 'local-dev', agnesVersion: '0.0.0' })
     writeLock(profileDir, {
@@ -73,14 +136,16 @@ function setup() {
         ]),
       ),
       policySnapshot: {
-        capabilityCeiling: loadTemplate('local-dev').policy?.capabilityCeiling ?? [],
+        capabilityCeiling: (loadTemplate('local-dev').policy?.capabilityCeiling ?? []).filter(
+          (category) => !restrictCeiling || category === 'tools',
+        ),
         workspacePackages: 'require-project-trust',
       },
     })
   }
   return { root, profileDir, manager, exec, initializePolicy }
 }
-it('installs release defaults and registers the primary MHS entry offline once and preserves disable/remove on subsequent starts', async () => {
+it('installs release defaults and registers a synthetic primary entry offline once and preserves disable/remove on subsequent starts', async () => {
   const s = setup()
   await initializeDefaultHelpers(s)
   expect(
@@ -92,9 +157,9 @@ it('installs release defaults and registers the primary MHS entry offline once a
   ).toEqual([
     ['@agnes/document-reader', true, true],
     ['@agnes/mcp-helper', true, true],
-    ['@agnes/mhs', true, true],
     ['@agnes/plugin-helper', true, true],
     ['@agnes/skill-helper', true, true],
+    ['@agnes/test-console', true, true],
   ])
   const admin = createPackageAdminService({
     manager: s.manager,
@@ -111,7 +176,9 @@ it('installs release defaults and registers the primary MHS entry offline once a
       permissions: ['packages.read'],
     },
   )) as { packages: { id: string; presentation: { origin: string } }[] }
-  expect(listed.packages.find((row) => row.id === '@agnes/mhs')?.presentation.origin).toBe('official')
+  expect(listed.packages.find((row) => row.id === '@agnes/test-console')?.presentation.origin).toBe(
+    'official',
+  )
   let published: RuntimeTargetArtifact | undefined
   const publish = vi.fn(async (target: RuntimeTargetArtifact) => {
     published = target
@@ -126,8 +193,8 @@ it('installs release defaults and registers the primary MHS entry offline once a
   if (!published) throw new Error('No default runtime target')
   expect(decodeRuntimeTargetArtifact(published).tree.rows).toEqual(
     expect.arrayContaining([
-      expect.objectContaining({ id: 'ext:agnes.mhs', disabled: false }),
-      expect.objectContaining({ id: 'web:@agnes/mhs', disabled: false }),
+      expect.objectContaining({ id: 'ext:fixture.console', disabled: false }),
+      expect.objectContaining({ id: 'web:@agnes/test-console', disabled: false }),
     ]),
   )
   const registry = createClientModuleRegistry({
@@ -146,22 +213,29 @@ it('installs release defaults and registers the primary MHS entry offline once a
       refreshInventory: () => s.manager.inventory(s.profileDir),
     })
   try {
-    expect((await roster()).rows?.find((row) => row.packageId === '@agnes/mhs')).toMatchObject({
+    expect((await roster()).rows?.find((row) => row.packageId === '@agnes/test-console')).toMatchObject({
       enabled: true,
       phase: 'ready',
-      homeEntries: [{ id: 'mhs', placement: 'primary' }],
+      homeEntries: [
+        {
+          id: 'console',
+          placement: 'primary',
+          navigation: { title: 'Reports', icon: 'file-text', order: 40 },
+        },
+      ],
+      streams: ['reports.events', 'reports.media'],
       binding: { lifetime: 'profile', availability: 'active' },
     })
-    await s.manager.setEnabled(s.profileDir, '@agnes/mhs', false)
+    await s.manager.setEnabled(s.profileDir, '@agnes/test-console', false)
     published = rebuildDesiredFromInventory({
       previous: published,
       inventory: await s.manager.inventory(s.profileDir),
-      packageId: '@agnes/mhs',
+      packageId: '@agnes/test-console',
       operation: 'disable',
     })
     expect(
       (await roster()).rows?.filter((row) => row.enabled).flatMap((row) => row.homeEntries ?? []),
-    ).not.toContainEqual({ id: 'mhs', placement: 'primary' })
+    ).not.toContainEqual(expect.objectContaining({ id: 'console', placement: 'primary' }))
   } finally {
     registry.close()
   }
@@ -174,19 +248,22 @@ it('installs release defaults and registers the primary MHS entry offline once a
   ).toEqual([
     ['@agnes/document-reader', true],
     ['@agnes/mcp-helper', false],
-    ['@agnes/mhs', false],
     ['@agnes/plugin-helper', true],
+    ['@agnes/test-console', false],
   ])
   expect(s.exec).not.toHaveBeenCalled()
 })
-it('provisions old profiles and rejects damaged initialization records', async () => {
-  const s = setup()
-  await s.initializePolicy()
-  await initializeDefaultHelpers(s)
-  expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(4)
-  writeFileSync(join(s.profileDir, 'default-helpers', 'state.json'), '{}')
-  await expect(initializeDefaultHelpers(s)).rejects.toThrow('Invalid helper initialization')
-})
+it.each([false, true])(
+  'provisions profiles under their ceiling and rejects damaged records (restricted fresh=%s)',
+  async (restricted) => {
+    const s = setup(restricted)
+    if (!restricted) await s.initializePolicy()
+    await initializeDefaultHelpers(s)
+    expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(4)
+    writeFileSync(join(s.profileDir, 'default-helpers', 'state.json'), '{}')
+    await expect(initializeDefaultHelpers(s)).rejects.toThrow('Invalid helper initialization')
+  },
+)
 it('resumes interrupted first initialization without replacing already installed packages', async () => {
   const s = setup()
   const trust = s.manager.trust.bind(s.manager)
@@ -327,9 +404,9 @@ it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
     payloads.set(helper.ref, { root: s.root, path: `release/${helper.name}` })
     const file = join(payload, 'package.json')
     const manifest = JSON.parse(readFileSync(file, 'utf8'))
-    const shippedVersion = manifest.version
-    const oldVersion = helper.name === 'mhs' ? shippedVersion : '0.1.0'
-    const nextVersion = helper.name === 'mhs' ? shippedVersion : '0.2.0'
+    const oldVersion = helper.freshOnly ? '0.1.0-alpha.0' : '0.1.0'
+    const nextVersion = helper.freshOnly ? oldVersion : '0.2.0'
+    const parentRange = helper.freshOnly ? oldVersion : '>=0.1.0 <1.0.0'
     manifest.version = oldVersion
     writeFileSync(file, JSON.stringify(manifest))
     await initializeDefaultHelpers(s)
@@ -355,25 +432,72 @@ it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
         expectedTreeIntegrity: before.entry.treeIntegrity!,
       },
     })
-    if (helper.name === 'mhs') {
-      expect(shippedVersion).toBe('0.1.0-alpha.0')
-      const source = parseSource('file:./bundled-examples/mhs/mars-rescue')
-      const mars = await s.manager.inspect(s.profileDir, source)
-      expect(mars.dependencies['@agnes/mhs']).toBe(shippedVersion)
-      expect(mars.blockers).toEqual([])
-      await s.manager.install(s.profileDir, source, { expectedIntegrity: mars.integrity })
-      await s.manager.trust(s.profileDir, mars.id, {
-        integrity: mars.integrity,
-        capabilityHash: mars.capabilityHash!,
-      })
-      await s.manager.setEnabled(s.profileDir, mars.id, true)
-      target = rebuildDesiredFromInventory({
-        previous: target,
-        inventory: await s.manager.inventory(s.profileDir),
-        packageId: mars.id,
-        operation: 'enable',
-      })
-    }
+    // The parent-owned example stays runnable across a compatible bundled parent refresh.
+    const child = join(s.root, 'report-example')
+    mkdirSync(child)
+    writeFileSync(
+      join(child, 'package.json'),
+      JSON.stringify({
+        name: '@fixture/report-example',
+        version: '1.0.0',
+        type: 'module',
+        license: 'Apache-2.0',
+        exports: { '.': './index.mjs' },
+        dependencies: { [helper.id]: parentRange },
+        agnes: {
+          metadata: {
+            displayName: 'Report example',
+            summary: 'Synthetic report',
+            description: 'Synthetic report',
+            category: 'example',
+            exampleOf: helper.id,
+            pageEntry: 'reports',
+          },
+          clientDescriptors: [{ rowId: 'ext:fixture.report', path: './agnes.client.json' }],
+          plugins: [
+            {
+              id: 'ext:fixture.report',
+              export: 'reportPlugin',
+              capabilities: { ui: true },
+              apiRange: '^4.0.0',
+              inject: ['tools'],
+              runtime: 'in-process',
+            },
+          ],
+        },
+      }),
+    )
+    writeFileSync(join(child, 'index.mjs'), 'export const reportPlugin = { apply() {} }')
+    writeFileSync(join(child, 'client.js'), 'export {}')
+    writeFileSync(
+      join(child, 'agnes.client.json'),
+      JSON.stringify({
+        client: {
+          entry: './client.js',
+          lifetime: 'profile',
+          examplePages: ['reports'],
+          services: [],
+          slots: [],
+          slotCatalogVersion: 'dsh-client-slots/v1',
+        },
+      }),
+    )
+    const childSource = parseSource(`file:${child}`)
+    const example = await s.manager.inspect(s.profileDir, childSource)
+    expect(example.dependencies[helper.id]).toBe(parentRange)
+    expect(example.blockers).toEqual([])
+    await s.manager.install(s.profileDir, childSource, { expectedIntegrity: example.integrity })
+    await s.manager.trust(s.profileDir, example.id, {
+      integrity: example.integrity,
+      capabilityHash: example.capabilityHash!,
+    })
+    await s.manager.setEnabled(s.profileDir, example.id, true)
+    target = rebuildDesiredFromInventory({
+      previous: target,
+      inventory: await s.manager.inventory(s.profileDir),
+      packageId: example.id,
+      operation: 'enable',
+    })
     manifest.version = nextVersion
     writeFileSync(join(payload, 'distribution-revision.txt'), 'new release bytes')
     writeFileSync(file, JSON.stringify(manifest))
@@ -445,19 +569,17 @@ it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
     expect(readFileSync(join(equalVersion.directory!, 'release-bytes.txt'), 'utf8')).toBe(
       'new distribution bytes',
     )
-    if (helper.name === 'mhs') {
-      const mars = (await s.manager.inventory(s.profileDir)).packages.find(
-        (pkg) => pkg.id === '@agnes-example/mars-rescue',
-      )!
-      expect(mars).toMatchObject({ enabled: true, trusted: true, blockers: [] })
-      expect(
-        decodeRuntimeTargetArtifact(target!).tree.rows.some(
-          (row) => row.plugin.startsWith(`${mars.id}@`) && !row.disabled,
-        ),
-      ).toBe(true)
-      await s.manager.setEnabled(s.profileDir, mars.id, false)
-      await s.manager.remove(s.profileDir, mars.id)
-    }
+    const childAfter = (await s.manager.inventory(s.profileDir)).packages.find(
+      (pkg) => pkg.id === example.id,
+    )!
+    expect(childAfter).toMatchObject({ enabled: true, trusted: true, blockers: [] })
+    expect(
+      decodeRuntimeTargetArtifact(target!).tree.rows.some(
+        (row) => row.plugin.startsWith(`${example.id}@`) && !row.disabled,
+      ),
+    ).toBe(true)
+    await s.manager.setEnabled(s.profileDir, example.id, false)
+    await s.manager.remove(s.profileDir, example.id)
     // A later distribution must preserve the explicit disable and removal decisions.
     await s.manager.setEnabled(s.profileDir, helper.id, false)
     const disabled = (await s.manager.inventory(s.profileDir)).packages.find((pkg) => pkg.id === helper.id)

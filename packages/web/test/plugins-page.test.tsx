@@ -418,15 +418,15 @@ describe('skill detail', () => {
   })
 })
 
-it('keeps MHS under built-ins with an enable toggle and excludes parent-owned examples while retaining FDE agents', () => {
+it('keeps the bundled helper under built-ins with an enable toggle and excludes parent-owned examples while retaining FDE agents', () => {
   const row = (id: string, category: string, exampleOf?: string) => ({
     id,
     version: '1.0.0',
     source: {
       type: 'file',
-      ref: `file:./${id === '@agnes/mhs' ? 'bundled-plugins/mhs' : 'examples/plugin'}`,
+      ref: `file:./${id === '@agnes/plugin-helper' ? 'bundled-plugins/plugin-helper' : 'examples/plugin'}`,
     },
-    presentation: { origin: id === '@agnes/mhs' ? 'official' : 'example', rows: [] },
+    presentation: { origin: id === '@agnes/plugin-helper' ? 'official' : 'example', rows: [] },
     trusted: true,
     desired: 'enabled',
     actual: 'running',
@@ -441,8 +441,8 @@ it('keeps MHS under built-ins with an enable toggle and excludes parent-owned ex
     },
   })
   const rows = [
-    row('@agnes/mhs', 'developer'),
-    row('acme/example', 'example', '@agnes/mhs'),
+    row('@agnes/plugin-helper', 'developer'),
+    row('acme/example', 'example', '@agnes/plugin-helper'),
     row('@agnes-fde/support-triage', 'business-agent'),
   ]
   const toggle = vi.fn(async () => {})
@@ -473,18 +473,18 @@ it('keeps MHS under built-ins with an enable toggle and excludes parent-owned ex
   try {
     flushSync(() => root.render(createElement(PluginsTab, { view, t: (key) => key, summaries: {} })))
     const builtin = host.querySelector('[data-testid="plugin-builtin"]')!
-    expect(builtin.textContent).toContain('@agnes/mhs')
+    expect(builtin.textContent).toContain('@agnes/plugin-helper')
     expect(host.querySelector('[data-testid="plugin-browser"]')?.textContent).toContain(
       '@agnes-fde/support-triage',
     )
     expect(host.querySelector('[data-plugin-id="acme/example"]')).toBeNull()
     const enable = builtin.querySelector<HTMLButtonElement>(
-      '[data-plugin-id="@agnes/mhs"] button[role="switch"]',
+      '[data-plugin-id="@agnes/plugin-helper"] button[role="switch"]',
     )!
     expect(enable).not.toBeNull()
     expect(enable.disabled).toBe(false)
     enable.click()
-    expect(toggle).toHaveBeenCalledWith(expect.objectContaining({ id: '@agnes/mhs' }))
+    expect(toggle).toHaveBeenCalledWith(expect.objectContaining({ id: '@agnes/plugin-helper' }))
   } finally {
     flushSync(() => root.unmount())
   }

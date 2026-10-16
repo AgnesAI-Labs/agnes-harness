@@ -81,14 +81,6 @@ Making execution inspectable and controllable is an engineering priority for AGH
 
 Ordinary third-party plugins run as trusted in-process code. Review their source and provenance before installing them. See [security and trust](security.md) for each mechanism's responsibilities and platform boundaries.
 
-<a id="从数字业务走向设备现场"></a>
-
-## From business systems to physical devices
-
-AGH plans to explore integration through MHS (Model Hardware Standard), bringing device state, human confirmation, and execution receipts into task workflows. The aim is to make integrations reusable across inspection, instrument coordination, and field operations.
-
-A [simulated device bundle](../../examples/fde/device-inspection/README.md) now demonstrates status → anomaly → human confirmation → constrained action → receipt verification. It is MHS-inspired and does not claim MHS compatibility. The integration seam is a preview; validated hardware adapters remain future work. [Explore the device integration direction →](mhs.md)
-
 <a id="带着你的问题开始"></a>
 
 ## Start with your use case

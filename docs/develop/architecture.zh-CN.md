@@ -15,7 +15,7 @@ AGH 的客户端展示状态，daemon 管理会话与控制面，Host 组装运�
 
 业务 Agent Loop、工具、模型适配器与角色通过插件替换，由 Host 组合。官方默认 Agent Loop 位于 [loop-default](../../packages/loop-default/src/index.ts)，只使用公开 LoopContext 端口；Core 负责授权、持久事实与恢复。[文件记忆](../guide/memory.zh-CN.md)保存学习到的偏好，账本保留执行历史。
 
-Jev 仍是探索中的结构化决策接入，没有已安装的 Jev 适配器。[MHS](../guide/mhs.zh-CN.md)已有设备 SDK/Hub 工厂及[火星模拟器](../guide/mars-world.zh-CN.md)，生产受管理适配器和物理设备兼容性仍待验证；这些方向与下方已实现的请求链路分开说明。
+Jev 仍是探索中的结构化决策接入，没有已安装的 Jev 适配器。
 
 ## 运行时请求链路
 
@@ -89,18 +89,16 @@ AGH 的 App Server 为客户端提供共享的任务运行基础：daemon 管理
 
 ## 可复用场景的范围
 
-FDE 是交付方式，MHS 是设备接入方向。FDE 交付可通过 AGH 已有扩展入口构建企业软件，后续也可包含设备接入。知识检索、数据库连接器、业务系统与专用界面需要针对具体环境开发与验证。
+FDE 是交付方式。FDE 交付可通过 AGH 已有扩展入口构建企业软件。知识检索、数据库连接器、业务系统与专用界面需要针对具体环境开发与验证。
 
-| 模块与源码归属 | 当前软件路径怎样支撑 FDE | 后续 MHS 接入可复用的底座 |
-| --- | --- | --- |
-| App Server：[SDK](../../packages/sdk/src)、[daemon](../../packages/daemon/src)、[worker](../../packages/worker-runtime/src) | 共享会话、任务提交、事件、审批路由与客户端接入 | 任务入口、人工确认和状态展示 |
-| Agent Loop：[Host 装配](../../packages/host/src/runtime/assemble/assemble.ts)、[Core](../../packages/core/src)、[AI](../../packages/ai/src) | 模型与工具执行、任务状态、中断处理和恢复 | 高层设备任务编排；实际运动由设备控制器执行 |
-| 记忆：[事件记录](../../packages/core-ledger/src/log)、[资源治理](../../packages/resource-control-runtime/src) | 保存任务历史和结果，通过 Skills 复用方法 | 按任务记录合同保存观察与适配器回执；设备实际状态仍需设备侧验证 |
-| 执行约束：[受控工具执行](../../packages/core/src/step/tools.ts)、[sandbox](../../packages/host-infrastructure/src/sandbox-seam.ts)、[工作区策略](../../packages/host-common/src/workspace-policy.ts) | 工具审批与适用的软件执行约束 | 软件侧控制点；设备互锁、急停与本地接管仍由设备侧承担 |
-| 插件：[Cordis](../../packages/cordis/src)、[插件运行时](../../packages/plugin-runtime/src)、[包管理](../../packages/package-manager/src)、[Web 客户端模块](../../packages/web-client/src) | 后端工具与服务、hooks、Skills、MCP 连接和业务面板 | 适配器与设备操作界面的扩展入口；仓库尚无已验证的通用 MHS 适配器 |
+| 模块与源码归属 | 当前软件路径怎样支撑 FDE |
+| --- | --- |
+| App Server：[SDK](../../packages/sdk/src)、[daemon](../../packages/daemon/src)、[worker](../../packages/worker-runtime/src) | 共享会话、任务提交、事件、审批路由与客户端接入 |
+| Agent Loop：[Host 装配](../../packages/host/src/runtime/assemble/assemble.ts)、[Core](../../packages/core/src)、[AI](../../packages/ai/src) | 模型与工具执行、任务状态、中断处理和恢复 |
+| 记忆：[事件记录](../../packages/core-ledger/src/log)、[资源治理](../../packages/resource-control-runtime/src) | 保存任务历史和结果，通过 Skills 复用方法 |
+| 执行约束：[受控工具执行](../../packages/core/src/step/tools.ts)、[sandbox](../../packages/host-infrastructure/src/sandbox-seam.ts)、[工作区策略](../../packages/host-common/src/workspace-policy.ts) | 工具审批与适用的软件执行约束 |
+| 插件：[Cordis](../../packages/cordis/src)、[插件运行时](../../packages/plugin-runtime/src)、[包管理](../../packages/package-manager/src)、[Web 客户端模块](../../packages/web-client/src) | 后端工具与服务、hooks、Skills、MCP 连接和业务面板 |
 
 普通后端插件作为受信进程内代码执行；一次工具审批或可用的命令沙箱不代表任意插件代码已被隔离。审批、沙箱等必要接缝由受信部署配置选择；普通扩展注册工具或 hook 不会获得替换它们的权限。详见[安全与信任](../guide/security.zh-CN.md)。
-
-MHS 设备通过 TypeScript 或 Python 设备 SDK 连接 Hub，与 MCP 相互独立。已有 [MCP 模拟巡检组合包](../guide/mhs.zh-CN.md)是另一套模拟器。[火星救援](../guide/mars-world.zh-CN.md)验证设备消费合同，生产受管理及批准适配器仍待集成。取消任务不代表物理设备已安全停止；企业部署、审计、隔离与物理动作均须在实际环境中分别验证。
 
 源码依据：[Host](../../packages/host/src/runtime/assemble/assemble.ts)、[Worker](../../packages/worker-runtime/src/main.ts)、[Core](../../packages/core/src)、[Daemon](../../packages/daemon/src/supervisor/runtime.ts)、[运行目标发布](../../packages/host-providers/src/runtime-target-publisher.ts)、[Web Context](../../packages/web/src/client-modules/boot.tsx)。

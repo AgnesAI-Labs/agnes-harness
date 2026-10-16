@@ -1,35 +1,10 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { listPackages, listSourceFiles, repoRoot } from './repo.js'
 
 describe('repo', () => {
-  it('keeps both original Mars videos clickable with local accessible covers and current reproduction guides', () => {
-    const root = repoRoot()
-    for (const [suffix, video] of [
-      ['', 'absoBkphEHE'],
-      ['.zh-CN', 'QbmD2KVli5Y'],
-    ] as const) {
-      const readme = readFileSync(join(root, `README${suffix}.md`), 'utf8')
-      const preview = readme.match(
-        /\[!\[([^\]]+)\]\((docs\/assets\/readme\/mars-rescue[^)]+)\)\]\((https:\/\/youtu\.be\/[^)]+)\)/,
-      )
-      expect(preview, `missing clickable ${suffix || 'English'} video`).not.toBeNull()
-      expect(preview?.[1]?.trim().length).toBeGreaterThan(20)
-      expect(preview?.[2]).toBe(`docs/assets/readme/mars-rescue${suffix}.svg`)
-      expect(preview?.[3]).toBe(`https://youtu.be/${video}`)
-      const cover = readFileSync(join(root, preview?.[2] ?? ''), 'utf8')
-      expect(cover).toMatch(/<title id="title">[^<]+<\/title>/)
-      expect(cover).toMatch(/<desc id="desc">[^<]+<\/desc>/)
-      expect(cover).toContain('data:image/jpeg;base64,')
-      expect(cover).toContain('aria-labelledby="title desc"')
-      const guide = `docs/guide/mars-world${suffix}.md`
-      expect(readme).toContain(`](${guide})`)
-      expect(existsSync(join(root, guide))).toBe(true)
-      expect(existsSync(join(root, `examples/mhs/mars-rescue/README${suffix}.md`))).toBe(true)
-    }
-  })
   it('lists every workspace package plus guards', () => {
     const names = listPackages(repoRoot())
       .map((p) => p.name)
@@ -72,10 +47,6 @@ describe('repo', () => {
       '@agnes/intelligent-ui-contract',
       '@agnes/loop-default',
       '@agnes/memory-file',
-      '@agnes/mhs',
-      '@agnes/mhs-device',
-      '@agnes/mhs-hub',
-      '@agnes/mhs-ui',
       '@agnes/model-adapters',
       '@agnes/observability',
       '@agnes/package-isolation',

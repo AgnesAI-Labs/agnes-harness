@@ -36,10 +36,6 @@ Ask the agent to draft a Skill or plugin, test it, then review its files and per
 
 The screenshots show the current interface using synthetic browser fixtures. The runnable demos use fresh isolated homes and a deterministic local model by default; they do not send external business messages. Old code remains retained while durable session pins reference it, including idle history.
 
-Watch the original Mars rescue demo: the agent coordinates eleven simulated devices to find an astronaut and bring them back through the airlock. This recording shows the former Mars World; the new plugin-based example has its own scene and integration limits, and does not yet reproduce every feature shown. On an integrated host, follow the [current Mars rescue guide](docs/guide/mars-world.md) to review and enable the local example, connect eleven devices and try the rescue/sampling tasks with an image- and tool-capable model. No physical hardware is required.
-
-[![Original Mars rescue video preview — click to watch the English demo on YouTube](docs/assets/readme/mars-rescue.svg)](https://youtu.be/absoBkphEHE)
-
 <a id="new-product-clean-home"></a>
 
 ## New product and old environments
@@ -78,7 +74,7 @@ Clients connect to one App Server per canonical home. Workers host composed plug
 - **Trusted code:** ordinary backend plugins execute in process. Capability review, provenance, approvals and command/MCP sandboxing do not isolate arbitrary plugin JavaScript.
 - **Preview release:** source builds are available; no public npm release, consumer installer or automatic-update commitment is made. APIs and configuration can change during preview.
 - **Platforms:** macOS and Linux have maintained native/process/browser gates. Windows remains untested end to end, with no proven L1 command sandbox. Computer Use is unavailable on Linux.
-- **Experimental paths:** provider/Loop APIs, child engines, programmatic cells (especially stateless CPython), and MHS-inspired device integration need deployment-specific validation. The device example is a simulator, not a certified hardware adapter.
+- **Experimental paths:** provider/Loop APIs, child engines, programmatic cells (especially stateless CPython) need deployment-specific validation.
 
 [Supported scope](docs/reference/limitations.md) · [Security](docs/guide/security.md) · [Verification](docs/maintainers/verification.md) · [Network deployment](docs/guide/deployment.md)
 

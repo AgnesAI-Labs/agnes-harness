@@ -42,15 +42,6 @@ export const DEFAULT_ENABLED_BUNDLED_PACKAGES = Object.freeze([
     sourcePath: `package-manager/bundled-plugins/${helper.name}`,
     freshOnly: false,
   })),
-  {
-    name: 'mhs',
-    id: '@agnes/mhs',
-    version: '0.1.0-alpha.0',
-    license: 'Apache-2.0',
-    ref: 'file:./bundled-plugins/mhs',
-    sourcePath: 'package-manager/dist/bundled-plugins/mhs',
-    freshOnly: true,
-  },
 ])
 
 /** Resolve reserved release payloads independently of the caller's workspace. */
@@ -94,7 +85,6 @@ export const BUNDLED_EXAMPLES = Object.freeze(
       'recruiting-screen',
       'support-triage',
     ].map((name) => ({ family: 'fde', name })),
-    { family: 'mhs', name: 'mars-rescue' },
     ...['tool-panel', 'mcp-skills', 'dag-loop-adapter'].map((name) => ({ family: 'community', name })),
   ].map((example) => ({ ...example, ref: `file:./bundled-examples/${example.family}/${example.name}` })),
 )

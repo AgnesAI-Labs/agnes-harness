@@ -341,15 +341,5 @@
     "@agnes/error-sanitization",
     "@agnes/system-node"
   ],
-  "@agnes/memory-file": ["@agnes/extension-api", "@agnes/system-node"],
-  "@agnes/mhs-device": [],
-  "@agnes/mhs-hub": ["@agnes/mhs-device"],
-  "@agnes/mhs": ["@agnes/extension-api", "@agnes/mhs-device", "@agnes/mhs-hub"],
-  "@agnes/mhs-ui": [
-    "@agnes/protocol",
-    "@agnes/web-client",
-    "@agnes/web-ui",
-    "@agnes/mhs-device",
-    "@agnes/mhs-hub"
-  ]
+  "@agnes/memory-file": ["@agnes/extension-api", "@agnes/system-node"]
 }

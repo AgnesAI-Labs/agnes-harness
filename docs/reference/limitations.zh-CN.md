@@ -26,7 +26,6 @@
 | 程序化工具 | 本地 macOS/Linux 支持 PTC，Windows 和远程执行不支持。独立 CPython 为实验功能，见[代码工作流](../guide/code-workflows.zh-CN.md) |
 | Desktop/系统集成 | 不包含桌面客户端、系统登录启动注册、自动更新 |
 | 行业/企业 | 业务接口、身份、数据与部署政策需要按[FDE 场景](../guide/why-agh.zh-CN.md)分别集成和验收 |
-| MHS/物理设备 | 已有模拟 MCP 巡检组合包与预览接入点，不宣称物理适配器已验证或 MHS 兼容 |
 | 性能/Eval | 不提供未经固定模型、预算、任务与测量验证的领先/提升数字 |
 
 当前验证的命令与范围见[验证记录](../maintainers/verification.zh-CN.md)。版本更新时需重新核对当前源码，特别是长期运行、MCP OAuth 会话支持、插件与客户端描述合同、默认安全策略和发行状态。

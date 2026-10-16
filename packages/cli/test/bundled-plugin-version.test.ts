@@ -2,10 +2,15 @@ import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { bundledPluginSource, DEFAULT_ENABLED_BUNDLED_PACKAGES } from '@agnes/package-manager'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { copyBundledExamples } from '../tools/build-local.js'
 import { bundledReleaseVersion, stampBundledPackageVersion } from '../tools/bundled-version.js'
 import { PUBLIC_PACKAGE_VERSION } from '../tools/release-version.mjs'
+
+vi.mock('@agnes/package-manager', async (original) => {
+  const module = await original<typeof import('@agnes/package-manager')>()
+  return { ...module, BUNDLED_EXAMPLES: [{ family: 'fixtures', name: 'parent-example' }] }
+})
 
 it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
   'preserves $id declared versions and only raises them for explicit releases',
@@ -74,11 +79,11 @@ it.each([
 })
 
 it.each(['0.0.0', '0.1.0-alpha.0', '1.2.3'])(
-  'pins copied Mars to the shipped MHS version for build %s',
+  'pins a copied synthetic example to its shipped parent version for build %s',
   async (version) => {
     const root = await mkdtemp(join(tmpdir(), 'agh-bundle-parent-'))
     try {
-      const parent = DEFAULT_ENABLED_BUNDLED_PACKAGES.find((pkg) => pkg.name === 'mhs')
+      const parent = DEFAULT_ENABLED_BUNDLED_PACKAGES.find((pkg) => pkg.name === 'plugin-helper')
       if (!parent) throw new Error('Missing bundled parent')
       const source = bundledPluginSource(parent.ref)
       if (!source) throw new Error('Missing bundled parent source')
@@ -88,11 +93,11 @@ it.each(['0.0.0', '0.1.0-alpha.0', '1.2.3'])(
       await stampBundledPackageVersion(root, version)
       await copyBundledExamples(root, version)
       const shipped = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
-      const mars = JSON.parse(
-        await readFile(join(root, 'bundled-examples/mhs/mars-rescue/package.json'), 'utf8'),
+      const example = JSON.parse(
+        await readFile(join(root, 'bundled-examples/fixtures/parent-example/package.json'), 'utf8'),
       )
-      expect(shipped.version).toBe(version === '1.2.3' ? version : '0.1.0-alpha.0')
-      expect(mars.dependencies[parent.id]).toBe(shipped.version)
+      expect(shipped.version).toBe(version === '1.2.3' ? version : '0.2.0')
+      expect(example.dependencies[parent.id]).toBe(shipped.version)
       expect(await readFile(sourceFile, 'utf8')).toBe(declared)
     } finally {
       await rm(root, { recursive: true, force: true })

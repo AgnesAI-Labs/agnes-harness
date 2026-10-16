@@ -62,7 +62,6 @@ AGH 的发展需要真实场景中的使用体验。欢迎试用、研究源码�
 pnpm install --frozen-lockfile
 pnpm --filter @agnes/host build:native
 pnpm --filter @agnes/system-node build:native
-pnpm --filter @agnes/cli build:bundled-plugins
 pnpm typecheck
 pnpm lint
 pnpm gen:check

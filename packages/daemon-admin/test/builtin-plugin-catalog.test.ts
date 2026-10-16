@@ -18,17 +18,12 @@ it.each([false, true])('discovers optional pinned helper even with broken exampl
   if (broken) mkdirSync(join(root, 'examples', 'packages'), { recursive: true })
   const catalog = await discoverLocalExamples(root)
   const result = await catalog.read({ offline: true })
-  expect(result.entries).toHaveLength(23)
+  expect(result.entries).toHaveLength(21)
   const examples = result.entries.filter((entry) => entry.sourceId === 'official-examples')
-  expect(examples).toHaveLength(18)
+  expect(examples).toHaveLength(17)
   expect(examples.filter((entry) => entry.id.startsWith('@agnes-fde/'))).toHaveLength(12)
   expect(examples.map((entry) => entry.id)).toEqual(
-    expect.arrayContaining([
-      '@agnes-example/dag-loop',
-      '@agnes-example/react-loop',
-      '@agnes-example/mars-rescue',
-      '@community/tool-panel',
-    ]),
+    expect.arrayContaining(['@agnes-example/dag-loop', '@agnes-example/react-loop', '@community/tool-panel']),
   )
   expect(
     examples.every((entry) => entry.integrity && entry.source.ref.startsWith('file:./bundled-examples/')),
@@ -48,10 +43,6 @@ it.each([false, true])('discovers optional pinned helper even with broken exampl
     id: '@agnes/document-reader',
     version: '0.1.2',
     source: { ref: 'file:./bundled-plugins/document-reader' },
-  })
-  expect(result.entries.find((entry) => entry.id === '@agnes/mhs')).toMatchObject({
-    sourceId: 'builtin-plugins',
-    source: { ref: 'file:./bundled-plugins/mhs' },
   })
   expect(JSON.stringify(result.entries)).not.toContain('github.com')
   expect(result.sources.find((source) => source.sourceId === 'builtin-plugins')?.status).toBe('cached')

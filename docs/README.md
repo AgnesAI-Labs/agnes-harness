@@ -8,7 +8,7 @@ English | [简体中文](README.zh-CN.md)
 
 Run tasks through CLI and Web, connect business capabilities with plugins, capture methods in Skills, and build interfaces for the people doing the work. Choose a path below to get started.
 
-[Project home](../README.md) · [Why AGH](guide/why-agh.md) · [Try the examples](guide/demo.md) · [Device integration (preview)](guide/mhs.md)
+[Project home](../README.md) · [Why AGH](guide/why-agh.md) · [Try the examples](guide/demo.md)
 
 <a id="选择你的起点"></a>
 
@@ -62,7 +62,7 @@ Still choosing? Try the [three examples](guide/demo.md), then use the [extension
 
 ## Build and explore
 
-- **Scenarios and methods:** [FDE and use cases](guide/why-agh.md) · [MHS and device integration](guide/mhs.md).
+- **Scenarios and methods:** [FDE and use cases](guide/why-agh.md).
 - **Exact interfaces:** [CLI reference](reference/cli.md) · [Configuration](reference/configuration.md) · [API and schemas](reference/api.md).
 - **Side model calls:** [TypeSafe Jev adapter](guide/typesafe-jev.md) · [Write a loop plugin](develop/plugins.md).
 - **Support and feedback:** [Supported scope](reference/limitations.md) · [Feedback and development](develop/contributing.md) · [Security reports](../SECURITY.md).
