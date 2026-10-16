@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import type { ConfigSnapshot, UIOpeningResult, UIProjectionUpdate, UITimeline } from '@agnes/protocol'
-import { MAX_FRAME_BYTES } from '@agnes/protocol'
+import { attachmentLink, FILE_UPLOAD_PATH, MAX_FRAME_BYTES } from '@agnes/protocol'
 import type { InitializeInfo, LedgerEvent } from '@agnes/sdk/browser'
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -2447,12 +2447,81 @@ describe('image composer submissions', () => {
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
   const imagePngBytes = Uint8Array.from(atob(imagePngData), (character) => character.charCodeAt(0))
 
+  const receiptId = '00000000-0000-0000-0000-000000000001'
+  const imageReference = (bytes: Uint8Array, mime: string, name: string) =>
+    attachmentLink(
+      { sha256: createHash('sha256').update(bytes).digest('hex'), size: bytes.length, mime },
+      name,
+      {
+        receiptId,
+        image: { width: 1, height: 1 },
+      },
+    )
+
+  function originalUploads(sessionId: string) {
+    let metadata: { name: string; mimeType: string; size: number } | undefined
+    let uploadId: string | undefined
+    const chunks: Buffer[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async (input, init) => {
+        const url = new URL(String(input), 'http://localhost')
+        expect(url.pathname).toBe(FILE_UPLOAD_PATH)
+        const respond = (value: unknown) =>
+          new Response(JSON.stringify(value), {
+            headers: { 'Content-Type': 'application/json' },
+          })
+        if (!init?.method) {
+          expect(Object.fromEntries(url.searchParams)).toEqual({
+            sessionId,
+            destination: 'original',
+            laneId: 'main',
+          })
+          return respond({
+            limits: { maxBytes: 100 * 1024 * 1024, chunkBytes: 1024 * 1024, allowedMimeTypes: [] },
+          })
+        }
+        if (url.searchParams.get('operation') === 'chunk') {
+          expect(url.searchParams.get('destination')).toBe('original')
+          expect(url.searchParams.get('sessionId')).toBe(sessionId)
+          expect(url.searchParams.get('laneId')).toBe('main')
+          expect(url.searchParams.get('uploadId')).toBe(uploadId)
+          expect(Number(url.searchParams.get('offset'))).toBe(
+            chunks.reduce((size, bytes) => size + bytes.length, 0),
+          )
+          if (!(init.body instanceof Blob)) throw new Error('missing original upload chunk')
+          const bytes = Buffer.from(await init.body.arrayBuffer())
+          expect(bytes.length).toBeLessThanOrEqual(1024 * 1024)
+          expect(createHash('sha256').update(bytes).digest('hex')).toBe(url.searchParams.get('sha256'))
+          chunks.push(bytes)
+          return respond({ offset: chunks.reduce((size, chunk) => size + chunk.length, 0) })
+        }
+        const control = JSON.parse(String(init.body))
+        expect(control).toMatchObject({ sessionId, laneId: 'main', destination: 'original' })
+        if (control.operation === 'start') {
+          uploadId = control.uploadId
+          expect(uploadId).toBeTypeOf('string')
+          metadata = control
+          return respond({ offset: 0 })
+        }
+        expect(control.operation).toBe('finish')
+        expect(control.uploadId).toBe(uploadId)
+        if (!metadata) throw new Error('original upload was not started')
+        const bytes = Buffer.concat(chunks)
+        expect(bytes.length).toBe(metadata.size)
+        expect(createHash('sha256').update(bytes).digest('hex')).toBe(control.sha256)
+        return respond({ attachment: imageReference(bytes, metadata.mimeType, metadata.name) })
+      }),
+    )
+  }
+
   async function start(
     sessionValue: SessionDouble,
     busy = false,
     inputModes: readonly ('text' | 'image')[] = ['text', 'image'],
   ): Promise<void> {
     installPublicFixture()
+    originalUploads(sessionValue.id)
     const imageUrl = `blob:${sessionValue.id}-image`
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => imageUrl) })
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
@@ -2503,8 +2572,12 @@ describe('image composer submissions', () => {
       },
     })
     prompt.dispatchEvent(event)
-    if (accepted)
-      await vi.waitFor(() => expect(document.querySelector('.composer-image-preview img')).not.toBeNull())
+    if (accepted) {
+      await vi.waitFor(() => expect(document.querySelector('.composer-file-preview')).not.toBeNull())
+      await vi.waitFor(() =>
+        expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(false),
+      )
+    }
   }
 
   it.each(['PNG', '10 MiB JPEG'])(
@@ -2529,10 +2602,10 @@ describe('image composer submissions', () => {
       submit('')
 
       await vi.waitFor(() => expect(active.prompt).toHaveBeenCalledTimes(1))
-      expect(active.prompt).toHaveBeenCalledWith(
-        [{ type: 'image', mimeType, data: Buffer.from(bytes).toString('base64') }],
-        { titleLocale: 'zh-CN', references: [] },
-      )
+      expect(active.prompt).toHaveBeenCalledWith([imageReference(bytes, mimeType, 'image')], {
+        titleLocale: 'zh-CN',
+        references: [],
+      })
     },
   )
 
@@ -2548,14 +2621,11 @@ describe('image composer submissions', () => {
 
     await vi.waitFor(() => expect(active.followUp).toHaveBeenCalledTimes(1))
     expect(active.followUp).toHaveBeenCalledWith(
-      [
-        { type: 'text', text: '请解释这张图' },
-        { type: 'image', mimeType: 'image/png', data: imagePngData },
-      ],
+      [{ type: 'text', text: '请解释这张图' }, imageReference(imagePngBytes, 'image/png', 'one.png')],
       { references: [] },
     )
     await vi.waitFor(() => expect(draft.value).toBe('请解释这张图'))
-    expect(document.querySelector('.composer-image-preview img')).not.toBeNull()
+    expect(document.querySelector('.composer-file-preview')?.textContent).toContain('one.png')
     expect(document.querySelector('.agh-notifications')?.textContent).toContain('follow-up rejected')
   })
 
@@ -2609,15 +2679,15 @@ describe('image composer submissions', () => {
     await start(active)
     await attachPng()
     const protocol = await import('@agnes/protocol')
-    const validation = vi.spyOn(protocol, 'decodeSafeImages').mockImplementationOnce(() => {
-      throw new Error('images exceed aggregate pixel limit')
+    const validation = vi.spyOn(protocol, 'validateUserAttachments').mockImplementationOnce(() => {
+      throw new Error('attachments exceed aggregate byte limit')
     })
     submit('保留文字和图片')
     expect(active.prompt).not.toHaveBeenCalled()
     expect((document.getElementById('prompt') as HTMLTextAreaElement).value).toBe('保留文字和图片')
-    expect(document.querySelector('.composer-image-preview img')).not.toBeNull()
+    expect(document.querySelector('.composer-file-preview')?.textContent).toContain('one.png')
     await vi.waitFor(() =>
-      expect(document.querySelector('.agh-notifications')?.textContent).toContain('aggregate pixel limit'),
+      expect(document.querySelector('.agh-notifications')?.textContent).toContain('aggregate byte limit'),
     )
     validation.mockRestore()
     submit('保留文字和图片')
@@ -2634,7 +2704,7 @@ describe('image composer submissions', () => {
     expect(active.followUp).not.toHaveBeenCalled()
     expect(active.steer).not.toHaveBeenCalled()
     expect((document.getElementById('prompt') as HTMLTextAreaElement).value).toBe(longText)
-    expect(document.querySelector('.composer-image-preview img')).not.toBeNull()
+    expect(document.querySelector('.composer-file-preview')?.textContent).toContain('one.png')
     await vi.waitFor(() =>
       expect(document.querySelector('.agh-notifications')?.textContent).toContain('144 MiB 限制'),
     )
