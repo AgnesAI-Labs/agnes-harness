@@ -134,6 +134,8 @@ describe('client reconciler（WC10 前端状态机）', () => {
         homeNavigation.open('declared-page')
         await reconciler.reconcileNow()
         expect(h.loaded).toContain(row.entryUrl)
+        // A declaration alone cannot substitute for the module's actual component registration.
+        expect(homeEntries.get('declared-page')).toBeUndefined()
         rows = []
         await reconciler.reconcileNow()
         expect(homeEntries.get('declared-page')).toBeUndefined()

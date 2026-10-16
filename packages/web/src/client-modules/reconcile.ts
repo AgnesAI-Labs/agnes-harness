@@ -88,6 +88,7 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
     phase: PluginRuntimePhase,
     failure?: PluginRuntimeError,
   ): void {
+    if (phase === 'active') navigation.remove(rowId)
     state.phase = phase
     state.failure = failure
     statuses.set(
