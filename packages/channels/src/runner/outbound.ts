@@ -5,6 +5,7 @@ import { type DegradedCap, degrade } from '../degrade.js'
 import { backoffDelays } from './backoff.js'
 import type { RunnerConfig } from './config.js'
 import { contentHash, drawSurfaceMessage, whatToDraw } from './draw.js'
+import { historyRefusalText } from './notices.js'
 import type { DeliveryRefRow, RefPart, RefStore } from './ref-store.js'
 import type { SessionCache } from './session-cache.js'
 import { chunkText, TokenBucket } from './throttle.js'
@@ -32,6 +33,7 @@ type OutboundDeps = {
   noticeRetry?: { attempts?: number; baseMs?: number; maxMs?: number; jitter?: () => number }
   stopSettleMs?: number
   maxDetachedWork?: number
+  onHistoryRefused?: (key: string, error: unknown) => Promise<boolean>
 }
 
 type Watermark = Pick<UITimeline, 'generation' | 'upto'>
@@ -117,7 +119,16 @@ export class Outbound {
   ): Promise<void> {
     const lane = this.lanes.get(sessionKey)
     if (lane === undefined) return Promise.resolve()
-    lane.flushing = lane.flushing.catch(() => undefined).then(() => this.render(sessionKey, lane))
+    lane.flushing = lane.flushing
+      .catch(() => undefined)
+      .then(() => this.render(sessionKey, lane))
+      .catch(async (error: unknown) => {
+        if (!this.isCurrent(sessionKey, lane)) {
+          if (historyRefusalText(error) !== null) return
+          throw error
+        }
+        if (!(await this.dependencies.onHistoryRefused?.(sessionKey, error))) throw error
+      })
     return lane.flushing
   }
 
@@ -181,6 +192,7 @@ export class Outbound {
         }
       } catch (error) {
         if (!this.isCurrent(sessionKey, lane)) return
+        if (await this.dependencies.onHistoryRefused?.(sessionKey, error)) return
         failures++
         this.safeError('channel outbound event pump failed; rebuilding iterator', {
           sessionKey,

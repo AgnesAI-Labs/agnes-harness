@@ -1,5 +1,15 @@
-import type { DaemonNotice } from '@agnes/protocol'
+import { AGNES_ERRORS, type DaemonNotice, SESSION_VERSION_CODES } from '@agnes/protocol'
+import { JsonRpcError } from '@agnes/sdk'
 import type { RunnerConfig } from './config.js'
+
+/** Session-open maps ledger integrity failures to this closed wire code. Ignore all prose. */
+export function historyRefusalText(error: unknown): string | null {
+  return error instanceof JsonRpcError &&
+    error.code === AGNES_ERRORS.SEMANTIC_REJECTED &&
+    error.data.code === SESSION_VERSION_CODES.corrupt
+    ? '会话历史校验失败，已停止；请联系管理员'
+    : null
+}
 
 export function noticeText(notice: DaemonNotice): string | null {
   const detail =
