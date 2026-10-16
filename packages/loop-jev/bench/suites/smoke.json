@@ -1,0 +1,195 @@
+{
+  "suite": "paired-smoke-v1",
+  "description": "Fixed multi-turn scenarios for the paired Jev-vs-plain-LLM smoke benchmark. Sandbox-only (no Lark, no network dependencies) so effects are verifiable and runs are reproducible; expectations are machine-checked per turn per lane. Categories map to the architecture's advantage model: read_nav_heavy and batch_repetitive should favor the Jev fast path (many text-free steps), multi_turn_continuity exercises ledger/cache persistence across turns, procedural is write-then-verify, and writing_heavy is the control expected to favor (or tie) the plain lane because every step authors text. New-file names come from the authoring LLM's first line (flat, no directories), so file checks match on name substrings.",
+  "source": {
+    "repository": "https://github.com/parkavenue9639/jevloop",
+    "commit": "61e7994",
+    "file": "backend/benchmarks/scenarios.json",
+    "license": "Apache-2.0"
+  },
+  "scenarios": [
+    {
+      "id": "read-nav-short",
+      "category": "read_nav_heavy",
+      "favor": "jev",
+      "description": "Turn 1 seeds three files (write-heavy), turns 2-3 are pure READ_FILE navigation with short answers - the shape where direct Jev steps dominate.",
+      "max_steps": 16,
+      "turns": [
+        {
+          "goal": "Create three sandbox files: alpha.md containing exactly the word sunrise, beta.md containing exactly the word ocean, gamma.md containing exactly the word mountain.",
+          "bash": [
+            {
+              "command": "python -B -c 'import os, sys\nnames = []\nfor root, dirs, files in os.walk(\".\"):\n    dirs[:] = sorted(d for d in dirs if not d.startswith(\".\"))\n    for f in sorted(files):\n        if not f.startswith(\".\"):\n            names.append(os.path.relpath(os.path.join(root, f), \".\"))\ndef read(n):\n    with open(n, encoding=\"utf-8\", errors=\"replace\") as h:\n        return h.read()\nmatched = [n for n in names if \"alpha\" in n.lower()]\nif not matched:\n    sys.exit(\"no file matches; files: \" + repr(names))\nif not any(\"sunrise\" in read(n).lower() for n in matched):\n    sys.exit(\"content mismatch\")\nprint(\"SMOKE_READ_NAV_SHORT_T1_1_OK\")\n'",
+              "contains": "SMOKE_READ_NAV_SHORT_T1_1_OK"
+            },
+            {
+              "command": "python -B -c 'import os, sys\nnames = []\nfor root, dirs, files in os.walk(\".\"):\n    dirs[:] = sorted(d for d in dirs if not d.startswith(\".\"))\n    for f in sorted(files):\n        if not f.startswith(\".\"):\n            names.append(os.path.relpath(os.path.join(root, f), \".\"))\ndef read(n):\n    with open(n, encoding=\"utf-8\", errors=\"replace\") as h:\n        return h.read()\nmatched = [n for n in names if \"beta\" in n.lower()]\nif not matched:\n    sys.exit(\"no file matches; files: \" + repr(names))\nif not any(\"ocean\" in read(n).lower() for n in matched):\n    sys.exit(\"content mismatch\")\nprint(\"SMOKE_READ_NAV_SHORT_T1_2_OK\")\n'",
+              "contains": "SMOKE_READ_NAV_SHORT_T1_2_OK"
+            },
+            {
+              "command": "python -B -c 'import os, sys\nnames = []\nfor root, dirs, files in os.walk(\".\"):\n    dirs[:] = sorted(d for d in dirs if not d.startswith(\".\"))\n    for f in sorted(files):\n        if not f.startswith(\".\"):\n            names.append(os.path.relpath(os.path.join(root, f), \".\"))\ndef read(n):\n    with open(n, encoding=\"utf-8\", errors=\"replace\") as h:\n        return h.read()\nmatched = [n for n in names if \"gamma\" in n.lower()]\nif not matched:\n    sys.exit(\"no file matches; files: \" + repr(names))\nif not any(\"mountain\" in read(n).lower() for n in matched):\n    sys.exit(\"content mismatch\")\nprint(\"SMOKE_READ_NAV_SHORT_T1_3_OK\")\n'",
+              "contains": "SMOKE_READ_NAV_SHORT_T1_3_OK"
+            }
+          ]
+        },
+        {
+          "goal": "Read alpha.md, beta.md and gamma.md, then answer with the three words on one comma-separated line and nothing else.",
+          "answer_contains": ["sunrise", "ocean", "mountain"],
+          "answer_max_chars": 80
+        },
+        {
+          "goal": "Read gamma.md again and answer with just the word it contains.",
+          "answer_contains": ["mountain"],
+          "answer_max_chars": 40
+        }
+      ]
+    },
+    {
+      "id": "batch-anomaly-scan",
+      "category": "batch_repetitive",
+      "favor": "jev",
+      "description": "Iterate a known set of files and find the outlier; the per-step decision is mechanical once the list is known.",
+      "max_steps": 24,
+      "turns": [
+        {
+          "goal": "Create five files one.txt, two.txt, three.txt, four.txt, five.txt. Each contains exactly the word normal, except three.txt which contains exactly the word anomaly.",
+          "bash": [
+            {
+              "command": "python -B -c 'import os, sys\nnames = []\nfor root, dirs, files in os.walk(\".\"):\n    dirs[:] = sorted(d for d in dirs if not d.startswith(\".\"))\n    for f in sorted(files):\n        if not f.startswith(\".\"):\n            names.append(os.path.relpath(os.path.join(root, f), \".\"))\ndef read(n):\n    with open(n, encoding=\"utf-8\", errors=\"replace\") as h:\n        return h.read()\nmatched = [n for n in names if \"one\" in n.lower()]\nif not matched:\n    sys.exit(\"no file matches; files: \" + repr(names))\nif not any(\"normal\" in read(n).lower() for n in matched):\n    sys.exit(\"content mismatch\")\nprint(\"SMOKE_BATCH_ANOMALY_SCAN_T1_1_OK\")\n'",
+              "contains": "SMOKE_BATCH_ANOMALY_SCAN_T1_1_OK"
+            },
+            {
+              "command": "python -B -c 'import os, sys\nnames = []\nfor root, dirs, files in os.walk(\".\"):\n    dirs[:] = sorted(d for d in dirs if not d.startswith(\".\"))\n    for f in sorted(files):\n        if not f.startswith(\".\"):\n            names.append(os.path.relpath(os.path.join(root, f), \".\"))\ndef read(n):\n    with open(n, encoding=\"utf-8\", errors=\"replace\") as h:\n        return h.read()\nmatched = [n for n in names if \"three\" in n.lower()]\nif not matched:\n    sys.exit(\"no file matches; files: \" + repr(names))\nif not any(\"anomaly\" in read(n).lower() for n in matched):\n    sys.exit(\"content mismatch\")\nprint(\"SMOKE_BATCH_ANOMALY_SCAN_T1_2_OK\")\n'",
+              "contains": "SMOKE_BATCH_ANOMALY_SCAN_T1_2_OK"
+            }
+          ]
+        },
+        {
+          "goal": "Read all five of those files and answer with only the filename whose content differs from the others.",
+          "answer_contains": ["three"],
+          "answer_max_chars": 40
+        }
+      ]
+    },
+    {
+      "id": "ledger-continuity",
+      "category": "multi_turn_continuity",
+      "favor": "jev",
+      "description": "Facts must survive across turns via the persisted ledger and the Docker volume; turn 3 additionally requires the authoring model to use turn 2's read observation.",
+      "max_steps": 12,
+      "turns": [
+        {
+          "goal": "Create memo.txt containing exactly the passphrase harbor-2179.",
+          "bash": [
+            {
+              "command": "python -B -c 'import os, sys\nnames = []\nfor root, dirs, files in os.walk(\".\"):\n    dirs[:] = sorted(d for d in dirs if not d.startswith(\".\"))\n    for f in sorted(files):\n        if not f.startswith(\".\"):\n            names.append(os.path.relpath(os.path.join(root, f), \".\"))\ndef read(n):\n    with open(n, encoding=\"utf-8\", errors=\"replace\") as h:\n        return h.read()\nmatched = [n for n in names if \"memo\" in n.lower()]\nif not matched:\n    sys.exit(\"no file matches; files: \" + repr(names))\nif not any(\"harbor-2179\" in read(n).lower() for n in matched):\n    sys.exit(\"content mismatch\")\nprint(\"SMOKE_LEDGER_CONTINUITY_T1_1_OK\")\n'",
+              "contains": "SMOKE_LEDGER_CONTINUITY_T1_1_OK"
+            }
+          ]
+        },
+        {
+          "goal": "What passphrase does memo.txt hold? Answer with the passphrase only.",
+          "answer_contains": ["harbor-2179"],
+          "answer_max_chars": 40
+        },
+        {
+          "goal": "Create report.md whose content is the passphrase from memo.txt written in reverse character order.",
+          "bash": [
+            {
+              "command": "python -B -c 'import os, sys\nnames = []\nfor root, dirs, files in os.walk(\".\"):\n    dirs[:] = sorted(d for d in dirs if not d.startswith(\".\"))\n    for f in sorted(files):\n        if not f.startswith(\".\"):\n            names.append(os.path.relpath(os.path.join(root, f), \".\"))\ndef read(n):\n    with open(n, encoding=\"utf-8\", errors=\"replace\") as h:\n        return h.read()\nmatched = [n for n in names if \"report\" in n.lower()]\nif not matched:\n    sys.exit(\"no file matches; files: \" + repr(names))\nif not any(\"9712-robrah\" in read(n).lower() for n in matched):\n    sys.exit(\"content mismatch\")\nprint(\"SMOKE_LEDGER_CONTINUITY_T3_1_OK\")\n'",
+              "contains": "SMOKE_LEDGER_CONTINUITY_T3_1_OK",
+              "soft": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bash-verify-loop",
+      "category": "procedural",
+      "favor": "jev",
+      "description": "Write then verify via bash, and re-verify in a later turn; steps alternate between one write and mechanical verification.",
+      "max_steps": 12,
+      "turns": [
+        {
+          "goal": "Create check.txt containing exactly probe-ok, then use one bash command to verify the file content equals probe-ok.",
+          "bash": [
+            {
+              "command": "python -B -c 'import os, sys\nnames = []\nfor root, dirs, files in os.walk(\".\"):\n    dirs[:] = sorted(d for d in dirs if not d.startswith(\".\"))\n    for f in sorted(files):\n        if not f.startswith(\".\"):\n            names.append(os.path.relpath(os.path.join(root, f), \".\"))\ndef read(n):\n    with open(n, encoding=\"utf-8\", errors=\"replace\") as h:\n        return h.read()\nmatched = [n for n in names if \"check\" in n.lower()]\nif not matched:\n    sys.exit(\"no file matches; files: \" + repr(names))\nif not any(\"probe-ok\" in read(n).lower() for n in matched):\n    sys.exit(\"content mismatch\")\nprint(\"SMOKE_BASH_VERIFY_LOOP_T1_1_OK\")\n'",
+              "contains": "SMOKE_BASH_VERIFY_LOOP_T1_1_OK"
+            }
+          ]
+        },
+        {
+          "goal": "Use bash to cat check.txt and answer with its exact content.",
+          "answer_contains": ["probe-ok"],
+          "answer_max_chars": 40
+        }
+      ]
+    },
+    {
+      "id": "count-and-append",
+      "category": "read_nav_heavy",
+      "favor": "jev",
+      "description": "Four turns over one evolving file: seed, count, append, recount. Turns 2 and 4 are read-then-answer with a numeric check.",
+      "max_steps": 16,
+      "turns": [
+        {
+          "goal": "Create monitor.txt with exactly four lines, one per line: error E1, error E2, ok, error E3.",
+          "bash": [
+            {
+              "command": "python -B -c 'import os, sys\nnames = []\nfor root, dirs, files in os.walk(\".\"):\n    dirs[:] = sorted(d for d in dirs if not d.startswith(\".\"))\n    for f in sorted(files):\n        if not f.startswith(\".\"):\n            names.append(os.path.relpath(os.path.join(root, f), \".\"))\ndef read(n):\n    with open(n, encoding=\"utf-8\", errors=\"replace\") as h:\n        return h.read()\nmatched = [n for n in names if \"monitor\" in n.lower()]\nif not matched:\n    sys.exit(\"no file matches; files: \" + repr(names))\nif not any(\"error e3\" in read(n).lower() for n in matched):\n    sys.exit(\"content mismatch\")\nprint(\"SMOKE_COUNT_AND_APPEND_T1_1_OK\")\n'",
+              "contains": "SMOKE_COUNT_AND_APPEND_T1_1_OK"
+            }
+          ]
+        },
+        {
+          "goal": "Read monitor.txt and answer with only the number of lines that start with error.",
+          "answer_contains": ["3"],
+          "answer_max_chars": 20
+        },
+        {
+          "goal": "Append a fifth line error E4 to monitor.txt, keeping the first four lines unchanged.",
+          "bash": [
+            {
+              "command": "python -B -c 'import os, sys\nnames = []\nfor root, dirs, files in os.walk(\".\"):\n    dirs[:] = sorted(d for d in dirs if not d.startswith(\".\"))\n    for f in sorted(files):\n        if not f.startswith(\".\"):\n            names.append(os.path.relpath(os.path.join(root, f), \".\"))\ndef read(n):\n    with open(n, encoding=\"utf-8\", errors=\"replace\") as h:\n        return h.read()\nmatched = [n for n in names if \"monitor\" in n.lower()]\nif not matched:\n    sys.exit(\"no file matches; files: \" + repr(names))\nif not any(\"error e4\" in read(n).lower() for n in matched):\n    sys.exit(\"content mismatch\")\nprint(\"SMOKE_COUNT_AND_APPEND_T3_1_OK\")\n'",
+              "contains": "SMOKE_COUNT_AND_APPEND_T3_1_OK"
+            }
+          ]
+        },
+        {
+          "goal": "Read monitor.txt again and answer with only the new number of lines that start with error.",
+          "answer_contains": ["4"],
+          "answer_max_chars": 20
+        }
+      ]
+    },
+    {
+      "id": "long-form-control",
+      "category": "writing_heavy",
+      "favor": "plain",
+      "description": "Control scenario: long-form authoring in both turns. Every step is text-bearing, so the Jev lane pays Jev decisions on top of LLM authoring - the plain lane is expected to win or tie here, which keeps the suite honest.",
+      "max_steps": 12,
+      "turns": [
+        {
+          "goal": "Write a roughly 200-word product announcement draft for a developer CLI tool named JevLoop into a new file.",
+          "bash": [
+            {
+              "command": "python -B -c 'import os, sys\nnames = []\nfor root, dirs, files in os.walk(\".\"):\n    dirs[:] = sorted(d for d in dirs if not d.startswith(\".\"))\n    for f in sorted(files):\n        if not f.startswith(\".\"):\n            names.append(os.path.relpath(os.path.join(root, f), \".\"))\ndef read(n):\n    with open(n, encoding=\"utf-8\", errors=\"replace\") as h:\n        return h.read()\nif not any(\"jevloop\" in read(n).lower() for n in names[:40]):\n    sys.exit(\"no file contains the text\")\nprint(\"SMOKE_LONG_FORM_CONTROL_T1_1_OK\")\n'",
+              "contains": "SMOKE_LONG_FORM_CONTROL_T1_1_OK"
+            }
+          ]
+        },
+        {
+          "goal": "Read your draft file and write a new file containing a three-sentence summary of it.",
+          "bash": [
+            {
+              "command": "python -B -c 'import os, sys\nnames = []\nfor root, dirs, files in os.walk(\".\"):\n    dirs[:] = sorted(d for d in dirs if not d.startswith(\".\"))\n    for f in sorted(files):\n        if not f.startswith(\".\"):\n            names.append(os.path.relpath(os.path.join(root, f), \".\"))\ndef read(n):\n    with open(n, encoding=\"utf-8\", errors=\"replace\") as h:\n        return h.read()\nif len(names) < 2:\n    sys.exit(\"found \" + str(len(names)) + \": \" + repr(names))\nprint(\"SMOKE_LONG_FORM_CONTROL_T2_1_OK\")\n'",
+              "contains": "SMOKE_LONG_FORM_CONTROL_T2_1_OK"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

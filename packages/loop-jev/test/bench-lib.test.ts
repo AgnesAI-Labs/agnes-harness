@@ -1,0 +1,289 @@
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { describe, expect, it } from 'vitest'
+import {
+  aggregate,
+  buildBundle,
+  cacheScope,
+  computeK,
+  finalAnswer,
+  loadSuite,
+  orderLanes,
+  presetName,
+  renderReport,
+  scoreTurn,
+  turnMetrics,
+  verdict,
+} from '../bench/lib.mjs'
+
+const families = new URL('../bench/suites/fastapi-families.json', import.meta.url).pathname
+const smoke = new URL('../bench/suites/smoke.json', import.meta.url).pathname
+
+describe('bench suites', () => {
+  it('loads the exported FastAPI families: 3 scenarios, 20 turns, Chinese goals, attribution', () => {
+    const s = loadSuite(families)
+    expect(s.scenarios.map((x) => [x.id, x.turns.length])).toEqual([
+      ['fastapi-observation-reuse', 6],
+      ['fastapi-generation', 6],
+      ['fastapi-mixed', 8],
+    ])
+    expect(s.scenarios[0]?.turns[0]?.goal).toMatch(/FastAPI/)
+    expect((s as unknown as { source: { commit: string } }).source.commit).toBe('61e7994')
+    expect(s.scenarios[1]?.turns[0]?.bash?.[0]?.contains).toBe('FAMILY_GENERATION_T1_OK')
+  })
+  it('loads the smoke suite with checks rewritten as probes', () => {
+    const s = loadSuite(smoke)
+    expect(s.scenarios).toHaveLength(6)
+    expect(
+      s.scenarios
+        .flatMap((x) => x.turns)
+        .every((t) => (t.bash?.length ?? 0) > 0 || (t.answer_contains?.length ?? 0) > 0),
+    ).toBe(true)
+    expect(s.scenarios.find((x) => x.id === 'ledger-continuity')?.turns[2]?.bash?.[0]?.soft).toBe(true)
+  })
+})
+
+describe('bench configuration', () => {
+  const suite = loadSuite(families)
+  it('isolates prompt caches per scenario, lane and repetition', () => {
+    expect(cacheScope('a', 'jev', 1)).toMatch(/^\[cache-scope:[0-9a-f]{16}\]$/)
+    expect(cacheScope('a', 'jev', 1)).not.toBe(cacheScope('a', 'default', 1))
+    expect(presetName('a', 'jev', 1)).toMatch(/^bench-[0-9a-f]{12}$/)
+  })
+  it('builds one bundle: the Jev row, seven tools and a preset per cell', () => {
+    const b = buildBundle({ suite, lanes: ['default', 'jev'], reps: 3, stepCap: 20 }) as {
+      profile: { plugins: object; tools: string[] }
+      presets: Record<string, { budget: object; model: { system_prompt: { personaPrefix: string } } }>
+    }
+    expect(b.profile).toEqual({
+      plugins: { 'loop:agnes.jev': { enabled: true, config: { stepCap: 20 } } },
+      tools: ['ls', 'read', 'grep', 'find', 'write', 'edit', 'shell'],
+    })
+    expect(Object.keys(b.presets)).toHaveLength(18)
+    expect(Object.values(b.presets)[0]).toMatchObject({ extends: 'standard', budget: { max_steps: 20 } })
+  })
+  it('alternates lane order by repetition', () => {
+    expect(orderLanes(['default', 'jev'], 0)).toEqual(['default', 'jev'])
+    expect(orderLanes(['default', 'jev'], 1)).toEqual(['jev', 'default'])
+  })
+})
+
+describe('bench scoring', () => {
+  const turn = {
+    goal: 'g',
+    answer_contains: ['Lantern Catalog', 'orchard-ops'],
+    bash: [{ command: 'x', contains: 'M_OK' }],
+  }
+  it('passes only with probes, answer checks and a completed turn', () => {
+    expect(
+      scoreTurn({
+        turn,
+        answer: 'lantern catalog by ORCHARD-OPS',
+        endReason: 'completed',
+        probes: [{ exit: 0, output: 'M_OK' }],
+      }),
+    ).toMatchObject({ pass: true, probesPass: true, answerPass: true })
+    expect(
+      scoreTurn({
+        turn,
+        answer: 'lantern catalog',
+        endReason: 'completed',
+        probes: [{ exit: 0, output: 'M_OK' }],
+      }),
+    ).toMatchObject({ pass: false, probesPass: true, answerPass: false })
+    expect(
+      scoreTurn({
+        turn,
+        answer: 'Lantern Catalog orchard-ops',
+        endReason: 'completed',
+        probes: [{ exit: 1, output: 'M_OK' }],
+      }).probesPass,
+    ).toBe(false)
+    expect(
+      scoreTurn({
+        turn,
+        answer: 'Lantern Catalog orchard-ops',
+        endReason: 'max_steps',
+        probes: [{ exit: 0, output: 'M_OK' }],
+      }).pass,
+    ).toBe(false)
+  })
+  it('ignores soft probes and enforces answer_max_chars', () => {
+    expect(
+      scoreTurn({
+        turn: { goal: 'g', bash: [{ command: 'x', contains: 'Z', soft: true }] },
+        answer: '',
+        endReason: 'completed',
+        probes: [{ exit: 1, output: '' }],
+      }).pass,
+    ).toBe(true)
+    expect(
+      scoreTurn({
+        turn: { goal: 'g', answer_contains: ['3'], answer_max_chars: 5 },
+        answer: 'there are 3 lines',
+        endReason: 'completed',
+        probes: [],
+      }).answerPass,
+    ).toBe(false)
+  })
+  it('takes the last end_turn assistant message of the turn as the answer', () => {
+    const ev = [
+      {
+        seq: 1,
+        type: 'assistant/message',
+        data: { content: [{ type: 'text', text: 'old' }], stopReason: 'end_turn' },
+      },
+      { seq: 5, type: 'assistant/message', data: { content: [], stopReason: 'tool_use' } },
+      {
+        seq: 7,
+        type: 'assistant/message',
+        data: { content: [{ type: 'text', text: 'new' }], stopReason: 'end_turn' },
+      },
+    ]
+    expect(finalAnswer(ev, 2)).toBe('new')
+  })
+})
+
+describe('bench metrics', () => {
+  const cost = (purpose: string, usdMicros: number) => ({
+    type: 'cost/ledger',
+    data: {
+      purpose,
+      tokens: { input: 10, output: 1, cacheRead: 5, cacheWrite: 0 },
+      credits: 1,
+      billing: { usdMicros, source: 'gateway', subscription: false },
+    },
+  })
+  it('counts inference and side-call rows and reconciles with jev.step', () => {
+    const m = turnMetrics([
+      cost('inference', 100),
+      cost('side-call', 7),
+      cost('side-call', 7),
+      { type: 'x/agnes/base/jev.step', data: { route: 'answer', llm: { attempts: 1 } } },
+      { type: 'x/agnes/base/jev.step', data: { route: 'direct' } },
+    ])
+    expect(m).toMatchObject({
+      inference: 1,
+      sideCall: 2,
+      usdMicros: 114,
+      reconciled: true,
+      jev: { steps: 2, llmAttempts: 1 },
+    })
+  })
+  it('computes k from the baseline pilot', () => {
+    const events = [
+      { type: 'assistant/message', data: { stopReason: 'tool_use' } },
+      { type: 'tool/call', data: { toolUseId: 'a', name: 'edit' } },
+      { type: 'tool/call', data: { toolUseId: 'b', name: 'edit' } },
+      { type: 'tool/result', data: { toolUseId: 'a' } },
+      { type: 'tool/result', data: { toolUseId: 'b' } },
+      { type: 'assistant/message', data: { stopReason: 'tool_use' } },
+      { type: 'tool/call', data: { toolUseId: 'c', name: 'read' } },
+      { type: 'tool/result', data: { toolUseId: 'c' } },
+      { type: 'assistant/message', data: { stopReason: 'tool_use' } },
+      { type: 'tool/call', data: { toolUseId: 'd', name: 'write' } },
+      { type: 'tool/result', data: { toolUseId: 'd', code: 'TOOL_ARGS_INVALID' } },
+    ]
+    expect(computeK([{ events }])).toEqual({ k: 1, mutableCalls: 2, toolInferences: 3 })
+    expect(computeK([{ events: events.slice(0, 5) }]).k).toBe(2)
+  })
+  it('judges the three gates on totals', () => {
+    const rec = (lane: string, pass: boolean, inference: number, usd: number) => ({
+      scenario: 's',
+      category: 'c',
+      lane,
+      rep: 0,
+      turn: 0,
+      score: { pass, probesPass: pass, answerPass: pass, completed: true, checks: [] },
+      metrics: { inference, usdMicros: usd } as never,
+      wallMs: 1,
+    })
+    const totals = aggregate([rec('default', true, 10, 1000), rec('jev', true, 7, 790)])
+    expect(verdict(totals, 1)).toEqual({ passGate: true, callGate: true, costGate: true })
+    expect(verdict(aggregate([rec('default', true, 10, 1000), rec('jev', true, 8, 790)]), 1).callGate).toBe(
+      false,
+    )
+    expect(verdict(aggregate([rec('default', true, 10, 1000), rec('jev', true, 14, 790)]), 2).callGate).toBe(
+      true,
+    )
+  })
+})
+
+describe('bench suite validation', () => {
+  const write = (suite: unknown) => {
+    const dir = mkdtempSync(join(tmpdir(), 'bench-suite-'))
+    const path = join(dir, 'suite.json')
+    writeFileSync(path, JSON.stringify(suite))
+    return path
+  }
+  const scenario = (id: string, turn: object = { goal: 'g' }) => ({ id, category: 'c', turns: [turn] })
+  it('rejects unknown keys, empty goals and duplicate ids', () => {
+    expect(() =>
+      loadSuite(write({ suite: 's', scenarios: [scenario('a', { goal: 'g', files: [] })] })),
+    ).toThrow(/unknown key "files"/)
+    expect(() => loadSuite(write({ suite: 's', scenarios: [scenario('a', { goal: '  ' })] }))).toThrow(/goal/)
+    expect(() => loadSuite(write({ suite: 's', scenarios: [scenario('a'), scenario('a')] }))).toThrow(
+      /duplicate/,
+    )
+    expect(() => loadSuite(write({ suite: 's', extra: 1, scenarios: [scenario('a')] }))).toThrow(
+      /unknown key "extra"/,
+    )
+    expect(() =>
+      loadSuite(
+        write({
+          suite: 's',
+          scenarios: [scenario('a', { goal: 'g', bash: [{ command: 'x', contains: 'y', note: 1 }] })],
+        }),
+      ),
+    ).toThrow(/unknown key "note"/)
+  })
+  it('refuses a bundle over the 64-cell limit', () => {
+    const suite = loadSuite(families)
+    expect(() => buildBundle({ suite, lanes: ['default', 'jev'], reps: 11, stepCap: 20 })).toThrow(/64/)
+    expect(
+      Object.keys(buildBundle({ suite, lanes: ['default', 'jev'], reps: 10, stepCap: 20 }).presets),
+    ).toHaveLength(60)
+  })
+  it('counts request headers and reconciles a lane without Jev events', () => {
+    const m = turnMetrics([
+      { type: 'request/header', data: { tool_schema_hash: 'h1', prompt_prefix_hash: 'p1' } },
+      { type: 'request/header', data: { tool_schema_hash: 'h1', prompt_prefix_hash: null } },
+      { type: 'cost/ledger', data: { purpose: 'inference', tokens: {} } },
+    ])
+    expect(m).toMatchObject({
+      toolSchemaHashes: ['h1', 'h1'],
+      promptPrefixHashes: ['p1'],
+      inference: 1,
+      reconciled: true,
+    })
+  })
+  it('flags a lane whose inference rows differ from the Jev attempts', () => {
+    const m = turnMetrics(
+      [
+        { type: 'cost/ledger', data: { purpose: 'inference', tokens: {} } },
+        { type: 'x/a/b/jev.step', data: { route: 'answer', llm: { attempts: 2 } } },
+      ],
+      () => 5,
+    )
+    expect(m).toMatchObject({ reconciled: false, usdMicros: 5 })
+  })
+  it('renders the family, turn and total tables with ratios and the verdict', () => {
+    const rec = (lane: string, usd: number) => ({
+      scenario: 's',
+      category: 'c',
+      lane,
+      rep: 0,
+      turn: 0,
+      score: { pass: true, probesPass: true, answerPass: true, completed: true, checks: [] },
+      metrics: { inference: 4, usdMicros: usd } as never,
+      wallMs: 2000,
+    })
+    const records = [rec('default', 1000), rec('jev', 700)]
+    const totals = aggregate(records)
+    const md = renderReport({ suite: 'demo', totals, verdict: verdict(totals, 1), k: 1, records })
+    expect(md).toMatch(/## By family[\s\S]*## By turn[\s\S]*## Totals[\s\S]*## Ratios[\s\S]*## Verdict/)
+    expect(md).toContain('| s | jev | 1/1 | 1 | 1 | 4 | $0.000700 | 2.0 s |')
+    expect(md).toContain('| Cost | jev cost <= 0.8 x default cost | PASS |')
+  })
+})

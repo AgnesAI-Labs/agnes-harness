@@ -1,0 +1,320 @@
+{
+  "suite": "fastapi-task-families-v1",
+  "description": "Fixed derived suite, not a verbatim README replay: 6 observation-reuse, 6 generation and 8 mixed turns. Scenarios are independent; each lane retains its own state across turns. Executable checks are host-defined and require successful exit plus their marker. No model/tool choice is prescribed.",
+  "scenarios": [
+    {
+      "id": "fastapi-observation-reuse",
+      "category": "observation_reuse",
+      "favor": "either",
+      "description": "Explore and reuse immutable project evidence.",
+      "max_steps": 20,
+      "turns": [
+        {
+          "goal": "请了解当前这个 FastAPI 项目：概括主要目录及各自职责。不要修改项目。",
+          "answer_contains": ["routes", "config", "data", "docs"],
+          "inject_files": [
+            {
+              "name": "README.md",
+              "content": "# Lantern Catalog\n\nMaintainer: orchard-ops. This is a small FastAPI inventory service.\napp.py exports app. routes/items.py handles the item list.\nconfig/settings.json holds operational settings; data/items.json is\nthe inventory. docs/runbook.md describes the stockout procedure.\n\nGET / returns {\"message\": \"hello world\"}. GET /items returns a JSON\narray of {id, name, stock}; its optional positive limit overrides\ndefault_limit in settings. There is no search filter yet.\n\nDATA_FILE overrides data/items.json; SETTINGS_FILE overrides\nconfig/settings.json. Both are paths, read on each request.\nUse TestClient for checks; a long-running server is unnecessary.\n"
+            },
+            {
+              "name": "app.py",
+              "content": "from fastapi import FastAPI\nfrom routes.items import router\n\napp = FastAPI()\napp.include_router(router)\n\n@app.get(\"/\")\ndef hello():\n    return {\"message\": \"hello world\"}\n"
+            },
+            {
+              "name": "routes/__init__.py",
+              "content": ""
+            },
+            {
+              "name": "routes/items.py",
+              "content": "import json\nimport os\nfrom pathlib import Path\nfrom fastapi import APIRouter, Query\n\nrouter = APIRouter()\nROOT = Path(__file__).resolve().parents[1]\n\ndef read_settings():\n    path = Path(os.environ.get(\"SETTINGS_FILE\", ROOT / \"config/settings.json\"))\n    return json.loads(path.read_text(encoding=\"utf-8\"))\n\ndef read_items():\n    path = Path(os.environ.get(\"DATA_FILE\", ROOT / \"data/items.json\"))\n    return json.loads(path.read_text(encoding=\"utf-8\"))\n\n@router.get(\"/items\")\ndef items(limit: int | None = Query(default=None, ge=1)):\n    count = limit if limit is not None else read_settings()[\"default_limit\"]\n    return read_items()[:count]\n"
+            },
+            {
+              "name": "config/settings.json",
+              "content": "{\n  \"catalog_label\": \"Lantern Catalog\",\n  \"revision\": \"cedar-v1\",\n  \"warehouse\": \"east-depot\",\n  \"default_limit\": 2\n}\n"
+            },
+            {
+              "name": "data/items.json",
+              "content": "[\n  {\n    \"id\": 101,\n    \"name\": \"Paper Kite\",\n    \"stock\": 7\n  },\n  {\n    \"id\": 102,\n    \"name\": \"Brass Compass\",\n    \"stock\": 12\n  },\n  {\n    \"id\": 103,\n    \"name\": \"Canvas Pouch\",\n    \"stock\": 4\n  }\n]\n"
+            },
+            {
+              "name": "docs/runbook.md",
+              "content": "# Stockout runbook\n\nNever invent replacement inventory. Route stockout requests to\namber-shelf and record ticket OPS-417 for the operator.\nThe settings revision is an operational label, not a data checksum.\nAfter an operator changes settings or inventory, report current\nfile values rather than treating an earlier answer as authoritative.\n"
+            }
+          ],
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nexpected = {'\"'\"'README.md'\"'\"': '\"'\"'ce666be754869bf9d69ece94a5ea76a1a84c584f3280f0f4ff7de004536f8862'\"'\"', '\"'\"'app.py'\"'\"': '\"'\"'3741e5ddc45c4c87029daee70cc2fbd07ddee03179d0c6296eb8c0b7e8e66f77'\"'\"', '\"'\"'routes/__init__.py'\"'\"': '\"'\"'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'\"'\"', '\"'\"'routes/items.py'\"'\"': '\"'\"'a1d5e85d5ae49e892d42fde18e8c881ee631738542ca8e16780069e983341071'\"'\"', '\"'\"'config/settings.json'\"'\"': '\"'\"'8beb2ca015799d7a13526eb9045ecc966579c33af57ad1d136cb656462374b06'\"'\"', '\"'\"'data/items.json'\"'\"': '\"'\"'801f6561e03cf49315f774b28c4464f02b7656657a17759f43a1780f58bb7502'\"'\"', '\"'\"'docs/runbook.md'\"'\"': '\"'\"'61cece667eaf831e8a053c4e25a89815f0c27da95c16a1bf2494ba6ecbd27435'\"'\"'}\nfor name, digest in expected.items():\n    assert hashlib.sha256(Path(name).read_bytes()).hexdigest() == digest, name\nprint('\"'\"'FAMILY_REUSE_T1_OK'\"'\"')\n'",
+              "contains": "FAMILY_REUSE_T1_OK"
+            }
+          ]
+        },
+        {
+          "goal": "这个项目叫什么，由哪个维护团队负责？请依据项目说明回答，不修改文件。",
+          "answer_contains": ["Lantern Catalog", "orchard-ops"],
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nexpected = {'\"'\"'README.md'\"'\"': '\"'\"'ce666be754869bf9d69ece94a5ea76a1a84c584f3280f0f4ff7de004536f8862'\"'\"', '\"'\"'app.py'\"'\"': '\"'\"'3741e5ddc45c4c87029daee70cc2fbd07ddee03179d0c6296eb8c0b7e8e66f77'\"'\"', '\"'\"'routes/__init__.py'\"'\"': '\"'\"'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'\"'\"', '\"'\"'routes/items.py'\"'\"': '\"'\"'a1d5e85d5ae49e892d42fde18e8c881ee631738542ca8e16780069e983341071'\"'\"', '\"'\"'config/settings.json'\"'\"': '\"'\"'8beb2ca015799d7a13526eb9045ecc966579c33af57ad1d136cb656462374b06'\"'\"', '\"'\"'data/items.json'\"'\"': '\"'\"'801f6561e03cf49315f774b28c4464f02b7656657a17759f43a1780f58bb7502'\"'\"', '\"'\"'docs/runbook.md'\"'\"': '\"'\"'61cece667eaf831e8a053c4e25a89815f0c27da95c16a1bf2494ba6ecbd27435'\"'\"'}\nfor name, digest in expected.items():\n    assert hashlib.sha256(Path(name).read_bytes()).hexdigest() == digest, name\nprint('\"'\"'FAMILY_REUSE_T2_OK'\"'\"')\n'",
+              "contains": "FAMILY_REUSE_T2_OK"
+            }
+          ]
+        },
+        {
+          "goal": "项目配置中的版本标签、仓库位置和默认返回条数各是什么？不要改动配置。",
+          "answer_contains": ["cedar-v1", "east-depot", "2"],
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nexpected = {'\"'\"'README.md'\"'\"': '\"'\"'ce666be754869bf9d69ece94a5ea76a1a84c584f3280f0f4ff7de004536f8862'\"'\"', '\"'\"'app.py'\"'\"': '\"'\"'3741e5ddc45c4c87029daee70cc2fbd07ddee03179d0c6296eb8c0b7e8e66f77'\"'\"', '\"'\"'routes/__init__.py'\"'\"': '\"'\"'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'\"'\"', '\"'\"'routes/items.py'\"'\"': '\"'\"'a1d5e85d5ae49e892d42fde18e8c881ee631738542ca8e16780069e983341071'\"'\"', '\"'\"'config/settings.json'\"'\"': '\"'\"'8beb2ca015799d7a13526eb9045ecc966579c33af57ad1d136cb656462374b06'\"'\"', '\"'\"'data/items.json'\"'\"': '\"'\"'801f6561e03cf49315f774b28c4464f02b7656657a17759f43a1780f58bb7502'\"'\"', '\"'\"'docs/runbook.md'\"'\"': '\"'\"'61cece667eaf831e8a053c4e25a89815f0c27da95c16a1bf2494ba6ecbd27435'\"'\"'}\nfor name, digest in expected.items():\n    assert hashlib.sha256(Path(name).read_bytes()).hexdigest() == digest, name\nprint('\"'\"'FAMILY_REUSE_T3_OK'\"'\"')\n'",
+              "contains": "FAMILY_REUSE_T3_OK"
+            }
+          ]
+        },
+        {
+          "goal": "库存里数量最多和最少的商品分别是什么，各有多少？比较全部库存，不修改数据。",
+          "answer_contains": ["Brass Compass", "12", "Canvas Pouch", "4"],
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nexpected = {'\"'\"'README.md'\"'\"': '\"'\"'ce666be754869bf9d69ece94a5ea76a1a84c584f3280f0f4ff7de004536f8862'\"'\"', '\"'\"'app.py'\"'\"': '\"'\"'3741e5ddc45c4c87029daee70cc2fbd07ddee03179d0c6296eb8c0b7e8e66f77'\"'\"', '\"'\"'routes/__init__.py'\"'\"': '\"'\"'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'\"'\"', '\"'\"'routes/items.py'\"'\"': '\"'\"'a1d5e85d5ae49e892d42fde18e8c881ee631738542ca8e16780069e983341071'\"'\"', '\"'\"'config/settings.json'\"'\"': '\"'\"'8beb2ca015799d7a13526eb9045ecc966579c33af57ad1d136cb656462374b06'\"'\"', '\"'\"'data/items.json'\"'\"': '\"'\"'801f6561e03cf49315f774b28c4464f02b7656657a17759f43a1780f58bb7502'\"'\"', '\"'\"'docs/runbook.md'\"'\"': '\"'\"'61cece667eaf831e8a053c4e25a89815f0c27da95c16a1bf2494ba6ecbd27435'\"'\"'}\nfor name, digest in expected.items():\n    assert hashlib.sha256(Path(name).read_bytes()).hexdigest() == digest, name\nprint('\"'\"'FAMILY_REUSE_T4_OK'\"'\"')\n'",
+              "contains": "FAMILY_REUSE_T4_OK"
+            }
+          ]
+        },
+        {
+          "goal": "现有商品列表接口的路径是什么？没有指定条数时如何确定条数，传入条数的最小允许值是多少？不要改代码。",
+          "answer_contains": ["/items", "default_limit", "1"],
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nexpected = {'\"'\"'README.md'\"'\"': '\"'\"'ce666be754869bf9d69ece94a5ea76a1a84c584f3280f0f4ff7de004536f8862'\"'\"', '\"'\"'app.py'\"'\"': '\"'\"'3741e5ddc45c4c87029daee70cc2fbd07ddee03179d0c6296eb8c0b7e8e66f77'\"'\"', '\"'\"'routes/__init__.py'\"'\"': '\"'\"'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'\"'\"', '\"'\"'routes/items.py'\"'\"': '\"'\"'a1d5e85d5ae49e892d42fde18e8c881ee631738542ca8e16780069e983341071'\"'\"', '\"'\"'config/settings.json'\"'\"': '\"'\"'8beb2ca015799d7a13526eb9045ecc966579c33af57ad1d136cb656462374b06'\"'\"', '\"'\"'data/items.json'\"'\"': '\"'\"'801f6561e03cf49315f774b28c4464f02b7656657a17759f43a1780f58bb7502'\"'\"', '\"'\"'docs/runbook.md'\"'\"': '\"'\"'61cece667eaf831e8a053c4e25a89815f0c27da95c16a1bf2494ba6ecbd27435'\"'\"'}\nfor name, digest in expected.items():\n    assert hashlib.sha256(Path(name).read_bytes()).hexdigest() == digest, name\nprint('\"'\"'FAMILY_REUSE_T5_OK'\"'\"')\n'",
+              "contains": "FAMILY_REUSE_T5_OK"
+            }
+          ]
+        },
+        {
+          "goal": "运维文档要求缺货请求转交到哪里，记录哪个工单标识？只说明当前约定。",
+          "answer_contains": ["amber-shelf", "OPS-417"],
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nexpected = {'\"'\"'README.md'\"'\"': '\"'\"'ce666be754869bf9d69ece94a5ea76a1a84c584f3280f0f4ff7de004536f8862'\"'\"', '\"'\"'app.py'\"'\"': '\"'\"'3741e5ddc45c4c87029daee70cc2fbd07ddee03179d0c6296eb8c0b7e8e66f77'\"'\"', '\"'\"'routes/__init__.py'\"'\"': '\"'\"'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'\"'\"', '\"'\"'routes/items.py'\"'\"': '\"'\"'a1d5e85d5ae49e892d42fde18e8c881ee631738542ca8e16780069e983341071'\"'\"', '\"'\"'config/settings.json'\"'\"': '\"'\"'8beb2ca015799d7a13526eb9045ecc966579c33af57ad1d136cb656462374b06'\"'\"', '\"'\"'data/items.json'\"'\"': '\"'\"'801f6561e03cf49315f774b28c4464f02b7656657a17759f43a1780f58bb7502'\"'\"', '\"'\"'docs/runbook.md'\"'\"': '\"'\"'61cece667eaf831e8a053c4e25a89815f0c27da95c16a1bf2494ba6ecbd27435'\"'\"'}\nfor name, digest in expected.items():\n    assert hashlib.sha256(Path(name).read_bytes()).hexdigest() == digest, name\nprint('\"'\"'FAMILY_REUSE_T6_OK'\"'\"')\n'",
+              "contains": "FAMILY_REUSE_T6_OK"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fastapi-generation",
+      "category": "generation",
+      "favor": "either",
+      "description": "Evolve an empty workspace into a JSON-backed FastAPI app.",
+      "max_steps": 20,
+      "turns": [
+        {
+          "goal": "当前工作目录有哪些文件？先概括现状，不创建内容。",
+          "answer_contains": [".gitkeep"],
+          "bash": [
+            {
+              "command": "python -B -c 'from pathlib import Path\nassert {p.name for p in Path.cwd().iterdir()} == {\".gitkeep\"}\nprint('\"'\"'FAMILY_GENERATION_T1_OK'\"'\"')\n'",
+              "contains": "FAMILY_GENERATION_T1_OK"
+            }
+          ]
+        },
+        {
+          "goal": "创建一个最小 FastAPI demo。入口固定为 app.py 中的 app 对象，GET / 返回状态 200 和 JSON 对象 {\"message\": \"hello world\"}。无需常驻服务。",
+          "bash": [
+            {
+              "command": "python -B -c 'import json\nimport os\nimport shutil\nimport subprocess\nimport sys\nimport tempfile\nfrom pathlib import Path\nfrom fastapi.testclient import TestClient\n\noriginal = Path.cwd()\nwith tempfile.TemporaryDirectory(prefix=\"fastapi-family-check-\") as scratch:\n    scratch = Path(scratch)\n    project = scratch / \"project\"\n    shutil.copytree(original, project, ignore=shutil.ignore_patterns(\n        \".git\", \".venv\", \"__pycache__\", \".pytest_cache\"))\n    data_path = scratch / \"items.json\"\n    settings_path = scratch / \"settings.json\"\n    data_path.write_text(json.dumps([{'\"'\"'id'\"'\"': 101, '\"'\"'name'\"'\"': '\"'\"'Paper Kite'\"'\"', '\"'\"'stock'\"'\"': 7}, {'\"'\"'id'\"'\"': 102, '\"'\"'name'\"'\"': '\"'\"'Brass Compass'\"'\"', '\"'\"'stock'\"'\"': 12}, {'\"'\"'id'\"'\"': 103, '\"'\"'name'\"'\"': '\"'\"'Canvas Pouch'\"'\"', '\"'\"'stock'\"'\"': 4}]), encoding=\"utf-8\")\n    settings_path.write_text(json.dumps({'\"'\"'catalog_label'\"'\"': '\"'\"'Lantern Catalog'\"'\"', '\"'\"'revision'\"'\"': '\"'\"'cedar-v1'\"'\"', '\"'\"'warehouse'\"'\"': '\"'\"'east-depot'\"'\"', '\"'\"'default_limit'\"'\"': 2}),\n                             encoding=\"utf-8\")\n    os.environ[\"DATA_FILE\"] = str(data_path)\n    os.environ[\"SETTINGS_FILE\"] = str(settings_path)\n    os.environ[\"PYTHONDONTWRITEBYTECODE\"] = \"1\"\n    os.chdir(project)\n    sys.path.insert(0, str(project))\n    from app import app\n    with TestClient(app) as client:\n        response = client.get(\"/\")\n        assert response.status_code == 200\n        assert response.json() == {\"message\": \"hello world\"}\nprint('\"'\"'FAMILY_GENERATION_T2_OK'\"'\"')\n'",
+              "contains": "FAMILY_GENERATION_T2_OK"
+            }
+          ]
+        },
+        {
+          "goal": "为现有 hello 接口在 test_app.py 中增加 pytest 测试，并验证它可以正常调用。使用 TestClient，不启动常驻服务。",
+          "bash": [
+            {
+              "command": "python -B -c 'import json\nimport os\nimport shutil\nimport subprocess\nimport sys\nimport tempfile\nfrom pathlib import Path\nfrom fastapi.testclient import TestClient\n\noriginal = Path.cwd()\nwith tempfile.TemporaryDirectory(prefix=\"fastapi-family-check-\") as scratch:\n    scratch = Path(scratch)\n    project = scratch / \"project\"\n    shutil.copytree(original, project, ignore=shutil.ignore_patterns(\n        \".git\", \".venv\", \"__pycache__\", \".pytest_cache\"))\n    data_path = scratch / \"items.json\"\n    settings_path = scratch / \"settings.json\"\n    data_path.write_text(json.dumps([{'\"'\"'id'\"'\"': 101, '\"'\"'name'\"'\"': '\"'\"'Paper Kite'\"'\"', '\"'\"'stock'\"'\"': 7}, {'\"'\"'id'\"'\"': 102, '\"'\"'name'\"'\"': '\"'\"'Brass Compass'\"'\"', '\"'\"'stock'\"'\"': 12}, {'\"'\"'id'\"'\"': 103, '\"'\"'name'\"'\"': '\"'\"'Canvas Pouch'\"'\"', '\"'\"'stock'\"'\"': 4}]), encoding=\"utf-8\")\n    settings_path.write_text(json.dumps({'\"'\"'catalog_label'\"'\"': '\"'\"'Lantern Catalog'\"'\"', '\"'\"'revision'\"'\"': '\"'\"'cedar-v1'\"'\"', '\"'\"'warehouse'\"'\"': '\"'\"'east-depot'\"'\"', '\"'\"'default_limit'\"'\"': 2}),\n                             encoding=\"utf-8\")\n    os.environ[\"DATA_FILE\"] = str(data_path)\n    os.environ[\"SETTINGS_FILE\"] = str(settings_path)\n    os.environ[\"PYTHONDONTWRITEBYTECODE\"] = \"1\"\n    os.chdir(project)\n    sys.path.insert(0, str(project))\n    from app import app\n    with TestClient(app) as client:\n        response = client.get(\"/\")\n        assert response.status_code == 200\n        assert response.json() == {\"message\": \"hello world\"}\n        assert Path(\"test_app.py\").is_file()\n        result = subprocess.run([sys.executable, \"-m\", \"pytest\", \"-q\", \"-p\",\n                                 \"no:cacheprovider\", \"test_app.py\"],\n                                capture_output=True, text=True, timeout=30)\n        assert result.returncode == 0, result.stdout + result.stderr\nprint('\"'\"'FAMILY_GENERATION_T3_OK'\"'\"')\n'",
+              "contains": "FAMILY_GENERATION_T3_OK"
+            }
+          ]
+        },
+        {
+          "goal": "增加 GET /items 查询接口，返回 JSON 数组。先放至少两条内存商品数据，每条含唯一整数 id、非空字符串 name 和非负整数 stock。可选 q 参数按名称做不区分大小写的子串筛选，无匹配返回空数组；保留 hello 接口。",
+          "bash": [
+            {
+              "command": "python -B -c 'import json\nimport os\nimport shutil\nimport subprocess\nimport sys\nimport tempfile\nfrom pathlib import Path\nfrom fastapi.testclient import TestClient\n\noriginal = Path.cwd()\nwith tempfile.TemporaryDirectory(prefix=\"fastapi-family-check-\") as scratch:\n    scratch = Path(scratch)\n    project = scratch / \"project\"\n    shutil.copytree(original, project, ignore=shutil.ignore_patterns(\n        \".git\", \".venv\", \"__pycache__\", \".pytest_cache\"))\n    data_path = scratch / \"items.json\"\n    settings_path = scratch / \"settings.json\"\n    data_path.write_text(json.dumps([{'\"'\"'id'\"'\"': 101, '\"'\"'name'\"'\"': '\"'\"'Paper Kite'\"'\"', '\"'\"'stock'\"'\"': 7}, {'\"'\"'id'\"'\"': 102, '\"'\"'name'\"'\"': '\"'\"'Brass Compass'\"'\"', '\"'\"'stock'\"'\"': 12}, {'\"'\"'id'\"'\"': 103, '\"'\"'name'\"'\"': '\"'\"'Canvas Pouch'\"'\"', '\"'\"'stock'\"'\"': 4}]), encoding=\"utf-8\")\n    settings_path.write_text(json.dumps({'\"'\"'catalog_label'\"'\"': '\"'\"'Lantern Catalog'\"'\"', '\"'\"'revision'\"'\"': '\"'\"'cedar-v1'\"'\"', '\"'\"'warehouse'\"'\"': '\"'\"'east-depot'\"'\"', '\"'\"'default_limit'\"'\"': 2}),\n                             encoding=\"utf-8\")\n    os.environ[\"DATA_FILE\"] = str(data_path)\n    os.environ[\"SETTINGS_FILE\"] = str(settings_path)\n    os.environ[\"PYTHONDONTWRITEBYTECODE\"] = \"1\"\n    os.chdir(project)\n    sys.path.insert(0, str(project))\n    from app import app\n    with TestClient(app) as client:\n        response = client.get(\"/\")\n        assert response.status_code == 200\n        assert response.json() == {\"message\": \"hello world\"}\n        response = client.get(\"/items\", params={\"limit\": 100})\n        assert response.status_code == 200\n        items = response.json()\n        assert isinstance(items, list) and len(items) >= 2\n        assert all(isinstance(item[\"id\"], int) and isinstance(item[\"name\"], str)\n                   and item[\"name\"] and isinstance(item[\"stock\"], int)\n                   and item[\"stock\"] >= 0 for item in items)\n        assert len({item[\"id\"] for item in items}) == len(items)\n        query = items[0][\"name\"].upper()\n        found = client.get(\"/items\", params={\"q\": query, \"limit\": 100})\n        assert found.status_code == 200\n        assert found.json() == [item for item in items if query.casefold() in item[\"name\"].casefold()]\n        absent = client.get(\"/items\", params={\"q\": \"no-match-7de09\", \"limit\": 100})\n        assert absent.status_code == 200 and absent.json() == []\nprint('\"'\"'FAMILY_GENERATION_T4_OK'\"'\"')\n'",
+              "contains": "FAMILY_GENERATION_T4_OK"
+            }
+          ]
+        },
+        {
+          "goal": "把商品从内存改为 JSON 文件存储，默认 data/items.json，环境变量 DATA_FILE 可以指定另一个文件。每次查询读取当前文件，以便外部更新立即生效。保持现有商品、查询语义和 hello 接口。",
+          "bash": [
+            {
+              "command": "python -B -c 'import json\nimport os\nimport shutil\nimport subprocess\nimport sys\nimport tempfile\nfrom pathlib import Path\nfrom fastapi.testclient import TestClient\n\noriginal = Path.cwd()\nwith tempfile.TemporaryDirectory(prefix=\"fastapi-family-check-\") as scratch:\n    scratch = Path(scratch)\n    project = scratch / \"project\"\n    shutil.copytree(original, project, ignore=shutil.ignore_patterns(\n        \".git\", \".venv\", \"__pycache__\", \".pytest_cache\"))\n    data_path = scratch / \"items.json\"\n    settings_path = scratch / \"settings.json\"\n    data_path.write_text(json.dumps([{'\"'\"'id'\"'\"': 101, '\"'\"'name'\"'\"': '\"'\"'Paper Kite'\"'\"', '\"'\"'stock'\"'\"': 7}, {'\"'\"'id'\"'\"': 102, '\"'\"'name'\"'\"': '\"'\"'Brass Compass'\"'\"', '\"'\"'stock'\"'\"': 12}, {'\"'\"'id'\"'\"': 103, '\"'\"'name'\"'\"': '\"'\"'Canvas Pouch'\"'\"', '\"'\"'stock'\"'\"': 4}]), encoding=\"utf-8\")\n    settings_path.write_text(json.dumps({'\"'\"'catalog_label'\"'\"': '\"'\"'Lantern Catalog'\"'\"', '\"'\"'revision'\"'\"': '\"'\"'cedar-v1'\"'\"', '\"'\"'warehouse'\"'\"': '\"'\"'east-depot'\"'\"', '\"'\"'default_limit'\"'\"': 2}),\n                             encoding=\"utf-8\")\n    os.environ[\"DATA_FILE\"] = str(data_path)\n    os.environ[\"SETTINGS_FILE\"] = str(settings_path)\n    os.environ[\"PYTHONDONTWRITEBYTECODE\"] = \"1\"\n    os.chdir(project)\n    sys.path.insert(0, str(project))\n    from app import app\n    with TestClient(app) as client:\n        response = client.get(\"/\")\n        assert response.status_code == 200\n        assert response.json() == {\"message\": \"hello world\"}\n        response = client.get(\"/items\", params={\"limit\": 100})\n        assert response.status_code == 200\n        items = response.json()\n        assert isinstance(items, list) and len(items) >= 2\n        assert all(isinstance(item[\"id\"], int) and isinstance(item[\"name\"], str)\n                   and item[\"name\"] and isinstance(item[\"stock\"], int)\n                   and item[\"stock\"] >= 0 for item in items)\n        assert len({item[\"id\"] for item in items}) == len(items)\n        query = items[0][\"name\"].upper()\n        found = client.get(\"/items\", params={\"q\": query, \"limit\": 100})\n        assert found.status_code == 200\n        assert found.json() == [item for item in items if query.casefold() in item[\"name\"].casefold()]\n        absent = client.get(\"/items\", params={\"q\": \"no-match-7de09\", \"limit\": 100})\n        assert absent.status_code == 200 and absent.json() == []\n        expected = json.loads(data_path.read_text())\n        response = client.get(\"/items\", params={\"limit\": 100})\n        assert response.status_code == 200 and response.json() == expected\n        replacement = [{\"id\": 907, \"name\": \"Probe Blue Lantern\", \"stock\": 8}]\n        data_path.write_text(json.dumps(replacement))\n        refreshed = client.get(\"/items\", params={\"limit\": 100})\n        assert refreshed.status_code == 200 and refreshed.json() == replacement\nprint('\"'\"'FAMILY_GENERATION_T5_OK'\"'\"')\n'",
+              "contains": "FAMILY_GENERATION_T5_OK"
+            },
+            {
+              "command": "python -B -c 'import json\nfrom pathlib import Path\nitems = json.loads(Path(\"data/items.json\").read_text())\nassert isinstance(items, list) and len(items) >= 2\nassert all(isinstance(item[\"id\"], int) and isinstance(item[\"name\"], str)\n           and isinstance(item[\"stock\"], int) for item in items)\nprint('\"'\"'FAMILY_GENERATION_DATA_OK'\"'\"')\n'",
+              "contains": "FAMILY_GENERATION_DATA_OK"
+            }
+          ]
+        },
+        {
+          "goal": "增加 PATCH /items/{id}，请求 JSON 为 {\"stock\": 非负整数}；存在时更新库存、写回同一个 DATA_FILE 并返回完整商品对象，未知 id 返回 404 且不改变文件。保留已有查询、外部文件刷新和 hello 行为。",
+          "bash": [
+            {
+              "command": "python -B -c 'import json\nimport os\nimport shutil\nimport subprocess\nimport sys\nimport tempfile\nfrom pathlib import Path\nfrom fastapi.testclient import TestClient\n\noriginal = Path.cwd()\nwith tempfile.TemporaryDirectory(prefix=\"fastapi-family-check-\") as scratch:\n    scratch = Path(scratch)\n    project = scratch / \"project\"\n    shutil.copytree(original, project, ignore=shutil.ignore_patterns(\n        \".git\", \".venv\", \"__pycache__\", \".pytest_cache\"))\n    data_path = scratch / \"items.json\"\n    settings_path = scratch / \"settings.json\"\n    data_path.write_text(json.dumps([{'\"'\"'id'\"'\"': 101, '\"'\"'name'\"'\"': '\"'\"'Paper Kite'\"'\"', '\"'\"'stock'\"'\"': 7}, {'\"'\"'id'\"'\"': 102, '\"'\"'name'\"'\"': '\"'\"'Brass Compass'\"'\"', '\"'\"'stock'\"'\"': 12}, {'\"'\"'id'\"'\"': 103, '\"'\"'name'\"'\"': '\"'\"'Canvas Pouch'\"'\"', '\"'\"'stock'\"'\"': 4}]), encoding=\"utf-8\")\n    settings_path.write_text(json.dumps({'\"'\"'catalog_label'\"'\"': '\"'\"'Lantern Catalog'\"'\"', '\"'\"'revision'\"'\"': '\"'\"'cedar-v1'\"'\"', '\"'\"'warehouse'\"'\"': '\"'\"'east-depot'\"'\"', '\"'\"'default_limit'\"'\"': 2}),\n                             encoding=\"utf-8\")\n    os.environ[\"DATA_FILE\"] = str(data_path)\n    os.environ[\"SETTINGS_FILE\"] = str(settings_path)\n    os.environ[\"PYTHONDONTWRITEBYTECODE\"] = \"1\"\n    os.chdir(project)\n    sys.path.insert(0, str(project))\n    from app import app\n    with TestClient(app) as client:\n        response = client.get(\"/\")\n        assert response.status_code == 200\n        assert response.json() == {\"message\": \"hello world\"}\n        response = client.get(\"/items\", params={\"limit\": 100})\n        assert response.status_code == 200\n        items = response.json()\n        assert isinstance(items, list) and len(items) >= 2\n        assert all(isinstance(item[\"id\"], int) and isinstance(item[\"name\"], str)\n                   and item[\"name\"] and isinstance(item[\"stock\"], int)\n                   and item[\"stock\"] >= 0 for item in items)\n        assert len({item[\"id\"] for item in items}) == len(items)\n        query = items[0][\"name\"].upper()\n        found = client.get(\"/items\", params={\"q\": query, \"limit\": 100})\n        assert found.status_code == 200\n        assert found.json() == [item for item in items if query.casefold() in item[\"name\"].casefold()]\n        absent = client.get(\"/items\", params={\"q\": \"no-match-7de09\", \"limit\": 100})\n        assert absent.status_code == 200 and absent.json() == []\n        original_items = json.loads(data_path.read_text())\n        item = original_items[0]\n        changed = client.patch(f\"/items/{item['\"'\"'id'\"'\"']}\", json={\"stock\": 31})\n        assert changed.status_code == 200\n        expected = {**item, \"stock\": 31}\n        assert changed.json() == expected\n        saved = json.loads(data_path.read_text())\n        assert saved == [expected, *original_items[1:]]\n        assert client.get(\"/items\", params={\"limit\": 100}).json() == saved\n        before_missing = data_path.read_bytes()\n        missing = client.patch(\"/items/999999\", json={\"stock\": 1})\n        assert missing.status_code == 404\n        assert data_path.read_bytes() == before_missing\n        invalid = client.patch(f\"/items/{item['\"'\"'id'\"'\"']}\", json={\"stock\": -1})\n        assert 400 <= invalid.status_code < 500\n        assert data_path.read_bytes() == before_missing\n        expected = json.loads(data_path.read_text())\n        response = client.get(\"/items\", params={\"limit\": 100})\n        assert response.status_code == 200 and response.json() == expected\n        replacement = [{\"id\": 907, \"name\": \"Probe Blue Lantern\", \"stock\": 8}]\n        data_path.write_text(json.dumps(replacement))\n        refreshed = client.get(\"/items\", params={\"limit\": 100})\n        assert refreshed.status_code == 200 and refreshed.json() == replacement\nprint('\"'\"'FAMILY_GENERATION_T6_OK'\"'\"')\n'",
+              "contains": "FAMILY_GENERATION_T6_OK"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fastapi-mixed",
+      "category": "mixed",
+      "favor": "either",
+      "description": "Read, implement, verify, refresh external changes and document.",
+      "max_steps": 20,
+      "turns": [
+        {
+          "goal": "请了解当前 FastAPI 工程，概括主要目录及它们的职责，暂时不要修改。",
+          "answer_contains": ["routes", "config", "data", "docs"],
+          "inject_files": [
+            {
+              "name": "README.md",
+              "content": "# Lantern Catalog\n\nMaintainer: orchard-ops. This is a small FastAPI inventory service.\napp.py exports app. routes/items.py handles the item list.\nconfig/settings.json holds operational settings; data/items.json is\nthe inventory. docs/runbook.md describes the stockout procedure.\n\nGET / returns {\"message\": \"hello world\"}. GET /items returns a JSON\narray of {id, name, stock}; its optional positive limit overrides\ndefault_limit in settings. There is no search filter yet.\n\nDATA_FILE overrides data/items.json; SETTINGS_FILE overrides\nconfig/settings.json. Both are paths, read on each request.\nUse TestClient for checks; a long-running server is unnecessary.\n"
+            },
+            {
+              "name": "app.py",
+              "content": "from fastapi import FastAPI\nfrom routes.items import router\n\napp = FastAPI()\napp.include_router(router)\n\n@app.get(\"/\")\ndef hello():\n    return {\"message\": \"hello world\"}\n"
+            },
+            {
+              "name": "routes/__init__.py",
+              "content": ""
+            },
+            {
+              "name": "routes/items.py",
+              "content": "import json\nimport os\nfrom pathlib import Path\nfrom fastapi import APIRouter, Query\n\nrouter = APIRouter()\nROOT = Path(__file__).resolve().parents[1]\n\ndef read_settings():\n    path = Path(os.environ.get(\"SETTINGS_FILE\", ROOT / \"config/settings.json\"))\n    return json.loads(path.read_text(encoding=\"utf-8\"))\n\ndef read_items():\n    path = Path(os.environ.get(\"DATA_FILE\", ROOT / \"data/items.json\"))\n    return json.loads(path.read_text(encoding=\"utf-8\"))\n\n@router.get(\"/items\")\ndef items(limit: int | None = Query(default=None, ge=1)):\n    count = limit if limit is not None else read_settings()[\"default_limit\"]\n    return read_items()[:count]\n"
+            },
+            {
+              "name": "config/settings.json",
+              "content": "{\n  \"catalog_label\": \"Lantern Catalog\",\n  \"revision\": \"cedar-v1\",\n  \"warehouse\": \"east-depot\",\n  \"default_limit\": 2\n}\n"
+            },
+            {
+              "name": "data/items.json",
+              "content": "[\n  {\n    \"id\": 101,\n    \"name\": \"Paper Kite\",\n    \"stock\": 7\n  },\n  {\n    \"id\": 102,\n    \"name\": \"Brass Compass\",\n    \"stock\": 12\n  },\n  {\n    \"id\": 103,\n    \"name\": \"Canvas Pouch\",\n    \"stock\": 4\n  }\n]\n"
+            },
+            {
+              "name": "docs/runbook.md",
+              "content": "# Stockout runbook\n\nNever invent replacement inventory. Route stockout requests to\namber-shelf and record ticket OPS-417 for the operator.\nThe settings revision is an operational label, not a data checksum.\nAfter an operator changes settings or inventory, report current\nfile values rather than treating an earlier answer as authoritative.\n"
+            }
+          ],
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nexpected = {'\"'\"'README.md'\"'\"': '\"'\"'ce666be754869bf9d69ece94a5ea76a1a84c584f3280f0f4ff7de004536f8862'\"'\"', '\"'\"'app.py'\"'\"': '\"'\"'3741e5ddc45c4c87029daee70cc2fbd07ddee03179d0c6296eb8c0b7e8e66f77'\"'\"', '\"'\"'routes/__init__.py'\"'\"': '\"'\"'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'\"'\"', '\"'\"'routes/items.py'\"'\"': '\"'\"'a1d5e85d5ae49e892d42fde18e8c881ee631738542ca8e16780069e983341071'\"'\"', '\"'\"'config/settings.json'\"'\"': '\"'\"'8beb2ca015799d7a13526eb9045ecc966579c33af57ad1d136cb656462374b06'\"'\"', '\"'\"'data/items.json'\"'\"': '\"'\"'801f6561e03cf49315f774b28c4464f02b7656657a17759f43a1780f58bb7502'\"'\"', '\"'\"'docs/runbook.md'\"'\"': '\"'\"'61cece667eaf831e8a053c4e25a89815f0c27da95c16a1bf2494ba6ecbd27435'\"'\"'}\nfor name, digest in expected.items():\n    assert hashlib.sha256(Path(name).read_bytes()).hexdigest() == digest, name\nprint('\"'\"'FAMILY_MIXED_T1_OK'\"'\"')\n'",
+              "contains": "FAMILY_MIXED_T1_OK"
+            }
+          ]
+        },
+        {
+          "goal": "当前配置的版本标签、仓库位置是什么？全部库存中哪件商品最多，有多少？先报告现状，不改文件。",
+          "answer_contains": ["cedar-v1", "east-depot", "Brass Compass", "12"],
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nexpected = {'\"'\"'README.md'\"'\"': '\"'\"'ce666be754869bf9d69ece94a5ea76a1a84c584f3280f0f4ff7de004536f8862'\"'\"', '\"'\"'app.py'\"'\"': '\"'\"'3741e5ddc45c4c87029daee70cc2fbd07ddee03179d0c6296eb8c0b7e8e66f77'\"'\"', '\"'\"'routes/__init__.py'\"'\"': '\"'\"'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'\"'\"', '\"'\"'routes/items.py'\"'\"': '\"'\"'a1d5e85d5ae49e892d42fde18e8c881ee631738542ca8e16780069e983341071'\"'\"', '\"'\"'config/settings.json'\"'\"': '\"'\"'8beb2ca015799d7a13526eb9045ecc966579c33af57ad1d136cb656462374b06'\"'\"', '\"'\"'data/items.json'\"'\"': '\"'\"'801f6561e03cf49315f774b28c4464f02b7656657a17759f43a1780f58bb7502'\"'\"', '\"'\"'docs/runbook.md'\"'\"': '\"'\"'61cece667eaf831e8a053c4e25a89815f0c27da95c16a1bf2494ba6ecbd27435'\"'\"'}\nfor name, digest in expected.items():\n    assert hashlib.sha256(Path(name).read_bytes()).hexdigest() == digest, name\nprint('\"'\"'FAMILY_MIXED_T2_OK'\"'\"')\n'",
+              "contains": "FAMILY_MIXED_T2_OK"
+            }
+          ]
+        },
+        {
+          "goal": "给现有 GET /items 增加可选 q 参数，按名称做不区分大小写的子串筛选；先筛选再应用 limit，无匹配返回空数组。保留默认条数、JSON 文件即时读取和 hello 行为，不更改现有配置、数据或文档。",
+          "bash": [
+            {
+              "command": "python -B -c 'import json\nimport os\nimport shutil\nimport subprocess\nimport sys\nimport tempfile\nfrom pathlib import Path\nfrom fastapi.testclient import TestClient\n\noriginal = Path.cwd()\nwith tempfile.TemporaryDirectory(prefix=\"fastapi-family-check-\") as scratch:\n    scratch = Path(scratch)\n    project = scratch / \"project\"\n    shutil.copytree(original, project, ignore=shutil.ignore_patterns(\n        \".git\", \".venv\", \"__pycache__\", \".pytest_cache\"))\n    data_path = scratch / \"items.json\"\n    settings_path = scratch / \"settings.json\"\n    data_path.write_text(json.dumps([{'\"'\"'id'\"'\"': 101, '\"'\"'name'\"'\"': '\"'\"'Paper Kite'\"'\"', '\"'\"'stock'\"'\"': 7}, {'\"'\"'id'\"'\"': 102, '\"'\"'name'\"'\"': '\"'\"'Brass Compass'\"'\"', '\"'\"'stock'\"'\"': 12}, {'\"'\"'id'\"'\"': 103, '\"'\"'name'\"'\"': '\"'\"'Canvas Pouch'\"'\"', '\"'\"'stock'\"'\"': 4}]), encoding=\"utf-8\")\n    settings_path.write_text(json.dumps({'\"'\"'catalog_label'\"'\"': '\"'\"'Lantern Catalog'\"'\"', '\"'\"'revision'\"'\"': '\"'\"'cedar-v1'\"'\"', '\"'\"'warehouse'\"'\"': '\"'\"'east-depot'\"'\"', '\"'\"'default_limit'\"'\"': 2}),\n                             encoding=\"utf-8\")\n    os.environ[\"DATA_FILE\"] = str(data_path)\n    os.environ[\"SETTINGS_FILE\"] = str(settings_path)\n    os.environ[\"PYTHONDONTWRITEBYTECODE\"] = \"1\"\n    os.chdir(project)\n    sys.path.insert(0, str(project))\n    from app import app\n    with TestClient(app) as client:\n        response = client.get(\"/\")\n        assert response.status_code == 200\n        assert response.json() == {\"message\": \"hello world\"}\n        response = client.get(\"/items\", params={\"limit\": 100})\n        assert response.status_code == 200\n        items = response.json()\n        assert isinstance(items, list) and len(items) >= 2\n        assert all(isinstance(item[\"id\"], int) and isinstance(item[\"name\"], str)\n                   and item[\"name\"] and isinstance(item[\"stock\"], int)\n                   and item[\"stock\"] >= 0 for item in items)\n        assert len({item[\"id\"] for item in items}) == len(items)\n        query = items[0][\"name\"].upper()\n        found = client.get(\"/items\", params={\"q\": query, \"limit\": 100})\n        assert found.status_code == 200\n        assert found.json() == [item for item in items if query.casefold() in item[\"name\"].casefold()]\n        absent = client.get(\"/items\", params={\"q\": \"no-match-7de09\", \"limit\": 100})\n        assert absent.status_code == 200 and absent.json() == []\n        assert client.get(\"/items\").json() == json.loads(data_path.read_text())[:2]\n        assert client.get(\"/items\", params={\"q\": \"compass\", \"limit\": 1}).json()[0][\"id\"] == 102\nprint('\"'\"'FAMILY_MIXED_T3_OK'\"'\"')\n'",
+              "contains": "FAMILY_MIXED_T3_OK"
+            },
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nexpected = {'\"'\"'config/settings.json'\"'\"': '\"'\"'8beb2ca015799d7a13526eb9045ecc966579c33af57ad1d136cb656462374b06'\"'\"', '\"'\"'data/items.json'\"'\"': '\"'\"'801f6561e03cf49315f774b28c4464f02b7656657a17759f43a1780f58bb7502'\"'\"', '\"'\"'README.md'\"'\"': '\"'\"'ce666be754869bf9d69ece94a5ea76a1a84c584f3280f0f4ff7de004536f8862'\"'\"', '\"'\"'docs/runbook.md'\"'\"': '\"'\"'61cece667eaf831e8a053c4e25a89815f0c27da95c16a1bf2494ba6ecbd27435'\"'\"'}\nfor name, digest in expected.items():\n    assert hashlib.sha256(Path(name).read_bytes()).hexdigest() == digest, name\nprint('\"'\"'FAMILY_MIXED_T3_INPUTS_OK'\"'\"')\n'",
+              "contains": "FAMILY_MIXED_T3_INPUTS_OK"
+            }
+          ]
+        },
+        {
+          "goal": "验证刚新增的查询：大小写混用能找到商品、没有匹配时为空、指定条数仍然有效，且首页正常。不要修改配置、库存或文档，不必启动服务。",
+          "bash": [
+            {
+              "command": "python -B -c 'import json\nimport os\nimport shutil\nimport subprocess\nimport sys\nimport tempfile\nfrom pathlib import Path\nfrom fastapi.testclient import TestClient\n\noriginal = Path.cwd()\nwith tempfile.TemporaryDirectory(prefix=\"fastapi-family-check-\") as scratch:\n    scratch = Path(scratch)\n    project = scratch / \"project\"\n    shutil.copytree(original, project, ignore=shutil.ignore_patterns(\n        \".git\", \".venv\", \"__pycache__\", \".pytest_cache\"))\n    data_path = scratch / \"items.json\"\n    settings_path = scratch / \"settings.json\"\n    data_path.write_text(json.dumps([{'\"'\"'id'\"'\"': 101, '\"'\"'name'\"'\"': '\"'\"'Paper Kite'\"'\"', '\"'\"'stock'\"'\"': 7}, {'\"'\"'id'\"'\"': 102, '\"'\"'name'\"'\"': '\"'\"'Brass Compass'\"'\"', '\"'\"'stock'\"'\"': 12}, {'\"'\"'id'\"'\"': 103, '\"'\"'name'\"'\"': '\"'\"'Canvas Pouch'\"'\"', '\"'\"'stock'\"'\"': 4}]), encoding=\"utf-8\")\n    settings_path.write_text(json.dumps({'\"'\"'catalog_label'\"'\"': '\"'\"'Lantern Catalog'\"'\"', '\"'\"'revision'\"'\"': '\"'\"'cedar-v1'\"'\"', '\"'\"'warehouse'\"'\"': '\"'\"'east-depot'\"'\"', '\"'\"'default_limit'\"'\"': 2}),\n                             encoding=\"utf-8\")\n    os.environ[\"DATA_FILE\"] = str(data_path)\n    os.environ[\"SETTINGS_FILE\"] = str(settings_path)\n    os.environ[\"PYTHONDONTWRITEBYTECODE\"] = \"1\"\n    os.chdir(project)\n    sys.path.insert(0, str(project))\n    from app import app\n    with TestClient(app) as client:\n        response = client.get(\"/\")\n        assert response.status_code == 200\n        assert response.json() == {\"message\": \"hello world\"}\n        response = client.get(\"/items\", params={\"limit\": 100})\n        assert response.status_code == 200\n        items = response.json()\n        assert isinstance(items, list) and len(items) >= 2\n        assert all(isinstance(item[\"id\"], int) and isinstance(item[\"name\"], str)\n                   and item[\"name\"] and isinstance(item[\"stock\"], int)\n                   and item[\"stock\"] >= 0 for item in items)\n        assert len({item[\"id\"] for item in items}) == len(items)\n        query = items[0][\"name\"].upper()\n        found = client.get(\"/items\", params={\"q\": query, \"limit\": 100})\n        assert found.status_code == 200\n        assert found.json() == [item for item in items if query.casefold() in item[\"name\"].casefold()]\n        absent = client.get(\"/items\", params={\"q\": \"no-match-7de09\", \"limit\": 100})\n        assert absent.status_code == 200 and absent.json() == []\n        assert len(client.get(\"/items\", params={\"limit\": 1}).json()) == 1\nprint('\"'\"'FAMILY_MIXED_T4_OK'\"'\"')\n'",
+              "contains": "FAMILY_MIXED_T4_OK"
+            },
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nexpected = {'\"'\"'config/settings.json'\"'\"': '\"'\"'8beb2ca015799d7a13526eb9045ecc966579c33af57ad1d136cb656462374b06'\"'\"', '\"'\"'data/items.json'\"'\"': '\"'\"'801f6561e03cf49315f774b28c4464f02b7656657a17759f43a1780f58bb7502'\"'\"', '\"'\"'README.md'\"'\"': '\"'\"'ce666be754869bf9d69ece94a5ea76a1a84c584f3280f0f4ff7de004536f8862'\"'\"', '\"'\"'docs/runbook.md'\"'\"': '\"'\"'61cece667eaf831e8a053c4e25a89815f0c27da95c16a1bf2494ba6ecbd27435'\"'\"'}\nfor name, digest in expected.items():\n    assert hashlib.sha256(Path(name).read_bytes()).hexdigest() == digest, name\nprint('\"'\"'FAMILY_MIXED_T4_INPUTS_OK'\"'\"')\n'",
+              "contains": "FAMILY_MIXED_T4_INPUTS_OK"
+            }
+          ]
+        },
+        {
+          "goal": "同事刚修改了 config/settings.json 和 data/items.json。请查当前版本标签、仓库位置、默认条数，以及现在库存最多的商品及数量。不要沿用先前答案，也不要改动文件。",
+          "answer_contains": ["cedar-v2", "west-depot", "1", "Orion Thermos", "19"],
+          "inject_files": [
+            {
+              "name": "config/settings.json",
+              "content": "{\n  \"catalog_label\": \"Lantern Catalog\",\n  \"revision\": \"cedar-v2\",\n  \"warehouse\": \"west-depot\",\n  \"default_limit\": 1\n}\n"
+            },
+            {
+              "name": "data/items.json",
+              "content": "[\n  {\n    \"id\": 101,\n    \"name\": \"Paper Kite\",\n    \"stock\": 3\n  },\n  {\n    \"id\": 104,\n    \"name\": \"Orion Thermos\",\n    \"stock\": 19\n  }\n]\n"
+            }
+          ],
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nexpected = {'\"'\"'config/settings.json'\"'\"': '\"'\"'536e91f1281f344837896674b9a7b01e6e5f3a1c6bfdc3cc648941d6a59a3144'\"'\"', '\"'\"'data/items.json'\"'\"': '\"'\"'deec40c80bf5d30dab68f624ed879b2fa5fb80fea78cf29e9ea6ffc687ecbc3a'\"'\"'}\nfor name, digest in expected.items():\n    assert hashlib.sha256(Path(name).read_bytes()).hexdigest() == digest, name\nprint('\"'\"'FAMILY_MIXED_T5_OK'\"'\"')\n'",
+              "contains": "FAMILY_MIXED_T5_OK"
+            }
+          ]
+        },
+        {
+          "goal": "增加 GET /snapshot，返回对象含 revision、warehouse、item_count、total_stock，分别来自当前配置及全部库存，不受列表默认条数限制。每次请求读取当前 SETTINGS_FILE 和 DATA_FILE（未设置时用原路径），外部更新立即反映；保留 hello 和商品查询，不改现有配置、数据或文档。",
+          "bash": [
+            {
+              "command": "python -B -c 'import json\nimport os\nimport shutil\nimport subprocess\nimport sys\nimport tempfile\nfrom pathlib import Path\nfrom fastapi.testclient import TestClient\n\noriginal = Path.cwd()\nwith tempfile.TemporaryDirectory(prefix=\"fastapi-family-check-\") as scratch:\n    scratch = Path(scratch)\n    project = scratch / \"project\"\n    shutil.copytree(original, project, ignore=shutil.ignore_patterns(\n        \".git\", \".venv\", \"__pycache__\", \".pytest_cache\"))\n    data_path = scratch / \"items.json\"\n    settings_path = scratch / \"settings.json\"\n    data_path.write_text(json.dumps([{'\"'\"'id'\"'\"': 101, '\"'\"'name'\"'\"': '\"'\"'Paper Kite'\"'\"', '\"'\"'stock'\"'\"': 3}, {'\"'\"'id'\"'\"': 104, '\"'\"'name'\"'\"': '\"'\"'Orion Thermos'\"'\"', '\"'\"'stock'\"'\"': 19}]), encoding=\"utf-8\")\n    settings_path.write_text(json.dumps({'\"'\"'catalog_label'\"'\"': '\"'\"'Lantern Catalog'\"'\"', '\"'\"'revision'\"'\"': '\"'\"'cedar-v2'\"'\"', '\"'\"'warehouse'\"'\"': '\"'\"'west-depot'\"'\"', '\"'\"'default_limit'\"'\"': 1}),\n                             encoding=\"utf-8\")\n    os.environ[\"DATA_FILE\"] = str(data_path)\n    os.environ[\"SETTINGS_FILE\"] = str(settings_path)\n    os.environ[\"PYTHONDONTWRITEBYTECODE\"] = \"1\"\n    os.chdir(project)\n    sys.path.insert(0, str(project))\n    from app import app\n    with TestClient(app) as client:\n        response = client.get(\"/\")\n        assert response.status_code == 200\n        assert response.json() == {\"message\": \"hello world\"}\n        response = client.get(\"/items\", params={\"limit\": 100})\n        assert response.status_code == 200\n        items = response.json()\n        assert isinstance(items, list) and len(items) >= 2\n        assert all(isinstance(item[\"id\"], int) and isinstance(item[\"name\"], str)\n                   and item[\"name\"] and isinstance(item[\"stock\"], int)\n                   and item[\"stock\"] >= 0 for item in items)\n        assert len({item[\"id\"] for item in items}) == len(items)\n        query = items[0][\"name\"].upper()\n        found = client.get(\"/items\", params={\"q\": query, \"limit\": 100})\n        assert found.status_code == 200\n        assert found.json() == [item for item in items if query.casefold() in item[\"name\"].casefold()]\n        absent = client.get(\"/items\", params={\"q\": \"no-match-7de09\", \"limit\": 100})\n        assert absent.status_code == 200 and absent.json() == []\n        def expected_snapshot():\n            settings = json.loads(settings_path.read_text())\n            items = json.loads(data_path.read_text())\n            return {\"revision\": settings[\"revision\"],\n                    \"warehouse\": settings[\"warehouse\"],\n                    \"item_count\": len(items),\n                    \"total_stock\": sum(item[\"stock\"] for item in items)}\n        response = client.get(\"/snapshot\")\n        assert response.status_code == 200 and response.json() == expected_snapshot()\n        settings_path.write_text(json.dumps({\"revision\": \"probe-live-v3\",\n            \"warehouse\": \"probe-north\", \"default_limit\": 1}))\n        data_path.write_text(json.dumps([{\"id\": 333, \"name\": \"Probe\", \"stock\": 27}]))\n        response = client.get(\"/snapshot\")\n        assert response.status_code == 200 and response.json() == expected_snapshot()\n        assert client.get(\"/items\").json() == json.loads(data_path.read_text())\nprint('\"'\"'FAMILY_MIXED_T6_OK'\"'\"')\n'",
+              "contains": "FAMILY_MIXED_T6_OK"
+            },
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nexpected = {'\"'\"'config/settings.json'\"'\"': '\"'\"'536e91f1281f344837896674b9a7b01e6e5f3a1c6bfdc3cc648941d6a59a3144'\"'\"', '\"'\"'data/items.json'\"'\"': '\"'\"'deec40c80bf5d30dab68f624ed879b2fa5fb80fea78cf29e9ea6ffc687ecbc3a'\"'\"'}\nfor name, digest in expected.items():\n    assert hashlib.sha256(Path(name).read_bytes()).hexdigest() == digest, name\nprint('\"'\"'FAMILY_MIXED_T6_INPUTS_OK'\"'\"')\n'",
+              "contains": "FAMILY_MIXED_T6_INPUTS_OK"
+            }
+          ]
+        },
+        {
+          "goal": "接下来交接运维：项目文档规定缺货请求转交到哪里、记录哪个工单？配置的版本标签是否等同数据校验和？请说明约定，不修改文件。",
+          "answer_contains": ["amber-shelf", "OPS-417"],
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nexpected = {'\"'\"'config/settings.json'\"'\"': '\"'\"'536e91f1281f344837896674b9a7b01e6e5f3a1c6bfdc3cc648941d6a59a3144'\"'\"', '\"'\"'data/items.json'\"'\"': '\"'\"'deec40c80bf5d30dab68f624ed879b2fa5fb80fea78cf29e9ea6ffc687ecbc3a'\"'\"', '\"'\"'docs/runbook.md'\"'\"': '\"'\"'61cece667eaf831e8a053c4e25a89815f0c27da95c16a1bf2494ba6ecbd27435'\"'\"'}\nfor name, digest in expected.items():\n    assert hashlib.sha256(Path(name).read_bytes()).hexdigest() == digest, name\nprint('\"'\"'FAMILY_MIXED_T7_OK'\"'\"')\n'",
+              "contains": "FAMILY_MIXED_T7_OK"
+            }
+          ]
+        },
+        {
+          "goal": "请新增 docs/handoff.md 作为交接记录：写明当前版本标签、仓库、全部商品及各自库存，以及缺货转交位置和工单标识；说明 /snapshot 用于读取当前汇总。必须与当前文件一致，不修改配置或库存。",
+          "bash": [
+            {
+              "command": "python -B -c 'from pathlib import Path\ntext = Path(\"docs/handoff.md\").read_text(encoding=\"utf-8\")\nfor fact in (\"cedar-v2\", \"west-depot\", \"Paper Kite\", \"3\", \"Orion Thermos\",\n             \"19\", \"amber-shelf\", \"OPS-417\", \"/snapshot\"):\n    assert fact.casefold() in text.casefold(), fact\nprint('\"'\"'FAMILY_MIXED_T8_OK'\"'\"')\n'",
+              "contains": "FAMILY_MIXED_T8_OK"
+            },
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nexpected = {'\"'\"'config/settings.json'\"'\"': '\"'\"'536e91f1281f344837896674b9a7b01e6e5f3a1c6bfdc3cc648941d6a59a3144'\"'\"', '\"'\"'data/items.json'\"'\"': '\"'\"'deec40c80bf5d30dab68f624ed879b2fa5fb80fea78cf29e9ea6ffc687ecbc3a'\"'\"'}\nfor name, digest in expected.items():\n    assert hashlib.sha256(Path(name).read_bytes()).hexdigest() == digest, name\nprint('\"'\"'FAMILY_MIXED_T8_INPUTS_OK'\"'\"')\n'",
+              "contains": "FAMILY_MIXED_T8_INPUTS_OK"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "source": {
+    "repository": "https://github.com/parkavenue9639/jevloop",
+    "commit": "61e7994",
+    "file": "backend/benchmarks/fastapi_families.py",
+    "license": "Apache-2.0"
+  }
+}
