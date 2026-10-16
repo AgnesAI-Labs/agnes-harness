@@ -44,6 +44,7 @@ export function acquireManagedLease(directory: string, key: string) {
   try {
     db.exec(`PRAGMA busy_timeout=0; PRAGMA locking_mode=EXCLUSIVE; BEGIN EXCLUSIVE;
       CREATE TABLE IF NOT EXISTS instance (id INTEGER PRIMARY KEY CHECK(id=1), state TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS process_owner (id INTEGER PRIMARY KEY CHECK(id=1), pid INTEGER NOT NULL, start_id TEXT);
       CREATE TABLE IF NOT EXISTS diagnostics (seq INTEGER PRIMARY KEY, reason TEXT NOT NULL);
       COMMIT;`)
     const previous = db.prepare('SELECT state FROM instance WHERE id=1').get()?.state
@@ -53,10 +54,28 @@ export function acquireManagedLease(directory: string, key: string) {
     return {
       id,
       previous,
+      owner() {
+        const row = db.prepare('SELECT pid, start_id FROM process_owner WHERE id=1').get()
+        return row && typeof row.pid === 'number' && typeof row.start_id === 'string'
+          ? { pid: row.pid, startId: row.start_id }
+          : undefined
+      },
+      recordOwner(pid: number, startId: string | null) {
+        db.prepare('INSERT OR REPLACE INTO process_owner VALUES(1,?,?)').run(pid, startId)
+      },
       record(state: 'active' | 'stopped' | 'unknown') {
-        db.prepare('INSERT INTO instance VALUES(1,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state').run(
-          state,
-        )
+        db.exec('BEGIN EXCLUSIVE')
+        try {
+          // An active marker without its own identity must never inherit an old process identity.
+          if (state === 'active') db.exec('DELETE FROM process_owner')
+          db.prepare(
+            'INSERT INTO instance VALUES(1,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state',
+          ).run(state)
+          db.exec('COMMIT')
+        } catch (error) {
+          db.exec('ROLLBACK')
+          throw error
+        }
       },
       diagnose(reason: string) {
         db.prepare('INSERT INTO diagnostics(reason) VALUES(?)').run(reason)

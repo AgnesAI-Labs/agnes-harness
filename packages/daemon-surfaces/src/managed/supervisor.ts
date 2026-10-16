@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
-import type { ResolvedDeployment } from '@agnes/host'
+import { defaultProcessIdentity, type ProcessIdentity, type ResolvedDeployment } from '@agnes/host'
 import {
   jcs,
   type ManagedServiceDescriptor,
@@ -43,6 +43,7 @@ type Record = {
   incarnation: string
   signal: AbortController
   endpoint?: SurfaceEndpoint
+  pid?: number
   probe?: (signal: AbortSignal) => Promise<boolean>
   monitor?: ReturnType<typeof setInterval>
   stopping?: Promise<void>
@@ -62,6 +63,7 @@ export function createManagedServiceSupervisor(options: {
   allocateListeners?: typeof allocateManagedListeners
   request?: typeof managedRequest
   healthIntervalMs?: number
+  processIdentity?: (pid: number) => Promise<ProcessIdentity>
 }) {
   const records = new Map<string, Record>()
   const operations = new Map<string, Promise<ManagedServiceStatus>>()
@@ -70,6 +72,19 @@ export function createManagedServiceSupervisor(options: {
   const keyOf = (s: ManagedServiceSelector) =>
     JSON.stringify([options.installationId, s.profileId, s.owner, s.serviceId])
   const request = options.request ?? managedRequest
+  const processIdentity = async (pid: number): Promise<ProcessIdentity> => {
+    try {
+      const found = await bounded(
+        Promise.resolve().then(() => (options.processIdentity ?? defaultProcessIdentity)(pid)),
+        AbortSignal.timeout(3000),
+      )
+      if (found?.state === 'dead') return found
+      if (found?.state === 'alive' && validStartId(found.startId)) return found
+      return { state: 'unknown', reason: 'invalid identity' }
+    } catch {
+      return { state: 'unknown', reason: 'identity unavailable' }
+    }
+  }
   function snapshot(record: Record): ManagedServiceStatus {
     return structuredClone(record.status)
   }
@@ -148,9 +163,24 @@ export function createManagedServiceSupervisor(options: {
     ])
     const lease = acquireManagedLease(options.directory, leaseKey)
     if (lease.previous === 'active' || lease.previous === 'unknown') {
-      lease.diagnose('shutdown-unconfirmed')
-      lease.release()
-      throw new ManagedServiceError('SHUTDOWN_UNCONFIRMED')
+      const owner = lease.owner()
+      const found = owner ? await processIdentity(owner.pid) : undefined
+      if (
+        !owner?.startId ||
+        !validStartId(owner.startId) ||
+        !Number.isSafeInteger(owner.pid) ||
+        owner.pid <= 0 ||
+        !(
+          found?.state === 'dead' ||
+          (found?.state === 'alive' && found.startId && found.startId !== owner.startId)
+        )
+      ) {
+        lease.diagnose('shutdown-unconfirmed')
+        lease.release()
+        throw new ManagedServiceError('SHUTDOWN_UNCONFIRMED')
+      }
+      // Reconcile the process only; external-operation journals retain their unknown outcomes.
+      lease.record('stopped')
     }
     lease.record('active')
     const signal = new AbortController()
@@ -223,7 +253,11 @@ export function createManagedServiceSupervisor(options: {
         const runtime: SurfaceRuntimeAdapter = {
           kind: 'managed',
           async start(input) {
+            // Every auto-port retry is a new process; never retain the preceding attempt's identity.
+            lease.record('active')
             const handle = await base.start(input)
+            if (handle.pid === undefined) delete record.pid
+            else record.pid = handle.pid
             record.endpoint = handle.endpoint
             record.probe = (s) => probe(handle.endpoint, s)
             void handle.exited.then((exit) => {
@@ -251,6 +285,10 @@ export function createManagedServiceSupervisor(options: {
         record.controller = controller
         try {
           await controller.start(deployment(binding, lease.id), startupSignal)
+          if (record.pid !== undefined) {
+            const identity = await processIdentity(record.pid)
+            lease.recordOwner(record.pid, identity.state === 'alive' ? identity.startId : null)
+          }
           startupSignal.throwIfAborted()
           binding.assertCurrent()
           record.status.state = 'ready'
@@ -457,6 +495,14 @@ export function createManagedServiceSupervisor(options: {
         throw new ManagedServiceError('SHUTDOWN_UNCONFIRMED')
     },
   }
+}
+function validStartId(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value.length <= 256 &&
+    ![...value].some((c) => c.charCodeAt(0) <= 32 || c.charCodeAt(0) === 127)
+  )
 }
 function deployment(binding: ReviewedManagedService, sourceId: string): ResolvedDeployment {
   if (binding.descriptor.artifact.kind === 'in-process') throw new ManagedServiceError('REFUSED')

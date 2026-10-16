@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { ProcessIdentity } from '@agnes/host'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { acquireManagedLease } from '../src/managed/lease.js'
 import { allocateManagedListeners } from '../src/managed/listeners.js'
@@ -28,6 +29,8 @@ function fixture(
     stuck?: boolean
     conflict?: boolean
     fixed?: boolean
+    directory?: string
+    processIdentity?: (pid: number) => Promise<ProcessIdentity>
   } = {},
 ) {
   let revision = 'sha256-one',
@@ -56,7 +59,8 @@ function fixture(
   let rejectResolution = false
   const supervisor = createManagedServiceSupervisor({
     installationId: 'installation',
-    directory: directory(),
+    directory: options.directory ?? directory(),
+    processIdentity: options.processIdentity ?? (async () => ({ state: 'alive', startId: 'boot:child' })),
     healthIntervalMs: 100,
     async resolve(s) {
       if (rejectResolution) throw new Error('disabled')
@@ -102,6 +106,7 @@ function fixture(
           })
           if (options.conflict) queueMicrotask(() => settle({ code: 98, signal: null }))
           const handle: SurfaceRuntimeHandle = {
+            pid: 42,
             sourceId: input.surface.instance.sourceId,
             endpoint: { host: '127.0.0.1', port, healthPath: '/health' },
             exited,
@@ -277,6 +282,7 @@ describe('managed service supervisor', () => {
     const d = directory(),
       one = acquireManagedLease(d, 'same-profile-owner-service')
     one.record('active')
+    one.recordOwner(42, 'boot:original')
     expect(() => acquireManagedLease(d, 'same-profile-owner-service')).toThrow('BUSY')
     const isolated = acquireManagedLease(d, 'other-profile-owner-service')
     isolated.record('stopped')
@@ -284,11 +290,89 @@ describe('managed service supervisor', () => {
     one.release()
     const recovered = acquireManagedLease(d, 'same-profile-owner-service')
     expect(recovered.previous).toBe('active')
+    expect(recovered.owner()).toEqual({ pid: 42, startId: 'boot:original' })
+    recovered.record('active')
+    expect(recovered.owner()).toBeUndefined()
     recovered.diagnose('shutdown-unconfirmed')
     expect(recovered.diagnostics()).toEqual(['shutdown-unconfirmed'])
     recovered.record('stopped')
     recovered.release()
   })
+  it.each([
+    { name: 'dead child', state: 'active', startId: 'boot:child', found: { state: 'dead' }, recover: true },
+    {
+      name: 'dead child after failed cleanup',
+      state: 'unknown',
+      startId: 'boot:child',
+      found: { state: 'dead' },
+      recover: true,
+    },
+    {
+      name: 'PID reused',
+      state: 'active',
+      startId: 'boot:old',
+      found: { state: 'alive', startId: 'boot:child' },
+      recover: true,
+    },
+    {
+      name: 'old process still alive',
+      state: 'active',
+      startId: 'boot:child',
+      found: { state: 'alive', startId: 'boot:child' },
+      recover: false,
+    },
+    {
+      name: 'identity ambiguous',
+      state: 'unknown',
+      startId: 'boot:child',
+      found: { state: 'unknown', reason: 'permission' },
+      recover: false,
+    },
+    {
+      name: 'no recorded identity',
+      state: 'active',
+      startId: null,
+      found: { state: 'dead' },
+      recover: false,
+    },
+    {
+      name: 'malformed identity',
+      state: 'active',
+      startId: 'boot:child',
+      found: { state: 'alive', startId: '' },
+      recover: false,
+    },
+    { name: 'probe failed', state: 'active', startId: 'boot:child', found: null, recover: false },
+  ] as const)(
+    'restarts only after proving the previous process gone: $name',
+    async ({ state, startId, found, recover }) => {
+      const d = directory()
+      const key = JSON.stringify(['installation', 'one', '@sample/plugin', 'sample'])
+      const old = acquireManagedLease(d, key)
+      old.record(state)
+      old.recordOwner(42, startId)
+      old.release() // Simulates kernel lock release on daemon crash; the durable marker survives.
+      const f = fixture({
+        directory: d,
+        processIdentity: async () => {
+          if (!found) throw new Error('identity unavailable')
+          return found
+        },
+      })
+      if (recover) {
+        expect(await f.supervisor.ensure(selector)).toMatchObject({ state: 'ready' })
+        await f.supervisor.close()
+        const restarted = fixture({ directory: d })
+        expect(await restarted.supervisor.ensure(selector)).toMatchObject({ state: 'ready' })
+      } else {
+        await expect(f.supervisor.ensure(selector)).rejects.toThrow('SHUTDOWN_UNCONFIRMED')
+        expect(f.spawns).toBe(0)
+        const retained = acquireManagedLease(d, key)
+        expect(retained.previous).toBe(state)
+        retained.release()
+      }
+    },
+  )
   it('disable during asynchronous resolution cannot start a late instance', async () => {
     let resolve!: (binding: ReviewedManagedService) => void
     const binding: ReviewedManagedService = {

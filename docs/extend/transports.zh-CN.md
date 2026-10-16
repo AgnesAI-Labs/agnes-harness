@@ -28,6 +28,6 @@ daemon 从 `@agnes/daemon-surfaces/managed` 导入 `createManagedServiceSupervis
 
 Node artifact 使用 `@agnes/sdk/managed-service` 的 `createManagedServiceRuntime`，从 supervisor 环境接收私有初始化，打开自己的命名空间存储，安装 `onShutdown`，绑定业务 listener，检查存储格式，然后调用 `ready({ apiVersion, listeners })`。OS bind 冲突须用退出码 **98** 报告；固定 listener 立即失败，auto 最多尝试三次。启动不重发历史效果。POSIX guardian 在 artifact 退出或父进程失联时终止自有进程组；Windows 复用 Surface Job Object 适配器。显式 detached 的外部进程仍由受信插件负责。
 
-无法回收的进程保留 lease 并显示 `shutdown-unconfirmed`。daemon 崩溃会留下耐久 active 标记；新 supervisor 在操作者核实旧进程及私有状态前拒绝重启。保守拒绝不能作为外部效果已经停止的证明。
+无法回收的进程保留 lease 并显示 `shutdown-unconfirmed`。daemon 崩溃会留下耐久 active 标记，并在启动后保存子进程 PID 与启动身份。新 supervisor 仅在证实旧身份已消失（包括 PID 被复用）时自动恢复；旧进程仍存活、身份缺失或无法验证时，仍需操作者核实旧进程及私有状态后才能重启。恢复只核实资源存活状态，不会改写或重放结果未知的操作。保守拒绝不能作为外部效果已经停止的证明。
 
 `createRosterStreamAuthorizer` 使用真实 `ClientModuleRosterRow` 的贡献 binding 与不可变 `streams` 白名单；authority resolver 提供当前 row 读取、撤销信号与 session/lane/source 校验，入站流还必须绑定确切 operation/declaration 的已消费 effect grant。ticket 消费与每帧都重新检查，历史 pin、同包另一行、旧快照与旧 activation 均拒绝。活跃 profile contribution 可用 `ctx.profile.streams.open(name, input, options)`；owner 立即撤销会取消待打开请求与现有连接。

@@ -68,7 +68,7 @@ await client.extensions.wakes.enqueue({
 
 已安装且受信任的插件可注入 `profileRuntime`，声明 profile 范围的 `managedServices`、`artifact: { kind: 'in-process' }`、经审查的回环监听地址和有界启停期限。`ctx.profileRuntime.register({ id, configSchema, defaultConfig, start, check? })` 只注册 factory；staged 与 pinned 树不启动资源，只有当前 profile 发布后才在共享 Host worker 中启动。替换先完成旧资源停机，`handle.get()` 拒绝过时或未就绪的资源。此路径属于受信任的进程内执行；Node/OCI artifact 仍使用独立进程 supervisor。
 
-`start(init)` 接收 owner 隔离存储、绑定通知、选定监听端口、已校验配置及生命周期 signal。绑定监听前须安装 `init.onShutdown`，恢复与绑定完成后才调用 `init.ready()`。停机须确认收敛，持久化的未确认停机标记阻止重新启动。通用 `listenerPorts` 配置仅能为 `auto` 监听选择端口，不能改变 host 或覆盖已审查的固定端口。
+`start(init)` 接收 owner 隔离存储、绑定通知、选定监听端口、已校验配置及生命周期 signal。绑定监听前须安装 `init.onShutdown`，恢复与绑定完成后才调用 `init.ready()`。Host 会先排空受管停机，再撤销插件注册与流，并持久化已确认的收敛结果。未确认停机仅在记录的 worker PID 与启动身份能证明旧进程内资源的 owner 已消失（包括 PID 被复用）时自动恢复；owner 仍存活、身份缺失或核验失败时仍拒绝重新启动。这只核实资源存活状态：结果未知的操作保持 unknown，绝不自动重放。通用 `listenerPorts` 配置仅能为 `auto` 监听选择端口，不能改变 host 或覆盖已审查的固定端口。
 
 Host 将 `<id>.status`、`<id>.configuration`、`<id>.check`、`<id>.retry`、`<id>.configure` 注册为普通 profile 服务，客户端须逐项列入 allowlist。状态只暴露公开监听地址；配置和重试保留原生批准。插件提供的 check 通过同一接口报告领域健康。
 

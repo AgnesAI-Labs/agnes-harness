@@ -205,6 +205,9 @@ async function mountExtensions(ctx: AssemblyContext, f: Foundation, t: Tree, c: 
   // torn down, so the tree has to go before the extension host does, or every revoke fails.
   // Closing twice is a no-op, so the earlier registration still covers a half-finished assembly.
   ctx.rollback.push('runtime-target-tree', () => t.runtimeTarget.publisher.close())
+  // Managed shutdown still needs the current plugin registrations and streams. Drain it before
+  // disposing the tree; the earlier registration also protects partially assembled Hosts.
+  ctx.rollback.push('profile-managed-drain', () => f.proc.profileManaged.close())
   return { host, rows, skillRefresh }
 }
 type Extensions = Awaited<ReturnType<typeof mountExtensions>>

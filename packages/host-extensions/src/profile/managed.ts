@@ -8,6 +8,7 @@ import type {
 import type { JsonValue, ManagedServiceDescriptor } from '@agnes/protocol'
 import { rpcError } from '@agnes/protocol'
 import { compileExtensionSchema } from '../ext-host/json-schema.js'
+import { managedProcessGone, managedProcessOwner, type ProcessQuery } from './managed-owner.js'
 import { managedStore } from './managed-store.js'
 
 type Reason = 'disable' | 'upgrade' | 'exit'
@@ -47,6 +48,7 @@ export class ProfileManagedResources {
     private readonly key: string,
     private readonly wakes: (owner: string, integrity: string) => BoundWakes,
     private readonly current?: (owner: string, integrity: string, revision: string) => boolean,
+    private readonly processIdentity?: ProcessQuery,
   ) {}
   register<T>(input: {
     owner: string
@@ -166,7 +168,7 @@ export class ProfileManagedResources {
           await r.value.catch(() => undefined)
           const result = await shut(reason)
           const settled =
-            result?.state === 'settled' || (!started && r.status.code !== 'shutdown-unconfirmed')
+            result?.state === 'settled' || (!started && input.store.get(`managed-shutdown:${r.id}`) !== true)
           r.status = settled ? { state: 'stopped' } : { state: 'failed', code: 'shutdown-unconfirmed' }
           ended = true
           input.store.set(`managed-shutdown:${r.id}`, !settled)
@@ -174,7 +176,17 @@ export class ProfileManagedResources {
         })()),
     }
     const run = async () => {
-      if (input.store.get(`managed-shutdown:${r.id}`) === true) throw new Error('shutdown-unconfirmed')
+      const shutdownKey = `managed-shutdown:${r.id}`
+      const ownerKey = `managed-process:${r.id}`
+      if (input.store.get(shutdownKey) === true) {
+        if (
+          input.descriptor.artifact.kind !== 'in-process' ||
+          !(await managedProcessGone(input.store.get(ownerKey), this.processIdentity))
+        )
+          throw new Error('shutdown-unconfirmed')
+        // Only resource liveness is reconciled here. Operation receipts remain unknown.
+        input.store.set(shutdownKey, false)
+      }
       const config = input.store.get(`managed-config:${r.id}`) ?? input.definition.defaultConfig
       const overrides =
         config &&
@@ -197,7 +209,12 @@ export class ProfileManagedResources {
         listeners[listener.name] = { host: listener.host, port: port === 'auto' ? await freePort() : port }
       }
       lifetime.signal.throwIfAborted()
-      input.store.set(`managed-shutdown:${r.id}`, true)
+      const owner = await managedProcessOwner(process.pid, this.processIdentity)
+      lifetime.signal.throwIfAborted()
+      input.store.transaction(() => {
+        input.store.set(ownerKey, owner)
+        input.store.set(shutdownKey, true)
+      })
       started = true
       const value = await input.definition.start({
         signal: lifetime.signal,
@@ -239,7 +256,8 @@ export class ProfileManagedResources {
       let code =
         error?.code === 'EADDRINUSE'
           ? 'port-in-use'
-          : error?.message === 'shutdown-unconfirmed'
+          : error?.message === 'shutdown-unconfirmed' ||
+              (!started && input.store.get(`managed-shutdown:${r.id}`) === true)
             ? 'shutdown-unconfirmed'
             : 'unavailable'
       lifetime.abort('failed')
@@ -320,7 +338,9 @@ export class ProfileManagedResources {
     for (const r of current.resources) r.lifetime.abort('exit')
     await current.draining.catch(() => undefined)
     try {
-      await Promise.all(current.resources.map((r) => r.stop('exit')))
+      const results = await Promise.allSettled(current.resources.map((r) => r.stop('exit')))
+      const errors = results.filter((r) => r.status === 'rejected').map((r) => r.reason)
+      if (errors.length) throw new AggregateError(errors, 'managed shutdown unconfirmed')
     } finally {
       if (profiles.get(this.key) === current) profiles.delete(this.key)
     }

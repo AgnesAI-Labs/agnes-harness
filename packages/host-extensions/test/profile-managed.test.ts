@@ -1,11 +1,12 @@
 import { createServer } from 'node:net'
 import type { BoundWakes, ProfileManagedDefinition } from '@agnes/extension-api'
-import type { ManagedServiceDescriptor } from '@agnes/protocol'
-import { expect, it } from 'vitest'
+import type { ProcessIdentity } from '@agnes/host-infrastructure/adapters/process-identity'
+import type { JsonValue, ManagedServiceDescriptor } from '@agnes/protocol'
+import { expect, it, vi } from 'vitest'
 import { ProfileManagedResources } from '../src/profile/managed.js'
 import { ownedStore } from '../src/profile/owned-store.js'
 
-it('runs only the published resource, drains replacements, and refuses revival after unknown shutdown', async () => {
+function storage() {
   const data = new Map<string, unknown>()
   const store = ownedStore(
     {
@@ -22,6 +23,11 @@ it('runs only the published resource, drains replacements, and refuses revival a
     () => {},
     true,
   )
+  return { data, store }
+}
+
+it('runs only the published resource, drains replacements, and refuses revival after unknown shutdown', async () => {
+  const { data, store } = storage()
   const wakes: BoundWakes = {
     async enqueue() {
       throw new Error('unbound-target')
@@ -142,3 +148,192 @@ it('runs only the published resource, drains replacements, and refuses revival a
     await two.close().catch(() => undefined)
   }
 })
+
+// Synthetic OS snapshots exercise recovery without starting daemon/worker processes.
+it.each([
+  {
+    name: 'confirmed clean stop',
+    marker: false,
+    owner: { pid: 42, startId: 'boot:old' },
+    identity: { state: 'alive', startId: 'boot:old' },
+    recover: true,
+  },
+  {
+    name: 'dead worker after crash',
+    marker: true,
+    owner: { pid: 42, startId: 'boot:old' },
+    identity: { state: 'dead' },
+    recover: true,
+  },
+  {
+    name: 'reused PID',
+    marker: true,
+    owner: { pid: 42, startId: 'boot:old' },
+    identity: { state: 'alive', startId: 'boot:new' },
+    recover: true,
+  },
+  {
+    name: 'same live worker',
+    marker: true,
+    owner: { pid: 42, startId: 'boot:old' },
+    identity: { state: 'alive', startId: 'boot:old' },
+    recover: false,
+  },
+  {
+    name: 'unverifiable identity',
+    marker: true,
+    owner: { pid: 42, startId: 'boot:old' },
+    identity: { state: 'unknown', reason: 'probe denied' },
+    recover: false,
+  },
+  { name: 'missing old identity', marker: true, owner: null, identity: { state: 'dead' }, recover: false },
+  {
+    name: 'missing start identity',
+    marker: true,
+    owner: { pid: 42, startId: null },
+    identity: { state: 'dead' },
+    recover: false,
+  },
+  {
+    name: 'invalid PID',
+    marker: true,
+    owner: { pid: -1, startId: 'boot:old' },
+    identity: { state: 'dead' },
+    recover: false,
+  },
+  {
+    name: 'malformed live identity',
+    marker: true,
+    owner: { pid: 42, startId: 'boot:old' },
+    identity: { state: 'alive', startId: '' },
+    recover: false,
+  },
+  {
+    name: 'probe timeout',
+    marker: true,
+    owner: { pid: 42, startId: 'boot:old' },
+    identity: null,
+    recover: false,
+  },
+  {
+    name: 'probe failure',
+    marker: true,
+    owner: { pid: 42, startId: 'boot:old' },
+    identity: null,
+    recover: false,
+  },
+] satisfies {
+  name: string
+  marker: boolean
+  owner: JsonValue
+  identity: ProcessIdentity | null
+  recover: boolean
+}[])(
+  'reconciles resource liveness for $name without changing operation outcomes',
+  async ({ name, marker, owner, identity, recover }) => {
+    if (name === 'probe timeout') vi.useFakeTimers()
+    const { store } = storage()
+    store.set('managed-shutdown:server', marker)
+    if (owner) store.set('managed-process:server', owner)
+    store.set('operation:motion', { state: 'unknown' })
+    const manager = () =>
+      new ProfileManagedResources(
+        'synthetic-recovery',
+        () => ({
+          async enqueue() {
+            throw new Error('unused')
+          },
+          async read() {
+            throw new Error('unused')
+          },
+        }),
+        undefined,
+        async (pid): Promise<ProcessIdentity> => {
+          if (pid === process.pid) return { state: 'alive', startId: 'boot:self' }
+          if (name === 'probe timeout') return new Promise(() => {})
+          if (!identity) throw new Error('probe failed')
+          return identity
+        },
+      )
+    let shutdownFinished = false
+    let released!: () => void
+    const drain = new Promise<void>((resolve) => {
+      released = resolve
+    })
+    const input = {
+      owner: 'plugin/synthetic',
+      packageId: '@example/server',
+      integrity: 'one',
+      revision: 'one',
+      store,
+      assert() {},
+      descriptor: {
+        id: 'server',
+        scope: 'profile' as const,
+        artifact: { kind: 'in-process' as const },
+        healthPath: '/health',
+        apiVersion: '1.0.0',
+        listeners: [],
+        requires: [],
+        startupTimeoutMs: 1000,
+        shutdownTimeoutMs: 1000,
+      },
+      definition: {
+        id: 'server',
+        configSchema: { type: 'object' as const, properties: {}, additionalProperties: false as const },
+        defaultConfig: {},
+        async start(init: Parameters<ProfileManagedDefinition<JsonValue>['start']>[0]) {
+          init.onShutdown(async () => {
+            await drain
+            shutdownFinished = true
+            return { state: 'settled' }
+          })
+          init.ready()
+          return 'ready'
+        },
+      },
+    }
+    const first = manager()
+    const handle = first.register(input)
+    let second: ProfileManagedResources | undefined
+    try {
+      await first.publish()
+      if (name === 'probe timeout') await vi.advanceTimersByTimeAsync(1001)
+      if (recover) {
+        expect(await handle.get()).toBe('ready')
+        expect(first.statuses(input.packageId)).toMatchObject([{ state: 'ready' }])
+        expect(store.get('managed-process:server')).toEqual({ pid: process.pid, startId: 'boot:self' })
+        const closing = first.close()
+        await Promise.resolve()
+        expect(shutdownFinished).toBe(false)
+        expect(store.get('managed-shutdown:server')).toBe(true)
+        released()
+        await closing
+        expect(shutdownFinished).toBe(true)
+        expect(store.get('managed-shutdown:server')).toBe(false)
+        second = manager()
+        const restarted = second.register(input)
+        await second.publish()
+        expect(await restarted.get()).toBe('ready')
+        expect(second.statuses(input.packageId)).toMatchObject([{ state: 'ready' }])
+      } else {
+        await expect(handle.get()).rejects.toThrow()
+        expect(first.statuses(input.packageId)).toMatchObject([
+          { state: 'failed', code: 'shutdown-unconfirmed' },
+        ])
+        await expect(handle.retry()).rejects.toThrow()
+        expect(store.get('managed-shutdown:server')).toBe(true)
+      }
+      expect(store.get('operation:motion')).toEqual({ state: 'unknown' })
+    } finally {
+      released()
+      await first.close().catch(() => undefined)
+      await second?.close()
+      if (!recover) expect(store.get('managed-shutdown:server')).toBe(true)
+      if (name === 'probe timeout') {
+        await vi.advanceTimersByTimeAsync(3000)
+        vi.useRealTimers()
+      }
+    }
+  },
+)
