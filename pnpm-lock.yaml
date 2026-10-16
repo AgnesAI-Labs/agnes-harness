@@ -111,7 +111,7 @@ importers:
   examples/mhs/mars-rescue:
     dependencies:
       '@agnes/mhs':
-        specifier: 0.0.0
+        specifier: 0.1.0-alpha.0
         version: link:../../../packages/mhs-plugin
       '@agnes/mhs-device':
         specifier: workspace:*
@@ -307,30 +307,30 @@ importers:
         specifier: workspace:*
         version: link:../sdk
     devDependencies:
+      '@agnes/ai':
+        specifier: workspace:*
+        version: link:../ai
       '@agnes/base':
         specifier: workspace:*
         version: link:../base
       '@agnes/core':
         specifier: workspace:*
         version: link:../core
-      '@agnes/host-extensions':
-        specifier: workspace:*
-        version: link:../host-extensions
-      '@agnes/host':
-        specifier: workspace:*
-        version: link:../host
-      '@agnes/daemon-rpc':
-        specifier: workspace:*
-        version: link:../daemon-rpc
       '@agnes/daemon-foundation':
         specifier: workspace:*
         version: link:../daemon-foundation
+      '@agnes/daemon-rpc':
+        specifier: workspace:*
+        version: link:../daemon-rpc
+      '@agnes/host':
+        specifier: workspace:*
+        version: link:../host
+      '@agnes/host-extensions':
+        specifier: workspace:*
+        version: link:../host-extensions
       '@agnes/host-infrastructure':
         specifier: workspace:*
         version: link:../host-infrastructure
-      '@agnes/ai':
-        specifier: workspace:*
-        version: link:../ai
 
   packages/bridges:
     dependencies:
