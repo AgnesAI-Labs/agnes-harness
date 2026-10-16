@@ -1,8 +1,12 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { rebuildDesiredFromInventory } from '@agnes/daemon-foundation/composite-desired'
+import { loadTemplate } from '@agnes/host'
 import { createPackageManager, parseSource, readLock, writeLock } from '@agnes/package-manager'
+import { decodeRuntimeTargetArtifact, type RuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 import { afterEach, expect, it, vi } from 'vitest'
+import { createClientModuleRegistry } from '../src/packages/client-modules.js'
 import { activateDefaultHelpers, initializeDefaultHelpers } from '../src/packages/default-helpers.js'
 
 const roots: string[] = []
@@ -35,12 +39,15 @@ function setup() {
           { provider: 'local' },
         ]),
       ),
-      policySnapshot: { capabilityCeiling: ['tools'], workspacePackages: 'require-project-trust' },
+      policySnapshot: {
+        capabilityCeiling: loadTemplate('local-dev').policy?.capabilityCeiling ?? [],
+        workspacePackages: 'require-project-trust',
+      },
     })
   }
   return { root, profileDir, manager, exec, initializePolicy }
 }
-it('installs four release packages offline once and preserves disable/remove on subsequent starts', async () => {
+it('installs release defaults and registers the primary MHS entry offline once and preserves disable/remove on subsequent starts', async () => {
   const s = setup()
   await initializeDefaultHelpers(s)
   expect(
@@ -52,10 +59,14 @@ it('installs four release packages offline once and preserves disable/remove on 
   ).toEqual([
     ['@agnes/document-reader', true, true],
     ['@agnes/mcp-helper', true, true],
+    ['@agnes/mhs', true, true],
     ['@agnes/plugin-helper', true, true],
     ['@agnes/skill-helper', true, true],
   ])
-  const publish = vi.fn(async () => {})
+  let published: RuntimeTargetArtifact | undefined
+  const publish = vi.fn(async (target: RuntimeTargetArtifact) => {
+    published = target
+  })
   await activateDefaultHelpers({
     profileDir: s.profileDir,
     inventory: await s.manager.inventory(s.profileDir),
@@ -63,6 +74,48 @@ it('installs four release packages offline once and preserves disable/remove on 
     publish,
   })
   expect(publish).toHaveBeenCalledOnce()
+  if (!published) throw new Error('No default runtime target')
+  expect(decodeRuntimeTargetArtifact(published).tree.rows).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: 'ext:agnes.mhs', disabled: false }),
+      expect.objectContaining({ id: 'web:@agnes/mhs', disabled: false }),
+    ]),
+  )
+  const registry = createClientModuleRegistry({
+    snapshotDirectory: () => join(s.root, 'client-modules'),
+    runtimeArtifacts: () => (published ? { desired: published } : undefined),
+  })
+  const roster = async () =>
+    registry.list({
+      profile: 'local-dev',
+      profileDirectory: s.profileDir,
+      inventory: await s.manager.inventory(s.profileDir),
+      actual: async (id) => {
+        const pkg = (await s.manager.inventory(s.profileDir)).packages.find((p) => p.id === id)
+        return pkg?.enabled ? { actual: 'running', actualIntegrity: pkg.entry.integrity } : undefined
+      },
+      refreshInventory: () => s.manager.inventory(s.profileDir),
+    })
+  try {
+    expect((await roster()).rows?.find((row) => row.packageId === '@agnes/mhs')).toMatchObject({
+      enabled: true,
+      phase: 'ready',
+      homeEntries: [{ id: 'mhs', placement: 'primary' }],
+      binding: { lifetime: 'profile', availability: 'active' },
+    })
+    await s.manager.setEnabled(s.profileDir, '@agnes/mhs', false)
+    published = rebuildDesiredFromInventory({
+      previous: published,
+      inventory: await s.manager.inventory(s.profileDir),
+      packageId: '@agnes/mhs',
+      operation: 'disable',
+    })
+    expect(
+      (await roster()).rows?.filter((row) => row.enabled).flatMap((row) => row.homeEntries ?? []),
+    ).not.toContainEqual({ id: 'mhs', placement: 'primary' })
+  } finally {
+    registry.close()
+  }
   await s.manager.setEnabled(s.profileDir, '@agnes/mcp-helper', false)
   await s.manager.setEnabled(s.profileDir, '@agnes/skill-helper', false)
   await s.manager.remove(s.profileDir, '@agnes/skill-helper')
@@ -72,6 +125,7 @@ it('installs four release packages offline once and preserves disable/remove on 
   ).toEqual([
     ['@agnes/document-reader', true],
     ['@agnes/mcp-helper', false],
+    ['@agnes/mhs', false],
     ['@agnes/plugin-helper', true],
   ])
   expect(s.exec).not.toHaveBeenCalled()
@@ -178,7 +232,7 @@ it('records completion without activation when all helpers are already installed
   )
 })
 
-it.each([1, 2])(
+it.each([1, 2, 3])(
   'migrates a completed v%s profile by adding new helpers, preserving prior removals',
   async (version) => {
     const s = setup()
@@ -190,7 +244,11 @@ it.each([1, 2])(
     )
     await initializeDefaultHelpers(s)
     expect((await s.manager.inventory(s.profileDir)).packages.map((p) => p.id)).toEqual(
-      version === 1 ? ['@agnes/document-reader', '@agnes/plugin-helper'] : ['@agnes/document-reader'],
+      version === 1
+        ? ['@agnes/document-reader', '@agnes/plugin-helper']
+        : version === 2
+          ? ['@agnes/document-reader']
+          : [],
     )
     await activateDefaultHelpers({
       profileDir: s.profileDir,

@@ -36,6 +36,8 @@ The separate MCP-based [device-inspection bundle](../../examples/fde/device-insp
 
 ## Browser workbench
 
+Official distributions install and enable the MHS package on a fresh home, so **MHS** appears as a first-level sidebar entry at first run. Open **MHS → Examples** to review and install/launch the bundled Mars rescue example. Disabling MHS in Plugins removes its entry. Existing homes are not backfilled; install and enable the package explicitly there.
+
 The MHS client contributes a primary sidebar page with Devices, Map, Activity, Connect and Examples tabs, device detail, seven device-tool cards and a contextual session Devices workbench panel. Device lists and controls use profile services; viewing or stopping a device does not create a hidden chat session. Native approval and device-bound manual leases remain backend decisions. Unknown receipts offer read-only reconciliation rather than automatically dispatching another action.
 
 Activity uses the Hub's seven-day window, earliest available timestamp and bounded cursor pages. Its current-session filter is disabled when no session is selected. The workbench count reflects devices used in the selected session and clears on a switch. Device details show confirmed source states and recent operation summaries; the device SDK reports paused only after reaching rest. Maps support declared landmarks, device trust/offline markers and point, pose or polygon targets.

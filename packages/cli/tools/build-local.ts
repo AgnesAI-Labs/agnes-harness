@@ -5,7 +5,7 @@ import { appendFile, chmod, copyFile, cp, mkdir, readdir, readFile, rm, writeFil
 import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { BUNDLED_EXAMPLES, BUNDLED_HELPERS } from '@agnes/package-manager'
+import { BUNDLED_EXAMPLES, DEFAULT_ENABLED_BUNDLED_PACKAGES } from '@agnes/package-manager'
 import { type BuildOptions, type BuildResult, build, type Plugin } from 'esbuild'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
 import { scrollbarCsp } from '../../../tools/web-scrollbar-csp.mjs'
@@ -21,6 +21,7 @@ import { xSurface } from '../../../tools/web-x-surface.mjs'
 import { beginRuntimeDirectory } from '../../base/tools/runtime-directory.js'
 import { bundledManifests } from './bundled-manifests.mjs'
 import { prepareDocumentReader } from './document-reader.js'
+import { prepareMhsPackage } from './mhs-package.js'
 import { copyPluginPackRuntime } from './plugin-pack-runtime.js'
 import { copyRipgrep } from './ripgrep.js'
 import { copySystemRuntime, withBuiltSystemRuntime } from './windows-runtime.js'
@@ -41,7 +42,11 @@ export async function copyComputerUseNotice(outputDirectory: string): Promise<vo
 
 /** Copy only runtime payload, never repository tests or personal working files. */
 export async function copyBundledPlugins(outputDirectory: string): Promise<void> {
-  for (const { name: helper } of BUNDLED_HELPERS) {
+  for (const { name: helper } of DEFAULT_ENABLED_BUNDLED_PACKAGES) {
+    if (helper === 'mhs') {
+      await prepareMhsPackage(join(outputDirectory, 'bundled-plugins', helper))
+      continue
+    }
     const source = join(repoPackages, 'package-manager', 'bundled-plugins', helper)
     const destination = join(outputDirectory, 'bundled-plugins', helper)
     await mkdir(destination, { recursive: true })

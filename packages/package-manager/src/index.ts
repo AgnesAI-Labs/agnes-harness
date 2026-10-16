@@ -5,7 +5,9 @@ export {
   BUNDLED_HELPERS,
   BUNDLED_SKILL_HELPER_REF,
   bundledExampleSource,
+  bundledPluginSource,
   bundledPluginSourceRoot,
+  DEFAULT_ENABLED_BUNDLED_PACKAGES,
 } from './bundled-plugin-source.js'
 export * from './capabilities.js'
 export * from './catalog.js'

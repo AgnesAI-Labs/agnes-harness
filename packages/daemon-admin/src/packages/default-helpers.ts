@@ -2,8 +2,8 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { rebuildDesiredFromInventory } from '@agnes/daemon-foundation/composite-desired'
 import {
-  BUNDLED_HELPERS,
-  bundledPluginSourceRoot,
+  bundledPluginSource,
+  DEFAULT_ENABLED_BUNDLED_PACKAGES,
   hashDirectory,
   type InstalledInventory,
   isRuntimePackageEligible,
@@ -27,7 +27,8 @@ export async function initializeDefaultHelpers(options: {
         : undefined
       const integrity: Record<string, string> =
         state && ['pending', 'installed'].includes(state.phase) ? { ...state.integrity } : {}
-      for (const helper of BUNDLED_HELPERS) {
+      for (const helper of DEFAULT_ENABLED_BUNDLED_PACKAGES) {
+        if (helper.freshOnly && (state || inventory)) continue
         if (
           state?.version === 1 &&
           state.phase !== 'existing' &&
@@ -36,9 +37,9 @@ export async function initializeDefaultHelpers(options: {
           continue
         if (state?.version === 2 && helper.name !== 'document-reader') continue
         if (inventory?.packages.some((pkg) => pkg.id === helper.id)) continue
-        const root = bundledPluginSourceRoot(helper.ref)
-        if (!root) throw new Error('Bundled helper source unavailable')
-        integrity[helper.id] = hashDirectory(join(root, 'bundled-plugins', helper.name))
+        const source = bundledPluginSource(helper.ref)
+        if (!source) throw new Error('Bundled helper source unavailable')
+        integrity[helper.id] = hashDirectory(join(source.root, source.path))
       }
       state = { version: 3, phase: 'pending', integrity }
       // This intent precedes policy creation, so a failed first startup can resume safely.
@@ -47,7 +48,7 @@ export async function initializeDefaultHelpers(options: {
     await options.initializePolicy()
     if (state.phase !== 'pending') return
     await options.manager.recover(options.profileDir)
-    for (const helper of BUNDLED_HELPERS) {
+    for (const helper of DEFAULT_ENABLED_BUNDLED_PACKAGES) {
       if (!Object.hasOwn(state.integrity, helper.id)) continue
       const source = parseSource(helper.ref)
       const preview = await options.manager.inspect(options.profileDir, source)
@@ -92,7 +93,7 @@ export async function activateDefaultHelpers(options: {
   await withDefaultHelperState(options.profileDir, async (state, save) => {
     if (state?.phase !== 'installed') return
     let target = options.previous
-    for (const helper of BUNDLED_HELPERS) {
+    for (const helper of DEFAULT_ENABLED_BUNDLED_PACKAGES) {
       if (!Object.hasOwn(state.integrity, helper.id)) continue
       const pkg = options.inventory.packages.find((p) => p.id === helper.id)
       if (!pkg || !isRuntimePackageEligible(pkg) || pkg.entry.integrity !== state.integrity[helper.id])

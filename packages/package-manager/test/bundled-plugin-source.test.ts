@@ -6,9 +6,10 @@ import { afterEach, expect, it, vi } from 'vitest'
 import {
   BUNDLED_EXAMPLES,
   BUNDLED_HELPERS,
-  BUNDLED_SKILL_HELPER_REF,
   bundledExampleSource,
+  bundledPluginSource,
   bundledPluginSourceRoot,
+  DEFAULT_ENABLED_BUNDLED_PACKAGES,
 } from '../src/bundled-plugin-source.js'
 import { emptyLock, readLock, writeLock } from '../src/lockfile.js'
 import { createPackageManager } from '../src/manager.js'
@@ -23,26 +24,29 @@ const fixture = () => {
   roots.push(root)
   return root
 }
-it('uses runtime payload instead of workspace impostor and never runs network commands', async () => {
-  const cwd = fixture()
-  const impostor = join(cwd, 'bundled-plugins', 'skill-helper')
-  mkdirSync(impostor, { recursive: true })
-  writeFileSync(join(impostor, 'package.json'), JSON.stringify({ name: 'impostor', version: '9.9.9' }))
-  const exec = vi.fn(async () => {
-    throw new Error('Network/command forbidden')
-  })
-  const into = join(cwd, 'stage')
-  const fetched = await fetchSource(parseSource(BUNDLED_SKILL_HELPER_REF), into, { cwd, exec })
-  expect(JSON.parse(readFileSync(join(into, 'package.json'), 'utf8')).name).toBe('@agnes/skill-helper')
-  expect(fetched.integrity).toBe(
-    hashDirectory(
-      join(bundledPluginSourceRoot(BUNDLED_SKILL_HELPER_REF) ?? '', 'bundled-plugins', 'skill-helper'),
-    ),
-  )
-  expect(exec).not.toHaveBeenCalled()
-  expect(bundledPluginSourceRoot('file:./ordinary')).toBeUndefined()
-  expect(existsSync(join(into, 'src', 'sources.mjs'))).toBe(true)
-})
+it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
+  'uses $id runtime payload instead of workspace impostor without network commands',
+  async (helper) => {
+    const cwd = fixture()
+    const impostor = join(cwd, 'bundled-plugins', helper.name)
+    mkdirSync(impostor, { recursive: true })
+    writeFileSync(join(impostor, 'package.json'), JSON.stringify({ name: 'impostor', version: '9.9.9' }))
+    const exec = vi.fn(async () => {
+      throw new Error('Network/command forbidden')
+    })
+    const into = join(cwd, 'stage')
+    const fetched = await fetchSource(parseSource(helper.ref), into, { cwd, exec })
+    expect(JSON.parse(readFileSync(join(into, 'package.json'), 'utf8')).name).toBe(helper.id)
+    const source = bundledPluginSource(helper.ref)
+    if (!source) throw new Error('Missing bundled source')
+    expect(fetched.integrity).toBe(hashDirectory(join(source.root, source.path)))
+    expect(exec).not.toHaveBeenCalled()
+    expect(bundledPluginSource('file:./ordinary')).toBeUndefined()
+    expect(bundledPluginSource('file:./bundled-plugins/mhs/../impostor')).toBeUndefined()
+    expect(bundledPluginSourceRoot('file:./ordinary')).toBeUndefined()
+    if (helper.name === 'skill-helper') expect(existsSync(join(into, 'src', 'sources.mjs'))).toBe(true)
+  },
+)
 it.each(BUNDLED_HELPERS)(
   'inspects and installs $id offline without automatic trust or activation',
   async (helper) => {

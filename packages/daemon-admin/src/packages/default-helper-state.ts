@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { BUNDLED_HELPERS, withLock } from '@agnes/package-manager'
+import { DEFAULT_ENABLED_BUNDLED_PACKAGES, withLock } from '@agnes/package-manager'
 
 export type DefaultHelperState = {
   version: 1 | 2 | 3
@@ -25,7 +25,7 @@ function decode(raw: unknown): DefaultHelperState {
   if (
     Object.entries(integrity).some(
       ([id, hash]) =>
-        !BUNDLED_HELPERS.some((h) => h.id === id) ||
+        !DEFAULT_ENABLED_BUNDLED_PACKAGES.some((h) => h.id === id) ||
         typeof hash !== 'string' ||
         !/^sha256-[a-f0-9]{64}$/.test(hash),
     )

@@ -4,6 +4,10 @@ import { mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { loadTemplate } from '@agnes/host'
+import { loadRuntimePackage, preflightRuntimePackage } from '@agnes/host-extensions/assemble/packages'
+import { createLoader } from '@agnes/host-extensions/ext-host/loader'
+import { emptyLock, runtimePluginSnapshotsFromInventory, writeLock } from '@agnes/package-manager'
 import { build } from 'esbuild'
 import { afterEach, expect, it } from 'vitest'
 import { copyBundledExamples, copyBundledPlugins } from '../tools/build-local.js'
@@ -118,4 +122,88 @@ it('ships all official example payloads with runnable community entries and no c
     expect(await readdir(payload)).not.toEqual(expect.arrayContaining(['test', 'node_modules', 'src']))
     expect(await readFile(join(payload, 'LICENSE'), 'utf8')).toContain('Apache')
   }
+})
+
+it('ships an installable MHS backend, Hub and profile client outside the checkout', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agnes-mhs-delivery-'))
+  roots.push(root)
+  await copyBundledPlugins(root)
+  const payload = join(root, 'bundled-plugins/mhs')
+  const manifest = JSON.parse(await readFile(join(payload, 'package.json'), 'utf8'))
+  expect(manifest.name).toBe('@agnes/mhs')
+  expect(await readdir(payload)).not.toEqual(expect.arrayContaining(['src', 'test', 'node_modules']))
+  expect(await readFile(join(payload, 'LICENSE'), 'utf8')).toContain('Apache')
+  expect(await readdir(join(payload, 'THIRD-PARTY-NOTICES'))).toEqual(
+    expect.arrayContaining(['ws.txt', 'sinclair-typebox.txt']),
+  )
+  const descriptor = JSON.parse(await readFile(join(payload, 'agnes.client.json'), 'utf8'))
+  expect(descriptor.client).toMatchObject({
+    lifetime: 'profile',
+    homeEntries: [{ id: 'mhs', placement: 'primary' }],
+  })
+  for (const path of [manifest.exports['.'], descriptor.client.entry, ...descriptor.client.styles])
+    expect((await readFile(join(payload, path))).length).toBeGreaterThan(0)
+  // Bundle the actual first-start path beside the relocated payload, just as local/SEA delivery does.
+  const bootstrap = join(root, 'bootstrap.mjs')
+  const initializer = fileURLToPath(
+    new URL('../../daemon-admin/src/packages/default-helpers.ts', import.meta.url),
+  )
+  const managerModule = fileURLToPath(new URL('../../package-manager/src/index.ts', import.meta.url))
+  await build({
+    stdin: {
+      contents: `export { initializeDefaultHelpers } from ${JSON.stringify(initializer)}; export { createPackageManager } from ${JSON.stringify(managerModule)}`,
+      resolveDir: root,
+    },
+    outfile: bootstrap,
+    bundle: true,
+    platform: 'node',
+    format: 'esm',
+    define: { AGNES_PACKAGED_BUILTINS: 'true' },
+    banner: {
+      js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
+    },
+  })
+  const boot = await import(bootstrap)
+  const profile = join(root, 'profiles/local-dev')
+  const manager = boot.createPackageManager({
+    dataDir: root,
+    cwd: root,
+    agnesVersion: '0.0.0',
+    references: async () => [],
+  })
+  await boot.initializeDefaultHelpers({
+    profileDir: profile,
+    manager,
+    initializePolicy: async () =>
+      writeLock(profile, {
+        ...emptyLock('local-dev', '0.0.0'),
+        policySnapshot: {
+          capabilityCeiling: loadTemplate('local-dev').policy?.capabilityCeiling ?? [],
+          workspacePackages: 'require-project-trust',
+        },
+        resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
+        seams: Object.fromEntries(
+          ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals'].map(
+            (name) => [name, { provider: 'local' }],
+          ),
+        ),
+      }),
+  })
+  expect(
+    (await manager.inventory(profile)).packages.find((pkg: { id: string }) => pkg.id === manifest.name),
+  ).toMatchObject({ enabled: true, trusted: true })
+  const installed = runtimePluginSnapshotsFromInventory(await manager.inventory(profile)).find(
+    (item) => item.snapshot.packageId === manifest.name,
+  )
+  if (!installed) throw new Error('MHS was not installed')
+  preflightRuntimePackage(installed)
+  const loaded = await loadRuntimePackage(
+    installed,
+    createLoader({
+      cacheDir: join(root, 'cache'),
+      hostRoot: fileURLToPath(new URL('../../host-extensions/', import.meta.url)),
+      agnesVersion: '0.0.0',
+    }),
+  )
+  expect(loaded?.module.plugins?.map((plugin) => plugin.declaration.id)).toContain('ext:agnes.mhs')
 })

@@ -17,7 +17,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { runIsolatedCommand } from '@agnes/package-isolation'
 import type { PackageProvenance } from '@agnes/protocol'
 import { deploymentFetch } from '@agnes/system-node/deployment-network'
-import { bundledExampleSource, bundledPluginSourceRoot } from './bundled-plugin-source.js'
+import { bundledExampleSource, bundledPluginSource } from './bundled-plugin-source.js'
 import { copyPackageTreeSync } from './copy-tree.js'
 import { PackageError } from './errors.js'
 import { extractPluginArchive } from './plugin-archives.js'
@@ -461,8 +461,8 @@ function metadata(fetchedDir: string, expected?: { name?: string; version?: stri
 }
 
 function localSource(src: PackageSource, cwd: string): string {
-  const example = bundledExampleSource(src.ref)
-  cwd = example?.root ?? bundledPluginSourceRoot(src.ref) ?? cwd
+  const example = bundledExampleSource(src.ref) ?? bundledPluginSource(src.ref)
+  cwd = example?.root ?? cwd
   const raw = example?.path ?? src.ref.slice(src.ref.indexOf(':') + 1)
   // Resolved separately so a missing/escaping source can still name the root it was
   // checked against, which is rarely the process's own cwd (the daemon that fetches
