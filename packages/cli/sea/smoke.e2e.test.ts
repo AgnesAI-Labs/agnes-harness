@@ -9,8 +9,9 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { hashDirectory } from '@agnes/host'
 import { describe, expect, it } from 'vitest'
@@ -23,6 +24,9 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
   it('runs production commands and loads a TypeScript extension through the SEA loader', async () => {
     const temporary = mkdtempSync(join(tmpdir(), 'agnes-sea-'))
     const home = join(temporary, 'home')
+    const distributionRoot = join(temporary, 'distribution')
+    const binary = join(distributionRoot, basename(bin as string))
+    const loaderHarness = join(distributionRoot, basename(harness as string))
     // Session workspaces cannot contain the private .agh state under home.
     const workspace = join(temporary, 'workspace')
     const server = spawn(
@@ -30,13 +34,33 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
       [fileURLToPath(new URL('./fixtures/openai-server.mjs', import.meta.url))],
       { stdio: ['ignore', 'pipe', 'inherit'] },
     )
-    const env = { ...process.env, AGH_HOME: home, HOME: home }
+    const env = { ...process.env, AGH_HOME: home, HOME: home, NODE_PATH: '', NODE_OPTIONS: '' }
     try {
+      // Run outside the checkout so native dependency lookup cannot fall back to its node_modules.
+      cpSync(dirname(resolve(bin as string)), distributionRoot, { recursive: true, dereference: true })
+      cpSync(resolve(harness as string), loaderHarness)
       mkdirSync(workspace, { recursive: true })
+      // Only fixture generation uses checkout sharp. The command below executes the distributed
+      // SEA, daemon and worker; the loopback provider checks actual returned resized pixels.
+      const sharp = createRequire(new URL('../../base/package.json', import.meta.url))('sharp')
+      for (const format of ['png', 'jpeg'] as const)
+        writeFileSync(
+          join(workspace, `sea-image.${format}`),
+          await sharp({
+            create: {
+              width: 1024,
+              height: 512,
+              channels: 3,
+              background: 'white',
+            },
+          })
+            [format]()
+            .toBuffer(),
+        )
       const profileDir = join(home, 'profiles', 'local-dev')
       const secrets = join(home, '.agh', 'secrets', 'test')
       if (process.platform === 'win32') {
-        const distribution = dirname(resolve(bin as string))
+        const distribution = dirname(binary)
         execFileSync(
           join(distribution, 'runtime', 'node.exe'),
           [
@@ -124,18 +148,16 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
           },
         }),
       )
-      expect(execFileSync(resolve(bin as string), ['--version'], { encoding: 'utf8' })).toMatch(
-        /^agh 0\.0\.0 node 24\./,
-      )
-      expect(execFileSync(resolve(bin as string), ['--help'], { encoding: 'utf8' })).toContain('agh [prompt]')
-      const forwardedHelp = spawnSync(resolve(bin as string), ['daemon', 'start', '--help'], {
+      expect(execFileSync(binary, ['--version'], { encoding: 'utf8' })).toMatch(/^agh 0\.0\.0 node 24\./)
+      expect(execFileSync(binary, ['--help'], { encoding: 'utf8' })).toContain('agh [prompt]')
+      const forwardedHelp = spawnSync(binary, ['daemon', 'start', '--help'], {
         encoding: 'utf8',
         env,
       })
       expect(forwardedHelp.status).toBe(2)
       expect(forwardedHelp.stdout).toBe('')
       expect(forwardedHelp.stderr).toContain('unknown daemon argument --help')
-      const started = spawnSync(resolve(bin as string), ['daemon', 'start'], {
+      const started = spawnSync(binary, ['daemon', 'start'], {
         encoding: 'utf8',
         env,
         cwd: workspace,
@@ -146,23 +168,23 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
         JSON.stringify({ stdout: started.stdout, stderr: started.stderr, error: started.error }),
       ).toBe(0)
       const status = JSON.parse(
-        execFileSync(resolve(bin as string), ['daemon', 'status'], { encoding: 'utf8', env, cwd: workspace }),
+        execFileSync(binary, ['daemon', 'status'], { encoding: 'utf8', env, cwd: workspace }),
       ) as { running: boolean; owner: { pid: number } }
       expect(status.running).toBe(true)
       expect(
-        execFileSync(resolve(bin as string), ['stats', 'deviation', '--json'], {
+        execFileSync(binary, ['stats', 'deviation', '--json'], {
           encoding: 'utf8',
           env,
         }).trim(),
       ).toBe('[]')
       expect(
-        execFileSync(resolve(bin as string), ['consent', 'LOCAL'], {
+        execFileSync(binary, ['consent', 'LOCAL'], {
           encoding: 'utf8',
           env,
         }),
       ).toContain('telemetry consent for local-dev: LOCAL')
       const doctor = JSON.parse(
-        execFileSync(resolve(bin as string), ['doctor', 'binary', '--json', '--cwd', workspace], {
+        execFileSync(binary, ['doctor', 'binary', '--json', '--cwd', workspace], {
           encoding: 'utf8',
           env,
         }),
@@ -175,7 +197,7 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
         },
       ])
       const extensions = JSON.parse(
-        execFileSync(resolve(bin as string), ['doctor', 'extensions', '--json', '--cwd', workspace], {
+        execFileSync(binary, ['doctor', 'extensions', '--json', '--cwd', workspace], {
           encoding: 'utf8',
           env,
         }),
@@ -209,12 +231,32 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
       )
       expect(
         execFileSync(
-          resolve(bin as string),
+          binary,
           ['-p', 'hello', '--profile', 'local-dev', '--model', 'primary=faux/faux-1', '--cwd', workspace],
           { encoding: 'utf8', env },
         ),
       ).toBe('sea faux ok\n')
-      const output = execFileSync(resolve(harness as string), [join(packageDirectory, 'index.ts')], {
+      expect(
+        execFileSync(
+          binary,
+          [
+            '-p',
+            'SEA_IMAGE_SMOKE',
+            '--profile',
+            'local-dev',
+            '--model',
+            'primary=faux/faux-1',
+            '--cwd',
+            workspace,
+          ],
+          {
+            encoding: 'utf8',
+            env: { ...env, NODE_PATH: '', NODE_OPTIONS: '' },
+            timeout: 30_000,
+          },
+        ),
+      ).toBe('sea image smoke ok\n')
+      const output = execFileSync(loaderHarness, [join(packageDirectory, 'index.ts')], {
         encoding: 'utf8',
         env,
         cwd: workspace,
@@ -225,13 +267,13 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
       expect(readdirSync(cache).length).toBeGreaterThan(0)
       writeFileSync(join(packageDirectory, 'tampered.ts'), 'export const changed = true\n')
       expect(() =>
-        execFileSync(resolve(bin as string), ['doctor', 'extensions', '--json', '--cwd', workspace], {
+        execFileSync(binary, ['doctor', 'extensions', '--json', '--cwd', workspace], {
           encoding: 'utf8',
           env,
         }),
       ).toThrow()
       const children = process.platform === 'win32' ? windowsChildren(status.owner.pid) : []
-      const distribution = dirname(resolve(bin as string))
+      const distribution = dirname(binary)
       const before = process.platform === 'win32' ? windowsIdentities(distribution, children) : []
       if (process.platform === 'win32') {
         expect(children.length).toBeGreaterThan(0)
@@ -242,7 +284,7 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
       )
       for (const file of shutdownFiles)
         expect(existsSync(file), `published before shutdown: ${file}`).toBe(true)
-      const stopped = spawnSync(resolve(bin as string), ['daemon', 'stop'], {
+      const stopped = spawnSync(binary, ['daemon', 'stop'], {
         encoding: 'utf8',
         env,
         cwd: workspace,
@@ -258,10 +300,10 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
         for (let index = 0; index < children.length; index++) expect(after[index + 1]).not.toBe(before[index])
       }
     } finally {
-      spawnSync(resolve(bin as string), ['daemon', 'stop'], { env, cwd: workspace, timeout: 15_000 })
+      spawnSync(binary, ['daemon', 'stop'], { env, cwd: workspace, timeout: 15_000 })
       server.kill()
       rmSync(temporary, { recursive: true, force: true })
     }
     // Multiple cold SEA launches plus daemon readiness and a real provider round-trip exceed 5s on Windows.
-  }, 30000)
+  }, 60000)
 })
