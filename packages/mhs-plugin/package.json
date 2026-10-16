@@ -1276,6 +1276,26 @@
               }
             },
             {
+              "name": "hub.reconcile",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 65536,
+              "kind": "effect",
+              "effectPolicy": {
+                "isDestructive": true,
+                "isOpenWorld": true,
+                "replay": "never",
+                "requiresApproval": "always",
+                "approvalScopes": []
+              }
+            },
+            {
               "name": "hub.configure",
               "scope": "profile",
               "inputSchema": {

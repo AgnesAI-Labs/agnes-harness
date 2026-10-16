@@ -28,6 +28,7 @@
       "hub.status",
       "hub.configuration",
       "hub.retry",
+      "hub.reconcile",
       "hub.configure",
       "hub.check",
       "mhs.pause",

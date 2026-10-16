@@ -29,7 +29,7 @@ export interface ProfileManagedHandle<T> {
 }
 export interface PluginProfileRuntimePort {
   /** The reviewed managedServices declaration owns listeners and deadlines.
-   * Registers generic `<id>.status`, `.retry`, `.configure` and `.check` profile services.
+   * Registers generic `<id>.status`, `.retry`, `.reconcile`, `.configure` and `.check` profile services.
    * Configuration/retry retain native effect admission; status never returns private credentials. */
   register<T>(definition: ProfileManagedDefinition<T>): ProfileManagedHandle<T>
   /** Forward an own authenticated producer stream to an explicitly reviewed managed `requires` grant.
@@ -49,7 +49,7 @@ export function managedServiceCapabilities(
   checkSchema?: import('./services.js').ServiceDef['inputSchema'],
 ): import('./services.js').ServiceCapability[] {
   const empty = { type: 'object', properties: {}, additionalProperties: false } as const
-  return (['status', 'configuration', 'check', 'retry', 'configure'] as const).map((method) => {
+  return (['status', 'configuration', 'check', 'retry', 'reconcile', 'configure'] as const).map((method) => {
     const common = {
       name: `${id}.${method}`,
       scope: 'profile' as const,
@@ -59,7 +59,7 @@ export function managedServiceCapabilities(
       timeoutMs: 30000,
       maxResultBytes: 65536,
     }
-    return method === 'retry' || method === 'configure'
+    return method === 'retry' || method === 'reconcile' || method === 'configure'
       ? {
           ...common,
           kind: 'effect' as const,
