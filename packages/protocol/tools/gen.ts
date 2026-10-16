@@ -302,6 +302,7 @@ const TARGETS: Array<{
           'JsonValue',
           'DecisionHandle',
           'DecisionSnapshot',
+          'DecisionConsumption',
           'DecisionResponse',
           'DecisionSpec',
           'DecisionRequest',

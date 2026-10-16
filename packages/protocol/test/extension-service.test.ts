@@ -27,6 +27,48 @@ describe('S1 Extension Service contract', () => {
     expect(result.total).toBe(35)
     expect(result.skipped).toBe(0)
   })
+  it('validates pending and consumed native profile decisions at the RPC boundary', () => {
+    const decision = {
+      handle: { id: 'recovery', sessionId: null, profileId: 'local-dev' },
+      revision: 1,
+      request: {
+        spec: {
+          key: 'recover',
+          purpose: 'service.effect',
+          subject: {},
+          prompt: 'Confirm recovery',
+          options: ['allowed-once', 'rejected'],
+        },
+        subjectDigest: 'a'.repeat(64),
+        owner: 'plugin/server',
+        operationId: 'reconcile',
+        sourcePackage: '@sample/server',
+        packageVersion: '1.0.0',
+        requestedBy: { id: 'operator', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+        lane: 'main',
+        createdAt: '2026-10-16T00:00:00Z',
+        expiresAt: null,
+      },
+      result: null,
+      answerCommand: null,
+      consumption: null,
+      invalidation: null,
+    }
+    for (const consumption of [
+      null,
+      { at: '2026-10-16T00:00:01Z', operationId: 'reconcile', effectId: null },
+    ])
+      expect(
+        validateMethod('_agnes/v1/profile.decisions.list', 'result', {
+          decisions: [{ ...decision, consumption }],
+        }).ok,
+      ).toBe(true)
+    expect(
+      validateMethod('_agnes/v1/profile.decisions.list', 'result', {
+        decisions: [{ ...decision, consumption: { operationId: 'reconcile' } }],
+      }).ok,
+    ).toBe(false)
+  })
   it('requires reviewed profile effect policy and refuses caller authority fields', () => {
     const effect = { ...capability, scope: 'profile', kind: 'effect' }
     expect(validateServiceCapability(effect).ok).toBe(false)
