@@ -119,6 +119,7 @@ export type NormalizedClientContribution = {
   homeEntries?: ClientContribution['homeEntries']
   examplePages?: ClientContribution['examplePages']
   assets?: ClientContribution['assets']
+  streams?: ClientContribution['streams']
   intelligentComponents?: ClientContribution['intelligentComponents']
   id?: string
   entry: string
@@ -140,6 +141,7 @@ export function normalizeClientContribution(client: ClientContribution): Normali
     ...(client.homeEntries === undefined ? {} : { homeEntries: client.homeEntries }),
     ...(client.examplePages === undefined ? {} : { examplePages: set(client.examplePages) }),
     ...(client.assets === undefined ? {} : { assets: set(client.assets.map(normalizeClientPath)) }),
+    ...(client.streams === undefined ? {} : { streams: set(client.streams) }),
     ...(client.id === undefined ? {} : { id: client.id }),
     entry: normalizeClientPath(client.entry),
     ...(client.intelligentComponents ? { intelligentComponents: client.intelligentComponents } : {}),

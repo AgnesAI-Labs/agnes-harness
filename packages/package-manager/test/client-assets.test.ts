@@ -255,12 +255,14 @@ describe('client contribution normalization', () => {
   it('keeps styles in order, dedupes and sorts the sets, and defaults missing lists to []', () => {
     const normalized = normalizeClientContribution({
       entry: './dist/client/index.js',
+      streams: ['panel.events', 'panel.media', 'panel.events'],
       styles: ['./dist/client/b.css', 'dist/client/a.css'],
       slots: ['workbench.panel', 'client.card', 'workbench.panel'],
       services: ['s.b', 's.a', 's.b'],
     })
     expect(normalized).toEqual({
       entry: 'dist/client/index.js',
+      streams: ['panel.events', 'panel.media'],
       styles: ['dist/client/b.css', 'dist/client/a.css'],
       slots: ['client.card', 'workbench.panel'],
       services: ['s.a', 's.b'],
