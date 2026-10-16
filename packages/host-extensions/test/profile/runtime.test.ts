@@ -16,6 +16,8 @@ import type {
 import { describe, expect, it, vi } from 'vitest'
 import { ServiceRegistry } from '../../src/ext-host/services.js'
 import { ProfileActivations } from '../../src/profile/activation.js'
+import { ProfileManagedResources } from '../../src/profile/managed.js'
+import { registerManagedServices } from '../../src/profile/managed-services.js'
 import { ownedStore } from '../../src/profile/owned-store.js'
 import { createProfileServiceRuntime } from '../../src/profile/runtime.js'
 import { ProfileWakeBindings } from '../../src/profile/wakes.js'
@@ -122,9 +124,10 @@ function fixture() {
     },
   })
   const audit = vi.fn()
-  const make = (journalKey?: string) =>
+  const make = (journalKey?: string, managed?: ProfileManagedResources) =>
     createProfileServiceRuntime({
       ...(journalKey ? { journalKey } : {}),
+      ...(managed ? { managed } : {}),
       profileId: 'default',
       registry,
       activations,
@@ -148,13 +151,18 @@ function fixture() {
           return {
             source: credential === 'beta' ? 'notice-panel' : 'report-panel',
             subjectCredential: 'human',
-            grants: ['reports.publish', 'reports.read', 'reports.stop', 'notice.publish', 'wake.enqueue'].map(
-              (name) => ({
-                extension: credential === 'beta' ? 'plugin/fedcba9876543210' : owner,
-                name,
-                range: '*',
-              }),
-            ),
+            grants: [
+              'reports.publish',
+              'reports.read',
+              'reports.stop',
+              'notice.publish',
+              'wake.enqueue',
+              'server.reconcile',
+            ].map((name) => ({
+              extension: credential === 'beta' ? 'plugin/fedcba9876543210' : owner,
+              name,
+              range: '*',
+            })),
           }
         },
       },
@@ -549,4 +557,156 @@ describe('current profile authority', () => {
       await runtime.close()
     }
   })
+})
+
+it.each([
+  'approved',
+  'rejected',
+  'stale-marker',
+  'stale-generation',
+  'dead',
+  'alive',
+  'became-live',
+  'live-at-dispatch',
+  'probe-unavailable',
+  'unauthorized',
+] as const)('reconciles a managed singleton through native decisions: %s', async (scenario) => {
+  const f = fixture()
+  const store = ownedStore(f.meta.namespace(owner, 'managed:server'), () => {}, true)
+  store.set('managed-shutdown:server', true)
+  // Boolean-only records deliberately have no identity.
+  if (['dead', 'alive', 'became-live', 'live-at-dispatch', 'probe-unavailable'].includes(scenario))
+    store.set('managed-process:server', { pid: 42, startId: 'old' })
+  store.set('operation:motion', { state: 'unknown' })
+  let identity: 'dead' | 'alive' | 'unknown' = scenario === 'alive' ? 'alive' : 'unknown'
+  let current = true
+  const managed = new ProfileManagedResources(
+    `native-reconcile-${scenario}`,
+    () => {
+      throw new Error('unused')
+    },
+    () => current,
+    async (pid) => {
+      if (pid === process.pid) return { state: 'alive', startId: 'self' }
+      if (scenario === 'probe-unavailable') throw new Error('unavailable')
+      return identity === 'alive'
+        ? { state: 'alive', startId: 'old' }
+        : identity === 'dead'
+          ? { state: 'dead' }
+          : { state: 'unknown', reason: 'unavailable' }
+    },
+  )
+  const configSchema = { type: 'object', properties: {}, additionalProperties: false } as const
+  const handle = managed.register({
+    owner,
+    packageId: '@acme/server',
+    integrity: 'snapshot-one',
+    revision: 'generation-one',
+    store,
+    assert() {},
+    descriptor: {
+      id: 'server',
+      scope: 'profile',
+      artifact: { kind: 'in-process' },
+      apiVersion: '1.0.0',
+      healthPath: '/health',
+      listeners: [],
+      requires: [],
+      startupTimeoutMs: 1000,
+      shutdownTimeoutMs: 1000,
+    },
+    definition: {
+      id: 'server',
+      configSchema,
+      defaultConfig: {},
+      async start(init) {
+        init.onShutdown(async () => ({ state: 'settled' }))
+        init.ready()
+        return 'recovered'
+      },
+    },
+  })
+  registerManagedServices(
+    'server',
+    {
+      register(def) {
+        return f.add(def.name, def)
+      },
+    },
+    handle,
+    () => managed.settle(),
+    configSchema,
+  )
+  const runtime = f.make(undefined, managed)
+  const params = { extension: owner, service: 'server.reconcile', input: {}, operationId: 'reconcile-one' }
+  if (scenario === 'live-at-dispatch') {
+    const commit = f.storage.commit.bind(f.storage)
+    vi.spyOn(f.storage, 'commit').mockImplementation(async (key, tx) => {
+      const result = await commit(key, tx)
+      // The OS becomes certain only after native dispatch intent has committed.
+      if (
+        tx.events.some(
+          (event) =>
+            event.type === 'x/host/profile-operation' &&
+            (event.data as { receipt?: { state?: string } }).receipt?.state === 'running',
+        )
+      )
+        identity = 'alive'
+      return result
+    })
+  }
+
+  try {
+    await managed.publish()
+    await expect(handle.get()).rejects.toThrow()
+    if (scenario === 'dead') identity = 'dead'
+    if (scenario === 'alive' || scenario === 'unauthorized') {
+      await expect(runtime.call(params, scenario === 'unauthorized' ? 'forged' : 'granted')).rejects.toThrow()
+      expect(await runtime.listDecisions('human')).toEqual([])
+    } else {
+      const first = await runtime.call(params, 'granted')
+      if (scenario === 'dead') {
+        expect(first).toMatchObject({ state: 'completed' })
+        expect(await runtime.listDecisions('human')).toEqual([])
+      } else {
+        expect(first).toMatchObject({ state: 'approval-required' })
+        const snapshot = (await runtime.listDecisions('human'))[0]
+        if (!snapshot) throw new Error('native decision missing')
+        expect(snapshot.request.spec.subject).toMatchObject({
+          presentation: {
+            resource: 'server',
+            ownerPackage: '@acme/server',
+            generation: 'generation-one',
+            identityState: 'unknown',
+          },
+          resourceRevision: expect.any(String),
+        })
+        await approve(runtime, scenario === 'rejected' ? 'rejected' : 'allowed-once')
+        if (scenario === 'stale-marker') store.set('managed-marker-revision:server', 'changed')
+        if (scenario === 'stale-generation') current = false
+        if (scenario === 'became-live') identity = 'alive'
+        if (['stale-marker', 'stale-generation', 'became-live'].includes(scenario))
+          await expect(runtime.call(params, 'granted')).rejects.toThrow()
+        else
+          expect(await runtime.call(params, 'granted')).toMatchObject({
+            state:
+              scenario === 'rejected' ? 'refused' : scenario === 'live-at-dispatch' ? 'unknown' : 'completed',
+          })
+      }
+    }
+    const recovered = ['approved', 'dead', 'probe-unavailable'].includes(scenario)
+    if (recovered) {
+      expect(await handle.get()).toBe('recovered')
+      expect(await runtime.call(params, 'granted')).toMatchObject({ state: 'completed' })
+    } else {
+      expect(managed.statuses('@acme/server')).toMatchObject([
+        { state: 'failed', code: 'shutdown-unconfirmed' },
+      ])
+      expect(store.get('managed-shutdown:server')).toBe(true)
+    }
+    expect(store.get('operation:motion')).toEqual({ state: 'unknown' })
+  } finally {
+    await runtime.close()
+    await managed.close().catch(() => undefined)
+  }
 })

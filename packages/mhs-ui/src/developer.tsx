@@ -148,15 +148,14 @@ export function DeveloperPage() {
                 </div>
               ))}
               <Button
-                disabled={status.value.state !== 'failed'}
+                disabled={!['failed', 'shutdown-unconfirmed'].includes(status.value.state)}
                 onClick={() =>
-                  void port
-                    .retry()
+                  void (status.value?.state === 'shutdown-unconfirmed' ? port.reconcile() : port.retry())
                     .then(status.retry)
                     .catch(() => setFailed(true))
                 }
               >
-                {t('retry')}
+                {t(status.value.state === 'shutdown-unconfirmed' ? 'confirmRecover' : 'retry')}
               </Button>
               <details>
                 <summary>{t('advancedHub')}</summary>

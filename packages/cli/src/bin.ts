@@ -25,7 +25,7 @@ import { bootDefault } from './boot/default.js'
 import { makeEphemeralHome, profileNameFrom, resolveHome } from './boot/inputs.js'
 import { bootLocal, type LocalBootDeps } from './boot/local.js'
 import { installSignalLadder } from './boot/signals.js'
-import { dispatchBatchCli, prepareCommandArgs, resolveMode } from './command-entry.js'
+import { dispatchProfileCli, isProfileCommand, prepareCommandArgs, resolveMode } from './command-entry.js'
 import { commandHelp } from './command-help.js'
 import { type ConfigWizardIO, runConfigurationWizard } from './config-wizard.js'
 import {
@@ -451,7 +451,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     ...boot,
   }
   try {
-    if (p.command === 'batch') return await dispatchBatchCli(p, io, deps, !production)
+    if (isProfileCommand(p.command)) return await dispatchProfileCli(p, io, deps, !production)
     if (p.command === 'run') {
       const { runCommand } = await import('./commands/run.js')
       const { bootHeadless } = await import('./boot/headless.js')

@@ -68,9 +68,9 @@ await client.extensions.wakes.enqueue({
 
 已安装且受信任的插件可注入 `profileRuntime`，声明 profile 范围的 `managedServices`、`artifact: { kind: 'in-process' }`、经审查的回环监听地址和有界启停期限。`ctx.profileRuntime.register({ id, configSchema, defaultConfig, start, check? })` 只注册 factory；staged 与 pinned 树不启动资源，只有当前 profile 发布后才在共享 Host worker 中启动。替换先完成旧资源停机，`handle.get()` 拒绝过时或未就绪的资源。此路径属于受信任的进程内执行；Node/OCI artifact 仍使用独立进程 supervisor。
 
-`start(init)` 接收 owner 隔离存储、绑定通知、选定监听端口、已校验配置及生命周期 signal。绑定监听前须安装 `init.onShutdown`，恢复与绑定完成后才调用 `init.ready()`。Host 会先排空受管停机，再撤销插件注册与流，并持久化已确认的收敛结果。未确认停机仅在记录的 worker PID 与启动身份能证明旧进程内资源的 owner 已消失（包括 PID 被复用）时自动恢复；owner 仍存活、身份缺失或核验失败时仍拒绝重新启动。这只核实资源存活状态：结果未知的操作保持 unknown，绝不自动重放。通用 `listenerPorts` 配置仅能为 `auto` 监听选择端口，不能改变 host 或覆盖已审查的固定端口。
+`start(init)` 接收 owner 隔离存储、绑定通知、选定监听端口、已校验配置及生命周期 signal。绑定监听前须安装 `init.onShutdown`，恢复与绑定完成后才调用 `init.ready()`。Host 会先排空受管停机，再撤销插件注册与流，并持久化已确认的收敛结果。未确认停机仅在记录的 worker PID 与启动身份能证明旧进程内资源的 owner 已消失（包括 PID 被复用）时自动恢复；owner 仍存活时拒绝重新启动；身份缺失或核验失败时须通过下述审核恢复操作。这只核实资源存活状态：结果未知的操作保持 unknown，绝不自动重放。通用 `listenerPorts` 配置仅能为 `auto` 监听选择端口，不能改变 host 或覆盖已审查的固定端口。
 
-Host 将 `<id>.status`、`<id>.configuration`、`<id>.check`、`<id>.retry`、`<id>.configure` 注册为普通 profile 服务，客户端须逐项列入 allowlist。状态只暴露公开监听地址；配置和重试保留原生批准。插件提供的 check 通过同一接口报告领域健康。
+Host 将 `<id>.status`、`<id>.configuration`、`<id>.check`、`<id>.retry`、`<id>.reconcile`、`<id>.configure` 注册为普通 profile 服务，客户端须逐项列入 allowlist。状态只暴露公开监听地址；配置和重试保留原生批准。插件提供的 check 通过同一接口报告领域健康。
 
 流声明通过 `ctx.profileRuntime.streams.register(name, handler)` 注册。本地 launcher 将同源 stream gateway 经私有连接转接到共享 worker，分发前校验当前 roster、scope、输入 schema、actor 和原生控制 grant。浏览器不会获得 worker 私有端点及连接证明。通用传输实现位于 `@agnes/plugin-streams`，`@agnes/daemon-rpc/streams` 保留兼容入口。
 
@@ -79,3 +79,22 @@ Host 将 `<id>.status`、`<id>.configuration`、`<id>.check`、`<id>.retry`、`<
 Profile 数据 producer 可在 events 或 media 通道的 inbound profile stream 上声明 `producer: true`。它保留认证 roster、精确 owner、activation、有界缓冲和撤销检查，不取得运动或控制权限。可信后端仅可按精确的 `managedServices.requires` grant（backend owner、stream 名称、range `*`）调用 `profileRuntime.connectProducer`。每次转接帧都复查 child 与 parent activation；现有 inbound control stream 仍要求已消费的原生 effect grant。
 
 `local-dev` 模板允许经审核的 store、wake、stream 与 managed-service 声明。现有 profile 已保存的能力上限仍然有效，不自动扩权，也不绕过包信任与 effect 批准。
+
+
+### 确认并恢复
+
+当前配置资源处于 `failed / shutdown-unconfirmed` 时，以 `{}` 和新的操作 ID 请求 Host 提供的 `<id>.reconcile` effect。客户端 allowlist 和审核能力声明必须包含该精确服务名（可用 `managedServiceCapabilities` 声明此门面）。已认证来源需要精确服务授权，主体也必须获准执行该资源管理操作；agent 不能请求配置级 effect。
+
+Host 先检查保存的进程身份。确认旧进程已退出（包括 PID 已被不同启动身份复用）时，可自动恢复，无需人工确认存活状态。缺少身份或探测不可用时，发起原生 AR1 决策，列出资源、所属包、代际和最后已知身份。**允许一次**表示操作者确认旧进程已不再运行。身份匹配且仍存活时，即使已经批准也拒绝恢复。拒绝、代际或资源实例变化、关闭标记版本变化均保留锁定；审核新状态后使用新的操作 ID。清除标记并启动替代资源前再次检查身份及版本。恢复不会向记录的 PID 发信号，也不会重置或重放操作日志、回执或设备运动；未知操作结果仍保持未知。
+
+本地操作者可不打开会话，使用同一审批流程：
+
+```sh
+node agnes.mjs runtime reconcile RESOURCE --extension ext:OWNER.ROW --operation recovery-1
+# 阅读返回的原生决策，核实旧进程已停止，再回答：
+node agnes.mjs runtime reconcile RESOURCE --extension ext:OWNER.ROW --operation recovery-1 --answer allow
+# 或拒绝并保持锁定：
+node agnes.mjs runtime reconcile RESOURCE --extension ext:OWNER.ROW --operation recovery-1 --answer reject
+```
+
+使用已安装插件的行 ID 和受管资源 ID；`--profile NAME` 选择配置。命令输出 JSON 回执和原生审核主题。退出码 0 表示完成，3 表示待批准或运行中，1 表示终态拒绝或结果未知。也可在 Web **审批**中回答，然后以相同操作 ID 再次提交以完成恢复。不得把结果未知视为尚未派发的失败来重试。

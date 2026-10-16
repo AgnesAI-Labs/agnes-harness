@@ -92,3 +92,10 @@ Start with [backend plugins](../develop/backend.md), [MCP](mcp.md), and [full-st
 ## Mars rescue example
 
 The bundled [Mars rescue package](../../examples/mhs/mars-rescue/README.md) implements eleven simulated devices and an in-page procedural 3D scene. See the [Mars guide](mars-world.md) for lifecycle, business-Agent launch and integration status. Its reviewed producer binding now connects the installed parent runtime. Focused checks exercise registration, native approval, Stop and disable; full browser and physical-device acceptance remain separate.
+
+
+### Recover an unconfirmed Hub
+
+When Hub status is `shutdown-unconfirmed`, the developer section offers **Confirm and recover**. The Host checks the old process identity first. If it cannot prove the process has exited, open Web **Approvals** and read the resource, package and last known identity. **Allow once** confirms that you have checked the old process is no longer running; **Reject** keeps the Hub locked. A matching live identity always refuses recovery. A changed generation or marker needs a fresh request. The page uses the generic profile facade and does not grant itself recovery authority.
+
+CLI operators use `node agnes.mjs runtime reconcile hub --extension ext:agnes.mhs --operation hub-recovery-1`, then repeat with `--answer allow` or `--answer reject` after reviewing the returned native decision. For the installed Mars resource use `runtime reconcile fleet --extension ext:agnes-example.mars-rescue --operation mars-recovery-1`. Both accept `--profile NAME`; verified-dead owners recover automatically. See [confirm and recover](../develop/profile-services.md#confirm-and-recover). This never replays a device motion, resets receipts or resolves unknown operation outcomes.

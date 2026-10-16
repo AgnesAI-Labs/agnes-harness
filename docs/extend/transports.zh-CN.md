@@ -31,3 +31,6 @@ Node artifact 使用 `@agnes/sdk/managed-service` 的 `createManagedServiceRunti
 无法回收的进程保留 lease 并显示 `shutdown-unconfirmed`。daemon 崩溃会留下耐久 active 标记，并在启动后保存子进程 PID 与启动身份。新 supervisor 仅在证实旧身份已消失（包括 PID 被复用）时自动恢复；旧进程仍存活、身份缺失或无法验证时，仍需操作者核实旧进程及私有状态后才能重启。恢复只核实资源存活状态，不会改写或重放结果未知的操作。保守拒绝不能作为外部效果已经停止的证明。
 
 `createRosterStreamAuthorizer` 使用真实 `ClientModuleRosterRow` 的贡献 binding 与不可变 `streams` 白名单；authority resolver 提供当前 row 读取、撤销信号与 session/lane/source 校验，入站流还必须绑定确切 operation/declaration 的已消费 effect grant。ticket 消费与每帧都重新检查，历史 pin、同包另一行、旧快照与旧 activation 均拒绝。活跃 profile contribution 可用 `ctx.profile.streams.open(name, input, options)`；owner 立即撤销会取消待打开请求与现有连接。
+
+
+通过 `profileRuntime` 注册的可信进程内资源，其通用配置服务门面提供 `<id>.reconcile`，用于处理未确认的关闭。它自动检查存活状态，身份不明确时要求原生操作者确认，将决策绑定到当前资源与标记版本，并拒绝恢复身份匹配且仍存活的进程。运行 `agh runtime reconcile RESOURCE --extension ext:OWNER.ROW --operation recovery-1`，阅读决策后以 `--answer allow` 或 `--answer reject` 再次执行。授权、回执和失败语义见[配置服务](../develop/profile-services.zh-CN.md#确认并恢复)。此操作仅恢复资源存活状态，未知外部操作结果仍保持未知。独立 Node 制品监督器的租约不能通过该进程内门面编辑。

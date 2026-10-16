@@ -182,9 +182,12 @@ export function createProfileServiceRuntime(deps: {
     input: JsonValue,
     signal: AbortSignal,
   ): Promise<PreparedServiceEffect> => {
-    const value = id.entry.prepare
-      ? await id.entry.prepare(input, context(id, signal, false))
-      : { input, presentation: { service: id.entry.capability.name } }
+    const reconciliation = deps.managed?.reconciliation(id.entry.owner, id.entry.capability.name)
+    const value = reconciliation
+      ? await reconciliation.prepare()
+      : id.entry.prepare
+        ? await id.entry.prepare(input, context(id, signal, false))
+        : { input, presentation: { service: id.entry.capability.name } }
     const checked = inspectJsonData(value, 131072)
     if (!checked.ok || !checked.value || typeof checked.value !== 'object' || Array.isArray(checked.value))
       throw rpcError('INVALID_PARAMS')
@@ -312,7 +315,10 @@ export function createProfileServiceRuntime(deps: {
         },
         signal,
       )
-      const needsApproval = policy.effect === 'ask' || id.principalPolicy === 'require_approval'
+      const automaticRecovery =
+        deps.managed?.reconciliation(id.entry.owner, cap.name)?.automatic(prepared) === true
+      const needsApproval =
+        (!automaticRecovery && policy.effect === 'ask') || id.principalPolicy === 'require_approval'
       if (policy.effect === 'deny') throw rpcError('CAPABILITY_DENIED')
       const decisions = log.decisions(id.actor),
         source = sourceFor(id, operationId)

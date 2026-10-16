@@ -39,10 +39,10 @@ export async function managedProcessOwner(pid: number, probe: ProcessQuery = def
 }
 
 /** In-process resources die with their worker. A reused PID does not identify that worker. */
-export async function managedProcessGone(
+export async function managedProcessState(
   value: JsonValue | undefined,
   probe: ProcessQuery = defaultProcessIdentity,
-): Promise<boolean> {
+): Promise<'dead' | 'alive' | 'unknown'> {
   if (
     !value ||
     typeof value !== 'object' ||
@@ -52,10 +52,13 @@ export async function managedProcessGone(
     value.pid <= 0 ||
     !validStartId(value.startId)
   )
-    return false
+    return 'unknown'
   const identity = await query(value.pid, probe)
-  return (
-    identity.state === 'dead' ||
-    (identity.state === 'alive' && !!identity.startId && identity.startId !== value.startId)
-  )
+  if (identity.state === 'dead') return 'dead'
+  if (identity.state === 'alive') return identity.startId === value.startId ? 'alive' : 'dead'
+  return 'unknown'
+}
+
+export async function managedProcessGone(value: JsonValue | undefined, probe?: ProcessQuery) {
+  return (await managedProcessState(value, probe)) === 'dead'
 }

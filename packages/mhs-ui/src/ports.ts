@@ -36,6 +36,7 @@ export interface HubStatus {
 export interface DeveloperPort {
   status(signal: AbortSignal): Promise<HubStatus>
   retry(): Promise<void>
+  reconcile(): Promise<void>
   /** Host-owned, reviewed configuration interface. No direct socket or arbitrary URL fetch. */
   configure?(port?: number | 'auto', external?: { address: string; allowlist: string[] }): Promise<void>
   check(

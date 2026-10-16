@@ -71,6 +71,7 @@ export function nativeDeveloper(ctx: ClientContext): DeveloperPort {
       }
     },
     retry: () => effect('hub.retry', {}),
+    reconcile: () => effect('hub.reconcile', {}),
     configure: (port = 'auto', external) =>
       effect('hub.configure', {
         listenerPorts: { device: port },

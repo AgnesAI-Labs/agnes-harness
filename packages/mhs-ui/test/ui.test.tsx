@@ -672,10 +672,14 @@ it('submits advanced Hub mode through the reviewed developer port and can return
   vi.useFakeTimers()
   const f = fake(),
     configured: unknown[] = []
-  let remote = false
+  let remote = false,
+    unconfirmed = true
+  const reconcile = async () => {
+    unconfirmed = false
+  }
   f.ports.developer = {
     status: async () => ({
-      state: 'ready',
+      state: unconfirmed ? 'shutdown-unconfirmed' : 'ready',
       mode: remote ? 'external' : 'local',
       devicePort: 'auto',
       ...(remote
@@ -683,6 +687,7 @@ it('submits advanced Hub mode through the reviewed developer port and can return
         : {}),
     }),
     retry: async () => {},
+    reconcile,
     check: async () => [],
     configure: async (port, external) => {
       configured.push({ port, external })
@@ -690,6 +695,8 @@ it('submits advanced Hub mode through the reviewed developer port and can return
     },
   }
   await mount(<DeveloperPage />, f)
+  await click(getByRole(host, 'button', { name: 'Confirm and recover' }))
+  expect(getByRole(host, 'button', { name: 'Retry' })).toBeTruthy()
   host.querySelector('details')!.open = true
   await act(async () => fireEvent.change(getByLabelText(host, 'Hub mode'), { target: { value: 'external' } }))
   await act(async () =>

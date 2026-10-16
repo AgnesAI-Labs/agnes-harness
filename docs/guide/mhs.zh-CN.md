@@ -82,3 +82,10 @@ MCP 桥保留 `readOnlyHint`、`destructiveHint` 与 `idempotentHint`，映射�
 ## 火星救援示例
 
 随包的[火星救援](../../examples/mhs/mars-rescue/README.zh-CN.md) 实现 11 台模拟设备及页内程序化 3D 场景。[火星指南](mars-world.zh-CN.md) 说明生命周期、业务 Agent 启动及集成状态。经审核的 producer 连接已接入安装后的父运行时，定向检查覆盖注册、原生批准、Stop 与停用；完整浏览器和物理设备验收仍是独立检查。
+
+
+### 恢复未确认关闭的 Hub
+
+Hub 状态为 `shutdown-unconfirmed` 时，开发者区域提供**确认并恢复**。Host 先检查旧进程身份；若不能证明进程已退出，请打开 Web **审批**，阅读资源、所属包和最后已知身份。**允许一次**表示你已核实旧进程不再运行；**拒绝**保留 Hub 锁定。身份匹配且仍存活时始终拒绝恢复。代际或标记变化需要重新请求。页面使用通用配置服务门面，不会自行获得恢复权限。
+
+CLI 操作者运行 `node agnes.mjs runtime reconcile hub --extension ext:agnes.mhs --operation hub-recovery-1`，审核返回的原生决策后以 `--answer allow` 或 `--answer reject` 再次执行。已安装的 Mars 资源使用 `runtime reconcile fleet --extension ext:agnes-example.mars-rescue --operation mars-recovery-1`。两者均支持 `--profile NAME`；确认旧进程已退出时自动恢复。详见[确认并恢复](../develop/profile-services.zh-CN.md#确认并恢复)。此操作不会重放设备运动、重置回执或消除未知操作结果。

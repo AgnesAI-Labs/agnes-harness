@@ -1,18 +1,28 @@
+import { randomUUID } from 'node:crypto'
 import { createServer } from 'node:net'
+import { decisionSubjectDigest } from '@agnes/core'
 import type {
   BoundWakes,
   OwnedStore,
+  PreparedServiceEffect,
   ProfileManagedDefinition,
   ProfileManagedInit,
+  ServiceContext,
 } from '@agnes/extension-api'
 import type { JsonValue, ManagedServiceDescriptor } from '@agnes/protocol'
 import { rpcError } from '@agnes/protocol'
 import { compileExtensionSchema } from '../ext-host/json-schema.js'
-import { managedProcessGone, managedProcessOwner, type ProcessQuery } from './managed-owner.js'
+import {
+  managedProcessGone,
+  managedProcessOwner,
+  managedProcessState,
+  type ProcessQuery,
+} from './managed-owner.js'
 import { managedStore } from './managed-store.js'
 
 type Reason = 'disable' | 'upgrade' | 'exit'
 type Resource = {
+  incarnation: string
   owner: string
   packageId: string
   revision: string
@@ -106,6 +116,33 @@ export class ProfileManagedResources {
       },
       configuration: () => structuredClone(input.store.get(configKey) ?? input.definition.defaultConfig),
       status: () => structuredClone(resource().status) as unknown as JsonValue,
+      reconcile: async (context: ServiceContext) => {
+        const prepared = context.admission?.prepared
+        if (!prepared) throw rpcError('CAPABILITY_DENIED')
+        const r = resource()
+        const latest = await this.reconciliation(input.owner, `${r.id}.reconcile`)?.prepare()
+        context.signal.throwIfAborted()
+        if (
+          resource() !== r ||
+          !latest ||
+          latest.resourceRevision !== prepared.resourceRevision ||
+          managedRevision(input.store, r, input.revision, input.integrity) !== prepared.resourceRevision ||
+          (!context.admission?.approval && !automaticReconciliation(latest))
+        )
+          throw rpcError('CAPABILITY_DENIED')
+        // No await between the final fence, reservation and durable marker update.
+        markShutdown(input.store, r.id, false)
+        r.status = { state: 'starting' }
+        const next = await this.start(input)
+        const profile = profiles.get(this.key)
+        if (!profile || profile.manager !== this) {
+          await next.stop('disable')
+          throw rpcError('CAPABILITY_DENIED')
+        }
+        profile.resources.splice(profile.resources.indexOf(r), 1, next)
+        await next.value
+        return null
+      },
       retry: async () => {
         const r = resource()
         if (r.status.state !== 'failed' || r.status.code === 'shutdown-unconfirmed')
@@ -153,6 +190,7 @@ export class ProfileManagedResources {
         input.descriptor.shutdownTimeoutMs,
       ).catch(() => undefined))
     const r: Resource = {
+      incarnation: randomUUID(),
       owner: input.owner,
       packageId: input.packageId,
       revision: input.revision,
@@ -171,7 +209,7 @@ export class ProfileManagedResources {
             result?.state === 'settled' || (!started && input.store.get(`managed-shutdown:${r.id}`) !== true)
           r.status = settled ? { state: 'stopped' } : { state: 'failed', code: 'shutdown-unconfirmed' }
           ended = true
-          input.store.set(`managed-shutdown:${r.id}`, !settled)
+          markShutdown(input.store, r.id, !settled)
           if (!settled) throw rpcError('CAPABILITY_DENIED')
         })()),
     }
@@ -185,7 +223,7 @@ export class ProfileManagedResources {
         )
           throw new Error('shutdown-unconfirmed')
         // Only resource liveness is reconciled here. Operation receipts remain unknown.
-        input.store.set(shutdownKey, false)
+        markShutdown(input.store, r.id, false)
       }
       const config = input.store.get(`managed-config:${r.id}`) ?? input.definition.defaultConfig
       const overrides =
@@ -213,7 +251,7 @@ export class ProfileManagedResources {
       lifetime.signal.throwIfAborted()
       input.store.transaction(() => {
         input.store.set(ownerKey, owner)
-        input.store.set(shutdownKey, true)
+        markShutdown(input.store, r.id, true)
       })
       started = true
       const value = await input.definition.start({
@@ -263,7 +301,7 @@ export class ProfileManagedResources {
       lifetime.abort('failed')
       if (started) {
         const result = await shut('exit')
-        input.store.set(`managed-shutdown:${r.id}`, result?.state !== 'settled')
+        markShutdown(input.store, r.id, result?.state !== 'settled')
         if (result?.state !== 'settled') code = 'shutdown-unconfirmed'
       }
       ended = true
@@ -320,6 +358,58 @@ export class ProfileManagedResources {
     void next.draining.catch(() => undefined)
     return next.draining
   }
+  /** Host-owned preparation; plugin presentation can never waive native admission. */
+  reconciliation(owner: string, service: string) {
+    const input = this.definitions.find(
+      (d) => d.owner === owner && service === `${d.definition.id}.reconcile`,
+    )
+    if (!input) return undefined
+    return {
+      prepare: async (): Promise<PreparedServiceEffect> => {
+        input.assert()
+        if (this.closed || (this.current && !this.current(input.owner, input.integrity, input.revision)))
+          throw rpcError('CAPABILITY_DENIED')
+        const profile = profiles.get(this.key)
+        const r = profile?.resources.find(
+          (r) => r.owner === owner && r.id === input.definition.id && r.revision === input.revision,
+        )
+        if (
+          profile?.manager !== this ||
+          !r ||
+          r.status.state !== 'failed' ||
+          r.status.code !== 'shutdown-unconfirmed' ||
+          input.store.get(`managed-shutdown:${r.id}`) !== true
+        )
+          throw rpcError('CAPABILITY_DENIED')
+        const identity = input.store.get(`managed-process:${r.id}`) ?? null
+        const resourceRevision = managedRevision(input.store, r, input.revision, input.integrity)
+        const identityState = await managedProcessState(identity, this.processIdentity)
+        input.assert()
+        if (
+          this.closed ||
+          profiles.get(this.key) !== profile ||
+          r.status.state !== 'failed' ||
+          resourceRevision !== managedRevision(input.store, r, input.revision, input.integrity)
+        )
+          throw rpcError('CAPABILITY_DENIED')
+        if (identityState === 'alive') throw rpcError('CAPABILITY_DENIED')
+        return {
+          input: {},
+          resourceRevision,
+          presentation: {
+            resource: r.id,
+            ownerPackage: input.packageId,
+            generation: input.revision,
+            lastKnownIdentity: identity,
+            identityState,
+            confirmation:
+              'Confirm and recover / 确认并恢复: I confirm the old process is no longer running / 我确认旧进程已不再运行。 Unknown operation outcomes remain unknown; no device motion is replayed.',
+          },
+        }
+      },
+      automatic: automaticReconciliation,
+    }
+  }
   statuses(packageId: string) {
     return (profiles.get(this.key)?.resources ?? [])
       .filter((r) => r.packageId === packageId)
@@ -371,4 +461,31 @@ async function deadline<T>(work: Promise<T>, ms: number): Promise<T> {
   } finally {
     clearTimeout(timer)
   }
+}
+
+function markShutdown(store: OwnedStore, id: string, unconfirmed: boolean) {
+  store.transaction(() => {
+    store.set(`managed-shutdown:${id}`, unconfirmed)
+    store.set(`managed-marker-revision:${id}`, randomUUID())
+  })
+}
+function automaticReconciliation(prepared: PreparedServiceEffect) {
+  const value = prepared.presentation
+  return !!value && typeof value === 'object' && !Array.isArray(value) && value.identityState === 'dead'
+}
+
+function managedRevision(
+  store: OwnedStore,
+  resource: Pick<Resource, 'id' | 'incarnation'>,
+  generation: string,
+  integrity: string,
+) {
+  return decisionSubjectDigest({
+    incarnation: resource.incarnation,
+    generation,
+    integrity,
+    shutdown: store.get(`managed-shutdown:${resource.id}`) ?? null,
+    marker: store.get(`managed-marker-revision:${resource.id}`) ?? null,
+    identity: store.get(`managed-process:${resource.id}`) ?? null,
+  })
 }

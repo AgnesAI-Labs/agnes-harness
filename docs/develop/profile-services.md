@@ -64,9 +64,9 @@ These APIs are trusted-plugin contracts, not isolation for arbitrary JavaScript.
 
 Installed, trusted plugins can inject `profileRuntime`. Declare a profile `managedServices` entry with `artifact: { kind: 'in-process' }`, reviewed loopback listeners and bounded startup/shutdown deadlines. `ctx.profileRuntime.register({ id, configSchema, defaultConfig, start, check? })` registers the factory; it does not start a resource in a staged or pinned tree. Only current profile publication starts it in the shared Host worker. Replacement drains the old resource first. `handle.get()` refuses obsolete or unready resources. This is trusted in-process execution; Node/OCI artifacts continue to use the separate process supervisor.
 
-`start(init)` receives an owner-scoped store, bound notifications, selected listeners, validated configuration and a lifecycle signal. Install `init.onShutdown` before opening listeners, and call `init.ready()` only after recovery and binding. The Host drains managed shutdown before revoking plugin registrations and streams, and persists confirmed settlement. An unconfirmed shutdown can recover automatically only when the recorded worker PID and start identity prove the old in-process owner is gone (including PID reuse). A live owner, missing identity or failed identity probe still refuses restart. This reconciles resource liveness only: unknown operation outcomes remain unknown and are never replayed. The generic `listenerPorts` configuration may select a port for an `auto` listener, but cannot change its host or override a reviewed fixed port.
+`start(init)` receives an owner-scoped store, bound notifications, selected listeners, validated configuration and a lifecycle signal. Install `init.onShutdown` before opening listeners, and call `init.ready()` only after recovery and binding. The Host drains managed shutdown before revoking plugin registrations and streams, and persists confirmed settlement. An unconfirmed shutdown can recover automatically only when the recorded worker PID and start identity prove the old in-process owner is gone (including PID reuse). A live owner refuses restart; missing identity or a failed probe requires the reviewed reconciliation action below. This reconciles resource liveness only: unknown operation outcomes remain unknown and are never replayed. The generic `listenerPorts` configuration may select a port for an `auto` listener, but cannot change its host or override a reviewed fixed port.
 
-The Host registers `<id>.status`, `<id>.configuration`, `<id>.check`, `<id>.retry` and `<id>.configure` as ordinary profile services. Include the exact names in the client allowlist. Status exposes safe listener addresses; configuration and retry require native approval. A plugin-provided check reports domain health through this same facade.
+The Host registers `<id>.status`, `<id>.configuration`, `<id>.check`, `<id>.retry`, `<id>.reconcile` and `<id>.configure` as ordinary profile services. Include the exact names in the client allowlist. Status exposes safe listener addresses; configuration and retry require native approval. A plugin-provided check reports domain health through this same facade.
 
 Declare streams and register them through `ctx.profileRuntime.streams.register(name, handler)`. The local launcher relays the same-origin stream gateway to the shared worker over a private connection. The current roster, scope, input schema, actor and native control grant are checked before dispatch. Browser code never receives the private worker endpoint or its connection proof. The generic transport implementation is shared in `@agnes/plugin-streams`; `@agnes/daemon-rpc/streams` remains a compatible entry.
 
@@ -75,3 +75,22 @@ The examples facade reports installation and managed runtime readiness separatel
 Profile data producers may declare `producer: true` on an inbound profile stream in an events or media lane. They retain authenticated roster, exact-owner and activation checks, bounded buffers and revocation, but do not acquire motion/control authority. A trusted backend can use `profileRuntime.connectProducer` only for an exact `managedServices.requires` grant (backend owner, stream name, range `*`). Both child and parent activations are checked for every forwarded frame. Existing inbound control streams still require a consumed native effect grant.
 
 The `local-dev` template permits reviewed store, wake, stream and managed-service declarations. Existing saved profile ceilings remain authoritative; this does not widen them or bypass package trust and effect approval.
+
+
+### Confirm and recover
+
+For a current-profile resource in `failed / shutdown-unconfirmed`, request the Host-owned `<id>.reconcile` effect with `{}` and a new operation id. Include this exact service in the client allowlist and reviewed capability declarations (use `managedServiceCapabilities` when declaring the facade). The authenticated source needs the exact service grant and the principal must be authorized to execute this resource administration action. Agents cannot request profile effects.
+
+The Host checks the saved process identity first. A verifiably dead owner, including a reused PID with a different start identity, can recover without a liveness confirmation. Missing identity or an unavailable probe requires a native AR1 decision naming the resource, owner package, generation and last known identity. **Allow once** means the operator confirms that the old process is no longer running. A matching live identity refuses recovery even after approval. Rejection, a changed generation/resource instance, or a changed shutdown marker revision leaves it locked; use a new operation id after reviewing the new state. Identity and revision are checked again before clearing the marker and starting the replacement. Recovery never signals a recorded PID and never resets or replays operation journals, receipts or device motions. Unknown operation outcomes remain unknown.
+
+A local operator can use the same flow without opening a session:
+
+```sh
+node agnes.mjs runtime reconcile RESOURCE --extension ext:OWNER.ROW --operation recovery-1
+# Read the returned native decision, verify the old process has stopped, then answer it:
+node agnes.mjs runtime reconcile RESOURCE --extension ext:OWNER.ROW --operation recovery-1 --answer allow
+# Or keep the resource locked:
+node agnes.mjs runtime reconcile RESOURCE --extension ext:OWNER.ROW --operation recovery-1 --answer reject
+```
+
+Use the installed plugin's row id and managed resource id; `--profile NAME` selects the profile. The command prints JSON receipts and the native review subject. Exit 0 means completed, 3 means approval-required/running, and 1 means a terminal refusal or unknown outcome. Approval can also be answered in Web **Approvals**; resubmit the same operation id to finish. Never retry an unknown operation as though it had failed before dispatch.

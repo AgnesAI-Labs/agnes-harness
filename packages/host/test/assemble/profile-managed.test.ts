@@ -1,13 +1,22 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import * as processIdentity from '@agnes/host-infrastructure/adapters/process-identity-default'
 import { hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
 import { buildRuntimeTarget, createPluginRow } from '@agnes/plugin-runtime/host'
-import { expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { createTestHost } from '../../testkit/index.js'
 import { packageDirs, scratch } from './plugin-extension-fixture.js'
 
-it('drains current-profile resources before revoking their plugin, then restarts on the same home', async () => {
+afterEach(() => vi.restoreAllMocks())
+
+it.each(['settled', 'unknown'] as const)('restarts resources after %s shutdown', async (shutdown) => {
+  // The unknown row simulates the previous worker exiting; the clean row retains the disposal-order gate.
+  let startId = 'worker-one'
+  vi.spyOn(processIdentity, 'defaultProcessIdentity').mockImplementation(async () => ({
+    state: 'alive',
+    startId,
+  }))
   const directory = scratch()
   const dataDir = scratch()
   const packageId = '@sample/managed'
@@ -57,7 +66,7 @@ it('drains current-profile resources before revoking their plugin, then restarts
             init.onShutdown(async () => {
               await Promise.resolve()
               init.store.set('shutdown-before-dispose', !disposed)
-              return { state: disposed ? 'unknown' : 'settled' }
+              return { state: disposed ? 'unknown' : '${shutdown}' }
             })
             init.ready()
             return id
@@ -121,6 +130,7 @@ it('drains current-profile resources before revoking their plugin, then restarts
         )
     } finally {
       await host.close()
+      if (shutdown === 'unknown') startId = 'worker-two'
     }
   }
 })
