@@ -1,6 +1,6 @@
 import type { PluginContextFacets, ToolContext, ToolDef, ToolMeta, ToolResult } from '@agnes/extension-api'
 import { MhsError, object } from '@agnes/mhs-device'
-import type { Invocation, North, WakeTarget } from '@agnes/mhs-hub'
+import { type Invocation, type North, resultSummary, type WakeTarget } from '@agnes/mhs-hub'
 import { Type } from '@sinclair/typebox'
 import { mhsContext } from './context.js'
 
@@ -71,14 +71,14 @@ const descriptions = {
     'Watch new device state or observations without polling. Receives a durable notification in this session/lane on condition or timeout.',
   unwatch_device: 'Cancel a watch owned by this session and wake binding.',
 }
-function textResult(value: unknown): ToolResult {
+function textResult(value: unknown, summary = resultSummary(value)): ToolResult {
   const outcome =
     value && typeof value === 'object' ? (value as { outcome?: { status?: string } }).outcome : undefined
   return {
     ...(outcome?.status && ['error', 'interrupted', 'rejected', 'unknown'].includes(outcome.status)
       ? { isError: true }
       : {}),
-    content: [{ type: 'text', text: JSON.stringify(value) ?? 'null' }],
+    content: [{ type: 'text', text: summary }],
     structured: value,
   }
 }
@@ -98,7 +98,10 @@ export function createMhsTools(connector: MhsConnector): ToolDef[] {
       try {
         ctx.signal.throwIfAborted()
         const north = typeof connector.north === 'function' ? await connector.north() : connector.north
-        if (name === 'list_devices') return textResult(await north.query('devices', args))
+        if (name === 'list_devices') {
+          const devices = await north.hub.list()
+          return textResult(devices, await north.hub.summarizeDevices(devices))
+        }
         if (name === 'read_device') {
           const read = await north.hub.read(
             typeof args.device === 'string' ? args.device : undefined,
@@ -132,7 +135,16 @@ export function createMhsTools(connector: MhsConnector): ToolDef[] {
             content.push(...image.content)
           }
           const safe = { ...read, items: read.items.map(({ bytes: _bytes, ...item }) => item) }
-          return { content: [...content, ...textResult(safe).content], structured: safe }
+          return {
+            content: [
+              ...content,
+              ...textResult(
+                safe,
+                await north.hub.summarizeRead(read, typeof args.since === 'number' ? args.since : undefined),
+              ).content,
+            ],
+            structured: safe,
+          }
         }
         const invocation = await connector.invocation(ctx, name, args)
         // Binding comes from the authorized current invocation, not a supplied session id.

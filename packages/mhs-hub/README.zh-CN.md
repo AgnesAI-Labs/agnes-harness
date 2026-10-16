@@ -31,3 +31,5 @@
 音频上传使用有序 2 KiB 二进制分块，遵守现有 control 通道 4 KiB/每秒 30 帧合同；浏览器按 40 ms 间隔发送。Hub 按审批的 hash 聚合最多 1 MiB 后再发送给设备；部分、超量、过期和重复上传不能触发设备工具。
 
 资源拒绝回执通过 `holder.job` 标识占用操作，同时保留设备 call id、工具和展示用 caller 标签；声明 source 不可用时返回明确的 needs 拒绝。
+
+`Hub.summarizeRead(read, since?)` 与 `Hub.summarizeDevices(views)` 提供最多 6000 UTF-8 字节的展示文字，结合 Hub 接收时间、定位年龄、声明的角色/单位/告警及地图区域。条件读取摘要应传入原 `since`。`resultSummary(receipt)` 解释操作与 Stop 回执，不序列化任意载荷。这些辅助方法保留输入数据，不批准、派发、停止或重放操作；North 查询载荷保持不变。

@@ -42,6 +42,10 @@ export class Localization {
       ...(this.odom ? { odom: { ...this.odom } } : {}),
     }
   }
+  /** Age of the last received fix, for presentation only. */
+  age(): number | undefined {
+    return this.fix ? Math.max(0, this.now() - this.fix.at) : undefined
+  }
   project(available: boolean): {
     trust: 'trusted' | 'uncertain' | 'lost'
     position?: Position

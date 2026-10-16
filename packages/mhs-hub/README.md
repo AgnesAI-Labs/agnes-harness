@@ -31,3 +31,5 @@ Clip sending requires a separate native-approved `mhs.clip` capability bound to 
 Clip uploads use ordered 2 KiB binary chunks on the existing 4 KiB/30-frame-per-second control contract. The browser paces chunks at 40 ms, and the Hub assembles at most 1 MiB under the approved hash before sending it to the device. Partial, excess, expired or repeated uploads cannot trigger a device tool.
 
 Resource refusal receipts expose the holding operation as `holder.job`, alongside the device call id, tool and descriptive caller label; unavailable declared source needs remain a typed refusal.
+
+`Hub.summarizeRead(read, since?)` and `Hub.summarizeDevices(views)` provide presentation-only text within 6000 UTF-8 bytes, using Hub receive times and localization age with declared roles, units, alerts and map zones. Pass the original `since` when summarizing a conditional read. `resultSummary(receipt)` describes operation and Stop receipts without serializing arbitrary payloads. These helpers preserve the input data and do not authorize, dispatch, stop or replay operations; North query payloads remain unchanged.

@@ -16,8 +16,9 @@ import { Localization } from './localization.js'
 import { navigationFrom, type Position, zoneAt } from './maps.js'
 import type { MediaSample } from './media.js'
 import type { Authority, BoundWakes, DeviceLink, Invocation, OwnedStore, SouthEvents } from './ports.js'
-import { type ReadOptions, readSource, validateRead } from './reads.js'
+import { type ReadItem, type ReadOptions, readSource, validateRead } from './reads.js'
 import { Samples } from './samples.js'
+import { boundedSummary, deviceSummary, readSummary } from './summary.js'
 import { Watches } from './watches.js'
 
 export type JobSummary = Pick<
@@ -201,6 +202,32 @@ export class Hub implements SouthEvents {
     } finally {
       for (const release of releases) release()
     }
+  }
+  /** Presentation only; never changes the read payload or localization/operation facts. */
+  async summarizeRead(read: { device: DeviceView; items: ReadItem[] }, since?: number): Promise<string> {
+    const live = this.live.get(read.device.id)
+    return boundedSummary(
+      readSummary(
+        read,
+        await this.maps(),
+        this.now(),
+        live?.localization.age(),
+        new Set(
+          read.items.filter((item) => live?.samples.get(item.source).length).map((item) => item.source),
+        ),
+        since,
+      ),
+    )
+  }
+  async summarizeDevices(views: DeviceView[]): Promise<string> {
+    const maps = await this.maps()
+    const live = this.live
+    return boundedSummary(
+      (function* () {
+        if (!views.length) yield 'No known MHS devices.'
+        for (const view of views) yield* deviceSummary(view, maps, live.get(view.id)?.localization.age())
+      })(),
+    )
   }
   online(link: DeviceLink): void {
     if (this.stopping) {

@@ -46,3 +46,5 @@ Switching local/external drains the old Hub through the managed configuration re
 stops the attached fleet and closes this profile's peer, without terminating the external service.
 A missing stop acknowledgement stays unknown. Stores, sockets and control leases remain bound
 to each current profile; old pinned sessions cannot re-open a disabled connection.
+
+Tool text is a human-readable summary bounded to 6000 UTF-8 bytes; the existing structured result is preserved. It explains state and declared field roles/units/alerts, pictures versus data or no fresh data, position trust/zone/age, and task/Stop receipts. Device text is quoted, bounded and marked as untrusted; inline media is omitted. Unknown task outcomes never confirm completion or stopping. Read images still use the request-media channel.
