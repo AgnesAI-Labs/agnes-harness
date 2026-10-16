@@ -1,3 +1,4 @@
+import { API_KEY_PROVIDER_REGISTRY } from '@agnes/ai'
 import type { ConfigModel, ConfigSaveInput, ModelRecord, RouteDecl } from '@agnes/protocol'
 import { ConfigurationError } from './configuration-error.js'
 import { normalizeConfigModel } from './configuration-models.js'
@@ -48,6 +49,74 @@ export function parsePayloadOnlyModels(value: unknown): ConfigModel[] {
   if (new Set(models.map((model) => model.id)).size !== models.length)
     throw new ConfigurationError('CONFIG_INVALID_INPUT')
   return models
+}
+
+type PayloadOnlyAccountRow = {
+  accountId: string
+  label: string
+  id: string
+  route: string
+  baseUrl: string
+  model: string
+  models: ConfigModel[]
+  credentialRef: string
+  enabled: boolean
+  authType: 'api-key'
+  networkTimeouts?: ConfigSaveInput['networkTimeouts']
+}
+
+/**
+ * The stored row a payload-only save produces. The account is declared, not probed: its models come
+ * from the form, its credential is an existing generic credential reference, and it can never be
+ * the default account. The caller still checks the referenced credential resolves.
+ */
+export function payloadOnlyAccountRow(args: {
+  input: ConfigSaveInput
+  parsed: Readonly<{ apiKey?: string; model: string; models?: unknown; credentialRef?: string }>
+  entryId: string
+  existing:
+    | Readonly<{
+        credentialRef: string
+        route: string
+        enabled: boolean
+        networkTimeouts?: ConfigSaveInput['networkTimeouts']
+      }>
+    | undefined
+  accountId: string
+  label: string
+  baseUrl: string
+}): PayloadOnlyAccountRow {
+  const { input, parsed, existing } = args
+  if (
+    input.accountId === undefined ||
+    input.makeDefault === true ||
+    parsed.apiKey !== undefined ||
+    input.defaultSettings !== undefined
+  )
+    throw new ConfigurationError('CONFIG_INVALID_INPUT')
+  const models = parsePayloadOnlyModels(parsed.models)
+  if (!models.some((model) => model.id === parsed.model))
+    throw new ConfigurationError('CONFIG_MODEL_UNAVAILABLE')
+  const credentialRef =
+    parsed.credentialRef === undefined
+      ? existing?.credentialRef
+      : parsePayloadOnlyCredentialRef(parsed.credentialRef)
+  if (credentialRef === undefined) throw new ConfigurationError('CONFIG_CREDENTIAL_REQUIRED')
+  const networkTimeouts =
+    input.networkTimeouts === undefined ? existing?.networkTimeouts : input.networkTimeouts
+  return {
+    accountId: args.accountId,
+    label: args.label,
+    id: args.entryId,
+    route: existing?.route ?? `account-${args.accountId}`,
+    baseUrl: args.baseUrl,
+    model: parsed.model,
+    models,
+    credentialRef,
+    enabled: input.enabled ?? existing?.enabled ?? true,
+    authType: 'api-key',
+    ...(networkTimeouts === undefined ? {} : { networkTimeouts }),
+  }
 }
 
 /**
@@ -101,4 +170,19 @@ export function payloadOnlyRoute(
     displayName: account.label,
     models,
   }
+}
+
+/**
+ * The api-key registry entries' capability markers keyed by wire api, in the shape
+ * `payloadOnlyRoutes` asks for. The registry marker is the only capability fact the configuration
+ * layer may read; runtime exclusion keeps reading the adapter registrations.
+ */
+export function payloadOnlyApiCapabilities(): readonly {
+  id: string
+  capabilities: PayloadOnlyCapabilities
+}[] {
+  return API_KEY_PROVIDER_REGISTRY.map((entry) => ({
+    id: entry.api,
+    capabilities: entry.capabilities ?? {},
+  }))
 }

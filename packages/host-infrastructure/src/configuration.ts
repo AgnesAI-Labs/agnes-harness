@@ -76,10 +76,11 @@ import {
 import {
   GENERIC_CREDENTIAL_REF,
   isPayloadOnlyEntry,
-  parsePayloadOnlyCredentialRef,
-  parsePayloadOnlyModels,
+  payloadOnlyAccountRow,
+  payloadOnlyApiCapabilities,
   payloadOnlyRoute,
 } from './configuration-payload-only.js'
+import { payloadOnlyRoutes } from './payload-only-routes.js'
 
 type ConfigurationProvider = ApiKeyProviderRegistryEntry | SubscriptionProviderEntry
 
@@ -833,16 +834,25 @@ export function createConfigurationService(
     if (slots.fast !== undefined || !row?.enabled) return result
     try {
       const entry = providerFor(row.id, row.authType)
+      const capabilities = payloadOnlyApiCapabilities()
+      // A payload-only route answers payloads, not conversations: no automatic fast choice.
+      if (payloadOnlyRoutes(capabilities, [{ route: row.route, api: entry.api }]).has(row.route))
+        return result
       const records = new Map((await staticCatalogue(entry)).records.map((record) => [record.id, record]))
       const api = (record: ModelRecord) =>
         row.authType === 'oauth' && 'api' in record ? String(record.api) : entry.api
       const primary = records.get(row.model)
       // Only models served on the account's own route: its other transports are separate routes.
+      const candidates = row.models.flatMap(({ id }) => {
+        const record = records.get(id)
+        return record && primary && api(record) === api(primary) ? [record] : []
+      })
       const fast = automaticFastModel(
-        row.models.flatMap(({ id }) => {
-          const record = records.get(id)
-          return record && primary && api(record) === api(primary) ? [record] : []
-        }),
+        candidates,
+        payloadOnlyRoutes(
+          capabilities,
+          candidates.map((record) => ({ route: record.id, api: api(record) })),
+        ),
       )
       return fast
         ? { ...result, auto: { fast: { accountId: row.accountId, route: row.route, model: fast.id } } }
@@ -1001,42 +1011,17 @@ export function createConfigurationService(
         ? (existing?.baseUrl ?? providerEndpoint(entry, undefined))
         : providerEndpoint(entry, input.baseUrl)
     if (isPayloadOnlyEntry(entry)) {
-      // A payload-only account is declared, not probed: its models come from the form, its
-      // credential is an existing generic credential reference, and it can never be the default.
-      if (
-        input.accountId === undefined ||
-        input.makeDefault === true ||
-        parsed.apiKey !== undefined ||
-        input.defaultSettings !== undefined
-      )
-        throw new ConfigurationError('CONFIG_INVALID_INPUT')
-      const models = parsePayloadOnlyModels(parsed.models)
-      if (!models.some((model) => model.id === parsed.model))
-        throw new ConfigurationError('CONFIG_MODEL_UNAVAILABLE')
-      const ref =
-        parsed.credentialRef === undefined
-          ? existing?.credentialRef
-          : parsePayloadOnlyCredentialRef(parsed.credentialRef)
-      if (ref === undefined || !(await configuredCredential(ref, entry, 'api-key')))
-        throw new ConfigurationError('CONFIG_CREDENTIAL_REQUIRED')
-      const enabled = input.enabled ?? existing?.enabled ?? true
-      const row: StoredAccount = {
+      const row = payloadOnlyAccountRow({
+        input,
+        parsed,
+        entryId: entry.id,
+        existing,
         accountId: id,
         label,
-        id: entry.id,
-        route: existing?.route ?? `account-${id}`,
         baseUrl,
-        model: parsed.model,
-        models,
-        credentialRef: ref,
-        enabled,
-        authType: 'api-key',
-        ...(input.networkTimeouts === undefined
-          ? existing?.networkTimeouts
-            ? { networkTimeouts: existing.networkTimeouts }
-            : {}
-          : { networkTimeouts: checkedNetworkTimeouts(input.networkTimeouts) }),
-      }
+      })
+      if (!(await configuredCredential(row.credentialRef, entry, 'api-key')))
+        throw new ConfigurationError('CONFIG_CREDENTIAL_REQUIRED')
       const next: StoredConfiguration = {
         version: 2,
         profile,
