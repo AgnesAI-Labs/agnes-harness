@@ -1,0 +1,21 @@
+{
+  "name": "@agnes/loop-jev",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@agnes/extension-api": "workspace:*",
+    "@agnes/plugin-runtime": "workspace:*"
+  },
+  "devDependencies": {
+    "@agnes/ai": "workspace:*",
+    "@agnes/core": "workspace:*",
+    "@agnes/host": "workspace:*",
+    "@agnes/protocol": "workspace:*",
+    "@agnes/sdk": "workspace:*"
+  },
+  "license": "Apache-2.0"
+}
