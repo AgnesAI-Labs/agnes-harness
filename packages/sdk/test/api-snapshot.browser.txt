@@ -21,6 +21,7 @@ UIProjectionSync
 Unsupported
 applyUITimelinePatch
 applyWindowedUITimelinePatch
+cancelAttachmentUpload
 classify
 createClient
 createExampleClient
@@ -41,4 +42,5 @@ runHeadless
 snapshotPending
 textFor
 toContentBlocks
+uploadAttachment
 wsTransport

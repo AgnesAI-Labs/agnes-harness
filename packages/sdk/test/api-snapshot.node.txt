@@ -22,6 +22,7 @@ UIProjectionSync
 Unsupported
 applyUITimelinePatch
 applyWindowedUITimelinePatch
+cancelAttachmentUpload
 classify
 createClient
 createExampleClient
@@ -59,5 +60,6 @@ surfaceAuthProvider
 textFor
 toContentBlocks
 unixTransport
+uploadAttachment
 verifyPortalIdentity
 wsTransport
