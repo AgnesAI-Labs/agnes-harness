@@ -105,7 +105,7 @@ jobs:
         run: |
           pnpm --filter @agnes/host build:native
           pnpm --filter @agnes/system-node build:native
-          pnpm --filter @agnes/mhs build:client
+          pnpm --filter @agnes/cli build:bundled-plugins
       - name: Restore Chromium cache
         id: browser-cache
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
@@ -159,7 +159,7 @@ jobs:
         run: |
           pnpm --filter @agnes/host build:native
           pnpm --filter @agnes/system-node build:native
-          pnpm --filter @agnes/mhs build:client
+          pnpm --filter @agnes/cli build:bundled-plugins
       - name: Typecheck production and fixtures
         if: ${{ !cancelled() && steps.native.outcome == 'success' }}
         run: pnpm typecheck
@@ -204,7 +204,7 @@ jobs:
         run: |
           pnpm --filter @agnes/host build:native
           pnpm --filter @agnes/system-node build:native
-          pnpm --filter @agnes/mhs build:client
+          pnpm --filter @agnes/cli build:bundled-plugins
       # External template consumer tests require the declarations emitted by the original job.
       # Each shard owns its runner; the contracts job's build products are not shared.
       - name: Typecheck production and fixtures
@@ -249,7 +249,7 @@ jobs:
         run: |
           pnpm --filter @agnes/host build:native
           pnpm --filter @agnes/system-node build:native
-          pnpm --filter @agnes/mhs build:client
+          pnpm --filter @agnes/cli build:bundled-plugins
       - run: pnpm typecheck
       # Filename migration changes the tier, never coverage: every migrated file stays required.
       - name: Migrated process and data-heavy tests (zero retries)

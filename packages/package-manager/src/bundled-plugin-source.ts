@@ -48,7 +48,7 @@ export const DEFAULT_ENABLED_BUNDLED_PACKAGES = Object.freeze([
     version: '0.1.0-alpha.0',
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/mhs',
-    sourcePath: 'mhs-plugin',
+    sourcePath: 'package-manager/dist/bundled-plugins/mhs',
     freshOnly: true,
   },
 ])

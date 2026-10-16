@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { build } from 'esbuild'
 import { afterEach, expect, it, vi } from 'vitest'
 import {
   BUNDLED_EXAMPLES,
@@ -35,9 +36,21 @@ it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
     })
     const into = join(cwd, 'stage')
     const fetched = await fetchSource(parseSource(helper.ref), into, { cwd, exec })
-    const manifest = JSON.parse(readFileSync(join(into, 'package.json'), 'utf8'))
-    expect(manifest.name).toBe(helper.id)
-    expect(manifest.version).not.toBe('0.0.0')
+    const metadata = JSON.parse(readFileSync(join(into, 'package.json'), 'utf8'))
+    expect(metadata.name).toBe(helper.id)
+    expect(metadata.version).not.toBe('0.0.0')
+    if (helper.name === 'mhs') {
+      // An offline runtime payload must carry domain dependencies; only public Host SDKs are external.
+      const compiled = await build({
+        entryPoints: [join(into, metadata.exports['.'])],
+        bundle: true,
+        platform: 'node',
+        format: 'esm',
+        external: Object.keys(metadata.agnes.hostProvidedExternals),
+        write: false,
+      })
+      expect(compiled.outputFiles[0]?.contents.byteLength).toBeGreaterThan(0)
+    }
     const source = bundledPluginSource(helper.ref)
     if (!source) throw new Error('Missing bundled source')
     expect(fetched.integrity).toBe(hashDirectory(join(source.root, source.path)))

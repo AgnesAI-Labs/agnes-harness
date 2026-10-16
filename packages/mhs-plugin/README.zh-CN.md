@@ -18,7 +18,7 @@
 
 `createMhsNativeProfileAdapter(assertActive)` 将真实 Hub 接到原生 profile 服务：`authority` 只接受 Host 已消费批准所绑定的有效参数及设备修订号，`definitions(north)` 返回严格的 `mhs.*` 服务，Stop 使用独立优先通道，手动控制有租期上限；`register(ctx, north)` 通过公共 services facet 注册。将 `adapter.bindControl` 传给 `registerMhsStreams`，它只解析原生 lease handler 生成且仍有效的 grant，核对相同 actor、source 和 profile，再绑定其确切设备与 Hub lease。gateway 先用已认证凭据调用当前 profile authority 的 `authorizeControl`。派生控制绑定不会在进程重启后恢复。`mhsOwnedStore(store)` 将 Host 的 owner store 适配为 Hub 的 CAS 修订号和分页扫描。受管理组合负责提供当前 activation 校验、生命周期内的 owner store 和已认证的 bound-wake SDK。默认插件使用此组合，不使用伪造批准。
 
-浏览器贡献由 [`@agnes/mhs-ui`](../mhs-ui/README.zh-CN.md) 实现，声明在 `agnes.client.json`，使用 profile 生命周期、primary MHS 入口和公开工具卡片槽。运行 `pnpm --filter @agnes/mhs build:client` 生成插件内的客户端资源。该构建不启动 Hub；启用已安装插件时才启动，缺少 profile runtime 合同时拒绝激活。
+浏览器贡献由 [`@agnes/mhs-ui`](../mhs-ui/README.zh-CN.md) 实现，声明在 `agnes.client.json`，使用 profile 生命周期、primary MHS 入口和公开工具卡片槽。运行 `pnpm --filter @agnes/mhs build:client` 生成插件内的客户端资源。全新 home 的源码测试前运行 `pnpm --filter @agnes/cli build:bundled-plugins`，生成与发行包一致的独立后端与客户端载荷。该构建不启动 Hub；启用已安装插件时才启动，缺少 profile runtime 合同时拒绝激活。
 
 已安装 Hub 还通过 `mhs.producer` 与 `mhs.producer.media` 接受经审核的后端 producer bridge。子包必须在 managed `requires` 中声明精确 grant，通用 profile runtime 为每条转接流绑定当前 child 权限；浏览器直连不能冒充该 bridge。设备命令仍来自经原生批准的 Hub 操作，媒体使用独立有界通道。
 
