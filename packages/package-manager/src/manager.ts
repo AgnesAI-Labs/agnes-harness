@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, lstatSync, mkdirSync, realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { setTimeout as delay, setImmediate } from 'node:timers/promises'
+import { setImmediate } from 'node:timers/promises'
 import type { ExtensionManifest } from '@agnes/extension-api'
 import {
   type PackagePreview,
@@ -19,6 +19,7 @@ import {
   type InstalledPackage,
   type InventoryVerificationCache,
   readInventory,
+  readInventoryAsync,
 } from './inventory.js'
 import { readBoundary } from './inventory-boundary.js'
 import {
@@ -46,7 +47,7 @@ import {
 } from './local-workspace-trust.js'
 import { type LockEntry, type Lockfile, readLock, withLock, writeLock } from './lockfile.js'
 import { readBundledManifest } from './manifest.js'
-import { type RuntimePluginSnapshot, runtimePluginSnapshotsFromPins } from './package-plugin-loader.js'
+import type { RuntimePluginSnapshot } from './package-plugin-loader.js'
 import { entryFrom, readPackageJson } from './package-record.js'
 import { readPluginCapabilityPolicy } from './plugin-capabilities.js'
 import { checkCancelled, type OperationOptions, type PackageSourceAdapter, progress } from './ports.js'
@@ -66,11 +67,12 @@ import {
   type RuntimeSnapshotCollection,
   type RuntimeSnapshotPinRequest,
   type RuntimeSnapshotStore,
-  recoverRuntimeSnapshotStore,
+  recoverRuntimeSnapshotStoreAsync,
   releaseRuntimePinStore,
   resolveRuntimePinStore,
   runtimePinBlockers,
 } from './runtime-snapshots.js'
+import { readRuntimePluginSnapshots } from './runtime-source-read.js'
 import {
   type ExecFn,
   type FetchedSource,
@@ -372,7 +374,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       profileDir,
       async () => {
         recoverPackageStore(storeFor(profileDir))
-        recoverRuntimeSnapshotStore(storeFor(profileDir))
+        await recoverRuntimeSnapshotStoreAsync(storeFor(profileDir))
         recoverStaging(dirname(packageDir(options.dataDir, profileName(profileDir), 'stage')))
         return fn()
       },
@@ -682,11 +684,11 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       const clear = () => {
         if (inventoryReads.get(key)?.promise === reading) inventoryReads.delete(key)
       }
-      const read = () => {
+      const read = async () => {
         try {
           const lock = load(profileDir)
           return projectLocal(
-            readInventory(lock, {
+            await readInventoryAsync(lock, {
               ...storeFor(profileDir),
               ceiling: ceiling(lock),
               ...(opts.fresh ? {} : { verificationCache: inventoryVerifications }),
@@ -707,39 +709,11 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       return reading
     },
     async runtimePluginSnapshots(profileDir) {
-      const store = storeFor(profileDir)
-      // Package and runtime-snapshot writers publish a journal before moving any tree and replace
-      // the lock or runtime state when they commit; either explains a torn lock-free read.
-      const committed = () => readBoundary(profileDir, ['agnes-lock.json', '.agnes-runtime-snapshots.json'])
-      const transacting = () =>
-        ['.agnes-package-transaction.json', '.agnes-runtime-transaction.json'].some((file) =>
-          existsSync(join(profileDir, file)),
-        )
-      for (let attempt = 0; attempt < 3; attempt++) {
-        const boundary = committed()
-        try {
-          const beforeLock = load(profileDir)
-          const before = readInventory(beforeLock, {
-            ...store,
-            ceiling: ceiling(beforeLock),
-            verificationCache: inventoryVerifications,
-          })
-          const pins = listRuntimePinsStore(store)
-          const afterLock = load(profileDir)
-          const after = readInventory(afterLock, {
-            ...store,
-            ceiling: ceiling(afterLock),
-            verificationCache: inventoryVerifications,
-          })
-          if (before.hash === after.hash) return runtimePluginSnapshotsFromPins(after, pins)
-        } catch (error) {
-          // A failure no writer explains is tampering and stays fatal; otherwise let the writer finish.
-          if (!transacting() && committed() === boundary) throw error
-          await delay(50 * (attempt + 1))
-        }
-      }
-      throw new PackageError('E_LOCK_MISMATCH', 'runtime source changed during snapshot read', {
-        detail: { reason: 'runtime-source-stale' },
+      return readRuntimePluginSnapshots(profileDir, {
+        store: storeFor(profileDir),
+        load: () => load(profileDir),
+        ceiling,
+        verificationCache: inventoryVerifications,
       })
     },
     async pinRuntimeSnapshot(profileDir, request) {

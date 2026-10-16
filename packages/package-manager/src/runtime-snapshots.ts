@@ -1,15 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { lstatSync, mkdirSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import {
-  type PackageBlocker,
-  type PackageContributionSummary,
-  type PluginCapabilities,
-  type PluginMetadata,
-  validatePackageAdminData,
-  validatePluginMetadata,
-} from '@agnes/protocol'
+import { type PackageBlocker, validatePackageAdminData, validatePluginMetadata } from '@agnes/protocol'
 import { renameWriteThroughSync } from '@agnes/system-node'
+import { collectRead, collectReadAsync } from './cooperative-read.js'
 import { copyPackageTreeSync } from './copy-tree.js'
 import { PackageError } from './errors.js'
 import {
@@ -23,104 +17,30 @@ import {
 } from './integrity.js'
 import { type InstalledPackage, isSnapshotPackageEligible, verifyPackageDirectory } from './inventory.js'
 import type { LockEntry, Lockfile } from './lockfile.js'
+import type {
+  PinRecord,
+  RuntimeJournal,
+  RuntimePin,
+  RuntimePinPurpose,
+  RuntimeSnapshot,
+  RuntimeSnapshotCollection,
+  RuntimeSnapshotPinRequest,
+  RuntimeSnapshotStore,
+  RuntimeState,
+  SnapshotRecord,
+} from './runtime-snapshot-types.js'
 import { hashDirectory, packageDir, parseSource } from './sources.js'
-import { type PackageStore, previousPackageDir } from './store.js'
+import { previousPackageDir } from './store.js'
 
-export type RuntimePinPurpose = 'active' | 'candidate' | 'recovery' | 'rollback' | 'turn'
-
-export type RuntimeSnapshotSelector =
-  | Readonly<{ kind: 'installed'; expectedIntegrity: string; expectedTreeIntegrity: string }>
-  | Readonly<{ kind: 'previous'; expectedIntegrity: string; expectedTreeIntegrity: string }>
-  | Readonly<{
-      kind: 'snapshot'
-      snapshotId: string
-      expectedIntegrity: string
-      expectedTreeIntegrity: string
-    }>
-
-export type RuntimeSnapshot = Readonly<{
-  snapshotId: string
-  profile: string
-  packageId: string
-  version: string
-  integrity: string
-  treeIntegrity: string
-  capabilityHash: string
-  directory: string
-  metadata?: PluginMetadata
-  contributions: readonly PackageContributionSummary[]
-  /** Sealed with capabilityHash at trust or development load. Pins leave these unset. */
-  dependencies?: Readonly<Record<string, string>>
-  declaredCapabilities?: PluginCapabilities
-}>
-
-export type RuntimePin = Readonly<{
-  pinId: string
-  operationId: string
-  purpose: RuntimePinPurpose
-  snapshot: RuntimeSnapshot
-}>
-
-export type RuntimeSnapshotPinRequest = Readonly<{
-  pinId: string
-  operationId: string
-  packageId: string
-  purpose: RuntimePinPurpose
-  selector: RuntimeSnapshotSelector
-}>
-
-export type RuntimeSnapshotCollection = Readonly<{
-  removed: readonly string[]
-  retained: readonly string[]
-}>
-
-export type RuntimeSnapshotStore = PackageStore
-
-type SnapshotRecord = {
-  version: 1
-  snapshotId: string
-  packageId: string
-  packageVersion: string
-  integrity: string
-  treeIntegrity: string
-  capabilityHash: string
-  source: LockEntry['source']
-  license: string
-  releasedAt: string | null
-  dependencies: Record<string, string>
-  metadata?: PluginMetadata
-  contributions: PackageContributionSummary[]
-  declaredCapabilities?: NonNullable<LockEntry['declaredCapabilities']>
-}
-type PinRecord = {
-  pinId: string
-  operationId: string
-  purpose: RuntimePinPurpose
-  packageId: string
-  snapshotId: string
-  requestHash: string
-}
-type RuntimeState = {
-  version: 1
-  snapshots: Record<string, SnapshotRecord>
-  pins: Record<string, PinRecord>
-}
-type CreateJournal = {
-  version: 1
-  kind: 'create'
-  transactionId: string
-  stage: string
-  snapshot: SnapshotRecord
-  pin: PinRecord
-}
-type GcJournal = {
-  version: 1
-  kind: 'gc'
-  transactionId: string
-  trash: string
-  snapshot: SnapshotRecord
-}
-type RuntimeJournal = CreateJournal | GcJournal
+export type {
+  RuntimePin,
+  RuntimePinPurpose,
+  RuntimeSnapshot,
+  RuntimeSnapshotCollection,
+  RuntimeSnapshotPinRequest,
+  RuntimeSnapshotSelector,
+  RuntimeSnapshotStore,
+} from './runtime-snapshot-types.js'
 
 const SHA256 = /^sha256-[a-f0-9]{64}$/
 const INTEGRITY = /^(?:sha256-[a-f0-9]{64}|sha512-[A-Za-z0-9+/]{86}==)$/
@@ -588,12 +508,12 @@ function clearJournal(s: RuntimeSnapshotStore): void {
 }
 
 /** Caller holds the PackageManager Profile lock. Runtime state never decides the active revision. */
-export function recoverRuntimeSnapshotStore(s: RuntimeSnapshotStore): void {
+function* runtimeRecoverySteps(s: RuntimeSnapshotStore): Generator<void, void, void> {
   const root = runtimeRoot(s)
   rmSync(`${statePath(s)}.tmp`, { force: true })
   if (!present(journalPath(s))) {
     rmSync(`${journalPath(s)}.tmp`, { force: true })
-    assertKnownRuntimeDirectories(s, readState(s))
+    yield* knownRuntimeDirectoryReadSteps(s, readState(s))
     return
   }
   const state = readState(s),
@@ -641,7 +561,17 @@ export function recoverRuntimeSnapshotStore(s: RuntimeSnapshotStore): void {
   clearJournal(s)
 }
 
-function assertKnownRuntimeDirectories(s: RuntimeSnapshotStore, state: RuntimeState): void {
+export function recoverRuntimeSnapshotStore(s: RuntimeSnapshotStore): void {
+  collectRead(runtimeRecoverySteps(s))
+}
+export function recoverRuntimeSnapshotStoreAsync(s: RuntimeSnapshotStore): Promise<void> {
+  return collectReadAsync(runtimeRecoverySteps(s))
+}
+
+function* knownRuntimeDirectoryReadSteps(
+  s: RuntimeSnapshotStore,
+  state: RuntimeState,
+): Generator<void, void, void> {
   const root = runtimeRoot(s)
   if (!present(root)) {
     if (Object.keys(state.snapshots).length) integrityFailure('runtime-root-missing')
@@ -651,8 +581,14 @@ function assertKnownRuntimeDirectories(s: RuntimeSnapshotStore, state: RuntimeSt
   const allowed = new Set(Object.keys(state.snapshots))
   for (const entry of readdirSync(root))
     if (!allowed.has(entry)) integrityFailure('unknown-runtime-directory')
-  for (const record of Object.values(state.snapshots))
+  for (const record of Object.values(state.snapshots)) {
+    yield
     verifyRecord(s, record, snapshotDir(s, record.snapshotId))
+  }
+}
+
+function assertKnownRuntimeDirectories(s: RuntimeSnapshotStore, state: RuntimeState): void {
+  collectRead(knownRuntimeDirectoryReadSteps(s, state))
 }
 
 export function pinRuntimeSnapshotStore(
@@ -782,10 +718,21 @@ export function runtimePinBlockers(s: RuntimeSnapshotStore, packageId: string): 
   return references.length ? [{ code: 'generation', references }] : []
 }
 
-export function listRuntimePinsStore(s: RuntimeSnapshotStore): RuntimePin[] {
+function* runtimePinReadSteps(s: RuntimeSnapshotStore): Generator<void, RuntimePin[], void> {
   const state = readState(s)
-  assertKnownRuntimeDirectories(s, state)
-  return Object.values(state.pins).map((pin) => pinView(s, state, pin))
+  yield* knownRuntimeDirectoryReadSteps(s, state)
+  const pins: RuntimePin[] = []
+  for (const pin of Object.values(state.pins)) {
+    yield
+    pins.push(pinView(s, state, pin))
+  }
+  return pins
+}
+export function listRuntimePinsStore(s: RuntimeSnapshotStore): RuntimePin[] {
+  return collectRead(runtimePinReadSteps(s))
+}
+export function listRuntimePinsStoreAsync(s: RuntimeSnapshotStore): Promise<RuntimePin[]> {
+  return collectReadAsync(runtimePinReadSteps(s))
 }
 
 export function collectRuntimeSnapshotsStore(

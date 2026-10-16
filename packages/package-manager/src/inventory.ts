@@ -6,6 +6,7 @@ import {
   type PackagePresentation,
   validatePluginMetadata,
 } from '@agnes/protocol'
+import { collectRead, collectReadAsync } from './cooperative-read.js'
 import { PackageError } from './errors.js'
 import { inspectVerifiedTree } from './inspect.js'
 import { canonical, capabilityHash, freezeData, readStaticJson, snapshotHash } from './integrity.js'
@@ -263,7 +264,7 @@ function verifiedRollbackTarget(
   })
 }
 /** Reads and verifies installed bytes; it never fetches, imports modules, or mutates the store. */
-export function readInventory(
+function* inventoryReadSteps(
   lock: Lockfile,
   options: {
     dataDir: string
@@ -272,13 +273,14 @@ export function readInventory(
     verificationCache?: InventoryVerificationCache
     builtinDirectory?: (id: string) => string | undefined
   },
-): InstalledInventory {
+): Generator<void, InstalledInventory, void> {
   const packages: InstalledPackage[] = [],
     paths = new Set<string>()
   const capabilityPolicy = readPluginCapabilityPolicy(options.profileDir)
   const sourceConfig = readPackageSourceConfiguration(options.profileDir)
   const verifyCatalog = officialCatalogVerifier(sourceConfig)
   for (const [id, entry] of Object.entries(lock.packages).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+    yield
     let directory: string | null = packageDir(options.dataDir, lock.profile, id)
     if (paths.has(directory)) throw new PackageError('E_LOCK_MISMATCH', 'package store path collision')
     paths.add(directory)
@@ -390,6 +392,16 @@ export function readInventory(
       JSON.stringify({ profile: lock.profile, hash: `sha256-${snapshotHash(stable)}`, packages }),
     ) as InstalledInventory,
   )
+}
+
+/** Synchronous transaction readers and async readers share every verification and refusal. */
+export function readInventory(...args: Parameters<typeof inventoryReadSteps>): InstalledInventory {
+  return collectRead(inventoryReadSteps(...args))
+}
+export function readInventoryAsync(
+  ...args: Parameters<typeof inventoryReadSteps>
+): Promise<InstalledInventory> {
+  return collectReadAsync(inventoryReadSteps(...args))
 }
 
 /**
