@@ -84,6 +84,8 @@ const bundleJitiTransform = {
 }
 
 rmSync(out, { recursive: true, force: true })
+// This directory also contains CLI declaration outputs. Recheck them after resetting it.
+rmSync(join(root, 'dist', 'tsconfig.tsbuildinfo'), { force: true })
 mkdirSync(out, { recursive: true })
 
 async function buildSea(name, entry, destination) {
