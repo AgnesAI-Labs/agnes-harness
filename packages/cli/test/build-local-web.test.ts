@@ -17,6 +17,18 @@ it('builds local web assets with the shared platform vendor modules', async () =
     // Check the actual local distribution, including lazy entries and all vendor/shared chunks.
     const assets = (await readdir(output, { recursive: true })).filter((file) => /\.(js|css|map)$/.test(file))
     expect(assets.some((file) => /^terminal-[A-Z0-9]{8}\.js$/.test(file))).toBe(true)
+    const terminalSources = await Promise.all(
+      assets
+        .filter((file) => /^terminal-.*\.js$/.test(file))
+        .map((file) => readFile(join(output, file), 'utf8')),
+    )
+    expect(terminalSources.join('\n')).not.toMatch(/this\._document\s*\?\?\s*typeof window/)
+    expect(terminalSources.join('\n')).toMatch(/this\._document\s*\?\?\s*\(typeof window/)
+    expect(terminalSources.join('\n')).not.toMatch(/this\._rowFactory\s*=.*createInstance\(\w+, document\)/)
+    expect(terminalSources.join('\n')).toMatch(
+      /this\._rowFactory\s*=.*createInstance\(\w+, this\._document\)/,
+    )
+
     const listener = createServer()
     await new Promise<void>((resolve) => listener.listen(0, '127.0.0.1', resolve))
     const address = listener.address()

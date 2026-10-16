@@ -33,6 +33,8 @@ const disposeCard = conversationCards.register({
 
 ### 首页入口
 
+声明过的 profile 主入口在运行时 generation 等待激活或后台 revision 就绪时保留宿主拥有的加载页。旧模块及其权限立即撤销；ready 名册到达后替换加载页。禁用、移除或失败的贡献仍会失去入口。
+
 `homeEntries` 列出首页侧栏里可以打开的页面。注册项为 `{ id, icon, titleKey, order, component }`，可选 `subtitleKey`（标题旁的次要说明）和 `badge`。选中入口后，`component` 作为整页显示在主区域，替换对话区，侧栏保留。内置的业务 Agent、插件、自动化三个入口也通过这个注册表注册。插件注册的入口无论 `order` 是多少都排在这三个之后，按 `order`、再按 ID 排序；超过三个时折叠成一个「更多」菜单。卸载注册项后入口消失，正在显示的页面回到对话区。
 
 ```tsx

@@ -257,7 +257,7 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
     banner: {
       js: "import __agnesSharedReact from 'react'; var require = (id) => { if (id === 'react') return __agnesSharedReact; throw Error('Unexpected external require: ' + id) };",
     },
-    plugins: [clientPlatformExternals],
+    plugins: [clientPlatformExternals, scrollbarCsp],
   })
   // Keep the local launcher's import-map targets and platform singleton graph identical to the
   // standalone Web build.
