@@ -1633,7 +1633,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
                 profile: o.profile.name,
                 packageId: id,
                 operationId: `local-reload:${id}`,
-                operation: plugin.enabled ? 'update' : 'disable',
+                operation: 'update',
                 signal: new AbortController().signal,
               })
               if (result.error) throw new Error(result.error.code)

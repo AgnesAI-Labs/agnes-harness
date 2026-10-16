@@ -374,7 +374,7 @@ describe('concurrent reconcile publication', () => {
           configuration: (rowId) => store.configAudit.value(packageId, rowId),
         }),
     })
-    const reconcile = (id: string, operation: 'enable' | 'disable') =>
+    const reconcile = (id: string, operation: 'enable' | 'disable' | 'update') =>
       activation.reconcile({
         profile: 'default',
         packageId: id,
@@ -424,14 +424,22 @@ describe('concurrent reconcile publication', () => {
     throw new Error('condition did not become true')
   }
 
-  it.each([false, true])(
-    'keeps a disable and a concurrent enable both in the desired target (overlapping=%s)',
-    async (overlapping) => {
+  it.each(['sequential', 'target', 'inventory'] as const)(
+    'keeps a disable and a concurrent enable both in the desired target (change=%s)',
+    async (change) => {
       const f = reconcileFixture()
       expect((await f.reconcile(alpha, 'enable')).error).toBeUndefined()
       expect(summary(f.store.desired())).toEqual({ alphaDisabled: [false], quillPresent: false })
-      f.disableAlphaAndApproveQuill()
-      if (overlapping) {
+      if (change === 'inventory') {
+        f.armGate()
+        const enable = f.reconcile(quill, 'update')
+        await waitFor(f.probeEntered)
+        f.disableAlphaAndApproveQuill()
+        f.releaseGate()
+        expect((await enable).error).toBeUndefined()
+        expect((await f.reconcile(alpha, 'disable')).error).toBeUndefined()
+      } else if (change === 'target') {
+        f.disableAlphaAndApproveQuill()
         const before = f.publishCalls()
         f.armGate()
         const disable = f.reconcile(alpha, 'disable')
@@ -443,6 +451,7 @@ describe('concurrent reconcile publication', () => {
         const [disabled, enabled] = await Promise.all([disable, enable])
         expect([disabled.error, enabled.error]).toEqual([undefined, undefined])
       } else {
+        f.disableAlphaAndApproveQuill()
         expect((await f.reconcile(alpha, 'disable')).error).toBeUndefined()
         expect((await f.reconcile(quill, 'enable')).error).toBeUndefined()
       }

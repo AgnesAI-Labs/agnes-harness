@@ -283,7 +283,7 @@ export function createCompositeTargetActivation(
       await options.revertFailedDesired?.()
       let next: RuntimeTargetArtifact | undefined
       // Derivation runs outside the publication lane, so a concurrent operation can publish first.
-      // Its CAS baseline is the desired target it read; on a stale refusal derive again from the new one.
+      // A stale target or inventory needs a new derivation and probe under the current authorization.
       for (let attempt = 1; ; attempt++) {
         const derivedFrom = { digest: options.store.desired()?.digest }
         if (input.operation === 'rollback') {
@@ -310,7 +310,12 @@ export function createCompositeTargetActivation(
           }
           break
         } catch (error) {
-          if (attempt >= 3 || !(error instanceof Error) || error.message !== 'E_RUNTIME_TARGET_STALE')
+          if (
+            attempt >= 3 ||
+            !(error instanceof Error) ||
+            (error.message !== 'E_RUNTIME_TARGET_STALE' &&
+              error.message !== 'E_RUNTIME_TARGET_INVENTORY_STALE')
+          )
             throw error
         }
       }
