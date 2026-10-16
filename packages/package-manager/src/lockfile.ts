@@ -32,14 +32,13 @@ export type Lockfile = Omit<ValidatedLockfile, 'resolvedProfileHash' | 'seams'> 
 export const lockPath = (profileDir: string): string => join(profileDir, 'agnes-lock.json')
 const STALE_LOCK_MS = 30_000
 /**
- * Whether the lock's recorded owner is gone. A lock is published with its owner already written (see
- * `withLock`), so a file that names no valid pid was not made by a live acquirer: callers only ask
- * once the file is older than `STALE_LOCK_MS`, and such a file counts as abandoned.
+ * A valid, dead owner can be reclaimed immediately: publication already includes its PID, so no
+ * live acquirer is still filling it in. Keep the stale grace for malformed/legacy owner records.
  */
 function ownerIsDead(file: string): boolean {
   try {
     const pid = Number(readFileSync(file, 'utf8'))
-    if (!Number.isSafeInteger(pid) || pid <= 0) return true
+    if (!Number.isSafeInteger(pid) || pid <= 0) return Date.now() - statSync(file).mtimeMs > STALE_LOCK_MS
     try {
       process.kill(pid, 0)
       return false
@@ -150,11 +149,7 @@ export async function withLock<T>(
     } catch (error) {
       // Only an existing lock is contention; an unsupported link, a permission or an I/O failure is not busy.
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-      if (
-        existsSync(lockFile) &&
-        Date.now() - statSync(lockFile).mtimeMs > STALE_LOCK_MS &&
-        ownerIsDead(lockFile)
-      ) {
+      if (existsSync(lockFile) && ownerIsDead(lockFile)) {
         // Serialize reclaimers so two contenders cannot both unlink a newly acquired lock.
         const reclaim = `${lockFile}.reclaim`
         let fd: number | undefined
