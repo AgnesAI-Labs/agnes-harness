@@ -667,6 +667,21 @@
         },
         "placement": {
           "enum": ["primary", "secondary"]
+        },
+        "navigation": {
+          "description": "Optional eager navigation metadata. Profile primary pages can load their module on first open; legacy declarations retain eager module loading.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["title", "icon", "order"],
+          "properties": {
+            "title": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "titles": {
+              "type": "object",
+              "additionalProperties": { "type": "string", "minLength": 1, "maxLength": 256 }
+            },
+            "icon": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "order": { "type": "number" }
+          }
         }
       }
     },

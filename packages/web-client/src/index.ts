@@ -32,6 +32,7 @@ export type { ClientContext, ClientModule } from './client-module.js'
 export { clientModule } from './client-module.js'
 export type { ContributionAvailability } from './contribution-scope.js'
 export { revokeContributionOwner, updateContributionAvailability } from './contribution-scope.js'
+export { reserveHomeEntry } from './declared-home-entries.js'
 export type { DshSlotDefinition, DshSlotName } from './dsh-slot-catalog.js'
 export {
   DSH_PUBLIC_SLOT_NAMES,

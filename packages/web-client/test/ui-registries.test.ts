@@ -164,7 +164,15 @@ it('binds global entries to a declared active profile owner and revokes before f
   availability.subscribe(() => {
     observed = availability.getSnapshot()?.availability ?? ''
   })
+  const { reserveHomeEntry } = await import('../src/declared-home-entries.js')
+  const release = reserveHomeEntry(module.rowId, { ...entry, component: () => null })
+  expect(() =>
+    scopedHomeEntries({ ...module, binding: { ...module.binding, owner: 'web:other' } }, () => {}).register(
+      entry,
+    ),
+  ).toThrow('already registered')
   entries.register(entry)
+  release() // The old placeholder's disposer must not revoke the live registration.
   expect(homeEntries.get('owned')).toBeDefined()
   expect(() => entries.register({ ...entry, id: 'undeclared' })).toThrow('Undeclared')
   expect(() =>
