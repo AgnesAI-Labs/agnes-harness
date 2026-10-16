@@ -1,0 +1,65 @@
+import { readFileSync } from 'node:fs'
+import { join, relative } from 'node:path'
+import { expect, it } from 'vitest'
+import { isTestFile, listSourceFiles, repoRoot } from './repo.js'
+import { controlPresentationCounts, newControlPresentationViolations } from './ui-controls.js'
+
+it('permits hidden/file fields and tokens, refuses new raw controls and all colour literal forms', () => {
+  expect(
+    controlPresentationCounts('<input type="hidden"><input type="file">color: var(--agnes-text-primary)'),
+  ).toEqual({})
+  for (const source of [
+    '<input type="text">',
+    '<select>',
+    "doc.createElement('select')",
+    '#abc',
+    'rgb(1,2,3)',
+    'hsl(0 0% 0%)',
+    'color: red',
+    'fill: tomato',
+    'border: 1px solid rebeccapurple',
+  ])
+    expect(newControlPresentationViolations(controlPresentationCounts(source), {})).toHaveLength(1)
+  const baseline = controlPresentationCounts('<input type="number">')
+  expect(newControlPresentationViolations(baseline, baseline)).toEqual([])
+  expect(
+    newControlPresentationViolations(
+      controlPresentationCounts('<input type="number"><input type="number">'),
+      baseline,
+    ),
+  ).toHaveLength(1)
+  expect(newControlPresentationViolations(controlPresentationCounts('<select>'), baseline)).toHaveLength(1)
+})
+it('keeps existing call sites explicit and forbids new raw controls or colours outside web-ui', () => {
+  const root = repoRoot()
+  const baseline = JSON.parse(
+    readFileSync(join(root, 'tools/guards/ui-controls-baseline.json'), 'utf8'),
+  ) as Record<string, Record<string, number>>
+  const files = listSourceFiles(join(root, 'packages'), {
+    extensions: ['.ts', '.tsx', '.css', '.html', '.mjs'],
+  })
+  const errors = files
+    .filter((file) => !isTestFile(file) && !file.includes('/web-ui/') && !/\/(?:test|tests)\//.test(file))
+    .flatMap((file) => {
+      const path = relative(root, file)
+      return newControlPresentationViolations(
+        controlPresentationCounts(readFileSync(file, 'utf8')),
+        baseline[path] ?? {},
+      ).map((error) => `${path}: ${error}`)
+    })
+  expect(errors, errors.join('\n')).toEqual([])
+})
+
+it('allows radio-group segmented presentation only in the shared Segmented implementation', () => {
+  const root = repoRoot()
+  const offenders = listSourceFiles(join(root, 'packages')).filter(
+    (file) =>
+      !isTestFile(file) &&
+      !/\/(?:test|tests)\//.test(file) &&
+      !file.endsWith('/web-ui/src/ui/segmented.tsx') &&
+      // Long answer cards, including an Other text editor, are a questionnaire rather than a segmented selector.
+      !file.endsWith('/web-ui/src/intelligent-ui/question-card.tsx') &&
+      /role\s*(?:=|:)\s*(?:["']radiogroup["']|\{[^}]*["']radiogroup["'])/.test(readFileSync(file, 'utf8')),
+  )
+  expect(offenders.map((file) => relative(root, file))).toEqual([])
+})

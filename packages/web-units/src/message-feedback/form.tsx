@@ -1,5 +1,5 @@
 import type { FeedbackItem, FeedbackTarget } from '@agnes/protocol/gen/app-server'
-import { Button, Popover, SettingsCheckbox, SettingsTextArea } from '@agnes/web-ui'
+import { Button, Popover, reportSuccess, SettingsCheckbox, SettingsTextArea } from '@agnes/web-ui'
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
 import {
   FeedbackRequestError,
@@ -141,6 +141,8 @@ export function MessageFeedback({
       enqueue(async (signal) => {
         try {
           await request(signal, 'put', fields)
+          if (signal?.aborted) return
+          reportSuccess('message-feedback', t('saved'))
           setPhase('')
         } catch (error) {
           if (signal?.aborted) return
@@ -190,6 +192,7 @@ export function MessageFeedback({
         enqueue(async (signal) => {
           try {
             await request(signal, 'withdraw')
+            if (!signal?.aborted) reportSuccess('message-feedback', t('withdrawnNotice'))
           } catch {
             if (signal?.aborted) return
             retry.current = attempt

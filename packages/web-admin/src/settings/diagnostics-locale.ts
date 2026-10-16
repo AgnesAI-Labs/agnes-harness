@@ -45,7 +45,7 @@ export const diagnosticsCatalog: LocaleCatalog = {
     copyFailed: 'Copy failed. Select and copy the ID manually.',
     invalid: 'Enter a complete diagnostic ID.',
     export: 'Export diagnostic bundle',
-    exported: 'Redacted bundle downloaded.',
+    exported: 'Download started.',
     exportHelp:
       'Includes versions, runtime status, hashes, counts and safe error IDs. Excludes conversations, file contents, credentials, exception messages, stacks and raw audit details. Search selects one error for export.',
     exportReview: 'Review deployment metadata before sharing the file.',
@@ -140,11 +140,11 @@ export const diagnosticsCatalog: LocaleCatalog = {
     loading: '正在加载诊断…',
     refresh: '刷新',
     copy: '复制 ID',
-    copied: '已复制诊断 ID。',
+    copied: '诊断 ID 已复制。',
     copyFailed: '复制失败，请手动选中并复制 ID。',
     invalid: '请输入完整的诊断 ID。',
     export: '导出诊断包',
-    exported: '已下载脱敏诊断包。',
+    exported: '已开始下载。',
     exportHelp:
       '包含版本、运行状态、哈希、计数和安全错误 ID；不包含对话、文件内容、凭据、异常消息、堆栈或原始审计详情。查询后只导出所选错误。',
     exportReview: '分享前请审查文件中的部署元数据。',

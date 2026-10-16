@@ -1,3 +1,5 @@
+import { installFeedbackSink, type OperationFeedback } from '@agnes/web-ui'
+import { afterEach as feedbackAfterEach, beforeEach as feedbackBeforeEach } from 'vitest'
 // @vitest-environment happy-dom
 
 import type { ConfigSnapshot, ConfigTestResult } from '@agnes/protocol'
@@ -347,9 +349,12 @@ describe('settings controller', () => {
       expectedRevision: 3,
     })
     await vi.waitFor(() => expect(onSaved).toHaveBeenCalledOnce())
-    expect(node('config-state').textContent).toBe(
-      '默认配置已保存；仅新建任务会使用新的默认模型，当前会话模型不会改变。',
-    )
+    expect(node('config-state').textContent).toBe('')
+    expect(feedbackResults.at(-1)).toMatchObject({
+      scope: 'model-accounts',
+      outcome: 'success',
+      effect: { kind: 'new-sessions' },
+    })
     expect(node('config-api-key').value).toBe('')
     // 2026-09-17：账户详情改为独立弹窗后，保存只收起账户弹窗、留在设置里。
     expect(node('config').open).toBe(true)
@@ -567,3 +572,11 @@ describe('settings controller', () => {
     expect(node('config-api-key').value).toBe('')
   })
 })
+
+const feedbackResults: OperationFeedback[] = []
+let releaseFeedback: (() => void) | undefined
+feedbackBeforeEach(() => {
+  feedbackResults.length = 0
+  releaseFeedback = installFeedbackSink({ publish: (value) => feedbackResults.push(value), resolve() {} })
+})
+feedbackAfterEach(() => releaseFeedback?.())

@@ -113,6 +113,8 @@ export const sessionLocaleCatalog: LocaleCatalog = {
     'session.menu.archive': 'Archive session',
     'session.menu.triggerAria': 'Session actions for {name}',
     'session.menu.label': 'Session actions',
+    'session.rename.saved': 'Session name saved.',
+    'session.archivedNotice': 'Session archived.',
     'session.rename.heading': 'Rename session',
     'session.rename.nameLabel': 'Session name',
     'session.rename.cancel': 'Cancel',
@@ -134,6 +136,8 @@ export const sessionLocaleCatalog: LocaleCatalog = {
       'Archived, but the list failed to refresh; reload the page: {detail}',
   },
   'zh-CN': {
+    'session.rename.saved': '会话名称已保存。',
+    'session.archivedNotice': '会话已归档。',
     'nav.noWorkspaceTitle': '没有工作区归属的历史会话',
     'nav.sessionFallback': '新会话',
     'nav.loadMore': '加载更多任务',

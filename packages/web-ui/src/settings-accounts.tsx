@@ -9,7 +9,6 @@ import { Icon } from './ui/icon.js'
 import { Loadable } from './ui/loadable.js'
 import { Menu } from './ui/menu.js'
 import { Tag } from './ui/tag.js'
-import { Toast } from './ui/toast.js'
 
 export type SettingsAccountsProps = {
   accounts: readonly ConfigAccount[]
@@ -172,9 +171,6 @@ export function SettingsAccounts({
   })
   return (
     <>
-      <Toast open={saved} onDismiss={() => onDismissSaved?.()}>
-        {t('accounts.saved')}
-      </Toast>
       {phase === 'loading' && <Loadable loading hasData={false} shape="rows" />}
       {phase === 'empty' && (
         <SettingsGroup className="config-accounts-welcome">

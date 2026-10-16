@@ -3,7 +3,9 @@ import {
   Banner,
   Button,
   CopyButton,
+  fallbackT,
   promptSourceLabel,
+  reportSuccess,
   Segmented,
   Select,
   type SessionOption,
@@ -91,6 +93,7 @@ function PromptOverride({ canSave, api }: { canSave: boolean; api: PromptApi }) 
         const { fullOverride: _replaced, ...rest } = latest
         return value ? { ...rest, fullOverride: value } : rest
       }, !!value && confirmed)
+      reportSuccess('system-prompt', fallbackT('ui.settingsSaved'))
       setDraft(undefined)
       setOpen(!!value)
       setConfirmed(false)

@@ -10,12 +10,13 @@ import {
   ListRow,
   Loadable,
   Menu,
+  reportSuccess,
   SettingsCheckbox,
   SettingsDrill,
   SettingsList,
   SettingsPage,
   SettingsSection,
-  SettingsState,
+  StatusMessage,
   SUBPAGE_CLOSE_EVENT,
   useSettingsSubpages,
   useUiText,
@@ -66,7 +67,6 @@ export function CredentialsPage({
   const [context, setContext] = useState<PackageAdminContext>()
   const [error, setError] = useState<CredentialFailure>()
   const [busy, setBusy] = useState(false)
-  const [notice, setNotice] = useState('')
   const [revision, setRevision] = useState(0)
   const [editor, setEditor] = useState<{
     mode: 'create' | 'rename' | 'replace'
@@ -121,7 +121,7 @@ export function CredentialsPage({
       if (!lifetime.current) return
       setItems((current) => current?.filter((item) => item.id !== removing.id))
       setRemoving(undefined)
-      setNotice(t('deleted'))
+      reportSuccess('credentials', t('deleted'))
       window.dispatchEvent(new Event(CREDENTIALS_CHANGED))
     } catch (cause) {
       if (!lifetime.current) return
@@ -163,7 +163,11 @@ export function CredentialsPage({
     pageBody.current?.dispatchEvent(new CustomEvent(SUBPAGE_CLOSE_EVENT, { bubbles: true }))
   const saved = (mode: NonNullable<typeof editor>['mode'], item: AdminCredentialMetadata) => {
     setItems((current) => [item, ...(current ?? []).filter((old) => old.id !== item.id)])
-    setNotice(t(mode === 'create' ? 'saved' : mode === 'rename' ? 'renamed' : 'replaced'))
+    reportSuccess(
+      'credentials',
+      t(mode === 'create' ? 'saved' : mode === 'rename' ? 'renamed' : 'replaced'),
+      mode === 'replace' ? { kind: 'reconnect-required', message: t('reconnect') } : undefined,
+    )
     setEditor(undefined)
   }
   const open = (mode: 'rename' | 'replace', item: AdminCredentialMetadata) => edit({ mode, item })
@@ -197,11 +201,14 @@ export function CredentialsPage({
     >
       {blocked && context && <Banner tone="warning">{t(`error.${blocked}`)}</Banner>}
       {error && !removing && (
-        <Banner tone="error" data-testid="credentials-error">
+        <StatusMessage
+          kind="error"
+          data-testid="credentials-error"
+          action={{ label: t('retry'), onSelect: () => setRevision((value) => value + 1), busy }}
+        >
           {t(`error.${error}`)}
-        </Banner>
+        </StatusMessage>
       )}
-      {notice && <SettingsState tone="success">{notice}</SettingsState>}
       {busy && !items && <Loadable loading hasData={false} shape="rows" />}
       {items?.length === 0 && (
         <EmptyState icon={<Icon name="key-round" />} title={t('empty')} description={t('emptyHelp')} />

@@ -113,14 +113,14 @@ it('picks the default permission from three cards, confirms full access, and off
       fetcher: fetcher as unknown as typeof fetch,
     }),
   )
-  expect(host.querySelectorAll('.agnes-settings-modes input[type="radio"]')).toHaveLength(3)
-  expect(
-    host.querySelector<HTMLInputElement>('[data-testid="security-workspace-write"] input')?.checked,
-  ).toBe(true)
-  await click(host, '[data-testid="security-read-only"] input')
+  expect(host.querySelectorAll('.agh-segmented input[type="radio"]')).toHaveLength(3)
+  expect(host.querySelector<HTMLInputElement>('input[data-testid="security-workspace-write"]')?.checked).toBe(
+    true,
+  )
+  await click(host, 'input[data-testid="security-read-only"]')
   expect(saves.at(-1)).toEqual({ revision: 3, defaults: { preset: 'read-only' } })
   // Full access asks first.
-  await click(host, '[data-testid="security-full-access"] input')
+  await click(host, 'input[data-testid="security-full-access"]')
   expect(saves).toHaveLength(1)
   await click(document, '[data-testid="security-full-confirm"]')
   expect(saves.at(-1)).toEqual({ revision: 4, defaults: { preset: 'full-access' } })
@@ -203,12 +203,12 @@ it('rereads the defaults on a revision conflict, keeps the chosen preset, and re
       fetcher: fetcher as unknown as typeof fetch,
     }),
   )
-  await click(host, '[data-testid="security-read-only"] input')
+  await click(host, 'input[data-testid="security-read-only"]')
   await act(async () => {})
   expect(saves.at(-1)?.revision).toBe(3)
   expect(host.querySelector('[data-testid="security-default-conflict"]')).not.toBeNull()
   // The choice is kept on screen while it waits.
-  expect(host.querySelector<HTMLInputElement>('[data-testid="security-read-only"] input')?.checked).toBe(true)
+  expect(host.querySelector<HTMLInputElement>('input[data-testid="security-read-only"]')?.checked).toBe(true)
   await click(host, '[data-testid="settings-save-retry"]')
   expect(saves.at(-1)).toEqual({ revision: 7, defaults: { preset: 'read-only' } })
   expect(host.querySelector('[data-testid="settings-save-failed"]')).toBeNull()

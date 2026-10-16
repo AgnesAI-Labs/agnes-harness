@@ -22,6 +22,11 @@ import { modelSettingsLocaleCatalog } from './model-settings.js'
 
 const primitiveCatalog: LocaleCatalog = {
   en: {
+    'ui.valueUnavailable': 'Saved value unavailable. Choose another value.',
+    'ui.settingsSaved': 'Settings saved.',
+    'ui.defaultsSaved': 'Defaults saved. New sessions use these settings.',
+    'ui.restartRequired':
+      'Restart the backend to apply these settings. Finish tasks, run daemon stop with the same home/profile, then run serve again.',
     'ui.regionError': 'This region failed',
     'ui.retry': 'Retry',
     'ui.close': 'Close',
@@ -33,6 +38,8 @@ const primitiveCatalog: LocaleCatalog = {
     'ui.optional': '(optional)',
     'ui.unsaved': 'You have unsaved changes',
     'ui.discard': 'Discard',
+    'ui.copyFailed': 'Could not copy. Try again.',
+    'ui.copiedNotice': 'Content copied.',
     'ui.copy': 'Copy',
     'ui.copied': 'Copied',
     'ui.save': 'Save',
@@ -66,6 +73,11 @@ const primitiveCatalog: LocaleCatalog = {
     'settings.selectPicker.ariaJoin': '{label}: {value}',
   },
   'zh-CN': {
+    'ui.valueUnavailable': '已保存的值不可用，请重新选择。',
+    'ui.settingsSaved': '设置已保存。',
+    'ui.defaultsSaved': '默认设置已保存。新会话会使用这些设置。',
+    'ui.restartRequired':
+      '重启后台后生效。请先结束任务，在同一 home/profile 运行 daemon stop，再重新运行 serve。',
     'ui.regionError': '该区域出错',
     'ui.retry': '重试',
     'ui.close': '关闭',
@@ -77,6 +89,8 @@ const primitiveCatalog: LocaleCatalog = {
     'ui.optional': '（可选）',
     'ui.unsaved': '有未保存的更改',
     'ui.discard': '放弃',
+    'ui.copyFailed': '未能复制，请重试。',
+    'ui.copiedNotice': '内容已复制。',
     'ui.copy': '复制',
     'ui.copied': '已复制',
     'ui.save': '保存',

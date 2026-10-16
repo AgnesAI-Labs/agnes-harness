@@ -2,7 +2,10 @@ import type { AdminObservabilityResult, ObservabilitySettings } from '@agnes/pro
 import {
   Banner,
   Button,
+  Field,
+  fallbackT,
   IconButton,
+  reportSuccess,
   Segmented,
   SettingsBlock,
   SettingsDrill,
@@ -40,6 +43,7 @@ export function ObservabilityPanel({ canSave = true }: { canSave?: boolean }) {
   const [readFailed, setReadFailed] = useState(false)
   const [notice, setNotice] = useState<'' | 'ok' | 'failed'>('')
   const [header, setHeader] = useState({ name: '', env: '' })
+  const [headerErrors, setHeaderErrors] = useState(false)
   useEffect(() => {
     const abort = new AbortController()
     lifetime.current = abort
@@ -57,6 +61,7 @@ export function ObservabilityPanel({ canSave = true }: { canSave?: boolean }) {
   }, [])
   const settings = useAutosave<ObservabilitySettings>({
     resourceKey: 'settings:observability',
+    onSaved: () => reportSuccess('settings:observability', fallbackT('ui.settingsSaved')),
     stored: snapshot?.settings,
     equal: sameSettings,
     save: async (next) => {
@@ -99,7 +104,18 @@ export function ObservabilityPanel({ canSave = true }: { canSave?: boolean }) {
   const addHeader = () => {
     const name = header.name.trim().toLowerCase()
     const env = header.env.trim().replace(/^env:/, '')
-    if (!name || !/^[A-Z_][A-Z0-9_]*$/.test(env)) return
+    if (!/^[a-z0-9!#$%&'*+.^_`|~-]+$/.test(name) || !/^[A-Z_][A-Z0-9_]*$/.test(env)) {
+      setHeaderErrors(true)
+      document
+        .querySelector<HTMLElement>(
+          !/^[a-z0-9!#$%&'*+.^_`|~-]+$/.test(name)
+            ? '[data-testid="otlp-header-name"]'
+            : '[data-testid="otlp-header-env"]',
+        )
+        ?.focus()
+      return
+    }
+    setHeaderErrors(false)
     edit({ headers: { ...(value.headers ?? {}), [name]: { secretRef: `env:${env}` } } })
     setHeader({ name: '', env: '' })
   }
@@ -154,22 +170,40 @@ export function ObservabilityPanel({ canSave = true }: { canSave?: boolean }) {
           data-testid="otlp-headers"
         >
           <span className="agnes-settings-toolbar-row">
-            <SettingsInput
-              aria-label={t('headerName')}
-              placeholder={t('headerName')}
-              data-testid="otlp-header-name"
-              disabled={locked}
-              value={header.name}
-              onChange={(event) => setHeader({ ...header, name: event.target.value })}
-            />
-            <SettingsInput
-              aria-label={t('headerEnv')}
-              placeholder={t('headerEnvExample')}
-              data-testid="otlp-header-env"
-              disabled={locked}
-              value={header.env}
-              onChange={(event) => setHeader({ ...header, env: event.target.value })}
-            />
+            <Field
+              label={t('headerName')}
+              error={
+                headerErrors && !/^[a-z0-9!#$%&'*+.^_`|~-]+$/.test(header.name.trim().toLowerCase())
+                  ? t('headerNameError')
+                  : undefined
+              }
+            >
+              <SettingsInput
+                aria-label={t('headerName')}
+                placeholder={t('headerName')}
+                data-testid="otlp-header-name"
+                disabled={locked}
+                value={header.name}
+                onChange={(event) => setHeader({ ...header, name: event.target.value })}
+              />
+            </Field>
+            <Field
+              label={t('headerEnv')}
+              error={
+                headerErrors && !/^[A-Z_][A-Z0-9_]*$/.test(header.env.trim().replace(/^env:/, ''))
+                  ? t('headerEnvError')
+                  : undefined
+              }
+            >
+              <SettingsInput
+                aria-label={t('headerEnv')}
+                placeholder={t('headerEnvExample')}
+                data-testid="otlp-header-env"
+                disabled={locked}
+                value={header.env}
+                onChange={(event) => setHeader({ ...header, env: event.target.value })}
+              />
+            </Field>
             <Button size="small" data-testid="otlp-header-add" disabled={locked} onClick={addHeader}>
               {t('add')}
             </Button>

@@ -1,3 +1,5 @@
+import { installFeedbackSink, type OperationFeedback } from '../src/feedback.js'
+
 /** @vitest-environment happy-dom */
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true })
 
@@ -34,6 +36,11 @@ const schema: ConfigSchema = {
       'x-ui': { labelKey: 'names', id: 'names' },
     },
   },
+}
+function valueSetter(prototype: object) {
+  const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
+  if (!setter) throw new Error('Native value setter missing')
+  return setter
 }
 const valid = { name: 'demo', credential: 'secret://demo/api-key', count: 2, names: ['one'] }
 
@@ -146,6 +153,7 @@ describe('schema form actions and control semantics', () => {
           ] ?? key,
       })
     }
+
     await act(async () =>
       root.render(createElement(UiLocaleProvider, { source: locale.source }, createElement(Harness))),
     )
@@ -158,13 +166,13 @@ describe('schema form actions and control semantics', () => {
     expect(credential.getAttribute('aria-invalid')).toBe('true')
     expect(credential.getAttribute('aria-describedby')).toBe('credential-error')
     expect(host.querySelector('#credential-error')).not.toBeNull()
-    const setInput = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+    const setInput = valueSetter(HTMLInputElement.prototype)
     await act(async () => {
       setInput.call(credential, valid.credential)
       credential.dispatchEvent(new Event('input', { bubbles: true }))
     })
     const names = host.querySelector<HTMLTextAreaElement>('#names')!
-    const setText = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!
+    const setText = valueSetter(HTMLTextAreaElement.prototype)
     await act(async () => {
       setText.call(names, 'one\n')
       names.dispatchEvent(new Event('input', { bubbles: true }))
@@ -253,7 +261,7 @@ it('loads a declared settings component, preserves revisions and drafts across l
     ({ name: '名称', credential: '凭据引用', count: '数量', names: '名称列表' })[key as 'name'] ?? key
   await act(async () => root.render(createElement(Component, { context: { data: 'one', t: english } })))
   const name = host.querySelector<HTMLInputElement>('#name')!
-  const setInput = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+  const setInput = valueSetter(HTMLInputElement.prototype)
   await act(async () => {
     setInput.call(name, 'draft')
     name.dispatchEvent(new Event('input', { bubbles: true }))
@@ -392,6 +400,8 @@ it('shows provider saving only for changed values and keeps the draft when savin
   const host = document.createElement('div')
   document.body.append(host)
   const root = createRoot(host)
+  const outcomes: OperationFeedback[] = []
+  const releaseFeedback = installFeedbackSink({ publish: (result) => outcomes.push(result), resolve() {} })
   const save = vi.fn().mockRejectedValueOnce(new Error('private failure')).mockResolvedValue(undefined)
   function Harness() {
     const [value, onChange] = useState<Record<string, unknown>>({ provider: 'disk' })
@@ -400,7 +410,7 @@ it('shows provider saving only for changed values and keeps the draft when savin
   await act(async () => root.render(createElement(Harness)))
   expect(host.querySelector('.agh-settings-save-bar')).toBeNull()
   const input = host.querySelector<HTMLInputElement>('input')!
-  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+  const setter = valueSetter(HTMLInputElement.prototype)
   await act(async () => {
     setter.call(input, 'memory')
     input.dispatchEvent(new Event('input', { bubbles: true }))
@@ -409,12 +419,18 @@ it('shows provider saving only for changed values and keeps the draft when savin
   await act(async () => host.querySelector<HTMLButtonElement>('.agh-btn--primary')?.click())
   expect(input.value).toBe('memory')
   expect(host.textContent).not.toContain('private failure')
+  expect(outcomes).toHaveLength(0)
   await act(async () => host.querySelector<HTMLButtonElement>('.agh-btn--primary')?.click())
   expect(save).toHaveBeenCalledWith(
     { provider: 'memory' },
     expect.objectContaining({ signal: expect.any(AbortSignal) }),
   )
   expect(host.querySelector('.agh-settings-save-bar')).toBeNull()
+  expect(host.querySelector('.agh-settings-saved')).toBeNull()
+  expect(host.querySelector('[data-tone="success"]')).toBeNull()
+  expect(outcomes).toHaveLength(1)
+  expect(outcomes[0]).toMatchObject({ outcome: 'success', message: 'Configuration saved.' })
+  releaseFeedback()
   await act(async () => {
     setter.call(input, 'disk')
     input.dispatchEvent(new Event('input', { bubbles: true }))

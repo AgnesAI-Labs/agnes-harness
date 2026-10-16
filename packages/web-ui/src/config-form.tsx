@@ -7,6 +7,7 @@ import {
   configIssues,
   configSchemaSupported,
 } from './config-schema.js'
+import { reportSuccess, StatusMessage } from './feedback.js'
 import { CONFIG_FORM_NAMESPACE, configFormCatalog } from './locales/config-form.js'
 import type { Translate } from './locales/index.js'
 import {
@@ -289,6 +290,7 @@ export function SchemaConfigForm({
   const [failure, setFailure] = useState<unknown>()
   const [busy, setBusy] = useState(false)
   const pending = useRef<AbortController>()
+  const retry = useRef<{ action: ConfigAction; success: 'saved' | 'tested' }>()
   useEffect(
     () => () => {
       pending.current?.abort()
@@ -303,6 +305,10 @@ export function SchemaConfigForm({
     }
   }, [readOnly])
   const supported = configSchemaSupported(schema) && schema.type === 'object' && translatedFields(schema, t)
+  const form = useRef<HTMLFormElement>(null)
+  useEffect(() => {
+    if (issues.length) form.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()
+  }, [issues])
   const formIssue = issues.find(
     (issue) => issue.path === '' || issue.code === 'unknown' || issue.code === 'schema',
   )
@@ -314,13 +320,15 @@ export function SchemaConfigForm({
     setFailure(undefined)
     if (errors.length) return
     const abort = new AbortController()
+    retry.current = { action, success }
     pending.current = abort
     setBusy(true)
     try {
       await action(structuredClone(value), { signal: abort.signal })
       if (!abort.signal.aborted) {
         if (success === 'saved') baseline.current = structuredClone(value)
-        setStatus(success)
+        reportSuccess(testId, text(success))
+        setStatus(undefined)
       }
     } catch (error) {
       if (!abort.signal.aborted) {
@@ -334,6 +342,7 @@ export function SchemaConfigForm({
   }
   return (
     <form
+      ref={form}
       data-testid={testId}
       aria-busy={busy}
       noValidate
@@ -366,6 +375,7 @@ export function SchemaConfigForm({
           {onTest && (
             <Button
               htmlType="button"
+              loading={busy}
               disabled={readOnly || busy || !supported}
               onClick={() => void run(onTest, 'tested')}
             >
@@ -378,7 +388,6 @@ export function SchemaConfigForm({
         <SettingsSaveBar
           dirty={JSON.stringify(value) !== JSON.stringify(baseline.current)}
           busy={busy}
-          saved={status === 'saved'}
           onSave={() => void run(onSave, 'saved')}
           onDiscard={() => {
             onChange(structuredClone(baseline.current))
@@ -387,12 +396,22 @@ export function SchemaConfigForm({
           }}
         />
       )}
-      {status && (
-        <SettingsState tone={status === 'error.action' ? 'error' : 'success'}>
+      {status === 'error.action' && (
+        <StatusMessage
+          kind="error"
+          action={{
+            label: text('retry'),
+            onSelect: () => {
+              const failed = retry.current
+              if (failed) void run(failed.action, failed.success)
+            },
+            busy,
+          }}
+        >
           {status === 'error.action'
             ? (appServerErrorMessage(failure, locale) ?? text(status))
             : text(status)}
-        </SettingsState>
+        </StatusMessage>
       )}
     </form>
   )

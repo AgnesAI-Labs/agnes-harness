@@ -14,6 +14,8 @@ export function useFeedbackText() {
 }
 export const feedbackCatalog: LocaleCatalog = {
   en: {
+    saved: 'Feedback saved. Stored on this device only.',
+    withdrawnNotice: 'Feedback withdrawn.',
     title: 'Feedback',
     session: 'Session feedback',
     up: 'Thumbs up',
@@ -89,6 +91,8 @@ export const feedbackCatalog: LocaleCatalog = {
     'category.other': 'Other',
   },
   'zh-CN': {
+    saved: '反馈已保存。仅保存在此设备。',
+    withdrawnNotice: '反馈已撤回。',
     title: '反馈',
     session: '会话反馈',
     up: '赞',

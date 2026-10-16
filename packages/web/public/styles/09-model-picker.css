@@ -179,32 +179,6 @@
     font-weight: 500;
     line-height: 1.6;
   }
-  .model-picker-choices {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--s4);
-  }
-  .model-picker-choices [role="radio"] {
-    min-height: 1.75rem;
-    padding: 0 var(--s8);
-    border: 1px solid var(--agnes-line-primary);
-    border-radius: var(--radius-control);
-    color: var(--agnes-text-secondary);
-    background: transparent;
-    font-size: var(--font-size-xs);
-    font-variant-numeric: tabular-nums;
-    font-weight: var(--font-weight-regular);
-  }
-  .model-picker-choices [role="radio"]:hover:not(:disabled) {
-    border-color: var(--agnes-line-emphasis);
-    color: var(--agnes-text-primary);
-    background: var(--agnes-bg-hover);
-  }
-  .model-picker-choices [role="radio"][aria-checked="true"] {
-    border-color: var(--agnes-text-emphasis);
-    color: var(--agnes-text-emphasis);
-    background: var(--agnes-brand-emphasis-soft);
-  }
   .model-picker-budget {
     width: 100%;
     min-height: 1.875rem;

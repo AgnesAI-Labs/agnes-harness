@@ -44,6 +44,8 @@ export const runtimeCatalog: LocaleCatalog = {
     'bundles.saved':
       'Applied. The page cannot restart the background service: restart agh, then new sessions use this order.',
     'bundles.failed': 'Bundles were not saved. Reload and check your selection.',
+    'bundles.refreshFailed':
+      'Bundles saved. The latest view could not be loaded. Reload to check the selection.',
     'bundles.unavailable': 'Bundle composition is unavailable.',
     'bundles.explain': 'View the composed configuration',
     'bundles.missing': 'Unavailable',
@@ -111,6 +113,7 @@ export const runtimeCatalog: LocaleCatalog = {
     'bundles.explain-action': '查看',
     'bundles.saved': '已应用。网页还不能重启后台：请重启 agh，之后新会话按此顺序生效。',
     'bundles.failed': '未保存组合包。请重新加载并检查选择。',
+    'bundles.refreshFailed': '组合包已保存。最新视图读取失败，请重新加载并检查选择。',
     'bundles.unavailable': '组合包配置不可用。',
     'bundles.explain': '查看叠加后的生效配置',
     'bundles.missing': '不可用',

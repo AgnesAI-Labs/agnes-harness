@@ -1,6 +1,14 @@
 import type { Client } from '@agnes/sdk/browser'
 import type { Translate } from '@agnes/web-conversation/presentation'
-import { Button, createRegionHost, Dialog, renderRegion, SettingsInput, unmountRegion } from '@agnes/web-ui'
+import {
+  Button,
+  createRegionHost,
+  Dialog,
+  renderRegion,
+  reportSuccess,
+  SettingsInput,
+  unmountRegion,
+} from '@agnes/web-ui'
 
 import { createRuntimeDialog } from './session-runtime-dialog.js'
 
@@ -82,6 +90,7 @@ export function createSessionActions(options: {
       try {
         if (!saved) {
           await writeTitle(id, title)
+          reportSuccess('session-title', t('session.rename.saved'))
           saved = true
         }
         await options.changed()
@@ -160,6 +169,7 @@ export function createSessionActions(options: {
                 }}
                 appearance="primary"
                 htmlType="submit"
+                loading={pending}
                 disabled={pending}
               >
                 {t(saved ? 'session.rename.retryRefresh' : 'session.rename.submit')}
@@ -190,6 +200,7 @@ export function createSessionActions(options: {
         if (!validRenameTitle(title)) throw new Error(t('session.rename.invalidName'))
         if (title !== persisted) {
           await writeTitle(id, title)
+          reportSuccess('session-title', t('session.rename.saved'))
           persisted = title
         }
         try {
@@ -236,6 +247,7 @@ export function createSessionActions(options: {
         else {
           await options.client.session.archive(id, true)
           archivedSuccessfully = true
+          reportSuccess('session-archive', t('session.archivedNotice'))
           await options.changed()
           options.archived?.(id)
           document.querySelector<HTMLElement>('#sessions button')?.focus()

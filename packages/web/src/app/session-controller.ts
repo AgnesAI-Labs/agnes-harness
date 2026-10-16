@@ -2,7 +2,7 @@ import { type PageSessionMeta, readSessionTitle, type UITurn, type WorkspaceEntr
 import type { LedgerEvent, PermissionOutcome, Session } from '@agnes/sdk/browser'
 import { createLiveProjection } from '@agnes/web-conversation/live-projection'
 import type { KnownSessionModel } from '@agnes/web-conversation/presentation'
-import { preserveRouteParams } from '@agnes/web-ui'
+import { preserveRouteParams, reportSuccess } from '@agnes/web-ui'
 import type { AppSessionContext } from '../app.js'
 import { forkTitle } from '../session-actions.js'
 import { bindWebSession, loadWebSession } from '../session-binding.js'
@@ -411,7 +411,7 @@ export function createSessionController(
     if (context.selection !== epoch || context.current !== parent) return
     await open(forked.id, { created: forked })
     if (context.selection !== epoch + 1 || context.current?.id !== forked.id) return
-    context.notice.setText(context.t('app.fork.created'))
+    reportSuccess('session-fork', context.t('app.fork.created'))
     context.notice.setKind('')
     context.composerRuntime.focus()
   }

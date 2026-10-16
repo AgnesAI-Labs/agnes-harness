@@ -11,6 +11,7 @@ import {
   ListRow,
   MetaText,
   PushCrumbs,
+  reportSuccess,
   SettingsDetails,
   SettingsState,
   SettingsToolbar,
@@ -266,6 +267,7 @@ export function CandidateInbox({
       if (value.state === 'published') {
         setSelected(undefined)
         setPublished(value)
+        reportSuccess('candidate-publish', t('candidates.publishSuccess'))
         await onPublished().catch(() => setError(t('candidates.unavailable')))
         await refresh().catch(() => setError(t('candidates.unavailable')))
       } else {
@@ -438,7 +440,7 @@ export function CandidateInbox({
         </Button>
       </SettingsToolbar>
       {published && (
-        <SettingsState tone="success" role="status" data-testid="candidate-published">
+        <SettingsState role="status" data-testid="candidate-published">
           <p>{t('candidates.publishSuccess')}</p>
           <a
             data-testid="candidate-published-link"

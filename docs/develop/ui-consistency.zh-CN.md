@@ -133,3 +133,7 @@ Web 主题桥已包含规则，静态按钮可使用相同契约类。
 完成带路由的页面时，始终将当前 URL 替换为父级栈；直接深链进入、没有框架历史状态时也一样。刷新和历史恢复不得重新打开已完成的页面。
 
 更新会话、账户等 URL 元数据时保留 `view` 和 `settings` 路由原有编码，避免把页级分隔符与标识符中的斜杠混为一谈。
+
+已完成的操作通过 shell 持有的反馈出口发布本地化结果。每个操作标识只显示一条持续 3 秒、不改变焦点的 polite `Toast`。字段校验使用 `Field.error`；操作失败在所属区域用 `StatusMessage` 并提供真实恢复动作；重启、扫描、重连、启用等尚未解除的后果，每个资源保留一条 notice。pending、unknown、partial 不得显示为成功。仅作用范围不同的效果放在 toast 第二句和稳定帮助中。`SettingsSaveBar` 只处理未保存编辑。
+
+字段使用 `SettingsInput`、`SettingsTextArea`、`SettingsSelect`、`Select` 和 `SearchBar`，共用 `--agnes-input-surface` 与状态 token，保留已保存但不可用的值。短选项单选组统一使用 `Segmented`，其轨道、测量定位的滑块、动画与“对话/轨迹”开关相同，保留单选组方向键和可见焦点。主题预览块和多选标签维持各自语义。显式旧调用清单之外，guard 拒绝 web-ui 外新增裸输入框、下拉框和颜色字面量。

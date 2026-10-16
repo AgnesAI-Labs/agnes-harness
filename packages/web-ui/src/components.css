@@ -1843,7 +1843,7 @@
     border: 1px solid var(--agnes-input-border);
     border-radius: var(--radius-control);
     color: var(--agnes-input-content-strong);
-    background: var(--agnes-bg-fill);
+    background: var(--agnes-input-surface);
     font: inherit;
     font-size: var(--agnes-ui-input-font-size);
   }
@@ -1852,7 +1852,7 @@
   }
   .agh-search-bar-field > input:hover {
     border-color: var(--agnes-input-border-emphasis);
-    background: var(--agnes-bg-fill-hover);
+    background: var(--agnes-input-surface);
   }
   .agh-search-bar-field > input:focus-visible {
     border-color: var(--agnes-input-border-focus);
@@ -2818,5 +2818,30 @@
   }
   .agnes-settings-drill[hidden] {
     display: none;
+  }
+}
+
+@layer base {
+  #settings-operation-notices:empty {
+    display: none;
+  }
+  #settings-operation-notices:not(:empty) {
+    padding: var(--s12) var(--s32);
+  }
+  #settings-operation-notices > * + * {
+    margin-top: var(--s8);
+  }
+}
+
+@layer base {
+  .agh-feedback-notices {
+    width: min(50rem, calc(100% - var(--s32)));
+    margin-inline: auto;
+  }
+  .agh-feedback-notices > * + * {
+    margin-top: var(--s8);
+  }
+  #settings-operation-notices .agh-feedback-notices {
+    width: 100%;
   }
 }

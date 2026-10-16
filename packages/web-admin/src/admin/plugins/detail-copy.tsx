@@ -1,10 +1,9 @@
-import { Button, SettingsState, Toast, useUiText } from '@agnes/web-ui'
+import { Button, reportSuccess, SettingsState, useUiText } from '@agnes/web-ui'
 import { useState } from 'react'
 import { PLUGIN_ADMIN_LOCALE_NAMESPACE, pluginAdminLocaleCatalog } from './locales/admin.js'
 
 export function PluginDetailCopy({ value }: { value: string }) {
   const { t } = useUiText(PLUGIN_ADMIN_LOCALE_NAMESPACE, pluginAdminLocaleCatalog)
-  const [copied, setCopied] = useState(false)
   const [failed, setFailed] = useState(false)
   return (
     <>
@@ -14,7 +13,7 @@ export function PluginDetailCopy({ value }: { value: string }) {
           setFailed(false)
           void navigator.clipboard
             ?.writeText(value)
-            .then(() => setCopied(true))
+            .then(() => reportSuccess('plugin-copy', t('ux.copied')))
             .catch(() => setFailed(true))
           if (!navigator.clipboard) setFailed(true)
         }}
@@ -22,9 +21,6 @@ export function PluginDetailCopy({ value }: { value: string }) {
         {t('ux.copy')}
       </Button>
       {failed && <SettingsState tone="error">{t('ux.copyFailed')}</SettingsState>}
-      <Toast open={copied} onDismiss={() => setCopied(false)}>
-        {t('ux.copied')}
-      </Toast>
     </>
   )
 }

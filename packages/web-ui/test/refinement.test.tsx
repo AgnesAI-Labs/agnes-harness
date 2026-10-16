@@ -88,7 +88,7 @@ describe('refinement stylesheet', () => {
   it('keeps translucency to menus and option lists', () => {
     const rules = [
       ...refinement.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{[^{}]*backdrop-filter:[^{}]*\}/g),
-    ].map((match) => match[1]!.replace(/\s+/g, ' ').trim())
+    ].map((match) => match[1]?.replace(/\s+/g, ' ').trim())
     expect(rules).toEqual(['.agh-menu-popup .agh-menu, .ant-select-dropdown'])
   })
 
@@ -133,11 +133,16 @@ describe('refined primitives', () => {
     const radios = [...group.querySelectorAll<HTMLInputElement>('input[type="radio"]')]
     expect(radios.map((radio) => radio.checked)).toEqual([false, true, false])
     expect(new Set(radios.map((radio) => radio.name)).size).toBe(1)
-    expect(radios[2]!.disabled).toBe(true)
-    radios[0]!.click()
+    expect(radios[2]?.disabled).toBe(true)
+    expect(group.querySelectorAll('.agh-segmented-thumb')).toHaveLength(1)
+    radios[1]?.focus()
+    radios[1]?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    expect(document.activeElement).toBe(radios[0])
+    expect(onChange).toHaveBeenLastCalledWith('small')
+    radios[0]?.click()
     expect(onChange).toHaveBeenCalledWith('small')
     // Controlled: the picked segment moves only when the caller passes the new value.
-    expect(radios[1]!.checked).toBe(true)
+    expect(radios[1]?.checked).toBe(true)
   })
 
   it('renders a page header as a title, one description and its actions', () => {
@@ -157,11 +162,11 @@ describe('refined primitives', () => {
     expect(render(createElement(PageHeader, { title: 'Automation' })).querySelector('p')).toBeNull()
   })
 
-  it('ends a plain select in the up/down block and leaves a searchable one as a field', () => {
+  it('ends plain and searchable selects in the same neutral down-chevron', () => {
     const options = [{ value: 'a', label: 'A' }]
     const plain = render(createElement(Select, { options, value: 'a', 'aria-label': 'Language' }))
     expect(plain.querySelector('.agh-popup-chevrons')?.getAttribute('aria-hidden')).toBe('true')
     const searchable = render(createElement(Select, { options, value: 'a', showSearch: true }))
-    expect(searchable.querySelector('.agh-popup-chevrons')).toBeNull()
+    expect(searchable.querySelector('.agh-popup-chevrons')?.getAttribute('aria-hidden')).toBe('true')
   })
 })

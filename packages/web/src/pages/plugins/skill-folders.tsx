@@ -2,12 +2,13 @@ import { contextRequest } from '@agnes/web-admin/settings/context'
 import {
   Button,
   Field,
+  reportSuccess,
   SettingsDetails,
-  SettingsState,
   SettingsTextArea,
   SettingsToolbar,
+  StatusMessage,
 } from '@agnes/web-ui'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 type Text = (key: string, vars?: Readonly<Record<string, string | number>>) => string
 type Config = NonNullable<Parameters<typeof contextRequest>[0]['config']>
@@ -27,20 +28,22 @@ export function SkillFolders({ t, canSave, onSaved }: { t: Text; canSave: boolea
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
-  const [saved, setSaved] = useState(false)
+  const read = useCallback(async (signal?: AbortSignal) => {
+    setFailed(false)
+    try {
+      const value = await contextRequest({}, fetch, signal)
+      if (signal?.aborted) return
+      setConfig(value.config)
+      setDraft(value.config.customSkillRoots.join('\n'))
+    } catch {
+      if (!signal?.aborted) setFailed(true)
+    }
+  }, [])
   useEffect(() => {
     const pending = new AbortController()
-    void contextRequest({}, fetch, pending.signal)
-      .then((value) => {
-        if (pending.signal.aborted) return
-        setConfig(value.config)
-        setDraft(value.config.customSkillRoots.join('\n'))
-      })
-      .catch(() => {
-        if (!pending.signal.aborted) setFailed(true)
-      })
+    void read(pending.signal)
     return () => pending.abort()
-  }, [])
+  }, [read])
   const current = config?.customSkillRoots ?? []
   const next = lines(draft)
   const changed = next.join('\n') !== current.join('\n')
@@ -49,13 +52,15 @@ export function SkillFolders({ t, canSave, onSaved }: { t: Text; canSave: boolea
     if (!canSave || !config || busy || relative) return
     setBusy(true)
     setFailed(false)
-    setSaved(false)
     try {
       const value = await contextRequest({ config: { ...config, customSkillRoots: next } })
       setConfig(value.config)
       setDraft(value.config.customSkillRoots.join('\n'))
-      setSaved(true)
-      onSaved()
+      reportSuccess('skill-folders', t('folders.saved'), {
+        kind: 'rescan-required',
+        message: t('folders.rescan'),
+        action: { label: t('folders.scan'), onSelect: onSaved },
+      })
     } catch {
       setFailed(true)
     } finally {
@@ -85,13 +90,13 @@ export function SkillFolders({ t, canSave, onSaved }: { t: Text; canSave: boolea
           placeholder={t('folders.placeholder')}
           onChange={(event) => {
             setDraft(event.currentTarget.value)
-            setSaved(false)
           }}
         />
       </Field>
       <SettingsToolbar>
         <Button
           appearance="primary"
+          loading={busy}
           data-testid="skill-folders-save"
           disabled={!canSave || !config || busy || !changed || relative}
           onClick={() => void save()}
@@ -100,11 +105,19 @@ export function SkillFolders({ t, canSave, onSaved }: { t: Text; canSave: boolea
         </Button>
       </SettingsToolbar>
       {failed && (
-        <SettingsState tone="error" role="alert">
+        <StatusMessage
+          kind="error"
+          action={{
+            label: t('folders.retry'),
+            onSelect: () => {
+              void (config ? save() : read())
+            },
+            busy,
+          }}
+        >
           {t('folders.failed')}
-        </SettingsState>
+        </StatusMessage>
       )}
-      {saved && <SettingsState tone="success">{t('folders.saved')}</SettingsState>}
     </SettingsDetails>
   )
 }

@@ -91,8 +91,16 @@ it.each([false, true])(
     )
     expect(host.querySelector('[data-testid="diagnostics-error-code"]')?.textContent).toBe('-32602')
     expect(!!host.querySelector('[data-testid="diagnostics-doctor"]')).toBe(doctorAvailable)
-    const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
+    const write = vi
+      .spyOn(navigator.clipboard, 'writeText')
+      .mockResolvedValue()
+      .mockRejectedValueOnce(new Error('Clipboard blocked'))
     await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="diagnostics-copy"]')?.click())
+    expect(host.querySelector('[data-testid="diagnostics-notice"]')?.textContent).toContain('Copy failed')
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="diagnostics-notice"] button')?.click(),
+    )
+    expect(host.querySelector('[data-testid="diagnostics-notice"]')).toBeNull()
     expect(write).toHaveBeenCalledWith(diagnosticId)
     // OTLP is a subpage of 集成.
     expect(host.querySelector('[data-testid="otlp-state"]')).not.toBeNull()
@@ -108,6 +116,13 @@ it.each([false, true])(
       host.querySelector<HTMLButtonElement>('[data-testid="settings-subpage-back"]')?.click(),
     )
     const input = host.querySelector<HTMLInputElement>('#diagnostics-query')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, 'not-an-id')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    expect(input.getAttribute('aria-invalid')).toBe('true')
+    expect(document.activeElement).toBe(input)
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, diagnosticId)
       input.dispatchEvent(new Event('input', { bubbles: true }))

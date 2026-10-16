@@ -22,6 +22,7 @@ import {
   type ResourceProgress,
   ResourceRoots,
   renderRegion,
+  resolveFeedback,
   resourceDesiredEnabled,
   resourceDetailLocaleCatalog,
   resourceFailureKey,
@@ -47,6 +48,7 @@ import {
 import { mountMcpPresets } from './mcp-presets.js'
 import { resourcePollDelay, watchMcpPanel } from './mcp-refresh.js'
 import { mountMcpWizard } from './mcp-wizard.js'
+import { type ResourceCompletion, reportResourceCompleted } from './operation-feedback.js'
 import { SkillsPage } from './skills-page.js'
 
 export { registerSkillPagePanels, type SkillPagePanels } from './skills-page.js'
@@ -389,7 +391,7 @@ class ResourceAdminPage {
     })()
     await this.#loadMorePromise
   }
-  async track(receipt: { operationId: string }): Promise<boolean> {
+  async track(receipt: { operationId: string }, completion?: ResourceCompletion): Promise<boolean> {
     const api = this.api()
     this.#activeOperation = receipt.operationId
     this.setNotice('notice.submitted')
@@ -401,8 +403,11 @@ class ResourceAdminPage {
       this.render()
       if (terminal.has(op.state)) {
         this.#activeOperation = undefined
-        if (op.state === 'succeeded') this.setNotice('notice.succeeded', 'success')
-        else if (op.lastSafeError?.message) this.setNotice(resourceFailureKey(op.lastSafeError.code), 'error')
+        if (op.state === 'succeeded') {
+          reportResourceCompleted(op, activeResourceText, completion)
+          this.setNotice(undefined)
+        } else if (op.lastSafeError?.message)
+          this.setNotice(resourceFailureKey(op.lastSafeError.code), 'error')
         else this.setNotice('notice.failed', 'error')
         await this.reload(true)
         if (this.#loadState === 'error') return false
@@ -455,7 +460,6 @@ class ResourceAdminPage {
             busy={busy || this.#activeOperation !== undefined}
             writable={this.writable()}
             locations={<ResourceRoots roots={this.#skillRoots} />}
-            successMessage={this.#notice.kind === 'success' ? (notice.textContent ?? '') : ''}
           >
             {(onImport) => this.#resourceList(onImport)}
           </SkillsPage>
@@ -649,7 +653,7 @@ class ResourceAdminPage {
       item.kind === 'mcp' && item.definition.transport.kind === 'stdio'
         ? this.#t(`sandbox.${sandboxProfileOf(item.definition)}`)
         : ''
-    if (!(await this.confirm(sandbox ? summary + '\n' + sandbox : summary))) return
+    if (!(await this.confirm(sandbox ? `${summary}\n${sandbox}` : summary))) return
     try {
       await this.#setDesired(item, next)
     } catch (error) {
@@ -988,8 +992,9 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
     'click',
     () =>
       void (async () => {
-        if (await page.confirm(activeResourceText('action.refresh-skills')))
-          await page.track(await page.api().refresh())
+        if (await page.confirm(activeResourceText('action.refresh-skills'))) {
+          if (await page.track(await page.api().refresh())) resolveFeedback('skill-folders')
+        }
       })().catch((error) => page.showError(error)),
     bound,
   )
@@ -1019,7 +1024,7 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
         : activeResourceText('action.create-mcp-summary', { name: definition.displayName })
       const sandboxSummary =
         'sandboxProfile' in definition
-          ? '\n' + activeResourceText('sandbox.' + definition.sandboxProfile)
+          ? `\n${activeResourceText(`sandbox.${definition.sandboxProfile}`)}`
           : ''
       // A modal form closes before its confirmation; the draft remains in the mounted form. A form
       // shown as a page stays where it is, under the confirmation.
@@ -1043,10 +1048,15 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
       if (stop.signal.aborted) return
       editing = undefined
       if (dialog.open) dialog.close()
-      await page.track(receipt)
-      // track() already reported success generically; a new server still needs an explicit enable.
-      if (creating && notice.dataset.kind === 'success')
-        page.setNotice('notice.created', 'success', { name: definition.displayName })
+      await page.track(
+        receipt,
+        creating
+          ? {
+              message: activeResourceText('notice.created', { name: definition.displayName }),
+              effect: { kind: 'enable-required', message: activeResourceText('notice.enableRequired') },
+            }
+          : undefined,
+      )
     })()
       .catch((cause) => {
         if (stop.signal.aborted) return

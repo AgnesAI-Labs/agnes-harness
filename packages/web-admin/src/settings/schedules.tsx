@@ -9,6 +9,7 @@ import {
   Loadable,
   Menu,
   MetaText,
+  reportSuccess,
   Segmented,
   SettingsDetails,
   SettingsList,
@@ -16,9 +17,9 @@ import {
   SettingsPageDescription,
   SettingsSection,
   SettingsState,
-  SettingsToolbar,
   StateSwitch,
   StatusDot,
+  StatusMessage,
   setResource,
   Tag,
   usePushStack,
@@ -185,7 +186,10 @@ export function SchedulesPage({
   // Failures of an action the reader took; a failed read shows where the list is.
   const [error, setError] = useState<unknown>()
   const [formError, setFormError] = useState<string>()
-  const [notice, setNotice] = useState<string>()
+  const setNotice = (message: string | undefined) => {
+    if (message) reportSuccess('schedules', message)
+  }
+  const [runRequested, setRunRequested] = useState(false)
   const [pending, setPending] = useState<string>()
   const [busy, setBusy] = useState(false)
   // New and edit open as pages inside 自动化: the open page is the address (`view=schedule-…`).
@@ -291,8 +295,10 @@ export function SchedulesPage({
         setError({ code: result.code })
         return
       }
-      if (action === 'run') live.expectRun()
-      setNotice(ux(action === 'run' ? 'runStarted' : action === 'pause' ? 'noticePaused' : 'noticeResumed'))
+      if (action === 'run') {
+        live.expectRun()
+        setRunRequested(true)
+      } else setNotice(ux(action === 'pause' ? 'noticePaused' : 'noticeResumed'))
     } catch (reason) {
       if (alive.current) setError(reason)
       return
@@ -397,6 +403,20 @@ export function SchedulesPage({
           {t('schedulesIncludeArchived')}
         </label>
       </div>
+      {runRequested && (
+        <StatusMessage
+          kind="pending"
+          action={{
+            label: t('retry'),
+            onSelect: () => {
+              setRunRequested(false)
+              void refresh()
+            },
+          }}
+        >
+          {ux('runStarted')}
+        </StatusMessage>
+      )}
       <ScheduleEditor
         pageId={formOpen && top ? top : schedulePageId(undefined)}
         editing={!!editing}
@@ -412,15 +432,19 @@ export function SchedulesPage({
         onCancel={nav.back}
         onSubmit={() => void save()}
       />
-      {notice && (
-        <SettingsState tone="success" data-testid="schedules-notice">
-          {notice}
-        </SettingsState>
-      )}
       {error !== undefined && api && !pending && (
-        <SettingsState tone="error" data-testid="schedules-error">
+        <StatusMessage
+          kind="error"
+          data-testid="schedules-error"
+          action={{
+            label: t('retry'),
+            onSelect: () => {
+              void refresh()
+            },
+          }}
+        >
           {failureText(error, ux, t)}
-        </SettingsState>
+        </StatusMessage>
       )}
       {api && (
         <Loadable

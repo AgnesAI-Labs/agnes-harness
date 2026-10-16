@@ -1,6 +1,7 @@
 import type { AuxiliaryModelSlots } from '@agnes/protocol'
 import { useEffect, useRef, useState } from 'react'
 import { AuxiliaryModelFields, type AuxiliaryModelOption } from './auxiliary-model-fields.js'
+import { reportSuccess } from './feedback.js'
 import { fallbackT, type Translate } from './locales/index.js'
 import { SettingsDetails, SettingsState, SettingsToolbar } from './settings-layout.js'
 import { Button } from './ui/button.js'
@@ -44,7 +45,8 @@ export function SessionAuxiliaryModels({
     setBusy(true)
     try {
       const accepted = await save(slot, { route: target.route, id: target.model })
-      if (mounted.current) setMessage(accepted ? 'sessionSaved' : 'sessionFailed')
+      if (accepted) reportSuccess('session-model-slots', t('modelSettings.slots.sessionSaved'))
+      else if (mounted.current) setMessage('sessionFailed')
     } catch {
       if (mounted.current) setMessage('sessionFailed')
     } finally {
@@ -75,6 +77,7 @@ export function SessionAuxiliaryModels({
           <Button
             key={slot}
             data-testid={`session-model-slot-${slot}-save`}
+            loading={busy}
             disabled={disabled || busy || !slots?.[slot]}
             onClick={() => void apply(slot)}
           >
@@ -83,10 +86,7 @@ export function SessionAuxiliaryModels({
         ))}
       </SettingsToolbar>
       {message && (
-        <SettingsState
-          tone={message === 'sessionSaved' ? 'success' : 'error'}
-          data-testid="session-model-slot-status"
-        >
+        <SettingsState tone="error" data-testid="session-model-slot-status">
           {t(`modelSettings.slots.${message}`)}
         </SettingsState>
       )}

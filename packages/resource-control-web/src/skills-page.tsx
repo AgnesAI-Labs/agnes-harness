@@ -12,10 +12,9 @@ import {
   SettingsPageHeader,
   SettingsState,
   Tabs,
-  Toast,
   useUiText,
 } from '@agnes/web-ui'
-import { type ReactNode, useEffect, useState, useSyncExternalStore } from 'react'
+import { type ReactNode, useState, useSyncExternalStore } from 'react'
 
 export type SkillPagePanels = {
   review(onPendingCount: (count: number) => void): ReactNode
@@ -46,7 +45,6 @@ export function SkillsPage({
   busy,
   writable,
   locations,
-  successMessage,
   embedded = false,
 }: {
   /** Inside the plugins page: no heading or inner tabs; drafts and feedback live under "To review". */
@@ -58,17 +56,12 @@ export function SkillsPage({
   busy: boolean
   writable: boolean
   locations: ReactNode
-  successMessage: string
 }) {
   const { t } = useUiText(RESOURCE_LIST_LOCALE_NAMESPACE, resourceListLocaleCatalog)
   const extra = useSyncExternalStore(subscribe, () => panels)
   const [tab, setTab] = useState('mine')
   const [pending, setPending] = useState(0)
   const [importing, setImporting] = useState(false)
-  const [success, setSuccess] = useState('')
-  useEffect(() => {
-    if (successMessage) setSuccess(successMessage)
-  }, [successMessage])
   const createUrl = `/?${new URLSearchParams({ new: '1', prompt: t('skills.creatorPrompt') })}`
   const create = (
     <Menu
@@ -142,9 +135,6 @@ export function SkillsPage({
   if (embedded)
     return (
       <>
-        <Toast open={!!success} onDismiss={() => setSuccess('')}>
-          {success}
-        </Toast>
         <p className="agnes-settings-page-description">{t('skills.description')}</p>
         {mine}
         {importHelp}
@@ -152,9 +142,6 @@ export function SkillsPage({
     )
   return (
     <>
-      <Toast open={!!success} onDismiss={() => setSuccess('')}>
-        {success}
-      </Toast>
       <SettingsPageHeader
         title={t('skills.title')}
         description={t('skills.description')}

@@ -65,7 +65,10 @@ export const triggersCatalog = {
     open: 'Open session',
     empty: 'No deliveries yet.',
     failed: 'The trigger request failed. Check the trigger, secret reference and workspace.',
-    saved: 'Saved',
+    saved: 'Trigger saved.',
+    deleted: 'Trigger deleted.',
+    configured: 'Endpoint settings saved.',
+    jsonError: 'Enter valid JSON.',
     choose: 'Choose a reference',
     active: 'Enable trigger',
     githubTime:
@@ -148,7 +151,10 @@ export const triggersCatalog = {
     open: '打开会话',
     empty: '暂无投递。',
     failed: '触发器请求失败，请检查触发器、密钥引用与工作区。',
-    saved: '已保存',
+    saved: '触发器已保存。',
+    deleted: '触发器已删除。',
+    configured: '端点设置已保存。',
+    jsonError: '请输入有效的 JSON。',
     choose: '选择引用',
     active: '启用触发器',
     githubTime:

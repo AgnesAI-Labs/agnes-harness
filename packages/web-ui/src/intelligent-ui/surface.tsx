@@ -8,6 +8,7 @@ import type {
   UiSurfaceRecord,
 } from '@agnes/protocol/gen/intelligent-ui'
 import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { reportSuccess, StatusMessage } from '../feedback.js'
 import { SettingsState, SettingsToolbar } from '../settings-layout.js'
 import { Badge } from '../ui/badge.js'
 import { Button } from '../ui/button.js'
@@ -17,7 +18,6 @@ import { Icon } from '../ui/icon.js'
 import { IconButton } from '../ui/icon-button.js'
 import { Menu, type MenuItem } from '../ui/menu.js'
 import { MetaText } from '../ui/tag.js'
-import { Toast } from '../ui/toast.js'
 import { useUiText } from '../ui-locale.js'
 import { IntelligentActionButtons, IntelligentCatalog, type IntelligentCatalogProps } from './catalog.js'
 import { IntelligentSurfaceChip } from './chip.js'
@@ -122,7 +122,8 @@ function SurfaceCard(props: IntelligentSurfaceProps) {
       if (!navigator.clipboard) throw new Error('Clipboard unavailable')
       await navigator.clipboard.writeText(summary)
       setCopyFailed(false)
-      setCopyMessage(t('ui.copied'))
+      setCopyMessage('')
+      reportSuccess('clipboard', t('ui.copied'))
     } catch {
       setCopyFailed(true)
       setCopyMessage(t('ui.copyFailed'))
@@ -164,13 +165,11 @@ function SurfaceCard(props: IntelligentSurfaceProps) {
       data-revision={surface.revision}
       aria-labelledby={titleId}
     >
-      <Toast
-        tone={copyFailed ? 'error' : 'success'}
-        open={!!copyMessage}
-        onDismiss={() => setCopyMessage('')}
-      >
-        {copyMessage}
-      </Toast>
+      {copyFailed && (
+        <StatusMessage kind="error" action={{ label: t('ui.copy'), onSelect: () => void copySummary() }}>
+          {copyMessage}
+        </StatusMessage>
+      )}
       <header>
         {!deliverables && (
           <span className="agnes-intelligent-icon" aria-hidden="true">

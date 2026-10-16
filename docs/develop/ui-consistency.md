@@ -136,3 +136,7 @@ A resource write commits a new version. Reads started before that commit cannot 
 Finishing a routed page always replaces its current URL with the parent stack, even when the page came from a deep link with no owned history state. Reload and history restoration must keep that completed page closed.
 
 Incidental URL updates preserve the raw `view` and `settings` route encoding, so page boundaries and identifiers containing slashes survive session and account metadata changes.
+
+Completed operations publish localized results through the shell-owned feedback sink. Use one 3-second, polite `Toast` per operation ID, with no focus change. Keep field validation in `Field.error`, failures next to their operation in `StatusMessage` with an actual recovery action, and unresolved restart/rescan/reconnect/enable consequences in one notice per resource. Pending, unknown and partial outcomes are never success. Scope-only effects belong in a second toast sentence and stable help. `SettingsSaveBar` only handles unsaved edits.
+
+Use `SettingsInput`, `SettingsTextArea`, `SettingsSelect`, `Select` and `SearchBar` for fields. They share `--agnes-input-surface` and state tokens; preserve unavailable saved values. Short single-choice groups use `Segmented`: the same measured sliding thumb and track as the conversation/trace switch, native radio arrow keys and a visible focus state. Theme preview tiles and multi-select chips keep their own semantics. New raw inputs/selects and color literals outside web-ui are rejected by the explicit legacy ratchet.

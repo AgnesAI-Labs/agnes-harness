@@ -256,6 +256,7 @@ export function SettingsShell({
           <SettingsDshHost name="settings.header" />
           <SettingsDshHost name="settings.section" />
         </div>
+        <div id="settings-operation-notices" />
         <div id="settings-pane-slots">
           {(Object.keys(PANE_IDS) as SettingsPane[]).map((pane) => (
             <div key={pane} id={settingsPaneSlotHostId(pane)} data-agnes-settings-pane-slot={pane} />

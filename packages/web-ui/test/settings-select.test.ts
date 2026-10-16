@@ -82,3 +82,59 @@ it('materializes static fields without changing form values, constraints or boun
   expect(endpoint.checkValidity()).toBe(false)
   expect(host.querySelector('template[data-agnes-control]')).toBeNull()
 })
+
+it('preserves an unavailable saved value in native and rich selects and exposes field states', async () => {
+  const { Field, Select, SettingsInput, SettingsSelect, SettingsTextArea } = await import('../src/index.js')
+  const host = document.createElement('div')
+  document.body.append(host)
+  dispose = mountRegion(
+    host,
+    createElement(
+      'div',
+      {},
+      createElement(
+        Field,
+        { label: 'Invalid', error: 'Enter a value.' },
+        createElement(SettingsInput, { id: 'invalid', value: '', onChange() {} }),
+      ),
+      createElement(SettingsInput, { id: 'readonly', readOnly: true, value: 'kept' }),
+      createElement(SettingsTextArea, { id: 'disabled', disabled: true }),
+      createElement(
+        SettingsSelect,
+        { id: 'native', value: 'removed', onChange() {} },
+        createElement('option', { value: 'available' }, 'Available'),
+      ),
+      createElement(Select, { value: 'removed', options: [{ value: 'available', label: 'Available' }] }),
+      createElement(SettingsSelect, { id: 'native-empty', value: 'removed', onChange() {} }),
+      createElement(Select, { id: 'rich-empty', value: 'removed', options: [] }),
+      createElement(
+        SettingsSelect,
+        { id: 'native-readonly', value: 'kept', readOnly: true },
+        createElement('option', { value: 'kept' }, 'Kept'),
+      ),
+      createElement(
+        SettingsSelect,
+        { id: 'disabled-group', value: 'kept', onChange() {} },
+        createElement(
+          'optgroup',
+          { label: 'Unavailable', disabled: true },
+          createElement('option', { value: 'kept' }, 'Kept'),
+        ),
+      ),
+    ),
+  )
+  expect(host.querySelector('#invalid')?.getAttribute('aria-invalid')).toBe('true')
+  expect(host.querySelector<HTMLInputElement>('#readonly')?.readOnly).toBe(true)
+  expect(host.querySelector<HTMLTextAreaElement>('#disabled')?.disabled).toBe(true)
+  const native = host.querySelector<HTMLSelectElement>('#native')!
+  expect(host.querySelector('#native-readonly')?.getAttribute('aria-readonly')).toBe('true')
+  expect(host.querySelector('#disabled-group')?.getAttribute('aria-invalid')).toBe('true')
+  expect(host.querySelector<HTMLSelectElement>('#native-empty')?.value).toBe('removed')
+  expect(host.querySelector('#native-empty')?.getAttribute('aria-invalid')).toBe('true')
+  expect(host.querySelector('#rich-empty')?.getAttribute('aria-invalid')).toBe('true')
+  expect(native.value).toBe('removed')
+  expect(native.getAttribute('aria-invalid')).toBe('true')
+  expect(native.selectedOptions[0]?.disabled).toBe(true)
+  expect(host.querySelector('.agnes-ui-select [aria-invalid]')?.getAttribute('aria-invalid')).toBe('true')
+  expect(host.querySelector('.agnes-ui-select')?.textContent).toContain('removed')
+})

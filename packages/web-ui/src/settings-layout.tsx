@@ -1,10 +1,4 @@
-import type {
-  HTMLAttributes,
-  InputHTMLAttributes,
-  ReactNode,
-  SelectHTMLAttributes,
-  TextareaHTMLAttributes,
-} from 'react'
+import type { HTMLAttributes, InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from 'react'
 import { createContext, forwardRef, useContext, useEffect, useId, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 
@@ -324,19 +318,7 @@ export const SettingsTextArea = forwardRef<
     />
   )
 })
-/** Native select preserves form semantics, following SettingsOptionSelect's account-dialog pattern. */
-export const SettingsSelect = forwardRef<
-  HTMLSelectElement,
-  SelectHTMLAttributes<HTMLSelectElement> & DataAttributes
->(function SettingsSelect(props, ref) {
-  return (
-    <select
-      {...props}
-      ref={ref}
-      className={['agnes-settings-input', props.className].filter(Boolean).join(' ')}
-    />
-  )
-})
+export { SettingsSelect } from './ui/settings-select.js'
 
 /** One grouped card of rows: accounts, plugins, servers, schedules. Rows are divided, never boxed again. */
 export function SettingsList({ children, ...props }: HTMLAttributes<HTMLDivElement> & DataAttributes) {
@@ -669,7 +651,6 @@ const noop = () => {}
 export function SettingsSaveBar({
   dirty,
   busy = false,
-  saved = false,
   onDiscard,
   onSave,
   message,
@@ -685,23 +666,7 @@ export function SettingsSaveBar({
   discardLabel?: string
   saveLabel?: string
 }) {
-  const [showSaved, setShowSaved] = useState(false)
-  useEffect(() => {
-    if (!saved) {
-      setShowSaved(false)
-      return
-    }
-    setShowSaved(true)
-    const timer = setTimeout(() => setShowSaved(false), 2000)
-    return () => clearTimeout(timer)
-  }, [saved])
-  if (!dirty)
-    return showSaved ? (
-      <div className="agh-settings-saved" role="status">
-        <Icon name="check" />
-        {fallbackT('ui.saved')}
-      </div>
-    ) : null
+  if (!dirty) return null
   return (
     <div
       className="agh-settings-save-bar"

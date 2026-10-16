@@ -6,6 +6,7 @@ import {
   bindDialogSheets,
   createCatalogTranslator,
   preserveRouteParams,
+  reportSuccess,
   searchParamRoute,
 } from '@agnes/web-ui'
 import { settingsRoute, sortSessionsByRecency } from '@agnes/web-units'
@@ -1928,7 +1929,8 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
     sessionYoloEnabled = requestedYolo
     permissionMode = mode
     rememberWebComposer({ permission: mode })
-    notice.setText(
+    reportSuccess(
+      'session-permission',
       mode === 'full'
         ? t('app.permission.notice.full')
         : t('app.permission.notice.mode', { mode: permissionLabel(mode) }),
@@ -2051,7 +2053,7 @@ async function selectModel(option: ModelPickerOption, settings?: ModelSettings):
     knownSessionModel = selected
     rememberWebComposer({ model: knownSessionModel })
     initialModelPending = undefined
-    notice.setText(t('app.notice.modelSaved'))
+    reportSuccess('session-primary-model', t('app.notice.modelSaved'))
     notice.setKind('')
     live?.refresh()
     return true
@@ -2083,10 +2085,10 @@ async function savedConfiguration(saved: ConfigSnapshot): Promise<void> {
     return
   }
   if (saved.effect === 'restart-required' || !published) {
-    notice.setText(t('app.model.savedNotEffective'))
+    // The account owner reports the authoritative restart consequence.
+    if (!published && saved.effect !== 'restart-required') notice.setText(t('app.model.savedNotEffective'))
     return
   }
-  notice.setText(firstRun.active ? '' : t('app.model.savedNotice'))
 }
 onWindowFocus(() => {
   if (connected)

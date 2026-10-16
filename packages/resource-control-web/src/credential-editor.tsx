@@ -1,5 +1,13 @@
 import type { AdminCredentialMetadata } from '@agnes/protocol/gen/app-server'
-import { Banner, Button, Dialog, Field, getOverlayContainer, SettingsInput, useUiText } from '@agnes/web-ui'
+import {
+  Button,
+  Dialog,
+  Field,
+  getOverlayContainer,
+  SettingsInput,
+  StatusMessage,
+  useUiText,
+} from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
 import {
   CREDENTIALS_CHANGED,
@@ -99,9 +107,13 @@ export function CredentialEditor({
       }}
     >
       {error && (
-        <Banner tone="error" data-testid="credential-error">
+        <StatusMessage
+          kind="error"
+          data-testid="credential-error"
+          action={{ label: t('retry'), onSelect: () => void save(), busy }}
+        >
           {t(`error.${error}`)}
-        </Banner>
+        </StatusMessage>
       )}
       {mode !== 'replace' && (
         <Field label={t('label')}>

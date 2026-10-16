@@ -10,6 +10,7 @@ import {
   SettingsState,
   SettingsTextArea,
   StateSwitch,
+  StatusMessage,
 } from '@agnes/web-ui'
 import { useState } from 'react'
 import {
@@ -543,9 +544,13 @@ export function ScheduleEditor({
         </MetaText>
       </form>
       {error && (
-        <SettingsState tone="error" data-testid="schedules-form-error">
+        <StatusMessage
+          kind="error"
+          data-testid="schedules-form-error"
+          action={{ label: t('schedulesSave'), onSelect: onSubmit, busy }}
+        >
           {error}
-        </SettingsState>
+        </StatusMessage>
       )}
       <div className="home-push-actions">
         <Button disabled={busy} onClick={onCancel}>

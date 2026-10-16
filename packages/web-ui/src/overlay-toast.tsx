@@ -11,7 +11,11 @@ export function Toast(props: ToastProps) {
   const [container, setContainer] = useState<HTMLElement>()
   useLayoutEffect(() => {
     if (!props.open) return
-    if (anchor.current) setContainer(getOverlayContainer(anchor.current, anchor.current.ownerDocument))
+    if (anchor.current) {
+      const owner = anchor.current.ownerDocument
+      const modal = owner.querySelector<HTMLElement>('dialog[open]') ?? owner.activeElement
+      setContainer(getOverlayContainer(modal instanceof HTMLElement ? modal : anchor.current, owner))
+    }
   }, [props.open])
   return (
     <>

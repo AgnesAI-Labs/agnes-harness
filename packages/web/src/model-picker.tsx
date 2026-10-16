@@ -5,6 +5,7 @@ import {
   contextBudgetLabel,
   Icon,
   Popover,
+  Segmented,
   SessionAuxiliaryModels,
   SettingsInput,
 } from '@agnes/web-ui'
@@ -326,22 +327,6 @@ function ModelPanel({
   )
 }
 
-/** Arrow keys walk a radio group and move focus with the choice, per the APG radio pattern. */
-function radioKeys(event: KeyboardEvent<HTMLElement>): void {
-  const delta =
-    event.key === 'ArrowRight' || event.key === 'ArrowDown'
-      ? 1
-      : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
-        ? -1
-        : 0
-  if (!delta) return
-  const radios = [...event.currentTarget.querySelectorAll<HTMLElement>('[role="radio"]:not(:disabled)')]
-  const current = radios.indexOf(event.target as HTMLElement)
-  if (current < 0) return
-  event.preventDefault()
-  radios[(current + delta + radios.length) % radios.length]?.focus({ preventScroll: true })
-}
-
 function Choices({
   id,
   label,
@@ -357,25 +342,15 @@ function Choices({
   disabled: boolean
   onChoose(value: string): void
 }): ReactElement {
-  const tabStop = options.some((option) => option.value === selected) ? selected : options[0]?.value
   return (
-    <div id={id} className="model-picker-choices" role="radiogroup" aria-label={label} onKeyDown={radioKeys}>
-      {options.map((option) => (
-        <Button
-          key={option.value || 'auto'}
-          role="radio"
-          size="small"
-          appearance="ghost"
-          htmlType="button"
-          aria-checked={option.value === selected}
-          tabIndex={option.value === tabStop ? 0 : -1}
-          disabled={disabled}
-          onClick={() => onChoose(option.value)}
-        >
-          {option.label}
-        </Button>
-      ))}
-    </div>
+    <Segmented
+      id={id}
+      label={label}
+      value={selected}
+      options={options}
+      disabled={disabled}
+      onChange={onChoose}
+    />
   )
 }
 

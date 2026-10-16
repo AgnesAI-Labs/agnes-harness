@@ -1,14 +1,22 @@
 /** @vitest-environment happy-dom */
 import { type ChildEngineSettings, DISABLED_CHILD_ENGINES } from '@agnes/protocol'
+import { installFeedbackSink, type OperationFeedback } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { type ChildEnginesClient, ChildEnginesPanel } from '../src/settings/child-engines.js'
 import { settingsCatalog } from '../src/settings/locales.js'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 const roots: Root[] = []
+const outcomes: OperationFeedback[] = []
+let releaseFeedback: (() => void) | undefined
+beforeEach(() => {
+  outcomes.length = 0
+  releaseFeedback = installFeedbackSink({ publish: (result) => outcomes.push(result), resolve() {} })
+})
 afterEach(async () => {
+  releaseFeedback?.()
   for (const root of roots.splice(0)) await act(async () => root.unmount())
   document.body.replaceChildren()
 })
@@ -67,7 +75,8 @@ it('requires an exact allowlist entry before enabling an engine', async () => {
     allow.dispatchEvent(new Event('change', { bubbles: true }))
   })
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="child-engine-save"]')?.click())
-  expect(host.querySelector('[data-testid="child-engine-status"]')?.getAttribute('role')).toBe('status')
+  expect(host.querySelector('[data-testid="child-engine-status"]')).toBeNull()
+  expect(outcomes.at(-1)).toMatchObject({ scope: 'child-engines', outcome: 'success' })
   expect(api.saveChildEngines).toHaveBeenCalledTimes(1)
   const saved = api.saveChildEngines.mock.calls[0]?.[0] as { engines: ChildEngineSettings }
   expect(saved.engines.codex).toMatchObject({ enabled: true, allow: ['codex'] })

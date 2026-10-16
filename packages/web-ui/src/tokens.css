@@ -463,7 +463,7 @@
     /* A soft fill with a thin boundary line: the field's edge stays 3:1 against the surface. */
     border: 1px solid var(--agnes-input-border);
     border-radius: var(--radius-control);
-    background: var(--agnes-bg-fill);
+    background: var(--agnes-input-surface);
     color: var(--agnes-input-content-strong);
     font: inherit;
     line-height: var(--line-sm);
@@ -475,9 +475,9 @@
     min-height: 5rem;
     resize: vertical;
   }
-  .agnes-settings-input:hover:not(:disabled):not(:focus-visible) {
+  .agnes-settings-input:hover:not(:disabled):not(:focus-visible):not([readonly]):not([aria-invalid="true"]) {
     border-color: var(--agnes-input-border-emphasis);
-    background-color: var(--agnes-bg-fill-hover);
+    background-color: var(--agnes-input-surface);
   }
   .agnes-settings-input:focus-visible {
     outline: none;
@@ -905,11 +905,11 @@
     border-radius: var(--radius-control);
   }
   .agnes-ui-select:not(.ant-select-disabled) {
-    background: var(--agnes-bg-fill);
+    background: var(--agnes-input-surface);
     color: var(--agnes-text-primary);
   }
   .agnes-ui-select:not(.ant-select-disabled):hover {
-    background: var(--agnes-bg-fill-hover);
+    background: var(--agnes-input-surface);
   }
   .agnes-ui-select.ant-select-focused:not(.ant-select-disabled) {
     --ant-color-border: var(--agnes-input-border-focus);

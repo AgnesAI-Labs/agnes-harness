@@ -2,7 +2,9 @@ import { type PackageInstalledDescriptor, resolvePluginMetadata } from '@agnes/p
 import {
   Banner,
   Button,
+  fallbackT,
   IconButton,
+  reportSuccess,
   Select,
   SettingsBlock,
   SettingsCode,
@@ -112,11 +114,19 @@ export function BundlesPanel({
     setFailed('')
     try {
       await api.saveBundles({ revision: snapshot.revision, bundles: selected })
+      reportSuccess('bundles', fallbackT('ui.settingsSaved'), {
+        kind: 'restart-required',
+        message: fallbackT('ui.restartRequired'),
+      })
       // Read the stored selection back: its revision moved with the save.
-      const value = await api.bundles()
+      const value = await api.bundles().catch(() => {
+        setFailed('bundles.refreshFailed')
+        return undefined
+      })
+      setApplied(true)
+      if (!value) return
       setSnapshot(value)
       setSelected(value.bundles)
-      setApplied(true)
     } catch {
       setFailed('bundles.failed')
     } finally {
@@ -335,7 +345,7 @@ export function BundlesPanel({
           {snapshot && rows.length > 0 && (
             <div className="agnes-settings-apply" data-testid="bundles-footer">
               <span role="status" data-testid="bundles-status">
-                {applied ? t('bundles.saved') : t('bundles.restart')}
+                {!applied && t('bundles.restart')}
               </span>
               <Button
                 appearance="primary"

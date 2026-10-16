@@ -24,7 +24,7 @@ export const settingsShellLocaleCatalog: LocaleCatalog = {
     'accounts.keyHelpText': 'Create an API key in your provider’s account dashboard, then paste it here.',
     'accounts.chooseProvider': 'Choose a provider',
     'accounts.custom': 'Custom address',
-    'accounts.saved': 'Account saved',
+    'accounts.saved': 'Account saved.',
     'settings-shell.advanced': 'Advanced',
     'settings-shell.showAdvanced': 'Show advanced settings',
     'settings-shell.showAdvancedHelp':
@@ -148,7 +148,7 @@ export const settingsShellLocaleCatalog: LocaleCatalog = {
     'accounts.keyHelpText': '在提供商的账户控制台创建 API Key，然后粘贴到这里。',
     'accounts.chooseProvider': '选择提供商',
     'accounts.custom': '自定义地址',
-    'accounts.saved': '账户已保存',
+    'accounts.saved': '账户已保存。',
     'settings-shell.advanced': '高级',
     'settings-shell.showAdvanced': '显示高级设置',
     'settings-shell.showAdvancedHelp': '运行配置、诊断和各页里的高级选项。',

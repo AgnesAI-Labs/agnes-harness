@@ -14,6 +14,7 @@ import {
   ListRow,
   Menu,
   PushPage,
+  reportSuccess,
   SchemaControl,
   SearchBar,
   Segmented,
@@ -29,6 +30,7 @@ import {
   SettingsTechnicalDetails,
   SettingsToolbar,
   StateSwitch,
+  StatusMessage,
   setDisclosureOpen,
   Tag,
   usePushStack,
@@ -260,7 +262,7 @@ export function SearchPanel({
       // A closed dialog stops rendering, so the key leaves the field before the dialog closes.
       flushSync(() => setApiKey(''))
       setStatus(value)
-      setNotice('searchSaved')
+      reportSuccess('search', t('searchSaved'))
       leaveEditor()
     } catch (error) {
       if (lifetime.current?.signal.aborted) return
@@ -308,6 +310,7 @@ export function SearchPanel({
       }
       setHits(Array.isArray(value.results) ? value.results : [])
       setNotice('tested')
+      reportSuccess('search-test', ux('testCompleted'))
     } catch (error) {
       if (lifetime.current?.signal.aborted) return
       setProbeFailure(
@@ -355,7 +358,7 @@ export function SearchPanel({
       if (!isStatus(value)) throw new Error('invalid search status')
       setStatus(value)
       setConfirmClear(undefined)
-      setNotice('searchSaved')
+      reportSuccess('search', t('searchSaved'))
     } catch (failure) {
       if (lifetime.current?.signal.aborted) return
       setErrorEnvelope((failure as { envelope?: unknown })?.envelope)
@@ -532,6 +535,7 @@ export function SearchPanel({
           inputProps={{ id: 'search-test-query', 'data-testid': 'search-test-query' }}
           actions={
             <Button
+              loading={busy}
               data-testid="search-test"
               disabled={!canSave || busy || !status?.configured}
               {...(status?.configured ? {} : { disabledReason: ux('needsDefault') })}
@@ -542,13 +546,17 @@ export function SearchPanel({
           }
         />
         {probeFailure && (
-          <SettingsState tone="error" data-testid="search-test-error">
+          <StatusMessage
+            kind="error"
+            data-testid="search-test-error"
+            action={{ label: ux('test'), onSelect: () => void testProvider(), busy }}
+          >
             {probeFailure}
             {elapsed !== undefined ? ` · ${numbers.format(elapsed)} ms` : ''}
-          </SettingsState>
+          </StatusMessage>
         )}
         {notice && (
-          <SettingsState tone="success" data-testid="search-notice">
+          <SettingsState data-testid="search-notice">
             {notice === 'tested'
               ? `${ux('tested')} · ${ux('results').replace('{count}', String(hits.length))} · ${numbers.format(elapsed ?? 0)} ms`
               : t(notice)}
@@ -690,9 +698,12 @@ export function SearchPanel({
           </SettingsDetails>
         </form>
         {error && (
-          <SettingsState tone="error">
+          <StatusMessage
+            kind="error"
+            action={{ label: ux('retry'), onSelect: () => void save({ preventDefault() {} }), busy }}
+          >
             {appServerErrorMessage(errorEnvelope, document.documentElement.lang) ?? t(error)}
-          </SettingsState>
+          </StatusMessage>
         )}
         <SettingsToolbar className="capability-save">
           <Button disabled={busy} onClick={leaveEditor}>

@@ -68,7 +68,7 @@ export const configFormCatalog: LocaleCatalog = {
     'error.unknown': '配置中包含未知字段。',
     'error.action': '操作失败。已保留你的修改，请重试。',
     saved: '配置已保存。',
-    tested: '配置测试完成。',
+    tested: '配置测试已完成。',
     save: '保存',
     test: '测试配置',
     toggle: '切换设置',

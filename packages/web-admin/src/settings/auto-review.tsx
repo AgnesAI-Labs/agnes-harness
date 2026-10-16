@@ -2,7 +2,9 @@ import { AutoReviewConfig, validateAgainst } from '@agnes/protocol'
 import {
   Banner,
   Button,
+  fallbackT,
   IconButton,
+  reportSuccess,
   Segmented,
   SettingsBlock,
   SettingsChips,
@@ -97,6 +99,7 @@ export function AutoReviewPanel({ canSave }: { canSave: boolean }) {
   }, [])
   const config = useAutosave<AutoReviewConfig>({
     resourceKey: 'settings:auto-review',
+    onSaved: () => reportSuccess('settings:auto-review', fallbackT('ui.settingsSaved')),
     stored,
     equal: sameConfig,
     save: async (next) => {

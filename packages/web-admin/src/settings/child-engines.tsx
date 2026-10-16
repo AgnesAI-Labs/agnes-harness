@@ -7,6 +7,8 @@ import {
 import {
   Button,
   configIssues,
+  fallbackT,
+  reportSuccess,
   SchemaConfigFields,
   SchemaControl,
   SettingsCode,
@@ -14,6 +16,7 @@ import {
   SettingsGroup,
   SettingsItem,
   SettingsTechnicalDetails,
+  StatusMessage,
 } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
 import { childEngineConfigSchema } from './config-schemas.js'
@@ -101,7 +104,6 @@ export function ChildEnginesPanel({
     else update({ ...draft, sdk: { ...draft.sdk, ...patch } })
   }
   const dirty = ready && JSON.stringify(draft) !== loaded
-  const succeeded = status === 'engine.saved' || status === 'engine.savedRestart'
   const save = () => {
     if (busy || !ready) return
     const invalid = ENGINES.some((id) => configIssues(childEngineConfigSchema(id), engine(id)).length > 0)
@@ -122,7 +124,14 @@ export function ChildEnginesPanel({
         setDraft(state.engines)
         setLoaded(JSON.stringify(state.engines))
         setSaved(JSON.stringify(state.engines))
-        setStatus(state.effect === 'restart-required' ? 'engine.savedRestart' : 'engine.saved')
+        setStatus('')
+        reportSuccess(
+          'child-engines',
+          state.effect === 'restart-required' ? fallbackT('ui.settingsSaved') : t('engine.saved'),
+          state.effect === 'restart-required'
+            ? { kind: 'restart-required', message: fallbackT('ui.restartRequired') }
+            : undefined,
+        )
       },
       (error: unknown) => {
         setBusy(false)
@@ -210,13 +219,15 @@ export function ChildEnginesPanel({
         )
       })}
       <div className="capability-save">
-        <span
-          role={succeeded || !status ? 'status' : 'alert'}
-          data-tone={succeeded ? 'success' : 'error'}
-          data-testid={status ? 'child-engine-status' : undefined}
-        >
-          {status ? t(status) : ''}
-        </span>
+        {status && (
+          <StatusMessage
+            kind="error"
+            data-testid="child-engine-status"
+            action={{ label: t('engine.save'), onSelect: save, busy }}
+          >
+            {t(status)}
+          </StatusMessage>
+        )}
         <Button
           appearance="primary"
           data-testid="child-engine-save"

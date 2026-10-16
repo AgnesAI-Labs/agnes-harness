@@ -1,8 +1,14 @@
 /** @vitest-environment happy-dom */
-import { modelSettingsLocaleCatalog, SettingsSubpageFrame, setAdvancedSettingsShown } from '@agnes/web-ui'
+import {
+  installFeedbackSink,
+  modelSettingsLocaleCatalog,
+  type OperationFeedback,
+  SettingsSubpageFrame,
+  setAdvancedSettingsShown,
+} from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { PluginAdminApi } from '../src/admin/plugins/api.js'
 import { AutoReviewPanel } from '../src/settings/auto-review.js'
 import { ModelSlotsPanel, modelSlotOptions } from '../src/settings/model-slots.js'
@@ -41,7 +47,14 @@ let state: {
 }
 const writes: unknown[] = []
 let failSave = false
+const outcomes: OperationFeedback[] = []
+let releaseFeedback: (() => void) | undefined
+beforeEach(() => {
+  outcomes.length = 0
+  releaseFeedback = installFeedbackSink({ publish: (result) => outcomes.push(result), resolve() {} })
+})
 afterEach(async () => {
+  releaseFeedback?.()
   await act(async () => root?.unmount())
   root = undefined
   document.body.replaceChildren()
@@ -109,7 +122,12 @@ it('saves each choice as it is made and refreshes the security card', async () =
   // Chosen: the warning goes, and the reviewer row names the model, not its route.
   expect(host.querySelector('[data-testid="auto-review-slot-status"]')).toBeNull()
   expect(host.querySelector('#auto-review-model option[value="fast"]')?.textContent).toContain('reviewer')
-  expect(host.querySelector('[data-testid="model-slots-status"]')?.textContent).toContain('New sessions')
+  expect(host.querySelector('[data-testid="model-slots-status"]')).toBeNull()
+  expect(outcomes.at(-1)).toMatchObject({
+    scope: 'model-slots',
+    outcome: 'success',
+    message: 'Model settings saved. New sessions use these settings.',
+  })
   // Emptying the fast slot leaves it unset, so it follows the default account again.
   await choose(host, 'fast', '')
   expect(writes[1]).toEqual({ revision: 2, slots: {} })
