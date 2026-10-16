@@ -7,6 +7,7 @@ import { loadTemplate } from '@agnes/host-common/profile/templates'
 import {
   BUNDLED_EXAMPLES,
   createPackageManager,
+  DEFAULT_ENABLED_BUNDLED_PACKAGES,
   emptyLock,
   parseSource,
   runtimePluginSnapshotsFromInventory,
@@ -77,6 +78,24 @@ it.each(shipped)('installs, trusts, enables and loads %s from a clean home', asy
   const directory = join(examples, path)
   const id = String(manifest(path).name)
   const spec = parseSource(`file:${directory}`)
+  const parentId = manifest(path).agnes?.metadata?.exampleOf
+  if (parentId && !(await m.inventory(profile)).packages.some((pkg) => pkg.id === parentId)) {
+    expect((await m.inspect(profile, spec)).blockers).toEqual([
+      { code: 'dependency', references: ['example-parent-unavailable', parentId] },
+    ])
+    const parent = DEFAULT_ENABLED_BUNDLED_PACKAGES.find((pkg) => pkg.id === parentId)
+    if (!parent) throw new Error(`${parentId} has no release payload`)
+    const parentSpec = parseSource(parent.ref)
+    const parentPreview = await m.inspect(profile, parentSpec)
+    expect(parentPreview.blockers).toEqual([])
+    if (!parentPreview.capabilityHash) throw new Error(`${parentId} has no capability hash`)
+    await m.install(profile, parentSpec, { expectedIntegrity: parentPreview.integrity })
+    await m.trust(profile, parentId, {
+      integrity: parentPreview.integrity,
+      capabilityHash: parentPreview.capabilityHash,
+    })
+    await m.enable(profile, parentId, true)
+  }
   const preview = await m.inspect(profile, spec)
   expect(preview.blockers).toEqual([])
   await m.install(profile, spec, { expectedIntegrity: preview.integrity })
