@@ -18,6 +18,8 @@ import {
 import { type InstalledPackage, isSnapshotPackageEligible, verifyPackageDirectory } from './inventory.js'
 import type { LockEntry, Lockfile } from './lockfile.js'
 import type {
+  CreateJournal,
+  GcJournal,
   PinRecord,
   RuntimeJournal,
   RuntimePin,
