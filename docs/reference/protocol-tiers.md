@@ -35,6 +35,19 @@ What third-party clients rely on: sessions, submit, decisions and events. These 
 - `_agnes/v1/participant.list`
 - `_agnes/v1/workspace.list`
 - `_agnes/v1/workspace.add`
+- `_agnes/v1/workspace.reveal`
+- `_agnes/v1/workspace.remove`
+
+`workspace.reveal` accepts exactly one of `path` or `workspaceId` and opens only a listed,
+revalidated canonical workspace. Like `session.revealWorkspace`, it requires a local desktop
+owner and an interactive desktop; arbitrary paths and remote credentials are refused.
+
+`workspace.remove` accepts `workspaceId` and optional `expectedRevision`. It requires the local
+owner, archives all sessions in the workspace and removes only its listing, never disk files.
+`WORKSPACE_RUNNING` means stop its running sessions first; `WORKSPACE_STALE` means refresh the
+revision. Neither refusal changes the listing or archives sessions. Repeated removal returns
+`removed: false`; re-adding the folder restores its listing and leaves sessions archived.
+Existing session bindings remain valid for recovery through the archive.
 
 ### Submit and turn control
 

@@ -220,6 +220,10 @@ export type {
   WorkspaceEntry,
   WorkspaceListParams,
   WorkspaceListResult,
+  WorkspaceRemoveParams,
+  WorkspaceRemoveResult,
+  WorkspaceRevealParams,
+  WorkspaceRevealResult,
 } from '../gen/ts/agnes-v1.js'
 export type * from '../gen/ts/app-server-methods.js'
 export { APP_SERVER_SCHEMA } from '../gen/ts/app-server-schema.js'

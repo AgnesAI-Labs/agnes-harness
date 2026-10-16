@@ -35,6 +35,16 @@
 - `_agnes/v1/participant.list`
 - `_agnes/v1/workspace.list`
 - `_agnes/v1/workspace.add`
+- `_agnes/v1/workspace.reveal`
+- `_agnes/v1/workspace.remove`
+
+`workspace.reveal` 接受 `path` 或 `workspaceId` 中的一个，只打开列表中经过重新校验的规范工作区。
+与 `session.revealWorkspace` 相同，它要求本地桌面所有者和可用的交互桌面，拒绝任意路径及远程凭据。
+
+`workspace.remove` 接受 `workspaceId` 和可选的 `expectedRevision`，要求本地所有者身份。
+它归档项目的所有会话并移除项目列表项，绝不删除磁盘文件。`WORKSPACE_RUNNING` 表示须先停止运行中的会话；
+`WORKSPACE_STALE` 表示须刷新版本。这些拒绝不会修改列表或归档会话。重复移除返回 `removed: false`；
+重新添加文件夹会恢复项目列表项，会话仍保持归档。已有会话绑定保留，支持从「已归档」恢复。
 
 ### 提交与回合控制
 

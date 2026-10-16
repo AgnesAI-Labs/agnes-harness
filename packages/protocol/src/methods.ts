@@ -158,6 +158,8 @@ export type MethodName =
   | '_agnes/v1/session.list'
   | '_agnes/v1/workspace.list'
   | '_agnes/v1/workspace.add'
+  | '_agnes/v1/workspace.reveal'
+  | '_agnes/v1/workspace.remove'
   | '_agnes/v1/session.setPreset'
   | '_agnes/v1/session.setModel'
   | '_agnes/v1/session.setYolo'
@@ -405,6 +407,8 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   },
   '_agnes/v1/workspace.list': clientRequest(A.WorkspaceListParams, A.WorkspaceListResult),
   '_agnes/v1/workspace.add': clientRequest(A.WorkspaceAddParams, A.WorkspaceAddResult),
+  '_agnes/v1/workspace.reveal': clientRequest(A.WorkspaceRevealParams, A.WorkspaceRevealResult),
+  '_agnes/v1/workspace.remove': clientRequest(A.WorkspaceRemoveParams, A.WorkspaceRemoveResult),
   '_agnes/v1/session.setPreset': {
     kind: 'request',
     direction: 'c2s',

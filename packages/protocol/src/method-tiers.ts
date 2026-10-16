@@ -177,6 +177,8 @@ export const METHOD_TIERS: Record<MethodName, MethodTier> = {
   '_agnes/v1/session.list': 'client',
   '_agnes/v1/workspace.list': 'client',
   '_agnes/v1/workspace.add': 'client',
+  '_agnes/v1/workspace.reveal': 'client',
+  '_agnes/v1/workspace.remove': 'client',
   '_agnes/v1/session.setPreset': 'client',
   '_agnes/v1/session.setModel': 'client',
   '_agnes/v1/session.setYolo': 'client',

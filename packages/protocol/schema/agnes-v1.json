@@ -4995,6 +4995,72 @@
         }
       }
     },
+    "WorkspaceRevealParams": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path"],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["workspaceId"],
+          "properties": {
+            "workspaceId": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        }
+      ]
+    },
+    "WorkspaceRevealResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["opened"],
+      "properties": {
+        "opened": {
+          "const": true
+        }
+      }
+    },
+    "WorkspaceRemoveParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["workspaceId"],
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "WorkspaceRemoveResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["removed", "archivedSessionCount"],
+      "properties": {
+        "removed": {
+          "type": "boolean"
+        },
+        "archivedSessionCount": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
     "SurfacesMountsParams": {
       "type": "object",
       "additionalProperties": false,

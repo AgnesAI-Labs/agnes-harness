@@ -167,6 +167,8 @@ export interface AppServerMethods {
   "_agnes/v1/session.list": { params: Static<typeof import("./agnes-v1.js").SessionListParams>; result: Static<typeof import("./agnes-v1.js").PageSessionMeta>; direction: "c2s"; kind: "request" }
   "_agnes/v1/workspace.list": { params: Static<typeof import("./agnes-v1.js").WorkspaceListParams>; result: Static<typeof import("./agnes-v1.js").WorkspaceListResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/workspace.add": { params: Static<typeof import("./agnes-v1.js").WorkspaceAddParams>; result: Static<typeof import("./agnes-v1.js").WorkspaceAddResult>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/workspace.reveal": { params: Static<typeof import("./agnes-v1.js").WorkspaceRevealParams>; result: Static<typeof import("./agnes-v1.js").WorkspaceRevealResult>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/workspace.remove": { params: Static<typeof import("./agnes-v1.js").WorkspaceRemoveParams>; result: Static<typeof import("./agnes-v1.js").WorkspaceRemoveResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.setPreset": { params: Static<typeof import("./agnes-v1.js").SessionSetPresetParams>; result: Static<typeof import("./agnes-v1.js").EffectiveFromResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.setModel": { params: Static<typeof import("./agnes-v1.js").SessionSetModelParams>; result: Static<typeof import("./agnes-v1.js").EffectiveFromResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.setYolo": { params: Static<typeof import("./agnes-v1.js").SessionSetYoloParams>; result: Static<typeof import("./agnes-v1.js").EffectiveFromResult>; direction: "c2s"; kind: "request" }

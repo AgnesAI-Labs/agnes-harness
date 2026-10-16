@@ -148,6 +148,10 @@ export const AgnesV1 = Type.Module({
   "WorkspaceListResult": Type.Object({ "items": Type.Array(Type.Ref('WorkspaceEntry')) }, { additionalProperties: false }),
   "WorkspaceAddParams": Type.Object({ "path": Type.String({ minLength: 1, maxLength: 4096 }) }, { additionalProperties: false }),
   "WorkspaceAddResult": Type.Object({ "workspace": Type.Ref('WorkspaceEntry') }, { additionalProperties: false }),
+  "WorkspaceRevealParams": Type.Union([Type.Object({ "path": Type.String({ minLength: 1, maxLength: 4096 }) }, { additionalProperties: false }), Type.Object({ "workspaceId": Type.String({ pattern: "^[a-f0-9]{64}$" }) }, { additionalProperties: false })]),
+  "WorkspaceRevealResult": Type.Object({ "opened": Type.Literal(true) }, { additionalProperties: false }),
+  "WorkspaceRemoveParams": Type.Object({ "workspaceId": Type.String({ pattern: "^[a-f0-9]{64}$" }), "expectedRevision": Type.Optional(Type.Integer({ minimum: 1 })) }, { additionalProperties: false }),
+  "WorkspaceRemoveResult": Type.Object({ "removed": Type.Boolean(), "archivedSessionCount": Type.Integer({ minimum: 0 }) }, { additionalProperties: false }),
   "SurfacesMountsParams": Type.Object({  }, { additionalProperties: false }),
   "SurfacesMountsResult": Type.Object({ "mounts": Type.Array(Type.Object({ "package": Type.String({ minLength: 1, maxLength: 256, pattern: "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)$" }), "surfaceId": Type.String({ minLength: 1, maxLength: 64, pattern: "^[a-z][a-z0-9-]{0,63}$" }), "mount": Type.String({ minLength: 1, maxLength: 256, pattern: "^/(?!_agnes(?:/|$))[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*$" }), "host": Type.Literal('127.0.0.1'), "port": Type.Integer({ minimum: 1, maximum: 65535 }) }, { additionalProperties: false }), { maxItems: 256 }) }, { additionalProperties: false }),
   "SessionPreferences": Type.Object({ "title": Type.Optional(Type.String({ minLength: 1, maxLength: 80 })), "archived": Type.Boolean(), "bookmarks": Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 128, pattern: "^[^\\u0000-\\u001f\\u007f]+$" }), { maxItems: 200, uniqueItems: true })) }, { additionalProperties: false }),
@@ -596,6 +600,14 @@ export const WorkspaceAddParams = AgnesV1.Import('WorkspaceAddParams')
 export type WorkspaceAddParams = Static<typeof WorkspaceAddParams>
 export const WorkspaceAddResult = AgnesV1.Import('WorkspaceAddResult')
 export type WorkspaceAddResult = Static<typeof WorkspaceAddResult>
+export const WorkspaceRevealParams = AgnesV1.Import('WorkspaceRevealParams')
+export type WorkspaceRevealParams = Static<typeof WorkspaceRevealParams>
+export const WorkspaceRevealResult = AgnesV1.Import('WorkspaceRevealResult')
+export type WorkspaceRevealResult = Static<typeof WorkspaceRevealResult>
+export const WorkspaceRemoveParams = AgnesV1.Import('WorkspaceRemoveParams')
+export type WorkspaceRemoveParams = Static<typeof WorkspaceRemoveParams>
+export const WorkspaceRemoveResult = AgnesV1.Import('WorkspaceRemoveResult')
+export type WorkspaceRemoveResult = Static<typeof WorkspaceRemoveResult>
 export const SurfacesMountsParams = AgnesV1.Import('SurfacesMountsParams')
 export type SurfacesMountsParams = Static<typeof SurfacesMountsParams>
 export const SurfacesMountsResult = AgnesV1.Import('SurfacesMountsResult')
