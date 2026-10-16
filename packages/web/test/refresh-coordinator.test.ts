@@ -3,13 +3,14 @@ import { createRefreshCoordinator } from '../src/refresh-coordinator.js'
 
 afterEach(() => vi.useRealTimers())
 
-it('polls at the fallback rate, skips hidden/disconnected pages and stops on close', async () => {
+it('does not poll and only refreshes visible mounted views on change notifications', async () => {
   vi.useFakeTimers()
   let visible = true
   let connected = true
+  let mounted = false
   let shown = 0
   const coordinator = createRefreshCoordinator({
-    canPoll: () => visible && connected,
+    canRefresh: () => mounted && visible && connected,
     refresh: async () => {
       shown++
     },
@@ -17,21 +18,25 @@ it('polls at the fallback rate, skips hidden/disconnected pages and stops on clo
   await vi.advanceTimersByTimeAsync(9_999)
   expect(shown).toBe(0)
   await vi.advanceTimersByTimeAsync(50_001)
-  expect(shown).toBe(6)
+  expect(shown).toBe(0)
+  await coordinator.request()
+  expect(shown).toBe(0)
+  mounted = true
   visible = false
+  await coordinator.request()
   await vi.advanceTimersByTimeAsync(60_000)
-  expect(shown).toBe(6)
+  expect(shown).toBe(0)
   visible = true
   connected = false
   await vi.advanceTimersByTimeAsync(60_000)
-  expect(shown).toBe(6)
+  expect(shown).toBe(0)
   connected = true
   await coordinator.request()
-  expect(shown).toBe(7)
+  expect(shown).toBe(1)
   coordinator.stop()
   await coordinator.request()
   await vi.advanceTimersByTimeAsync(60_000)
-  expect(shown).toBe(7)
+  expect(shown).toBe(1)
 })
 
 it.each([false, true])('applies post-save state after an in-flight read (first fails=%s)', async (fails) => {
@@ -44,8 +49,7 @@ it.each([false, true])('applies post-save state after an in-flight read (first f
   let shown = ''
   let reads = 0
   const coordinator = createRefreshCoordinator({
-    intervalMs: 1_000,
-    canPoll: () => true,
+    canRefresh: () => true,
     refresh: async () => {
       const value = stored
       if (++reads === 1) {

@@ -1186,6 +1186,8 @@ function syncDraftPermission(): void {
   permissionMode = permissionForSessionPreset(selectedDraftPreset(), runtimeCatalog) ?? permissionMode
 }
 async function refreshSessionCatalog(): Promise<void> {
+  // Only the new-session composer consumes these admin catalogs.
+  if (!draftingNew || homeNavigation.getSnapshot() || !pageVisible()) return
   const generation = ++sessionCatalogGeneration
   loopCatalogPending = !newSessionCatalog
   renderControls()
@@ -2174,7 +2176,10 @@ client.on('notice', (payload) => {
     typeof incoming.detail === 'object' && incoming.detail !== null
       ? (incoming.detail as { profile?: unknown })
       : undefined
-  if (profileName && detail?.profile === profileName) scheduleClientRosterRead()
+  if (profileName && detail?.profile === profileName) {
+    scheduleClientRosterRead()
+    void modelRefresh.request().catch(showError)
+  }
 })
 onPageVisible(() => {
   reconnect.resume()
@@ -2203,11 +2208,9 @@ async function refreshModelConfiguration(): Promise<void> {
   await refreshSessionCatalog()
   await refreshModels()
 }
-const refreshInterval = shellConfig.modelRefreshIntervalMs
 const modelRefresh = createRefreshCoordinator({
   refresh: refreshModelConfiguration,
-  canPoll: () => connected && pageVisible(),
-  ...(refreshInterval === undefined ? {} : { intervalMs: refreshInterval }),
+  canRefresh: () => connected && pageVisible(),
 })
 const sessionConfigurationChanged = () => void modelRefresh.request().catch(showError)
 const stopSessionConfiguration = onBroadcast(

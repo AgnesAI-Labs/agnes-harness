@@ -72,6 +72,6 @@ profile 模块使用 `ctx.profile.examples.list/inspect/enable/read/stop/inspect
 
 示例的 profile 模块通过 `ctx.examplePages.register` 注册声明的组件，父模块通过 `ctx.examplePages.render(exampleId, context)` 呈现，并订阅该注册表的快照。组件继续使用自己的模块作用域，不获得父包管理连接。模拟器生命周期应属于 profile 模块的 effect 作用域；切页只分离场景视图。示例禁用或所属浏览器关闭时释放连接并停止工作。会话 tab 复用已有 workbench panel API。
 
-场景资源声明在 `client.assets` 中，相对于与 entry 相同的描述文件目录。支持 glTF/GLB、二进制缓冲、PNG/JPEG/WebP、KTX2 和 WebAssembly。安装拒绝路径穿越和越界符号链接；不可变快照绑定每个文件的哈希和长度，读取时再次校验。代码继续受单文件 4 MiB、合计 16 MiB 限制；场景资源单文件最多 32 MiB、完整快照最多 128 MiB。不支持或超限的资源拒绝发布。解码器执行仍须满足部署 CSP，能够下发 wasm 文件不代表浏览器能够执行。示例应明确展示场景加载失败，不得据此伪报设备已就绪。
+场景资源声明在 `client.assets` 中，相对于与 entry 相同的描述文件目录。支持 glTF/GLB、二进制缓冲、PNG/JPEG/WebP、KTX2 和 WebAssembly。安装拒绝路径穿越和越界符号链接；不可变快照绑定每个文件的哈希和长度，读取时再次校验。代码继续受单文件 4 MiB、合计 16 MiB 限制；场景资源单文件最多 32 MiB、完整快照最多 128 MiB。不支持或超限的资源拒绝发布。解码器执行仍须满足部署 CSP，能够下发 wasm 文件不代表浏览器能够执行。示例应明确展示场景加载失败，不得据此伪报设备已就绪。 启动器的私有资产读取支持相同的 32 MiB 资源上限，并计入 base64 编码开销。本地和 SEA 打包会检查声明的客户端文件、字面量 `new URL(..., import.meta.url)`、CSS URL 及 glTF 缓冲区/图像引用是否存在于交付 payload；优先使用字面量资产 URL，使漏文件在构建时失败。
 
 profile 的 primary 声明可添加 `navigation: { title, titles?, icon, order }`。`titles` 按界面语言提供标签，`title` 为回退值。宿主收到已启用且就绪的名册后即呈现入口，首次打开才加载模块；模块仍通过原有的 `ctx.homeEntries.register`、声明与归属校验接管同一入口。省略元数据时保留立即加载行为。失败或撤销会立即移除入口；元数据不授予权限。

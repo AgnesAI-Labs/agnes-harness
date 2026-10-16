@@ -1,13 +1,14 @@
-export const MODEL_NAMES = [
-  'rover',
-  'suit',
-  'moon_rock_01',
-  'moon_rock_03',
-  'moon_rock_05',
-  'moon_rock_07',
-  'namaqualand_boulder_02',
-] as const
-export type ModelName = (typeof MODEL_NAMES)[number]
+const MODEL_URLS = {
+  rover: new URL('../assets/rover.bin', import.meta.url),
+  suit: new URL('../assets/suit.bin', import.meta.url),
+  moon_rock_01: new URL('../assets/moon_rock_01.bin', import.meta.url),
+  moon_rock_03: new URL('../assets/moon_rock_03.bin', import.meta.url),
+  moon_rock_05: new URL('../assets/moon_rock_05.bin', import.meta.url),
+  moon_rock_07: new URL('../assets/moon_rock_07.bin', import.meta.url),
+  namaqualand_boulder_02: new URL('../assets/namaqualand_boulder_02.bin', import.meta.url),
+} as const
+export type ModelName = keyof typeof MODEL_URLS
+export const MODEL_NAMES = Object.keys(MODEL_URLS) as ModelName[]
 /** The package snapshot verifies hashes. Only these fixed same-origin offline assets are loaded. */
 export async function loadModels(signal: AbortSignal): Promise<Map<ModelName, Float32Array>> {
   return new Map(
@@ -15,7 +16,7 @@ export async function loadModels(signal: AbortSignal): Promise<Map<ModelName, Fl
       MODEL_NAMES.map(async (name) => {
         let response: Response
         try {
-          response = await fetch(new URL(`../assets/${name}.bin`, import.meta.url), { signal })
+          response = await fetch(MODEL_URLS[name], { signal })
         } catch (error) {
           throw new Error('model-asset-unavailable', { cause: error })
         }
