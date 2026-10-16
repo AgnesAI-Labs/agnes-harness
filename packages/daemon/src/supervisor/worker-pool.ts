@@ -375,7 +375,12 @@ export class WorkerPool {
         if (!helloReceived && !this.stopping) this.bootFailures.record(workerKey, bootFailureCode, bootEpoch)
         // A start that dies on the very target it was given says something about that target, not
         // about the worker; only then is the exit expected rather than a crash to count.
-        if (bootOffer && this.o.runtimeDelivery?.recordBootFailure(slot.generation, bootOffer, error))
+        // Operator shutdown cancels admission; it says nothing about whether the target can boot.
+        if (
+          !this.stopping &&
+          bootOffer &&
+          this.o.runtimeDelivery?.recordBootFailure(slot.generation, bootOffer, error)
+        )
           slot.intentionalExit = true
         bootOffer = undefined
         this.pendingByToken.delete(token)
@@ -933,6 +938,7 @@ export class WorkerPool {
   private cancelStarting(): void {
     for (const slot of this.slots.values()) {
       if (!slot.starting) continue
+      slot.intentionalExit = true
       slot.failStarting?.(new Error('worker pool shut down during startup'))
     }
   }

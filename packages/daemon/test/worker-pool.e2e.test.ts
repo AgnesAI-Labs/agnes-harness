@@ -1284,7 +1284,12 @@ describe('WorkerPool when a start from the desired target fails', () => {
 
   async function withBoot(
     setup: (store: CompositeTargetStore) => void,
-    run: (ctx: { pool: WorkerPool; store: CompositeTargetStore; notices: string[] }) => Promise<void>,
+    run: (ctx: {
+      pool: WorkerPool
+      store: CompositeTargetStore
+      notices: string[]
+      booting: Promise<void>
+    }) => Promise<void>,
   ) {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-pool-boot-failure-'))
     const profileFile = join(dir, 'profile.json')
@@ -1303,6 +1308,17 @@ describe('WorkerPool when a start from the desired target fails', () => {
     const store = new CompositeTargetStore(sqliteTables().table('composite'), 'default')
     setup(store)
     const notices: string[] = []
+    const delivery = new CompositeRuntimeDelivery(store)
+    let offered: () => void = () => undefined
+    const booting = new Promise<void>((resolve) => {
+      offered = resolve
+    })
+    const beginBoot = delivery.beginBoot.bind(delivery)
+    delivery.beginBoot = (...args) => {
+      const admission = beginBoot(...args)
+      offered()
+      return admission
+    }
     const pool = new WorkerPool({
       config,
       profile: { name: 'p', hash: 'h1' } as never,
@@ -1314,11 +1330,11 @@ describe('WorkerPool when a start from the desired target fails', () => {
       onEvent: () => undefined,
       onRequest: async () => undefined,
       notices: { emit: (kind: string) => notices.push(kind) },
-      runtimeDelivery: new CompositeRuntimeDelivery(store),
+      runtimeDelivery: delivery,
     })
     const server = await listenUnix(config.workersSocketPath, (socket) => pool.adopt(socket))
     try {
-      await run({ pool, store, notices })
+      await run({ pool, store, notices, booting })
     } finally {
       pool.killAll()
       await server.close()
@@ -1328,16 +1344,33 @@ describe('WorkerPool when a start from the desired target fails', () => {
 
   const bootstrapOnly = (store: CompositeTargetStore) => store.publishDesired(artifact('ext:bad'))
 
-  it('records the failure and does not count a worker that never became ready as a crash', async () => {
-    // One failed start is enough: the shared worker is never quarantined, so repeating the start
-    // exercises nothing new.
-    await withBoot(bootstrapOnly, async ({ pool, store, notices }) => {
-      await expect(pool.acquireSharedWorker()).rejects.toThrow('did not boot_ready')
-      expect(store.lastFailure()).toMatchObject({ phase: 'boot', digest: store.desired()?.digest })
-      expect(notices).not.toContain('worker_crashed')
-      expect(pool.isQuarantined('@shared')).toBe(false)
-    })
-  }, 40_000)
+  it.each(['timeout', 'shutdown', 'kill', 'fail-stop'])(
+    'attributes a start that never became ready: %s',
+    async (cause) => {
+      await withBoot(bootstrapOnly, async ({ pool, store, notices, booting }) => {
+        const starting = expect(pool.acquireSharedWorker()).rejects.toThrow(
+          cause === 'timeout' ? 'did not boot_ready' : 'shut down during startup',
+        )
+        if (cause !== 'timeout') {
+          await booting
+          if (cause === 'shutdown') await pool.closeAll(1_000)
+          else if (cause === 'kill') pool.killAll()
+          else pool.failStop('uncertain activation')
+        }
+        await starting
+        await pool.waitForExitRecovery()
+        if (cause === 'timeout')
+          expect(store.lastFailure()).toMatchObject({ phase: 'boot', digest: store.desired()?.digest })
+        else {
+          expect(store.lastFailure()).toBeUndefined()
+          expect(store.desired()?.digest).toBe(artifact('ext:bad').digest)
+        }
+        expect(notices).not.toContain('worker_crashed')
+        expect(pool.isQuarantined('@shared')).toBe(false)
+      })
+    },
+    40_000,
+  )
 
   it('records the failure when the worker process dies while it is starting from the target', async () => {
     process.env.AGNES_FAKE_BOOT = 'exit'
