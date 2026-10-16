@@ -1,15 +1,15 @@
-import { homeNavigation, type LocaleService, reserveHomeEntry } from '@agnes/web-client'
+import { homeEntries, homeNavigation, type LocaleService, reserveHomeEntry } from '@agnes/web-client'
 import { useEffect } from 'react'
 import type { ReadyClientModule } from './contracts.js'
 
 /** Navigation is a roster fact; executing a page module waits for a person's first open. */
 export function createRosterNavigation(locale?: LocaleService) {
-  const rows = new Map<string, { signature: string; opened: boolean; dispose(): void }>()
+  const rows = new Map<string, { signature: string; opened: boolean; load(): void; dispose(): void }>()
   function remove(rowId: string) {
     rows.get(rowId)?.dispose()
     rows.delete(rowId)
   }
-  function prepare(rowId: string, module: ReadyClientModule, load: () => void): boolean {
+  function prepare(rowId: string, module: ReadyClientModule, load: () => void, opened = false): boolean {
     const declarations = module.homeEntries?.filter(
       (entry) => entry.placement === 'primary' && entry.navigation,
     )
@@ -25,7 +25,8 @@ export function createRosterNavigation(locale?: LocaleService) {
       const cleanups: (() => void)[] = []
       const state = {
         signature,
-        opened: false,
+        opened,
+        load,
         dispose: () => {
           for (const off of cleanups.reverse()) off()
         },
@@ -34,7 +35,7 @@ export function createRosterNavigation(locale?: LocaleService) {
       const open = () => {
         if (state.opened || rows.get(rowId) !== state) return
         state.opened = true
-        load()
+        state.load()
       }
       try {
         for (const entry of declarations) {
@@ -75,9 +76,31 @@ export function createRosterNavigation(locale?: LocaleService) {
         throw error
       }
     }
-    return !rows.get(rowId)?.opened
+    const state = rows.get(rowId)
+    if (state) state.load = load
+    return !state?.opened
   }
   return {
+    // Older declarations identify the primary entry but leave its title/icon to the live module.
+    // Capture presentation before revoking that module; the loading page carries no authority.
+    describe(module: ReadyClientModule): ReadyClientModule {
+      return {
+        ...module,
+        homeEntries: module.homeEntries?.map((entry) => {
+          const live = homeEntries.get(entry.id)
+          return entry.placement === 'primary' && !entry.navigation && live
+            ? {
+                ...entry,
+                navigation: {
+                  title: locale?.t(live.titleKey) ?? live.titleKey,
+                  icon: live.icon,
+                  order: live.order,
+                },
+              }
+            : entry
+        }),
+      }
+    },
     prepare,
     remove,
     retain(ids: ReadonlySet<string>) {

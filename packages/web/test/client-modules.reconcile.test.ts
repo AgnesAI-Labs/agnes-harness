@@ -4,6 +4,7 @@
 import { Context } from '@agnes/cordis'
 import {
   AgnesClientService,
+  type ClientContext,
   CommandService,
   homeEntries,
   homeNavigation,
@@ -157,6 +158,135 @@ describe('client reconciler（WC10 前端状态机）', () => {
         rows = []
         await reconciler.reconcileNow()
         await h.ctx.fiber.dispose()
+      }
+    },
+  )
+  it.each([true, false])(
+    'keeps primary navigation (metadata: %s) through a generation gap and an overlapping replacement',
+    async (metadata) => {
+      const ctx = new Context()
+      await ctx.plugin(SlotRegistry)
+      new AgnesClientService(ctx, { sessions: { get: () => undefined } } as never)
+      new CommandService(ctx, async () => true)
+      new SessionService(ctx)
+      new ThemeService(ctx, 'light')
+      const locale = zhLocaleService()
+      ctx.provide('locale', locale)
+      const row: ReadyClientModule = {
+        ...mod('generation-page', 'v1'),
+        rowId: 'web:generation-page',
+        binding: {
+          owner: 'web:generation-page',
+          lifetime: 'profile',
+          availability: 'active',
+          packageId: 'generation-page',
+          integrity: 'v1',
+          profileId: 'test',
+          activationId: 'one',
+        },
+        homeEntries: [
+          {
+            id: 'generation-page',
+            placement: 'primary',
+            ...(metadata
+              ? {
+                  navigation: {
+                    title: 'Generation page',
+                    icon: 'cpu',
+                    order: 40,
+                  },
+                }
+              : {}),
+          },
+        ],
+      }
+      let current = roster([row])
+      let release: (() => void) | undefined
+      let mounted: ClientContext | undefined
+      const reconciler = createReconciler({
+        ctx,
+        locale,
+        source: { list: async () => current },
+        importer: async () => {
+          if (release)
+            await new Promise<void>((resolve) => {
+              release = resolve
+            })
+          return {
+            apply(context: ClientContext) {
+              mounted = context
+              context.homeEntries.register({
+                id: 'generation-page',
+                placement: 'primary',
+                titleKey: 'Generation page',
+                icon: 'cpu',
+                order: 40,
+                component: () => null,
+              })
+            },
+          }
+        },
+      })
+      try {
+        await reconciler.reconcileNow()
+        homeNavigation.open('generation-page')
+        await reconciler.reconcileNow()
+        const previous = homeEntries.get('generation-page')
+        expect(previous).toBeDefined()
+        current = {
+          ...roster([]),
+          statuses: [
+            {
+              packageId: row.packageId,
+              installedRevision: 'v1',
+              backendRevision: null,
+              state: 'blocked',
+              reason: 'backend-revision-unavailable',
+            },
+          ],
+        }
+        await reconciler.invalidate()
+        expect(homeEntries.get('generation-page')).toBeDefined()
+        expect(mounted?.availability.getSnapshot()?.availability).toBe('disabled')
+        await reconciler.invalidate()
+        expect(homeEntries.get('generation-page')).toBeDefined()
+        current = roster([{ ...row, binding: { ...row.binding!, activationId: 'two' } }])
+        await reconciler.invalidate()
+        expect(homeEntries.get('generation-page')).toBeDefined()
+        expect(homeEntries.get('generation-page')).not.toBe(previous)
+        expect(mounted?.availability.getSnapshot()?.activationId).toBe('two')
+        release = () => {}
+        current = roster([{ ...row, binding: { ...row.binding!, activationId: 'three' } }])
+        const pending = reconciler.invalidate()
+        await vi.waitFor(() => expect(reconciler.snapshot().get(row.rowId!)?.phase).toBe('loading'))
+        expect(homeEntries.get('generation-page')).toBeDefined()
+        const overlap = reconciler.invalidate()
+        release?.()
+        release = undefined
+        await Promise.all([pending, overlap])
+        expect(homeEntries.get('generation-page')).toBeDefined()
+        expect(mounted?.availability.getSnapshot()?.availability).toBe('active')
+        expect(mounted?.availability.getSnapshot()?.activationId).toBe('three')
+        current = {
+          ...roster([]),
+          statuses: [
+            {
+              packageId: row.packageId,
+              installedRevision: 'v1',
+              backendRevision: null,
+              state: 'blocked',
+              reason: 'resources-invalid',
+            },
+          ],
+        }
+        await reconciler.invalidate()
+        expect(homeEntries.get('generation-page')).toBeUndefined()
+      } finally {
+        release?.()
+        homeNavigation.close()
+        current = roster([])
+        await reconciler.invalidate()
+        await ctx.fiber.dispose()
       }
     },
   )

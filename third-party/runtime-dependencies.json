@@ -336,7 +336,7 @@
       "license": "MIT",
       "source": "https://github.com/xtermjs/xterm.js",
       "purpose": "Emulate the workbench PTY screen, ANSI/OSC colors and accessible terminal input.",
-      "rationale": "Shared, lazy-loaded terminal renderer behind the Web UI boundary; uses the existing session jobs transport.",
+      "rationale": "Shared, lazy-loaded terminal renderer behind the Web UI boundary; uses the existing session jobs transport. The build adapter corrects the CoreBrowserService documentOverride ternary precedence and passes the scoped document to DomRendererRowFactory so generated viewport styles use the existing nonce and cell colors use CSSOM.",
       "consumers": ["packages/web-ui"]
     },
     {
