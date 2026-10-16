@@ -1,5 +1,12 @@
-import { API_KEY_PROVIDER_REGISTRY } from '@agnes/ai'
-import type { ConfigModel, ConfigSaveInput, ModelRecord, RouteDecl } from '@agnes/protocol'
+import { API_KEY_PROVIDER_REGISTRY, JEV_WIRE_API, JevAdapter, type WireEvent } from '@agnes/ai'
+import type {
+  ConfigModel,
+  ConfigSaveInput,
+  ConfigTestResult,
+  ModelRecord,
+  RequestBody,
+  RouteDecl,
+} from '@agnes/protocol'
 import { ConfigurationError } from './configuration-error.js'
 import { normalizeConfigModel } from './configuration-models.js'
 
@@ -185,4 +192,103 @@ export function payloadOnlyApiCapabilities(): readonly {
     id: entry.api,
     capabilities: entry.capabilities ?? {},
   }))
+}
+
+const PROBE_TIMEOUT_MS = 30_000
+
+type ProbeOutcome = 'ok' | 'throttled' | 'auth' | 'failed'
+
+/**
+ * One real call through the payload adapter with a fixed `{state: {}, questions: {ping}}` body: an
+ * answer or a rate limit proves reachability, a rejected key is told apart, and everything else —
+ * a contract mismatch, a transport failure, a timeout — is just "not reachable". The fixed body
+ * carries no user data, and no reply content leaves the adapter.
+ */
+async function probePayloadOnlyRoute(args: {
+  baseUrl: string
+  model: string
+  credential: string
+  request: typeof globalThis.fetch
+  signal: AbortSignal
+}): Promise<ProbeOutcome> {
+  let adapter: JevAdapter
+  try {
+    adapter = new JevAdapter({
+      routes: [{ route: 'probe', api: JEV_WIRE_API, baseUrl: args.baseUrl, models: [] }],
+      network: () => ({ fetch: args.request, close: () => Promise.resolve() }),
+    })
+  } catch {
+    throw new ConfigurationError('CONFIG_INVALID_INPUT')
+  }
+  try {
+    adapter.bindCredential('probe', args.credential)
+    const request: RequestBody = {
+      kind: 'inference',
+      sessionKey: 'agnes:config:probe',
+      slot: 'primary',
+      route: 'probe',
+      model: args.model,
+      contractId: null,
+      derivedHash: '0'.repeat(64),
+      system: '',
+      messages: [],
+      tools: [],
+      payload: { state: {}, questions: { ping: 'ping' } },
+    }
+    let terminal: WireEvent | undefined
+    for await (const event of adapter.stream('probe', request, {
+      signal: args.signal,
+      sessionKey: request.sessionKey,
+      toolNames: [],
+      timeoutMs: { firstToken: PROBE_TIMEOUT_MS, total: PROBE_TIMEOUT_MS },
+    }))
+      terminal = event
+    if (terminal?.type === 'done') return 'ok'
+    if (terminal?.type !== 'error') return 'failed'
+    return terminal.code === 'RATE_LIMIT' ? 'throttled' : terminal.code === 'AUTH' ? 'auth' : 'failed'
+  } finally {
+    await adapter.dispose()
+  }
+}
+
+/**
+ * The payload-only branch of a configuration test: the account's declared models come back as they
+ * are stored, and the probe runs only when a model and a resolvable generic credential are known.
+ * A rejected key is the existing credential refusal; anything else unreachable stays a saveable,
+ * unverified entry.
+ */
+export async function testPayloadOnlyAccount(
+  args: {
+    baseUrl: string
+    model: string | undefined
+    credentialRef: string | undefined
+    row: Readonly<{ model: string; models: ConfigModel[]; credentialRef: string }> | undefined
+  },
+  deps: {
+    request: typeof globalThis.fetch
+    signal: AbortSignal
+    readCredential: (ref: string) => Promise<{ kind: string; provider: string; value?: string } | null>
+  },
+): Promise<ConfigTestResult> {
+  const models = args.row?.models.map((model) => structuredClone(model)) ?? []
+  const ref = args.credentialRef ?? args.row?.credentialRef
+  const stored = ref === undefined ? null : await deps.readCredential(ref)
+  const key =
+    stored?.kind === 'api-key' &&
+    stored.provider === 'generic' &&
+    typeof stored.value === 'string' &&
+    /\P{C}/u.test(stored.value.trim())
+      ? stored.value
+      : undefined
+  const model = args.model ?? args.row?.model
+  if (key === undefined || model === undefined) return { models, verified: false }
+  const outcome = await probePayloadOnlyRoute({
+    baseUrl: args.baseUrl,
+    model,
+    credential: key,
+    request: deps.request,
+    signal: deps.signal,
+  })
+  if (outcome === 'auth') throw new ConfigurationError('CONFIG_CREDENTIAL_REJECTED')
+  return { models, verified: outcome !== 'failed' }
 }

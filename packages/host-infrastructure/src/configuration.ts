@@ -76,9 +76,11 @@ import {
 import {
   GENERIC_CREDENTIAL_REF,
   isPayloadOnlyEntry,
+  parsePayloadOnlyCredentialRef,
   payloadOnlyAccountRow,
   payloadOnlyApiCapabilities,
   payloadOnlyRoute,
+  testPayloadOnlyAccount,
 } from './configuration-payload-only.js'
 import { payloadOnlyRoutes } from './payload-only-routes.js'
 
@@ -291,12 +293,13 @@ function parseTestInput(value: unknown): {
   entry: ConfigurationProvider
   baseUrl: string
   apiKey?: string
+  credentialRef?: string
   model?: string
 } {
   const input = inputObject(value)
   if (
     !Object.keys(input).every((key) =>
-      ['providerId', 'baseUrl', 'apiKey', 'accountId', 'model'].includes(key),
+      ['providerId', 'baseUrl', 'apiKey', 'credentialRef', 'accountId', 'model'].includes(key),
     )
   )
     throw new ConfigurationError('CONFIG_INVALID_INPUT')
@@ -304,11 +307,17 @@ function parseTestInput(value: unknown): {
   const baseUrl = providerEndpoint(entry, input.baseUrl)
   if (entry.id === CODEX_ID && input.apiKey !== undefined)
     throw new ConfigurationError('CONFIG_INVALID_INPUT')
+  // Each credential spelling belongs to one side: a raw key for chat, a reference for payload-only.
+  if (isPayloadOnlyEntry(entry) ? input.apiKey !== undefined : input.credentialRef !== undefined)
+    throw new ConfigurationError('CONFIG_INVALID_INPUT')
   const apiKey = input.apiKey === undefined ? undefined : parseApiKey(input.apiKey)
   return {
     entry,
     baseUrl,
     ...(apiKey === undefined ? {} : { apiKey }),
+    ...(input.credentialRef === undefined
+      ? {}
+      : { credentialRef: parsePayloadOnlyCredentialRef(input.credentialRef) }),
     ...(input.model === undefined ? {} : { model: parseModel(input.model) }),
   }
 }
@@ -907,10 +916,15 @@ export function createConfigurationService(
     const state = await loadState()
     const row = selectedAccount(state, input)
     const baseUrl = input.baseUrl === undefined ? (row?.baseUrl ?? parsed.baseUrl) : parsed.baseUrl
-    // Never forward an existing account's key to an edited destination implicitly.
+    // Never forward an existing account's credential to an edited destination implicitly.
     const changedEndpoint = row && baseUrl.replace(/\/$/, '') !== row.baseUrl.replace(/\/$/, '')
-    if (changedEndpoint && parsed.apiKey === undefined)
+    if (changedEndpoint && parsed.apiKey === undefined && parsed.credentialRef === undefined)
       throw new ConfigurationError('CONFIG_CREDENTIAL_REQUIRED')
+    if (isPayloadOnlyEntry(parsed.entry))
+      return testPayloadOnlyAccount(
+        { baseUrl, model: parsed.model, credentialRef: parsed.credentialRef, row },
+        { request, signal: callerSignal ?? new AbortController().signal, readCredential },
+      )
     const storedCredential = row ? await readCredential(row.credentialRef) : null
     let models = (await staticCatalogue(parsed.entry)).records.map((record) =>
       configModel(

@@ -397,6 +397,77 @@ it('accepts a direct endpoint for a payload-only account and rejects chat-form f
   ).rejects.toMatchObject({ code: 'CONFIG_INVALID_INPUT' })
 })
 
+it('probes a payload-only endpoint with a fixed payload, treating success and throttling as reachable', async () => {
+  const requests: Request[] = []
+  let status = 200
+  const request: typeof fetch = async (input, init) => {
+    requests.push(new Request(input, init))
+    if (status === 200)
+      return new Response(
+        JSON.stringify({
+          model: JEV_MODEL.id,
+          answers: { ping: { answer: 'pong' } },
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    return new Response('', { status })
+  }
+  const root = await home()
+  const ref = await genericCredential(root)
+  const service = createConfigurationService({ home: root, profile: 'local-dev', request })
+  await service.save({ ...jevAccount(ref), expectedRevision: 0 })
+
+  const probed = await service.test({ providerId: 'typesafe-systemone', accountId: 'jev' })
+  expect(probed).toMatchObject({ verified: true })
+  expect(probed.models).toEqual([expect.objectContaining({ id: JEV_MODEL.id, maxTokens: 32768 })])
+  const sent = requests[0]
+  if (!sent) throw new Error('probe sent no request')
+  expect(sent.method).toBe('POST')
+  expect(sent.url).toBe('https://openrouter.ai/api/v1/systemone')
+  expect(sent.headers.get('authorization')).toBe('Bearer jev-test-key')
+  expect(await sent.json()).toEqual({ model: JEV_MODEL.id, state: {}, questions: { ping: 'ping' } })
+
+  // A probe of an unsaved entry binds the named generic credential, and no credential means untested.
+  await expect(
+    service.test({ providerId: 'typesafe-systemone', credentialRef: ref, model: JEV_MODEL.id }),
+  ).resolves.toMatchObject({ models: [], verified: true })
+  await expect(
+    service.test({ providerId: 'typesafe-systemone', model: JEV_MODEL.id }),
+  ).resolves.toMatchObject({ verified: false })
+
+  // Throttling still proves reachability; a rejected key is the existing fixed refusal; a reply that
+  // does not speak the protocol is not reachable and never blocks saving.
+  status = 429
+  await expect(service.test({ providerId: 'typesafe-systemone', accountId: 'jev' })).resolves.toMatchObject({
+    verified: true,
+  })
+  status = 401
+  await expect(service.test({ providerId: 'typesafe-systemone', accountId: 'jev' })).rejects.toMatchObject({
+    code: 'CONFIG_CREDENTIAL_REJECTED',
+  })
+  status = 400
+  await expect(service.test({ providerId: 'typesafe-systemone', accountId: 'jev' })).resolves.toMatchObject({
+    verified: false,
+  })
+
+  // An edited endpoint is never probed with the stored reference implicitly, and the fields the
+  // other side of the form owns stay refused.
+  await expect(
+    service.test({
+      providerId: 'typesafe-systemone',
+      accountId: 'jev',
+      baseUrl: 'https://api.typesafe.ai/v1',
+    }),
+  ).rejects.toMatchObject({ code: 'CONFIG_CREDENTIAL_REQUIRED' })
+  await expect(
+    service.test({ providerId: 'typesafe-systemone', apiKey: 'jev-test-key' }),
+  ).rejects.toMatchObject({ code: 'CONFIG_INVALID_INPUT' })
+  await expect(service.test({ providerId: 'deepseek', credentialRef: ref })).rejects.toMatchObject({
+    code: 'CONFIG_INVALID_INPUT',
+  })
+})
+
 it('refuses a payload-only account without a usable generic credential', async () => {
   const root = await home()
   const service = createConfigurationService({ home: root, profile: 'local-dev' })

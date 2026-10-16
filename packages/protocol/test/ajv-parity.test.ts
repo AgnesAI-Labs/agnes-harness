@@ -2569,6 +2569,7 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { providerId: '' },
       { providerId: 'p', apiKey: rep(65537) },
       { providerId: 'p', baseUrl: rep(2049) },
+      { providerId: 'p', credentialRef: 'not-a-secret-ref' },
     ],
   },
   ConfigTestResult: {

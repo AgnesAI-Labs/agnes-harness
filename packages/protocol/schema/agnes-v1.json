@@ -5746,6 +5746,12 @@
           "minLength": 1,
           "maxLength": 65536
         },
+        "credentialRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "pattern": "^secret://[A-Za-z0-9_./-]+$"
+        },
         "model": { "type": "string", "minLength": 1, "maxLength": 256 },
         "accountId": {
           "type": "string",
