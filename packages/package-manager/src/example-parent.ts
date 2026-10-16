@@ -1,4 +1,4 @@
-import { parseSemver, satisfiesApiRange } from '@agnes/extension-api'
+import { satisfiesApiRange } from '@agnes/extension-api'
 import type { PackageBlocker, PackagePreview, PluginMetadata } from '@agnes/protocol'
 import type { InstalledPackage } from './inventory.js'
 
@@ -19,10 +19,7 @@ export function exampleParentBlockers(
     !parent.trusted ||
     parent.blockers.length ||
     !range ||
-    !(
-      (range === parent.entry.version && parseSemver(range) !== null) ||
-      satisfiesApiRange(range, parent.entry.version)
-    )
+    !satisfiesApiRange(range, parent.entry.version)
   )
     return [{ code: 'dependency', references: ['example-parent-unavailable', parentId] }]
   seen.add(parentId)

@@ -14,7 +14,7 @@ const roots: string[] = []
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
-function fixture() {
+function fixture(parentVersion = '1.0.0') {
   const directory = mkdtempSync(join(tmpdir(), 'agh-example-'))
   roots.push(directory)
   const row: ClientModuleRosterRow = {
@@ -62,7 +62,7 @@ function fixture() {
   const preview = {
     ...entry,
     capabilityHash: 'cap-1',
-    dependencies: { 'acme/parent': '*' },
+    dependencies: { 'acme/parent': parentVersion },
     blockers: [],
     warnings: [],
   } as unknown as PackagePreview
@@ -78,7 +78,7 @@ function fixture() {
       await check()
       installed = []
     },
-    owner: async () => ({ version: '1.0.0', principal: 'synthetic-user', profile: 'test', row }),
+    owner: async () => ({ version: parentVersion, principal: 'synthetic-user', profile: 'test', row }),
     catalog: async () => [entry],
     installed: async () => installed,
     inspect: async () => preview,
@@ -107,8 +107,8 @@ function fixture() {
   const call = (request: Record<string, unknown>) => create().call(row.rowId, request)
   return { row, entry, preview, backend, sessions, inputs, call, directory }
 }
-it('reviews only the calling host local payload, enables it and creates one durable session per operation', async () => {
-  const f = fixture()
+it.each(['1.0.0', '0.1.0-alpha.0'])('reviews an exact %s parent pin, enables it and creates one durable session per operation', async (version) => {
+  const f = fixture(version)
   expect(await f.call({ action: 'list' })).toMatchObject([{ id: f.entry.id, installation: 'not-installed' }])
   const review = (await f.call({ action: 'inspect', exampleId: f.entry.id })) as { reviewId: string }
   await f.call({ action: 'enable', reviewId: review.reviewId, operationId: 'enable-1' })

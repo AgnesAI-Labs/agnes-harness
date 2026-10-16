@@ -68,7 +68,7 @@ function metadata(): PersistenceMetadataPort {
     },
   }
 }
-function fixture() {
+function fixture(version = '1.0.0') {
   const storage = new MemoryStorage(),
     meta = metadata(),
     registry = new ServiceRegistry()
@@ -100,7 +100,7 @@ function fixture() {
         owner: rowOwner,
         packageId: rowOwner === owner ? '@acme/reports' : '@acme/notifications',
         integrity: 'snapshot-one',
-        version: '1.0.0',
+        version,
         declaredCapabilities: { store: true, wake: true },
         signal: new AbortController().signal,
         assertAlive: () => {
@@ -213,8 +213,8 @@ async function approve(
 }
 
 describe('current profile authority', () => {
-  it('serves a sessionless report query while refusing forged identity and mutation authority', async () => {
-    const f = fixture(),
+  it.each(['1.0.0', '0.1.0-alpha.0'])('serves a %s sessionless report query while refusing forged identity and mutation authority', async (version) => {
+    const f = fixture(version),
       runtime = f.make()
     try {
       expect(
