@@ -23,7 +23,7 @@
   "packages/resource-control-web/src/admin.tsx": 1050,
   "packages/sdk/src/session.ts": 894,
   "packages/web-admin/src/admin/plugins/admin/page.tsx": 1743,
-  "packages/web-admin/src/settings.ts": 1034,
+  "packages/web-admin/src/settings.ts": 1051,
   "packages/web-ui/src/ui/icons.ts": 1345,
   "packages/web-units/src/trace.tsx": 1167,
   "packages/web/src/app.ts": 2366

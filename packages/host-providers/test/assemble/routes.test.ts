@@ -1,8 +1,14 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PiAdapter } from '@agnes/ai'
 import { fakeModel, fakeRequest } from '@agnes/ai/testkit'
 import { type PresetView, presetDefaults } from '@agnes/core'
 import type { ResolvedProfile, RouteDecl } from '@agnes/host-common/profile/types'
+import { createCredentialStore } from '@agnes/host-infrastructure/adapters/credential-store'
+import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
 import type { ModelRecord, RouteTable } from '@agnes/protocol'
+import { createPrivateDirectorySync } from '@agnes/system-node'
 import { describe, expect, it } from 'vitest'
 import {
   BEDROCK_API,
@@ -91,6 +97,40 @@ describe('materializeRoutes with payload-only adapters', () => {
       primary: { route: 'gw', model: 'chat-1' },
       fast: { route: 'gw', model: 'chat-1' },
     })
+  })
+
+  it('skips the payload-only route a saved configuration account produces', async () => {
+    const scratch = mkdtempSync(join(tmpdir(), 'agnes-routes-'))
+    try {
+      const home = join(scratch, 'home')
+      createPrivateDirectorySync(home)
+      const credentialRef = 'secret://generic/11111111-1111-4111-8111-111111111111'
+      await createCredentialStore({ root: home }).putGeneric(credentialRef, 'jev-test-key', {
+        label: 'Jev',
+        createdAt: '2026-10-16T00:00:00.000Z',
+      })
+      const configuration = createConfigurationService({ home, profile: 'local-dev' })
+      await configuration.save({
+        providerId: 'typesafe-systemone',
+        accountId: 'jev',
+        label: 'Jev',
+        credentialRef,
+        model: 'typesafe/jev-1.13-20260917',
+        models: [
+          { id: 'typesafe/jev-1.13-20260917', name: 'Jev 1.13', contextWindow: 65536, maxTokens: 32768 },
+        ],
+        expectedRevision: 0,
+      })
+      const generated = (await configuration.profileInput()).provider?.routes ?? []
+      expect(generated.map((decl) => [decl.route, decl.api])).toEqual([['account-jev', 'typesafe-systemone']])
+      const p = profile([...generated, route('gw', 'openai', 'chat-1')])
+      expect(materializeRoutes(preset, p, [jev, chat])).toMatchObject({
+        primary: { route: 'gw', model: 'chat-1' },
+        fast: { route: 'gw', model: 'chat-1' },
+      })
+    } finally {
+      rmSync(scratch, { recursive: true, force: true })
+    }
   })
 
   it('keeps declaration order for a profile without payload-only routes', () => {

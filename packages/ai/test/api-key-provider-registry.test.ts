@@ -72,9 +72,16 @@ const streamOptions = () => ({
 
 describe('API-key provider registry', () => {
   it('publishes exactly the twelve first-screen providers with stable friendly names', () => {
-    expect(API_KEY_PROVIDER_REGISTRY.map(({ id, displayName }) => [id, displayName])).toEqual(expected)
-    expect(new Set(API_KEY_PROVIDER_REGISTRY.map((entry) => entry.id)).size).toBe(12)
-    expect(API_KEY_PROVIDER_REGISTRY.every((entry) => entry.availability === 'available')).toBe(true)
+    const chat = API_KEY_PROVIDER_REGISTRY.filter((entry) => entry.capabilities?.payloadOnly !== true)
+    expect(chat.map(({ id, displayName }) => [id, displayName])).toEqual(expected)
+    expect(new Set(chat.map((entry) => entry.id)).size).toBe(12)
+    expect(chat.every((entry) => entry.availability === 'available')).toBe(true)
+    // Payload-only entries are registered for account storage lookups, not for chat onboarding.
+    expect(
+      API_KEY_PROVIDER_REGISTRY.filter((entry) => entry.capabilities?.payloadOnly === true).map(
+        (entry) => entry.id,
+      ),
+    ).toEqual(['typesafe-systemone'])
   })
 
   it.each([

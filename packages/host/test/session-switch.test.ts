@@ -10,6 +10,7 @@ import type { PresetDoc } from '@agnes/host-common/presets/types'
 import { resolveProfile } from '@agnes/host-common/profile/resolve'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { MemoryPackageLoader, type PackageModule } from '@agnes/host-extensions/assemble/packages'
+import { createCredentialStore } from '@agnes/host-infrastructure/adapters/credential-store'
 import { createMemoryAudit } from '@agnes/host-infrastructure/audit'
 import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
 import type {} from '@agnes/host-providers/assemble/loops'
@@ -145,8 +146,10 @@ async function profileWithRoutes(routes: RouteDecl[]): Promise<ResolvedProfile> 
  */
 async function buildFixture(
   extraRoutes: RouteDecl[] = [],
+  prepareHome?: (home: string) => Promise<void>,
 ): Promise<{ assembled: Assembled; profile: ResolvedProfile }> {
   const dataDir = scratch()
+  await prepareHome?.(dataDir)
   // Named 'gw', not 'default': 'default' is the reserved unresolved-sentinel spelling
   // (profile/templates.ts's RESERVED_ROUTE_NAMES) and resolveProfile refuses a declared route using
   // it, so the plan text's literal `route: 'default'` in these cases is a real route name here
@@ -327,6 +330,51 @@ describe('validateModelSwitch', () => {
       expect(() =>
         validateModelSwitch(profile, assembled, { slot: 'primary', route: 'gw', model: 'm' }),
       ).not.toThrow()
+    })
+
+    it('refuses a model on the route a saved configuration account produced', async () => {
+      const home = scratch()
+      const credentialRef = 'secret://generic/11111111-1111-4111-8111-111111111111'
+      await createCredentialStore({ root: home }).putGeneric(credentialRef, 'jev-test-key', {
+        label: 'Jev',
+        createdAt: '2026-10-16T00:00:00.000Z',
+      })
+      const configuration = createConfigurationService({ home, profile: 'local-dev' })
+      await configuration.save({
+        providerId: 'typesafe-systemone',
+        accountId: 'jev',
+        label: 'Jev',
+        credentialRef,
+        model: 'typesafe/jev-1.13-20260917',
+        models: [
+          { id: 'typesafe/jev-1.13-20260917', name: 'Jev 1.13', contextWindow: 65536, maxTokens: 32768 },
+        ],
+        expectedRevision: 0,
+      })
+      const generated = (await configuration.profileInput()).provider?.routes ?? []
+      expect(generated.map((decl) => decl.route)).toEqual(['account-jev'])
+      // Assembly resolves a declared credentialRef against the deployment's own store, so the
+      // fixture home binds the same reference the saved account carries.
+      const { assembled, profile } = await buildFixture(generated, async (fixtureHome) => {
+        await createCredentialStore({ root: fixtureHome }).putGeneric(credentialRef, 'jev-test-key', {
+          label: 'Jev',
+          createdAt: '2026-10-16T00:00:00.000Z',
+        })
+      })
+      let thrown: unknown
+      try {
+        validateModelSwitch(profile, assembled, {
+          slot: 'primary',
+          route: 'account-jev',
+          model: 'typesafe/jev-1.13-20260917',
+        })
+      } catch (error) {
+        thrown = error
+      }
+      expect(thrown).toMatchObject({
+        code: 'E_MODEL_UNSUPPORTED',
+        detail: { slot: 'primary', route: 'account-jev', payloadOnly: true },
+      })
     })
 
     it('refuses every slot, not only the primary one', async () => {

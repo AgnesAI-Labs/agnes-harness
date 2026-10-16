@@ -43,6 +43,7 @@ import {
   showSettingsDialog,
 } from './settings/dialog.js'
 import { modelSlotsPanel } from './settings/model-slots.js'
+import { sideModelsPanel } from './settings/side-models.js'
 
 export type SettingsControllerOptions = {
   client: Client
@@ -827,11 +828,29 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     }
   }
   let renderedSlots: HTMLElement | undefined
+  let renderedSideModels: HTMLElement | undefined
   const renderAccounts = (): void => {
     const slotsHost = optionalElement('config-auxiliary-models', 'div')
     if (renderedSlots && renderedSlots !== slotsHost) unmountRegion(renderedSlots)
     renderedSlots = slotsHost
     if (slotsHost) renderRegion(slotsHost, modelSlotsPanel(configuration, tr))
+    const sideHost = optionalElement('config-side-models', 'div')
+    if (renderedSideModels && renderedSideModels !== sideHost) unmountRegion(renderedSideModels)
+    renderedSideModels = sideHost
+    if (sideHost)
+      renderRegion(
+        sideHost,
+        sideModelsPanel({
+          client: options.client.config,
+          configuration,
+          canSave: connected && !savePending && !testPending,
+          onSaved: async (saved) => {
+            await options.onSaved(saved)
+            configuration = saved
+            renderAccounts()
+          },
+        }),
+      )
     const guard = optionalElement('config-account-guard', 'p')
     if (guard) guard.hidden = !editingId || editingId !== configuration?.defaultAccountId
     const currentAccountList = accountList()

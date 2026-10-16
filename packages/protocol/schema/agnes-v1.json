@@ -5812,6 +5812,8 @@
         "reasoning": { "type": "boolean" },
         "thinkingLevelMap": { "type": "object", "additionalProperties": { "type": "string" } },
         "contextWindow": { "type": "integer", "minimum": 1 },
+        "maxTokens": { "type": "integer", "minimum": 1 },
+        "cost": { "$ref": "model.json#/$defs/ModelCost" },
         "defaultSettings": { "$ref": "model.json#/$defs/ModelSettings" },
         "id": {
           "type": "string",
@@ -5937,6 +5939,12 @@
           "minLength": 1,
           "maxLength": 65536
         },
+        "credentialRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "pattern": "^secret://[A-Za-z0-9_./-]+$"
+        },
         "model": { "type": "string", "minLength": 1, "maxLength": 256 },
         "accountId": {
           "type": "string",
@@ -5991,6 +5999,17 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 256
+        },
+        "models": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ConfigModel" },
+          "maxItems": 4096
+        },
+        "credentialRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "pattern": "^secret://[A-Za-z0-9_./-]+$"
         },
         "expectedRevision": {
           "type": "integer",
