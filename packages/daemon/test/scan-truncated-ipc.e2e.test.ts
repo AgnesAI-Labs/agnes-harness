@@ -1,4 +1,5 @@
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -52,10 +53,22 @@ it('a truncated scan in the worker reaches the daemon with its range, and paging
   const dir = realpathSync.native(mkdtempSync(join(tmpdir(), 'agnes-scan-ipc-')))
   const key = 'agnes:local:default:daemon:dm:scan-ipc'
   try {
-    // Seed the ledger before any worker owns it.
+    // Seed the ledger before any worker owns it. Store actual original bytes: the generic
+    // testkit artifact seam returns a placeholder digest that is invalid in stored attachments.
+    const originals = join(dir, 'originals')
+    mkdirSync(originals)
     const seeded = await createTestHost({
       dataDir: dir,
       script: [],
+      seams: {
+        artifacts: {
+          async put(bytes, meta) {
+            const sha256 = createHash('sha256').update(bytes).digest('hex')
+            writeFileSync(join(originals, sha256), bytes)
+            return { sha256, size: bytes.length, mime: meta?.mime ?? 'application/octet-stream' }
+          },
+        },
+      },
       profileInputs: {
         user: {
           name: 'local-dev',
@@ -138,7 +151,8 @@ it('a truncated scan in the worker reaches the daemon with its range, and paging
         binding: await workspaceBinding(key, dir),
       })
       const hello = await link.hello
-      expect(performance.now() - coldStarted).toBeLessThan(30_000)
+      const coldStartMs = performance.now() - coldStarted
+      expect(coldStartMs).toBeLessThan(30_000)
       const remote = new RemoteSession(key, hello.writerRunId, hello.generation, link, dir)
 
       const openingMs: number[] = []
@@ -157,6 +171,7 @@ it('a truncated scan in the worker reaches the daemon with its range, and paging
           platform: process.platform,
           arch: process.arch,
           node: process.version,
+          coldStartMs,
           openingMs,
           peakParentRssBytes: process.resourceUsage().maxRSS * 1024,
         }),
