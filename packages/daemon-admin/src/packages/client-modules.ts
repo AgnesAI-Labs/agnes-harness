@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, extname, join, posix, relative, resolve, sep } from 'node:path'
-import { clientModuleRowIdForContribution, packageOfRow } from '@agnes/daemon-foundation/composite-desired'
+import { clientModuleRowIdForContribution } from '@agnes/daemon-foundation/composite-desired'
 import { type CompositionPatch, CompositionSessionStore, compositionModuleAllowed } from '@agnes/host'
 import {
   CLIENT_RESOURCE_MAX_FILE_BYTES,
@@ -12,11 +12,7 @@ import {
   RuntimeGenerationSnapshotStore,
   resolveClientModuleAsset,
 } from '@agnes/package-manager'
-import {
-  decodeRuntimeTargetArtifact,
-  type PluginRow,
-  type RuntimeTargetArtifact,
-} from '@agnes/plugin-runtime/host'
+import type { RuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 import {
   type ClientModuleListResult,
   type ClientModuleReadResult,
@@ -27,6 +23,8 @@ import {
 } from '@agnes/protocol'
 import { validUiComponentDeclaration } from '@agnes/protocol/intelligent-ui'
 import { cleanRelative, collectSnapshotFiles, SERVABLE } from './client-asset-references.js'
+import { createPublicationChecks } from './client-publication-checks.js'
+import { runtimeClientTruth } from './client-runtime-truth.js'
 import {
   clientContributionDeclarations,
   combineContributionRosters,
@@ -464,77 +462,6 @@ function hasClient(row: InstalledPackage): boolean {
   )
 }
 
-type RuntimeClientTruth = Readonly<{
-  useArtifact: boolean
-  active: ReadonlyMap<string, Readonly<{ packageId: string; revision: string }>>
-  backend: ReadonlyMap<string, Readonly<{ packageId: string; revision: string }>>
-  referenced: ReadonlyMap<string, ReadonlySet<string>>
-}>
-
-/**
- * Decode the daemon-minted browser locator without searching for `/client` in
- * the whole string: scoped package names may themselves contain that prefix.
- */
-function webRowReference(row: PluginRow): Readonly<{ packageId: string; revision: string }> | undefined {
-  if (!row.id.startsWith('web:')) return undefined
-  const packageId = packageOfRow(row.plugin)
-  if (!packageId) return undefined
-  const prefix = `${packageId}@`
-  if (!row.plugin.startsWith(prefix)) return undefined
-  const remainder = row.plugin.slice(prefix.length)
-  const separator = remainder.indexOf('/')
-  if (separator < 1) return undefined
-  const revision = remainder.slice(0, separator)
-  const clientPath = remainder.slice(separator)
-  if (clientPath !== '/client' && !clientPath.startsWith('/client/')) return undefined
-  return REVISION.test(revision) ? { packageId, revision } : undefined
-}
-
-function webRowRevision(row: PluginRow): Readonly<{ packageId: string; revision: string }> | undefined {
-  return row.disabled ? undefined : webRowReference(row)
-}
-
-function runtimeClientTruth(
-  artifacts: ReturnType<NonNullable<ClientModuleRegistryOptions['runtimeArtifacts']>>,
-): RuntimeClientTruth {
-  if (!artifacts) return { useArtifact: false, active: new Map(), backend: new Map(), referenced: new Map() }
-  const active = new Map<string, Readonly<{ packageId: string; revision: string }>>()
-  const backend = new Map<string, Readonly<{ packageId: string; revision: string }>>()
-  const referenced = new Map<string, Set<string>>()
-  const readRows = (artifact: RuntimeTargetArtifact | undefined): readonly Readonly<PluginRow>[] => {
-    if (!artifact) return []
-    try {
-      return decodeRuntimeTargetArtifact(artifact).tree.rows
-    } catch {
-      return []
-    }
-  }
-  for (const artifact of [artifacts.desired, artifacts.previous, artifacts.lastGood]) {
-    for (const row of readRows(artifact)) {
-      const reference = webRowReference(row)
-      if (!reference) continue
-      const set = referenced.get(reference.packageId) ?? new Set<string>()
-      set.add(reference.revision)
-      referenced.set(reference.packageId, set)
-    }
-  }
-  const selected = artifacts.lastGood ?? artifacts.desired
-  for (const row of readRows(selected)) {
-    const selected = webRowRevision(row)
-    if (selected) active.set(row.id, selected)
-    if (!row.disabled && !row.id.startsWith('web:')) {
-      const packageId = packageOfRow(row.plugin)
-      if (packageId) backend.set(row.id, { packageId, revision: row.entryRevision })
-    }
-  }
-  return {
-    useArtifact: Boolean(artifacts.lastGood || artifacts.desired || artifacts.previous),
-    active,
-    backend,
-    referenced,
-  }
-}
-
 function storedDeclaration(declared: ClientDeclaration): StoredDeclaration {
   return {
     moduleName: declared.moduleName,
@@ -626,17 +553,6 @@ function migrateRowAliases(
     aliases: Object.fromEntries([...aliases].sort(([left], [right]) => left.localeCompare(right))),
     ambiguous: [...ambiguous].sort(),
   }
-}
-
-function sameInstalled(left: InstalledInventory, right: InstalledInventory, row: InstalledPackage): boolean {
-  const current = right.packages.find((candidate) => candidate.id === row.id)
-  return (
-    left.profile === right.profile &&
-    current?.entry.integrity === row.entry.integrity &&
-    current.directory === row.directory &&
-    current.enabled === row.enabled &&
-    current.trusted === row.trusted
-  )
 }
 
 async function writeAtomic(path: string, value: unknown): Promise<void> {
@@ -1167,6 +1083,7 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
     const rows: NonNullable<ClientModuleListResult['rows']> = []
     const statuses: ClientModuleListResult['statuses'] = []
     const rowAliases: Record<string, string> = {}
+    const publications = createPublicationChecks(input.inventory)
     for (const row of [...eligible.values()].sort((left, right) => left.id.localeCompare(right.id))) {
       const installedRevision = row.entry.integrity
       const liveDeclarations = declarations(row)
@@ -1305,10 +1222,6 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
           declarations: activeDeclarations,
           quotaAvailable: Math.max(0, quotaBytes - used),
         })
-        if (selectedRevision === installedRevision) {
-          const refreshed = await input.refreshInventory()
-          if (!sameInstalled(input.inventory, refreshed, row)) publication = 'invalid'
-        }
       }
       if (publication === 'invalid' || publication === 'quota') {
         await removeSnapshot(root, row.id, selectedRevision)
@@ -1327,6 +1240,31 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
         statuses.push({ ...baseStatus, state: 'blocked', reason: 'resources-invalid' })
         resourceFailure = true
         continue
+      }
+      if (current.current !== selectedRevision && selectedRevision === installedRevision) {
+        const prior = state.packages[row.id]
+        publications.add(row, async () => {
+          await removeSnapshot(root, row.id, selectedRevision)
+          const restored = { ...state.packages }
+          if (prior) restored[row.id] = prior
+          else delete restored[row.id]
+          state = { ...state, packages: restored }
+          for (let index = statuses.length - 1; index >= 0; index--)
+            if (statuses[index]?.packageId === row.id) statuses.splice(index, 1)
+          statuses.push({
+            ...baseStatus,
+            state: 'blocked',
+            reason: 'resources-invalid',
+            ...(reportRetained.length ? { retained: reportRetained } : {}),
+          })
+          for (let index = modules.length - 1; index >= 0; index--)
+            if (modules[index]?.packageId === row.id) modules.splice(index, 1)
+          for (let index = rows.length - 1; index >= 0; index--)
+            if (rows[index]?.packageId === row.id) rows.splice(index, 1)
+          for (const key of Object.keys(migration.aliases)) delete rowAliases[key]
+          resourcesChanged = true
+          resourceFailure = true
+        })
       }
       const contentDigest = snapshotContentDigest(verifiedSnapshot.manifest.files)
       if (current.current && current.current !== selectedRevision)
@@ -1404,6 +1342,7 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
         })
       }
     }
+    await publications.verify(input.refreshInventory)
     const bounded = Object.entries(state.packages).map(([id, item]) => [id, trackedDeclarations(item)])
     state = { ...state, packages: Object.fromEntries(bounded) }
     // An unreadable state reads back as empty and prunes every snapshot, so refuse to persist it.

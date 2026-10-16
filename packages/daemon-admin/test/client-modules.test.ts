@@ -1287,25 +1287,42 @@ describe('client module immutable snapshots', () => {
     registry.close()
   })
 
-  it('fails closed when the install identity changes during snapshot copy', async () => {
-    const files = fixture()
-    const row = installed({ directory: files.packageDirectory })
-    const changed = installed({
-      directory: files.packageDirectory,
-      integrity: `sha256-${'9'.repeat(64)}`,
-    })
-    const registry = createClientModuleRegistry({ snapshotDirectory: () => files.snapshots })
-    const result = await registry.list({
-      profile: 'local-dev',
-      profileDirectory: files.root,
-      inventory: inventory(row),
-      actual: async () => undefined,
-      refreshInventory: async () => inventory(changed),
-    })
-    expect(result.modules).toEqual([])
-    expect(result.statuses[0]).toMatchObject({ state: 'blocked', reason: 'resources-invalid' })
-    registry.close()
-  })
+  it.each([false, true])(
+    'fails closed when install identity changes during snapshot copies (companion=%s)',
+    async (companion) => {
+      const files = fixture()
+      const row = installed({ directory: files.packageDirectory })
+      const otherFiles = fixture()
+      const other = { ...installed({ directory: otherFiles.packageDirectory }), id: 'acme/second' }
+      const changed = installed({
+        directory: files.packageDirectory,
+        integrity: `sha256-${'9'.repeat(64)}`,
+      })
+      const registry = createClientModuleRegistry({ snapshotDirectory: () => files.snapshots })
+      const result = await registry.list({
+        profile: 'local-dev',
+        profileDirectory: files.root,
+        inventory: { ...inventory(row), packages: [row, ...(companion ? [other] : [])] },
+        actual: async () => undefined,
+        refreshInventory: async () => {
+          // The identity change is observed after the complete batch is copied, including packages
+          // later in the roster. Every published package must still pass this final verification.
+          if (companion)
+            expect(
+              existsSync(join(files.snapshots, 'acme/second', other.entry.integrity, 'dist/index.js')),
+            ).toBe(true)
+          return { ...inventory(changed), packages: [changed, ...(companion ? [other] : [])] }
+        },
+      })
+      expect(result.modules.map((module) => module.packageId)).toEqual(companion ? ['acme/second'] : [])
+      expect(result.statuses.find((status) => status.packageId === row.id)).toMatchObject({
+        state: 'blocked',
+        reason: 'resources-invalid',
+      })
+      expect(existsSync(join(files.snapshots, 'acme/panel', row.entry.integrity))).toBe(false)
+      registry.close()
+    },
+  )
 
   it('serves list/read through the shared PackageAdmin RPC handler', async () => {
     const files = fixture()
