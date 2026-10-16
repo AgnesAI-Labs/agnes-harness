@@ -28,6 +28,7 @@ Use the Node.js requirement and pinned pnpm version in `package.json`. From the 
 pnpm install --frozen-lockfile
 pnpm --filter @agnes/host build:native
 pnpm --filter @agnes/system-node build:native
+pnpm --filter @agnes/mhs build:client
 pnpm typecheck
 pnpm lint
 pnpm gen:check
