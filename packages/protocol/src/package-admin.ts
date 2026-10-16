@@ -268,6 +268,7 @@ export function projectClientModuleRows(result: P.ClientModuleListResult): P.Cli
       if (source.contentDigest !== undefined) row.contentDigest = source.contentDigest
       if (source.extIds !== undefined) row.extIds = [...source.extIds]
       if (source.services !== undefined) row.services = [...source.services]
+      if (source.streams !== undefined) row.streams = [...source.streams]
       if (source.intelligentComponents !== undefined)
         row.intelligentComponents = copyUiComponents(source.intelligentComponents)
       if (source.publicConfig !== undefined) row.publicConfig = { ...source.publicConfig }
@@ -791,8 +792,8 @@ const DATA_SCHEMAS: Record<PackageAdminDataName, TSchema> = {
   ClientModuleRosterRow: P.ClientModuleRosterRow,
   ClientModuleEffectCallParams: P.ClientModuleEffectCallParams,
 }
-function check(schema: TSchema, value: unknown): ValidationResult<unknown> {
-  const inspected = inspectJsonData(value, 1048576)
+function check(schema: TSchema, value: unknown, maxBytes = 1048576): ValidationResult<unknown> {
+  const inspected = inspectJsonData(value, maxBytes)
   if (!inspected.ok)
     return { ok: false, errors: [{ path: '', code: 'TYPE', message: 'expected bounded strict JSON data' }] }
   return validateAgainst(schema, inspected.value)
@@ -808,5 +809,11 @@ export function validatePackageAdminCall(
   side: 'params' | 'result',
   value: unknown,
 ): ValidationResult<unknown> {
-  return check(PACKAGE_ADMIN_METHODS[name][side], value)
+  // Only the immutable client-asset read needs the 32 MiB raw resource allowance
+  // (base64 plus the JSON envelope). Other administrative payloads remain at 1 MiB.
+  return check(
+    PACKAGE_ADMIN_METHODS[name][side],
+    value,
+    name === '_agnes/v1/clientModules.read' && side === 'result' ? 44739244 + 1024 : 1048576,
+  )
 }

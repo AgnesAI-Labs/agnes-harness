@@ -58,6 +58,14 @@ describe('PM4 management contracts', () => {
       }).ok,
     ).toBe(false)
   })
+  it('serves resource payloads through the same read contract up to the 32 MiB raw cap', () => {
+    const base64 = Buffer.alloc(32 * 1024 * 1024).toString('base64')
+    expect(validateMethod('_agnes/v1/clientModules.read', 'result', { found: true, base64 }).ok).toBe(true)
+    expect(
+      validateMethod('_agnes/v1/clientModules.read', 'result', { found: true, base64: `${base64}A` }).ok,
+    ).toBe(false)
+  })
+
   it('validates all checked-in contracts through production entry points', () => {
     const result = runFixtureFiles([file])
     expect(result.failed).toEqual([])
@@ -243,6 +251,7 @@ describe('PM4 management contracts', () => {
           examplePages: ['scene'],
           exampleOf: 'acme/host',
           pageEntry: 'scene',
+          streams: ['acme.events'],
           packageId: 'acme/ui',
           enabled: true,
           phase: 'ready',
@@ -255,6 +264,7 @@ describe('PM4 management contracts', () => {
     expect(withRows.rows?.[0]?.intelligentComponents).toEqual(intelligentComponents)
     expect(withRows.modules[0]?.contentDigest).toBe(contentDigest)
     expect(withRows.rows?.[0]?.contentDigest).toBe(contentDigest)
+    expect(withRows.rows?.[0]?.streams).toEqual(['acme.events'])
     expect(withRows.rows?.[0]?.binding).toMatchObject({ lifetime: 'profile', activationId: 'activation-1' })
     expect(withRows.rows?.[0]?.homeEntries).toEqual([{ id: 'board', placement: 'primary' }])
     expect(withRows.rows?.[0]?.examplePages).toEqual(['scene'])
