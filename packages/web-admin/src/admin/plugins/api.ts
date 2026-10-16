@@ -168,8 +168,16 @@ export class PluginAdminApi {
     return body
   }
 
-  async candidatesList(): Promise<import('@agnes/protocol').AuthoringCandidateList> {
-    return this.#post('candidates/list', { profile: this.#context.profile })
+  #candidateRead: Promise<import('@agnes/protocol').AuthoringCandidateList> | undefined
+
+  candidatesList(): Promise<import('@agnes/protocol').AuthoringCandidateList> {
+    if (this.#candidateRead) return this.#candidateRead
+    this.#candidateRead = this.#post<import('@agnes/protocol').AuthoringCandidateList>('candidates/list', {
+      profile: this.#context.profile,
+    }).finally(() => {
+      this.#candidateRead = undefined
+    })
+    return this.#candidateRead
   }
   async candidatesShow(candidateId: string): Promise<import('@agnes/protocol').AuthoringCandidate> {
     return this.#post('candidates/show', { profile: this.#context.profile, candidateId })
@@ -337,8 +345,15 @@ export class PluginAdminApi {
     return this.#post('tree/get', { profile: this.#context.profile })
   }
 
-  async treeList(): Promise<PluginTreeView> {
-    return this.#post('tree/list', { profile: this.#context.profile })
+  #treeRead: Promise<PluginTreeView> | undefined
+  treeList(): Promise<PluginTreeView> {
+    if (this.#treeRead) return this.#treeRead
+    this.#treeRead = this.#post<PluginTreeView>('tree/list', { profile: this.#context.profile }).finally(
+      () => {
+        this.#treeRead = undefined
+      },
+    )
+    return this.#treeRead
   }
 
   async treeApply(artifact: PluginTreeView['desired']): Promise<PluginTreeApplyResult> {

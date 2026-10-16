@@ -65,7 +65,6 @@ it.each(['en', 'zh-CN'])(
     const host = document.body.appendChild(document.createElement('div'))
     const page = new PluginAdminPage({ surface: { host, render: () => null } })
     vi.spyOn(page, 'render').mockImplementation(() => {})
-    vi.spyOn(page, 'scheduleTreePoll').mockImplementation(() => {})
     const inspect = vi.spyOn(page, 'inspect').mockResolvedValue({ ok: true, operationId: 'fixture-inspect' })
     const root = createRoot(host)
     try {

@@ -167,7 +167,9 @@ it.each([false, true])(
       )
       expect(host.querySelector('[data-testid="plugin-candidates"]')).toBeNull()
       list.mockResolvedValue({ candidates: [candidate] })
-      await act(async () => vi.advanceTimersByTimeAsync(3000))
+      await act(async () => vi.advanceTimersByTimeAsync(120_000))
+      expect(list).toHaveBeenCalledTimes(1)
+      await act(async () => window.dispatchEvent(new Event('agnes:plugins-invalidated')))
       expect(host.querySelector('[data-testid="candidate-open"]')?.textContent).toContain(candidate.packageId)
       const button = (id: string) => {
         const element = host.querySelector<HTMLButtonElement>(`[data-testid="${id}"]`)
@@ -216,13 +218,22 @@ it.each([false, true])(
       }
       await act(async () => button('candidate-back').click())
       list.mockResolvedValue({ candidates: [] })
-      await act(async () => vi.advanceTimersByTimeAsync(3000))
+      const settledReads = list.mock.calls.length
+      await act(async () => vi.advanceTimersByTimeAsync(120_000))
+      expect(list).toHaveBeenCalledTimes(settledReads)
+      await act(async () => window.dispatchEvent(new Event('agnes:plugins-invalidated')))
       expect(host.querySelector('[data-testid="plugin-candidates"]')).toBeNull()
       list.mockRejectedValue(new Error('offline'))
-      await act(async () => vi.advanceTimersByTimeAsync(3000))
+      const failedReads = list.mock.calls.length
+      await act(async () => vi.advanceTimersByTimeAsync(120_000))
+      expect(list).toHaveBeenCalledTimes(failedReads)
+      await act(async () => window.dispatchEvent(new Event('agnes:plugins-invalidated')))
       expect(host.querySelector('[role="alert"]')?.textContent).toBe(t('candidates.unavailable'))
       list.mockResolvedValue({ candidates: [] })
-      await act(async () => vi.advanceTimersByTimeAsync(3000))
+      const recoveredReads = list.mock.calls.length
+      await act(async () => vi.advanceTimersByTimeAsync(120_000))
+      expect(list).toHaveBeenCalledTimes(recoveredReads)
+      await act(async () => window.dispatchEvent(new Event('agnes:plugins-invalidated')))
       expect(host.querySelector('[data-testid="plugin-candidates"]')).toBeNull()
     } finally {
       await act(async () => root.unmount())

@@ -101,3 +101,56 @@ it('renders terminal control bytes safely and maps interactive keys', () => {
   expect(terminalKey({ key: 'ArrowUp', ctrlKey: false, altKey: false, metaKey: false })).toBe('\x1b[A')
   expect(terminalKey({ key: 'c', ctrlKey: true, altKey: false, metaKey: false })).toBe('\x03')
 })
+
+it('rests with no running jobs, backs off active reads and pauses while hidden', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+  let hidden = false
+  const visible = vi
+    .spyOn(document, 'visibilityState', 'get')
+    .mockImplementation(() => (hidden ? 'hidden' : 'visible'))
+  let running = false
+  const job: SessionJob = {
+    id: 'job',
+    kind: 'shell',
+    command: 'sleep 10',
+    cwd: '/fixture',
+    status: 'running',
+    code: null,
+    truncated: false,
+  }
+  const api = { read: vi.fn(async () => ({ jobs: running ? [job] : [], completions: [] })), control: vi.fn() }
+  const sessions = {
+    current: () => 'fixture',
+    list: async () => [
+      { id: 'fixture', title: 'Fixture', workspace: '/fixture', createdAt: new Date().toISOString() },
+    ],
+  }
+  const host = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(host)
+  try {
+    await act(async () => root.render(createElement(JobsPanel, { api, sessions })))
+    expect(api.read).toHaveBeenCalledTimes(1)
+    await act(async () => vi.advanceTimersByTimeAsync(120_000))
+    expect(api.read).toHaveBeenCalledTimes(1)
+    running = true
+    await act(async () => window.dispatchEvent(new Event('agnes:jobs-changed')))
+    await act(async () => vi.advanceTimersByTimeAsync(1000))
+    expect(api.read).toHaveBeenCalledTimes(3)
+    await act(async () => vi.advanceTimersByTimeAsync(1000))
+    expect(api.read).toHaveBeenCalledTimes(3)
+    hidden = true
+    await act(async () => document.dispatchEvent(new Event('visibilitychange')))
+    await act(async () => vi.advanceTimersByTimeAsync(120_000))
+    expect(api.read).toHaveBeenCalledTimes(3)
+    running = false
+    hidden = false
+    await act(async () => document.dispatchEvent(new Event('visibilitychange')))
+    expect(api.read).toHaveBeenCalledTimes(4)
+    await act(async () => vi.advanceTimersByTimeAsync(120_000))
+    expect(api.read).toHaveBeenCalledTimes(4)
+  } finally {
+    await act(async () => root.unmount())
+    visible.mockRestore()
+    vi.useRealTimers()
+  }
+})

@@ -2,7 +2,7 @@ import type { DecisionSnapshot } from '@agnes/protocol'
 import type { HostAgnesClient, LocaleService } from '@agnes/web-client'
 import { Button, Icon, Tooltip } from '@agnes/web-ui'
 import { Approval } from '@agnes/web-units'
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 
 /** Profile approvals belong to the host shell and remain accessible without a selected session. */
 export function ProfileApprovals({ client, locale }: { client: HostAgnesClient; locale: LocaleService }) {
@@ -12,36 +12,66 @@ export function ProfileApprovals({ client, locale }: { client: HostAgnesClient; 
   const [decisions, setDecisions] = useState<DecisionSnapshot[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(false)
+  const refresh = useRef<() => Promise<void>>(async () => {})
+  const opened = useRef(open)
+  opened.current = open
   useEffect(() => {
-    let alive = true,
-      reading = false
-    const read = async () => {
-      if (reading) return
-      reading = true
-      try {
-        const result = await client.call<{ decisions: DecisionSnapshot[] }>(
-          '_agnes/v1/profile.decisions.list',
-          {},
-        )
-        if (alive) {
-          setDecisions(result.decisions)
-          setError(false)
+    let alive = true
+    let pending: Promise<void> | undefined
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let attempts = 0
+    let count = 0
+    let again = false
+    const read = () => {
+      if (!alive || document.visibilityState === 'hidden') return Promise.resolve()
+      if (pending) return pending
+      clearTimeout(timer)
+      pending = Promise.resolve().then(async () => {
+        try {
+          const result = await client.call<{ decisions: DecisionSnapshot[] }>(
+            '_agnes/v1/profile.decisions.list',
+            {},
+          )
+          if (alive) {
+            count = result.decisions.length
+            setDecisions(result.decisions)
+            setError(false)
+          }
+        } catch {
+          if (alive && opened.current) setError(true)
+        } finally {
+          pending = undefined
+          // There is no profile-decision push in the current protocol. Keep visible-only discovery
+          // at one minute; only known pending approvals need faster, backed-off revalidation.
+          const delay = count ? Math.min(30_000, 3000 * 2 ** Math.min(4, attempts++)) : 60_000
+          if (!count) attempts = 0
+          if (alive && document.visibilityState !== 'hidden') {
+            timer = setTimeout(() => void read(), again ? 0 : delay)
+            again = false
+          }
         }
-      } catch {
-        if (alive && open) setError(true)
-      } finally {
-        reading = false
-      }
+      })
+      return pending
     }
-    void read()
-    const timer = setInterval(() => {
+    const wake = () => {
+      again = pending !== undefined
+      clearTimeout(timer)
       void read()
-    }, 3000)
+    }
+    refresh.current = read
+    document.addEventListener('visibilitychange', wake)
+    window.addEventListener('focus', wake)
+    window.addEventListener('online', wake)
+    void read()
     return () => {
       alive = false
-      clearInterval(timer)
+      clearTimeout(timer)
+      refresh.current = async () => {}
+      document.removeEventListener('visibilitychange', wake)
+      window.removeEventListener('focus', wake)
+      window.removeEventListener('online', wake)
     }
-  }, [client, open])
+  }, [client])
   const answer = async (snapshot: DecisionSnapshot, option: string) => {
     setBusy(true)
     setError(false)
@@ -53,6 +83,7 @@ export function ProfileApprovals({ client, locale }: { client: HostAgnesClient; 
         response: { option, value: null },
       })
       setDecisions((values) => values.filter((value) => value.handle.id !== snapshot.handle.id))
+      await refresh.current()
     } catch {
       setError(true)
     } finally {
@@ -67,7 +98,10 @@ export function ProfileApprovals({ client, locale }: { client: HostAgnesClient; 
         <Button
           appearance="ghost"
           className="home-entry"
-          onClick={() => setOpen((value) => !value)}
+          onClick={() => {
+            setOpen((value) => !value)
+            void refresh.current()
+          }}
           aria-expanded={open}
           aria-controls="profile-approvals"
           aria-label={label}

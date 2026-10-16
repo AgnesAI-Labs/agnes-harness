@@ -2,11 +2,11 @@ import type { LocaleCatalog } from '@agnes/web-ui'
 
 export const runtimeCatalog: LocaleCatalog = {
   en: {
-    'state.historical': 'Leftover usage',
+    'state.historical': 'Saved sessions use an older version',
     'drain.historicalTooltip':
-      'Only saved sessions reference this version. Its container can close; the snapshot stays available for resume.',
+      'Saved sessions keep the plugin version they started with so they can resume. New sessions use the current version. This does not mean a task is running.',
     'drain.historicalSummary':
-      'Leftover usage: {sessions} saved sessions retain older code. Use “Migrate session to current plugins” in runtime settings to migrate eligible sessions.',
+      '{sessions} saved sessions use older plugin versions. Use “Migrate session to current plugins” in runtime settings to migrate eligible sessions.',
     'drain.historicalDetails': 'Historical sessions',
     'drain.historicalVersion': 'Version {version} · {sessions} historical sessions',
     'drain.pluginOne': 'plugin',
@@ -71,10 +71,11 @@ export const runtimeCatalog: LocaleCatalog = {
     'tree.loading': 'Updating plugin resources…',
   },
   'zh-CN': {
-    'state.historical': '遗留占用',
-    'drain.historicalTooltip': '只有历史会话引用此版本。运行容器可关闭，快照仍保留供恢复使用。',
+    'state.historical': '历史会话保留旧版',
+    'drain.historicalTooltip':
+      '已保存的会话保留其开始时的插件版本，以便继续会话；新会话使用当前版本。这不表示有任务正在运行。',
     'drain.historicalSummary':
-      '遗留占用：{sessions} 个历史会话保留旧代码。可在运行时设置中使用“将会话迁移到当前插件”迁移符合条件的会话。',
+      '{sessions} 个历史会话保留旧版插件。可在运行时设置中使用“将会话迁移到当前插件”迁移符合条件的会话。',
     'drain.historicalDetails': '历史会话',
     'drain.historicalVersion': '版本 {version} · {sessions} 个历史会话',
     'drain.pluginOne': '插件',

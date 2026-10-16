@@ -17,7 +17,6 @@ import {
 import { rowsOf, type ScheduleRow, scheduleChoices } from '../src/settings/schedule-model.js'
 import {
   SCHEDULE_ACTIVE_REFRESH_MS,
-  SCHEDULE_IDLE_REFRESH_MS,
   schedulesActive,
   useScheduleRefresh,
 } from '../src/settings/schedule-refresh.js'
@@ -530,26 +529,26 @@ it('keeps run and approval states current while the page is open, and rests whil
     await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_ACTIVE_REFRESH_MS))
     expect(list).toHaveBeenCalledTimes(2)
     rows = [{ ...running, runs: [{ ...running.runs[0], outcome: 'waiting_approval' }] }]
-    await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_ACTIVE_REFRESH_MS))
+    await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_ACTIVE_REFRESH_MS * 2))
     expect(document.body.textContent).toContain(ux('outcome.waiting_approval'))
-    // Nothing happening: the list still refreshes, but slowly.
+    // Nothing happening: no periodic reads.
     rows = [idle]
-    await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_ACTIVE_REFRESH_MS))
+    await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_ACTIVE_REFRESH_MS * 4))
     const settled = list.mock.calls.length
     await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_ACTIVE_REFRESH_MS))
     expect(list).toHaveBeenCalledTimes(settled)
-    await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_IDLE_REFRESH_MS))
-    expect(list).toHaveBeenCalledTimes(settled + 1)
+    await act(async () => vi.advanceTimersByTimeAsync(60_000))
+    expect(list).toHaveBeenCalledTimes(settled)
     // Hidden pages do not poll; coming back reads at once.
     visibility = 'hidden'
-    await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_IDLE_REFRESH_MS * 3))
-    expect(list).toHaveBeenCalledTimes(settled + 1)
+    await act(async () => vi.advanceTimersByTimeAsync(60_000 * 3))
+    expect(list).toHaveBeenCalledTimes(settled)
     visibility = 'visible'
     await act(async () => {
       document.dispatchEvent(new Event('visibilitychange'))
       await vi.advanceTimersByTimeAsync(0)
     })
-    expect(list).toHaveBeenCalledTimes(settled + 2)
+    expect(list).toHaveBeenCalledTimes(settled + 1)
     // «Run now» polls quickly until the run shows, even before the list says it is running.
     await click('schedules-actions')
     await click('schedules-run-now')
@@ -601,7 +600,7 @@ describe('polling lifetime (N02)', () => {
         const host = document.createElement('div')
         const root = createRoot(host)
         await act(async () => root.render(createElement(Probe, { refresh, rows: [idleRow()] })))
-        await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_IDLE_REFRESH_MS))
+        await act(async () => window.dispatchEvent(new Event('focus')))
         expect(refresh).toHaveBeenCalledTimes(1)
         await act(async () => root.unmount())
         await act(async () => {
@@ -611,7 +610,7 @@ describe('polling lifetime (N02)', () => {
           await vi.advanceTimersByTimeAsync(0)
         })
         expect(vi.getTimerCount()).toBe(0)
-        await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_IDLE_REFRESH_MS * 4))
+        await act(async () => vi.advanceTimersByTimeAsync(60_000 * 4))
         expect(refresh).toHaveBeenCalledTimes(1)
       }))
 
@@ -623,7 +622,7 @@ describe('polling lifetime (N02)', () => {
       const idle = idleRow()
       const due = { ...idle, nextRunAt: now + 10_000 }
       await act(async () => root.render(createElement(Probe, { refresh, rows: [idle] })))
-      await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_IDLE_REFRESH_MS))
+      await act(async () => window.dispatchEvent(new Event('focus')))
       expect(refresh).toHaveBeenCalledTimes(1)
       // The list turns active while that read is still open: the quick chain takes over.
       await act(async () => root.render(createElement(Probe, { refresh, rows: [due] })))
@@ -632,7 +631,7 @@ describe('polling lifetime (N02)', () => {
         await vi.advanceTimersByTimeAsync(0)
       })
       expect(vi.getTimerCount()).toBe(1)
-      await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_ACTIVE_REFRESH_MS))
+      await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_ACTIVE_REFRESH_MS * 2))
       expect(refresh).toHaveBeenCalledTimes(2)
       await act(async () => {
         pending[1]?.resolve()
@@ -644,12 +643,13 @@ describe('polling lifetime (N02)', () => {
     }))
 })
 
-it('counts a task as active while it runs, waits for approval or is about to run', () => {
+it('counts a task as active while it runs, waits for approval or is due', () => {
   const now = Date.parse('2026-10-14T08:00:00Z')
   const [row] = rowsOf({ schedules: [{ ...report, nextRunAt: now + 3_600_000 }] })
   if (!row) throw new Error('row')
   expect(schedulesActive([row], now)).toBe(false)
-  expect(schedulesActive([{ ...row, nextRunAt: now + 30_000 }], now)).toBe(true)
+  expect(schedulesActive([{ ...row, nextRunAt: now + 30_000 }], now)).toBe(false)
+  expect(schedulesActive([{ ...row, nextRunAt: now }], now)).toBe(true)
   expect(schedulesActive([{ ...row, status: 'paused', nextRunAt: now + 30_000 }], now)).toBe(false)
   expect(schedulesActive([{ ...row, runs: [{ at: now, outcome: 'waiting_approval' }] }], now)).toBe(true)
 })

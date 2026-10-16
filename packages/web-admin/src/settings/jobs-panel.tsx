@@ -89,21 +89,40 @@ export function JobsPanel({
     if (!sessionId) return
     let active = true
     let timer: ReturnType<typeof setTimeout> | undefined
+    let inFlight = false
+    let attempts = 0
+    let hasRunning = false
+    const visible = () => document.visibilityState !== 'hidden'
     async function refresh() {
+      if (!active || inFlight || !visible()) return
+      inFlight = true
+      let running = hasRunning
       try {
         const value = await api.read(sessionId, jobId)
         if (!active) return
+        running = value.jobs.some((job) => job.status === 'running')
+        hasRunning = running
         setSnapshot(value)
         setError(false)
         setUpdatedAt(new Date())
       } catch {
         if (active) setError(true)
       } finally {
-        if (active) timer = setTimeout(() => void refresh(), 1000)
+        inFlight = false
+        if (active && running && visible())
+          timer = setTimeout(() => void refresh(), Math.min(30_000, 1000 * 2 ** Math.min(5, attempts++)))
       }
     }
+    const wake = () => {
+      clearTimeout(timer)
+      void refresh()
+    }
+    document.addEventListener('visibilitychange', wake)
+    window.addEventListener('agnes:jobs-changed', wake)
     void refresh()
     return () => {
+      document.removeEventListener('visibilitychange', wake)
+      window.removeEventListener('agnes:jobs-changed', wake)
       active = false
       owner.current = ''
       clearTimeout(timer)

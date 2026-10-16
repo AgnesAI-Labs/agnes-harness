@@ -175,7 +175,7 @@ describe('rendered approval region', () => {
 it.each(['en', 'zh-CN'] as const)(
   'shows pending profile approvals as one navigation row without a conversation (%s)',
   async (language) => {
-    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
     const handle = { id: 'profile-decision', sessionId: null, profileId: 'default' }
     const decision = {
       handle,
@@ -201,6 +201,10 @@ it.each(['en', 'zh-CN'] as const)(
       pending = pending.filter((value) => value.handle.id !== input?.handle.id)
       return {}
     })
+    let hidden = false
+    const visibility = vi
+      .spyOn(document, 'visibilityState', 'get')
+      .mockImplementation(() => (hidden ? 'hidden' : 'visible'))
     let runtime: Awaited<ReturnType<typeof mountRenderedIndex>> | undefined
     const row = () => document.querySelector<HTMLButtonElement>('button[aria-controls="profile-approvals"]')
     const surface = () => document.querySelector<HTMLElement>('#profile-approvals')
@@ -216,10 +220,22 @@ it.each(['en', 'zh-CN'] as const)(
       await vi.waitFor(() => expect(call).toHaveBeenCalledWith('_agnes/v1/profile.decisions.list', {}))
       expect(row()).toBeNull()
       expect(surface()).toBeNull()
+      const idleReads = call.mock.calls.length
+      await vi.advanceTimersByTimeAsync(59_000)
+      expect(call).toHaveBeenCalledTimes(idleReads)
+      hidden = true
+      document.dispatchEvent(new Event('visibilitychange'))
+      await vi.advanceTimersByTimeAsync(120_000)
+      expect(call).toHaveBeenCalledTimes(idleReads)
+      hidden = false
+      document.dispatchEvent(new Event('visibilitychange'))
+      await vi.advanceTimersByTimeAsync(0)
+      expect(call).toHaveBeenCalledTimes(idleReads + 1)
       expect(document.querySelector('.sidebar-footer')?.textContent).not.toMatch(/Approvals|操作审批/)
 
       pending = [decision, { ...decision, handle: { ...handle, id: 'second-decision' } }]
-      await vi.advanceTimersByTimeAsync(3000)
+      window.dispatchEvent(new Event('focus'))
+      await Promise.resolve()
       await vi.waitFor(() => expect(row()?.querySelector('.home-entry-badge')?.textContent).toBe('2'))
       expect(document.querySelectorAll('button[aria-controls="profile-approvals"]')).toHaveLength(1)
       expect(row()?.closest('.home-entries')).toBeTruthy()
@@ -241,10 +257,12 @@ it.each(['en', 'zh-CN'] as const)(
       })
       expect(surface()?.textContent).toContain('reviewed-one')
       listUnavailable = true
-      await vi.advanceTimersByTimeAsync(3000)
+      window.dispatchEvent(new Event('focus'))
+      await Promise.resolve()
       expect(row()?.querySelector('.home-entry-badge')?.textContent).toBe('2')
       listUnavailable = false
-      await vi.advanceTimersByTimeAsync(3000)
+      window.dispatchEvent(new Event('focus'))
+      await Promise.resolve()
       await vi.waitFor(() => expect(surface()?.querySelector('[role="alert"]')).toBeNull())
       action(allowLabel)?.click()
       await vi.waitFor(() => expect(surface()?.querySelector('[role="alert"]')).toBeTruthy())
@@ -265,27 +283,31 @@ it.each(['en', 'zh-CN'] as const)(
         expect(row()).toBeNull()
         expect(surface()).toBeNull()
       })
-      expect(call).toHaveBeenLastCalledWith('_agnes/v1/profile.decisions.answer', {
+      expect(call).toHaveBeenCalledWith('_agnes/v1/profile.decisions.answer', {
         handle: { ...handle, id: 'second-decision' },
         revision: 1,
         commandId: expect.any(String),
         response: { option: 'rejected', value: null },
       })
-      await vi.advanceTimersByTimeAsync(3000)
+      window.dispatchEvent(new Event('focus'))
+      await Promise.resolve()
       expect(row()).toBeNull()
 
       pending = [decision]
-      await vi.advanceTimersByTimeAsync(3000)
+      window.dispatchEvent(new Event('focus'))
+      await Promise.resolve()
       await vi.waitFor(() => expect(row()?.querySelector('.home-entry-badge')?.textContent).toBe('1'))
       // An approval resolved by another client also removes the entry on the next refresh.
       pending = []
-      await vi.advanceTimersByTimeAsync(3000)
+      window.dispatchEvent(new Event('focus'))
+      await Promise.resolve()
       await vi.waitFor(() => {
         expect(row()).toBeNull()
         expect(surface()).toBeNull()
       })
     } finally {
       await runtime?.dispose()
+      visibility.mockRestore()
       vi.useRealTimers()
       resetWebDom()
     }

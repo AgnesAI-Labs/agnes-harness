@@ -45,7 +45,7 @@ import {
   saveToolDisclosure,
 } from './mcp-form.js'
 import { mountMcpPresets } from './mcp-presets.js'
-import { watchMcpPanel } from './mcp-refresh.js'
+import { resourcePollDelay, watchMcpPanel } from './mcp-refresh.js'
 import { mountMcpWizard } from './mcp-wizard.js'
 import { SkillsPage } from './skills-page.js'
 
@@ -408,7 +408,7 @@ class ResourceAdminPage {
         if (this.#loadState === 'error') return false
         return op.state === 'succeeded'
       }
-      await new Promise((resolve) => setTimeout(resolve, 500))
+      await resourcePollDelay(attempt, this.lifetime.signal)
     }
     this.#activeOperation = undefined
     this.setNotice('notice.running', 'warning')

@@ -18,6 +18,7 @@ import {
   useUiText,
 } from '@agnes/web-ui'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { visibleRefresh } from '../../visible-refresh.js'
 import type { PluginAdminApi } from './api.js'
 import { CandidateListFacts, candidateIdentity, candidateSkillText } from './candidate-list.js'
 import {
@@ -162,7 +163,7 @@ export function CandidateInbox({
     if (!api) return
     let alive = true
     const cache = new Map<string, ListFacts>()
-    const refresh = async () => {
+    const read = async () => {
       try {
         const value = await api.candidatesList()
         if (alive) {
@@ -226,17 +227,25 @@ export function CandidateInbox({
         return false
       }
     }
+    let result = false
+    const reader = visibleRefresh(async () => {
+      result = await read()
+    }, ['agnes:plugins-invalidated', 'agnes:candidates-changed'])
+    const refresh = async () => {
+      await reader.request()
+      return result
+    }
     refreshFacts.current = refresh
     void refresh()
-    const timer = setInterval(() => void refresh(), 3000)
     return () => {
       alive = false
-      clearInterval(timer)
+      reader.dispose()
       if (refreshFacts.current === refresh) refreshFacts.current = undefined
     }
   }, [api, t, sessionTurnTime, sessionTitle, scope])
   const refresh = async () => {
-    if (api) setItems((await api.candidatesList()).candidates)
+    await refreshFacts.current?.()
+    window.dispatchEvent(new CustomEvent('agnes:candidate-count-changed'))
   }
   // Finish navigation reads before allowing another action to replace the selected review.
   const navigate = async (read: () => Promise<void | boolean>) => {

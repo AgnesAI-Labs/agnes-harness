@@ -34,11 +34,20 @@ function usePendingReviews(api: PluginView['api']) {
         },
         () => undefined,
       )
-    read()
-    const timer = setInterval(read, 20_000)
+    if (document.visibilityState !== 'hidden') read()
+    const wake = () => {
+      if (document.visibilityState !== 'hidden') read()
+    }
+    window.addEventListener('agnes:plugins-invalidated', wake)
+    window.addEventListener('agnes:candidate-count-changed', wake)
+    window.addEventListener('agnes:candidates-changed', wake)
+    document.addEventListener('visibilitychange', wake)
     return () => {
       alive = false
-      clearInterval(timer)
+      window.removeEventListener('agnes:plugins-invalidated', wake)
+      window.removeEventListener('agnes:candidate-count-changed', wake)
+      window.removeEventListener('agnes:candidates-changed', wake)
+      document.removeEventListener('visibilitychange', wake)
     }
   }, [api])
   return [count, setCount] as const
@@ -175,7 +184,10 @@ export function PluginsPage({ context }: { context: UiExtensionContext }) {
                   label={t('refresh')}
                   data-testid="plugins-refresh"
                   disabled={!view || view.state.loading}
-                  onClick={() => void view?.refresh()}
+                  onClick={() => {
+                    void view?.refresh()
+                    window.dispatchEvent(new Event('agnes:candidates-changed'))
+                  }}
                 />
               )}
               {route.tab === 'plugins' || route.tab === 'market' ? add : null}

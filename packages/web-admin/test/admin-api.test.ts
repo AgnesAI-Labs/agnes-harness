@@ -494,3 +494,27 @@ it('notifies the workbench only after validated default and bundle saves', async
     vi.unstubAllGlobals()
   }
 })
+
+it('deduplicates concurrent tree and candidate reads and releases failed reads for retry', async () => {
+  let finish: ((response: Response) => void) | undefined
+  const fetcher = vi.fn<typeof fetch>(
+    () =>
+      new Promise<Response>((resolve) => {
+        finish = resolve
+      }),
+  )
+  const api = new PluginAdminApi(context, fetcher)
+  for (const read of [() => api.treeList(), () => api.candidatesList()]) {
+    fetcher.mockClear()
+    const first = read()
+    const second = read()
+    expect(second).toBe(first)
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    finish?.(Response.json({ error: { code: 'UNAVAILABLE', message: 'unavailable' } }, { status: 503 }))
+    await expect(first).rejects.toThrow()
+    const retry = read()
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    finish?.(Response.json({ error: { code: 'UNAVAILABLE' } }, { status: 503 }))
+    await expect(retry).rejects.toThrow()
+  }
+})

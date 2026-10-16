@@ -254,7 +254,11 @@ it('shows declared kinds and observable states without guessing draining or rest
   const historyBadge = await mount(
     createElement(PluginBadges, { item: { ...item, draining: true }, status: historicalStatus, t }),
   )
-  expect(historyBadge.textContent).toBe('Leftover usage')
+  expect(historyBadge.textContent).toBe('Saved sessions use an older version')
+  expect(historyBadge.querySelector('[role=note]')?.getAttribute('aria-label')).toContain(
+    'New sessions use the current version',
+  )
+  expect(historyBadge.querySelector('[role=note]')?.getAttribute('tabindex')).toBe('0')
   const builtins = await mount(
     createElement(GenerationDrainSummary, {
       installed: [],

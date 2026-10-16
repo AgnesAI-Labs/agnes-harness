@@ -14,6 +14,7 @@ import { createCommandController } from './app/command-controller.js'
 import { createComposerController } from './app/composer-controller.js'
 import { bindConnectionEvents } from './app/connection-events.js'
 import {
+  broadcast,
   onBroadcast,
   onHistoryNavigation,
   onPageHide,
@@ -2178,6 +2179,7 @@ client.on('notice', (payload) => {
       : undefined
   if (profileName && detail?.profile === profileName) {
     scheduleClientRosterRead()
+    broadcast('agnes:plugins-invalidated')
     void modelRefresh.request().catch(showError)
   }
 })

@@ -36,6 +36,7 @@ import type { ReactNode } from 'react'
 import type { SettingsPage } from '../../../settings/hub.js'
 import { SETTINGS_NAMESPACE, settingsCatalog } from '../../../settings/locales.js'
 import type { SchedulesApi } from '../../../settings/schedules.js'
+import { visibleRefresh } from '../../../visible-refresh.js'
 import { AdminApiError, PluginAdminApi } from '../api.js'
 import type { PluginKind } from '../control-panel.js'
 import { PLUGIN_ADMIN_LOCALE_NAMESPACE, pluginAdminLocaleCatalog } from '../locales/admin.js'
@@ -66,6 +67,7 @@ import {
   safeMessage,
   sourceForCatalog,
 } from './model.js'
+import { bindOperationVisibility, OperationBackoff } from './operation-refresh.js'
 import {
   type PreviewMode,
   operationRecords as readOperationRecords,
@@ -395,6 +397,7 @@ export class PluginAdminPage {
   #operationModes = new Map<string, PreviewMode>()
   #operationPackages = new Map<string, string>()
   #operationTimers = new Map<string, number>()
+  readonly #operationBackoff = new OperationBackoff(this.#operationTimers)
   #operationCompletions = new Map<string, (operation: PackageOperation) => Promise<void>>()
   #submittingPackages = new Set<string>()
   readonly #flow = new InstallFlow()
@@ -462,6 +465,11 @@ export class PluginAdminPage {
         this.render()
       })
     }
+    bindOperationVisibility(
+      this.#operationTimers,
+      () => this.#state.context && this.restoreOperations(this.#state.context),
+      this.#lifetime.signal,
+    )
     await this.refresh()
   }
 
@@ -513,13 +521,25 @@ export class PluginAdminPage {
     return bundledUpdate(item, this.#bundledCatalog)
   }
 
-  async refresh(options: { preserveError?: boolean } = {}): Promise<void> {
+  #refreshOptions: { preserveError?: boolean } = {}
+  readonly #refresh = visibleRefresh(
+    () => this.readInventory(),
+    ['agnes:plugins-invalidated'],
+    () => this.#submittingPackages.size > 0 || this.#operationBackoff.active,
+  )
+
+  refresh(options: { preserveError?: boolean } = {}): Promise<void> {
+    this.#refreshOptions = options
+    return this.#refresh.request()
+  }
+
+  private async readInventory(): Promise<void> {
     if (this.#lifetime.signal.aborted) return
     const generation = ++this.#generation
     this.#state = {
       ...this.#state,
       loading: true,
-      ...(options.preserveError ? {} : { error: undefined }),
+      ...(this.#refreshOptions.preserveError ? {} : { error: undefined }),
     }
     this.render()
     let resolvedContext: AdminContext | undefined
@@ -557,7 +577,6 @@ export class PluginAdminPage {
         loading: false,
         connection: 'connected',
       })
-      this.scheduleTreePoll()
       this.render()
       try {
         const { orphans } = await this.#api.pinsInspect()
@@ -589,7 +608,7 @@ export class PluginAdminPage {
         ...(resolvedContext ? { context: resolvedContext } : {}),
         inventoryAuthoritative: false,
         loading: false,
-        error: options.preserveError && this.#state.error ? this.#state.error : detail,
+        error: this.#refreshOptions.preserveError && this.#state.error ? this.#state.error : detail,
         connection:
           detail.code === 'FORBIDDEN' || detail.code === 'ADMIN_FORBIDDEN' ? 'forbidden' : 'offline',
       }
@@ -932,6 +951,7 @@ export class PluginAdminPage {
     const packageId = operation.packageId ?? this.#operationPackages.get(operation.operationId)
     const inspectKey = this.#flow.settle(operation.operationId)
     this.forgetOperation(operation.operationId)
+    if (operation.operation === 'inspect') await this.#refresh.flush()
     if (operation.operation === 'inspect') {
       if (operation.state === 'completed' && operation.preview && previewMode) {
         this.#state = {
@@ -1188,6 +1208,7 @@ export class PluginAdminPage {
       return await submit()
     } catch (error) {
       this.#submittingPackages.delete(packageId)
+      await this.#refresh.flush()
       this.render()
       throw error
     }
@@ -1240,7 +1261,13 @@ export class PluginAdminPage {
 
   async poll(operationId: string): Promise<void> {
     const api = this.#api
-    if (this.#lifetime.signal.aborted || !api || this.#operationTimers.has(operationId)) return
+    if (
+      this.#lifetime.signal.aborted ||
+      document.visibilityState === 'hidden' ||
+      !api ||
+      this.#operationTimers.has(operationId)
+    )
+      return
     this.#operationTimers.set(operationId, -1)
     try {
       const operation = await api.operation(operationId)
@@ -1260,11 +1287,9 @@ export class PluginAdminPage {
         await this.operationUpdated(operation)
         return
       }
-      const timer = window.setTimeout(() => {
-        this.#operationTimers.delete(operationId)
+      this.#operationBackoff.schedule(operationId, ACTIVE_REFRESH_MS, () => {
         void this.poll(operationId)
-      }, ACTIVE_REFRESH_MS)
-      this.#operationTimers.set(operationId, timer)
+      })
     } catch (error) {
       this.#operationTimers.delete(operationId)
       if (this.#lifetime.signal.aborted) return
@@ -1276,16 +1301,15 @@ export class PluginAdminPage {
           detail.code,
         )
       ) {
-        const timer = window.setTimeout(() => {
-          this.#operationTimers.delete(operationId)
+        this.#operationBackoff.schedule(operationId, RECONNECT_REFRESH_MS, () => {
           void this.poll(operationId)
-        }, RECONNECT_REFRESH_MS)
-        this.#operationTimers.set(operationId, timer)
+        })
       }
     }
   }
 
   forgetOperation(operationId: string): void {
+    this.#operationBackoff.forget(operationId)
     const timer = this.#operationTimers.get(operationId)
     if (timer !== undefined && timer !== -1) clearTimeout(timer)
     this.#operationTimers.delete(operationId)
@@ -1551,30 +1575,6 @@ export class PluginAdminPage {
       },
     }
     this.render()
-  }
-
-  scheduleTreePoll(): void {
-    if (this.#lifetime.signal.aborted) return
-    if (this.#treeTimer !== undefined) window.clearTimeout(this.#treeTimer)
-    this.#treeTimer = window.setTimeout(() => {
-      this.#treeTimer = undefined
-      void this.pollTree()
-    }, ACTIVE_REFRESH_MS)
-  }
-
-  #treeTimer: number | undefined
-
-  async pollTree(): Promise<void> {
-    const api = this.#api
-    if (!api || this.#state.connection !== 'connected') return
-    try {
-      const tree = await api.treeList()
-      this.#state = { ...this.#state, tree }
-      this.render()
-    } catch {
-      // Lost tree_changed recovers by the next successful poll, not by inventing actual.
-    }
-    this.scheduleTreePoll()
   }
 
   primaryAction(item: PackageInstalledDescriptor | PackageCatalogDescriptor): {
@@ -1872,7 +1872,7 @@ export class PluginAdminPage {
     this.#runtimeStop = undefined
     this.#localeStop()
     this.#localeCleanup?.()
-    if (this.#treeTimer !== undefined) window.clearTimeout(this.#treeTimer)
+    this.#refresh.dispose()
     for (const timer of this.#operationTimers.values()) {
       if (timer >= 0) window.clearTimeout(timer)
     }
