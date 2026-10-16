@@ -118,7 +118,7 @@ it('pre-registers API-key providers without replacing the production route or ce
     const registry = host.provider.registry
     if (!registry) throw new Error('production provider did not expose registry')
     expect(registry.models().some((model) => model.route === 'gw' && model.id === 'm1')).toBe(true)
-    for (const entry of API_KEY_PROVIDER_REGISTRY)
+    for (const entry of API_KEY_PROVIDER_REGISTRY.filter((entry) => entry.capabilities?.payloadOnly !== true))
       expect(registry.routes().some((route) => route.route === entry.route)).toBe(true)
     const result = await runDoctor(registry, { signal: new AbortController().signal })
     expect(result.ok).toBe(false)

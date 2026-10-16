@@ -30,6 +30,8 @@ export function normalizeConfigModel(value: unknown): ConfigModel | undefined {
           'reasoning',
           'thinkingLevelMap',
           'contextWindow',
+          'maxTokens',
+          'cost',
           'defaultSettings',
         ].includes(key),
     )
@@ -56,6 +58,19 @@ export function normalizeConfigModel(value: unknown): ConfigModel | undefined {
   if (
     'contextWindow' in value &&
     (!Number.isSafeInteger(value.contextWindow) || (value.contextWindow as number) < 1)
+  )
+    return undefined
+  if ('maxTokens' in value && (!Number.isSafeInteger(value.maxTokens) || (value.maxTokens as number) < 1))
+    return undefined
+  if (
+    'cost' in value &&
+    (!object(value.cost) ||
+      Object.keys(value.cost).length !== 4 ||
+      !['input', 'output', 'cacheRead', 'cacheWrite'].every(
+        (key) =>
+          typeof (value.cost as Record<string, unknown>)[key] === 'number' &&
+          Number.isFinite((value.cost as Record<string, unknown>)[key] as number),
+      ))
   )
     return undefined
   if ('defaultSettings' in value && normalizeModelSettings(value.defaultSettings) === undefined)

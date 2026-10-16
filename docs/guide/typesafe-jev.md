@@ -8,6 +8,19 @@ English | [简体中文](typesafe-jev.zh-CN.md)
 
 Jev is **not a chat model**. The adapter takes a payload and nothing else: no messages, no system prompt, no tools and no streaming. It declares the capabilities `payload: true` and `payloadOnly: true`, so a model served by it never appears in a model picker, cannot be chosen as a session, default, fast, verifier or child-agent model, and is refused if a client asks for it by name. A loop plugin reaches it through a side model call.
 
+## Settings page
+
+In Settings → Models & accounts, the **Side models** group after the account list adds an entry:
+
+1. The adapter is fixed to `typesafe-systemone`.
+2. The endpoint defaults to `https://openrouter.ai/api/v1` and can point at `https://api.typesafe.ai/v1` directly. The rules are the adapter's: no templates, no inline credentials, no query or fragment, and plain `http` only on loopback addresses.
+3. Pick a [generic credential](credentials.md), or create one in place; the entry stores its `secret://generic/<UUID>` reference, never the key.
+4. Each model needs only `id`, `name`, `contextWindow`, `maxTokens` and an optional `cost`; the remaining fields are fixed by the adapter's template (`reasoning: false`, `input: [text]`, `toolCallFormats: []`, `thinkingReplay: drop`, `contract_id: null`).
+5. The test button sends one fixed minimal payload `{state: {}, questions: {ping: 'ping'}}`: a success or a rate limit both count as reachable, and a rejected credential is called out. What the probe sends is provisional, and you can skip the test and save.
+6. Saving takes effect for new sessions; an entry can be enabled, disabled or removed. A side model can never become the default account, and it never appears in the fast or verifier slots.
+
+A hand-written `.agh/profile.local.yaml` route (the next section) coexists with a page entry: different route names merge, and the same name is refused as a duplicate route. When migrating from a hand-written route, delete it once the page entry is saved.
+
 ## Profile route
 
 Add a route to the profile's provider configuration. The adapter ships with `@agnes/ai`, so there is nothing to install or trust. If the profile lists model adapters explicitly under `providers.model-adapter`, include `typesafe-systemone` (or `@agnes/ai`) in that list.

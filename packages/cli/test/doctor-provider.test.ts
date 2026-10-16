@@ -3,7 +3,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createProvider, JEV_WIRE_API, JevAdapter, NullContractStore } from '@agnes/ai'
 import { FakeAdapter, fakeModel } from '@agnes/ai/testkit'
+import { createConfigurationService, createCredentialStore } from '@agnes/host'
 import { createTestHost } from '@agnes/host/testkit'
+import type { ModelRecord, RouteDecl } from '@agnes/protocol'
+import { createPrivateDirectorySync } from '@agnes/system-node'
 import { expect, it } from 'vitest'
 import { doctorProvider } from '../src/commands/doctor-provider.js'
 
@@ -238,7 +241,9 @@ function jevCatalogEntry() {
   }
 }
 
-function chatAndJevHost(opts: { jevOnly?: boolean } = {}) {
+function chatAndJevHost(
+  opts: { jevOnly?: boolean; jevRoutes?: (RouteDecl & { models: ModelRecord[] })[] } = {},
+) {
   let probes = 0
   const chat = new FakeAdapter({
     id: 'chat',
@@ -273,7 +278,7 @@ function chatAndJevHost(opts: { jevOnly?: boolean } = {}) {
   })
   // The real adapter, which has no probe: asking it for one reads as a failure.
   const jev = new JevAdapter({
-    routes: [
+    routes: opts.jevRoutes ?? [
       {
         route: 'jev',
         api: JEV_WIRE_API,
@@ -290,10 +295,11 @@ function chatAndJevHost(opts: { jevOnly?: boolean } = {}) {
     secrets: () => 'TEST-KEY-0123456789',
     contract: new NullContractStore(),
   }).registry
-  const routes = [
-    ...(opts.jevOnly ? [] : [{ route: 'gw', api: 'openai-completions' }]),
-    { route: 'jev', api: JEV_WIRE_API },
-  ]
+  const jevDecls = (opts.jevRoutes ?? [{ route: 'jev', api: JEV_WIRE_API }]).map((decl) => ({
+    route: decl.route,
+    api: decl.api,
+  }))
+  const routes = [...(opts.jevOnly ? [] : [{ route: 'gw', api: 'openai-completions' }]), ...jevDecls]
   const host = {
     provider: { registry },
     profile: { provider: { routes } },
@@ -320,6 +326,52 @@ it('leaves a payload-only route out of the probe and says so', async () => {
     expect(JSON.parse(json.detail[0] ?? '').routes.map((r: { route: string }) => r.route)).toEqual(['gw'])
   } finally {
     await dispose()
+  }
+})
+it('skips the payload-only route a saved configuration account produces', async () => {
+  const scratch = mkdtempSync(join(tmpdir(), 'agnes-cli-doctor-'))
+  try {
+    const home = join(scratch, 'home')
+    createPrivateDirectorySync(home)
+    const credentialRef = 'secret://generic/11111111-1111-4111-8111-111111111111'
+    await createCredentialStore({ root: home }).putGeneric(credentialRef, 'jev-test-key', {
+      label: 'Jev',
+      createdAt: '2026-10-16T00:00:00.000Z',
+    })
+    const configuration = createConfigurationService({ home, profile: 'local-dev' })
+    await configuration.save({
+      providerId: 'typesafe-systemone',
+      accountId: 'jev',
+      label: 'Jev',
+      credentialRef,
+      model: 'typesafe/jev-1.13-20260917',
+      models: [
+        { id: 'typesafe/jev-1.13-20260917', name: 'Jev 1.13', contextWindow: 65536, maxTokens: 32768 },
+      ],
+      expectedRevision: 0,
+    })
+    const generated = (await configuration.profileInput()).provider?.routes ?? []
+    const jevRoutes = generated.map((decl) => ({
+      ...decl,
+      models: (decl.models ?? []) as ModelRecord[],
+    }))
+    const { host, probes, dispose } = chatAndJevHost({ jevRoutes })
+    try {
+      const result = await doctorProvider(host, { signal: new AbortController().signal, probe: true })
+      expect(result).toEqual({
+        name: 'provider',
+        status: 'ok',
+        detail: [
+          'selected provider route and model inference verified',
+          'payload-only routes not probed (1): account-jev',
+        ],
+      })
+      expect(probes()).toBe(1)
+    } finally {
+      await dispose()
+    }
+  } finally {
+    rmSync(scratch, { recursive: true, force: true })
   }
 })
 it('warns instead of failing when every configured route is payload-only', async () => {
