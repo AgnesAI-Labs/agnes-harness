@@ -62,7 +62,7 @@
       "source": "https://github.com/biomejs/biome",
       "purpose": "Repository formatting and static lint checks.",
       "rationale": "Provides one deterministic formatter and linter for the TypeScript workspace.",
-      "consumers": ["."]
+      "consumers": [".", "examples/mhs/mars-rescue"]
     },
     {
       "name": "@types/node",

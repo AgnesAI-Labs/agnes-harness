@@ -193,6 +193,7 @@
     ]
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.12",
     "esbuild": "0.28.2",
     "@agnes/mhs-hub": "workspace:*",
     "@agnes/extension-api": "workspace:*",

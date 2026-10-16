@@ -156,6 +156,9 @@ importers:
       '@agnes/worker-runtime':
         specifier: workspace:*
         version: link:../../../packages/worker-runtime
+      '@biomejs/biome':
+        specifier: 2.5.12
+        version: 2.5.12
       '@types/ws':
         specifier: 8.18.1
         version: 8.18.1

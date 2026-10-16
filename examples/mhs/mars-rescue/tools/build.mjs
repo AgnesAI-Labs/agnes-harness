@@ -1,5 +1,7 @@
+import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
@@ -62,7 +64,20 @@ entries.push({
   license: 'Apache-2.0',
 })
 const manifest = new URL('../assets/manifest.json', import.meta.url)
-const content = `${JSON.stringify({ version: 1, firstOpenNetworkDownloads: false, draco: null, resources: entries }, null, 2)}\n`
+const content = execFileSync(
+  process.execPath,
+  [
+    createRequire(import.meta.url).resolve('@biomejs/biome/bin/biome'),
+    'format',
+    '--stdin-file-path',
+    fileURLToPath(manifest),
+  ],
+  {
+    cwd: root,
+    input: JSON.stringify({ version: 1, firstOpenNetworkDownloads: false, draco: null, resources: entries }),
+    encoding: 'utf8',
+  },
+)
 if (check) {
   if ((await readFile(manifest, 'utf8')) !== content) throw new Error('Stale resource manifest')
 } else await writeFile(manifest, content)
