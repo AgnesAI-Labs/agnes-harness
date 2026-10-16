@@ -5,6 +5,8 @@ import { Context } from '@agnes/cordis'
 import {
   AgnesClientService,
   CommandService,
+  homeEntries,
+  homeNavigation,
   SessionService,
   SlotRegistry,
   ThemeService,
@@ -12,6 +14,7 @@ import {
 import { Window } from 'happy-dom'
 import { createElement } from 'react'
 import { describe, expect, it, vi } from 'vitest'
+import { readyRosterModules } from '../src/client-modules/reconcile/roster.js'
 import { prepareDocumentStyles } from '../src/client-modules/reconcile/styles.js'
 import {
   type ClientRoster,
@@ -76,6 +79,85 @@ function stubPlugin(ctx: Context, log: { loaded: string[]; disposed: string[] })
 }
 
 describe('client reconciler（WC10 前端状态机）', () => {
+  it.each(['en', 'zh-CN'] as const)(
+    'publishes primary roster navigation before importing and revokes failed/disabled rows in %s',
+    async (language) => {
+      const h = await harness()
+      stubPlugin(h.ctx, h)
+      const row: ReadyClientModule = {
+        ...mod('declared-page', 'v1'),
+        rowId: 'web:declared-page',
+        binding: {
+          owner: 'web:declared-page',
+          lifetime: 'profile',
+          availability: 'active',
+          packageId: 'declared-page',
+          integrity: 'v1',
+          profileId: 'test',
+          activationId: 'current',
+        },
+        homeEntries: [
+          {
+            id: 'declared-page',
+            placement: 'primary',
+            navigation: {
+              title: 'Device console',
+              titles: { 'zh-CN': '设备控制台' },
+              icon: 'cpu',
+              order: 40,
+            },
+          },
+        ],
+      }
+      let rows = [row]
+      const locale = zhLocaleService()
+      // LocaleService exposes the active UI language independently of module execution.
+      locale.setLocale(language)
+      const reconciler = createReconciler({
+        ctx: h.ctx,
+        source: { list: async () => roster(rows) },
+        importer: h.importer,
+        locale,
+      })
+      try {
+        await reconciler.reconcileNow()
+        expect(h.loaded).toEqual([])
+        expect(
+          readyRosterModules([
+            { rowId: 'web:disabled', enabled: false, phase: 'ready', moduleName: 'page' },
+            { rowId: 'web:failed', enabled: true, phase: 'blocked', moduleName: 'page' },
+          ]),
+        ).toEqual([])
+        const entry = homeEntries.get('declared-page')!
+        expect(entry).toMatchObject({ placement: 'primary', icon: 'cpu', order: 40 })
+        expect(locale.t(entry.titleKey)).toBe(language === 'zh-CN' ? '设备控制台' : 'Device console')
+        homeNavigation.open('declared-page')
+        await reconciler.reconcileNow()
+        expect(h.loaded).toContain(row.entryUrl)
+        rows = []
+        await reconciler.reconcileNow()
+        expect(homeEntries.get('declared-page')).toBeUndefined()
+        homeNavigation.close()
+        rows = [row]
+        await reconciler.reconcileNow()
+        expect(homeEntries.get('declared-page')).toBeDefined()
+        rows = [{ ...row, revision: 'broken', entryUrl: '/broken/index.js' }]
+        await reconciler.reconcileNow()
+        homeNavigation.open('declared-page')
+        await reconciler.reconcileNow()
+        expect(reconciler.snapshot().get('web:declared-page')?.phase).toBe('failed')
+        expect(homeEntries.get('declared-page')).toBeUndefined()
+        homeNavigation.close()
+        await reconciler.invalidate()
+        expect(homeEntries.get('declared-page')).toBeUndefined()
+      } finally {
+        homeNavigation.close()
+        rows = []
+        await reconciler.reconcileNow()
+        await h.ctx.fiber.dispose()
+      }
+    },
+  )
   it('leaves custom renderer modules in their isolated host on initial load and hot reload', async () => {
     const h = await harness()
     const custom = {

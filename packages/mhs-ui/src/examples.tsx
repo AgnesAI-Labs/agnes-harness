@@ -1,11 +1,14 @@
 import { Button } from '@agnes/web-ui'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { HubDependency, useHub } from './hub.js'
+import { stateLabel } from './locales.js'
 import { jsonText } from './model.js'
 import type { ExampleView } from './ports.js'
 import { QueryState, useMhs, useQuery } from './react.js'
 export function ExamplesPage({ initialScene }: { initialScene?: string }) {
   const { client, t } = useMhs(),
     port = client.ports.examples,
+    hub = useHub(),
     [scene, setScene] = useState<string | undefined>(initialScene),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(false),
@@ -80,10 +83,12 @@ export function ExamplesPage({ initialScene }: { initialScene?: string }) {
       <Button
         key={launch.id}
         appearance="primary"
-        disabled={busy || (example.requiresRuntime === true && example.state !== 'running')}
+        disabled={hub.blocked || busy || (example.requiresRuntime === true && example.state !== 'running')}
         onClick={() => void run('launch', example, undefined, launch.id || undefined)}
       >
-        {launch.title}
+        {example.id === '@agnes-example/mars-rescue' && (launch.id === 'rescue' || launch.id === 'sample')
+          ? t(`mars.${launch.id}`)
+          : launch.title}
       </Button>
     ))
   const feedback = (
@@ -112,7 +117,7 @@ export function ExamplesPage({ initialScene }: { initialScene?: string }) {
       {error && <p role="alert">{t('unavailable')}</p>}
     </>
   )
-  if (selected?.Scene)
+  if (selected?.Scene && !hub.blocked)
     return (
       <section className="mhs-scene">
         <Button onClick={() => setScene(undefined)}>{t('backExamples')}</Button>
@@ -126,8 +131,9 @@ export function ExamplesPage({ initialScene }: { initialScene?: string }) {
     )
   return (
     <section>
+      {hub.blocked && <HubDependency panel="examples" />}
       {query.error || !query.value ? (
-        <QueryState error={query.error} retry={query.retry} />
+        !hub.blocked && <QueryState error={query.error} retry={query.retry} />
       ) : query.value.length === 0 ? (
         <p className="mhs-empty">{t('noExamples')}</p>
       ) : (
@@ -138,7 +144,7 @@ export function ExamplesPage({ initialScene }: { initialScene?: string }) {
               <h2>{example.name}</h2>
               <p>{example.description}</p>
             </div>
-            <div className="mhs-box">
+            <div className="mhs-box mhs-example-actions">
               {example.installed && port?.remove && (
                 <Button
                   appearance="danger"
@@ -154,22 +160,31 @@ export function ExamplesPage({ initialScene }: { initialScene?: string }) {
                     {t('stopExample')}
                   </Button>
                 )}
-              <p role="status">
-                {example.state} {example.code}
-              </p>
+              <p role="status">{stateLabel(t, example.state)}</p>
+              {example.code && (
+                <details>
+                  <summary>{t('details')}</summary>
+                  <pre>{example.code}</pre>
+                </details>
+              )}
               {example.total !== undefined && (
                 <p>
                   {example.connected ?? 0}/{example.total} {t('online')}
                 </p>
               )}
-              {!example.Scene && ['disabled', 'stopped', 'failed'].includes(example.state) && (
-                <Button appearance="primary" disabled={busy} onClick={() => void run('enable', example)}>
-                  {t(example.state === 'failed' ? 'retry' : 'enable')}
-                </Button>
-              )}
+              {!hub.blocked &&
+                !example.Scene &&
+                ['disabled', 'stopped', 'failed'].includes(example.state) && (
+                  <Button appearance="primary" disabled={busy} onClick={() => void run('enable', example)}>
+                    {t(example.state === 'failed' ? 'retry' : 'enable')}
+                  </Button>
+                )}
               {(example.Scene || ['running', 'installed'].includes(example.state)) && (
                 <>
-                  <Button disabled={!example.Scene || busy} onClick={() => setScene(example.id)}>
+                  <Button
+                    disabled={hub.blocked || !example.Scene || busy}
+                    onClick={() => setScene(example.id)}
+                  >
                     {t('openScene')}
                   </Button>
                   {launchButtons(example)}
@@ -185,7 +200,7 @@ export function ExamplesPage({ initialScene }: { initialScene?: string }) {
         ))
       )}
       {feedback}
-      <Button onClick={query.retry}>{t('retry')}</Button>
+      {!hub.blocked && query.value && !query.error && <Button onClick={query.retry}>{t('refresh')}</Button>}
     </section>
   )
 }

@@ -6,7 +6,8 @@
     "homeEntries": [
       {
         "id": "mhs",
-        "placement": "primary"
+        "placement": "primary",
+        "navigation": { "title": "MHS", "icon": "radio", "order": 40 }
       }
     ],
     "slots": ["tool.call.toolview"],

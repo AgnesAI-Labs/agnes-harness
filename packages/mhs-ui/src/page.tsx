@@ -5,6 +5,8 @@ import { DeviceDetail } from './detail.js'
 import { DeveloperPage } from './developer.js'
 import { ExamplesPage } from './examples.js'
 import { deviceTone, Fields, keyFields } from './fields.js'
+import { HubDependency, useHub } from './hub.js'
+import { stateLabel } from './locales.js'
 import { WorldMap } from './map.js'
 import { type Device, text } from './model.js'
 import { HubHealth, Stop, useMhs, useSnapshot } from './react.js'
@@ -48,7 +50,7 @@ export function DeviceCard({ device }: { device: Device }) {
         {t(device.simulated === true ? 'simulated' : device.simulated === false ? 'real' : 'unclassified')}
       </span>
       <p>
-        {t(device.available ? 'online' : 'offline')} · {device.health}
+        {t(device.available ? 'online' : 'offline')} · {stateLabel(t, device.health)}
       </p>
       {Boolean(device.state.problem) && <p role="status">{String(device.state.problem)}</p>}
       <Fields
@@ -62,6 +64,7 @@ export function DeviceCard({ device }: { device: Device }) {
 export function MhsPage({ selection }: { selection?: unknown }) {
   const { t, store } = useMhs(),
     snapshot = useSnapshot(),
+    hub = useHub(),
     [tab, setTab] = useState('devices'),
     [deviceId, setDeviceId] = useState<string>()
   useEffect(() => {
@@ -100,15 +103,17 @@ export function MhsPage({ selection }: { selection?: unknown }) {
       <div className="mhs-attention">
         {alerts.map((d) => (
           <Button key={d.id} onClick={() => setDeviceId(d.id)}>
-            {d.name} · {text(d.state.problem) || d.health}
+            {d.name} · {text(d.state.problem) || stateLabel(t, d.health)}
           </Button>
         ))}
       </div>
-      {snapshot.status === 'loading' ? (
+      {hub.blocked ? (
+        <HubDependency panel="devices" />
+      ) : snapshot.status === 'loading' ? (
         <p role="status">{t('loading')}</p>
       ) : snapshot.status === 'failed' ? (
         <div role="alert">
-          {t('failed')}
+          {t('deviceRequestFailed')}
           <Button onClick={() => void store.refresh()}>{t('retry')}</Button>
         </div>
       ) : snapshot.devices.length === 0 ? (
@@ -152,9 +157,9 @@ export function MhsPage({ selection }: { selection?: unknown }) {
           <Button onClick={() => setDeviceId(undefined)}>{t('back')}</Button>
         </div>
       )}
-      {snapshot.streamError && (
+      {snapshot.streamError && !hub.blocked && (
         <p role="status">
-          {t('unavailable')} · {snapshot.streamError}
+          {t('streamRequestFailed')}
           <Button onClick={() => void store.refresh()}>{t('retry')}</Button>
         </p>
       )}
@@ -166,9 +171,17 @@ export function MhsPage({ selection }: { selection?: unknown }) {
           {
             key: 'map',
             label: t('mhs.map'),
-            children: <WorldMap maps={snapshot.maps} devices={snapshot.devices} />,
+            children: hub.blocked ? (
+              <HubDependency panel="map" />
+            ) : (
+              <WorldMap maps={snapshot.maps} devices={snapshot.devices} />
+            ),
           },
-          { key: 'activity', label: t('mhs.activity'), children: <ActivityPage /> },
+          {
+            key: 'activity',
+            label: t('mhs.activity'),
+            children: hub.blocked ? <HubDependency panel="activity" /> : <ActivityPage />,
+          },
           { key: 'developer', label: t('mhs.developer'), children: <DeveloperPage /> },
           {
             key: 'examples',

@@ -1,4 +1,5 @@
 import type { ClientContext } from '@agnes/web-client'
+import { translate } from './locales.js'
 import type { ExampleRuntime, ExampleSceneHost, ExamplesPort, ExampleView } from './ports.js'
 
 /** Installation, scene registration and the profile-owned simulation are separate readiness facts. */
@@ -159,17 +160,34 @@ export function nativeExamples(ctx: ClientContext): ExamplesPort {
             if (runtime) state = runtime.state
             else if (state === 'running') state = 'installed'
           }
+          const localized = example.metadata.locales?.[ctx.locale.getSnapshot() === 'zh-CN' ? 'zh-CN' : 'en']
           return {
             id: example.id,
             installed: example.installation !== 'not-installed',
-            name: example.metadata.displayName,
-            description: example.metadata.description,
+            name:
+              localized?.displayName ??
+              (example.id === '@agnes-example/mars-rescue'
+                ? translate(ctx.locale.getSnapshot(), 'marsName')
+                : example.metadata.displayName),
+            description:
+              localized?.description ??
+              (example.id === '@agnes-example/mars-rescue'
+                ? translate(ctx.locale.getSnapshot(), 'marsDescription')
+                : example.metadata.description),
             state,
             ...(code ? { code } : {}),
             ...(runtime ? { connected: runtime.connected, total: runtime.total } : {}),
             ...(scene ? { Scene: scenes.get(example.id)!, requiresRuntime: true } : {}),
             ...(example.metadata.launches
-              ? { launches: example.metadata.launches.map(({ id, title }) => ({ id, title })) }
+              ? {
+                  launches: example.metadata.launches.map(({ id, title }) => ({
+                    id,
+                    title:
+                      example.id === '@agnes-example/mars-rescue' && (id === 'rescue' || id === 'sample')
+                        ? translate(ctx.locale.getSnapshot(), `mars.${id}`)
+                        : title,
+                  })),
+                }
               : {}),
           }
         }),
@@ -178,9 +196,11 @@ export function nativeExamples(ctx: ClientContext): ExamplesPort {
     subscribe(listener) {
       listeners.add(listener)
       const off = ctx.examplePages.subscribe(listener)
+      const offLocale = ctx.locale.subscribe(listener)
       return () => {
         listeners.delete(listener)
         off()
+        offLocale()
       }
     },
     async inspectRemove(id) {

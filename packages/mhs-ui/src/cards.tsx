@@ -1,5 +1,6 @@
 import type { ConversationCardInput } from '@agnes/web-client'
 import { Button } from '@agnes/web-ui'
+import { stateLabel } from './locales.js'
 import { jsonText, record, TOOL_NAMES, type ToolRecord, text, toolsFrom } from './model.js'
 import { Stop, useMhs, useSnapshot } from './react.js'
 import { usedDeviceIds } from './store.js'
@@ -12,7 +13,7 @@ export function ToolCard({ call, onRecord }: { call: ToolRecord; onRecord?: () =
         <Button appearance="link" disabled={!call.device} onClick={() => openDevice(call.device)}>
           {call.device || '—'}
         </Button>
-        <span>{call.state || '—'}</span>
+        <span>{stateLabel(t, call.state)}</span>
         {onRecord && <Button onClick={onRecord}>{t('details')}</Button>}
       </header>
       <details>
@@ -54,7 +55,7 @@ export function SessionDevices() {
                 {d.name}
               </Button>
               <p>
-                {t(d.available ? 'online' : 'offline')} · {d.health}
+                {t(d.available ? 'online' : 'offline')} · {stateLabel(t, d.health)}
               </p>
               <Stop device={d.id} />
             </article>

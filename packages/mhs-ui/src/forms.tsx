@@ -2,6 +2,7 @@ import { prepareArguments } from '@agnes/mhs-device'
 import { Button } from '@agnes/web-ui'
 import { useId, useState } from 'react'
 import { ClipSender } from './clips.js'
+import { stateLabel } from './locales.js'
 import { type PickMode, WorldMap } from './map.js'
 import { array, asJson, type Data, type Device, jsonText, number, record, text } from './model.js'
 import { ActionFeedback, useAction, useMhs, useSnapshot } from './react.js'
@@ -317,8 +318,11 @@ export function JobView({ operation, device }: { operation: Data; device: string
     outcome = record(operation.outcome)
   return (
     <div role="status">
-      <strong>{text(operation.label) || operationId}</strong> · {text(outcome.status) || state}{' '}
-      {text(outcome.reason)}
+      <strong>{text(operation.label) || operationId}</strong> · {stateLabel(t, text(outcome.status) || state)}
+      <details>
+        <summary>{t('details')}</summary>
+        <pre>{jsonText(operation)}</pre>
+      </details>
       {typeof operation.startedAt === 'number' && (
         <Elapsed
           start={operation.startedAt}

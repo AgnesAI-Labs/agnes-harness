@@ -330,7 +330,39 @@
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     border: 1px solid var(--agnes-line-primary);
     border-radius: var(--radius-lg);
-    overflow: hidden;
+    min-width: 0;
+  }
+  .mhs-hub-status {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    scroll-margin-top: 24px;
+  }
+  .mhs-example-cover,
+  .mhs-example-actions {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .mhs-example-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-content: start;
+    align-items: start;
+    gap: 8px;
+  }
+  .mhs-example-actions > p,
+  .mhs-example-actions > details {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+  .mhs-example-actions .agh-btn {
+    max-width: 100%;
+    white-space: normal;
+    height: auto;
+    overflow-wrap: anywhere;
   }
   .mhs-example-cover {
     background: var(--agnes-bg-card);

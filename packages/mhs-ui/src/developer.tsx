@@ -1,7 +1,9 @@
 import { Button, CopyButton } from '@agnes/web-ui'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useHub } from './hub.js'
+import { stateLabel } from './locales.js'
 import { jsonText, record, text } from './model.js'
-import { QueryState, useMhs, useQuery, useSnapshot } from './react.js'
+import { useMhs, useSnapshot } from './react.js'
 export function DeveloperPage() {
   const { client, t } = useMhs(),
     { devices } = useSnapshot(),
@@ -19,20 +21,7 @@ export function DeveloperPage() {
     [checking, setChecking] = useState(false)
   const selected = devices.find((d) => d.id === id) ?? devices[0],
     port = client.ports.developer,
-    status = useQuery(
-      useCallback(async (signal: AbortSignal) => (port ? port.status(signal) : undefined), [port]),
-      true,
-    )
-  useEffect(() => {
-    if (
-      status.value?.state !== 'starting' &&
-      status.value?.state !== 'stopping' &&
-      status.value?.mode !== 'external'
-    )
-      return
-    const timer = setTimeout(status.retry, 1000)
-    return () => clearTimeout(timer)
-  }, [status.value?.state, status.value?.mode, status.retry])
+    status = useHub()
   const configuredPort = status.value?.devicePort
   useEffect(() => {
     if (configuredPort !== undefined) setDevicePort(String(configuredPort))
@@ -130,16 +119,14 @@ export function DeveloperPage() {
         <section className="mhs-box">
           <h3>Hub</h3>
           {status.error ? (
-            <QueryState error retry={status.retry} />
+            <p>{t('hubRequestFailed')}</p>
           ) : !port ? (
             <p>{t('noDeveloper')}</p>
           ) : !status.value ? (
             <p>{t('loading')}</p>
           ) : (
             <>
-              <p role="status">
-                {status.value.state} · {status.value.mode} {status.value.code}
-              </p>
+              <p role="status">{stateLabel(t, status.value.state)}</p>
               {Object.entries(status.value.endpoints ?? {}).map(([key, value]) => (
                 <div className="mhs-endpoint" key={key}>
                   <span>{t(key === 'command' ? 'command' : 'observation')}</span>
@@ -147,18 +134,9 @@ export function DeveloperPage() {
                   <CopyButton label={t('copy')} copiedLabel={t('copied')} text={value} />
                 </div>
               ))}
-              <Button
-                disabled={!['failed', 'shutdown-unconfirmed'].includes(status.value.state)}
-                onClick={() =>
-                  void (status.value?.state === 'shutdown-unconfirmed' ? port.reconcile() : port.retry())
-                    .then(status.retry)
-                    .catch(() => setFailed(true))
-                }
-              >
-                {t(status.value.state === 'shutdown-unconfirmed' ? 'confirmRecover' : 'retry')}
-              </Button>
               <details>
                 <summary>{t('advancedHub')}</summary>
+                <pre>{jsonText(status.value)}</pre>
                 <label>
                   {t('hubMode')}
                   <select value={mode} onChange={(e) => setMode(e.target.value)}>
@@ -269,7 +247,7 @@ export function DeveloperPage() {
           </Button>
           {checks?.map((check) => (
             <p key={check.name}>
-              {check.name} · {check.state} {check.detail}
+              {check.name} · {stateLabel(t, check.state)} {check.detail}
             </p>
           ))}
         </section>

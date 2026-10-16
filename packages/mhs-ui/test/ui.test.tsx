@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 
+import { readFileSync } from 'node:fs'
 import { encodeMedia } from '@agnes/mhs-hub/media'
 import { fireEvent, getByLabelText, getByRole, queryByLabelText, queryByRole } from '@testing-library/dom'
 import { act, type ReactNode } from 'react'
@@ -19,7 +20,7 @@ import { axisKeys } from '../src/manual.js'
 import { pickValue, WorldMap } from '../src/map.js'
 import { devicesFrom } from '../src/model.js'
 import { MhsPage } from '../src/page.js'
-import { MhsProvider, Stop } from '../src/react.js'
+import { HubHealth, MhsProvider, Stop } from '../src/react.js'
 import { MhsStore } from '../src/store.js'
 import { pointCloud } from '../src/telemetry.js'
 import { Observation } from '../src/widgets.js'
@@ -42,14 +43,14 @@ afterEach(async () => {
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
-async function mount(node: ReactNode, f = fake()) {
+async function mount(node: ReactNode, f = fake(), locale: 'en' | 'zh-CN' = 'en') {
   const client = new MhsClient(f.ports),
     store = new MhsStore(client)
   dispose = () => client.dispose()
   await act(async () => {
     await store.refresh()
     root.render(
-      <MhsProvider value={{ client, store, t: (key) => catalog.en[key], openDevice: () => {} }}>
+      <MhsProvider value={{ client, store, t: (key) => catalog[locale][key], openDevice: () => {} }}>
         {node}
       </MhsProvider>,
     )
@@ -61,6 +62,96 @@ async function click(element: HTMLElement) {
     fireEvent.click(element)
   })
 }
+it.each(['en', 'zh-CN'] as const)(
+  'explains Hub dependencies and offers one recovery in %s',
+  async (locale) => {
+    const f = fake(),
+      reconcile = vi.fn(async () => {}),
+      retry = vi.fn(async () => {})
+    f.ports.developer = {
+      status: async () => ({ state: 'shutdown-unconfirmed', code: 'shutdown-unconfirmed', mode: 'local' }),
+      reconcile,
+      retry,
+      check: async () => [],
+    }
+    f.ports.examples = {
+      list: async () => [
+        {
+          id: 'mars',
+          name: catalog[locale].marsName,
+          description: catalog[locale].marsDescription,
+          state: 'failed',
+          code: 'unavailable',
+          installed: true,
+          Scene: () => null,
+        },
+      ],
+      subscribe: () => () => {},
+      enable: async () => {},
+      stop: async () => {},
+      launch: async () => undefined,
+    }
+    await mount(<MhsPage />, f, locale)
+    const t = catalog[locale]
+    const header = host.querySelector('.mhs-header')!
+    const visibleHeader = header.cloneNode(true) as HTMLElement
+    visibleHeader.querySelectorAll('details').forEach((node) => {
+      node.remove()
+    })
+    expect(visibleHeader.textContent).toContain(t['state.shutdown-unconfirmed'])
+    expect(visibleHeader.textContent?.split(t['state.shutdown-unconfirmed'])).toHaveLength(2)
+    expect(visibleHeader.textContent).not.toMatch(/shutdown-unconfirmed|unavailable|Hub · local/)
+    expect(host.textContent).toContain(t['hubBlocked.devices'])
+    expect(host.querySelector('a[href="#mhs-hub-status"]')).toBeTruthy()
+    for (const tab of ['mhs.map', 'mhs.activity', 'mhs.examples', 'mhs.developer'] as const) {
+      await click(getByRole(host, 'tab', { name: t[tab] }))
+      expect(host.querySelectorAll('button')).not.toHaveLength(0)
+      expect(queryByRole(host, 'button', { name: t.retry })).toBeNull()
+      expect(host.querySelectorAll('#mhs-hub-status button')).toHaveLength(1)
+      if (tab === 'mhs.examples') {
+        expect(host.textContent).toContain(t['hubBlocked.examples'])
+        const card = host.querySelector('.mhs-example')!
+        expect(card.textContent).toContain(t.marsName)
+        expect(card.textContent).toContain(t.marsDescription)
+        expect(card.querySelector('.mhs-example-actions [role="status"]')?.textContent).toBe(
+          t['state.failed'],
+        )
+        expect(getByRole(card as HTMLElement, 'button', { name: t.openScene })).toBeTruthy()
+      }
+    }
+    await click(getByRole(host, 'button', { name: t.confirmRecover }))
+    const css = readFileSync('packages/mhs-ui/src/style.css', 'utf8')
+    const actions = [...css.matchAll(/\.mhs-example-actions \{([^}]+)\}/g)]
+      .map((match) => match[1])
+      .join('\n')
+    expect(actions).toContain('display: flex')
+    expect(actions).toContain('flex-wrap: wrap')
+    expect(css).toMatch(/\.mhs-example-cover,\s*\.mhs-example-actions \{[^}]*min-width: 0/)
+    expect(css).toMatch(/\.mhs-example-actions \.agh-btn \{[^}]*white-space: normal/)
+    expect(reconcile).toHaveBeenCalledOnce()
+    expect(retry).not.toHaveBeenCalled()
+  },
+)
+it.each(['en', 'zh-CN'] as const)(
+  'allows an independent device request retry when Hub is ready in %s',
+  async (locale) => {
+    const f = fake()
+    f.ports.services.query = async (name) => {
+      if (name.endsWith('devices')) throw new Error('network')
+      return []
+    }
+    f.ports.developer = {
+      status: async () => ({ state: 'ready' }),
+      reconcile: async () => {},
+      retry: async () => {},
+      check: async () => [],
+    }
+    await mount(<MhsPage />, f, locale)
+    expect(host.textContent).toContain(catalog[locale].deviceRequestFailed)
+    expect(getByRole(host, 'button', { name: catalog[locale].retry })).toBeTruthy()
+  },
+)
+
 describe('MHS approved device interactions', () => {
   it('validates required JSON/typed enum forms and confirms motion without granting approval', async () => {
     const d = devicesFrom([device()])[0]!
@@ -437,7 +528,7 @@ describe('MHS approved device interactions', () => {
         ),
       },
     ]
-    await click(getByRole(host, 'button', { name: 'Retry' }))
+    await click(getByRole(host, 'button', { name: 'Refresh' }))
     await click(getByRole(host, 'button', { name: 'Rescue Agent' }))
     expect(launched).toEqual([])
     await click(getByRole(host, 'button', { name: 'Run' }))
@@ -456,13 +547,13 @@ describe('MHS approved device interactions', () => {
     f.ports.examples.list = async () => [
       { id: 'mars', name: 'Mars', description: 'Rescue', state: 'failed', installed: true },
     ]
-    await click(getByRole(host, 'button', { name: 'Retry' }))
+    await click(getByRole(host, 'button', { name: 'Refresh' }))
     await click(getByRole(host, 'button', { name: 'Stop example' }))
     expect(stopped).toEqual(['mars', 'mars'])
     f.ports.examples.list = async () => [
       { id: 'mars', name: 'Mars', description: 'Rescue', state: 'disabled', installed: true },
     ]
-    await click(host.querySelector('section > button') as HTMLButtonElement)
+    await click(getByRole(host, 'button', { name: 'Refresh' }))
     await click(getByRole(host, 'button', { name: 'Remove example (stop first)' }))
     expect(removed).toEqual([])
     await click(getByRole(host, 'button', { name: 'Run' }))
@@ -694,9 +785,15 @@ it('submits advanced Hub mode through the reviewed developer port and can return
       remote = external !== undefined
     },
   }
-  await mount(<DeveloperPage />, f)
+  await mount(
+    <>
+      <HubHealth />
+      <DeveloperPage />
+    </>,
+    f,
+  )
   await click(getByRole(host, 'button', { name: 'Confirm and recover' }))
-  expect(getByRole(host, 'button', { name: 'Retry' })).toBeTruthy()
+  expect(host.textContent).toContain('Ready')
   host.querySelector('details')!.open = true
   await act(async () => fireEvent.change(getByLabelText(host, 'Hub mode'), { target: { value: 'external' } }))
   await act(async () =>

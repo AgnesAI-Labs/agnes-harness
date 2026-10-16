@@ -11,14 +11,20 @@ import {
   useSyncExternalStore,
 } from 'react'
 import { type MhsClient, receiptMessage } from './client.js'
-import type { Translate } from './locales.js'
+import { HubProvider } from './hub.js'
+import { stateLabel, type Translate } from './locales.js'
+import { jsonText } from './model.js'
 import type { Receipt } from './ports.js'
 import type { MhsStore } from './store.js'
 
 export type Ui = { client: MhsClient; store: MhsStore; t: Translate; openDevice(id: string): void }
 const UiContext = createContext<Ui | undefined>(undefined)
 export function MhsProvider({ value, children }: { value: Ui; children: ReactNode }) {
-  return <UiContext.Provider value={value}>{children}</UiContext.Provider>
+  return (
+    <UiContext.Provider value={value}>
+      <HubProvider>{children}</HubProvider>
+    </UiContext.Provider>
+  )
 }
 export function useMhs() {
   const ui = useContext(UiContext)
@@ -61,8 +67,12 @@ export function ReceiptView({ receipt }: { receipt: Receipt | undefined }) {
         ? t('pending')
         : receipt.state === 'unknown' || message === 'unknown'
           ? t('unknown')
-          : message}
+          : stateLabel(t, receipt.state === 'completed' ? message : receipt.state)}
       <small>{receipt.operationId}</small>
+      <details>
+        <summary>{t('details')}</summary>
+        <pre>{jsonText(receipt)}</pre>
+      </details>
     </div>
   )
 }
@@ -172,7 +182,7 @@ export function QueryState({ error, retry, empty }: { error: boolean; retry(): v
   const { t } = useMhs()
   return (
     <div role={error ? 'alert' : 'status'} className="mhs-empty">
-      {t(error ? 'failed' : empty ? 'noEvents' : 'loading')}
+      {t(error ? 'requestFailed' : empty ? 'noEvents' : 'loading')}
       {error && <Button onClick={retry}>{t('retry')}</Button>}
     </div>
   )
@@ -186,32 +196,4 @@ export function Notice({ children }: { children: string }) {
   )
 }
 
-export function HubHealth() {
-  const { client, t } = useMhs(),
-    port = client.ports.developer
-  const status = useQuery(
-    useCallback(async (signal: AbortSignal) => port?.status(signal), [port]),
-    true,
-  )
-  useEffect(() => {
-    if (
-      !status.value ||
-      (!['starting', 'stopping'].includes(status.value.state) && status.value.mode !== 'external')
-    )
-      return
-    const timer = setTimeout(status.retry, 2000)
-    return () => clearTimeout(timer)
-  }, [status.value, status.retry])
-  if (!port) return <span>{t('noDeveloper')}</span>
-  if (status.error)
-    return (
-      <span role="status">
-        {t('unavailable')} <Button onClick={status.retry}>{t('retry')}</Button>
-      </span>
-    )
-  return (
-    <span role="status">
-      Hub · {status.value?.mode} · {status.value?.state ?? t('loading')} {status.value?.code}
-    </span>
-  )
-}
+export { HubHealth } from './hub.js'

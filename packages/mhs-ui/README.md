@@ -22,3 +22,5 @@ Local scene modules may consume `ExampleSceneHost` from their existing `context.
 
 
 Semantic observation widgets render all MOS kinds, including float32 point clouds, occupancy PNGs, heading/trails, IMU vectors, GNSS fix/accuracy and detections. Declarations select source groups, field labels/roles/units/alerts, hidden fields and gauges. Axis `keys` override role defaults; arrow keys select pitch/yaw when declared and otherwise forward/turn. The advanced Connect panel submits exact external peer/allowlist configuration through native approval; the browser never connects to that address.
+
+Hub health uses the current UI language. The header owns recovery: an unconfirmed shutdown offers **Confirm and recover** through the managed reconcile operation. Devices, maps, activity and examples explain when the Hub blocks them and link to that action; independent request failures keep a local retry. Technical state/error codes stay in details. Example cards use declared localized metadata (with MHS locale fallbacks for Mars) and wrap actions at narrow widths.

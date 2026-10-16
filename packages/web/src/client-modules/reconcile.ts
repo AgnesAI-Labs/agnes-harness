@@ -16,6 +16,7 @@ import type {
   ReconcilerOptions,
 } from './reconcile/contracts.js'
 import { createReconcileLifecycle } from './reconcile/lifecycle.js'
+import { createRosterNavigation } from './reconcile/navigation.js'
 import { prepareDocumentStyles } from './reconcile/styles.js'
 
 const DEFAULT_TIMEOUTS = { import: 15_000, styles: 15_000, apply: 15_000, dispose: 5_000 }
@@ -48,6 +49,8 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
   const timeouts = { ...DEFAULT_TIMEOUTS, ...options.timeouts }
   const packages = new Map<string, PackageState>()
   const statuses = new RuntimeStatusStore()
+  const navigation = createRosterNavigation(locale)
+  ctx.effect(() => () => navigation.retain(new Set()))
 
   async function lifecycle(step: ClientModuleLifecycleStep, packageId: string): Promise<void> {
     await options.onLifecycleStep?.(step, packageId)
@@ -99,6 +102,8 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
   }
 
   function fail(rowId: string, state: PackageState, stage: RuntimeErrorStage): void {
+    navigation.remove(rowId)
+    revokeContributionOwner(registrationOwner(rowId, state))
     setPhase(
       rowId,
       state,
@@ -240,6 +245,7 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
       roster.modules.filter((mod) => !mod.intelligentComponents?.length).map((mod) => [rowKey(mod), mod]),
     )
     const blockedRows = migrateRosterAliases(roster.rowAliases, wanted)
+    navigation.retain(new Set([...wanted.keys()].filter((id) => !blockedRows.has(id))))
     const waits: Promise<void>[] = []
     // 名册不再列出的包：dispose（级联撤销注册项）；模块记录本身驻留（B1）。
     for (const [rowId, state] of packages) {
@@ -319,6 +325,19 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
         (state.phase === 'loading' || state.phase === 'active')
       const forced = reload?.packageId === mod.packageId && reload.revision === mod.revision
       if (!forced && (unchanged || pending)) continue
+      try {
+        if (
+          !state.active &&
+          state.phase !== 'failed' &&
+          navigation.prepare(rowId, mod, () => {
+            void runDiff()
+          })
+        )
+          continue
+      } catch {
+        fail(rowId, state, 'apply')
+        continue
+      }
       waits.push(applyTarget(rowId, state, mod))
     }
     return waits

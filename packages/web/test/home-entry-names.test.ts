@@ -1,9 +1,18 @@
 /** @vitest-environment happy-dom */
 
+import { Context } from '@agnes/cordis'
 import { homeEntries } from '@agnes/web-client'
-import { afterEach, describe, expect, it } from 'vitest'
+import { act, createElement } from 'react'
+import { createRoot } from 'react-dom/client'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createReconciler, type ReadyClientModule } from '../src/client-modules/reconcile.js'
 import { registerBuiltinHomeEntries } from '../src/pages/entries.js'
-import { enT, zhT } from './helpers/locale.js'
+import { HomeEntriesNav } from '../src/regions/home-entries.js'
+import { enT, zhLocaleService, zhT } from './helpers/locale.js'
+
+vi.mock('../src/pages/admin-api.js', () => ({
+  homeAdmin: async () => ({ api: { candidatesList: async () => ({ candidates: [] }) } }),
+}))
 
 describe('home entry names', () => {
   let dispose: (() => void) | undefined
@@ -23,4 +32,80 @@ describe('home entry names', () => {
     expect(agents?.titleKey).toBe('home.entry.agents')
     expect(agents?.subtitleKey).toBe('home.entry.agents.sub')
   })
+  it.each(['en', 'zh-CN'] as const)(
+    'renders declared primary navigation beside built-ins before loading code in %s',
+    async (language) => {
+      Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+      const ctx = new Context(),
+        locale = zhLocaleService(ctx)
+      locale.setLocale(language)
+      const importer = vi.fn(async () => {
+        throw new Error('must remain lazy')
+      })
+      const module: ReadyClientModule = {
+        packageId: 'acme/console',
+        rowId: 'web:acme/console',
+        revision: 'v1',
+        entryUrl: '/console.js',
+        styleUrls: [],
+        slots: [],
+        extIds: [],
+        binding: {
+          owner: 'web:acme/console',
+          packageId: 'acme/console',
+          integrity: 'v1',
+          profileId: 'test',
+          activationId: 'current',
+          lifetime: 'profile',
+          availability: 'active',
+        },
+        homeEntries: [
+          {
+            id: 'console',
+            placement: 'primary',
+            navigation: { title: 'Console', titles: { 'zh-CN': '控制台' }, icon: 'cpu', order: 40 },
+          },
+        ],
+      }
+      let modules = [module]
+      const reconciler = createReconciler({
+        ctx,
+        locale,
+        importer,
+        source: { list: async () => ({ revision: 'v1', modules, statuses: [] }) },
+      })
+      dispose = registerBuiltinHomeEntries()
+      const host = document.body.appendChild(document.createElement('div')),
+        root = createRoot(host)
+      try {
+        await act(async () => {
+          await reconciler.reconcileNow()
+          root.render(createElement(HomeEntriesNav, { t: (key, vars) => locale.t(key, vars) }))
+        })
+        for (const id of ['agents', 'plugins', 'automation', 'console'])
+          expect(host.querySelector(`[data-testid="home-entry-${id}"]`)).toBeTruthy()
+        expect(host.querySelector('[data-testid="home-entry-console"]')?.textContent).toBe(
+          language === 'zh-CN' ? '控制台' : 'Console',
+        )
+        expect(importer).not.toHaveBeenCalled()
+        modules = []
+        await act(async () => {
+          await reconciler.invalidate()
+        })
+        expect(host.querySelector('[data-testid="home-entry-console"]')).toBeNull()
+        modules = [module]
+        await act(async () => {
+          await reconciler.invalidate()
+        })
+        expect(host.querySelector('[data-testid="home-entry-console"]')).toBeTruthy()
+        expect(importer).not.toHaveBeenCalled()
+      } finally {
+        await act(async () => {
+          root.unmount()
+          await ctx.fiber.dispose()
+        })
+        host.remove()
+      }
+    },
+  )
 })
