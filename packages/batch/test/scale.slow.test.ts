@@ -79,7 +79,9 @@ it('recovers a 1207-item manifest with bounded pages, memory and consistent CSV/
       offset = page.nextOffset ?? 1207
     }
     expect(rows.map((row) => row.input.name)).toEqual(files.map((row) => row.name))
-    await expect(h.repo.page(id, 0, 1001)).rejects.toMatchObject({ code: 'E_BATCH_PAGE' })
+    await expect(Promise.resolve().then(() => h.repo.page(id, 0, 1001))).rejects.toMatchObject({
+      code: 'E_BATCH_PAGE',
+    })
     const bundle = await renderExport(h.repo, id)
     await publishExport(root, 'export', bundle)
     const json = (await readFile(join(root, 'export/results.jsonl'), 'utf8'))
