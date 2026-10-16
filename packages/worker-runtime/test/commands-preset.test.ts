@@ -189,3 +189,46 @@ it('routes controls to the pinned session while Host publication changes', async
     ),
   ).rejects.toMatchObject({ data: { code: 'LOOP_CONTROL_UNSUPPORTED', control: 'pause' } })
 })
+
+it('leaves the models of a payload-only adapter out of the session catalog', async () => {
+  const adapter = (id: string, capabilities: Record<string, boolean>) => ({
+    id,
+    version: '1.0.0',
+    wireApi: id,
+    sourcePackage: '@acme/adapter',
+    capabilities: { imageInput: false, tools: false, streaming: false, ...capabilities },
+  })
+  const host = {
+    profile: {
+      presets: { default: 'standard', allowed: ['standard'] },
+      bundleCatalog: {},
+      provider: {
+        routes: [
+          { route: 'jev', api: 'typesafe-systemone' },
+          { route: 'mixed-route', api: 'mixed' },
+        ],
+      },
+    },
+    providers: { catalog: () => [] },
+    kernel: { loops: { catalog: () => [] } },
+    modelAdapterCatalog: () => [
+      adapter('typesafe-systemone', { payload: true, payloadOnly: true }),
+      adapter('mixed', { payload: true }),
+    ],
+    provider: {
+      models: () => [
+        { id: 'jev-1', route: 'jev', api: 'typesafe-systemone' },
+        { id: 'mixed-1', route: 'mixed-route', api: 'mixed' },
+      ],
+    },
+  } as unknown as Host
+  const catalog = (await handleServiceCommand(
+    host,
+    { kind: 'command' as const, requestId: 'request', method: 'session.catalog', params: {} },
+    new Map(),
+  )) as { modelAdapters: { id: string; models: unknown[] }[] }
+  expect(catalog.modelAdapters.map(({ id, models }) => [id, models])).toEqual([
+    ['typesafe-systemone', []],
+    ['mixed', [{ id: 'mixed-1', route: 'mixed-route' }]],
+  ])
+})

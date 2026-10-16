@@ -1,7 +1,16 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { Client, Dispatcher, EnvHttpProxyAgent, setGlobalDispatcher } from 'undici'
 
-export type DeploymentTimeouts = { requestMs?: number; connectMs?: number; streamIdleMs?: number }
+export type DeploymentTimeouts = {
+  requestMs?: number
+  connectMs?: number
+  streamIdleMs?: number
+  /**
+   * How long an idle pooled connection is kept, 1 to 600000 ms. Omitted leaves undici's default
+   * (a few seconds). A `Keep-Alive: timeout=N` hint from the server still takes precedence.
+   */
+  keepAliveTimeoutMs?: number
+}
 type ProxyEnvironment = Readonly<Record<string, string | undefined>>
 const proxyOptions = (env: ProxyEnvironment) => ({
   httpProxy: env.http_proxy ?? env.HTTP_PROXY ?? '',
@@ -55,6 +64,12 @@ export function createDeploymentFetch(
   for (const value of [requestMs, idleMs, timeouts.connectMs ?? 10_000])
     if (!Number.isSafeInteger(value) || value < 1 || value > 3_600_000)
       throw new TypeError('Network timeouts must be integers from 1 to 3600000 milliseconds')
+  const keepAliveMs = timeouts.keepAliveTimeoutMs
+  if (
+    keepAliveMs !== undefined &&
+    (!Number.isSafeInteger(keepAliveMs) || keepAliveMs < 1 || keepAliveMs > 600_000)
+  )
+    throw new TypeError('Keep-alive timeout must be an integer from 1 to 600000 milliseconds')
   const headersTimeout = timeouts.connectMs ?? 10_000
   const dispatcher = new EnvHttpProxyAgent({
     ...proxyOptions(env),
@@ -65,6 +80,9 @@ export function createDeploymentFetch(
     // this option. The proxy hop is built by clientFactory and does not, so both
     // set it. Non-SSE bodies still stop at the idle timer in fetch below.
     bodyTimeout: 0,
+    // Direct and tunneled origin pools inherit this. The proxy hop only carries CONNECT, whose
+    // socket is handed to the tunnel, so clientFactory does not need it.
+    ...(keepAliveMs === undefined ? {} : { keepAliveTimeout: keepAliveMs }),
     clientFactory: (origin, options) => new Client(origin, { ...options, headersTimeout, bodyTimeout: 0 }),
   })
   const request: typeof globalThis.fetch = async (input, init) => {

@@ -103,6 +103,23 @@ Every `agnes.plugins[].apiRange` and `@agnes/extension-api` dependency range mov
   summary silently: the decision subject records `rewrite: { by, summary }` (the hook sources and
   the platform's summary), the timeline's approval node carries it as `rewrite`, and the Web
   approval card shows both.
+- Two requests of one loop that pass the same `LoopRequestOptions.tools` names carry the same tool
+  schemas, sorted by name whatever the order passed, and the same `tool_schema_hash` for the rest of
+  the turn, also when the model loads a deferred tool in between; across turns the same holds while
+  those tools' definitions are unchanged, for the same slot and model. Omitting `tools` follows the
+  current disclosure, which grows whenever the model loads a deferred tool (loads are kept for the
+  session). The guarantee already held; it is now documented and covered by a contract test.
+- A message a loop supplies in `LoopRequestOptions.messages` is no longer served from the session's
+  envelope memo: each request carries the text it was prepared with. Earlier, a later request in the
+  same session could resend the text of the first.
+- When a usage event gives no `credits`, the AI facade takes them from the gateway's billing (a
+  `billing` of source `gateway` that is not a subscription) and reports the source `gateway`;
+  otherwise it prices the request from the catalog and reports `estimated`. An adapter's own
+  `creditSource` label is ignored unless the same event also gives `credits`, so an adapter that
+  prices a request itself sets both.
+- `timeoutMs.firstToken` and `timeoutMs.total` in the options a model adapter receives can be as low
+  as 100 ms (a side call's `deadlineMs` sets them), where they used to be at least 1000 ms. An adapter
+  must not assume a larger value.
 
 ### Added
 
@@ -114,6 +131,59 @@ Every `agnes.plugins[].apiRange` and `@agnes/extension-api` dependency range mov
   applies it around the session's selected tool policy, so the floor follows the session's preset
   instead of the Host's default preset. `ToolPolicyRegistryPort` is unchanged; a Host no longer
   wraps it.
+- `GenericLoopPorts.sideCall` (optional) and the `LoopSideCallPort` contract in `side-call.ts`:
+  a loop sends a one-off model request to a chosen route and model, outside the conversation.
+  `prepare(options)` validates the options and returns a frozen `PreparedSideCall` with an
+  estimate; `invoke(prepared, signal)` sends it and returns a `SideCallResult` (`ok`, `failed`,
+  `unknown` after a crash, or `refused` with nothing written); `status(invocationId)` reads a
+  recorded call back. The request goes out as written, with no main system prompt, history or
+  untrusted envelope. Also exported: `SideCallTarget` (a route and model only), `SideCallOptions`,
+  `PreparedSideCall`, `SideCallUsage`, `SideCallFailure` and `SideCallStatus`. The port is optional
+  so a test double of `LoopContext` that does not provide it keeps compiling.
+- `LoopRequestOptions.tailNote` (`LoopTailNote`): one user-side note appended after the visible
+  history and after Core's own per-request notes. It is trusted at the level of the loop's
+  instructions, like `system`: scrubbed, never wrapped as untrusted, so a loop that quotes untrusted
+  content in it answers for that content. The system prompt, tools, `prompt_prefix_hash` and
+  `tool_schema_hash` are unchanged by it. With `commit: true` the note is written as a history row
+  in the transaction that records the request as sent, so later requests carry it as an ordinary
+  turn and each request stays a prefix of the next. A note of 0 or more than 32768 UTF-8 bytes, one
+  that begins with a Core note prefix, or `commit` together with custom `messages` is refused with
+  `E_ENVELOPE` before anything is written. A request without `tailNote` is unchanged.
+- `CostLedger.purpose` accepts `'side-call'`, and `CostLedger` has the optional `route`, `adapter`
+  (`{ id, version? }`) and `endpointHost`.
+- `ModelAdapterCapabilities.payload` and `.payloadOnly` (both optional booleans). `payload: true`
+  declares that the adapter reads `RequestBody.payload`; without it the facade rejects a request
+  that carries a payload before sending. `payloadOnly: true` declares that the adapter accepts only
+  a payload and no messages, and requires `payload: true`; pickers of the conversation model leave
+  such an adapter out. A registration whose `payload` or `payloadOnly` is not a boolean, or that
+  sets `payloadOnly` without `payload`, is refused as an invalid model adapter registration. The
+  catalog and the capability names list both keys when they are true.
+- `LoopTestOptions.sideCall` for `driveLoop` in `@agnes/plugin-runtime/testkit` (re-exported by
+  `@agnes/host/author-testkit`): a fake `LoopSideCallPort` that becomes `ctx.sideCall`. Without it
+  `ctx.sideCall` stays undefined, as before.
+- `verifyLoopExecutionContract(factory, options)` in `@agnes/host/author-testkit` takes the new
+  `LoopContractOptions`. `{ sideCall: true }` adds the checks `side-call`, `side-call-deadline`,
+  `side-call-cancel`, `side-call-revocation` and `side-call-estimated-cost`; they make side calls
+  through the loop's own context against a payload-only adapter that the suite defines. Without the
+  option the report is unchanged.
+- `LoopToolCallOptions` and an optional third parameter of `tools.execute` and `tools.batch`:
+  `announce` records the call, or the whole batch, as one new assistant message written in the same
+  transaction as the call rows, before anything runs; each call still goes through approval and tool
+  policy. A planned announced call that was never dispatched continues on replay with the same
+  `invocationId` while the step that planned it is open, so a loop that replays it first after a
+  reopen still runs that very call. Otherwise the call is closed with an error result (the history's
+  `tool/result` row carries the code `TOOL_NOT_STARTED`) when its step ends, or before the next
+  model request is prepared, and the loop can announce again with a new `invocationId`. Without
+  `announce` nothing changes.
+- `SideCallResult` (`status: 'failed'`) has an optional `retryAfterMs`: for an `adapter-error` whose
+  vendor asked for a wait, such as a rate limit with `retry-after`, the milliseconds to wait before a
+  retry. It is a whole number up to one hour (a longer or invalid hint is dropped), recorded with the
+  call, so `status` and a replay return it too. Core still never retries; the loop retries with a new
+  `invocationId`.
+- `driveLoop` in `@agnes/plugin-runtime/testkit` (re-exported by `@agnes/host/author-testkit`) honours
+  the `announce` option of `tools.execute` and `tools.batch`: it first records the call, or the batch,
+  as one `assistant/message` event with `stopReason: 'tool_use'`, and passes the option on to the
+  test's tool port with each call. Replay is not simulated.
 
 ## 3.1.0
 

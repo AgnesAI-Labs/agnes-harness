@@ -74,6 +74,16 @@ export type ModelAdapterCapabilities = Readonly<{
   imageInput: boolean
   tools: boolean
   streaming: boolean
+  /**
+   * The adapter reads `RequestBody.payload`. Default false: the facade rejects a request that
+   * carries a payload before sending it.
+   */
+  payload?: boolean
+  /**
+   * The adapter accepts only a payload, not messages. Default false; requires `payload: true`.
+   * Pickers of the conversation model leave such an adapter out.
+   */
+  payloadOnly?: boolean
 }>
 
 /** Register through an ordinary Cordis plugin that injects providers. */

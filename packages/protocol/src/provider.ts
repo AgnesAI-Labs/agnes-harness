@@ -47,6 +47,13 @@ export const SLOT_NAMES = [
 //
 // `count` is optional. An implementation without it, or one answering `{ source: 'unsupported' }` for
 // the route in hand, means the caller falls back to its own estimate rather than failing the turn.
+//
+// `describeRoute` is optional too. It names the adapter and endpoint that would serve a route and
+// model: the adapter identity and wire API, the endpoint host only (never a path or credentials), and
+// a digest of the full routing configuration. The host is what an audit row records; the digest lets a
+// caller detect, between two calls, that the same route name now resolves to a different target
+// without the base URL itself ever leaving the provider. An implementation without it, or one that
+// does not know the route, returns undefined.
 export interface Provider {
   /** retry=false disables adapter retries for this call without changing shared defaults. */
   infer(
@@ -55,4 +62,15 @@ export interface Provider {
   ): AsyncIterable<InferenceEvent>
   models(): ModelRecord[]
   count?(req: RequestBody, opts: { signal: AbortSignal }): Promise<CountResult>
+  describeRoute?(
+    route: string,
+    model: string,
+  ):
+    | Readonly<{
+        adapter: Readonly<{ id: string; version: string | null }>
+        api: string
+        endpointHost: string | null
+        routeDigest: string
+      }>
+    | undefined
 }

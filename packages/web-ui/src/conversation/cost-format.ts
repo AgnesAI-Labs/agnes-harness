@@ -20,6 +20,7 @@ const purposeKeys = new Map([
   ['verifier', 'cost.purpose.verifier'],
   ['media', 'cost.purpose.media'],
   ['tool', 'cost.purpose.tool'],
+  ['side-call', 'cost.purpose.side-call'],
 ])
 
 export function costSummary(node: CostNode, t: Translate = fallbackT): string {

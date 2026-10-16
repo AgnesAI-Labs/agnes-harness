@@ -6,7 +6,9 @@ import type {
   LoopFactory,
   LoopInput,
   LoopRequest,
+  LoopSideCallPort,
   LoopStepOutcome,
+  LoopToolCallOptions,
   LoopTurnView,
 } from '@agnes/extension-api'
 import { type DecisionPort, loopShouldStop, unavailableDecisions } from '@agnes/extension-api'
@@ -23,6 +25,17 @@ export interface LoopTestOptions {
   decisions?: DecisionPort
   /** Durable receipts that exist before the first step, keyed by invocation id. */
   effects?: Readonly<Record<string, LoopEffectStatus>>
+  /**
+   * The port behind `ctx.sideCall`. `ctx.sideCall` stays undefined unless one is supplied, so a loop
+   * that guards on it sees the same context as before; a fake needs to answer only what the loop calls.
+   */
+  sideCall?: LoopSideCallPort
+  /**
+   * The fake behind the tool ports; a batch runs each of its calls through `execute`. An `announce`
+   * option is honoured the way Core records it: the call or batch is first added to `events` as one
+   * `assistant/message` with `stopReason: 'tool_use'`, and the option reaches `execute` with each call.
+   * Replay is not simulated: an invocation that may have been sent is refused, announced or not.
+   */
   tools?: Pick<LoopContext['tools'], 'execute' | 'batch'> & Partial<Pick<LoopContext['tools'], 'resume'>>
   /** Result of the approval-continuation probe; defaults to false (nothing parked). */
   resumeParked?: Awaited<ReturnType<LoopContext['input']['resumeParked']>>
@@ -76,6 +89,30 @@ export async function driveLoop(factory: LoopFactory, options: LoopTestOptions =
     else input.turnId = current!.turnId
     return input
   }
+  const announce = (callOptions?: LoopToolCallOptions) => {
+    if (!callOptions?.announce) return
+    const content = callOptions.announce === true ? [] : structuredClone(callOptions.announce.content)
+    events.push({ type: 'assistant/message', data: { content, stopReason: 'tool_use' } })
+  }
+  const runTool: LoopContext['tools']['execute'] = async (call, signal, callOptions) => {
+    const id = call.invocationId ?? 'tool-' + statuses.size
+    const previous = statuses.get(id)
+    if (previous?.status === 'may-have-sent') throw new Error('Invocation may have been sent')
+    if (previous?.status === 'responded') return previous.result as import('@agnes/extension-api').ToolResult
+    statuses.set(id, { status: 'may-have-sent', invocationId: id, checkpoint })
+    const result = options.tools
+      ? await (callOptions === undefined
+          ? options.tools.execute(call, signal)
+          : options.tools.execute(call, signal, callOptions))
+      : await unavailable()
+    statuses.set(id, {
+      status: 'responded',
+      invocationId: id,
+      checkpoint,
+      result: structuredClone(result),
+    })
+    return result
+  }
   const ctx: LoopContext = options.context ?? {
     decisions: options.decisions ?? unavailableDecisions,
     session: { key: 'author-loop-test', lane: 'main', workspaceRoot: '/fixture' },
@@ -123,28 +160,18 @@ export async function driveLoop(factory: LoopFactory, options: LoopTestOptions =
       finishFailure: unavailable,
     },
     effects: { status: async (id) => statuses.get(id) ?? { status: 'not-sent', invocationId: id } },
+    ...(options.sideCall ? { sideCall: options.sideCall } : {}),
     model: { ...scripted.model, respond: unavailable },
     tools: {
       drain: unavailable,
       resume: options.tools?.resume ?? unavailable,
-      async execute(call, signal) {
-        const id = call.invocationId ?? 'tool-' + statuses.size
-        const previous = statuses.get(id)
-        if (previous?.status === 'may-have-sent') throw new Error('Invocation may have been sent')
-        if (previous?.status === 'responded')
-          return previous.result as import('@agnes/extension-api').ToolResult
-        statuses.set(id, { status: 'may-have-sent', invocationId: id, checkpoint })
-        const result = options.tools ? await options.tools.execute(call, signal) : await unavailable()
-        statuses.set(id, {
-          status: 'responded',
-          invocationId: id,
-          checkpoint,
-          result: structuredClone(result),
-        })
-        return result
+      async execute(call, signal, callOptions) {
+        announce(callOptions)
+        return runTool(call, signal, callOptions)
       },
-      async batch(calls, signal) {
-        return Promise.all(calls.map((call) => ctx.tools.execute(call, signal)))
+      async batch(calls, signal, callOptions) {
+        announce(callOptions)
+        return Promise.all(calls.map((call) => runTool(call, signal, callOptions)))
       },
     },
     input: {

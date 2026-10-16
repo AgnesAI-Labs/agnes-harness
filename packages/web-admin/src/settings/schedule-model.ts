@@ -137,6 +137,7 @@ type AdapterEntry = {
   id: string
   label?: string
   sourcePackage?: string
+  capabilities?: { payloadOnly?: boolean }
   models: readonly { id: string; label?: string; route?: string }[]
 }
 
@@ -173,7 +174,8 @@ export function scheduleChoices(input: {
   const accounts = new Map((input.accounts ?? []).map((account) => [account.route, account]))
   const seen = new Set<string>()
   const models = (input.adapters ?? []).flatMap((adapter) =>
-    adapter.models.flatMap((model) => {
+    // A payload-only adapter takes no messages: a scheduled session cannot run on its models.
+    (adapter.capabilities?.payloadOnly === true ? [] : adapter.models).flatMap((model) => {
       const account = model.route ? accounts.get(model.route) : undefined
       const key = `${model.route}\u0000${model.id}`
       if (!model.route || !account || seen.has(key)) return []

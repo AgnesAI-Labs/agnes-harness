@@ -1,5 +1,6 @@
 import type { ModelAdapterConfig, ProviderPluginContext } from '@agnes/extension-api'
 import { modelAdapterKind } from '@agnes/extension-api'
+import { JEV_ADAPTER_VERSION, JEV_WIRE_API, JevAdapter } from './adapters/jev/index.js'
 import { PiAdapter } from './adapters/pi/index.js'
 import { PI_ADAPTER_APIS } from './adapters/pi/wire.js'
 
@@ -24,10 +25,26 @@ const registrations = [...PI_ADAPTER_APIS, 'openai'].map((api) => ({
   },
 }))
 
-/** Builtin pi-ai protocols contribute through the same factory port as community packages. */
+/**
+ * TypeSafe System One answers a payload and nothing else: no messages, no tools, no streaming. It
+ * declares `payloadOnly` so a model picker for conversations leaves its models out.
+ */
+const jevRegistration = {
+  id: JEV_WIRE_API,
+  wireApi: JEV_WIRE_API,
+  version: JEV_ADAPTER_VERSION,
+  capabilities: { imageInput: false, tools: false, streaming: false, payload: true, payloadOnly: true },
+  create: (config: ModelAdapterConfig, signal?: AbortSignal) => {
+    signal?.throwIfAborted()
+    return new JevAdapter({ routes: config.routes })
+  },
+}
+
+/** Builtin adapters contribute through the same factory port as community packages. */
 export const modelAdaptersPlugin = {
   inject: ['providers'],
   apply(ctx: ProviderPluginContext) {
     for (const adapter of registrations) ctx.providers.register(modelAdapterKind, adapter)
+    ctx.providers.register(modelAdapterKind, jevRegistration)
   },
 }

@@ -121,3 +121,11 @@ coexisting Loop generations. The factory must handle ordinary text prompts and m
 replies; adapt a custom planning language in the supplied factory. Run it in the heavy test tier
 because the stale-scope scenario waits for a real deadline. This additive Host testkit export does
 not change the extension-api contract version.
+
+A loop that sends side model calls (`ctx.sideCall`) can add the side-call checks with
+`verifyLoopExecutionContract(myLoopFactory, { sideCall: true })`. The report then also lists
+`side-call`, `side-call-deadline`, `side-call-cancel`, `side-call-revocation` and
+`side-call-estimated-cost`. They make side calls through the loop's own context against a
+payload-only adapter that the suite defines, so no account or service is needed. Without the
+option the checks and the report are unchanged. See
+[Side model calls from a loop](../develop/plugins.md#side-model-calls-from-a-loop).

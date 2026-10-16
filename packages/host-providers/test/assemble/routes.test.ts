@@ -61,6 +61,73 @@ const refusal = (fn: () => unknown): { code: string; detail: Record<string, unkn
   throw new Error('expected a refusal')
 }
 
+describe('materializeRoutes with payload-only adapters', () => {
+  const route = (name: string, api: string, id: string): RouteDecl => ({
+    route: name,
+    api,
+    baseUrl: 'https://gw.example/v1',
+    models: [model(id, name)],
+  })
+  const adapter = (
+    id: string,
+    capabilities: {
+      imageInput?: boolean
+      tools?: boolean
+      streaming?: boolean
+      payload?: boolean
+      payloadOnly?: boolean
+    },
+  ) => ({
+    id,
+    capabilities: { imageInput: false, tools: false, streaming: false, ...capabilities },
+  })
+  const jev = adapter('typesafe-systemone', { payload: true, payloadOnly: true })
+  const chat = adapter('openai', { tools: true, streaming: true })
+  const preset = withRoute({ route: { primary: 'default', fast: 'default' } })
+
+  it('does not resolve the default sentinel to a route a payload-only adapter serves', () => {
+    const p = profile([route('jev', 'typesafe-systemone', 'jev-1'), route('gw', 'openai', 'chat-1')])
+    expect(materializeRoutes(preset, p, [jev, chat])).toMatchObject({
+      primary: { route: 'gw', model: 'chat-1' },
+      fast: { route: 'gw', model: 'chat-1' },
+    })
+  })
+
+  it('keeps declaration order for a profile without payload-only routes', () => {
+    const p = profile([route('a', 'openai', 'a-1'), route('b', 'openai', 'b-1')])
+    expect(materializeRoutes(preset, p, [chat]).primary).toEqual({ route: 'a', model: 'a-1' })
+    expect(materializeRoutes(preset, p).primary).toEqual({ route: 'a', model: 'a-1' })
+  })
+
+  it('treats a mixed adapter as a chat adapter', () => {
+    const mixed = adapter('openai', { payload: true })
+    const p = profile([route('first', 'openai', 'f-1'), route('gw', 'openai', 'chat-1')])
+    expect(materializeRoutes(preset, p, [mixed]).primary.route).toBe('first')
+  })
+
+  it("keeps today's answer when every declared route is payload-only", () => {
+    const p = profile([route('jev', 'typesafe-systemone', 'jev-1')])
+    expect(materializeRoutes(preset, p, [jev]).primary).toEqual({ route: 'jev', model: 'jev-1' })
+  })
+
+  it('falls back to the built-in demo rather than a payload-only route when nothing else is declared', () => {
+    const demo: RouteDecl = {
+      route: 'demo',
+      api: 'scripted',
+      baseUrl: 'https://demo.invalid',
+      models: [model('demo-model', 'demo')],
+    }
+    const p = profile([demo, route('jev', 'typesafe-systemone', 'jev-1')])
+    expect(materializeRoutes(preset, p, [jev]).primary).toEqual({ route: 'demo', model: 'demo-model' })
+  })
+
+  it('still resolves a route that is named, whatever serves it', () => {
+    const p = profile([route('jev', 'typesafe-systemone', 'jev-1'), route('gw', 'openai', 'chat-1')])
+    const named = withRoute({ route: { primary: 'jev' } })
+    expect(materializeRoutes(named, p, [jev, chat]).primary).toEqual({ route: 'jev', model: 'jev-1' })
+  })
+})
+
 describe('materializeRoutes', () => {
   it('substitutes the default sentinel with the first declared route and its slot model', () => {
     // m-main is first in the catalogue and carries no slot, so it is what an unslotted request gets;

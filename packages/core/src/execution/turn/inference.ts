@@ -20,7 +20,7 @@ import {
 } from '../../child/runtime-budget.js'
 import type { RuntimePromptPreload } from '../../kernel.js'
 import { beforeLoopModelRequest, loopEventContext } from '../../loop/events.js'
-import { loopRequestSurface } from '../../loop/request-surface.js'
+import { loopRequestHistory, loopTailNote, withLoopSampling } from '../../loop/request-options.js'
 import { sessionIdentity } from '../../loop/scope.js'
 import {
   auxiliaryVisionAvailableForSession,
@@ -51,11 +51,12 @@ import {
   type DeriveInput,
   type DeriveOutput,
   deriveRequest,
+  HOOK_CONTEXT_PREFIX,
   headerEquals,
   type RequestHeaderData,
-  remintAfterBeforeRequest,
   remintRequestWithMaxTokens,
   requestMemoryRevision,
+  SKILL_LOADED_PREFIX,
 } from '../../request/derive.js'
 import { inlineImageMediaSurface } from '../../request/inline-images.js'
 import { toProviderRequest } from '../../request/to-provider.js'
@@ -471,6 +472,7 @@ export async function prepareInferenceRequest(
   const op = s.op()
   const t = s.turn
   if (!op || !t) throw new CoreError('E_RELATION', 'Request preparation requires an accepted input')
+  const tailNote = loopTailNote(options)
   await restoreToolDisclosure(s)
   const attempt = op.phase.kind === 'inference' ? op.phase.gen.attempt : 0
   const step = op.step + 1
@@ -514,12 +516,7 @@ export async function prepareInferenceRequest(
     ctx,
     op.meta.triggerSeq,
   )
-  if (options.system !== undefined)
-    merged.sections.push({ id: 'loop:system', order: 1000, source: 'loop', text: options.system })
-  const { surface, imageIndices } = await attachmentSurface(
-    s,
-    options.messages ? loopRequestSurface(s, options.messages) : s.surface(),
-  )
+  const { surface, imageIndices } = await attachmentSurface(s, loopRequestHistory(s, merged, options))
   let requestMedia: LedgerPreparedRequestMedia | undefined
   let auxiliaryVision: ReturnType<typeof prepareAuxiliaryVisionDerivedText> | undefined
   const mediaRuntime = s.d.requestMedia
@@ -654,11 +651,11 @@ export async function prepareInferenceRequest(
     envelopeNonceFor: (nodeSeq) => s.envelopeNonceFor(nodeSeq),
     envelopeCache: s.envelopeCache,
     notes: [
-      { prefix: '[hook context]\n', text: additionalContext, dedup: { kind: 'latest' } },
+      { prefix: HOOK_CONTEXT_PREFIX, text: additionalContext, dedup: { kind: 'latest' } },
       ...(preloaded
         ? [
             {
-              prefix: '[skill loaded]\n',
+              prefix: SKILL_LOADED_PREFIX,
               text: `${preloaded.key}\n${preloaded.note}`,
               dedup: { kind: 'present' as const, key: preloaded.key },
             },
@@ -667,6 +664,7 @@ export async function prepareInferenceRequest(
     ],
     ...(requestMedia ? { media: requestMedia, mediaSessionKey: s.key } : {}),
     ...(auxiliaryVision ? { auxiliaryVision } : {}),
+    ...(tailNote ? { tailNote } : {}),
   })
   if (attachmentOmittedThrough(s)) out.header.attachmentImagesOmittedThrough = attachmentOmittedThrough(s)
   if (slot === 'primary' && s.preset.model.maxTokens !== undefined) {
@@ -677,16 +675,7 @@ export async function prepareInferenceRequest(
     )
     out = { ...out, request, header: { ...out.header, derived_hash: derivedHash } }
   }
-  if (options.sampling) {
-    const { maxTokens, ...samplingParams } = options.sampling
-    const reminted = remintAfterBeforeRequest(out.request, out.media, {
-      ...out.request,
-      samplingParams: { ...out.request.samplingParams, ...samplingParams },
-      ...(maxTokens === undefined ? {} : { maxTokens }),
-    })
-    out = { ...out, request: reminted.request, header: { ...out.header, derived_hash: reminted.derivedHash } }
-  }
-  out = await beforeLoopModelRequest(s, out, slot, attempt)
+  out = await beforeLoopModelRequest(s, withLoopSampling(out, options), slot, attempt)
   return out
 }
 

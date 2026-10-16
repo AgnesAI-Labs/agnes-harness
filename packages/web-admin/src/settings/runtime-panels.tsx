@@ -78,9 +78,14 @@ export function ProvidersPanel({
                     {[
                       t(kind === 'model-adapter' ? 'available' : entry.active ? 'active' : 'inactive'),
                       entry.version,
-                      ...entry.capabilities.flatMap(
-                        (capability) => label('providerCapability', capability) ?? [],
-                      ),
+                      // The summary keeps three items. Payload-only already says it reads payloads, so
+                      // the weaker label does not take the place the stronger one needs.
+                      ...entry.capabilities
+                        .filter(
+                          (capability) =>
+                            capability !== 'payload' || !entry.capabilities.includes('payloadOnly'),
+                        )
+                        .flatMap((capability) => label('providerCapability', capability) ?? []),
                     ]
                       .slice(0, 3)
                       .join(' · ')}

@@ -39,6 +39,7 @@ export function modelRuntime(initial: ModelSnapshot, onDisposeError: (error: unk
   }
   const provider: Provider = {
     models: () => current().provider.models(),
+    describeRoute: (route, model) => current().provider.describeRoute?.(route, model),
     infer: (request, options) => {
       const snapshot = current()
       return (async function* () {

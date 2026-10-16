@@ -274,6 +274,11 @@ export type LocalEndpointOptions = {
   claims?: ClaimStore
   jobs?: JobsPort
   schedules?: SchedulesPort
+  /**
+   * The registered model adapters `apis.list` reads to leave out payload-only routes. Defaults to
+   * the Host's own catalog; a process that holds no adapter registry supplies a lookup.
+   */
+  modelAdapters?: AgnesContext['modelAdapters']
   /** Authentication verifier for an embedded endpoint. The normal local form keeps the unix-only
    * default; authenticated transport adapters can supply their verifier without bypassing authGate. */
   auth?: LocalContext['auth']
@@ -440,6 +445,7 @@ export function createLocalEndpoint(
         inspectService: host.inspectService.bind(host),
       },
       configuration: opts.configuration !== undefined,
+      modelAdapters: opts.modelAdapters ?? (async () => host.modelAdapterCatalog()),
       profileHashForSession: async (key: string) => registry.require(key).session.d.resolvedProfileHash,
       policyDigestForSession: async (key: string) => registry.require(key).session.d.policyDigest ?? null,
       limits: { ...DEFAULT_LIMITS, ...opts.limits },

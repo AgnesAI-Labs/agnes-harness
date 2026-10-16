@@ -215,6 +215,7 @@ import { describeGenerationSessions } from './generation-sessions.js'
 import { type JwksResolver, type JwksTransport, startJwksCache } from './jwks-cache.js'
 import { closeWithAudit, installSignals, shutdownLadder } from './lifecycle.js'
 import { createMcpManageRequests } from './mcp-manage-requests.js'
+import { sharedSessionCatalog, supervisorAdapterLookup } from './model-adapter-lookup.js'
 import { acquireDaemonMutationLock } from './mutation-lock.js'
 import { acquireOwnerLock } from './owner-lock.js'
 import { createPluginManageRequests } from './plugin-manage-requests.js'
@@ -1830,14 +1831,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           },
         })
       : undefined
-    const sessionSelection = sessionSelectionProvider(o.configuration, async () => {
-      const link = await pool.acquireSharedWorker()
-      return (await link.command('session.catalog', {}, { timeoutMs: 31_000 })) as {
-        presets?: readonly { id: string; isDefault: boolean }[]
-        loops: import('@agnes/protocol').AdminLoop[]
-        modelAdapters: import('@agnes/protocol').AdminModelAdapter[]
-      }
-    })
+    const sessionSelection = sessionSelectionProvider(o.configuration, () => sharedSessionCatalog(pool))
     const preferences = new SessionPreferencesStore(jobTables?.table('session_preferences'))
     const rawLister =
       o.ports?.lister ??
@@ -2051,6 +2045,10 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         >
       },
     })
+    // The supervisor holds no adapter registry. `apis.list` learns which adapters take payloads only
+    // from the built-in registrations, and from the shared worker if it is already running. One
+    // lookup serves every connection, so the catalog it last read is shared.
+    const adapterLookup = supervisorAdapterLookup(host, pool)
     const endpoint = (transport: 'unix' | 'ws'): { ep: LocalEndpoint; onClose: () => void } => {
       // `local` is the Unix identity and only a pre-auth placeholder for WSS. The lifecycle bearer
       // admits an HTTP upgrade but establishes no application principal; authGate replaces this value
@@ -2078,6 +2076,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         agnesVersion: '0.0.0',
         quiescenceWaitMs: 2_000,
         configuration: o.configuration !== undefined,
+        modelAdapters: adapterLookup,
         // The WSS lifecycle bearer is only an upgrade gate. initialize still requires one of the
         // configured remote credentials; missing/local auth on WSS is always refused.
         auth: {

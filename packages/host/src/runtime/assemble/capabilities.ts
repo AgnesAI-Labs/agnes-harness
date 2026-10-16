@@ -94,6 +94,7 @@ export function createCapabilities(
     ]
     return resolveSessionCapabilities({
       profile: ctx.profile,
+      adapterCatalog: modelAdapterCatalog(runtimeTarget.pluginTree.root),
       composition:
         deps.compositionPin ??
         (ctx.profile.composition

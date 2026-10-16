@@ -134,6 +134,10 @@ The server binds only `127.0.0.1` on an ephemeral port. `latencyMs` delays heade
 
 `driveLoop`, `scriptedModel` and `runModelAdapter` remain available from the same author entry. `driveLoop(factory, { inputs, replies, checkpoint, maxSteps })` creates/resumes a driver and captures requests, emitted events and checkpoints, then disposes it. `maxSteps` exhaustion fails. Missing controlled ledger ports refuse access; use the full session fixture for approvals, recovery and durable effects. `scriptedModel` exposes `requests` and `remaining`.
 
+To test a loop that calls `ctx.sideCall`, pass `driveLoop(factory, { sideCall })` a fake `LoopSideCallPort` that your test writes; without it `ctx.sideCall` is `undefined`. To check the same loop against the real execution path, call `verifyLoopExecutionContract(factory, { sideCall: true })`, which adds five side-call checks and leaves the report unchanged without the option (see [Execution contract suite](workflow-loops.md#execution-contract-suite)).
+
+`driveLoop` honours the `announce` option of `ctx.tools.execute` and `ctx.tools.batch`: it records the call, or the batch, in `events` as one `assistant/message` event and passes the option on to the `tools.execute` your test wrote, with each call. It does not simulate replay of an announced call (see [Announcing a tool call](../develop/plugins.md#announcing-a-tool-call)).
+
 `runModelAdapter` creates a real adapter instance, captures catalog/events and disposes it in `finally`. The [adapter starter](../../templates/model-adapter/test/adapter.test.mjs) tests this contract. Add provider-specific fixtures and fault scripts when replacing its deterministic reply. Browser mounting, MCP connectivity, real providers and platform sandboxes need their corresponding integration checks.
 
 ## Provider conformance against Host

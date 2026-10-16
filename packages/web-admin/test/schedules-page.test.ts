@@ -737,3 +737,35 @@ it('opens a task named by a link once its row is read, and archives it through t
   )
   expect(document.querySelector('[data-testid="schedules-save"]')).not.toBeNull()
 })
+
+it('offers no model of a payload-only adapter to a scheduled task', () => {
+  const capabilities = (extra: {
+    imageInput?: boolean
+    tools?: boolean
+    streaming?: boolean
+    payload?: boolean
+    payloadOnly?: boolean
+  }) => ({
+    imageInput: false,
+    tools: false,
+    streaming: false,
+    ...extra,
+  })
+  const choices = scheduleChoices({
+    adapters: [
+      { id: 'chat', capabilities: capabilities({ tools: true }), models: [{ id: 'm', route: 'chat' }] },
+      {
+        id: 'jev',
+        capabilities: capabilities({ payload: true, payloadOnly: true }),
+        models: [{ id: 'j', route: 'jev' }],
+      },
+      { id: 'mixed', capabilities: capabilities({ payload: true }), models: [{ id: 'x', route: 'mixed' }] },
+    ],
+    accounts: [
+      { route: 'chat', label: 'Chat' },
+      { route: 'jev', label: 'Jev' },
+      { route: 'mixed', label: 'Mixed' },
+    ],
+  })
+  expect(choices.models.map((model) => model.model)).toEqual(['m', 'x'])
+})

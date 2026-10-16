@@ -6,6 +6,7 @@ import { checkRelations } from '../src/log/relations.js'
 import { contextAnchorOf } from '../src/reduce/anchor.js'
 import { ChunkedMap } from '../src/reduce/chunked-map.js'
 import { foldEvents, initialState, reduce } from '../src/reduce/reducer.js'
+import type { EffectIntent } from '../src/reduce/shapes.js'
 import { effectTree, type LedgerState } from '../src/reduce/state.js'
 import { answeredDecision, pendingDecision } from '../testkit/decision.js'
 
@@ -77,6 +78,13 @@ describe('contextAnchorOf', () => {
     expect(contextAnchorOf(row({ interrupted: true }))).toBeUndefined()
     expect(contextAnchorOf(row({ adjustment: { of: 1, delta: -1 } }))).toBeUndefined()
   })
+
+  it.each(['title', 'approval-guardian', 'media', 'compaction', 'side-call'] as const)(
+    'does not anchor on a %s row, however large',
+    (purpose) => {
+      expect(contextAnchorOf(row({ purpose, tokens: { ...tokens, input: 180_000 } }))).toBeUndefined()
+    },
+  )
 
   it('anchors on a compaction end only when tokensAfter is a nonnegative safe integer', () => {
     const end = (data: unknown) => contextAnchorOf(ev('x/core/compaction-end', data))
@@ -236,11 +244,42 @@ describe('reducer', () => {
     )
     expect(s.creditsUsed).toBe(4.5)
     expect(s.lastLedgerTokens).toEqual(contextAnchor)
+    // A side call is a model call outside the conversation: its spend counts, its tokens are not the context.
+    s = reduce(
+      s,
+      ev('cost/ledger', {
+        purpose: 'side-call',
+        effectId: 'side:1',
+        tokens: { input: 189, output: 12, cacheRead: 0, cacheWrite: 0 },
+        credits: 0.5,
+        creditSource: 'gateway',
+        model: 'side-model',
+        route: 'side-route',
+        adapter: 'side-adapter',
+        endpointHost: 'side.example',
+      }),
+    )
+    expect(s.creditsUsed).toBe(5)
+    expect(s.lastLedgerTokens).toEqual(contextAnchor)
     // What the compaction leaves behind is anchored by its own end row, as a cold-cache estimate.
     s = reduce(s, ev('x/core/compaction-end', { tokensAfter: 321 }, { ignorable: true }))
     expect(s.lastLedgerTokens).toMatchObject({ total: 321, input: 321, cacheRead: 0 })
     s = reduce(s, ev('x/core/compaction-end', {}, { ignorable: true }))
     expect(s.lastLedgerTokens).toMatchObject({ total: 321 })
+    // Nor does a side call replace the estimate a compaction left behind.
+    s = reduce(
+      s,
+      ev('cost/ledger', {
+        purpose: 'side-call',
+        effectId: 'side:2',
+        tokens: { input: 40, output: 4, cacheRead: 0, cacheWrite: 0 },
+        credits: 0.25,
+        creditSource: 'estimated',
+        model: 'side-model',
+      }),
+    )
+    expect(s.creditsUsed).toBe(5.25)
+    expect(s.lastLedgerTokens).toMatchObject({ total: 321, input: 321, cacheRead: 0 })
     s = reduce(s, ev('effect/settled', { effectId: 'e2', outcome: 'ok' }))
     s = reduce(
       s,
@@ -576,6 +615,22 @@ describe('reducer', () => {
       replay: 'never',
       slot: 'image',
     })
+  })
+
+  it('tracks a side-call effect as a never-replay pending effect until it settles', () => {
+    seq = 0
+    const intent: EffectIntent = { effectId: 'side:1', kind: 'side-call', replay: 'never' }
+    const pending = foldEvents([ev('effect/intent', intent)])
+    expect(pending.pendingEffects.get('side:1')).toMatchObject({
+      effectId: 'side:1',
+      kind: 'side-call',
+      replay: 'never',
+    })
+    const settled = reduce(
+      pending,
+      ev('effect/settled', { effectId: 'side:1', outcome: 'error', code: 'TIMEOUT', durationMs: 200 }),
+    )
+    expect(settled.pendingEffects.has('side:1')).toBe(false)
   })
 
   it('starts a fork child with no open step, pending effect, pending approval or consumed decision', () => {

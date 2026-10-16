@@ -33,6 +33,10 @@ type Choice = { loop: string; adapter: string; model: string }
 const sameChoice = (a: Choice, b: Choice) =>
   a.loop === b.loop && a.adapter === b.adapter && a.model === b.model
 
+/** A payload-only adapter takes no messages, so a new session cannot start on it. */
+export const defaultAdapterChoices = (adapters: readonly AdminModelAdapter[]): AdminModelAdapter[] =>
+  adapters.filter((entry) => entry.capabilities.payloadOnly !== true)
+
 /**
  * 新会话默认: what a new session starts with, one row per choice, each saved as soon as it is picked.
  * The host stores the loop, the model adapter and its model; the permission preset is chosen under
@@ -306,7 +310,7 @@ export function SessionDefaultsPanel({
                       },
                     ]
                   : []),
-                ...catalog.adapters.map((entry) => ({
+                ...defaultAdapterChoices(catalog.adapters).map((entry) => ({
                   value: identity(entry),
                   label: entry.label ?? entry.id,
                 })),

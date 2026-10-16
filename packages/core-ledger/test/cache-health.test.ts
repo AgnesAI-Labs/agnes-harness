@@ -185,6 +185,77 @@ describe('cache invalidation detection', () => {
   })
 })
 
+describe('side calls leave cache health alone', () => {
+  const sideCallRow = (
+    seq: number,
+    effectId: string,
+    tokens: { input: number; cacheRead: number; cacheWrite: number },
+  ): Event => {
+    const base = inferenceRow(seq, effectId, tokens)
+    return { ...base, data: { ...(base.data as object), purpose: 'side-call' } } as Event
+  }
+
+  const warm = () => {
+    let state = initialCacheHealthState()
+    state = applyCacheHealthEvent(state, header(1, 'h1'), 'main')
+    return applyCacheHealthEvent(
+      state,
+      inferenceRow(2, 'e1', { input: 500, cacheRead: 9000, cacheWrite: 0 }),
+      'main',
+    )
+  }
+
+  it('does not count a cold side call as an invalidation or move the hit rate', () => {
+    const before = warm()
+    // A cold row this large would be flagged if it were read as the next inference request.
+    const after = applyCacheHealthEvent(
+      before,
+      sideCallRow(3, 'side:1', { input: 9500, cacheRead: 0, cacheWrite: 0 }),
+      'main',
+    )
+    expect(after).toEqual(before)
+    expect(cacheHealthView(after).lastInvalidation).toBeUndefined()
+    expect(cacheHealthView(after).hitRate).toBeCloseTo(9000 / 9500)
+  })
+
+  it('does not hide a real invalidation of the next inference request behind an earlier side call', () => {
+    let state = warm()
+    state = applyCacheHealthEvent(
+      state,
+      sideCallRow(3, 'side:1', { input: 100, cacheRead: 0, cacheWrite: 0 }),
+      'main',
+    )
+    state = applyCacheHealthEvent(state, header(4, 'h1'), 'main')
+    state = applyCacheHealthEvent(
+      state,
+      inferenceRow(5, 'e2', { input: 9500, cacheRead: 0, cacheWrite: 0 }),
+      'main',
+    )
+    expect(cacheHealthView(state).lastInvalidation).toEqual({
+      seq: 5,
+      reprocessedTokens: 9500,
+      cause: 'history-changed',
+    })
+  })
+
+  it('does not invent an invalidation when a warm request follows a side call', () => {
+    let state = warm()
+    state = applyCacheHealthEvent(
+      state,
+      sideCallRow(3, 'side:1', { input: 9500, cacheRead: 0, cacheWrite: 0 }),
+      'main',
+    )
+    state = applyCacheHealthEvent(state, header(4, 'h1'), 'main')
+    state = applyCacheHealthEvent(
+      state,
+      inferenceRow(5, 'e2', { input: 600, cacheRead: 9500, cacheWrite: 0 }),
+      'main',
+    )
+    expect(cacheHealthView(state).lastInvalidation).toBeUndefined()
+    expect(cacheHealthView(state).hitRate).toBeCloseTo((9000 + 9500) / (9500 + 10_100))
+  })
+})
+
 describe('a DeepSeek-shaped session: warm cache, one compaction, one dip, one recovery', () => {
   it('reports a hit rate above zero and exactly one invalidation', () => {
     let state = initialCacheHealthState()

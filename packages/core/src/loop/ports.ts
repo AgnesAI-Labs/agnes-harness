@@ -10,6 +10,7 @@ import type {
   LoopRequest,
   LoopRequestOptions,
   LoopToolCall,
+  LoopToolCallOptions,
   ServiceInstance,
   ServicePorts,
 } from '@agnes/extension-api'
@@ -28,6 +29,7 @@ import { appendExtensionEvent, prepareLoopEvent } from '../step/ext-events.js'
 import { beforeStepGate, builtinBudgetPreflight, checkpointRoutine, stopGate } from '../step/gate.js'
 import { admitInferenceRequest, prepareInferenceRequest } from '../step/inference.js'
 import type { SessionImpl } from '../step/session.js'
+import { announcedTools } from './announce.js'
 import { loopChildStarts } from './child-starts.js'
 import { estimateLoopRequest } from './estimates.js'
 import { dispatchLoopEvent } from './events.js'
@@ -35,6 +37,7 @@ import { LoopInvocations } from './invocations.js'
 import { loopJobs } from './jobs.js'
 import { publicOutcome } from './outcome.js'
 import { scopeLoopContext, sessionForLoop } from './scope.js'
+import { createSideCallPort, sideCallInFlight } from './side-call.js'
 import { freezeView, loopTurnView } from './turn-view.js'
 import { loopWait } from './wait.js'
 
@@ -109,7 +112,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
     if (!s.turn) await s.rehydrateTurn(op)
     const opened = s.state.openStep.get(s.lane)
     if (opened && (newModel || lastPortEdge !== s.loopEdge))
-      await s.transition([s.ev('step/end', { turn: opened.turn, step: opened.step })], op)
+      await announced.closeStep([s.ev('step/end', { turn: opened.turn, step: opened.step })], op)
     lastPortEdge = s.loopEdge
     if (!s.state.openStep.has(s.lane)) {
       const admission = await builtinBudgetPreflight(s)
@@ -137,6 +140,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
     try {
       const op = requireOp()
       if (!s.turn) await s.rehydrateTurn(op)
+      await announced.answerStranded()
       const output = await prepareInferenceRequest(s, options)
       if ('phase' in output)
         throw new CoreError('E_BUDGET', 'Request preparation stopped the turn', { reason: output.reason })
@@ -305,7 +309,9 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
       throw error
     }
   }
-  async function execute(call: LoopToolCall, signal: AbortSignal) {
+  const announced = announcedTools(s, { invocations, prepareTools, closeParked })
+  async function execute(call: LoopToolCall, signal: AbortSignal, options?: LoopToolCallOptions) {
+    if (options?.announce) return announced.execute(call, signal, options.announce)
     const releaseEffect = await s.controls.beginEffect()
     const done = s.beginLoopOperation()
     try {
@@ -402,6 +408,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
     },
     jobs: loopJobs(s, invocations),
     effects: { status: (id) => invocations.status(id) },
+    sideCall: createSideCallPort(s),
     turn: {
       view: () => loopTurnView(s),
       async endStep() {
@@ -411,7 +418,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
           if (s.pendingEffects().length)
             throw new CoreError('E_RELATION', 'Cannot close a step with active effects')
           const step = s.state.openStep.get(s.lane)
-          if (step) await s.transition([s.ev('step/end', { turn: step.turn, step: step.step })], op)
+          if (step) await announced.closeStep([s.ev('step/end', { turn: step.turn, step: step.step })], op)
         } finally {
           done()
         }
@@ -451,7 +458,8 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
       },
     },
     tools: {
-      drain: (signal) => controlled(signal, async () => publicOutcome(await s.runToolsPhase())),
+      drain: (signal) =>
+        controlled(signal, async () => publicOutcome(await announced.driving(() => s.runToolsPhase()))),
       execute,
       async resume(id, signal) {
         if (resumingTools.has(id))
@@ -508,7 +516,8 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
           releaseEffect()
         }
       },
-      async batch(calls, signal) {
+      async batch(calls, signal, options) {
+        if (options?.announce) return announced.batch(calls, signal, options.announce)
         const releaseEffect = await s.controls.beginEffect()
         const done = s.beginLoopOperation()
         try {
@@ -603,12 +612,16 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
         await s.locked(() => appendExtensionEvent(s, event, { loopTrigger: true }))
       },
       async finish(reason, error) {
+        // A side call settles inside its turn; ending the turn first would leave it unsettled.
+        if (sideCallInFlight(s))
+          throw new CoreError('E_RELATION', 'A side call is still in flight', {
+            reason: 'side-call-in-flight',
+          })
         if (reason !== 'completed') {
           const step = s.state.openStep.get(s.lane)
-          await s.endTurn(reason, {
-            ...(error ? { error } : {}),
-            ...(step ? { events: [s.ev('step/end', { turn: step.turn, step: step.step })] } : {}),
-          })
+          const end =
+            step && (await announced.endTurnRows([s.ev('step/end', { turn: step.turn, step: step.step })]))
+          await s.endTurn(reason, { ...(error ? { error } : {}), ...(end ? { events: end } : {}) })
           return { outcome: reason === 'parked' ? 'parked' : 'turn-ended', phase: 'terminal', reason }
         }
         const done = s.beginLoopOperation()
@@ -616,7 +629,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
           const op = requireOp()
           if (!s.turn) await s.rehydrateTurn(op)
           const step = s.state.openStep.get(s.lane)
-          if (step) await s.transition([s.ev('step/end', { turn: step.turn, step: step.step })], op)
+          if (step) await announced.closeStep([s.ev('step/end', { turn: step.turn, step: step.step })], op)
           const mark = `${op.meta.turn}:${op.step}:${op.latestAssistantSeq ?? ''}`
           if (heldCompletion === mark) {
             const held = {

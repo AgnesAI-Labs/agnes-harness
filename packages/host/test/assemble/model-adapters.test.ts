@@ -12,6 +12,7 @@ import { resolveProfile } from '@agnes/host-common/profile/resolve'
 import { MemoryPackageLoader, type PackageModule } from '@agnes/host-extensions/assemble/packages'
 import { createMemoryAudit } from '@agnes/host-infrastructure/audit'
 import {
+  builtinModelAdapterCatalog,
   installModelAdapters,
   ModelAdapterRegistry,
   modelAdapterCatalog,
@@ -101,6 +102,84 @@ it('registers factories with immutable metadata, rejects duplicates and releases
   await expect(root.modelAdapters.create('custom', { routes: [] })).rejects.toMatchObject({
     code: 'E_PROVIDER_UNKNOWN',
   })
+  await root.fiber.dispose()
+})
+
+it('validates payload capabilities at registration and carries them into the catalog', async () => {
+  const root = new Context()
+  new ModelAdapterRegistry(root)
+  const register = (id: string, capabilities: Record<string, unknown>) =>
+    root.providers.registerHost(
+      modelAdapterKind,
+      '@agnes/host',
+      definition({
+        id,
+        capabilities: { imageInput: false, tools: false, streaming: false, ...capabilities } as never,
+      }),
+    )
+  expect(() => register('bad-type', { payload: 'yes' })).toThrow('invalid model adapter registration')
+  expect(() => register('bad-only-type', { payload: true, payloadOnly: 1 })).toThrow(
+    'invalid model adapter registration',
+  )
+  expect(() => register('only-without-payload', { payloadOnly: true })).toThrow(
+    'invalid model adapter registration',
+  )
+  expect(modelAdapterCatalog(root)).toEqual([])
+  register('plain', {})
+  register('payload', { payload: true })
+  register('payload-only', { payload: true, payloadOnly: true })
+  const capabilities = (id: string) =>
+    modelAdapterCatalog(root).find((entry) => entry.id === id)?.capabilities
+  expect(capabilities('plain')).toEqual({ imageInput: false, tools: false, streaming: false })
+  expect(capabilities('payload')).toEqual({
+    imageInput: false,
+    tools: false,
+    streaming: false,
+    payload: true,
+  })
+  expect(capabilities('payload-only')).toEqual({
+    imageInput: false,
+    tools: false,
+    streaming: false,
+    payload: true,
+    payloadOnly: true,
+  })
+  expect(Object.isFrozen(capabilities('payload-only'))).toBe(true)
+  await root.fiber.dispose()
+})
+
+// The facade refuses a payload for any adapter that is not marked as reading one. For an assembled
+// adapter that mark comes from the registration's declared capabilities, not from the instance the
+// factory returned: an instance is free to claim anything, and only the declaration is reviewed.
+it('marks an assembled adapter as payload-accepting only when its registration declares it', async () => {
+  const root = new Context()
+  new ModelAdapterRegistry(root)
+  const register = (id: string, capabilities: Record<string, unknown>, instanceClaim?: boolean) =>
+    root.providers.registerHost(
+      modelAdapterKind,
+      '@agnes/host',
+      definition({
+        id,
+        capabilities: { imageInput: false, tools: false, streaming: false, ...capabilities } as never,
+        create: (config) =>
+          ({
+            ...(definition().create(config) as ModelAdapterInstance),
+            ...(instanceClaim === undefined ? {} : { acceptsPayload: instanceClaim }),
+          }) as ModelAdapterInstance,
+      }),
+    )
+  register('plain', {})
+  register('declared-off', { payload: false })
+  register('declared', { payload: true })
+  register('declared-only', { payload: true, payloadOnly: true })
+  register('claims-without-declaring', {}, true)
+  const accepts = async (id: string) =>
+    (await root.modelAdapters.create(id, { routes: [] })).adapter.acceptsPayload
+  expect(await accepts('declared')).toBe(true)
+  expect(await accepts('declared-only')).toBe(true)
+  expect(await accepts('plain')).toBe(false)
+  expect(await accepts('declared-off')).toBe(false)
+  expect(await accepts('claims-without-declaring')).toBe(false)
   await root.fiber.dispose()
 })
 
@@ -335,3 +414,11 @@ it.each([
     })
   },
 )
+
+it('reads what the built-in adapters take without assembling a Host', () => {
+  const builtin = new Map(builtinModelAdapterCatalog().map((entry) => [entry.id, entry.capabilities]))
+  expect(builtin.get('typesafe-systemone')).toMatchObject({ payload: true, payloadOnly: true })
+  // Every conversation adapter declares neither payload key.
+  for (const id of ['openai-completions', 'anthropic-messages', 'openai'])
+    expect(builtin.get(id)).toEqual({ imageInput: true, tools: true, streaming: true })
+})

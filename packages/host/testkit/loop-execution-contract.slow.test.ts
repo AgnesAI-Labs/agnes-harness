@@ -42,20 +42,40 @@ class Driver implements LoopDriver {
   }
 }
 
-it.each([defaultLoopFactory, new ReactFactory()])(
+const factories = [defaultLoopFactory, new ReactFactory()]
+const core = [
+  'cost-settlement',
+  'missing-usage',
+  'cancel',
+  'approval-rejection',
+  'unknown-outcome',
+  'cold-restore',
+  'stale-scope',
+  'parallel-generations',
+]
+const sideCall = [
+  'side-call',
+  'side-call-deadline',
+  'side-call-cancel',
+  'side-call-revocation',
+  'side-call-estimated-cost',
+]
+
+it.each(factories)(
   '$id passes the public execution contract',
   async (factory) => {
     const result = await verifyLoopExecutionContract(factory)
-    expect(result.checks).toEqual([
-      'cost-settlement',
-      'missing-usage',
-      'cancel',
-      'approval-rejection',
-      'unknown-outcome',
-      'cold-restore',
-      'stale-scope',
-      'parallel-generations',
-    ])
+    // A loop that does not ask for the side-call cases is checked exactly as before.
+    expect(result.checks).toEqual(core)
+  },
+  30_000,
+)
+
+it.each(factories)(
+  '$id passes the side-call cases of the public execution contract',
+  async (factory) => {
+    const result = await verifyLoopExecutionContract(factory, { sideCall: true })
+    expect(result.checks).toEqual([...core, ...sideCall])
   },
   30_000,
 )

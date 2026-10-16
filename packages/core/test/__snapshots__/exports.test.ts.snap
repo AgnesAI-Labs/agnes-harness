@@ -152,6 +152,7 @@ exports[`keeps the public runtime export surface stable 1`] = `
   "scanTruncated",
   "scheduleBatch",
   "setChildAgentAllowlist",
+  "setChildModelScope",
   "sha256Hex",
   "stopGate",
   "toProviderRequest",

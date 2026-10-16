@@ -119,3 +119,10 @@ await verifyLoopExecutionContract(myLoopFactory)
 未知结果、冷恢复、过期 scope 拒绝以及两代 Loop 并存。工厂需处理普通文字提示和模型工具调用；
 自定义规划语言可在传入的工厂中适配。过期 scope 场景等待真实 deadline，请放在 heavy 测试层运行。
 这是 Host testkit 的新增出口，不改变 extension-api 契约版本。
+
+发送旁路模型调用（`ctx.sideCall`）的 Loop 可以用
+`verifyLoopExecutionContract(myLoopFactory, { sideCall: true })` 加上旁路调用检查，报告随之多出
+`side-call`、`side-call-deadline`、`side-call-cancel`、`side-call-revocation` 和
+`side-call-estimated-cost`。这些检查通过 Loop 自己的上下文，对套件自己定义的只接受 payload 的适配器
+发起旁路调用，不需要账号或外部服务。不传该选项时，检查与报告都不变。参见
+[循环的旁路模型调用](../develop/plugins.zh-CN.md#循环的旁路模型调用)。

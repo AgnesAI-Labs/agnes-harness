@@ -199,6 +199,7 @@ export { DEFAULT_LOOP } from '@agnes/extension-api'
 export type { Provider } from '@agnes/protocol'
 export { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
 export { bindChildAgentSession, runLoopChild } from './child/loop-port.js'
+export { type ChildModelScope, setChildModelScope } from './child/model-scope.js'
 export type { InProcessChildBackend, ResidentStart, ResidentTurn } from './child/provider.js'
 export {
   IN_PROCESS_CHILD_CAPABILITIES,

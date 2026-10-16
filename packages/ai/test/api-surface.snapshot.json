@@ -13,6 +13,8 @@
   "Escalation",
   "FileContractStore",
   "IMAGE_ROUTE",
+  "JEV_WIRE_API",
+  "JevAdapter",
   "MediaAdapter",
   "NullContractStore",
   "PARSER_VERSION",

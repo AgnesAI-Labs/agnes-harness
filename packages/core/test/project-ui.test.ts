@@ -1184,6 +1184,8 @@ describe('cache health on the live projection cell', () => {
     ['media', 2048, 0.75, { input: 2058 }],
     // The summary request's usage is not what the next request carries.
     ['compaction', 9000, 0.5, { input: 9010 }],
+    // A loop's own model call is not part of the conversation.
+    ['side-call', 4096, 0.25, { input: 4106 }],
   ] as const)(
     'keeps %s cost in totals without replacing the live context anchor',
     (purpose, input, credits, totals) => {
@@ -1198,6 +1200,30 @@ describe('cache health on the live projection cell', () => {
       })
     },
   )
+
+  it('keeps the conversation context and cache health steady across side calls', () => {
+    const cell = new UIProjectionCell('k', 'main', { maxEvents: 2, maxBytes: 1024 * 1024 })
+    const sideCall = (seq: number, effectId: string, input: number) => {
+      const base = inferenceRow(seq, effectId, { input, cacheRead: 0, cacheWrite: 0 })
+      base.data = { ...(base.data as object), purpose: 'side-call', credits: 0.5 }
+      return base
+    }
+    cell.apply([
+      header(1, 'h1'),
+      inferenceRow(2, 'inference-1', { input: 180_000, cacheRead: 0, cacheWrite: 0 }),
+      header(3, 'h1'),
+      inferenceRow(4, 'inference-2', { input: 400, cacheRead: 180_000, cacheWrite: 0 }),
+    ])
+    const before = cell.usage(usageOpts)
+    expect(before.context.tokens).toBe(180_401)
+    cell.apply([sideCall(5, 'side:1', 189), sideCall(6, 'side:2', 9000)])
+    const after = cell.usage(usageOpts)
+    expect(after.context.tokens).toBe(180_401)
+    expect(after.cache).toEqual(before.cache)
+    expect(after.cache?.lastInvalidation).toBeUndefined()
+    expect(after.totals.input).toBe(before.totals.input + 189 + 9000)
+    expect(after.credits?.amount).toBe(1)
+  })
 
   it('reads the context from the estimate a compaction leaves behind, until the next request', () => {
     const cell = new UIProjectionCell('k', 'main', { maxEvents: 2, maxBytes: 1024 * 1024 })
