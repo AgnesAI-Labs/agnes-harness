@@ -50,8 +50,9 @@ import {
   type InstallReviewState,
   type PluginRuntimeSource,
 } from '../types.js'
-import { confirmSimple, EnableFacts, offeredActions, PreviewFacts, RollbackFacts } from './confirms.js'
+import { confirmEnable, confirmSimple, offeredActions, PreviewFacts, RollbackFacts } from './confirms.js'
 import { adminErrorKey, element, markSettingsPage, setDialog } from './dom.js'
+import { manageExample } from './example-parent.js'
 import { InstallFlow, operationFailure } from './install-flow.js'
 import { rememberInventory, seededState } from './inventory-cache.js'
 import { hasClientContribution, isClientOnly, safeMessage, sourceForCatalog } from './model.js'
@@ -286,6 +287,7 @@ export class PluginAdminPage {
       configureConfirm: page.configureConfirm.bind(page),
       confirmDisable: page.confirmDisable.bind(page),
       confirmEnable: page.confirmEnable.bind(page),
+      manageExample: (item: Pick<PackageInstalledDescriptor, 'id' | 'metadata'>) => manageExample(page, item),
       confirmReleasePins: page.confirmReleasePins.bind(page),
       detailActions: offeredActions(page),
       detailOperations: page.detailOperations.bind(page),
@@ -742,7 +744,7 @@ export class PluginAdminPage {
   /** Submit the install or update the current preview confirms; the operation id once accepted. */
   async #submitPreview(enableAfter: boolean): Promise<string | undefined> {
     const preview = this.#state.preview
-    if (!preview) return undefined
+    if (!preview || manageExample(this, preview)) return undefined
     const mode = this.#state.previewMode ?? 'install'
     const api = this.effectApi('packages.install')
     if (!api) return undefined
@@ -1017,6 +1019,7 @@ export class PluginAdminPage {
   }
 
   openPreview(preview: PackagePreview, mode: PreviewMode): void {
+    if (manageExample(this, preview)) return
     this.#confirmTrigger ??= this.#sourceTrigger ?? this.#listHost
     const installed =
       mode === 'update' ? this.#state.installed.find((item) => item.id === preview.id) : undefined
@@ -1433,14 +1436,16 @@ export class PluginAdminPage {
   }
 
   filteredInstalled(): readonly PackageInstalledDescriptor[] {
-    return this.#state.installed.filter((item) =>
-      matchesPluginSearch(item, this.#query, this.presentationOf(item), (kind) =>
-        createUiTranslator(
-          this.#locale,
-          PLUGIN_PRESENTATION_NAMESPACE,
-          pluginPresentationCatalog,
-        )(`provide.${kind}`),
-      ),
+    return this.#state.installed.filter(
+      (item) =>
+        !item.metadata?.exampleOf &&
+        matchesPluginSearch(item, this.#query, this.presentationOf(item), (kind) =>
+          createUiTranslator(
+            this.#locale,
+            PLUGIN_PRESENTATION_NAMESPACE,
+            pluginPresentationCatalog,
+          )(`provide.${kind}`),
+        ),
     )
   }
 
@@ -1624,6 +1629,7 @@ export class PluginAdminPage {
   }
 
   selectItem(item: PackageInstalledDescriptor | PackageCatalogDescriptor): void {
+    if (manageExample(this, item)) return
     this.#ownsDialogs(true)
     // React 键控行复用 DOM：触发行查询自渲染结果，详情关闭后焦点可以精确归还。
     this.#detailTrigger =
@@ -1678,7 +1684,7 @@ export class PluginAdminPage {
     }
   }
 
-  async chooseUpdateVersion(item: PackageInstalledDescriptor): Promise<void> {
+  async chooseUpdateVersion(item: Pick<PackageInstalledDescriptor, 'id'>): Promise<void> {
     this.#tab = 'discover'
     this.#query = item.id
     this.#queryRaw = item.id
@@ -1692,33 +1698,7 @@ export class PluginAdminPage {
   }
 
   confirmEnable(item: PackageInstalledDescriptor): Promise<void> {
-    if (
-      hasFeature(this.#state.context, ADMIN_FEATURES.runtimeIdentity) &&
-      this.activeIntegrity(item) === undefined
-    ) {
-      this.showError({
-        code: 'RUNTIME_IDENTITY_UNKNOWN',
-        message:
-          'The actual runtime summary has not been confirmed, so this plugin cannot be safely enabled.',
-      })
-      return Promise.resolve()
-    }
-    const capabilityHash = item.capabilityHash
-    if (!item.trusted && !capabilityHash) {
-      this.showError({
-        code: 'E_PACKAGE_TRUST',
-        message: 'The capability summary has not been confirmed, so this version cannot be safely enabled.',
-      })
-      return Promise.resolve()
-    }
-    this.configureConfirm({
-      title: () => this.#t('confirm.enable.title', { id: this.nameOf(item) }),
-      description: () => this.#t(item.trusted ? 'confirm.enable.trusted' : 'confirm.enable.verify'),
-      label: () => this.#t(item.trusted ? 'confirm.enable.action' : 'confirm.enable.trust-action'),
-      facts: <EnableFacts item={item} t={this.#t} />,
-      run: () => this.#trustAndEnable(item),
-    })
-    return Promise.resolve()
+    return confirmEnable(this, item, () => this.#trustAndEnable(item))
   }
 
   /** Trust this exact version if it is not trusted yet, then enable it once that has landed. */
@@ -1774,6 +1754,7 @@ export class PluginAdminPage {
   }
 
   confirmRollback(item: PackageInstalledDescriptor): void {
+    if (manageExample(this, item)) return
     const target = item.rollbackTarget
     const activeIntegrity = this.activeIntegrity(item)
     if (!target || activeIntegrity === undefined || !this.supportsCompositeActivation()) return

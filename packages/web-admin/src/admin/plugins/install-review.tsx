@@ -235,3 +235,5 @@ export function PluginInstallReview({
     />
   )
 }
+
+export { ExampleManagementNotice } from './admin/example-parent.js'

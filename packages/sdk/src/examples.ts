@@ -58,7 +58,8 @@ export function createExampleClient(transport: ExampleTransport): {
       stop: async (exampleId, operationId) => {
         await transport({ action: 'stop', exampleId, operationId })
       },
-      inspectRemove: async (exampleId) => (await transport({ action: 'inspect-remove', exampleId })) as ExampleReview,
+      inspectRemove: async (exampleId) =>
+        (await transport({ action: 'inspect-remove', exampleId })) as ExampleReview,
       remove: async (reviewId, operationId) =>
         (await transport({ action: 'remove', reviewId, operationId })) as { operationId: string },
       inspect: async (exampleId) => (await transport({ action: 'inspect', exampleId })) as ExampleReview,

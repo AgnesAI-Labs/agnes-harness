@@ -267,6 +267,7 @@ export function PluginsTab({
     .filteredInstalled()
     .filter(
       (item) =>
+        !item.metadata?.exampleOf &&
         (!view.kind || item.kinds?.includes(view.kind)) &&
         (!view.category || (item.metadata?.category ?? 'unclassified') === view.category),
     )

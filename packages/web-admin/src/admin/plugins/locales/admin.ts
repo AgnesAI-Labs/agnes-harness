@@ -9,6 +9,14 @@ export const PLUGIN_ADMIN_LOCALE_NAMESPACE = '@agnes/web/plugin-admin'
 
 export const pluginAdminLocaleCatalog: LocaleCatalog = {
   en: {
+    'example.parent.title': 'Managed by the parent plugin',
+    'example.parent.missing':
+      'This example requires {parent}, which is not installed. Review, install and enable the parent first, then manage this example on its Examples page.',
+    'example.parent.disabled':
+      'This example is unavailable because {parent} is disabled or not ready. Review and enable the parent first, then use its Examples page.',
+    'example.parent.managed': 'This example is managed on the Examples page of {parent}.',
+    'example.parent.open': 'Open parent Examples',
+    'example.parent.review': 'Review parent first',
     'ux.examples': 'Official examples',
     'ux.settings': 'Settings',
     'ux.success.enable': 'Enabled {name}',
@@ -38,6 +46,14 @@ export const pluginAdminLocaleCatalog: LocaleCatalog = {
     ...pluginAdminShellLocaleCatalog.en,
   },
   'zh-CN': {
+    'example.parent.title': '由所属插件管理',
+    'example.parent.missing':
+      '此示例需要尚未安装的 {parent}。请先审核、安装并启用所属插件，再到其示例页面管理此示例。',
+    'example.parent.disabled':
+      '所属插件 {parent} 已停用或尚未就绪，此示例不可用。请先审核并启用所属插件，再进入其示例页面。',
+    'example.parent.managed': '此示例由 {parent} 的示例页面管理。',
+    'example.parent.open': '打开所属插件的示例',
+    'example.parent.review': '先审核所属插件',
     'ux.examples': '官方示例',
     'ux.settings': '设置',
     'ux.success.enable': '已启用 {name}',

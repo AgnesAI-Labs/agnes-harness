@@ -401,3 +401,49 @@ describe('rebuildDesiredFromInventory', () => {
     )
   })
 })
+
+it.each([false, true])(
+  'disables dependent example rows with their parent and restores them on parent enable (nested=%s)',
+  (nested) => {
+    const directory = mkdtempSync(join(tmpdir(), 'agnes-example-parent-'))
+    dirs.push(directory)
+    const parent = installed({ id: 'acme/parent', directory, enabled: false })
+    const intermediate = installed({
+      id: 'acme/intermediate',
+      directory,
+      entry: { metadata: { category: 'example', exampleOf: parent.id } } as InstalledPackage['entry'],
+    })
+    const child = installed({
+      id: 'acme/example',
+      directory,
+      entry: {
+        metadata: {
+          displayName: 'Example',
+          summary: 'Example',
+          description: 'Example',
+          category: 'example',
+          exampleOf: nested ? intermediate.id : parent.id,
+        },
+      } as InstalledPackage['entry'],
+      blockers: [{ code: 'dependency', references: ['example-parent-unavailable', parent.id] }],
+    })
+    const disabled = rebuildDesiredFromInventory({
+      previous: previous('ext:acme/example/main', child.id),
+      inventory: inventory([parent, intermediate, child]),
+      packageId: parent.id,
+      operation: 'disable',
+    })!
+    expect(decodeRuntimeTargetArtifact(disabled).tree.rows).toContainEqual(
+      expect.objectContaining({ id: 'ext:acme/example/main', disabled: true }),
+    )
+    const enabled = rebuildDesiredFromInventory({
+      previous: disabled,
+      inventory: inventory([{ ...parent, enabled: true }, intermediate, { ...child, blockers: [] }]),
+      packageId: parent.id,
+      operation: 'enable',
+    })!
+    expect(decodeRuntimeTargetArtifact(enabled).tree.rows).toContainEqual(
+      expect.objectContaining({ id: 'ext:acme/example/main', disabled: false }),
+    )
+  },
+)

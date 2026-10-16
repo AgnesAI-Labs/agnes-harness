@@ -17,11 +17,36 @@ const plugin = (ref: string, origin: string) =>
   }) as unknown as PackageInstalledDescriptor
 
 it('never offers to uninstall what ships with the product, and keeps its other actions', () => {
-  const offered = offeredActions(page)(plugin('file:./bundled-plugins/skill-helper', 'official'))
-  expect(offered.map((action) => action.label)).toEqual(['Check for updates', 'Revoke trust'])
+  for (const name of ['skill-helper', 'mhs']) {
+    const offered = offeredActions(page)({
+      ...plugin(`file:./bundled-plugins/${name}`, 'official'),
+      id: `@agnes/${name}`,
+    })
+    expect(offered.map((action) => action.label)).toEqual(['Check for updates', 'Revoke trust'])
+  }
 })
 
 it('offers every action for a plugin the user installed', () => {
   expect(offeredActions(page)(plugin('file:./my-plugins/skill-helper', 'local-source'))).toHaveLength(3)
   expect(offeredActions(page)(plugin('npm:@agnes/skill-helper@1.0.0', 'official'))).toHaveLength(3)
+})
+
+it('offers no ordinary management actions for any parent-owned example', () => {
+  const example = {
+    ...plugin('file:./example', 'example'),
+    metadata: {
+      displayName: 'Example',
+      summary: 'Example',
+      description: 'Example',
+      category: 'example' as const,
+      exampleOf: 'acme/parent',
+    },
+  }
+  expect(offeredActions(page)(example)).toEqual([])
+  expect(
+    offeredActions(page)({
+      ...example,
+      metadata: { displayName: 'FDE', summary: 'FDE', description: 'FDE', category: 'business-agent' },
+    }),
+  ).toHaveLength(3)
 })

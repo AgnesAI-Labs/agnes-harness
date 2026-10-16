@@ -1,5 +1,5 @@
 import { resolvePluginMetadata } from '@agnes/protocol'
-import { PluginInstallReview } from '@agnes/web-admin/admin/plugins/install-review'
+import { ExampleManagementNotice, PluginInstallReview } from '@agnes/web-admin/admin/plugins/install-review'
 import {
   PLUGIN_PRESENTATION_NAMESPACE,
   PushPage,
@@ -63,15 +63,19 @@ export function InstallReviewPage({ view }: { view: PluginView | undefined }) {
     preview.presentation?.origin ?? (LOCAL_SOURCES.has(preview.source.type) ? 'local-source' : 'third-party')
   return (
     <PushPage id={segment} title={view.t(`preview.title.${review.mode}`, { id: name })}>
-      <PluginInstallReview
-        review={review}
-        name={name}
-        kind={kind ? view.t(`kind.${kind}`) : undefined}
-        tier={purposeText(`origin.${origin}`)}
-        t={view.t}
-        onCancel={() => nav.current.back()}
-        onConfirm={(enableAfter) => void view.confirmReview(enableAfter)}
-      />
+      {preview.metadata?.exampleOf ? (
+        <ExampleManagementNotice view={view} preview={preview} />
+      ) : (
+        <PluginInstallReview
+          review={review}
+          name={name}
+          kind={kind ? view.t(`kind.${kind}`) : undefined}
+          tier={purposeText(`origin.${origin}`)}
+          t={view.t}
+          onCancel={() => nav.current.back()}
+          onConfirm={(enableAfter) => void view.confirmReview(enableAfter)}
+        />
+      )}
     </PushPage>
   )
 }

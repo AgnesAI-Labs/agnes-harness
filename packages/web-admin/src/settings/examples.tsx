@@ -59,7 +59,8 @@ export function OfficialExampleCards({ api, canInstall = false, installed, t, on
         result.push(
           ...page.items.filter(
             (row) =>
-              row.sourceId === 'official-examples' || row.source.ref.startsWith('file:./bundled-examples/'),
+              !row.metadata?.exampleOf &&
+              (row.sourceId === 'official-examples' || row.source.ref.startsWith('file:./bundled-examples/')),
           ),
         )
         cursor = page.nextCursor ?? undefined

@@ -66,9 +66,9 @@ register 返回幂等且绑定该注册项身份的卸载函数，须绑定到�
 
 daemon 名册提供 `binding`，包含 owner、包、integrity、profile、activation、lifetime 和 availability；`ctx.availability` 提供只读快照和订阅。profile 模块始终跟随当前启用状态，不随选中会话切换版本；session 模块保留固定的历史呈现。禁用在异步清理前撤销全局注册，已记录的会话内容仍可读。availability 只用于呈现，后端继续独立授权每个操作。应将 profile 页面与 session 历史渲染器拆成两个 client 贡献。受管理服务的健康状态与静态页面可用性分开。
 
-随包示例的 metadata 声明 `category: "example"`、指向宿主包的 `exampleOf`、可选 `pageEntry`，以及最多 32 个 `launches`。每项包含 `id`、`kind: "business-agent"`、`title`、`bundle`、`preset` 和最多 16 KiB 的 `prompt`，并显式声明父包依赖。此类包不进入业务 Agent 目录；发现关系不授予任何服务访问权限。
+随包示例的 metadata 声明 `category: "example"`、指向宿主包的 `exampleOf`、可选 `pageEntry`，以及最多 32 个 `launches`。每项包含 `id`、`kind: "business-agent"`、`title`、`bundle`、`preset` 和最多 16 KiB 的 `prompt`，并显式声明父包依赖。此类包仅在所属插件的示例页面管理，不进入普通插件列表或业务 Agent 目录。启用前检查所属插件的安装、信任、启用状态及依赖版本兼容性；停用所属插件后，示例的启动入口不可用。发现关系不授予任何服务访问权限。
 
-profile 模块使用 `ctx.profile.examples.list/inspect/enable/read` 和 `ctx.profile.launch.prepare/start/openPage`。inspect 返回五分钟内有效、绑定调用方、activation、内容与能力的 review。enable 通过既有安装、信任和精确启用流程确认这些字节。launch 选择示例声明的 bundle 和 preset；同一 operation ID 只产生一个会话和一条耐久输入，丢失回执后仍可安全重试。缺少 bundle、preset、依赖，内容变化或 activation 撤销均拒绝执行。未知外部结果通过 read 保留，不自动重发。浏览器接口不接受包来源或任意管理方法。SDK 可通过 `createExampleClient` 和宿主认证 transport 使用相同窄接口。
+profile 模块使用 `ctx.profile.examples.list/inspect/enable/read/stop/inspectRemove/remove` 和 `ctx.profile.launch.prepare/start/openPage`。inspect 返回五分钟内有效、绑定调用方、activation、内容与能力的 review。enable 通过既有安装、信任和精确启用流程确认这些字节。停止示例后，inspectRemove 创建独立的移除 review；remove 接受该 review ID 和稳定的 operation ID，并保留普通包引用及 pin 检查。启用 review 不能授权移除。launch 选择示例声明的 bundle 和 preset；同一 operation ID 只产生一个会话和一条耐久输入，丢失回执后仍可安全重试。缺少 bundle、preset、依赖，内容变化或 activation 撤销均拒绝执行。未知外部结果通过 read 保留，不自动重发。浏览器接口不接受包来源或任意管理方法。SDK 可通过 `createExampleClient` 和宿主认证 transport 使用相同窄接口。
 
 示例的 profile 模块通过 `ctx.examplePages.register` 注册声明的组件，父模块通过 `ctx.examplePages.render(exampleId, context)` 呈现，并订阅该注册表的快照。组件继续使用自己的模块作用域，不获得父包管理连接。模拟器生命周期应属于 profile 模块的 effect 作用域；切页只分离场景视图。示例禁用或所属浏览器关闭时释放连接并停止工作。会话 tab 复用已有 workbench panel API。
 

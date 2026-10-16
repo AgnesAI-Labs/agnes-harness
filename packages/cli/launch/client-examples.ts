@@ -59,6 +59,26 @@ export function localClientExamples(
             }),
           )
         },
+        async remove(review, operationId, check) {
+          await check()
+          const row = (await admin.list({ profile })).packages.find((item) => item.id === review.entry.id)
+          if (
+            !row ||
+            row.integrity !== review.preview.integrity ||
+            row.capabilityHash !== review.preview.capabilityHash
+          )
+            throw new Error('E_PACKAGE_PREVIEW_STALE')
+          if (row.desired === 'enabled') throw new Error('E_PACKAGE_STATE')
+          await check()
+          await settled(() =>
+            admin.remove({
+              profile,
+              id: row.id,
+              clientId: awaitClientId,
+              commandId: `example-remove-${operationId}`,
+            }),
+          )
+        },
         async owner(rowId) {
           await initialize()
           const row = (await client.clientModules.list(profile)).rows.find((row) => row.rowId === rowId)

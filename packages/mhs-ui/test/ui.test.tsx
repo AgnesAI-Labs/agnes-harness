@@ -385,11 +385,18 @@ describe('MHS approved device interactions', () => {
       enabled: string[] = [],
       launched: string[] = [],
       prepared: string[] = [],
-      stopped: string[] = []
+      stopped: string[] = [],
+      removed: string[] = []
     f.ports.examples = {
-      list: async () => [{ id: 'mars', name: 'Mars', description: 'Rescue', state: 'disabled' }],
+      list: async () => [
+        { id: 'mars', name: 'Mars', description: 'Rescue', state: 'disabled', installed: true },
+      ],
       subscribe: () => () => {},
       inspect: async () => ({ reviewId: 'review', presentation: { devices: 11 } }),
+      inspectRemove: async () => ({ reviewId: 'remove-review', presentation: { action: 'remove' } }),
+      remove: async (_id, token) => {
+        removed.push(token)
+      },
       enable: async (_id, token) => {
         enabled.push(token ?? '')
       },
@@ -446,6 +453,20 @@ describe('MHS approved device interactions', () => {
     await click(getByRole(host, 'button', { name: 'Examples' }))
     await click(getByRole(host, 'button', { name: 'Stop example' }))
     expect(stopped).toEqual(['mars'])
+    f.ports.examples.list = async () => [
+      { id: 'mars', name: 'Mars', description: 'Rescue', state: 'failed', installed: true },
+    ]
+    await click(getByRole(host, 'button', { name: 'Retry' }))
+    await click(getByRole(host, 'button', { name: 'Stop example' }))
+    expect(stopped).toEqual(['mars', 'mars'])
+    f.ports.examples.list = async () => [
+      { id: 'mars', name: 'Mars', description: 'Rescue', state: 'disabled', installed: true },
+    ]
+    await click(host.querySelector('section > button') as HTMLButtonElement)
+    await click(getByRole(host, 'button', { name: 'Remove example (stop first)' }))
+    expect(removed).toEqual([])
+    await click(getByRole(host, 'button', { name: 'Run' }))
+    expect(removed).toEqual(['remove-review'])
   })
 })
 

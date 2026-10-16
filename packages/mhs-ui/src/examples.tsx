@@ -12,7 +12,7 @@ export function ExamplesPage({ initialScene }: { initialScene?: string }) {
     [createdSession, setCreatedSession] = useState<string>(),
     [review, setReview] = useState<{
       id: string
-      action: 'enable' | 'launch'
+      action: 'enable' | 'launch' | 'remove'
       token: string
       presentation: unknown
     }>(),
@@ -34,7 +34,7 @@ export function ExamplesPage({ initialScene }: { initialScene?: string }) {
     return () => clearTimeout(timer)
   }, [query.value, query.retry])
   const run = async (
-    action: 'enable' | 'stop' | 'launch',
+    action: 'enable' | 'stop' | 'launch' | 'remove',
     example: ExampleView,
     token?: string,
     launchId?: string,
@@ -49,6 +49,11 @@ export function ExamplesPage({ initialScene }: { initialScene?: string }) {
         setReview({ id: example.id, action, token: r.reviewId, presentation: r.presentation })
         return
       }
+      if (action === 'remove' && port.inspectRemove && !token) {
+        const r = await port.inspectRemove(example.id)
+        setReview({ id: example.id, action, token: r.reviewId, presentation: r.presentation })
+        return
+      }
       if (action === 'launch' && example.requiresRuntime && example.state !== 'running')
         throw new Error('example-runtime-unavailable')
       if (action === 'launch' && port.prepare && !token) {
@@ -56,7 +61,10 @@ export function ExamplesPage({ initialScene }: { initialScene?: string }) {
         setReview({ id: example.id, action, token: r.launchTicket, presentation: r.presentation })
         return
       }
-      const result = await port[action](example.id, token)
+      const result =
+        action === 'remove'
+          ? await port.remove?.(example.id, token ?? '')
+          : await port[action](example.id, token)
       if (result && 'sessionId' in result) setCreatedSession(result.sessionId)
       setReview(undefined)
       query.retry()
@@ -131,6 +139,21 @@ export function ExamplesPage({ initialScene }: { initialScene?: string }) {
               <p>{example.description}</p>
             </div>
             <div className="mhs-box">
+              {example.installed && port?.remove && (
+                <Button
+                  appearance="danger"
+                  disabled={busy || !['disabled', 'stopped'].includes(example.state)}
+                  onClick={() => void run('remove', example)}
+                >
+                  {t('removeExample')}
+                </Button>
+              )}
+              {example.installed &&
+                ['failed', 'starting', 'installed', 'unavailable'].includes(example.state) && (
+                  <Button disabled={busy} onClick={() => void run('stop', example)}>
+                    {t('stopExample')}
+                  </Button>
+                )}
               <p role="status">
                 {example.state} {example.code}
               </p>

@@ -74,6 +74,10 @@ function fixture() {
     stop: async () => {
       installed = installed.map((item) => ({ ...item, desired: 'installed-disabled', actual: 'not-running' }))
     },
+    remove: async (_review, _operation, check) => {
+      await check()
+      installed = []
+    },
     owner: async () => ({ version: '1.0.0', principal: 'synthetic-user', profile: 'test', row }),
     catalog: async () => [entry],
     installed: async () => installed,
@@ -132,6 +136,12 @@ it('reviews only the calling host local payload, enables it and creates one dura
   expect(await f.call({ action: 'list' })).toMatchObject([
     { installation: 'disabled', runtime: { state: 'stopped' } },
   ])
+  const removal = (await f.call({ action: 'inspect-remove', exampleId: f.entry.id })) as { reviewId: string }
+  await expect(
+    f.call({ action: 'remove', reviewId: review.reviewId, operationId: 'wrong-review' }),
+  ).rejects.toThrow('DENIED')
+  await f.call({ action: 'remove', reviewId: removal.reviewId, operationId: 'remove-1' })
+  expect(await f.call({ action: 'list' })).toMatchObject([{ installation: 'not-installed' }])
   await expect(
     f.call({ action: 'stop', exampleId: 'foreign/example', operationId: 'stop-2' }),
   ).rejects.toThrow()
@@ -155,6 +165,12 @@ it('refuses changed hashes, cross-parent examples, stale activation, undeclared 
   await expect(f.call({ action: 'install', source: 'https://example.invalid' })).rejects.toThrow('INVALID')
   await expect(f.call({ action: 'list', approved: true })).rejects.toThrow('INVALID')
   f.row.enabled = false
+  await expect(
+    f.call({ action: 'enable', reviewId: review.reviewId, operationId: 'parent-disabled' }),
+  ).rejects.toThrow('DENIED')
+  await expect(f.call({ action: 'prepare', exampleId: f.entry.id, launchId: 'work' })).rejects.toThrow(
+    'DENIED',
+  )
   await expect(f.call({ action: 'list' })).rejects.toThrow('DENIED')
 })
 it('retains an unknown dispatch result and does not replay it', async () => {

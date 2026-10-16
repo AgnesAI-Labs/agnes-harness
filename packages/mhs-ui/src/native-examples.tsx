@@ -161,6 +161,7 @@ export function nativeExamples(ctx: ClientContext): ExamplesPort {
           }
           return {
             id: example.id,
+            installed: example.installation !== 'not-installed',
             name: example.metadata.displayName,
             description: example.metadata.description,
             state,
@@ -181,6 +182,18 @@ export function nativeExamples(ctx: ClientContext): ExamplesPort {
         listeners.delete(listener)
         off()
       }
+    },
+    async inspectRemove(id) {
+      current()
+      const review = await ctx.profile.examples.inspectRemove(id)
+      current()
+      return { reviewId: review.reviewId, presentation: review.presentation }
+    },
+    async remove(id, reviewId) {
+      current()
+      await ctx.profile.examples.remove(reviewId, crypto.randomUUID())
+      current()
+      operations.delete(id)
     },
     async inspect(id) {
       current()

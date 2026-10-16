@@ -12,6 +12,7 @@ import {
 import type { PackageAuditSink } from './audit.js'
 import { copyPackageTreeSync } from './copy-tree.js'
 import { isPackageError, PackageError } from './errors.js'
+import { previewWithExampleParent } from './example-parent.js'
 import { inspectStaged } from './inspect.js'
 import { canonical, capabilityHash, freezeData, own } from './integrity.js'
 import {
@@ -33,6 +34,7 @@ import {
   type TrustDecision,
   trustPackageEntry,
 } from './lifecycle.js'
+import { commitPackage } from './lifecycle-commit.js'
 import {
   discoverLocalPlugins,
   LOCAL_PLUGIN_FAILURE,
@@ -84,7 +86,6 @@ import {
 } from './sources.js'
 import { claimStage, clearStage, readyStage, recoverStaging, type StageKind } from './staging.js'
 import {
-  commitPackage,
   type PackageCommitPoint,
   previousPackageDir,
   type RuntimeSnapshotCommitPoint,
@@ -877,7 +878,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
           ...(op.signal ? { signal: op.signal } : {}),
         })
         progress(op, 'completed')
-        return preview
+        return previewWithExampleParent(preview, () => readInventory(lock, storeFor(profileDir)).packages)
       } finally {
         clearStage(stage)
       }

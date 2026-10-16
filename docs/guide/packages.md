@@ -172,6 +172,9 @@ In Web, use Settings → Plugins → Add plugin → Install from source → Insp
 
 The Plugins page has Installed and Discover tabs. Discover starts with three official examples; expand More official examples for the rest. The row menu contains settings (when declared), details and lifecycle actions. Details group the existing information into Overview, Settings, Permissions and Versions. Versions shows ongoing sessions using the previous generation; their work continues without interruption. Technical IDs, sources and integrity values are under Technical details.
 
+A package declaring `metadata.exampleOf` is managed only on its parent plugin’s **Examples** page: review installation and activation there, launch it there, and stop it before reviewing removal. These packages are excluded from ordinary Plugins lists and discovery; FDE business-agent examples without `exampleOf` keep their existing flow. A direct source review explains the parent relationship and offers the parent’s normal reviewed install/enable flow. An example requires its parent to be installed, trusted, enabled and compatible; disabling the parent makes the example’s launch surfaces unavailable. Re-enabling the parent restores enabled examples. The relationship grants no service access.
+
+
 <a id="更新与回滚"></a>
 
 ## Update and roll back

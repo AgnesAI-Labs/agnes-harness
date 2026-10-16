@@ -499,3 +499,49 @@ it('binds npm verified identity to exact package subject and actual archive dige
     }),
   ).rejects.toMatchObject({ code: 'E_PACKAGE_PROVENANCE' })
 })
+
+it('requires the reviewed parent before enabling an example and blocks its runtime when the parent is disabled', async () => {
+  const childDir = join(root, 'child')
+  cpSync(sourceDir, childDir, { recursive: true })
+  const pkg = JSON.parse(readFileSync(join(childDir, 'package.json'), 'utf8'))
+  pkg.name = 'acme/example'
+  pkg.agnes.plugins[0].id = 'ext:acme/example/main'
+  pkg.dependencies[id] = '^1.0.0'
+  pkg.agnes.metadata = {
+    displayName: 'Example',
+    summary: 'Example',
+    description: 'Example',
+    category: 'example',
+    exampleOf: id,
+  }
+  writeFileSync(join(childDir, 'package.json'), JSON.stringify(pkg))
+  const m = manager({ references: emptyRefs })
+  const childSource = parseSource('file:./child')
+  const missing = await m.inspect(profile, childSource)
+  const blocker = { code: 'dependency', references: ['example-parent-unavailable', id] }
+  expect(missing.blockers).toContainEqual(blocker)
+  await m.install(profile, childSource, { expectedIntegrity: missing.integrity })
+  await expect(m.enable(profile, pkg.name, true)).rejects.toMatchObject({ code: 'E_PACKAGE_BLOCKED' })
+  expect(load().packages[pkg.name]?.state.enabled).toBe(false)
+  expect(load().packages[id]).toBeUndefined()
+  await install(m)
+  await m.trust(profile, id, await decision(m))
+  expect((await m.inspect(profile, childSource)).blockers).toContainEqual(blocker)
+  await m.enable(profile, id, true)
+  const ready = await m.inspect(profile, childSource)
+  expect(ready.blockers).toEqual([])
+  await m.trust(profile, pkg.name, { integrity: ready.integrity, capabilityHash: ready.capabilityHash! })
+  await m.enable(profile, pkg.name, true)
+  expect((await m.inventory(profile)).packages.find((row) => row.id === pkg.name)).toMatchObject({
+    enabled: true,
+    trusted: true,
+    blockers: [],
+  })
+  await m.enable(profile, id, false)
+  expect((await m.inventory(profile)).packages.find((row) => row.id === pkg.name)?.blockers).toContainEqual(
+    blocker,
+  )
+  await expect(m.enable(profile, pkg.name, true)).rejects.toMatchObject({ code: 'E_PACKAGE_BLOCKED' })
+  await m.enable(profile, id, true)
+  expect((await m.inventory(profile)).packages.find((row) => row.id === pkg.name)?.blockers).toEqual([])
+})

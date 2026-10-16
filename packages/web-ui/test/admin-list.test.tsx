@@ -3,10 +3,12 @@ import type { PackageCatalogDescriptor } from '@agnes/protocol'
 import { act, createElement } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  categoryLabel,
   Icon,
   type IconName,
   isBuiltinPlugin,
   mountRegion,
+  PLUGIN_CATEGORIES,
   PluginList,
   PluginPurposeSections,
   pluginIncludes,
@@ -208,7 +210,15 @@ it.each(['en', 'zh-CN'] as const)(
         createElement(PluginList, {
           ...listProps,
           tab: 'discover',
-          rows: [purposeRow, ...purposeIcons.map(([id]) => ({ ...purposeRow, id }))],
+          rows: [
+            purposeRow,
+            ...purposeIcons.map(([id]) => ({ ...purposeRow, id })),
+            ...PLUGIN_CATEGORIES.map((category) => ({
+              ...purposeRow,
+              id: `category-${category}`,
+              metadata: { ...purposeRow.metadata!, category },
+            })),
+          ],
           providesOf: () => ({
             provides: [{ kind: 'tool', id: 'read_report' }],
             appearsIn: ['chat'] as const,
@@ -229,6 +239,14 @@ it.each(['en', 'zh-CN'] as const)(
     // The small line names what the plugin includes, next to its category.
     expect(host.querySelector('[data-testid=plugin-provides]')?.textContent).toBe(
       locale === 'en' ? 'Includes: 1 Tools' : '包含：1 个工具',
+    )
+    expect(host.textContent).not.toMatch(/category\./)
+    expect(
+      host.querySelector('[data-plugin-id="category-example"] [data-testid="plugin-purpose-badges"]')
+        ?.textContent,
+    ).toContain(locale === 'en' ? 'Example' : '示例')
+    expect(categoryLabel('future-category', (key) => (key === 'unclassified' ? 'Uncategorized' : key))).toBe(
+      'Uncategorized',
     )
     // The source is the row's only badge.
     expect(host.querySelector('[data-plugin-id]')?.querySelectorAll('.agh-tag')).toHaveLength(1)

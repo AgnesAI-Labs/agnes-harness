@@ -8,6 +8,8 @@ import { decodeRuntimeTargetArtifact, type RuntimeTargetArtifact } from '@agnes/
 import { afterEach, expect, it, vi } from 'vitest'
 import { createClientModuleRegistry } from '../src/packages/client-modules.js'
 import { activateDefaultHelpers, initializeDefaultHelpers } from '../src/packages/default-helpers.js'
+import { createPackageAdminService } from '../src/packages/handler.js'
+import { FilePackageOperationStore } from '../src/packages/operations.js'
 
 const roots: string[] = []
 afterEach(() => {
@@ -63,6 +65,22 @@ it('installs release defaults and registers the primary MHS entry offline once a
     ['@agnes/plugin-helper', true, true],
     ['@agnes/skill-helper', true, true],
   ])
+  const admin = createPackageAdminService({
+    manager: s.manager,
+    profileDirectory: () => s.profileDir,
+    operations: new FilePackageOperationStore(join(s.root, 'operations')),
+  })
+  const listed = (await admin.call(
+    '_agnes/v1/packages.list',
+    { profile: 'local-dev' },
+    {
+      audience: 'admin',
+      principalId: 'synthetic',
+      clientId: 'synthetic',
+      permissions: ['packages.read'],
+    },
+  )) as { packages: { id: string; presentation: { origin: string } }[] }
+  expect(listed.packages.find((row) => row.id === '@agnes/mhs')?.presentation.origin).toBe('official')
   let published: RuntimeTargetArtifact | undefined
   const publish = vi.fn(async (target: RuntimeTargetArtifact) => {
     published = target

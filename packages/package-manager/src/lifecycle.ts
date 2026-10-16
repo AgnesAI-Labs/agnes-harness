@@ -109,7 +109,12 @@ export async function assertNoReferences(
 ): Promise<void> {
   const blockers: PackageBlocker[] = []
   const dependents = Object.entries(lock.packages)
-    .filter(([other, e]) => other !== id && Object.hasOwn(e.dependencies, id))
+    .filter(
+      ([other, e]) =>
+        other !== id &&
+        Object.hasOwn(e.dependencies, id) &&
+        !(operation === 'disable' && e.metadata?.exampleOf === id),
+    )
     .map(([other]) => other)
     .sort()
   if (dependents.length) blockers.push({ code: 'dependency', references: dependents })

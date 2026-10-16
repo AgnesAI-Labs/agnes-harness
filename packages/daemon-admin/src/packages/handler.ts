@@ -15,7 +15,7 @@ import {
   AuthoringCandidates,
   activeRuntimePinId,
   bundledExampleSource,
-  bundledPluginSourceRoot,
+  bundledPluginSource,
   collectSkinRoster,
   parseSource,
   publicPluginFailureReason,
@@ -324,7 +324,7 @@ function packageOrigin(
   provenance?: PackageInstalledDescriptor['provenance'],
   builtin = false,
 ): NonNullable<NonNullable<PackageInstalledDescriptor['presentation']>['origin']> {
-  if (builtin || bundledPluginSourceRoot(source.ref) || provenance?.verification === 'official-ed25519')
+  if (builtin || bundledPluginSource(source.ref) || provenance?.verification === 'official-ed25519')
     return 'official'
   if (bundledExampleSource(source.ref)) return 'example'
   if (provenance?.authoring) return 'local'

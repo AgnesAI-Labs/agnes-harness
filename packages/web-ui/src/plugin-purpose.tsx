@@ -65,6 +65,12 @@ export function pluginIncludes(
   return [...counts].map(([kind, count]) => t('includesItem', { count, name: label(kind) })).join(' · ')
 }
 
+export function categoryLabel(category: string, t: (key: string) => string): string {
+  const key = `category.${category}`
+  const label = t(key)
+  return label === key ? t('unclassified') : label
+}
+
 /** The row's small line: the category, then what the plugin includes. */
 export function PluginPurposeBadges({
   item,
@@ -78,7 +84,7 @@ export function PluginPurposeBadges({
   if (!item.metadata && !includes) return null
   return (
     <MetaText data-testid="plugin-purpose-badges">
-      {item.metadata ? t(`category.${item.metadata.category}`) : ''}
+      {item.metadata ? categoryLabel(item.metadata.category, t) : ''}
       {item.metadata && includes ? ' · ' : ''}
       {includes && <span data-testid="plugin-provides">{t('includes', { items: includes })}</span>}
     </MetaText>

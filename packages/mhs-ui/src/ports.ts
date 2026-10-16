@@ -73,12 +73,15 @@ export interface ExampleView {
   Scene?: ComponentType<{ onClose(): void; onLaunch?(launchId: string): void }>
   launches?: readonly { id: string; title: string }[]
   requiresRuntime?: boolean
+  installed?: boolean
 }
 export interface ExamplesPort {
   list(signal: AbortSignal): Promise<readonly ExampleView[]>
   subscribe(listener: () => void): () => void
   /** Activation/launch retain native package review and bounded launch authorization. */
   inspect?(id: string): Promise<{ reviewId: string; presentation: unknown }>
+  inspectRemove?(id: string): Promise<{ reviewId: string; presentation: unknown }>
+  remove?(id: string, reviewId: string): Promise<void>
   prepare?(id: string, launchId?: string): Promise<{ launchTicket: string; presentation: unknown }>
   enable(id: string, reviewId?: string): Promise<void>
   stop(id: string): Promise<void>

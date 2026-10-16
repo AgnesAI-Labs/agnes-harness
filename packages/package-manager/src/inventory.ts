@@ -8,6 +8,7 @@ import {
 } from '@agnes/protocol'
 import { collectRead, collectReadAsync } from './cooperative-read.js'
 import { PackageError } from './errors.js'
+import { exampleParentBlockers } from './example-parent.js'
 import { inspectVerifiedTree } from './inspect.js'
 import { canonical, capabilityHash, freezeData, readStaticJson, snapshotHash } from './integrity.js'
 import type { LockEntry, Lockfile } from './lockfile.js'
@@ -384,6 +385,11 @@ function* inventoryReadSteps(
       }),
     })
   }
+  for (const row of packages)
+    packages[packages.indexOf(row)] = {
+      ...row,
+      blockers: [...row.blockers, ...exampleParentBlockers(row.entry, packages)],
+    }
   // Store paths and derived manifest data stay out of the hash so it only changes with the lock.
   const stable = stableInventoryRows(packages)
   // Clone before freezing so callers cannot mutate the original lock through the snapshot.

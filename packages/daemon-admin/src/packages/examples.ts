@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { satisfiesApiRange } from '@agnes/extension-api'
-import { BUNDLED_EXAMPLES, withLock } from '@agnes/package-manager'
+import { withLock } from '@agnes/package-manager'
 import type {
   ClientModuleRosterRow,
   ExampleLaunchDeclaration,
@@ -20,6 +20,7 @@ type Review = {
   expires: number
   entry: PackageCatalogDescriptor
   preview: PackagePreview
+  removal?: boolean
   launch?: ExampleLaunchDeclaration
 }
 type Operation = {
@@ -36,6 +37,7 @@ export interface ExampleBackend {
     exampleId: string,
   ): Promise<{ state: 'starting' | 'running' | 'failed' | 'stopped' | 'unavailable'; code?: string }>
   stop(exampleId: string, commandId: string): Promise<void>
+  remove(review: Review, commandId: string, check: () => Promise<void>): Promise<void>
   owner(rowId: string): Promise<Owner>
   catalog(): Promise<readonly PackageCatalogDescriptor[]>
   installed(): Promise<readonly PackageInstalledDescriptor[]>
@@ -61,7 +63,7 @@ const id = (value: unknown): string =>
 const field = (value: unknown): string =>
   typeof value === 'string' && value.length > 0 && value.length <= 256 ? value : deny('INVALID_REQUEST')
 
-/** A fixed local-only facade. No action accepts a source, path, host ID, approval or admin method. */
+/** A fixed catalogue-only facade. No action accepts a source, path, host ID, approval or admin method. */
 export function createExamplePackages(options: {
   directory: string
   backend: ExampleBackend
@@ -99,9 +101,6 @@ export function createExamplePackages(options: {
   async function entries(who: Owner) {
     return (await backend.catalog()).filter(
       (entry) =>
-        entry.sourceId === 'official-examples' &&
-        BUNDLED_EXAMPLES.some((item) => item.ref === entry.source.ref) &&
-        entry.source.type === 'file' &&
         entry.compatibility === 'supported' &&
         entry.metadata?.category === 'example' &&
         entry.metadata.exampleOf === who.row.packageId,
@@ -139,6 +138,8 @@ export function createExamplePackages(options: {
         list: [],
         stop: ['exampleId', 'operationId'],
         inspect: ['exampleId'],
+        'inspect-remove': ['exampleId'],
+        remove: ['reviewId', 'operationId'],
         enable: ['reviewId', 'operationId'],
         read: ['operationId'],
         prepare: ['exampleId', 'launchId'],
@@ -184,7 +185,7 @@ export function createExamplePackages(options: {
                 version: entry.version,
                 integrity: entry.integrity,
                 metadata: entry.metadata,
-                bundled: true,
+                bundled: entry.source.ref.startsWith('file:./bundled-examples/'),
                 runtime: item?.desired === 'enabled' ? await backend.runtime(entry.id) : { state: 'stopped' },
                 installation: !item
                   ? 'not-installed'
@@ -199,7 +200,7 @@ export function createExamplePackages(options: {
             }),
           )
         }
-        if (action === 'inspect' || action === 'prepare') {
+        if (action === 'inspect' || action === 'inspect-remove' || action === 'prepare') {
           const entry = (await entries(who)).find((entry) => entry.id === field(request.exampleId)) ?? deny()
           const preview = await backend.inspect(entry, randomUUID())
           if (
@@ -215,7 +216,9 @@ export function createExamplePackages(options: {
             expires: now() + 300_000,
             entry,
             preview,
+            ...(action === 'inspect-remove' ? { removal: true } : {}),
           }
+          if (review.removal && !(await current(review, who))) deny('E_PACKAGE_STATE')
           if (action === 'prepare') {
             const installed = await current(review, who)
             if (!installed?.trusted || installed.desired !== 'enabled' || installed.actual !== 'running')
@@ -245,6 +248,7 @@ export function createExamplePackages(options: {
                 integrity: preview.integrity,
                 capabilityHash: preview.capabilityHash,
                 presentation: {
+                  ...(review.removal ? { action: 'remove' } : {}),
                   metadata: entry.metadata,
                   license: entry.license,
                   capabilities: preview.declaredCapabilities,
@@ -266,7 +270,11 @@ export function createExamplePackages(options: {
             state.reviews[field(action === 'start' ? request.launchTicket : request.reviewId)] ??
             deny('E_PACKAGE_PREVIEW_STALE')
           await current(review, who)
-          if ((action === 'start') !== Boolean(review.launch)) deny()
+          if (
+            (action === 'start') !== Boolean(review.launch) ||
+            (action === 'remove') !== Boolean(review.removal)
+          )
+            deny()
           if (Object.keys(state.operations).length >= 10_000) deny('OVERLOADED')
           op = { owner: scope, digest: payload, state: 'running', review }
           state.operations[operationKey] = op
@@ -278,7 +286,8 @@ export function createExamplePackages(options: {
         }
         try {
           await check()
-          if (action === 'enable') await backend.enable(review, operationKey, check)
+          if (action === 'remove') await backend.remove(review, operationKey, check)
+          else if (action === 'enable') await backend.enable(review, operationKey, check)
           else {
             const launch = review.launch ?? deny()
             const installed = await current(review, await owner(rowId), true)

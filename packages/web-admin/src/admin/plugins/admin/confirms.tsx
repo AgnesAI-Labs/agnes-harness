@@ -12,6 +12,8 @@ import {
 } from '@agnes/web-ui'
 import type { ReactNode } from 'react'
 import { CapabilityReview, ProvenanceReview } from '../capability-review.js'
+import { ADMIN_FEATURES, hasFeature } from '../types.js'
+import { manageExample } from './example-parent.js'
 import type { PluginAdminPage } from './page.js'
 
 type Text = (key: string, vars?: Readonly<Record<string, string | number>>) => string
@@ -120,6 +122,7 @@ export function confirmSimple(
   item: PackageInstalledDescriptor,
   name: string,
 ): void {
+  if ((kind === 'remove' && isBuiltinPlugin(item)) || manageExample(page, item)) return
   const { t } = page.viewContext()
   page.configureConfirm({
     title: () => t(`confirm.${kind}.title`, { id: name }),
@@ -160,9 +163,44 @@ export function confirmSimple(
  */
 export function offeredActions(page: PluginAdminPage) {
   return (item: PackageInstalledDescriptor | PackageCatalogDescriptor): readonly DetailActionSpec[] => {
+    if (item.metadata?.exampleOf) return []
     const actions = page.detailActions(item)
     return isBuiltinPlugin(item)
       ? actions.filter((action) => !(action.danger && action.group === 'versions'))
       : actions
   }
+}
+
+export function confirmEnable(
+  page: PluginAdminPage,
+  item: PackageInstalledDescriptor,
+  run: () => Promise<void>,
+): Promise<void> {
+  if (manageExample(page, item)) return Promise.resolve()
+  const { t } = page.viewContext()
+  if (
+    hasFeature(page.viewContext().state.context, ADMIN_FEATURES.runtimeIdentity) &&
+    page.activeIntegrity(item) === undefined
+  ) {
+    page.showError({
+      code: 'RUNTIME_IDENTITY_UNKNOWN',
+      message: 'The actual runtime summary has not been confirmed, so this plugin cannot be safely enabled.',
+    })
+    return Promise.resolve()
+  }
+  if (!item.trusted && !item.capabilityHash) {
+    page.showError({
+      code: 'E_PACKAGE_TRUST',
+      message: 'The capability summary has not been confirmed, so this version cannot be safely enabled.',
+    })
+    return Promise.resolve()
+  }
+  page.configureConfirm({
+    title: () => t('confirm.enable.title', { id: page.nameOf(item) }),
+    description: () => t(item.trusted ? 'confirm.enable.trusted' : 'confirm.enable.verify'),
+    label: () => t(item.trusted ? 'confirm.enable.action' : 'confirm.enable.trust-action'),
+    facts: <EnableFacts item={item} t={t} />,
+    run,
+  })
+  return Promise.resolve()
 }
