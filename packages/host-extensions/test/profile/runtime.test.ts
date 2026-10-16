@@ -24,6 +24,7 @@ import { createProfileServiceRuntime } from '../../src/profile/runtime.js'
 import { ProfileWakeBindings } from '../../src/profile/wakes.js'
 
 const owner = 'plugin/0123456789abcdef'
+const providerVersions = ['1.0.0', '0.1.0-alpha.0', '1.2.3+build.4'] as const
 const actor: Actor = { id: 'operator', org: 'local', role: 'user', deptPath: [], attrs: {} }
 const logger = { debug() {}, info() {}, warn() {}, error() {} }
 const policy: ServiceEffectPolicy = {
@@ -214,29 +215,26 @@ async function approve(
 }
 
 describe('current profile authority', () => {
-  it.each(['1.0.0', '0.1.0-alpha.0'])(
-    'serves a %s sessionless report query while refusing forged identity and mutation authority',
-    async (version) => {
-      const f = fixture(version),
-        runtime = f.make()
-      try {
-        expect(
-          await runtime.call({ extension: owner, service: 'reports.read', input: { value: 3 } }, 'granted'),
-        ).toEqual({ output: { value: 3 } })
-        for (const key of ['actor', 'role', 'profileId', 'approved', 'approval', 'owner', 'sessionId'])
-          await expect(runtime.call({ ...f.call, [key]: true }, 'granted')).rejects.toMatchObject({
-            data: { code: 'INVALID_PARAMS' },
-          })
-        await expect(
-          runtime.call({ ...f.call, sessionReads: ['owned-session'] }, 'granted'),
-        ).rejects.toMatchObject({ data: { code: 'CAPABILITY_DENIED' } })
-        await expect(runtime.call(f.call, 'forged')).rejects.toThrow()
-        expect(f.handler).not.toHaveBeenCalled()
-      } finally {
-        await runtime.close()
-      }
-    },
-  )
+  it.each(providerVersions)('serves %s queries with identity and mutation fences', async (version) => {
+    const f = fixture(version),
+      runtime = f.make()
+    try {
+      expect(
+        await runtime.call({ extension: owner, service: 'reports.read', input: { value: 3 } }, 'granted'),
+      ).toEqual({ output: { value: 3 } })
+      for (const key of ['actor', 'role', 'profileId', 'approved', 'approval', 'owner', 'sessionId'])
+        await expect(runtime.call({ ...f.call, [key]: true }, 'granted')).rejects.toMatchObject({
+          data: { code: 'INVALID_PARAMS' },
+        })
+      await expect(
+        runtime.call({ ...f.call, sessionReads: ['owned-session'] }, 'granted'),
+      ).rejects.toMatchObject({ data: { code: 'CAPABILITY_DENIED' } })
+      await expect(runtime.call(f.call, 'forged')).rejects.toThrow()
+      expect(f.handler).not.toHaveBeenCalled()
+    } finally {
+      await runtime.close()
+    }
+  })
   it('reuses durable AR1 approvals, consumes once with dispatch intent, and replays receipts after restart', async () => {
     const f = fixture()
     let runtime = f.make()
@@ -491,8 +489,8 @@ describe('current profile authority', () => {
       await runtime.close()
     }
   })
-  it('isolates and rolls back owner state and requires bound producer authority for wakes', async () => {
-    const f = fixture(),
+  it.each(providerVersions.slice(0, 2))('fences %s owner state and bound wakes', async (version) => {
+    const f = fixture(version),
       runtime = f.make()
     const first = ownedStore(f.meta.namespace(owner, 'state'), () => undefined, true)
     const second = ownedStore(f.meta.namespace('plugin/fedcba9876543210', 'state'), () => undefined, true)
@@ -542,6 +540,7 @@ describe('current profile authority', () => {
       expect(first.get('escaped')).toBeUndefined()
       const target = f.wakes.bind({
         producerOwner: owner,
+        producerVersion: version,
         producerIntegrity: 'snapshot-one',
         profileId: 'default',
         sessionId: 'original',

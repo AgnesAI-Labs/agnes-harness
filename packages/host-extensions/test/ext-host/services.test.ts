@@ -22,12 +22,12 @@ const workspace = {
   checkpointContext: () => ({}),
 } as unknown as WorkspaceInvocationView
 type SessionServiceDef = Extract<ServiceDef, { scope?: 'session' }>
-function setup(over: Partial<SessionServiceDef> = {}, budget = Infinity) {
+function setup(over: Partial<SessionServiceDef> = {}, budget = Infinity, version = '1.0.0') {
   const def: SessionServiceDef = { ...serviceFixture(), ...over }
   const { handler: _, ...cap } = def
   const manifest: ExtensionManifest = {
     id: 'fixture/service',
-    version: '1.0.0',
+    version,
     apiRange: '^4.0.0',
     entry: './index.ts',
     capabilities: { services: [cap] },
@@ -126,7 +126,11 @@ function setup(over: Partial<SessionServiceDef> = {}, budget = Infinity) {
 }
 
 describe('S3 Service registration and invocation', () => {
-  it('registers and invokes a row service under its Host-derived grant, then rejects retirement', async () => {
+  it.each([
+    { version: '1.0.0', range: '^1.0' },
+    { version: '0.1.0-alpha.0', range: '*' },
+    { version: '1.2.3+build.4', range: '*' },
+  ])('invokes row $version under $range and rejects retirement', async ({ version, range }) => {
     const h = setup()
     const owner = 'plugin/0123456789abcdef'
     const ac = new AbortController()
@@ -134,7 +138,7 @@ describe('S3 Service registration and invocation', () => {
     const registry = new ServiceRegistry()
     const dispose = registry.registerRow(h.def, {
       owner,
-      version: '1.0.0',
+      version,
       signal: ac.signal,
       assertAlive() {
         if (!active) throw new Error('row retired')
@@ -153,7 +157,7 @@ describe('S3 Service registration and invocation', () => {
         resolve: async () => ({
           source: 'reports',
           subjectCredential: 'verified-subject',
-          grants: [{ extension: owner, name: h.def.name, range: '^1.0' }],
+          grants: [{ extension: owner, name: h.def.name, range }],
         }),
       },
     })
@@ -264,37 +268,49 @@ describe('S3 Service registration and invocation', () => {
     await expect(h.call()).rejects.toMatchObject({ data: { code: 'CAPABILITY_DENIED' } })
   })
 
-  it.each(['missing', 'extension', 'name', 'range', 'deny', 'approval', 'lease'])(
-    'refuses %s authority before handler',
-    async (kind) => {
-      const handler = vi.fn(async () => ({ value: 1 })),
-        h = setup({ handler })
-      if (kind === 'missing') delete h.deps.authority
-      else if (kind === 'lease') h.lease.revoke('test')
-      else if (kind === 'deny' || kind === 'approval')
-        h.deps.principals.authorize = async () => ({
-          decisionId: 'no',
-          effect: kind === 'deny' ? 'deny' : 'require_approval',
-          reason: '',
-        })
-      else
-        h.deps.authority = {
-          resolve: async () => ({
-            source: 'other',
-            subjectCredential: 'subject',
-            grants: [
-              {
-                extension: kind === 'extension' ? 'fixture/other' : h.manifest.id,
-                name: kind === 'name' ? '*' : h.def.name,
-                range: kind === 'range' ? '^2.0' : '^1.0',
-              },
-            ],
-          }),
-        }
-      await expect(h.call()).rejects.toMatchObject({ data: { code: 'CAPABILITY_DENIED' } })
+  it.each([
+    'missing',
+    'extension',
+    'name',
+    'range',
+    'prerelease-range',
+    'invalid-version',
+    'deny',
+    'approval',
+    'lease',
+  ])('refuses %s authority before handler', async (kind) => {
+    const handler = vi.fn(async () => ({ value: 1 }))
+    if (kind === 'invalid-version') {
+      expect(() => setup({ handler }, Infinity, '1.0.0-01')).toThrow(/invalid lease configuration/)
       expect(handler).not.toHaveBeenCalled()
-    },
-  )
+      return
+    }
+    const h = setup({ handler }, Infinity, kind === 'prerelease-range' ? '1.2.3-alpha.1' : '1.0.0')
+    if (kind === 'missing') delete h.deps.authority
+    else if (kind === 'lease') h.lease.revoke('test')
+    else if (kind === 'deny' || kind === 'approval')
+      h.deps.principals.authorize = async () => ({
+        decisionId: 'no',
+        effect: kind === 'deny' ? 'deny' : 'require_approval',
+        reason: '',
+      })
+    else
+      h.deps.authority = {
+        resolve: async () => ({
+          source: 'other',
+          subjectCredential: 'subject',
+          grants: [
+            {
+              extension: kind === 'extension' ? 'fixture/other' : h.manifest.id,
+              name: kind === 'name' ? '*' : h.def.name,
+              range: kind === 'range' ? '^2.0' : '^1.0',
+            },
+          ],
+        }),
+      }
+    await expect(h.call()).rejects.toMatchObject({ data: { code: 'CAPABILITY_DENIED' } })
+    expect(handler).not.toHaveBeenCalled()
+  })
 
   it('rejects forged envelope identity and invalid input without author execution', async () => {
     const handler = vi.fn(async () => ({ value: 1 })),

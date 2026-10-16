@@ -28,6 +28,8 @@ ctx.services.register({
 
 客户端模块使用 `ctx.profile.services.query(name, input)`、`effect(name, input, { operationId })` 和 `readOperation(name, operationId)`。同源代理核对当前 ready 行及其准确服务白名单；profile 和后端 owner 由服务端决定。Node 客户端通过 `client.extensions.callScoped` 和 `readOperation` 调用，仍受已认证来源的 grant 限制。
 
+服务与绑定 producer 的 grant 匹配已注册提供方的版本。不受版本限制的 `*` 包含合法预发布版本。其他范围遵循共享的受支持范围规则，仅在显式指定相同主、次、补丁版本的预发布版本时接受该元组的预发布版本；普通稳定版范围拒绝预发布版本。准确 owner 与服务名、当前 activation 和原生准入要求均保持不变。
+
 Effect 返回 `approval-required`、`running`、`completed`、`refused`、`cancelled` 或 `unknown` 回执。需要审批时返回既有持久化 DecisionRequest 的 handle。在 Web 左侧栏底部打开**操作审批**，没有选中会话也可使用；宿主审批卡显示不可变主体，提供**允许一次**和**拒绝**。批准后，用同一个操作 id 重试原 effect。插件自己的确认弹窗不授予执行权限。Profile 审批复用原生持久化决定，并采用保守的人工风险策略，不继承某个聊天会话的 full-access 设置。
 
 审批消费与 dispatch intent 在既有账本中原子提交。已完成回执直接重放，不重复执行；dispatch 后缺少终态回执，重启后变为 `unknown`，即使声明幂等也不会自动重发。先核对外部结果，再决定是否发起新操作。相同 id、不同参数会被拒绝。禁用、撤销信任、行配置变化和更换包会撤销旧权限；恢复 pinned 会话不会发布全局 activation，也不会恢复控制授权。
