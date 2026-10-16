@@ -1,6 +1,6 @@
 import type { DecisionSnapshot } from '@agnes/protocol'
 import type { HostAgnesClient, LocaleService } from '@agnes/web-client'
-import { Button } from '@agnes/web-ui'
+import { Button, Icon, Tooltip } from '@agnes/web-ui'
 import { Approval } from '@agnes/web-units'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 
@@ -59,17 +59,27 @@ export function ProfileApprovals({ client, locale }: { client: HostAgnesClient; 
       setBusy(false)
     }
   }
+  if (!decisions.length) return null
+  const label = `${zh ? '全局操作审批' : 'Profile approvals'} (${decisions.length})`
   return (
     <>
-      <Button
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-        aria-label={zh ? '全局操作审批' : 'Profile approvals'}
-      >
-        {zh ? '操作审批' : 'Approvals'}
-        {decisions.length ? ` (${decisions.length})` : ''}
-      </Button>
-      <section hidden={!open} aria-label={zh ? '全局操作审批' : 'Profile approvals'}>
+      <Tooltip title={label}>
+        <Button
+          appearance="ghost"
+          className="home-entry"
+          onClick={() => setOpen((value) => !value)}
+          aria-expanded={open}
+          aria-controls="profile-approvals"
+          aria-label={label}
+        >
+          <Icon name="shield-check" />
+          <span className="home-entry-label">{zh ? '操作审批' : 'Approvals'}</span>
+          <span className="home-entry-badge" aria-hidden="true">
+            {decisions.length}
+          </span>
+        </Button>
+      </Tooltip>
+      <section id="profile-approvals" hidden={!open} aria-label={zh ? '全局操作审批' : 'Profile approvals'}>
         <p>
           {zh
             ? '批准后返回原操作继续；审批只适用于所示操作。'
@@ -80,7 +90,6 @@ export function ProfileApprovals({ client, locale }: { client: HostAgnesClient; 
             {zh ? '审批不可用，请刷新重试。' : 'Approval unavailable. Refresh and try again.'}
           </p>
         )}
-        {!decisions.length && <p>{zh ? '没有待审批操作。' : 'No pending approvals.'}</p>}
         {decisions.map((snapshot) => (
           <Approval
             key={`${snapshot.handle.id}:${snapshot.revision}:${busy}`}

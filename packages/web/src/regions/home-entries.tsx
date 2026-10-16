@@ -7,7 +7,7 @@ import {
 } from '@agnes/web-client'
 import type { Translate } from '@agnes/web-conversation/presentation'
 import { Button, Icon, type IconName, icons, Menu, Tooltip } from '@agnes/web-ui'
-import { useSyncExternalStore } from 'react'
+import { type ReactNode, useSyncExternalStore } from 'react'
 
 function EntryBadge({ badge, label }: { badge: HomeEntryBadge; label(count: number): string }) {
   const count = useSyncExternalStore(badge.subscribe, badge.getSnapshot)
@@ -27,7 +27,15 @@ const entryLabel = (entry: HomeEntry, t: Translate): string =>
   entry.subtitleKey ? `${t(entry.titleKey)} · ${t(entry.subtitleKey)}` : t(entry.titleKey)
 
 /** The home entries above the session list: the three built-in pages, then the ones plugins add. */
-export function HomeEntriesNav({ t, onSelect }: { t: Translate; onSelect?(): void }) {
+export function HomeEntriesNav({
+  t,
+  onSelect,
+  children,
+}: {
+  t: Translate
+  onSelect?(): void
+  children?: ReactNode
+}) {
   useSyncExternalStore(homeEntries.subscribe, homeEntries.getSnapshot)
   const requested = useSyncExternalStore(homeNavigation.subscribe, homeNavigation.getSnapshot)
   const entries = homeEntries.entries()
@@ -36,7 +44,7 @@ export function HomeEntriesNav({ t, onSelect }: { t: Translate; onSelect?(): voi
     homeNavigation.open(entry.id)
     onSelect?.()
   }
-  if (!entries.length) return null
+  if (!entries.length && !children) return null
   return (
     <nav className="home-entries" aria-label={t('home.entries.nav')} data-testid="home-entries">
       {inline.map((entry) => (
@@ -89,6 +97,7 @@ export function HomeEntriesNav({ t, onSelect }: { t: Translate; onSelect?(): voi
           />
         </Tooltip>
       )}
+      {children}
     </nav>
   )
 }

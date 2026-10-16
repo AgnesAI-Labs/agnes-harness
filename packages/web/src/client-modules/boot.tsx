@@ -353,16 +353,17 @@ export async function startClientModules(options: {
   // topbar commit its toggle button before that root discovers the shared control.
   if (topbar) await topbar.ready
   const sidebar = options.sidebarContainer
-    ? mountSidebarRegion(registry, options.sidebarContainer, options.sidebar, locale)
+    ? mountSidebarRegion(
+        registry,
+        options.sidebarContainer,
+        {
+          ...options.sidebar,
+          profileApprovals: <ProfileApprovals client={options.agnes} locale={locale} />,
+        },
+        locale,
+      )
     : undefined
   if (sidebar) builtinUnits.mount('@agnes/web-sidebar', () => sidebar.dispose())
-  if (sidebar) {
-    const removeProfileApprovals = registry.register(
-      { name: 'sidebar.footer.action', id: 'profile-approvals', owner: '@agnes/web-shell', priority: 0 },
-      () => <ProfileApprovals client={options.agnes} locale={locale} />,
-    )
-    ctx.effect(() => removeProfileApprovals)
-  }
   const transcript =
     !conversation && options.transcriptContainer
       ? mountTranscriptRegion(registry, options.transcriptContainer, {

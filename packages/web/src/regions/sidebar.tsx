@@ -8,6 +8,7 @@ import {
   type SidebarHandle,
   type SidebarState,
 } from '@agnes/web-units'
+import type { ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { SessionNavigation } from '../navigation.js'
 import {
@@ -35,12 +36,14 @@ export function SidebarDshFrame({
   running,
   actions,
   dependencies,
+  profileApprovals,
 }: {
   handle: { current: SidebarHandle | null }
   state: SidebarState
   running?: readonly string[]
   actions?: Partial<SidebarActions>
   dependencies: SidebarDependencies
+  profileApprovals?: ReactNode
 }) {
   const outlet = (name: string) => <SlotOutlet name={name as never} hideWhenEmpty />
   return (
@@ -51,7 +54,11 @@ export function SidebarDshFrame({
       actions={actions}
       dependencies={dependencies}
       slots={{
-        entries: <HomeEntriesNav t={dependencies.translate} onSelect={() => handle.current?.close()} />,
+        entries: (
+          <HomeEntriesNav t={dependencies.translate} onSelect={() => handle.current?.close()}>
+            {profileApprovals}
+          </HomeEntriesNav>
+        ),
         sectionLabel: <SessionListLabel t={dependencies.translate} />,
         sessionTools: <SessionListTools t={dependencies.translate} />,
         brandMark: outlet('sidebar.brand.mark'),
@@ -76,7 +83,7 @@ export interface SidebarRegionMount extends EmptyStateRegionMount, SidebarHandle
 export function mountSidebarRegion(
   registry: SlotRegistry,
   container: HTMLElement,
-  options: { state?: SidebarState; actions?: Partial<SidebarActions> } = {},
+  options: { state?: SidebarState; actions?: Partial<SidebarActions>; profileApprovals?: ReactNode } = {},
   locale: LocaleService,
 ): SidebarRegionMount {
   let state = options.state ?? EMPTY_SIDEBAR_STATE
@@ -107,6 +114,7 @@ export function mountSidebarRegion(
         running,
         ...(options.actions === undefined ? {} : { actions: options.actions }),
         dependencies: sidebarDependencies,
+        profileApprovals: options.profileApprovals,
       }),
   )
   const removeBuiltin = registry.register(
