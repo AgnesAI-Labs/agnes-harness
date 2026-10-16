@@ -4,6 +4,7 @@ import { createServer, type IncomingMessage } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { getApiKeyProvider } from '@agnes/ai'
+import { mergeRoutes } from '@agnes/host-common/profile/resolve'
 import * as systemNode from '@agnes/system-node'
 import { createPrivateDirectorySync } from '@agnes/system-node'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -243,6 +244,207 @@ it('keeps the payload-only provider out of the chat account form projection', as
   const { providers } = await service.providers()
   expect(providers.some((provider) => provider.id === 'typesafe-systemone')).toBe(false)
   expect(getApiKeyProvider('typesafe-systemone')?.capabilities?.payloadOnly).toBe(true)
+})
+
+const JEV_MODEL = {
+  id: 'typesafe/jev-1.13-20260917',
+  name: 'Jev 1.13 (2026-09-17)',
+  contextWindow: 65536,
+  maxTokens: 32768,
+  cost: { input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0 },
+}
+
+async function genericCredential(root: string, value = 'jev-test-key'): Promise<string> {
+  const ref = 'secret://generic/11111111-1111-4111-8111-111111111111'
+  await createCredentialStore({ root }).putGeneric(ref, value, {
+    label: 'Jev',
+    createdAt: '2026-10-16T00:00:00.000Z',
+  })
+  return ref
+}
+
+const jevAccount = (credentialRef?: string) => ({
+  providerId: 'typesafe-systemone',
+  accountId: 'jev',
+  label: 'Jev',
+  ...(credentialRef === undefined ? {} : { credentialRef }),
+  model: JEV_MODEL.id,
+  models: [JEV_MODEL],
+})
+
+it('saves a payload-only account bound to a generic credential and renders its route from the fixed template', async () => {
+  const root = await home()
+  const ref = await genericCredential(root)
+  const service = createConfigurationService({ home: root, profile: 'local-dev' })
+  const saved = await service.save({
+    ...jevAccount(ref),
+    models: [
+      JEV_MODEL,
+      { id: 'typesafe/jev-1.12-20260801', name: 'Jev 1.12', contextWindow: 65536, maxTokens: 32768 },
+    ],
+    expectedRevision: 0,
+  })
+  expect(saved).toMatchObject({ revision: 1, configured: false, defaultAccountId: null })
+  expect(saved.accounts?.[0]).toMatchObject({
+    accountId: 'jev',
+    providerId: 'typesafe-systemone',
+    route: 'account-jev',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    credentialConfigured: true,
+    enabled: true,
+  })
+  expect(JSON.stringify(saved)).not.toContain('jev-test-key')
+
+  const overlay = await service.profileInput()
+  expect(overlay.provider?.routes).toEqual([
+    {
+      route: 'account-jev',
+      api: 'typesafe-systemone',
+      baseUrl: 'https://openrouter.ai/api/v1',
+      credentialRef: ref,
+      displayName: 'Jev',
+      models: [
+        {
+          id: JEV_MODEL.id,
+          name: JEV_MODEL.name,
+          api: 'typesafe-systemone',
+          route: 'account-jev',
+          baseUrl: 'https://openrouter.ai/api/v1',
+          reasoning: false,
+          input: ['text'],
+          cost: JEV_MODEL.cost,
+          contextWindow: 65536,
+          maxTokens: 32768,
+          toolCallFormats: [],
+          thinkingReplay: 'drop',
+          contract_id: null,
+        },
+        {
+          id: 'typesafe/jev-1.12-20260801',
+          name: 'Jev 1.12',
+          api: 'typesafe-systemone',
+          route: 'account-jev',
+          baseUrl: 'https://openrouter.ai/api/v1',
+          reasoning: false,
+          input: ['text'],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 65536,
+          maxTokens: 32768,
+          toolCallFormats: [],
+          thinkingReplay: 'drop',
+          contract_id: null,
+        },
+      ],
+    },
+  ])
+  const reloaded = createConfigurationService({ home: root, profile: 'local-dev' })
+  expect(await reloaded.profileInput()).toEqual(overlay)
+
+  // A hand-written profile-layer route of the same name is refused at merge, as for any account route.
+  expect(() =>
+    mergeRoutes(
+      overlay.provider?.routes,
+      [{ route: 'account-jev', api: 'typesafe-systemone', baseUrl: 'https://x.invalid' }],
+      'local',
+    ),
+  ).toThrow(/E_PRESET_UNRESOLVED/)
+
+  // The rendered route fails closed when the bound credential disappears.
+  await createCredentialStore({ root }).remove(ref)
+  await expect(service.profileInput()).rejects.toMatchObject({ code: 'CONFIG_CREDENTIAL_REQUIRED' })
+})
+
+it('accepts a direct endpoint for a payload-only account and rejects chat-form fields', async () => {
+  const root = await home()
+  const ref = await genericCredential(root)
+  const service = createConfigurationService({ home: root, profile: 'local-dev' })
+  const saved = await service.save({
+    ...jevAccount(ref),
+    baseUrl: 'https://api.typesafe.ai/v1',
+    expectedRevision: 0,
+  })
+  expect(saved.accounts?.[0]?.baseUrl).toBe('https://api.typesafe.ai/v1')
+
+  const malformed = [
+    { ...jevAccount(ref), makeDefault: true },
+    { ...jevAccount(ref), apiKey: 'jev-test-key' },
+    { ...jevAccount(ref), defaultSettings: { contextWindow: 32000 } },
+    { ...jevAccount(ref), models: [] },
+    { ...jevAccount(ref), models: [JEV_MODEL, JEV_MODEL] },
+    { ...jevAccount(ref), models: [{ ...JEV_MODEL, reasoning: true }] },
+    { ...jevAccount(ref), models: [{ id: JEV_MODEL.id, name: JEV_MODEL.name, contextWindow: 65536 }] },
+    { ...jevAccount(ref), models: [{ ...JEV_MODEL, maxTokens: 0 }] },
+    { ...jevAccount(ref), models: [{ ...JEV_MODEL, cost: { input: 0 } }] },
+    { ...jevAccount(ref), credentialRef: 'secret://openai/default' },
+  ]
+  for (const input of malformed)
+    await expect(service.save(input as never)).rejects.toMatchObject({ code: 'CONFIG_INVALID_INPUT' })
+  await expect(service.save({ ...jevAccount(ref), model: 'typesafe/jev-9.99' })).rejects.toMatchObject({
+    code: 'CONFIG_MODEL_UNAVAILABLE',
+  })
+  expect((await service.get()).revision).toBe(1)
+
+  // Chat accounts keep their exact input surface: the new fields are not accepted there.
+  const server = await fixture('deepseek-flash')
+  await expect(
+    service.save({
+      providerId: 'deepseek',
+      baseUrl: server.baseUrl,
+      apiKey: 'sk-test-value',
+      model: 'deepseek-flash',
+      models: [JEV_MODEL],
+    } as never),
+  ).rejects.toMatchObject({ code: 'CONFIG_INVALID_INPUT' })
+})
+
+it('refuses a payload-only account without a usable generic credential', async () => {
+  const root = await home()
+  const service = createConfigurationService({ home: root, profile: 'local-dev' })
+  await expect(service.save(jevAccount())).rejects.toMatchObject({ code: 'CONFIG_CREDENTIAL_REQUIRED' })
+  await expect(
+    service.save(jevAccount('secret://generic/99999999-9999-4999-8999-999999999999')),
+  ).rejects.toMatchObject({ code: 'CONFIG_CREDENTIAL_REQUIRED' })
+  expect((await service.get()).revision).toBe(0)
+})
+
+it('never lets a payload-only account become the default account', async () => {
+  const server = await fixture('deepseek-flash')
+  const root = await home()
+  const ref = await genericCredential(root)
+  const service = createConfigurationService({ home: root, profile: 'local-dev' })
+  await service.save({
+    providerId: 'deepseek',
+    baseUrl: server.baseUrl,
+    apiKey: 'sk-test-value',
+    model: 'deepseek-flash',
+    expectedRevision: 0,
+  })
+  const saved = await service.save({ ...jevAccount(ref), expectedRevision: 1 })
+  expect(saved.defaultAccountId).toBe('legacy-deepseek')
+  await expect(
+    service.save({ ...jevAccount(ref), makeDefault: true, expectedRevision: 2 }),
+  ).rejects.toMatchObject({ code: 'CONFIG_INVALID_INPUT' })
+  await expect(
+    service.account({ accountId: 'jev', action: 'default', expectedRevision: 2 }),
+  ).rejects.toMatchObject({ code: 'CONFIG_INVALID_INPUT' })
+
+  // Removing the chat default leaves no default rather than promoting the payload-only account.
+  const removed = await service.account({
+    accountId: 'legacy-deepseek',
+    action: 'remove',
+    expectedRevision: 2,
+  })
+  expect(removed.defaultAccountId).toBeNull()
+  const reloaded = createConfigurationService({ home: root, profile: 'local-dev' })
+  expect((await reloaded.get()).defaultAccountId).toBeNull()
+  expect((await reloaded.profileInput()).provider?.routes?.[0]?.api).toBe('typesafe-systemone')
+
+  // Enable and disable work, but neither makes the account the default.
+  await service.account({ accountId: 'jev', action: 'disable', expectedRevision: 3 })
+  expect((await service.profileInput()).provider?.routes).toEqual([])
+  const enabled = await service.account({ accountId: 'jev', action: 'enable', expectedRevision: 4 })
+  expect(enabled.defaultAccountId).toBeNull()
+  expect((await service.profileInput()).provider?.routes).toHaveLength(1)
 })
 
 it('saves and reopens from a previously nonexistent nested home without read-side creation', async () => {

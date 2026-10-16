@@ -73,6 +73,13 @@ import {
   normalizeModelSettings,
   supportsModelSettings,
 } from './configuration-models.js'
+import {
+  GENERIC_CREDENTIAL_REF,
+  isPayloadOnlyEntry,
+  parsePayloadOnlyCredentialRef,
+  parsePayloadOnlyModels,
+  payloadOnlyRoute,
+} from './configuration-payload-only.js'
 
 type ConfigurationProvider = ApiKeyProviderRegistryEntry | SubscriptionProviderEntry
 
@@ -269,7 +276,7 @@ function providerEndpoint(entry: ConfigurationProvider, value: unknown): string 
   const baseUrl = value === undefined ? entry.baseUrl : parseBaseUrl(value)
   const defaultUrl = entry.baseUrl.endsWith('/') ? entry.baseUrl.slice(0, -1) : entry.baseUrl
   const requestedUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl
-  if (requestedUrl !== defaultUrl && !COMPATIBLE_APIS.has(entry.api))
+  if (requestedUrl !== defaultUrl && !COMPATIBLE_APIS.has(entry.api) && !isPayloadOnlyEntry(entry))
     throw new ConfigurationError('CONFIG_ENDPOINT_OVERRIDE_UNSUPPORTED')
   return getSubscriptionProvider(entry.id) === entry ? entry.baseUrl : baseUrl
 }
@@ -311,6 +318,8 @@ function parseSaveInput(value: unknown): {
   model: string
   expectedRevision?: number
   apiKey?: string
+  models?: unknown
+  credentialRef?: string
 } {
   const input = inputObject(value)
   if (
@@ -320,6 +329,8 @@ function parseSaveInput(value: unknown): {
         'baseUrl',
         'apiKey',
         'model',
+        'models',
+        'credentialRef',
         'expectedRevision',
         'accountId',
         'label',
@@ -336,6 +347,10 @@ function parseSaveInput(value: unknown): {
     ...(input.baseUrl === undefined ? {} : { baseUrl: input.baseUrl }),
     ...(input.apiKey === undefined ? {} : { apiKey: input.apiKey }),
   })
+  // The declared model list and an explicit credential reference exist only for payload-only
+  // providers; a chat account keeps its catalogue-derived models and its account-scoped key.
+  if (!isPayloadOnlyEntry(parsed.entry) && (input.models !== undefined || input.credentialRef !== undefined))
+    throw new ConfigurationError('CONFIG_INVALID_INPUT')
   if (input.networkTimeouts !== undefined) checkedNetworkTimeouts(input.networkTimeouts)
   const model = parseModel(input.model)
   if (
@@ -346,6 +361,8 @@ function parseSaveInput(value: unknown): {
   return {
     ...parsed,
     model,
+    ...(input.models === undefined ? {} : { models: input.models }),
+    ...(input.credentialRef === undefined ? {} : { credentialRef: stringField(input.credentialRef, 2048) }),
     ...(input.expectedRevision === undefined ? {} : { expectedRevision: input.expectedRevision as number }),
   }
 }
@@ -482,6 +499,7 @@ function decodeState(value: unknown, profile: string): StoredConfiguration | und
       return undefined
     const ref = row.credentialRef
     if (typeof ref !== 'string') return undefined
+    const genericRef = isPayloadOnlyEntry(entry) && GENERIC_CREDENTIAL_REF.test(ref)
     const prefix = accountRef(entry, profile, row.accountId, 1).replace(/1$/, '')
     const suffix = ref.startsWith(prefix) ? ref.slice(prefix.length) : ''
     const grantSuffix =
@@ -497,7 +515,7 @@ function decodeState(value: unknown, profile: string): StoredConfiguration | und
       row.accountId === legacyAccount(entry.id) &&
       (ref === entry.credentialRef ||
         (Number.isSafeInteger(oldRevision) && oldRevision > 0 && oldRevision <= (value.revision as number)))
-    if (!validRef && !legacyRef) return undefined
+    if (!validRef && !legacyRef && !genericRef) return undefined
     accounts.push({
       ...decoded.provider,
       accountId: row.accountId,
@@ -521,7 +539,11 @@ function decodeState(value: unknown, profile: string): StoredConfiguration | und
     !accounts.some((row) => row.accountId === value.defaultAccountId && row.enabled)
   )
     return undefined
-  if (value.defaultAccountId === null && accounts.some((row) => row.enabled)) return undefined
+  if (
+    value.defaultAccountId === null &&
+    accounts.some((row) => row.enabled && !isPayloadOnlyEntry(providerFor(row.id, row.authType)))
+  )
+    return undefined
   const childEngines = acceptedChildEngines(value.childEngines)
   return {
     version: 2,
@@ -731,6 +753,12 @@ export function createConfigurationService(
     authType: 'api-key' | 'oauth',
   ): Promise<boolean> => {
     const credential = await readCredential(ref)
+    if (isPayloadOnlyEntry(entry))
+      return (
+        credential?.kind === 'api-key' &&
+        credential.provider === 'generic' &&
+        isUsableCredential(credential.value)
+      )
     if (authType === 'oauth') return isSubscriptionCredential(credential, entry.id)
     return (
       credential?.kind === 'api-key' &&
@@ -751,30 +779,31 @@ export function createConfigurationService(
         effect: 'new-sessions',
       }
     const accounts: ConfigAccount[] = await Promise.all(
-      state.accounts.map(async (row) => ({
-        accountId: row.accountId,
-        label: row.label,
-        providerId: row.id,
-        route: row.route,
-        baseUrl: row.baseUrl,
-        ...(row.networkTimeouts === undefined ? {} : { networkTimeouts: row.networkTimeouts }),
-        model: row.model,
-        models: await staticCatalogue(providerFor(row.id, row.authType))
-          .catch(() => ({ records: [] as ModelRecord[] }))
-          .then(({ records }) =>
-            row.models.map((saved) => {
-              const record = records.find((m) => m.id === saved.id)
-              return record ? configModel(record, saved) : structuredClone(saved)
-            }),
-          ),
-        enabled: row.enabled,
-        authType: row.authType,
-        credentialConfigured: await configuredCredential(
-          row.credentialRef,
-          providerFor(row.id, row.authType),
-          row.authType,
-        ),
-      })),
+      state.accounts.map(async (row) => {
+        const entry = providerFor(row.id, row.authType)
+        return {
+          accountId: row.accountId,
+          label: row.label,
+          providerId: row.id,
+          route: row.route,
+          baseUrl: row.baseUrl,
+          ...(row.networkTimeouts === undefined ? {} : { networkTimeouts: row.networkTimeouts }),
+          model: row.model,
+          models: isPayloadOnlyEntry(entry)
+            ? row.models.map((saved) => structuredClone(saved))
+            : await staticCatalogue(entry)
+                .catch(() => ({ records: [] as ModelRecord[] }))
+                .then(({ records }) =>
+                  row.models.map((saved) => {
+                    const record = records.find((m) => m.id === saved.id)
+                    return record ? configModel(record, saved) : structuredClone(saved)
+                  }),
+                ),
+          enabled: row.enabled,
+          authType: row.authType,
+          credentialConfigured: await configuredCredential(row.credentialRef, entry, row.authType),
+        }
+      }),
     )
     const selected = accounts.find((row) => row.accountId === state.defaultAccountId && row.enabled)
     return {
@@ -971,6 +1000,54 @@ export function createConfigurationService(
       input.baseUrl === undefined
         ? (existing?.baseUrl ?? providerEndpoint(entry, undefined))
         : providerEndpoint(entry, input.baseUrl)
+    if (isPayloadOnlyEntry(entry)) {
+      // A payload-only account is declared, not probed: its models come from the form, its
+      // credential is an existing generic credential reference, and it can never be the default.
+      if (
+        input.accountId === undefined ||
+        input.makeDefault === true ||
+        parsed.apiKey !== undefined ||
+        input.defaultSettings !== undefined
+      )
+        throw new ConfigurationError('CONFIG_INVALID_INPUT')
+      const models = parsePayloadOnlyModels(parsed.models)
+      if (!models.some((model) => model.id === parsed.model))
+        throw new ConfigurationError('CONFIG_MODEL_UNAVAILABLE')
+      const ref =
+        parsed.credentialRef === undefined
+          ? existing?.credentialRef
+          : parsePayloadOnlyCredentialRef(parsed.credentialRef)
+      if (ref === undefined || !(await configuredCredential(ref, entry, 'api-key')))
+        throw new ConfigurationError('CONFIG_CREDENTIAL_REQUIRED')
+      const enabled = input.enabled ?? existing?.enabled ?? true
+      const row: StoredAccount = {
+        accountId: id,
+        label,
+        id: entry.id,
+        route: existing?.route ?? `account-${id}`,
+        baseUrl,
+        model: parsed.model,
+        models,
+        credentialRef: ref,
+        enabled,
+        authType: 'api-key',
+        ...(input.networkTimeouts === undefined
+          ? existing?.networkTimeouts
+            ? { networkTimeouts: existing.networkTimeouts }
+            : {}
+          : { networkTimeouts: checkedNetworkTimeouts(input.networkTimeouts) }),
+      }
+      const next: StoredConfiguration = {
+        version: 2,
+        profile,
+        revision: revision + 1,
+        accounts: [...(current?.accounts ?? []).filter((account) => account.accountId !== id), row],
+        defaultAccountId: current?.defaultAccountId ?? null,
+        ...retainedConfiguration(current),
+      }
+      await persistState(next)
+      return snapshot(next)
+    }
     const labelOnlyUpdate =
       !!existing &&
       parsed.apiKey === undefined &&
@@ -1093,7 +1170,9 @@ export function createConfigurationService(
       throw new ConfigurationError('CONFIG_REVISION_CONFLICT')
     const row = state.accounts.find((entry) => entry.accountId === id)
     if (!row) throw new ConfigurationError('CONFIG_INVALID_INPUT')
-    if (input.action === 'default' && !row.enabled) throw new ConfigurationError('CONFIG_INVALID_INPUT')
+    const payloadOnly = isPayloadOnlyEntry(providerFor(row.id, row.authType))
+    if (input.action === 'default' && (!row.enabled || payloadOnly))
+      throw new ConfigurationError('CONFIG_INVALID_INPUT')
     if (
       (input.action === 'enable' || input.action === 'default') &&
       !(await configuredCredential(row.credentialRef, providerFor(row.id, row.authType), row.authType))
@@ -1101,11 +1180,19 @@ export function createConfigurationService(
       throw new ConfigurationError('CONFIG_CREDENTIAL_REQUIRED')
     let defaultAccountId = state.defaultAccountId
     if (['disable', 'remove'].includes(input.action) && defaultAccountId === id) {
-      if (state.accounts.some((entry) => entry.accountId !== id && entry.enabled))
+      if (
+        state.accounts.some(
+          (entry) =>
+            entry.accountId !== id &&
+            entry.enabled &&
+            !isPayloadOnlyEntry(providerFor(entry.id, entry.authType)),
+        )
+      )
         throw new ConfigurationError('CONFIG_INVALID_INPUT')
       defaultAccountId = null
     }
-    if (input.action === 'default' || (input.action === 'enable' && !defaultAccountId)) defaultAccountId = id
+    if (input.action === 'default' || (input.action === 'enable' && !defaultAccountId && !payloadOnly))
+      defaultAccountId = id
     const accounts = state.accounts
       .filter((entry) => input.action !== 'remove' || entry.accountId !== id)
       .map((entry) =>
@@ -1367,6 +1454,9 @@ export function createConfigurationService(
           const entry = providerFor(row.id, row.authType)
           if (!(await configuredCredential(row.credentialRef, entry, row.authType)))
             throw new ConfigurationError('CONFIG_CREDENTIAL_REQUIRED')
+          // A payload-only account has no provider catalogue to resolve against; its declared
+          // models render through the fixed payload template instead.
+          if (isPayloadOnlyEntry(entry)) return [payloadOnlyRoute(row, entry.api)]
           const catalogue = await staticCatalogue(entry)
           const byId = new Map(catalogue.records.map((record) => [record.id, record]))
           const records = row.models.map((model) => {

@@ -217,7 +217,7 @@ const TARGETS: Array<{
       // retyping the seven-value set a second time.
       {
         from: 'schema/model.json',
-        defs: ['SlotName', 'ThinkingLevel', 'ModelSettings', 'ModelInputLimits', 'TokenCounts'],
+        defs: ['SlotName', 'ThinkingLevel', 'ModelSettings', 'ModelInputLimits', 'ModelCost', 'TokenCounts'],
       },
     ],
   },

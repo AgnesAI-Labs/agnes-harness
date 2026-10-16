@@ -2544,6 +2544,8 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     invalid: [
       { id: '', name: 'Model' },
       { id: 'm', name: 'Model', secret: true },
+      { id: 'm', name: 'Model', maxTokens: 0 },
+      { id: 'm', name: 'Model', cost: { input: 0, output: 0, cacheRead: 0 } },
     ],
   },
   ConfigSnapshot: {
@@ -2584,6 +2586,8 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { providerId: 'openai', model: 'm', expectedRevision: -1 },
       { providerId: 'openai', model: 'm', expectedRevision: 1.1 },
       { providerId: 'openai' },
+      { providerId: 'openai', model: 'm', credentialRef: 'not-a-secret-ref' },
+      { providerId: 'openai', model: 'm', models: [{ id: 'm', name: 'M', maxTokens: 0 }] },
     ],
   },
   ConfigProvidersResult: {
