@@ -24,6 +24,8 @@ export type ExampleRequest =
   | { action: 'list' }
   | { action: 'stop'; exampleId: string; operationId: string }
   | { action: 'inspect'; exampleId: string }
+  | { action: 'inspect-remove'; exampleId: string }
+  | { action: 'remove'; reviewId: string; operationId: string }
   | { action: 'enable'; reviewId: string; operationId: string }
   | { action: 'read'; operationId: string }
   | { action: 'prepare'; exampleId: string; launchId: string }
@@ -34,6 +36,8 @@ export type ExampleTransport = (request: ExampleRequest) => Promise<unknown>
 export interface ExamplePackages {
   list(): Promise<readonly ExampleView[]>
   stop(exampleId: string, operationId: string): Promise<void>
+  inspectRemove(exampleId: string): Promise<ExampleReview>
+  remove(reviewId: string, operationId: string): Promise<{ operationId: string }>
   inspect(exampleId: string): Promise<ExampleReview>
   enable(reviewId: string, operationId: string): Promise<{ operationId: string }>
   read(operationId: string): Promise<ExampleOperation>
@@ -54,6 +58,9 @@ export function createExampleClient(transport: ExampleTransport): {
       stop: async (exampleId, operationId) => {
         await transport({ action: 'stop', exampleId, operationId })
       },
+      inspectRemove: async (exampleId) => (await transport({ action: 'inspect-remove', exampleId })) as ExampleReview,
+      remove: async (reviewId, operationId) =>
+        (await transport({ action: 'remove', reviewId, operationId })) as { operationId: string },
       inspect: async (exampleId) => (await transport({ action: 'inspect', exampleId })) as ExampleReview,
       enable: async (reviewId, operationId) =>
         (await transport({ action: 'enable', reviewId, operationId })) as { operationId: string },
