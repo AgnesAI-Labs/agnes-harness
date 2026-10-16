@@ -42,7 +42,7 @@ const files = [
   },
   { path: 'index.mjs', content: source },
 ] as const
-async function setup() {
+async function setup(candidateTestPolicy?: 'allow' | 'ask') {
   const root = mkdtempSync(join(tmpdir(), 'agh-plugin-helper-'))
   roots.push(root)
   const profileDir = join(root, 'profiles', 'local-dev')
@@ -75,17 +75,18 @@ async function setup() {
     return pkg.entry.integrity
   }
   let running = false
+  const testRunner = vi.fn(async () => ({
+    state: 'passed' as const,
+    count: 1,
+    runner: 'node-test' as const,
+    output: 'synthetic unit runner',
+  }))
   const admin = createPackageAdminService({
     manager,
     profileDirectory: async () => profileDir,
     operations: new FilePackageOperationStore(join(root, 'ops')),
     clock: () => new Date().toISOString(),
-    authoringTestRunner: async () => ({
-      state: 'passed',
-      count: 1,
-      runner: 'node-test',
-      output: 'synthetic unit runner',
-    }),
+    authoringTestRunner: testRunner,
     activation: {
       actual: async () =>
         running
@@ -138,6 +139,7 @@ async function setup() {
   const request = (input: unknown, overrides = {}, requestId: string = randomUUID()) =>
     handler('session', requestId, 'plugin-manage', {
       input,
+      ...(candidateTestPolicy ? { candidateTestPolicy } : {}),
       turn: 2,
       packageId: '@agnes/plugin-helper',
       snapshotId: 'snap',
@@ -149,6 +151,7 @@ async function setup() {
     }) as Promise<AuthoringCandidate & { proposalId: string }>
   return {
     root,
+    testRunner,
     refresh,
     profileDir,
     manager,
@@ -200,6 +203,57 @@ it('drafts and submits a tested review without installing, trusting or enabling;
   ).rejects.toMatchObject({ code: -32602 })
   expect(s.exec).not.toHaveBeenCalled()
 })
+it.each(['@agnes/plugin-helper', '@agnes/skill-helper'])(
+  'full-access tests %s candidates without prompting and audits the exact hash',
+  async (packageId) => {
+    const s = await setup('allow')
+    const p = await s.request({ action: 'prepare', files }, { packageId })
+    s.testRunner.mockImplementationOnce(async () => {
+      const beforeRun = JSON.parse(readFileSync(join(s.root, 'candidate-test-audit.jsonl'), 'utf8').trim())
+      expect(beforeRun.detail).toMatchObject({ bindingHash: p.candidateHash, verdict: 'allowed-once' })
+      return { state: 'passed', count: 1, runner: 'node-test', output: 'synthetic unit runner' }
+    })
+    const tested = await s.request(
+      { action: 'candidate.test', candidateId: p.candidateId, expectedHash: p.candidateHash },
+      { packageId },
+    )
+    expect(tested.tests).toMatchObject({ state: 'passed', hash: p.candidateHash })
+    expect(s.ask).not.toHaveBeenCalled()
+    const audit = JSON.parse(readFileSync(join(s.root, 'candidate-test-audit.jsonl'), 'utf8').trim())
+    expect(audit.detail).toMatchObject({
+      action: 'candidate.test',
+      bindingHash: p.candidateHash,
+      verdict: 'allowed-once',
+      via: 'full-access-policy',
+    })
+    await expect(
+      s.request({ action: 'test', proposalId: p.candidateId, candidateTestPolicy: 'allow' }),
+    ).rejects.toMatchObject({ code: -32602 })
+    for (const action of ['candidate.approve', 'install', 'trust', 'enable'])
+      await expect(
+        s.request({ action, candidateId: p.candidateId, expectedHash: p.candidateHash }),
+      ).rejects.toMatchObject({ code: -32602 })
+    expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(0)
+    const next = await s.request({ action: 'prepare', files })
+    rmSync(join(s.root, 'candidate-test-audit.jsonl'))
+    mkdirSync(join(s.root, 'candidate-test-audit.jsonl'))
+    await expect(s.request({ action: 'test', proposalId: next.candidateId })).rejects.toThrow()
+    expect((await s.request({ action: 'status', proposalId: next.candidateId })).tests).toBeNull()
+    expect(s.testRunner).toHaveBeenCalledOnce()
+  },
+)
+it.each([undefined, 'ask'] as const)('keeps the exact-hash prompt with policy %s', async (policy) => {
+  const s = await setup(policy)
+  const p = await s.request({ action: 'prepare', files })
+  await s.request({ action: 'test', proposalId: p.candidateId })
+  expect(s.ask).toHaveBeenCalledOnce()
+  expect(s.ask.mock.calls[0]?.[1]).toMatchObject({
+    toolCall: {
+      rawInput: { packageId: p.packageId, candidateHash: p.candidateHash },
+      _meta: { 'ai.agnes.harness': { tool: 'plugin_candidate_test' } },
+    },
+  })
+})
 it('denied test execution and cancelled native prompts leave the candidate inactive, with no passing result', async () => {
   const s = await setup(),
     p = await s.request({ action: 'prepare', files })
@@ -226,6 +280,19 @@ it('denied test execution and cancelled native prompts leave the candidate inact
   await job
   expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(0)
   expect((await s.request({ action: 'status', proposalId: p.proposalId })).tests).toBeNull()
+  vi.useFakeTimers()
+  try {
+    s.ask.mockImplementationOnce(async () => {
+      vi.advanceTimersByTime(110_001)
+      return { outcome: { outcome: 'selected', optionId: 'allow_once' } }
+    })
+    await expect(s.request({ action: 'test', proposalId: p.proposalId })).rejects.toMatchObject({
+      data: { code: 'PLUGIN_TEST_UNANSWERED', reason: 'deadline' },
+    })
+  } finally {
+    vi.useRealTimers()
+  }
+  expect((await s.request({ action: 'status', proposalId: p.proposalId })).tests).toBeNull()
 })
 it('binds authority to the local owner, session and live connection', async () => {
   const s = await setup()
@@ -238,25 +305,29 @@ it('binds authority to the local owner, session and live connection', async () =
   })
   expect(s.ask).not.toHaveBeenCalled()
 })
-it('rejects changed bytes and legacy proposals before tests or approval; no request can publish', async () => {
-  const s = await setup(),
-    p = await s.request({ action: 'prepare', files })
-  const record = JSON.parse(
-    readFileSync(join(s.profileDir, '.authoring-candidates', p.candidateId, 'record.json'), 'utf8'),
-  )
-  writeFileSync(join(record.tree, 'index.mjs'), source + '// changed')
-  await expect(
-    s.request({ action: 'candidate.test', candidateId: p.candidateId, expectedHash: p.candidateHash }),
-  ).rejects.toMatchObject({ data: { code: 'PLUGIN_CANDIDATE_STALE' } })
-  await expect(s.request({ action: 'commit', proposalId: randomUUID() })).rejects.toMatchObject({
-    data: { code: 'PLUGIN_LEGACY_PROPOSAL_REVIEW_REQUIRED' },
-  })
-  await expect(s.request({ action: 'cancel', proposalId: p.proposalId })).rejects.toMatchObject({
-    data: { code: 'PLUGIN_REJECT_IN_REVIEW_UI' },
-  })
-  expect(s.ask).not.toHaveBeenCalled()
-  expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(0)
-})
+it.each([undefined, 'allow'] as const)(
+  'rejects changed bytes before tests or approval under policy %s; no request can publish',
+  async (policy) => {
+    const s = await setup(policy),
+      p = await s.request({ action: 'prepare', files })
+    const record = JSON.parse(
+      readFileSync(join(s.profileDir, '.authoring-candidates', p.candidateId, 'record.json'), 'utf8'),
+    )
+    writeFileSync(join(record.tree, 'index.mjs'), source + '// changed')
+    await expect(
+      s.request({ action: 'candidate.test', candidateId: p.candidateId, expectedHash: p.candidateHash }),
+    ).rejects.toMatchObject({ data: { code: 'PLUGIN_CANDIDATE_STALE' } })
+    await expect(s.request({ action: 'commit', proposalId: randomUUID() })).rejects.toMatchObject({
+      data: { code: 'PLUGIN_LEGACY_PROPOSAL_REVIEW_REQUIRED' },
+    })
+    await expect(s.request({ action: 'cancel', proposalId: p.proposalId })).rejects.toMatchObject({
+      data: { code: 'PLUGIN_REJECT_IN_REVIEW_UI' },
+    })
+    expect(s.ask).not.toHaveBeenCalled()
+    expect(s.testRunner).not.toHaveBeenCalled()
+    expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(0)
+  },
+)
 it.each([
   '../escape.mjs',
   '/tmp/escape.mjs',

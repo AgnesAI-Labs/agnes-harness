@@ -12,6 +12,7 @@ import {
   type WorkerResourceBootstrapInput,
 } from '@agnes/resource-control-worker'
 import { reportWorkerBootFailure } from './boot-failure.js'
+import { requestPluginManage } from './plugin-manage.js'
 import { profileWakeProducer } from './profile-wake-producer.js'
 import { generationExtensionRestorer } from './runtime-generation-restore.js'
 import { connectSupervisor } from './supervisor-connection.js'
@@ -245,11 +246,8 @@ export async function runWorker(
       throw new Error('MCP management session mismatch')
     return sharedChannel.request('mcp-manage', input, signal)
   }
-  const pluginManage: NonNullable<HostOptions['pluginManage']> = async (input, signal) => {
-    if (input.sessionKey !== sharedChannel.currentSessionKey())
-      throw new Error('plugins management session mismatch')
-    return sharedChannel.request('plugin-manage', input, signal)
-  }
+  const pluginManage: NonNullable<HostOptions['pluginManage']> = (input, signal) =>
+    requestPluginManage(host?.kernel.sessions.get(input.sessionKey), input, signal, sharedChannel)
   const prompter: Prompter = {
     ask(req, opts) {
       return sharedChannel.ask(req, opts)

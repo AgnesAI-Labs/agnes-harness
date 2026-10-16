@@ -103,7 +103,18 @@ export class PermissionModal implements Component {
     const question = this.questions[0]
     if (!question) return []
     const locale = this.options.locale ?? 'en'
-    const title = question.request.toolCall.title
+    const call = question.request.toolCall
+    const meta = call._meta as { 'ai.agnes.harness'?: { tool?: unknown } } | undefined
+    const input = call.rawInput as { packageId?: unknown; candidateHash?: unknown } | undefined
+    const title =
+      meta?.['ai.agnes.harness']?.tool === 'plugin_candidate_test' &&
+      typeof input?.packageId === 'string' &&
+      typeof input.candidateHash === 'string'
+        ? t('permission.candidateTest', locale, {
+            name: input.packageId,
+            hash: input.candidateHash.replace(/^sha256-/, '').slice(0, 12),
+          })
+        : call.title
     const heading = `${t('permission.heading', locale)}: ${escapeControl(
       typeof title === 'string' ? title : t('permission.toolRequest', locale),
     )}`

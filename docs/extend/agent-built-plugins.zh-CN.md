@@ -8,11 +8,15 @@
 
 Agent 创作的文件走 **候选 → 测试 → 人工审阅 → 发布**。Host 将有界纯文本文件集合写入 profile 的私有 `.authoring-candidates` 区。发现流程不会加载它，即使自定义发现根目录指向候选区内部。创建或提交候选不安装、不信任、不启用插件。
 
+显式选择 **完全访问（full-access）** 权限预设时，只要会话的有效策略允许，Agent 创作的插件和 Skill 候选测试就不再单独请求测试执行审批。只读、标准／询问及计划模式路径仍保留明确的测试审批，其他工具限制照常生效。测试在本机执行候选的 Node 作者测试，不发布、不信任、不启用任何内容；运行前请到 **设置 → 插件 → 候选** 审阅源码。决定与精确候选摘要一同记录在私有 resource-control 目录的 `candidate-test-audit.jsonl`；候选改变后仍须使用新摘要并重新测试。
+
+完全访问仍要求明确确认候选、插件及 Skill 的安装、信任、启用，以及能力范围变更；不会跳过「写入前询问」模式的记忆写入审批或凭据管理确认。保护路径保留原有硬拒绝，完全访问不能批准普通文件工具访问凭据或应用私有状态。Skill 导入安装和 MCP 注册／启动的审批保持不变；人工维护的本地插件和可信磁盘 Skill 仍遵循各自文档中的信任路径。
+
 ## 免密钥 Demo 练习
 
 沿用[快速上手](quickstart.zh-CN.md)的独立 home 和工作区，在 Web 新建 **Demo** 会话，提交 `create a plugin` 并确认保存候选的工具审批。Demo 复制版本匹配的文本统计示例，不会根据需求设计新代码。`agh -p` 没有交互审批处理器，创作调用会被拒绝；不要通过放宽策略绕过。
 
-在候选列表审阅生成的源码和测试，记下返回的 `proposalId`（即 `candidateId`），然后在同一个 Web 会话依次提交以下消息，把 `CANDIDATE_ID` 换成实际值，并逐次确认工具和测试执行审批：
+在候选列表审阅生成的源码和测试，记下返回的 `proposalId`（即 `candidateId`），然后在同一个 Web 会话依次提交以下消息，把 `CANDIDATE_ID` 换成实际值，并确认当前权限预设要求的工具和测试执行审批：
 
 ```text
 call plugin_helper_install {"action":"test","proposalId":"CANDIDATE_ID"}
@@ -25,7 +29,7 @@ call plugin_helper_install {"action":"commit","proposalId":"CANDIDATE_ID"}
 
 1. `plugin_helper_guide`（`kind: tool|skill|skin`）返回版本匹配的 JavaScript 模板和 Node 合同测试。实现需求后，加强测试，包括无效输入。
 2. `plugin_helper_create`（`files: [{path, content}, …]`）仅写 Host 候选区，返回 `proposalId`（候选 ID）、`candidateHash` 和 `draft` 状态。有界 helper 接受不带依赖与生命周期脚本的自包含文本 ESM。
-3. `plugin_helper_install`（`action: test`、`proposalId`）先征得明确许可，再对该摘要的私有副本执行 Node 作者测试。`action: commit` 提交通过的结果供审阅；`action: status` 查询持久候选。Commit 不再安装；旧 onboarding proposal ID 需重新创建候选。
+3. `plugin_helper_install`（`action: test`、`proposalId`）按上述会话策略裁决后，对该摘要的私有副本执行 Node 作者测试。`action: commit` 提交通过的结果供审阅；`action: status` 查询持久候选。Commit 不再安装；旧 onboarding proposal ID 需重新创建候选。
 
 新创作 Markdown 的 `skill_helper_create` 同样保存为可审阅的 Skill 包候选；`skill_helper_install` 对候选 ID 使用 test/commit/status。创作包在此 profile 发布；代码按会话固定，已批准的 Skill 资源实时刷新；create 不再接受原 workspace/user 范围与仅安装参数。已有 Skill 导入保留 workspace/user 导入审批流程。
 

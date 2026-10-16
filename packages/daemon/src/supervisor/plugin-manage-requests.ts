@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto'
+import { join } from 'node:path'
 import { localPackageAdminAuthority, type PackageAdminService } from '@agnes/daemon-admin/packages/index'
 import { type ConnectionState, connActor, type LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import { PrompterRouter } from '@agnes/daemon-rpc/local/prompter'
+import { createFileAudit } from '@agnes/host'
 import { type AuthoringCandidate, type PackageAdminMethodName, rpcError } from '@agnes/protocol'
 import { managementConnection } from './management-connection.js'
 import { checkedPluginFiles } from './plugin-files.js'
@@ -46,6 +48,7 @@ export function createPluginManageRequests(options: {
         (k) =>
           ![
             'input',
+            'candidateTestPolicy',
             'turn',
             'sessionKey',
             'toolUseId',
@@ -55,6 +58,9 @@ export function createPluginManageRequests(options: {
             'rowId',
           ].includes(k),
       ) ||
+      (raw.candidateTestPolicy !== undefined &&
+        raw.candidateTestPolicy !== 'allow' &&
+        raw.candidateTestPolicy !== 'ask') ||
       raw.sessionKey !== sessionKey ||
       !Number.isSafeInteger(raw.turn) ||
       Number(raw.turn) < 0 ||
@@ -137,43 +143,86 @@ export function createPluginManageRequests(options: {
       if (expectedHash !== value.candidateHash)
         throw rpcError('SEMANTIC_REJECTED', { code: 'PLUGIN_CANDIDATE_STALE' })
       if (action === 'test') {
-        const prompt = new PrompterRouter({
-          record: () => {},
-          connections: live.candidates,
-          originOf: () => live.candidates()[0],
-          clock: Date.now,
-          endpointFor: (target) => {
-            const ep = options.endpoint(target)
-            if (!ep) throw new Error('closed')
-            return ep
-          },
-        })
-        const answer = await prompt.ask(
-          {
-            requestId: `candidate-${randomUUID()}`,
-            kind: 'tool',
-            sessionKey,
-            stepId: 'candidate-test',
-            toolUseId: raw.toolUseId as string,
-            summary: `Run Node author tests for ${value.packageId}\nCandidate SHA256: ${expectedHash}\nThis executes candidate JavaScript on this machine; it does not publish or trust the plugin. Review its source first in Settings → Plugins.`,
-            risk: 'always',
-            actor: connActor(conn),
-            taint: false,
-            bindingHash: value.candidateHash,
-            deadline: new Date(Date.now() + 110_000).toISOString(),
-            scope: 'plugin.test',
-            options: ['allowed-once', 'rejected'],
-          },
-          { signal },
-        )
-        assertActive()
-        signal.throwIfAborted()
-        const verdict = typeof answer === 'string' ? answer : answer.verdict
-        if (verdict !== 'allowed-once')
-          throw rpcError('CAPABILITY_DENIED', {
-            code: verdict === 'rejected' ? 'PLUGIN_TEST_REJECTED' : 'PLUGIN_TEST_UNANSWERED',
-            reason: typeof answer === 'string' ? 'invalid-answer' : (answer.reason ?? 'invalid-answer'),
+        if (raw.candidateTestPolicy !== 'allow') {
+          const prompt = new PrompterRouter({
+            record: (outcome) =>
+              createFileAudit(join(options.directory, 'candidate-test-audit.jsonl')).write({
+                kind: 'extension.service-call',
+                detail: {
+                  action: 'candidate.test',
+                  session: sessionKey,
+                  candidateId: id,
+                  packageId: value.packageId,
+                  bindingHash: value.candidateHash,
+                  ...outcome,
+                },
+              }),
+            connections: live.candidates,
+            originOf: () => live.candidates()[0],
+            clock: Date.now,
+            endpointFor: (target) => {
+              const ep = options.endpoint(target)
+              if (!ep) throw new Error('closed')
+              return ep
+            },
           })
+          const answer = await prompt.ask(
+            {
+              requestId: `candidate-${randomUUID()}`,
+              kind: 'tool',
+              sessionKey,
+              stepId: 'candidate-test',
+              toolUseId: raw.toolUseId as string,
+              summary: `${value.packageId} (${value.candidateHash.slice(7, 19)})`,
+              tool: {
+                name: 'plugin_candidate_test',
+                args: { packageId: value.packageId, candidateHash: value.candidateHash },
+                meta: {
+                  isReadOnly: false,
+                  isDestructive: false,
+                  isConcurrencySafe: false,
+                  isOpenWorld: true,
+                  replay: 'never',
+                  costHint: {},
+                  deferLoading: false,
+                  requiresApproval: 'always',
+                },
+              },
+              risk: 'always',
+              actor: connActor(conn),
+              taint: false,
+              bindingHash: value.candidateHash,
+              deadline: new Date(Date.now() + 110_000).toISOString(),
+              scope: 'plugin.test',
+              options: ['allowed-once', 'rejected'],
+            },
+            { signal },
+          )
+          assertActive()
+          signal.throwIfAborted()
+          const verdict = typeof answer === 'string' ? answer : answer.verdict
+          if (verdict !== 'allowed-once')
+            throw rpcError('CAPABILITY_DENIED', {
+              code: verdict === 'rejected' ? 'PLUGIN_TEST_REJECTED' : 'PLUGIN_TEST_UNANSWERED',
+              reason: typeof answer === 'string' ? 'invalid-answer' : (answer.reason ?? 'invalid-answer'),
+            })
+        } else {
+          assertActive()
+          signal.throwIfAborted()
+          createFileAudit(join(options.directory, 'candidate-test-audit.jsonl')).write({
+            kind: 'extension.service-call',
+            detail: {
+              action: 'candidate.test',
+              session: sessionKey,
+              candidateId: id,
+              packageId: value.packageId,
+              actor: connActor(conn),
+              bindingHash: value.candidateHash,
+              verdict: 'allowed-once',
+              via: 'full-access-policy',
+            },
+          })
+        }
       }
       const result = (await call(action === 'commit' ? 'submit' : action, {
         ...command(),

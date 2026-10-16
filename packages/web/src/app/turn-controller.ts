@@ -268,7 +268,10 @@ export function createTurnController(
       return
     }
 
-    const liveTitle = context.liveApproval?.request.toolCall.title
+    const card = context.liveApproval
+      ? liveApprovalCard(context.liveApproval.request.toolCall, context.t)
+      : undefined
+    const liveTitle = card?.summary ?? context.liveApproval?.request.toolCall.title
     const reconcile = context.liveApproval ? undefined : durable?.reconcile
     const summary =
       typeof liveTitle === 'string'
@@ -282,9 +285,6 @@ export function createTurnController(
       budget: context.t('app.risk.budget'),
       unknown: context.t('app.risk.unknown'),
     }
-    const card = context.liveApproval
-      ? liveApprovalCard(context.liveApproval.request.toolCall, context.t)
-      : undefined
     const impact = reconcile
       ? context.t('app.reconcile.impact')
       : durable

@@ -346,10 +346,10 @@ it('closes a published review, links to the skill, and keeps terminal history wi
   const api = {
     candidatesList: async () => ({ candidates: items }),
     candidatesShow: async (id: string) => items.find((value) => value.candidateId === id),
-    candidatesDecide: async () => {
+    candidatesDecide: vi.fn(async () => {
       items = [published, rejected]
       return published
-    },
+    }),
   } as unknown as PluginAdminApi
   const host = document.createElement('div')
   document.body.append(host)
@@ -378,7 +378,10 @@ it('closes a published review, links to the skill, and keeps terminal history wi
         ?.click(),
     )
     await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="candidate-approve"]')?.click())
+    expect(api.candidatesDecide).not.toHaveBeenCalled()
+    expect(run).toBeDefined()
     await act(async () => run?.())
+    expect(api.candidatesDecide).toHaveBeenCalledOnce()
     expect(host.querySelector('[data-testid="review-dialog"]')).toBeNull()
     expect(host.querySelector('[data-testid="candidate-published"]')?.textContent).toContain('发布')
     expect(host.querySelector<HTMLAnchorElement>('[data-testid="candidate-published-link"]')?.href).toContain(

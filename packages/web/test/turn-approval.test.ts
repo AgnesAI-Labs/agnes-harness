@@ -442,3 +442,40 @@ it('settles the search and offers «定位审批» again when the decision looku
   expect(document.querySelector('[data-testid="approval-card"]')?.textContent).toContain('有一项审批等待处理')
   expect(showError).toHaveBeenCalledWith(expect.objectContaining({ message: 'not connected' }))
 })
+
+// Candidate tests use the same live approval surface as other tool calls.
+it.each([
+  [zhT, '在本机运行候选的 Node 作者测试', '不会发布、信任或启用', '设置 → 插件 → 候选'],
+  [
+    enT,
+    'Node author tests on this machine',
+    'does not publish, trust or enable',
+    'Settings → Plugins → Candidates',
+  ],
+] as const)('localizes candidate test approval with %s', async (t, execution, boundary, review) => {
+  const { context, controller } = await harness()
+  context.t = t
+  context.liveApproval = {
+    request: {
+      sessionId: 's',
+      toolCall: {
+        toolCallId: 'test',
+        title: 'synthetic fallback',
+        rawInput: { packageId: 'agh-skill-math-teacher', candidateHash: `sha256-${'a'.repeat(64)}` },
+        _meta: { 'ai.agnes.harness': { tool: 'plugin_candidate_test' } },
+      },
+      options: [
+        { optionId: 'allow_once', kind: 'allow_once', name: 'allow_once' },
+        { optionId: 'reject_once', kind: 'reject_once', name: 'reject_once' },
+      ],
+    },
+    finish: vi.fn(),
+  } as unknown as typeof context.liveApproval
+  controller.renderApproval()
+  await vi.waitFor(() => {
+    const text = document.querySelector('[data-testid="approval-card"]')?.textContent ?? ''
+    for (const phrase of [execution, boundary, review, 'agh-skill-math-teacher', 'aaaaaaaaaaaa'])
+      expect(text).toContain(phrase)
+    expect(text).not.toContain('synthetic fallback')
+  })
+})

@@ -8,11 +8,15 @@ Ask a tool-capable model to implement a reusable tool or Skill, including determ
 
 Agent-authored files follow **candidate → tests → human review → publish**. The Host saves bounded text trees in the profile’s private `.authoring-candidates` area. Discovery never loads that area, including when a custom discovery root points inside it. Creating or submitting a candidate does not install, trust or enable it.
 
+Under the explicit **full-access** permission preset, agent-authored plugin and Skill candidate tests run without a separate test-execution prompt when the effective session policy allows them. Read-only, standard/ask and plan-mode paths retain the explicit test prompt; their other tool restrictions still apply. Tests execute the candidate’s Node author tests on this machine; they do not publish, trust or enable anything. Review the source in **Settings → Plugins → Candidates** first. The decision is audited with the exact candidate hash in the private resource-control `candidate-test-audit.jsonl`; changed candidates still require a fresh hash and test run.
+
+Full access still requires explicit confirmation for installing, trusting or enabling candidates, plugins and Skills, and for capability scope changes. It does not waive memory-write approval in **ask before writing** mode or credential administration confirmations. Protected paths retain their existing hard refusals; full access cannot approve ordinary file-tool access to credentials or private application state. Skill import/install and MCP registration/start approvals are unchanged. Human-maintained local plugin and trusted disk-Skill discovery retain their documented trust paths.
+
 ## Keyless Demo exercise
 
 Use the isolated home and workspace from the [quickstart](quickstart.md). Create a **Demo** session in Web, submit `create a plugin`, and confirm the tool approval to save its candidate. Demo copies the version-matched text statistics example; it does not design new code for your request. `agh -p` has no interactive permission handler and rejects the authoring call; do not bypass this by weakening policy.
 
-Inspect the generated source and tests in the candidate list. Note the returned `proposalId` (the `candidateId`), then submit these messages in the same Web session, replacing `CANDIDATE_ID` with the actual value and confirming each tool and test-execution approval:
+Inspect the generated source and tests in the candidate list. Note the returned `proposalId` (the `candidateId`), then submit these messages in the same Web session, replacing `CANDIDATE_ID` with the actual value and confirming the tool and test-execution approvals requested by your permission preset:
 
 ```text
 call plugin_helper_install {"action":"test","proposalId":"CANDIDATE_ID"}
@@ -25,7 +29,7 @@ The default **Plugin Helper** exposes three tools:
 
 1. `plugin_helper_guide` (`kind: tool|skill|skin`) returns a version-matched JavaScript template and Node contract test. Implement the requested behavior and strengthen the test, including invalid inputs.
 2. `plugin_helper_create` (`files: [{path, content}, …]`) writes only to the Host candidate area and returns `proposalId` (the candidate ID), `candidateHash` and `draft` state. The bounded helper accepts self-contained text ESM without dependencies or lifecycle scripts.
-3. `plugin_helper_install` (`action: test`, `proposalId`) asks explicit permission to execute Node author tests against a private copy of that exact tree. `action: commit` submits passing results for review; `action: status` reads the durable candidate. Commit no longer installs. Old onboarding proposal IDs require a fresh candidate.
+3. `plugin_helper_install` (`action: test`, `proposalId`) uses the session policy described above before executing Node author tests against a private copy of that exact tree. `action: commit` submits passing results for review; `action: status` reads the durable candidate. Commit no longer installs. Old onboarding proposal IDs require a fresh candidate.
 
 For newly authored Markdown, `skill_helper_create` also writes a reviewed Skill package candidate; `skill_helper_install` uses test/commit/status for its candidate ID. Authored packages publish in this profile; code stays pinned per session and approved Skill resources refresh live; creation no longer accepts the old workspace/user scope or install-only flags. Importing existing Skills retains its workspace/user import approval workflow.
 

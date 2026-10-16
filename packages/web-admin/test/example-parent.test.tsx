@@ -67,3 +67,32 @@ it.each(['en', 'zh-CN'] as const)(
     homeNavigation.close()
   },
 )
+
+// Admin review is independent of a session's tool permission preset, including full-access.
+it.each([true, false])(
+  'requires confirmation before enabling trusted=%s plugins or Skills',
+  async (trusted) => {
+    let pending: Parameters<PluginAdminPage['configureConfirm']>[0] | undefined
+    const run = vi.fn(async () => {})
+    const page = {
+      viewContext: () => ({
+        state: { context: { features: [] }, installed: [], catalog: [] },
+        t: (key: string) => key,
+      }),
+      nameOf: (item: PackageInstalledDescriptor) => item.id,
+      configureConfirm: (value: typeof pending) => {
+        pending = value
+      },
+      showError: vi.fn(),
+    } as unknown as PluginAdminPage
+    await confirmEnable(page, { ...parent, trusted, capabilityHash: 'capability-hash' }, run)
+    expect(page.showError).not.toHaveBeenCalled()
+    const label = pending?.label
+    expect(typeof label === 'function' ? label() : label).toBe(
+      trusted ? 'confirm.enable.action' : 'confirm.enable.trust-action',
+    )
+    expect(run).not.toHaveBeenCalled()
+    await pending?.run()
+    expect(run).toHaveBeenCalledOnce()
+  },
+)

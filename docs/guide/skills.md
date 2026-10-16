@@ -66,6 +66,10 @@ A skill root may contain a directory `<name>/SKILL.md` or a flat `<name>.md`. Th
 
 ## Manage skills in Web
 
+Under the explicit **full-access** permission preset, agent-authored plugin and Skill candidate tests run without a separate test-execution prompt when the effective session policy allows them. Read-only, standard/ask and plan-mode paths retain the explicit test prompt; their other tool restrictions still apply. Tests execute the candidate’s Node author tests on this machine; they do not publish, trust or enable anything. Review the source in **Settings → Plugins → Candidates** first. The decision is audited with the exact candidate hash in the private resource-control `candidate-test-audit.jsonl`; changed candidates still require a fresh hash and test run.
+
+Full access still requires explicit confirmation for installing, trusting or enabling candidates, plugins and Skills, and for capability scope changes. It does not waive memory-write approval in **ask before writing** mode or credential administration confirmations. Protected paths retain their existing hard refusals; full access cannot approve ordinary file-tool access to credentials or private application state. Skill import/install and MCP registration/start approvals are unchanged. Human-maintained local plugin and trusted disk-Skill discovery retain their documented trust paths.
+
 Settings → Skills has My skills, Pending review and Feedback tabs. New skill opens a menu to ask the agent to draft a skill or learn how to import existing folders. Agent proposals appear in Pending review; open a review to inspect content changes and test evidence before approving publication or rejecting it. The pending count appears only when a review needs attention.
 
 Search My skills by name or description. The row switch and menu keep the existing enable, trust and removal confirmation flows. Where are skill folders? lists the sources reported by the daemon. Import help links to deployment instructions for other agents; it does not change the daemon's startup import setting. Refresh skills and Scan folders use the existing confirmed rescan operation.

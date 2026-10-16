@@ -108,3 +108,32 @@ it('localizes Chinese approval chrome and bounds the rejection-only row at extre
   modal.handleInput('\x1b')
   expect(await pending).toEqual({ unanswered: 'detached' })
 })
+
+it.each([
+  ['zh-CN', '在本机运行候选的 Node 作者测试', '不会发布、信任或启用', '设置 → 插件 → 候选'],
+  [
+    'en',
+    'Node author tests on this machine',
+    'does not publish, trust or enable',
+    'Settings → Plugins → Candidates',
+  ],
+] as const)('renders candidate test approval in %s', async (locale, execution, boundary, review) => {
+  const modal = new PermissionModal(vi.fn(), { locale })
+  const pending = modal.ask(
+    {
+      ...request,
+      toolCall: {
+        title: 'synthetic fallback',
+        rawInput: { packageId: 'agh-skill-math-teacher', candidateHash: `sha256-${'b'.repeat(64)}` },
+        _meta: { 'ai.agnes.harness': { tool: 'plugin_candidate_test' } },
+      },
+    },
+    { signal: new AbortController().signal },
+  )
+  const text = modal.render(240).join('\n')
+  for (const phrase of [execution, boundary, review, 'agh-skill-math-teacher', 'bbbbbbbbbbbb'])
+    expect(text).toContain(phrase)
+  expect(text).not.toContain('synthetic fallback')
+  modal.close()
+  expect(await pending).toEqual({ unanswered: 'detached' })
+})

@@ -58,6 +58,9 @@ export const appLocaleCatalog: LocaleCatalog = {
     'app.risk.unknown': 'The impact needs confirmation',
     'app.approval.executeImpact':
       'A command will run in this task’s working directory. Review it before deciding.',
+    'app.approval.candidateTest': 'Run the candidate’s Node author tests on this machine: {name} ({hash}).',
+    'app.approval.candidateTestImpact':
+      'This does not publish, trust or enable anything. Review the source in Settings → Plugins → Candidates before running.',
     'app.approval.toolImpact': 'Review the tool and its arguments before deciding whether to continue.',
     'app.approval.allowOnce': 'Allow once',
     'app.approval.allowAlways': 'Allow for this session',
@@ -98,7 +101,7 @@ export const appLocaleCatalog: LocaleCatalog = {
     'app.session.selectionChanged': 'The session selection changed.',
     'app.session.createFailed': 'Session creation failed.',
     'app.permission.draftNotice': 'The new session will use “{mode}”.',
-    'app.permission.fullNotice': 'Remaining approvals are skipped for this session.',
+    'app.permission.fullNotice': 'Ordinary tool approvals are skipped for this session.',
     'app.permission.sessionNotice': 'Session permission set to “{mode}”.',
     'app.model.draftNotice': 'The new session will use the selected model.',
     'app.model.updatedNotice': 'Model updated; later requests use the selected model.',
@@ -225,6 +228,9 @@ export const appLocaleCatalog: LocaleCatalog = {
     'app.risk.budget': '涉及预算使用',
     'app.risk.unknown': '影响范围需要确认',
     'app.approval.executeImpact': '将在此任务的工作目录执行命令。请核对命令后决定。',
+    'app.approval.candidateTest': '在本机运行候选的 Node 作者测试：{name}（{hash}）。',
+    'app.approval.candidateTestImpact':
+      '测试不会发布、信任或启用任何内容。运行前请到「设置 → 插件 → 候选」审阅源码。',
     'app.approval.toolImpact': '请核对工具及参数后决定是否继续。',
     'app.approval.allowOnce': '仅允许这次',
     'app.approval.allowAlways': '本会话允许',
@@ -260,7 +266,7 @@ export const appLocaleCatalog: LocaleCatalog = {
     'app.session.selectionChanged': '会话选择已改变。',
     'app.session.createFailed': '会话创建失败。',
     'app.permission.draftNotice': '新会话将使用「{mode}」。',
-    'app.permission.fullNotice': '本会话已跳过其余审批。',
+    'app.permission.fullNotice': '本会话已跳过普通工具审批。',
     'app.permission.sessionNotice': '本会话权限已设为「{mode}」。',
     'app.model.draftNotice': '新会话将使用所选模型。',
     'app.model.updatedNotice': '模型已更新，后续请求将使用所选模型。',

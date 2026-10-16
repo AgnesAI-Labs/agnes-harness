@@ -11,6 +11,7 @@ export const PREVIEW_LIMIT = 32 * 1024
 const LEADING = ['plan', 'path', 'file_path', 'command', 'url', 'pattern', 'query']
 
 export type ApprovalCard = {
+  summary?: string
   impact: string
   preview?: string
   /** Set when part of the call is not on the card. */
@@ -59,6 +60,20 @@ function impactOf(tool: string | undefined, kind: unknown, input: unknown, t: Tr
 export function liveApprovalCard(toolCall: Record<string, unknown>, t: Translate): ApprovalCard {
   const tool = approvalToolName(toolCall)
   const input = toolCall.rawInput
+  if (
+    tool === 'plugin_candidate_test' &&
+    isRecord(input) &&
+    typeof input.packageId === 'string' &&
+    typeof input.candidateHash === 'string'
+  )
+    return {
+      summary: t('app.approval.candidateTest', {
+        name: input.packageId,
+        hash: input.candidateHash.replace(/^sha256-/, '').slice(0, 12),
+      }),
+      impact: t('app.approval.candidateTestImpact'),
+      preview: JSON.stringify(input, null, 2),
+    }
   const impact = impactOf(tool, toolCall.kind, input, t)
   const sessionLabel = tool ? t('app.approval.session.all', { tool }) : t('app.approval.session.tool')
   if (input === undefined) return { impact, sessionLabel }
