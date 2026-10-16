@@ -8,6 +8,19 @@
 
 Jev **不是对话模型**。适配器只接收载荷（payload），不接收 messages、system prompt 和 tools，也不做流式输出。它声明的能力是 `payload: true` 和 `payloadOnly: true`，所以由它服务的模型不会出现在任何模型选择器里，不能被选作会话、默认、fast、verifier 或子代理模型，客户端直接按名字请求也会被拒绝。循环插件通过旁路模型调用使用它。
 
+## 设置页面配置
+
+在 设置 → 模型与账户 页面，聊天账户列表之后的「旁路模型」分组里添加条目：
+
+1. 适配器固定为 `typesafe-systemone`。
+2. 端点默认 `https://openrouter.ai/api/v1`，可改为直连 `https://api.typesafe.ai/v1`。端点规则与适配器一致：不允许模板、账号信息、query 和 fragment，明文 `http` 只接受环回地址。
+3. 凭据从[通用凭据](credentials.zh-CN.md)里选择，或就地新建一个；条目保存的是 `secret://generic/<UUID>` 引用，不是密钥本身。
+4. 模型列表每条只需填 `id`、`name`、`contextWindow`、`maxTokens` 和可选的 `cost`；其余字段按适配器模板固定（`reasoning: false`、`input: [text]`、`toolCallFormats: []`、`thinkingReplay: drop`、`contract_id: null`）。
+5. 测试按钮向端点发一个固定的最小载荷 `{state: {}, questions: {ping: 'ping'}}`：成功或限流都视为可达，凭据被拒会单独标出。探测发送的内容暂定，可以跳过测试直接保存。
+6. 保存对新会话生效；条目可启用、禁用或删除。旁路模型不能成为默认账户，也不出现在 fast、verifier 槽位里。
+
+手写 `.agh/profile.local.yaml` 路由（下一节）与页面条目并存：路由名不同则共存，同名则按重复路由拒绝。从手写迁移到页面时，页面配好后删掉手写条目。
+
 ## 配置档路由
 
 在配置档的 provider 配置里加一条路由。适配器随 `@agnes/ai` 提供，不需要安装或信任任何包。如果配置档在 `providers.model-adapter` 下显式列出了模型适配器，请把 `typesafe-systemone`（或 `@agnes/ai`）加进这个列表。
