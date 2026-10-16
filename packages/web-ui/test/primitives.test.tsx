@@ -8,6 +8,7 @@ import {
   CopyButton,
   Count,
   Disclosure,
+  Icon,
   IconButton,
   Kbd,
   Menu,
@@ -54,6 +55,7 @@ it('moves through enabled menu actions, typeahead and danger-last grouping; rest
   const host = render(
     createElement(Menu, {
       label: 'Actions',
+      tone: 'neutral',
       trigger: createElement(Button, null, 'More'),
       items: [
         {
@@ -67,6 +69,7 @@ it('moves through enabled menu actions, typeahead and danger-last grouping; rest
         {
           id: 'edit',
           label: 'Edit',
+          icon: createElement(Icon, { name: 'pencil' }),
           onSelect: () => {
             selected = 'edit'
           },
@@ -101,6 +104,8 @@ it('moves through enabled menu actions, typeahead and danger-last grouping; rest
     'Delete',
   ])
   expect(menu.querySelectorAll('[role="separator"]')).toHaveLength(1)
+  expect(menu.closest('.agh-menu-popup--neutral')).not.toBeNull()
+  expect(menu.querySelector('.agh-menu-icon svg')?.getAttribute('width')).toBe('16')
   key(document.activeElement!, 'ArrowDown')
   expect(document.activeElement?.textContent).toBe('Copy')
   key(document.activeElement!, 'd')
@@ -220,13 +225,14 @@ it('confirms on Enter, refuses decisions while busy and cancels on Escape with f
   const trigger = document.createElement('button')
   document.body.append(trigger)
   trigger.focus()
-  const element = (busy: boolean, open = true) => (
+  const element = (busy: boolean, open = true, confirmDisabled = false) => (
     <ConfirmDialog
       open={open}
       title="Delete record"
       confirmLabel="Delete"
       destructive
       busy={busy}
+      confirmDisabled={confirmDisabled}
       onConfirm={confirm}
       onCancel={cancel}
     >
@@ -238,6 +244,16 @@ it('confirms on Enter, refuses decisions while busy and cancels on Escape with f
   input.focus()
   key(input, 'Enter')
   expect(confirm).toHaveBeenCalledOnce()
+  renderRegion(host, element(false, true, true))
+  key(host.querySelector('input')!, 'Enter')
+  const disabledConfirm = [...host.querySelectorAll('button')].find(
+    (button) => button.textContent === 'Delete',
+  )
+  expect(disabledConfirm?.disabled).toBe(true)
+  disabledConfirm?.click()
+  expect(confirm).toHaveBeenCalledOnce()
+  const enabledCancel = [...host.querySelectorAll('button')].find((button) => button.textContent === 'Cancel')
+  expect(enabledCancel?.disabled).toBe(false)
   renderRegion(host, element(true))
   key(host.querySelector('input')!, 'Enter')
   key(host.querySelector('input')!, 'Escape')

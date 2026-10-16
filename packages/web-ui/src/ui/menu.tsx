@@ -31,9 +31,11 @@ export type MenuProps = {
   label: string
   items: readonly MenuItem[]
   triggerMode?: 'click' | 'contextMenu'
+  /** Neutral action lists retain text/danger colors and use a visible keyboard focus ring. */
+  tone?: 'default' | 'neutral'
 }
 /** antd owns placement and menu semantics; this adapter preserves the existing keyboard contract. */
-export function Menu({ trigger, label, items, triggerMode = 'click' }: MenuProps) {
+export function Menu({ trigger, label, items, triggerMode = 'click', tone = 'default' }: MenuProps) {
   const [open, setOpen] = useState(false)
   const hold = useRef<ReturnType<typeof setTimeout>>()
   const held = useRef(false)
@@ -87,7 +89,7 @@ export function Menu({ trigger, label, items, triggerMode = 'click' }: MenuProps
       placement="bottomRight"
       destroyOnHidden
       transitionName={reduce ? '' : 'ant-slide-up'}
-      rootClassName="agh-menu-popup"
+      rootClassName={`agh-menu-popup${tone === 'neutral' ? ' agh-menu-popup--neutral' : ''}`}
       menu={{
         id,
         'aria-label': label,
@@ -103,7 +105,7 @@ export function Menu({ trigger, label, items, triggerMode = 'click' }: MenuProps
               ) : (
                 text
               ),
-            icon: item.icon,
+            icon: item.icon ? <span className="agh-menu-icon">{item.icon}</span> : undefined,
             danger: item.danger ?? false,
             disabled: item.disabled ?? false,
             className: ['agh-menu-item', item.className].filter(Boolean).join(' '),

@@ -600,6 +600,10 @@ export class SessionImpl {
   // run/step/resume calls in progress, and the resume they wait behind. `turn` and `op()` cannot say
   // this: both are set while a crashed turn waits to be continued, with nothing running.
   private activeOps = 0
+  /** Live activity only; a recoverable persisted turn does not count as running. */
+  get isRunning(): boolean {
+    return this.activeOps > 0
+  }
   private readonly activeWork = new Set<Promise<unknown>>()
   loopScope = new LoopScope()
   private resuming: Promise<unknown> | undefined

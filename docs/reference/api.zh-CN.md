@@ -46,6 +46,8 @@ async function listSessions(options: CreateClientOptions) {
 
 传输支持 Node 的 unix/stdio/ws 等入口，生产连接的认证、命名管道进程身份、TLS/Origin 由部署合同决定。建议用户先从 CLI/Web 入口走自动发现；嵌入者不能跳过握手和服务端身份校验。可运行的连接与包管理示例见[文档 smoke](../../tools/public-docs/smoke.mjs)，其凭据与模型由本地夹具产生。另有[共享本地验收](../../tools/acceptance/shared-local-delivery.e2e.test.ts)覆盖分发迁移等流程。复现步骤与检查范围见[验证记录](../maintainers/verification.zh-CN.md)。
 
+进程内 Core/Host 会话还提供只读的 `isRunning`，表示当前正在执行 run、step 或 resume；只有等待恢复的持久轮次不算运行。daemon 据此拒绝移除有活动会话的工作区。
+
 ## 协议方法分组
 
 | 方法族 | 作用 |

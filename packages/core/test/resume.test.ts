@@ -785,14 +785,17 @@ describe('resume', () => {
 describe('resume and a run in progress exclude each other', () => {
   it('refuses to resume while a run is in progress', async () => {
     const { session } = await openSession({ provider: hangingModel() })
+    expect(session.isRunning).toBe(false)
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
     const ac = new AbortController()
     const running = session.run({ until: 'turn-end', signal: ac.signal })
     await new Promise((r) => setTimeout(r, 10))
     expect(session.op()).not.toBeNull()
+    expect(session.isRunning).toBe(true)
     await expect(session.resume()).rejects.toMatchObject({ code: 'E_LANE_BUSY' })
     ac.abort()
     await running.catch(() => undefined)
+    expect(session.isRunning).toBe(false)
   })
 
   it('lets a run wait for a resume in progress and then finish the turn', async () => {

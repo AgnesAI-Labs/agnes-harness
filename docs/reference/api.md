@@ -54,6 +54,8 @@ Node transports include unix, stdio, and ws. Deployment contracts determine auth
 
 <a id="协议方法分组"></a>
 
+The in-process Core/Host session also exposes read-only `isRunning`, which reflects live run, step or resume work; a persisted turn awaiting recovery alone is not running. The daemon uses this state when refusing workspace removal.
+
 ## Protocol method groups
 
 | Method family | Purpose |

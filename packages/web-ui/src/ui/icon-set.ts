@@ -48,6 +48,19 @@ const added = {
   ],
 } as const satisfies Readonly<Record<string, readonly IconNode[]>>
 
+/** Application symbols: compose and the existing session archive geometry. */
+const projectIcons = {
+  archive: [
+    ['path', { d: 'M3 4h18v4H3z' }],
+    ['path', { d: 'M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8' }],
+    ['path', { d: 'M10 12h4' }],
+  ],
+  compose: [
+    ['path', { d: 'M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7' }],
+    ['path', { d: 'm16 3 5 5 M10 14l1-5 7-7 4 4-7 7z' }],
+  ],
+} as const satisfies Readonly<Record<string, readonly IconNode[]>>
+
 /** The whole icon set the `Icon` primitive draws from. */
-export const icons = { ...lucideSubset, ...added }
+export const icons = { ...lucideSubset, ...added, ...projectIcons }
 export type IconName = keyof typeof icons

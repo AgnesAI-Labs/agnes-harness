@@ -439,23 +439,64 @@
     font-size: var(--font-size-sm);
     line-height: var(--line-sm);
   }
-  .agh-menu-popup .agh-menu-item:hover:not([aria-disabled="true"]),
-  .agh-menu-popup .agh-menu-item:focus-visible:not([aria-disabled="true"]),
+  .agh-menu-popup:not(.agh-menu-popup--neutral) .agh-menu-item:hover:not([aria-disabled="true"]),
+  .agh-menu-popup:not(.agh-menu-popup--neutral) .agh-menu-item:focus-visible:not([aria-disabled="true"]),
   :root:not([data-agnes-input="pointer"])
-    .agh-menu-popup
+    .agh-menu-popup:not(.agh-menu-popup--neutral)
     .agh-menu-item.ant-dropdown-menu-item-active:not([aria-disabled="true"]) {
     color: var(--agnes-menu-active-text);
     background: var(--agnes-menu-active-bg);
     outline: none;
     box-shadow: none;
   }
-  .agh-menu-popup .agh-menu-item[data-danger]:hover:not([aria-disabled="true"]),
-  .agh-menu-popup .agh-menu-item[data-danger]:focus-visible:not([aria-disabled="true"]),
+  .agh-menu-popup:not(.agh-menu-popup--neutral) .agh-menu-item[data-danger]:hover:not([aria-disabled="true"]),
+  .agh-menu-popup:not(.agh-menu-popup--neutral) .agh-menu-item[data-danger]:focus-visible:not([aria-disabled="true"]),
   :root:not([data-agnes-input="pointer"])
-    .agh-menu-popup
+    .agh-menu-popup:not(.agh-menu-popup--neutral)
     .agh-menu-item[data-danger].ant-dropdown-menu-item-active:not([aria-disabled="true"]) {
     color: var(--agnes-text-inverse);
     background: var(--agnes-status-danger-text);
+  }
+  /* Neutral action lists: shared by project/session menus; preserve danger text and focus. */
+  .agh-menu-popup--neutral .agh-menu-item {
+    color: var(--agnes-text-primary);
+    background: transparent;
+  }
+  .agh-menu-popup--neutral .agh-menu-item:hover:not([aria-disabled="true"]),
+  .agh-menu-popup--neutral .agh-menu-item:focus:not([aria-disabled="true"]),
+  :root:not([data-agnes-input="pointer"])
+    .agh-menu-popup--neutral .agh-menu-item.ant-dropdown-menu-item-active:not([aria-disabled="true"]) {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-hover);
+    box-shadow: none;
+  }
+  .agh-menu-popup--neutral .agh-menu-item:focus-visible:not([aria-disabled="true"]) {
+    outline: 2px solid var(--agnes-brand-focus-ring);
+    outline-offset: -2px;
+  }
+  .agh-menu-popup--neutral .agh-menu-item[data-danger] {
+    color: var(--agnes-status-danger-text);
+  }
+  .agh-menu-popup--neutral .agh-menu-item[data-danger]:hover:not([aria-disabled="true"]),
+  .agh-menu-popup--neutral .agh-menu-item[data-danger]:focus:not([aria-disabled="true"]),
+  :root:not([data-agnes-input="pointer"])
+    .agh-menu-popup--neutral .agh-menu-item[data-danger].ant-dropdown-menu-item-active:not([aria-disabled="true"]) {
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-bg-hover);
+  }
+  .agh-menu-popup--neutral .agh-menu-icon {
+    display: inline-flex;
+    width: 16px;
+    min-width: 16px;
+    flex: 0 0 16px;
+    align-items: center;
+    justify-content: center;
+  }
+  .agh-menu-popup--neutral .agh-menu-icon svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke-width: 1.5;
   }
   .ant-select-dropdown .ant-select-item-option {
     border-radius: var(--radius-menu-item);

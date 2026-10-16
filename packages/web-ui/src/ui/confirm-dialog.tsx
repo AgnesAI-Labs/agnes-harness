@@ -13,6 +13,8 @@ export type ConfirmDialogProps = Omit<
   cancelLabel?: ReactNode
   destructive?: boolean
   busy?: boolean
+  /** Refuse confirmation while keeping Cancel available, for example while a project is running. */
+  confirmDisabled?: boolean
   /** Test ids of the two buttons, for pages whose ids predate the shared dialog. */
   testIds?: { confirm?: string; cancel?: string }
 }
@@ -24,6 +26,7 @@ export function ConfirmDialog({
   cancelLabel,
   destructive = false,
   busy = false,
+  confirmDisabled = false,
   testIds,
   children,
   ...props
@@ -47,9 +50,12 @@ export function ConfirmDialog({
             type="primary"
             danger={destructive}
             dangerFilled={destructive}
+            disabled={busy || confirmDisabled}
             loading={busy}
             data-testid={testIds?.confirm}
-            onClick={onConfirm}
+            onClick={() => {
+              if (!busy && !confirmDisabled) onConfirm()
+            }}
           >
             {confirmLabel ?? fallbackT('ui.confirm')}
           </Button>
@@ -64,6 +70,7 @@ export function ConfirmDialog({
               !event.defaultPrevented &&
               !event.nativeEvent.isComposing &&
               !busy &&
+              !confirmDisabled &&
               !(event.target as Element).closest(
                 'button, textarea, [role="combobox"], [contenteditable="true"]',
               )
