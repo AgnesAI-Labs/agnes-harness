@@ -123,6 +123,7 @@ import { SessionControls } from '../loop/controls.js'
 import { LoopEventRegistry, loopEventContext } from '../loop/events.js'
 import { drivenOutcome, isAdmissionEnding, publicOutcome, shouldStopLoop } from '../loop/outcome.js'
 import { createLoopContext, disposeLoopContext } from '../loop/ports.js'
+import { settleSideCalls, sideCallInFlight } from '../loop/side-call-receipts.js'
 import type {
   AuxiliaryVisionAssemblyInput,
   AuxiliaryVisionProductionAdmission,
@@ -1249,6 +1250,7 @@ export class SessionImpl {
   ): Promise<Seq> {
     const expected = this.opSeq()
     const turnNumber = this.op()?.meta.turn ?? 0
+    if (sideCallInFlight(this)) await settleSideCalls(this, expected)
     // Serialize completion with pause admission; whichever fact commits first wins.
     const seqs = await this.locked(async () => {
       if (reason === 'completed' && (await this.controls.paused()))

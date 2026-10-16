@@ -291,5 +291,13 @@
   {
     "path": "packages/daemon/src/supervisor/configuration.ts",
     "includes": ["appliedRevision = -1", "'new-sessions' : 'restart-required'"]
+  },
+  {
+    "path": "packages/ai/src/model-adapters.ts",
+    "includes": ["jevRegistration", "payload: true, payloadOnly: true"]
+  },
+  {
+    "path": "packages/ai/src/adapters/jev/wire.ts",
+    "includes": ["JEV_WIRE_API = 'typesafe-systemone'", "/systemone", "max_tokens_exceeded"]
   }
 ]

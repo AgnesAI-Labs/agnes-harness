@@ -40,6 +40,12 @@ export type AdapterStreamOptions = {
  */
 export abstract class WireAdapter {
   declare readonly version?: string
+  /**
+   * True only for an adapter that reads `RequestBody.payload`. Anything else is treated as not
+   * accepting one, and the facade refuses a payload for it before sending. Declared without an
+   * initializer so an adapter that says nothing carries no extra own property.
+   */
+  declare readonly acceptsPayload?: boolean
   abstract readonly id: string
   abstract routes(): RouteDecl[]
   abstract models(route: string): ModelRecord[]

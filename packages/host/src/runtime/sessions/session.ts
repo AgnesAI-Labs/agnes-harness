@@ -141,7 +141,7 @@ export function checkPresetHardRequirements(
   // provider was actually built with, because ai resolves a slot from that table and not from the
   // session's preset: a session asking for a route the provider was not given cannot be served, and
   // says so at open rather than in the middle of the first turn.
-  const wanted = materializeRoutes(resolved.view, profile)
+  const wanted = materializeRoutes(resolved.view, profile, a.modelAdapterCatalog())
   for (const [slot, t] of Object.entries(wanted)) {
     const built = (a.routes as Record<string, { route: string; model: string } | undefined>)[slot]
     if (!built || built.route !== t.route || built.model !== t.model)
@@ -335,7 +335,11 @@ export async function createSession(
   // refused if this preset's routing does not resolve against what this host assembled, so by this
   // point `materializeRoutes` is known to succeed and this is just fetching its answer back to pin
   // into the view core runs on.
-  const wanted = resolveSessionCapabilities({ profile, presetView: preset.view }).modelRoutes.value!
+  const wanted = resolveSessionCapabilities({
+    profile,
+    presetView: preset.view,
+    adapterCatalog: a.modelAdapterCatalog(),
+  }).modelRoutes.value!
   let view = parentSession?.preset ?? pinPresetRoutes(preset.view, wanted)
   // Defaults are captured by session/start; resumed ledgers restore their own model selections.
   if (!parentSession && a.sessionModelSlots) {

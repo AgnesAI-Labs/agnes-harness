@@ -206,3 +206,35 @@ it('names each model by its account and display name, and picks through the them
   await choose(host, 'fast', JSON.stringify([route, 'deepseek-v4-flash']))
   expect(trigger.textContent).toContain('DeepSeek · DeepSeek V4.1 Flash')
 })
+it('offers no model of a payload-only adapter for a chat slot, and keeps a mixed adapter selectable', async () => {
+  const adapter = (id: string, route: string, capabilities: Record<string, boolean>) => ({
+    id,
+    version: '1',
+    wireApi: id,
+    sourcePackage: 'local',
+    capabilities: { imageInput: false, tools: false, streaming: false, ...capabilities },
+    models: [{ route, id: `${id}-model`, label: id }],
+  })
+  const adapters = [
+    adapter('chat', 'chat-route', { tools: true, streaming: true }),
+    adapter('jev', 'jev-route', { payload: true, payloadOnly: true }),
+    adapter('mixed', 'mixed-route', { payload: true }),
+  ]
+  // The catalog already leaves such models out; the picker does not rely on that alone.
+  expect(modelSlotOptions({ ...state, modelAdapters: adapters }).map((option) => option.id)).toEqual([
+    'chat-model',
+    'mixed-model',
+  ])
+  state = { ...state, modelAdapters: adapters }
+  const host = await mount()
+  for (const slot of ['fast', 'verifier'])
+    expect(
+      [...host.querySelectorAll<HTMLOptionElement>(`#model-slot-${slot} option`)].map(
+        (option) => option.value,
+      ),
+    ).toEqual([
+      '',
+      JSON.stringify(['chat-route', 'chat-model']),
+      JSON.stringify(['mixed-route', 'mixed-model']),
+    ])
+})

@@ -415,8 +415,10 @@ export {
   type TableStore,
 } from '@agnes/host-infrastructure/adapters/storage-sqlite'
 export {
+  conversationModelAdapters,
   createAdminSessionSelection,
   type HostAdminSessionCatalog,
+  payloadOnlyRoutes,
 } from '@agnes/host-infrastructure/admin-session-selection'
 export * from '@agnes/host-infrastructure/audit'
 export {
@@ -447,7 +449,11 @@ export {
   CompactionEngineRegistry,
   compactionEngineCatalog,
 } from '@agnes/host-providers/assemble/compaction-engines'
-export { ModelAdapterRegistry, modelAdapterCatalog } from '@agnes/host-providers/assemble/model-adapters'
+export {
+  builtinModelAdapterCatalog,
+  ModelAdapterRegistry,
+  modelAdapterCatalog,
+} from '@agnes/host-providers/assemble/model-adapters'
 export {
   applyProviderSelections,
   PROVIDER_KINDS,

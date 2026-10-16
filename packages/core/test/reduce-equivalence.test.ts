@@ -85,7 +85,53 @@ function* forkedAfterToolCalls(): Generator<Event> {
   }
 }
 
+/** A conversation request, then side calls around and between later requests, each with its cost row. */
+function* sideCallsBesideInference(): Generator<Event> {
+  const actor = { id: 'system', org: 'local', role: 'system', deptPath: [], attrs: {} }
+  let seq = 0
+  const row = (type: string, data: unknown): Event =>
+    ({
+      seq: ++seq,
+      ts: '2026-10-15T00:00:00Z',
+      id: `01J6ZM2Q3R4S5T6V7W8X9Y0Z${String(seq).padStart(2, '0')}`,
+      type,
+      data,
+      actor,
+      origin: 'system',
+      trust: 'trusted',
+      lane: 'main',
+      v: 1,
+    }) as Event
+  const cost = (purpose: string, effectId: string, input: number, extra: object = {}) =>
+    row('cost/ledger', {
+      purpose,
+      effectId,
+      tokens: { input, output: 3, cacheRead: 2, cacheWrite: 1 },
+      credits: 0.5,
+      creditSource: 'gateway',
+      model: 'm',
+      ...extra,
+    })
+  yield row('turn/start', { turn: 1, trigger: 'prompt' })
+  yield row('step/start', { turn: 1, step: 1 })
+  yield row('effect/intent', { effectId: 'side:before', kind: 'side-call', replay: 'never' })
+  yield cost('side-call', 'side:before', 189)
+  yield row('effect/settled', { effectId: 'side:before', outcome: 'ok', durationMs: 4 })
+  yield row('effect/intent', { effectId: 'inf-1', kind: 'inference', replay: 'safe' })
+  yield cost('inference', 'inf-1', 180_000)
+  yield row('effect/intent', { effectId: 'side:after', kind: 'side-call', replay: 'never' })
+  yield cost('side-call', 'side:after', 40, { interrupted: true, creditSource: 'estimated' })
+  yield row('effect/settled', { effectId: 'side:after', outcome: 'unknown' })
+  yield row('effect/intent', { effectId: 'side:pending', kind: 'side-call', replay: 'never' })
+  yield row('step/end', { turn: 1, step: 1 })
+  yield row('turn/end', { reason: 'completed', lastAssistantSeq: null })
+}
+
 describe('the fold matches the reference reducer row for row', () => {
+  it('side calls beside conversation requests', () => {
+    expect(compare(sideCallsBesideInference())).toBe(13)
+  })
+
   it('a fork started after tool calls', () => {
     expect(compare(forkedAfterToolCalls())).toBeGreaterThan(800)
   })

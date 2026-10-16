@@ -3908,7 +3908,8 @@
             "media",
             "tool",
             "title",
-            "approval-guardian"
+            "approval-guardian",
+            "side-call"
           ]
         },
         "model": {
@@ -4151,7 +4152,8 @@
             "media",
             "tool",
             "title",
-            "approval-guardian"
+            "approval-guardian",
+            "side-call"
           ]
         },
         "model": {
@@ -6388,6 +6390,12 @@
                     "type": "boolean"
                   },
                   "streaming": {
+                    "type": "boolean"
+                  },
+                  "payload": {
+                    "type": "boolean"
+                  },
+                  "payloadOnly": {
                     "type": "boolean"
                   }
                 }

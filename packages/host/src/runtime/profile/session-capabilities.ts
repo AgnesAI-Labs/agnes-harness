@@ -50,6 +50,8 @@ export type SessionCapabilityInput = {
   sessionBundles?: readonly string[]
   pin?: Readonly<{ generationId?: string | undefined; loop?: LoopSelection; legacy?: boolean }>
   routes?: RouteTable
+  /** The registered model adapters; `default` routing then skips routes a payload-only adapter serves. */
+  adapterCatalog?: Parameters<typeof materializeRoutes>[2]
   computerUseAllowed?: boolean
   childAllowlist?: ChildAgentAllowlist
   childRequest?: { providerId?: string; model?: string }
@@ -238,7 +240,8 @@ export function resolveSessionCapabilities(input: SessionCapabilityInput): Capab
     preset?.loop ??
     DEFAULT_LOOP
   const routes =
-    input.routes ?? (input.profile && preset ? materializeRoutes(preset, input.profile) : undefined)
+    input.routes ??
+    (input.profile && preset ? materializeRoutes(preset, input.profile, input.adapterCatalog) : undefined)
   return immutable(
     structuredClone({
       ...(tree ? { compositionHash: tree.hash } : {}),

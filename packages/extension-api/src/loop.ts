@@ -16,6 +16,7 @@ import type { SessionRef } from './common.js'
 import type { DecisionHandle, DecisionPort } from './decisions.js'
 import type { LoopEventPort } from './loop-events.js'
 import type { BindableKind, ServiceInstance, ServicePorts } from './service-provider.js'
+import type { LoopSideCallPort } from './side-call.js'
 import type { ToolResult } from './tool.js'
 
 /** A session pins this identity; reopening never substitutes a different loop. */
@@ -76,15 +77,56 @@ export interface LoopStepOutcome {
 /** Core resolves route, contracts, media and hashes. A prepared request is session/turn bound. */
 declare const preparedLoopRequest: unique symbol
 export type LoopRequest = Readonly<RequestBody> & { readonly [preparedLoopRequest]: true }
+/** One trailing note for one model request. */
+export interface LoopTailNote {
+  /**
+   * Appended after the visible history and after Core's own per-request notes, as one user-side
+   * message. It is trusted at the level of the loop's own instructions, the same as `system`: Core
+   * scrubs it and never wraps it as untrusted data, since the note is meant to steer the model. A
+   * loop that quotes untrusted content in it (a tool result, a file name, fetched text) is
+   * responsible for that content; Core does not mark the quote as data. 1 to 32768 UTF-8 bytes; it
+   * must not begin with a Core note prefix (`[runtime context]`, `[hook context]` or
+   * `[skill loaded]` followed by a line break).
+   */
+  readonly text: string
+  /**
+   * Write the note as a history row in the transaction that records this request as sent, so
+   * every later request carries it as an ordinary turn and each request stays a prefix of the
+   * next. The row stays even if the request then fails; `effects.status(invocationId)` tells
+   * whether it was sent, so the note is not added a second time. Send it when none of the loop's
+   * tool calls is still running: a result recorded after the note is placed before it in later
+   * requests. Default false: this request only, and the next request's history no longer extends
+   * this one from the note on. Refused together with custom `messages`.
+   *
+   * Resuming: the committed note is part of the history, so preparing the request again under the
+   * same `invocationId` gives a different request, and sending it throws `E_RELATION`. Read
+   * `effects.status(invocationId)` and use the recorded result instead.
+   *
+   * Other slots: a committed note on a request for a slot other than `primary` (such as `fast`,
+   * `verifier` or `compaction`) is written into the main conversation history all the same, as Core's
+   * own runtime and hook notes are on such requests. Core does not check this; the loop is
+   * responsible for it.
+   */
+  readonly commit?: boolean
+}
 export interface LoopRequestOptions {
   slot?: RequestBody['slot']
   system?: string
   /** Omitted uses the visible post-compaction history. */
   messages?: RequestBody['messages']
-  /** Exact names from the turn's frozen catalog; omitted uses current disclosure. */
+  /**
+   * Exact names from the turn's frozen catalog; omitted uses current disclosure, which grows
+   * whenever the model loads a deferred tool, in this turn or an earlier one (loads are kept for the
+   * session). Requests that pass the same names carry the same tool bytes (sorted by name, whatever
+   * the order passed) and the same `tool_schema_hash` within a turn, and across turns while those
+   * tools' definitions are unchanged, for the same slot and model. A name outside the catalog throws
+   * `E_ENVELOPE`.
+   */
   tools?: readonly string[]
   sampling?: RequestBody['sampling']
   invocationId?: string
+  /** A note sent after the history; an invalid one throws `E_ENVELOPE` before anything is written. */
+  tailNote?: LoopTailNote
 }
 /** Advisory estimates of the prepared wire; never a send permit or a token upper bound. */
 export interface LoopRequestEstimate {
@@ -181,6 +223,33 @@ export interface LoopToolCall {
   args: JsonValue
 }
 
+/** Options of `tools.execute` and `tools.batch`. */
+export interface LoopToolCallOptions {
+  /**
+   * Record the call, or the whole batch, as one new assistant message that asked for it, written in
+   * the same ledger transaction as the call rows and before anything runs. `true`: an assistant
+   * message with no text, for a call the loop chose itself. `{ content }`: the text and thinking a
+   * model produced beside a call it authored and the loop now dispatches. `content` is model output
+   * in the trusted assistant frame: scrubbed when a request is rendered, not wrapped as untrusted.
+   * Every call is checked first and nothing is written if one is refused, including a batch that
+   * repeats an `invocationId`; a turn with an unsettled call or effect is refused with `E_RELATION`.
+   * Each call still goes through approval and tool policy. Omitted: the call is recorded on its own.
+   *
+   * Replay takes the same `invocationId` and `announce`; the receipt covers the name, the arguments
+   * and `announce`, not `content`. A planned call that was never dispatched (its process died first)
+   * continues on replay while the step that planned it is open: after a reopen, a loop that replays
+   * its recorded announced invocations before it prepares a request or makes any other model or tool
+   * call still runs that very call, once. Otherwise the call is closed with an error result (its
+   * `tool/result` row in the history carries the code `TOOL_NOT_STARTED`; a `ToolResult` has no
+   * `code`) when its step ends, or before the next request is prepared, so the history never holds
+   * the call without a result; a later replay returns that result (the text
+   * `<name> was announced but did not run`, `isError: true`) without running the call, and the loop
+   * can announce again under a new `invocationId`. An invocation whose receipt was
+   * written but whose message and call rows were not (a crash between the two) stays refused.
+   */
+  readonly announce?: true | { readonly content: AssistantMessage['content'] }
+}
+
 /** Generic service reader. Host installs the deferred queue under its kind token. */
 export interface LoopServiceReader {
   get<S extends ServiceInstance, P extends ServicePorts>(
@@ -217,6 +286,8 @@ export interface GenericLoopPorts {
     cancelled(): boolean
   }
   readonly effects: { status(invocationId: string): Promise<LoopEffectStatus> }
+  /** One-off model calls to a chosen route and model, outside the conversation. Optional so existing test doubles keep compiling. */
+  readonly sideCall?: LoopSideCallPort
   readonly model: {
     /** RequestBody accepts text, images and other protocol content blocks. */
     stream(request: LoopRequest, signal: AbortSignal): AsyncIterable<InferenceEvent>
@@ -224,11 +295,15 @@ export interface GenericLoopPorts {
   }
   readonly tools: {
     /** Execution goes through the session's approval and tool policy path. */
-    execute(call: LoopToolCall, signal: AbortSignal): Promise<ToolResult>
+    execute(call: LoopToolCall, signal: AbortSignal, options?: LoopToolCallOptions): Promise<ToolResult>
     /** Independent calls may overlap; results preserve input order and policy controls concurrency.
      * A pending approval throws code=PARKED after siblings drain and the turn closes.
      */
-    batch(calls: readonly LoopToolCall[], signal: AbortSignal): Promise<readonly ToolResult[]>
+    batch(
+      calls: readonly LoopToolCall[],
+      signal: AbortSignal,
+      options?: LoopToolCallOptions,
+    ): Promise<readonly ToolResult[]>
     /** Resume only the original approval-bound call after input.resumeParked() opens it.
      * A rejected approval returns its durable refusal; an uncertain external effect is refused.
      * E_LANE_BUSY means this call still awaits its own approval continuation.

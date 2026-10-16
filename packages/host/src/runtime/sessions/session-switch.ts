@@ -1,6 +1,7 @@
 import { HostError } from '@agnes/host-common/errors'
 import { type ResolvedPreset, resolvePreset } from '@agnes/host-common/presets/resolve'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
+import { payloadOnlyRoutes } from '@agnes/host-infrastructure/admin-session-selection'
 import { materializeRoutes, pinPresetRoutes } from '@agnes/host-providers/assemble/routes'
 import { minimumContextBudget, type ThinkingLevel } from '@agnes/protocol'
 import type { Assembled } from '../assemble/assemble.js'
@@ -59,6 +60,13 @@ export function validateModelSwitch(
       "the requested model is outside this deployment's assembled route table",
       { detail: { slot: sel.slot, route: sel.route, model: sel.model, declared, published: !!record } },
     )
+  // An adapter that takes a payload and no messages cannot hold a conversation, whichever slot asks.
+  if (payloadOnlyRoutes(a.modelAdapterCatalog(), profile.provider.routes ?? []).has(record.route))
+    throw new HostError(
+      'E_MODEL_UNSUPPORTED',
+      'the requested model answers payload requests only and cannot be selected for a conversation',
+      { detail: { slot: sel.slot, route: sel.route, model: sel.model, payloadOnly: true } },
+    )
   if (
     sel.thinking !== undefined &&
     sel.thinking !== null &&
@@ -113,7 +121,10 @@ export async function replaySwitchesOnOpen(
   // supersedes that initial snapshot, even after switching away and back to the original name.
   if (lastPreset) {
     const resolved = validatePresetSwitch(profile, a, lastPreset.to)
-    applyPresetInMemory(session, pinPresetRoutes(resolved.view, materializeRoutes(resolved.view, profile)))
+    applyPresetInMemory(
+      session,
+      pinPresetRoutes(resolved.view, materializeRoutes(resolved.view, profile, a.modelAdapterCatalog())),
+    )
   }
   // Latest switch per slot across the whole ledger, not a 200-row window: a busy slot must not
   // push a quiet slot's last switch out of the restore set. Model rows at or before the last

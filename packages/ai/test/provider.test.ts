@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type { ModelRequestTrace } from '@agnes/extension-api'
 import type { InferenceEvent, RequestBody, RouteTable } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
@@ -620,6 +621,156 @@ describe('createProvider', () => {
     await expect(
       provider.count?.(body({ route: 'ghost' }), { signal: new AbortController().signal }),
     ).rejects.toMatchObject({ code: 'NO_ADAPTER' })
+  })
+})
+
+// A payload is content only an adapter that reads it can act on. Sending one to any other adapter
+// would put a request on the wire that silently drops what the caller meant, so the facade refuses
+// it first - before a trace is opened, before `sent`, before the adapter is called.
+describe('the payload gate', () => {
+  class PayloadAdapter extends FakeAdapter {
+    override readonly acceptsPayload = true
+  }
+  const payload = { state: { step: 2 }, questions: { q1: ['a', 'b'] } }
+  const setup = (Adapter: typeof FakeAdapter, begin?: () => void) => {
+    const adapter = new Adapter({
+      id: 'fake',
+      routes: [gwRoute],
+      models: { gw: [fakeModel({ id: 'flash', route: 'gw' })] },
+    })
+    const provider = createProvider({
+      adapters: [adapter],
+      routes: table,
+      contract: new NullContractStore(),
+      secrets: () => 'sk',
+      clock: () => 1000,
+      ...(begin
+        ? {
+            trace: {
+              begin: async () => {
+                begin()
+                return { id: 'trace', event() {}, wire: async () => {}, finish: async () => {} }
+              },
+            },
+          }
+        : {}),
+    })
+    return { adapter, provider }
+  }
+
+  it.each([payload, null, false])(
+    'refuses a payload of %j before sending when the adapter does not accept one',
+    async (value) => {
+      let traced = 0
+      const { adapter, provider } = setup(FakeAdapter, () => traced++)
+      const events = await collect(provider.infer(body({ payload: value }), run()))
+      expect(events.map((e) => e.type)).toEqual(['error'])
+      expect(events[0]).toMatchObject({
+        type: 'error',
+        reason: 'error',
+        code: 'CONTRACT_MISMATCH',
+        retryable: false,
+      })
+      expect(adapter.calls).toEqual([])
+      expect(traced).toBe(0)
+    },
+  )
+
+  it('hands the payload to an adapter that accepts one', async () => {
+    const { adapter, provider } = setup(PayloadAdapter)
+    const events = await collect(provider.infer(body({ payload }), run()))
+    expect(events.map((e) => e.type)).toEqual(['sent', 'text_delta', 'usage', 'done'])
+    expect(adapter.calls).toHaveLength(1)
+    expect(adapter.calls[0]?.req.payload).toEqual(payload)
+  })
+
+  it.each([
+    ['an adapter without the capability', FakeAdapter],
+    ['an adapter with it', PayloadAdapter],
+  ] as const)('leaves a request without a payload untouched for %s', async (_name, Adapter) => {
+    const { adapter, provider } = setup(Adapter)
+    const events = await collect(provider.infer(body(), run()))
+    expect(events.map((e) => e.type)).toEqual(['sent', 'text_delta', 'usage', 'done'])
+    expect(adapter.calls).toHaveLength(1)
+    expect(adapter.calls[0]?.req).not.toHaveProperty('payload')
+  })
+})
+
+describe('describeRoute', () => {
+  const canonicalDigest = (text: string) => createHash('sha256').update(text).digest('hex')
+  class VersionedAdapter extends FakeAdapter {
+    constructor(
+      cfg: ConstructorParameters<typeof FakeAdapter>[0],
+      override readonly version: string,
+    ) {
+      super(cfg)
+    }
+  }
+  const providerFor = (baseUrl: string, version?: string) => {
+    const cfg = {
+      id: 'fake',
+      routes: [{ ...gwRoute, baseUrl }],
+      models: { gw: [fakeModel({ id: 'flash', route: 'gw' })] },
+    }
+    return createProvider({
+      adapters: [version === undefined ? new FakeAdapter(cfg) : new VersionedAdapter(cfg, version)],
+      routes: table,
+      contract: new NullContractStore(),
+      secrets: () => 'sk',
+      clock: () => 1000,
+    })
+  }
+
+  it('names the adapter, the wire api and the endpoint host, and nothing more specific than the host', () => {
+    const described = providerFor('https://user:hunter2@gw.invalid:8443/team-a/v1?key=abc').describeRoute?.(
+      'gw',
+      'flash',
+    )
+    expect(described).toMatchObject({
+      adapter: { id: 'fake', version: null },
+      api: 'openai-completions',
+      endpointHost: 'gw.invalid:8443',
+    })
+    // Neither the full URL nor any part of it that is not the host may leave the facade.
+    const serialized = JSON.stringify(described)
+    for (const secret of ['hunter2', 'user', 'team-a', 'key=abc', 'https://'])
+      expect(serialized).not.toContain(secret)
+    expect(described?.routeDigest).toMatch(/^[0-9a-f]{64}$/)
+  })
+
+  it('reports the adapter version when it has one', () => {
+    expect(providerFor('https://gw.invalid/v1', '2.1.0').describeRoute?.('gw', 'flash')).toMatchObject({
+      adapter: { id: 'fake', version: '2.1.0' },
+    })
+  })
+
+  it('digests the canonical form of the full routing configuration', () => {
+    const described = providerFor('https://gw.invalid/team-a/v1').describeRoute?.('gw', 'flash')
+    expect(described?.routeDigest).toBe(
+      canonicalDigest(
+        '{"adapter":{"id":"fake","version":null},"api":"openai-completions","baseUrl":"https://gw.invalid/team-a/v1","model":"flash"}',
+      ),
+    )
+  })
+
+  it('gives the same digest to the same configuration and a different one when any part of it differs', () => {
+    const digest = (provider: ReturnType<typeof providerFor>, model = 'flash') =>
+      provider.describeRoute?.('gw', model)?.routeDigest
+    const base = digest(providerFor('https://gw.invalid/team-a/v1'))
+    expect(digest(providerFor('https://gw.invalid/team-a/v1'))).toBe(base)
+    // Two routes on one host are told apart by their path, though a reader of the host cannot.
+    const otherPath = providerFor('https://gw.invalid/team-b/v1')
+    expect(otherPath.describeRoute?.('gw', 'flash')?.endpointHost).toBe('gw.invalid')
+    expect(digest(otherPath)).not.toBe(base)
+    expect(digest(providerFor('https://gw.invalid/team-a/v1?region=eu'))).not.toBe(base)
+    expect(digest(providerFor('https://gw.invalid/team-a/v1'), 'pro')).not.toBe(base)
+    expect(digest(providerFor('https://gw.invalid/team-a/v1', '2.1.0'))).not.toBe(base)
+  })
+
+  it('has no host for a base URL that does not parse, and nothing for a route it does not serve', () => {
+    const provider = providerFor('not a url')
+    expect(provider.describeRoute?.('gw', 'flash')).toMatchObject({ endpointHost: null })
+    expect(provider.describeRoute?.('ghost', 'flash')).toBeUndefined()
   })
 })
 

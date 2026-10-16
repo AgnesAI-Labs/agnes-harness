@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from 'node:util'
 import {
   assertHostPublication,
+  conversationModelAdapters,
   draftFeedbackSkill,
   FEEDBACK_PROVIDER_ID,
   type Host,
@@ -794,7 +795,6 @@ export async function handleServiceCommand(
       return host.systemPromptPreview(p.config as import('@agnes/protocol').SystemPromptConfig)
     case 'session.catalog': {
       if (!host) throw new Error('session catalog requires an assembled Host')
-      const models = host.provider.models()
       const publication = host.compositionPublicationStatus?.()
       return {
         ...(publication
@@ -821,12 +821,11 @@ export async function handleServiceCommand(
           isDefault: id === host.profile.presets.default,
         })),
         loops: host.kernel.loops.catalog(),
-        modelAdapters: host.modelAdapterCatalog().map((entry) => ({
-          ...entry,
-          models: models
-            .filter((model) => model.api === entry.wireApi)
-            .map((model) => ({ id: model.id, route: model.route })),
-        })),
+        modelAdapters: conversationModelAdapters(
+          host.modelAdapterCatalog(),
+          host.provider.models(),
+          host.profile.provider.routes ?? [],
+        ),
       }
     }
     case 'session.runtime': {

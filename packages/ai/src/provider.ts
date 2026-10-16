@@ -8,6 +8,7 @@ import { PARSER_VERSION } from './decode/rules/index.js'
 import type { DecodeContext } from './decode/types.js'
 import { AiSetupError } from './errors.js'
 import { checkedResponse, guardSequence } from './guard.js'
+import { canonicalJson, sha256Hex } from './hash.js'
 import { InferenceTiming } from './inference-timing.js'
 import { buildRegistry, type Registry } from './registry.js'
 import { resolveSelection, SlotUnresolved } from './route.js'
@@ -94,6 +95,19 @@ export async function* runInference(
       reason: 'error',
       code: 'CONTRACT_MISMATCH',
       message: 'selected model contract is unavailable or inconsistent',
+      retryable: false,
+    }
+    return
+  }
+  // A payload is content only an adapter that reads it can act on. Refused here, ahead of the trace
+  // and of `sent`, so a misrouted request leaves no record of having been sent and nothing reaches
+  // an adapter that would drop what the caller meant. A request without a payload is not affected.
+  if (req.payload !== undefined && hit.adapter.acceptsPayload !== true) {
+    yield {
+      type: 'error',
+      reason: 'error',
+      code: 'CONTRACT_MISMATCH',
+      message: 'the selected adapter does not accept a payload',
       retryable: false,
     }
     return
@@ -255,10 +269,25 @@ export async function* runInference(
         // implementations are TypeScript-typed, but a remote decoder can still hand one an invalid
         // value; only the closed shape above is allowed onto the public stream.
         const { billing: _untrustedBilling, response, ...usage } = ev
+        // Credits the adapter did not state come from the gateway's own dollars when it billed the
+        // request (a subscription has no per-request price to derive them from), and from the
+        // catalogue otherwise. The source follows the figure: it says `gateway` only when a gateway
+        // supplied the number, whatever label the adapter attached.
+        const gatewayCredits =
+          ev.credits === undefined && safeBilling?.source === 'gateway' && !safeBilling.subscription
+            ? Math.max(0, Math.round((safeBilling.usdMicros / 1e6) * deps.creditsPerUsd * 1e6) / 1e6)
+            : undefined
         yield {
           ...usage,
           ...checkedResponse(response),
-          credits: ev.credits ?? estimateCredits(resolved.model, ev.tokens, deps.creditsPerUsd),
+          credits:
+            ev.credits ?? gatewayCredits ?? estimateCredits(resolved.model, ev.tokens, deps.creditsPerUsd),
+          creditSource:
+            ev.credits !== undefined
+              ? ev.creditSource
+              : gatewayCredits !== undefined
+                ? 'gateway'
+                : 'estimated',
           ...(safeBilling ? { billing: safeBilling } : {}),
           timing: {
             ...timing.snapshot(false),
@@ -383,6 +412,28 @@ export function createProvider(opts: {
     // promises a caller, and tests that build the deps by hand still reach the unguarded stream.
     infer: (req, o) => guardSequence(runInference(deps, req, o)),
     models: () => registry.models(),
+    describeRoute: (route, model) => {
+      const hit = registry.lookup(route)
+      if (!hit) return undefined
+      const adapter = { id: hit.adapter.id, version: hit.adapter.version ?? null }
+      // Only the host is reported. The digest stands in for everything else about where the route
+      // points - path, query, userinfo - so a caller can tell that the target changed without the
+      // base URL, which may carry credentials, ever leaving the facade.
+      let endpointHost: string | null = null
+      try {
+        endpointHost = new URL(hit.decl.baseUrl).host
+      } catch {
+        /* A base URL that does not parse has no host to report. */
+      }
+      return {
+        adapter,
+        api: hit.decl.api,
+        endpointHost,
+        routeDigest: sha256Hex(
+          canonicalJson({ baseUrl: hit.decl.baseUrl, api: hit.decl.api, adapter, model }),
+        ),
+      }
+    },
   }
   if (anyCounts) {
     provider.count = async (req, o): Promise<CountResult> => {

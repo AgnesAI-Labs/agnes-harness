@@ -45,6 +45,7 @@ Still choosing? Try the [three examples](guide/demo.md), then use the [extension
 | [Webhook triggers](guide/webhooks.md) | Start normal business-agent sessions from authenticated business events |
 | [Headless runs and replay](guide/headless.md) | Stream JSONL events, compare fixed model replies and run batches |
 | [Use a local model](guide/local-model.md) | Configure local OpenAI-compatible endpoints and discovery |
+| [Use TypeSafe Jev for side model calls](guide/typesafe-jev.md) | Configure the built-in payload-only adapter that loop plugins call outside the conversation |
 | [Security and trust](guide/security.md) | Choose a working directory and understand authorization and execution boundaries |
 | [Sandbox providers](guide/sandbox-providers.md) | Select the process sandbox at startup and read declared capabilities |
 | [Observability and diagnostics](guide/observability.md) | Enable OTLP telemetry and export a redacted issue bundle |
@@ -63,6 +64,7 @@ Still choosing? Try the [three examples](guide/demo.md), then use the [extension
 
 - **Scenarios and methods:** [FDE and use cases](guide/why-agh.md) · [MHS and device integration](guide/mhs.md).
 - **Exact interfaces:** [CLI reference](reference/cli.md) · [Configuration](reference/configuration.md) · [API and schemas](reference/api.md).
+- **Side model calls:** [TypeSafe Jev adapter](guide/typesafe-jev.md) · [Write a loop plugin](develop/plugins.md).
 - **Support and feedback:** [Supported scope](reference/limitations.md) · [Feedback and development](develop/contributing.md) · [Security reports](../SECURITY.md).
 - **More development topics:** [Skins](develop/skins.md) · [Theme](develop/ui-theme.md) · [Build recovery](guide/build-recovery.md) · [Capability matrix](reference/capabilities.md).
 

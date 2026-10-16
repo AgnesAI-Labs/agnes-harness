@@ -16,6 +16,7 @@ import type { TicketPort } from '@agnes/daemon-foundation/storage/lister'
 import type { WorkspaceBindingEnvelope } from '@agnes/daemon-foundation/storage/workspaces'
 import {
   ActivationInProgressError,
+  payloadOnlyRoutes,
   type QueuedActivationInvocation,
   SCAN_PAGE_MAX,
   type ScanRead,
@@ -24,6 +25,7 @@ import {
 import {
   type Ack,
   type Actor,
+  type AdminModelAdapter,
   type ComputerUseDoctorParams,
   type ComputerUseDoctorResult,
   type ComputerUseOperationResult,
@@ -101,6 +103,11 @@ export type AgnesContext = LocalContext & {
   authKind: AuthKind
   credentialKind: CredentialKind
   artifactRead?: boolean
+  /**
+   * The registered model adapters, as far as a model list needs them: which API each serves and
+   * what it takes. Absent, or failing, the list of models is left whole.
+   */
+  modelAdapters?: () => Promise<readonly Pick<AdminModelAdapter, 'id' | 'capabilities'>[]>
   /** Host-owned, read-only locked-package mutation readiness. Absence is reported as unknown. */
   lockedPackageMutations?: Readonly<{ status(): unknown }>
   /** Present only when Host completed platform-scoped production admission. */
@@ -1938,6 +1945,16 @@ export function registerAgnes(
   ep.register('_agnes/v1/session.control', (params, c) => sugar('control', params, c))
   ep.register('_agnes/v1/apis.list', async (_params, c) => {
     const pr = cx.host.profile
+    // This list is what every conversation picker offers and what a client takes its default model
+    // from, so a model that answers payload requests only is left out.
+    let adapters: Awaited<ReturnType<NonNullable<AgnesContext['modelAdapters']>>> = []
+    try {
+      adapters = (await cx.modelAdapters?.()) ?? []
+    } catch {
+      // A catalog that cannot be read leaves the list whole; the model switch gate still refuses
+      // such a model, so listing it cannot select it.
+    }
+    const payloadOnly = payloadOnlyRoutes(adapters, pr.provider.routes ?? [])
     // ResolvedProfile has no branding field. ApisListResult keeps `branding` optional, so it is simply
     // omitted here rather than read off a key that does not exist; host owns branding and has to
     // publish it before this can be filled.
@@ -1947,7 +1964,7 @@ export function registerAgnes(
         resolvedProfileHash: pr.hash ?? null,
         presets: pr.presets,
         models: (pr.provider.routes ?? []).flatMap((route) =>
-          (route.models ?? []).map((model) => ({
+          (payloadOnly.has(route.route) ? [] : (route.models ?? [])).map((model) => ({
             route: route.route,
             id: model.id,
             input: model.input,

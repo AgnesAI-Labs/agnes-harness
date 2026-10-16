@@ -210,6 +210,127 @@ describe('apis.list / auth.claim', () => {
     }
   })
 
+  describe('models a conversation can pick', () => {
+    const chatModel = fakeModel({ id: 'm1', route: 'gw' })
+    const jevModel = fakeModel({
+      id: 'typesafe/jev-1.13-20260917',
+      route: 'jev',
+      api: 'typesafe-systemone',
+      input: ['text'],
+    })
+    /** One host that declares a chat route and the built-in payload-only route; only `catalog` varies. */
+    const serve = async <T>(
+      catalog: (() => unknown) | undefined,
+      use: (ep: ReturnType<typeof createLocalEndpoint>, dataDir: string) => Promise<T>,
+    ): Promise<T> => {
+      const h = await openTestHost({
+        provider: new ScriptedProvider({ scripts: [say('hello')], models: [chatModel, jevModel] }),
+        profileInputs: {
+          user: {
+            name: 'local-dev',
+            provider: {
+              package: '@agnes/ai',
+              routes: [
+                {
+                  route: 'gw',
+                  api: 'openai-completions',
+                  baseUrl: 'http://127.0.0.1:1/v1',
+                  models: [chatModel],
+                },
+                {
+                  route: 'jev',
+                  api: 'typesafe-systemone',
+                  baseUrl: 'http://127.0.0.1:1/v1',
+                  models: [jevModel],
+                },
+              ],
+            },
+          },
+        },
+      })
+      const served = catalog
+        ? new Proxy(h.host, {
+            get: (target, key, receiver) =>
+              key === 'modelAdapterCatalog' ? catalog : Reflect.get(target, key, receiver),
+          })
+        : h.host
+      const ep = createLocalEndpoint(served, { clock: () => Date.now(), workspaces: h.workspaces })
+      try {
+        await ep.handle(init)
+        return await use(ep, h.dataDir)
+      } finally {
+        await ep.close()
+        await h.close()
+      }
+    }
+    const listed = (catalog?: () => unknown) =>
+      serve(catalog, async (ep) => {
+        const r = (await ep.handle({
+          jsonrpc: '2.0',
+          id: 2,
+          method: '_agnes/v1/apis.list',
+          params: {},
+        })) as { result: ApisListResult }
+        return (r.result.profile.models ?? []).map((model) => `${model.route}/${model.id}`)
+      })
+
+    it('omits a model served by the built-in payload-only adapter', async () => {
+      expect(await listed()).toEqual(['gw/m1'])
+    })
+
+    it('keeps the models of an adapter that takes a payload and messages', async () => {
+      const mixed = [
+        {
+          id: 'typesafe-systemone',
+          version: '1.0.0',
+          wireApi: 'typesafe-systemone',
+          sourcePackage: '@acme/adapter',
+          capabilities: { imageInput: false, tools: false, streaming: false, payload: true },
+        },
+        {
+          id: 'openai-completions',
+          version: '1.0.0',
+          wireApi: 'openai-completions',
+          sourcePackage: '@agnes/ai',
+          capabilities: { imageInput: true, tools: true, streaming: true },
+        },
+      ]
+      expect(await listed(() => mixed)).toEqual(['gw/m1', 'jev/typesafe/jev-1.13-20260917'])
+    })
+
+    it('lists every declared model when the adapter catalog cannot be read', async () => {
+      expect(
+        await listed(() => {
+          throw new Error('catalog unavailable')
+        }),
+      ).toEqual(['gw/m1', 'jev/typesafe/jev-1.13-20260917'])
+    })
+
+    it('refuses to select the payload-only model for a conversation, and accepts the chat model', async () => {
+      await serve(undefined, async (ep, dataDir) => {
+        const {
+          result: { sessionId },
+        } = (await ep.handle({
+          jsonrpc: '2.0',
+          id: 2,
+          method: 'session/new',
+          params: { cwd: dataDir, mcpServers: [] },
+        })) as { result: { sessionId: string } }
+        const select = (id: number, route: string, model: string) =>
+          ep.handle({
+            jsonrpc: '2.0',
+            id,
+            method: '_agnes/v1/session.setModel',
+            params: { sessionId, slot: 'primary', route, model },
+          })
+        expect(await select(3, 'jev', jevModel.id)).toMatchObject({ error: { code: -32008 } })
+        expect(await select(4, 'gw', 'm1')).toMatchObject({
+          result: { effectiveFromSeq: expect.any(Number) },
+        })
+      })
+    })
+  })
+
   it('advertises from the credential initialize verified, not a stale construction-time label', async () => {
     // This helper's authGate is unix-only, so initialize verifies a local credential. The old
     // construction-time authKind predates authGate and must not hide capabilities from that actual

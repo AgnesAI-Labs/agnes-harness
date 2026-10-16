@@ -1,6 +1,7 @@
 import type { PresetView } from '@agnes/core'
 import { HostError } from '@agnes/host-common/errors'
 import type { ResolvedProfile, RouteDecl } from '@agnes/host-common/profile/types'
+import { payloadOnlyRoutes } from '@agnes/host-infrastructure/admin-session-selection'
 import type { ModelRecord, RouteTable, RouteTarget, SlotName } from '@agnes/protocol'
 import { SLOT_NAMES } from '@agnes/protocol'
 
@@ -28,17 +29,27 @@ function pickModel(decl: RouteDecl, slot: string, preset: string): string {
  * things are resolved here and nowhere else: the literal `default`, and the model id, which the
  * preset carries only when a deployment pinned one.
  *
+ * `adapters` is the registered model-adapter catalog. The sentinel then skips routes a payload-only
+ * adapter serves, because every slot a preset leaves at `default` is a conversation model; when all
+ * declared routes are payload-only the first one is used as before, and the refusal comes later, at
+ * the adapter.
+ *
  * Every failure is a refusal at assembly. The alternative - handing an unresolved name to ai - does
  * not fail loudly on the other side: the slot resolver reads the route table, the registry returns
  * undefined on a miss, and the provider facade encodes that as an in-stream
  * `{ type: 'error', code: 'NO_ADAPTER' }` event, so a deployment that was never configured boots
  * green and degrades in the middle of the operator's first turn.
  */
-export function materializeRoutes(preset: PresetView, profile: ResolvedProfile): RouteTable {
+export function materializeRoutes(
+  preset: PresetView,
+  profile: ResolvedProfile,
+  adapters: Parameters<typeof payloadOnlyRoutes>[0] = [],
+): RouteTable {
   const declared = profile.provider.routes ?? []
   const named = preset.name
   if (declared.length === 0) bad('no-routes', 'the profile declares no provider.routes', { preset: named })
   const byName = new Map(declared.map((r) => [r.route, r] as const))
+  const payloadOnly = payloadOnlyRoutes(adapters, declared)
   const out: Partial<Record<SlotName, RouteTarget>> = {}
   // A pin with no route beside it is the sentinel leak from the other direction: core reads
   // `route[slot] ?? 'default'` and returns the pinned id under route `default`, so the request would
@@ -48,10 +59,15 @@ export function materializeRoutes(preset: PresetView, profile: ResolvedProfile):
       bad('pin-without-route', `model.id.${slot} pins a slot with no route`, { slot, preset: named })
   for (const [slot, name] of Object.entries(preset.model.route)) {
     if (!SLOTS.has(slot)) bad('unknown-slot', `${slot} is not a protocol SlotName`, { slot, preset: named })
-    // The built-in demo is a fallback; configured routes keep their declaration order.
+    // The built-in demo is a fallback; configured routes keep their declaration order. A route that
+    // only answers payloads is a fallback too: it cannot hold the conversation `default` stands for.
+    const configured = declared.filter((route) => route.route !== 'demo' || route.api !== 'scripted')
     const decl =
       name === SENTINEL
-        ? (declared.find((route) => route.route !== 'demo' || route.api !== 'scripted') ?? declared[0])
+        ? (configured.find((route) => !payloadOnly.has(route.route)) ??
+          declared.find((route) => !payloadOnly.has(route.route)) ??
+          configured[0] ??
+          declared[0])
         : byName.get(name)
     if (!decl)
       bad('unknown-route', `the profile declares no route ${name}`, { slot, route: name, preset: named })

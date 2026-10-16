@@ -85,3 +85,14 @@ it('keeps every exported frontend catalog paired across all frontend packages', 
   const css = readWebStyleSource(resolve('packages/web/public/style.css'))
   expect(css.match(/content:\s*["'][^"']*\p{Script=Han}[^"']*["']/gu)).toBeNull()
 })
+
+it('names the built-in payload-only adapter and its payload capabilities in both languages', async () => {
+  const { settingsCatalog } = await import('../src/settings/locales.js')
+  for (const locale of ['en', 'zh-CN'] as const)
+    for (const key of [
+      'providerName.typesafe-systemone',
+      'providerCapability.payload',
+      'providerCapability.payloadOnly',
+    ])
+      expect(settingsCatalog[locale][key], `${locale}/${key}`).toEqual(expect.any(String))
+})

@@ -1,6 +1,7 @@
 import { createServer, type Server } from 'node:http'
 import { createRequire } from 'node:module'
 import { connect } from 'node:net'
+import { Client } from 'undici'
 import { afterEach, expect, it } from 'vitest'
 import {
   createDeploymentFetch,
@@ -91,9 +92,10 @@ it.each(['request', 'idle', 'abort', 'cancel'] as const)(
 )
 
 const require = createRequire(new URL('../package.json', import.meta.url))
-const { kBodyTimeout, kDispatch } = require('undici/lib/core/symbols.js') as {
+const { kBodyTimeout, kDispatch, kKeepAliveDefaultTimeout } = require('undici/lib/core/symbols.js') as {
   kBodyTimeout: symbol
   kDispatch: symbol
+  kKeepAliveDefaultTimeout: symbol
 }
 type Dispatch = (this: object, options: unknown, handler: unknown) => boolean
 const UndiciClient = require('undici/lib/dispatcher/client.js') as {
@@ -175,4 +177,100 @@ it('enforces the connection deadline during proxied TLS negotiation', async () =
   await expect(client.fetch('https://target.invalid')).rejects.toMatchObject({
     cause: { code: 'UND_ERR_CONNECT_TIMEOUT' },
   })
+})
+
+// A fixture that sends no `Keep-Alive: timeout=N` hint and never closes idle sockets itself, so the
+// only idle limit left is the one the client was configured with (undici prefers a server hint).
+async function listenCountingConnections() {
+  const server = createServer((_request, response) => response.end('ok'))
+  server.keepAliveTimeout = 0
+  let connections = 0
+  server.on('connection', () => connections++)
+  const endpoint = await listen(server)
+  return { endpoint, connections: () => connections }
+}
+function listenTunnelProxy() {
+  let tunnels = 0
+  const proxy = createServer()
+  proxy.on('connect', (request, downstream, head) => {
+    tunnels++
+    const target = new URL(`http://${request.url}`)
+    const upstream = connect(Number(target.port), target.hostname, () => {
+      downstream.write('HTTP/1.1 200 Connection Established\r\n\r\n')
+      upstream.write(head)
+      upstream.pipe(downstream)
+      downstream.pipe(upstream)
+    })
+    sockets.add(upstream)
+    sockets.add(downstream)
+    upstream.on('error', () => downstream.destroy())
+  })
+  return listen(proxy).then((proxyUrl) => ({ proxyUrl, tunnels: () => tunnels }))
+}
+
+it('reuses direct and tunneled connections after six idle seconds when keepAliveTimeoutMs is set', async () => {
+  const direct = await listenCountingConnections()
+  const target = await listenCountingConnections()
+  const proxy = await listenTunnelProxy()
+  const directClient = createDeploymentFetch({ keepAliveTimeoutMs: 30_000 }, {})
+  const proxiedClient = createDeploymentFetch(
+    { keepAliveTimeoutMs: 30_000 },
+    { HTTP_PROXY: proxy.proxyUrl, HTTPS_PROXY: proxy.proxyUrl, NO_PROXY: '' },
+  )
+  clients.push(directClient, proxiedClient)
+  const call = async () =>
+    expect(
+      await Promise.all([
+        directClient.fetch(direct.endpoint).then((response) => response.text()),
+        proxiedClient.fetch(target.endpoint).then((response) => response.text()),
+      ]),
+    ).toEqual(['ok', 'ok'])
+  await call()
+  await new Promise((resolve) => setTimeout(resolve, 6_000))
+  await call()
+  expect(direct.connections()).toBe(1)
+  expect(proxy.tunnels()).toBe(1)
+  expect(target.connections()).toBe(1)
+}, 30_000)
+
+it('leaves undici keep-alive handling untouched when keepAliveTimeoutMs is omitted', async () => {
+  const baseline = new Client('http://127.0.0.1:1')
+  const undiciDefault = (baseline as unknown as Record<symbol, number>)[kKeepAliveDefaultTimeout]
+  await baseline.close()
+  expect(undiciDefault).toBeGreaterThan(0)
+  const seen: number[] = []
+  const prototype = UndiciClient.prototype
+  const original = prototype[kDispatch]
+  if (!original) throw new Error('undici Client dispatch is missing')
+  prototype[kDispatch] = function (this: object, options, handler) {
+    seen.push((this as Record<symbol, number>)[kKeepAliveDefaultTimeout] as number)
+    return original.call(this, options, handler)
+  }
+  try {
+    const direct = await listenCountingConnections()
+    const target = await listenCountingConnections()
+    const proxy = await listenTunnelProxy()
+    const directClient = createDeploymentFetch({}, {})
+    const proxiedClient = createDeploymentFetch(
+      {},
+      { HTTP_PROXY: proxy.proxyUrl, HTTPS_PROXY: proxy.proxyUrl, NO_PROXY: '' },
+    )
+    clients.push(directClient, proxiedClient)
+    expect(await (await directClient.fetch(direct.endpoint)).text()).toBe('ok')
+    const directSeen = seen.length
+    expect(directSeen).toBeGreaterThan(0)
+    expect(await (await proxiedClient.fetch(target.endpoint)).text()).toBe('ok')
+    expect(seen.length).toBeGreaterThan(directSeen)
+    expect(new Set(seen)).toEqual(new Set([undiciDefault]))
+  } finally {
+    prototype[kDispatch] = original
+  }
+})
+
+it('accepts keepAliveTimeoutMs from 1 to 600000 and rejects anything else when the client is built', () => {
+  for (const value of [1, 600_000]) clients.push(createDeploymentFetch({ keepAliveTimeoutMs: value }, {}))
+  for (const value of [0, -1, 600_001, 1.5, Number.NaN, Number.POSITIVE_INFINITY, '1000' as never])
+    expect(() => createDeploymentFetch({ keepAliveTimeoutMs: value }, {})).toThrow(
+      new TypeError('Keep-alive timeout must be an integer from 1 to 600000 milliseconds'),
+    )
 })

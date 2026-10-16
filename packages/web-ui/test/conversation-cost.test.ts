@@ -8,6 +8,8 @@ import {
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it } from 'vitest'
+import { costDetails } from '../src/conversation/cost-format.js'
+import { fallbackT } from '../src/locales/index.js'
 import { zhT } from './locale.js'
 
 type CostNode = Extract<UINode, { kind: 'cost' }>
@@ -155,6 +157,15 @@ it('uses credit-only zero and interrupted values without inventing dollar or tok
   await update({ kind: 'cost', id: 'call', seq: 2, source: 'estimated', model: call.model ?? '' })
   expect(host.querySelector('.agh-disclosure-summary')?.textContent).toBe('费用未提供')
   expect(rows()).not.toContainEqual(['美元费用', expect.anything()])
+})
+
+it('names a side model call in the record range, in both languages', async () => {
+  await mount({ ...call, purpose: 'side-call' })
+  expect(rows()[0]).toEqual(['记录范围', '旁路模型调用'])
+  expect(costDetails({ ...call, purpose: 'side-call' }, fallbackT)[0]).toEqual([
+    'Record range',
+    'Side model call',
+  ])
 })
 
 it('renders unknown purpose identifiers as plain generic scope without React object children', async () => {

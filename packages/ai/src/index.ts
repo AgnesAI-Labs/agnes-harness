@@ -1,5 +1,6 @@
 export type { AdapterStreamOptions, WireEvent } from './adapter.js'
 export { WireAdapter } from './adapter.js'
+export { JEV_WIRE_API, JevAdapter } from './adapters/jev/index.js'
 export type { ImagesImpl } from './adapters/media/index.js'
 export { IMAGE_ROUTE, MediaAdapter, VIDEO_ROUTE } from './adapters/media/index.js'
 export type { VideoClient, VideoStatus } from './adapters/media/video-job.js'
