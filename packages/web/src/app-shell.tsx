@@ -35,7 +35,6 @@ export type ShellHosts = {
 export type ShellConfig = {
   /** The daemon WebSocket address. */
   wsUrl: string | undefined
-  /** `data-model-refresh-interval-ms` on <html>; absent or out of range uses the default. */
 }
 
 /** React owns the page structure; controller views and plugin outlets are children via portals. */

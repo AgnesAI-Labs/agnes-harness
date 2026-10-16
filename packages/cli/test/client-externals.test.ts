@@ -62,6 +62,7 @@ it('ships client packages whose external imports all resolve, and refuses a brok
     const mars = join(output, 'bundled-examples/mhs/mars-rescue')
     const marsDescriptorPath = join(mars, 'client/agnes.client.json')
     const marsDescriptor = JSON.parse(await readFile(marsDescriptorPath, 'utf8'))
+    expect(marsDescriptor.client.streams).toEqual(['mars.devices', 'mars.media'])
     // Prove transitive literal URL and glTF references are checked even without an
     // explicit client.assets entry for the referenced file.
     marsDescriptor.client.assets = marsDescriptor.client.assets.filter(

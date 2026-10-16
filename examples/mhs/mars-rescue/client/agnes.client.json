@@ -4,6 +4,7 @@
     "styles": ["./index.css"],
     "lifetime": "profile",
     "examplePages": ["mars-rescue"],
+    "streams": ["mars.devices", "mars.media"],
     "assets": [
       "./generated/runtime.js",
       "./generated/scene.js",
