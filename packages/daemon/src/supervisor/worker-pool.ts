@@ -34,6 +34,7 @@ import type {
 import { workerStderrEvidence } from './runtime-log.js'
 import { WorkerBootFailures } from './worker-boot-failures.js'
 import { WorkerLink, type WorkerSessionChannel } from './worker-link.js'
+import { waitForWorkerExit } from './worker-process-exit.js'
 
 /**
  * The narrow shape this pool needs from daemon's notice sink. The real `NoticeSink` is
@@ -840,23 +841,7 @@ export class WorkerPool {
   ): Promise<boolean> {
     const slot = this.slots.get(sessionKey)
     if (!slot || slot.generation !== generation) return true
-    const child = slot.child
-    if (!child || child.exitCode !== null || child.signalCode !== null) return true
-    return new Promise<boolean>((resolve) => {
-      let settled = false
-      let timer: ReturnType<typeof setTimeout> | undefined
-      const onExit = (): void => finish(true)
-      const finish = (exited: boolean): void => {
-        if (settled) return
-        settled = true
-        if (timer !== undefined) clearTimeout(timer)
-        if (!exited) child.off('exit', onExit)
-        resolve(exited)
-      }
-      child.once('exit', onExit)
-      timer = setTimeout(() => finish(false), timeoutMs)
-      timer.unref()
-    })
+    return waitForWorkerExit(slot.child, timeoutMs)
   }
 
   /**
@@ -901,9 +886,7 @@ export class WorkerPool {
   async waitForExitRecovery(): Promise<void> {
     await Promise.all(
       [...this.slots.values()].map(async (slot) => {
-        const child = slot.child
-        if (child?.exitCode === null && child.signalCode === null)
-          await new Promise<void>((resolve) => child.once('exit', () => resolve()))
+        await waitForWorkerExit(slot.child)
         // The pool's exit listener is registered before this waiter, so it has assigned
         // exitRecovery by the time the promise above resolves.
         await slot.exitRecovery
