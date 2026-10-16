@@ -85,6 +85,7 @@ export function SettingsModelPane({
           data-loading-text={t('accounts.loading')}
         />
       </SettingsBlock>
+      <div id="config-side-models" />
       <div id="config-auxiliary-models" />
       {afterAccounts}
       {/* The two account pages open from the add row and from an account row; their rows stay hidden. */}
