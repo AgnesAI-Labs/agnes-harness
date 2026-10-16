@@ -56,6 +56,20 @@ test('workspace dock previews and mentions a file that the agent reads', async (
   })
   await page.getByTestId('workbench-right-toggle').click()
   const files = page.getByTestId('files-panel')
+  for (const expanded of [false, true]) {
+    if (expanded) await page.getByRole('button', { name: 'Expand', exact: true }).click()
+    await expect(page.getByTestId('files-choose')).toHaveCount(0)
+    await expect(files.locator('.workbench-file-preview')).toHaveCount(0)
+    await expect(page.getByTestId('files-divider')).toHaveCount(0)
+    await expect(async () => {
+      const panel = await files.boundingBox()
+      const tree = await page.getByTestId('files-tree').boundingBox()
+      expect(panel).not.toBeNull()
+      expect(tree?.height).toBeCloseTo(panel?.height ?? 0, 0)
+      expect(tree?.width).toBeCloseTo(panel?.width ?? 0, 0)
+    }).toPass()
+  }
+  await page.getByRole('button', { name: 'Collapse', exact: true }).click()
   await files.locator('[data-path="report.md"]').click()
   await expect(page.getByTestId('file-preview')).toContainText('Synthetic delivery')
   await page.getByTestId('file-mention').click()
@@ -153,7 +167,16 @@ test('workspace dock previews and mentions a file that the agent reads', async (
         expect(geometry.name.left - geometry.entry.left).toBeLessThan(50)
         expect(geometry.preview.height).toBeGreaterThan(geometry.tree.height)
         await expect(page.locator('.workbench-dock-heading button[aria-busy]')).toBeVisible()
-        await expect(page.getByTestId('files-rules')).toBeVisible()
+        await expect(files.locator('.workbench-files-footer button, .workbench-files-footer a')).toHaveCount(
+          0,
+        )
+        await page.getByTestId('files-more').click()
+        await expect(page.getByTestId('files-rules')).toHaveAttribute('role', 'menuitem')
+        await page.getByTestId('files-rules').click()
+        await expect(page.getByTestId('files-rules-text')).toContainText('.aghignore')
+        await page.getByTestId('files-more').click()
+        await page.getByTestId('files-rules').click()
+        await expect(page.getByTestId('files-rules-text')).toHaveCount(0)
         await expect(page.getByTestId('file-meta')).not.toContainText(/T\d{2}:/)
         await workbenchScreen(page, info, `p1-${locale}-${theme}-${width}-after`, folder)
         await page.getByTestId('workbench-right-toggle').click()

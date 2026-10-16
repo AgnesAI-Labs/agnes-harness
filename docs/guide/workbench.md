@@ -10,7 +10,7 @@ If the terminal screen fails to load, use **Retry** inside its tab. Workbench ta
 
 ## Inspect files
 
-The built-in file panel lazily lists the admitted session workspace, honoring the supported `.gitignore`/`.aghignore` subset. Open a file for a read-only preview. Mentioning a file inserts a quoted relative path into the composer without sending a message. Git badges are best effort; an unavailable badge does not mean a clean repository.
+The built-in file panel lazily lists the admitted session workspace, honoring the supported `.gitignore`/`.aghignore` subset. The tree fills the panel until you open a file for a read-only preview. The A/M badges explain session-created and session-modified files in their tooltips. Open **… → File visibility rules** in the panel header to inspect the supported ignore rules. Mentioning a file inserts a quoted relative path into the composer without sending a message. Git badges are best effort; an unavailable badge does not mean a clean repository.
 
 Previews are capped at 1 MiB. Binary/oversized files, symlinks and the installation home are refused or labelled without pretending to show their contents. A revision describes the bytes that were read, not a guarantee that a later edit has not changed them. The panel offers no arbitrary filesystem or restore authority.
 

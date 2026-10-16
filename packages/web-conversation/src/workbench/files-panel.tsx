@@ -83,7 +83,7 @@ export function FilesPanel({ context, headerId }: { context: UiExtensionContext;
   const [wrap, setWrap] = useState(() => stored(WRAP_KEY) === 'true')
   const [treeWidth, setTreeWidth] = useState(storedWidth)
   const [panel, ref, width] = usePanelWidth()
-  const split = width >= FILES_SPLIT_WIDTH
+  const split = !!selected && width >= FILES_SPLIT_WIDTH
   const maxTree = Math.max(TREE_MIN, width - PREVIEW_MIN)
   const shownWidth = Math.min(Math.max(treeWidth, TREE_MIN), maxTree)
   useLayoutEffect(() => {
@@ -226,6 +226,12 @@ export function FilesPanel({ context, headerId }: { context: UiExtensionContext;
               }
               items={[
                 {
+                  id: 'rules',
+                  label: t('workbench.files.scope'),
+                  testId: 'files-rules',
+                  onSelect: () => setRules((value) => !value),
+                },
+                {
                   id: 'wrap',
                   label: t(wrap ? 'workbench.files.wrapOff' : 'workbench.files.wrapOn'),
                   testId: 'files-wrap',
@@ -294,16 +300,6 @@ export function FilesPanel({ context, headerId }: { context: UiExtensionContext;
             {root?.gitStatus === 'unavailable' && <p role="status">{t('workbench.git.unavailable')}</p>}
             <p className="workbench-files-summary">
               <span>{t('workbench.files.summary', { count: visible })}</span>
-              <Button
-                type="link"
-                size="small"
-                data-testid="files-rules"
-                aria-expanded={rules}
-                title={t('workbench.files.scope')}
-                onClick={() => setRules((value) => !value)}
-              >
-                {t('workbench.files.rules')}
-              </Button>
             </p>
             {rules && (
               <p className="workbench-files-rules" data-testid="files-rules-text">
@@ -356,8 +352,8 @@ export function FilesPanel({ context, headerId }: { context: UiExtensionContext;
             }}
           />
         )}
-        <section className="workbench-file-preview" aria-label={t('workbench.files.preview')}>
-          {selected ? (
+        {selected && (
+          <section className="workbench-file-preview" aria-label={t('workbench.files.preview')}>
             <FilePreview
               context={context}
               path={selected}
@@ -369,13 +365,8 @@ export function FilesPanel({ context, headerId }: { context: UiExtensionContext;
               wrap={wrap}
               mention={mention}
             />
-          ) : (
-            <div className="workbench-files-choose" data-testid="files-choose">
-              <p>{t('workbench.files.choose')}</p>
-              <p className="workbench-files-legend">{t('workbench.files.legend')}</p>
-            </div>
-          )}
-        </section>
+          </section>
+        )}
       </div>
     </section>
   )

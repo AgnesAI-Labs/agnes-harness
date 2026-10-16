@@ -1,5 +1,7 @@
 /** @vitest-environment happy-dom */
 /** @vitest-environment-options {"happyDOM":{"settings":{"disableIframePageLoading":true}}} */
+import { readFileSync } from 'node:fs'
+import { URL as NodeURL } from 'node:url'
 import type { Session } from '@agnes/sdk/browser'
 import { fileViewerActions } from '@agnes/web-client'
 import { createCatalogTranslator, renderRegion, unmountRegion } from '@agnes/web-ui'
@@ -75,6 +77,14 @@ function fakeSession({
   } as unknown as Session & { workspaceChanges?: ReturnType<typeof vi.fn> }
 }
 
+// happy-dom does not parse cascade layers; keep the production rules inside the app layer.
+const panelCss = readFileSync(
+  new NodeURL('../../web/public/styles/22-session-dock.css', import.meta.url),
+  'utf8',
+)
+  .replace(/^@layer app \{/, '')
+  .replace(/\}\s*$/, '')
+let styles: HTMLStyleElement
 let host: HTMLElement
 let observedWidth = 0
 class FakeResizeObserver {
@@ -87,6 +97,9 @@ class FakeResizeObserver {
 }
 
 beforeEach(() => {
+  styles = document.createElement('style')
+  styles.textContent = panelCss
+  document.head.append(styles)
   observedWidth = 0
   vi.stubGlobal('ResizeObserver', FakeResizeObserver)
   localStorage.clear()
@@ -96,17 +109,18 @@ beforeEach(() => {
 afterEach(() => {
   unmountRegion(host)
   host.remove()
+  styles.remove()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
 
-function mount(session: Session, extra: Record<string, unknown> = {}) {
+function mount(session: Session, extra: Record<string, unknown> = {}, headerId = '') {
   const context = {
     t: createCatalogTranslator(workbenchLocaleCatalog, 'en'),
     data: { session, disabled: false, mention: vi.fn(), workspace: { name: 'WorkLLM', path: '/w' } },
     ...extra,
   }
-  renderRegion(host, <FilesPanel context={context} />)
+  renderRegion(host, <FilesPanel context={context} headerId={headerId} />)
   return context
 }
 const q = (selector: string) => host.querySelector(selector) as HTMLElement | null
@@ -149,17 +163,36 @@ describe('file type mapping', () => {
 })
 
 describe('FilesPanel layout', () => {
-  it('stacks the tree above the preview in a narrow panel and has no divider', async () => {
-    mount(fakeSession())
+  it.each([
+    ['en', 320],
+    ['en', 900],
+    ['zh-CN', 320],
+    ['zh-CN', 900],
+  ] as const)('gives the tree the empty panel and opens a file in %s at %ipx', async (locale, width) => {
+    observedWidth = width
+    mount(fakeSession(), { t: createCatalogTranslator(workbenchLocaleCatalog, locale) })
     await vi.waitFor(() => expect(q('[data-path="main.ts"]')).not.toBeNull())
     expect(q('[data-testid="files-panel"]')?.dataset.layout).toBe('stacked')
     expect(q('[data-testid="files-divider"]')).toBeNull()
-    expect(q('[data-testid="files-choose"]')?.textContent).toContain('Choose a file')
+    expect(q('[data-testid="files-choose"]')).toBeNull()
+    expect(q('.workbench-file-preview')).toBeNull()
+    expect(q('.workbench-files-body')?.children).toHaveLength(1)
+    expect(q('.workbench-files-body')?.firstElementChild).toBe(q('[data-testid="files-tree"]'))
+    expect(getComputedStyle(q('[data-testid="files-panel"]') as HTMLElement).height).toBe('100%')
+    expect(getComputedStyle(q('.workbench-files-body') as HTMLElement).flexGrow).toBe('1')
+    expect(getComputedStyle(q('[data-testid="files-tree"]') as HTMLElement).flexGrow).toBe('1')
+    expect(getComputedStyle(q('.workbench-tree-scroll') as HTMLElement).overflow).toBe('auto')
+    expect(host.textContent).not.toMatch(/Choose a file|选一个文件查看内容|A created · M|本次会话新建 A/)
+    await open('main.ts')
+    expect(q('[data-testid="file-preview"]')?.textContent).toBe(TEXT['main.ts'])
+    expect(q('[data-testid="files-panel"]')?.dataset.layout).toBe(width >= 640 ? 'split' : 'stacked')
+    expect(q('[data-testid="files-divider"]') !== null).toBe(width >= 640)
   })
 
   it('splits from 640px, sizes the tree at 250px and persists divider drags and arrow keys', async () => {
     observedWidth = 900
     mount(fakeSession())
+    await open('main.ts')
     await vi.waitFor(() => expect(q('[data-testid="files-panel"]')?.dataset.layout).toBe('split'))
     const panel = q('[data-testid="files-panel"]') as HTMLElement
     expect(panel.style.getPropertyValue('--workbench-tree-width')).toBe(`${TREE_DEFAULT}px`)
@@ -185,6 +218,7 @@ describe('FilesPanel layout', () => {
     observedWidth = 900
     localStorage.setItem(TREE_WIDTH_KEY, '300')
     mount(fakeSession())
+    await open('main.ts')
     await vi.waitFor(() => expect(q('[data-testid="files-panel"]')?.dataset.layout).toBe('split'))
     expect(q('[data-testid="files-panel"]')?.style.getPropertyValue('--workbench-tree-width')).toBe('300px')
     unmountRegion(host)
@@ -196,6 +230,7 @@ describe('FilesPanel layout', () => {
     })
     try {
       mount(fakeSession())
+      await open('main.ts')
       await vi.waitFor(() => expect(q('[data-testid="files-divider"]')).not.toBeNull())
       const panel = q('[data-testid="files-panel"]') as HTMLElement
       expect(panel.style.getPropertyValue('--workbench-tree-width')).toBe(`${TREE_DEFAULT}px`)
@@ -213,27 +248,34 @@ describe('FilesPanel layout', () => {
 })
 
 describe('FilesPanel tree', () => {
-  it('draws type badges, marks session changes A / M and highlights the selection', async () => {
-    mount(fakeSession())
-    await vi.waitFor(() =>
-      expect(q('[data-path="portal.html"] [data-testid="file-change-badge"]')).not.toBeNull(),
-    )
-    expect(q('[data-path="portal.html"] .workbench-file-type')?.textContent).toBe('HTML')
-    expect(q('[data-path="portal.html"] .workbench-file-type')?.dataset.tone).toBe('html')
-    expect(q('[data-path="story.md"] .workbench-file-type')?.textContent).toBe('MD')
-    expect(q('[data-path="src"] .workbench-file-type')).toBeNull()
-    expect(q('[data-path="src"] .workbench-file-icon')).not.toBeNull()
-    const added = q('[data-path="portal.html"] [data-testid="file-change-badge"]') as HTMLElement
-    expect(added.dataset.kind).toBe('added')
-    expect(added.textContent).toBe('ACreated in this session')
-    const modified = q('[data-path="main.ts"] [data-testid="file-change-badge"]') as HTMLElement
-    expect(modified.dataset.kind).toBe('modified')
-    expect(modified.querySelector('[aria-hidden]')?.textContent).toBe('M')
-    expect(q('[data-path="story.md"] [data-testid="file-change-badge"]')).toBeNull()
-    click('[data-path="story.md"]')
-    expect(q('[data-path="story.md"]')?.getAttribute('aria-pressed')).toBe('true')
-    expect(q('[data-path="main.ts"]')?.getAttribute('aria-pressed')).toBe('false')
-  })
+  it.each(['en', 'zh-CN'] as const)(
+    'labels A / M badges and highlights the selection in %s',
+    async (locale) => {
+      const t = createCatalogTranslator(workbenchLocaleCatalog, locale)
+      mount(fakeSession(), { t })
+      await vi.waitFor(() =>
+        expect(q('[data-path="portal.html"] [data-testid="file-change-badge"]')).not.toBeNull(),
+      )
+      expect(q('[data-path="portal.html"] .workbench-file-type')?.textContent).toBe('HTML')
+      expect(q('[data-path="portal.html"] .workbench-file-type')?.dataset.tone).toBe('html')
+      expect(q('[data-path="story.md"] .workbench-file-type')?.textContent).toBe('MD')
+      expect(q('[data-path="src"] .workbench-file-type')).toBeNull()
+      expect(q('[data-path="src"] .workbench-file-icon')).not.toBeNull()
+      const added = q('[data-path="portal.html"] [data-testid="file-change-badge"]') as HTMLElement
+      expect(added.dataset.kind).toBe('added')
+      expect(added.title).toBe(locale === 'en' ? 'Created in this session' : '本次会话新建')
+      expect(added.querySelector('.agh-visually-hidden')?.textContent).toBe(added.title)
+      const modified = q('[data-path="main.ts"] [data-testid="file-change-badge"]') as HTMLElement
+      expect(modified.dataset.kind).toBe('modified')
+      expect(modified.title).toBe(locale === 'en' ? 'Modified in this session' : '本次会话修改')
+      expect(modified.querySelector('.agh-visually-hidden')?.textContent).toBe(modified.title)
+      expect(modified.querySelector('[aria-hidden]')?.textContent).toBe('M')
+      expect(q('[data-path="story.md"] [data-testid="file-change-badge"]')).toBeNull()
+      click('[data-path="story.md"]')
+      expect(q('[data-path="story.md"]')?.getAttribute('aria-pressed')).toBe('true')
+      expect(q('[data-path="main.ts"]')?.getAttribute('aria-pressed')).toBe('false')
+    },
+  )
 
   it('shows no marks when the change list is unavailable', async () => {
     mount(fakeSession({ changes: false }))
@@ -261,16 +303,39 @@ describe('FilesPanel tree', () => {
     expect(q('[data-path="main.ts"]')).not.toBeNull()
   })
 
-  it('opens the visibility rules from the footer and keeps the 500-entry notice', async () => {
-    mount(fakeSession({ truncated: true }))
-    await vi.waitFor(() => expect(q('[data-testid="files-truncated"]')).not.toBeNull())
-    expect(q('[data-testid="files-truncated"]')?.textContent).toBe('Only the first 500 entries are shown.')
-    expect(q('[data-testid="files-rules-text"]')).toBeNull()
-    expect(q('[data-testid="files-rules"]')?.getAttribute('aria-expanded')).toBe('false')
-    click('[data-testid="files-rules"]')
-    expect(q('[data-testid="files-rules-text"]')?.textContent).toContain('.gitignore and .aghignore')
-    expect(q('[data-testid="files-rules"]')?.getAttribute('aria-expanded')).toBe('true')
-  })
+  it.each(['en', 'zh-CN'] as const)(
+    'opens visibility rules from the header menu in %s and keeps footer notices',
+    async (locale) => {
+      const header = document.createElement('div')
+      header.id = 'files-test-header'
+      document.body.append(header)
+      const t = createCatalogTranslator(workbenchLocaleCatalog, locale)
+      try {
+        mount(fakeSession({ truncated: true }), { t }, header.id)
+        await vi.waitFor(() => expect(q('[data-testid="files-truncated"]')).not.toBeNull())
+        expect(q('[data-testid="files-truncated"]')?.textContent).toBe(t('workbench.files.truncated'))
+        expect(q('.workbench-files-summary')?.textContent).toBe(t('workbench.files.summary', { count: 6 }))
+        expect(q('.workbench-files-footer button, .workbench-files-footer a')).toBeNull()
+        expect(q('[data-testid="files-rules-text"]')).toBeNull()
+        const more = header.querySelector('[data-testid="files-more"]') as HTMLElement
+        const rulesItem = () => document.querySelector<HTMLElement>('[data-testid="files-rules"]')
+        for (const shown of [true, false]) {
+          flushSync(() => more.click())
+          await vi.waitFor(() => expect(rulesItem()?.getAttribute('role')).toBe('menuitem'))
+          expect(rulesItem()?.textContent).toBe(t('workbench.files.scope'))
+          flushSync(() => rulesItem()?.click())
+          await vi.waitFor(() => expect(more.getAttribute('aria-expanded')).toBe('false'))
+          if (shown)
+            expect(q('[data-testid="files-rules-text"]')?.textContent).toBe(t('workbench.files.ignore'))
+          else expect(q('[data-testid="files-rules-text"]')).toBeNull()
+        }
+        expect(q('.workbench-files-footer button, .workbench-files-footer a')).toBeNull()
+      } finally {
+        unmountRegion(host)
+        header.remove()
+      }
+    },
+  )
 })
 
 describe('FilesPanel preview', () => {
@@ -437,7 +502,9 @@ describe('opening a file chip and naming a folder', () => {
     unmountRegion(host)
     mount(session, { selection: { path: 'src', directory: true } })
     await vi.waitFor(() => expect(q('[data-path="src"]')?.getAttribute('aria-expanded')).toBe('true'))
-    expect(q('[data-testid="files-choose"]')).not.toBeNull()
+    expect(q('[data-testid="files-choose"]')).toBeNull()
+    expect(q('.workbench-file-preview')).toBeNull()
+    expect(q('.workbench-files-body')?.children).toHaveLength(1)
   })
 
   it('names a folder in the prompt from its row', async () => {

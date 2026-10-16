@@ -74,9 +74,7 @@ it('loads directories lazily, previews text and mentions a relative path without
     expect(host.querySelector('textarea')).toBeNull()
     expect(header.querySelector('button')?.getAttribute('aria-label')).toBe('Refresh workspace files')
     expect(header.querySelector('button')?.textContent).toBe('')
-    expect(host.querySelector('[data-testid="files-rules"]')?.getAttribute('title')).toBe(
-      'File visibility rules',
-    )
+    expect(host.querySelector('.workbench-files-footer button, .workbench-files-footer a')).toBeNull()
     expect(host.querySelector('[data-testid="file-meta"]')?.textContent).not.toContain('2026-10-08T')
     expect(host.querySelector('time')?.dateTime).toBe('2026-10-08T00:00:00Z')
     expect(host.querySelector('time')?.title).toBe('source-hash')
