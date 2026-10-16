@@ -36,7 +36,7 @@ The separate MCP-based [device-inspection bundle](../../examples/fde/device-insp
 
 ## Browser workbench
 
-Official distributions install and enable the MHS package on a fresh home, so **MHS** appears as a first-level sidebar entry at first run. Open **MHS → Examples** to review and install/launch the bundled Mars rescue example. MHS appears under **Plugins → Built in**, with an enable toggle and no uninstall action. Disabling it hides its sidebar entry and makes its examples unavailable. Mars is managed only under **MHS → Examples**, including reviewed removal after stopping it. Existing homes are not backfilled; install and enable the package explicitly there.
+Official distributions install and enable the MHS package on a fresh home when the profile’s capability ceiling permits it, so **MHS** appears as a first-level sidebar entry at first run. Open **MHS → Examples** to review and install/launch the bundled Mars rescue example. MHS appears under **Plugins → Built in**, with an enable toggle and no uninstall action. Disabling it hides its sidebar entry and makes its examples unavailable. Mars is managed only under **MHS → Examples**, including reviewed removal after stopping it. Existing homes are not backfilled; install and enable the package explicitly there.
 
 The MHS client contributes a primary sidebar page with Devices, Map, Activity, Connect and Examples tabs, device detail, seven device-tool cards and a contextual session Devices workbench panel. Device lists and controls use profile services; viewing or stopping a device does not create a hidden chat session. Native approval and device-bound manual leases remain backend decisions. Unknown receipts offer read-only reconciliation rather than automatically dispatching another action.
 

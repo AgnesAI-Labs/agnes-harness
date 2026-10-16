@@ -9,6 +9,7 @@ import {
   type PackageAdminService,
   scopedPackageProfileDirectory,
 } from '@agnes/daemon/packages'
+import type { PackageListResult } from '@agnes/protocol'
 import type { NodeClient } from '@agnes/sdk'
 import { createPrivateDirectorySync } from '@agnes/system-node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -218,7 +219,16 @@ describe('dbh M-14 (second source): daemon composition via runAgnesd with the re
         (e: { data?: { code?: string } }) => ({ code: e.data?.code }),
       )
     // Control: the daemon's own scope profile is served.
-    expect(await call({ profile: 'enterprise' })).toMatchObject({ ok: { packages: expect.any(Array) } })
+    const ownProfile = await call({ profile: 'enterprise' })
+    expect(ownProfile).toMatchObject({ ok: { packages: expect.any(Array) } })
+    // Fresh-only defaults must respect this profile's ceiling instead of preventing daemon boot.
+    if (!('ok' in ownProfile)) throw new Error('Enterprise package inventory unavailable')
+    expect((ownProfile.ok as PackageListResult).packages.map((pkg) => pkg.id)).toEqual([
+      '@agnes/document-reader',
+      '@agnes/mcp-helper',
+      '@agnes/plugin-helper',
+      '@agnes/skill-helper',
+    ])
 
     const r = await run(['package', 'status'], { AGNES_PROFILE: 'enterprise' })
     const sent = { profile: r.sent[0]?.[1] }

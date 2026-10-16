@@ -57,10 +57,25 @@ export async function initializeDefaultHelpers(options: {
         preview.id !== helper.id ||
         preview.version === '0.0.0' ||
         preview.integrity !== state.integrity[helper.id] ||
-        preview.blockers.length ||
         !preview.capabilityHash
       )
         throw new Error('Bundled helper verification failed')
+      if (preview.blockers.length) {
+        // A fresh-only default is optional under the profile's ceiling. Never bypass policy or
+        // mistake another verification failure for a policy choice; bind identity and bytes first.
+        if (
+          !helper.freshOnly ||
+          preview.blockers.some(
+            (blocker) => blocker.code !== 'policy' || blocker.references[0] !== 'capability-ceiling',
+          )
+        )
+          throw new Error('Bundled helper verification failed')
+        const integrity: Record<string, string> = { ...state.integrity }
+        delete integrity[helper.id]
+        state = { ...state, integrity }
+        save(state)
+        continue
+      }
       const installed = (await options.manager.inventory(options.profileDir)).packages.find(
         (p) => p.id === helper.id,
       )
