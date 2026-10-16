@@ -327,7 +327,7 @@ it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
     payloads.set(helper.ref, { root: s.root, path: `release/${helper.name}` })
     const file = join(payload, 'package.json')
     const manifest = JSON.parse(readFileSync(file, 'utf8'))
-    manifest.version = '1.0.0'
+    manifest.version = '0.1.0'
     writeFileSync(file, JSON.stringify(manifest))
     await initializeDefaultHelpers(s)
     let target: RuntimeTargetArtifact | undefined
@@ -352,7 +352,7 @@ it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
         expectedTreeIntegrity: before.entry.treeIntegrity!,
       },
     })
-    manifest.version = '1.1.0'
+    manifest.version = '0.2.0'
     writeFileSync(file, JSON.stringify(manifest))
     const preview = await s.manager.inspect(s.profileDir, parseSource(helper.ref))
     expect(preview.capabilityHash).toBe(before.capabilityHash)
@@ -371,7 +371,7 @@ it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
       enabled: true,
       capabilityHash: before.capabilityHash,
       entry: {
-        version: '1.1.0',
+        version: '0.2.0',
         integrity: preview.integrity,
         previous: { integrity: before.entry.integrity },
       },
@@ -381,9 +381,9 @@ it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
       pinId: pin.pinId,
       expectedSnapshotId: pin.snapshot.snapshotId,
     })
-    expect(retained.snapshot).toMatchObject({ version: '1.0.0', integrity: before.entry.integrity })
+    expect(retained.snapshot).toMatchObject({ version: '0.1.0', integrity: before.entry.integrity })
     expect(JSON.parse(readFileSync(join(retained.snapshot.directory, 'package.json'), 'utf8')).version).toBe(
-      '1.0.0',
+      '0.1.0',
     )
 
     await refreshDefaultHelpers(options)
@@ -401,20 +401,28 @@ it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
     // Equal version labels are not an identity check: source builds can change their UI bytes.
     writeFileSync(join(payload, 'release-bytes.txt'), 'new distribution bytes')
     const equalVersionPreview = await s.manager.inspect(s.profileDir, parseSource(helper.ref))
+    expect(equalVersionPreview.version).toBe('0.2.0')
+    expect(equalVersionPreview.capabilityHash).toBe(after.capabilityHash)
     await refreshDefaultHelpers(options)
     const equalVersion = (await s.manager.inventory(s.profileDir)).packages.find(
       (pkg) => pkg.id === helper.id,
     )!
-    expect(equalVersion.entry).toMatchObject({ version: '1.1.0', integrity: equalVersionPreview.integrity })
+    expect(equalVersion.entry).toMatchObject({ version: '0.2.0', integrity: equalVersionPreview.integrity })
     expect(equalVersion.entry.integrity).not.toBe(after.entry.integrity)
-    expect(equalVersion.trusted).toBe(true)
+    expect(equalVersion).toMatchObject({
+      enabled: true,
+      trusted: true,
+      capabilityHash: after.capabilityHash,
+      entry: { trustDecision: { integrity: equalVersionPreview.integrity } },
+    })
+    expect(target?.digest).not.toBe(published)
     expect(readFileSync(join(equalVersion.directory!, 'release-bytes.txt'), 'utf8')).toBe(
       'new distribution bytes',
     )
     // A later distribution must preserve the explicit disable and removal decisions.
     await s.manager.setEnabled(s.profileDir, helper.id, false)
     const disabled = (await s.manager.inventory(s.profileDir)).packages.find((pkg) => pkg.id === helper.id)
-    manifest.version = '1.2.0'
+    manifest.version = '0.3.0'
     writeFileSync(file, JSON.stringify(manifest))
     await refreshDefaultHelpers(options)
     expect((await s.manager.inventory(s.profileDir)).packages.find((pkg) => pkg.id === helper.id)).toEqual(

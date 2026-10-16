@@ -21,12 +21,11 @@ import { tabsAria } from '../../../tools/web-tabs-aria.mjs'
 import { xSurface } from '../../../tools/web-x-surface.mjs'
 import { beginRuntimeDirectory } from '../../base/tools/runtime-directory.js'
 import { bundledManifests } from './bundled-manifests.mjs'
-import { bundledReleaseVersion, stampBundledPackageVersion } from './bundled-version.js'
+import { bundledPackageVersion, stampBundledPackageVersion } from './bundled-version.js'
 import { checkPackagedClientModules } from './client-module-check.js'
 import { prepareDocumentReader } from './document-reader.js'
 import { prepareMhsPackage } from './mhs-package.js'
 import { copyPluginPackRuntime } from './plugin-pack-runtime.js'
-import { PUBLIC_PACKAGE_VERSION } from './release-version.mjs'
 import { copyRipgrep } from './ripgrep.js'
 import { copySystemRuntime, withBuiltSystemRuntime } from './windows-runtime.js'
 
@@ -45,11 +44,7 @@ export async function copyComputerUseNotice(outputDirectory: string): Promise<vo
 }
 
 /** Copy only runtime payload, never repository tests or personal working files. */
-export async function copyBundledPlugins(
-  outputDirectory: string,
-  version = PUBLIC_PACKAGE_VERSION,
-): Promise<void> {
-  const releaseVersion = bundledReleaseVersion(version)
+export async function copyBundledPlugins(outputDirectory: string, version = '0.0.0'): Promise<void> {
   for (const { name: helper } of DEFAULT_ENABLED_BUNDLED_PACKAGES) {
     const destination = join(outputDirectory, 'bundled-plugins', helper)
     if (helper === 'mhs') await prepareMhsPackage(destination)
@@ -64,7 +59,7 @@ export async function copyBundledPlugins(
         })
       if (helper === 'document-reader') await prepareDocumentReader(destination)
     }
-    await stampBundledPackageVersion(destination, releaseVersion)
+    await stampBundledPackageVersion(destination, version)
     await checkPackagedClientModules(destination)
   }
 }
@@ -94,10 +89,12 @@ const bundleJitiTransform: Plugin = {
 }
 
 /** Ship the curated example payload independently of the user's workspace. */
-export async function copyBundledExamples(
-  outputDirectory: string,
-  version = PUBLIC_PACKAGE_VERSION,
-): Promise<void> {
+export async function copyBundledExamples(outputDirectory: string, version = '0.0.0'): Promise<void> {
+  const parentVersions = new Map<string, string>()
+  for (const pkg of DEFAULT_ENABLED_BUNDLED_PACKAGES) {
+    const parent = JSON.parse(await readFile(join(repoPackages, pkg.sourcePath, 'package.json'), 'utf8'))
+    parentVersions.set(pkg.id, bundledPackageVersion(parent.version, version))
+  }
   for (const { family, name } of BUNDLED_EXAMPLES) {
     const source = join(repoPackages, '..', 'examples', family, name)
     if (!existsSync(join(source, 'package.json'))) continue
@@ -126,8 +123,8 @@ export async function copyBundledExamples(
     for (const file of payload) await cp(join(source, file), join(destination, file), { recursive: true })
     const manifestPath = join(destination, 'package.json')
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
-    for (const pkg of DEFAULT_ENABLED_BUNDLED_PACKAGES)
-      if (manifest.dependencies?.[pkg.id]) manifest.dependencies[pkg.id] = bundledReleaseVersion(version)
+    for (const [id, parentVersion] of parentVersions)
+      if (manifest.dependencies?.[id]) manifest.dependencies[id] = parentVersion
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
     if (family === 'community')
       await build({
