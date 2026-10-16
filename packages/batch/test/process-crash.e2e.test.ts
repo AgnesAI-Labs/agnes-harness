@@ -9,7 +9,7 @@ import { createOwnedStore } from '@agnes/sdk'
 import { expect, it, vi } from 'vitest'
 import { Repository } from '../src/index.js'
 import { id } from './fakes.js'
-import { daemonEntry, daemonSocket, driverEntry, kill, launch } from './process-harness.js'
+import { daemonEntry, daemonSocket, descendants, driverEntry, kill, launch } from './process-harness.js'
 
 // guards-allow-platform: SIGKILL and ps exercise the maintained POSIX process gate.
 it
@@ -20,12 +20,14 @@ it
     const root = await realpath(await mkdtemp(join(tmpdir(), 'agh-batch-kill-')))
     const children: ReturnType<typeof launch>[] = []
     const requests: string[] = []
+    const authorization: (string | undefined)[] = []
     const block = ['accepted', 'worker', 'daemon'].includes(stage)
     const sockets = new Set<import('node:net').Socket>()
     const provider = createServer(async (request, response) => {
       const chunks: Buffer[] = []
       for await (const chunk of request) chunks.push(Buffer.from(chunk))
       requests.push(Buffer.concat(chunks).toString())
+      authorization.push(request.headers.authorization)
       response.writeHead(200, { 'Content-Type': 'text/event-stream' })
       response.flushHeaders()
       if (block) return
@@ -51,12 +53,17 @@ it
       await writeFile(join(workspace, 'inputs/a.txt'), 'alpha')
       await writeFile(join(workspace, 'inputs/b.txt'), 'beta')
       initializeHome(home, 'local-dev')
+      // The real OpenAI-compatible client requires a credential even for this loopback fixture.
+      const secretDir = join(root, 'secrets')
+      await mkdir(join(secretDir, 'fixture'), { recursive: true, mode: 0o700 })
+      await writeFile(join(secretDir, 'fixture', 'model'), 'synthetic-batch-fixture', { mode: 0o600 })
       const baseUrl = `http://127.0.0.1:${address.port}/v1`
       await writeFile(
         join(home, 'profiles/local-dev/profile.yaml'),
         JSON.stringify({
           name: 'local-dev',
           computerUse: { enabled: false },
+          adapters: { secrets: { kind: 'file', path: secretDir } },
           provider: {
             package: '@agnes/ai',
             catalog: { include: [] },
@@ -65,7 +72,7 @@ it
                 route: 'batch-local',
                 api: 'openai-completions',
                 baseUrl,
-                keyless: true,
+                credentialRef: 'secret://fixture/model',
                 models: [
                   {
                     id: 'batch-script',
@@ -100,11 +107,16 @@ it
       let daemon = await startDaemon()
       const driver = launch(driverEntry, [JSON.stringify({ root, socket: socketPath, stage })])
       children.push(driver)
-      if (block) await vi.waitFor(() => expect(requests).toHaveLength(1), { timeout: 60_000 })
+      if (block)
+        await vi.waitFor(
+          () => expect(requests, `${driver.stderr()}\n${JSON.stringify(driver.messages)}`).toHaveLength(1),
+          { timeout: 60_000 },
+        )
       else
         await vi.waitFor(() => expect(driver.messages, driver.stderr()).toContainEqual({ stage }), {
           timeout: 60_000,
         })
+      expect(authorization).toEqual(requests.map(() => 'Bearer synthetic-batch-fixture'))
       if (stage === 'daemon' || stage === 'worker') {
         const workers = execFileSync('ps', ['-A', '-o', 'pid=,ppid='], { encoding: 'utf8' })
           .trim()
@@ -165,7 +177,22 @@ it
         database.close()
       }
     } finally {
+      const owned = descendants(children.map(({ child }) => child))
       for (const child of children.reverse()) await kill(child.child)
+      await vi.waitFor(
+        () =>
+          expect(
+            owned.filter((pid) => {
+              try {
+                process.kill(pid, 0)
+                return true
+              } catch {
+                return false
+              }
+            }),
+          ).toEqual([]),
+        { timeout: 15_000 },
+      )
       for (const socket of sockets) socket.destroy()
       await new Promise<void>((resolve) => provider.close(() => resolve()))
       if (socketPath && !socketPath.startsWith(root))

@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn } from 'node:child_process'
+import { type ChildProcess, execFileSync, spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -26,6 +26,25 @@ export async function kill(child: ChildProcess) {
   const exit = once(child, 'exit')
   child.kill('SIGKILL')
   await exit
+}
+/** Snapshot descendants of live test-owned roots before killing those roots. */
+export function descendants(children: readonly ChildProcess[]): number[] {
+  const roots = children
+    .filter((child) => child.exitCode === null && child.signalCode === null)
+    .flatMap((child) => (child.pid === undefined ? [] : [child.pid]))
+  const rows = execFileSync('ps', ['-A', '-o', 'pid=,ppid='], { encoding: 'utf8' })
+    .trim()
+    .split('\n')
+    .map((line) => line.trim().split(/\s+/u).map(Number))
+  const owned = new Set(roots)
+  for (;;) {
+    const found = rows.filter(
+      ([pid, parent]) => pid !== undefined && parent !== undefined && owned.has(parent) && !owned.has(pid),
+    )
+    if (!found.length) break
+    for (const [pid] of found) if (pid !== undefined) owned.add(pid)
+  }
+  return [...owned].filter((pid) => !roots.includes(pid))
 }
 export const daemonEntry = new URL('../../daemon/test/fixtures/source-loop-daemon.ts', import.meta.url)
 export const driverEntry = new URL('./fixtures/managed-driver.ts', import.meta.url)
