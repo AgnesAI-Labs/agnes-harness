@@ -12,4 +12,5 @@ export const VENDOR_ENTRY_NAMES = new Set([
   'x',
   'cordis',
   'web-client',
+  'web-ui',
 ])

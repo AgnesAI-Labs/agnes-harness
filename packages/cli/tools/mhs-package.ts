@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
+import { assertClientExternals } from '../../../tools/web-client-externals.mjs'
 
 /** Ship the Hub/device implementation inside the ordinary plugin, with only public SDK externals. */
 export async function prepareMhsPackage(destination: string): Promise<void> {
@@ -37,6 +38,7 @@ export async function prepareMhsPackage(destination: string): Promise<void> {
     metafile: true,
     legalComments: 'eof',
   })
+  assertClientExternals(client.metafile)
   manifest.exports = { '.': './dist/index.mjs' }
   delete manifest.devDependencies
   delete manifest.scripts

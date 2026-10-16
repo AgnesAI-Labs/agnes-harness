@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { BUNDLED_EXAMPLES, DEFAULT_ENABLED_BUNDLED_PACKAGES } from '@agnes/package-manager'
 import { type BuildOptions, type BuildResult, build, type Plugin } from 'esbuild'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
+import { clientPlatformExternals } from '../../../tools/web-client-externals.mjs'
 import { scrollbarCsp } from '../../../tools/web-scrollbar-csp.mjs'
 import {
   inCssLayer,
@@ -20,6 +21,7 @@ import { tabsAria } from '../../../tools/web-tabs-aria.mjs'
 import { xSurface } from '../../../tools/web-x-surface.mjs'
 import { beginRuntimeDirectory } from '../../base/tools/runtime-directory.js'
 import { bundledManifests } from './bundled-manifests.mjs'
+import { checkPackagedClientModules } from './client-module-check.js'
 import { prepareDocumentReader } from './document-reader.js'
 import { prepareMhsPackage } from './mhs-package.js'
 import { copyPluginPackRuntime } from './plugin-pack-runtime.js'
@@ -44,7 +46,9 @@ export async function copyComputerUseNotice(outputDirectory: string): Promise<vo
 export async function copyBundledPlugins(outputDirectory: string): Promise<void> {
   for (const { name: helper } of DEFAULT_ENABLED_BUNDLED_PACKAGES) {
     if (helper === 'mhs') {
-      await prepareMhsPackage(join(outputDirectory, 'bundled-plugins', helper))
+      const destination = join(outputDirectory, 'bundled-plugins', helper)
+      await prepareMhsPackage(destination)
+      await checkPackagedClientModules(destination)
       continue
     }
     const source = join(repoPackages, 'package-manager', 'bundled-plugins', helper)
@@ -57,6 +61,7 @@ export async function copyBundledPlugins(outputDirectory: string): Promise<void>
         errorOnExist: true,
       })
     if (helper === 'document-reader') await prepareDocumentReader(destination)
+    await checkPackagedClientModules(destination)
   }
 }
 
@@ -123,6 +128,7 @@ export async function copyBundledExamples(outputDirectory: string): Promise<void
         packages: 'external',
         legalComments: 'eof',
       })
+    await checkPackagedClientModules(destination)
   }
 }
 
@@ -216,18 +222,6 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
   }
   // Plugin entrypoints resolve these imports through index.html's import map, so the host bundle
   // must leave them external and serve exactly one shared platform instance.
-  const platformExternals = [
-    'react',
-    'react/jsx-runtime',
-    'react-dom',
-    'react-dom/client',
-    '@agnes/cordis',
-    '@agnes/web-client',
-    '@agnes/web-ui/conversation',
-    '@agnes/web-ui/x',
-    'antd',
-    'recharts',
-  ]
   await buildWithMetadata({
     entryPoints: {
       app: join(repoPackages, 'web', 'src', 'app.ts'),
@@ -254,7 +248,7 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
     banner: {
       js: "import __agnesSharedReact from 'react'; var require = (id) => { if (id === 'react') return __agnesSharedReact; throw Error('Unexpected external require: ' + id) };",
     },
-    external: platformExternals,
+    plugins: [clientPlatformExternals],
   })
   // Keep the local launcher's import-map targets and platform singleton graph identical to the
   // standalone Web build.
@@ -293,6 +287,7 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
       x: join(repoPackages, 'web', 'tools', 'vendor', 'x-entry.js'),
       cordis: join(repoPackages, 'web', 'tools', 'vendor', 'cordis-entry.js'),
       'web-client': join(repoPackages, 'web', 'tools', 'vendor', 'web-client-entry.js'),
+      'web-ui': join(repoPackages, 'web', 'tools', 'vendor', 'web-ui-entry.js'),
     },
     ...vendorOptions,
     plugins: [scrollbarCsp, tabsAria, xSurface],

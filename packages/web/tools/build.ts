@@ -4,6 +4,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { type BuildResult, build } from 'esbuild'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
+import { clientPlatformExternals } from '../../../tools/web-client-externals.mjs'
 import { scrollbarCsp } from '../../../tools/web-scrollbar-csp.mjs'
 import {
   inCssLayer,
@@ -34,18 +35,6 @@ export async function buildWeb(options: { clean?: boolean } = {}): Promise<Build
   await mkdir(out, { recursive: true })
   // WC5：平台共享单例说明符。宿主 app 与（未来的）插件模块都经 import map 解析到 /vendor/* 的
   // 同一份实例；app.js 打包时保持这些说明符为外部导入。
-  const platformExternals = [
-    'react',
-    'react/jsx-runtime',
-    'react-dom',
-    'react-dom/client',
-    '@agnes/cordis',
-    '@agnes/web-client',
-    '@agnes/web-ui/conversation',
-    '@agnes/web-ui/x',
-    'antd',
-    'recharts',
-  ]
   const metafiles: BuildResult[] = []
   metafiles.push(
     await build({
@@ -73,7 +62,7 @@ export async function buildWeb(options: { clean?: boolean } = {}): Promise<Build
       banner: {
         js: "import __agnesSharedReact from 'react'; var require = (id) => { if (id === 'react') return __agnesSharedReact; throw Error('Unexpected external require: ' + id) };",
       },
-      external: platformExternals,
+      plugins: [clientPlatformExternals],
       metafile: true,
     }),
   )
@@ -117,6 +106,7 @@ export async function buildWeb(options: { clean?: boolean } = {}): Promise<Build
         x: join(root, 'tools', 'vendor', 'x-entry.js'),
         cordis: join(root, 'tools', 'vendor', 'cordis-entry.js'),
         'web-client': join(root, 'tools', 'vendor', 'web-client-entry.js'),
+        'web-ui': join(root, 'tools', 'vendor', 'web-ui-entry.js'),
       },
       ...vendorOptions,
       plugins: [scrollbarCsp, tabsAria, xSurface],

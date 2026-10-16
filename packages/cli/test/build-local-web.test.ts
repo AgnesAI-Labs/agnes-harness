@@ -64,11 +64,11 @@ it('builds local web assets with the shared platform vendor modules', async () =
     )
     expect(markdownLicense).toContain('Copyright (c) 2015-present Ant UED')
     expect(app).toMatch(/from\s+["']react["']/)
-    expect(chunkSources.some((source) => /from\s+["']antd["']/.test(source))).toBe(true)
+    expect([app, ...chunkSources].some((source) => /from\s+["']@agnes\/web-ui["']/.test(source))).toBe(true)
     expect(app).toMatch(/from\s+["']@agnes\/web-ui\/conversation["']/)
     expect(html).toContain('"react": "/vendor/react.js"')
+    expect(html).toContain('"@agnes/web-ui": "/vendor/web-ui.js"')
     expect(html).toContain('"recharts": "/vendor/recharts.js"')
-    expect(chunkSources.some((source) => /from\s+["']recharts["']/.test(source))).toBe(true)
     const chartNotice = await readFile(join(output, 'THIRD-PARTY-NOTICES/recharts.txt'), 'utf8')
     expect(chartNotice).toContain('recharts')
     const victoryNotice = await readFile(join(output, 'THIRD-PARTY-NOTICES/victory-vendor.txt'), 'utf8')
@@ -87,6 +87,7 @@ it('builds local web assets with the shared platform vendor modules', async () =
       'recharts.js',
       'cordis.js',
       'web-client.js',
+      'web-ui.js',
     ]) {
       await expect(readFile(join(output, 'vendor', entry), 'utf8')).resolves.toBeTruthy()
     }
@@ -165,6 +166,7 @@ it('rejects a local package when an HTML or import-map asset is missing', async 
       'vendor/x.js',
       'vendor/cordis.js',
       'vendor/web-client.js',
+      'vendor/web-ui.js',
     ]) {
       const path = join(web, asset)
       const contents = await readFile(path)
