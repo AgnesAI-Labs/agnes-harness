@@ -46,15 +46,24 @@ it('publishes the real startup refusal in a private, write-once launcher receipt
   mkdirSync(daemonDir)
   const path = startupDiagnosticPath(daemonDir)
   vi.stubEnv(STARTUP_DIAGNOSTIC_ENV, path)
+  vi.stubEnv('AGH_HOME', directory)
   const refusal = new Error('daemon or package mutation lock is held')
   runAgnesd.mockRejectedValueOnce(refusal)
   try {
-    await expect(runDaemonEntry(['--data-dir', directory])).rejects.toBe(refusal)
+    await expect(runDaemonEntry(['--data-dir', join(directory, 'data')])).rejects.toBe(refusal)
     expect(readStartupDiagnostic(path)).toBe(refusal.message)
     if (process.platform !== 'win32') expect(statSync(path).mode & 0o777).toBe(0o600)
     runAgnesd.mockRejectedValueOnce(new Error('later failure'))
-    await expect(runDaemonEntry(['--data-dir', directory])).rejects.toThrow('later failure')
+    await expect(runDaemonEntry(['--data-dir', join(directory, 'data')])).rejects.toThrow('later failure')
     expect(readStartupDiagnostic(path)).toBe(refusal.message)
+    const foreign = startupDiagnosticPath(join(directory, 'foreign', 'daemon'))
+    mkdirSync(join(directory, 'foreign', 'daemon'), { recursive: true })
+    vi.stubEnv(STARTUP_DIAGNOSTIC_ENV, foreign)
+    runAgnesd.mockRejectedValueOnce(new Error('foreign receipt refused'))
+    await expect(runDaemonEntry(['--data-dir', join(directory, 'data')])).rejects.toThrow(
+      'foreign receipt refused',
+    )
+    expect(readStartupDiagnostic(foreign)).toBeUndefined()
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }

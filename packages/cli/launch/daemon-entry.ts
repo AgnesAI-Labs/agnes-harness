@@ -69,7 +69,7 @@ export async function runDaemonEntry(argv: readonly string[] = process.argv.slic
     })
   } catch (error) {
     if (!homeVersionMessage(error, process.env.AGNES_LOCALE))
-      publishStartupDiagnostic(error, parsed.args.dataDir)
+      publishStartupDiagnostic(error, process.env.AGH_HOME)
     const message = startupFailure(error, process.env)
     if (message) throw new Error(message, { cause: error })
     throw error
