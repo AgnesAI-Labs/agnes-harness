@@ -2,6 +2,13 @@ import type { LocaleCatalog } from '@agnes/web-ui'
 
 export const operationsCatalog: LocaleCatalog = {
   en: {
+    'update.dependents.review': 'Review parent and dependent updates together',
+    'update.dependents.title': 'Update the parent and its dependents',
+    'update.dependents.description':
+      'Review each version and capability request. All packages are checked and committed together; disabled dependents stay disabled.',
+    'update.dependents.confirm': 'Update together',
+    'update.dependents.unavailable':
+      'A compatible reviewed dependent update is unavailable. Keep the installed versions and review the dependent source.',
     'failure.repair': 'Review the plugin details, resolve the reported issue and retry activation.',
     'compatibility.supported': 'Supported',
     'compatibility.unsupported': 'Unsupported',
@@ -160,6 +167,12 @@ export const operationsCatalog: LocaleCatalog = {
     'source.validation.prefix': 'This source reference must start with “{prefix}”, for example {example}.',
   },
   'zh-CN': {
+    'update.dependents.review': '联合审核父插件和依赖插件更新',
+    'update.dependents.title': '更新父插件及其依赖插件',
+    'update.dependents.description':
+      '请审核每个版本和权限请求。所有插件一并校验和提交；已停用的依赖插件保持停用。',
+    'update.dependents.confirm': '一并更新',
+    'update.dependents.unavailable': '暂无兼容且可审核的依赖插件更新。保留已安装版本并检查依赖插件来源。',
     'failure.repair': '检查插件详情，解决已报告的问题后重试启用。',
     'compatibility.supported': '兼容',
     'compatibility.unsupported': '不兼容',

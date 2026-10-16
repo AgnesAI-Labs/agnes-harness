@@ -597,6 +597,9 @@ it('requires the complete dynamic authority for composite update and rollback re
         id: 'acme/pkg-a',
         expectedIntegrity: activation.trust.integrity,
         activation,
+        dependents: [
+          { id: 'acme/dependent', source, expectedIntegrity: activation.trust.integrity, activation },
+        ],
       },
       { ...authority, permissions: ['packages.install'] },
     ),

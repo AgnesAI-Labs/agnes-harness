@@ -77,6 +77,17 @@ function matrix(eye: number[], target: number[], aspect: number, zoom = 1): Floa
       for (let k = 0; k < 4; k++) out[c * 4 + r]! += projection[k * 4 + r]! * view[c * 4 + k]!
   return out
 }
+/** Keep GPU/context failures distinct from missing or invalid packaged scene assets. */
+export function sceneFailure(error: unknown): string {
+  const message = error instanceof Error ? error.message : ''
+  if (message.includes('asset'))
+    return 'Scene assets unavailable. Reload the page or repair the example installation.'
+  if (message.includes('context lost'))
+    return 'The browser lost its graphics context. Close other 3D views, then retry the scene.'
+  if (message.includes('WebGL unavailable'))
+    return 'This browser cannot create a WebGL graphics context. Enable hardware acceleration or use a browser with graphics support, then retry.'
+  return 'The 3D renderer failed. Retry the scene; if it persists, inspect browser graphics diagnostics.'
+}
 /** Original procedural geometry; no network, external textures or decoder downloads. */
 export class MarsScene {
   private readonly gl: WebGLRenderingContext
@@ -115,7 +126,7 @@ export class MarsScene {
     private readonly simulation: MarsSimulation,
   ) {
     const gl = canvas.getContext('webgl', { antialias: true, preserveDrawingBuffer: true })
-    if (!gl) throw new Error('WebGL unavailable; retry on a WebGL-capable browser')
+    if (!gl) throw new Error('WebGL unavailable')
     this.gl = gl
     const shader = (type: number, source: string) => {
       const s = gl.createShader(type)

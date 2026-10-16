@@ -2,7 +2,7 @@ import { createElement as h, useEffect, useRef, useState } from 'react'
 import { createMarsExampleAccess } from './generated/browser-transport.js'
 import { MarsCameras } from './generated/cameras.js'
 import { MarsRuntime } from './generated/runtime.js'
-import { MarsScene, VIEWS } from './generated/scene.js'
+import { MarsScene, sceneFailure, VIEWS } from './generated/scene.js'
 
 const PACKAGE = '@agnes-example/mars-rescue'
 /** The child profile facade consumes an explicitly reviewed parent producer grant. No browser URL fallback. */
@@ -88,11 +88,13 @@ export function apply(ctx) {
         }, 50)
         unavailable = undefined
       } catch {
+        const cameraError = cameras?.error
         await runtime?.stop().catch(() => {})
         cameras?.dispose()
         cameras = undefined
         release()
-        unavailable = 'Device connection unavailable. Review the parent MHS connection, then retry.'
+        unavailable =
+          cameraError ?? 'Device connection unavailable. Review the parent MHS connection, then retry.'
       }
       notify()
     })().finally(() => {
@@ -212,14 +214,24 @@ export function apply(ctx) {
           try {
             scene.render()
             frame = requestAnimationFrame(draw)
-          } catch {
-            setError('Scene unavailable. Retry WebGL.')
+          } catch (error) {
+            setError(sceneFailure(error))
             scene.dispose()
           }
         }
-        draw()
-      } catch {
-        setError('WebGL unavailable. Retry on a WebGL-capable browser.')
+        void scene.ready.then(
+          () => {
+            if (!disposed) draw()
+          },
+          (error) => {
+            if (!disposed) {
+              setError(sceneFailure(error))
+              scene.dispose()
+            }
+          },
+        )
+      } catch (error) {
+        setError(sceneFailure(error))
       }
       return () => {
         disposed = true

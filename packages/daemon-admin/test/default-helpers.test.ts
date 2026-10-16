@@ -327,7 +327,10 @@ it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
     payloads.set(helper.ref, { root: s.root, path: `release/${helper.name}` })
     const file = join(payload, 'package.json')
     const manifest = JSON.parse(readFileSync(file, 'utf8'))
-    manifest.version = '0.1.0'
+    const shippedVersion = manifest.version
+    const oldVersion = helper.name === 'mhs' ? shippedVersion : '0.1.0'
+    const nextVersion = helper.name === 'mhs' ? shippedVersion : '0.2.0'
+    manifest.version = oldVersion
     writeFileSync(file, JSON.stringify(manifest))
     await initializeDefaultHelpers(s)
     let target: RuntimeTargetArtifact | undefined
@@ -352,7 +355,27 @@ it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
         expectedTreeIntegrity: before.entry.treeIntegrity!,
       },
     })
-    manifest.version = '0.2.0'
+    if (helper.name === 'mhs') {
+      expect(shippedVersion).toBe('0.1.0-alpha.0')
+      const source = parseSource('file:./bundled-examples/mhs/mars-rescue')
+      const mars = await s.manager.inspect(s.profileDir, source)
+      expect(mars.dependencies['@agnes/mhs']).toBe(shippedVersion)
+      expect(mars.blockers).toEqual([])
+      await s.manager.install(s.profileDir, source, { expectedIntegrity: mars.integrity })
+      await s.manager.trust(s.profileDir, mars.id, {
+        integrity: mars.integrity,
+        capabilityHash: mars.capabilityHash!,
+      })
+      await s.manager.setEnabled(s.profileDir, mars.id, true)
+      target = rebuildDesiredFromInventory({
+        previous: target,
+        inventory: await s.manager.inventory(s.profileDir),
+        packageId: mars.id,
+        operation: 'enable',
+      })
+    }
+    manifest.version = nextVersion
+    writeFileSync(join(payload, 'distribution-revision.txt'), 'new release bytes')
     writeFileSync(file, JSON.stringify(manifest))
     const preview = await s.manager.inspect(s.profileDir, parseSource(helper.ref))
     expect(preview.capabilityHash).toBe(before.capabilityHash)
@@ -371,7 +394,7 @@ it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
       enabled: true,
       capabilityHash: before.capabilityHash,
       entry: {
-        version: '0.2.0',
+        version: nextVersion,
         integrity: preview.integrity,
         previous: { integrity: before.entry.integrity },
       },
@@ -381,9 +404,9 @@ it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
       pinId: pin.pinId,
       expectedSnapshotId: pin.snapshot.snapshotId,
     })
-    expect(retained.snapshot).toMatchObject({ version: '0.1.0', integrity: before.entry.integrity })
+    expect(retained.snapshot).toMatchObject({ version: oldVersion, integrity: before.entry.integrity })
     expect(JSON.parse(readFileSync(join(retained.snapshot.directory, 'package.json'), 'utf8')).version).toBe(
-      '0.1.0',
+      oldVersion,
     )
 
     await refreshDefaultHelpers(options)
@@ -401,13 +424,16 @@ it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
     // Equal version labels are not an identity check: source builds can change their UI bytes.
     writeFileSync(join(payload, 'release-bytes.txt'), 'new distribution bytes')
     const equalVersionPreview = await s.manager.inspect(s.profileDir, parseSource(helper.ref))
-    expect(equalVersionPreview.version).toBe('0.2.0')
+    expect(equalVersionPreview.version).toBe(nextVersion)
     expect(equalVersionPreview.capabilityHash).toBe(after.capabilityHash)
     await refreshDefaultHelpers(options)
     const equalVersion = (await s.manager.inventory(s.profileDir)).packages.find(
       (pkg) => pkg.id === helper.id,
     )!
-    expect(equalVersion.entry).toMatchObject({ version: '0.2.0', integrity: equalVersionPreview.integrity })
+    expect(equalVersion.entry).toMatchObject({
+      version: nextVersion,
+      integrity: equalVersionPreview.integrity,
+    })
     expect(equalVersion.entry.integrity).not.toBe(after.entry.integrity)
     expect(equalVersion).toMatchObject({
       enabled: true,
@@ -419,6 +445,19 @@ it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
     expect(readFileSync(join(equalVersion.directory!, 'release-bytes.txt'), 'utf8')).toBe(
       'new distribution bytes',
     )
+    if (helper.name === 'mhs') {
+      const mars = (await s.manager.inventory(s.profileDir)).packages.find(
+        (pkg) => pkg.id === '@agnes-example/mars-rescue',
+      )!
+      expect(mars).toMatchObject({ enabled: true, trusted: true, blockers: [] })
+      expect(
+        decodeRuntimeTargetArtifact(target!).tree.rows.some(
+          (row) => row.plugin.startsWith(`${mars.id}@`) && !row.disabled,
+        ),
+      ).toBe(true)
+      await s.manager.setEnabled(s.profileDir, mars.id, false)
+      await s.manager.remove(s.profileDir, mars.id)
+    }
     // A later distribution must preserve the explicit disable and removal decisions.
     await s.manager.setEnabled(s.profileDir, helper.id, false)
     const disabled = (await s.manager.inventory(s.profileDir)).packages.find((pkg) => pkg.id === helper.id)

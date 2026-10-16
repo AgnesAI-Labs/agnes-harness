@@ -214,6 +214,8 @@ it('allows only range subsets, independently checked against existing range memb
     '<=1.2.3',
   ]
   const versions = [
+    '0.1.0-alpha.0',
+    '1.2.3-alpha',
     '0.0.0',
     '0.0.1',
     '0.0.2',
@@ -234,12 +236,16 @@ it('allows only range subsets, independently checked against existing range memb
         for (const version of versions)
           if (satisfiesApiRange(requested, version))
             expect(satisfiesApiRange(ceiling, version), `${requested} <= ${ceiling} at ${version}`).toBe(true)
+  expect(rangeNarrows('1.2.3-alpha', '*')).toBe(true)
+  expect(rangeNarrows('1.2.3-alpha', '1.2.3-alpha')).toBe(true)
+  expect(rangeNarrows('1.2.3-alpha', '^1.0')).toBe(false)
+  expect(rangeNarrows('*', '>=0.0.0')).toBe(false)
   expect(rangeNarrows('1.2.3', '^1.0')).toBe(true)
   expect(rangeNarrows('*', '^1.0')).toBe(false)
   expect(rangeNarrows('^0.0', '^0.0.0')).toBe(false)
   expect(() => rangeNarrows('>1.2.3 <1.2.4', '*')).toThrow()
 })
-it.each(['', 'garbage', '1.2.3-alpha', '>=2.0.0 <1.0.0', '9007199254740992.x'])(
+it.each(['', 'garbage', '>=2.0.0 <1.0.0', '9007199254740992.x'])(
   'rejects invalid or empty range %s',
   (range) => {
     expect(() => rangeNarrows(range, '*')).toThrow()

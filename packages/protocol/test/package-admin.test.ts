@@ -23,6 +23,41 @@ const valid = (name: string) =>
   structuredClone(rows.find((row) => row.name === name && row.kind === 'valid').payload)
 
 describe('PM4 management contracts', () => {
+  it('requires explicit digest and trust baselines for every reviewed dependent update', () => {
+    const base = valid('_agnes/v1/packages.update')
+    const activation = {
+      expectedInstalledIntegrity: `sha256-${'1'.repeat(64)}`,
+      expectedActiveIntegrity: null,
+      trust: { integrity: `sha256-${'2'.repeat(64)}`, capabilityHash: '3'.repeat(64) },
+    }
+    const dependent = {
+      id: 'acme/dependent',
+      source: base.source,
+      expectedIntegrity: activation.trust.integrity,
+      activation,
+    }
+    expect(
+      validatePackageAdminCall('_agnes/v1/packages.update', 'params', {
+        ...base,
+        activation,
+        dependents: [dependent],
+      }).ok,
+    ).toBe(true)
+    for (const key of ['activation', 'expectedIntegrity', 'source']) {
+      const incomplete: Record<string, unknown> = { ...dependent }
+      delete incomplete[key]
+      expect(
+        validatePackageAdminCall('_agnes/v1/packages.update', 'params', { ...base, dependents: [incomplete] })
+          .ok,
+      ).toBe(false)
+    }
+    expect(
+      validatePackageAdminCall('_agnes/v1/packages.update', 'params', {
+        ...base,
+        dependents: [{ ...dependent, approved: true }],
+      }).ok,
+    ).toBe(false)
+  })
   it('validates all checked-in contracts through production entry points', () => {
     const result = runFixtureFiles([file])
     expect(result.failed).toEqual([])

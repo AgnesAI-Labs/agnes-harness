@@ -77,7 +77,7 @@ describe('checkApiRange', () => {
   })
 })
 
-describe('stable API subset boundary cases', () => {
+describe('supported API subset boundary cases', () => {
   it.each([
     ['^1.0', '1.9.9', true],
     ['^0.0', '0.0.9', true],

@@ -51,6 +51,7 @@ import {
   type PluginRuntimeSource,
 } from '../types.js'
 import { confirmEnable, confirmSimple, offeredActions, PreviewFacts, RollbackFacts } from './confirms.js'
+import { blockedDependents, startDependentReview } from './dependent-update.js'
 import { adminErrorKey, element, markSettingsPage, setDialog } from './dom.js'
 import { manageExample } from './example-parent.js'
 import { InstallFlow, operationFailure } from './install-flow.js'
@@ -58,6 +59,7 @@ import { rememberInventory, seededState } from './inventory-cache.js'
 import {
   bundledUpdate,
   bundledUpdateAction,
+  canCombineUpdate,
   hasClientContribution,
   isClientOnly,
   readBundledCatalog,
@@ -284,6 +286,7 @@ export class PluginAdminPage {
       cancelOperation: page.cancelOperation.bind(page),
       cancelReview: page.cancelReview.bind(page),
       confirmReview: page.confirmReview.bind(page),
+      reviewDependents: page.reviewDependents.bind(page),
       inspectCatalog: page.inspectCatalog.bind(page),
       inspectFailure: (packageId: string) => page.#flow.failure(packageId),
       inspecting: (packageId: string) => page.#flow.checking(packageId),
@@ -690,7 +693,7 @@ export class PluginAdminPage {
     const { preview, previewMode: mode = 'install' } = this.#state
     const current =
       mode === 'update' ? this.#state.installed.find((item) => item.id === preview?.id) : undefined
-    const combined = !!current && !!preview && this.canCombineUpdate(current, preview)
+    const combined = !!current && !!preview && canCombineUpdate(this, current, preview)
     return this.#flow.state(
       preview,
       mode,
@@ -707,6 +710,15 @@ export class PluginAdminPage {
       !!preview.capabilityHash &&
       this.can('packages.trust') &&
       this.canEffect('packages.activate')
+    )
+  }
+
+  reviewDependents(): Promise<void> {
+    return startDependentReview(
+      this,
+      this.effectApi('packages.install'),
+      this.#state.preview,
+      this.#lifetime.signal,
     )
   }
 
@@ -761,21 +773,13 @@ export class PluginAdminPage {
   /** Submit the install or update the current preview confirms; the operation id once accepted. */
   async #submitPreview(enableAfter: boolean): Promise<string | undefined> {
     const preview = this.#state.preview
-    if (!preview || manageExample(this, preview)) return undefined
+    if (!preview || preview.blockers.length || manageExample(this, preview)) return undefined
     const mode = this.#state.previewMode ?? 'install'
     const api = this.effectApi('packages.install')
     if (!api) return undefined
     const installed = this.#state.installed.find((item) => item.id === preview.id)
     const activeIntegrity = installed ? this.activeIntegrity(installed) : undefined
-    const combined =
-      mode === 'update' &&
-      !!installed &&
-      activeIntegrity !== undefined &&
-      !!preview.capabilityHash &&
-      this.supportsCompositeActivation() &&
-      this.can('packages.install') &&
-      this.can('packages.trust') &&
-      this.can('packages.activate')
+    const combined = mode === 'update' && !!installed && canCombineUpdate(this, installed, preview)
     const receipt = await this.submitPackage(preview.id, () =>
       mode === 'install'
         ? api.install(preview.source, preview.integrity)
@@ -783,7 +787,7 @@ export class PluginAdminPage {
             preview.id,
             preview.source,
             preview.integrity,
-            combined && installed && preview.capabilityHash
+            combined && installed && preview.capabilityHash && activeIntegrity !== undefined
               ? {
                   expectedInstalledIntegrity: installed.integrity,
                   expectedActiveIntegrity: activeIntegrity,
@@ -1040,7 +1044,7 @@ export class PluginAdminPage {
     this.#confirmTrigger ??= this.#sourceTrigger ?? this.#listHost
     const installed =
       mode === 'update' ? this.#state.installed.find((item) => item.id === preview.id) : undefined
-    const combined = !!installed && this.canCombineUpdate(installed, preview)
+    const combined = !!installed && canCombineUpdate(this, installed, preview)
     const enables = this.#previewEnables(preview, mode)
     const action = enables ? 'install-enable' : mode === 'install' ? 'install' : 'update'
     const describe = mode === 'install' ? mode : combined ? 'update-combined' : 'update-compatible'
@@ -1050,14 +1054,21 @@ export class PluginAdminPage {
       label: () => this.#t(`preview.action.${combined ? 'update-activate' : action}`),
       facts: <PreviewFacts preview={preview} current={installed} combined={combined} t={this.#t} />,
       run: () => this.confirmPreview(enables),
-      ...(enables
+      ...(blockedDependents(preview).length
         ? {
             secondary: {
-              label: () => this.#t('preview.action.install-only'),
-              run: () => this.confirmPreview(),
+              label: () => this.#t('update.dependents.review'),
+              run: () => this.reviewDependents(),
             },
           }
-        : {}),
+        : enables
+          ? {
+              secondary: {
+                label: () => this.#t('preview.action.install-only'),
+                run: () => this.confirmPreview(),
+              },
+            }
+          : {}),
     })
   }
 
@@ -1153,17 +1164,6 @@ export class PluginAdminPage {
     )
       return null
     return undefined
-  }
-
-  canCombineUpdate(item: PackageInstalledDescriptor, preview: PackagePreview): boolean {
-    return (
-      this.supportsCompositeActivation() &&
-      this.activeIntegrity(item) !== undefined &&
-      !!preview.capabilityHash &&
-      this.can('packages.install') &&
-      this.can('packages.trust') &&
-      this.can('packages.activate')
-    )
   }
 
   packageBusy(packageId: string): boolean {

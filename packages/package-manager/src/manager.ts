@@ -92,6 +92,7 @@ import {
   recoverPackageStore,
 } from './store.js'
 import { runTrustGate, verifyInstalledIntegrity } from './trust-gate.js'
+import { dependentUpdateBlockers, updatePackages } from './update.js'
 import { hashWorkspace, readDeployManifest, supportsHarness } from './workspace.js'
 
 export type PackageStatus = {
@@ -159,6 +160,12 @@ export interface PackageManager {
       installer?: 'agent' | 'user'
       authoring?: import('@agnes/protocol').AuthoringProvenance
       activation?: PackageLifecycleActivation
+      dependents?: readonly {
+        id: string
+        source: PackageSource
+        expectedIntegrity: string
+        activation: PackageLifecycleActivation
+      }[]
     },
   ): Promise<LockEntry>
   enable(
@@ -758,105 +765,29 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
     },
     async update(profileDir, id, requestedSource, op) {
       const source = { ...requestedSource },
-        expectedIntegrity = op.expectedIntegrity
+        request = {
+          ...op,
+          ...(op.activation ? { activation: structuredClone(op.activation) } : {}),
+          ...(op.dependents ? { dependents: structuredClone(op.dependents) } : {}),
+        }
       return locked(
         profileDir,
         async () => {
-          const lock = load(profileDir),
-            store = storeFor(profileDir)
+          const lock = load(profileDir)
           writable(lock)
-          const current = installed(store, lock, id, true).entry
-          if (
-            op.expectedInstalledIntegrity !== undefined &&
-            current.integrity !== op.expectedInstalledIntegrity
-          )
-            throw new PackageError('E_LOCK_MISMATCH', 'installed package changed since candidate review', {
-              code: 'E_PACKAGE_PREVIEW_STALE',
-            })
-          if (op.activation && current.integrity !== op.activation.expectedInstalledIntegrity)
-            throw new PackageError('E_LOCK_MISMATCH', 'installed package preview is stale', {
-              code: 'E_PACKAGE_PREVIEW_STALE',
-            })
-          const stage = stageFor(profileDir)
-          try {
-            const acquired = await acquire(source, stage, op, profileDir)
-            const fetched = op.installer
-              ? {
-                  ...acquired,
-                  provenance: {
-                    ...acquired.provenance!,
-                    installer: op.installer,
-                    ...(op.authoring ? { authoring: op.authoring } : {}),
-                  },
-                }
-              : acquired
-            if (fetched.integrity !== expectedIntegrity)
-              throw new PackageError('E_LOCK_MISMATCH', 'package preview is stale', {
-                code: 'E_PACKAGE_PREVIEW_STALE',
-              })
-            const { preview, treeIntegrity } = inspectStaged({
-              dir: stage,
-              source: fetched.source ?? source,
-              fetched,
-              previous: current,
-              ceiling: ceiling(lock),
-              capabilityPolicy: readPluginCapabilityPolicy(profileDir),
-              ...(op.signal ? { signal: op.signal } : {}),
-            })
-            if (preview.id !== id)
-              throw new PackageError('E_LOCK_MISMATCH', 'update package identity differs')
-            if (preview.blockers.length)
-              throw new PackageError('E_API_RANGE', 'package update is blocked', {
-                detail: { blockers: preview.blockers },
-              })
-            const entry = entryFrom(
-              fetched.source ?? source,
-              fetched,
-              readPackageJson(stage),
-              undefined,
-              stamp(),
-              current,
-            )
-            entry.contributions = preview.contributions
-            if (preview.metadata) entry.metadata = preview.metadata
-            else delete entry.metadata
-            if (preview.declaredCapabilities !== undefined)
-              entry.declaredCapabilities = preview.declaredCapabilities
-            else delete entry.declaredCapabilities
-            entry.treeIntegrity = treeIntegrity
-            entry.surfaces = preview.contributions.flatMap((c) =>
-              c.kind === 'surface' ? [c.descriptor] : [],
-            )
-            entry.previous = previousSnapshot(current)
-            if (op.activation) {
-              if (current.state.trusted === null)
-                throw new PackageError(
-                  'E_WORKSPACE_UNTRUSTED',
-                  'untrusted package cannot activate during update',
-                )
-              const trusted = trustPackageEntry(
-                store,
-                id,
-                entry,
-                stage,
-                op.activation.trust,
-                minimumReleaseAgeMin,
-                ceiling(lock),
-              )
-              trusted.state.enabled = true
-              Object.assign(entry, trusted)
-            }
-            progress(op, 'committing')
-            await assertNoReferences(store, lock, id, 'update', options.references)
-            checkCancelled(op.signal)
-            commitPackage(store, lock, id, entry, 'update', stage)
-            try {
-              op.onProgress?.(Object.freeze({ phase: 'completed', percent: 100 }))
-            } catch {}
-            return entry
-          } finally {
-            clearStage(stage)
-          }
+          return updatePackages({
+            profileDir,
+            id,
+            source,
+            op: request,
+            lock,
+            store: storeFor(profileDir),
+            acquire,
+            stageFor,
+            ceiling: ceiling(lock),
+            minimumReleaseAgeMin,
+            ...(options.references ? { references: options.references } : {}),
+          })
         },
         op,
       )
@@ -878,7 +809,13 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
           ...(op.signal ? { signal: op.signal } : {}),
         })
         progress(op, 'completed')
-        return previewWithExampleParent(preview, () => readInventory(lock, storeFor(profileDir)).packages)
+        const checked = previous
+          ? {
+              ...preview,
+              blockers: [...preview.blockers, ...dependentUpdateBlockers(lock, preview.id, preview.version)],
+            }
+          : preview
+        return previewWithExampleParent(checked, () => readInventory(lock, storeFor(profileDir)).packages)
       } finally {
         clearStage(stage)
       }

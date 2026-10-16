@@ -31,6 +31,7 @@ export type CompositeTargetActivationOptions = Readonly<{
   workerGeneration?: () => number | undefined
   /** Produce the complete desired artifact after lockfile enable/disable/update. */
   desiredFor?(input: {
+    packageIds?: readonly string[]
     profile: string
     packageId: string
     operation: 'enable' | 'disable' | 'update' | 'rollback' | 'remove'
@@ -294,6 +295,7 @@ export function createCompositeTargetActivation(
             (await options.desiredFor?.({
               profile: input.profile,
               packageId: input.packageId,
+              ...(input.packageIds ? { packageIds: input.packageIds } : {}),
               operation: input.operation,
             })) ?? options.store.desired()
         }
@@ -313,7 +315,8 @@ export function createCompositeTargetActivation(
         }
       }
       await options.deliver?.(next)
-      options.store.clearPackageFailure(input.packageId)
+      for (const packageId of [input.packageId, ...(input.packageIds ?? [])])
+        options.store.clearPackageFailure(packageId)
       if (!wait) {
         if (packageStopped(options.store, options.workerGeneration?.(), input.packageId))
           await options.releaseRetiring?.(input.packageId)

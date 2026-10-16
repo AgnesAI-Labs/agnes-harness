@@ -27,13 +27,16 @@ function cmp(a: Semver, b: Semver): number {
   if (delta || a.pre === b.pre) return delta
   if (a.pre === undefined) return 1
   if (b.pre === undefined) return -1
-  const left = a.pre.split('.'), right = b.pre.split('.')
+  const left = a.pre.split('.'),
+    right = b.pre.split('.')
   for (let i = 0; i < Math.max(left.length, right.length); i++) {
-    const x = left[i], y = right[i]
+    const x = left[i],
+      y = right[i]
     if (x === y) continue
     if (x === undefined) return -1
     if (y === undefined) return 1
-    const xn = /^\d+$/.test(x), yn = /^\d+$/.test(y)
+    const xn = /^\d+$/.test(x),
+      yn = /^\d+$/.test(y)
     if (xn !== yn) return xn ? -1 : 1
     if (xn && x.length !== y.length) return x.length - y.length
     return x < y ? -1 : 1
@@ -84,10 +87,14 @@ export function satisfiesApiRange(range: string, version = API_VERSION as string
   if (!v || typeof range !== 'string' || !range.trim()) return false
   const tokens = range.trim().split(/\s+/)
   if (!tokens.every((token) => admits(token, v))) return false
-  return v.pre === undefined || range.trim() === '*' || tokens.some((token) => {
-    const base = parseSemver(token.replace(/^(>=|<=|>|<|=|\^|~)/, ''))
-    return base?.pre !== undefined && tuple(v, base) === 0
-  })
+  return (
+    v.pre === undefined ||
+    range.trim() === '*' ||
+    tokens.some((token) => {
+      const base = parseSemver(token.replace(/^(>=|<=|>|<|=|\^|~)/, ''))
+      return base?.pre !== undefined && tuple(v, base) === 0
+    })
+  )
 }
 export function checkApiRange(
   manifest: { id: string; apiRange: string },

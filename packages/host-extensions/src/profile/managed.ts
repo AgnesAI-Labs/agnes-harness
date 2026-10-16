@@ -366,21 +366,27 @@ export class ProfileManagedResources {
     if (!input) return undefined
     return {
       prepare: async (): Promise<PreparedServiceEffect> => {
+        // Preparation runs before the service handler, which normally waits for publication.
+        await this.settle()
         input.assert()
         if (this.closed || (this.current && !this.current(input.owner, input.integrity, input.revision)))
-          throw rpcError('CAPABILITY_DENIED')
+          throw rpcError('CAPABILITY_DENIED', { reason: 'MANAGED_ACTIVATION_CHANGED' })
         const profile = profiles.get(this.key)
         const r = profile?.resources.find(
           (r) => r.owner === owner && r.id === input.definition.id && r.revision === input.revision,
         )
+        await r?.value.catch(() => undefined)
+        input.assert()
         if (
+          this.closed ||
+          profiles.get(this.key) !== profile ||
           profile?.manager !== this ||
           !r ||
           r.status.state !== 'failed' ||
           r.status.code !== 'shutdown-unconfirmed' ||
           input.store.get(`managed-shutdown:${r.id}`) !== true
         )
-          throw rpcError('CAPABILITY_DENIED')
+          throw rpcError('CAPABILITY_DENIED', { reason: 'MANAGED_RESOURCE_NOT_RECOVERABLE' })
         const identity = input.store.get(`managed-process:${r.id}`) ?? null
         const resourceRevision = managedRevision(input.store, r, input.revision, input.integrity)
         const identityState = await managedProcessState(identity, this.processIdentity)
@@ -392,7 +398,8 @@ export class ProfileManagedResources {
           resourceRevision !== managedRevision(input.store, r, input.revision, input.integrity)
         )
           throw rpcError('CAPABILITY_DENIED')
-        if (identityState === 'alive') throw rpcError('CAPABILITY_DENIED')
+        if (identityState === 'alive')
+          throw rpcError('CAPABILITY_DENIED', { reason: 'MANAGED_PROCESS_ALIVE' })
         return {
           input: {},
           resourceRevision,

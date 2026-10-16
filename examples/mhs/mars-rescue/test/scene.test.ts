@@ -1,12 +1,15 @@
 // @vitest-environment happy-dom
 import { expect, it, vi } from 'vitest'
 
+const assets = vi.hoisted(() => ({ failed: false }))
 vi.mock('../src/assets.js', () => ({
-  loadModels: async () =>
-    new Map([['rover', new Float32Array([0, 0, 0, 1, 1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 0, 1, 1, 1])]]),
+  loadModels: async () => {
+    if (assets.failed) throw new Error('model-asset-unavailable')
+    return new Map([['rover', new Float32Array([0, 0, 0, 1, 1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 0, 1, 1, 1])]])
+  },
 }))
 
-import { MarsScene, VIEWS } from '../src/scene.js'
+import { MarsScene, sceneFailure, VIEWS } from '../src/scene.js'
 import { MarsSimulation } from '../src/simulation.js'
 
 it('renders every view with bounded orbit/zoom and lighting options, then releases GPU models', async () => {
@@ -65,9 +68,16 @@ it('renders every view with bounded orbit/zoom and lighting options, then releas
       draws++
     },
   }
+  const sim = new MarsSimulation()
+  const unavailable = { getContext: () => null } as unknown as HTMLCanvasElement
+  expect(() => new MarsScene(unavailable, sim)).toThrow('WebGL unavailable')
+  expect(sceneFailure(new Error('WebGL unavailable'))).toContain('hardware acceleration')
+  expect(sceneFailure(new Error('Offline scene asset unavailable'))).toContain(
+    'repair the example installation',
+  )
+  expect(sceneFailure(new Error('WebGL context lost'))).toContain('Close other 3D views')
   const canvas = { width: 960, height: 540, getContext: () => gl } as unknown as HTMLCanvasElement
-  const sim = new MarsSimulation(),
-    scene = new MarsScene(canvas, sim)
+  const scene = new MarsScene(canvas, sim)
   await scene.ready
   for (let i = 0; i < VIEWS.length; i++) {
     scene.view = i
@@ -102,5 +112,14 @@ it('renders every view with bounded orbit/zoom and lighting options, then releas
   expect(removed).toHaveLength(count)
   expect(count).toBe(3)
   expect(() => scene.render()).toThrow('context lost')
+  assets.failed = true
+  const failedScene = new MarsScene(canvas, sim)
+  try {
+    await expect(failedScene.ready).rejects.toThrow('model-asset-unavailable')
+    expect(() => failedScene.render()).toThrow('Offline scene asset unavailable')
+  } finally {
+    failedScene.dispose()
+    assets.failed = false
+  }
   await sim.stop()
 })

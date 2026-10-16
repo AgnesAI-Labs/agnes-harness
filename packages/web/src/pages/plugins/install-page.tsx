@@ -73,6 +73,7 @@ export function InstallReviewPage({ view }: { view: PluginView | undefined }) {
           tier={purposeText(`origin.${origin}`)}
           t={view.t}
           onCancel={() => nav.current.back()}
+          onReviewDependents={() => void view.reviewDependents()}
           onConfirm={(enableAfter) => void view.confirmReview(enableAfter)}
         />
       )}

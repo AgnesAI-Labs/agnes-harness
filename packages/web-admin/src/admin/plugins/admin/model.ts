@@ -103,3 +103,18 @@ export function bundledUpdateAction(
     onClick: () => void view.inspectCatalog(candidate),
   }
 }
+
+export function canCombineUpdate(
+  page: PluginAdminPage,
+  item: PackageInstalledDescriptor,
+  preview: import('@agnes/protocol').PackagePreview,
+): boolean {
+  return (
+    page.supportsCompositeActivation() &&
+    page.activeIntegrity(item) !== undefined &&
+    !!preview.capabilityHash &&
+    page.can('packages.install') &&
+    page.can('packages.trust') &&
+    page.can('packages.activate')
+  )
+}

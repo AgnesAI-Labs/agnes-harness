@@ -1570,15 +1570,18 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
                 )
             },
             workerGeneration: () => pool.businessWorker()?.generation,
-            desiredFor: async ({ packageId, operation }) => {
+            desiredFor: async ({ packageId, operation, packageIds = [] }) => {
               latestInventory = await packageRuntime.manager.inventory(packageProfileDirectory)
-              return rebuildDesiredFromInventory({
-                previous: runtimeStore.desired(),
-                inventory: latestInventory,
-                packageId,
-                operation,
-                configuration: (rowId) => runtimeStore.configAudit.value(packageId, rowId),
-              })
+              let previous = runtimeStore.desired()
+              for (const member of [packageId, ...packageIds])
+                previous = rebuildDesiredFromInventory({
+                  previous,
+                  inventory: latestInventory,
+                  packageId: member,
+                  operation,
+                  configuration: (rowId) => runtimeStore.configAudit.value(member, rowId),
+                })
+              return previous
             },
             contributions: (packageId) =>
               latestInventory.packages.find((pkg) => pkg.id === packageId)?.contributions,

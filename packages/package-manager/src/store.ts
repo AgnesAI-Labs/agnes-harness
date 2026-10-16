@@ -209,6 +209,8 @@ function finish(s: PackageStore, j: Journal): void {
     exact(p.stage, j.nextTree)
     discard(p, p.stage)
   }
+}
+function complete(s: PackageStore): void {
   rmSync(journalPath(s))
   syncDirectory(s.profileDir)
   s.checkpoint?.('finished')
@@ -216,17 +218,40 @@ function finish(s: PackageStore, j: Journal): void {
 /** Caller holds the unique Profile lock. No decision uses operation labels or UI state. */
 export function recoverPackageStore(s: PackageStore): void {
   if (!existsSync(journalPath(s))) return
-  const lock = readLock(s.profileDir, { profile: s.profile, agnesVersion: s.agnesVersion }),
-    j = checked(s, lock, readStaticJson(journalPath(s))),
-    p = paths(s, j)
+  const lock = readLock(s.profileDir, { profile: s.profile, agnesVersion: s.agnesVersion })
+  const raw = readStaticJson(journalPath(s))
+  let entries: Journal[]
+  if (raw.version === 2) {
+    if (
+      Object.keys(raw).sort().join(',') !== 'entries,version' ||
+      !Array.isArray(raw.entries) ||
+      raw.entries.length < 2 ||
+      raw.entries.length > 33
+    )
+      fail('journal-group')
+    entries = raw.entries.map((entry) => checked(s, lock, entry))
+    if (
+      new Set(entries.map((j) => j.id)).size !== entries.length ||
+      new Set(entries.map((j) => paths(s, j).dest)).size !== entries.length ||
+      new Set(entries.map((j) => j.transactionId)).size !== entries.length
+    )
+      fail('journal-group-identity')
+  } else entries = [checked(s, lock, raw)]
+  for (const j of entries) rmSync(paths(s, j).trash, { recursive: true, force: true })
+  const matches = (key: 'old' | 'next') =>
+    entries.every((j) => canonical(own(lock.packages, j.id) ?? null) === canonical(j[key]))
+  if (matches('next')) {
+    for (const j of entries) finish(s, j)
+  } else {
+    if (!matches('old')) fail('lock-mismatch')
+    for (const j of [...entries].reverse()) restore(s, j)
+  }
+  complete(s)
+}
+function restore(s: PackageStore, j: Journal): void {
+  const p = paths(s, j)
   // Only this journal names its trash, and only verified trees enter it: a partial delete is expected.
   rmSync(p.trash, { recursive: true, force: true })
-  const current = own(lock.packages, j.id) ?? null
-  if (canonical(current) === canonical(j.next)) {
-    finish(s, j)
-    return
-  }
-  if (canonical(current) !== canonical(j.old)) fail('lock-mismatch')
   if (j.stage !== null || j.next === null) {
     if (present(p.backup)) {
       exact(p.backup, j.oldTree)
@@ -246,8 +271,6 @@ export function recoverPackageStore(s: PackageStore): void {
       discard(p, p.stage)
     }
   } else exact(p.dest, j.oldTree)
-  rmSync(journalPath(s))
-  syncDirectory(s.profileDir)
 }
 /** Retains crash fixtures at each point; subsequent calls recover from lock+digest. */
 export function commitPackage(
@@ -258,6 +281,46 @@ export function commitPackage(
   operation: string,
   stage?: string,
 ): void {
+  commitPackages(s, lock, [{ id, next, operation, ...(stage ? { stage } : {}) }])
+}
+export type PackageChange = { id: string; next: LockEntry | null; operation: string; stage?: string }
+/** One atomic lock publication, with digest-checked rollback before it and roll-forward after it. */
+export function commitPackages(s: PackageStore, lock: Lockfile, changes: readonly PackageChange[]): void {
+  if (!changes.length || changes.length > 33 || new Set(changes.map((c) => c.id)).size !== changes.length)
+    fail('transaction-group')
+  if (existsSync(journalPath(s))) fail('pending-transaction')
+  const draft = { ...lock, packages: { ...lock.packages } }
+  const entries = changes.map((change) => {
+    const j = prepare(s, lock, change)
+    if (j.next) draft.packages[j.id] = j.next
+    else delete draft.packages[j.id]
+    return j
+  })
+  if (new Set(entries.map((j) => paths(s, j).dest)).size !== entries.length) fail('package-path-collision')
+  if (!validateLockfile(draft).ok) fail('new-lock')
+  const serialized = `${JSON.stringify(entries.length === 1 ? entries[0] : { version: 2, entries })}\n`
+  if (Buffer.byteLength(serialized) > 1048576) fail('journal-size')
+  const file = journalPath(s),
+    tmp = `${file}.tmp`
+  mkdirSync(dirname(paths(s, entries[0]!).dest), { recursive: true })
+  writeFileSync(tmp, serialized, { mode: 0o600, flush: true })
+  renameWriteThroughSync(resolve(tmp), resolve(file))
+  s.checkpoint?.('prepared')
+  for (const j of entries) {
+    const p = paths(s, j)
+    if ((j.stage || j.next === null) && j.oldTree !== null) renameSync(p.dest, p.backup)
+    s.checkpoint?.('old-moved')
+    if (p.stage) renameSync(p.stage, p.dest)
+    s.checkpoint?.('new-moved')
+  }
+  writeLock(s.profileDir, draft)
+  s.checkpoint?.('lock-written')
+  for (const j of entries) finish(s, j)
+  complete(s)
+}
+function prepare(s: PackageStore, lock: Lockfile, change: PackageChange): Journal {
+  const { id, operation, stage } = change
+  let { next } = change
   if (next?.provenance)
     next = {
       ...next,
@@ -296,26 +359,8 @@ export function commitPackage(
     oldTree,
     nextTree,
   }
-  // Validate all future lock bytes before publishing an intent or moving any directory.
-  const draft = { ...lock, packages: { ...lock.packages } }
-  if (next) draft.packages[id] = next
-  else delete draft.packages[id]
-  if (!validateLockfile(draft).ok) fail('new-lock')
-  const serialized = `${JSON.stringify(j)}\n`
+  const serialized = JSON.stringify(j)
   if (Buffer.byteLength(serialized) > 1048576) fail('journal-size')
   checked(s, lock, JSON.parse(serialized) as Record<string, unknown>)
-  const file = journalPath(s),
-    tmp = `${file}.tmp`
-  mkdirSync(dirname(dest), { recursive: true })
-  writeFileSync(tmp, serialized, { mode: 0o600, flush: true })
-  renameWriteThroughSync(resolve(tmp), resolve(file))
-  s.checkpoint?.('prepared')
-  const p = paths(s, j)
-  if ((stage || next === null) && oldTree !== null) renameSync(dest, p.backup)
-  s.checkpoint?.('old-moved')
-  if (stage) renameSync(stage, dest)
-  s.checkpoint?.('new-moved')
-  writeLock(s.profileDir, draft)
-  s.checkpoint?.('lock-written')
-  finish(s, j)
+  return j
 }

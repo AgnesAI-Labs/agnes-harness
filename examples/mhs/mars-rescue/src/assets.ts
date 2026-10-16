@@ -13,7 +13,12 @@ export async function loadModels(signal: AbortSignal): Promise<Map<ModelName, Fl
   return new Map(
     await Promise.all(
       MODEL_NAMES.map(async (name) => {
-        const response = await fetch(new URL(`../assets/${name}.bin`, import.meta.url), { signal })
+        let response: Response
+        try {
+          response = await fetch(new URL(`../assets/${name}.bin`, import.meta.url), { signal })
+        } catch (error) {
+          throw new Error('model-asset-unavailable', { cause: error })
+        }
         if (!response.ok) throw new Error('model-asset-unavailable')
         const buffer = await response.arrayBuffer()
         if (buffer.byteLength > 32 * 1024 * 1024 || buffer.byteLength % 72 !== 0)

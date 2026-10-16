@@ -155,3 +155,40 @@ describe('composite-target-activation: dropUnpinnedLastGood plugin-id parsing', 
     expect(store.lastGood()).toBeUndefined()
   })
 })
+
+it('probes and publishes one reviewed target for a parent and its dependent', async () => {
+  const store = new CompositeTargetStore(sqliteTables().table('joint-update'), 'default')
+  const before = target([
+    pluginRow('ext:parent/main', `parent@${snap1}/main`, snap1),
+    pluginRow('ext:example/main', `example@${snap1}/main`, snap1),
+  ])
+  const next = target([
+    pluginRow('ext:parent/main', `parent@${snap2}/main`, snap2),
+    pluginRow('ext:example/main', `example@${snap2}/main`, snap2),
+  ])
+  store.publishDesired(before)
+  let delivered: RuntimeTargetArtifact | undefined
+  const activation = createCompositeTargetActivation({
+    store,
+    desiredFor: async (input) => {
+      expect(input).toMatchObject({ packageId: 'parent', packageIds: ['example'], operation: 'update' })
+      return next
+    },
+    probe: async (artifact) => {
+      expect(artifact.digest).toBe(next.digest)
+    },
+    deliver: async (artifact) => {
+      delivered = artifact
+    },
+  })
+  await activation.reconcile({
+    profile: 'default',
+    packageId: 'parent',
+    packageIds: ['example'],
+    operation: 'update',
+    operationId: 'reviewed-joint-update',
+    signal: new AbortController().signal,
+  })
+  expect(store.desired()?.digest).toBe(next.digest)
+  expect(delivered?.digest).toBe(next.digest)
+})

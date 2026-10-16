@@ -1,3 +1,4 @@
+import { setImmediate as nextTurn } from 'node:timers/promises'
 import { MemoryStorage } from '@agnes/core'
 import { fakeSeams } from '@agnes/core/testkit'
 import type {
@@ -213,26 +214,29 @@ async function approve(
 }
 
 describe('current profile authority', () => {
-  it.each(['1.0.0', '0.1.0-alpha.0'])('serves a %s sessionless report query while refusing forged identity and mutation authority', async (version) => {
-    const f = fixture(version),
-      runtime = f.make()
-    try {
-      expect(
-        await runtime.call({ extension: owner, service: 'reports.read', input: { value: 3 } }, 'granted'),
-      ).toEqual({ output: { value: 3 } })
-      for (const key of ['actor', 'role', 'profileId', 'approved', 'approval', 'owner', 'sessionId'])
-        await expect(runtime.call({ ...f.call, [key]: true }, 'granted')).rejects.toMatchObject({
-          data: { code: 'INVALID_PARAMS' },
-        })
-      await expect(
-        runtime.call({ ...f.call, sessionReads: ['owned-session'] }, 'granted'),
-      ).rejects.toMatchObject({ data: { code: 'CAPABILITY_DENIED' } })
-      await expect(runtime.call(f.call, 'forged')).rejects.toThrow()
-      expect(f.handler).not.toHaveBeenCalled()
-    } finally {
-      await runtime.close()
-    }
-  })
+  it.each(['1.0.0', '0.1.0-alpha.0'])(
+    'serves a %s sessionless report query while refusing forged identity and mutation authority',
+    async (version) => {
+      const f = fixture(version),
+        runtime = f.make()
+      try {
+        expect(
+          await runtime.call({ extension: owner, service: 'reports.read', input: { value: 3 } }, 'granted'),
+        ).toEqual({ output: { value: 3 } })
+        for (const key of ['actor', 'role', 'profileId', 'approved', 'approval', 'owner', 'sessionId'])
+          await expect(runtime.call({ ...f.call, [key]: true }, 'granted')).rejects.toMatchObject({
+            data: { code: 'INVALID_PARAMS' },
+          })
+        await expect(
+          runtime.call({ ...f.call, sessionReads: ['owned-session'] }, 'granted'),
+        ).rejects.toMatchObject({ data: { code: 'CAPABILITY_DENIED' } })
+        await expect(runtime.call(f.call, 'forged')).rejects.toThrow()
+        expect(f.handler).not.toHaveBeenCalled()
+      } finally {
+        await runtime.close()
+      }
+    },
+  )
   it('reuses durable AR1 approvals, consumes once with dispatch intent, and replays receipts after restart', async () => {
     const f = fixture()
     let runtime = f.make()
@@ -561,6 +565,7 @@ describe('current profile authority', () => {
 
 it.each([
   'approved',
+  'publishing',
   'rejected',
   'stale-marker',
   'stale-generation',
@@ -571,11 +576,20 @@ it.each([
   'probe-unavailable',
   'unauthorized',
 ] as const)('reconciles a managed singleton through native decisions: %s', async (scenario) => {
-  const f = fixture()
+  const f = fixture(scenario === 'approved' ? '0.1.0-alpha.0' : '0.1.0')
+  let releaseStartup!: () => void, enteredProbe!: () => void
+  const startupGate = new Promise<void>((resolve) => {
+    releaseStartup = resolve
+  })
+  const startupProbe = new Promise<void>((resolve) => {
+    enteredProbe = resolve
+  })
   const store = ownedStore(f.meta.namespace(owner, 'managed:server'), () => {}, true)
   store.set('managed-shutdown:server', true)
   // Boolean-only records deliberately have no identity.
-  if (['dead', 'alive', 'became-live', 'live-at-dispatch', 'probe-unavailable'].includes(scenario))
+  if (
+    ['dead', 'alive', 'became-live', 'live-at-dispatch', 'probe-unavailable', 'publishing'].includes(scenario)
+  )
     store.set('managed-process:server', { pid: 42, startId: 'old' })
   store.set('operation:motion', { state: 'unknown' })
   let identity: 'dead' | 'alive' | 'unknown' = scenario === 'alive' ? 'alive' : 'unknown'
@@ -588,6 +602,10 @@ it.each([
     () => current,
     async (pid) => {
       if (pid === process.pid) return { state: 'alive', startId: 'self' }
+      if (scenario === 'publishing') {
+        enteredProbe()
+        await startupGate
+      }
       if (scenario === 'probe-unavailable') throw new Error('unavailable')
       return identity === 'alive'
         ? { state: 'alive', startId: 'old' }
@@ -657,14 +675,32 @@ it.each([
   }
 
   try {
-    await managed.publish()
+    const publication = managed.publish()
+    let duringPublication: ReturnType<typeof runtime.call> | undefined
+    if (scenario === 'publishing') {
+      await startupProbe
+      let settled = false
+      duringPublication = runtime.call(params, 'granted')
+      void duringPublication.then(
+        () => {
+          settled = true
+        },
+        () => {
+          settled = true
+        },
+      )
+      await nextTurn()
+      expect(settled).toBe(false)
+      releaseStartup()
+    }
+    await publication
     await expect(handle.get()).rejects.toThrow()
     if (scenario === 'dead') identity = 'dead'
     if (scenario === 'alive' || scenario === 'unauthorized') {
       await expect(runtime.call(params, scenario === 'unauthorized' ? 'forged' : 'granted')).rejects.toThrow()
       expect(await runtime.listDecisions('human')).toEqual([])
     } else {
-      const first = await runtime.call(params, 'granted')
+      const first = await (duringPublication ?? runtime.call(params, 'granted'))
       if (scenario === 'dead') {
         expect(first).toMatchObject({ state: 'completed' })
         expect(await runtime.listDecisions('human')).toEqual([])
@@ -694,7 +730,7 @@ it.each([
           })
       }
     }
-    const recovered = ['approved', 'dead', 'probe-unavailable'].includes(scenario)
+    const recovered = ['approved', 'dead', 'probe-unavailable', 'publishing'].includes(scenario)
     if (recovered) {
       expect(await handle.get()).toBe('recovered')
       expect(await runtime.call(params, 'granted')).toMatchObject({ state: 'completed' })
@@ -706,6 +742,7 @@ it.each([
     }
     expect(store.get('operation:motion')).toEqual({ state: 'unknown' })
   } finally {
+    releaseStartup()
     await runtime.close()
     await managed.close().catch(() => undefined)
   }

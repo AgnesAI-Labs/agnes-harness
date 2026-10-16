@@ -1,4 +1,4 @@
-import { parseSemver } from '@agnes/extension-api'
+import { parseSemver, satisfiesApiRange } from '@agnes/extension-api'
 import { HostError } from '@agnes/host-common/errors'
 
 const radix = BigInt(Number.MAX_SAFE_INTEGER) + 1n,
@@ -57,6 +57,16 @@ function interval(range: string): [bigint, bigint] {
   return [low, high]
 }
 export function rangeNarrows(requested: string, ceiling: string): boolean {
+  for (const range of [requested, ceiling])
+    if (typeof range !== 'string' || !range.trim() || range.length > 64) invalid()
+  // A wildcard now includes prereleases; no stable-only ceiling can grant that authority.
+  if (requested.trim() === '*') {
+    interval(ceiling)
+    return ceiling.trim() === '*'
+  }
+  const exactVersion = requested.trim().replace(/^=/, '')
+  const exact = parseSemver(exactVersion)
+  if (exact?.pre !== undefined) return satisfiesApiRange(ceiling, exactVersion)
   const [lo, hi] = interval(requested),
     [min, max] = interval(ceiling)
   return lo >= min && hi <= max
