@@ -204,9 +204,18 @@ export class ProfileManagedResources {
           r.status.state = 'stopping'
           lifetime.abort(reason)
           await r.value.catch(() => undefined)
+          // A blocked definition never acquired a live instance. Retiring its registration must
+          // not poison the next publication: leave the durable unknown marker for native recovery.
+          if (!started) {
+            r.status =
+              input.store.get(`managed-shutdown:${r.id}`) === true
+                ? { state: 'failed', code: 'shutdown-unconfirmed' }
+                : { state: 'stopped' }
+            ended = true
+            return
+          }
           const result = await shut(reason)
-          const settled =
-            result?.state === 'settled' || (!started && input.store.get(`managed-shutdown:${r.id}`) !== true)
+          const settled = result?.state === 'settled'
           r.status = settled ? { state: 'stopped' } : { state: 'failed', code: 'shutdown-unconfirmed' }
           ended = true
           markShutdown(input.store, r.id, !settled)

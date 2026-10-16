@@ -11,6 +11,7 @@ import { PackageError } from './errors.js'
 import { exampleParentBlockers } from './example-parent.js'
 import { inspectVerifiedTree } from './inspect.js'
 import { canonical, capabilityHash, freezeData, readStaticJson, snapshotHash } from './integrity.js'
+import { reviewedContributionsMatch } from './inventory-client-compatibility.js'
 import type { LockEntry, Lockfile } from './lockfile.js'
 import { readPackagePresentation } from './package-presentation.js'
 import { capabilityPolicyBlockers, readPluginCapabilityPolicy } from './plugin-capabilities.js'
@@ -184,7 +185,7 @@ export function verifyPackageDirectory(
   }
   if (
     checked.preview.id !== id ||
-    canonical(checked.preview.contributions) !== canonical(entry.contributions) ||
+    !reviewedContributionsMatch(checked.preview.contributions, entry.contributions) ||
     canonical(checked.preview.dependencies) !== canonical(entry.dependencies) ||
     canonical(checked.preview.metadata) !== canonical(entry.metadata) ||
     canonical(checked.preview.declaredCapabilities) !== canonical(entry.declaredCapabilities)

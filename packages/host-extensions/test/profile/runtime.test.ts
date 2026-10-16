@@ -564,6 +564,7 @@ describe('current profile authority', () => {
 
 it.each([
   'approved',
+  'upgraded',
   'publishing',
   'rejected',
   'stale-marker',
@@ -614,7 +615,7 @@ it.each([
     },
   )
   const configSchema = { type: 'object', properties: {}, additionalProperties: false } as const
-  const handle = managed.register({
+  const registration = {
     owner,
     packageId: '@acme/server',
     integrity: 'snapshot-one',
@@ -642,7 +643,26 @@ it.each([
         return 'recovered'
       },
     },
-  })
+  } satisfies Parameters<ProfileManagedResources['register']>[0]
+  const handle = managed.register(registration)
+  const previous =
+    scenario === 'upgraded'
+      ? new ProfileManagedResources(`native-reconcile-${scenario}`, () => {
+          throw new Error('unused')
+        })
+      : undefined
+  if (previous) {
+    const old = previous.register({
+      ...registration,
+      integrity: 'previous-snapshot',
+      revision: 'previous-generation',
+    })
+    await previous.publish()
+    await expect(old.get()).rejects.toThrow()
+    expect(previous.statuses('@acme/server')).toMatchObject([
+      { state: 'failed', code: 'shutdown-unconfirmed' },
+    ])
+  }
   registerManagedServices(
     'server',
     {
@@ -729,7 +749,7 @@ it.each([
           })
       }
     }
-    const recovered = ['approved', 'dead', 'probe-unavailable', 'publishing'].includes(scenario)
+    const recovered = ['approved', 'upgraded', 'dead', 'probe-unavailable', 'publishing'].includes(scenario)
     if (recovered) {
       expect(await handle.get()).toBe('recovered')
       expect(await runtime.call(params, 'granted')).toMatchObject({ state: 'completed' })
@@ -744,5 +764,6 @@ it.each([
     releaseStartup()
     await runtime.close()
     await managed.close().catch(() => undefined)
+    await previous?.close().catch(() => undefined)
   }
 })
