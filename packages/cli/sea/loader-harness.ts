@@ -14,10 +14,14 @@ async function run(): Promise<void> {
     agnesVersion: AGNES_VERSION,
   })
   const extension = await loader.import(entry)
-  if (typeof extension.default !== 'function') throw new Error('extension has no default factory')
-  await extension.default({
-    registerTool: (tool: { name: string; execute(): Promise<{ content: { text?: string }[] }> }) =>
-      tools.set(tool.name, tool),
+  const plugin = extension.default
+  if (!plugin || typeof plugin !== 'object' || !('apply' in plugin) || typeof plugin.apply !== 'function')
+    throw new Error('extension has no plugin apply entry')
+  await plugin.apply({
+    tools: {
+      register: (tool: { name: string; execute(): Promise<{ content: { text?: string }[] }> }) =>
+        tools.set(tool.name, tool),
+    },
   })
   const tool = tools.get('hello_ping')
   if (!tool) throw new Error('extension did not register hello_ping')

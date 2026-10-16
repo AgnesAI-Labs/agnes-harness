@@ -1,18 +1,5 @@
 name: local-dev
 schemaVersion: 1
-packages:
-  - { id: "@agnes/ai", source: "builtin" }
-  - { id: "@agnes/base", source: "builtin" }
-  - { id: "@agnes/code", source: "builtin" }
-providers:
-  approval: "@agnes/base"
-  checkpoint: "@agnes/base"
-  ledger: "@agnes/base"
-  verifier: "@agnes/base"
-  repair: "@agnes/base"
-  artifacts: "@agnes/base"
-  principals: "@agnes/base"
-  harness: "@agnes/base"
 provider:
   package: "@agnes/ai"
   routes:
@@ -41,8 +28,6 @@ adapters:
   platform: host
   secrets: { kind: file }
 transports: [{ kind: stdio }]
-dataDir: "~/.agh"
-cacheDir: "~/.agh/cache"
 limits: { "jobs.tick_ms": 1000, "shutdown.grace_ms": 10000 }
 presets: { default: standard, allowed: [standard] }
 policy:
