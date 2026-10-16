@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -433,7 +433,57 @@ describe('storage-sqlite', () => {
     expect((await s.open('k', { writerRunId: 'r2', ttlMs: 1000 })).lastSeq).toBe(1)
   })
 
-  it('refuses a ledger without an append watermark without rewriting its rows', async () => {
+  it.each(['plain', 'tool', 'attachment'])(
+    'opens and continues an earlier plugin-core %s ledger without rewriting history',
+    async (key) => {
+      const file = join(dir, 'earlier.db')
+      const raw = new DatabaseSync(file)
+      raw.exec(readFileSync(new URL('../fixtures/plugin-core-bae7c4279.sql', import.meta.url), 'utf8'))
+      const original = raw.prepare('SELECT * FROM events WHERE session_key = ? ORDER BY seq').all(key)
+      const storage = createSqliteStorage({ file })
+      const options = {
+        storage,
+        key,
+        writerRunId: 'upgraded',
+        ttlMs: 60_000,
+        ids: defaultIds(),
+        clock: () => now,
+      }
+      try {
+        const opened = await openTracked(options)
+        expect(opened.tracker.state.lastSeq).toBe(original.length)
+        expect(opened.surface.nodes().length).toBeGreaterThan(0)
+        expect(raw.prepare('SELECT * FROM ledger_heads WHERE session_key = ?').get(key)).toBeUndefined()
+        await opened.log.append([
+          ev('user/message', { content: [{ type: 'text', text: 'Continue after upgrade' }] }),
+        ])
+        await opened.log.close()
+        const resumed = await openTracked({ ...options, writerRunId: 'resumed' })
+        expect(resumed.tracker.state.lastSeq).toBe(original.length + 1)
+        await resumed.log.close()
+        expect(
+          raw
+            .prepare('SELECT * FROM events WHERE session_key = ? AND seq <= ? ORDER BY seq')
+            .all(key, original.length),
+        ).toEqual(original)
+        // A new child must verify its earlier-format parent, including the protected prefix.
+        await storage.createChild(key, original.length, 'child')
+        const child = await openTracked({ ...options, key: 'child', writerRunId: 'child' })
+        await child.log.append([
+          ev('user/message', { content: [{ type: 'text', text: 'Child continuation' }] }),
+        ])
+        await child.log.close()
+        const reopenedChild = await openTracked({ ...options, key: 'child', writerRunId: 'child-reader' })
+        expect(reopenedChild.tracker.state.lastSeq).toBe(original.length + 1)
+        await reopenedChild.log.close()
+      } finally {
+        raw.close()
+        await storage.close()
+      }
+    },
+  )
+
+  it('refuses orphaned event history without rewriting its rows', async () => {
     const file = join(dir, 'legacy.db')
     const legacy = new DatabaseSync(file)
     legacy.exec(`CREATE TABLE events (
@@ -458,42 +508,76 @@ describe('storage-sqlite', () => {
     await migrated.close()
   })
 
-  it('detects direct mutation of a protected SQLite event on the next open', async () => {
-    const file = join(dir, 'sessions.db')
-    const log = await SessionLogImpl.open({
-      storage: s,
-      key: 'protected',
-      writerRunId: 'writer',
-      ttlMs: 1000,
-      ids: defaultIds(),
-      clock: () => now,
-      timers: { setTimeout: () => 0, clearTimeout: () => undefined },
-    })
-    await log.append([
-      ev('user/message', { content: [{ type: 'text', text: 'original' }] }),
-      ev('user/message', { content: [{ type: 'text', text: 'valid successor' }] }),
-    ])
-    await log.close()
-    await s.close()
+  it.each(['current', 'earlier'])(
+    'detects direct mutation of a protected %s SQLite event on the next open',
+    async (format) => {
+      const file = join(dir, format === 'earlier' ? 'earlier.db' : 'sessions.db')
+      if (format === 'current') {
+        const log = await SessionLogImpl.open({
+          storage: s,
+          key: 'protected',
+          writerRunId: 'writer',
+          ttlMs: 1000,
+          ids: defaultIds(),
+          clock: () => now,
+          timers: { setTimeout: () => 0, clearTimeout: () => undefined },
+        })
+        await log.append([
+          ev('user/message', { content: [{ type: 'text', text: 'original' }] }),
+          ev('user/message', { content: [{ type: 'text', text: 'valid successor' }] }),
+        ])
+        await log.close()
+      }
+      await s.close()
 
-    const attacker = new DatabaseSync(file)
-    attacker
-      .prepare('UPDATE events SET data = ? WHERE session_key = ? AND seq = 1')
-      .run(JSON.stringify({ content: [{ type: 'text', text: 'changed' }] }), 'protected')
-    attacker.close()
+      const attacker = new DatabaseSync(file)
+      if (format === 'earlier') {
+        attacker.exec(readFileSync(new URL('../fixtures/plugin-core-bae7c4279.sql', import.meta.url), 'utf8'))
+      }
+      attacker
+        .prepare('UPDATE events SET data = ? WHERE session_key = ? AND seq = 1')
+        .run(
+          JSON.stringify({ content: [{ type: 'text', text: 'changed' }] }),
+          format === 'earlier' ? 'plain' : 'protected',
+        )
+      attacker.close()
 
-    s = createSqliteStorage({ file, clock: () => now + 5000, tablesDir: join(dir, 'tables') })
-    await expect(
-      SessionLogImpl.open({
-        storage: s,
-        key: 'protected',
-        writerRunId: 'reader',
-        ttlMs: 1000,
-        ids: defaultIds(),
-        clock: () => now + 5000,
-        timers: { setTimeout: () => 0, clearTimeout: () => undefined },
-      }),
-    ).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+      s = createSqliteStorage({ file, clock: () => now + 5000, tablesDir: join(dir, 'tables') })
+      await expect(
+        SessionLogImpl.open({
+          storage: s,
+          key: format === 'earlier' ? 'plain' : 'protected',
+          writerRunId: 'reader',
+          ttlMs: 1000,
+          ids: defaultIds(),
+          clock: () => now + 5000,
+          timers: { setTimeout: () => 0, clearTimeout: () => undefined },
+        }),
+      ).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+    },
+  )
+
+  it('keeps an existing append watermark mandatory when adding its version marker', async () => {
+    const file = join(dir, 'watermarked.db')
+    const raw = new DatabaseSync(file)
+    raw.exec(readFileSync(new URL('../fixtures/plugin-core-bae7c4279.sql', import.meta.url), 'utf8'))
+    raw.exec('CREATE TABLE ledger_heads (session_key TEXT PRIMARY KEY, seq INTEGER NOT NULL, digest TEXT)')
+    raw.exec(`INSERT INTO ledger_heads SELECT session_key, seq, integrity_digest
+      FROM events WHERE session_key = 'plain' AND seq = 4`)
+    const storage = createSqliteStorage({ file })
+    try {
+      await expect(storage.open('plain', { writerRunId: 'reader', ttlMs: 1000 })).resolves.toMatchObject({
+        lastSeq: 4,
+      })
+      await storage.release('plain', 'reader')
+      raw.exec("DELETE FROM ledger_heads WHERE session_key = 'plain'")
+      await expect(storage.open('plain', { writerRunId: 'attacked', ttlMs: 1000 })).rejects.toMatchObject({
+        code: 'E_LEDGER_INTEGRITY',
+      })
+    } finally {
+      raw.close()
+      await storage.close()
+    }
   })
 
   it('continues a protected parent prefix under the physical owner key', async () => {
@@ -557,7 +641,7 @@ describe('storage-sqlite', () => {
     await storage.close()
     rmSync(dir, { recursive: true, force: true })
   })
-  it.each(['json', 'checksum', 'missing'])(
+  it.each(['json', 'checksum', 'missing', 'watermark', 'tail-and-watermark', 'empty-and-watermark'])(
     'refuses a damaged %s tail without altering the stored evidence',
     async (kind) => {
       const options = {
@@ -579,18 +663,28 @@ describe('storage-sqlite', () => {
       db.prepare(
         kind === 'json'
           ? "UPDATE events SET data = '{' WHERE session_key = 'tail' AND seq = 3"
-          : kind === 'missing'
+          : kind === 'missing' || kind === 'tail-and-watermark'
             ? "DELETE FROM events WHERE session_key = 'tail' AND seq = 3"
-            : "UPDATE events SET integrity_digest = 'bad' WHERE session_key = 'tail' AND seq = 3",
+            : kind === 'empty-and-watermark'
+              ? "DELETE FROM events WHERE session_key = 'tail'"
+              : kind === 'watermark'
+                ? "DELETE FROM ledger_heads WHERE session_key = 'tail'"
+                : "UPDATE events SET integrity_digest = 'bad' WHERE session_key = 'tail' AND seq = 3",
       ).run()
+      if (kind === 'tail-and-watermark' || kind === 'empty-and-watermark')
+        db.exec("DELETE FROM ledger_heads WHERE session_key = 'tail'")
       db.close()
-      await expect(openTracked({ ...options, writerRunId: 'reader' })).rejects.toMatchObject({
+      await s.close()
+      s = createSqliteStorage({ file: options.storage.file, clock: () => now })
+      await expect(openTracked({ ...options, storage: s, writerRunId: 'reader' })).rejects.toMatchObject({
         code: 'E_LEDGER_INTEGRITY',
       })
       const evidence = new DatabaseSync(s.file)
       expect(
         evidence.prepare("SELECT COUNT(*) AS n FROM events WHERE session_key = 'tail'").get(),
-      ).toMatchObject({ n: kind === 'missing' ? 2 : 3 })
+      ).toMatchObject({
+        n: kind === 'empty-and-watermark' ? 0 : kind === 'missing' || kind === 'tail-and-watermark' ? 2 : 3,
+      })
       expect(
         evidence.prepare("SELECT COUNT(*) AS n FROM writer_claims WHERE session_key = 'tail'").get(),
       ).toMatchObject({ n: 0 })

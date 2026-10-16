@@ -40,7 +40,7 @@ The screenshots show the current interface using synthetic browser fixtures. The
 
 ## New product and old environments
 
-This version ships as a new product built on the new plugin architecture. It does not migrate or reuse runtime data from the old AGH product. If you used an older version, remove or move its home directory before starting this version: `~/.agh` by default, or the directory selected by `AGH_HOME`. You can also keep the old directory and set `AGH_HOME` to a different, new, empty private directory. This version creates its own environment there; configure your model accounts and plugins again. Startup refuses an old-layout home and does not automatically delete or convert its data.
+This version ships as a new product built on the new plugin architecture. The clean-home policy below applies to the old, pre-plugin product; earlier builds of this plugin architecture use their own compatibility checks and do not require clearing the home. It does not migrate or reuse runtime data from the old AGH product. If you used that old product, remove or move its home directory before starting this version: `~/.agh` by default, or the directory selected by `AGH_HOME`. You can also keep the old directory and set `AGH_HOME` to a different, new, empty private directory. This version creates its own environment there; configure your model accounts and plugins again. Startup refuses an old-layout home and does not automatically delete or convert its data.
 
 Copy the folder first if you want to keep old sessions.
 

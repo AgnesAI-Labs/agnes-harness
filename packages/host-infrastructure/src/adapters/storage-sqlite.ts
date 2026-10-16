@@ -27,7 +27,7 @@ import { sqliteChildControl } from './child-control-sqlite.js'
 import { DDL } from './ddl.js'
 import { assertOwnedSql, confineToOwnFile } from './sql-guard.js'
 import { syncCheckpointsToMedium } from './sqlite-durability.js'
-import { assertStoredHead } from './storage-sqlite-head.js'
+import { assertStoredHead, initializeStoredHeads, recordStoredHead } from './storage-sqlite-head.js'
 
 // Re-exported from the module that uses it: a caller wanting the schema reaches for the storage
 // adapter, not for a file whose name it would have to know.
@@ -293,6 +293,7 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
   syncCheckpointsToMedium(db)
   db.exec('PRAGMA foreign_keys = ON')
   for (const ddl of DDL) db.exec(ddl)
+  initializeStoredHeads(db)
   const eventColumns = new Set(
     (db.prepare('PRAGMA table_info(events)').all() as Array<{ name: string }>).map((column) => column.name),
   )
@@ -533,6 +534,7 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
           Number(q.insertSession.run(key, null, null, new Date(clock()).toISOString()).changes) === 1
         const version = (q.session.get(key) as { format_version: number }).format_version
         if (version !== LEDGER_FORMAT_VERSION) throw ledgerFormatError(key, version, opts.file)
+        if (created) recordStoredHead(db, key, 0, null)
         q.upsertLease.run(key, claim.writerRunId, clock() + claim.ttlMs, claim.ttlMs)
         // New-product histories are never salvaged into an executable prefix after damage.
         assertStoredHead(db, key)
@@ -604,10 +606,7 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
           }
           seqs.push(seq)
         }
-        if (seqs.length > 0)
-          db.prepare(
-            'INSERT INTO ledger_heads (session_key, seq, digest) VALUES (?, ?, ?) ON CONFLICT(session_key) DO UPDATE SET seq = excluded.seq, digest = excluded.digest',
-          ).run(key, seq, c.integrity?.at(-1)?.digest ?? null)
+        if (seqs.length > 0) recordStoredHead(db, key, seq, c.integrity?.at(-1)?.digest ?? null)
         if (c.opState) {
           const lane = keyBytes(c.opState.lane)
           if (c.opState.data === null) q.deleteRegister.run(key, 'op.state', lane)
@@ -685,6 +684,7 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
         }
         try {
           q.insertChildSession.run(childKey, parentKey, boundarySeq, new Date(clock()).toISOString())
+          recordStoredHead(db, childKey, 0, null)
         } catch {
           throw new CoreError('E_STORAGE_FAULT', 'child key exists', { childKey })
         }
