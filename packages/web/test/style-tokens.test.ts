@@ -373,3 +373,21 @@ describe('style.css token 门禁', () => {
     expect(violations.join('\n')).toBe('')
   })
 })
+
+it('keeps sidebar action menus neutral on hover/focus and reveals project actions on keyboard focus', () => {
+  const css = readWebStyleSource(stylePath)
+  const shared = readUiCss(resolve(packageDirectory, '../web-ui/src/refinement.css'))
+  expect(shared).toMatch(
+    /\.agh-menu-popup--neutral \.agh-menu-item:hover[^}]+background: var\(--agnes-bg-hover\)/,
+  )
+  expect(shared).toMatch(
+    /\.agh-menu-popup--neutral \.agh-menu-item:focus-visible[^{]*\{[^}]+outline: 2px solid var\(--agnes-brand-focus-ring\)/,
+  )
+  const activeReset = parseRules(shared).find(
+    (rule) => rule.selector.includes('ant-dropdown-menu-item-active') && /outline:\s*none/.test(rule.body),
+  )
+  expect(activeReset?.selector).toContain('.agh-menu-popup:not(.agh-menu-popup--neutral)')
+  expect(css).toMatch(
+    /\.workspace-heading-row:hover \.workspace-row-actions,[^}]+\.workspace-heading-row:focus-within \.workspace-row-actions[^}]+opacity: 1/,
+  )
+})

@@ -2199,7 +2199,12 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       )
       sessionPrefs.registerSessionPreferences(ep, lister, preferences)
       registerSessionMethods(ep, pool, cx)
-      registerWorkspaces(ep, workspaceCatalog)
+      registerWorkspaces(ep, workspaceCatalog, {
+        running: (id) => Boolean(registry.get(id)?.inflight || registry.get(id)?.session.running),
+        archive: (id) => {
+          preferences.archive(id, true)
+        },
+      })
       registerAcp(ep, cx, feeds, attached)
       registerAgnes(ep, cx, feeds, attached)
       registerDoctor(ep, {

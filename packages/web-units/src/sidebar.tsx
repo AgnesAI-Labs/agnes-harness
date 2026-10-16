@@ -31,6 +31,7 @@ export interface SidebarNavigationOptions {
   next?: string
   loadMore?(cursor: string): void
   action?(action: SessionAction, id: string, title: string, trigger: HTMLElement): void
+  workspaceAction?(action: 'reveal' | 'remove', workspace: WorkspaceEntry): Promise<void>
   newSession(workspace: WorkspaceEntry): void
   open(id: string): void
 }
@@ -62,6 +63,7 @@ export interface SidebarState {
 }
 
 export interface SidebarActions {
+  workspaceAction?(action: 'reveal' | 'remove', workspace: WorkspaceEntry): Promise<void>
   newSession(workspace?: WorkspaceEntry): void
   addWorkspace(): void
   openSettings(): void
@@ -281,6 +283,7 @@ const SidebarBuiltin = forwardRef<
           ...(current.next ? { next: current.next } : {}),
           loadMore: actions.loadMore,
           action: actions.sessionAction,
+          ...(actions.workspaceAction ? { workspaceAction: actions.workspaceAction } : {}),
           newSession: actions.newSession,
           open: actions.openSession,
         })}

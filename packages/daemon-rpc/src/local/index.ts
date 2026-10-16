@@ -80,7 +80,10 @@ import {
   sessionSelectionProvider,
 } from './methods/session-selection.js'
 import { registerSessionView } from './methods/session-view.js'
-import { registerSessionWorkspaceReveal } from './methods/session-workspace-reveal.js'
+import {
+  registerSessionWorkspaceReveal,
+  registerWorkspaceReveal,
+} from './methods/session-workspace-reveal.js'
 import { registerWorkspaces } from './methods/workspaces.js'
 import { type Prompter, PrompterRouter } from './prompter.js'
 import { RegistryLister, SessionRegistry } from './sessions.js'
@@ -431,7 +434,15 @@ export function createLocalEndpoint(
     local: cx.auth.config.transport === 'unix' || cx.auth.config.localWeb === true,
   })
   registerSessionView(ep, host, requireSessionOwner(cx))
-  registerWorkspaces(ep, workspaces)
+  registerWorkspaceReveal(ep, workspaces, {
+    local: cx.auth.config.transport === 'unix' || cx.auth.config.localWeb === true,
+  })
+  registerWorkspaces(ep, workspaces, {
+    running: (id) => Boolean(registry.get(id)?.inflight || registry.get(id)?.session.isRunning),
+    archive: (id) => {
+      preferences.archive(id, true)
+    },
+  })
   registerAcp(ep, cx, feeds, attached)
   registerAgnes(
     ep,

@@ -887,6 +887,23 @@ const clientModules = await startClientModules({
           if (id !== current?.id || draftingNew) await open(id)
           clientModules.sidebar?.close()
         }),
+      workspaceAction: async (action, workspace) => {
+        if (action === 'reveal') {
+          await client.call(
+            '_agnes/v1/workspace.reveal',
+            workspace.workspaceId ? { workspaceId: workspace.workspaceId } : { path: workspace.path },
+          )
+          return
+        }
+        if (!workspace.workspaceId) throw new Error(t('workspace.remove.unavailable'))
+        await client.call('_agnes/v1/workspace.remove', {
+          workspaceId: workspace.workspaceId,
+          ...(workspace.revision !== undefined ? { expectedRevision: workspace.revision } : {}),
+        })
+        applyWorkspaces(await client.workspace.list())
+        await list()
+        if (archivedSessions.getSnapshot().filter === 'archived') await archivedSessions.reload()
+      },
       sessionAction: (action, id, title, trigger) => {
         void sessionActions.act(action, id, title, trigger)
       },

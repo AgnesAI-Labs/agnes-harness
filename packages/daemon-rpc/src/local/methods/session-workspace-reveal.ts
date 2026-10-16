@@ -1,7 +1,7 @@
 import { macDesktopAvailable, revealWorkspaceDirectory } from '@agnes/daemon-foundation/desktop'
 import type { CallContext, LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import type { WorkspaceCatalog } from '@agnes/daemon-foundation/storage/workspaces'
-import { rpcError, type SessionRevealWorkspaceParams } from '@agnes/protocol'
+import { rpcError, type SessionRevealWorkspaceParams, type WorkspaceRevealParams } from '@agnes/protocol'
 import { throwWorkspaceRpcError } from './workspaces.js'
 
 type DesktopEnvironment = {
@@ -21,11 +21,45 @@ export function desktopAvailable(platform: string, env: DesktopEnvironment): boo
   return platform === 'darwin'
 }
 
+export function registerWorkspaceReveal(
+  endpoint: LocalEndpoint,
+  workspaces: Pick<WorkspaceCatalog, 'bind'>,
+  options: { local: boolean; platform?: string; environment?: DesktopEnvironment },
+): void {
+  registerReveal(endpoint, '_agnes/v1/workspace.reveal', options, async (params) => {
+    const request = params as WorkspaceRevealParams
+    return (
+      await workspaces.bind(
+        'workspaceId' in request ? request.workspaceId : undefined,
+        'path' in request ? request.path : '',
+      )
+    ).path
+  })
+}
+
 export function registerSessionWorkspaceReveal(
   endpoint: LocalEndpoint,
   workspaces: Pick<WorkspaceCatalog, 'restoreBinding'>,
   requireOwner: (method: string, sessionId: string, context: CallContext) => void,
   options: { local: boolean; platform?: string; environment?: DesktopEnvironment },
+): void {
+  registerReveal(
+    endpoint,
+    '_agnes/v1/session.revealWorkspace',
+    options,
+    async (params) =>
+      (await workspaces.restoreBinding((params as SessionRevealWorkspaceParams).sessionId)).canonicalRoot,
+    (params, context) =>
+      requireOwner('session.revealWorkspace', (params as SessionRevealWorkspaceParams).sessionId, context),
+  )
+}
+
+function registerReveal(
+  endpoint: LocalEndpoint,
+  method: '_agnes/v1/session.revealWorkspace' | '_agnes/v1/workspace.reveal',
+  options: { local: boolean; platform?: string; environment?: DesktopEnvironment },
+  root: (params: unknown, context: CallContext) => Promise<string>,
+  authorize?: (params: unknown, context: CallContext) => void,
 ): void {
   const platform = options.platform ?? process.platform // guards-allow-platform: desktop opener selection belongs to the daemon.
   const environment = options.environment ?? {
@@ -36,20 +70,19 @@ export function registerSessionWorkspaceReveal(
     SESSIONNAME: process.env.SESSIONNAME,
     CI: process.env.CI,
   }
-  endpoint.register('_agnes/v1/session.revealWorkspace', async (params, context) => {
+  endpoint.register(method, async (params, context) => {
     if (!options.local || context.conn.authKind !== 'local' || context.conn.credentialKind !== 'local')
       throw rpcError('CAPABILITY_DENIED', { reason: 'local desktop owner required' })
-    const { sessionId } = params as SessionRevealWorkspaceParams
-    requireOwner('session.revealWorkspace', sessionId, context)
+    authorize?.(params, context)
     if (!desktopAvailable(platform, environment))
       throw rpcError('SEMANTIC_REJECTED', { code: 'DESKTOP_UNAVAILABLE' })
     try {
       if (platform === 'darwin' && !(await macDesktopAvailable(context.signal)))
         throw rpcError('SEMANTIC_REJECTED', { code: 'DESKTOP_UNAVAILABLE' })
       // Revalidation rejects missing directories, stale registrations and changed canonical roots.
-      const binding = await workspaces.restoreBinding(sessionId)
+      const path = await root(params, context)
       if (context.signal.aborted) throw rpcError('REQUEST_TIMEOUT')
-      await revealWorkspaceDirectory(platform, binding.canonicalRoot)
+      await revealWorkspaceDirectory(platform, path)
       return { opened: true }
     } catch (error) {
       throwWorkspaceRpcError(error)

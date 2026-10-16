@@ -82,7 +82,7 @@ describe('rendered sidebar region', () => {
     flushSync(() => sidebar?.querySelector<HTMLButtonElement>('.session-menu-trigger')?.click())
     await vi.waitFor(() => expect(document.querySelector('[role=menuitem]')).not.toBeNull())
     expect([...document.querySelectorAll('[role=menuitem]')].map((item) => item.textContent)).toContain(
-      'Open in File Explorer',
+      'Show in Explorer',
     )
     document.querySelector<HTMLButtonElement>('[role="menuitem"]')?.click()
     expect(sessionAction).toHaveBeenCalledWith('rename', 'one', '会话 one', expect.any(HTMLElement))
@@ -194,6 +194,16 @@ describe('rendered sidebar region', () => {
 
     expect(newSession).toHaveBeenCalledWith(selectedWorkspace)
     expect(heading?.getAttribute('aria-expanded')).toBe('true')
+    const menu = document.querySelector<HTMLButtonElement>('.workspace-menu-trigger')
+    flushSync(() => menu?.click())
+    await vi.waitFor(() => expect(document.querySelector('[role=menuitem]')).not.toBeNull())
+    expect([...document.querySelectorAll('[role=menuitem]')].map((item) => item.textContent)).toEqual([
+      'New session',
+      'Show in File Manager',
+      'Remove project…',
+    ])
+    document.querySelector<HTMLElement>('[role=menuitem]')?.click()
+    expect(newSession).toHaveBeenLastCalledWith(selectedWorkspace)
   })
 
   it('files sessions under their workspace folder, newest first, and follows the locale', async () => {

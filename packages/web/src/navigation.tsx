@@ -6,6 +6,7 @@ import { type SidebarNavigationOptions, sortSessionsByRecency, untitledSessionLa
 import { useState, useSyncExternalStore } from 'react'
 import { archivedSessions } from './archived-sessions.js'
 import { SessionMenu } from './session-menu.js'
+import { WorkspaceMenu } from './workspace-menu.js'
 
 const FOLDER_CLOSED =
   'M5.37012 2.8418C5.52719 2.84178 5.68146 2.88387 5.81641 2.96289C5.95148 3.04201 6.06232 3.15581 6.13672 3.29199L6.74414 4.40137H12.7383C13.2166 4.40139 13.6084 4.78249 13.6084 5.25391V12.6631C13.6082 13.1343 13.2165 13.5146 12.7383 13.5146H2.7627C2.28458 13.5146 1.89277 13.1343 1.89258 12.6631V3.69434C1.89258 3.22297 2.28447 2.84189 2.7627 2.8418H5.37012ZM2.83496 11.4932V12.5908H12.667V11.5645H12.666V8.00488L2.84961 7.99121L2.83496 11.4932ZM2.83496 7.06738H12.666V5.32617H6.18066L6.16016 5.28809L5.32715 3.76562H2.83496V7.06738Z'
@@ -348,14 +349,18 @@ function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; 
                   <span className="workspace-name">{name}</span>
                 </Button>
                 {workspace && (
-                  <IconButton
-                    name="plus"
-                    className="workspace-new-session"
-                    data-workspace-new-session={path}
-                    label={t('nav.newSessionInWorkspace', { name })}
-                    title={t('nav.newSessionInWorkspace', { name })}
-                    disabled={(options.newDisabled ?? false) || !workspace.available}
-                    onClick={() => options.newSession(workspace)}
+                  <WorkspaceMenu
+                    workspace={workspace}
+                    name={name}
+                    t={t}
+                    platform={options.runtimePlatform}
+                    disabled={options.disabled ?? false}
+                    newDisabled={(options.newDisabled ?? false) || !workspace.available}
+                    runningCount={
+                      sessions.filter((row) => options.runningIds?.includes(row.sessionId)).length
+                    }
+                    newSession={() => options.newSession(workspace)}
+                    action={options.workspaceAction}
                   />
                 )}
               </div>

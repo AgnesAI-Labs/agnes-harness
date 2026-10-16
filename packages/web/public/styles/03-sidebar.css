@@ -204,22 +204,30 @@
   }
   /* The folder's new-session action appears with the pointer or keyboard focus; touch has no
      hover, so the narrow drawer keeps it visible. */
-  .workspace-heading-row .workspace-new-session {
-    width: 1.5rem;
-    min-width: 1.5rem;
-    height: 1.5rem;
-    min-height: 1.5rem;
+  .workspace-heading-row .workspace-row-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--s2);
     margin-right: var(--s4);
     opacity: 0;
     pointer-events: none;
   }
-  .workspace-heading-row:hover .workspace-new-session,
-  .workspace-heading-row:focus-within .workspace-new-session {
+  .workspace-heading-row:hover .workspace-row-actions,
+  .workspace-heading-row:focus-within .workspace-row-actions,
+  .workspace-row-actions:has([aria-expanded="true"]) {
     opacity: 1;
     pointer-events: auto;
   }
+  .workspace-row-actions .agh-btn {
+    width: 1.5rem;
+    min-width: 1.5rem;
+    height: 1.5rem;
+    min-height: 1.5rem;
+    padding: 0;
+  }
   @media (max-width: 900px) {
-    .workspace-heading-row .workspace-new-session {
+    .workspace-heading-row .workspace-new-session,
+    .workspace-heading-row .workspace-menu-trigger {
       width: var(--control-height-sm);
       min-width: var(--control-height-sm);
       height: var(--control-height-sm);
@@ -227,7 +235,8 @@
     }
   }
   @media (max-width: 767px) {
-    .workspace-heading-row .workspace-new-session {
+    .workspace-heading-row .workspace-new-session,
+    .workspace-heading-row .workspace-menu-trigger {
       width: var(--control-height-touch);
       min-width: var(--control-height-touch);
       height: var(--control-height-touch);
@@ -235,7 +244,7 @@
     }
   }
   @media (max-width: 720px) {
-    .workspace-heading-row .workspace-new-session {
+    .workspace-heading-row .workspace-row-actions {
       opacity: 1;
       pointer-events: auto;
     }
@@ -451,5 +460,18 @@
   :lang(zh-CN) :is(.eyebrow, .sidebar-section-heading, .workspace-heading) {
     letter-spacing: 0;
     line-height: 1.6;
+  }
+}
+
+@layer app {
+  .workspace-remove-path {
+    overflow-wrap: anywhere;
+    font-family: var(--font-mono);
+    padding: var(--s8);
+    border-radius: var(--radius-control);
+    background: var(--agnes-bg-hover);
+  }
+  .workspace-action-error {
+    color: var(--agnes-status-danger-text);
   }
 }

@@ -12,6 +12,7 @@ import { requireSessionOwner } from '../src/local/methods/agnes.js'
 import {
   desktopAvailable,
   registerSessionWorkspaceReveal,
+  registerWorkspaceReveal,
 } from '../src/local/methods/session-workspace-reveal.js'
 
 const { spawn, failure, desktop } = vi.hoisted(() => ({
@@ -174,6 +175,7 @@ it.each(['Background', 'System', 'LoginWindow', 'probe failure'])(
     register()
     desktop.name = bootstrap
     desktop.failure = bootstrap === 'probe failure'
+    expect(await call({ sessionId: 'foreign' })).toHaveProperty('error.data.code', 'CAPABILITY_DENIED')
     expect(await call()).toHaveProperty('error.data.code', 'DESKTOP_UNAVAILABLE')
     expect(spawn).not.toHaveBeenCalled()
   },
@@ -197,3 +199,48 @@ it('does not launch a desktop opener after the requesting connection closes duri
   await Promise.all([request, close])
   expect(spawn).not.toHaveBeenCalled()
 })
+
+it.each([
+  ['darwin', {}, 'open'],
+  ['win32', { SESSIONNAME: 'Console' }, 'explorer.exe'],
+  ['linux', { DISPLAY: ':0' }, 'xdg-open'],
+])(
+  'reveals only listed projects on %s without requiring a session',
+  async (platform, environment, executable) => {
+    registerWorkspaceReveal(endpoint, workspaces, { local: true, platform, environment })
+    const callWorkspace = (params: unknown) =>
+      endpoint.handle({ jsonrpc: '2.0', id: 2, method: '_agnes/v1/workspace.reveal', params })
+    const {
+      items: [workspace],
+    } = await workspaces.list()
+    expect(workspace).toBeDefined()
+    expect(await callWorkspace({ path: root })).toMatchObject({ result: { opened: true } })
+    expect(await callWorkspace({ workspaceId: workspace?.workspaceId })).toMatchObject({
+      result: { opened: true },
+    })
+    expect(spawn).toHaveBeenLastCalledWith(executable, [workspace?.path], {
+      detached: true,
+      stdio: 'ignore',
+      shell: false,
+    })
+    spawn.mockClear()
+    expect(await callWorkspace({ workspaceId: 'a'.repeat(64) })).toHaveProperty(
+      'error.data.code',
+      'WORKSPACE_NOT_FOUND',
+    )
+    expect(await callWorkspace({ path: directory })).toHaveProperty('error.data.code', 'WORKSPACE_NOT_FOUND')
+    endpoint.conn.authKind = 'jwt'
+    expect(await callWorkspace({ path: root })).toHaveProperty('error.data.code', 'CAPABILITY_DENIED')
+    endpoint.conn.authKind = 'local'
+    if (!workspace?.workspaceId) throw new Error('missing workspace id')
+    workspaces.remove(workspace.workspaceId, undefined, { running: () => false, archive: () => {} })
+    expect(await callWorkspace({ path: root })).toHaveProperty('error.data.code', 'WORKSPACE_NOT_FOUND')
+    await workspaces.add(root)
+    await rm(root, { recursive: true })
+    expect(await callWorkspace({ workspaceId: workspace.workspaceId })).toHaveProperty(
+      'error.data.code',
+      'WORKSPACE_STALE',
+    )
+    expect(spawn).not.toHaveBeenCalled()
+  },
+)

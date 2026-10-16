@@ -248,6 +248,7 @@ describe('WorkspaceCatalog', () => {
     const store: WorkspaceStore = {
       put: (directory, registeredAt) => base.put(directory, registeredAt),
       touch: (path, usedAt) => base.touch(path, usedAt),
+      remove: (id, archive) => base.remove(id, archive),
       rows: () => base.rows().map((row) => (stale ? { ...row, revision: row.revision + 1 } : row)),
     }
     const catalog = new WorkspaceCatalog(store, new MemorySessionWorkspaces(), resolver(new Set(['/repo'])))
@@ -260,3 +261,35 @@ describe('WorkspaceCatalog', () => {
     })
   })
 })
+
+it.each(['admit', 'reveal'])(
+  'refuses a pending %s when the project is removed during directory validation',
+  async (operation) => {
+    const sessions = new MemorySessionWorkspaces()
+    let release: (() => void) | undefined
+    let validations = 0
+    let block = false
+    const catalog = new WorkspaceCatalog(new MemoryWorkspaceStore(), sessions, async (path) => {
+      validations++
+      if (block && (operation === 'reveal' || validations === 3))
+        await new Promise<void>((resolve) => {
+          release = resolve
+        })
+      return { path, name: 'project' }
+    })
+    const workspace = await catalog.add('/repo')
+    block = true
+    const pending =
+      operation === 'admit'
+        ? catalog.authorizeAndBind('new', '/repo')
+        : catalog.bind(workspace.workspaceId, '')
+    // Reach the freshness check after the listed row was read.
+    for (let step = 0; step < 5 && !release; step++) await Promise.resolve()
+    expect(release).toBeTypeOf('function')
+    catalog.remove(workspace.workspaceId ?? '', undefined, { running: () => false, archive: () => {} })
+    block = false
+    release?.()
+    await expect(pending).rejects.toMatchObject({ data: { code: 'WORKSPACE_NOT_FOUND' } })
+    expect(sessions.keys()).toEqual([])
+  },
+)

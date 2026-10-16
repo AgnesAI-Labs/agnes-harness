@@ -19,7 +19,8 @@ type WorkspaceRow = Omit<WorkspaceEntry, 'sessionCount' | 'available' | 'workspa
 export interface WorkspaceStore {
   put(directory: WorkspaceDirectory, registeredAt: string): WorkspaceRow
   touch(path: string, usedAt: string): void
-  rows(): WorkspaceRow[]
+  remove(workspaceId: string, archive: () => void): void
+  rows(includeRemoved?: boolean): WorkspaceRow[]
 }
 
 export class WorkspaceIndex implements WorkspaceStore {
@@ -47,6 +48,11 @@ export class WorkspaceIndex implements WorkspaceStore {
     } catch {
       // Column already exists.
     }
+    try {
+      table.exec('ALTER TABLE workspace_registry ADD COLUMN listed INTEGER NOT NULL DEFAULT 1')
+    } catch (error) {
+      if (!/duplicate column name/i.test(String(error))) throw error
+    }
     for (const row of table.all<{ path: string; workspace_id: string | null }>(
       'SELECT path, workspace_id FROM workspace_registry',
     ))
@@ -63,7 +69,7 @@ export class WorkspaceIndex implements WorkspaceStore {
       `INSERT INTO workspace_registry
          (path, name, workspace_id, revision, registered_at, last_used_at)
        VALUES (?, ?, ?, 1, ?, NULL)
-       ON CONFLICT(path) DO UPDATE SET name = excluded.name`,
+       ON CONFLICT(path) DO UPDATE SET name = excluded.name, listed = 1`,
       [directory.path, directory.name, workspaceId, registeredAt],
     )
     const row = this.table.get<SqlWorkspaceRow>(
@@ -78,10 +84,17 @@ export class WorkspaceIndex implements WorkspaceStore {
     this.table.exec('UPDATE workspace_registry SET last_used_at = ? WHERE path = ?', [usedAt, path])
   }
 
-  rows(): WorkspaceRow[] {
+  remove(workspaceId: string, archive: () => void): void {
+    this.table.transaction(() => {
+      archive()
+      this.table.exec('UPDATE workspace_registry SET listed = 0 WHERE workspace_id = ?', [workspaceId])
+    })
+  }
+
+  rows(includeRemoved = false): WorkspaceRow[] {
     return this.table
       .all<SqlWorkspaceRow>(
-        'SELECT path, name, workspace_id, revision, last_used_at FROM workspace_registry ORDER BY path',
+        `SELECT path, name, workspace_id, revision, last_used_at FROM workspace_registry ${includeRemoved ? '' : 'WHERE listed = 1'} ORDER BY path`,
       )
       .map(fromSqlRow)
   }
@@ -107,6 +120,7 @@ function fromSqlRow(row: SqlWorkspaceRow): WorkspaceRow {
 
 export class MemoryWorkspaceStore implements WorkspaceStore {
   private readonly entries = new Map<string, WorkspaceRow>()
+  private readonly removed = new Set<string>()
 
   put(directory: WorkspaceDirectory, _registeredAt: string): WorkspaceRow {
     const existing = this.entries.get(directory.path)
@@ -117,6 +131,7 @@ export class MemoryWorkspaceStore implements WorkspaceStore {
       revision: existing?.revision ?? 1,
       lastUsedAt: existing?.lastUsedAt ?? null,
     }
+    this.removed.delete(entry.workspaceId)
     this.entries.set(directory.path, entry)
     return { ...entry }
   }
@@ -126,8 +141,15 @@ export class MemoryWorkspaceStore implements WorkspaceStore {
     if (existing) this.entries.set(path, { ...existing, lastUsedAt: usedAt })
   }
 
-  rows(): WorkspaceRow[] {
-    return [...this.entries.values()].map((entry) => ({ ...entry }))
+  remove(workspaceId: string, archive: () => void): void {
+    archive()
+    this.removed.add(workspaceId)
+  }
+
+  rows(includeRemoved = false): WorkspaceRow[] {
+    return [...this.entries.values()]
+      .filter((entry) => includeRemoved || !this.removed.has(entry.workspaceId))
+      .map((entry) => ({ ...entry }))
   }
 }
 
@@ -301,6 +323,7 @@ export class WorkspaceCatalog {
     const row = this.store.rows().find((candidate) => candidate.path === directory.path)
     if (!row) throw this.notRegistered()
     await this.assertFresh(row)
+    this.assertListed(row)
     const requested: WorkspaceBindingRecord = {
       sessionKey,
       workspaceId: row.workspaceId,
@@ -326,7 +349,7 @@ export class WorkspaceCatalog {
         sessionId: sessionKey,
         reason: 'session has no authoritative workspace binding',
       })
-    const row = this.store.rows().find((candidate) => candidate.workspaceId === binding.workspaceId)
+    const row = this.store.rows(true).find((candidate) => candidate.workspaceId === binding.workspaceId)
     if (
       !row ||
       row.revision !== binding.revision ||
@@ -369,6 +392,30 @@ export class WorkspaceCatalog {
     return { items }
   }
 
+  /** No await between the running check and the transactional archive/list mutation. */
+  remove(
+    workspaceId: string,
+    expectedRevision: number | undefined,
+    sessions: { running(id: string): boolean; archive(id: string): void },
+  ): { removed: boolean; archivedSessionCount: number } {
+    const row = this.store.rows().find((candidate) => candidate.workspaceId === workspaceId)
+    if (!row) return { removed: false, archivedSessionCount: 0 }
+    if (expectedRevision !== undefined && expectedRevision !== row.revision)
+      throw rpcError('SEMANTIC_REJECTED', { code: 'WORKSPACE_STALE', reason: 'workspace revision changed' })
+    const keys = this.sessions.keys().filter((key) => this.sessions.get(key) === row.path)
+    const running = keys.filter((key) => sessions.running(key))
+    if (running.length)
+      throw rpcError('SEMANTIC_REJECTED', {
+        code: 'WORKSPACE_RUNNING',
+        runningSessionCount: running.length,
+        reason: 'Stop the running sessions before removing this project.',
+      })
+    this.store.remove(workspaceId, () => {
+      for (const key of keys) sessions.archive(key)
+    })
+    return { removed: true, archivedSessionCount: keys.length }
+  }
+
   async bind(
     workspaceId: string | undefined,
     fallbackPath: string,
@@ -381,7 +428,22 @@ export class WorkspaceCatalog {
     }
     if (!row) throw this.notRegistered()
     await this.assertFresh(row)
+    this.assertListed(row)
     return { workspaceId: row.workspaceId, path: row.path }
+  }
+
+  private assertListed(row: WorkspaceRow): void {
+    if (
+      !this.store
+        .rows()
+        .some(
+          (current) =>
+            current.workspaceId === row.workspaceId &&
+            current.path === row.path &&
+            current.revision === row.revision,
+        )
+    )
+      throw this.notRegistered()
   }
 
   private entry(

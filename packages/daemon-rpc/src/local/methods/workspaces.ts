@@ -9,6 +9,7 @@ import {
   type WorkspaceAddParams,
   type WorkspaceAddResult,
   type WorkspaceListResult,
+  type WorkspaceRemoveParams,
 } from '@agnes/protocol'
 
 export function throwWorkspaceRpcError(error: unknown): never {
@@ -32,7 +33,18 @@ const workspaceCall = async <T>(_context: CallContext, action: () => Promise<T>)
 }
 
 /** Registers the workspace control surface; LocalEndpoint enforces initialize/auth first. */
-export function registerWorkspaces(endpoint: LocalEndpoint, catalog: WorkspaceCatalog): void {
+export function registerWorkspaces(
+  endpoint: LocalEndpoint,
+  catalog: WorkspaceCatalog,
+  sessions?: { running(id: string): boolean; archive(id: string): void },
+): void {
+  endpoint.register('_agnes/v1/workspace.remove', async (params, context) => {
+    if (context.conn.authKind !== 'local' || context.conn.credentialKind !== 'local')
+      throw rpcError('CAPABILITY_DENIED', { reason: 'local owner required' })
+    if (!sessions) throw rpcError('CAPABILITY_DENIED', { reason: 'workspace removal unavailable' })
+    const request = params as WorkspaceRemoveParams
+    return catalog.remove(request.workspaceId, request.expectedRevision, sessions)
+  })
   endpoint.register('_agnes/v1/workspace.list', (_params, context) =>
     workspaceCall<WorkspaceListResult>(context, () => catalog.list()),
   )

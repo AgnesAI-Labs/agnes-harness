@@ -1,35 +1,15 @@
 import type { Translate } from '@agnes/web-conversation/presentation'
-import { Button, Menu } from '@agnes/web-ui'
+import { Button, Icon, type IconName, Menu } from '@agnes/web-ui'
 import { useLayoutEffect, useRef } from 'react'
 import type { SessionAction } from './session-actions.js'
 
-const ITEMS: readonly (readonly [SessionAction, string, readonly string[]])[] = [
-  [
-    'rename',
-    'session.menu.rename',
-    [
-      'M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z',
-      'm15 5 4 4',
-    ],
-  ],
-  ['runtime', 'session.menu.runtime', ['M4 6h16', 'M4 12h16', 'M4 18h10']],
-  ['revealWorkspace', 'session.menu.openFolder', ['M3 7V5a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v11H3z']],
-  ['fork', 'session.menu.fork', ['M6 3v5a4 4 0 0 0 4 4h8', 'm14 8 4 4-4 4', 'M6 21v-5a4 4 0 0 1 4-4']],
-  [
-    'archive',
-    'session.menu.archive',
-    ['M3 4h18v4H3z', 'M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8', 'M10 12h4'],
-  ],
+const ITEMS: readonly (readonly [SessionAction, string, IconName])[] = [
+  ['rename', 'session.menu.rename', 'pencil'],
+  ['fork', 'session.menu.fork', 'git-branch'],
+  ['revealWorkspace', 'session.menu.openFolder', 'folder-open'],
+  ['runtime', 'session.menu.runtime', 'info'],
+  ['archive', 'session.menu.archive', 'archive'],
 ]
-function MenuIcon({ paths }: { paths: readonly string[] }) {
-  return (
-    <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
-      {paths.map((path) => (
-        <path key={path} d={path} />
-      ))}
-    </svg>
-  )
-}
 
 let activeTrigger: HTMLButtonElement | null = null
 
@@ -81,6 +61,7 @@ export function SessionMenu({
   return (
     <div className="session-menu">
       <Menu
+        tone="neutral"
         label={t('session.menu.triggerAria', { name: title })}
         trigger={
           <Button
@@ -91,11 +72,12 @@ export function SessionMenu({
             data-session-action-id={id}
             aria-label={t('session.menu.triggerAria', { name: title })}
           >
-            <MenuIcon paths={['M5 12h.01', 'M12 12h.01', 'M19 12h.01']} />
+            <Icon name="ellipsis" />
           </Button>
         }
-        items={ITEMS.map(([item, key, paths]) => ({
+        items={ITEMS.map(([item, key, icon]) => ({
           id: item,
+          dividerBefore: item === 'revealWorkspace' || item === 'archive',
           label: t(
             item === 'revealWorkspace'
               ? platform === 'darwin'
@@ -105,7 +87,7 @@ export function SessionMenu({
                   : key
               : key,
           ),
-          icon: <MenuIcon paths={paths} />,
+          icon: <Icon name={icon} />,
           onSelect: () => {
             if (trigger.current) action(item, id, title, trigger.current)
           },

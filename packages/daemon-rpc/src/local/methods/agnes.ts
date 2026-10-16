@@ -487,7 +487,12 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
   },
   {
     name: 'workspace',
-    methods: ['_agnes/v1/workspace.list', '_agnes/v1/workspace.add'],
+    methods: [
+      '_agnes/v1/workspace.list',
+      '_agnes/v1/workspace.add',
+      '_agnes/v1/workspace.reveal',
+      '_agnes/v1/workspace.remove',
+    ],
     guidance: 'validate and register canonical workspace directories before creating sessions',
   },
   {

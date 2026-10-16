@@ -71,15 +71,35 @@ it('portals one menu with five icon-led items and marks the trigger expanded', a
   expect(panel.getAttribute('role')).toBe('menu')
   const items = [...panel.querySelectorAll<HTMLElement>('[role="menuitem"]')]
   expect(items.map((item) => item.textContent)).toEqual([
-    '重命名…',
-    '运行信息',
-    '打开文件夹',
+    '重命名',
     '分叉会话',
+    '在文件管理器中打开',
+    '运行信息',
     '归档会话',
   ])
   expect(items.map((item) => item.querySelector('svg') !== null)).toEqual([true, true, true, true, true])
+  expect([...panel.children].filter((item) => item.classList.contains('agh-menu-separator'))).toHaveLength(2)
+  expect([...panel.children].map((item) => item.textContent)).toEqual([
+    '重命名',
+    '分叉会话',
+    '',
+    '在文件管理器中打开',
+    '运行信息',
+    '',
+    '归档会话',
+  ])
+  for (const item of items) {
+    expect(item.closest('.agh-menu-popup--neutral')).not.toBeNull()
+    expect(item.querySelector('.agh-menu-icon')).not.toBeNull()
+    expect(item.querySelector('svg')?.getAttribute('width')).toBe('16')
+    expect(item.querySelector('svg')?.getAttribute('stroke-width')).toBe('1.5')
+  }
   expect(trigger.getAttribute('aria-expanded')).toBe('true')
   expect(document.activeElement).toBe(items[0])
+  items[0]?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+  expect(document.activeElement).toBe(items[1])
+  items[1]?.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))
+  expect(document.activeElement).toBe(items[4])
 })
 
 it('dismisses on selection, reports the session action and returns focus to the trigger', async () => {
@@ -136,7 +156,7 @@ it('removes a portalled menu and row state when the sidebar unmounts', async () 
 it.each([
   ['darwin', '在访达中打开'],
   ['win32', '在资源管理器中打开'],
-  ['linux', '打开文件夹'],
+  ['linux', '在文件管理器中打开'],
 ])('uses the daemon %s platform label and dispatches only a session id', async (platform, label) => {
   const { open, select, trigger } = renderMenu(platform)
   const panel = await open()
