@@ -835,17 +835,19 @@ export function createConfigurationService(
 
   const providers = async (): Promise<ConfigProvidersResult> => ({
     providers: [
-      ...API_KEY_PROVIDER_REGISTRY.map((entry): ConfigProvider => {
-        const subscription = getSubscriptionProvider(entry.id)
-        return {
-          id: entry.id,
-          label: entry.displayName,
-          authMethods: subscription ? ['api-key', 'oauth'] : ['api-key'],
-          ...(subscription ? { loginMethods: [...subscription.loginMethods] } : {}),
-          api: entry.api,
-          baseUrl: entry.baseUrl,
-        }
-      }),
+      ...API_KEY_PROVIDER_REGISTRY.filter((entry) => entry.capabilities?.payloadOnly !== true).map(
+        (entry): ConfigProvider => {
+          const subscription = getSubscriptionProvider(entry.id)
+          return {
+            id: entry.id,
+            label: entry.displayName,
+            authMethods: subscription ? ['api-key', 'oauth'] : ['api-key'],
+            ...(subscription ? { loginMethods: [...subscription.loginMethods] } : {}),
+            api: entry.api,
+            baseUrl: entry.baseUrl,
+          }
+        },
+      ),
       ...SUBSCRIPTION_PROVIDER_REGISTRY.filter((entry) => !getApiKeyProvider(entry.id)).map(
         (entry): ConfigProvider => ({
           id: entry.id,

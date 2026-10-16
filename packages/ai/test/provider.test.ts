@@ -4,8 +4,11 @@ import type { InferenceEvent, RequestBody, RouteTable } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import type { ContractStore, Registry } from '../src/index.js'
 import {
+  ApiKeyProviderError,
   buildRegistry,
   createProvider,
+  getApiKeyProvider,
+  JEV_WIRE_API,
   NullContractStore,
   runInference,
   toolSchemaHash,
@@ -1009,5 +1012,30 @@ describe('the decode chain sits between the adapter and the caller', () => {
     )
     expect(events.map((e) => e.type)).toEqual(['sent', 'text_delta', 'usage', 'done'])
     expect(events[1]).toEqual({ type: 'text_delta', delta: raw })
+  })
+})
+
+describe('payload-only provider registry entry', () => {
+  it('registers TypeSafe System One with its capability marker and no chat catalogue', async () => {
+    const entry = getApiKeyProvider(JEV_WIRE_API)
+    expect(entry).toMatchObject({
+      id: 'typesafe-systemone',
+      displayName: 'TypeSafe System One',
+      availability: 'available',
+      route: 'typesafe-systemone',
+      api: JEV_WIRE_API,
+      baseUrl: 'https://openrouter.ai/api/v1',
+      credentialRef: 'secret://typesafe-systemone/default',
+      capabilities: { payloadOnly: true },
+    })
+    await expect(entry?.createAdapter()).rejects.toSatisfy(
+      (error) => error instanceof ApiKeyProviderError && error.code === 'PROVIDER_CONTRACT',
+    )
+  })
+
+  it('leaves the chat entries unmarked and keeps unknown ids unknown', () => {
+    expect(getApiKeyProvider('deepseek')?.capabilities).toBeUndefined()
+    expect(getApiKeyProvider('openai')?.capabilities).toBeUndefined()
+    expect(getApiKeyProvider('not-a-provider')).toBeUndefined()
   })
 })

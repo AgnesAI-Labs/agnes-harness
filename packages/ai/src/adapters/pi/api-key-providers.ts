@@ -6,6 +6,7 @@ import {
   type Provider as PiProvider,
 } from '@earendil-works/pi-ai'
 import { isUsableCredential } from '../../credentials.js'
+import { JEV_WIRE_API } from '../jev/index.js'
 import type { ManualRoute } from './index.js'
 import { PiAdapter, type PiStream } from './index.js'
 import { KNOWN_THINKING_CORRECTIONS } from './known-thinking-corrections.js'
@@ -23,6 +24,7 @@ export type ApiKeyProviderId =
   | 'minimax'
   | 'xai'
   | 'agnes-ai'
+  | 'typesafe-systemone'
 
 export type ApiKeyProviderErrorCode =
   | 'UNKNOWN_PROVIDER'
@@ -84,6 +86,12 @@ export type ApiKeyProviderRegistryEntry = Readonly<{
   baseUrl: string
   credentialRef: `secret://${ApiKeyProviderId}/default`
   sourceProviderId: string
+  /**
+   * Config-time marker mirrored from the model-adapter registration. A payload-only entry serves no
+   * conversation catalogue: it stays out of chat projections, and runtime exclusion keeps reading
+   * the adapter registration's own capabilities.
+   */
+  capabilities?: Readonly<{ payloadOnly?: boolean }>
   modelsUrl?: string
   createAdapter(options?: ApiKeyAdapterOptions): Promise<PiAdapter>
   /** Present only where the provider publishes a compatible, pinned model-list endpoint. */
@@ -324,8 +332,27 @@ async function createAdapter(spec: ProviderSpec, options: ApiKeyAdapterOptions =
   })
 }
 
-export const API_KEY_PROVIDER_REGISTRY: readonly ApiKeyProviderRegistryEntry[] = Object.freeze(
-  specs.map((spec) =>
+/**
+ * TypeSafe System One answers a payload instead of chat messages, so it has no pi catalogue to pin
+ * against: asking this entry for a chat adapter is a wiring mistake, refused with PROVIDER_CONTRACT.
+ */
+const JEV_PROVIDER: ApiKeyProviderRegistryEntry = Object.freeze({
+  id: 'typesafe-systemone',
+  displayName: 'TypeSafe System One',
+  availability: 'available',
+  route: 'typesafe-systemone',
+  api: JEV_WIRE_API,
+  baseUrl: 'https://openrouter.ai/api/v1',
+  credentialRef: 'secret://typesafe-systemone/default',
+  sourceProviderId: 'typesafe-systemone',
+  capabilities: { payloadOnly: true },
+  createAdapter: () => Promise.reject(new ApiKeyProviderError('PROVIDER_CONTRACT')),
+})
+
+const chatProvider = (entry: ApiKeyProviderRegistryEntry): boolean => entry.capabilities?.payloadOnly !== true
+
+export const API_KEY_PROVIDER_REGISTRY: readonly ApiKeyProviderRegistryEntry[] = Object.freeze([
+  ...specs.map((spec) =>
     Object.freeze({
       id: spec.id,
       displayName: spec.displayName,
@@ -340,27 +367,30 @@ export const API_KEY_PROVIDER_REGISTRY: readonly ApiKeyProviderRegistryEntry[] =
       ...(spec.fetchModels ? { fetchModels: spec.fetchModels } : {}),
     }),
   ),
-)
+  JEV_PROVIDER,
+])
 
 /**
  * The only credential references that an API-key client may leave unbound at startup.  Supplying
  * this set to `createProvider` preserves fail-fast assembly for every other route while letting a
- * first-run UI register all eleven choices before the user has entered any keys.
+ * first-run UI register the chat choices before the user has entered any keys.
  */
 export const API_KEY_CREDENTIAL_REFS: ReadonlySet<string> = new Set(
-  API_KEY_PROVIDER_REGISTRY.map((entry) => entry.credentialRef),
+  API_KEY_PROVIDER_REGISTRY.filter(chatProvider).map((entry) => entry.credentialRef),
 )
 
 /**
- * Creates the complete, fixed API-key route table once at startup.  This never reads a credential
- * and therefore cannot block a first launch; an unconfigured route returns AUTH from PiAdapter
- * before network I/O when the user actually selects it.
+ * Creates the complete, fixed API-key chat route table once at startup.  This never reads a
+ * credential and therefore cannot block a first launch; an unconfigured route returns AUTH from
+ * PiAdapter before network I/O when the user actually selects it.
  */
 export async function createApiKeyProviderAdapters(
   options: ApiKeyAdaptersOptions = {},
 ): Promise<readonly PiAdapter[]> {
   const adapters = await Promise.all(
-    API_KEY_PROVIDER_REGISTRY.map((entry) => entry.createAdapter(options.adapters?.[entry.id])),
+    API_KEY_PROVIDER_REGISTRY.filter(chatProvider).map((entry) =>
+      entry.createAdapter(options.adapters?.[entry.id]),
+    ),
   )
   return Object.freeze(adapters)
 }

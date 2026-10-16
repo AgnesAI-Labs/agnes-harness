@@ -238,6 +238,13 @@ it('tests Kimi Coding Plan through its Anthropic-compatible catalogue and fails 
   )
 })
 
+it('keeps the payload-only provider out of the chat account form projection', async () => {
+  const service = createConfigurationService({ home: await home(), profile: 'local-dev' })
+  const { providers } = await service.providers()
+  expect(providers.some((provider) => provider.id === 'typesafe-systemone')).toBe(false)
+  expect(getApiKeyProvider('typesafe-systemone')?.capabilities?.payloadOnly).toBe(true)
+})
+
 it('saves and reopens from a previously nonexistent nested home without read-side creation', async () => {
   const entry = getApiKeyProvider('openai')
   if (!entry) throw new Error('openai registry entry missing')
