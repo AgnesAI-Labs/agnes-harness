@@ -1,4 +1,4 @@
-import { cp, mkdir, mkdtemp, realpath, rm } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
 import { request } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -28,6 +28,7 @@ it('enables the installed MHS plugin, connects a real SDK device, admits manual 
   await mkdir(directory)
   for (const path of ['package.json', 'agnes.client.json', 'src'])
     await cp(join(original, path), join(directory, path), { recursive: true })
+  const manifest = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'))
   const integrity = `sha256-${'7'.repeat(64)}`,
     rowId = 'ext:agnes.mhs',
     owner = pluginRowSource(rowId)
@@ -36,7 +37,7 @@ it('enables the installed MHS plugin, connects a real SDK device, admits manual 
       snapshotId: integrity,
       profile: 'local-dev',
       packageId: '@agnes/mhs',
-      version: '0.0.0',
+      version: manifest.version,
       integrity,
       treeIntegrity: hashDirectory(directory, { exclude: [] }),
       capabilityHash: 'synthetic',

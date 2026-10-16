@@ -52,9 +52,9 @@ it.each([true, false])(
       const original = fileURLToPath(new URL(spec.directory, import.meta.url))
       for (const file of spec.files)
         await cp(join(original, file), join(directory, file), { recursive: true })
+      const manifestPath = join(directory, 'package.json')
+      const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
       if (index === 1 && !reviewed) {
-        const manifestPath = join(directory, 'package.json')
-        const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
         manifest.agnes.plugins[0].capabilities.managedServices[0].requires = []
         await writeFile(manifestPath, JSON.stringify(manifest))
       }
@@ -64,7 +64,7 @@ it.each([true, false])(
           snapshotId: integrity,
           profile: 'local-dev',
           packageId: spec.packageId,
-          version: index ? '0.1.0' : '0.0.0',
+          version: manifest.version,
           integrity,
           treeIntegrity: hashDirectory(directory, { exclude: [] }),
           capabilityHash: 'synthetic',
