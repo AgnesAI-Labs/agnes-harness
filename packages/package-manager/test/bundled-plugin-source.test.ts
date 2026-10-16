@@ -1,7 +1,6 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { satisfiesApiRange } from '@agnes/extension-api'
 import { afterEach, expect, it, vi } from 'vitest'
 import {
   BUNDLED_EXAMPLES,
@@ -36,7 +35,9 @@ it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
     })
     const into = join(cwd, 'stage')
     const fetched = await fetchSource(parseSource(helper.ref), into, { cwd, exec })
-    expect(JSON.parse(readFileSync(join(into, 'package.json'), 'utf8')).name).toBe(helper.id)
+    const manifest = JSON.parse(readFileSync(join(into, 'package.json'), 'utf8'))
+    expect(manifest.name).toBe(helper.id)
+    expect(manifest.version).not.toBe('0.0.0')
     const source = bundledPluginSource(helper.ref)
     if (!source) throw new Error('Missing bundled source')
     expect(fetched.integrity).toBe(hashDirectory(join(source.root, source.path)))
@@ -98,7 +99,7 @@ it.each([
   const metadata = JSON.parse(readFileSync(join(into, 'package.json'), 'utf8'))
   expect(metadata.name).toBe(expected.id)
   if (expected.family === 'mhs') {
-    expect(satisfiesApiRange(metadata.dependencies['@agnes/mhs'], '0.0.0')).toBe(true)
+    expect(metadata.dependencies['@agnes/mhs']).toBe('0.1.0-alpha.0')
     expect(metadata.agnes.metadata).toMatchObject({
       category: 'example',
       exampleOf: '@agnes/mhs',

@@ -75,6 +75,7 @@ export function PluginDetailBody({
   const locale = view.locale.getSnapshot()
   const purpose = resolvePluginMetadata(item.metadata, locale)
   const installed = 'desired' in item ? item : undefined
+  const update = installed ? view.availableBundledUpdate(installed) : undefined
   const runtime = view.runtimeState(item.id)
   const failureReason =
     runtime?.error?.message ??
@@ -161,6 +162,9 @@ export function PluginDetailBody({
           <Facts
             rows={[
               [t('detail.version'), item.version],
+              ...(update
+                ? [[t('detail.bundled-update'), `${item.version} → ${update.version}`] as const]
+                : []),
               ...(installed
                 ? [
                     [
@@ -204,6 +208,11 @@ export function PluginDetailBody({
         ) : undefined
       }
     >
+      {update && (
+        <SettingsState>
+          {t('detail.bundled-update')}: {item.version} → {update.version}
+        </SettingsState>
+      )}
       {failureReason && (
         <SettingsState tone="error">
           {pluginFailureMessage(failureReason, t, runtime?.error?.code)}

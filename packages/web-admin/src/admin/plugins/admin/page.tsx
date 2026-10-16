@@ -55,7 +55,15 @@ import { adminErrorKey, element, markSettingsPage, setDialog } from './dom.js'
 import { manageExample } from './example-parent.js'
 import { InstallFlow, operationFailure } from './install-flow.js'
 import { rememberInventory, seededState } from './inventory-cache.js'
-import { hasClientContribution, isClientOnly, safeMessage, sourceForCatalog } from './model.js'
+import {
+  bundledUpdate,
+  bundledUpdateAction,
+  hasClientContribution,
+  isClientOnly,
+  readBundledCatalog,
+  safeMessage,
+  sourceForCatalog,
+} from './model.js'
 import {
   type PreviewMode,
   operationRecords as readOperationRecords,
@@ -290,6 +298,7 @@ export class PluginAdminPage {
       manageExample: (item: Pick<PackageInstalledDescriptor, 'id' | 'metadata'>) => manageExample(page, item),
       confirmReleasePins: page.confirmReleasePins.bind(page),
       detailActions: offeredActions(page),
+      availableBundledUpdate: page.availableBundledUpdate.bind(page),
       detailOperations: page.detailOperations.bind(page),
       errorMessage: page.errorMessage.bind(page),
       filteredInstalled: page.filteredInstalled.bind(page),
@@ -495,6 +504,12 @@ export class PluginAdminPage {
     )
   }
 
+  #bundledCatalog: readonly PackageCatalogDescriptor[] = []
+
+  availableBundledUpdate(item: PackageInstalledDescriptor) {
+    return bundledUpdate(item, this.#bundledCatalog)
+  }
+
   async refresh(options: { preserveError?: boolean } = {}): Promise<void> {
     if (this.#lifetime.signal.aborted) return
     const generation = ++this.#generation
@@ -515,14 +530,16 @@ export class PluginAdminPage {
       // disable effects, while read-only catalog calls may remain available.
       this.#state = { ...this.#state, context }
       // Independent read models can load together. Optional feeds never block a valid inventory.
-      const [list, surfaceFeed, tree, runtimeCatalog, composition] = await Promise.all([
+      const [list, surfaceFeed, tree, runtimeCatalog, composition, bundledCatalog] = await Promise.all([
         this.#api.list(),
         this.#api.surfaceLinks().catch(() => undefined),
         this.#api.treeList().catch(() => undefined),
         this.#api.runtime().catch(() => undefined),
         this.#api.composition().catch(() => undefined),
+        readBundledCatalog(this.#api).catch(() => []),
       ])
       if (generation !== this.#generation) return
+      this.#bundledCatalog = bundledCatalog
       this.#presentationRuntime = runtimeCatalog
       this.#presentationComposition = composition
       const surfaceLinks = surfaceFeed?.surfaces ?? []
@@ -1367,6 +1384,8 @@ export class PluginAdminPage {
           onClick: () => {},
         })
       }
+      const update = this.availableBundledUpdate(installed)
+      if (update) specs.push(bundledUpdateAction(this, installed, update))
       specs.push({
         label: this.#t('action.update-catalog'),
         group: 'versions',

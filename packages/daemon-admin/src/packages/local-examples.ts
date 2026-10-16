@@ -17,7 +17,12 @@ function helperEntry(helper: (typeof DEFAULT_ENABLED_BUNDLED_PACKAGES)[number]) 
   if (!source) throw new Error('Bundled plugin root unavailable')
   const directory = join(source.root, source.path)
   const pkg = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8'))
-  if (pkg.name !== helper.id || pkg.version !== helper.version || pkg.license !== helper.license)
+  if (
+    pkg.name !== helper.id ||
+    typeof pkg.version !== 'string' ||
+    pkg.version === '0.0.0' ||
+    pkg.license !== helper.license
+  )
     throw new Error('Bundled helper identity mismatch')
   return {
     id: pkg.name,

@@ -7,6 +7,7 @@ import { runningPackageIdentity } from '@agnes/daemon-admin/package-actual-ident
 import {
   activateDefaultHelpers,
   initializeDefaultHelpers,
+  refreshDefaultHelpers,
 } from '@agnes/daemon-admin/packages/default-helpers'
 import {
   configurationReadOnly,
@@ -1374,7 +1375,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           : createSecretsEnv()
       if (o.packageRuntime.manager.localPluginRoots)
         await o.packageRuntime.manager.refreshLocalPlugins(packageProfileDirectory)
-      const surfaceInventory = await o.packageRuntime.manager.inventory(packageProfileDirectory)
+      let surfaceInventory = await o.packageRuntime.manager.inventory(packageProfileDirectory)
       const pinCoordinator = runtimeStore
         ? createRuntimePinCoordinator({
             store: runtimeStore,
@@ -1408,6 +1409,18 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           previous: runtimeStore.desired(),
           publish: (target) => pinCoordinator.publish(target, runtimeTargetProbe),
         })
+      if (runtimeStore && pinCoordinator && runtimeTargetProbe) {
+        o.packageRuntime.bindReferences?.(
+          createCompositeReferenceFacts(runtimeStore, () => pool.businessWorker()?.generation),
+        )
+        await refreshDefaultHelpers({
+          profileDir: packageProfileDirectory,
+          manager: packageRuntime.manager,
+          previous: () => runtimeStore.desired(),
+          publish: (target) => pinCoordinator.publish(target, runtimeTargetProbe),
+        })
+        surfaceInventory = await packageRuntime.manager.inventory(packageProfileDirectory)
+      }
       // Bootstrap local sources through the existing pinned generation publication path.
       if (runtimeStore && pinCoordinator && runtimeTargetProbe) {
         for (const pkg of surfaceInventory.packages) {

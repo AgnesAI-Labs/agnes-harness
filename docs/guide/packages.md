@@ -179,6 +179,10 @@ A package declaring `metadata.exampleOf` is managed only on its parent plugin’
 
 ## Update and roll back
 
+Release-owned bundled defaults (the four helpers and MHS) follow the installed distribution. At startup, AGH verifies the shipped version, integrity and capability hash against the installed snapshot. A trusted, enabled default still using its reserved bundled source refreshes through the verified package update and pinned runtime publication paths only when its capability hash is unchanged. Existing sessions retain their snapshots. Removed defaults are not reinstalled; disabled or untrusted defaults and packages pinned to another source are left untouched.
+
+If capabilities change or ordinary dependency/reference checks block refresh, **Plugins → Built-in → Versions** shows **Update available**, the installed → shipped versions, and **Review update**. This opens the normal content and capability review before updating. Copied release payloads use the distribution version (private workspace builds use the declared public candidate version), never `0.0.0`; equal version labels still compare integrity.
+
 The shell `package` command has no `update` subcommand. Use the installed package's update-from-source action in Web, or inspect the source and submit TUI `/package update <id> <source> <integrity>`. The TUI command does not provide the installation confirmation wizard. Programmatic callers use Node SDK `client.packages.update`.
 
 Practice with `hot-service/v1` and `v2`, or `client-panel/v1` and `v2`. Install and enable v1, then select the v2 source with the same package ID. Check new hashes and capability changes, and follow the interface's review and activation prompts. Inspect actual state and interface/service values, rather than relying only on 100% operation progress.

@@ -216,7 +216,7 @@
     }
   },
   "dependencies": {
-    "@agnes/mhs": "0.0.0",
+    "@agnes/mhs": "0.1.0-alpha.0",
     "@agnes/mhs-device": "workspace:*"
   }
 }

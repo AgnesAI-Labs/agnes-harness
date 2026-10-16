@@ -8,6 +8,7 @@ import {
   type InstalledInventory,
   isRuntimePackageEligible,
   lockPath,
+  PackageError,
   type PackageManager,
   parseSource,
 } from '@agnes/package-manager'
@@ -54,7 +55,7 @@ export async function initializeDefaultHelpers(options: {
       const preview = await options.manager.inspect(options.profileDir, source)
       if (
         preview.id !== helper.id ||
-        preview.version !== helper.version ||
+        preview.version === '0.0.0' ||
         preview.integrity !== state.integrity[helper.id] ||
         preview.blockers.length ||
         !preview.capabilityHash
@@ -109,4 +110,60 @@ export async function activateDefaultHelpers(options: {
     await options.publish(target)
     save({ ...state, phase: 'complete' })
   })
+}
+
+/** Refresh only the release source under its existing capability grant. Publication is retried on
+ * every boot, including after a crash between the package commit and target publication. */
+export async function refreshDefaultHelpers(options: {
+  profileDir: string
+  manager: PackageManager
+  previous(): RuntimeTargetArtifact | undefined
+  publish(target: RuntimeTargetArtifact): Promise<void>
+}): Promise<void> {
+  for (const helper of DEFAULT_ENABLED_BUNDLED_PACKAGES) {
+    const current = (await options.manager.inventory(options.profileDir, { fresh: true })).packages.find(
+      (pkg) => pkg.id === helper.id,
+    )
+    if (
+      !current ||
+      !isRuntimePackageEligible(current) ||
+      current.entry.source.type !== 'file' ||
+      current.entry.source.ref !== helper.ref
+    )
+      continue
+    const source = parseSource(helper.ref)
+    const preview = await options.manager.inspect(options.profileDir, source)
+    if (
+      preview.id !== helper.id ||
+      preview.version === '0.0.0' ||
+      preview.blockers.length ||
+      preview.capabilityHash !== current.capabilityHash
+    )
+      continue
+    if (current.entry.integrity !== preview.integrity || current.entry.version !== preview.version) {
+      try {
+        await options.manager.update(options.profileDir, helper.id, source, {
+          expectedIntegrity: preview.integrity,
+          expectedInstalledIntegrity: current.entry.integrity,
+          activation: {
+            expectedInstalledIntegrity: current.entry.integrity,
+            trust: { integrity: preview.integrity, capabilityHash: preview.capabilityHash },
+          },
+        })
+      } catch (error) {
+        // Dependencies, deployment references and pins retain their ordinary refusal semantics.
+        // The catalog still offers the candidate for a reviewed update.
+        if (error instanceof PackageError && error.legacyCode === 'E_API_RANGE') continue
+        throw error
+      }
+    }
+    const previous = options.previous()
+    const target = rebuildDesiredFromInventory({
+      previous,
+      inventory: await options.manager.inventory(options.profileDir, { fresh: true }),
+      packageId: helper.id,
+      operation: 'update',
+    })
+    if (target && target.digest !== previous?.digest) await options.publish(target)
+  }
 }

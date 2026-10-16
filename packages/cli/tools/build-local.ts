@@ -21,10 +21,12 @@ import { tabsAria } from '../../../tools/web-tabs-aria.mjs'
 import { xSurface } from '../../../tools/web-x-surface.mjs'
 import { beginRuntimeDirectory } from '../../base/tools/runtime-directory.js'
 import { bundledManifests } from './bundled-manifests.mjs'
+import { bundledReleaseVersion, stampBundledPackageVersion } from './bundled-version.js'
 import { checkPackagedClientModules } from './client-module-check.js'
 import { prepareDocumentReader } from './document-reader.js'
 import { prepareMhsPackage } from './mhs-package.js'
 import { copyPluginPackRuntime } from './plugin-pack-runtime.js'
+import { PUBLIC_PACKAGE_VERSION } from './release-version.mjs'
 import { copyRipgrep } from './ripgrep.js'
 import { copySystemRuntime, withBuiltSystemRuntime } from './windows-runtime.js'
 
@@ -43,24 +45,26 @@ export async function copyComputerUseNotice(outputDirectory: string): Promise<vo
 }
 
 /** Copy only runtime payload, never repository tests or personal working files. */
-export async function copyBundledPlugins(outputDirectory: string): Promise<void> {
+export async function copyBundledPlugins(
+  outputDirectory: string,
+  version = PUBLIC_PACKAGE_VERSION,
+): Promise<void> {
+  const releaseVersion = bundledReleaseVersion(version)
   for (const { name: helper } of DEFAULT_ENABLED_BUNDLED_PACKAGES) {
-    if (helper === 'mhs') {
-      const destination = join(outputDirectory, 'bundled-plugins', helper)
-      await prepareMhsPackage(destination)
-      await checkPackagedClientModules(destination)
-      continue
-    }
-    const source = join(repoPackages, 'package-manager', 'bundled-plugins', helper)
     const destination = join(outputDirectory, 'bundled-plugins', helper)
-    await mkdir(destination, { recursive: true })
-    for (const name of ['package.json', 'index.mjs', 'src', 'README.md', 'LICENSE'])
-      await cp(join(source, name), join(destination, name), {
-        recursive: true,
-        force: false,
-        errorOnExist: true,
-      })
-    if (helper === 'document-reader') await prepareDocumentReader(destination)
+    if (helper === 'mhs') await prepareMhsPackage(destination)
+    else {
+      const source = join(repoPackages, 'package-manager', 'bundled-plugins', helper)
+      await mkdir(destination, { recursive: true })
+      for (const name of ['package.json', 'index.mjs', 'src', 'README.md', 'LICENSE'])
+        await cp(join(source, name), join(destination, name), {
+          recursive: true,
+          force: false,
+          errorOnExist: true,
+        })
+      if (helper === 'document-reader') await prepareDocumentReader(destination)
+    }
+    await stampBundledPackageVersion(destination, releaseVersion)
     await checkPackagedClientModules(destination)
   }
 }
@@ -90,7 +94,10 @@ const bundleJitiTransform: Plugin = {
 }
 
 /** Ship the curated example payload independently of the user's workspace. */
-export async function copyBundledExamples(outputDirectory: string): Promise<void> {
+export async function copyBundledExamples(
+  outputDirectory: string,
+  version = PUBLIC_PACKAGE_VERSION,
+): Promise<void> {
   for (const { family, name } of BUNDLED_EXAMPLES) {
     const source = join(repoPackages, '..', 'examples', family, name)
     if (!existsSync(join(source, 'package.json'))) continue
@@ -117,6 +124,11 @@ export async function copyBundledExamples(outputDirectory: string): Promise<void
         (/\.(mjs|mts|json)$/.test(file) && file !== 'tsconfig.json'),
     )
     for (const file of payload) await cp(join(source, file), join(destination, file), { recursive: true })
+    const manifestPath = join(destination, 'package.json')
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+    for (const pkg of DEFAULT_ENABLED_BUNDLED_PACKAGES)
+      if (manifest.dependencies?.[pkg.id]) manifest.dependencies[pkg.id] = bundledReleaseVersion(version)
+    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
     if (family === 'community')
       await build({
         entryPoints: [join(source, 'src', 'index.ts')],
@@ -352,12 +364,12 @@ async function buildLocal(out: string, nativeOutput?: string, versionOverride?: 
   const webOut = join(out, 'web')
   await mkdir(join(out, 'native'), { recursive: true })
   await copyRipgrep(out)
-  await copyBundledPlugins(out)
-  await copyBundledExamples(out)
   const packageJson = JSON.parse(await readFile(join(cliRoot, 'package.json'), 'utf8')) as {
     version?: unknown
   }
   const version = versionOverride ?? (typeof packageJson.version === 'string' ? packageJson.version : '0.0.0')
+  await copyBundledPlugins(out, version)
+  await copyBundledExamples(out, version)
   const defines = await runtimeDefines(version)
   await copyPluginPackRuntime(out, { define: defines, plugins: [bundleJitiTransform] })
 
