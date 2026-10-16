@@ -140,6 +140,8 @@ export type ExecResult = {
    * was killed and the output is what it had printed so far. Absent means the executor did not say.
    */
   timedOut?: boolean
+  /** Descendants stopped when the foreground process exited; absent when not measured. */
+  stoppedProcesses?: number
 }
 export type FsEntry = { name: string; kind: 'file' | 'dir' | 'symlink' | 'other' }
 export type FsStat = { kind: FsEntry['kind']; size: number; mtimeMs: number }
@@ -273,6 +275,8 @@ export interface ToolContext {
     >
   }
   /** Backend-injected proof of the exact human approval consumed for this invocation. */
+  readonly store?: import('./profile-services.js').OwnedStore
+  readonly wake?: import('./profile-services.js').SessionWakePort
   readonly approval?: Readonly<{ requestId: string; subjectRevision: string; answeredBy: Actor }>
   readonly actor: Actor // recorded on the call; never the basis for an authorization decision
   /** Execution directory snapshot at the start of this call (or the explicitly requested operation).
@@ -300,6 +304,8 @@ export interface ToolContext {
     /** Zero-based byte offset; limit bounds bytes read from storage. */
     read(path: string, opts?: { offset?: number; limit?: number }): Promise<Bytes>
     write(path: string, data: Bytes | string): Promise<void>
+    /** Exclusive, no-follow creation. Refuse an existing entry or changed parent. No overwrite fallback. */
+    create?(path: string, data: Bytes): Promise<{ size: number; sha256: string }>
     list(path: string): Promise<FsEntry[]>
     stat(path: string): Promise<FsStat>
     /** Revision of a snapshot-backed read, when the filesystem supplies one. */

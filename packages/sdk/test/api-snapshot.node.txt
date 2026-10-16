@@ -7,6 +7,7 @@ FrameDecoder
 JsonRpcError
 MAX_DEFERRED_UI_OVERLAYS
 OPENING_RETRY_MS
+OwnedStoreError
 PREVIEW_MAX_CHARS
 PreviewMerger
 ProtocolViolation
@@ -21,10 +22,15 @@ UIProjectionSync
 Unsupported
 applyUITimelinePatch
 applyWindowedUITimelinePatch
+cancelAttachmentUpload
 classify
 createClient
+createExampleClient
 createExtensionClient
+createManagedServiceRuntime
+createOwnedStore
 createPackageAdminClient
+createPluginStreamsClient
 createRelay
 createResourceControlClient
 createSurfaceRelay
@@ -42,6 +48,7 @@ notifyListeners
 parseMessage
 portalIdentityAuth
 randomId
+readManagedServiceInitialization
 runHeadless
 signSourceAuth
 snapshotPending
@@ -53,5 +60,6 @@ surfaceAuthProvider
 textFor
 toContentBlocks
 unixTransport
+uploadAttachment
 verifyPortalIdentity
 wsTransport

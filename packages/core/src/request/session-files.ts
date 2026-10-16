@@ -1,14 +1,22 @@
-import { scanPages } from '@agnes/core-ledger/log/scan-pages'
 import type { ToolContext } from '@agnes/extension-api'
-import { type ContentBlock, sha256Hex, uploadedAttachment } from '@agnes/protocol'
+import {
+  AttachmentError,
+  type ContentBlock,
+  IncrementalSha256,
+  sha256Hex,
+  storedAttachment,
+  uploadedAttachment,
+} from '@agnes/protocol'
 import { decodeAttachmentData, USER_MESSAGE_ATTACHMENT_LIMITS } from '@agnes/protocol-validation'
 import type { SessionImpl } from '../step/session.js'
+import { attachmentIndex } from './attachment-index.js'
 
 type UserFile = Extract<ContentBlock, { type: 'file' | 'resource_link' }> & { name: string; mimeType: string }
 const filesOf = (data: unknown): UserFile[] =>
   ((data as { content?: ContentBlock[] })?.content ?? []).filter(
     (block): block is UserFile =>
       block.type === 'file' ||
+      (storedAttachment(block) && !block.attachment.image) ||
       (block.type === 'resource_link' &&
         !!uploadedAttachment(block.uri) &&
         typeof block.name === 'string' &&
@@ -40,31 +48,19 @@ export const readSessionAttachment = async (
       throw new Error('Invalid attachment list offset or limit.')
     const lines: string[] = []
     let used = 200
-    let ordinal = 0
-    for await (const page of scanPages(
-      (query) => session.d.log.scan(query),
-      { type: 'user/message', lane: session.lane, toSeq: end },
-      10,
-    )) {
+    let ordinal = offset - 1
+    const indexed = await attachmentIndex(session)
+    for (const file of indexed.files.slice(offset - 1, offset + limit)) {
       checkAbort()
-      for (const event of page) {
-        for (const [index, file] of filesOf(event.data).entries()) {
-          ordinal++
-          if (ordinal < offset) continue
-          const line = `${ordinal}. session-file://${event.seq}/${index + 1} ${JSON.stringify(file.name)} (${file.mimeType})`
-          const cost = new TextEncoder().encode(line).byteLength + 1
-          if (lines.length === limit || used + cost > maxBytes) {
-            lines.push(`[read session-file://list with offset=${ordinal} to continue]`)
-            return {
-              name: 'Attachments',
-              mimeType: 'text/plain',
-              bytes: new TextEncoder().encode(lines.join('\n')),
-            }
-          }
-          lines.push(line)
-          used += cost
-        }
+      ordinal++
+      const line = `${ordinal}. session-file://${file.seq}/${file.index} ${JSON.stringify(file.name)} (${file.mimeType})`
+      const cost = new TextEncoder().encode(line).byteLength + 1
+      if (lines.length === limit || used + cost > maxBytes) {
+        lines.push(`[read session-file://list with offset=${ordinal} to continue]`)
+        break
       }
+      lines.push(line)
+      used += cost
     }
     return {
       name: 'Attachments',
@@ -72,9 +68,9 @@ export const readSessionAttachment = async (
       bytes: new TextEncoder().encode(lines.join('\n') || 'No attachments at this offset.'),
     }
   }
-  const match = /^session-file:\/\/([1-9][0-9]*)\/([1-9][0-9]*)$/u.exec(input.path)
-  const seq = Number(match?.[1])
-  const index = Number(match?.[2])
+  const match = /^session-(file|image):\/\/([1-9][0-9]*)\/([1-9][0-9]*)$/u.exec(input.path)
+  const seq = Number(match?.[2])
+  const index = Number(match?.[3])
   if (!match || !Number.isSafeInteger(seq) || seq > end || !Number.isSafeInteger(index)) return undefined
   const rows = await session.d.log.scan({
     fromSeq: seq,
@@ -84,8 +80,33 @@ export const readSessionAttachment = async (
     limit: 1,
   })
   checkAbort()
-  const file = filesOf(rows[0]?.data)[index - 1]
+  const content = (rows[0]?.data as { content?: ContentBlock[] } | undefined)?.content ?? []
+  const file = (
+    match[1] === 'image'
+      ? content.filter(
+          (block) => block.type === 'image' || (storedAttachment(block) && block.attachment.image),
+        )
+      : filesOf(rows[0]?.data)
+  )[index - 1]
   if (!file) return undefined
+  const maxBytes = input.maxBytes ?? USER_MESSAGE_ATTACHMENT_LIMITS.maxAggregateBytes
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw new AttachmentError('ATTACHMENT_DATA')
+  if (storedAttachment(file)) {
+    if (file.attachment.artifact.size > maxBytes) throw new AttachmentError('ATTACHMENT_TOO_LARGE')
+    let bytes: Uint8Array
+    try {
+      bytes = await session.d.runtime.artifactGet(file.attachment.artifact)
+    } catch (error) {
+      throw error instanceof AttachmentError ? error : new AttachmentError('ATTACHMENT_UNAVAILABLE')
+    }
+    checkAbort()
+    if (
+      bytes.length !== file.attachment.artifact.size ||
+      new IncrementalSha256().update(bytes).digest() !== file.attachment.artifact.sha256
+    )
+      throw new AttachmentError('ATTACHMENT_HASH_MISMATCH')
+    return { name: file.name, mimeType: file.mimeType, bytes }
+  }
   if (file.type === 'resource_link') {
     const ref = uploadedAttachment(file.uri)
     const port = session.d.workspaceInvocation
@@ -110,19 +131,27 @@ export const readSessionAttachment = async (
         )
       const requested = input.maxBytes ?? USER_MESSAGE_ATTACHMENT_LIMITS.maxAggregateBytes
       if (!Number.isSafeInteger(requested) || requested < 0) throw new Error('Invalid attachment byte limit.')
-      const limit = Math.min(ref.size, requested, USER_MESSAGE_ATTACHMENT_LIMITS.maxAggregateBytes)
+      if (ref.size > requested || ref.size > USER_MESSAGE_ATTACHMENT_LIMITS.maxAggregateBytes)
+        throw new AttachmentError('ATTACHMENT_TOO_LARGE')
+      const limit = ref.size + 1
       // Host maps FsOps reads to the adapter's byte mode; offset is zero-based here.
       const bytes = await view.fs().read(ref.path, { offset: 0, limit })
       checkAbort()
-      return { name: file.name, mimeType: file.mimeType, bytes }
+      if (bytes.length !== ref.size || new IncrementalSha256().update(bytes).digest() !== ref.sha256)
+        throw new AttachmentError('ATTACHMENT_HASH_MISMATCH')
+      return { name: file.name ?? 'attachment', mimeType: file.mimeType ?? 'application/octet-stream', bytes }
     }
     return session.d.workspacePublication
       ? session.d.workspacePublication.workspace(() => ({ port, handler: invoke }))
       : port.run(invoke)
   }
+  if (file.type !== 'file' && file.type !== 'image') return undefined
   return {
-    name: file.name,
+    name: file.type === 'file' ? file.name : 'image',
     mimeType: file.mimeType,
-    bytes: decodeAttachmentData(file.data, USER_MESSAGE_ATTACHMENT_LIMITS.maxAggregateBytes),
+    bytes: decodeAttachmentData(
+      file.type === 'image' || file.type === 'file' ? file.data : '',
+      maxBytes || 1,
+    ),
   }
 }

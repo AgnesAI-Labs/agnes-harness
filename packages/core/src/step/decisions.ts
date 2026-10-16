@@ -28,6 +28,8 @@ import {
 /** Minimal authority needed by the decision commands; the session supplies the writer gate. */
 export interface DecisionAuthority {
   readonly key: string
+  /** A profile journal uses AR1 without creating a session or granting session access. */
+  readonly profileId?: string
   readonly lane: string
   readonly lastSeq: Seq
   readonly closed: boolean
@@ -108,13 +110,17 @@ export class DecisionCommands {
     if (this.s.closed) throw new CoreError('E_CLOSED', 'Session closed')
     source?.alive()
   }
+  private owns(handle: DecisionHandle): boolean {
+    return this.s.profileId !== undefined
+      ? handle.sessionId === null && handle.profileId === this.s.profileId
+      : handle.sessionId === this.s.key && handle.profileId == null
+  }
   private read(handle: DecisionHandle, source?: DecisionSource): DecisionSnapshot {
     const checked = inspectJsonData(handle, 4096)
     if (!checked.ok || !validateAgainst(HandleSchema, checked.value).ok) fail('HANDLE')
-    if (handle.sessionId !== this.s.key) fail('SCOPE')
+    if (!this.owns(handle)) fail('SCOPE')
     const value = this.s.readDecisions().get(handle.id)?.value
-    if (!value || value.handle.sessionId !== this.s.key || value.request.lane !== this.s.lane)
-      fail('NOT_FOUND')
+    if (!value || !this.owns(value.handle) || value.request.lane !== this.s.lane) fail('NOT_FOUND')
     if (
       source &&
       (value.request.owner !== source.owner ||
@@ -199,7 +205,7 @@ export class DecisionCommands {
       if (this.s.cancelled) fail('STOPPED')
       const existing = [...this.s.readDecisions().values()].find(
         ({ value }) =>
-          value.handle.sessionId === this.s.key &&
+          this.owns(value.handle) &&
           value.request.owner === source.owner &&
           value.request.spec.key === spec.key,
       )
@@ -214,7 +220,10 @@ export class DecisionCommands {
         return detached(existing.value.handle)
       }
       const now = this.s.clock()
-      const handle = { id: this.s.id(), sessionId: this.s.key }
+      const handle: DecisionHandle =
+        this.s.profileId === undefined
+          ? { id: this.s.id(), sessionId: this.s.key }
+          : { id: this.s.id(), sessionId: null, profileId: this.s.profileId }
       const value: DecisionSnapshot = {
         handle,
         revision: 1,
@@ -303,7 +312,7 @@ export class DecisionCommands {
       this.live()
       const values: DecisionSnapshot[] = []
       for (const { value } of this.s.readDecisions().values()) {
-        if (value.handle.sessionId === this.s.key && value.request.lane === this.s.lane)
+        if (this.owns(value.handle) && value.request.lane === this.s.lane)
           values.push(detached(await this.expire(value)))
       }
       return values
@@ -389,7 +398,7 @@ export class DecisionCommands {
     const at = new Date(this.s.clock()).toISOString()
     return [...this.s.readDecisions().values()].flatMap(({ value }) => {
       if (
-        value.handle.sessionId !== this.s.key ||
+        !this.owns(value.handle) ||
         value.request.lane !== this.s.lane ||
         value.consumption ||
         value.invalidation ||

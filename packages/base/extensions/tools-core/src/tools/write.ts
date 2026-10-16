@@ -4,11 +4,12 @@ import type { FileChangeRecorder } from '../file-change.js'
 import { withFileLock } from '../guards/mutation-queue.js'
 import { ABSENT, observe, observedVersion, UNKNOWN_VERSION, versionOf } from '../guards/observed.js'
 import { looksTruncated } from '../guards/truncation.js'
+import { usesCrlf, writeContent } from '../line-endings.js'
 import { normalizeWorkspacePath } from '../paths.js'
 import { MAX_READ_BYTES } from './read.js'
 import { WriteParams } from './schemas.js'
 
-const dec = new TextDecoder()
+const dec = new TextDecoder('utf-8', { ignoreBOM: true })
 const enc = new TextEncoder()
 
 export function createWriteTool(record?: FileChangeRecorder) {
@@ -78,7 +79,9 @@ export function createWriteTool(record?: FileChangeRecorder) {
               details: { code: 'FS_STALE_VERSION', path: args.path },
             }
         }
-        const t = looksTruncated(old, args.content)
+        const content = writeContent(args.path, args.content, old)
+        const after = enc.encode(content)
+        const t = looksTruncated(old, content)
         if (t.truncated)
           return {
             content: [
@@ -90,7 +93,7 @@ export function createWriteTool(record?: FileChangeRecorder) {
             isError: true,
           }
         try {
-          await ctx.fs.write(args.path, args.content)
+          await ctx.fs.write(args.path, after)
         } catch (e) {
           // A file the fence lets the model read but not replace fails here, not at the read above.
           // Left to propagate, a refusal that wrote nothing would reach the model as a call whose
@@ -108,7 +111,7 @@ export function createWriteTool(record?: FileChangeRecorder) {
                 operation: 'write',
                 path: args.path,
                 before: oldBytes,
-                after: enc.encode(args.content),
+                after,
                 existed,
               },
               ctx,
@@ -121,16 +124,16 @@ export function createWriteTool(record?: FileChangeRecorder) {
         observe(
           ctx.session.key,
           abs,
-          (await versionOf(ctx, args.path, enc.encode(args.content), MAX_READ_BYTES)) ?? UNKNOWN_VERSION,
+          (await versionOf(ctx, args.path, after, MAX_READ_BYTES)) ?? UNKNOWN_VERSION,
         )
         return {
           content: [
             {
               type: 'text',
-              text: `${existed ? 'overwrote' : 'created'} ${args.path} (${args.content.length} chars)`,
+              text: `${existed ? 'overwrote' : 'created'} ${args.path} (${content.length} chars${usesCrlf(content) ? ', CRLF line endings' : ''})`,
             },
           ],
-          details: { path: args.path, bytes: enc.encode(args.content).byteLength },
+          details: { path: args.path, bytes: after.byteLength },
         }
       })
     },

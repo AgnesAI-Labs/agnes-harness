@@ -9,6 +9,7 @@ import {
   type AgnesClient,
   AgnesClientService,
   type ClientEffectCaller,
+  type ClientProfileCaller,
   ClientResourceService,
   type ClientServiceCaller,
   type CommandAuthorizer,
@@ -51,7 +52,6 @@ import {
 import { BuiltinWebUnitRegistry, WEB_UNITS_LOCALE_NAMESPACE, webUnitsLocaleCatalog } from '@agnes/web-units'
 import { diagnosticsCatalog } from '@agnes/web-units/diagnostics-locale'
 import { traceCatalog } from '@agnes/web-units/trace-locale'
-
 import type {
   ApprovalRegionMount,
   ComposerRegionMount,
@@ -78,6 +78,7 @@ import {
   mountTraceRegion,
   mountTranscriptRegion,
 } from '../region-slots.js'
+import { ProfileApprovals } from '../regions/profile-approvals.js'
 import type { SidebarActions, SidebarState } from '../sidebar.js'
 import { type ClientReconciler, createReconciler, type RosterSource } from './reconcile.js'
 export interface ClientModulesRuntime {
@@ -118,6 +119,7 @@ export async function startClientModules(options: {
   /** Raw, host-owned SDK client. `clientModule()` exposes a narrower facade to each module. */
   agnes: HostAgnesClient
   /** Same-origin BFF only; absent keeps browser service calls fail-closed. */
+  clientProfileCaller?: ClientProfileCaller | undefined
   clientServiceCaller?: ClientServiceCaller | undefined
   /** Separate authorized effect relay; absent keeps effect commands fail-closed. */
   clientEffectCaller?: ClientEffectCaller | undefined
@@ -160,7 +162,13 @@ export async function startClientModules(options: {
   const builtinUnits = new BuiltinWebUnitRegistry()
   const pref = readThemePreference(safeThemeStorage())
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)')
-  new AgnesClientService(ctx, options.agnes, options.clientServiceCaller, options.clientEffectCaller)
+  new AgnesClientService(
+    ctx,
+    options.agnes,
+    options.clientServiceCaller,
+    options.clientEffectCaller,
+    options.clientProfileCaller,
+  )
   const theme = new ThemeService(ctx, resolveTheme(pref, prefersDark.matches))
   const session = new SessionService(ctx, undefined, options.agnes)
   const resources = new ClientResourceService(ctx, options.agnes, session)
@@ -345,7 +353,15 @@ export async function startClientModules(options: {
   // topbar commit its toggle button before that root discovers the shared control.
   if (topbar) await topbar.ready
   const sidebar = options.sidebarContainer
-    ? mountSidebarRegion(registry, options.sidebarContainer, options.sidebar, locale)
+    ? mountSidebarRegion(
+        registry,
+        options.sidebarContainer,
+        {
+          ...options.sidebar,
+          profileApprovals: <ProfileApprovals client={options.agnes} locale={locale} />,
+        },
+        locale,
+      )
     : undefined
   if (sidebar) builtinUnits.mount('@agnes/web-sidebar', () => sidebar.dispose())
   const transcript =

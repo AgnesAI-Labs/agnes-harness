@@ -40,9 +40,15 @@ async function result(response: Response): Promise<FileUploadResult> {
   if (!response.ok || value.error) throw new FileUploadFailure(value.error ?? 'UPLOAD_UNAVAILABLE')
   return value
 }
-export async function fileUploadLimits(sessionId: string, signal: AbortSignal): Promise<UploadLimits> {
+export async function fileUploadLimits(
+  sessionId: string,
+  signal: AbortSignal,
+  destination: 'workspace' | 'original' = 'workspace',
+): Promise<UploadLimits> {
   const value = await result(
-    await fetch(`${FILE_UPLOAD_PATH}?${new URLSearchParams({ sessionId })}`, { signal }),
+    await fetch(`${FILE_UPLOAD_PATH}?${new URLSearchParams({ sessionId, destination, laneId: 'main' })}`, {
+      signal,
+    }),
   )
   if (
     !value.limits ||
@@ -56,12 +62,16 @@ export async function fileUploadLimits(sessionId: string, signal: AbortSignal): 
     throw new FileUploadFailure('UPLOAD_UNAVAILABLE')
   return value.limits
 }
-export async function cancelFileUpload(sessionId: string, uploadId: string): Promise<void> {
+export async function cancelFileUpload(
+  sessionId: string,
+  uploadId: string,
+  destination: 'workspace' | 'original' = 'workspace',
+): Promise<void> {
   await result(
     await fetch(FILE_UPLOAD_PATH, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ operation: 'cancel', sessionId, uploadId }),
+      body: JSON.stringify({ operation: 'cancel', sessionId, uploadId, destination, laneId: 'main' }),
       keepalive: true,
     }),
   )
@@ -75,6 +85,7 @@ export async function uploadFile(
   limits: UploadLimits,
   signal: AbortSignal,
   progress: (value: UploadProgress) => void,
+  destination: 'workspace' | 'original' = 'workspace',
 ): Promise<UploadedAttachment> {
   const mimeType = file.type.split(';')[0]?.trim() || 'application/octet-stream'
   if (file.size > limits.maxBytes)
@@ -87,7 +98,7 @@ export async function uploadFile(
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal,
-        body: JSON.stringify({ operation, sessionId, uploadId, ...values }),
+        body: JSON.stringify({ operation, sessionId, uploadId, destination, laneId: 'main', ...values }),
       }),
     )
   signal.throwIfAborted()
@@ -112,6 +123,8 @@ export async function uploadFile(
     const chunkHash = new IncrementalSha256().update(bytes).digest()
     const query = new URLSearchParams({
       operation: 'chunk',
+      destination,
+      laneId: 'main',
       sessionId,
       uploadId,
       offset: String(offset),

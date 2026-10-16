@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import {
+  attachmentErrorCode,
   METHODS,
   type MethodName,
   type RpcError,
@@ -50,6 +51,7 @@ export type ConnectionState = {
   clientId: string
   initialized: boolean
   /** Set only after this connection successfully calls the authorized client-module roster RPC. */
+  surfaceMountNotices?: boolean
   clientModuleNotices: boolean
   capabilities: { permission: boolean }
   attached: Map<string, AttachPrefs>
@@ -434,6 +436,8 @@ export class LocalEndpoint implements RpcEndpoint {
       return ok(id, result)
     } catch (e) {
       if (id === undefined) return undefined
+      const attachmentCode = attachmentErrorCode(e)
+      if (attachmentCode) return fail(id, rpcError('INVALID_PARAMS', { code: attachmentCode }))
       if (isRpcError(e)) {
         // A refusal the caller can act on that an operator still has to be able to find.
         if (

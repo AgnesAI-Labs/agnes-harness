@@ -11,6 +11,11 @@ export interface ReadyClientModule {
   /** Isolated Intelligent UI renderers; never imported into the workbench document. */
   intelligentComponents?: readonly import('@agnes/protocol/gen/extension-manifest').UiComponentDeclaration[]
   /** Stable lifecycle key for one browser row; omitted only by legacy roster producers. */
+  exampleOf?: string
+  pageEntry?: string
+  binding?: ModuleIdentity['binding']
+  homeEntries?: ModuleIdentity['homeEntries']
+  examplePages?: ModuleIdentity['examplePages']
   rowId?: string
   packageId: string
   revision: string
@@ -23,6 +28,8 @@ export interface ReadyClientModule {
   contentDigest?: string
   extIds: string[]
   services?: string[]
+  backendOwner?: string
+  streams?: string[]
   /** Explicit browser-safe manifest metadata; never a daemon runtime row config. */
   publicConfig?: Readonly<Record<string, unknown>>
 }

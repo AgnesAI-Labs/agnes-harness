@@ -1,4 +1,11 @@
-import type { ChannelCapabilities, EventEnvelope, HarnessMeta, UITimeline } from '@agnes/protocol'
+import {
+  type ChannelCapabilities,
+  type EventEnvelope,
+  type HarnessMeta,
+  rpcError,
+  type UITimeline,
+} from '@agnes/protocol'
+import { JsonRpcError } from '@agnes/sdk'
 import { describe, expect, it, vi } from 'vitest'
 import type { MessageRef } from '../src/adapter.js'
 import { Outbound } from '../src/runner/outbound.js'
@@ -43,6 +50,7 @@ async function setup(
     sessionPerSec?: number
     maxDetachedWork?: number
     noticeRetry?: { attempts?: number; baseMs?: number; maxMs?: number; jitter?: () => number }
+    onHistoryRefused?: (key: string, error: unknown) => Promise<boolean>
   } = {},
 ) {
   const client = createFakeClient()
@@ -72,6 +80,7 @@ async function setup(
     ...(options.stopSettleMs === undefined ? {} : { stopSettleMs: options.stopSettleMs }),
     ...(options.maxDetachedWork === undefined ? {} : { maxDetachedWork: options.maxDetachedWork }),
     ...(options.noticeRetry === undefined ? {} : { noticeRetry: options.noticeRetry }),
+    ...(options.onHistoryRefused === undefined ? {} : { onHistoryRefused: options.onHistoryRefused }),
   })
   outbound.attach('k', session, { chatId: 'chat-1' })
   return { adapter, cache, client, outbound, refs, session }
@@ -375,11 +384,34 @@ describe('Outbound', () => {
   })
 
   it('detaches cleanly and makes later recovery flushes inert', async () => {
-    const { adapter, client, outbound } = await setup()
+    const onHistoryRefused = vi.fn(async () => true)
+    const { adapter, client, outbound, session } = await setup({ onHistoryRefused })
+    let refuse!: (error: unknown) => void
+    const projection = vi.spyOn(session, 'projectUI').mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          refuse = reject
+        }),
+    )
+    const pending = outbound.flush('k')
+    await vi.waitFor(() => expect(projection).toHaveBeenCalledOnce())
     outbound.detach('k')
     client.setTimeline('k', timeline([{ kind: 'assistant', id: 'a', seq: 2, text: 'ignored' }]))
     await outbound.flush('k', { reason: 'gap' })
     expect(adapter.sent).toHaveLength(0)
+
+    const replacement = await client.session.attach('replacement')
+    outbound.attach('k', replacement, { chatId: 'chat-1' })
+    refuse(new JsonRpcError(rpcError('SEMANTIC_REJECTED', { code: 'E_SESSION_CORRUPT' })))
+    await pending
+    expect(onHistoryRefused).not.toHaveBeenCalled()
+    client.setTimeline(
+      'replacement',
+      timeline([{ kind: 'assistant', id: 'new', seq: 2, text: 'new session' }]),
+    )
+    await outbound.flush('k')
+    expect(adapter.sent[0]?.msg.blocks).toEqual([{ kind: 'text', markdown: 'new session' }])
+    await outbound.stop()
   })
 
   it('updates multipart revisions without indefinitely appending obsolete tail chunks', async () => {

@@ -12,9 +12,9 @@ export function startupDiagnosticPath(daemonDir: string): string {
   return join(daemonDir, `startup-refusal-${randomUUID()}.json`)
 }
 
-export function publishStartupDiagnostic(error: unknown, dataDir: string | undefined): void {
+export function publishStartupDiagnostic(error: unknown, home: string | undefined): void {
   const path = process.env[STARTUP_DIAGNOSTIC_ENV]
-  if (!path || !dataDir || dirname(path) !== join(resolve(dataDir), 'daemon')) return
+  if (!path || !home || dirname(path) !== join(resolve(home), 'daemon')) return
   if (!/^startup-refusal-[0-9a-f-]{36}\.json$/u.test(basename(path))) return
   const message = error instanceof Error ? error.message : String(error)
   const safe = redactDetail({ message: message.slice(0, 1000) })

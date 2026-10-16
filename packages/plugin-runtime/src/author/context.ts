@@ -19,6 +19,7 @@ declare module '@agnes/cordis' {
     resources: PluginResourcesPort
     eventLog: PluginEventLogPort
     /** Identity, trust tier, logger, abort signal and platform facts of the calling plugin. */
+    profileRuntime: import('@agnes/extension-api').PluginProfileRuntimePort
     self: import('@agnes/extension-api').ExtensionContext
   }
 }

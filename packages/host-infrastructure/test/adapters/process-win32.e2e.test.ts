@@ -91,7 +91,9 @@ describe.skipIf(process.platform !== 'win32')('Windows configured job shells', (
         expect(windowsProcessStartTimeSync(pid)).not.toBeNull()
         if (mode === 'exit') await handle.write('exit\n')
         else await handle.close()
-        expect((await handle.exited).error).toBeUndefined()
+        const exited = await handle.exited
+        expect(exited.error).toBeUndefined()
+        if (mode === 'exit') expect(exited.stoppedProcesses).toBeGreaterThanOrEqual(1)
         expect(windowsProcessStartTimeSync(pid)).toBeNull()
         await handle.close()
       } finally {
@@ -130,6 +132,14 @@ describe.skipIf(process.platform !== 'win32')('Windows configured job shells', (
         expect(ordinary.isError).toBe(true)
         expect(JSON.stringify(ordinary)).toContain(version === '7' ? '中文7' : '中文5')
         expect(ordinary.details).toMatchObject({ code: 7 })
+        const streams = await run(
+          "Write-Host '中文 host'; Write-Warning '中文 warning'; [Console]::Write($env:PYTHONUTF8 + ':' + $env:PYTHONUNBUFFERED)",
+        )
+        expect(streams.isError, JSON.stringify(streams)).toBeUndefined()
+        expect(JSON.stringify(streams)).toContain('中文 host')
+        expect(JSON.stringify(streams)).toContain('中文 warning')
+        expect(JSON.stringify(streams)).toContain('1:1')
+        expect(JSON.stringify(streams)).not.toContain('CLIXML')
         const first = await run("$kept = '变量中文'; [Console]::Write($kept)", { persistent: true })
         expect(first.isError, JSON.stringify(first)).toBeUndefined()
         const next = await run('[Console]::Write($kept)', { persistent: true })

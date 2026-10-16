@@ -1,11 +1,19 @@
 /** Client-module adapter: plugin registrations are owned by their Cordis fiber. */
 import type { Context } from '@agnes/cordis'
+import { createExampleClient, type ExampleLaunches, type ExamplePackages } from '@agnes/sdk/browser'
+import {
+  type ContributionAvailability,
+  contributionAvailability,
+  scopedHomeEntries,
+} from './contribution-scope.js'
 import {
   DSH_SLOT_CATALOG_VERSION,
   getDshSlotDefinition,
   isPublicDshSlot,
   isRuntimeSupportedDshSlot,
 } from './dsh-slot-catalog.js'
+import { scopedExamplePages } from './example-pages.js'
+import { scopedProfileStreams } from './profile-streams.js'
 import { type RegisterOptions, SlotRegistry } from './registry.js'
 import {
   AgnesClientService,
@@ -37,6 +45,15 @@ export interface ClientContext extends Context {
   session: import('./services.js').SessionService
   theme: import('./services.js').ThemeService
   locale: import('./services.js').LocaleService
+  profile: Readonly<{
+    streams: ReturnType<typeof scopedProfileStreams>
+    services: import('./service-contracts.js').ClientProfileServices
+    examples: ExamplePackages
+    launch: ExampleLaunches & { openPage(exampleId: string): void }
+  }>
+  examplePages: ReturnType<typeof scopedExamplePages>
+  availability: ContributionAvailability
+  homeEntries: ReturnType<typeof scopedHomeEntries>
   resources: ClientResourceService
 }
 
@@ -86,6 +103,33 @@ export function clientModule(mod: ClientModule): {
           if (!sessionId) throw new Error('client service requires an active session')
           return await agnes.serviceCaller(config, sessionId, name, input)
         },
+      })
+      const profileCall = async (
+        name: string,
+        input: Record<string, unknown> | undefined,
+        options?: { operationId?: string; read?: boolean; sessionReads?: readonly string[] },
+      ) => {
+        if (!agnes.profileCaller || !config.services?.includes(name))
+          throw new Error(`client profile service is unavailable: ${name}`)
+        return agnes.profileCaller(config, name, input, options)
+      }
+      const profile = Object.freeze({
+        services: Object.freeze({
+          query: async (
+            name: string,
+            input: Record<string, unknown>,
+            options?: { sessionReads?: readonly string[] },
+          ) => {
+            const value = await profileCall(name, input, options)
+            if (!value || typeof value !== 'object' || !('output' in value))
+              throw new Error('Invalid profile query result')
+            return value.output
+          },
+          effect: (name: string, input: Record<string, unknown>, options: { operationId: string }) =>
+            profileCall(name, input, options),
+          readOperation: (name: string, operationId: string) =>
+            profileCall(name, undefined, { operationId, read: true }),
+        }),
       })
       const moduleAgnes = Object.freeze(
         Object.assign(Object.create(agnes.client) as import('./services.js').AgnesClient, {
@@ -143,6 +187,62 @@ export function clientModule(mod: ClientModule): {
       Object.defineProperty(ctx, 'resources', { value: resources, configurable: true })
       Object.defineProperty(ctx, 'theme', { value: theme, configurable: true })
       Object.defineProperty(ctx, 'locale', { value: locale, configurable: true })
+      Object.defineProperty(ctx, 'homeEntries', {
+        value: scopedHomeEntries(config, (off) => {
+          ctx.effect(() => off)
+        }),
+        configurable: true,
+      })
+      const availability = contributionAvailability(config, (off) => {
+        ctx.effect(() => off)
+      })
+      Object.defineProperty(ctx, 'availability', { value: availability, configurable: true })
+      const examplePages = scopedExamplePages(config, (off) => {
+        ctx.effect(() => off)
+      })
+      Object.defineProperty(ctx, 'examplePages', { value: examplePages, configurable: true })
+      const exampleClient = createExampleClient(async (request) => {
+        if (
+          availability.getSnapshot()?.lifetime !== 'profile' ||
+          availability.getSnapshot()?.availability !== 'active'
+        )
+          throw new Error('CAPABILITY_DENIED')
+        const response = await fetch('/api/client-modules/examples', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rowId: config.rowId, request }),
+        })
+        const value: unknown = await response.json()
+        if (!response.ok) {
+          const code = (value as { error?: { data?: { code?: unknown } } })?.error?.data?.code
+          throw new Error(
+            typeof code === 'string' &&
+              [
+                'E_PACKAGE_PREVIEW_STALE',
+                'E_PACKAGE_BLOCKED',
+                'E_PACKAGE_STATE',
+                'OUTCOME_UNKNOWN',
+                'INVALID_REQUEST',
+                'OVERLOADED',
+              ].includes(code)
+              ? code
+              : 'CAPABILITY_DENIED',
+          )
+        }
+        return value
+      })
+      Object.defineProperty(ctx, 'profile', {
+        value: Object.freeze({
+          streams: scopedProfileStreams(config, availability, (off) => {
+            ctx.effect(() => off)
+          }),
+          services: profile.services,
+          examples: exampleClient.packages,
+          launch: Object.freeze({ ...exampleClient.launches, openPage: examplePages.open }),
+        }),
+        configurable: true,
+      })
       return mod.apply(ctx as ClientContext, config)
     },
   }

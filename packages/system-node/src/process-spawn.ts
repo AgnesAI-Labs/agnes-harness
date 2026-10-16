@@ -16,7 +16,7 @@ export type WindowsJobProcess = {
   stdin: Writable
   stdout: Readable
   stderr: Readable
-  completion: Promise<ExitStatus & { cancelled: boolean; error?: Error }>
+  completion: Promise<ExitStatus & { cancelled: boolean; error?: Error; stoppedProcesses?: number }>
   terminate(): void
 }
 type Options = {
@@ -108,7 +108,8 @@ export function startWindowsJobProcess(argv: string[], options: Options): Promis
     let cancelled = false
     let failure: Error | undefined
     let targetExit: ExitStatus | undefined
-    let complete: (status: ExitStatus & { cancelled: boolean; error?: Error }) => void = () => {}
+    let stoppedProcesses: number | undefined
+    let complete: (status: Awaited<WindowsJobProcess['completion']>) => void = () => {}
     const completion: WindowsJobProcess['completion'] = new Promise((done) => {
       complete = done
     })
@@ -207,6 +208,13 @@ export function startWindowsJobProcess(argv: string[], options: Options): Promis
         (message.signal === null || typeof message.signal === 'string')
       ) {
         targetExit = { code: message.code as number | null, signal: message.signal as string | null }
+        try {
+          // The target exited; the trusted broker is the one non-descendant still in the Job.
+          stoppedProcesses = Math.max(0, job.activeProcessCount() - 1)
+        } catch (cause) {
+          failure ??= cause as Error
+        }
+        stop()
       } else if (
         message.type === 'error' &&
         typeof message.code === 'string' &&
@@ -240,7 +248,12 @@ export function startWindowsJobProcess(argv: string[], options: Options): Promis
         if (!targetExit && !cancelled)
           failure ??= error('E_PROCESS_GATE_EXIT', 'Process gate exited without a target result')
         if (!started) reject(failure ?? error('ABORT_ERR', 'Windows process start cancelled'))
-        complete({ ...(targetExit ?? { code, signal }), cancelled, ...(failure ? { error: failure } : {}) })
+        complete({
+          ...(targetExit ?? { code, signal }),
+          cancelled,
+          ...(failure ? { error: failure } : {}),
+          ...(stoppedProcesses === undefined ? {} : { stoppedProcesses }),
+        })
       })()
     })
   })

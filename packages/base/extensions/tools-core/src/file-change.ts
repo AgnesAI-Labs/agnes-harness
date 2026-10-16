@@ -15,13 +15,18 @@ export type FileChangeRecorder = (input: FileChangeInput, context: ToolContext) 
 const hash = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
 
 /** Only a successful mutation supplies this receipt; the reader must still authorize the path. */
-export function fileChangeReceipt(input: FileChangeInput, ctx: Pick<ToolContext, 'cwd' | 'session'>) {
+export function fileChangeReceipt(
+  input: FileChangeInput,
+  ctx: Pick<ToolContext, 'cwd' | 'session'> & Partial<Pick<ToolContext, 'platform'>>,
+) {
   const turn = ctx.session.turn
   if (typeof turn !== 'number' || !Number.isSafeInteger(turn) || turn < 1) return undefined
-  if (input.path.includes('\\') || input.path.includes('\0')) return undefined
+  if ((input.path.includes('\\') && ctx.platform?.fs.pathSep !== '\\') || input.path.includes('\0'))
+    return undefined
   const absolute = normalizeWorkspacePath(input.path, ctx.cwd).abs
   const path = normalizeWorkspacePath(absolute, ctx.session.workspaceRoot)
-  if (!path.inside || path.rel === '.' || path.rel.length > 4096) return undefined
+  if (!path.inside || path.rel === '.' || /^[A-Za-z]:/.test(path.rel) || path.rel.length > 4096)
+    return undefined
   const text = input.before.length <= REVIEW_TEXT_BYTES && input.after.length <= REVIEW_TEXT_BYTES
   const binary = [input.before, input.after].some(
     (bytes) => !isUtf8(bytes) || bytes.subarray(0, 8192).includes(0),

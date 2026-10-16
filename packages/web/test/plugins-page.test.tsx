@@ -14,7 +14,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PluginView } from '../src/pages/plugins/admin-view.js'
 import { MarketTab, marketTypes } from '../src/pages/plugins/market-tab.js'
 import { pluginsPageCatalog } from '../src/pages/plugins/page-locale.js'
-import { isBusinessAgent, isExperimental, orderInstalled } from '../src/pages/plugins/plugins-tab.js'
+import {
+  isBusinessAgent,
+  isExperimental,
+  orderInstalled,
+  PluginsTab,
+} from '../src/pages/plugins/plugins-tab.js'
 import {
   CAPABILITIES,
   PLUGIN_TABS,
@@ -236,7 +241,22 @@ it('groups marketplace releases and opens or installs the selected release', asy
   let chosen: string | undefined
   const view = {
     state: {
-      catalog: [item, { ...item, version: '2.0.0' }, { ...item, version: '2.0.0' }],
+      catalog: [
+        item,
+        { ...item, version: '2.0.0' },
+        { ...item, version: '2.0.0' },
+        {
+          ...item,
+          id: 'acme/parent-example',
+          metadata: {
+            displayName: 'Hidden example',
+            summary: 'Example',
+            description: 'Example',
+            category: 'example',
+            exampleOf: 'acme/parent',
+          },
+        },
+      ],
       installed: [],
       loading: false,
     },
@@ -272,6 +292,7 @@ it('groups marketplace releases and opens or installs the selected release', asy
   try {
     flushSync(() => root.render(createElement(MarketTab, { view, t: (key) => key })))
     expect(host.querySelectorAll('[data-testid="market-card"]')).toHaveLength(1)
+    expect(host.textContent).not.toContain('Hidden example')
     const picker = host.querySelector('[data-testid="plugin-version-picker"]')!
     await act(async () =>
       picker.querySelector('input')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })),
@@ -395,4 +416,76 @@ describe('skill detail', () => {
     expect(host.textContent).toContain('Priority 100')
     expect(host.textContent).toContain('skill-row:v1:abc')
   })
+})
+
+it('keeps the bundled helper under built-ins with an enable toggle and excludes parent-owned examples while retaining FDE agents', () => {
+  const row = (id: string, category: string, exampleOf?: string) => ({
+    id,
+    version: '1.0.0',
+    source: {
+      type: 'file',
+      ref: `file:./${id === '@agnes/plugin-helper' ? 'bundled-plugins/plugin-helper' : 'examples/plugin'}`,
+    },
+    presentation: { origin: id === '@agnes/plugin-helper' ? 'official' : 'example', rows: [] },
+    trusted: true,
+    desired: 'enabled',
+    actual: 'running',
+    blockers: [],
+    contributions: [],
+    metadata: {
+      displayName: id,
+      summary: id,
+      description: id,
+      category,
+      ...(exampleOf ? { exampleOf } : {}),
+    },
+  })
+  const rows = [
+    row('@agnes/plugin-helper', 'developer'),
+    row('acme/example', 'example', '@agnes/plugin-helper'),
+    row('@agnes-fde/support-triage', 'business-agent'),
+  ]
+  const toggle = vi.fn(async () => {})
+  const view = {
+    state: { installed: rows, loading: false, inventoryAuthoritative: true, operations: new Map() },
+    filteredInstalled: () => rows,
+    locale: { getSnapshot: () => 'en' },
+    query: '',
+    queryRaw: '',
+    kind: '',
+    category: '',
+    t: (key: string) => key,
+    purposeText: (key: string) => key,
+    settingsText: (key: string) => key,
+    can: () => true,
+    canEffect: () => true,
+    detailActions: () => [],
+    surfaceLinks: () => [],
+    packageBusy: () => false,
+    runtimeState: () => undefined,
+    presentationOf: () => undefined,
+    primaryAction: () => ({ label: 'Review', disabled: false, run: async () => {} }),
+    confirmDisable: toggle,
+    render: () => {},
+  } as unknown as PluginView
+  const host = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(host)
+  try {
+    flushSync(() => root.render(createElement(PluginsTab, { view, t: (key) => key, summaries: {} })))
+    const builtin = host.querySelector('[data-testid="plugin-builtin"]')!
+    expect(builtin.textContent).toContain('@agnes/plugin-helper')
+    expect(host.querySelector('[data-testid="plugin-browser"]')?.textContent).toContain(
+      '@agnes-fde/support-triage',
+    )
+    expect(host.querySelector('[data-plugin-id="acme/example"]')).toBeNull()
+    const enable = builtin.querySelector<HTMLButtonElement>(
+      '[data-plugin-id="@agnes/plugin-helper"] button[role="switch"]',
+    )!
+    expect(enable).not.toBeNull()
+    expect(enable.disabled).toBe(false)
+    enable.click()
+    expect(toggle).toHaveBeenCalledWith(expect.objectContaining({ id: '@agnes/plugin-helper' }))
+  } finally {
+    flushSync(() => root.unmount())
+  }
 })

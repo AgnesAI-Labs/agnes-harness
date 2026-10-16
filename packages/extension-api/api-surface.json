@@ -64,6 +64,7 @@
     "loopCheckpointCodec",
     "loopKind",
     "loopShouldStop",
+    "managedServiceCapabilities",
     "memoryKind",
     "memoryPrivateEvent",
     "modelAdapterKind",

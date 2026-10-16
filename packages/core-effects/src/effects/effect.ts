@@ -39,7 +39,11 @@ export class EffectRuntime {
       effectId,
       intent: this.o.ev('effect/intent', { effectId, ...body }),
       settle: (outcome: EffectOutcome): EventInput =>
-        this.o.ev('effect/settled', { effectId, outcome, durationMs: this.o.clock() - started }),
+        this.o.ev('effect/settled', {
+          effectId,
+          outcome,
+          durationMs: Math.max(0, Math.round(this.o.clock() - started)),
+        }),
     }
   }
 }

@@ -11,6 +11,7 @@ import {
   planRetainedArtifactGc,
   prepareArtifactGcExecutionPrerequisite,
 } from '@agnes/core/artifacts'
+import type { AttachmentRootSnapshot } from '@agnes/extension-api'
 import type { ResolvedComputerUseProfile } from '@agnes/host-common/profile/types'
 import { createPlatform } from '@agnes/host-infrastructure/adapters/platform'
 import { syncCheckpointsToMedium } from '@agnes/host-infrastructure/adapters/sqlite-durability'
@@ -68,6 +69,7 @@ export function createComputerUseArtifactGcRuntime(
   input: Readonly<{
     dataDir: string
     retention: ResolvedComputerUseProfile['retention']
+    pendingAttachments?: () => Promise<AttachmentRootSnapshot>
     clock?: () => number
     onError?: (error: unknown) => void
     /** Once per round while referenced or protected bytes keep the store above its cap. */
@@ -81,6 +83,16 @@ export function createComputerUseArtifactGcRuntime(
     throw new Error('Computer Use artifact GC native deletion capability is unavailable')
   const clock = input.clock ?? Date.now
 
+  const withPending = async (retention: ReadonlySet<string> = new Set()) => {
+    const snapshot = await input.pendingAttachments?.()
+    if (snapshot && !snapshot.complete) throw new Error('Attachment receipt roots are incomplete')
+    const roots = new Set(retention)
+    for (const ref of snapshot?.roots ?? []) {
+      if (!/^[a-f0-9]{64}$/u.test(ref.sha256)) throw new Error('Attachment receipt root is malformed')
+      roots.add(ref.sha256)
+    }
+    return roots
+  }
   const abort = new AbortController()
   const ledgerFile = join(input.dataDir, 'sessions.db')
   // A deferred batch deletes nothing, so everything above the cap is still pressure.
@@ -119,7 +131,7 @@ export function createComputerUseArtifactGcRuntime(
         : undefined
       const roots = await computerUseArtifactRootSnapshot({
         candidateDigests,
-        ...(indexed ? { roots: indexed, retention: protection?.digests ?? new Set() } : {}),
+        ...(indexed ? { roots: indexed, retention: await withPending(protection?.digests) } : {}),
       })
       const selected = planRetainedArtifactGc({
         dataDir: input.dataDir,
@@ -220,7 +232,7 @@ export function createComputerUseArtifactGcRuntime(
             const current = await computerUseArtifactRootSnapshot({
               candidateDigests,
               roots: verified,
-              retention,
+              retention: await withPending(retention),
             })
             if (!sameSnapshot(expected, current.identity))
               throw new Error('Computer Use artifact GC reachability snapshot changed')

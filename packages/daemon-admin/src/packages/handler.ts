@@ -15,7 +15,7 @@ import {
   AuthoringCandidates,
   activeRuntimePinId,
   bundledExampleSource,
-  bundledPluginSourceRoot,
+  bundledPluginSource,
   collectSkinRoster,
   parseSource,
   publicPluginFailureReason,
@@ -64,6 +64,11 @@ import {
   createClientModuleRegistry,
   defaultClientModuleSnapshotDirectory,
 } from './client-modules.js'
+import {
+  assertDependentBaselines,
+  dependentUpdatesApplied,
+  reviewedUpdateOptions,
+} from './dependent-updates.js'
 import {
   type PackageOperationKind,
   type PackageOperationRecovery,
@@ -119,6 +124,7 @@ export type PackageActivationAdapter = Readonly<{
   reconcile(input: {
     profile: string
     packageId: string
+    packageIds?: readonly string[]
     operationId: string
     operation: 'enable' | 'disable' | 'update' | 'rollback' | 'remove'
     signal: AbortSignal
@@ -324,7 +330,7 @@ function packageOrigin(
   provenance?: PackageInstalledDescriptor['provenance'],
   builtin = false,
 ): NonNullable<NonNullable<PackageInstalledDescriptor['presentation']>['origin']> {
-  if (builtin || bundledPluginSourceRoot(source.ref) || provenance?.verification === 'official-ed25519')
+  if (builtin || bundledPluginSource(source.ref) || provenance?.verification === 'official-ed25519')
     return 'official'
   if (bundledExampleSource(source.ref)) return 'example'
   if (provenance?.authoring) return 'local'
@@ -587,7 +593,7 @@ class Service implements PackageAdminService {
     const checked = validatePackageAdminCall(method, 'params', params)
     if (!checked.ok) throw rpcError('INVALID_PARAMS', { code: 'INVALID' })
     const data = checked.value as Record<string, unknown>
-    if (method === '_agnes/v1/packages.update' && 'activation' in data)
+    if (method === '_agnes/v1/packages.update' && ('activation' in data || 'dependents' in data))
       requirePackageAdminPermissions(method, granted, [
         'packages.install',
         'packages.trust',
@@ -1580,6 +1586,10 @@ class Service implements PackageAdminService {
         expectedActiveIntegrity: activation.expectedActiveIntegrity,
       })
     }
+    if (record.request.kind === 'update')
+      await assertDependentBaselines(params, (value) =>
+        this.assertRuntimeBaseline(record.operation.profile, directory, value),
+      )
     if (record.request.kind === 'rollback' && params.activation !== undefined) {
       const activation = params.activation as Record<string, unknown>
       const trust = activation.trust as Record<string, unknown>
@@ -1672,22 +1682,7 @@ class Service implements PackageAdminService {
         case 'update':
           await this.options.manager.update(directory, params.id as string, params.source as PackageSource, {
             expectedIntegrity: params.expectedIntegrity as string,
-            ...(params.activation === undefined
-              ? {}
-              : {
-                  activation: {
-                    expectedInstalledIntegrity: (params.activation as Record<string, unknown>)
-                      .expectedInstalledIntegrity as string,
-                    trust: {
-                      integrity: (
-                        (params.activation as Record<string, unknown>).trust as Record<string, unknown>
-                      ).integrity as string,
-                      capabilityHash: (
-                        (params.activation as Record<string, unknown>).trust as Record<string, unknown>
-                      ).capabilityHash as string,
-                    },
-                  },
-                }),
+            ...reviewedUpdateOptions(params),
             signal,
             onProgress,
           })
@@ -1813,6 +1808,7 @@ class Service implements PackageAdminService {
           ? 'yes'
           : 'no'
       case 'update':
+        if (!dependentUpdatesApplied(record.request.params, inventory)) return 'no'
         if (!row || row.entry.integrity !== record.request.params.expectedIntegrity) return 'no'
         if (record.request.params.activation !== undefined) {
           const activation = record.request.params.activation as Record<string, unknown>
@@ -1956,6 +1952,9 @@ class Service implements PackageAdminService {
     const result = await this.options.activation.reconcile({
       profile: record.operation.profile,
       packageId,
+      ...(record.request.kind === 'update' && record.request.params.dependents
+        ? { packageIds: (record.request.params.dependents as { id: string }[]).map((item) => item.id) }
+        : {}),
       operationId: record.operation.operationId,
       operation:
         record.request.kind === 'untrust'

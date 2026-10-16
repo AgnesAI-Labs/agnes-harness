@@ -39,3 +39,5 @@
 平台支持范围见[已知限制](limitations.zh-CN.md)。本地测试和 CI 覆盖本身不能证明安装包、签名、外部服务或实体设备支持。运行时隔离、权限与进程身份需要在各目标平台分别验证。
 
 工具权限、计划退出及普通插件的会话确认使用公开 DecisionPort 和同一 session ledger。旧 ticket-store stub 已删除；其他领域继续自己的实际审核路径，没有可恢复切点的旧 parking 明确拒绝。见[决策恢复示例](../../examples/loops/decision-loop/README.md)。
+
+插件可以声明当前 profile 的受管理资源和认证流，参阅 [profile 服务](../develop/profile-services.zh-CN.md)。

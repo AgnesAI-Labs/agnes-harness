@@ -3,6 +3,7 @@ export type { SystemInput, SystemInputPresentation } from '@agnes/protocol'
 // 不合判 `E_API_RANGE`。
 
 export * from './api-range.js'
+export * from './attachments.js'
 export * from './child-agent.js'
 export type * from './child-control.js'
 export * from './common.js'
@@ -27,6 +28,7 @@ export * from './hooks.js'
 export * from './kinds.js'
 export * from './loop.js'
 export * from './loop-events.js'
+export * from './managed-services.js'
 export * from './manifest.js'
 export * from './memory.js'
 export * from './model-adapter.js'
@@ -34,6 +36,8 @@ export * from './persistence.js'
 export * from './plugin-config.js'
 export * from './plugin-context.js'
 export * from './process.js'
+export * from './profile-runtime.js'
+export * from './profile-services.js'
 export * from './projections.js'
 export * from './provider-kind.js'
 export type {
@@ -55,6 +59,7 @@ export * from './services.js'
 export * from './side-call.js'
 export * from './skill-install.js'
 export * from './slots.js'
+export * from './streams.js'
 export {
   type ModelAdapterAttemptObservation,
   type ModelRequestTrace,

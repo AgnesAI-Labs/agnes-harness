@@ -112,6 +112,56 @@ async function atTools(o: {
 }
 
 describe('v3 approval modes and grants', () => {
+  it('labels forced review of a never-risk tool unknown and starts its deadline after hooks', async () => {
+    let now = 1_757_203_200_000
+    const policies = new ToolPolicyRegistry()
+    policies.register('test', {
+      id: 'force-review',
+      version: '1',
+      decide: async () => ({ effect: 'ask', reason: 'review required' }),
+    })
+    const tool = scopedTool(['tool:write'], async () => ({ content: [{ type: 'text', text: 'ok' }] }))
+    tool.meta = { ...tool.meta, isDestructive: false, requiresApproval: 'never' }
+    tool.classify = () => ({
+      isReadOnly: false,
+      isDestructive: false,
+      replay: 'never',
+      requiresApproval: 'never',
+      approvalScopes: ['tool:write'],
+    })
+    let seen: { risk: string; deadline: string } | undefined
+    const opened = await openSession({
+      provider: fakeProvider([toolTurn('scoped_write', { value: 'one' }), textTurn('done')]),
+      registry: registryWith(tool),
+      toolPolicies: policies,
+      toolPolicySettings: async () => ({ policy: 'force-review' }),
+      clock: () => now,
+      seams: fakeSeams({
+        approval: {
+          ask: async (request) => {
+            seen = request
+            return { verdict: 'allowed-once', answeredBy: actor }
+          },
+        },
+      }),
+    })
+    opened.session.hooks = {
+      ...opened.session.hooks,
+      approvalRequest: async () => {
+        now += 5000
+        return {}
+      },
+    }
+    await opened.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'go' }] })
+    await opened.session.run({ until: 'turn-end', signal: new AbortController().signal })
+    expect(seen?.risk).toBe('unknown')
+    // Durable decisions retain pendingTtlMs; the delivery waiter timeout does not shorten validity.
+    expect(Date.parse(seen?.deadline ?? '') - now).toBe(opened.session.preset.approval.pendingTtlMs)
+    const request = (await opened.log.scan({ type: 'decision/state', limit: 1 }))[0]?.data as DecisionSnapshot
+    expect(Date.parse(request.request.createdAt)).toBe(now)
+    await opened.session.close()
+  })
+
   it.each(['manual', 'off', 'auto-review'] as const)(
     'requires verified once answers for human-only revision review in %s mode',
     async (approvalMode) => {
@@ -399,7 +449,7 @@ describe('v3 approval modes and grants', () => {
               value.result?.reason === 'answered' &&
               value.result.response.option === 'allowed-permanent' &&
               permanentGrantId({
-                sessionKey: value.handle.sessionId,
+                sessionKey: value.handle.sessionId!,
                 toolUseId: value.request.operationId,
                 scope: (value.request.spec.subject as { scope: string }).scope,
               }) === grant.grantId,
@@ -757,94 +807,133 @@ describe('v3 approval modes and grants', () => {
     expect(executions).toBe(1)
   })
 
-  it('provides tool-free reviewer requests, records costs and shares the reservation budget across calls', async () => {
-    const provider = fakeProvider([
-      toolTurn('scoped_write', { value: '0' }),
-      textTurn('Bounded write'),
-      toolTurn('scoped_write', { value: '1' }),
-    ])
-    const policies = new ToolPolicyRegistry()
-    policies.register('test', {
-      id: 'budget-review',
-      version: '1',
-      async decide(input, signal, ports) {
-        const response = (await ports!.reserve(1))
-          ? await ports!.model({ slot: 'fast', prompt: 'Review the bounded write' }, signal)
-          : undefined
-        const decision = response ? ('allow' as const) : ('escalate' as const)
-        const reason = response?.text ?? 'Session reviewer budget exhausted'
-        return {
-          effect: response ? 'allow' : 'ask',
-          reason,
-          review: {
-            model: response?.model ?? 'fast',
-            promptHash: 'a'.repeat(64),
-            argsHash: sha256Hex(canonicalJson(input.call.args)),
-            scopeHash: 'b'.repeat(64),
-            decision,
-            risk: response ? 'low' : 'medium',
+  it.each([false, true])(
+    'provides tool-free reviewer requests and refuses unreserved hard-budget reviews (hard=%s)',
+    async (hard) => {
+      const provider = fakeProvider([
+        toolTurn('scoped_write', { value: '0' }),
+        textTurn('Bounded write'),
+        toolTurn('scoped_write', { value: '1' }),
+      ])
+      const policies = new ToolPolicyRegistry()
+      policies.register('test', {
+        id: 'budget-review',
+        version: '1',
+        async decide(input, signal, ports) {
+          const response = (await ports!.reserve(1))
+            ? await ports!.model({ slot: 'fast', prompt: 'Review the bounded write' }, signal)
+            : undefined
+          const decision = response ? ('allow' as const) : ('escalate' as const)
+          const reason = response?.text ?? 'Session reviewer budget exhausted'
+          return {
+            effect: response ? 'allow' : 'ask',
             reason,
-            latencyMs: 1,
-            cost: response?.cost ?? 0,
-            costSource: response?.costSource ?? 'unavailable',
-            source: response ? 'model' : 'fallback',
-          },
-        }
-      },
-    })
-    const preset = presetDefaults()
-    preset.model.route.fast = 'cheap'
-    preset.model.id.fast = 'scripted-cheap'
-    // Session start keeps an auxiliary slot only when the provider catalogue publishes that model.
-    provider.models = () => [
-      {
-        id: 'scripted-cheap',
-        name: 'scripted-cheap',
-        api: 'openai-completions',
+            review: {
+              model: response?.model ?? 'fast',
+              promptHash: 'a'.repeat(64),
+              argsHash: sha256Hex(canonicalJson(input.call.args)),
+              scopeHash: 'b'.repeat(64),
+              decision,
+              risk: response ? 'low' : 'medium',
+              reason,
+              latencyMs: 1,
+              cost: response?.cost ?? 0,
+              costSource: response?.costSource ?? 'unavailable',
+              source: response ? 'model' : 'fallback',
+            },
+          }
+        },
+      })
+      const preset = presetDefaults()
+      preset.model.route.fast = 'cheap'
+      preset.model.id.fast = 'scripted-cheap'
+      // Session start keeps an auxiliary slot only when the provider catalogue publishes that model.
+      provider.models = () => [
+        {
+          id: 'm',
+          name: 'm',
+          api: 'openai-completions',
+          route: 'default',
+          baseUrl: 'https://example.invalid/v1',
+          reasoning: false,
+          input: ['text'],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 8000,
+          maxTokens: 1024,
+          toolCallFormats: ['native'],
+          thinkingReplay: 'native',
+          contract_id: null,
+        },
+        {
+          id: 'scripted-cheap',
+          name: 'scripted-cheap',
+          api: 'openai-completions',
+          route: 'cheap',
+          baseUrl: 'https://example.invalid/v1',
+          reasoning: false,
+          input: ['text'],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 8_000,
+          maxTokens: 1024,
+          toolCallFormats: ['native'],
+          thinkingReplay: 'native',
+          contract_id: null,
+          slot: 'fast',
+        },
+      ]
+      let writes = 0
+      const opened = await atTools({
+        ...(hard
+          ? {
+              input: {
+                actor,
+                content: [{ type: 'text' as const, text: 'bounded' }],
+                budget: 10,
+                hardBudget: true,
+              },
+            }
+          : {}),
+        execute: async () => {
+          writes++
+          return { content: [{ type: 'text' as const, text: 'done' }] }
+        },
+        provider,
+        preset,
+        scopes: ['tool:write'],
+        toolPolicies: policies,
+        toolPolicySettings: async () => ({ policy: 'budget-review' }),
+        seams: fakeSeams({
+          approval: { ask: async () => ({ verdict: 'rejected' as const, answeredBy: actor }) },
+        }),
+      })
+      if (hard) {
+        await expect(opened.session.runToolsPhase()).rejects.toThrow('hard turn budget')
+        expect(provider.requests.some((request) => request.model === 'scripted-cheap')).toBe(false)
+        expect(writes).toBe(0)
+        return
+      }
+      await opened.session.runToolsPhase()
+      await opened.session.runInference()
+      await opened.session.runToolsPhase()
+      const reviews = await opened.log.scan({ type: 'x/approval/review', limit: 10 })
+      expect(reviews.map((row) => (row.data as { review: { decision: string } }).review.decision)).toEqual([
+        'allow',
+        'escalate',
+      ])
+      expect(provider.requests.find((request) => request.model === 'scripted-cheap')).toMatchObject({
+        tools: [],
         route: 'cheap',
-        baseUrl: 'https://example.invalid/v1',
-        reasoning: false,
-        input: ['text'],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 8_000,
-        maxTokens: 1024,
-        toolCallFormats: ['native'],
-        thinkingReplay: 'native',
-        contract_id: null,
-        slot: 'fast',
-      },
-    ]
-    const opened = await atTools({
-      provider,
-      preset,
-      scopes: ['tool:write'],
-      toolPolicies: policies,
-      toolPolicySettings: async () => ({ policy: 'budget-review' }),
-      seams: fakeSeams({
-        approval: { ask: async () => ({ verdict: 'rejected' as const, answeredBy: actor }) },
-      }),
-    })
-    await opened.session.runToolsPhase()
-    await opened.session.runInference()
-    await opened.session.runToolsPhase()
-    const reviews = await opened.log.scan({ type: 'x/approval/review', limit: 10 })
-    expect(reviews.map((row) => (row.data as { review: { decision: string } }).review.decision)).toEqual([
-      'allow',
-      'escalate',
-    ])
-    expect(provider.requests.find((request) => request.model === 'scripted-cheap')).toMatchObject({
-      tools: [],
-      route: 'cheap',
-    })
-    expect(
-      (await opened.log.scan({ type: 'cost/ledger', limit: 10 })).some(
-        (row) =>
-          (row.data as { purpose: string; credits: number }).purpose === 'approval-guardian' &&
-          (row.data as { credits: number }).credits === 1,
-      ),
-    ).toBe(true)
-    expect(await opened.log.scan({ type: 'x/approval/reservation', limit: 10 })).toHaveLength(1)
-  })
+      })
+      expect(
+        (await opened.log.scan({ type: 'cost/ledger', limit: 10 })).some(
+          (row) =>
+            (row.data as { purpose: string; credits: number }).purpose === 'approval-guardian' &&
+            (row.data as { credits: number }).credits === 1,
+        ),
+      ).toBe(true)
+      expect(await opened.log.scan({ type: 'x/approval/reservation', limit: 10 })).toHaveLength(1)
+    },
+  )
 
   it('re-decides a resumed review with the current policy and reuses only the recorded model output', async () => {
     const modelReviewing = (id: string) => {

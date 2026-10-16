@@ -13,6 +13,8 @@ import {
 import type { SharedSessionChannel } from './shared-session-channel.js'
 import { type TailHandle, tailSession } from './tail.js'
 
+type HistoryOpening = Pick<Parameters<Host['createSession']>[0], 'historySignal' | 'onHistoryProgress'>
+
 type HostedSession = {
   readonly session: HostSession
   readonly aborts: Map<string, AbortController>
@@ -56,6 +58,7 @@ export const SESSION_SCOPED_WORKER_METHODS: readonly string[] = ['callService', 
 
 // Commands that change or run a session count as activity; reads, `ping` and a run-less `abort` do not.
 const ACTIVE_METHODS = new Set([
+  'deliverSystemInput',
   'enqueue',
   'run',
   'append',
@@ -77,6 +80,8 @@ export class HostedSessions {
   private readonly stubs = new Map<string, HibernatedStub>()
   private readonly hibernating = new Map<string, Promise<void>>()
   private readonly waking = new Map<string, Promise<HostedSession>>()
+  private readonly cancelledOpens = new Set<string>()
+  private readonly openingAborts = new Map<string, { key: string; controller: AbortController }>()
   private closingAll = false
   private readonly clock: () => number
   private readonly sweeper: ReturnType<typeof setInterval> | undefined
@@ -123,49 +128,74 @@ export class HostedSessions {
     const closing = this.closing.get(frame.sessionKey)
     if (closing) await closing
     if (this.closingAll) throw new Error('shared worker is closing')
-    if (this.dormant(frame.sessionKey)) {
-      const woken = await this.acquire(frame.sessionKey)
-      this.assertAuthority(woken.session, binding, parent)
-      return this.describe(woken.session)
+    const controller = new AbortController()
+    if (this.cancelledOpens.delete(`${frame.sessionKey}\0${frame.requestId}`)) controller.abort()
+    this.openingAborts.set(frame.requestId, { key: frame.sessionKey, controller })
+    const history: HistoryOpening = {
+      historySignal: controller.signal,
+      onHistoryProgress: (progress) =>
+        this.options.send({
+          kind: 'session.loading',
+          requestId: frame.requestId,
+          sessionKey: frame.sessionKey,
+          ...progress,
+        }),
     }
-    const existing = this.sessions.get(frame.sessionKey)
-    if (existing) {
-      this.assertAuthority(existing.session, binding, parent)
-      return this.describe(existing.session)
-    }
-    const pending = this.opening.get(frame.sessionKey)
-    if (pending) {
-      const hosted = await pending
-      this.assertAuthority(hosted.session, binding, parent)
-      return this.describe(hosted.session)
-    }
-    const opening = this.options.channel.run(frame.sessionKey, async () => {
-      const session = await this.options.host
-        .createSession({
-          key: frame.sessionKey,
-          binding,
-          ...(frame.params.preset ? { preset: frame.params.preset } : {}),
-          ...(frame.params.bundles !== undefined ? { bundles: frame.params.bundles } : {}),
-          ...(frame.params.loop ? { loop: frame.params.loop } : {}),
-          ...(parent ? { parent } : {}),
-        })
-        .catch((error: unknown) => {
-          if ((error as { code?: string })?.code === 'E_LOOP_MISSING')
-            throw rpcError('SEMANTIC_REJECTED', {
-              code: 'LOOP_MISSING',
-              reason: 'selected loop is not installed; install its pinned id and version',
-            })
-          throw error
-        })
-      const hosted = this.adopt(frame.sessionKey, session)
-      return hosted
-    })
-    this.opening.set(frame.sessionKey, opening)
     try {
-      return this.describe((await opening).session)
+      controller.signal.throwIfAborted()
+      if (this.dormant(frame.sessionKey)) {
+        const woken = await this.acquire(frame.sessionKey, history)
+        this.assertAuthority(woken.session, binding, parent)
+        return this.describe(woken.session)
+      }
+      const existing = this.sessions.get(frame.sessionKey)
+      if (existing) {
+        this.assertAuthority(existing.session, binding, parent)
+        return this.describe(existing.session)
+      }
+      const pending = this.opening.get(frame.sessionKey)
+      if (pending) {
+        const hosted = await pending
+        this.assertAuthority(hosted.session, binding, parent)
+        return this.describe(hosted.session)
+      }
+      const opening = this.options.channel.run(frame.sessionKey, async () => {
+        const session = await this.options.host
+          .createSession({
+            key: frame.sessionKey,
+            ...history,
+            binding,
+            ...(frame.params.preset ? { preset: frame.params.preset } : {}),
+            ...(frame.params.bundles !== undefined ? { bundles: frame.params.bundles } : {}),
+            ...(frame.params.loop ? { loop: frame.params.loop } : {}),
+            ...(parent ? { parent } : {}),
+          })
+          .catch((error: unknown) => {
+            if ((error as { code?: string })?.code === 'E_LOOP_MISSING')
+              throw rpcError('SEMANTIC_REJECTED', {
+                code: 'LOOP_MISSING',
+                reason: 'selected loop is not installed; install its pinned id and version',
+              })
+            throw error
+          })
+        const hosted = this.adopt(frame.sessionKey, session)
+        return hosted
+      })
+      this.opening.set(frame.sessionKey, opening)
+      try {
+        return this.describe((await opening).session)
+      } finally {
+        if (this.opening.get(frame.sessionKey) === opening) this.opening.delete(frame.sessionKey)
+      }
     } finally {
-      if (this.opening.get(frame.sessionKey) === opening) this.opening.delete(frame.sessionKey)
+      this.openingAborts.delete(frame.requestId)
     }
+  }
+
+  cancelOpen(requestId: string, key: string): void {
+    const pending = this.openingAborts.get(requestId)
+    if (pending?.key === key) pending.controller.abort(new Error('session opening cancelled'))
+    else if (this.cancelledOpens.size < 512) this.cancelledOpens.add(`${key}\0${requestId}`)
   }
 
   private describe(session: HostSession): SessionOpenResult {
@@ -216,6 +246,26 @@ export class HostedSessions {
   }
 
   async dispatch(frame: SessionCommandFrame): Promise<unknown> {
+    if (frame.method === 'verifyHistory')
+      return this.enter(frame.sessionKey, frame.method, async (hosted) => {
+        const controller = new AbortController()
+        if (this.cancelledOpens.delete(`${frame.sessionKey}\0${frame.requestId}`)) controller.abort()
+        this.openingAborts.set(frame.requestId, { key: frame.sessionKey, controller })
+        try {
+          return await hosted.session.verifyHistory({
+            signal: controller.signal,
+            onProgress: (progress) =>
+              this.options.send({
+                kind: 'session.loading',
+                requestId: frame.requestId,
+                sessionKey: frame.sessionKey,
+                ...progress,
+              }),
+          })
+        } finally {
+          this.openingAborts.delete(frame.requestId)
+        }
+      })
     const stub = this.stubs.get(frame.sessionKey)
     // A stub answers these itself: a listing or a stray cancel must not wake a session.
     if (stub && frame.method === 'ping')
@@ -289,6 +339,7 @@ export class HostedSessions {
 
   private quiet(key: string, hosted: HostedSession): boolean {
     const { session } = hosted
+    if (session.hasActiveProcesses?.()) return false
     if (hosted.inflight > 0 || hosted.aborts.size > 0 || this.options.channel.hasPending(key)) return false
     if (session.turn !== null || session.op() !== null || session.d.log.faulted) return false
     for (const { value } of session.state.registers.decisionStates.values())
@@ -360,7 +411,7 @@ export class HostedSessions {
   }
 
   /** The open session for `key`, waking it from its stub if it hibernated. */
-  private async acquire(key: string): Promise<HostedSession> {
+  private async acquire(key: string, history: HistoryOpening = {}): Promise<HostedSession> {
     for (;;) {
       const hibernating = this.hibernating.get(key)
       if (hibernating) {
@@ -374,11 +425,11 @@ export class HostedSessions {
       const stub = this.stubs.get(key)
       // A session being closed is not woken: close would not see a wake that starts after it looked.
       if (!stub || this.closingAll || this.closing.has(key)) throw new Error(`session ${key} is not open`)
-      return this.wake(key, stub)
+      return this.wake(key, stub, history)
     }
   }
 
-  private wake(key: string, stub: HibernatedStub): Promise<HostedSession> {
+  private wake(key: string, stub: HibernatedStub, history: HistoryOpening = {}): Promise<HostedSession> {
     const started = this.clock()
     // No parent: the ledger records it, and this is the shape a reopen after restart takes.
     const woken = this.options.channel.run(key, async () => {
@@ -386,6 +437,7 @@ export class HostedSessions {
         key,
         binding: stub.binding,
         preset: stub.preset,
+        ...history,
       })
       if (stub.pluginGenerationId && session.pluginGenerationId !== stub.pluginGenerationId) {
         try {
@@ -500,6 +552,8 @@ export class HostedSessions {
     const active = this.closing.get(sessionKey)
     if (active) return active
     const closing = (async () => {
+      for (const pending of this.openingAborts.values())
+        if (pending.key === sessionKey) pending.controller.abort()
       await this.opening.get(sessionKey)?.catch(() => undefined)
       while (this.hibernating.has(sessionKey) || this.waking.has(sessionKey)) {
         await this.hibernating.get(sessionKey)
@@ -533,6 +587,7 @@ export class HostedSessions {
 
   async closeAll(): Promise<void> {
     this.closingAll = true
+    for (const { controller } of this.openingAborts.values()) controller.abort()
     if (this.sweeper) clearInterval(this.sweeper)
     await Promise.allSettled(this.opening.values())
     await Promise.allSettled([...this.hibernating.values(), ...this.waking.values()])

@@ -55,6 +55,7 @@ const base = (over: Partial<Parameters<typeof Kernel.create>[0]> = {}) =>
 const sessionOpts = {
   actor,
   resolvedProfileHash: 'h1',
+  resolvedPresetHash: 'sha256-' + 'a'.repeat(64),
   cwd: '/w',
   writerRunId: 'r1',
 }
@@ -121,6 +122,8 @@ describe('Kernel (I1 assembly)', () => {
     }
     const systemPrompt = { config: async () => config, resolve: () => promptProvider }
     const k = base({ storage, systemPrompt })
+    await expect(k.session('@profile/default', sessionOpts)).rejects.toThrow('E_ENVELOPE')
+    expect(k.sessions.size).toBe(0)
     const s = await k.session('k1', sessionOpts)
     config.personaPrefix = 'changed in place'
     expect((await s.systemPromptPreview()).config.personaPrefix).toBe('first persona')
@@ -413,6 +416,8 @@ describe('Kernel default children', () => {
     expect(types).toContain('turn/end')
     expect(parent.surface()).toEqual([])
     expect(starts).toEqual([{ childKey: child.key, kind: 'fork', budget: null }])
+    const childStart = await storage.scan(child.key, { type: 'session/start', order: 'desc', limit: 1 })
+    expect(childStart[0]?.data).toMatchObject({ resolvedPresetHash: sessionOpts.resolvedPresetHash })
     expect(ends).toEqual([{ childKey: child.key, outcome: 'completed', credits: 1 }])
 
     await child.close()
@@ -425,7 +430,8 @@ describe('Kernel default children', () => {
     Object.assign(provider, {
       models: () => [modelRecord('ds', 'deepseek-v4-pro', 'fast'), modelRecord('anthropic', 'claude/sonnet')],
     })
-    const k = base({ provider, preset: childPreset })
+    const storage = new MemoryStorage()
+    const k = base({ provider, preset: childPreset, storage })
     const parent = await k.session('parent', {
       ...sessionOpts,
       preset: {
@@ -451,6 +457,8 @@ describe('Kernel default children', () => {
       })
       await child.run(`use ${selector}`)
       expect(provider.requests.at(-1)).toMatchObject(expected)
+      const rows = await storage.scan(child.key, { type: 'session/start', order: 'desc', limit: 1 })
+      expect(rows[0]?.data).not.toHaveProperty('resolvedPresetHash')
       await child.close()
     }
     await k.close()
@@ -615,7 +623,7 @@ describe('Kernel (fix round 1)', () => {
     expect(counters.at(-1)).toBe(true)
     expect(counters.indexOf(true)).toBeGreaterThan(0)
     const ask = rows.find((e) => e.type === 'decision/state')
-    expect(ask?.data).toMatchObject({ request: { spec: { subject: { risk: 'destructive' } } } })
+    expect(ask?.data).toMatchObject({ request: { spec: { subject: { risk: 'unknown' } } } })
     await k.close()
   })
 })
@@ -1539,6 +1547,40 @@ describe('Kernel (registries wiring — Task 37b)', () => {
       },
       meta('t'),
     )
+    await expect(
+      k2.session('k1', { ...sessionOpts, writerRunId: 'fresh-only', requireNew: true }),
+    ).rejects.toThrow('not fresh')
+    expect(replayed).toEqual([])
+    const cancellation = new AbortController()
+    await expect(
+      k2.session('k1', {
+        ...sessionOpts,
+        writerRunId: 'cancelled-open',
+        historySignal: cancellation.signal,
+        onHistoryProgress: () => cancellation.abort(),
+      }),
+    ).rejects.toMatchObject({ code: 'E_CLOSED' })
+    expect(replayed).toEqual([])
+    const lateCancellation = new AbortController()
+    let abortOnStart = true
+    k2.hooks.on(
+      'session_start',
+      async (_payload, ctx) => {
+        if (!abortOnStart) return
+        lateCancellation.abort(new Error('history loading cancelled during lifecycle'))
+        expect(ctx.signal.aborted).toBe(true)
+      },
+      meta('cancel-lifecycle'),
+    )
+    await expect(
+      k2.session('k1', {
+        ...sessionOpts,
+        writerRunId: 'cancelled-lifecycle',
+        historySignal: lateCancellation.signal,
+      }),
+    ).rejects.toThrow('history loading cancelled during lifecycle')
+    abortOnStart = false
+    replayed.length = 0
     const again = await k2.session('k1', { ...sessionOpts, writerRunId: 'r2' })
     expect(replayed).toEqual([
       { reason: 'resume', preset: again.preset.name, cwd: '/w', key: 'k1', replayed: true },

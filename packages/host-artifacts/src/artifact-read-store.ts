@@ -12,11 +12,17 @@ const HASH = /^[0-9a-f]{64}$/u
 const MIME = /^[a-z0-9][a-z0-9!#$&^_.+-]{0,63}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,127}$/u
 /** Hard cap for configured local reads, including deliverables and tool-output spills.
  * Public response envelopes and Computer Use image limits remain independently bounded. */
-export const LOCAL_ARTIFACT_READ_MAX_BYTES = 32 * 1024 * 1024
+export const LOCAL_ARTIFACT_READ_MAX_BYTES = 100 * 1024 * 1024
 
 export type LocalArtifactReadStore = Readonly<{
   status(ref: ArtifactRef, signal: AbortSignal): Promise<UiArtifactStatus>
   get(ref: ArtifactRef, signal: AbortSignal): Promise<Uint8Array>
+  /** Verifies the complete object before releasing a bounded response window. */
+  readRange(
+    ref: ArtifactRef,
+    range: { start: number; endExclusive: number },
+    signal: AbortSignal,
+  ): Promise<Uint8Array>
   inspect(identity: Readonly<{ sha256: string; mime: string }>, signal: AbortSignal): Promise<ArtifactRef>
 }>
 
@@ -182,6 +188,72 @@ export function createLocalArtifactReadStore(
         return ref
       } catch {
         throw fixedFailure()
+      }
+    },
+    async readRange(value, range, signal) {
+      const ref = snapshotRef(value, maxArtifactBytes)
+      if (
+        !ref ||
+        !Number.isSafeInteger(range.start) ||
+        !Number.isSafeInteger(range.endExclusive) ||
+        range.start < 0 ||
+        range.endExclusive <= range.start ||
+        range.endExclusive > ref.size ||
+        range.endExclusive - range.start > 4 * 1024 * 1024
+      )
+        throw fixedFailure()
+      const path = join(artifactRoot, ref.sha256.slice(0, 2), ref.sha256)
+      let handle: Awaited<ReturnType<typeof open>> | undefined
+      try {
+        signal.throwIfAborted()
+        const found = await missingOrReclaimed(path, rawDataDir, ref.sha256)
+        if (found.kind === 'reclaimed') throw ARTIFACT_RECLAIMED_FAILURE
+        const observed = found.stat
+        if (!observed.isFile() || observed.isSymbolicLink()) throw fixedFailure()
+        try {
+          handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
+        } catch (error) {
+          if ((await missingOrReclaimed(path, rawDataDir, ref.sha256)).kind === 'reclaimed')
+            throw ARTIFACT_RECLAIMED_FAILURE
+          throw error
+        }
+        const before = await handle.stat()
+        if (
+          !before.isFile() ||
+          before.dev !== observed.dev ||
+          before.ino !== observed.ino ||
+          before.nlink !== 1 ||
+          before.size !== ref.size
+        )
+          throw fixedFailure()
+        const bytes = new Uint8Array(64 * 1024),
+          result = new Uint8Array(range.endExclusive - range.start)
+        const digest = createHash('sha256')
+        for (let at = 0; at < ref.size; ) {
+          signal.throwIfAborted()
+          const { bytesRead } = await handle.read(bytes, 0, Math.min(bytes.length, ref.size - at), at)
+          if (!bytesRead) throw fixedFailure()
+          digest.update(bytes.subarray(0, bytesRead))
+          const start = Math.max(at, range.start),
+            end = Math.min(at + bytesRead, range.endExclusive)
+          if (end > start) result.set(bytes.subarray(start - at, end - at), start - range.start)
+          at += bytesRead
+        }
+        const after = await handle.stat()
+        if (
+          signal.aborted ||
+          after.size !== before.size ||
+          after.mtimeMs !== before.mtimeMs ||
+          after.ctimeMs !== before.ctimeMs ||
+          digest.digest('hex') !== ref.sha256
+        )
+          throw fixedFailure()
+        return result
+      } catch (error) {
+        if (error === ARTIFACT_RECLAIMED_FAILURE && !signal.aborted) throw error
+        throw fixedFailure()
+      } finally {
+        await handle?.close().catch(() => undefined)
       }
     },
     async get(value: ArtifactRef, signal: AbortSignal): Promise<Uint8Array> {

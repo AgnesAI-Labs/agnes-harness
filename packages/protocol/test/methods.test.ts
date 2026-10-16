@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest'
+import { ContentBlock as ContentBlockSchema } from '../gen/ts/session-v1.js'
 import {
+  attachmentLink,
   canAccessResourceControl,
   fromAcpPrompt,
   METHODS,
   toAcpPrompt,
   UI_PROJECTION_MAX_BYTES,
   type ValidationError,
+  validateAgainst,
   validateMethod,
   validateUserAttachments,
 } from '../src/index.js'
@@ -39,6 +42,12 @@ function errorsOf(r: ReturnType<typeof validateMethod>): ValidationError[] {
 }
 
 describe('methods (I1 set)', () => {
+  it('accepts optional runtime diagnostics without changing the legacy request', () => {
+    for (const params of [{}, { runtimeLog: true }, { runtimeLog: false }])
+      expect(validateMethod('_agnes/v1/diagnostics.collect', 'params', params)?.ok).toBe(true)
+    expect(validateMethod('_agnes/v1/diagnostics.collect', 'params', { runtimeLog: 'yes' })?.ok).toBe(false)
+  })
+
   it('carries file originals through standard ACP embedded resources and the submit envelope', () => {
     const blocks = [
       { type: 'file' as const, name: '资料 #%../video.mp4', mimeType: 'video/mp4', data: 'AAAAAA==' },
@@ -63,6 +72,28 @@ describe('methods (I1 set)', () => {
       { type: 'file', name: 'https://test.invalid/video', mimeType: 'application/octet-stream', data: '' },
     ])
     expect(() => validateUserAttachments(embedded)).not.toThrow()
+    const stored = attachmentLink({ sha256: 'b'.repeat(64), size: 3, mime: 'text/plain' }, 'report.txt', {
+      receiptId: '00000000-0000-4000-8000-000000000001',
+    })
+    const submit = (content: unknown[]) =>
+      validateMethod('_agnes/v1/submit', 'params', {
+        clientId: 'protocol-test',
+        kind: 'followUp',
+        commandId: 'c',
+        payload: { sessionId: 's', content },
+      })
+    expect(submit([stored]).ok).toBe(true)
+    expect(fromAcpPrompt(toAcpPrompt([stored]))).toEqual([stored])
+    expect(
+      validateMethod('session/prompt', 'params', { sessionId: 's', prompt: toAcpPrompt([stored]) }).ok,
+    ).toBe(true)
+    expect(
+      validateAgainst(ContentBlockSchema, {
+        ...stored,
+        attachment: { artifact: { ...stored.attachment.artifact, size: -1 } },
+      }).ok,
+    ).toBe(false)
+    expect(JSON.stringify(stored)).not.toContain('base64')
     const uploaded = {
       type: 'resource_link' as const,
       name: '../contract.pdf',
@@ -77,7 +108,9 @@ describe('methods (I1 set)', () => {
       { ...uploaded, mimeType: 'bad' },
     ])
       expect(() => validateUserAttachments([block])).toThrow('invalid')
-    expect(() => validateUserAttachments(Array.from({ length: 51 }, () => uploaded))).toThrow('50')
+    expect(() => validateUserAttachments(Array.from({ length: 51 }, () => uploaded))).toThrow(
+      'ATTACHMENT_COUNT',
+    )
     expect(
       validateMethod('_agnes/v1/submit', 'params', {
         clientId: 'protocol-test',
@@ -100,6 +133,8 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/plugins.config.get',
         '_agnes/v1/plugins.config.validate',
         '_agnes/v1/plugins.config.save',
+        '_agnes/v1/profile.decisions.answer',
+        '_agnes/v1/profile.decisions.list',
         '_agnes/v1/session.control',
         '_agnes/v1/session.controls',
         '_agnes/v1/ui.action',
@@ -171,6 +206,10 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/ext.ui.response',
         '_agnes/v1/extension.ack',
         '_agnes/v1/extension.call',
+        '_agnes/v1/extension.callScoped',
+        '_agnes/v1/extension.readOperation',
+        '_agnes/v1/extension.wakes.enqueue',
+        '_agnes/v1/extension.wakes.read',
         '_agnes/v1/jobs.cancel',
         '_agnes/v1/jobs.enqueue',
         '_agnes/v1/jobs.poll',
@@ -239,6 +278,8 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/session.budget',
         '_agnes/v1/session.detach',
         '_agnes/v1/session.event',
+        '_agnes/v1/session.loading',
+        '_agnes/v1/session.loadingCancel',
         '_agnes/v1/session.fileUpload',
         '_agnes/v1/session.fork',
         '_agnes/v1/session.list',
@@ -277,6 +318,8 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/skins.read',
         '_agnes/v1/submit',
         '_agnes/v1/submit.ack',
+        '_agnes/v1/pluginRuntime.status',
+        '_agnes/v1/pluginStreams.endpoint',
         '_agnes/v1/surfaces.mounts',
         '_agnes/v1/workspace.add',
         '_agnes/v1/workspace.list',
@@ -291,7 +334,12 @@ describe('methods (I1 set)', () => {
         'session/update',
       ].sort(),
     )
-    expect(Object.keys(METHODS)).toHaveLength(193)
+    expect(Object.keys(METHODS)).toHaveLength(203)
+    expect(METHODS['_agnes/v1/session.loading']).toMatchObject({ kind: 'notification', direction: 's2c' })
+    expect(METHODS['_agnes/v1/session.loadingCancel']).toMatchObject({
+      kind: 'notification',
+      direction: 'c2s',
+    })
     expect(METHODS['session/cancel']).toMatchObject({ kind: 'notification', direction: 'c2s' })
     expect(METHODS['session/request_permission']).toMatchObject({ kind: 'request', direction: 's2c' })
   })

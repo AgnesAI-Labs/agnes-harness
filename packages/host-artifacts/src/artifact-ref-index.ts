@@ -8,7 +8,7 @@ import {
 } from './private-artifact-store.js'
 
 export const ARTIFACT_REF_INDEX_FILE = 'computer-use-ref-index.db'
-const SCHEMA_VERSION = '1'
+const SCHEMA_VERSION = '2'
 const MiB = 1024 * 1024
 /** One unit of unlocked catch-up: a short ledger read transaction plus one index write transaction. */
 export const REF_INDEX_CHUNK = Object.freeze({ rows: 500, bytes: 4 * MiB })
@@ -26,7 +26,7 @@ const SCHEMA = [
      anchor_id TEXT NOT NULL, anchor_digest TEXT, last_ts_ms INTEGER NOT NULL,
      open_lanes TEXT NOT NULL DEFAULT '[]')`,
   `CREATE TABLE artifact_ref (sha256 TEXT NOT NULL, session_key TEXT NOT NULL,
-     source TEXT NOT NULL CHECK (source IN ('ledger','request-media')),
+     source TEXT NOT NULL CHECK (source IN ('ledger','request-media','attachment')),
      last_seq INTEGER NOT NULL, last_ts_ms INTEGER NOT NULL, last_tool_image_seq INTEGER,
      PRIMARY KEY (sha256, session_key, source)) WITHOUT ROWID`,
   'CREATE INDEX artifact_ref_session ON artifact_ref(session_key, last_tool_image_seq)',
@@ -52,7 +52,11 @@ type LedgerRow = Readonly<{
   data: string
   integrity_digest: string | null
 }>
-export type IndexedRoots = Readonly<{ ledger: ReadonlySet<string>; requestMedia: ReadonlySet<string> }>
+export type IndexedRoots = Readonly<{
+  ledger: ReadonlySet<string>
+  requestMedia: ReadonlySet<string>
+  attachments?: ReadonlySet<string>
+}>
 
 const statements = new WeakMap<DatabaseSync, Map<string, StatementSync>>()
 /** Per-connection prepared statements: catch-up and locked verification run them per session. */
@@ -318,6 +322,7 @@ function advanceChunk(
     for (const sha256 of refs.ledger)
       upsert.run(sha256, sessionKey, 'ledger', row.seq, ts, refs.toolImage.has(sha256) ? row.seq : null)
     for (const sha256 of refs.requestMedia) upsert.run(sha256, sessionKey, 'request-media', row.seq, ts, null)
+    for (const sha256 of refs.attachments) upsert.run(sha256, sessionKey, 'attachment', row.seq, ts, null)
     if (refs.turn?.kind === 'start') lanes.add(refs.turn.lane)
     if (refs.turn?.kind === 'end') lanes.delete(refs.turn.lane)
     applied = row
@@ -425,9 +430,12 @@ export async function readIndexedRoots(
   return withIndexTransaction(index, () => {
     const ledger = new Set<string>()
     const requestMedia = new Set<string>()
+    const attachments = new Set<string>()
     for (const row of candidateRefs(index, candidates))
-      (row.source === 'ledger' ? ledger : requestMedia).add(row.sha256)
-    return { ledger, requestMedia }
+      (row.source === 'ledger' ? ledger : row.source === 'attachment' ? attachments : requestMedia).add(
+        row.sha256,
+      )
+    return { ledger, requestMedia, ...(attachments.size ? { attachments } : {}) }
   })
 }
 
@@ -454,6 +462,7 @@ export async function verifyRootsUnderLedgerLock(
   )
   const ledger = new Set<string>()
   const requestMedia = new Set<string>()
+  const attachments = new Set<string>()
   const states = sessionStates(database, snapshot.cursors)
   const remaining = { ...REF_INDEX_LOCKED_BUDGET }
   const activity = new Map<string, SessionActivity>()
@@ -474,13 +483,16 @@ export async function verifyRootsUnderLedgerLock(
       const refs = extractArtifactRefs({ ...row, lane: laneText(row.lane) })
       for (const sha256 of refs.ledger) if (candidates.has(sha256)) ledger.add(sha256)
       for (const sha256 of refs.requestMedia) if (candidates.has(sha256)) requestMedia.add(sha256)
+      for (const sha256 of refs.attachments) if (candidates.has(sha256)) attachments.add(sha256)
       seen.lastTsMs = Math.max(seen.lastTsMs, tsMs(row.ts))
       if (refs.toolImage.size > 0) seen.toolImages.push({ seq: row.seq, digests: [...refs.toolImage] })
     }
   }
   for (const row of snapshot.indexed) {
     if (!states.has(row.session_key)) continue
-    ;(row.source === 'ledger' ? ledger : requestMedia).add(row.sha256)
+    ;(row.source === 'ledger' ? ledger : row.source === 'attachment' ? attachments : requestMedia).add(
+      row.sha256,
+    )
   }
-  return { ledger, requestMedia, activity }
+  return { ledger, requestMedia, activity, ...(attachments.size ? { attachments } : {}) }
 }

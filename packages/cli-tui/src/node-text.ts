@@ -1,10 +1,10 @@
-import type { UINode } from '@agnes/protocol'
+import { storedAttachment, type UINode } from '@agnes/protocol'
 
 /** Text presentation while the richer cards are assembled around the same projected nodes. */
 export function nodeText(node: UINode): string {
   switch (node.kind) {
     case 'user':
-      return `you: ${node.content.map((block) => (block.type === 'text' ? block.text : `[${block.type}]`)).join('\n')}`
+      return `you: ${node.content.map((block) => (block.type === 'text' ? block.text : storedAttachment(block) ? `[${block.attachment.image ? 'image' : 'file'}: ${block.name} (${block.mimeType}, ${block.attachment.artifact.size} B)]` : block.type === 'file' ? `[file: ${block.name} (${block.mimeType})]` : `[${block.type}]`)).join('\n')}`
     case 'assistant':
       // An attempt whose streamed text died with its process has only that fact to show.
       return node.text === '' && node.lostChars !== undefined

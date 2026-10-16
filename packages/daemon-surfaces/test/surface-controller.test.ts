@@ -393,7 +393,12 @@ setInterval(()=>{},1000);`,
       kill: vi.fn(),
       cleanup,
     }
+    const observed: string[] = []
     const controller = createSurfaceController({
+      onChange: () => {
+        observed.push(controller.snapshot().instances[0]?.state ?? 'empty')
+        throw new Error('consumer failed')
+      },
       artifacts: { resolveNodeArtifact: () => ({ cwd: '/trusted', entry: '/trusted/dist/server.mjs' }) },
       secrets: { resolve: () => 'value' },
       runtime: { kind: 'test', start: async () => handle },
@@ -408,6 +413,9 @@ setInterval(()=>{},1000);`,
     expect(cleanup).toHaveBeenCalledTimes(1)
     await controller.stop()
     expect(cleanup).toHaveBeenCalledTimes(1)
+    expect(observed).toContain('healthy')
+    expect(observed).toContain('crashed')
+    expect(observed.at(-1)).toBe('empty')
   })
 
   it('reports a bounded stop failure after TERM and KILL while still invoking cleanup', async () => {
@@ -643,6 +651,32 @@ setInterval(()=>{},1000);`,
       sourceId: 'dashboard-source',
       state: 'healthy',
     })
+  })
+
+  it('invalidates routes for boot, cold upgrade and stop without allowing observer failures to block lifecycle', async () => {
+    const runtime = fakeRuntime()
+    const routes: number[][] = []
+    const controller = createSurfaceController({
+      artifacts: trustedArtifacts(),
+      secrets: constantSecrets(),
+      runtime: runtime.adapter,
+      onChange: () => {
+        routes.push(
+          controller
+            .snapshot()
+            .instances.filter((row) => row.state === 'healthy')
+            .map((row) => row.endpoint?.port ?? 0),
+        )
+      },
+    })
+    const plan = deployment()
+    await controller.start(plan)
+    expect(routes.at(-1)).toEqual([32000])
+    await controller.update(plan, onlySurface(plan))
+    expect(routes).toContainEqual([])
+    expect(routes.at(-1)).toEqual([32001])
+    await controller.stop()
+    expect(routes.at(-1)).toEqual([])
   })
 
   it('cleans up a failed update without leaving a stale record behind', async () => {

@@ -7,6 +7,7 @@ import { loadTemplate } from '@agnes/host-common/profile/templates'
 import {
   BUNDLED_EXAMPLES,
   createPackageManager,
+  DEFAULT_ENABLED_BUNDLED_PACKAGES,
   emptyLock,
   parseSource,
   runtimePluginSnapshotsFromInventory,
@@ -20,9 +21,12 @@ const examples = fileURLToPath(new URL('../../../../examples/', import.meta.url)
 const manifest = (path: string) => JSON.parse(readFileSync(join(examples, path, 'package.json'), 'utf8'))
 // The catalog's shipped examples, as a person starts them from the business agents page or market.
 // Examples written in TypeScript ship their build output, which a source checkout does not have.
-const shipped = BUNDLED_EXAMPLES.map((example) => `${example.family}/${example.name}`).filter((path) =>
-  existsSync(join(examples, path, String(manifest(path).exports))),
-)
+const shipped = BUNDLED_EXAMPLES.map((example) => `${example.family}/${example.name}`).filter((path) => {
+  const pkg = manifest(path)
+  const entry =
+    typeof pkg.exports === 'string' ? pkg.exports : (pkg.exports?.['.'] ?? pkg.main ?? './index.js')
+  return typeof entry === 'string' && existsSync(join(examples, path, entry))
+})
 let root: string, profile: string
 const nodePath = process.env.NODE_PATH
 /** Node's global lookup paths are computed from NODE_PATH; recompute them after changing it. */
@@ -74,6 +78,24 @@ it.each(shipped)('installs, trusts, enables and loads %s from a clean home', asy
   const directory = join(examples, path)
   const id = String(manifest(path).name)
   const spec = parseSource(`file:${directory}`)
+  const parentId = manifest(path).agnes?.metadata?.exampleOf
+  if (parentId && !(await m.inventory(profile)).packages.some((pkg) => pkg.id === parentId)) {
+    expect((await m.inspect(profile, spec)).blockers).toEqual([
+      { code: 'dependency', references: ['example-parent-unavailable', parentId] },
+    ])
+    const parent = DEFAULT_ENABLED_BUNDLED_PACKAGES.find((pkg) => pkg.id === parentId)
+    if (!parent) throw new Error(`${parentId} has no release payload`)
+    const parentSpec = parseSource(parent.ref)
+    const parentPreview = await m.inspect(profile, parentSpec)
+    expect(parentPreview.blockers).toEqual([])
+    if (!parentPreview.capabilityHash) throw new Error(`${parentId} has no capability hash`)
+    await m.install(profile, parentSpec, { expectedIntegrity: parentPreview.integrity })
+    await m.trust(profile, parentId, {
+      integrity: parentPreview.integrity,
+      capabilityHash: parentPreview.capabilityHash,
+    })
+    await m.enable(profile, parentId, true)
+  }
   const preview = await m.inspect(profile, spec)
   expect(preview.blockers).toEqual([])
   await m.install(profile, spec, { expectedIntegrity: preview.integrity })

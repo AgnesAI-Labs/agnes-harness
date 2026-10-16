@@ -11,3 +11,25 @@
 Host 的 `referenceLimits` 选项可配置 `maxBytes`、`maxSourceBytes` 和 `headFraction`。默认每个摘录最多 32 KiB UTF-8 字节，保留 75% 头部及 25% 尾部，并显示 `[TRUNCATED: middle omitted]`。文件完整读取和 hash 上限为 16 MiB，超限或二进制文件拒绝引用；忽略规则、沙箱和私有状态目录限制在发送时再次检查。会话摘录最多保留 24 条已索引的用户/助手消息，省略时显示标记。文件 hash 对应完整文件，会话 hash 对应读取时的标题与索引摘录快照。JSON 转义防止来源内容关闭 UNTRUSTED 围栏；这些数据不会获得指令权限。
 
 解析后的引用块独立落账为 `system/untrusted` 消息，人类文字保留 `principal/trusted` 来源。模型请求将引用封装为不可信内容，reviewer 的人类指令排除引用。虽然输入消息先于 `turn/start` 写入，接纳输入仍会在开始 turn 时初始化 taint。
+
+## 已存附件合同
+
+原件复用现有 `resource_link` 内容块，包含 `uri: artifact://<sha256>`、`name`、
+`mimeType` 和 `attachment` 对象。`attachment.artifact` 是公开的 `ArtifactRef`
+（`sha256`、`size`、`mime`），URI 与 MIME 必须完全一致。可选的
+`image: {width, height}` 标识图片原件。`thumbnail` 是单独授权、单独校验的小型
+PNG/JPEG `ArtifactRef`。`receiptId` 标识一次待确认上传，只在原 session 和 lane
+内提供授权。仅知道摘要不代表有权读取。客户端保留这些块时无需读取原件字节。
+
+可选的 `ArtifactsSeam.attachments` 能力通过选定的 persistence provider 管理字节与
+各次独立上传的耐久回执。Core 接受当前 session/lane 可见的精确引用（包括 fork 的
+可见前缀），或匹配的待确认回执，且仅在 inbox 提交后确认回执。失败或取消的接纳仅
+丢弃自己创建的回执，不影响相同字节的其他上传。GC 必须计入 inbox、fork 前缀、原件、
+缩略图、request media、派生结果及待确认回执；根快照不完整时禁止删除。
+
+`ToolContext.fs.create` 是可选的独占创建能力：拒绝已有条目和符号链接祖先，执行正常的
+workspace 写授权，并返回实际写入的 `size` 与 `sha256`。禁止降级为覆盖式 `write`。
+`read.save_to` 使用此能力复制会话原件。
+
+附件失败通过稳定的 `AttachmentError.code` 表达；接纳路径在 `CoreError.detail.code`
+中保留该原因。客户端按 code 本地化，不展示底层文件系统或解码器错误。

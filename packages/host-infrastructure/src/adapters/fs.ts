@@ -10,6 +10,7 @@ export type HostFs = {
   realpath(p: string): Promise<string>
   read(p: string, opts?: { unit?: 'lines' | 'bytes'; offset?: number; limit?: number }): Promise<Uint8Array>
   write(p: string, data: Uint8Array): Promise<void>
+  create?(p: string, data: Uint8Array): Promise<{ size: number; sha256: string }>
   stat(p: string): Promise<FsStat>
   list(p: string): Promise<FsEntry[]>
   mkdir(p: string): Promise<void>
@@ -280,6 +281,18 @@ export function createFs(
         lines.slice(start, opts.limit === undefined ? undefined : start + opts.limit).join(''),
       )
     },
+    ...(io.createFile
+      ? {
+          async create(p: string, data: Uint8Array) {
+            const { real, named } = await authorize(p, 'write')
+            const requested = isAbsolute(p) ? resolve(p) : resolve(binding().policy.workspaceRoot, p)
+            if (real !== requested || named !== requested)
+              return refuse(p, 'contains a symbolic link or alias')
+            await io.mkdir(dirname(real))
+            return io.createFile!(real, data)
+          },
+        }
+      : {}),
     async write(p, data) {
       const { real } = await authorize(p, 'write')
       await io.mkdir(dirname(real))

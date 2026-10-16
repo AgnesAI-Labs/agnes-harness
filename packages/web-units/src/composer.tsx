@@ -207,6 +207,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               ? {
                   type: block.type,
                   uri: block.uri,
+                  ...(block.attachment ? { attachment: structuredClone(block.attachment) } : {}),
                   ...(block.name ? { name: block.name } : {}),
                   ...(block.mimeType ? { mimeType: block.mimeType } : {}),
                 }
@@ -258,19 +259,20 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     fileInput.current?.click()
   }
   const addButton = (
-    <Button
-      id="composer-attach"
-      htmlType="button"
-      appearance="ghost"
-      size="small"
-      aria-label={t('composer.attachment.add')}
-      aria-describedby="composer-image-hint"
-      aria-disabled={imageDisabled || attachmentsFull}
-      title={t('composer.attachment.add')}
-      onClick={chooseFiles}
-    >
-      <Icon name="plus" size={18} />
-    </Button>
+    <Tooltip title={imageHint}>
+      <Button
+        id="composer-attach"
+        htmlType="button"
+        appearance="ghost"
+        size="small"
+        aria-label={t('composer.attachment.add')}
+        aria-describedby="composer-image-hint"
+        aria-disabled={imageDisabled || attachmentsFull}
+        onClick={chooseFiles}
+      >
+        <Icon name="plus" size={18} />
+      </Button>
+    </Tooltip>
   )
 
   // 队列排在输入卡之外、它的上方。排队的消息和正在写的草稿是两件事，同处一张卡里会被读成

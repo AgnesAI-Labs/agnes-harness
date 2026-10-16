@@ -109,7 +109,77 @@
             "type": { "const": "resource_link" },
             "uri": { "type": "string", "maxLength": 4096 },
             "name": { "type": "string", "maxLength": 256 },
-            "mimeType": { "type": "string", "maxLength": 128 }
+            "mimeType": { "type": "string", "maxLength": 128 },
+            "attachment": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["artifact"],
+              "properties": {
+                "artifact": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["sha256", "size", "mime"],
+                  "properties": {
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "mime": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  }
+                },
+                "image": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["width", "height"],
+                  "properties": {
+                    "width": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 65535
+                    },
+                    "height": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 65535
+                    }
+                  }
+                },
+                "thumbnail": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["sha256", "size", "mime"],
+                  "properties": {
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "mime": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  }
+                },
+                "receiptId": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9-]{36}$"
+                }
+              }
+            }
           }
         }
       ]
@@ -628,6 +698,7 @@
         "envelopeNonce"
       ],
       "properties": {
+        "attachmentImagesOmittedThrough": { "type": "integer", "minimum": 0 },
         "derived_hash": { "type": "string", "maxLength": 128 },
         "sent_hash": { "type": "string", "maxLength": 128 },
         "transforms": {
@@ -2500,23 +2571,52 @@
       }
     },
     "DecisionHandle": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["id", "sessionId"],
-      "properties": {
-        "id": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 256,
-          "pattern": "^[^\\u0000]+$"
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "sessionId"],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[^\\u0000]+$"
+            },
+            "sessionId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[^\\u0000]+$"
+            },
+            "profileId": {
+              "type": "null"
+            }
+          }
         },
-        "sessionId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 512,
-          "pattern": "^[^\\u0000]+$"
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "sessionId", "profileId"],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[^\\u0000]+$"
+            },
+            "sessionId": {
+              "type": "null"
+            },
+            "profileId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[^\\u0000]+$"
+            }
+          }
         }
-      }
+      ]
     },
     "DecisionResponse": {
       "type": "object",

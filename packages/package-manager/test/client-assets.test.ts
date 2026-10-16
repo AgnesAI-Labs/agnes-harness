@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  truncateSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { bundledPackageJson, checkManifest, type ExtensionManifest } from '@agnes/extension-api'
@@ -63,6 +71,17 @@ describe('client asset resolution', () => {
     // styles 保序，与声明顺序一致。
     expect(resolved?.stylePaths).toEqual(styles.map((p) => realpathSync(join(dir, p))))
   })
+  it('validates declared scene resources without accepting traversal, scripts as models or oversized assets', () => {
+    const dir = makePackage()
+    const { entry } = writeClientFiles(dir)
+    writeFileSync(join(dir, 'scene.glb'), Buffer.from([1, 2, 3]))
+    expect(resolveClientAssets(dir, manifestWith({ entry, assets: ['scene.glb'] }))?.entryPath).toBeTruthy()
+    expect(() => resolveClientAssets(dir, manifestWith({ entry, assets: ['../scene.glb'] }))).toThrow()
+    expect(() => resolveClientAssets(dir, manifestWith({ entry, assets: ['scene.html'] }))).toThrow()
+    writeFileSync(join(dir, 'large.glb'), '')
+    truncateSync(join(dir, 'large.glb'), 32 * 1024 * 1024 + 1)
+    expect(() => resolveClientAssets(dir, manifestWith({ entry, assets: ['large.glb'] }))).toThrow('cap')
+  })
   it('accepts ./-prefixed paths and reports no client when none is declared', () => {
     const dir = makePackage()
     writeClientFiles(dir, { styles: { 'index.css': 32 } })
@@ -118,7 +137,21 @@ describe('client asset resolution', () => {
     writeFileSync(join(dir, 'dist', 'client', 'entry.mjs'), 'export {}\n')
     expect(resolveClientAssets(dir, manifestWith({ entry: 'dist/client/entry.mjs' }))).toBeDefined()
     // `.map` may be served as a transitive source-map resource, but it cannot be declared as entry/style.
-    expect(CLIENT_ASSET_EXTENSIONS).toEqual(['js', 'mjs', 'css', 'map'])
+    expect(CLIENT_ASSET_EXTENSIONS).toEqual([
+      'js',
+      'mjs',
+      'css',
+      'map',
+      'gltf',
+      'glb',
+      'bin',
+      'png',
+      'jpg',
+      'jpeg',
+      'webp',
+      'ktx2',
+      'wasm',
+    ])
   })
   it('rejects a single file over the byte cap and allows exactly the cap', () => {
     const dir = makePackage()
@@ -222,12 +255,14 @@ describe('client contribution normalization', () => {
   it('keeps styles in order, dedupes and sorts the sets, and defaults missing lists to []', () => {
     const normalized = normalizeClientContribution({
       entry: './dist/client/index.js',
+      streams: ['panel.events', 'panel.media', 'panel.events'],
       styles: ['./dist/client/b.css', 'dist/client/a.css'],
       slots: ['workbench.panel', 'client.card', 'workbench.panel'],
       services: ['s.b', 's.a', 's.b'],
     })
     expect(normalized).toEqual({
       entry: 'dist/client/index.js',
+      streams: ['panel.events', 'panel.media'],
       styles: ['dist/client/b.css', 'dist/client/a.css'],
       slots: ['client.card', 'workbench.panel'],
       services: ['s.a', 's.b'],
@@ -414,6 +449,36 @@ describe('client capability hash integration', () => {
     const baseline = snapshotHash({ contributions: [], dependencies: {} })
     expect(preview.capabilityHash).toBe(baseline)
     expect(capabilityHash({ contributions: preview.contributions, dependencies: {} })).toBe(baseline)
+  })
+  it('binds example launch content to the reviewed capability digest', () => {
+    const metadata = {
+      displayName: 'Example',
+      summary: 'Example',
+      description: 'Example',
+      category: 'example' as const,
+      exampleOf: 'acme/host',
+      launches: [
+        {
+          id: 'work',
+          kind: 'business-agent' as const,
+          title: 'Work',
+          bundle: 'acme/demo#work',
+          preset: 'safe',
+          prompt: 'Read sample data.',
+        },
+      ],
+    }
+    const base = { contributions: [], dependencies: { 'acme/host': '*' }, metadata }
+    const first = capabilityHash(base)
+    const launch = metadata.launches[0]
+    if (!launch) throw new Error('missing launch fixture')
+    expect(
+      capabilityHash({
+        ...base,
+        metadata: { ...metadata, launches: [{ ...launch, prompt: 'Write sample data.' }] },
+      }),
+    ).not.toBe(first)
+    expect(capabilityHash({ ...base, metadata: { ...metadata, exampleOf: 'other/host' } })).not.toBe(first)
   })
   it('adds the normalized client field to the summary and the hash for a declaring package', () => {
     const { preview } = staged(

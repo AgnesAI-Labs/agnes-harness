@@ -133,6 +133,11 @@ const record = () => {
 describe('business agent catalog', () => {
   it('recognises a business agent by its metadata category, and by the FDE scope for older copies', () => {
     expect(isBusinessAgent(entry())).toBe(true)
+    expect(
+      isBusinessAgent(
+        entry({ metadata: { ...entry().metadata, category: 'example', exampleOf: 'acme/host' } }),
+      ),
+    ).toBe(false)
     expect(isBusinessAgent(entry({}, '@agnes-example/react-loop'))).toBe(false)
     const marked = { ...entry().metadata, category: 'business-agent' }
     expect(isBusinessAgent(entry({ metadata: marked }, '@acme/billing'))).toBe(true)

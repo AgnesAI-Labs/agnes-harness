@@ -50,10 +50,11 @@ afterEach(() => {
 async function makeRegistry(
   client = { sessions: { get: () => undefined } } as never,
   serviceCaller?: ConstructorParameters<typeof AgnesClientService>[2],
+  profileCaller?: ConstructorParameters<typeof AgnesClientService>[4],
 ) {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry)
-  new AgnesClientService(ctx, client, serviceCaller)
+  new AgnesClientService(ctx, client, serviceCaller, undefined, profileCaller)
   new CommandService(ctx, async () => true)
   const session = new SessionService(ctx, undefined, client)
   new ClientResourceService(ctx, client, session)
@@ -212,6 +213,60 @@ describe('clientModule fiber 绑定', () => {
     await fiber.dispose()
   })
 
+  it('offers profile services without a session and retains exact service allowlists and operation ids', async () => {
+    const received: unknown[] = []
+    const { ctx } = await makeRegistry(undefined, undefined, async (module, name, input, options) => {
+      received.push({ rowId: module.rowId, name, input, options })
+      return options?.operationId
+        ? { state: 'approval-required', operationId: options.operationId }
+        : { output: { report: 'ready' } }
+    })
+    let profile: ClientContext['profile'] | undefined
+    const fiber = ctx.plugin(
+      clientModule({
+        apply(value) {
+          expect(value.profile.examples).toBeDefined()
+          expect(value.profile.launch.openPage).toBeTypeOf('function')
+          profile = value.profile
+        },
+      }),
+      {
+        packageId: 'acme/reports',
+        rowId: 'web:acme/reports',
+        revision: 'r1',
+        services: ['report.read', 'report.publish'],
+      },
+    )
+    await fiber
+    try {
+      expect(await profile?.services.query('report.read', {})).toEqual({ report: 'ready' })
+      expect(
+        await profile?.services.query(
+          'report.read',
+          { sessionId: 'owned-session' },
+          { sessionReads: ['owned-session'] },
+        ),
+      ).toEqual({ report: 'ready' })
+      expect(received).toContainEqual({
+        rowId: 'web:acme/reports',
+        name: 'report.read',
+        input: { sessionId: 'owned-session' },
+        options: { sessionReads: ['owned-session'] },
+      })
+      expect(
+        await profile?.services.effect('report.publish', { value: 1 }, { operationId: 'stable-one' }),
+      ).toMatchObject({ state: 'approval-required', operationId: 'stable-one' })
+      expect(received).toContainEqual({
+        rowId: 'web:acme/reports',
+        name: 'report.publish',
+        input: { value: 1 },
+        options: { operationId: 'stable-one' },
+      })
+      await expect(profile?.services.query('foreign.read', {})).rejects.toThrow('unavailable')
+    } finally {
+      await fiber.dispose()
+    }
+  })
   it('fails closed before a current session exists', async () => {
     const caller = vi.fn()
     const { ctx } = await makeRegistry(undefined, caller)
@@ -876,4 +931,66 @@ describe('SlotOutlet', () => {
     }, committed)
     vi.restoreAllMocks()
   })
+})
+
+it('binds profile streams to the accepted roster and aborts pending opens on immediate owner revocation', async () => {
+  const { revokeContributionOwner } = await import('../src/contribution-scope.js')
+  const { ctx } = await makeRegistry()
+  let streams: ClientContext['profile']['streams'] | undefined
+  const binding = {
+    lifetime: 'profile' as const,
+    owner: 'web:sample-stream',
+    packageId: 'sample-stream',
+    integrity: 'r1',
+    profileId: 'one',
+    activationId: 'active',
+    availability: 'active' as const,
+  }
+  const fiber = await ctx.plugin(
+    clientModule({
+      apply(cctx) {
+        streams = cctx.profile.streams
+      },
+    }),
+    {
+      packageId: 'sample-stream',
+      rowId: binding.owner,
+      revision: 'r1',
+      contentDigest: `sha256-${'a'.repeat(64)}`,
+      backendOwner: 'sample/plugin',
+      streams: ['sample.events'],
+      binding,
+    },
+  )
+  let requestSignal: AbortSignal | undefined
+  let requestBody: unknown
+  const network = vi.fn(async (_url: string, init: RequestInit) => {
+    requestBody = JSON.parse(String(init.body))
+    requestSignal = init.signal as AbortSignal
+    return new Promise<Response>((_resolve, reject) =>
+      requestSignal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true }),
+    )
+  })
+  vi.stubGlobal('fetch', network)
+  try {
+    if (!streams) throw new Error('streams not bound')
+    await expect(streams.open('undeclared', {})).rejects.toThrow('unavailable')
+    expect(network).not.toHaveBeenCalled()
+    const pending = streams.open('sample.events', {})
+    expect(requestBody).toEqual({
+      owner: 'sample/plugin',
+      name: 'sample.events',
+      input: {},
+      scope: { kind: 'profile', profileId: 'one' },
+      client: { rowId: binding.owner, revision: 'r1', contentDigest: `sha256-${'a'.repeat(64)}` },
+    })
+    const refused = expect(pending).rejects.toThrow('aborted')
+    revokeContributionOwner(binding.owner)
+    expect(requestSignal?.aborted).toBe(true)
+    await refused
+    await expect(streams.open('sample.events', {})).rejects.toThrow('unavailable')
+  } finally {
+    vi.unstubAllGlobals()
+    await fiber.dispose()
+  }
 })

@@ -5,6 +5,7 @@ import type {
   EventEnvelope,
   UITimeline,
 } from '@agnes/protocol'
+import { type ContentBlock, storedAttachment } from '@agnes/protocol'
 import { redactDiagnostic, redactDiagnosticText } from '@agnes/web-foundation/diagnostics-redact'
 import { diagnosticsText } from '@agnes/web-units/diagnostics-locale'
 // 走诊断相关的子路径，而不是 @agnes/web-units 的包根 barrel：barrel 会连带导出整个 UI 组件树
@@ -68,7 +69,10 @@ function omitInlineMedia(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(omitInlineMedia)
   if (value === null || typeof value !== 'object') return value
   const record = value as Record<string, unknown>
-  if ((record.type === 'image' || record.type === 'audio') && typeof record.data === 'string')
+  if (
+    (record.type === 'image' || record.type === 'audio' || record.type === 'file') &&
+    typeof record.data === 'string'
+  )
     return { ...record, data: `[OMITTED:${record.type}:base64]` }
   if (record.type === 'base64' && typeof record.data === 'string')
     return { ...record, data: '[OMITTED:binary:base64]' }
@@ -111,6 +115,22 @@ function collectArtifacts(event: EventEnvelope, found: Map<string, DiagnosticsAr
     if (!found.has(key)) found.set(key, { ...item, lane, seq: event.seq })
   }
   const data = event.data as { media?: { manifest?: unknown }; content?: unknown } | null
+  if (event.type === 'user/message' || event.type === 'inbox') {
+    const value = event.data as { content?: ContentBlock[]; items?: { content?: ContentBlock[] }[] }
+    const blocks =
+      event.type === 'inbox'
+        ? (value.items ?? []).flatMap((item) => item.content ?? [])
+        : (value.content ?? [])
+    for (const block of blocks) {
+      if (!storedAttachment(block)) continue
+      for (const [ref, source] of [
+        [block.attachment.artifact, event.type === 'inbox' ? 'inbox-attachment' : 'user-attachment'],
+        [block.attachment.thumbnail, 'attachment-thumbnail'],
+      ] as const) {
+        if (ref) add({ sha256: ref.sha256, mime: ref.mime, source, uri: `artifact://${ref.sha256}` })
+      }
+    }
+  }
   if (event.type === 'request/header' && Array.isArray(data?.media?.manifest)) {
     for (const entry of data.media.manifest as Record<string, unknown>[]) {
       if (typeof entry?.sha256 !== 'string' || typeof entry.mime !== 'string') continue
@@ -148,16 +168,35 @@ export async function collectDiagnostics(
   // A failed item becomes a warning and `undefined`; only the user's own abort rejects the export.
   const rpc = async <T>(method: string, params: unknown, quiet = false): Promise<T | undefined> => {
     if (expired) return undefined
+    const requestSignal = AbortSignal.any([combined, AbortSignal.timeout(limits.rpcMs)])
     try {
-      return (await withTimeout(
-        input.call(PREFIX + method, params, { signal: combined }),
-        limits.rpcMs,
-        combined,
-      )) as T
+      const call = async (value: unknown) => {
+        try {
+          return await input.call(PREFIX + method, value, { signal: requestSignal })
+        } catch (error) {
+          const e = error as { code?: unknown; data?: { code?: unknown } } | null
+          if (
+            !requestSignal.aborted &&
+            method === 'diagnostics.collect' &&
+            effective.logs &&
+            (value as { runtimeLog?: boolean }).runtimeLog &&
+            (e?.code === -32602 || e?.code === 'INVALID_PARAMS' || e?.data?.code === 'INVALID_PARAMS')
+          )
+            return input.call(PREFIX + method, {}, { signal: requestSignal })
+          throw error
+        }
+      }
+      return (await withTimeout(call(params), limits.rpcMs, combined)) as T
     } catch (error) {
       if (signal.aborted) throw abortError()
       if (total.aborted) expired = true
-      else if (!quiet) warnings.push(warnFor(method, error))
+      else if (!quiet)
+        warnings.push(
+          warnFor(
+            method,
+            requestSignal.aborted ? new DOMException('RPC deadline exceeded', 'TimeoutError') : error,
+          ),
+        )
       return undefined
     }
   }
@@ -169,7 +208,11 @@ export async function collectDiagnostics(
   const effective = { ...include, conversation: include.conversation && sessionId !== null }
   const [collected, apis, config] = await Promise.all([
     // Always read for bundle.version, but a failure only matters when logs or system were selected.
-    rpc<DiagnosticsCollectResult>('diagnostics.collect', {}, !(effective.logs || effective.system)),
+    rpc<DiagnosticsCollectResult>(
+      'diagnostics.collect',
+      effective.logs ? { runtimeLog: true } : {},
+      !(effective.logs || effective.system),
+    ),
     effective.system ? rpc<ApisListResult>('apis.list', {}) : undefined,
     effective.system ? rpc<unknown>('config.get', {}) : undefined,
   ])
@@ -204,7 +247,7 @@ export async function collectDiagnostics(
           const named = IMPORT_SOURCES.has(source) ? source : 'unknown'
           warnings.push({ source: 'session', reason: 'imported', detail: `imported from ${named}` })
         }
-        const line = JSON.stringify(redactDiagnostic(event))
+        const line = JSON.stringify(redactDiagnostic(omitInlineMedia(event)))
         bytes += encoder.encode(line).byteLength + 1
         if (bytes > limits.ledgerBytes) {
           truncated = true
@@ -241,7 +284,14 @@ export async function collectDiagnostics(
   }
   const daemonLog = tailOf('daemon.jsonl')
   const hostLog = tailOf('host.jsonl')
-  const missingLogs = [daemonLog?.missing && 'daemon.jsonl', hostLog?.missing && 'host.jsonl'].filter(Boolean)
+  const runtimeLog =
+    tailOf('runtime.jsonl') ??
+    (collected && effective.logs ? { size: 0, text: '', truncated: false, missing: true } : undefined)
+  const missingLogs = [
+    daemonLog?.missing && 'daemon.jsonl',
+    hostLog?.missing && 'host.jsonl',
+    runtimeLog?.missing && 'runtime.jsonl',
+  ].filter(Boolean)
   if (effective.logs && missingLogs.length)
     warnings.push({ source: 'logs', reason: 'unavailable', detail: missingLogs.join(', ') })
   const bundle: DiagnosticsBundle = redactDiagnostic({
@@ -258,8 +308,9 @@ export async function collectDiagnostics(
     ...(effective.logs
       ? {
           logs: {
-            ...(daemonLog ? { daemon: daemonLog } : {}),
+            ...(daemonLog ? { requestAudit: daemonLog } : {}),
             ...(hostLog ? { host: hostLog } : {}),
+            ...(runtimeLog ? { runtime: runtimeLog } : {}),
             browser: input.browserLog,
           },
         }
@@ -294,8 +345,11 @@ export async function collectDiagnostics(
   const json = (value: unknown) => JSON.stringify(value, null, 2)
   if (bundle.system) add('system.json', json(bundle.system))
   if (bundle.trace) add('trace.json', json(bundle.trace))
-  if (bundle.logs?.daemon && !bundle.logs.daemon.missing) add('logs/daemon.jsonl', bundle.logs.daemon.text)
+  if (bundle.logs?.requestAudit && !bundle.logs.requestAudit.missing)
+    add('logs/daemon-request-audit.jsonl', bundle.logs.requestAudit.text)
   if (bundle.logs?.host && !bundle.logs.host.missing) add('logs/host.jsonl', bundle.logs.host.text)
+  if (bundle.logs?.runtime && !bundle.logs.runtime.missing)
+    add('logs/daemon-runtime.jsonl', bundle.logs.runtime.text)
   if (bundle.logs) add('logs/browser.json', json(bundle.logs.browser))
   if (ledger) add('events.jsonl', lines.length ? `${lines.join('\n')}\n` : '')
 

@@ -14,7 +14,7 @@ A plugin is one package. It is the only unit a person installs, upgrades, trusts
 | An agent architecture researcher | `loop`, `model-adapter`, or a provider | How a turn is scheduled, how a model is called, or one runtime service such as compaction or memory | Settings → Advanced → Run configuration, as an option in the matching slot |
 | An industry solution author (FDE) | `bundle` | A finished business agent: a loop, tools, skills and a preset selected together | Home → Business agents; also one row in Plugins → Installed with the “Business agent” label |
 | An interface author | `ui` | Panels, skins or browser-side controls | The workbench slot the panel declares, Settings → General for skins, and Plugins → Marketplace (type “Interface and skins”) |
-| An enterprise solution author (MHS and similar) | No new type: seam providers plus a home entry | Organization-wide rules such as approval, identity, billing or audit, and your own page | Your own entry on the home sidebar; Settings → Permissions & security |
+| An enterprise solution author (such as reporting) | No new type: seam providers plus a home entry | Organization-wide rules such as approval, identity, billing or audit, and your own page | Your own entry on the home sidebar; Settings → Permissions & security |
 
 ## What each choice means
 
@@ -30,7 +30,7 @@ A plugin is one package. It is the only unit a person installs, upgrades, trusts
 
 **UI.** Browser code has its own lifecycle and never runs in the agent process. Declare panels and skins through a client descriptor; see [Workbench panels](workbench-panels.md) and [Configuration UI](configuration-ui.md).
 
-**Enterprise solutions.** There is no “enterprise” type. Register providers for the [seams](seams.md) your rules need, and register a page through the [home entry registry](../develop/ui-extension-registries.md). Seam providers that enforce security are pinned for the life of a session, so a rule cannot change under a running task. [MHS and device integration](../guide/mhs.md) shows the shape for field devices.
+**Enterprise solutions.** There is no “enterprise” type. Register providers for the [seams](seams.md) your rules need, and register a page through the [home entry registry](../develop/ui-extension-registries.md). Seam providers that enforce security are pinned for the life of a session, so a rule cannot change under a running task. A reporting solution can combine review rules with its own report page.
 
 ## One category, many kinds
 

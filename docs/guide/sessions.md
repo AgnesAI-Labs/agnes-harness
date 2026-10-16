@@ -14,9 +14,11 @@ A session contains task history, model selection, and execution state. A user re
 
 ## A damaged log tail
 
-Opening a SQLite ledger with a torn JSON/checksum tail preserves its verified prefix, durably quarantines the damaged raw rows and registers in a private `sessions.db.tail-<diagnosticId>.json` sidecar, and records a recovery diagnostic. The JSONL example similarly preserves exact damaged bytes in `store.jsonl.tail-<diagnosticId>.bin`. Web shows a localized notice with the diagnostic ID. Keep the sidecar when investigating a storage failure; it is not ordinary model context.
+SQLite histories are verified completely before session hooks, recovery, titles, tools or models can execute. An atomic append watermark also detects a removed tail. A corrupt row, a missing chain link or a mismatched head refuses the open without truncating stored evidence. Preserve the database for investigation; use the read-only history view when execution is unavailable. This product does not import old homes or migrate their ledgers.
 
-Outstanding effects are closed as unknown instead of being replayed, including normally replay-safe tools. Check the external result before requesting another operation. A valid event/transaction after damage, a missing chain link, or a damaged prefix referenced by a fork refuses automatic truncation. Unknown future format versions are refused explicitly; this recovery does not upgrade or migrate formats.
+Web can display an **unverified, read-only preview** while verification runs. Large stored payloads and inline media may appear as placeholders. The preview grants no execution authority; the live session replaces it only after verification succeeds. Recent-window and scan-budget markers identify omitted history. SDK `session.load(id, { onProgress })` reports verification and replay progress; `timeouts.loadIdle` (30 seconds) and `timeouts.loadHard` (10 minutes) independently bound a load. A timeout cancels that connection's pending load, and disconnect cancels outstanding verification.
+
+The JSONL persistence example has its own diagnostic sidecars; it does not define SQLite recovery policy.
 
 ## Find and resume a session
 
@@ -83,6 +85,10 @@ The official default goal plugin keeps a session objective on the ledger. In Web
 
 Automatic rounds enter the next-turn inbox. Human controls take priority; stale rounds stop before model work. Completion, blockers, cancellation, errors and exhausted limits stop continuation. Credit checks occur between steps/turns; an in-flight response can exceed the goal limit, while normal model budget admission still applies. Unknown credit usage with a goal budget blocks continuation. Restored and forked active goals pause until explicit resume.
 
+For an exact raw export containing artifact references, use `node agnes.mjs export SESSION_ID --raw -o session.agnes`. Keep `session.agnes` together with `session.agnes.artifacts/`. The manifest binds the complete event stream and every declared original by size and SHA-256. Export reads originals through authenticated session/lane authority and checks their bytes; unavailable or mismatched originals refuse publication. Existing bundles are never overwritten. Redacted exports remain sharing formats and omit original bytes.
+
+Import the bundle with `node agnes.mjs import session.agnes --key NEW_SESSION_KEY`. All declarations, event sequences, transaction boundaries and sidecar bytes are checked before a target is reserved. Originals are then rechecked and stored through the selected artifact seam with receipts scoped to the new session and lane. Pending receipts protect the bytes until the referencing ledger rows have committed, then are confirmed. A failed append or activation rolls back the new target. Original files left by a failed store operation remain content-addressed orphans for ordinary retention. Native bundles use the current product's event schema and are bounded to 32 MiB per original and 256 MiB of declared originals; they are not a reader for another product's session format.
+
 ## Control running work
 
 Sending while the agent is working queues a steer for the next step boundary, after the active model call or tool batch. Edit or withdraw it above the composer before delivery. **Interrupt now** on a queued message cooperatively stops the active step and runs that message next; committed effects remain committed and unknown outcomes remain unknown.
@@ -92,3 +98,21 @@ Sending while the agent is working queues a steer for the next step boundary, af
 SDK: `session.controls()` reads capabilities and state; `steer(content)`, `editQueued(itemId, content)`, `removeQueued(itemId)`, `interrupt(itemId)`, `pause()`, `resume()` and `cancel()` use durable commands. A Loop opts in through `LoopFactory.controls`; omission refuses steer, interrupt and pause. Without `afterSeq`, `controls()` returns the latest window of at most 200 facts (`facts[0].seq` is the earliest seq in that window) and sets `factsMore` when the window is full. Use `afterSeq`, starting at 0, to read history.
 
 The composer’s child tree lists owned workflow and sub-agent sessions with duration and token usage (unknown values stay explicit). **Stop child** cooperatively ends the child’s turn while keeping the workflow waiting; a continue message runs in the same child with its original constraints. SDK callers use `stopChild(childId)` and `continueChild(childId, text)`. Child and parent control facts retain the human actor. External child providers expose their own interrupt/continue capabilities; unsupported actions remain disabled. `controls({ afterSeq })` pages the complete control history using `factsThrough` and `factsMore`.
+
+## Original attachments
+
+The original-upload path uses `_agnes/v1/session.fileUpload` with `destination: "original"`
+and the active `laneId`. `start`, `chunk`, `status`, `finish` and `cancel` operate on a
+session-scoped upload ID. Each chunk is at most 1 MiB and carries its SHA-256; `finish`
+checks the complete digest and returns a pending attachment receipt. Submit that reference
+in prompt content to commit it to the session. A finished, cancelled or expired upload ID
+cannot be finished again. Interrupted intake can resume in the same live worker; a worker
+restart requires a new upload ID. Intake expires after 30 minutes and reserves bounded quota.
+Omitting `destination` retains the independent workspace-file upload semantics.
+
+The SDK exports `uploadAttachment` and `cancelAttachmentUpload` for bounded original intake.
+Web uses the same original receipts for files and images. Historical images load authorized
+thumbnail/original references on demand; downloading an original preserves its bytes.
+Model image renditions are provider-owned cached derivatives. The original is unchanged;
+current-turn images must fit the selected model, missing older originals show a placeholder,
+and an omitted historical prefix remains omitted across model changes and restart.

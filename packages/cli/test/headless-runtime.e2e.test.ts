@@ -2,12 +2,14 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createClientModuleRegistry } from '@agnes/daemon/packages'
-import { buildCompleteRuntimeTarget } from '@agnes/host'
+import { buildCompleteRuntimeTarget, dataDir } from '@agnes/host'
 import { createTestHost } from '@agnes/host/testkit'
 import {
   createPackageManager,
   localPluginRoots,
+  localWorkspaceTrustHash,
   RuntimeGenerationSnapshotStore,
+  readLock,
 } from '@agnes/package-manager'
 import { expect, it, vi } from 'vitest'
 import { parseArgs } from '../src/args.js'
@@ -101,16 +103,39 @@ it('loads zero-build loops and panels into isolated headless sessions and publis
   let boot: Awaited<ReturnType<typeof bootHeadless>> | undefined
   let registry: ReturnType<typeof createClientModuleRegistry> | undefined
   try {
-    boot = await bootHeadless(
-      { bundle, args: parseArgs(['-p']), signal: new AbortController().signal },
-      {
-        home,
-        cwd: root,
-        env: { HOME: root },
-        agnesVersion: '0.0.0',
-        log: () => {},
-      },
+    const start = () =>
+      bootHeadless(
+        { bundle, args: parseArgs(['-p']), signal: new AbortController().signal },
+        {
+          home,
+          cwd: root,
+          env: { HOME: root },
+          agnesVersion: '0.0.0',
+          log: () => {},
+        },
+      )
+    boot = await start()
+    const initialHost = boot.host
+    if (!initialHost) throw new Error('Embedded Host missing')
+    const profileDir = join(home, 'profiles/local-dev')
+    const roots = localPluginRoots(home, root)
+    const manager = createPackageManager({
+      dataDir: dataDir(home),
+      agnesVersion: '0.0.0',
+      localPlugins: roots,
+    })
+    const reviewWorkspace = () =>
+      manager.trustWorkspace(
+        profileDir,
+        root,
+        localWorkspaceTrustHash(roots, readLock(profileDir, { profile: 'local-dev', agnesVersion: '0.0.0' })),
+      )
+    expect(initialHost.kernel.loops.catalog()).not.toContainEqual(
+      expect.objectContaining({ id: 'student-loop' }),
     )
+    await reviewWorkspace()
+    await boot.close()
+    boot = await start()
     const host = boot.host
     if (!host?.runtimeTargetSnapshot || !host.reloadPlugin) throw new Error('Embedded Host APIs missing')
     const targetSnapshot = host.runtimeTargetSnapshot.bind(host)
@@ -127,11 +152,6 @@ it('loads zero-build loops and panels into isolated headless sessions and publis
       loop: { id: 'student-loop', version: '0.1.0' },
     })
     expect(host.kernel.get(loopSession.id)?.loop).toEqual({ id: 'student-loop', version: '0.1.0' })
-    const manager = createPackageManager({
-      dataDir: join(home, 'data'),
-      agnesVersion: '0.0.0',
-      localPlugins: localPluginRoots(home, root),
-    })
     const inventory = await manager.inventory(join(home, 'profiles/local-dev'))
     registry = createClientModuleRegistry({
       snapshotDirectory: () => join(root, 'browser'),
@@ -163,6 +183,7 @@ it('loads zero-build loops and panels into isolated headless sessions and publis
     await writeFile(join(panel, 'client/index.js'), 'export const panelVersion = "reloaded"')
     await expect(host.reloadPlugin('student-panel', panel)).rejects.toThrow('E_GENERATION_UNTRUSTED')
     await manager.refreshLocalPlugins(join(home, 'profiles/local-dev'))
+    await reviewWorkspace()
     await host.reloadPlugin('student-panel', panel)
     const second = await boot.client.session.new({ cwd: root, sessionKey: 'panel-second' })
     const next = await registry.list({ ...input, sessionId: second.id })

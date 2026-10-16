@@ -51,6 +51,8 @@ export interface PluginContextFacets {
   readonly resources: PluginResourcesPort
   readonly eventLog: PluginEventLogPort
   readonly providers: ProviderRegistrationPort
+  /** Current-profile managed resources and streams for reviewed installed plugin rows. */
+  readonly profileRuntime: import('./profile-runtime.js').PluginProfileRuntimePort
   /** Identity, trust tier, logger, abort signal and platform facts of this plugin. */
   readonly self: ExtensionContext
 }
@@ -66,4 +68,5 @@ export const PLUGIN_FACET_NAMES: readonly PluginFacetName[] = Object.freeze([
   'eventLog',
   'providers',
   'self',
+  'profileRuntime',
 ])

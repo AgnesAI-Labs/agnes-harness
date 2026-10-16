@@ -1,33 +1,45 @@
+import type { CredentialStoreReason } from './adapters/credential-files.js'
+
+export type CredentialDiagnostic = {
+  part: 'home' | 'secrets' | 'auth' | 'locks' | 'store'
+  check: CredentialStoreReason
+  mode?: string
+  expectedMode?: string
+}
+
 /** Fixed setup failures exposed to the local configuration RPC.  Messages never contain input. */
-export type ConfigurationErrorCode =
-  | 'CONFIG_INVALID_INPUT'
-  | 'CONFIG_UNKNOWN_PROVIDER'
-  | 'CONFIG_ENDPOINT_OVERRIDE_UNSUPPORTED'
-  | 'CONFIG_CREDENTIAL_REQUIRED'
-  | 'CONFIG_CREDENTIAL_REJECTED'
-  | 'CONFIG_CREDENTIAL_STORE'
-  | 'CONFIG_CREDENTIAL_PERMISSIONS'
-  | 'CONFIG_CREDENTIAL_READ_ONLY'
-  | 'CONFIG_CREDENTIAL_NO_SPACE'
-  | 'CONFIG_CREDENTIAL_INVALID'
-  | 'CONFIG_PROVIDER_UNAVAILABLE'
-  | 'CONFIG_TEST_FAILED'
-  | 'CONFIG_SUBSCRIPTION_AUTH'
-  | 'CONFIG_SUBSCRIPTION_QUOTA'
-  | 'CONFIG_SUBSCRIPTION_RATE_LIMIT'
-  | 'CONFIG_SUBSCRIPTION_TIMEOUT'
-  | 'CONFIG_SUBSCRIPTION_MODEL'
-  | 'CONFIG_SUBSCRIPTION_FAILED'
-  | 'CONFIG_MODEL_UNAVAILABLE'
-  | 'CONFIG_REVISION_CONFLICT'
-  | 'CONFIG_PERSIST_FAILED'
-  | 'CONFIG_INVALID_STATE'
+export const CONFIGURATION_ERROR_CODES = [
+  'CONFIG_INVALID_INPUT',
+  'CONFIG_UNKNOWN_PROVIDER',
+  'CONFIG_ENDPOINT_OVERRIDE_UNSUPPORTED',
+  'CONFIG_CREDENTIAL_REQUIRED',
+  'CONFIG_CREDENTIAL_REJECTED',
+  'CONFIG_CREDENTIAL_STORE',
+  'CONFIG_CREDENTIAL_PERMISSIONS',
+  'CONFIG_CREDENTIAL_READ_ONLY',
+  'CONFIG_CREDENTIAL_NO_SPACE',
+  'CONFIG_CREDENTIAL_INVALID',
+  'CONFIG_PROVIDER_UNAVAILABLE',
+  'CONFIG_TEST_FAILED',
+  'CONFIG_SUBSCRIPTION_AUTH',
+  'CONFIG_SUBSCRIPTION_QUOTA',
+  'CONFIG_SUBSCRIPTION_RATE_LIMIT',
+  'CONFIG_SUBSCRIPTION_TIMEOUT',
+  'CONFIG_SUBSCRIPTION_MODEL',
+  'CONFIG_SUBSCRIPTION_FAILED',
+  'CONFIG_MODEL_UNAVAILABLE',
+  'CONFIG_REVISION_CONFLICT',
+  'CONFIG_PERSIST_FAILED',
+  'CONFIG_INVALID_STATE',
+] as const
+export type ConfigurationErrorCode = (typeof CONFIGURATION_ERROR_CODES)[number]
 
 /** `file` is the authority file a CONFIG_INVALID_STATE came from: it fails closed and is left as found. */
 export class ConfigurationError extends Error {
   constructor(
     readonly code: ConfigurationErrorCode,
     readonly file?: string,
+    readonly credential?: CredentialDiagnostic,
   ) {
     super(
       code === 'CONFIG_CREDENTIAL_NO_SPACE'

@@ -186,6 +186,9 @@ describe('local production artifact read store', () => {
     await expect(store.status(item.ref, signal)).resolves.toBe('reclaimed')
     await expect(store.inspect(image, signal)).resolves.toEqual({ ...image, size: item.bytes.byteLength })
     await expect(store.get(item.ref, signal)).rejects.toBe(ARTIFACT_RECLAIMED_FAILURE)
+    await expect(store.readRange(item.ref, { start: 0, endExclusive: 1 }, signal)).rejects.toBe(
+      ARTIFACT_RECLAIMED_FAILURE,
+    )
     // A tombstone claiming more than the read ceiling is not trusted for a reference.
     await tombstone(2048)
     await expect(store.inspect(image, signal)).rejects.toThrow('artifact bytes unavailable')
@@ -238,6 +241,11 @@ describe('local production artifact read store', () => {
       const { item, store, unlinkBefore } = await reclaimable()
       unlinkBefore('open')
       await expect(store.get(item.ref, new AbortController().signal)).rejects.toBe(ARTIFACT_RECLAIMED_FAILURE)
+      const ranged = await reclaimable()
+      ranged.unlinkBefore('open')
+      await expect(
+        ranged.store.readRange(ranged.item.ref, { start: 0, endExclusive: 1 }, new AbortController().signal),
+      ).rejects.toBe(ARTIFACT_RECLAIMED_FAILURE)
     })
 
     it('inspect returns the reclaimed reference when its byte check loses the race', async () => {
@@ -275,4 +283,25 @@ describe('local production artifact read store', () => {
       await expect(store.inspect(image, controller.signal)).rejects.toThrow('artifact bytes unavailable')
     })
   })
+})
+
+it('verifies an entire original while returning only the requested bounded window', async () => {
+  const item = await fixture('original bytes outside the selected window also matter')
+  const store = createLocalArtifactReadStore({ dataDir: item.dataDir, maxArtifactBytes: 1024 })
+  const signal = new AbortController().signal
+  expect(await store.readRange(item.ref, { start: 2, endExclusive: 9 }, signal)).toEqual(
+    item.bytes.slice(2, 9),
+  )
+  const corrupted = item.bytes.slice()
+  corrupted[corrupted.length - 1] = 0
+  await writeFile(item.path, corrupted)
+  await expect(store.readRange(item.ref, { start: 2, endExclusive: 9 }, signal)).rejects.toThrow(
+    'artifact bytes unavailable',
+  )
+  for (const range of [
+    { start: -1, endExclusive: 2 },
+    { start: 5, endExclusive: 4 },
+    { start: 0, endExclusive: 1025 },
+  ])
+    await expect(store.readRange(item.ref, range, signal)).rejects.toThrow()
 })

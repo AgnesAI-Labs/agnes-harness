@@ -167,6 +167,11 @@ function hashRows(rows: readonly Readonly<PluginRow>[]): string {
   return createHash('sha256').update(JSON.stringify({ rows })).digest('hex')
 }
 
+/** Canonical identity for one mounted row, including rows owned by a resource generation. */
+export function canonicalRowRevision(row: Readonly<PluginRow>): string {
+  return hashRows([canonicalizePluginRow(row)])
+}
+
 /** Copies, canonicalizes and freezes rows before deriving their identity. */
 export function createTreeSnapshot(rows: readonly Readonly<PluginRow>[]): TreeSnapshot {
   const snapshotRows = canonicalRows(rows)

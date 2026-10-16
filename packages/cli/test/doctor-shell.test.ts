@@ -21,6 +21,7 @@ function platform(os: 'win32' | 'linux') {
     os,
     matches: () => true,
     probe: async () => {},
+    capability: () => ({ level: 'unavailable', scope: [], reason: 'test sandbox unavailable' }),
     snapshot: () => ({ os, arch: 'x64', capabilities: { 'sandbox.l1': 'unavailable' } }),
   } as unknown as ReturnType<typeof createPlatform>)
 }
@@ -42,6 +43,7 @@ it('reports the selected runtime shell without changing sandbox availability', a
       'shell path C:\\Windows\\powershell.exe',
       'native arguments Legacy',
       'sandbox.l1=unavailable',
+      'sandbox.l1.reason=test sandbox unavailable',
     ]),
   )
 })
@@ -65,6 +67,7 @@ it('keeps non-Windows diagnostics independent of PowerShell', async () => {
     'Unavailable L1 refuses commands by default. Explicit full-access runs without OS confinement.',
     'Computer Use is unsupported by the current pinned Linux driver admission; a graphical session alone cannot enable it.',
     'sandbox.l1=unavailable',
+    'sandbox.l1.reason=test sandbox unavailable',
   ])
   expect(resolveConfiguredPowerShell).not.toHaveBeenCalled()
 })

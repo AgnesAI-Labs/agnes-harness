@@ -38,7 +38,7 @@ import {
 import { type AuthConfig, authGate, type NonceConsume } from '../auth.js'
 import { type CommandQueue, runQueued } from '../command-queue.js'
 import { createFollowUpRunner } from '../follow-up-runner.js'
-import { toSessionUpdate } from '../project.js'
+import { toSessionUpdates } from '../project.js'
 import type { PrompterRouter } from '../prompter.js'
 import { resolvePromptReferences } from '../references.js'
 import { reserveOwnedSession, SessionAdmissionDenied } from '../session-admission.js'
@@ -50,6 +50,7 @@ import { mapCore } from './agnes.js'
 import { throwWorkspaceRpcError } from './workspaces.js'
 
 export type LocalContext = {
+  profileFeatures?: readonly string[]
   host: Host
   registry: Registry<SessionEntry>
   prompter: PrompterRouter
@@ -272,8 +273,8 @@ export class Feed {
     const prefs = this.prefs()
     // An attached client that asked for raw rows only gets no ACP projection; everyone else does.
     if (!prefs || prefs.filter.acpUpdates) {
-      const u = toSessionUpdate(e, o)
-      if (u)
+      const updates = toSessionUpdates(e, o)
+      for (const u of updates)
         this.ep.push(
           notify(
             'session/update',
@@ -285,7 +286,7 @@ export class Feed {
         )
       // turn/end has no projection of its own; the phase rides an empty chunk so an ACP client sees
       // terminalQuiescence as the last session/update of the turn.
-      else if (e.type === 'turn/end')
+      if (!updates.length && e.type === 'turn/end')
         this.ep.push(
           notify(
             'session/update',
@@ -365,9 +366,10 @@ export function throwSessionOpenRpcError(error: unknown, sessionId = ''): never 
   if (e?.code === 'SANDBOX_UNAVAILABLE') throw rpcError('SEMANTIC_REJECTED', { code: 'SANDBOX_UNAVAILABLE' })
   // A session that cannot continue on this build says which way it differs and what the person can
   // do next, in both languages; the ledger stays readable and nothing was changed.
-  const versionIssue = (Object.entries(SESSION_VERSION_CODES) as [SessionVersionIssue, string][]).find(
-    ([, code]) => code === e?.code,
-  )?.[0]
+  const versionIssue =
+    (Object.entries(SESSION_VERSION_CODES) as [SessionVersionIssue, string][]).find(
+      ([, code]) => code === e?.code,
+    )?.[0] ?? (e?.code === 'E_LEDGER_INTEGRITY' ? 'corrupt' : undefined)
   if (versionIssue) {
     const detail = (e as { detail?: { sessionKey?: unknown; ledgerPath?: unknown; cause?: unknown } }).detail
     const notice = sessionVersionNotice(versionIssue, {
@@ -544,6 +546,7 @@ export function registerAcp(
       protocolVersion: 1,
       agentCapabilities: {
         loadSession: true,
+        _meta: { 'ai.agnes.harness': { hardTurnBudget: true } },
         promptCapabilities: { image: true, audio: false, embeddedContext: true },
       },
       _meta: {
@@ -551,6 +554,7 @@ export function registerAcp(
           agnesVersion: cx.agnesVersion,
           platform: process.platform, // guards-allow-platform: daemon handshake reports its own OS to clients.
           apis: 'call apis.list',
+          features: [...(cx.profileFeatures ?? [])],
         },
       },
     }
@@ -653,39 +657,98 @@ export function registerAcp(
     return { sessionId: entry.key }
   })
 
-  ep.register('session/load', async (params) => {
+  const loading = new Map<string, Set<AbortController>>()
+  ep.register('_agnes/v1/session.loadingCancel', async (params) => {
+    const { sessionId } = params as { sessionId: string }
+    requireOwner('session.loadingCancel', sessionId)
+    for (const controller of loading.get(sessionId) ?? [])
+      controller.abort(new Error('session loading cancelled'))
+    return {}
+  })
+
+  ep.register('session/load', async (params, call) => {
     const p = params as { sessionId: string; cwd: string }
     requireOwner('session/load', p.sessionId)
-    let entry = cx.registry.get(p.sessionId)
+    const controller = new AbortController()
+    const signal = AbortSignal.any([call.signal, controller.signal])
+    const pending = loading.get(p.sessionId) ?? new Set<AbortController>()
+    pending.add(controller)
+    loading.set(p.sessionId, pending)
     try {
-      const binding = await cx.workspaces.restoreBinding(p.sessionId, p.cwd || undefined)
-      // Calling open for a live entry is intentional: both registries must reject a different
-      // authority binding rather than ignoring it until the next restart.
-      entry = await cx.registry.open({
-        key: p.sessionId,
-        cwd: binding.canonicalRoot,
-        binding,
-        resume: true,
-      } as Parameters<typeof cx.registry.open>[0])
-    } catch (error) {
-      throwSessionOpenRpcError(error, p.sessionId)
+      let entry = cx.registry.get(p.sessionId)
+      const wasOpen = entry !== undefined
+      try {
+        const binding = await cx.workspaces.restoreBinding(p.sessionId, p.cwd || undefined)
+        // Calling open for a live entry is intentional: both registries must reject a different
+        // authority binding rather than ignoring it until the next restart.
+        entry = await cx.registry.open({
+          key: p.sessionId,
+          cwd: binding.canonicalRoot,
+          binding,
+          resume: true,
+          historySignal: signal,
+          onHistoryProgress: (progress: { verifiedSeq: number; lastSeq: number }) => {
+            if (!signal.aborted)
+              ep.push(
+                notify('_agnes/v1/session.loading', {
+                  sessionId: p.sessionId,
+                  phase: 'verifying',
+                  ...progress,
+                }),
+              )
+          },
+        } as Parameters<typeof cx.registry.open>[0])
+      } catch (error) {
+        throwSessionOpenRpcError(error, p.sessionId)
+      }
+      if (!entry) throw rpcError('SESSION_NOT_FOUND', { sessionId: p.sessionId })
+      try {
+        if (wasOpen)
+          await entry.session.verifyHistory({
+            signal,
+            onProgress: (progress) => {
+              if (!signal.aborted)
+                ep.push(
+                  notify('_agnes/v1/session.loading', {
+                    sessionId: p.sessionId,
+                    phase: 'verifying',
+                    ...progress,
+                  }),
+                )
+            },
+          })
+      } catch (error) {
+        throwSessionOpenRpcError(error, p.sessionId)
+      }
+      const feed = feedFor(entry)
+      // Paged and bounded: core refuses an unbounded scan (E_SCAN_UNBOUNDED), and a single page would
+      // silently truncate a long transcript at whatever limit was written here.
+      const lastSeq = entry.session.lastSeq
+      for (let from = 1; from <= lastSeq; from += 500) {
+        if (signal.aborted) throw new Error('session load disconnected')
+        feed.replayLoad(
+          (await entry.session.scan({
+            fromSeq: from,
+            toSeq: Math.min(lastSeq, from + 499),
+            limit: 500,
+          })) as EventEnvelope[],
+        )
+        ep.push(
+          notify('_agnes/v1/session.loading', {
+            sessionId: p.sessionId,
+            phase: 'replaying',
+            verifiedSeq: Math.min(lastSeq, from + 499),
+            lastSeq,
+          }),
+        )
+      }
+      // Whatever is streaming now is not in the transcript yet; the snapshot says it.
+      feed.previewResync()
+      return {}
+    } finally {
+      pending.delete(controller)
+      if (!pending.size) loading.delete(p.sessionId)
     }
-    if (!entry) throw rpcError('SESSION_NOT_FOUND', { sessionId: p.sessionId })
-    const feed = feedFor(entry)
-    // Paged and bounded: core refuses an unbounded scan (E_SCAN_UNBOUNDED), and a single page would
-    // silently truncate a long transcript at whatever limit was written here.
-    const lastSeq = entry.session.lastSeq
-    for (let from = 1; from <= lastSeq; from += 500)
-      feed.replayLoad(
-        (await entry.session.scan({
-          fromSeq: from,
-          toSeq: Math.min(lastSeq, from + 499),
-          limit: 500,
-        })) as EventEnvelope[],
-      )
-    // Whatever is streaming now is not in the transcript yet; the snapshot says it.
-    feed.previewResync()
-    return {}
   })
 
   ep.register('session/prompt', async (params, c) => {
@@ -698,6 +761,15 @@ export function registerAcp(
       throw rpcError('INVALID_PARAMS', { reason: 'Invalid attachment resource or locator.' })
     }
     const entry = cx.registry.require(p.sessionId)
+    const creditLimit = pocket(params).creditLimit
+    if (
+      creditLimit !== undefined &&
+      (typeof creditLimit !== 'number' ||
+        !Number.isFinite(creditLimit) ||
+        creditLimit < 0 ||
+        creditLimit > Number.MAX_SAFE_INTEGER / 1_000_000)
+    )
+      throw rpcError('INVALID_PARAMS', { reason: 'invalid turn credit limit' })
     const titleLocale = pocket(params).titleLocale
     if (titleLocale !== undefined && titleLocale !== 'en' && titleLocale !== 'zh-CN')
       throw rpcError('SEMANTIC_REJECTED', { reason: 'unsupported title language' })
@@ -739,6 +811,7 @@ export function registerAcp(
             kind: 'prompt',
             commandId,
             ...(titleLocale ? { titleLocale } : {}),
+            ...(creditLimit !== undefined ? { budget: creditLimit as number, hardBudget: true } : {}),
           })
           running = invocation.run(async () => {
             for (;;) {

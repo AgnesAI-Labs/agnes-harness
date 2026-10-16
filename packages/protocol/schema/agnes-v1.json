@@ -51,6 +51,15 @@
               "minLength": 1,
               "maxLength": 512,
               "type": "string"
+            },
+            "destination": {
+              "type": "string",
+              "enum": ["workspace", "original"]
+            },
+            "laneId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
             }
           },
           "required": ["operation", "sessionId"]
@@ -86,6 +95,15 @@
               "minimum": 0,
               "maximum": 9007199254740991,
               "type": "integer"
+            },
+            "destination": {
+              "type": "string",
+              "enum": ["workspace", "original"]
+            },
+            "laneId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
             }
           },
           "required": ["operation", "sessionId", "uploadId", "name", "mimeType", "size"]
@@ -119,6 +137,15 @@
             "sha256": {
               "pattern": "^[a-f0-9]{64}$",
               "type": "string"
+            },
+            "destination": {
+              "type": "string",
+              "enum": ["workspace", "original"]
+            },
+            "laneId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
             }
           },
           "required": ["operation", "sessionId", "uploadId", "offset", "data", "sha256"]
@@ -143,6 +170,15 @@
             "sha256": {
               "pattern": "^[a-f0-9]{64}$",
               "type": "string"
+            },
+            "destination": {
+              "type": "string",
+              "enum": ["workspace", "original"]
+            },
+            "laneId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
             }
           },
           "required": ["operation", "sessionId", "uploadId", "sha256"]
@@ -171,6 +207,15 @@
             "uploadId": {
               "pattern": "^[a-f0-9-]{36}$",
               "type": "string"
+            },
+            "destination": {
+              "type": "string",
+              "enum": ["workspace", "original"]
+            },
+            "laneId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
             }
           },
           "required": ["operation", "sessionId", "uploadId"]
@@ -230,6 +275,76 @@
             "mimeType": {
               "maxLength": 128,
               "type": "string"
+            },
+            "attachment": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["artifact"],
+              "properties": {
+                "artifact": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["sha256", "size", "mime"],
+                  "properties": {
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "mime": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  }
+                },
+                "image": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["width", "height"],
+                  "properties": {
+                    "width": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 65535
+                    },
+                    "height": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 65535
+                    }
+                  }
+                },
+                "thumbnail": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["sha256", "size", "mime"],
+                  "properties": {
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "mime": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  }
+                },
+                "receiptId": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9-]{36}$"
+                }
+              }
             }
           },
           "required": ["type", "uri"]
@@ -3036,10 +3151,22 @@
         }
       }
     },
+    "SessionLoadingParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "phase", "verifiedSeq", "lastSeq"],
+      "properties": {
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "phase": { "enum": ["verifying", "replaying"] },
+        "verifiedSeq": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "lastSeq": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+      }
+    },
     "SessionViewResult": {
       "type": "object",
       "additionalProperties": false,
       "required": ["sessionId", "readOnly", "lastSeq", "timeline", "history"],
+      "description": "A presentation-only preview. No integrity verification or execution authority is implied.",
       "properties": {
         "sessionId": {
           "type": "string",
@@ -5001,7 +5128,7 @@
     "DiagnosticsCollectParams": {
       "type": "object",
       "additionalProperties": false,
-      "properties": {}
+      "properties": { "runtimeLog": { "type": "boolean" } }
     },
     "DiagnosticsCollectResult": {
       "type": "object",
@@ -5032,13 +5159,13 @@
         },
         "logs": {
           "type": "array",
-          "maxItems": 2,
+          "maxItems": 3,
           "items": {
             "type": "object",
             "additionalProperties": false,
             "required": ["name", "size", "text", "truncated", "missing"],
             "properties": {
-              "name": { "enum": ["daemon.jsonl", "host.jsonl"] },
+              "name": { "enum": ["daemon.jsonl", "host.jsonl", "runtime.jsonl"] },
               "size": { "type": "integer", "minimum": 0 },
               "text": { "type": "string" },
               "truncated": { "type": "boolean" },
@@ -8339,6 +8466,76 @@
         "costSource",
         "source"
       ]
+    },
+    "PluginStreamsEndpointParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["origin"],
+      "properties": {
+        "origin": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "PluginStreamsEndpointResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["host", "port", "proof"],
+      "properties": {
+        "host": {
+          "const": "127.0.0.1"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "proof": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "PluginRuntimeStatusParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["packageId"],
+      "properties": {
+        "packageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "PluginRuntimeStatusResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resources"],
+      "properties": {
+        "resources": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "state"],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "state": {
+                "enum": ["starting", "ready", "stopping", "failed", "stopped"]
+              },
+              "code": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

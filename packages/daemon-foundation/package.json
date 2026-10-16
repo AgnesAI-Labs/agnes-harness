@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./desktop": "./src/desktop.ts",
     "./composite-desired": "./src/composite-desired.ts",
     "./index": "./src/index.ts",
     "./jobs/repo": "./src/jobs/repo.ts",
@@ -31,7 +32,8 @@
     "./storage/source-auth-rotation": "./src/storage/source-auth-rotation.ts",
     "./storage/table": "./src/storage/table.ts",
     "./storage/workspaces": "./src/storage/workspaces.ts",
-    "./workspace-binding": "./src/workspace-binding.ts"
+    "./workspace-binding": "./src/workspace-binding.ts",
+    "./jobs/bound-wakes": "./src/jobs/bound-wakes.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",

@@ -16,7 +16,7 @@ Clients present state, the daemon manages sessions and the control plane, Host a
 
 Business Loops, tools, model adapters and personas are replaceable plugins composed by Host. The official default Loop lives in [loop-default](../../packages/loop-default/src/index.ts), using public LoopContext ports; Core owns authorization, durable facts and recovery. [File memory](../guide/memory.md) stores learned preferences, while the ledger retains execution history.
 
-Jev remains an exploratory structured-decision integration, without an installed Jev adapter. [MHS](../guide/mhs.md) has a simulated MCP inspection bundle; it does not establish physical-device compatibility. These directions are distinct from the implemented request path below.
+Jev remains an exploratory structured-decision integration, without an installed Jev adapter.
 
 ## Runtime request path
 
@@ -104,18 +104,16 @@ AGH's App Server provides shared task execution: the daemon manages sessions and
 
 ## Scope of reusable applications
 
-FDE is a delivery approach; MHS is a device integration direction. An FDE deployment can use AGH's existing extension paths for enterprise software and can later include device integrations. Knowledge retrieval, database connectors, business systems, and specialized interfaces require implementation and validation for each environment.
+FDE is a delivery approach. An FDE deployment can use AGH's existing extension paths for enterprise software. Knowledge retrieval, database connectors, business systems, and specialized interfaces require implementation and validation for each environment.
 
-| Module and source ownership | FDE use through current software paths | Reusable foundation for a future MHS integration |
-| --- | --- | --- |
-| App Server: [SDK](../../packages/sdk/src), [daemon](../../packages/daemon/src), [worker](../../packages/worker-runtime/src) | Shared sessions, task submission, events, approval routing, and client integration | Task entry points, human confirmation, and status presentation |
-| Agent Loop: [Host assembly](../../packages/host/src/runtime/assemble/assemble.ts), [Core](../../packages/core/src), [AI](../../packages/ai/src) | Model/tool execution, task state, interruption handling, and recovery | High-level device task orchestration; device controllers perform actual motion |
-| Memory: [event records](../../packages/core-ledger/src/log), [resource governance](../../packages/resource-control-runtime/src) | Preserve task history and results; reuse methods through Skills | Preserve observations and adapter receipts under task-record contracts; device truth needs device-side verification |
-| Execution constraints: [controlled tool execution](../../packages/core/src/step/tools.ts), [sandbox](../../packages/host-infrastructure/src/sandbox-seam.ts), [workspace policy](../../packages/host-common/src/workspace-policy.ts) | Tool approvals and applicable software execution constraints | Software-side control points; device interlocks, emergency stops, and local takeover remain device responsibilities |
-| Plugins: [Cordis](../../packages/cordis/src), [plugin runtime](../../packages/plugin-runtime/src), [package manager](../../packages/package-manager/src), [Web client modules](../../packages/web-client/src) | Backend tools/services, hooks, Skills, MCP connections, and business panels | Extension points for adapters and device-facing interfaces; no verified general-purpose MHS adapter exists in this repository |
+| Module and source ownership | FDE use through current software paths |
+| --- | --- |
+| App Server: [SDK](../../packages/sdk/src), [daemon](../../packages/daemon/src), [worker](../../packages/worker-runtime/src) | Shared sessions, task submission, events, approval routing, and client integration |
+| Agent Loop: [Host assembly](../../packages/host/src/runtime/assemble/assemble.ts), [Core](../../packages/core/src), [AI](../../packages/ai/src) | Model/tool execution, task state, interruption handling, and recovery |
+| Memory: [event records](../../packages/core-ledger/src/log), [resource governance](../../packages/resource-control-runtime/src) | Preserve task history and results; reuse methods through Skills |
+| Execution constraints: [controlled tool execution](../../packages/core/src/step/tools.ts), [sandbox](../../packages/host-infrastructure/src/sandbox-seam.ts), [workspace policy](../../packages/host-common/src/workspace-policy.ts) | Tool approvals and applicable software execution constraints |
+| Plugins: [Cordis](../../packages/cordis/src), [plugin runtime](../../packages/plugin-runtime/src), [package manager](../../packages/package-manager/src), [Web client modules](../../packages/web-client/src) | Backend tools/services, hooks, Skills, MCP connections, and business panels |
 
 Ordinary backend plugins execute as trusted in-process code. A tool approval or available command sandbox does not isolate arbitrary plugin code. Approvals, sandbox behavior, and other required seams are selected by trusted deployment configuration; ordinary extensions do not acquire the right to replace them by registering a tool or hook. See [security and trust](../guide/security.md).
-
-MHS adapters are the device branch in the overview, built on MCP (Model Context Protocol) rather than a vendor-specific SDK or a ROS bridge. A [simulated inspection bundle](../guide/mhs.md) is available; hardware adapters require validation; a bare MCP connection alone does not establish MHS compatibility, since no public MHS specification is open for certification. Task cancellation does not establish that a physical device stopped safely. Enterprise deployment, audit, isolation, and device actions each need validation in their actual environment.
 
 Source: [Host](../../packages/host/src/runtime/assemble/assemble.ts), [Worker](../../packages/worker-runtime/src/main.ts), [Core](../../packages/core/src), [Daemon](../../packages/daemon/src/supervisor/runtime.ts), [runtime-target publication](../../packages/host-providers/src/runtime-target-publisher.ts), [Web Context](../../packages/web/src/client-modules/boot.tsx).

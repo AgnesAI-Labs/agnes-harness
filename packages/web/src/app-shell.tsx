@@ -35,8 +35,6 @@ export type ShellHosts = {
 export type ShellConfig = {
   /** The daemon WebSocket address. */
   wsUrl: string | undefined
-  /** `data-model-refresh-interval-ms` on <html>; absent or out of range uses the default. */
-  modelRefreshIntervalMs: number | undefined
 }
 
 /** React owns the page structure; controller views and plugin outlets are children via portals. */
@@ -217,15 +215,10 @@ export function mountAppShell(): { hosts: ShellHosts; config: ShellConfig; dispo
   const dispose = mountApplication(host, <AppShell hosts={hosts} />)
   renderAppDialogs()
   for (const key of HOSTS) if (!hosts[key]) throw new Error(`the application shell did not render ${key}`)
-  const interval = Number(document.documentElement.dataset.modelRefreshIntervalMs)
   return {
     hosts: hosts as ShellHosts,
     config: {
       wsUrl: document.querySelector<HTMLMetaElement>('meta#agnes-config')?.dataset.ws,
-      modelRefreshIntervalMs:
-        Number.isSafeInteger(interval) && interval >= 1_000 && interval <= 2_147_483_647
-          ? interval
-          : undefined,
     },
     dispose,
   }

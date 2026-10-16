@@ -5,7 +5,7 @@ import {
   type IdMinter,
   type PreparedEvent,
 } from '@agnes/core-common/types'
-import { isEventType, validateEvent } from '@agnes/protocol'
+import { describeValidationErrors, isEventType, validateEvent } from '@agnes/protocol'
 
 /** The only three event types the model ever sees, and therefore the only ones a surfaceOp may edit. */
 export const MODEL_VISIBLE = ['user/message', 'assistant/message', 'tool/result'] as const
@@ -40,7 +40,9 @@ export function prepareEvents(
     // An ignorable event of an unknown type fails the envelope only on `/type`; anything else it got
     // wrong is still a rejection, so the pass is narrowed to batches where `/type` is the sole error.
     if (!r.ok && !(e.ignorable === true && r.errors.every((x) => x.path === '/type')))
-      throw new CoreError('E_ENVELOPE', r.errors[0]?.message ?? 'invalid', { errors: r.errors })
+      throw new CoreError('E_ENVELOPE', `${e.type} ${describeValidationErrors(r.errors)}`, {
+        errors: r.errors,
+      })
     if (
       (e.type === 'decision/state' || e.register === 'decision/state') &&
       (e.type !== 'decision/state' ||

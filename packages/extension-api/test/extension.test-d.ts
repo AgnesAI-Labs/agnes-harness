@@ -85,6 +85,7 @@ describe('plugin context facets', () => {
       | 'eventLog'
       | 'providers'
       | 'self'
+      | 'profileRuntime'
     >()
   })
 })

@@ -1,4 +1,5 @@
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -12,6 +13,7 @@ import {
   sha256hex,
 } from '@agnes/host'
 import { createTestHost } from '@agnes/host/testkit'
+import { attachmentLink } from '@agnes/protocol'
 import { expect, it } from 'vitest'
 import { workspaceBinding } from '../../daemon-foundation/test/workspace-authority.js'
 import { type DaemonConfig, DEFAULT_LIMITS } from '../src/supervisor/config.js'
@@ -51,10 +53,22 @@ it('a truncated scan in the worker reaches the daemon with its range, and paging
   const dir = realpathSync.native(mkdtempSync(join(tmpdir(), 'agnes-scan-ipc-')))
   const key = 'agnes:local:default:daemon:dm:scan-ipc'
   try {
-    // Seed the ledger before any worker owns it.
+    // Seed the ledger before any worker owns it. Store actual original bytes: the generic
+    // testkit artifact seam returns a placeholder digest that is invalid in stored attachments.
+    const originals = join(dir, 'originals')
+    mkdirSync(originals)
     const seeded = await createTestHost({
       dataDir: dir,
       script: [],
+      seams: {
+        artifacts: {
+          async put(bytes, meta) {
+            const sha256 = createHash('sha256').update(bytes).digest('hex')
+            writeFileSync(join(originals, sha256), bytes)
+            return { sha256, size: bytes.length, mime: meta?.mime ?? 'application/octet-stream' }
+          },
+        },
+      },
       profileInputs: {
         user: {
           name: 'local-dev',
@@ -77,6 +91,19 @@ it('a truncated scan in the worker reaches the daemon with its range, and paging
       session.ev('x/agnes/scan-test/note', { n }, { ignorable: true }),
     )
     for (let i = 0; i < notes.length; i += 250) await session.append(notes.slice(i, i + 250))
+    // Fixed original-heavy companion dataset: originals stay in the artifact provider, never IPC
+    // ledger frames. The worker must reopen and page the reference history under the same budget.
+    for (let index = 0; index < 5; index++) {
+      const original = await session.d.runtime.artifactPut(Buffer.alloc(20 * 1024 * 1024, index + 1), {
+        mime: 'application/octet-stream',
+      })
+      await session.append([
+        session.ev('user/message', {
+          kind: 'prompt',
+          content: [attachmentLink(original, `original-${index}.bin`)],
+        }),
+      ])
+    }
     const lastSeq = session.lastSeq
     await session.close()
     await seeded.host.close()
@@ -93,13 +120,23 @@ it('a truncated scan in the worker reaches the daemon with its range, and paging
         process.platform === 'win32' ? `\\\\.\\pipe\\${basename(dir)}-w` : join(dir, 'w.sock'),
       limits: { ...DEFAULT_LIMITS, workerStartupMs: 30_000 },
     }
+    const rssFile = join(dir, 'opening-worker-rss.json')
+    // A test-only Node preload records this real child process's cumulative peak, including
+    // startup and restore. It creates no production RPC, environment switch or alternate worker.
+    const probe =
+      'data:text/javascript,' +
+      encodeURIComponent(`
+      import {writeFileSync} from 'node:fs';
+      const record = () => writeFileSync(${JSON.stringify(rssFile)}, JSON.stringify({peakRssBytes:process.resourceUsage().maxRSS*1024}));
+      record(); setInterval(record,100).unref(); process.on('exit',record);
+    `)
     const pool = new WorkerPool({
       config,
       profile,
       profileFile,
       execPath: process.execPath,
       workerEntry: fakeWorkerEntry,
-      execArgv: ['--import', 'tsx'],
+      execArgv: ['--import', 'tsx', '--import', probe],
       clock: () => Date.now(),
       onEvent: () => undefined,
       onRequest: async () => undefined,
@@ -107,14 +144,38 @@ it('a truncated scan in the worker reaches the daemon with its range, and paging
     })
     const server = await listenUnix(config.workersSocketPath, (socket) => pool.adopt(socket))
     try {
+      const coldStarted = performance.now()
       const link = await pool.acquire(key, {
         resume: true,
         cwd: dir,
         binding: await workspaceBinding(key, dir),
       })
       const hello = await link.hello
+      const coldStartMs = performance.now() - coldStarted
+      expect(coldStartMs).toBeLessThan(30_000)
       const remote = new RemoteSession(key, hello.writerRunId, hello.generation, link, dir)
 
+      const openingMs: number[] = []
+      for (let index = 0; index < 5; index++) {
+        const started = performance.now()
+        const opening = await remote.projectUIOpening({ maxNodes: 200, maxBytes: 8 * 1024 * 1024 })
+        openingMs.push(performance.now() - started)
+        expect(JSON.stringify(opening).length).toBeLessThan(8 * 1024 * 1024)
+        expect(JSON.stringify(opening)).toContain('original-4.bin')
+      }
+      expect(Math.max(...openingMs)).toBeLessThan(1000)
+      expect(process.resourceUsage().maxRSS * 1024).toBeLessThan(1024 * 1024 * 1024)
+      console.info(
+        JSON.stringify({
+          dataset: 'ipc-1232-notes-5x20MiB-originals-v1',
+          platform: process.platform,
+          arch: process.arch,
+          node: process.version,
+          coldStartMs,
+          openingMs,
+          peakParentRssBytes: process.resourceUsage().maxRSS * 1024,
+        }),
+      )
       const err = (await remote.scan({ toSeq: lastSeq }).catch((e: unknown) => e)) as Record<string, unknown>
       expect(err.code).toBe('E_SCAN_TRUNCATED')
       expect(err.message).toBe(
@@ -128,6 +189,15 @@ it('a truncated scan in the worker reaches the daemon with its range, and paging
     } finally {
       await pool.closeAll(2_000)
       await server.close()
+      const worker = JSON.parse(readFileSync(rssFile, 'utf8')) as { peakRssBytes: number }
+      expect(worker.peakRssBytes).toBeGreaterThan(0)
+      expect(worker.peakRssBytes).toBeLessThan(1024 * 1024 * 1024)
+      console.info(
+        JSON.stringify({
+          dataset: 'ipc-1232-notes-5x20MiB-originals-v1',
+          peakWorkerRssBytes: worker.peakRssBytes,
+        }),
+      )
     }
   } finally {
     // On Windows a worker's database files can stay locked for a moment after the process exits;

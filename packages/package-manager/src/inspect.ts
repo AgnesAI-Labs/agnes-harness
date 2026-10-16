@@ -260,11 +260,7 @@ export function inspectVerifiedTree(
     clientPaths.add(item.path)
     const plugin = plugins.find((entry) => entry.id === item.rowId)
     if (plugin?.runtime !== 'in-process') invalid('client-descriptor-row')
-    if (
-      !/^\.\/(?!\.{1,2}(?:\/|$))[^/\\:\0]+(?:\/(?!\.{1,2}(?:\/|$))[^/\\:\0]+)*\/agnes\.client\.json$/.test(
-        item.path,
-      )
-    )
+    if (!/^\.\/(?:(?!\.{1,2}(?:\/|$))[^/\\:\0]+\/)*agnes\.client\.json$/.test(item.path))
       invalid('client-descriptor-path')
     const descriptorPath = containedEntry(input.dir, item.path, 'file', 'package.json')
     const descriptor = readStaticJson(descriptorPath)
@@ -279,7 +275,9 @@ export function inspectVerifiedTree(
         version: pkg.version,
         apiRange: '*',
         entry: './index.mjs',
-        capabilities: { ui: true },
+        // Keep the descriptor binding's implicit UI marker, but validate every declared capability
+        // against this exact owner. Neither a sibling row nor the descriptor can supply authority.
+        capabilities: { ui: true, ...plugin.capabilities },
         contributes: {
           ...(descriptor.client === undefined ? {} : { client: descriptor.client }),
           ...(descriptor.skins === undefined ? {} : { skins: descriptor.skins }),
@@ -323,6 +321,37 @@ export function inspectVerifiedTree(
     if (c.descriptor.artifact.kind === 'node')
       containedEntry(input.dir, c.descriptor.artifact.entry, 'file', 'package.json')
     contributions.push(c)
+  }
+  if (displayMetadata?.ok && displayMetadata.value.category === 'example') {
+    const example = displayMetadata.value
+    if (
+      !example.exampleOf ||
+      example.exampleOf === String(pkg.name) ||
+      !fetched.dependencies[example.exampleOf]
+    )
+      invalid('example-dependency')
+    const presentation = presentPluginRows(plugins, {
+      packageId: String(pkg.name),
+      bundles,
+      ...(kinds ? { kinds } : {}),
+    })
+    for (const launch of example.launches ?? [])
+      if (
+        !presentation.presets?.some(
+          (preset) => preset.bundle === launch.bundle && preset.id === launch.preset,
+        )
+      )
+        invalid('example-launch')
+    if (
+      example.pageEntry &&
+      !contributions.some(
+        (item) =>
+          'client' in item &&
+          item.client?.lifetime === 'profile' &&
+          item.client.examplePages?.includes(example.pageEntry ?? ''),
+      )
+    )
+      invalid('example-page')
   }
   contributions.sort((a, b) => compare(`${a.kind}:${a.id}`, `${b.kind}:${b.id}`))
   if (new Set(contributions.map((c) => `${c.kind}:${c.id}`)).size !== contributions.length)
@@ -388,6 +417,7 @@ export function inspectVerifiedTree(
     dependencies,
     capabilityDiff,
     capabilityHash: capabilityHash({
+      ...(displayMetadata?.ok ? { metadata: displayMetadata.value } : {}),
       contributions,
       dependencies: fetched.dependencies,
       ...(declaredCapabilities === undefined ? {} : { declaredCapabilities }),

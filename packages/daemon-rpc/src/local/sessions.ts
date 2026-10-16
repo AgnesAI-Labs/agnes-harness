@@ -92,11 +92,15 @@ export class SessionRegistry implements Registry<SessionEntry> {
     bundles?: readonly string[]
     loop?: LoopSelection
     credential?: unknown
+    historySignal?: AbortSignal
+    onHistoryProgress?: (progress: { verifiedSeq: number; lastSeq: number }) => void
   }): Promise<SessionEntry> {
     const accepted = this.acceptBinding(o.binding, o.key)
     const request = {
       ...(o.key ? { key: o.key } : {}),
       cwd: o.cwd,
+      ...(o.historySignal ? { historySignal: o.historySignal } : {}),
+      ...(o.onHistoryProgress ? { onHistoryProgress: o.onHistoryProgress } : {}),
       ...(o.preset ? { preset: o.preset } : {}),
       ...(o.bundles !== undefined ? { bundles: o.bundles } : {}),
       ...(o.loop ? { loop: o.loop } : {}),
@@ -156,6 +160,8 @@ export class SessionRegistry implements Registry<SessionEntry> {
     bundles?: readonly string[]
     loop?: LoopSelection
     credential?: unknown
+    historySignal?: AbortSignal
+    onHistoryProgress?: (progress: { verifiedSeq: number; lastSeq: number }) => void
   }): Promise<SessionEntry> {
     const session = await this.host.createSession(o)
     return this.track(session, o.cwd, o.binding)

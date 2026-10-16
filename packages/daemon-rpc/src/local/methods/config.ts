@@ -4,6 +4,7 @@ import type {
   ChildEnginesSnapshot,
   ConfigurationService,
 } from '@agnes/host'
+import { CONFIGURATION_ERROR_CODES } from '@agnes/host'
 import {
   type ConfigAccountInput,
   type ConfigOAuthInput,
@@ -58,8 +59,60 @@ export function registerConfiguration(
     } catch (error) {
       // Never forward an upstream body, URL, path or credential through a setup failure.
       const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined
-      const reason = typeof code === 'string' && /^CONFIG_[A-Z_]{1,48}$/.test(code) ? code : 'CONFIG_FAILED'
-      throw rpcError('SEMANTIC_REJECTED', { reason })
+      const reason =
+        typeof code === 'string' &&
+        [
+          ...CONFIGURATION_ERROR_CODES,
+          'CONFIG_AUTH_UNAVAILABLE',
+          'CONFIG_AUTH_BUSY',
+          'CONFIG_AUTH_CANCELLED',
+          'CONFIG_AUTH_EXPIRED',
+          'CONFIG_AUTH_FAILED',
+          'CONFIG_FAILED',
+        ].includes(code)
+          ? code
+          : 'CONFIG_FAILED'
+      const detail =
+        error && typeof error === 'object' && 'credential' in error
+          ? (error.credential as
+              | { part?: unknown; check?: unknown; mode?: unknown; expectedMode?: unknown }
+              | undefined)
+          : undefined
+      const checks = [
+        'bad-ref',
+        'enforcement-unavailable',
+        'io',
+        'symlink',
+        'not-directory',
+        'not-file',
+        'mode',
+        'owner',
+        'link-count',
+        'changed',
+        'too-large',
+        'invalid-json',
+        'schema',
+        'kind-conflict',
+      ]
+      const credential =
+        reason.startsWith('CONFIG_CREDENTIAL_') &&
+        detail &&
+        typeof detail.part === 'string' &&
+        ['home', 'secrets', 'auth', 'locks', 'store'].includes(detail.part) &&
+        typeof detail.check === 'string' &&
+        checks.includes(detail.check)
+          ? {
+              ...(detail.expectedMode === '0600' || detail.expectedMode === '0700'
+                ? { expectedMode: detail.expectedMode }
+                : {}),
+              part: detail.part,
+              check: detail.check,
+              ...(typeof detail.mode === 'string' && /^[0-7]{4}$/.test(detail.mode)
+                ? { mode: detail.mode }
+                : {}),
+            }
+          : {}
+      throw rpcError('SEMANTIC_REJECTED', { reason, ...credential })
     }
   }
   endpoint.register('_agnes/v1/config.get', (_params, context) =>

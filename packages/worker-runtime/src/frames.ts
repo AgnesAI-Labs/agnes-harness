@@ -10,6 +10,7 @@ import type {
 import { workerGeneration } from '@agnes/protocol'
 
 export type SessionMethod =
+  | 'deliverSystemInput'
   | 'enqueue'
   | 'control'
   | 'controlState'
@@ -18,6 +19,7 @@ export type SessionMethod =
   | 'removeQueuedInput'
   | 'run'
   | 'abort'
+  | 'verifyHistory'
   | 'scan'
   | 'latest'
   | 'projectUI'
@@ -64,6 +66,17 @@ export type WorkerMethod =
   | 'systemPrompt.defaults'
   | 'memory.manage'
   | 'observability.health'
+  | 'boundWake.resolve'
+  | 'boundWake.read'
+  | 'boundWake.require'
+  | 'profileManaged.status'
+  | 'profileStreams.endpoint'
+  | 'profileService.identity'
+  | 'profileService.authorizeControl'
+  | 'profileService.call'
+  | 'profileService.readOperation'
+  | 'profileService.listDecisions'
+  | 'profileService.answerDecision'
   | 'inspectService'
   | 'callService'
   | 'abortService'
@@ -180,6 +193,7 @@ export type RequestFrame = {
   sessionKey: string
   requestId: string
   method:
+    | 'bound-wake'
     | 'permission'
     | 'permission-abort'
     | 'notice'
@@ -236,6 +250,7 @@ export type CommandFrame = WorkerCommandFrame | SessionCommandFrame
 export type ReplyFrame = WorkerReplyFrame | SessionReplyFrame
 export type CloseFrame = { kind: 'close'; reason: string }
 export type WorkerToSupervisor =
+  | { kind: 'session.loading'; requestId: string; sessionKey: string; verifiedSeq: number; lastSeq: number }
   | WorkerHello
   | EventFrame
   | PreviewFrame
@@ -246,6 +261,7 @@ export type WorkerToSupervisor =
   | SessionReplyFrame
   | RequestFrame
 export type SupervisorToWorker =
+  | { kind: 'session.open.cancel'; requestId: string; sessionKey: string }
   | RuntimeStaleFrame
   | WorkerCommandFrame
   | SessionOpenFrame

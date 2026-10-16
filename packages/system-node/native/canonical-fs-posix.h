@@ -9,11 +9,11 @@ typedef struct {
   struct stat meta; char* text; canonical_entry* entries; size_t count, capacity;
 } canonical_job;
 
-static napi_value open_canonical_writable_file(napi_env env, napi_callback_info info) {
+static napi_value canonical_open_for_write(napi_env env, napi_callback_info info, bool exclusive) {
   napi_value args[1], result; size_t count = 1; char path[4096];
   if (napi_get_cb_info(env, info, &count, args, NULL, NULL) != napi_ok || count != 1 ||
       !string_arg(env, args[0], path, sizeof(path))) return NULL;
-  int fd = canonical_file_flags(path, O_WRONLY | O_CREAT);
+  int fd = canonical_file_flags(path, (exclusive ? O_RDWR : O_WRONLY) | O_CREAT | (exclusive ? O_EXCL : 0));
   if (fd < 0) return fail(env, "open canonical writable file", errno);
   struct stat meta;
   if (fstat(fd, &meta) != 0) { int error = errno; close(fd); return fail(env, "stat canonical writable file", error); }
@@ -23,6 +23,13 @@ static napi_value open_canonical_writable_file(napi_env env, napi_callback_info 
   }
   if (napi_create_int32(env, fd, &result) != napi_ok) { close(fd); return NULL; }
   return result;
+}
+
+static napi_value open_canonical_writable_file(napi_env env, napi_callback_info info) {
+  return canonical_open_for_write(env, info, false);
+}
+static napi_value open_canonical_exclusive_file(napi_env env, napi_callback_info info) {
+  return canonical_open_for_write(env, info, true);
 }
 
 static int canonical_mkdir(const char* path, mode_t mode) {

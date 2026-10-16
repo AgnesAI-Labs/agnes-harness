@@ -123,6 +123,14 @@ export function observePluginCapabilities(
               fs('write', path)
               return context.fs.write(path, data)
             },
+            ...(context.fs.create
+              ? {
+                  create: (path: string, data: Uint8Array) => {
+                    fs('write', path)
+                    return context.fs.create!(path, data)
+                  },
+                }
+              : {}),
             list: (path) => {
               fs('read', path)
               return context.fs.list(path)

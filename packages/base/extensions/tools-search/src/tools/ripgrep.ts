@@ -5,6 +5,7 @@ import { guardedResult, refBlock, spillLocator } from '../../../tools-core/src/g
 import { normalizeWorkspacePath } from '../../../tools-core/src/paths.js'
 import { MAX_ARTIFACT_READ_BYTES } from '../../../tools-core/src/tools/read.js'
 import { FindParams, GrepParams } from '../../../tools-core/src/tools/schemas.js'
+import { findTool as fallbackFind } from './find.js'
 import { grepTool as artifactGrep } from './grep.js'
 import { ripgrepPath } from './rg-path.js'
 import {
@@ -22,7 +23,19 @@ import {
 const searchRelative = (root: string, path: string) =>
   (relative(root, path) || basename(path)).split(sep).join('/')
 
-async function files(ctx: ToolContext, root: string): Promise<{ paths: string[]; notes: string[] }> {
+const unavailable = (error: unknown) =>
+  ['ENOENT', 'EACCES', 'MODULE_NOT_FOUND', 'SANDBOX_UNAVAILABLE'].includes(
+    String((error as { code?: string })?.code),
+  )
+
+async function files(
+  ctx: ToolContext,
+  root: string,
+): Promise<{ paths: string[]; notes: string[]; namedFile: boolean }> {
+  const kind = (await ctx.fs.stat(root)).kind
+  if (kind === 'symlink') await ctx.fs.read(root, { limit: 1 })
+  const namedFile = kind === 'file' || kind === 'symlink'
+  if (namedFile) return { paths: [root], notes: [], namedFile }
   // --no-ignore preserves the existing tool's explicit skips; never follow symlinks.
   const globs = [...new Set([...DEFAULT_SKIP, ...DENIED_PATHS])].flatMap((p) => [
     '--glob',
@@ -34,7 +47,8 @@ async function files(ctx: ToolContext, root: string): Promise<{ paths: string[];
     [ripgrepPath(), '--files', '--null', '--hidden', '--no-ignore', ...globs, '--', root],
     { cwd: ctx.cwd },
   )
-  if (r.code > 1 || r.code < 0) throw new Error(r.stderr || 'bundled ripgrep could not list files')
+  if (r.code > 1 || r.code < 0 || (r.code === 1 && r.stderr))
+    throw new Error(r.stderr || 'bundled ripgrep could not list files')
   const paths: string[] = []
   let denied = 0
   for (const path of r.stdout.split('\0').filter(Boolean)) {
@@ -52,7 +66,8 @@ async function files(ctx: ToolContext, root: string): Promise<{ paths: string[];
   const notes = [`[not searched: ${[...DEFAULT_SKIP].sort().join(', ')}; symlinks are not followed]`]
   if (denied) notes.push(`[${denied} path(s) skipped: outside the workspace, unreadable or denied by policy]`)
   if (r.truncated) notes.push('[file listing capture limit reached; search is partial]')
-  return { paths, notes }
+  if (r.stderr) notes.push(`[listing incomplete: ${r.stderr.slice(0, 2000).trim()}]`)
+  return { paths, notes, namedFile }
 }
 
 async function result(
@@ -61,7 +76,7 @@ async function result(
   limit: number,
   notes: string[],
 ): Promise<ToolResult> {
-  const full = [...lines, ...notes].join('\n') || 'no matches'
+  const full = [...(lines.length ? lines : ['no matches']), ...notes].join('\n')
   const bytes = new TextEncoder().encode(full)
   if (bytes.length > MAX_ARTIFACT_READ_BYTES)
     return toolError('search output exceeds the 32 MiB artifact limit; narrow the search')
@@ -109,6 +124,7 @@ export const ripgrepFindTool = defineTool({
         .sort()
       return result(ctx, lines, args.limit ?? 1000, listing.notes)
     } catch (e) {
+      if (unavailable(e)) return fallbackFind.execute(args, ctx)
       return toolError(`find failed: ${String(e)}`)
     }
   },
@@ -128,9 +144,13 @@ export const ripgrepGrepTool = defineTool({
     try {
       const listing = await files(ctx, root)
       const glob = args.glob ? globToRegExp(args.glob) : undefined
-      const paths = listing.paths.filter((p) => !glob || glob.test(searchRelative(root, p)))
+      const paths = listing.paths.filter(
+        (p) => listing.namedFile || !glob || glob.test(searchRelative(root, p)),
+      )
       const lines: string[] = []
-      let captured = 0
+      let captured = 0,
+        binary = 0,
+        failedSearch = false
       // Batches bound argv and each executor capture. No model-controlled flag enters argv.
       for (let i = 0; i < paths.length; i += 128) {
         const batch = paths.slice(i, i + 128)
@@ -143,13 +163,20 @@ export const ripgrepGrepTool = defineTool({
         const r = await ctx.exec([ripgrepPath(), '--json', ...flags, '-e', args.pattern, '--', ...batch], {
           cwd: ctx.cwd,
         })
-        if (r.code > 1 || r.code < 0) throw new Error(r.stderr || 'bundled ripgrep failed')
+        if ((r.code > 1 || r.code < 0) && !r.stdout) throw new Error(r.stderr || 'bundled ripgrep failed')
+        if (r.code > 1 || r.code < 0) failedSearch = true
+        if (r.stderr) listing.notes.push(`[search incomplete: ${r.stderr.slice(0, 2000).trim()}]`)
         if (r.truncated) listing.notes.push('[match capture limit reached; search is partial]')
         for (const row of r.stdout.trimEnd().split('\n')) {
           if (!row) continue
           let item: {
             type: string
-            data: { path?: { text?: string }; lines?: { text?: string }; line_number?: number }
+            data: {
+              path?: { text?: string }
+              lines?: { text?: string }
+              line_number?: number
+              binary_offset?: number | null
+            }
           }
           try {
             item = JSON.parse(row)
@@ -157,6 +184,7 @@ export const ripgrepGrepTool = defineTool({
             if (r.truncated) continue
             throw new Error('invalid ripgrep output')
           }
+          if (item.type === 'end' && typeof item.data.binary_offset === 'number') binary++
           if (item.type !== 'match' && item.type !== 'context') continue
           const p = item.data.path?.text
           const text = item.data.lines?.text
@@ -172,8 +200,17 @@ export const ripgrepGrepTool = defineTool({
           break
         }
       }
-      return result(ctx, lines, args.limit ?? 100, listing.notes)
+      if (binary) listing.notes.push(`[${binary} binary file(s) not searched completely]`)
+      const failed = !lines.length && (failedSearch || (binary > 0 && binary === paths.length))
+      const response = await result(
+        ctx,
+        failed ? ['nothing could be searched'] : lines,
+        args.limit ?? 100,
+        listing.notes,
+      )
+      return failed ? { ...response, isError: true } : response
     } catch (e) {
+      if (unavailable(e)) return artifactGrep.execute(args, ctx)
       return toolError(`grep failed: ${String(e)}`)
     }
   },

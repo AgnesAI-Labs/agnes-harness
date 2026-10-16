@@ -65,7 +65,6 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
   const importMapHash = await importMapScriptHash(options.root)
   // Static assets share the base policy. Each HTML response adds its own nonce for Ant Design's
   // CSS-in-JS styles; it is also inserted into that document for ConfigProvider to consume.
-  const contentSecurityPolicy = `default-src 'self'; connect-src 'self' ${wsUrl.origin.replace(/^http/, 'ws')}; style-src 'self'; script-src 'self'${importMapHash ? ` 'sha256-${importMapHash}'` : ''}`
   const requestedPort = port(options.port ?? DEFAULT_WEB_PORT)
   const expectedOrigin = loopbackOrigin(options.origin ?? `http://${HOST}:${requestedPort}`)
   if (expectedOrigin.hostname !== HOST && expectedOrigin.hostname !== 'localhost')
@@ -74,6 +73,7 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
     throw new Error('Web origin port does not match Web listener port')
   if (requestedPort === 0 && !expectedOrigin.port)
     throw new Error('Web origin must include the selected Web listener port')
+  const contentSecurityPolicy = `default-src 'self'; media-src 'self' blob:; connect-src 'self' ${expectedOrigin.origin.replace(/^http/, 'ws')} ${wsUrl.origin.replace(/^http/, 'ws')}; style-src 'self'; script-src 'self'${importMapHash ? ` 'sha256-${importMapHash}'` : ''}`
 
   let pickerPending = false
   let activePicker: AbortController | undefined
@@ -170,6 +170,7 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
         response.writeHead(403).end()
         return
       }
+      if (await options.pluginStreams?.handleHttp(request, response)) return
       if (await handleWebhook?.(request, response)) return
       const requestUrl = new URL(request.url ?? '/', expectedOrigin)
       if (requestUrl.pathname === DELIVERABLE_PREVIEW_PATH) {
@@ -597,6 +598,13 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
       response.writeHead(missing ? 404 : 500).end(missing ? '' : 'web assets unavailable')
     }
   })
+  server.on('upgrade', (request, socket, head) => {
+    void Promise.resolve(options.pluginStreams?.handleUpgrade(request, socket, head))
+      .then((claimed) => {
+        if (!claimed) socket.destroy()
+      })
+      .catch(() => socket.destroy())
+  })
   const sockets = new Set<import('node:net').Socket>()
   server.on('connection', (socket) => {
     sockets.add(socket)
@@ -619,6 +627,7 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
     },
     close: () =>
       (closing ??= new Promise<void>((resolve, reject) => {
+        options.pluginStreams?.close()
         activePicker?.abort()
         stopPluginEvents?.()
         if (pluginBuildPoller !== undefined) clearInterval(pluginBuildPoller)

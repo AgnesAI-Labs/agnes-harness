@@ -62,6 +62,30 @@ describe('plugin purpose metadata', () => {
     })
     expect(resolvePluginMetadata(metadata, 'en')?.displayName).toBe('Search')
   })
+  it('validates bounded example metadata and refuses unrelated declarations or duplicate launches', () => {
+    const launch = {
+      id: 'start',
+      kind: 'business-agent',
+      title: 'Start',
+      bundle: 'acme/example#demo',
+      preset: 'safe',
+      prompt: 'Read synthetic data.',
+    }
+    const example = {
+      ...metadata,
+      category: 'example',
+      exampleOf: 'acme/host',
+      launches: [launch],
+      pageEntry: 'scene',
+    }
+    expect(validatePluginMetadata(example).ok).toBe(true)
+    expect(validatePluginMetadata({ ...example, exampleOf: undefined }).ok).toBe(false)
+    expect(validatePluginMetadata({ ...example, category: 'tools' }).ok).toBe(false)
+    expect(validatePluginMetadata({ ...example, launches: [launch, launch] }).ok).toBe(false)
+    expect(
+      validatePluginMetadata({ ...example, launches: [{ ...launch, prompt: '😀'.repeat(4097) }] }).ok,
+    ).toBe(false)
+  })
   it('carries a localized sample prompt, an experimental mark and the business-agent category', () => {
     const agent = {
       ...metadata,

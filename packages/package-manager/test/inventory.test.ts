@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -35,16 +36,46 @@ function currentFixture() {
       version: '1.0.0',
       license: 'MIT',
       exports: './index.mjs',
-      agnes: { plugins: [{ export: 'main', apiRange: '^4.0.0', capabilities: { ui: true } }] },
+      agnes: {
+        plugins: [
+          {
+            id: 'ext:acme/round',
+            export: 'main',
+            apiRange: '^4.0.0',
+            runtime: 'in-process',
+            capabilities: {
+              ui: true,
+              streams: [
+                {
+                  name: 'events',
+                  scope: 'profile',
+                  lane: 'events',
+                  inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+                  directions: ['outbound'],
+                  maxFrameBytes: 1024,
+                  maxBufferedBytes: 2048,
+                  maxBytesPerSecond: 4096,
+                },
+              ],
+            },
+          },
+        ],
+        clientDescriptors: [{ rowId: 'ext:acme/round', path: './agnes.client.json' }],
+      },
     }),
   )
   writeFileSync(join(directory, 'index.mjs'), 'export const main = () => {}\n')
+  writeFileSync(join(directory, 'client.js'), 'export {}')
+  writeFileSync(
+    join(directory, 'agnes.client.json'),
+    JSON.stringify({ client: { entry: './client.js', streams: ['events'] } }),
+  )
   const tree = hashDirectory(directory, { exclude: [] })
   const source = { type: 'file' as const, ref: 'file:./round' }
   const checked = inspectStaged({
     dir: directory,
     source,
-    ceiling: ['ui'],
+    ceiling: ['ui', 'streams'],
     fetched: {
       dir: directory,
       version: '1.0.0',
@@ -54,7 +85,7 @@ function currentFixture() {
     },
   })
   const lock = emptyLock('local-dev', '0.1.0')
-  lock.policySnapshot.capabilityCeiling = ['ui']
+  lock.policySnapshot.capabilityCeiling = ['ui', 'streams']
   lock.resolvedProfileHash = `sha256-${'0'.repeat(64)}`
   lock.seams = Object.fromEntries(
     ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals'].map((name) => [
@@ -104,6 +135,9 @@ it('shares an ordinary in-flight read, then verifies bytes again even without a 
   ])
   expect(first).toBe(second)
   expect(Object.isFrozen(first.packages)).toBe(true)
+  const warm = await f.manager.inventory(f.profileDir)
+  expect(warm).toEqual(first)
+  expect(await f.manager.inventory(f.profileDir, { fresh: true })).toEqual(first)
   writeFileSync(join(f.directory, 'index.mjs'), 'changed bytes')
   const failures = await Promise.allSettled([
     f.manager.inventory(f.profileDir),
@@ -312,4 +346,52 @@ it.each([
   await manager.remove(profileDir, id)
   expect((await manager.inventory(profileDir)).packages).toEqual([])
   expect(existsSync(directory)).toBe(false)
+})
+
+// The immutable tree is unchanged; older normalization lost only the client stream grants.
+it('opens an earlier reviewed snapshot without granting newly discovered streams, then requires a reviewed update', async () => {
+  const f = currentFixture()
+  const entry = f.lock.packages[f.id]
+  assert(entry?.contributions && entry.trustDecision)
+  entry.contributions = entry.contributions.map((row) => {
+    if (!('client' in row) || !row.client) return row
+    const { streams: _streams, ...client } = row.client
+    return { ...row, client }
+  })
+  const priorHash = capabilityHash(entry)
+  entry.trustDecision = { ...entry.trustDecision, capabilityHash: priorHash }
+  writeLock(f.profileDir, f.lock)
+  const old = (await f.manager.inventory(f.profileDir)).packages[0]
+  assert(old)
+  expect(old.trusted).toBe(true)
+  expect(old.capabilityHash).toBe(priorHash)
+  expect(old.contributions.every((row) => !('client' in row) || !row.client?.streams)).toBe(true)
+  const source = parseSource(`file:${f.directory}`)
+  const preview = await f.manager.inspect(f.profileDir, source)
+  assert(preview.capabilityHash)
+  expect(preview.capabilityHash).not.toBe(priorHash)
+  expect(
+    preview.contributions.some((row) => 'client' in row && row.client?.streams?.includes('events')),
+  ).toBe(true)
+  await f.manager.update(f.profileDir, f.id, source, {
+    expectedIntegrity: preview.integrity,
+    expectedInstalledIntegrity: old.entry.integrity,
+    activation: {
+      expectedInstalledIntegrity: old.entry.integrity,
+      trust: { integrity: preview.integrity, capabilityHash: preview.capabilityHash },
+    },
+  })
+  const updated = (await f.manager.inventory(f.profileDir)).packages[0]
+  assert(updated)
+  expect(updated).toMatchObject({ trusted: true, enabled: true, capabilityHash: preview.capabilityHash })
+  expect(updated.contributions).toEqual(preview.contributions)
+  const changed = structuredClone(f.lock)
+  const changedEntry = changed.packages[f.id]
+  assert(changedEntry)
+  changedEntry.contributions = preview.contributions.map((row) =>
+    'client' in row && row.client ? { ...row, client: { ...row.client, streams: ['unreviewed'] } } : row,
+  )
+  expect(() => readInventory(changed, { dataDir: f.root, profileDir: f.profileDir })).toThrow(
+    'metadata differs',
+  )
 })

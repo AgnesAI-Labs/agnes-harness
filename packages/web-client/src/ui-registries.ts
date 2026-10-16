@@ -131,10 +131,36 @@ export type HomeEntry = Readonly<{
   /** Optional quiet second label beside the title, e.g. an abbreviation. */
   subtitleKey?: string
   order: number
+  /** Omitted placement preserves the secondary overflow behavior. */
+  placement?: 'primary' | 'secondary'
   badge?: HomeEntryBadge
   component: ComponentType<{ context: UiExtensionContext }>
 }>
-export const homeEntries = new UiExtensionRegistry<HomeEntry>()
+export class HomeEntryRegistry extends UiExtensionRegistry<HomeEntry> {
+  override register(entry: HomeEntry): () => void {
+    if (entry.placement !== undefined && entry.placement !== 'primary' && entry.placement !== 'secondary')
+      throw new Error('Invalid home placement')
+    const entries = this.entries()
+    if (
+      entries.length >= 64 ||
+      (entry.placement === 'primary' && entries.filter((item) => item.placement === 'primary').length >= 32)
+    )
+      throw new Error('Home entry registration limit exceeded')
+    return super.register(entry)
+  }
+}
+export const homeEntries = new HomeEntryRegistry()
+
+/** Primary entries never overflow; legacy secondary entries keep the three-entry threshold. */
+export function homeEntryGroups(entries: readonly HomeEntry[]) {
+  const sorted = [...entries].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id, 'en'))
+  const primary = sorted.filter((entry) => entry.placement === 'primary')
+  const secondary = sorted.filter((entry) => entry.placement !== 'primary')
+  return {
+    inline: [...primary, ...(secondary.length <= 3 ? secondary : [])],
+    more: secondary.length > 3 ? secondary : [],
+  }
+}
 
 export type HomePageSelection = Readonly<{ id: string; selection?: unknown }>
 /**

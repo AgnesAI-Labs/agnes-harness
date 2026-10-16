@@ -7,7 +7,9 @@
  */
 export const PUBLIC_PACKAGE_NAME = '@agnes/harness'
 export const PUBLIC_BIN = 'agh'
-export const PUBLIC_PACKAGE_VERSION = '0.1.0-alpha.0'
+export { PUBLIC_PACKAGE_VERSION } from '../../packages/cli/tools/release-version.mjs'
+
+import { PUBLIC_PACKAGE_VERSION } from '../../packages/cli/tools/release-version.mjs'
 export const PUBLIC_NODE_RANGE = '>=24.10'
 
 /** Platforms a release tarball may contain. Each pack includes the host triple it was built on. */

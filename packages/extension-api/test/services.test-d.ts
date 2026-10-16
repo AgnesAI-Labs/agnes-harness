@@ -13,7 +13,12 @@ describe('service context surface', () => {
     expectTypeOf<keyof ServiceContext>().toEqualTypeOf<
       | 'childJobs'
       | 'session'
+      | 'sessionAccess'
       | 'sandbox'
+      | 'scope'
+      | 'admission'
+      | 'store'
+      | 'wake'
       | 'actor'
       | 'source'
       | 'requestId'
@@ -27,6 +32,9 @@ describe('service context surface', () => {
       | 'timeoutMs'
       | 'log'
       | 'platform'
+    >()
+    expectTypeOf<NonNullable<ServiceContext['sessionAccess']>['requireRead']>().toEqualTypeOf<
+      (sessionId: string) => Promise<void>
     >()
     expectTypeOf<ToolPolicyInput['workspaceRoot']>().toEqualTypeOf<string>()
     expectTypeOf<LoopContext['session']>().toEqualTypeOf<SessionRef>()

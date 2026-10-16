@@ -39,6 +39,7 @@ import type {
 } from '@agnes/extension-api'
 import { ProviderError } from '@agnes/extension-api'
 import type { Actor, ApprovalMode, Provider, SessionStart } from '@agnes/protocol'
+import { isProfileDecisionJournal } from '@agnes/protocol'
 import { recoverChildCompletions } from './child/completion-notice.js'
 import { KernelChildren } from './child/factory.js'
 import { bindChildFactory } from './child/sessions.js'
@@ -182,11 +183,14 @@ export type SessionOptions = {
   actor: Actor
   preset?: PresetView
   resolvedProfileHash: string | null
+  resolvedPresetHash?: string
   /** The authorization-relevant part of the profile; durable approval grants bind to it, not to the whole hash. */
   policyDigest?: string | null
   seams?: Partial<SeamImplementations>
   cwd: string
   writerRunId: string
+  historySignal?: AbortSignal
+  onHistoryProgress?: (progress: { verifiedSeq: number; lastSeq: number }) => void
   lane?: string
   /** Host runtime identity carried unchanged into the assembled session. */
   workspaceRuntime?: SessionWorkspaceRuntime
@@ -205,6 +209,7 @@ export type SessionOptions = {
    * before the caller writes. For an importer filling the ledger verbatim: native rows point at each
    * other by sequence number. A resumed session ignores this and gets its hooks as always.
    */
+  requireNew?: boolean
   skipSessionStartHooks?: boolean
   /** Written into a new session's session/start; an importer's record of where the ledger came from. */
   imported?: SessionStart['imported']
@@ -380,6 +385,8 @@ export class Kernel {
   private closing?: Promise<void>
 
   session(key: SessionKey, so: SessionOptions): Promise<SessionImpl> {
+    if (isProfileDecisionJournal(key))
+      return Promise.reject(new CoreError('E_ENVELOPE', 'Reserved decision journal scope'))
     if (this.construction.signal.aborted) return Promise.reject(new CoreError('E_CLOSED', 'kernel closed'))
     const creating = this.openSession(key, so)
     this.creating.add(creating)
@@ -406,6 +413,7 @@ export class Kernel {
     // silently runs that caller's work as the first caller's principal. The same holds one field
     // over for the writer lease, the working directory, the lane and the preset — a mismatch is a
     // deployment error, and it fails closed rather than resolving in the first caller's favour.
+    if (existing && so.requireNew) throw new CoreError('E_LANE_BUSY', 'import target is not fresh')
     if (existing) {
       const want = {
         actor: so.actor.id,
@@ -470,6 +478,7 @@ export class Kernel {
         agnesVersion: this.o.agnesVersion ?? '0.0.0',
         preset: preset.name,
         resolvedProfileHash: so.resolvedProfileHash,
+        ...(so.resolvedPresetHash ? { resolvedPresetHash: so.resolvedPresetHash } : {}),
         writerRunId: so.writerRunId,
         lane,
         loop: selection,
@@ -505,6 +514,10 @@ export class Kernel {
     try {
       tracked = await openTracked({
         storage: this.o.storage,
+        verification: {
+          ...(so.onHistoryProgress ? { onProgress: so.onHistoryProgress } : {}),
+          ...(so.historySignal ? { signal: so.historySignal } : {}),
+        },
         key,
         writerRunId: so.writerRunId,
         ttlMs: this.o.leaseTtlMs ?? 30_000,
@@ -526,6 +539,8 @@ export class Kernel {
     let memory: import('@agnes/extension-api').MemorySession | undefined
     let factoryPort: HookPort | undefined
     try {
+      so.historySignal?.throwIfAborted()
+      if (so.requireNew && !log.created) throw new CoreError('E_LANE_BUSY', 'import target is not fresh')
       let systemPrompt: import('./request/system-prompt.js').PinnedSystemPrompt | undefined
       let loopFactory: LoopFactory
       const promptPort = so.systemPrompt ?? this.o.systemPrompt
@@ -639,6 +654,7 @@ export class Kernel {
         clock: this.clock,
         actor: so.actor,
         resolvedProfileHash: so.resolvedProfileHash,
+        ...(so.resolvedPresetHash ? { resolvedPresetHash: so.resolvedPresetHash } : {}),
         ...(so.policyDigest ? { policyDigest: so.policyDigest } : {}),
         ...(so.imported ? { imported: so.imported } : {}),
         cwd: so.cwd,
@@ -668,12 +684,16 @@ export class Kernel {
       if (children instanceof KernelChildren) bindChildFactory(session.key, children)
       const sessionHooks = this.createHookEngine(logger, preset)
       let resumed = false
+      const creationSignal = AbortSignal.any([
+        this.construction.signal,
+        ...(so.historySignal ? [so.historySignal] : []),
+      ])
       const cancelCreation = () => {
         void session.close().catch(() => undefined)
       }
-      this.construction.signal.addEventListener('abort', cancelCreation, { once: true })
+      creationSignal.addEventListener('abort', cancelCreation, { once: true })
       try {
-        this.construction.signal.throwIfAborted()
+        creationSignal.throwIfAborted()
         if (this.o.hooksFactory) {
           const hooks = this.o.hooksFactory(session, sessionHooks)
           if (
@@ -693,32 +713,36 @@ export class Kernel {
           // live without adding a second dispatch beside a fitted hooksFactory port.
           session.hooks = lifecyclePort(session, sessionHooks, logger)
         }
+        so.historySignal?.throwIfAborted()
         const reason = forked ? 'new' : session.state.session ? 'resume' : 'new'
         resumed = reason === 'resume'
         await session.start()
-        this.construction.signal.throwIfAborted()
+        creationSignal.throwIfAborted()
         if (!(so.skipSessionStartHooks && reason === 'new'))
           await session.hooks.sessionStart?.({ reason, preset: session.preset.name, cwd: so.cwd })
-        this.construction.signal.throwIfAborted()
+        creationSignal.throwIfAborted()
+
+        if (registersRebuilt) await session.diag('registers-rebuilt', { sessionKey: key })
+        if (log.recovery) {
+          const [lastRecovery] = await log.scan({
+            type: 'x/core/ledger-tail-recovered',
+            order: 'desc',
+            limit: 1,
+          })
+          if (
+            (lastRecovery?.data as { diagnosticId?: unknown } | undefined)?.diagnosticId !==
+            log.recovery.diagnosticId
+          )
+            await log.append([session.ev('x/core/ledger-tail-recovered', log.recovery, { ignorable: true })])
+        }
+        this.sessions.set(key, session)
+        creationSignal.throwIfAborted()
+        if (resumed) await recoverChildCompletions(session)
+        creationSignal.throwIfAborted()
+        return session
       } finally {
-        this.construction.signal.removeEventListener('abort', cancelCreation)
+        creationSignal.removeEventListener('abort', cancelCreation)
       }
-      if (registersRebuilt) await session.diag('registers-rebuilt', { sessionKey: key })
-      if (log.recovery) {
-        const [lastRecovery] = await log.scan({
-          type: 'x/core/ledger-tail-recovered',
-          order: 'desc',
-          limit: 1,
-        })
-        if (
-          (lastRecovery?.data as { diagnosticId?: unknown } | undefined)?.diagnosticId !==
-          log.recovery.diagnosticId
-        )
-          await log.append([session.ev('x/core/ledger-tail-recovered', log.recovery, { ignorable: true })])
-      }
-      this.sessions.set(key, session)
-      if (resumed) await recoverChildCompletions(session)
-      return session
     } catch (error) {
       if (factoryPort) this.factoryHooks.delete(factoryPort)
       const failures: unknown[] = [error]

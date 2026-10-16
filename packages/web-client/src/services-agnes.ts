@@ -1,5 +1,10 @@
 import { type Context, Service } from '@agnes/cordis'
-import type { ClientEffectCaller, ClientServiceCaller, HostAgnesClient } from './service-contracts.js'
+import type {
+  ClientEffectCaller,
+  ClientProfileCaller,
+  ClientServiceCaller,
+  HostAgnesClient,
+} from './service-contracts.js'
 
 export class AgnesClientService extends Service {
   constructor(
@@ -7,6 +12,7 @@ export class AgnesClientService extends Service {
     readonly client: HostAgnesClient,
     readonly serviceCaller?: ClientServiceCaller,
     readonly effectCaller?: ClientEffectCaller,
+    readonly profileCaller?: ClientProfileCaller,
   ) {
     super(ctx, 'agnes')
   }

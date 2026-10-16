@@ -19,13 +19,23 @@ export function createWorkerServiceAuthority(): ServiceAuthority {
         throw new Error('invalid service authority')
       const record = inspected.value as Record<string, unknown>
       if (
-        !Object.keys(record).every((key) => ['kind', 'source', 'subjectCredential', 'grants'].includes(key))
+        !Object.keys(record).every((key) =>
+          ['kind', 'source', 'subjectCredential', 'grants', 'sessionReads'].includes(key),
+        )
       )
         throw new Error('invalid service authority')
       if (
         record.kind !== 'surface-service' ||
         typeof record.source !== 'string' ||
         !SOURCE.test(record.source)
+      )
+        throw new Error('invalid service authority')
+      const sessionReads = record.sessionReads ?? []
+      if (
+        !Array.isArray(sessionReads) ||
+        sessionReads.length > 16 ||
+        new Set(sessionReads).size !== sessionReads.length ||
+        sessionReads.some((id) => typeof id !== 'string' || id.length < 1 || id.length > 512)
       )
         throw new Error('invalid service authority')
       const subject = record.subjectCredential
@@ -62,6 +72,7 @@ export function createWorkerServiceAuthority(): ServiceAuthority {
         throw new Error('invalid service authority')
       return Object.freeze({
         source: record.source,
+        ...(record.sessionReads !== undefined ? { sessionReads: Object.freeze([...sessionReads]) } : {}),
         subjectCredential: structuredClone(subject),
         grants: Object.freeze(
           record.grants.map((grant) => Object.freeze(structuredClone(grant))) as Array<{

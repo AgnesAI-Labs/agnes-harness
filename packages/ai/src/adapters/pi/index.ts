@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { ModelAdapterAttemptObservation } from '@agnes/extension-api'
-import type { ModelRecord, RequestBody, ResponseMeta, RouteDecl } from '@agnes/protocol'
+import type { InferenceEvent, ModelRecord, RequestBody, ResponseMeta, RouteDecl } from '@agnes/protocol'
 import { modelImageInputError } from '@agnes/protocol'
 import { createDeploymentFetch, ensureDeploymentProxy } from '@agnes/system-node/deployment-network'
 import type {
@@ -22,6 +22,7 @@ import {
   retryAttemptFresh,
 } from '../../retry.js'
 import { providerPayloadImageError } from './input-limits.js'
+import { networkEvent, networkFailure, watchResponse } from './network.js'
 import { probeInference } from './probe.js'
 import { probeModelsEndpoint } from './probe-models.js'
 import { AGNES_AI_BASE_URL } from './providers/agnes-ai.js'
@@ -466,6 +467,7 @@ export class PiAdapter extends WireAdapter {
     ])
     // `wire` belongs to one attempt: an abandoned attempt's late response must not overwrite the
     // metadata of the attempt that replaced it.
+    const failures = new WeakMap<ResponseMeta, NonNullable<ReturnType<typeof networkFailure>>>()
     const fetchBody =
       (wire: ResponseMeta, observed: ModelAdapterAttemptObservation): typeof globalThis.fetch =>
       async (input, init) => {
@@ -483,9 +485,19 @@ export class PiAdapter extends WireAdapter {
         observed.adapter.endpoint = `${new URL(request.url).origin}${new URL(request.url).pathname}`
         observed.status = 'sent'
         opts.reportDispatch?.()
-        const response = await network.fetch(request)
-        Object.assign(wire, responseMeta(response))
-        return response
+        try {
+          failures.delete(wire)
+          const response = await network.fetch(request)
+          Object.assign(wire, responseMeta(response))
+          return watchResponse(response, (error) => {
+            const failure = networkFailure(error, 'body')
+            if (failure) failures.set(wire, failure)
+          })
+        } catch (error) {
+          const failure = networkFailure(error, 'connect')
+          if (failure) failures.set(wire, failure)
+          throw error
+        }
       }
     // Two deadlines, both enforced here rather than by the wire library, and both merged with the
     // caller's own signal into one controller so the request below sees a single cancellation.
@@ -551,6 +563,17 @@ export class PiAdapter extends WireAdapter {
       }
       let authRecoveryAttempted = false
       for (;;) {
+        if (inner.signal.aborted) {
+          const aborted = opts.signal.aborted
+          yield {
+            type: 'error',
+            reason: aborted ? 'aborted' : 'error',
+            code: aborted ? 'ABORTED' : 'TIMEOUT',
+            message: aborted ? 'aborted' : 'network deadline',
+            retryable: !aborted,
+          }
+          return
+        }
         // Per attempt, not shared: two streams in flight in one process must not draw tool-call
         // ordinals from one counter.
         let ordinal = 0
@@ -676,7 +699,12 @@ export class PiAdapter extends WireAdapter {
               return
             }
             if (next === ABORTED || next.done) break
-            for (const w of translateEvent(next.value, requestModel, nextOrdinal, wire)) {
+            for (const translated of translateEvent(next.value, requestModel, nextOrdinal, wire)) {
+              const failure = failures.get(wire)
+              const w =
+                translated.type === 'error' && translated.reason !== 'aborted' && failure
+                  ? { ...translated, ...networkEvent(failure) }
+                  : translated
               if (
                 w.type === 'usage' &&
                 Object.values(w.tokens).some((value) => typeof value === 'number' && value > 0)
@@ -736,9 +764,41 @@ export class PiAdapter extends WireAdapter {
             if (retryAfter !== undefined) break
           }
         } catch (error) {
-          if (!payloadError) throw error
-          yield { type: 'error', reason: 'error', code: 'FORMAT', message: payloadError, retryable: false }
-          return
+          if (payloadError) {
+            yield { type: 'error', reason: 'error', code: 'FORMAT', message: payloadError, retryable: false }
+            return
+          }
+          const failure = failures.get(wire) ?? networkFailure(error, 'stream')
+          const event: Extract<InferenceEvent, { type: 'error' }> = inner.signal.aborted
+            ? {
+                type: 'error',
+                reason: opts.signal.aborted ? 'aborted' : 'error',
+                code: opts.signal.aborted ? 'ABORTED' : 'TIMEOUT',
+                message: opts.signal.aborted ? 'aborted' : 'network timeout',
+                retryable: !opts.signal.aborted,
+              }
+            : failure
+              ? networkEvent(failure)
+              : {
+                  type: 'error',
+                  reason: 'error',
+                  code: 'TRANSPORT',
+                  message: 'unclassified transport failure',
+                  retryable: false,
+                }
+          if (
+            !emitted &&
+            event.retryable &&
+            opts.retry !== false &&
+            attempt < this.maxRetries &&
+            !inner.signal.aborted
+          ) {
+            retryAfter = nextRetryDelay(attempt + 1)
+            retryError = event
+          } else {
+            yield { ...event, ...withResponse(wire) }
+            return
+          }
         } finally {
           // Abandoning an iterator without closing it leaves the previous attempt's request running
           // beside the retry. The result is not awaited: a hung generator's `return` settles only

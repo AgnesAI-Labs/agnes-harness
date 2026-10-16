@@ -179,6 +179,10 @@ export class RemoteSession {
     return this.link.command('fileUpload', input)
   }
 
+  deliverSystemInput(params: Record<string, unknown>): Promise<number> {
+    return this.link.command('deliverSystemInput', params) as Promise<number>
+  }
+
   enqueue(target: 'next-turn' | 'next-step', msg: unknown): Promise<number> {
     return this.link.command('enqueue', { target, msg }) as Promise<number>
   }
@@ -276,6 +280,22 @@ export class RemoteSession {
       'systemPrompt.preview',
       {},
     )) as import('@agnes/protocol').SystemPromptSnapshot
+  }
+
+  verifyHistory(
+    options: {
+      signal?: AbortSignal
+      onProgress?: (progress: { verifiedSeq: number; lastSeq: number }) => void
+    } = {},
+  ): Promise<number> {
+    return this.link.command(
+      'verifyHistory',
+      {},
+      {
+        ...(options.signal ? { historySignal: options.signal } : {}),
+        ...(options.onProgress ? { onHistoryProgress: options.onProgress } : {}),
+      },
+    ) as Promise<number>
   }
 
   async scan(q: unknown): Promise<EventEnvelope[]> {

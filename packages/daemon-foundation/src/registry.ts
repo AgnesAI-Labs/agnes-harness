@@ -37,6 +37,8 @@ export interface Registry<Entry> {
     bundles?: readonly string[]
     loop?: LoopSelection
     credential?: unknown
+    historySignal?: AbortSignal
+    onHistoryProgress?: (progress: { verifiedSeq: number; lastSeq: number }) => void
   }): Promise<Entry>
   fork(o: {
     parent: string

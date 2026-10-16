@@ -33,7 +33,9 @@
     "./local/methods/doctor": "./src/local/methods/doctor.ts",
     "./local/methods/prompt-trace": "./src/local/methods/prompt-trace.ts",
     "./local/methods/fact-chain": "./src/local/methods/fact-chain.ts",
-    "./local/methods/feedback": "./src/local/methods/feedback.ts"
+    "./local/methods/feedback": "./src/local/methods/feedback.ts",
+    "./streams": "./src/streams/index.ts",
+    "./local/methods/profile-services": "./src/local/methods/profile-services.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",
@@ -48,7 +50,9 @@
     "@agnes/protocol": "workspace:*",
     "@agnes/worker-runtime": "workspace:*",
     "@agnes/observability": "workspace:*",
-    "@agnes/extension-api": "workspace:*"
+    "@agnes/extension-api": "workspace:*",
+    "ws": "8.21.3",
+    "@agnes/plugin-streams": "workspace:*"
   },
   "license": "Apache-2.0",
   "devDependencies": {
@@ -57,7 +61,6 @@
     "@agnes/package-manager": "workspace:*",
     "@agnes/sdk": "workspace:*",
     "@agnes/system-node": "workspace:*",
-    "@types/ws": "8.18.1",
-    "ws": "8.21.3"
+    "@types/ws": "8.18.1"
   }
 }

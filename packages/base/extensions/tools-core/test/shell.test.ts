@@ -52,7 +52,11 @@ describe('shell', () => {
     const ctx = fakeToolContext({ exec: (cmd) => ({ code: 0, stdout: `ran ${cmd[1]}`, stderr: '' }) })
     const r = await shellTool.execute({ command: 'echo hi' }, ctx)
     expect(ctx.calls.exec[0]).toEqual([SHELL_SENTINEL, 'echo hi'])
-    expect(ctx.calls.execOpts[0]).toEqual({ cwd: ctx.cwd, timeoutMs: ctx.timeoutMs })
+    expect(ctx.calls.execOpts[0]).toEqual({
+      cwd: ctx.cwd,
+      timeoutMs: ctx.timeoutMs,
+      env: { PYTHONUNBUFFERED: '1', PYTHONUTF8: '1' },
+    })
     expect(r.isError).toBeUndefined()
     expect(r.content[0]).toEqual({ type: 'text', text: 'ran echo hi\n[exit 0]' })
   })
@@ -258,7 +262,7 @@ describe('shell timeout', () => {
   it.each([
     ['the captured output, then the marker', { code: -1, stdout: 'part', stderr: '' }, 'part\n'],
     ['stderr before the marker', { code: -1, stdout: 'o', stderr: 'e' }, 'o\n[stderr]\ne\n'],
-    ['no output at all, just the marker', { code: -1, stdout: '', stderr: '' }, ''],
+    ['no output at all, with guidance and the marker', { code: -1, stdout: '', stderr: '' }, ''],
     [
       'the marker even when the command trapped the kill and exited 0',
       { code: 0, stdout: 'x', stderr: '' },
@@ -270,10 +274,17 @@ describe('shell timeout', () => {
       'x\n[output truncated by sandbox]\n',
     ],
   ])('reports %s', async (_name, result, before) => {
-    const ctx = fakeToolContext({ timeoutMs: 1000, exec: () => ({ ...result, timedOut: true }) })
+    const ctx = fakeToolContext({
+      sessionKey: `timeout-${_name}`,
+      timeoutMs: 1000,
+      exec: () => ({ ...result, timedOut: true }),
+    })
     const r = await shellTool.execute({ command: 'sleep 9' }, ctx)
     expect(r.isError).toBe(true)
-    expect(textOf(r)).toBe(`${before}${marker(1000)}`)
+    expect(textOf(r).startsWith(before)).toBe(true)
+    expect(textOf(r).endsWith(marker(1000))).toBe(true)
+    expect(textOf(r)).toContain('do not rerun it unchanged')
+    if (!result.stdout && !result.stderr) expect(textOf(r)).toContain('printed no output')
     expect(textOf(r)).not.toMatch(/\[exit /)
     expect(textOf(r)).not.toContain('background=true')
   })
@@ -353,4 +364,21 @@ describe('shell without a job registry', () => {
     expect(ctx.calls.exec).toHaveLength(0)
     expect(ctx.calls.jobs).toHaveLength(0)
   })
+})
+
+it('reports measured descendant cleanup and PowerShell wrapper guidance, without claiming a timeout cause', async () => {
+  const original = fakeToolContext({ sessionKey: 'shell-guidance' })
+  const ctx = { ...original, platform: { ...original.platform, shell: 'powershell' as const } }
+  ctx.exec = async () => ({ code: 0, stdout: 'ready', stderr: '', truncated: false, stoppedProcesses: 2 })
+  const result = textOf(await shellTool.execute({ command: 'pwsh -Command echo ready' }, ctx))
+  expect(result).toContain('stopped 2 descendant')
+  expect(result).toContain('omit the extra')
+  expect(result).toMatch(/\[exit 0\]$/)
+  ctx.exec = async () => ({ code: -1, stdout: '', stderr: '', truncated: false, timedOut: true })
+  for (let i = 1; i <= 2; i++) {
+    const timeout = textOf(await shellTool.execute({ command: 'slow' }, ctx))
+    expect(timeout).toContain('printed no output')
+    expect(timeout).toContain('do not rerun it unchanged')
+    if (i === 2) expect(timeout).toContain('timed out 2 times')
+  }
 })

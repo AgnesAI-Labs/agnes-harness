@@ -325,6 +325,7 @@ export function renderPluginView(this: PluginAdminViewContext): void {
             rows={(this.tab === 'installed' ? this.filteredInstalled() : this.state.catalog).filter(
               (item) =>
                 (!this.kind || item.kinds?.includes(this.kind)) &&
+                !item.metadata?.exampleOf &&
                 (!this.category || (item.metadata?.category ?? 'unclassified') === this.category),
             )}
             loading={loading}

@@ -14,6 +14,7 @@ export {
   interactionToolPresentation,
 } from './conversation/interaction-result.js'
 export { ConversationMarkdown, type ConversationMarkdownProps } from './conversation/markdown.js'
+export type { AttachmentReader, AttachmentResource } from './conversation/messages/attachment-image.js'
 export {
   type ProcessStepResult,
   processStepLabel,

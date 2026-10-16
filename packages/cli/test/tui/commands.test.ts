@@ -1,6 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { attachmentLink } from '@agnes/protocol'
 import { createClient } from '@agnes/sdk'
 import { describe, expect, it, vi } from 'vitest'
 import { resourceCapabilityMissing } from '../../src/commands/resources.js'
@@ -111,7 +112,7 @@ async function unstartedApp(
 
 describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
   it('names the session commands, plan mode and package controls', () => {
-    expect(SLASH_COMMANDS).toHaveLength(26)
+    expect(SLASH_COMMANDS).toHaveLength(27)
     expect(SLASH_COMMANDS.map((c) => c.name)).toEqual([
       '/help',
       '/quit',
@@ -130,6 +131,7 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
       '/theme',
       '/model',
       '/yolo',
+      '/attach',
       '/export',
       '/refine',
       '/packages',
@@ -962,4 +964,55 @@ describe('app.ts wiring: key routing through the editor reaches the real command
       await client.close()
     }
   })
+})
+
+it('uploads a CLI path with spaces through bounded original intake and preserves a typed refusal', async () => {
+  const { mkdtemp, writeFile, rm } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const { IncrementalSha256 } = await import('@agnes/protocol')
+  const dir = await mkdtemp(join(tmpdir(), 'agh-cli-attachment-'))
+  try {
+    const bytes = new TextEncoder().encode('synthetic original')
+    await writeFile(join(dir, 'a file.txt'), bytes)
+    const artifact = {
+      sha256: new IncrementalSha256().update(bytes).digest(),
+      size: bytes.length,
+      mime: 'text/plain',
+    }
+    const calls: import('@agnes/protocol').FileUploadRequest[] = []
+    const app = {
+      cwd: dir,
+      session: {
+        id: 's',
+        client: {
+          call: async (_method: string, input: import('@agnes/protocol').FileUploadRequest) => {
+            calls.push(input)
+            if (input.operation === 'start') return { offset: 0 }
+            if (input.operation === 'chunk') return { offset: bytes.length }
+            return {
+              attachment: attachmentLink(artifact, 'a file.txt', {
+                receiptId: '00000000-0000-4000-8000-000000000001',
+              }),
+            }
+          },
+        },
+      },
+    } as unknown as TuiApp
+    expect((await runSlash(app, '/attach a file.txt')).content).toEqual([
+      attachmentLink(artifact, 'a file.txt', { receiptId: '00000000-0000-4000-8000-000000000001' }),
+    ])
+    expect(calls.map((call) => [call.operation, call.destination, call.laneId])).toEqual([
+      ['start', 'original', 'main'],
+      ['chunk', 'original', 'main'],
+      ['finish', 'original', 'main'],
+    ])
+    const error = Object.assign(new Error('refused'), { data: { reason: 'ATTACHMENT_QUOTA' } })
+    app.session.client.call = async () => {
+      throw error
+    }
+    await expect(runSlash(app, '/attach a file.txt')).rejects.toBe(error)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
 })

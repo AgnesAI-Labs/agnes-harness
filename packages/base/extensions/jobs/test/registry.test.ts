@@ -179,3 +179,31 @@ it('keeps backend origin, isolates controls and reports slow or capped output wi
     await jobs.dispose()
   }
 })
+
+it('retains failed cleanup for explicit retry instead of discarding the owned handle', async () => {
+  const jobs = new ShellJobs(),
+    ctx = fakeToolContext({ sessionKey: 'cleanup-retry' })
+  let finish!: (exit: import('@agnes/extension-api').ProcessExit) => void
+  let failing = true
+  ctx.sandbox.openProcess = async () => ({
+    enforcement: { level: 'none', scope: [] },
+    exited: new Promise((resolve) => {
+      finish = resolve
+    }),
+    onOutput: () => () => {},
+    write: async () => {},
+    resize: async () => {},
+    signal: async () => {},
+    close: async () => {
+      if (failing) throw new Error('cleanup failed')
+    },
+  })
+  const job = await jobs.start('server', ctx.cwd, ctx)
+  finish({ code: 0, error: new Error('cleanup failed') })
+  expect((await jobs.wait(ctx, job.id, 10)).status).toBe('failed')
+  await expect(jobs.closeSession(ctx.session.key)).rejects.toThrow('job shutdown failed')
+  expect(jobs.list(ctx)).toHaveLength(1)
+  failing = false
+  await jobs.closeSession(ctx.session.key)
+  expect(jobs.list(ctx)).toEqual([])
+})

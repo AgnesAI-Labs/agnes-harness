@@ -54,6 +54,7 @@ describe('dependency allowlist (dependencies point one way, downward)', () => {
 // therefore 9 here, with channels/bridges still together on 8, which lets every existing and
 // previously approved dependency in the code pass.
 const LAYER: Record<string, number> = {
+  '@agnes/batch': 4, // Application plugin composes public SDK sessions and author contracts.
   '@agnes/memory-file': 2, // File provider implements the pure extension API; Base composes it.
   '@agnes/e2e-web': 11, // Private acceptance client consumes only the public SDK and protocol.
   // Vendored Cordis core and utilities: third-party code, no @agnes layer (web-client-modules WC4).
@@ -61,6 +62,7 @@ const LAYER: Record<string, number> = {
   '@agnes/cordis': -1,
   '@agnes/cordis-loader': 0,
   '@agnes/plugin-runtime': 1,
+  '@agnes/plugin-streams': 2, // Pure authenticated transport shared by worker and daemon.
   '@agnes/web-slots': -1,
   // UI component layer (web-ui component system, spec 2026-09-24): the only package allowed to
   // import antd/@ant-design (enforced by ui-layer.test.ts). Sits just above protocol so it can

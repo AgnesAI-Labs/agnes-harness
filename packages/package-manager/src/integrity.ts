@@ -50,6 +50,7 @@ export function syncDirectory(directory: string): void {
 export function capabilityHash(entry: {
   contributions?: PackageContributionSummary[]
   declaredCapabilities?: PluginCapabilities
+  metadata?: import('@agnes/protocol').PluginMetadata
   dependencies: Record<string, string>
 }): string {
   return snapshotHash({
@@ -57,6 +58,15 @@ export function capabilityHash(entry: {
       c.kind === 'extension' ? { ...c, runtimeSupports: c.runtimeSupports ?? ['in-process'] } : c,
     ),
     dependencies: entry.dependencies,
+    ...(entry.metadata?.category === 'example'
+      ? {
+          example: {
+            exampleOf: entry.metadata.exampleOf,
+            launches: entry.metadata.launches ?? [],
+            pageEntry: entry.metadata.pageEntry,
+          },
+        }
+      : {}),
     ...(entry.declaredCapabilities === undefined ? {} : { declaredCapabilities: entry.declaredCapabilities }),
   })
 }

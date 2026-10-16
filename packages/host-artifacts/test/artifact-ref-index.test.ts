@@ -354,6 +354,19 @@ describe('Computer Use artifact reference index', () => {
       data: { media: { manifest: [{ sha256: later, artifactUri: `artifact://${later}` }] } },
     })
     fixture.row('t', 1, { data: { sha256: later } })
+    fixture.row('s', 3, {
+      type: 'user/message',
+      data: {
+        content: [
+          {
+            type: 'resource_link',
+            uri: `artifact://${indexed}`,
+            mimeType: 'image/png',
+            attachment: { artifact: { sha256: indexed, size: 10, mime: 'image/png' } },
+          },
+        ],
+      },
+    })
     const candidates = new Set([indexed, later, digest(3)])
     const locked = new DatabaseSync(fixture.file)
     open.push(locked)
@@ -361,9 +374,10 @@ describe('Computer Use artifact reference index', () => {
     await expect(verifyRootsUnderLedgerLock({ ledger: locked, index, candidates })).resolves.toMatchObject({
       ledger: new Set([indexed, later]),
       requestMedia: new Set([later]),
+      attachments: new Set([indexed]),
     })
     locked.exec('ROLLBACK')
-    for (let seq = 3; seq <= 2003; seq += 1) fixture.row('s', seq)
+    for (let seq = 4; seq <= 2003; seq += 1) fixture.row('s', seq)
     locked.exec('BEGIN IMMEDIATE')
     await expect(verifyRootsUnderLedgerLock({ ledger: locked, index, candidates })).resolves.toBeUndefined()
     locked.exec('ROLLBACK')
@@ -391,6 +405,8 @@ describe('Computer Use artifact reference index', () => {
     locked.exec('BEGIN IMMEDIATE')
     await expect(verifyRootsUnderLedgerLock({ ledger: locked, index, candidates })).resolves.toBeUndefined()
     locked.exec('ROLLBACK')
+    await catchUpArtifactRefIndex({ ledger: fixture.ledger(), index, signal: neverAborted })
+    expect((await readIndexedRoots(index, candidates)).attachments).toEqual(new Set([indexed]))
   })
 
   it('declines under the lock when a session was re-created with more rows than its cursor', async () => {

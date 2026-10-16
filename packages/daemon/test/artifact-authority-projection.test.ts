@@ -274,6 +274,39 @@ describe('artifact authority ledger projection', () => {
     cancelled.abort()
     await cold.observe('other', event, cancelled.signal)
     expect(f.index.resolve('other', 'main', f.sha256)).toBeUndefined()
+    const { attachmentLink } = await import('@agnes/protocol')
+    await cold.observe(
+      'session-a',
+      {
+        ...event,
+        type: 'user/message',
+        origin: 'principal',
+        data: { content: [attachmentLink(ref, 'original.html')] },
+      },
+      new AbortController().signal,
+    )
+    expect(f.index.resolve('session-a', 'main', f.sha256, ref.mime)?.artifact).toEqual(ref)
+    await cold.observe(
+      'session-a',
+      {
+        ...event,
+        type: 'inbox',
+        register: 'inbox',
+        data: {
+          items: Array.from({ length: 6 }, (_, index) => ({
+            itemId: `queued-${index}`,
+            target: 'next-turn',
+            actor: event.actor,
+            enqueuedAt: event.ts,
+            content: Array.from({ length: 50 }, () =>
+              attachmentLink({ ...ref, mime: 'text/plain' }, 'queued.txt'),
+            ),
+          })),
+        },
+      },
+      new AbortController().signal,
+    )
+    expect(f.index.resolve('session-a', 'main', f.sha256, 'text/plain')?.artifact.mime).toBe('text/plain')
     await f.tables.close()
   })
 

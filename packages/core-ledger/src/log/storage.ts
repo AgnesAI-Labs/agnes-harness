@@ -110,6 +110,8 @@ export interface StorageAdapter {
   renew(key: SessionKey, writerRunId: string, claim?: LeaseClaim): Promise<void>
   release(key: SessionKey, writerRunId: string): Promise<void>
   scan(key: SessionKey, q: ScanQuery): Promise<Event[]>
+  /** Unverified presentation only; never used for execution replay or integrity verification. */
+  scanLean?(key: SessionKey, q: ScanQuery): Promise<Event[]>
   scanIntegrity(key: SessionKey, q: IntegrityScanQuery): Promise<IntegrityRow[]>
   registers(key: SessionKey): Promise<RegisterRow[]>
   /** Remove a session only after Core proves this open created it and storage verifies its writer lease. */

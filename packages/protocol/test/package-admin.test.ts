@@ -23,6 +23,49 @@ const valid = (name: string) =>
   structuredClone(rows.find((row) => row.name === name && row.kind === 'valid').payload)
 
 describe('PM4 management contracts', () => {
+  it('requires explicit digest and trust baselines for every reviewed dependent update', () => {
+    const base = valid('_agnes/v1/packages.update')
+    const activation = {
+      expectedInstalledIntegrity: `sha256-${'1'.repeat(64)}`,
+      expectedActiveIntegrity: null,
+      trust: { integrity: `sha256-${'2'.repeat(64)}`, capabilityHash: '3'.repeat(64) },
+    }
+    const dependent = {
+      id: 'acme/dependent',
+      source: base.source,
+      expectedIntegrity: activation.trust.integrity,
+      activation,
+    }
+    expect(
+      validatePackageAdminCall('_agnes/v1/packages.update', 'params', {
+        ...base,
+        activation,
+        dependents: [dependent],
+      }).ok,
+    ).toBe(true)
+    for (const key of ['activation', 'expectedIntegrity', 'source']) {
+      const incomplete: Record<string, unknown> = { ...dependent }
+      delete incomplete[key]
+      expect(
+        validatePackageAdminCall('_agnes/v1/packages.update', 'params', { ...base, dependents: [incomplete] })
+          .ok,
+      ).toBe(false)
+    }
+    expect(
+      validatePackageAdminCall('_agnes/v1/packages.update', 'params', {
+        ...base,
+        dependents: [{ ...dependent, approved: true }],
+      }).ok,
+    ).toBe(false)
+  })
+  it('serves resource payloads through the same read contract up to the 32 MiB raw cap', () => {
+    const base64 = Buffer.alloc(32 * 1024 * 1024).toString('base64')
+    expect(validateMethod('_agnes/v1/clientModules.read', 'result', { found: true, base64 }).ok).toBe(true)
+    expect(
+      validateMethod('_agnes/v1/clientModules.read', 'result', { found: true, base64: `${base64}A` }).ok,
+    ).toBe(false)
+  })
+
   it('validates all checked-in contracts through production entry points', () => {
     const result = runFixtureFiles([file])
     expect(result.failed).toEqual([])
@@ -33,7 +76,8 @@ describe('PM4 management contracts', () => {
     // the generated-schema parity table. The current set also includes generation status and
     // capability/source authoring boundaries.
     // Five presentation rows preserve valid metadata and reject invalid display/authority fields.
-    expect(result.total).toBe(636)
+    // Three binding rows cover history-only session ownership and reject invalid availability/owner.
+    expect(result.total).toBe(639)
     expect(result.skipped).toBe(0)
   })
   it('requires explicit classification, permission and command identity for every management method', () => {
@@ -194,6 +238,20 @@ describe('PM4 management contracts', () => {
         {
           rowId: 'web:acme/ui',
           moduleName: 'ui',
+          binding: {
+            lifetime: 'profile',
+            owner: 'web:acme/ui',
+            packageId: 'acme/ui',
+            integrity: 'sha256-revision',
+            profileId: 'test',
+            activationId: 'activation-1',
+            availability: 'active',
+          },
+          homeEntries: [{ id: 'board', placement: 'primary' }],
+          examplePages: ['scene'],
+          exampleOf: 'acme/host',
+          pageEntry: 'scene',
+          streams: ['acme.events'],
           packageId: 'acme/ui',
           enabled: true,
           phase: 'ready',
@@ -206,6 +264,11 @@ describe('PM4 management contracts', () => {
     expect(withRows.rows?.[0]?.intelligentComponents).toEqual(intelligentComponents)
     expect(withRows.modules[0]?.contentDigest).toBe(contentDigest)
     expect(withRows.rows?.[0]?.contentDigest).toBe(contentDigest)
+    expect(withRows.rows?.[0]?.streams).toEqual(['acme.events'])
+    expect(withRows.rows?.[0]?.binding).toMatchObject({ lifetime: 'profile', activationId: 'activation-1' })
+    expect(withRows.rows?.[0]?.homeEntries).toEqual([{ id: 'board', placement: 'primary' }])
+    expect(withRows.rows?.[0]?.examplePages).toEqual(['scene'])
+    expect(withRows.rows?.[0]?.exampleOf).toBe('acme/host')
     expect(withRows.rowAliases).toEqual({ 'web:acme/legacy': 'web:acme/ui' })
 
     const compatibility = projectClientModuleRows({

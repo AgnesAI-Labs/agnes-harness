@@ -499,6 +499,7 @@ export function createSandboxDispatchExec(local: ExecAdapter, slot: SandboxProvi
         stderr: result.stderr,
         truncated: result.truncated,
         timedOut: result.timedOut,
+        ...(result.stoppedProcesses === undefined ? {} : { stoppedProcesses: result.stoppedProcesses }),
         ...(result.signal === undefined ? {} : { signal: result.signal }),
       }
     },

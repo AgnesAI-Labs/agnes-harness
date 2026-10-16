@@ -294,6 +294,15 @@
     },
     {
       "path": "packages/core-ledger/tsconfig.testkit.json"
+    },
+    {
+      "path": "packages/plugin-streams"
+    },
+    {
+      "path": "packages/batch"
+    },
+    {
+      "path": "packages/batch/tsconfig.test.json"
     }
   ]
 }

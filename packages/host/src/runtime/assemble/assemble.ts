@@ -83,7 +83,7 @@ async function mountTree(ctx: AssemblyContext, { pkgs, proc, presets }: Foundati
   const workspaceRuntime = createWorkspaceRuntimeFactory(ctx, pkgs, proc, presets, seamContexts, seams)
   const skillState = createSkillState(ctx, proc)
   const bootRows = buildBootRows(ctx, pkgs, presets, seamContexts)
-  const rowHosts = createRowHosts(ctx, pkgs, workspaceRuntime)
+  const rowHosts = createRowHosts(ctx, pkgs, workspaceRuntime, proc)
   const runtimeTarget = await mountRuntimeTarget(ctx, {
     pkgs,
     proc,
@@ -102,6 +102,9 @@ async function mountTree(ctx: AssemblyContext, { pkgs, proc, presets }: Foundati
     platform: proc.adapters.platform,
     retention: seamContexts.retention,
     artifacts: { put: (bytes, meta) => seams.artifacts.put(bytes, { mime: meta.mime, name: meta.name }) },
+    ...(seams.artifacts.attachments
+      ? { pendingAttachments: () => seams.artifacts.attachments!.pendingRoots() }
+      : {}),
     rollback: ctx.rollback,
   })
   ctx.say('seams.assembled', { seams: ctx.profile.seams, fsDigest: proc.adapters.fs.fence().digest })
@@ -202,6 +205,9 @@ async function mountExtensions(ctx: AssemblyContext, f: Foundation, t: Tree, c: 
   // torn down, so the tree has to go before the extension host does, or every revoke fails.
   // Closing twice is a no-op, so the earlier registration still covers a half-finished assembly.
   ctx.rollback.push('runtime-target-tree', () => t.runtimeTarget.publisher.close())
+  // Managed shutdown still needs the current plugin registrations and streams. Drain it before
+  // disposing the tree; the earlier registration also protects partially assembled Hosts.
+  ctx.rollback.push('profile-managed-drain', () => f.proc.profileManaged.close())
   return { host, rows, skillRefresh }
 }
 type Extensions = Awaited<ReturnType<typeof mountExtensions>>
@@ -219,16 +225,18 @@ function publish(ctx: AssemblyContext, f: Foundation, t: Tree, c: Core, e: Exten
       rowExtensions.replacedBy,
     )
   ctx.say('host.ready', { hash: ctx.profile.hash, extensions: extensionStatus().length })
-  const { servicesInvocation, sessionConfiguration } = createHostServices(ctx, {
+  const { servicesInvocation, sessionConfiguration, profileServices } = createHostServices(ctx, {
     proc: f.proc,
     kernel: c.kernelStage.kernel,
     host: e.host,
+    publishProfileCurrent: t.runtimeTarget.publishProfileCurrent,
     seams: t.seams,
   })
   return {
     memory: c.kernelStage.memory,
     activationBarrier: ctx.activationBarrier,
     approvalGrants: t.approvalGrantControl.management,
+    profileServices,
     callService: servicesInvocation.call,
     inspectService: servicesInvocation.inspect,
     prepareService: servicesInvocation.prepare,

@@ -640,27 +640,25 @@ describe('a process that dies around a side call', () => {
     }
   })
 
-  it('(e) a reopen that closes the interrupted turn (damaged tail) settles the call as unknown', async () => {
+  it('(e) a damaged SQLite tail refuses recovery without settling or resending its side call', async () => {
     const dataDir = scratch()
     const endpoint = new Endpoint()
     endpoint.behaviour = 'stall'
-    let replay: SideCallResult | undefined
-    const plan = script(
-      async (port, signal) => {
-        await settledWith(call(port, 'e-1', signal))
-        throw new Error('process ended')
-      },
-      async (port, signal) => {
-        replay = await call(port, 'e-1', signal)
-        return undefined
-      },
-    )
+    const plan = script(async (port, signal) => {
+      await settledWith(call(port, 'e-1', signal))
+      throw new Error('process ended')
+    })
     const first = await boot(dataDir, endpoint, plan)
     const session = await first.open('crash-e')
     await enqueue(session, 'decide')
     void continueTurn(session).catch(() => undefined)
     await endpoint.entering(1)
-    // A torn last row makes the reopen close the turn instead of continuing it.
+    const pending = await rowsOf(session)
+    expect(forEffect(pending, 'effect/intent', 'e-1')).toHaveLength(1)
+    expect(forEffect(pending, 'effect/settled', 'e-1')).toEqual([])
+    expect(costs(pending)).toEqual([])
+    // SQLite must verify the complete ledger before recovery. Unlike an ordinary interrupted
+    // call (cases a/b), corrupt evidence is preserved and the open is refused, not repaired.
     await session.d.log.append([session.ev('x/test/torn-tail', { pending: true }, { ignorable: true })])
     const damagedSeq = session.lastSeq
     await crash(first, session)
@@ -671,31 +669,37 @@ describe('a process that dies around a side call', () => {
       damagedSeq,
     )
     db.close()
+    const stored = () => {
+      const raw = new DatabaseSync(join(dataDir, 'sessions.db'), { readOnly: true })
+      try {
+        return {
+          events: raw.prepare('SELECT * FROM events WHERE session_key = ? ORDER BY seq').all(session.key),
+          head: raw.prepare('SELECT * FROM ledger_heads WHERE session_key = ?').get(session.key),
+          registers: raw
+            .prepare('SELECT * FROM registers WHERE session_key = ? ORDER BY register, key')
+            .all(session.key),
+        }
+      } finally {
+        raw.close()
+      }
+    }
+    const evidence = stored()
+    expect(evidence.events.at(-1)).toMatchObject({ seq: damagedSeq, data: '{' })
     endpoint.behaviour = 'answer'
     const second = await boot(dataDir, endpoint, plan)
     try {
-      const reopened = await second.open('crash-e')
-      expect(second.recovered.flatMap((r) => r.actions)).toEqual([
-        { effectId: 'side:e-1', action: 'unknown' },
-      ])
-      const rows = await rowsOf(reopened)
-      expect(ofType(rows, 'x/core/ledger-tail-recovered')).toHaveLength(1)
-      expect(reopened.op()).toBeNull()
-      expect(data(ofType(rows, 'turn/end').at(-1)).reason).toBe('interrupted')
-      expect(forEffect(rows, 'effect/settled', 'e-1').map((row) => data(row).outcome)).toEqual(['unknown'])
-      expect(
-        costs(rows).map((row) => [data(row).purpose, data(row).creditSource, data(row).interrupted]),
-      ).toEqual([['side-call', 'estimated', true]])
+      await expect(second.open('crash-e')).rejects.toMatchObject({
+        code: 'E_SESSION_CORRUPT',
+        detail: { sessionKey: session.key, cause: 'E_LEDGER_INTEGRITY', issue: 'corrupt' },
+      })
+      expect(second.recovered).toEqual([])
       expect(sideBilled(second.billed, 'e-1')).toEqual([])
-      expect(pendingSideCalls(reopened)).toEqual([])
-      // The next turn reads the interrupted record for the same id and sends nothing.
-      await nextTurnFinishes(reopened, plan)
-      expect(replay).toMatchObject({ status: 'unknown', reason: 'interrupted', replayed: true })
       expect(endpoint.hits).toHaveLength(1)
-      expect(violations(await rowsOf(reopened))).toEqual([])
+      expect(stored()).toEqual(evidence)
     } finally {
       await second.host.close()
     }
+    expect(stored()).toEqual(evidence)
   })
 })
 

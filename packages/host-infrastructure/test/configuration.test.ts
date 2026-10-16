@@ -677,6 +677,12 @@ it.runIf(process.getuid !== undefined).each([0o500, 0o755])(
     ).rejects.toMatchObject({
       code: 'CONFIG_CREDENTIAL_PERMISSIONS',
       message: expect.stringContaining('0700'),
+      credential: {
+        part: 'secrets',
+        check: 'mode',
+        mode: mode.toString(8).padStart(4, '0'),
+        expectedMode: '0700',
+      },
     })
     expect((await service.get()).revision).toBe(0)
     expect((await lstat(directory)).mode & 0o7777).toBe(mode)

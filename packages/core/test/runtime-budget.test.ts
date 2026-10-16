@@ -478,3 +478,38 @@ describe('explicit tree budget reservation handles', () => {
     await recoveredKernel.close()
   })
 })
+
+describe('hard ordinary turn budget', () => {
+  it.each(['settled', 'unknown', 'unpriced'] as const)(
+    'retains a durable total ceiling after %s usage',
+    async (usage) => {
+      const { kernel, storage } = setup(new MemoryStorage(), null)
+      try {
+        const session = await kernel.session('ordinary-hard', sessionOpts)
+        await session.enqueue('next-turn', {
+          actor,
+          content: [{ type: 'text', text: 'bounded' }],
+          budget: 0.3,
+          hardBudget: true,
+        })
+        await session.acceptInput()
+        if (usage === 'unpriced') {
+          expect(await reserveTreeBudget(session, 0, { route: 'missing', model: 'unpriced' })).toEqual({
+            reason: 'budget',
+          })
+        } else {
+          expect(await reserveTreeBudget(session, 0.25, target)).toBe('ok')
+          const permit = treePermitOf(session)
+          expect(permit).toBeDefined()
+          await settleTreeSpend(session, usage === 'unknown' ? undefined : 0.2, 10 as Seq)
+          expect(await storage.peekReservation?.(permit!.permitId)).toMatchObject({ status: usage })
+          expect(await reserveTreeBudget(session, 0.25, target)).toEqual({ reason: 'budget' })
+        }
+        const ends = await session.scan({ type: 'turn/end', limit: 10 })
+        expect(ends.at(-1)?.data).toMatchObject({ reason: 'budget' })
+      } finally {
+        await kernel.close()
+      }
+    },
+  )
+})

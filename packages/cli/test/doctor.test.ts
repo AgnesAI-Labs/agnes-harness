@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { initializeHome } from '@agnes/host'
 import { createTestHost } from '@agnes/host/testkit'
 import { afterEach, describe, expect, it } from 'vitest'
 import { parseArgs, usage } from '../src/args.js'
@@ -59,6 +60,30 @@ describe('doctor command aggregation', () => {
     expect(json.text).not.toContain('minimal_inference')
   })
 
+  it.skipIf(process.platform === 'win32')(
+    'locates unsafe credential directories, files and locks with safe repair hints',
+    async () => {
+      const d = deps()
+      chmodSync(d.home, 0o700)
+      const provider = join(d.home, 'secrets', "provider's")
+      mkdirSync(provider, { recursive: true, mode: 0o700 })
+      chmodSync(join(d.home, 'secrets'), 0o700)
+      const file = join(provider, 'default')
+      writeFileSync(file, 'doctor-private-canary', { mode: 0o644 })
+      mkdirSync(join(d.home, 'locks'), { mode: 0o755 })
+      const result = await doctorCommand(parseArgs(['doctor', 'credentials']), d)
+      expect(result.exitCode).toBe(1)
+      expect(result.text).toContain('expectedMode=0600')
+      expect(result.text).toContain('expectedMode=0700')
+      expect(result.text).toContain('chmod -- 0600')
+      expect(result.text).toContain('chmod -- 0700')
+      expect(result.text).toContain("provider'\"'\"'s")
+      expect(result.text).toContain('locks: unsafe')
+      expect(result.text).not.toContain('doctor-private-canary')
+      expect(readFileSync(file, 'utf8')).toBe('doctor-private-canary')
+    },
+  )
+
   it('fails default provider doctor for an enabled account whose credential is absent', async () => {
     const d = deps()
     d.configuration = {
@@ -89,6 +114,26 @@ describe('doctor command aggregation', () => {
     expect(result.json).toEqual([expect.objectContaining({ name: 'provider', status: 'fail' })])
     expect(result.text).not.toContain('unused.invalid')
   })
+
+  it.each(['extensions', 'code-runtime'])(
+    'classifies %s setup separately from assembly faults',
+    async (section) => {
+      const d = deps()
+      for (const [code, reason, status] of [
+        ['E_PRESET_UNRESOLVED', 'no-routes', 'warn'],
+        ['E_SEAM_INIT', 'no-routes', 'fail'],
+        ['E_PRESET_UNRESOLVED', 'unknown-route', 'fail'],
+      ] as const) {
+        d.createHostImpl = async () => {
+          throw Object.assign(new Error('private body'), { code, detail: { reason } })
+        }
+        const result = await doctorCommand(parseArgs(['doctor', section]), d)
+        expect(result.json[0]?.status).toBe(status)
+        if (status === 'fail') expect(result.text).toContain(code)
+        expect(result.text).not.toContain('private body')
+      }
+    },
+  )
 
   it('runs an independent section and renders exact JSON', async () => {
     const d = deps()
@@ -146,7 +191,9 @@ describe('doctor command aggregation', () => {
 
   it('lists shared first-run checks and rejects unknown or extra section arguments', async () => {
     const d = deps()
+    initializeHome(d.home)
     const result = await doctorCommand(parseArgs(['doctor']), d)
+    expect(result.json.find((section) => section.name === 'accounts')?.status).toBe('warn')
     expect(result.json.map((section) => section.name)).toEqual([
       'node',
       'native',
@@ -162,7 +209,7 @@ describe('doctor command aggregation', () => {
     ])
     expect(result.json.every((section) => section.fixHintKey?.startsWith('doctor.fix.'))).toBe(true)
     expect(usage()).toContain(
-      'doctor [platform|network|provider|storage|profile|extensions|daemon|binary|code-runtime]',
+      'doctor [platform|network|provider|storage|credentials|profile|extensions|daemon|binary|code-runtime]',
     )
     expect(usage()).not.toContain('doctor [provider|sandbox')
 
@@ -215,10 +262,52 @@ describe('home inspection and startup guidance', () => {
     mkdirSync(home)
     writeFileSync(join(home, 'unknown.txt'), 'synthetic')
     expect(await homeCommand(['info'], io)).toBe(1)
-    expect(error).toContain('布局不受支持')
+    expect(error).toContain('不能使用此布局')
     expect(error).toContain('AGH_HOME')
     expect(readFileSync(join(home, 'unknown.txt'), 'utf8')).toBe('synthetic')
   })
+  it.each([
+    ['old', undefined],
+    ['broken', '{'],
+    ['future', '{"version":99}'],
+  ] as const)(
+    'shows the selected absolute home and fixed %s reason without changing the home',
+    async (_kind, marker) => {
+      const d = deps()
+      const { initializeHome } = await import('@agnes/host')
+      const { startupFailure } = await import('../src/commands/first-run-locales.js')
+      const filename = join(d.home, marker === undefined ? 'legacy.txt' : 'home-layout.json')
+      const bytes = marker ?? 'synthetic old environment'
+      writeFileSync(filename, bytes)
+      let failure: unknown
+      try {
+        initializeHome(d.home)
+      } catch (error) {
+        failure = error
+      }
+      for (const locale of ['en', 'zh-CN']) {
+        const text = startupFailure(failure, { AGNES_LOCALE: locale })
+        expect(text).toContain(d.home)
+        expect(text).toContain('E_HOME_VERSION')
+        expect(text).toContain(
+          locale === 'zh-CN' ? 'README.zh-CN.md#new-product-clean-home' : 'README.md#new-product-clean-home',
+        )
+        expect(text).toContain(
+          marker === undefined
+            ? locale === 'zh-CN'
+              ? '旧环境目录'
+              : 'Old environment directory'
+            : locale === 'zh-CN'
+              ? '布局标记无效'
+              : 'layout marker is invalid',
+        )
+      }
+      expect(readFileSync(filename, 'utf8')).toBe(bytes)
+      expect(existsSync(join(d.home, 'profiles'))).toBe(false)
+      rmSync(filename)
+      expect(initializeHome(d.home).state).toBe('current')
+    },
+  )
   it('maps common startup codes to actionable text without exposing exception messages', async () => {
     const { startupFailure } = await import('../src/commands/first-run-locales.js')
     for (const code of [

@@ -37,7 +37,7 @@ Enable official Plan mode with `/plan on` in Web/TUI **before submitting a fresh
 
 ## From example to customer
 
-Keep the reusable loop and replace the fixture connectors, business rubric and `SKILL.md`. Decide which data the customer can expose, which actions need a person and which receipts establish success. For operations, select a registered sandbox provider before startup. For devices, keep units, action bounds and physical safety in the validated controller/adapter; the example is MHS-inspired and claims no MHS compatibility.
+Keep the reusable loop and replace the fixture connectors, business rubric and `SKILL.md`. Decide which data the customer can expose, which actions need a person and which receipts establish success. For operations, select a registered sandbox provider before startup. For devices, keep units, action bounds and physical safety in the validated controller/adapter. This example changes only local simulated state.
 
 All twelve bundles use the official `defineWorkflowLoop` from `@agnes/plugin-runtime`; their tarballs contain business stages and connectors with no copied scheduler or sibling imports. See the [worked workflow example](../../docs/extend/workflow-loops.md). Ordinary backend plugins are trusted in-process code. Capability declarations support installation review and policy, not arbitrary-code isolation. Checkpoints refuse automatic replay of pending effects; simulation receipts are not a durable production device/CRM ledger.
 

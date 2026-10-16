@@ -3,7 +3,6 @@ import { createReadStream, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { Duplex } from 'node:stream'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { domainFailureFromUnknown } from '@agnes/error-sanitization'
 import { createSkillCordisService } from '@agnes/resource-control-runtime'
 import {
   bootstrapWorkerResources,
@@ -13,8 +12,10 @@ import {
   type WorkerResourceBootstrapInput,
 } from '@agnes/resource-control-worker'
 import { reportWorkerBootFailure } from './boot-failure.js'
+import { profileWakeProducer } from './profile-wake-producer.js'
 import { generationExtensionRestorer } from './runtime-generation-restore.js'
 import { connectSupervisor } from './supervisor-connection.js'
+import { workerDomainFailure } from './worker-errors.js'
 
 export { scanSkills } from '@agnes/resource-control-worker'
 
@@ -90,6 +91,7 @@ import { createMcpStatusFrameBuffer } from './status-frame-buffer.js'
 
 /** Runtime capabilities already bootstrapped for this worker; reuse them without reconnecting. */
 export type WorkerHostSkillResources = Readonly<{
+  boundWakes?: NonNullable<HostOptions['boundWakes']>
   mcpManage?: NonNullable<HostOptions['mcpManage']>
   pluginManage?: NonNullable<HostOptions['pluginManage']>
   skillInstall?: NonNullable<HostOptions['skillInstall']>
@@ -230,6 +232,7 @@ export async function runWorker(
   }
 
   const sharedChannel = new SharedSessionChannel(send)
+  const boundWakes = profileWakeProducer(sharedChannel)
   const skillInstall: NonNullable<HostOptions['skillInstall']> = async (input, signal) => {
     if (input.sessionKey !== sharedChannel.currentSessionKey())
       throw new Error('Skill install session mismatch')
@@ -428,6 +431,7 @@ export async function runWorker(
     : deps.buildHost
       ? deps.buildHost(profile, prompter, {
           restoreGenerationExtension: generationExtensionRestorer(workerResourcesInput, sharedMcpOpener),
+          boundWakes,
           skillInstall,
           mcpManage,
           pluginManage,
@@ -464,6 +468,7 @@ export async function runWorker(
             allowUnresolvedProvider: true,
             log: deps.log ?? sessionLog,
             prompter,
+            boundWakes,
             skillInstall,
             mcpManage,
             pluginManage,
@@ -647,6 +652,10 @@ export async function runWorker(
       await shutdown(0)
       return
     }
+    if (frame.kind === 'session.open.cancel') {
+      hostedSessions?.cancelOpen(frame.requestId, frame.sessionKey)
+      return
+    }
     try {
       const result = await admitWorkerCommand(localGate, async () => {
         if (frame.kind === 'session.open') {
@@ -794,7 +803,7 @@ export async function runWorker(
                 code: typeof err.code === 'string' ? err.code : 'INTERNAL_ERROR',
                 _servicePhase: 'pre-dispatch',
               })
-            : domainFailureFromUnknown(e)
+            : workerDomainFailure(e)
       const reply = {
         kind: 'reply' as const,
         requestId: frame.requestId,

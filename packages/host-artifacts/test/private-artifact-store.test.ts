@@ -36,11 +36,13 @@ function failMarkerWrites(): () => void {
   const rename = vi.mocked(renameWriteThroughSync).getMockImplementation()
   const windows = vi.mocked(windowsWritePrivateFile).getMockImplementation()
   vi.mocked(renameWriteThroughSync).mockImplementation((from, to) => {
-    if (String(to).endsWith('.json')) throw new Error('injected marker write failure')
+    if (String(to).includes('computer-use-meta') && String(to).endsWith('.json'))
+      throw new Error('injected marker write failure')
     return (rename ?? renameWriteThroughSync)(from, to)
   })
   vi.mocked(windowsWritePrivateFile).mockImplementation(async (target, bytes) => {
-    if (String(target).endsWith('.json')) throw new Error('injected marker write failure')
+    if (String(target).includes('computer-use-meta') && String(target).endsWith('.json'))
+      throw new Error('injected marker write failure')
     return (windows ?? windowsWritePrivateFile)(target, bytes)
   })
   return () => {

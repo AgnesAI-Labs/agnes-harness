@@ -10,7 +10,7 @@ import {
   type Seq,
   type SessionKey,
 } from '@agnes/core-common/types'
-import { type ThinkingLevel, validateOpState } from '@agnes/protocol'
+import { describeValidationErrors, type ThinkingLevel, validateOpState } from '@agnes/protocol'
 import { type ForkBase, forkBaseProviders, forkPaths, pageYield, seededLogs } from './fork-seed.js'
 import {
   INTEGRITY_PAGE_SIZE,
@@ -71,6 +71,7 @@ export type OpenLogOptions = {
   relationCheck?: (events: PreparedEvent[], log: SessionLogImpl, op: OpWrite | undefined) => void
   onAppended?: (events: Event[], extra: AppendedExtra) => void
   /** Folds the ledger while `open` verifies it: `page` receives every verified page in order, from seq 1. */
+  verification?: import('./integrity.js').VerificationOptions
   replay?: {
     page(events: Event[]): void
   }
@@ -180,10 +181,13 @@ export class SessionLogImpl {
         opened.lastSeq,
         pageYield,
         replay ? (events) => replay.page(events) : undefined,
+        o.verification,
       )
       const rows = await o.storage.registers(o.key)
+      // Opening observers belong to the caller, not to the lifetime of the cached session.
+      const { verification: _opening, ...retained } = o
       const log = new SessionLogImpl(
-        o,
+        retained,
         opened.lastSeq,
         rows,
         integrityState,
@@ -222,8 +226,10 @@ export class SessionLogImpl {
         })
       const own = await verifiedRange(o.storage, o.key, start, opened.lastSeq)
       const rows = await o.storage.registers(o.key)
+      // Opening observers belong to the caller, not to the lifetime of the cached session.
+      const { verification: _opening, ...retained } = o
       const log = new SessionLogImpl(
-        o,
+        retained,
         opened.lastSeq,
         rows,
         own.state,
@@ -254,8 +260,35 @@ export class SessionLogImpl {
   get faulted(): boolean {
     return this.faultedValue
   }
+  get created(): boolean {
+    return this.createdOnOpen
+  }
   get isClosed(): boolean {
     return this.closed
+  }
+
+  /** Recheck a live session before exporting it: a cached open is not proof of current stored bytes. */
+  async verifyHistory(options: import('./integrity.js').VerificationOptions = {}): Promise<number> {
+    await this.drain
+    this.guard()
+    const expected = { ...this.integrityState }
+    try {
+      const actual = await verifyLedger(
+        this.o.storage,
+        this.key,
+        expected.lastSeq,
+        pageYield,
+        undefined,
+        options,
+      )
+      if (actual.headDigest !== expected.headDigest || actual.legacyThroughSeq !== expected.legacyThroughSeq)
+        throw new LedgerIntegrityFailure('stored history differs from the live verified head')
+      this.guard()
+      return expected.lastSeq
+    } catch (error) {
+      if (error instanceof CoreError && error.code === 'E_LEDGER_INTEGRITY') this.markFaulted(error)
+      throw error
+    }
   }
 
   /** Import-only compensation: existing sessions are refused and storage rechecks the writer lease. */
@@ -371,7 +404,7 @@ export class SessionLogImpl {
     if (op) {
       const checked = validateOpState(op.data)
       if (!checked.ok)
-        throw new CoreError('E_ENVELOPE', checked.errors[0]?.message ?? 'invalid op state', {
+        throw new CoreError('E_ENVELOPE', describeValidationErrors(checked.errors), {
           errors: checked.errors,
         })
     }
@@ -529,6 +562,7 @@ export class SessionLogImpl {
       agnesVersion: string
       preset: string | null
       resolvedProfileHash: string | null
+      resolvedPresetHash?: string
       writerRunId: string
       lane: string
       loop?: { id: string; version: string }
@@ -632,6 +666,7 @@ export class SessionLogImpl {
             ...(opener.loop ? { loop: { ...opener.loop } } : {}),
             parent: { key: this.o.key, boundarySeq },
             resolvedProfileHash: opener.resolvedProfileHash,
+            ...(opener.resolvedPresetHash ? { resolvedPresetHash: opener.resolvedPresetHash } : {}),
             preset: opener.preset,
             agnesVersion: opener.agnesVersion,
             ...(opener.delegation ? { delegation: opener.delegation } : {}),

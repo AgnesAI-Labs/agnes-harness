@@ -123,6 +123,10 @@ export type {
   ParticipantListResult,
   ParticipantParams,
   PermissionWithdrawParams,
+  PluginRuntimeStatusParams,
+  PluginRuntimeStatusResult,
+  PluginStreamsEndpointParams,
+  PluginStreamsEndpointResult,
   SeqResult,
   SessionAdapterCatalogResult,
   SessionApprovalGrant,
@@ -148,6 +152,7 @@ export type {
   SessionJobsReadParams,
   SessionJobsReadResult,
   SessionListParams,
+  SessionLoadingParams,
   SessionLoopCatalogResult,
   SessionMeta,
   SessionPreferences,
@@ -237,7 +242,9 @@ export type { DeployManifest } from '../gen/ts/deploy-manifest.js'
 export type {
   Capabilities,
   ClientContribution,
+  ExampleLaunchDeclaration,
   ExtensionManifest,
+  HomeContributionDeclaration,
   PluginCategory,
   PluginMetadata,
   PluginMetadataLocale,
@@ -248,6 +255,18 @@ export type {
 export type { ServiceCapability } from '../gen/ts/extension-service.js'
 /** The one capabilities shape every plugin declares, bundled or installed. */
 export type PluginCapabilities = import('../gen/ts/extension-manifest.js').Capabilities
+
+export type {
+  BoundWakeEnqueueParams,
+  BoundWakeReadParams,
+  BoundWakeReceipt,
+  ProfileDecisionAnswerParams,
+  ProfileServiceCallParams,
+  ProfileServiceCallResult,
+  ProfileServiceOperationParams,
+  ProfileServiceReceipt,
+  ServiceEffectPolicy,
+} from '../gen/ts/extension-service.js'
 // Preset surface declarations; execution is supplied by the official Intelligent UI plugin.
 export type {
   UiAction,
@@ -281,6 +300,11 @@ export type {
 } from '../gen/ts/intelligent-ui.js'
 export type { JobSpec, JobStatus, Schedule } from '../gen/ts/jobs.js'
 export type { Lockfile, PackageLock } from '../gen/ts/lockfile.js'
+export type {
+  ManagedServiceDescriptor,
+  ManagedServiceReady,
+  ManagedServiceStatus,
+} from '../gen/ts/managed-service.js'
 export type {
   AiErrorCode,
   ContractManifest,
@@ -327,6 +351,7 @@ export type {
   ClientModuleReadResult,
   ClientModuleRosterRow,
   ClientModuleServiceCallParams,
+  ContributionBinding,
   PackageActivationRequest,
   PackageActivationTrust,
   PackageAdminContext,
@@ -395,6 +420,13 @@ export type {
   SkinReadParams,
   SkinReadResult,
 } from '../gen/ts/package-admin.js'
+export type {
+  PluginStreamClose,
+  PluginStreamGrant,
+  PluginStreamOpen,
+  StreamDeclaration,
+  StreamScope,
+} from '../gen/ts/plugin-stream.js'
 export type { PresetDoc } from '../gen/ts/preset.js'
 export type {
   ApprovalMode,
@@ -577,13 +609,16 @@ export type {
 } from '../gen/ts/worker.js'
 export * from './admin-session-selection.js'
 export * from './app-server.js'
+export { attachmentErrorCode } from './attachment-errors.js'
 export * from './attachments.js'
 export { AutoReviewConfig, ToolReviewFact } from './auto-review.js'
 export * from './child-engine-document.js'
+export { CLIENT_PLATFORM_IMPORTS } from './client-platform-imports.js'
 export * from './codec/permission.js'
 export * from './codec/stop-reason.js'
 export * from './configs.js'
 export * from './constants.js'
+export * from './decision-journal.js'
 export { diagnosticRecords, observeDiagnostics, safeDiagnosticRecord } from './diagnostic-records.js'
 export { errorMessageKey, httpRpcError, normalizeRpcError } from './error-envelope.js'
 export * from './errors.js'
@@ -616,6 +651,7 @@ export {
   redactPluginConfig,
 } from './plugin-config-validation.js'
 export { type PluginFailureHelp, pluginFailureHelp } from './plugin-failure-help.js'
+export * from './plugin-transports.js'
 export { validateProjectionCapability, validateProjectionReadResult } from './projections.js'
 export * from './provider.js'
 export {
@@ -645,14 +681,21 @@ export type {
 export { SESSION_VERSION_CODES, sessionVersionNotice } from './session-version.js'
 export { IncrementalSha256, sha256Hex } from './sha256.js'
 export * from './slots.js'
+export * from './stored-attachments.js'
 export * from './surfaces.js'
 export type { ValidationError, ValidationResult } from './validate.js'
 export {
+  ATTACHMENT_ERROR_CODES,
+  AttachmentError,
+  type AttachmentErrorCode,
   decodeAttachmentData,
+  decodeSafeImageBytes,
   decodeSafeImages,
+  describeValidationErrors,
   isDateTime,
   modelImageInputError,
   toRpcError,
+  USER_IMAGE_ORIGINAL_LIMITS,
   USER_MESSAGE_ATTACHMENT_LIMITS,
   USER_MESSAGE_IMAGE_LIMITS,
   userImagePolicy,

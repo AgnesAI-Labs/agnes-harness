@@ -71,6 +71,7 @@ import { registerConfiguration } from './methods/config.js'
 import { registerDiagnostics } from './methods/diagnostics.js'
 import { registerExtensions } from './methods/extensions.js'
 import { registerFactChain } from './methods/fact-chain.js'
+import { registerProfileServices } from './methods/profile-services.js'
 import { copyForkBookmarks, registerSessionPreferences } from './methods/session-preferences.js'
 import { registerSessionRuntime } from './methods/session-runtime.js'
 import {
@@ -403,6 +404,7 @@ export function createLocalEndpoint(
   const cx = {
     host,
     registry,
+    profileFeatures: host.profileServices ? ['services.profile.v1', 'store.owned.v1'] : [],
     prompter,
     clock,
     agnesVersion: opts.agnesVersion ?? '0.0.0',
@@ -583,6 +585,31 @@ export function createLocalEndpoint(
       cx.auth.config.transport === 'unix' ? localResourceAuthority() : denyResourceAuthority
     registerResourceControl(ep, opts.resources.service, opts.resources.authority ?? defaultAuthority)
   }
+  if (host.profileServices)
+    registerProfileServices(
+      ep,
+      {
+        call: (...args) => {
+          if (!host.profileServices) throw rpcError('CAPABILITY_DENIED')
+          return host.profileServices.call(...args)
+        },
+        readOperation: (...args) => {
+          if (!host.profileServices) throw rpcError('CAPABILITY_DENIED')
+          return host.profileServices.readOperation(...args)
+        },
+        listDecisions: (...args) => {
+          if (!host.profileServices) throw rpcError('CAPABILITY_DENIED')
+          return host.profileServices.listDecisions(...args)
+        },
+        answerDecision: (...args) => {
+          if (!host.profileServices) throw rpcError('CAPABILITY_DENIED')
+          return host.profileServices.answerDecision(...args)
+        },
+      },
+      undefined,
+      host.activationBarrier,
+      requireSessionOwner(cx),
+    )
   registerExtensions(ep, {
     activationBarrier: cx.activationBarrier,
     journal,

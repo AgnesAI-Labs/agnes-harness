@@ -43,6 +43,7 @@ export type Assembled = {
   referenceLimits?: Partial<import('@agnes/extension-api').ReferenceLimits>
   activationBarrier: ReturnType<typeof createExtensionActivationBarrier>
   approvalGrants: ApprovalGrantManagement
+  profileServices: import('@agnes/host-extensions/profile/runtime').ProfileServiceRuntime
   callService: ReturnType<typeof serviceInvoker>['call']
   inspectService: ReturnType<typeof serviceInvoker>['inspect']
   prepareService: ReturnType<typeof serviceInvoker>['prepare']

@@ -1,11 +1,13 @@
-import { type HomeEntry, type HomeEntryBadge, homeEntries, homeNavigation } from '@agnes/web-client'
+import {
+  type HomeEntry,
+  type HomeEntryBadge,
+  homeEntries,
+  homeEntryGroups,
+  homeNavigation,
+} from '@agnes/web-client'
 import type { Translate } from '@agnes/web-conversation/presentation'
 import { Button, Icon, type IconName, icons, Menu, Tooltip } from '@agnes/web-ui'
-import { useSyncExternalStore } from 'react'
-import { BUILTIN_HOME_ENTRIES } from '../pages/entries.js'
-
-/** Plugin entries shown in the sidebar before the rest collapse under "More". */
-const INLINE_PLUGIN_ENTRIES = 3
+import { type ReactNode, useSyncExternalStore } from 'react'
 
 function EntryBadge({ badge, label }: { badge: HomeEntryBadge; label(count: number): string }) {
   const count = useSyncExternalStore(badge.subscribe, badge.getSnapshot)
@@ -25,22 +27,27 @@ const entryLabel = (entry: HomeEntry, t: Translate): string =>
   entry.subtitleKey ? `${t(entry.titleKey)} · ${t(entry.subtitleKey)}` : t(entry.titleKey)
 
 /** The home entries above the session list: the three built-in pages, then the ones plugins add. */
-export function HomeEntriesNav({ t, onSelect }: { t: Translate; onSelect?(): void }) {
+export function HomeEntriesNav({
+  t,
+  onSelect,
+  children,
+}: {
+  t: Translate
+  onSelect?(): void
+  children?: ReactNode
+}) {
   useSyncExternalStore(homeEntries.subscribe, homeEntries.getSnapshot)
   const requested = useSyncExternalStore(homeNavigation.subscribe, homeNavigation.getSnapshot)
   const entries = homeEntries.entries()
-  const builtin = BUILTIN_HOME_ENTRIES.flatMap((id) => entries.find((entry) => entry.id === id) ?? [])
-  const added = entries.filter((entry) => !BUILTIN_HOME_ENTRIES.includes(entry.id))
-  const inline = added.length > INLINE_PLUGIN_ENTRIES ? [] : added
-  const more = added.length > INLINE_PLUGIN_ENTRIES ? added : []
+  const { inline, more } = homeEntryGroups(entries)
   const open = (entry: HomeEntry) => {
     homeNavigation.open(entry.id)
     onSelect?.()
   }
-  if (!entries.length) return null
+  if (!entries.length && !children) return null
   return (
     <nav className="home-entries" aria-label={t('home.entries.nav')} data-testid="home-entries">
-      {[...builtin, ...inline].map((entry) => (
+      {inline.map((entry) => (
         <Tooltip key={entry.id} title={entryLabel(entry, t)}>
           <Button
             appearance="ghost"
@@ -90,6 +97,7 @@ export function HomeEntriesNav({ t, onSelect }: { t: Translate; onSelect?(): voi
           />
         </Tooltip>
       )}
+      {children}
     </nav>
   )
 }

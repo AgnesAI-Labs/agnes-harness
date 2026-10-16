@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -33,16 +33,40 @@ it('shares a bundled third-party dependency into an isolated receiving folder', 
       type: 'module',
       exports: './index.js',
       dependencies: { yaml: '2.9.0' },
-      agnes: { plugins: [{ apiRange: '^4.0.0', export: 'main', capabilities: {} }] },
+      agnes: {
+        plugins: [{ id: 'ext:shared/main', apiRange: '^4.0.0', export: 'main', capabilities: { ui: true } }],
+        hostProvidedExternals: { '@agnes/extension-api': '^4.0.0' },
+        clientDescriptors: [{ rowId: 'ext:shared/main', path: './agnes.client.json' }],
+      },
     }),
   )
   writeFileSync(
     join(source, 'index.js'),
     "import { parse } from 'yaml'; export const main = () => parse('hello: friend').hello;",
   )
+  writeFileSync(
+    join(source, 'agnes.client.json'),
+    JSON.stringify({
+      client: {
+        entry: './client.js',
+        slots: [],
+        services: [],
+        projections: [],
+        publicConfig: {},
+        slotCatalogVersion: 'dsh-client-slots/v1',
+      },
+    }),
+  )
+  writeFileSync(
+    join(source, 'client.js'),
+    "import { createElement } from 'react'; import { homeNavigation } from '@agnes/web-client'; import { Button } from '@agnes/web-ui'; export const page = () => createElement(Button, null, String(homeNavigation));",
+  )
   const archive = await packPlugin(source, join(root, 'shared.tgz'))
   rmSync(source, { recursive: true, force: true })
   await fetchSource(parseSource('file:' + archive), receiver, { cwd: root })
   const loaded = await import(pathToFileURL(join(receiver, '.agnes-packed-entry.mjs')).href)
   expect(loaded.main()).toBe('friend')
+  const browser = readFileSync(join(receiver, 'client.js'), 'utf8')
+  for (const specifier of ['react', '@agnes/web-client', '@agnes/web-ui'])
+    expect(browser).toContain(specifier)
 })

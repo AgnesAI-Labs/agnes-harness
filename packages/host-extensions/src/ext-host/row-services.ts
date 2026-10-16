@@ -23,6 +23,7 @@ import {
   validateSlotPayload,
 } from '@agnes/protocol'
 import { ResourceEntry as ResourceSchema } from '@agnes/protocol/gen/hooks'
+import { installProfileRuntime } from '../profile/row-runtime.js'
 import { compileExtensionSchema } from './json-schema.js'
 import { mapResult } from './map-result.js'
 import type { KernelPorts } from './ports.js'
@@ -61,7 +62,18 @@ function nearestRow(fiber: Fiber, origins: RowOriginLookup): BoundRow | undefine
  * again, including when the row never called ctx.extension().
  */
 export function createRowServiceHost(
-  describePackage: (packageId: string, snapshotId: string) => Readonly<{ version?: string }> | undefined,
+  describePackage: (
+    packageId: string,
+    snapshotId: string,
+    exportName?: string,
+  ) =>
+    | Readonly<{
+        version?: string
+        integrity?: string
+        declaredCapabilities?: import('@agnes/protocol').PluginCapabilities
+      }>
+    | undefined,
+  profileRuntime?: Parameters<typeof installProfileRuntime>[2],
 ) {
   let ports: KernelPorts | undefined
   const pending = new Set<() => void>()
@@ -69,6 +81,7 @@ export function createRowServiceHost(
 
   return Object.freeze({
     installRoot(root: Context, origins: RowOriginLookup): void {
+      if (profileRuntime) installProfileRuntime(root, origins, profileRuntime)
       const contribution: RowServiceContribution = {
         register(this: { ctx: Context }, def) {
           const found = nearestRow(this.ctx.fiber, origins)
@@ -83,7 +96,8 @@ export function createRowServiceHost(
           }
           alive()
           const owner = pluginRowSource(origin.rowId)
-          const version = describePackage(origin.packageId, origin.snapshotId)?.version ?? '0.0.0'
+          const description = describePackage(origin.packageId, origin.snapshotId, origin.exportName)
+          const version = description?.version ?? '0.0.0'
           return fiber.effect(() => {
             const ac = new AbortController()
             let release: (() => void) | undefined
@@ -92,6 +106,12 @@ export function createRowServiceHost(
               if (!ports) return
               release = ports.services.registerRow(def, {
                 owner,
+                ...(origin.rowRevision ? { activationRevision: origin.rowRevision } : {}),
+                packageId: origin.packageId,
+                integrity: description?.integrity ?? origin.snapshotId,
+                ...(description?.declaredCapabilities
+                  ? { declaredCapabilities: description.declaredCapabilities }
+                  : {}),
                 version,
                 signal: ac.signal,
                 assertAlive: alive,

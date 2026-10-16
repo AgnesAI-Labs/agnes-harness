@@ -1,13 +1,15 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { build } from 'esbuild'
 import { afterEach, expect, it, vi } from 'vitest'
 import {
   BUNDLED_EXAMPLES,
   BUNDLED_HELPERS,
-  BUNDLED_SKILL_HELPER_REF,
   bundledExampleSource,
+  bundledPluginSource,
   bundledPluginSourceRoot,
+  DEFAULT_ENABLED_BUNDLED_PACKAGES,
 } from '../src/bundled-plugin-source.js'
 import { emptyLock, readLock, writeLock } from '../src/lockfile.js'
 import { createPackageManager } from '../src/manager.js'
@@ -22,26 +24,45 @@ const fixture = () => {
   roots.push(root)
   return root
 }
-it('uses runtime payload instead of workspace impostor and never runs network commands', async () => {
-  const cwd = fixture()
-  const impostor = join(cwd, 'bundled-plugins', 'skill-helper')
-  mkdirSync(impostor, { recursive: true })
-  writeFileSync(join(impostor, 'package.json'), JSON.stringify({ name: 'impostor', version: '9.9.9' }))
-  const exec = vi.fn(async () => {
-    throw new Error('Network/command forbidden')
-  })
-  const into = join(cwd, 'stage')
-  const fetched = await fetchSource(parseSource(BUNDLED_SKILL_HELPER_REF), into, { cwd, exec })
-  expect(JSON.parse(readFileSync(join(into, 'package.json'), 'utf8')).name).toBe('@agnes/skill-helper')
-  expect(fetched.integrity).toBe(
-    hashDirectory(
-      join(bundledPluginSourceRoot(BUNDLED_SKILL_HELPER_REF) ?? '', 'bundled-plugins', 'skill-helper'),
-    ),
-  )
-  expect(exec).not.toHaveBeenCalled()
-  expect(bundledPluginSourceRoot('file:./ordinary')).toBeUndefined()
-  expect(existsSync(join(into, 'src', 'sources.mjs'))).toBe(true)
-})
+it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
+  'uses $id runtime payload instead of workspace impostor without network commands',
+  async (helper) => {
+    const cwd = fixture()
+    const impostor = join(cwd, 'bundled-plugins', helper.name)
+    mkdirSync(impostor, { recursive: true })
+    writeFileSync(join(impostor, 'package.json'), JSON.stringify({ name: 'impostor', version: '9.9.9' }))
+    const exec = vi.fn(async () => {
+      throw new Error('Network/command forbidden')
+    })
+    const into = join(cwd, 'stage')
+    const fetched = await fetchSource(parseSource(helper.ref), into, { cwd, exec })
+    const metadata = JSON.parse(readFileSync(join(into, 'package.json'), 'utf8'))
+    expect(metadata.name).toBe(helper.id)
+    expect(metadata.version).not.toBe('0.0.0')
+    {
+      // An offline runtime payload must carry domain dependencies; only public Host SDKs are external.
+      const compiled = await build({
+        entryPoints: [
+          join(into, typeof metadata.exports === 'string' ? metadata.exports : metadata.exports['.']),
+        ],
+        bundle: true,
+        platform: 'node',
+        format: 'esm',
+        external: Object.keys(metadata.agnes.hostProvidedExternals ?? {}),
+        write: false,
+      })
+      expect(compiled.outputFiles[0]?.contents.byteLength).toBeGreaterThan(0)
+    }
+    const source = bundledPluginSource(helper.ref)
+    if (!source) throw new Error('Missing bundled source')
+    expect(fetched.integrity).toBe(hashDirectory(join(source.root, source.path)))
+    expect(exec).not.toHaveBeenCalled()
+    expect(bundledPluginSource('file:./ordinary')).toBeUndefined()
+    expect(bundledPluginSource('file:./bundled-plugins/plugin-helper/../impostor')).toBeUndefined()
+    expect(bundledPluginSourceRoot('file:./ordinary')).toBeUndefined()
+    if (helper.name === 'skill-helper') expect(existsSync(join(into, 'src', 'sources.mjs'))).toBe(true)
+  },
+)
 it.each(BUNDLED_HELPERS)(
   'inspects and installs $id offline without automatic trust or activation',
   async (helper) => {
@@ -74,9 +95,14 @@ it.each(BUNDLED_HELPERS)(
   },
 )
 
-it('fetches reserved official examples outside a checkout without using a workspace impostor', async () => {
+it.each([
+  { family: 'loops', name: 'dag-loop', id: '@agnes-example/dag-loop' },
+  { family: 'community', name: 'tool-panel', id: '@community/tool-panel' },
+])('fetches bundled $family/$name offline without using a workspace impostor', async (expected) => {
   const root = fixture()
-  const example = BUNDLED_EXAMPLES[0]!
+  const example = BUNDLED_EXAMPLES.find(
+    (item) => item.family === expected.family && item.name === expected.name,
+  )!
   const impostor = join(root, 'bundled-examples', example.family, example.name)
   mkdirSync(impostor, { recursive: true })
   writeFileSync(join(impostor, 'package.json'), JSON.stringify({ name: 'impostor', version: '9.9.9' }))
@@ -85,7 +111,8 @@ it('fetches reserved official examples outside a checkout without using a worksp
   })
   const into = join(root, 'stage')
   await fetchSource(parseSource(example.ref), into, { cwd: root, exec })
-  expect(JSON.parse(readFileSync(join(into, 'package.json'), 'utf8')).name).toBe('@agnes-example/dag-loop')
+  const metadata = JSON.parse(readFileSync(join(into, 'package.json'), 'utf8'))
+  expect(metadata.name).toBe(expected.id)
   expect(bundledExampleSource('file:./bundled-examples/loops/dag-loop/../../impostor')).toBeUndefined()
   expect(exec).not.toHaveBeenCalled()
 })

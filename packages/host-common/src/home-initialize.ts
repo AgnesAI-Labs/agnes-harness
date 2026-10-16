@@ -3,7 +3,7 @@ import { closeSync, fsyncSync, lstatSync, mkdirSync, renameSync, unlinkSync, wri
 import { basename, dirname, join, resolve } from 'node:path'
 import { createPrivateFileSync, renameWriteThroughSync } from '@agnes/system-node'
 import { withConfigurationLock } from './configuration-lock.js'
-import { HOME_LAYOUT_VERSION, homeLayout, inspectHome } from './home-layout.js'
+import { HOME_LAYOUT_VERSION, homeVersionFault, inspectHome } from './home-layout.js'
 import { createHomeDirectory, prepareHomeLock, prepareWindowsHomeDirectories } from './home-private.js'
 
 const MARKER = 'home-layout.json'
@@ -60,7 +60,7 @@ function publishMarker(home: string): void {
 }
 export function initializeHome(home: string, profile = 'local-dev', options: InitializeOptions = {}) {
   const info = inspectHome(home, profile)
-  if (info.state === 'unsupported') throw homeFault('E_HOME_VERSION')
+  if (info.state === 'unsupported') throw homeVersionFault(home, 'unversioned')
   // PackageManager remains the only writer of the live package store.
   const paths = Object.values(info.paths).filter((path) => path !== info.paths.packages)
   if (windows) {
@@ -83,7 +83,8 @@ export async function initializeHomeLocked(
   profile = 'local-dev',
   options: InitializeOptions = {},
 ) {
-  homeLayout(home, profile)
+  const initial = inspectHome(home, profile)
+  if (initial.state === 'unsupported') throw homeVersionFault(home, 'unversioned')
   const canonicalHome = resolve(home)
   // Keep the lock outside a fresh home so inspection cannot mistake it for unknown user data.
   if (windows) createHomeDirectory(dirname(canonicalHome))

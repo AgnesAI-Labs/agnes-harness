@@ -151,6 +151,7 @@ export function PluginInstallReview({
   t,
   onCancel,
   onConfirm,
+  onReviewDependents,
 }: {
   review: InstallReviewState
   name: string
@@ -161,6 +162,7 @@ export function PluginInstallReview({
   t: Text
   onCancel(): void
   onConfirm(enableAfter: boolean): void
+  onReviewDependents?(): void
 }) {
   const { t: adminText } = useUiText(ADMIN_LOCALE_NAMESPACE, adminLocaleCatalog)
   const { preview, mode, current, combined, enables, enableAfter, busy, error } = review
@@ -199,6 +201,11 @@ export function PluginInstallReview({
           {blocked && (
             <Banner tone="error" data-testid="install-review-blocked">
               {preview.blockers.map((blocker) => blockerText(blocker, adminText)).join(t('review.separator'))}
+              {onReviewDependents && preview.blockers.some((blocker) => blocker.code === 'dependency') && (
+                <Button data-testid="review-dependent-updates" disabled={busy} onClick={onReviewDependents}>
+                  {t('update.dependents.review')}
+                </Button>
+              )}
             </Banner>
           )}
           {preview.warnings.length > 0 && (
@@ -225,7 +232,7 @@ export function PluginInstallReview({
             appearance="primary"
             data-testid="install-review-confirm"
             loading={busy}
-            disabled={busy}
+            disabled={busy || blocked}
             onClick={() => onConfirm(enables)}
           >
             {t(`preview.action.${action}`)}
@@ -235,3 +242,5 @@ export function PluginInstallReview({
     />
   )
 }
+
+export { ExampleManagementNotice } from './admin/example-parent.js'

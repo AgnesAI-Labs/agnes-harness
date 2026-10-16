@@ -73,7 +73,9 @@ export function setTreePermit(s: SessionImpl, permit: TreePermit): void {
 export async function treeBudgetApplies(s: SessionImpl): Promise<boolean> {
   const storage = s.d.log.storage
   return (
-    hasChildControl(storage) && (!!(await storage.lookupByKey(s.key)) || s.preset.treeBudgetCredits !== null)
+    s.turn?.hardBudgetCap !== undefined ||
+    (hasChildControl(storage) &&
+      (!!(await storage.lookupByKey(s.key)) || s.preset.treeBudgetCredits !== null))
   )
 }
 
@@ -96,9 +98,22 @@ async function reserveTreeBudgetPermit(
     }
 > {
   const storage = s.d.log.storage
-  if (!(await treeBudgetApplies(s)) || !hasChildControl(storage)) return 'unreserved'
+  if (!(await treeBudgetApplies(s))) return 'unreserved'
+  if (!hasChildControl(storage)) {
+    if (endTurnOnBlocked) await s.endTurn('budget')
+    return { reason: 'budget' }
+  }
   const rec = await storage.lookupByKey(s.key)
-  const treeCredits = s.preset.treeBudgetCredits
+  const hardCap = s.turn?.hardBudgetCap
+  const treeCredits =
+    hardCap === undefined
+      ? s.preset.treeBudgetCredits
+      : Math.min(hardCap, s.preset.treeBudgetCredits ?? hardCap)
+  // A bounded ordinary turn owns its root. Never silently drop an inherited tree constraint.
+  if (hardCap !== undefined && (rec || hardCap < 0.000001)) {
+    if (endTurnOnBlocked) await s.endTurn('budget')
+    return { reason: 'budget' }
+  }
   if (!Number.isFinite(projectedCredits) || projectedCredits < 0) {
     if (endTurnOnBlocked) await s.endTurn('budget')
     return { reason: 'budget' }
@@ -132,6 +147,17 @@ async function reserveTreeBudgetPermit(
     recModel.maxTokens > 0 &&
     Number.isFinite(recModel.cost.input) &&
     Number.isFinite(recModel.cost.output)
+  if (
+    hardCap !== undefined &&
+    (!recModel ||
+      !complete ||
+      !Number.isFinite(recModel?.cost.cacheWrite) ||
+      !Number.isFinite(recModel?.cost.cacheRead) ||
+      Object.values(recModel.cost).some((price) => price < 0))
+  ) {
+    if (endTurnOnBlocked) await s.endTurn('budget')
+    return { reason: 'budget' }
+  }
   const upper =
     complete && recModel ? conservativeModelCredits(inputTokens, recModel.maxTokens, recModel.cost) : 0
   const hold = Math.max(projectedCredits, upper)

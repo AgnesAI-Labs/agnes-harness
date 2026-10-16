@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { hasPrivateDaclSync } from '@agnes/system-node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { isHostError } from '../src/errors.js'
@@ -247,11 +247,17 @@ describe('versioned home layout', () => {
       expect(hasPrivateDaclSync(join(concurrentHome, '..', '.concurrent.initialize.sqlite'))).toBe(true)
     }
   })
-  it('refuses an occupied unversioned home without changing its files', () => {
+  it('refuses an occupied unversioned home without changing its files', async () => {
     const home = scratch()
     writeFileSync(join(home, 'unknown.txt'), 'synthetic data')
     expect(inspectHome(home)).toMatchObject({ state: 'unsupported', version: null })
     expect(() => initializeHome(home)).toThrow('E_HOME_VERSION')
+    await expect(initializeHomeLocked(home)).rejects.toMatchObject({
+      code: 'E_HOME_VERSION',
+      home,
+      reason: 'unversioned',
+    })
+    expect(existsSync(join(dirname(home), `.${basename(home)}.initialize.sqlite`))).toBe(false)
     expect(readdirSync(home)).toEqual(['unknown.txt'])
     expect(readFileSync(join(home, 'unknown.txt'), 'utf8')).toBe('synthetic data')
   })

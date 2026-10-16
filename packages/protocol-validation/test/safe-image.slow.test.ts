@@ -158,12 +158,12 @@ describe('safe image decoder', () => {
     expect(() =>
       decodeSafeImage({ data: base64(jpeg(10, 10).slice(0, -2)), mimeType: 'image/jpeg' }, limits),
     ).toThrow(/JPEG/)
-    expect(() =>
+    expect(
       decodeSafeImage(
         { data: base64([...jpeg(10, 10), ...new Array(24).fill(0)]), mimeType: 'image/jpeg' },
         limits,
       ),
-    ).toThrow(/trailing bytes/)
+    ).toMatchObject({ width: 10, height: 10 })
   })
 
   it('requires critical PNG chunks in safe order and rejects compressed ancillary data', () => {

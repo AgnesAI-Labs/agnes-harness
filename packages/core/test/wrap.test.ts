@@ -749,6 +749,10 @@ describe('buildToolContext hands every path to the file system, and decides none
       write: async (path) => {
         seen.push(path)
       },
+      create: async (path, data) => {
+        seen.push(path)
+        return { size: data.length, sha256: 'a'.repeat(64) }
+      },
       list: async (path) => {
         seen.push(path)
         return []
@@ -870,6 +874,9 @@ describe('buildToolContext hands every path to the file system, and decides none
     expect(snapshots).toEqual([])
     await ctx.fs.write('notes.md', 'x')
     expect(snapshots).toEqual([['notes.md']])
+    await expect(ctx.fs.create!('./secrets/attachment', new Uint8Array())).rejects.toThrow(/E_FS_DENIED/)
+    await ctx.fs.create!('original.bin', new Uint8Array([0, 1]))
+    expect(snapshots).toEqual([['notes.md'], ['original.bin']])
   })
 })
 

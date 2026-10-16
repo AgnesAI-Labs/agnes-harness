@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
-import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { openDaemonScheduleDb } from '@agnes/base/schedule'
 import { createAppServerAdmin } from '@agnes/daemon-admin/app-server'
@@ -7,6 +7,7 @@ import { runningPackageIdentity } from '@agnes/daemon-admin/package-actual-ident
 import {
   activateDefaultHelpers,
   initializeDefaultHelpers,
+  refreshDefaultHelpers,
 } from '@agnes/daemon-admin/packages/default-helpers'
 import {
   configurationReadOnly,
@@ -122,6 +123,7 @@ import { registerDoctor } from '@agnes/daemon-rpc/local/methods/doctor'
 import { executeJournaledEffect, registerExtensions } from '@agnes/daemon-rpc/local/methods/extensions'
 import { registerFactChain } from '@agnes/daemon-rpc/local/methods/fact-chain'
 import { registerFeedback } from '@agnes/daemon-rpc/local/methods/feedback'
+import { registerProfileServices } from '@agnes/daemon-rpc/local/methods/profile-services'
 import { registerPromptTrace } from '@agnes/daemon-rpc/local/methods/prompt-trace'
 import * as sessionPrefs from '@agnes/daemon-rpc/local/methods/session-preferences'
 import {
@@ -132,10 +134,7 @@ import { registerSurfaces } from '@agnes/daemon-rpc/local/methods/surfaces'
 import { registerWorkspaces } from '@agnes/daemon-rpc/local/methods/workspaces'
 import { type ApprovalRequest, PrompterRouter } from '@agnes/daemon-rpc/local/prompter'
 import type { SessionEntry } from '@agnes/daemon-rpc/local/sessions'
-import { createSurfaceArtifactResolver } from '@agnes/daemon-surfaces/surfaces/artifact-resolver'
 import { coordinateSurfacesOnBoot } from '@agnes/daemon-surfaces/surfaces/boot-coordination'
-import { createSurfaceController } from '@agnes/daemon-surfaces/surfaces/controller'
-import { createSurfaceSecretResolver } from '@agnes/daemon-surfaces/surfaces/secret-resolver'
 import type { SurfaceController } from '@agnes/daemon-surfaces/surfaces/types'
 import {
   ActivationInProgressError,
@@ -145,7 +144,6 @@ import {
   compositionSurfaceAllowed,
   createExtensionActivationBarrier,
   createFeedbackOwner,
-  createFileAudit,
   createPlatform,
   createSecretsEnv,
   createSecretsFile,
@@ -155,7 +153,6 @@ import {
   type Host,
   HostError,
   type HostSession,
-  type TableStore as HostTableStore,
   initializeHome,
   initializeHomeLocked,
   overlayChildEngineTarget,
@@ -199,7 +196,7 @@ import {
   writePackageSkillInventory,
 } from '@agnes/resource-control-daemon'
 import { type ActivationLinkPool, notifyLiveSessionWorkers } from '@agnes/resource-control-runtime'
-import { hasPrivateDaclSync, renameWriteThrough, windowsEnsurePrivateDirectorySync } from '@agnes/system-node'
+import { hasPrivateDaclSync, windowsEnsurePrivateDirectorySync } from '@agnes/system-node'
 import {
   artifactMediaReadReply,
   composeDefaultProductionProjectedArtifactRead,
@@ -223,6 +220,9 @@ import { sharedSessionCatalog, supervisorAdapterLookup } from './model-adapter-l
 import { acquireDaemonMutationLock } from './mutation-lock.js'
 import { acquireOwnerLock } from './owner-lock.js'
 import { createPluginManageRequests } from './plugin-manage-requests.js'
+import { registerPluginRuntimeIngress } from './plugin-runtime-ingress.js'
+import { createSupervisorProfileServices } from './profile-services.js'
+import { createProfileSurfaceController } from './profile-surfaces.js'
 import {
   CompositeRuntimeDelivery,
   deliverDesiredToWorkers,
@@ -237,6 +237,7 @@ import { deferPackageActivation } from './publication/deferred-package-activatio
 import { createRuntimePinCoordinator } from './publication/runtime-pin-coordinator.js'
 import { publishProbedRuntimeTarget } from './publication/runtime-target-publisher.js'
 import { type RemoteEntry, WorkerRegistry } from './registry.js'
+import { openDaemonLogs } from './runtime-log.js'
 import { createRuntimeTargetProbeLauncher, spawnRuntimeTargetProbeWorker } from './runtime-target-probe.js'
 import { type ScheduleCatalog, scheduledTasks } from './schedule-sessions.js'
 import { canonicalPath, resolveDaemonProfile, resolveDaemonScope } from './scope.js'
@@ -253,6 +254,7 @@ import { type SkillWatcher, startSkillWatcher } from './skill-watcher.js'
 import { listenUnix } from './socket.js'
 import { prepareDaemonSocketPaths } from './socket-paths.js'
 import { watchWindowsStopRequest } from './stop-request.js'
+import { adaptHostTables, persistResolvedProfile } from './storage-adapters.js'
 import { webhookSessions } from './webhook-sessions.js'
 import { WorkerPool } from './worker-pool.js'
 import { PACKAGE_MANAGER_VERSION, workspaceDeployments } from './workspace-deployments.js'
@@ -337,6 +339,8 @@ class RemoteEntryView implements SessionEntry {
   }
 }
 
+type SessionOpenRequest = Parameters<Registry<SessionEntry>['open']>[0] & { resume?: boolean }
+
 export class SupervisorRegistry implements Registry<SessionEntry> {
   private readonly opening = new Map<
     string,
@@ -353,16 +357,7 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
     private readonly inner: WorkerRegistry,
     private readonly workspaces: SessionWorkspacePort,
   ) {}
-  async open(o: {
-    key?: string
-    cwd: string
-    binding?: WorkspaceBindingEnvelope
-    preset?: string
-    bundles?: readonly string[]
-    loop?: LoopSelection
-    credential?: unknown
-    resume?: boolean
-  }): Promise<SessionEntry> {
+  async open(o: SessionOpenRequest): Promise<SessionEntry> {
     if (o.key) {
       const pending = this.opening.get(o.key)
       if (pending) {
@@ -392,16 +387,7 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
     return this.openFresh(o)
   }
 
-  private async openFresh(o: {
-    key?: string
-    cwd: string
-    binding?: WorkspaceBindingEnvelope
-    preset?: string
-    bundles?: readonly string[]
-    loop?: LoopSelection
-    credential?: unknown
-    resume?: boolean
-  }): Promise<SessionEntry> {
+  private async openFresh(o: SessionOpenRequest): Promise<SessionEntry> {
     const persisted = o.key ? this.workspaces.get(o.key) : undefined
     if (o.key && persisted !== undefined && persisted !== o.cwd)
       throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: o.key })
@@ -658,20 +644,6 @@ export function supervisorLister(
       const cursor = all.length > limit && last ? JSON.stringify([last.at, last.key]) : undefined
       return { items, ...(cursor !== undefined ? { cursor } : {}) }
     },
-  }
-}
-
-/** Atomically replace the default profile consumed by workers acquired after activation. */
-async function persistResolvedProfile(file: string, profile: ResolvedProfile): Promise<void> {
-  await mkdir(dirname(file), { recursive: true })
-  const temporary = `${file}.${process.pid}.${randomBytes(8).toString('hex')}.tmp`
-  try {
-    const windows = createPlatform().os === 'win32'
-    await writeFile(temporary, JSON.stringify(profile), { mode: 0o600, ...(windows ? { flush: true } : {}) })
-    if (windows) await renameWriteThrough(temporary, file)
-    else await rename(temporary, file)
-  } finally {
-    await rm(temporary, { force: true }).catch(() => undefined)
   }
 }
 
@@ -1113,7 +1085,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
               sessionOwnership,
               limits: {
                 maxArtifactBytes: Math.max(
-                  32 * 1024 * 1024,
+                  100 * 1024 * 1024,
                   o.profile.computerUse?.capture.maxBytesPerImage ?? 0,
                 ),
                 maxResponseBytes: Math.max(
@@ -1242,11 +1214,13 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       },
       onPreview: (sessionKey, p) => registry.deliverPreview(sessionKey, p),
       onResourceStatus: (input) => observeResourceMcpStatus?.(input),
+      onRuntimeLog: (record) => o.audit?.(record),
       onLog: (input) => o.audit?.({ kind: 'worker.log', ...input }),
       onLifecycle: (phase, id) => o.observability?.lifecycle('worker', phase, undefined, id),
       onSessionFailure: (sessionKey, error) => registry.interrupt(sessionKey, error),
       ...(runtimeDelivery ? { runtimeDelivery } : {}),
       onRequest: async (sessionKey, f, workerSignal) => {
+        if (f.method === 'bound-wake') return profilePorts.ownedWake(f.params)
         if (f.method === 'plugin-manage' || f.method === 'plugin-manage-abort')
           return pluginManageRequests(sessionKey, f.requestId, f.method, f.params, workerSignal)
         if (f.method === 'mcp-manage' || f.method === 'mcp-manage-abort')
@@ -1401,7 +1375,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           : createSecretsEnv()
       if (o.packageRuntime.manager.localPluginRoots)
         await o.packageRuntime.manager.refreshLocalPlugins(packageProfileDirectory)
-      const surfaceInventory = await o.packageRuntime.manager.inventory(packageProfileDirectory)
+      let surfaceInventory = await o.packageRuntime.manager.inventory(packageProfileDirectory)
       const pinCoordinator = runtimeStore
         ? createRuntimePinCoordinator({
             store: runtimeStore,
@@ -1435,6 +1409,18 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           previous: runtimeStore.desired(),
           publish: (target) => pinCoordinator.publish(target, runtimeTargetProbe),
         })
+      if (runtimeStore && pinCoordinator && runtimeTargetProbe) {
+        o.packageRuntime.bindReferences?.(
+          createCompositeReferenceFacts(runtimeStore, () => pool.businessWorker()?.generation),
+        )
+        await refreshDefaultHelpers({
+          profileDir: packageProfileDirectory,
+          manager: packageRuntime.manager,
+          previous: () => runtimeStore.desired(),
+          publish: (target) => pinCoordinator.publish(target, runtimeTargetProbe),
+        })
+        surfaceInventory = await packageRuntime.manager.inventory(packageProfileDirectory)
+      }
       // Bootstrap local sources through the existing pinned generation publication path.
       if (runtimeStore && pinCoordinator && runtimeTargetProbe) {
         for (const pkg of surfaceInventory.packages) {
@@ -1455,10 +1441,12 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           }
         }
       }
-      surfaceController = createSurfaceController({
-        artifacts: createSurfaceArtifactResolver(surfaceInventory),
-        secrets: createSurfaceSecretResolver((ref) => surfaceSecretBackend.resolve(ref)),
-      })
+      surfaceController = createProfileSurfaceController(
+        o.profile.name,
+        surfaceInventory,
+        (ref) => surfaceSecretBackend.resolve(ref),
+        notices,
+      )
       // Covers a startup ABORT only (thrown before this function returns a handle) -- see
       // `startupCleanup.length = 0` below, and cleanupStartup()'s own doc. The real graceful-stop
       // path is wired separately into `closeSockets` in the shutdown ladder further down.
@@ -1582,15 +1570,18 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
                 )
             },
             workerGeneration: () => pool.businessWorker()?.generation,
-            desiredFor: async ({ packageId, operation }) => {
+            desiredFor: async ({ packageId, operation, packageIds = [] }) => {
               latestInventory = await packageRuntime.manager.inventory(packageProfileDirectory)
-              return rebuildDesiredFromInventory({
-                previous: runtimeStore.desired(),
-                inventory: latestInventory,
-                packageId,
-                operation,
-                configuration: (rowId) => runtimeStore.configAudit.value(packageId, rowId),
-              })
+              let previous = runtimeStore.desired()
+              for (const member of [packageId, ...packageIds])
+                previous = rebuildDesiredFromInventory({
+                  previous,
+                  inventory: latestInventory,
+                  packageId: member,
+                  operation,
+                  configuration: (rowId) => runtimeStore.configAudit.value(member, rowId),
+                })
+              return previous
             },
             contributions: (packageId) =>
               latestInventory.packages.find((pkg) => pkg.id === packageId)?.contributions,
@@ -1642,7 +1633,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
                 profile: o.profile.name,
                 packageId: id,
                 operationId: `local-reload:${id}`,
-                operation: plugin.enabled ? 'update' : 'disable',
+                operation: 'update',
                 signal: new AbortController().signal,
               })
               if (result.error) throw new Error(result.error.code)
@@ -1885,9 +1876,22 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         })
       : undefined
     if (schedules) startupCleanup.push(() => schedules.close())
+    const profilePorts = createSupervisorProfileServices({
+      runtime: o.packageRuntime,
+      profile: o.profile.name,
+      pool,
+      repo: jobsRepo,
+      profileHash: host.profile.hash,
+      clock,
+      ownership: sessionOwnership,
+      workspaces: workspaceCatalog,
+      registry,
+    })
+    const boundWakes = profilePorts.boundWakes
     const scheduler = jobsRepo
       ? new Scheduler({
           repo: jobsRepo,
+          boundWake: profilePorts.boundWake,
           registry: supervisorRegistry,
           notices,
           clock,
@@ -2072,12 +2076,14 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         profile: o.profile.name,
         ...(o.audit ? { audit: o.audit } : {}),
       })
+      registerPluginRuntimeIngress(ep, pool, transport)
       const feeds = new Map<string, Feed>()
       const attached = new Map<string, AttachedFeed>()
       const artifactReadConfigured = artifactRead !== undefined
       const factRead: (key: string) => ScanRead<import('@agnes/protocol').EventEnvelope> =
         o.sessionFactRead ?? ((key) => (query) => cx.registry.require(key).session.scan(query))
       const cx: AgnesContext = {
+        profileFeatures: profilePorts.features,
         sessionServices: { activationBarrier, journal, commandQueue, callService, inspectService },
         host,
         registry: supervisorRegistry,
@@ -2436,6 +2442,13 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           ? (resourceControl.unixAuthority ?? localResourceAuthority())
           : (resourceControl.webAuthority ?? denyResourceAuthority),
       )
+      registerProfileServices(
+        ep,
+        profilePorts.services,
+        boundWakes,
+        activationBarrier,
+        requireSessionOwner(cx),
+      )
       registerExtensions(ep, {
         activationBarrier,
         journal,
@@ -2656,24 +2669,6 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
 }
 
 type SupervisorHandle = Awaited<ReturnType<typeof startSupervisor>>
-
-/** Host uses `run(sql, params)` while daemon's older narrow port uses `exec(sql, params)`. */
-function adaptHostTables(store: HostTableStore): Pick<Tables, 'table'> {
-  return {
-    table(name: string): TableHandle {
-      const table = store.table(name)
-      return {
-        exec(sql, params = []) {
-          if (params.length) table.run(sql, params)
-          else table.exec(sql)
-        },
-        get: <T>(sql: string, params = []) => table.get<T>(sql, params),
-        all: <T>(sql: string, params = []) => table.all<T>(sql, params),
-        transaction: <T>(fn: () => T) => table.transaction(fn),
-      }
-    },
-  }
-}
 
 /**
  * Opens the Host-owned storage used by the real supervisor process and gives jobs an isolated
@@ -3030,19 +3025,9 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
     }),
   }
 
-  const requestAudit = createFileAudit(join(scope.dataDir, 'audit', 'daemon.jsonl'))
-  const flushAudit = async () => {
-    await requestAudit.close?.()
-  }
+  const { record: audit, close: flushAudit } = openDaemonLogs(scope.dataDir)
   const sup = await (deps.startProduction ?? startProductionSupervisor)({
-    audit: (record) => {
-      if (!record || typeof record !== 'object' || !('kind' in record)) return
-      if (record.kind === 'daemon.request_failed' || record.kind === 'plugin.tree.reverted')
-        requestAudit.write({
-          kind: record.kind,
-          ...('detail' in record ? { detail: record.detail as Record<string, unknown> } : {}),
-        })
-    },
+    audit,
     config,
     profile,
     profileDir: scope.profileDir,

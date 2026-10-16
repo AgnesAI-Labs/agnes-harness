@@ -2,6 +2,7 @@ import {
   EXT_EVENT_PATTERN,
   type ExtensionManifest,
   inspectJsonData,
+  transportCapabilityProblems,
   validateExtensionManifest,
 } from '@agnes/protocol'
 import { validUiComponentDeclaration } from '@agnes/protocol/intelligent-ui'
@@ -74,9 +75,21 @@ function clientProblems(value: ExtensionManifest, namespace: string): string[] {
   if (client === undefined) return []
   if (value.capabilities.ui !== true)
     return ['contributes.client: declaring a client module requires capabilities.ui']
+  if ((client.homeEntries?.length || client.examplePages?.length) && client.lifetime !== 'profile')
+    return ['home entries and example pages require profile lifetime']
+  if (
+    new Set(client.homeEntries?.map((entry) => entry.id)).size !== (client.homeEntries?.length ?? 0) ||
+    (client.homeEntries?.filter((entry) => entry.placement === 'primary').length ?? 0) > 32
+  )
+    return ['home entry declarations must have unique ids and at most 32 primary entries']
   const components = client.intelligentComponents
   if (!components) return []
-  if ((client.slots?.length ?? 0) || (client.services?.length ?? 0) || (client.styles?.length ?? 0))
+  if (
+    (client.slots?.length ?? 0) ||
+    (client.services?.length ?? 0) ||
+    (client.styles?.length ?? 0) ||
+    (client.streams?.length ?? 0)
+  )
     return ['intelligentComponents modules must be self-contained and have no slots, services or styles']
   const seen = new Set<string>()
   for (const component of components) {
@@ -105,7 +118,12 @@ export function checkManifest(
     if (!result.value.apiRange.trim()) return { ok: false, problems: ['apiRange: must not be empty'] }
     if (!containedRelativePath(result.value.entry))
       return { ok: false, problems: ['entry: must be a relative path inside the package'] }
+    const transportProblems = transportCapabilityProblems(result.value.capabilities)
+    for (const name of result.value.contributes?.client?.streams ?? [])
+      if (!result.value.capabilities.streams?.some((s) => s.name === name))
+        transportProblems.push('client stream must be declared by its owner')
     const problems = [
+      ...transportProblems,
       ...skinProblems(result.value),
       ...clientProblems(result.value, componentNamespace ?? result.value.id),
     ]

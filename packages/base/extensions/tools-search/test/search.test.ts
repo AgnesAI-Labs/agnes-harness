@@ -119,6 +119,7 @@ describe('grep', () => {
     const ci = await grepTool.execute({ pattern: 'foo', ignoreCase: true, glob: '**/*.ts' }, ctx)
     expect(textOf(ci)).toContain('src/sub/b.ts:1:Foo here')
     expect(textOf(ci)).not.toContain('README.md')
+    expect(textOf(r)).toContain('1 binary file(s)')
   })
 
   it('treats literal patterns literally and says when nothing matched', async () => {
@@ -509,4 +510,90 @@ describe('grep in an artifact the output guard stored', () => {
     )
     expect(r.isError).toBe(true)
   })
+})
+
+describe('explicit file and failed searches', () => {
+  it.each([grepTool, findTool])(
+    '$name handles a named Unicode file and reports a missing path as a failure',
+    async (tool) => {
+      const ctx = ctxOf({ files: { '空 格.txt': 'hit' } })
+      const result =
+        tool.name === 'grep'
+          ? await grepTool.execute({ path: '空 格.txt', pattern: 'hit', glob: '*.ts' }, ctx)
+          : await findTool.execute({ path: '空 格.txt', pattern: '*.txt' }, ctx)
+      expect(result.isError).not.toBe(true)
+      expect(textOf(result)).toContain(tool.name === 'grep' ? '空 格.txt:1:hit' : '空 格.txt')
+      const missing = await tool.execute({ path: 'missing', pattern: 'hit' }, ctx)
+      expect(missing.isError).toBe(true)
+      expect(textOf(missing)).toContain('ENOENT')
+    },
+  )
+  it('names unreadable paths with bounded reason codes and distinguishes total refusal from no matches', async () => {
+    const files = Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`locked-${i}.txt`, 'hit']))
+    const ctx = ctxOf({
+      files,
+      readErrors: Object.fromEntries(Object.keys(files).map((path) => [path, { code: 'EACCES' }])),
+    })
+    const result = await grepTool.execute({ pattern: 'hit' }, ctx)
+    expect(result.isError).toBe(true)
+    expect(textOf(result)).toContain('nothing could be searched')
+    expect(textOf(result)).toContain('12 path(s) could not be read')
+    expect(textOf(result).match(/: EACCES/g)).toHaveLength(10)
+    expect(
+      (await grepTool.execute({ pattern: 'absent' }, ctxOf({ files: { 'ok.txt': 'hit' } }))).isError,
+    ).not.toBe(true)
+  })
+})
+
+it('uses filesystem search when execution is unavailable and keeps its denied-path checks', async () => {
+  const ctx = ctxOf({ files: { 'src/a.ts': 'hit', 'secrets/key.txt': 'hit' } })
+  ctx.exec = async () => {
+    throw Object.assign(new Error('no process backend'), { code: 'SANDBOX_UNAVAILABLE' })
+  }
+  const grep = TOOLS_SEARCH.find((tool) => tool.name === 'grep')!
+  expect(textOf(await grep.execute({ pattern: 'hit' }, ctx))).toContain('src/a.ts:1:hit')
+  expect(textOf(await findTool.execute({ pattern: '**/*.ts' }, ctx)).split('\n')).toContain('src/a.ts')
+  expect((await grep.execute({ pattern: 'hit', path: 'secrets' }, ctx)).isError).toBe(true)
+})
+
+it.each([
+  { code: 1, rows: [{ type: 'end', data: { binary_offset: 2 } }], stderr: '', note: 'binary file(s)' },
+  {
+    code: 2,
+    rows: [{ type: 'summary', data: {} }],
+    stderr: 'a.txt: permission denied',
+    note: 'permission denied',
+  },
+])('reports unsearchable primary-ripgrep output with code $code', async ({ code, rows, stderr, note }) => {
+  const ctx = ctxOf({ files: { 'a.txt': 'hit' } })
+  ctx.exec = async () => ({
+    code,
+    stdout: rows.map((row) => JSON.stringify(row)).join('\n'),
+    stderr,
+    truncated: false,
+  })
+  const grep = TOOLS_SEARCH.find((tool) => tool.name === 'grep')
+  if (!grep) throw new Error('missing registered grep')
+  const result = await grep.execute({ path: 'a.txt', pattern: 'hit', glob: '*.ts' }, ctx)
+  expect(result.isError).toBe(true)
+  expect(textOf(result)).toContain('nothing could be searched')
+  expect(textOf(result)).toContain(note)
+})
+
+it('searches a directly named file symlink through the filesystem fence without applying glob', async () => {
+  const ctx = ctxOf({ files: { 'target.txt': 'hit' } })
+  const fs = ctx.fs
+  const target = (path: string) => path.replace(/link\.txt$/, 'target.txt')
+  const selected = {
+    ...ctx,
+    fs: {
+      ...fs,
+      stat: async (path: string) =>
+        path.endsWith('link.txt') ? { kind: 'symlink' as const, size: 0, mtimeMs: 0 } : fs.stat(path),
+      read: (path: string, options?: { offset?: number; limit?: number }) => fs.read(target(path), options),
+    },
+  }
+  const result = await grepTool.execute({ path: 'link.txt', pattern: 'hit', glob: '*.ts' }, selected)
+  expect(result.isError).not.toBe(true)
+  expect(textOf(result)).toBe('link.txt:1:hit')
 })

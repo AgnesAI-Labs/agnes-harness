@@ -20,7 +20,27 @@ export function validatePluginMetadata(x: unknown): ValidationResult<EXTENSION_M
       ok: false,
       errors: [{ path: '', code: 'OTHER', message: 'Plugin metadata must be bounded JSON data.' }],
     }
-  return validateAgainst<EXTENSION_MANIFEST.PluginMetadata>(EXTENSION_MANIFEST.PluginMetadata, json.value)
+  const checked = validateAgainst<EXTENSION_MANIFEST.PluginMetadata>(
+    EXTENSION_MANIFEST.PluginMetadata,
+    json.value,
+  )
+  if (!checked.ok) return checked
+  const m = checked.value
+  if (
+    (m.category === 'example' && !m.exampleOf) ||
+    (m.category !== 'example' &&
+      (m.exampleOf !== undefined || m.launches !== undefined || m.pageEntry !== undefined)) ||
+    new Set(m.launches?.map((launch) => launch.id)).size !== (m.launches?.length ?? 0) ||
+    m.launches?.some(
+      (launch) =>
+        new TextEncoder().encode(launch.prompt).byteLength > 16384 || /secret:\/\//i.test(launch.prompt),
+    )
+  )
+    return {
+      ok: false,
+      errors: [{ path: '/exampleOf', code: 'OTHER', message: 'Invalid example declarations.' }],
+    }
+  return checked
 }
 
 /** Field-by-field locale fallback for author text; never infer a description from an ID. */

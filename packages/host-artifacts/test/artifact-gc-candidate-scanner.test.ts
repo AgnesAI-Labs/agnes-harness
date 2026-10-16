@@ -137,3 +137,32 @@ describe('Computer Use artifact GC candidate scanner', () => {
     await expect(scanComputerUseArtifactCandidates(row.dataDir)).resolves.toEqual([])
   })
 })
+
+it('tracks ordinary originals separately, verifies bytes in windows and never collects through incomplete roots', async () => {
+  const { scanStoredObjects } = await import('../src/object-gc.js')
+  const { planArtifactGc } = await import('@agnes/core/artifacts')
+  const bytes = new TextEncoder().encode('ordinary attachment original')
+  const row = await fixture(bytes)
+  expect(await scanStoredObjects(row.dataDir, Date.now())).toEqual([])
+  const candidates = await scanStoredObjects(row.dataDir, Date.now() + 25 * 60 * 60 * 1000)
+  expect(candidates).toMatchObject([{ sha256: row.sha256, contentSha256: row.sha256, size: bytes.length }])
+  const empty = { complete: true, roots: [] }
+  const input = {
+    dataDir: row.dataDir,
+    candidates,
+    roots: { ledger: empty, 'request-media': empty, retention: empty, export: empty, rollback: empty },
+  }
+  expect(planArtifactGc(input).eligibleForDeletion).toHaveLength(1)
+  const pending = {
+    ...input,
+    roots: { ...input.roots, retention: { complete: true, roots: [{ sha256: row.sha256 }] } },
+  }
+  expect(planArtifactGc(pending).eligibleForDeletion).toHaveLength(0)
+  expect(
+    planArtifactGc({ ...input, roots: { ...input.roots, ledger: { complete: false, roots: [] } } }),
+  ).toMatchObject({ blocked: true, eligibleForDeletion: [] })
+  await writeFile(join(row.artifactDirectory, row.sha256), new Uint8Array(bytes.length).fill(1))
+  await expect(scanStoredObjects(row.dataDir, Date.now() + 25 * 60 * 60 * 1000)).rejects.toThrow(
+    'integrity mismatch',
+  )
+})

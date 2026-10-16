@@ -9,6 +9,8 @@ import type { MethodName } from './methods.js'
 export type MethodTier = 'client' | 'admin'
 
 export const METHOD_TIERS: Record<MethodName, MethodTier> = {
+  '_agnes/v1/pluginRuntime.status': 'admin',
+  '_agnes/v1/pluginStreams.endpoint': 'admin',
   '_agnes/v1/admin.feedback': 'admin',
   '_agnes/v1/admin.credentials.list': 'admin',
   '_agnes/v1/admin.credentials.create': 'admin',
@@ -96,6 +98,12 @@ export const METHOD_TIERS: Record<MethodName, MethodTier> = {
   '_agnes/v1/mcp.servers.oauth.status': 'admin',
   '_agnes/v1/mcp.servers.oauth.status.set': 'admin',
   '_agnes/v1/extension.ack': 'admin',
+  '_agnes/v1/extension.wakes.enqueue': 'client',
+  '_agnes/v1/extension.wakes.read': 'client',
+  '_agnes/v1/extension.callScoped': 'client',
+  '_agnes/v1/extension.readOperation': 'client',
+  '_agnes/v1/profile.decisions.list': 'client',
+  '_agnes/v1/profile.decisions.answer': 'client',
   '_agnes/v1/extension.call': 'admin',
   '_agnes/v1/sessionSelection.loops': 'admin',
   '_agnes/v1/sessionSelection.runtime': 'admin',
@@ -200,6 +208,8 @@ export const METHOD_TIERS: Record<MethodName, MethodTier> = {
   '_agnes/v1/ui.read': 'client',
   '_agnes/v1/ui.refresh': 'client',
   '_agnes/v1/session.event': 'client',
+  '_agnes/v1/session.loading': 'client',
+  '_agnes/v1/session.loadingCancel': 'client',
   '_agnes/v1/session.preview': 'client',
   '_agnes/v1/daemon.notice': 'client',
 }

@@ -25,6 +25,8 @@
 }
 ```
 
+若客户端使用 `streams`，须在绑定后端行的 `capabilities.streams` 中逐一声明。检查与打包依据该行的能力进行校验；同包其他行的声明不能授权此客户端。stream 的 scope 变更需要重新作出信任决定。
+
 包声明见[package.json](../../examples/packages/client-panel/v1/package.json)，完整客户端描述见[agnes.client.json](../../examples/packages/client-panel/v1/extensions/main/agnes.client.json)。客户端 entry 相对于描述文件定位，是浏览器可执行的原生 ESM：
 
 ```js
@@ -40,6 +42,8 @@ export function apply(ctx, config) {
 该单实例槽的较小 priority 优先，示例替换内置侧栏。停用后应恢复内置侧栏。正式插件选择合适槽位，不能指望覆盖未迁移区域，也不要依赖宿主私有 DOM/CSS 结构。
 
 `publicConfig` 来自随包内容，是公开展示元数据，不是后端 runtime config。客户端 entry/styles 必须是经过校验的包内路径；不能逃出快照、任意 import 本机模块或获取连接凭据。React 与共享 Agnes 包使用宿主的平台 externals，仅将其它依赖打入浏览器产物。
+
+浏览器共享单例白名单是 [`CLIENT_PLATFORM_IMPORTS`](../../packages/protocol/src/client-platform-imports.ts)：`react`、`react/jsx-runtime`、`@agnes/web-client` 和根入口 `@agnes/web-ui`。这些精确说明符通过 HTML import map 解析；包名被 external 并不表示任意子路径都有映射。发行打包会对照该 map 检查客户端产物的导入，拒绝无法解析的 external。
 
 ## 安装与观察
 

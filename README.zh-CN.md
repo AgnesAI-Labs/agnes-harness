@@ -36,6 +36,14 @@ AGH 是面向开发者与现场交付团队的开源开发者预览版。CLI、W
 
 截图使用当前界面与合成浏览器测试数据。可运行演示默认使用全新隔离 home 和确定性本地模型，不发送外部业务消息。只要持久会话仍引用旧代码，旧版本就会保留，包括闲置历史会话。
 
+<a id="new-product-clean-home"></a>
+
+## 新产品与旧环境
+
+本版本以全新的插件架构作为新产品交付，不迁移或继续使用旧版 AGH 的运行数据。如果你曾使用旧版，请在启动新版本前删除或移走旧运行目录：默认是 `~/.agh`，设置过 `AGH_HOME` 时则是该变量指向的目录。也可以保留旧目录，并把 `AGH_HOME` 设置为另一个新的私有空目录。新版本会在新目录中创建自己的环境；模型账号和插件需要重新配置。检测到旧布局时，启动会被拒绝，程序不会自动删除或转换旧数据。
+
+如需保留旧会话，请先复制该文件夹。
+
 ## 从源码开始
 
 准备 Node.js **24.10+**、固定 pnpm **10.34.5** 与平台原生工具链（[安装指南](docs/guide/install.zh-CN.md)）。克隆仓库，在根目录运行：
@@ -66,7 +74,7 @@ node agnes.mjs serve
 - **受信代码：** 普通后端插件在进程内运行。能力审阅、来源校验、审批和命令/MCP 沙箱不隔离任意插件 JavaScript。
 - **预览发行：** 当前可从源码构建，没有公开 npm 发行、消费者安装程序或自动升级承诺。预览期间 API 与配置可能变化。
 - **平台：** macOS 和 Linux 已有持续维护的原生、进程与浏览器检查。Windows 尚未经完整端到端验收，也没有已验证的 L1 命令沙箱。Linux 暂不支持 Computer Use。
-- **实验能力：** Provider/Agent Loop API、子引擎、程序化 cell（尤其无状态 CPython）与 MHS 启发的设备接入需要按部署验证。设备示例是模拟器，不是认证硬件适配器。
+- **实验能力：** Provider/Agent Loop API、子引擎、程序化 cell（尤其无状态 CPython）需要按部署验证。
 
 [支持范围](docs/reference/limitations.zh-CN.md) · [安全](docs/guide/security.zh-CN.md) · [验证](docs/maintainers/verification.zh-CN.md) · [网络部署](docs/guide/deployment.zh-CN.md)
 

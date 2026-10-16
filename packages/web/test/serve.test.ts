@@ -219,9 +219,9 @@ it('issues a fresh CSP style nonce for each served HTML document', async () => {
       } else {
         expect(directives['img-src']).toBeUndefined()
         expect(directives['frame-src']).toBeUndefined()
-        expect(policy).not.toContain('blob:')
       }
       expect(directives['default-src']).toEqual(["'self'"])
+      expect(directives['media-src']).toEqual(["'self'", 'blob:'])
       expect(directives['script-src']).toEqual(["'self'"])
       expect(directives['style-src']).toEqual(["'self'", `'nonce-${nonce}'`])
 

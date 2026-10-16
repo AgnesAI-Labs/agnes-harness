@@ -6,6 +6,8 @@ import type { RequestBody, RequestMessage } from './mint.js'
 export type InlineImagePolicy = {
   model: ModelRecord | undefined
   canRead: boolean
+  /** Already budgeted stored images, with original per-message ordinals preserved. */
+  selectedImageIndices?: ReadonlyMap<number, readonly number[]>
 }
 
 export const sessionImageRef = (seq: number, index: number): string => `session-image://${seq}/${index}`
@@ -66,6 +68,8 @@ export function selectInlineImages(
     (m) => m.role === 'user' && m.content.some((b) => b.type === 'image'),
   )
   const recent = new Set(imageMessages.slice(-3).map((m) => m.seq))
+  const imageRef = (seq: number, index: number) =>
+    sessionImageRef(seq, policy.selectedImageIndices?.get(seq)?.[index - 1] ?? index)
   const selected = new Set<object>()
   let count = media.length
   const fresh = body.messages.flatMap((m) =>
@@ -86,7 +90,7 @@ export function selectInlineImages(
         return {
           ...m,
           content: m.content.map((b) =>
-            b.type === 'image' ? imageNote(sessionImageRef(m.seq, ++index), false, policy.canRead) : b,
+            b.type === 'image' ? imageNote(imageRef(m.seq, ++index), false, policy.canRead) : b,
           ),
         }
       }),
@@ -109,13 +113,13 @@ export function selectInlineImages(
     let index = 0
     for (const block of message.content) {
       if (block.type !== 'image') continue
-      const ref = sessionImageRef(message.seq, ++index)
+      const ref = imageRef(message.seq, ++index)
       const cost =
         jsonBytes([imageNote(ref, true, policy.canRead), block]) -
         jsonBytes([imageNote(ref, false, policy.canRead)])
       const eligible =
         supportsImages &&
-        (required || recent.has(message.seq)) &&
+        (required || recent.has(message.seq) || policy.selectedImageIndices?.has(message.seq)) &&
         count < cap &&
         inMessage < perMessage &&
         cost <= remainingBytes
@@ -140,7 +144,7 @@ export function selectInlineImages(
     let index = 0
     message.content = message.content.flatMap((block): RequestMessage['content'] => {
       if (block.type !== 'image') return [block]
-      const ref = sessionImageRef(message.seq, ++index)
+      const ref = imageRef(message.seq, ++index)
       const included = selected.has(block)
       return [imageNote(ref, included, policy.canRead), ...(included ? [block] : [])]
     })

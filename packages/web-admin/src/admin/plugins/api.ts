@@ -432,12 +432,14 @@ export class PluginAdminApi {
     source: PackageSource,
     expectedIntegrity: string,
     activation?: PackageActivationRequest,
+    dependents?: import('@agnes/protocol').PackageUpdateParams['dependents'],
   ): Promise<PackageOperationReceipt> {
     return this.#effect('update', {
       id,
       source,
       expectedIntegrity,
       ...(activation ? { activation } : {}),
+      ...(dependents ? { dependents } : {}),
     })
   }
 

@@ -31,6 +31,8 @@ export class SurfaceControllerError extends Error {
 
 export type SurfaceControllerOptions = Readonly<{
   artifacts: SurfaceArtifactResolver
+  /** Invalidation hint only; consumers re-read snapshot(). Listener failures cannot affect lifecycle. */
+  onChange?(): void
   secrets: SurfaceSecretResolver
   runtime?: SurfaceRuntimeAdapter
   log?: SurfaceLog
@@ -215,6 +217,7 @@ export function createSurfaceController(options: SurfaceControllerOptions): Surf
     }
     const record: InstanceRecord = { surface, state: 'starting', handle }
     records.set(sourceId, record)
+    changed()
     watchExit(record, handle)
     await waitForSurfaceHealth(handle, {
       timeoutMs: startupMs,
@@ -234,6 +237,7 @@ export function createSurfaceController(options: SurfaceControllerOptions): Surf
       throw new Error('surface exited during startup')
     }
     record.state = 'healthy'
+    changed()
     return record
   }
 
@@ -294,6 +298,7 @@ export function createSurfaceController(options: SurfaceControllerOptions): Surf
       throw new SurfaceControllerError('STOP_FAILED', 'surface instance did not stop cleanly')
     }
     records.delete(sourceId)
+    changed()
     safeLog(log, 'info', 'surface instance stopped', { sourceId })
   }
 
@@ -312,6 +317,7 @@ export function createSurfaceController(options: SurfaceControllerOptions): Surf
       return
     }
     records.delete(sourceId)
+    changed()
   }
 
   function guardSource(sourceId: string): SurfaceControllerError | undefined {
@@ -336,6 +342,7 @@ export function createSurfaceController(options: SurfaceControllerOptions): Surf
 
   function forgetRecords(): void {
     records.clear()
+    changed()
   }
 
   async function resolveSecrets(
@@ -399,6 +406,7 @@ export function createSurfaceController(options: SurfaceControllerOptions): Surf
     const handle = record.handle
     if (handle === undefined) return
     record.state = 'stopping'
+    changed()
     try {
       handle.terminate()
     } catch (error) {
@@ -431,6 +439,7 @@ export function createSurfaceController(options: SurfaceControllerOptions): Surf
       if (records.get(handle.sourceId) !== record || record.state === 'stopping') return
       record.exit = exit
       record.state = 'crashed'
+      changed()
       try {
         await withTimeout(
           Promise.resolve().then(() => handle.cleanup()),
@@ -461,6 +470,14 @@ export function createSurfaceController(options: SurfaceControllerOptions): Surf
       ...(record.handle === undefined ? {} : { endpoint: Object.freeze({ ...record.handle.endpoint }) }),
       ...(record.exit === undefined ? {} : { exit: Object.freeze({ ...record.exit }) }),
     })
+  }
+
+  function changed(): void {
+    try {
+      options.onChange?.()
+    } catch {
+      /* Hints never change lifecycle outcomes. */
+    }
   }
 
   function snapshot(): SurfaceControllerSnapshot {

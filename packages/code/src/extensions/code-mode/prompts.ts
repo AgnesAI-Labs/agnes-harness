@@ -103,7 +103,13 @@ export function createPromptOperation(deps: PromptDeps): Operation {
       if (declared?.length === 0) return { promptSections: [] }
       const sections = [
         section('persona', renderPersona()),
-        section('environment', renderEnvironment(environmentFacts(ctx, deps))),
+        section(
+          'environment',
+          renderEnvironment(environmentFacts(ctx, deps)) +
+            (deps.adapters.platform.shell() === 'powershell'
+              ? '\n\n' + loadPrompt('environment-powershell')
+              : ''),
+        ),
       ]
       // The code preset offers run_code alone, and the general working rules are written for an
       // agent that edits and runs things directly.

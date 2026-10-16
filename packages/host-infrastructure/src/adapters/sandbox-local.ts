@@ -129,6 +129,7 @@ export function createLocalSandboxProvider(
             stderr: result.stderr,
             truncated: result.truncated,
             timedOut: result.timedOut,
+            ...(result.stoppedProcesses === undefined ? {} : { stoppedProcesses: result.stoppedProcesses }),
             enforcement: actual,
             ...(result.signal === undefined ? {} : { signal: result.signal }),
           }

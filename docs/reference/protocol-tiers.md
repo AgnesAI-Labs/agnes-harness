@@ -55,6 +55,8 @@ What third-party clients rely on: sessions, submit, decisions and events. These 
 
 - `session/update`
 - `_agnes/v1/session.event`
+- `_agnes/v1/session.loading`
+- `_agnes/v1/session.loadingCancel`
 - `_agnes/v1/session.preview`
 - `_agnes/v1/daemon.notice`
 
@@ -80,6 +82,15 @@ What third-party clients rely on: sessions, submit, decisions and events. These 
 - `_agnes/v1/ui.refresh`
 - `_agnes/v1/artifact.read`
 - `_agnes/v1/artifact.job.status`
+
+### Profile operations and bound notifications
+
+- `_agnes/v1/extension.callScoped`
+- `_agnes/v1/extension.readOperation`
+- `_agnes/v1/extension.wakes.enqueue`
+- `_agnes/v1/extension.wakes.read`
+- `_agnes/v1/profile.decisions.list`
+- `_agnes/v1/profile.decisions.answer`
 
 ## Admin contract
 
@@ -210,6 +221,8 @@ Package administration, resource control, configuration, scheduling, diagnostics
 - `_agnes/v1/extension.call`
 - `_agnes/v1/directory.upsert`
 - `_agnes/v1/apis.list`
+- `_agnes/v1/pluginRuntime.status`
+- `_agnes/v1/pluginStreams.endpoint`
 - `_agnes/v1/surfaces.mounts`
 
 ### Session defaults and selection

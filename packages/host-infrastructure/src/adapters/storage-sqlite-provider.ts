@@ -38,6 +38,7 @@ export const sqlitePersistenceProvider: PersistenceProvider = definePersistenceP
       renew: storage.renew,
       release: storage.release,
       scan: storage.scan,
+      scanLean: storage.scanLean,
       registers: storage.registers,
       scanIntegrity: storage.scanIntegrity,
       createChild: storage.createChild,

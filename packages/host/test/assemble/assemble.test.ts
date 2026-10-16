@@ -24,6 +24,7 @@ import { hashDirectory, type RuntimePluginSnapshot, type RuntimeSnapshot } from 
 import { buildRuntimeTarget, createPluginRow, normalizePluginExport } from '@agnes/plugin-runtime/host'
 import type { Actor, ModelRecord, RouteDecl } from '@agnes/protocol'
 import { defineRemoteSandboxProvider } from '@agnes/sandbox-remote'
+import { privateArtifactDeleteAvailable } from '@agnes/system-node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ASSEMBLY_STEPS, type AssembleDeps, assemble } from '../../src/runtime/assemble/assemble.js'
 import { closeHost } from '../../src/runtime/lifecycle/lifecycle.js'
@@ -246,7 +247,9 @@ describe('assemble', () => {
     )
     void assembly.catch((error) => reached.reject(error))
     await reached.promise
-    expect(started).toEqual(sources.slice(0, limit).map(({ snapshot }) => snapshot.packageId))
+    expect(new Set(started)).toEqual(
+      new Set(sources.slice(0, limit).map(({ snapshot }) => snapshot.packageId)),
+    )
     expect(mounted).toEqual([])
     for (const heldImport of [...held].reverse()) heldImport.resolve()
     const a = await assembly
@@ -265,6 +268,7 @@ describe('assemble', () => {
       const sources = Array.from({ length: 4 }, (_, i) => prepareSource(`@acme/fail-${i}`))
       const held = [gate(), gate()]
       const reached = gate()
+      const secondEntered = gate()
       const started: string[] = []
       let settled = false
       const options = deps(allModules(), {
@@ -274,9 +278,13 @@ describe('assemble', () => {
         runtimePrepareIndependent: sources.map(({ snapshot }) => snapshot),
         extensionLoader: {
           import: async (file) => {
+            const index = sources.findIndex(({ snapshot }) => file.startsWith(snapshot.directory))
+            // Independent imports may arrive in either order; exercise the reverse order explicitly.
+            if (index === 0) await secondEntered.promise
             started.push(file)
+            if (index === 1) secondEntered.resolve()
             if (started.length === 2) reached.resolve()
-            await held[started.length - 1]?.promise
+            await held[index]?.promise
             return { main: () => {} }
           },
         },
@@ -1505,7 +1513,7 @@ describe('assemble', () => {
     expect((ctx.preset as { name: string }).name).toBe('standard')
     await a.rollback.unwind()
   })
-  it('keeps Computer Use artifact retention out of a never-enabled profile', async () => {
+  it('keeps screenshot collection off while permitting private shared CAS writes', async () => {
     const p = await profileFor({ computerUse: { enabled: false } })
     const m = baseModule()
     const seams = testSeams(m)
@@ -1518,7 +1526,7 @@ describe('assemble', () => {
     }
 
     const a = await assemble(p, deps({ '@agnes/base': m, '@agnes/code': codeModule, '@agnes/ai': aiModule }))
-    expect(privateStoreInjected).toBe(false)
+    expect(privateStoreInjected).toBe(privateArtifactDeleteAvailable())
     expect(a.computerUseArtifactGc).toBeUndefined()
     await a.rollback.unwind()
   })

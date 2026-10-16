@@ -1,23 +1,28 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
-  BUNDLED_HELPERS,
   bundledExamplesEntries,
-  bundledPluginSourceRoot,
+  bundledPluginSource,
   createCatalog,
   createLocalExamplesCatalog,
+  DEFAULT_ENABLED_BUNDLED_PACKAGES,
   hashDirectory,
   type LocalExamplesCatalog,
   staticCatalogSource,
 } from '@agnes/package-manager'
 
 /** Read the actual shipped payload; never advertise an unavailable Git fallback. */
-function helperEntry(helper: (typeof BUNDLED_HELPERS)[number]) {
-  const root = bundledPluginSourceRoot(helper.ref)
-  if (!root) throw new Error('Bundled plugin root unavailable')
-  const directory = join(root, 'bundled-plugins', helper.name)
+function helperEntry(helper: (typeof DEFAULT_ENABLED_BUNDLED_PACKAGES)[number]) {
+  const source = bundledPluginSource(helper.ref)
+  if (!source) throw new Error('Bundled plugin root unavailable')
+  const directory = join(source.root, source.path)
   const pkg = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8'))
-  if (pkg.name !== helper.id || pkg.version !== helper.version || pkg.license !== helper.license)
+  if (
+    pkg.name !== helper.id ||
+    typeof pkg.version !== 'string' ||
+    pkg.version === '0.0.0' ||
+    pkg.license !== helper.license
+  )
     throw new Error('Bundled helper identity mismatch')
   return {
     id: pkg.name,
@@ -37,7 +42,7 @@ export async function discoverLocalExamples(workspace: string): Promise<LocalExa
     staticCatalogSource('builtin-plugins', async () => ({
       issuedAt: new Date().toISOString(),
       ttlMs: 86_400_000,
-      entries: BUNDLED_HELPERS.map(helperEntry),
+      entries: DEFAULT_ENABLED_BUNDLED_PACKAGES.map(helperEntry),
     })),
     staticCatalogSource('official-examples', async (signal) => ({
       issuedAt: new Date().toISOString(),

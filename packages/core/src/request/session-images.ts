@@ -1,13 +1,14 @@
 import { sha256Hex } from '@agnes/core-common/request/hash'
-import { scanPages } from '@agnes/core-ledger/log/scan-pages'
 import type { ToolResult } from '@agnes/extension-api'
-import { type ContentBlock, modelImageInputError } from '@agnes/protocol'
+import { type ContentBlock, modelImageInputError, storedAttachment } from '@agnes/protocol'
 import { decodeSafeImages, USER_MESSAGE_IMAGE_LIMITS } from '@agnes/protocol-validation'
 import { REQUEST_MEDIA_MIN_DIMENSION } from '../orchestrator/request-media.js'
 import { resolveModel } from '../step/inference.js'
 import { resolvedModelRecord } from '../step/model-tools.js'
 import type { SessionImpl } from '../step/session.js'
+import { attachmentIndex } from './attachment-index.js'
 import { sessionImageRef } from './inline-images.js'
+import { readSessionAttachment } from './session-files.js'
 
 const result = (text: string, isError = false): ToolResult => ({
   content: [{ type: 'text', text }],
@@ -31,28 +32,14 @@ export async function readSessionImages(
     if (!Number.isSafeInteger(offset) || offset < 1 || !Number.isSafeInteger(limit) || limit < 1)
       return result('Invalid image list offset or limit.', true)
     const lines: string[] = []
-    let ordinal = 0
-    for await (const page of scanPages(
-      (q) => session.d.log.scan(q),
-      { type: 'user/message', lane: session.lane, toSeq: end },
-      10,
-    )) {
+    let ordinal = offset - 1
+    const indexed = await attachmentIndex(session)
+    for (const image of indexed.images.slice(offset - 1, offset + limit)) {
       abort()
-      for (const event of page) {
-        const content = (event.data as { content?: ContentBlock[] }).content ?? []
-        let index = 0
-        for (const block of content) {
-          if (block.type !== 'image') continue
-          index++
-          ordinal++
-          if (ordinal < offset) continue
-          if (lines.length === limit)
-            return result(
-              `${lines.join('\n')}\n[read session-image://list with offset=${ordinal} to continue]`,
-            )
-          lines.push(`${ordinal}. ${sessionImageRef(event.seq, index)}`)
-        }
-      }
+      ordinal++
+      if (lines.length === limit)
+        return result(`${lines.join('\n')}\n[read session-image://list with offset=${ordinal} to continue]`)
+      lines.push(`${ordinal}. ${sessionImageRef(image.seq, image.index)}`)
     }
     return result(lines.join('\n') || 'No images at this offset in this session.')
   }
@@ -80,10 +67,22 @@ export async function readSessionImages(
     })
     const content = (rows[0]?.data as { content?: ContentBlock[] } | undefined)?.content ?? []
     const image = content.filter(
-      (block): block is Extract<ContentBlock, { type: 'image' }> => block.type === 'image',
+      (block) => block.type === 'image' || (storedAttachment(block) && block.attachment.image),
     )[index - 1]
     if (!image) return result('The image is not available in this session.', true)
-    images.push(image)
+    if (image.type === 'image') images.push(image)
+    else {
+      const original = await readSessionAttachment(
+        session,
+        { path: `session-image://${reference}`, maxBytes: USER_MESSAGE_IMAGE_LIMITS.maxBytesPerImage },
+        signal,
+      )
+      if (!original) return result('The image is not available in this session.', true)
+      const parts: string[] = []
+      for (let at = 0; at < original.bytes.length; at += 16384)
+        parts.push(String.fromCharCode(...original.bytes.subarray(at, at + 16384)))
+      images.push({ type: 'image', data: btoa(parts.join('')), mimeType: original.mimeType })
+    }
   }
   const target = resolveModel(session, 'primary')
   const model = resolvedModelRecord(session.d.provider, target)

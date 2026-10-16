@@ -17,6 +17,7 @@ export interface ShellJobView {
   stdout: string
   stderr: string
   truncated: boolean
+  stoppedProcesses?: number
   shell?: PersistentShellName
   sessionId?: string
 }
@@ -27,6 +28,7 @@ export type JobOwner = Pick<ToolContext, 'session'>
 interface Job {
   view: ShellJobView
   capturedBytes: number
+  cleanupPending?: boolean
   done: Promise<ShellJobView>
   finish(code: number | null): void
   stop(): Promise<void>
@@ -62,7 +64,7 @@ export class ShellJobs {
     view.ownerSessionId = ctx.session.key
     const jobs = this.table(ctx)
     if (jobs.size >= MAX_JOBS) {
-      const old = [...jobs].find(([, job]) => job.view.status !== 'running')
+      const old = [...jobs].find(([, job]) => job.view.status !== 'running' && !job.cleanupPending)
       if (!old) throw new Error('session job limit reached; close a running job first')
       jobs.delete(old[0])
       for (const [call, id] of this.calls) if (id === old[0]) this.calls.delete(call)
@@ -131,7 +133,13 @@ export class ShellJobs {
     if (cwd !== ctx.cwd && (await ctx.fs.stat(cwd)).kind !== 'dir')
       throw new Error('job cwd must be readable')
     const opening = ctx.sandbox.openProcess
-      ? ctx.sandbox.openProcess({ argv, cwd, signal: ctx.signal, ...(pty ? { pty } : {}) })
+      ? ctx.sandbox.openProcess({
+          argv,
+          cwd,
+          env: { PYTHONUNBUFFERED: '1', PYTHONUTF8: '1' },
+          signal: ctx.signal,
+          ...(pty ? { pty } : {}),
+        })
       : pty || argv[0] === SHELL_STDIN_SENTINEL || !('confine' in ctx.sandbox)
         ? undefined
         : legacyProcess({ signal: ctx.signal, sandbox: ctx.sandbox }, argv, cwd)
@@ -176,8 +184,10 @@ export class ShellJobs {
     }
     this.calls.set(call, job.view.id)
     const off = handle.onOutput((chunk) => this.append(job, chunk))
-    void handle.exited.then(({ code, error }) => {
+    void handle.exited.then(({ code, error, stoppedProcesses }) => {
       off()
+      if (stoppedProcesses !== undefined) job.view.stoppedProcesses = stoppedProcesses
+      job.cleanupPending = error !== undefined
       if (error) this.append(job, { stream: 'stderr', text: String(error) })
       job.finish(error ? null : code)
     })
@@ -207,6 +217,7 @@ export class ShellJobs {
     const off = handle.onOutput((chunk) => this.append(job, chunk))
     void handle.exited.then(({ code, error }) => {
       off()
+      job.cleanupPending = error !== undefined
       if (error) this.append(job, { stream: 'stderr', text: String(error) })
       job.finish(error ? null : code)
       this.processes.delete(job.view.id)
@@ -355,10 +366,11 @@ export class ShellJobs {
   }
   async kill(ctx: JobOwner, id: string): Promise<ShellJobView> {
     const job = this.get(ctx, id)
-    if (job.view.status === 'running') {
+    if (job.view.status === 'running' || job.cleanupPending) {
       job.view.status = 'killed'
       try {
         await job.stop()
+        job.cleanupPending = false
         job.finish(-1)
       } catch (error) {
         job.view.status = 'running'
@@ -392,11 +404,12 @@ export class ShellJobs {
       await Promise.allSettled([...(this.starting.get(ownerKey) ?? [])])
       const failures = await Promise.allSettled(
         [...jobs.values()]
-          .filter((job) => job.view.status === 'running' && job.view.kind !== 'child')
+          .filter((job) => (job.view.status === 'running' || job.cleanupPending) && job.view.kind !== 'child')
           .map(async (job) => {
             job.view.status = 'killed'
             try {
               await job.stop()
+              job.cleanupPending = false
               job.finish(-1)
             } catch (error) {
               job.view.status = 'running'
@@ -425,6 +438,7 @@ export class ShellJobs {
             job.view.status = 'killed'
             try {
               await job.stop()
+              job.cleanupPending = false
               job.finish(-1)
             } catch (error) {
               job.view.status = 'running'

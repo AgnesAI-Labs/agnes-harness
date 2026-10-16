@@ -5,9 +5,10 @@ import type {
   RuntimePinDescriptor,
 } from '@agnes/protocol'
 import type { PluginRuntimeState } from '@agnes/web-foundation/client-modules/runtime-status'
-import type { RuntimeStateView } from '@agnes/web-ui'
-import { AdminApiError } from '../api.js'
+import { type DetailActionSpec, isBuiltinPlugin, type RuntimeStateView } from '@agnes/web-ui'
+import { AdminApiError, type PluginAdminApi } from '../api.js'
 import type { AdminError } from '../types.js'
+import type { PluginAdminPage } from './page.js'
 
 export function safeMessage(error: unknown): AdminError {
   if (error instanceof AdminApiError) return error.details
@@ -57,4 +58,63 @@ export function pinPurposeLabel(
 
 export function asRuntimeView(state: PluginRuntimeState | undefined): RuntimeStateView | undefined {
   return state
+}
+
+/** A release update is identified by its reserved source and bytes, even if versions coincide. */
+export function bundledUpdate(
+  installed: PackageInstalledDescriptor,
+  catalog: readonly PackageCatalogDescriptor[],
+): PackageCatalogDescriptor | undefined {
+  if (!isBuiltinPlugin(installed)) return undefined
+  return catalog.find(
+    (entry) =>
+      entry.id === installed.id &&
+      entry.sourceId === 'builtin-plugins' &&
+      entry.source.type === installed.source.type &&
+      entry.source.ref === installed.source.ref &&
+      entry.integrity !== installed.integrity,
+  )
+}
+
+/** Built-in update discovery is independent of the marketplace's search and pagination state. */
+export async function readBundledCatalog(api: PluginAdminApi): Promise<PackageCatalogDescriptor[]> {
+  const entries: PackageCatalogDescriptor[] = []
+  let cursor: string | undefined
+  do {
+    const page = await api.catalog('', cursor)
+    entries.push(...page.items.filter((item) => item.sourceId === 'builtin-plugins'))
+    cursor = page.nextCursor ?? undefined
+  } while (cursor)
+  return entries
+}
+
+export function bundledUpdateAction(
+  page: PluginAdminPage,
+  current: PackageInstalledDescriptor,
+  candidate: PackageCatalogDescriptor,
+): DetailActionSpec {
+  const view = page.viewContext()
+  return {
+    label: view.t('action.review-bundled-update', { from: current.version, to: candidate.version }),
+    group: 'versions',
+    className: '',
+    disabled:
+      !view.canEffect('packages.install') || view.packageBusy(current.id) || view.inspecting(current.id),
+    onClick: () => void view.inspectCatalog(candidate),
+  }
+}
+
+export function canCombineUpdate(
+  page: PluginAdminPage,
+  item: PackageInstalledDescriptor,
+  preview: import('@agnes/protocol').PackagePreview,
+): boolean {
+  return (
+    page.supportsCompositeActivation() &&
+    page.activeIntegrity(item) !== undefined &&
+    !!preview.capabilityHash &&
+    page.can('packages.install') &&
+    page.can('packages.trust') &&
+    page.can('packages.activate')
+  )
 }

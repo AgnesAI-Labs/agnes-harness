@@ -1,6 +1,13 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { type PackageBlocker, type PluginCapabilities, validatePackageAdminData } from '@agnes/protocol'
+import {
+  type JsonValue,
+  jcs,
+  type PackageBlocker,
+  type PluginCapabilities,
+  transportCapabilityProblems,
+  validatePackageAdminData,
+} from '@agnes/protocol'
 import { PackageError } from './errors.js'
 import { readStaticJson } from './integrity.js'
 
@@ -11,6 +18,7 @@ export function parsePluginCapabilities(value: unknown): PluginCapabilities | un
   const checked = validatePackageAdminData('PluginCapabilities', value)
   if (
     !checked.ok ||
+    transportCapabilityProblems(checked.ok ? (checked.value as PluginCapabilities) : {}).length > 0 ||
     // biome-ignore lint/suspicious/noControlCharactersInRegex: reject control bytes at the identifier or path boundary.
     capabilityAtoms(value as PluginCapabilities).some((atom) => /[\u0000-\u001f]/.test(atom))
   )
@@ -31,8 +39,12 @@ export function capabilityAtoms(value: PluginCapabilities | undefined): string[]
     ...(['read', 'write'] as const).flatMap((key) =>
       (value.filesystem?.[key] ?? []).map((scope) => `filesystem.${key}:${scope}`),
     ),
-    ...(['model', 'childAgents', 'ui', 'device'] as const).filter((key) => value[key] === true),
+    ...(['model', 'childAgents', 'ui', 'device', 'wake', 'store'] as const).filter(
+      (key) => value[key] === true,
+    ),
     ...(value.uiData ?? []).map((permission) => `uiData:${permission}`),
+    ...(value.streams ?? []).map((stream) => `streams:${stream.scope}:${stream.name}:${stream.lane}`),
+    ...(value.managedServices ?? []).map((service) => `managedServices:${service.scope}:${service.id}`),
   ].sort()
 }
 
@@ -147,12 +159,12 @@ export function capabilityPolicyBlockers(
 }
 
 const AUTHORITY_LISTS = ['network', 'exec', 'secrets', 'credentials', 'uiData'] as const
-const AUTHORITY_FLAGS = ['model', 'device', 'childAgents', 'ui'] as const
+const AUTHORITY_FLAGS = ['model', 'device', 'childAgents', 'ui', 'store', 'wake'] as const
 
 /**
  * The package-level view of its plugins' capabilities: the authority a package needs is the union of
- * what each plugin declares. Registration keys (tools, hooks, slots, ...) belong to one plugin and
- * are not merged.
+ * what each plugin declares, including service/transport contracts for review. Runtime callers
+ * select the exact verified export rather than granting a sibling row this union.
  */
 export function mergePluginCapabilities(
   declared: readonly (PluginCapabilities | undefined)[],
@@ -172,11 +184,30 @@ export function mergePluginCapabilities(
     if (present.some((capabilities) => capabilities.filesystem?.[access] !== undefined))
       merged.filesystem = { ...(merged.filesystem as object | undefined), [access]: scopes }
   }
+  for (const key of ['services', 'streams', 'managedServices'] as const) {
+    if (present.some((c) => c[key] !== undefined)) {
+      const byValue = new Map<string, JsonValue>()
+      for (const capability of present)
+        for (const d of capability[key] ?? []) byValue.set(jcs(d), structuredClone(d))
+      merged[key] = [...byValue.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, d]) => d)
+    }
+  }
   return merged as PluginCapabilities
 }
 
-export function readPluginCapabilities(directory: string): PluginCapabilities | undefined {
+/** Package previews use the union; runtime registration must select its verified export. */
+export function readPluginCapabilities(
+  directory: string,
+  exportName?: string,
+): PluginCapabilities | undefined {
   const manifest = readStaticJson(join(directory, 'package.json'))
-  const plugins = (manifest.agnes as { plugins?: { capabilities?: unknown }[] } | undefined)?.plugins
-  return mergePluginCapabilities((plugins ?? []).map((entry) => parsePluginCapabilities(entry.capabilities)))
+  const plugins =
+    (manifest.agnes as { plugins?: { export?: string; capabilities?: unknown }[] } | undefined)?.plugins ?? []
+  if (exportName !== undefined) {
+    const entries = plugins.filter((entry) => entry.export === exportName)
+    if (entries.length !== 1)
+      throw new PackageError('E_EXT_LOAD', 'Plugin export capabilities are unavailable')
+    return parsePluginCapabilities(entries[0]?.capabilities)
+  }
+  return mergePluginCapabilities(plugins.map((entry) => parsePluginCapabilities(entry.capabilities)))
 }

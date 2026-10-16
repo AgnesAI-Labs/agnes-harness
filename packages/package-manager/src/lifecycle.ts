@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
+import { satisfiesApiRange } from '@agnes/extension-api'
 import { type PackageBlocker, validatePackageAdminData } from '@agnes/protocol'
 import { parse as parseYaml } from 'yaml'
 import { surfaceReferences } from './deployment-refs.js'
@@ -106,10 +107,18 @@ export async function assertNoReferences(
   id: string,
   operation: 'disable' | 'update' | 'rollback' | 'remove',
   authority?: PackageReferences,
+  candidate?: LockEntry,
+  candidates: Readonly<Record<string, LockEntry>> = {},
 ): Promise<void> {
   const blockers: PackageBlocker[] = []
-  const dependents = Object.entries(lock.packages)
-    .filter(([other, e]) => other !== id && Object.hasOwn(e.dependencies, id))
+  const dependents = Object.entries({ ...lock.packages, ...candidates })
+    .filter(
+      ([other, e]) =>
+        other !== id &&
+        Object.hasOwn(e.dependencies, id) &&
+        !(operation === 'disable' && e.metadata?.exampleOf === id) &&
+        !(operation === 'update' && candidate && satisfiesApiRange(e.dependencies[id]!, candidate.version)),
+    )
     .map(([other]) => other)
     .sort()
   if (dependents.length) blockers.push({ code: 'dependency', references: dependents })

@@ -133,12 +133,12 @@ describe('tree budget on the live inference path', () => {
     await k.close()
   })
 
-  it('shares reserveTreeBudget with compaction', () => {
+  it('uses an independent tree budget handle for compaction', () => {
     const src = readFileSync(
-      fileURLToPath(new URL('../src/execution/turn/compaction.ts', import.meta.url)),
+      fileURLToPath(new URL('../src/execution/turn/compaction-summary.ts', import.meta.url)),
       'utf8',
     )
-    expect(src.includes('reserveTreeBudget(')).toBe(true)
+    expect(src.includes('reserveTreeBudgetHandle(')).toBe(true)
   })
 
   it('maps maxTokens onto the provider wire body', () => {

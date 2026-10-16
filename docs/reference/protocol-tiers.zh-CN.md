@@ -55,6 +55,8 @@
 
 - `session/update`
 - `_agnes/v1/session.event`
+- `_agnes/v1/session.loading`
+- `_agnes/v1/session.loadingCancel`
 - `_agnes/v1/session.preview`
 - `_agnes/v1/daemon.notice`
 
@@ -80,6 +82,15 @@
 - `_agnes/v1/ui.refresh`
 - `_agnes/v1/artifact.read`
 - `_agnes/v1/artifact.job.status`
+
+### Profile 操作与绑定通知
+
+- `_agnes/v1/extension.callScoped`
+- `_agnes/v1/extension.readOperation`
+- `_agnes/v1/extension.wakes.enqueue`
+- `_agnes/v1/extension.wakes.read`
+- `_agnes/v1/profile.decisions.list`
+- `_agnes/v1/profile.decisions.answer`
 
 ## 管理契约
 
@@ -210,6 +221,8 @@
 - `_agnes/v1/extension.call`
 - `_agnes/v1/directory.upsert`
 - `_agnes/v1/apis.list`
+- `_agnes/v1/pluginRuntime.status`
+- `_agnes/v1/pluginStreams.endpoint`
 - `_agnes/v1/surfaces.mounts`
 
 ### 会话默认值与选择

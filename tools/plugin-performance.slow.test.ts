@@ -1,12 +1,12 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
-import { tmpdir } from 'node:os'
+import { cpus, tmpdir, totalmem } from 'node:os'
 import { dirname, join } from 'node:path'
 import { monitorEventLoopDelay, performance } from 'node:perf_hooks'
 import { setTimeout as delay } from 'node:timers/promises'
 import { createMemoryAudit } from '@agnes/host-infrastructure/audit'
 import { expect, it, vi } from 'vitest'
-import { fetchSurfaceMountProxy } from '../packages/cli/launch/surface-mounts.js'
+import { fetchSurfaceMountLookup, fetchSurfaceMountProxy } from '../packages/cli/launch/surface-mounts.js'
 import { createClientModuleRegistry } from '../packages/daemon-admin/src/packages/client-modules.js'
 import { assemble } from '../packages/host/src/runtime/assemble/assemble.js'
 import { resolveProfile } from '../packages/host-common/src/profile/resolve.js'
@@ -28,8 +28,24 @@ import {
   encodeRuntimeTargetArtifact,
 } from '../packages/plugin-runtime/src/host/index.js'
 import { createWebServer } from '../packages/web-server/src/server.js'
+import { createFixture } from './package-load/fixture.js'
+import {
+  assertBudget,
+  budgets,
+  dataset,
+  measure,
+  resourceBudget,
+  type Stage,
+} from './package-load/metrics.js'
+import { assertTamperRefused, runPackageLoad } from './package-load/run.js'
 
-// Opt-in, serial synthetic benchmark; no daemon, native build, private home or external provider.
+const surfaceState = vi.hoisted(() => ({
+  handlers: new Map<string, (value?: unknown) => void>(),
+  port: 1111,
+}))
+
+// Exploratory case is opt-in; the package-load budget gate below always runs in the heavy tier.
+// Both are serial synthetic benchmarks; no daemon, native build, private home or external provider.
 // nice -n 10 pnpm exec vitest run tools/plugin-performance.slow.test.ts --maxWorkers=1
 // Set AGH_PERFORMANCE_OUTPUT to a report file outside the repository to enable it.
 vi.mock('../packages/sdk/src/index.node.js', async (actual) => ({
@@ -38,8 +54,26 @@ vi.mock('../packages/sdk/src/index.node.js', async (actual) => ({
     initialize: async () => {
       await delay(20)
     },
-    surfaces: { mounts: async () => ({ mounts: [] }) },
-    close: async () => {},
+    on: (event: string, callback: (value?: unknown) => void) => {
+      surfaceState.handlers.set(event, callback)
+      return () => surfaceState.handlers.delete(event)
+    },
+    surfaces: {
+      mounts: async () => ({
+        mounts: [
+          {
+            package: '@synthetic/surface',
+            surfaceId: 'load',
+            mount: '/synthetic',
+            host: '127.0.0.1',
+            port: surfaceState.port,
+          },
+        ],
+      }),
+    },
+    close: async () => {
+      surfaceState.handlers.clear()
+    },
   }),
 }))
 
@@ -380,3 +414,70 @@ it.skipIf(!process.env.AGH_PERFORMANCE_OUTPUT)(
   },
   60_000,
 )
+
+it('gates real immutable package preparation, readonly views and Surface event latency', async () => {
+  const f = await createFixture(dataset)
+  const rows = []
+  const feed = await fetchSurfaceMountLookup({
+    socketPath: '/synthetic.sock',
+    scope: { scopeID: 'package-load' },
+  } as never)
+  try {
+    const readyDeadline = performance.now() + budgets.surfaceChanged
+    while (!feed.ready()) {
+      if (performance.now() > readyDeadline) throw new Error('initial Surface table did not become ready')
+      await delay(1)
+    }
+    expect(feed.lookup('/synthetic/asset')?.port).toBe(surfaceState.port)
+    for (let run = 0; run < dataset.runs; run++) {
+      const loading = runPackageLoad(f, run)
+      const changing = measure(async () => {
+        // Deliver the hint on an event-loop turn while package IO/verification is active.
+        await new Promise<void>((resolve) => setImmediate(resolve))
+        const port = ++surfaceState.port
+        surfaceState.handlers.get('notice')?.({ kind: 'packages_changed' })
+        const deadline = performance.now() + budgets.surfaceChanged
+        while (feed.lookup('/synthetic/asset')?.port !== port) {
+          if (performance.now() > deadline) throw new Error('Surface event did not publish within budget')
+          await delay(1)
+        }
+      })
+      // Settle both jobs before releasing their fixture, including on a failed latency bound.
+      const [prepared, changed] = await Promise.allSettled([loading, changing])
+      if (prepared.status === 'rejected') throw prepared.reason
+      if (changed.status === 'rejected') throw changed.reason
+      const { results } = prepared.value
+      rows.push({ ...results, surfaceChanged: changed.value.sample })
+    }
+    await assertTamperRefused(f)
+    const report = {
+      node: process.version,
+      platform: process.platform,
+      arch: process.arch,
+      machine: { cpu: cpus()[0]?.model, logicalCpus: cpus().length, memoryMiB: totalmem() / 1024 / 1024 },
+      dataset,
+      budgets,
+      resourceBudget,
+      rows,
+      surfaceTransport: 'synthetic SDK mounts response; production event feed and route lookup',
+    }
+    console.info('package-load gate', JSON.stringify(report))
+    if (process.env.AGH_PERFORMANCE_OUTPUT) {
+      mkdirSync(dirname(process.env.AGH_PERFORMANCE_OUTPUT), { recursive: true })
+      writeFileSync(
+        `${process.env.AGH_PERFORMANCE_OUTPUT}.package-load.json`,
+        `${JSON.stringify(report, null, 2)}\n`,
+      )
+    }
+    for (const row of rows) {
+      for (const stage of Object.keys(budgets) as Stage[]) {
+        const sample = row[stage]
+        expect(sample, `missing ${stage}`).toBeDefined()
+        if (sample) assertBudget(stage, sample)
+      }
+    }
+  } finally {
+    await feed.close()
+    f.close()
+  }
+}, 180_000)

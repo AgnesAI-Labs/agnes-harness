@@ -218,11 +218,12 @@ export class PrompterRouter implements Prompter {
         const expired = Number.isFinite(deadlineAt) && remaining <= 0
         if (expired)
           return this.done(req.requestId, 'timeout', { verdict: 'unavailable', reason: 'deadline' })
-        const origin = this.o.originOf(req.sessionKey)
-        const target = [
-          origin,
-          ...this.o.connections().filter((c) => c !== origin && c.attached.has(req.sessionKey)),
-        ].filter((c): c is ConnectionState => !!c && c.capabilities.permission && !skipped.has(c))[0]
+        const live = this.o.connections()
+        const candidate = this.o.originOf(req.sessionKey)
+        const origin = candidate && live.includes(candidate) ? candidate : undefined
+        const target = [origin, ...live.filter((c) => c !== origin && c.attached.has(req.sessionKey))].filter(
+          (c): c is ConnectionState => !!c && c.capabilities.permission && !skipped.has(c),
+        )[0]
         // 'unavailable' hands control to the preset's on_unavailable, so it is reserved for the one case
         // where nothing was asked. A dropped connection is not that case: nobody has answered yet.
         if (!target) {

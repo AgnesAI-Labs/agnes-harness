@@ -2,12 +2,23 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CAPABILITY_IDS, type ConfigurationService, createConfigurationService } from '@agnes/host'
+import {
+  CAPABILITY_IDS,
+  type ConfigurationService,
+  createConfigurationService,
+  createPosixPlatform,
+  type ResolvedProfile,
+} from '@agnes/host'
 import { createPrivateDirectorySync } from '@agnes/system-node'
 import { describe, expect, it } from 'vitest'
 import { parseArgs } from '../src/args.js'
 import { doctorBinary } from '../src/commands/doctor-local.js'
-import { doctorPlatform, doctorProfile, resolveDoctorProfile } from '../src/commands/doctor-profile.js'
+import {
+  doctorPlatform,
+  doctorProfile,
+  doctorResolvedProfile,
+  resolveDoctorProfile,
+} from '../src/commands/doctor-profile.js'
 import { TEST_LOCK } from './boot-host.js'
 
 const setup = () => {
@@ -22,16 +33,46 @@ describe('profile and platform doctor', () => {
   it('reports real probed capabilities and warns about degraded capability levels', async () => {
     const d = setup()
     try {
-      const report = await doctorPlatform(d)
+      const platform = createPosixPlatform()
+      const report = await doctorPlatform(d, platform)
       expect(report.status).toBe('warn')
       for (const id of CAPABILITY_IDS)
         expect(report.detail.some((line) => line.startsWith(`${id}=`))).toBe(true)
+      for (const id of CAPABILITY_IDS) {
+        const fact = platform.capability(id)
+        if (fact.level !== 'full' && fact.reason)
+          expect(report.detail).toContain(`${id}.reason=${fact.reason}`)
+        if (fact.level === 'full')
+          expect(report.detail.some((line) => line.startsWith(`${id}.reason=`))).toBe(false)
+      }
       expect(report.detail).toContain('ipc=full')
       expect(report.detail).toContain('terminal.kitty-keys=unavailable')
     } finally {
       rmSync(d.home, { recursive: true, force: true })
     }
   })
+  it.each([
+    ['reviewed', ['reviewed', 'restricted'], 'ok'],
+    ['reviewed', ['reviewde'], 'fail'],
+    ['reviewed', [], 'fail'],
+  ] as const)('explains whether default preset %s is allowed (%j)', (defaultPreset, allowed, status) => {
+    const profile = {
+      name: 'test',
+      hash: 'sha256-test',
+      packages: [],
+      dataDir: '/data',
+      cacheDir: '/cache',
+      presets: { default: defaultPreset, allowed: [...allowed] },
+    } as unknown as ResolvedProfile
+    const section = doctorResolvedProfile(profile)
+    expect(section.status).toBe(status)
+    expect(section.detail.join('\n')).toContain(
+      `presets default ${defaultPreset}; allowed ${allowed.join(', ')}`,
+    )
+    if (status === 'fail')
+      expect(section.detail.join('\n')).toContain('presets.default must be listed in presets.allowed')
+  })
+
   it('uses the default local-dev path and passes the resolved custom cache to the actual binary check', async () => {
     const d = setup()
     try {

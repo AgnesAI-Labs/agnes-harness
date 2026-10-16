@@ -2,12 +2,13 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { rebuildDesiredFromInventory } from '@agnes/daemon-foundation/composite-desired'
 import {
-  BUNDLED_HELPERS,
-  bundledPluginSourceRoot,
+  bundledPluginSource,
+  DEFAULT_ENABLED_BUNDLED_PACKAGES,
   hashDirectory,
   type InstalledInventory,
   isRuntimePackageEligible,
   lockPath,
+  PackageError,
   type PackageManager,
   parseSource,
 } from '@agnes/package-manager'
@@ -27,7 +28,8 @@ export async function initializeDefaultHelpers(options: {
         : undefined
       const integrity: Record<string, string> =
         state && ['pending', 'installed'].includes(state.phase) ? { ...state.integrity } : {}
-      for (const helper of BUNDLED_HELPERS) {
+      for (const helper of DEFAULT_ENABLED_BUNDLED_PACKAGES) {
+        if (helper.freshOnly && (state || inventory)) continue
         if (
           state?.version === 1 &&
           state.phase !== 'existing' &&
@@ -36,9 +38,9 @@ export async function initializeDefaultHelpers(options: {
           continue
         if (state?.version === 2 && helper.name !== 'document-reader') continue
         if (inventory?.packages.some((pkg) => pkg.id === helper.id)) continue
-        const root = bundledPluginSourceRoot(helper.ref)
-        if (!root) throw new Error('Bundled helper source unavailable')
-        integrity[helper.id] = hashDirectory(join(root, 'bundled-plugins', helper.name))
+        const source = bundledPluginSource(helper.ref)
+        if (!source) throw new Error('Bundled helper source unavailable')
+        integrity[helper.id] = hashDirectory(join(source.root, source.path))
       }
       state = { version: 3, phase: 'pending', integrity }
       // This intent precedes policy creation, so a failed first startup can resume safely.
@@ -47,18 +49,33 @@ export async function initializeDefaultHelpers(options: {
     await options.initializePolicy()
     if (state.phase !== 'pending') return
     await options.manager.recover(options.profileDir)
-    for (const helper of BUNDLED_HELPERS) {
+    for (const helper of DEFAULT_ENABLED_BUNDLED_PACKAGES) {
       if (!Object.hasOwn(state.integrity, helper.id)) continue
       const source = parseSource(helper.ref)
       const preview = await options.manager.inspect(options.profileDir, source)
       if (
         preview.id !== helper.id ||
-        preview.version !== helper.version ||
+        preview.version === '0.0.0' ||
         preview.integrity !== state.integrity[helper.id] ||
-        preview.blockers.length ||
         !preview.capabilityHash
       )
         throw new Error('Bundled helper verification failed')
+      if (preview.blockers.length) {
+        // A fresh-only default is optional under the profile's ceiling. Never bypass policy or
+        // mistake another verification failure for a policy choice; bind identity and bytes first.
+        if (
+          !helper.freshOnly ||
+          preview.blockers.some(
+            (blocker) => blocker.code !== 'policy' || blocker.references[0] !== 'capability-ceiling',
+          )
+        )
+          throw new Error('Bundled helper verification failed')
+        const integrity: Record<string, string> = { ...state.integrity }
+        delete integrity[helper.id]
+        state = { ...state, integrity }
+        save(state)
+        continue
+      }
       const installed = (await options.manager.inventory(options.profileDir)).packages.find(
         (p) => p.id === helper.id,
       )
@@ -92,7 +109,7 @@ export async function activateDefaultHelpers(options: {
   await withDefaultHelperState(options.profileDir, async (state, save) => {
     if (state?.phase !== 'installed') return
     let target = options.previous
-    for (const helper of BUNDLED_HELPERS) {
+    for (const helper of DEFAULT_ENABLED_BUNDLED_PACKAGES) {
       if (!Object.hasOwn(state.integrity, helper.id)) continue
       const pkg = options.inventory.packages.find((p) => p.id === helper.id)
       if (!pkg || !isRuntimePackageEligible(pkg) || pkg.entry.integrity !== state.integrity[helper.id])
@@ -108,4 +125,60 @@ export async function activateDefaultHelpers(options: {
     await options.publish(target)
     save({ ...state, phase: 'complete' })
   })
+}
+
+/** Refresh only the release source under its existing capability grant. Publication is retried on
+ * every boot, including after a crash between the package commit and target publication. */
+export async function refreshDefaultHelpers(options: {
+  profileDir: string
+  manager: PackageManager
+  previous(): RuntimeTargetArtifact | undefined
+  publish(target: RuntimeTargetArtifact): Promise<void>
+}): Promise<void> {
+  for (const helper of DEFAULT_ENABLED_BUNDLED_PACKAGES) {
+    const current = (await options.manager.inventory(options.profileDir, { fresh: true })).packages.find(
+      (pkg) => pkg.id === helper.id,
+    )
+    if (
+      !current ||
+      !isRuntimePackageEligible(current) ||
+      current.entry.source.type !== 'file' ||
+      current.entry.source.ref !== helper.ref
+    )
+      continue
+    const source = parseSource(helper.ref)
+    const preview = await options.manager.inspect(options.profileDir, source)
+    if (
+      preview.id !== helper.id ||
+      preview.version === '0.0.0' ||
+      preview.blockers.length ||
+      preview.capabilityHash !== current.capabilityHash
+    )
+      continue
+    if (current.entry.integrity !== preview.integrity || current.entry.version !== preview.version) {
+      try {
+        await options.manager.update(options.profileDir, helper.id, source, {
+          expectedIntegrity: preview.integrity,
+          expectedInstalledIntegrity: current.entry.integrity,
+          activation: {
+            expectedInstalledIntegrity: current.entry.integrity,
+            trust: { integrity: preview.integrity, capabilityHash: preview.capabilityHash },
+          },
+        })
+      } catch (error) {
+        // Dependencies, deployment references and pins retain their ordinary refusal semantics.
+        // The catalog still offers the candidate for a reviewed update.
+        if (error instanceof PackageError && error.legacyCode === 'E_API_RANGE') continue
+        throw error
+      }
+    }
+    const previous = options.previous()
+    const target = rebuildDesiredFromInventory({
+      previous,
+      inventory: await options.manager.inventory(options.profileDir, { fresh: true }),
+      packageId: helper.id,
+      operation: 'update',
+    })
+    if (target && target.digest !== previous?.digest) await options.publish(target)
+  }
 }

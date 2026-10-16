@@ -221,3 +221,12 @@ it('shows the AUTH cause when a real turn ends in a provider 403', async () => {
     rmSync(dir, { recursive: true, force: true })
   }
 }, 20_000)
+
+it('shows only allowlisted attachment refusal codes from RPC reasons', () => {
+  expect(
+    formatTuiErrorNotice({ data: { code: 'SEMANTIC_REJECTED', reason: 'ATTACHMENT_HASH_MISMATCH' } }),
+  ).toContain('ATTACHMENT_HASH_MISMATCH')
+  expect(
+    formatTuiErrorNotice({ data: { code: 'SEMANTIC_REJECTED', reason: 'untrusted private content' } }),
+  ).not.toContain('untrusted private content')
+})

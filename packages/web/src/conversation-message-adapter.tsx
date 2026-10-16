@@ -26,7 +26,7 @@ import {
   interactionToolPresentation,
 } from '@agnes/web-ui/conversation'
 import { MessageFeedback } from '@agnes/web-units/message-feedback'
-import { type ReactNode, useSyncExternalStore } from 'react'
+import { type ReactNode, useCallback, useSyncExternalStore } from 'react'
 import type { ClaimResolver } from './client-modules/boot.js'
 import { AnsweredQuestions, QuestionAnswersNode, questionSubmission } from './intelligent-ui/question-dock.js'
 import { TurnDeliverables } from './intelligent-ui/turn-deliverables.js'
@@ -244,6 +244,20 @@ export function WebConversationMessages({
     registry ? registry.subscribeSession.bind(registry) : noSessionSubscription,
     () => registry?.sessionId,
   )
+  const readAttachment = useCallback(
+    async (artifact: import('@agnes/protocol').ArtifactRef, signal: AbortSignal) => {
+      signal.throwIfAborted()
+      if (!resources || !sessionScope || session?.getSnapshot() !== sessionScope)
+        throw new Error('attachment session unavailable')
+      const resource = await resources.files.load({ laneId: 'main', artifact, signal })
+      if (signal.aborted || session?.getSnapshot() !== sessionScope) {
+        resource.release()
+        throw new Error('attachment session changed')
+      }
+      return resource
+    },
+    [resources, sessionScope, session],
+  )
   // A person's surface submission is not the agent's work: fold its tool row, and the queued line
   // before question answers (the answers say it).
   // Answers to a question show as «answered» on the answer that asked; their node leaves the stream.
@@ -270,6 +284,7 @@ export function WebConversationMessages({
     if (answer?.kind === 'assistant') answers.set(answer.id, answer)
   }
   const props: ConversationMessagesProps = {
+    readAttachment,
     keepNodeVisible: (node) => keepConversationCardVisible(node) || rawEchoes.has(node.id),
     t: (key, vars) => locale?.t(key, vars) ?? key,
     nodes: nodes ?? [],

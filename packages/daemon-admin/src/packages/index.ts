@@ -15,6 +15,7 @@ export {
   type RuntimeArtifactsStore,
   runtimeArtifactsFromStore,
 } from './client-modules.js'
+export { createExamplePackages, type ExampleBackend } from './examples.js'
 export {
   createPackageAdminService,
   type PackageActivationActual,

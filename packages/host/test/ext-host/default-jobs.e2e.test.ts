@@ -99,6 +99,7 @@ it.skipIf(process.platform === 'win32')(
       scripts: [
         call('shell', { command: 'echo $$ > job.pid; sleep 30', background: true, cwd: 'jobwork' }),
         say('Started.'),
+        call('tool_describe', { name: 'job_list' }),
         call('job_list', {}),
         say('Listed.'),
       ],

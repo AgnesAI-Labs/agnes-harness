@@ -499,3 +499,198 @@ it('binds npm verified identity to exact package subject and actual archive dige
     }),
   ).rejects.toMatchObject({ code: 'E_PACKAGE_PROVENANCE' })
 })
+
+it.each(['1.0.0', '1.1.0-alpha.2'])(
+  'requires the reviewed parent %s before enabling an example and blocks its runtime when the parent is disabled',
+  async (parentVersion) => {
+    const parentFile = join(sourceDir, 'package.json')
+    const parentManifest = JSON.parse(readFileSync(parentFile, 'utf8'))
+    parentManifest.version = parentVersion
+    writeFileSync(parentFile, JSON.stringify(parentManifest))
+    const childDir = join(root, 'child')
+    cpSync(sourceDir, childDir, { recursive: true })
+    const pkg = JSON.parse(readFileSync(join(childDir, 'package.json'), 'utf8'))
+    pkg.name = 'acme/example'
+    pkg.agnes.plugins[0].id = 'ext:acme/example/main'
+    pkg.dependencies[id] = parentVersion.includes('-') ? parentVersion : '^1.0.0'
+    pkg.agnes.metadata = {
+      displayName: 'Example',
+      summary: 'Example',
+      description: 'Example',
+      category: 'example',
+      exampleOf: id,
+    }
+    writeFileSync(join(childDir, 'package.json'), JSON.stringify(pkg))
+    const m = manager({ references: emptyRefs })
+    const childSource = parseSource('file:./child')
+    const missing = await m.inspect(profile, childSource)
+    const blocker = { code: 'dependency', references: ['example-parent-unavailable', id] }
+    expect(missing.blockers).toContainEqual(blocker)
+    await m.install(profile, childSource, { expectedIntegrity: missing.integrity })
+    await expect(m.enable(profile, pkg.name, true)).rejects.toMatchObject({ code: 'E_PACKAGE_BLOCKED' })
+    expect(load().packages[pkg.name]?.state.enabled).toBe(false)
+    expect(load().packages[id]).toBeUndefined()
+    await install(m)
+    await m.trust(profile, id, await decision(m))
+    expect((await m.inspect(profile, childSource)).blockers).toContainEqual(blocker)
+    await m.enable(profile, id, true)
+    const reviewedRange = pkg.dependencies[id]
+    pkg.dependencies[id] = '99.0.0-alpha.1'
+    writeFileSync(join(childDir, 'package.json'), JSON.stringify(pkg))
+    expect((await m.inspect(profile, childSource)).blockers).toContainEqual(blocker)
+    pkg.dependencies[id] = reviewedRange
+    writeFileSync(join(childDir, 'package.json'), JSON.stringify(pkg))
+    const ready = await m.inspect(profile, childSource)
+    expect(ready.blockers).toEqual([])
+    await m.trust(profile, pkg.name, { integrity: ready.integrity, capabilityHash: ready.capabilityHash! })
+    await m.enable(profile, pkg.name, true)
+    expect((await m.inventory(profile)).packages.find((row) => row.id === pkg.name)).toMatchObject({
+      enabled: true,
+      trusted: true,
+      blockers: [],
+    })
+    await m.enable(profile, id, false)
+    expect((await m.inventory(profile)).packages.find((row) => row.id === pkg.name)?.blockers).toContainEqual(
+      blocker,
+    )
+    await expect(m.enable(profile, pkg.name, true)).rejects.toMatchObject({ code: 'E_PACKAGE_BLOCKED' })
+    await m.enable(profile, id, true)
+    expect((await m.inventory(profile)).packages.find((row) => row.id === pkg.name)?.blockers).toEqual([])
+  },
+)
+
+async function installDependent(m: ReturnType<typeof manager>, range: string) {
+  const childDir = join(root, 'dependent')
+  cpSync(sourceDir, childDir, { recursive: true })
+  const file = join(childDir, 'package.json'),
+    pkg = JSON.parse(readFileSync(file, 'utf8'))
+  pkg.name = 'acme/dependent'
+  pkg.agnes.plugins[0].id = 'ext:acme/dependent/main'
+  pkg.dependencies[id] = range
+  pkg.agnes.metadata = {
+    displayName: 'Dependent',
+    summary: 'Fixture',
+    description: 'Fixture',
+    category: 'example',
+    exampleOf: id,
+  }
+  writeFileSync(file, JSON.stringify(pkg))
+  const childSource = parseSource('file:./dependent'),
+    preview = await m.inspect(profile, childSource)
+  await m.install(profile, childSource, { expectedIntegrity: preview.integrity })
+  await m.trust(profile, pkg.name, { integrity: preview.integrity, capabilityHash: preview.capabilityHash! })
+  await m.enable(profile, pkg.name, true)
+  return { file, pkg, source: childSource, preview }
+}
+it.each(['^1.0.0', '*', '1.0.0'])(
+  'updates a parent only when its installed dependent range %s admits the candidate',
+  async (range) => {
+    const m = await install(manager({ references: emptyRefs }))
+    await m.trust(profile, id, await decision(m))
+    await m.enable(profile, id, true)
+    const child = await installDependent(m, range)
+    const before = (await decision(m)).integrity
+    if (range === '1.0.0') writeFileSync(join(sourceDir, 'revision.txt'), 'same version, new release bytes')
+    else version('1.1.0')
+    const target = await m.inspect(profile, source)
+    expect(target.blockers).toEqual([])
+    await m.update(profile, id, source, {
+      expectedIntegrity: target.integrity,
+      activation: {
+        expectedInstalledIntegrity: before,
+        trust: { integrity: target.integrity, capabilityHash: target.capabilityHash! },
+      },
+    })
+    expect((await m.inventory(profile)).packages.find((row) => row.id === child.preview.id)).toMatchObject({
+      enabled: true,
+      trusted: true,
+      blockers: [],
+    })
+    version('2.0.0')
+    if (range !== '*') {
+      const incompatible = await m.inspect(profile, source)
+      expect(incompatible.blockers).toContainEqual({ code: 'dependency', references: [child.preview.id] })
+      await expect(
+        m.update(profile, id, source, { expectedIntegrity: incompatible.integrity }),
+      ).rejects.toMatchObject({
+        code: 'E_PACKAGE_BLOCKED',
+        detail: { blockers: [{ code: 'dependency', references: [child.preview.id] }] },
+      })
+      expect(load().packages[id]?.integrity).toBe(target.integrity)
+    }
+  },
+)
+it.each([
+  'none',
+  'disabled',
+  'prepared',
+  'old-moved',
+  'new-moved',
+  'second-new-moved',
+  'lock-written',
+  'audit-written',
+  'previous-saved',
+] as const)(
+  'commits or recovers a reviewed parent/dependent update at %s without an incompatible pair',
+  async (point) => {
+    const m = await install(manager({ references: emptyRefs }))
+    await m.trust(profile, id, await decision(m))
+    await m.enable(profile, id, true)
+    const child = await installDependent(m, '1.0.0'),
+      before = await decision(m)
+    if (point === 'disabled') await m.enable(profile, child.preview.id, false)
+    version('1.1.0')
+    child.pkg.version = '1.1.0'
+    child.pkg.dependencies[id] = '1.1.0'
+    writeFileSync(child.file, JSON.stringify(child.pkg))
+    const target = await m.inspect(profile, source),
+      dependent = await m.inspect(profile, child.source)
+    const options = {
+      expectedIntegrity: target.integrity,
+      activation: {
+        expectedInstalledIntegrity: before.integrity,
+        trust: { integrity: target.integrity, capabilityHash: target.capabilityHash! },
+      },
+      dependents: [
+        {
+          id: dependent.id,
+          source: child.source,
+          expectedIntegrity: dependent.integrity,
+          activation: {
+            expectedInstalledIntegrity: child.preview.integrity,
+            expectedActiveIntegrity: null,
+            trust: { integrity: dependent.integrity, capabilityHash: dependent.capabilityHash! },
+          },
+        },
+      ],
+    }
+    await expect(
+      m.update(profile, id, source, {
+        ...options,
+        dependents: options.dependents.map((d) => ({ ...d, expectedIntegrity: child.preview.integrity })),
+      }),
+    ).rejects.toMatchObject({ code: 'E_PACKAGE_PREVIEW_STALE' })
+    expect(load().packages[id]?.integrity).toBe(before.integrity)
+    let moved = 0
+    const crash = manager({
+      references: emptyRefs,
+      checkpoint: (at) => {
+        if (at === 'new-moved') moved++
+        if (at === point || (point === 'second-new-moved' && at === 'new-moved' && moved === 2))
+          throw Error('crash')
+      },
+    })
+    if (point === 'none' || point === 'disabled') await crash.update(profile, id, source, options)
+    else await expect(crash.update(profile, id, source, options)).rejects.toThrow('crash')
+    await m.recover(profile)
+    const inventory = await m.inventory(profile),
+      next = ['none', 'disabled', 'lock-written', 'audit-written', 'previous-saved'].includes(point)
+    for (const packageId of [id, dependent.id])
+      expect(inventory.packages.find((row) => row.id === packageId)).toMatchObject({
+        enabled: packageId !== dependent.id || point !== 'disabled',
+        trusted: true,
+        blockers: [],
+        entry: { version: next ? '1.1.0' : '1.0.0' },
+      })
+  },
+)

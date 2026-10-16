@@ -105,8 +105,18 @@ type Metrics = ReturnType<typeof summarize>
 function summarize(rows: Event[], provider: ToolLoopProvider) {
   const replaces = rows.filter((row) => typeof row.surfaceOp === 'object')
   const begins = rows.filter((row) => row.type === 'x/core/compaction-begin')
+  const billedRequests = new Set(
+    rows
+      .filter(
+        (row) => row.type === 'cost/ledger' && (row.data as { purpose?: string }).purpose === 'compaction',
+      )
+      .map((row) => (row.data as { effectId: string }).effectId),
+  )
   const attempts = rows.filter(
-    (row) => row.type === 'effect/intent' && (row.data as { kind?: string }).kind === 'compaction',
+    (row) =>
+      row.type === 'effect/intent' &&
+      (row.data as { kind?: string }).kind === 'compaction' &&
+      !billedRequests.has((row.data as { effectId: string }).effectId),
   ).length
   const mainInputs = provider.requests.flatMap((req, i) =>
     req.kind === 'summary' ? [] : [provider.inputs[i] as number],
@@ -133,7 +143,7 @@ function summarize(rows: Event[], provider: ToolLoopProvider) {
     ).length,
     summaryRequests: provider.summaries,
     summaryOutputTokens: summaryOutputs,
-    // Summary calls that led to no replace: each LLM-backed replace carries its effect id.
+    // Top-level attempts that led to no replace; model requests now have separate billed effects.
     wastedAttempts: attempts - begins.filter((row) => (row.data as { effectId?: string }).effectId).length,
     peakMainInput: Math.max(...mainInputs),
     overflows: provider.overflows,

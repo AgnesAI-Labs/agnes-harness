@@ -13,6 +13,8 @@ export type FsIo = Readonly<{
   readFile(abs: string): Promise<Uint8Array>
   /** Zero-based byte window. A finite limit bounds underlying I/O, not just returned bytes. */
   readRange?(abs: string, opts: { offset: number; limit?: number }): Promise<Uint8Array>
+  /** Exclusive create through no-follow parents. */
+  createFile?(abs: string, data: Uint8Array): Promise<{ size: number; sha256: string }>
   writeFile(abs: string, data: Uint8Array): Promise<void>
   /** Recursive. */
   mkdir(abs: string): Promise<void>

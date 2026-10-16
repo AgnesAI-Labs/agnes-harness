@@ -3,8 +3,8 @@ import { createHash } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import type { ConfigSnapshot, UIOpeningResult, UIProjectionUpdate, UITimeline } from '@agnes/protocol'
-import { MAX_FRAME_BYTES } from '@agnes/protocol'
-import type { LedgerEvent } from '@agnes/sdk/browser'
+import { attachmentLink, FILE_UPLOAD_PATH, MAX_FRAME_BYTES } from '@agnes/protocol'
+import type { InitializeInfo, LedgerEvent } from '@agnes/sdk/browser'
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -12,6 +12,11 @@ const sdk = vi.hoisted(() => ({
   createClient: vi.fn(),
   memoryJournal: vi.fn(() => ({})),
 }))
+const initialized = async (): Promise<InitializeInfo> => ({
+  agnesVersion: '0.1.0',
+  capabilities: {},
+  platform: 'linux',
+})
 const configurationCallback = vi.hoisted(() => ({
   saved: undefined as ((snapshot: ConfigSnapshot) => Promise<void>) | undefined,
 }))
@@ -399,7 +404,7 @@ describe('web permission synchronization', () => {
     const listeners = new Map<string, Set<() => void>>()
     const client = {
       connectionState: 'connected',
-      initialize: vi.fn(async () => undefined),
+      initialize: vi.fn(initialized),
       on: vi.fn((event: string, listener: () => void) => {
         const handlers = listeners.get(event) ?? new Set<() => void>()
         handlers.add(listener)
@@ -440,7 +445,7 @@ describe('web permission synchronization', () => {
       pending = deferred<{ items: { sessionId: string }[] }>()
       const client = {
         connectionState: 'connected',
-        initialize: vi.fn(async () => undefined),
+        initialize: vi.fn(initialized),
         on: vi.fn(() => () => undefined),
         close: vi.fn(async () => undefined),
         apis: vi.fn(async () => ({ profile: { models: [] } })),
@@ -491,7 +496,7 @@ describe('web permission synchronization', () => {
       const models = deferred<void>()
       const old = session('old', async () => idleTimeline('old'))
       const client = {
-        initialize: vi.fn(async () => undefined),
+        initialize: vi.fn(initialized),
         on: vi.fn(),
         close: vi.fn(async () => undefined),
         apis: vi.fn(async () => {
@@ -536,7 +541,7 @@ describe('web permission synchronization', () => {
       } else {
         await vi.waitFor(() => expect(binding.loadWebSession).toHaveBeenCalled())
         expect(document.querySelector('[data-session="old"]')).not.toBeNull()
-        expect(document.getElementById('notice')?.textContent).toContain(
+        expect(document.querySelector('.agh-notifications')?.textContent).toContain(
           kind === 'failed-models' ? 'models unavailable' : '工作区列表',
         )
       }
@@ -787,7 +792,7 @@ describe('web session selection', () => {
     const old = session('old', async () => idleTimeline('old'))
     const next = session('next', async () => idleTimeline('next'))
     sdk.createClient.mockReturnValue({
-      initialize: vi.fn(async () => undefined),
+      initialize: vi.fn(initialized),
       on: vi.fn(),
       close: vi.fn(async () => undefined),
       apis: vi.fn(async () => ({ profile: { models: [] } })),
@@ -860,7 +865,7 @@ describe('web session selection', () => {
       const listeners = new Map<string, Set<() => void>>()
       const client = {
         connectionState: 'connected',
-        initialize: vi.fn(async () => undefined),
+        initialize: vi.fn(initialized),
         on: vi.fn((event: string, listener: () => void) => {
           const handlers = listeners.get(event) ?? new Set<() => void>()
           handlers.add(listener)
@@ -1051,7 +1056,7 @@ describe('web session selection', () => {
     const fresh = session('fresh', async () => idleTimeline('fresh', { route: 'local', id: 'model-a' }))
     const create = vi.fn(async () => fresh)
     sdk.createClient.mockReturnValue({
-      initialize: vi.fn(async () => undefined),
+      initialize: vi.fn(initialized),
       on: vi.fn(),
       close: vi.fn(async () => undefined),
       apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
@@ -1107,7 +1112,7 @@ describe('web session selection', () => {
     let models = [{ route: 'local', id: 'model-a' }]
     const old = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
     sdk.createClient.mockReturnValue({
-      initialize: vi.fn(async () => undefined),
+      initialize: vi.fn(initialized),
       on: vi.fn(),
       close: vi.fn(async () => undefined),
       apis: vi.fn(async () => ({ profile: { models } })),
@@ -1154,7 +1159,7 @@ describe('web session selection', () => {
     installPublicFixture()
     const old = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
     sdk.createClient.mockReturnValue({
-      initialize: vi.fn(async () => undefined),
+      initialize: vi.fn(initialized),
       on: vi.fn(),
       close: vi.fn(async () => undefined),
       // Model capability metadata stays available to settings even though the picker is flat.
@@ -1206,12 +1211,12 @@ describe('web session selection', () => {
     control('model').click()
   }, 20_000)
 
-  it('refreshes saved catalogs and rejects a late catalog after the user starts a draft', async () => {
+  it('scopes saved catalogs to drafts and rejects late catalogs from earlier drafts', async () => {
     installPublicFixture()
     const old = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
     const apis = vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } }))
     sdk.createClient.mockReturnValue({
-      initialize: vi.fn(async () => undefined),
+      initialize: vi.fn(initialized),
       on: vi.fn(),
       close: vi.fn(async () => undefined),
       apis,
@@ -1233,7 +1238,7 @@ describe('web session selection', () => {
       'fetch',
       vi.fn<typeof fetch>(async (url) => {
         if (url === '/admin/api/loops') {
-          if (++loopReads === 1) return stale.promise
+          if (++loopReads === 2) return stale.promise
           return Response.json({ revision: 2, defaults: { preset: 'full-access' }, loops: [] })
         }
         if (url === '/admin/api/model-adapters') return Response.json({ modelAdapters: [] })
@@ -1252,14 +1257,25 @@ describe('web session selection', () => {
         return Response.json({ available: false })
       }),
     )
+    const newButton = () => document.getElementById('new') as HTMLButtonElement
     window.dispatchEvent(new CustomEvent('agnes:session-configuration-changed'))
+    await vi.waitFor(() => expect(apis).toHaveBeenCalledTimes(2))
+    expect(loopReads).toBe(0)
+    newButton().click()
     await vi.waitFor(() => expect(loopReads).toBe(1))
-    document.getElementById('new')?.click()
+    await vi.waitFor(() => expect(newButton().disabled).toBe(false))
+    const workspaceDialog = document.getElementById('new-session') as HTMLDialogElement
+    workspaceDialog.dispatchEvent(new Event('cancel', { cancelable: true }))
+    window.dispatchEvent(new CustomEvent('agnes:session-configuration-changed'))
+    await vi.waitFor(() => expect(loopReads).toBe(2))
+    newButton().click()
+    await vi.waitFor(() => expect(loopReads).toBe(3))
+    await vi.waitFor(() => expect(newButton().disabled).toBe(false))
     await vi.waitFor(() =>
       expect(document.querySelector('[data-permission-label]')?.textContent).toBe('完全访问'),
     )
     stale.resolve(Response.json({ revision: 1, defaults: { preset: 'read-only' }, loops: [] }))
-    await vi.waitFor(() => expect(apis).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(apis).toHaveBeenCalledTimes(3))
     expect(document.querySelector('[data-permission-label]')?.textContent).toBe('完全访问')
   })
 
@@ -1270,7 +1286,7 @@ describe('web session selection', () => {
       const old = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
       const apis = vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } }))
       sdk.createClient.mockReturnValue({
-        initialize: vi.fn(async () => undefined),
+        initialize: vi.fn(initialized),
         on: vi.fn(),
         close: vi.fn(async () => undefined),
         apis,
@@ -1343,7 +1359,7 @@ describe('web session selection', () => {
       sdk.createClient.mockReturnValue({
         apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
         close: vi.fn(async () => undefined),
-        initialize: vi.fn(async () => undefined),
+        initialize: vi.fn(initialized),
         on: vi.fn(),
         config: {
           get: vi.fn(async () => ({ configured: true })),
@@ -1414,7 +1430,7 @@ describe('web session selection', () => {
       sdk.createClient.mockReturnValue({
         apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
         close: vi.fn(async () => undefined),
-        initialize: vi.fn(async () => undefined),
+        initialize: vi.fn(initialized),
         on: vi.fn(),
         config: {
           get: vi.fn(async () => ({ configured: true })),
@@ -1502,7 +1518,7 @@ describe('web session selection', () => {
         save: vi.fn(async () => ({ configured: true })),
         test: vi.fn(async () => ({ verified: true, models: [] })),
       },
-      initialize: vi.fn(async () => undefined),
+      initialize: vi.fn(initialized),
       on: vi.fn(),
       workspace: {
         list: vi.fn(async () => {
@@ -1540,7 +1556,7 @@ describe('web session selection', () => {
     const newSession = document.getElementById('new-session') as HTMLDialogElement
 
     await vi.waitFor(() => expect(prompt.disabled).toBe(false))
-    expect(document.getElementById('notice')?.textContent).toContain('无法读取工作区列表')
+    expect(document.querySelector('.agh-notifications')?.textContent).toContain('无法读取工作区列表')
     expect(send.disabled).toBe(true)
     expect(send.dataset.mode).toBe('idle')
     expect(send.getAttribute('aria-label')).toBe('发送')
@@ -1582,7 +1598,7 @@ describe('web session selection', () => {
     const newSessionCreate = document.getElementById('new-session-create') as HTMLButtonElement
     expect(create).not.toHaveBeenCalled()
     await vi.waitFor(() =>
-      expect(document.getElementById('notice')?.textContent).toContain('detach cleanup failed'),
+      expect(document.querySelector('.agh-notifications')?.textContent).toContain('detach cleanup failed'),
     )
     expect(prompt.disabled).toBe(false)
     newSessionCwd.value = '/cancelled-directory'
@@ -1653,7 +1669,7 @@ describe('web session selection', () => {
           save: vi.fn(async () => ({ configured: true })),
           test: vi.fn(async () => ({ verified: true, models: [] })),
         },
-        initialize: vi.fn(async () => undefined),
+        initialize: vi.fn(initialized),
         on: vi.fn(),
         workspace: {
           list: vi.fn(async () => ({ items: [] })),
@@ -1753,7 +1769,7 @@ describe('web session selection', () => {
         save: vi.fn(async () => ({ configured: true })),
         test: vi.fn(async () => ({ verified: true, models: [] })),
       },
-      initialize: vi.fn(async () => undefined),
+      initialize: vi.fn(initialized),
       on: vi.fn(),
       workspace: { list: vi.fn(async () => ({ items: [] })), add },
       session: { list: vi.fn(async () => ({ items: [] })), load: vi.fn(), new: vi.fn() },
@@ -1808,7 +1824,7 @@ describe('web session selection', () => {
         save: vi.fn(async () => ({ configured: true })),
         test: vi.fn(async () => ({ verified: true, models: [] })),
       },
-      initialize: vi.fn(async () => undefined),
+      initialize: vi.fn(initialized),
       on: vi.fn(),
       workspace: {
         list: vi.fn(async () => ({ items: [row('first', 'a'.repeat(64)), row('linked', linked)] })),
@@ -1849,7 +1865,7 @@ describe('web session selection', () => {
         save: vi.fn(async () => ({ configured: true })),
         test: vi.fn(async () => ({ verified: true, models: [] })),
       },
-      initialize: vi.fn(async () => undefined),
+      initialize: vi.fn(initialized),
       on: vi.fn(),
       workspace: { list: vi.fn(async () => ({ items: [] })), add },
       session: { list: vi.fn(async () => ({ items: [] })), load: vi.fn(), new: vi.fn() },
@@ -1894,7 +1910,7 @@ describe('web session selection', () => {
           save: vi.fn(async () => ({ configured: true })),
           test: vi.fn(async () => ({ verified: true, models: [] })),
         },
-        initialize: vi.fn(async () => undefined),
+        initialize: vi.fn(initialized),
         on: vi.fn(),
         workspace: {
           list: vi.fn(async () => ({ items: [] })),
@@ -1940,7 +1956,9 @@ describe('web session selection', () => {
         if (mode === 'failed') {
           listing.reject(new Error('sidebar list failed'))
           await vi.waitFor(() =>
-            expect(document.getElementById('notice')?.textContent).toContain('sidebar list failed'),
+            expect(document.querySelector('.agh-notifications')?.textContent).toContain(
+              'sidebar list failed',
+            ),
           )
         }
         expect((document.getElementById('prompt') as HTMLTextAreaElement).value).toBe('')
@@ -1990,7 +2008,7 @@ describe('web session selection', () => {
         save: vi.fn(async () => ({ configured: true })),
         test: vi.fn(async () => ({ verified: true, models: [] })),
       },
-      initialize: vi.fn(async () => undefined),
+      initialize: vi.fn(initialized),
       on: vi.fn(),
       workspace: {
         list: vi.fn(async () => ({ items: [] })),
@@ -2028,7 +2046,7 @@ describe('web session selection', () => {
 
     submit('保留这条首轮草稿')
     await vi.waitFor(() =>
-      expect(document.getElementById('notice')?.textContent).toContain('initial model failed'),
+      expect(document.querySelector('.agh-notifications')?.textContent).toContain('initial model failed'),
     )
     expect(composer.value).toBe('保留这条首轮草稿')
     expect(fresh.prompt).not.toHaveBeenCalled()
@@ -2038,7 +2056,7 @@ describe('web session selection', () => {
 
     submit('保留这条首轮草稿')
     await vi.waitFor(() =>
-      expect(document.getElementById('notice')?.textContent).toContain(
+      expect(document.querySelector('.agh-notifications')?.textContent).toContain(
         '模型凭据已失效或被上游拒绝，请在设置中重新配置或登录该模型账号。',
       ),
     )
@@ -2094,7 +2112,7 @@ describe('web session selection', () => {
         save: vi.fn(async () => ({ configured: true })),
         test: vi.fn(async () => ({ verified: true, models: [] })),
       },
-      initialize: vi.fn(async () => undefined),
+      initialize: vi.fn(initialized),
       on: vi.fn(),
       workspace: {
         list: vi.fn(async () => ({ items: [] })),
@@ -2311,7 +2329,7 @@ describe('queued input deletion', () => {
           get: vi.fn(async () => ({ configured: outcome === 'failure' })),
           providers: vi.fn(async () => ({ providers: [] })),
         },
-        initialize: vi.fn(async () => undefined),
+        initialize: vi.fn(initialized),
         on: vi.fn(),
         workspace: { list: vi.fn(async () => ({ items: [] })) },
         session: {
@@ -2378,7 +2396,7 @@ describe('composer draft persistence', () => {
         get: vi.fn(async () => ({ configured: true })),
         providers: vi.fn(async () => ({ providers: [] })),
       },
-      initialize: vi.fn(async () => undefined),
+      initialize: vi.fn(initialized),
       on: vi.fn(),
       workspace: { list: vi.fn(async () => ({ items: [] })) },
       session: { list: vi.fn(async () => ({ items: [{ sessionId: 'old' }] })), load: vi.fn(async () => old) },
@@ -2440,12 +2458,81 @@ describe('image composer submissions', () => {
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
   const imagePngBytes = Uint8Array.from(atob(imagePngData), (character) => character.charCodeAt(0))
 
+  const receiptId = '00000000-0000-0000-0000-000000000001'
+  const imageReference = (bytes: Uint8Array, mime: string, name: string) =>
+    attachmentLink(
+      { sha256: createHash('sha256').update(bytes).digest('hex'), size: bytes.length, mime },
+      name,
+      {
+        receiptId,
+        image: { width: 1, height: 1 },
+      },
+    )
+
+  function originalUploads(sessionId: string) {
+    let metadata: { name: string; mimeType: string; size: number } | undefined
+    let uploadId: string | undefined
+    const chunks: Buffer[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async (input, init) => {
+        const url = new URL(String(input), 'http://localhost')
+        expect(url.pathname).toBe(FILE_UPLOAD_PATH)
+        const respond = (value: unknown) =>
+          new Response(JSON.stringify(value), {
+            headers: { 'Content-Type': 'application/json' },
+          })
+        if (!init?.method) {
+          expect(Object.fromEntries(url.searchParams)).toEqual({
+            sessionId,
+            destination: 'original',
+            laneId: 'main',
+          })
+          return respond({
+            limits: { maxBytes: 100 * 1024 * 1024, chunkBytes: 1024 * 1024, allowedMimeTypes: [] },
+          })
+        }
+        if (url.searchParams.get('operation') === 'chunk') {
+          expect(url.searchParams.get('destination')).toBe('original')
+          expect(url.searchParams.get('sessionId')).toBe(sessionId)
+          expect(url.searchParams.get('laneId')).toBe('main')
+          expect(url.searchParams.get('uploadId')).toBe(uploadId)
+          expect(Number(url.searchParams.get('offset'))).toBe(
+            chunks.reduce((size, bytes) => size + bytes.length, 0),
+          )
+          if (!(init.body instanceof Blob)) throw new Error('missing original upload chunk')
+          const bytes = Buffer.from(await init.body.arrayBuffer())
+          expect(bytes.length).toBeLessThanOrEqual(1024 * 1024)
+          expect(createHash('sha256').update(bytes).digest('hex')).toBe(url.searchParams.get('sha256'))
+          chunks.push(bytes)
+          return respond({ offset: chunks.reduce((size, chunk) => size + chunk.length, 0) })
+        }
+        const control = JSON.parse(String(init.body))
+        expect(control).toMatchObject({ sessionId, laneId: 'main', destination: 'original' })
+        if (control.operation === 'start') {
+          uploadId = control.uploadId
+          expect(uploadId).toBeTypeOf('string')
+          metadata = control
+          return respond({ offset: 0 })
+        }
+        expect(control.operation).toBe('finish')
+        expect(control.uploadId).toBe(uploadId)
+        if (!metadata) throw new Error('original upload was not started')
+        const bytes = Buffer.concat(chunks)
+        expect(bytes.length).toBe(metadata.size)
+        expect(createHash('sha256').update(bytes).digest('hex')).toBe(control.sha256)
+        return respond({ attachment: imageReference(bytes, metadata.mimeType, metadata.name) })
+      }),
+    )
+  }
+
   async function start(
     sessionValue: SessionDouble,
     busy = false,
     inputModes: readonly ('text' | 'image')[] = ['text', 'image'],
   ): Promise<void> {
     installPublicFixture()
+    originalUploads(sessionValue.id)
     const imageUrl = `blob:${sessionValue.id}-image`
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => imageUrl) })
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
@@ -2459,7 +2546,7 @@ describe('image composer submissions', () => {
         get: vi.fn(async () => ({ configured: true })),
         providers: vi.fn(async () => ({ providers: [] })),
       },
-      initialize: vi.fn(async () => undefined),
+      initialize: vi.fn(initialized),
       on: vi.fn(),
       workspace: { list: vi.fn(async () => ({ items: [] })) },
       session: {
@@ -2496,8 +2583,12 @@ describe('image composer submissions', () => {
       },
     })
     prompt.dispatchEvent(event)
-    if (accepted)
-      await vi.waitFor(() => expect(document.querySelector('.composer-image-preview img')).not.toBeNull())
+    if (accepted) {
+      await vi.waitFor(() => expect(document.querySelector('.composer-file-preview')).not.toBeNull())
+      await vi.waitFor(() =>
+        expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(false),
+      )
+    }
   }
 
   it.each(['PNG', '10 MiB JPEG'])(
@@ -2522,10 +2613,10 @@ describe('image composer submissions', () => {
       submit('')
 
       await vi.waitFor(() => expect(active.prompt).toHaveBeenCalledTimes(1))
-      expect(active.prompt).toHaveBeenCalledWith(
-        [{ type: 'image', mimeType, data: Buffer.from(bytes).toString('base64') }],
-        { titleLocale: 'zh-CN', references: [] },
-      )
+      expect(active.prompt).toHaveBeenCalledWith([imageReference(bytes, mimeType, 'image')], {
+        titleLocale: 'zh-CN',
+        references: [],
+      })
     },
   )
 
@@ -2541,15 +2632,12 @@ describe('image composer submissions', () => {
 
     await vi.waitFor(() => expect(active.followUp).toHaveBeenCalledTimes(1))
     expect(active.followUp).toHaveBeenCalledWith(
-      [
-        { type: 'text', text: '请解释这张图' },
-        { type: 'image', mimeType: 'image/png', data: imagePngData },
-      ],
+      [{ type: 'text', text: '请解释这张图' }, imageReference(imagePngBytes, 'image/png', 'one.png')],
       { references: [] },
     )
     await vi.waitFor(() => expect(draft.value).toBe('请解释这张图'))
-    expect(document.querySelector('.composer-image-preview img')).not.toBeNull()
-    expect(document.getElementById('notice')?.textContent).toContain('follow-up rejected')
+    expect(document.querySelector('.composer-file-preview')?.textContent).toContain('one.png')
+    expect(document.querySelector('.agh-notifications')?.textContent).toContain('follow-up rejected')
   })
 
   it('accepts an image as a file attachment when the selected model has only text input', async () => {
@@ -2602,15 +2690,15 @@ describe('image composer submissions', () => {
     await start(active)
     await attachPng()
     const protocol = await import('@agnes/protocol')
-    const validation = vi.spyOn(protocol, 'decodeSafeImages').mockImplementationOnce(() => {
-      throw new Error('images exceed aggregate pixel limit')
+    const validation = vi.spyOn(protocol, 'validateUserAttachments').mockImplementationOnce(() => {
+      throw new Error('attachments exceed aggregate byte limit')
     })
     submit('保留文字和图片')
     expect(active.prompt).not.toHaveBeenCalled()
     expect((document.getElementById('prompt') as HTMLTextAreaElement).value).toBe('保留文字和图片')
-    expect(document.querySelector('.composer-image-preview img')).not.toBeNull()
+    expect(document.querySelector('.composer-file-preview')?.textContent).toContain('one.png')
     await vi.waitFor(() =>
-      expect(document.getElementById('notice')?.textContent).toContain('aggregate pixel limit'),
+      expect(document.querySelector('.agh-notifications')?.textContent).toContain('aggregate byte limit'),
     )
     validation.mockRestore()
     submit('保留文字和图片')
@@ -2627,8 +2715,10 @@ describe('image composer submissions', () => {
     expect(active.followUp).not.toHaveBeenCalled()
     expect(active.steer).not.toHaveBeenCalled()
     expect((document.getElementById('prompt') as HTMLTextAreaElement).value).toBe(longText)
-    expect(document.querySelector('.composer-image-preview img')).not.toBeNull()
-    await vi.waitFor(() => expect(document.getElementById('notice')?.textContent).toContain('144 MiB 限制'))
+    expect(document.querySelector('.composer-file-preview')?.textContent).toContain('one.png')
+    await vi.waitFor(() =>
+      expect(document.querySelector('.agh-notifications')?.textContent).toContain('144 MiB 限制'),
+    )
   })
 })
 
@@ -2662,7 +2752,7 @@ describe('web model confirmation', () => {
         save: vi.fn(async () => ({ configured: true })),
         test: vi.fn(async () => ({ verified: true, models: [] })),
       },
-      initialize: vi.fn(async () => undefined),
+      initialize: vi.fn(initialized),
       on: vi.fn(),
       workspace: {
         list: vi.fn(async () => ({ items: [] })),
@@ -2700,7 +2790,11 @@ describe('web model confirmation', () => {
     await openModelList()
     modelMenu().querySelectorAll<HTMLElement>('[role="option"]')[1]?.click()
     await vi.waitFor(() => expect(old.setModel).toHaveBeenCalledTimes(1))
-    await vi.waitFor(() => expect(document.getElementById('notice')?.dataset.kind).toBe('error'))
+    await vi.waitFor(() =>
+      expect(document.querySelector('.agh-notification-message[role="alert"]')?.textContent).toBe(
+        'model switch failed',
+      ),
+    )
     expect(model.querySelector('[data-model-label]')?.textContent).toBe('model-a')
     expect(model.getAttribute('aria-label')).not.toContain('account-acct-private')
 
@@ -2750,7 +2844,7 @@ describe('session action review regressions', () => {
       return { title, archived: false }
     })
     sdk.createClient.mockReturnValue({
-      initialize: vi.fn(async () => undefined),
+      initialize: vi.fn(initialized),
       on,
       close: vi.fn(async () => undefined),
       apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
@@ -2783,11 +2877,16 @@ describe('session action review regressions', () => {
 
   it('retains a renamed paged-out current session through the next transcript render', async () => {
     const { rename, old, on } = await boot({ value: false })
-    document.querySelector<HTMLButtonElement>('#task-title')?.click()
-    const dialog = document.querySelector('.session-rename-dialog') as HTMLElement
-    ;(dialog.querySelector('input') as HTMLInputElement).value = '改名后'
-    dialog.querySelector('form')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
-    await vi.waitFor(() => expect((dialog.closest('dialog') as HTMLDialogElement).open).toBe(false))
+    await act(async () => document.querySelector<HTMLButtonElement>('#task-title')?.click())
+    const titleInput = document.getElementById('task-title-input') as HTMLInputElement
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(titleInput, '改名后')
+      titleInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[data-testid="task-title-save"]')?.click(),
+    )
+    await vi.waitFor(() => expect(document.getElementById('task-title-input')).toBeNull())
     expect(rename).toHaveBeenCalledOnce()
     expect(document.getElementById('task-title')?.textContent).toBe('改名后')
     const prior = old.projectUIOpening.mock.calls.length
@@ -2808,7 +2907,9 @@ describe('session action review regressions', () => {
     const fork = menuItem('分叉会话')
     expect(fork).toBeDefined()
     fork?.click()
-    await vi.waitFor(() => expect(document.getElementById('notice')?.textContent).toContain('没有可分叉'))
+    await vi.waitFor(() =>
+      expect(document.querySelector('.agh-notifications')?.textContent).toContain('没有可分叉'),
+    )
     expect(document.body.classList.contains('sidebar-open')).toBe(false)
     expect(document.querySelector('main')?.inert).toBe(false)
     expect(document.activeElement).toBe(document.getElementById('sidebar-toggle'))
@@ -2840,7 +2941,7 @@ describe('sidebar recency', () => {
           ],
     }))
     sdk.createClient.mockReturnValue({
-      initialize: vi.fn(async () => undefined),
+      initialize: vi.fn(initialized),
       on: vi.fn(),
       close: vi.fn(async () => undefined),
       apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
@@ -2880,7 +2981,7 @@ describe('incremental opening', () => {
       items: [{ sessionId: 'old', ...(titled ? { title: '旧任务' } : {}) }],
     }))
     sdk.createClient.mockReturnValue({
-      initialize: vi.fn(async () => undefined),
+      initialize: vi.fn(initialized),
       on,
       close: vi.fn(async () => undefined),
       apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
@@ -2922,7 +3023,12 @@ describe('incremental opening', () => {
 
   it('opens with one bounded opening and no full projection, and seeds the run receipt from the last turn', async () => {
     const { old } = await bootWith(async () => ({ ...idleTimeline('old'), upto: 4, turns: [finishedTurn] }))
-    await vi.waitFor(() => expect(document.getElementById('status')?.textContent).toBe('已完成'))
+    await vi.waitFor(() =>
+      expect(document.querySelector('#status [role="status"]')?.textContent).toBe('已完成'),
+    )
+    expect(
+      document.querySelector('#status .run-status-phase > .run-status-word:last-child')?.textContent,
+    ).toBe('已完成')
     expect(old.projectUIOpening).toHaveBeenCalledTimes(1)
     expect(old.projectUI).not.toHaveBeenCalled()
     expect(old.events).toHaveBeenCalledWith({ preview: true, cursor: { fromSeq: 4, generation: 1 } })
@@ -3193,7 +3299,7 @@ it('renders Computer Use in the application and retires its late operation reply
   sdk.createClient.mockReturnValue({
     call,
     skins: { list: listSkins },
-    initialize: vi.fn(async () => undefined),
+    initialize: vi.fn(initialized),
     on: vi.fn(),
     close: vi.fn(async () => undefined),
     apis: vi.fn(async () => ({ profile: { models: [] } })),
@@ -3273,7 +3379,7 @@ it.skipIf(!process.env.AGH_WEB_PERFORMANCE_OUTPUT).each([1, 2, 3])(
       }),
     )
     const client = {
-      initialize: vi.fn(async () => undefined),
+      initialize: vi.fn(initialized),
       on: vi.fn(),
       close: vi.fn(async () => undefined),
       config: {
@@ -3405,7 +3511,7 @@ describe('session that cannot continue on this build', () => {
       sdk.createClient.mockReturnValue({
         apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
         close: vi.fn(async () => undefined),
-        initialize: vi.fn(async () => undefined),
+        initialize: vi.fn(initialized),
         on: vi.fn(),
         config: {
           get: vi.fn(async () => ({ configured: true })),
@@ -3442,7 +3548,7 @@ describe('session that cannot continue on this build', () => {
     sdk.createClient.mockReturnValue({
       apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
       close: vi.fn(async () => undefined),
-      initialize: vi.fn(async () => undefined),
+      initialize: vi.fn(initialized),
       on: vi.fn(),
       config: {
         get: vi.fn(async () => ({ configured: true })),

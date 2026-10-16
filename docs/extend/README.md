@@ -6,7 +6,7 @@ English | [简体中文](README.zh-CN.md)
 
 Plugins are fully trusted code running with the user's rights. Capability declarations are reviewed at admission; they do not restrict arbitrary JavaScript or enforce a hook allowlist. `ctx.hooks.register` accepts the supported observe, transform and intercept hooks regardless of the declared `hooks` list. Use only code you intend to authorize.
 
-[Tool runtime and policies](tool-runtime.md) · [Loop events](loop-events.md) · [Business workflows](workflow-loops.md)
+[Streams and managed services](transports.md) · [Tool runtime and policies](tool-runtime.md) · [Loop events](loop-events.md) · [Business workflows](workflow-loops.md)
 
 Choose the smallest starter that owns your behavior. All five [templates](../../templates/) are independent packages with build/test scripts and imports through public package exports. This SDK is a source preview; the quickstart includes local SDK links until public packages are distributed.
 

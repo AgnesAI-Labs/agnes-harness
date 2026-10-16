@@ -24,7 +24,7 @@ export function createWindowsExec(options: {
       const controller = new AbortController()
       let timedOut = false
       let cancelledFirst = false
-      const output = createExecOutput(opts.maxOutputBytes ?? 1024 * 1024)
+      const output = createExecOutput(opts.maxOutputBytes ?? 1024 * 1024, options.powerShell?.codePage)
       const cancel = () => controller.abort()
       const timer = setTimeout(() => {
         // First cause wins: a cancel that came first is not reported as a timeout.
@@ -58,6 +58,7 @@ export function createWindowsExec(options: {
             code: result.code ?? -1,
             ...output.result(),
             timedOut,
+            ...(result.stoppedProcesses === undefined ? {} : { stoppedProcesses: result.stoppedProcesses }),
             ...(signal === undefined ? {} : { signal }),
           }
         } catch (cause) {

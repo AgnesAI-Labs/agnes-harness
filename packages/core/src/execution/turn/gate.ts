@@ -189,7 +189,7 @@ async function evaluateBudgetPreflight(s: SessionImpl): Promise<'ok' | { reason:
   await s.d.log.append([s.ev('budget.state', budget, { register: 'budget.state' })])
   const cap = s.turnBudgetCap()
   if (cap !== null && projected.credits > cap) {
-    if (s.preset.budget.onExceed === 'deny') {
+    if (s.turn?.hardBudgetCap !== undefined || s.preset.budget.onExceed === 'deny') {
       await s.endTurn('budget')
       return { reason: 'budget' }
     }

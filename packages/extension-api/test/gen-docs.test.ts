@@ -25,6 +25,14 @@ describe('author documentation generation', () => {
     expect(docs['services.md']).toContain(
       'required: name, kind, inputSchema, outputSchema, timeoutMs, maxResultBytes',
     )
+    expect(docs['services.md']).toContain(
+      '[ServiceCapability](../../protocol/schema/extension-service.json#/$defs/ServiceCapability): anyOf: 3 branches',
+    )
+    expect(docs['services.md']).toContain('Services default to session scope.')
+    expect(docs['services.md']).toContain(
+      'Scope: profile; kind: effect; required: name, kind, inputSchema, outputSchema, timeoutMs, maxResultBytes, scope, effectPolicy',
+    )
+    expect(docs['services.md']).toContain('Explicit profile services have no session or workspace ports;')
     expect(docs['projections.md']).toContain('required: name, inputEventTypes, maxStateBytes')
   })
   it('uses all four real slots and required and optional metadata fields in order', () => {

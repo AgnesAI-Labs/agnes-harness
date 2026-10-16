@@ -45,6 +45,9 @@ function installed(input: {
   publicConfig?: Record<string, unknown>
   services?: string[]
   slotCatalogVersion?: string
+  lifetime?: 'profile' | 'session'
+  homeEntries?: import('@agnes/protocol').HomeContributionDeclaration[]
+  assets?: string[]
 }): InstalledPackage {
   const integrity = input.integrity ?? `sha256-${'1'.repeat(64)}`
   return {
@@ -65,6 +68,9 @@ function installed(input: {
         capabilities: input.backend ? { ui: true, tools: { prefix: 'panel_' } } : { ui: true },
         client: {
           ...(input.intelligentComponents ? { intelligentComponents: input.intelligentComponents } : {}),
+          ...(input.lifetime ? { lifetime: input.lifetime } : {}),
+          ...(input.homeEntries ? { homeEntries: input.homeEntries } : {}),
+          ...(input.assets ? { assets: input.assets } : {}),
           entry: input.entry ?? 'dist/index.js',
           styles: input.styles ?? ['dist/index.css'],
           slots: input.slots ?? ['workbench.panel'],
@@ -169,6 +175,7 @@ describe('client module immutable snapshots', () => {
         registry.list({ ...input, sessionId: 'other-session' }),
       ])
       expect(currentRoster.modules).toEqual([])
+      expect(roster.rows?.[0]?.binding?.availability).toBe('history-only')
       expect(roster.modules).toHaveLength(1)
       expect(roster.modules[0]?.intelligentComponents).toEqual(
         row.contributions[0] && 'client' in row.contributions[0]
@@ -187,6 +194,93 @@ describe('client module immutable snapshots', () => {
       expect(asset.found).toBe(true)
       if (asset.found) expect(Buffer.from(asset.base64, 'base64').toString()).toContain('"v1"')
       expect((await registry.list(input)).modules).toEqual([])
+    } finally {
+      registry.close()
+    }
+  })
+  it('uses current profile entries beside historical session renderers and revokes only the global entry', async () => {
+    const f = fixture()
+    const row = installed({
+      directory: f.packageDirectory,
+      lifetime: 'profile',
+      homeEntries: [{ id: 'alpha', placement: 'primary' }],
+    })
+    const session = structuredClone(row.contributions[0]) as Extract<
+      InstalledPackage['contributions'][number],
+      { kind: 'extension' }
+    >
+    session.id = 'acme/history'
+    if (session.client) {
+      session.client.lifetime = 'session'
+      delete session.client.homeEntries
+    }
+    const mixed = { ...row, contributions: [...row.contributions, session] }
+    const store = new RuntimeGenerationSnapshotStore(f.root)
+    const original = decodeRuntimeTargetArtifact(webArtifact(row.id, row.entry.integrity))
+    const originalRow = original.tree.rows[0]
+    if (!originalRow) throw new Error('missing row')
+    const artifact = buildRuntimeTarget({
+      rows: [
+        { ...originalRow, id: 'web:acme/panel:acme/panel' },
+        {
+          ...originalRow,
+          id: 'web:acme/panel:acme/history',
+          plugin: `acme/panel@${row.entry.integrity}/client/history`,
+        },
+      ],
+      resources: { mcp: [], skills: {} },
+      resourceRevision: 'a'.repeat(64),
+      compositeRevision: 'b'.repeat(64),
+    })
+    const snapshot = store.create(
+      artifact,
+      [
+        {
+          generation: 1,
+          trusted: true,
+          snapshot: {
+            snapshotId: row.entry.integrity,
+            integrity: row.entry.integrity,
+            profile: 'local-dev',
+            packageId: row.id,
+            version: '1.0.0',
+            treeIntegrity: hashDirectory(f.packageDirectory, { exclude: [] }),
+            capabilityHash: row.capabilityHash,
+            directory: f.packageDirectory,
+            contributions: mixed.contributions,
+          },
+        },
+      ],
+      'test',
+    )
+    store.pin('old-session', snapshot.id, [])
+    let current = inventory(mixed)
+    const registry = createClientModuleRegistry({ snapshotDirectory: () => f.snapshots })
+    const input = () => ({
+      profile: 'local-dev',
+      profileDirectory: f.root,
+      inventory: current,
+      actual: async () => undefined,
+      refreshInventory: async () => current,
+    })
+    try {
+      const active = await registry.list({ ...input(), sessionId: 'old-session' })
+      const global = active.rows?.find((row) => row.binding?.lifetime === 'profile')
+      expect(global?.entryUrl).not.toContain('/generations/')
+      expect(active.rows?.find((row) => row.binding?.lifetime === 'session')?.entryUrl).toContain(
+        '/generations/',
+      )
+      current = inventory({ ...mixed, enabled: false })
+      const disabled = await registry.list({ ...input(), sessionId: 'old-session' })
+      expect(disabled.rows?.some((row) => row.binding?.lifetime === 'profile')).toBe(false)
+      expect(disabled.rows?.find((row) => row.binding?.lifetime === 'session')?.binding?.availability).toBe(
+        'history-only',
+      )
+      current = inventory(mixed)
+      const enabled = await registry.list(input())
+      expect(
+        enabled.rows?.find((row) => row.binding?.lifetime === 'profile')?.binding?.activationId,
+      ).not.toBe(global?.binding?.activationId)
     } finally {
       registry.close()
     }
@@ -247,7 +341,7 @@ describe('client module immutable snapshots', () => {
           id: owner,
           rowId: 'ext:acme/panel',
           path: './agnes.client.json',
-          client: { entry: './dist/index.js', services: ['panel.search'] },
+          client: { entry: './dist/index.js', services: ['panel.search'], streams: ['panel.events'] },
         },
       ],
     } as InstalledPackage
@@ -289,6 +383,7 @@ describe('client module immutable snapshots', () => {
         moduleName: owner,
         extIds: [owner],
         services: ['panel.search'],
+        streams: ['panel.events'],
         phase: 'ready',
       },
     ])
@@ -839,7 +934,8 @@ describe('client module immutable snapshots', () => {
 
   it('serves only files declared by the verified snapshot manifest', async () => {
     const files = fixture()
-    const row = installed({ directory: files.packageDirectory })
+    writeFileSync(join(files.packageDirectory, 'dist', 'scene.glb'), Buffer.from([1, 2, 3]))
+    const row = installed({ directory: files.packageDirectory, assets: ['dist/scene.glb'] })
     const currentInventory = inventory(row)
     const registry = createClientModuleRegistry({ snapshotDirectory: () => files.snapshots })
     const input = {
@@ -858,6 +954,17 @@ describe('client module immutable snapshots', () => {
         path: `/plugins/acme/panel/${row.entry.integrity}/dist/undeclared.js`,
       }),
     ).toEqual({ found: false })
+    const resourcePath = `/plugins/acme/panel/${row.entry.integrity}/dist/scene.glb`
+    expect(await registry.read({ ...input, path: resourcePath })).toEqual({
+      found: true,
+      base64: Buffer.from([1, 2, 3]).toString('base64'),
+    })
+    writeFileSync(join(revisionDirectory, 'dist', 'scene.glb'), Buffer.from([3, 2, 1]))
+    // Reconciliation repairs the corrupt snapshot from the still-verified installed source.
+    expect(await registry.read({ ...input, path: resourcePath })).toEqual({
+      found: true,
+      base64: Buffer.from([1, 2, 3]).toString('base64'),
+    })
     registry.close()
   })
 
@@ -1180,25 +1287,42 @@ describe('client module immutable snapshots', () => {
     registry.close()
   })
 
-  it('fails closed when the install identity changes during snapshot copy', async () => {
-    const files = fixture()
-    const row = installed({ directory: files.packageDirectory })
-    const changed = installed({
-      directory: files.packageDirectory,
-      integrity: `sha256-${'9'.repeat(64)}`,
-    })
-    const registry = createClientModuleRegistry({ snapshotDirectory: () => files.snapshots })
-    const result = await registry.list({
-      profile: 'local-dev',
-      profileDirectory: files.root,
-      inventory: inventory(row),
-      actual: async () => undefined,
-      refreshInventory: async () => inventory(changed),
-    })
-    expect(result.modules).toEqual([])
-    expect(result.statuses[0]).toMatchObject({ state: 'blocked', reason: 'resources-invalid' })
-    registry.close()
-  })
+  it.each([false, true])(
+    'fails closed when install identity changes during snapshot copies (companion=%s)',
+    async (companion) => {
+      const files = fixture()
+      const row = installed({ directory: files.packageDirectory })
+      const otherFiles = fixture()
+      const other = { ...installed({ directory: otherFiles.packageDirectory }), id: 'acme/second' }
+      const changed = installed({
+        directory: files.packageDirectory,
+        integrity: `sha256-${'9'.repeat(64)}`,
+      })
+      const registry = createClientModuleRegistry({ snapshotDirectory: () => files.snapshots })
+      const result = await registry.list({
+        profile: 'local-dev',
+        profileDirectory: files.root,
+        inventory: { ...inventory(row), packages: [row, ...(companion ? [other] : [])] },
+        actual: async () => undefined,
+        refreshInventory: async () => {
+          // The identity change is observed after the complete batch is copied, including packages
+          // later in the roster. Every published package must still pass this final verification.
+          if (companion)
+            expect(
+              existsSync(join(files.snapshots, 'acme/second', other.entry.integrity, 'dist/index.js')),
+            ).toBe(true)
+          return { ...inventory(changed), packages: [changed, ...(companion ? [other] : [])] }
+        },
+      })
+      expect(result.modules.map((module) => module.packageId)).toEqual(companion ? ['acme/second'] : [])
+      expect(result.statuses.find((status) => status.packageId === row.id)).toMatchObject({
+        state: 'blocked',
+        reason: 'resources-invalid',
+      })
+      expect(existsSync(join(files.snapshots, 'acme/panel', row.entry.integrity))).toBe(false)
+      registry.close()
+    },
+  )
 
   it('serves list/read through the shared PackageAdmin RPC handler', async () => {
     const files = fixture()

@@ -5,9 +5,10 @@ import { appendFile, chmod, copyFile, cp, mkdir, readdir, readFile, rm, writeFil
 import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { BUNDLED_EXAMPLES, BUNDLED_HELPERS } from '@agnes/package-manager'
+import { BUNDLED_EXAMPLES, DEFAULT_ENABLED_BUNDLED_PACKAGES } from '@agnes/package-manager'
 import { type BuildOptions, type BuildResult, build, type Plugin } from 'esbuild'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
+import { clientPlatformExternals } from '../../../tools/web-client-externals.mjs'
 import { scrollbarCsp } from '../../../tools/web-scrollbar-csp.mjs'
 import {
   inCssLayer,
@@ -20,6 +21,8 @@ import { tabsAria } from '../../../tools/web-tabs-aria.mjs'
 import { xSurface } from '../../../tools/web-x-surface.mjs'
 import { beginRuntimeDirectory } from '../../base/tools/runtime-directory.js'
 import { bundledManifests } from './bundled-manifests.mjs'
+import { bundledPackageVersion, stampBundledPackageVersion } from './bundled-version.js'
+import { checkPackagedClientModules } from './client-module-check.js'
 import { prepareDocumentReader } from './document-reader.js'
 import { copyPluginPackRuntime } from './plugin-pack-runtime.js'
 import { copyRipgrep } from './ripgrep.js'
@@ -40,10 +43,10 @@ export async function copyComputerUseNotice(outputDirectory: string): Promise<vo
 }
 
 /** Copy only runtime payload, never repository tests or personal working files. */
-export async function copyBundledPlugins(outputDirectory: string): Promise<void> {
-  for (const { name: helper } of BUNDLED_HELPERS) {
-    const source = join(repoPackages, 'package-manager', 'bundled-plugins', helper)
+export async function copyBundledPlugins(outputDirectory: string, version = '0.0.0'): Promise<void> {
+  for (const { name: helper } of DEFAULT_ENABLED_BUNDLED_PACKAGES) {
     const destination = join(outputDirectory, 'bundled-plugins', helper)
+    const source = join(repoPackages, 'package-manager', 'bundled-plugins', helper)
     await mkdir(destination, { recursive: true })
     for (const name of ['package.json', 'index.mjs', 'src', 'README.md', 'LICENSE'])
       await cp(join(source, name), join(destination, name), {
@@ -52,6 +55,8 @@ export async function copyBundledPlugins(outputDirectory: string): Promise<void>
         errorOnExist: true,
       })
     if (helper === 'document-reader') await prepareDocumentReader(destination)
+    await stampBundledPackageVersion(destination, version)
+    await checkPackagedClientModules(destination)
   }
 }
 
@@ -80,9 +85,15 @@ const bundleJitiTransform: Plugin = {
 }
 
 /** Ship the curated example payload independently of the user's workspace. */
-export async function copyBundledExamples(outputDirectory: string): Promise<void> {
+export async function copyBundledExamples(outputDirectory: string, version = '0.0.0'): Promise<void> {
+  const parentVersions = new Map<string, string>()
+  for (const pkg of DEFAULT_ENABLED_BUNDLED_PACKAGES) {
+    const parent = JSON.parse(await readFile(join(repoPackages, pkg.sourcePath, 'package.json'), 'utf8'))
+    parentVersions.set(pkg.id, bundledPackageVersion(parent.version, version))
+  }
   for (const { family, name } of BUNDLED_EXAMPLES) {
     const source = join(repoPackages, '..', 'examples', family, name)
+    if (!existsSync(join(source, 'package.json'))) continue
     const destination = join(outputDirectory, 'bundled-examples', family, name)
     await mkdir(destination, { recursive: true })
     const payload = (await readdir(source)).filter(
@@ -93,6 +104,10 @@ export async function copyBundledExamples(outputDirectory: string): Promise<void
           'fixtures',
           'skills',
           'client',
+          'assets',
+          'dist',
+          'resources',
+          'NOTICE',
           'mcp',
           'dag',
           'provider.example.json',
@@ -101,6 +116,11 @@ export async function copyBundledExamples(outputDirectory: string): Promise<void
         (/\.(mjs|mts|json)$/.test(file) && file !== 'tsconfig.json'),
     )
     for (const file of payload) await cp(join(source, file), join(destination, file), { recursive: true })
+    const manifestPath = join(destination, 'package.json')
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+    for (const [id, parentVersion] of parentVersions)
+      if (manifest.dependencies?.[id]) manifest.dependencies[id] = parentVersion
+    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
     if (family === 'community')
       await build({
         entryPoints: [join(source, 'src', 'index.ts')],
@@ -112,6 +132,7 @@ export async function copyBundledExamples(outputDirectory: string): Promise<void
         packages: 'external',
         legalComments: 'eof',
       })
+    await checkPackagedClientModules(destination)
   }
 }
 
@@ -205,18 +226,6 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
   }
   // Plugin entrypoints resolve these imports through index.html's import map, so the host bundle
   // must leave them external and serve exactly one shared platform instance.
-  const platformExternals = [
-    'react',
-    'react/jsx-runtime',
-    'react-dom',
-    'react-dom/client',
-    '@agnes/cordis',
-    '@agnes/web-client',
-    '@agnes/web-ui/conversation',
-    '@agnes/web-ui/x',
-    'antd',
-    'recharts',
-  ]
   await buildWithMetadata({
     entryPoints: {
       app: join(repoPackages, 'web', 'src', 'app.ts'),
@@ -243,7 +252,7 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
     banner: {
       js: "import __agnesSharedReact from 'react'; var require = (id) => { if (id === 'react') return __agnesSharedReact; throw Error('Unexpected external require: ' + id) };",
     },
-    external: platformExternals,
+    plugins: [clientPlatformExternals, scrollbarCsp],
   })
   // Keep the local launcher's import-map targets and platform singleton graph identical to the
   // standalone Web build.
@@ -282,6 +291,7 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
       x: join(repoPackages, 'web', 'tools', 'vendor', 'x-entry.js'),
       cordis: join(repoPackages, 'web', 'tools', 'vendor', 'cordis-entry.js'),
       'web-client': join(repoPackages, 'web', 'tools', 'vendor', 'web-client-entry.js'),
+      'web-ui': join(repoPackages, 'web', 'tools', 'vendor', 'web-ui-entry.js'),
     },
     ...vendorOptions,
     plugins: [scrollbarCsp, tabsAria, xSurface],
@@ -346,12 +356,12 @@ async function buildLocal(out: string, nativeOutput?: string, versionOverride?: 
   const webOut = join(out, 'web')
   await mkdir(join(out, 'native'), { recursive: true })
   await copyRipgrep(out)
-  await copyBundledPlugins(out)
-  await copyBundledExamples(out)
   const packageJson = JSON.parse(await readFile(join(cliRoot, 'package.json'), 'utf8')) as {
     version?: unknown
   }
   const version = versionOverride ?? (typeof packageJson.version === 'string' ? packageJson.version : '0.0.0')
+  await copyBundledPlugins(out, version)
+  await copyBundledExamples(out, version)
   const defines = await runtimeDefines(version)
   await copyPluginPackRuntime(out, { define: defines, plugins: [bundleJitiTransform] })
 

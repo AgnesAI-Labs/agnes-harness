@@ -4,6 +4,7 @@ export interface RowOrigin {
   readonly trustTier: 'third-party' | 'builtin'
   readonly packageId: string
   readonly snapshotId: string
+  readonly rowRevision?: string
   readonly rowId: string
   readonly exportName: string
   readonly declaredProvides: readonly string[]

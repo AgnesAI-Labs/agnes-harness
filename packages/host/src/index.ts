@@ -36,6 +36,7 @@ export { initializeHome, initializeHomeLocked } from '@agnes/host-common/home-in
 export {
   HOME_LAYOUT_VERSION,
   homeLayout,
+  homeVersionMessage,
   inspectHome,
 } from '@agnes/host-common/home-layout'
 export {
@@ -357,6 +358,7 @@ export {
   CredentialStoreError,
   type CredentialStoreReason,
   credentialFileEnforcement,
+  inspectCredentialMetadata,
 } from '@agnes/host-infrastructure/adapters/credential-files'
 export {
   type ApiKeyCredentialV1,
@@ -424,6 +426,7 @@ export * from '@agnes/host-infrastructure/audit'
 export {
   type ChildEnginesConfigurationService,
   type ChildEnginesSnapshot,
+  CONFIGURATION_ERROR_CODES,
   ConfigurationError,
   type ConfigurationErrorCode,
   type ConfigurationService,
@@ -550,3 +553,5 @@ export {
 } from './runtime/sessions/session.js'
 export { readProfileTelemetryConsent } from './runtime/sessions/session-hooks.js'
 export { loadSessionTitle } from './runtime/sessions/session-title.js'
+
+export { enqueueSystemInput } from './runtime/sessions/system-input.js'

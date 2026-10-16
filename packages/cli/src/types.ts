@@ -12,6 +12,8 @@ export type SessionAdmissionPort = {
 export type Command =
   | 'app-server'
   | 'run'
+  | 'batch'
+  | 'runtime'
   | 'tools'
   | 'resume'
   | 'sessions'

@@ -149,10 +149,23 @@ export function createSessionController(
           permissionContext.signal.addEventListener('abort', reject, { once: true })
           context.render()
         })
+      if (!options.created) void context.readOnlyController.preview(id, epoch).catch(() => undefined)
       const binding = options.created
         ? bindWebSession(options.created, permission)
         : await loadWebSession(
-            (sessionId, options) => context.client.session.load(sessionId, options),
+            (sessionId, options) =>
+              context.client.session.load(sessionId, {
+                ...options,
+                onProgress: (progress) => {
+                  if (epoch === context.selection && !context.current)
+                    context.readOnlyController.progress(
+                      id,
+                      progress.phase,
+                      progress.verifiedSeq,
+                      progress.lastSeq,
+                    )
+                },
+              }),
             id,
             permission,
           )
@@ -160,6 +173,7 @@ export function createSessionController(
         binding.offPermission?.()
         return
       }
+      context.readOnlyController.clear()
       const loaded = binding.session
       context.current = loaded
       context.sessionIsolation = undefined

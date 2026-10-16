@@ -123,3 +123,5 @@ Badge, Tag, EmptyState, Skeleton, ListRow, Banner, Icon and SheetHandle remain c
 | `SettingsPresetSelect` / `SettingsChips` / `SettingsChipToggle` | A | 人话取值 | 毫秒 ↔ 秒/分钟档位（默认 / 档位 / 自定义保留原值）；逗号列表 ↔ 标签；固定选项多选标签 |
 
 `preserveRouteParams(url)` keeps the existing `view` and `settings` level encoding when the host edits unrelated URL metadata; explicit `searchParamRoute().href()` changes its own route and preserves the other. / `preserveRouteParams(url)` 在宿主修改其他 URL 元数据时保留已有层级编码；`searchParamRoute().href()` 只改自身路由并保留另一路由。
+
+| `Notifications` | Shared | React portal | Top-right transient error stack; independent six-second expiry, labelled close buttons, pagehide and unmount cleanup. Action banners remain caller-owned. |

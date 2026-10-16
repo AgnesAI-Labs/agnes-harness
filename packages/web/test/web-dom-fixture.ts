@@ -15,6 +15,7 @@ import type { SidebarActions, SidebarState } from '../src/sidebar.js'
 
 export type WebPageName = 'index.html' | 'admin.html' | 'resources.html'
 export type WebDomFixtureOptions = {
+  agnes?: AgnesClient
   composer?: Partial<ComposerRegionOptions>
   sidebar?: { state?: SidebarState; actions?: Partial<SidebarActions> }
   claim?: ClaimResolver
@@ -52,9 +53,9 @@ export async function mountRenderedIndex(options: WebDomFixtureOptions = {}): Pr
   const { hosts, dispose: unmountShell } = mountAppShell()
 
   const runtime = await startClientModules({
-    // The region bootstrap only retains this client for the reconciler. No roster read is issued by
-    // this fixture, so an empty test double keeps the fixture independent of daemon contracts.
-    agnes: {} as AgnesClient,
+    // Tests may supply a synthetic client for shell operations such as profile approvals.
+    // The separate roster source keeps this fixture independent of the daemon.
+    agnes: options.agnes ?? ({} as AgnesClient),
     rosterSource: { list: async () => ({ revision: '', modules: [], statuses: [] }) },
     panelContainer: hosts.panels,
     sidebarContainer: hosts.sidebar,

@@ -21,8 +21,11 @@ UIProjectionSync
 Unsupported
 applyUITimelinePatch
 applyWindowedUITimelinePatch
+cancelAttachmentUpload
 classify
 createClient
+createExampleClient
+createPluginStreamsClient
 encodeFrame
 jcs
 jwtAuth
@@ -39,4 +42,5 @@ runHeadless
 snapshotPending
 textFor
 toContentBlocks
+uploadAttachment
 wsTransport

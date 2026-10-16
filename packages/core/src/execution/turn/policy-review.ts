@@ -113,6 +113,9 @@ export async function decideToolPolicy(
               costSource: recorded.costSource,
             }
           }
+          // This legacy reviewer has no durable reservation receipt. A bounded turn must refuse it.
+          if (s.turn?.hardBudgetCap !== undefined)
+            throw new Error('Reviewer cannot enforce a hard turn budget')
           const target = resolveModel(s, request.slot)
           // A fast slot must be explicitly configured; never quietly spend on the primary model.
           if (!s.preset.model.route[request.slot]) throw new Error('Reviewer model profile is not configured')

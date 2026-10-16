@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, lstatSync, mkdirSync, realpathSync, statSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { setTimeout as delay, setImmediate } from 'node:timers/promises'
+import { setImmediate } from 'node:timers/promises'
 import type { ExtensionManifest } from '@agnes/extension-api'
 import {
   type PackagePreview,
@@ -12,9 +12,17 @@ import {
 import type { PackageAuditSink } from './audit.js'
 import { copyPackageTreeSync } from './copy-tree.js'
 import { isPackageError, PackageError } from './errors.js'
+import { previewWithExampleParent } from './example-parent.js'
 import { inspectStaged } from './inspect.js'
 import { canonical, capabilityHash, freezeData, own } from './integrity.js'
-import { type InstalledInventory, type InstalledPackage, readInventory } from './inventory.js'
+import {
+  type InstalledInventory,
+  type InstalledPackage,
+  type InventoryVerificationCache,
+  readInventory,
+  readInventoryAsync,
+} from './inventory.js'
+import { readBoundary } from './inventory-boundary.js'
 import {
   assertNoReferences,
   assertNoRuntimePins,
@@ -26,6 +34,7 @@ import {
   type TrustDecision,
   trustPackageEntry,
 } from './lifecycle.js'
+import { commitPackage } from './lifecycle-commit.js'
 import {
   discoverLocalPlugins,
   LOCAL_PLUGIN_FAILURE,
@@ -40,7 +49,7 @@ import {
 } from './local-workspace-trust.js'
 import { type LockEntry, type Lockfile, readLock, withLock, writeLock } from './lockfile.js'
 import { readBundledManifest } from './manifest.js'
-import { type RuntimePluginSnapshot, runtimePluginSnapshotsFromPins } from './package-plugin-loader.js'
+import type { RuntimePluginSnapshot } from './package-plugin-loader.js'
 import { entryFrom, readPackageJson } from './package-record.js'
 import { readPluginCapabilityPolicy } from './plugin-capabilities.js'
 import { checkCancelled, type OperationOptions, type PackageSourceAdapter, progress } from './ports.js'
@@ -60,11 +69,12 @@ import {
   type RuntimeSnapshotCollection,
   type RuntimeSnapshotPinRequest,
   type RuntimeSnapshotStore,
-  recoverRuntimeSnapshotStore,
+  recoverRuntimeSnapshotStoreAsync,
   releaseRuntimePinStore,
   resolveRuntimePinStore,
   runtimePinBlockers,
 } from './runtime-snapshots.js'
+import { readRuntimePluginSnapshots } from './runtime-source-read.js'
 import {
   type ExecFn,
   type FetchedSource,
@@ -76,13 +86,13 @@ import {
 } from './sources.js'
 import { claimStage, clearStage, readyStage, recoverStaging, type StageKind } from './staging.js'
 import {
-  commitPackage,
   type PackageCommitPoint,
   previousPackageDir,
   type RuntimeSnapshotCommitPoint,
   recoverPackageStore,
 } from './store.js'
 import { runTrustGate, verifyInstalledIntegrity } from './trust-gate.js'
+import { dependentUpdateBlockers, updatePackages } from './update.js'
 import { hashWorkspace, readDeployManifest, supportsHarness } from './workspace.js'
 
 export type PackageStatus = {
@@ -150,6 +160,12 @@ export interface PackageManager {
       installer?: 'agent' | 'user'
       authoring?: import('@agnes/protocol').AuthoringProvenance
       activation?: PackageLifecycleActivation
+      dependents?: readonly {
+        id: string
+        source: PackageSource
+        expectedIntegrity: string
+        activation: PackageLifecycleActivation
+      }[]
     },
   ): Promise<LockEntry>
   enable(
@@ -254,26 +270,10 @@ function workspacePath(profileDir: string, deployDir: string): { deployDir: stri
 }
 
 export function createPackageManager(options: ManagerOptions): PackageManager {
+  const inventoryVerifications: InventoryVerificationCache = new Map()
   const inventoryReads = new Map<string, { boundary: string; promise: Promise<InstalledInventory> }>()
   const profileKey = (directory: string): string =>
     existsSync(directory) ? realpathSync(directory) : resolve(directory)
-  // Small policy/lock files are change sentinels ONLY for joining a pending scan, never authority
-  // for skipping byte verification. A scan itself always reads current policy and installed bytes.
-  const readBoundary = (
-    directory: string,
-    files = ['agnes-lock.json', 'plugin-capabilities.json', 'package-sources.json'],
-  ): string =>
-    files
-      .map((file) => {
-        try {
-          const stat = statSync(join(directory, file), { bigint: true })
-          return `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'absent'
-          throw error
-        }
-      })
-      .join('|')
   const adapters = new Map(options.sourceAdapters?.map((adapter) => [adapter.type, adapter]))
   if (adapters.size !== (options.sourceAdapters?.length ?? 0)) throw new TypeError('duplicate source adapter')
   const stamp = options.now ?? (() => new Date().toISOString())
@@ -382,7 +382,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       profileDir,
       async () => {
         recoverPackageStore(storeFor(profileDir))
-        recoverRuntimeSnapshotStore(storeFor(profileDir))
+        await recoverRuntimeSnapshotStoreAsync(storeFor(profileDir))
         recoverStaging(dirname(packageDir(options.dataDir, profileName(profileDir), 'stage')))
         return fn()
       },
@@ -692,10 +692,16 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       const clear = () => {
         if (inventoryReads.get(key)?.promise === reading) inventoryReads.delete(key)
       }
-      const read = () => {
+      const read = async () => {
         try {
           const lock = load(profileDir)
-          return projectLocal(readInventory(lock, { ...storeFor(profileDir), ceiling: ceiling(lock) }))
+          return projectLocal(
+            await readInventoryAsync(lock, {
+              ...storeFor(profileDir),
+              ceiling: ceiling(lock),
+              ...(opts.fresh ? {} : { verificationCache: inventoryVerifications }),
+            }),
+          )
         } finally {
           // No reader may join a finished verification, even before Promise settlement is observed.
           clear()
@@ -711,31 +717,11 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       return reading
     },
     async runtimePluginSnapshots(profileDir) {
-      const store = storeFor(profileDir)
-      // Package and runtime-snapshot writers publish a journal before moving any tree and replace
-      // the lock or runtime state when they commit; either explains a torn lock-free read.
-      const committed = () => readBoundary(profileDir, ['agnes-lock.json', '.agnes-runtime-snapshots.json'])
-      const transacting = () =>
-        ['.agnes-package-transaction.json', '.agnes-runtime-transaction.json'].some((file) =>
-          existsSync(join(profileDir, file)),
-        )
-      for (let attempt = 0; attempt < 3; attempt++) {
-        const boundary = committed()
-        try {
-          const beforeLock = load(profileDir)
-          const before = readInventory(beforeLock, { ...store, ceiling: ceiling(beforeLock) })
-          const pins = listRuntimePinsStore(store)
-          const afterLock = load(profileDir)
-          const after = readInventory(afterLock, { ...store, ceiling: ceiling(afterLock) })
-          if (before.hash === after.hash) return runtimePluginSnapshotsFromPins(after, pins)
-        } catch (error) {
-          // A failure no writer explains is tampering and stays fatal; otherwise let the writer finish.
-          if (!transacting() && committed() === boundary) throw error
-          await delay(50 * (attempt + 1))
-        }
-      }
-      throw new PackageError('E_LOCK_MISMATCH', 'runtime source changed during snapshot read', {
-        detail: { reason: 'runtime-source-stale' },
+      return readRuntimePluginSnapshots(profileDir, {
+        store: storeFor(profileDir),
+        load: () => load(profileDir),
+        ceiling,
+        verificationCache: inventoryVerifications,
       })
     },
     async pinRuntimeSnapshot(profileDir, request) {
@@ -779,105 +765,29 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
     },
     async update(profileDir, id, requestedSource, op) {
       const source = { ...requestedSource },
-        expectedIntegrity = op.expectedIntegrity
+        request = {
+          ...op,
+          ...(op.activation ? { activation: structuredClone(op.activation) } : {}),
+          ...(op.dependents ? { dependents: structuredClone(op.dependents) } : {}),
+        }
       return locked(
         profileDir,
         async () => {
-          const lock = load(profileDir),
-            store = storeFor(profileDir)
+          const lock = load(profileDir)
           writable(lock)
-          const current = installed(store, lock, id, true).entry
-          if (
-            op.expectedInstalledIntegrity !== undefined &&
-            current.integrity !== op.expectedInstalledIntegrity
-          )
-            throw new PackageError('E_LOCK_MISMATCH', 'installed package changed since candidate review', {
-              code: 'E_PACKAGE_PREVIEW_STALE',
-            })
-          if (op.activation && current.integrity !== op.activation.expectedInstalledIntegrity)
-            throw new PackageError('E_LOCK_MISMATCH', 'installed package preview is stale', {
-              code: 'E_PACKAGE_PREVIEW_STALE',
-            })
-          const stage = stageFor(profileDir)
-          try {
-            const acquired = await acquire(source, stage, op, profileDir)
-            const fetched = op.installer
-              ? {
-                  ...acquired,
-                  provenance: {
-                    ...acquired.provenance!,
-                    installer: op.installer,
-                    ...(op.authoring ? { authoring: op.authoring } : {}),
-                  },
-                }
-              : acquired
-            if (fetched.integrity !== expectedIntegrity)
-              throw new PackageError('E_LOCK_MISMATCH', 'package preview is stale', {
-                code: 'E_PACKAGE_PREVIEW_STALE',
-              })
-            const { preview, treeIntegrity } = inspectStaged({
-              dir: stage,
-              source: fetched.source ?? source,
-              fetched,
-              previous: current,
-              ceiling: ceiling(lock),
-              capabilityPolicy: readPluginCapabilityPolicy(profileDir),
-              ...(op.signal ? { signal: op.signal } : {}),
-            })
-            if (preview.id !== id)
-              throw new PackageError('E_LOCK_MISMATCH', 'update package identity differs')
-            if (preview.blockers.length)
-              throw new PackageError('E_API_RANGE', 'package update is blocked', {
-                detail: { blockers: preview.blockers },
-              })
-            const entry = entryFrom(
-              fetched.source ?? source,
-              fetched,
-              readPackageJson(stage),
-              undefined,
-              stamp(),
-              current,
-            )
-            entry.contributions = preview.contributions
-            if (preview.metadata) entry.metadata = preview.metadata
-            else delete entry.metadata
-            if (preview.declaredCapabilities !== undefined)
-              entry.declaredCapabilities = preview.declaredCapabilities
-            else delete entry.declaredCapabilities
-            entry.treeIntegrity = treeIntegrity
-            entry.surfaces = preview.contributions.flatMap((c) =>
-              c.kind === 'surface' ? [c.descriptor] : [],
-            )
-            entry.previous = previousSnapshot(current)
-            if (op.activation) {
-              if (current.state.trusted === null)
-                throw new PackageError(
-                  'E_WORKSPACE_UNTRUSTED',
-                  'untrusted package cannot activate during update',
-                )
-              const trusted = trustPackageEntry(
-                store,
-                id,
-                entry,
-                stage,
-                op.activation.trust,
-                minimumReleaseAgeMin,
-                ceiling(lock),
-              )
-              trusted.state.enabled = true
-              Object.assign(entry, trusted)
-            }
-            progress(op, 'committing')
-            await assertNoReferences(store, lock, id, 'update', options.references)
-            checkCancelled(op.signal)
-            commitPackage(store, lock, id, entry, 'update', stage)
-            try {
-              op.onProgress?.(Object.freeze({ phase: 'completed', percent: 100 }))
-            } catch {}
-            return entry
-          } finally {
-            clearStage(stage)
-          }
+          return updatePackages({
+            profileDir,
+            id,
+            source,
+            op: request,
+            lock,
+            store: storeFor(profileDir),
+            acquire,
+            stageFor,
+            ceiling: ceiling(lock),
+            minimumReleaseAgeMin,
+            ...(options.references ? { references: options.references } : {}),
+          })
         },
         op,
       )
@@ -899,7 +809,13 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
           ...(op.signal ? { signal: op.signal } : {}),
         })
         progress(op, 'completed')
-        return preview
+        const checked = previous
+          ? {
+              ...preview,
+              blockers: [...preview.blockers, ...dependentUpdateBlockers(lock, preview.id, preview.version)],
+            }
+          : preview
+        return previewWithExampleParent(checked, () => readInventory(lock, storeFor(profileDir)).packages)
       } finally {
         clearStage(stage)
       }

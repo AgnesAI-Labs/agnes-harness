@@ -4,7 +4,10 @@
 import { Context } from '@agnes/cordis'
 import {
   AgnesClientService,
+  type ClientContext,
   CommandService,
+  homeEntries,
+  homeNavigation,
   SessionService,
   SlotRegistry,
   ThemeService,
@@ -12,6 +15,7 @@ import {
 import { Window } from 'happy-dom'
 import { createElement } from 'react'
 import { describe, expect, it, vi } from 'vitest'
+import { readyRosterModules } from '../src/client-modules/reconcile/roster.js'
 import { prepareDocumentStyles } from '../src/client-modules/reconcile/styles.js'
 import {
   type ClientRoster,
@@ -76,6 +80,216 @@ function stubPlugin(ctx: Context, log: { loaded: string[]; disposed: string[] })
 }
 
 describe('client reconciler（WC10 前端状态机）', () => {
+  it.each(['en', 'zh-CN'] as const)(
+    'publishes primary roster navigation before importing and revokes failed/disabled rows in %s',
+    async (language) => {
+      const h = await harness()
+      stubPlugin(h.ctx, h)
+      const row: ReadyClientModule = {
+        ...mod('declared-page', 'v1'),
+        rowId: 'web:declared-page',
+        binding: {
+          owner: 'web:declared-page',
+          lifetime: 'profile',
+          availability: 'active',
+          packageId: 'declared-page',
+          integrity: 'v1',
+          profileId: 'test',
+          activationId: 'current',
+        },
+        homeEntries: [
+          {
+            id: 'declared-page',
+            placement: 'primary',
+            navigation: {
+              title: 'Device console',
+              titles: { 'zh-CN': '设备控制台' },
+              icon: 'cpu',
+              order: 40,
+            },
+          },
+        ],
+      }
+      let rows = [row]
+      const locale = zhLocaleService()
+      // LocaleService exposes the active UI language independently of module execution.
+      locale.setLocale(language)
+      const reconciler = createReconciler({
+        ctx: h.ctx,
+        source: { list: async () => roster(rows) },
+        importer: h.importer,
+        locale,
+      })
+      try {
+        await reconciler.reconcileNow()
+        expect(h.loaded).toEqual([])
+        expect(
+          readyRosterModules([
+            { rowId: 'web:disabled', enabled: false, phase: 'ready', moduleName: 'page' },
+            { rowId: 'web:failed', enabled: true, phase: 'blocked', moduleName: 'page' },
+          ]),
+        ).toEqual([])
+        const entry = homeEntries.get('declared-page')!
+        expect(entry).toMatchObject({ placement: 'primary', icon: 'cpu', order: 40 })
+        expect(locale.t(entry.titleKey)).toBe(language === 'zh-CN' ? '设备控制台' : 'Device console')
+        homeNavigation.open('declared-page')
+        await reconciler.reconcileNow()
+        expect(h.loaded).toContain(row.entryUrl)
+        // A declaration alone cannot substitute for the module's actual component registration.
+        expect(homeEntries.get('declared-page')).toBeUndefined()
+        rows = []
+        await reconciler.reconcileNow()
+        expect(homeEntries.get('declared-page')).toBeUndefined()
+        homeNavigation.close()
+        rows = [row]
+        await reconciler.reconcileNow()
+        expect(homeEntries.get('declared-page')).toBeDefined()
+        rows = [{ ...row, revision: 'broken', entryUrl: '/broken/index.js' }]
+        await reconciler.reconcileNow()
+        homeNavigation.open('declared-page')
+        await reconciler.reconcileNow()
+        expect(reconciler.snapshot().get('web:declared-page')?.phase).toBe('failed')
+        expect(homeEntries.get('declared-page')).toBeUndefined()
+        homeNavigation.close()
+        await reconciler.invalidate()
+        expect(homeEntries.get('declared-page')).toBeUndefined()
+      } finally {
+        homeNavigation.close()
+        rows = []
+        await reconciler.reconcileNow()
+        await h.ctx.fiber.dispose()
+      }
+    },
+  )
+  it.each([true, false])(
+    'keeps primary navigation (metadata: %s) through a generation gap and an overlapping replacement',
+    async (metadata) => {
+      const ctx = new Context()
+      await ctx.plugin(SlotRegistry)
+      new AgnesClientService(ctx, { sessions: { get: () => undefined } } as never)
+      new CommandService(ctx, async () => true)
+      new SessionService(ctx)
+      new ThemeService(ctx, 'light')
+      const locale = zhLocaleService()
+      ctx.provide('locale', locale)
+      const row: ReadyClientModule = {
+        ...mod('generation-page', 'v1'),
+        rowId: 'web:generation-page',
+        binding: {
+          owner: 'web:generation-page',
+          lifetime: 'profile',
+          availability: 'active',
+          packageId: 'generation-page',
+          integrity: 'v1',
+          profileId: 'test',
+          activationId: 'one',
+        },
+        homeEntries: [
+          {
+            id: 'generation-page',
+            placement: 'primary',
+            ...(metadata
+              ? {
+                  navigation: {
+                    title: 'Generation page',
+                    icon: 'cpu',
+                    order: 40,
+                  },
+                }
+              : {}),
+          },
+        ],
+      }
+      let current = roster([row])
+      let release: (() => void) | undefined
+      let mounted: ClientContext | undefined
+      const reconciler = createReconciler({
+        ctx,
+        locale,
+        source: { list: async () => current },
+        importer: async () => {
+          if (release)
+            await new Promise<void>((resolve) => {
+              release = resolve
+            })
+          return {
+            apply(context: ClientContext) {
+              mounted = context
+              context.homeEntries.register({
+                id: 'generation-page',
+                placement: 'primary',
+                titleKey: 'Generation page',
+                icon: 'cpu',
+                order: 40,
+                component: () => null,
+              })
+            },
+          }
+        },
+      })
+      try {
+        await reconciler.reconcileNow()
+        homeNavigation.open('generation-page')
+        await reconciler.reconcileNow()
+        const previous = homeEntries.get('generation-page')
+        expect(previous).toBeDefined()
+        current = {
+          ...roster([]),
+          statuses: [
+            {
+              packageId: row.packageId,
+              installedRevision: 'v1',
+              backendRevision: null,
+              state: 'blocked',
+              reason: 'backend-revision-unavailable',
+            },
+          ],
+        }
+        await reconciler.invalidate()
+        expect(homeEntries.get('generation-page')).toBeDefined()
+        expect(mounted?.availability.getSnapshot()?.availability).toBe('disabled')
+        await reconciler.invalidate()
+        expect(homeEntries.get('generation-page')).toBeDefined()
+        current = roster([{ ...row, binding: { ...row.binding!, activationId: 'two' } }])
+        await reconciler.invalidate()
+        expect(homeEntries.get('generation-page')).toBeDefined()
+        expect(homeEntries.get('generation-page')).not.toBe(previous)
+        expect(mounted?.availability.getSnapshot()?.activationId).toBe('two')
+        release = () => {}
+        current = roster([{ ...row, binding: { ...row.binding!, activationId: 'three' } }])
+        const pending = reconciler.invalidate()
+        await vi.waitFor(() => expect(reconciler.snapshot().get(row.rowId!)?.phase).toBe('loading'))
+        expect(homeEntries.get('generation-page')).toBeDefined()
+        const overlap = reconciler.invalidate()
+        release?.()
+        release = undefined
+        await Promise.all([pending, overlap])
+        expect(homeEntries.get('generation-page')).toBeDefined()
+        expect(mounted?.availability.getSnapshot()?.availability).toBe('active')
+        expect(mounted?.availability.getSnapshot()?.activationId).toBe('three')
+        current = {
+          ...roster([]),
+          statuses: [
+            {
+              packageId: row.packageId,
+              installedRevision: 'v1',
+              backendRevision: null,
+              state: 'blocked',
+              reason: 'resources-invalid',
+            },
+          ],
+        }
+        await reconciler.invalidate()
+        expect(homeEntries.get('generation-page')).toBeUndefined()
+      } finally {
+        release?.()
+        homeNavigation.close()
+        current = roster([])
+        await reconciler.invalidate()
+        await ctx.fiber.dispose()
+      }
+    },
+  )
   it('leaves custom renderer modules in their isolated host on initial load and hot reload', async () => {
     const h = await harness()
     const custom = {

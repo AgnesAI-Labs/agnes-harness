@@ -75,3 +75,5 @@ Host 必须提供对应注册服务，循环或适配器插件才能加载。安
 工具、Skill 和 provider 分别使用 `ctx.tools.register(tool)`、`ctx.skills.register(skill)`、`ctx.providers.register(kind, provider)`；声明对应注入，平台自动清理注册，作者无需额外 `ctx.effect`。自建连接和订阅仍需生命周期清理。
 
 `ToolMeta` 的 `costHint`、`deferLoading`、`requiresApproval` 可省略：默认无成本估计、立即发现，审批依据 `isDestructive` 推导。`readOnlyTool` / `writeTool` 是 plugin-runtime 的元数据预设，直接写 `meta: readOnlyTool` 或展开后覆盖字段。`modelVisible: false` 保留内部调用并从模型发现/schema 隐藏；`requiresImageInput: true` 仅允许原生图像输入模型发现和执行。
+
+[插件流与受管理服务](transports.zh-CN.md)

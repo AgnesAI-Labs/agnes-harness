@@ -616,6 +616,54 @@ describe('a file longer than read returns in full', () => {
 })
 
 describe('successful file review receipts', () => {
+  it.each([
+    ['script.CMD', '', 'echo 一\necho 二\n', 'echo 一\r\necho 二\r\n'],
+    ['text.txt', '\uFEFFone\r\ntwo\r\n', 'three\nfour\n', '\uFEFFthree\r\nfour\r\n'],
+    ['mixed.txt', 'one\r\ntwo\n', 'three\nfour\n', 'three\nfour\n'],
+    ['unix.txt', 'one\ntwo\n', 'three\nfour\n', 'three\nfour\n'],
+  ])(
+    'writes %s with matching persisted bytes, receipt and next observation',
+    async (path, before, content, expected) => {
+      const ctx = await observedCtxOf({ files: before ? { [path]: before } : {} })
+      const receipts: Uint8Array[] = []
+      const record: Parameters<typeof createWriteTool>[0] = async (input) => {
+        receipts.push(input.after)
+      }
+      const write = createWriteTool(record)
+      const result = await write.execute({ path, content }, ctx)
+      const bytes = new TextEncoder().encode(expected)
+      expect(result.isError).not.toBe(true)
+      expect(ctx.mem.files.get(`${ctx.cwd}/${path}`)).toEqual(bytes)
+      expect(receipts).toEqual([bytes])
+      expect(result.details).toMatchObject({ bytes: bytes.length })
+      expect((await write.execute({ path, content }, ctx)).isError).not.toBe(true)
+    },
+  )
+  it('matches LF input in a BOM/CRLF file, preserves literal replacement text and records real bytes', async () => {
+    const ctx = await observedCtxOf({ files: { 'a.txt': '\uFEFFone\r\ntwo\r\n' } })
+    let receipt: Uint8Array | undefined
+    const result = await createEditTool(async (input) => {
+      receipt = input.after
+    }).execute(
+      {
+        path: 'a.txt',
+        edits: [{ oldText: 'one\ntwo', newText: 'three\n$&' }],
+      },
+      ctx,
+    )
+    const expected = new TextEncoder().encode('\uFEFFthree\r\n$&\r\n')
+    expect(result.isError).not.toBe(true)
+    expect(ctx.mem.files.get(`${ctx.cwd}/a.txt`)).toEqual(expected)
+    expect(receipt).toEqual(expected)
+    expect(result.details).toMatchObject({ bytes: expected.length })
+    const ambiguous = await observedCtxOf({ files: { 'a.txt': 'one\r\ntwo\r\none\r\ntwo\r\n' } })
+    expect(
+      textOf(
+        await editTool.execute({ path: 'a.txt', edits: [{ oldText: 'one\ntwo', newText: 'x' }] }, ambiguous),
+      ),
+    ).toContain('ambiguous')
+  })
+
   it.each([false, true])(
     'records workspace-relative write/edit receipts with nested cwd: %s',
     async (nested) => {
@@ -701,3 +749,26 @@ describe('successful file review receipts', () => {
     }
   })
 })
+
+it.each(['C:\\work\\proj', '\\\\server\\share\\proj'])(
+  'records native Windows separators in %s without weakening POSIX identity',
+  (workspaceRoot) => {
+    const original = ctxOf()
+    const ctx = {
+      ...original,
+      cwd: workspaceRoot,
+      session: { ...original.session, workspaceRoot },
+      platform: { ...original.platform, fs: { pathSep: '\\', caseSensitive: false } },
+    }
+    const input = {
+      operation: 'edit' as const,
+      path: 'src\\一.txt',
+      before: new Uint8Array(),
+      after: new TextEncoder().encode('\uFEFF一\r\n'),
+      existed: false,
+    }
+    expect(fileChangeReceipt(input, ctx)).toMatchObject({ path: 'src/一.txt', after: '\uFEFF一\r\n' })
+    expect(fileChangeReceipt(input, original)).toBeUndefined()
+    expect(fileChangeReceipt({ ...input, path: '..\\escape.txt' }, ctx)).toBeUndefined()
+  },
+)

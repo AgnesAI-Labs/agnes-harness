@@ -94,6 +94,7 @@ export type {
   WorkspaceListParams,
   WorkspaceListResult,
 } from '@agnes/protocol'
+export * from './attachment-upload.js'
 export { type AuthProvider, jwtAuth, localAuth, portalIdentityAuth } from './auth.js'
 export * from './branding.js'
 export type {
@@ -109,11 +110,22 @@ export * from './errors.js'
 // Emitter only: `Disposer` is the same `() => void` in both modules, and re-exporting
 // it twice would make the name ambiguous on the package surface.
 export { Emitter, notifyListeners } from './events.js'
+export type {
+  ExampleLaunches,
+  ExampleOperation,
+  ExamplePackages,
+  ExampleRequest,
+  ExampleReview,
+  ExampleTransport,
+  ExampleView,
+} from './examples.js'
+export { createExampleClient } from './examples.js'
 export * from './headless.js'
 export { jcs } from './jcs.js'
 export * from './journal.js'
 export { localStorageJournal, type StorageLike } from './journal-local-storage.js'
 export { loginCodex, loginSubscription, type OAuthClient, type OAuthInteraction } from './oauth.js'
+export * from './plugin-streams.js'
 export * from './preview-merger.js'
 export * from './rpc.js'
 export * from './session.js'

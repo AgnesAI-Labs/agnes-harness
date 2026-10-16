@@ -12,6 +12,16 @@ export type ClientModuleAssetResolution = string | Uint8Array | null
 export type PluginRebuiltEvent = Readonly<{ packageId: string; revision: string }>
 
 export type WebServerOptions = {
+  /** Optional authenticated stream gateway. Its daemon-owned adapter validates subject and current authority. */
+  pluginStreams?: {
+    handleHttp(request: IncomingMessage, response: ServerResponse): Promise<boolean>
+    handleUpgrade(
+      request: IncomingMessage,
+      socket: import('node:stream').Duplex,
+      head: Buffer,
+    ): Promise<boolean>
+    close(): void
+  }
   fileUpload?: FileUploadHandler
   /** Directory containing the built index.html, app.js and style.css files. */
   root: string

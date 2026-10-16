@@ -82,8 +82,8 @@ describe('shared ledger artifact reference extraction', () => {
     // returns must bump ARTIFACT_REF_EXTRACTOR_VERSION (which rebuilds every index) and then
     // re-pin this digest together with the new version.
     const pinned = {
-      version: '1',
-      digest: '7b2c5c643f5fd9af5bd1d8e5bff2fef0e40060f8274b548054560128823aae7f',
+      version: '2',
+      digest: '0dec78d63db248deef9b9104e058c800ca97c63b31c266bd41a780db0d830325',
     }
     const sha = (character: string) => character.repeat(64)
     let deep: unknown = { sha256: sha('9') }
@@ -137,10 +137,34 @@ describe('shared ledger artifact reference extraction', () => {
         ledger: [...refs.ledger].sort(),
         requestMedia: [...refs.requestMedia].sort(),
         toolImage: [...refs.toolImage].sort(),
+        attachments: [...refs.attachments].sort(),
         turn: refs.turn ?? null,
       }
     })
     const digest = createHash('sha256').update(JSON.stringify(output)).digest('hex')
     expect({ version: ARTIFACT_REF_EXTRACTOR_VERSION, digest }).toEqual(pinned)
   })
+})
+
+it('protects original and thumbnail attachment identities in messages and inboxes, and refuses malformed metadata', () => {
+  const original = 'a'.repeat(64),
+    thumbnail = 'b'.repeat(64)
+  const link = {
+    type: 'resource_link',
+    uri: `artifact://${original}`,
+    name: 'image',
+    mimeType: 'image/png',
+    attachment: {
+      artifact: { sha256: original, size: 100, mime: 'image/png' },
+      thumbnail: { sha256: thumbnail, size: 20, mime: 'image/jpeg' },
+    },
+  }
+  for (const entry of [
+    row('user/message', { content: [link] }),
+    row('inbox', { items: [{ content: [link] }] }),
+  ])
+    expect(extractArtifactRefs(entry).attachments).toEqual(new Set([original, thumbnail]))
+  expect(() =>
+    extractArtifactRefs(row('user/message', { content: [{ ...link, mimeType: 'text/plain' }] })),
+  ).toThrow('malformed')
 })

@@ -3,6 +3,7 @@ import {
   createConfigurationService,
   createPlatform,
   type LockState,
+  type PlatformBackend,
   probeLinuxSandboxSupport,
   type ResolvedProfile,
   resolveConfiguredPowerShell,
@@ -12,9 +13,11 @@ import { profileNameFrom, readProfileInputs } from '../boot/inputs.js'
 import type { BootDeps, ParsedArgs } from '../types.js'
 import type { Section } from './doctor-local.js'
 
-export async function doctorPlatform(d: BootDeps): Promise<Section> {
+export async function doctorPlatform(
+  d: BootDeps,
+  platform: PlatformBackend = createPlatform(),
+): Promise<Section> {
   try {
-    const platform = createPlatform()
     await platform.probe({ root: d.cwd })
     const snapshot = platform.snapshot()
     const shellDetail: string[] = []
@@ -25,6 +28,7 @@ export async function doctorPlatform(d: BootDeps): Promise<Section> {
           `PowerShell ${shell.version} (${shell.edition})`,
           `shell path ${shell.path}`,
           `native arguments ${shell.nativeArguments}`,
+          ...(shell.codePage ? [`console code page ${shell.codePage}`] : []),
         )
       } catch {
         return {
@@ -52,7 +56,10 @@ export async function doctorPlatform(d: BootDeps): Promise<Section> {
       detail: [
         `os ${snapshot.os} ${snapshot.arch}`,
         ...shellDetail,
-        ...Object.entries(snapshot.capabilities).map(([key, value]) => `${key}=${value}`),
+        ...Object.entries(snapshot.capabilities).flatMap(([key, value]) => {
+          const reason = value !== 'full' ? platform.capability(key).reason : undefined
+          return [`${key}=${value}`, ...(reason ? [`${key}.reason=${reason}`] : [])]
+        }),
       ],
     }
   } catch {
@@ -113,8 +120,12 @@ export async function doctorProfile(d: BootDeps & { lock?: LockState }, p: Parse
 export function doctorResolvedProfile(profile: ResolvedProfile): Section {
   return {
     name: 'profile',
-    status: 'ok',
+    status: profile.presets.allowed.includes(profile.presets.default) ? 'ok' : 'fail',
     detail: [
+      `presets default ${profile.presets.default}; allowed ${profile.presets.allowed.join(', ')}`,
+      ...(profile.presets.allowed.includes(profile.presets.default)
+        ? []
+        : ['presets.default must be listed in presets.allowed before a session can start.']),
       `${profile.name} hash ${profile.hash}`,
       `packages ${profile.packages.map((pkg) => pkg.id).join(', ')}`,
       `dataDir ${profile.dataDir}`,

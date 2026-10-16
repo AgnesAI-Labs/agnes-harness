@@ -1,6 +1,6 @@
 /** @vitest-environment happy-dom */
 
-import { userImagePolicy } from '@agnes/protocol'
+import { attachmentLink, storedAttachment, userImagePolicy } from '@agnes/protocol'
 import { decodeSafeImageBytes, USER_MESSAGE_IMAGE_LIMITS } from '@agnes/protocol-validation'
 import { webUiLocaleCatalog } from '@agnes/web-ui'
 import { act, createElement, createRef } from 'react'
@@ -103,15 +103,14 @@ it('keeps a batch through upload session opening, stores references and cleans a
     allowedMimeTypes: [],
   })
   vi.spyOn(uploads, 'uploadFile').mockImplementation(
-    async (file, _session, id, _limits, signal, progress) => {
+    async (file, _session, id, _limits, signal, progress, destination) => {
+      expect(destination).toBe('original')
       signal.throwIfAborted()
       progress({ loaded: file.size, total: file.size, phase: 'verifying' })
-      return {
-        type: 'resource_link',
-        name: file.name,
-        mimeType: file.type,
-        uri: `agnes-upload://${'a'.repeat(64)}/${'b'.repeat(64)}/${file.size}/${id}`,
-      }
+      return attachmentLink({ sha256: 'a'.repeat(64), size: file.size, mime: file.type }, file.name, {
+        receiptId: id,
+        ...(file.type === 'image/png' ? { image: { width: 1, height: 1 } } : {}),
+      })
     },
   )
   await act(async () =>
@@ -142,15 +141,17 @@ it('keeps a batch through upload session opening, stores references and cleans a
       imagePasteEvent([
         new File(['one'], 'contract.txt', { type: 'text/plain' }),
         new File(['two'], 'scan.pdf', { type: 'application/pdf' }),
+        pngFile(),
       ]),
     ),
   )
-  await vi.waitFor(() => expect(handle.current?.getAttachmentBlocks()).toHaveLength(2))
-  expect(handle.current?.getAttachmentBlocks().every((block) => block.type === 'resource_link')).toBe(true)
+  await vi.waitFor(() => expect(handle.current?.getAttachmentBlocks()).toHaveLength(3))
+  expect(handle.current?.getAttachmentBlocks().every(storedAttachment)).toBe(true)
+  expect(JSON.stringify(handle.current?.getAttachmentBlocks())).not.toContain(PNG_DATA)
   expect(cancelled).not.toHaveBeenCalled()
   const remove = host.querySelector<HTMLButtonElement>('[data-testid="attachment-remove"]')
   await act(async () => remove?.click())
-  expect(handle.current?.getAttachmentBlocks()).toHaveLength(1)
+  expect(handle.current?.getAttachmentBlocks()).toHaveLength(2)
   expect(cancelled).not.toHaveBeenCalled()
 })
 
@@ -207,13 +208,13 @@ it.each([
     callback(encodable ? new Blob([bytes], { type: 'image/jpeg' }) : null),
   )
   const result = await downscaleImageFile(file, view.imagePolicy)
-  expect(result === file).toBe(!trailing || !decodable || !encodable)
+  expect(result).toBe(file)
+  expect(HTMLCanvasElement.prototype.toBlob).not.toHaveBeenCalled()
   expect(result.name).toBe('photo.jpg')
   const resultBytes = new Uint8Array(await result.arrayBuffer())
   const decode = () =>
     decodeSafeImageBytes({ bytes: resultBytes, mimeType: result.type }, USER_MESSAGE_IMAGE_LIMITS)
-  if (trailing && (!decodable || !encodable)) expect(decode).toThrow(/trailing bytes/)
-  else expect(decode()).toMatchObject({ mime: 'image/jpeg', width: 1, height: 1 })
+  expect(decode()).toMatchObject({ mime: 'image/jpeg', width: 1, height: 1 })
   if (decodable) expect(close).toHaveBeenCalledOnce()
   else expect(close).not.toHaveBeenCalled()
 })
@@ -465,6 +466,73 @@ describe('composer image attachments', () => {
 
     expect(handle.current?.getImageBlocks()).toEqual([])
     expect(URL.createObjectURL).not.toHaveBeenCalled()
+  })
+
+  it('shows the shared attachment tooltip on focus and hover and dismisses it with Escape', async () => {
+    await act(async () =>
+      root.render(
+        createElement(Composer, {
+          dependencies,
+          initialView: view,
+          onCancel() {},
+          onDraftChange() {},
+          onError() {},
+          onModelSelect: async () => false,
+          onPermissionSelect: async () => false,
+          onSubmit() {},
+          onWorkspace() {},
+        }),
+      ),
+    )
+    const attach = host.querySelector<HTMLButtonElement>('#composer-attach')
+    if (!attach) throw new Error('missing attachment action')
+    expect(attach.getAttribute('title')).toBeNull()
+    expect(attach.getAttribute('aria-describedby')).toBe('composer-image-hint')
+    const hint = host.querySelector('#composer-image-hint')?.textContent ?? ''
+    expect(hint).toContain('50')
+    await act(async () => attach.focus())
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toContain(hint)
+    expect(attach.getAttribute('aria-describedby')).toContain('composer-image-hint')
+    await act(async () =>
+      attach.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })),
+    )
+    expect(attach.getAttribute('aria-describedby')).toBe('composer-image-hint')
+    await act(async () => attach.blur())
+    await act(async () => attach.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+    await vi.waitFor(() => expect(attach.getAttribute('aria-describedby')).not.toBe('composer-image-hint'))
+    expect(document.querySelector('.agh-tooltip')?.textContent).toContain(hint)
+  })
+
+  it('reports pixel overflow as a size error without enqueuing an invalid-image card', async () => {
+    const handle = createRef<ComposerHandle>()
+    const onError = vi.fn()
+    await act(async () =>
+      root.render(
+        createElement(Composer, {
+          ref: handle,
+          dependencies,
+          initialView: view,
+          onCancel() {},
+          onDraftChange() {},
+          onError,
+          onModelSelect: async () => false,
+          onPermissionSelect: async () => false,
+          onSubmit() {},
+          onWorkspace() {},
+        }),
+      ),
+    )
+    const data =
+      'iVBORw0KGgoAAAANSUhEUgAAB9AAAAXcCAAAAABfDkr3AAALc0lEQVR4nO3BAQ0AAADCoPdPbQ43oAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB4Nc8/AAGyCpVaAAAAAElFTkSuQmCC'
+    const oversized = pngFile(
+      'pixels.png',
+      Uint8Array.from(atob(data), (c) => c.charCodeAt(0)),
+    )
+    await act(async () => host.querySelector('textarea')?.dispatchEvent(imagePasteEvent([oversized])))
+    await vi.waitFor(() => expect(onError).toHaveBeenCalled())
+    expect(onError.mock.calls[0]?.[0].message).toContain('像素超出限制')
+    expect(onError.mock.calls[0]?.[0].message).not.toContain('不是有效')
+    expect(handle.current?.getAttachmentBlocks()).toEqual([])
   })
 
   it('accepts other file types while refusing invalid and oversized images', async () => {

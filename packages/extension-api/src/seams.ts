@@ -1,4 +1,5 @@
 import type { Actor, ApprovalReason, ApprovalVerdict, ArtifactRef, Billing } from '@agnes/protocol'
+import type { AttachmentStore } from './attachments.js'
 import type { Logger, Seq } from './common.js'
 import type { DecisionHandle } from './decisions.js'
 import type { PersistenceMetadataNamespace } from './persistence.js'
@@ -155,6 +156,8 @@ export type JobSpec = {
   protected?: boolean
 }
 export interface ArtifactsSeam {
+  /** Absent providers retain inline input compatibility; supplied references fail closed. */
+  readonly attachments?: AttachmentStore
   put(bytes: Uint8Array, meta?: { mime?: string; name?: string }): Promise<ArtifactRef>
   get(ref: ArtifactRef): Promise<Uint8Array>
   // The session key is filled in by the kernel, so a caller cannot submit work against a session

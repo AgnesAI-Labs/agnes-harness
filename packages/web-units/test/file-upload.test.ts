@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { attachmentLink } from '@agnes/protocol'
 import { afterEach, expect, it, vi } from 'vitest'
 import { cancelFileUpload, type UploadProgress, uploadFile } from '../src/file-upload.js'
 
@@ -22,15 +23,30 @@ const busy = () =>
     headers: { 'Content-Type': 'application/json' },
   })
 
-it.each([0, 4])(
-  'sends bounded chunks, resumes from %i, and retries a lost acknowledgement',
-  async (resume) => {
+it.each([
+  [0, 'workspace'],
+  [4, 'workspace'],
+  [0, 'original'],
+  [4, 'original'],
+] as const)(
+  'sends bounded chunks, resumes from %i into %s, and retries a lost acknowledgement',
+  async (resume, destination) => {
+    const expected =
+      destination === 'original'
+        ? attachmentLink(
+            { sha256: createHash('sha256').update('abcdefghij').digest('hex'), size: 10, mime: 'text/plain' },
+            'contract.txt',
+            { receiptId: '00000000-0000-4000-8000-000000000001' },
+          )
+        : attachment
     const chunks: { offset: number; bytes: string }[] = []
     let lost = false
     let digest: string | undefined
     vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
       const query = new URL(url, 'http://localhost').searchParams
       if (query.get('operation') === 'chunk') {
+        expect(query.get('destination')).toBe(destination)
+        expect(query.get('laneId')).toBe('main')
         const bytes = new Uint8Array(await (init.body as Blob).arrayBuffer())
         expect(bytes.length).toBeLessThanOrEqual(limits.chunkBytes)
         expect(query.get('sha256')).toBe(createHash('sha256').update(bytes).digest('hex'))
@@ -45,15 +61,22 @@ it.each([0, 4])(
       const control = JSON.parse(String(init.body)) as { operation: string; sha256?: string }
       if (control.operation === 'start') return response({ offset: resume })
       digest = control.sha256
-      return response({ attachment })
+      expect((JSON.parse(String(init.body)) as { destination: string }).destination).toBe(destination)
+      return response({ attachment: expected })
     })
     const progress: UploadProgress[] = []
     const file = new File(['abcdefghij'], 'contract.txt', { type: 'text/plain' })
     expect(
-      await uploadFile(file, 'session', 'upload', limits, new AbortController().signal, (value) =>
-        progress.push(value),
+      await uploadFile(
+        file,
+        'session',
+        'upload',
+        limits,
+        new AbortController().signal,
+        (value) => progress.push(value),
+        destination,
       ),
-    ).toEqual(attachment)
+    ).toEqual(expected)
     expect(chunks).toEqual(
       resume === 0
         ? [

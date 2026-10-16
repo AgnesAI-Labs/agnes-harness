@@ -1,6 +1,9 @@
 import type { ServiceDef } from '../../src/services.js'
 /** No I/O or implicit identity; suitable for author checks and Host boundary fixtures. */
-export function serviceFixture(): ServiceDef<{ value: number }, { value: number }> {
+export function serviceFixture(): Extract<
+  ServiceDef<{ value: number }, { value: number }>,
+  { scope?: 'session' }
+> {
   return {
     name: 'fixture.echo',
     kind: 'query',

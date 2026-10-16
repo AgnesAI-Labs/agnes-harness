@@ -105,3 +105,15 @@ export function toSessionUpdate(
       return null
   }
 }
+
+/** ACP carries one block per update. Preserve every reference without rehydrating original bytes. */
+export function toSessionUpdates(event: EventEnvelope, options: { replay?: boolean } = {}) {
+  if (event.type === 'user/message') {
+    const data = event.data as { kind?: string; content?: ContentBlock[] }
+    if (data.kind === 'runtime_context') return []
+    const content = toAcpPrompt(data.content ?? [])
+    return content.map((block) => ({ sessionUpdate: 'user_message_chunk', payload: { content: block } }))
+  }
+  const update = toSessionUpdate(event, options)
+  return update ? [update] : []
+}

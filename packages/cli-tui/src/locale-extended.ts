@@ -20,6 +20,7 @@ export const EXTENDED_KEYS = [
   'commands.theme',
   'commands.model',
   'commands.yolo',
+  'commands.attach',
   'commands.export',
   'commands.refine',
   'commands.packages',
@@ -164,6 +165,7 @@ const DICT: Record<Locale, Record<ExtendedKey, string>> = {
     'commands.model':
       'List available models and select one, or switch a slot directly (optional thinking tier)',
     'commands.yolo': 'Skip every remaining approval in this session; irreversible once enabled',
+    'commands.attach': 'Upload an original attachment',
     'commands.export': 'Export the current session',
     'commands.refine': 'Show refine proposals (not yet projected onto the timeline)',
     'commands.packages': 'Show installed plugins with their expected/actual status',
@@ -295,6 +297,7 @@ const DICT: Record<Locale, Record<ExtendedKey, string>> = {
     'commands.theme': '切换当前 TUI 的明亮、深色或无色主题',
     'commands.model': '列出可用模型并选择，或直接切换指定槽位（可选带上 thinking 档）',
     'commands.yolo': '本会话剩余部分跳过全部审批，一旦开启不可撤销',
+    'commands.attach': '上传原件附件',
     'commands.export': '导出当前会话',
     'commands.refine': '查看精炼提案（尚未投影到时间线）',
     'commands.packages': '查看已安装插件及其期望/实际状态',

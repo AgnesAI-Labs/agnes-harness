@@ -5,6 +5,23 @@ import { readFile } from 'node:fs/promises'
 export const scrollbarCsp = {
   name: 'agnes-scrollbar-csp',
   setup(build) {
+    // xterm 6's CoreBrowserService ternary selects window.document even when documentOverride
+    // exists. Keep the terminal's nonce/layer adapter in force for viewport-generated rules too.
+    build.onLoad({ filter: /[/\\]@xterm[/\\]xterm[/\\]lib[/\\]xterm\.mjs$/ }, async ({ path }) => {
+      const source = await readFile(path, 'utf8')
+      const target = 'this._document??typeof window<"u"?window.document:null'
+      // DomRenderer also passes the global document to its row factory, bypassing the
+      // scoped CSSOM adapter for ANSI true colors and minimum-contrast cell styles.
+      const rowFactory = 'this._rowFactory=u.createInstance(Vt,document)'
+      if (source.split(target).length !== 2 || source.split(rowFactory).length !== 2)
+        throw new Error('Terminal CSP adapter needs review for this xterm version')
+      return {
+        contents: source
+          .replace(target, 'this._document??(typeof window<"u"?window.document:null)')
+          .replace(rowFactory, 'this._rowFactory=u.createInstance(Vt,this._document)'),
+        loader: 'js',
+      }
+    })
     // The portal's body scroll lock also inserts a stylesheet outside ConfigProvider.csp.
     build.onLoad(
       { filter: /[/\\]@rc-component[/\\]portal[/\\](?:es|lib)[/\\]useScrollLocker\.js$/ },

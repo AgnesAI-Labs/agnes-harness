@@ -227,6 +227,16 @@ describe('loop plugins', () => {
   }
 
   it.each([
+    [
+      'an invalid assistant row',
+      async (ctx: LoopContext) => {
+        await ctx.events.assistant(
+          { content: 'private-row-canary' as never, stopReason: 'end_turn' },
+          codec.encode('done'),
+        )
+      },
+      {},
+    ],
     ['a step that never settles', never, {}],
     ['a model call that goes silent and ignores cancellation', modelCall, { provider: deafProvider() }],
   ] as const)(
@@ -241,9 +251,21 @@ describe('loop plugins', () => {
         await session.enqueue('next-turn', { content: [{ type: 'text', text: 'run' }], actor })
         const outcome = await session.run({ until: 'turn-end', signal: new AbortController().signal })
         expect(outcome.reason).toBe('error')
-        expect(outcome.error?.message).toContain('test.stuck@1.0.0')
+        if (_name !== 'an invalid assistant row') expect(outcome.error?.message).toContain('test.stuck@1.0.0')
         const rows = await session.scan({ fromSeq: 1, limit: 200 })
         expect(JSON.stringify(rows.map((row) => row.data))).toContain('step-threw')
+        if (_name === 'an invalid assistant row') {
+          expect(outcome.error?.code).toBe('E_STEP_FAILED')
+          expect(outcome.error?.message).toContain('assistant/message /data/content')
+          const invariant = rows.find(
+            (row) => row.type === 'x/core/invariant' && (row.data as { kind?: string }).kind === 'step-threw',
+          )
+          expect(invariant?.data).toMatchObject({
+            message: expect.stringContaining('assistant/message /data/content'),
+          })
+          expect(outcome.error?.message).not.toMatch(/private-row-canary/)
+          expect(JSON.stringify(invariant?.data)).not.toContain('private-row-canary')
+        }
       } finally {
         await k.close()
       }

@@ -26,6 +26,7 @@ import { createReadOnlyController } from './app/read-only-controller.js'
 import { createSessionController } from './app/session-controller.js'
 import { createSubmissionController } from './app/submission-controller.js'
 import { createTurnController } from './app/turn-controller.js'
+import { readyRosterModules } from './client-modules/reconcile/roster.js'
 import { mountIntelligentUi } from './intelligent-ui/mount.js'
 import '@agnes/web-admin/settings/registry'
 import type {
@@ -52,9 +53,7 @@ import { settingsCatalog } from '@agnes/web-admin/settings/locales'
 import { effectiveSessionPreset, permissionForSessionPreset } from '@agnes/web-admin/settings/session-choice'
 import { mountStatusCheck } from '@agnes/web-admin/settings/status-check'
 import { homeEntries, homeNavigation, settingsSections } from '@agnes/web-client'
-
 import type { LiveProjection } from '@agnes/web-conversation/live-projection'
-
 import {
   errorNotice,
   type KnownSessionModel,
@@ -65,6 +64,7 @@ import { workbenchLocaleCatalog } from '@agnes/web-conversation/workbench'
 import { installBrowserLogCapture } from '@agnes/web-foundation/browser-log'
 import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
 import { safeThemeStorage } from '@agnes/web-foundation/theme'
+import { attachmentErrorMessage } from '@agnes/web-units'
 import { appNotice, setConnectionNotice, setReconnectNotice } from './app-notices.js'
 import { mountAppShell } from './app-shell.js'
 import { archivedSessions } from './archived-sessions.js'
@@ -777,35 +777,7 @@ const rosterSource: RosterSource = {
     // `rows` is the authoritative browser lifecycle surface.  The legacy
     // `modules` compatibility projection deliberately cannot carry every
     // immutable declaration, including the per-module service allow-list.
-    const modules = roster.rows.flatMap((row) => {
-      if (
-        !row.enabled ||
-        row.phase !== 'ready' ||
-        row.packageId === undefined ||
-        row.revision === undefined ||
-        row.entryUrl === undefined ||
-        row.styleUrls === undefined ||
-        row.slots === undefined ||
-        row.extIds === undefined
-      )
-        return []
-      return [
-        {
-          ...(row.intelligentComponents ? { intelligentComponents: row.intelligentComponents } : {}),
-          rowId: row.rowId,
-          packageId: row.packageId,
-          revision: row.revision,
-          entryUrl: row.entryUrl,
-          styleUrls: row.styleUrls,
-          slots: row.slots,
-          ...(row.slotCatalogVersion === undefined ? {} : { slotCatalogVersion: row.slotCatalogVersion }),
-          ...(row.contentDigest === undefined ? {} : { contentDigest: row.contentDigest }),
-          extIds: row.extIds,
-          services: row.services ?? [],
-          ...(row.publicConfig ? { publicConfig: row.publicConfig } : {}),
-        },
-      ]
-    })
+    const modules = readyRosterModules(roster.rows ?? [])
     return {
       revision: roster.revision,
       modules,
@@ -820,9 +792,26 @@ const claimSlotCard: ClaimResolver = (entry, extId) =>
 const references = composerReferences(prepareComposerSession, renderControls)
 let referenceSessionPending: Promise<Session> | undefined
 
+// Reserve host entries before installed modules can register their reviewed declarations.
+const removeHomeEntries = registerBuiltinHomeEntries()
 const clientModules = await startClientModules({
   agnes: client,
   claim: claimSlotCard,
+  clientProfileCaller: async (module, service, input, options) => {
+    const response = await fetch('/api/client-modules/profile', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        rowId: module.rowId ?? module.packageId,
+        service,
+        ...(input === undefined ? {} : { input }),
+        ...options,
+      }),
+    })
+    if (!response.ok) throw new Error(t('app.plugin.serviceUnavailable'))
+    return response.json()
+  },
   clientServiceCaller: async (module, sessionId, service, input) => {
     const response = await fetch('/api/client-modules/service', {
       method: 'POST',
@@ -1000,7 +989,6 @@ const statusCheck = mountStatusCheck({
 const settingsRegion = clientModules.settings as NonNullable<typeof clientModules.settings>
 if (!settingsRegion) throw new Error('missing settings region')
 // Home entries open full pages in the main area; the built-in three register like any plugin's.
-const removeHomeEntries = registerBuiltinHomeEntries()
 const homePages = mountHomePages(hosts.homePage, {
   locale: clientModules.locale,
   data: {
@@ -1198,6 +1186,8 @@ function syncDraftPermission(): void {
   permissionMode = permissionForSessionPreset(selectedDraftPreset(), runtimeCatalog) ?? permissionMode
 }
 async function refreshSessionCatalog(): Promise<void> {
+  // Only the new-session composer consumes these admin catalogs.
+  if (!draftingNew || homeNavigation.getSnapshot() || !pageVisible()) return
   const generation = ++sessionCatalogGeneration
   loopCatalogPending = !newSessionCatalog
   renderControls()
@@ -1455,6 +1445,8 @@ onSurfaceEvent('agnes:compose-suggestion', (event) => {
 })
 let sessionRecovery: { id: string; message: string } | undefined
 function errorMessage(error: unknown): string {
+  const attachment = attachmentErrorMessage(error, t)
+  if (attachment) return attachment
   // Provider values are redacted by settings before leaving that controller.
   const message = error instanceof Error ? error.message : t('app.error.fallback')
   const diagnostic =
@@ -1483,13 +1475,18 @@ function errorMessage(error: unknown): string {
 }
 function showError(error: unknown): void {
   const message = errorMessage(error)
+  const persistent =
+    error &&
+    typeof error === 'object' &&
+    'data' in error &&
+    (error.data as { code?: unknown } | undefined)?.code === 'CONFIG_CREDENTIAL_REJECTED'
   if (sessionRecovery) {
     renderSessionRecovery(message)
     notice.setKind('error')
-  } else {
+  } else if (persistent) {
     notice.setText(message)
     notice.setKind('error')
-  }
+  } else notice.error(message)
   if (newSessionDialog.open) newSessionDialog.update({ error: message })
   const data =
     error && typeof error === 'object' && 'data' in error
@@ -2179,7 +2176,10 @@ client.on('notice', (payload) => {
     typeof incoming.detail === 'object' && incoming.detail !== null
       ? (incoming.detail as { profile?: unknown })
       : undefined
-  if (profileName && detail?.profile === profileName) scheduleClientRosterRead()
+  if (profileName && detail?.profile === profileName) {
+    scheduleClientRosterRead()
+    void modelRefresh.request().catch(showError)
+  }
 })
 onPageVisible(() => {
   reconnect.resume()
@@ -2208,11 +2208,9 @@ async function refreshModelConfiguration(): Promise<void> {
   await refreshSessionCatalog()
   await refreshModels()
 }
-const refreshInterval = shellConfig.modelRefreshIntervalMs
 const modelRefresh = createRefreshCoordinator({
   refresh: refreshModelConfiguration,
-  canPoll: () => connected && pageVisible(),
-  ...(refreshInterval === undefined ? {} : { intervalMs: refreshInterval }),
+  canRefresh: () => connected && pageVisible(),
 })
 const sessionConfigurationChanged = () => void modelRefresh.request().catch(showError)
 const stopSessionConfiguration = onBroadcast(
@@ -2220,6 +2218,7 @@ const stopSessionConfiguration = onBroadcast(
   sessionConfigurationChanged,
 )
 onPageHide(() => {
+  notice.clearErrors()
   intentionalClose = true
   stopConnectionEvents()
   stopSettingsTerminal()

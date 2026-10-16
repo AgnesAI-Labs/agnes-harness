@@ -919,6 +919,7 @@ static napi_value initialize(napi_env env, napi_value exports) {
   }
   napi_property_descriptor functions[] = {
     {"openCanonicalWritableFile", nullptr, guarded<openCanonicalWritableFile>, nullptr, nullptr, nullptr, napi_default, nullptr},
+    {"openCanonicalExclusiveFile", nullptr, guarded<openCanonicalExclusiveFile>, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"canonicalFs", nullptr, guarded<canonicalFs>, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"openCanonicalFile", nullptr, guarded<openCanonicalFile>, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"listCanonicalDirectory", nullptr, guarded<listCanonicalDirectory>, nullptr, nullptr, nullptr, napi_default, nullptr},

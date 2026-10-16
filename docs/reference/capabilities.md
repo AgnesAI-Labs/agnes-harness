@@ -47,3 +47,5 @@ not by themselves establish installer, signing, external service or physical dev
 isolation, permissions and process identity require validation on each target platform.
 
 Tool permissions, plan exit and plugin confirmations use the public DecisionPort and the same session ledger. The old ticket-store stub is removed. Other domains retain their working review paths; old parking without a recoverable boundary refuses explicitly. See the [decision recovery example](../../examples/loops/decision-loop/README.md).
+
+Plugins can declare current-profile managed resources and authenticated streams; see [profile services](../develop/profile-services.md).

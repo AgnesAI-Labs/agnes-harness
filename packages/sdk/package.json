@@ -13,7 +13,10 @@
       "browser": "./src/surface.browser.ts",
       "default": "./src/surface.node.ts"
     },
-    "./composer-selection": "./src/composer-selection.ts"
+    "./composer-selection": "./src/composer-selection.ts",
+    "./owned-store": "./src/owned-store.node.ts",
+    "./managed-service": "./src/managed-service.node.ts",
+    "./streams": "./src/plugin-streams.ts"
   },
   "scripts": {
     "test": "vitest run",

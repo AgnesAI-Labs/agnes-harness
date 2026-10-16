@@ -24,7 +24,7 @@ function temporary() {
   vi.stubEnv('TMP', root)
   return root
 }
-const long = (command: string) => `#${'字'.repeat(20000)}\n${command}`
+const long = (command: string) => `#${'字'.repeat(40000)}\n${command}`
 const paths = [
   win32.join(
     process.env.SystemRoot ?? 'C:\\Windows',
@@ -36,7 +36,7 @@ const paths = [
   ...(process.env.AGNES_TEST_PWSH ? [process.env.AGNES_TEST_PWSH] : []),
 ]
 describe.runIf(process.platform === 'win32').each(paths)('private PowerShell script: %s', (path) => {
-  it('creates private UTF16 content and an encoded bootstrap, then removes exactly its files', async () => {
+  it('creates private UTF16 content and a selected-interpreter bootstrap, then removes exactly its files', async () => {
     const root = temporary()
     const shell = await probePowerShell(path)
     const argv = powerShellCommand(shell, long('exit 7'))
@@ -48,7 +48,11 @@ describe.runIf(process.platform === 'win32').each(paths)('private PowerShell scr
       const file = prepared.scriptFile as string
       expect(hasPrivateDaclSync(file)).toBe(true)
       expect(hasPrivateDaclSync(dirname(file))).toBe(true)
-      expect(readFileSync(file).equals(Buffer.from(argv.at(-1) as string, 'base64'))).toBe(true)
+      expect(
+        readFileSync(file).equals(
+          Buffer.from(argv.at(-1) as string, shell.edition === 'Desktop' ? 'utf16le' : 'base64'),
+        ),
+      ).toBe(true)
     } finally {
       prepared.dispose()
     }
@@ -143,7 +147,7 @@ it.runIf(process.platform === 'win32')(
     import {powerShellCommand} from ${JSON.stringify(commandUrl)};
     import {writeFileSync} from 'node:fs';
     const shell={path:${JSON.stringify(paths[0])},version:'5.1.0',edition:'Desktop',nativeArguments:'Legacy'};
-    const prepared=preparePowerShellFile(shell,powerShellCommand(shell,'#'+'x'.repeat(20000)+'\\nexit 0'));
+    const prepared=preparePowerShellFile(shell,powerShellCommand(shell,'#'+'x'.repeat(40000)+'\\nexit 0'));
     writeFileSync(${JSON.stringify(ready)},JSON.stringify({file:prepared.scriptFile}));
     setInterval(()=>{},1000);
   `,

@@ -36,6 +36,16 @@ pnpm exec vitest run tools/guards/src tools/public-docs/examples.test.ts --maxWo
 
 The CLI startup test still gates successful boot and session creation. On shared CI runners, its elapsed time is reported in the job summary rather than used as a pass/fail threshold. To enforce the 300 ms target on a controlled performance machine, set `AGH_ENFORCE_BOOT_BUDGET=1` and run `pnpm exec vitest run packages/cli/test/boot-budget.test.ts --maxWorkers=1`.
 
+The package-load gate is the **gates real immutable package preparation** case in `tools/plugin-performance.slow.test.ts`. Run it serially on a performance runner with Node 24:
+
+```sh
+pnpm exec vitest run tools/plugin-performance.slow.test.ts --project heavy --maxWorkers=1 -t 'gates real immutable package preparation'
+```
+
+It installs, trusts and pins 20 synthetic packages, each with 200 × 1 KiB payload files plus a module, manifest and two 32 KiB client assets. Three runs measure cold/warm inventory, immutable snapshots, the real Host package-assembly stage (before native/provider startup), readonly client roster/assets, and Surface change-event publication during package IO. Cold uses new readers and empty loader/client disk caches; it does not flush OS caches. Surface transport uses a synthetic SDK response with the production subscription and route lookup; this does not verify daemon IPC or browser rendering.
+
+Every sample gates wall time (10 s per stage, 15 s cold preparation, 1 s Surface publication), event-loop gaps (250 ms), process peak RSS (1536 MiB, including setup/import high water) and sampled RSS growth (256 MiB). The fixed ceilings live in `tools/package-load/metrics.ts`; they are conservative regression budgets, not measured performance claims. The test prints dataset, machine, Node and per-run measurements before budget assertions. Set `AGH_PERFORMANCE_OUTPUT` to a path outside the repository to also save `<path>.package-load.json`. Review results on the same runner before changing ceilings. Warm loader and ordinary/fresh inventory reads must still refuse tampered bytes. The fast `tools/package-load.test.ts` exercises the real path at one-package scale and checks budget refusal without claiming the large-data gate passed.
+
 On Windows, tests that exercise symlink escapes require permission to create symbolic links (Developer Mode or the corresponding account privilege). An `EPERM` from `symlinkSync` while staging a fixture means that environment prerequisite is missing; the security assertion has not run. The shared CI startup diagnostic also runs after a failing test step, unless the suite was skipped or the job was cancelled.
 
 <a id="构建与真实本地进程"></a>

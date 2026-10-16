@@ -1,5 +1,7 @@
-/** Preserve UTF-8 across chunks and apply the existing byte cap separately to stdout/stderr. */
-export function createExecOutput(max: number) {
+import { commandOutputDecoder } from './command-output.js'
+
+/** Preserve encoding across chunks and apply the byte cap separately to stdout/stderr. */
+export function createExecOutput(max: number, codePage?: number) {
   let truncated = false
   const stream = () => {
     const chunks: Buffer[] = []
@@ -20,7 +22,10 @@ export function createExecOutput(max: number) {
           bytes += chunk.byteLength
         }
       },
-      text: () => Buffer.concat(chunks).toString('utf8'),
+      text: () => {
+        const decoder = commandOutputDecoder(codePage)
+        return decoder.write(Buffer.concat(chunks)) + decoder.end()
+      },
     }
   }
   const stdout = stream(),

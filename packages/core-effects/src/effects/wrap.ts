@@ -422,6 +422,10 @@ export class SeamRuntime {
     return platformView(this.#seams.platform)
   }
 
+  attachmentStore() {
+    return this.#seams.artifacts.attachments
+  }
+
   artifactPut(...args: Parameters<SeamImplementations['artifacts']['put']>) {
     return this.#seams.artifacts.put(...args)
   }

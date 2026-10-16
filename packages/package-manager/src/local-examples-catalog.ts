@@ -176,6 +176,7 @@ export async function bundledExamplesEntries(signal?: AbortSignal) {
     for (const example of BUNDLED_EXAMPLES) {
       const source = bundledExampleSource(example.ref)
       if (!source) return invalid('bundled-source')
+      if (!existsSync(join(source.root, source.path, 'package.json'))) continue
       await fetchSource({ type: 'file', ref: example.ref }, join(staging, example.name), {
         cwd: source.root,
         ...(signal ? { signal } : {}),

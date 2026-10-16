@@ -169,18 +169,38 @@ describe('lockfile', () => {
     })
   })
 
-  it('reclaims an abandoned lock that names no owner', async () => {
+  it.each(['stale empty owner', 'fresh dead owner'])('reclaims an abandoned lock: %s', async (scenario) => {
     const lock = join(dir, '.agnes-lock.lock')
-    writeFileSync(lock, '')
-    const old = new Date(Date.now() - 5 * 60_000)
-    utimesSync(lock, old, old)
-    await expect(withLock(dir, async () => 'ran')).resolves.toBe('ran')
-    expect(existsSync(lock)).toBe(false)
+    const deadPid = 2147483647
+    writeFileSync(lock, scenario === 'fresh dead owner' ? String(deadPid) : '')
+    if (scenario === 'stale empty owner') {
+      const old = new Date(Date.now() - 5 * 60_000)
+      utimesSync(lock, old, old)
+    }
+    const kill = process.kill.bind(process)
+    const probe = vi.spyOn(process, 'kill').mockImplementation((pid, signal) => {
+      if (pid === deadPid) throw Object.assign(new Error('exited fixture owner'), { code: 'ESRCH' })
+      return kill(pid, signal)
+    })
+    vi.useFakeTimers()
+    try {
+      const attempt = withLock(dir, async () => 'ran').then(
+        (value) => ({ value }),
+        (error: unknown) => ({ error }),
+      )
+      await vi.advanceTimersByTimeAsync(11_000)
+      expect(await attempt).toEqual({ value: 'ran' })
+      expect(existsSync(lock)).toBe(false)
+    } finally {
+      vi.useRealTimers()
+      probe.mockRestore()
+    }
   })
 
-  it('names the lock file and the recovery when a live owner holds it', async () => {
+  it.each(['live owner', 'fresh empty owner'])('keeps a contended lock: %s', async (owner) => {
     const lock = join(dir, '.agnes-lock.lock')
-    writeFileSync(lock, String(process.pid))
+    const recordedOwner = owner === 'live owner' ? String(process.pid) : ''
+    writeFileSync(lock, recordedOwner)
     vi.useFakeTimers()
     try {
       const attempt = withLock(dir, async () => 'never').catch((error: unknown) => error)
@@ -199,7 +219,7 @@ describe('lockfile', () => {
     } finally {
       vi.useRealTimers()
     }
-    expect(readFileSync(lock, 'utf8')).toBe(String(process.pid))
+    expect(readFileSync(lock, 'utf8')).toBe(recordedOwner)
   })
 
   it('reports a filesystem failure as itself, never as a busy lock', async () => {

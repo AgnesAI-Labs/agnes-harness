@@ -91,6 +91,7 @@ export type AssembleDeps = HostPaths &
     env?: NodeJS.ProcessEnv
     extensionIsolation?: ExtensionIsolationOptions
     extensionIsolationServices?: ExtensionIsolationServices
+    profileAuthorityPublication?: 'current' | 'retained'
     serviceAuthority?: ServiceAuthority
     /** Trusted deployment coordinator boundary; never exposed to extension code. */
     activationBarrier?: ExtensionActivationBarrier
@@ -101,6 +102,7 @@ export type AssembleDeps = HostPaths &
     /** Host-local resolved Skill snapshot. The daemon supplies it; PackageManager never does. */
     skillResources?: SkillRuntimeInput
     /** Request-only daemon bridge. Never a resource-admin client or authority. */
+    boundWakes?: (owner: string, integrity: string) => import('@agnes/extension-api').BoundWakes
     mcpManage?: import('@agnes/host-extensions/resources/mcp-manage-port').McpManageBridge
     pluginManage?: import('@agnes/host-extensions/resources/plugin-manage-port').PluginManageBridge
     skillInstall?: import('@agnes/host-extensions/resources/skill-install-port').SkillInstallBridge

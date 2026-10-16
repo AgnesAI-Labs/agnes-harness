@@ -15,6 +15,11 @@ export type ServiceRegistration = Readonly<{
   version: string
   capability: ServiceCapability
   manifest: ExtensionManifest
+  packageId: string
+  integrity: string
+  activationRevision?: string
+  declaredCapabilities?: import('@agnes/protocol').PluginCapabilities
+  prepare?: ServiceDef['prepare']
   handler: ServiceDef['handler']
   input(value: unknown): boolean
   output(value: unknown): boolean
@@ -33,6 +38,10 @@ export class ServiceRegistry {
     def: ServiceDef,
     authority: Readonly<{
       owner: string
+      packageId?: string
+      integrity?: string
+      activationRevision?: string
+      declaredCapabilities?: import('@agnes/protocol').PluginCapabilities
       version: string
       signal: AbortSignal
       assertAlive(): void
@@ -43,7 +52,7 @@ export class ServiceRegistry {
     if (!checkServiceDef(def).ok) throw new ExtensionError('E_SERVICE_DEF', 'invalid service definition')
     if (!/^plugin\/[0-9a-f]{16}$/.test(authority.owner) || !/^\d+\.\d+\.\d+/.test(authority.version))
       throw new ExtensionError('E_SERVICE_DEF', 'invalid row service identity')
-    const { handler, ...metadata } = def
+    const { handler, prepare, ...metadata } = def
     const snapshot = inspectJsonData(metadata)
     if (!snapshot.ok) throw new ExtensionError('E_SERVICE_DEF', 'invalid service capability')
     const capability = frozenJson(snapshot.value) as ServiceCapability
@@ -61,9 +70,16 @@ export class ServiceRegistry {
     assertAlive()
     const registration: ServiceRegistration = Object.freeze({
       owner: authority.owner,
+      packageId: authority.packageId ?? authority.owner,
+      integrity: authority.integrity ?? authority.version,
+      ...(authority.activationRevision ? { activationRevision: authority.activationRevision } : {}),
+      ...(authority.declaredCapabilities
+        ? { declaredCapabilities: frozenJson(authority.declaredCapabilities) }
+        : {}),
       version: authority.version,
       capability,
       manifest,
+      ...(prepare ? { prepare: prepare.bind(def) } : {}),
       handler: handler.bind(def),
       input: compileExtensionSchema(capability.inputSchema, 'E_SERVICE_DEF'),
       output: compileExtensionSchema(capability.outputSchema, 'E_SERVICE_DEF'),
@@ -84,7 +100,7 @@ export class ServiceRegistry {
     const { manifest, lease, signal } = authority
     if (!checkServiceDef(def).ok) throw new ExtensionError('E_SERVICE_DEF', 'invalid service definition')
     const cap = manifest.capabilities.services?.find((item) => item.name === def.name)
-    const { handler, ...metadata } = def
+    const { handler, prepare, ...metadata } = def
     if (!cap || jcs(metadata as unknown as JsonValue) !== jcs(cap as unknown as JsonValue))
       throw new ExtensionError('E_CAPABILITY_UNDECLARED', 'service differs from manifest')
     const snapshot = inspectJsonData(manifest)
@@ -100,9 +116,13 @@ export class ServiceRegistry {
     assertAlive()
     const registration: ServiceRegistration = Object.freeze({
       owner: manifest.id,
+      packageId: manifest.id,
+      integrity: jcs(manifest as unknown as JsonValue),
+      declaredCapabilities: frozenManifest.capabilities,
       version: manifest.version,
       capability,
       manifest: frozenManifest,
+      ...(prepare ? { prepare: prepare.bind(def) } : {}),
       handler: handler.bind(def),
       input: compileExtensionSchema(capability.inputSchema, 'E_SERVICE_DEF'),
       output: compileExtensionSchema(capability.outputSchema, 'E_SERVICE_DEF'),

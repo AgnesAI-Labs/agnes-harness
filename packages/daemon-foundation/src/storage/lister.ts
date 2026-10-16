@@ -7,6 +7,8 @@
 // the ledger back off disk instead.
 import {
   type EventEnvelope,
+  isProfileDecisionJournal,
+  PROFILE_DECISION_JOURNAL_PREFIX,
   readSessionTitle,
   SESSION_TITLE_EVENT,
   SessionTitleRecord,
@@ -54,6 +56,7 @@ export class StorageLister implements SessionLister {
     const limit = Math.min(500, Math.max(1, q.limit ?? 50))
     if (q.sessionIds) {
       const keys = [...new Set(q.sessionIds)]
+        .filter((key) => !isProfileDecisionJournal(key))
         .filter((key) => key > (q.cursor ?? ''))
         .filter((key) => !q.q || key.includes(q.q))
         .filter((key) => q.cwd === undefined || this.workspaces?.get(key) === q.cwd)
@@ -75,6 +78,7 @@ export class StorageLister implements SessionLister {
     }
     if (q.cwd !== undefined) {
       const keys = (this.workspaces?.keys() ?? [])
+        .filter((key) => !isProfileDecisionJournal(key))
         .filter((key) => key > (q.cursor ?? ''))
         .filter((key) => !q.q || key.includes(q.q))
         .filter((key) => this.workspaces?.get(key) === q.cwd)
@@ -98,9 +102,9 @@ export class StorageLister implements SessionLister {
     // by a second COUNT(*) query.
     const rows = this.events.all<EventGroupRow>(
       `SELECT session_key, MIN(ts) AS first_ts, MAX(seq) AS last_seq FROM events
-       WHERE session_key > ? AND session_key LIKE ?
+       WHERE session_key > ? AND session_key LIKE ? AND session_key NOT LIKE ?
        GROUP BY session_key ORDER BY session_key LIMIT ?`,
-      [q.cursor ?? '', `%${q.q ?? ''}%`, limit + 1],
+      [q.cursor ?? '', `%${q.q ?? ''}%`, `${PROFILE_DECISION_JOURNAL_PREFIX}%`, limit + 1],
     )
     const page = rows.slice(0, limit)
     const items = page.map((r) => this.toMetaRow(r))

@@ -249,6 +249,16 @@ export function projectClientModuleRows(result: P.ClientModuleListResult): P.Cli
         enabled: source.enabled,
         phase: source.phase,
       }
+      if (source.exampleOf !== undefined) row.exampleOf = source.exampleOf
+      if (source.pageEntry !== undefined) row.pageEntry = source.pageEntry
+      if (source.homeEntries !== undefined)
+        row.homeEntries = source.homeEntries.map(({ id, placement }) => ({ id, placement }))
+      if (source.examplePages !== undefined) row.examplePages = [...source.examplePages]
+      if (source.binding !== undefined) {
+        const { lifetime, owner, packageId, integrity, profileId, activationId, availability } =
+          source.binding
+        row.binding = { lifetime, owner, packageId, integrity, profileId, activationId, availability }
+      }
       if (source.packageId !== undefined) row.packageId = source.packageId
       if (source.revision !== undefined) row.revision = source.revision
       if (source.entryUrl !== undefined) row.entryUrl = source.entryUrl
@@ -258,6 +268,7 @@ export function projectClientModuleRows(result: P.ClientModuleListResult): P.Cli
       if (source.contentDigest !== undefined) row.contentDigest = source.contentDigest
       if (source.extIds !== undefined) row.extIds = [...source.extIds]
       if (source.services !== undefined) row.services = [...source.services]
+      if (source.streams !== undefined) row.streams = [...source.streams]
       if (source.intelligentComponents !== undefined)
         row.intelligentComponents = copyUiComponents(source.intelligentComponents)
       if (source.publicConfig !== undefined) row.publicConfig = { ...source.publicConfig }
@@ -648,6 +659,7 @@ export type PackageAdminDataName =
   | 'PluginCapabilities'
   | 'PackagePreview'
   | 'PackagePresentation'
+  | 'ContributionBinding'
   | 'PackageTrustDecision'
   | 'PackageActivationTrust'
   | 'PackageActivationRequest'
@@ -731,6 +743,7 @@ const DATA_SCHEMAS: Record<PackageAdminDataName, TSchema> = {
   PluginCapabilities: P.PluginCapabilities,
   PackagePreview: P.PackagePreview,
   PackagePresentation: P.PackagePresentation,
+  ContributionBinding: P.ContributionBinding,
   PackageTrustDecision: P.PackageTrustDecision,
   PackageActivationTrust: P.PackageActivationTrust,
   PackageActivationRequest: P.PackageActivationRequest,
@@ -779,8 +792,8 @@ const DATA_SCHEMAS: Record<PackageAdminDataName, TSchema> = {
   ClientModuleRosterRow: P.ClientModuleRosterRow,
   ClientModuleEffectCallParams: P.ClientModuleEffectCallParams,
 }
-function check(schema: TSchema, value: unknown): ValidationResult<unknown> {
-  const inspected = inspectJsonData(value, 1048576)
+function check(schema: TSchema, value: unknown, maxBytes = 1048576): ValidationResult<unknown> {
+  const inspected = inspectJsonData(value, maxBytes)
   if (!inspected.ok)
     return { ok: false, errors: [{ path: '', code: 'TYPE', message: 'expected bounded strict JSON data' }] }
   return validateAgainst(schema, inspected.value)
@@ -796,5 +809,11 @@ export function validatePackageAdminCall(
   side: 'params' | 'result',
   value: unknown,
 ): ValidationResult<unknown> {
-  return check(PACKAGE_ADMIN_METHODS[name][side], value)
+  // Only the immutable client-asset read needs the 32 MiB raw resource allowance
+  // (base64 plus the JSON envelope). Other administrative payloads remain at 1 MiB.
+  return check(
+    PACKAGE_ADMIN_METHODS[name][side],
+    value,
+    name === '_agnes/v1/clientModules.read' && side === 'result' ? 44739244 + 1024 : 1048576,
+  )
 }

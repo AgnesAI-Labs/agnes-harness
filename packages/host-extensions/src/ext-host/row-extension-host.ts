@@ -30,6 +30,20 @@ import { buildRowExtensionAPI, OBSERVE_HOOK_EVENTS, type RowExtensionApi } from 
 export type RowExtensionHostOptions = Readonly<{
   mcpManage?: import('../resources/mcp-manage-port.js').McpManageBridge
   pluginManage?: import('../resources/plugin-manage-port.js').PluginManageBridge
+  store?: (input: {
+    owner: string
+    integrity: string
+    revision?: string
+    alive(): void
+  }) => import('@agnes/extension-api').OwnedStore
+  bindWake?: (input: {
+    owner: string
+    packageId?: string
+    version?: string
+    integrity: string
+    revision?: string
+    session: import('@agnes/extension-api').ToolContext['session']
+  }) => Promise<import('@agnes/extension-api').WakeTarget>
   skillInstall?: import('../resources/skill-install-port.js').SkillInstallBridge
   info: ExtensionContext['info']
   log: Logger
@@ -42,6 +56,7 @@ export type RowExtensionHostOptions = Readonly<{
   describePackage?(
     packageId: string,
     snapshotId: string,
+    exportName?: string,
   ):
     | Readonly<{
         version?: string
@@ -264,7 +279,7 @@ export function createRowExtensionHost(options: RowExtensionHostOptions) {
     const holder = sources.get(source)
     if (holder !== undefined && holder !== rowId)
       throw new HostError('E_EXT_LOAD', 'extension source is already held by another row')
-    const info = options.describePackage?.(origin.packageId, origin.snapshotId)
+    const info = options.describePackage?.(origin.packageId, origin.snapshotId, origin.exportName)
     const packageVersion = info?.version ?? origin.snapshotId
     const lease = leaseFor(manifestLikeFor(source, packageVersion), {
       ttlMs: ROW_BOUND_LEASE_TTL_MS,
@@ -300,7 +315,34 @@ export function createRowExtensionHost(options: RowExtensionHostOptions) {
     const requestSkillInstall = options.skillInstall
     const requestMcpManage = options.mcpManage
     const requestPluginManage = options.pluginManage
+    const sourceIntegrity = info?.integrity
+    const openStore = options.store
+    const bindWake = options.bindWake
     record.api = buildRowExtensionAPI({
+      ...(openStore && sourceIntegrity
+        ? {
+            store: () =>
+              openStore({
+                owner: source,
+                integrity: sourceIntegrity,
+                ...(origin.rowRevision ? { revision: origin.rowRevision } : {}),
+                alive: () => lease.assertAlive('execute'),
+              }),
+          }
+        : {}),
+      ...(bindWake && sourceIntegrity
+        ? {
+            bindWake: (session) =>
+              bindWake({
+                owner: source,
+                packageId: origin.packageId,
+                version: packageVersion,
+                integrity: sourceIntegrity,
+                ...(origin.rowRevision ? { revision: origin.rowRevision } : {}),
+                session,
+              }),
+          }
+        : {}),
       ...(requestMcpManage
         ? {
             mcpManage: (invocation, signal) =>
@@ -411,7 +453,7 @@ export function createRowExtensionHost(options: RowExtensionHostOptions) {
 
   const apiFor = (caller: Context, origins: RowOriginLookup): RowExtensionApi => {
     const found = rowFiberOf(caller.fiber, origins)
-    if (!found || found.origin.trustTier !== 'third-party')
+    if (found?.origin.trustTier !== 'third-party')
       throw new ExtensionError(
         'E_CAPABILITY_UNDECLARED',
         'plugin facets are only available to installed plugin rows',

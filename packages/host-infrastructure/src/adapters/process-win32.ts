@@ -1,4 +1,3 @@
-import { StringDecoder } from 'node:string_decoder'
 import {
   type ProcessOutput,
   type SandboxProcess,
@@ -7,6 +6,7 @@ import {
   sandboxUnavailable,
 } from '@agnes/extension-api'
 import { mergeWindowsEnvironment, startWindowsJobProcess } from '@agnes/system-node/process-spawn'
+import { commandOutputDecoder } from './command-output.js'
 import type { PowerShellDescriptor } from './powershell.js'
 import { powerShellEncoding } from './powershell-command.js'
 import { preparePowerShellFile } from './powershell-file.js'
@@ -73,8 +73,8 @@ export async function openWindowsProcess(
     bytes += Buffer.byteLength(chunk.text)
     while (bytes > 65536 && pending.length > 1) bytes -= Buffer.byteLength(pending.shift()!.text)
   }
-  const out = new StringDecoder('utf8'),
-    err = new StringDecoder('utf8')
+  const out = commandOutputDecoder(options.powerShell?.codePage),
+    err = commandOutputDecoder(options.powerShell?.codePage)
   child.stdout.on('data', (data: Buffer) => emit({ stream: 'stdout', text: out.write(data) }))
   child.stderr.on('data', (data: Buffer) => emit({ stream: 'stderr', text: err.write(data) }))
   const exited = child.completion.then((result) => {
@@ -91,6 +91,7 @@ export async function openWindowsProcess(
       code: result.code,
       ...(result.signal ? { signal: result.signal } : {}),
       ...(error ? { error } : {}),
+      ...(result.stoppedProcesses === undefined ? {} : { stoppedProcesses: result.stoppedProcesses }),
     }
   })
   const cleanup = exited.then((result) => {

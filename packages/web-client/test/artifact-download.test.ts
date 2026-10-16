@@ -62,5 +62,10 @@ it('downloads bounded authorized ranges, checks identity/digest, and releases th
     call.mockImplementation(async () => ({ ok: false, status: 500, code }) as never)
     await expect(downloadArtifact(client, 'session', 'main', small)).rejects.toMatchObject({ code })
   }
+  const cancelled = new AbortController()
+  cancelled.abort()
+  await expect(downloadArtifact(client, 'session', 'main', artifact, cancelled.signal)).rejects.toMatchObject(
+    { name: 'AbortError' },
+  )
   expect(create).toHaveBeenCalledTimes(1)
 })

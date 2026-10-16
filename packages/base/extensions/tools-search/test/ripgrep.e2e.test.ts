@@ -76,7 +76,7 @@ describe('bundled ripgrep', () => {
         stderr: '',
         truncated: false,
       })
-      ctx.fs.stat = async () => ({ kind: 'file', size: 0, mtimeMs: 0 })
+      ctx.fs.stat = async (path) => ({ kind: path === ctx.cwd ? 'dir' : 'file', size: 0, mtimeMs: 0 })
       for (const limit of [1, 1000]) {
         const oversized = await ripgrepFindTool.execute({ pattern: '*', limit }, ctx)
         expect(oversized).toMatchObject({

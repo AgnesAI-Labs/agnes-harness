@@ -90,6 +90,7 @@ export class ClientResourceReclaimedError extends Error {
 
 export class ClientResourceService extends Service {
   private active = true
+  private readonly closed = new AbortController()
   private readonly objectUrls = new Set<string>()
 
   readonly images: ClientImageLoader = Object.freeze({
@@ -97,10 +98,13 @@ export class ClientResourceService extends Service {
   })
 
   readonly files = Object.freeze({
-    load: async (input: Readonly<{ laneId: string; artifact: ClientDocumentArtifact }>) => {
+    load: async (
+      input: Readonly<{ laneId: string; artifact: ClientDocumentArtifact; signal?: AbortSignal }>,
+    ) => {
       const sessionId = this.session.sessionId
       if (!this.active || !sessionId) throw new Error('deliverable requires an active session')
-      const resource = await downloadArtifact(this.client, sessionId, input.laneId, input.artifact)
+      const signal = input.signal ? AbortSignal.any([this.closed.signal, input.signal]) : this.closed.signal
+      const resource = await downloadArtifact(this.client, sessionId, input.laneId, input.artifact, signal)
       if (!this.active || this.session.sessionId !== sessionId) {
         resource.release()
         throw new Error('deliverable session changed')
@@ -128,6 +132,7 @@ export class ClientResourceService extends Service {
     super(ctx, 'resources')
     ctx.effect(() => () => {
       this.active = false
+      this.closed.abort()
       this.releaseAll()
     })
   }

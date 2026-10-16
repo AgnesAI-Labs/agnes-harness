@@ -231,6 +231,7 @@ function bridge(
       },
     })
   const discardNewSession = store.discardNewSession?.bind(store)
+  const scanLean = store.scanLean?.bind(store)
   const ledger = {
     capabilities: provider.capabilities,
     ...(store.sqlite ? { sqlite: store.sqlite } : {}),
@@ -252,6 +253,12 @@ function bridge(
     release: (key: string, runId: string) => call(() => store.release(key, runId)),
     scan: (key: string, query: PersistenceScanQuery) =>
       call(async () => (await store.scan(key, query)) as Event[]),
+    ...(scanLean
+      ? {
+          scanLean: (key: string, query: PersistenceScanQuery) =>
+            call(async () => (await scanLean(key, query)) as Event[]),
+        }
+      : {}),
     scanIntegrity: (key: string, query: { fromSeq: number; toSeq: number; limit: number }) =>
       call(async () => (await store.scanIntegrity(key, query)) as IntegrityRow[]),
     registers: (key: string) => call(() => store.registers(key)),

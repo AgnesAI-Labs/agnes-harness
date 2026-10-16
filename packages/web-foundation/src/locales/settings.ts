@@ -3,6 +3,14 @@ import type { LocaleCatalog } from '@agnes/web-client'
 /** 设置域文案（S 线）：配置错误码译文（§8.2 设置负责人翻译）、外观、OAuth、选择器与账户面板。 */
 export const settingsLocaleCatalog: LocaleCatalog = {
   en: {
+    'settings.config.part.home': 'Home directory',
+    'settings.config.part.secrets': 'Secret storage',
+    'settings.config.part.auth': 'Authentication storage',
+    'settings.config.part.locks': 'Credential locks',
+    'settings.config.part.store': 'Credential store',
+    'settings.config.currentMode': 'Current mode',
+    'settings.config.expectedMode': 'Required mode',
+
     'accounts.keepEditing': 'Keep editing',
     'accounts.discardAction': 'Discard changes',
     'accounts.emptyHelp':
@@ -182,6 +190,14 @@ export const settingsLocaleCatalog: LocaleCatalog = {
     'settings.account.connectTitle': 'Connect {provider}',
   },
   'zh-CN': {
+    'settings.config.part.home': '主目录',
+    'settings.config.part.secrets': '密钥目录',
+    'settings.config.part.auth': '认证目录',
+    'settings.config.part.locks': '凭据锁目录',
+    'settings.config.part.store': '凭据存储',
+    'settings.config.currentMode': '当前权限',
+    'settings.config.expectedMode': '所需权限',
+
     'accounts.keepEditing': '继续编辑',
     'accounts.discardAction': '放弃更改',
     'accounts.emptyHelp': '连接模型后即可开始工作。点击上方“添加账户”，或在新会话里试用 Demo。',

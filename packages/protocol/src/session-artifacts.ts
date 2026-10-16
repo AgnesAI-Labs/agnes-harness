@@ -1,6 +1,6 @@
 import type { ArtifactRef, EventEnvelope } from '../gen/ts/agnes-v1.js'
 import { ArtifactRef as ArtifactRefSchema } from '../gen/ts/agnes-v1.js'
-import { validateAgainst } from './validate.js'
+import { validateAgainst, validateStoredAttachment } from './validate.js'
 
 export const ARTIFACT_REGISTERED_EVENT = 'x/core/artifact.registered'
 const MAX_ROOTS = 256
@@ -22,6 +22,25 @@ export function sessionArtifactRoots(
     )
     if (!checked.ok) throw new Error('artifact registration invalid')
     return [checked.value]
+  }
+  if (
+    event.type === 'user/message' ||
+    (event.type === 'inbox' && event.origin === 'system' && event.trust === 'trusted')
+  ) {
+    const data = event.data as { content?: unknown[]; items?: { content?: unknown[] }[] }
+    const blocks =
+      event.type === 'inbox' ? (data.items ?? []).flatMap((item) => item.content ?? []) : (data.content ?? [])
+    const refs = new Map<string, ArtifactRef>()
+    for (const block of blocks) {
+      if (!block || typeof block !== 'object' || !('attachment' in block)) continue
+      validateStoredAttachment(block)
+      for (const ref of [block.attachment.artifact, block.attachment.thumbnail])
+        if (ref) refs.set(JSON.stringify([ref.sha256, ref.size, ref.mime]), ref)
+    }
+    // An inbox aggregates independently bounded messages. Its ledger frame bounds the scan;
+    // a per-message root limit must not revoke authority when more input is queued.
+    if (event.type === 'user/message' && refs.size > MAX_ROOTS) throw new Error('artifact roots invalid')
+    return [...refs.values()]
   }
   if (event.type === 'request/header') {
     if (event.origin !== 'system' || event.trust !== 'trusted') return undefined

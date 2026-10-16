@@ -234,6 +234,43 @@ importers:
         specifier: 0.28.2
         version: 0.28.2
 
+  packages/batch:
+    dependencies:
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
+      '@agnes/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@agnes/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+    devDependencies:
+      '@agnes/ai':
+        specifier: workspace:*
+        version: link:../ai
+      '@agnes/base':
+        specifier: workspace:*
+        version: link:../base
+      '@agnes/core':
+        specifier: workspace:*
+        version: link:../core
+      '@agnes/daemon-foundation':
+        specifier: workspace:*
+        version: link:../daemon-foundation
+      '@agnes/daemon-rpc':
+        specifier: workspace:*
+        version: link:../daemon-rpc
+      '@agnes/host':
+        specifier: workspace:*
+        version: link:../host
+      '@agnes/host-extensions':
+        specifier: workspace:*
+        version: link:../host-extensions
+      '@agnes/host-infrastructure':
+        specifier: workspace:*
+        version: link:../host-infrastructure
+
   packages/bridges:
     dependencies:
       '@agnes/protocol':
@@ -292,6 +329,9 @@ importers:
       '@agnes/host':
         specifier: workspace:*
         version: link:../host
+      '@agnes/host-extensions':
+        specifier: workspace:*
+        version: link:../host-extensions
       '@agnes/observability':
         specifier: workspace:*
         version: link:../observability
@@ -671,12 +711,18 @@ importers:
       '@agnes/observability':
         specifier: workspace:*
         version: link:../observability
+      '@agnes/plugin-streams':
+        specifier: workspace:*
+        version: link:../plugin-streams
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
       '@agnes/worker-runtime':
         specifier: workspace:*
         version: link:../worker-runtime
+      ws:
+        specifier: 8.21.3
+        version: 8.21.3
     devDependencies:
       '@agnes/ai':
         specifier: workspace:*
@@ -696,9 +742,6 @@ importers:
       '@types/ws':
         specifier: 8.18.1
         version: 8.18.1
-      ws:
-        specifier: 8.21.3
-        version: 8.21.3
 
   packages/daemon-surfaces:
     dependencies:
@@ -711,6 +754,9 @@ importers:
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@agnes/sdk':
+        specifier: workspace:*
+        version: link:../sdk
       '@agnes/system-node':
         specifier: workspace:*
         version: link:../system-node
@@ -1198,6 +1244,22 @@ importers:
         specifier: workspace:*
         version: link:../protocol
 
+  packages/plugin-streams:
+    dependencies:
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
+      '@agnes/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      ws:
+        specifier: 8.21.3
+        version: 8.21.3
+    devDependencies:
+      '@types/ws':
+        specifier: 8.18.1
+        version: 8.18.1
+
   packages/protocol:
     dependencies:
       '@agnes/protocol-validation':
@@ -1664,6 +1726,9 @@ importers:
       '@agnes/plugin-runtime':
         specifier: workspace:*
         version: link:../plugin-runtime
+      '@agnes/plugin-streams':
+        specifier: workspace:*
+        version: link:../plugin-streams
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
@@ -1677,9 +1742,18 @@ importers:
         specifier: workspace:*
         version: link:../system-node
     devDependencies:
+      '@agnes/core':
+        specifier: workspace:*
+        version: link:../core
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
       '@agnes/host-infrastructure':
         specifier: workspace:*
         version: link:../host-infrastructure
+      '@agnes/sdk':
+        specifier: workspace:*
+        version: link:../sdk
 
   tools/e2e-web:
     dependencies:

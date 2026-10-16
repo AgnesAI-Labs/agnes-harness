@@ -161,7 +161,14 @@ export async function runWebCommand(
   const makeServer = io.createServer ?? createWebServer
   const env = io.env ?? process.env
   const home = parsed.home ?? agnesHome(env)
-  if (!io.ensureBackend) initializeHome(home, parsed.profile ?? 'local-dev')
+  try {
+    if (!io.ensureBackend) initializeHome(home, parsed.profile ?? 'local-dev')
+  } catch (error) {
+    const message = startupFailure(error, env)
+    if (message)
+      throw Object.assign(new Error(message, { cause: error }), { code: (error as { code?: string }).code })
+    throw error
+  }
   const composition =
     io.composition ??
     (!io.ensureBackend
@@ -225,14 +232,13 @@ export async function runWebCommand(
     admin = adminHandler
     resourceAdmin = resourceAdminHandler
     oauthAdmin = oauthAdminHandler
-    // Polls over the same private daemon connection package-admin/resource-admin use, refreshing every
-    // `SURFACE_MOUNT_REFRESH_MS` (spec RC1) so a Surface instance `agnesd` hot-updates after this
-    // process's boot is picked up within a bounded window instead of never -- see
-    // packages/cli/launch/surface-mounts.ts.
+    // A persistent private daemon connection receives lifecycle invalidations and re-reads the
+    // authoritative mount table; healthy idle launchers do not poll.
     // This creates the feed immediately; the first mount RPC runs in the background.
     mounts = await fetchSurfaceMountProxy(backend)
     web = await makeServer({
       root: resources.webRoot,
+      pluginStreams: adminHandler.pluginStreams,
       historySearch: adminHandler.historySearch,
       triggers: adminHandler.triggers,
       fileUpload: adminHandler.fileUpload,
@@ -261,6 +267,7 @@ export async function runWebCommand(
         // service BFF first so its POST endpoint cannot be turned into an admin 405.
         handleLaunchHealth(request, response) ||
         (await adminHandler.handleClientService(request, response)) ||
+        (await adminHandler.handleClientExamples(request, response)) ||
         (await adminHandler.handleClientEffect(request, response)) ||
         (await adminHandler.handle(request, response)) ||
         (await resourceAdminHandler.handle(request, response)) ||

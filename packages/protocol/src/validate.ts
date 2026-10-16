@@ -11,17 +11,27 @@ import { type RpcError, rpcError } from './errors.js'
 import { validateRequestMedia } from './request-media.js'
 
 export {
+  ATTACHMENT_ERROR_CODES,
+  AttachmentError,
+  type AttachmentErrorCode,
   USER_MESSAGE_ATTACHMENT_LIMITS,
+  validateStoredAttachment,
   validateUserAttachments,
 } from '../../protocol-validation/src/attachments.js'
 export { modelImageInputError, userImagePolicy } from '../../protocol-validation/src/model-images.js'
 export {
   decodeAttachmentData,
+  decodeSafeImageBytes,
   decodeSafeImages,
+  USER_IMAGE_ORIGINAL_LIMITS,
   USER_MESSAGE_IMAGE_LIMITS,
 } from '../../protocol-validation/src/safe-image.js'
 export type { ValidationError, ValidationResult } from '../../protocol-validation/src/validate.js'
-export { isDateTime, validateAgainst } from '../../protocol-validation/src/validate.js'
+export {
+  describeValidationErrors,
+  isDateTime,
+  validateAgainst,
+} from '../../protocol-validation/src/validate.js'
 
 // The lookup table validateEvent's second stage reads: event type -> the generated TypeBox schema for
 // that type's `data`. It is derived from the generated `X_AGNES_DATA` map rather than typed out, so

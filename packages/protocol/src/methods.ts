@@ -1,6 +1,7 @@
 import type { TSchema } from '@sinclair/typebox'
 import * as Acp from '../gen/ts/acp.js'
 import * as A from '../gen/ts/agnes-v1.js'
+import * as ProfileServices from '../gen/ts/extension-service.js'
 import {
   UiActionParams,
   UiActionReceipt,
@@ -79,6 +80,12 @@ export type MethodName =
   | ResourceControlMethodName
   | '_agnes/v1/extension.ack'
   | '_agnes/v1/extension.call'
+  | '_agnes/v1/extension.wakes.enqueue'
+  | '_agnes/v1/extension.wakes.read'
+  | '_agnes/v1/extension.callScoped'
+  | '_agnes/v1/extension.readOperation'
+  | '_agnes/v1/profile.decisions.list'
+  | '_agnes/v1/profile.decisions.answer'
   | '_agnes/v1/sessionSelection.loops'
   | '_agnes/v1/sessionSelection.runtime'
   | '_agnes/v1/sessionSelection.reloadLocal'
@@ -172,6 +179,8 @@ export type MethodName =
   | '_agnes/v1/apis.list'
   | '_agnes/v1/submit'
   | '_agnes/v1/submit.ack'
+  | '_agnes/v1/pluginRuntime.status'
+  | '_agnes/v1/pluginStreams.endpoint'
   | '_agnes/v1/surfaces.mounts'
   | 'authenticate'
   | 'session/load'
@@ -179,6 +188,8 @@ export type MethodName =
   | '_agnes/v1/session.detach'
   | '_agnes/v1/auth.claim'
   | '_agnes/v1/session.event'
+  | '_agnes/v1/session.loadingCancel'
+  | '_agnes/v1/session.loading'
   | '_agnes/v1/session.preview'
   | '_agnes/v1/daemon.notice'
 
@@ -187,6 +198,30 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   ...PACKAGE_ADMIN_METHODS,
   ...RESOURCE_CONTROL_METHODS,
   '_agnes/v1/extension.ack': clientRequest(A.ExtensionAckParams, A.Empty),
+  '_agnes/v1/extension.wakes.enqueue': clientRequest(
+    ProfileServices.BoundWakeEnqueueParams,
+    ProfileServices.BoundWakeReceipt,
+  ),
+  '_agnes/v1/extension.wakes.read': clientRequest(
+    ProfileServices.BoundWakeReadParams,
+    ProfileServices.BoundWakeReceipt,
+  ),
+  '_agnes/v1/extension.callScoped': clientRequest(
+    ProfileServices.ProfileServiceCallParams,
+    ProfileServices.ProfileServiceCallResult,
+  ),
+  '_agnes/v1/extension.readOperation': clientRequest(
+    ProfileServices.ProfileServiceOperationParams,
+    ProfileServices.ProfileServiceReceipt,
+  ),
+  '_agnes/v1/profile.decisions.list': clientRequest(
+    ProfileServices.ProfileDecisionsListParams,
+    ProfileServices.ProfileDecisionsListResult,
+  ),
+  '_agnes/v1/profile.decisions.answer': clientRequest(
+    ProfileServices.ProfileDecisionAnswerParams,
+    ProfileServices.ProfileDecisionAnswerResult,
+  ),
   '_agnes/v1/extension.call': clientRequest(A.ExtensionCallParams, A.ExtensionCallResult),
   '_agnes/v1/sessionSelection.loops': clientRequest(A.ConfigEmptyParams, A.SessionLoopCatalogResult),
   '_agnes/v1/sessionSelection.runtime': clientRequest(RuntimeAdminEmpty, RuntimeAdminSnapshot),
@@ -415,6 +450,11 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   // bridge createMountProxy's lookup() across the process boundary to `agnesd` (see
   // packages/daemon/src/local/methods/surfaces.ts and packages/cli/launch/web-command.ts). No
   // authKind restriction beyond LocalEndpoint's own initialize gate, same as workspace.list/add.
+  '_agnes/v1/pluginRuntime.status': clientRequest(A.PluginRuntimeStatusParams, A.PluginRuntimeStatusResult),
+  '_agnes/v1/pluginStreams.endpoint': clientRequest(
+    A.PluginStreamsEndpointParams,
+    A.PluginStreamsEndpointResult,
+  ),
   '_agnes/v1/surfaces.mounts': clientRequest(A.SurfacesMountsParams, A.SurfacesMountsResult),
   // Pulled forward from I3. daemon's dispatcher answers -32601 from this table before it reaches any
   // handler, so a method daemon registers and this table omits is unreachable rather than merely
@@ -456,6 +496,8 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   // reads them, so does the conformance runner, and so does the server before it puts the frame on
   // the wire - daemon's LocalEndpoint refuses an s2c frame this table's schema rejects.
   '_agnes/v1/session.event': { kind: 'notification', direction: 's2c', params: A.SessionEventParams },
+  '_agnes/v1/session.loadingCancel': { kind: 'notification', direction: 'c2s', params: A.SessionIdParams },
+  '_agnes/v1/session.loading': { kind: 'notification', direction: 's2c', params: A.SessionLoadingParams },
   '_agnes/v1/session.preview': { kind: 'notification', direction: 's2c', params: A.SessionPreviewParams },
   '_agnes/v1/daemon.notice': { kind: 'notification', direction: 's2c', params: A.DaemonNotice },
 }

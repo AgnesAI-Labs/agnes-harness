@@ -264,6 +264,11 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
           await lifecycle('refresh', rowId)
           stagedStyles.activate()
           const created = ctx.plugin(clientModule(mod as never), {
+            ...(target.exampleOf ? { exampleOf: target.exampleOf } : {}),
+            ...(target.pageEntry ? { pageEntry: target.pageEntry } : {}),
+            ...(target.binding ? { binding: target.binding } : {}),
+            ...(target.homeEntries ? { homeEntries: target.homeEntries } : {}),
+            ...(target.examplePages ? { examplePages: target.examplePages } : {}),
             rowId,
             packageId: target.packageId,
             revision: target.revision,
@@ -273,6 +278,8 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
               : { slotCatalogVersion: target.slotCatalogVersion }),
             ...(target.contentDigest === undefined ? {} : { contentDigest: target.contentDigest }),
             ...(target.services === undefined ? {} : { services: target.services }),
+            ...(target.backendOwner ? { backendOwner: target.backendOwner } : {}),
+            ...(target.streams ? { streams: target.streams } : {}),
             ...(target.publicConfig === undefined ? {} : { publicConfig: target.publicConfig }),
           })
           fiber = created

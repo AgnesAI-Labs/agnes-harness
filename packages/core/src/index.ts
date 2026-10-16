@@ -127,6 +127,7 @@ export type {
   WorkspacePublicationDispatch,
 } from '@agnes/core-effects/workspace/runtime'
 export { createWorkspaceInvocationPort } from '@agnes/core-effects/workspace/runtime'
+export { decisionSubjectDigest, leanEvents, reduceDecision } from '@agnes/core-ledger'
 export { CORE_CHECKS } from '@agnes/core-ledger/invariants/core-checks'
 export type { InvariantCheck, Violation } from '@agnes/core-ledger/invariants/registry'
 export { InvariantRegistry } from '@agnes/core-ledger/invariants/registry'
@@ -286,6 +287,12 @@ export { approvalDeadlineMs } from './step/approval-callback.js'
 export { listSessionGrants, revokeSessionGrant, type SessionGrantEntry } from './step/approval-grants.js'
 export type { BeforeCompactPayload, CompactionPlan, CompactPayload } from './step/compaction.js'
 export { CompactionRunner, runCompaction } from './step/compaction.js'
+export {
+  type DecisionAnswerContext,
+  type DecisionAuthority,
+  DecisionCommands,
+  type DecisionSource,
+} from './step/decisions.js'
 export { budgetPreflight, checkpointRoutine, contextTokens, contextWindowFor, stopGate } from './step/gate.js'
 export type { EnqueueMsg } from './step/inbox.js'
 export { claimFrom, inboxEvent } from './step/inbox.js'

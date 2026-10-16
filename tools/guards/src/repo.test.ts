@@ -12,6 +12,7 @@ describe('repo', () => {
     expect(names).toEqual([
       '@agnes/ai',
       '@agnes/base',
+      '@agnes/batch',
       '@agnes/bridges',
       '@agnes/channels',
       '@agnes/cli',
@@ -51,6 +52,7 @@ describe('repo', () => {
       '@agnes/package-isolation',
       '@agnes/package-manager',
       '@agnes/plugin-runtime',
+      '@agnes/plugin-streams',
       '@agnes/protocol',
       '@agnes/protocol-validation',
       '@agnes/resource-control-cli',

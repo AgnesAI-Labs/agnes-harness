@@ -86,13 +86,14 @@ it.each(process.platform === 'win32' ? [false, true] : [false])(
     const inode = lstatSync(lock).ino
     const holder = childScript(
       `import { withConfigurationLock } from ${JSON.stringify(locker)};
-    process.on('message', () => {});
     await withConfigurationLock(process.argv[1], async () => {
-      process.send('held'); await new Promise(() => {});
+      // Keep the pending action reachable from live IPC, rather than awaiting an unresolvable promise.
+      const released = new Promise((resolve) => process.once('message', resolve));
+      process.send('held'); await released;
     });`,
       [lock],
     )
-    await once(holder, 'message')
+    expect((await once(holder, 'message'))[0]).toBe('held')
     let completed = false
     const waiting = initializeHomeLocked(home).then(
       (result) => {

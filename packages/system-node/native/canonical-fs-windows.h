@@ -41,14 +41,14 @@ static DWORD canonicalHold(const std::wstring& path, bool leafDirectory, bool cr
   }
   return ERROR_SUCCESS;
 }
-static napi_value openCanonicalWritableFile(napi_env env, napi_callback_info info) {
+static napi_value canonicalOpenForWrite(napi_env env, napi_callback_info info, bool exclusive) {
   napi_value args[1]; std::wstring path;
   if (!arguments(env, info, 1, args) || !stringArgument(env, args[0], path)) return nullptr;
   std::vector<std::unique_ptr<Handle>> held;
   DWORD error = canonicalHold(path, false, false, held);
   if (error) return failure(env, "open canonical parent", error);
-  Handle file(CreateFileW(path.c_str(), GENERIC_WRITE | FILE_READ_ATTRIBUTES,
-    FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_ALWAYS, FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
+  Handle file(CreateFileW(path.c_str(), GENERIC_WRITE | FILE_READ_ATTRIBUTES | (exclusive ? GENERIC_READ : 0),
+    FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, exclusive ? CREATE_NEW : OPEN_ALWAYS, FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
   BY_HANDLE_FILE_INFORMATION meta{};
   if (file.value == INVALID_HANDLE_VALUE || !GetFileInformationByHandle(file.value, &meta)) {
     error = GetLastError();
@@ -65,6 +65,12 @@ static napi_value openCanonicalWritableFile(napi_env env, napi_callback_info inf
   if (meta.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) return failure(env, "real file required", ERROR_ACCESS_DENIED);
   if (meta.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) { napi_throw_error(env, "EISDIR", "Regular writable file required"); return nullptr; }
   return adoptFile(env, file);
+}
+static napi_value openCanonicalWritableFile(napi_env env, napi_callback_info info) {
+  return canonicalOpenForWrite(env, info, false);
+}
+static napi_value openCanonicalExclusiveFile(napi_env env, napi_callback_info info) {
+  return canonicalOpenForWrite(env, info, true);
 }
 static std::wstring canonicalDisplayPath(std::wstring path) {
   if (path.compare(0, 8, L"\\\\?\\UNC\\") == 0) return L"\\\\" + path.substr(8);

@@ -88,6 +88,12 @@ export interface AppServerMethods {
   "_agnes/v1/mcp.servers.oauth.status": { params: Static<typeof import("@agnes/resource-control-contracts/schema").McpServerGetParams>; result: Static<typeof import("@agnes/resource-control-contracts/schema").McpOAuthStatusResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/mcp.servers.oauth.status.set": { params: Static<typeof import("@agnes/resource-control-contracts/schema").McpOAuthStatusSetParams>; result: Static<typeof import("@agnes/resource-control-contracts/schema").McpOAuthStatusResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/extension.ack": { params: Static<typeof import("./agnes-v1.js").ExtensionAckParams>; result: Static<typeof import("./agnes-v1.js").Empty>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/extension.wakes.enqueue": { params: Static<typeof import("./extension-service.js").BoundWakeEnqueueParams>; result: Static<typeof import("./extension-service.js").BoundWakeReceipt>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/extension.wakes.read": { params: Static<typeof import("./extension-service.js").BoundWakeReadParams>; result: Static<typeof import("./extension-service.js").BoundWakeReceipt>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/extension.callScoped": { params: Static<typeof import("./extension-service.js").ProfileServiceCallParams>; result: Static<typeof import("./extension-service.js").ProfileServiceCallResult>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/extension.readOperation": { params: Static<typeof import("./extension-service.js").ProfileServiceOperationParams>; result: Static<typeof import("./extension-service.js").ProfileServiceReceipt>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/profile.decisions.list": { params: Static<typeof import("./extension-service.js").ProfileDecisionsListParams>; result: Static<typeof import("./extension-service.js").ProfileDecisionsListResult>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/profile.decisions.answer": { params: Static<typeof import("./extension-service.js").ProfileDecisionAnswerParams>; result: Static<typeof import("./extension-service.js").ProfileDecisionAnswerResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/extension.call": { params: Static<typeof import("./agnes-v1.js").ExtensionCallParams>; result: Static<typeof import("./agnes-v1.js").ExtensionCallResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/sessionSelection.loops": { params: Static<typeof import("./agnes-v1.js").ConfigEmptyParams>; result: Static<typeof import("./agnes-v1.js").SessionLoopCatalogResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/sessionSelection.runtime": { params: Static<typeof import("../../src/runtime-admin.js").RuntimeAdminEmpty>; result: Static<typeof import("../../src/runtime-admin.js").RuntimeAdminSnapshot>; direction: "c2s"; kind: "request" }
@@ -182,6 +188,8 @@ export interface AppServerMethods {
   "_agnes/v1/apis.list": { params: Static<typeof import("./agnes-v1.js").ApisListParams>; result: Static<typeof import("./agnes-v1.js").ApisListResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/submit": { params: Static<typeof import("./agnes-v1.js").SubmitParams>; result: Static<typeof import("./agnes-v1.js").Ack>; direction: "c2s"; kind: "request" }
   "_agnes/v1/submit.ack": { params: Static<typeof import("./agnes-v1.js").CommandAckParams>; result: Static<typeof import("./agnes-v1.js").Empty>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/pluginRuntime.status": { params: Static<typeof import("./agnes-v1.js").PluginRuntimeStatusParams>; result: Static<typeof import("./agnes-v1.js").PluginRuntimeStatusResult>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/pluginStreams.endpoint": { params: Static<typeof import("./agnes-v1.js").PluginStreamsEndpointParams>; result: Static<typeof import("./agnes-v1.js").PluginStreamsEndpointResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/surfaces.mounts": { params: Static<typeof import("./agnes-v1.js").SurfacesMountsParams>; result: Static<typeof import("./agnes-v1.js").SurfacesMountsResult>; direction: "c2s"; kind: "request" }
   "authenticate": { params: Static<typeof import("./acp.js").AuthenticateRequest>; result: Static<typeof import("./acp.js").AuthenticateResponse>; direction: "c2s"; kind: "request" }
   "session/load": { params: Static<typeof import("./acp.js").LoadSessionRequest>; result: Static<typeof import("./acp.js").LoadSessionResponse>; direction: "c2s"; kind: "request" }
@@ -192,6 +200,8 @@ export interface AppServerMethods {
   "_agnes/v1/ui.read": { params: Static<typeof import("./intelligent-ui.js").UiReadParams>; result: Static<typeof import("./intelligent-ui.js").UiReadResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/ui.refresh": { params: Static<typeof import("./intelligent-ui.js").UiRefreshParams>; result: Static<typeof import("./intelligent-ui.js").UiSurfaceRecord>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.event": { params: Static<typeof import("./agnes-v1.js").SessionEventParams>; result: void; direction: "s2c"; kind: "notification" }
+  "_agnes/v1/session.loadingCancel": { params: Static<typeof import("./agnes-v1.js").SessionIdParams>; result: void; direction: "c2s"; kind: "notification" }
+  "_agnes/v1/session.loading": { params: Static<typeof import("./agnes-v1.js").SessionLoadingParams>; result: void; direction: "s2c"; kind: "notification" }
   "_agnes/v1/session.preview": { params: Static<typeof import("./agnes-v1.js").SessionPreviewParams>; result: void; direction: "s2c"; kind: "notification" }
   "_agnes/v1/daemon.notice": { params: Static<typeof import("./agnes-v1.js").DaemonNotice>; result: void; direction: "s2c"; kind: "notification" }
 }

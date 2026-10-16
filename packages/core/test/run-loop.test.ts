@@ -231,51 +231,61 @@ describe('run loop', () => {
     ).toHaveLength(1)
   })
 
-  it('binds a one-turn budget override durably and does not leak it into the next turn', async () => {
-    const preset = {
-      ...presetDefaults(),
-      budget: { ...presetDefaults().budget, perRequestCap: 5, onExceed: 'deny' as const },
-    }
-    const seams = fakeSeams({
-      billing: { projected: async () => ({ credits: 9, creditSource: 'estimated' }) },
-    })
-    const storage = new MemoryStorage()
-    const first = await openSession({
-      provider: fakeProvider([]),
-      preset,
-      seams,
-      storage,
-      key: 'budget-recovery',
-    })
-    await first.session.enqueue('next-turn', {
-      content: [{ type: 'text', text: 'budgeted' }],
-      actor,
-      budget: 10,
-    })
-    expect(await first.session.step()).toMatchObject({ outcome: 'running', phase: 'checkpoint' })
-    expect(first.session.turnBudgetCap()).toBe(10)
-    await first.log.close()
+  it.each([false, true])(
+    'binds a one-turn budget override durably and does not leak it into the next turn (hard=%s)',
+    async (hard) => {
+      const preset = {
+        ...presetDefaults(),
+        budget: { ...presetDefaults().budget, perRequestCap: hard ? 20 : 5, onExceed: 'deny' as const },
+      }
+      let projected = 9
+      const seams = fakeSeams({
+        billing: { projected: async () => ({ credits: projected, creditSource: 'estimated' }) },
+      })
+      const storage = new MemoryStorage()
+      const first = await openSession({
+        provider: fakeProvider([]),
+        preset,
+        seams,
+        storage,
+        key: 'budget-recovery',
+      })
+      await first.session.enqueue('next-turn', {
+        content: [{ type: 'text', text: 'budgeted' }],
+        actor,
+        budget: 10,
+        ...(hard ? { hardBudget: true } : {}),
+      })
+      expect(await first.session.step()).toMatchObject({ outcome: 'running', phase: 'checkpoint' })
+      expect(first.session.turnBudgetCap()).toBe(10)
+      expect(first.session.turn?.hardBudgetCap).toBe(hard ? 10 : undefined)
+      await first.log.close()
 
-    const reopened = await openSession({
-      provider: fakeProvider([textTurn('ok')]),
-      preset,
-      seams,
-      storage,
-      key: 'budget-recovery',
-      writerRunId: 'r2',
-    })
-    expect((await reopened.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
+      const reopened = await openSession({
+        provider: Object.assign(fakeProvider([textTurn('ok')]), {
+          models: () => [modelRecord('default', 'm')],
+        }),
+        preset,
+        seams,
+        storage,
+        key: 'budget-recovery',
+        writerRunId: 'r2',
+      })
+      expect((await reopened.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
 
-    await reopened.session.enqueue('next-turn', {
-      content: [{ type: 'text', text: 'preset budget again' }],
-      actor,
-    })
-    expect((await reopened.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('budget')
-    const caps = (await reopened.log.scan({ type: 'budget.state', order: 'asc', limit: 10 })).map(
-      (event) => (event.data as { creditsCap: number | null }).creditsCap,
-    )
-    expect(caps).toEqual([10, 5])
-  })
+      projected = 25
+      await reopened.session.enqueue('next-turn', {
+        content: [{ type: 'text', text: 'preset budget again' }],
+        actor,
+      })
+      expect((await reopened.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('budget')
+      const caps = (await reopened.log.scan({ type: 'budget.state', order: 'asc', limit: 10 })).map(
+        (event) => (event.data as { creditsCap: number | null }).creditsCap,
+      )
+      expect(caps).toEqual([10, hard ? 20 : 5])
+      expect(reopened.session.turn?.hardBudgetCap).toBeUndefined()
+    },
+  )
 
   it('rejects an invalid or mid-turn budget override before changing the inbox', async () => {
     const { session } = await openSession({ provider: fakeProvider([]) })

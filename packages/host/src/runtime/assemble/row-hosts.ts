@@ -3,10 +3,12 @@ import { ExtensionOwners } from '@agnes/host-extensions/ext-host/extension-owner
 import { createExtensionOrder } from '@agnes/host-extensions/ext-host/extension-status-book'
 import { createRowExtensionHost } from '@agnes/host-extensions/ext-host/row-extension-host'
 import { createRowServiceHost } from '@agnes/host-extensions/ext-host/row-services'
+import { ownedStore } from '@agnes/host-extensions/profile/owned-store'
 import { RuntimePluginCatalogue } from '@agnes/host-providers/runtime-plugin-catalogue'
 import { readPluginCapabilities } from '@agnes/package-manager'
 import type { AssemblyContext } from './context.js'
 import type { PackageSet } from './packages.js'
+import type { ProcessServices } from './process-services.js'
 import type { WorkspaceRuntimeFactory } from './workspace-runtime.js'
 
 /**
@@ -18,6 +20,7 @@ export function createRowHosts(
   ctx: AssemblyContext,
   pkgs: PackageSet,
   workspaceRuntime: WorkspaceRuntimeFactory,
+  proc: ProcessServices,
 ) {
   const { deps, say } = ctx
   const { activeRuntimeSources } = pkgs
@@ -35,6 +38,36 @@ export function createRowHosts(
   // first tree so that tree can hand rows the service; it stays dormant until the kernel is up.
   const requestSkillInstall = deps.skillInstall
   const rowExtensions = createRowExtensionHost({
+    store: ({ owner, integrity, revision, alive }) =>
+      ownedStore(
+        proc.adapters.storage.metadata.namespace(owner, `profile:${ctx.profile.name}`),
+        () => {
+          alive()
+          proc.profileActivations.require(owner, integrity, undefined, revision)
+        },
+        true,
+      ),
+    bindWake: async ({ owner, packageId, version, integrity, revision, session: ref }) => {
+      const session = ctx.live.kernel.get().get(ref.key)
+      if (!session || session.closingOrClosed || session.lane !== ref.lane)
+        throw new Error('Wake target unavailable')
+      proc.profileActivations.require(owner, integrity, undefined, revision)
+      return proc.profileWakes.bind(
+        {
+          ...(packageId ? { producerPackageId: packageId } : {}),
+          ...(version ? { producerVersion: version } : {}),
+          actorOrg: session.d.actor.org,
+          producerOwner: owner,
+          producerIntegrity: integrity,
+          profileId: ctx.profile.name,
+          sessionId: session.key,
+          laneId: session.lane,
+          generationId: deps.sessionGeneration?.(session.key) ?? ctx.profile.hash,
+          actorId: session.d.actor.id,
+        },
+        ref.toolUseId,
+      )
+    },
     ...(deps.mcpManage ? { mcpManage: deps.mcpManage } : {}),
     ...(deps.pluginManage ? { pluginManage: deps.pluginManage } : {}),
     ...(requestSkillInstall
@@ -65,10 +98,12 @@ export function createRowHosts(
     audit: say,
     order: extensionOrder,
     owners: extensionOwners,
-    describePackage: (packageId, snapshotId) => {
+    describePackage: (packageId, snapshotId, exportName) => {
       const description = pluginCatalogue.describe(packageId, snapshotId)
       const source = pluginCatalogue.get(packageId, snapshotId)
-      const declaredCapabilities = source ? readPluginCapabilities(source.snapshot.directory) : undefined
+      const declaredCapabilities = source
+        ? readPluginCapabilities(source.snapshot.directory, exportName)
+        : undefined
       return (
         description && {
           ...description,
@@ -77,9 +112,21 @@ export function createRowHosts(
       )
     },
   })
-  const rowServices = createRowServiceHost((packageId, snapshotId) =>
-    pluginCatalogue.describe(packageId, snapshotId),
-  )
+  const describeServices = (packageId: string, snapshotId: string, exportName?: string) => {
+    const description = pluginCatalogue.describe(packageId, snapshotId)
+    const source = pluginCatalogue.get(packageId, snapshotId)
+    const declaredCapabilities = source
+      ? readPluginCapabilities(source.snapshot.directory, exportName)
+      : undefined
+    return description && { ...description, ...(declaredCapabilities ? { declaredCapabilities } : {}) }
+  }
+  const rowServices = createRowServiceHost(describeServices, {
+    managed: proc.profileManaged,
+    streams: proc.profileStreams,
+    namespace: (owner, name) =>
+      proc.adapters.storage.metadata.namespace(owner, `profile:${ctx.profile.name}:${name}`),
+    describe: describeServices,
+  })
   // Like a loader importing by name at update time: each target sees what is installed now.
   const refreshPluginCatalogue = async () => {
     if (!deps.runtimePluginSources) return

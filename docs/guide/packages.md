@@ -172,9 +172,22 @@ In Web, use Settings → Plugins → Add plugin → Install from source → Insp
 
 The Plugins page has Installed and Discover tabs. Discover starts with three official examples; expand More official examples for the rest. The row menu contains settings (when declared), details and lifecycle actions. Details group the existing information into Overview, Settings, Permissions and Versions. Versions shows ongoing sessions using the previous generation; their work continues without interruption. Technical IDs, sources and integrity values are under Technical details.
 
+A package declaring `metadata.exampleOf` is managed only on its parent plugin’s **Examples** page: review installation and activation there, launch it there, and stop it before reviewing removal. These packages are excluded from ordinary Plugins lists and discovery; FDE business-agent examples without `exampleOf` keep their existing flow. A direct source review explains the parent relationship and offers the parent’s normal reviewed install/enable flow. An example requires its parent to be installed, trusted, enabled and compatible; disabling the parent makes the example’s launch surfaces unavailable. Re-enabling the parent restores enabled examples. The relationship grants no service access.
+
+
 <a id="更新与回滚"></a>
 
 ## Update and roll back
+
+Rebuilding AGH preserves an installed package’s reviewed capability snapshot. Immutable package bytes are verified again at startup. Older client descriptors that were normalized without their declared streams remain usable with their original grants and capability hash; discovering those streams does not authorize them. Use the normal reviewed update flow, even from the same source and version, to approve the current declarations. Changed installed bytes still fail integrity verification.
+
+Release-owned bundled defaults (the four helpers) follow the installed distribution. At startup, AGH verifies the shipped version, integrity and capability hash against the installed snapshot. A trusted, enabled default still using its reserved bundled source refreshes through the verified package update and pinned runtime publication paths only when its capability hash is unchanged. Existing sessions retain their snapshots. Removed defaults are not reinstalled; disabled or untrusted defaults and packages pinned to another source are left untouched.
+
+If capabilities change or ordinary dependency/reference checks block refresh, **Plugins → Built-in → Versions** shows **Update available**, the installed → shipped versions, and **Review update**. This opens the normal content and capability review before updating. Copied release payloads preserve each package’s declared version. Only `0.0.0` placeholders receive the distribution version (the declared public candidate for private workspace builds). An explicit release version may raise a package version, but never lower it; copied examples pin the resulting parent version. Equal version labels still compare integrity.
+
+An installed dependent blocks a parent update only when its declared range does not admit the candidate version. The preview names those dependents. **Review parent and dependent updates together** inspects their current distribution sources and shows each candidate's version and capabilities before **Update together**. The request binds every installed and candidate digest; unavailable, stale or incompatible candidates leave the installed combination intact. The package lock commits the reviewed set together, and one runtime target publishes the combination. Disabled dependents remain disabled. Active references and source policy still apply.
+
+Version matching accepts a valid prerelease for `*` and its exact version, including `0.1.0-alpha.0`. Other supported comparator sets admit prereleases only when an explicit prerelease comparator names the same major/minor/patch tuple, following npm semver rules. API compatibility ranges retain this restriction; an unrelated prerelease never satisfies a stable API range.
 
 The shell `package` command has no `update` subcommand. Use the installed package's update-from-source action in Web, or inspect the source and submit TUI `/package update <id> <source> <integrity>`. The TUI command does not provide the installation confirmation wizard. Programmatic callers use Node SDK `client.packages.update`.
 

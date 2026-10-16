@@ -65,6 +65,69 @@ describe('resolveCredentials', () => {
     }
   })
 
+  it('carries only closed refusal words without evaluating accessors or retaining paths', () => {
+    const detail = {
+      reason: 'private-file',
+      part: 'namespace',
+      check: 'not-private',
+      path: '/private/canary',
+      value: 'secret-canary',
+    }
+    const inherited = Object.create({ detail })
+    let accessed = false
+    const accessor = Object.defineProperty({}, 'detail', {
+      get() {
+        accessed = true
+        throw new Error('getter-canary')
+      },
+    })
+    const fieldAccessor = {
+      detail: Object.defineProperty({}, 'reason', {
+        get() {
+          accessed = true
+          return 'mode'
+        },
+      }),
+    }
+    const hostile = new Proxy(
+      {},
+      {
+        getOwnPropertyDescriptor() {
+          throw new Error('proxy-canary')
+        },
+      },
+    )
+    for (const [cause, words] of [
+      [{ detail }, { reason: 'private-file', part: 'namespace', check: 'not-private' }],
+      [
+        { detail: { reason: 'mode', part: 'file', check: 'symlink' } },
+        { reason: 'mode', part: 'file', check: 'symlink' },
+      ],
+      [{ detail: { reason: 'unreviewed', part: '/private/canary', check: 'secret-canary' } }, {}],
+      [inherited, {}],
+      [accessor, {}],
+      [fieldAccessor, {}],
+      [hostile, {}],
+    ] as const) {
+      const adapter = new FakeAdapter({ id: 'a', routes, models: {} })
+      try {
+        resolveCredentials([adapter], () => {
+          throw cause
+        })
+        expect.unreachable('must refuse')
+      } catch (error) {
+        expect(error).toBeInstanceOf(AiSetupError)
+        expect((error as AiSetupError).detail).toEqual({
+          route: 'gw',
+          ref: 'secret://agnes/gateway',
+          ...words,
+        })
+        expect(JSON.stringify(error)).not.toMatch(/canary/)
+      }
+    }
+    expect(accessed).toBe(false)
+  })
+
   it('treats an empty string as unresolved rather than binding a blank credential', () => {
     const a = new FakeAdapter({ id: 'a', routes, models: {} })
     let caught: unknown

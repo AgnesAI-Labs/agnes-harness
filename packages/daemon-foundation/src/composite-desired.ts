@@ -165,6 +165,21 @@ function encodeComplete(
   )
 }
 
+function hasExampleAncestor(
+  pkg: InstalledPackage,
+  target: string,
+  packages: readonly InstalledPackage[],
+): boolean {
+  const seen = new Set<string>()
+  let parent = pkg.entry.metadata?.exampleOf
+  while (parent && !seen.has(parent)) {
+    if (parent === target) return true
+    seen.add(parent)
+    parent = packages.find((row) => row.id === parent)?.entry.metadata?.exampleOf
+  }
+  return false
+}
+
 /**
  * Rebuild one complete desired artifact after PackageManager commits enable/disable/update/remove.
  * Builtin/seam/resource rows from the previous desired stay; only the named package's ordinary
@@ -184,7 +199,18 @@ export function rebuildDesiredFromInventory(input: {
   )
   const kept: Readonly<PluginRow>[] = []
   for (const row of previous?.tree.rows ?? []) {
-    if (!ownsRow(row.plugin, input.packageId)) kept.push(row)
+    if (!ownsRow(row.plugin, input.packageId)) {
+      const owner = input.inventory.packages.find((pkg) => ownsRow(row.plugin, pkg.id))
+      if (owner?.entry.metadata?.exampleOf && !isRuntimePackageEligible(owner))
+        kept.push(withDisabled(row, true))
+      else if (
+        owner &&
+        input.operation === 'enable' &&
+        hasExampleAncestor(owner, input.packageId, input.inventory.packages)
+      )
+        kept.push(withDisabled(row, false))
+      else kept.push(row)
+    }
   }
   const pkg = input.inventory.packages.find((row) => row.id === input.packageId)
   if (input.operation === 'enable' || input.operation === 'update' || input.operation === 'rollback') {

@@ -28,7 +28,6 @@ Use this page to decide whether AGH fits your trial or integration. It distingui
 | Programmatic tools | Local macOS/Linux PTC is supported; Windows and remote execution are unavailable. Stateless CPython is experimental; see [code workflows](../guide/code-workflows.md) |
 | Desktop / system integration | No desktop client, system-login startup registration, or automatic updates |
 | Domain / enterprise | Business APIs, identity, data, and deployment policies need scenario-specific integration and acceptance; see [FDE](../guide/why-agh.md) |
-| MHS / devices | A simulated MCP inspection bundle and preview seam are available. No validated physical adapter or MHS compatibility is claimed |
 | Performance / evaluation | No leadership or improvement figures without fixed models, budgets, tasks, and reproducible measurement |
 
 See [verification](../maintainers/verification.md) for recorded commands and scope. Recheck current source after upgrades, especially long-running behavior, MCP OAuth session support, plugin/client descriptor contracts, default security policy, and distribution status.

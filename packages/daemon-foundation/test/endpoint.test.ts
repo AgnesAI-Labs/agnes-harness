@@ -642,3 +642,25 @@ describe('LocalEndpoint', () => {
     expect(ran).toBe(1)
   })
 })
+
+it('returns fixed attachment reasons for local Core failures without forwarding native detail', async () => {
+  const ep = await initialized()
+  ep.register('session/prompt', async () => {
+    throw {
+      code: 'E_ENVELOPE',
+      message: 'private native path',
+      detail: { code: 'ATTACHMENT_HASH_MISMATCH', private: 'do not expose' },
+    }
+  })
+  const reply = await ep.handle({
+    jsonrpc: '2.0',
+    id: 'attachment',
+    method: 'session/prompt',
+    params: { sessionId: 's', prompt: [{ type: 'text', text: 'fixture' }] },
+  })
+  expect(reply).toMatchObject({
+    error: { code: -32602, message: 'INVALID_PARAMS', data: { code: 'ATTACHMENT_HASH_MISMATCH' } },
+  })
+  expect(JSON.stringify(reply)).not.toContain('private')
+  await ep.close()
+})

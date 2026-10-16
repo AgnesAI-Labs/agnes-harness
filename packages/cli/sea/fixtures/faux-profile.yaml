@@ -1,18 +1,5 @@
 name: local-dev
 schemaVersion: 1
-packages:
-  - { id: "@agnes/ai", source: "builtin" }
-  - { id: "@agnes/base", source: "builtin" }
-  - { id: "@agnes/code", source: "builtin" }
-providers:
-  approval: "@agnes/base"
-  checkpoint: "@agnes/base"
-  ledger: "@agnes/base"
-  verifier: "@agnes/base"
-  repair: "@agnes/base"
-  artifacts: "@agnes/base"
-  principals: "@agnes/base"
-  harness: "@agnes/base"
 provider:
   package: "@agnes/ai"
   routes:
@@ -27,7 +14,7 @@ provider:
           route: faux
           baseUrl: SEA_BASE_URL
           reasoning: false
-          input: [text]
+          input: [text, image]
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
           contextWindow: 128000
           maxTokens: 8192
@@ -41,8 +28,6 @@ adapters:
   platform: host
   secrets: { kind: file }
 transports: [{ kind: stdio }]
-dataDir: "~/.agh"
-cacheDir: "~/.agh/cache"
 limits: { "jobs.tick_ms": 1000, "shutdown.grace_ms": 10000 }
 presets: { default: standard, allowed: [standard] }
 policy:

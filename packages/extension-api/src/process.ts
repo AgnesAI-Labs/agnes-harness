@@ -2,7 +2,12 @@ import type { SandboxEnforcement } from './common.js'
 import type { SandboxExecRequest } from './sandbox-provider.js'
 
 export type ProcessOutput = Readonly<{ stream: 'stdout' | 'stderr'; text: string }>
-export type ProcessExit = Readonly<{ code: number | null; signal?: string; error?: Error }>
+export type ProcessExit = Readonly<{
+  code: number | null
+  signal?: string
+  error?: Error
+  stoppedProcesses?: number
+}>
 /** Open is invocation-authorized; the returned process is owned by the session, not the call. */
 export type SandboxProcessRequest = SandboxExecRequest &
   Readonly<{

@@ -192,13 +192,14 @@ it('binds process launch and child cancellation only to journaled effects and Ho
       openProcess,
     }),
   }
+  const { handler: _handler, ...effectCapability } = serviceFixture()
   const session = { key: 'session-bound-by-host', lane: 'main', workspaceRoot: workspace.root }
   const query = build(entry, { ...identity, session }, alive, boundWorkspace)
   expect(query.session?.key).toBe(session.key)
   expect(query.sandbox).toBeUndefined()
   expect(query.childJobs?.cancel).toBeUndefined()
   const effect = build(
-    { ...entry, capability: { ...entry.capability, kind: 'effect' } },
+    { ...entry, capability: { ...effectCapability, kind: 'effect' } },
     { ...identity, session },
     alive,
     boundWorkspace,
@@ -207,7 +208,7 @@ it('binds process launch and child cancellation only to journaled effects and Ho
     'service operation unavailable',
   )
   const approved = fixture(undefined, async () => {}).build(
-    { ...entry, capability: { ...entry.capability, kind: 'effect' } },
+    { ...entry, capability: { ...effectCapability, kind: 'effect' } },
     { ...identity, session },
     alive,
     boundWorkspace,
@@ -218,7 +219,7 @@ it('binds process launch and child cancellation only to journaled effects and Ho
   const denied = fixture(undefined, async () => {
     throw new Error('preset denied')
   }).build(
-    { ...entry, capability: { ...entry.capability, kind: 'effect' } },
+    { ...entry, capability: { ...effectCapability, kind: 'effect' } },
     { ...identity, session },
     alive,
     boundWorkspace,

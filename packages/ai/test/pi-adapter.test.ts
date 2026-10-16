@@ -916,9 +916,9 @@ describe('PiAdapter', () => {
     const events = await collect(
       a.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), opts(ac.signal)),
     )
-    expect(seen).toHaveLength(1)
+    expect(seen).toHaveLength(0)
     expect(events).toHaveLength(1)
-    expect(events[0]).toMatchObject({ type: 'error' })
+    expect(events[0]).toMatchObject({ type: 'error', code: 'ABORTED', retryable: false })
   })
 
   it('reports an abort as ABORTED and does not offer a retry', async () => {

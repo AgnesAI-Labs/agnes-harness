@@ -27,6 +27,7 @@ import {
   type ConfigTestResult,
   type Credential,
   type Cursor,
+  describeValidationErrors,
   type LoopSelection,
   META_KEY,
   METHODS,
@@ -61,6 +62,7 @@ import { JsonRpcError, ProtocolViolation, RequestTimeout, TransportClosed, Unsup
 import { type Disposer, Emitter } from './events.js'
 import { untilAborted } from './initialize-wait.js'
 import { type JournalStore, memoryJournal } from './journal.js'
+import { loadHistory } from './load-history.js'
 import { type PermissionHandler, type PermissionRequest, unansweredPermission } from './permission.js'
 import { type ReconnectOptions, Reconnector } from './reattach.js'
 import { RpcConnection } from './rpc.js'
@@ -113,7 +115,7 @@ export type CreateClientOptions = {
   auth?: AuthOption
   clientId?: string
   journal?: JournalStore
-  timeouts?: { request?: number; initialize?: number; claim?: number }
+  timeouts?: { request?: number; initialize?: number; claim?: number; loadIdle?: number; loadHard?: number }
   locale?: string
   bufferLimit?: number
   claimStrict?: boolean
@@ -140,6 +142,7 @@ export type CallOptions = {
   timeoutMs?: number | null
   // Set only by the handshake itself, which would otherwise wait on its own result.
   skipInit?: boolean
+  signal?: AbortSignal
 }
 
 type InitializeResponseBody = {
@@ -163,7 +166,13 @@ export class Client {
   // Connection/options stay private so consumers cannot bypass client bookkeeping or expose auth.
   private readonly conn: RpcConnection
   readonly journal: JournalStore
-  readonly timeouts: { request: number; initialize: number; claim: number }
+  readonly timeouts: {
+    request: number
+    initialize: number
+    claim: number
+    loadIdle: number
+    loadHard: number
+  }
   readonly locale: string
   readonly bufferLimit: number
   readonly claim: Claim
@@ -207,6 +216,8 @@ export class Client {
     this.journal = opts.journal ?? memoryJournal(opts.clientId)
     this.timeouts = {
       request: opts.timeouts?.request ?? 30_000,
+      loadIdle: opts.timeouts?.loadIdle ?? 30_000,
+      loadHard: opts.timeouts?.loadHard ?? 600_000,
       initialize: opts.timeouts?.initialize ?? 10_000,
       claim: opts.timeouts?.claim ?? 4_000,
     }
@@ -491,6 +502,7 @@ export class Client {
       o: {
         cwd?: string
         onPermissionRequest?: PermissionHandler
+        onProgress?: (progress: import('@agnes/protocol').SessionLoadingParams) => void
         /** Receives the disposer for the load-time handler before the RPC is sent. */
         onPermissionRequestRegistered?: (off: () => void) => void
       } = {},
@@ -511,7 +523,7 @@ export class Client {
         }
       }
       try {
-        await this.call('session/load', { sessionId: id, cwd: o.cwd ?? '', mcpServers: [] })
+        await this.loadSessionHistory(id, o.cwd ?? '', o.onProgress)
         if (o.cwd) session.rememberWorkspace(o.cwd)
         return session
       } catch (error) {
@@ -588,7 +600,35 @@ export class Client {
    * wire call in the same place as an explicit session.load.
    */
   restoreSession(id: string, cwd: string): Promise<unknown> {
-    return this.call('session/load', { sessionId: id, cwd, mcpServers: [] })
+    return this.loadSessionHistory(id, cwd)
+  }
+
+  private async loadSessionHistory(
+    id: string,
+    cwd: string,
+    onProgress?: (progress: import('@agnes/protocol').SessionLoadingParams) => void,
+  ): Promise<unknown> {
+    await this.initialize()
+    return loadHistory({
+      sessionId: id,
+      idleMs: this.timeouts.loadIdle,
+      hardMs: this.timeouts.loadHard,
+      subscribe: (fn) => this.conn.onNotification(fn),
+      request: async (signal) => {
+        try {
+          return await this.call(
+            'session/load',
+            { sessionId: id, cwd, mcpServers: [] },
+            { timeoutMs: null, signal },
+          )
+        } catch (error) {
+          if (signal.aborted)
+            await this.notify('_agnes/v1/session.loadingCancel', { sessionId: id }).catch(() => undefined)
+          throw error
+        }
+      },
+      ...(onProgress ? { onProgress } : {}),
+    })
   }
 
   private sessionHandle(id: string, cwd?: string): Session {
@@ -722,6 +762,7 @@ export class Client {
       // Omitted, not undefined: leaving the key off is what lets the connection apply
       // its own default deadline, while an explicit null means "no deadline".
       ...(o.timeoutMs !== undefined ? { timeoutMs: o.timeoutMs } : {}),
+      ...(o.signal ? { signal: o.signal } : {}),
       ...(o.metadata === undefined ? {} : { metadata: o.metadata }),
     })
     this.checkResult(method, result)
@@ -744,7 +785,7 @@ export class Client {
       : fallback
         ? validateAgainst(fallback, params)
         : null
-    if (v && !v.ok) throw new ProtocolViolation(`${method} params: ${v.errors[0]?.message ?? 'invalid'}`)
+    if (v && !v.ok) throw new ProtocolViolation(`${method} params: ${describeValidationErrors(v.errors)}`)
   }
 
   private checkResult(method: string, result: unknown): void {
@@ -756,7 +797,7 @@ export class Client {
       : fallback
         ? validateAgainst(fallback, result)
         : null
-    if (v && !v.ok) throw new ProtocolViolation(`${method} result: ${v.errors[0]?.message ?? 'invalid'}`)
+    if (v && !v.ok) throw new ProtocolViolation(`${method} result: ${describeValidationErrors(v.errors)}`)
   }
 
   async resendPending(sessionId: string): Promise<void> {

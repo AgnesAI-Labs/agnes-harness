@@ -31,6 +31,7 @@ export type CompositeTargetActivationOptions = Readonly<{
   workerGeneration?: () => number | undefined
   /** Produce the complete desired artifact after lockfile enable/disable/update. */
   desiredFor?(input: {
+    packageIds?: readonly string[]
     profile: string
     packageId: string
     operation: 'enable' | 'disable' | 'update' | 'rollback' | 'remove'
@@ -282,7 +283,7 @@ export function createCompositeTargetActivation(
       await options.revertFailedDesired?.()
       let next: RuntimeTargetArtifact | undefined
       // Derivation runs outside the publication lane, so a concurrent operation can publish first.
-      // Its CAS baseline is the desired target it read; on a stale refusal derive again from the new one.
+      // A stale target or inventory needs a new derivation and probe under the current authorization.
       for (let attempt = 1; ; attempt++) {
         const derivedFrom = { digest: options.store.desired()?.digest }
         if (input.operation === 'rollback') {
@@ -294,6 +295,7 @@ export function createCompositeTargetActivation(
             (await options.desiredFor?.({
               profile: input.profile,
               packageId: input.packageId,
+              ...(input.packageIds ? { packageIds: input.packageIds } : {}),
               operation: input.operation,
             })) ?? options.store.desired()
         }
@@ -308,12 +310,18 @@ export function createCompositeTargetActivation(
           }
           break
         } catch (error) {
-          if (attempt >= 3 || !(error instanceof Error) || error.message !== 'E_RUNTIME_TARGET_STALE')
+          if (
+            attempt >= 3 ||
+            !(error instanceof Error) ||
+            (error.message !== 'E_RUNTIME_TARGET_STALE' &&
+              error.message !== 'E_RUNTIME_TARGET_INVENTORY_STALE')
+          )
             throw error
         }
       }
       await options.deliver?.(next)
-      options.store.clearPackageFailure(input.packageId)
+      for (const packageId of [input.packageId, ...(input.packageIds ?? [])])
+        options.store.clearPackageFailure(packageId)
       if (!wait) {
         if (packageStopped(options.store, options.workerGeneration?.(), input.packageId))
           await options.releaseRetiring?.(input.packageId)

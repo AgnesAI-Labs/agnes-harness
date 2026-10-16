@@ -31,8 +31,10 @@ import type {
   CompositeRuntimeDelivery,
   RuntimeBootDelivery,
 } from './publication/composite-runtime-delivery.js'
+import { workerStderrEvidence } from './runtime-log.js'
 import { WorkerBootFailures } from './worker-boot-failures.js'
 import { WorkerLink, type WorkerSessionChannel } from './worker-link.js'
+import { waitForWorkerExit } from './worker-process-exit.js'
 
 /**
  * The narrow shape this pool needs from daemon's notice sink. The real `NoticeSink` is
@@ -47,6 +49,8 @@ export type NoticeEmitter = {
 /** Immutable worker inputs selected when a session is first acquired. */
 export type WorkerProfile = Readonly<{ profile: ResolvedProfile; profileFile: string }>
 type SessionWorkerAcquireOptions = Readonly<{
+  historySignal?: AbortSignal
+  onHistoryProgress?: (progress: { verifiedSeq: number; lastSeq: number }) => void
   resume?: boolean
   cwd?: string
   binding?: WorkspaceBindingEnvelope
@@ -148,6 +152,7 @@ export class WorkerPool {
         traceId?: string
         spanId?: string
       }) => void
+      onRuntimeLog?: (record: unknown) => void
       onLifecycle?: (phase: 'start' | 'stop' | 'restart', id: string) => void
       onSessionFailure?: (sessionKey: string, error: unknown) => void
       runtimeDelivery?: CompositeRuntimeDelivery
@@ -257,6 +262,8 @@ export class WorkerPool {
         slot.channels.delete(sessionKey)
         slot.sessions.delete(sessionKey)
       },
+      opts.onHistoryProgress,
+      opts.historySignal,
     )
     slot.channels.set(sessionKey, channel)
     try {
@@ -365,10 +372,16 @@ export class WorkerPool {
       const failStarting = (error: Error): void => {
         if (startupFinished) return
         startupFinished = true
+        this.o.onRuntimeLog?.({ kind: 'worker.start_failed', detail: { code: bootFailureCode } })
         if (!helloReceived && !this.stopping) this.bootFailures.record(workerKey, bootFailureCode, bootEpoch)
         // A start that dies on the very target it was given says something about that target, not
         // about the worker; only then is the exit expected rather than a crash to count.
-        if (bootOffer && this.o.runtimeDelivery?.recordBootFailure(slot.generation, bootOffer, error))
+        // Operator shutdown cancels admission; it says nothing about whether the target can boot.
+        if (
+          !this.stopping &&
+          bootOffer &&
+          this.o.runtimeDelivery?.recordBootFailure(slot.generation, bootOffer, error)
+        )
           slot.intentionalExit = true
         bootOffer = undefined
         this.pendingByToken.delete(token)
@@ -525,7 +538,7 @@ export class WorkerPool {
               AGNES_WORKER_ROOT: opts.kind === 'service' && opts.cwd ? opts.cwd : undefined,
             },
             windowsHide: true,
-            stdio: ['ignore', 'inherit', 'inherit', 'pipe', 'ipc'],
+            stdio: ['ignore', 'inherit', 'pipe', 'pipe', 'ipc'],
           },
         )
       } catch (error) {
@@ -541,6 +554,8 @@ export class WorkerPool {
         return
       }
       const spawnedChild = child
+      const stderr = workerStderrEvidence()
+      spawnedChild.stderr?.on('data', (chunk: Buffer) => stderr.push(chunk))
       slot.child = spawnedChild
       spawnedChild.on('message', (message: unknown) => {
         if (startupFinished || slot.initializingLink || !message || typeof message !== 'object') return
@@ -559,6 +574,12 @@ export class WorkerPool {
       // Reject immediately so callers do not wait for the full startup deadline and remove the
       // token before a late socket connection can claim a failed generation.
       spawnedChild.once('exit', (code, signal) => {
+        this.o.onRuntimeLog?.({
+          kind: 'worker.exited',
+          detail: { pid: spawnedChild.pid, exitCode: code, signal },
+        })
+        const stderrFacts = stderr.snapshot()
+        if (stderrFacts.bytes) this.o.onRuntimeLog?.({ kind: 'worker.stderr', detail: stderrFacts })
         try {
           this.o.onLifecycle?.('stop', `${workerKey}:${generation}`)
         } catch {
@@ -820,23 +841,7 @@ export class WorkerPool {
   ): Promise<boolean> {
     const slot = this.slots.get(sessionKey)
     if (!slot || slot.generation !== generation) return true
-    const child = slot.child
-    if (!child || child.exitCode !== null || child.signalCode !== null) return true
-    return new Promise<boolean>((resolve) => {
-      let settled = false
-      let timer: ReturnType<typeof setTimeout> | undefined
-      const onExit = (): void => finish(true)
-      const finish = (exited: boolean): void => {
-        if (settled) return
-        settled = true
-        if (timer !== undefined) clearTimeout(timer)
-        if (!exited) child.off('exit', onExit)
-        resolve(exited)
-      }
-      child.once('exit', onExit)
-      timer = setTimeout(() => finish(false), timeoutMs)
-      timer.unref()
-    })
+    return waitForWorkerExit(slot.child, timeoutMs)
   }
 
   /**
@@ -881,9 +886,7 @@ export class WorkerPool {
   async waitForExitRecovery(): Promise<void> {
     await Promise.all(
       [...this.slots.values()].map(async (slot) => {
-        const child = slot.child
-        if (child?.exitCode === null && child.signalCode === null)
-          await new Promise<void>((resolve) => child.once('exit', () => resolve()))
+        await waitForWorkerExit(slot.child)
         // The pool's exit listener is registered before this waiter, so it has assigned
         // exitRecovery by the time the promise above resolves.
         await slot.exitRecovery
@@ -918,6 +921,7 @@ export class WorkerPool {
   private cancelStarting(): void {
     for (const slot of this.slots.values()) {
       if (!slot.starting) continue
+      slot.intentionalExit = true
       slot.failStarting?.(new Error('worker pool shut down during startup'))
     }
   }

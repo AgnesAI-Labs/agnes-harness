@@ -12,7 +12,23 @@ import { PackageError } from './errors.js'
  */
 export const CLIENT_MAX_FILE_BYTES = 4194304
 export const CLIENT_MAX_TOTAL_BYTES = 16777216
-export const CLIENT_ASSET_EXTENSIONS: readonly string[] = Object.freeze(['js', 'mjs', 'css', 'map'])
+export const CLIENT_ASSET_EXTENSIONS: readonly string[] = Object.freeze([
+  'js',
+  'mjs',
+  'css',
+  'map',
+  'gltf',
+  'glb',
+  'bin',
+  'png',
+  'jpg',
+  'jpeg',
+  'webp',
+  'ktx2',
+  'wasm',
+])
+export const CLIENT_RESOURCE_MAX_FILE_BYTES = 32 * 1024 * 1024
+export const CLIENT_RESOURCE_MAX_TOTAL_BYTES = 128 * 1024 * 1024
 const CLIENT_ENTRY_EXTENSIONS: readonly string[] = Object.freeze(['js', 'mjs'])
 const CLIENT_STYLE_EXTENSIONS: readonly string[] = Object.freeze(['css'])
 const PRIVATE_CONFIG_KEY = /(?:credential|secret|token|api[-_]?key|password|authorization)/i
@@ -99,6 +115,11 @@ function decodeUrlPathSegments(segments: readonly string[]): string[] | null {
  * 同一份清单在任何一条路径上得到的摘要字节都相同。
  */
 export type NormalizedClientContribution = {
+  lifetime?: ClientContribution['lifetime']
+  homeEntries?: ClientContribution['homeEntries']
+  examplePages?: ClientContribution['examplePages']
+  assets?: ClientContribution['assets']
+  streams?: ClientContribution['streams']
   intelligentComponents?: ClientContribution['intelligentComponents']
   id?: string
   entry: string
@@ -116,6 +137,11 @@ export function normalizeClientContribution(client: ClientContribution): Normali
   if (client.publicConfig !== undefined) validatePublicClientConfig(client.publicConfig)
   const set = (values: readonly string[] | undefined): string[] => [...new Set(values ?? [])].sort()
   return {
+    ...(client.lifetime === undefined ? {} : { lifetime: client.lifetime }),
+    ...(client.homeEntries === undefined ? {} : { homeEntries: client.homeEntries }),
+    ...(client.examplePages === undefined ? {} : { examplePages: set(client.examplePages) }),
+    ...(client.assets === undefined ? {} : { assets: set(client.assets.map(normalizeClientPath)) }),
+    ...(client.streams === undefined ? {} : { streams: set(client.streams) }),
     ...(client.id === undefined ? {} : { id: client.id }),
     entry: normalizeClientPath(client.entry),
     ...(client.intelligentComponents ? { intelligentComponents: client.intelligentComponents } : {}),
@@ -158,6 +184,11 @@ export function resolveClientAssets(
   const file = join(dir, 'package.json')
   const assets = [
     { path: client.entry, extensions: CLIENT_ENTRY_EXTENSIONS, reason: 'client-entry-extension' },
+    ...(client.assets ?? []).map((path) => ({
+      path,
+      extensions: CLIENT_ASSET_EXTENSIONS,
+      reason: 'client-asset-extension',
+    })),
     ...(client.styles ?? []).map((path) => ({
       path,
       extensions: CLIENT_STYLE_EXTENSIONS,
@@ -176,13 +207,22 @@ export function resolveClientAssets(
     // containedEntry 负责文件真实存在、类型正确且 realpath 后仍在包内。
     const target = containedEntry(dir, path, 'file', file)
     const bytes = statSync(target).size
-    const limit = client.intelligentComponents ? 262144 : CLIENT_MAX_FILE_BYTES
+    const resource =
+      (client.assets ?? []).includes(path) &&
+      !CLIENT_ENTRY_EXTENSIONS.includes(extension) &&
+      extension !== 'css' &&
+      extension !== 'map'
+    const limit = client.intelligentComponents
+      ? 262144
+      : resource
+        ? CLIENT_RESOURCE_MAX_FILE_BYTES
+        : CLIENT_MAX_FILE_BYTES
     if (bytes > limit)
       fail(path, `client asset is ${bytes} bytes, over the ${limit}-byte cap`, 'client-asset-too-large')
     total += bytes
     resolved.push(target)
   }
-  if (total > CLIENT_MAX_TOTAL_BYTES)
+  if (total > (client.assets?.length ? CLIENT_RESOURCE_MAX_TOTAL_BYTES : CLIENT_MAX_TOTAL_BYTES))
     fail(
       client.entry,
       `client assets total ${total} bytes, over the ${CLIENT_MAX_TOTAL_BYTES}-byte cap`,
@@ -190,10 +230,10 @@ export function resolveClientAssets(
     )
   const entryPath = resolved[0]
   if (entryPath === undefined) fail(client.entry, 'client entry did not resolve', 'client-path')
-  return { entryPath, stylePaths: resolved.slice(1) }
+  return { entryPath, stylePaths: resolved.slice(1 + (client.assets?.length ?? 0)) }
 }
 
-/** web 下发通道只允许这四类扩展名（对应 text/javascript / text/css / application/json 三种 MIME）；与安装期白名单一致。 */
+/** Reviewed client code and scene resource formats; the immutable snapshot is the file allow-list. */
 export const CLIENT_MODULE_SERVABLE_EXTENSIONS: readonly string[] = CLIENT_ASSET_EXTENSIONS
 
 /** 包 id 的词法形态（与锁文件 schema 中的 id 模式一致）：一段，或 `scope/name` 两段。 */

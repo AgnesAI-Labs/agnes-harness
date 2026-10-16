@@ -33,6 +33,34 @@ async function turn(session: Session, prompt: string, trust?: 'untrusted') {
   ).resolves.toMatchObject({ reason: 'completed' })
 }
 
+async function expectNarrowSummaryRecovery(
+  session: Session,
+  requests: Awaited<ReturnType<typeof startWireCapture>>['requests'],
+) {
+  expect(requests).toHaveLength(4)
+  const narrow = requests[3]
+  if (!narrow) throw new Error('missing narrow fallback request')
+  expect(renderedParts(narrow).find((part) => part.key === 'tools')).toBeUndefined()
+  expect(await session.d.log.scan({ type: 'tool/call', limit: 10 })).toEqual([])
+  const begins = await session.d.log.scan({ type: 'x/core/compaction-begin', limit: 10 })
+  expect(begins).toHaveLength(1)
+  expect(begins[0]?.data).toMatchObject({ effectId: expect.any(String) })
+  expect(begins[0]?.data).not.toHaveProperty('mode')
+  const replacements = (await session.d.log.scan({ type: 'assistant/message', limit: 10 })).filter(
+    (row) => row.surfaceOp,
+  )
+  expect(replacements).toHaveLength(1)
+  expect(replacements[0]).toMatchObject({
+    origin: 'model',
+    data: { content: [{ type: 'text', text: 'fixture reply' }] },
+  })
+  const costs = (await session.d.log.scan({ type: 'cost/ledger', limit: 10 })).filter(
+    (row) => (row.data as { purpose?: string }).purpose === 'compaction',
+  )
+  expect(costs).toHaveLength(2)
+  expect(new Set(costs.map((row) => (row.data as { effectId: string }).effectId)).size).toBe(2)
+}
+
 function compactPlan(payload: HookPayloadMap['before_compact'], split: boolean) {
   const nodes = payload.getSurface()
   const first = nodes[0]
@@ -280,7 +308,7 @@ describe('real provider wire compaction prefix', () => {
   })
 
   it.each(['anthropic-messages', 'openai-completions'] as const)(
-    '%s keeps native tools available but rejects a summary tool call',
+    '%s retries a rejected wide summary tool call without exposing narrow tools',
     async (api) => {
       await fixture(
         api,
@@ -304,20 +332,13 @@ describe('real provider wire compaction prefix', () => {
           expectExtends(primary, summary)
           expect(JSON.stringify(summary.body)).toContain('read')
           expect(JSON.stringify(summary.body)).not.toContain('tool_choice')
-          const begins = await session.d.log.scan({ type: 'x/core/compaction-begin', limit: 10 })
-          expect(begins).toEqual(
-            expect.arrayContaining([
-              expect.objectContaining({
-                data: expect.objectContaining({ mode: 'elided', cause: 'summary called a tool' }),
-              }),
-            ]),
-          )
+          await expectNarrowSummaryRecovery(session, requests)
         },
       )
     },
   )
 
-  it('decodes a textual summary tool call and mechanically elides on the OpenAI wire', async () => {
+  it('decodes a textual summary tool call and recovers through a narrow OpenAI request', async () => {
     await fixture(
       'openai-completions',
       (index) =>
@@ -338,14 +359,7 @@ describe('real provider wire compaction prefix', () => {
         const summary = requests[2]
         if (!summary) throw new Error('missing summary request')
         expectExtends(primary, summary)
-        const begins = await session.d.log.scan({ type: 'x/core/compaction-begin', limit: 10 })
-        expect(begins).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({
-              data: expect.objectContaining({ mode: 'elided', cause: 'summary called a tool' }),
-            }),
-          ]),
-        )
+        await expectNarrowSummaryRecovery(session, requests)
       },
     )
   })

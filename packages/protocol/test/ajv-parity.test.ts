@@ -57,8 +57,10 @@ import * as HooksGen from '../gen/ts/hooks.js'
 import * as IntelligentUiGen from '../gen/ts/intelligent-ui.js'
 import * as JobsGen from '../gen/ts/jobs.js'
 import * as LockfileGen from '../gen/ts/lockfile.js'
+import * as ManagedServiceGen from '../gen/ts/managed-service.js'
 import * as ModelGen from '../gen/ts/model.js'
 import * as PackageAdminGen from '../gen/ts/package-admin.js'
+import * as PluginStreamGen from '../gen/ts/plugin-stream.js'
 import * as PresetGen from '../gen/ts/preset.js'
 import * as ProfileGen from '../gen/ts/profile.js'
 import * as ProjectionGen from '../gen/ts/projection.js'
@@ -272,6 +274,10 @@ ajv.addSchema(slotsSchemaDoc)
 ajv.addSchema(presetSchemaDoc)
 ajv.addSchema(ProfileDoc)
 ajv.addSchema(LockfileDoc)
+const PluginStreamDoc = JSON.parse(readFileSync(`${pkgRoot}schema/plugin-stream.json`, 'utf8')) as Json
+const ManagedServiceDoc = JSON.parse(readFileSync(`${pkgRoot}schema/managed-service.json`, 'utf8')) as Json
+ajv.addSchema(PluginStreamDoc)
+ajv.addSchema(ManagedServiceDoc)
 ajv.addSchema(ExtensionManifestDoc)
 ajv.addSchema(DeployManifestDoc)
 ajv.addSchema(JobsDoc)
@@ -533,6 +539,10 @@ const AGNES_DEFS: Record<string, TSchema> = {
   WorkspaceListResult: AgnesGen.WorkspaceListResult,
   WorkspaceAddParams: AgnesGen.WorkspaceAddParams,
   WorkspaceAddResult: AgnesGen.WorkspaceAddResult,
+  PluginRuntimeStatusParams: AgnesGen.PluginRuntimeStatusParams,
+  PluginRuntimeStatusResult: AgnesGen.PluginRuntimeStatusResult,
+  PluginStreamsEndpointParams: AgnesGen.PluginStreamsEndpointParams,
+  PluginStreamsEndpointResult: AgnesGen.PluginStreamsEndpointResult,
   SurfacesMountsParams: AgnesGen.SurfacesMountsParams,
   SurfacesMountsResult: AgnesGen.SurfacesMountsResult,
   JsonValue: AgnesGen.JsonValue,
@@ -609,6 +619,7 @@ const AGNES_DEFS: Record<string, TSchema> = {
   AuthClaimParams: AgnesGen.AuthClaimParams,
   AuthClaimResult: AgnesGen.AuthClaimResult,
   SessionEventParams: AgnesGen.SessionEventParams,
+  SessionLoadingParams: AgnesGen.SessionLoadingParams,
   SessionPreviewParams: AgnesGen.SessionPreviewParams,
   DaemonNotice: AgnesGen.DaemonNotice,
   // SlotName is a cross-file alias of model.json's closed seven-value enum, on the same footing as
@@ -3838,6 +3849,14 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     ],
     note: 'valid and the first invalid reuse fixtures/methods/i1.jsonl (session-event-params-ok / session-event-params-row-missing-actor)',
   },
+  SessionLoadingParams: {
+    note: 'bounded verification and replay progress',
+    valid: { sessionId: 's', phase: 'verifying', verifiedSeq: 5, lastSeq: 10 },
+    invalid: [
+      { sessionId: 's', phase: 'ready', verifiedSeq: 5, lastSeq: 10 },
+      { sessionId: 's', phase: 'verifying', verifiedSeq: -1, lastSeq: 10 },
+    ],
+  },
   SessionPreviewParams: {
     valid: { sessionId: 's1', lane: 'main', effectId: 'e1', stream: 'text', offset: 0, delta: 'hi' },
     invalid: [
@@ -3911,6 +3930,26 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     valid: { path: '/workspace/project' },
     invalid: [{ path: '' }],
     note: 'workspace add requires one non-empty path for host validation',
+  },
+  PluginRuntimeStatusParams: {
+    valid: { packageId: '@example/runtime' },
+    invalid: [{}, { packageId: '' }],
+    note: 'private runtime status selects an installed package',
+  },
+  PluginRuntimeStatusResult: {
+    valid: { resources: [{ id: 'server', state: 'ready' }] },
+    invalid: [{ resources: [{ id: 'server', state: 'invented' }] }],
+    note: 'runtime status is a safe lifecycle projection',
+  },
+  PluginStreamsEndpointParams: {
+    valid: { origin: 'http://127.0.0.1:49999' },
+    invalid: [{}, { origin: '' }],
+    note: 'launcher supplies its exact public origin',
+  },
+  PluginStreamsEndpointResult: {
+    valid: { host: '127.0.0.1', port: 12345, proof: 'a'.repeat(64) },
+    invalid: [{ host: 'public.example', port: 12345, proof: 'a'.repeat(64) }],
+    note: 'private stream capability remains on loopback',
   },
   SurfacesMountsParams: {
     valid: {},
@@ -6001,6 +6040,33 @@ const EXTENSION_SAMPLES: Record<string, Sample> = {
     ],
     note: 'Client contribution: entry required, closed object, reserved fields stay arrays (P1a)',
   },
+  HomeContributionDeclaration: {
+    valid: { id: 'reports', placement: 'primary' },
+    invalid: [{ id: 'reports', placement: 'unknown' }, { placement: 'primary' }],
+    note: 'Navigation contribution has an explicit bounded identity and placement',
+  },
+  ExampleLaunchDeclaration: {
+    valid: {
+      id: 'example',
+      kind: 'business-agent',
+      title: 'Example',
+      bundle: 'acme/example',
+      preset: 'standard',
+      prompt: 'Start example',
+    },
+    invalid: [
+      { id: 'example' },
+      {
+        id: 'example',
+        kind: 'business-agent',
+        title: 'Example',
+        bundle: 'acme/example',
+        preset: 'standard',
+        prompt: '',
+      },
+    ],
+    note: 'Example launch requires the complete declarative input',
+  },
   ExtensionManifest: configSample('ExtensionManifest'),
   HookEvent: HOOKS_SAMPLES.HookEvent as Sample,
   UiSlotName: SLOTS_SAMPLES.UiSlotName as Sample,
@@ -6081,6 +6147,8 @@ const LockfileDefs: Record<string, TSchema> = {
   Capability: LockfileGen.Capability,
 }
 const ExtensionManifestDefs: Record<string, TSchema> = {
+  HomeContributionDeclaration: ExtensionManifestGen.HomeContributionDeclaration,
+  ExampleLaunchDeclaration: ExtensionManifestGen.ExampleLaunchDeclaration,
   UiComponentDeclaration: ExtensionManifestGen.UiComponentDeclaration,
   PluginCategory: ExtensionManifestGen.PluginCategory,
   PluginMetadata: ExtensionManifestGen.PluginMetadata,
@@ -6354,6 +6422,77 @@ const ServiceSamples: Record<string, Sample> = Object.fromEntries(
     },
   ]),
 )
+Object.assign(ServiceSamples, {
+  ProfileDecisionAnswerResult: SESSION_SAMPLES.DecisionCommandReceipt,
+  BoundWakeEnqueueParams: {
+    valid: {
+      target: { bindingId: 'binding' },
+      idempotencyKey: 'one',
+      event: { name: 'report.done', summary: 'Done' },
+    },
+    invalid: [{ sessionId: 'forged' }],
+    note: 'Bound target',
+  },
+  BoundWakeReadParams: { valid: { wakeId: 'wake' }, invalid: [{}], note: 'Owned wake receipt' },
+  BoundWakeReceipt: { valid: { wakeId: 'wake', state: 'queued' }, invalid: [{}], note: 'Durable wake' },
+  ServiceEffectPolicy: {
+    valid: {
+      isDestructive: true,
+      isOpenWorld: true,
+      replay: 'never',
+      requiresApproval: 'always',
+      approvalScopes: [],
+    },
+    invalid: [{}],
+    note: 'Reviewed policy',
+  },
+  ProfileServiceCallParams: {
+    valid: {
+      extension: 'acme/dashboard',
+      service: 'report.query',
+      input: {},
+      sessionReads: ['owned-session'],
+    },
+    invalid: [
+      { actor: 'forged' },
+      ...[
+        [''],
+        ['x'.repeat(513)],
+        ['duplicate', 'duplicate'],
+        Array.from({ length: 17 }, (_, n) => String(n)),
+      ].map((sessionReads) => ({
+        extension: 'acme/dashboard',
+        service: 'report.query',
+        input: {},
+        sessionReads,
+      })),
+    ],
+    note: 'Profile query requests bounded session read access; the authenticated ingress grants it',
+  },
+  ProfileServiceOperationParams: {
+    valid: { extension: 'acme/dashboard', service: 'report.query', operationId: 'one' },
+    invalid: [{}],
+    note: 'Owned receipt',
+  },
+  ProfileServiceReceipt: {
+    valid: { operationId: 'one', state: 'unknown' },
+    invalid: [{}],
+    note: 'Effect receipt',
+  },
+  ProfileServiceCallResult: { valid: { output: {} }, invalid: [{}], note: 'Profile query or effect result' },
+  ProfileDecisionsListParams: { valid: {}, invalid: [{ actor: 'forged' }], note: 'Profile decisions' },
+  ProfileDecisionsListResult: { valid: { decisions: [] }, invalid: [{}], note: 'Profile decisions' },
+  ProfileDecisionAnswerParams: {
+    valid: {
+      handle: { id: 'one', sessionId: null, profileId: 'default' },
+      revision: 1,
+      commandId: 'answer',
+      response: { option: 'allowed-once', value: null },
+    },
+    invalid: [{}],
+    note: 'Authenticated answer',
+  },
+})
 for (const name of ['ExtensionCallParams', 'ExtensionCallResult', 'ExtensionAckParams', 'ExtensionCallError'])
   AGNES_SAMPLES[name] = ServiceSamples[name] as Sample
 
@@ -6394,6 +6533,19 @@ const PackageAdminSamples: Record<string, Sample> = Object.fromEntries(
     },
   ]),
 )
+PackageAdminSamples.ContributionBinding = {
+  valid: {
+    lifetime: 'profile',
+    owner: 'plugin/0123456789abcdef',
+    packageId: '@acme/reports',
+    integrity: 'reviewed',
+    profileId: 'default',
+    activationId: 'current',
+    availability: 'active',
+  },
+  invalid: [{ lifetime: 'profile', availability: 'active' }],
+  note: 'Current roster authority binding',
+}
 AGNES_SAMPLES.AuthoringFile = PackageAdminSamples.AuthoringFile as Sample
 AGNES_SAMPLES.AuthoringOrigin = PackageAdminSamples.AuthoringOrigin as Sample
 AGNES_SAMPLES.AuthoringTests = PackageAdminSamples.AuthoringTests as Sample
@@ -7157,6 +7309,10 @@ const AppSamples: Record<string, Sample> = {
     note: 'App Server boundary shape',
   },
 }
+const TransportSamples = JSON.parse(readFileSync(`${pkgRoot}test/transport-samples.json`, 'utf8')) as {
+  pluginStream: Record<string, Sample>
+  managedService: Record<string, Sample>
+}
 const SELF_OWNED_DOCS: Array<[string, Json, string, Record<string, Sample>]> = [
   [
     'intelligent-ui.json',
@@ -7192,6 +7348,18 @@ const SELF_OWNED_DOCS: Array<[string, Json, string, Record<string, Sample>]> = [
   ],
   ['deploy-manifest.json', DeployManifestDoc, 'https://agnes.ai/schema/deploy-manifest.json', DEPLOY_SAMPLES],
   ['jobs.json', JobsDoc, 'https://agnes.ai/schema/jobs.json', JOBS_SAMPLES],
+  [
+    'plugin-stream.json',
+    PluginStreamDoc,
+    'https://agnes.ai/schema/plugin-stream.json',
+    TransportSamples.pluginStream,
+  ],
+  [
+    'managed-service.json',
+    ManagedServiceDoc,
+    'https://agnes.ai/schema/managed-service.json',
+    TransportSamples.managedService,
+  ],
   ['authz.json', AuthzDoc, 'https://agnes.ai/schema/authz.json', TASK21_SAMPLES.authz],
   ['channel.json', ChannelDoc, 'https://agnes.ai/schema/channel.json', TASK21_SAMPLES.channel],
   ['bridge.json', BridgeDoc, 'https://agnes.ai/schema/bridge.json', TASK21_SAMPLES.bridge],
@@ -7326,6 +7494,7 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     SkinReadResult: PackageAdminGen.SkinReadResult,
     ClientModuleListResult: PackageAdminGen.ClientModuleListResult,
     ClientModuleRosterRow: PackageAdminGen.ClientModuleRosterRow,
+    ContributionBinding: PackageAdminGen.ContributionBinding,
     ClientModuleReadParams: PackageAdminGen.ClientModuleReadParams,
     ClientModuleReadResult: PackageAdminGen.ClientModuleReadResult,
     ClientModuleServiceCallParams: PackageAdminGen.ClientModuleServiceCallParams,
@@ -7407,6 +7576,18 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     ExtensionCallResult: ServiceGen.ExtensionCallResult,
     ExtensionAckParams: ServiceGen.ExtensionAckParams,
     ExtensionCallError: ServiceGen.ExtensionCallError,
+    ServiceEffectPolicy: ServiceGen.ServiceEffectPolicy,
+    ProfileServiceCallParams: ServiceGen.ProfileServiceCallParams,
+    ProfileServiceOperationParams: ServiceGen.ProfileServiceOperationParams,
+    ProfileServiceReceipt: ServiceGen.ProfileServiceReceipt,
+    ProfileServiceCallResult: ServiceGen.ProfileServiceCallResult,
+    ProfileDecisionsListParams: ServiceGen.ProfileDecisionsListParams,
+    ProfileDecisionsListResult: ServiceGen.ProfileDecisionsListResult,
+    ProfileDecisionAnswerParams: ServiceGen.ProfileDecisionAnswerParams,
+    ProfileDecisionAnswerResult: ServiceGen.ProfileDecisionAnswerResult,
+    BoundWakeEnqueueParams: ServiceGen.BoundWakeEnqueueParams,
+    BoundWakeReadParams: ServiceGen.BoundWakeReadParams,
+    BoundWakeReceipt: ServiceGen.BoundWakeReceipt,
   },
   'https://agnes.ai/schema/projection.json': {
     ProjectionCapability: ProjectionGen.ProjectionCapability,
@@ -7424,6 +7605,20 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
   'https://agnes.ai/schema/extension-manifest.json': ExtensionManifestDefs,
   'https://agnes.ai/schema/deploy-manifest.json': DeployManifestDefs,
   'https://agnes.ai/schema/jobs.json': JobsDefs,
+  'https://agnes.ai/schema/plugin-stream.json': {
+    StreamScope: PluginStreamGen.StreamScope,
+    StreamDeclaration: PluginStreamGen.StreamDeclaration,
+    PluginStreamOpen: PluginStreamGen.PluginStreamOpen,
+    PluginStreamGrant: PluginStreamGen.PluginStreamGrant,
+    PluginStreamClose: PluginStreamGen.PluginStreamClose,
+    PluginStreamHello: PluginStreamGen.PluginStreamHello,
+    PluginStreamJsonFrame: PluginStreamGen.PluginStreamJsonFrame,
+  },
+  'https://agnes.ai/schema/managed-service.json': {
+    ManagedServiceDescriptor: ManagedServiceGen.ManagedServiceDescriptor,
+    ManagedServiceReady: ManagedServiceGen.ManagedServiceReady,
+    ManagedServiceStatus: ManagedServiceGen.ManagedServiceStatus,
+  },
 
   'https://agnes.ai/schema/authz.json': AuthzDefs,
   'https://agnes.ai/schema/channel.json': ChannelDefs,
@@ -7524,6 +7719,37 @@ describe('McpServerDescriptor: authorizationStatus field (mcp-oauth-authorizatio
 type MethodDefRef = { fileId: string; params: string; result?: string }
 
 const METHOD_DEF: Record<MethodName, MethodDefRef> = {
+  '_agnes/v1/extension.wakes.enqueue': {
+    fileId: 'https://agnes.ai/schema/extension-service.json',
+    params: 'BoundWakeEnqueueParams',
+    result: 'BoundWakeReceipt',
+  },
+  '_agnes/v1/extension.wakes.read': {
+    fileId: 'https://agnes.ai/schema/extension-service.json',
+    params: 'BoundWakeReadParams',
+    result: 'BoundWakeReceipt',
+  },
+  '_agnes/v1/extension.callScoped': {
+    fileId: 'https://agnes.ai/schema/extension-service.json',
+    params: 'ProfileServiceCallParams',
+    result: 'ProfileServiceCallResult',
+  },
+  '_agnes/v1/extension.readOperation': {
+    fileId: 'https://agnes.ai/schema/extension-service.json',
+    params: 'ProfileServiceOperationParams',
+    result: 'ProfileServiceReceipt',
+  },
+  '_agnes/v1/profile.decisions.list': {
+    fileId: 'https://agnes.ai/schema/extension-service.json',
+    params: 'ProfileDecisionsListParams',
+    result: 'ProfileDecisionsListResult',
+  },
+  '_agnes/v1/profile.decisions.answer': {
+    fileId: 'https://agnes.ai/schema/extension-service.json',
+    params: 'ProfileDecisionAnswerParams',
+    result: 'ProfileDecisionAnswerResult',
+  },
+
   '_agnes/v1/session.revealWorkspace': {
     fileId: AGNES_ID,
     params: 'SessionRevealWorkspaceParams',
@@ -8232,6 +8458,8 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
   '_agnes/v1/session.detach': { fileId: AGNES_ID, params: 'SessionIdParams', result: 'Empty' },
   '_agnes/v1/auth.claim': { fileId: AGNES_ID, params: 'AuthClaimParams', result: 'AuthClaimResult' },
   '_agnes/v1/session.event': { fileId: AGNES_ID, params: 'SessionEventParams' },
+  '_agnes/v1/session.loading': { fileId: AGNES_ID, params: 'SessionLoadingParams' },
+  '_agnes/v1/session.loadingCancel': { fileId: AGNES_ID, params: 'SessionIdParams' },
   '_agnes/v1/session.preview': { fileId: AGNES_ID, params: 'SessionPreviewParams' },
   '_agnes/v1/daemon.notice': { fileId: AGNES_ID, params: 'DaemonNotice' },
   '_agnes/v1/session.fork': { fileId: AGNES_ID, params: 'SessionForkParams', result: 'SessionIdParams' },
@@ -8275,6 +8503,16 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     fileId: AGNES_ID,
     params: 'WorkspaceAddParams',
     result: 'WorkspaceAddResult',
+  },
+  '_agnes/v1/pluginRuntime.status': {
+    fileId: AGNES_ID,
+    params: 'PluginRuntimeStatusParams',
+    result: 'PluginRuntimeStatusResult',
+  },
+  '_agnes/v1/pluginStreams.endpoint': {
+    fileId: AGNES_ID,
+    params: 'PluginStreamsEndpointParams',
+    result: 'PluginStreamsEndpointResult',
   },
   '_agnes/v1/surfaces.mounts': {
     fileId: AGNES_ID,
@@ -8348,6 +8586,34 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
 }
 
 const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
+  '_agnes/v1/extension.wakes.enqueue': ServiceSamples.BoundWakeEnqueueParams as Sample,
+  '_agnes/v1/extension.wakes.read': ServiceSamples.BoundWakeReadParams as Sample,
+  '_agnes/v1/extension.callScoped': {
+    valid: { extension: 'acme/dashboard', service: 'report.query', input: {} },
+    invalid: [{ actor: 'forged' }],
+    note: 'Profile authority boundary',
+  },
+  '_agnes/v1/extension.readOperation': {
+    valid: { extension: 'acme/dashboard', service: 'report.query', operationId: 'one' },
+    invalid: [{ actor: 'forged' }],
+    note: 'Profile authority boundary',
+  },
+  '_agnes/v1/profile.decisions.list': {
+    valid: {},
+    invalid: [{ actor: 'forged' }],
+    note: 'Profile authority boundary',
+  },
+  '_agnes/v1/profile.decisions.answer': {
+    valid: {
+      handle: { id: 'one', sessionId: null, profileId: 'default' },
+      revision: 1,
+      commandId: 'answer',
+      response: { option: 'allowed-once', value: null },
+    },
+    invalid: [{ actor: 'forged' }],
+    note: 'Profile authority boundary',
+  },
+
   '_agnes/v1/admin.credentials.delete': {
     note: 'Write-only generic credential contract',
     valid: { id: 'secret://generic/11111111-1111-4111-8111-111111111111', force: true, confirm: true },
@@ -8997,6 +9263,8 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     note: 'valid and the first invalid reuse fixtures/methods/i1.jsonl (auth-claim-params-windowed / auth-claim-params-mixed-shapes)',
   },
   '_agnes/v1/session.event': AGNES_SAMPLES.SessionEventParams as Sample,
+  '_agnes/v1/session.loading': AGNES_SAMPLES.SessionLoadingParams as Sample,
+  '_agnes/v1/session.loadingCancel': AGNES_SAMPLES.SessionIdParams as Sample,
   '_agnes/v1/session.preview': AGNES_SAMPLES.SessionPreviewParams as Sample,
   '_agnes/v1/daemon.notice': AGNES_SAMPLES.DaemonNotice as Sample,
   '_agnes/v1/session.fork': AGNES_SAMPLES.SessionForkParams as Sample,
@@ -9017,6 +9285,8 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/session.list': AGNES_SAMPLES.SessionListParams as Sample,
   '_agnes/v1/workspace.list': AGNES_SAMPLES.WorkspaceListParams as Sample,
   '_agnes/v1/workspace.add': AGNES_SAMPLES.WorkspaceAddParams as Sample,
+  '_agnes/v1/pluginRuntime.status': AGNES_SAMPLES.PluginRuntimeStatusParams as Sample,
+  '_agnes/v1/pluginStreams.endpoint': AGNES_SAMPLES.PluginStreamsEndpointParams as Sample,
   '_agnes/v1/surfaces.mounts': AGNES_SAMPLES.SurfacesMountsParams as Sample,
   '_agnes/v1/session.setPreset': AGNES_SAMPLES.SessionSetPresetParams as Sample,
   '_agnes/v1/session.setModel': AGNES_SAMPLES.SessionSetModelParams as Sample,
@@ -9089,6 +9359,12 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
 }
 
 const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
+  '_agnes/v1/extension.wakes.enqueue': ServiceSamples.BoundWakeReceipt as Sample,
+  '_agnes/v1/extension.wakes.read': ServiceSamples.BoundWakeReceipt as Sample,
+  '_agnes/v1/extension.callScoped': ServiceSamples.ProfileServiceCallResult as Sample,
+  '_agnes/v1/extension.readOperation': ServiceSamples.ProfileServiceReceipt as Sample,
+  '_agnes/v1/profile.decisions.list': ServiceSamples.ProfileDecisionsListResult as Sample,
+  '_agnes/v1/profile.decisions.answer': SESSION_SAMPLES.DecisionCommandReceipt as Sample,
   '_agnes/v1/admin.credentials.delete': {
     note: 'Metadata-only response',
     valid: {},
@@ -9618,6 +9894,8 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/session.list': AGNES_SAMPLES.PageSessionMeta as Sample,
   '_agnes/v1/workspace.list': AGNES_SAMPLES.WorkspaceListResult as Sample,
   '_agnes/v1/workspace.add': AGNES_SAMPLES.WorkspaceAddResult as Sample,
+  '_agnes/v1/pluginRuntime.status': AGNES_SAMPLES.PluginRuntimeStatusResult as Sample,
+  '_agnes/v1/pluginStreams.endpoint': AGNES_SAMPLES.PluginStreamsEndpointResult as Sample,
   '_agnes/v1/surfaces.mounts': AGNES_SAMPLES.SurfacesMountsResult as Sample,
   '_agnes/v1/session.setPreset': AGNES_SAMPLES.EffectiveFromResult as Sample,
   '_agnes/v1/session.setModel': AGNES_SAMPLES.EffectiveFromResult as Sample,

@@ -1,8 +1,18 @@
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { CLIENT_PLATFORM_IMPORTS } from '@agnes/protocol'
 import type { build as Esbuild } from 'esbuild'
 import { containedEntry } from './entry-path.js'
 import { PackageError } from './errors.js'
@@ -132,7 +142,7 @@ export async function packPlugin(folder: string, output?: string): Promise<strin
       const client = readStaticJson(descriptorFile).client as { entry?: string } | undefined
       if (!client?.entry) continue
       const entry = containedEntry(dirname(descriptorFile), client.entry, 'file', descriptor.path)
-      const output = join(tree, relative(source, entry))
+      const output = join(tree, relative(realpathSync(source), entry))
       const browser = await build({
         entryPoints: [entry],
         outfile: output,
@@ -140,7 +150,7 @@ export async function packPlugin(folder: string, output?: string): Promise<strin
         platform: 'browser',
         format: 'esm',
         target: 'es2022',
-        external: externals,
+        external: [...externals, ...CLIENT_PLATFORM_IMPORTS],
         metafile: true,
         legalComments: 'eof',
         logLevel: 'silent',

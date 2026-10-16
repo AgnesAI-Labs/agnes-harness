@@ -14,7 +14,11 @@ import { parseWorkerHello } from './frames.js'
 import { encodeFrame, JsonlDecoder } from './framing.js'
 import { skillInstallReplyError } from './skill-install-error.js'
 
-export type WorkerCommandOptions = { timeoutMs?: number }
+export type WorkerCommandOptions = {
+  historySignal?: AbortSignal
+  timeoutMs?: number
+  onHistoryProgress?: (progress: { verifiedSeq: number; lastSeq: number }) => void
+}
 
 /** Session-scoped view of the shared process connection. */
 export class WorkerSessionChannel {
@@ -33,8 +37,13 @@ export class WorkerSessionChannel {
       parent?: { key: string; boundarySeq: number }
     }>,
     private readonly onClosed?: () => void,
+    onHistoryProgress?: WorkerCommandOptions['onHistoryProgress'],
+    historySignal?: AbortSignal,
   ) {
-    this.hello = worker.openSession(sessionKey, open)
+    this.hello = worker.openSession(sessionKey, open, {
+      ...(onHistoryProgress ? { onHistoryProgress } : {}),
+      ...(historySignal ? { historySignal } : {}),
+    })
   }
 
   get alive(): boolean {
@@ -86,6 +95,7 @@ export class WorkerLink {
       sessionKey?: string
       resolve: (value: unknown) => void
       reject: (error: unknown) => void
+      onHistoryProgress?: WorkerCommandOptions['onHistoryProgress']
       timer?: ReturnType<typeof setTimeout>
     }
   >()
@@ -150,7 +160,14 @@ export class WorkerLink {
       this.close('invalid worker frame')
       return
     }
-    const sessionKinds = new Set(['event', 'preview', 'request', 'session.interrupted', 'log'])
+    const sessionKinds = new Set([
+      'event',
+      'preview',
+      'request',
+      'session.interrupted',
+      'session.loading',
+      'log',
+    ])
     const candidate = frame as WorkerToSupervisor & { sessionKey?: unknown }
     if (
       sessionKinds.has(frame.kind) &&
@@ -167,6 +184,7 @@ export class WorkerLink {
       'reply',
       'request',
       'session.interrupted',
+      'session.loading',
       'log',
     ])
     if (!knownKinds.has(frame.kind)) {
@@ -247,6 +265,18 @@ export class WorkerLink {
     }
     if (frame.kind === 'session.interrupted') {
       this.failSession(frame.sessionKey, new Error(frame.reason))
+      return
+    }
+    if (frame.kind === 'session.loading') {
+      const pending = this.pending.get(frame.requestId)
+      if (
+        pending?.sessionKey === frame.sessionKey &&
+        Number.isSafeInteger(frame.verifiedSeq) &&
+        frame.verifiedSeq >= 0 &&
+        Number.isSafeInteger(frame.lastSeq) &&
+        frame.lastSeq >= frame.verifiedSeq
+      )
+        pending.onHistoryProgress?.({ verifiedSeq: frame.verifiedSeq, lastSeq: frame.lastSeq })
       return
     }
     if (frame.kind === 'log') {
@@ -378,13 +408,23 @@ export class WorkerLink {
   ): Promise<SessionOpenResult> {
     if (!this.alive) return Promise.reject(new Error('worker link closed'))
     const requestId = `s${this.nextId++}`
-    return new Promise((resolve, reject) => {
+    const signal = options.historySignal
+    const cancel = () => {
+      if (this.alive) this.send({ kind: 'session.open.cancel', requestId, sessionKey })
+    }
+    const result = new Promise<SessionOpenResult>((resolve, reject) => {
       const pending: {
         sessionKey: string
         resolve: (value: unknown) => void
         reject: (error: unknown) => void
+        onHistoryProgress?: WorkerCommandOptions['onHistoryProgress']
         timer?: ReturnType<typeof setTimeout>
-      } = { sessionKey, resolve: (value) => resolve(value as SessionOpenResult), reject }
+      } = {
+        sessionKey,
+        resolve: (value) => resolve(value as SessionOpenResult),
+        reject,
+        ...(options.onHistoryProgress ? { onHistoryProgress: options.onHistoryProgress } : {}),
+      }
       this.pending.set(requestId, pending)
       if (options.timeoutMs) {
         pending.timer = setTimeout(() => {
@@ -393,7 +433,10 @@ export class WorkerLink {
         pending.timer.unref()
       }
       this.send({ kind: 'session.open', requestId, sessionKey, params })
+      signal?.addEventListener('abort', cancel, { once: true })
+      if (signal?.aborted) cancel()
     })
+    return result.finally(() => signal?.removeEventListener('abort', cancel))
   }
 
   tailSession(sessionKey: string, fromSeq: number, options: WorkerCommandOptions = {}): Promise<void> {
@@ -423,6 +466,7 @@ export class WorkerLink {
         sessionKey: string
         resolve: (value: unknown) => void
         reject: (error: unknown) => void
+        onHistoryProgress?: WorkerCommandOptions['onHistoryProgress']
         timer?: ReturnType<typeof setTimeout>
       } = { sessionKey, resolve, reject }
       this.pending.set(requestId, pending)
@@ -447,8 +491,10 @@ export class WorkerLink {
       parent?: { key: string; boundarySeq: number }
     }>,
     onClosed?: () => void,
+    onHistoryProgress?: WorkerCommandOptions['onHistoryProgress'],
+    historySignal?: AbortSignal,
   ): WorkerSessionChannel {
-    return new WorkerSessionChannel(sessionKey, this, open, onClosed)
+    return new WorkerSessionChannel(sessionKey, this, open, onClosed, onHistoryProgress, historySignal)
   }
 
   private sendCommand(
@@ -459,13 +505,23 @@ export class WorkerLink {
   ): Promise<unknown> {
     if (!this.alive) return Promise.reject(new Error('worker link closed'))
     const requestId = `s${this.nextId++}`
-    return new Promise((resolve, reject) => {
+    const signal = options.historySignal
+    const cancel = () => {
+      if (this.alive && sessionKey) this.send({ kind: 'session.open.cancel', requestId, sessionKey })
+    }
+    const result = new Promise<unknown>((resolve, reject) => {
       const pending: {
         sessionKey?: string
         resolve: (value: unknown) => void
         reject: (error: unknown) => void
+        onHistoryProgress?: WorkerCommandOptions['onHistoryProgress']
         timer?: ReturnType<typeof setTimeout>
-      } = { ...(sessionKey ? { sessionKey } : {}), resolve, reject }
+      } = {
+        ...(sessionKey ? { sessionKey } : {}),
+        resolve,
+        reject,
+        ...(options.onHistoryProgress ? { onHistoryProgress: options.onHistoryProgress } : {}),
+      }
       this.pending.set(requestId, pending)
       if (options.timeoutMs) {
         pending.timer = setTimeout(() => {
@@ -474,7 +530,10 @@ export class WorkerLink {
         pending.timer.unref()
       }
       this.send({ kind: 'command', requestId, ...(sessionKey ? { sessionKey } : {}), method, params })
+      signal?.addEventListener('abort', cancel, { once: true })
+      if (signal?.aborted) cancel()
     })
+    return result.finally(() => signal?.removeEventListener('abort', cancel))
   }
 
   close(reason: string): void {

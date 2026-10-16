@@ -275,6 +275,13 @@ describe('isPublicErrorReason', () => {
 describe('domainFailureFromUnknown', () => {
   it('carries a whitelist reason from detail and redacts a secret-shaped message', async () => {
     const { domainFailureFromUnknown, REDACTED_ERROR_MESSAGE } = await import('@agnes/package-manager')
+    expect(
+      domainFailureFromUnknown({
+        code: 'E_PRESET_UNRESOLVED',
+        message: 'refused',
+        detail: { reason: 'unreviewed-cause' },
+      }),
+    ).not.toHaveProperty('reason')
     const error = new HostError('E_PRESET_UNRESOLVED', 'value: sk-live-abc', {
       detail: { reason: 'no-routes', extra: 'drop-me' },
     })

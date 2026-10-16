@@ -1,4 +1,4 @@
-import type { ArtifactRef } from '@agnes/protocol'
+import type { ArtifactRef, ContributionBinding, HomeContributionDeclaration } from '@agnes/protocol'
 
 export type HostAgnesClient = import('@agnes/sdk/browser').Client
 
@@ -116,6 +116,11 @@ export type CommandAuthorizer = (
  */
 export interface ModuleIdentity {
   /** Browser lifecycle/slot owner identity. Distinct rows of one package must not tear down each other. */
+  exampleOf?: string
+  pageEntry?: string
+  binding?: ContributionBinding
+  homeEntries?: readonly HomeContributionDeclaration[]
+  examplePages?: readonly string[]
   rowId?: string
   packageId: string
   revision: string
@@ -129,4 +134,24 @@ export interface ModuleIdentity {
   publicConfig?: Readonly<Record<string, unknown>>
   /** Immutable manifest allow-list for own-extension query services. */
   services?: readonly string[]
+  /** Exact same-row backend owner and stream allowlist from the verified roster. */
+  backendOwner?: string
+  streams?: readonly string[]
+}
+
+export type ClientProfileCaller = (
+  module: ModuleIdentity,
+  service: string,
+  input: Record<string, unknown> | undefined,
+  options?: { operationId?: string; read?: boolean; sessionReads?: readonly string[] },
+) => Promise<unknown>
+
+export interface ClientProfileServices {
+  query(
+    service: string,
+    input: Record<string, unknown>,
+    options?: { sessionReads?: readonly string[] },
+  ): Promise<unknown>
+  effect(service: string, input: Record<string, unknown>, options: { operationId: string }): Promise<unknown>
+  readOperation(service: string, operationId: string): Promise<unknown>
 }

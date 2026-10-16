@@ -29,6 +29,8 @@ The package declares a backend Cordis row with `agnes.plugins`, then binds a bro
 }
 ```
 
+If the client uses `streams`, declare each stream in the bound backend row's `capabilities.streams`. Inspection and packing validate against that row's capabilities; a sibling row's declarations do not authorize the client. Stream scope changes require a new trust decision.
+
 See [package.json](../../examples/packages/client-panel/v1/package.json) and the complete [agnes.client.json](../../examples/packages/client-panel/v1/extensions/main/agnes.client.json). The client entry is resolved relative to the descriptor and must be native ESM executable by the browser:
 
 ```js
@@ -44,6 +46,8 @@ export function apply(ctx, config) {
 For this singleton slot, a lower priority wins. The example replaces the built-in sidebar. After disabling it, a new session uses the built-in sidebar; a session pinned to the example retains its version. Choose a suitable slot for a production plugin. Do not assume unexposed regions can be replaced or depend on private Host DOM/CSS structure.
 
 `publicConfig` is public presentation metadata from package contents, not backend runtime configuration. Client entry/styles must be validated paths inside the package. They cannot escape the snapshot, import arbitrary local modules, or obtain connection credentials. Use the host platform externals for React and shared Agnes packages; bundle only other dependencies into browser artifacts.
+
+The browser singleton allowlist is [`CLIENT_PLATFORM_IMPORTS`](../../packages/protocol/src/client-platform-imports.ts): `react`, `react/jsx-runtime`, `@agnes/web-client` and the root `@agnes/web-ui`. These exact imports resolve through the HTML import map; an external package name does not imply that arbitrary subpaths are mapped. Distribution packaging checks emitted client imports against that map and rejects unresolved externals.
 
 <a id="安装与观察"></a>
 

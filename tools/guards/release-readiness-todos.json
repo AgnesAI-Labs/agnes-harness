@@ -9,6 +9,7 @@
       "affectedPackages": [
         "@agnes/ai",
         "@agnes/base",
+        "@agnes/batch",
         "@agnes/bridges",
         "@agnes/channels",
         "@agnes/cli",
@@ -46,6 +47,7 @@
         "@agnes/package-isolation",
         "@agnes/package-manager",
         "@agnes/plugin-runtime",
+        "@agnes/plugin-streams",
         "@agnes/protocol",
         "@agnes/protocol-validation",
         "@agnes/resource-control-cli",

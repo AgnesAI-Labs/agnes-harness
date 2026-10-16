@@ -1,6 +1,29 @@
-import type { DaemonNotice } from '@agnes/protocol'
+import { type DaemonNotice, rpcError, SESSION_VERSION_CODES } from '@agnes/protocol'
+import { JsonRpcError } from '@agnes/sdk'
 import { describe, expect, it } from 'vitest'
-import { noticeText, shouldAck } from '../src/runner/notices.js'
+import { historyRefusalText, noticeText, shouldAck } from '../src/runner/notices.js'
+
+describe('historyRefusalText', () => {
+  it('uses only the closed session-open refusal, never diagnostic text', () => {
+    const detail = {
+      code: SESSION_VERSION_CODES.corrupt,
+      localized: { 'zh-CN': 'private ledger bytes at /private/history.db' },
+      reason: 'private ledger bytes',
+    }
+    expect(historyRefusalText(new JsonRpcError(rpcError('SEMANTIC_REJECTED', detail)))).toBe(
+      '会话历史校验失败，已停止；请联系管理员',
+    )
+    for (const error of [
+      new Error('E_SESSION_CORRUPT: history verification failed'),
+      new JsonRpcError(rpcError('INTERNAL_ERROR', detail)),
+      new JsonRpcError(rpcError('SEMANTIC_REJECTED', { code: SESSION_VERSION_CODES.older })),
+      new JsonRpcError(rpcError('SEMANTIC_REJECTED', { code: SESSION_VERSION_CODES.newer })),
+      new JsonRpcError(rpcError('SEMANTIC_REJECTED', { reason: 'E_SESSION_CORRUPT' })),
+    ]) {
+      expect(historyRefusalText(error)).toBeNull()
+    }
+  })
+})
 
 describe('noticeText', () => {
   it('maps actionable daemon notices to stable Chinese copy', () => {

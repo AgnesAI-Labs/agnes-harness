@@ -32,6 +32,7 @@ import type { SessionCommandFrame, WorkerCommandFrame } from './frames.js'
 import { GRANT_COMMANDS, grantCommand } from './grant-commands.js'
 import type { McpRowRuntime } from './mcp-row-runtime.js'
 import { noticeConnectingMcp } from './mcp-turn-notice.js'
+import { deliverBoundSystemInput, isProfileCommand, profileServiceCommand } from './profile-commands.js'
 import { sessionReferences } from './references.js'
 import { refreshSkills } from './skills-refresh.js'
 import { readToolDetailPage } from './tool-detail.js'
@@ -389,6 +390,8 @@ export async function handleCommand(
         p.actor as Actor,
         String(p.admissionId),
       )
+    case 'deliverSystemInput':
+      return deliverBoundSystemInput(session, o.host, p)
     case 'enqueue':
       return session.enqueue(p.target as 'next-turn' | 'next-step', p.msg as never)
     case 'sendQueuedNow':
@@ -428,6 +431,8 @@ export async function handleCommand(
     case 'abort':
       o.aborts.get(String(p.runId))?.abort()
       return {}
+    case 'verifyHistory':
+      return session.verifyHistory()
     case 'scan': {
       const rows = await session.scan(p as never)
       if (Buffer.byteLength(JSON.stringify(rows), 'utf8') > MAX_FRAME_BYTES - 4096)
@@ -782,6 +787,7 @@ export async function handleServiceCommand(
     return { profileHash: (cmd.params.profile as ResolvedProfile).hash }
   }
   const p = cmd.params
+  if (isProfileCommand(cmd.method)) return profileServiceCommand(host, cmd, aborts)
   switch (cmd.method) {
     case 'ping':
       return { ok: true }

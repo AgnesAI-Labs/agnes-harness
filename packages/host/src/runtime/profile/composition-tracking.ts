@@ -72,6 +72,7 @@ export async function trackHostComposition(
       return seq
     },
     async releaseSessionGeneration(key) {
+      host.profileServices?.revokeWakeSession(key)
       await host.releaseSessionGeneration?.(key)
       store.release(key)
     },

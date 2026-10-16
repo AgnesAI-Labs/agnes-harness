@@ -35,6 +35,28 @@ export const BUNDLED_HELPERS = Object.freeze([
   },
 ])
 
+/** Release-owned defaults; freshOnly additions never backfill an existing profile. */
+export const DEFAULT_ENABLED_BUNDLED_PACKAGES = Object.freeze([
+  ...BUNDLED_HELPERS.map((helper) => ({
+    ...helper,
+    sourcePath: `package-manager/bundled-plugins/${helper.name}`,
+    freshOnly: false,
+  })),
+])
+
+/** Resolve reserved release payloads independently of the caller's workspace. */
+export function bundledPluginSource(ref: string): { root: string; path: string } | undefined {
+  const pkg = DEFAULT_ENABLED_BUNDLED_PACKAGES.find((item) => item.ref === ref)
+  if (!pkg) return undefined
+  const moduleDir = dirname(fileURLToPath(import.meta.url))
+  const sea = process.getBuiltinModule('node:sea').isSea()
+  const packaged = sea || (typeof AGNES_PACKAGED_BUILTINS !== 'undefined' && AGNES_PACKAGED_BUILTINS)
+  return {
+    root: sea ? dirname(process.execPath) : packaged ? moduleDir : dirname(dirname(moduleDir)),
+    path: packaged ? `bundled-plugins/${pkg.name}` : pkg.sourcePath,
+  }
+}
+
 /** Only this reserved identity is runtime-owned; ordinary file sources keep workspace semantics. */
 export function bundledPluginSourceRoot(ref: string): string | undefined {
   if (!BUNDLED_HELPERS.some((helper) => helper.ref === ref)) return undefined

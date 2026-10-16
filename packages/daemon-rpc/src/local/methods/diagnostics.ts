@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
-import { open } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { lstat, open } from 'node:fs/promises'
 import { release } from 'node:os' // guards-allow-platform: diagnostics report
 import { join } from 'node:path'
 import {
@@ -12,6 +13,7 @@ import { memoryPrivateEvent } from '@agnes/extension-api'
 import { redactDetail } from '@agnes/host'
 import { administerObservability, observabilityHome, readDiagnosticJournal } from '@agnes/observability'
 import {
+  type DiagnosticsCollectParams,
   type DiagnosticsCollectResult,
   type DiagnosticsEventsParams,
   type DiagnosticsEventsResult,
@@ -56,28 +58,39 @@ function redactLine(line: string): string {
     const row = JSON.parse(line) as unknown
     if (row === null || typeof row !== 'object' || Array.isArray(row)) throw new TypeError('not a row')
     const record = row as Record<string, unknown>
-    return JSON.stringify({
-      ...record,
-      detail: redactDetail(record.detail as Record<string, unknown> | undefined),
-    })
+    return JSON.stringify(redactDetail(record))
   } catch {
     return JSON.stringify({ at: null, kind: 'unparseable' })
   }
 }
 
-async function readTail(dataDir: string | undefined, name: Log['name']): Promise<Log> {
+async function readTail(
+  dataDir: string | undefined,
+  name: Log['name'],
+  budget = TAIL_BYTES,
+  fileName: string = name,
+): Promise<Log> {
   const missing: Log = { name, size: 0, text: '', truncated: false, missing: true }
   if (dataDir === undefined) return missing
-  let fh: Awaited<ReturnType<typeof open>>
+  let fh: Awaited<ReturnType<typeof open>> | undefined
   try {
-    fh = await open(join(dataDir, 'audit', name), 'r')
+    const path = join(dataDir, 'audit', fileName)
+    const before = await lstat(path)
+    if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1) return missing
+    fh = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0))
+    const after = await fh.stat()
+    if (!after.isFile() || after.nlink !== 1 || after.dev !== before.dev || after.ino !== before.ino) {
+      await fh.close()
+      return missing
+    }
   } catch (error) {
+    await fh?.close().catch(() => undefined)
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return missing
     throw error
   }
   try {
     const { size } = await fh.stat()
-    const start = Math.max(0, size - TAIL_BYTES)
+    const start = Math.max(0, size - budget)
     const buf = Buffer.alloc(size - start)
     const { bytesRead } = await fh.read(buf, 0, buf.length, start)
     let text = buf.subarray(0, bytesRead).toString('utf8')
@@ -87,6 +100,24 @@ async function readTail(dataDir: string | undefined, name: Log['name']): Promise
     return { name, size, text: lines.map(redactLine).join('\n'), truncated: start > 0, missing: false }
   } finally {
     await fh.close()
+  }
+}
+
+/** Runtime output and request audit remain separate; rotation shares one raw-byte budget. */
+async function runtimeTail(dataDir: string | undefined): Promise<Log> {
+  const live = await readTail(dataDir, 'runtime.jsonl')
+  const previous = await readTail(
+    dataDir,
+    'runtime.jsonl',
+    Math.max(0, TAIL_BYTES - live.size),
+    'runtime.jsonl.1',
+  )
+  return {
+    name: 'runtime.jsonl',
+    size: previous.size + live.size,
+    text: [previous.text, live.text].filter(Boolean).join('\n'),
+    truncated: previous.truncated || live.truncated,
+    missing: previous.missing && live.missing,
   }
 }
 
@@ -258,27 +289,28 @@ export function registerDiagnostics(
     }
   })
 
-  endpoint.register(
-    '_agnes/v1/diagnostics.collect',
-    async (_params, c): Promise<DiagnosticsCollectResult> => {
-      localOwner(c)
-      const logs: Log[] = []
-      for (const name of LOGS) logs.push(await readTail(deps.dataDir, name))
-      return {
-        collectedAt: new Date(c.clock()).toISOString(),
-        agh: { version: typeof AGNES_VERSION === 'string' ? AGNES_VERSION : 'dev' },
-        runtime: {
-          platform: process.platform, // guards-allow-platform: diagnostics report // guards-allow-platform: diagnostics report
-          arch: process.arch, // guards-allow-platform: diagnostics report // guards-allow-platform: diagnostics report
-          osRelease: release(), // guards-allow-platform: diagnostics report
-          node: process.versions.node,
-          pid: process.pid,
-          uptimeMs: Math.round(process.uptime() * 1000),
-        },
-        logs,
-      }
-    },
-  )
+  endpoint.register('_agnes/v1/diagnostics.collect', async (params, c): Promise<DiagnosticsCollectResult> => {
+    localOwner(c)
+    const logs: Log[] = []
+    for (const name of [
+      ...LOGS,
+      ...((params as DiagnosticsCollectParams).runtimeLog ? ['runtime.jsonl' as const] : []),
+    ])
+      logs.push(await (name === 'runtime.jsonl' ? runtimeTail(deps.dataDir) : readTail(deps.dataDir, name)))
+    return {
+      collectedAt: new Date(c.clock()).toISOString(),
+      agh: { version: typeof AGNES_VERSION === 'string' ? AGNES_VERSION : 'dev' },
+      runtime: {
+        platform: process.platform, // guards-allow-platform: diagnostics report // guards-allow-platform: diagnostics report
+        arch: process.arch, // guards-allow-platform: diagnostics report // guards-allow-platform: diagnostics report
+        osRelease: release(), // guards-allow-platform: diagnostics report
+        node: process.versions.node,
+        pid: process.pid,
+        uptimeMs: Math.round(process.uptime() * 1000),
+      },
+      logs,
+    }
+  })
 
   endpoint.register('_agnes/v1/diagnostics.events', async (params, c): Promise<DiagnosticsEventsResult> => {
     const { sessionId, afterSeq, limit, maxBytes } = params as DiagnosticsEventsParams

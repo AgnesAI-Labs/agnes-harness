@@ -30,6 +30,27 @@ describe('satisfiesApiRange', () => {
     ['1.x', '2.0.0', false],
     ['1.2.x', '1.2.5', true],
     ['*', '9.9.9', true],
+    ['*', '0.1.0-alpha.0', true],
+    ['*', 'invalid', false],
+    ['0.1.0-alpha.0', '0.1.0-alpha.0', true],
+    ['=0.1.0-alpha.0', '0.1.0-alpha.0+build.1', true],
+    ['0.1.0-alpha.0', '0.1.0-alpha.1', false],
+    ['0.1.0', '0.1.0-alpha.0', false],
+    ['>=0.1.0-alpha.0 <0.2.0', '0.1.0-alpha.1', true],
+    ['>=0.1.0-alpha.0 <0.2.0', '0.1.1-alpha.0', false],
+    ['>=0.1.0-alpha.0 <0.2.0', '0.1.1', true],
+    ['>=0.1.0-alpha.0 <0.2.0', '0.1.0', true],
+    ['>0.1.0-alpha.9', '0.1.0-alpha.10', true],
+    ['>0.1.0-alpha.10', '0.1.0-alpha.9', false],
+    ['<0.1.0-rc.1', '0.1.0-beta', true],
+    ['<=0.1.0-alpha', '0.1.0-alpha.1', false],
+    ['>=0.1.0-1', '0.1.0-alpha', true],
+    ['^0.1.0-alpha.0', '0.1.0-beta.1', true],
+    ['^0.1.0-alpha.0', '0.1.1-beta.1', false],
+    ['~0.1.0-alpha.0', '0.1.0', true],
+    ['>=0.0.0 <1.0.0', '0.1.0-alpha.0', false],
+    ['* >=0.0.0', '0.1.0-alpha.0', false],
+    ['0.1.x', '0.1.0-alpha.0', false],
     ['^1.0.0', '1.5.0-rc.1', false], // 预发布不满足普通范围（fail-closed）
     ['latest', '1.0.0', false],
     ['', '1.0.0', false],
@@ -56,7 +77,7 @@ describe('checkApiRange', () => {
   })
 })
 
-describe('stable API subset boundary cases', () => {
+describe('supported API subset boundary cases', () => {
   it.each([
     ['^1.0', '1.9.9', true],
     ['^0.0', '0.0.9', true],
@@ -68,7 +89,7 @@ describe('stable API subset boundary cases', () => {
     ['>=1.0.0 <=1.2.3', '1.2.3', true],
     ['>=*', '1.0.0', false],
     ['^1.x', '1.0.0', false],
-    ['^1.0.0-rc.1', '1.0.0', false],
+    ['^1.0.0-rc.1', '1.0.0', true],
     ['1.0.0 || 2.0.0', '1.0.0', false],
     ['01.x', '1.0.0', false],
   ])('%s admits %s: %s', (range, version, expected) => {

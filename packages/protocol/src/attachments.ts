@@ -1,4 +1,7 @@
 import type { ContentBlock } from '../gen/ts/session-v1.js'
+import { META_KEY } from './constants.js'
+import { storedAttachment } from './stored-attachments.js'
+import { validateStoredAttachment } from './validate.js'
 
 const PREFIX = 'agnes-attachment:'
 
@@ -13,16 +16,24 @@ function textData(text: string): string {
 /** File originals use ACP's existing embedded blob resource, never a private ACP schema fork. */
 export function toAcpPrompt(content: readonly ContentBlock[]): unknown[] {
   return content.map((block) =>
-    block.type === 'file'
+    storedAttachment(block)
       ? {
-          type: 'resource',
-          resource: {
-            uri: `${PREFIX}${encodeURIComponent(block.name)}`,
-            mimeType: block.mimeType,
-            blob: block.data,
-          },
+          type: 'resource_link',
+          uri: block.uri,
+          name: block.name,
+          mimeType: block.mimeType,
+          _meta: { [META_KEY]: { attachment: block } },
         }
-      : block,
+      : block.type === 'file'
+        ? {
+            type: 'resource',
+            resource: {
+              uri: `${PREFIX}${encodeURIComponent(block.name)}`,
+              mimeType: block.mimeType,
+              blob: block.data,
+            },
+          }
+        : block,
   )
 }
 
@@ -31,7 +42,15 @@ export function fromAcpPrompt(content: readonly unknown[]): ContentBlock[] {
   return content.map((value) => {
     const block = value as {
       type?: string
+      uri?: string
+      _meta?: Record<string, { attachment?: unknown }>
       resource?: { uri?: string; mimeType?: string | null; blob?: string; text?: string }
+    }
+    const reference = block.type === 'resource_link' ? block._meta?.[META_KEY]?.attachment : undefined
+    if (reference !== undefined) {
+      validateStoredAttachment(reference)
+      if (reference.uri !== block.uri) throw new Error('Invalid attachment resource.')
+      return reference
     }
     if (block.type !== 'resource') return value as ContentBlock
     const { uri, blob, mimeType, text } = block.resource ?? {}

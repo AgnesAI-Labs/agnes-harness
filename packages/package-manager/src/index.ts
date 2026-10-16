@@ -5,7 +5,9 @@ export {
   BUNDLED_HELPERS,
   BUNDLED_SKILL_HELPER_REF,
   bundledExampleSource,
+  bundledPluginSource,
   bundledPluginSourceRoot,
+  DEFAULT_ENABLED_BUNDLED_PACKAGES,
 } from './bundled-plugin-source.js'
 export * from './capabilities.js'
 export * from './catalog.js'
@@ -14,7 +16,20 @@ export * from './deployment-refs.js'
 export * from './entry-path.js'
 export * from './error-message.js'
 export * from './errors.js'
-export * from './inventory.js'
+export {
+  capabilityHash,
+  type InstalledInventory,
+  type InstalledPackage,
+  type InventoryVerificationCache,
+  isReservedRowIdPackageError,
+  isRuntimePackageEligible,
+  isSnapshotPackageEligible,
+  LEGACY_EXTENSION_BLOCKER,
+  RESERVED_WEB_ROW_BLOCKER,
+  readInventory,
+  stableInventoryRows,
+  verifyPackageDirectory,
+} from './inventory.js'
 export * from './inventory-types.js'
 export * from './isolation-inventory.js'
 export type { PackageLifecycleActivation, PackageReferences, TrustDecision } from './lifecycle.js'

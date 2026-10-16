@@ -37,6 +37,7 @@ async function writeWebFixture(directory: string): Promise<void> {
       'vendor/x.js',
       'vendor/cordis.js',
       'vendor/web-client.js',
+      'vendor/web-ui.js',
       'brand-mark.png',
     ].map((asset) => writeFile(join(directory, asset), '')),
   )

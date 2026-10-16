@@ -92,6 +92,10 @@ export function createRunner(dependencies: RunnerDeps): Runner {
     caps: dependencies.adapter.capabilities(),
     limits: dependencies.adapter.manifest.limits,
     log: dependencies.log,
+    onHistoryRefused: async (key, error) => {
+      const target = targets.get(key)
+      return target !== undefined && inbound.refuseHistory(key, target, error)
+    },
   })
   const targets = new Map<string, { chatId: string; threadId?: string }>()
   const requesters = new Map<string, string>()
@@ -171,6 +175,10 @@ export function createRunner(dependencies: RunnerDeps): Runner {
         outbound.attach(key, session, target)
         watchApproval(key, session, target)
       }
+    },
+    onHistoryRefused: (key) => {
+      // evict removes targets, output pumps and approval watches synchronously, before detach I/O.
+      void cache.evict(key).catch(() => safeWarn('channel refused session detach failed'))
     },
     onSession: (key, session, target, requesterUserId) => {
       if (abort.signal.aborted || !cache.owns(key, session)) return
@@ -353,10 +361,7 @@ export function createRunner(dependencies: RunnerDeps): Runner {
           const text = noticeText(payload)
           if (text === null) return
           const matching = [...targets].filter(
-            ([key]) =>
-              payload.sessionId === undefined ||
-              key === payload.sessionId ||
-              cache.current(key)?.id === payload.sessionId,
+            ([key]) => payload.sessionId === undefined || cache.current(key)?.id === payload.sessionId,
           )
           const unique = new Map<string, string>()
           for (const [key, target] of matching) {

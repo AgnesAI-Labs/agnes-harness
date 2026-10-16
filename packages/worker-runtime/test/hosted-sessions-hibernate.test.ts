@@ -19,6 +19,7 @@ afterEach(async () => {
 async function setup() {
   let now = Date.UTC(2026, 0, 1)
   let creates = 0
+  let onCreate: (o: Parameters<Host['createSession']>[0]) => void = () => {}
   const t = await realHosted({
     limits: { 'worker.generation_idle_close_ms': 0 },
     idleCloseMs: T,
@@ -28,6 +29,7 @@ async function setup() {
         ...host,
         createSession: async (o: Parameters<Host['createSession']>[0]) => {
           creates++
+          onCreate(o)
           return host.createSession(o)
         },
       }) as Host,
@@ -59,7 +61,19 @@ async function setup() {
     return true
   }
   const ping = (key: string) => t.hosted.dispatch(t.command(key, 'ping'))
-  return { ...t, open, live, idle, hibernated, leaseFree, ping, creates: () => creates }
+  return {
+    ...t,
+    open,
+    live,
+    idle,
+    hibernated,
+    leaseFree,
+    ping,
+    creates: () => creates,
+    onCreate: (fn: typeof onCreate) => {
+      onCreate = fn
+    },
+  }
 }
 
 describe('HostedSessions hibernates idle sessions and wakes them on demand', () => {
@@ -72,6 +86,39 @@ describe('HostedSessions hibernates idle sessions and wakes them on demand', () 
     expect(t.hibernated('idle')).toBe(true)
     expect(await t.leaseFree(session)).toBe(true)
     expect(t.sent.filter((f) => f.kind === 'log')).not.toHaveLength(0)
+    const waking = { ...t.openFrame('idle'), requestId: 'cancel-wake' }
+    t.onCreate((options) => {
+      const progress = options.onHistoryProgress
+      options.onHistoryProgress = (value) => {
+        progress?.(value)
+        if (value.verifiedSeq > 0) t.hosted.cancelOpen(waking.requestId, 'idle')
+      }
+    })
+    await expect(t.hosted.open(waking)).rejects.toThrow()
+    expect(t.hibernated('idle')).toBe(true)
+    expect(await t.leaseFree(session)).toBe(true)
+    expect(t.sent).toContainEqual(
+      expect.objectContaining({
+        kind: 'session.loading',
+        requestId: waking.requestId,
+        verifiedSeq: expect.any(Number),
+      }),
+    )
+    t.onCreate(() => {})
+    await t.hosted.open({ ...waking, requestId: 'retry-wake' })
+    expect(t.hibernated('idle')).toBe(false)
+  })
+
+  it('retains a session with a live process and hibernates after its cleanup completes', async () => {
+    const t = await setup()
+    const session = await t.open('busy-process')
+    let active = true
+    Object.assign(session, { hasActiveProcesses: () => active })
+    await t.idle()
+    expect(t.hibernated('busy-process')).toBe(false)
+    active = false
+    await t.idle()
+    expect(t.hibernated('busy-process')).toBe(true)
   })
 
   it('does nothing when T is zero', async () => {

@@ -26,7 +26,14 @@ type RemoteOpen = Readonly<{
   parent?: string
   forkAt?: number
   resume?: boolean
+  historySignal?: AbortSignal
+  onHistoryProgress?: (progress: { verifiedSeq: number; lastSeq: number }) => void
 }>
+
+function withoutOpeningObservers(open: RemoteOpen): RemoteOpen {
+  const { onHistoryProgress: _progress, historySignal: _signal, ...rest } = open
+  return rest
+}
 
 export type RemoteEntry = {
   key: string
@@ -277,6 +284,8 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     bundles?: readonly string[]
     loop?: LoopSelection
     credential?: unknown
+    historySignal?: AbortSignal
+    onHistoryProgress?: (progress: { verifiedSeq: number; lastSeq: number }) => void
     parent?: string
     forkAt?: number
     resume?: boolean
@@ -319,6 +328,8 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     this.artifactProjectedThrough.delete(key)
     const link = await this.pool.acquire(key, {
       resume: o.resume ?? false,
+      ...(o.historySignal ? { historySignal: o.historySignal } : {}),
+      ...(o.onHistoryProgress ? { onHistoryProgress: o.onHistoryProgress } : {}),
       cwd: o.cwd,
       binding: o.binding,
       ...(o.preset ? { preset: o.preset } : {}),
@@ -358,10 +369,17 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
       tail: () => undefined,
       ac: new AbortController(),
       recover: true,
-      reopen: o,
+      reopen: withoutOpeningObservers(o),
     }
     this.entries.set(key, entry)
-    link.onExit(() => this.interruptEntry(key, entry as RemoteEntry, o, new Error('worker link closed')))
+    link.onExit(() =>
+      this.interruptEntry(
+        key,
+        entry as RemoteEntry,
+        withoutOpeningObservers(o),
+        new Error('worker link closed'),
+      ),
+    )
     // The shared worker may emit events while tail() is still acknowledging its subscription.
     if (this.artifactAuthority) this.artifactReplayBuffers.set(key, [])
     try {

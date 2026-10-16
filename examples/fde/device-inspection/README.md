@@ -6,7 +6,7 @@ A field operator needs versioned state, an anomaly check and a reviewed constrai
 
 **Workflow:** Read status → detect anomaly → human confirmation → constrained action → receipt and state verification.
 
-MHS-inspired; no MHS compatibility claim. dry_run defaults to true: temperature remains 38 °C and the receipt says preview-only. Only targetC 20–30, a fresh expectedVersion and a bounded idempotency key are accepted. Explicit dry_run:false changes only local simulated state. Receipts are process-local.
+A local device simulation. dry_run defaults to true: temperature remains 38 °C and the receipt says preview-only. Only targetC 20–30, a fresh expectedVersion and a bounded idempotency key are accepted. Explicit dry_run:false changes only local simulated state. Receipts are process-local.
 
 ## What ships
 

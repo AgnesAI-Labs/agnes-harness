@@ -174,3 +174,51 @@ describe('HostedSessions', () => {
     expect(hosted.keys()).toEqual(['a'])
   })
 })
+
+it.each(['before', 'during'] as const)(
+  'cancels a %s-verification open without adopting a session',
+  async (when) => {
+    const frames: unknown[] = []
+    const createSession = vi.fn(
+      async (options: {
+        historySignal: AbortSignal
+        onHistoryProgress(progress: { verifiedSeq: number; lastSeq: number }): void
+      }) => {
+        options.historySignal.throwIfAborted()
+        options.onHistoryProgress({ verifiedSeq: 0, lastSeq: 20 })
+        await new Promise<void>((_, reject) =>
+          options.historySignal.addEventListener('abort', () => reject(new Error('cancelled')), {
+            once: true,
+          }),
+        )
+        throw new Error('unreachable')
+      },
+    )
+    const hosted = new HostedSessions({
+      host: { acceptWorkspaceBinding: (value: unknown) => value, createSession } as never,
+      channel: new SharedSessionChannel(() => undefined),
+      send: (frame) => frames.push(frame),
+      workerGeneration: 1,
+      workspaceRoot: '/workspace',
+    })
+    const request = open('cancelled')
+    if (when === 'before') hosted.cancelOpen(request.requestId, request.sessionKey)
+    const loading = hosted.open(request)
+    const refused = expect(loading).rejects.toThrow()
+    if (when === 'during') {
+      await vi.waitFor(() =>
+        expect(frames).toContainEqual({
+          kind: 'session.loading',
+          requestId: request.requestId,
+          sessionKey: request.sessionKey,
+          verifiedSeq: 0,
+          lastSeq: 20,
+        }),
+      )
+      hosted.cancelOpen(request.requestId, request.sessionKey)
+    }
+    await refused
+    expect(hosted.keys()).toEqual([])
+    await hosted.closeAll()
+  },
+)

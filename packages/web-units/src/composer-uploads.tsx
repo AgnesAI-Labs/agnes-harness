@@ -1,6 +1,7 @@
 import type { UploadedAttachment } from '@agnes/protocol'
 import { Button } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
+import { attachmentErrorMessage } from './composer-errors.js'
 import {
   cancelFileUpload,
   FileUploadFailure,
@@ -37,7 +38,7 @@ export function useComposerUploads(
   const cancel = async (entry: Entry) => {
     entry.controller.abort()
     try {
-      if (entry.sessionId) await cancelFileUpload(entry.sessionId, entry.id)
+      if (entry.sessionId) await cancelFileUpload(entry.sessionId, entry.id, 'original')
       entry.state = 'cancelled'
       delete entry.error
     } catch {
@@ -62,7 +63,7 @@ export function useComposerUploads(
             }
           }
           entry.controller.signal.throwIfAborted()
-          const limits = await fileUploadLimits(entry.sessionId, entry.controller.signal)
+          const limits = await fileUploadLimits(entry.sessionId, entry.controller.signal, 'original')
           const attachment = await uploadFile(
             entry.file,
             entry.sessionId,
@@ -73,6 +74,7 @@ export function useComposerUploads(
               Object.assign(entry, progress, { state: progress.phase })
               publish()
             },
+            'original',
           )
           entry.state = 'ready'
           if (alive.current && !entry.controller.signal.aborted) ready(attachment, entry.id, entry.total)
@@ -82,7 +84,8 @@ export function useComposerUploads(
           } else {
             entry.state = 'failed'
             entry.error =
-              error instanceof FileUploadFailure
+              attachmentErrorMessage(error, t) ??
+              (error instanceof FileUploadFailure
                 ? t(
                     error.code === 'UPLOAD_SIZE_LIMIT'
                       ? 'composer.upload.sizeLimit'
@@ -91,7 +94,7 @@ export function useComposerUploads(
                         : 'composer.upload.failed',
                     error.detail,
                   )
-                : t('composer.upload.failed')
+                : t('composer.upload.failed'))
           }
         }
         publish()

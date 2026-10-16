@@ -41,6 +41,12 @@ export type ArtifactReadAuthorityPort = Readonly<{
 
 export type ArtifactReadStore = Readonly<{
   get(ref: ArtifactRef, signal: AbortSignal): Promise<unknown>
+  /** Trusted byte-store capability: verifies the full digest before returning this window. */
+  readRange?(
+    ref: ArtifactRef,
+    range: { start: number; endExclusive: number },
+    signal: AbortSignal,
+  ): Promise<unknown>
 }>
 
 export type ArtifactReadFailure = Readonly<{
@@ -254,6 +260,7 @@ function snapshotConstructor(value: unknown):
   | Readonly<{
       resolve: ArtifactReadAuthorityPort['resolve']
       get: ArtifactReadStore['get']
+      readRange?: ArtifactReadStore['readRange']
       limits: Limits
       operationTimeoutMs: number
     }>
@@ -261,13 +268,15 @@ function snapshotConstructor(value: unknown):
   const input = exactOwn(value, ['authority', 'artifacts', 'limits', 'operationTimeoutMs'])
   if (!input) return undefined
   const authority = exactOwn(input.authority, ['resolve'])
-  const artifacts = exactOwn(input.artifacts, ['get'])
+  const artifacts = exactOwn(input.artifacts, ['get'], ['readRange'])
   const limits = exactOwn(input.limits, ['maxArtifactBytes', 'maxResponseBytes'])
   if (
     !authority ||
     !artifacts ||
     typeof authority.resolve !== 'function' ||
     utilTypes.isProxy(authority.resolve) ||
+    (artifacts.readRange !== undefined &&
+      (typeof artifacts.readRange !== 'function' || utilTypes.isProxy(artifacts.readRange))) ||
     typeof artifacts.get !== 'function' ||
     utilTypes.isProxy(artifacts.get) ||
     !limits ||
@@ -280,6 +289,9 @@ function snapshotConstructor(value: unknown):
   return Object.freeze({
     resolve: authority.resolve as ArtifactReadAuthorityPort['resolve'],
     get: artifacts.get as ArtifactReadStore['get'],
+    ...(artifacts.readRange
+      ? { readRange: artifacts.readRange as NonNullable<ArtifactReadStore['readRange']> }
+      : {}),
     limits: Object.freeze({
       maxArtifactBytes: limits.maxArtifactBytes as number,
       maxResponseBytes: limits.maxResponseBytes as number,
@@ -407,12 +419,19 @@ export function createAuthenticatedArtifactReadHandler(
     if (responseLength > limits.maxResponseBytes) return failure(413, 'artifact_too_large')
     if (signal?.aborted) return failure(500, 'artifact_unavailable')
 
+    const windowed = range !== undefined && configuration.readRange !== undefined
     const loaded = await runPort(
       (operationSignal) =>
-        Reflect.apply(configuration.get, undefined, [
-          authority.artifact,
-          operationSignal,
-        ]) as Promise<unknown>,
+        windowed
+          ? (Reflect.apply(configuration.readRange!, undefined, [
+              authority.artifact,
+              range,
+              operationSignal,
+            ]) as Promise<unknown>)
+          : (Reflect.apply(configuration.get, undefined, [
+              authority.artifact,
+              operationSignal,
+            ]) as Promise<unknown>),
       signal,
       configuration.operationTimeoutMs,
     )
@@ -420,11 +439,11 @@ export function createAuthenticatedArtifactReadHandler(
     if (!loaded.ok)
       return loaded.reclaimed ? failure(410, 'artifact_reclaimed') : failure(500, 'artifact_unavailable')
     if (signal?.aborted) return failure(500, 'artifact_unavailable')
-    const bytes = snapshotBytes(loaded.value, authority.artifact.size)
+    const bytes = snapshotBytes(loaded.value, windowed ? responseLength : authority.artifact.size)
     if (!bytes) return failure(409, 'artifact_identity_mismatch')
-    if (createHash('sha256').update(bytes).digest('hex') !== authority.artifact.sha256)
+    if (!windowed && createHash('sha256').update(bytes).digest('hex') !== authority.artifact.sha256)
       return failure(409, 'artifact_identity_mismatch')
-    const body = range ? bytes.slice(range.start, range.endExclusive) : bytes
+    const body = range && !windowed ? bytes.slice(range.start, range.endExclusive) : bytes
     return Object.freeze({
       ok: true,
       status: range ? 206 : 200,

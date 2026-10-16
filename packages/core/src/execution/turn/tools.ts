@@ -826,20 +826,20 @@ export async function approveAndExecute(
         summary: permission.review
           ? `${summarizeCall(call.name, call.args)} — ${permission.reason}`
           : summarizeCall(call.name, call.args),
-        risk: risk === 'always' ? ('always' as const) : ('destructive' as const),
+        risk: risk === 'never' ? ('unknown' as const) : risk,
         bindingHash,
         scope,
         policyVersion: policy.policyVersion,
         policyBinding,
         options,
         ...(permission.approval ? { approval: permission.approval } : {}),
-        deadline: new Date(s.d.clock() + s.preset.approval.timeoutMs).toISOString(),
       }
       // The inference or nested-call entry validated `call.args` before persisting the exact args
       // and resolved policy binding consumed by this dispatch.
       const { asked: finalAsked, rewrite } = await hookedAsk(s, call.name, call.args as JsonValue, asked)
       const approvalRequest = {
         ...finalAsked,
+        deadline: new Date(s.d.clock() + s.preset.approval.timeoutMs).toISOString(),
         sessionKey: s.key,
         stepId,
         tool: { name: call.name, args: call.args, meta },

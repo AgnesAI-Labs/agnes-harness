@@ -1,7 +1,9 @@
+import { CoreError } from '@agnes/core'
+import { isProfileDecisionJournal } from '@agnes/protocol'
 import '../provided-contracts.js'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
-import type { Kernel, WorkspaceInvocationPort } from '@agnes/core'
+import { type Kernel, leanEvents, type WorkspaceInvocationPort } from '@agnes/core'
 import { HostError } from '@agnes/host-common/errors'
 import { type ResolvedPreset, resolvePreset } from '@agnes/host-common/presets/resolve'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
@@ -58,6 +60,7 @@ import { closeHost } from './lifecycle.js'
 // core does not export a type named `Session`; it exports SessionImpl and SessionLogImpl. Taking the
 // return type instead of pinning a name means a rename over there is not a break over here.
 export type HostSession = Awaited<ReturnType<Kernel['session']>> & {
+  readonly hasActiveProcesses?: () => boolean
   readonly intelligentUi?: Pick<
     import('@agnes/intelligent-ui-contract').IntelligentUiInstance,
     'action' | 'read' | 'refresh'
@@ -142,6 +145,7 @@ export interface Host {
   readonly activationBarrier: ExtensionActivationBarrier
   /** Authenticated management port. It is not registered as a model tool or extension service. */
   readonly approvalGrants: Assembled['approvalGrants']
+  readonly profileServices?: Assembled['profileServices']
   callService(
     params: ExtensionCallParams,
     credential: unknown,
@@ -173,7 +177,7 @@ export interface Host {
   readonly presets: Record<string, PresetDoc>
   /** Resolve an inbound credential through the deployment's fitted principals seam. Consumers use
    *  this for approval/participant actors instead of constructing ledger identities themselves. */
-  resolveActor(credential: unknown, surface: 'session' | 'approval'): Promise<Actor>
+  resolveActor(credential: unknown, surface: 'session' | 'approval' | 'service'): Promise<Actor>
   /** Authenticated worker-control decoder. Public RPC must never call this with caller data. */
   acceptWorkspaceBinding(
     envelope: AuthenticatedWorkspaceBindingEnvelope,
@@ -292,6 +296,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
   const host: Host = {
     activationBarrier: a.activationBarrier,
     approvalGrants: a.approvalGrants,
+    profileServices: a.profileServices,
     callService: (params, credential, signal, effectAdmission) => {
       if (closed) throw markServicePreDispatchFailure(new HostError('E_HOST_CLOSED', 'host is closed'))
       let entered = false
@@ -357,15 +362,23 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
       }),
     readSessionView: (sessionKey, options) =>
       readSessionView(
-        (key, query) =>
-          a.kernel.o.storage.scan(key, {
-            ...(query.fromSeq === undefined ? {} : { fromSeq: query.fromSeq }),
-            ...(query.toSeq === undefined ? {} : { toSeq: query.toSeq }),
-            limit: query.limit,
-            order: query.order ?? 'asc',
-          }),
+        async (key, query) =>
+          leanEvents(
+            await (
+              a.kernel.o.storage.scanLean?.bind(a.kernel.o.storage) ??
+              a.kernel.o.storage.scan.bind(a.kernel.o.storage)
+            )(key, {
+              ...(query.fromSeq === undefined ? {} : { fromSeq: query.fromSeq }),
+              ...(query.toSeq === undefined ? {} : { toSeq: query.toSeq }),
+              limit: query.limit,
+              order: query.order ?? 'asc',
+            }),
+          ),
         sessionKey,
-        options,
+        {
+          budget: { events: 2000, bytes: 8 * 1024 * 1024, timeMs: 750 },
+          ...options,
+        },
       ),
     get provider() {
       return a.provider
@@ -431,6 +444,8 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
     acceptWorkspaceBinding: (envelope, expectedSessionKey) =>
       workspaceBindings.accept(envelope, expectedSessionKey),
     async createSession(o) {
+      if (o.key && isProfileDecisionJournal(o.key))
+        throw new CoreError('E_ENVELOPE', 'Reserved decision journal scope')
       // A lifecycle condition gets a lifecycle code. The old one raised E_SEAM_IMMUTABLE - the code
       // for "a seam implementation may not be swapped" - and the test only grepped /closed/, so the
       // mismatch was invisible from both sides.

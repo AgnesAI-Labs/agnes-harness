@@ -6,6 +6,7 @@ import type { TSchema } from '@sinclair/typebox'
 import * as Acp from '../gen/ts/acp.js'
 import * as Agnes from '../gen/ts/agnes-v1.js'
 import * as App from '../gen/ts/app-server.js'
+import * as ProfileServices from '../gen/ts/extension-service.js'
 import * as Ui from '../gen/ts/intelligent-ui.js'
 import * as Packages from '../gen/ts/package-admin.js'
 import { METHODS } from '../src/methods.js'
@@ -31,6 +32,7 @@ export function appServerArtifacts() {
     ['../../src/session-runtime.js', RuntimeDescriptor],
     ['../../src/session-tools.js', Tools],
     ['./app-server.js', App],
+    ['./extension-service.js', ProfileServices],
   ] as const
   const typeNames = new Map<unknown, string>()
   for (const [path, values] of modules)

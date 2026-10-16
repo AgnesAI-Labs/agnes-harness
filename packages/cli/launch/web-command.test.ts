@@ -1,5 +1,8 @@
 import { EventEmitter } from 'node:events'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EnsureLocalBackendOptions, LocalBackend } from './backend.js'
 import { parseWebCommand, runWebCommand, type WebCommandIO } from './web-command.js'
@@ -40,6 +43,30 @@ const resources = {
 }
 
 describe('Web command launch contract', () => {
+  it.each(['en', 'zh-CN'])(
+    'refuses an occupied --home before a backend or server starts in %s',
+    async (locale) => {
+      const home = mkdtempSync(join(tmpdir(), 'agh-old-web-home-'))
+      const file = join(home, 'old.txt')
+      writeFileSync(file, 'synthetic old state')
+      const createServer = vi.fn()
+      try {
+        const failure = await runWebCommand(['--home', home], {
+          env: { AGH_HOME: join(home, 'ignored'), AGNES_LOCALE: locale },
+          resources,
+          createServer,
+        }).catch((error) => error)
+        expect(failure).toMatchObject({ code: 'E_HOME_VERSION' })
+        expect(failure.message).toContain(home)
+        expect(failure.message).toContain('#new-product-clean-home')
+        expect(createServer).not.toHaveBeenCalled()
+        expect(readFileSync(file, 'utf8')).toBe('synthetic old state')
+      } finally {
+        rmSync(home, { recursive: true, force: true })
+      }
+    },
+  )
+
   it.each(['en', 'zh-CN'])('keeps startup refusal codes for localized CLI output in %s', async (locale) => {
     for (const code of ['EADDRINUSE', 'EACCES', 'CONFIG_CREDENTIAL_STORE']) {
       const failure = await runWebCommand([], {

@@ -36,6 +36,14 @@ Ask the agent to draft a Skill or plugin, test it, then review its files and per
 
 The screenshots show the current interface using synthetic browser fixtures. The runnable demos use fresh isolated homes and a deterministic local model by default; they do not send external business messages. Old code remains retained while durable session pins reference it, including idle history.
 
+<a id="new-product-clean-home"></a>
+
+## New product and old environments
+
+This version ships as a new product built on the new plugin architecture. It does not migrate or reuse runtime data from the old AGH product. If you used an older version, remove or move its home directory before starting this version: `~/.agh` by default, or the directory selected by `AGH_HOME`. You can also keep the old directory and set `AGH_HOME` to a different, new, empty private directory. This version creates its own environment there; configure your model accounts and plugins again. Startup refuses an old-layout home and does not automatically delete or convert its data.
+
+Copy the folder first if you want to keep old sessions.
+
 ## Start from source
 
 Prepare Node.js **24.10+**, pinned pnpm **10.34.5**, and your platform's native toolchain ([installation](docs/guide/install.md)). Clone this repository and run from its root:
@@ -66,7 +74,7 @@ Clients connect to one App Server per canonical home. Workers host composed plug
 - **Trusted code:** ordinary backend plugins execute in process. Capability review, provenance, approvals and command/MCP sandboxing do not isolate arbitrary plugin JavaScript.
 - **Preview release:** source builds are available; no public npm release, consumer installer or automatic-update commitment is made. APIs and configuration can change during preview.
 - **Platforms:** macOS and Linux have maintained native/process/browser gates. Windows remains untested end to end, with no proven L1 command sandbox. Computer Use is unavailable on Linux.
-- **Experimental paths:** provider/Loop APIs, child engines, programmatic cells (especially stateless CPython), and MHS-inspired device integration need deployment-specific validation. The device example is a simulator, not a certified hardware adapter.
+- **Experimental paths:** provider/Loop APIs, child engines, programmatic cells (especially stateless CPython) need deployment-specific validation.
 
 [Supported scope](docs/reference/limitations.md) · [Security](docs/guide/security.md) · [Verification](docs/maintainers/verification.md) · [Network deployment](docs/guide/deployment.md)
 

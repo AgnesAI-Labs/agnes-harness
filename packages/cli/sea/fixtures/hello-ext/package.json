@@ -1,6 +1,7 @@
 {
   "name": "test/hello",
   "version": "0.0.1",
+  "license": "MIT",
   "type": "module",
   "exports": "./index.ts",
   "agnes": {

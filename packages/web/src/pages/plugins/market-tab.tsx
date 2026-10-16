@@ -165,6 +165,7 @@ export function MarketTab({ view, t }: { view: PluginView; t: Text }) {
   const [type, setType] = useState<MarketType | ''>('')
   const rows = view.state.catalog.filter(
     (item) =>
+      !item.metadata?.exampleOf &&
       (!type || marketTypes(item).includes(type)) &&
       (!view.kind || item.kinds?.includes(view.kind)) &&
       (!view.category || (item.metadata?.category ?? 'unclassified') === view.category),
