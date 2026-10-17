@@ -115,12 +115,56 @@ describe('targetCandidates', () => {
     expect(targetCandidates(tool('read'), closed, ws)).toEqual([])
     expect(ws.views[0]?.references).toEqual([{ kind: 'file', value: 'notes.md' }])
   })
-  it('stops at 20 candidates, newest reference first, and never offers a synthetic key', () => {
-    const refs = Array.from({ length: 25 }, (_, i) => ['file', `f${i}.md`] as ['file', string])
-    const ws = observed([['file', 'LLM_PARAMETERS'], ...refs.slice(0, 19)])
+  it('stops at 20 references, newest view first in listing order, and never offers a synthetic key', () => {
+    const view = (scope: string, names: string[]) =>
+      normalizeView({
+        operation: 'find',
+        callId: scope,
+        scope,
+        evidence: '',
+        references: names.map((value) => ({ kind: 'file' as const, value })),
+        truncated: false,
+      })
+    const names = (prefix: string) => Array.from({ length: 11 }, (_, i) => `${prefix}${i}.md`)
+    const older = names('o')
+    const newer = names('n')
+    const ws = emptyWorkspace()
+    ws.views = [
+      view('old', [older[0] ?? '', 'LLM_PARAMETERS', ...older.slice(1)]),
+      view('new', [...newer.slice(0, 2), 'DEFAULT_ARGUMENTS', ...newer.slice(2)]),
+    ]
     const keys = targetCandidates(tool('read'), BUILTIN_SCHEMAS.read, ws).map((c) => c.key)
-    expect(keys).not.toContain('LLM_PARAMETERS')
-    expect(keys.length).toBeLessThanOrEqual(20)
+    // The first 20 references are the 12 newer ones and 8 older ones; the two synthetic names
+    // among them take a place each and are skipped.
+    expect(keys).toEqual([...newer, ...older.slice(0, 7)])
+  })
+  it('keeps the freshness label of a long path whole', () => {
+    const changed = `${'c'.repeat(299)}.md`
+    const read = `${'r'.repeat(299)}.md`
+    const ws = observed([
+      ['file', changed],
+      ['file', read],
+    ])
+    recordStep(ws, step({ operation: 'read', target: changed, read_files: [changed, read] }))
+    recordStep(ws, step({ operation: 'edit', target: changed, changed_files: [changed], phase: 'ACT' }))
+    const labels = targetCandidates(tool('read'), BUILTIN_SCHEMAS.read, ws).map((c) => c.label)
+    expect(labels).toEqual([
+      `${changed.slice(0, 300 - CHANGED_LABEL.length)}${CHANGED_LABEL}`,
+      `${read.slice(0, 300 - READ_LABEL.length)}${READ_LABEL}`,
+    ])
+    const plain = `${'p'.repeat(310)}.md`
+    expect(targetCandidates(tool('read'), BUILTIN_SCHEMAS.read, observed([['file', plain]]))[0]?.label).toBe(
+      plain.slice(0, 300),
+    )
+  })
+  it('never labels a directory with freshness', () => {
+    const ws = observed([
+      ['directory', 'src'],
+      ['directory', 'lib'],
+    ])
+    recordStep(ws, step({ operation: 'read', target: 'lib', read_files: ['lib'] }))
+    recordStep(ws, step({ operation: 'edit', target: 'src', changed_files: ['src'], phase: 'ACT' }))
+    expect(targetCandidates(tool('ls'), BUILTIN_SCHEMAS.ls, ws).map((c) => c.label)).toEqual(['src', 'lib'])
   })
   it('returns arguments that do not alias the profile defaults', () => {
     const read = tool('read')
@@ -146,6 +190,22 @@ describe('candidatesFor', () => {
     const closed = { type: 'object', properties: { path: { type: 'string' } }, additionalProperties: false }
     const view = { tools: [{ name: 'read', description: 'read', parameters: closed }] }
     expect(candidatesFor([tool('read'), tool('ls')], view as never, ws)).toEqual({ read: [], ls: [] })
+  })
+  it('takes the first tool and the first schema of a name', () => {
+    const ws = observed([['file', 'a.md']])
+    const unbound = { ...tool('read'), referenceKind: null }
+    const both = turnView({ tools: ['read'] })
+    expect(candidatesFor([unbound, tool('read')], both, ws)).toEqual({ read: [] })
+    const closed = { type: 'object', properties: { path: { type: 'string' } }, additionalProperties: false }
+    const view = {
+      tools: [
+        { name: 'read', description: 'read', parameters: closed },
+        { name: 'read', description: 'read', parameters: BUILTIN_SCHEMAS.read },
+      ],
+    }
+    expect(candidatesFor([tool('read')], view as never, ws)).toEqual({ read: [] })
+    view.tools.reverse()
+    expect(candidatesFor([tool('read')], view as never, ws).read).toHaveLength(1)
   })
   it('keeps a tool named like an object prototype key as its own key', () => {
     const odd = { ...tool('ls'), name: '__proto__' }

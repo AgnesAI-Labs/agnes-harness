@@ -39,7 +39,9 @@ export function targetCandidates(tool: ResolvedTool, schema: unknown, ws: Worksp
     const args = { ...structuredClone(bindingDefaults), [targetParam]: key }
     if (!completeArgs(schema, args)) continue
     const freshness = changed.has(key) ? CHANGED_LABEL : read.has(key) ? READ_LABEL : ''
-    candidates.push({ key, kind, label: clip(`${key}${freshness}`, LABEL_CHARS), args })
+    // A long path gives way to its freshness label, which stays whole.
+    const label = `${clip(key, LABEL_CHARS - freshness.length)}${freshness}`
+    candidates.push({ key, kind, label, args })
   }
   return candidates
 }
