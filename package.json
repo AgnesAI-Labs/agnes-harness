@@ -20,7 +20,7 @@
     "typecheck": "tsc -b",
     "guards:remeasure": "tsx tools/guards/remeasure.ts",
     "lint": "biome check .",
-    "gen:check": "pnpm -r --if-present run gen:check",
+    "gen:check": "pnpm -r --if-present run gen:check && node tools/build-feature-clients.mjs --check",
     "bench:cu-artifact-gc": "tsx tools/bench-cu-artifact-gc.ts",
     "bench:ledger-integrity": "tsx tools/bench-ledger-integrity.ts",
     "bench:ledger-scan": "tsx tools/bench-ledger-scan.ts",

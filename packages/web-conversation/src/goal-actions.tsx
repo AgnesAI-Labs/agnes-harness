@@ -1,5 +1,5 @@
 import type { GoalSnapshot } from '@agnes/protocol/gen/slots'
-import type { UiExtensionContext } from '@agnes/web-client'
+import { goalCommand, type UiExtensionContext } from '@agnes/web-client'
 import { Button } from '@agnes/web-ui'
 
 const reasons: Record<string, string> = {
@@ -24,10 +24,10 @@ export function GoalActions({
   t: UiExtensionContext['t']
   prefix?: string
 }) {
-  const actions = [
-    ...(goal.phase === 'active' ? ['pause'] : []),
-    ...(goal.phase === 'paused' || goal.phase === 'blocked' ? ['resume'] : []),
-    ...(goal.phase !== 'complete' ? ['complete'] : []),
+  const actions: ('pause' | 'resume' | 'complete' | 'clear')[] = [
+    ...(goal.phase === 'active' ? ['pause' as const] : []),
+    ...(goal.phase === 'paused' || goal.phase === 'blocked' ? ['resume' as const] : []),
+    ...(goal.phase !== 'complete' ? ['complete' as const] : []),
     'clear',
   ]
   return (
@@ -38,7 +38,7 @@ export function GoalActions({
           htmlType="button"
           disabled={disabled}
           data-testid={`${prefix}-${action}`}
-          onClick={() => onCommand(`/goal ${action}`)}
+          onClick={() => onCommand(goalCommand({ action }))}
         >
           {t(`goal.${action}`)}
         </Button>

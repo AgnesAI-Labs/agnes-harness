@@ -23,3 +23,5 @@ Automatic rounds enter the ordinary next-turn inbox with an owner-bound identity
 Credit spend is checked between steps and turns, so an in-flight response can exceed the goal credit limit. Existing per-request model budget admission remains active. Unknown credit usage with a configured goal budget blocks continuation. An older host without the optional turn_stopping input port reports continuation as unavailable.
 
 The existing status.line slot supplies a typed goal snapshot. Clearing a goal removes that snapshot and reports No goal. Live slots are delivered outside transcript indices, including empty replacement arrays when no fills remain.
+
+The official Web controls ship in the default bundled `@agnes/goal-ui` client plugin. It reads the public `readGoal` contract and owns card, panel and composer commands under the `goal` presentation role. Its declared backend-row dependency removes all controls when this feature is disabled; another client role provider can replace them without changing goal persistence, budget checks or authorization.

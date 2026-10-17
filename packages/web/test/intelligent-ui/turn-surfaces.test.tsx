@@ -7,13 +7,16 @@ import { createDocumentLocaleSource } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it, vi } from 'vitest'
-import { IntelligentUiClient } from '../../src/intelligent-ui/client.js'
+import { IntelligentUiClient } from '../../../web-conversation/src/intelligent-ui/client.js'
 import {
   IntelligentInline,
   newSurfacePlacements,
   type UiPlacementBinding,
-} from '../../src/intelligent-ui/placements.js'
-import { attachIntelligentBinding, TurnViews } from '../../src/intelligent-ui/turn-views.js'
+} from '../../../web-conversation/src/intelligent-ui/placements.js'
+import {
+  attachIntelligentBinding,
+  TurnViews,
+} from '../../../web-conversation/src/intelligent-ui/turn-views.js'
 import { uiPage } from './fixture.js'
 
 /** The owner's case: a display-only outline the model rendered with ui_render. */

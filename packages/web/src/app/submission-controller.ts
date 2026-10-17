@@ -11,6 +11,7 @@ import {
 import { type Session, unresolvedSubmission } from '@agnes/sdk/browser'
 import { yoloEnabled } from '@agnes/web-admin/permission-picker'
 import { permissionForSessionPreset } from '@agnes/web-admin/settings/session-choice'
+import { composerCommands } from '@agnes/web-client'
 import { PlanModeRequestError, submitPlanCommand } from '@agnes/web-conversation/plan-mode'
 import { canSubmitComposer } from '@agnes/web-conversation/presentation'
 import type { AppSessionContext } from '../app.js'
@@ -33,7 +34,6 @@ export function createSubmissionController(
     | 'draftLoopAvailable'
     | 'draftPreset'
     | 'draftingNew'
-    | 'goalHost'
     | 'initialModelPending'
     | 'initialPermissionPending'
     | 'intentionalClose'
@@ -166,28 +166,19 @@ export function createSubmissionController(
     const selectedReferences = context.references.getSnapshot()
     const referenceSelections = selectedReferences.map(({ source, id }) => ({ source, id }))
     const input = originalDraft.trim()
-    if (
-      !selectedReferences.length &&
-      /^\/goal(?:\s+show)?$/.test(input) &&
-      context.composerRuntime.getAttachmentBlocks().length === 0
-    ) {
-      context.composerRuntime.setDraft('')
-      sessionStorage.removeItem(context.composerDraftKey)
-      const toggle = context.goalHost.querySelector<HTMLButtonElement>('[data-testid="goal-toggle"]')
-      if (toggle?.getAttribute('aria-expanded') === 'false') toggle.click()
-      toggle?.focus()
-      return
-    }
-    if (
-      !selectedReferences.length &&
-      /^\/goal(?:\s|$)/.test(input) &&
-      context.current &&
-      context.projection?.opState
-    ) {
-      context.composerRuntime.setDraft('')
-      sessionStorage.removeItem(context.composerDraftKey)
-      void context.current.steer(input).catch(context.showError)
-      return
+    if (!selectedReferences.length && context.composerRuntime.getAttachmentBlocks().length === 0) {
+      for (const command of composerCommands.entries()) {
+        const route = command.route({
+          text: input,
+          ...(context.current ? { sessionId: context.current.id } : {}),
+          busy: !!context.projection?.opState,
+        })
+        if (!route) continue
+        context.composerRuntime.setDraft('')
+        sessionStorage.removeItem(context.composerDraftKey)
+        if (route === 'steer' && context.current) void context.current.steer(input).catch(context.showError)
+        return
+      }
     }
     if (!selectedReferences.length && isPlanCommand(input)) {
       const cwd = context.selectedWorkspace?.path

@@ -1,44 +1,47 @@
 import type { UITimeline } from '@agnes/protocol'
-import type { GoalSnapshot, StatusLinePayload } from '@agnes/protocol/gen/slots'
-import { conversationCards } from '@agnes/web-client'
+import type { GoalSnapshot } from '@agnes/protocol/gen/slots'
+import { goalCommand } from '@agnes/web-client'
 import { tr } from '@agnes/web-foundation/locale-bridge'
 import {
   Button,
   ConversationCardLayout,
   Field,
   Popover,
-  renderRegion,
   SettingsInput,
   SettingsState,
   SettingsTextArea,
 } from '@agnes/web-ui'
-import type { ComponentProps } from 'react'
 import { useEffect, useRef, useState } from 'react'
-import { RegisteredConversationCard } from './conversation-registry.js'
 import { GoalActions } from './goal-actions.js'
+import { renderSessionActions } from './registered-card.js'
 
-export function goalSlot(timeline?: UITimeline): StatusLinePayload | undefined {
-  const live = timeline?.slots?.find((fill) => fill.extId === 'agnes/goal' && fill.slot === 'status.line')
-  if (live) return live.payload as StatusLinePayload
-  for (const node of [...(timeline?.nodes ?? [])].reverse())
-    if (node.kind === 'slot' && node.fill.extId === 'agnes/goal' && node.fill.slot === 'status.line')
-      return node.fill.payload as StatusLinePayload
-  return undefined
-}
+export { readGoal as goalSlot } from '@agnes/web-client'
 
 export function GoalCard({
   goal,
   error,
   disabled,
   onCommand,
+  t = tr,
+  registerShow,
 }: {
   goal?: GoalSnapshot | undefined
   error?: string | undefined
   disabled: boolean
   onCommand(command: string): void
+  t?: typeof tr
+  registerShow?: (show: () => void) => () => void
 }) {
   const [open, setOpen] = useState(false)
   const trigger = useRef<HTMLButtonElement>(null)
+  useEffect(
+    () =>
+      registerShow?.(() => {
+        setOpen(true)
+        trigger.current?.focus()
+      }),
+    [registerShow],
+  )
   useEffect(() => {
     if (!open) return
     const close = (event: KeyboardEvent) => {
@@ -67,11 +70,11 @@ export function GoalCard({
             variant="plain"
             className="goal-card"
             data-testid="goal-card"
-            aria-label={tr('goal.title')}
+            aria-label={t('goal.title')}
           >
             {error && (
               <SettingsState tone="error" role="status">
-                {tr('goal.error')}
+                {t('goal.error')}
               </SettingsState>
             )}
             <form
@@ -79,17 +82,16 @@ export function GoalCard({
                 event.preventDefault()
                 if (!objective.trim()) return
                 onCommand(
-                  '/goal ' +
-                    (goal ? 'edit' : 'create') +
-                    ' --max-rounds ' +
-                    rounds +
-                    ` --budget ${budget || 'none'}` +
-                    ' ' +
-                    objective.trim(),
+                  goalCommand({
+                    action: goal ? 'edit' : 'create',
+                    objective,
+                    maxRounds: rounds,
+                    ...(budget ? { budgetCredits: Number(budget) } : {}),
+                  }),
                 )
               }}
             >
-              <Field label={tr('goal.objective')}>
+              <Field label={t('goal.objective')}>
                 <SettingsTextArea
                   data-testid="goal-objective"
                   value={objective}
@@ -99,7 +101,7 @@ export function GoalCard({
                   onChange={(event) => setObjective(event.target.value)}
                 />
               </Field>
-              <Field label={tr('goal.rounds')}>
+              <Field label={t('goal.rounds')}>
                 <SettingsInput
                   data-testid="goal-max-rounds"
                   type="number"
@@ -111,7 +113,7 @@ export function GoalCard({
                   onChange={(event) => setRounds(Number(event.target.value))}
                 />
               </Field>
-              <Field label={tr('goal.budget')}>
+              <Field label={t('goal.budget')}>
                 <SettingsInput
                   data-testid="goal-budget"
                   type="number"
@@ -123,10 +125,10 @@ export function GoalCard({
                 />
               </Field>
               <Button htmlType="submit" type="primary" disabled={disabled} data-testid="goal-save">
-                {tr(goal ? 'goal.edit' : 'goal.create')}
+                {t(goal ? 'goal.edit' : 'goal.create')}
               </Button>
             </form>
-            {goal && <GoalActions goal={goal} disabled={disabled} onCommand={onCommand} t={tr} />}
+            {goal && <GoalActions goal={goal} disabled={disabled} onCommand={onCommand} t={t} />}
           </ConversationCardLayout>
         }
       >
@@ -138,53 +140,25 @@ export function GoalCard({
           data-testid="goal-toggle"
           data-agnes-region="session-goal-action"
           aria-expanded={open}
-          aria-label={tr('goal.title')}
+          aria-label={t('goal.title')}
         >
           <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
             <circle cx="12" cy="12" r="8" />
             <circle cx="12" cy="12" r="3" />
           </svg>
-          {tr(goal ? `goal.state.${goal.phase}` : 'goal.create')}
+          {t(goal ? `goal.state.${goal.phase}` : 'goal.create')}
         </Button>
       </Popover>
     </span>
   )
 }
 
-if (!conversationCards.get('goal'))
-  conversationCards.register({
-    id: 'goal',
-    order: 0,
-    matches: (card) => card.kind === 'goal',
-    component: ({ card }) => <GoalCard {...(card.data as ComponentProps<typeof GoalCard>)} />,
-  })
-
+/** Compatibility renderer for embedders; registration belongs to the feature client. */
 export function renderGoalCard(
   host: HTMLElement,
   timeline: UITimeline | undefined,
   disabled: boolean,
   onCommand: (command: string) => void,
 ) {
-  host.hidden = !timeline?.sessionId
-  if (!timeline?.sessionId) {
-    renderRegion(host, null)
-    return
-  }
-  const slot = goalSlot(timeline)
-  renderRegion(
-    host,
-    <RegisteredConversationCard
-      key={`${timeline.sessionId}:${slot?.goal?.id ?? 'new'}`}
-      card={{
-        kind: 'goal',
-        data: {
-          goal: slot?.goal,
-          error: slot?.level === 'warn' && !slot.goal?.reason ? slot.text : undefined,
-          disabled,
-          onCommand,
-        },
-      }}
-      context={{ t: tr }}
-    />,
-  )
+  renderSessionActions(host, timeline, disabled, onCommand, tr)
 }

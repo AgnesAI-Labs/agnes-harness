@@ -1,3 +1,4 @@
+import type { UINode, UITurn } from '@agnes/protocol'
 import type { UiActionReceipt } from '@agnes/protocol/gen/intelligent-ui'
 import type { Client } from '@agnes/sdk/browser'
 import {
@@ -9,7 +10,9 @@ import {
   workbenchPanels,
 } from '@agnes/web-client'
 import { createDocumentLocaleSource, INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog } from '@agnes/web-ui'
+import type { ReactNode } from 'react'
 import { IntelligentUiClient } from './client.js'
+import { answeredQuestions, foldedUserActions, renderedSurfaceIds } from './conversation.js'
 import type { CustomUiModuleSource } from './custom-host.js'
 import {
   hiddenSurfaces,
@@ -23,10 +26,11 @@ import {
   type UiPlacementBinding,
   workbenchSurfaces,
 } from './placements.js'
+import { AnsweredQuestions, QuestionAnswersNode, QuestionDock, questionSubmission } from './question-dock.js'
 import { intelligentUiServer } from './server.js'
 import { attachIntelligentBinding, TurnViews } from './turn-views.js'
 
-/** Two registrations, one session client. Mounting a placement never submits a command. */
+/** One owned presentation across placements, dock and historical answer receipts. Mounting never submits. */
 export function mountIntelligentUi(options: {
   resources?: ClientResourceService
   customModules?: CustomUiModuleSource
@@ -177,10 +181,49 @@ export function mountIntelligentUi(options: {
     order: 100,
     matches: (card) => card.kind === 'conversation.turn-tail',
     component: ({ card }) => {
-      const value = card.data as { turn: import('@agnes/protocol').UITurn; surfaceIds: readonly string[] }
-      return <TurnViews turn={value.turn} surfaceIds={value.surfaceIds} />
+      const value = card.data as { turn: UITurn; nodes?: readonly UINode[]; surfaceIds?: readonly string[] }
+      return (
+        <TurnViews
+          turn={value.turn}
+          surfaceIds={value.surfaceIds ?? renderedSurfaceIds(value.nodes ?? [], value.turn)}
+        />
+      )
     },
   })
+  const removeQuestions = [
+    conversationCards.register({
+      id: 'question-dock',
+      order: 0,
+      matches: (card) => card.kind === 'composer.before-input',
+      component: QuestionDock,
+    }),
+    conversationCards.register({
+      id: 'question-turn-actions',
+      order: 0,
+      matches: (card) => card.kind === 'conversation.turn-actions',
+      hiddenNodeIds(nodes, turns) {
+        const hidden = new Set(foldedUserActions(nodes))
+        for (const answers of answeredQuestions(nodes, turns).values())
+          for (const item of answers) hidden.add(item.nodeId)
+        return [...hidden]
+      },
+      component: ({ card }) => {
+        const { turn, nodes } = card.data as { turn: UITurn; nodes: readonly UINode[] }
+        return <AnsweredQuestions answered={answeredQuestions(nodes, [turn]).get(turn.id) ?? []} />
+      },
+    }),
+    conversationCards.register({
+      id: 'question-answer-node',
+      order: 0,
+      matches: (card) => card.kind === 'conversation.node' && !!questionSubmission(card.data as UINode),
+      component: ({ card, context }) => (
+        <QuestionAnswersNode
+          submission={questionSubmission(card.data as UINode)!}
+          native={context.data as ReactNode}
+        />
+      ),
+    }),
+  ]
   const stopClaims = conversationCards.subscribe(notify)
   const stopSession = options.session.subscribe(switchSession)
   switchSession()
@@ -193,6 +236,7 @@ export function mountIntelligentUi(options: {
     detachTurns()
     removePanel()
     removeTurns()
+    for (const off of removeQuestions) off()
     stopClaims()
     removeLocale()
     documentLocale.dispose()

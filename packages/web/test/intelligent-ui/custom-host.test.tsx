@@ -9,7 +9,10 @@ import { IntelligentCatalog } from '@agnes/web-ui'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it, vi } from 'vitest'
-import { CustomUiHost, selectCustomUiModule } from '../../src/intelligent-ui/custom-host.js'
+import {
+  CustomUiHost,
+  selectCustomUiModule,
+} from '../../../web-conversation/src/intelligent-ui/custom-host.js'
 import { financeRecord } from './fixture.js'
 
 const declaration = {

@@ -3,7 +3,6 @@ import { sessionLoopSelection } from '@agnes/web-admin/admin/plugins/session-loo
 import { choiceName } from '@agnes/web-admin/settings/choices'
 import { effectiveSessionPreset, permissionForSessionPreset } from '@agnes/web-admin/settings/session-choice'
 import type { ComposerView } from '@agnes/web-conversation/composer'
-import { renderGoalCard } from '@agnes/web-conversation/goal-card'
 import {
   composerActionPresentation,
   composerHintPresentation,
@@ -11,6 +10,7 @@ import {
   modelSelectLabel,
   shouldShowEmptyState,
 } from '@agnes/web-conversation/presentation'
+import { renderSessionActions } from '@agnes/web-conversation/session-actions'
 import type { WorkbenchContext } from '@agnes/web-conversation/workbench'
 import { shortcutLabel, trackPageRequest } from '@agnes/web-ui'
 import type { AppSessionContext } from '../app.js'
@@ -123,7 +123,7 @@ export function createComposerController(
         })
       else unmountWorkbench(dockHost)
     }
-    renderGoalCard(
+    renderSessionActions(
       context.goalHost,
       context.draftingNew ? undefined : context.projection,
       !context.connected || context.sessionPending || context.sending || context.stopping,
@@ -131,6 +131,7 @@ export function createComposerController(
         context.composerRuntime.setDraft(command)
         context.submitComposer()
       },
+      context.t,
     )
     // The top bar names the Agent bound to the selected session.
     const sessionLoop = workbench.session

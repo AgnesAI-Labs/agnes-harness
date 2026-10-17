@@ -3,6 +3,7 @@ export type UiAnswers = Record<string, string | string[]>
 export type UiAnswerFact =
   | { kind: 'received'; commandId: string; surfaceId: string; answers: UiAnswers }
   | { kind: 'succeeded'; commandId: string }
+  | { kind: 'presented'; surfaceId: string }
 const object = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value)
 
@@ -12,6 +13,7 @@ export const UI_SUBMIT_TOOL = 'ui_submit'
 export const UI_ANSWER_EVENTS = [
   `x/${UI_ANSWER_OWNER}/action.received`,
   `x/${UI_ANSWER_OWNER}/action.succeeded`,
+  `x/${UI_ANSWER_OWNER}/surface.opened`,
 ] as const
 
 /** Only owner-authenticated facts count; prose, refusals and failed submissions never answer. */
@@ -23,6 +25,18 @@ export function readUiAnswerFact(event: {
   if (event.origin !== `ext:${UI_ANSWER_OWNER}` || !object(event.data)) return undefined
   if (event.type === UI_ANSWER_EVENTS[1] && typeof event.data.commandId === 'string')
     return { kind: 'succeeded', commandId: event.data.commandId }
+  if (event.type === UI_ANSWER_EVENTS[2]) {
+    const record = event.data.record
+    if (
+      object(record) &&
+      record.status === 'open' &&
+      object(record.surface) &&
+      typeof record.surface.id === 'string' &&
+      record.surface.id.length > 0 &&
+      record.surface.id.length <= 64
+    )
+      return { kind: 'presented', surfaceId: record.surface.id }
+  }
   if (event.type !== UI_ANSWER_EVENTS[0]) return undefined
   const record = event.data.record
   if (!object(record) || !object(record.request) || !object(record.invocation)) return undefined
@@ -32,10 +46,13 @@ export function readUiAnswerFact(event: {
     typeof record.request.commandId !== 'string' ||
     !object(args) ||
     typeof args.surfaceId !== 'string' ||
+    args.surfaceId.length === 0 ||
+    args.surfaceId.length > 64 ||
     !object(args.answers)
   )
     return undefined
   if (
+    Object.entries(args.answers).length === 0 ||
     Object.entries(args.answers).length > 4 ||
     !Object.values(args.answers).every((value) =>
       typeof value === 'string'

@@ -87,3 +87,32 @@ profile 的 primary 声明可添加 `navigation: { title, titles?, icon, order }
 通过 `conversation.chat.turnTail` 注册轮次卡片（owner 为 `{ turn: UITurn, nodes: readonly UINode[] }`），通过 `workbenchPanels` 注册标签，通过 `conversationCards` 的 `artifact-file` 类别渲染文件组件（data 为 `{ file, sessionId, laneId }`）。匹配 `intelligent-ui.surface` 类别、data 为 `UiSurfaceRecord` 的卡片表示由插件接管整个 surface，通用视图面板会让出它。角色 mount 应返回上述全部注销函数，不依赖异步卸载清除标签。打开和下载必须通过 `ctx.resources.documents/files`，携带记录中的 lane 和完整 artifact 引用，不得把源路径当下载 URL。
 
 参见[独立画廊示例](../../examples/community/deliverables-gallery/README.md)。它不导入 Web 宿主代码，展示当前 profile 启用、历史恢复、接管及回退。
+
+### 目标与问答呈现
+
+默认捆绑包 `@agnes/goal-ui`、`@agnes/interaction-ui` 分别以优先级 100 注册
+`goal`、`interaction` 呈现角色；替换界面通常使用 0。角色卸载会同步撤销卡片、面板、
+输入命令、问题 dock、答案回执及折叠策略。预算准入与执行授权仍由平台后端负责。
+
+客户端描述可以声明 `requiresBackendRows: ["ext:vendor/feature"]`，表示可选的呈现依赖。
+只有最后成功的运行目标（首次成功激活前使用 desired）中全部依赖后端行存在且启用，
+该客户端才进入名册。缺失或未观察到的依赖默认拒绝挂载；此条件不授予任何后端权限。
+依赖关闭期间仍完整保留不可变快照中的全部声明和资源，重新启用、重启时可以恢复。
+官方描述依赖 `ext:agnes/goal`、`ext:agnes/intelligent-ui`；宿主对所有包应用同一规则。
+
+公开 `readGoal(timeline)` 返回校验后的 `GoalView`（带可选 `GoalSnapshot` 的
+`StatusLinePayload`），优先使用实时 `status.line`，包括明确的清除和错误；没有实时填充时
+读取历史 slot 节点。`goalCommand(input)` 仅生成通过普通会话输入提交的人类命令，
+不授权自动执行，也不改变平台预算。
+
+通用卡片输入包括：`session.actions` 的 `{timeline, disabled, command(text)}`、
+`composer.before-input`、`conversation.turn-tail` 和 `conversation.turn-actions` 的
+`{turn, nodes}`，以及 `conversation.node` 的 `UINode`（`context.data` 为原生回退内容）。
+卡片可通过 `hiddenNodeIds(nodes, turns)` 折叠已被自身可见回执替代的节点；卸载后恢复原生节点。
+`composerCommands` 接收 `{id, order, route({text, sessionId, busy})}`：返回 `handled`
+表示呈现操作已处理，`steer` 请求正常后端准入的 steer 路径，`undefined` 保留普通输入流程。
+命令与卡片应在同一角色内注册、撤销。
+
+`ctx.presentation` 提供可选的呈现导航 `revealConversation`、`focusApproval`，以及经过
+宿主认证的自定义组件名册读取、订阅 `listComponents`、`subscribeComponents`。
+问题和表单继续使用已有 SDK 的授权 UI 协议；回答不能作为执行许可。

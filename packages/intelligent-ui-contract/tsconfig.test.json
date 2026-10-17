@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist/test",
+    "tsBuildInfoFile": "dist/tsconfig.test.tsbuildinfo"
+  },
+  "include": ["test/**/*.ts"],
+  "references": [
+    { "path": "." },
+    { "path": "../../tsconfig.config.json" },
+    { "path": "../extension-api" },
+    { "path": "../protocol" }
+  ]
+}

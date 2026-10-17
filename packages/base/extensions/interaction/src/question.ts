@@ -1,3 +1,4 @@
+import { UI_SUBMIT_TOOL } from '@agnes/intelligent-ui-contract'
 import { type Static, Type } from '@sinclair/typebox'
 
 export const QuestionParams = Type.Object(
@@ -107,7 +108,7 @@ export function questionSurface(
       {
         id: 'submit',
         label: 'Submit',
-        tool: 'ui_submit',
+        tool: UI_SUBMIT_TOOL,
         style: 'primary',
         argsTemplate: { surfaceId: { literal: id }, answers: { from: 'input', key: 'answers' } },
         paramsSchema: {

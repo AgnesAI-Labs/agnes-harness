@@ -20,6 +20,10 @@ following material retains its original notices and license terms:
   its own code is Apache-2.0. Pinned PDF, Word, ZIP and offline OCR dependencies
   retain their upstream licenses; the plugin payload includes THIRD-PARTY-NOTICES.
   See its README.md and third-party/build-dependencies.json for provenance.
+- Default Interaction UI in packages/package-manager/bundled-plugins/interaction-ui:
+  generated browser code includes the existing protocol validation dependencies.
+  Its local NOTICE retains the TypeBox, Ajv, Ajv Formats, fast-deep-equal,
+  json-schema-traverse and fast-uri license texts (MIT and BSD-3-Clause).
 - Legacy DOC test fixture in packages/package-manager/test/fixtures/document-reader:
   Copyright (c) 2016-2021 Stuart Watt. MIT License. The source revision and LICENSE
   are retained alongside the fixture.

@@ -49,4 +49,14 @@ it('adapts historical authenticated answer protocol and refuses other origins or
     kind: 'succeeded',
     commandId: 'cmd',
   })
+  const opened = {
+    ...event,
+    type: UI_ANSWER_EVENTS[2],
+    data: { record: { status: 'open', surface: { id: 'surface' } } },
+  }
+  expect(readUiAnswerFact(opened)).toEqual({ kind: 'presented', surfaceId: 'surface' })
+  expect(readUiAnswerFact({ ...opened, origin: 'user' })).toBeUndefined()
+  expect(
+    readUiAnswerFact({ ...opened, data: { record: { status: 'open', surface: { id: 'x'.repeat(65) } } } }),
+  ).toBeUndefined()
 })
