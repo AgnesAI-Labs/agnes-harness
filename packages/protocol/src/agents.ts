@@ -1,5 +1,10 @@
 import { type Static, Type } from '@sinclair/typebox'
-import { BundleLaunch } from '../gen/ts/extension-manifest.js'
+import { BundleLaunch as LaunchSchema } from '../gen/ts/extension-manifest.js'
+
+const BundleLaunch = Type.Module({
+  PluginLocalizedText: LaunchSchema.$defs.PluginLocalizedText,
+  BundleLaunch: LaunchSchema.$defs.BundleLaunch,
+}).Import('BundleLaunch')
 
 const text = Type.String({ minLength: 1, maxLength: 512 })
 const target = Type.Object({ route: text, model: text }, { additionalProperties: false })
@@ -36,6 +41,7 @@ export const AgentPlan = Type.Object(
           integrity: text,
           source: text,
           capabilityHash: Type.Optional(text),
+          treeIntegrity: Type.Optional(text),
           snapshotId: Type.Optional(text),
         },
         { additionalProperties: false },

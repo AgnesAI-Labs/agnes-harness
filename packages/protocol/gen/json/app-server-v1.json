@@ -1785,6 +1785,16 @@
         "$ref": "#/$defs/_agnes_v1_session_revealWorkspaceResult"
       }
     },
+    "_agnes/v1/agents.resolve": {
+      "kind": "request",
+      "direction": "c2s",
+      "params": {
+        "$ref": "#/$defs/_agnes_v1_agents_resolveParams"
+      },
+      "result": {
+        "$ref": "#/$defs/_agnes_v1_agents_resolveResult"
+      }
+    },
     "_agnes/v1/session.runtime": {
       "kind": "request",
       "direction": "c2s",
@@ -41289,6 +41299,254 @@
     "_agnes_v1_session_revealWorkspaceResult": {
       "$ref": "#/$defs/D2e67cf467ee5_SessionRevealWorkspaceResult"
     },
+    "_agnes_v1_agents_resolveParams": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "ref": {
+          "minLength": 1,
+          "maxLength": 512,
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref"
+      ]
+    },
+    "De3cd617b523f_PluginLocalizedText": {
+      "$ref": "#/$defs/R1f8351121870"
+    },
+    "De3cd617b523f_BundleLaunch": {
+      "$ref": "#/$defs/Rec1592bc93c4"
+    },
+    "_agnes_v1_agents_resolveResult": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "ref": {
+          "minLength": 1,
+          "maxLength": 512,
+          "type": "string"
+        },
+        "launch": {
+          "$ref": "#/$defs/De3cd617b523f_BundleLaunch"
+        },
+        "loop": {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "id": {
+              "minLength": 1,
+              "maxLength": 512,
+              "type": "string"
+            },
+            "version": {
+              "minLength": 1,
+              "maxLength": 512,
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "version"
+          ]
+        },
+        "bundles": {
+          "maxItems": 64,
+          "type": "array",
+          "items": {
+            "minLength": 1,
+            "maxLength": 512,
+            "type": "string"
+          }
+        },
+        "preset": {
+          "minLength": 1,
+          "maxLength": 512,
+          "type": "string"
+        },
+        "pages": {
+          "maxItems": 64,
+          "type": "array",
+          "items": {
+            "minLength": 1,
+            "maxLength": 512,
+            "type": "string"
+          }
+        },
+        "digest": {
+          "minLength": 1,
+          "maxLength": 512,
+          "type": "string"
+        },
+        "compositionHash": {
+          "minLength": 1,
+          "maxLength": 512,
+          "type": "string"
+        },
+        "presetHash": {
+          "minLength": 1,
+          "maxLength": 512,
+          "type": "string"
+        },
+        "effectivePresetHash": {
+          "minLength": 1,
+          "maxLength": 512,
+          "type": "string"
+        },
+        "model": {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "route": {
+              "minLength": 1,
+              "maxLength": 512,
+              "type": "string"
+            },
+            "model": {
+              "minLength": 1,
+              "maxLength": 512,
+              "type": "string"
+            }
+          },
+          "required": [
+            "route",
+            "model"
+          ]
+        },
+        "models": {
+          "type": "object",
+          "patternProperties": {
+            "^(.*)$": {
+              "additionalProperties": false,
+              "type": "object",
+              "properties": {
+                "route": {
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                "model": {
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "route",
+                "model"
+              ]
+            }
+          }
+        },
+        "permission": {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "readOnly": {
+              "type": "boolean"
+            },
+            "tools": {
+              "type": "array",
+              "items": {
+                "minLength": 1,
+                "maxLength": 512,
+                "type": "string"
+              }
+            },
+            "allow": {
+              "type": "array",
+              "items": {
+                "minLength": 1,
+                "maxLength": 512,
+                "type": "string"
+              }
+            },
+            "deny": {
+              "type": "array",
+              "items": {
+                "minLength": 1,
+                "maxLength": 512,
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "readOnly",
+            "tools",
+            "allow",
+            "deny"
+          ]
+        },
+        "sources": {
+          "maxItems": 512,
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "type": "object",
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "maxLength": 512,
+                "type": "string"
+              },
+              "version": {
+                "minLength": 1,
+                "maxLength": 512,
+                "type": "string"
+              },
+              "integrity": {
+                "minLength": 1,
+                "maxLength": 512,
+                "type": "string"
+              },
+              "source": {
+                "minLength": 1,
+                "maxLength": 512,
+                "type": "string"
+              },
+              "capabilityHash": {
+                "minLength": 1,
+                "maxLength": 512,
+                "type": "string"
+              },
+              "treeIntegrity": {
+                "minLength": 1,
+                "maxLength": 512,
+                "type": "string"
+              },
+              "snapshotId": {
+                "minLength": 1,
+                "maxLength": 512,
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "version",
+              "integrity",
+              "source"
+            ]
+          }
+        }
+      },
+      "required": [
+        "ref",
+        "launch",
+        "loop",
+        "bundles",
+        "preset",
+        "pages",
+        "digest",
+        "compositionHash",
+        "presetHash",
+        "effectivePresetHash",
+        "model",
+        "models",
+        "permission",
+        "sources"
+      ]
+    },
     "_agnes_v1_session_runtimeParams": {
       "additionalProperties": false,
       "type": "object",
@@ -41810,7 +42068,7 @@
         "sessionId"
       ]
     },
-    "R3e4f03059e4d": {
+    "Rf3b73f87d837": {
       "anyOf": [
         {
           "type": "null"
@@ -41827,14 +42085,14 @@
         {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/R3e4f03059e4d"
+            "$ref": "#/$defs/Rf3b73f87d837"
           }
         },
         {
           "type": "object",
           "patternProperties": {
             "^(.*)$": {
-              "$ref": "#/$defs/R3e4f03059e4d"
+              "$ref": "#/$defs/Rf3b73f87d837"
             }
           }
         }
@@ -43078,7 +43336,7 @@
                 "type": "string"
               },
               "parameters": {
-                "$ref": "#/$defs/R3e4f03059e4d"
+                "$ref": "#/$defs/Rf3b73f87d837"
               },
               "source": {
                 "type": "string"
@@ -43775,6 +44033,9 @@
         "id": {
           "pattern": "^sched_[0-9a-f]{16}$",
           "type": "string"
+        },
+        "agent": {
+          "$ref": "#/$defs/R0de09c215b34"
         },
         "title": {
           "minLength": 1,

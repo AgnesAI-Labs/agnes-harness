@@ -1,5 +1,7 @@
 import { type Static, Type } from '@sinclair/typebox'
-import { AgentRef } from '../gen/ts/extension-manifest.js'
+import { AgentRef as AgentRefSchema } from '../gen/ts/extension-manifest.js'
+
+const AgentRef = AgentRefSchema.$defs.AgentRef
 
 const sessionKey = Type.String({ minLength: 1, maxLength: 256 })
 const title = Type.String({ minLength: 1, maxLength: 120 })
