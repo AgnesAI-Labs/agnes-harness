@@ -184,7 +184,7 @@ export function createSessionController(
       context.clientModules.session.setSession(loaded.id)
       if (!options.created && !context.sessionRows.some((row) => row.sessionId === id)) {
         const page = await context.client.session.list({ q: { prefix: id }, limit: 100 })
-        if (epoch !== context.selection) return
+        if (!context.sessionBinding.isCurrent(epoch)) return
         const row = page.items.find((item) => item.sessionId === id)
         if (row) context.sessionRows = [...context.sessionRows.filter((item) => item.sessionId !== id), row]
       }
