@@ -165,7 +165,6 @@ type Deferred<T> = {
 
 type SessionDouble = {
   id: string
-  pendingCommands: ReturnType<typeof vi.fn>
   controls: ReturnType<typeof vi.fn>
   control: ReturnType<typeof vi.fn>
   editQueued: ReturnType<typeof vi.fn>
@@ -176,6 +175,9 @@ type SessionDouble = {
   followUp: ReturnType<typeof vi.fn>
   interrupt: ReturnType<typeof vi.fn>
   removeQueued: ReturnType<typeof vi.fn>
+  promoteQueued: ReturnType<typeof vi.fn>
+  pendingCommands: ReturnType<typeof vi.fn>
+  checkCommand: ReturnType<typeof vi.fn>
   onPermissionRequest: ReturnType<typeof vi.fn>
   onPreview: ReturnType<typeof vi.fn>
   projectUI: ReturnType<typeof vi.fn>
@@ -264,7 +266,6 @@ function session(id: string, projectUI: () => Promise<UITimeline>): SessionDoubl
     }
   })
   return {
-    pendingCommands: vi.fn(async () => []),
     projectUIOpening: opening,
     projectUIPatch: patch,
     projectUIHistory: vi.fn(async () => {
@@ -296,6 +297,9 @@ function session(id: string, projectUI: () => Promise<UITimeline>): SessionDoubl
     followUp: vi.fn(async () => undefined),
     interrupt: vi.fn(async () => 1),
     removeQueued: vi.fn(async () => 1),
+    promoteQueued: vi.fn(async () => 1),
+    pendingCommands: vi.fn(async () => []),
+    checkCommand: vi.fn(async () => 1),
     onPermissionRequest: vi.fn(() => vi.fn()),
     onPreview: vi.fn(() => vi.fn()),
     projectUI: vi.fn(projectUI),
@@ -1392,7 +1396,7 @@ describe('web session selection', () => {
     for (const id of ['model', 'composer-workspace', 'composer-permission', 'new', 'prompt'])
       expect(control(id).disabled).toBe(false)
     // The account settings owner reports the restart consequence, not this refresh callback.
-    expect(document.getElementById('notice')?.textContent).not.toContain('尚未生效')
+    expect(document.getElementById('notice')?.textContent).toBe('')
     control('model').click()
     await openModelList()
     expect(modelMenu().textContent).toContain('model-a')
@@ -1587,8 +1591,7 @@ describe('web session selection', () => {
         afterSave.resolve(result)
       }
       await saved
-      expect(document.getElementById('notice')?.textContent).not.toContain('模型配置已更新')
-      expect(document.getElementById('notice')?.textContent).not.toContain('尚未生效')
+      expect(document.getElementById('notice')?.textContent).toBe('')
       await vi.waitFor(() => expect(modelButton.disabled).toBe(false))
       modelButton.click()
       await openModelList()

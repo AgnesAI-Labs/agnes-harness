@@ -1515,7 +1515,7 @@ it('shows a plain pending tree status and hides aligned internal digests', async
   Object.defineProperty(location, 'reload', { configurable: true, value: originalReload })
 })
 
-it('recovers a dropped tree_changed notice by polling tree/list without a page reload', async () => {
+it('recovers a dropped tree_changed notice when the page regains focus without reloading', async () => {
   await renderPluginHost()
   history.replaceState(null, '', '/admin/plugins#tree-poll-token')
   const digest = `sha256-${'b'.repeat(64)}`
@@ -1562,6 +1562,8 @@ it('recovers a dropped tree_changed notice by polling tree/list without a page r
   )
   expect(document.getElementById('plugin-tree-status')?.textContent).not.toContain(digest)
   expect(document.getElementById('plugin-tree-status')?.textContent).not.toContain('health')
+  expect(treeCalls).toBe(1)
+  window.dispatchEvent(new Event('focus'))
   await vi.waitFor(() => expect(document.getElementById('plugin-tree-status')?.hidden).toBe(true), {
     timeout: 4_000,
   })
