@@ -6345,6 +6345,10 @@
         "credentialConfigured": {
           "type": "boolean"
         },
+        "credentialIssue": {
+          "description": "Read-only availability reason. Missing or unreadable credentials exclude this account from new-session routes; no credential values are returned.",
+          "enum": ["CONFIG_CREDENTIAL_REQUIRED", "CONFIG_CREDENTIAL_UNREADABLE"]
+        },
         "authType": {
           "enum": ["api-key", "oauth"]
         }
