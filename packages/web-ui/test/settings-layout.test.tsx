@@ -144,6 +144,12 @@ it.each(['default', 'file'] as const)('keeps %s row actions separate from its de
   host.querySelector('p')!.click()
   expect(open).toHaveBeenCalledTimes(2)
   expect(document.activeElement).toBe(buttons[0])
+  if (variant === 'file') {
+    const name = 'delivery-summary.pdf'
+    const label = render(createElement(ListRow, { variant, title: name }))
+    expect(label.querySelector('h3')?.textContent).toBe(name)
+    expect(label.querySelector('h3')?.title).toBe(name)
+  }
 })
 it('closes the detail drawer on Escape and returns focus to its trigger', async () => {
   function Fixture() {

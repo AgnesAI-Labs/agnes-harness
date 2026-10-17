@@ -4,6 +4,7 @@ import { DocumentPreview, HtmlPreviewFrame } from '@agnes/web-ui/conversation'
 import { createElement as h, useEffect, useState, useSyncExternalStore } from 'react'
 
 function GalleryCard({ file, ctx }) {
+  const zh = ctx.locale.locale === 'zh-CN'
   const [resource, setResource] = useState()
   const [error, setError] = useState()
   const [owner] = useState(() => ({ live: true, releases: new Set() }))
@@ -75,7 +76,7 @@ function GalleryCard({ file, ctx }) {
             void read(true)
           },
         },
-        'Download',
+        zh ? '下载' : 'Download',
       ),
     }),
     error && h(StatusMessage, { kind: 'error' }, error),
@@ -102,6 +103,7 @@ export function apply(ctx) {
     mount() {
       const store = new DeliverablesStore(ctx.agnes, ctx.session)
       function Gallery({ turn }) {
+        const zh = ctx.locale.locale === 'zh-CN'
         const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot)
         if (snapshot.sessionId !== ctx.session.sessionId) return null
         const files = snapshot.files
@@ -116,21 +118,26 @@ export function apply(ctx) {
           )
         return h(
           'section',
-          { 'aria-label': 'Deliverables gallery', 'data-testid': 'deliverables-gallery' },
+          {
+            'aria-label': zh ? '交付物图库' : 'Deliverables gallery',
+            'data-testid': 'deliverables-gallery',
+            className: turn ? undefined : 'workbench-deliverables-scroll',
+          },
           snapshot.error &&
             h(
               StatusMessage,
-              { kind: 'error', action: { label: 'Retry', onSelect: store.refresh } },
+              { kind: 'error', action: { label: zh ? '重试' : 'Retry', onSelect: store.refresh } },
               snapshot.error,
             ),
-          snapshot.loading && h(StatusMessage, { kind: 'pending' }, 'Loading snapshots…'),
+          snapshot.loading &&
+            h(StatusMessage, { kind: 'pending' }, zh ? '正在读取快照…' : 'Loading snapshots…'),
           ...files.map((file) => h(GalleryCard, { key: file.id, file, ctx })),
           !files.length &&
             !snapshot.loading &&
             h(EmptyState, {
               icon: h(Icon, { name: 'file' }),
-              title: 'Gallery',
-              description: 'Present files to see their snapshots.',
+              title: zh ? '图库' : 'Gallery',
+              description: zh ? '交付文件后即可查看快照。' : 'Present files to see their snapshots.',
             }),
         )
       }
@@ -152,7 +159,7 @@ export function apply(ctx) {
             edge: 'right',
             order: 55,
             titleKey: 'Gallery',
-            title: () => 'Gallery',
+            title: () => (ctx.locale.locale === 'zh-CN' ? '图库' : 'Gallery'),
             count: { subscribe: store.subscribe, read: () => store.getSnapshot().files.length },
             component: () => h(Gallery),
           }),

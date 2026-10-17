@@ -20,7 +20,7 @@ import * as official from '../../package-manager/bundled-plugins/deliverables-ui
 
 const artifact = { sha256: 'a'.repeat(64), size: 6, mime: 'text/plain' }
 
-it('takes over the complete experience, recovers history, opens/downloads through resource authorization and yields without leftover UI', async () => {
+it.each(['en', 'zh-CN'])('switches authorized deliverables (%s)', async (locale) => {
   const cordis = new Context(),
     session = new SessionService(cordis, 'session')
   const slots = new SlotRegistry(cordis),
@@ -41,7 +41,7 @@ it('takes over the complete experience, recovers history, opens/downloads throug
     readToolDetail: async () => ({
       result: {
         structured: {
-          deliverables: [{ name: 'report.txt', description: 'final', ref: artifact }],
+          deliverables: [{ name: 'report.txt', description: 'Saved report', ref: artifact }],
           laneId: 'main',
         },
       },
@@ -63,7 +63,7 @@ it('takes over the complete experience, recovers history, opens/downloads throug
             session,
             slots,
             resources,
-            locale: { locale: 'en', t: (key: string) => key },
+            locale: { locale, t: (key: string) => key },
             presentationRoles: { register: (provider: never) => roles.register(owner, provider) },
           }).map(([key, value]) => [key, { value, enumerable: false }]),
         ),
@@ -84,6 +84,10 @@ it('takes over the complete experience, recovers history, opens/downloads throug
       root.render(createElement(panel.component, { context: { t: (key) => key } }))
     })
     await vi.waitFor(() => expect(host.textContent).toContain('report.txt'))
+    if (id === 'deliverables')
+      expect(host.querySelector('.workbench-deliverables-group h4')?.textContent).toBe(
+        locale === 'zh-CN' ? '文件' : 'Files',
+      )
   }
   let stopOfficial = official.apply(context('official'))
   let stopGallery: (() => void) | undefined
@@ -112,14 +116,18 @@ it('takes over the complete experience, recovers history, opens/downloads throug
     expect(resources.documents.load).toHaveBeenCalledWith({ laneId: 'main', artifact, kind: 'text' })
     expect(host.textContent).toContain('saved snapshot')
     await act(async () =>
-      [...host.querySelectorAll('button')].find((button) => button.textContent === 'Download')!.click(),
+      [...host.querySelectorAll('button')]
+        .find((button) => button.textContent === (locale === 'zh-CN' ? '下载' : 'Download'))!
+        .click(),
     )
     expect(resources.files.load).toHaveBeenCalledWith({ laneId: 'main', artifact })
     expect(anchor).toHaveBeenCalled()
     // Backend refusal remains a visible failure and does not create a source-path URL.
     resources.files.load.mockRejectedValueOnce(new Error('artifact_forbidden'))
     await act(async () =>
-      [...host.querySelectorAll('button')].find((button) => button.textContent === 'Download')!.click(),
+      [...host.querySelectorAll('button')]
+        .find((button) => button.textContent === (locale === 'zh-CN' ? '下载' : 'Download'))!
+        .click(),
     )
     expect(host.textContent).toContain('artifact_forbidden')
     // Browser restart: reconstruct both modules from the same durable session, replacement wins.
@@ -211,7 +219,9 @@ it('opens inline-only historical snapshots locally, reveals selected earlier ver
     )
     expect(host.querySelector('.agh-disclosure')?.getAttribute('data-open')).toBe('true')
     expect(host.textContent).toContain('older snapshot')
-    await act(async () => host.querySelectorAll<HTMLButtonElement>('.agh-list-row-title')[1]!.click())
+    await act(async () =>
+      host.querySelectorAll<HTMLButtonElement>('[data-testid=deliverable-open]')[1]!.click(),
+    )
     expect(host.textContent).not.toContain('older snapshot')
     await act(async () =>
       root.render(
@@ -232,7 +242,9 @@ it('opens inline-only historical snapshots locally, reveals selected earlier ver
         createElement(official.FileList, { files: [old, latest], ctx: { ...ctx, selection: { id: 'new' } } }),
       ),
     )
-    await act(async () => host.querySelectorAll<HTMLButtonElement>('.agh-list-row-title')[1]!.click())
+    await act(async () =>
+      host.querySelectorAll<HTMLButtonElement>('[data-testid=deliverable-open]')[1]!.click(),
+    )
     await act(async () => host.querySelector<HTMLButtonElement>('[data-testid=deliverables-source]')!.click())
     expect(navigate).toHaveBeenLastCalledWith({
       sessionId: 's',
@@ -250,7 +262,7 @@ it('opens inline-only historical snapshots locally, reveals selected earlier ver
     await act(async () =>
       root.render(createElement(official.FileCard, { file: { ...old, id: 'late' }, ctx, inline: false })),
     )
-    await act(async () => host.querySelector<HTMLButtonElement>('.agh-list-row-title')!.click())
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid=deliverable-open]')!.click())
     await act(async () => root.render(null))
     await act(async () => complete({ kind: 'text', content: 'late', release }))
     expect(host.textContent).toBe('')

@@ -152,9 +152,12 @@ export function FileCard({ file, ctx, inline = false, subtitle }) {
       titleLabel: `${zh ? '打开' : 'Open'}: ${file.name}`,
       description: subtitle ?? [file.description, formatted].filter(Boolean).join(' · '),
       icon: h('span', { className: 'deliverable-tile', 'data-type': type }, h(Icon, { name: icon })),
-      onOpen: () => {
-        void open()
-      },
+      // Workbench titles are labels; the explicit Open action owns preview activation.
+      onOpen: inline
+        ? () => {
+            void open()
+          }
+        : undefined,
       actions: h(
         Fragment,
         null,
@@ -363,7 +366,7 @@ export function FileList({ files, ctx, inline = false }) {
         groups.filter(({ latest }) => ['draft', 'review draft'].includes(version(latest))),
       ),
       section(
-        zh ? '其他文件' : 'Other files',
+        zh ? '文件' : 'Files',
         groups.filter(({ latest }) => !['final', 'draft', 'review draft'].includes(version(latest))),
       ),
       earlier.length > 0 && h(History, { earlier, ctx, inline, zh, onChoose: setChosen }),

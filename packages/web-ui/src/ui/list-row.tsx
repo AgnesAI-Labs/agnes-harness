@@ -59,7 +59,10 @@ export function ListRow({
       )}
       <div className={file ? 'deliverable-text' : 'agh-list-row-copy'}>
         <div className={file ? undefined : 'agh-list-row-heading'}>
-          <h3 className={file ? 'deliverable-name' : undefined}>
+          <h3
+            title={typeof title === 'string' ? title : undefined}
+            className={file ? 'deliverable-name' : undefined}
+          >
             {onOpen ? (
               <Button
                 ref={trigger}
