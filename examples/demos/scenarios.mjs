@@ -168,8 +168,14 @@ try {
     await prompt(author, 'Create a plugin that counts characters and words in text.')
     const draft = await result(author, 'plugin_helper_create')
     assert.equal(draft.state, 'draft')
-    const manifest = JSON.parse(draft.files.find((file) => file.path === 'package.json').after)
-    const source = draft.files.find((file) => file.path === 'index.mjs').after
+    // Creation returns a bounded receipt; human review reads the exact backend-owned source.
+    const candidate = await rt.client.request('_agnes/v1/plugins.candidates.show', {
+      profile: 'local-dev',
+      candidateId: draft.candidateId,
+    })
+    assert.equal(candidate.candidateHash, draft.candidateHash)
+    const manifest = JSON.parse(candidate.sourceFiles.find((file) => file.path === 'package.json').content)
+    const source = candidate.sourceFiles.find((file) => file.path === 'index.mjs').content
     assert.equal(manifest.name, 'my-agh-plugin')
     assert.ok(source.includes('my_text_stats'))
     assert.equal(

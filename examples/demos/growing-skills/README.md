@@ -4,6 +4,8 @@ English | [简体中文](README.zh-CN.md)
 
 Ask the Agent to create a reusable text statistics plugin. Review its source and passing tests, publish the exact reviewed candidate hash, then verify the next session uses it with installer=agent provenance.
 
+Creation returns a bounded receipt. The demo reads the candidate source through the backend review interface and verifies that its hash matches that receipt before reviewing or publishing it.
+
 From the repository root, after installing dependencies and building the local CLI:
 
 ```sh
