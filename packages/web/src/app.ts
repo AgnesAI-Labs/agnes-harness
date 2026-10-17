@@ -26,7 +26,9 @@ import {
 } from './app/global-events.js'
 import { createReadOnlyController } from './app/read-only-controller.js'
 import { createSessionController } from './app/session-controller.js'
+import { SessionBindingOwner } from './app/session-owner.js'
 import { createSubmissionController } from './app/submission-controller.js'
+import { SubmissionOwner } from './app/submission-owner.js'
 import { createTurnController } from './app/turn-controller.js'
 import { readyRosterModules } from './client-modules/reconcile/roster.js'
 import '@agnes/web-admin/settings/registry'
@@ -114,7 +116,7 @@ const unbindDialogSheets = bindDialogSheets(document)
 // An old link to a page that left settings opens that page's new home.
 rewriteMovedSettingsLink()
 
-/** Live bindings keep selection guards and asynchronous cleanup on the app's shared state. */
+/** Controllers consume the selected binding through its owner. */
 export interface AppSessionContext {
   SESSION_WATCH_STOP_TIMEOUT_MS: typeof SESSION_WATCH_STOP_TIMEOUT_MS
   TRACE_THROTTLE_MS: typeof TRACE_THROTTLE_MS
@@ -122,8 +124,6 @@ export interface AppSessionContext {
   approvalRuntime: typeof approvalRuntime
   approvalSearch: typeof approvalSearch
   approvalSearchTicket: typeof approvalSearchTicket
-  attachmentSessionOpening: typeof attachmentSessionOpening
-  awaitingPromptStart: typeof awaitingPromptStart
   beginNewDraft: typeof beginNewDraft
   clearSessionRecovery: typeof clearSessionRecovery
   client: typeof client
@@ -132,11 +132,11 @@ export interface AppSessionContext {
   composerRuntime: typeof composerRuntime
   configured: typeof configured
   connected: typeof connected
-  controlPending: typeof controlPending
   controlsHistory: typeof controlsHistory
-  controlsRefresh: typeof controlsRefresh
   conversationRuntime: typeof conversationRuntime
-  current: typeof current
+  readonly submissions: SubmissionOwner
+  readonly sessionBinding: Pick<SessionBindingOwner, 'capture' | 'isCurrent'>
+  readonly current: Session | undefined
   dockControlsHost: typeof dockControlsHost
   draftBundles: typeof draftBundles
   draftLoop: typeof draftLoop
@@ -150,7 +150,7 @@ export interface AppSessionContext {
   intentionalClose: typeof intentionalClose
   knownSessionModel: typeof knownSessionModel
   list: typeof list
-  live: typeof live
+  readonly live: LiveProjection | undefined
   liveApproval: typeof liveApproval
   loopCatalogError: typeof loopCatalogError
   loopCatalogPending: typeof loopCatalogPending
@@ -160,7 +160,6 @@ export interface AppSessionContext {
   moduleSessionId: typeof moduleSessionId
   newSessionCatalog: typeof newSessionCatalog
   notice: typeof notice
-  offPermission: typeof offPermission
   open: typeof open
   openNewSessionDialog: typeof openNewSessionDialog
   pendingSessionKey: typeof pendingSessionKey
@@ -170,11 +169,9 @@ export interface AppSessionContext {
   permissionRefreshPending: typeof permissionRefreshPending
   permissionSelectionSeq: typeof permissionSelectionSeq
   projection: typeof projection
-  queueAction: typeof queueAction
   receipts: typeof receipts
   recoveredReturns: typeof recoveredReturns
   recoveryDisabled: typeof recoveryDisabled
-  referenceSessionPending: typeof referenceSessionPending
   references: typeof references
   refreshSessionControls: typeof refreshSessionControls
   render: typeof render
@@ -188,8 +185,6 @@ export interface AppSessionContext {
   selectedDraftPreset: typeof selectedDraftPreset
   selectedModelAvailable: typeof selectedModelAvailable
   selectedWorkspace: typeof selectedWorkspace
-  selection: typeof selection
-  sending: typeof sending
   sessionControls: typeof sessionControls
   sessionPending: typeof sessionPending
   sessionRows: typeof sessionRows
@@ -199,10 +194,8 @@ export interface AppSessionContext {
   showError: typeof showError
   showSessionRecovery: typeof showSessionRecovery
   stopAfterSeq: typeof stopAfterSeq
-  stopEvents: typeof stopEvents
   stopping: typeof stopping
   streamFrame: typeof streamFrame
-  submissionGeneration: typeof submissionGeneration
   submitComposer: typeof submitComposer
   syncDraftPermission: typeof syncDraftPermission
   t: typeof t
@@ -220,7 +213,11 @@ export interface AppSessionContext {
   readOnly: typeof readOnly
   readOnlyController: typeof readOnlyController
 }
+const sessionBinding = new SessionBindingOwner()
+const submissions = new SubmissionOwner(sessionBinding)
 const appSessionContext: AppSessionContext = {
+  sessionBinding,
+  submissions,
   get SESSION_WATCH_STOP_TIMEOUT_MS() {
     return SESSION_WATCH_STOP_TIMEOUT_MS
   },
@@ -247,18 +244,6 @@ const appSessionContext: AppSessionContext = {
   },
   set approvalSearchTicket(value: typeof approvalSearchTicket) {
     approvalSearchTicket = value
-  },
-  get attachmentSessionOpening() {
-    return attachmentSessionOpening
-  },
-  set attachmentSessionOpening(value: typeof attachmentSessionOpening) {
-    attachmentSessionOpening = value
-  },
-  get awaitingPromptStart() {
-    return awaitingPromptStart
-  },
-  set awaitingPromptStart(value: typeof awaitingPromptStart) {
-    awaitingPromptStart = value
   },
   get beginNewDraft() {
     return beginNewDraft
@@ -290,29 +275,14 @@ const appSessionContext: AppSessionContext = {
   set connected(value: typeof connected) {
     connected = value
   },
-  get controlPending() {
-    return controlPending
-  },
-  set controlPending(value: typeof controlPending) {
-    controlPending = value
-  },
   get controlsHistory() {
     return controlsHistory
-  },
-  get controlsRefresh() {
-    return controlsRefresh
-  },
-  set controlsRefresh(value: typeof controlsRefresh) {
-    controlsRefresh = value
   },
   get conversationRuntime() {
     return conversationRuntime
   },
   get current() {
-    return current
-  },
-  set current(value: typeof current) {
-    current = value
+    return sessionBinding.session
   },
   get dockControlsHost() {
     return dockControlsHost
@@ -381,10 +351,7 @@ const appSessionContext: AppSessionContext = {
     return list
   },
   get live() {
-    return live
-  },
-  set live(value: typeof live) {
-    live = value
+    return sessionBinding.live
   },
   get liveApproval() {
     return liveApproval
@@ -434,12 +401,6 @@ const appSessionContext: AppSessionContext = {
   get notice() {
     return notice
   },
-  get offPermission() {
-    return offPermission
-  },
-  set offPermission(value: typeof offPermission) {
-    offPermission = value
-  },
   get open() {
     return open
   },
@@ -488,12 +449,6 @@ const appSessionContext: AppSessionContext = {
   set projection(value: typeof projection) {
     projection = value
   },
-  get queueAction() {
-    return queueAction
-  },
-  set queueAction(value: typeof queueAction) {
-    queueAction = value
-  },
   get receipts() {
     return receipts
   },
@@ -502,12 +457,6 @@ const appSessionContext: AppSessionContext = {
   },
   get recoveryDisabled() {
     return recoveryDisabled
-  },
-  get referenceSessionPending() {
-    return referenceSessionPending
-  },
-  set referenceSessionPending(value: typeof referenceSessionPending) {
-    referenceSessionPending = value
   },
   get references() {
     return references
@@ -560,18 +509,6 @@ const appSessionContext: AppSessionContext = {
   set selectedWorkspace(value: typeof selectedWorkspace) {
     selectedWorkspace = value
   },
-  get selection() {
-    return selection
-  },
-  set selection(value: typeof selection) {
-    selection = value
-  },
-  get sending() {
-    return sending
-  },
-  set sending(value: typeof sending) {
-    sending = value
-  },
   get sessionControls() {
     return sessionControls
   },
@@ -614,12 +551,6 @@ const appSessionContext: AppSessionContext = {
   set stopAfterSeq(value: typeof stopAfterSeq) {
     stopAfterSeq = value
   },
-  get stopEvents() {
-    return stopEvents
-  },
-  set stopEvents(value: typeof stopEvents) {
-    stopEvents = value
-  },
   get stopping() {
     return stopping
   },
@@ -631,12 +562,6 @@ const appSessionContext: AppSessionContext = {
   },
   set streamFrame(value: typeof streamFrame) {
     streamFrame = value
-  },
-  get submissionGeneration() {
-    return submissionGeneration
-  },
-  set submissionGeneration(value: typeof submissionGeneration) {
-    submissionGeneration = value
   },
   get submitComposer() {
     return submitComposer
@@ -708,7 +633,7 @@ const appSessionContext: AppSessionContext = {
 const commandController = createCommandController(appSessionContext)
 const composerController = createComposerController(appSessionContext)
 const submissionController = createSubmissionController(appSessionContext)
-const sessionController = createSessionController(appSessionContext)
+const sessionController = createSessionController(appSessionContext, sessionBinding)
 const turnController = createTurnController(appSessionContext)
 const readOnlyController = createReadOnlyController(appSessionContext, {
   open: (id) => open(id),
@@ -728,7 +653,11 @@ const client = createClient({
   journal: localStorageJournal(sessionStorage, `agnes-web-commands:${wsUrl ?? location.origin}`),
 })
 onPageHide(
-  bindJobsClient({ client, current: () => current?.id, newTaskTitle: () => t('app.status.newTask') }),
+  bindJobsClient({
+    client,
+    current: () => sessionBinding.session?.id,
+    newTaskTitle: () => t('app.status.newTask'),
+  }),
 )
 let intentionalClose = false
 // Recovery state lives beside the notice, not in it: later errors rewrite the notice, and the
@@ -747,11 +676,10 @@ function renderReconnect(phase: ReconnectPhase): void {
 // 之前名册按空处理（fail-closed，不加载任何模块）。
 const customModuleListeners = new Set<() => void>()
 const moduleExtIds = new Map<string, string[]>()
-let selection = 0
 let profileName = ''
 let moduleSessionId: string | undefined
 const rosterSource: RosterSource = {
-  identity: () => JSON.stringify([profileName, moduleSessionId, selection]),
+  identity: () => JSON.stringify([profileName, moduleSessionId, sessionBinding.generation]),
   commit(roster) {
     moduleExtIds.clear()
     for (const mod of roster.modules) moduleExtIds.set(mod.rowId ?? mod.packageId, mod.extIds)
@@ -776,7 +704,6 @@ const rosterSource: RosterSource = {
 const claimSlotCard: ClaimResolver = (entry, extId) =>
   entry.owner !== undefined && (moduleExtIds.get(entry.owner)?.includes(extId) ?? false)
 const references = composerReferences(prepareComposerSession, renderControls)
-let referenceSessionPending: Promise<Session> | undefined
 
 // Reserve host entries before installed modules can register their reviewed declarations.
 const removeHomeEntries = registerBuiltinHomeEntries()
@@ -886,7 +813,7 @@ const clientModules = await startClientModules({
           if (sessionPending) return
           homeNavigation.close()
           // The session already showing behind a page needs no second open.
-          if (id !== current?.id || draftingNew) await open(id)
+          if (id !== sessionBinding.session?.id || draftingNew) await open(id)
           clientModules.sidebar?.close()
         }),
       workspaceAction: async (action, workspace) => {
@@ -954,19 +881,26 @@ const clientModules = await startClientModules({
     chatToggle: hosts.viewChat,
     conversation,
     clearModelRequest: async (params) => {
-      if (!current || current.id !== params.sessionId) throw new Error(t('app.trace.sessionSwitched'))
+      if (!sessionBinding.session || sessionBinding.session.id !== params.sessionId)
+        throw new Error(t('app.trace.sessionSwitched'))
       return client.requestTrace.clear(params)
     },
     readFactChain: (params, signal) =>
-      readTraceFactChain(current, params, () => new Error(t('app.trace.sessionSwitched')), signal),
+      readTraceFactChain(
+        sessionBinding.session,
+        params,
+        () => new Error(t('app.trace.sessionSwitched')),
+        signal,
+      ),
     loadArtifact: (input) => clientModules.resources.files.load(input),
     readModelRequest: async (params, signal) => {
-      if (!current || current.id !== params.sessionId) throw new Error(t('app.trace.sessionSwitched'))
+      if (!sessionBinding.session || sessionBinding.session.id !== params.sessionId)
+        throw new Error(t('app.trace.sessionSwitched'))
       if (signal?.aborted) throw new Error(t('app.trace.sessionSwitched'))
       return client.requestTrace.get(params)
     },
     readToolDetail: async (sessionId, callSeq, resultSeq, signal) => {
-      const session = current
+      const session = sessionBinding.session
       if (!session) throw new Error(t('app.trace.noSession'))
       if (session.id !== sessionId) throw new Error(t('app.trace.sessionSwitched'))
       return session.readToolDetail(callSeq, resultSeq, signal ? { signal } : undefined)
@@ -1019,7 +953,7 @@ const homePages = mountHomePages(hosts.homePage, {
   locale: clientModules.locale,
   data: {
     call: (method, params) => client.call(method, params),
-    sessionId: () => current?.id,
+    sessionId: () => sessionBinding.session?.id,
     openSettings: (section) =>
       run(async () => {
         settingsRegion.open('model')
@@ -1071,7 +1005,7 @@ setLocaleTranslator(t)
 clientModules.locale.register('@agnes/web-workbench', workbenchLocaleCatalog)
 
 // A daemon notice is only an invalidation hint. Every read goes back through the SDK roster
-// endpoint, and a failed read leaves the current page/modules intact for the next hint.
+// endpoint, and a failed read leaves the sessionBinding.session page/modules intact for the next hint.
 function scheduleClientRosterRead(initial = false): void {
   void (initial ? clientModules.reconciler.reconcileNow() : clientModules.reconciler.invalidate()).catch(
     (error) => console.warn('[client-modules] 名册重读失败', error),
@@ -1088,17 +1022,14 @@ const stopPluginHotReload = startPluginHotReload({
 onPageHide(() => stopPluginHotReload())
 let connected = false
 let configured = false
-let current: Session | undefined
 let sessionControls: { sessionId: string; value: SessionControlStateResult } | undefined
-let controlsRefresh = 0
-let controlPending = false
 const recoveredReturns = new Set<string>()
 const controlsHistory = new Map<
   string,
   { through: number; facts: NonNullable<SessionControlStateResult['facts']> }
 >()
 const childControlRefreshTimer = setInterval(() => {
-  const session = current
+  const session = sessionBinding.session
   if (
     connected &&
     session &&
@@ -1112,7 +1043,6 @@ const childControlRefreshTimer = setInterval(() => {
 onPageHide(() => clearInterval(childControlRefreshTimer))
 let projection: UITimeline | undefined
 let listGeneration = 0
-let live: LiveProjection | undefined
 // The window's first node is the session's first, so its first user message titles the task.
 let windowAtStart = true
 // A session that cannot continue on this build, shown from its record alone.
@@ -1120,21 +1050,7 @@ let readOnly: { id: string; maxNodes: number; hasEarlier: boolean } | undefined
 let approvalSearch: 'idle' | 'searching' | 'not-found' = 'idle'
 let approvalSearchTicket: string | undefined
 let streamFrame: number | undefined
-let stopEvents: (() => Promise<void>) | undefined
-let offPermission: (() => void) | undefined
-let sending = false
-let awaitingPromptStart = false
 let stopping = false
-let queueAction:
-  | {
-      sessionId: string
-      selection: number
-      itemId: string
-      kind: 'sendNow' | 'removeQueued' | 'promote'
-      pending: boolean
-      error?: string
-    }
-  | undefined
 let sessionPending = new URLSearchParams(location.search).get('new') === '1'
 let newSessionCreating = false
 let workspacePickerReady: boolean | undefined
@@ -1230,7 +1146,6 @@ let permissionRefreshPending = false
 let permissionConnectionEpoch = 0
 let sessionYoloEnabled: boolean | undefined
 let permissionSelectionSeq = 0
-let submissionGeneration = 0
 // daemon 自己报出的 profile（config.get() 后才知道）；皮肤清单与客户端模块名册都必须把它传回去。
 const receipts = new Map<string, RunReceipt>()
 const sessionLabels = new Map<string, string>()
@@ -1250,7 +1165,7 @@ const titleRefresh = createTitleRefresh(async (id) => {
 })
 function updateTitle(id: string, title: string): void {
   sessionLabels.set(id, title)
-  if (current?.id === id) topbarRuntime.setTaskTitle(title)
+  if (sessionBinding.session?.id === id) topbarRuntime.setTaskTitle(title)
   updateSidebar()
 }
 let runtimePlatform: string | undefined
@@ -1259,7 +1174,7 @@ let workspaceRows: WorkspaceEntry[] = []
 const sidebarPages = createSidebarPagination(
   client.session,
   () => {
-    const selected = sessionRows.find((row) => row.sessionId === (current?.id ?? readOnly?.id))
+    const selected = sessionRows.find((row) => row.sessionId === (sessionBinding.session?.id ?? readOnly?.id))
     sessionRows = sidebarPages.rows()
     if (selected && !sessionRows.some((row) => row.sessionId === selected.sessionId))
       sessionRows.push(selected)
@@ -1299,13 +1214,13 @@ function updateSidebar(): void {
     // While a home page shows, the page's entry is the selected item, not the session behind it.
     ...(activeHomeEntry()
       ? {}
-      : current
-        ? { currentId: current.id }
+      : sessionBinding.session
+        ? { currentId: sessionBinding.session.id }
         : readOnly
           ? { currentId: readOnly.id }
           : {}),
     sessionPending,
-    newDisabled: !connected || sending || sessionPending || newSessionCreating,
+    newDisabled: !connected || submissions.sending || sessionPending || newSessionCreating,
   })
 }
 
@@ -1446,7 +1361,7 @@ const sessionSearch = mountSessionSearch({
     run(async () => {
       if (sessionPending) return
       homeNavigation.close()
-      if (id !== current?.id || draftingNew) await open(id)
+      if (id !== sessionBinding.session?.id || draftingNew) await open(id)
     }),
 })
 onSurfaceEvent(SESSION_SEARCH_EVENT, (event) =>
@@ -1455,21 +1370,21 @@ onSurfaceEvent(SESSION_SEARCH_EVENT, (event) =>
 clientModules.locale.subscribe(() => sessionSearch.refreshLocale())
 // Top bar entries for the selected session: its title renames it, the info button shows its runtime.
 for (const action of ['rename', 'runtime'] as const)
-  onSurfaceEvent(`agnes:${action}-current-session`, (event) => {
-    if (!current || draftingNew || sessionPending) return
+  onSurfaceEvent(`agnes:${action}-sessionBinding.session-session`, (event) => {
+    if (!sessionBinding.session || draftingNew || sessionPending) return
     const trigger = event.target
     if (!(trigger instanceof HTMLElement)) return
     if (action === 'rename') {
       const title = trigger.textContent ?? ''
       topbarRuntime.editTitle({
-        sessionId: current.id,
+        sessionId: sessionBinding.session.id,
         title,
-        save: sessionActions.renameInline(current.id, title),
+        save: sessionActions.renameInline(sessionBinding.session.id, title),
       })
-    } else void sessionActions.act(action, current.id, trigger.textContent ?? '', trigger)
+    } else void sessionActions.act(action, sessionBinding.session.id, trigger.textContent ?? '', trigger)
   })
 onSurfaceEvent('agnes:compose-suggestion', (event) => {
-  if ((current && !draftingNew) || sessionPending || !(event instanceof CustomEvent)) return
+  if ((sessionBinding.session && !draftingNew) || sessionPending || !(event instanceof CustomEvent)) return
   if (typeof event.detail !== 'string') return
   composerRuntime.setDraft(event.detail)
   composerRuntime.focus()
@@ -1553,7 +1468,7 @@ function showSessionRecovery(error: unknown, id: string): void {
   renderSessionRecovery()
 }
 function recoveryDisabled(): boolean {
-  return !connected || sending || sessionPending || newSessionCreating
+  return !connected || submissions.sending || sessionPending || newSessionCreating
 }
 function renderSessionRecovery(message = ''): void {
   if (!sessionRecovery) return
@@ -1583,7 +1498,7 @@ function setConnection(value: 'connecting' | 'connected' | 'reconnecting' | 'clo
   if (!connected) {
     sidebarPages.reset()
     permissionConnectionEpoch++
-    if (current) {
+    if (sessionBinding.session) {
       permissionRefreshPending = true
       sessionYoloEnabled = undefined
       // An interrupted first submission must not replay its permission choice after reconnecting.
@@ -1642,19 +1557,19 @@ async function list(
   const page = { items: sidebarPages.rows() }
   if (epoch !== listGeneration) return page
   const rows = new Map(page.items.map((row) => [row.sessionId, row]))
-  if (current) {
-    const selected = await client.session.list({ q: { prefix: current.id }, limit: 100 })
+  if (sessionBinding.session) {
+    const selected = await client.session.list({ q: { prefix: sessionBinding.session.id }, limit: 100 })
     if (epoch !== listGeneration) return page
-    const match = selected.items.find((row) => row.sessionId === current?.id)
+    const match = selected.items.find((row) => row.sessionId === sessionBinding.session?.id)
     if (match) {
       if (match.title) sessionTitles.set(match.sessionId, match.title)
       rows.set(match.sessionId, match)
     }
   }
   sessionRows = [...rows.values()]
-  if (current && projection) render()
+  if (sessionBinding.session && projection) render()
   updateSidebar()
-  const selectedRow = sessionRows.find((row) => row.sessionId === current?.id)
+  const selectedRow = sessionRows.find((row) => row.sessionId === sessionBinding.session?.id)
   if (selectedRow?.title || (selectedRow && !projection?.nodes.some((node) => node.kind === 'user')))
     topbarRuntime.setTaskTitle(selectedRow.title ?? t('app.status.newTask'))
   return page
@@ -1674,7 +1589,6 @@ function forkSidebar(id: string, title: string): Promise<void> {
   homeNavigation.close()
   return sessionController.forkSidebar(id, title)
 }
-let attachmentSessionOpening: Promise<string> | undefined
 function prepareAttachmentSession(): Promise<string> {
   return submissionController.prepareAttachmentSession()
 }
@@ -1752,17 +1666,15 @@ async function pickWorkspace(): Promise<void> {
   }
 }
 async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEntry): Promise<void> {
-  if (sessionPending || sending) return
+  if (sessionPending || submissions.sending) return
   sessionPending = true
   if (workspace) selectedWorkspace = workspace
   clearSessionRecovery()
-  const epoch = ++selection
+  const { binding: epoch, previous } = sessionBinding.begin()
   references.clear()
-  const previous = current
-  if (previous && knownSessionModel) rememberWebComposer({ model: knownSessionModel })
+  if (previous.session && knownSessionModel) rememberWebComposer({ model: knownSessionModel })
   const inherited = selectionFromMemory(runtimeModels, accountProvider)
-  const stop = stopEvents
-  current = undefined
+  const stop = previous.stop
   moduleSessionId = undefined
   clientModules.session.setSession(undefined)
   projection = undefined
@@ -1780,13 +1692,8 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   permissionRefreshPending = false
   initialPermissionPending = undefined
   initialModelPending = undefined
-  submissionGeneration++
-  offPermission?.()
-  offPermission = undefined
   liveApproval?.finish({ unanswered: 'detached' })
   liveApproval = undefined
-  stopEvents = undefined
-  live = undefined
   renderer.reset()
   const url = new URL(location.href)
   url.searchParams.delete('session')
@@ -1803,7 +1710,7 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   let cleanupError: unknown
   try {
     await refreshSessionCatalog()
-    if (selection === epoch && draftingNew && !draftModelExplicit && !draftModelSettingsEdited) {
+    if (sessionBinding.isCurrent(epoch) && draftingNew && !draftModelExplicit && !draftModelSettingsEdited) {
       const adminModel = newSessionCatalog && defaultModelAdapter(newSessionCatalog.defaults)
       const preferred = adminModel
         ? runtimeModels.find(
@@ -1828,12 +1735,12 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
     cleanupError = error
   }
   try {
-    await previous?.detach()
+    await previous.session?.detach()
     await clientModules.reconciler.reconcileNow()
   } catch (error) {
     cleanupError ??= error
   } finally {
-    if (selection === epoch) {
+    if (sessionBinding.isCurrent(epoch)) {
       sessionPending = false
       render()
     }
@@ -1908,7 +1815,7 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
   const preset = ({ view: 'read-only', workspace: 'workspace-write', full: 'full-access' } as const)[mode]
   const usePreset = runtimeCatalog?.presets.some((entry) => entry.id === preset) === true
   if (mode === 'view' && !usePreset) throw new Error(settingsText('notAllowed'))
-  if (!current && draftingNew) {
+  if (!sessionBinding.session && draftingNew) {
     draftPreset = usePreset ? preset : undefined
     permissionMode = mode
     rememberWebComposer({ permission: mode })
@@ -1917,9 +1824,9 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
     renderControls()
     return true
   }
-  if (!current) return false
-  const session = current
-  const epoch = selection
+  if (!sessionBinding.session) return false
+  const session = sessionBinding.session
+  const epoch = sessionBinding.capture()
   const connectionEpoch = permissionConnectionEpoch
   const requestedYolo = yoloEnabled(mode)
   permissionChangePending = true
@@ -1927,13 +1834,12 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
   try {
     if (usePreset) {
       await session.setPreset(preset)
-      if (current !== session || selection !== epoch || connectionEpoch !== permissionConnectionEpoch)
+      if (!sessionBinding.isCurrent(epoch, session) || connectionEpoch !== permissionConnectionEpoch)
         return false
     }
     const applied = await session.setYolo(requestedYolo)
     if (
-      current !== session ||
-      selection !== epoch ||
+      !sessionBinding.isCurrent(epoch, session) ||
       sessionPending ||
       connectionEpoch !== permissionConnectionEpoch
     )
@@ -1952,7 +1858,7 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
     notice.setKind('')
     return true
   } catch (error) {
-    if (current !== session || selection !== epoch || sessionPending) return false
+    if (!sessionBinding.isCurrent(epoch, session) || sessionPending) return false
     const refused =
       error instanceof Error &&
       'data' in error &&
@@ -1974,7 +1880,7 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
     }
     return false
   } finally {
-    if (current === session && selection === epoch && !sessionPending) {
+    if (sessionBinding.isCurrent(epoch, session) && !sessionPending) {
       permissionChangePending = false
       render()
     }
@@ -1994,25 +1900,34 @@ function modelDefaults(option: ModelPickerOption): KnownSessionModel {
   }
 }
 async function readAuxiliaryModels(): Promise<import('@agnes/web-ui').SessionAuxiliarySnapshot> {
-  const session = current
+  const session = sessionBinding.session
   if (!session) throw new Error('Session unavailable')
+  const binding = sessionBinding.capture()
   const [capabilities, defaults] = await Promise.all([session.capabilities(), loadAuxiliaryModelDefaults()])
-  if (current !== session || !capabilities?.modelRoutes.value) throw new Error('Session unavailable')
+  if (!sessionBinding.isCurrent(binding, session) || !capabilities?.modelRoutes.value)
+    throw new Error('Session unavailable')
   const routes = capabilities.modelRoutes.value
   return { fast: routes.fast ?? null, verifier: routes.verifier ?? null, defaults }
 }
 async function selectAuxiliaryModel(slot: 'fast' | 'verifier', option: ModelPickerOption): Promise<boolean> {
-  const session = current
-  const epoch = selection
-  if (!session || !connected || sending || sessionPending || modelChangePending || auxiliaryModelPending)
+  const session = sessionBinding.session
+  const epoch = sessionBinding.capture()
+  if (
+    !session ||
+    !connected ||
+    submissions.sending ||
+    sessionPending ||
+    modelChangePending ||
+    auxiliaryModelPending
+  )
     return false
   auxiliaryModelPending = true
   try {
     await session.setModel({ slot, route: option.route, model: option.id })
-    if (current !== session || selection !== epoch || sessionPending) return false
+    if (!sessionBinding.isCurrent(epoch, session) || sessionPending) return false
     return true
   } catch (error) {
-    if (current === session && selection === epoch) showError(error)
+    if (sessionBinding.isCurrent(epoch, session)) showError(error)
     return false
   } finally {
     auxiliaryModelPending = false
@@ -2037,7 +1952,7 @@ async function selectModel(option: ModelPickerOption, settings?: ModelSettings):
           id: option.id,
           settings: { ...settings, ...(window === undefined ? {} : { contextWindow: window }) },
         }
-  const session = current
+  const session = sessionBinding.session
   if (sessionPending || modelChangePending || auxiliaryModelPending) return false
   if (!session && draftingNew) {
     draftModelExplicit = true
@@ -2051,7 +1966,7 @@ async function selectModel(option: ModelPickerOption, settings?: ModelSettings):
     return true
   }
   if (!session) return false
-  const epoch = selection
+  const epoch = sessionBinding.capture()
   modelChangePending = true
   renderControls()
   try {
@@ -2062,20 +1977,20 @@ async function selectModel(option: ModelPickerOption, settings?: ModelSettings):
       thinking: selected.settings?.thinking ?? null,
       contextWindow: selected.settings?.contextWindow ?? null,
     })
-    if (current !== session || selection !== epoch || sessionPending) return false
+    if (!sessionBinding.isCurrent(epoch, session) || sessionPending) return false
     modelSelectionSeq = applied.effectiveFromSeq
     knownSessionModel = selected
     rememberWebComposer({ model: knownSessionModel })
     initialModelPending = undefined
     reportSuccess('session-primary-model', t('app.notice.modelSaved'))
     notice.setKind('')
-    live?.refresh()
+    sessionBinding.live?.refresh()
     return true
   } catch (error) {
-    if (current === session && selection === epoch && !sessionPending) showError(error)
+    if (sessionBinding.isCurrent(epoch, session) && !sessionPending) showError(error)
     return false
   } finally {
-    if (current === session && selection === epoch && !sessionPending) {
+    if (sessionBinding.isCurrent(epoch, session) && !sessionPending) {
       modelChangePending = false
       renderControls()
     }
@@ -2165,10 +2080,10 @@ function submitComposer(options?: { steer?: boolean }): void {
 const diagnostics = createDiagnosticsDialog({
   call: (method, params) => client.call(method, params),
   context: () => ({
-    sessionId: current?.id ?? null,
-    sessionTitle: sessionTitles.get(current?.id ?? '') ?? null,
+    sessionId: sessionBinding.session?.id ?? null,
+    sessionTitle: sessionTitles.get(sessionBinding.session?.id ?? '') ?? null,
     projection,
-    projectionHasEarlier: live?.hasEarlier() ?? false,
+    projectionHasEarlier: sessionBinding.live?.hasEarlier() ?? false,
   }),
 })
 sessionViewCommands.reportProblem = (trigger) => diagnostics.open(trigger)
@@ -2188,17 +2103,18 @@ const stopConnectionEvents = bindConnectionEvents(appSessionContext, {
 })
 /** Gap and generation notices name their session; another session's are not this view's concern. */
 const forCurrent = (payload: unknown): boolean =>
-  current !== undefined && (payload as { sessionId?: unknown } | undefined)?.sessionId === current.id
+  sessionBinding.session !== undefined &&
+  (payload as { sessionId?: unknown } | undefined)?.sessionId === sessionBinding.session.id
 client.on('gap', (payload) => {
   if (!forCurrent(payload)) return
   const message = t('app.gap.partial')
   if (sessionRecovery) renderSessionRecovery(message)
   else notice.setText(message)
-  void live?.resync().catch(showError)
+  void sessionBinding.live?.resync().catch(showError)
 })
 client.on('generationChanged', (payload) => {
   if (!forCurrent(payload)) return
-  void live?.resync().catch(showError)
+  void sessionBinding.live?.resync().catch(showError)
 })
 // 名册失效推送（WC10）：packages_changed 只是失效提示，收到后必须重读名册。
 client.on('notice', (payload) => {
@@ -2226,10 +2142,10 @@ onHistoryNavigation(() => {
   if (!id && params.has('settings')) return
   run(async () => {
     if (id) {
-      if (current?.id !== id) await open(id)
+      if (sessionBinding.session?.id !== id) await open(id)
       return
     }
-    if (current || !draftingNew) await beginNewDraft(!homeNavigation.getSnapshot())
+    if (sessionBinding.session || !draftingNew) await beginNewDraft(!homeNavigation.getSnapshot())
   })
 })
 async function refreshModelConfiguration(): Promise<void> {
@@ -2271,11 +2187,12 @@ onPageHide(() => {
   stopSessionConfiguration()
   reconnect.cancel()
   titleRefresh.close()
-  void (stopEvents?.() ?? Promise.resolve()).finally(() => client.close())
+  const { previous } = sessionBinding.begin()
+  void (previous.stop?.() ?? Promise.resolve()).finally(() => client.close())
 })
 
 run(async () => {
-  const startupSelection = selection
+  const startupSelection = sessionBinding.capture()
   setConnection('connecting')
   if (!wsUrl) throw new Error(t('app.ws.unavailable'))
   // A first connection that fails never reports `closed`; the page may hold a stale daemon address.
@@ -2307,7 +2224,7 @@ run(async () => {
     applyWorkspaces(workspaces.value)
     // A link that names a workspace selects it, unless the reader has already chosen one.
     const requested = workspaceRows.find((row) => row.workspaceId === requestedWorkspaceId)
-    if (requested && !selectedWorkspace && selection === startupSelection) {
+    if (requested && !selectedWorkspace && sessionBinding.isCurrent(startupSelection)) {
       selectedWorkspace = requested
       updateWorkspaceOptions()
     }
@@ -2332,7 +2249,7 @@ run(async () => {
         .find((item) => !item.archived)
     : undefined
   // A user choice also owns whether the account setup dialog may open.
-  if (selection !== startupSelection) return
+  if (!sessionBinding.isCurrent(startupSelection)) return
   // Accounts without a usable model get a notice that leads to settings; a load never opens the dialog.
   const modelNotice = needsModelNotice({
     modelsRead: models.status === 'fulfilled',
@@ -2361,7 +2278,7 @@ run(async () => {
     !startupRequest.get('session') &&
     needsFirstRun(snapshot)
   // A user selection made while startup was loading owns the current view.
-  if (selection !== startupSelection) return
+  if (!sessionBinding.isCurrent(startupSelection)) return
   const selected = new URL(location.href).searchParams.get('session')
   if (startupRequest.get('new') === '1') {
     sessionPending = false
@@ -2425,7 +2342,7 @@ run(async () => {
   const factCandidate = startupRequest.get('factCandidate')
   if (
     selected &&
-    current?.id === selected &&
+    sessionBinding.session?.id === selected &&
     factCandidate &&
     /^candidate-[a-f0-9]{32}$/.test(factCandidate)
   ) {
@@ -2448,12 +2365,12 @@ run(async () => {
       showArchived: () => archivedSessions.show('archived'),
     })
   showModelNotice()
-  const settingsSelection = selection
+  const settingsSelection = sessionBinding.capture()
   if ((startupSection || startupTerminal) && !startupSettingsDismissed) {
     settingsRegion.open('model')
     await settings.open()
     // A choice made while the dialog was loading owns the view.
-    if (selection !== settingsSelection) return
+    if (!sessionBinding.isCurrent(settingsSelection)) return
     const anchoredSettings = startupSettingsAnchor.replace(/^settings-subsection-/, '')
     const anchoredRoute = settingsRoute(anchoredSettings)
     const target =

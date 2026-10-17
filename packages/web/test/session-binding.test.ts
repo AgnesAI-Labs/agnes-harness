@@ -1,6 +1,8 @@
 import type { JsonRpcMessage, JsonRpcRequest, RpcEndpoint } from '@agnes/sdk'
 import { createClient, localAuth, memoryJournal } from '@agnes/sdk'
-import { describe, expect, it } from 'vitest'
+import type { Session } from '@agnes/sdk/browser'
+import { describe, expect, it, vi } from 'vitest'
+import { SessionBindingOwner } from '../src/app/session-owner.js'
 import { bindWebSession, loadWebSession } from '../src/session-binding.js'
 
 type Handler = (request: JsonRpcRequest, push: (message: JsonRpcMessage) => void) => unknown
@@ -265,5 +267,38 @@ describe('Web session permission binding', () => {
     } finally {
       await client.close()
     }
+  })
+})
+
+describe('selected session owner', () => {
+  it.each(['other-session', 'same-session'])('rejects late load and result after %s switch', async (id) => {
+    const owner = new SessionBindingOwner()
+    const first = owner.capture()
+    const session = { id: 'same-session' } as Session
+    const off = vi.fn()
+    owner.attach(first, { session, offPermission: off })
+    let finish!: (value: string) => void
+    const result = new Promise<string>((resolve) => {
+      finish = resolve
+    })
+    const apply = vi.fn()
+    const work = result.then((value) => {
+      if (owner.isCurrent(first, session)) apply(value)
+    })
+    const next = owner.begin()
+    expect(next.previous.session).toBe(session)
+    expect(off).toHaveBeenCalledOnce()
+    const selected = { id } as Session
+    owner.attach(next.binding, { session: selected })
+    finish('obsolete result')
+    await work
+    expect(apply).not.toHaveBeenCalled()
+    const staleOff = vi.fn()
+    expect(owner.attach(first, { session, offPermission: staleOff })).toBe(false)
+    expect(staleOff).toHaveBeenCalledOnce()
+    expect(owner.session).toBe(selected)
+    // An old cleanup cannot release the replacement binding.
+    expect(owner.release(first)).toEqual({})
+    expect(owner.session).toBe(selected)
   })
 })

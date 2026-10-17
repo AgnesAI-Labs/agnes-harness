@@ -6,7 +6,17 @@ import { showCommandFeedback } from './command-feedback.js'
 export function bindConnectionEvents(
   context: Pick<
     AppSessionContext,
-    'client' | 'current' | 'live' | 'intentionalClose' | 'notice' | 'run' | 'showError' | 't' | 'titleRefresh'
+    | 'client'
+    | 'current'
+    | 'sessionBinding'
+    | 'submissions'
+    | 'live'
+    | 'intentionalClose'
+    | 'notice'
+    | 'run'
+    | 'showError'
+    | 't'
+    | 'titleRefresh'
   >,
   options: {
     reconnect: ReconnectController

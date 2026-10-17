@@ -1,3 +1,6 @@
+import type { Session } from '@agnes/sdk/browser'
+import { SessionBindingOwner } from '../src/app/session-owner.js'
+import { SubmissionOwner } from '../src/app/submission-owner.js'
 /** @vitest-environment happy-dom */
 
 import { createClient, type JsonRpcMessage, memoryJournal, type PendingCommand } from '@agnes/sdk'
@@ -44,6 +47,7 @@ function runningSession() {
 }
 
 function submission(session: ReturnType<typeof runningSession>, draft = '补充一条') {
+  const sessionBinding = new SessionBindingOwner()
   const context = {
     current: session,
     projection: { sessionId: session.id, opState: { phase: 'model' }, pendingInputs: [] },
@@ -68,14 +72,13 @@ function submission(session: ReturnType<typeof runningSession>, draft = '补充�
     permissionChangePending: false,
     permissionRefreshPending: false,
     sessionYoloEnabled: false,
-    sending: false,
     stopping: false,
     sessionPending: false,
     runtimeModels: [],
     recoveredReturns: new Set<string>(),
-    submissionGeneration: 0,
     permissionConnectionEpoch: 0,
-    selection: 1,
+    sessionBinding,
+    submissions: new SubmissionOwner(sessionBinding),
     notice: {
       setText: vi.fn(),
       setKind: vi.fn(),
@@ -92,6 +95,7 @@ function submission(session: ReturnType<typeof runningSession>, draft = '补充�
     composerDraftKey: 'draft',
     t: enT,
   }
+  context.sessionBinding.attach(context.sessionBinding.capture(), { session: session as unknown as Session })
   return {
     ...createSubmissionController(context as unknown as Parameters<typeof createSubmissionController>[0]),
     context,
@@ -116,6 +120,7 @@ it('sends ⌘/Ctrl+Enter as guidance (a steer) while the agent runs', async () =
 })
 
 function commands(session: ReturnType<typeof runningSession>) {
+  const sessionBinding = new SessionBindingOwner()
   const context = {
     current: session,
     connected: true,
@@ -126,20 +131,10 @@ function commands(session: ReturnType<typeof runningSession>) {
     permissionChangePending: false,
     permissionRefreshPending: false,
     sessionYoloEnabled: false,
-    selection: 1,
-    queueAction: undefined as
-      | undefined
-      | {
-          kind: string
-          itemId: string
-          pending: boolean
-          error?: string
-          sessionId: string
-          selection: number
-        },
+    sessionBinding,
+    submissions: new SubmissionOwner(sessionBinding),
     projection: { sessionId: session.id, pendingInputs: [{ itemId: 'q1', preview: '主色换成深蓝' }] },
     controlsHistory: new Map(),
-    controlsRefresh: 0,
     live: { refresh: vi.fn() },
     renderControls: vi.fn(),
     render: vi.fn(),
@@ -151,6 +146,7 @@ function commands(session: ReturnType<typeof runningSession>) {
     },
     t: enT,
   }
+  context.sessionBinding.attach(context.sessionBinding.capture(), { session: session as unknown as Session })
   const controller = createCommandController(
     context as unknown as Parameters<typeof createCommandController>[0],
   )
@@ -161,8 +157,8 @@ it('promotes a queued follow-up to guidance with its full content, attachments i
   const session = runningSession()
   const { context, controller } = commands(session)
   controller.handleQueuedAction('q1', 'promote')
-  expect(context.queueAction).toMatchObject({ kind: 'promote', itemId: 'q1', pending: true })
-  await vi.waitFor(() => expect(context.queueAction?.pending).toBe(false))
+  expect(context.submissions.queueAction).toMatchObject({ kind: 'promote', itemId: 'q1', pending: true })
+  await vi.waitFor(() => expect(context.submissions.queueAction?.pending).toBe(false))
   expect(session.promoteQueued).toHaveBeenCalledWith('q1')
   expect(session.removeQueued).not.toHaveBeenCalled()
   expect(session.steer).not.toHaveBeenCalled()
@@ -175,7 +171,7 @@ it('leaves a refused promotion to the backend without client compensation', asyn
   session.promoteQueued.mockRejectedValueOnce(new Error('steer refused'))
   const { context, controller } = commands(session)
   controller.handleQueuedAction('q1', 'promote')
-  await vi.waitFor(() => expect(context.queueAction?.error).toBe('steer refused'))
+  await vi.waitFor(() => expect(context.submissions.queueAction?.error).toBe('steer refused'))
   expect(session.removeQueued).not.toHaveBeenCalled()
   expect(session.steer).not.toHaveBeenCalled()
   expect(session.followUp).not.toHaveBeenCalled()
@@ -185,7 +181,7 @@ it('still interrupts with a queued message', async () => {
   const session = runningSession()
   const { context, controller } = commands(session)
   controller.handleQueuedAction('q1', 'sendNow')
-  await vi.waitFor(() => expect(context.queueAction?.pending).toBe(false))
+  await vi.waitFor(() => expect(context.submissions.queueAction?.pending).toBe(false))
   expect(session.interrupt).toHaveBeenCalledWith('q1')
   expect(session.removeQueued).not.toHaveBeenCalled()
 })
@@ -276,7 +272,7 @@ it.each(['overloaded', 'uncertain'] as const)(
     try {
       const controller = submission(s.session as unknown as ReturnType<typeof runningSession>, 'run once')
       controller.submitComposer()
-      await vi.waitFor(() => expect(controller.context.sending).toBe(false))
+      await vi.waitFor(() => expect(controller.context.submissions.sending).toBe(false))
       expect(controller.context.composerRuntime.getDraft()).toBe('')
       expect(await s.journal.pending('session')).toHaveLength(1)
       expect(controller.context.notice.setText).toHaveBeenCalledWith(
@@ -285,7 +281,7 @@ it.each(['overloaded', 'uncertain'] as const)(
       // Even explicitly retyping cannot create a second command while the SDK owns the first.
       controller.context.composerRuntime.setDraft('run once')
       controller.submitComposer()
-      await vi.waitFor(() => expect(controller.context.sending).toBe(false))
+      await vi.waitFor(() => expect(controller.context.submissions.sending).toBe(false))
       expect(s.attempts).toHaveLength(1)
       s.settle()
       expect(controller.context.notice.offer.mock.calls.length).toBeGreaterThanOrEqual(2)
@@ -312,14 +308,14 @@ it.each(['overloaded', 'uncertain'] as const)(
       live.checkCommand = s.session.checkCommand.bind(s.session) as typeof live.checkCommand
       const { context, controller } = commands(live)
       controller.handleQueuedAction('q1', 'promote')
-      await vi.waitFor(() => expect(context.queueAction?.pending).toBe(false))
+      await vi.waitFor(() => expect(context.submissions.queueAction?.pending).toBe(false))
       expect(s.accepted).toEqual([])
       expect(await s.journal.pending('session')).toHaveLength(1)
       expect(live.removeQueued).not.toHaveBeenCalled()
       expect(live.steer).not.toHaveBeenCalled()
       expect(live.followUp).not.toHaveBeenCalled()
       controller.handleQueuedAction('q1', 'promote')
-      await vi.waitFor(() => expect(context.queueAction?.pending).toBe(false))
+      await vi.waitFor(() => expect(context.submissions.queueAction?.pending).toBe(false))
       expect(s.attempts).toHaveLength(1)
       s.settle()
       const [pending] = await s.journal.pending('session')
@@ -360,6 +356,10 @@ it('reconstructs unconfirmed feedback after journal reopen and keeps it scoped t
   expect(context.notice.setText).toHaveBeenLastCalledWith('结果未确认，请核对')
   expect(context.notice.offer).toHaveBeenLastCalledWith(expect.objectContaining({ label: '核对' }))
   context.current = runningSession()
+  context.sessionBinding.begin()
+  context.sessionBinding.attach(context.sessionBinding.capture(), {
+    session: context.current as unknown as Session,
+  })
   context.notice.setText.mockClear()
   await showCommandFeedback(
     context as unknown as Parameters<typeof showCommandFeedback>[0],

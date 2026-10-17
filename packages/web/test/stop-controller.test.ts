@@ -1,14 +1,19 @@
+import type { Session } from '@agnes/sdk/browser'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createCommandController } from '../src/app/command-controller.js'
+import { SessionBindingOwner } from '../src/app/session-owner.js'
+import { SubmissionOwner } from '../src/app/submission-owner.js'
 import { enT } from './helpers/locale.js'
 
 afterEach(() => vi.useRealTimers())
 
 function setup(cancel: () => Promise<void>) {
   let work = Promise.resolve()
+  const sessionBinding = new SessionBindingOwner()
   const context = {
     current: { id: 'session', cancel, controls: async () => ({ facts: [], factsThrough: 1166 }) },
-    selection: 1,
+    sessionBinding,
+    submissions: new SubmissionOwner(sessionBinding),
     stopping: false,
     sessionPending: false,
     projection: { upto: 1162, opState: { phase: 'tools' } },
@@ -30,8 +35,10 @@ function setup(cancel: () => Promise<void>) {
     },
     showError: vi.fn(),
     controlsHistory: new Map(),
-    controlsRefresh: 0,
   }
+  context.sessionBinding.attach(context.sessionBinding.capture(), {
+    session: context.current as unknown as Session,
+  })
   const controller = createCommandController(
     context as unknown as Parameters<typeof createCommandController>[0],
   )
@@ -88,7 +95,7 @@ it('does not let an old stop result or recovery action alter another selected se
   await vi.advanceTimersByTimeAsync(10_000)
   await f.settled()
   const actions = f.context.notice.offerMany.mock.calls.at(-1)![0]
-  f.context.selection++
+  f.context.sessionBinding.begin()
   f.context.stopping = true
   f.context.notice.setText.mockClear()
   finish()
