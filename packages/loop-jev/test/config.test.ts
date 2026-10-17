@@ -29,5 +29,10 @@ describe('configuration', () => {
     [{ requestTokenBudget: 70000 }, 'requestTokenBudget'],
     [{ extra: 1 }, 'extra'],
     [{ jev: { maxRetries: 1.5 } }, 'jev.maxRetries'],
+    [{ constructor: 1 }, 'constructor'],
+    [{ toString: 1 }, 'toString'],
+    [{ jev: { valueOf: 1 } }, 'jev.valueOf'],
+    [JSON.parse('{"__proto__": 1}'), '__proto__'],
+    [JSON.parse('{"jev": {"__proto__": 1}}'), 'jev.__proto__'],
   ])('rejects %j at %s', (input, path) => expect(() => resolveConfig(input)).toThrow(path))
 })

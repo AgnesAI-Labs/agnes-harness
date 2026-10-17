@@ -73,7 +73,12 @@ const optional = (
   check: (v: unknown, p: string) => unknown,
   path: string,
 ): void => {
-  if (key in parent) check(parent[key], `${path}.${key}`)
+  if (Object.hasOwn(parent, key)) check(parent[key], path === '' ? key : `${path}.${key}`)
+}
+/** Reject keys outside the v1 shape. */
+const only = (parent: Obj, allowed: readonly string[], path: string): void => {
+  for (const key of Object.keys(parent))
+    if (!allowed.includes(key)) fail(path === '' ? key : `${path}.${key}`)
 }
 const json = (value: unknown, path: string): void => {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return
@@ -187,6 +192,7 @@ function checkCall(value: unknown, path: string): void {
 
 function checkCurrent(value: unknown, path: string): void {
   const cur = obj(value, path)
+  only(cur, ['jevAttempts', 'level', 'decision', 'route', 'llm', 'calls'], path)
   strings(cur.jevAttempts, `${path}.jevAttempts`)
   int(cur.level, `${path}.level`)
   optional(cur, 'decision', checkDecision, path)
@@ -248,9 +254,27 @@ function checkCounters(value: unknown, path: string): void {
     int(obj(c.llm, `${path}.llm`)[key], `${path}.llm.${key}`)
 }
 
+const TOP_KEYS = [
+  'v',
+  'idTurn',
+  'coreTurn',
+  'stage',
+  'step',
+  'toolNames',
+  'toolNamesChanges',
+  'cur',
+  'pendingNotes',
+  'workspace',
+  'counters',
+  'internalErrors',
+  'endReason',
+  'endError',
+]
+
 /** Strict check of a decoded checkpoint state; throws on any deviation from the v1 shape. */
 export function parseJevState(value: JsonValue): JevState {
   const s = obj(value, 'state')
+  only(s, TOP_KEYS, '')
   if (s.v !== 1) fail('v')
   orNull(s.idTurn, int, 'idTurn')
   orNull(s.coreTurn, int, 'coreTurn')
@@ -263,7 +287,7 @@ export function parseJevState(value: JsonValue): JevState {
   checkWorkspace(s.workspace, 'workspace')
   checkCounters(s.counters, 'counters')
   int(s.internalErrors, 'internalErrors')
-  optional(s, 'endReason', (v, p) => oneOf(v, END_REASONS, p), 'state')
+  optional(s, 'endReason', (v, p) => oneOf(v, END_REASONS, p), '')
   optional(
     s,
     'endError',
@@ -272,7 +296,7 @@ export function parseJevState(value: JsonValue): JevState {
       str(e.code, `${p}.code`)
       str(e.message, `${p}.message`)
     },
-    'state',
+    '',
   )
   return structuredClone(s) as unknown as JevState
 }
@@ -283,9 +307,13 @@ export function parseJevState(value: JsonValue): JevState {
 const sizeOf = (state: JevState): number => utf8Bytes(JSON.stringify(state))
 
 /**
- * The checkpoint for a state, within CHECKPOINT_MAX_BYTES where possible. When too large, shrink in
- * this order: histories from before the current turn (oldest first), the previous answer (last
- * 1000 characters), then the goal (first 2000 + last 2000 characters). The argument is not changed.
+ * The checkpoint for a state. When over CHECKPOINT_MAX_BYTES, shrink in this order: histories from
+ * before the current turn (oldest first), the previous answer (last 1000 characters), the goal
+ * (first 2000 + last 2000 characters), then the command and output excerpts of every history entry
+ * but the last. It never throws and never drops current-turn entries, so the result can still be
+ * larger when the unbounded fields are large: `cur.llm.note`, `workspace.answer`, `workspace.notes`
+ * and `cur.calls[].content`, which the driver is responsible for bounding. The argument is not
+ * changed.
  */
 export function encodeState(state: JevState): LoopCheckpoint {
   const next = structuredClone(state)
@@ -297,6 +325,11 @@ export function encodeState(state: JevState): LoopCheckpoint {
   if (sizeOf(next) > CHECKPOINT_MAX_BYTES) w.previousAnswer = tail(w.previousAnswer, 1000)
   if (sizeOf(next) > CHECKPOINT_MAX_BYTES && w.goal.length > 4003)
     w.goal = `${clip(w.goal, 2000)}\n…\n${tail(w.goal, 2000)}`
+  if (sizeOf(next) > CHECKPOINT_MAX_BYTES)
+    for (const entry of w.history.slice(0, -1)) {
+      delete entry.command_excerpt
+      delete entry.output_excerpt
+    }
   return { codecVersion: 1, state: next as unknown as JsonValue }
 }
 

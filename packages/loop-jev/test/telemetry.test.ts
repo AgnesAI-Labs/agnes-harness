@@ -26,5 +26,6 @@ describe('telemetry', () => {
       {},
     )
     expect(counters.droppedEvents).toBe(1)
+    expect(counters.emitted).toBe(0)
   })
 })

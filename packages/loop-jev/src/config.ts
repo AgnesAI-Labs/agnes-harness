@@ -73,7 +73,7 @@ export function resolveConfig(input: unknown): JevLoopConfig {
   if (input === undefined || input === null) return merged as unknown as JevLoopConfig
   if (!isRecord(input)) return invalid('config')
   const schema: { [key: string]: Field | Group } = SCHEMA
-  for (const key of Object.keys(input)) if (!(key in schema)) invalid(key)
+  for (const key of Object.keys(input)) if (!Object.hasOwn(schema, key)) invalid(key)
   for (const [key, entry] of Object.entries(schema)) {
     const value = input[key]
     if (value === undefined) continue
@@ -83,7 +83,7 @@ export function resolveConfig(input: unknown): JevLoopConfig {
     }
     if (!isRecord(value)) invalid(key)
     const group = merged[key] as { [key: string]: unknown }
-    for (const sub of Object.keys(value as object)) if (!(sub in entry)) invalid(`${key}.${sub}`)
+    for (const sub of Object.keys(value as object)) if (!Object.hasOwn(entry, sub)) invalid(`${key}.${sub}`)
     for (const [sub, field] of Object.entries(entry)) {
       const raw = (value as { [key: string]: unknown })[sub]
       if (raw !== undefined) group[sub] = checkField(field, raw, `${key}.${sub}`)
