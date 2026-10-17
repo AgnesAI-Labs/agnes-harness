@@ -8,6 +8,7 @@ import {
   type VerifiedRowEntry,
   VerifiedRowError,
 } from '@agnes/plugin-runtime/host'
+import { parsePackageBundleContract } from './bundle-contract.js'
 import { PackageError } from './errors.js'
 import { canonical, freezeData, readStaticJson } from './integrity.js'
 import type { InstalledInventory, InstalledPackage } from './inventory.js'
@@ -102,6 +103,30 @@ export function runtimePluginSnapshotsFromInventory(
     }
   }
   return Object.freeze(sources)
+}
+
+/** Verified declarative packages need no artificial executable row or active code pin. */
+export function runtimePluginDataSourcesFromInventory(
+  inventory: InstalledInventory,
+): readonly RuntimePluginSnapshot[] {
+  const packages = inventory.packages.filter((pkg) => {
+    if (!pkg.enabled || !pkg.trusted || pkg.blockers.length || !pkg.directory || !pkg.entry.treeIntegrity)
+      return false
+    const manifest = readStaticJson(join(pkg.directory, 'package.json'))
+    const agnes = (manifest.agnes ?? {}) as Record<string, unknown>
+    if (parseAgnesPluginEntries(pkg.id, agnes.plugins).length) return false
+    return (
+      Object.keys(parsePackageBundleContract(pkg.id, agnes.bundles)).length > 0 ||
+      pkg.entry.application !== undefined
+    )
+  })
+  return runtimePluginSnapshotsFromInventory({ ...inventory, packages })
+    .filter((source) =>
+      packages.some(
+        (pkg) => pkg.id === source.snapshot.packageId && pkg.entry.integrity === source.snapshot.integrity,
+      ),
+    )
+    .map((source) => Object.freeze({ ...source, enabled: true }))
 }
 
 /** Only daemon-owned active pins may supply executable rows to a shared worker. */

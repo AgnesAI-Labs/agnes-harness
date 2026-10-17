@@ -6,7 +6,6 @@ import { withLock } from '@agnes/package-manager'
 import type {
   AgentPlan,
   ClientModuleRosterRow,
-  ExampleLaunchDeclaration,
   PackageCatalogDescriptor,
   PackageInstalledDescriptor,
   PackagePreview,
@@ -22,8 +21,7 @@ type Review = {
   entry: PackageCatalogDescriptor
   preview: PackagePreview
   removal?: boolean
-  launch?: ExampleLaunchDeclaration
-  plan?: AgentPlan
+  launch?: AgentPlan
 }
 type Operation = {
   owner: string
@@ -127,7 +125,7 @@ export function createExamplePackages(options: {
         installed.blockers.length)
     )
       deny('E_PACKAGE_PREVIEW_STALE')
-    if (review.plan && (await backend.resolveAgent(review.plan.ref)).digest !== review.plan.digest)
+    if (review.launch && (await backend.resolveAgent(review.launch.ref)).digest !== review.launch.digest)
       deny('E_PACKAGE_PREVIEW_STALE')
     return installed
   }
@@ -222,20 +220,12 @@ export function createExamplePackages(options: {
             const installed = await current(review, who)
             if (!installed?.trusted || installed.desired !== 'enabled' || installed.actual !== 'running')
               deny('E_PACKAGE_STATE')
-            review.launch = (() => {
-              const launchId = field(request.launchId)
-              const launch =
-                entry.agents?.find((agent) => agent.ref === `${entry.id}#${launchId}`)?.launch ?? deny()
-              return {
-                id: launchId,
-                kind: 'business-agent' as const,
-                title: launch.title.en,
-                bundle: `${entry.id}#${launchId}`,
-                preset: launch.preset,
-                prompt: launch.prompt?.text.en ?? '',
-              }
-            })()
-            review.plan = await backend.resolveAgent(review.launch.bundle)
+            const launchId = field(request.launchId)
+            const declared = entry.agents?.find((agent) => agent.ref === `${entry.id}#${launchId}`) ?? deny()
+            const plan = await backend.resolveAgent(declared.ref)
+            if (plan.ref !== declared.ref || digest(plan.launch) !== digest(declared.launch))
+              deny('E_PACKAGE_PREVIEW_STALE')
+            review.launch = plan
           }
           for (const [key, item] of Object.entries(state.reviews))
             if (item.expires <= now()) delete state.reviews[key]
@@ -247,10 +237,10 @@ export function createExamplePackages(options: {
             ? {
                 launchTicket: ticket,
                 presentation: {
-                  title: review.launch?.title,
-                  bundle: review.launch?.bundle,
-                  preset: review.launch?.preset,
-                  prompt: review.launch?.prompt,
+                  ...review.launch,
+                  title: review.launch?.launch.title.en,
+                  bundle: review.launch?.ref,
+                  prompt: review.launch?.launch.prompt?.text.en ?? '',
                 },
               }
             : {
@@ -282,7 +272,7 @@ export function createExamplePackages(options: {
             return action === 'start'
               ? {
                   sessionId: op.sessionId,
-                  ...(op.review.plan?.launch.prompt ? { draft: op.review.plan.launch.prompt } : {}),
+                  ...(op.review.launch?.launch.prompt ? { draft: op.review.launch.launch.prompt } : {}),
                 }
               : { operationId }
           if (op.state === 'failed' || op.state === 'unknown') deny(op.code ?? 'OUTCOME_UNKNOWN')
@@ -314,10 +304,9 @@ export function createExamplePackages(options: {
             const installed = await current(review, await owner(rowId), true)
             if (!installed?.trusted || installed.desired !== 'enabled' || installed.actual !== 'running')
               deny('E_PACKAGE_STATE')
-            const plan = review.plan ?? deny()
-            if ((await backend.resolveAgent(launch.bundle)).digest !== plan.digest)
+            if ((await backend.resolveAgent(launch.ref)).digest !== launch.digest)
               deny('E_PACKAGE_PREVIEW_STALE')
-            op.sessionId = await backend.open(plan, `example:${operationKey}`)
+            op.sessionId = await backend.open(launch, `example:${operationKey}`)
             await save(state)
             await check()
           }
@@ -326,7 +315,7 @@ export function createExamplePackages(options: {
           return action === 'start'
             ? {
                 sessionId: op.sessionId,
-                ...(op.review.plan?.launch.prompt ? { draft: op.review.plan.launch.prompt } : {}),
+                ...(op.review.launch?.launch.prompt ? { draft: op.review.launch.launch.prompt } : {}),
               }
             : { operationId }
         } catch (error) {

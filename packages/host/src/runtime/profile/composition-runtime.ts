@@ -42,15 +42,20 @@ import {
 } from '../lifecycle/host-routing.js'
 import { sessionHostRoutes } from '../lifecycle/session-host-routes.js'
 import { sessionKey } from '../sessions/session.js'
-import { assertAgentPin, createAgentResolver, sessionAdmission } from './agent-plan.js'
+import {
+  activeAgentPackages,
+  assertAgentRequest,
+  createAgentResolver,
+  sessionAdmission,
+  verifyAgentPin,
+} from './agent-plan.js'
 import { compositionPresets } from './composition-presets.js'
-import { profileForComposition } from './composition-selection.js'
+import { type CompositionContainer as Container, profileForComposition } from './composition-selection.js'
 import { admitSessionBundlePresets } from './session-bundle-presets.js'
 import { capabilityEnabled, resolveSessionCapabilities } from './session-capabilities.js'
 import { describeCapabilitySession } from './session-capability-view.js'
 
 type Factory = (profile: ResolvedProfile, options: HostOptions) => Promise<Host>
-type Container = { host: Host; tree: ResolvedComposition; draining?: boolean }
 
 /** Composition selects a container; W7 continues to own generations, leases and durable pins. */
 export async function createCompositionHost(
@@ -185,13 +190,15 @@ export async function createCompositionHost(
       resources: target.resource.resources,
     }).target
   }
+  const containerKey = (binding: CompositionBinding) => `${binding.tree.hash}:${binding.profile.hash}`
   const open = async (binding: CompositionBinding): Promise<Container> => {
-    const found = containers.get(binding.tree.hash)
+    const identity = containerKey(binding)
+    const found = containers.get(identity)
     if (found) {
       idleSince.delete(found)
       return found
     }
-    const pending = opening.get(binding.tree.hash)
+    const pending = opening.get(identity)
     if (pending) return pending
     const started = (async () => {
       const pinned = generations.session(binding.sessionKey)
@@ -313,18 +320,18 @@ export async function createCompositionHost(
           tree: binding.tree,
           draining: latestTarget ? draining(latestTarget.tree.rows, binding.tree, host) : false,
         }
-        containers.set(binding.tree.hash, container)
+        containers.set(identity, container)
         return container
       } catch (error) {
         await host.close()
         throw error
       }
     })()
-    opening.set(binding.tree.hash, started)
+    opening.set(identity, started)
     try {
       return await started
     } finally {
-      opening.delete(binding.tree.hash)
+      opening.delete(identity)
     }
   }
   const initialTree = resolveComposition(profile, {
@@ -341,7 +348,7 @@ export async function createCompositionHost(
   const owner = (key: string, coldRead = true): Container => {
     const binding = store.readIfValid(key)
     const active = binding
-      ? containers.get(binding.tree.hash)
+      ? containers.get(containerKey(binding))
       : (sessionOwners.get(key) ??
         [...containers.values()].find((container) => container.host.kernel.get(key)))
     if (active) return active
@@ -394,13 +401,13 @@ export async function createCompositionHost(
       rows: [...rows.values()],
     }
   }
-  const enqueue = calls.enqueue
   const collectIdle = () => collectIdleContainers(containers, initial, idleSince, idleMs)
   let collectionQueued = false
   const scheduleCollection = () => {
     if (closed || collectionQueued) return
     collectionQueued = true
-    void enqueue(collectIdle)
+    void calls
+      .enqueue(collectIdle)
       .catch((error) => options.log.warn('Composition collection failed', { error: String(error) }))
       .finally(() => {
         collectionQueued = false
@@ -444,7 +451,13 @@ export async function createCompositionHost(
     (key, coldRead = false) => owner(key, coldRead).host.kernel,
     sessions,
   )
-  const admission = () => sessionAdmission(profile, modelProfile, options, latestTarget)
+  const admission = () =>
+    sessionAdmission(
+      profile,
+      modelProfile,
+      options,
+      latestTarget ? activeAgentPackages(latestTarget.tree.rows) : undefined,
+    )
   const prepareAgent = createAgentResolver({
     profile,
     admission,
@@ -454,7 +467,7 @@ export async function createCompositionHost(
     open,
   })
   const overrides: HostFacadeOverrides = {
-    resolveAgent: (ref) => enqueue(async () => (await prepareAgent(ref)).plan),
+    resolveAgent: (ref) => calls.enqueue(async () => (await prepareAgent(ref)).plan),
     ...sessionHostRoutes(
       (key, coldRead = false) => owner(key, coldRead).host,
       () => initial.host,
@@ -474,7 +487,7 @@ export async function createCompositionHost(
     },
     compositionPublicationStatus: () => lastPublication,
     createSession: (input) =>
-      enqueue(async () => {
+      calls.enqueue(async () => {
         const key =
           input.key ??
           input.binding?.sessionKey ??
@@ -484,18 +497,9 @@ export async function createCompositionHost(
             input.cwd ?? options.workspaceRoot,
           )
         try {
-          const agent = input.agent ? await prepareAgent(input.agent) : undefined
-          if (input.agentDigest && (!agent || input.agentDigest !== agent.plan.digest))
-            throw new HostError('E_PRESET_UNSUPPORTED', 'agent review drift')
-          if (agent && (input.loop || input.bundles !== undefined || input.preset || input.parent))
-            throw new HostError('E_PRESET_UNSUPPORTED', 'agent cannot be combined with execution overrides')
+          const agent = input.agent !== undefined ? await prepareAgent(input.agent) : undefined
           let binding = store.read(key)
-          if (
-            binding &&
-            agent &&
-            (binding.tree.hash !== agent.tree.hash || binding.profile.hash !== agent.profile.hash)
-          )
-            throw new HostError('E_PRESET_UNSUPPORTED', 'agent selection differs from session pin')
+          assertAgentRequest(input, agent, binding)
           if (!binding && agent)
             binding = store.pin({ sessionKey: key, tree: agent.tree, profile: agent.profile })
           if (!binding) {
@@ -552,16 +556,7 @@ export async function createCompositionHost(
               preset: binding.tree.preset,
               ...(binding.tree.selection.loop ? { loop: binding.tree.selection.loop } : {}),
             })
-            if (agent) {
-              try {
-                if ((await prepareAgent(agent.plan.ref)).plan.digest !== agent.plan.digest)
-                  throw new HostError('E_PRESET_UNSUPPORTED', 'agent source or policy drift during admission')
-                assertAgentPin(agent.plan, session, binding.tree.hash)
-              } catch (error) {
-                await session.close()
-                throw error
-              }
-            }
+            if (agent) await verifyAgentPin(agent.plan, session, binding.tree.hash, prepareAgent)
             sessionOwners.set(key, container)
             const close = session.close.bind(session)
             session.close = async () => {
@@ -584,7 +579,7 @@ export async function createCompositionHost(
         }
       }),
     releaseSessionGeneration: (key) =>
-      enqueue(async () => {
+      calls.enqueue(async () => {
         const container = owner(key)
         await container.host.releaseSessionGeneration?.(key)
         store.release(key)
@@ -593,7 +588,7 @@ export async function createCompositionHost(
         publish()
       }),
     migrateSessionGeneration: (key, context) =>
-      enqueue(async () => {
+      calls.enqueue(async () => {
         const binding = store.read(key)
         if (!binding) {
           // Pre-composition durable generation pins retain the generation owner's migration checks.
@@ -608,7 +603,7 @@ export async function createCompositionHost(
         return result
       }),
     collectPluginGenerations: () =>
-      enqueue(async () => {
+      calls.enqueue(async () => {
         for (const { host } of containers.values()) await host.collectPluginGenerations?.()
         await collectIdle()
       }),
@@ -703,13 +698,13 @@ export async function createCompositionHost(
       }
     },
     setSessionPreset: (key, name) =>
-      enqueue(async () => {
+      calls.enqueue(async () => {
         const result = await owner(key, false).host.setSessionPreset(key, name)
         publish()
         return result
       }),
     applyRuntimeTarget: (target) =>
-      enqueue(async () => {
+      calls.enqueue(async () => {
         await refreshTrust()
         latestTarget = target
         latestRows = undefined
@@ -723,7 +718,7 @@ export async function createCompositionHost(
         return convergence(target)
       }),
     refreshSkillRow: (fresh) =>
-      enqueue(async () => {
+      calls.enqueue(async () => {
         currentSkills = fresh
         return broadcast('skills', (container) => container.host.refreshSkillRow(fresh))
       }),
@@ -740,7 +735,7 @@ export async function createCompositionHost(
       return result
     },
     applyModelProfile: (next) =>
-      enqueue(async () => {
+      calls.enqueue(async () => {
         const deployment = modelProfileDeployment(next)
         if (
           ![profile, modelProfile, ...[...containers.values()].map(({ host }) => host.profile)].some(
@@ -774,7 +769,7 @@ export async function createCompositionHost(
         return result!
       },
       apply: (rows) =>
-        enqueue(async () => {
+        calls.enqueue(async () => {
           await refreshTrust()
           latestRows = rows
           const selected = new Set(rows.map((row) => row.id))

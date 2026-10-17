@@ -198,11 +198,15 @@ export function localClientExamples(
     backend: {
       async caller() {
         await initialize()
+        const workspace = (await client.workspace.list()).items.find(
+          (row) => row.path === backend.scope.workspace && row.available,
+        )
+        if (!workspace) throw new Error('CAPABILITY_DENIED')
         return {
           principal: await client.clientId(),
           profile,
           workspace: backend.scope.workspace,
-          activation: hostActivation,
+          activation: `${hostActivation}:${workspace.workspaceId ?? workspace.path}:${workspace.revision ?? 0}`,
         }
       },
       resolve: (ref) => client.agents.resolve(ref),

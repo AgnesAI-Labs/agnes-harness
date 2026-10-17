@@ -34,6 +34,7 @@ type Loaded = {
   context: AdminContext
   rows: readonly PackageCatalogDescriptor[]
   installed: readonly PackageInstalledDescriptor[]
+  readyAgents: readonly string[]
 }
 export type BusinessAgentsSource = {
   /** Injected by tests and by hosts that already hold an admin session. */
@@ -61,6 +62,28 @@ function catalogKey(connect: object): string {
   return key
 }
 
+async function readyAgentRefs(
+  api: PluginAdminApi,
+  rows: readonly PackageCatalogDescriptor[],
+  installed: readonly PackageInstalledDescriptor[],
+): Promise<string[]> {
+  const enabled = new Set(
+    installed.filter((pkg) => pkg.trusted && pkg.desired === 'enabled').map((pkg) => pkg.id),
+  )
+  const values = await Promise.allSettled(
+    rows
+      .filter((row) => enabled.has(row.id))
+      .flatMap((row) =>
+        (row.agents ?? []).map(async (agent) => {
+          const plan = await api.resolveAgent(agent.ref)
+          if (plan.ref !== agent.ref) throw new Error('agent selection changed')
+          return plan.ref
+        }),
+      ),
+  )
+  return values.flatMap((value) => (value.status === 'fulfilled' ? [value.value] : []))
+}
+
 export function useBusinessAgents(source: BusinessAgentsSource = {}) {
   const { locale } = useUiText(AGENTS_NAMESPACE, agentsCatalog)
   const connect = useRef(source.connect ?? connectAdmin)
@@ -69,7 +92,13 @@ export function useBusinessAgents(source: BusinessAgentsSource = {}) {
   const read = useResource<Loaded>(key, async () => {
     const { api, context } = await connect.current()
     const [rows, list] = await Promise.all([readBusinessAgents(api), api.list()])
-    return { api, context, rows, installed: list.packages }
+    return {
+      api,
+      context,
+      rows,
+      installed: list.packages,
+      readyAgents: await readyAgentRefs(api, rows, list.packages),
+    }
   })
   const loaded = read.data
   /** Re-reads only what a start changes; the catalog itself stays as loaded. */
@@ -78,7 +107,13 @@ export function useBusinessAgents(source: BusinessAgentsSource = {}) {
     if (!current) return
     void current.api
       .list()
-      .then((list) => setResource<Loaded>(key, { ...current, installed: list.packages }))
+      .then(async (list) =>
+        setResource<Loaded>(key, {
+          ...current,
+          installed: list.packages,
+          readyAgents: await readyAgentRefs(current.api, current.rows, list.packages),
+        }),
+      )
       .catch(() => {})
   }, [loaded, key])
   const agents = useMemo(
@@ -100,6 +135,7 @@ export function useBusinessAgents(source: BusinessAgentsSource = {}) {
     api: loaded?.api,
     features: context?.features,
     installed: loaded?.installed ?? [],
+    readyAgents: loaded?.readyAgents ?? [],
     /** Why package changes are refused here; undefined when the user may start any agent. */
     denied,
     busy: read.loading,
@@ -198,7 +234,7 @@ export function BusinessAgentGallery({
    * A card another surface points at: it is scrolled into view and marked. With `start`, one-click
    * start begins for it once, exactly as if its button had been pressed. A new object asks again.
    */
-  focus?: { id: string; start?: boolean } | undefined
+  focus?: { id: string; ref?: string; start?: boolean } | undefined
   openSession?: (target: StartedSession) => void
   onOpenPlugins?: (agent: BusinessAgent) => void
 }) {
@@ -215,10 +251,12 @@ export function BusinessAgentGallery({
   const stateOf = (agent: BusinessAgent): BusinessAgentState =>
     starter.failedId === agent.entry.id
       ? 'attention'
-      : businessAgentState(
-          data.installed.find((item) => item.id === agent.entry.id),
-          starter.startingId === agent.entry.id,
-        )
+      : data.readyAgents.includes(agent.ref)
+        ? 'ready'
+        : businessAgentState(
+            data.installed.find((item) => item.id === agent.entry.id),
+            starter.startingId === agent.entry.id,
+          )
   const needle = query.trim().toLocaleLowerCase()
   const readyCount = data.agents.filter((agent) => stateOf(agent) === 'ready').length
   const shown = data.agents.filter(
@@ -249,7 +287,9 @@ export function BusinessAgentGallery({
     starter.start(linked)
   }, [top, linked])
   const handled = useRef<object>()
-  const focused = focus ? data.agents.find((agent) => agent.entry.id === focus.id) : undefined
+  const focused = focus
+    ? data.agents.find((agent) => agent.entry.id === focus.id && (!focus.ref || agent.ref === focus.ref))
+    : undefined
   // biome-ignore lint/correctness/useExhaustiveDependencies: a focus request is acted on once, when its card exists.
   useEffect(() => {
     if (!focus || !focused || data.busy || handled.current === focus) return
@@ -325,7 +365,7 @@ export function BusinessAgentGallery({
                   key={agent.ref}
                   agent={agent}
                   state={state}
-                  focused={focus?.id === agent.entry.id}
+                  focused={focus?.id === agent.entry.id && (!focus.ref || focus.ref === agent.ref)}
                   disabledReason={disabledReason}
                   onStart={() => starter.start(agent, { quiet: state === 'ready' })}
                 />

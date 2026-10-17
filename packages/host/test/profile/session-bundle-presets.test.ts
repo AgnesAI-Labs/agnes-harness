@@ -14,6 +14,7 @@ import { expect, it, vi } from 'vitest'
 import { admitSessionBundlePresets } from '../../src/runtime/profile/session-bundle-presets.js'
 import { createTestHost } from '../../testkit/index.js'
 import {
+  packageDirs,
   pluginHost,
   pluginRow,
   pluginSource,
@@ -342,9 +343,16 @@ it.each(['route', 'model'])(
 it('reviews the compiler final tree, strictly pins an agent and admits saved schedule selections against current bundle definitions', async () => {
   const original = pluginSource("ctx.tools.register(tool('fixture_review'))")
   const bundles = {
+    parent: { profile: { toolPolicy: { readOnly: false } } },
     review: {
-      profile: { tools: ['read'], toolPolicy: { readOnly: false } },
+      extends: [`${VENDOR}#parent`],
+      profile: { tools: ['read'] },
       presets: {
+        unselected: {
+          name: 'unselected',
+          extends: 'standard',
+          model: { route: { primary: { route: 'not-served', model: 'default' } } },
+        },
         review: { name: 'review', extends: 'standard', composition: { toolPolicy: { readOnly: true } } },
       },
       launch: {
@@ -357,7 +365,15 @@ it('reviews the compiler final tree, strictly pins an agent and admits saved sch
   }
   const file = join(original.snapshot.directory, 'package.json')
   const manifest = JSON.parse(readFileSync(file, 'utf8'))
-  manifest.agnes.bundles = bundles
+  manifest.agnes.bundles = {
+    ...bundles,
+    writer: {
+      extends: [`${VENDOR}#parent`],
+      profile: { tools: ['write'] },
+      presets: { relaxed: { name: 'relaxed', extends: 'standard' } },
+      launch: { title: { en: 'Writer' }, description: { en: 'Writer' }, preset: 'relaxed' },
+    },
+  }
   writeFileSync(file, JSON.stringify(manifest))
   let source = {
     ...original,
@@ -367,12 +383,45 @@ it('reviews the compiler final tree, strictly pins an agent and admits saved sch
       treeIntegrity: hashDirectory(original.snapshot.directory, { exclude: [] }),
     },
   }
-  const { host, dataDir } = await pluginHost(source, {
+  const metadataDirectory = scratch()
+  const metadataId = '@acme/launch-only'
+  const metadataBundles = { work: { extends: [`${VENDOR}#review`], launch: bundles.review.launch } }
+  writeFileSync(
+    join(metadataDirectory, 'package.json'),
+    JSON.stringify({
+      name: metadataId,
+      version: '1.0.0',
+      dependencies: { [VENDOR]: '^2.3.4' },
+      agnes: { bundles: metadataBundles },
+    }),
+  )
+  const metadataSource = {
+    ...source,
+    snapshot: {
+      ...source.snapshot,
+      directory: metadataDirectory,
+      packageId: metadataId,
+      version: '1.0.0',
+      snapshotId: 'metadata',
+      integrity: 'metadata-integrity',
+      treeIntegrity: hashDirectory(metadataDirectory, { exclude: [] }),
+    },
+  }
+  const { host, dataDir } = await pluginHost([source, metadataSource], {
+    provider: (profile) =>
+      new ScriptedProvider({
+        scripts: [],
+        models: (profile.provider.routes ?? []).flatMap((route) => route.models ?? []),
+      }),
+    packageDirs: {
+      ...packageDirs,
+      '@agnes/ai': fileURLToPath(new URL('../../../ai', import.meta.url)),
+    },
     script: [],
     disableSessionTitle: true,
     extensionLoader: createLoader({ cacheDir: scratch(), hostRoot: process.cwd(), agnesVersion: '0.0.0' }),
     profileInputs: { bundleCatalog: parsePackageBundles(VENDOR, bundles) },
-    runtimePluginSources: async () => [source],
+    runtimePluginSources: async () => [source, metadataSource],
   })
   try {
     await host.applyRuntimeTarget(targetOf([pluginRow()]))
@@ -380,6 +429,22 @@ it('reviews the compiler final tree, strictly pins an agent and admits saved sch
     const plan = await host.resolveAgent!(ref)
     expect(plan.permission.readOnly).toBe(false)
     expect(plan.bundles).toEqual([ref])
+    const writer = await host.resolveAgent!(`${VENDOR}#writer`)
+    expect(writer.loop).toEqual(plan.loop)
+    expect(writer.preset).toBe('relaxed')
+    expect(writer.permission.tools).toEqual(['write'])
+    expect(plan.permission.tools).toEqual(['read'])
+    const metadataPlan = await host.resolveAgent!(`${metadataId}#work`)
+    expect(metadataPlan.bundles).toEqual([`${metadataId}#work`])
+    expect(metadataPlan.sources.map((item) => item.id)).toContain(metadataId)
+    const metadataSession = await host.createSession({
+      key: 'metadata-only',
+      cwd: dataDir,
+      agent: metadataPlan.ref,
+      agentDigest: metadataPlan.digest,
+    })
+    expect(metadataSession.preset.name).toBe('review')
+    await metadataSession.close()
     const session = await host.createSession({
       key: 'reviewed-agent',
       cwd: dataDir,
@@ -393,7 +458,6 @@ it('reviews the compiler final tree, strictly pins an agent and admits saved sch
     const saved = { bundles: plan.bundles, preset: plan.preset, loop: plan.loop }
     // Same selection, new trusted Bundle definition. Its launch is no longer read by schedules.
     manifest.agnes.bundles.review.profile = { tools: ['write'], toolPolicy: { readOnly: true } }
-    delete manifest.agnes.bundles.review.launch
     writeFileSync(file, JSON.stringify(manifest))
     source = {
       ...source,
@@ -405,16 +469,8 @@ it('reviews the compiler final tree, strictly pins an agent and admits saved sch
     }
     await expect(
       host.createSession({ key: 'drifted-agent', cwd: dataDir, agent: ref, agentDigest: plan.digest }),
-    ).rejects.toThrow()
-    const scheduled = await host.createSession({ key: 'schedule-next-run', cwd: dataDir, ...saved })
-    const bindings = new CompositionSessionStore(join(dataDir, 'profiles', 'local-dev'))
-    expect(bindings.read(scheduled.key)?.tree.selection.tools).toEqual(['write'])
-    expect(bindings.read(session.key)?.tree.selection.tools).toEqual(['read'])
-    await scheduled.close()
-    await session.close()
-    // A strict caller cannot use ordinary admission's unserved-route fallback.
-    manifest.agnes.bundles.review.launch = bundles.review.launch
-    manifest.agnes.bundles.review.presets.review.model = { route: { primary: 'not-served' } }
+    ).rejects.toThrow('review drift')
+    delete manifest.agnes.bundles.review.launch
     writeFileSync(file, JSON.stringify(manifest))
     source = {
       ...source,
@@ -423,7 +479,26 @@ it('reviews the compiler final tree, strictly pins an agent and admits saved sch
         treeIntegrity: hashDirectory(original.snapshot.directory, { exclude: [] }),
       },
     }
-    await expect(host.resolveAgent!(ref)).rejects.toMatchObject({ code: 'E_PRESET_UNSUPPORTED' })
+    const scheduled = await host.createSession({ key: 'schedule-next-run', cwd: dataDir, ...saved })
+    const bindings = new CompositionSessionStore(join(dataDir, 'profiles', 'local-dev'))
+    expect(bindings.read(scheduled.key)?.tree.selection.tools).toEqual(['write'])
+    expect(bindings.read(session.key)?.tree.selection.tools).toEqual(['read'])
+    await scheduled.close()
+    await session.close()
+    // A strict caller cannot use ordinary admission's unserved-route fallback.
+    manifest.agnes.bundles.review.launch = bundles.review.launch
+    manifest.agnes.bundles.review.presets.review.model = {
+      route: { primary: { route: 'not-served', model: 'default' } },
+    }
+    writeFileSync(file, JSON.stringify(manifest))
+    source = {
+      ...source,
+      snapshot: {
+        ...source.snapshot,
+        treeIntegrity: hashDirectory(original.snapshot.directory, { exclude: [] }),
+      },
+    }
+    await expect(host.resolveAgent!(ref)).rejects.toMatchObject({ code: 'E_PRESET_UNRESOLVED' })
   } finally {
     await host.close()
   }

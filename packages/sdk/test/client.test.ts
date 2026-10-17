@@ -749,6 +749,7 @@ it('carries validated loop, preset and ordered bundles on new-session metadata',
     await expect(c.session.new({ cwd: '/w', bundles: ['same', 'same'] })).rejects.toThrow('unique')
     await expect(c.session.new({ cwd: '/w', bundles: [''] })).rejects.toThrow('nonempty')
     await expect(c.session.new({ cwd: '/w', agent: 'missing-ref' })).rejects.toThrow('package#bundle')
+    await expect(c.session.new({ cwd: '/w', agent: '' })).rejects.toThrow('package#bundle')
     await expect(c.session.new({ cwd: '/w', agent: 'acme/kit#work', loop })).rejects.toThrow('overrides')
   } finally {
     await c.close()

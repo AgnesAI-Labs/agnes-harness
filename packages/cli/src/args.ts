@@ -226,7 +226,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (p.mode === 'json' || p.mode === 'text') p.print = true
   if (p.agent && (p.loop || p.preset))
     throw new UsageError('--agent cannot be combined with --loop or --preset')
-  if (p.agent && (p.continue || p.resume !== undefined || p.command === 'resume'))
+  if (p.agent && (p.continue || p.resume !== undefined || p.command === 'resume' || p.key !== undefined))
     throw new UsageError('--agent selects a new session')
   if (p.loop && (p.continue || p.resume !== undefined || p.command === 'resume'))
     throw new UsageError('--loop selects a new session; resumed sessions keep their pinned loop')

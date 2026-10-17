@@ -365,10 +365,7 @@ export function useBusinessAgentStart(options: {
                   label={phase.target.launch.title[locale] ?? phase.target.launch.title.en}
                   description={phase.target.ref}
                 />
-                <SettingsItem
-                  label={t('launch.model')}
-                  description={`${phase.target.model.route} / ${phase.target.model.model}`}
-                />
+                <SettingsItem label={t('launch.model')} description={JSON.stringify(phase.target.models)} />
                 <SettingsItem
                   label={t('launch.permission')}
                   description={JSON.stringify(phase.target.permission)}
@@ -376,7 +373,7 @@ export function useBusinessAgentStart(options: {
                 <SettingsItem
                   label={t('launch.sources')}
                   description={phase.target.sources
-                    .map((source) => `${source.id}@${source.version}`)
+                    .map((source) => `${source.id}@${source.version} ${source.integrity}`)
                     .join(', ')}
                 />
                 {phase.target.launch.prompt && (
@@ -410,7 +407,16 @@ export function useBusinessAgentStart(options: {
                       })
                     },
                     (error: unknown) =>
-                      fail(review.agent, review.plan, { ...idle, session: 'failed' }, error),
+                      fail(
+                        review.agent,
+                        review.plan,
+                        { ...idle, session: 'failed' },
+                        new StartError({
+                          step: 'session',
+                          code: 'request',
+                          detail: error instanceof Error ? error.message : undefined,
+                        }),
+                      ),
                   )
                 }}
               >

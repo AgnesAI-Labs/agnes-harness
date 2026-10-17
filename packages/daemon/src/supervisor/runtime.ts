@@ -161,7 +161,6 @@ import {
   overlayChildEngineTarget,
   type ProcessIdentity,
   RequestTraceStore,
-  type ResolvedPreset,
   type ResolvedProfile,
   readFactChainBinding,
   resolveComposition,
@@ -351,6 +350,7 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
     {
       cwd: string
       preset: string | null
+      agent: string | null
       bundles: string | null
       loop: string | null
       promise: Promise<SessionEntry>
@@ -368,6 +368,7 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
         if (
           pending.cwd !== o.cwd ||
           pending.preset !== (o.preset ?? null) ||
+          pending.agent !== (o.agent === undefined ? null : JSON.stringify([o.agent, o.agentDigest])) ||
           pending.bundles !== (o.bundles === undefined ? null : JSON.stringify(o.bundles)) ||
           pending.loop !== (o.loop ? JSON.stringify(o.loop) : null)
         )
@@ -378,6 +379,7 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
       this.opening.set(o.key, {
         cwd: o.cwd,
         preset: o.preset ?? null,
+        agent: o.agent === undefined ? null : JSON.stringify([o.agent, o.agentDigest]),
         bundles: o.bundles === undefined ? null : JSON.stringify(o.bundles),
         loop: o.loop ? JSON.stringify(o.loop) : null,
         promise,

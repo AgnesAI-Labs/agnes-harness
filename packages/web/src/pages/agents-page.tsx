@@ -18,10 +18,17 @@ export function AgentsPage({ context }: { context: UiExtensionContext }) {
   const { t } = useUiText(AGENTS_NAMESPACE, agentsCatalog)
   const data = useBusinessAgents(source)
   // Another surface may point at one agent: `focus` names its package, `start` begins one-click start.
-  const selection = context.selection as { focus?: unknown; start?: unknown } | undefined
+  const selection = context.selection as { focus?: unknown; agent?: unknown; start?: unknown } | undefined
   const focusId = typeof selection?.focus === 'string' ? selection.focus : undefined
   const focus = useMemo(
-    () => (focusId ? { id: focusId, start: selection?.start === true } : undefined),
+    () =>
+      focusId
+        ? {
+            id: focusId,
+            ...(typeof selection?.agent === 'string' ? { ref: selection.agent } : {}),
+            start: selection?.start === true,
+          }
+        : undefined,
     // The selection object is new for every request, so the same card can be asked for again.
     [selection, focusId],
   )

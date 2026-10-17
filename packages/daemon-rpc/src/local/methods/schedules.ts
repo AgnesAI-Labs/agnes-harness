@@ -4,16 +4,19 @@ import type { SchedulesPort } from '@agnes/daemon-foundation/local/ports'
 import { type AgentPlan, rpcError, type SchedulesUpsertParams } from '@agnes/protocol'
 
 type Deps = {
-  resolveAgent?(ref: string): Promise<AgentPlan>
-  schedules(): SchedulesPort | undefined
-  requireOwner(method: string, sessionId: string, c: CallContext): void
+  host?: { resolveAgent?(ref: string): Promise<AgentPlan> }
+  schedules?: SchedulesPort
   registry: { get(key: string): { session: unknown } | undefined }
 }
 
 /** `_agnes/v1/schedules.*`: scheduled tasks, their targets and run history. */
-export function registerSchedules(ep: LocalEndpoint, deps: Deps): void {
+export function registerSchedules(
+  ep: LocalEndpoint,
+  deps: Deps,
+  requireOwner: (method: string, sessionId: string, c: CallContext) => void,
+): void {
   const schedules = (): SchedulesPort => {
-    const port = deps.schedules()
+    const port = deps.schedules
     if (!port) throw rpcError('CAPABILITY_DENIED', { method: 'schedules' })
     return port
   }
@@ -28,7 +31,7 @@ export function registerSchedules(ep: LocalEndpoint, deps: Deps): void {
   }
   /** A task bound to a session is that session's owner's; one with no session is the local owner's. */
   const requireScheduleOwner = (method: string, sessionKey: string | undefined, c: CallContext) => {
-    if (sessionKey) deps.requireOwner(method, sessionKey, c)
+    if (sessionKey) requireOwner(method, sessionKey, c)
     else if (c.conn.authKind !== 'local') throw rpcError('CAPABILITY_DENIED', { method })
   }
   /** A run still in progress is shown as waiting for approval while its session has an open request. */
@@ -58,7 +61,7 @@ export function registerSchedules(ep: LocalEndpoint, deps: Deps): void {
     const query = params as { scope: 'session' | 'all'; sessionKey?: string; includeArchived?: boolean }
     if (query.scope === 'all') {
       if (c.conn.authKind !== 'local') throw rpcError('CAPABILITY_DENIED', { method: 'schedules.list' })
-    } else if (query.sessionKey) deps.requireOwner('schedules.list', query.sessionKey, c)
+    } else if (query.sessionKey) requireOwner('schedules.list', query.sessionKey, c)
     else throw rpcError('SEMANTIC_REJECTED', { code: 'invalid_selector', reason: 'sessionKey required' })
     return scheduleCall(async () => withApprovals(await schedules().list(query)))
   })
@@ -75,9 +78,9 @@ export function registerSchedules(ep: LocalEndpoint, deps: Deps): void {
     )
     const input = params as SchedulesUpsertParams
     if (input.agent) {
-      if (!deps.resolveAgent || input.target.kind !== 'new-session')
+      if (!deps.host?.resolveAgent || input.target.kind !== 'new-session')
         throw rpcError('SEMANTIC_REJECTED', { reason: 'invalid agent target' })
-      const plan = await deps.resolveAgent(input.agent)
+      const plan = await deps.host.resolveAgent(input.agent)
       for (const field of ['loop', 'bundles', 'preset', 'model'] as const) {
         const supplied = input.target[field]
         if (supplied !== undefined && JSON.stringify(supplied) !== JSON.stringify(plan[field]))

@@ -60,8 +60,6 @@ export function admitSessionBundlePresets<P extends ResolvedProfile>(
     Object.entries(
       input.bundles?.length ? sessionBundlePresets(input.bundles, admission.bundleCatalog ?? {}) : {},
     ).map(([name, doc]) => {
-      if (input.strict && !routesServed(doc, served))
-        throw new HostError('E_PRESET_UNSUPPORTED', 'agent model route is unavailable')
       return [name, input.strict || routesServed(doc, served) ? doc : withoutModel(doc)]
     }),
   )

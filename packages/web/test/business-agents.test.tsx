@@ -1,7 +1,7 @@
 /** @vitest-environment happy-dom */
 
 import { Context } from '@agnes/cordis'
-import type { PackageCatalogDescriptor } from '@agnes/protocol'
+import type { AgentPlan, PackageCatalogDescriptor } from '@agnes/protocol'
 import { homeNavigation, SlotRegistry, SlotsProvider } from '@agnes/web-client'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -72,6 +72,19 @@ it('reads every catalog page and suggests three different kinds of work first', 
     '@agnes-fde/data-report',
     '@agnes-fde/compliance-audit',
   ])
+  const ready = rows[0]!
+  const unavailable = {
+    ...ready,
+    agents: [{ ...ready.agents![0]!, ref: 'acme/kit#unavailable' }],
+  }
+  const admitted = await listBusinessAgents(
+    async () => ({ items: [ready, unavailable] }),
+    async (ref) => {
+      if (ref !== ready.agents![0]!.ref) throw new Error('unavailable source')
+      return { ref, launch: ready.agents![0]!.launch } as AgentPlan
+    },
+  )
+  expect(admitted.map((row) => row.agents?.[0]?.ref)).toEqual([ready.agents![0]!.ref])
 })
 
 it('keeps the hero free of cards even when the business-agent catalog is available', async () => {

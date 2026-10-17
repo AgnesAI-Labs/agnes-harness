@@ -95,6 +95,7 @@ function setup(options: { permissions?: string[]; readOnly?: boolean; ready?: bo
     },
   }
   const api = {
+    resolveAgent: async (ref: string) => (await api.prepareAgent(ref)).presentation,
     prepareAgent: async (ref: string) => ({
       launchTicket: 'ticket',
       presentation: {

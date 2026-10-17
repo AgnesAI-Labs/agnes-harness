@@ -441,6 +441,7 @@ it('selects an explicit agent without exposing bundle knowledge and refuses conf
     ['--agent', '@acme/kit#review', '--loop', 'dag@1'],
     ['--agent', '@acme/kit#review', '--preset', 'safe'],
     ['--continue', '--agent', '@acme/kit#review'],
+    ['tools', '--session', 'existing', '--agent', '@acme/kit#review'],
   ])
     expect(() => parseArgs(argv)).toThrow()
 })

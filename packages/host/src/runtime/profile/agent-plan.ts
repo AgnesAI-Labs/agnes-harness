@@ -1,17 +1,17 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { satisfiesApiRange } from '@agnes/extension-api'
 import { HostError } from '@agnes/host-common/errors'
 import type { AgentSource } from '@agnes/host-common/profile/agent'
 import { agentSelection, validateAgentBundles } from '@agnes/host-common/profile/agent'
 import { canonicalJson, sha256hex } from '@agnes/host-common/profile/canonical'
-import { loopPatch, resolveComposition } from '@agnes/host-common/profile/composition'
+import { expandBundles, loopPatch, resolveComposition } from '@agnes/host-common/profile/composition'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { materializeRoutes, pinPresetRoutes } from '@agnes/host-providers/assemble/routes'
 import { readRuntimeBundles } from '@agnes/host-providers/profile/bundles-reader'
 import type { CompositionBinding } from '@agnes/host-providers/profile/composition-state'
 import { pluginSnapshotIdentity } from '@agnes/host-providers/runtime-plugin-catalogue'
 import type { RuntimePluginSnapshot } from '@agnes/package-manager'
-import type { RuntimeTarget } from '@agnes/plugin-runtime/host'
 import type { AgentPlan, LoopSelection } from '@agnes/protocol'
 import type { Host, HostOptions } from '../lifecycle/host.js'
 import { profileForComposition } from './composition-selection.js'
@@ -30,6 +30,7 @@ export function agentSources(
     source: 'runtime-snapshot',
     snapshotId: snapshot.snapshotId,
     capabilityHash: snapshot.capabilityHash,
+    treeIntegrity: snapshot.treeIntegrity,
     enabled: trusted && enabled !== false,
     dependencies:
       JSON.parse(readFileSync(join(snapshot.directory, 'package.json'), 'utf8')).dependencies ?? {},
@@ -74,7 +75,7 @@ export async function sessionAdmission(
   profile: ResolvedProfile,
   modelProfile: ResolvedProfile,
   options: HostOptions,
-  latestTarget: RuntimeTarget | undefined,
+  activePackages: ReadonlySet<string> | undefined,
 ) {
   const available =
     (await options.runtimePluginSources?.()) ??
@@ -85,12 +86,7 @@ export async function sessionAdmission(
     (source) =>
       source.trusted &&
       source.enabled !== false &&
-      (source.enabled === true ||
-        !latestTarget ||
-        latestTarget.tree.rows.some(
-          (row) =>
-            !row.disabled && pluginSnapshotIdentity(row.plugin)?.packageId === source.snapshot.packageId,
-        )),
+      (source.enabled === true || !activePackages || activePackages.has(source.snapshot.packageId)),
   )
   const sourceIds = new Set(sources.map((source) => source.snapshot.packageId))
   if (sourceIds.size !== sources.length)
@@ -100,7 +96,7 @@ export async function sessionAdmission(
     packages: [
       ...profile.packages
         .filter((pkg) => !sourceIds.has(pkg.id))
-        .map((pkg) => ({ ...pkg, enabled: (pkg.trust === 'builtin' || !latestTarget) && pkg.enabled })),
+        .map((pkg) => ({ ...pkg, enabled: (pkg.trust === 'builtin' || !activePackages) && pkg.enabled })),
       ...sources.map(({ snapshot }) => ({
         id: snapshot.packageId,
         version: snapshot.version,
@@ -112,7 +108,7 @@ export async function sessionAdmission(
     ],
     bundleCatalog: sessionBundleCatalog(
       profile,
-      sources.length || latestTarget || options.runtimePluginSources
+      sources.length || activePackages || options.runtimePluginSources
         ? readRuntimeBundles(sources)
         : undefined,
     ),
@@ -150,16 +146,27 @@ export function createAgentResolver(deps: {
       .catalog()
       .find((entry) => entry.id === loop?.id && entry.version === loop.version)
     if (!loop || !loopEntry) throw new HostError('E_PRESET_UNSUPPORTED', 'agent loop is unavailable')
-    // Cross-package loop providers need the same explicit dependency as bundle inheritance.
-    const declaring = current.bundleCatalog[tree.sources.loop?.name ?? ref] ?? current.bundleCatalog[ref]!
-    const owner = identities.find((source) => source.id === declaring.sourcePackage)!
-    if (
-      tree.sources.loop?.layer !== 'default' &&
-      current.bundleCatalog[tree.sources.loop?.name ?? ''] &&
-      loopEntry.sourcePackage !== owner.id &&
-      !Object.hasOwn(owner.dependencies, loopEntry.sourcePackage)
-    )
-      throw new HostError('E_PRESET_UNSUPPORTED', 'agent loop requires a declared dependency')
+    // Resolve provenance from the actual winning author layer, including inherited presets.
+    const loopSource = identities.find((source) => source.enabled && source.id === loopEntry.sourcePackage)
+    if (!loopSource) throw new HostError('E_PRESET_UNSUPPORTED', 'agent loop source is unavailable')
+    const declaring =
+      current.bundleCatalog[tree.sources.loop?.name ?? ''] ??
+      (tree.sources.loop?.layer === 'preset'
+        ? [...expandBundles(selected.bundles, current.bundleCatalog)].reverse().find((entry) =>
+            Object.values(entry.document.presets ?? {}).some((preset) => {
+              const provider = (
+                preset.providers as { loop?: { provider: string; version: string } } | undefined
+              )?.loop
+              return provider?.provider === loop.id && provider.version === loop.version
+            }),
+          )
+        : undefined)
+    if (declaring && declaring.sourcePackage !== loopSource.id) {
+      const owner = identities.find((source) => source.id === declaring.sourcePackage)
+      const range = owner?.dependencies[loopSource.id]
+      if (!range || !satisfiesApiRange(range, loopSource.version))
+        throw new HostError('E_PRESET_UNSUPPORTED', 'agent loop requires a compatible declared dependency')
+    }
     const sessionProfile = profileForComposition(admitted.profile, tree)
     const container = await open({ sessionKey: '', tree, profile: sessionProfile })
     const resolved = container.host.validatePresetSwitch(selected.preset)
@@ -201,4 +208,51 @@ export function createAgentResolver(deps: {
     const plan: AgentPlan = { ...content, digest }
     return { plan, tree, profile: sessionProfile }
   }
+}
+
+/** Validate the exact reviewed choice before writing or reopening a composition binding. */
+export function assertAgentRequest(
+  input: import('../sessions/session.js').CreateSessionOptions,
+  agent: Awaited<ReturnType<ReturnType<typeof createAgentResolver>>> | undefined,
+  binding: CompositionBinding | undefined,
+): void {
+  if (input.agentDigest !== undefined && (!agent || input.agentDigest !== agent.plan.digest))
+    throw new HostError('E_PRESET_UNSUPPORTED', 'agent review drift')
+  if (agent && (input.loop || input.bundles !== undefined || input.preset || input.parent))
+    throw new HostError('E_PRESET_UNSUPPORTED', 'agent cannot be combined with execution overrides')
+  if (
+    binding &&
+    agent &&
+    (binding.tree.hash !== agent.tree.hash || binding.profile.hash !== agent.profile.hash)
+  )
+    throw new HostError('E_PRESET_UNSUPPORTED', 'agent selection differs from session pin')
+}
+
+/** Finish strict admission against current sources and the actual session pin; clean up a refusal. */
+export async function verifyAgentPin(
+  plan: AgentPlan,
+  session: Awaited<ReturnType<Host['createSession']>>,
+  compositionHash: string,
+  resolve: (ref: string) => Promise<{ plan: AgentPlan }>,
+): Promise<void> {
+  try {
+    if ((await resolve(plan.ref)).plan.digest !== plan.digest)
+      throw new HostError('E_PRESET_UNSUPPORTED', 'agent source or policy drift during admission')
+    assertAgentPin(plan, session, compositionHash)
+  } catch (error) {
+    await session.close()
+    throw error
+  }
+}
+
+/** The publisher owns row enablement; data admission consumes only its active package identities. */
+export function activeAgentPackages(
+  rows: readonly { plugin: string; disabled?: boolean }[],
+): ReadonlySet<string> {
+  return new Set(
+    rows.flatMap((row) => {
+      const identity = !row.disabled && pluginSnapshotIdentity(row.plugin)
+      return identity ? [identity.packageId] : []
+    }),
+  )
 }

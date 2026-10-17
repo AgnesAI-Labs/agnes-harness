@@ -105,6 +105,15 @@ function daemon(
     return Promise.resolve({ operationId: name, profile: 'default' })
   }
   const api = {
+    resolveAgent: async (ref: string) => {
+      if (
+        state?.actual === 'failed' ||
+        state?.actual === 'unavailable' ||
+        state?.actual === 'restart-required'
+      )
+        throw new Error('launch unavailable')
+      return (await api.prepareAgent(ref)).presentation
+    },
     prepareAgent: async (ref: string) => ({
       launchTicket: 'ticket',
       presentation: {
@@ -119,6 +128,7 @@ function daemon(
         digest: 'digest',
         compositionHash: 'tree',
         presetHash: 'preset',
+        effectivePresetHash: 'effective',
         permission: { readOnly: false, tools: [], allow: [], deny: [] },
         sources: [],
       } as AgentPlan,

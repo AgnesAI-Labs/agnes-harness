@@ -126,7 +126,7 @@ export const folderName = (path: string) => path.split(/[\\/]/).filter(Boolean).
 
 /**
  * Execution modes and models a new-session task may name, read from the same admin catalog as a new
- * chat. A business agent is a loop whose package also brings bundles; they go with it.
+ * chat. Agent choices carry the exact selection returned by the backend resolver.
  */
 export type ExecutionChoice = {
   key: string

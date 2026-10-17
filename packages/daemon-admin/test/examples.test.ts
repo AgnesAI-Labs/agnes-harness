@@ -113,6 +113,7 @@ function fixture(parentVersion = '1.0.0') {
         pages: [],
         compositionHash: 'tree',
         presetHash: 'preset',
+        effectivePresetHash: 'effective',
         model: { route: 'demo', model: 'demo' },
         models: {},
         permission: { readOnly: false, tools: [], allow: [], deny: [] },

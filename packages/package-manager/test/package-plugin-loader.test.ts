@@ -9,6 +9,7 @@ import {
   createPackageSnapshotVerifier,
   installedRuntimeSnapshotId,
   loadPackagePlugins,
+  runtimePluginDataSourcesFromInventory,
   runtimePluginSnapshotsFromInventory,
   runtimePluginSnapshotsFromPins,
 } from '../src/package-plugin-loader.js'
@@ -89,6 +90,44 @@ describe('package plugin loader', () => {
     expect(
       runtimePluginSnapshotsFromPins({ ...inventory, packages: [{ ...pkg, trusted: false }] }, [active]),
     ).toEqual([])
+  })
+  it('offers trusted enabled bundle-only packages as data without requiring or importing an executable row', async () => {
+    const { snapshot } = packageSnapshot([], {
+      bundles: { base: { profile: { toolPolicy: { readOnly: true } } } },
+    })
+    const pkg = {
+      id: snapshot.packageId,
+      directory: snapshot.directory,
+      enabled: true,
+      trusted: true,
+      blockers: [],
+      capabilityHash: snapshot.capabilityHash,
+      contributions: [],
+      verifiedRollbackTarget: null,
+      entry: {
+        version: snapshot.version,
+        integrity: snapshot.integrity,
+        treeIntegrity: snapshot.treeIntegrity,
+      },
+    } as unknown as InstalledPackage
+    const inventory = { profile: snapshot.profile, hash: 'fixture', packages: [pkg] } as InstalledInventory
+    const sources = runtimePluginDataSourcesFromInventory(inventory)
+    expect(sources).toMatchObject([
+      { enabled: true, trusted: true, snapshot: { packageId: pkg.id, integrity: snapshot.integrity } },
+    ])
+    const importModule = async () => {
+      throw new Error('declarative packages must not import code')
+    }
+    expect(await loadPackagePlugins({ snapshot: sources[0]!.snapshot, generation: 1, importModule })).toEqual(
+      [],
+    )
+    for (const changed of [{ enabled: false }, { trusted: false }, { blockers: [{ code: 'dependency' }] }])
+      expect(
+        runtimePluginDataSourcesFromInventory({
+          ...inventory,
+          packages: [{ ...pkg, ...changed } as InstalledPackage],
+        }),
+      ).toEqual([])
   })
   it('loads only statically declared named exports and normalizes them for Host', async () => {
     const { snapshot } = packageSnapshot([

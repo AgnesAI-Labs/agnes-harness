@@ -1,7 +1,8 @@
 /** @vitest-environment happy-dom */
 import { defaultLoop, type PackageInstalledDescriptor } from '@agnes/protocol'
 import { pluginStates } from '@agnes/web-admin/admin/plugins/control-panel'
-import type { ClientContext } from '@agnes/web-client'
+import * as businessAgents from '@agnes/web-admin/agents'
+import { type ClientContext, homeNavigation } from '@agnes/web-client'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
@@ -79,6 +80,56 @@ it('loads exact new-session defaults and renders the selected/stale Loop accessi
       root.unmount()
       updateLoopPicker({ ...view, visible: false })
     })
+    host.remove()
+  }
+})
+
+it('offers backend-ready AgentRefs in a new draft and opens the exact agent review', async () => {
+  const agent = {
+    ref: 'acme/kit#second',
+    entry: { id: 'acme/kit' },
+    name: 'Second agent',
+  } as businessAgents.BusinessAgent
+  const source = vi.spyOn(businessAgents, 'useBusinessAgents').mockReturnValue({
+    agents: [agent, { ...agent, ref: 'acme/kit#unavailable', name: 'Unavailable agent' }],
+    readyAgents: [agent.ref],
+  } as ReturnType<typeof businessAgents.useBusinessAgents>)
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+  try {
+    localStorage.setItem('agnes.settings.advanced', '0')
+    await act(async () => {
+      updateLoopPicker({
+        visible: true,
+        disabled: false,
+        loops: [],
+        label: 'Loop',
+        inherited: '',
+        unavailable: '',
+        onSelect() {},
+      })
+      root.render(createElement(LoopPicker))
+    })
+    const trigger = host.querySelector<HTMLButtonElement>('[data-testid="composer-agent"]')!
+    expect(trigger.hidden).toBe(false)
+    await act(async () => trigger.click())
+    const picker = document.querySelector('[data-testid="new-session-agent"]')!
+    await act(async () =>
+      picker.querySelector('input')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })),
+    )
+    const choices = [...document.querySelectorAll<HTMLElement>('.ant-select-item-option')]
+    expect(choices.map((choice) => choice.textContent)).toEqual(['Second agent'])
+    await act(async () => choices[0]!.click())
+    expect(homeNavigation.getSnapshot()).toEqual({
+      id: 'agents',
+      selection: { focus: 'acme/kit', agent: agent.ref, start: true },
+    })
+  } finally {
+    source.mockRestore()
+    localStorage.removeItem('agnes.settings.advanced')
+    homeNavigation.close()
+    await act(async () => root.unmount())
     host.remove()
   }
 })

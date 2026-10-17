@@ -1,8 +1,12 @@
-import type { ExtensionActivationBarrier, Host, HostSession } from '@agnes/host'
-import { HostError } from '@agnes/host-common/errors'
-import type { ResolvedPreset } from '@agnes/host-common/presets/resolve'
-import type { PresetDoc } from '@agnes/host-common/presets/types'
-import type { ResolvedProfile } from '@agnes/host-common/profile/types'
+import {
+  type ExtensionActivationBarrier,
+  type Host,
+  HostError,
+  type HostSession,
+  type PresetDoc,
+  type ResolvedPreset,
+  type ResolvedProfile,
+} from '@agnes/host'
 import { workerComputerUseStatusSource } from './service-worker.js'
 import type { WorkerPool } from './worker-pool.js'
 /**

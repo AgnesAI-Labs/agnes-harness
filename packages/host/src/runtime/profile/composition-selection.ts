@@ -6,7 +6,10 @@ import type {
 } from '@agnes/host-common/profile/composition'
 import { freezeTree } from '@agnes/host-common/profile/composition-freeze'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
+import type { Host } from '../lifecycle/host.js'
 import { capabilityEnabled, resolveSessionCapabilities } from './session-capabilities.js'
+
+export type CompositionContainer = { host: Host; tree: ResolvedComposition; draining?: boolean }
 
 /** Compile a preset tree into a separate Host profile, without changing an existing session. */
 export function profileForComposition(profile: ResolvedProfile, tree: ResolvedComposition): ResolvedProfile {

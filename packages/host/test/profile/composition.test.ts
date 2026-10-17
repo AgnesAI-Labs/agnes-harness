@@ -522,7 +522,7 @@ it('resolves explicit agent presets at the session layer, with source dependency
     bundleCatalog: bundles,
   }
   const writer = resolveComposition(admitted, {
-    preset: bundles['acme/kit#writer']!.document.presets!.safe,
+    preset: bundles['acme/kit#writer']!.document.presets!.safe!,
     sessionBundles: selection.bundles,
   })
   expect(writer.selection.toolPolicy?.readOnly).toBe(false)

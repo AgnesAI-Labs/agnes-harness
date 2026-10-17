@@ -5,7 +5,10 @@ import { PackageError } from './errors.js'
 import { type InventoryVerificationCache, readInventoryAsync } from './inventory.js'
 import { readBoundary } from './inventory-boundary.js'
 import type { Lockfile } from './lockfile.js'
-import { runtimePluginSnapshotsFromPins } from './package-plugin-loader.js'
+import {
+  runtimePluginDataSourcesFromInventory,
+  runtimePluginSnapshotsFromPins,
+} from './package-plugin-loader.js'
 import { listRuntimePinsStoreAsync, type RuntimeSnapshotStore } from './runtime-snapshots.js'
 
 /** Retry torn reads, but keep unexplained byte/policy changes fatal. */
@@ -42,7 +45,18 @@ export async function readRuntimePluginSnapshots(
         ceiling: ceiling(afterLock),
         verificationCache,
       })
-      if (before.hash === after.hash) return runtimePluginSnapshotsFromPins(after, pins)
+      if (before.hash === after.hash) {
+        const pinned = runtimePluginSnapshotsFromPins(after, pins)
+        const identities = new Set(
+          pinned.map(({ snapshot }) => `${snapshot.packageId}\0${snapshot.integrity}`),
+        )
+        return Object.freeze([
+          ...pinned,
+          ...runtimePluginDataSourcesFromInventory(after).filter(
+            ({ snapshot }) => !identities.has(`${snapshot.packageId}\0${snapshot.integrity}`),
+          ),
+        ])
+      }
     } catch (error) {
       // A failure no writer explains is tampering and stays fatal; otherwise let the writer finish.
       if (!transacting() && committed() === boundary) throw error

@@ -492,12 +492,12 @@ export class Client {
       loop?: LoopSelection
     }): Promise<Session> => {
       const meta: Record<string, unknown> = {}
-      if (o.agent) {
+      if (o.agent !== undefined) {
         meta.agent = parseAgentRef(o.agent)
         if (o.loop || o.bundles !== undefined || o.preset)
           throw new TypeError('agent cannot be combined with execution overrides')
       }
-      if (o.agentDigest) meta.agentDigest = o.agentDigest
+      if (o.agentDigest !== undefined) meta.agentDigest = o.agentDigest
       if (o.loop) meta.loop = parseLoopSelection(o.loop)
       if (o.preset) meta.preset = o.preset
       if (o.bundles !== undefined) meta.bundles = parseSessionBundles(o.bundles)

@@ -22,6 +22,7 @@ export type StartApi = Pick<
   | 'enable'
   | 'enableChecked'
   | 'operation'
+  | 'resolveAgent'
   | 'prepareAgent'
   | 'startAgent'
 >
@@ -171,7 +172,7 @@ export const planBlocked = (plan: StartPlan): boolean =>
   (plan.preview?.blockers.length ?? 0) > 0 || (plan.installed?.blockers.length ?? 0) > 0
 
 /**
- * Install → trust → enable → find the loop to open a session with. Stops at the first step that
+ * Install → trust → enable → prepare the declared agent for review. Stops at the first step that
  * fails and leaves completed steps in place: the package stays as far along as it got.
  */
 export async function runBusinessAgentStart(
@@ -265,12 +266,28 @@ export async function runBusinessAgentStart(
           options,
         )
       }
-      // Enabled is a wish; the session needs the plugin actually running.
+      // Executable packages need running rows; declarative packages use backend launch admission.
       const deadline = Date.now() + (options.timeoutMs ?? 120_000)
       for (;;) {
         const next = await installedOf(api, id, 'enable', options.signal)
         assertReviewed('enable', next)
         if (next?.actual === 'running') return
+        if (
+          next?.trusted &&
+          next.desired === 'enabled' &&
+          next.actual !== 'failed' &&
+          next.actual !== 'restart-required' &&
+          !next.contributions.some((row) => row.kind === 'extension' || row.kind === 'surface')
+        ) {
+          const declared = plan.entry.agents?.length === 1 ? plan.entry.agents[0] : undefined
+          if (!declared) throw new StartError({ step: 'enable', code: 'blocked' })
+          try {
+            await api.resolveAgent(declared.ref)
+            return
+          } catch (error) {
+            throw new StartError({ step: 'enable', code: 'not-running', detail: detailOf(error) })
+          }
+        }
         if (next?.actual === 'restart-required')
           throw new StartError({ step: 'enable', code: 'restart-required', hint: next.failureHint })
         if (!next || next.actual === 'failed' || next.actual === 'unavailable')

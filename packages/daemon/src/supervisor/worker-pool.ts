@@ -263,8 +263,8 @@ export class WorkerPool {
       {
         binding: opts.binding,
         ...(opts.preset ? { preset: opts.preset } : {}),
-        ...(opts.agent ? { agent: opts.agent } : {}),
-        ...(opts.agentDigest ? { agentDigest: opts.agentDigest } : {}),
+        ...(opts.agent !== undefined ? { agent: opts.agent } : {}),
+        ...(opts.agentDigest !== undefined ? { agentDigest: opts.agentDigest } : {}),
         ...(opts.bundles !== undefined ? { bundles: opts.bundles } : {}),
         ...(opts.loop ? { loop: opts.loop } : {}),
         ...(opts.resume ? { resume: true } : {}),
