@@ -93,7 +93,17 @@ it('offers backend-ready AgentRefs in a new draft and opens the exact agent revi
   const source = vi.spyOn(businessAgents, 'useBusinessAgents').mockReturnValue({
     agents: [agent, { ...agent, ref: 'acme/kit#unavailable', name: 'Unavailable agent' }],
     readyAgents: [agent.ref],
-  } as ReturnType<typeof businessAgents.useBusinessAgents>)
+    api: undefined,
+    features: undefined,
+    installed: [],
+    denied: undefined,
+    busy: false,
+    failed: false,
+    error: undefined,
+    loaded: true,
+    reload() {},
+    refreshInstalled() {},
+  })
   const host = document.createElement('div')
   document.body.append(host)
   const root = createRoot(host)
