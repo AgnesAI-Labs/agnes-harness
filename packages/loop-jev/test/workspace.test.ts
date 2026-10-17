@@ -3,6 +3,7 @@ import type { HistoryEntry, Observation } from '../src/types.js'
 import {
   addNote,
   buildState,
+  CONTEXT_CONTRACT,
   emptyWorkspace,
   fileActivity,
   goalText,
@@ -58,7 +59,7 @@ describe('workspace', () => {
     expect(ws.history[0]?.output_excerpt).toBeUndefined()
     expect(ws.history[1]?.output_excerpt).toBe('second')
   })
-  it('derives file activity from successful current-turn entries (ref test_compiler.py:352)', () => {
+  it('derives file activity from successful current-turn entries', () => {
     const ws = emptyWorkspace()
     newTurn(ws, 'g')
     recordStep(ws, entry({ read_files: ['a.py'] }))
@@ -120,7 +121,7 @@ describe('workspace', () => {
     expect(buildState(ws, 6, surface).goal).toHaveLength(6000)
     expect(buildState(ws, 7, surface).goal).toBe(`${'头'.repeat(2000)}\n…\n${'尾'.repeat(2000)}`)
   })
-  it('forces arbitration only for a recoverable latest entry of the current turn (ref test_kernel.py:1116)', () => {
+  it('forces arbitration only for a recoverable latest entry of the current turn', () => {
     const ws = emptyWorkspace()
     recordStep(
       ws,
@@ -139,6 +140,45 @@ describe('workspace', () => {
     expect(latestRecoverable(ws)?.error?.code).toBe('EXECUTION_FAILED')
     newTurn(ws, 'next')
     expect(latestRecoverable(ws)).toBeNull()
+  })
+  it('treats a successful read without read_files as a read of its target', () => {
+    const ws = emptyWorkspace()
+    newTurn(ws, 'g')
+    recordStep(ws, entry({ target: 'x' }))
+    expect(fileActivity(ws)).toMatchObject({ read_current: ['x'], read_counts: { x: 1 } })
+  })
+  it('keeps the last 10 notes and clips each to 600 characters', () => {
+    const ws = emptyWorkspace()
+    for (let i = 0; i < 11; i++) addNote(ws, { kind: 'steer', text: `n${i}` })
+    expect(ws.notes.map((n) => n.text)).toEqual(['n1', 'n2', 'n3', 'n4', 'n5', 'n6', 'n7', 'n8', 'n9', 'n10'])
+    addNote(ws, { kind: 'file', text: 'x'.repeat(900) })
+    expect(ws.notes[ws.notes.length - 1]?.text).toHaveLength(600)
+  })
+  it('hands out a state that shares nothing with the workspace or the contract', () => {
+    const ws = emptyWorkspace()
+    newTurn(ws, 'g')
+    recordStep(ws, entry({ read_files: ['a.py'], changed_files: ['b.py'], target: ['a.py', 'c.py'] }))
+    const state = buildState(ws, 0, surface)
+    ;(state.context_contract as Record<string, unknown>).authority = 'changed'
+    const step = (state.recent_steps as Array<Record<string, unknown>>)[0] as Record<string, unknown>
+    ;(step.read_files as string[]).push('z')
+    ;(step.target as string[]).push('z')
+    ;((state.last_result as Record<string, unknown>).changed_files as string[]).push('z')
+    expect(buildState(ws, 0, surface).context_contract).toEqual(CONTEXT_CONTRACT)
+    expect(CONTEXT_CONTRACT.authority).not.toBe('changed')
+    expect(ws.history[0]).toMatchObject({
+      read_files: ['a.py'],
+      changed_files: ['b.py'],
+      target: ['a.py', 'c.py'],
+    })
+    expect(Object.isFrozen(CONTEXT_CONTRACT)).toBe(true)
+  })
+  it('copies the entry on record so later edits of the input do not reach the workspace', () => {
+    const ws = emptyWorkspace()
+    const obs = entry({ read_files: ['a.py'] })
+    recordStep(ws, obs)
+    obs.entry.read_files?.push('z')
+    expect(ws.history[0]?.read_files).toEqual(['a.py'])
   })
   it('joins text blocks into the goal', () => {
     expect(

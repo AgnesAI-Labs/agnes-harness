@@ -59,7 +59,7 @@ describe('no-progress limit', () => {
     expect(checkNoProgress([ok('a'), ok('a'), ok('a')])).toBeNull()
     expect(checkNoProgress([ok('a'), ok('a'), ok('a'), ok('a')])?.code).toBe('NO_PROGRESS_LIMIT')
   })
-  it('counts the same refusal code three times (ref test_kernel.py:954)', () => {
+  it('counts the same refusal code three times', () => {
     const refused = (): HistoryEntry => ({
       ...failed('NO_CALL', 'write'),
       status: 'refused',
