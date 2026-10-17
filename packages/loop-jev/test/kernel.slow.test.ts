@@ -144,6 +144,7 @@ async function cutAt(
   o: JevKernelOptions,
   key: string,
   cut: (types: string[]) => boolean,
+  setup?: (session: SessionImpl) => void,
 ): Promise<MemoryStorage> {
   const kit = jevKernel(o)
   const commit = kit.storage.commit.bind(kit.storage)
@@ -162,6 +163,7 @@ async function cutAt(
   })
   try {
     const session = await kit.open(key)
+    setup?.(session)
     const outcome = await kit.run(session)
     if (outcome.reason !== 'completed') throw new Error(`the turn before the cut ended ${outcome.reason}`)
   } finally {
@@ -348,6 +350,50 @@ describe('agnes.jev on a real Core session', () => {
       expect((await kit.run(session)).reason).toBe('completed')
       expect(reads).toBe(1)
       expect((await kit.rows(session)).filter((r) => r.type === 'tool/call')).toHaveLength(1)
+    } finally {
+      await kit.kernel.close()
+    }
+  })
+
+  it('asks the stop gate again after a crash right after it held the completion', async () => {
+    const jev = fakeJev(() => ({ pick: PICK_RESPOND }))
+    let answered = false
+    const storage = await cutAt(
+      { scripts: [textTurn('first'), textTurn('second')], jev },
+      'crash-gate',
+      // The gate's note is the first user message after the answer was committed.
+      (types) => {
+        if (answered && types.includes('user/message')) return true
+        answered ||= types.includes('assistant/message')
+        return false
+      },
+      (session) => {
+        let asked = 0
+        session.hooks = {
+          ...noopHooks,
+          turnStopping: async () =>
+            ++asked === 1 ? { action: 'continue', note: 'cite the source first' } : { action: 'stop' },
+        }
+      },
+    )
+    const kit = jevKernel({ scripts: [textTurn('after restart')], jev, storage })
+    const session = await kit.open('crash-gate')
+    let asked = 0
+    session.hooks = {
+      ...noopHooks,
+      turnStopping: async () => {
+        asked++
+        return { action: 'stop' }
+      },
+    }
+    try {
+      // The held mark lives with the loop context, so the restarted loop's repeated finish is not
+      // ended as blocked: Core runs the gate again, and the gate decides.
+      const outcome = await session.run({ until: 'turn-end', signal: new AbortController().signal })
+      expect(outcome.reason).toBe('completed')
+      expect(asked).toBe(1)
+      expect(kit.provider.calls).toBe(0)
+      expect((await kit.rows(session)).filter((r) => r.type === 'turn/end')).toHaveLength(1)
     } finally {
       await kit.kernel.close()
     }

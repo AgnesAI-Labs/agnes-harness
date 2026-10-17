@@ -577,4 +577,85 @@ describe('Jev loop driver', () => {
     expect(r.requests).toHaveLength(0)
     expect(r.metrics).toEqual([expect.objectContaining({ endReason: 'budget', jevCalls: 0 })])
   })
+  describe('cancellation while a request is running', () => {
+    /** Runs one turn whose `cancel` port aborts the session signal mid-request; driveLoop then throws. */
+    async function cancelledRun(
+      acts: JevAct[],
+      o: {
+        tools?: ReturnType<typeof toolPort>
+        ports?: (ctx: LoopContext, stop: AbortController) => Record<string, unknown>
+      },
+    ) {
+      const stop = new AbortController()
+      const finished: unknown[] = []
+      const emitted: Array<{ type: string; data: JsonObject }> = []
+      const events = (ctx: LoopContext): LoopContext['events'] => ({
+        assistant: (message, checkpoint) => ctx.events.assistant(message, checkpoint),
+        emit: async (name, data) => {
+          emitted.push({ type: name, data: structuredClone(data) as JsonObject })
+          await ctx.events.emit(name, data)
+        },
+        finish: async (reason, error) => {
+          finished.push(reason)
+          return ctx.events.finish(reason, error)
+        },
+      })
+      const jev = fakeJev((n) => acts[n] ?? { pick: PICK_RESPOND })
+      const factory = withPorts(createJevLoopFactory(), (ctx) => ({
+        events: events(ctx),
+        ...(o.ports?.(ctx, stop) ?? {}),
+      }))
+      await expect(
+        driveLoop(factory, {
+          inputs: [{ content: [{ type: 'text', text: 'list the workspace' }] }] as never,
+          turnView: turnView(),
+          replies: [textReply('never sent')] as never,
+          tools: (o.tools ?? toolPort()).port,
+          sideCall: jev,
+          signal: stop.signal,
+        }),
+      ).rejects.toThrow()
+      const of = (type: string) => emitted.filter((e) => e.type === type).map((e) => e.data)
+      return { finished, steps: of('jev.step'), metrics: of('jev.metrics') }
+    }
+    it('ends aborted when the turn is cancelled while a tool runs', async () => {
+      let stop: AbortController | undefined
+      const r = await cancelledRun([{ pick: PICK_LS }], {
+        tools: toolPort({
+          ls: () => {
+            stop?.abort()
+            throw Object.assign(new Error('The operation was aborted'), { name: 'AbortError' })
+          },
+        }),
+        ports: (_ctx, controller) => {
+          stop = controller
+          return {}
+        },
+      })
+      expect(r.finished).toEqual(['aborted'])
+      expect(r.steps).toMatchObject([{ route: 'direct', op: 'ls' }])
+      expect(r.metrics).toEqual([expect.objectContaining({ endReason: 'aborted', directSteps: 1 })])
+    })
+    it('ends aborted and reports the attempt when the turn is cancelled while the model answers', async () => {
+      const r = await cancelledRun([{ pick: PICK_RESPOND }], {
+        ports: (ctx, stop) => ({
+          model: {
+            ...ctx.model,
+            // Core settles a cancelled request with an aborted error event.
+            complete: async () => {
+              stop.abort()
+              return [
+                { type: 'error', reason: 'aborted', code: 'ABORTED', message: 'aborted', retryable: false },
+              ]
+            },
+          },
+        }),
+      })
+      expect(r.finished).toEqual(['aborted'])
+      expect(r.steps).toMatchObject([{ route: 'answer', llm: { attempts: 1, outcome: 'error' } }])
+      expect(r.metrics).toEqual([
+        expect.objectContaining({ endReason: 'aborted', llm: expect.objectContaining({ answer: 1 }) }),
+      ])
+    })
+  })
 })
