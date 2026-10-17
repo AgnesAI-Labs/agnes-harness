@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createAuthenticatedArtifactReadHandler } from '@agnes/daemon-rpc/local/artifact-read'
 import { createLocalArtifactReadStore } from '@agnes/host'
+import { validateEvent } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
 import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import { PersistentArtifactReadAuthorityIndex } from '../src/local/artifact-read-authority.js'
@@ -338,6 +339,11 @@ describe('artifact authority ledger projection', () => {
 
   it('ignores non-media rows and refuses malformed roots without granting scope', async () => {
     const f = await fixture()
+    const clearedInbox = { ...f.event(), type: 'inbox', register: 'inbox', data: null }
+    expect(validateEvent(clearedInbox).ok).toBe(true)
+    await expect(
+      f.projection.observe('session-a', clearedInbox, new AbortController().signal),
+    ).resolves.toBeUndefined()
     await f.projection.observe(
       'session-a',
       { ...f.event(), type: 'turn/end', data: { reason: 'completed' } },

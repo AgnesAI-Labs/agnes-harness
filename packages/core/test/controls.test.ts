@@ -184,29 +184,45 @@ describe('human Loop controls', () => {
     await session.close()
   })
 
-  it('pauses at a boundary and stays paused through projection reload and cold reopen', async () => {
-    const storage = new MemoryStorage()
-    const a = await openSession({ storage, provider: fakeProvider([textTurn('answer')]) })
-    await a.session.enqueue('next-turn', { content: content('go'), actor })
-    await a.session.step()
-    const turn = a.session.op()!.meta.turn
-    await a.session.controls.apply('pause', actor, 'pause')
-    expect(await a.session.step()).toMatchObject({ phase: 'paused', outcome: 'parked' })
-    expect((await a.session.projectUI()).opState).not.toBeNull()
-    await a.log.close()
-    const provider = fakeProvider([textTurn('answer')])
-    const b = await openSession({ storage, writerRunId: 'r2', provider })
-    await b.session.resume()
-    expect(await b.session.step()).toMatchObject({ phase: 'paused' })
-    expect(b.session.op()!.meta.turn).toBe(turn)
-    expect(provider.requests).toEqual([])
-    await b.session.controls.apply('resume', actor, 'resume')
-    expect((await run(b.session)).reason).toBe('completed')
-    expect(await facts(b.log)).toContainEqual(
-      expect.objectContaining({ action: 'pause', outcome: 'applied' }),
-    )
-    await b.session.close()
-  })
+  it.each(['open', 'settled'] as const)(
+    'keeps a %s paused turn resumable through cold reopen',
+    async (mode) => {
+      const storage = new MemoryStorage()
+      const a = await openSession({ storage, provider: fakeProvider([textTurn('answer')]) })
+      for (const action of ['pause', 'resume'] as const)
+        await expect(a.session.controls.apply(action, actor, `idle-${action}`)).rejects.toMatchObject({
+          code: 'E_RELATION',
+          detail: { reason: 'CONTROL_NOT_RUNNING' },
+        })
+      await a.session.enqueue('next-turn', { content: content('go'), actor })
+      await a.session.step()
+      const turn = a.session.op()!.meta.turn
+      await a.session.controls.apply('pause', actor, 'pause')
+      expect(await a.session.step()).toMatchObject({ phase: 'paused', outcome: 'parked' })
+      expect((await a.session.projectUI()).opState).not.toBeNull()
+      if (mode === 'settled') {
+        await a.session.enqueue('next-turn', { content: content('queued after shutdown'), actor })
+        await a.session.resume({ mode: 'close' })
+        expect(a.session.op()).toBeNull()
+      }
+      await a.log.close()
+      const provider = fakeProvider([textTurn('answer')])
+      const b = await openSession({ storage, writerRunId: 'r2', provider })
+      await b.session.resume()
+      expect(await b.session.step()).toMatchObject({ phase: 'paused' })
+      if (mode === 'open') expect(b.session.op()!.meta.turn).toBe(turn)
+      else expect(b.session.op()).toBeNull()
+      expect(provider.requests).toEqual([])
+      await b.session.controls.apply('resume', actor, 'resume')
+      expect((await run(b.session)).reason).toBe('completed')
+      expect((await b.session.controls.state()).paused).toBe(false)
+      expect((await b.session.controls.state()).pending).toEqual([])
+      expect(await facts(b.log)).toContainEqual(
+        expect.objectContaining({ action: 'pause', outcome: 'applied' }),
+      )
+      await b.session.close()
+    },
+  )
 
   it('pages all control facts so reload recovery cannot lose old returned steers', async () => {
     const { session, log } = await openSession({ provider: fakeProvider([textTurn('unused')]) })

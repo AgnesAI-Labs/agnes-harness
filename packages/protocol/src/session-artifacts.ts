@@ -27,6 +27,8 @@ export function sessionArtifactRoots(
     event.type === 'user/message' ||
     (event.type === 'inbox' && event.origin === 'system' && event.trust === 'trusted')
   ) {
+    // Forks clear inherited inbox registers with a valid null snapshot.
+    if (event.type === 'inbox' && event.data === null) return []
     const data = event.data as { content?: unknown[]; items?: { content?: unknown[] }[] }
     const blocks =
       event.type === 'inbox' ? (data.items ?? []).flatMap((item) => item.content ?? []) : (data.content ?? [])

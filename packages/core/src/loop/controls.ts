@@ -245,7 +245,9 @@ export class SessionControls {
     if (action === 'pause' || action === 'resume') {
       await this.require('pause', actor)
       const seq = await this.s.locked(async () => {
-        if (!this.s.op()) {
+        // Shutdown can close the turn while its durable pause still fences queued input.
+        // That fence must remain explicitly resumable even without an open operation.
+        if (!this.s.op() && (action !== 'resume' || !(await this.paused()))) {
           await this.s.d.log.append([
             this.fact(action, 'refused', actor, { admissionId, reason: 'CONTROL_NOT_RUNNING' }),
           ])
