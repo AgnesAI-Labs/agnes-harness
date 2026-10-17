@@ -22,6 +22,7 @@ import {
   verifyHashedPackageDirectory,
   verifyPackageDirectory,
 } from './inventory.js'
+import { projectLegacyPluginMetadata } from './legacy-plugin-metadata.js'
 import type { LockEntry, Lockfile } from './lockfile.js'
 import type {
   CreateJournal,
@@ -96,7 +97,8 @@ function validateToken(value: unknown, reason: string): asserts value is string 
 }
 function validateRecord(raw: unknown): SnapshotRecord {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) integrityFailure('snapshot-shape')
-  const value = raw as Record<string, unknown>
+  const value = { ...(raw as Record<string, unknown>) }
+  if (value.metadata !== undefined) value.metadata = projectLegacyPluginMetadata(value.metadata)
   if (
     !exactKeys(value, [
       'version',

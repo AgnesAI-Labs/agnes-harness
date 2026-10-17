@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path'
 import { createPluginRow, isResourceOwnedRowId, type PluginRow } from '@agnes/plugin-runtime/host'
 import { inspectStaged } from './inspect.js'
 import { readStaticJson } from './integrity.js'
+import { projectLegacyPluginEntries } from './legacy-plugin-metadata.js'
 import type { RuntimePluginSnapshot } from './package-plugin-loader.js'
 import { parseAgnesPluginEntries } from './plugin-manifest.js'
 import { hashDirectory } from './sources.js'
@@ -69,7 +70,7 @@ export function developmentPluginRows(
     pkg = readStaticJson(join(snapshot.directory, 'package.json'))
   const declarations = parseAgnesPluginEntries(
     snapshot.packageId,
-    (pkg.agnes as { plugins?: unknown } | undefined)?.plugins,
+    projectLegacyPluginEntries((pkg.agnes as { plugins?: unknown } | undefined)?.plugins),
   )
   const rows: Readonly<PluginRow>[] = declarations
     .filter((entry) => !isResourceOwnedRowId(entry.id))

@@ -59,20 +59,48 @@ describe('lockfile', () => {
   })
   afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
-  it('returns an empty lock when the file is missing and round-trips writes', () => {
-    const l = readLock(dir, { profile: 'local-dev', agnesVersion: '0.1.0' })
-    expect(l).toMatchObject({ lockfileVersion: 1, profile: 'local-dev', packages: {} })
-    expect(l.resolvedProfileHash).toBeNull()
-    expect(existsSync(lockPath(dir))).toBe(false)
+  it.each(['current', 'previous'] as const)(
+    'returns an empty lock and round-trips legacy %s metadata',
+    (target) => {
+      const l = readLock(dir, { profile: 'local-dev', agnesVersion: '0.1.0' })
+      expect(l).toMatchObject({ lockfileVersion: 1, profile: 'local-dev', packages: {} })
+      expect(l.resolvedProfileHash).toBeNull()
+      expect(existsSync(lockPath(dir))).toBe(false)
 
-    const w = writableLock('local-dev')
-    w.packages['@agnes/base'] = npmEntry('@agnes/base')
-    writeLock(dir, w)
-    const back = readLock(dir, { profile: 'local-dev', agnesVersion: '0.1.0' })
-    expect(back.packages['@agnes/base']?.integrity).toBe('sha512-x')
-    expect(back.resolvedProfileHash).toBe(HASH)
-    expect(existsSync(`${lockPath(dir)}.tmp`)).toBe(false)
-  })
+      const w = writableLock('local-dev')
+      const metadata = { displayName: 'Example', summary: 'Example plugin', description: 'Synthetic plugin.' }
+      w.packages['@agnes/base'] = {
+        ...npmEntry('@agnes/base'),
+        metadata,
+        previous: { version: '0.0.1', integrity: 'sha512-y', metadata },
+      }
+      writeLock(dir, w)
+      const legacy = JSON.parse(readFileSync(lockPath(dir), 'utf8'))
+      const entry = legacy.packages['@agnes/base']
+      const snapshot = target === 'current' ? entry : entry.previous
+      snapshot.metadata.category = 'developer'
+      expect(() => writeLock(dir, legacy)).toThrow(/E_PACKAGE_INTEGRITY/)
+      const bytes = JSON.stringify(legacy)
+      writeFileSync(lockPath(dir), bytes)
+      const back = readLock(dir, { profile: 'local-dev', agnesVersion: '0.1.0' })
+      expect(back.packages).toEqual(w.packages)
+      expect(readFileSync(lockPath(dir), 'utf8')).toBe(bytes)
+      expect(back.packages['@agnes/base']?.integrity).toBe('sha512-x')
+      expect(back.resolvedProfileHash).toBe(HASH)
+      expect(existsSync(`${lockPath(dir)}.tmp`)).toBe(false)
+      snapshot.metadata.category = 'invented'
+      writeFileSync(lockPath(dir), JSON.stringify(legacy))
+      expect(() => readLock(dir, { profile: 'local-dev', agnesVersion: '0.1.0' })).toThrow(
+        'E_PACKAGE_INTEGRITY: agnes-lock.json does not validate against the lockfile schema',
+      )
+      snapshot.metadata.category = 'developer'
+      snapshot.metadata.unknown = true
+      writeFileSync(lockPath(dir), JSON.stringify(legacy))
+      expect(() => readLock(dir, { profile: 'local-dev', agnesVersion: '0.1.0' })).toThrow(
+        'E_PACKAGE_INTEGRITY: agnes-lock.json does not validate against the lockfile schema',
+      )
+    },
+  )
 
   it('rejects a lock that is not JSON, and one that does not validate, with E_LOCK_MISMATCH', () => {
     writeFileSync(lockPath(dir), 'not json{')

@@ -7,6 +7,7 @@ import {
 } from '@agnes/protocol'
 import { containedEntry } from './entry-path.js'
 import { readStaticJson } from './integrity.js'
+import { projectLegacyPluginEntries } from './legacy-plugin-metadata.js'
 import { summarizePackageIncludes } from './package-includes.js'
 import {
   type AgnesPluginManifestEntry,
@@ -49,12 +50,15 @@ export function readPackagePresentation(
   const author = pkg.agnes as
     | { plugins?: unknown; extensions?: unknown; bundles?: unknown; provides?: unknown }
     | undefined
-  const result = presentPluginRows(parseAgnesPluginEntries(String(pkg.name), author?.plugins), {
-    packageId: String(pkg.name),
-    bundles: author?.bundles,
-    provides: parseAgnesPluginProvides(author?.provides),
-    contributions,
-  })
+  const result = presentPluginRows(
+    parseAgnesPluginEntries(String(pkg.name), projectLegacyPluginEntries(author?.plugins)),
+    {
+      packageId: String(pkg.name),
+      bundles: author?.bundles,
+      provides: parseAgnesPluginProvides(author?.provides),
+      contributions,
+    },
+  )
   if (builtin && Array.isArray(author?.extensions)) {
     for (const path of author.extensions) {
       if (typeof path !== 'string' || result.rows.length >= 256) throw new TypeError('Invalid bundled rows')

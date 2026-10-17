@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -130,8 +130,9 @@ describe('package plugin loader', () => {
       ).toEqual([])
   })
   it('loads only statically declared named exports and normalizes them for Host', async () => {
+    const metadata = { displayName: 'Legacy', summary: 'Legacy snapshot', description: 'Synthetic plugin.' }
     const { snapshot } = packageSnapshot([
-      { apiRange: '^4.0.0', export: 'main' },
+      { apiRange: '^4.0.0', export: 'main', metadata: { ...metadata, category: 'developer' } },
       {
         apiRange: '^4.0.0',
         export: 'optional',
@@ -140,6 +141,7 @@ describe('package plugin loader', () => {
         default: false,
       },
     ])
+    const original = readFileSync(join(snapshot.directory, 'package.json'), 'utf8')
     const main = Object.assign(() => {}, { inject: ['clock'], provide: 'acme:main' })
     const optional = { apply() {} }
     const importModule = vi.fn(async () => ({ main, optional, undeclared: () => {} }))
@@ -185,6 +187,8 @@ describe('package plugin loader', () => {
         entry: { inject: {}, provides: [] },
       },
     ])
+    expect(loaded[0]?.declaration.metadata).toEqual(metadata)
+    expect(readFileSync(join(snapshot.directory, 'package.json'), 'utf8')).toBe(original)
     expect(Object.isFrozen(loaded)).toBe(true)
     expect(Object.isFrozen(loaded[0])).toBe(true)
   })

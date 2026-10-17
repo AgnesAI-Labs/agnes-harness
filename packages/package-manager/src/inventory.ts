@@ -183,6 +183,7 @@ export function verifyHashedPackageDirectory(
         ceiling,
       },
       treeIntegrity,
+      { legacyDisplayMetadata: true },
     )
   } catch (error) {
     if (isReservedRowIdPackageError(error))

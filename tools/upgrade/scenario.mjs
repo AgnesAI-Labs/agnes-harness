@@ -256,8 +256,11 @@ try {
       assert.deepEqual(rows.get(`${row.session_key}:${row.seq}`), row, 'historical event was rewritten')
     const { effect: _currentEffect, ...currentConfig } = await sdk.config.get()
     const { effect: _previousEffect, ...previousConfig } = state.config
-    // `effect` describes this runtime's application strategy, not persisted account data.
-    assert.deepEqual(currentConfig, previousConfig)
+    // `effect` is runtime strategy. Older stores derive the new execution revision from their revision.
+    assert.deepEqual(currentConfig, {
+      ...previousConfig,
+      executionRevision: previousConfig.executionRevision ?? previousConfig.revision,
+    })
     const prompt = await sdk.call('_agnes/v1/systemPrompt.get', {})
     assert.equal(prompt.config.personaSuffix, state.prompt.config.personaSuffix)
     const schedules = await sdk.call('_agnes/v1/schedules.list', { scope: 'all', includeArchived: true })
