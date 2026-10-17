@@ -2,9 +2,11 @@
 import { Context } from '@agnes/cordis'
 import type { UITimeline } from '@agnes/protocol'
 import {
+  type ClientContext,
   composerCommands,
   conversationCards,
   LocaleService,
+  type PresentationProvider,
   PresentationRoleRegistry,
   SessionService,
   SlotRegistry,
@@ -32,7 +34,7 @@ it.each([
     const locale = new LocaleService(ctx, 'en')
     const client = { sessions: { get: () => undefined } }
     // Services are non-enumerable just as on a real Cordis client fiber.
-    const services = Object.create(
+    const services: ClientContext = Object.create(
       null,
       Object.fromEntries(
         Object.entries({
@@ -41,9 +43,18 @@ it.each([
           locale,
           agnes: client,
           resources: {},
+          composerCommands,
+          conversationCards,
+          workbenchPanels,
           theme: {},
           presentation: {},
-          presentationRoles: { register: (provider: never) => roles.register('official', provider) },
+          presentationRoles: {
+            register: (provider: PresentationProvider) =>
+              roles.register('official', {
+                ...provider,
+                mount: () => provider.mount(services),
+              }),
+          },
         }).map(([name, value]) => [name, { value }]),
       ),
     )

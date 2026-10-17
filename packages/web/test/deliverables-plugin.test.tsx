@@ -3,8 +3,10 @@ Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, con
 
 import { Context } from '@agnes/cordis'
 import {
+  type ClientContext,
   conversationCards,
   factChainLinks,
+  type PresentationProvider,
   PresentationRoleRegistry,
   SessionService,
   SlotRegistry,
@@ -53,7 +55,7 @@ it.each(['en', 'zh-CN'])('switches authorized deliverables (%s)', async (locale)
     files: { load: vi.fn(async () => ({ url: 'blob:snapshot', release })) },
   }
   const client = { sessions: { get: () => handle }, on: () => () => {} }
-  const context = (owner: string) =>
+  const context = (owner: string): ClientContext =>
     new Proxy(
       Object.create(
         null,
@@ -63,8 +65,16 @@ it.each(['en', 'zh-CN'])('switches authorized deliverables (%s)', async (locale)
             session,
             slots,
             resources,
+            conversationCards,
+            workbenchPanels,
             locale: { locale, t: (key: string) => key },
-            presentationRoles: { register: (provider: never) => roles.register(owner, provider) },
+            presentationRoles: {
+              register: (provider: PresentationProvider) =>
+                roles.register(owner, {
+                  ...provider,
+                  mount: () => provider.mount(context(owner)),
+                }),
+            },
           }).map(([key, value]) => [key, { value, enumerable: false }]),
         ),
       ),

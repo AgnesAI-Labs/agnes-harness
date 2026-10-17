@@ -499,7 +499,7 @@ it('links a live Surface mount without treating the link as qualified actual', a
   await vi.waitFor(() => expect(document.querySelectorAll('.plugin-row')).toHaveLength(1))
   const row = document.querySelector<HTMLElement>('.plugin-row')
   expect(row?.querySelector('.state-light')).toBeNull()
-  expect(row?.querySelector('[role="switch"]')?.getAttribute('aria-checked')).toBe('false')
+  expect(row?.querySelector('[role="switch"]')?.getAttribute('aria-checked')).toBe('true')
   expect(row?.querySelector('.plugin-surface-link')).toBeNull()
 
   row?.click()
@@ -584,7 +584,7 @@ it('does not enable a plugin when its hidden approval step fails', async () => {
 })
 
 it.each(['failed', 'unavailable'] as const)(
-  'does not retry enable for a %s plugin without a verified runtime baseline',
+  'shows desired enablement for a %s plugin and confirms disable without retrying enable',
   async (actual) => {
     await renderPluginHost()
     history.replaceState(null, '', '/admin/plugins#actual-switch-token')
@@ -628,14 +628,14 @@ it.each(['failed', 'unavailable'] as const)(
       }
       if (url.endsWith('/operation/get'))
         return Response.json(
-          operation('enable-retry', 'enable', {
+          operation('disable-unavailable', 'disable', {
             packageId: installed.id,
             installed,
           }),
         )
       if (url.endsWith('/disable')) {
         disableCalls += 1
-        return Response.json({ operationId: 'unexpected-disable', profile: 'local-dev' })
+        return Response.json({ operationId: 'disable-unavailable', profile: 'local-dev' })
       }
       return Response.json({ error: { code: 'UNEXPECTED', message: url } }, { status: 500 })
     })
@@ -645,7 +645,7 @@ it.each(['failed', 'unavailable'] as const)(
     await vi.waitFor(() => expect(document.querySelectorAll('.plugin-row')).toHaveLength(1))
     const row = document.querySelector<HTMLElement>('.plugin-row')
     const toggle = row?.querySelector<HTMLButtonElement>('.switch')
-    expect(toggle?.getAttribute('aria-checked')).toBe('false')
+    expect(toggle?.getAttribute('aria-checked')).toBe('true')
     expect(row?.querySelector('.state-light')).toBeNull()
     row?.click()
     expect(document.getElementById('plugin-detail')?.textContent).toContain(
@@ -654,12 +654,14 @@ it.each(['failed', 'unavailable'] as const)(
     expect(document.getElementById('plugin-detail')?.textContent).not.toContain(installed.actualReason)
     document.querySelector<HTMLButtonElement>('#plugin-detail .plugin-detail-close')?.click()
     toggle?.click()
-    expect(document.getElementById('admin-notice')?.textContent).toContain(
-      'The actual runtime summary has not been confirmed',
+    await vi.waitFor(() =>
+      expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('Disable'),
     )
-    expect(document.getElementById('plugin-confirm-title')).toBeNull()
     expect(enableCalls).toBe(0)
     expect(disableCalls).toBe(0)
+    document.getElementById('plugin-confirm-action')?.click()
+    await vi.waitFor(() => expect(disableCalls).toBe(1))
+    expect(enableCalls).toBe(0)
     mounted.dispose()
   },
 )

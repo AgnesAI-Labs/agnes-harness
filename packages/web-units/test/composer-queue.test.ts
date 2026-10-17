@@ -97,7 +97,7 @@ describe('queue tray', () => {
     const tray = host.querySelector('.composer-queue')
     // The tray is the card's previous sibling: joined to its top edge, not inside it.
     expect(tray?.nextElementSibling?.id).toBe('composer')
-    expect(tray?.querySelector('.composer-queue-count')?.textContent).toBe('待发送 2 条 · Agent 完成后发送')
+    expect(tray?.querySelector('.composer-queue-count')?.textContent).toBe('待发送 2 条 · 智能体完成后发送')
     const rows = [...host.querySelectorAll<HTMLElement>('[data-testid="queued-steer"]')]
     expect(rows.map((row) => row.querySelector('.composer-queue-preview')?.textContent)).toEqual([
       '而且颜色也不太好看啊',

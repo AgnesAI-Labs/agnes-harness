@@ -615,7 +615,7 @@ it('opens one instance per bind and keeps profiles, actors, and in-flight reads 
     const pending = live.execute({ action: 'list' }, actor, liveSignal.signal)
     const closing = alpha.close()
     release()
-    await expect(pending).resolves.toMatchObject({ items: [] })
+    await expect(pending).rejects.toBeInstanceOf(ProviderError)
     expect(liveSignal.signal.aborted).toBe(false)
     await closing
     await expect(

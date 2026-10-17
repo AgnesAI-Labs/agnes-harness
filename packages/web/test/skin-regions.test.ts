@@ -142,18 +142,26 @@ describe('skin region hooks', () => {
       expect(hooks(root).length).toBeGreaterThan(page === 'index.html' ? 2 : 0)
   })
 
-  it('reports built-in slots from live registrations rather than their declared manifest', () => {
-    // The sidebar owner now carries both the legacy `ui:sidebar` boundary and the DSH `sidebar`
-    // frame that is rendered inside it.
-    expect(runtime?.actualSlots('@agnes/web-sidebar')).toEqual(['sidebar', 'ui:sidebar'])
-    // The conversation owner carries the DSH shell seam and session header alongside the legacy
-    // `ui:conversation` boundary.
-    expect(runtime?.actualSlots('@agnes/web-conversation')).toEqual([
-      'main.conversation',
-      'ui:conversation',
-      'conversation.session',
-      'conversation.session.header',
+  it('reports presentation and built-in slots from live registrations', () => {
+    // The release modules own their complete presentations, including composer and transcript.
+    expect([...(runtime?.actualSlots('@agnes/navigation-ui') ?? [])].sort()).toEqual([
+      'sidebar',
+      'ui:sidebar',
     ])
+    expect([...(runtime?.actualSlots('@agnes/conversation-ui') ?? [])].sort()).toEqual(
+      [
+        'main.conversation',
+        'conversation.session',
+        'ui:conversation',
+        'conversation.session.header',
+        'conversation.composer.bar',
+        'ui:composer',
+        'ui:transcript',
+        'conversation.view',
+        'conversation.chat.node',
+        'tool.call.toolview',
+      ].sort(),
+    )
     // Settings panes now have separate live rows; this is runtime evidence rather than the
     // declaration copied out of the built-in manifest.
     expect(runtime?.actualSlots('@agnes/web-settings-appearance')).toEqual(['ui:settings-pane.appearance'])

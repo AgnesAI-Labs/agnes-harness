@@ -1,6 +1,13 @@
 /** @vitest-environment happy-dom */
 import type { UITimeline } from '@agnes/protocol'
-import { type ClientContext, presentationRoles } from '@agnes/web-client'
+import {
+  type ClientContext,
+  composerCommands,
+  conversationCards,
+  type PresentationProvider,
+  presentationRoles,
+  workbenchPanels,
+} from '@agnes/web-client'
 import { setLocaleTranslator, tr } from '@agnes/web-foundation/locale-bridge'
 import { webLocaleCatalog } from '@agnes/web-foundation/locale-catalog'
 import { renderRegion, unmountRegion } from '@agnes/web-ui'
@@ -23,13 +30,17 @@ const goal = {
 } as const
 let stopPresentation: () => void
 beforeEach(() => {
-  stopPresentation = applyGoalPresentation({
+  const context = {
+    composerCommands,
+    conversationCards,
+    workbenchPanels,
     locale: { register: () => () => {} },
     presentationRoles: {
-      register: (provider: Parameters<typeof presentationRoles.register>[1]) =>
-        presentationRoles.register('goal-test', provider),
+      register: (provider: PresentationProvider) =>
+        presentationRoles.register('goal-test', { ...provider, mount: () => provider.mount(context) }),
     },
-  } as unknown as ClientContext)
+  } as unknown as ClientContext
+  stopPresentation = applyGoalPresentation(context)
 })
 let host: HTMLElement, panel: HTMLElement
 function renderBoth(...args: Parameters<typeof renderGoalCard>) {

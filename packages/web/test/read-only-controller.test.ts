@@ -1,4 +1,6 @@
+import { Context } from '@agnes/cordis'
 import { SESSION_VERSION_CODES } from '@agnes/protocol'
+import { SessionService } from '@agnes/web-client'
 import { expect, it, vi } from 'vitest'
 import { createReadOnlyController } from '../src/app/read-only-controller.js'
 import { SessionBindingOwner } from '../src/app/session-owner.js'
@@ -22,6 +24,7 @@ const view = (id: string, hasEarlier = true, scan?: { fromSeq: number; throughSe
 function setup() {
   const pending = new Map<string, (value: ReturnType<typeof view>) => void>()
   const context = {
+    clientModules: { session: new SessionService(new Context()) },
     client: {
       session: {
         view: (id: string, options: { maxNodes: number }) =>
@@ -64,6 +67,10 @@ it('keeps the newest selection when a late loadEarlier response of the previous 
   await earlier
   expect(context.readOnly?.id).toBe('B')
   expect(context.projection).toEqual({ sessionId: 'B' })
+  expect(context.clientModules.session.readiness.getSnapshot()).toMatchObject({
+    status: 'history-only',
+    sessionId: 'B',
+  })
 })
 
 it.each([refusal, isolationRefusal])(

@@ -107,7 +107,7 @@ it('auto-opens once, lists Agent jobs read-only, retains completed output until 
   click(host.querySelector('#terminal-tab-job'))
   await vi.waitFor(() =>
     expect(host.querySelector('.workbench-terminal-readonly')?.textContent).toContain(
-      'Agent 运行的命令 · 只读',
+      '智能体运行的命令 · 只读',
     ),
   )
   await vi.waitFor(() => expect(host.querySelector('input')?.disabled).toBe(true))
