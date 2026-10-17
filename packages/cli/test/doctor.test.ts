@@ -7,7 +7,6 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { parseArgs, usage } from '../src/args.js'
 import type { DoctorCommandDeps } from '../src/commands/doctor.js'
 import { doctorCommand, renderSections } from '../src/commands/doctor.js'
-import { TEST_LOCK } from './boot-host.js'
 
 const cleanup: string[] = []
 
@@ -24,7 +23,8 @@ function deps(): DoctorCommandDeps {
     cwd: home,
     agnesVersion: '0',
     log: () => undefined,
-    lock: TEST_LOCK,
+    // Let the closed builtin set resolve against this test's actual runtime version.
+    lock: { packages: {} },
     createHostImpl: async () => (await createTestHost({ dataDir: home })).host,
   }
 }
@@ -84,7 +84,7 @@ describe('doctor command aggregation', () => {
     },
   )
 
-  it('fails default provider doctor for an enabled account whose credential is absent', async () => {
+  it('warns in provider doctor for an enabled account whose credential is absent', async () => {
     const d = deps()
     d.configuration = {
       get: async () => ({
@@ -110,8 +110,8 @@ describe('doctor command aggregation', () => {
       }),
     } as never
     const result = await doctorCommand(parseArgs(['doctor', 'provider', '--json']), d)
-    expect(result.exitCode).toBe(1)
-    expect(result.json).toEqual([expect.objectContaining({ name: 'provider', status: 'fail' })])
+    expect(result.exitCode).toBe(0)
+    expect(result.json).toEqual([expect.objectContaining({ name: 'provider', status: 'warn' })])
     expect(result.text).not.toContain('unused.invalid')
   })
 

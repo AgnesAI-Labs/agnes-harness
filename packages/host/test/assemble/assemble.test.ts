@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ScriptedProvider } from '@agnes/ai/testkit'
+import { fakeRequest, ScriptedProvider } from '@agnes/ai/testkit'
 import type { Context } from '@agnes/cordis'
 import type { RemoteTransport, SandboxSeam, SeamWorkspace } from '@agnes/core'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
@@ -16,8 +16,10 @@ import {
   type PackageModule,
 } from '@agnes/host-extensions/assemble/packages'
 import { createLoader } from '@agnes/host-extensions/ext-host/loader'
+import { createCredentialStore } from '@agnes/host-infrastructure/adapters/credential-store'
 import { localFsIo } from '@agnes/host-infrastructure/adapters/fs-io-local'
 import { type AuditEvent, type AuditSink, createMemoryAudit } from '@agnes/host-infrastructure/audit'
+import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
 import { SessionWorkspaceRuntimeTable } from '@agnes/host-infrastructure/session-workspace-runtime'
 import { buildOrdinaryRows, type OrdinaryPluginLayers } from '@agnes/host-providers/assemble/ordinary-rows'
 import { hashDirectory, type RuntimePluginSnapshot, type RuntimeSnapshot } from '@agnes/package-manager'
@@ -1781,14 +1783,50 @@ describe('assemble', () => {
     expect(e.code).toBe('E_PACKAGE_DUPLICATE')
     expect(e.detail.source).toBe('python')
   })
-  it('assembles applyRuntimeTarget when the profile declares no provider.routes', async () => {
-    const p = await profileFor({
-      provider: { package: '@agnes/ai' },
-    })
+  it('assembles applyRuntimeTarget with all account credentials missing and refuses inference clearly', async () => {
     const d = deps(allModules())
+    const configuration = createConfigurationService({
+      home: join(d.dataDir, 'home'),
+      profile: 'local-dev',
+      request: async () =>
+        new Response(JSON.stringify({ data: [{ id: 'deepseek-flash' }] }), {
+          headers: { 'content-type': 'application/json' },
+        }),
+    })
+    await configuration.save({
+      accountId: 'lost',
+      providerId: 'deepseek',
+      model: 'deepseek-flash',
+      apiKey: 'test-lost-key',
+    })
+    const before = await configuration.profileInput()
+    const ref = before.provider?.routes?.[0]?.credentialRef
+    if (!ref) throw new Error('missing credential reference')
+    await createCredentialStore({ root: join(d.dataDir, 'home') }).remove(ref)
+    const overlay = await configuration.profileInput()
+    expect(overlay.provider?.routes).toEqual([])
+    const p = await resolveProfile(
+      {
+        builtin: 'local-dev',
+        user: { name: 'local-dev', ...overlay, presets: { default: 'standard', allowed: ['standard'] } },
+      },
+      env,
+    )
     delete d.providerFactory
     d.allowUnresolvedProvider = true
     const a = await assemble(p, d)
+    expect(a.provider.models()).toEqual([])
+    await expect(
+      a.provider
+        .infer(fakeRequest(), { signal: new AbortController().signal, toolNames: [] })
+        [Symbol.asyncIterator]()
+        .next(),
+    ).rejects.toMatchObject({
+      code: 'E_PRESET_UNRESOLVED',
+      message: expect.stringContaining('Configure a model account'),
+      detail: { reason: 'no-routes' },
+    })
+    expect(JSON.stringify(events(d))).not.toContain('test-lost-key')
     expect(typeof a.applyRuntimeTarget).toBe('function')
     const report = await a.applyRuntimeTarget(
       buildRuntimeTarget({

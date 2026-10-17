@@ -52,17 +52,35 @@ export async function doctorProvider(
   const missingCredentials = (options.accounts ?? []).filter(
     (account) => account.enabled && !account.credentialConfigured,
   )
-  if (missingCredentials.length)
-    return {
-      name: 'provider',
-      status: 'fail',
-      detail: [
-        summary(
-          'enabled accounts missing usable credentials',
-          missingCredentials.map((account) => account.accountId),
-        ),
-      ],
-    }
+  const credentialNotes = (['CONFIG_CREDENTIAL_REQUIRED', 'CONFIG_CREDENTIAL_UNREADABLE'] as const).flatMap(
+    (reason) => {
+      const accounts = missingCredentials.filter(
+        (account) => (account.credentialIssue ?? 'CONFIG_CREDENTIAL_REQUIRED') === reason,
+      )
+      return accounts.length
+        ? [
+            summary(
+              `${reason}: enabled accounts missing usable credentials`,
+              accounts.map((account) => account.accountId),
+            ),
+          ]
+        : []
+    },
+  )
+  const result = await inspectProvider(host, options)
+  return credentialNotes.length
+    ? {
+        ...result,
+        status: result.status === 'fail' ? 'fail' : 'warn',
+        detail: [...credentialNotes, ...result.detail],
+      }
+    : result
+}
+
+async function inspectProvider(
+  host: Parameters<typeof doctorProvider>[0],
+  options: Parameters<typeof doctorProvider>[1],
+): Promise<Section> {
   if (!host)
     return {
       name: 'provider',

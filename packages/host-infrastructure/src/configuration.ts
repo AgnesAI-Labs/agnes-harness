@@ -65,6 +65,12 @@ import {
 import { createWin32Platform } from './adapters/platform.js'
 import { type CodexLoginDependencies, createCodexLogin } from './codex-login.js'
 import { automaticFastModel } from './configuration-auto-slots.js'
+import {
+  configurationCredentialAvailability,
+  effectiveDefaultAccount,
+  isConfiguredCredential,
+  isUsableCredential,
+} from './configuration-credential-availability.js'
 import { configurationCredentialFailure } from './configuration-credential-failure.js'
 import { parseBaseUrl, requireEndpointCredential, validateEndpoint } from './configuration-endpoint.js'
 import { ConfigurationError, type ConfigurationErrorCode } from './configuration-error.js'
@@ -221,8 +227,6 @@ function retainedConfiguration(current: StoredConfiguration | undefined) {
     ...(current?.childEngines === undefined ? {} : { childEngines: current.childEngines }),
   }
 }
-
-const isUsableCredential = (value: string): boolean => /\P{C}/u.test(value.trim())
 
 function inputObject(value: unknown): Record<string, unknown> {
   if (!isRecord(value)) throw new ConfigurationError('CONFIG_INVALID_INPUT')
@@ -729,21 +733,12 @@ export function createConfigurationService(
     ref: string,
     entry: ConfigurationProvider,
     authType: 'api-key' | 'oauth',
-  ): Promise<boolean> => {
-    const credential = await readCredential(ref)
-    if (isPayloadOnlyEntry(entry))
-      return (
-        credential?.kind === 'api-key' &&
-        credential.provider === 'generic' &&
-        isUsableCredential(credential.value)
-      )
-    if (authType === 'oauth') return isSubscriptionCredential(credential, entry.id)
-    return (
-      credential?.kind === 'api-key' &&
-      credential.provider === entry.id &&
-      isUsableCredential(credential.value)
+  ) => isConfiguredCredential(await readCredential(ref), entry.id, authType, isPayloadOnlyEntry(entry))
+
+  const credentialAvailability = (row: StoredAccount) =>
+    configurationCredentialAvailability(() =>
+      configuredCredential(row.credentialRef, providerFor(row.id, row.authType), row.authType),
     )
-  }
 
   const snapshot = async (state: StoredConfiguration | undefined): Promise<ConfigSnapshot> => {
     if (!state)
@@ -779,18 +774,22 @@ export function createConfigurationService(
                 ),
           enabled: row.enabled,
           authType: row.authType,
-          credentialConfigured: await configuredCredential(row.credentialRef, entry, row.authType),
+          ...(await credentialAvailability(row)),
         }
       }),
     )
-    const selected = accounts.find((row) => row.accountId === state.defaultAccountId && row.enabled)
+    const selected = effectiveDefaultAccount(
+      accounts,
+      state.defaultAccountId,
+      (row) => !isPayloadOnlyEntry(providerFor(row.providerId, row.authType ?? 'api-key')),
+    )
     return {
       profile,
       revision: state.revision,
       executionRevision: state.executionRevision ?? state.revision,
       configured: selected?.credentialConfigured ?? false,
       accounts,
-      defaultAccountId: state.defaultAccountId,
+      defaultAccountId: selected?.accountId ?? null,
       effect: 'new-sessions',
       provider: selected
         ? {
@@ -807,7 +806,8 @@ export function createConfigurationService(
   /** An unset fast slot follows the default account; an explicit choice or `null` is left alone. */
   const slotsSnapshot = async (state: StoredConfiguration | undefined): Promise<ModelSlotsSnapshot> => {
     const slots = structuredClone(state?.modelSlots ?? {})
-    const row = state?.accounts.find((account) => account.accountId === state.defaultAccountId)
+    const effectiveDefault = (await snapshot(state)).defaultAccountId
+    const row = state?.accounts.find((account) => account.accountId === effectiveDefault)
     const result = { revision: state?.revision ?? 0, slots }
     if (slots.fast !== undefined || !row?.enabled) return result
     try {
@@ -892,7 +892,8 @@ export function createConfigurationService(
         { baseUrl, model: parsed.model, credentialRef: parsed.credentialRef, row },
         { request, signal: callerSignal ?? new AbortController().signal, readCredential },
       )
-    const storedCredential = row ? await readCredential(row.credentialRef) : null
+    const storedCredential =
+      row && parsed.apiKey === undefined ? await readCredential(row.credentialRef) : null
     let models = (await staticCatalogue(parsed.entry)).records.map((record) =>
       configModel(
         record,
@@ -1063,7 +1064,8 @@ export function createConfigurationService(
       }
       await verifySubscriptionAuth(provider.id, auth, parsed.model, signal)
     }
-    const before = existing ? await readCredential(existing.credentialRef) : null
+    const before =
+      existing && parsed.apiKey === undefined ? await readCredential(existing.credentialRef) : null
     const key =
       parsed.apiKey ?? (before?.kind === 'api-key' && before.provider === entry.id ? before.value : undefined)
     const oauth = oauthEntry
@@ -1451,8 +1453,7 @@ export function createConfigurationService(
       const routeGroups = await Promise.all(
         enabled.map(async (row) => {
           const entry = providerFor(row.id, row.authType)
-          if (!(await configuredCredential(row.credentialRef, entry, row.authType)))
-            throw new ConfigurationError('CONFIG_CREDENTIAL_REQUIRED')
+          if (!(await credentialAvailability(row)).credentialConfigured) return []
           // A payload-only account has no provider catalogue to resolve against; its declared
           // models render through the fixed payload template instead.
           if (isPayloadOnlyEntry(entry)) return [payloadOnlyRoute(row, entry.api)]

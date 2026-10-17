@@ -47,7 +47,10 @@ export function materializeRoutes(
 ): RouteTable {
   const declared = profile.provider.routes ?? []
   const named = preset.name
-  if (declared.length === 0) bad('no-routes', 'the profile declares no provider.routes', { preset: named })
+  if (declared.length === 0)
+    bad('no-routes', 'Configure a model account in Settings → Models (请在设置 → 模型中配置模型账号).', {
+      preset: named,
+    })
   const byName = new Map(declared.map((r) => [r.route, r] as const))
   const payloadOnly = payloadOnlyRoutes(adapters, declared)
   const out: Partial<Record<SlotName, RouteTarget>> = {}

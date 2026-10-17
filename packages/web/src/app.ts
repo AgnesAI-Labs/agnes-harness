@@ -1421,7 +1421,7 @@ function errorMessage(error: unknown): string {
       ? 'AUTH'
       : diagnostic?.code === 'TURN_ERROR'
         ? diagnostic.error?.code
-        : undefined,
+        : diagnostic?.code,
     diagnostic?.reason,
     t,
   )

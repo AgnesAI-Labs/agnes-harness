@@ -63,7 +63,7 @@ describe('web presentation controls', () => {
         },
         zhT,
       ),
-    ).toBe('可指导正在运行的 Agent')
+    ).toBe('可指导正在运行的智能体')
     expect(
       composerHint(
         {
@@ -125,7 +125,7 @@ describe('web presentation controls', () => {
         },
         zhT,
       ),
-    ).toEqual({ kind: 'state', text: '可指导正在运行的 Agent' })
+    ).toEqual({ kind: 'state', text: '可指导正在运行的智能体' })
   })
 
   it('blocks prompt submission while a session transition is pending', () => {
@@ -226,6 +226,22 @@ describe('web presentation controls', () => {
     expect(errorNotice('SEMANTIC_REJECTED (-32011)', undefined, undefined, 'AUTH', undefined, zhT)).toBe(
       '模型凭据已失效或被上游拒绝，请在设置中重新配置或登录该模型账号。',
     )
+    for (const locale of ['en', 'zh-CN'] as const) {
+      const text = errorNotice(
+        'SEMANTIC_REJECTED (-32011)',
+        undefined,
+        undefined,
+        'PROVIDER_UNCONFIGURED',
+        'private-reason',
+        (key) => webLocaleCatalog[locale]?.[key] ?? key,
+      )
+      expect(text).toBe(
+        locale === 'en'
+          ? 'Configure a model account in Settings → Models before starting a conversation.'
+          : '请先在设置 → 模型中配置模型账号，再开始对话。',
+      )
+      expect(text).not.toContain('private-reason')
+    }
     expect(errorNotice('INTERNAL_ERROR (-32603)', undefined, undefined, 'UNKNOWN', undefined, zhT)).toBe(
       '后台未能完成请求，请稍后重试。',
     )

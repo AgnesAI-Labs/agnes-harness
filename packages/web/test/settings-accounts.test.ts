@@ -213,6 +213,25 @@ it('colours the account indicator by enablement first, then credential health', 
   expect(status(0)).toBe('ready')
   expect(status(1)).toBe('inactive')
   expect(status(2)).toBe('missing')
+  const broken = h.doc.querySelectorAll('.config-account')[2]
+  if (!broken) throw new Error('missing unavailable account')
+  expect(broken.textContent).toContain('需要重新填写 API key')
+  const repair = [...broken.querySelectorAll('button')].find(
+    (node) => node.textContent === '重新填写 API key',
+  )
+  if (!repair) throw new Error('missing key re-entry action')
+  ;(repair as unknown as HTMLButtonElement).click()
+  await vi.waitFor(() => expect(h.input('config-base-url').value).toBe('https://broken.example/v1'))
+  expect(h.input('config-api-key').value).toBe('')
+  h.input('config-api-key').value = 'test-enter-key'
+  await h.click('#config-save')
+  await vi.waitFor(() => expect(h.config.save).toHaveBeenCalled())
+  expect(h.config.save).toHaveBeenCalledWith(
+    expect.objectContaining({
+      accountId: 'broken',
+      apiKey: 'test-enter-key',
+    }),
+  )
   h.controller.close()
 })
 
