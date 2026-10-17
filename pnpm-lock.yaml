@@ -1325,6 +1325,43 @@ importers:
         specifier: 18.3.1
         version: 18.3.1
 
+  packages/package-manager/bundled-plugins/knowledge-sources:
+    dependencies:
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../../../extension-api
+      '@agnes/plugin-runtime':
+        specifier: workspace:*
+        version: link:../../../plugin-runtime
+      '@sinclair/typebox':
+        specifier: 0.34.33
+        version: 0.34.33
+    devDependencies:
+      '@agnes/host-extensions':
+        specifier: workspace:*
+        version: link:../../../host-extensions
+      '@agnes/protocol':
+        specifier: workspace:*
+        version: link:../../../protocol
+      '@agnes/web-client':
+        specifier: workspace:*
+        version: link:../../../web-client
+      '@agnes/web-ui':
+        specifier: workspace:*
+        version: link:../../../web-ui
+      '@types/react':
+        specifier: 18.3.12
+        version: 18.3.12
+      '@types/react-dom':
+        specifier: 18.3.1
+        version: 18.3.1
+      react:
+        specifier: 18.3.1
+        version: 18.3.1
+      react-dom:
+        specifier: 18.3.1
+        version: 18.3.1(react@18.3.1)
+
   packages/package-manager/bundled-plugins/usage-cockpit:
     devDependencies:
       '@agnes/protocol':

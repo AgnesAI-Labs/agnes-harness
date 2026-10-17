@@ -376,5 +376,10 @@
         }
       }
     }
+  },
+  "peerDependencies": {
+    "@agnes/web-client": "0.0.0",
+    "@agnes/web-ui": "0.0.0",
+    "react": "18.3.1"
   }
 }
