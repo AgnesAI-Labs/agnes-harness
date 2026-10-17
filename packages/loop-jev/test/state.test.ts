@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { DIRECTORY_REF_CAP, FILE_REF_CAP, VIEW_CAP } from '../src/observations.js'
 import {
   ADDED_COUNTERS,
   CHECKPOINT_MAX_BYTES,
@@ -338,6 +339,32 @@ describe('checkpoints with observations', () => {
       'a view reference of another kind',
       (s: Loose) => {
         s.workspace.views = [{ ...view(), references: [{ kind: 'symlink', value: 'x' }] }]
+      },
+    ],
+    [
+      'more views than the window holds',
+      (s: Loose) => {
+        s.workspace.views = Array.from({ length: VIEW_CAP + 1 }, (_, i) => ({ ...view(), id: `v${i}` }))
+      },
+    ],
+    [
+      'a view with more file references than its cap',
+      (s: Loose) => {
+        const references = Array.from({ length: FILE_REF_CAP + 1 }, (_, i) => ({
+          kind: 'file',
+          value: `f${i}`,
+        }))
+        s.workspace.views = [{ ...view(), references }]
+      },
+    ],
+    [
+      'a view with more directory references than its cap',
+      (s: Loose) => {
+        const references = Array.from({ length: DIRECTORY_REF_CAP + 1 }, (_, i) => ({
+          kind: 'directory',
+          value: `d${i}`,
+        }))
+        s.workspace.views = [{ ...view(), references }]
       },
     ],
     [

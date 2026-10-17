@@ -1,4 +1,5 @@
 import type { LoopCheckpoint, LoopCheckpointCodec } from '@agnes/extension-api'
+import { DIRECTORY_REF_CAP, FILE_REF_CAP, VIEW_CAP } from './observations.js'
 import type { Counters, JevState, JsonValue } from './types.js'
 import { clip, tail, utf8Bytes } from './util.js'
 
@@ -297,18 +298,24 @@ function checkView(value: unknown, path: string): void {
   if (v.trust !== 'untrusted_evidence') fail(`${path}.trust`)
   if (v.historical !== true) fail(`${path}.historical`)
   str(v.evidence, `${path}.evidence`)
+  let files = 0
+  let directories = 0
   for (const [i, item] of arr(v.references, `${path}.references`).entries()) {
     const ref = obj(item, `${path}.references[${i}]`)
     only(ref, ['kind', 'value'], `${path}.references[${i}]`)
-    oneOf(ref.kind, REFERENCE_KINDS, `${path}.references[${i}].kind`)
+    if (oneOf(ref.kind, REFERENCE_KINDS, `${path}.references[${i}].kind`) === 'file') files++
+    else directories++
     str(ref.value, `${path}.references[${i}].value`)
   }
+  if (files > FILE_REF_CAP || directories > DIRECTORY_REF_CAP) fail(`${path}.references`)
   bool(v.truncated, `${path}.truncated`)
   optional(v, 'invocation', jsonObject, path)
 }
 
 function checkViews(value: unknown, path: string): void {
-  for (const [i, view] of arr(value, path).entries()) checkView(view, `${path}[${i}]`)
+  const views = arr(value, path)
+  if (views.length > VIEW_CAP) fail(path)
+  for (const [i, view] of views.entries()) checkView(view, `${path}[${i}]`)
 }
 
 function checkWorkspace(value: unknown, path: string): void {
