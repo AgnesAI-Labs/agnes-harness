@@ -155,11 +155,13 @@ it('installs release defaults and registers a synthetic primary entry offline on
       !!p.entry.state.trusted,
     ]),
   ).toEqual([
+    ['@agnes/conversation-ui', true, true],
     ['@agnes/deliverables-ui', true, true],
     ['@agnes/document-reader', true, true],
     ['@agnes/goal-ui', true, true],
     ['@agnes/interaction-ui', true, true],
     ['@agnes/mcp-helper', true, true],
+    ['@agnes/navigation-ui', true, true],
     ['@agnes/plugin-helper', true, true],
     ['@agnes/skill-helper', true, true],
     ['@agnes/test-console', true, true],
@@ -249,11 +251,13 @@ it('installs release defaults and registers a synthetic primary entry offline on
   expect(
     (await s.manager.inventory(s.profileDir)).packages.map((p) => [p.id, p.entry.state.enabled]),
   ).toEqual([
+    ['@agnes/conversation-ui', true],
     ['@agnes/deliverables-ui', true],
     ['@agnes/document-reader', true],
     ['@agnes/goal-ui', true],
     ['@agnes/interaction-ui', true],
     ['@agnes/mcp-helper', false],
+    ['@agnes/navigation-ui', true],
     ['@agnes/plugin-helper', true],
     ['@agnes/test-console', false],
   ])
@@ -295,8 +299,14 @@ it.each([
     }
     await initializeDefaultHelpers(s)
     const packages = (await s.manager.inventory(s.profileDir)).packages
-    expect(packages).toHaveLength(restricted ? 4 : 7)
-    for (const id of ['@agnes/deliverables-ui', '@agnes/goal-ui', '@agnes/interaction-ui'])
+    expect(packages).toHaveLength(restricted ? 4 : 9)
+    for (const id of [
+      '@agnes/conversation-ui',
+      '@agnes/deliverables-ui',
+      '@agnes/goal-ui',
+      '@agnes/interaction-ui',
+      '@agnes/navigation-ui',
+    ])
       expect(
         packages.some((pkg) => pkg.id === id),
         id,
@@ -310,7 +320,13 @@ it.each([
     })
     const receipt = JSON.parse(readFileSync(file, 'utf8'))
     expect(receipt).toMatchObject({ version: 4, phase: 'complete' })
-    for (const id of ['@agnes/deliverables-ui', '@agnes/goal-ui', '@agnes/interaction-ui'])
+    for (const id of [
+      '@agnes/conversation-ui',
+      '@agnes/deliverables-ui',
+      '@agnes/goal-ui',
+      '@agnes/interaction-ui',
+      '@agnes/navigation-ui',
+    ])
       expect(receipt.offered).toContain(id)
     // Even a subsequently wider ceiling does not silently reverse an omitted offer.
     const lock = readLock(s.profileDir, { profile: 'local-dev', agnesVersion: '0.0.0' })
@@ -472,7 +488,7 @@ it('migrates the earlier existing marker without enabling or replacing an instal
   await s.manager.setEnabled(s.profileDir, '@agnes/mcp-helper', false)
   await s.manager.remove(s.profileDir, '@agnes/mcp-helper')
   await initializeDefaultHelpers(s)
-  expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(6)
+  expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(8)
 })
 it('records completion without activation when all helpers are already installed', async () => {
   const s = setup()
@@ -481,6 +497,8 @@ it('records completion without activation when all helpers are already installed
     'skill-helper',
     'mcp-helper',
     'plugin-helper',
+    'navigation-ui',
+    'conversation-ui',
     'goal-ui',
     'interaction-ui',
     'deliverables-ui',
@@ -548,7 +566,7 @@ it.each([1, 2, 3, 4])(
     )
     await initializeDefaultHelpers(s)
     const inventory = await s.manager.inventory(s.profileDir)
-    expect(inventory.packages).toHaveLength(version === 3 ? 7 : 6)
+    expect(inventory.packages).toHaveLength(version === 3 ? 9 : 8)
     expect(inventory.packages.every((pkg) => pkg.trusted)).toBe(true)
     expect(inventory.packages.filter((pkg) => !pkg.enabled).map((pkg) => pkg.id)).toEqual(
       version === 3 ? [] : ['@agnes/skill-helper'],
@@ -564,7 +582,7 @@ it.each([1, 2, 3, 4])(
         target = next
       },
     })
-    for (const name of ['goal-ui', 'interaction-ui', 'deliverables-ui']) {
+    for (const name of ['goal-ui', 'interaction-ui', 'deliverables-ui', 'navigation-ui', 'conversation-ui']) {
       const pkg = inventory.packages.find((pkg) => pkg.id === `@agnes/${name}`)
       if (!pkg || !target) throw new Error('Missing presentation or target')
       expect(pkg.entry.trustDecision).toMatchObject({
@@ -586,7 +604,7 @@ it.each([1, 2, 3, 4])(
       phase: 'complete',
       offered: expect.arrayContaining(inventory.packages.map((pkg) => pkg.id)),
     })
-    expect(JSON.parse(readFileSync(file, 'utf8')).offered).toHaveLength(7)
+    expect(JSON.parse(readFileSync(file, 'utf8')).offered).toHaveLength(9)
     await s.manager.setEnabled(s.profileDir, '@agnes/goal-ui', false)
     await s.manager.remove(s.profileDir, '@agnes/goal-ui')
     await s.manager.setEnabled(s.profileDir, '@agnes/interaction-ui', false)
