@@ -10,8 +10,6 @@
       "**",
       "!**/gen",
       "!**/generated",
-      "!packages/context-doctor/src/client.js",
-      "!packages/package-manager/bundled-plugins/context-doctor/src/client.js",
       "!packages/package-manager/bundled-plugins/goal-ui/src/client.js",
       "!packages/package-manager/bundled-plugins/interaction-ui/src/client.js",
       "!**/dist",

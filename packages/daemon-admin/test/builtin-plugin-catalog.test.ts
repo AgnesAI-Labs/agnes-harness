@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { BUNDLED_HELPERS, OPTIONAL_BUNDLED_PACKAGES } from '@agnes/package-manager'
 import { afterEach, expect, it, vi } from 'vitest'
 import { discoverLocalExamples } from '../src/packages/local-examples.js'
 
@@ -18,7 +19,7 @@ it.each([false, true])('discovers optional pinned helper even with broken exampl
   if (broken) mkdirSync(join(root, 'examples', 'packages'), { recursive: true })
   const catalog = await discoverLocalExamples(root)
   const result = await catalog.read({ offline: true })
-  expect(result.entries).toHaveLength(26)
+  expect(result.entries).toHaveLength(17 + BUNDLED_HELPERS.length + OPTIONAL_BUNDLED_PACKAGES.length)
   const examples = result.entries.filter((entry) => entry.sourceId === 'official-examples')
   expect(examples).toHaveLength(17)
   expect(examples.filter((entry) => entry.id.startsWith('@agnes-fde/'))).toHaveLength(12)
@@ -69,7 +70,10 @@ it.each([false, true])('discovers optional pinned helper even with broken exampl
     version: '0.1.0',
     source: { ref: 'file:./bundled-plugins/usage-cockpit' },
   })
-  expect(result.entries.find((entry) => entry.id === '@agnes/context-doctor')).toMatchObject({ sourceId: 'builtin-plugins', source: { ref: 'file:./bundled-plugins/context-doctor' } })
+  expect(result.entries.find((entry) => entry.id === '@agnes/context-doctor')).toMatchObject({
+    sourceId: 'builtin-plugins',
+    source: { ref: 'file:./bundled-plugins/context-doctor' },
+  })
   expect(JSON.stringify(result.entries)).not.toContain('github.com')
   expect(result.sources.find((source) => source.sourceId === 'builtin-plugins')?.status).toBe('cached')
   if (broken)

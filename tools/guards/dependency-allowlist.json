@@ -1,5 +1,4 @@
 {
-  "@agnes/context-doctor": ["@agnes/extension-api", "@agnes/web-client", "@agnes/web-ui"],
   "@agnes/e2e-web": ["@agnes/sdk", "@agnes/protocol", "@agnes/observability"],
   "@agnes/cosmokit": [],
   "@agnes/cordis": ["@agnes/cosmokit"],
@@ -345,6 +344,7 @@
     "@agnes/system-node"
   ],
   "@agnes/memory-file": ["@agnes/extension-api", "@agnes/system-node"],
+  "@agnes/context-doctor": ["@agnes/extension-api", "@agnes/web-client", "@agnes/web-ui"],
   "@agnes/deliverables-ui": ["@agnes/web-client", "@agnes/web-ui"],
   "@agnes/document-reader": [],
   "@agnes/eval-studio": ["@agnes/model-adapters", "@agnes/sdk", "@agnes/web-client", "@agnes/web-ui"],

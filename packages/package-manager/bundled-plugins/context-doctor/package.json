@@ -12,7 +12,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b test"
   },
   "agnes": {
     "kinds": [

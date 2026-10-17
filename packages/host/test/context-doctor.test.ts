@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 import type {
   HookContext,
   HookHandler,
@@ -16,7 +17,7 @@ import { expect, it } from 'vitest'
 type KernelProjection = Parameters<KernelPorts['projections']['register']>[0]
 
 it('mounts the installed context observer on the production registration bridge without native or model access', async () => {
-  const url = new URL('../../context-doctor/index.mjs', import.meta.url)
+  const url = new URL('../../package-manager/bundled-plugins/context-doctor/index.mjs', import.meta.url)
   const module: { main: { apply(ctx: PluginContextFacets): () => void } } = await import(url.href)
   const hooks = new Set<string>()
   let contextHook: HookHandler<'context'> | undefined
@@ -95,7 +96,9 @@ it('mounts the installed context observer on the production registration bridge 
     },
   }
   const host = await createPluginTestHost(module.main, {
-    packageDir: new URL('../../context-doctor', import.meta.url).pathname,
+    packageDir: fileURLToPath(
+      new URL('../../package-manager/bundled-plugins/context-doctor', import.meta.url),
+    ),
     registration,
   })
   const ctx = {

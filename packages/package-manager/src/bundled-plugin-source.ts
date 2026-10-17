@@ -54,8 +54,12 @@ export const BUNDLED_HELPERS = Object.freeze([
 /** Shipped discovery choices; never auto-installed or enabled in profiles. */
 export const OPTIONAL_BUNDLED_PACKAGES = Object.freeze([
   {
-    name: 'context-doctor', id: '@agnes/context-doctor', version: '0.1.0', license: 'Apache-2.0',
-    ref: 'file:./bundled-plugins/context-doctor', sourcePath: 'package-manager/bundled-plugins/context-doctor',
+    name: 'context-doctor',
+    id: '@agnes/context-doctor',
+    version: '0.1.0',
+    license: 'Apache-2.0',
+    ref: 'file:./bundled-plugins/context-doctor',
+    sourcePath: 'package-manager/bundled-plugins/context-doctor',
   },
   {
     name: 'eval-studio',

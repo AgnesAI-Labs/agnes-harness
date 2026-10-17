@@ -20,4 +20,4 @@
 
 若提示无法读取，请检查此会话是否包含后台行，再点“刷新”。缺失或旧版后台行不能自动提供其他会话的数据。重启、缓存淘汰或打开旧历史后，在新 hook 运行前显示未知；当前已安装插件的 hook reader 无法恢复自己的 projection。精确 wire/tokenizer 归因、历史诊断、卸载来源和保留核验等待后续授权只读诊断合同。
 
-无需密钥的演示可运行[插件包](../../packages/context-doctor/README.zh-CN.md)中的合成测试，覆盖中英文规则、记忆、大输出 Surface、模型窗口变化和压缩范围，不调用模型或外部效果。浏览器与真实模型验收留给集成检查。
+无需密钥的演示可运行[插件包](../../packages/package-manager/bundled-plugins/context-doctor/README.zh-CN.md)中的合成测试，覆盖中英文规则、记忆、大输出 Surface、模型窗口变化和压缩范围，不调用模型或外部效果。浏览器与真实模型验收留给集成检查。

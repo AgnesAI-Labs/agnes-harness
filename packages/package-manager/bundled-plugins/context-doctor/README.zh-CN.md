@@ -14,4 +14,4 @@
 
 当前已安装插件的 hook 不能通过 projection reader 读取自己的 projection，因此面板仅展示实时观察，不重建历史或调用私有接口。重启、缓存淘汰或打开旧历史后，在新 hook 运行前显示未知。旧后端、停用或缺少后台行时显示可读失败并可刷新。历史读取与精确 wire 归因等待 后续授权只读诊断接口，本插件不新增 Core/Host 接缝。
 
-详见[使用指南](../../../../docs/guide/context-doctor.zh-CN.md)。独立实现，采用 Apache-2.0；未复制第三方代码、提示词或素材。仓库根执行 `node tools/build-feature-clients.mjs`，由 `src/client.tsx` 生成 `src/client.js`。
+详见[使用指南](../../../../docs/guide/context-doctor.zh-CN.md)。独立实现，采用 Apache-2.0；未复制第三方代码、提示词或素材。`src/client.js` 直接使用 Host 提供的 React 与 web-ui 导出。

@@ -317,7 +317,7 @@
       "path": "packages/package-manager/bundled-plugins/usage-cockpit"
     },
     {
-      "path": "packages/context-doctor"
+      "path": "packages/package-manager/bundled-plugins/context-doctor/test"
     }
   ]
 }

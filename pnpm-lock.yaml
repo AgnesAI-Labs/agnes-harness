@@ -461,30 +461,6 @@ importers:
         specifier: workspace:*
         version: link:../cordis
 
-  packages/context-doctor:
-    devDependencies:
-      '@agnes/extension-api':
-        specifier: workspace:*
-        version: link:../extension-api
-      '@agnes/web-client':
-        specifier: workspace:*
-        version: link:../web-client
-      '@agnes/web-ui':
-        specifier: workspace:*
-        version: link:../web-ui
-      '@types/react':
-        specifier: 18.3.12
-        version: 18.3.12
-      '@types/react-dom':
-        specifier: 18.3.1
-        version: 18.3.1
-      react:
-        specifier: 18.3.1
-        version: 18.3.1
-      react-dom:
-        specifier: 18.3.1
-        version: 18.3.1(react@18.3.1)
-
   packages/core:
     dependencies:
       '@agnes/core-child-control':
@@ -1264,6 +1240,30 @@ importers:
       yaml:
         specifier: 2.9.0
         version: 2.9.0
+
+  packages/package-manager/bundled-plugins/context-doctor:
+    devDependencies:
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../../../extension-api
+      '@agnes/web-client':
+        specifier: workspace:*
+        version: link:../../../web-client
+      '@agnes/web-ui':
+        specifier: workspace:*
+        version: link:../../../web-ui
+      '@types/react':
+        specifier: 18.3.12
+        version: 18.3.12
+      '@types/react-dom':
+        specifier: 18.3.1
+        version: 18.3.1
+      react:
+        specifier: 18.3.1
+        version: 18.3.1
+      react-dom:
+        specifier: 18.3.1
+        version: 18.3.1(react@18.3.1)
 
   packages/package-manager/bundled-plugins/deliverables-ui:
     devDependencies:

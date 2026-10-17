@@ -93,5 +93,36 @@ it.each(['en', 'zh-CN'] as const)(
     expect(releaseLocale).toHaveBeenCalledOnce()
     expect(listeners.size).toBe(0)
     expect(projections.size).toBe(0)
+    // Refused/partially failed activation must not leak or replace another module's registration.
+    const keep = workbenchPanels.register(panel)
+    let catalogActive = false
+    try {
+      expect(() =>
+        apply({
+          locale: {
+            register() {
+              catalogActive = true
+              return () => {
+                catalogActive = false
+              }
+            },
+          },
+        } as unknown as ClientContext),
+      ).toThrow(/already registered/)
+      expect(catalogActive).toBe(false)
+      expect(workbenchPanels.get('context-doctor')).toBeDefined()
+    } finally {
+      keep()
+    }
+    expect(() =>
+      apply({
+        locale: {
+          register() {
+            throw new Error('locale unavailable')
+          },
+        },
+      } as unknown as ClientContext),
+    ).toThrow('locale unavailable')
+    expect(workbenchPanels.get('context-doctor')).toBeUndefined()
   },
 )

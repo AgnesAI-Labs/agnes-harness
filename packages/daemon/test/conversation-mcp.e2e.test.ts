@@ -8,8 +8,8 @@ import { mcpStablePrefix } from '@agnes/base'
 import { createTestHost } from '@agnes/host/testkit'
 import {
   activeRuntimePinId,
+  BUNDLED_HELPERS,
   createPackageManager,
-  DEFAULT_ENABLED_BUNDLED_PACKAGES,
   emptyLock,
   writeLock,
 } from '@agnes/package-manager'
@@ -143,7 +143,7 @@ it('a conversation approves registration and calls the real stdio server on its 
       },
     })
   let target: ReturnType<typeof rebuildDesiredFromInventory>
-  for (const helper of DEFAULT_ENABLED_BUNDLED_PACKAGES)
+  for (const helper of BUNDLED_HELPERS)
     target = rebuildDesiredFromInventory({
       previous: target,
       inventory,

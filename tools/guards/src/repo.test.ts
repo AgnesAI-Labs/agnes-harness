@@ -18,7 +18,6 @@ describe('repo', () => {
       '@agnes/cli',
       '@agnes/cli-tui',
       '@agnes/code',
-      '@agnes/context-doctor',
       '@agnes/cordis',
       '@agnes/cordis-loader',
       '@agnes/core',
