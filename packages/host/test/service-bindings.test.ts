@@ -472,6 +472,47 @@ describe('service binding gate', () => {
     }
   })
 
+  it('rejects a stale async open and calls revoked during execution after same-object registration', async () => {
+    const root = new Context()
+    const kind = sampleKind({})
+    const bindings = new ServiceBindings(() => root.providers)
+    bindings.install(root, kind, { ports: [], audience: 'host' })
+    let finishOpen!: (value: Probe) => void
+    let off!: () => Promise<void>
+    let pending = true
+    let disposed = 0
+    const exported = provider('reused', () =>
+      pending
+        ? new Promise<Probe>((resolve) => {
+            finishOpen = resolve
+          })
+        : {
+            mark() {
+              void off()
+              return 'revoked during call'
+            },
+          },
+    )
+    off = root.providers.registerHost(kind, packageId, exported)
+    const opening = bindings.bind(kind, call(), {})
+    const rejected = expect(opening).rejects.toBeInstanceOf(ProviderError)
+    await off()
+    pending = false
+    off = root.providers.registerHost(kind, packageId, exported)
+    finishOpen({
+      mark: () => 'stale',
+      dispose() {
+        disposed++
+      },
+    })
+    await rejected
+    expect(disposed).toBe(1)
+    const current = await bindings.bind(kind, call(), {})
+    expect(() => current.mark()).toThrow(ProviderError)
+    await off()
+    await root.fiber.dispose()
+  })
+
   it('fails a cached handle closed and disposes the underlying instance once', async () => {
     let active = true
     let disposed = 0
@@ -2039,8 +2080,11 @@ it('claims public row registrations transactionally for bindOwn and releases own
   root.providers.verifyRows(origins)
   host.attachBinder(root.providers)
   let off!: () => Promise<void>
+  let rowContext!: Context
+  const ownProvider = provider('agnes/intelligent-ui', () => ({ mark: () => 'own' }))
   const fiber = root.plugin({
     apply(ctx: Context) {
+      rowContext = ctx
       index.set(ctx.fiber, {
         trustTier: 'third-party',
         packageId,
@@ -2049,10 +2093,7 @@ it('claims public row registrations transactionally for bindOwn and releases own
         exportName: 'plugin',
         declaredProvides: [],
       })
-      off = ctx.providers.register(
-        kind,
-        provider('agnes/intelligent-ui', () => ({ mark: () => 'own' })),
-      )
+      off = ctx.providers.register(kind, ownProvider)
     },
   })
   await fiber
@@ -2077,6 +2118,11 @@ it('claims public row registrations transactionally for bindOwn and releases own
   expect(() => bound.mark()).toThrow(ProviderError)
   expect(host.packageFor(kind, rowOwner)).toBeUndefined()
   expect(() => root.providers.bindOwn(kind)).toThrow(ProviderError)
+  const replacement = rowContext.providers.register(kind, ownProvider)
+  expect((await root.providers.bindOwn(kind)).mark()).toBe('own')
+  // Reusing the exact exported object must never restore an old registration lease.
+  expect(() => bound.mark()).toThrow(ProviderError)
+  await replacement()
   await fiber.dispose()
   await root.fiber.dispose()
 })

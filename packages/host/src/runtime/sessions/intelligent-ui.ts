@@ -297,9 +297,10 @@ export function createIntelligentUiBridge(input: {
       const session = requireSession(ref.key, ref.lane)
       if (!call.actor) denied()
       const found = deferredQueueFor(session)?.ownerFacade(session.key, session.lane, {
-        owner: UI_OWNER,
+        owner: call.owner,
         actor: call.actor,
-        confirmSource: (seq, source, signal) => confirmDeferredSource(session, UI_OWNER, seq, source, signal),
+        confirmSource: (seq, source, signal) =>
+          confirmDeferredSource(session, call.owner, seq, source, signal),
       })
       if (!found) denied()
       return {
@@ -353,7 +354,7 @@ export function createIntelligentUiBridge(input: {
             declarations: () => readUiComponentDeclarations(input.profileDir, live.key),
             open: async (registration, signal) => {
               const instance = await input.extensionHost.bindHost(uiDataSourceKind, {
-                owner: UI_OWNER,
+                owner: call.owner,
                 packageId: registration.sourcePackage,
                 providerId: registration.id,
                 session: call.session,
@@ -363,7 +364,7 @@ export function createIntelligentUiBridge(input: {
                 live: () => {
                   if (signal.aborted || live.closingOrClosed) return undefined
                   if (generationOf(live) !== generationId) return undefined
-                  return { owner: UI_OWNER, active: true, generationId }
+                  return { owner: call.owner, active: true, generationId }
                 },
               })
               return {
