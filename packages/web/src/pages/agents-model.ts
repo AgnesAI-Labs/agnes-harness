@@ -1,46 +1,73 @@
-import type { DeclaredAgent, PackageCatalogDescriptor, PackageInstalledDescriptor } from '@agnes/protocol'
+import type {
+  AgentRef,
+  DeclaredAgent,
+  PackageCatalogDescriptor,
+  PackageInstalledDescriptor,
+} from '@agnes/protocol'
 import { type BusinessAgent, businessAgentView } from '@agnes/web-admin/agents'
 
-export type AgentCard = BusinessAgent & { declaration: DeclaredAgent }
+export type AgentCard = Omit<BusinessAgent, 'entry' | 'ref'> & {
+  ref: AgentRef
+  entry: PackageCatalogDescriptor | PackageInstalledDescriptor
+  declaration: DeclaredAgent
+  /** Real catalog data is needed only by the public package installation flow. */
+  catalogAgent?: BusinessAgent
+}
 
-/** Only explicit launch declarations are cards; neither package prefixes nor provides imply agents. */
+/** Only explicit declarations are cards. Installed inventory replaces catalog declarations for a
+ * package, including removed agents; no synthetic catalog descriptors or inferred capabilities.
+ */
 export function declaredAgentCards(
   rows: readonly PackageCatalogDescriptor[],
   locale: 'en' | 'zh-CN',
+  installed: readonly PackageInstalledDescriptor[] = [],
 ): AgentCard[] {
-  const cards = new Map<string, AgentCard>()
+  const cards = new Map<AgentRef, AgentCard>()
+  const installedIds = new Set(installed.map((entry) => entry.id))
   for (const entry of rows) {
+    if (installedIds.has(entry.id)) continue
     for (const declaration of entry.agents ?? []) {
-      const base = businessAgentView(entry, locale)
-      const text = (value: { en: string; 'zh-CN'?: string }) => value[locale] ?? value.en
+      const catalogAgent = businessAgentView({ ...entry, agents: [declaration] }, locale)
       cards.set(declaration.ref, {
-        ...base,
-        declaration,
+        ...catalogAgent,
         slug: encodeURIComponent(declaration.ref),
-        name: text(declaration.launch.title),
+        declaration,
+        catalogAgent,
+      })
+    }
+  }
+  for (const entry of installed) {
+    for (const declaration of entry.agents ?? []) {
+      const text = (value: { en: string; 'zh-CN'?: string }) => value[locale] ?? value.en
+      const name = text(declaration.launch.title)
+      const catalogEntry =
+        !entry.trusted || entry.desired !== 'enabled'
+          ? rows.find(
+              (row) => row.id === entry.id && row.agents?.some((agent) => agent.ref === declaration.ref),
+            )
+          : undefined
+      const catalogAgent = catalogEntry
+        ? businessAgentView(
+            {
+              ...catalogEntry,
+              agents: (catalogEntry.agents ?? []).filter((agent) => agent.ref === declaration.ref),
+            },
+            locale,
+          )
+        : undefined
+      cards.set(declaration.ref, {
+        ref: declaration.ref,
+        entry,
+        declaration,
+        ...(catalogAgent ? { catalogAgent } : {}),
+        slug: encodeURIComponent(declaration.ref),
+        name,
         summary: text(declaration.launch.description),
         samplePrompt: declaration.launch.prompt ? text(declaration.launch.prompt.text) : undefined,
+        glyph: [...name][0]?.toUpperCase() ?? '?',
+        tint: [...declaration.ref].reduce((hash, char) => (hash * 31 + char.charCodeAt(0)) % 8, 0),
       })
     }
   }
   return [...cards.values()]
-}
-
-/** Launch facade adapter: the existing start hook accepts catalog rows. Installed declarations win over
- * catalog versions; these catalog-only fields are local presentation scaffolding, never admission.
- */
-export function agentCatalogRows(
-  catalog: readonly PackageCatalogDescriptor[],
-  installed: readonly PackageInstalledDescriptor[],
-): PackageCatalogDescriptor[] {
-  const rows = new Map(catalog.map((item) => [item.id, item]))
-  for (const item of installed)
-    rows.set(item.id, {
-      ...item,
-      license: 'UNKNOWN',
-      sourceId: 'installed',
-      retrievedAt: '',
-      compatibility: 'supported',
-    })
-  return [...rows.values()]
 }

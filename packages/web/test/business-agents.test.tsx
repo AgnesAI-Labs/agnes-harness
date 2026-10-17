@@ -1,7 +1,7 @@
 /** @vitest-environment happy-dom */
 
 import { Context } from '@agnes/cordis'
-import type { AgentPlan, PackageCatalogDescriptor } from '@agnes/protocol'
+import type { AgentPlan, PackageCatalogDescriptor, PackageInstalledDescriptor } from '@agnes/protocol'
 import { homeNavigation, SlotRegistry, SlotsProvider } from '@agnes/web-client'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -154,4 +154,25 @@ it('projects one card per explicit declaration, including several agents in one 
     ['@acme/support#reply', 'Reply', 'Prepare a reply', 'Draft a response'],
   ])
   expect(new Set(cards.map((card) => card.slug)).size).toBe(2)
+  const installed: PackageInstalledDescriptor = {
+    id: base.id,
+    version: '2.0.0',
+    trusted: true,
+    desired: 'enabled',
+    actual: 'running',
+    source: { type: 'file', ref: 'file:./support' },
+    integrity: 'sha512-support',
+    contributions: [],
+    blockers: [],
+    agents: cards.filter((card) => card.ref === '@acme/support#reply').map((card) => card.declaration),
+  }
+  const current = declaredAgentCards(rows, 'en', [installed])
+  expect(current.map((card) => card.ref)).toEqual(['@acme/support#reply'])
+  expect(current[0]?.entry).toBe(installed)
+  expect(current[0]?.catalogAgent).toBeUndefined()
+  expect(current[0]?.entry).not.toHaveProperty('sourceId')
+  expect(current[0]?.entry).not.toHaveProperty('compatibility')
+  const disabled = declaredAgentCards(rows, 'en', [{ ...installed, desired: 'installed-disabled' }])
+  expect(disabled[0]?.catalogAgent?.ref).toBe('@acme/support#reply')
+  expect(disabled[0]?.catalogAgent?.entry.agents?.map((agent) => agent.ref)).toEqual(['@acme/support#reply'])
 })

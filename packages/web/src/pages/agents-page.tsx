@@ -26,7 +26,7 @@ import {
 import { useEffect, useRef, useState } from 'react'
 import { homeAdmin } from './admin-api.js'
 import { useAgentLaunch } from './agents-launch.js'
-import { agentCatalogRows, declaredAgentCards } from './agents-model.js'
+import { declaredAgentCards } from './agents-model.js'
 import { HomePageFrame } from './page-frame.js'
 
 const source = { connect: homeAdmin }
@@ -47,20 +47,20 @@ function AgentList({
   })
   const starter = useAgentLaunch(data)
   const cards = declaredAgentCards(
-    agentCatalogRows(
-      data.agents.map((agent) => agent.entry),
-      data.installed,
-    ),
+    data.agents.map((agent) => agent.entry),
     locale,
+    data.installed,
   )
   const needle = query.trim().toLocaleLowerCase()
   const shown = cards.filter((card) =>
     [card.name, card.summary, card.entry.id].some((text) => text?.toLocaleLowerCase().includes(needle)),
   )
-  const request = selection as { focus?: string; start?: boolean } | undefined
+  const request = selection as { focus?: string; agent?: string; start?: boolean } | undefined
   const handled = useRef<unknown>()
   const focused = cards.find(
-    (card) => card.declaration.ref === request?.focus || card.entry.id === request?.focus,
+    (card) =>
+      card.ref === (request?.agent ?? request?.focus) ||
+      (!request?.agent && card.entry.id === request?.focus),
   )
   useEffect(() => {
     if (!focused || !request?.start || handled.current === selection) return
@@ -126,6 +126,8 @@ function AgentList({
             <Button
               disabled={!chosenLoop}
               disabledReason={t('noRunningMode')}
+              // B2's agent facade is AgentRef-only. Ordinary Loop selection stays on the plain
+              // new-session branch, with no agent, combination or permission overrides.
               onClick={() =>
                 chosenLoop && location.assign(sessionStartUrl(undefined, undefined, undefined, chosenLoop))
               }
@@ -136,7 +138,7 @@ function AgentList({
         )}
         {shown.map((card) => {
           const installed = data.installed.find((item) => item.id === card.entry.id)
-          const blocked = data.denied && installed?.primaryStatus?.state !== 'ready'
+          const blocked = data.denied && !(installed?.trusted && installed.desired === 'enabled')
           return (
             <article className="agent-card" key={card.declaration.ref} data-agent-ref={card.declaration.ref}>
               <header>

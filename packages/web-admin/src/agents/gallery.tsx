@@ -99,7 +99,12 @@ export function useBusinessAgents(source: BusinessAgentsSource = {}) {
       ),
       api.list(),
     ])
-    return { api, context, rows: catalog.rows, installed: list.packages, catalogError: catalog.error,
+    return {
+      api,
+      context,
+      rows: catalog.rows,
+      installed: list.packages,
+      catalogError: catalog.error,
       readyAgents: await readyAgentRefs(api, catalog.rows, list.packages),
     }
   })
