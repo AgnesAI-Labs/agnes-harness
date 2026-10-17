@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { type ConfigurationService, createConfigurationService } from '@agnes/host'
 import {
   type InstalledPackage,
+  lockPath,
   type PackageManager,
   readApplicationAssets,
   withLock,
@@ -29,6 +31,11 @@ const bindingDigest = (preview: ApplicationPreview) => {
   return digest(identity)
 }
 const eligible = (p: InstalledPackage) => p.enabled && p.trusted && !p.blockers.length && !!p.directory
+const packageBoundary = (directory: string) =>
+  readFile(lockPath(directory), 'utf8').catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return null
+    throw error
+  })
 
 /** Presentation has a separate configuration lane; no profile resolver, tree publication or pins. */
 export class Applications {
@@ -314,10 +321,14 @@ export class Applications {
 
   async adopt(profile: string, packageId: string, expectedRevision: number, consentDigest: string) {
     const { directory, config } = await this.context(profile)
+    // Inventory owns the package lock itself. Verify outside it, then bind that evidence to
+    // unchanged package state under the write lock before committing the configuration CAS.
+    const boundary = await packageBoundary(directory)
+    const { packages } = await this.options.manager.inventory(directory, { fresh: true })
     await withLock(directory, async () => {
+      if ((await packageBoundary(directory)) !== boundary) return fail('APPLICATION_PREVIEW_STALE')
       const saved = await config.application()
       if (saved.revision !== expectedRevision) return fail('CONFIG_REVISION_CONFLICT')
-      const { packages } = await this.options.manager.inventory(directory)
       const { preview } = await this.reviewed(profile, packageId, packages, saved.selection)
       if (preview.consentDigest !== consentDigest) return fail('APPLICATION_PREVIEW_STALE')
       await config.saveApplication({

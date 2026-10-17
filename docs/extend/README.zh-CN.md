@@ -13,7 +13,7 @@
 | 类型 | 模板 | 提供的能力 |
 | --- | --- | --- |
 | 工具 | [tool](../../templates/tool/) | TypeBox 输入和结果 schema、取消信号、卸载清理 |
-| 工具与面板 | [tool-with-panel](../../templates/tool-with-panel/) | 相同工具与独立浏览器侧栏插槽 |
+| 工具与面板 | [tool-with-panel](../../templates/tool-with-panel/) | 相同工具与追加的 Profile 页面 |
 | MCP 与 Skills | [mcp-skills](../../templates/mcp-skills/) | MCP 定义与通过 Skills 服务注册的包内 Skill |
 | 模型适配器 | [model-adapter](../../templates/model-adapter/) | 通过 `ctx.providers.register` 注册的结构化适配器 |
 | 循环 | [loop](../../templates/loop/) | 官方分阶段业务工作流、确认与 checkpoint 恢复 |
@@ -66,7 +66,7 @@ Host 必须提供对应注册服务，循环或适配器插件才能加载。安
 
 ## 待实现提案
 
-[提案：插件用途 metadata 与页面卡片](plugin-presentation/DESIGN.zh-CN.md) 定义可选的作者用途说明与运行时派生贡献事实，尚未实现。
+[提案：插件用途 metadata 与页面卡片](plugin-presentation/DESIGN.zh-CN.md) 定义可选的作者用途说明与运行时派生贡献事实，历史设计；现行规则以元数据合同为准。
 
 [用途元数据](plugin-metadata.zh-CN.md)定义可选的插件用途双语文案。
 
@@ -77,3 +77,5 @@ Host 必须提供对应注册服务，循环或适配器插件才能加载。安
 `ToolMeta` 的 `costHint`、`deferLoading`、`requiresApproval` 可省略：默认无成本估计、立即发现，审批依据 `isDestructive` 推导。`readOnlyTool` / `writeTool` 是 plugin-runtime 的元数据预设，直接写 `meta: readOnlyTool` 或展开后覆盖字段。`modelVisible: false` 保留内部调用并从模型发现/schema 隐藏；`requiresImageInput: true` 仅允许原生图像输入模型发现和执行。
 
 [插件流与受管理服务](transports.zh-CN.md)
+
+[四步 Loop 教程](first-loop.zh-CN.md) · [应用合同](applications.zh-CN.md) · [Acme 参考应用](../../examples/acme/README.zh-CN.md)

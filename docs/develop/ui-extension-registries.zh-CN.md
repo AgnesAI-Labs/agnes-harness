@@ -116,3 +116,5 @@ profile client 须先在 descriptor 声明显式 `client.id` 和 `presentationRo
 `ctx.presentation` 提供可选的呈现导航 `revealConversation`、`focusApproval`，以及经过
 宿主认证的自定义组件名册读取、订阅 `listComponents`、`subscribeComponents`。
 问题和表单继续使用已有 SDK 的授权 UI 协议；回答不能作为执行许可。
+
+会话就绪／epoch 的统一订阅与三个 Intelligent UI 公开示例仍属于后续 UI 插件化交付；本版不把安装或 profile 页面激活等同于会话渲染器就绪。Profile 页面跟随当前激活，会话渲染器跟随会话固定代际。

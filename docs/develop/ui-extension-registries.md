@@ -134,3 +134,5 @@ input handling in place. Register and dispose these within the same role.
 (`listComponents`, `subscribeComponents`). These are presentation seats only.
 Question/form reads and actions continue through the existing authorized SDK
 UI protocol; clients must never infer permission from an answer.
+
+Unified session readiness/epoch subscription and the three Intelligent UI public examples belong to the subsequent UI pluginization delivery. This version does not equate installation or profile-page activation with session-renderer readiness. Profile pages follow current activation; session renderers follow the session pinned generation.

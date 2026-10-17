@@ -2,6 +2,8 @@
 
 [English](frontend.md) | 简体中文
 
+> 进阶接管示例（历史演示路径）：下文替换整个侧栏，用于解释单占位置与会话版本。新增页面请使用 [tool-with-panel 模板](../../templates/tool-with-panel/)；新增面板请使用[工作台面板](../extend/workbench-panels.zh-CN.md)。
+
 [文档导航](../README.zh-CN.md) · [插件生命周期](../guide/packages.zh-CN.md)
 
 做完本教程，你会在工作台里看到自己的面板，完成一次版本更新，并确认停用后新会话使用内置界面、旧会话保留原版本。先理解生命周期，再把版本文字替换成岗位需要的内容。

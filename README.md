@@ -2,25 +2,40 @@
 
 English | [简体中文](README.zh-CN.md)
 
-**A trustworthy business-agent platform.** Build business agents as plugins, upgrade them while existing work keeps its version, and grow reusable skills through human review.
+**AGH delivers business capabilities as installable plugins, launchable agents and adoptable applications.**
 
-AGH is an open-source developer preview for developers and field deployment teams. CLI, Web and SDK share one local App Server, with durable sessions, approvals and inspectable execution records.
+- A **plugin** is the installation, distribution and trust unit. It can provide tools, Loops, models, UI, skills, connections or services.
+- An **agent** is a Bundle with its own explicit `launch`, referenced as `package#bundle`. It selects a Loop and preset to start a task.
+- An **application** declares identity, presentation defaults and default/visible agents inside a plugin. A deployment administrator previews and explicitly adopts it; installation never switches applications.
 
-[Quickstart](docs/guide/quickstart.md) · [Why AGH](docs/guide/why-agh.md) · [Documentation](docs/README.md) · [Build a plugin](docs/extend/quickstart.md)
+**FDE (forward-deployed engineering) means building an application for an enterprise**: deliver business tools, agents and a workbench for the people doing the work. Existing backend modules still own execution and authorization.
 
-## 1. Your business agent is a plugin
+Minimal tool plugin: from a built source checkout, add an echo tool in an isolated home. No agent or application declaration is required.
 
-Package a business Loop, tools, model adapters, persona and Skills into an installable bundle. Each session gets its selected capabilities; a support agent's tools do not automatically appear in an unrelated default session. Add a workbench panel through the public frontend APIs.
+```sh
+export AGH_HOME="$(mktemp -d /tmp/agh-hello.XXXXXX)"
+export AGH_HOME="$(cd "$AGH_HOME" && pwd -P)"
+export AGNES_PROFILE=local-dev
+node templates/create-agh-plugin.mjs tool hello-tool "$AGH_HOME/plugins/hello-tool" --local
+node agnes.mjs dev "$AGH_HOME/plugins/hello-tool"
+node agnes.mjs --new -p 'call plugin_hello_tool {"message":"hello"}'
+```
+
+[Quickstart](docs/guide/quickstart.md) · [Documentation](docs/README.md) · [Build a plugin](docs/extend/quickstart.md) · [Acme application](examples/acme/README.md)
+
+## 1. Deliver business agents in plugins
+
+Package a business Loop, tools, model adapters, persona and Skills into an installable plugin. Each session gets its selected capabilities; a support agent's tools do not automatically appear in an unrelated default session. Add a workbench panel through the public frontend APIs.
 
 Drive the agent from business events too: opt-in [GitHub and generic webhook triggers](docs/guide/webhooks.md) start ordinary workspace sessions under the normal policy.
 
-![Plugin kinds in the current Web workbench](docs/assets/readme/plugin-kinds-en-light.png)
+![Plugin capabilities in the Web workbench](docs/assets/readme/plugin-kinds-en-light.png)
 
-[Run the business-agent demo](examples/demos/business-agent/README.md) · [Browse FDE bundles](examples/fde/README.md)
+[Run the business-agent demo](examples/demos/business-agent/README.md) · [Browse business agents](examples/fde/README.md)
 
 ## 2. Upgrade without replacing work in progress
 
-New sessions use the reviewed new plugin code; saved sessions retain their backend code (tools, hooks, loops and seams) across restart, while plugin panels and views always come from the installed version. Inspect model requests, tool results and recovery gaps through the trace and execution-evidence views. Uncertain external effects require reconciliation before another dispatch.
+New sessions use the reviewed new plugin code; saved sessions retain their backend code (tools, hooks, loops and seams) across restart, while profile pages follow the current activation and session renderers follow the session's pinned generation. Inspect model requests, tool results and recovery gaps through the trace and execution-evidence views. Uncertain external effects require reconciliation before another dispatch.
 
 ![An installed plugin disabled for new sessions while an older version remains in use](docs/assets/readme/plugin-old-version-en-light.png)
 

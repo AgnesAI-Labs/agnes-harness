@@ -12,7 +12,7 @@ A plugin is one package. It is the only unit a person installs, upgrades, trusts
 | A skill author | `skills`, or no package at all | `SKILL.md` instructions, shipped in a package or dropped into a skills folder | Plugins → Skills, each row labelled “From <plugin>” or “Added by me” |
 | An integration author | `mcp` | A connection to an external system through MCP | Plugins → MCP, each row labelled with its source |
 | An agent architecture researcher | `loop`, `model-adapter`, or a provider | How a turn is scheduled, how a model is called, or one runtime service such as compaction or memory | Settings → Advanced → Run configuration, as an option in the matching slot |
-| An industry solution author (FDE) | `bundle` | A finished business agent: a loop, tools, skills and a preset selected together | Home → Business agents; also one row in Plugins → Installed with the “Business agent” label |
+| An agent author | `bundle` | A Bundle with its own launch: Loop, tools, skills and an explicit preset | Agents page; Plugins shows capabilities and status |
 | An interface author | `ui` | Panels, skins or browser-side controls | The workbench slot the panel declares, Settings → General for skins, and Plugins → Marketplace (type “Interface and skins”) |
 | An enterprise solution author (such as reporting) | No new type: seam providers plus a home entry | Organization-wide rules such as approval, identity, billing or audit, and your own page | Your own entry on the home sidebar; Settings → Permissions & security |
 
@@ -36,11 +36,11 @@ A plugin is one package. It is the only unit a person installs, upgrades, trusts
 
 `agnes.provides` says what a package contains and drives the marketplace type filter and the “Includes” labels on each row.
 
-The marketplace derives its type filter from the kinds:
+Capability filters use author-declared `agnes.provides`. Runtime registration is separate evidence; labels never grant authority:
 
-| Filter | Kinds |
+| Capability | provides label |
 | --- | --- |
-| Business agents | `bundle` |
+| Reusable configuration (not necessarily launchable) | `bundle` |
 | Tools | `tool` |
 | Skill packs | `skills` |
 | MCP connections | `mcp` |
@@ -50,3 +50,5 @@ The marketplace derives its type filter from the kinds:
 “Includes” labels use `PackagePresentation.includes`, which the backend derives without running your code. To have a number shown next to a kind, state it in package data: list tool names under a plugin's `capabilities.tools.names`, declare skills as `skill` contributions, and declare bundles under `agnes.bundles`. A kind with no stated number is shown by name alone. See [Plugin purpose metadata](plugin-metadata.md#what-a-package-includes).
 
 “Built-in” has one meaning: shipped with the product and not removable. A package you publish is never built-in, whatever it contains.
+
+Application builders declare brand and presentation defaults through [application](applications.md); see [Acme](../../examples/acme/README.md).

@@ -2,6 +2,8 @@
 
 English | [简体中文](frontend.zh-CN.md)
 
+> Advanced takeover example (historical demo path): the example below replaces the entire sidebar to explain singleton positions and session versions. To add a page, use the [tool-with-panel template](../../templates/tool-with-panel/); to add a panel, use [workbench panels](../extend/workbench-panels.md).
+
 <a id="前端插件为工作台增加一个界面"></a>
 
 [Documentation](../README.md) · [Plugin lifecycle](../guide/packages.md)

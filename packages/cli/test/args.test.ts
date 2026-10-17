@@ -348,6 +348,10 @@ describe('usage', () => {
 
   it('mentions every accepted flag spelling, so the grammar and the help text cannot drift', () => {
     const text = usage()
+    expect(text.split('Advanced:')[0]).toContain('--agent <package#agent>')
+    expect(text.split('Advanced:')[0]).not.toMatch(/--bundle|--preset|FDE/)
+    expect(usage('zh-CN')).toContain('智能体')
+    expect(usage('zh-CN')).toContain('应用恢复：agh app clear')
     for (const flag of [
       '--profile',
       '--preset',

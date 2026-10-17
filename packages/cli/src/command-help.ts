@@ -5,10 +5,12 @@ import { RUNTIME_USAGE } from './commands/runtime.js'
 import type { Command } from './types.js'
 
 /** Help is rendered before boot, including forwarded command grammars. */
-export function commandHelp(command?: Command): string {
+export function commandHelp(command?: Command, locale = 'en'): string {
   const common = 'Use --yes to confirm reviewed mutations without a TTY. Help never starts the backend.'
   switch (command) {
     case 'app':
+      if (locale === 'zh-CN')
+        return '用法：agh app clear [--profile NAME] [--json]\n无需加载插件即可清除应用展示选择。后台运行时使用在线 CAS，否则使用共享配置锁。'
       return 'Usage: agh app clear [--profile NAME] [--json]\nClear the presentation selection without loading plugins. Uses online CAS when the daemon is running, otherwise the shared configuration lock.'
     case 'home':
       return 'Usage: agh home info [--json]\nInspect the versioned home without writes. AGH_HOME selects the home.'
@@ -29,7 +31,7 @@ export function commandHelp(command?: Command): string {
     case 'start':
       return 'Usage: agh serve [--profile <name>] [--home <path>] [--cwd <path>] [--port <port>]\nStart the local Web listener. --help only prints this message.'
     case 'mcp':
-      return `Usage: agh mcp <action> [--profile <name>]\nActions: list, get, status, tools, add, update, trust, enable, disable, test, reconnect, remove\nAdd: agh mcp add <id> --name <name> (--stdio <executable> [--arg <value>] | --http <url> | --sse <url>) [--yes]\nPreset: agh mcp add [<id>] --preset playwright [--sandbox-workspace <absolute-path>] [--yes]\nTrust/enable/test: agh mcp <action> <id> --expected-revision <revision> [--yes]\n${common}`
+      return `Usage: agh mcp <action> [--profile <name>]\nActions: list, get, status, tools, add, update, trust, enable, disable, test, reconnect, remove\nAdd: agh mcp add <id> --name <name> (--stdio <executable> [--arg <value>] | --http <url> | --sse <url>) [--yes]\nConnection template: agh mcp add [<id>] --preset playwright [--sandbox-workspace <absolute-path>] [--yes]\nTrust/enable/test: agh mcp <action> <id> --expected-revision <revision> [--yes]\n${common}`
     case 'skills':
       return `Usage: agh skills list|refresh|trust [--profile <name>]\nList: agh skills list [--workspace-id <id>] [--cursor <cursor>]\nRefresh: agh skills refresh [--workspace-id <id>] [--root-key <key>] [--yes]\nThe current directory is registered automatically; its workspaceId is printed.\nTrust: agh skills trust <resourceId> <revision> [trusted|rejected] [--yes]\n${common}`
     case 'resources':
@@ -44,6 +46,6 @@ export function commandHelp(command?: Command): string {
     case 'install':
       return `Usage: agh install <source> [--yes]\nagh package inspect|add <source> [--yes]\nagh package trust <id> [<integrity> <capabilityHash>] [--yes]\nagh package enable|disable|rollback|remove <id> [--yes]\nagh package status|list|catalog|operation|cancel\n${common}`
     default:
-      return usage()
+      return usage(locale)
   }
 }

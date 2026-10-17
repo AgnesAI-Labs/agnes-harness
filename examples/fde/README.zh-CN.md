@@ -1,12 +1,12 @@
-# FDE bundles：使用 AGH 交付业务流程
+# 业务智能体：为企业构建应用
 
 [English](README.md) | 简体中文 · [为什么选择 AGH](../../docs/guide/why-agh.zh-CN.md)
 
-FDE 工程师将流程、连接器、审核策略与手册一起交付。下面每个目录都是独立可安装的 **bundle**，只使用公开契约与作者工具包。合成数据和本地模拟器让团队无需凭据即可体验完整交付流程。
+FDE 工程师将流程、连接器、审核策略与手册一起交付。下面每个目录都是独立可安装的**插件**，包含可启动的智能体，只使用公开契约与作者工具包。合成数据和本地模拟器让团队无需凭据即可体验完整交付流程。
 
 每次 `modelText` 请求都是不带工具的文字阶段，使用该阶段自己的窄指令。流程手册仍作为外围 Loop 的已注册 Skill，不拼进草稿或解读请求。客户草稿只使用已提供的事实，输出面向客户的回复。
 
-| Bundle | 业务成果 | 控制点 |
+| Agent / 智能体 | 业务成果 | 控制点 |
 | --- | --- | --- |
 | [客服分诊](support-triage/README.zh-CN.md) | 读取工单 → 分类 → 草稿 → 人工审批 → 模拟发送回执。 | 动作前人工确认 |
 | [合同评审](contract-review/README.zh-CN.md) | 拆分条款 → 并行评审节点 → 汇总 Markdown 报告 → 模型解读。 | 只读策略 |
@@ -23,7 +23,7 @@ FDE 工程师将流程、连接器、审核策略与手册一起交付。下面�
 
 ## 开始交付
 
-按[安装指南](../../docs/guide/install.zh-CN.md)构建 `agh`。打开对应 README，在目录中执行 `agh plugins add .`，通过 `agh run --bundle PACKAGE#NAME` 或 Web **Admin → Plugins → Bundles** 面板选择已安装 bundle。每份 README 提供预设、提示、模型目标与预期结果。Web bundle 变更需要重启 Host 并新建会话。客户端也可以在 `session/new` 里用 `bundles` 只为一个会话选择 bundle，不需要重启；该会话会带上 bundle 的预设与策略。参见[组合包与配置](../../docs/extend/bundles-and-profiles.zh-CN.md#只为一个会话选择)。
+按[安装指南](../../docs/guide/install.zh-CN.md)构建 `agh`，在示例目录运行 `agh plugins add .` 并审阅权限，然后从 Web 的「智能体」页选择，或运行 `agh --new --agent PACKAGE#NAME -p "任务"`。每个 `agnes.bundles.<id>.launch` 显式选择预设，不按包名前缀推测。安装不会自动启动智能体。进阶组合见[组合与配置档](../../docs/extend/bundles-and-profiles.zh-CN.md)。FDE 指为企业构建应用这项工作；显式采纳应用参见 [Acme](../acme/README.zh-CN.md)。
 
 全新 local-dev 配置提供无密钥 Demo 路由。工具依据和客服/CRM 草稿来自夹具，Demo 不进行真实推理。已有部署须保留该路由或配置真实模型。所有示例使用 Core 准备的请求和会话主模型，`real-model.bundle.json` 配置预设 primary 路由。
 

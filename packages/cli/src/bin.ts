@@ -391,7 +391,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     return ExitCode.OK
   }
   if (p.help) {
-    io.stdout.write(`${commandHelp(p.command)}\n`)
+    io.stdout.write(`${commandHelp(p.command, io.env.AGNES_LOCALE)}\n`)
     return ExitCode.OK
   }
 

@@ -162,6 +162,14 @@ it('scaffolds complete inert text through the host rather than reading virtual a
       continue
     }
     expect(pkg.agnes.plugins[0].apiRange).toBe('^4.0.0')
+    if (template === 'tool-with-panel') {
+      const descriptor = JSON.parse(
+        input.files.find((file) => file.path === 'client/agnes.client.json')!.content,
+      )
+      expect(descriptor.client.slots).toEqual([])
+      expect(descriptor.client.lifetime).toBe('profile')
+      expect(descriptor.client.homeEntries).toMatchObject([{ id: 'review-demo', placement: 'secondary' }])
+    }
     expect(pkg.agnes.plugins[0].inject).toEqual(
       {
         tool: ['tools'],

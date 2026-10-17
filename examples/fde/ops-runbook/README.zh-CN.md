@@ -1,6 +1,6 @@
-# 运维手册 bundle
+# 运维手册 智能体
 
-[English](README.md) | 简体中文 · [FDE 示例](../README.zh-CN.md)
+[English](README.md) | 简体中文 · [企业应用示例](../README.zh-CN.md)
 
 运维人员需要受约束的诊断与重启流程，在改变服务前经过审核。
 
@@ -24,15 +24,15 @@
 ```sh
 cd examples/fde/ops-runbook
 agh plugins add .
-agh run --bundle '@agnes-fde/ops-runbook#ops-runbook' --preset ops-runbook --input fixtures/prompt.txt --json
+agh --new --agent '@agnes-fde/ops-runbook#ops-runbook' -p "$(cat fixtures/prompt.txt)"
 agh serve
 ```
 
 在本目录执行 `npm pack`，通过 `agh plugins add ./NAME.tgz` 安装可分发包。运行文件、夹具、手册和可选面板/MCP 服务一同打包，不依赖工作区源码导入或相邻示例。
 
-无人值守的 agh run 会停在待答的官方问题或工具权限请求。在 Web/TUI 问题卡片完成业务选择；动作仍需后台权限。
+无人值守执行 会停在待答的官方问题或工具权限请求。在 Web/TUI 问题卡片完成业务选择；动作仍需后台权限。
 
-Web：打开 serve 地址，进入 **Admin → Plugins → Bundles**，选择 `@agnes-fde/ops-runbook#ops-runbook`，保存并按提示重启 Host。创建新会话，选择 `ops-runbook` 预设与 Demo 模型，粘贴 `fixtures/prompt.txt`。旧会话保留固定 loop。审核交付物和官方问题卡片；取消或权限拒绝后停止，不产生动作回执。
+Web：打开 serve 地址，在「智能体」页选择 `@agnes-fde/ops-runbook#ops-runbook`，审阅启动配置并创建新会话，粘贴 `fixtures/prompt.txt`。检查交付物和业务问题卡片，工具权限仍由后端裁决。
 
 这是使用固定标识且等待人工答案的夹具流程。内置 Demo 不执行真实推理，工具产生确定性依据，客服/CRM 草稿为脚本内容。快速测试使用固定模型回复。配置真实模型后，工具依据保持相同，模型文字来自真实推理。
 
@@ -41,7 +41,7 @@ Web：打开 serve 地址，进入 **Admin → Plugins → Bundles**，选择 `@
 先在 AGH 配置真实路由和模型，再将 [real-model.bundle.json](real-model.bundle.json) 中预设 primary 路由改为已配置的标识：
 
 ```sh
-agh run --bundle ./real-model.bundle.json --preset ops-runbook --input fixtures/prompt.txt --json
+agh --new --agent '@agnes-fde/ops-runbook#ops-runbook' -p "$(cat fixtures/prompt.txt)"
 ```
 
 loop 使用 Core 的公开 `prepareRequest()`，由会话主模型提供路由、契约与哈希。Web 中配置等价预设 primary 路由，并为新会话选择对应模型。密钥不要放进示例包。
@@ -58,7 +58,7 @@ loop 使用 Core 的公开 `prepareRequest()`，由会话主模型提供路由�
 
 官方 `write` 在 `fde-output/ops-runbook/<run-hash>/` 生成报告，`present` 复制为会话制品，使用标准打开/下载卡。问题前先交付草稿，完成后交付最终结果。策略仅允许此受限路径的报告写入，官方已读/过期版本保护继续生效；只读依据流程仍拒绝其他源数据写入。输出相对于会话工作区，manifest 声明了相应读写范围。
 
-Loop **3.0.0** 使用 checkpoint codec **3** 保存待答问题。升级后新建会话，旧 codec 1/2 会被拒绝，不会自动重放。模型选择来自预设 primary 路由。快速测试使用官方工具端口、模型和制品回执的脚本夹具，不验证真实问题投影、下载、搜索服务或后台进程隔离。
+Loop **5.0.0** 使用 checkpoint codec **1** 保存待答问题。升级后新建会话，不兼容 checkpoint 会被拒绝，不会自动重放。模型选择来自预设 primary 路由。快速测试使用官方工具端口、模型和制品回执的脚本夹具，不验证真实问题投影、下载、搜索服务或后台进程隔离。
 
 在 Web/TUI 中先输入 `/plan on`，再提交**新任务**，启用官方计划模式。Loop 从公开提示区识别计划模式，以 `exit_plan_mode` 提交固定业务步骤；官方审批卡片获准后才运行连接器、报告或命令。拒绝计划会停止流程，未启用时跳过此关卡。示例策略保留默认策略的计划模式拒绝结果。计划获准不替代后续业务问题或工具权限；单个原生工具票据通过公开续跑端口和原调用回执恢复，未知回执会阻止重放。
 

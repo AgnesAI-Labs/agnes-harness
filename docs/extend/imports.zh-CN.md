@@ -4,7 +4,7 @@
 
 [作者工具包](README.zh-CN.md) · [快速上手](quickstart.zh-CN.md) · [测试](testing.zh-CN.md)
 
-插件代码只从一个包导入：`@agnes/plugin-runtime`。它提供作者 helper，并转出 `@agnes/extension-api` 的全部合同（kind、Loop 端口、provider 类型、错误），所以下表里写 `@agnes/extension-api` 的行也都能从它导入。**作者测试统一使用 `@agnes/host/author-testkit`**。`@agnes/extension-api/host` 是 Host 的后端端口，不是作者入口。所有 kind（无论注册还是绑定）都是同一种 token 类型；只有需要某项 Host 服务时，才从对应合同包导入 token。当前没有统一 SDK 包，也没有公开 npm 发行；请使用匹配的源码 checkout 与[本地 SDK linker](quickstart.zh-CN.md#4-可选的构建和测试)。
+插件代码只从一个包导入：`@agnes/plugin-runtime`。它提供作者 helper，并转出 `@agnes/extension-api` 的全部合同（kind、Loop 端口、provider 类型、错误），所以下表里写 `@agnes/extension-api` 的行也都能从它导入。**作者测试统一使用 `@agnes/host/author-testkit`**。`@agnes/extension-api/host` 是 Host 的后端端口，不是作者入口。所有 kind（无论注册还是绑定）都是同一种 token 类型；只有需要某项 Host 服务时，才从对应合同包导入 token。当前没有统一 SDK 包，也没有公开 npm 发行；请使用匹配的源码 checkout 与[本地 SDK linker](quickstart.zh-CN.md#5-可选的构建和测试)。
 
 下文的**作者面**表示预览版支持的公开作者入口，不代表 API 已冻结。**专用合同**用于明确的合同或集成任务。**内部/旧入口——不要使用**表示新作者模板应避开该入口，现有导出仍保留。
 

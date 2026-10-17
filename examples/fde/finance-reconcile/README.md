@@ -1,6 +1,6 @@
-# Finance reconciliation bundle
+# Finance reconciliation agent
 
-English | [简体中文](README.zh-CN.md) · [FDE examples](../README.md)
+English | [简体中文](README.zh-CN.md) · [Enterprise application examples](../README.md)
 
 A finance operator compares bank and book ledgers and reviews proposed adjusting entries before recording them.
 
@@ -25,7 +25,7 @@ From the repository root:
 ```sh
 cd examples/fde/finance-reconcile
 agh plugins add .
-agh run --bundle '@agnes-fde/finance-reconcile#finance-reconcile' --preset finance-reconcile --input fixtures/prompt.txt --json
+agh --new --agent '@agnes-fde/finance-reconcile#finance-reconcile' -p "$(cat fixtures/prompt.txt)"
 agh serve
 ```
 
@@ -33,7 +33,7 @@ Run `npm pack` here to distribute a tarball and install it with `agh plugins add
 
 The draft appears as one preset surface in both the conversation and workbench: a review summary detail card, progress steps, a differences table, an amount chart and an adjustment form. The table and chart bind to the ledger source `finance/differences`. If that source is not registered for this session, render is refused with `UI_SOURCE_UNKNOWN`. If trust does not cover `finance.differences.read`, render is refused with `UI_SOURCE_DENIED`. Do not invent rows. Select rows to track the differences you are reviewing and edit the proposal reasons in the form. The confirmation covers every proposal in that form. Choose **确认调整**; the backend then requests permission for the simulated adjustment tool. Refresh restores the same review and pending receipt. Unattended runs stop at this interactive boundary. TUI/channel users receive a text summary and workbench link.
 
-Web: open the serve URL, use **Admin → Plugins → Bundles**, select `@agnes-fde/finance-reconcile#finance-reconcile`, save and restart Host as requested. Start a new session with preset `finance-reconcile` and Demo model; paste `fixtures/prompt.txt`. Existing sessions keep their pinned loop. Inspect evidence and the trace.
+Web: open the serve URL and choose `@agnes-fde/finance-reconcile#finance-reconcile` on **Agents**. Review the launch configuration, create a new session and submit `fixtures/prompt.txt`. Inspect deliverables and business questions; backend tool authorization still applies.
 
 This workflow uses fixed synthetic input: the prompt starts it, and fixture files define the business data. Built-in Demo does not reason. Tools produce the substantive fixture result; quick tests use scripted model replies. A real model adds draft commentary that never overrides citations, amounts, findings or approvals.
 
@@ -42,7 +42,7 @@ This workflow uses fixed synthetic input: the prompt starts it, and fixture file
 Configure an AGH route/model, then edit the preset primary route in [real-model.bundle.json](real-model.bundle.json) to that configured pair:
 
 ```sh
-agh run --bundle ./real-model.bundle.json --preset finance-reconcile --input fixtures/prompt.txt --json
+agh --new --agent '@agnes-fde/finance-reconcile#finance-reconcile' -p "$(cat fixtures/prompt.txt)"
 ```
 
 The loop calls Core’s public `prepareRequest()`; Core resolves the session’s primary model, contracts and hashes. For Web, configure the equivalent preset primary route in profile composition and select that model for a new session. Keep credentials outside the bundle.

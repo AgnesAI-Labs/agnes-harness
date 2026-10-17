@@ -27,7 +27,7 @@ export async function scaffold(template, name, destination = name?.split('/').at
     options.local
       ? `## Zero-build local development
 
-This package exports source TypeScript. Put it in the daemon workspace's \`.agh/plugins/${leaf}\` or \`$AGH_HOME/plugins/${leaf}\`. Start AGH once from that workspace; an already running daemon discovers the folder and watches edits automatically. No npm install, compilation or SDK links are needed to run it.
+This package exports source TypeScript. Put it in the daemon workspace's \`.agh/plugins/${leaf}\` or \`$AGH_HOME/plugins/${leaf}\`. Run \`agh dev .agh/plugins/${leaf}\` from that workspace to activate it; the daemon discovers the folder and watches edits automatically. No npm install, compilation or SDK links are needed to run it.
 
 For an immediate reload, use \`agh dev .agh/plugins/${leaf}\` or \`agh plugins reload ${name}\`. Open a new session after activation; existing sessions keep their generation. Ordinary plugin edits do not require a daemon restart.`
       : `## Build for distribution
@@ -112,7 +112,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       if (extra.length) throw new TypeError('Too many arguments')
       const target = await scaffold(template, name, destination, { local })
       console.log(
-        `Created ${name} in ${target}\nNext: ${local ? 'AGH watches this folder when it is in a local plugin root; start AGH once if needed, then open a new session (no build or restart needed). For an immediate reload use agh dev <folder> or agh plugins reload <id>' : 'see README.md for preview SDK links, compilation and author tests'}`,
+        `Created ${name} in ${target}\nNext: ${local ? 'Activate with agh dev <folder>, then open a new session (no build or restart needed). AGH watches local roots; for an immediate reload use agh plugins reload <id>' : 'see README.md for preview SDK links, compilation and author tests'}`,
       )
     } catch (error) {
       console.error(error.message)

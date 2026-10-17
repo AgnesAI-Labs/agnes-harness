@@ -61,7 +61,9 @@ describe('plugin scaffolder', () => {
         'name: hello-world',
       )
       const panel = JSON.parse(await readFile(join(temp, 'tool-with-panel/client/agnes.client.json'), 'utf8'))
-      expect(panel.client.slots).toEqual(['ui:sidebar'])
+      expect(panel.client.slots).toEqual([])
+      expect(panel.client.lifetime).toBe('profile')
+      expect(panel.client.homeEntries[0].id).toBe('hello-world')
     } finally {
       await rm(temp, { recursive: true, force: true })
     }

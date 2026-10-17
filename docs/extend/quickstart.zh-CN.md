@@ -25,7 +25,7 @@ node "$AGH_SOURCE/templates/create-agh-plugin.mjs" tool hello-tool .agh/plugins/
 
 工具模板声明 `agnes.provides: ["tool"]` 与 插件条目上的 `capabilities: {}`，预览无需执行代码即可展示类型与请求的能力范围。新增功能或副作用时请更新这些声明；面板模板声明 UI 能力，Loop 模板声明模型能力。能力字段的完整格式和示例见[声明能力](../guide/packages.zh-CN.md#能力声明)；空对象适合此纯回声工具，增加文件、网络或进程访问前应按实际范围声明。
 
-## 2. 启动并打开新会话
+## 2. 启动 AGH
 
 ```sh
 node "$AGH_SOURCE/agnes.mjs" web
@@ -35,7 +35,10 @@ node "$AGH_SOURCE/agnes.mjs" web
 
 保持 daemon 运行，在另一个使用相同工作区、profile 和 home 的终端执行：
 
+## 3. 调用工具
+
 ```sh
+node "$AGH_SOURCE/agnes.mjs" dev .agh/plugins/hello-tool --profile local-dev
 node "$AGH_SOURCE/agnes.mjs" tools
 node "$AGH_SOURCE/agnes.mjs" --new -p 'call plugin_hello_tool'
 ```
@@ -46,7 +49,7 @@ CLI 和 daemon 仅在没有已保存 profile 或显式 provider 配置的全新 
 
 Web 中新建会话，选择 **Demo (local tool-aware, no API key)**，提交 `call plugin_hello_tool`。已有显式模型配置优先。要求 Demo 创建插件时，它会使用可用的 `plugin_helper_guide` 和 `plugin_helper_create`；仍需审核生成的文件，并单独批准安装。若只有内置 creator，可调用 `plugin_creator_guide` 和 `plugin_scaffold` 创建固定的工具示例，然后停止等待审核。
 
-## 3. 修改并重试
+## 4. 修改并重试
 
 在工作区编辑 `.agh/plugins/hello-tool/src/index.ts`，例如在返回结果前加上 ``message = `hot-v2:${message}` ``。再次提交 `call plugin_hello_tool {"message":"hello"}`，新会话应返回 `hot-v2:hello`。保留 `ctx.signal.throwIfAborted()`，异步操作传入 signal。预期业务拒绝用 `toolError('message')`；客户端和订阅通过 `ctx.effect()` 释放。
 
@@ -59,7 +62,9 @@ node "$AGH_SOURCE/agnes.mjs" plugins reload hello-tool --profile local-dev
 
 激活后在 Web 创建新会话或使用 `agh --new -p`，客户端面板资源随新代际更新。已有会话（包括同一工作区中复用的 CLI 会话）仍保持原代际。存储、沙箱等进程后端仍需重启。详见[热重载](hot-reload.zh-CN.md)与[本地插件](local-plugins.zh-CN.md)。
 
-## 4. 可选的构建和测试
+修改工具结果后，也将 `test/plugin.test.mjs` 的成功结果断言更新为 `{ message: 'hot-v2:hello' }`，保留无效输入、取消与卸载断言。
+
+## 5. 可选的构建和测试
 
 需要编译或运行作者测试时，在仓库内构建一次预览 SDK 声明，再本地链接。预览 Agnes SDK 尚未发布到 npm，无需从注册表安装：
 
@@ -72,7 +77,7 @@ npm --prefix "$AGH_PLUGIN" run build
 npm --prefix "$AGH_PLUGIN" test
 ```
 
-linker 可重复执行。model-adapter 模板使用公共合同测试数据，不再要求构建 `@agnes/ai`。需要安装编译包时，不带 `--local` 创建、构建后按[插件管理](../guide/packages.zh-CN.md)安装。侧栏选 `tool-with-panel`，独立循环选 `loop`。
+linker 可重复执行。model-adapter 模板使用公共合同测试数据，不再要求构建 `@agnes/ai`。需要安装编译包时，不带 `--local` 创建、构建后按[插件管理](../guide/packages.zh-CN.md)安装。追加页面选 `tool-with-panel`，独立循环选 `loop`。
 
 ## Host 提供的依赖
 

@@ -8,7 +8,7 @@ import { ExitCode, exitCodeForReason, SIGNAL_EXIT_CODES, type SignalName, UsageE
 import type { Booted, ParsedArgs } from '../types.js'
 
 export const RUN_USAGE =
-  'agh run --bundle <package#id|path> --input <file|-> --json [--batch] [--profile <p>] [--preset <p>] [--loop <id>@<version>] [--model <slot>=<route>/<model>] [--cwd <dir>]'
+  'Advanced composition runner: agh run --bundle <package#id|path> --input <file|-> --json [--batch] [--profile <p>] [--preset <p>] [--loop <id>@<version>] [--model <slot>=<route>/<model>] [--cwd <dir>]\nFor an agent, use agh --new --agent <package#agent> -p <prompt>.'
 export type RunArgs = {
   bundle: string
   input: string

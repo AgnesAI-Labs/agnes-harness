@@ -63,7 +63,7 @@ helper 首先插入计划关卡。公开 turn view 包含 Plan mode 时，通过
 
 `confirm(state)` 返回问题或 `undefined`。默认确认使用会话 `DecisionPort`，重新打开时保留原 handle，与下一 checkpoint 一起消费答复。等待连接断开时继续停驻。Cancel、停止、过期、不可用、失效均停止动作；业务选择不授予工具权限。
 
-工作流设置 `confirm: 'surface'` 可保留官方 `ask_user_question` 的 Proceed/Cancel 表面。只有 Host 认证的 `agnes/intelligent-ui` / `action-result` 系统输入，且表面匹配、`ui_submit` 成功、恰好包含一个合法答复，才能推进。普通文本、显示摘要、无关通知和失败回执均不能批准动作。[FDE 示例](../../examples/fde/README.zh-CN.md) 使用此呈现并保留原工具与表面。
+工作流设置 `confirm: 'surface'` 可保留官方 `ask_user_question` 的 Proceed/Cancel 表面。只有 Host 认证的 `agnes/intelligent-ui` / `action-result` 系统输入，且表面匹配、`ui_submit` 成功、恰好包含一个合法答复，才能推进。普通文本、显示摘要、无关通知和失败回执均不能批准动作。[业务智能体示例](../../examples/fde/README.zh-CN.md) 使用此呈现并保留原工具与表面。
 
 `workflow.factory` 和 `workflow.createFactory(settings)` 提供 Loop，供直接测试或自行组合插件；`workflow.policy` 提供业务策略。JSON 工具可使用 `workflowTool`、`workflowResult`、`workflowValue`、`workflowText`、`workflowChecked`；`workflowModelText` 用给定业务依据发起窄指令、无工具的公开 prepared request，也可继续使用普通 `defineTool` 和 `LoopContext` 方法。
 

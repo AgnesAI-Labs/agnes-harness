@@ -12,9 +12,9 @@
 | Provider kind | 插件类型 | 运行实现的类别 |
 | Provider | 插件实现 | 已注册的运行实现；模型账户使用“模型服务” |
 | Child agent | 子代理 | 属于会话的子任务执行 |
-| How the agent works (Agent Loop) | 执行方式（Agent Loop） | 有多项可选时才显示，技术名称保留在括号里 |
-| Bundle | 组合包 | 命名的会话组合 |
-| Preset | 预设 | 命名的权限或配置预设 |
+| Execution mode (Loop) | 运行方式（Loop） | 有多项可选时才显示，技术名称保留在括号里 |
+| Bundle (advanced) | 组合（高级） | 可复用配置；智能体须有自己的 launch |
+| Preset (advanced) | 预设（高级） | 命名的权限或配置预设 |
 | Updating | 更新中 | 可行动的更新状态；保留版本放入详情 |
 | Saved credential | 已保存的凭据 | 通过选择器选择；内部 `secretRef` 字段名不改动 |
 | New session | 新会话 | 修改默认值或启用插件后创建的会话 |
@@ -33,3 +33,14 @@
 | Refresh | 刷新 | 图标与提示 |
 
 默认选择显示友好名称；ID、版本、来源等进入详情或提示，读取失败保留草稿。
+
+| English | 简体中文 | 用法 |
+| --- | --- | --- |
+| Agent | 智能体 | 带显式 launch 的组合 |
+| Application | 应用 | 显式采纳的身份与展示 |
+| Page | 页面 | 追加的完整页面 |
+| View position | 视图位置 | 既有区域里的贡献 |
+| Tool result card | 工具结果卡片 | 展示工具证据 |
+| Interaction card | 交互卡片 | 受授权的结构化交互 |
+| Settings section | 设置分区 | 宿主设置中的分区 |
+| Takeover | 接管 | 替换选中的呈现角色 |

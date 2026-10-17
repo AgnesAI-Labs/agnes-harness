@@ -8,4 +8,4 @@ Use `@agnes/host/author-testkit` for author tests. See the [SDK import map](http
 
 After activation, ask a new session to call __TOOL_NAME__ with {"message":"hello"}. Inspect the tool record for the structured result. Update effect and replay metadata when adding I/O.
 
-Open the printed AGH Web URL, create a new session after activation, and find the sidebar text starting with `__PACKAGE_NAME__:`. Existing sessions retain their previous frontend generation. Backend status does not prove the panel rendered; check it in the browser.
+Open the printed AGH Web URL, create a new session after activation, and open the additional `__PACKAGE_NAME__` page from the sidebar. The page follows current profile activation and leaves the host navigation available; session renderers retain their session generation. Backend status does not prove the panel rendered; check it in the browser.

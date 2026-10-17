@@ -70,3 +70,5 @@ before importing application JavaScript, CSS, roles or navigation. The URL grant
 mutations use the same authenticated BFF and admin checks. **`agh app clear [--profile NAME] [--json]`**
 is dispatched before generic boot, loads no plugins and only clears presentation. A running daemon
 uses online CAS; otherwise an atomic write uses the shared configuration lock and revision.
+
+The [Acme reference application](../../examples/acme/README.md) supplies a tool, a default-Loop agent, raster identity assets, an additional page and executable SDK preview/adoption commands.

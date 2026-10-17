@@ -2,6 +2,8 @@
 
 [English](DESIGN.md) | 简体中文
 
+> 历史设计记录：其中旧导航、category/kinds 和 FDE 页面描述不再是作者合同。现行规则见[插件元数据](../plugin-metadata.zh-CN.md)、[应用](../applications.zh-CN.md)和[能力选择](../choose-a-plugin-type.zh-CN.md)。
+
 **状态：简化展示已实现；作者能力标签已更新为 `agnes.provides`，浏览器验收仍待进行。**
 
 Lead 于 2026-10-10 批准元数据契约与内容。本次实现可选公开契约、能力／搜索卡片、六个详情区块，仅用现有可读目录／注册信息和轻量 PackagePresentation 字段。证据等级、已观察事件、新增分页、依赖／反向依赖图和停用影响分析延期，现有 blockers／pins 继续保持权威。浏览器、构建与截图仍留待统一验收。

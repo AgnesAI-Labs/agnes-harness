@@ -4,11 +4,26 @@ English | [简体中文](README.zh-CN.md)
 
 <a id="agnes-harness-文档"></a>
 
-**A trustworthy business-agent platform: installable agents, ongoing work and reviewed growth.**
+**AGH delivers business capabilities as installable plugins, launchable agents and adoptable applications.**
 
-Run tasks through CLI and Web, connect business capabilities with plugins, capture methods in Skills, and build interfaces for the people doing the work. Choose a path below to get started.
+- A **plugin** is the installation, distribution and trust unit. It can provide tools, Loops, models, UI, skills, connections or services.
+- An **agent** is a Bundle with its own explicit `launch`, referenced as `package#bundle`. It selects a Loop and preset to start a task.
+- An **application** declares identity, presentation defaults and default/visible agents inside a plugin. A deployment administrator previews and explicitly adopts it; installation never switches applications.
 
-[Project home](../README.md) · [Why AGH](guide/why-agh.md) · [Try the examples](guide/demo.md)
+**FDE (forward-deployed engineering) means building an application for an enterprise**: deliver business tools, agents and a workbench for the people doing the work. Existing backend modules still own execution and authorization.
+
+Minimal tool plugin: from a built source checkout, add an echo tool in an isolated home. No agent or application declaration is required.
+
+```sh
+export AGH_HOME="$(mktemp -d /tmp/agh-hello.XXXXXX)"
+export AGH_HOME="$(cd "$AGH_HOME" && pwd -P)"
+export AGNES_PROFILE=local-dev
+node templates/create-agh-plugin.mjs tool hello-tool "$AGH_HOME/plugins/hello-tool" --local
+node agnes.mjs dev "$AGH_HOME/plugins/hello-tool"
+node agnes.mjs --new -p 'call plugin_hello_tool {"message":"hello"}'
+```
+
+[Five-step tool tutorial](extend/quickstart.md) · [Four-step Loop tutorial](extend/first-loop.md) · [Acme reference application](../examples/acme/README.md)
 
 <a id="选择你的起点"></a>
 
@@ -16,18 +31,18 @@ Run tasks through CLI and Web, connect business capabilities with plugins, captu
 [Three product demos](guide/demos.md)
 ## Choose your starting point
 
-| Your goal | Recommended path | What you will achieve |
+| Role | Start here | Outcome |
 | --- | --- | --- |
-| **Try AGH** | [Install](guide/install.md) → [First run](guide/getting-started.md) → [Continue a session](guide/sessions.md) | Run a task and find its record in both Web and CLI |
-| **Give agents business capabilities** | [Backend plugins](develop/backend.md) · [MCP](guide/mcp.md) · [Skills](guide/skills.md) · [Support](guide/mcp-skills-support.md) | Connect tools, external services, or your team's methods |
-| **Build a business workbench** | [Frontend panels](develop/frontend.md) → [Full-stack integration](develop/fullstack.md) | Add an interface and read results from a backend service |
-| **Explore and extend the runtime** | [Architecture](develop/architecture.md) → [Source map](develop/source-map.md) → [API](reference/api.md) | Understand requests, extensions, and persistent state |
-
-Still choosing? Try the [three examples](guide/demo.md), then use the [extension guide](develop/plugins.md) to choose an integration path.
+| **User** | [Install](guide/install.md) → [First run](guide/getting-started.md) → [Sessions](guide/sessions.md) | Choose an agent, complete tasks and inspect records |
+| **Deployment administrator** | [Deployment](guide/deployment.md) · [Security](guide/security.md) · [Plugins](guide/packages.md) · [Applications](extend/applications.md) | Review capabilities, configure models, adopt and recover applications |
+| **Plugin author** | [First tool](extend/quickstart.md) → [First Loop](extend/first-loop.md) → [Choose capabilities](extend/choose-a-plugin-type.md) | Deliver installable capabilities through public contracts |
+| **Application builder** | [Acme](../examples/acme/README.md) → [Application contract](extend/applications.md) → [UI author guide](develop/ui-author-guide.md) | Combine agents, identity, pages and navigation |
 
 <a id="使用-agh"></a>
 
-## Use AGH
+<a id="use-agh"></a>
+
+## User
 
 | Topic | What you will learn |
 | --- | --- |
@@ -58,6 +73,18 @@ Still choosing? Try the [three examples](guide/demo.md), then use the [extension
 | [Network deployment and Linux](guide/deployment.md) | Outbound proxies, timeouts and Linux preparation |
 | [App Server stdio](reference/app-server.md) | Build a client on the shared backend |
 | [Troubleshooting](guide/troubleshooting.md) | Use error codes and runtime state to choose the next diagnostic step |
+
+## Deployment administrator
+
+[Plugin lifecycle](guide/packages.md) · [Models and accounts](guide/getting-started.md) · [Network deployment](guide/deployment.md) · [Security and trust](guide/security.md) · [Application adoption and recovery](extend/applications.md)
+
+## Plugin author
+
+[Five-step tool](extend/quickstart.md) → [Four-step Loop](extend/first-loop.md) → [Author kit](extend/README.md) · [Testing](extend/testing.md) · [Public imports](extend/imports.md)
+
+## Application builder
+
+[Acme reference application](../examples/acme/README.md) → [Application contract](extend/applications.md) · [Agents and composition](extend/bundles-and-profiles.md) · [UI author guide](develop/ui-author-guide.md) · [Workbench panels](extend/workbench-panels.md)
 
 <a id="构建与深入了解"></a>
 

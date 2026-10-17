@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
   CompositionSessionStore,
   createConfigurationService,
@@ -8,7 +9,13 @@ import {
   resolveProfile,
 } from '@agnes/host'
 import type { InstalledPackage } from '@agnes/package-manager'
-import { capabilityHash } from '@agnes/package-manager'
+import {
+  capabilityHash,
+  createPackageManager,
+  emptyLock,
+  parseSource,
+  writeLock,
+} from '@agnes/package-manager'
 import { afterEach, expect, it } from 'vitest'
 import { Applications } from '../src/packages/applications.js'
 
@@ -287,3 +294,55 @@ it('restores the consented transitive closure across upgrades and uninstall, and
     reason: 'previous-consent-unavailable',
   })
 })
+
+it('installs, previews and adopts the Acme application through a real locking package manager', async () => {
+  const f = await fixture()
+  const manager = createPackageManager({ dataDir: join(f.home, 'data'), agnesVersion: '0.1.0' })
+  writeLock(f.directory, {
+    ...emptyLock('local-dev', '0.1.0'),
+    resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
+    seams: Object.fromEntries(
+      ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals'].map((kind) => [
+        kind,
+        { provider: 'local' },
+      ]),
+    ),
+    policySnapshot: { capabilityCeiling: ['tools', 'ui'], workspacePackages: 'require-project-trust' },
+  })
+  const source = parseSource(`file:${fileURLToPath(new URL('../../../examples/acme', import.meta.url))}`)
+  const inspected = await manager.inspect(f.directory, source)
+  expect(inspected.blockers).toEqual([])
+  const installed = await manager.install(f.directory, source, { expectedIntegrity: inspected.integrity })
+  await manager.trust(f.directory, inspected.id, {
+    integrity: installed.integrity,
+    capabilityHash: inspected.capabilityHash ?? '',
+  })
+  await manager.setEnabled(f.directory, inspected.id, true)
+  const applications = new Applications({
+    manager,
+    home: f.home,
+    profileDirectory: async () => f.directory,
+  })
+  expect((await applications.get('local-dev')).status).toBe('host')
+  const preview = await applications.preview('local-dev', inspected.id)
+  expect(preview.declaration.defaultAgent).toBe('@acme/operations#desk')
+  expect(preview.assets.mark).toMatch(/^data:image\/png;base64,/)
+  const adopted = await applications.adopt('local-dev', inspected.id, 0, preview.consentDigest)
+  expect(adopted).toMatchObject({ status: 'active', effective: { id: 'acme-operations' } })
+  expect((await applications.clear('local-dev', adopted.revision)).status).toBe('host')
+  const racing = new Applications({
+    home: f.home,
+    profileDirectory: async () => f.directory,
+    manager: {
+      async inventory(directory, options) {
+        const inventory = await manager.inventory(directory, options)
+        await manager.setEnabled(directory, inspected.id, false)
+        return inventory
+      },
+    },
+  })
+  await expect(
+    racing.adopt('local-dev', inspected.id, adopted.revision + 1, preview.consentDigest),
+  ).rejects.toMatchObject({ data: { reason: 'APPLICATION_PREVIEW_STALE' } })
+  expect((await f.config.application()).selection).toBeNull()
+}, 15_000)

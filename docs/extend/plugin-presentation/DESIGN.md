@@ -2,6 +2,8 @@
 
 English | [简体中文](DESIGN.zh-CN.md)
 
+> Historical design record: old navigation, category/kinds and FDE page descriptions are not the current author contract. Use [plugin metadata](../plugin-metadata.md), [applications](../applications.md) and [capability selection](../choose-a-plugin-type.md).
+
 **Status: simplified presentation implemented; author taxonomy updated to `agnes.provides`. Browser acceptance remains pending.**
 
 The lead approved the metadata contract and content on 2026-10-10. Phase B keeps the optional contract, capability/search cards and six detail sections. It uses only today's readable catalogs/registries and a small `PackagePresentation` read field. Evidence levels, observed events, new pagination, dependency/dependent graphs and disable-impact analysis are deferred; existing blockers/pins remain authoritative. Browser runs, builds and screenshots remain reserved for the shared acceptance run.
