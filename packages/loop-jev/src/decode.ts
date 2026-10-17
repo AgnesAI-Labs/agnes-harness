@@ -132,7 +132,7 @@ export function decodeAnswers(answers: unknown, c: CompiledQuestions): DecodeRes
     const defaults = c.defaults[op]
     if (defaults === undefined) return { ok: false, reason: `${op} has no default arguments.` }
     bindingMode = 'defaults'
-    args = defaults
+    args = structuredClone(defaults)
   } else {
     return { ok: false, reason: `Unsupported target ${target} for ${op}.` }
   }
