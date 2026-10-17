@@ -10,6 +10,8 @@
       "**",
       "!**/gen",
       "!**/generated",
+      "!packages/package-manager/bundled-plugins/goal-ui/src/client.js",
+      "!packages/package-manager/bundled-plugins/interaction-ui/src/client.js",
       "!**/dist",
       "!**/node_modules",
       "!docs",
