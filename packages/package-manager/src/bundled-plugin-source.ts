@@ -54,6 +54,7 @@ export const BUNDLED_HELPERS = Object.freeze([
 /** Release-owned defaults; freshOnly additions never backfill an existing profile. */
 export const DEFAULT_ENABLED_BUNDLED_PACKAGES = Object.freeze([
   ...BUNDLED_HELPERS.map((helper) => ({
+    optionalUnderCeiling: false,
     ...helper,
     sourcePath: `package-manager/bundled-plugins/${helper.name}`,
     freshOnly: false,
