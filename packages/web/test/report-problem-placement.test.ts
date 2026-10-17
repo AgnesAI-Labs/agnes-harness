@@ -1,4 +1,4 @@
-import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
+import { readUiCss, readWebStyleSource } from '../../../tools/web-style-source.mjs'
 /** @vitest-environment happy-dom */
 
 import { resolve } from 'node:path'
@@ -48,13 +48,15 @@ describe('report-problem button placement', () => {
 
   it('draws a hairline and a raised sliding thumb with reduced-motion rules', () => {
     const css = readWebStyleSource(resolve(__dirname, '../public/style.css'))
-    const rule = (selector: string, from = 0) =>
-      new RegExp(`^\\s*${selector.replace(/[.#]/g, '\\$&')} \\{([^}]*)\\}`, 'm').exec(css.slice(from))?.[1]
+    const shared = readUiCss(resolve(__dirname, '../../web-ui/src/refinement.css'))
+    const rule = (selector: string, source = css) =>
+      new RegExp(`^\\s*${selector.replace(/[.#]/g, '\\$&')} \\{([^}]*)\\}`, 'm').exec(source)?.[1]
     expect(rule('.topbar-row')).toMatch(/border-bottom: var\(--hairline\) solid var\(--agnes-line-hairline\)/)
     // The view switch is a segmented track, not underlined text tabs.
-    expect(rule('.session-tabs')).toMatch(/background: var\(--agnes-segment-track\)/)
-    expect(rule('.session-view-thumb')).toContain('background: var(--agnes-bg-control)')
-    expect(css).toContain('@media (prefers-reduced-motion: reduce)')
+    expect(rule('.agh-segmented', shared)).toMatch(/background: var\(--agnes-segment-track\)/)
+    expect(rule('.agh-segmented-thumb', shared)).toContain('background: var(--agnes-bg-control)')
+    const reduced = shared.slice(shared.indexOf('@media (prefers-reduced-motion: reduce)'))
+    expect(rule('.agh-segmented-thumb', reduced)).toContain('transition: none')
     expect(css).not.toMatch(/#report-problem,\s*#session-runtime/)
   })
 })

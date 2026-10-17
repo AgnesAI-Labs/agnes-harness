@@ -371,11 +371,10 @@ describe('independent core web-unit implementations', () => {
     roots.push(root)
     flushSync(() => root.render(createElement(SettingsPaneBuiltin, { pane: 'appearance', translate: enT })))
     expect(host.querySelector('input[name="agnes-theme"][value="system"]')).toBeInstanceOf(HTMLInputElement)
-    expect(host.querySelector('input[name="agnes-font-scale"][value="normal"]')).toBeInstanceOf(
-      HTMLInputElement,
-    )
+    // The appearance controller mounts the font-size Segmented into this labelled host.
+    const fontScaleRow = host.querySelector('#font-scale-choices')?.closest('.agnes-settings-item')
+    expect(fontScaleRow?.querySelector('.agnes-settings-item-label')?.textContent).toBe('Font size')
     expect(host.querySelector('#appearance-settings-pane h2')?.textContent).toBe('General')
-    expect(host.querySelector('[aria-label="Font size"]')?.getAttribute('aria-label')).toBe('Font size')
     // 语言切换必须留在通用设置里：合并 origin/main 时它一度被整段冲掉，
     // 而当时的用例断言被改成只查配色和字号，回归没有被兜住。
     // The language and skin controls are pickers filled at run time, not options written here.

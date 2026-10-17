@@ -165,6 +165,7 @@ function backend(options: { inspect?: Outcome; install?: Outcome } = {}) {
 
 let host: Awaited<ReturnType<typeof import('./web-dom-fixture.js').mountRenderedIndex>> | undefined
 let root: Root | undefined
+let releaseFeedback: (() => void) | undefined
 
 /** The plugins page's marketplace with its pushed pages, over the real plugin controller. */
 async function mountMarket(fetcher: ReturnType<typeof backend>['fetcher'], page?: string) {
@@ -174,6 +175,9 @@ async function mountMarket(fetcher: ReturnType<typeof backend>['fetcher'], page?
   history.replaceState(null, '', `/?page=plugins&tab=market${page ? `&view=${page}` : ''}#install-flow-token`)
   vi.stubGlobal('fetch', fetcher)
   const web = await import('@agnes/web-ui')
+  const { createOperationFeedback } = await import('../src/operation-feedback.js')
+  const feedback = createOperationFeedback()
+  releaseFeedback = web.installFeedbackSink(feedback.sink)
   const { usePluginAdmin } = await import('../src/pages/plugins/admin-view.js')
   const { MarketTab } = await import('../src/pages/plugins/market-tab.js')
   const { PluginStatus } = await import('../src/pages/plugins/plugins-tab.js')
@@ -187,6 +191,7 @@ async function mountMarket(fetcher: ReturnType<typeof backend>['fetcher'], page?
       zh[key] ?? key,
     )
   function Market() {
+    const snapshot = web.useStoreSelector(feedback.store, (value) => value)
     const { host: controllerHost, view } = usePluginAdmin({})
     const selectTab = view?.selectTab
     const ready = !!view && !view.state.loading && !!view.state.context
@@ -205,6 +210,7 @@ async function mountMarket(fetcher: ReturnType<typeof backend>['fetcher'], page?
       'div',
       null,
       createElement('div', { ref: controllerHost, hidden: true }),
+      createElement(web.FeedbackHost, { snapshot, onDismiss: feedback.dismiss }),
       // The workbench draws its pages in the reader's language, as the controller does.
       view ? createElement(web.UiLocaleProvider, { source: view.locale }, page) : page,
     )
@@ -231,6 +237,8 @@ function expectNoDialog() {
 afterEach(async () => {
   await act(async () => root?.unmount())
   root = undefined
+  releaseFeedback?.()
+  releaseFeedback = undefined
   await host?.dispose()
   host = undefined
   vi.unstubAllGlobals()
@@ -310,9 +318,11 @@ it('installs from the review page and returns to the marketplace with 已安装 
     expect(document.querySelector('[data-testid="market-card"]')?.textContent).toContain('已安装'),
   )
   await vi.waitFor(() =>
-    expect(document.querySelector('.agh-toast')?.textContent).toContain('已安装「Task graph Loop」'),
+    expect(document.querySelector('.agh-toast')?.textContent).toBe('插件「Task graph Loop」已安装。'),
   )
-  expect(document.querySelector('[data-testid="install-toast-enable"]')?.textContent).toBe('去启用')
+  const notice = document.querySelector('[data-testid="operation-notice"]')
+  expect(notice?.textContent).toContain('启用插件后可使用。')
+  expect(notice?.querySelector('button')?.textContent).toBe('去启用')
   expectNoDialog()
 })
 

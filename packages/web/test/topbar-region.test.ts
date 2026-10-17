@@ -3,7 +3,7 @@
 import { resolve } from 'node:path'
 import { act, createElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
+import { readUiCss, readWebStyleSource } from '../../../tools/web-style-source.mjs'
 import { TOPBAR_SLOT } from '../src/region-slots.js'
 import { sessionViewCommands } from '../src/regions/session-views.js'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
@@ -251,8 +251,9 @@ describe('rendered topbar region', () => {
     // The workspace is named in the sidebar, not in the bar.
     expect(css).not.toContain('.topbar-workspace')
     expect(css).not.toContain('.workbench-toggle-label')
-    expect(css).toContain('.session-view-thumb')
-    expect(css).toContain('cubic-bezier(0.3, 1.35, 0.5, 1)')
+    const shared = readUiCss(resolve(__dirname, '../../web-ui/src/refinement.css'))
+    expect(shared).toContain('.agh-segmented-thumb')
+    expect(shared).toContain('cubic-bezier(0.3, 1.35, 0.5, 1)')
     expect(css).toContain('.topbar-actions::before')
     expect(css).toContain('.session-view-live')
     expect(css).toContain('[data-view-enter="right"]')

@@ -122,7 +122,10 @@ it('renders the injected pickers and usage gauge in its own tree and feeds them 
     })
     // The reason sending is unavailable stays readable in the card and describes the input.
     expect(host.querySelector('#composer-hint')?.textContent).toBe('disconnected')
-    expect(host.querySelector('#prompt')?.getAttribute('aria-describedby')).toBe('composer-hint')
+    expect(host.querySelector('#prompt')?.getAttribute('aria-describedby')).toBe(
+      'composer-hint composer-suggestion',
+    )
+    expect(host.querySelector('#composer-suggestion')).not.toBeNull()
     expect(host.querySelector('#composer kbd')).toBeNull()
     expect(host.querySelector('[data-testid="composer-use-model"]')).toBeNull()
 

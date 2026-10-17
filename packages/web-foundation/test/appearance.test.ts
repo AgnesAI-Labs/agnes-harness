@@ -1,7 +1,7 @@
 /** @vitest-environment happy-dom */
 
-import { zhT } from '@agnes/web-foundation/testkit/locale'
-import { mountSettingsSelectOptions } from '@agnes/web-ui'
+import { enT, zhT } from '@agnes/web-foundation/testkit/locale'
+import { mountSettingsSelectOptions, unmountRegion } from '@agnes/web-ui'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { bindAppearance, bindSkinGroup } from '../src/appearance.js'
 import { setLocaleTranslator } from '../src/locale-bridge.js'
@@ -185,8 +185,29 @@ describe('bindAppearance 字号组', () => {
   })
 
   it('初始回填：无存储时选中 normal', () => {
-    bindAppearance({ scope: document, root: document.documentElement, storage: fakeStorage() })
-    expect(fontRadio('normal').checked).toBe(true)
+    document.body.innerHTML = '<div id="font-scale-choices"></div>'
+    const host = document.querySelector<HTMLElement>('#font-scale-choices')!
+    const storage = fakeStorage()
+    setLocaleTranslator(enT)
+    try {
+      const controller = bindAppearance({ scope: document, root: document.documentElement, storage })
+      expect(host.querySelector('[role="radiogroup"]')?.getAttribute('aria-label')).toBe('Font size')
+      expect([...host.querySelectorAll('label')].map((label) => label.textContent)).toEqual([
+        'Small',
+        'Standard',
+        'Large',
+      ])
+      expect(fontRadio('normal').checked).toBe(true)
+      fontRadio('large').click()
+      expect(storage.read(FONT_SCALE_STORAGE_KEY)).toBe('large')
+      expect(document.documentElement.style.fontSize).toBe('112.5%')
+      storage.setItem(FONT_SCALE_STORAGE_KEY, 'small')
+      controller.sync()
+      expect(fontRadio('small').checked).toBe(true)
+    } finally {
+      unmountRegion(host)
+      setLocaleTranslator(zhT)
+    }
   })
 
   it('初始回填：按已存字号选中', () => {

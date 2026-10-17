@@ -126,7 +126,7 @@ it('mounts notification holders in the shared outlet or active native dialog sco
       <>
         <div id="fixture" />
         <div id="agnes-overlay-container">
-          <dialog id="native" open />
+          <dialog id="native" />
         </div>
         {children}
       </>
@@ -141,6 +141,13 @@ it('mounts notification holders in the shared outlet or active native dialog sco
         page saved
       </Toast>,
     )
+  })
+  await vi.waitFor(() => expect(document.querySelectorAll('[role="status"]')).toHaveLength(1))
+  const holder = document.querySelector('#agnes-overlay-container > .agh-toast-host')
+  expect(holder?.textContent).toContain('page saved')
+  // Notifications created while a native dialog is open belong to its focus scope.
+  document.getElementById('native')?.setAttribute('open', '')
+  flushSync(() => {
     dialog.render(
       <Toast open duration={0} onDismiss={() => {}}>
         dialog saved
@@ -148,8 +155,6 @@ it('mounts notification holders in the shared outlet or active native dialog sco
     )
   })
   await vi.waitFor(() => expect(document.querySelectorAll('[role="status"]')).toHaveLength(2))
-  const holder = document.querySelector('#agnes-overlay-container > .agh-toast-host')
-  expect(holder?.textContent).toContain('page saved')
   expect(document.querySelector('#native > .agh-toast-host')?.textContent).toContain('dialog saved')
   page.unmount()
   expect(document.querySelector('#agnes-overlay-container > .agh-toast-host')).toBeNull()
