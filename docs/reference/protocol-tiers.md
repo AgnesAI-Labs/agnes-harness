@@ -53,6 +53,14 @@ Existing session bindings remain valid for recovery through the archive.
 
 - `_agnes/v1/submit`
 - `_agnes/v1/submit.ack`
+
+`submit` with `kind: control, payload.action: promote` atomically changes an existing queued
+item (`itemId`) into `next-step` guidance (`kind: steer`). It preserves the item's identity,
+content, attachments and provenance and requires an open turn and the pinned Loop's steer capability. Queue
+mutation and the control receipt commit together; stale selections and refusals leave the item
+unchanged. Replay uses the original command ID and recovers the receipt without another send.
+Older servers may refuse this additive action; clients must not emulate it with remove/send.
+
 - `session/prompt`
 - `session/cancel`
 
