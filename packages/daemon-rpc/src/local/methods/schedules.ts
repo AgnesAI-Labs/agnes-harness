@@ -78,6 +78,11 @@ export function registerSchedules(ep: LocalEndpoint, deps: Deps): void {
       if (!deps.resolveAgent || input.target.kind !== 'new-session')
         throw rpcError('SEMANTIC_REJECTED', { reason: 'invalid agent target' })
       const plan = await deps.resolveAgent(input.agent)
+      for (const field of ['loop', 'bundles', 'preset', 'model'] as const) {
+        const supplied = input.target[field]
+        if (supplied !== undefined && JSON.stringify(supplied) !== JSON.stringify(plan[field]))
+          throw rpcError('SEMANTIC_REJECTED', { reason: 'agent selection changed', field })
+      }
       const { agent: _agent, ...request } = input
       return scheduleCall(() =>
         schedules().upsert({

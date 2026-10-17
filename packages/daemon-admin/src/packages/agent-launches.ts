@@ -74,6 +74,7 @@ export function createAgentLaunches(options: {
   return {
     async call(request: Record<string, unknown>): Promise<unknown> {
       const fields: Record<string, string[]> = {
+        resolve: ['agent'],
         prepare: ['agent'],
         start: ['launchTicket', 'operationId'],
         read: ['operationId'],
@@ -90,6 +91,7 @@ export function createAgentLaunches(options: {
         const caller = await backend.caller()
         const owner = scope(caller)
         const state = read()
+        if (action === 'resolve') return backend.resolve(parseAgentRef(request.agent))
         if (action === 'prepare') {
           const plan = await backend.resolve(parseAgentRef(request.agent))
           // Caller activation may change while a container is being admitted.

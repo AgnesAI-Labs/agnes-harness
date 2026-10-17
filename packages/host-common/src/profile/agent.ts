@@ -25,6 +25,21 @@ export function agentSelection(
   if (!entry || ref !== `${entry.sourcePackage}#${ref.split('#')[1]}` || !entry.document.launch)
     refuse('unknown agent')
   const launch = entry!.document.launch!
+  const sources = validateAgentBundles([ref], catalog, packages)
+  return {
+    launch,
+    bundles: [ref],
+    preset: launch.preset,
+    sources,
+  }
+}
+
+/** All explicit bundle references must remain inside their authors' declared dependency edges. */
+export function validateAgentBundles(
+  ids: readonly string[],
+  catalog: BundleCatalog,
+  packages: readonly AgentSource[],
+): AgentPlan['sources'] {
   const byId = new Map(packages.map((source) => [source.id, source]))
   if (byId.size !== packages.length) refuse('duplicate source identity')
   const used = new Map<string, AgentSource>()
@@ -40,7 +55,7 @@ export function agentSelection(
     if (!range || !satisfiesApiRange(range, target.version))
       refuse('cross-package reference requires a compatible declared dependency')
   }
-  for (const bundle of expandBundles([ref], catalog)) {
+  for (const bundle of expandBundles(ids, catalog)) {
     const owner = visit(bundle.sourcePackage)
     for (const parent of bundle.document.extends ?? []) {
       const target = catalog[parent] ?? refuse('unknown bundle')
@@ -53,12 +68,5 @@ export function agentSelection(
       }
     }
   }
-  return {
-    launch,
-    bundles: [ref],
-    preset: launch.preset,
-    sources: [...used.values()].map(
-      ({ enabled: _enabled, dependencies: _dependencies, ...identity }) => identity,
-    ),
-  }
+  return [...used.values()].map(({ enabled: _enabled, dependencies: _dependencies, ...identity }) => identity)
 }

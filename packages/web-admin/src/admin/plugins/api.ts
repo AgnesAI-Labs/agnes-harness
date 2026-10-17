@@ -141,6 +141,9 @@ function intentFingerprint(value: string): string {
  * source credential, or transport credential to the page.
  */
 export class PluginAdminApi {
+  async resolveAgent(agent: string): Promise<import('@agnes/protocol').AgentPlan> {
+    return this.agentLaunch({ action: 'resolve', agent })
+  }
   async prepareAgent(
     agent: string,
   ): Promise<{ launchTicket: string; presentation: import('@agnes/protocol').AgentPlan }> {
@@ -159,7 +162,7 @@ export class PluginAdminApi {
       body: JSON.stringify({ request }),
     })
     const value = await response.json()
-    if (!response.ok) throw new Error(value.error?.message ?? 'Agent launch refused')
+    if (!response.ok) throw new Error(value.error?.message ?? 'CAPABILITY_DENIED')
     return value as T
   }
 

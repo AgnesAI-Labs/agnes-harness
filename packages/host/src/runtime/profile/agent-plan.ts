@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { HostError } from '@agnes/host-common/errors'
 import type { AgentSource } from '@agnes/host-common/profile/agent'
-import { agentSelection } from '@agnes/host-common/profile/agent'
+import { agentSelection, validateAgentBundles } from '@agnes/host-common/profile/agent'
 import { canonicalJson, sha256hex } from '@agnes/host-common/profile/canonical'
 import { loopPatch, resolveComposition } from '@agnes/host-common/profile/composition'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
@@ -110,7 +110,12 @@ export async function sessionAdmission(
         enabled: true,
       })),
     ],
-    bundleCatalog: sessionBundleCatalog(profile, latestTarget ? readRuntimeBundles(sources) : undefined),
+    bundleCatalog: sessionBundleCatalog(
+      profile,
+      sources.length || latestTarget || options.runtimePluginSources
+        ? readRuntimeBundles(sources)
+        : undefined,
+    ),
   }
   return { current, sources }
 }
@@ -139,6 +144,7 @@ export function createAgentResolver(deps: {
         ...(adminLoop ? { admin: { composition: loopPatch(adminLoop) } } : {}),
       },
     )
+    validateAgentBundles(tree.bundles, current.bundleCatalog, identities)
     const loop = tree.selection.loop
     const loopEntry = host.kernel.loops
       .catalog()
