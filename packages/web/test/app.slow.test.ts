@@ -1169,6 +1169,7 @@ describe('web session selection', () => {
         await vi.waitFor(() => expect(document.getElementById('model-listbox')).toBeNull())
       }
       await openPanel('context')
+      expect(document.getElementById('model-picker-context')?.textContent).toContain('64K')
       expect(settingsPanel()?.textContent).toContain('128K')
       await closePanel()
       await openPanel()
@@ -1190,6 +1191,8 @@ describe('web session selection', () => {
       })
       await openPanel()
       expect(choice('session-model-thinking', '低').getAttribute('aria-checked')).toBe('true')
+      await closePanel()
+      await openPanel('context')
       expect(choice('session-model-budget', '32K').getAttribute('aria-checked')).toBe('true')
       await closePanel()
       const cwd = document.getElementById('new-session-cwd') as HTMLInputElement
