@@ -99,7 +99,10 @@ it('上下文弹窗按 DSH 的头部行排版，并在下半段接 Token 用量�
   expect(container.querySelector('.usage-percent')?.textContent).toBe('1%')
   expect(container.querySelector('.usage-summary-label')?.textContent).toBe('上下文约 1.5K / 128.0K · 1.2%')
   expect(container.querySelector<HTMLElement>('.agh-disclosure-summary')?.title).toBe(
-    '上下文约 1.5K / 128.0K · 1.2%',
+    '上下文约 1.5K / 128.0K · 1.2%. 上下文占用为后台估算。',
+  )
+  expect(container.querySelector('.agh-disclosure-summary')?.getAttribute('aria-label')).toBe(
+    '查看上下文约 1.5K / 128.0K · 1.2%. 上下文占用为后台估算。',
   )
   expect(container.textContent).toContain('上下文占用')
   expect(container.textContent).toContain('1,500 Token')
