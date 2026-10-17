@@ -75,6 +75,7 @@ import {
   type TrackedOperation,
 } from './operation-storage.js'
 import { matchesPluginSearch, pluginPresentation } from './presentation.js'
+import { catalogPrimaryAction, projectedStatusAction } from './status-action.js'
 import { type PluginPageSurface, settingsPaneHosts } from './surface.js'
 import {
   renderConfirmPluginView,
@@ -1582,28 +1583,10 @@ export class PluginAdminPage {
     disabled: boolean
     run: () => Promise<void>
   } {
-    if (this.#tab === 'discover') {
-      const catalog = item as PackageCatalogDescriptor
-      const installed = this.#state.installed.some((candidate) => candidate.id === catalog.id)
-      return {
-        label:
-          catalog.compatibility === 'unsupported'
-            ? this.#t('action.unsupported')
-            : installed
-              ? this.#t('action.check-update')
-              : this.#t('action.check-install'),
-        disabled:
-          !this.canEffect('packages.install') ||
-          catalog.compatibility === 'unsupported' ||
-          (installed && this.packageBusy(catalog.id)) ||
-          this.#flow.checking(catalog.id),
-        // The card shows the check in place and its failure under it.
-        run: async () => {
-          await this.inspectCatalog(catalog)
-        },
-      }
-    }
+    if (this.#tab === 'discover') return catalogPrimaryAction(this, item as PackageCatalogDescriptor)
     const installed = item as PackageInstalledDescriptor
+    const projected = projectedStatusAction(this, installed)
+    if (projected) return projected
     if (installed.trusted && this.runtimeState(installed.id)?.phase === 'failed') {
       return {
         label: this.#t('action.retry-ui'),

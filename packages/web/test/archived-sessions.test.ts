@@ -22,11 +22,11 @@ it('reads every page only when the archived filter is chosen, keeping archived s
   expect(list).toHaveBeenNthCalledWith(2, { limit: 500, cursor: 'p2' })
   expect(sessions.getSnapshot().rows.map((item) => item.sessionId)).toEqual(['a', 'c'])
   expect(changed).toHaveBeenCalled()
-  sessions.show('active')
-  expect(sessions.getSnapshot().filter).toBe('active')
+  sessions.show('unarchived')
+  expect(sessions.getSnapshot().filter).toBe('unarchived')
 })
 
-it('restores a session, drops its row and refreshes the active list', async () => {
+it('restores a session, drops its row and refreshes the unarchived list', async () => {
   const sessions = createArchivedSessions()
   const restore = vi.fn().mockResolvedValue(undefined)
   const changed = vi.fn().mockResolvedValue(undefined)

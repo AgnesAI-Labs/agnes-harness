@@ -1,10 +1,9 @@
-import { type PackageSource, resolvePluginMetadata } from '@agnes/protocol'
+import { resolvePluginMetadata } from '@agnes/protocol'
 import {
   Button,
   blockerText,
   ConfirmDialogContent,
   Count,
-  contributionText,
   DetailContent,
   Field,
   Icon,
@@ -14,7 +13,6 @@ import {
   operationLabel,
   PLUGIN_CATEGORIES,
   PluginList,
-  PluginPurposeSections,
   Popover,
   pluginOrigin,
   renderRegion,
@@ -22,20 +20,15 @@ import {
   SettingsDetails,
   SettingsPageHeader,
   SettingsSelect,
-  SettingsState,
   SourceDialogContent,
   StateSwitch,
-  sourceLabel,
   Tabs,
   UiLocaleProvider,
 } from '@agnes/web-ui'
 import { SettingsHub } from '../../../settings/hub.js'
 import { sessionStartUrl } from '../../../settings/runtime-panels.js'
 import { CandidateInbox } from '../candidates.js'
-import { CapabilityReview, FailureHelp, ProvenanceReview } from '../capability-review.js'
-import { PluginConfigTab } from '../config-tab.js'
-import { GenerationDrainSummary, KindFilter, PluginBadges, pluginFailureMessage } from '../control-panel.js'
-import { PluginDetailCopy } from '../detail-copy.js'
+import { KindFilter, pluginFailureMessage } from '../control-panel.js'
 import { PluginOperationFeedback } from '../operation-feedback.js'
 import { SOURCE_FORMATS, sourceProblem } from '../source-form.js'
 import { PluginDetailBody } from './detail-body.js'
@@ -313,14 +306,6 @@ export function renderPluginView(this: PluginAdminViewContext): void {
             ]}
             providesOf={(item) => this.presentationOf(item)}
             formatFailure={(message, code) => pluginFailureMessage(message, this.t, code)}
-            metadataOf={(item) => (
-              <PluginBadges
-                item={item}
-                runtime={this.runtimeState(item.id)}
-                status={this.state.generations}
-                t={this.t}
-              />
-            )}
             tab={this.tab}
             rows={(this.tab === 'installed' ? this.filteredInstalled() : this.state.catalog).filter(
               (item) =>
@@ -435,7 +420,7 @@ export function renderDetailPluginView(this: PluginAdminViewContext): void {
   const name = purpose?.displayName ?? item.id
   const actions = this.detailActions(item)
   const installed = 'desired' in item ? item : undefined
-  const running = installed?.actual === 'running'
+  const enabled = installed?.desired === 'enabled'
   renderRegion(
     this.detail,
     <UiLocaleProvider source={this.locale}>
@@ -449,8 +434,8 @@ export function renderDetailPluginView(this: PluginAdminViewContext): void {
           installed && (
             <StateSwitch
               testId="plugin-detail-switch"
-              label={this.t(running ? 'detail.switch.disable' : 'detail.switch.enable', { name })}
-              checked={running}
+              label={this.t(enabled ? 'detail.switch.disable' : 'detail.switch.enable', { name })}
+              checked={enabled}
               busy={this.packageBusy(item.id)}
               disabled={
                 !this.canEffect('packages.activate') ||

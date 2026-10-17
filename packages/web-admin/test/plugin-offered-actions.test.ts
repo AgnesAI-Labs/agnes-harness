@@ -2,6 +2,7 @@ import type { PackageInstalledDescriptor } from '@agnes/protocol'
 import { expect, it } from 'vitest'
 import { offeredActions } from '../src/admin/plugins/admin/confirms.js'
 import type { PluginAdminPage } from '../src/admin/plugins/admin/page.js'
+import { projectedStatusAction } from '../src/admin/plugins/admin/status-action.js'
 
 const actions = [
   { label: 'Check for updates', group: 'versions', className: '', onClick: () => undefined },
@@ -49,4 +50,55 @@ it('offers no ordinary management actions for any parent-owned example', () => {
       metadata: { displayName: 'FDE', summary: 'FDE', description: 'FDE', category: 'business-agent' },
     }),
   ).toHaveLength(3)
+})
+
+it('keeps projected trust/enable actions inside the existing permission and confirmation boundary', async () => {
+  let allowed = false
+  let confirmed = false
+  const item = {
+    ...plugin('file:./plugin', 'local-source'),
+    trusted: false,
+    capabilityHash: 'a'.repeat(64),
+    primaryStatus: {
+      state: 'untrusted',
+      reasonCode: 'trust-required',
+      nextAction: 'trust',
+      reason: { en: 'Review trust.', 'zh-CN': '审阅信任。' },
+    },
+  } as PackageInstalledDescriptor
+  const owner = {
+    viewContext: () => ({ t: (key: string) => key, canEffect: () => allowed, packageBusy: () => false }),
+    confirmEnable: async () => {
+      confirmed = true
+    },
+  } as unknown as PluginAdminPage
+  expect(projectedStatusAction(owner, item)?.disabled).toBe(true)
+  expect(confirmed).toBe(false)
+  allowed = true
+  const action = projectedStatusAction(owner, item)
+  expect(action?.disabled).toBe(false)
+  await action?.run()
+  expect(confirmed).toBe(true)
+})
+
+it('opens restart guidance without claiming or dispatching a restart', async () => {
+  let confirmation: { description(): string; run(): Promise<void> } | undefined
+  const item = {
+    ...plugin('file:./plugin', 'local-source'),
+    primaryStatus: {
+      state: 'restart-required',
+      reasonCode: 'restart-required',
+      nextAction: 'restart',
+      reason: { en: 'Restart.', 'zh-CN': '请重启。' },
+    },
+  } as PackageInstalledDescriptor
+  const owner = {
+    viewContext: () => ({ t: (key: string) => key, packageBusy: () => false }),
+    configureConfirm: (value: typeof confirmation) => {
+      confirmation = value
+    },
+  } as unknown as PluginAdminPage
+  await projectedStatusAction(owner, item)?.run()
+  expect(confirmation?.description()).toBe('status.restartHelp')
+  await expect(confirmation?.run()).resolves.toBeUndefined()
 })

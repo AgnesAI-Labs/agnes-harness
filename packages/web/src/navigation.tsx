@@ -151,7 +151,7 @@ export function shownSessions<T extends { sessionId: string }>(
   return { shown, hidden: sorted.length - shown.length }
 }
 
-/** Archived sessions in one flat list: find one, put it back among the active sessions. */
+/** Archived sessions in one flat list: find one, put it back among the unarchived sessions. */
 function ArchivedSessions({ options, t }: { options: SidebarNavigationOptions; t: Translate }) {
   const view = useSyncExternalStore(archivedSessions.subscribe, archivedSessions.getSnapshot)
   const [query, setQuery] = useState('')
@@ -174,7 +174,7 @@ function ArchivedSessions({ options, t }: { options: SidebarNavigationOptions; t
         title={t('home.filter.archived')}
         crumbs={[t('sidebar.sectionHeading')]}
         backTestId="archived-back"
-        onBack={() => archivedSessions.show('active')}
+        onBack={() => archivedSessions.show('unarchived')}
       />
       <div className="archived-search">
         <Icon name="search" />
@@ -237,7 +237,7 @@ function ArchivedSessions({ options, t }: { options: SidebarNavigationOptions; t
           title={t(view.rows.length ? 'session.archived.empty.noMatch' : 'session.archived.empty.fallback')}
           description={view.rows.length ? undefined : t('home.archived.emptyHelp')}
           actions={
-            <Button size="small" onClick={() => archivedSessions.show('active')}>
+            <Button size="small" onClick={() => archivedSessions.show('unarchived')}>
               {t('home.archived.back')}
             </Button>
           }
@@ -247,7 +247,7 @@ function ArchivedSessions({ options, t }: { options: SidebarNavigationOptions; t
   )
 }
 
-/** The sidebar list: active sessions by workspace, or the archived ones when that filter is on. */
+/** The sidebar list: unarchived sessions by workspace, or the archived ones when that filter is on. */
 export function SessionNavigation(props: { options: SidebarNavigationOptions; t: Translate }) {
   const view = useSyncExternalStore(archivedSessions.subscribe, archivedSessions.getSnapshot)
   return view.filter === 'archived' ? <ArchivedSessions {...props} /> : <WorkspaceSessions {...props} />
