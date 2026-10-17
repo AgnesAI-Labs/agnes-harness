@@ -10,7 +10,10 @@ it('ships the optional connector backend, both READMEs and the complete shared-c
   try {
     const destination = join(root, 'relocated')
     await mkdir(destination)
-    await copyKnowledgeSources(new URL('../../knowledge-sources', import.meta.url).pathname, destination)
+    await copyKnowledgeSources(
+      new URL('../../package-manager/bundled-plugins/knowledge-sources', import.meta.url).pathname,
+      destination,
+    )
     const pkg = JSON.parse(await readFile(join(destination, 'package.json'), 'utf8'))
     expect(pkg.exports).toBe('./index.mjs')
     expect(pkg.agnes.plugins[0]).toMatchObject({ default: false, id: 'ext:agnes/knowledge-sources' })

@@ -70,7 +70,9 @@ it.each([false, true])('discovers optional pinned helper even with broken exampl
     source: { ref: 'file:./bundled-plugins/usage-cockpit' },
   })
   expect(result.entries.find((entry) => entry.id === '@agnes/knowledge-sources')).toMatchObject({
-    version: '0.1.0', sourceId: 'builtin-plugins', source: { ref: 'file:./bundled-plugins/knowledge-sources' },
+    version: '0.1.0',
+    sourceId: 'builtin-plugins',
+    source: { ref: 'file:./bundled-plugins/knowledge-sources' },
   })
   expect(JSON.stringify(result.entries)).not.toContain('github.com')
   expect(result.sources.find((source) => source.sourceId === 'builtin-plugins')?.status).toBe('cached')

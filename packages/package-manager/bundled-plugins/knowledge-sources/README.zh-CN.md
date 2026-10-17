@@ -4,7 +4,7 @@
 
 可选官方知识连接器插件。在内置插件目录中安装**知识来源**，审核能力后信任并显式启用。新 profile 不会自动安装或启用它。唯一的延迟加载工具仅在包含此插件的会话中可用。
 
-配置和操作示例见[使用指南](../../docs/guide/knowledge-sources.zh-CN.md)。后端只消费公开的工具、服务、事件、projection、文件/制品端口与 profile managed resource，不增加 Core/Host 合同。Web 面板使用共享 web-ui 组件，卸载时释放注册。
+配置和操作示例见[使用指南](../../../../docs/guide/knowledge-sources.zh-CN.md)。后端只消费公开的工具、服务、事件、projection、文件/制品端口与 profile managed resource，不增加 Core/Host 合同。Web 面板使用共享 web-ui 组件，卸载时释放注册。
 
 - `knowledge_query({})`：列出此会话获授权的来源 ID。
 - `knowledge_query({sourceId, query?})`：获取一次字面匹配的有限摘录与引用。
@@ -19,8 +19,8 @@
 从仓库根运行：
 
 ```sh
-pnpm exec tsc -b packages/knowledge-sources packages/knowledge-sources/tsconfig.test.json
-pnpm exec vitest run packages/knowledge-sources/test --project fast --maxWorkers=1
+pnpm exec tsc -b packages/package-manager/bundled-plugins/knowledge-sources packages/package-manager/bundled-plugins/knowledge-sources/tsconfig.test.json
+pnpm exec vitest run packages/package-manager/bundled-plugins/knowledge-sources/test --project fast --maxWorkers=1
 pnpm --filter @agnes/knowledge-sources gen:check
 ```
 

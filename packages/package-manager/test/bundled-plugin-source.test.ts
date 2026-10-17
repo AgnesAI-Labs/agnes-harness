@@ -29,7 +29,8 @@ const fixture = () => {
 it.each([...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES])(
   'uses $id runtime payload instead of workspace impostor without network commands',
   async (helper) => {
-    if (helper.id === '@agnes/knowledge-sources') expect(DEFAULT_ENABLED_BUNDLED_PACKAGES.some((item) => item.id === helper.id)).toBe(false)
+    if (helper.id === '@agnes/knowledge-sources')
+      expect(DEFAULT_ENABLED_BUNDLED_PACKAGES.some((item) => item.id === helper.id)).toBe(false)
     const cwd = fixture()
     const impostor = join(cwd, 'bundled-plugins', helper.name)
     mkdirSync(impostor, { recursive: true })
@@ -81,7 +82,20 @@ it.each([...BUNDLED_HELPERS, ...OPTIONAL_BUNDLED_PACKAGES])(
           { provider: 'local' },
         ]),
       ),
-      policySnapshot: { capabilityCeiling: ['tools', 'ui'], workspacePackages: 'require-project-trust' },
+      policySnapshot: {
+        capabilityCeiling: [
+          'tools',
+          'ui',
+          'store',
+          'managedServices',
+          'services',
+          'events',
+          'projections',
+          'artifacts',
+          'filesystem.read',
+        ],
+        workspacePackages: 'require-project-trust',
+      },
     })
     const exec = vi.fn(async () => {
       throw new Error('Network forbidden')
@@ -94,6 +108,18 @@ it.each([...BUNDLED_HELPERS, ...OPTIONAL_BUNDLED_PACKAGES])(
     expect(
       readLock(profile, { profile: 'local-dev', agnesVersion: '0.1.0' }).packages[helper.id],
     ).toBeDefined()
+    if (helper.id === '@agnes/knowledge-sources') {
+      const row = (await manager.inventory(profile)).packages.find((item) => item.id === helper.id)
+      if (!row) throw new Error('Optional connector was not installed')
+      await manager.trust(profile, helper.id, {
+        integrity: row.entry.integrity,
+        capabilityHash: row.capabilityHash,
+      })
+      await manager.setEnabled(profile, helper.id, true)
+      await manager.setEnabled(profile, helper.id, false)
+      await manager.remove(profile, helper.id)
+      expect((await manager.inventory(profile)).packages.some((item) => item.id === helper.id)).toBe(false)
+    }
     expect(exec).not.toHaveBeenCalled()
     if (OPTIONAL_BUNDLED_PACKAGES.some((item) => item.id === helper.id))
       expect(DEFAULT_ENABLED_BUNDLED_PACKAGES.some((item) => item.id === helper.id)).toBe(false)

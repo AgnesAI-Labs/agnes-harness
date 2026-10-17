@@ -58,7 +58,10 @@ export async function copyJevLoopNotice(outputDirectory: string): Promise<void> 
 
 /** Copy only runtime payload, never repository tests or personal working files. */
 export async function copyBundledPlugins(outputDirectory: string, version = '0.0.0'): Promise<void> {
-  for (const { name: helper, sourcePath } of [...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES]) {
+  for (const { name: helper, sourcePath } of [
+    ...DEFAULT_ENABLED_BUNDLED_PACKAGES,
+    ...OPTIONAL_BUNDLED_PACKAGES,
+  ]) {
     const destination = join(outputDirectory, 'bundled-plugins', helper)
     const source = join(repoPackages, sourcePath)
     await mkdir(destination, { recursive: true })

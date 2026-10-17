@@ -1,5 +1,5 @@
 {
-  "extends": "../../tsconfig.base.json",
+  "extends": "../../../../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": ".",
     "outDir": "dist/test",
@@ -13,16 +13,16 @@
       "path": "."
     },
     {
-      "path": "../extension-api"
+      "path": "../../../extension-api"
     },
     {
-      "path": "../protocol"
+      "path": "../../../protocol"
     },
     {
-      "path": "../web-client"
+      "path": "../../../web-client"
     },
     {
-      "path": "../web-ui"
+      "path": "../../../web-ui"
     }
   ]
 }

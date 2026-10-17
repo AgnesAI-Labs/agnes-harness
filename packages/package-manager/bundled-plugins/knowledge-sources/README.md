@@ -4,7 +4,7 @@ English | [简体中文](README.zh-CN.md)
 
 An optional official knowledge connector plugin. Install **Knowledge sources** from the built-in plugin catalogue, review its capabilities, trust and explicitly enable it. It is not bootstrapped into new profiles. Its one deferred tool is available only in sessions that include this plugin.
 
-See the [user guide](../../docs/guide/knowledge-sources.md) for configuration and a walkthrough. The backend uses only public tools, services, events, projections, filesystem/artifact ports and a profile-managed resource; it adds no Core/Host contract. The Web panel uses the shared web-ui controls and returns its registration disposer.
+See the [user guide](../../../../docs/guide/knowledge-sources.md) for configuration and a walkthrough. The backend uses only public tools, services, events, projections, filesystem/artifact ports and a profile-managed resource; it adds no Core/Host contract. The Web panel uses the shared web-ui controls and returns its registration disposer.
 
 - `knowledge_query({})`: list this session's authorized source IDs.
 - `knowledge_query({sourceId, query?})`: retrieve one literal match with a bounded excerpt and citation.
@@ -19,8 +19,8 @@ Limits: 16 sources, 32 session grants per source, 64 KiB per document, 2 KiB UTF
 Run from the repository root:
 
 ```sh
-pnpm exec tsc -b packages/knowledge-sources packages/knowledge-sources/tsconfig.test.json
-pnpm exec vitest run packages/knowledge-sources/test --project fast --maxWorkers=1
+pnpm exec tsc -b packages/package-manager/bundled-plugins/knowledge-sources packages/package-manager/bundled-plugins/knowledge-sources/tsconfig.test.json
+pnpm exec vitest run packages/package-manager/bundled-plugins/knowledge-sources/test --project fast --maxWorkers=1
 pnpm --filter @agnes/knowledge-sources gen:check
 ```
 
