@@ -6093,10 +6093,18 @@ const EXTENSION_SAMPLES: Record<string, Sample> = {
     note: 'Skin contribution: reserved id, closed object, both palette modes, and value charset',
   },
   ClientContribution: {
-    valid: { entry: 'dist/client/index.js', styles: ['dist/client/index.css'], slots: ['workbench.panel'] },
+    valid: {
+      entry: 'dist/client/index.js',
+      styles: ['dist/client/index.css'],
+      slots: ['workbench.panel'],
+      requiresBackendRows: ['ext:community/feature'],
+    },
     invalid: [
       {},
       { entry: '' },
+      { entry: 'client.js', requiresBackendRows: ['ext:feature', 'ext:feature'] },
+      { entry: 'client.js', requiresBackendRows: ['bad\0row'] },
+      { entry: 'client.js', requiresBackendRows: Array.from({ length: 33 }, (_, i) => `row-${i}`) },
       { entry: 'dist/client/index.js', extra: true },
       { entry: 'dist/client/index.js', styles: ['x'], services: 'not-an-array' },
     ],

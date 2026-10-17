@@ -142,6 +142,8 @@ export type {
   WorkbenchPanelCount,
 } from './ui-registries.js'
 export {
+  type ComposerInputCommand,
+  composerCommands,
   conversationCards,
   fileViewerActions,
   HomeEntryRegistry,

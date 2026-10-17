@@ -121,12 +121,13 @@ export function combineContributionRosters(
 /** Reviewed client declarations retained with an immutable asset snapshot and reprojected on restore. */
 export function clientContributionDeclarations(
   client: {
-    [K in 'lifetime' | 'homeEntries' | 'examplePages' | 'assets' | 'streams']?:
+    [K in 'requiresBackendRows' | 'lifetime' | 'homeEntries' | 'examplePages' | 'assets' | 'streams']?:
       | ClientContribution[K]
       | undefined
   },
 ) {
   return {
+    ...(client.requiresBackendRows ? { requiresBackendRows: [...client.requiresBackendRows] } : {}),
     ...(client.lifetime ? { lifetime: client.lifetime } : {}),
     ...(client.homeEntries ? { homeEntries: client.homeEntries } : {}),
     ...(client.examplePages ? { examplePages: client.examplePages } : {}),
