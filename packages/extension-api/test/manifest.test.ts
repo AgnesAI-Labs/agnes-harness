@@ -5,7 +5,6 @@ const purpose = {
   displayName: 'File search',
   summary: 'Find project text.',
   description: 'Find text in readable project files.',
-  category: 'tools' as const,
   locales: { 'zh-CN': { displayName: '文件搜索', summary: '检索项目文本。' } },
 }
 
@@ -48,7 +47,7 @@ describe('author manifest validation', () => {
       { ...purpose, summary: 'line\nline' },
       { ...purpose, description: 'x\u2028y' },
       { ...purpose, summary: 'x'.repeat(241) },
-      { ...purpose, category: 'invented' },
+      { ...purpose, category: 'tools' },
       { ...purpose, docsUrl: 'javascript:alert(1)' },
       { ...purpose, docsUrl: 'https://user:pass@example.org/' },
       { ...purpose, locales: { fr: { summary: 'Texte' } } },

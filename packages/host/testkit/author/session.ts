@@ -271,7 +271,13 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
           packages: Object.fromEntries([
             ...['@agnes/ai', '@agnes/base', '@agnes/code'].map((name) => [
               name,
-              { version: '0.1.0', integrity: 'sha512-fixture', trust: 'builtin', enabled: true },
+              {
+                version: '0.1.0',
+                source: { type: 'builtin', ref: 'builtin' },
+                integrity: 'builtin:0.1.0',
+                trust: 'builtin',
+                enabled: true,
+              },
             ]),
             [
               id,

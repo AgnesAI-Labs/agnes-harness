@@ -3,7 +3,7 @@ import { install } from './sdk.js'
 import { chooseWorkspace, pluginTab, preferences, section, settings } from './ui.js'
 
 for (const locale of ['en', 'zh-CN'] as const) {
-  test(`plugin purpose, category, registered settings and details (${locale})`, async ({ page, runtime }) => {
+  test(`plugin purpose, provides, registered settings and details (${locale})`, async ({ page, runtime }) => {
     const client = await runtime.connect()
     const pkg = await install(client, 'tools/e2e-web/fixtures/plugin-config')
     await preferences(page, locale)
@@ -16,7 +16,7 @@ for (const locale of ['en', 'zh-CN'] as const) {
       locale === 'en' ? 'Coordinates sample work queues for a team.' : '协调团队的样例任务队列。',
     )
     await expect(row.getByTestId('plugin-provides')).toHaveText(
-      locale === 'en' ? 'Includes: 1 Settings' : '包含：1 个设置',
+      locale === 'en' ? 'Includes: Service' : '包含：服务',
     )
     const source = row.getByTestId('plugin-source-badge')
     await expect(source).toHaveAttribute('data-origin', 'local-source')
@@ -27,10 +27,15 @@ for (const locale of ['en', 'zh-CN'] as const) {
     await expect(page.getByTestId('plugin-creator')).toBeVisible()
     await page.keyboard.press('Escape')
     await page.getByTestId('plugin-filter').click()
-    const category = page.getByTestId('plugin-category-filter')
-    await category.selectOption('tools')
+    const capability = page.getByRole('combobox', {
+      name: locale === 'en' ? 'Filter by capability' : '按能力筛选',
+      exact: true,
+    })
+    await capability.click()
+    await page.getByRole('option', { name: locale === 'en' ? 'Tool' : '工具', exact: true }).click()
     await expect(row).toHaveCount(0)
-    await category.selectOption('collaboration')
+    await capability.click()
+    await page.getByRole('option', { name: locale === 'en' ? 'Service' : '服务', exact: true }).click()
     await expect(row).toHaveCount(1)
     await page.getByTestId('plugin-filter').click()
     const search = page.locator('#plugin-search')

@@ -2,9 +2,9 @@
 
 English | [简体中文](DESIGN.zh-CN.md)
 
-**Status: Phase A approved; simplified Phase B implemented, awaiting the shared acceptance run.**
+**Status: simplified presentation implemented; author taxonomy updated to `agnes.provides`. Browser acceptance remains pending.**
 
-The lead approved the metadata contract and content on 2026-10-10. Phase B keeps the optional contract, category/search cards and six detail sections. It uses only today's readable catalogs/registries and a small `PackagePresentation` read field. Evidence levels, observed events, new pagination, dependency/dependent graphs and disable-impact analysis are deferred; existing blockers/pins remain authoritative. Builds, tests and screenshots have not been run during development.
+The lead approved the metadata contract and content on 2026-10-10. Phase B keeps the optional contract, capability/search cards and six detail sections. It uses only today's readable catalogs/registries and a small `PackagePresentation` read field. Evidence levels, observed events, new pagination, dependency/dependent graphs and disable-impact analysis are deferred; existing blockers/pins remain authoritative. Browser runs, builds and screenshots remain reserved for the shared acceptance run.
 
 [Author guide](../README.md) · [Exact bilingual content](CONTENT.md)
 
@@ -14,9 +14,9 @@ An administrator should understand a plugin's purpose, contributions, effective 
 
 At the inspected source revision `7b5271ffa`, all **37** manifests under `packages/base/extensions/*/agnes.extension.json` lack human-facing metadata. Of **126** package manifests under `packages/` and `examples/` (excluding dependencies and build output), **10** have npm descriptions: 10/70 package manifests and 0/56 example manifests. npm descriptions are neither a validated display contract nor localized. The earlier 6/97 count does not describe this revision.
 
-`web-admin/src/admin/plugins/admin/views.tsx` specializes example names and summaries by package ID. `web-ui/src/locales/admin-list.ts` also specializes four official helper packages. Both tables must go when manifests supply the same information. Generic labels for categories, contribution types and status remain shared UI translations.
+`web-admin/src/admin/plugins/admin/views.tsx` specializes example names and summaries by package ID. `web-ui/src/locales/admin-list.ts` also specializes four official helper packages. Both tables must go when manifests supply the same information. Generic labels for declared capabilities, contribution types and status remain shared UI translations.
 
-The seven package `kinds` (`tool`, `loop`, `model-adapter`, `mcp`, `skills`, `ui`, `bundle`) are not the provider-kind catalog. `extension-api/src/provider-kind.ts` includes policy, compaction, memory, persistence, sandbox, child agents, references and webhooks; feedback, intelligent UI and observability have separate public ports. Preserve these distinctions. A category is an editorial aid, not a new runtime kind.
+Package capability labels are the optional `agnes.provides` set: `tool`, `loop`, `model-adapter`, `mcp`, `skills`, `ui`, `bundle`, `service`. They do not replace the provider-kind catalog, extension seam `provides`, row service `provide`, or runtime registration evidence. `metadata.category` and `agnes.kinds` are rejected. See the current [author contract](../plugin-metadata.md).
 
 Several of the 37 manifests have no-op extension entries; actual functionality lives in seams/providers. `sandbox` is not listed as a normal extension in the base package. A description must explain its role without claiming registrations or availability merely because a manifest exists.
 
@@ -47,21 +47,20 @@ Row metadata overrides the package overview **as a complete metadata object**; a
 }
 ```
 
-The block is optional. When present, `displayName`, `summary`, `description` and `category` are required; `docsUrl` and `locales` are optional. Locales allow **only** `en` and `zh-CN`, each containing partial overrides of displayName, summary, description and docsUrl. Category does not vary by locale. Missing localized fields inherit the base value. Official and example content supplies complete English base text and Chinese text. Third parties need no translation to install.
+The block is optional. When present, `displayName`, `summary`, and `description` are required; `docsUrl` and `locales` are optional. Locales allow **only** `en` and `zh-CN`, each containing partial overrides of displayName, summary, description and docsUrl. Missing localized fields inherit the base value. Official and example content supplies complete English base text and Chinese text. Third parties need no translation to install.
 
 | Field | Validation |
 | --- | --- |
 | displayName | 1–80 Unicode code points; trimmed, printable, single line |
 | summary | 1–240 code points; trimmed, printable, single line; one sentence is editorial guidance |
 | description | 1–1,200 code points; trimmed, printable, single paragraph |
-| category | One stable enum value below |
 | docsUrl | 1–2,048 code points; absolute HTTPS URL; no credentials or control characters |
 | locales | At most two known locale keys; unknown fields rejected in every object |
 | whole block | At most 24 KiB UTF-8 JSON, including localized values |
 
-Categories: `agent-loop` (Agent Loop / Agent 执行), `tools` (Tools / 工具), `safety-approval` (Safety & Approval / 安全与审批), `memory-context` (Memory & Context / 记忆与上下文), `collaboration` (Collaboration / 协作), `integrations` (Integrations / 集成), `observability` (Observability / 可观测性), `ui` (UI / 界面), `developer` (Developer / 开发者). No category becomes `Uncategorized / 未分类`; do not guess it from ID. Existing kind filters remain available as a secondary technical filter.
+There is one capability filter, using `agnes.provides`; there is no separate category field or category filter. Labels never grant authority. Only a Bundle with its own explicit `launch` is an agent; a reusable Bundle is not automatically an agent.
 
-Resolve a supported UI locale field-by-field from its override, then the base text. For absent metadata show the full ID, known kinds and **No description provided / 作者未提供用途说明**. Do not invent summaries from IDs, call a model, fetch remote docs or use a private list. Display author text as escaped text, without HTML/Markdown execution; documentation links require an explicit click with `noopener noreferrer`. Render base English when a translation is missing.
+Resolve a supported UI locale field-by-field from its override, then the base text. For absent metadata show the full ID, declared capabilities and **No description provided / 作者未提供用途说明**. Do not invent summaries from IDs, call a model, fetch remote docs or use a private list. Display author text as escaped text, without HTML/Markdown execution; documentation links require an explicit click with `noopener noreferrer`. Render base English when a translation is missing.
 
 `package-manager/src/inspect.ts` validates package and row metadata before installation. `plugin-manifest.ts` accepts the new field; `extension-api/src/manifest.ts` continues to validate extension metadata via the shared schema. Catalog descriptors, previews, lock entries and immutable package snapshots carry validated package metadata; the read-only row presentation carries row metadata. Read it from the exact snapshot being displayed, including historical versions. Preserve public metadata in packed packages and agent candidates. Invalid present metadata refuses inspection/installation; absence remains valid. No new trust grant, loader behavior, configuration behavior or authorization path follows from metadata. A metadata edit changes ordinary package integrity naturally; existing trust/update review remains in force, while the metadata is excluded from the capability hash input.
 
@@ -71,7 +70,7 @@ This is an optional public-contract addition with no migration or compatibility 
 
 `PackagePreview`, `PackageInstalledDescriptor` and `PackageCatalogDescriptor` have an optional, read-only `presentation` field. It contains `rows` (ID, optional author metadata/source ID and whether a config schema is present), plus backend-derived `origin` on displayed inventory/catalog rows. Package-manager reads the public declarations from the exact inventory directory, without importing code. Row text is author purpose; it is displayed separately from runtime contributions. The field is excluded from runtime targets, capability hashes and activation decisions. It is computed rather than persisted as a second catalog.
 
-The admin makes optional reads through existing `runtime()` and `composition()` endpoints. A small ephemeral `PluginPresentation` combines these with the existing browser slot callback and surface links. A missing read does not prevent inventory from rendering. The model never turns `capabilities.tools.names`, `events` or package `kinds` into registered contributions.
+The admin makes optional reads through existing `runtime()` and `composition()` endpoints. A small ephemeral `PluginPresentation` combines these with the existing browser slot callback and surface links. A missing read does not prevent inventory from rendering. The model never turns `capabilities.tools.names`, `events` or package `provides` labels into registered contributions.
 
 | Information | Reused source | Presentation |
 | --- | --- | --- |
@@ -104,7 +103,7 @@ Do not display an absolute **safe to disable** promise. Simplified Phase B prese
 Plugins                                       [Install from source]
 [Installed] [Discover] [Providers] [Examples]
 [Search name, purpose or contribution_______________]
-[Category: All v] [Kind v]
+[Capability: All v]
 
 Support triage example             Example  Agent Loop       [Enabled]
 Classifies sample support tickets and requests approval before
@@ -119,15 +118,15 @@ or escalation within configured limits.
 Provides  [Actual readable contribution types]
 Selected for default sessions        [Details]
 
-vendor/plugin                      Third-party  Uncategorized
+vendor/plugin                      Third-party
 No description provided
-Kinds: tool    Provides: Not inspected    Installed · Not trusted
+Declared: tool    Provides: Not inspected    Installed · Not trusted
 [Details]                                                 [Review]
 ```
 
-Counts above are illustrative, not measurements of the named plugins. Category and existing kind filters apply to the current package list. Each package card shows its metadata, source, existing state/trust badges and readable contribution counts. Multi-row author purposes are available in the Overview disclosure. Manifest-only entries do not become active cards.
+Counts above are illustrative, not measurements of the named plugins. The capability filter applies to the current package list. Each package card shows its metadata, source, existing state/trust badges and readable contribution counts. Multi-row author purposes are available in the Overview disclosure. Manifest-only entries do not become active cards.
 
-Search is a case-insensitive phrase match across ID, version, display name, summary, both supplied locales, row purposes, contribution IDs and readable registered IDs/translated contribution labels. Search, category and kind compose with AND. Catalog queries search bilingual metadata and row/contribution IDs in existing cached descriptors before the existing pagination; category/kind filtering remains on loaded catalog rows. No new pagination or remote browsing is introduced.
+Search is a case-insensitive phrase match across ID, version, display name, summary, both supplied locales, row purposes, contribution IDs and readable registered IDs/translated contribution labels. Search and capability compose with AND. Catalog queries search bilingual metadata and row/contribution IDs in existing cached descriptors before the existing pagination; capability filtering remains on loaded catalog rows. No new pagination or remote browsing is introduced.
 
 The heading button opens details. Existing switch/actions remain separate controls. Provides chips wrap with shared spacing, and summaries remain fully readable. Long IDs/hashes/source paths stay in technical disclosure. Existing loading, empty, recovery and failure states are retained. Narrow-screen layout and light/dark readability still require the shared acceptance run.
 
@@ -170,15 +169,15 @@ These are six semantic sections in the existing scrollable dialog. Keep D3's exi
 
 Use `@agnes/web-ui`: extend PluginList/DetailContent, SettingsCard, SettingsToolbar, Field, SettingsInput, Select, Badge, Button, SettingsDetails and StateSwitch. Keep configuration, trust, candidate review and pins components in their current owners. External UI libraries stay in web-ui. Reuse tokens, spacing, border/radius and semantic status colors; no new private palette or CSS that bypasses skin hooks. Text labels accompany every colored status.
 
-Follow the merged [Web UI consistency contract](../../develop/ui-consistency.md): SettingsPage owns one localized header and page actions; panels do not repeat that title. Use SettingsList/SettingsRow or the existing PluginList, with technical fields in SettingsDetails rather than nested property cards. Loading/empty/error/success states use SettingsState and preserve context and drafts. Existing native dialog hosts retain their controller and shared content; cancel precedes the primary action. The category control uses SettingsSelect for native semantics or Select only when rich search is needed. Preserve all current IDs, aria relationships, IME behavior and skin hooks.
+Follow the merged [Web UI consistency contract](../../develop/ui-consistency.md): SettingsPage owns one localized header and page actions; panels do not repeat that title. Use SettingsList/SettingsRow or the existing PluginList, with technical fields in SettingsDetails rather than nested property cards. Loading/empty/error/success states use SettingsState and preserve context and drafts. Existing native dialog hosts retain their controller and shared content; cancel precedes the primary action. The capability filter uses the existing labeled Select control. Preserve all current IDs, aria relationships, IME behavior and skin hooks.
 
 Use the existing spacing/type/control tokens in `packages/web/public/styles/01-tokens.css` and the semantic bridge in web-ui. Prefer --s8/--s12 within rows, --s16/--s24 between sections and --s24/--s32 page insets. Use --agnes-input-surface and --agnes-status-* with both theme variants, honor reduced motion and avoid a second palette. Required narrow review is 390px; the 375px layout above is an additional design target. Embedded and standalone pages share the same header/body/action rhythm.
 
-Provide en/zh-CN translations for generic chrome, labels and empty/error/unknown states. Use stable IDs (`plugin-category-filter`, `plugin-summary`, `plugin-provides`, `plugin-appears-detail`) plus package/row/version data attributes. Fields have visible labels; details have a heading; chips are readable static text; all controls have keyboard access and focus indicators. Light and dark screenshots must show readable summary text, source labels and disabled states without relying on color alone.
+Provide en/zh-CN translations for generic chrome, labels and empty/error/unknown states. Use stable IDs (`plugin-filter`, `plugin-summary`, `plugin-provides`, `plugin-appears-detail`) plus package/row/version data attributes. Fields have visible labels; details have a heading; chips are readable static text; all controls have keyboard access and focus indicators. Light and dark screenshots must show readable summary text, source labels and disabled states without relying on color alone.
 
-## Current page, described from source
+## Historical source baseline before the presentation implementation
 
-`admin/views.tsx` renders the SettingsHub navigation, candidate inbox and generation-drain notice, then a search field, KindFilter, source-install action and plugin-creator action above PluginList. Category and origin filters do not exist. `admin/page.tsx:filteredInstalled` searches ID, version and contributionText; it does not search a general purpose summary.
+At the original inspected revision, `admin/views.tsx` rendered the SettingsHub navigation, candidate inbox and generation-drain notice, then a search field, KindFilter, source-install action and plugin-creator action above PluginList. Category and origin filters do not exist. `admin/page.tsx:filteredInstalled` searches ID, version and contributionText; it does not search a general purpose summary.
 
 `web-ui/src/admin-list.tsx` renders one installed package article with a heading button, kind/status metadata, an optional description, version information, a StateSwitch and expandable technical details. Four official helpers obtain names/descriptions from UI locale keys. Recognized example names use the settings locale map; FDE entries share one broad summary rather than their individual business purpose. Other entries can display their technical package ID with no description and no missing-description explanation. Source and integrity are available through technical details, not a clear verified origin badge.
 
@@ -188,6 +187,6 @@ Product builds are prohibited during development. Before and after **real** scre
 
 ## Implementation and deferred verification
 
-The optional public contract, installation validation, immutable package metadata, bilingual author docs/content, generic category/source/status cards, metadata search and six detail sections are implemented. Both per-ID name/description tables are removed, including their use in the examples shelf and generation notice. Multi-row purpose text is visible in the Overview disclosure; it does not assert registration. The configuration tab retains its existing editor and lifetime.
+The optional public contract, installation validation, immutable package metadata, bilingual author docs/content, generic capability/source/status cards, metadata search and six detail sections are implemented. Both per-ID name/description tables are removed, including their use in the examples shelf and generation notice. Multi-row purpose text is visible in the Overview disclosure; it does not assert registration. The configuration tab retains its existing editor and lifetime.
 
-Tests have been written for metadata admission/limits/localization/persistence, source-owned real contributions, declaration/disabled/revision fallback, bilingual catalog search, generic card/detail rendering, plain-text safety and metadata-free third parties. One registered Web spec covers category/search, provided settings, localized details, 390px keyboard opening and preserved configuration drafts. They have **not been run**. The allowed protocol generator was run; source and diff review are the available development evidence. Real light/dark before/after screenshots and compilation/runtime acceptance remain for the shared pre-handoff stage.
+Tests have been written for metadata admission/limits/localization/persistence, source-owned real contributions, declaration/disabled/revision fallback, bilingual catalog search, generic card/detail rendering, plain-text safety and metadata-free third parties. One registered Web spec covers capability/search, provided settings, localized details, 390px keyboard opening and preserved configuration drafts. The browser spec has **not been run** in this update. Unit checks follow the repository workflow; they do not establish browser acceptance. Real light/dark before/after screenshots and compilation/runtime acceptance remain for the shared pre-handoff stage.
