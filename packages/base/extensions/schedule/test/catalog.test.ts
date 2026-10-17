@@ -373,7 +373,7 @@ it.each(['approve', 'expire', 'refuse'] as const)(
     })
     expect(catalog.read(created.id)?.runs[0]?.endedAt).toBeUndefined()
     expect(catalog.hasWaiting(key)).toBe(true)
-    catalog.recordFailure(key, { at: now + 1, reason: 'approval_pending_previous_run' })
+    catalog.recordFailure(key, { at: now + 1, reason: 'approval_pending_previous_run', sessionKey: 'sess' })
     expect(catalog.read(created.id)?.runs.map((run) => run.outcome)).toEqual(['waiting_approval', 'failed'])
     // Reopening the catalog retains both the pending deadline and the recurring schedule.
     catalog = openScheduleCatalogAt(db, () => now)

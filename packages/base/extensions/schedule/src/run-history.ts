@@ -5,6 +5,7 @@ import type { RunProgress } from './run-progress.js'
 export const previousApprovalExpired = (db: ScheduleDb, scheduleId: string): boolean =>
   db.get<{ reason: string }>(
     `SELECT reason FROM schedule_runs WHERE schedule_id = ? AND session_key IS NOT NULL
+     AND (reason IS NULL OR reason != 'approval_pending_previous_run')
      ORDER BY at DESC, rowid DESC LIMIT 1`,
     [scheduleId],
   )?.reason === 'approval_expired'
