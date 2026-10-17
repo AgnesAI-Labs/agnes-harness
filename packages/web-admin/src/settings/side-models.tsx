@@ -20,7 +20,7 @@ import {
   UiLocaleProvider,
   useUiText,
 } from '@agnes/web-ui'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { settingsCatalog } from './locales.js'
 import { SIDE_MODELS_NAMESPACE, sideModelsCatalog } from './side-models-locale.js'
 
@@ -163,6 +163,26 @@ function readModels(rows: readonly ModelDraft[]): ConfigModel[] | undefined {
   return new Set(models.map((model) => model.id)).size === models.length ? models : undefined
 }
 
+/**
+ * What a new entry pre-fills per adapter, so the form asks only for a label and a credential. Every
+ * value is a draft: the user can edit all of it before saving. Keyed by adapter id so the next
+ * payload-only adapter gets its own entry instead of a branch.
+ */
+const ADAPTER_PRESETS: Record<SideProviderId, { baseUrl: string; models: () => ModelDraft[] }> = {
+  'typesafe-systemone': {
+    baseUrl: DEFAULT_BASE_URL,
+    models: () => [
+      {
+        ...blankModel(),
+        id: 'typesafe/jev-1.13-20260917',
+        name: 'Jev 1.13 (2026-09-17)',
+        contextWindow: '65536',
+        maxTokens: '32768',
+      },
+    ],
+  },
+}
+
 export function SideModelsPanel({
   client,
   configuration,
@@ -228,6 +248,21 @@ function SideModels({
   )
   const [draft, setDraft] = useState<EditorDraft>()
   const [removing, setRemoving] = useState<string>()
+  const [copied, setCopied] = useState<string>()
+  const copyTimers = useRef<number[]>([])
+  useEffect(() => {
+    const timers = copyTimers.current
+    return () => timers.forEach((timer) => window.clearTimeout(timer))
+  }, [])
+  const copyRoute = async (accountId: string, route: string) => {
+    const board = navigator.clipboard
+    if (!board) return
+    await board.writeText(route)
+    setCopied(accountId)
+    copyTimers.current.push(
+      window.setTimeout(() => setCopied((current) => (current === accountId ? undefined : current)), 2000),
+    )
+  }
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('')
   const [testState, setTestState] = useState('')
@@ -251,13 +286,14 @@ function SideModels({
   const openAdd = () => {
     setStatus('')
     setTestState('')
+    const preset = ADAPTER_PRESETS[draftProvider()]
     setDraft({
       accountId: `jev-${crypto.randomUUID().slice(0, 8)}`,
       isNew: true,
       label: '',
-      baseUrl: DEFAULT_BASE_URL,
+      baseUrl: preset.baseUrl,
       credentialRef: '',
-      models: [blankModel()],
+      models: preset.models(),
     })
   }
   const openEdit = (account: ConfigAccount) => {
@@ -425,9 +461,23 @@ function SideModels({
                     {t('side.modelCount', { count: account.models.length })} ·{' '}
                     {t(account.credentialConfigured ? 'side.credentialConfigured' : 'side.credentialMissing')}
                   </span>
+                  <br />
+                  <span data-testid="side-model-route-hint">{t('side.routeHint')}</span>
                 </>
               }
             >
+              <Button
+                data-testid={`side-model-copy-${account.accountId}`}
+                disabled={busy}
+                onClick={() => void copyRoute(account.accountId, account.route)}
+              >
+                {t('side.copyRoute')}
+              </Button>
+              {copied === account.accountId && (
+                <span role="status" data-testid={`side-model-copied-${account.accountId}`}>
+                  {t('side.copied')}
+                </span>
+              )}
               <StateSwitch
                 testId={`side-model-toggle-${account.accountId}`}
                 label={t('side.enabled')}

@@ -15,6 +15,7 @@ afterEach(async () => {
   for (const root of roots.splice(0)) await act(async () => root.unmount())
   document.body.replaceChildren()
   document.documentElement.lang = 'en'
+  delete (navigator as { clipboard?: unknown }).clipboard
 })
 
 const JEV_MODEL = {
@@ -163,6 +164,48 @@ it('lists only payload-only accounts with the badge, summary and fixed group cop
   await click(host, 'side-model-add')
   const adapter = host.querySelector<HTMLSelectElement>('[data-testid="side-adapter"]')
   expect([...(adapter?.options ?? [])].map((item) => item.value)).toEqual(['typesafe-systemone'])
+})
+
+it('prefills the Jev template for a new entry and keeps every prefilled field a draft', async () => {
+  const api = client([chatAccount])
+  const { host } = await mount(api, { accounts: [chatAccount] })
+  await click(host, 'side-model-add')
+  expect(input(host, 'side-base-url')?.value).toBe('https://openrouter.ai/api/v1')
+  expect(input(host, 'side-model-id-0')?.value).toBe('typesafe/jev-1.13-20260917')
+  expect(input(host, 'side-model-name-0')?.value).toBe('Jev 1.13 (2026-09-17)')
+  expect(input(host, 'side-model-context-0')?.value).toBe('65536')
+  expect(input(host, 'side-model-tokens-0')?.value).toBe('32768')
+  // The label and the credential remain the user's to fill.
+  expect(input(host, 'side-label')?.value).toBe('')
+  // Prefill is a draft: an edited id is what gets saved.
+  await type(host, 'side-model-id-0', 'typesafe/jev-1.14-20261020')
+  await type(host, 'side-label', 'Jev')
+  await choose(host, 'side-credential', 'secret://generic/11111111-1111-4111-8111-111111111111')
+  await click(host, 'side-save')
+  const sent = api.save.mock.calls[0]?.[0] as Record<string, unknown>
+  expect(sent).toMatchObject({
+    model: 'typesafe/jev-1.14-20261020',
+    models: [{ id: 'typesafe/jev-1.14-20261020', name: 'Jev 1.13 (2026-09-17)', contextWindow: 65536, maxTokens: 32768 }],
+  })
+})
+
+it('shows the saved route name with a copy button and the loop-plugin hint', async () => {
+  const written: string[] = []
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: {
+      writeText: async (text: string) => {
+        written.push(text)
+      },
+    },
+  })
+  const { host } = await mount(client())
+  const row = host.querySelector('[data-testid="side-model-jev"]')
+  expect(row?.textContent).toContain('account-jev')
+  expect(row?.textContent).toContain('jev.route')
+  await click(host, 'side-model-copy-jev')
+  expect(written).toEqual(['account-jev'])
+  expect(host.querySelector('[data-testid="side-model-copied-jev"]')?.textContent).toContain('Copied')
 })
 
 it('shows the group copy in zh-CN when the document is zh-CN', async () => {
