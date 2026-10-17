@@ -543,8 +543,10 @@ export const sessionStartUrl = (
   prompt?: string,
   bundles: readonly string[] = [],
   loop?: { id: string; version: string },
+  agent?: string,
 ) => {
   const query = new URLSearchParams({ new: '1' })
+  if (agent) query.set('agent', agent)
   if (preset) query.set('preset', preset)
   if (loop) query.set('loop', `${loop.id}@${loop.version}`)
   if (prompt) query.set('prompt', prompt)

@@ -1,9 +1,10 @@
 import { ScheduleRejected } from '@agnes/base/schedule'
 import type { CallContext, LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import type { SchedulesPort } from '@agnes/daemon-foundation/local/ports'
-import { rpcError } from '@agnes/protocol'
+import { type AgentPlan, rpcError, type SchedulesUpsertParams } from '@agnes/protocol'
 
 type Deps = {
+  resolveAgent?(ref: string): Promise<AgentPlan>
   schedules(): SchedulesPort | undefined
   requireOwner(method: string, sessionId: string, c: CallContext): void
   registry: { get(key: string): { session: unknown } | undefined }
@@ -72,6 +73,29 @@ export function registerSchedules(ep: LocalEndpoint, deps: Deps): void {
       body.target?.kind === 'session' ? body.target.sessionKey : undefined,
       c,
     )
+    const input = params as SchedulesUpsertParams
+    if (input.agent) {
+      if (!deps.resolveAgent || input.target.kind !== 'new-session')
+        throw rpcError('SEMANTIC_REJECTED', { reason: 'invalid agent target' })
+      const plan = await deps.resolveAgent(input.agent)
+      const { agent: _agent, ...request } = input
+      return scheduleCall(() =>
+        schedules().upsert({
+          ...request,
+          target: {
+            kind: 'new-session',
+            cwd: input.target.kind === 'new-session' ? input.target.cwd : '',
+            ...(input.target.unattendedApproval
+              ? { unattendedApproval: input.target.unattendedApproval }
+              : {}),
+            loop: plan.loop,
+            bundles: plan.bundles,
+            preset: plan.preset,
+            model: plan.model,
+          },
+        }),
+      )
+    }
     return scheduleCall(() => schedules().upsert(params))
   })
   ep.register('_agnes/v1/schedules.archive', async (params, c) => {

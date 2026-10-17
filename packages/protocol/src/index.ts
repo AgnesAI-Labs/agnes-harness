@@ -622,6 +622,7 @@ export type {
   WorkerGeneration,
 } from '../gen/ts/worker.js'
 export * from './admin-session-selection.js'
+export * from './agents.js'
 export * from './app-server.js'
 export { attachmentErrorCode } from './attachment-errors.js'
 export * from './attachments.js'
@@ -682,7 +683,7 @@ export * from './sequence.js'
 export { validateExtensionCall, validateExtensionCallError, validateServiceCapability } from './services.js'
 export { ARTIFACT_REGISTERED_EVENT, sessionArtifactRoots } from './session-artifacts.js'
 export * from './session-capabilities.js'
-export { parseSessionBundles } from './session-composition.js'
+export { parseAgentRef, parseSessionBundles } from './session-composition.js'
 export * from './session-runtime.js'
 export * from './session-tools.js'
 export type {

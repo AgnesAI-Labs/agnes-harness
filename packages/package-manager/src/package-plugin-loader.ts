@@ -35,6 +35,8 @@ export type RuntimePluginSnapshot = Readonly<{
   snapshot: RuntimeSnapshot
   generation: number
   trusted: boolean
+  /** Current installed identity is enabled for new sessions; retained pins may be false. */
+  enabled?: boolean
 }>
 
 export function activeRuntimePinId(ref: Readonly<{ packageId: string; integrity: string }>): string {
@@ -129,6 +131,12 @@ export function runtimePluginSnapshotsFromPins(
       key,
       Object.freeze({
         snapshot: Object.freeze({ ...pin.snapshot, snapshotId: pin.snapshot.integrity }),
+        enabled: inventory.packages.some(
+          (pkg) =>
+            pkg.id === pin.snapshot.packageId &&
+            pkg.enabled &&
+            pkg.entry.integrity === pin.snapshot.integrity,
+        ),
         generation: 1,
         trusted: true,
       }),

@@ -170,6 +170,8 @@ export class HostedSessions {
             ...history,
             binding,
             ...(frame.params.preset ? { preset: frame.params.preset } : {}),
+            ...(frame.params.agent ? { agent: frame.params.agent } : {}),
+            ...(frame.params.agentDigest ? { agentDigest: frame.params.agentDigest } : {}),
             ...(frame.params.bundles !== undefined ? { bundles: frame.params.bundles } : {}),
             ...(frame.params.loop ? { loop: frame.params.loop } : {}),
             ...(parent ? { parent } : {}),

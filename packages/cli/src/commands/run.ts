@@ -34,7 +34,11 @@ export function parseRunArgs(rest: string[]): RunArgs {
       json = true
       continue
     }
-    if (!['--bundle', '--input', '--profile', '--preset', '--loop', '--model', '--cwd'].includes(flag))
+    if (
+      !['--bundle', '--input', '--profile', '--preset', '--agent', '--loop', '--model', '--cwd'].includes(
+        flag,
+      )
+    )
       throw new UsageError(`unknown run option ${flag}\n${RUN_USAGE}`)
     const value = rest[++index]
     if (!value || (value.startsWith('-') && !(flag === '--input' && value === '-')))
@@ -183,6 +187,7 @@ export async function runCommand(rest: string[], deps: RunCommandDeps): Promise<
           signal: ac.signal,
           ...(parsed.args.preset ? { preset: parsed.args.preset } : {}),
           ...(parsed.args.loop ? { loop: parsed.args.loop } : {}),
+          ...(parsed.args.agent ? { agent: parsed.args.agent } : {}),
           ...(parsed.args.model ? { model: parsed.args.model } : {}),
           write: (record) => writeLine(deps.stdout, { ...record, input: inputs[index] }),
         })

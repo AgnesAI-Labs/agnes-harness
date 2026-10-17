@@ -1,4 +1,5 @@
 import type {
+  AgentPlan,
   PackageCatalogDescriptor,
   PackageInstalledDescriptor,
   PackageOperation,
@@ -38,8 +39,12 @@ const entry = (extra: Record<string, unknown> = {}, id = ID) =>
     provides: ['bundle', 'loop', 'tool'],
     agents: [
       {
-        ref: 'acme/kit#work',
-        launch: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' },
+        ref: `${id}#data-report`,
+        launch: {
+          title: { en: 'Data report example', 'zh-CN': '数据报告示例' },
+          description: { en: 'Turns a sample CSV into a report.', 'zh-CN': '把样例 CSV 转成报告。' },
+          preset: 'safe',
+        },
       },
     ],
     metadata: {
@@ -100,6 +105,24 @@ function daemon(
     return Promise.resolve({ operationId: name, profile: 'default' })
   }
   const api = {
+    prepareAgent: async (ref: string) => ({
+      launchTicket: 'ticket',
+      presentation: {
+        ref,
+        launch: entry().agents![0]!.launch,
+        loop: { id: 'fde.data-report', version: '5.0.0' },
+        bundles: [ref],
+        preset: 'safe',
+        model: { route: 'demo', model: 'm' },
+        models: {},
+        pages: [],
+        digest: 'digest',
+        compositionHash: 'tree',
+        presetHash: 'preset',
+        permission: { readOnly: false, tools: [], allow: [], deny: [] },
+        sources: [],
+      } as AgentPlan,
+    }),
     list: async () => ({ packages: state ? [state] : [] }),
     inspect: () => effect('inspect', () => {}, { preview: preview() }),
     install: () => effect('install', () => (state = installed())),
@@ -152,7 +175,9 @@ describe('business agent catalog', () => {
     expect(samplePromptOf(entry({ metadata: both }), 'zh-CN')).toBe('汇总这份 CSV。')
     const english = { ...entry().metadata, samplePrompt: { en: 'Summarise the CSV.' } }
     expect(samplePromptOf(entry({ metadata: english }), 'zh-CN')).toBe('Summarise the CSV.')
-    expect(businessAgentView(entry({ metadata: both }), 'en').samplePrompt).toBe('Summarise the CSV.')
+    const withLaunch = entry({ metadata: both })
+    withLaunch.agents![0]!.launch.prompt = { mode: 'draft', text: { en: 'Reviewed draft' } }
+    expect(businessAgentView(withLaunch, 'en').samplePrompt).toBe('Reviewed draft')
   })
 
   it('names the card from localized package metadata with a stable tile', () => {
@@ -220,7 +245,9 @@ describe('one-click start', () => {
     const progress = record()
     const target = await runBusinessAgentStart(d.api, plan, progress.push, options)
     expect(d.calls).toEqual(['inspect', 'install', 'trust', 'enable'])
-    expect(target).toEqual({
+    expect(target).toMatchObject({
+      preset: 'safe',
+      launchTicket: 'ticket',
       loop: { id: 'fde.data-report', version: '5.0.0' },
       bundles: [`${ID}#data-report`],
     })
@@ -229,58 +256,25 @@ describe('one-click start', () => {
     expect(progress.seen.find((value) => value.trust === 'running')?.install).toBe('done')
   })
 
-  it('waits briefly for the package bundle, then starts the loop alone if none is listed', async () => {
+  it('refuses an unavailable or ambiguous agent rather than starting a plain loop', async () => {
     const d = daemon(installed({ trusted: true, desired: 'enabled', actual: 'running' }))
-    let reads = 0
     const api = {
       ...d.api,
-      runtime: async () => {
-        reads += 1
-        return { bundles: reads < 3 ? [] : [{ id: `${ID}#data-report`, sourcePackage: ID }] }
+      prepareAgent: async () => {
+        throw new Error('unknown agent')
       },
-    } as unknown as StartApi
-    const plan = await planBusinessAgentStart(api, entry(), options)
-    expect((await runBusinessAgentStart(api, plan, () => {}, options)).bundles).toEqual([`${ID}#data-report`])
-    expect(reads).toBe(3)
-
-    const none = { ...d.api, runtime: async () => ({ bundles: [] }) } as unknown as StartApi
-    const target = await runBusinessAgentStart(none, plan, () => {}, options)
-    expect(target).toEqual({ loop: { id: 'fde.data-report', version: '5.0.0' }, bundles: [] })
-  })
-
-  it('takes the session bundles the daemon names for the installed package, without asking the runtime catalog', async () => {
-    const preset = {
-      id: 'data-report',
-      toolPolicy: 'fde.data-report',
-      readOnly: 'unknown',
-      confirmBeforeActions: 'unknown',
-      network: 'none',
     }
-    const d = daemon(
-      installed({
-        trusted: true,
-        desired: 'enabled',
-        actual: 'running',
-        presentation: {
-          rows: [],
-          presets: [
-            { ...preset, bundle: `${ID}#data-report` },
-            { ...preset, id: 'other', bundle: `${ID}#data-report` },
-          ],
-        },
-      } as never),
-    )
-    let reads = 0
-    const api = {
-      ...d.api,
-      runtime: async () => {
-        reads += 1
-        return { bundles: [] }
-      },
-    } as unknown as StartApi
     const plan = await planBusinessAgentStart(api, entry(), options)
-    expect((await runBusinessAgentStart(api, plan, () => {}, options)).bundles).toEqual([`${ID}#data-report`])
-    expect(reads).toBe(0)
+    await expect(runBusinessAgentStart(api, plan, () => {}, options)).rejects.toMatchObject({
+      failure: { step: 'session' },
+    })
+    const ambiguous = {
+      ...plan,
+      entry: { ...plan.entry, agents: [...plan.entry.agents!, ...plan.entry.agents!] },
+    }
+    await expect(runBusinessAgentStart(d.api, ambiguous, () => {}, options)).rejects.toMatchObject({
+      failure: { code: 'blocked' },
+    })
   })
 
   it('skips the steps a package already satisfies', async () => {

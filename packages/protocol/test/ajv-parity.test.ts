@@ -70,6 +70,7 @@ import * as SlotsGen from '../gen/ts/slots.js'
 import * as SurfaceGen from '../gen/ts/surface.js'
 import * as ToolDefGen from '../gen/ts/tooldef.js'
 import * as WorkerGen from '../gen/ts/worker.js'
+import { AgentPlan, AgentResolveParams } from '../src/agents.js'
 import {
   METHODS,
   type MethodName,
@@ -204,6 +205,7 @@ ajv.addFormat('agnes-plugin-docs-url', (value: string) => {
   }
 })
 const SESSION_TOOLS_ID = 'https://agnes.dev/session-tools'
+const AGENTS_ID = 'https://agnes.dev/agents/schema.json'
 const SESSION_RUNTIME_ID = 'https://agnes.dev/session-runtime'
 const RUNTIME_ADMIN_ID = 'https://agnes.dev/runtime-admin'
 const SCHEDULES_ID = 'https://agnes.dev/schedules'
@@ -235,6 +237,7 @@ ajv.addSchema({
   },
 })
 ajv.addSchema({ $id: SESSION_TOOLS_ID, $defs: { SessionToolsParams, SessionToolsResult } })
+ajv.addSchema({ $id: AGENTS_ID, $defs: { AgentResolveParams, AgentPlan } })
 ajv.addSchema({ $id: SESSION_RUNTIME_ID, $defs: { SessionRuntimeParams, SessionRuntimeDescriptor } })
 // Reference validator uses URL parsing as required by the owned custom format's contract.
 ajv.addFormat('agnes-git-source', (ref: string) => {
@@ -7499,6 +7502,7 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     SchedulesUpsertResult,
   },
   [SESSION_TOOLS_ID]: { SessionToolsParams, SessionToolsResult },
+  [AGENTS_ID]: { AgentResolveParams, AgentPlan },
   [SESSION_RUNTIME_ID]: { SessionRuntimeParams, SessionRuntimeDescriptor },
   'https://agnes.ai/schema/worker.json': WorkerDefs,
   'https://agnes.ai/schema/resource-control.json': {
@@ -7820,6 +7824,7 @@ describe('McpServerDescriptor: authorizationStatus field (mcp-oauth-authorizatio
 type MethodDefRef = { fileId: string; params: string; result?: string }
 
 const METHOD_DEF: Record<MethodName, MethodDefRef> = {
+  '_agnes/v1/agents.resolve': { fileId: AGENTS_ID, params: 'AgentResolveParams', result: 'AgentPlan' },
   '_agnes/v1/extension.wakes.enqueue': {
     fileId: 'https://agnes.ai/schema/extension-service.json',
     params: 'BoundWakeEnqueueParams',
@@ -8702,6 +8707,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
 }
 
 const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
+  '_agnes/v1/agents.resolve': {
+    valid: { ref: 'acme/kit#work' },
+    invalid: [{}, { ref: 1 }, { ref: 'x', actor: 'forged' }],
+    note: 'Host resolves explicit refs',
+  },
   '_agnes/v1/extension.wakes.enqueue': ServiceSamples.BoundWakeEnqueueParams as Sample,
   '_agnes/v1/extension.wakes.read': ServiceSamples.BoundWakeReadParams as Sample,
   '_agnes/v1/extension.callScoped': {
@@ -9802,6 +9812,26 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/sessionSelection.defaults.get': AGNES_SAMPLES.SessionDefaultsState as Sample,
   '_agnes/v1/sessionSelection.defaults.save': AGNES_SAMPLES.SessionDefaultsState as Sample,
   '_agnes/v1/session.revealWorkspace': AGNES_SAMPLES.SessionRevealWorkspaceResult as Sample,
+  '_agnes/v1/agents.resolve': {
+    valid: {
+      ref: 'acme/kit#work',
+      launch: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' },
+      loop: { id: 'loop', version: '1.0.0' },
+      bundles: ['acme/kit#work'],
+      preset: 'safe',
+      pages: [],
+      digest: 'hash',
+      compositionHash: 'tree',
+      presetHash: 'preset',
+      effectivePresetHash: 'effective',
+      model: { route: 'demo', model: 'demo' },
+      models: { primary: { route: 'demo', model: 'demo' } },
+      permission: { readOnly: true, tools: [], allow: [], deny: [] },
+      sources: [],
+    },
+    invalid: [{}, { ref: 'acme/kit#work' }],
+    note: 'Resolved plans are complete and carry no credentials',
+  },
   '_agnes/v1/session.runtime': {
     valid: {
       sessionKey: 's',

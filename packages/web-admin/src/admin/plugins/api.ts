@@ -141,6 +141,28 @@ function intentFingerprint(value: string): string {
  * source credential, or transport credential to the page.
  */
 export class PluginAdminApi {
+  async prepareAgent(
+    agent: string,
+  ): Promise<{ launchTicket: string; presentation: import('@agnes/protocol').AgentPlan }> {
+    return this.agentLaunch({ action: 'prepare', agent })
+  }
+  async startAgent(
+    launchTicket: string,
+    operationId: string,
+  ): Promise<{ sessionId: string; draft?: import('@agnes/protocol').BundleLaunch['prompt'] }> {
+    return this.agentLaunch({ action: 'start', launchTicket, operationId })
+  }
+  private async agentLaunch<T>(request: Record<string, unknown>): Promise<T> {
+    const response = await fetch('/api/agents/launch', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ request }),
+    })
+    const value = await response.json()
+    if (!response.ok) throw new Error(value.error?.message ?? 'Agent launch refused')
+    return value as T
+  }
+
   readonly #fetch: FetchLike
   readonly #context: AdminContext
 

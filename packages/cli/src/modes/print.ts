@@ -102,7 +102,8 @@ async function openSession(booted: Booted, p: ParsedArgs, cwd: string): Promise<
     cwd,
     ...(p.preset ? { preset: p.preset } : {}),
     ...(p.loop ? { loop: p.loop } : {}),
-    ...(p.loop || p.newSession
+    ...(p.agent ? { agent: p.agent } : {}),
+    ...(p.agent || p.loop || p.newSession
       ? { sessionKey: `agnes:local:${booted.profileName}:cli:${p.loop ? 'loop' : 'session'}:${randomUUID()}` }
       : {}),
   })

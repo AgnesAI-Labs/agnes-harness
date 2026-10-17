@@ -57,6 +57,7 @@ export type ParsedArgs = {
   version: boolean
   profile?: string
   preset?: string
+  agent?: string
   loop?: LoopSelection
   cwd?: string
   /** Explicit Computer Use rescue store; bypasses profile/package resolution. */

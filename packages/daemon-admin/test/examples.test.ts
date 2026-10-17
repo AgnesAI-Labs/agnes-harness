@@ -2,13 +2,14 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type {
+  AgentPlan,
   ClientModuleRosterRow,
   PackageCatalogDescriptor,
   PackageInstalledDescriptor,
   PackagePreview,
 } from '@agnes/protocol'
 import { afterEach, expect, it } from 'vitest'
-import { createExamplePackages, type ExampleBackend } from '../src/packages/examples.js'
+import { createAgentLaunches, createExamplePackages, type ExampleBackend } from '../src/packages/examples.js'
 
 const roots: string[] = []
 afterEach(() => {
@@ -101,14 +102,26 @@ function fixture(parentVersion = '1.0.0') {
         } as unknown as PackageInstalledDescriptor,
       ]
     },
-    validateLaunch: async () => {},
+    resolveAgent: async (ref) =>
+      ({
+        ref,
+        launch: entry.agents![0]!.launch,
+        digest: JSON.stringify(entry.agents),
+        loop: { id: 'work', version: '1.0.0' },
+        bundles: [ref],
+        preset: 'safe',
+        pages: [],
+        compositionHash: 'tree',
+        presetHash: 'preset',
+        model: { route: 'demo', model: 'demo' },
+        models: {},
+        permission: { readOnly: false, tools: [], allow: [], deny: [] },
+        sources: [],
+      }) as AgentPlan,
     open: async (_launch, key) => {
       const session = sessions.get(key) ?? `session-${sessions.size + 1}`
       sessions.set(key, session)
       return session
-    },
-    prompt: async (_session, _prompt, command) => {
-      inputs.add(command)
     },
   }
   const create = () => createExamplePackages({ directory, backend })
@@ -135,12 +148,12 @@ it.each(['1.0.0', '0.1.0-alpha.0'])(
     expect(await f.call(request)).toEqual({ sessionId: 'session-1' })
     expect(f.sessions.size).toBe(1)
     expect(f.inputs.size).toBe(0)
-    // A crash after admission but before receipt persistence can repeat both steps safely.
+    // An interrupted launch has an uncertain receipt and must not be dispatched again.
     const state = JSON.parse(readFileSync(join(f.directory, 'operations.json'), 'utf8'))
     for (const operation of Object.values(state.operations) as { state: string; sessionId?: string }[])
       if (operation.sessionId) operation.state = 'running'
     writeFileSync(join(f.directory, 'operations.json'), JSON.stringify(state))
-    expect(await f.call(request)).toEqual({ sessionId: 'session-1' })
+    await expect(f.call(request)).rejects.toThrow('OUTCOME_UNKNOWN')
     expect(f.sessions.size).toBe(1)
     expect(f.inputs.size).toBe(0)
     await expect(f.call({ ...request, launchTicket: 'different-ticket' })).rejects.toThrow('STALE')
@@ -211,16 +224,74 @@ it('retains an unknown dispatch result and does not replay it', async () => {
   })
 })
 
-it('refuses draft launches through the legacy automatic-submit facade', async () => {
+it('returns the reviewed draft with the session and never submits it, including start retries', async () => {
   const f = fixture()
   const review = (await f.call({ action: 'inspect', exampleId: f.entry.id })) as { reviewId: string }
   await f.call({ action: 'enable', reviewId: review.reviewId, operationId: 'enable-draft' })
   const agent = f.entry.agents?.[0]
   if (!agent) throw new Error('fixture agent is missing')
   Object.assign(agent.launch, { prompt: { text: { en: 'Keep editable' }, mode: 'draft' } })
-  await expect(f.call({ action: 'prepare', exampleId: f.entry.id, launchId: 'work' })).rejects.toThrow(
-    'E_PACKAGE_BLOCKED',
-  )
-  expect(f.sessions.size).toBe(0)
+  const ticket = (await f.call({ action: 'prepare', exampleId: f.entry.id, launchId: 'work' })) as {
+    launchTicket: string
+  }
+  const request = { action: 'start', launchTicket: ticket.launchTicket, operationId: 'draft-start' }
+  const expected = { sessionId: 'session-1', draft: agent.launch.prompt }
+  expect(await f.call(request)).toEqual(expected)
+  expect(await f.call(request)).toEqual(expected)
+  expect(f.sessions.size).toBe(1)
   expect(f.inputs.size).toBe(0)
+})
+
+it('ordinary agent review binds caller workspace and activation, refuses drift and expiry, and keeps draft retries idempotent', async () => {
+  const f = fixture()
+  let time = 1
+  const caller = {
+    principal: 'host-user',
+    profile: 'test',
+    workspace: '/synthetic/workspace',
+    activation: 'host-1',
+  }
+  let plan = await f.backend.resolveAgent('acme/kit#work')
+  plan = {
+    ...plan,
+    launch: { ...plan.launch, prompt: { mode: 'draft', text: { en: 'Review before sending' } } },
+  }
+  const backend = { caller: async () => caller, resolve: async () => plan, open: f.backend.open }
+  const call = (request: Record<string, unknown>) =>
+    createAgentLaunches({ directory: f.directory, backend, now: () => time }).call(request)
+  const prepare = () => call({ action: 'prepare', agent: plan.ref }) as Promise<{ launchTicket: string }>
+  const first = await prepare()
+  const request = { action: 'start', launchTicket: first.launchTicket, operationId: 'host-start' }
+  expect(await call(request)).toEqual({ sessionId: 'session-1', draft: plan.launch.prompt })
+  expect(await call(request)).toEqual({ sessionId: 'session-1', draft: plan.launch.prompt })
+  expect(f.sessions.size).toBe(1)
+  expect(f.inputs.size).toBe(0)
+  await expect(call({ ...request, launchTicket: 'different' })).rejects.toThrow('STALE')
+  const drift = await prepare()
+  plan = { ...plan, digest: 'changed-permission-or-model-or-source' }
+  await expect(
+    call({ action: 'start', launchTicket: drift.launchTicket, operationId: 'drift' }),
+  ).rejects.toThrow('STALE')
+  const expired = await prepare()
+  time += 300_001
+  await expect(
+    call({ action: 'start', launchTicket: expired.launchTicket, operationId: 'expired' }),
+  ).rejects.toThrow('STALE')
+  const activation = await prepare()
+  caller.activation = 'host-2'
+  await expect(
+    call({ action: 'start', launchTicket: activation.launchTicket, operationId: 'activation' }),
+  ).rejects.toThrow('STALE')
+  await expect(
+    call({ action: 'enable', reviewId: first.launchTicket, operationId: 'escalate' }),
+  ).rejects.toThrow('INVALID')
+  const unknown = await prepare()
+  backend.open = async () => {
+    throw new Error('uncertain')
+  }
+  const retry = { action: 'start', launchTicket: unknown.launchTicket, operationId: 'unknown' }
+  await expect(call(retry)).rejects.toThrow('OUTCOME_UNKNOWN')
+  backend.open = f.backend.open
+  await expect(call(retry)).rejects.toThrow('OUTCOME_UNKNOWN')
+  expect(f.sessions.size).toBe(1)
 })

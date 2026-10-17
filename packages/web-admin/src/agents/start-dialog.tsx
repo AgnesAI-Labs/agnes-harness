@@ -14,7 +14,6 @@ import {
 } from '@agnes/web-ui'
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { InstallReview, shortSource } from '../admin/plugins/install-review.js'
-import { sessionStartUrl } from '../settings/runtime-panels.js'
 import { AGENTS_NAMESPACE, agentsCatalog } from './agents-locale.js'
 import type { BusinessAgent } from './catalog.js'
 import {
@@ -32,13 +31,15 @@ import {
 } from './start-flow.js'
 
 type Text = (key: string, vars?: Record<string, string | number>) => string
-export type StartedSession = StartTarget & { prompt?: string | undefined }
+export type StartedSession = { sessionId: string; prompt?: string | undefined }
 /**
  * Opens the new-session draft the way every other start link does: the loop is selected, the
  * package's session bundles are requested and the sample prompt is filled in, never sent.
  */
 export const openStartedSession = (target: StartedSession): void =>
-  location.assign(sessionStartUrl(undefined, target.prompt, target.bundles, target.loop))
+  location.assign(
+    `/?${new URLSearchParams({ session: target.sessionId, ...(target.prompt ? { prompt: target.prompt } : {}) })}`,
+  )
 
 type Reviewed = PackagePreview | PackageInstalledDescriptor
 type GetsRow = { icon: IconName; title: string; detail?: string | undefined; caution?: boolean }
@@ -148,6 +149,7 @@ type Phase =
   | { kind: 'idle' }
   | { kind: 'planning'; agent: BusinessAgent }
   | { kind: 'confirm'; agent: BusinessAgent; plan: StartPlan }
+  | { kind: 'launch-review'; agent: BusinessAgent; plan: StartPlan; target: StartTarget; operationId: string }
   | { kind: 'running'; agent: BusinessAgent; plan: StartPlan; progress: StartProgress }
   | {
       kind: 'failed'
@@ -186,7 +188,7 @@ export function useBusinessAgentStart(options: {
   openSession?: (target: StartedSession) => void
   onOpenPlugins?: (agent: BusinessAgent) => void
 }): BusinessAgentStart {
-  const { t } = useUiText(AGENTS_NAMESPACE, agentsCatalog)
+  const { t, locale } = useUiText(AGENTS_NAMESPACE, agentsCatalog)
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' })
   // The start shows as a page inside Agent FDE (Agent FDE › the agent); its page is the address.
   const nav = usePushStack()
@@ -239,16 +241,15 @@ export function useBusinessAgentStart(options: {
         (target) => {
           if (signal.aborted) return
           latest.current.onChanged?.()
-          setPhase({ kind: 'idle' })
-          hide(agent)
-          ;(latest.current.openSession ?? openStartedSession)({ ...target, prompt: agent.samplePrompt })
+          setPhase({ kind: 'launch-review', agent, plan, target, operationId: crypto.randomUUID() })
+          show(agent)
         },
         (error: unknown) => {
           if (!signal.aborted) fail(agent, plan, progress, error)
         },
       )
     },
-    [fail, hide],
+    [fail, show],
   )
 
   const begin = useCallback(
@@ -305,7 +306,7 @@ export function useBusinessAgentStart(options: {
 
   const start: BusinessAgentStart['start'] = (agent, startOptions) => {
     // A second click on the same agent brings its page back instead of starting twice.
-    if (phase.kind !== 'idle' && phase.agent.entry.id === agent.entry.id) return show(agent)
+    if (phase.kind !== 'idle' && phase.agent.ref === agent.ref) return show(agent)
     if (phase.kind === 'running') return show(phase.agent)
     begin(agent, startOptions?.quiet === true)
   }
@@ -348,7 +349,7 @@ export function useBusinessAgentStart(options: {
         description={t(
           phase.kind === 'planning'
             ? 'dialog.checking'
-            : phase.kind === 'confirm'
+            : phase.kind === 'confirm' || phase.kind === 'launch-review'
               ? 'dialog.confirm'
               : phase.kind === 'running'
                 ? 'dialog.running'
@@ -357,6 +358,66 @@ export function useBusinessAgentStart(options: {
         )}
       >
         <div className="agent-start-page" data-testid="agent-start-dialog">
+          {phase.kind === 'launch-review' && (
+            <section data-testid="agent-launch-review">
+              <SettingsGroup>
+                <SettingsItem
+                  label={phase.target.launch.title[locale] ?? phase.target.launch.title.en}
+                  description={phase.target.ref}
+                />
+                <SettingsItem
+                  label={t('launch.model')}
+                  description={`${phase.target.model.route} / ${phase.target.model.model}`}
+                />
+                <SettingsItem
+                  label={t('launch.permission')}
+                  description={JSON.stringify(phase.target.permission)}
+                />
+                <SettingsItem
+                  label={t('launch.sources')}
+                  description={phase.target.sources
+                    .map((source) => `${source.id}@${source.version}`)
+                    .join(', ')}
+                />
+                {phase.target.launch.prompt && (
+                  <SettingsItem
+                    label={t('launch.draft')}
+                    description={
+                      phase.target.launch.prompt.text[locale] ?? phase.target.launch.prompt.text.en
+                    }
+                  />
+                )}
+              </SettingsGroup>
+              <Button
+                data-testid="agent-launch-confirm"
+                onClick={() => {
+                  const review = phase
+                  const api = latest.current.api
+                  if (!api) return
+                  setPhase({
+                    kind: 'running',
+                    agent: review.agent,
+                    plan: review.plan,
+                    progress: { ...idle, session: 'running' },
+                  })
+                  void api.startAgent(review.target.launchTicket, review.operationId).then(
+                    (result) => {
+                      setPhase({ kind: 'idle' })
+                      hide(review.agent)
+                      ;(latest.current.openSession ?? openStartedSession)({
+                        sessionId: result.sessionId,
+                        prompt: result.draft?.text[locale] ?? result.draft?.text.en,
+                      })
+                    },
+                    (error: unknown) =>
+                      fail(review.agent, review.plan, { ...idle, session: 'failed' }, error),
+                  )
+                }}
+              >
+                {t('action.session')}
+              </Button>
+            </section>
+          )}
           {phase.kind === 'planning' && <Loadable loading hasData={false} shape="rows" />}
           {phase.kind === 'confirm' && reviewed && (
             <InstallReview

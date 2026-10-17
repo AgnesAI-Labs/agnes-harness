@@ -554,7 +554,8 @@ export function localPackageAdmin(
     },
     async handleClientExamples(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
       const url = new URL(request.url ?? '/', origin)
-      if (url.pathname !== '/api/client-modules/examples') return false
+      const agent = url.pathname === '/api/agents/launch'
+      if (!agent && url.pathname !== '/api/client-modules/examples') return false
       if (
         request.method !== 'POST' ||
         url.search ||
@@ -568,7 +569,7 @@ export function localPackageAdmin(
       const body = await jsonBody(request)
       if (
         !body ||
-        typeof body.rowId !== 'string' ||
+        (!agent && typeof body.rowId !== 'string') ||
         !record(body.request) ||
         Object.keys(body).some((key) => key !== 'rowId' && key !== 'request')
       ) {
@@ -576,7 +577,13 @@ export function localPackageAdmin(
         return true
       }
       try {
-        serviceReply(response, 200, await examples.call(body.rowId, body.request))
+        serviceReply(
+          response,
+          200,
+          agent
+            ? await examples.callAgent(body.request)
+            : await examples.call(typeof body.rowId === 'string' ? body.rowId : '', body.request),
+        )
       } catch (error) {
         const code =
           error instanceof Error &&

@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { satisfiesApiRange } from '@agnes/extension-api'
 import { withLock } from '@agnes/package-manager'
 import type {
+  AgentPlan,
   ClientModuleRosterRow,
   ExampleLaunchDeclaration,
   PackageCatalogDescriptor,
@@ -22,6 +23,7 @@ type Review = {
   preview: PackagePreview
   removal?: boolean
   launch?: ExampleLaunchDeclaration
+  plan?: AgentPlan
 }
 type Operation = {
   owner: string
@@ -44,10 +46,8 @@ export interface ExampleBackend {
   inspect(entry: PackageCatalogDescriptor, command: string): Promise<PackagePreview>
   enable(review: Review, command: string, check: () => Promise<void>): Promise<void>
   /** Must select this exact reviewed bundle/preset, with no model or permission fallback. */
-  open(launch: ExampleLaunchDeclaration, sessionKey: string): Promise<string>
-  /** Must use the durable session submit journal and the supplied command ID. */
-  prompt(sessionId: string, prompt: string, commandId: string): Promise<void>
-  validateLaunch(example: PackageInstalledDescriptor, launch: ExampleLaunchDeclaration): Promise<void>
+  open(plan: AgentPlan, sessionKey: string): Promise<string>
+  resolveAgent(ref: string): Promise<AgentPlan>
 }
 const digest = (value: unknown) => createHash('sha256').update(jcs(value)).digest('hex')
 function deny(code = 'CAPABILITY_DENIED'): never {
@@ -126,6 +126,8 @@ export function createExamplePackages(options: {
         installed.capabilityHash !== review.preview.capabilityHash ||
         installed.blockers.length)
     )
+      deny('E_PACKAGE_PREVIEW_STALE')
+    if (review.plan && (await backend.resolveAgent(review.plan.ref)).digest !== review.plan.digest)
       deny('E_PACKAGE_PREVIEW_STALE')
     return installed
   }
@@ -224,19 +226,16 @@ export function createExamplePackages(options: {
               const launchId = field(request.launchId)
               const launch =
                 entry.agents?.find((agent) => agent.ref === `${entry.id}#${launchId}`)?.launch ?? deny()
-              // The legacy example facade submits automatically. Draft launch support belongs to
-              // the reviewed launch facade; fail closed until that protocol is available.
-              if (launch.prompt) deny('E_PACKAGE_BLOCKED')
               return {
                 id: launchId,
                 kind: 'business-agent' as const,
                 title: launch.title.en,
                 bundle: `${entry.id}#${launchId}`,
                 preset: launch.preset,
-                prompt: '',
+                prompt: launch.prompt?.text.en ?? '',
               }
             })()
-            await backend.validateLaunch(installed, review.launch)
+            review.plan = await backend.resolveAgent(review.launch.bundle)
           }
           for (const [key, item] of Object.entries(state.reviews))
             if (item.expires <= now()) delete state.reviews[key]
@@ -273,8 +272,19 @@ export function createExamplePackages(options: {
         let op = state.operations[operationKey]
         if (op) {
           if (op.owner !== scope || op.digest !== payload) deny('E_PACKAGE_PREVIEW_STALE')
+          await current(op.review, who, true)
+          if (op.state === 'running') {
+            op.state = 'unknown'
+            op.code = 'OUTCOME_UNKNOWN'
+            await save(state)
+          }
           if (op.state === 'completed')
-            return action === 'start' ? { sessionId: op.sessionId } : { operationId }
+            return action === 'start'
+              ? {
+                  sessionId: op.sessionId,
+                  ...(op.review.plan?.launch.prompt ? { draft: op.review.plan.launch.prompt } : {}),
+                }
+              : { operationId }
           if (op.state === 'failed' || op.state === 'unknown') deny(op.code ?? 'OUTCOME_UNKNOWN')
         } else {
           const review =
@@ -304,15 +314,21 @@ export function createExamplePackages(options: {
             const installed = await current(review, await owner(rowId), true)
             if (!installed?.trusted || installed.desired !== 'enabled' || installed.actual !== 'running')
               deny('E_PACKAGE_STATE')
-            await backend.validateLaunch(installed, launch)
-            op.sessionId = await backend.open(launch, `example:${operationKey}`)
+            const plan = review.plan ?? deny()
+            if ((await backend.resolveAgent(launch.bundle)).digest !== plan.digest)
+              deny('E_PACKAGE_PREVIEW_STALE')
+            op.sessionId = await backend.open(plan, `example:${operationKey}`)
             await save(state)
             await check()
-            if (launch.prompt) await backend.prompt(op.sessionId, launch.prompt, `example-${operationKey}`)
           }
           op.state = 'completed'
           await save(state)
-          return action === 'start' ? { sessionId: op.sessionId } : { operationId }
+          return action === 'start'
+            ? {
+                sessionId: op.sessionId,
+                ...(op.review.plan?.launch.prompt ? { draft: op.review.plan.launch.prompt } : {}),
+              }
+            : { operationId }
         } catch (error) {
           const code =
             error instanceof Error &&
@@ -330,3 +346,5 @@ export function createExamplePackages(options: {
     },
   }
 }
+
+export { type AgentLaunchBackend, createAgentLaunches } from './agent-launches.js'

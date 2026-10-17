@@ -20,6 +20,8 @@ type RemoteOpen = Readonly<{
   cwd: string
   binding: WorkspaceBindingEnvelope
   preset?: string
+  agent?: string
+  agentDigest?: string
   bundles?: readonly string[]
   loop?: LoopSelection
   credential?: unknown
@@ -281,6 +283,8 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     cwd: string
     binding?: WorkspaceBindingEnvelope
     preset?: string
+    agent?: string
+    agentDigest?: string
     bundles?: readonly string[]
     loop?: LoopSelection
     credential?: unknown
@@ -299,6 +303,8 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     const epoch = this.sessionEpochs.get(key) ?? 0
     const existing = this.entries.get(key)
     if (existing) {
+      if (o.agent && (o.agent !== existing.reopen.agent || o.agentDigest !== existing.reopen.agentDigest))
+        throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: key })
       if (o.bundles !== undefined && JSON.stringify(o.bundles) !== JSON.stringify(existing.reopen.bundles))
         throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: key })
       return existing
@@ -333,6 +339,8 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
       cwd: o.cwd,
       binding: o.binding,
       ...(o.preset ? { preset: o.preset } : {}),
+      ...(o.agent ? { agent: o.agent } : {}),
+      ...(o.agentDigest ? { agentDigest: o.agentDigest } : {}),
       ...(o.bundles !== undefined ? { bundles: o.bundles } : {}),
       ...(o.loop ? { loop: o.loop } : {}),
       ...(o.parent && o.forkAt !== undefined ? { parent: { key: o.parent, boundarySeq: o.forkAt } } : {}),

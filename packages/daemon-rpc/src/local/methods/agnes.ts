@@ -1433,6 +1433,7 @@ export function registerAgnes(
     return {}
   })
   registerSchedules(ep, {
+    ...(cx.host.resolveAgent ? { resolveAgent: (ref: string) => cx.host.resolveAgent!(ref) } : {}),
     schedules: () => cx.schedules,
     requireOwner,
     registry: cx.registry,

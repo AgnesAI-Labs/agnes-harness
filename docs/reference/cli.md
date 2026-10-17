@@ -89,3 +89,9 @@ Authoritative syntax: [args/usage](../../packages/cli/src/args.ts), [package](..
 | `agh doctor --json` / `doctor --probe --json` | Local checks / explicit account probes, which may incur charges |
 
 See [candidate review](../extend/agent-built-plugins.md), [hot reload](../extend/hot-reload.md), [App Server](app-server.md) and [first run](../guide/getting-started.md) for complete flags and authority boundaries.
+
+## Create a session from an agent
+
+`node agnes.mjs --agent '@acme/kit#review' -p 'Inspect this workspace'` asks the backend to resolve that Bundle's own `launch`, selecting an exact Loop, session Bundle and explicit preset. `--agent` cannot be combined with `--loop`, `--preset` or resume options. Loop-only plugins can still use `--loop id@version`.
+
+The target must be trusted, enabled and launch-ready. Invalid references, missing dependencies and unsatisfiable strict model/permission requirements refuse creation. Draft launch prompts are never sent automatically.

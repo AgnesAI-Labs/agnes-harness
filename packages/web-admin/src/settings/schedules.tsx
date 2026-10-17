@@ -284,6 +284,10 @@ export function SchedulesPage({
         prompt: draft.prompt.trim(),
         selector: selectorOf(draft),
         target: targetOf(draft, choices),
+        ...((!draft.saved || draft.mode !== draft.saved.mode) &&
+        choices.modes.find((mode) => mode.key === draft.mode)?.businessAgent
+          ? { agent: draft.mode }
+          : {}),
       })) as { id?: string; code?: string; updated?: boolean }
       if (!alive.current) return
       if (result.updated === false) {

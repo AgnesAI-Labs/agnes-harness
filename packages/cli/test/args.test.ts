@@ -432,3 +432,15 @@ it('keeps candidate review digests supplied by the human instead of selecting th
   for (const flag of ['--candidate-hash', '--review-hash'])
     expect(() => parseArgs(['plugins', 'candidates', 'approve', flag])).toThrow(UsageError)
 })
+
+it('selects an explicit agent without exposing bundle knowledge and refuses conflicting or resumed targets', () => {
+  expect(parseArgs(['-p', 'hello', '--agent', '@acme/kit#review']).agent).toBe('@acme/kit#review')
+  for (const argv of [
+    ['--agent'],
+    ['--agent', 'missing-ref'],
+    ['--agent', '@acme/kit#review', '--loop', 'dag@1'],
+    ['--agent', '@acme/kit#review', '--preset', 'safe'],
+    ['--continue', '--agent', '@acme/kit#review'],
+  ])
+    expect(() => parseArgs(argv)).toThrow()
+})

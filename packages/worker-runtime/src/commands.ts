@@ -836,6 +836,10 @@ export async function handleServiceCommand(
         ),
       }
     }
+    case 'agents.resolve': {
+      if (!host?.resolveAgent || typeof p.ref !== 'string') throw new Error('agent resolution unavailable')
+      return host.resolveAgent(p.ref)
+    }
     case 'session.runtime': {
       if (!host?.sessionRuntime) throw new Error('Session runtime requires an assembled Host')
       if (typeof p.sessionId !== 'string') throw new TypeError('invalid session key')

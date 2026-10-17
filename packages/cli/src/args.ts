@@ -1,4 +1,4 @@
-import { parseLoopSpecifier, SLOT_NAMES } from '@agnes/protocol'
+import { parseAgentRef, parseLoopSpecifier, SLOT_NAMES } from '@agnes/protocol'
 import { UsageError } from './errors.js'
 import type { Command, ModelSel, ParsedArgs } from './types.js'
 
@@ -165,6 +165,14 @@ export function parseArgs(argv: string[]): ParsedArgs {
       p.positional.push(...argv.slice(i + 1))
       break
     }
+    if (a === '--agent') {
+      try {
+        p.agent = parseAgentRef(argv[++i])
+      } catch {
+        throw new UsageError('--agent expects package#bundle')
+      }
+      continue
+    }
     if (a === '--loop') {
       const value = argv[++i]
       try {
@@ -216,6 +224,10 @@ export function parseArgs(argv: string[]): ParsedArgs {
   // Both printing modes select the one-shot form. Only acp does not, because it is a third form
   // rather than a way of printing, and resolveMode reads it as such.
   if (p.mode === 'json' || p.mode === 'text') p.print = true
+  if (p.agent && (p.loop || p.preset))
+    throw new UsageError('--agent cannot be combined with --loop or --preset')
+  if (p.agent && (p.continue || p.resume !== undefined || p.command === 'resume'))
+    throw new UsageError('--agent selects a new session')
   if (p.loop && (p.continue || p.resume !== undefined || p.command === 'resume'))
     throw new UsageError('--loop selects a new session; resumed sessions keep their pinned loop')
   if (p.newSession && (p.continue || p.resume !== undefined || p.command === 'resume'))
@@ -269,7 +281,7 @@ export function resolveMode(
 export function usage(): string {
   return [
     'agh [prompt] [--profile <p>] [--preset <n>] [--cwd <dir>] [--new | --continue | --resume <id>]',
-    '      [--connect <t>] [--model <slot>=<route>/<model>] [--loop <id>@<version>]',
+    '      [--connect <t>] [--model <slot>=<route>/<model>] [--agent <package#bundle> | --loop <id>@<version>]',
     'agh -p [prompt] [--mode text|json] [--park] [--meta] [--ephemeral|--standalone]',
     'agh --mode acp [--profile <p> | --connect <t>] [--ephemeral]      agh acp ... (alias)',
     'agh runtime reconcile <resource> --extension <row-id> [--operation <id>] [--answer allow|reject]',

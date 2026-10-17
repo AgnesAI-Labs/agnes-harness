@@ -1,4 +1,5 @@
 import type {
+  AgentPlan,
   PackageCatalogDescriptor,
   PackageInstalledDescriptor,
   PackageOperation,
@@ -14,7 +15,15 @@ export type StartProgress = Readonly<Record<StartStep, StartStepState>>
 
 export type StartApi = Pick<
   PluginAdminApi,
-  'list' | 'inspect' | 'install' | 'trust' | 'enable' | 'enableChecked' | 'operation' | 'loops' | 'runtime'
+  | 'list'
+  | 'inspect'
+  | 'install'
+  | 'trust'
+  | 'enable'
+  | 'enableChecked'
+  | 'operation'
+  | 'prepareAgent'
+  | 'startAgent'
 >
 
 /** Why a step stopped: a stable code the dialog words, plus what the daemon said when it said anything. */
@@ -51,11 +60,7 @@ export type StartPlan = {
   preview: PackagePreview | undefined
   needed: Readonly<Record<StartStep, boolean>>
 }
-export type StartTarget = {
-  loop: { id: string; version: string }
-  /** Session-scope bundle ids of this package, as the runtime catalog names them. */
-  bundles: string[]
-}
+export type StartTarget = AgentPlan & { launchTicket: string }
 
 export type StartOptions = {
   signal?: AbortSignal
@@ -281,33 +286,16 @@ export async function runBusinessAgentStart(
   }
 
   return run('session', async () => {
-    let loops: Awaited<ReturnType<StartApi['loops']>>['loops']
-    try {
-      loops = (await api.loops()).loops
-    } catch (error) {
-      if (options.signal?.aborted) throw error
-      throw new StartError({ step: 'session', code: 'request', detail: detailOf(error) })
-    }
-    const loop = loops.find((item) => item.sourcePackage === id)
-    if (!loop) throw new StartError({ step: 'session', code: 'loop-missing' })
-    // The package's bundle carries its presets and tool policy into the session. The daemon names
-    // the bundles of an installed package in its policy summary; the runtime catalog is asked only
-    // when that summary is missing, and may take a moment to list a bundle after enabling. A
-    // daemon that names none still starts the loop, without that policy.
     const current = await installedOf(api, id, 'session', options.signal)
     assertReviewed('session', current)
-    const named = [...new Set((current?.presentation?.presets ?? []).map((preset) => preset.bundle))]
-    if (named.length) return { loop: { id: loop.id, version: loop.version }, bundles: named }
-    const expected = plan.entry.provides?.includes('bundle') === true
-    let bundles: { id: string }[] = []
-    for (let attempt = 0; attempt < (expected ? 8 : 1); attempt++) {
-      if (attempt > 0) await sleep(options.pollMs ?? 400, options.signal)
-      bundles = await api
-        .runtime()
-        .then((snapshot) => (snapshot.bundles ?? []).filter((bundle) => bundle.sourcePackage === id))
-        .catch(() => [])
-      if (bundles.length) break
+    const declared = plan.entry.agents?.length === 1 ? plan.entry.agents[0] : undefined
+    if (!declared) throw new StartError({ step: 'session', code: 'blocked' })
+    try {
+      const prepared = await api.prepareAgent(declared.ref)
+      if (prepared.presentation.ref !== declared.ref) throw new Error('agent selection changed')
+      return { ...prepared.presentation, launchTicket: prepared.launchTicket }
+    } catch (error) {
+      throw new StartError({ step: 'session', code: 'request', detail: detailOf(error) })
     }
-    return { loop: { id: loop.id, version: loop.version }, bundles: bundles.map((bundle) => bundle.id) }
   })
 }

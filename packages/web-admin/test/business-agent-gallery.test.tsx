@@ -38,7 +38,15 @@ const entry = (id: string, name: string, sample?: string) =>
     retrievedAt: '',
     provides: ['loop', 'tool'],
     agents: [
-      { ref: `${id}#work`, launch: { title: { en: name }, description: { en: name }, preset: 'safe' } },
+      {
+        ref: `${id}#work`,
+        launch: {
+          title: { en: name },
+          description: { en: name },
+          preset: 'safe',
+          ...(sample ? { prompt: { mode: 'draft', text: { en: sample } } } : {}),
+        },
+      },
     ],
     presentation: { origin: 'example', rows: [] },
     metadata: {
@@ -87,6 +95,23 @@ function setup(options: { permissions?: string[]; readOnly?: boolean; ready?: bo
     },
   }
   const api = {
+    prepareAgent: async (ref: string) => ({
+      launchTicket: 'ticket',
+      presentation: {
+        ref,
+        launch: entry(ID, 'Data report', 'Summarise the sample CSV.').agents![0]!.launch,
+        loop: { id: 'fde.data-report', version: '5.0.0' },
+        bundles: [ref],
+        preset: 'safe',
+        model: { route: 'demo', model: 'm' },
+        sources: [],
+        permission: { readOnly: true, tools: [], allow: [], deny: [] },
+      },
+    }),
+    startAgent: async () => ({
+      sessionId: 'agent-session',
+      draft: { mode: 'draft', text: { en: 'Summarise the sample CSV.' } },
+    }),
     catalog: async () => ({
       items: [
         entry(ID, 'Data report', 'Summarise the sample CSV.'),
@@ -173,13 +198,15 @@ const click = (selector: string) =>
 it('shows a card per business agent, with a sample line only where the package has one', async () => {
   const host = await mount(setup().source, () => {})
   expect(host.querySelectorAll('.agent-card')).toHaveLength(2)
-  const report = host.querySelector('[data-testid="business-agent-data-report"]')
+  const report = host.querySelector('[data-testid="business-agent-data-report-work"]')
   expect(report?.textContent).toContain('Data report')
   expect(report?.querySelector('[data-testid="business-agent-sample"]')?.textContent).toBe(
     en('try', { prompt: 'Summarise the sample CSV.' }),
   )
   expect(
-    host.querySelector('[data-testid="business-agent-code-review"] [data-testid="business-agent-sample"]'),
+    host.querySelector(
+      '[data-testid="business-agent-code-review-work"] [data-testid="business-agent-sample"]',
+    ),
   ).toBeNull()
   expect(report?.textContent).toContain(en('state.available'))
 })
@@ -188,7 +215,7 @@ it('asks once with what the package gets, then installs, trusts, enables and ope
   const kit = setup()
   const opened: StartedSession[] = []
   await mount(kit.source, (target) => opened.push(target))
-  await click('[data-testid="business-agent-start-data-report"]')
+  await click('[data-testid="business-agent-start-data-report-work"]')
   await vi.waitFor(() => expect(document.querySelector('[data-testid="agent-start-gets"]')).not.toBeNull())
   // Inspecting is all that has happened before the user agrees.
   expect(kit.calls).toEqual(['inspect'])
@@ -212,11 +239,14 @@ it('asks once with what the package gets, then installs, trusts, enables and ope
   expect(review?.querySelector('[data-testid="install-review-unverified"]')).not.toBeNull()
   expect(document.querySelector('[role="dialog"]')).toBeNull()
   await click('[data-testid="agent-start-confirm"]')
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-testid="agent-launch-confirm"]')).not.toBeNull(),
+  )
+  await click('[data-testid="agent-launch-confirm"]')
   await vi.waitFor(() => expect(opened).toHaveLength(1), { timeout: 5000 })
   expect(kit.calls).toEqual(['inspect', 'install', 'trust', 'enable'])
   expect(opened[0]).toEqual({
-    loop: { id: 'fde.data-report', version: '5.0.0' },
-    bundles: [],
+    sessionId: 'agent-session',
     prompt: 'Summarise the sample CSV.',
   })
 })
@@ -225,10 +255,14 @@ it('opens a session at once for a ready agent, and refuses package changes witho
   const ready = setup({ ready: true })
   const opened: StartedSession[] = []
   const host = await mount(ready.source, (target) => opened.push(target))
-  expect(host.querySelector('[data-testid="business-agent-data-report"]')?.textContent).toContain(
+  expect(host.querySelector('[data-testid="business-agent-data-report-work"]')?.textContent).toContain(
     en('state.ready'),
   )
-  await click('[data-testid="business-agent-start-data-report"]')
+  await click('[data-testid="business-agent-start-data-report-work"]')
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-testid="agent-launch-confirm"]')).not.toBeNull(),
+  )
+  await click('[data-testid="agent-launch-confirm"]')
   await vi.waitFor(() => expect(opened).toHaveLength(1))
   expect(ready.calls).toEqual([])
   expect(document.querySelector('[data-testid="agent-start-gets"]')).toBeNull()
@@ -237,7 +271,8 @@ it('opens a session at once for a ready agent, and refuses package changes witho
   document.body.replaceChildren()
   const denied = await mount(setup({ permissions: ['packages.read'] }).source, () => {})
   expect(
-    denied.querySelector<HTMLButtonElement>('[data-testid="business-agent-start-data-report"]')?.disabled,
+    denied.querySelector<HTMLButtonElement>('[data-testid="business-agent-start-data-report-work"]')
+      ?.disabled,
   ).toBe(true)
 })
 
@@ -261,9 +296,9 @@ it('marks the card another surface points at, and starts it when asked to', asyn
 it('opens a start as a page inside Agent FDE, and 返回 cancels it before anything is installed', async () => {
   const kit = setup()
   const host = await mount(kit.source, () => {})
-  await click('[data-testid="business-agent-start-data-report"]')
+  await click('[data-testid="business-agent-start-data-report-work"]')
   await vi.waitFor(() => expect(document.querySelector('[data-testid="agent-start-confirm"]')).not.toBeNull())
-  expect(new URL(location.href).searchParams.get('view')).toBe('agent-data-report')
+  expect(new URL(location.href).searchParams.get('view')).toBe('agent-data-report-work')
   expect([...host.querySelectorAll('.agh-push-crumbs li')].map((item) => item.textContent)).toEqual([
     'Agent FDE',
     'Data report',
@@ -278,7 +313,7 @@ it('opens a start as a page inside Agent FDE, and 返回 cancels it before anyth
 })
 
 it('opens the start of an agent from a link that names its page', async () => {
-  history.replaceState(null, '', '/?page=agents&view=agent-data-report')
+  history.replaceState(null, '', '/?page=agents&view=agent-data-report-work')
   const kit = setup()
   await mount(kit.source, () => {})
   await vi.waitFor(() => expect(document.querySelector('[data-testid="agent-start-confirm"]')).not.toBeNull())

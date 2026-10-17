@@ -338,3 +338,93 @@ it.each(['route', 'model'])(
     }
   },
 )
+
+it('reviews the compiler final tree, strictly pins an agent and admits saved schedule selections against current bundle definitions', async () => {
+  const original = pluginSource("ctx.tools.register(tool('fixture_review'))")
+  const bundles = {
+    review: {
+      profile: { tools: ['read'], toolPolicy: { readOnly: false } },
+      presets: {
+        review: { name: 'review', extends: 'standard', composition: { toolPolicy: { readOnly: true } } },
+      },
+      launch: {
+        title: { en: 'Review' },
+        description: { en: 'Review' },
+        preset: 'review',
+        prompt: { mode: 'draft', text: { en: 'Editable' } },
+      },
+    },
+  }
+  const file = join(original.snapshot.directory, 'package.json')
+  const manifest = JSON.parse(readFileSync(file, 'utf8'))
+  manifest.agnes.bundles = bundles
+  writeFileSync(file, JSON.stringify(manifest))
+  let source = {
+    ...original,
+    enabled: true,
+    snapshot: {
+      ...original.snapshot,
+      treeIntegrity: hashDirectory(original.snapshot.directory, { exclude: [] }),
+    },
+  }
+  const { host, dataDir } = await pluginHost(source, {
+    script: [],
+    disableSessionTitle: true,
+    extensionLoader: createLoader({ cacheDir: scratch(), hostRoot: process.cwd(), agnesVersion: '0.0.0' }),
+    profileInputs: { bundleCatalog: parsePackageBundles(VENDOR, bundles) },
+    runtimePluginSources: async () => [source],
+  })
+  try {
+    await host.applyRuntimeTarget(targetOf([pluginRow()]))
+    const ref = `${VENDOR}#review`
+    const plan = await host.resolveAgent!(ref)
+    expect(plan.permission.readOnly).toBe(false)
+    expect(plan.bundles).toEqual([ref])
+    const session = await host.createSession({
+      key: 'reviewed-agent',
+      cwd: dataDir,
+      agent: ref,
+      agentDigest: plan.digest,
+    })
+    expect(session.preset.name).toBe('review')
+    expect(session.preset.model.route.primary).toBe(plan.model.route)
+    expect(session.preset.model.id.primary).toBe(plan.model.model)
+    expect((await session.scan({ type: 'user/message', limit: 1 })).length).toBe(0)
+    const saved = { bundles: plan.bundles, preset: plan.preset, loop: plan.loop }
+    // Same selection, new trusted Bundle definition. Its launch is no longer read by schedules.
+    manifest.agnes.bundles.review.profile = { tools: ['write'], toolPolicy: { readOnly: true } }
+    delete manifest.agnes.bundles.review.launch
+    writeFileSync(file, JSON.stringify(manifest))
+    source = {
+      ...source,
+      snapshot: {
+        ...source.snapshot,
+        treeIntegrity: hashDirectory(original.snapshot.directory, { exclude: [] }),
+        capabilityHash: 'changed',
+      },
+    }
+    await expect(
+      host.createSession({ key: 'drifted-agent', cwd: dataDir, agent: ref, agentDigest: plan.digest }),
+    ).rejects.toThrow()
+    const scheduled = await host.createSession({ key: 'schedule-next-run', cwd: dataDir, ...saved })
+    const bindings = new CompositionSessionStore(join(dataDir, 'profiles', 'local-dev'))
+    expect(bindings.read(scheduled.key)?.tree.selection.tools).toEqual(['write'])
+    expect(bindings.read(session.key)?.tree.selection.tools).toEqual(['read'])
+    await scheduled.close()
+    await session.close()
+    // A strict caller cannot use ordinary admission's unserved-route fallback.
+    manifest.agnes.bundles.review.launch = bundles.review.launch
+    manifest.agnes.bundles.review.presets.review.model = { route: { primary: 'not-served' } }
+    writeFileSync(file, JSON.stringify(manifest))
+    source = {
+      ...source,
+      snapshot: {
+        ...source.snapshot,
+        treeIntegrity: hashDirectory(original.snapshot.directory, { exclude: [] }),
+      },
+    }
+    await expect(host.resolveAgent!(ref)).rejects.toMatchObject({ code: 'E_PRESET_UNSUPPORTED' })
+  } finally {
+    await host.close()
+  }
+})

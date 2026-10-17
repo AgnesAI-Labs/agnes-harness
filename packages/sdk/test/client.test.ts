@@ -734,9 +734,11 @@ it('carries validated loop, preset and ordered bundles on new-session metadata',
   const loop = { id: 'example.dag', version: '1.0.0' }
   try {
     await c.createSession({ cwd: '/w', loop })
+    await c.session.new({ cwd: '/w', agent: 'acme/kit#work' })
     await c.session.new({ cwd: '/w', loop, preset: 'standard', bundles: ['acme#one', 'acme#two'] })
     expect(f.calls.filter((call) => call.method === 'session/new').map((call) => call.params)).toEqual([
       { cwd: '/w', mcpServers: [], _meta: { [META_KEY]: { loop } } },
+      { cwd: '/w', mcpServers: [], _meta: { [META_KEY]: { agent: 'acme/kit#work' } } },
       {
         cwd: '/w',
         mcpServers: [],
@@ -746,6 +748,8 @@ it('carries validated loop, preset and ordered bundles on new-session metadata',
     await expect(c.createSession({ cwd: '/w', loop: { id: '', version: '1' } })).rejects.toThrow('nonempty')
     await expect(c.session.new({ cwd: '/w', bundles: ['same', 'same'] })).rejects.toThrow('unique')
     await expect(c.session.new({ cwd: '/w', bundles: [''] })).rejects.toThrow('nonempty')
+    await expect(c.session.new({ cwd: '/w', agent: 'missing-ref' })).rejects.toThrow('package#bundle')
+    await expect(c.session.new({ cwd: '/w', agent: 'acme/kit#work', loop })).rejects.toThrow('overrides')
   } finally {
     await c.close()
   }

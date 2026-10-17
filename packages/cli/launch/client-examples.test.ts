@@ -29,7 +29,10 @@ it('prepares an explicit installed example outside default Host bundles while re
     dependencies: { 'acme/parent': '1.0.0' },
     compatibility: 'supported',
     source: { type: 'file', ref: 'file:./bundled-examples/demo' },
-    metadata: { category: 'example', exampleOf: parent.id, launches: [launch] },
+    metadata: { exampleOf: parent.id },
+    agents: [
+      { ref: launch.bundle, launch: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' } },
+    ],
     presentation: { presets: [{ bundle: launch.bundle, id: launch.preset }] },
   }
   const row = {
@@ -55,6 +58,13 @@ it('prepares an explicit installed example outside default Host bundles while re
   // explicit selection; using sessionSelection.runtime here used to turn this request into 403.
   const client = {
     clientId: async () => 'synthetic-user',
+    agents: {
+      resolve: async (ref: string) => {
+        if (ref !== bundle.id || bundle.sourcePackage !== example.id || preset.id !== 'safe')
+          throw new Error('CAPABILITY_DENIED')
+        return { ref, launch: example.agents[0]!.launch, preset: 'safe', bundles: [ref], digest: 'reviewed' }
+      },
+    },
     call: async () => ({ bundles: [] }),
     request: async () => ({ revision: 0, bundles: [], catalog }),
     clientModules: { list: async () => ({ rows: [row] }) },
@@ -85,7 +95,7 @@ it('prepares an explicit installed example outside default Host bundles while re
     row.enabled = false
     await expect(prepare()).rejects.toThrow('CAPABILITY_DENIED')
     row.enabled = true
-    launch.id = 'undeclared'
+    example.agents[0]!.ref = 'acme/demo#undeclared'
     await expect(prepare()).rejects.toThrow('CAPABILITY_DENIED')
   } finally {
     rmSync(directory, { recursive: true, force: true })

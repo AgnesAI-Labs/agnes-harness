@@ -2325,8 +2325,10 @@ run(async () => {
     const candidates = page.items.some((item) => item.sessionId === selected)
       ? page
       : await client.session.list({ q: { prefix: selected }, limit: 100 })
-    if (candidates.items.some((item) => item.sessionId === selected)) await open(selected)
-    else {
+    if (candidates.items.some((item) => item.sessionId === selected)) {
+      await open(selected)
+      if (requestedPrompt) composerRuntime.setDraft(requestedPrompt)
+    } else {
       missingSession = true
       notice.setText(t('app.session.notFound'))
       renderControls()

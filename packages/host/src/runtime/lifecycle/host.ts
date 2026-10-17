@@ -100,6 +100,7 @@ export interface Host {
   ): import('@agnes/protocol').SystemPromptSnapshot
   /** Description-only admin port; reads measured facts without probing or execution. */
   securityStatus?(): import('@agnes/protocol').RuntimeSecurityStatus
+  resolveAgent?(ref: string): Promise<import('@agnes/protocol').AgentPlan>
   compositionSessions?(): readonly LiveCompositionSession[]
   sessionCapabilities?(sessionKey: string): import('@agnes/protocol').SessionCapabilitySet
   pluginGenerationStatus?(): PluginGenerationStatus

@@ -322,7 +322,7 @@ export function BusinessAgentGallery({
               const state = stateOf(agent)
               return (
                 <AgentCard
-                  key={agent.entry.id}
+                  key={agent.ref}
                   agent={agent}
                   state={state}
                   focused={focus?.id === agent.entry.id}

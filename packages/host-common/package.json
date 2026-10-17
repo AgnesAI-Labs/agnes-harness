@@ -27,6 +27,7 @@
     "./presets/resolve": "./src/presets/resolve.ts",
     "./presets/types": "./src/presets/types.ts",
     "./presets/view": "./src/presets/view.ts",
+    "./profile/agent": "./src/profile/agent.ts",
     "./profile/canonical": "./src/profile/canonical.ts",
     "./profile/composition-freeze": "./src/profile/composition-freeze.ts",
     "./profile/composition": "./src/profile/composition.ts",

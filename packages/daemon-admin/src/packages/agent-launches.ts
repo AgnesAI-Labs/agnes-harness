@@ -1,0 +1,159 @@
+import { createHash, randomUUID } from 'node:crypto'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { withLock } from '@agnes/package-manager'
+import { type AgentPlan, jcs, parseAgentRef } from '@agnes/protocol'
+import { renameWriteThrough } from '@agnes/system-node'
+
+type Caller = { principal: string; profile: string; workspace: string; activation: string }
+type Review = { owner: string; activation: string; expires: number; plan: AgentPlan }
+type Operation = {
+  payload: string
+  review: Review
+  state: 'running' | 'completed' | 'failed' | 'unknown'
+  sessionId?: string
+  code?: string
+}
+type State = { reviews: Record<string, Review>; operations: Record<string, Operation> }
+export interface AgentLaunchBackend {
+  /** Host caller context, never an agent's own UI row or package-management authority. */
+  caller(): Promise<Caller>
+  resolve(ref: string): Promise<AgentPlan>
+  /** Re-enters ordinary session/workspace authorization with strict Host admission. */
+  open(plan: AgentPlan, sessionKey: string): Promise<string>
+}
+const hash = (value: unknown) => createHash('sha256').update(jcs(value)).digest('hex')
+const deny = (code = 'E_PACKAGE_PREVIEW_STALE'): never => {
+  throw new Error(code)
+}
+const token = (value: unknown): string =>
+  typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(value)
+    ? value
+    : deny('INVALID_REQUEST')
+const result = (op: Operation) => ({
+  sessionId: op.sessionId,
+  ...(op.review.plan.launch.prompt ? { draft: op.review.plan.launch.prompt } : {}),
+})
+
+/** Ordinary prepare/review/start branch. No installation, trust, enable or remove operations. */
+export function createAgentLaunches(options: {
+  directory: string
+  backend: AgentLaunchBackend
+  now?: () => number
+}) {
+  const { backend } = options
+  const now = options.now ?? Date.now
+  mkdirSync(options.directory, { recursive: true, mode: 0o700 })
+  const file = join(options.directory, 'agent-operations.json')
+  const read = (): State => {
+    if (!existsSync(file)) return { reviews: {}, operations: {} }
+    const body = readFileSync(file, 'utf8')
+    if (Buffer.byteLength(body) > 16 * 1024 * 1024) deny('OVERLOADED')
+    const value = JSON.parse(body) as State
+    if (!value.reviews || !value.operations) deny('E_PACKAGE_INTEGRITY')
+    return value
+  }
+  const save = async (state: State) => {
+    const body = JSON.stringify(state)
+    if (Buffer.byteLength(body) > 16 * 1024 * 1024) deny('OVERLOADED')
+    const temporary = `${file}.${randomUUID()}.tmp`
+    writeFileSync(temporary, body, { mode: 0o600, flush: true })
+    await renameWriteThrough(temporary, file)
+  }
+  const scope = ({ principal, profile, workspace }: Caller) => hash({ principal, profile, workspace })
+  const check = async (review: Review, caller: Caller, receipt = false) => {
+    if (
+      review.owner !== scope(caller) ||
+      review.activation !== caller.activation ||
+      (!receipt && review.expires <= now())
+    )
+      deny()
+    const current = await backend.resolve(review.plan.ref)
+    if (current.digest !== review.plan.digest) deny()
+  }
+  return {
+    async call(request: Record<string, unknown>): Promise<unknown> {
+      const fields: Record<string, string[]> = {
+        prepare: ['agent'],
+        start: ['launchTicket', 'operationId'],
+        read: ['operationId'],
+      }
+      const action = typeof request.action === 'string' ? request.action : ''
+      const keys = Object.hasOwn(fields, action) ? fields[action] : undefined
+      if (
+        !keys ||
+        Object.keys(request).some((key) => key !== 'action' && !keys.includes(key)) ||
+        keys.some((key) => typeof request[key] !== 'string')
+      )
+        deny('INVALID_REQUEST')
+      return withLock(options.directory, async () => {
+        const caller = await backend.caller()
+        const owner = scope(caller)
+        const state = read()
+        if (action === 'prepare') {
+          const plan = await backend.resolve(parseAgentRef(request.agent))
+          // Caller activation may change while a container is being admitted.
+          const review = { owner, activation: caller.activation, expires: now() + 300_000, plan }
+          await check(review, await backend.caller())
+          for (const [id, item] of Object.entries(state.reviews))
+            if (item.expires <= now()) delete state.reviews[id]
+          if (Object.keys(state.reviews).length >= 256) deny('OVERLOADED')
+          const launchTicket = randomUUID()
+          state.reviews[launchTicket] = review
+          await save(state)
+          return { launchTicket, presentation: plan }
+        }
+        const key = hash([owner, token(request.operationId)])
+        let op = state.operations[key]
+        if (action === 'read') {
+          if (!op) return deny('CAPABILITY_DENIED')
+          if (op.review.owner !== owner || op.review.activation !== caller.activation)
+            return deny('CAPABILITY_DENIED')
+          return {
+            state: op.state,
+            ...(op.code ? { code: op.code } : {}),
+            ...(op.sessionId ? result(op) : {}),
+          }
+        }
+        const payload = hash(request)
+        if (op) {
+          if (op.payload !== payload) deny()
+          await check(op.review, caller, true)
+          if (op.state === 'completed') return result(op)
+          if (op.state === 'running') {
+            op.state = 'unknown'
+            op.code = 'OUTCOME_UNKNOWN'
+            await save(state)
+          }
+          return deny(op.code ?? 'OUTCOME_UNKNOWN')
+        }
+        const review = state.reviews[token(request.launchTicket)] ?? deny()
+        await check(review, caller)
+        if (Object.keys(state.operations).length >= 10_000) deny('OVERLOADED')
+        op = { payload, review, state: 'running' }
+        state.operations[key] = op
+        await save(state)
+        try {
+          await check(review, await backend.caller())
+          op.sessionId = await backend.open(review.plan, `agent:${key}`)
+          await check(review, await backend.caller(), true)
+          op.state = 'completed'
+          await save(state)
+          return result(op)
+        } catch (error) {
+          const code =
+            error instanceof Error &&
+            ['E_PACKAGE_PREVIEW_STALE', 'E_PACKAGE_STATE', 'E_PACKAGE_BLOCKED', 'CAPABILITY_DENIED'].includes(
+              error.message,
+            )
+              ? error.message
+              : 'OUTCOME_UNKNOWN'
+          op.state = code === 'OUTCOME_UNKNOWN' ? 'unknown' : 'failed'
+          op.code = code
+          await save(state)
+          return deny(code)
+        }
+      })
+    },
+  }
+}

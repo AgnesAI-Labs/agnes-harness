@@ -62,6 +62,7 @@ export type WorkerMethod =
   | 'pluginGenerations.collect'
   | 'configuration.apply'
   | 'session.catalog'
+  | 'agents.resolve'
   | 'session.runtime'
   | 'session.view'
   | 'systemPrompt.defaults'
@@ -223,6 +224,8 @@ export type SessionOpenFrame = {
   params: {
     binding: WorkspaceBindingFrame
     preset?: string
+    agent?: string
+    agentDigest?: string
     bundles?: readonly string[]
     loop?: LoopSelection
     resume?: boolean

@@ -47,7 +47,7 @@ function withoutModel(doc: PresetDoc): PresetDoc {
 export function admitSessionBundlePresets<P extends ResolvedProfile>(
   admission: P,
   host: { presets: Record<string, PresetDoc> },
-  input: { preset?: string; bundles?: readonly string[] },
+  input: { preset?: string; bundles?: readonly string[]; strict?: boolean },
 ): {
   /** The session's own profile, carrying the bundle presets it may use. */
   profile: P
@@ -59,7 +59,11 @@ export function admitSessionBundlePresets<P extends ResolvedProfile>(
   const offered = Object.fromEntries(
     Object.entries(
       input.bundles?.length ? sessionBundlePresets(input.bundles, admission.bundleCatalog ?? {}) : {},
-    ).map(([name, doc]) => [name, routesServed(doc, served) ? doc : withoutModel(doc)]),
+    ).map(([name, doc]) => {
+      if (input.strict && !routesServed(doc, served))
+        throw new HostError('E_PRESET_UNSUPPORTED', 'agent model route is unavailable')
+      return [name, input.strict || routesServed(doc, served) ? doc : withoutModel(doc)]
+    }),
   )
   const names = Object.keys(offered)
   const merged = (base: Record<string, PresetDoc> | undefined) => ({

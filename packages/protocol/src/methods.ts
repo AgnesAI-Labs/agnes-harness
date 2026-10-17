@@ -10,6 +10,7 @@ import {
   UiRefreshParams,
   UiSurfaceRecord,
 } from '../gen/ts/intelligent-ui.js'
+import { AgentPlan, AgentResolveParams } from './agents.js'
 import { ADMIN_METHODS, type AdminMethodName } from './app-server.js'
 import { AutoReviewConfig } from './auto-review.js'
 import { ModelSlotsSnapshot } from './model-slots.js'
@@ -139,6 +140,7 @@ export type MethodName =
   | '_agnes/v1/session.projectUIHistory'
   | '_agnes/v1/session.revealWorkspace'
   | '_agnes/v1/session.runtime'
+  | '_agnes/v1/agents.resolve'
   | '_agnes/v1/session.tools'
   | '_agnes/v1/session.jobs.read'
   | '_agnes/v1/session.jobs.control'
@@ -363,6 +365,7 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     A.SessionRevealWorkspaceParams,
     A.SessionRevealWorkspaceResult,
   ),
+  '_agnes/v1/agents.resolve': clientRequest(AgentResolveParams, AgentPlan),
   '_agnes/v1/session.runtime': clientRequest(SessionRuntimeParams, SessionRuntimeDescriptor),
   '_agnes/v1/session.tools': clientRequest(SessionToolsParams, SessionToolsResult),
   '_agnes/v1/session.jobs.read': clientRequest(A.SessionJobsReadParams, A.SessionJobsReadResult),

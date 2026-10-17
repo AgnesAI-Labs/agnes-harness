@@ -11,7 +11,6 @@ import { modelProfileDeployment } from '@agnes/host-common/profile/model-compati
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
 import { readAdminLoopDefault } from '@agnes/host-providers/assemble/loop-selection'
-import { readRuntimeBundles } from '@agnes/host-providers/profile/bundles-reader'
 import {
   type CompositionBinding,
   CompositionSessionStore,
@@ -43,9 +42,10 @@ import {
 } from '../lifecycle/host-routing.js'
 import { sessionHostRoutes } from '../lifecycle/session-host-routes.js'
 import { sessionKey } from '../sessions/session.js'
+import { assertAgentPin, createAgentResolver, sessionAdmission } from './agent-plan.js'
 import { compositionPresets } from './composition-presets.js'
 import { profileForComposition } from './composition-selection.js'
-import { admitSessionBundlePresets, sessionBundleCatalog } from './session-bundle-presets.js'
+import { admitSessionBundlePresets } from './session-bundle-presets.js'
 import { capabilityEnabled, resolveSessionCapabilities } from './session-capabilities.js'
 import { describeCapabilitySession } from './session-capability-view.js'
 
@@ -444,7 +444,17 @@ export async function createCompositionHost(
     (key, coldRead = false) => owner(key, coldRead).host.kernel,
     sessions,
   )
+  const admission = () => sessionAdmission(profile, modelProfile, options, latestTarget)
+  const prepareAgent = createAgentResolver({
+    profile,
+    admission,
+    host: initial.host,
+    packageDirs: options.packageDirs ?? new Map(),
+    adminLoop: () => readAdminLoopDefault(configuration),
+    open,
+  })
   const overrides: HostFacadeOverrides = {
+    resolveAgent: (ref) => enqueue(async () => (await prepareAgent(ref)).plan),
     ...sessionHostRoutes(
       (key, coldRead = false) => owner(key, coldRead).host,
       () => initial.host,
@@ -474,45 +484,23 @@ export async function createCompositionHost(
             input.cwd ?? options.workspaceRoot,
           )
         try {
+          const agent = input.agent ? await prepareAgent(input.agent) : undefined
+          if (input.agentDigest && (!agent || input.agentDigest !== agent.plan.digest))
+            throw new HostError('E_PRESET_UNSUPPORTED', 'agent review drift')
+          if (agent && (input.loop || input.bundles !== undefined || input.preset || input.parent))
+            throw new HostError('E_PRESET_UNSUPPORTED', 'agent cannot be combined with execution overrides')
           let binding = store.read(key)
+          if (
+            binding &&
+            agent &&
+            (binding.tree.hash !== agent.tree.hash || binding.profile.hash !== agent.profile.hash)
+          )
+            throw new HostError('E_PRESET_UNSUPPORTED', 'agent selection differs from session pin')
+          if (!binding && agent)
+            binding = store.pin({ sessionKey: key, tree: agent.tree, profile: agent.profile })
           if (!binding) {
             const parent = input.parent ? store.read(input.parent.key) : undefined
-            const sources =
-              latestTarget && !parent
-                ? new RuntimePluginCatalogue(
-                    (await options.runtimePluginSources?.()) ??
-                      options.runtimePluginCatalogue ??
-                      options.runtimePluginSnapshots ??
-                      [],
-                  ).select(latestTarget)
-                : []
-            const admissionProfile = {
-              ...profile,
-              // Admission uses the published code catalog, including packages installed after boot.
-              // Persist it with the composition so cold opens can mount its loop before Kernel creation.
-              packages: [
-                ...profile.packages.filter(
-                  (pkg) => !sources.some((source) => source.snapshot.packageId === pkg.id),
-                ),
-                ...sources.map(({ snapshot, trusted }) => ({
-                  ...profile.packages.find((pkg) => pkg.id === snapshot.packageId),
-                  id: snapshot.packageId,
-                  version: snapshot.version,
-                  integrity: snapshot.integrity,
-                  source:
-                    profile.packages.find((pkg) => pkg.id === snapshot.packageId)?.source ??
-                    'runtime-snapshot',
-                  trust: 'trusted' as const,
-                  enabled:
-                    trusted &&
-                    (profile.packages.find((pkg) => pkg.id === snapshot.packageId)?.enabled ?? true),
-                })),
-              ],
-              bundleCatalog: sessionBundleCatalog(
-                profile,
-                latestTarget ? readRuntimeBundles(sources) : undefined,
-              ),
-            }
+            const { current: admissionProfile } = await admission()
             const adminLoop = parent ? undefined : await readAdminLoopDefault(configuration)
             const admitted = admitSessionBundlePresets(admissionProfile, initial.host, parent ? {} : input)
             const tree =
@@ -559,10 +547,21 @@ export async function createCompositionHost(
               )
             const session = await container.host.createSession({
               ...input,
+              ...(agent ? { strict: true } : {}),
               key,
               preset: binding.tree.preset,
               ...(binding.tree.selection.loop ? { loop: binding.tree.selection.loop } : {}),
             })
+            if (agent) {
+              try {
+                if ((await prepareAgent(agent.plan.ref)).plan.digest !== agent.plan.digest)
+                  throw new HostError('E_PRESET_UNSUPPORTED', 'agent source or policy drift during admission')
+                assertAgentPin(agent.plan, session, binding.tree.hash)
+              } catch (error) {
+                await session.close()
+                throw error
+              }
+            }
             sessionOwners.set(key, container)
             const close = session.close.bind(session)
             session.close = async () => {

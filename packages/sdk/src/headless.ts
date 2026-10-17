@@ -52,6 +52,7 @@ export type HeadlessOptions = {
   cwd: string
   input: string | ContentBlock[]
   preset?: string
+  agent?: string
   loop?: LoopSelection
   model?: Parameters<Session['setModel']>[0]
   runId?: string
@@ -86,6 +87,7 @@ export async function runHeadless(
     sessionKey: `agnes:headless:${globalThis.crypto.randomUUID()}`,
     ...(options.preset ? { preset: options.preset } : {}),
     ...(options.loop ? { loop: options.loop } : {}),
+    ...(options.agent ? { agent: options.agent } : {}),
   })
   // Explicitly deny permission requests: an unattended consumer cannot grant authority.
   const offPermission = session.onPermissionRequest(async () => ({ verdict: 'rejected' }))

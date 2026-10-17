@@ -1,4 +1,5 @@
 import { type Static, Type } from '@sinclair/typebox'
+import { AgentRef } from '../gen/ts/extension-manifest.js'
 
 const sessionKey = Type.String({ minLength: 1, maxLength: 256 })
 const title = Type.String({ minLength: 1, maxLength: 120 })
@@ -141,7 +142,14 @@ export const SchedulesListResult = Type.Object(
   { additionalProperties: false },
 )
 export const SchedulesUpsertParams = Type.Object(
-  { id: Type.Optional(scheduleId), title, prompt, selector: ScheduleSelector, target: ScheduleTarget },
+  {
+    id: Type.Optional(scheduleId),
+    agent: Type.Optional(AgentRef),
+    title,
+    prompt,
+    selector: ScheduleSelector,
+    target: ScheduleTarget,
+  },
   { additionalProperties: false },
 )
 const refused = Type.Object(

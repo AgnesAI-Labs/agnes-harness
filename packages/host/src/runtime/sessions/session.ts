@@ -45,6 +45,9 @@ export type SessionRecovery = Awaited<ReturnType<HostSession['resume']>>
 type PinnedSeamKind = (typeof PINNED_SEAM_KINDS)[number]
 
 export type CreateSessionOptions = {
+  agent?: string
+  agentDigest?: string
+  strict?: boolean
   loop?: LoopSelection
   key?: string
   preset?: string
@@ -363,7 +366,7 @@ export async function createSession(
   }).modelRoutes.value!
   let view = parentSession?.preset ?? pinPresetRoutes(preset.view, wanted)
   // Defaults are captured by session/start; resumed ledgers restore their own model selections.
-  if (!parentSession && a.sessionModelSlots) {
+  if (!parentSession && !opts.strict && a.sessionModelSlots) {
     const { slots, auto } = await a.sessionModelSlots()
     const model = {
       ...view.model,

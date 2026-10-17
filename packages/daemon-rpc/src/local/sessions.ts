@@ -89,6 +89,8 @@ export class SessionRegistry implements Registry<SessionEntry> {
     cwd: string
     binding?: WorkspaceBindingEnvelope
     preset?: string
+    agent?: string
+    agentDigest?: string
     bundles?: readonly string[]
     loop?: LoopSelection
     credential?: unknown
@@ -102,6 +104,8 @@ export class SessionRegistry implements Registry<SessionEntry> {
       ...(o.historySignal ? { historySignal: o.historySignal } : {}),
       ...(o.onHistoryProgress ? { onHistoryProgress: o.onHistoryProgress } : {}),
       ...(o.preset ? { preset: o.preset } : {}),
+      ...(o.agent ? { agent: o.agent } : {}),
+      ...(o.agentDigest ? { agentDigest: o.agentDigest } : {}),
       ...(o.bundles !== undefined ? { bundles: o.bundles } : {}),
       ...(o.loop ? { loop: o.loop } : {}),
       ...(o.credential === undefined ? {} : { credential: o.credential }),
@@ -110,6 +114,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
     if (request.key) {
       const existing = this.entries.get(request.key)
       if (existing) {
+        if (o.agent) await this.host.createSession(request)
         if (
           existing.session.d.cwd !== request.cwd ||
           (request.preset !== undefined && existing.session.preset.name !== request.preset) ||
@@ -157,6 +162,8 @@ export class SessionRegistry implements Registry<SessionEntry> {
     cwd: string
     binding?: WorkspaceBinding
     preset?: string
+    agent?: string
+    agentDigest?: string
     bundles?: readonly string[]
     loop?: LoopSelection
     credential?: unknown
