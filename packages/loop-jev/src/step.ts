@@ -446,10 +446,17 @@ export async function dispatchStep(
 ): Promise<LoopStepOutcome> {
   const st = s.state
   const { decision } = route
+  // `binding` describes the calls that were dispatched: a batch Core narrowed to its first call reports one.
   const event = (dropped: number): StepEvent => ({
     ...routeEvent(route),
     ...(route.kind === 'direct'
-      ? { binding: { mode: decision.bindingMode, targets: targetsOf(s, calls), batch: calls.length } }
+      ? {
+          binding: {
+            mode: decision.bindingMode,
+            targets: targetsOf(s, calls.slice(0, calls.length - dropped)),
+            batch: calls.length - dropped,
+          },
+        }
       : {}),
     ...(options.llm
       ? { llm: { ...options.llm, droppedCalls: Number(options.llm.droppedCalls ?? 0) + dropped } }

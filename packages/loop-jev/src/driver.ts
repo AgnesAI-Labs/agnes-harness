@@ -35,6 +35,7 @@ async function beginTurn(s: Scope, input: LoopInput): Promise<LoopTurnView> {
   st.pendingNotes = []
   st.counters = emptyCounters()
   st.internalErrors = 0
+  st.toolNamesChanges = 0
   delete st.endReason
   delete st.endError
   const view = await s.ctx.turn.view()
