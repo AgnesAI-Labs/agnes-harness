@@ -17,7 +17,6 @@ import {
   reportSuccess,
   SchemaControl,
   SearchBar,
-  Segmented,
   SettingsDetails,
   SettingsGroup,
   SettingsInput,
@@ -26,6 +25,7 @@ import {
   SettingsPageActions,
   SettingsPageDescription,
   SettingsSection,
+  SettingsSelect,
   SettingsState,
   SettingsTechnicalDetails,
   SettingsToolbar,
@@ -598,18 +598,23 @@ export function SearchPanel({
       <PushPage id={EDITOR_PAGE} title={ux(selected && configured(selected) ? 'editTitle' : 'add')}>
         <form id="search-settings-editor" className="capability-form" onSubmit={(event) => void save(event)}>
           <Field label={ux('provider')}>
-            <Segmented
+            <SettingsSelect
               id="search-edit-provider"
-              testId="search-edit-provider"
-              label={ux('provider')}
-              block
+              data-testid="search-edit-provider"
+              aria-label={ux('provider')}
               disabled={!canSave || busy || !status}
               value={providerId}
-              options={(status?.providers ?? []).map((row) => ({ value: row.id, label: row.label }))}
-              onChange={(value) => {
+              onChange={(event) => {
+                const value = event.currentTarget.value
                 if (isProviderId(value)) setProviderId(value)
               }}
-            />
+            >
+              {(status?.providers ?? []).map((row) => (
+                <option key={row.id} value={row.id}>
+                  {row.label}
+                </option>
+              ))}
+            </SettingsSelect>
           </Field>
           <Field
             label={t('searchApiKey')}

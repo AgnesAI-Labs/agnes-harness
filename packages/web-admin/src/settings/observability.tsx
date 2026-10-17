@@ -6,9 +6,10 @@ import {
   fallbackT,
   IconButton,
   reportSuccess,
-  Segmented,
   SettingsBlock,
+  SettingsChoice,
   SettingsDrill,
+  SettingsGroup,
   SettingsInput,
   SettingsItem,
   SettingsPresetSelect,
@@ -229,17 +230,31 @@ export function ObservabilityPanel({ canSave = true }: { canSave?: boolean }) {
           </SettingsItem>
         ))}
         <SettingsItem label={t('redaction')}>
-          <Segmented<'metadata' | 'content'>
-            label={t('redaction')}
-            testId="otlp-redaction"
-            value={value.redaction ?? 'metadata'}
-            disabled={locked}
-            options={[
-              { value: 'metadata', label: t('metadata') },
-              { value: 'content', label: t('content') },
-            ]}
-            onChange={(redaction) => edit({ redaction })}
-          />
+          <SettingsGroup
+            role="radiogroup"
+            aria-label={t('redaction')}
+            data-testid="otlp-redaction"
+            className="agnes-settings-choices"
+          >
+            <SettingsChoice
+              type="radio"
+              name="otlp-redaction"
+              value="metadata"
+              label={t('metadata')}
+              checked={(value.redaction ?? 'metadata') === 'metadata'}
+              disabled={locked}
+              onChange={() => edit({ redaction: 'metadata' })}
+            />
+            <SettingsChoice
+              type="radio"
+              name="otlp-redaction"
+              value="content"
+              label={t('content')}
+              checked={(value.redaction ?? 'metadata') === 'content'}
+              disabled={locked}
+              onChange={() => edit({ redaction: 'content' })}
+            />
+          </SettingsGroup>
         </SettingsItem>
         <SettingsItem label={t('scopeLabel')}>
           <span className="agnes-settings-value">{t('scope')}</span>
@@ -298,17 +313,31 @@ export function ObservabilityPanel({ canSave = true }: { canSave?: boolean }) {
               </SettingsItem>
             ))}
             <SettingsItem label={t('shutdown')}>
-              <Segmented<'flush' | 'discard'>
-                label={t('shutdown')}
-                testId="otlp-shutdown"
-                value={value.shutdownPolicy ?? 'flush'}
-                disabled={locked}
-                options={[
-                  { value: 'flush', label: t('flush') },
-                  { value: 'discard', label: t('discard') },
-                ]}
-                onChange={(shutdownPolicy) => edit({ shutdownPolicy })}
-              />
+              <SettingsGroup
+                role="radiogroup"
+                aria-label={t('shutdown')}
+                data-testid="otlp-shutdown"
+                className="agnes-settings-choices"
+              >
+                <SettingsChoice
+                  type="radio"
+                  name="otlp-shutdown"
+                  value="flush"
+                  label={t('flush')}
+                  checked={(value.shutdownPolicy ?? 'flush') === 'flush'}
+                  disabled={locked}
+                  onChange={() => edit({ shutdownPolicy: 'flush' })}
+                />
+                <SettingsChoice
+                  type="radio"
+                  name="otlp-shutdown"
+                  value="discard"
+                  label={t('discard')}
+                  checked={(value.shutdownPolicy ?? 'flush') === 'discard'}
+                  disabled={locked}
+                  onChange={() => edit({ shutdownPolicy: 'discard' })}
+                />
+              </SettingsGroup>
             </SettingsItem>
           </SettingsBlock>
         </SettingsDrill>

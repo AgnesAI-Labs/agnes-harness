@@ -26,7 +26,12 @@ export type SegmentedProps<Value extends string = string> = {
   hostRef?: Ref<HTMLDivElement>
 }
 
-/** The topbar's track, measured sliding thumb and keyboard behaviour, shared by every short choice. */
+/**
+ * Only 2–5 fixed, short, single-line labels in both zh and en, without descriptions/sub-text.
+ * Plugin-driven or dynamic counts, long labels and descriptive choices use SettingsChoice rows
+ * (or a Select for long lists). A radiogroup does not imply a Segmented presentation.
+ * Shares the topbar's track, measured sliding thumb and keyboard behaviour.
+ */
 export function Segmented<Value extends string = string>({
   label,
   value,

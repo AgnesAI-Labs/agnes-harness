@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { expect, it } from 'vitest'
 import { isTestFile, listSourceFiles, repoRoot } from './repo.js'
+import { segmentedPresentationViolations } from './segmented-controls.js'
 import { controlPresentationCounts, newControlPresentationViolations } from './ui-controls.js'
 
 it('permits hidden/file fields and tokens, refuses new raw controls and all colour literal forms', () => {
@@ -50,16 +51,40 @@ it('keeps existing call sites explicit and forbids new raw controls or colours o
   expect(errors, errors.join('\n')).toEqual([])
 })
 
-it('allows radio-group segmented presentation only in the shared Segmented implementation', () => {
+it('reserves segmented presentation for fixed 2–5 short choices and permits descriptive radiogroups', () => {
+  expect(
+    segmentedPresentationViolations(
+      `<SettingsGroup role="radiogroup" className="agnes-settings-choices"><SettingsChoice label="Long title" hint="Source, version, capabilities" /></SettingsGroup>`,
+    ),
+  ).toEqual([])
+  expect(
+    segmentedPresentationViolations(
+      `<Segmented options={[{value: 'a', label: 'A'}, {value: 'b', label: 'B'}]} />`,
+    ),
+  ).toEqual([])
+  for (const source of [
+    `<div role="radiogroup" className="custom-segmented" />`,
+    `<Segmented options={plugins.map(plugin => ({value: plugin.id, label: plugin.title}))} />`,
+    `<Segmented options={[{value: 'a', label: 'A'}]} />`,
+    `<Segmented options={[{value:'a'}, {value:'b'}, {value:'c'}, {value:'d'}, {value:'e'}, {value:'f'}]} />`,
+    `<Segmented options={[{value: 'a', label: 'A', description: 'Details'}, {value: 'b', label: 'B'}]} />`,
+    `<Segmented options={[{value: 'a', label: 'This is a very long option label'}, {value: 'b', label: 'B'}]} />`,
+  ])
+    expect(segmentedPresentationViolations(source), source).not.toEqual([])
+})
+it('guards segmented presentation without forcing descriptive option lists into Segmented', () => {
   const root = repoRoot()
-  const offenders = listSourceFiles(join(root, 'packages')).filter(
-    (file) =>
-      !isTestFile(file) &&
-      !/\/(?:test|tests)\//.test(file) &&
-      !file.endsWith('/web-ui/src/ui/segmented.tsx') &&
-      // Long answer cards, including an Other text editor, are a questionnaire rather than a segmented selector.
-      !file.endsWith('/web-ui/src/intelligent-ui/question-card.tsx') &&
-      /role\s*(?:=|:)\s*(?:["']radiogroup["']|\{[^}]*["']radiogroup["'])/.test(readFileSync(file, 'utf8')),
-  )
-  expect(offenders.map((file) => relative(root, file))).toEqual([])
+  const errors = listSourceFiles(join(root, 'packages'))
+    .filter(
+      (file) =>
+        !isTestFile(file) &&
+        !/\/(?:test|tests)\//.test(file) &&
+        !file.endsWith('/web-ui/src/ui/segmented.tsx'),
+    )
+    .flatMap((file) =>
+      segmentedPresentationViolations(readFileSync(file, 'utf8')).map(
+        (error) => `${relative(root, file)}:${error}`,
+      ),
+    )
+  expect(errors, errors.join('\n')).toEqual([])
 })

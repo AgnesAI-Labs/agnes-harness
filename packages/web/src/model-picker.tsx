@@ -5,9 +5,9 @@ import {
   contextBudgetLabel,
   Icon,
   Popover,
-  Segmented,
   SessionAuxiliaryModels,
   SettingsInput,
+  SettingsSelect,
 } from '@agnes/web-ui'
 import {
   type KeyboardEvent,
@@ -343,14 +343,24 @@ function Choices({
   onChoose(value: string): void
 }): ReactElement {
   return (
-    <Segmented
+    <SettingsSelect
       id={id}
-      label={label}
-      value={selected}
-      options={options}
+      aria-label={label}
+      value={selected ?? '__unselected__'}
       disabled={disabled}
-      onChange={onChoose}
-    />
+      onChange={(event) => onChoose(event.currentTarget.value)}
+    >
+      {selected === undefined && (
+        <option value="__unselected__" disabled>
+          —
+        </option>
+      )}
+      {options.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </SettingsSelect>
   )
 }
 

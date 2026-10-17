@@ -4,8 +4,8 @@ import {
   Dialog,
   fallbackT,
   reportSuccess,
-  Segmented,
   SettingsBlock,
+  SettingsChoice,
   SettingsItem,
   SettingsSelect,
   SettingsState,
@@ -146,23 +146,25 @@ export function PermissionDefaults({
           {t('conflict')}
         </p>
       )}
-      <Segmented
-        label={t('defaultPermissions')}
-        name="security-default-preset"
-        value={chosen ?? ''}
-        disabled={locked}
-        options={presets.map((preset) => ({
-          value: preset,
-          label: t(preset),
-          testId: `security-${preset}`,
-          disabled: !available.includes(preset),
-        }))}
-        onChange={(preset) => {
-          if (preset === 'full-access') setConfirm(true)
-          else void save(preset)
-        }}
-      />
-      <p className="agnes-settings-note">{chosen ? t(`${chosen}Help`) : t('notAllowed')}</p>
+      <fieldset className="agnes-settings-modes" aria-label={t('defaultPermissions')} disabled={locked}>
+        {presets.map((preset) => (
+          <div key={preset} data-testid={`security-${preset}`} data-on={chosen === preset || undefined}>
+            <SettingsChoice
+              type="radio"
+              name="security-default-preset"
+              value={preset}
+              checked={chosen === preset}
+              disabled={locked || !available.includes(preset)}
+              label={t(preset)}
+              hint={available.includes(preset) ? t(`${preset}Help`) : t('notAllowed')}
+              onChange={() => {
+                if (preset === 'full-access') setConfirm(true)
+                else void save(preset)
+              }}
+            />
+          </div>
+        ))}
+      </fieldset>
       {more.length > 0 && (
         <SettingsBlock>
           <SettingsItem label={t('morePresets')} info={t('morePresetsHelp')}>

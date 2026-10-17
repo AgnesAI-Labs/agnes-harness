@@ -9,10 +9,11 @@ import {
 import {
   fallbackT,
   reportSuccess,
-  Segmented,
   Select,
   SettingsBlock,
+  SettingsChoice,
   SettingsDrill,
+  SettingsGroup,
   SettingsItem,
   SettingsTag,
   trackPageRequest,
@@ -222,25 +223,44 @@ export function SessionDefaultsPanel({
             }
             description={t('defaults.loop-hint')}
           >
-            <Segmented
-              label={t('defaults.loop')}
-              name="session-default-loop"
-              value={value.loop}
-              disabled={locked}
-              onChange={(loop) => set({ loop })}
-              options={[
-                {
-                  value: '',
-                  label: follow(resolvedLoop && loopName(resolvedLoop)),
-                  testId: 'session-loop-follow',
-                },
-                ...catalog.loops.map((entry) => ({
-                  value: identity(entry),
-                  label: loopName(entry),
-                  testId: `session-loop-${entry.id}`,
-                })),
-              ]}
-            />
+            <SettingsGroup
+              role="radiogroup"
+              aria-label={t('defaults.loop')}
+              className="agnes-settings-choices"
+            >
+              <SettingsChoice
+                type="radio"
+                name="session-default-loop"
+                value=""
+                data-testid="session-loop-follow"
+                checked={!value.loop}
+                disabled={locked}
+                onChange={() => set({ loop: '' })}
+                label={follow(resolvedLoop && loopName(resolvedLoop))}
+                hint={source && `${t('defaults.source')}: ${source}`}
+              />
+              {catalog.loops.map((entry) => (
+                <SettingsChoice
+                  key={identity(entry)}
+                  type="radio"
+                  name="session-default-loop"
+                  value={identity(entry)}
+                  data-testid={`session-loop-${entry.id}`}
+                  checked={value.loop === identity(entry)}
+                  disabled={locked}
+                  onChange={() => set({ loop: identity(entry) })}
+                  label={loopName(entry)}
+                  hint={[
+                    t('defaults.loop-from', { name: `${entry.sourcePackage} ${entry.version}` }),
+                    entry.capabilities.length
+                      ? t('defaults.loop-can', { list: entry.capabilities.join('、') })
+                      : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                />
+              ))}
+            </SettingsGroup>
             {staleLoop && <p className="agnes-settings-note">{t('defaults.stale')}</p>}
             <p className="agnes-settings-note">
               {t('defaults.loop-source', {

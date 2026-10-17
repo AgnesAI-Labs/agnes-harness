@@ -21,17 +21,29 @@ import {
 import { SecurityStatusPanel } from '@agnes/web-admin/settings/security-status'
 import { effectiveSessionPreset, permissionForSessionPreset } from '@agnes/web-admin/settings/session-choice'
 import { SessionToolsPanel } from '@agnes/web-admin/settings/session-tools'
-import { SettingsSubpageFrame, setDisclosureOpen } from '@agnes/web-ui'
+import {
+  installFeedbackSink,
+  type OperationFeedback,
+  SettingsSubpageFrame,
+  setDisclosureOpen,
+} from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { LoopPicker, updateLoopPicker } from '../src/loop-picker.js'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 const t = (key: string, params?: Record<string, string | number>) =>
   (pluginAdminLocaleCatalog.en[key] ?? key).replace(/\{(\w+)\}/g, (_, name) => String(params?.[name] ?? name))
 const roots: Root[] = []
+const outcomes: OperationFeedback[] = []
+let releaseFeedback: (() => void) | undefined
+beforeEach(() => {
+  outcomes.length = 0
+  releaseFeedback = installFeedbackSink({ publish: (result) => outcomes.push(result), resolve() {} })
+})
 afterEach(async () => {
+  releaseFeedback?.()
   vi.unstubAllGlobals()
   for (const root of roots.splice(0)) await act(async () => root.unmount())
   document.body.replaceChildren()
@@ -310,7 +322,14 @@ it('loads catalog choices and saves their exact identities and revision', async 
   const fetcher = vi.fn<typeof fetch>(async (url, init) => {
     if (String(url).endsWith('/loops'))
       return Response.json({
-        loops: [loop],
+        loops: [
+          loop,
+          ...Array.from({ length: 6 }, (_, index) => ({
+            ...loop,
+            id: `plugin-loop-${index}`,
+            sourcePackage: `@acme/loop-${index}`,
+          })),
+        ],
         presets: ['read-only', 'workspace-write', 'full-access'],
         ...snapshot,
       })
@@ -365,6 +384,13 @@ it('loads catalog choices and saves their exact identities and revision', async 
   expect(
     host.querySelector('[data-testid="session-loop-workflow"]')?.closest('label')?.textContent,
   ).toContain('@acme/workflow 1.0.0')
+  expect(
+    host.querySelector('[data-testid="session-loop-workflow"]')?.closest('label')?.textContent,
+  ).toContain('resume')
+  const choices = host.querySelector('[role="radiogroup"]')!
+  expect(choices.classList.contains('agh-segmented')).toBe(false)
+  expect(choices.querySelectorAll('input[type="radio"]')).toHaveLength(8)
+  expect(choices.textContent).toContain('@acme/loop-5 1.0.0')
   // Choosing 「follow the default」 saves at once and keeps the preset chosen elsewhere.
   await act(async () => host.querySelector<HTMLInputElement>('[data-testid="session-loop-follow"]')?.click())
   const saved = fetcher.mock.calls.filter(([url]) => String(url).endsWith('/defaults'))
@@ -699,15 +725,18 @@ it('reports publication failures and requires an explicit eligible migration wit
   await act(async () =>
     host.querySelector<HTMLButtonElement>('[data-testid="confirm-session-migration"]')?.click(),
   )
-  expect(host.querySelector('[role="alert"]')?.textContent).toBe(text('migrationFailed'))
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(text('migrationFailed'))
+  expect(host.querySelector('[role="alert"] button')?.textContent).toBe(text('confirmMigration'))
   expect(host.textContent).not.toContain('previous')
   await act(async () =>
     host.querySelector<HTMLButtonElement>('[data-testid="confirm-session-migration"]')?.click(),
   )
   expect(migrateSession).toHaveBeenLastCalledWith('session-key')
-  expect(host.querySelector('[data-testid="session-migration-status"]')?.textContent).toContain(
-    text('migrated'),
-  )
+  expect(outcomes.at(-1)).toMatchObject({
+    scope: 'session-migration',
+    outcome: 'success',
+    message: text('migrated'),
+  })
   expect(host.textContent).toContain('previous → current')
 })
 
@@ -844,7 +873,12 @@ it('trusts a workspace deploy directory the backend offers, by confirmation, and
   // What is sent is the backend's own value for the directory, not the display path.
   expect(trustWorkspace).toHaveBeenCalledWith('workspaces/site', `sha256-${'b'.repeat(64)}`)
   expect(onRefresh).toHaveBeenCalledOnce()
-  expect(host.querySelector('[role="status"]')?.textContent).toBe(text('trusted'))
+  expect(outcomes.at(-1)).toMatchObject({
+    scope: 'plugin-folders',
+    outcome: 'success',
+    message: text('trusted'),
+    effect: { kind: 'rescan-required' },
+  })
 })
 
 it('places ordered bundle and preset choices beside the loop only for a new session', async () => {

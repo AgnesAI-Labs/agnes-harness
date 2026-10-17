@@ -161,6 +161,12 @@ it('creates a new-session task in the workspace of the session the user came fro
   await click('schedules-new', host)
   // A new task runs in a new session by default, in this session's workspace.
   expect(document.querySelector('[data-testid="schedules-target"]')?.textContent).toContain(ux('targetNew'))
+  expect(
+    document.querySelector('[data-testid="schedules-target-new-session"]')?.closest('label')?.textContent,
+  ).toContain(ux('targetNewHint'))
+  expect(
+    document.querySelector('[data-testid="schedules-target-session"]')?.closest('label')?.textContent,
+  ).toContain(ux('targetSessionHint'))
   await vi.waitFor(() =>
     expect(document.querySelector<HTMLSelectElement>('[data-testid="schedules-workspace"]')?.value).toBe(
       '/work/app',

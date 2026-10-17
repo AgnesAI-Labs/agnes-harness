@@ -105,7 +105,7 @@ it('shows the unconfigured state and saves a key without rendering it again', as
   // A service that was never set up is chosen in the dialog; the page lists only what is in use.
   expect(panel.querySelector('[data-testid="search-provider-brave"]')).toBeNull()
   expect(
-    [...panel.querySelectorAll<HTMLInputElement>('[data-testid="search-edit-provider"] input')].map(
+    [...panel.querySelectorAll<HTMLOptionElement>('[data-testid="search-edit-provider"] option')].map(
       (option) => option.value,
     ),
   ).toEqual(['brave', 'tavily', 'exa', 'perplexity', 'searxng'])

@@ -106,12 +106,18 @@ function row(id: string): HTMLElement {
   return found
 }
 
-function radio(group: string, label: string): HTMLInputElement {
-  const found = [...document.querySelectorAll<HTMLInputElement>(`#${group} input[type="radio"]`)].find(
-    (option) => option.closest('label')?.textContent === label,
+function option(group: string, label: string): HTMLOptionElement {
+  const found = [...document.querySelectorAll<HTMLOptionElement>(`#${group} option`)].find(
+    (option) => option.textContent === label,
   )
   if (!found) throw new Error(`missing choice: ${label}`)
   return found
+}
+function choose(group: string, label: string): void {
+  const selected = option(group, label)
+  const select = selected.closest('select')!
+  select.value = selected.value
+  select.dispatchEvent(new Event('change', { bubbles: true }))
 }
 
 function budget(): HTMLInputElement {
@@ -332,10 +338,10 @@ describe('model picker', () => {
   it('lists the declared reasoning levels and applies one together with the saved budget', async () => {
     const { trigger, onSettingsChange } = mountPicker()
     await open(trigger)
-    const levels = [...document.querySelectorAll('#session-model-thinking input[type="radio"]')]
-    expect(levels.map((level) => level.closest('label')?.textContent)).toEqual(['自动', '低', '高'])
-    expect(String(radio('session-model-thinking', '低').checked)).toBe('true')
-    radio('session-model-thinking', '高').click()
+    const levels = [...document.querySelectorAll('#session-model-thinking option')]
+    expect(levels.map((level) => level.textContent)).toEqual(['自动', '低', '高'])
+    expect(String(option('session-model-thinking', '低').selected)).toBe('true')
+    choose('session-model-thinking', '高')
     // 档位与预算一起提交，免得只改一项把另一项重置。
     await vi.waitFor(() =>
       expect(onSettingsChange).toHaveBeenCalledWith({ thinking: 'high', contextWindow: 64000 }),
@@ -343,13 +349,27 @@ describe('model picker', () => {
     await closed()
   })
 
-  it('selects a choice with radio-group arrow keys and sends the saved budget with it', async () => {
-    const { trigger, onSettingsChange } = mountPicker()
+  it('keeps model-driven choices in selects when the model offers more than five levels or budgets', async () => {
+    const { trigger, onSettingsChange } = mountPicker({
+      settings: {
+        ...settings,
+        capacity: 1000000,
+        thinkingLevelMap: {
+          off: 'off',
+          minimal: 'minimal',
+          low: 'low',
+          medium: 'medium',
+          high: 'high',
+          xhigh: 'xhigh',
+          max: 'max',
+        },
+      },
+    })
     await open(trigger)
-    const low = radio('session-model-thinking', '低')
-    expect(low.tabIndex).toBe(0)
-    low.focus()
-    press(low, 'ArrowRight')
+    expect(document.querySelectorAll('#session-model-thinking option')).toHaveLength(8)
+    expect(document.querySelectorAll('#session-model-budget option')).toHaveLength(7)
+    expect(document.querySelector('#model-settings-popover .agh-segmented')).toBeNull()
+    choose('session-model-thinking', '高')
     await vi.waitFor(() =>
       expect(onSettingsChange).toHaveBeenCalledWith({ thinking: 'high', contextWindow: 64000 }),
     )
@@ -359,15 +379,10 @@ describe('model picker', () => {
   it('offers budget presets within the model capacity and applies one', async () => {
     const { trigger, onSettingsChange } = mountPicker()
     await open(trigger)
-    const presets = [...document.querySelectorAll('#session-model-budget input[type="radio"]')]
-    expect(presets.map((preset) => preset.closest('label')?.textContent)).toEqual([
-      '自动',
-      '32K',
-      '64K',
-      '128K',
-    ])
-    expect(String(radio('session-model-budget', '64K').checked)).toBe('true')
-    radio('session-model-budget', '自动').click()
+    const presets = [...document.querySelectorAll('#session-model-budget option')]
+    expect(presets.map((preset) => preset.textContent)).toEqual(['自动', '32K', '64K', '128K'])
+    expect(String(option('session-model-budget', '64K').selected)).toBe('true')
+    choose('session-model-budget', '自动')
     await vi.waitFor(() => expect(onSettingsChange).toHaveBeenCalledWith({ thinking: 'low' }))
     await closed()
   })
@@ -391,9 +406,9 @@ describe('model picker', () => {
     type(budget(), '999m')
     await vi.waitFor(() => expect(budget().getAttribute('aria-invalid')).toBe('true'))
     expect(document.querySelector('#session-model-settings-error')?.textContent).toContain('128,000')
-    expect(document.querySelector('#session-model-budget input:checked')).toBeNull()
+    expect(document.querySelector<HTMLSelectElement>('#session-model-budget')?.value).toBe('__unselected__')
     press(budget(), 'Enter')
-    radio('session-model-thinking', '高').click()
+    choose('session-model-thinking', '高')
     expect(onSettingsChange).not.toHaveBeenCalled()
     expect(document.querySelector('#model-listbox')).not.toBeNull()
   })
@@ -422,8 +437,8 @@ describe('model picker', () => {
     expect(trigger.querySelector('[data-model-level]')).toBeNull()
     await open(trigger)
     expect(document.querySelector('.model-picker-notice')?.textContent).toContain('max')
-    expect(document.querySelector('#session-model-thinking input:checked')).toBeNull()
-    radio('session-model-budget', '32K').click()
+    expect(document.querySelector<HTMLSelectElement>('#session-model-thinking')?.value).toBe('__unselected__')
+    choose('session-model-budget', '32K')
     await vi.waitFor(() => expect(onSettingsChange).toHaveBeenCalledWith({ contextWindow: 32000 }))
   })
 
