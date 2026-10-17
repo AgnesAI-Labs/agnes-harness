@@ -61,6 +61,14 @@ export const OPTIONAL_BUNDLED_PACKAGES = Object.freeze([
     ref: 'file:./bundled-plugins/eval-studio',
     sourcePath: 'package-manager/bundled-plugins/eval-studio',
   },
+  {
+    name: 'usage-cockpit',
+    id: '@agnes/usage-cockpit',
+    version: '0.1.0',
+    license: 'Apache-2.0',
+    ref: 'file:./bundled-plugins/usage-cockpit',
+    sourcePath: 'package-manager/bundled-plugins/usage-cockpit',
+  },
 ])
 
 /** Release-owned defaults; freshOnly additions never backfill an existing profile. */

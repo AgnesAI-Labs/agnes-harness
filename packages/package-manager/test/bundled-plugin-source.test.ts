@@ -94,7 +94,7 @@ it.each([...BUNDLED_HELPERS, ...OPTIONAL_BUNDLED_PACKAGES])(
       readLock(profile, { profile: 'local-dev', agnesVersion: '0.1.0' }).packages[helper.id],
     ).toBeDefined()
     expect(exec).not.toHaveBeenCalled()
-    if (helper.id === '@agnes/eval-studio')
+    if (OPTIONAL_BUNDLED_PACKAGES.some((item) => item.id === helper.id))
       expect(DEFAULT_ENABLED_BUNDLED_PACKAGES.some((item) => item.id === helper.id)).toBe(false)
   },
 )

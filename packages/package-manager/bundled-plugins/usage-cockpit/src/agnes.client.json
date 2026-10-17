@@ -1,0 +1,14 @@
+{
+  "client": {
+    "entry": "./generated/client.js",
+    "lifetime": "profile",
+    "slotCatalogVersion": "dsh-client-slots/v1",
+    "slots": [],
+    "homeEntries": [
+      {
+        "id": "usage-cockpit",
+        "placement": "primary"
+      }
+    ]
+  }
+}

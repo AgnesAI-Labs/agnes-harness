@@ -56,6 +56,7 @@
         "examples/community/deliverables-gallery",
         "packages/package-manager/bundled-plugins/deliverables-ui",
         "packages/package-manager/bundled-plugins/eval-studio",
+        "packages/package-manager/bundled-plugins/usage-cockpit",
         "packages/package-manager/bundled-plugins/goal-ui",
         "packages/package-manager/bundled-plugins/interaction-ui",
         "packages/resource-control-web",

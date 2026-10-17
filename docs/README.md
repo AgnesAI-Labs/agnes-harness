@@ -40,6 +40,7 @@ Still choosing? Try the [three examples](guide/demo.md), then use the [extension
 | [Web workbench](guide/web.md) | Create tasks, inspect history, and manage models and extensions |
 | [Programmatic tools and workflows](guide/code-workflows.md) | Run TypeScript cells and durable parallel child workflows |
 | [Sessions and recovery](guide/sessions.md) | Continue tasks, export records, and handle interruptions |
+| [Usage cockpit](guide/usage-cockpit.md) | Inspect selected-session costs and unknown coverage with an optional plugin |
 | [Plugin lifecycle](guide/packages.md) | Install, trust, enable, update, and remove plugins |
 | [Generic credentials](guide/credentials.md) | Save write-only API keys and manage their references |
 | [Webhook triggers](guide/webhooks.md) | Start normal business-agent sessions from authenticated business events |
