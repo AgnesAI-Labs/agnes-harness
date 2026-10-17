@@ -176,6 +176,8 @@ it('assembles the bundled default policy row before opening a real Host session'
         'tool-policy',
         'child-agent',
         'workspace-state',
+        'intelligent-ui',
+        'deferred-producer',
       ]),
     )
     expect(catalog).toContainEqual(
