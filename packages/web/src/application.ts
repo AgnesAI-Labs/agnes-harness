@@ -32,11 +32,13 @@ export function projectApplication(state: ApplicationState | undefined): void {
   const old = urls
   urls = []
   const assets: ApplicationState['assets'] = {}
+  let faviconType = 'image/png'
   for (const key of ['mark', 'favicon'] as const) {
     const data = state?.assets[key]
     if (!data) continue
     const match = /^data:(image\/(?:png|jpeg|webp|gif|x-icon));base64,([A-Za-z0-9+/=]+)$/.exec(data)
     if (!match?.[1] || !match[2]) continue
+    if (key === 'favicon') faviconType = match[1]
     const bytes = Uint8Array.from(atob(match[2]), (c) => c.charCodeAt(0))
     const url = URL.createObjectURL(new Blob([bytes], { type: match[1] }))
     urls.push(url)
@@ -47,7 +49,7 @@ export function projectApplication(state: ApplicationState | undefined): void {
   const icon = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
   if (icon) {
     icon.href = assets.favicon ?? '/favicon.png'
-    icon.type = 'image/png'
+    icon.type = faviconType
   }
   const touch = document.querySelector<HTMLLinkElement>('link[rel="apple-touch-icon"]')
   if (touch) touch.href = assets.mark ?? '/favicon.png'
