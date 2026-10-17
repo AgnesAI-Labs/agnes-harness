@@ -22,28 +22,35 @@ export async function initializeDefaultHelpers(options: {
   initializePolicy(): Promise<void>
 }): Promise<void> {
   await withDefaultHelperState(options.profileDir, async (state, save) => {
-    if (!state || state.phase === 'existing' || state.version < 3) {
-      const inventory = existsSync(lockPath(options.profileDir))
-        ? await options.manager.inventory(options.profileDir)
-        : undefined
-      const integrity: Record<string, string> =
-        state && ['pending', 'installed'].includes(state.phase) ? { ...state.integrity } : {}
-      for (const helper of DEFAULT_ENABLED_BUNDLED_PACKAGES) {
-        if (helper.freshOnly && (state || inventory)) continue
-        if (
-          state?.version === 1 &&
-          state.phase !== 'existing' &&
-          !['plugin-helper', 'document-reader'].includes(helper.name)
-        )
-          continue
-        if (state?.version === 2 && helper.name !== 'document-reader') continue
-        if (inventory?.packages.some((pkg) => pkg.id === helper.id)) continue
-        const source = bundledPluginSource(helper.ref)
-        if (!source) throw new Error('Bundled helper source unavailable')
-        integrity[helper.id] = hashDirectory(join(source.root, source.path))
+    const inventory = existsSync(lockPath(options.profileDir))
+      ? await options.manager.inventory(options.profileDir)
+      : undefined
+    // Old receipts only prove offers through their hashes and the current inventory. Never infer
+    // past offers from a version number: that would hide newly shipped defaults again.
+    const offered = new Set(state?.version === 4 ? state.offered : Object.keys(state?.integrity ?? {}))
+    for (const helper of DEFAULT_ENABLED_BUNDLED_PACKAGES)
+      if (inventory?.packages.some((pkg) => pkg.id === helper.id)) offered.add(helper.id)
+    const unfinished = state?.phase === 'pending' || state?.phase === 'installed' ? state : undefined
+    const integrity: Record<string, string> = unfinished ? { ...unfinished.integrity } : {}
+    let planned = false
+    for (const helper of DEFAULT_ENABLED_BUNDLED_PACKAGES) {
+      if (helper.freshOnly && (state || inventory)) continue
+      if (offered.has(helper.id)) continue
+      const source = bundledPluginSource(helper.ref)
+      if (!source) throw new Error('Bundled helper source unavailable')
+      integrity[helper.id] = hashDirectory(join(source.root, source.path))
+      offered.add(helper.id)
+      planned = true
+    }
+    if (state?.version !== 4 || planned || offered.size !== state.offered.length) {
+      state = {
+        version: 4,
+        phase: unfinished && !planned ? unfinished.phase : 'pending',
+        integrity,
+        offered: [...offered],
       }
-      state = { version: 3, phase: 'pending', integrity }
-      // This intent precedes policy creation, so a failed first startup can resume safely.
+      // This intent precedes policy creation, so a failed startup can resume safely. Completed
+      // batches are excluded from the new intent to preserve earlier disable/remove decisions.
       save(state)
     }
     await options.initializePolicy()
@@ -99,7 +106,7 @@ export async function initializeDefaultHelpers(options: {
   })
 }
 
-/** Finish first boot through the same pinned/probed target publication as ordinary plugins. */
+/** Finish default provisioning through the same pinned/probed target publication as ordinary plugins. */
 export async function activateDefaultHelpers(options: {
   profileDir: string
   inventory: InstalledInventory

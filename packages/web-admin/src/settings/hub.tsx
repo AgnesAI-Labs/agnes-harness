@@ -24,7 +24,7 @@ import {
   revealSettingsAnchor,
   settingsGroup,
   settingsRoute,
-} from '@agnes/web-units'
+} from '@agnes/web-units/shell'
 import { type ReactNode, useEffect, useState, useSyncExternalStore } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
 import { SETTINGS_NAMESPACE, settingsCatalog } from './locales.js'

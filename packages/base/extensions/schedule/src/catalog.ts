@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
+import type { EventEnvelope } from '@agnes/protocol'
 import type { JobSchedule } from '../../../src/schedule-cron.js'
-
 import {
   compile,
   compileTarget,
@@ -19,6 +19,8 @@ import {
   type ScheduleWrite,
   textField,
 } from './rules.js'
+import { previousApprovalExpired, saveRunProgress } from './run-history.js'
+import { expireProgress, observeProgress, type RunProgress, startProgress } from './run-progress.js'
 
 export {
   compileTarget,
@@ -132,6 +134,9 @@ function ensureScheduleSchema(db: ScheduleDb): void {
   )`)
   db.exec('CREATE INDEX IF NOT EXISTS schedule_runs_schedule ON schedule_runs (schedule_id, at)')
   db.exec('CREATE INDEX IF NOT EXISTS schedule_runs_session ON schedule_runs (session_key, at)')
+  db.exec(
+    'CREATE TABLE IF NOT EXISTS schedule_run_progress (run_id INTEGER PRIMARY KEY, state TEXT NOT NULL)',
+  )
 }
 
 type ScheduleRow = {
@@ -269,11 +274,14 @@ export type ScheduleCatalog = {
     jobKey: string,
     info: { at: number; seq?: number; reason?: string; sessionKey?: string },
   ): void
-  noteSettlement(jobKey: string, info: { nextRunAt: number | null; at?: number }): void
+  noteSettlement(jobKey: string, info: { nextRunAt: number | null; at?: number; reason?: string }): void
   recordFailure(
     jobKey: string,
     info: { at: number; reason: string; detail?: string; sessionKey?: string },
   ): void
+  observeSession(sessionKey: string, event: EventEnvelope): boolean
+  notificationSession(runSession: string): string | undefined
+  hasWaiting(jobKey: string): boolean
   stillWaiting(jobKey: string): boolean
   recentDelivery(sessionKey: string, since: number): { title: string; prompt: string } | undefined
 }
@@ -311,18 +319,35 @@ export function openScheduleCatalog(db: ScheduleDb, clock: () => number = () => 
     }
     return { target: { kind: 'session', sessionKey: row.session_key }, origin: row.session_key }
   }
+  const progressRows = () =>
+    db.all<{ rid: number; state: string }>(
+      `SELECT p.run_id AS rid, p.state AS state FROM schedule_run_progress p
+     JOIN schedule_runs r ON r.rowid = p.run_id WHERE r.ended_at IS NULL`,
+    )
+  const saveProgress = (rid: number, state: RunProgress) => saveRunProgress(db, clock(), rid, state)
+  const expireRuns = () => {
+    for (const row of progressRows()) {
+      const state = JSON.parse(row.state) as RunProgress
+      const next = expireProgress(state, clock())
+      if (next !== state) saveProgress(row.rid, next)
+    }
+  }
   const runs = (id: string): ScheduleRun[] =>
     db
       .all<RunRow>(
         `SELECT at, outcome, session_key, ended_at, seq, reason, detail FROM (
            SELECT *, rowid AS rid FROM schedule_runs
-           WHERE schedule_id = ? ORDER BY at DESC, rowid DESC LIMIT 20
+           WHERE schedule_id = ? ORDER BY CASE WHEN outcome IN ('running', 'waiting_approval', 'needs_attention') THEN 0 ELSE 1 END, at DESC, rowid DESC LIMIT 20
          ) ORDER BY at ASC, rid ASC`,
         [id],
       )
       .map((row) => ({
         at: row.at,
         outcome: row.outcome,
+        ...(['failed', 'waiting_approval', 'needs_attention'].includes(row.outcome) ||
+        row.reason === 'previous_approval_expired'
+          ? { needsAttention: true }
+          : {}),
         ...(row.session_key === null ? {} : { sessionKey: row.session_key }),
         ...(row.ended_at === null ? {} : { endedAt: row.ended_at }),
         ...(row.seq === null ? {} : { seq: row.seq }),
@@ -345,6 +370,7 @@ export function openScheduleCatalog(db: ScheduleDb, clock: () => number = () => 
     }
   }
   const read = (id: string): ScheduleView | undefined => {
+    expireRuns()
     const row = load(id)
     return row ? viewOf(row) : undefined
   }
@@ -352,7 +378,7 @@ export function openScheduleCatalog(db: ScheduleDb, clock: () => number = () => 
   /** The run a job started and has not closed: the one its settlement or failure finishes. */
   const openRun = (key: string) =>
     db.get<{ rid: number }>(
-      `SELECT rowid AS rid FROM schedule_runs WHERE job_key = ? AND outcome = 'running'
+      `SELECT rowid AS rid FROM schedule_runs WHERE job_key = ? AND outcome IN ('running', 'waiting_approval', 'needs_attention')
        ORDER BY at DESC, rowid DESC LIMIT 1`,
       [key],
     )
@@ -374,11 +400,12 @@ export function openScheduleCatalog(db: ScheduleDb, clock: () => number = () => 
         ],
       )
       db.exec(
-        `DELETE FROM schedule_runs WHERE schedule_id = ? AND rowid NOT IN (
+        `DELETE FROM schedule_runs WHERE schedule_id = ? AND outcome NOT IN ('running', 'waiting_approval', 'needs_attention') AND rowid NOT IN (
            SELECT rowid FROM schedule_runs WHERE schedule_id = ? ORDER BY at DESC, rowid DESC LIMIT 50
          )`,
         [id, id],
       )
+      db.exec('DELETE FROM schedule_run_progress WHERE run_id NOT IN (SELECT rowid FROM schedule_runs)')
     })
   /** A new job for the stored rule, counted from now; used by resume. */
   const restart = (row: ScheduleRow, now: number) => {
@@ -562,6 +589,7 @@ export function openScheduleCatalog(db: ScheduleDb, clock: () => number = () => 
       return value
     },
     list(query) {
+      expireRuns()
       const limit = Math.min(query.limit ?? 500, 500)
       return db
         .all<ScheduleRow>(
@@ -588,20 +616,63 @@ export function openScheduleCatalog(db: ScheduleDb, clock: () => number = () => 
       insertRun(id, key, {
         at: info.at,
         outcome,
+        ...(previousApprovalExpired(db, id) ? { reason: 'previous_approval_expired' } : {}),
         ...(info.sessionKey ? { sessionKey: info.sessionKey } : {}),
         ...(info.seq === undefined ? {} : { seq: info.seq }),
       })
+      const open = openRun(key)
+      if (open && outcome === 'running') saveProgress(open.rid, startProgress())
+    },
+    observeSession(sessionKey, event) {
+      if (!['decision/state', 'turn/start', 'turn/end', 'x/core/unattended-refused'].includes(event.type))
+        return false
+      let attention = false
+      for (const row of progressRows()) {
+        const run = db.get<{ session_key: string }>('SELECT session_key FROM schedule_runs WHERE rowid = ?', [
+          row.rid,
+        ])
+        if (run?.session_key !== sessionKey) continue
+        const before = JSON.parse(row.state) as RunProgress
+        const next = observeProgress(before, event, clock())
+        saveProgress(row.rid, next)
+        attention ||= next.needsAttention && !before.needsAttention
+      }
+      return attention
+    },
+    notificationSession(sessionKey) {
+      return db.get<{ session_key: string }>(
+        `SELECT s.session_key FROM schedule_runs r
+        JOIN schedules s ON s.id = r.schedule_id WHERE r.session_key = ? ORDER BY r.at DESC LIMIT 1`,
+        [sessionKey],
+      )?.session_key
+    },
+    hasWaiting(key) {
+      expireRuns()
+      const id = idOf(key)
+      return !!db.get(
+        `SELECT rowid FROM schedule_runs WHERE schedule_id = ? AND outcome IN ('waiting_approval', 'needs_attention') LIMIT 1`,
+        [id],
+      )
     },
     noteSettlement(key, info) {
       const id = idOf(key)
       if (!id) return
       const now = clock()
       const open = openRun(key)
-      if (open)
-        db.exec(`UPDATE schedule_runs SET outcome = 'ran', ended_at = ? WHERE rowid = ?`, [
-          info.at ?? now,
+      if (open) {
+        const stored = db.get<{ state: string }>('SELECT state FROM schedule_run_progress WHERE run_id = ?', [
           open.rid,
         ])
+        let progress = stored ? (JSON.parse(stored.state) as RunProgress) : startProgress()
+        if (info.reason === 'parked')
+          progress = {
+            ...progress,
+            outcome: Object.keys(progress.pending).length ? 'waiting_approval' : 'needs_attention',
+            needsAttention: true,
+          }
+        else if (progress.outcome === 'running') progress = { ...progress, outcome: 'ran' }
+        saveProgress(open.rid, expireProgress(progress, now))
+      }
       if (info.nextRunAt === null) {
         db.exec(
           `UPDATE schedules SET status = 'ended', next_run_at = NULL, updated_at = ? WHERE id = ? AND status = 'active'`,
@@ -620,7 +691,7 @@ export function openScheduleCatalog(db: ScheduleDb, clock: () => number = () => 
       if (!id || !load(id)) return
       const reason = info.reason.slice(0, 64)
       const detail = clipDetail(info.detail)
-      const open = openRun(key)
+      const open = info.reason === 'approval_pending_previous_run' ? undefined : openRun(key)
       if (open) {
         db.exec(
           `UPDATE schedule_runs SET outcome = 'failed', ended_at = ?, reason = ?, detail = ? WHERE rowid = ?`,
@@ -708,5 +779,8 @@ export function createSchedulesPort(
     noteSettlement: catalog.noteSettlement,
     recordFailure: catalog.recordFailure,
     stillWaiting: catalog.stillWaiting,
+    observeSession: catalog.observeSession,
+    hasWaiting: catalog.hasWaiting,
+    notificationSession: catalog.notificationSession,
   }
 }

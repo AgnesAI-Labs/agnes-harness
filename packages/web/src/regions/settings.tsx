@@ -19,7 +19,7 @@ import {
   type SettingsRegionHandle,
   settingsDshSlotHostId,
   settingsPaneSlotHostId,
-} from '@agnes/web-units'
+} from '@agnes/web-units/shell'
 import { flushSync } from 'react-dom'
 import {
   type EmptyStateRegionMount,

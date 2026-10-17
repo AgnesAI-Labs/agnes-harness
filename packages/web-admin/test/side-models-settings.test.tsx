@@ -184,7 +184,14 @@ it('prefills the Jev template for a new entry and keeps every prefilled field a 
   const sent = api.save.mock.calls[0]?.[0] as Record<string, unknown>
   expect(sent).toMatchObject({
     model: 'typesafe/jev-1.14-20261020',
-    models: [{ id: 'typesafe/jev-1.14-20261020', name: 'Jev 1.13 (2026-09-17)', contextWindow: 65536, maxTokens: 32768 }],
+    models: [
+      {
+        id: 'typesafe/jev-1.14-20261020',
+        name: 'Jev 1.13 (2026-09-17)',
+        contextWindow: 65536,
+        maxTokens: 32768,
+      },
+    ],
   })
 })
 
@@ -213,6 +220,12 @@ it('shows the group copy in zh-CN when the document is zh-CN', async () => {
   expect(host.querySelector('[data-testid="side-models-title"]')?.textContent).toBe('旁路模型')
   expect(host.querySelector('[data-testid="side-models-note"]')?.textContent).toContain('仅载荷请求')
   expect(host.querySelector('[data-testid="side-model-badge"]')?.textContent).toBe('仅载荷请求，不用于对话')
+  await click(host, 'side-model-edit-jev')
+  await type(host, 'side-base-url', 'https://replacement.example.invalid/v1')
+  expect(host.textContent).toContain('端点已更改。请重新选择凭据，授权将其发送到此端点。')
+  await type(host, 'side-base-url', 'http://vendor.example.invalid/v1')
+  await click(host, 'side-save')
+  expect(host.textContent).toContain('请输入绝对 HTTPS URL')
 })
 
 it('adds an account through the editor: adapter fixed, credential picked or created, five model fields', async () => {
@@ -284,14 +297,31 @@ it('refuses to save without a credential, with a malformed endpoint, or with a b
   expect(api.save).not.toHaveBeenCalled()
 })
 
-it('edits an existing account, keeping its credential unless another is picked', async () => {
+it('requires a credential selection for an edited endpoint and locates server refusals', async () => {
   const api = client()
   const { host } = await mount(api)
   await click(host, 'side-model-edit-jev')
   expect(input(host, 'side-base-url')?.value).toBe('https://openrouter.ai/api/v1')
   expect(input(host, 'side-model-id-0')?.value).toBe(JEV_MODEL.id)
   await type(host, 'side-base-url', 'https://api.typesafe.ai/v1')
-  // The endpoint changed, so the probe needs the credential named again; saving keeps the stored one.
+  expect(host.textContent).toContain(
+    'Endpoint changed. Choose a credential again to authorize sending it to this endpoint.',
+  )
+  await click(host, 'side-save')
+  expect(api.save).not.toHaveBeenCalled()
+  expect(host.querySelector('[data-testid="side-credential"]')?.getAttribute('aria-invalid')).toBe('true')
+  await choose(host, 'side-credential', 'secret://generic/11111111-1111-4111-8111-111111111111')
+  api.save.mockRejectedValueOnce({ data: { reason: 'CONFIG_CREDENTIAL_REQUIRED', field: 'credentialRef' } })
+  await click(host, 'side-save')
+  expect(host.querySelector('[data-testid="side-credential"]')?.getAttribute('aria-invalid')).toBe('true')
+  expect(host.textContent).toContain('Choose a credential again')
+  await choose(host, 'side-credential', 'secret://generic/11111111-1111-4111-8111-111111111111')
+  api.save.mockRejectedValueOnce({
+    data: { reason: 'CONFIG_INVALID_INPUT', field: 'baseUrl', messageKey: 'appServer.errors.invalidParams' },
+  })
+  await click(host, 'side-save')
+  expect(input(host, 'side-base-url')?.getAttribute('aria-invalid')).toBe('true')
+  expect(host.textContent).toContain('Use an absolute HTTPS URL')
   await click(host, 'side-save')
   const sent = api.save.mock.calls[0]?.[0] as Record<string, unknown>
   expect(sent).toMatchObject({
@@ -300,7 +330,7 @@ it('edits an existing account, keeping its credential unless another is picked',
     model: JEV_MODEL.id,
     expectedRevision: 1,
   })
-  expect(sent.credentialRef).toBeUndefined()
+  expect(sent.credentialRef).toBe('secret://generic/11111111-1111-4111-8111-111111111111')
 })
 
 it('probes on demand and still saves without probing, saying the probe semantics are provisional', async () => {
@@ -359,9 +389,7 @@ it('derives the route from the label live and disambiguates collisions with exis
   await click(host, 'side-model-add')
   expect(input(host, 'side-label')?.value).toBe('Jev')
   // The label is prefilled, and account-jev is taken: the preview disambiguates with a suffix.
-  expect(host.querySelector('[data-testid="side-route-preview"]')?.textContent).toContain(
-    'account-jev-2',
-  )
+  expect(host.querySelector('[data-testid="side-route-preview"]')?.textContent).toContain('account-jev-2')
   await type(host, 'side-label', 'My Side Model')
   expect(host.querySelector('[data-testid="side-route-preview"]')?.textContent).toContain(
     'account-my-side-model',
@@ -375,7 +403,7 @@ it('derives the route from the label live and disambiguates collisions with exis
   await type(host, 'side-label', 'My Side Model')
   await choose(host, 'side-credential', 'secret://generic/11111111-1111-4111-8111-111111111111')
   await click(host, 'side-save')
-  expect((api.save.mock.calls[0]?.[0] as Record<string, unknown>).accountId).toBe('my-side-model')
+  expect(api.save.mock.calls[0]?.[0]).toMatchObject({ accountId: 'my-side-model' })
 })
 
 it('keeps pricing collapsed by default and only saves it when expanded with values', async () => {

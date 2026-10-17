@@ -5,7 +5,7 @@ import {
   type TopbarConnectionState,
   type TopbarHandle,
   type TopbarStatusDetails,
-} from '@agnes/web-units'
+} from '@agnes/web-units/shell'
 import { flushSync } from 'react-dom'
 import { type EmptyStateRegionMount, rootStableRegistry, TOPBAR_SLOT } from './contracts.js'
 export interface TopbarRegionMount extends EmptyStateRegionMount, TopbarHandle {

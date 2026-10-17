@@ -40,6 +40,7 @@ export class ConfigurationError extends Error {
     readonly code: ConfigurationErrorCode,
     readonly file?: string,
     readonly credential?: CredentialDiagnostic,
+    readonly field?: 'baseUrl' | 'apiKey' | 'credentialRef',
   ) {
     super(
       code === 'CONFIG_CREDENTIAL_NO_SPACE'
@@ -77,6 +78,7 @@ export class ConfigurationError extends Error {
                                       : 'The saved configuration is invalid.',
     )
     this.name = 'ConfigurationError'
+    if (field) this.message = `${field}: ${this.message}`
     if (code === 'CONFIG_INVALID_STATE' && file)
       this.message = `The saved configuration file ${file} is invalid. It was left unchanged; repair it or move it aside, then restart.`
   }

@@ -1,15 +1,29 @@
-import { readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_EXCLUDE_DIRS, isTestFile, listPackages, listSourceFiles, repoRoot } from './repo.js'
 
 const root = repoRoot()
+// Bundled payloads are independent packages even though their sources live beneath package-manager.
+const bundledRoot = join(root, 'packages/package-manager/bundled-plugins')
+const packages = [
+  ...listPackages(root),
+  // Skip leftovers such as an ignored node_modules from a removed payload.
+  ...readdirSync(bundledRoot)
+    .filter((name) => existsSync(join(bundledRoot, name, 'package.json')))
+    .map((name) => {
+      const dir = join(bundledRoot, name)
+      const json = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as Record<string, unknown>
+      return { name: String(json.name), dir, json }
+    }),
+].sort((a, b) => b.dir.length - a.dir.length)
+const ownerOf = (file: string) => packages.find((pkg) => file.startsWith(`${pkg.dir}${sep}`))
 const allow = JSON.parse(
   readFileSync(join(root, 'tools/guards/dependency-allowlist.json'), 'utf8'),
 ) as Record<string, string[]>
 
 describe('dependency allowlist (dependencies point one way, downward)', () => {
-  for (const pkg of listPackages(root)) {
+  for (const pkg of packages) {
     it(`${pkg.name} only depends on allowed @agnes packages`, () => {
       const deps = {
         ...(pkg.json.dependencies as Record<string, string> | undefined),
@@ -32,7 +46,7 @@ describe('dependency allowlist (dependencies point one way, downward)', () => {
     })
   }
   it('every allowlist entry is a real package', () => {
-    const names = new Set(listPackages(root).map((p) => p.name))
+    const names = new Set(packages.map((p) => p.name))
     for (const n of Object.keys(allow)) expect(names.has(n), n).toBe(true)
   })
 })
@@ -129,6 +143,14 @@ const LAYER: Record<string, number> = {
   '@agnes/web-foundation': 9.1,
   '@agnes/web-admin': 9.2,
   '@agnes/web-conversation': 9.2,
+  // Independently installed bundled plugins consume public Host/UI contracts.
+  '@agnes/deliverables-ui': 10,
+  '@agnes/document-reader': 10,
+  '@agnes/goal-ui': 10,
+  '@agnes/interaction-ui': 10,
+  '@agnes/mcp-helper': 10,
+  '@agnes/plugin-helper': 10,
+  '@agnes/skill-helper': 10,
   '@agnes/web': 10,
   // CLI's serve command composes the public Node static server; Web still depends only on SDK/protocol.
   '@agnes/cli': 11,
@@ -217,7 +239,6 @@ function dependencyCycles(graph: Map<string, Set<string>>): string[] {
 }
 
 it('production source and manifests form declared, acyclic package graphs', () => {
-  const packages = listPackages(root)
   const byName = new Map(packages.map((pkg) => [pkg.name, pkg]))
   const sourceGraph = new Map<string, Set<string>>()
   const manifestGraph = new Map<string, Set<string>>()
@@ -246,11 +267,11 @@ it('production source and manifests form declared, acyclic package graphs', () =
     for (const file of listSourceFiles(pkg.dir, {
       excludeDirs: [...DEFAULT_EXCLUDE_DIRS, 'test', 'tests', 'testkit', 'fixtures', 'tools', 'scripts'],
     })) {
-      if (isTestFile(file) || file.endsWith('vitest.config.ts')) continue
+      if (ownerOf(file) !== pkg || isTestFile(file) || file.endsWith('vitest.config.ts')) continue
       for (const spec of importedModules(readFileSync(file, 'utf8'))) {
         if (spec.startsWith('.')) {
           const target = resolve(dirname(file), spec)
-          const owner = packages.find((candidate) => target.startsWith(`${candidate.dir}${sep}`))
+          const owner = ownerOf(target)
           if (owner && owner !== pkg) {
             edges.add(owner.name)
             if (!legacyPaths.has(`${relative(root, file).split(sep).join('/')}:${spec}`)) {
@@ -273,6 +294,10 @@ it('production source and manifests form declared, acyclic package graphs', () =
 })
 
 it('detects fixture back-edges, type queries and literal dynamic imports', () => {
+  // Nested plugin sources must be checked against their own manifest, not their container package.
+  for (const pkg of packages.filter((pkg) => pkg.dir.startsWith(`${bundledRoot}${sep}`)))
+    expect(ownerOf(join(pkg.dir, 'src', 'client.tsx'))?.name).toBe(pkg.name)
+  expect(ownerOf(join(root, 'packages/package-manager/src/manager.ts'))?.name).toBe('@agnes/package-manager')
   expect(
     importedModules(`
     // import('@agnes/ignored')
@@ -327,7 +352,7 @@ describe('browser packages do not depend on backend capability packages', () => 
     '@agnes/resource-control-web',
   ])
   const BACKEND = new Set(['@agnes/base', '@agnes/core', '@agnes/host', '@agnes/daemon', '@agnes/code'])
-  for (const pkg of listPackages(root).filter((p) => BROWSER_PACKAGES.has(p.name))) {
+  for (const pkg of packages.filter((p) => BROWSER_PACKAGES.has(p.name))) {
     it(`${pkg.name} has no backend @agnes dependency`, () => {
       const deps = {
         ...(pkg.json.dependencies as Record<string, string> | undefined),

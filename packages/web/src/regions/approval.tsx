@@ -1,6 +1,6 @@
 import { SlotOutlet, type SlotRegistry, SlotsProvider } from '@agnes/web-client'
 import { createRegionRenderer } from '@agnes/web-ui'
-import { Approval, type ApprovalHandle, type ApprovalView } from '@agnes/web-units'
+import { Approval, type ApprovalHandle, type ApprovalView } from '@agnes/web-units/shell'
 import type { ReactElement } from 'react'
 import { flushSync } from 'react-dom'
 import { APPROVAL_SLOT, type EmptyStateRegionMount } from './contracts.js'

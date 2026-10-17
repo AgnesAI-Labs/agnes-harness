@@ -83,6 +83,10 @@ export class NoticeSink {
     )
     const params = n.params as DaemonNotice
     const decision = params.kind === 'decisions_changed' ? params.detail : undefined
+    const automation =
+      params.kind === 'automation_attention'
+        ? (params.detail as { profile?: string; owner?: string })
+        : undefined
     const noticeProfile =
       (kind === 'packages_changed' || kind === 'tree_changed') &&
       typeof o.detail === 'object' &&
@@ -93,6 +97,12 @@ export class NoticeSink {
     for (const { ep, conn } of this.o.endpoints())
       if (
         kind === 'shutting_down' ||
+        (automation?.owner &&
+          conn.initialized &&
+          conn.authKind === 'local' &&
+          conn.credentialKind === 'local' &&
+          conn.profile === automation.profile &&
+          conn.principalId === automation.owner) ||
         (kind === 'decisions_changed'
           ? decision !== undefined &&
             conn.initialized &&

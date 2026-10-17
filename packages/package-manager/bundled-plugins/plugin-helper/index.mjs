@@ -155,7 +155,13 @@ export const pluginHelper = {
       meta: meta(false, 'always'),
       policyVersion: 'candidate-test-v2',
       classify(input) {
-        return { ...meta(false, input.action === 'test' ? 'never' : 'always'), approvalScopes: [] }
+        return {
+          isReadOnly: false,
+          isDestructive: false,
+          replay: 'never',
+          requiresApproval: input.action === 'test' ? 'never' : 'always',
+          approvalScopes: [],
+        }
       },
       async execute(input, ctx) {
         return result(await port(ctx).request(input), input.action)

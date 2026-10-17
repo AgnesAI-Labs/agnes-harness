@@ -33,12 +33,14 @@ import {
   syncAccountHeading,
 } from './settings/account-tiles.js'
 import {
+  configurationField,
   configurationReason,
   errorText,
   focusable,
   option,
   optionalElement,
   readElements,
+  renderAccountKeyHint,
   setDialogOpen,
   showSettingsDialog,
 } from './settings/dialog.js'
@@ -251,6 +253,15 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     const translated = configurationReason(error, tr)
     const message = translated ?? errorText(error, secret, tr)
     ui.error.textContent = message
+    const field = configurationField(error)
+    const control = field === 'baseUrl' ? ui.baseUrl : field === 'apiKey' ? ui.apiKey : undefined
+    if (control) {
+      control.setAttribute('aria-invalid', 'true')
+      control.setAttribute(
+        'aria-describedby',
+        `${control === ui.apiKey ? 'config-key-hint ' : ''}${ui.error.id}`,
+      )
+    }
     const invalid = accountBody?.querySelector<HTMLElement>('[aria-invalid="true"]')
     if (invalid && advanced) setDisclosureOpen(advanced, true)
     invalid?.focus()
@@ -397,20 +408,8 @@ export function createSettingsController(options: SettingsControllerOptions): Se
           : '') + tr('settings.model.budgetHint')
   }
 
-  const renderKeyHint = (): void => {
-    if (!ui.keyHint) return
-    const reusesSavedKey =
-      connected && savedProvider()?.id === providerId() && savedProvider()?.credentialConfigured
-    if (isOAuth()) {
-      ui.keyHint.textContent = tr('settings.key.oauthHint')
-      return
-    }
-    ui.keyHint.textContent = reusesSavedKey
-      ? tr('settings.key.savedHint')
-      : connected
-        ? tr('settings.key.inputHint')
-        : tr('settings.key.offlineCleared')
-  }
+  const renderKeyHint = (): void =>
+    renderAccountKeyHint(ui, savedProvider(), providerId(), connected, isOAuth())
 
   const renderProviders = (): void => {
     const savedProviderId = savedProvider()?.id
@@ -465,13 +464,17 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     tested = saved?.models.length ? { models: saved.models, verified: false } : undefined
     ui.models.value = ''
     renderModels()
-    if (clearError) ui.error.textContent = ''
+    if (clearError) {
+      ui.error.textContent = ''
+      for (const field of [ui.baseUrl, ui.apiKey]) field.removeAttribute('aria-invalid')
+    }
     // Only a connection that had passed needs telling that its result no longer holds.
     say(retest ? tr('settings.state.connectionChanged') : '', 'warn')
   }
   /** A changed key is tested once typing settles, at once after a paste; an emptied field tests nothing. */
   const connectionChanged = (delay: number): void => {
     resetTest()
+    renderKeyHint()
     if (!isOAuth() && ui.apiKey.value.trim() && accountStep === 'connection') autoTest.schedule(delay)
   }
 
@@ -481,6 +484,9 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     if (!selectedId || !selected) throw new Error(tr('settings.provider.required'))
     const baseUrl = ui.baseUrl.value.trim()
     const apiKey = ui.apiKey.value
+    const row = selectedAccount()
+    if (row && baseUrl && row.baseUrl.replace(/\/$/, '') !== baseUrl.replace(/\/$/, '') && !apiKey)
+      throw Object.assign(new Error(tr('settings.key.endpointChanged')), { field: 'apiKey' })
     if (!isOAuth() && selectedAccount()?.authType === 'oauth' && !apiKey)
       throw new Error(tr('settings.provider.switchKeyRequired'))
     return {

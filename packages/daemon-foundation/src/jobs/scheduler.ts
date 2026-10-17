@@ -43,9 +43,10 @@ type SchedulerOptions = {
   log?: (message: string) => void
   onDispatched?(job: JobRow, info: { at: number; seq?: number; reason?: string; sessionKey: string }): void
   keepWaiting?(job: JobRow): boolean
+  unattendedApproval?(job: JobRow): 'notify' | 'refuse'
   onSettled?(
     job: JobRow,
-    info: { at: number; nextRunAt: number | null; status: 'completed' | 'waiting' },
+    info: { at: number; nextRunAt: number | null; status: 'completed' | 'waiting'; reason?: string },
   ): void
   /**
    * Resolves the session a job runs in before it is opened. A job whose row names a placeholder (a
@@ -252,7 +253,7 @@ export class Scheduler {
       org: 'local',
       role: 'system',
       deptPath: [],
-      attrs: {},
+      attrs: { unattendedApproval: this.options.unattendedApproval?.(job) ?? 'notify' },
     } satisfies Actor
     const content: ContentBlock[] =
       typeof job.payload.prompt === 'string'
@@ -265,6 +266,7 @@ export class Scheduler {
       const seq = await entry.session.enqueue(steer ? 'next-step' : 'next-turn', {
         content,
         actor,
+        origin: 'system',
         kind: steer ? 'steer' : 'follow_up',
         ...(job.budget !== undefined ? { budget: job.budget } : {}),
       })
@@ -279,6 +281,7 @@ export class Scheduler {
       const seq = await entry.session.enqueue('next-turn', {
         content,
         actor,
+        origin: 'system',
         kind: 'prompt',
         ...(job.budget !== undefined ? { budget: job.budget } : {}),
       })
@@ -312,7 +315,12 @@ export class Scheduler {
       job.idempotencyKey,
       next === null ? { status, result } : { status, result, delayUntil: next },
     )
-    this.options.onSettled?.(job, { at: this.options.clock(), nextRunAt: next, status })
+    this.options.onSettled?.(job, {
+      at: this.options.clock(),
+      nextRunAt: next,
+      status,
+      ...(result.reason ? { reason: result.reason } : {}),
+    })
   }
 
   private settleFailure(job: JobRow, error: string, sessionKey?: string): void {

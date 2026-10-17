@@ -9,7 +9,7 @@ import {
   reportSuccess,
   searchParamRoute,
 } from '@agnes/web-ui'
-import { settingsRoute, sortSessionsByRecency } from '@agnes/web-units'
+import { settingsRoute, sortSessionsByRecency } from '@agnes/web-units/shell'
 import { createAppearanceController } from './app/appearance-controller.js'
 import { createCommandController } from './app/command-controller.js'
 import { createComposerController } from './app/composer-controller.js'
@@ -66,7 +66,7 @@ import { workbenchLocaleCatalog } from '@agnes/web-conversation/workbench'
 import { installBrowserLogCapture } from '@agnes/web-foundation/browser-log'
 import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
 import { safeThemeStorage } from '@agnes/web-foundation/theme'
-import { attachmentErrorMessage } from '@agnes/web-units'
+import { attachmentErrorMessage } from '@agnes/web-units/shell'
 import { appNotice, setConnectionNotice, setReconnectNotice } from './app-notices.js'
 import { mountAppShell } from './app-shell.js'
 import { archivedSessions } from './archived-sessions.js'
@@ -2119,6 +2119,11 @@ client.on('generationChanged', (payload) => {
 // 名册失效推送（WC10）：packages_changed 只是失效提示，收到后必须重读名册。
 client.on('notice', (payload) => {
   const incoming = payload as { kind?: unknown; detail?: unknown }
+  if (incoming.kind === 'automation_attention') {
+    notice.setKind('warning')
+    notice.setText(t('app.automation.needsAttention'))
+    return
+  }
   if (incoming.kind !== 'packages_changed' && incoming.kind !== 'tree_changed') return
   const detail =
     typeof incoming.detail === 'object' && incoming.detail !== null

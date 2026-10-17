@@ -7,9 +7,9 @@ export type {
   TracePanel,
   TracePanelOptions,
   TraceProps,
-} from '@agnes/web-units'
+} from '@agnes/web-units/shell'
 export {
   durationLabel,
   TRACE_PANEL_STORAGE_KEY,
   Trace,
-} from '@agnes/web-units'
+} from '@agnes/web-units/shell'

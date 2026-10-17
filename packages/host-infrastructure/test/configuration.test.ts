@@ -478,6 +478,85 @@ it('refuses a payload-only account without a usable generic credential', async (
   expect((await service.get()).revision).toBe(0)
 })
 
+it.each([
+  'http://localhost/v1',
+  'https://replacement.example.invalid/v1',
+  'https://localhost:9443/v1',
+  'https://localhost/v2',
+])('requires an explicit credential before saving a changed endpoint %s', async (baseUrl) => {
+  const root = await home()
+  const ref = await genericCredential(root)
+  const request = vi.fn<typeof fetch>(async () => new Response('', { status: 429 }))
+  const service = createConfigurationService({ home: root, profile: 'local-dev', request })
+  const saved = await service.save({ ...jevAccount(ref), baseUrl: 'https://localhost/v1' })
+  await expect(service.save({ ...jevAccount(), baseUrl, expectedRevision: 1 })).rejects.toMatchObject({
+    code: 'CONFIG_CREDENTIAL_REQUIRED',
+    field: 'credentialRef',
+  })
+  expect(await service.get()).toEqual(saved)
+  expect(request).not.toHaveBeenCalled()
+  await expect(
+    service.save({
+      ...jevAccount(),
+      baseUrl: `${saved.accounts?.[0]?.baseUrl}/`,
+      label: 'Renamed',
+      expectedRevision: 1,
+    }),
+  ).resolves.toMatchObject({ revision: 2 })
+  await expect(service.save({ ...jevAccount(ref), baseUrl, expectedRevision: 2 })).resolves.toMatchObject({
+    revision: 3,
+  })
+  await service.test({ providerId: 'typesafe-systemone', accountId: 'jev' })
+  expect(new Request(request.mock.calls[0]?.[0] ?? '', request.mock.calls[0]?.[1]).url).toBe(
+    `${baseUrl}/systemone`,
+  )
+})
+
+it.each([
+  'http://vendor.example.invalid/v1',
+  'https://vendor.example.invalid/{tenant}',
+  'https://vendor.example.invalid/v1?',
+])('refuses an unusable payload-only URL %s without persisting it', async (baseUrl) => {
+  const root = await home()
+  const ref = await genericCredential(root)
+  const service = createConfigurationService({ home: root, profile: 'local-dev' })
+  await expect(service.save({ ...jevAccount(ref), baseUrl })).rejects.toMatchObject({
+    code: 'CONFIG_INVALID_INPUT',
+    field: 'baseUrl',
+  })
+  expect((await service.get()).revision).toBe(0)
+  expect(await service.profileInput()).toEqual({})
+  await expect(
+    service.save({ ...jevAccount(ref), baseUrl: 'https://vendor.example.invalid/v1' }),
+  ).resolves.toMatchObject({ revision: 1 })
+  // Old records still load, but cannot be saved or probed with an unusable effective URL.
+  const path = join(root, 'profiles', 'local-dev', 'configuration.json')
+  const state = JSON.parse(await readFile(path, 'utf8'))
+  state.accounts[0].baseUrl = baseUrl
+  await writeFile(path, JSON.stringify(state))
+  expect((await service.get()).revision).toBe(1)
+  await expect(service.save({ ...jevAccount(), expectedRevision: 1 })).rejects.toMatchObject({
+    code: 'CONFIG_INVALID_INPUT',
+    field: 'baseUrl',
+  })
+  await expect(service.test({ providerId: 'typesafe-systemone', accountId: 'jev' })).rejects.toMatchObject({
+    code: 'CONFIG_INVALID_INPUT',
+    field: 'baseUrl',
+  })
+  expect(await readFile(path, 'utf8')).toBe(JSON.stringify(state))
+})
+
+it.each(['http://localhost/v1', 'http://127.0.0.2/v1', 'http://[::1]/v1'])(
+  'preserves the adapter loopback HTTP allowance for %s',
+  async (baseUrl) => {
+    const root = await home()
+    const ref = await genericCredential(root)
+    await expect(
+      createConfigurationService({ home: root, profile: 'local-dev' }).save({ ...jevAccount(ref), baseUrl }),
+    ).resolves.toMatchObject({ revision: 1 })
+  },
+)
+
 it('never lets a payload-only account become the default account', async () => {
   const server = await fixture('deepseek-flash')
   const root = await home()

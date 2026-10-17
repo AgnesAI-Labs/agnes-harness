@@ -3,6 +3,11 @@ import { homeVersionMessage } from '@agnes/host'
 /** CLI startup and home errors use fixed text, never an upstream error body. */
 const en = {
   home: 'Home',
+  configBaseUrl:
+    'baseUrl: This endpoint is invalid for the serving adapter. Check the URL scheme, host and path.',
+  configApiKey: 'apiKey: Enter the API key again to authorize sending it to the changed endpoint.',
+  configCredentialRef:
+    'credentialRef: Choose a credential again to authorize sending it to the changed endpoint.',
   daemonScope:
     'This AGH home already owns an App Server with different profile or data settings. Use the running configuration, or stop that server before changing it.',
   daemonBusy:
@@ -24,6 +29,9 @@ const en = {
 } as const
 const zh: Record<keyof typeof en, string> = {
   home: '运行目录',
+  configBaseUrl: 'baseUrl：此适配器不支持该端点，请检查 URL 协议、主机和路径。',
+  configApiKey: 'apiKey：请重新输入 API key，授权将其发送到更改后的端点。',
+  configCredentialRef: 'credentialRef：请重新选择凭据，授权将其发送到更改后的端点。',
   daemonScope:
     '此 AGH 运行目录已有 App Server，配置档或数据目录与本次请求不同。请使用现有配置，或先停止该服务再更改配置。',
   daemonBusy: '此 AGH 运行目录已由另一个 App Server 或启动器占用。请连接现有服务，或等待启动完成。',

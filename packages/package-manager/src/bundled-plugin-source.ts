@@ -22,7 +22,7 @@ export const BUNDLED_HELPERS = Object.freeze([
   {
     name: 'plugin-helper',
     id: '@agnes/plugin-helper',
-    version: '0.2.1',
+    version: '0.2.2',
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/plugin-helper',
   },
@@ -51,6 +51,16 @@ export const BUNDLED_HELPERS = Object.freeze([
   },
 ])
 
+/** Shipped discovery choices; never auto-installed or enabled in profiles. */
+export const OPTIONAL_BUNDLED_PACKAGES: readonly {
+  name: string
+  id: string
+  version: string
+  license: string
+  ref: string
+  sourcePath: string
+}[] = Object.freeze([])
+
 /** Release-owned defaults; freshOnly additions never backfill an existing profile. */
 export const DEFAULT_ENABLED_BUNDLED_PACKAGES = Object.freeze([
   ...BUNDLED_HELPERS.map((helper) => ({
@@ -63,7 +73,9 @@ export const DEFAULT_ENABLED_BUNDLED_PACKAGES = Object.freeze([
 
 /** Resolve reserved release payloads independently of the caller's workspace. */
 export function bundledPluginSource(ref: string): { root: string; path: string } | undefined {
-  const pkg = DEFAULT_ENABLED_BUNDLED_PACKAGES.find((item) => item.ref === ref)
+  const pkg = [...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES].find(
+    (item) => item.ref === ref,
+  )
   if (!pkg) return undefined
   const moduleDir = dirname(fileURLToPath(import.meta.url))
   const sea = process.getBuiltinModule('node:sea').isSea()
@@ -76,7 +88,8 @@ export function bundledPluginSource(ref: string): { root: string; path: string }
 
 /** Only this reserved identity is runtime-owned; ordinary file sources keep workspace semantics. */
 export function bundledPluginSourceRoot(ref: string): string | undefined {
-  if (!BUNDLED_HELPERS.some((helper) => helper.ref === ref)) return undefined
+  if (![...BUNDLED_HELPERS, ...OPTIONAL_BUNDLED_PACKAGES].some((helper) => helper.ref === ref))
+    return undefined
   if (process.getBuiltinModule('node:sea').isSea()) return dirname(process.execPath)
   const moduleDir = dirname(fileURLToPath(import.meta.url))
   return typeof AGNES_PACKAGED_BUILTINS !== 'undefined' && AGNES_PACKAGED_BUILTINS

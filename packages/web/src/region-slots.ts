@@ -1,4 +1,4 @@
-export type { ConversationChildContainers, ConversationHandle } from '@agnes/web-units'
+export type { ConversationChildContainers, ConversationHandle } from '@agnes/web-units/shell'
 export { type ApprovalRegionMount, mountApprovalRegion } from './regions/approval.js'
 export { type ComposerRegionMount, mountComposerRegion } from './regions/composer.js'
 export {

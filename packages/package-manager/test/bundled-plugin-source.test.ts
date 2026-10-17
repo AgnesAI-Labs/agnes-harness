@@ -11,6 +11,7 @@ import {
   bundledPluginSource,
   bundledPluginSourceRoot,
   DEFAULT_ENABLED_BUNDLED_PACKAGES,
+  OPTIONAL_BUNDLED_PACKAGES,
 } from '../src/bundled-plugin-source.js'
 import { emptyLock, readLock, writeLock } from '../src/lockfile.js'
 import { createPackageManager } from '../src/manager.js'
@@ -25,7 +26,13 @@ const fixture = () => {
   roots.push(root)
   return root
 }
-it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
+
+it('keeps an empty optional catalogue without reserving ordinary workspace sources', () => {
+  expect(OPTIONAL_BUNDLED_PACKAGES).toEqual([])
+  expect(bundledPluginSource('file:./bundled-plugins/fixture-optional')).toBeUndefined()
+  expect(bundledPluginSourceRoot('file:./bundled-plugins/fixture-optional')).toBeUndefined()
+})
+it.each([...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES])(
   'uses $id runtime payload instead of workspace impostor without network commands',
   async (helper) => {
     const cwd = fixture()
@@ -64,7 +71,7 @@ it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
     if (helper.name === 'skill-helper') expect(existsSync(join(into, 'src', 'sources.mjs'))).toBe(true)
   },
 )
-it.each(BUNDLED_HELPERS)(
+it.each([...BUNDLED_HELPERS, ...OPTIONAL_BUNDLED_PACKAGES])(
   'inspects and installs $id offline without automatic trust or activation',
   async (helper) => {
     const root = fixture(),

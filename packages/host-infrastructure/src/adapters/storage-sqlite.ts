@@ -455,11 +455,10 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
       params.push(...types)
     }
     const order = qy.order === 'desc' ? 'DESC' : 'ASC'
-    const own = db
-      .prepare(
-        `SELECT ${lean ? LEAN_COLUMNS : '*'} FROM events WHERE ${where.join(' AND ')} ORDER BY seq ${order} LIMIT ?`,
-      )
-      .all(...params, take) as unknown as Row[]
+    const own = preparedStatement(
+      db,
+      `SELECT ${lean ? LEAN_COLUMNS : '*'} FROM events WHERE ${where.join(' AND ')} ORDER BY seq ${order} LIMIT ?`,
+    ).all(...params, take) as unknown as Row[]
     let rows = lean ? leanEvents(own.map(rowToEvent)) : own.map(rowToEvent)
     if (parent) {
       const upper = qy.toSeq === undefined ? parent.boundarySeq : Math.min(qy.toSeq, parent.boundarySeq)
@@ -496,11 +495,10 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
     )
       return prefix
     const from = Math.max(qy.fromSeq, parent ? parent.boundarySeq + 1 : 1)
-    const sizes = db
-      .prepare(
-        'SELECT seq, octet_length(data) AS size FROM events WHERE session_key = ? AND seq >= ? AND seq <= ? ORDER BY seq LIMIT ?',
-      )
-      .all(key, from, qy.toSeq, take - prefix.length) as Array<{ seq: number; size: number }>
+    const sizes = preparedStatement(
+      db,
+      'SELECT seq, octet_length(data) AS size FROM events WHERE session_key = ? AND seq >= ? AND seq <= ? ORDER BY seq LIMIT ?',
+    ).all(key, from, qy.toSeq, take - prefix.length) as Array<{ seq: number; size: number }>
     let end = from - 1
     let bytes = 0
     for (const row of sizes) {
@@ -508,11 +506,10 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
       end = row.seq
       bytes += row.size
     }
-    const own = db
-      .prepare(
-        'SELECT * FROM events WHERE session_key = ? AND seq >= ? AND seq <= ? ORDER BY seq ASC LIMIT ?',
-      )
-      .all(key, from, end, take - prefix.length) as unknown as Row[]
+    const own = preparedStatement(
+      db,
+      'SELECT * FROM events WHERE session_key = ? AND seq >= ? AND seq <= ? ORDER BY seq ASC LIMIT ?',
+    ).all(key, from, end, take - prefix.length) as unknown as Row[]
     return [...prefix, ...own.map(rowToIntegrity)]
   }
 

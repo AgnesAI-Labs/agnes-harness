@@ -56,7 +56,7 @@ describe('CLI configuration wizard', () => {
     )
     expect(oauth).toHaveBeenCalledWith({ action: 'commit', operationId: 'op', model: 'm' })
   })
-  it('tests and saves through client.config while using the revision returned by get', async () => {
+  it.each([false, true])('tests and saves with an explicit key (editing account: %s)', async (editing) => {
     const test = vi.fn().mockResolvedValue({
       verified: true,
       models: [{ id: 'model-a', name: 'Model A' }],
@@ -89,14 +89,43 @@ describe('CLI configuration wizard', () => {
     const secret = vi.fn().mockResolvedValue('secret-key')
     const saved = await runConfigurationWizard(
       client,
-      { profile: 'local-dev', revision: 1, configured: false, provider: null, effect: 'restart-required' },
-      { input: input('1', '', '1'), secret, write: (line) => output.push(line) },
+      {
+        profile: 'local-dev',
+        revision: 1,
+        configured: editing,
+        provider: null,
+        effect: 'restart-required',
+        ...(editing
+          ? {
+              accounts: [
+                {
+                  accountId: 'work',
+                  label: 'Work',
+                  providerId: 'openai',
+                  route: 'account-work',
+                  baseUrl: 'https://old.example.invalid/v1',
+                  model: 'model-a',
+                  models: [],
+                  enabled: true,
+                  credentialConfigured: true,
+                  authType: 'api-key' as const,
+                },
+              ],
+            }
+          : {}),
+      },
+      {
+        input: editing ? input('1', 'edit', '', 'https://api.example.test', '1') : input('1', '', '1'),
+        secret,
+        write: (line) => output.push(line),
+      },
     )
     expect(saved.revision).toBe(2)
     expect(test).toHaveBeenCalledWith({
       providerId: 'openai',
       baseUrl: 'https://api.example.test',
       apiKey: 'secret-key',
+      ...(editing ? { accountId: 'work' } : {}),
     })
     expect(save).toHaveBeenCalledWith({
       providerId: 'openai',
@@ -104,6 +133,7 @@ describe('CLI configuration wizard', () => {
       apiKey: 'secret-key',
       model: 'model-a',
       expectedRevision: 1,
+      ...(editing ? { accountId: 'work', label: 'Work' } : {}),
     })
     expect(secret).toHaveBeenCalledWith('API key (stored by the local backend; never returned): ')
     expect(output.join(' ')).not.toContain('secret-key')
@@ -112,8 +142,20 @@ describe('CLI configuration wizard', () => {
     )
   })
 
-  it('does not claim selected-model inference when the catalogue passes but save rejects that model', async () => {
-    const save = vi.fn().mockRejectedValue(new Error('CONFIG_MODEL_UNAVAILABLE'))
+  it.each([
+    ['en', undefined, 'CONFIG_MODEL_UNAVAILABLE'],
+    ['en', 'baseUrl', 'baseUrl: This endpoint is invalid'],
+    ['en', 'apiKey', 'apiKey: Enter the API key again'],
+    ['en', 'credentialRef', 'credentialRef: Choose a credential again'],
+    ['zh-CN', 'baseUrl', 'baseUrl：此适配器不支持该端点'],
+    ['zh-CN', 'apiKey', 'apiKey：请重新输入 API key'],
+    ['zh-CN', 'credentialRef', 'credentialRef：请重新选择凭据'],
+  ])('locates save refusals without claiming inference (%s, %s)', async (locale, field, expected) => {
+    const previousLocale = process.env.AGNES_LOCALE
+    process.env.AGNES_LOCALE = locale
+    const save = vi
+      .fn()
+      .mockRejectedValue(field ? { data: { field } } : new Error('CONFIG_MODEL_UNAVAILABLE'))
     const client = {
       config: {
         providers: async () => ({
@@ -124,13 +166,22 @@ describe('CLI configuration wizard', () => {
       },
     } as unknown as Client
     const output: string[] = []
-    await expect(
-      runConfigurationWizard(
-        client,
-        { profile: 'local-dev', revision: 1, configured: false, provider: null, effect: 'new-sessions' },
-        { input: input('1', '', '1'), secret: async () => 'fixture-key', write: (line) => output.push(line) },
-      ),
-    ).rejects.toThrow('configuration save failed: CONFIG_MODEL_UNAVAILABLE')
+    try {
+      await expect(
+        runConfigurationWizard(
+          client,
+          { profile: 'local-dev', revision: 1, configured: false, provider: null, effect: 'new-sessions' },
+          {
+            input: input('1', '', '1'),
+            secret: async () => 'fixture-key',
+            write: (line) => output.push(line),
+          },
+        ),
+      ).rejects.toThrow(`configuration save failed: ${expected}`)
+    } finally {
+      if (previousLocale === undefined) delete process.env.AGNES_LOCALE
+      else process.env.AGNES_LOCALE = previousLocale
+    }
     expect(output.join(' ')).toContain('selected-model inference was not tested')
     expect(output.join(' ')).not.toContain('Connection verified')
   })

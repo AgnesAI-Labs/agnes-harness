@@ -331,9 +331,13 @@ describe('client module immutable snapshots', () => {
       registry.close()
     }
   })
-  it.each([false, true])(
-    'binds client activation to its declared backend dependency (cross-package: %s)',
-    async (crossPackage) => {
+  it.each([
+    { crossPackage: false, hostPrivate: false },
+    { crossPackage: true, hostPrivate: false },
+    { crossPackage: true, hostPrivate: true },
+  ])(
+    'binds client activation to its declared backend dependency ($crossPackage cross-package, $hostPrivate Host-private)',
+    async ({ crossPackage, hostPrivate }) => {
       const files = fixture()
       const base = installed({ directory: files.packageDirectory, backend: true })
       const owner = 'plugin/0123456789abcdef'
@@ -378,7 +382,7 @@ describe('client module immutable snapshots', () => {
             rows: [
               web,
               { ...backend, disabled: !crossPackage && backendDisabled },
-              ...(crossPackage ? [{ ...dependency, disabled: backendDisabled }] : []),
+              ...(crossPackage && !hostPrivate ? [{ ...dependency, disabled: backendDisabled }] : []),
             ],
             resources: { mcp: [], skills: {} },
             resourceRevision: 'a'.repeat(64),
@@ -387,7 +391,11 @@ describe('client module immutable snapshots', () => {
         )
       const registry = createClientModuleRegistry({
         snapshotDirectory: () => files.snapshots,
-        runtimeArtifacts: () => ({ desired: artifact(), lastGood: artifact() }),
+        runtimeArtifacts: () => ({
+          desired: artifact(),
+          lastGood: artifact(),
+          ...(hostPrivate ? { activeBackendRows: new Set(backendDisabled ? [] : [dependency.id]) } : {}),
+        }),
       })
       const roster = await registry.list({
         profile: 'local-dev',
@@ -435,6 +443,28 @@ describe('client module immutable snapshots', () => {
 
     expect(runtimeArtifactsFromStore(store)).toEqual({ desired, previous, lastGood })
     expect(runtimeArtifactsFromStore(undefined)).toBeUndefined()
+    let acknowledged = { digest: lastGood.digest, generation: 7 }
+    let ok = true
+    const qualified = {
+      ...store,
+      acknowledged: () => acknowledged,
+      report: () => ({
+        hash: 'confirmed',
+        ok,
+        rows: [
+          { id: 'ext:host/feature', state: 'active' as const },
+          { id: 'ext:host/disabled', state: 'disabled' as const },
+          { id: 'web:client', state: 'active' as const },
+        ],
+      }),
+    }
+    expect(runtimeArtifactsFromStore(qualified, 7)?.activeBackendRows).toEqual(new Set(['ext:host/feature']))
+    expect(runtimeArtifactsFromStore(qualified, 8)?.activeBackendRows).toEqual(new Set())
+    acknowledged = { digest: previous.digest, generation: 7 }
+    expect(runtimeArtifactsFromStore(qualified, 7)?.activeBackendRows).toEqual(new Set())
+    acknowledged = { digest: lastGood.digest, generation: 7 }
+    ok = false
+    expect(runtimeArtifactsFromStore(qualified, 7)?.activeBackendRows).toEqual(new Set())
   })
 
   it('revokes snapshots for an inventory-blocked package instead of serving stale bytes', async () => {

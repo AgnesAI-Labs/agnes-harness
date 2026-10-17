@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { ManualRoute } from '../src/adapters/pi/index.js'
 import type { WireEvent } from '../src/index.js'
-import { AiSetupError, PiAdapter } from '../src/index.js'
+import { AiSetupError, PiAdapter, validateModelBaseUrl } from '../src/index.js'
 import { fakeModel, fakeRequest } from '../testkit/index.js'
 
 /**
@@ -181,6 +181,7 @@ describe('a route has to declare where it points', () => {
 
   for (const bad of ['', '   ', '/v1', 'api.openai.com/v1', 'ftp://gw.invalid/v1', 'file:///etc']) {
     it(`refuses ${JSON.stringify(bad)} at construction`, () => {
+      expect(() => validateModelBaseUrl(withBaseUrl(bad))).toThrowError(AiSetupError)
       expect(() => new PiAdapter({ manualRoutes: [withBaseUrl(bad)] })).toThrowError(AiSetupError)
       expect(() => new PiAdapter({ manualRoutes: [withBaseUrl(bad)] })).toThrowError(/INVALID_BASE_URL/)
     })
@@ -288,6 +289,10 @@ describe('a route has to declare where it points', () => {
   it('accepts an ordinary http and https endpoint', () => {
     expect(() => new PiAdapter({ manualRoutes: [withBaseUrl('https://gw.invalid/v1')] })).not.toThrow()
     expect(() => new PiAdapter({ manualRoutes: [withBaseUrl('http://127.0.0.1:8080')] })).not.toThrow()
+    expect(() => validateModelBaseUrl(withBaseUrl('http://vendor.example.invalid/v1'))).not.toThrow()
+    expect(
+      () => new PiAdapter({ manualRoutes: [withBaseUrl('http://vendor.example.invalid/v1')] }),
+    ).not.toThrow()
   })
 })
 

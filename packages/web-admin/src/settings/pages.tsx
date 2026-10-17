@@ -13,7 +13,7 @@ import {
   useResource,
   useUiText,
 } from '@agnes/web-ui'
-import { revealSettingsAnchor, settingsMoved } from '@agnes/web-units'
+import { revealSettingsAnchor, settingsMoved } from '@agnes/web-units/shell'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { PluginAdminApi } from '../admin/plugins/api.js'
 import { PLUGIN_ADMIN_LOCALE_NAMESPACE, pluginAdminLocaleCatalog } from '../admin/plugins/locales/admin.js'

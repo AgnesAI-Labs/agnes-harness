@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -82,8 +82,22 @@ it.skipIf(process.platform === 'win32')(
             if (variant === 'clean') await daemon.stop()
             else await daemon.crash()
             daemon = undefined
+            const receiptFile = join(home, 'profiles/local-dev/default-helpers/state.json')
+            const previousReceipt = JSON.parse(await readFile(receiptFile, 'utf8'))
+            assert.equal(previousReceipt.phase, 'complete', 'previous bootstrap must be finished')
+            const presentations = ['goal-ui', 'interaction-ui', 'deliverables-ui'].map(
+              (name) => `@agnes/${name}`,
+            )
+            if (!process.env.AGH_UPGRADE_PREVIOUS_REF || ref === ledgerRef)
+              for (const id of presentations)
+                assert.ok(!Object.hasOwn(previousReceipt.integrity, id), `${id}: must be a new default`)
             daemon = await runtime(builds.current, home, workspace)
             await scenario('verify', repository)
+            const upgradedReceipt = JSON.parse(await readFile(receiptFile, 'utf8'))
+            assert.equal(upgradedReceipt.version, 4)
+            assert.equal(upgradedReceipt.phase, 'complete')
+            for (const id of presentations)
+              assert.ok(upgradedReceipt.offered.includes(id), `${id}: missing offer after upgrade`)
             await daemon.stop()
             daemon = undefined
           }

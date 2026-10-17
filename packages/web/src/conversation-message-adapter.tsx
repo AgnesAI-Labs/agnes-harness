@@ -27,7 +27,7 @@ import {
   interactionToolPresentation,
 } from '@agnes/web-ui/conversation'
 import { MessageFeedback } from '@agnes/web-units/message-feedback'
-import { type ReactNode, useCallback, useSyncExternalStore } from 'react'
+import { createContext, type ReactNode, useCallback, useContext, useMemo, useSyncExternalStore } from 'react'
 import type { ClaimResolver } from './client-modules/boot.js'
 import { openPlugins } from './pages/plugins/route.js'
 import { workflowStepRecord } from './workflow-step.js'
@@ -155,17 +155,42 @@ function interactionEcho(
   )
 }
 
-export function WebConversationMessages({
-  registry,
-  claim,
-  session,
-  locale,
-  resources,
-  turns,
-  nodes,
-  visibleNodeIds,
-  onFork,
+type TurnContributionKind = 'renderTurnActions' | 'renderTurnDeliverables'
+type Presentation = Pick<ConversationMessagesProps, TurnContributionKind> & {
+  answers: ReadonlyMap<string, Extract<UINode, { kind: 'assistant' }>>
+  answerIds: ReadonlySet<string>
+  echoIds: ReadonlySet<string>
+  echoTexts: ReadonlyMap<string, readonly string[]>
+}
+const PresentationContext = createContext<Presentation | undefined>(undefined)
+function usePresentation(): Presentation {
+  const current = useContext(PresentationContext)
+  if (!current) throw new Error('Conversation presentation unavailable')
+  return current
+}
+
+// Select from the current render, then retain the element below this boundary when only
+// unrelated history changes. New plugin leaves never see a previous projection on mount.
+function SelectedContribution<T>({
+  select,
+  render,
 }: {
+  select: (current: Presentation) => T
+  render: (value: T) => ReactNode
+}) {
+  const value = select(usePresentation())
+  return useMemo(() => render(value), [render, value])
+}
+
+// These plugin contributions may read the entire window, so they receive every projection.
+function TurnContribution({ kind, args }: { kind: TurnContributionKind; args: [UITurn, string, boolean] }) {
+  const current = usePresentation()
+  return kind === 'renderTurnActions'
+    ? current.renderTurnActions?.(...args)
+    : current.renderTurnDeliverables?.(args[0])
+}
+
+type WebConversationMessagesProps = {
   registry?: SlotRegistry
   claim?: ClaimResolver
   session?: SessionService
@@ -177,11 +202,29 @@ export function WebConversationMessages({
   onFork?: (turn: UITurn) => Promise<void>
   /** Compatibility selector; both values now use the same React-owned Markdown. */
   markdownRenderer?: 'legacy' | 'xmarkdown'
-}) {
+}
+
+export function WebConversationMessages(props: WebConversationMessagesProps) {
+  const { registry } = props
   const sessionScope = useSyncExternalStore(
     registry ? registry.subscribeSession.bind(registry) : noSessionSubscription,
     () => registry?.sessionId,
   )
+  return <ScopedConversationMessages key={sessionScope ?? ''} {...props} sessionScope={sessionScope} />
+}
+
+function ScopedConversationMessages({
+  registry,
+  claim,
+  session,
+  locale,
+  resources,
+  turns,
+  nodes,
+  visibleNodeIds,
+  onFork,
+  sessionScope,
+}: WebConversationMessagesProps & { sessionScope: string | undefined }) {
   const readAttachment = useCallback(
     async (artifact: import('@agnes/protocol').ArtifactRef, signal: AbortSignal) => {
       signal.throwIfAborted()
@@ -197,7 +240,30 @@ export function WebConversationMessages({
     [resources, sessionScope, session],
   )
   // Presentation contributions can replace native nodes with their own visible receipt.
-  useSyncExternalStore(conversationCards.subscribe, conversationCards.getSnapshot)
+  const cardVersion = useSyncExternalStore(conversationCards.subscribe, conversationCards.getSnapshot)
+  // Catalog replacement can change text without changing the language tag.
+  const localeChanges = useMemo(() => {
+    let revision = 0
+    return {
+      getSnapshot: () => revision,
+      subscribe: (listener: () => void) =>
+        locale?.subscribe(() => {
+          revision++
+          listener()
+        }) ?? (() => undefined),
+    }
+  }, [locale])
+  const localeVersion = useSyncExternalStore(localeChanges.subscribe, localeChanges.getSnapshot)
+  const localeTag = locale?.locale
+  const translate = useCallback(
+    (key: string, vars?: Readonly<Record<string, string | number>>) => {
+      // Both a language change and an in-place catalog update invalidate native labels.
+      void localeTag
+      void localeVersion
+      return locale?.t(key, vars) ?? key
+    },
+    [locale, localeTag, localeVersion],
+  )
   const folded = new Set(
     conversationCards.entries().flatMap((entry) => entry.hiddenNodeIds?.(nodes ?? [], turns ?? []) ?? []),
   )
@@ -220,13 +286,17 @@ export function WebConversationMessages({
     const answer = nodes?.find((node) => node.id === turn.finalAssistantId)
     if (answer?.kind === 'assistant') answers.set(answer.id, answer)
   }
-  const props: ConversationMessagesProps = {
-    readAttachment,
-    keepNodeVisible: (node) => keepConversationCardVisible(node) || rawEchoes.has(node.id),
-    t: (key, vars) => locale?.t(key, vars) ?? key,
-    nodes: nodes ?? [],
-    ...(turns ? { turns } : {}),
-    ...(shownNodeIds ? { visibleNodeIds: shownNodeIds } : {}),
+  const answerKey = JSON.stringify([...answers.keys()])
+  const answerIds = useMemo(() => new Set<string>(JSON.parse(answerKey)), [answerKey])
+  const echoKey = JSON.stringify([...echoedTools.keys()])
+  const rawKey = JSON.stringify([...rawEchoes])
+  const echoIds = useMemo(() => new Set<string>(JSON.parse(echoKey)), [echoKey])
+  const echoTexts = useMemo(() => new Map<string, string[]>(JSON.parse(rawKey)), [rawKey])
+  const nextContributions: Presentation = {
+    answers,
+    answerIds,
+    echoIds,
+    echoTexts,
     renderTurnDeliverables: (turn) => (
       <>
         <RegisteredConversationCard
@@ -241,203 +311,258 @@ export function WebConversationMessages({
         )}
       </>
     ),
-    processStep: (node) => workflowStepRecord(node.text),
-    renderTurnActions: (turn, finalText, settled) => {
-      const answer = turn.finalAssistantId ? answers.get(turn.finalAssistantId) : undefined
-      const rated =
-        sessionScope &&
-        session?.getSnapshot() === sessionScope &&
-        settled &&
-        !turn.inherited &&
-        answer &&
-        !answer.streaming &&
-        answer.seq > 0
-      return (
-        <ConversationTurnActions
-          key={turn.id}
-          turn={turn}
-          finalText={finalText}
-          settled={settled}
-          t={(key, vars) => locale?.t(key, vars) ?? key}
-          {...(locale ? { localeTag: locale.locale } : {})}
-          {...(onFork ? { onFork } : {})}
-          leading={
-            <RegisteredConversationCard
-              card={{ kind: 'conversation.turn-actions', data: { turn, nodes: nodes ?? [] } }}
-              context={{ t: (key) => locale?.t(key) ?? key }}
-            />
-          }
-          extra={
-            <>
-              {rated && (
-                <MessageFeedback
-                  sessionId={sessionScope}
-                  target={{ messageSeq: answer.seq, turn: turn.turn }}
-                  openEvidence={(candidateId) => {
-                    factChainLinks.open({
-                      sessionId: sessionScope,
-                      laneId: 'main',
-                      anchor: { kind: 'authoring', candidateId },
-                    })
-                  }}
-                  openReview={() => openPlugins('review')}
-                />
-              )}
-              {answer && registry?.spec('conversation.chat.assistant-actions') && (
-                <span className="turn-action-slot" data-agnes-dsh-children="conversation.chat.node">
-                  <SlotOutlet
-                    name="conversation.chat.assistant-actions"
-                    props={{ owner: { node: answer, nodeId: answer.id, kind: answer.kind } }}
-                    hideWhenEmpty
-                  />
-                </span>
-              )}
-            </>
-          }
-        />
-      )
-    },
-    renderMarkdown: (text, part, state) => {
-      const markdown = (
-        <ConversationMarkdown
-          key={`${state?.nodeId ?? ''}:${part}`}
-          source={text}
-          part={part}
-          streaming={state?.streaming ?? false}
-          t={(key, vars) => locale?.t(key, vars) ?? key}
-        />
-      )
-      const echo = part === 'body' && state?.nodeId ? echoedTools.get(state.nodeId) : undefined
-      if (echo) return null
-      return markdown
-    },
-    renderTool: (node, turnStatus) => (
+    renderTurnActions: (turn) => (
       <RegisteredConversationCard
-        card={{
-          kind: conversationToolCardKind(node) ?? 'tool',
-          data: node,
-        }}
-        context={{
-          t: (key, vars) => locale?.t(key, vars) ?? key,
-          data: (
-            <>
-              <DefaultToolCards
-                node={node}
-                {...(locale ? { t: (key: string) => locale.t(key) } : {})}
-                {...(session ? { session } : {})}
-                {...(resources ? { resources } : {})}
+        card={{ kind: 'conversation.turn-actions', data: { turn, nodes: nodes ?? [] } }}
+        context={{ t: (key) => locale?.t(key) ?? key }}
+      />
+    ),
+  }
+
+  const keepNodeVisible = useCallback(
+    (node: UINode) => {
+      // A catalog revision may change a native card's visibility without changing its node.
+      void cardVersion
+      return keepConversationCardVisible(node) || echoTexts.has(node.id)
+    },
+    [cardVersion, echoTexts],
+  )
+  const native = useMemo<Omit<ConversationMessagesProps, 'nodes' | 'turns' | 'visibleNodeIds'>>(() => {
+    return {
+      readAttachment,
+      t: translate,
+      processStep: (node) => workflowStepRecord(node.text),
+      renderMarkdown: (text, part, state) => (
+        <SelectedContribution
+          select={(current) => part === 'body' && !!state?.nodeId && current.echoIds.has(state.nodeId)}
+          render={(echo) =>
+            echo ? null : (
+              <ConversationMarkdown
+                key={`${state?.nodeId ?? ''}:${part}`}
+                source={text}
+                part={part}
+                streaming={state?.streaming ?? false}
+                t={translate}
               />
-              {conversationToolCardKind(node) === 'child-agent' && node.resultPreview && (
-                <div
-                  role="log"
-                  data-testid="child-engine-output"
-                  aria-live="polite"
-                  aria-relevant="additions"
-                  aria-label={locale?.t('cards.child.output') ?? 'cards.child.output'}
-                >
-                  {node.resultPreview}
-                </div>
-              )}
-              <ConversationToolCard
+            )
+          }
+        />
+      ),
+      renderTool: (node, turnStatus) => (
+        <SelectedContribution
+          select={(current) => current.echoTexts.get(node.id)?.join('\n\n')}
+          render={(appendix) => (
+            <RegisteredConversationCard
+              card={{
+                kind: conversationToolCardKind(node) ?? 'tool',
+                data: node,
+              }}
+              context={{
+                t: translate,
+                data: (
+                  <>
+                    <DefaultToolCards
+                      node={node}
+                      {...(locale ? { t: (key: string) => locale.t(key) } : {})}
+                      {...(session ? { session } : {})}
+                      {...(resources ? { resources } : {})}
+                    />
+                    {conversationToolCardKind(node) === 'child-agent' && node.resultPreview && (
+                      <div
+                        role="log"
+                        data-testid="child-engine-output"
+                        aria-live="polite"
+                        aria-relevant="additions"
+                        aria-label={locale?.t('cards.child.output') ?? 'cards.child.output'}
+                      >
+                        {node.resultPreview}
+                      </div>
+                    )}
+                    <ConversationToolCard
+                      key={node.id}
+                      node={node}
+                      turnStatus={turnStatus}
+                      resultAppendix={appendix}
+                      icon={toolIconReact(node.name)}
+                      presentation={interactionToolPresentation(
+                        node,
+                        (key, vars) => locale?.t(key, vars) ?? key,
+                      )}
+                      t={translate}
+                    />
+                  </>
+                ),
+              }}
+            />
+          )}
+        />
+      ),
+      renderSlot: (node) => (
+        <RegisteredConversationCard
+          card={{ kind: 'plugin', data: node }}
+          context={{
+            t: (key) => locale?.t(key) ?? key,
+            data: (
+              <SlotLeaf
                 key={node.id}
                 node={node}
-                turnStatus={turnStatus}
-                resultAppendix={rawEchoes.get(node.id)?.join('\n\n')}
-                icon={toolIconReact(node.name)}
-                presentation={interactionToolPresentation(node, (key, vars) => locale?.t(key, vars) ?? key)}
-                t={(key, vars) => locale?.t(key, vars) ?? key}
+                registry={registry}
+                claim={claim}
+                t={(key) => locale?.t(key) ?? key}
               />
-            </>
-          ),
-        }}
-      />
-    ),
-    renderSlot: (node) => (
-      <RegisteredConversationCard
-        card={{ kind: 'plugin', data: node }}
-        context={{
-          t: (key) => locale?.t(key) ?? key,
-          data: (
-            <SlotLeaf
-              key={node.id}
-              node={node}
-              registry={registry}
-              claim={claim}
-              t={(key) => locale?.t(key) ?? key}
-            />
-          ),
-        }}
-      />
-    ),
-    renderNode: (node, native) => {
-      const base = (
-        <RegisteredConversationCard
-          card={{ kind: 'conversation.node', data: node }}
-          context={{ t: (key) => locale?.t(key) ?? key, data: native }}
-          fallback={native}
+            ),
+          }}
         />
-      )
-      const factAnchor =
-        node.kind === 'tool'
-          ? { kind: 'tool' as const, toolUseId: node.toolUseId }
-          : node.kind === 'artifact'
-            ? { kind: 'artifact' as const, seq: node.seq, ref: node.ref }
-            : undefined
-      const content = (
-        <>
-          {base}
-          {node.kind === 'tool' && node.review && (
-            <p data-testid="tool-review-decision">
-              {locale?.t(
-                node.review.source === 'human-override'
-                  ? 'facts.reviewHumanRule'
-                  : node.review.decision === 'allow'
-                    ? 'facts.reviewAllowed'
-                    : node.review.decision === 'deny'
-                      ? 'facts.reviewDenied'
-                      : 'facts.reviewEscalated',
-              )}
-              : {node.review.reason}
-            </p>
-          )}
-          {factAnchor && sessionScope && (
-            <Button
-              type="link"
-              size="small"
-              data-testid={node.kind === 'tool' ? 'tool-fact-chain' : 'artifact-fact-chain'}
-              onClick={() =>
-                factChainLinks.open({ sessionId: sessionScope, laneId: 'main', anchor: factAnchor })
-              }
-            >
-              {locale?.t(node.kind === 'tool' ? 'facts.toolLink' : 'facts.artifactLink')}
-            </Button>
-          )}
-        </>
-      )
-      return registry ? (
-        <DshNodeLeaf
-          key={node.id}
-          node={node}
-          native={content}
+      ),
+      renderNode: (node, native) => (
+        <SelectedContribution
+          select={(current) => current.answerIds.has(node.id)}
+          render={(actionsInBar) => {
+            const base = (
+              <RegisteredConversationCard
+                card={{ kind: 'conversation.node', data: node }}
+                context={{ t: (key) => locale?.t(key) ?? key, data: native }}
+                fallback={native}
+              />
+            )
+            const factAnchor =
+              node.kind === 'tool'
+                ? { kind: 'tool' as const, toolUseId: node.toolUseId }
+                : node.kind === 'artifact'
+                  ? { kind: 'artifact' as const, seq: node.seq, ref: node.ref }
+                  : undefined
+            const content = (
+              <>
+                {base}
+                {node.kind === 'tool' && node.review && (
+                  <p data-testid="tool-review-decision">
+                    {locale?.t(
+                      node.review.source === 'human-override'
+                        ? 'facts.reviewHumanRule'
+                        : node.review.decision === 'allow'
+                          ? 'facts.reviewAllowed'
+                          : node.review.decision === 'deny'
+                            ? 'facts.reviewDenied'
+                            : 'facts.reviewEscalated',
+                    )}
+                    : {node.review.reason}
+                  </p>
+                )}
+                {factAnchor && sessionScope && (
+                  <Button
+                    type="link"
+                    size="small"
+                    data-testid={node.kind === 'tool' ? 'tool-fact-chain' : 'artifact-fact-chain'}
+                    onClick={() =>
+                      factChainLinks.open({ sessionId: sessionScope, laneId: 'main', anchor: factAnchor })
+                    }
+                  >
+                    {locale?.t(node.kind === 'tool' ? 'facts.toolLink' : 'facts.artifactLink')}
+                  </Button>
+                )}
+              </>
+            )
+            return registry ? (
+              <DshNodeLeaf
+                key={node.id}
+                node={node}
+                native={content}
+                registry={registry}
+                actionsInBar={actionsInBar}
+              />
+            ) : (
+              content
+            )
+          }}
+        />
+      ),
+      renderTurnActions: (turn, finalText, settled) => (
+        <SelectedContribution
+          select={(current) => JSON.stringify(current.answers.get(turn.finalAssistantId ?? ''))}
+          render={(serialized) => {
+            const answer =
+              serialized === undefined
+                ? undefined
+                : (JSON.parse(serialized) as Extract<UINode, { kind: 'assistant' }>)
+            const rated =
+              sessionScope &&
+              session?.getSnapshot() === sessionScope &&
+              settled &&
+              !turn.inherited &&
+              answer &&
+              !answer.streaming &&
+              answer.seq > 0
+            return (
+              <ConversationTurnActions
+                key={turn.id}
+                turn={turn}
+                finalText={finalText}
+                settled={settled}
+                t={translate}
+                {...(locale ? { localeTag: locale.locale } : {})}
+                {...(onFork ? { onFork } : {})}
+                leading={<TurnContribution kind="renderTurnActions" args={[turn, finalText, settled]} />}
+                extra={
+                  <>
+                    {rated && (
+                      <MessageFeedback
+                        sessionId={sessionScope}
+                        target={{ messageSeq: answer.seq, turn: turn.turn }}
+                        openEvidence={(candidateId) => {
+                          factChainLinks.open({
+                            sessionId: sessionScope,
+                            laneId: 'main',
+                            anchor: { kind: 'authoring', candidateId },
+                          })
+                        }}
+                        openReview={() => openPlugins('review')}
+                      />
+                    )}
+                    {answer && registry?.spec('conversation.chat.assistant-actions') && (
+                      <span className="turn-action-slot" data-agnes-dsh-children="conversation.chat.node">
+                        <SlotOutlet
+                          name="conversation.chat.assistant-actions"
+                          props={{ owner: { node: answer, nodeId: answer.id, kind: answer.kind } }}
+                          hideWhenEmpty
+                        />
+                      </span>
+                    )}
+                  </>
+                }
+              />
+            )
+          }}
+        />
+      ),
+      renderTurnDeliverables: (turn) => (
+        <TurnContribution kind="renderTurnDeliverables" args={[turn, '', false]} />
+      ),
+    }
+  }, [readAttachment, translate, registry, claim, session, locale, resources, sessionScope, onFork])
+  const messages = (
+    <ConversationMessages
+      key={sessionScope ?? ''}
+      {...native}
+      keepNodeVisible={keepNodeVisible}
+      nodes={nodes ?? []}
+      {...(turns ? { turns } : {})}
+      {...(shownNodeIds ? { visibleNodeIds: shownNodeIds } : {})}
+    />
+  )
+  return (
+    <PresentationContext.Provider value={nextContributions}>
+      {registry ? (
+        <SlotsProvider
           registry={registry}
-          actionsInBar={answers.has(node.id)}
-        />
+          {...(session ? { session } : {})}
+          {...(locale ? { locale } : {})}
+          {...(resources ? { resources } : {})}
+        >
+          {messages}
+        </SlotsProvider>
       ) : (
-        content
-      )
-    },
-  }
-  const messages = <ConversationMessages key={sessionScope ?? ''} {...props} />
-  return registry ? (
-    <SlotsProvider
-      registry={registry}
-      {...(session ? { session } : {})}
-      {...(locale ? { locale } : {})}
-      {...(resources ? { resources } : {})}
-    >
-      {messages}
-    </SlotsProvider>
-  ) : (
-    messages
+        messages
+      )}
+    </PresentationContext.Provider>
   )
 }

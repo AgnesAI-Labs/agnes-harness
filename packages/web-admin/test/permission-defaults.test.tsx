@@ -4,6 +4,8 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import { PermissionDefaults } from '../src/settings/permission-defaults.js'
 
+import { securityUxCatalog } from '../src/settings/security-locale.js'
+
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 afterEach(() => document.body.replaceChildren())
 
@@ -91,3 +93,12 @@ it.each([false, true])(
     }
   },
 )
+
+it.each(['en', 'zh-CN'] as const)('describes default permission boundaries in %s', (locale) => {
+  const copy = securityUxCatalog[locale]
+  expect(copy?.['read-onlyHelp']).toContain(locale === 'en' ? 'public webpages' : '公开网页')
+  expect(copy?.['workspace-writeHelp']).toContain(locale === 'en' ? 'commands need approval' : '命令需审批')
+  expect(copy?.['full-accessHelp']).toContain(
+    locale === 'en' ? 'installation trust confirmations' : '安装信任确认',
+  )
+})

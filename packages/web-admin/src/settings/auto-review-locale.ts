@@ -83,7 +83,7 @@ export const reviewCatalog = {
     seconds: '{count} 秒',
     secondUnit: '秒',
     timeoutDefault: '默认（10 秒）',
-    overridesHelp: '你在审批时添加的「以后同类调用」规则。',
+    overridesHelp: '你在审批时添加的「以后完全相同的调用（同身份/目录/工具定义）」规则。',
     noOverrides: '还没有规则',
     removeRule: '删除 {tool} 的规则',
     'decision.allow': '允许',

@@ -6,6 +6,7 @@ import {
   createElement,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useSyncExternalStore,
 } from 'react'
@@ -46,7 +47,12 @@ export function SlotsProvider({
     if (!session) return
     return registry.bindSession(session)
   }, [registry, session])
-  const runtimeValue: SlotRuntime = { session, locale, resources }
+  // Each outlet subscribes to session/locale changes itself. A new wrapper object would
+  // otherwise invalidate every historical outlet on each streamed transcript update.
+  const runtimeValue = useMemo<SlotRuntime>(
+    () => ({ session, locale, resources }),
+    [session, locale, resources],
+  )
   return createElement(
     SlotsContext.Provider,
     { value: registry },

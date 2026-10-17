@@ -112,7 +112,13 @@ export function registerConfiguration(
                 : {}),
             }
           : {}
-      throw rpcError('SEMANTIC_REJECTED', { reason, ...credential })
+      const field = error && typeof error === 'object' && 'field' in error ? error.field : undefined
+      const located =
+        (reason === 'CONFIG_INVALID_INPUT' && field === 'baseUrl') ||
+        (reason === 'CONFIG_CREDENTIAL_REQUIRED' && (field === 'apiKey' || field === 'credentialRef'))
+          ? { field }
+          : {}
+      throw rpcError('SEMANTIC_REJECTED', { reason, ...credential, ...located })
     }
   }
   endpoint.register('_agnes/v1/config.get', (_params, context) =>

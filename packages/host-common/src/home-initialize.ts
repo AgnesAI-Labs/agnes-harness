@@ -84,12 +84,14 @@ export async function initializeHomeLocked(
   options: InitializeOptions = {},
 ) {
   const initial = inspectHome(home, profile)
-  if (initial.state === 'unsupported') throw homeVersionFault(home, 'unversioned')
   const canonicalHome = resolve(home)
+  const lock = join(dirname(canonicalHome), `.${basename(canonicalHome)}.initialize.sqlite`)
+  // An existing initializer may have created directories without publishing its marker yet.
+  // Wait for that lock and inspect again; unknown homes without a lock remain untouched.
+  if (initial.state === 'unsupported' && !present(lock)) throw homeVersionFault(home, 'unversioned')
   // Keep the lock outside a fresh home so inspection cannot mistake it for unknown user data.
   if (windows) createHomeDirectory(dirname(canonicalHome))
   else directory(dirname(canonicalHome))
-  const lock = join(dirname(canonicalHome), `.${basename(canonicalHome)}.initialize.sqlite`)
   if (windows) prepareHomeLock(lock)
   return withConfigurationLock(lock, async () => initializeHome(canonicalHome, profile, options))
 }

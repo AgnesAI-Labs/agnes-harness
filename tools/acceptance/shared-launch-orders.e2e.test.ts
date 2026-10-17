@@ -219,7 +219,7 @@ async function scenario(options: { simultaneous: boolean }): Promise<void> {
       expect(html).toContain('data-ws=')
       for (const result of cliResults) {
         if (result.status === 'rejected') throw new Error('CLI cold start did not complete')
-        expect(result.value.code, 'CLI cold start exit code').toBe(0)
+        expect(result.value.code, `CLI cold start exit code: ${result.value.stderr}`).toBe(0)
         expect(JSON.parse(result.value.stdout).items).toEqual([])
       }
       const concurrentOwner = await readOwner(ownerPath)
@@ -233,7 +233,7 @@ async function scenario(options: { simultaneous: boolean }): Promise<void> {
       expect(html).toContain('data-ws=')
 
       const first = await runCli(['sessions', '--json'])
-      expect(first.code).toBe(0)
+      expect(first.code, `first CLI exit code: ${first.stderr}`).toBe(0)
       expect(JSON.parse(first.stdout).items).toEqual([])
       const owner = await readOwner(ownerPath)
 
@@ -241,7 +241,7 @@ async function scenario(options: { simultaneous: boolean }): Promise<void> {
       const secondWorkspace = join(root, 'second-workspace')
       await mkdir(secondWorkspace)
       const second = await runCli(['sessions', '--json'], secondWorkspace)
-      expect(second.code).toBe(0)
+      expect(second.code, `second CLI exit code: ${second.stderr}`).toBe(0)
       expect(JSON.parse(second.stdout).items).toEqual([])
       expect((await readOwner(ownerPath)).generation).toBe(owner.generation)
     }
@@ -249,7 +249,7 @@ async function scenario(options: { simultaneous: boolean }): Promise<void> {
     // All CLI clients have exited, while the Web launcher remains alive; the shared daemon must
     // continue serving its owner and endpoint.
     const status = await runCli(['daemon', 'status'])
-    expect(status.code).toBe(0)
+    expect(status.code, `daemon status exit code: ${status.stderr}`).toBe(0)
     expect(JSON.parse(status.stdout)).toMatchObject({ running: true })
     const stableOwner = await readOwner(ownerPath)
     expect(stableOwner.generation).toMatch(/^[0-9a-f-]{36}$/u)
@@ -259,7 +259,7 @@ async function scenario(options: { simultaneous: boolean }): Promise<void> {
     }
 
     const stop = await runCli(['daemon', 'stop'])
-    expect(stop.code).toBe(0)
+    expect(stop.code, `daemon stop exit code: ${stop.stderr}`).toBe(0)
     expect(stop.stdout.trim()).toBe('stopped')
     await expectGone(ownerPath)
     await expectGone(discoveryPath)
@@ -269,8 +269,10 @@ async function scenario(options: { simultaneous: boolean }): Promise<void> {
     expect(afterStop.code).toBe(1)
     expect(JSON.parse(afterStop.stdout)).toMatchObject({ running: false })
   } finally {
-    // A failed assertion can occur after the CLI has detached the shared daemon. Reclaim that
-    // process before removing its temporary home; an already-completed stop simply returns 1.
+    // Quiesce a launcher still starting up before stopping its detached daemon; otherwise it can
+    // publish a new owner while the temporary home is being removed. The body already verifies
+    // explicit daemon stop while the Web client is alive.
+    await terminate(web)
     await runCli(['daemon', 'stop'])
     await Promise.allSettled([...children].map((child) => terminate(child)))
     await rm(root, { recursive: true, force: true })

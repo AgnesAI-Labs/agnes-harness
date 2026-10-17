@@ -17,6 +17,10 @@ export const sideModelsCatalog: LocaleCatalog = {
     'side.prefillLabel.typesafe-systemone': 'Jev',
     'side.label': 'Name',
     'side.baseUrl': 'Endpoint',
+    'side.endpointChanged':
+      'Endpoint changed. Choose a credential again to authorize sending it to this endpoint.',
+    'side.invalidBaseUrl':
+      'Use an absolute HTTPS URL (HTTP is allowed only for loopback), without credentials, templates, a query or a fragment.',
     'side.credential': 'Credential',
     'side.credentialKeep': 'Keep the current credential',
     'side.credentialChoose': 'Choose a credential',
@@ -70,6 +74,9 @@ export const sideModelsCatalog: LocaleCatalog = {
     'side.prefillLabel.typesafe-systemone': 'Jev',
     'side.label': '名称',
     'side.baseUrl': '端点',
+    'side.endpointChanged': '端点已更改。请重新选择凭据，授权将其发送到此端点。',
+    'side.invalidBaseUrl':
+      '请输入绝对 HTTPS URL（仅回环地址允许 HTTP），不能包含凭据、模板、查询参数或片段。',
     'side.credential': '凭据',
     'side.credentialKeep': '保留当前凭据',
     'side.credentialChoose': '选择凭据',

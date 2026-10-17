@@ -467,6 +467,18 @@ describe('SessionService plugin boundary', () => {
       listener()
     })
     expect(changed).toHaveBeenCalledTimes(1)
+    let finish!: (value: { status: string }) => void
+    handle.projectUI.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    const stale = service.projection.read()
+    service.setSession(undefined)
+    service.setSession('session-a')
+    finish({ status: 'old selection' })
+    await expect(stale).resolves.toMatchObject({ status: 'unavailable' })
     service.setSession(undefined)
     await expect(service.projection.read()).resolves.toMatchObject({ status: 'unavailable' })
     expect(() => service.commands.cancel()).toThrow('session unavailable')

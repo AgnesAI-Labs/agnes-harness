@@ -363,6 +363,15 @@ describe('storage-sqlite', () => {
     expect(
       (await s.scan('k', { type: ['user/message', 'assistant/message'], limit: 10 })).map((e) => e.seq),
     ).toEqual([1, 2])
+    // A reused plan must bind each query afresh and see commits after its first execution.
+    await s.commit('k', {
+      events: [ev('assistant/message', {}, { lane: 'main' })],
+      expectedWriterRunId: 'r1',
+    })
+    expect((await s.scan('k', { type: 'assistant/message', limit: 10 })).map((e) => e.seq)).toEqual([2, 3])
+    expect((await s.scan('k', { fromSeq: 3, limit: 10 })).map((e) => e.seq)).toEqual([3])
+    expect((await s.scan('k', { fromSeq: 2, limit: 10 })).map((e) => e.seq)).toEqual([2, 3])
+    expect((await s.scanLean('k', { fromSeq: 3, limit: 1 })).map((e) => e.seq)).toEqual([3])
   })
   it('child session reads parent prefix and continues seq', async () => {
     await s.open('p', { writerRunId: 'r1', ttlMs: 1000 })

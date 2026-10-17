@@ -71,7 +71,7 @@ describe('buildRuntimeTargetConvergenceReport', () => {
       compositeRevision: 'c'.repeat(64),
       resources: { mcp: [], skills: {} },
     })
-    const report = buildRuntimeTargetConvergenceReport(target)
+    const report = buildRuntimeTargetConvergenceReport(target, undefined, undefined, [ordinary, resource])
     expect(report.hash).toBe(target.tree.hash)
     expect(report.ok).toBe(true)
     expect(report.rows.map((row) => row.id)).toEqual([

@@ -1,6 +1,7 @@
 import { type ComponentProps, type Tokens, XMarkdown, type XMarkdownProps } from '@ant-design/x-markdown'
 import {
   createContext,
+  memo,
   type ReactNode,
   useContext,
   useEffect,
@@ -160,7 +161,7 @@ function TableScroll({ children }: { children?: ReactNode }) {
   )
 }
 
-export function ConversationMarkdown({
+export const ConversationMarkdown = memo(function ConversationMarkdown({
   source,
   part,
   streaming = false,
@@ -269,4 +270,4 @@ export function ConversationMarkdown({
       </MarkdownRevealOwner.Provider>
     </div>
   )
-}
+})

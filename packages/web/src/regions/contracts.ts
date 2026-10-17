@@ -8,11 +8,11 @@ import {
   type ConversationHandle,
   downscaleImageFile,
   type SettingsPane,
-} from '@agnes/web-units'
+} from '@agnes/web-units/shell'
 import { ModelPickerControl } from '../model-picker.js'
 import { bindSidebar } from '../shell.js'
 
-export type { ConversationChildContainers, ConversationHandle } from '@agnes/web-units'
+export type { ConversationChildContainers, ConversationHandle } from '@agnes/web-units/shell'
 
 export const SIDEBAR_DEPENDENCIES_BASE = {
   bindSidebar,

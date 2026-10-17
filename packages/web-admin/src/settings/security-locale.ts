@@ -3,13 +3,16 @@ export const SECURITY_NAMESPACE = '@agnes/web/security-settings'
 export const securityUxCatalog: LocaleCatalog = {
   en: {
     defaultPermissions: 'Default permissions',
+    exceptions: 'Full access exceptions',
     defaultHelp: 'Used by new sessions. Change the current session’s permissions in the composer.',
     'read-only': 'Read only',
-    'read-onlyHelp': 'View files without modifying them.',
+    'read-onlyHelp': 'View allowed files and public webpages; changes and command execution are denied.',
     'workspace-write': 'Edit workspace',
-    'workspace-writeHelp': 'Modify workspace files. Other actions require approval.',
+    'workspace-writeHelp':
+      'File tools can edit the workspace; commands need approval. Command isolation depends on the platform.',
     'full-access': 'Full access',
-    'full-accessHelp': 'Access the whole computer without asking for approval.',
+    'full-accessHelp':
+      'Routine operations skip individual approvals; protected directories, plan/memory rules and installation trust confirmations still apply.',
     fullConfirm: 'Allow full access for new sessions?',
     cancel: 'Cancel',
     notAllowed: 'Unavailable in this profile',
@@ -48,13 +51,14 @@ export const securityUxCatalog: LocaleCatalog = {
   },
   'zh-CN': {
     defaultPermissions: '默认权限',
+    exceptions: '完全访问的例外',
     defaultHelp: '新会话使用此设置。当前会话的权限在输入框旁修改。',
     'read-only': '只读',
-    'read-onlyHelp': '只能查看文件，不会修改内容。',
+    'read-onlyHelp': '查看允许范围的文件和公开网页；修改与命令执行会被拒绝。',
     'workspace-write': '可修改工作区',
-    'workspace-writeHelp': '可以修改工作区里的文件，其他操作先问你。',
+    'workspace-writeHelp': '文件工具可改工作区；命令需审批。命令隔离取决于平台。',
     'full-access': '完全访问',
-    'full-accessHelp': '不再询问，可访问整台电脑。',
+    'full-accessHelp': '普通操作不再逐次审批；保护目录、计划/记忆规则及安装信任确认仍生效。',
     fullConfirm: '允许新会话完全访问？',
     cancel: '取消',
     notAllowed: '当前配置不可用',

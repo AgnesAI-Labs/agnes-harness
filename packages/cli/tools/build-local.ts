@@ -5,7 +5,11 @@ import { appendFile, chmod, copyFile, cp, mkdir, readdir, readFile, rm, writeFil
 import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { BUNDLED_EXAMPLES, DEFAULT_ENABLED_BUNDLED_PACKAGES } from '@agnes/package-manager'
+import {
+  BUNDLED_EXAMPLES,
+  DEFAULT_ENABLED_BUNDLED_PACKAGES,
+  OPTIONAL_BUNDLED_PACKAGES,
+} from '@agnes/package-manager'
 import { type BuildOptions, type BuildResult, build, type Plugin } from 'esbuild'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
 import { productionWebOptions } from '../../../tools/web-build-options.mjs'
@@ -53,7 +57,7 @@ export async function copyJevLoopNotice(outputDirectory: string): Promise<void> 
 
 /** Copy only runtime payload, never repository tests or personal working files. */
 export async function copyBundledPlugins(outputDirectory: string, version = '0.0.0'): Promise<void> {
-  for (const { name: helper } of DEFAULT_ENABLED_BUNDLED_PACKAGES) {
+  for (const { name: helper } of [...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES]) {
     const destination = join(outputDirectory, 'bundled-plugins', helper)
     const source = join(repoPackages, 'package-manager', 'bundled-plugins', helper)
     await mkdir(destination, { recursive: true })
@@ -63,6 +67,8 @@ export async function copyBundledPlugins(outputDirectory: string, version = '0.0
         force: false,
         errorOnExist: true,
       })
+    if (existsSync(join(source, 'README.zh-CN.md')))
+      await cp(join(source, 'README.zh-CN.md'), join(destination, 'README.zh-CN.md'))
     if (existsSync(join(source, 'NOTICE'))) await cp(join(source, 'NOTICE'), join(destination, 'NOTICE'))
     if (helper === 'document-reader') await prepareDocumentReader(destination)
     await stampBundledPackageVersion(destination, version)
@@ -97,7 +103,7 @@ const bundleJitiTransform: Plugin = {
 /** Ship the curated example payload independently of the user's workspace. */
 export async function copyBundledExamples(outputDirectory: string, version = '0.0.0'): Promise<void> {
   const parentVersions = new Map<string, string>()
-  for (const pkg of DEFAULT_ENABLED_BUNDLED_PACKAGES) {
+  for (const pkg of [...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES]) {
     const parent = JSON.parse(await readFile(join(repoPackages, pkg.sourcePath, 'package.json'), 'utf8'))
     parentVersions.set(pkg.id, bundledPackageVersion(parent.version, version))
   }
@@ -239,6 +245,7 @@ export async function buildLocalWeb(webOut: string): Promise<readonly BuildResul
   // Plugin entrypoints resolve these imports through index.html's import map, so the host bundle
   // must leave them external and serve exactly one shared platform instance.
   await buildWithMetadata({
+    define: { ...productionWebOptions.define, __AGNES_WEB_BUNDLE__: 'true' },
     entryPoints: {
       app: join(repoPackages, 'web', 'src', 'app.ts'),
       admin: '@agnes/web-admin/admin/plugins/admin',
@@ -282,6 +289,7 @@ export async function buildLocalWeb(webOut: string): Promise<readonly BuildResul
     logLevel: 'warning' as const,
     entryNames: '[name]',
     chunkNames: 'chunk-[hash]',
+    define: { ...productionWebOptions.define, __AGNES_WEB_BUNDLE__: 'true' },
   }
   await buildWithMetadata({
     entryPoints: {
@@ -296,7 +304,6 @@ export async function buildLocalWeb(webOut: string): Promise<readonly BuildResul
   await buildWithMetadata({
     entryPoints: {
       antd: join(repoPackages, 'web', 'tools', 'vendor', 'antd-entry.js'),
-      recharts: join(repoPackages, 'web', 'tools', 'vendor', 'recharts-entry.js'),
       'antd-en-us': join(repoPackages, 'web-ui', 'tools', 'antd-en-us.ts'),
       'antd-zh-cn': join(repoPackages, 'web-ui', 'tools', 'antd-zh-cn.ts'),
       conversation: join(repoPackages, 'web', 'tools', 'vendor', 'conversation-entry.js'),
@@ -310,6 +317,27 @@ export async function buildLocalWeb(webOut: string): Promise<readonly BuildResul
     external: ['react', 'react/jsx-runtime', 'react/jsx-dev-runtime', 'react-dom', 'react-dom/client'],
     banner: {
       js: "import * as __agnesSharedReact from 'react'; var require = (id) => { if (id === 'react') return __agnesSharedReact; throw Error('Unexpected external require: ' + id) };",
+    },
+  })
+  // Optional chart assets stay self-contained so a cache-busted retry cannot retain a failed child module.
+  await buildWithMetadata({
+    ...vendorOptions,
+    entryPoints: {
+      recharts: join(repoPackages, 'web', 'tools', 'vendor', 'recharts-entry.js'),
+      'chunk-diagnostics': join(repoPackages, 'web', 'src', 'diagnostics-bundle.ts'),
+    },
+    splitting: false,
+    alias: { 'react-dom/server': require.resolve('react-dom/server.browser', { paths: [webRoot] }) },
+    external: [
+      'react',
+      'react/jsx-runtime',
+      'react/jsx-dev-runtime',
+      'react-dom',
+      'react-dom/client',
+      '@agnes/web-ui',
+    ],
+    banner: {
+      js: "import __agnesSharedReact from 'react'; var require = (id) => { if (id === 'react') return __agnesSharedReact; throw Error('Unexpected external require: ' + id) };",
     },
   })
   // 首帧主题必须早于第一次绘制，所以这一份单独打成 IIFE 并以阻塞式 <script> 引入。

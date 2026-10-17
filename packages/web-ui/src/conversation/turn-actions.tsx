@@ -188,6 +188,45 @@ export function ConversationTurnActions({
   useLayoutEffect(() => {
     if (usageOpen && summary.current && usage.current) positionUsage(summary.current, usage.current)
   })
+  // Memoized history no longer supplies incidental renders while another turn streams.
+  // An open fixed panel owns its positioning and releases all observers on close/unmount.
+  useLayoutEffect(() => {
+    const anchor = summary.current
+    const panel = usage.current
+    if (!usageOpen || !anchor || !panel) return
+    const doc = anchor.ownerDocument
+    const win = doc.defaultView
+    let alive = true
+    const position = () => {
+      if (alive) positionUsage(anchor, panel)
+    }
+    doc.addEventListener('scroll', position, true)
+    win?.addEventListener('resize', position)
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(position) : undefined
+    observer?.observe(anchor)
+    const mutations =
+      typeof MutationObserver === 'function'
+        ? new MutationObserver((records) => {
+            if (records.some((record) => record.target !== panel)) position()
+          })
+        : undefined
+    if (footer.current)
+      mutations?.observe(footer.current, {
+        childList: true,
+        characterData: true,
+        attributes: true,
+        subtree: true,
+      })
+    const row = anchor.closest('.conversation-turn')
+    if (row) observer?.observe(row)
+    return () => {
+      alive = false
+      doc.removeEventListener('scroll', position, true)
+      win?.removeEventListener('resize', position)
+      observer?.disconnect()
+      mutations?.disconnect()
+    }
+  }, [usageOpen])
 
   const copy = () => {
     if (!finalText) return

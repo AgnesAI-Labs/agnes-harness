@@ -474,7 +474,13 @@ export function TriggersPanel({
                     </span>
                   }
                   title={`${moment(item.at)} · ${item.ruleId || '—'}`}
-                  description={t(item.status)}
+                  description={[
+                    t(item.status),
+                    item.needsAttention ? t('needsAttention') : '',
+                    item.reason ? t(`reason.${item.reason}`) : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
                   actions={
                     item.sessionId ? (
                       <Button
@@ -584,6 +590,19 @@ export function TriggersPanel({
                     {path}
                   </option>
                 ))}
+              </SettingsSelect>
+            </Field>
+            <Field label={t('approvalBehavior')}>
+              <SettingsSelect
+                data-testid="trigger-approval-behavior"
+                disabled={busy}
+                value={rule.unattendedApproval ?? 'notify'}
+                onChange={(event) =>
+                  setRule({ ...rule, unattendedApproval: event.target.value as 'notify' | 'refuse' })
+                }
+              >
+                <option value="notify">{t('approvalNotify')}</option>
+                <option value="refuse">{t('approvalRefuse')}</option>
               </SettingsSelect>
             </Field>
             {input('event', 'event')}

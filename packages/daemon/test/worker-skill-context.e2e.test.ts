@@ -21,7 +21,8 @@ const roots: string[] = []
 // Includes eager UI display schemas, explicit file/question/UI routing, and child completion notices.
 // Candidate source reads now advertise bounded pages with offset and expectedHash.
 // ui_render/ui_update retain their contracts with the reviewed slim model guidance.
-const EXPECTED_SKILL_TOOL_SCHEMA_HASH = '0b3910eac468bde7cdd335ca582d45fcad154414d2a1bca034fbc6adef7c5a41'
+// plugin_test now describes its single hash-bound confirmation and OS-isolation requirement.
+const EXPECTED_SKILL_TOOL_SCHEMA_HASH = 'b169d90f1cee945deb4281802737eb2a49d40495b5108349367ef8dd6c9d7607'
 const expectedToolNames = [
   'ask_user_question',
   'compact',

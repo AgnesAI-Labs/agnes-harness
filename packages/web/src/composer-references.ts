@@ -1,5 +1,5 @@
 import type { Session } from '@agnes/sdk/browser'
-import { createComposerReferences } from '@agnes/web-units'
+import { createComposerReferences } from '@agnes/web-units/shell'
 
 /** Lazy session admission gives a new draft the same backend authority as a sent message. */
 export function composerReferences(session: () => Promise<Session>, changed: () => void) {

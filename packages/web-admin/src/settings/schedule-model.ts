@@ -1,19 +1,21 @@
 /** Scheduled tasks as the automation page reads them; every field is checked before it is shown. */
 
 export type ScheduleTarget =
-  | { kind: 'session'; sessionKey: string }
+  | { kind: 'session'; sessionKey: string; unattendedApproval?: 'notify' | 'refuse' }
   | {
       kind: 'new-session'
       cwd: string
+      unattendedApproval?: 'notify' | 'refuse'
       loop?: { id: string; version: string }
       bundles?: string[]
       preset?: string
       model?: { route: string; model: string }
     }
-export type RunOutcome = 'running' | 'waiting_approval' | 'ran' | 'delivered' | 'failed'
+export type RunOutcome = 'running' | 'waiting_approval' | 'needs_attention' | 'ran' | 'delivered' | 'failed'
 export type ScheduleRun = {
   at: number
   outcome: RunOutcome
+  needsAttention?: boolean
   sessionKey?: string
   endedAt?: number
   reason?: string
@@ -32,7 +34,14 @@ export type ScheduleRow = {
   runs: ScheduleRun[]
 }
 
-const OUTCOMES = new Set<RunOutcome>(['running', 'waiting_approval', 'ran', 'delivered', 'failed'])
+const OUTCOMES = new Set<RunOutcome>([
+  'running',
+  'waiting_approval',
+  'needs_attention',
+  'ran',
+  'delivered',
+  'failed',
+])
 const STATUSES = new Set(['active', 'paused', 'archived', 'ended'])
 
 function targetOf(value: unknown): ScheduleTarget | undefined {

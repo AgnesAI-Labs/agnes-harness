@@ -2,10 +2,10 @@
 
 import { Context } from '@agnes/cordis'
 import type { UINode, UITurn } from '@agnes/protocol'
-import { SlotRegistry } from '@agnes/web-client'
+import { conversationCards, SlotRegistry } from '@agnes/web-client'
 import { costDetails, costSummary } from '@agnes/web-conversation/usage'
 import { setDisclosureOpen } from '@agnes/web-ui'
-import { act, createElement, useEffect, useState } from 'react'
+import { act, createElement, type ReactNode, useEffect, useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mountTranscriptRegion } from '../src/region-slots.js'
 import { zhLocaleService, zhT } from './helpers/locale.js'
@@ -24,14 +24,15 @@ async function setup(options: { onFork?: (turn: UITurn) => Promise<void> } = {})
   transcript.tabIndex = -1
   const button = document.createElement('button')
   document.body.append(transcript, button)
+  const locale = zhLocaleService()
   const mount = mountTranscriptRegion(registry, transcript, {
     newContentButton: button,
     claim: (entry, extId) => entry.owner === extId,
-    locale: zhLocaleService(),
+    locale,
     ...(options.onFork ? { onFork: options.onFork } : {}),
   })
   mounts.push(mount)
-  return { registry, transcript, button, mount }
+  return { registry, transcript, button, mount, locale }
 }
 
 function measureTranscript(transcript: HTMLElement) {
@@ -543,6 +544,86 @@ describe('W4a opt-in transcript node host', () => {
     expect(transcript.querySelector('.turn-final')?.textContent).toContain('迟到的最终正文')
     expect(transcript.querySelector<HTMLButtonElement>('[aria-label="复制回答"]')?.disabled).toBe(false)
     expect(transcript.querySelectorAll('[data-node-id="assistant"]')).toHaveLength(1)
+  })
+
+  it('refreshes global turn-tail contributions while an unrelated historical turn stays mounted', async () => {
+    const { registry, transcript, mount, locale } = await setup()
+    let historyRenders = 0
+    const removeProbe = conversationCards.register({
+      id: 'history-render-probe',
+      order: -1,
+      matches: (card) => card.kind === 'conversation.node' && (card.data as UINode).id === 'old',
+      component: ({ context }) => {
+        historyRenders++
+        return context.data as ReactNode
+      },
+    })
+    const remove = registry.register(
+      {
+        name: 'conversation.chat.turnTail',
+        id: 'global-history',
+        select: (owner) => owner,
+      },
+      ({ selected }: { selected: unknown }) => {
+        const view = selected as { turn: UITurn; nodes: readonly UINode[] }
+        return createElement(
+          'output',
+          { 'data-history-tail': view.turn.id },
+          view.nodes
+            .filter((node) => node.kind === 'assistant')
+            .map((node) => node.text)
+            .join('|'),
+        )
+      },
+    )
+    try {
+      const history = turn({ status: 'completed', nodeIds: ['user', 'old'], finalAssistantId: 'old' })
+      const live = turn({ id: 'turn:2', turn: 2, nodeIds: ['live'] })
+      await act(async () =>
+        mount.render([user, say('old', 2, 'history'), say('live', 3, 'one')], [history, live]),
+      )
+      const old = item(transcript, 'old')
+      const tail = transcript.querySelector('[data-history-tail="turn:1"]')
+      expect(tail?.textContent).toBe('history|one')
+      const renders = historyRenders
+      await act(async () =>
+        mount.render(
+          structuredClone([user, say('old', 2, 'history'), say('live', 3, 'two')]),
+          structuredClone([history, live]),
+        ),
+      )
+      expect(item(transcript, 'old')).toBe(old)
+      expect(transcript.querySelector('[data-history-tail="turn:1"]')).toBe(tail)
+      expect(tail?.textContent).toBe('history|two')
+      expect(historyRenders).toBe(renders)
+      await act(async () =>
+        mount.render(
+          [user, say('old', 2, 'history'), say('live', 3, 'two'), say('new-answer', 4, 'three')],
+          [
+            history,
+            live,
+            turn({
+              id: 'turn:3',
+              turn: 3,
+              status: 'completed',
+              nodeIds: ['new-answer'],
+              finalAssistantId: 'new-answer',
+            }),
+          ],
+        ),
+      )
+      expect(tail?.textContent).toBe('history|two|three')
+      expect(historyRenders).toBe(renders)
+      let removeCatalog: (() => void) | undefined
+      await act(async () => {
+        removeCatalog = locale.register('updated-brand', { 'zh-CN': { 'brand.harness': 'Updated Harness' } })
+      })
+      expect(transcript.querySelector('.process-name')?.textContent).toBe('Updated Harness')
+      await act(async () => removeCatalog?.())
+    } finally {
+      remove()
+      removeProbe()
+    }
   })
 
   it('keeps a claimed process card mounted while a streamed answer becomes final', async () => {

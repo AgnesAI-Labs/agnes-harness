@@ -19,3 +19,11 @@ export {
   openScheduleCatalog,
   ScheduleRejected,
 } from './catalog.js'
+
+export {
+  expireProgress,
+  isRunProgress,
+  observeProgress,
+  type RunProgress,
+  startProgress,
+} from './run-progress.js'

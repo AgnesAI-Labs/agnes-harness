@@ -807,36 +807,45 @@ describe('RuntimeTargetPublisher', () => {
     await publisher.close()
   })
 
-  it('applies builtin static rows from Host-private claims without a third-party snapshot', async () => {
-    const builtin = createPluginRow({
-      id: 'preset:default',
-      plugin: 'builtin:host/preset/default',
-      snapshotDigest: 'builtin:host-presets:v1',
-      exportName: 'default',
-      entryRevision: 'host-preset-row:v1',
-      extrasRevision: 'none',
-      mountRevision: 'host-preset-row:v1',
-    })
-    const provide = vi.fn()
-    const complete = buildCompleteRuntimeTarget({
-      rows: [builtin],
-      resources: { mcp: [], skills: {} },
-    })
-    const publisher = new RuntimeTargetPublisher({
-      catalogue: new RuntimePluginCatalogue([]),
-      publication: new PublicationGate(),
-      load: async () => undefined,
-      trust: () => undefined,
-      resourceFactory: { create: (input) => ({ revision: input.target.compositeRevision }) },
-      staticClaims: () => [{ row: builtin, entry: normalizePluginExport(provide) }],
-    })
-    await publisher.apply(complete.target)
-    expect(provide).toHaveBeenCalledOnce()
-    expect(publisher.current().value.current?.target.tree.rows.map((row) => row.id)).toEqual([
-      'preset:default',
-    ])
-    await publisher.close()
-  })
+  it.each([false, true])(
+    'applies builtin static rows from Host-private claims (daemon omits row: %s)',
+    async (daemonOmitsRow) => {
+      const builtin = createPluginRow({
+        id: 'preset:default',
+        plugin: 'builtin:host/preset/default',
+        snapshotDigest: 'builtin:host-presets:v1',
+        exportName: 'default',
+        entryRevision: 'host-preset-row:v1',
+        extrasRevision: 'none',
+        mountRevision: 'host-preset-row:v1',
+      })
+      const provide = vi.fn()
+      const complete = buildCompleteRuntimeTarget({
+        rows: daemonOmitsRow ? [] : [builtin],
+        resources: { mcp: [], skills: {} },
+      })
+      const publisher = new RuntimeTargetPublisher({
+        catalogue: new RuntimePluginCatalogue([]),
+        publication: new PublicationGate(),
+        load: async () => undefined,
+        trust: () => undefined,
+        resourceFactory: { create: (input) => ({ revision: input.target.compositeRevision }) },
+        staticClaims: () => [{ row: builtin, entry: normalizePluginExport(provide) }],
+        privateInput: () => ({ bootRows: [builtin] }),
+      })
+      await publisher.apply(complete.target)
+      expect(provide).toHaveBeenCalledOnce()
+      expect(publisher.current().value.current?.target.tree.rows.map((row) => row.id)).toEqual(
+        daemonOmitsRow ? [] : ['preset:default'],
+      )
+      // Daemon targets omit Host-private rows; their actual activity must still be reported.
+      expect(publisher.current().value.current?.report.rows).toContainEqual({
+        id: builtin.id,
+        state: 'active',
+      })
+      await publisher.close()
+    },
+  )
 
   it('refuses a builtin target row when Host-private static claims are missing', async () => {
     const builtin = createPluginRow({

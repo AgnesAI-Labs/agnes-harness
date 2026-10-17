@@ -149,6 +149,12 @@ export type KernelOptions = {
     key: string
     workspaceRoot: string
   }) => import('@agnes/extension-api').MemorySession | undefined
+  /** Trusted Host classification for file paths with independently enforced domain gates. */
+  commandPathScopeFor?: (input: {
+    workspaceRoot: string
+    memory?: import('@agnes/extension-api').MemorySession
+    workspaceInvocation?: WorkspaceInvocationPort
+  }) => NonNullable<SessionDeps['commandPathScope']>
   netFetch: ToolContextDeps['netFetch']
   publicFetch?: ToolContextDeps['publicFetch']
   /** Trusted resolved profile approval mode; only trusted profile resolution may set `off`. */
@@ -596,6 +602,15 @@ export class Kernel {
       const workspaceRoot = workspaceIdentity?.canonicalRoot ?? so.cwd
       memory = this.o.memoryFor?.({ key, workspaceRoot })
       session = new SessionImpl({
+        ...(this.o.commandPathScopeFor
+          ? {
+              commandPathScope: this.o.commandPathScopeFor({
+                workspaceRoot,
+                ...(memory ? { memory } : {}),
+                ...(workspaceInvocation ? { workspaceInvocation } : {}),
+              }),
+            }
+          : {}),
         ...(memory ? { memory } : {}),
         log,
         tracker,

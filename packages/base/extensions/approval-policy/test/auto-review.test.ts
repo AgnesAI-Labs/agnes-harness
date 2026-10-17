@@ -40,6 +40,11 @@ describe('official auto-review policy', () => {
       new AbortController().signal,
       ports(JSON.stringify({ decision, risk, reason: 'Scripted reason' })),
     )
+    expect(result.review?.scopePreview).toEqual({
+      args: JSON.stringify(input.call.args),
+      cwd: input.cwd,
+      mode: 'default / auto-review',
+    })
     expect(result.effect).toBe(effect)
     expect(result.review).toMatchObject({
       model: 'scripted-cheap',

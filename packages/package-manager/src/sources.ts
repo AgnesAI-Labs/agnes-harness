@@ -234,6 +234,8 @@ export async function hashDirectoryAsync(
     }
   }
   await walk(root)
+  // One bounded scratch buffer per traversal, reused only after each awaited read/hash completes.
+  const chunk = new Uint8Array(256 * 1024)
   const outer = createHash('sha256')
   for (const { rel, file } of files.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0))) {
     checkCancelled(opts.signal)
@@ -247,7 +249,6 @@ export async function hashDirectoryAsync(
       const before = await handle.stat()
       if (!before.isFile()) throw sourceError('package file changed while hashing', 'tree-changed')
       const inner = createHash('sha256').update(rel).update('\0')
-      const chunk = new Uint8Array(256 * 1024)
       for (;;) {
         checkCancelled(opts.signal)
         const { bytesRead } = await handle.read(chunk)

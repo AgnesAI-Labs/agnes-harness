@@ -1,7 +1,7 @@
 import type { WorkspaceEntry } from '@agnes/protocol'
 import type { Translate } from '@agnes/web-conversation/presentation'
 import { createExternalStore, mountRegion, useStoreSelector } from '@agnes/web-ui'
-import { WorkspaceDialog, type WorkspaceDialogState } from '@agnes/web-units'
+import { WorkspaceDialog, type WorkspaceDialogState } from '@agnes/web-units/shell'
 import { flushSync } from 'react-dom'
 import { FolderIcon, WorkspaceOptions } from './navigation.js'
 

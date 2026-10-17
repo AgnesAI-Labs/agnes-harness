@@ -6,7 +6,7 @@ import {
   TurnNav,
   useConversationProjection,
 } from '@agnes/web-ui/conversation'
-import type { TranscriptHandle, TranscriptMeta } from '@agnes/web-units'
+import type { TranscriptHandle, TranscriptMeta } from '@agnes/web-units/shell'
 import { forwardRef, useCallback, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import type { ClaimResolver } from './client-modules/boot.js'

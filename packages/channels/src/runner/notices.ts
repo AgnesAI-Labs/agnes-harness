@@ -18,6 +18,8 @@ export function noticeText(notice: DaemonNotice): string | null {
       : {}
 
   switch (notice.kind) {
+    case 'automation_attention':
+      return '自动化需要人工处理，请查看运行记录和审批收件箱。 / Automation needs attention. Check the run and the approval inbox.'
     case 'resumed':
       return `上次停在第 ${typeof detail.lastStep === 'number' ? detail.lastStep : '?'} 步，已续跑`
     case 'worker_crashed':

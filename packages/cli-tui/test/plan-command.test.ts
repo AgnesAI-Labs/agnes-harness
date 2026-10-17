@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { expect, it, vi } from 'vitest'
 import type { TuiApp } from '../src/app.js'
 import { runSlash } from '../src/commands.js'
+import { tt } from '../src/locale-extended.js'
 
 it('routes plan commands through the authenticated session backend and displays unavailable mode as off', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'agnes-plan-cli-'))
@@ -27,3 +28,16 @@ it('routes plan commands through the authenticated session backend and displays 
     rmSync(cwd, { recursive: true, force: true })
   }
 })
+
+it.each(['en', 'zh-CN'] as const)(
+  'explains routine approval bypass without claiming full access in %s',
+  async (locale) => {
+    expect(tt('commands.yolo', locale)).toContain(locale === 'en' ? 'routine approvals' : '普通审批')
+    expect(tt('commands.preset', locale)).toContain('security')
+    const call = vi.fn(async () => ({ effectiveFromSeq: 12 }))
+    const app = { session: { id: 's', client: { call } } } as unknown as TuiApp
+    const result = await runSlash(app, '/yolo')
+    expect(result.text).toContain('routine approvals skipped')
+    expect(result.text).not.toContain('full access')
+  },
+)

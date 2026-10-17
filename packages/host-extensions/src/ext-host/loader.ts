@@ -12,7 +12,6 @@ import {
   registerProvidedExternal,
 } from '@agnes/plugin-runtime/provided-externals'
 import * as protocol from '@agnes/protocol'
-import { createJiti } from 'jiti'
 import { localPluginVirtualModules } from '../local-plugin-loader.js'
 import { resolveEntry } from './manifest.js'
 
@@ -37,24 +36,34 @@ export function runtimeForm(): 'sea' | 'bundled' | 'source' {
 export function createLoader(opts: { cacheDir: string; hostRoot: string; agnesVersion: string }): {
   import(entryFile: string): Promise<Record<string, unknown>>
 } {
-  if (!/^[A-Za-z0-9][A-Za-z0-9._+-]*$/.test(opts.agnesVersion))
+  const { cacheDir, hostRoot, agnesVersion } = opts
+  if (!/^[A-Za-z0-9][A-Za-z0-9._+-]*$/.test(agnesVersion))
     throw new HostError('E_EXT_LOAD', 'invalid loader cache version')
   // This package does not depend on base. Register the namespaces it already imported.
   registerProvidedExternal('@agnes/protocol', protocol)
   registerProvidedExternal('@agnes/git-worktree-contract', gitWorktreeContract)
   registerProvidedExternal('@agnes/intelligent-ui-contract', intelligentUiContract)
-  const jiti = createJiti(join(opts.hostRoot, 'package.json'), {
-    moduleCache: false,
-    fsCache: join(opts.cacheDir, 'jiti', opts.agnesVersion),
-    virtualModules: {
-      ...localPluginVirtualModules,
-    },
-    tryNative: false,
-    forceTranspile: true,
-    interopDefault: true,
-    debug: false,
-    tsconfigPaths: false,
-  })
+  let pending: Promise<ReturnType<typeof import('jiti')['createJiti']>> | undefined
+  const loadJiti = () =>
+    (pending ??= import('jiti')
+      .then(({ createJiti }) =>
+        createJiti(join(hostRoot, 'package.json'), {
+          moduleCache: false,
+          fsCache: join(cacheDir, 'jiti', agnesVersion),
+          virtualModules: {
+            ...localPluginVirtualModules,
+          },
+          tryNative: false,
+          forceTranspile: true,
+          interopDefault: true,
+          debug: false,
+          tsconfigPaths: false,
+        }),
+      )
+      .catch((error: unknown) => {
+        pending = undefined
+        throw error
+      }))
   return {
     async import(entryFile) {
       const filename = resolveEntry(dirname(entryFile), basename(entryFile))
@@ -76,7 +85,7 @@ export function createLoader(opts: { cacheDir: string; hostRoot: string; agnesVe
         throw new HostError('E_EXT_LOAD', 'plugin manifest validation failed')
       }
       try {
-        const result: unknown = await jiti.import(filename)
+        const result: unknown = await (await loadJiti()).import(filename)
         if (result === null || typeof result !== 'object') throw new Error('invalid module namespace')
         return result as Record<string, unknown>
       } catch (error) {

@@ -1,7 +1,7 @@
 /** @vitest-environment happy-dom */
 
 import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
-import { zhT } from '@agnes/web-foundation/testkit/locale'
+import { enT, zhT } from '@agnes/web-foundation/testkit/locale'
 import { createRegionRenderer, type RegionRenderer } from '@agnes/web-ui'
 import { createElement } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -58,6 +58,7 @@ afterEach(() => {
   for (const region of regions.splice(0)) region.unmount()
   vi.unstubAllGlobals()
   document.body.replaceChildren()
+  setLocaleTranslator(zhT)
 })
 
 it('labels the three session permission modes', () => {
@@ -87,10 +88,10 @@ it('shows the current mode on the trigger, lists the three modes and reports the
   ])
   expect(option('可修改工作区').getAttribute('aria-selected')).toBe('true')
   // The row carries one short line; the full explanation is its tooltip.
-  expect(option('完全访问').textContent).toBe('完全访问跳过审批，谨慎使用')
-  expect(option('完全访问').getAttribute('title')).toContain('工作区内外文件读写')
-  expect(option('完全访问').getAttribute('title')).toContain('保留安全禁令和系统权限')
-  expect(option('可修改工作区').getAttribute('title')).toContain('越界需切换完全权限或选择目录')
+  expect(option('完全访问').textContent).toBe('完全访问普通操作免逐次审批；仍有例外')
+  expect(option('完全访问').getAttribute('title')).toContain('普通操作不再逐次审批')
+  expect(option('完全访问').getAttribute('title')).toContain('保护目录、计划/记忆规则及安装信任确认仍生效')
+  expect(option('可修改工作区').getAttribute('title')).toContain('命令需审批。命令隔离取决于平台')
 
   // While the host is applying a change the list stays readable and refuses another choice.
   render({ disabled: false, pending: true, selected: 'workspace' })
@@ -198,7 +199,7 @@ it('links to the permission settings from the list', async () => {
     expect(rows.map((row) => row.querySelector('.permission-picker-hint')?.textContent)).toEqual([
       '只能查看，不改文件',
       '可改工作区内文件',
-      '跳过审批，谨慎使用',
+      '普通操作免逐次审批；仍有例外',
     ])
     for (const row of rows) {
       expect(row.querySelector('svg.permission-picker-icon')).not.toBeNull()
@@ -227,3 +228,49 @@ it('shows measured isolation information without changing the permission choice'
   expect(trigger.textContent).toContain('OS sandbox off')
   expect(trigger.dataset.permission).toBe('workspace')
 })
+
+it.each([
+  [
+    'zh',
+    zhT,
+    '只读',
+    '公开网页',
+    '修改与命令执行会被拒绝',
+    '可修改工作区',
+    '命令需审批',
+    '完全访问',
+    '安装信任确认',
+  ],
+  [
+    'en',
+    enT,
+    'Read only',
+    'public webpages',
+    'command execution are denied',
+    'Edit workspace',
+    'commands need approval',
+    'Full access',
+    'installation trust confirmations',
+  ],
+] as const)(
+  'explains all permission axes in %s',
+  async (_locale, translate, view, publicWeb, denied, workspace, approval, full, exceptions) => {
+    setLocaleTranslator(translate)
+    const { trigger } = mountPicker({
+      disabled: false,
+      pending: false,
+      selected: 'workspace',
+      isolationNote: translate('session.runtime.platformNoCommandIsolation'),
+    })
+    expect(trigger.textContent).toContain(
+      _locale === 'en' ? 'Commands are not isolated on this platform' : '此平台命令未隔离',
+    )
+    trigger.click()
+    await opened()
+    expect(option(view).title).toContain(publicWeb)
+    expect(option(view).title).toContain(denied)
+    expect(option(workspace).title).toContain(approval)
+    expect(option(full).title).toContain(exceptions)
+    expect(document.querySelector('a[href$="#full-access-exceptions"]')).not.toBeNull()
+  },
+)

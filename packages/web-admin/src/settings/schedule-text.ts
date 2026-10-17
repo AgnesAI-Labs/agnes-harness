@@ -153,6 +153,12 @@ const REASONS = new Set([
   'schedule_paused',
   'schedule_ended',
   'schedule_conflict',
+  'needs_attention',
+  'approval_expired',
+  'previous_approval_expired',
+  'approval_refused',
+  'approval_unavailable',
+  'approval_pending_previous_run',
 ])
 export const reasonText = (code: string | undefined, ux: Text): string | undefined =>
   code && REASONS.has(code) ? ux(`reason.${code}`) : undefined

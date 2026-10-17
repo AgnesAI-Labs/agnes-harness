@@ -51,8 +51,12 @@ import {
   WEB_UI_LOCALE_NAMESPACE,
   webUiLocaleCatalog,
 } from '@agnes/web-ui'
-import { BuiltinWebUnitRegistry, WEB_UNITS_LOCALE_NAMESPACE, webUnitsLocaleCatalog } from '@agnes/web-units'
 import { diagnosticsCatalog } from '@agnes/web-units/diagnostics-locale'
+import {
+  BuiltinWebUnitRegistry,
+  WEB_UNITS_LOCALE_NAMESPACE,
+  webUnitsLocaleCatalog,
+} from '@agnes/web-units/shell'
 import { traceCatalog } from '@agnes/web-units/trace-locale'
 import type {
   ApprovalRegionMount,

@@ -108,11 +108,18 @@ it('shares host modules even when the extension carries decoy copies', async () 
     import { inspectJsonData } from '@agnes/protocol'
     import { Type } from '@sinclair/typebox'
     import { Value } from '@sinclair/typebox/value'
+    import { prepareValidationSchemas, validateAgainst } from ${JSON.stringify(fileURLToPath(new URL('../../../protocol-validation/src/index.ts', import.meta.url)))}
+    const schema = Type.Module({ Input: Type.Object({ value: Type.String() }) }).Import('Input')
+    prepareValidationSchemas([schema])
+    export const valid = validateAgainst(schema, { value: 'shared validation' })
+    export const invalid = validateAgainst(schema, { value: 42 })
     export const shared = { HOOK_EVENTS, gitWorktreeKind, intelligentUiKind, inspectJsonData, Type, Value }
     export default () => undefined
   `,
   )
   const mod = await f.loader.import(entry)
+  expect(mod.valid).toEqual({ ok: true, value: { value: 'shared validation' } })
+  expect(mod.invalid).toMatchObject({ ok: false, errors: [{ path: '/value', code: 'TYPE' }] })
   expect(mod.shared).toEqual({
     HOOK_EVENTS,
     gitWorktreeKind,
@@ -294,16 +301,21 @@ it('refuses a cache version that could escape its version directory', () => {
   )
 })
 
-it('accepts prerelease and build identifiers in the cache version', async () => {
+it('accepts prerelease cache versions and captures validated loader options', async () => {
   const f = setup()
-  const loader = createLoader({
+  const options = {
     cacheDir: join(f.root, 'cache'),
     hostRoot: f.root,
     agnesVersion: '0.1.0-dev+abc',
-  })
+  }
+  const loader = createLoader(options)
+  options.agnesVersion = '../elsewhere'
+  options.cacheDir = join(f.root, 'changed-cache')
+  options.hostRoot = join(f.root, 'changed-root')
   const entry = f.write('index.ts', 'export default () => {}')
   expect(typeof (await loader.import(entry)).default).toBe('function')
   expect(readdirSync(join(f.root, 'cache', 'jiti', '0.1.0-dev+abc')).length).toBeGreaterThan(0)
+  expect(readdirSync(f.root)).not.toContain('changed-cache')
 })
 
 it.each(['ts', 'js'])(

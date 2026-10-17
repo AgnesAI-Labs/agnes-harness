@@ -79,6 +79,16 @@ export function TraceReview({ name, review }: { name: string; review: ToolReview
           ),
         })}
       </p>
+      <dl data-testid="review-scope-preview">
+        <dt>{traceText('trace.facts.scopeArgs')}</dt>
+        <dd>
+          <pre>{review.scopePreview?.args ?? traceText('trace.provenance.unknown')}</pre>
+        </dd>
+        <dt>{traceText('trace.facts.scopeDirectory')}</dt>
+        <dd>{review.scopePreview?.cwd ?? traceText('trace.provenance.unknown')}</dd>
+        <dt>{traceText('trace.facts.scopeMode')}</dt>
+        <dd>{review.scopePreview?.mode ?? traceText('trace.provenance.unknown')}</dd>
+      </dl>
       <div className="trace-review-rules">
         <span>{traceText('trace.facts.future')}</span>
         {review.risk !== 'high' ? (

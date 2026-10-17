@@ -62,6 +62,7 @@ it('names confirmed configure/save/delete outcomes and keeps pending/unknown del
         })
       if (url !== '/api/triggers') return Response.json({ items: [] })
       const input = JSON.parse(String(init?.body))
+      if (input.action === 'upsert') expect(input.rule.unattendedApproval).toBe('refuse')
       if (input.action === 'configure') snapshot = { ...snapshot, config: input.config }
       if (input.action === 'delete') snapshot = { ...snapshot, rules: [] }
       return Response.json({
@@ -82,6 +83,13 @@ it('names confirmed configure/save/delete outcomes and keeps pending/unknown del
   await click('[data-testid="triggers-configure"]')
   expect(outcomes.at(-1)).toMatchObject({ outcome: 'success', message: 'Endpoint settings saved.' })
   await click('[data-testid="trigger-edit-preview"]')
+  await act(async () => {
+    const approval = document.querySelector<HTMLSelectElement>('[data-testid="trigger-approval-behavior"]')
+    if (!approval) throw new Error('missing trigger approval behavior')
+    expect(approval.value).toBe('notify')
+    approval.value = 'refuse'
+    approval.dispatchEvent(new Event('change', { bubbles: true }))
+  })
   await act(async () =>
     document
       .querySelector('form#trigger-editor')
