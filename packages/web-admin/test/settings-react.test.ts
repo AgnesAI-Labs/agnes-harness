@@ -577,7 +577,7 @@ it('re-reads the runtime details after a local plugin rescan, not only the page 
   }
 })
 
-it('provides an application group placeholder independently of the runtime catalog', async () => {
+it('opens the application adoption page in its stable group independently of the runtime catalog', async () => {
   const form = document.createElement('div')
   form.id = 'config-form'
   form.dataset.runtimePage = 'application'
@@ -588,10 +588,22 @@ it('provides an application group placeholder independently of the runtime catal
     throw new Error('must not load runtime')
   })
   try {
-    await act(async () => root.render(createElement(SettingsPages, { admin: adminOf({ runtime }) })))
-    await vi.waitFor(() =>
-      expect(host.querySelector('[data-testid="application-placeholder"]')).not.toBeNull(),
+    const application = vi.fn<PluginAdminApi['application']>(async () => ({
+      revision: 1,
+      selection: null,
+      status: 'host',
+      effective: null,
+      assets: {},
+      candidates: [{ packageId: 'acme/kit', applicationId: 'Acme', version: '1.0.0', available: true }],
+    }))
+    await act(async () =>
+      root.render(createElement(SettingsPages, { admin: adminOf({ runtime, application }) })),
     )
+    await vi.waitFor(() => expect(host.textContent).toContain('Acme'))
+    expect(host.textContent).toContain('agh app clear')
+    expect(application).toHaveBeenCalled()
+    expect(host.querySelector('[data-testid="application-placeholder"]')).toBeNull()
+    expect(settingsSections.entries().filter((entry) => entry.id === 'application')).toHaveLength(1)
     expect(settingsSections.get('application')?.group).toBe('application')
     expect(runtime).not.toHaveBeenCalled()
     const { settingsRoute, settingsGroup } = await import('@agnes/web-units/shell')

@@ -61,6 +61,15 @@ it.each(['business-agents', 'business-agent', 'agent-fde', 'fde'])(
       expect(new URLSearchParams(location.search).get('session')).toBe('s')
       expect(new URLSearchParams(location.search).get('view')).toBe('agent-acme')
       expect(history.length).toBe(count)
+      // Qualified plugin pages keep their name and owner, even when the name was a builtin alias.
+      history.replaceState(null, '', `/?page=${page}&pagePackage=acme/console&tab=details`)
+      window.dispatchEvent(new PopStateEvent('popstate'))
+      expect(homeNavigation.getSnapshot()).toEqual({
+        id: page,
+        pageRef: `acme/console#${page}`,
+        selection: { tab: 'details' },
+      })
+      expect(new URLSearchParams(location.search).get('page')).toBe(page)
     } finally {
       stop()
     }

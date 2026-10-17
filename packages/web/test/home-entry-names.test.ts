@@ -145,14 +145,26 @@ describe('home entry names', () => {
             node.getAttribute('data-testid'),
           ),
         ).toEqual(['home-entry-console', 'home-entry-agents', 'home-entry-automation'])
-        await act(async () => {
-          applicationIdentity.set(undefined)
-        })
+        await act(async () =>
+          root.render(
+            createElement(HomeEntriesNav, { t: (key, vars) => locale.t(key, vars), management: true }),
+          ),
+        )
+        expect(host.querySelector('[data-testid="home-entry-plugins"]')).toBeNull()
+        await act(async () => applicationIdentity.set(undefined))
         expect(
           [...host.querySelectorAll('[data-testid^="home-entry-"]')].map((node) =>
             node.getAttribute('data-testid'),
           ),
-        ).toEqual(['home-entry-agents', 'home-entry-plugins', 'home-entry-automation', 'home-entry-console'])
+        ).toEqual(['home-entry-plugins'])
+        await act(async () =>
+          root.render(createElement(HomeEntriesNav, { t: (key, vars) => locale.t(key, vars) })),
+        )
+        expect(
+          [...host.querySelectorAll('[data-testid^="home-entry-"]')].map((node) =>
+            node.getAttribute('data-testid'),
+          ),
+        ).toEqual(['home-entry-agents', 'home-entry-automation', 'home-entry-console'])
         modules = []
         await act(async () => {
           await reconciler.invalidate()

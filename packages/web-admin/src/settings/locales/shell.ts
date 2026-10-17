@@ -2,8 +2,6 @@ import type { LocaleCatalog } from '@agnes/web-ui'
 
 export const shellCatalog: LocaleCatalog = {
   en: {
-    applicationPlaceholder:
-      'Application settings will appear here. The built-in application is currently used.',
     copyId: 'Copy technical ID',
     copiedId: 'ID copied',
     runtimeDetails: 'Runtime details',
@@ -188,7 +186,6 @@ export const shellCatalog: LocaleCatalog = {
       'This view explains desired configuration. Live session bindings are listed separately; a saved combination selection may still require a restart.',
   },
   'zh-CN': {
-    applicationPlaceholder: '应用设置将在这里提供；当前使用内置应用。',
     copyId: '复制技术标识',
     copiedId: '已复制标识',
     runtimeDetails: '运行详情',

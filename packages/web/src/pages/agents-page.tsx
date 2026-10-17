@@ -6,7 +6,12 @@ import {
   useBusinessAgents,
 } from '@agnes/web-admin/agents'
 import { sessionStartUrl } from '@agnes/web-admin/settings/runtime-panels'
-import { homeNavigation, type UiExtensionContext } from '@agnes/web-client'
+import {
+  applicationAgents,
+  applicationIdentity,
+  homeNavigation,
+  type UiExtensionContext,
+} from '@agnes/web-client'
 import {
   Banner,
   Button,
@@ -23,7 +28,7 @@ import {
   useResource,
   useUiText,
 } from '@agnes/web-ui'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { homeAdmin } from './admin-api.js'
 import { useAgentLaunch } from './agents-launch.js'
 import { declaredAgentCards } from './agents-model.js'
@@ -46,10 +51,13 @@ function AgentList({
     return (await data.api.loops()).loops
   })
   const starter = useAgentLaunch(data)
-  const cards = declaredAgentCards(
-    data.agents.map((agent) => agent.entry),
-    locale,
-    data.installed,
+  useSyncExternalStore(applicationIdentity.subscribe, applicationIdentity.getSnapshot)
+  const cards = applicationAgents(
+    declaredAgentCards(
+      data.agents.map((agent) => agent.entry),
+      locale,
+      data.installed,
+    ),
   )
   const needle = query.trim().toLocaleLowerCase()
   const shown = cards.filter((card) =>

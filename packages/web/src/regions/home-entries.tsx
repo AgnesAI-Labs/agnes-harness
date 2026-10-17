@@ -45,9 +45,11 @@ export function HomeEntriesNav({
   const requested = useSyncExternalStore(homeNavigation.subscribe, homeNavigation.getSnapshot)
   useSyncExternalStore(applicationIdentity.subscribe, applicationIdentity.getSnapshot)
   const nav = effectiveApplication()?.presentation?.navigation
-  let entries = homeEntries.entries().filter(
-    (entry) => (entry.id === 'plugins') === management && !nav?.hideBuiltin?.some((id) => id === entry.id),
-  )
+  let entries = homeEntries
+    .entries()
+    .filter(
+      (entry) => (entry.id === 'plugins') === management && !nav?.hideBuiltin?.some((id) => id === entry.id),
+    )
   const references = new Map(
     (nav?.entries ?? []).flatMap((ref) => {
       const entry = resolveHomeEntry(ref)

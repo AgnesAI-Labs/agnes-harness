@@ -1,5 +1,6 @@
 /** @vitest-environment happy-dom */
-import type { AgentPlan } from '@agnes/protocol'
+import type { AgentPlan, ApplicationState } from '@agnes/protocol'
+import { applicationIdentity } from '@agnes/web-client'
 import { clearResources } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -11,6 +12,7 @@ vi.mock('../src/pages/admin-api.js', () => ({ homeAdmin: mock.connect }))
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 afterEach(() => {
   clearResources()
+  applicationIdentity.set(undefined)
   vi.restoreAllMocks()
   document.body.replaceChildren()
   history.replaceState(null, '', '/')
@@ -222,3 +224,98 @@ it.each(['success', 'recover', 'unknown', 'wrong-ref', 'cancel', 'enable'] as co
     }
   },
 )
+
+it('reacts to the effective application for catalog and installed agents, including hidden start links and host fallback', async () => {
+  const declaration = (id: string, packageId = 'acme/kit') => ({
+    ref: `${packageId}#${id}`,
+    launch: { title: { en: id }, description: { en: `${id} description` }, preset: 'safe' },
+  })
+  const prepareAgent = vi.fn()
+  mock.connect.mockResolvedValue({
+    context: { permissions: [], readOnly: false },
+    api: {
+      prepareAgent,
+      catalog: async () => ({
+        items: [
+          {
+            id: 'acme/catalog',
+            version: '1.0.0',
+            agents: [declaration('catalog', 'acme/catalog')],
+          },
+        ],
+      }),
+      list: async () => ({
+        packages: [
+          {
+            id: 'acme/kit',
+            version: '1.0.0',
+            trusted: true,
+            desired: 'enabled',
+            actual: 'running',
+            agents: [declaration('triage'), declaration('reply')],
+          },
+        ],
+      }),
+      loops: async () => ({ loops: [] }),
+    },
+  })
+  const state: ApplicationState = {
+    revision: 1,
+    selection: null,
+    status: 'active',
+    effective: { id: 'acme', agents: ['acme/catalog#catalog'] },
+    assets: {},
+    candidates: [],
+  }
+  applicationIdentity.set(state)
+  const query = new URLSearchParams({ view: `agent-${encodeURIComponent('acme/kit#reply')}` })
+  history.replaceState(null, '', `/?${query}`)
+  const host = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(host)
+  const refs = () =>
+    [...host.querySelectorAll('[data-agent-ref]')].map((card) => card.getAttribute('data-agent-ref'))
+  try {
+    await act(async () =>
+      root.render(
+        createElement(AgentsPage, {
+          context: {
+            t: (key) => key,
+            selection: { focus: 'acme/kit', agent: 'acme/kit#reply', start: true },
+          },
+        }),
+      ),
+    )
+    await vi.waitFor(() => expect(refs()).toEqual(['acme/catalog#catalog']))
+    expect(prepareAgent).not.toHaveBeenCalled()
+    await act(async () => root.render(createElement(AgentsPage, { context: { t: (key) => key } })))
+    await act(async () => {
+      history.replaceState(null, '', '/')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    await act(async () => {
+      applicationIdentity.set({
+        ...state,
+        effective: {
+          id: 'acme',
+          agents: ['acme/catalog#catalog', 'acme/kit#reply'],
+          defaultAgent: 'acme/kit#reply',
+        },
+      })
+    })
+    expect(refs()).toEqual(['acme/kit#reply', 'acme/catalog#catalog'])
+    await act(async () => applicationIdentity.set({ ...state, effective: { id: 'acme' } }))
+    expect(refs()).toHaveLength(3)
+    await act(async () => applicationIdentity.set({ ...state, effective: { id: 'acme', agents: [] } }))
+    expect(refs()).toEqual([])
+    expect(host.querySelector('[data-testid="general-agent"]')).not.toBeNull()
+    await act(async () =>
+      applicationIdentity.set({ ...state, status: 'unresolved', effective: { id: 'acme', agents: [] } }),
+    )
+    expect(refs()).toHaveLength(3)
+    await act(async () => applicationIdentity.set(undefined))
+    expect(refs()).toHaveLength(3)
+    expect(prepareAgent).not.toHaveBeenCalled()
+  } finally {
+    await act(async () => root.unmount())
+  }
+})
