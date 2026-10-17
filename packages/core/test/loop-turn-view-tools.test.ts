@@ -39,6 +39,7 @@ const tool = (name: string, meta: object) =>
 
 async function viewAndRequest(
   input: ('text' | 'image')[],
+  disclosure: 'standard' | 'hybrid' | 'code' = 'standard',
 ): Promise<{ view: LoopTurnView; request: RequestBody }> {
   let view: LoopTurnView | null = null
   const loop: LoopFactory = {
@@ -92,7 +93,7 @@ async function viewAndRequest(
     seams: fakeSeams(),
     provider,
     contract: { contract_id: null, parser_version: '1' },
-    preset: presetDefaults(),
+    preset: { ...presetDefaults(), disclosure },
     fsOps: testFsOps(),
     netFetch: async () => new Response(''),
     timers: noTimers,
@@ -107,6 +108,9 @@ async function viewAndRequest(
     trust: 'builtin',
   })
   k.tools.add(tool('later', { deferLoading: true }), { source: 'test', trust: 'builtin' })
+  k.tools.add(tool('run_code', { isReadOnly: false }), { source: 'test', trust: 'builtin' })
+  // A capitalised name sorts differently by code unit than by locale, so it pins the order requests use.
+  k.tools.add(tool('Draft', {}), { source: 'test', trust: 'builtin' })
   try {
     const session = await k.session('view-tools', {
       actor,
@@ -135,12 +139,21 @@ describe('turn view tool facts', () => {
     'lists the names a request without tools sends, for a model taking %j',
     async (input, images) => {
       const { view, request } = await viewAndRequest([...input])
-      expect([...(view.disclosedTools ?? [])].sort()).toEqual(request.tools.map((t) => t.name).sort())
+      expect(view.disclosedTools).toEqual(request.tools.map((t) => t.name))
       expect(view.disclosedTools).not.toContain('hidden_target')
       expect(view.disclosedTools).not.toContain('later')
       expect(view.disclosedTools?.includes('screen')).toBe(images)
     },
   )
+  it.each([
+    ['hybrid', ['Draft', 'docs_search', 'read', 'run_code', 'shell']],
+    ['code', ['run_code']],
+    ['standard', ['Draft', 'docs_search', 'read', 'shell']],
+  ] as const)('lists the names and order a %s disclosure request sends', async (disclosure, names) => {
+    const { view, request } = await viewAndRequest(['text'], disclosure)
+    expect(request.tools.map((t) => t.name)).toEqual(names)
+    expect(view.disclosedTools).toEqual(names)
+  })
   it.each([[['text']], [['text', 'image']]] as const)(
     'gives every catalog tool its static facts (%j)',
     async (input) => {

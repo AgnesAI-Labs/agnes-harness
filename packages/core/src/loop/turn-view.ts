@@ -82,7 +82,8 @@ export async function loopTurnView(s: SessionImpl): Promise<LoopTurnView | null>
           },
         ]),
       ),
-      disclosedTools: toolNamesForModel(ctx.disclosed, ctx.snapshot, computerUseAllowed),
+      // The merged list is the request's own: clipped to the catalog, disclosed only, in wire order.
+      disclosedTools: toolNamesForModel(merged.tools, ctx.snapshot, computerUseAllowed),
     }),
   )
 }

@@ -207,7 +207,7 @@ export interface LoopTurnView {
   }
   /** One entry per tool in the catalog. `isReadOnly`, `isDestructive` and `isOpenWorld` come from the tool's static meta; `offered` depends on the view's model. Optional so a test double may leave it out. */
   readonly toolMeta?: Readonly<Record<string, LoopToolMeta>>
-  /** The tool names a request that leaves out `tools` would send at this moment. Optional so a test double may leave it out. */
+  /** The tool names a request that leaves out `tools` would send at this moment, in the order it sends them. Optional so a test double may leave it out. */
   readonly disclosedTools?: readonly string[]
 }
 /** Durable dispatch uncertainty; responded is not a promise of successful execution. */
