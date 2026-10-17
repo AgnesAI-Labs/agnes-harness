@@ -151,17 +151,4 @@ export const AGNES_BASE_PLUGIN_METADATA: Readonly<
       },
     },
   },
-  'service:plan-mode': {
-    displayName: 'Plan mode controls',
-    summary: 'Provides shared plan mode controls for Web and terminal clients.',
-    description: 'Provides shared plan mode controls for Web and terminal clients.',
-    category: 'safety-approval',
-    locales: {
-      'zh-CN': {
-        displayName: '计划模式控制',
-        summary: '为 Web 和终端客户端提供共享的计划模式控制。',
-        description: '为 Web 和终端客户端提供共享的计划模式控制。',
-      },
-    },
-  },
 }
