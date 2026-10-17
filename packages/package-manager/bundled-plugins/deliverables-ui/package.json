@@ -1,0 +1,57 @@
+{
+  "name": "@agnes/deliverables-ui",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": "./index.mjs",
+  "files": [
+    "index.mjs",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "agnes": {
+    "kinds": [
+      "ui"
+    ],
+    "plugins": [
+      {
+        "export": "main",
+        "id": "ext:deliverables-ui/main",
+        "apiRange": "^4.0.0",
+        "runtime": "in-process",
+        "capabilities": {
+          "ui": true
+        },
+        "metadata": {
+          "displayName": "Deliverables presentation",
+          "summary": "Snapshot file cards, history and deliverables panel.",
+          "category": "ui",
+          "description": "Snapshot file cards, history and deliverables panel."
+        }
+      }
+    ],
+    "clientDescriptors": [
+      {
+        "rowId": "ext:deliverables-ui/main",
+        "path": "./src/agnes.client.json"
+      }
+    ],
+    "metadata": {
+      "displayName": "Deliverables presentation",
+      "summary": "Snapshot file cards, history and deliverables panel.",
+      "category": "ui",
+      "description": "Snapshot file cards, history and deliverables panel."
+    }
+  },
+  "peerDependencies": {
+    "@agnes/web-client": "0.0.0",
+    "@agnes/web-ui": "0.0.0",
+    "react": "18.3.1"
+  },
+  "devDependencies": {
+    "@agnes/web-client": "workspace:*",
+    "@agnes/web-ui": "workspace:*",
+    "react": "18.3.1"
+  }
+}

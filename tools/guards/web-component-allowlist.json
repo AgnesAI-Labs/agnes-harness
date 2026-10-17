@@ -71,9 +71,6 @@
     "packages/web/src/client-modules/reconcile/styles.ts": {
       "dom": 1
     },
-    "packages/web/src/intelligent-ui/artifact-file.tsx": {
-      "dom": 1
-    },
     "packages/web/src/timeline-node-host.tsx": {
       "intrinsic": 1
     }

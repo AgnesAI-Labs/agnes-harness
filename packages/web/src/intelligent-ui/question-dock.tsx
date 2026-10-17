@@ -11,7 +11,7 @@ import {
 } from '@agnes/web-ui'
 import { type ReactNode, useEffect, useSyncExternalStore } from 'react'
 import type { IntelligentUiClient } from './client.js'
-import { useIntelligentBinding } from './turn-deliverables.js'
+import { useIntelligentBinding } from './turn-views.js'
 
 const inFlight = (receipt: UiActionReceipt) =>
   ['received', 'pending-approval', 'executing'].includes(receipt.status) ||

@@ -78,7 +78,7 @@ it.each(BUNDLED_HELPERS)(
           { provider: 'local' },
         ]),
       ),
-      policySnapshot: { capabilityCeiling: ['tools'], workspacePackages: 'require-project-trust' },
+      policySnapshot: { capabilityCeiling: ['tools', 'ui'], workspacePackages: 'require-project-trust' },
     })
     const exec = vi.fn(async () => {
       throw new Error('Network forbidden')
@@ -142,4 +142,58 @@ it('generates an executable tool plugin using the current owned registration por
   expect(await generated.execute({ text: 'two words' }, {} as never)).toMatchObject({
     structured: { characters: 9, words: 2 },
   })
+})
+
+it('installs the community deliverables replacement in a throwaway home and preserves checked enable/disable/uninstall lifecycle', async () => {
+  const root = fixture(),
+    profile = join(root, 'profiles', 'local-dev')
+  mkdirSync(profile, { recursive: true })
+  writeLock(profile, {
+    ...emptyLock('local-dev', '0.1.0'),
+    resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
+    seams: Object.fromEntries(
+      ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals'].map((name) => [
+        name,
+        { provider: 'local' },
+      ]),
+    ),
+    policySnapshot: { capabilityCeiling: ['ui'], workspacePackages: 'require-project-trust' },
+  })
+  const exec = vi.fn(async () => {
+    throw new Error('Network forbidden')
+  })
+  const manager = createPackageManager({
+    dataDir: root,
+    cwd: root,
+    agnesVersion: '0.1.0',
+    exec,
+    references: async () => [],
+  })
+  const source = parseSource(
+    `file:${new URL('../../../examples/community/deliverables-gallery', import.meta.url).pathname}`,
+  )
+  const review = await manager.inspect(profile, source)
+  expect(review).toMatchObject({ id: '@community/deliverables-gallery', blockers: [] })
+  await manager.install(profile, source, { expectedIntegrity: review.integrity })
+  const installed = (await manager.inventory(profile)).packages.find((row) => row.id === review.id)!
+  await manager.trust(profile, review.id, {
+    integrity: installed.entry.integrity,
+    capabilityHash: installed.capabilityHash,
+  })
+  await manager.setEnabled(profile, review.id, true)
+  const restarted = createPackageManager({
+    dataDir: root,
+    cwd: root,
+    agnesVersion: '0.1.0',
+    exec,
+    references: async () => [],
+  })
+  expect((await restarted.inventory(profile)).packages.find((row) => row.id === review.id)).toMatchObject({
+    enabled: true,
+    trusted: true,
+  })
+  await restarted.setEnabled(profile, review.id, false)
+  await restarted.remove(profile, review.id)
+  expect((await restarted.inventory(profile)).packages.some((row) => row.id === review.id)).toBe(false)
+  expect(exec).not.toHaveBeenCalled()
 })
