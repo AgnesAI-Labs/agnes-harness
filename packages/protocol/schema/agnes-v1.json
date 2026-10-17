@@ -3029,6 +3029,7 @@
                 "overloaded",
                 "job_dispatched",
                 "job_dead",
+                "automation_attention",
                 "shutting_down"
               ]
             },
@@ -8605,6 +8606,16 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "scopePreview": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["args", "cwd", "mode"],
+          "properties": {
+            "args": { "type": "string", "maxLength": 4096 },
+            "cwd": { "type": "string", "maxLength": 4096 },
+            "mode": { "type": "string", "maxLength": 128 }
+          }
+        },
         "model": { "type": "string", "maxLength": 256 },
         "promptHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
         "argsHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },

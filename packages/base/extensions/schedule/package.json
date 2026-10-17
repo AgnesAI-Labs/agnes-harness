@@ -286,6 +286,18 @@
                             "minLength": 1,
                             "maxLength": 256,
                             "type": "string"
+                          },
+                          "unattendedApproval": {
+                            "anyOf": [
+                              {
+                                "const": "notify",
+                                "type": "string"
+                              },
+                              {
+                                "const": "refuse",
+                                "type": "string"
+                              }
+                            ]
                           }
                         },
                         "required": [
@@ -300,6 +312,18 @@
                           "kind": {
                             "const": "new-session",
                             "type": "string"
+                          },
+                          "unattendedApproval": {
+                            "anyOf": [
+                              {
+                                "const": "notify",
+                                "type": "string"
+                              },
+                              {
+                                "const": "refuse",
+                                "type": "string"
+                              }
+                            ]
                           },
                           "cwd": {
                             "minLength": 1,
