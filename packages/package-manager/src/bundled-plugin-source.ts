@@ -27,6 +27,13 @@ export const BUNDLED_HELPERS = Object.freeze([
     ref: 'file:./bundled-plugins/plugin-helper',
   },
   {
+    name: 'deliverables-ui',
+    id: '@agnes/deliverables-ui',
+    version: '0.1.0',
+    license: 'Apache-2.0',
+    ref: 'file:./bundled-plugins/deliverables-ui',
+  },
+  {
     name: 'document-reader',
     id: '@agnes/document-reader',
     version: '0.1.2',

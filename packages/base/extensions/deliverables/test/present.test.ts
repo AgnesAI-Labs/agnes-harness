@@ -10,9 +10,13 @@ import { fakeToolContext } from '../../../testkit/tool-context.js'
 import deliverables from '../src/index.js'
 
 describe('deliverable surface', () => {
-  it.each(['html', 'md'])(
-    'persists %s file copies through memory protection, refusing missing files',
-    async (format) => {
+  it.each(
+    ['html', 'md'].flatMap((format) =>
+      ['available', 'disabled', 'rejected', 'unavailable'].map((ui) => ({ format, ui })),
+    ),
+  )(
+    'persists $format snapshots through memory protection with UI $ui, refusing missing files',
+    async ({ format, ui }) => {
       const home = await mkdtemp(join(tmpdir(), 'agh-present-memory-'))
       try {
         const tools: ToolDef[] = [],
@@ -33,10 +37,14 @@ describe('deliverable surface', () => {
         const base = fakeToolContext({
           cwd: process.cwd().replaceAll('\\', '/'),
           files: { [`cities.${format}`]: '<h1>城市</h1>' },
-          invoke: async () => ({ content: [] }),
+          invoke: async () => {
+            if (ui === 'unavailable') throw new Error('Tool not found')
+            return { content: [], isError: ui === 'rejected' }
+          },
         })
         const ctx = {
           ...base,
+          tools: { ...base.tools, list: () => (ui === 'disabled' ? [] : [{ ...tool, name: 'ui_render' }]) },
           fs: fileMemoryProvider
             .open({ home, workspaceRoot: base.cwd, sessionKey: base.session.key })
             .files(
@@ -64,30 +72,38 @@ describe('deliverable surface', () => {
         )
         expect(result.isError).not.toBe(true)
         expect(events).toHaveLength(1)
-        expect(ctx.calls.invoke[0]?.args).toMatchObject({
-          surface: {
-            title: 'Deliverables',
-            titleKey: 'ui.deliverables',
-            components: [{ id: 'file-0', kind: 'artifact-file', dataKey: 'file-0' }],
-            data: {
-              'file-0': {
-                name: `Cities.${format}`,
-                description: 'City comparison',
-                artifact: {
-                  mime: format === 'html' ? 'text/html' : 'text/markdown',
-                  size: new TextEncoder().encode('<h1>城市</h1>').byteLength,
+        expect(result.structured).toMatchObject({
+          deliverables: [
+            { name: `Cities.${format}`, ref: { mime: format === 'html' ? 'text/html' : 'text/markdown' } },
+          ],
+          laneId: 'main',
+        })
+        if (ui === 'disabled') expect(ctx.calls.invoke).toEqual([])
+        else
+          expect(ctx.calls.invoke[0]?.args).toMatchObject({
+            surface: {
+              title: 'Deliverables',
+              titleKey: 'ui.deliverables',
+              components: [{ id: 'file-0', kind: 'artifact-file', dataKey: 'file-0' }],
+              data: {
+                'file-0': {
+                  name: `Cities.${format}`,
+                  description: 'City comparison',
+                  artifact: {
+                    mime: format === 'html' ? 'text/html' : 'text/markdown',
+                    size: new TextEncoder().encode('<h1>城市</h1>').byteLength,
+                  },
                 },
               },
             },
-          },
-        })
+          })
         const failure = await tool.execute(
           { files: [{ path: `cities.${format}` }, { path: 'missing.txt' }] },
           ctx,
         )
         expect(failure.isError).toBe(true)
         expect(events).toHaveLength(1)
-        expect(ctx.calls.invoke).toHaveLength(1)
+        expect(ctx.calls.invoke).toHaveLength(ui === 'disabled' ? 0 : 1)
         expect(ctx.calls.artifacts).toHaveLength(1)
         await base.fs.write(`cities.${format}`, 'changed after presentation')
         expect(new TextDecoder().decode(ctx.calls.artifacts[0]!.bytes)).toBe('<h1>城市</h1>')

@@ -87,6 +87,8 @@ Review each inventory surface in en and zh-CN, light and dark, at desktop and 39
 `@agnes/web-ui` owns `Button`, `IconButton`, `Icon`, `Tag`, `MetaText`, `Count`,
 `Menu`, `Tooltip`, `Toast`, `EmptyState`, `Banner`, `ListRow`, `Drawer`, `Skeleton`, `Field`,
 `SettingsPageHeader` and `SettingsSaveBar`. Existing props and hooks remain supported.
+
+`ListRow` supports `variant="file"` for compact file cards; it reuses the existing deliverable skin hooks and tokens. Keep previews outside the row so actions remain independent.
 `Button` additionally accepts `appearance="primary|secondary|ghost|danger|link"`;
 `dangerFilled` is reserved for destructive confirmations. Use `disabledReason` to
 explain unavailable actions. Icon actions require a label and shared tooltip.

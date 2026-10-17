@@ -33,6 +33,13 @@ export { clientModule } from './client-module.js'
 export type { ContributionAvailability } from './contribution-scope.js'
 export { revokeContributionOwner, updateContributionAvailability } from './contribution-scope.js'
 export { reserveHomeEntry } from './declared-home-entries.js'
+export type { DeliverableRecord, DeliverablesSnapshot } from './deliverables.js'
+export {
+  DeliverablesStore,
+  deliveredFiles,
+  groupDeliveredFiles,
+  surfaceDeliverables,
+} from './deliverables.js'
 export type { DshSlotDefinition, DshSlotName } from './dsh-slot-catalog.js'
 export {
   DSH_PUBLIC_SLOT_NAMES,
@@ -55,6 +62,8 @@ export type { IntelligentUiRenderer, IntelligentUiRendererApi } from './intellig
 export { slotLocaleCatalog } from './locales.js'
 export type { SlotOutletProps } from './outlet.js'
 export { SlotOutlet, SlotsProvider } from './outlet.js'
+export type { PresentationProvider } from './presentation-roles.js'
+export { PresentationRoleRegistry, presentationRoles } from './presentation-roles.js'
 export type { RegisterOptions } from './registry.js'
 export { SlotRegistry } from './registry.js'
 export type {

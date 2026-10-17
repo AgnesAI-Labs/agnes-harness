@@ -1,17 +1,17 @@
 import type { UiActionReceipt, UiSurfaceRecord } from '@agnes/protocol/gen/intelligent-ui'
 import {
   type ClientResourceService,
+  conversationCards,
   type UiExtensionContext,
   workbenchNavigation,
-  workbenchPanels,
 } from '@agnes/web-client'
+import { RegisteredConversationCard } from '@agnes/web-conversation/conversation-registry'
 import {
   Button,
   docksInConversation,
   INTELLIGENT_UI_NAMESPACE,
   IntelligentSurface,
   intelligentUiCatalog,
-  isDeliverableList,
   Menu,
   rendersInAnswer,
   SettingsState,
@@ -21,7 +21,6 @@ import {
   useUiText,
 } from '@agnes/web-ui'
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
-import { ArtifactFile } from './artifact-file.js'
 import type { IntelligentUiClient } from './client.js'
 import { CustomUiHost, type CustomUiModuleSource } from './custom-host.js'
 import { isQuestionSurface } from './question-dock.js'
@@ -86,6 +85,7 @@ function SurfaceList({
   placement: 'inline' | 'workbench'
 }) {
   useSyncExternalStore(client.subscribe, client.getVersion)
+  useSyncExternalStore(conversationCards.subscribe, conversationCards.getSnapshot)
   const { t } = useUiText(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
   const [workbenchOpen, setWorkbenchOpen] = useState(false)
   useEffect(() => {
@@ -168,7 +168,9 @@ function SurfaceList({
       ? sorted.filter(
           (record) =>
             !docksInConversation(record.surface) &&
-            !isDeliverableList(record.surface) &&
+            !conversationCards
+              .entries()
+              .some((card) => card.matches({ kind: 'intelligent-ui.surface', data: record })) &&
             !rendersInAnswer(record.surface),
         )
       : sorted
@@ -238,16 +240,16 @@ function SurfaceList({
 const DOCK_VISIBLE = 2
 
 /**
- * The surfaces the workbench «Views» tab lists: every workbench placement except questions, and
- * except file lists once a deliverables tab shows those.
+ * Generic Views retain surfaces not claimed by another conversation presentation.
  */
 export function workbenchSurfaces(surfaces: readonly UiSurfaceRecord[]): UiSurfaceRecord[] {
-  const filesElsewhere = !!workbenchPanels.get('deliverables')
   return surfaces.filter(
     (record) =>
       !isQuestionSurface(record) &&
       record.surface.placement.workbench &&
-      !(filesElsewhere && isDeliverableList(record.surface)),
+      !conversationCards
+        .entries()
+        .some((card) => card.matches({ kind: 'intelligent-ui.surface', data: record })),
   )
 }
 
@@ -352,7 +354,6 @@ export function BoundSurface({
 }) {
   // A closed view inside an answer is read back by id; it stays in place, read-only.
   const record = client.knownRecord(id)!
-  const snapshot = client.getSnapshot()
   const draft = client.draft(id),
     receipts = client.receipts(id),
     confirmation = client.confirmation(id)
@@ -377,26 +378,10 @@ export function BoundSurface({
   )
   return (
     <IntelligentSurface
-      renderArtifact={(file, componentId) => (
-        <ArtifactFile
-          key={file.artifact.sha256}
-          sessionId={client.sessionId}
-          file={file}
-          checking={snapshot.ready === false && !snapshot.error}
-          artifactStatus={
-            snapshot.error
-              ? 'unavailable'
-              : (
-                  record.artifacts as Record<string, import('@agnes/protocol').UiArtifactStatus> | undefined
-                )?.[componentId]
-          }
-          onRetry={() => void client.refresh()}
-          laneId={record.lane}
-          resources={binding.resources}
-          placement={placement}
-          {...(placement === 'inline' && record.surface.placement.workbench
-            ? { onShowInWorkbench: () => binding.expand(id, record.surface.revision) }
-            : {})}
+      renderArtifact={(file) => (
+        <RegisteredConversationCard
+          card={{ kind: 'artifact-file', data: { file, sessionId: client.sessionId, laneId: record.lane } }}
+          context={{ t: (key) => key, resources: binding.resources }}
         />
       )}
       {...(binding.customModules ? { renderCustom } : {})}

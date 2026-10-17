@@ -13,7 +13,7 @@ import {
   newSurfacePlacements,
   type UiPlacementBinding,
 } from '../../src/intelligent-ui/placements.js'
-import { attachTurnDeliverables, TurnDeliverables } from '../../src/intelligent-ui/turn-deliverables.js'
+import { attachIntelligentBinding, TurnViews } from '../../src/intelligent-ui/turn-views.js'
 import { uiPage } from './fixture.js'
 
 /** The owner's case: a display-only outline the model rendered with ui_render. */
@@ -94,7 +94,7 @@ async function mount(server: { records: UiSurfaceRecord[] }, surfaceIds: string[
     expand: vi.fn(),
     approval: vi.fn(),
   }
-  const detach = attachTurnDeliverables(binding)
+  const detach = attachIntelligentBinding(binding)
   const host = document.body.appendChild(document.createElement('div'))
   const root = createRoot(host)
   await act(async () =>
@@ -102,11 +102,7 @@ async function mount(server: { records: UiSurfaceRecord[] }, surfaceIds: string[
       createElement(
         'div',
         {},
-        createElement(
-          'div',
-          { 'data-testid': 'turn' },
-          createElement(TurnDeliverables, { turn, surfaceIds }),
-        ),
+        createElement('div', { 'data-testid': 'turn' }, createElement(TurnViews, { turn, surfaceIds })),
         createElement(IntelligentInline, { binding }),
       ),
     ),

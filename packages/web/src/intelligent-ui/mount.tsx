@@ -2,6 +2,7 @@ import type { UiActionReceipt } from '@agnes/protocol/gen/intelligent-ui'
 import type { Client } from '@agnes/sdk/browser'
 import {
   type ClientResourceService,
+  conversationCards,
   type LocaleService,
   type SessionService,
   type SlotRegistry,
@@ -23,8 +24,7 @@ import {
   workbenchSurfaces,
 } from './placements.js'
 import { intelligentUiServer } from './server.js'
-import { attachTurnDeliverables } from './turn-deliverables.js'
-import { DELIVERABLES_PANEL, deliverablesCount, WorkbenchDeliverables } from './workbench-deliverables.js'
+import { attachIntelligentBinding, TurnViews } from './turn-views.js'
 
 /** Two registrations, one session client. Mounting a placement never submits a command. */
 export function mountIntelligentUi(options: {
@@ -171,19 +171,17 @@ export function mountIntelligentUi(options: {
     },
     component: ({ context }) => <IntelligentPanel binding={binding} context={context} />,
   })
-  // File lists have their own 交付物 tab; while it is registered the views tab leaves them out.
-  const counted = deliverablesCount(binding)
-  const removeDeliverables = workbenchPanels.register({
-    id: DELIVERABLES_PANEL,
-    order: 55,
-    edge: 'right',
-    titleKey: 'workbench.deliverables.title',
-    visibility: 'contextual',
-    when: (context) => !!counted.read(context),
-    count: counted,
-    component: ({ context }) => <WorkbenchDeliverables binding={binding} context={context} />,
+  const detachTurns = attachIntelligentBinding(binding)
+  const removeTurns = conversationCards.register({
+    id: 'intelligent-turn-views',
+    order: 100,
+    matches: (card) => card.kind === 'conversation.turn-tail',
+    component: ({ card }) => {
+      const value = card.data as { turn: import('@agnes/protocol').UITurn; surfaceIds: readonly string[] }
+      return <TurnViews turn={value.turn} surfaceIds={value.surfaceIds} />
+    },
   })
-  const detachTurns = attachTurnDeliverables(binding)
+  const stopClaims = conversationCards.subscribe(notify)
   const stopSession = options.session.subscribe(switchSession)
   switchSession()
   return () => {
@@ -194,7 +192,8 @@ export function mountIntelligentUi(options: {
     removeInline()
     detachTurns()
     removePanel()
-    removeDeliverables()
+    removeTurns()
+    stopClaims()
     removeLocale()
     documentLocale.dispose()
     listeners.clear()

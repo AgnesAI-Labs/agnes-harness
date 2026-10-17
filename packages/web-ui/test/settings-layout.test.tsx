@@ -123,11 +123,12 @@ it('offers teaching content and only allows informational banners to be dismisse
   host.querySelector<HTMLButtonElement>('.agh-banner[role="status"] button')!.click()
   expect(dismiss).toHaveBeenCalledTimes(1)
 })
-it('keeps row actions separate from its detail button', () => {
+it.each(['default', 'file'] as const)('keeps %s row actions separate from its detail button', (variant) => {
   const open = vi.fn(),
     action = vi.fn()
   const host = render(
     createElement(ListRow, {
+      variant,
       title: 'Plugin',
       description: 'A short description',
       onOpen: open,
@@ -143,6 +144,12 @@ it('keeps row actions separate from its detail button', () => {
   host.querySelector('p')!.click()
   expect(open).toHaveBeenCalledTimes(2)
   expect(document.activeElement).toBe(buttons[0])
+  if (variant === 'file') {
+    const name = 'delivery-summary.pdf'
+    const label = render(createElement(ListRow, { variant, title: name }))
+    expect(label.querySelector('h3')?.textContent).toBe(name)
+    expect(label.querySelector('h3')?.title).toBe(name)
+  }
 })
 it('closes the detail drawer on Escape and returns focus to its trigger', async () => {
   function Fixture() {

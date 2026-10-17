@@ -122,30 +122,41 @@ export default defineAgnesPlugin({
                 }
                 await plugin.eventLog.append('presented', { toolUseId: ctx.session.toolUseId, files })
               }
-              await renderInteractionSurface(ctx, {
-                id: interactionSurfaceId(ctx.session.toolUseId),
-                revision: 1,
-                title: 'Deliverables',
-                titleKey: 'ui.deliverables',
-                placement: { inline: true, workbench: true, preferred: 'inline' },
-                components: files.map((_, i) => ({
-                  id: 'file-' + i,
-                  kind: 'artifact-file',
-                  dataKey: 'file-' + i,
-                })),
-                data: {
-                  ...Object.fromEntries(
-                    files.map((file, i) => [
-                      'file-' + i,
-                      { name: file.name, description: file.description, artifact: file.ref },
-                    ]),
-                  ),
-                  // When the files were presented (epoch ms): an earlier version is named by it.
-                  presentedAt: Date.now(),
-                },
-                actions: [],
-              })
+              try {
+                if (ctx.tools.list().some((tool) => tool.name === 'ui_render'))
+                  await renderInteractionSurface(ctx, {
+                    id: interactionSurfaceId(ctx.session.toolUseId),
+                    revision: 1,
+                    title: 'Deliverables',
+                    titleKey: 'ui.deliverables',
+                    placement: { inline: true, workbench: true, preferred: 'inline' },
+                    components: files.map((_, i) => ({
+                      id: 'file-' + i,
+                      kind: 'artifact-file',
+                      dataKey: 'file-' + i,
+                    })),
+                    data: {
+                      ...Object.fromEntries(
+                        files.map((file, i) => [
+                          'file-' + i,
+                          { name: file.name, description: file.description, artifact: file.ref },
+                        ]),
+                      ),
+                      // When the files were presented (epoch ms): an earlier version is named by it.
+                      presentedAt: Date.now(),
+                    },
+                    actions: [],
+                  })
+              } catch {
+                // The durable snapshot is already committed. Optional UI enhancement cannot revoke it.
+              }
               return {
+                structured: {
+                  deliverables: files,
+                  laneId: ctx.session.lane,
+                  owner: 'agnes/deliverables',
+                  surfaceId: interactionSurfaceId(ctx.session.toolUseId),
+                },
                 content: [
                   { type: 'text', text: `Presented ${files.map((f) => f.name).join(', ')}` },
                   ...files.map((f) => ({ type: 'ref' as const, ref: f.ref })),

@@ -29,7 +29,6 @@ import { MessageFeedback } from '@agnes/web-units/message-feedback'
 import { type ReactNode, useCallback, useSyncExternalStore } from 'react'
 import type { ClaimResolver } from './client-modules/boot.js'
 import { AnsweredQuestions, QuestionAnswersNode, questionSubmission } from './intelligent-ui/question-dock.js'
-import { TurnDeliverables } from './intelligent-ui/turn-deliverables.js'
 import { openPlugins } from './pages/plugins/route.js'
 import { workflowStepRecord } from './workflow-step.js'
 
@@ -86,7 +85,6 @@ function DshNodeLeaf({
             ? ['conversation.chat.assistant-actions' as const]
             : []),
           'conversation.chat.commandview',
-          'conversation.chat.turnTail',
           'conversation.message.images',
           'conversation.trajectory.images',
         ] as const)
@@ -291,7 +289,18 @@ export function WebConversationMessages({
     ...(turns ? { turns } : {}),
     ...(shownNodeIds ? { visibleNodeIds: shownNodeIds } : {}),
     renderTurnDeliverables: (turn) => (
-      <TurnDeliverables turn={turn} surfaceIds={renderedSurfaceIds(nodes ?? [], turn)} />
+      <>
+        <RegisteredConversationCard
+          card={{
+            kind: 'conversation.turn-tail',
+            data: { turn, surfaceIds: renderedSurfaceIds(nodes ?? [], turn) },
+          }}
+          context={{ t: (key) => locale?.t(key) ?? key }}
+        />
+        {registry && (
+          <SlotOutlet name="conversation.chat.turnTail" owner={{ turn, nodes: nodes ?? [] }} hideWhenEmpty />
+        )}
+      </>
     ),
     processStep: (node) => workflowStepRecord(node.text),
     renderTurnActions: (turn, finalText, settled) => {

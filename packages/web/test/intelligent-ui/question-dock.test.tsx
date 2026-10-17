@@ -20,7 +20,7 @@ import {
   QuestionDock,
   questionSubmission,
 } from '../../src/intelligent-ui/question-dock.js'
-import { attachTurnDeliverables } from '../../src/intelligent-ui/turn-deliverables.js'
+import { attachIntelligentBinding } from '../../src/intelligent-ui/turn-views.js'
 import { financeRecord, uiPage, uiReceipt } from './fixture.js'
 
 /** The record ask_user_question leaves behind (packages/base/extensions/interaction/src/question.ts). */
@@ -117,7 +117,7 @@ async function mount(records: UiSurfaceRecord[], extra?: ReturnType<typeof creat
     expand: vi.fn(),
     approval: vi.fn(),
   }
-  const detach = attachTurnDeliverables(binding)
+  const detach = attachIntelligentBinding(binding)
   const host = document.createElement('div')
   document.body.append(host)
   const root = createRoot(host)

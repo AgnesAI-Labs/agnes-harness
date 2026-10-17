@@ -89,6 +89,8 @@ SettingsPage 的 `headingId` / `bodyClassName` 保留原有标题 ID 与正文�
 `@agnes/web-ui` 提供 `Button`、`IconButton`、`Icon`、`Tag`、`MetaText`、`Count`、
 `Menu`、`Tooltip`、`Toast`、`EmptyState`、`Banner`、`ListRow`、`Drawer`、`Skeleton`、`Field`、
 `SettingsPageHeader`、`SettingsSaveBar`，保留既有 props 和钩子。
+
+`ListRow` 的 `variant="file"` 用于紧凑文件卡片，复用现有交付物皮肤钩子与主题 token。预览内容放在行外，保持文件操作相互独立。
 `Button` 新增 `appearance="primary|secondary|ghost|danger|link"`；
 `dangerFilled` 只用于破坏性确认。用 `disabledReason` 解释不可用动作。
 纯图标动作必带 label 和共享 tooltip。动作菜单用 `role="menu"`，值选择器用 `role="listbox"`。
