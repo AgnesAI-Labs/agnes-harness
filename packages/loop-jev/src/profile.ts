@@ -225,6 +225,22 @@ export function turnToolNames(view: Pick<LoopTurnView, 'tools' | 'disclosedTools
   return [...names].sort()
 }
 
+/**
+ * True when the turn's disclosure is `code` or `hybrid`: it offers `run_code`, or none of the
+ * built-in tools the catalog has. Only the `standard` disclosure leaves `run_code` out and the
+ * built-in tools in. A view without `disclosedTools` says nothing, so it is never refused.
+ */
+export function codeDisclosure(view: Pick<LoopTurnView, 'tools' | 'disclosedTools'>): boolean {
+  const disclosed = view.disclosedTools
+  if (disclosed === undefined) return false
+  if (disclosed.includes('run_code')) return true
+  const builtin: readonly string[] = BUILTIN_TOOLS
+  return (
+    !disclosed.some((name) => builtin.includes(name)) &&
+    view.tools.some((tool) => builtin.includes(tool.name))
+  )
+}
+
 const byName = (a: ResolvedTool, b: ResolvedTool): number => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
 
 /**

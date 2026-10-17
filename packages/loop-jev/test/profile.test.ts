@@ -4,6 +4,7 @@ import {
   builtinToolNames,
   classifyReadBatch,
   classifyResult,
+  codeDisclosure,
   completeArgs,
   decisionTools,
   normalizePath,
@@ -415,5 +416,28 @@ describe('with platform metadata', () => {
       disposition: 'UNKNOWN',
       error: { code: 'EFFECT_UNKNOWN', recoverability: 'unsafe' },
     })
+  })
+})
+
+describe('tool disclosure', () => {
+  const builtins = ['ls', 'read', 'grep', 'find', 'write', 'edit', 'shell', 'tool_search', 'tool_describe']
+  const withCode = [...builtins, 'run_code']
+  it.each<{ name: string; tools: string[]; disclosed: string[]; refused: boolean }>([
+    { name: 'hybrid', tools: withCode, disclosed: withCode, refused: true },
+    { name: 'code', tools: withCode, disclosed: ['run_code'], refused: true },
+    { name: 'code without a code runtime', tools: builtins, disclosed: [], refused: true },
+    { name: 'standard with run_code in the catalog', tools: withCode, disclosed: builtins, refused: false },
+    {
+      name: 'standard after a deferred tool was loaded',
+      tools: [...withCode, 'docs_search'],
+      disclosed: [...builtins, 'docs_search'],
+      refused: false,
+    },
+    { name: 'a catalog without built-in tools', tools: ['docs_search'], disclosed: [], refused: false },
+  ])('$name', ({ tools, disclosed, refused }) => {
+    expect(codeDisclosure(turnView({ tools, platform: { disclosed } }))).toBe(refused)
+  })
+  it('refuses nothing when the view does not list the disclosed tools', () => {
+    expect(codeDisclosure(turnView({ tools: ['ls', 'run_code'] }))).toBe(false)
   })
 })
