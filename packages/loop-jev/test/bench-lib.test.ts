@@ -15,8 +15,10 @@ import {
   presetName,
   renderReport,
   scoreTurn,
+  sessionBalance,
   toolSchemaCheck,
   turnMetrics,
+  turnWindow,
   verdict,
 } from '../bench/lib.mjs'
 
@@ -215,6 +217,59 @@ describe('bench metrics', () => {
       otherSideCalls: { count: 0 },
       reconciled: false,
     })
+  })
+  it('windows each turn from its own start to its own end', () => {
+    const types = [
+      'turn/start',
+      'cost/ledger',
+      'turn/end',
+      'cost/ledger',
+      'turn/start',
+      'cost/ledger',
+      'turn/end',
+    ]
+    const events = types.map((type, i) => ({ seq: i + 1, type, data: {} }))
+    const first = turnWindow(events, 0)
+    expect(first.events.map((e) => e.seq)).toEqual([1, 2, 3])
+    // The row between the turns (seq 4) belongs to neither; the second turn starts after the first.
+    const second = turnWindow(events, first.upper)
+    expect(second.events.map((e) => e.seq)).toEqual([5, 6, 7])
+    expect(second.lower).toBe(4)
+    // Without an end the window stops before the next turn, or at the fallback when one is given.
+    const open = events.filter((e) => e.seq !== 3)
+    expect(turnWindow(open, 0).events.map((e) => e.seq)).toEqual([1, 2, 4])
+    expect(turnWindow(open, 0, 2).upper).toBe(2)
+    // Another lane's turn rows do not open or close the main lane's turn.
+    const side = [
+      { seq: 1, type: 'turn/start', lane: 'child', data: {} },
+      ...events.map((e) => ({ ...e, seq: e.seq + 1 })),
+    ]
+    expect(turnWindow(side, 0).start?.seq).toBe(2)
+  })
+  it('checks that the turns of a session add up to its ledger rows', () => {
+    const on = (purpose: string, route?: string) => ({ type: 'cost/ledger', data: { purpose, route } })
+    const session = [
+      on('inference'),
+      on('inference'),
+      on('side-call', 'jev'),
+      on('side-call', 'chat'),
+      on('title'),
+    ]
+    const turn = (inference: number, sideCall: number) => ({ metrics: { inference, sideCall } })
+    expect(sessionBalance(session, [turn(1, 0), turn(1, 1)], 'jev')).toEqual({
+      inferenceRows: 2,
+      turnInference: 2,
+      jevSideCallRows: 1,
+      turnJevSideCalls: 1,
+      ok: true,
+    })
+    // Windows that each start at the session's beginning count the first turn's rows twice.
+    expect(sessionBalance(session, [turn(1, 0), turn(2, 1)], 'jev')).toMatchObject({
+      turnInference: 3,
+      ok: false,
+    })
+    expect(sessionBalance(session, [turn(2, 0)], 'jev')).toMatchObject({ ok: false })
+    expect(sessionBalance(session, [turn(2, 0)], null)).toMatchObject({ jevSideCallRows: 0, ok: true })
   })
   it('computes k from the baseline pilot', () => {
     const events = [

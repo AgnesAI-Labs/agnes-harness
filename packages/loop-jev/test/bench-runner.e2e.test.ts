@@ -72,8 +72,15 @@ const JEV_MODEL = {
   cost: { input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0 },
 }
 
-/** An OpenAI-compatible chat endpoint on loopback that lists one model and always answers "ok". */
-async function startChat(model: string): Promise<{ baseUrl: string; systems: string[]; bodies: string[] }> {
+/**
+ * An OpenAI-compatible chat endpoint on loopback that lists one model and answers "ok". With
+ * `toolCalls`, a request whose latest user message asks for "Turn <n>" first gets one `ls` call per
+ * request until the turn holds `toolCalls(n)` tool results, so turn n makes toolCalls(n) + 1 requests.
+ */
+async function startChat(
+  model: string,
+  toolCalls?: (turn: number) => number,
+): Promise<{ baseUrl: string; systems: string[]; bodies: string[] }> {
   const systems: string[] = []
   const bodies: string[] = []
   const server: Server = createServer(async (req, res) => {
@@ -96,6 +103,27 @@ async function startChat(model: string): Promise<{ baseUrl: string; systems: str
     systems.push(JSON.stringify(system?.content ?? ''))
     const chunk = { id: 'chat-fixture', object: 'chat.completion.chunk', created: 0, model }
     res.writeHead(200, { 'content-type': 'text/event-stream' })
+    // The goal of the turn is the latest user message naming a turn; the host may add others.
+    const lastUser = body.messages.findLastIndex(
+      (m) => m.role === 'user' && /Turn \d+/.test(JSON.stringify(m.content)),
+    )
+    const asked = /Turn (\d+)/.exec(JSON.stringify(body.messages[lastUser]?.content ?? ''))
+    const results = body.messages.slice(lastUser + 1).filter((m) => m.role === 'tool').length
+    if (toolCalls && asked && results < toolCalls(Number(asked[1]))) {
+      const call = {
+        index: 0,
+        id: `call-${bodies.length}`,
+        type: 'function',
+        function: { name: 'ls', arguments: '{"path":"."}' },
+      }
+      res.write(
+        `data: ${JSON.stringify({ ...chunk, choices: [{ index: 0, delta: { role: 'assistant', tool_calls: [call] }, finish_reason: null }] })}\n\n`,
+      )
+      res.end(
+        `data: ${JSON.stringify({ ...chunk, choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 100, completion_tokens: 5, total_tokens: 105 } })}\n\ndata: [DONE]\n\n`,
+      )
+      return
+    }
     res.write(
       `data: ${JSON.stringify({ ...chunk, choices: [{ index: 0, delta: { role: 'assistant', content: 'ok' }, finish_reason: null }] })}\n\n`,
     )
@@ -347,6 +375,116 @@ describe('bench runner', () => {
     expect(report.totals.byLane.jev.turns + report.totals.byLane.default.turns).toBe(2)
     // Nothing is written into the home's profile: the bench settings travel in the bundle.
     expect(readdirSync(join(home, 'profiles', 'local-dev'))).not.toContain('profile.yaml')
+  }, 300_000)
+
+  it('reports each turn of a multi-turn session with its own requests, steps, cost and wall time', async () => {
+    // Turn n makes n model requests on the default lane: n - 1 `ls` calls, then the answer.
+    const chat = await startChat('deepseek-flash', (turn) => turn - 1)
+    const jevFake = await startJev()
+    const home = await settingsHome({
+      name: 'window',
+      chat: [{ baseUrl: chat.baseUrl }],
+      jev: [{ baseUrl: jevFake.url, accountId: 'jev' }],
+    })
+    const multi = join(out, 'window', 'suite.json')
+    const probe = [{ command: 'node -e "console.log(1)"', contains: '1' }]
+    writeFileSync(
+      multi,
+      JSON.stringify({
+        suite: 'bench-window',
+        scenarios: [
+          {
+            id: 'three',
+            category: 'plumbing',
+            turns: [1, 2, 3].map((n) => ({
+              goal: `Turn ${n}: say ok.`,
+              answer_contains: ['ok'],
+              bash: probe,
+            })),
+          },
+        ],
+      }),
+    )
+    const dir = join(out, 'window', 'run')
+    const r = await runAsync(['--suite', multi, '--lanes', 'default,jev', '--out', dir, '--home', home])
+    expect(r.status, r.stderr).toBe(0)
+    const records = readRecords(dir)
+    const events = (lane: string) =>
+      readFileSync(join(dir, 'events', `three.${lane}.r1.jsonl`), 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line))
+    const of = (lane: string) => records.filter((x) => x.lane === lane).sort((a, b) => a.turn - b.turn)
+    // The default lane: exactly n requests and n steps in turn n, each turn priced on its own rows.
+    const all = events('default')
+    const inference = all.filter((e) => e.type === 'cost/ledger' && e.data.purpose === 'inference')
+    expect(inference).toHaveLength(6)
+    const def = of('default')
+    expect(def.map((x) => x.metrics.inference)).toEqual([1, 2, 3])
+    expect(def.map((x) => x.steps)).toEqual([1, 2, 3])
+    const starts = all.filter((e) => e.type === 'turn/start')
+    const ends = all.filter((e) => e.type === 'turn/end')
+    expect(starts).toHaveLength(3)
+    for (const [i, x] of def.entries()) {
+      const own = inference.filter((e) => e.seq > starts[i].seq && e.seq < ends[i].seq)
+      expect(x.metrics.usdMicros).toBe(own.reduce((sum, e) => sum + e.data.billing.usdMicros, 0))
+      expect(x.wallMs).toBe(Date.parse(ends[i].ts) - Date.parse(starts[i].ts))
+      expect(x.endReason).toBe(ends[i].data.reason)
+    }
+    // On every lane the turns add up to the session's own ledger, and the report says so.
+    const report = readJson(join(dir, 'report.json'))
+    for (const lane of ['default', 'jev']) {
+      const rows = events(lane).filter((e) => e.type === 'cost/ledger' && e.data.purpose === 'inference')
+      expect(of(lane).reduce((sum, x) => sum + x.metrics.inference, 0)).toBe(rows.length)
+      expect(report.totals.byLane[lane].inference).toBe(rows.length)
+    }
+    expect(report.sessionChecks.every((c: { ok: boolean }) => c.ok)).toBe(true)
+    expect(readFileSync(join(dir, 'report.md'), 'utf8')).not.toContain('COUNTS DO NOT ADD UP')
+    // The pilot's k counts each tool-using request once: 1 in turn 2 and 2 in turn 3, all read-only.
+    const pilotDir = join(out, 'window', 'pilot')
+    const pilot = await runAsync(['--suite', multi, '--out', pilotDir, '--home', home, '--pilot'])
+    expect(pilot.status, pilot.stderr).toBe(0)
+    expect(readJson(join(pilotDir, 'report.json')).pilot).toEqual({
+      k: 1,
+      mutableCalls: 0,
+      toolInferences: 3,
+      callsPerInference: { '0 mutable + 1 read-only': 3 },
+    })
+
+    // A rescore from the saved files, with no home and no network, gives the live numbers back.
+    const again = join(out, 'window', 'rescored')
+    const rescored = runSync(['--rescore', dir, '--out', again], { AGH_HOME: join(out, 'window', 'no-home') })
+    expect(rescored.status, rescored.stderr).toBe(0)
+    const live = readJson(join(dir, 'report.json'))
+    const redo = readJson(join(again, 'report.json'))
+    expect(redo.rescoredFrom).toBe(dir)
+    expect(redo.totals).toEqual(live.totals)
+    expect(redo.sessionChecks).toEqual(live.sessionChecks)
+    expect(redo.verdict).toEqual(live.verdict)
+    type Rec = ReturnType<typeof readRecords>[number]
+    const pick = (x: Rec) => ({
+      key: `${x.lane}.${x.turn}`,
+      inference: x.metrics.inference,
+      sideCall: x.metrics.sideCall,
+      usdMicros: x.metrics.usdMicros,
+      reconciled: x.metrics.reconciled,
+      wallMs: x.wallMs,
+      steps: x.steps,
+      endReason: x.endReason,
+      score: x.score,
+    })
+    const sorted = (rows: Rec[]) => rows.map(pick).sort((a, b) => a.key.localeCompare(b.key))
+    expect(sorted(readRecords(again))).toEqual(sorted(records))
+    const pilotAgain = join(out, 'window', 'pilot-rescored')
+    expect(runSync(['--rescore', pilotDir, '--out', pilotAgain]).status).toBe(0)
+    expect(readJson(join(pilotAgain, 'report.json')).pilot).toEqual(
+      readJson(join(pilotDir, 'report.json')).pilot,
+    )
+    // The original is never overwritten.
+    const same = runSync(['--rescore', dir, '--out', dir])
+    expect(same.status).toBe(2)
+    expect(same.stderr).toContain('must be a new directory')
+    expect(runSync(['--rescore', dir, '--out', again]).stderr).toContain('already holds a report')
   }, 300_000)
 
   it('names what is missing or ambiguous in the saved accounts', async () => {

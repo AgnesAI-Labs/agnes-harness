@@ -125,6 +125,28 @@ export function callsPerInference(
   turns: Array<{ events: MetricEvent[] }>,
   mutable?: string[],
 ): Record<string, number>
+export function turnWindow(
+  events: SessionEvent[],
+  fromSeq: number,
+  fallbackSeq?: number,
+): {
+  start: SessionEvent | undefined
+  end: SessionEvent | undefined
+  lower: number
+  upper: number
+  events: SessionEvent[]
+}
+export function sessionBalance(
+  events: MetricEvent[],
+  records: Array<{ metrics?: Partial<TurnMetrics> }>,
+  jevRoute: string | null,
+): {
+  inferenceRows: number
+  turnInference: number
+  jevSideCallRows: number
+  turnJevSideCalls: number
+  ok: boolean
+}
 export type DecideStats = {
   calls: number
   byStatus: Record<string, number>
