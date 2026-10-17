@@ -67,9 +67,13 @@ it('serializes two real startup processes and retains one home instance', async 
   expect(inspectHome(home).instanceId).toBe(results[0]?.instanceId)
 }, 30000)
 
-it.each(process.platform === 'win32' ? [false, true] : [false])(
-  'waits for a live initialization lock (inherited ACL: %s) and recovers without replacing it',
-  async (inherited) => {
+it.each([
+  { inherited: false, publishing: false },
+  { inherited: false, publishing: true },
+  ...(process.platform === 'win32' ? [{ inherited: true, publishing: false }] : []),
+])(
+  'waits for a live initialization lock ($inherited ACL, publishing: $publishing) without replacing it',
+  async ({ inherited, publishing }) => {
     const privateParent = join(parent, 'private')
     createPrivateDirectorySync(privateParent)
     const home = join(privateParent, 'home')
@@ -86,12 +90,16 @@ it.each(process.platform === 'win32' ? [false, true] : [false])(
     const inode = lstatSync(lock).ino
     const holder = childScript(
       `import { withConfigurationLock } from ${JSON.stringify(locker)};
+    import { renameSync } from 'node:fs';
     await withConfigurationLock(process.argv[1], async () => {
+      // Expose the first-start window: private directories exist but the marker is not published.
+      if (process.argv[4] === 'true') renameSync(process.argv[2], process.argv[3]);
       // Keep the pending action reachable from live IPC, rather than awaiting an unresolvable promise.
       const released = new Promise((resolve) => process.once('message', resolve));
       process.send('held'); await released;
+      if (process.argv[4] === 'true') renameSync(process.argv[3], process.argv[2]);
     });`,
-      [lock],
+      [lock, join(home, 'home-layout.json'), join(privateParent, 'pending-marker.json'), String(publishing)],
     )
     expect((await once(holder, 'message'))[0]).toBe('held')
     let completed = false
@@ -108,7 +116,8 @@ it.each(process.platform === 'win32' ? [false, true] : [false])(
     await new Promise((resolve) => setTimeout(resolve, 100))
     expect(completed).toBe(false)
     const exited = once(holder, 'exit')
-    holder.kill('SIGKILL')
+    if (publishing) holder.send('publish')
+    else holder.kill('SIGKILL')
     await exited
     expect(await waiting).toMatchObject({ result: { instanceId: initial.instanceId } })
     expect(lstatSync(lock).ino).toBe(inode)

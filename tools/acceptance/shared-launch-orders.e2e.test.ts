@@ -219,7 +219,7 @@ async function scenario(options: { simultaneous: boolean }): Promise<void> {
       expect(html).toContain('data-ws=')
       for (const result of cliResults) {
         if (result.status === 'rejected') throw new Error('CLI cold start did not complete')
-        expect(result.value.code, 'CLI cold start exit code').toBe(0)
+        expect(result.value.code, `CLI cold start exit code: ${result.value.stderr}`).toBe(0)
         expect(JSON.parse(result.value.stdout).items).toEqual([])
       }
       const concurrentOwner = await readOwner(ownerPath)
