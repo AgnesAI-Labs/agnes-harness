@@ -59,7 +59,7 @@ async function mount(node: ReturnType<typeof createElement>) {
 const item = {
   id: '@acme/plugin',
   version: '1.0.0',
-  kinds: ['loop', 'ui'],
+  provides: ['loop', 'ui'],
   desired: 'enabled',
   actual: 'running',
 } as PackageInstalledDescriptor

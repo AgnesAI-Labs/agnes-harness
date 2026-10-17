@@ -351,7 +351,9 @@ function projectPackage(
     integrity: row.entry.integrity,
     trusted: row.trusted,
     ...(row.entry.provenance ? { provenance: row.entry.provenance } : {}),
-    ...(row.kinds === undefined ? {} : { kinds: [...row.kinds] }),
+    ...(row.entry.agents ? { agents: row.entry.agents } : {}),
+    ...(row.entry.application ? { application: row.entry.application } : {}),
+    ...(row.provides === undefined ? {} : { provides: [...row.provides] }),
     desired: row.enabled ? 'enabled' : 'installed-disabled',
     // A pending local scan is not a restart requirement. The generation owner decides
     // whether the replacement is running, activating, failed, or genuinely needs a restart.

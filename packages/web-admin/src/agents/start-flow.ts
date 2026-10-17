@@ -298,7 +298,7 @@ export async function runBusinessAgentStart(
     assertReviewed('session', current)
     const named = [...new Set((current?.presentation?.presets ?? []).map((preset) => preset.bundle))]
     if (named.length) return { loop: { id: loop.id, version: loop.version }, bundles: named }
-    const expected = plan.entry.kinds?.includes('bundle') === true
+    const expected = plan.entry.provides?.includes('bundle') === true
     let bundles: { id: string }[] = []
     for (let attempt = 0; attempt < (expected ? 8 : 1); attempt++) {
       if (attempt > 0) await sleep(options.pollMs ?? 400, options.signal)

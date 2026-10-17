@@ -68,7 +68,7 @@ export function stageLocalPlugin(candidate: LocalPluginCandidate, stage: string)
         license: 'UNLICENSED',
         exports: './.agnes-local-entry.mjs',
         agnes: {
-          kinds: ['tool'],
+          provides: ['tool'],
           plugins: [
             { apiRange: '^4.0.0', export: 'main', id: `ext:${candidate.name}/main`, inject: ['tools'] },
           ],

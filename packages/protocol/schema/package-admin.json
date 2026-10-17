@@ -997,14 +997,6 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "kinds": {
-          "type": "array",
-          "items": {
-            "enum": ["tool", "loop", "model-adapter", "mcp", "skills", "ui", "bundle"]
-          },
-          "uniqueItems": true,
-          "maxItems": 6
-        },
         "id": {
           "type": "string",
           "minLength": 1,
@@ -1084,6 +1076,44 @@
         },
         "presentation": {
           "$ref": "#/$defs/PackagePresentation"
+        },
+        "provides": {
+          "type": "array",
+          "items": {
+            "$ref": "extension-manifest.json#/$defs/PluginProvide"
+          },
+          "uniqueItems": true,
+          "maxItems": 8
+        },
+        "application": {
+          "$ref": "extension-manifest.json#/$defs/ApplicationTemplate"
+        },
+        "agents": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "extension-manifest.json#/$defs/BundleLaunch"
+          }
+        },
+        "preflight": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["level", "reasons", "next"],
+          "properties": {
+            "level": {
+              "enum": ["structural", "static-references", "deployment-dependent", "refused"]
+            },
+            "reasons": {
+              "type": "array",
+              "maxItems": 128,
+              "items": {
+                "type": "string",
+                "maxLength": 2048
+              }
+            },
+            "next": {
+              "enum": ["resolve-static-references", "validate-deployment", "review-trust", "fix-declaration"]
+            }
+          }
         }
       },
       "required": [
@@ -1422,6 +1452,23 @@
         },
         "presentation": {
           "$ref": "#/$defs/PackagePresentation"
+        },
+        "provides": {
+          "type": "array",
+          "items": {
+            "$ref": "extension-manifest.json#/$defs/PluginProvide"
+          },
+          "uniqueItems": true,
+          "maxItems": 8
+        },
+        "application": {
+          "$ref": "extension-manifest.json#/$defs/ApplicationTemplate"
+        },
+        "agents": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "extension-manifest.json#/$defs/BundleLaunch"
+          }
         }
       },
       "required": [
@@ -1440,14 +1487,6 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "kinds": {
-          "type": "array",
-          "items": {
-            "enum": ["tool", "loop", "model-adapter", "mcp", "skills", "ui", "bundle"]
-          },
-          "uniqueItems": true,
-          "maxItems": 6
-        },
         "id": {
           "type": "string",
           "minLength": 1,
@@ -1499,6 +1538,23 @@
         },
         "presentation": {
           "$ref": "#/$defs/PackagePresentation"
+        },
+        "provides": {
+          "type": "array",
+          "items": {
+            "$ref": "extension-manifest.json#/$defs/PluginProvide"
+          },
+          "uniqueItems": true,
+          "maxItems": 8
+        },
+        "application": {
+          "$ref": "extension-manifest.json#/$defs/ApplicationTemplate"
+        },
+        "agents": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "extension-manifest.json#/$defs/BundleLaunch"
+          }
         }
       },
       "required": [
@@ -3872,19 +3928,11 @@
           "enum": ["official", "example", "local", "local-source", "third-party"]
         },
         "includes": {
-          "description": "What the package contains, derived from package data without running plugin code. kinds joins the declared agnes.kinds with what the data proves. A count is present only when the package data states it; an absent count means the number is decided in code, not zero.",
+          "description": "Static package facts without executing plugin code. provides combines author labels with explicit contribution evidence, independently of runtime registrations. A count is present only when the package data states it; an absent count means the number is decided in code, not zero.",
           "type": "object",
           "additionalProperties": false,
-          "required": ["kinds", "counts"],
+          "required": ["provides", "counts"],
           "properties": {
-            "kinds": {
-              "type": "array",
-              "items": {
-                "enum": ["tool", "loop", "model-adapter", "mcp", "skills", "ui", "bundle"]
-              },
-              "uniqueItems": true,
-              "maxItems": 7
-            },
             "counts": {
               "type": "object",
               "additionalProperties": false,
@@ -3915,6 +3963,14 @@
                   "maximum": 4096
                 }
               }
+            },
+            "provides": {
+              "type": "array",
+              "items": {
+                "$ref": "extension-manifest.json#/$defs/PluginProvide"
+              },
+              "uniqueItems": true,
+              "maxItems": 8
             }
           }
         },

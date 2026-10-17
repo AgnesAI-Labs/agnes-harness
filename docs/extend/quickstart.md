@@ -23,7 +23,7 @@ node "$AGH_SOURCE/templates/create-agh-plugin.mjs" tool hello-tool .agh/plugins/
 
 The package exports `./src/index.ts`. AGH transpiles it with jiti and provides the public author SDK imports, including TypeBox. You can also place it in `$AGH_HOME/plugins/hello-tool`; use the same configured home in every terminal. Local folders opt into trusted execution, so put only code you intend to run there.
 
-The tool starter declares `agnes.kinds: ["tool"]` and a `capabilities: {}` on its plugin entry so inspection can show its type and requested capability scope without executing it. Update these declarations when adding functionality or side effects; the panel starter declares UI access and the loop starter declares model access. See [capability declarations](../guide/packages.md#capabilities) for the field format and examples; the empty object suits this pure echo tool. Declare the actual scope before adding file, network or process access.
+The tool starter declares `agnes.provides: ["tool"]` and a `capabilities: {}` on its plugin entry so inspection can show its type and requested capability scope without executing it. Update these declarations when adding functionality or side effects; the panel starter declares UI access and the loop starter declares model access. See [capability declarations](../guide/packages.md#capabilities) for the field format and examples; the empty object suits this pure echo tool. Declare the actual scope before adding file, network or process access.
 
 ## 2. Start AGH and open a new session
 

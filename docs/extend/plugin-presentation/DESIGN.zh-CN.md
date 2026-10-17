@@ -36,7 +36,6 @@ Lead 于 2026-10-10 批准元数据契约与内容。本次实现可选公开契
     "displayName": "Progress checks",
     "summary": "Detects repeated writes and stalled work, then requests revision or escalation within configured limits.",
     "description": "Checks execution for repetition, missing progress and unfinished plans. The selected repair policy can request another attempt, escalate or park the task; limits come from the session configuration.",
-    "category": "agent-loop",
     "locales": {
       "zh-CN": {
         "displayName": "执行进度检查",

@@ -216,6 +216,23 @@
                     },
                     "metadata": {
                       "$ref": "extension-manifest.json#/$defs/PluginMetadata"
+                    },
+                    "declaredProvides": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "extension-manifest.json#/$defs/PluginProvide"
+                      },
+                      "uniqueItems": true,
+                      "maxItems": 8
+                    },
+                    "agents": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "$ref": "extension-manifest.json#/$defs/BundleLaunch"
+                      }
+                    },
+                    "application": {
+                      "$ref": "extension-manifest.json#/$defs/ApplicationTemplate"
                     }
                   }
                 }
@@ -253,6 +270,23 @@
             },
             "metadata": {
               "$ref": "extension-manifest.json#/$defs/PluginMetadata"
+            },
+            "declaredProvides": {
+              "type": "array",
+              "items": {
+                "$ref": "extension-manifest.json#/$defs/PluginProvide"
+              },
+              "uniqueItems": true,
+              "maxItems": 8
+            },
+            "agents": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "extension-manifest.json#/$defs/BundleLaunch"
+              }
+            },
+            "application": {
+              "$ref": "extension-manifest.json#/$defs/ApplicationTemplate"
             }
           }
         },
@@ -465,6 +499,23 @@
                     },
                     "metadata": {
                       "$ref": "extension-manifest.json#/$defs/PluginMetadata"
+                    },
+                    "declaredProvides": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "extension-manifest.json#/$defs/PluginProvide"
+                      },
+                      "uniqueItems": true,
+                      "maxItems": 8
+                    },
+                    "agents": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "$ref": "extension-manifest.json#/$defs/BundleLaunch"
+                      }
+                    },
+                    "application": {
+                      "$ref": "extension-manifest.json#/$defs/ApplicationTemplate"
                     }
                   }
                 }
@@ -502,6 +553,23 @@
             },
             "metadata": {
               "$ref": "extension-manifest.json#/$defs/PluginMetadata"
+            },
+            "declaredProvides": {
+              "type": "array",
+              "items": {
+                "$ref": "extension-manifest.json#/$defs/PluginProvide"
+              },
+              "uniqueItems": true,
+              "maxItems": 8
+            },
+            "agents": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "extension-manifest.json#/$defs/BundleLaunch"
+              }
+            },
+            "application": {
+              "$ref": "extension-manifest.json#/$defs/ApplicationTemplate"
             }
           }
         }
@@ -615,13 +683,27 @@
           "additionalProperties": false,
           "required": ["approval", "checkpoint", "billing", "verifier", "repair", "artifacts", "principals"],
           "properties": {
-            "approval": { "$ref": "#/$defs/SeamSelection" },
-            "checkpoint": { "$ref": "#/$defs/SeamSelection" },
-            "billing": { "$ref": "#/$defs/SeamSelection" },
-            "verifier": { "$ref": "#/$defs/SeamSelection" },
-            "repair": { "$ref": "#/$defs/SeamSelection" },
-            "artifacts": { "$ref": "#/$defs/SeamSelection" },
-            "principals": { "$ref": "#/$defs/SeamSelection" }
+            "approval": {
+              "$ref": "#/$defs/SeamSelection"
+            },
+            "checkpoint": {
+              "$ref": "#/$defs/SeamSelection"
+            },
+            "billing": {
+              "$ref": "#/$defs/SeamSelection"
+            },
+            "verifier": {
+              "$ref": "#/$defs/SeamSelection"
+            },
+            "repair": {
+              "$ref": "#/$defs/SeamSelection"
+            },
+            "artifacts": {
+              "$ref": "#/$defs/SeamSelection"
+            },
+            "principals": {
+              "$ref": "#/$defs/SeamSelection"
+            }
           }
         }
       }

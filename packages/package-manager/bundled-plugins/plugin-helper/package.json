@@ -15,9 +15,6 @@
     "node": ">=24"
   },
   "agnes": {
-    "kinds": [
-      "tool"
-    ],
     "plugins": [
       {
         "export": "pluginHelper",
@@ -30,7 +27,6 @@
           "displayName": "Plugin helper",
           "summary": "Helps create, inspect and install plugins through reviewed requests.",
           "description": "Helps create, inspect and install plugins through reviewed requests.",
-          "category": "developer",
           "locales": {
             "zh-CN": {
               "displayName": "插件助手",
@@ -45,7 +41,6 @@
       "displayName": "Plugin helper",
       "summary": "Helps create, inspect and install plugins through reviewed requests.",
       "description": "Helps create, inspect and install plugins through reviewed requests.",
-      "category": "developer",
       "locales": {
         "zh-CN": {
           "displayName": "插件助手",
@@ -53,6 +48,9 @@
           "description": "通过审核后的请求帮助创建、检查和安装插件。"
         }
       }
-    }
+    },
+    "provides": [
+      "tool"
+    ]
   }
 }

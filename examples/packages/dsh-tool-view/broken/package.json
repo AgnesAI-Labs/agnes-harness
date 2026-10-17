@@ -15,7 +15,6 @@
           "displayName": "Tool display example (failure fixture)",
           "summary": "Deliberately fails tool display example validation or loading to demonstrate refusal and recovery.",
           "description": "Deliberately fails tool display example validation or loading to demonstrate refusal and recovery.",
-          "category": "ui",
           "locales": {
             "zh-CN": {
               "displayName": "工具展示示例（失败测试包）",
@@ -36,7 +35,6 @@
       "displayName": "Tool display example (failure fixture)",
       "summary": "Deliberately fails tool display example validation or loading to demonstrate refusal and recovery.",
       "description": "Deliberately fails tool display example validation or loading to demonstrate refusal and recovery.",
-      "category": "ui",
       "locales": {
         "zh-CN": {
           "displayName": "工具展示示例（失败测试包）",
@@ -44,7 +42,10 @@
           "description": "故意使工具展示示例的校验或加载失败，用于演示拒绝和恢复。"
         }
       }
-    }
+    },
+    "provides": [
+      "ui"
+    ]
   },
   "exports": "./index.mjs"
 }

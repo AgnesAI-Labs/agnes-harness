@@ -59,7 +59,6 @@
           "displayName": "Reply suggestions",
           "summary": "Suggests one editable next question after a successful reply using the auxiliary model.",
           "description": "Suggests one editable next question after a successful reply using the auxiliary model.",
-          "category": "ui",
           "locales": {
             "zh-CN": {
               "displayName": "回复建议",

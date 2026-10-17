@@ -15,7 +15,7 @@ import { reviewedContributionsMatch } from './inventory-client-compatibility.js'
 import type { LockEntry, Lockfile } from './lockfile.js'
 import { readPackagePresentation } from './package-presentation.js'
 import { capabilityPolicyBlockers, readPluginCapabilityPolicy } from './plugin-capabilities.js'
-import type { AgnesPluginKind } from './plugin-manifest.js'
+import type { AgnesPluginProvide } from './plugin-manifest.js'
 import {
   enforceSourceConfiguration,
   officialCatalogVerifier,
@@ -36,7 +36,7 @@ export type InstalledPackage = Readonly<{
   capabilityHash: string
   trusted: boolean
   enabled: boolean
-  kinds?: readonly AgnesPluginKind[]
+  provides?: readonly AgnesPluginProvide[]
   contributions: readonly PackageContributionSummary[]
   blockers: readonly PackageBlocker[]
   verifiedRollbackTarget: Readonly<{
@@ -107,7 +107,7 @@ export function isSnapshotPackageEligible(row: Pick<InstalledPackage, 'trusted' 
 type VerifiedPackageDirectory = {
   capabilityHash: string
   blockers: readonly PackageBlocker[]
-  kinds?: readonly AgnesPluginKind[]
+  provides?: readonly AgnesPluginProvide[]
 }
 export type InventoryVerificationCache = Map<string, VerifiedPackageDirectory>
 
@@ -202,6 +202,8 @@ export function verifyHashedPackageDirectory(
     !reviewedContributionsMatch(checked.preview.contributions, entry.contributions) ||
     canonical(checked.preview.dependencies) !== canonical(entry.dependencies) ||
     canonical(checked.preview.metadata) !== canonical(entry.metadata) ||
+    canonical(checked.preview.agents) !== canonical(entry.agents) ||
+    canonical(checked.preview.application) !== canonical(entry.application) ||
     canonical(checked.preview.declaredCapabilities) !== canonical(entry.declaredCapabilities)
   )
     throw new PackageError('E_LOCK_MISMATCH', 'installed inventory metadata differs from lock', {
@@ -210,7 +212,7 @@ export function verifyHashedPackageDirectory(
   const result = freezeData({
     capabilityHash: hash,
     blockers: checked.preview.blockers,
-    ...(checked.preview.kinds === undefined ? {} : { kinds: checked.preview.kinds }),
+    ...(checked.preview.provides === undefined ? {} : { provides: checked.preview.provides }),
   })
   if (key && cache) {
     const oldest = cache.keys().next().value
@@ -316,7 +318,7 @@ function* inventoryReadSteps(
       blockers.push({ code: 'policy', references: ['workspace-packages-denied'] })
     let provenance = entry.provenance
     let hash = capabilityHash(entry)
-    let kinds: readonly AgnesPluginKind[] | undefined
+    let provides: readonly AgnesPluginProvide[] | undefined
     if (entry.contributions === undefined || entry.treeIntegrity === undefined)
       blockers.push({ code: 'unknown-contribution', references: ['static-inventory-migration-required'] })
     else {
@@ -347,7 +349,7 @@ function* inventoryReadSteps(
       )
       if (entry.trust !== 'builtin') enforceSourceConfiguration(sourceConfig, provenance)
       hash = verified.capabilityHash
-      kinds = verified.kinds
+      provides = verified.provides
       blockers.push(
         ...verified.blockers.filter(
           (b) => !(entry.source.type === 'workspace' && b.references.includes('use-trust-workspace')),
@@ -389,7 +391,7 @@ function* inventoryReadSteps(
       capabilityHash: hash,
       trusted,
       enabled: entry.state.enabled,
-      ...(kinds === undefined ? {} : { kinds }),
+      ...(provides === undefined ? {} : { provides }),
       contributions: entry.contributions ?? [],
       blockers,
       verifiedRollbackTarget: verifiedRollbackTarget(id, entry, {

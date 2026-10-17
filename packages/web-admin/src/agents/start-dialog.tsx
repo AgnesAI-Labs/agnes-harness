@@ -57,7 +57,7 @@ export function startGets(reviewed: Reviewed, t: Text): GetsRow[] {
       title: tools.length === 1 ? t('gets.tool') : t('gets.tools', { count: tools.length }),
       detail: list(tools),
     })
-  if (reviewed.kinds?.includes('loop')) rows.push({ icon: 'bot', title: t('gets.loop') })
+  if (reviewed.provides?.includes('loop')) rows.push({ icon: 'bot', title: t('gets.loop') })
   const skills = reviewed.contributions.filter((item) => item.kind === 'skill').map((item) => item.id)
   if (skills.length)
     rows.push({

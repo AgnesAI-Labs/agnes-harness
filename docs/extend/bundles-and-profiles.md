@@ -16,14 +16,14 @@ In Web Settings → Bundles & Presets, session information lists actual tool gro
 
 ## Publish a bundle
 
-Declare `agnes.kinds: ["bundle"]` and an `agnes.bundles` map in `package.json`. Bundle identifiers are `<package-id>#<bundle-name>`; names use lowercase letters, digits and hyphens and start with a letter. A package can publish several bundles. Each document accepts `extends`, `profile` and `presets`:
+Declare `agnes.provides: ["bundle"]` and an `agnes.bundles` map in `package.json`. Bundle identifiers are `<package-id>#<bundle-name>`; names use lowercase letters, digits and hyphens and start with a letter. A package can publish several bundles. Each document accepts `extends`, `profile` and `presets`:
 
 ```json
 {
   "name": "acme/research",
   "version": "1.0.0",
   "agnes": {
-    "kinds": ["bundle"],
+    "provides": ["bundle"],
     "bundles": {
       "base": { "profile": { "toolPolicy": { "readOnly": true } } },
       "research": {

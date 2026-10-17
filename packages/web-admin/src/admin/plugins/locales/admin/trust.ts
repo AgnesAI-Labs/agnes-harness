@@ -2,6 +2,15 @@ import type { LocaleCatalog } from '@agnes/web-ui'
 
 export const trustCatalog: LocaleCatalog = {
   en: {
+    'preflight.structural': 'Declaration structure is valid',
+    'preflight.static-references': 'Static references resolve',
+    'preflight.deployment-dependent': 'Deployment validation is pending; installation does not mean ready',
+    'preflight.refused': 'Static preflight refused this declaration',
+    'preflight.next.resolve-static-references': 'Resolve static references next',
+    'preflight.next.validate-deployment': 'Validate trusted dependencies and runtime registration next',
+    'preflight.next.review-trust': 'Review trust next',
+    'preflight.next.fix-declaration': 'Correct the declaration before continuing',
+
     'capability.device': 'Device access',
     'capability.tools': 'Provide tools',
     'capability.hooks': 'Respond to events',
@@ -40,7 +49,7 @@ export const trustCatalog: LocaleCatalog = {
     'capability.model': 'Model access',
     'capability.childAgents': 'Child agents',
     'capability.ui': 'UI',
-    'fact.kinds': 'Plugin kinds',
+    'fact.provides': 'Declared capabilities',
     'fact.source': 'Source',
     'detail.state': 'Status',
     'detail.trust': 'Trust',
@@ -65,6 +74,15 @@ export const trustCatalog: LocaleCatalog = {
     'fact.unavailable': 'Not provided by the host',
   },
   'zh-CN': {
+    'preflight.structural': '声明结构合法',
+    'preflight.static-references': '静态引用可解',
+    'preflight.deployment-dependent': '待部署验证；安装通过不等于就绪',
+    'preflight.refused': '静态预检拒绝此声明',
+    'preflight.next.resolve-static-references': '下一步解析静态引用',
+    'preflight.next.validate-deployment': '下一步验证可信依赖与运行时登记',
+    'preflight.next.review-trust': '下一步审阅信任',
+    'preflight.next.fix-declaration': '修正声明后再继续',
+
     'capability.device': '设备访问',
     'capability.tools': '提供工具',
     'capability.hooks': '响应事件',
@@ -100,7 +118,7 @@ export const trustCatalog: LocaleCatalog = {
     'capability.model': '模型访问',
     'capability.childAgents': '子代理',
     'capability.ui': '界面',
-    'fact.kinds': '插件类型',
+    'fact.provides': '声明能力',
     'fact.source': '来源',
     'detail.state': '状态',
     'detail.trust': '信任',

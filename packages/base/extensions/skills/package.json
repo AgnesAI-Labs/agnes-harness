@@ -33,7 +33,6 @@
           "displayName": "Reusable playbooks",
           "summary": "Lets the agent discover and read reusable Skills and their supporting files.",
           "description": "Lets the agent discover and read reusable Skills and their supporting files.",
-          "category": "memory-context",
           "locales": {
             "zh-CN": {
               "displayName": "可复用操作手册",
@@ -43,6 +42,9 @@
           }
         }
       }
+    ],
+    "provides": [
+      "tool"
     ]
   }
 }

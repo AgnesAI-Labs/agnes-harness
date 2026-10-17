@@ -122,12 +122,14 @@ export async function installPreview(
 
 export function formatPreview(preview: PackagePreview, options: { activate?: boolean } = {}): string {
   const contributions =
-    [...new Set([...(preview.kinds ?? []), ...preview.contributions.map((item) => item.kind)])].join(', ') ||
-    'none'
+    [...new Set([...(preview.provides ?? []), ...preview.contributions.map((item) => item.kind)])].join(
+      ', ',
+    ) || 'none'
   const warnings = preview.warnings.map((warning) => warning.safeMessage).join('; ') || 'none'
   return [
     `Preview ${preview.id}@${preview.version}`,
     `integrity ${preview.integrity}`,
+    ...(preview.preflight ? [`preflight ${preview.preflight.level}: ${preview.preflight.next}`] : []),
     `capabilityHash ${preview.capabilityHash}`,
     `declared capabilities ${preview.declaredCapabilities === undefined ? 'not declared' : JSON.stringify(preview.declaredCapabilities)}`,
     `blockers ${preview.blockers.map((b) => b.references.join(', ')).join('; ') || 'none'}`,

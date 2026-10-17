@@ -3,7 +3,16 @@ import type { PluginRuntimeState } from '@agnes/web-foundation/client-modules/ru
 import { Disclosure, Field, Select, Tag, type TagTone, Tooltip } from '@agnes/web-ui'
 import type { Plugin, Text } from './control-panel-types.js'
 
-export const PLUGIN_KINDS = ['tool', 'loop', 'model-adapter', 'mcp', 'skills', 'ui', 'bundle'] as const
+export const PLUGIN_KINDS = [
+  'tool',
+  'loop',
+  'model-adapter',
+  'mcp',
+  'skills',
+  'ui',
+  'bundle',
+  'service',
+] as const
 export type PluginKind = (typeof PLUGIN_KINDS)[number]
 
 /** Keep author declarations and host/browser observations separate. */

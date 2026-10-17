@@ -9,10 +9,10 @@ import { containedEntry } from './entry-path.js'
 import { readStaticJson } from './integrity.js'
 import { summarizePackageIncludes } from './package-includes.js'
 import {
-  type AgnesPluginKind,
   type AgnesPluginManifestEntry,
+  type AgnesPluginProvide,
   parseAgnesPluginEntries,
-  parseAgnesPluginKinds,
+  parseAgnesPluginProvides,
 } from './plugin-manifest.js'
 import { summarizeBundlePresets } from './preset-policy-summary.js'
 
@@ -22,7 +22,7 @@ export function presentPluginRows(
   bundles?: {
     packageId: string
     bundles: unknown
-    kinds?: readonly AgnesPluginKind[] | undefined
+    provides?: readonly AgnesPluginProvide[] | undefined
     contributions?: readonly PackageContributionSummary[] | undefined
   },
 ): PackagePresentation {
@@ -47,12 +47,12 @@ export function readPackagePresentation(
 ): PackagePresentation {
   const pkg = readStaticJson(join(directory, 'package.json'))
   const author = pkg.agnes as
-    | { plugins?: unknown; extensions?: unknown; bundles?: unknown; kinds?: unknown }
+    | { plugins?: unknown; extensions?: unknown; bundles?: unknown; provides?: unknown }
     | undefined
   const result = presentPluginRows(parseAgnesPluginEntries(String(pkg.name), author?.plugins), {
     packageId: String(pkg.name),
     bundles: author?.bundles,
-    kinds: parseAgnesPluginKinds(author?.kinds),
+    provides: parseAgnesPluginProvides(author?.provides),
     contributions,
   })
   if (builtin && Array.isArray(author?.extensions)) {

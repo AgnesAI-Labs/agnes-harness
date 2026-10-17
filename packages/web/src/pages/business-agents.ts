@@ -1,12 +1,9 @@
 import type { PackageCatalogDescriptor } from '@agnes/protocol'
 import { homeAdmin } from './admin-api.js'
 
-/**
- * A business agent is a bundle marked `category: "business-agent"`; catalogs written before that
- * mark existed name the same packages under `@agnes-fde/`.
- */
+/** Catalogue availability comes from explicit launch declarations, independently of package names. */
 export function isBusinessAgent(row: PackageCatalogDescriptor): boolean {
-  return row.metadata?.category === 'business-agent' || row.id.startsWith('@agnes-fde/')
+  return Object.keys(row.agents ?? {}).length > 0 && !row.metadata?.exampleOf
 }
 
 /** Every business agent the catalog offers, in catalog order. */

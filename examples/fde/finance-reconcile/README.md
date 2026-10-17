@@ -14,7 +14,7 @@ TX-1 matches; TX-2 differs by 5000 cents; bank-only TX-3 is 7525 cents; book-onl
 - Tools: fixture connectors and transformations registered by `main` through the public author kit.
 - Policy: `fde.finance-reconcile`, requiring human approval for every decision/send action.
 - Skills: packaged `skills/playbook/SKILL.md`, registered and included in model requests.
-- Bundle: `agnes.kinds` declares `bundle`; `agnes.bundles.finance-reconcile` composes the loop, Skill and preset.
+- Bundle: `agnes.provides` declares `bundle`; `agnes.bundles.finance-reconcile` composes the loop, Skill and preset.
 
 ## Install and run
 

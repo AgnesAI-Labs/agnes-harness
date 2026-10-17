@@ -19,7 +19,6 @@
       "displayName": "JSONL persistence example",
       "summary": "Stores session records and metadata in local JSONL files as an alternative persistence provider.",
       "description": "Stores session records and metadata in local JSONL files as an alternative persistence provider.",
-      "category": "developer",
       "locales": {
         "zh-CN": {
           "displayName": "JSONL 持久化示例",
@@ -27,6 +26,9 @@
           "description": "作为替代持久化提供方，将会话记录与元数据保存到本地 JSONL 文件。"
         }
       }
-    }
+    },
+    "provides": [
+      "service"
+    ]
   }
 }

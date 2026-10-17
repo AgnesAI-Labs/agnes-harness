@@ -12,7 +12,8 @@ const lock: LockState = {
   packages: {
     '@agnes/base': {
       version: '0.1.0',
-      integrity: 'sha512-b',
+      integrity: 'builtin:0.1.0',
+      source: { type: 'builtin', ref: 'builtin' },
       trust: 'builtin',
       enabled: true,
       provides: [
@@ -26,8 +27,20 @@ const lock: LockState = {
         'principals',
       ],
     },
-    '@agnes/code': { version: '0.1.0', integrity: 'sha512-c', trust: 'builtin', enabled: true },
-    '@agnes/ai': { version: '0.1.0', integrity: 'sha512-a', trust: 'builtin', enabled: true },
+    '@agnes/code': {
+      version: '0.1.0',
+      integrity: 'builtin:0.1.0',
+      source: { type: 'builtin', ref: 'builtin' },
+      trust: 'builtin',
+      enabled: true,
+    },
+    '@agnes/ai': {
+      version: '0.1.0',
+      integrity: 'builtin:0.1.0',
+      source: { type: 'builtin', ref: 'builtin' },
+      trust: 'builtin',
+      enabled: true,
+    },
   },
 }
 
@@ -63,7 +76,7 @@ describe('resolveProfile (single layer)', () => {
     const p = await resolveProfile({ builtin: 'local-dev', lock }, env)
     expect(p.packages.find((x) => x.id === '@agnes/base')).toMatchObject({
       version: '0.1.0',
-      integrity: 'sha512-b',
+      integrity: 'builtin:0.1.0',
       trust: 'builtin',
       enabled: true,
       source: 'builtin',
@@ -504,9 +517,27 @@ describe('resolveProfile, the resolved profile is not editable in place', () => 
 describe('resolveProfile, the fields finalize decides', () => {
   const trusted: LockState = {
     packages: {
-      '@agnes/ai': { version: '1', integrity: 'sha512-a', trust: 'trusted', enabled: true },
-      '@agnes/base': { version: '1', integrity: 'sha512-b', trust: 'trusted', enabled: false },
-      '@agnes/code': { version: '1', integrity: 'sha512-c', trust: 'trusted', enabled: true },
+      '@agnes/ai': {
+        version: '1',
+        integrity: 'builtin:0.1.0',
+        source: { type: 'builtin', ref: 'builtin' },
+        trust: 'trusted',
+        enabled: true,
+      },
+      '@agnes/base': {
+        version: '1',
+        integrity: 'builtin:0.1.0',
+        source: { type: 'builtin', ref: 'builtin' },
+        trust: 'trusted',
+        enabled: false,
+      },
+      '@agnes/code': {
+        version: '1',
+        integrity: 'builtin:0.1.0',
+        source: { type: 'builtin', ref: 'builtin' },
+        trust: 'trusted',
+        enabled: true,
+      },
     },
   }
   it('stamps a builtin package as builtin whatever the lockfile claims', async () => {
@@ -612,4 +643,33 @@ describe('resolveProfile, the fields finalize decides', () => {
       ),
     ).rejects.toThrow('provider.adapters was removed')
   })
+})
+
+it('does not promote a familiar package name from file/git/npm to release authority', async () => {
+  for (const type of ['file', 'git', 'npm']) {
+    const st = {
+      version: '0.1.0',
+      integrity: 'sha512-external',
+      trust: 'trusted' as const,
+      enabled: true,
+      source: { type, ref: `${type}:external` },
+    }
+    const p = await resolveProfile({ builtin: 'local-dev', lock: { packages: { '@agnes/base': st } } }, env)
+    expect(p.packages.find((pkg) => pkg.id === '@agnes/base')?.trust).toBe('trusted')
+    await expect(
+      resolveProfile(
+        { builtin: 'local-dev', lock: { packages: { '@agnes/base': { ...st, trust: 'builtin' } } } },
+        env,
+      ),
+    ).rejects.toMatchObject({ code: 'E_LOCK_MISMATCH' })
+    await expect(
+      resolveProfile(
+        {
+          builtin: 'local-dev',
+          user: { name: 'x', packages: [{ id: '@agnes/base', source: `${type}:external` }] },
+        },
+        env,
+      ),
+    ).rejects.toMatchObject({ code: 'E_DEP_MISSING' })
+  }
 })

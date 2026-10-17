@@ -249,14 +249,18 @@ export type {
 } from '../gen/ts/channel.js'
 export type { DeployManifest } from '../gen/ts/deploy-manifest.js'
 export type {
+  AgentRef,
+  ApplicationTemplate,
+  BundleLaunch,
   Capabilities,
   ClientContribution,
   ExampleLaunchDeclaration,
   ExtensionManifest,
   HomeContributionDeclaration,
-  PluginCategory,
+  PluginLocalizedText,
   PluginMetadata,
   PluginMetadataLocale,
+  PluginProvide,
   SkinContribution,
   SkinTokenValue,
   UiComponentDeclaration,

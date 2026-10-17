@@ -50,7 +50,7 @@ import {
 import { type LockEntry, type Lockfile, readLock, withLock, writeLock } from './lockfile.js'
 import { readBundledManifest } from './manifest.js'
 import type { RuntimePluginSnapshot } from './package-plugin-loader.js'
-import { entryFrom, readPackageJson } from './package-record.js'
+import { applyReviewedContract, entryFrom, readPackageJson } from './package-record.js'
 import { readPluginCapabilityPolicy } from './plugin-capabilities.js'
 import { checkCancelled, type OperationOptions, type PackageSourceAdapter, progress } from './ports.js'
 import {
@@ -502,6 +502,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
           current,
         )
         entry.treeIntegrity = checked.treeIntegrity
+        applyReviewedContract(entry, checked.preview)
         entry.contributions = checked.preview.contributions
         if (checked.preview.metadata) entry.metadata = checked.preview.metadata
         else delete entry.metadata
@@ -873,6 +874,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
               undefined,
             )
             entry.contributions = preview.contributions
+            applyReviewedContract(entry, preview)
             if (preview.metadata) entry.metadata = preview.metadata
             else delete entry.metadata
             if (preview.declaredCapabilities !== undefined)

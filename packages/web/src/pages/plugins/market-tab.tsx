@@ -30,10 +30,10 @@ export const MARKET_TYPES = ['agent', 'tool', 'skills', 'mcp', 'ui', 'runtime'] 
 export type MarketType = (typeof MARKET_TYPES)[number]
 /**
  * The marketplace types a package belongs to. The package says which kinds it includes; an entry
- * from an older source without that falls back to the kinds its author declared.
+ * without static counts still shows the labels its author declared.
  */
 export function marketTypes(item: PackageCatalogDescriptor): readonly MarketType[] {
-  const kinds: readonly string[] = item.presentation?.includes?.kinds ?? item.kinds ?? []
+  const kinds: readonly string[] = item.presentation?.includes?.provides ?? item.provides ?? []
   return MARKET_TYPES.filter((type) =>
     type === 'agent'
       ? kinds.includes('bundle') || isBusinessAgent(item)
@@ -121,7 +121,11 @@ function MarketCard({
         {item.compatibility === 'unsupported' ? (
           <Tag tone="bad">{view.t('state.unsupported')}</Tag>
         ) : item.metadata ? (
-          <MetaText>{purposeText(`category.${item.metadata.category}`)}</MetaText>
+          <MetaText>
+            {item.provides
+              ?.map((kind) => purposeText(`provide.${kind === 'skills' ? 'skill' : kind}`))
+              .join(' · ')}
+          </MetaText>
         ) : (
           <span />
         )}
@@ -167,8 +171,7 @@ export function MarketTab({ view, t }: { view: PluginView; t: Text }) {
     (item) =>
       !item.metadata?.exampleOf &&
       (!type || marketTypes(item).includes(type)) &&
-      (!view.kind || item.kinds?.includes(view.kind)) &&
-      (!view.category || (item.metadata?.category ?? 'unclassified') === view.category),
+      (!view.kind || item.provides?.includes(view.kind)),
   )
   const grouped = new Map<string, PackageCatalogDescriptor[]>()
   for (const row of rows) grouped.set(row.id, [...(grouped.get(row.id) ?? []), row])
@@ -217,7 +220,7 @@ export function MarketTab({ view, t }: { view: PluginView; t: Text }) {
         <EmptyState
           className="plugin-empty"
           icon={<Icon name="puzzle" size={48} />}
-          title={view.query || view.kind || view.category || type ? t('market.none') : t('market.empty')}
+          title={view.query || view.kind || type ? t('market.none') : t('market.empty')}
           description={t('market.emptyHelp')}
         />
       ) : (

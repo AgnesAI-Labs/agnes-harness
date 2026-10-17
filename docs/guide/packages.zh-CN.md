@@ -132,7 +132,7 @@ AGH 默认提供四个官方助手插件。每次启动时，profile 从未被�
 包可在 `package.json` 中声明可选的多值字段：
 
 ```json
-{ "agnes": { "kinds": ["tool", "loop", "model-adapter", "mcp", "skills", "ui"] } }
+{ "agnes": { "provides": ["tool", "loop", "model-adapter", "mcp", "skills", "ui"] } }
 ```
 
 只声明包实际提供的类型。管理列表和详情展示类型徽标，类型筛选匹配声明值。未声明字段的旧包仍显示在“全部类型”中。

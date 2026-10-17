@@ -10,6 +10,8 @@ import {
   validatePluginMetadata,
   validateSurfacePackageMetadata,
 } from '@agnes/protocol'
+import { parseApplicationContract } from './application-contract.js'
+import { parsePackageBundleContract, preflightPackageBundles } from './bundle-contract.js'
 import { normalizeClientContribution, resolveClientAssets } from './client-assets.js'
 import { containedEntry } from './entry-path.js'
 import { PackageError } from './errors.js'
@@ -26,7 +28,7 @@ import {
 import {
   isReservedPluginRowIdError,
   parseAgnesPluginEntries,
-  parseAgnesPluginKinds,
+  parseAgnesPluginProvides,
 } from './plugin-manifest.js'
 import { checkCancelled } from './ports.js'
 import { resolveSkins } from './skin-assets.js'
@@ -179,7 +181,8 @@ export function inspectVerifiedTree(
           'plugins',
           'surfaces',
           'clientDescriptors',
-          'kinds',
+          'provides',
+          'application',
           'bundles',
           'hostProvidedExternals',
         ].includes(k),
@@ -200,12 +203,11 @@ export function inspectVerifiedTree(
       Object.keys(bundles).length > 64)
   )
     invalid('bundles')
-  let kinds: ReturnType<typeof parseAgnesPluginKinds>
+  let provides: ReturnType<typeof parseAgnesPluginProvides>
   let declaredCapabilities: ReturnType<typeof mergePluginCapabilities>
   let plugins: ReturnType<typeof parseAgnesPluginEntries>
   try {
-    kinds = parseAgnesPluginKinds(metadata.kinds)
-    if (bundles !== undefined && !kinds?.includes('bundle')) invalid('bundles-kind')
+    provides = parseAgnesPluginProvides(metadata.provides)
     plugins = parseAgnesPluginEntries(String(pkg.name), metadata.plugins)
     declaredCapabilities = mergePluginCapabilities(plugins.map((entry) => entry.capabilities))
   } catch (error) {
@@ -322,7 +324,7 @@ export function inspectVerifiedTree(
       containedEntry(input.dir, c.descriptor.artifact.entry, 'file', 'package.json')
     contributions.push(c)
   }
-  if (displayMetadata?.ok && displayMetadata.value.category === 'example') {
+  if (displayMetadata?.ok && displayMetadata.value.exampleOf !== undefined) {
     const example = displayMetadata.value
     if (
       !example.exampleOf ||
@@ -330,18 +332,6 @@ export function inspectVerifiedTree(
       !fetched.dependencies[example.exampleOf]
     )
       invalid('example-dependency')
-    const presentation = presentPluginRows(plugins, {
-      packageId: String(pkg.name),
-      bundles,
-      ...(kinds ? { kinds } : {}),
-    })
-    for (const launch of example.launches ?? [])
-      if (
-        !presentation.presets?.some(
-          (preset) => preset.bundle === launch.bundle && preset.id === launch.preset,
-        )
-      )
-        invalid('example-launch')
     if (
       example.pageEntry &&
       !contributions.some(
@@ -352,6 +342,41 @@ export function inspectVerifiedTree(
       )
     )
       invalid('example-page')
+  }
+  let preflight = preflightPackageBundles({
+    packageId: String(pkg.name),
+    bundles,
+    dependencies: fetched.dependencies,
+    pages: contributions.flatMap((item) =>
+      'client' in item && item.client?.lifetime === 'profile'
+        ? [...(item.client.examplePages ?? []), ...(item.client.homeEntries ?? []).map((page) => page.id)]
+        : [],
+    ),
+    runtime: plugins,
+  })
+  if (preflight.level === 'refused') invalid(preflight.reasons.join('; '))
+  const agents = Object.fromEntries(
+    Object.values(parsePackageBundleContract(String(pkg.name), bundles))
+      .filter((entry) => entry.document.launch)
+      .map((entry) => [entry.id.split('#')[1], entry.document.launch!]),
+  )
+  let application: import('@agnes/protocol').ApplicationTemplate | undefined
+  try {
+    const parsed = parseApplicationContract(
+      metadata.application,
+      String(pkg.name),
+      parsePackageBundleContract(String(pkg.name), bundles),
+      fetched.dependencies,
+    )
+    application = parsed.application
+    if (parsed.deploymentDependent)
+      preflight = {
+        level: 'deployment-dependent',
+        reasons: [...preflight.reasons, 'application-dependency-definitions-required'],
+        next: 'validate-deployment',
+      }
+  } catch (error) {
+    invalid(error instanceof Error ? error.message : 'application')
   }
   contributions.sort((a, b) => compare(`${a.kind}:${a.id}`, `${b.kind}:${b.id}`))
   if (new Set(contributions.map((c) => `${c.kind}:${c.id}`)).size !== contributions.length)
@@ -409,16 +434,26 @@ export function inspectVerifiedTree(
       ...(fetched.provenance ?? {}),
       ...(fetched.releasedAt ? { releasedAt: fetched.releasedAt } : {}),
     },
+    preflight,
+    ...(application ? { application } : {}),
+    ...(Object.keys(agents).length ? { agents } : {}),
     contributions,
-    presentation: presentPluginRows(plugins, { packageId: String(pkg.name), bundles, kinds, contributions }),
+    presentation: presentPluginRows(plugins, {
+      packageId: String(pkg.name),
+      bundles,
+      provides,
+      contributions,
+    }),
     ...(displayMetadata?.ok ? { metadata: displayMetadata.value } : {}),
     ...(declaredCapabilities === undefined ? {} : { declaredCapabilities }),
-    ...(kinds === undefined ? {} : { kinds }),
+    ...(provides === undefined ? {} : { provides }),
     dependencies,
     capabilityDiff,
     capabilityHash: capabilityHash({
       ...(displayMetadata?.ok ? { metadata: displayMetadata.value } : {}),
       contributions,
+      agents,
+      ...(application ? { application } : {}),
       dependencies: fetched.dependencies,
       ...(declaredCapabilities === undefined ? {} : { declaredCapabilities }),
     }),

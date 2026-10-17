@@ -21,6 +21,9 @@ import { EmptyStateBuiltin } from '../src/regions/empty-state.js'
 const agent = (name: string, metadata?: Record<string, unknown>, scope = '@agnes-fde') =>
   ({
     id: `${scope}/${name}`,
+    ...(scope !== '@agnes-example'
+      ? { agents: { work: { title: { en: name }, description: { en: name }, preset: 'safe' } } }
+      : {}),
     version: '1.0.0',
     ...(metadata ? { metadata: { displayName: name, summary: `${name} summary`, ...metadata } } : {}),
   }) as unknown as PackageCatalogDescriptor
@@ -31,10 +34,10 @@ afterEach(() => {
   document.body.replaceChildren()
 })
 
-it('recognises a business agent by its category, or by the package scope older catalogs use', () => {
-  expect(isBusinessAgent(agent('crm', { category: 'business-agent' }, '@acme'))).toBe(true)
+it('recognises a business agent by its explicit launch declaration', () => {
+  expect(isBusinessAgent(agent('crm', {}, '@acme'))).toBe(true)
   expect(isBusinessAgent(agent('crm'))).toBe(true)
-  expect(isBusinessAgent(agent('dag-loop', { category: 'developer' }, '@agnes-example'))).toBe(false)
+  expect(isBusinessAgent(agent('dag-loop', {}, '@agnes-example'))).toBe(false)
 })
 
 it('reads every catalog page and suggests three different kinds of work first', async () => {

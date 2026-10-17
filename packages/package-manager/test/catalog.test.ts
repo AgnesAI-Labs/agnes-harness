@@ -228,9 +228,9 @@ describe('local example catalog', () => {
     ])
     const fde = result.entries.filter((entry) => entry.id.startsWith('@agnes-fde/'))
     expect(fde).toHaveLength(12)
-    expect(fde.every((entry) => entry.kinds?.includes('bundle'))).toBe(true)
+    expect(fde.every((entry) => entry.provides?.includes('bundle'))).toBe(true)
     // The gallery finds business agents by category and offers each one's own prompt in both languages.
-    expect(result.entries.filter((entry) => entry.metadata?.category === 'business-agent')).toEqual(fde)
+    expect(result.entries.filter((entry) => Object.keys(entry.agents ?? {}).length > 0)).toEqual(fde)
     for (const entry of fde) {
       const prompt = entry.metadata?.samplePrompt
       expect(prompt?.en).toBeTruthy()
@@ -256,12 +256,12 @@ describe('local example catalog', () => {
     // What each one contains is derived: the declared kinds, and a count only where the data has one.
     for (const entry of fde) {
       const includes = entry.presentation?.includes
-      expect(new Set(includes?.kinds)).toEqual(new Set(entry.kinds))
+      expect(new Set(includes?.provides)).toEqual(new Set(entry.provides))
       expect(includes?.counts.bundles).toBe(1)
       expect(includes?.counts.tools).toBeUndefined()
-      expect(includes?.counts.ui === 1).toBe(entry.kinds?.includes('ui'))
+      expect(includes?.counts.ui === 1).toBe(entry.provides?.includes('ui'))
       // One category level: the package's, which its plugin rows repeat rather than contradict.
-      for (const row of entry.presentation?.rows ?? []) expect(row.metadata?.category).toBe('business-agent')
+      for (const row of entry.presentation?.rows ?? []) expect(row.metadata?.displayName).toBeTruthy()
     }
     for (const entry of result.entries) {
       const directory = fileURLToPath(

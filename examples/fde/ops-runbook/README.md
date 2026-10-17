@@ -13,7 +13,7 @@ The diagnostic uses official `shell` with background:true and follows the return
 - `main`: author-kit plugin registering business tools, `fde.ops-runbook` loop and policy, and the packaged Skill.
 - `defineWorkflowLoop` from `@agnes/plugin-runtime`: official checkpoints, confirmation, cancellation and refusal on uncertain recovery; the package contains only business stages and connectors.
 - `fixtures/`: synthetic business input; `skills/playbook/SKILL.md`: customer playbook registered and used in model prompts.
-- The bundle kind is declared in `agnes.kinds`; `agnes.bundles.ops-runbook` selects the loop and supplies its preset.
+- The bundle kind is declared in `agnes.provides`; `agnes.bundles.ops-runbook` selects the loop and supplies its preset.
 
 ## Install and run
 

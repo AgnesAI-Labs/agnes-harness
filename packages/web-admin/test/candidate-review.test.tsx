@@ -104,7 +104,7 @@ it('distinguishes same-name candidate versions, skills and source-turn time in b
     const newPlugin = {
       ...candidate,
       baseHash: null,
-      preview: { ...preview, kinds: ['tool'] as ['tool'], version: '0.1.0' },
+      preview: { ...preview, provides: ['tool'] as ['tool'], version: '0.1.0' },
     }
     const update = {
       ...newPlugin,
@@ -115,7 +115,10 @@ it('distinguishes same-name candidate versions, skills and source-turn time in b
       ...newPlugin,
       preview: null,
       sourceFiles: [
-        { path: 'package.json', content: JSON.stringify({ version: '1.0.0', agnes: { kinds: ['skills'] } }) },
+        {
+          path: 'package.json',
+          content: JSON.stringify({ version: '1.0.0', agnes: { provides: ['skills'] } }),
+        },
       ],
     }
     const html = (value: AuthoringCandidate) =>
@@ -266,7 +269,7 @@ it.each([
       candidateId: 'skill-review',
       packageId: '@example/weekly-report',
       state: 'review' as const,
-      preview: { ...plainPreview, kinds: ['skills'] as ['skills'] },
+      preview: { ...plainPreview, provides: ['skills'] as ['skills'] },
       sourceFiles: [
         ...candidate.sourceFiles,
         { path: 'SKILL.md', content: `---\n${header}\n---\nInert body.\n` },
@@ -276,7 +279,7 @@ it.each([
       ...candidate,
       candidateId: 'plugin-review',
       state: 'review' as const,
-      preview: { ...preview, kinds: ['tool'] as ['tool'] },
+      preview: { ...preview, provides: ['tool'] as ['tool'] },
     }
     let listedSkill: AuthoringCandidate = skill
     let unavailable = false
@@ -344,7 +347,7 @@ it('closes a published review, links to the skill, and keeps terminal history wi
     ...candidate,
     state: 'review' as const,
     reviewHash: 'review-hash',
-    preview: { ...preview, kinds: ['skills'] as ['skills'] },
+    preview: { ...preview, provides: ['skills'] as ['skills'] },
     sourceFiles: [
       ...candidate.sourceFiles,
       { path: 'SKILL.md', content: '---\nname: published-skill\ndescription: Synthetic skill\n---\nBody' },

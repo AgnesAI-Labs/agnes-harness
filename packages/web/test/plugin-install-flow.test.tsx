@@ -32,20 +32,19 @@ const entry: PackageCatalogDescriptor = {
   compatibility: 'supported',
   sourceId: 'official-examples',
   retrievedAt: timestamp,
-  kinds: ['loop'],
+  provides: ['loop'],
   presentation: { origin: 'example', rows: [] },
   metadata: {
     displayName: 'Task graph Loop',
     summary: 'Runs a checked task graph.',
     description: 'Runs independent tools of a checked task graph in parallel.',
-    category: 'developer',
   },
 } as unknown as PackageCatalogDescriptor
 
 const preview: PackagePreview = {
   id: ID,
   version: '1.0.0',
-  kinds: ['loop'],
+  provides: ['loop'],
   source: entry.source,
   integrity,
   license: 'Apache-2.0',

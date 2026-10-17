@@ -28,12 +28,6 @@
     "@agnes/protocol": "0.0.0"
   },
   "agnes": {
-    "kinds": [
-      "bundle",
-      "loop",
-      "tool",
-      "skills"
-    ],
     "plugins": [
       {
         "export": "main",
@@ -48,7 +42,6 @@
           "displayName": "Code review example",
           "summary": "Reviews a synthetic patch for selected risks and prepares an evidence-linked report for a maintainer.",
           "description": "Reviews a synthetic patch for selected risks and prepares an evidence-linked report for a maintainer.",
-          "category": "business-agent",
           "locales": {
             "zh-CN": {
               "displayName": "代码审查示例",
@@ -103,6 +96,16 @@
               }
             }
           }
+        },
+        "launch": {
+          "title": {
+            "en": "Code review example",
+            "zh-CN": "代码审查示例"
+          },
+          "description": {
+            "en": "Reviews a synthetic patch for selected risks and prepares an evidence-linked report for a maintainer."
+          },
+          "preset": "code-review"
         }
       }
     },
@@ -110,7 +113,6 @@
       "displayName": "Code review example",
       "summary": "Reviews a synthetic patch for selected risks and prepares an evidence-linked report for a maintainer.",
       "description": "Reviews a synthetic patch for selected risks and prepares an evidence-linked report for a maintainer.",
-      "category": "business-agent",
       "samplePrompt": {
         "en": "Review the sample patch: run the debug-log and dynamic-eval checks in parallel, then give me one report listing each finding with its file, line and severity.",
         "zh-CN": "审查这份示例补丁：并行检查调试日志和动态 eval 两类风险，再合并成一份报告，逐条给出文件、行号和严重程度。"
@@ -122,7 +124,13 @@
           "description": "检查模拟补丁中的特定风险，为维护者生成附带证据的审查报告。"
         }
       }
-    }
+    },
+    "provides": [
+      "bundle",
+      "loop",
+      "tool",
+      "skills"
+    ]
   },
   "devDependencies": {
     "@agnes/host": "0.0.0",

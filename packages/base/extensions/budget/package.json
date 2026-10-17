@@ -21,7 +21,6 @@
           "displayName": "Usage accounting",
           "summary": "Records model usage and cost estimates to help track a task's spending.",
           "description": "Records model usage and cost estimates to help track a task's spending.",
-          "category": "observability",
           "locales": {
             "zh-CN": {
               "displayName": "用量记录",

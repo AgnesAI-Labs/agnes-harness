@@ -11,7 +11,6 @@ import {
   Menu,
   OrphanPins,
   operationLabel,
-  PLUGIN_CATEGORIES,
   PluginList,
   Popover,
   pluginOrigin,
@@ -223,25 +222,6 @@ export function renderPluginView(this: PluginAdminViewContext): void {
                 trigger="click"
                 content={
                   <>
-                    <Field label={this.purposeText('category')} htmlFor="plugin-category">
-                      <SettingsSelect
-                        id="plugin-category"
-                        data-testid="plugin-category-filter"
-                        value={this.category}
-                        onChange={(event) => {
-                          this.category = event.target.value
-                          this.render()
-                        }}
-                      >
-                        <option value="">{this.purposeText('all')}</option>
-                        {PLUGIN_CATEGORIES.map((category) => (
-                          <option key={category} value={category}>
-                            {this.purposeText(`category.${category}`)}
-                          </option>
-                        ))}
-                        <option value="unclassified">{this.purposeText('unclassified')}</option>
-                      </SettingsSelect>
-                    </Field>
                     <SettingsDetails title={this.t('ux.moreFilters')}>
                       <KindFilter
                         value={this.kind}
@@ -257,10 +237,7 @@ export function renderPluginView(this: PluginAdminViewContext): void {
               >
                 <Button icon={<Icon name="sliders-horizontal" />}>
                   {this.t('ux.filter')}
-                  <Count
-                    value={Number(!!this.category) + Number(!!this.kind)}
-                    label={this.t('ux.activeFilters')}
-                  />
+                  <Count value={Number(!!this.kind)} label={this.t('ux.activeFilters')} />
                 </Button>
               </Popover>
             }
@@ -308,15 +285,12 @@ export function renderPluginView(this: PluginAdminViewContext): void {
             formatFailure={(message, code) => pluginFailureMessage(message, this.t, code)}
             tab={this.tab}
             rows={(this.tab === 'installed' ? this.filteredInstalled() : this.state.catalog).filter(
-              (item) =>
-                (!this.kind || item.kinds?.includes(this.kind)) &&
-                !item.metadata?.exampleOf &&
-                (!this.category || (item.metadata?.category ?? 'unclassified') === this.category),
+              (item) => (!this.kind || item.provides?.includes(this.kind)) && !item.metadata?.exampleOf,
             )}
             loading={loading}
             inventoryAuthoritative={this.state.inventoryAuthoritative}
             query={this.query}
-            filtered={!!this.kind || !!this.category}
+            filtered={!!this.kind}
             nextCursor={this.state.nextCursor}
             surfaceLinksOf={(packageId) => this.surfaceLinks(packageId)}
             highlight={

@@ -16,9 +16,6 @@
     "node": ">=24.10"
   },
   "agnes": {
-    "kinds": [
-      "tool"
-    ],
     "plugins": [
       {
         "export": "documentReader",
@@ -31,7 +28,6 @@
           "displayName": "Attachment reader",
           "summary": "Reads PDF, Word, image text and ZIP attachments offline.",
           "description": "Reads PDF, Word, image text and ZIP attachments offline.",
-          "category": "tools",
           "locales": {
             "zh-CN": {
               "displayName": "附件读取",
@@ -46,7 +42,6 @@
       "displayName": "Attachment reader",
       "summary": "Reads PDF, Word, image text and ZIP attachments offline.",
       "description": "Reads PDF, Word, image text and ZIP attachments offline.",
-      "category": "tools",
       "locales": {
         "zh-CN": {
           "displayName": "附件读取",
@@ -54,7 +49,10 @@
           "description": "离线读取 PDF、Word、图片文字和 ZIP 附件。"
         }
       }
-    }
+    },
+    "provides": [
+      "tool"
+    ]
   },
   "devDependencies": {
     "@hyzyla/pdfium": "2.1.13",

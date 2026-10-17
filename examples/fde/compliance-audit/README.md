@@ -14,7 +14,7 @@ CTRL-1 cites access-review.md line 3 as evidenced. CTRL-2 is a medium gap becaus
 - Tools: fixture connectors and transformations registered by `main` through the public author kit.
 - Policy: `fde.compliance-audit`, denying writes even in full-access sessions.
 - Skills: packaged `skills/playbook/SKILL.md`, registered and included in model requests.
-- Bundle: `agnes.kinds` declares `bundle`; `agnes.bundles.compliance-audit` composes the loop, Skill and preset.
+- Bundle: `agnes.provides` declares `bundle`; `agnes.bundles.compliance-audit` composes the loop, Skill and preset.
 
 ## Install and run
 

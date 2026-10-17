@@ -21,7 +21,6 @@
           "displayName": "Local artifacts",
           "summary": "Stores tool outputs and attachments locally so they can be retrieved later.",
           "description": "Stores tool outputs and attachments locally so they can be retrieved later.",
-          "category": "developer",
           "locales": {
             "zh-CN": {
               "displayName": "本地附件存储",

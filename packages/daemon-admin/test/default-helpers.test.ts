@@ -659,7 +659,6 @@ it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
             displayName: 'Report example',
             summary: 'Synthetic report',
             description: 'Synthetic report',
-            category: 'example',
             exampleOf: helper.id,
             pageEntry: 'reports',
           },

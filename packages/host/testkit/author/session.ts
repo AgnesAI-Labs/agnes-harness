@@ -163,6 +163,8 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
         treeIntegrity: integrity,
         capabilityHash: inspected?.snapshot.capabilityHash ?? createHash('sha256').update(id).digest('hex'),
         contributions: inspected?.snapshot.contributions ?? [],
+        ...(inspected?.snapshot.agents ? { agents: inspected.snapshot.agents } : {}),
+        ...(inspected?.snapshot.application ? { application: inspected.snapshot.application } : {}),
         ...(inspected?.snapshot.dependencies === undefined
           ? {}
           : { dependencies: inspected.snapshot.dependencies }),

@@ -89,7 +89,7 @@ it('mounts an installed UI package panel and reports a subsequent loader failure
   const item = {
     id: '@acme/panel',
     version: '1.0.0',
-    kinds: ['ui'],
+    provides: ['ui'],
     desired: 'enabled',
     actual: 'running',
   } as PackageInstalledDescriptor

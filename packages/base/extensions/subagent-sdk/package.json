@@ -21,7 +21,6 @@
           "displayName": "Built-in child agents",
           "summary": "Runs delegated tasks in child sessions through AGH's built-in agent engine.",
           "description": "Runs delegated tasks in child sessions through AGH's built-in agent engine.",
-          "category": "collaboration",
           "locales": {
             "zh-CN": {
               "displayName": "内置子 Agent",

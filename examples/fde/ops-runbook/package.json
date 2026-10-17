@@ -28,12 +28,6 @@
     "@agnes/protocol": "0.0.0"
   },
   "agnes": {
-    "kinds": [
-      "bundle",
-      "loop",
-      "tool",
-      "skills"
-    ],
     "plugins": [
       {
         "export": "main",
@@ -48,7 +42,6 @@
           "displayName": "Operations runbook example",
           "summary": "Reviews sample incidents, runs bounded diagnostics and requests approval before a simulated remediation.",
           "description": "Reviews sample incidents, runs bounded diagnostics and requests approval before a simulated remediation.",
-          "category": "business-agent",
           "locales": {
             "zh-CN": {
               "displayName": "运维手册示例",
@@ -109,6 +102,16 @@
               }
             }
           }
+        },
+        "launch": {
+          "title": {
+            "en": "Operations runbook example",
+            "zh-CN": "运维手册示例"
+          },
+          "description": {
+            "en": "Reviews sample incidents, runs bounded diagnostics and requests approval before a simulated remediation."
+          },
+          "preset": "ops-runbook"
         }
       }
     },
@@ -116,7 +119,6 @@
       "displayName": "Operations runbook example",
       "summary": "Reviews sample incidents, runs bounded diagnostics and requests approval before a simulated remediation.",
       "description": "Reviews sample incidents, runs bounded diagnostics and requests approval before a simulated remediation.",
-      "category": "business-agent",
       "samplePrompt": {
         "en": "Follow the sample runbook: run the diagnostic in the background, show me its output, and ask me before the restart step. Then verify the restart receipt.",
         "zh-CN": "按示例运维手册执行：在后台运行诊断并给我看输出，重启这一步先问我，之后核对重启回执。"
@@ -128,7 +130,13 @@
           "description": "检查样例事件、执行受限诊断，并在模拟修复前请求批准。"
         }
       }
-    }
+    },
+    "provides": [
+      "bundle",
+      "loop",
+      "tool",
+      "skills"
+    ]
   },
   "devDependencies": {
     "@agnes/host": "0.0.0",

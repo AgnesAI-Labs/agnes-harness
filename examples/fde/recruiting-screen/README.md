@@ -14,7 +14,7 @@ The rubric weights API integration (4), incident analysis (3) and technical writ
 - Tools: fixture connectors and transformations registered by `main` through the public author kit.
 - Policy: `fde.recruiting-screen`, requiring human approval for every decision/send action.
 - Skills: packaged `skills/playbook/SKILL.md`, registered and included in model requests.
-- Bundle: `agnes.kinds` declares `bundle`; `agnes.bundles.recruiting-screen` composes the loop, Skill and preset.
+- Bundle: `agnes.provides` declares `bundle`; `agnes.bundles.recruiting-screen` composes the loop, Skill and preset.
 
 ## Install and run
 

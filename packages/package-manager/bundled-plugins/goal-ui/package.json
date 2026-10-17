@@ -12,9 +12,6 @@
     "NOTICE"
   ],
   "agnes": {
-    "kinds": [
-      "ui"
-    ],
     "plugins": [
       {
         "id": "ext:goal-ui/main",
@@ -27,7 +24,6 @@
         "metadata": {
           "displayName": "Goal presentation",
           "summary": "Durable goal cards, controls and workbench panel.",
-          "category": "ui",
           "description": "Durable goal cards, controls and workbench panel."
         }
       }
@@ -41,9 +37,11 @@
     "metadata": {
       "displayName": "Goal presentation",
       "summary": "Durable goal cards, controls and workbench panel.",
-      "category": "ui",
       "description": "Durable goal cards, controls and workbench panel."
-    }
+    },
+    "provides": [
+      "ui"
+    ]
   },
   "peerDependencies": {
     "@agnes/web-client": "0.0.0",

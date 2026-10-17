@@ -39,6 +39,8 @@ export function readDevelopmentPlugin(directory: string, profile: string): Runti
       version: preview.version,
       capabilityHash: preview.capabilityHash,
       contributions: preview.contributions,
+      ...(preview.agents ? { agents: preview.agents } : {}),
+      ...(preview.application ? { application: preview.application } : {}),
       dependencies: preview.dependencies,
       ...(preview.declaredCapabilities === undefined
         ? {}

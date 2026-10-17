@@ -14,7 +14,6 @@
           "displayName": "Appearance presets",
           "summary": "Provides four sample appearance presets, each with light and dark variants.",
           "description": "Provides four sample appearance presets, each with light and dark variants.",
-          "category": "ui",
           "locales": {
             "zh-CN": {
               "displayName": "外观预设",
@@ -35,7 +34,6 @@
       "displayName": "Appearance presets",
       "summary": "Provides four sample appearance presets, each with light and dark variants.",
       "description": "Provides four sample appearance presets, each with light and dark variants.",
-      "category": "ui",
       "locales": {
         "zh-CN": {
           "displayName": "外观预设",
@@ -43,7 +41,10 @@
           "description": "提供四套样例外观预设，每套均包含浅色和深色变体。"
         }
       }
-    }
+    },
+    "provides": [
+      "ui"
+    ]
   },
   "exports": "./index.mjs"
 }

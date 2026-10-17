@@ -205,7 +205,7 @@ it('blocks one package with removed package-level agnes.capabilities without abo
   for (const [id, agnes] of [
     [
       'acme/stale-skill',
-      { kinds: ['skills'], capabilities: {}, plugins: [{ export: 'main', apiRange: '^4.0.0' }] },
+      { provides: ['skills'], capabilities: {}, plugins: [{ export: 'main', apiRange: '^4.0.0' }] },
     ],
     ['acme/good', { plugins: [{ export: 'main', apiRange: '^4.0.0' }] }],
   ] as const) {

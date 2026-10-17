@@ -11,11 +11,13 @@ import { ExtensionError } from './errors.js'
 import { THEME_TOKENS } from './generated/theme-tokens.js'
 
 export type {
+  ApplicationTemplate,
+  BundleLaunch,
   Capabilities as ExtensionCapabilities,
   ExtensionManifest,
-  PluginCategory,
   PluginMetadata,
   PluginMetadataLocale,
+  PluginProvide,
 } from '@agnes/protocol'
 export type { ThemeTokenName } from './generated/theme-tokens.js'
 export { THEME_TOKEN_NAMES } from './generated/theme-tokens.js'

@@ -15,7 +15,6 @@
           "displayName": "Composer controls example",
           "summary": "Demonstrates extra controls beside the chat input and their removal when disabled.",
           "description": "Demonstrates extra controls beside the chat input and their removal when disabled.",
-          "category": "ui",
           "locales": {
             "zh-CN": {
               "displayName": "输入区控件示例",
@@ -36,7 +35,6 @@
       "displayName": "Composer controls example",
       "summary": "Demonstrates extra controls beside the chat input and their removal when disabled.",
       "description": "Demonstrates extra controls beside the chat input and their removal when disabled.",
-      "category": "ui",
       "locales": {
         "zh-CN": {
           "displayName": "输入区控件示例",
@@ -44,7 +42,10 @@
           "description": "演示聊天输入框旁的附加控件及其停用后的清理。"
         }
       }
-    }
+    },
+    "provides": [
+      "ui"
+    ]
   },
   "exports": "./index.mjs"
 }

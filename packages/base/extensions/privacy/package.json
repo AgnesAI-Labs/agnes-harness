@@ -28,7 +28,6 @@
           "displayName": "Telemetry consent",
           "summary": "Controls supported trajectory exports using session consent and sensitive-text redaction.",
           "description": "Controls supported trajectory exports using session consent and sensitive-text redaction.",
-          "category": "safety-approval",
           "locales": {
             "zh-CN": {
               "displayName": "遥测授权",

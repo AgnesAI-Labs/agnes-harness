@@ -1,4 +1,9 @@
-import { type PackageProvenance, type PluginCapabilities, pluginFailureHelp } from '@agnes/protocol'
+import {
+  type PackagePreview,
+  type PackageProvenance,
+  type PluginCapabilities,
+  pluginFailureHelp,
+} from '@agnes/protocol'
 import { useUiText } from '@agnes/web-ui'
 import { PLUGIN_ADMIN_LOCALE_NAMESPACE, pluginAdminLocaleCatalog } from './locales/admin.js'
 
@@ -21,7 +26,15 @@ export function capabilityRequests(value: PluginCapabilities | undefined, t: Tex
     : []
 }
 
-export function CapabilityReview({ value, t }: { value: PluginCapabilities | undefined; t: Text }) {
+export function CapabilityReview({
+  value,
+  preflight,
+  t,
+}: {
+  value: PluginCapabilities | undefined
+  preflight?: PackagePreview['preflight']
+  t: Text
+}) {
   useUiText(PLUGIN_ADMIN_LOCALE_NAMESPACE, pluginAdminLocaleCatalog)
   const requests = capabilityRequests(value, t)
   return (
@@ -37,6 +50,11 @@ export function CapabilityReview({ value, t }: { value: PluginCapabilities | und
         <p>{t(value === undefined ? 'capability.undeclared' : 'capability.none')}</p>
       )}
       <p>{t('capability.community')}</p>
+      {preflight && (
+        <p data-testid="package-preflight">
+          {t(`preflight.${preflight.level}`)} · {t(`preflight.next.${preflight.next}`)}
+        </p>
+      )}
     </section>
   )
 }

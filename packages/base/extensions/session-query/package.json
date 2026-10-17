@@ -38,7 +38,6 @@
           "displayName": "Session history search",
           "summary": "Lets the agent search readable session history and inspect the events behind a result.",
           "description": "Lets the agent search readable session history and inspect the events behind a result.",
-          "category": "memory-context",
           "locales": {
             "zh-CN": {
               "displayName": "会话历史检索",
@@ -48,6 +47,9 @@
           }
         }
       }
+    ],
+    "provides": [
+      "tool"
     ]
   }
 }

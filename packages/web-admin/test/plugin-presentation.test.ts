@@ -19,7 +19,6 @@ const item: PackageInstalledDescriptor = {
     displayName: 'Research desk',
     summary: 'Find answers in project documents.',
     description: 'Search project documents.',
-    category: 'tools',
     locales: { 'zh-CN': { displayName: '资料研究', summary: '在项目资料中查找答案。' } },
   },
   contributions: [

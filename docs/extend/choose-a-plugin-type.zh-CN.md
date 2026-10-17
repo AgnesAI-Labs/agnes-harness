@@ -4,7 +4,7 @@
 
 [插件作者工具包](README.zh-CN.md) · [五分钟入门](quickstart.zh-CN.md) · [插件用途元数据](plugin-metadata.zh-CN.md)
 
-一个插件就是一个包。包是用户安装、升级、信任和卸载的唯一单位。包里有什么，就是它的类型，在 `package.json` 的 `agnes.kinds` 里声明；一个包可以声明多个。先想清楚你要交付什么，再选能承载它的最小类型。
+一个插件就是一个包。包是用户安装、升级、信任和卸载的唯一单位。包里有什么，就是它的类型，在 `package.json` 的 `agnes.provides` 里声明；一个包可以声明多个。先想清楚你要交付什么，再选能承载它的最小类型。
 
 | 你是 | 声明 | 你要写的 | 用户在哪里看到 |
 | --- | --- | --- | --- |
@@ -26,15 +26,15 @@
 
 **Loop、模型适配器和服务商。** 这几类是替换运行时的一部分，不是往上加东西。Loop 负责一轮对话的调度和状态（[业务工作流](workflow-loops.zh-CN.md)、[循环事件](loop-events.zh-CN.md)）。模型适配器翻译一种线上协议（[model-adapter 模板](../../templates/model-adapter/)）。其他服务商各占一个槽位：[压缩](compaction-engines.zh-CN.md)、[持久化](persistence.zh-CN.md)、[记忆](memory.zh-CN.md)、[子 Agent](child-agents.zh-CN.md)，以及沙箱、工具运行时和工具策略。安装后，它们在运行配置里与内置实现并列，成为一个选项；安装本身不会切换正在运行的会话。
 
-**Bundle。** Bundle 把 Loop、工具、技能和预设组合起来，用户一步就能启动一个可用的 Agent。声明 `bundle`，同时声明包里带的其他类型，并把包的分类设为 `business-agent`，它才会列在首页；见 [Bundle 与 Profile](bundles-and-profiles.zh-CN.md) 和 [FDE 示例](../../examples/fde/README.zh-CN.md)。加上 `samplePrompt`，启动对话框就能给出第一条消息。
+**Bundle。** Bundle 是可复用配置；声明自身完整的 `launch` 块并显式选择 preset，才成为智能体。仅提供 Loop 的插件不必声明 Bundle。参见[Bundle 与 Profile](bundles-and-profiles.zh-CN.md)和[插件元数据](plugin-metadata.zh-CN.md)。
 
 **界面。** 浏览器代码有自己的生命周期，从不在 Agent 进程里运行。通过客户端描述文件声明面板和皮肤，见[工作台面板](workbench-panels.zh-CN.md)和[配置界面](configuration-ui.zh-CN.md)。
 
 **企业方案。** 没有「企业」这个类型。为你的规则需要的 [seam](seams.zh-CN.md) 注册服务商，再通过[首页入口注册表](../develop/ui-extension-registries.zh-CN.md)注册一个页面。负责安全的 seam 服务商在会话存续期间固定不变，所以规则不会在任务运行中途改变。报表方案可以组合审核规则与自己的报表页面。
 
-## 一个分类，多个类型
+## 一组声明能力
 
-`agnes.kinds` 说明包里有什么，市场的类型筛选和每行的「包含」标签都由它推导。`agnes.metadata.category` 是整个包的一个编辑性标签，显示为小字，也可以用来筛选。界面只读包级的分类。`agnes.plugins[]` 下的每一行仍然带一份完整的元数据，所以每一行都填包的分类，不要填别的值。
+`agnes.provides` 说明包里有什么，市场的类型筛选和每行的「包含」标签都由它推导。
 
 市场的类型筛选由 kinds 推导：
 

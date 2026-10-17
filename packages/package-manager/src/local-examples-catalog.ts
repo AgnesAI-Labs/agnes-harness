@@ -116,9 +116,11 @@ function descriptor(
     integrity,
     license: preview.license,
     contributions: preview.contributions,
+    ...(preview.agents ? { agents: preview.agents } : {}),
+    ...(preview.application ? { application: preview.application } : {}),
     ...(preview.presentation ? { presentation: preview.presentation } : {}),
     ...(preview.metadata ? { metadata: preview.metadata } : {}),
-    ...(preview.kinds === undefined ? {} : { kinds: preview.kinds }),
+    ...(preview.provides === undefined ? {} : { provides: preview.provides }),
     compatibility: 'supported' as const,
   }
   const projected = { ...value, sourceId: SOURCE_ID, retrievedAt: new Date(0).toISOString() }
@@ -182,19 +184,7 @@ export async function bundledExamplesEntries(signal?: AbortSignal) {
         ...(signal ? { signal } : {}),
       })
       const entry = descriptor(realpathSync(staging), example.name, signal, example.ref)
-      if (example.family !== 'loops') entries.push(entry)
-      else {
-        // The loop examples predate agnes.kinds; their family is the declaration.
-        const includes = entry.presentation?.includes
-        const kinds = ['loop' as const, ...(includes?.kinds ?? []).filter((kind) => kind !== 'loop')]
-        entries.push({
-          ...entry,
-          kinds: ['loop'],
-          ...(entry.presentation
-            ? { presentation: { ...entry.presentation, includes: { kinds, counts: includes?.counts ?? {} } } }
-            : {}),
-        })
-      }
+      entries.push(entry)
     }
     return entries
   } finally {

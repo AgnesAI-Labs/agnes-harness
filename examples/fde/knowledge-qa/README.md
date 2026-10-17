@@ -14,7 +14,7 @@ The input is the actual query. The refund fixture cites refunds.md paragraph 2 a
 - Tools: fixture connectors and transformations registered by `main` through the public author kit.
 - Policy: `fde.knowledge-qa`, denying writes even in full-access sessions.
 - Skills: packaged `skills/playbook/SKILL.md`, registered and included in model requests.
-- Bundle: `agnes.kinds` declares `bundle`; `agnes.bundles.knowledge-qa` composes the loop, Skill and preset.
+- Bundle: `agnes.provides` declares `bundle`; `agnes.bundles.knowledge-qa` composes the loop, Skill and preset.
 
 ## Install and run
 

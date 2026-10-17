@@ -16,7 +16,7 @@ Web 设置 → 组合包与预设中的会话信息列出实际工具组及启�
 
 ## 格式与选择
 
-在 `package.json` 声明 `agnes.kinds: ["bundle"]` 和 `agnes.bundles`。标识为 `<package-id>#<bundle-name>`，名称以小写字母开头，可包含小写字母、数字和连字符。每个文档接受 `extends`、`profile` 和 `presets`。参见 [research 示例](../../examples/bundles/research/README.md)；英文格式示例可通过页首语言切换查看。
+在 `package.json` 声明 `agnes.provides: ["bundle"]` 和 `agnes.bundles`。标识为 `<package-id>#<bundle-name>`，名称以小写字母开头，可包含小写字母、数字和连字符。每个文档接受 `extends`、`profile` 和 `presets`。参见 [research 示例](../../examples/bundles/research/README.md)；英文格式示例可通过页首语言切换查看。
 
 在用户 profile 中选择：
 

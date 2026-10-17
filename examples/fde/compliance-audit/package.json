@@ -28,12 +28,6 @@
     "@agnes/protocol": "0.0.0"
   },
   "agnes": {
-    "kinds": [
-      "bundle",
-      "loop",
-      "tool",
-      "skills"
-    ],
     "plugins": [
       {
         "export": "main",
@@ -48,7 +42,6 @@
           "displayName": "Compliance evidence example",
           "summary": "Checks local sample evidence against a checklist and reports gaps for human follow-up.",
           "description": "Checks local sample evidence against a checklist and reports gaps for human follow-up.",
-          "category": "business-agent",
           "locales": {
             "zh-CN": {
               "displayName": "合规证据示例",
@@ -103,6 +96,16 @@
               }
             }
           }
+        },
+        "launch": {
+          "title": {
+            "en": "Compliance evidence example",
+            "zh-CN": "合规证据示例"
+          },
+          "description": {
+            "en": "Checks local sample evidence against a checklist and reports gaps for human follow-up."
+          },
+          "preset": "compliance-audit"
         }
       }
     },
@@ -110,7 +113,6 @@
       "displayName": "Compliance evidence example",
       "summary": "Checks local sample evidence against a checklist and reports gaps for human follow-up.",
       "description": "Checks local sample evidence against a checklist and reports gaps for human follow-up.",
-      "category": "business-agent",
       "samplePrompt": {
         "en": "Audit the sample control checklist against the local evidence files. For each control, tell me whether it is evidenced, a gap or missing, with severity and the source quote.",
         "zh-CN": "对照本地证据文件审计示例控制清单。逐项说明是已有证据、存在缺口还是缺失，并给出严重程度和原文引用。"
@@ -122,7 +124,13 @@
           "description": "按清单检查本地样例证据，列出需要人工跟进的缺项。"
         }
       }
-    }
+    },
+    "provides": [
+      "bundle",
+      "loop",
+      "tool",
+      "skills"
+    ]
   },
   "devDependencies": {
     "@agnes/host": "0.0.0",

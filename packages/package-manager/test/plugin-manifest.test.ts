@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { parseAgnesPluginEntries, parseAgnesPluginKinds } from '../src/plugin-manifest.js'
+import { parseApplicationContract } from '../src/application-contract.js'
+import { parsePackageBundleContract, preflightPackageBundles } from '../src/bundle-contract.js'
+import { parseAgnesPluginEntries, parseAgnesPluginProvides } from '../src/plugin-manifest.js'
 
 const purpose = {
   displayName: 'File search',
   summary: 'Find project text.',
   description: 'Find text in readable project files.',
-  category: 'tools' as const,
   locales: { 'zh-CN': { displayName: '文件搜索', summary: '检索项目文本。' } },
 }
 
@@ -195,8 +196,8 @@ describe('package.json agnes.plugins', () => {
 })
 
 it('accepts multiple declared package kinds, preserves absence and rejects unsupported or duplicate kinds', () => {
-  expect(parseAgnesPluginKinds(undefined)).toBeUndefined()
-  expect(parseAgnesPluginKinds(['tool', 'loop', 'model-adapter', 'mcp', 'skills', 'ui'])).toEqual([
+  expect(parseAgnesPluginProvides(undefined)).toBeUndefined()
+  expect(parseAgnesPluginProvides(['tool', 'loop', 'model-adapter', 'mcp', 'skills', 'ui'])).toEqual([
     'tool',
     'loop',
     'model-adapter',
@@ -204,7 +205,65 @@ it('accepts multiple declared package kinds, preserves absence and rejects unsup
     'skills',
     'ui',
   ])
-  expect(Object.isFrozen(parseAgnesPluginKinds(['tool', 'ui']))).toBe(true)
+  expect(Object.isFrozen(parseAgnesPluginProvides(['tool', 'ui']))).toBe(true)
   for (const input of [null, 'tool', ['tool', 'tool'], ['unknown'], [1]])
-    expect(() => parseAgnesPluginKinds(input)).toThrow('agnes.kinds')
+    expect(() => parseAgnesPluginProvides(input)).toThrow('agnes.provides')
+})
+
+it('validates explicit launch blocks without inheriting them and reports static preflight stages', () => {
+  const launch = { title: { en: 'Work' }, description: { en: 'Work safely' }, preset: 'safe' }
+  const bundles = {
+    base: { presets: { safe: { name: 'safe' } }, launch },
+    child: { extends: ['acme/kit#base'] },
+  }
+  const input = { packageId: 'acme/kit', bundles }
+  expect(
+    parsePackageBundleContract(input.packageId, bundles)['acme/kit#child']?.document.launch,
+  ).toBeUndefined()
+  expect(preflightPackageBundles({ ...input, stage: 'structural' }).level).toBe('structural')
+  expect(preflightPackageBundles(input).level).toBe('static-references')
+  expect(preflightPackageBundles({ ...input, runtime: [{ runtime: 'in-process' }] }).level).toBe(
+    'deployment-dependent',
+  )
+  for (const invalid of [
+    { base: { launch: { ...launch, preset: 'missing' } } },
+    { base: { launch: { ...launch, preset: undefined } } },
+    { base: { extends: ['base'] } },
+    { base: { extends: ['acme/kit#missing'] } },
+    { base: { extends: ['acme/kit#base'] } },
+    { base: { presets: { safe: { name: 'safe', invented: true } } } },
+    { base: { launch: { ...launch, prompt: { text: { en: 'secret://credential' }, mode: 'draft' } } } },
+  ])
+    expect(preflightPackageBundles({ ...input, bundles: invalid }).level).toBe('refused')
+  expect(preflightPackageBundles({ ...input, runtime: [{ runtime: 'isolated' }] }).level).toBe('refused')
+  expect(
+    preflightPackageBundles({
+      ...input,
+      bundles: { dependent: { extends: ['other/pkg#base'] } },
+      dependencies: { 'other/pkg': '^1' },
+    }).level,
+  ).toBe('deployment-dependent')
+})
+
+it('keeps application schema minimal and validates explicit agent references', () => {
+  const bundles = parsePackageBundleContract('acme/kit', {
+    work: {
+      launch: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' },
+      presets: { safe: { name: 'safe' } },
+    },
+  })
+  const app = { id: 'acme', defaultAgent: 'acme/kit#work', agents: ['acme/kit#work'] }
+  expect(parseApplicationContract(app, 'acme/kit', bundles, {}).application).toEqual(app)
+  for (const value of [
+    { ...app, brand: {} },
+    { ...app, presentation: {} },
+    { ...app, defaultAgent: 'acme/kit#missing' },
+    { ...app, agents: [] },
+  ])
+    expect(() => parseApplicationContract(value, 'acme/kit', bundles, {})).toThrow()
+  expect(
+    parseApplicationContract({ id: 'acme', agents: ['other/pkg#work'] }, 'acme/kit', bundles, {
+      'other/pkg': '^1',
+    }).deploymentDependent,
+  ).toBe(true)
 })

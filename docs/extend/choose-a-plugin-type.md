@@ -4,7 +4,7 @@ English | [简体中文](choose-a-plugin-type.zh-CN.md)
 
 [Plugin author kit](README.md) · [Five-minute quickstart](quickstart.md) · [Plugin purpose metadata](plugin-metadata.md)
 
-A plugin is one package. It is the only unit a person installs, upgrades, trusts and removes. What the package contains is its type, declared in `package.json` as `agnes.kinds`; one package may declare several. Start from what you want to deliver and pick the smallest type that owns it.
+A plugin is one package. It is the only unit a person installs, upgrades, trusts and removes. What the package contains is its type, declared in `package.json` as `agnes.provides`; one package may declare several. Start from what you want to deliver and pick the smallest type that owns it.
 
 | You are | Declare | You write | Where people meet it |
 | --- | --- | --- | --- |
@@ -26,15 +26,15 @@ A plugin is one package. It is the only unit a person installs, upgrades, trusts
 
 **Loop, model adapter and providers.** These replace part of the runtime rather than add to it. A loop owns scheduling and state for a turn ([Business workflows](workflow-loops.md), [Loop events](loop-events.md)). A model adapter translates one wire protocol ([model-adapter template](../../templates/model-adapter/)). Other providers fill one slot each: [compaction](compaction-engines.md), [persistence](persistence.md), [memory](memory.md), [child agents](child-agents.md), the sandbox, the tool runtime and the tool policy. After installation each one is a choice in Run configuration, next to the built-in implementation; installing it does not switch a running session.
 
-**Bundle.** A bundle names a loop, tools, skills and a preset so that a person starts a working agent in one step. Declare `bundle` together with the kinds the package carries, and set the package category to `business-agent` so it is listed on the home page; see [Bundles and profiles](bundles-and-profiles.md) and the [FDE examples](../../examples/fde/README.md). Add `samplePrompt` so the start dialog can offer a first message.
+**Bundle.** A Bundle is a reusable configuration. Add its own complete `launch` block with an explicit preset to offer an agent; a Loop-only plugin needs no Bundle. See [Bundles and profiles](bundles-and-profiles.md) and [plugin metadata](plugin-metadata.md).
 
 **UI.** Browser code has its own lifecycle and never runs in the agent process. Declare panels and skins through a client descriptor; see [Workbench panels](workbench-panels.md) and [Configuration UI](configuration-ui.md).
 
 **Enterprise solutions.** There is no “enterprise” type. Register providers for the [seams](seams.md) your rules need, and register a page through the [home entry registry](../develop/ui-extension-registries.md). Seam providers that enforce security are pinned for the life of a session, so a rule cannot change under a running task. A reporting solution can combine review rules with its own report page.
 
-## One category, many kinds
+## One declared capability set
 
-`agnes.kinds` says what a package contains and drives the marketplace type filter and the “Includes” labels on each row. `agnes.metadata.category` is a single editorial label for the whole package, shown as small text and offered as a filter. Clients read the category from the package only. Rows under `agnes.plugins[]` still carry a complete metadata object, so give every row the package's category rather than a different one.
+`agnes.provides` says what a package contains and drives the marketplace type filter and the “Includes” labels on each row.
 
 The marketplace derives its type filter from the kinds:
 

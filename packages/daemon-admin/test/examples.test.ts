@@ -50,13 +50,18 @@ function fixture(parentVersion = '1.0.0') {
     compatibility: 'supported',
     license: 'Apache-2.0',
     contributions: [],
+    agents: {
+      work: {
+        title: { en: launch.title },
+        description: { en: 'Work' },
+        preset: launch.preset,
+      },
+    },
     metadata: {
       displayName: 'Demo',
       summary: 'Demo',
       description: 'Demo',
-      category: 'example',
       exampleOf: 'acme/parent',
-      launches: [launch],
     },
   } as unknown as PackageCatalogDescriptor
   const preview = {
@@ -126,7 +131,7 @@ it.each(['1.0.0', '0.1.0-alpha.0'])(
     expect(await f.call(request)).toEqual({ sessionId: 'session-1' })
     expect(await f.call(request)).toEqual({ sessionId: 'session-1' })
     expect(f.sessions.size).toBe(1)
-    expect(f.inputs.size).toBe(1)
+    expect(f.inputs.size).toBe(0)
     // A crash after admission but before receipt persistence can repeat both steps safely.
     const state = JSON.parse(readFileSync(join(f.directory, 'operations.json'), 'utf8'))
     for (const operation of Object.values(state.operations) as { state: string; sessionId?: string }[])
@@ -134,7 +139,7 @@ it.each(['1.0.0', '0.1.0-alpha.0'])(
     writeFileSync(join(f.directory, 'operations.json'), JSON.stringify(state))
     expect(await f.call(request)).toEqual({ sessionId: 'session-1' })
     expect(f.sessions.size).toBe(1)
-    expect(f.inputs.size).toBe(1)
+    expect(f.inputs.size).toBe(0)
     await expect(f.call({ ...request, launchTicket: 'different-ticket' })).rejects.toThrow('STALE')
     await f.call({ action: 'stop', exampleId: f.entry.id, operationId: 'stop-1' })
     expect(await f.call({ action: 'list' })).toMatchObject([
@@ -201,4 +206,16 @@ it('retains an unknown dispatch result and does not replay it', async () => {
     state: 'failed',
     code: 'E_PACKAGE_STATE',
   })
+})
+
+it('refuses draft launches through the legacy automatic-submit facade', async () => {
+  const f = fixture()
+  const review = (await f.call({ action: 'inspect', exampleId: f.entry.id })) as { reviewId: string }
+  await f.call({ action: 'enable', reviewId: review.reviewId, operationId: 'enable-draft' })
+  Object.assign(f.entry.agents.work, { prompt: { text: { en: 'Keep editable' }, mode: 'draft' } })
+  await expect(f.call({ action: 'prepare', exampleId: f.entry.id, launchId: 'work' })).rejects.toThrow(
+    'E_PACKAGE_BLOCKED',
+  )
+  expect(f.sessions.size).toBe(0)
+  expect(f.inputs.size).toBe(0)
 })

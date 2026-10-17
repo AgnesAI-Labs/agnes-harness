@@ -1,18 +1,5 @@
 import type { PackageCatalogDescriptor, PackageInstalledDescriptor } from '@agnes/protocol'
 
-export const PLUGIN_CATEGORIES = [
-  'agent-loop',
-  'tools',
-  'safety-approval',
-  'memory-context',
-  'collaboration',
-  'integrations',
-  'observability',
-  'ui',
-  'developer',
-  'business-agent',
-  'example',
-] as const
 export type PluginSurface =
   | 'chat'
   | 'workbench'

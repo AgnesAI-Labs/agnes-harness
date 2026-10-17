@@ -21,7 +21,6 @@
           "displayName": "File checkpoints",
           "summary": "Saves file checkpoints so supported workspace changes can be inspected and rewound.",
           "description": "Saves file checkpoints so supported workspace changes can be inspected and rewound.",
-          "category": "safety-approval",
           "locales": {
             "zh-CN": {
               "displayName": "文件检查点",

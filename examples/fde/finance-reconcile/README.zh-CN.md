@@ -14,7 +14,7 @@ TX-1 匹配；TX-2 相差 5000 分；银行独有 TX-3 为 7525 分；账簿独�
 - Tools：夹具连接器和转换，由 `main` 通过公开作者工具包注册。
 - Policy：`fde.finance-reconcile`，每次决定或发送动作均要求人工审批。
 - Skills：随包 `skills/playbook/SKILL.md` 注册并加入模型请求。
-- Bundle：`agnes.kinds` 声明 `bundle`，`agnes.bundles.finance-reconcile` 组合 loop、Skill 和预设。
+- Bundle：`agnes.provides` 声明 `bundle`，`agnes.bundles.finance-reconcile` 组合 loop、Skill 和预设。
 
 ## 安装与运行
 

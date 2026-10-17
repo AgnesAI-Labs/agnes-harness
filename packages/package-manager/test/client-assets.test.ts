@@ -450,35 +450,14 @@ describe('client capability hash integration', () => {
     expect(preview.capabilityHash).toBe(baseline)
     expect(capabilityHash({ contributions: preview.contributions, dependencies: {} })).toBe(baseline)
   })
-  it('binds example launch content to the reviewed capability digest', () => {
-    const metadata = {
-      displayName: 'Example',
-      summary: 'Example',
-      description: 'Example',
-      category: 'example' as const,
-      exampleOf: 'acme/host',
-      launches: [
-        {
-          id: 'work',
-          kind: 'business-agent' as const,
-          title: 'Work',
-          bundle: 'acme/demo#work',
-          preset: 'safe',
-          prompt: 'Read sample data.',
-        },
-      ],
-    }
-    const base = { contributions: [], dependencies: { 'acme/host': '*' }, metadata }
+  it('binds launch content independently of example metadata to the reviewed capability digest', () => {
+    const launch = { title: { en: 'Work' }, description: { en: 'Read sample data' }, preset: 'safe' }
+    const base = { contributions: [], dependencies: {}, agents: { work: launch } }
     const first = capabilityHash(base)
-    const launch = metadata.launches[0]
-    if (!launch) throw new Error('missing launch fixture')
-    expect(
-      capabilityHash({
-        ...base,
-        metadata: { ...metadata, launches: [{ ...launch, prompt: 'Write sample data.' }] },
-      }),
-    ).not.toBe(first)
-    expect(capabilityHash({ ...base, metadata: { ...metadata, exampleOf: 'other/host' } })).not.toBe(first)
+    expect(capabilityHash({ ...base, agents: { work: { ...launch, preset: 'write' } } })).not.toBe(first)
+    expect(capabilityHash({ ...base, application: { id: 'acme', defaultAgent: 'acme/demo#work' } })).not.toBe(
+      first,
+    )
   })
   it('adds the normalized client field to the summary and the hash for a declaring package', () => {
     const { preview } = staged(

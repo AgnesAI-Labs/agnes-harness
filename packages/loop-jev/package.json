@@ -120,7 +120,6 @@
           "displayName": "Jev Agent Loop",
           "summary": "Lets TypeSafe Jev choose each step and asks the conversation model only to write, bind or review.",
           "description": "Lets TypeSafe Jev choose each step and asks the conversation model only to write, bind or review. Needs a Jev side-call route.",
-          "category": "agent-loop",
           "locales": {
             "zh-CN": {
               "displayName": "Jev Agent Loop",

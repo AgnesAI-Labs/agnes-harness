@@ -5,7 +5,8 @@ import type {
   ModelAdapterCatalogEntry,
 } from '@agnes/extension-api'
 import { DEFAULT_PERSISTENCE_PROVIDER_ID, LOCAL_SANDBOX_PROVIDER_ID } from '@agnes/extension-api'
-import type { JsonValue, LoopSelection } from '@agnes/protocol'
+import { parsePackageBundleContract } from '@agnes/package-manager'
+import type { BundleLaunch, JsonValue, LoopSelection } from '@agnes/protocol'
 import { inspectJsonData } from '@agnes/protocol'
 import { HostError } from '../errors.js'
 import { mergeValue } from '../presets/merge.js'
@@ -72,6 +73,7 @@ export function bindProviderSelections(patch: CompositionPatch): ResolvedComposi
 }
 
 export type BundleDocument = {
+  launch?: BundleLaunch
   extends?: string[]
   profile?: CompositionPatch
   presets?: Record<string, PresetDoc>
@@ -243,42 +245,11 @@ export function presetCompositionPatch(preset: PresetDoc | undefined): Compositi
 
 /** Packages publish data in package.json agnes.bundles; no entry module is evaluated. */
 export function parsePackageBundles(packageId: string, value: unknown): BundleCatalog {
-  if (value === undefined) return {}
-  const inspected = inspectJsonData(value, 1_048_576)
-  if (!inspected.ok) fail('bundles must be JSON data')
-  value = inspected.value
-  if (!map(value) || Object.keys(value).length > 64) fail('agnes.bundles must be a map')
-  const result: Record<string, BundleCatalogEntry> = Object.create(null)
-  for (const [name, raw] of Object.entries(value)) {
-    if (
-      !/^[a-z][a-z0-9-]{0,63}$/.test(name) ||
-      !map(raw) ||
-      Object.keys(raw).some((key) => !['extends', 'profile', 'presets'].includes(key))
-    )
-      fail(`invalid bundle ${name}`)
-    if (raw.extends !== undefined && !list(raw.extends)) fail(`invalid extends in ${name}`)
-    if (raw.presets !== undefined && (!map(raw.presets) || Object.keys(raw.presets).length > 64))
-      fail(`invalid presets in ${name}`)
-    const presets: Record<string, PresetDoc> = {}
-    for (const [preset, doc] of Object.entries((raw.presets ?? {}) as Record<string, unknown>)) {
-      if (!/^[a-z][a-z0-9-]{0,63}$/.test(preset) || !map(doc) || doc.name !== preset)
-        fail(`invalid preset ${preset}`)
-      presetCompositionPatch(doc as PresetDoc)
-      if (doc.bundles !== undefined && !list(doc.bundles)) fail(`invalid bundles in preset ${preset}`)
-      presets[preset] = structuredClone(doc) as PresetDoc
-    }
-    const id = `${packageId}#${name}`
-    result[id] = Object.freeze({
-      id,
-      sourcePackage: packageId,
-      document: {
-        ...(raw.extends === undefined ? {} : { extends: [...(raw.extends as string[])] }),
-        ...(raw.profile === undefined ? {} : { profile: checkCompositionPatch(raw.profile) }),
-        ...(raw.presets === undefined ? {} : { presets }),
-      },
-    })
+  try {
+    return parsePackageBundleContract(packageId, value) as BundleCatalog
+  } catch (error) {
+    fail(error instanceof Error ? error.message : 'invalid bundles')
   }
-  return Object.freeze(result)
 }
 
 /** DFS preserves declaration order, refuses cycles/unknown ids, and applies each base once. */

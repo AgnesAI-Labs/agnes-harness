@@ -1,7 +1,16 @@
 import { randomUUID } from 'node:crypto'
 import { lstatSync, mkdirSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { type PackageBlocker, validatePackageAdminData, validatePluginMetadata } from '@agnes/protocol'
+import {
+  type PackageBlocker,
+  validateAgainst,
+  validatePackageAdminData,
+  validatePluginMetadata,
+} from '@agnes/protocol'
+import {
+  ApplicationTemplate as ApplicationSchema,
+  BundleLaunch as LaunchSchema,
+} from '@agnes/protocol/gen/extension-manifest'
 import { renameWriteThroughSync } from '@agnes/system-node'
 import { collectRead, collectReadAsync } from './cooperative-read.js'
 import { copyPackageTreeSync } from './copy-tree.js'
@@ -111,6 +120,8 @@ function validateRecord(raw: unknown): SnapshotRecord {
       'dependencies',
       'contributions',
       ...(value.metadata === undefined ? [] : ['metadata']),
+      ...(value.agents === undefined ? [] : ['agents']),
+      ...(value.application === undefined ? [] : ['application']),
       ...(value.declaredCapabilities === undefined ? [] : ['declaredCapabilities']),
     ]) ||
     (value.declaredCapabilities !== undefined &&
@@ -146,6 +157,17 @@ function validateRecord(raw: unknown): SnapshotRecord {
   for (const contribution of value.contributions)
     if (!validatePackageAdminData('PackageContributionSummary', contribution).ok)
       integrityFailure('snapshot-contribution')
+  if (value.application !== undefined && !validateAgainst(ApplicationSchema, value.application).ok)
+    integrityFailure('snapshot-application')
+  if (
+    value.agents !== undefined &&
+    (!value.agents ||
+      typeof value.agents !== 'object' ||
+      Array.isArray(value.agents) ||
+      Object.keys(value.agents).length > 64 ||
+      Object.values(value.agents).some((launch) => !validateAgainst(LaunchSchema, launch).ok))
+  )
+    integrityFailure('snapshot-agents')
   const record = value as unknown as SnapshotRecord
   if (
     record.snapshotId !==
@@ -257,6 +279,8 @@ function recordFromEntry(packageId: string, entry: LockEntry): SnapshotRecord {
     dependencies: structuredClone(entry.dependencies),
     contributions: structuredClone(entry.contributions),
     ...(entry.metadata ? { metadata: structuredClone(entry.metadata) } : {}),
+    ...(entry.agents ? { agents: structuredClone(entry.agents) } : {}),
+    ...(entry.application ? { application: structuredClone(entry.application) } : {}),
     ...(entry.declaredCapabilities === undefined
       ? {}
       : { declaredCapabilities: structuredClone(entry.declaredCapabilities) }),
@@ -306,6 +330,8 @@ function verifyRecord(s: RuntimeSnapshotStore, record: SnapshotRecord, directory
     directory: actual,
     contributions: structuredClone(checkedRecord.contributions),
     ...(checkedRecord.metadata ? { metadata: structuredClone(checkedRecord.metadata) } : {}),
+    ...(checkedRecord.agents ? { agents: structuredClone(checkedRecord.agents) } : {}),
+    ...(checkedRecord.application ? { application: structuredClone(checkedRecord.application) } : {}),
   })
 }
 function contributionCeiling(record: SnapshotRecord): string[] {
@@ -327,6 +353,8 @@ function recordEntry(record: SnapshotRecord): LockEntry {
     previous: null,
     contributions: structuredClone(record.contributions),
     ...(record.metadata ? { metadata: structuredClone(record.metadata) } : {}),
+    ...(record.agents ? { agents: structuredClone(record.agents) } : {}),
+    ...(record.application ? { application: structuredClone(record.application) } : {}),
     ...(record.declaredCapabilities === undefined
       ? {}
       : { declaredCapabilities: structuredClone(record.declaredCapabilities) }),

@@ -13,7 +13,7 @@
 - `main`：作者工具包插件，注册业务工具、`fde.data-report` loop、策略与随包 Skill。
 - `@agnes/plugin-runtime` 的 `defineWorkflowLoop`：官方 checkpoint、确认、取消和未知结果恢复拒绝；示例只保留业务阶段与连接器。
 - `fixtures/`：合成输入；`skills/playbook/SKILL.md`：客户手册，注册并加入模型提示。
-- 在 `agnes.kinds` 声明 bundle 类型；`agnes.bundles.data-report` 选择 loop 并提供预设。
+- 在 `agnes.provides` 声明 bundle 类型；`agnes.bundles.data-report` 选择 loop 并提供预设。
 
 ## 安装与运行
 

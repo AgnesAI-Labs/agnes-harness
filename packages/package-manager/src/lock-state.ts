@@ -83,6 +83,7 @@ export function lockState(
         detail: { id },
       })
     packages[id] = {
+      source: structuredClone(e.source),
       version: e.version,
       integrity: e.integrity,
       trust: e.trust,

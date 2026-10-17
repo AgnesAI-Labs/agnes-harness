@@ -13,7 +13,7 @@ A local device simulation. dry_run defaults to true: temperature remains 38 °C 
 - `main`: author-kit plugin registering business tools, `fde.device-inspection` loop and policy, and the packaged Skill.
 - `defineWorkflowLoop` from `@agnes/plugin-runtime`: official checkpoints, confirmation, cancellation and refusal on uncertain recovery; the package contains only business stages and connectors.
 - `fixtures/`: synthetic business input; `skills/playbook/SKILL.md`: customer playbook registered and used in model prompts.
-- The bundle kind is declared in `agnes.kinds`; `agnes.bundles.device-inspection` selects the loop and supplies its preset.
+- The bundle kind is declared in `agnes.provides`; `agnes.bundles.device-inspection` selects the loop and supplies its preset.
 
 ## Install and run
 

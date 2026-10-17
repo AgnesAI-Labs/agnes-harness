@@ -36,9 +36,7 @@ export function contributionProjection(
   activationId: string | undefined,
 ): Partial<ClientModuleRosterRow> {
   return {
-    ...(row.entry.metadata?.category === 'example' && row.entry.metadata.exampleOf
-      ? { exampleOf: row.entry.metadata.exampleOf }
-      : {}),
+    ...(row.entry.metadata?.exampleOf ? { exampleOf: row.entry.metadata.exampleOf } : {}),
     ...(row.entry.metadata?.pageEntry ? { pageEntry: row.entry.metadata.pageEntry } : {}),
     binding: {
       lifetime: client.lifetime ?? 'session',

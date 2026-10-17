@@ -411,7 +411,14 @@ it.each([false, true])(
     const intermediate = installed({
       id: 'acme/intermediate',
       directory,
-      entry: { metadata: { category: 'example', exampleOf: parent.id } } as InstalledPackage['entry'],
+      entry: {
+        metadata: {
+          displayName: 'Example',
+          summary: 'Example',
+          description: 'Example',
+          exampleOf: parent.id,
+        },
+      } as InstalledPackage['entry'],
     })
     const child = installed({
       id: 'acme/example',
@@ -421,7 +428,6 @@ it.each([false, true])(
           displayName: 'Example',
           summary: 'Example',
           description: 'Example',
-          category: 'example',
           exampleOf: nested ? intermediate.id : parent.id,
         },
       } as InstalledPackage['entry'],

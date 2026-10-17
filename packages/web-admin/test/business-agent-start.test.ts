@@ -35,12 +35,12 @@ const entry = (extra: Record<string, unknown> = {}, id = ID) =>
     compatibility: 'supported',
     sourceId: 'official-examples',
     retrievedAt: '2026-10-14T00:00:00.000Z',
-    kinds: ['bundle', 'loop', 'tool'],
+    provides: ['bundle', 'loop', 'tool'],
+    agents: { work: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' } },
     metadata: {
       displayName: 'Data report example',
       summary: 'Turns a sample CSV into a report.',
       description: '',
-      category: 'tools',
       locales: { 'zh-CN': { displayName: '数据报告示例', summary: '把样例 CSV 转成报告。' } },
     },
     ...extra,
@@ -131,17 +131,11 @@ const record = () => {
 }
 
 describe('business agent catalog', () => {
-  it('recognises a business agent by its metadata category, and by the FDE scope for older copies', () => {
+  it('recognises only declared launchable Bundles independently from a package name', () => {
     expect(isBusinessAgent(entry())).toBe(true)
-    expect(
-      isBusinessAgent(
-        entry({ metadata: { ...entry().metadata, category: 'example', exampleOf: 'acme/host' } }),
-      ),
-    ).toBe(false)
-    expect(isBusinessAgent(entry({}, '@agnes-example/react-loop'))).toBe(false)
-    const marked = { ...entry().metadata, category: 'business-agent' }
-    expect(isBusinessAgent(entry({ metadata: marked }, '@acme/billing'))).toBe(true)
-    expect(isBusinessAgent(entry({ metadata: undefined }, '@acme/billing'))).toBe(false)
+    expect(isBusinessAgent(entry({ metadata: { ...entry().metadata, exampleOf: 'acme/host' } }))).toBe(false)
+    expect(isBusinessAgent(entry({ agents: undefined }, '@agnes-fde/legacy'))).toBe(false)
+    expect(isBusinessAgent(entry({}, '@acme/billing'))).toBe(true)
   })
 
   it('shows a sample line only when the package carries one, in the reader’s language', () => {

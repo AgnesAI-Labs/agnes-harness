@@ -28,13 +28,6 @@
     "@agnes/protocol": "0.0.0"
   },
   "agnes": {
-    "kinds": [
-      "bundle",
-      "loop",
-      "tool",
-      "skills",
-      "ui"
-    ],
     "plugins": [
       {
         "export": "main",
@@ -49,7 +42,6 @@
           "displayName": "Support triage example",
           "summary": "Classifies sample support tickets and requests approval before recording a simulated reply.",
           "description": "Classifies sample support tickets and requests approval before recording a simulated reply.",
-          "category": "business-agent",
           "locales": {
             "zh-CN": {
               "displayName": "客服分流示例",
@@ -105,6 +97,16 @@
               }
             }
           }
+        },
+        "launch": {
+          "title": {
+            "en": "Support triage example",
+            "zh-CN": "客服分流示例"
+          },
+          "description": {
+            "en": "Classifies sample support tickets and requests approval before recording a simulated reply."
+          },
+          "preset": "support-triage"
         }
       }
     },
@@ -118,7 +120,6 @@
       "displayName": "Support triage example",
       "summary": "Classifies sample support tickets and requests approval before recording a simulated reply.",
       "description": "Classifies sample support tickets and requests approval before recording a simulated reply.",
-      "category": "business-agent",
       "samplePrompt": {
         "en": "Look up the sample support ticket, classify its type and priority, draft a reply to the customer, and ask me before sending it.",
         "zh-CN": "查询示例客服工单，判断类型和优先级，起草给客户的回复，发送前先问我。"
@@ -130,7 +131,14 @@
           "description": "对样例客服工单分类，并在记录模拟回复前请求批准。"
         }
       }
-    }
+    },
+    "provides": [
+      "bundle",
+      "loop",
+      "tool",
+      "skills",
+      "ui"
+    ]
   },
   "peerDependencies": {
     "react": "18.3.1"

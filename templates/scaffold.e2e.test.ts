@@ -29,7 +29,7 @@ describe('plugin scaffolder', () => {
         }
         expect(manifest.scripts).toHaveProperty('build')
         expect(manifest.scripts).toHaveProperty('test')
-        expect(manifest.agnes.kinds).toEqual(
+        expect(manifest.agnes.provides).toEqual(
           {
             tool: ['tool'],
             'tool-with-panel': ['tool', 'ui'],

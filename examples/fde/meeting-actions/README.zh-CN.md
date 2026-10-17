@@ -14,7 +14,7 @@
 - Tools：夹具连接器和转换，由 `main` 通过公开作者工具包注册。
 - Policy：`fde.meeting-actions`，每次决定或发送动作均要求人工审批。
 - Skills：随包 `skills/playbook/SKILL.md` 注册并加入模型请求。
-- Bundle：`agnes.kinds` 声明 `bundle`，`agnes.bundles.meeting-actions` 组合 loop、Skill 和预设。 客户端描述符通过公开 tool.call.toolview 槽位挂载面板。
+- Bundle：`agnes.provides` 声明 `bundle`，`agnes.bundles.meeting-actions` 组合 loop、Skill 和预设。 客户端描述符通过公开 tool.call.toolview 槽位挂载面板。
 
 ## 安装与运行
 

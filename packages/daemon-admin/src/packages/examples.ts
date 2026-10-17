@@ -100,10 +100,7 @@ export function createExamplePackages(options: {
   }
   async function entries(who: Owner) {
     return (await backend.catalog()).filter(
-      (entry) =>
-        entry.compatibility === 'supported' &&
-        entry.metadata?.category === 'example' &&
-        entry.metadata.exampleOf === who.row.packageId,
+      (entry) => entry.compatibility === 'supported' && entry.metadata?.exampleOf === who.row.packageId,
     )
   }
   async function current(review: Review, who: Owner, running = false) {
@@ -119,7 +116,7 @@ export function createExamplePackages(options: {
     if (
       !entry ||
       entry.integrity !== review.entry.integrity ||
-      digest(entry.metadata) !== digest(review.entry.metadata)
+      digest([entry.metadata, entry.agents]) !== digest([review.entry.metadata, review.entry.agents])
     )
       deny('E_PACKAGE_PREVIEW_STALE')
     const installed = (await backend.installed()).find((item) => item.id === entry.id)
@@ -223,8 +220,21 @@ export function createExamplePackages(options: {
             const installed = await current(review, who)
             if (!installed?.trusted || installed.desired !== 'enabled' || installed.actual !== 'running')
               deny('E_PACKAGE_STATE')
-            review.launch =
-              entry.metadata?.launches?.find((launch) => launch.id === field(request.launchId)) ?? deny()
+            review.launch = (() => {
+              const launchId = field(request.launchId)
+              const launch = entry.agents?.[launchId] ?? deny()
+              // The legacy example facade submits automatically. Draft launch support belongs to
+              // the reviewed launch facade; fail closed until that protocol is available.
+              if (launch.prompt) deny('E_PACKAGE_BLOCKED')
+              return {
+                id: launchId,
+                kind: 'business-agent' as const,
+                title: launch.title.en,
+                bundle: `${entry.id}#${launchId}`,
+                preset: launch.preset,
+                prompt: launch.prompt?.text.en ?? '',
+              }
+            })()
             await backend.validateLaunch(installed, review.launch)
           }
           for (const [key, item] of Object.entries(state.reviews))
@@ -297,7 +307,7 @@ export function createExamplePackages(options: {
             op.sessionId = await backend.open(launch, `example:${operationKey}`)
             await save(state)
             await check()
-            await backend.prompt(op.sessionId, launch.prompt, `example-${operationKey}`)
+            if (launch.prompt) await backend.prompt(op.sessionId, launch.prompt, `example-${operationKey}`)
           }
           op.state = 'completed'
           await save(state)

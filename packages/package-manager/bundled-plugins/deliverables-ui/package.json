@@ -11,9 +11,6 @@
     "LICENSE"
   ],
   "agnes": {
-    "kinds": [
-      "ui"
-    ],
     "plugins": [
       {
         "export": "main",
@@ -26,7 +23,6 @@
         "metadata": {
           "displayName": "Deliverables presentation",
           "summary": "Snapshot file cards, history and deliverables panel.",
-          "category": "ui",
           "description": "Snapshot file cards, history and deliverables panel."
         }
       }
@@ -40,9 +36,11 @@
     "metadata": {
       "displayName": "Deliverables presentation",
       "summary": "Snapshot file cards, history and deliverables panel.",
-      "category": "ui",
       "description": "Snapshot file cards, history and deliverables panel."
-    }
+    },
+    "provides": [
+      "ui"
+    ]
   },
   "peerDependencies": {
     "@agnes/web-client": "0.0.0",

@@ -28,12 +28,6 @@
     "@agnes/protocol": "0.0.0"
   },
   "agnes": {
-    "kinds": [
-      "bundle",
-      "loop",
-      "tool",
-      "skills"
-    ],
     "plugins": [
       {
         "export": "main",
@@ -48,7 +42,6 @@
           "displayName": "Data report example",
           "summary": "Turns a sample CSV into calculated figures, charts and shareable reports.",
           "description": "Turns a sample CSV into calculated figures, charts and shareable reports.",
-          "category": "business-agent",
           "locales": {
             "zh-CN": {
               "displayName": "数据报告示例",
@@ -103,6 +96,16 @@
               }
             }
           }
+        },
+        "launch": {
+          "title": {
+            "en": "Data report example",
+            "zh-CN": "数据报告示例"
+          },
+          "description": {
+            "en": "Turns a sample CSV into calculated figures, charts and shareable reports."
+          },
+          "preset": "data-report"
         }
       }
     },
@@ -110,7 +113,6 @@
       "displayName": "Data report example",
       "summary": "Turns a sample CSV into calculated figures, charts and shareable reports.",
       "description": "Turns a sample CSV into calculated figures, charts and shareable reports.",
-      "category": "business-agent",
       "samplePrompt": {
         "en": "Read the sample sales CSV, compute revenue, cost and margin totals, and produce a report with charts that I can open and download.",
         "zh-CN": "读取示例销售 CSV，计算收入、成本和毛利合计，生成一份带图表、可打开和下载的报告。"
@@ -122,7 +124,13 @@
           "description": "把样例 CSV 转成计算结果、图表和可分享的报告。"
         }
       }
-    }
+    },
+    "provides": [
+      "bundle",
+      "loop",
+      "tool",
+      "skills"
+    ]
   },
   "devDependencies": {
     "@agnes/host": "0.0.0",

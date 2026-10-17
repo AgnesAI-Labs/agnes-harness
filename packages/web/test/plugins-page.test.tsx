@@ -177,14 +177,23 @@ describe('plugin grouping', () => {
     ({ id, ...(metadata ? { metadata } : {}) }) as unknown as Parameters<typeof isBusinessAgent>[0]
 
   it('knows a business agent by its metadata, or by its package scope until the field exists', () => {
-    expect(isBusinessAgent(item('@acme/report', { category: 'business-agent' }))).toBe(true)
-    expect(isBusinessAgent(item('@agnes-fde/code-review'))).toBe(true)
+    expect(
+      isBusinessAgent({
+        ...item('@acme/report'),
+        agents: { work: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' } },
+      }),
+    ).toBe(true)
+    expect(isBusinessAgent(item('@agnes-fde/code-review'))).toBe(false)
     expect(isBusinessAgent(item('@agnes/attachments', { category: 'tools' }))).toBe(false)
   })
 
   it('lists installed plugins as one run: business agents, then enabled ones, then by name', () => {
     const row = (id: string, desired: string, category: string) =>
-      ({ id, desired, metadata: { category } }) as unknown as Parameters<typeof orderInstalled>[0][number]
+      ({
+        id,
+        desired,
+        ...(category === 'business-agent' ? { agents: { work: {} } } : {}),
+      }) as unknown as Parameters<typeof orderInstalled>[0][number]
     const rows = [
       row('zeta', 'enabled', 'tools'),
       row('beta', 'disabled', 'developer'),
@@ -202,11 +211,11 @@ describe('plugin grouping', () => {
   })
 
   it('files a catalog package under every marketplace type it says it includes', () => {
-    const entry = (id: string, kinds: readonly string[], declared?: readonly string[]) =>
+    const entry = (id: string, provides: readonly string[], declared?: readonly string[]) =>
       ({
         id,
-        ...(declared ? { kinds: declared } : {}),
-        presentation: { rows: [], ...(kinds.length ? { includes: { kinds } } : {}) },
+        ...(declared ? { provides: declared } : {}),
+        presentation: { rows: [], ...(provides.length ? { includes: { provides } } : {}) },
       }) as unknown as Parameters<typeof marketTypes>[0]
     expect(marketTypes(entry('@acme/desk', ['tool', 'skills']))).toEqual(['tool', 'skills'])
     expect(marketTypes(entry('@acme/loop', ['loop']))).toEqual(['runtime'])
@@ -252,7 +261,6 @@ it('groups marketplace releases and opens or installs the selected release', asy
             displayName: 'Hidden example',
             summary: 'Example',
             description: 'Example',
-            category: 'example',
             exampleOf: 'acme/parent',
           },
         },
@@ -422,6 +430,7 @@ it('keeps the bundled helper under built-ins with an enable toggle and excludes 
   const row = (id: string, category: string, exampleOf?: string) => ({
     id,
     version: '1.0.0',
+    ...(category === 'business-agent' ? { agents: { work: {} } } : {}),
     source: {
       type: 'file',
       ref: `file:./${id === '@agnes/plugin-helper' ? 'bundled-plugins/plugin-helper' : 'examples/plugin'}`,
@@ -436,7 +445,6 @@ it('keeps the bundled helper under built-ins with an enable toggle and excludes 
       displayName: id,
       summary: id,
       description: id,
-      category,
       ...(exampleOf ? { exampleOf } : {}),
     },
   })

@@ -13,7 +13,7 @@ import {
 } from './lifecycle.js'
 import type { LockEntry, Lockfile } from './lockfile.js'
 import type { PackageManager } from './manager.js'
-import { entryFrom, readPackageJson } from './package-record.js'
+import { applyReviewedContract, entryFrom, readPackageJson } from './package-record.js'
 import { readPluginCapabilityPolicy } from './plugin-capabilities.js'
 import { checkCancelled, type OperationOptions, progress } from './ports.js'
 import { type FetchedSource, hashDirectory, type PackageSource } from './sources.js'
@@ -113,6 +113,7 @@ export async function updatePackages(deps: {
         store.now(),
         current,
       )
+      applyReviewedContract(entry, preview)
       entry.contributions = preview.contributions
       if (preview.metadata) entry.metadata = preview.metadata
       if (preview.declaredCapabilities !== undefined)

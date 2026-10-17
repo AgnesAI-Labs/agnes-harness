@@ -13,7 +13,6 @@ const example = {
     displayName: 'Example',
     description: 'Example',
     summary: 'Example',
-    category: 'example',
     exampleOf: 'acme/parent',
   },
 } as PackageInstalledDescriptor

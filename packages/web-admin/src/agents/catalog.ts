@@ -18,16 +18,11 @@ export type BusinessAgent = {
 }
 export type BusinessAgentState = 'available' | 'installed' | 'starting' | 'ready' | 'attention'
 
-const FDE_PREFIX = '@agnes-fde/'
 const TINTS = 8
 
-/**
- * A business agent is a package whose metadata says so. The FDE scope stays as a fallback: a copy
- * installed before the category existed still carries its old metadata.
- */
+/** Catalogue availability comes from explicit launch declarations, independently of package names. */
 export function isBusinessAgent(row: PackageCatalogDescriptor): boolean {
-  if (row.metadata?.category === 'example') return false
-  return row.metadata?.category === 'business-agent' || row.id.startsWith(FDE_PREFIX)
+  return Object.keys(row.agents ?? {}).length > 0 && !row.metadata?.exampleOf
 }
 
 export function samplePromptOf(row: PackageCatalogDescriptor, locale: Locale): string | undefined {

@@ -32,7 +32,6 @@
           "displayName": "MCP reference materials",
           "summary": "Lets the agent list and read reference materials supplied by connected MCP servers.",
           "description": "Lets the agent list and read reference materials supplied by connected MCP servers.",
-          "category": "integrations",
           "locales": {
             "zh-CN": {
               "displayName": "MCP 参考资料",
@@ -42,6 +41,9 @@
           }
         }
       }
+    ],
+    "provides": [
+      "tool"
     ]
   }
 }

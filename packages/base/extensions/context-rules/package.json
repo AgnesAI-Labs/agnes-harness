@@ -32,7 +32,6 @@
           "displayName": "Workspace instructions",
           "summary": "Includes relevant workspace instructions when the agent works with project files.",
           "description": "Includes relevant workspace instructions when the agent works with project files.",
-          "category": "memory-context",
           "locales": {
             "zh-CN": {
               "displayName": "工作区规则",

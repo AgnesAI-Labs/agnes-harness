@@ -100,16 +100,13 @@ export function OfficialExampleCards({ api, canInstall = false, installed, t, on
       >
         <h3>{purpose?.displayName ?? row.id}</h3>
         {purpose?.summary && <p>{purpose.summary}</p>}
-        <MetaText>
-          {purposeText('origin.example')}
-          {row.metadata ? ` · ${purposeText(`category.${row.metadata.category}`)}` : ''}
-        </MetaText>
+        <MetaText>{purposeText('origin.example')}</MetaText>
         <SettingsDetails title={purposeText('technical')}>
           <p>
             {row.id} · {row.version} · {row.license}
           </p>
           <section className="agnes-settings-actions" aria-label={t('exampleSummary')}>
-            {row.kinds?.map((kind) => (
+            {row.provides?.map((kind) => (
               <MetaText key={kind}>{t(`kind.${kind}`)}</MetaText>
             ))}
           </section>
@@ -127,7 +124,7 @@ export function OfficialExampleCards({ api, canInstall = false, installed, t, on
           <Button
             data-testid={`example-start-${name}`}
             disabled={!available}
-            href={sessionStartUrl(undefined, undefined, row.kinds?.includes('bundle') ? [name] : [], loop)}
+            href={sessionStartUrl(undefined, undefined, row.provides?.includes('bundle') ? [name] : [], loop)}
           >
             {t('exampleStart')}
           </Button>

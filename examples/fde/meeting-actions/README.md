@@ -14,7 +14,7 @@ The synthetic transcript uses explicit SUMMARY, DECISION and ACTION tags. Morgan
 - Tools: fixture connectors and transformations registered by `main` through the public author kit.
 - Policy: `fde.meeting-actions`, requiring human approval for every decision/send action.
 - Skills: packaged `skills/playbook/SKILL.md`, registered and included in model requests.
-- Bundle: `agnes.kinds` declares `bundle`; `agnes.bundles.meeting-actions` composes the loop, Skill and preset. The client descriptor mounts the panel through public tool.call.toolview slots.
+- Bundle: `agnes.provides` declares `bundle`; `agnes.bundles.meeting-actions` composes the loop, Skill and preset. The client descriptor mounts the panel through public tool.call.toolview slots.
 
 ## Install and run
 

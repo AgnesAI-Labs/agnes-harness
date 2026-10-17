@@ -56,7 +56,6 @@
           "displayName": "Task goals",
           "summary": "Keeps an explicit task goal and its progress visible while the agent continues working.",
           "description": "Keeps an explicit task goal and its progress visible while the agent continues working.",
-          "category": "agent-loop",
           "locales": {
             "zh-CN": {
               "displayName": "任务目标",
@@ -66,6 +65,9 @@
           }
         }
       }
+    ],
+    "provides": [
+      "tool"
     ]
   }
 }

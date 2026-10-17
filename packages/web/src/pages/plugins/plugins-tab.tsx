@@ -17,7 +17,6 @@ import {
   isBuiltinPlugin,
   ListRow,
   type MenuItem,
-  PLUGIN_CATEGORIES,
   PluginList,
   Popover,
   SearchBar,
@@ -64,7 +63,7 @@ export function pluginListProps(view: PluginView): Omit<ComponentProps<typeof Pl
     loading: view.state.loading,
     inventoryAuthoritative: view.state.inventoryAuthoritative,
     query: view.query,
-    filtered: !!view.kind || !!view.category,
+    filtered: !!view.kind,
     nextCursor: view.state.nextCursor,
     menuOf: (item): readonly MenuItem[] => [
       ...('desired' in item && item.presentation?.rows.some((row) => row.settings)
@@ -120,7 +119,6 @@ export function PluginToolbar({
   /** A filter the tab owns, shown before the shared one. */
   leading?: ReactNode
 }) {
-  const advanced = useAdvancedSettings()
   return (
     <SearchBar
       data-testid="plugin-toolbar"
@@ -140,41 +138,20 @@ export function PluginToolbar({
             trigger="click"
             content={
               <>
-                <Field label={t('filter.category')} htmlFor="plugin-category">
-                  <SettingsSelect
-                    id="plugin-category"
-                    data-testid="plugin-category-filter"
-                    value={view.category}
-                    onChange={(event) => {
-                      view.category = event.target.value
-                      view.render()
-                    }}
-                  >
-                    <option value="">{t('filter.all')}</option>
-                    {PLUGIN_CATEGORIES.map((category) => (
-                      <option key={category} value={category}>
-                        {view.purposeText(`category.${category}`)}
-                      </option>
-                    ))}
-                    <option value="unclassified">{view.purposeText('unclassified')}</option>
-                  </SettingsSelect>
-                </Field>
-                {(advanced || !!view.kind) && (
-                  <KindFilter
-                    value={view.kind}
-                    t={view.t}
-                    onChange={(value) => {
-                      view.kind = value
-                      view.render()
-                    }}
-                  />
-                )}
+                <KindFilter
+                  value={view.kind}
+                  t={view.t}
+                  onChange={(value) => {
+                    view.kind = value
+                    view.render()
+                  }}
+                />
               </>
             }
           >
             <Button icon={<Icon name="sliders-horizontal" />} data-testid="plugin-filter">
               {t('filter.label')}
-              <Count value={Number(!!view.category) + Number(!!view.kind)} label={t('filter.active')} />
+              <Count value={Number(!!view.kind)} label={t('filter.active')} />
             </Button>
           </Popover>
         </>
@@ -257,12 +234,7 @@ export function PluginsTab({
     resolvePluginMetadata(item.metadata, locale)?.displayName ?? item.id
   const rows = view
     .filteredInstalled()
-    .filter(
-      (item) =>
-        !item.metadata?.exampleOf &&
-        (!view.kind || item.kinds?.includes(view.kind)) &&
-        (!view.category || (item.metadata?.category ?? 'unclassified') === view.category),
-    )
+    .filter((item) => !item.metadata?.exampleOf && (!view.kind || item.provides?.includes(view.kind)))
   const stable = rows.filter((item) => !isExperimental(item))
   const builtin = orderInstalled(stable.filter(isBuiltinPlugin), nameOf, locale)
   const others = orderInstalled(
@@ -271,15 +243,14 @@ export function PluginsTab({
     locale,
   )
   const experimental = rows.filter(isExperimental)
-  // Capabilities are not packages: a category or type filter cannot match them, a search by name can.
+  // Capabilities are not packages: a capability filter cannot match them, a search by name can.
   const needle = view.query.toLocaleLowerCase(locale)
-  const capabilities =
-    view.kind || view.category
-      ? []
-      : CAPABILITIES.filter((id) =>
-          `${t(`cap.${id}.name`)} ${t(`cap.${id}.desc`)}`.toLocaleLowerCase(locale).includes(needle),
-        )
-  const searching = !!view.query || !!view.kind || !!view.category
+  const capabilities = view.kind
+    ? []
+    : CAPABILITIES.filter((id) =>
+        `${t(`cap.${id}.name`)} ${t(`cap.${id}.desc`)}`.toLocaleLowerCase(locale).includes(needle),
+      )
+  const searching = !!view.query || !!view.kind
   return (
     <>
       <PluginToolbar view={view} t={t} onQuery={() => view.render()} />

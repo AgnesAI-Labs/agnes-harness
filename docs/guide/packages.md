@@ -140,7 +140,7 @@ A successful ordinary installation starts disabled. Internally, AGH also records
 Packages can declare an optional multi-value field in `package.json`:
 
 ```json
-{ "agnes": { "kinds": ["tool", "loop", "model-adapter", "mcp", "skills", "ui"] } }
+{ "agnes": { "provides": ["tool", "loop", "model-adapter", "mcp", "skills", "ui"] } }
 ```
 
 Declare only the kinds the package provides. The plugin admin list and detail show these badges; the kind filter matches declared kinds. Older packages without the field remain visible under “All kinds”.

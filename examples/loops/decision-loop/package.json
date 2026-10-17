@@ -22,7 +22,6 @@
           "displayName": "Decision Loop",
           "summary": "Resumes a human confirmation through the session decision port.",
           "description": "Resumes a human confirmation through the session decision port.",
-          "category": "agent-loop",
           "locales": {
             "zh-CN": {
               "displayName": "决策 Loop",
@@ -37,7 +36,6 @@
       "displayName": "Decision Loop",
       "summary": "Resumes a human confirmation through the session decision port.",
       "description": "Resumes a human confirmation through the session decision port.",
-      "category": "agent-loop",
       "locales": {
         "zh-CN": {
           "displayName": "决策 Loop",
@@ -45,6 +43,9 @@
           "description": "通过会话决策端口恢复真人确认。"
         }
       }
-    }
+    },
+    "provides": [
+      "loop"
+    ]
   }
 }

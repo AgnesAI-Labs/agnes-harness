@@ -14,7 +14,7 @@ fixtures/repo contains the pre-change synthetic source tree; change.patch is its
 - Tools: fixture connectors and transformations registered by `main` through the public author kit.
 - Policy: `fde.code-review`, denying business-source writes even in full-access sessions.
 - Skills: packaged `skills/playbook/SKILL.md`, registered and included in model requests.
-- Bundle: `agnes.kinds` declares `bundle`; `agnes.bundles.code-review` composes the loop, Skill and preset.
+- Bundle: `agnes.provides` declares `bundle`; `agnes.bundles.code-review` composes the loop, Skill and preset.
 
 ## Install and run
 

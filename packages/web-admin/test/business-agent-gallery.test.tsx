@@ -36,13 +36,12 @@ const entry = (id: string, name: string, sample?: string) =>
     compatibility: 'supported',
     sourceId: 'official-examples',
     retrievedAt: '',
-    kinds: ['loop', 'tool'],
+    provides: ['loop', 'tool'],
     presentation: { origin: 'example', rows: [] },
     metadata: {
       displayName: name,
       summary: `${name} summary`,
       description: '',
-      category: 'business-agent',
       ...(sample ? { samplePrompt: { en: sample } } : {}),
     },
   }) as unknown as PackageCatalogDescriptor
@@ -73,7 +72,7 @@ function setup(options: { permissions?: string[]; readOnly?: boolean; ready?: bo
         source: entry(ID, 'x').source,
         integrity: 'sha512-a',
         capabilityHash: 'cap',
-        kinds: ['loop', 'tool'],
+        provides: ['loop', 'tool'],
         contributions: [{ kind: 'skill', id: 'playbook', path: 'skills/playbook' }],
         blockers: [],
         declaredCapabilities: {

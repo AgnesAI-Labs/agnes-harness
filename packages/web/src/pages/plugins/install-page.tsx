@@ -58,7 +58,7 @@ export function InstallReviewPage({ view }: { view: PluginView | undefined }) {
   if (!view || !review || !segment) return null
   const { preview } = review
   const name = resolvePluginMetadata(preview.metadata, locale)?.displayName ?? preview.id
-  const kind = preview.kinds?.[0]
+  const kind = preview.provides?.[0]
   const origin =
     preview.presentation?.origin ?? (LOCAL_SOURCES.has(preview.source.type) ? 'local-source' : 'third-party')
   return (

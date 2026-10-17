@@ -69,6 +69,8 @@ export function runtimePluginSnapshotsFromInventory(
           capabilityHash: pkg.capabilityHash,
           directory: pkg.directory,
           contributions: pkg.contributions,
+          ...(pkg.entry.agents ? { agents: pkg.entry.agents } : {}),
+          ...(pkg.entry.application ? { application: pkg.entry.application } : {}),
         }),
         generation: 1,
         trusted: pkg.trusted,

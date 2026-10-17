@@ -15,7 +15,6 @@
           "displayName": "Multiple panels example",
           "summary": "Demonstrates two independently owned workbench panels from one plugin package.",
           "description": "Demonstrates two independently owned workbench panels from one plugin package.",
-          "category": "ui",
           "locales": {
             "zh-CN": {
               "displayName": "多面板示例",
@@ -34,7 +33,6 @@
           "displayName": "Multiple panels example",
           "summary": "Demonstrates two independently owned workbench panels from one plugin package.",
           "description": "Demonstrates two independently owned workbench panels from one plugin package.",
-          "category": "ui",
           "locales": {
             "zh-CN": {
               "displayName": "多面板示例",
@@ -59,7 +57,6 @@
       "displayName": "Multiple panels example",
       "summary": "Demonstrates two independently owned workbench panels from one plugin package.",
       "description": "Demonstrates two independently owned workbench panels from one plugin package.",
-      "category": "ui",
       "locales": {
         "zh-CN": {
           "displayName": "多面板示例",
@@ -67,7 +64,10 @@
           "description": "演示一个插件包如何提供两个各自归属明确的工作台面板。"
         }
       }
-    }
+    },
+    "provides": [
+      "ui"
+    ]
   },
   "exports": "./index.mjs"
 }

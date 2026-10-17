@@ -19,7 +19,6 @@
       "displayName": "Workspace memory",
       "summary": "Keeps reviewed workspace preferences in local files for later sessions, with agent access off by default.",
       "description": "Keeps reviewed workspace preferences in local files for later sessions, with agent access off by default.",
-      "category": "memory-context",
       "locales": {
         "zh-CN": {
           "displayName": "工作区记忆",
@@ -27,6 +26,9 @@
           "description": "在本地文件中保留经审核的工作区偏好供后续会话使用，默认关闭 Agent 访问。"
         }
       }
-    }
+    },
+    "provides": [
+      "service"
+    ]
   }
 }
