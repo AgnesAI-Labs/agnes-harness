@@ -5,7 +5,7 @@ import { extractReferences, isPathReferences, parseListing } from '../src/refere
 const CWD = '/w/proj'
 const text = (t: string, more: object = {}) => ({ content: [{ type: 'text' as const, text: t }], ...more })
 const refs = (kind: string, path: string) => ({ kind, path })
-const structured = (references: object[], over: object = {}) => ({
+const structured = (references: unknown[], over: object = {}) => ({
   structured: {
     schema: 'agh.path-references/1',
     references,
