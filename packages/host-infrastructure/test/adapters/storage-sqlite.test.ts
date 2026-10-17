@@ -397,13 +397,30 @@ describe('storage-sqlite', () => {
     t.run('insert into usage_ledger (credits) values (?)', [1.5])
     expect(t.all<{ credits: number }>('select credits from usage_ledger')).toEqual([{ credits: 1.5 }])
     expect(t.get<{ credits: number }>('select credits from usage_ledger')).toEqual({ credits: 1.5 })
+    t.run('insert into usage_ledger (credits) values (?)', [2.5])
+    expect(t.all<{ credits: number }>('select credits from usage_ledger')).toEqual([
+      { credits: 1.5 },
+      { credits: 2.5 },
+    ])
+    // Reusing a query must read current rows and retain parameter validation and owner confinement.
+    const query = 'select credits from usage_ledger where id = ?'
+    expect(t.get(query, [1])).toEqual({ credits: 1.5 })
+    expect(t.get(query, [2])).toEqual({ credits: 2.5 })
+    expect(t.get(query)).toBeUndefined()
+    expect(() => t.get(query, ['bad\u0000value'])).toThrow(/bind parameter/)
+    const other = s.tables('@acme/other').table('usage_ledger')
+    other.exec('create table usage_ledger (id integer primary key, credits real)')
+    other.run('insert into usage_ledger (credits) values (?)', [9])
+    expect(other.get(query, [1])).toEqual({ credits: 9 })
+    t.exec('alter table usage_ledger add column note text')
+    expect(t.get(query, [1])).toEqual({ credits: 1.5 })
     expect(() => s.tables('@agnes/base').table('Bad Name')).toThrow(/table name/)
     // The property the name check alone never had: a package handle cannot see, read or drop the
     // ledger tables, because they are not on this connection.
     expect(() => t.all('select * from writer_claims')).toThrow(/no such table/)
     expect(() => t.exec('drop table events')).toThrow(/no such table/)
     // Nor another package's tables.
-    expect(() => s.tables('@acme/other').table('usage_ledger').all('select * from usage_ledger')).toThrow(
+    expect(() => s.tables('@acme/unopened').table('usage_ledger').all('select * from usage_ledger')).toThrow(
       /no such table/,
     )
   })

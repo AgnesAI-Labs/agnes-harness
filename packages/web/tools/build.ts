@@ -4,6 +4,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { type BuildResult, build } from 'esbuild'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
+import { productionWebOptions } from '../../../tools/web-build-options.mjs'
 import { clientPlatformExternals } from '../../../tools/web-client-externals.mjs'
 import { scrollbarCsp } from '../../../tools/web-scrollbar-csp.mjs'
 import {
@@ -30,7 +31,9 @@ const markdownDarkCss = require.resolve('@ant-design/x-markdown/themes/dark.css'
 })
 const out = join(root, 'dist', 'web')
 
-export async function buildWeb(options: { clean?: boolean } = {}): Promise<BuildResult[]> {
+export async function buildWeb(
+  options: { clean?: boolean; development?: boolean } = {},
+): Promise<BuildResult[]> {
   if (options.clean !== false) await rm(out, { recursive: true, force: true })
   await mkdir(out, { recursive: true })
   // WC5：平台共享单例说明符。宿主 app 与（未来的）插件模块都经 import map 解析到 /vendor/* 的
@@ -38,6 +41,7 @@ export async function buildWeb(options: { clean?: boolean } = {}): Promise<Build
   const metafiles: BuildResult[] = []
   metafiles.push(
     await build({
+      ...(options.development ? {} : productionWebOptions),
       absWorkingDir: root,
       entryPoints: {
         app: join(root, 'src', 'app.ts'),
@@ -70,6 +74,7 @@ export async function buildWeb(options: { clean?: boolean } = {}): Promise<Build
   // 存在于共享入口/chunk 一份，antd、conversation、web-client 经 import map 引用同一套 React 说明符。产物落在
   // /vendor/ 命名空间，web-server 按固定文件名 + chunk 哈希模式放行。
   const vendorOptions = {
+    ...(options.development ? {} : productionWebOptions),
     outdir: join(out, 'vendor'),
     outbase: join(root, 'tools', 'vendor'),
     bundle: true,
@@ -123,6 +128,7 @@ export async function buildWeb(options: { clean?: boolean } = {}): Promise<Build
   // CSP 是 script-src 'self' 无 unsafe-inline，内联脚本这条路走不通。
   metafiles.push(
     await build({
+      ...(options.development ? {} : productionWebOptions),
       absWorkingDir: root,
       entryPoints: { theme: join(root, 'src', 'theme-boot.ts') },
       outdir: out,

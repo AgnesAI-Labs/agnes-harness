@@ -1,8 +1,12 @@
 import { type HomeEntryBadge, homeEntries, homeNavigation } from '@agnes/web-client'
 import { homeAdmin } from './admin-api.js'
-import { AgentsPage } from './agents-page.js'
-import { AutomationPage } from './automation-page.js'
-import { PluginsPage } from './plugins-page.js'
+import { deferHomePage } from './deferred.js'
+
+const AgentsPage = deferHomePage(async () => ({ default: (await import('./agents-page.js')).AgentsPage }))
+const AutomationPage = deferHomePage(async () => ({
+  default: (await import('./automation-page.js')).AutomationPage,
+}))
+const PluginsPage = deferHomePage(async () => ({ default: (await import('./plugins-page.js')).PluginsPage }))
 
 /** Built-in IDs for callers that need labels; placement follows the shared registry. */
 export const BUILTIN_HOME_ENTRIES: readonly string[] = ['agents', 'plugins', 'automation']

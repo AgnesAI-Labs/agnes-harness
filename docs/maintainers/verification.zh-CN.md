@@ -30,6 +30,10 @@ pnpm exec vitest run tools/guards/src tools/public-docs/examples.test.ts --maxWo
 
 CLI 启动测试仍要求启动和创建会话成功。共享 CI 机器上的耗时会写入任务摘要，不作为通过门槛。在稳定的性能测试机器上设置 `AGH_ENFORCE_BOOT_BUDGET=1`，再运行 `pnpm exec vitest run packages/cli/test/boot-budget.test.ts --maxWorkers=1`，即可执行 300 ms 门槛检查。
 
+Web 交付构建使用生产 React 并压缩 JavaScript；开发 watcher 保留开发诊断。聚焦用例 `packages/cli/test/build-local-web.test.ts` 遍历实际产物的静态模块图（含 import map 中的 vendor），将冷启动 JavaScript 限制为 9 MiB，较校准后的约 7 MiB 留出约 30% 余量。内置主页按选择加载。字节门具有确定性，不能代替真实浏览器的绘制、交互和转录测量。
+
+重型门 `packages/host-infrastructure/test/adapters/table-reads.slow.test.ts` 串行测量 50 行合成数据上的五批 owner 读取，每批 3,000 次，保守上限为 150 ms。它还检查写入、schema 变更和查询计划淘汰后的最新结果，以及非法参数和 SQL 拒绝。查询计划仅在各自隔离连接内复用，不缓存数据行或授权结果。原有账本完整性与包加载门仍须执行。
+
 包加载性能门位于 `tools/plugin-performance.slow.test.ts` 的 **gates real immutable package preparation** 用例。在性能测试机器上使用 Node 24 串行运行：
 
 ```sh

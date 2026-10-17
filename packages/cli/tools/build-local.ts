@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { BUNDLED_EXAMPLES, DEFAULT_ENABLED_BUNDLED_PACKAGES } from '@agnes/package-manager'
 import { type BuildOptions, type BuildResult, build, type Plugin } from 'esbuild'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
+import { productionWebOptions } from '../../../tools/web-build-options.mjs'
 import { clientPlatformExternals } from '../../../tools/web-client-externals.mjs'
 import { scrollbarCsp } from '../../../tools/web-scrollbar-csp.mjs'
 import {
@@ -228,10 +229,12 @@ async function runtimeDefines(version: string): Promise<Record<string, string>> 
   }
 }
 
-export async function buildLocalWeb(webOut: string): Promise<void> {
+export async function buildLocalWeb(webOut: string): Promise<readonly BuildResult[]> {
   const metafiles: BuildResult[] = []
   const buildWithMetadata = async (options: BuildOptions): Promise<void> => {
-    metafiles.push(await build({ ...options, absWorkingDir: webRoot, metafile: true }))
+    metafiles.push(
+      await build({ ...productionWebOptions, ...options, absWorkingDir: webRoot, metafile: true }),
+    )
   }
   // Plugin entrypoints resolve these imports through index.html's import map, so the host bundle
   // must leave them external and serve exactly one shared platform instance.
@@ -359,6 +362,7 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
   )
   await rm(markdownCss)
   await collectThirdPartyNotices(webRoot, webOut, metafiles)
+  return metafiles
 }
 
 async function buildLocal(out: string, nativeOutput?: string, versionOverride?: string): Promise<void> {

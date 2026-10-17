@@ -104,7 +104,7 @@ export async function startWebDevBuild(options: { onRebuilt?: () => void } = {})
       do {
         pending = false
         try {
-          const results = await buildWeb({ clean: false })
+          const results = await buildWeb({ clean: false, development: true })
           updateWatchers(results)
           onRebuilt?.()
           console.log('[web-dev] frontend rebuilt')
@@ -128,7 +128,7 @@ export async function startWebDevBuild(options: { onRebuilt?: () => void } = {})
     }, 120)
   }
 
-  const initialResults = await buildWeb()
+  const initialResults = await buildWeb({ development: true })
   updateWatchers(initialResults)
 
   return {
