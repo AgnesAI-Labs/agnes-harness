@@ -1,4 +1,4 @@
-import { BASE_SEAM_PROVIDERS, defaultLoopPlugin, toolPolicyPlugin } from '@agnes/base'
+import { BASE_SEAM_PROVIDERS, defaultLoopPlugin, planModePlugin, toolPolicyPlugin } from '@agnes/base'
 import type { ProviderPluginContext } from '@agnes/extension-api'
 import { SEAM_KIND_TOKENS, SEAM_KINDS } from '@agnes/extension-api/seams'
 import type { PackageModule, SeamInitContext } from '@agnes/host-extensions/assemble/packages'
@@ -97,6 +97,19 @@ export function attachTestSeamPlugins(module: PackageModule): PackageModule {
         entry: normalizePluginExport(plugin),
       })
     }
+  if (module.id === '@agnes/base' && !ordinary.some((row) => row.declaration.id === 'service:plan-mode'))
+    ordinary.push({
+      declaration: {
+        id: 'service:plan-mode',
+        export: 'planModePlugin',
+        apiRange: '^4.0.0',
+        default: true,
+        inject: ['providers', 'services'],
+        provide: ['planMode'],
+        runtime: 'in-process',
+      },
+      entry: normalizePluginExport(planModePlugin),
+    })
   Object.defineProperty(module, 'plugins', {
     configurable: true,
     enumerable: true,

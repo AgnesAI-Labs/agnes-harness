@@ -49,6 +49,8 @@ TUI `/package` and shell `package` have different subcommand sets. Updates can b
 
 When an approval card appears, inspect the tool, arguments, and scope, then choose an available allow/deny/abort option. `/yolo` enables full access for the current session: it skips tool approvals and allows file reads and writes inside and outside the workspace. Explicit policy denies, operating-system permissions, and configured command sandbox limits still apply. New sessions inherit the saved permission selection. The TUI has no command to disable full access.
 
+`/plan`, `/plan on`, `/plan off`, and `/plan <instruction>` use the selected backend plan service in both TUI and Web. `/plan status` reports the mode; `/plan pending` shows the last submitted plan. If the backend is disabled or unavailable, the UI reports plan mode off. Existing `.agh/plan-mode.json` files are read without migration. Plan mode blocks write and execution tools even with full access; leaving through `exit_plan_mode` still requires human approval of the exact plan revision. An explicit human `/plan off` remains available.
+
 <a id="退出码"></a>
 
 ## Exit codes

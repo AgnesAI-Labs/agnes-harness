@@ -1193,16 +1193,6 @@ class Service implements PackageAdminService {
     params: ClientModuleEffectCallParams,
     authority: PackageAdminAuthority,
   ): Promise<ExtensionCallResult> {
-    if (params.rowId === 'web:builtin:agnes/jobs' && params.service === 'jobs.control') {
-      if (!this.options.clientEffectCall) throw rpcError('CAPABILITY_DENIED')
-      const result = await this.options.clientEffectCall(
-        { ...params, packageId: '@agnes/base', extension: 'agnes/jobs-web' },
-        authority,
-      )
-      if (!validatePackageAdminCall('_agnes/v1/clientModules.callEffect', 'result', result).ok)
-        throw rpcError('INTERNAL_ERROR')
-      return result
-    }
     const directory = await this.options.profileDirectory(params.profile)
     const inventory = await this.options.manager.inventory(directory, { fresh: true })
     const roster = await this.clientModules.list({

@@ -23,6 +23,7 @@
     "./trace-panel": "./src/trace-panel.ts",
     "./usage": "./src/usage.ts",
     "./conversation-registry": "./src/conversation-registry.tsx",
+    "./workbench/terminal": "./src/workbench/terminal-client.ts",
     "./workbench": "./src/workbench/register.tsx"
   },
   "scripts": {

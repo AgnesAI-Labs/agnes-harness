@@ -50,7 +50,6 @@ import {
 import { type PermissionMode, permissionLabel, yoloEnabled } from '@agnes/web-admin/permission-picker'
 import { createSettingsController } from '@agnes/web-admin/settings'
 import { loadRuntimeCatalog } from '@agnes/web-admin/settings/api'
-import { bindJobsSessions } from '@agnes/web-admin/settings/jobs-api'
 import { settingsCatalog } from '@agnes/web-admin/settings/locales'
 import { effectiveSessionPreset, permissionForSessionPreset } from '@agnes/web-admin/settings/session-choice'
 import { mountStatusCheck } from '@agnes/web-admin/settings/status-check'
@@ -72,6 +71,7 @@ import { mountAppShell } from './app-shell.js'
 import { archivedSessions } from './archived-sessions.js'
 import { type ClaimResolver, startClientModules } from './client-modules/boot.js'
 import { startPluginHotReload } from './client-modules/hot-reload.js'
+import { bindJobsClient } from './client-modules/jobs.js'
 import type { RosterSource } from './client-modules/reconcile.js'
 import { rememberWebComposer, selectionFromMemory } from './composer-memory.js'
 import { composerReferences } from './composer-references.js'
@@ -727,25 +727,9 @@ const client = createClient({
   auth: { kind: 'local' },
   journal: localStorageJournal(sessionStorage, `agnes-web-commands:${wsUrl ?? location.origin}`),
 })
-const stopJobsSessions = bindJobsSessions({
-  current: () => current?.id,
-  async list() {
-    const rows: PageSessionMeta['items'] = []
-    let cursor: string | undefined
-    do {
-      const page = await client.session.list({ limit: 500, ...(cursor ? { cursor } : {}) })
-      rows.push(...page.items)
-      cursor = page.next
-    } while (cursor)
-    return rows.map((row) => ({
-      id: row.sessionId,
-      title: row.title || t('app.status.newTask'),
-      workspace: row.cwd?.split(/[\\/]/).filter(Boolean).at(-1) ?? '',
-      createdAt: row.createdAt,
-    }))
-  },
-})
-onPageHide(stopJobsSessions)
+onPageHide(
+  bindJobsClient({ client, current: () => current?.id, newTaskTitle: () => t('app.status.newTask') }),
+)
 let intentionalClose = false
 // Recovery state lives beside the notice, not in it: later errors rewrite the notice, and the
 // retry control must survive them.

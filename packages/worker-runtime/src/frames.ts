@@ -77,6 +77,7 @@ export type WorkerMethod =
   | 'profileService.readOperation'
   | 'profileService.listDecisions'
   | 'profileService.answerDecision'
+  | 'resolveService'
   | 'inspectService'
   | 'callService'
   | 'abortService'

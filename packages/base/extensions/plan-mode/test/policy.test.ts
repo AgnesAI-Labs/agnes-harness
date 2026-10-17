@@ -9,6 +9,7 @@ import { AGH_DIR } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import planMode from '../src/index.js'
 import { decidePlanMode } from '../src/policy.js'
+import { createPlanServices } from '../src/services.js'
 import { applyPlanCommand, clearPlanMode, planModePath, readPlanMode } from '../src/state.js'
 
 const dirs: string[] = []
@@ -91,6 +92,11 @@ describe('plan mode policy', () => {
     const signal = new AbortController().signal
     applyPlanCommand(root, '/plan ship the smallest change')
     expect(readPlanMode(root)).toMatchObject({ active: true, instruction: 'ship the smallest change' })
+    const unchanged = readPlanMode(root).revision
+    expect(applyPlanCommand(root, '/plan status')).toEqual({ active: true, text: 'Plan mode is on' })
+    expect(applyPlanCommand(root, '/plan pending')).toEqual({ active: true, text: 'No pending plan' })
+    expect(readPlanMode(root).revision).toBe(unchanged)
+
     expect(decidePlanMode(input(root, 'shell', false, cwd), signal, defaultToolPolicy)).toEqual({
       effect: 'deny',
       reason: 'Plan mode blocks write and exec tools until the plan is approved',
@@ -157,6 +163,9 @@ describe('plan mode extension', () => {
       (payload: unknown, ctx: { session: { workspaceRoot: string } }) => unknown
     >()
     extensionFactoryOf(planMode)({
+      ctx: { signal: new AbortController().signal },
+      providers: { register: () => async () => undefined },
+      registerService: () => () => undefined,
       registerTool(tool: ToolDef) {
         tools.push(tool)
         return () => undefined
@@ -204,4 +213,54 @@ describe('plan mode extension', () => {
     expect(readPlanMode(cwd)).toMatchObject({ active: false, pendingPlan: 'do the small thing' })
     expect(hooks.get('context')?.({}, ctx)).toEqual({})
   })
+})
+
+it('serves canonical plan operations, reads existing state and leaves disabled mode off without writes', async () => {
+  const root = workspace()
+  let available = true
+  const services = createPlanServices(() => available)
+  const status = services.find((service) => service.name === 'plan.status')
+  const command = services.find((service) => service.name === 'plan.command')
+  if (!status || !command) throw new Error('Plan services missing')
+  const ctx = { session: { workspaceRoot: root }, actor: { role: 'user' }, source: 'plan-admin' } as never
+  applyPlanCommand(root, '/plan')
+  writeFileSync(
+    join(root, AGH_DIR, 'plan-mode.json'),
+    JSON.stringify({
+      active: true,
+      instruction: 'existing instruction',
+      pendingPlan: 'existing pending',
+      updatedAt: '2026-10-01T00:00:00Z',
+    }),
+  )
+  await expect(status.handler({}, ctx)).resolves.toMatchObject({
+    active: true,
+    instruction: 'existing instruction',
+    pendingPlan: 'existing pending',
+  })
+  await expect(command.handler({ line: '/plan pending' }, ctx)).resolves.toMatchObject({
+    text: 'existing pending',
+  })
+  await expect(command.handler({ line: '/plan new instruction' }, ctx)).resolves.toMatchObject({
+    active: true,
+  })
+  expect(readPlanMode(root)).toMatchObject({ instruction: 'new instruction' })
+  available = false
+  const revision = readPlanMode(root).revision
+  await expect(command.handler({ line: '/plan off' }, ctx)).resolves.toMatchObject({
+    active: false,
+    text: expect.stringContaining('unavailable'),
+  })
+  await expect(status.handler({}, ctx)).resolves.toMatchObject({ active: false })
+  expect(readPlanMode(root).revision).toBe(revision)
+  available = true
+  await expect(
+    command.handler({ line: '/plan off' }, {
+      session: { workspaceRoot: root },
+      actor: { role: 'extension' },
+      source: 'client-web',
+    } as never),
+  ).rejects.toThrow('human workspace control')
+  await command.handler({ line: '/plan off' }, ctx)
+  expect(readPlanMode(root).active).toBe(false)
 })

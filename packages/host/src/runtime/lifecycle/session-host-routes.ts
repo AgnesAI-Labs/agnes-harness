@@ -52,6 +52,7 @@ export function sessionHostRoutes(
     validatePresetSwitch: (name, key) => (key ? owner(key) : current()).validatePresetSwitch(name, key),
     validateModelSwitch: (selection, key) =>
       (key ? owner(key) : current()).validateModelSwitch(selection, key),
+    resolveService: (key, names) => owner(key).resolveService(key, names),
     callService: (params, ...rest) => owner(params.sessionId).callService(params, ...rest),
     inspectService: (params, ...rest) => owner(params.sessionId).inspectService(params, ...rest),
   }

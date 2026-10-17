@@ -14,7 +14,6 @@ import { exporterHealth } from '@agnes/observability'
 import type { LocalGate } from '@agnes/plugin-runtime/host'
 import {
   type Actor,
-  type ExtensionCallParams,
   MAX_FRAME_BYTES,
   type McpStatus,
   rpcError,
@@ -34,6 +33,7 @@ import type { McpRowRuntime } from './mcp-row-runtime.js'
 import { noticeConnectingMcp } from './mcp-turn-notice.js'
 import { deliverBoundSystemInput, isProfileCommand, profileServiceCommand } from './profile-commands.js'
 import { sessionReferences } from './references.js'
+import { sessionServiceCommand } from './service-commands.js'
 import { refreshSkills } from './skills-refresh.js'
 import { readToolDetailPage } from './tool-detail.js'
 import { sessionWorkspaceChanges } from './workspace-changes.js'
@@ -914,52 +914,10 @@ export async function handleServiceCommand(
       if (!host?.computerUse || typeof p.operationId !== 'string')
         throw new TypeError('invalid Computer Use operation cancellation')
       return host.computerUse.operationCancel(p.operationId)
-    case 'inspectService': {
-      if (!host) throw new Error('generic services are unavailable in a resource lifecycle worker')
-      const params = p.call as ExtensionCallParams | undefined
-      if (
-        typeof p.sessionKey !== 'string' ||
-        p.sessionKey.length === 0 ||
-        !params ||
-        params.sessionId !== p.sessionKey
-      )
-        throw rpcError('CAPABILITY_DENIED')
-      const callId = String(p.callId)
-      if (!callId || aborts.has(callId)) throw new Error('duplicate service call id')
-      const ac = new AbortController()
-      aborts.set(callId, ac)
-      try {
-        return await host.inspectService(params, p.credential, ac.signal)
-      } finally {
-        aborts.delete(callId)
-      }
-    }
-    case 'callService': {
-      if (!host) throw new Error('generic services are unavailable in a resource lifecycle worker')
-      const params = p.call as ExtensionCallParams | undefined
-      if (
-        typeof p.sessionKey !== 'string' ||
-        p.sessionKey.length === 0 ||
-        !params ||
-        params.sessionId !== p.sessionKey
-      )
-        throw rpcError('CAPABILITY_DENIED')
-      const callId = String(p.callId)
-      if (!callId || aborts.has(callId)) throw new Error('duplicate service call id')
-      const ac = new AbortController()
-      aborts.set(callId, ac)
-      try {
-        const admission = p.effectCommandId
-        return await host.callService(
-          params,
-          p.credential,
-          ac.signal,
-          typeof admission === 'string' ? { commandId: admission } : undefined,
-        )
-      } finally {
-        aborts.delete(callId)
-      }
-    }
+    case 'resolveService':
+    case 'inspectService':
+    case 'callService':
+      return sessionServiceCommand(host, cmd, aborts)
     case 'resourceMcpTools':
       if (!resources) throw new Error('resource runtime is unavailable')
       return resources.mcp.tools(String(p.serverId), typeof p.cursor === 'string' ? p.cursor : undefined)

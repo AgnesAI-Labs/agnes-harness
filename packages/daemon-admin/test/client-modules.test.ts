@@ -1460,7 +1460,7 @@ describe('client module immutable snapshots', () => {
         },
         authority,
       ),
-    ).resolves.toMatchObject({ output: { extension: 'agnes/jobs-web', sessionId: 'session-a' } })
+    ).rejects.toMatchObject({ code: -32006 })
     await expect(
       service.call(
         '_agnes/v1/clientModules.callService',
@@ -1487,7 +1487,7 @@ describe('client module immutable snapshots', () => {
         },
         { ...authority, permissions: ['packages.read', 'extensions.execute'] },
       ),
-    ).resolves.toMatchObject({ output: { extension: 'agnes/jobs-web', commandId: 'terminal-close' } })
+    ).rejects.toMatchObject({ code: -32006 })
     await expect(
       service.call(
         '_agnes/v1/clientModules.callService',
@@ -1536,7 +1536,7 @@ describe('client module immutable snapshots', () => {
         { ...authority, permissions: ['packages.read', 'extensions.execute'] },
       ),
     ).rejects.toMatchObject({ message: 'CAPABILITY_DENIED' })
-    expect(effectDispatch).toHaveBeenCalledTimes(2)
+    expect(effectDispatch).toHaveBeenCalledTimes(1)
     service.closeClientModules()
   })
 

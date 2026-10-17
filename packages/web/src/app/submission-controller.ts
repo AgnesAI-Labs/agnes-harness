@@ -197,7 +197,8 @@ export function createSubmissionController(
       }
       context.composerRuntime.setDraft('')
       sessionStorage.removeItem(context.composerDraftKey)
-      void submitPlanCommand(cwd, input)
+      void prepareComposerSession()
+        .then((session) => submitPlanCommand(cwd, input, fetch, session.id))
         .then((result) => {
           context.notice.setText(result.text)
           context.notice.setKind('')

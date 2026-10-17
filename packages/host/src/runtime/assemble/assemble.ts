@@ -237,6 +237,7 @@ function publish(ctx: AssemblyContext, f: Foundation, t: Tree, c: Core, e: Exten
     activationBarrier: ctx.activationBarrier,
     approvalGrants: t.approvalGrantControl.management,
     profileServices,
+    serviceBinding: (names) => e.host.services.binding(names),
     callService: servicesInvocation.call,
     inspectService: servicesInvocation.inspect,
     prepareService: servicesInvocation.prepare,

@@ -23,7 +23,8 @@
         "apiRange": "^4.0.0",
         "id": "tool-policy:default",
         "inject": [
-          "providers"
+          "providers",
+          "planMode"
         ],
         "runtime": "in-process",
         "metadata": {
@@ -38,7 +39,10 @@
               "description": "按会话策略判断哪些工具操作需要先获得批准。"
             }
           }
-        }
+        },
+        "optionalInject": [
+          "planMode"
+        ]
       },
       {
         "id": "observability:otel",
@@ -340,6 +344,74 @@
               "description": "解析对话中附带的受支持文件与会话引用。"
             }
           }
+        }
+      },
+      {
+        "id": "service:plan-mode",
+        "export": "planModePlugin",
+        "apiRange": "^4.0.0",
+        "inject": [
+          "providers",
+          "services"
+        ],
+        "metadata": {
+          "displayName": "Plan mode controls",
+          "summary": "Provides shared plan mode controls for Web and terminal clients.",
+          "description": "Provides shared plan mode controls for Web and terminal clients.",
+          "category": "safety-approval",
+          "locales": {
+            "zh-CN": {
+              "displayName": "计划模式控制",
+              "summary": "为 Web 和终端客户端提供共享的计划模式控制。",
+              "description": "为 Web 和终端客户端提供共享的计划模式控制。"
+            }
+          }
+        },
+        "provide": [
+          "planMode"
+        ],
+        "capabilities": {
+          "services": [
+            {
+              "name": "plan.status",
+              "kind": "query",
+              "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              },
+              "outputSchema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "timeoutMs": 10000,
+              "maxResultBytes": 1048576
+            },
+            {
+              "name": "plan.command",
+              "kind": "effect",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "line": {
+                    "type": "string",
+                    "maxLength": 8192,
+                    "pattern": "^\\s*/plan(?:\\s|$)"
+                  }
+                },
+                "required": [
+                  "line"
+                ],
+                "additionalProperties": false
+              },
+              "outputSchema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "timeoutMs": 10000,
+              "maxResultBytes": 1048576
+            }
+          ]
         }
       }
     ],

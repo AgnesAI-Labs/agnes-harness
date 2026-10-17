@@ -24,6 +24,7 @@ export const HOST_MEMBER_SCOPES = {
   activationBarrier: 'deployment',
   approvalGrants: 'deployment',
   profileServices: 'deployment',
+  resolveService: 'session',
   callService: 'session',
   inspectService: 'session',
   applyModelProfile: 'deployment',

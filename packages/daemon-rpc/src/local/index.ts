@@ -452,6 +452,7 @@ export function createLocalEndpoint(
         activationBarrier: cx.activationBarrier,
         journal,
         commandQueue,
+        resolveService: host.resolveService.bind(host),
         callService: host.callService.bind(host),
         inspectService: host.inspectService.bind(host),
       },

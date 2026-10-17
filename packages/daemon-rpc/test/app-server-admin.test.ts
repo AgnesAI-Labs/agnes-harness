@@ -1,16 +1,26 @@
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { applyPlanCommand } from '@agnes/base/plan-mode'
 import { localPackageAdminAuthority, localWebSkinReadAuthority } from '@agnes/daemon-admin/packages/index'
 import { McpResourceStore, RESOURCE_ALL_PERMISSIONS } from '@agnes/daemon-admin/resources/index'
 import { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
+import { MemoryJournal } from '@agnes/daemon-foundation/local/ports'
 import { compilePluginConfig } from '@agnes/extension-api'
-import { createCredentialStore, createPlatform, createSecretsFile, resolveProfile } from '@agnes/host'
+import {
+  createCredentialStore,
+  createExtensionActivationBarrier,
+  createPlatform,
+  createSecretsFile,
+  resolveProfile,
+} from '@agnes/host'
 import { jcs } from '@agnes/protocol'
 import type { AdminCredentialMetadata } from '@agnes/protocol/gen/app-server'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
+import { CommandQueue } from '../src/local/command-queue.js'
 import { createAppServerAdmin, registerAppServerAdmin } from '../src/local/methods/admin.js'
+import { createPlanCommands } from '../src/local/plan-commands.js'
 
 it('owns settings and plan writes behind local admin and registered-workspace authority', async () => {
   const home = await mkdtemp(join(tmpdir(), 'agh-app-admin-'))
@@ -18,7 +28,9 @@ it('owns settings and plan writes behind local admin and registered-workspace au
   await mkdir(cwd)
   await mkdir(join(home, 'data'))
   await writeFile(join(cwd, 'AGENTS.md'), 'Project rules')
+  const plan = vi.fn(async (input: { cwd: string; line: string }) => applyPlanCommand(input.cwd, input.line))
   const service = createAppServerAdmin({
+    plan,
     home,
     dataDir: join(home, 'data'),
     profileDir: join(home, 'profiles/local-dev'),
@@ -77,12 +89,17 @@ it('owns settings and plan writes behind local admin and registered-workspace au
     expect(await call('_agnes/v1/admin.plan', { cwd, line: '/plan look first' })).toMatchObject({
       result: { active: true, text: 'Plan mode is on: look first' },
     })
+    expect(plan).toHaveBeenCalledWith({ cwd: await realpath(cwd), line: '/plan look first' })
     expect(JSON.parse(await readFile(join(cwd, '.agh/plan-mode.json'), 'utf8'))).toMatchObject({
       active: true,
       instruction: 'look first',
     })
     expect(await call('_agnes/v1/admin.plan', { cwd, line: '/plan off' })).toMatchObject({
       result: { active: false },
+    })
+    plan.mockResolvedValueOnce({ active: false, text: 'Plan mode is off (provider unavailable)' })
+    expect(await call('_agnes/v1/admin.plan', { cwd, line: '/plan' })).toMatchObject({
+      result: { active: false, text: 'Plan mode is off (provider unavailable)' },
     })
     for (const params of [
       { cwd: home, line: '/plan' },
@@ -399,5 +416,53 @@ it('manages write-only generic credentials with MCP references, restart persiste
   } finally {
     await endpoint.close()
     await rm(home, { recursive: true, force: true })
+  }
+})
+
+it('dispatches plan operations to the session binding with narrow grants, durable effects and workspace refusal', async () => {
+  const queue = new CommandQueue()
+  const calls: string[] = []
+  const services = {
+    activationBarrier: createExtensionActivationBarrier(),
+    journal: new MemoryJournal(Date.now),
+    commandQueue: queue,
+    resolveService: async (key: string) =>
+      key === 'disabled'
+        ? undefined
+        : { extension: 'community/plan', packageId: '@community/plan', workspaceRoot: '/workspace' },
+    inspectService: async () => ({ kind: 'effect' as const }),
+    callService: async (
+      params: import('@agnes/protocol').ExtensionCallParams,
+      credential: unknown,
+      _signal?: AbortSignal,
+      admission?: { commandId: string },
+    ) => {
+      expect(params.extension).toBe('community/plan')
+      expect(params.service).toBe('plan.command')
+      expect(credential).toMatchObject({
+        source: 'plan-admin',
+        grants: [{ extension: 'community/plan', name: 'plan.command', range: '*' }],
+      })
+      expect(admission?.commandId).toBe(params.commandId)
+      calls.push(params.sessionId)
+      return { output: { active: true, text: 'Plan mode is on' } }
+    },
+  }
+  const plan = createPlanCommands(services)
+  try {
+    await expect(plan({ cwd: '/workspace', sessionId: 'selected', line: '/plan on' })).resolves.toEqual({
+      active: true,
+      text: 'Plan mode is on',
+    })
+    await expect(plan({ cwd: '/other', sessionId: 'selected', line: '/plan off' })).rejects.toMatchObject({
+      data: { code: 'CAPABILITY_DENIED' },
+    })
+    await expect(plan({ cwd: '/workspace', sessionId: 'disabled', line: '/plan on' })).resolves.toMatchObject(
+      { active: false, text: expect.stringContaining('unavailable') },
+    )
+    await expect(plan({ cwd: '/workspace', line: '/plan on' })).resolves.toMatchObject({ active: false })
+    expect(calls).toEqual(['selected'])
+  } finally {
+    await queue.close()
   }
 })

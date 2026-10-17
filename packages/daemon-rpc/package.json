@@ -25,6 +25,7 @@
     "./local/methods/session-selection": "./src/local/methods/session-selection.ts",
     "./local/methods/surfaces": "./src/local/methods/surfaces.ts",
     "./local/methods/workspaces": "./src/local/methods/workspaces.ts",
+    "./local/plan-commands": "./src/local/plan-commands.ts",
     "./local/project": "./src/local/project.ts",
     "./local/prompter": "./src/local/prompter.ts",
     "./local/session-admission": "./src/local/session-admission.ts",

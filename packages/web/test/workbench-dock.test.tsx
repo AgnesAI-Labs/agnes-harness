@@ -1,10 +1,11 @@
 /** @vitest-environment happy-dom */
 import { resolve } from 'node:path'
-import { workbenchPanels } from '@agnes/web-client'
+import { settingsSections, workbenchPanels } from '@agnes/web-client'
 import { renderRegion, unmountRegion } from '@agnes/web-ui'
 import { flushSync } from 'react-dom'
 import { expect, it, vi } from 'vitest'
 import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
+import { registerJobsClientContribution } from '../src/client-modules/jobs.js'
 import { Dock, renderWorkbench, unmountWorkbench } from '../src/workbench/dock.js'
 import { cycleTaskFocus } from '../src/workbench/focus.js'
 import { mentionPanelPath } from '../src/workbench/mention-path.js'
@@ -385,4 +386,13 @@ it('shows a tab count beside the title and re-reads it when its source notifies'
     expect(listeners.size).toBe(0)
     localStorage.clear()
   }
+})
+
+it('registers and retires the shared jobs client contribution without owning a backend', () => {
+  const release = registerJobsClientContribution()
+  expect(workbenchPanels.get('terminal')?.titleKey).toBe('workbench.terminal.title')
+  expect(settingsSections.get('background-jobs')?.runtimeCatalog).toBe(false)
+  release()
+  expect(workbenchPanels.get('terminal')).toBeUndefined()
+  expect(settingsSections.get('background-jobs')).toBeUndefined()
 })

@@ -28,7 +28,6 @@ export function createHostServices(
   const servicesInvocation = serviceInvoker({
     authorize: async (entry, params, actor, workspace, signal) => {
       if (
-        entry.owner === 'agnes/jobs-web' &&
         entry.capability.name === 'jobs.control' &&
         params.input &&
         typeof params.input === 'object' &&

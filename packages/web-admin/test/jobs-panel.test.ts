@@ -2,7 +2,7 @@
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
-import type { SessionJob } from '../src/settings/jobs-api.js'
+import { bindJobsSessions, type SessionJob, sessionJobsApi } from '../src/settings/jobs-api.js'
 import { JobsPanel } from '../src/settings/jobs-panel.js'
 import { terminalKey, terminalScreen } from '../src/settings/terminal-screen.js'
 
@@ -153,4 +153,27 @@ it('rests with no running jobs, backs off active reads and pauses while hidden',
     visible.mockRestore()
     vi.useRealTimers()
   }
+})
+
+it('uses the session job binding RPC from the existing management UI API', async () => {
+  const call = vi.fn(async (method: string) =>
+    method.endsWith('.read') ? { jobs: [], completions: [] } : { output: { id: 'community-terminal' } },
+  )
+  const dispose = bindJobsSessions({ current: () => 'community-session', list: async () => [], call })
+  try {
+    const api = sessionJobsApi()
+    await expect(api.read('community-session')).resolves.toEqual({ jobs: [], completions: [] })
+    expect(call).toHaveBeenCalledWith('_agnes/v1/session.jobs.read', { sessionId: 'community-session' })
+    await expect(api.control('community-session', { operation: 'open' })).resolves.toEqual({
+      id: 'community-terminal',
+    })
+    expect(call).toHaveBeenCalledWith('_agnes/v1/session.jobs.control', {
+      sessionId: 'community-session',
+      operation: 'open',
+      commandId: expect.any(String),
+    })
+  } finally {
+    dispose()
+  }
+  await expect(sessionJobsApi().read('community-session')).rejects.toThrow('unavailable')
 })

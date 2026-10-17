@@ -318,14 +318,18 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
           if (!response.writableEnded) json(response, 400, { error: { code: 'INVALID_REQUEST' } })
           return
         }
-        let parsed: { cwd?: unknown; line?: unknown }
+        let parsed: { cwd?: unknown; line?: unknown; sessionId?: unknown }
         try {
-          parsed = JSON.parse(raw) as { cwd?: unknown; line?: unknown }
+          parsed = JSON.parse(raw) as { cwd?: unknown; line?: unknown; sessionId?: unknown }
         } catch {
           json(response, 400, { error: { code: 'INVALID_REQUEST' } })
           return
         }
-        if (typeof parsed.cwd !== 'string' || typeof parsed.line !== 'string') {
+        if (
+          typeof parsed.cwd !== 'string' ||
+          typeof parsed.line !== 'string' ||
+          (parsed.sessionId !== undefined && typeof parsed.sessionId !== 'string')
+        ) {
           json(response, 400, { error: { code: 'INVALID_REQUEST' } })
           return
         }
@@ -334,7 +338,15 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
           return
         }
         try {
-          json(response, 200, await options.planCommand({ cwd: parsed.cwd, line: parsed.line }))
+          json(
+            response,
+            200,
+            await options.planCommand({
+              cwd: parsed.cwd,
+              line: parsed.line,
+              ...(typeof parsed.sessionId === 'string' ? { sessionId: parsed.sessionId } : {}),
+            }),
+          )
         } catch (error) {
           const rpc = (error as { rpc?: RpcError })?.rpc
           json(response, rpc?.code === -32006 ? 403 : 400, {

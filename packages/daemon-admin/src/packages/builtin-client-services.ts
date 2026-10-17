@@ -15,11 +15,9 @@ export function callBuiltinClientQuery(
     | undefined,
 ): Promise<ExtensionCallResult> | undefined {
   const extension =
-    params.rowId === 'web:builtin:agnes/jobs' && params.service === 'jobs.read'
-      ? 'agnes/jobs-web'
-      : params.rowId === 'web:builtin:agnes/reply-suggestions' && params.service === 'replies.read'
-        ? 'agnes/follow-up-hint'
-        : undefined
+    params.rowId === 'web:builtin:agnes/reply-suggestions' && params.service === 'replies.read'
+      ? 'agnes/follow-up-hint'
+      : undefined
   if (!extension) return undefined
   if (!call) return Promise.reject(rpcError('CAPABILITY_DENIED'))
   return call({ ...params, packageId: '@agnes/base', extension }).then((result) => {

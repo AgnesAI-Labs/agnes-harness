@@ -170,6 +170,18 @@ export function applyPlanCommand(workspaceRoot: string, line: string): { active:
     .trim()
     .replace(/^\/plan\b/, '')
     .trim()
+  if (rest === 'status' || rest === 'pending') {
+    const state = readPlanMode(workspaceRoot)
+    return {
+      active: state.active,
+      text:
+        rest === 'pending'
+          ? (state.pendingPlan?.slice(0, 8192) ?? 'No pending plan')
+          : state.active
+            ? 'Plan mode is on'
+            : 'Plan mode is off',
+    }
+  }
   const updatedAt = new Date().toISOString()
   if (rest === 'off') {
     writePlanMode(workspaceRoot, { active: false, updatedAt })
