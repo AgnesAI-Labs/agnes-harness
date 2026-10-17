@@ -158,6 +158,7 @@ export function createComposerController(
       endSessionRead = undefined
     }
     const available = context.connected
+    const lastTurn = context.projection?.turns.at(-1)
     const busy = context.projection ? webView(context.projection, undefined, context.t).busy : false
     const images = context.composerRuntime.getAttachmentBlocks()
     const hasInput =
@@ -265,6 +266,19 @@ export function createComposerController(
                       context.t,
                     ),
       input: {
+        ...(!context.draftingNew &&
+        !context.readOnly &&
+        !context.sessionPending &&
+        context.current &&
+        lastTurn
+          ? {
+              hintScope: {
+                sessionId: context.current.id,
+                turn: lastTurn.turn,
+                completed: !busy && lastTurn.reason === 'completed',
+              },
+            }
+          : {}),
         exampleHint: context.draftingNew && !context.readOnly,
         disabled:
           !available ||

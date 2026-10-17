@@ -14,6 +14,7 @@ import { flushSync } from 'react-dom'
 import { QuestionDock } from '../intelligent-ui/question-dock.js'
 import { LoopPicker } from '../loop-picker.js'
 import { businessAgentSuggestions } from '../pages/business-agents.js'
+import { loadReplySuggestion } from '../reply-suggestion.js'
 import {
   COMPOSER_BAR_DSH_CHILDREN,
   COMPOSER_DEPENDENCIES,
@@ -101,6 +102,14 @@ export function mountComposerRegion(
   // Render-time lookup: the injected translate reads whatever locale is current on each render.
   const composerDependencies: ComposerDependencies = {
     ...COMPOSER_DEPENDENCIES,
+    loadHint: loadReplySuggestion,
+    subscribeHintInvalidation: (listener) => {
+      const events = ['agnes:packages-changed', 'agnes:session-configuration-changed', 'agnes:settings-route']
+      for (const event of events) window.addEventListener(event, listener, true)
+      return () => {
+        for (const event of events) window.removeEventListener(event, listener, true)
+      }
+    },
     translate: (key, vars) => locale.t(key, vars),
     // Wrap the usage panel so the shared React component renders with the current locale.
     UsagePanel: (props) => <ConversationUsage {...props} t={(key, vars) => locale.t(key, vars)} />,

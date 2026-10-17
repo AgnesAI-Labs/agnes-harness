@@ -58,6 +58,7 @@ import {
 import { classifyPackageContributions } from '../package-readiness.js'
 import { pluginTreeList } from '../plugin-tree-surface.js'
 import { runAuthoringTests } from './authoring-tests.js'
+import { callBuiltinClientQuery } from './builtin-client-services.js'
 import {
   type ClientModuleRegistry,
   type ClientModulesChanged,
@@ -1152,19 +1153,8 @@ class Service implements PackageAdminService {
   private async clientModulesCallService(
     params: ClientModuleServiceCallParams,
   ): Promise<ExtensionCallResult> {
-    // This built-in panel uses declared Base services. The worker still checks the pinned
-    // session's extension registration, grant, principal and query/effect kind on every call.
-    if (params.rowId === 'web:builtin:agnes/jobs' && params.service === 'jobs.read') {
-      if (!this.options.clientServiceCall) throw rpcError('CAPABILITY_DENIED')
-      const result = await this.options.clientServiceCall({
-        ...params,
-        packageId: '@agnes/base',
-        extension: 'agnes/jobs-web',
-      })
-      if (!validatePackageAdminCall('_agnes/v1/clientModules.callService', 'result', result).ok)
-        throw rpcError('INTERNAL_ERROR')
-      return result
-    }
+    const builtin = callBuiltinClientQuery(params, this.options.clientServiceCall)
+    if (builtin) return builtin
     const directory = await this.options.profileDirectory(params.profile)
     const inventory = await this.options.manager.inventory(directory, { fresh: true })
     const roster = await this.clientModules.list({

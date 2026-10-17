@@ -367,6 +367,7 @@
       "./extensions/jobs-web",
       "./extensions/context-rules",
       "./extensions/time-context",
+      "./extensions/follow-up-hint",
       "./extensions/schedule",
       "./extensions/intelligent-ui"
     ],

@@ -1463,6 +1463,19 @@ describe('client module immutable snapshots', () => {
     ).resolves.toMatchObject({ output: { extension: 'agnes/jobs-web', sessionId: 'session-a' } })
     await expect(
       service.call(
+        '_agnes/v1/clientModules.callService',
+        {
+          profile: 'local-dev',
+          rowId: 'web:builtin:agnes/reply-suggestions',
+          sessionId: 'session-a',
+          service: 'replies.read',
+          input: { turn: 1 },
+        },
+        authority,
+      ),
+    ).resolves.toMatchObject({ output: { extension: 'agnes/follow-up-hint', sessionId: 'session-a' } })
+    await expect(
+      service.call(
         '_agnes/v1/clientModules.callEffect',
         {
           profile: 'local-dev',
