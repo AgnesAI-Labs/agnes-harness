@@ -126,11 +126,13 @@ function fixture(version = '1.0.0') {
     },
   })
   const audit = vi.fn()
+  const changes = vi.fn()
   const make = (journalKey?: string, managed?: ProfileManagedResources) =>
     createProfileServiceRuntime({
       ...(journalKey ? { journalKey } : {}),
       ...(managed ? { managed } : {}),
       profileId: 'default',
+      decisionsChanged: changes,
       registry,
       activations,
       storage,
@@ -185,6 +187,7 @@ function fixture(version = '1.0.0') {
     make,
     call,
     audit,
+    changes,
     setActor: (value: Actor) => {
       resolvedActor = value
     },
@@ -244,8 +247,15 @@ describe('current profile authority', () => {
         state: 'approval-required',
         decision: { sessionId: null, profileId: 'default' },
       })
+      expect(f.changes.mock.calls).toEqual([
+        [{ profile: 'default', principal: { id: actor.id, org: actor.org } }],
+      ])
+      f.changes.mockClear()
       expect(await runtime.call(f.call, 'granted')).toEqual(pending)
-      const snapshot = (await runtime.listDecisions('human'))[0]!
+      expect(f.changes).not.toHaveBeenCalled()
+      const listed = await runtime.listDecisionState('human')
+      expect(listed.principal).toEqual({ id: actor.id, org: actor.org })
+      const snapshot = listed.decisions[0]!
       expect(snapshot.request.spec.subject).toMatchObject({
         input: { value: 1 },
         preparedInput: { value: 1 },
@@ -262,10 +272,15 @@ describe('current profile authority', () => {
           'other',
         ),
       ).rejects.toThrow()
+      expect(f.changes).not.toHaveBeenCalled()
       await runtime.close()
       runtime = f.make()
       expect((await runtime.listDecisions('human'))[0]?.handle).toEqual(snapshot.handle)
+      f.changes.mockClear()
       await approve(runtime)
+      expect(f.changes.mock.calls).toEqual([
+        [{ profile: 'default', principal: { id: actor.id, org: actor.org } }],
+      ])
       expect(await runtime.call(f.call, 'granted')).toMatchObject({
         state: 'completed',
         output: { value: 1 },
@@ -319,17 +334,52 @@ describe('current profile authority', () => {
       await runtime.close()
     }
   })
+  it('expires persisted profile approvals at the deadline without polling and cleans up on close', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const f = fixture()
+    let runtime = f.make()
+    try {
+      await runtime.call(f.call, 'granted')
+      await runtime.close()
+      f.changes.mockClear()
+      runtime = f.make()
+      await runtime.listDecisions('human')
+      expect(f.changes).not.toHaveBeenCalled()
+      f.time(86401001)
+      await vi.advanceTimersByTimeAsync(86400000)
+      expect(f.changes.mock.calls).toEqual([
+        [{ profile: 'default', principal: { id: actor.id, org: actor.org } }],
+      ])
+      expect(await runtime.listDecisions('human')).toEqual([])
+      await runtime.call({ ...f.call, operationId: 'after-expiry' }, 'granted')
+      await runtime.close()
+      f.changes.mockClear()
+      f.time(172802000)
+      await vi.advanceTimersByTimeAsync(86400000)
+      expect(f.changes).not.toHaveBeenCalled()
+    } finally {
+      await runtime.close()
+      vi.useRealTimers()
+    }
+  })
   it('shares one profile writer while retained code containers close', async () => {
     const f = fixture(),
       first = f.make('shared-profile-fixture'),
       second = f.make('shared-profile-fixture')
     try {
       const pending = await first.call(f.call, 'granted')
+      expect(f.changes.mock.calls).toEqual([
+        [{ profile: 'default', principal: { id: actor.id, org: actor.org } }],
+      ])
       expect((await second.listDecisions('human'))[0]?.handle).toEqual(
         'decision' in pending ? pending.decision : undefined,
       )
       await first.close()
+      f.changes.mockClear()
       await approve(second)
+      expect(f.changes.mock.calls).toEqual([
+        [{ profile: 'default', principal: { id: actor.id, org: actor.org } }],
+      ])
       expect(await second.call(f.call, 'granted')).toMatchObject({ state: 'completed' })
     } finally {
       await first.close()
@@ -353,6 +403,12 @@ describe('current profile authority', () => {
             data: { code: 'ID_CONFLICT' },
           })
         else expect(await runtime.call(f.call, 'granted')).toMatchObject({ state: 'refused' })
+        if (reason === 'disabled') await runtime.listDecisions('human')
+        if (reason === 'expired' || reason === 'disabled') {
+          expect(f.changes.mock.calls.length).toBeGreaterThan(1)
+          for (const [detail] of f.changes.mock.calls)
+            expect(detail).toEqual({ profile: 'default', principal: { id: actor.id, org: actor.org } })
+        }
         expect(f.handler).not.toHaveBeenCalled()
       } finally {
         await runtime.close()

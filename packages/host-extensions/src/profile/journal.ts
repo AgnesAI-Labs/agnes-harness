@@ -11,10 +11,13 @@ import {
 import type { DecisionSnapshot } from '@agnes/extension-api'
 import {
   type Actor,
+  type DaemonNotice,
   type JsonValue,
   type ProfileServiceReceipt,
   profileDecisionJournalKey,
 } from '@agnes/protocol'
+
+export type DecisionsChanged = Extract<DaemonNotice, { kind: 'decisions_changed' }>['detail']
 
 export interface ProfileOperation {
   key: string
@@ -34,6 +37,7 @@ export class ProfileJournal {
   private log!: SessionLogImpl
   private tail: Promise<unknown> = Promise.resolve()
   private closed = false
+  private expiryTimer: ReturnType<typeof setTimeout> | undefined
   readonly operations = new Map<string, ProfileOperation>()
   private readonly cells = new Map<string, { value: DecisionSnapshot; seq: number }>()
   private constructor(
@@ -44,6 +48,7 @@ export class ProfileJournal {
     profileId: string,
     storage: StorageAdapter,
     clock: () => number,
+    changed: (detail: DecisionsChanged) => void = () => undefined,
   ): Promise<ProfileJournal> {
     const journal = new ProfileJournal(profileId, clock)
     const apply = (events: Event[]) => {
@@ -70,6 +75,25 @@ export class ProfileJournal {
       replay: { page: apply },
       onAppended: apply,
     })
+    journal.log.observeCommitted(['decision/state', 'x/host/profile-operation'], (events) => {
+      journal.scheduleExpiry()
+      const principals = new Map<string, DecisionsChanged['principal']>()
+      for (const event of events) {
+        const operation =
+          event.type === 'x/host/profile-operation' ? (event.data as unknown as ProfileOperation) : undefined
+        const value = operation
+          ? operation.receipt.state === 'approval-required' && operation.receipt.decision
+            ? journal.cells.get(operation.receipt.decision.id)?.value
+            : undefined
+          : (event.data as DecisionSnapshot)
+        // Creation is visible only once the owning operation receipt has also committed.
+        if (!value || (!operation && value.revision === 1)) continue
+        const { id, org } = value.request.requestedBy
+        principals.set(JSON.stringify([id, org]), { id, org })
+      }
+      for (const principal of principals.values()) changed({ profile: profileId, principal })
+    })
+    journal.scheduleExpiry()
     // A dispatch without a terminal receipt is never automatically retried after restart.
     for (const operation of journal.operations.values())
       if (operation.receipt.state === 'running')
@@ -78,6 +102,39 @@ export class ProfileJournal {
           receipt: { operationId: operation.receipt.operationId, state: 'unknown', code: 'OUTCOME_UNKNOWN' },
         })
     return journal
+  }
+  /** One deadline wakeup, never periodic discovery. Recovery re-arms persisted deadlines. */
+  private scheduleExpiry(): void {
+    clearTimeout(this.expiryTimer)
+    this.expiryTimer = undefined
+    if (this.closed) return
+    const pending = [...this.cells.values()]
+      .map(({ value }) => value)
+      .filter(
+        (value) =>
+          !value.consumption &&
+          !value.invalidation &&
+          (!value.result || value.result.reason === 'answered') &&
+          value.request.expiresAt !== null,
+      )
+    const first = pending[0]
+    if (!first) return
+    const next = pending.reduce(
+      (deadline, value) => Math.min(deadline, Date.parse(value.request.expiresAt ?? '')),
+      Infinity,
+    )
+    this.expiryTimer = setTimeout(
+      () => {
+        const actor = first.request.requestedBy
+        void this.decisions(actor)
+          .list()
+          .then(() => this.scheduleExpiry())
+          // A failed writer must not spin at an already elapsed deadline. Reads stay fail-closed.
+          .catch(() => undefined)
+      },
+      Math.min(2147483647, Math.max(0, next - this.clock())),
+    )
+    this.expiryTimer.unref()
   }
   locked<T>(work: () => Promise<T>): Promise<T> {
     const pending = this.tail.then(work)
@@ -143,6 +200,7 @@ export class ProfileJournal {
   }
   async close(): Promise<void> {
     this.closed = true
+    clearTimeout(this.expiryTimer)
     await this.tail
     await this.log.close()
   }

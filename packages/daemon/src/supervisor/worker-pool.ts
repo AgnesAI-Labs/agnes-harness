@@ -142,6 +142,10 @@ export class WorkerPool {
       onEvent: (sessionKey: string, e: EventEnvelope) => void | Promise<void>
       /** Live streamed text, only from the worker that currently hosts the session. */
       onPreview?: (sessionKey: string, update: PreviewUpdate) => void
+      /** Advisory profile invalidation from the authenticated shared business worker. */
+      onDecisionsChanged?: (
+        detail: Extract<import('@agnes/protocol').DaemonNotice, { kind: 'decisions_changed' }>['detail'],
+      ) => void
       /** Safe live resource observations are fenced by the resource adapter's active worker key. */
       onResourceStatus?: (input: { sessionKey: string; serverId: string; status: McpStatus }) => void
       onRequest: (sessionKey: string, f: RequestFrame, signal: AbortSignal) => Promise<unknown>
@@ -174,10 +178,14 @@ export class WorkerPool {
   adopt(socket: Duplex): void {
     let workerKey = ''
     let generation = 0
+    let claimed = false
     const link = new WorkerLink(socket, {
       onEvent: (k, e) => this.o.onEvent(k, e),
       onPreview: (k, update) => {
         if (this.hosts(link, k)) this.o.onPreview?.(k, update)
+      },
+      onDecisionsChanged: (detail) => {
+        if (claimed && link.alive && workerKey === '@shared') this.o.onDecisionsChanged?.(detail)
       },
       onResourceStatus: (serverId, status) =>
         this.o.onResourceStatus?.({ sessionKey: workerKey, serverId, status }),
@@ -220,6 +228,7 @@ export class WorkerPool {
           return
         }
       }
+      claimed = true
       claim(link)
     })
   }

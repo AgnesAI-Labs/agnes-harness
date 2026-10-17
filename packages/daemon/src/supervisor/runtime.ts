@@ -1225,6 +1225,9 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         return deliverWorkerEvent(registry, tickets, clock, sessionKey, e, workspaces)
       },
       onPreview: (sessionKey, p) => registry.deliverPreview(sessionKey, p),
+      onDecisionsChanged: (detail) => {
+        if (detail.profile === o.profile.name) notices.emit('decisions_changed', { detail })
+      },
       onResourceStatus: (input) => observeResourceMcpStatus?.(input),
       onRuntimeLog: (record) => o.audit?.(record),
       onLog: (input) => o.audit?.({ kind: 'worker.log', ...input }),

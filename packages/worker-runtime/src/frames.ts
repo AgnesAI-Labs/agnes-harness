@@ -1,4 +1,5 @@
 import type {
+  DaemonNotice,
   EventEnvelope,
   LoopSelection,
   McpStatus,
@@ -259,6 +260,7 @@ export type WorkerToSupervisor =
   | PreviewFrame
   | SessionInterruptedFrame
   | LogFrame
+  | { kind: 'decisionsChanged'; detail: Extract<DaemonNotice, { kind: 'decisions_changed' }>['detail'] }
   | ResourceStatusFrame
   | WorkerReplyFrame
   | SessionReplyFrame

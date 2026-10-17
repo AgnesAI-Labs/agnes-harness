@@ -178,8 +178,17 @@ export function workerProfileServices(
     }) as Runtime['call'],
     readOperation: (async (params, credential) =>
       command('readOperation', params, credential)) as Runtime['readOperation'],
+    listDecisionState: async (credential: unknown) =>
+      (await command('listDecisions', {}, credential)) as {
+        principal: { id: string; org: string }
+        decisions: import('@agnes/protocol').DecisionSnapshot[]
+      },
     listDecisions: (async (credential) =>
-      command('listDecisions', {}, credential)) as Runtime['listDecisions'],
+      (
+        (await command('listDecisions', {}, credential)) as {
+          decisions: import('@agnes/protocol').DecisionSnapshot[]
+        }
+      ).decisions) as Runtime['listDecisions'],
     answerDecision: (async (params, credential) =>
       command('answerDecision', params, credential)) as Runtime['answerDecision'],
   }

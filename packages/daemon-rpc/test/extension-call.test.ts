@@ -437,6 +437,7 @@ it('admits profile calls from authenticated source grants and keeps native decis
       },
       readOperation: async () => ({ state: 'unknown', operationId: 'stable' }),
       listDecisions: async () => [],
+      listDecisionState: async () => ({ principal: { id: 'resolved-owner', org: 'local' }, decisions: [] }),
       answerDecision: async () => {
         throw new Error('must require human ingress')
       },
@@ -496,6 +497,13 @@ it('admits profile calls from authenticated source grants and keeps native decis
       )
     }
     expect(calls.at(-1)).toMatchObject({ credential: { sessionReads: ['owned-session'] } })
+    expect(ep.conn.decisionPrincipal).toBeUndefined()
+    ep.conn.authKind = 'local'
+    ep.conn.credentialKind = 'local'
+    expect(
+      await ep.handle({ jsonrpc: '2.0', id: 5, method: '_agnes/v1/profile.decisions.list', params: {} }),
+    ).toEqual({ jsonrpc: '2.0', id: 5, result: { decisions: [] } })
+    expect(ep.conn.decisionPrincipal).toEqual({ id: 'resolved-owner', org: 'local' })
   } finally {
     await ep.close()
     await queue.close()

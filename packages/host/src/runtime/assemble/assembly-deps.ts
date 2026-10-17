@@ -32,6 +32,8 @@ export type AssembleDeps = HostPaths &
     prompter?: Prompter
     signal?: AbortSignal
     clock?: () => number
+    /** Advisory invalidation after a durable profile decision change. */
+    decisionsChanged?: (detail: { profile: string; principal: { id: string; org: string } }) => void
     netFetch?: KernelOptions['netFetch']
     /** Host-owned lookup of the currently published runtime for already-open Core sessions. */
     currentRuntime?: KernelOptions['currentRuntime']

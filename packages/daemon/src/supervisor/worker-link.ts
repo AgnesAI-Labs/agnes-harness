@@ -1,6 +1,12 @@
 import type { Duplex } from 'node:stream'
 import type { PreviewUpdate } from '@agnes/daemon-foundation/registry'
-import type { EventEnvelope, LoopSelection, McpStatus, RuntimeTargetArtifact } from '@agnes/protocol'
+import type {
+  DaemonNotice,
+  EventEnvelope,
+  LoopSelection,
+  McpStatus,
+  RuntimeTargetArtifact,
+} from '@agnes/protocol'
 import type {
   RequestFrame,
   SessionMethod,
@@ -111,6 +117,7 @@ export class WorkerLink {
     private readonly options: {
       onEvent: (sessionKey: string, event: EventEnvelope) => void | Promise<void>
       onPreview?: (sessionKey: string, update: PreviewUpdate) => void
+      onDecisionsChanged?: (detail: Extract<DaemonNotice, { kind: 'decisions_changed' }>['detail']) => void
       onResourceStatus?: (serverId: string, status: McpStatus) => void
       onRequest: (frame: RequestFrame, signal: AbortSignal) => Promise<unknown>
       onLog?: (
@@ -182,6 +189,7 @@ export class WorkerLink {
       'event',
       'preview',
       'resourceStatus',
+      'decisionsChanged',
       'reply',
       'request',
       'session.interrupted',
@@ -258,6 +266,23 @@ export class WorkerLink {
     if (frame.kind === 'preview') {
       const { kind: _kind, sessionKey, ...update } = frame
       this.options.onPreview?.(sessionKey, update)
+      return
+    }
+    if (frame.kind === 'decisionsChanged') {
+      const { detail } = frame
+      if (
+        !detail ||
+        typeof detail.profile !== 'string' ||
+        !detail.principal ||
+        typeof detail.principal.id !== 'string' ||
+        typeof detail.principal.org !== 'string'
+      )
+        throw new Error('invalid decision invalidation')
+      // Reconstruct the signal, never forward unrecognized worker payload fields.
+      this.options.onDecisionsChanged?.({
+        profile: detail.profile,
+        principal: { id: detail.principal.id, org: detail.principal.org },
+      })
       return
     }
     if (frame.kind === 'resourceStatus') {
