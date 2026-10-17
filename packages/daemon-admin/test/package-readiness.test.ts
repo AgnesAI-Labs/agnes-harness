@@ -1,3 +1,8 @@
+import {
+  type PackageInstalledDescriptor,
+  type PluginGenerationStatus,
+  validatePackageAdminData,
+} from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import {
   classifyPackageContributions,
@@ -6,6 +11,7 @@ import {
   packageExtensionRowsStopped,
   packageOwnsReportRow,
 } from '../src/package-readiness.js'
+import { projectPluginPrimaryStatus } from '../src/packages/primary-status.js'
 
 describe('package readiness classes', () => {
   it('classifies mixed, surface-only, client-only, and extension-only packages', () => {
@@ -151,4 +157,110 @@ describe('package readiness classes', () => {
       }),
     ).toBe(false)
   })
+})
+
+describe('primary plugin read status', () => {
+  const installed: PackageInstalledDescriptor = {
+    id: 'acme/plugin',
+    version: '1.0.0',
+    integrity: `sha256-${'a'.repeat(64)}`,
+    source: { type: 'file', ref: 'file:./plugin' },
+    trusted: true,
+    desired: 'enabled',
+    actual: 'running',
+    blockers: [],
+    contributions: [],
+  }
+  it.each([
+    [{ trusted: false, desired: 'installed-disabled' }, undefined, 'untrusted', 'trust-required', 'trust'],
+    [
+      { trusted: false, actual: 'running', draining: true },
+      'draining',
+      'untrusted',
+      'trust-required',
+      'trust',
+    ],
+    [
+      { trusted: false, actual: 'restart-required' },
+      'restart-required',
+      'untrusted',
+      'trust-required',
+      'trust',
+    ],
+    [{ desired: 'installed-disabled', actual: 'not-running' }, undefined, 'disabled', 'disabled', 'enable'],
+    [{ desired: 'installed-disabled', actual: 'running' }, undefined, 'disabled', 'disabled', 'enable'],
+    [{ actual: 'not-running' }, undefined, 'blocked', 'not-running', 'none'],
+    [{ actual: 'unavailable' }, undefined, 'blocked', 'observation-unavailable', 'none'],
+    [{ actual: 'starting' }, undefined, 'blocked', 'starting', 'none'],
+    [{ actual: 'failed' }, undefined, 'blocked', 'activation-failed', 'none'],
+    [{}, 'failed', 'blocked', 'activation-failed', 'none'],
+    [{}, undefined, 'ready', 'ready', 'none'],
+    [{ actualVersion: '0.9.0' }, undefined, 'blocked', 'not-running', 'none'],
+    [{ actualIntegrity: `sha256-${'b'.repeat(64)}` }, undefined, 'blocked', 'not-running', 'none'],
+    [{ draining: true }, 'active', 'ready', 'ready-with-history', 'none'],
+    [{ actual: 'restart-required' }, undefined, 'restart-required', 'restart-required', 'restart'],
+    [{}, 'restart-required', 'restart-required', 'restart-required', 'restart'],
+    [
+      { desired: 'installed-disabled' },
+      'restart-required',
+      'restart-required',
+      'restart-required',
+      'restart',
+    ],
+    // Open older sessions still belong to the historical-only state when disabled for new work.
+    [
+      { desired: 'installed-disabled', actual: 'not-running', draining: true },
+      'draining',
+      'historical-only',
+      'historical-only',
+      'enable',
+    ],
+    [{ actual: 'not-running', draining: true }, 'historical', 'historical-only', 'historical-only', 'none'],
+    [
+      { blockers: [{ code: 'dependency', references: ['acme/provider'] }] },
+      undefined,
+      'blocked',
+      'dependency-missing',
+      'install-dependency',
+    ],
+    [
+      { actual: 'failed', actualReason: 'A required plugin service is missing.' },
+      undefined,
+      'blocked',
+      'dependency-missing',
+      'install-dependency',
+    ],
+    [{ blockers: [{ code: 'policy', references: [] }] }, undefined, 'blocked', 'policy-blocked', 'none'],
+  ] satisfies [
+    Partial<PackageInstalledDescriptor>,
+    PluginGenerationStatus['plugins'][number]['state'] | undefined,
+    string,
+    string,
+    string,
+  ][])(
+    'projects %j / %s as %s with a reason and action',
+    (patch, generationState, state, reasonCode, nextAction) => {
+      const item = { ...installed, ...patch }
+      const before = structuredClone(item)
+      const result = projectPluginPrimaryStatus(
+        item,
+        generationState
+          ? {
+              id: item.id,
+              state: generationState,
+              boundSessions: 2,
+              drainingSessions: 2,
+              historicalSessions: 0,
+            }
+          : undefined,
+      )
+      expect(result).toMatchObject({ state, reasonCode, nextAction })
+      expect(result.reason.en.length).toBeGreaterThan(0)
+      expect(result.reason['zh-CN'].length).toBeGreaterThan(0)
+      expect(
+        validatePackageAdminData('PackageInstalledDescriptor', { ...item, primaryStatus: result }).ok,
+      ).toBe(true)
+      expect(item).toEqual(before)
+    },
+  )
 })

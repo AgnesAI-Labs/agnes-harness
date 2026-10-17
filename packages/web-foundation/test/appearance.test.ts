@@ -185,12 +185,37 @@ describe('bindAppearance 字号组', () => {
   })
 
   it('初始回填：无存储时选中 normal', () => {
-    document.body.innerHTML = '<div id="font-scale-choices"></div>'
+    document.body.innerHTML = '<div id="font-scale-choices"></div><select id="locale-select"></select>'
     const host = document.querySelector<HTMLElement>('#font-scale-choices')!
+    const stopLocale = mountSettingsSelectOptions(
+      document.querySelector<HTMLSelectElement>('#locale-select')!,
+    )
     const storage = fakeStorage()
-    setLocaleTranslator(enT)
+    let locale: UiLocale = 'zh-CN'
+    setLocaleTranslator(zhT)
     try {
-      const controller = bindAppearance({ scope: document, root: document.documentElement, storage })
+      const controller = bindAppearance({
+        scope: document,
+        root: document.documentElement,
+        storage,
+        locale: {
+          rendered: true,
+          current: () => locale,
+          select(value) {
+            locale = value
+            setLocaleTranslator(value === 'en' ? enT : zhT)
+          },
+          text: (key) => (locale === 'en' ? enT : zhT)(key),
+        },
+      })
+      expect([...host.querySelectorAll('label')].map((label) => label.textContent)).toEqual([
+        '小',
+        '标准',
+        '大',
+      ])
+      const language = document.querySelector<HTMLSelectElement>('#locale-select')!
+      language.value = 'en'
+      language.dispatchEvent(new Event('change'))
       expect(host.querySelector('[role="radiogroup"]')?.getAttribute('aria-label')).toBe('Font size')
       expect([...host.querySelectorAll('label')].map((label) => label.textContent)).toEqual([
         'Small',
@@ -205,6 +230,7 @@ describe('bindAppearance 字号组', () => {
       controller.sync()
       expect(fontRadio('small').checked).toBe(true)
     } finally {
+      stopLocale()
       unmountRegion(host)
       setLocaleTranslator(zhT)
     }

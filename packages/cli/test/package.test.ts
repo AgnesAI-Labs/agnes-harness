@@ -135,6 +135,22 @@ function client(): { value: NodeClient; installs: () => number; trusts: unknown[
 }
 
 describe('package command', () => {
+  it.each(['status', 'list'])(
+    'prints parseable JSON for package %s --json including empty inventory',
+    async (action) => {
+      const fixture = client()
+      for (const packages of [(await fixture.value.packages.list({ profile })).packages, []]) {
+        vi.spyOn(fixture.value.packages, 'list').mockResolvedValue({ packages })
+        const written: string[] = []
+        await runPackageCommand(parseArgs(['package', action, '--json']), fixture.value, {
+          write: (text) => written.push(text),
+          confirm: async () => false,
+        })
+        expect(JSON.parse(written.join(''))).toEqual({ packages })
+      }
+    },
+  )
+
   it('binds install to the preview and activates only the reviewed plugins add version', async () => {
     for (const argv of [
       ['install', source.ref],

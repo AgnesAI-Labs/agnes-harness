@@ -74,6 +74,7 @@ export * from './model-settings.js'
 export { getOverlayContainer, overlayLayers } from './overlay-policy.js'
 export { Toast, type ToastProps } from './overlay-toast.js'
 export * from './plugin-presentation.js'
+export { PluginPrimaryStatus } from './plugin-primary-status.js'
 export * from './plugin-purpose.js'
 export {
   type PluginFormIssue,

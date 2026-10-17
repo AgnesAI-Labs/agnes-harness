@@ -86,6 +86,7 @@ import {
   requirePackageAdminPermissions,
 } from './permissions.js'
 import { PluginConfiguration } from './plugin-config.js'
+import { projectPluginPrimaryStatus, projectPluginReadStatus } from './primary-status.js'
 import type { PackageProfileDirectory } from './project.js'
 import { type TrustParams, trustAndRefresh } from './trust-workspace.js'
 
@@ -397,6 +398,7 @@ function projectPackage(
       ? {}
       : { declaredCapabilities: row.entry.declaredCapabilities }),
   }
+  value.primaryStatus = projectPluginPrimaryStatus(value)
   if (!validatePackageAdminData('PackageInstalledDescriptor', value).ok)
     throw rpcError('SEMANTIC_REJECTED', { reason: 'E_PACKAGE_STATE' })
   return value
@@ -1910,17 +1912,7 @@ class Service implements PackageAdminService {
         }
       }
       const plugin = generations?.plugins.find((item) => item.id === row.id)
-      entries.push({
-        ...projectPackage(row, observation),
-        ...(plugin
-          ? {
-              boundSessions: plugin.boundSessions,
-              drainingSessions: plugin.drainingSessions,
-              draining: plugin.drainingSessions > 0,
-              ...(plugin.state === 'restart-required' ? { actual: 'restart-required' as const } : {}),
-            }
-          : {}),
-      })
+      entries.push(projectPluginReadStatus(projectPackage(row, observation), plugin))
     }
     return entries
   }

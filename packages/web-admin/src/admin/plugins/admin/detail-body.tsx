@@ -10,7 +10,9 @@ import {
   type DetailActionSpec,
   integrityLabel,
   isBuiltinPlugin,
+  PluginPrimaryStatus,
   PluginPurposeSections,
+  SettingsDetails,
   SettingsState,
   SettingsTechnicalDetails,
   sourceLabel,
@@ -19,7 +21,7 @@ import {
 import type { ReactNode } from 'react'
 import { CapabilityReview, FailureHelp, ProvenanceReview } from '../capability-review.js'
 import { PluginConfigTab } from '../config-tab.js'
-import { GenerationDrainSummary, PluginBadges, pluginFailureMessage } from '../control-panel.js'
+import { GenerationDrainSummary, pluginFailureMessage } from '../control-panel.js'
 import { PluginDetailCopy } from '../detail-copy.js'
 import type { PluginAdminViewContext } from './page.js'
 
@@ -80,7 +82,14 @@ export function PluginDetailBody({
   const failureReason =
     runtime?.error?.message ??
     (installed && installed.actual !== 'running' ? installed.actualReason : undefined)
+  const uiRetry =
+    installed?.trusted &&
+    runtime?.phase === 'failed' &&
+    (!installed.primaryStatus || installed.primaryStatus.nextAction === 'none')
+      ? view.primaryAction(installed)
+      : undefined
   const presentation = view.presentationOf(item)
+  const generation = view.state.generations?.plugins.find((plugin) => plugin.id === item.id)
   const slots = installed ? (view.actualSlots?.(item.id) ?? []) : []
   const grouped = (group: DetailActionSpec['group']) => actions.filter((action) => action.group === group)
   const technical: (readonly [string, ReactNode])[] = [
@@ -216,6 +225,11 @@ export function PluginDetailBody({
       {failureReason && (
         <SettingsState tone="error">
           {pluginFailureMessage(failureReason, t, runtime?.error?.code)}
+          {uiRetry && (
+            <Button disabled={uiRetry.disabled} onClick={() => void uiRetry.run()}>
+              {uiRetry.label}
+            </Button>
+          )}
         </SettingsState>
       )}
       <PluginPurposeSections
@@ -231,10 +245,11 @@ export function PluginDetailBody({
             ? ([
                 [
                   t('detail.state'),
-                  <span key="state" className="plugin-detail-state-line">
-                    {adminT(`actual.${installed.actual}`)}{' '}
-                    <PluginBadges item={item} runtime={runtime} status={view.state.generations} t={t} />
-                  </span>,
+                  <PluginPrimaryStatus
+                    key="state"
+                    status={installed.primaryStatus}
+                    action={view.primaryAction(installed)}
+                  />,
                 ],
                 [t('detail.trust'), t(installed.trusted ? 'detail.trusted' : 'detail.untrusted')],
               ] as const)
@@ -251,6 +266,37 @@ export function PluginDetailBody({
           [t('fact.source'), sourceLabel(item.source as PackageSource, adminT)],
         ]}
       />
+      {installed && (
+        <SettingsDetails title={t('status.dimensions')}>
+          <Facts
+            rows={[
+              [t('status.installed'), item.version],
+              [t('detail.trust'), t(installed.trusted ? 'detail.trusted' : 'detail.untrusted')],
+              [
+                t('status.desired'),
+                adminT(installed.desired === 'enabled' ? 'desired.enabled' : 'desired.disabled'),
+              ],
+              [t('status.actual'), adminT(`actual.${installed.actual}`)],
+              [t('status.actualVersion'), installed.actualVersion ?? t('fact.unavailable')],
+              [
+                t('status.actualIntegrity'),
+                installed.actualIntegrity ? integrityLabel(installed.actualIntegrity) : t('fact.unavailable'),
+              ],
+              [
+                t('status.currentGeneration'),
+                view.state.generations?.currentGenerationId ?? t('fact.unavailable'),
+              ],
+              [t('status.browser'), runtime?.phase ?? t('fact.unavailable')],
+              [t('status.generation'), generation?.state ?? t('fact.unavailable')],
+              [t('status.bound'), installed.boundSessions ?? t('fact.unavailable')],
+              [t('status.draining'), installed.drainingSessions ?? t('fact.unavailable')],
+              [t('status.historical'), generation?.historicalSessions ?? t('fact.unavailable')],
+              [t('fact.cleanup'), t(installed.cleanupPending ? 'fact.cleanup-pending' : 'fact.cleanup-none')],
+              [t('status.reasonCode'), installed.primaryStatus?.reasonCode ?? t('fact.unavailable')],
+            ]}
+          />
+        </SettingsDetails>
+      )}
       <Actions actions={grouped('overview')} />
     </PluginConfigTab>
   )

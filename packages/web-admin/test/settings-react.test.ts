@@ -61,6 +61,9 @@ it('keeps the account dialog close control anchored and the action footer visibl
   // selector must therefore win on specificity or the close control falls back into the left edge.
   expect(close).toContain('position: absolute')
   expect(close).toContain('right: 0.75rem')
+  // The main settings close button must paint above the sticky pane header (z-index: 2).
+  const settingsClose = styleRule(css, '#config:has(.settings-shell) #config-close')
+  expect(settingsClose).toContain('z-index: 3')
   // The group title is the header line: it always leaves room for the dialog's close control.
   expect(styleRule(css, '.agnes-settings-group-title')).toContain(
     'padding: 0 var(--settings-header-end) 0 var(--settings-gutter)',

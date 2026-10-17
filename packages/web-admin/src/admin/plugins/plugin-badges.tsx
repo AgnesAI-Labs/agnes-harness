@@ -103,12 +103,21 @@ export function GenerationDrainSummary({
   return (
     <div className="plugin-drain-notice">
       <p data-testid="plugin-drain-summary">
-        {t(sessions ? 'drain.summary' : historical ? 'state.historical' : 'drain.summaryUnknown', {
-          plugins: plugins.length,
-          sessions,
-          pluginNoun: t(plugins.length === 1 ? 'drain.pluginOne' : 'drain.pluginMany'),
-          sessionNoun: t(sessions === 1 ? 'drain.sessionOne' : 'drain.sessionMany'),
-        })}
+        {t(
+          sessions
+            ? installed.some((item) => item.desired !== 'enabled')
+              ? 'status.retainedSummary'
+              : 'drain.summary'
+            : historical
+              ? 'state.historical'
+              : 'drain.summaryUnknown',
+          {
+            plugins: plugins.length,
+            sessions,
+            pluginNoun: t(plugins.length === 1 ? 'drain.pluginOne' : 'drain.pluginMany'),
+            sessionNoun: t(sessions === 1 ? 'drain.sessionOne' : 'drain.sessionMany'),
+          },
+        )}
       </p>
       {historical > 0 && (
         <p data-testid="plugin-historical-summary">

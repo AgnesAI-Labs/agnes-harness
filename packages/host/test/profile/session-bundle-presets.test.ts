@@ -2,8 +2,10 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { ScriptedProvider } from '@agnes/ai/testkit'
 import { defaultToolPolicy, toolPolicyKind } from '@agnes/extension-api'
 import { parsePackageBundles } from '@agnes/host-common/profile/composition'
+import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { createLoader } from '@agnes/host-extensions/ext-host/loader'
 import { CompositionSessionStore } from '@agnes/host-providers/profile/composition-state'
 import { hashDirectory } from '@agnes/package-manager'
@@ -223,3 +225,79 @@ it('refuses a boot-time bundle after its package is disabled without changing re
     await host.close()
   }
 })
+
+it.each(['route', 'model'])(
+  'cold-opens a business session after its model account %s is replaced without changing its code or policy pin',
+  async (replacement) => {
+    const { root, options } = fixture()
+    options.profileInputs.bundleCatalog['@fixture/review#review']!.document.presets!.strict!.model = {
+      route: { primary: { route: 'gw', model: 'm1' } },
+    }
+    const modelOptions = {
+      ...options,
+      provider: (profile: ResolvedProfile) =>
+        new ScriptedProvider({
+          scripts: [],
+          models: (profile.provider.routes ?? []).flatMap((route) => route.models ?? []),
+        }),
+    }
+    let host: Awaited<ReturnType<typeof createTestHost>>['host'] | undefined
+    try {
+      host = (await createTestHost(modelOptions)).host
+      const session = await host.createSession({
+        key: 'changed-account',
+        cwd: root,
+        bundles: ['@fixture/review#review'],
+      })
+      expect((await session.scan({ type: 'session/start', limit: 1 }))[0]?.data).toMatchObject({
+        modelSettings: expect.arrayContaining([expect.objectContaining({ route: 'gw', model: 'm1' })]),
+      })
+      const generation = session.pluginGenerationId
+      const route = host.profile.provider.routes![0]!
+      const bindings = new CompositionSessionStore(join(root, 'profiles', 'local-dev'))
+      const binding = bindings.read(session.key)
+      await session.close()
+      await host.close()
+      const changedRoute = replacement === 'route' ? 'replacement' : route.route
+      const changed = {
+        ...route,
+        route: changedRoute,
+        models: route.models!.map((model) => ({
+          ...model,
+          id: `${model.id}-replacement`,
+          route: changedRoute,
+        })),
+      }
+      host = (
+        await createTestHost({
+          ...modelOptions,
+          profileInputs: {
+            ...options.profileInputs,
+            user: { ...options.profileInputs.user, provider: { package: '@agnes/ai', routes: [changed] } },
+          },
+        })
+      ).host
+      const reopened = await host.createSession({ key: session.key, cwd: root })
+      expect(reopened.pluginGenerationId).toBe(generation)
+      expect(reopened.preset.model.route.primary).toBe('gw')
+      expect(reopened.preset.model.id.primary).toBe('m1')
+      expect(reopened.preset.approval.policy).toBe('fixture.strict')
+      expect(reopened.currentTools().resolve('write')).toBeUndefined()
+      expect(bindings.read(session.key)).toEqual(binding)
+      // Cold recovery must not relax admission for a new session with an unavailable pinned model.
+      if (replacement === 'model')
+        await expect(
+          host.createSession({ key: 'new-invalid-model', cwd: root, bundles: ['@fixture/review#review'] }),
+        ).rejects.toMatchObject({ code: 'E_PRESET_UNRESOLVED' })
+      await expect(
+        reopened.setModel({ slot: 'primary', route: 'gw', model: route.models![0]!.id }),
+      ).rejects.toThrow()
+      await reopened.setModel({ slot: 'primary', route: changed.route, model: changed.models[0]!.id })
+      expect(reopened.preset.model.route.primary).toBe(changedRoute)
+      await reopened.close()
+    } finally {
+      await host?.close()
+      rmSync(root, { recursive: true, force: true })
+    }
+  },
+)

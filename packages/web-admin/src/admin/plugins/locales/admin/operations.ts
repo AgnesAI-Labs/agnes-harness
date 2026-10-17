@@ -143,7 +143,8 @@ export const operationsCatalog: LocaleCatalog = {
     'error.state-changed':
       'The plugin version or capability scope has changed. Review the latest details before enabling it again.',
     'confirm.disable.title': 'Disable “{id}”?',
-    'confirm.disable.description': 'Its tools and panels are removed; the rest of Agnes is unaffected.',
+    'confirm.disable.description':
+      'New sessions will no longer use this plugin. Existing sessions keep its tools and panels; panels use the installed frontend version. The rest of Agnes is unaffected.',
     'confirm.disable.action': 'Disable',
     'confirm.remove.title': 'Uninstall “{id}”?',
     'confirm.remove.description':
@@ -292,7 +293,8 @@ export const operationsCatalog: LocaleCatalog = {
     'confirm.enable.facts': '启用前会绑定下列完整性摘要与能力摘要哈希，并校验当前版本及能力范围。',
     'error.state-changed': '插件版本或能力范围已经变化，请确认最新内容后再次启用。',
     'confirm.disable.title': '停用「{id}」？',
-    'confirm.disable.description': '它的工具和面板会移除，Agnes 原界面不受影响。',
+    'confirm.disable.description':
+      '新会话将不再使用此插件。已有会话保留它的工具和面板；面板使用当前安装的前端版本。Agnes 原界面不受影响。',
     'confirm.disable.action': '停用',
     'confirm.remove.title': '卸载「{id}」？',
     'confirm.remove.description': '如果还有会话或其他插件在用它，卸载会被拦下并告诉你原因。',

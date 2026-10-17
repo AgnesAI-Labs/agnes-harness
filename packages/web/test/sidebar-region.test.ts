@@ -606,10 +606,10 @@ describe('rendered sidebar region', () => {
       sidebar?.querySelector<HTMLButtonElement>('[data-testid="archived-restore"]')?.click()
       await vi.waitFor(() => expect(sidebar?.querySelector('.archived-session')).toBeNull())
       expect(restore).toHaveBeenCalledWith('old')
-      flushSync(() => archivedSessions.show('active'))
+      flushSync(() => archivedSessions.show('unarchived'))
       expect(sidebar?.querySelector('.workspace-group')).not.toBeNull()
     } finally {
-      archivedSessions.show('active')
+      archivedSessions.show('unarchived')
     }
   })
 })

@@ -1,5 +1,5 @@
 /** @vitest-environment happy-dom */
-import type { PackageCatalogDescriptor } from '@agnes/protocol'
+import type { PackageCatalogDescriptor, PackageInstalledDescriptor } from '@agnes/protocol'
 import { act, createElement } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
@@ -428,3 +428,82 @@ describe('where a plugin comes from and what it includes', () => {
     dispose()
   })
 })
+
+it.each(['en', 'zh-CN'] as const)(
+  'renders one backend status, its reason and next action in %s',
+  async (locale) => {
+    const states = [
+      ['ready', 'none', 'Ready', '就绪'],
+      ['blocked', 'install-dependency', 'Blocked', '受阻'],
+      ['restart-required', 'restart', 'After restart', '重启后生效'],
+      ['historical-only', 'enable', 'History only', '仅历史'],
+      ['disabled', 'enable', 'Disabled', '已停用'],
+      ['untrusted', 'trust', 'Untrusted', '未信任'],
+    ] as const
+    for (const [state, nextAction, en, zh] of states) {
+      const host = document.createElement('div')
+      document.body.append(host)
+      let opened = false
+      let repaired = false
+      const enabled = !['disabled', 'historical-only', 'untrusted'].includes(state)
+      const row: PackageInstalledDescriptor = {
+        id: '@acme/plugin',
+        version: '1.0.0',
+        source: { type: 'file', ref: 'file:./plugin' },
+        integrity: `sha256-${'a'.repeat(64)}`,
+        trusted: state !== 'untrusted',
+        desired: enabled ? 'enabled' : 'installed-disabled',
+        actual: state === 'restart-required' ? 'restart-required' : 'running',
+        blockers: [],
+        contributions: [],
+        primaryStatus: {
+          state,
+          nextAction,
+          reasonCode:
+            state === 'untrusted' ? 'trust-required' : state === 'blocked' ? 'dependency-missing' : state,
+          reason: { en: 'Backend reason', 'zh-CN': '后端原因' },
+        },
+      }
+      const dispose = mountRegion(
+        host,
+        createElement(
+          UiLocaleProvider,
+          { source: purposeSource(locale) },
+          createElement(PluginList, {
+            ...listProps,
+            rows: [row],
+            onOpen: () => {
+              opened = true
+            },
+            primaryActionOf: () => ({
+              label: 'unused',
+              disabled: false,
+              run: () => {
+                repaired = true
+              },
+            }),
+          }),
+        ),
+      )
+      try {
+        const primary = host.querySelector('[data-testid=plugin-primary-status]')
+        expect(primary?.querySelectorAll('.agh-tag')).toHaveLength(1)
+        expect(primary?.textContent).toContain(locale === 'en' ? en : zh)
+        expect(primary?.querySelector('[data-testid=plugin-status-reason]')?.textContent).toBe(
+          locale === 'en' ? 'Backend reason' : '后端原因',
+        )
+        expect(host.querySelector('[role=switch]')?.getAttribute('aria-checked')).toBe(String(enabled))
+        const button = primary?.querySelector('button')
+        if (nextAction === 'none') expect(button).toBeNull()
+        else {
+          expect(button?.textContent).not.toBe('unused')
+          await act(async () => button?.click())
+          expect(repaired).toBe(true)
+          expect(opened).toBe(false)
+        }
+      } finally {
+        dispose()
+      }
+    }
+  },
+)

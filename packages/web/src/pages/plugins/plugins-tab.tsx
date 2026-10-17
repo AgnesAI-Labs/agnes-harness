@@ -4,7 +4,7 @@ import {
   resolvePluginMetadata,
 } from '@agnes/protocol'
 import { pluginNotice } from '@agnes/web-admin/admin/plugins/admin'
-import { KindFilter, PluginBadges, pluginFailureMessage } from '@agnes/web-admin/admin/plugins/control-panel'
+import { KindFilter, pluginFailureMessage } from '@agnes/web-admin/admin/plugins/control-panel'
 import { PluginOperationFeedback } from '@agnes/web-admin/admin/plugins/operation-feedback'
 import { homeNavigation } from '@agnes/web-client'
 import {
@@ -87,14 +87,6 @@ export function pluginListProps(view: PluginView): Omit<ComponentProps<typeof Pl
     ],
     providesOf: (item) => view.presentationOf(item),
     formatFailure: (message, code) => pluginFailureMessage(message, view.t, code),
-    metadataOf: (item) => (
-      <PluginBadges
-        item={item}
-        runtime={view.runtimeState(item.id)}
-        status={view.state.generations}
-        t={view.t}
-      />
-    ),
     surfaceLinksOf: (packageId) => view.surfaceLinks(packageId),
     highlight:
       view.state.lastOperation?.state === 'completed' &&

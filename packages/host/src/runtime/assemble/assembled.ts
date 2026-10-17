@@ -75,6 +75,7 @@ export type Assembled = {
   /** Reviewed bundled API-key routes fitted at assembly, eligible for runtime model switching. */
   preconfiguredRoutes: readonly string[]
   presets: Record<string, PresetDoc>
+  retainedModelBootstrap?: boolean
   runtimes: Partial<Record<'python' | 'typescript', RuntimeFactory>>
   adapters: AdapterBundle
   lockedPackageMutations: HostLockedPackageMutationRuntime

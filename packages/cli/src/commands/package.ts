@@ -94,6 +94,10 @@ export async function runPackageCommand(
     case 'status':
     case 'list': {
       const result = await client.packages.list({ profile })
+      if (p.json) {
+        io.write(JSON.stringify(result, null, 2))
+        return
+      }
       io.write(
         result.packages.length === 0
           ? 'No packages installed.'
