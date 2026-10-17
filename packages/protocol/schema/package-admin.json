@@ -1247,6 +1247,63 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "primaryStatus": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Read-only primary plugin status. Underlying desired, trust, actual and generation facts keep their existing meanings; readiness never means a tool is executing.",
+          "properties": {
+            "state": {
+              "enum": ["ready", "blocked", "restart-required", "historical-only", "disabled", "untrusted"]
+            },
+            "reasonCode": {
+              "enum": [
+                "ready",
+                "ready-with-history",
+                "trust-required",
+                "disabled",
+                "historical-only",
+                "restart-required",
+                "dependency-missing",
+                "credential-required",
+                "repin-required",
+                "activation-failed",
+                "starting",
+                "not-running",
+                "observation-unavailable",
+                "policy-blocked"
+              ]
+            },
+            "reason": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "en": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "zh-CN": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              },
+              "required": ["en", "zh-CN"]
+            },
+            "nextAction": {
+              "enum": [
+                "trust",
+                "enable",
+                "configure-credential",
+                "install-dependency",
+                "restart",
+                "repin",
+                "none"
+              ]
+            }
+          },
+          "required": ["state", "reasonCode", "reason", "nextAction"]
+        },
         "kinds": {
           "type": "array",
           "items": {

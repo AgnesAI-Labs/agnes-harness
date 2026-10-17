@@ -2032,6 +2032,7 @@ const { appearance, skins: skinGroup } = createAppearanceController({
 clientModules.locale.subscribe(() => {
   renderControls()
   updateSidebar()
+  appearance.sync()
   skinGroup.sync()
 })
 

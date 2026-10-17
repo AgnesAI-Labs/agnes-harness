@@ -14,7 +14,8 @@ import {
 } from './text.js'
 
 const APPLICATION_ID = 0x41474858
-const SCHEMA_VERSION = 1
+// Version the derived title projection too; the next search rebuilds from unchanged source facts.
+const SCHEMA_VERSION = 2
 const TITLE_SEQ = -1
 
 export type HistoryAccess =
@@ -442,7 +443,23 @@ export class HistoryIndex {
       if (/fts5|malformed MATCH/i.test(message)) throw new HistoryIndexError('INVALID_QUERY')
       throw new HistoryIndexError('FAILED')
     }
-    const truncated = rows.length > HISTORY_FETCH_CAP
+    let truncated = rows.length > HISTORY_FETCH_CAP
+    // unicode61 treats a CJK title as one token. Also match literal title substrings, through
+    // the same visibility and request filters; event text keeps its existing phrase semantics.
+    if (!request.sessionId) {
+      const titleParams: Array<string | number> = [likeContains(request.query.trim()), ...visible.params]
+      let titleSql = `SELECT s.session_id AS sessionId, ${TITLE_SEQ} AS seq, s.created_at AS ts,
+        'x/history/title' AS type, s.title AS text, s.title AS snippet,
+        s.title AS title, s.workspace AS workspace FROM sessions s
+        WHERE s.title LIKE ? ESCAPE '\\' AND ${visible.sql}`
+      titleSql += this.filters(request, titleParams)
+      titleSql += ' ORDER BY s.created_at, s.session_id LIMIT ?'
+      titleParams.push(HISTORY_FETCH_CAP + 1)
+      const titles = this.db.prepare(titleSql).all(...titleParams) as HitRow[]
+      truncated ||= titles.length > HISTORY_FETCH_CAP
+      rows = groupSessions([...titles, ...rows])
+    }
+    truncated ||= rows.length > HISTORY_FETCH_CAP
     const capped = truncated ? rows.slice(0, HISTORY_FETCH_CAP) : rows
     const grouped = request.sessionId ? capped : groupSessions(capped)
     return this.page(request, grouped.map(toItem), limit, offset, truncated)

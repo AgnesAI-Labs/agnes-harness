@@ -29,6 +29,7 @@ import { referenceLimits } from '@agnes/host-providers/assemble/reference-text'
 import { materializeRoutes, pinPresetRoutes } from '@agnes/host-providers/assemble/routes'
 import type { Actor, LoopSelection, SessionStart } from '@agnes/protocol'
 import type { Assembled } from '../assemble/assemble.js'
+import { retainedModelView } from '../assemble/retained-model.js'
 import type { HostSession } from '../lifecycle/host.js'
 import { resolveSessionCapabilities } from '../profile/session-capabilities.js'
 import { bindDeferredInvocations } from './deferred-invocations.js'
@@ -261,6 +262,23 @@ function modelSwitchAllowed(...input: Parameters<typeof validateModelSwitch>): b
   }
 }
 
+/** Cold recovery may fit a bootstrap model view, only after finding this session's start record. */
+export async function sessionPresetForOpen(
+  profile: ResolvedProfile,
+  a: Assembled,
+  name: string,
+  key?: string,
+): Promise<ResolvedPreset> {
+  const preset = resolvePreset(name, a.presets, a.sessionPresetLimits())
+  if (
+    a.retainedModelBootstrap &&
+    key &&
+    (await a.adapters.storage.scan(key, { type: 'session/start', limit: 1 })).length
+  )
+    preset.view = retainedModelView(preset.view, profile, a.modelAdapterCatalog())
+  return preset
+}
+
 export async function createSession(
   profile: ResolvedProfile,
   a: Assembled,
@@ -304,7 +322,7 @@ export async function createSession(
     throw new HostError('E_PRESET_UNSUPPORTED', `preset ${name} is not in presets.allowed`, {
       detail: { source: name, capability: 'preset' },
     })
-  const preset = resolvePreset(name, a.presets, a.sessionPresetLimits())
+  const preset = await sessionPresetForOpen(profile, a, name, opts.key ?? opts.binding?.sessionKey)
 
   // 2 hard requirements, checked against what this deployment can actually provide.
   // checkPresetHardRequirements repeats the allowed-list check above - harmless here since `name`

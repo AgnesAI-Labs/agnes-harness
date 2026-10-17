@@ -49,6 +49,7 @@ import {
   checkPresetHardRequirements,
   createSession as openSession,
   sessionKey,
+  sessionPresetForOpen,
 } from '../sessions/session.js'
 import { validateModelSwitch, validatePresetSwitch } from '../sessions/session-switch.js'
 import { createTitleQueue, startSessionTitle } from '../sessions/session-title.js'
@@ -518,7 +519,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
           checkPresetHardRequirements(
             profile,
             a,
-            resolvePreset(presetName, a.presets, a.sessionPresetLimits()),
+            await sessionPresetForOpen(profile, a, presetName, o.key),
             presetName,
           )
           let canonicalRoot: string

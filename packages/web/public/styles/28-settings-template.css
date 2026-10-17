@@ -15,6 +15,8 @@
   #config:has(.settings-shell) #config-close {
     top: calc((var(--settings-header-height) - var(--control-height-sm)) / 2);
     right: var(--s16);
+    /* Stay above the sticky page header for pointer access and visible keyboard focus. */
+    z-index: 3;
   }
   /* The narrow screen's way back to the list (「设置」) has no place on a wide one, where the
    rail is beside the page. */

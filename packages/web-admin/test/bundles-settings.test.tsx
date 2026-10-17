@@ -108,7 +108,7 @@ it('names business agents from the catalog or their package, falls back to a sma
     handle?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true })),
   )
   const apply = host.querySelector<HTMLButtonElement>('[data-testid="bundles-save"]')
-  expect(apply?.textContent).toBe('Apply and restart')
+  expect(apply?.textContent).toBe('Save (restart required)')
   await act(async () => apply?.click())
   expect(saves).toEqual([
     {

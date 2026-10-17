@@ -54,6 +54,8 @@ export type AssembleDeps = HostPaths &
      * omit this and still fail closed at materializeRoutes.
      */
     allowUnresolvedProvider?: boolean
+    /** Host-only cold recovery: fit current models before the ledger restores its recorded selection. */
+    retainedModelBootstrap?: boolean
     /** Package-backed ordinary plugin importer; receives only a restricted third-party factory. */
     pluginImporter?: HostPluginImporterFactory
     /** Host-owned authority for installed immutable package snapshots. */

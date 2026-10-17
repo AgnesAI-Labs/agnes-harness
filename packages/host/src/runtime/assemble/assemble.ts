@@ -272,6 +272,7 @@ function publish(ctx: AssemblyContext, f: Foundation, t: Tree, c: Core, e: Exten
     sessionCapabilities: c.capabilities.sessionCapabilities,
     applyModelProfile: c.providerStage.applyModelProfile,
     presets: f.presets.presets,
+    ...(ctx.deps.retainedModelBootstrap ? { retainedModelBootstrap: true } : {}),
     runtimes: c.runtimes,
     adapters,
     lockedPackageMutations: f.proc.lockedPackageMutations,

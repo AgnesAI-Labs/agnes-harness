@@ -40,7 +40,7 @@ export function SessionListTools({ t }: { t: Translate }) {
             {...(view.filter === 'archived' ? { className: 'session-filter-on' } : {})}
           />
         }
-        items={(['active', 'archived'] as const).map((id) => ({
+        items={(['unarchived', 'archived'] as const).map((id) => ({
           id,
           testId: `session-filter-${id}`,
           label: t(`home.filter.${id}`),

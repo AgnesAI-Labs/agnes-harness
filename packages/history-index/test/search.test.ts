@@ -161,7 +161,8 @@ describe('history index', () => {
       query: 'ridg',
       title: '',
       workspace: '',
-      sessionId: '',
+      // Within a session only event text is searched; title substrings are a session-search feature.
+      sessionId: 'peer',
       omitSelf: true,
     })
     expect(substring.items).toEqual([])
@@ -177,13 +178,47 @@ describe('history index', () => {
     expect(operators.items).toEqual([])
   })
 
+  it('finds visible renamed and provisional CJK titles while retaining caller and workspace filters', () => {
+    const { dir, index, access } = openSeed()
+    const ledger = new DatabaseSync(join(dir, 'sessions.db'))
+    ledger
+      .prepare(
+        "UPDATE events SET data = ? WHERE type = 'user/message' AND seq = 1 AND session_key IN ('peer', 'away', 'other-owner')",
+      )
+      .run(JSON.stringify({ content: [{ type: 'text', text: '读取示例销售 CSV，计算收入。' }] }))
+    ledger.close()
+    const side = new DatabaseSync(join(dir, 'tables', 'daemon.db'))
+    side.exec('CREATE TABLE session_preferences (session_key TEXT PRIMARY KEY, title TEXT)')
+    side.prepare('INSERT INTO session_preferences VALUES (?, ?)').run('self', '销售报告（人工标题）')
+    side.close()
+    const before = sha(join(dir, 'sessions.db'))
+    index.rebuild(readLedgerDirectory(dir))
+    const query = {
+      access,
+      kind: 'search' as const,
+      query: '销售',
+      title: '',
+      workspace: '',
+      sessionId: '',
+      omitSelf: false,
+    }
+    const page = index.query(query)
+    expect(page.items.map((item) => item.sessionId).sort()).toEqual(['peer', 'self'])
+    expect(page.items.find((item) => item.sessionId === 'peer')?.title).toBe('读取示例销售 CSV，计算收入。')
+    expect(page.items.find((item) => item.sessionId === 'self')?.title).toBe('销售报告（人工标题）')
+    expect(index.query({ ...query, omitSelf: true }).items.map((item) => item.sessionId)).toEqual(['peer'])
+    expect(index.query({ ...query, query: '%' }).items).toEqual([])
+    expect(index.query({ ...query, sessionId: 'peer' }).items).toEqual([])
+    expect(sha(join(dir, 'sessions.db'))).toBe(before)
+  })
+
   it('lists titles in the caller workspace and rejects a stale cursor', () => {
     const { dir, index, access } = openSeed()
     const titled = index.query({
       access,
       kind: 'list',
       query: '',
-      title: 'Bridge',
+      title: 'Bridge notes',
       workspace: '',
       sessionId: '',
       omitSelf: false,
@@ -272,7 +307,11 @@ describe('history index', () => {
       .prepare(`INSERT INTO session_principal_ownership (session_id, principal_id) VALUES (?, ?)`)
       .run('mine', 'owner-a')
     side.close()
-    const page = searchHistoryDirectory(dir, { query: 'alpha bridge', title: 'Bridge', workspace: '/work/a' })
+    const page = searchHistoryDirectory(dir, {
+      query: 'alpha bridge',
+      title: 'Bridge notes',
+      workspace: '/work/a',
+    })
     expect(page.items.map((item) => item.sessionId)).toEqual(['mine'])
     const listed = searchHistoryDirectory(dir, { query: '', title: '', workspace: '/work/a' })
     expect(listed.items.map((item) => item.sessionId).sort()).toEqual(['mine', 'open'])

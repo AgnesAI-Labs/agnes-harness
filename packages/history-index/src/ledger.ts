@@ -104,11 +104,13 @@ function sourcesOf(raw: string | null): number[] {
 function readSideTables(dataDir: string): {
   workspaces: Map<string, WorkspaceRow>
   principals: Map<string, string>
+  titles: Map<string, string>
 } {
   const workspaces = new Map<string, WorkspaceRow>()
   const principals = new Map<string, string>()
+  const titles = new Map<string, string>()
   const dir = join(dataDir, 'tables')
-  if (!existsSync(dir)) return { workspaces, principals }
+  if (!existsSync(dir)) return { workspaces, principals, titles }
   for (const name of readdirSync(dir).sort()) {
     if (!name.endsWith('.db')) continue
     const db = new DatabaseSync(join(dir, name), { readOnly: true })
@@ -117,11 +119,22 @@ function readSideTables(dataDir: string): {
       const tables = tableNames(db)
       if (tables.has('session_workspaces')) readWorkspaces(db, workspaces)
       if (tables.has('session_principal_ownership')) readPrincipals(db, principals)
+      if (tables.has('session_preferences')) {
+        const rows = db
+          .prepare('SELECT session_key, title FROM session_preferences WHERE title IS NOT NULL')
+          .all() as Array<{ session_key: string; title: string }>
+        for (const row of rows) {
+          if (typeof row.title !== 'string' || !row.title.trim()) continue
+          const previous = titles.get(row.session_key)
+          if (previous && previous !== row.title) throw new HistoryIndexError('LEDGER')
+          titles.set(row.session_key, row.title)
+        }
+      }
     } finally {
       db.close()
     }
   }
-  return { workspaces, principals }
+  return { workspaces, principals, titles }
 }
 
 function readWorkspaces(db: DatabaseSync, into: Map<string, WorkspaceRow>): void {
@@ -183,6 +196,7 @@ export function readLedgerDirectory(dataDir: string): HistoryCorpus {
     const events: LedgerEvent[] = []
     const titles = new Map<string, string>()
     const firstTs = new Map<string, string>()
+    const prompts = new Map<string, string>()
     const rows = db
       .prepare(
         `SELECT session_key, seq, ts, type, origin, trust, source_event_seqs, data
@@ -205,6 +219,8 @@ export function readLedgerDirectory(dataDir: string): HistoryCorpus {
         const title = generatedTitle(data, row.origin, row.trust)
         if (title) titles.set(row.session_key, title)
       }
+      if (row.type === 'user/message' && text && !prompts.has(row.session_key))
+        prompts.set(row.session_key, Array.from(text).slice(0, 56).join(''))
       events.push({
         sessionId: row.session_key,
         seq: row.seq,
@@ -227,7 +243,8 @@ export function readLedgerDirectory(dataDir: string): HistoryCorpus {
       const workspace = side.workspaces.get(sessionId)
       const parent = parents.get(sessionId)
       const generated = titles.get(sessionId)
-      const title = generated ?? workspace?.title ?? ''
+      const title =
+        side.titles.get(sessionId) ?? generated ?? workspace?.title ?? prompts.get(sessionId) ?? ''
       const principal = side.principals.get(sessionId)
       sessions.push({
         sessionId,

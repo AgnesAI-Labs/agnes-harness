@@ -1,7 +1,7 @@
 import type { PageSessionMeta } from '@agnes/protocol'
 
 type Row = PageSessionMeta['items'][number]
-export type SessionFilter = 'active' | 'archived'
+export type SessionFilter = 'unarchived' | 'archived'
 export type ArchivedSessionsView = Readonly<{
   filter: SessionFilter
   rows: readonly Row[]
@@ -21,10 +21,10 @@ export type ArchivedSessionsApi = Readonly<{
 
 /**
  * The sidebar's session filter and the archived sessions it lists. The sidebar keeps showing
- * active sessions until someone asks for the archived ones; only then is the whole list read.
+ * unarchived sessions until someone asks for the archived ones; only then is the whole list read.
  */
 export function createArchivedSessions() {
-  let view: ArchivedSessionsView = { filter: 'active', rows: [], status: 'idle', restoring: [] }
+  let view: ArchivedSessionsView = { filter: 'unarchived', rows: [], status: 'idle', restoring: [] }
   let api: ArchivedSessionsApi | undefined
   let epoch = 0
   const listeners = new Set<() => void>()

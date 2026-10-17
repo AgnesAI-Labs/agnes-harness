@@ -139,14 +139,14 @@ export function bindAppearance(options: {
     input.addEventListener('change', () => {
       if (!input.checked || !isUiLocale(input.value) || !options.locale) return
       options.locale.select(input.value)
-      if (!options.locale.rendered) applyLocaleText(options.scope, options.locale.text)
+      sync()
     })
   }
 
   localeSelect?.addEventListener('change', () => {
     if (!isUiLocale(localeSelect.value) || !options.locale) return
     options.locale.select(localeSelect.value)
-    if (!options.locale.rendered) applyLocaleText(options.scope, options.locale.text)
+    sync()
   })
 
   sync()

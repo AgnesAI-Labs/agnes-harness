@@ -35,6 +35,12 @@ it.each(['en', 'zh-CN'])(
       trusted: true,
       desired: 'enabled',
       actual: 'running',
+      primaryStatus: {
+        state: 'ready',
+        reasonCode: 'ready',
+        nextAction: 'none',
+        reason: { en: 'Available for new sessions.', 'zh-CN': '新会话可用。' },
+      },
       blockers: [],
       contributions: [],
       presentation: { origin: 'official', rows: [] },
@@ -92,6 +98,11 @@ it.each(['en', 'zh-CN'])(
       )
       expect(host.textContent).toContain(locale === 'en' ? 'Update available' : '有可用更新')
       expect(host.textContent).toContain('1.0.0 → 1.1.0')
+      expect(host.querySelector('[data-testid=plugin-primary-status]')?.textContent).toContain(
+        locale === 'en' ? 'Available for new sessions.' : '新会话可用。',
+      )
+      expect(host.textContent).toContain(locale === 'en' ? 'Status dimensions' : '状态维度')
+      expect(host.querySelectorAll('[data-testid=plugin-primary-status] .agh-tag')).toHaveLength(1)
       await act(async () => host.querySelector<HTMLElement>('[data-testid="plugin-versions-tab"]')?.click())
       const action = [...host.querySelectorAll('button')].find((button) =>
         button.textContent?.includes(locale === 'en' ? 'Review update' : '审核更新'),

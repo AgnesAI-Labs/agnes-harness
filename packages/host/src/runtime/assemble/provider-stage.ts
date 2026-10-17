@@ -31,6 +31,7 @@ import { limitChildModels } from './child-model-scope.js'
 import type { AssemblyContext } from './context.js'
 import type { PresetCatalog } from './presets.js'
 import type { ProcessServices } from './process-services.js'
+import { retainedModelView } from './retained-model.js'
 
 /**
  * Step `provider` - route table first, environment second, credentials third. The route table,
@@ -50,9 +51,13 @@ export async function assembleProvider(
   selectConfiguredProviders(pluginTree.root, providerSelections)
   // 6 provider - route table first, environment second, credentials third.
   let routes: RouteTable | undefined
+  const bootstrapView = (profile: ResolvedProfile) =>
+    deps.retainedModelBootstrap
+      ? retainedModelView(presets.defaultPreset.view, profile, pluginTree.root.modelAdapters.catalog())
+      : presets.defaultPreset.view
   try {
     routes = materializeRoutes(
-      presets.defaultPreset.view,
+      bootstrapView(ctx.profile),
       ctx.profile,
       pluginTree.root.modelAdapters.catalog(),
     )
@@ -116,7 +121,7 @@ export async function assembleProvider(
   const applyModelProfile = async (next: ResolvedProfile): Promise<void> => {
     next = applyProviderSelections(next)
     const nextRoutes = next.provider.routes?.length
-      ? materializeRoutes(presets.defaultPreset.view, next, pluginTree.root.modelAdapters.catalog())
+      ? materializeRoutes(bootstrapView(next), next, pluginTree.root.modelAdapters.catalog())
       : undefined
     const nextSecrets =
       next.adapters.secrets.kind === 'file'
@@ -179,7 +184,7 @@ export async function assembleProvider(
   })
   // The view the sessions run on carries the resolved route and model, not the sentinel: see
   // pinPresetRoutes for what core would otherwise record in request/header.
-  const view = routes ? pinPresetRoutes(presets.defaultPreset.view, routes) : presets.defaultPreset.view
+  const view = routes ? pinPresetRoutes(bootstrapView(ctx.profile), routes) : presets.defaultPreset.view
   return {
     models,
     view,

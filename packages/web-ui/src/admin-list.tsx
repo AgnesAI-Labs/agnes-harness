@@ -5,6 +5,7 @@ import type { RuntimeStateView } from './admin-text.js'
 import { ADMIN_LIST_LOCALE_NAMESPACE, adminListLocaleCatalog } from './locales/admin-list.js'
 import { PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog } from './locales/plugin-presentation.js'
 import type { PluginPresentation } from './plugin-presentation.js'
+import { PluginPrimaryStatus } from './plugin-primary-status.js'
 import { PluginPurposeBadges, PluginSourceBadge, pluginIconName } from './plugin-purpose.js'
 import { SettingsDetails, SettingsList, SettingsState } from './settings-layout.js'
 import { Button } from './ui/button.js'
@@ -154,29 +155,21 @@ function RowControl({
   )
   if (tab === 'installed') {
     const installed = item as PackageInstalledDescriptor
-    const enabled = installed.actual === 'running'
-    if (runtime?.phase === 'failed') {
-      return (
-        <div className="plugin-row-actions">
-          <StateSwitch
-            label={t(enabled ? 'switch.disable' : 'switch.enable', { id: installed.id })}
-            checked={enabled}
-            busy={busy}
-            disabled={switchDisabled}
-            onToggle={(next) => onToggleDesired(installed, next)}
-          />
-          {actionButton('plugin-row-retry')}
-        </div>
-      )
-    }
+    const enabled = installed.desired === 'enabled'
     return (
-      <StateSwitch
-        label={t(enabled ? 'switch.disable' : 'switch.enable', { id: installed.id })}
-        checked={enabled}
-        busy={busy}
-        disabled={switchDisabled}
-        onToggle={(next) => onToggleDesired(installed, next)}
-      />
+      <div className="plugin-row-actions">
+        <StateSwitch
+          label={t(enabled ? 'switch.disable' : 'switch.enable', { id: installed.id })}
+          checked={enabled}
+          busy={busy}
+          disabled={switchDisabled}
+          onToggle={(next) => onToggleDesired(installed, next)}
+        />
+        {runtime?.phase === 'failed' &&
+          installed.trusted &&
+          (!installed.primaryStatus || installed.primaryStatus.nextAction === 'none') &&
+          actionButton('plugin-row-retry')}
+      </div>
     )
   }
   return actionButton()
@@ -196,7 +189,6 @@ export function PluginList({
   onOpen,
   onToggleDesired,
   onLoadMore,
-  metadataOf,
   providesOf,
   menuOf,
   emptyActions,
@@ -226,7 +218,6 @@ export function PluginList({
   highlight?: Readonly<{ key: string; id: string }> | undefined
   pendingOf?(item: PackageInstalledDescriptor | PackageCatalogDescriptor): boolean
   emptyActions?: ReactNode
-  metadataOf?(item: PackageInstalledDescriptor | PackageCatalogDescriptor): ReactNode
 }): JSX.Element {
   const { t } = useUiText(ADMIN_LIST_LOCALE_NAMESPACE, adminListLocaleCatalog)
   const { locale } = useUiText(PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog)
@@ -303,7 +294,6 @@ export function PluginList({
           const alternatives = group.filter(
             (row, index) => group.findIndex((entry) => entry.version === row.version) === index,
           )
-          const runtime = runtimeOf(item.id)
           const purpose = resolvePluginMetadata(item.metadata, locale)
           const displayName = purpose?.displayName ?? item.id
           const description = purpose?.summary
@@ -327,7 +317,10 @@ export function PluginList({
                   {tab === 'discover' ? (
                     <CatalogCompatibility item={item as PackageCatalogDescriptor} />
                   ) : (
-                    metadataOf?.(item)
+                    <PluginPrimaryStatus
+                      status={(item as PackageInstalledDescriptor).primaryStatus}
+                      action={primaryActionOf(item)}
+                    />
                   )}
                 </>
               }
@@ -337,7 +330,7 @@ export function PluginList({
                   <RowControl
                     tab={tab}
                     item={item}
-                    runtime={runtime}
+                    runtime={runtimeOf(item.id)}
                     primaryAction={primaryActionOf(item)}
                     busy={pendingOf?.(item) ?? false}
                     switchDisabled={
