@@ -14,7 +14,7 @@ import type {
   Phase,
   RouteKind,
 } from './types.js'
-import { clip, fingerprint, utf8Bytes } from './util.js'
+import { clip, digest16, fingerprint, utf8Bytes } from './util.js'
 import { currentTurn, recordStep } from './workspace.js'
 
 /** What one step works on: the ports, the resolved configuration, the mutable state and the workspace root. */
@@ -86,7 +86,11 @@ export async function emitStep(s: Scope, event: StepEvent): Promise<void> {
   await emitEvent(s.ctx.events, s.state.counters, 'jev.step', { step: s.state.step, ...event })
 }
 
-/** The `refusal` field of a step event, from the observation's error. */
+/**
+ * The `refusal` field of a step event, from the observation's error. The message can quote model
+ * text, argument values or history, so the event carries only its digest; the text itself stays in
+ * the checkpointed history and runtime note the next request needs.
+ */
 export function refusalOf(obs: Observation): JsonObject {
   const error = obs.entry.error
   if (!error) return {}
@@ -94,7 +98,7 @@ export function refusalOf(obs: Observation): JsonObject {
     code: error.code,
     stage: error.stage,
     recoverability: error.recoverability,
-    message: clip(error.message, ERROR_MESSAGE_CHARS),
+    digest: digest16(error.message),
   }
 }
 

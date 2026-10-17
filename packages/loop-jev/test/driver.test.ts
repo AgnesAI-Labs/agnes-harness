@@ -5,6 +5,7 @@ import { estimateTokens } from '../src/compile.js'
 import { createJevLoopFactory } from '../src/index.js'
 import { boundContent } from '../src/scope.js'
 import type { JsonObject } from '../src/types.js'
+import { digest16 } from '../src/util.js'
 import {
   type FakeJev,
   fakeJev,
@@ -228,7 +229,11 @@ describe('Jev loop driver', () => {
     const r = await run([{ pick: PICK_WRITE }, { pick: PICK_RESPOND }], {
       replies: [textReply('I would write a file.'), textReply('ok')],
     })
-    expect(r.steps[0]).toMatchObject({ route: 'parameters', refusal: { code: 'NO_CALL', stage: 'llm' } })
+    expect(r.steps[0]).toMatchObject({
+      route: 'parameters',
+      refusal: { code: 'NO_CALL', stage: 'llm', digest: digest16('I would write a file.') },
+    })
+    expect(JSON.stringify(r.steps)).not.toContain('I would write a file.')
     expect(r.events.find((e) => e.type === 'jev.metrics')?.data).toMatchObject({ noCall: 1 })
     expect(r.events.filter((e) => e.type === 'assistant/message')).toHaveLength(1)
   })
@@ -393,7 +398,16 @@ describe('Jev loop driver', () => {
       ['arbitration', 'recoverable_observation'],
     ])
     expect(r.steps[1]).toMatchObject({
-      refusal: { code: 'STOP_GATE_HELD', stage: 'finish', message: 'Verifier: run the tests first.' },
+      refusal: {
+        code: 'STOP_GATE_HELD',
+        stage: 'finish',
+        digest: digest16('Verifier: run the tests first.'),
+      },
+    })
+    // The event holds a digest only; the text stays in the loop's own record for the next request.
+    expect(r.steps[1]?.refusal).not.toHaveProperty('message')
+    expect(jevState(r.jev, 1).last_result).toMatchObject({
+      error: { code: 'STOP_GATE_HELD', message: 'Verifier: run the tests first.' },
     })
     expect(jevState(r.jev, 1).last_result).toMatchObject({ operation: 'ANSWER', status: 'held' })
     expect(r.finished?.[0]).toBe('completed')
