@@ -88,7 +88,7 @@ const sessionHref = (key: string) => `/?session=${encodeURIComponent(key)}`
 /** Exceptions are tags; a run that went through is a quiet dot and a word. */
 function OutcomeTag({ run, ux }: { run: ScheduleRun; ux: Text }) {
   const label = ux(`outcome.${run.outcome}`)
-  if (run.outcome === 'failed' || run.outcome === 'waiting_approval' || run.outcome === 'needs_attention')
+  if (run.needsAttention || ['failed', 'waiting_approval', 'needs_attention'].includes(run.outcome))
     return (
       <Tag
         tone={run.outcome === 'failed' ? 'bad' : 'warn'}
@@ -117,6 +117,7 @@ function RunHistory({ runs, ux }: { runs: readonly ScheduleRun[]; ux: Text }) {
         {[...runs].reverse().map((run) => {
           const took = runDuration(run, ux)
           const reason =
+            run.needsAttention ||
             run.outcome === 'failed' ||
             run.outcome === 'waiting_approval' ||
             run.outcome === 'needs_attention'

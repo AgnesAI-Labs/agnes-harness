@@ -11,6 +11,8 @@ export const triggersCatalog = {
     'reason.needs_attention': 'Human attention is required. Open the approval inbox.',
     'reason.approval_expired':
       'Approval expired. This run failed and needs attention; the next occurrence can run.',
+    'reason.previous_approval_expired':
+      'The previous approval expired. This occurrence can run; review the history.',
     'reason.approval_refused': 'Approval was refused. The step did not run.',
     'reason.approval_unavailable': 'The approval was stopped or withdrawn. This run needs attention.',
     'reason.approval_pending_previous_run':
@@ -112,6 +114,7 @@ export const triggersCatalog = {
     'outcome.needs_attention': '需要处理',
     'reason.needs_attention': '需要人工处理，请打开审批收件箱。',
     'reason.approval_expired': '审批已过期，本次失败并需处理；下次仍可运行。',
+    'reason.previous_approval_expired': '上次审批已过期，本次可正常运行；请查看历史并处理。',
     'reason.approval_refused': '审批被拒绝，该步骤未执行。',
     'reason.approval_unavailable': '审批已停止或撤回，本次运行需要处理。',
     'reason.approval_pending_previous_run': '上次运行仍在等待审批，本次未新建停等运行。',

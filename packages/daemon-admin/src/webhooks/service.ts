@@ -48,7 +48,7 @@ export function createWebhookService(options: {
     const row = store.state.deliveries.find((entry) => entry.sessionId === sessionId)
     if (row) {
       row.status = state.outcome === 'running' ? 'accepted' : state.outcome
-      row.needsAttention = state.needsAttention
+      row.needsAttention = state.needsAttention || row.reason === 'previous_approval_expired'
       if (state.reason) row.reason = state.reason
     }
   }
@@ -161,7 +161,12 @@ export function createWebhookService(options: {
       )
       state.rates[rule.id] = [...recent, time]
       // Persist reservation before entering normal session/new. Uncertain work is never retried.
+      const previous = state.deliveries.find((entry) => entry.ruleId === rule.id && entry.sessionId)
       const row = store.log('pending', rule.id, sessionId)
+      if (previous?.reason === 'approval_expired') {
+        row.reason = 'previous_approval_expired'
+        row.needsAttention = true
+      }
       progress[sessionId] = startProgress()
       store.save()
       try {

@@ -386,7 +386,15 @@ it.each(['approve', 'expire', 'refuse'] as const)(
         (row) => row.sessionId === sessionId,
       )?.status,
     ).toBe(action === 'approve' ? 'ran' : 'failed')
-    expect((await f.send(undefined, 'after')).delivery?.status).toBe('accepted')
+    const next = (await f.send(undefined, 'after')).delivery
+    expect(next?.status).toBe('accepted')
+    if (action === 'expire') {
+      expect(next).toMatchObject({ needsAttention: true, reason: 'previous_approval_expired' })
+      if (!next?.sessionId) throw new Error('missing post-expiry session')
+      f.service.observeSession(next.sessionId, event('turn/start', { turn: 1, trigger: 'prompt' }))
+      f.service.observeSession(next.sessionId, event('turn/end', { turn: 1, reason: 'completed' }))
+      expect(next).toMatchObject({ status: 'ran', needsAttention: true, reason: 'previous_approval_expired' })
+    }
     expect(f.sessions).toHaveLength(2)
   },
 )

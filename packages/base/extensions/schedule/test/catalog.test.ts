@@ -405,6 +405,14 @@ it.each(['approve', 'expire', 'refuse'] as const)(
     expect(catalog.hasWaiting(key)).toBe(false)
     expect(catalog.read(created.id)).toMatchObject({ status: 'active', nextRunAt: NOW + 60_000 })
     if (action === 'expire') {
+      catalog.recordDispatch(key, { at: ++now, reason: 'prompt', sessionKey: 'after-expiry' })
+      catalog.observeSession('after-expiry', event('turn/start', { turn: 3, trigger: 'prompt' }))
+      catalog.observeSession('after-expiry', event('turn/end', { turn: 3, reason: 'completed' }))
+      expect(catalog.read(created.id)?.runs.at(-1)).toMatchObject({
+        outcome: 'ran',
+        needsAttention: true,
+        reason: 'previous_approval_expired',
+      })
       catalog.recordDispatch(key, { at: ++now, reason: 'prompt', sessionKey: 'pending-again' })
       catalog.noteSettlement(key, { at: now, nextRunAt: now + 60_000, reason: 'parked' })
       for (let i = 0; i < 55; i++)

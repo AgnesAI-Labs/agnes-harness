@@ -19,6 +19,7 @@ import {
   type ScheduleWrite,
   textField,
 } from './rules.js'
+import { previousApprovalExpired, saveRunProgress } from './run-history.js'
 import { expireProgress, observeProgress, type RunProgress, startProgress } from './run-progress.js'
 
 export {
@@ -323,19 +324,7 @@ export function openScheduleCatalog(db: ScheduleDb, clock: () => number = () => 
       `SELECT p.run_id AS rid, p.state AS state FROM schedule_run_progress p
      JOIN schedule_runs r ON r.rowid = p.run_id WHERE r.ended_at IS NULL`,
     )
-  const saveProgress = (rid: number, state: RunProgress) =>
-    db.transaction(() => {
-      db.exec('INSERT OR REPLACE INTO schedule_run_progress (run_id, state) VALUES (?, ?)', [
-        rid,
-        JSON.stringify(state),
-      ])
-      db.exec(`UPDATE schedule_runs SET outcome = ?, reason = ?, ended_at = ? WHERE rowid = ?`, [
-        state.outcome,
-        state.reason ?? (state.needsAttention ? 'needs_attention' : null),
-        ['ran', 'failed'].includes(state.outcome) ? clock() : null,
-        rid,
-      ])
-    })
+  const saveProgress = (rid: number, state: RunProgress) => saveRunProgress(db, clock(), rid, state)
   const expireRuns = () => {
     for (const row of progressRows()) {
       const state = JSON.parse(row.state) as RunProgress
@@ -355,7 +344,8 @@ export function openScheduleCatalog(db: ScheduleDb, clock: () => number = () => 
       .map((row) => ({
         at: row.at,
         outcome: row.outcome,
-        ...(['failed', 'waiting_approval', 'needs_attention'].includes(row.outcome)
+        ...(['failed', 'waiting_approval', 'needs_attention'].includes(row.outcome) ||
+        row.reason === 'previous_approval_expired'
           ? { needsAttention: true }
           : {}),
         ...(row.session_key === null ? {} : { sessionKey: row.session_key }),
@@ -626,6 +616,7 @@ export function openScheduleCatalog(db: ScheduleDb, clock: () => number = () => 
       insertRun(id, key, {
         at: info.at,
         outcome,
+        ...(previousApprovalExpired(db, id) ? { reason: 'previous_approval_expired' } : {}),
         ...(info.sessionKey ? { sessionKey: info.sessionKey } : {}),
         ...(info.seq === undefined ? {} : { seq: info.seq }),
       })

@@ -155,6 +155,7 @@ const REASONS = new Set([
   'schedule_conflict',
   'needs_attention',
   'approval_expired',
+  'previous_approval_expired',
   'approval_refused',
   'approval_unavailable',
   'approval_pending_previous_run',
