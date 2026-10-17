@@ -28,6 +28,13 @@ export {
   WEB_ROW_PREFIX,
   webRowId,
 } from '@agnes/web-slots'
+export {
+  applicationAgents,
+  applicationBrand,
+  applicationIdentity,
+  effectiveApplication,
+  presentationDefault,
+} from './application-identity.js'
 export type { ClientContext, ClientModule } from './client-module.js'
 export { clientModule } from './client-module.js'
 export type { ContributionAvailability } from './contribution-scope.js'

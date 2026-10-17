@@ -1,4 +1,4 @@
-import { type ApplicationTemplate, validateAgainst } from '@agnes/protocol'
+import { type ApplicationTemplate, type PackageContributionSummary, validateAgainst } from '@agnes/protocol'
 import { ApplicationTemplate as ApplicationSchema } from '@agnes/protocol/gen/extension-manifest'
 import type { PackageBundleCatalog } from './bundle-contract.js'
 
@@ -8,6 +8,7 @@ export function parseApplicationContract(
   packageId: string,
   bundles: PackageBundleCatalog,
   dependencies: Readonly<Record<string, string>>,
+  contributions: readonly PackageContributionSummary[] = [],
 ): { application?: ApplicationTemplate; deploymentDependent: boolean } {
   if (input === undefined) return { deploymentDependent: false }
   const checked = validateAgainst<ApplicationTemplate>(ApplicationSchema, input)
@@ -32,6 +33,43 @@ export function parseApplicationContract(
         throw new TypeError(`unknown application agent ${ref}`)
       deploymentDependent = true
     }
+  }
+  const pages = contributions.flatMap((c) =>
+    'client' in c && c.client?.lifetime === 'profile'
+      ? [...(c.client.examplePages ?? []), ...(c.client.homeEntries ?? []).map((p) => p.id)]
+      : [],
+  )
+  for (const ref of [
+    ...(application.presentation?.navigation?.entries ?? []),
+    ...(application.presentation?.home ? [application.presentation.home] : []),
+  ]) {
+    const [owner, page] = ref.split('#')
+    if (owner === packageId) {
+      if (!pages.includes(page ?? '')) throw new TypeError(`unknown application page ${ref}`)
+    } else if (!owner || !Object.hasOwn(dependencies, owner))
+      throw new TypeError(`unknown application page ${ref}`)
+    else deploymentDependent = true
+  }
+  if (
+    application.presentation?.skin &&
+    !contributions.some((c) => 'skins' in c && c.skins?.some((s) => s.id === application.presentation?.skin))
+  )
+    throw new TypeError('unknown application skin')
+  for (const [role, target] of Object.entries(application.presentation?.roles ?? {})) {
+    if (target.packageId === packageId) {
+      if (
+        !contributions.some(
+          (c) =>
+            'client' in c &&
+            c.client?.lifetime === 'profile' &&
+            (c.client.id ?? c.id) === target.clientId &&
+            c.client.presentationRoles?.includes(role as import('@agnes/protocol').PresentationRole),
+        )
+      )
+        throw new TypeError(`undeclared application role ${role}`)
+    } else if (!Object.hasOwn(dependencies, target.packageId))
+      throw new TypeError(`unknown application role package ${target.packageId}`)
+    else deploymentDependent = true
   }
   return { application: structuredClone(application), deploymentDependent }
 }

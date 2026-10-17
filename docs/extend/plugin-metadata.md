@@ -57,6 +57,6 @@ Launch declarations participate in `capabilityHash` for every package. Changing 
 
 ## Application declaration
 
-The initial schema reserves only `{ "id": "acme", "defaultAgent": "acme/reviewer#review", "agents": ["acme/reviewer#review"] }` under `agnes.application`. Agent references must resolve or await declared dependency definitions. This data participates in trust hashing. Application selection and presentation runtime are separate work; installing a package never selects it automatically. Brand and presentation fields are pending their dedicated contract and are currently rejected.
+See [Applications](applications.md) for the complete identity, raster asset, presentation role and explicit adoption contracts. Installing an application only creates a candidate; presentation selection stays outside execution resolution.
 
 The fixed author backbone has 29 slots: 9 package-envelope fields, 14 plugin-row fields, 2 client-binding fields and 4 Bundle fields. Relative to the prior 27: remove `agnes.kinds`; add `agnes.provides`, `agnes.application`, and `bundles.*.launch`. Nested metadata and launch fields are outside this denominator. The first tool and first Loop need no new required steps.

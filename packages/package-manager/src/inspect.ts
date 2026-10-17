@@ -10,6 +10,7 @@ import {
   validatePluginMetadata,
   validateSurfacePackageMetadata,
 } from '@agnes/protocol'
+import { readApplicationAssets } from './application-assets.js'
 import { parseApplicationContract } from './application-contract.js'
 import { parsePackageBundleContract, preflightPackageBundles } from './bundle-contract.js'
 import { normalizeClientContribution, resolveClientAssets } from './client-assets.js'
@@ -366,8 +367,10 @@ export function inspectVerifiedTree(
       String(pkg.name),
       parsePackageBundleContract(String(pkg.name), bundles),
       fetched.dependencies,
+      contributions,
     )
     application = parsed.application
+    if (application) readApplicationAssets(input.dir, application)
     if (parsed.deploymentDependent)
       preflight = {
         level: 'deployment-dependent',

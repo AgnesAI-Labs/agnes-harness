@@ -38,6 +38,8 @@ export function contributionProjection(
   return {
     ...(row.entry.metadata?.exampleOf ? { exampleOf: row.entry.metadata.exampleOf } : {}),
     ...(row.entry.metadata?.pageEntry ? { pageEntry: row.entry.metadata.pageEntry } : {}),
+    clientId: client.id ?? owner,
+    ...(client.presentationRoles ? { presentationRoles: client.presentationRoles } : {}),
     binding: {
       lifetime: client.lifetime ?? 'session',
       owner,
@@ -119,12 +121,20 @@ export function combineContributionRosters(
 /** Reviewed client declarations retained with an immutable asset snapshot and reprojected on restore. */
 export function clientContributionDeclarations(
   client: {
-    [K in 'requiresBackendRows' | 'lifetime' | 'homeEntries' | 'examplePages' | 'assets' | 'streams']?:
-      | ClientContribution[K]
-      | undefined
+    [K in
+      | 'id'
+      | 'presentationRoles'
+      | 'requiresBackendRows'
+      | 'lifetime'
+      | 'homeEntries'
+      | 'examplePages'
+      | 'assets'
+      | 'streams']?: ClientContribution[K] | undefined
   },
 ) {
   return {
+    ...(client.id ? { id: client.id } : {}),
+    ...(client.presentationRoles ? { presentationRoles: client.presentationRoles } : {}),
     ...(client.requiresBackendRows ? { requiresBackendRows: [...client.requiresBackendRows] } : {}),
     ...(client.lifetime ? { lifetime: client.lifetime } : {}),
     ...(client.homeEntries ? { homeEntries: client.homeEntries } : {}),

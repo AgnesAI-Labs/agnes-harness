@@ -180,6 +180,10 @@ Package administration, resource control, configuration, scheduling, diagnostics
 - `_agnes/v1/packages.catalog.get`
 - `_agnes/v1/packages.provenance`
 - `_agnes/v1/packages.sourcePolicy`
+- `_agnes/v1/applications.get`
+- `_agnes/v1/applications.preview`
+- `_agnes/v1/applications.adopt`
+- `_agnes/v1/applications.clear`
 - `_agnes/v1/packages.list`
 - `_agnes/v1/packages.inspect`
 - `_agnes/v1/packages.install`

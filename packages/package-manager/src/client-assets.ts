@@ -127,6 +127,7 @@ export type NormalizedClientContribution = {
   styles: string[]
   slots: string[]
   slotCatalogVersion?: string
+  presentationRoles?: ClientContribution['presentationRoles']
   services: string[]
   projections: string[]
   legacyRowIds?: string[]
@@ -146,6 +147,7 @@ export function normalizeClientContribution(client: ClientContribution): Normali
     ...(client.examplePages === undefined ? {} : { examplePages: set(client.examplePages) }),
     ...(client.assets === undefined ? {} : { assets: set(client.assets.map(normalizeClientPath)) }),
     ...(client.streams === undefined ? {} : { streams: set(client.streams) }),
+    ...(client.presentationRoles ? { presentationRoles: [...client.presentationRoles].sort() } : {}),
     ...(client.id === undefined ? {} : { id: client.id }),
     entry: normalizeClientPath(client.entry),
     ...(client.intelligentComponents ? { intelligentComponents: client.intelligentComponents } : {}),

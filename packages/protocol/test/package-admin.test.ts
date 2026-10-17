@@ -77,7 +77,7 @@ describe('PM4 management contracts', () => {
     // capability/source authoring boundaries.
     // Five presentation rows preserve valid metadata and reject invalid display/authority fields.
     // Three binding rows cover history-only session ownership and reject invalid availability/owner.
-    expect(result.total).toBe(639)
+    expect(result.total).toBe(669)
     expect(result.skipped).toBe(0)
   })
   it('requires explicit classification, permission and command identity for every management method', () => {
@@ -86,10 +86,12 @@ describe('PM4 management contracts', () => {
     // `skins.`/`clientModules.` too; the equality below still pins the table to those namespaces
     // rather than accepting any method name.
     const names = Object.keys(METHODS)
-      .filter((name) => /^_agnes\/v1\/(?:packages|skins|clientModules|plugins|sessions)\./.test(name))
+      .filter((name) =>
+        /^_agnes\/v1\/(?:applications|packages|skins|clientModules|plugins|sessions)\./.test(name),
+      )
       .sort()
     expect(names).toEqual(Object.keys(PACKAGE_ADMIN_METHODS).sort())
-    expect(names).toHaveLength(43) // Includes publication status, session migration, authoring and three config methods.
+    expect(names).toHaveLength(47) // Includes publication status, session migration, authoring and three config methods.
     for (const name of names as PackageAdminMethodName[]) {
       const method = METHODS[name],
         policy = method.administration

@@ -40,7 +40,18 @@
     },
     "provides": [
       "ui"
-    ]
+    ],
+    "application": {
+      "id": "deliverables-gallery",
+      "presentation": {
+        "roles": {
+          "deliverables": {
+            "packageId": "@community/deliverables-gallery",
+            "clientId": "gallery"
+          }
+        }
+      }
+    }
   },
   "peerDependencies": {
     "@agnes/web-client": "0.0.0",

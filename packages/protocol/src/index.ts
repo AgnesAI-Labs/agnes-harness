@@ -271,6 +271,13 @@ export type { ServiceCapability } from '../gen/ts/extension-service.js'
 export type PluginCapabilities = import('../gen/ts/extension-manifest.js').Capabilities
 
 export type {
+  ApplicationAsset,
+  ApplicationBrand,
+  ApplicationPresentation,
+  ApplicationRoleTarget,
+  PresentationRole,
+} from '../gen/ts/extension-manifest.js'
+export type {
   BoundWakeEnqueueParams,
   BoundWakeReadParams,
   BoundWakeReceipt,
@@ -433,6 +440,15 @@ export type {
   SkinListResult,
   SkinReadParams,
   SkinReadResult,
+} from '../gen/ts/package-admin.js'
+export {
+  ApplicationAdoptParams,
+  ApplicationClearParams,
+  ApplicationConfigSnapshot,
+  ApplicationPreview,
+  ApplicationPreviewParams,
+  ApplicationSelection,
+  ApplicationState,
 } from '../gen/ts/package-admin.js'
 export type {
   PluginStreamClose,

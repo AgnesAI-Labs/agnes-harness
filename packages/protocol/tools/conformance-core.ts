@@ -103,6 +103,19 @@ const MODEL_VALIDATORS: Record<string, (x: unknown) => ValidationResult<unknown>
 }
 
 const CONFIG_VALIDATORS: Record<string, (x: unknown) => ValidationResult<unknown>> = {
+  ApplicationSelection: (x) =>
+    validatePackageAdminData('ApplicationSelection' satisfies PackageAdminDataName, x),
+  ApplicationConfigSnapshot: (x) =>
+    validatePackageAdminData('ApplicationConfigSnapshot' satisfies PackageAdminDataName, x),
+  ApplicationPreviewParams: (x) =>
+    validatePackageAdminData('ApplicationPreviewParams' satisfies PackageAdminDataName, x),
+  ApplicationPreview: (x) => validatePackageAdminData('ApplicationPreview' satisfies PackageAdminDataName, x),
+  ApplicationState: (x) => validatePackageAdminData('ApplicationState' satisfies PackageAdminDataName, x),
+  ApplicationAdoptParams: (x) =>
+    validatePackageAdminData('ApplicationAdoptParams' satisfies PackageAdminDataName, x),
+  ApplicationClearParams: (x) =>
+    validatePackageAdminData('ApplicationClearParams' satisfies PackageAdminDataName, x),
+
   PluginConfigGetParams: (x) =>
     validatePackageAdminData('PluginConfigGetParams' satisfies PackageAdminDataName, x),
   PluginConfigValidateParams: (x) =>

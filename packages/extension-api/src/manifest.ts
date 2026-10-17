@@ -77,13 +77,18 @@ function clientProblems(value: ExtensionManifest, namespace: string): string[] {
   if (client === undefined) return []
   if (value.capabilities.ui !== true)
     return ['contributes.client: declaring a client module requires capabilities.ui']
-  if ((client.homeEntries?.length || client.examplePages?.length) && client.lifetime !== 'profile')
+  if (
+    (client.presentationRoles?.length || client.homeEntries?.length || client.examplePages?.length) &&
+    client.lifetime !== 'profile'
+  )
     return ['home entries and example pages require profile lifetime']
   if (
     new Set(client.homeEntries?.map((entry) => entry.id)).size !== (client.homeEntries?.length ?? 0) ||
     (client.homeEntries?.filter((entry) => entry.placement === 'primary').length ?? 0) > 32
   )
     return ['home entry declarations must have unique ids and at most 32 primary entries']
+  if (client.presentationRoles?.length && !client.id)
+    return ['presentation roles require an explicit client id']
   const components = client.intelligentComponents
   if (!components) return []
   if (

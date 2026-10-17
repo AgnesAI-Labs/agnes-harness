@@ -5935,6 +5935,11 @@
           "type": "integer",
           "minimum": 0
         },
+        "executionRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Last revision affecting execution; presentation-only CAS still increments revision."
+        },
         "configured": {
           "type": "boolean"
         },

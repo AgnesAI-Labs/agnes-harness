@@ -115,6 +115,8 @@ export type CommandAuthorizer = (
  * still useful because the host can render or audit the current command set.
  */
 export interface ModuleIdentity {
+  clientId?: string
+  presentationRoles?: readonly import('@agnes/protocol').PresentationRole[]
   /** Browser lifecycle/slot owner identity. Distinct rows of one package must not tear down each other. */
   exampleOf?: string
   pageEntry?: string

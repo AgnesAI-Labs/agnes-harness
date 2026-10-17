@@ -109,7 +109,12 @@ it('lets a worker read validated active snapshots while a package effect owns th
   const manifestFile = join(sourceDir, 'package.json')
   const manifest = JSON.parse(readFileSync(manifestFile, 'utf8'))
   const launch = { title: { en: 'Work' }, description: { en: 'Work safely' }, preset: 'safe' }
-  const application = { id: 'acme', defaultAgent: `${id}#work`, agents: [`${id}#work`] }
+  const application = {
+    id: 'acme',
+    brand: { name: { en: 'Acme' }, assistantName: { en: 'Ava' } },
+    defaultAgent: `${id}#work`,
+    agents: [`${id}#work`],
+  }
   manifest.agnes.bundles = { work: { presets: { safe: { name: 'safe' } }, launch } }
   manifest.agnes.application = application
   writeFileSync(manifestFile, JSON.stringify(manifest))

@@ -249,6 +249,8 @@ export function projectClientModuleRows(result: P.ClientModuleListResult): P.Cli
         enabled: source.enabled,
         phase: source.phase,
       }
+      if (source.clientId !== undefined) row.clientId = source.clientId
+      if (source.presentationRoles !== undefined) row.presentationRoles = [...source.presentationRoles]
       if (source.exampleOf !== undefined) row.exampleOf = source.exampleOf
       if (source.pageEntry !== undefined) row.pageEntry = source.pageEntry
       if (source.homeEntries !== undefined)
@@ -356,6 +358,25 @@ const contract = (
     }),
   })
 export const PACKAGE_ADMIN_METHODS = Object.freeze({
+  '_agnes/v1/applications.get': contract(P.PackageListParams, P.ApplicationState, 'read', 'packages.read'),
+  '_agnes/v1/applications.preview': contract(
+    P.ApplicationPreviewParams,
+    P.ApplicationPreview,
+    'read',
+    'packages.read',
+  ),
+  '_agnes/v1/applications.adopt': contract(
+    P.ApplicationAdoptParams,
+    P.ApplicationState,
+    'effect',
+    'packages.activate',
+  ),
+  '_agnes/v1/applications.clear': contract(
+    P.ApplicationClearParams,
+    P.ApplicationState,
+    'effect',
+    'packages.activate',
+  ),
   '_agnes/v1/plugins.candidates.list': contract(
     P.PackageListParams,
     P.AuthoringCandidateList,
@@ -625,6 +646,13 @@ export function canAccessPackageAdmin(
 // trying to print the whole literal type. An explicit annotation on the table sidesteps that by
 // giving tsc a short type reference (`Record<PackageAdminDataName, TSchema>`) to print instead.
 export type PackageAdminDataName =
+  | 'ApplicationSelection'
+  | 'ApplicationConfigSnapshot'
+  | 'ApplicationPreviewParams'
+  | 'ApplicationPreview'
+  | 'ApplicationState'
+  | 'ApplicationAdoptParams'
+  | 'ApplicationClearParams'
   | 'PluginConfigGetParams'
   | 'PluginConfigValidateParams'
   | 'PluginConfigSaveParams'
@@ -708,6 +736,14 @@ export type PackageAdminDataName =
   | 'ClientModuleRosterRow'
   | 'ClientModuleEffectCallParams'
 const DATA_SCHEMAS: Record<PackageAdminDataName, TSchema> = {
+  ApplicationSelection: P.ApplicationSelection,
+  ApplicationConfigSnapshot: P.ApplicationConfigSnapshot,
+  ApplicationPreviewParams: P.ApplicationPreviewParams,
+  ApplicationPreview: P.ApplicationPreview,
+  ApplicationState: P.ApplicationState,
+  ApplicationAdoptParams: P.ApplicationAdoptParams,
+  ApplicationClearParams: P.ApplicationClearParams,
+
   PluginConfigGetParams: P.PluginConfigGetParams,
   PluginConfigValidateParams: P.PluginConfigValidateParams,
   PluginConfigSaveParams: P.PluginConfigSaveParams,

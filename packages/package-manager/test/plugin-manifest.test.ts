@@ -378,7 +378,7 @@ it('checks effective preset inheritance after parent-to-child overrides and defe
     ).toBe(level)
 })
 
-it('keeps application schema minimal and validates explicit agent references', () => {
+it('validates application identity and explicit agent, page and role references', () => {
   const bundles = parsePackageBundleContract('acme/kit', {
     work: {
       launch: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' },
@@ -388,8 +388,10 @@ it('keeps application schema minimal and validates explicit agent references', (
   const app = { id: 'acme', defaultAgent: 'acme/kit#work', agents: ['acme/kit#work'] }
   expect(parseApplicationContract(app, 'acme/kit', bundles, {}).application).toEqual(app)
   for (const value of [
-    { ...app, brand: {} },
-    { ...app, presentation: {} },
+    { ...app, brand: { unknown: 'no' } },
+    { ...app, presentation: { roles: { unknown: { packageId: 'acme/kit', clientId: 'ui' } } } },
+    { ...app, presentation: { roles: { navigation: { packageId: 'acme/kit', clientId: 'ui' } } } },
+    { ...app, presentation: { home: 'acme/kit#unknown' } },
     { ...app, defaultAgent: 'acme/kit#missing' },
     { ...app, agents: [] },
   ])
@@ -399,4 +401,38 @@ it('keeps application schema minimal and validates explicit agent references', (
       'other/pkg': '^1',
     }).deploymentDependent,
   ).toBe(true)
+})
+
+it('resolves local application home/navigation and only statically declared profile roles', () => {
+  const client = {
+    kind: 'client' as const,
+    id: 'ui-row',
+    rowId: 'ext:acme/ui',
+    path: './client.json',
+    client: {
+      id: 'ui',
+      entry: './ui.js',
+      lifetime: 'profile' as const,
+      homeEntries: [{ id: 'home', placement: 'primary' as const }],
+      presentationRoles: ['navigation' as const],
+    },
+  }
+  const app = {
+    id: 'acme',
+    brand: { name: { en: 'Acme' } },
+    presentation: {
+      home: 'acme/kit#home',
+      navigation: { entries: ['acme/kit#home'] },
+      roles: { navigation: { packageId: 'acme/kit', clientId: 'ui' } },
+    },
+  }
+  expect(parseApplicationContract(app, 'acme/kit', {}, {}, [client])).toMatchObject({
+    application: app,
+    deploymentDependent: false,
+  })
+  for (const contribution of [
+    { ...client, client: { ...client.client, presentationRoles: [] } },
+    { ...client, client: { ...client.client, lifetime: 'session' as const } },
+  ])
+    expect(() => parseApplicationContract(app, 'acme/kit', {}, {}, [contribution])).toThrow()
 })

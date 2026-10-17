@@ -80,7 +80,7 @@ profile 的 primary 声明可添加 `navigation: { title, titles?, icon, order }
 
 ## 替换交付物呈现
 
-生命周期为 `profile` 的客户端模块可调用 `ctx.presentationRoles.register({ role: 'deliverables', priority: 0, mount })`。`mount` 必须返回同步清理函数，撤销它注册的全部 slot、卡片、面板和订阅。角色沿用 single slot 的优先级规则：数值最小者生效，同优先级拒绝注册，先卸下旧提供方再挂载新提供方。默认 `@agnes/deliverables-ui` 使用 100。名册撤权在异步模块清理之前撤销角色；禁用替代插件会恢复默认呈现。角色不授予后台权限。
+profile client 须先在 descriptor 声明显式 `client.id` 和 `presentationRoles`。标准产品角色包括 `navigation`、`conversation`、`composer`、`goal`、`interaction`、`deliverables`；当前[应用](../extend/applications.zh-CN.md)或用户显式选择先筛选候选，再比较 priority，安装未选提供方不能接管当前产品。普通非产品角色保持原优先级语义。生命周期为 `profile` 的客户端模块可调用 `ctx.presentationRoles.register({ role: 'deliverables', priority: 0, mount })`。`mount` 必须返回同步清理函数，撤销它注册的全部 slot、卡片、面板和订阅。角色沿用 single slot 的优先级规则：数值最小者生效，同优先级拒绝注册，先卸下旧提供方再挂载新提供方。默认 `@agnes/deliverables-ui` 使用 100。名册撤权在异步模块清理之前撤销角色；禁用替代插件会恢复默认呈现。角色不授予后台权限。
 
 使用 `@agnes/web-client` 的 `DeliverablesStore(ctx.agnes, ctx.session)`，并随呈现一起 dispose。只读 `DeliverableRecord` 包含 `id`、`sessionId`、`laneId`、来源 owner/调用、可确定时的所属 `turnId`、呈现 `seq`、名称/说明、inline/workbench 位置及现有完整 `ArtifactRef`。同名历史只是展示分组，不证明版本谱系。修改工作区源文件不会改变已交付快照。新交付在现有交付物事件之外持久化工具 `structured` 结果；原有 Intelligent UI 文件列表仍可读取。Intelligent UI 是可选增强：没有渲染器时仍能展示已记录文件的普通列表。
 

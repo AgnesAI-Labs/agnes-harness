@@ -57,6 +57,6 @@
 
 ## 应用声明
 
-本期 `agnes.application` 仅保留 `{ "id": "acme", "defaultAgent": "acme/reviewer#review", "agents": ["acme/reviewer#review"] }`。智能体引用须可解，或等待已声明的依赖定义；声明进入信任哈希。应用选择与展示运行时另行实现，安装不会自动选中应用。品牌和展示字段等待专门合同，目前拒绝。
+完整的身份、raster 资产、接管角色和显式采纳合同见[应用](applications.zh-CN.md)。安装只产生候选；展示选择在执行解析之外保存。
 
 固定作者主干为 29 槽：包封套 9、插件行 14、客户端绑定 2、Bundle 4。相对原 27 槽：移除 `agnes.kinds`，增加 `agnes.provides`、`agnes.application`、`bundles.*.launch`。嵌套 metadata 与 launch 子字段不在该分母内。首个工具与首个 Loop 不增加必填步骤。

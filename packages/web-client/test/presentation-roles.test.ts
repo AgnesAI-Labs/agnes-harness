@@ -68,3 +68,34 @@ it('revokes a profile role before asynchronous module disposal and prevents late
   expect(() => roles.register({ role: 'test-presentation', mount: () => () => {} })).toThrow('active profile')
   for (const off of effects) off()
 })
+
+it('filters standard product roles before priority so installing B cannot steal A, and explicit user choice wins', () => {
+  const roles = new PresentationRoleRegistry()
+  const visible = new Set<string>()
+  const module = (packageId: string) => ({ packageId, clientId: 'ui', revision: 'one' })
+  const provider = (id: string, priority: number) => ({
+    role: 'navigation',
+    priority,
+    mount() {
+      visible.add(id)
+      return () => {
+        visible.delete(id)
+      }
+    },
+  })
+  roles.select({ navigation: { packageId: 'a', clientId: 'ui' } })
+  const a = roles.register('a-owner', provider('a', 10), module('a'))
+  const b = roles.register('b-owner', provider('b', -100), module('b'))
+  expect([...visible]).toEqual(['a'])
+  roles.select(
+    { navigation: { packageId: 'a', clientId: 'ui' } },
+    { navigation: { packageId: 'b', clientId: 'ui' } },
+  )
+  expect([...visible]).toEqual(['b'])
+  roles.select({ navigation: { packageId: 'a', clientId: 'ui' } }, {})
+  expect([...visible]).toEqual(['a'])
+  roles.select()
+  expect([...visible]).toEqual([])
+  a()
+  b()
+})

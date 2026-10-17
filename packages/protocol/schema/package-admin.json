@@ -2957,6 +2957,19 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 128
+        },
+        "presentationRoles": {
+          "type": "array",
+          "maxItems": 6,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "extension-manifest.json#/$defs/PresentationRole"
+          }
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
         }
       }
     },
@@ -4079,6 +4092,339 @@
           "enum": ["active", "draining", "history-only", "disabled", "failed"]
         }
       }
+    },
+    "ApplicationSelection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "packageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "applicationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "integrity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "declarationDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "consentDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "bindingDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "packageId",
+        "applicationId",
+        "integrity",
+        "declarationDigest",
+        "consentDigest",
+        "bindingDigest"
+      ]
+    },
+    "ApplicationConfigSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "selection": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApplicationSelection"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": ["revision", "selection"]
+    },
+    "ApplicationPreviewParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "packageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      },
+      "required": ["profile", "packageId"]
+    },
+    "ApplicationPreview": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "packageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "integrity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "source": {
+          "$ref": "#/$defs/PackageSource"
+        },
+        "signature": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "declaration": {
+          "$ref": "extension-manifest.json#/$defs/ApplicationTemplate"
+        },
+        "declarationDigest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "consentDigest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "session-v1.json#/$defs/JsonValue"
+          },
+          "maxItems": 256
+        },
+        "replacedRoles": {
+          "type": "array",
+          "items": {
+            "$ref": "session-v1.json#/$defs/JsonValue"
+          },
+          "maxItems": 6
+        },
+        "dependencyDiff": {
+          "$ref": "session-v1.json#/$defs/JsonValue"
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "recovery": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "warning": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "assets": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mark": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1500000
+            },
+            "favicon": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1500000
+            }
+          },
+          "required": []
+        }
+      },
+      "required": [
+        "packageId",
+        "version",
+        "integrity",
+        "source",
+        "signature",
+        "declaration",
+        "declarationDigest",
+        "consentDigest",
+        "dependencies",
+        "replacedRoles",
+        "dependencyDiff",
+        "scope",
+        "recovery",
+        "warning",
+        "assets"
+      ]
+    },
+    "ApplicationState": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "selection": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApplicationSelection"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": ["host", "active", "unresolved"]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "effective": {
+          "anyOf": [
+            {
+              "$ref": "extension-manifest.json#/$defs/ApplicationTemplate"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "assets": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mark": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1500000
+            },
+            "favicon": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1500000
+            }
+          },
+          "required": []
+        },
+        "candidates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "packageId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "applicationId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "available": {
+                "type": "boolean"
+              }
+            },
+            "required": ["packageId", "applicationId", "version", "available"]
+          }
+        }
+      },
+      "required": ["revision", "selection", "status", "effective", "assets", "candidates"]
+    },
+    "ApplicationAdoptParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "packageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "consentDigest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": ["profile", "packageId", "expectedRevision", "consentDigest", "clientId", "commandId"]
+    },
+    "ApplicationClearParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": ["profile", "expectedRevision", "clientId", "commandId"]
     }
   }
 }

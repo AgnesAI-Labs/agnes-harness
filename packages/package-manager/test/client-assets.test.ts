@@ -457,9 +457,12 @@ describe('client capability hash integration', () => {
     expect(
       capabilityHash({ ...base, agents: [{ ref: 'acme/kit#work', launch: { ...launch, preset: 'write' } }] }),
     ).not.toBe(first)
-    expect(capabilityHash({ ...base, application: { id: 'acme', defaultAgent: 'acme/demo#work' } })).not.toBe(
-      first,
-    )
+    expect(
+      capabilityHash({
+        ...base,
+        application: { id: 'acme', brand: { name: { en: 'Acme' } }, defaultAgent: 'acme/demo#work' },
+      }),
+    ).not.toBe(first)
   })
   it('adds the normalized client field to the summary and the hash for a declaring package', () => {
     const { preview } = staged(

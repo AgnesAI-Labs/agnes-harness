@@ -19,6 +19,8 @@ export function readyRosterModules(rows: readonly ClientModuleRosterRow[]): Read
         ...(row.intelligentComponents ? { intelligentComponents: row.intelligentComponents } : {}),
         ...(row.exampleOf ? { exampleOf: row.exampleOf } : {}),
         ...(row.pageEntry ? { pageEntry: row.pageEntry } : {}),
+        ...(row.clientId ? { clientId: row.clientId } : {}),
+        ...(row.presentationRoles ? { presentationRoles: row.presentationRoles } : {}),
         ...(row.binding ? { binding: row.binding } : {}),
         ...(row.homeEntries ? { homeEntries: row.homeEntries } : {}),
         ...(row.examplePages ? { examplePages: row.examplePages } : {}),

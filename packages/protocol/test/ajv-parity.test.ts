@@ -6028,9 +6028,39 @@ const EXTENSION_SAMPLES: Record<string, Sample> = {
     note: 'Static Bundle launch projection',
   },
   ApplicationTemplate: {
-    valid: { id: 'acme' },
-    invalid: [{}, { id: 'acme', brand: {} }],
-    note: 'Minimal application selection contract',
+    valid: { id: 'acme', brand: { name: { en: 'Acme' } } },
+    invalid: [{}, { id: 'acme', brand: { unknown: true } }],
+    note: 'Application identity and presentation contract',
+  },
+  ApplicationAsset: {
+    valid: {
+      path: 'assets/mark.png',
+      size: 8,
+      mime: 'image/png',
+      sha256: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    },
+    invalid: [{ unknown: true }],
+    note: 'Application static presentation contract',
+  },
+  ApplicationBrand: {
+    valid: { name: { en: 'Acme' } },
+    invalid: [{ unknown: true }],
+    note: 'Application static presentation contract',
+  },
+  ApplicationPresentation: {
+    valid: { roles: { navigation: { packageId: 'acme/kit', clientId: 'ui' } } },
+    invalid: [{ unknown: true }],
+    note: 'Application static presentation contract',
+  },
+  ApplicationRoleTarget: {
+    valid: { packageId: 'acme/kit', clientId: 'ui' },
+    invalid: [{ unknown: true }],
+    note: 'Application static presentation contract',
+  },
+  PresentationRole: {
+    valid: 'navigation',
+    invalid: ['unknown'],
+    note: 'Application static presentation contract',
   },
   PluginMetadata: {
     valid: {
@@ -6255,6 +6285,12 @@ const ExtensionManifestDefs: Record<string, TSchema> = {
   BundleLaunch: ExtensionManifestGen.BundleLaunch,
   DeclaredAgent: ExtensionManifestGen.DeclaredAgent,
   ApplicationTemplate: ExtensionManifestGen.ApplicationTemplate,
+  ApplicationAsset: ExtensionManifestGen.ApplicationAsset,
+  ApplicationBrand: ExtensionManifestGen.ApplicationBrand,
+  ApplicationPresentation: ExtensionManifestGen.ApplicationPresentation,
+  ApplicationRoleTarget: ExtensionManifestGen.ApplicationRoleTarget,
+  PresentationRole: ExtensionManifestGen.PresentationRole,
+
   PluginMetadata: ExtensionManifestGen.PluginMetadata,
   PluginMetadataLocale: ExtensionManifestGen.PluginMetadataLocale,
   Capabilities: ExtensionManifestGen.Capabilities,
@@ -7570,6 +7606,14 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     WorkspaceId: ResourceControlGen.WorkspaceId,
   },
   'https://agnes.ai/schema/package-admin.json': {
+    ApplicationSelection: PackageAdminGen.ApplicationSelection,
+    ApplicationConfigSnapshot: PackageAdminGen.ApplicationConfigSnapshot,
+    ApplicationPreviewParams: PackageAdminGen.ApplicationPreviewParams,
+    ApplicationPreview: PackageAdminGen.ApplicationPreview,
+    ApplicationState: PackageAdminGen.ApplicationState,
+    ApplicationAdoptParams: PackageAdminGen.ApplicationAdoptParams,
+    ApplicationClearParams: PackageAdminGen.ApplicationClearParams,
+
     PackagePresentation: PackageAdminGen.PackagePresentation,
     PluginConfigAudit: PackageAdminGen.PluginConfigAudit,
     PluginConfigEntry: PackageAdminGen.PluginConfigEntry,
@@ -7825,6 +7869,27 @@ type MethodDefRef = { fileId: string; params: string; result?: string }
 
 const METHOD_DEF: Record<MethodName, MethodDefRef> = {
   '_agnes/v1/agents.resolve': { fileId: AGENTS_ID, params: 'AgentResolveParams', result: 'AgentPlan' },
+  '_agnes/v1/applications.get': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'PackageListParams',
+    result: 'ApplicationState',
+  },
+  '_agnes/v1/applications.preview': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'ApplicationPreviewParams',
+    result: 'ApplicationPreview',
+  },
+  '_agnes/v1/applications.adopt': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'ApplicationAdoptParams',
+    result: 'ApplicationState',
+  },
+  '_agnes/v1/applications.clear': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'ApplicationClearParams',
+    result: 'ApplicationState',
+  },
+
   '_agnes/v1/extension.wakes.enqueue': {
     fileId: 'https://agnes.ai/schema/extension-service.json',
     params: 'BoundWakeEnqueueParams',
@@ -8712,6 +8777,34 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     invalid: [{}, { ref: 1 }, { ref: 'x', actor: 'forged' }],
     note: 'Host resolves explicit refs',
   },
+  '_agnes/v1/applications.get': {
+    valid: { profile: 'local-dev' },
+    invalid: [{}, { profile: 'local-dev', actor: 'forged' }],
+    note: 'Application presentation configuration',
+  },
+  '_agnes/v1/applications.preview': {
+    valid: { profile: 'local-dev', packageId: 'acme' },
+    invalid: [{}, { profile: 'local-dev', actor: 'forged' }],
+    note: 'Application presentation configuration',
+  },
+  '_agnes/v1/applications.adopt': {
+    valid: {
+      profile: 'local-dev',
+      packageId: 'acme',
+      expectedRevision: 0,
+      consentDigest: 'a'.repeat(64),
+      clientId: 'test',
+      commandId: 'adopt',
+    },
+    invalid: [{}, { profile: 'local-dev', actor: 'forged' }],
+    note: 'Application presentation configuration',
+  },
+  '_agnes/v1/applications.clear': {
+    valid: { profile: 'local-dev', expectedRevision: 0, clientId: 'test', commandId: 'clear' },
+    invalid: [{}, { profile: 'local-dev', actor: 'forged' }],
+    note: 'Application presentation configuration',
+  },
+
   '_agnes/v1/extension.wakes.enqueue': ServiceSamples.BoundWakeEnqueueParams as Sample,
   '_agnes/v1/extension.wakes.read': ServiceSamples.BoundWakeReadParams as Sample,
   '_agnes/v1/extension.callScoped': {
@@ -9488,6 +9581,11 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
 }
 
 const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
+  '_agnes/v1/applications.get': PackageAdminSamples.ApplicationState as Sample,
+  '_agnes/v1/applications.preview': PackageAdminSamples.ApplicationPreview as Sample,
+  '_agnes/v1/applications.adopt': PackageAdminSamples.ApplicationState as Sample,
+  '_agnes/v1/applications.clear': PackageAdminSamples.ApplicationState as Sample,
+
   '_agnes/v1/extension.wakes.enqueue': ServiceSamples.BoundWakeReceipt as Sample,
   '_agnes/v1/extension.wakes.read': ServiceSamples.BoundWakeReceipt as Sample,
   '_agnes/v1/extension.callScoped': ServiceSamples.ProfileServiceCallResult as Sample,

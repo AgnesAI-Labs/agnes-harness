@@ -386,6 +386,14 @@
           },
           "maxItems": 64,
           "uniqueItems": true
+        },
+        "presentationRoles": {
+          "type": "array",
+          "maxItems": 6,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/PresentationRole"
+          }
         }
       }
     },
@@ -811,6 +819,12 @@
           "items": {
             "$ref": "#/$defs/AgentRef"
           }
+        },
+        "brand": {
+          "$ref": "#/$defs/ApplicationBrand"
+        },
+        "presentation": {
+          "$ref": "#/$defs/ApplicationPresentation"
         }
       }
     },
@@ -827,6 +841,144 @@
           "$ref": "#/$defs/BundleLaunch"
         }
       }
+    },
+    "PresentationRole": {
+      "enum": ["navigation", "conversation", "composer", "goal", "interaction", "deliverables"]
+    },
+    "ApplicationAsset": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^(?:\\./)?[A-Za-z0-9_-]+(?:/[A-Za-z0-9_.-]+)*\\.(?:png|jpg|jpeg|webp|gif|ico)$"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 131072
+        },
+        "mime": {
+          "enum": ["image/png", "image/jpeg", "image/webp", "image/gif", "image/x-icon"]
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": ["path", "size", "mime", "sha256"]
+    },
+    "ApplicationBrand": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/PluginLocalizedText"
+        },
+        "title": {
+          "$ref": "#/$defs/PluginLocalizedText"
+        },
+        "assistantName": {
+          "$ref": "#/$defs/PluginLocalizedText"
+        },
+        "mark": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^(?:\\./)?[A-Za-z0-9_-]+(?:/[A-Za-z0-9_.-]+)*\\.(?:png|jpg|jpeg|webp|gif|ico)$",
+          "description": "Package-relative raster asset; inspect and immutable package integrity bind its bytes, length, type and digest."
+        },
+        "favicon": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^(?:\\./)?[A-Za-z0-9_-]+(?:/[A-Za-z0-9_.-]+)*\\.(?:png|jpg|jpeg|webp|gif|ico)$",
+          "description": "Package-relative raster asset; inspect and immutable package integrity bind its bytes, length, type and digest."
+        }
+      },
+      "required": []
+    },
+    "ApplicationRoleTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "packageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": ["packageId", "clientId"]
+    },
+    "ApplicationPresentation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "skin": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "home": {
+          "$ref": "#/$defs/AgentRef"
+        },
+        "navigation": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "entries": {
+              "type": "array",
+              "maxItems": 64,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/AgentRef"
+              }
+            },
+            "hideBuiltin": {
+              "type": "array",
+              "maxItems": 16,
+              "uniqueItems": true,
+              "items": {
+                "enum": ["agents", "business-agents", "automation", "schedules", "triggers", "plugins"]
+              }
+            }
+          },
+          "required": []
+        },
+        "roles": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "navigation": {
+              "$ref": "#/$defs/ApplicationRoleTarget"
+            },
+            "conversation": {
+              "$ref": "#/$defs/ApplicationRoleTarget"
+            },
+            "composer": {
+              "$ref": "#/$defs/ApplicationRoleTarget"
+            },
+            "goal": {
+              "$ref": "#/$defs/ApplicationRoleTarget"
+            },
+            "interaction": {
+              "$ref": "#/$defs/ApplicationRoleTarget"
+            },
+            "deliverables": {
+              "$ref": "#/$defs/ApplicationRoleTarget"
+            }
+          },
+          "required": []
+        }
+      },
+      "required": []
     }
   }
 }
