@@ -66,7 +66,8 @@
         "packages/web-conversation",
         "packages/web-foundation",
         "packages/web-ui",
-        "packages/web-units"
+        "packages/web-units",
+        "packages/package-manager/bundled-plugins/memory-review"
       ]
     },
     {
@@ -127,7 +128,8 @@
         "packages/plugin-runtime",
         "packages/protocol",
         "packages/protocol-validation",
-        "packages/resource-control-contracts"
+        "packages/resource-control-contracts",
+        "packages/package-manager/bundled-plugins/memory-review"
       ]
     },
     {

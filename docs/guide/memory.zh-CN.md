@@ -37,3 +37,5 @@ Linux 上 Host 在编译沙箱前安全准备工作区自有 `.agh` 目录，新
 Demo 模型不推理。`显示记住的偏好` 或 `show remembered preferences` 展示该请求实际收到的记忆贡献。`call write {"path":"<记忆目录>/MEMORY.md","content":"Prefer concise summaries."}` 走与推理模型相同的普通工具和审批路径。覆盖现有文件前先 read。
 
 可替换企业实现见[记忆 providers](../extend/memory.zh-CN.md)。
+
+[复核与整合记忆](memory-review.zh-CN.md) — 可选的经人审记忆整合插件。

@@ -6,6 +6,7 @@ packages:
   - packages/package-manager/bundled-plugins/deliverables-ui
   - packages/package-manager/bundled-plugins/goal-ui
   - packages/package-manager/bundled-plugins/interaction-ui
+  - packages/package-manager/bundled-plugins/memory-review
   - examples/community/deliverables-gallery
   - examples/packages/cordis-greeting
   - examples/loops/decision-loop

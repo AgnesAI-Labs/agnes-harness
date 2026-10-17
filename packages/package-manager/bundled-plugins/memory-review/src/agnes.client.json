@@ -1,0 +1,8 @@
+{
+  "client": {
+    "entry": "./client.js",
+    "styles": ["./client.css"],
+    "slots": [],
+    "requiresBackendRows": ["ext:memory-review/main"]
+  }
+}

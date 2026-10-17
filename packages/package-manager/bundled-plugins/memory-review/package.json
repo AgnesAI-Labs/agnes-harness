@@ -1,0 +1,104 @@
+{
+  "name": "@agnes/memory-review",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": "./index.mjs",
+  "files": [
+    "index.mjs",
+    "src",
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "agnes": {
+    "kinds": [
+      "loop",
+      "tool",
+      "skills",
+      "ui"
+    ],
+    "hostProvidedExternals": {
+      "@agnes/plugin-runtime": "0.0.0",
+      "@sinclair/typebox": "0.34.33"
+    },
+    "plugins": [
+      {
+        "id": "ext:memory-review/main",
+        "export": "main",
+        "apiRange": "^4.0.0",
+        "runtime": "in-process",
+        "inject": [
+          "tools",
+          "providers",
+          "skills"
+        ],
+        "capabilities": {
+          "model": true,
+          "ui": true,
+          "filesystem": {
+            "read": [
+              "**"
+            ],
+            "write": [
+              "**/*.md"
+            ]
+          }
+        },
+        "metadata": {
+          "displayName": "Memory review",
+          "summary": "Review and correct workspace memory with sources, complete diffs and native approvals.",
+          "description": "Optional, bounded memory consolidation. Requires Ask mode; learned preferences remain subordinate to AGENTS.md and authorized knowledge sources.",
+          "category": "developer",
+          "locales": {
+            "zh-CN": {
+              "displayName": "记忆复核",
+              "summary": "通过来源、完整差异和原生审批复核与纠正工作区记忆。",
+              "description": "可选的有界记忆整合，需要询问模式；学习偏好仍服从 AGENTS.md 和已授权知识源。"
+            }
+          }
+        }
+      }
+    ],
+    "clientDescriptors": [
+      {
+        "rowId": "ext:memory-review/main",
+        "path": "./src/agnes.client.json"
+      }
+    ],
+    "metadata": {
+      "displayName": "Memory review",
+      "summary": "Review and correct workspace memory with sources, complete diffs and native approvals.",
+      "description": "Optional, bounded memory consolidation. Requires Ask mode; learned preferences remain subordinate to AGENTS.md and authorized knowledge sources.",
+      "category": "developer",
+      "locales": {
+        "zh-CN": {
+          "displayName": "记忆复核",
+          "summary": "通过来源、完整差异和原生审批复核与纠正工作区记忆。",
+          "description": "可选的有界记忆整合，需要询问模式；学习偏好仍服从 AGENTS.md 和已授权知识源。"
+        }
+      }
+    }
+  },
+  "peerDependencies": {
+    "@agnes/plugin-runtime": "*",
+    "@agnes/web-client": "0.0.0",
+    "@agnes/web-ui": "0.0.0",
+    "react": "18.3.1",
+    "@sinclair/typebox": "0.34.33"
+  },
+  "devDependencies": {
+    "@agnes/plugin-runtime": "workspace:*",
+    "@agnes/web-client": "workspace:*",
+    "@agnes/web-ui": "workspace:*",
+    "@sinclair/typebox": "0.34.33",
+    "@types/react": "18.3.12",
+    "react": "18.3.1"
+  },
+  "scripts": {
+    "typecheck": "tsc -b"
+  }
+}

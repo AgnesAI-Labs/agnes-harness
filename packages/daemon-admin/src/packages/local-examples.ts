@@ -34,6 +34,7 @@ function helperEntry(
     integrity: hashDirectory(directory),
     license: pkg.license,
     contributions: [],
+    ...(pkg.agnes?.kinds ? { kinds: pkg.agnes.kinds } : {}),
     ...(pkg.agnes?.metadata ? { metadata: pkg.agnes.metadata } : {}),
     compatibility: 'supported' as const,
   }

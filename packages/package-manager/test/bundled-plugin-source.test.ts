@@ -80,7 +80,10 @@ it.each([...BUNDLED_HELPERS, ...OPTIONAL_BUNDLED_PACKAGES])(
           { provider: 'local' },
         ]),
       ),
-      policySnapshot: { capabilityCeiling: ['tools', 'ui'], workspacePackages: 'require-project-trust' },
+      policySnapshot: {
+        capabilityCeiling: ['tools', 'ui', 'model', 'filesystem.read', 'filesystem.write'],
+        workspacePackages: 'require-project-trust',
+      },
     })
     const exec = vi.fn(async () => {
       throw new Error('Network forbidden')
@@ -94,8 +97,13 @@ it.each([...BUNDLED_HELPERS, ...OPTIONAL_BUNDLED_PACKAGES])(
       readLock(profile, { profile: 'local-dev', agnesVersion: '0.1.0' }).packages[helper.id],
     ).toBeDefined()
     expect(exec).not.toHaveBeenCalled()
-    if (OPTIONAL_BUNDLED_PACKAGES.some((item) => item.id === helper.id))
+    if (OPTIONAL_BUNDLED_PACKAGES.some((item) => item.id === helper.id)) {
       expect(DEFAULT_ENABLED_BUNDLED_PACKAGES.some((item) => item.id === helper.id)).toBe(false)
+      await manager.remove(profile, helper.id)
+      expect(
+        readLock(profile, { profile: 'local-dev', agnesVersion: '0.1.0' }).packages[helper.id],
+      ).toBeUndefined()
+    }
   },
 )
 

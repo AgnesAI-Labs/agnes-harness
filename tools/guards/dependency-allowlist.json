@@ -350,6 +350,7 @@
   "@agnes/goal-ui": ["@agnes/web-client", "@agnes/web-ui"],
   "@agnes/interaction-ui": ["@agnes/web-client", "@agnes/web-ui"],
   "@agnes/mcp-helper": [],
+  "@agnes/memory-review": ["@agnes/plugin-runtime", "@agnes/web-client", "@agnes/web-ui"],
   "@agnes/plugin-helper": [],
   "@agnes/skill-helper": [],
   "@agnes/usage-cockpit": ["@agnes/protocol", "@agnes/web-client", "@agnes/web-ui"]

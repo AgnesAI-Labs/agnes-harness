@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "allowJs": true,
+    "checkJs": true,
+    "skipLibCheck": true,
+    "strict": false,
+    "strictNullChecks": true,
+    "types": ["node", "react"],
+    "rootDir": ".",
+    "outDir": "dist",
+    "exactOptionalPropertyTypes": false,
+    "noImplicitOverride": false,
+    "composite": true,
+    "declaration": true
+  },
+  "include": ["index.mjs", "src/review.mjs", "src/client.js"],
+  "references": [
+    {
+      "path": "../../../plugin-runtime"
+    },
+    {
+      "path": "../../../web-client"
+    },
+    {
+      "path": "../../../web-ui"
+    }
+  ],
+  "exclude": ["dist", "node_modules"]
+}

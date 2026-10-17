@@ -51,7 +51,7 @@ export const BUNDLED_HELPERS = Object.freeze([
   },
 ])
 
-/** Shipped discovery choices; never auto-installed or enabled in profiles. */
+/** Shipped and discoverable, but never installed, trusted or enabled automatically. */
 export const OPTIONAL_BUNDLED_PACKAGES = Object.freeze([
   {
     name: 'eval-studio',
@@ -68,6 +68,14 @@ export const OPTIONAL_BUNDLED_PACKAGES = Object.freeze([
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/usage-cockpit',
     sourcePath: 'package-manager/bundled-plugins/usage-cockpit',
+  },
+  {
+    name: 'memory-review',
+    id: '@agnes/memory-review',
+    version: '0.1.0',
+    license: 'Apache-2.0',
+    ref: 'file:./bundled-plugins/memory-review',
+    sourcePath: 'package-manager/bundled-plugins/memory-review',
   },
 ])
 

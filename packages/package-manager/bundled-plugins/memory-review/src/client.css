@@ -1,0 +1,15 @@
+@layer app {
+  .memory-review-panel {
+    padding: var(--s16);
+    overflow-wrap: anywhere;
+  }
+  .memory-review-panel pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+  }
+  .memory-review-panel > * + * {
+    margin-top: var(--s12);
+  }
+}

@@ -37,3 +37,5 @@ Memory stays in local files and the session ledger needed for tool execution. Fo
 The demo model performs no reasoning. `show remembered preferences` (or `显示记住的偏好`) displays the memory contribution actually received in that request. `call write {"path":"<memory-directory>/MEMORY.md","content":"Prefer concise summaries."}` uses the same normal tool and approval path as a configured reasoning model. Read an existing file before replacing it.
 
 For a replaceable enterprise implementation, see [Memory providers](../extend/memory.md).
+
+[Review and consolidate memory](memory-review.md) — Optional reviewed consolidation plugin.

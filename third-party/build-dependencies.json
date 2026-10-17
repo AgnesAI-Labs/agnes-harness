@@ -90,7 +90,8 @@
         "packages/web-conversation",
         "packages/web-foundation",
         "packages/web-ui",
-        "packages/web-units"
+        "packages/web-units",
+        "packages/package-manager/bundled-plugins/memory-review"
       ]
     },
     {
