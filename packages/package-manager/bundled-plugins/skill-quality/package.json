@@ -1,0 +1,117 @@
+{
+  "name": "@agnes/skill-quality",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": "./index.mjs",
+  "engines": {
+    "node": ">=24.10"
+  },
+  "files": [
+    "index.mjs",
+    "src",
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE"
+  ],
+  "agnes": {
+    "kinds": [
+      "tool",
+      "loop",
+      "ui"
+    ],
+    "hostProvidedExternals": {
+      "@agnes/plugin-runtime": "0.0.0",
+      "@sinclair/typebox": "^0.34.33"
+    },
+    "plugins": [
+      {
+        "id": "ext:skill-quality/main",
+        "export": "main",
+        "apiRange": "^4.0.0",
+        "runtime": "in-process",
+        "inject": [
+          "tools",
+          "services",
+          "projections",
+          "eventLog",
+          "self"
+        ],
+        "capabilities": {
+          "store": true,
+          "events": true,
+          "ui": true,
+          "tools": {
+            "prefix": "skill_quality_"
+          }
+        },
+        "metadata": {
+          "displayName": "Skill quality",
+          "summary": "Review candidate quality evidence before human publication.",
+          "description": "Optional session-scoped Skill quality evidence and manual eval imports.",
+          "category": "developer",
+          "locales": {
+            "zh-CN": {
+              "displayName": "技能质量",
+              "summary": "人审发布前查看候选质量证据。",
+              "description": "可选的会话范围技能质量证据与人工评测导入。"
+            }
+          }
+        }
+      },
+      {
+        "id": "ext:skill-quality/workflow",
+        "export": "workflow",
+        "apiRange": "^4.0.0",
+        "inject": [
+          "tools",
+          "providers",
+          "skills"
+        ],
+        "metadata": {
+          "displayName": "Skill quality",
+          "summary": "Review candidate quality evidence before human publication.",
+          "description": "Optional session-scoped Skill quality evidence and manual eval imports.",
+          "category": "developer",
+          "locales": {
+            "zh-CN": {
+              "displayName": "技能质量",
+              "summary": "人审发布前查看候选质量证据。",
+              "description": "可选的会话范围技能质量证据与人工评测导入。"
+            }
+          }
+        },
+        "capabilities": {
+          "model": true
+        }
+      }
+    ],
+    "clientDescriptors": [
+      {
+        "rowId": "ext:skill-quality/main",
+        "path": "./src/agnes.client.json"
+      }
+    ],
+    "metadata": {
+      "displayName": "Skill quality",
+      "summary": "Review candidate quality evidence before human publication.",
+      "description": "Optional session-scoped Skill quality evidence and manual eval imports.",
+      "category": "developer",
+      "locales": {
+        "zh-CN": {
+          "displayName": "技能质量",
+          "summary": "人审发布前查看候选质量证据。",
+          "description": "可选的会话范围技能质量证据与人工评测导入。"
+        }
+      }
+    }
+  },
+  "devDependencies": {
+    "@agnes/plugin-runtime": "workspace:*",
+    "@sinclair/typebox": "0.34.33",
+    "@agnes/web-client": "workspace:*",
+    "@agnes/web-ui": "workspace:*",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  }
+}

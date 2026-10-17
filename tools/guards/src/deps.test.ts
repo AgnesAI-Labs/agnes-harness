@@ -149,6 +149,7 @@ const LAYER: Record<string, number> = {
   '@agnes/mcp-helper': 10,
   '@agnes/plugin-helper': 10,
   '@agnes/skill-helper': 10,
+  '@agnes/skill-quality': 10,
   '@agnes/usage-cockpit': 10,
   '@agnes/web': 10,
   // CLI's serve command composes the public Node static server; Web still depends only on SDK/protocol.

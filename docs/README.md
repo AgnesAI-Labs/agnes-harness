@@ -14,6 +14,9 @@ Run tasks through CLI and Web, connect business capabilities with plugins, captu
 
 
 [Three product demos](guide/demos.md)
+
+[Skill quality evidence](guide/skill-quality.md) · Optional candidate eval imports and human review.
+
 ## Choose your starting point
 
 | Your goal | Recommended path | What you will achieve |

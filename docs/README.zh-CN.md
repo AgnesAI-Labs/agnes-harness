@@ -10,6 +10,9 @@
 
 
 [三个产品演示](guide/demos.zh-CN.md)
+
+[技能质量证据](guide/skill-quality.zh-CN.md) · 可选候选评测导入与人审。
+
 ## 选择你的起点
 
 | 你想做什么 | 推荐路径 | 完成后你会得到 |

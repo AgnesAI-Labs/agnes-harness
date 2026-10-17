@@ -1,0 +1,10 @@
+{
+  "client": {
+    "entry": "./client.js",
+    "lifetime": "profile",
+    "slots": [],
+    "services": ["quality.read"],
+    "requiresBackendRows": ["ext:skill-quality/main"],
+    "styles": ["./style.css"]
+  }
+}

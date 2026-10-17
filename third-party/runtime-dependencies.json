@@ -59,6 +59,7 @@
         "packages/package-manager/bundled-plugins/usage-cockpit",
         "packages/package-manager/bundled-plugins/goal-ui",
         "packages/package-manager/bundled-plugins/interaction-ui",
+        "packages/package-manager/bundled-plugins/skill-quality",
         "packages/resource-control-web",
         "packages/web",
         "packages/web-admin",
@@ -124,6 +125,7 @@
         "packages/host-extensions",
         "packages/host-providers",
         "packages/model-adapters",
+        "packages/package-manager/bundled-plugins/skill-quality",
         "packages/plugin-runtime",
         "packages/protocol",
         "packages/protocol-validation",
@@ -288,6 +290,7 @@
       "rationale": "Same pin line as react (WC5).",
       "consumers": [
         "packages/package-manager/bundled-plugins/eval-studio",
+        "packages/package-manager/bundled-plugins/skill-quality",
         "packages/web",
         "packages/web-admin",
         "packages/web-client",

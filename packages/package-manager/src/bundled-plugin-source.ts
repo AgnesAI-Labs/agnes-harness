@@ -69,6 +69,14 @@ export const OPTIONAL_BUNDLED_PACKAGES = Object.freeze([
     ref: 'file:./bundled-plugins/usage-cockpit',
     sourcePath: 'package-manager/bundled-plugins/usage-cockpit',
   },
+  {
+    name: 'skill-quality',
+    id: '@agnes/skill-quality',
+    version: '0.1.0',
+    license: 'Apache-2.0',
+    ref: 'file:./bundled-plugins/skill-quality',
+    sourcePath: 'package-manager/bundled-plugins/skill-quality',
+  },
 ])
 
 /** Release-owned defaults; freshOnly additions never backfill an existing profile. */
