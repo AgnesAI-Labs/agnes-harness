@@ -346,6 +346,8 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/surfaces.mounts',
         '_agnes/v1/workspace.add',
         '_agnes/v1/workspace.list',
+        '_agnes/v1/workspace.remove',
+        '_agnes/v1/workspace.reveal',
         'authenticate',
         'initialize',
         'session/cancel',
@@ -357,7 +359,7 @@ describe('methods (I1 set)', () => {
         'session/update',
       ].sort(),
     )
-    expect(Object.keys(METHODS)).toHaveLength(203)
+    expect(Object.keys(METHODS)).toHaveLength(205)
     expect(METHODS['_agnes/v1/session.loading']).toMatchObject({ kind: 'notification', direction: 's2c' })
     expect(METHODS['_agnes/v1/session.loadingCancel']).toMatchObject({
       kind: 'notification',

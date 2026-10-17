@@ -35,6 +35,33 @@ function setup() {
 afterEach(() => vi.useRealTimers())
 
 describe('WorkerLink command settlement', () => {
+  it('forwards only decision invalidation scope from the worker, never extra data', async () => {
+    const socket = new FakeSocket()
+    const changes: unknown[] = []
+    const link = new WorkerLink(socket as unknown as Socket, {
+      onEvent() {},
+      async onRequest() {},
+      onDecisionsChanged: (detail) => changes.push(detail),
+    })
+    socket.emit(
+      'data',
+      encodeFrame({
+        kind: 'decisionsChanged',
+        detail: {
+          profile: 'default',
+          principal: { id: 'operator', org: 'local', role: 'owner' },
+          decisions: [{ prompt: 'private' }],
+        },
+      }),
+    )
+    await vi.waitFor(() =>
+      expect(changes).toEqual([{ profile: 'default', principal: { id: 'operator', org: 'local' } }]),
+    )
+    socket.emit('data', encodeFrame({ kind: 'decisionsChanged', detail: { profile: 'default' } }))
+    await vi.waitFor(() => expect(link.alive).toBe(false))
+    expect(changes).toHaveLength(1)
+  })
+
   it.each(['revoke', 'close-session'] as const)(
     'keeps the %s session stopped until a new turn while preserving its sibling',
     async (way) => {

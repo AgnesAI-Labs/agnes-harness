@@ -70,6 +70,7 @@ export function createHostServices(
     barrier: ctx.activationBarrier,
     journalKey: `${ctx.dataDir}/profile:${ctx.profile.name}`,
     publishCurrent: input.publishProfileCurrent,
+    ...(deps.decisionsChanged ? { decisionsChanged: deps.decisionsChanged } : {}),
     wakes: proc.profileWakes,
     profileId: ctx.profile.name,
     registry: services,

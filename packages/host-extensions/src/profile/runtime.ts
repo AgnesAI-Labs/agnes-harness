@@ -38,7 +38,7 @@ import type { ServiceRegistry } from '../ext-host/services.js'
 import type { ProfileActivations } from './activation.js'
 import { profileServiceContext } from './context.js'
 import { ProfileEffectQueues } from './effect-queues.js'
-import { ProfileJournal, type ProfileOperation } from './journal.js'
+import { type DecisionsChanged, ProfileJournal, type ProfileOperation } from './journal.js'
 import { retainProfileJournal } from './shared-journal.js'
 
 export type ProfileServiceRuntime = ReturnType<typeof createProfileServiceRuntime>
@@ -48,6 +48,7 @@ export function createProfileServiceRuntime(deps: {
   barrier?: import('../ext-host/activation-barrier.js').ExtensionActivationBarrier
   journalKey?: string
   publishCurrent?: () => void
+  decisionsChanged?: (detail: DecisionsChanged) => void
   profileId: string
   registry: ServiceRegistry
   authority?: ServiceAuthority
@@ -63,7 +64,7 @@ export function createProfileServiceRuntime(deps: {
   audit(detail: Record<string, unknown>): void
 }) {
   const shared = deps.journalKey
-    ? retainProfileJournal(deps.journalKey, deps.profileId, deps.storage, deps.clock)
+    ? retainProfileJournal(deps.journalKey, deps.profileId, deps.storage, deps.clock, deps.decisionsChanged)
     : undefined
   const calls = new Set<Promise<ProfileServiceCallResult>>()
   let opening: Promise<ProfileJournal> | undefined
@@ -71,7 +72,9 @@ export function createProfileServiceRuntime(deps: {
   let closed = false
   const journal = () => {
     if (closed || deps.signal.aborted) throw rpcError('CAPABILITY_DENIED')
-    opening ??= shared ? shared.get() : ProfileJournal.open(deps.profileId, deps.storage, deps.clock)
+    opening ??= shared
+      ? shared.get()
+      : ProfileJournal.open(deps.profileId, deps.storage, deps.clock, deps.decisionsChanged)
     return opening
   }
   const actorFor = async (
@@ -476,6 +479,51 @@ export function createProfileServiceRuntime(deps: {
     void pending.finally(() => calls.delete(pending)).catch(() => undefined)
     return pending
   }
+  const listDecisionState = async (credential: unknown) => {
+    const actor = await actorFor(credential),
+      log = await journal()
+    const decisions = log.decisions(actor)
+    const pending: DecisionSnapshot[] = []
+    for (const value of await decisions.list()) {
+      if (
+        value.request.requestedBy.id !== actor.id ||
+        value.request.requestedBy.org !== actor.org ||
+        value.consumption ||
+        value.invalidation ||
+        value.result
+      )
+        continue
+      const operation = [...log.operations.values()].find(
+        (row) => row.receipt.decision?.id === value.handle.id,
+      )
+      if (!operation) continue
+      const entry = deps.registry.resolve(operation.owner, operation.service)
+      try {
+        if (!entry) throw rpcError('CAPABILITY_DENIED')
+        entry.assertAlive()
+        deps.activations.require(
+          operation.owner,
+          entry.integrity,
+          operation.activationId,
+          entry.activationRevision,
+        )
+        pending.push(value)
+      } catch {
+        await decisions.withdraw(
+          value.handle,
+          {
+            owner: value.request.owner,
+            operationId: value.request.operationId,
+            sourcePackage: value.request.sourcePackage,
+            packageVersion: value.request.packageVersion,
+            alive() {},
+          },
+          'activation-revoked',
+        )
+      }
+    }
+    return { principal: { id: actor.id, org: actor.org }, decisions: pending.slice(0, 1000) }
+  }
   return Object.freeze({
     signal: deps.signal,
     streams: deps.streams,
@@ -563,50 +611,9 @@ export function createProfileServiceRuntime(deps: {
       if (!deps.wakes || closed || deps.signal.aborted) throw rpcError('CAPABILITY_DENIED')
       return deps.wakes.require(bindingId)
     },
+    listDecisionState,
     async listDecisions(credential: unknown): Promise<DecisionSnapshot[]> {
-      const actor = await actorFor(credential),
-        log = await journal()
-      const decisions = log.decisions(actor)
-      const pending: DecisionSnapshot[] = []
-      for (const value of await decisions.list()) {
-        if (
-          value.request.requestedBy.id !== actor.id ||
-          value.request.requestedBy.org !== actor.org ||
-          value.consumption ||
-          value.invalidation ||
-          value.result
-        )
-          continue
-        const operation = [...log.operations.values()].find(
-          (row) => row.receipt.decision?.id === value.handle.id,
-        )
-        if (!operation) continue
-        const entry = deps.registry.resolve(operation.owner, operation.service)
-        try {
-          if (!entry) throw rpcError('CAPABILITY_DENIED')
-          entry.assertAlive()
-          deps.activations.require(
-            operation.owner,
-            entry.integrity,
-            operation.activationId,
-            entry.activationRevision,
-          )
-          pending.push(value)
-        } catch {
-          await decisions.withdraw(
-            value.handle,
-            {
-              owner: value.request.owner,
-              operationId: value.request.operationId,
-              sourcePackage: value.request.sourcePackage,
-              packageVersion: value.request.packageVersion,
-              alive() {},
-            },
-            'activation-revoked',
-          )
-        }
-      }
-      return pending.slice(0, 1000)
+      return (await listDecisionState(credential)).decisions
     },
     async answerDecision(
       params: ProfileDecisionAnswerParams,

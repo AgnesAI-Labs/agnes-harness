@@ -72,7 +72,7 @@ export async function profileServiceCommand(
           p.call as import('@agnes/protocol').ProfileServiceOperationParams,
           p.credential,
         )
-      if (method === 'listDecisions') return host.profileServices.listDecisions(p.credential)
+      if (method === 'listDecisions') return host.profileServices.listDecisionState(p.credential)
       if (method === 'answerDecision')
         return host.profileServices.answerDecision(
           p.call as import('@agnes/protocol').ProfileDecisionAnswerParams,

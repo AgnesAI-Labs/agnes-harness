@@ -12,7 +12,12 @@ type Runtime = NonNullable<Host['profileServices']>
 /** Fixed profile ingress. A page cannot submit actor, role, owner, profile or approval proof. */
 export function registerProfileServices(
   ep: LocalEndpoint,
-  runtime: Pick<Runtime, 'call' | 'readOperation' | 'listDecisions' | 'answerDecision'>,
+  runtime: Pick<Runtime, 'call' | 'readOperation' | 'listDecisions' | 'answerDecision'> & {
+    listDecisionState?(credential: unknown): Promise<{
+      principal: { id: string; org: string }
+      decisions: import('@agnes/protocol').DecisionSnapshot[]
+    }>
+  },
   wakes?: BoundWakeService,
   barrier?: Host['activationBarrier'],
   requireSessionRead?: (method: string, sessionId: string, call: CallContext) => void,
@@ -80,9 +85,14 @@ export function registerProfileServices(
     const p = params as ProfileServiceOperationParams
     return runtime.readOperation(p, serviceCredential(call, p))
   })
-  ep.register('_agnes/v1/profile.decisions.list', async (_params, call) => ({
-    decisions: await runtime.listDecisions(humanCredential(call)),
-  }))
+  ep.register('_agnes/v1/profile.decisions.list', async (_params, call) => {
+    const credential = humanCredential(call)
+    if (!runtime.listDecisionState) return { decisions: await runtime.listDecisions(credential) }
+    const state = await runtime.listDecisionState(credential)
+    // The transport principal label is not the seam's actor identity. Bind only backend evidence.
+    call.conn.decisionPrincipal = state.principal
+    return { decisions: state.decisions }
+  })
   ep.register('_agnes/v1/profile.decisions.answer', (params, call) =>
     runtime.answerDecision(params as ProfileDecisionAnswerParams, humanCredential(call)),
   )

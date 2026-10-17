@@ -343,6 +343,10 @@ it('serves esbuild shared and lazy entry chunks and still rejects arbitrary file
     expect(mark.status).toBe(200)
     expect(mark.headers.get('content-type')).toBe('image/png; charset=utf-8')
     // The tab icon is its own allowlisted file; the white mask cannot double as one.
+    const legacyFavicon = await fetch(`${server.url}/favicon.ico`)
+    expect(legacyFavicon.status).toBe(200)
+    expect(legacyFavicon.headers.get('content-type')).toBe('image/png; charset=utf-8')
+    expect(Buffer.from(await legacyFavicon.arrayBuffer())).toEqual(await readFile(join(root, 'favicon.png')))
     const favicon = await fetch(`${server.url}/favicon.png`)
     expect(favicon.status).toBe(200)
     expect(favicon.headers.get('content-type')).toBe('image/png; charset=utf-8')

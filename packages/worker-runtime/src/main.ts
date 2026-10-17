@@ -74,6 +74,7 @@ import type {
   WorkerReplyFrame,
 } from './frames.js'
 import { encodeFrame, JsonlDecoder } from './framing.js'
+import type { WorkerHostSkillResources } from './host-resources.js'
 import {
   HostedSessions,
   SESSION_SCOPED_WORKER_METHODS,
@@ -90,25 +91,7 @@ import { createWorkerServiceAuthority } from './service-authority.js'
 import { SharedSessionChannel } from './shared-session-channel.js'
 import { createMcpStatusFrameBuffer } from './status-frame-buffer.js'
 
-/** Runtime capabilities already bootstrapped for this worker; reuse them without reconnecting. */
-export type WorkerHostSkillResources = Readonly<{
-  scheduling?: NonNullable<HostOptions['scheduling']>
-  boundWakes?: NonNullable<HostOptions['boundWakes']>
-  mcpManage?: NonNullable<HostOptions['mcpManage']>
-  pluginManage?: NonNullable<HostOptions['pluginManage']>
-  skillInstall?: NonNullable<HostOptions['skillInstall']>
-  /** The same bounded, session-scoped artifact reader used by the executable-owned Host path. */
-  requestMedia: NonNullable<HostOptions['requestMedia']>
-  skillResources?: NonNullable<HostOptions['skillResources']>
-  skillContribution?: NonNullable<HostOptions['skillContribution']>
-  runtimePluginSnapshots?: NonNullable<HostOptions['runtimePluginSnapshots']>
-  runtimePluginCatalogue?: NonNullable<HostOptions['runtimePluginCatalogue']>
-  runtimePluginSources?: NonNullable<HostOptions['runtimePluginSources']>
-  restoreGenerationExtension?: NonNullable<HostOptions['restoreGenerationExtension']>
-  managedExtensionPackageIds?: NonNullable<HostOptions['managedExtensionPackageIds']>
-  /** Trusted daemon-to-worker authority for narrowly scoped surface service calls. */
-  serviceAuthority?: NonNullable<HostOptions['serviceAuthority']>
-}>
+export type { WorkerHostSkillResources } from './host-resources.js'
 
 /** Session workers assemble a Host that owns applyRuntimeTarget. */
 export type WorkerHostLike = Host
@@ -437,6 +420,7 @@ export async function runWorker(
     ? Promise.resolve(undefined)
     : deps.buildHost
       ? deps.buildHost(profile, prompter, {
+          decisionsChanged: (detail) => send({ kind: 'decisionsChanged', detail }),
           restoreGenerationExtension: generationExtensionRestorer(workerResourcesInput, sharedMcpOpener),
           boundWakes,
           scheduling,
@@ -468,6 +452,7 @@ export async function runWorker(
                 }
               : createLoader({ cacheDir: profile.cacheDir, hostRoot, agnesVersion: '0.0.0' }))
           return createHost(profile, {
+            decisionsChanged: (detail) => send({ kind: 'decisionsChanged', detail }),
             restoreGenerationExtension: generationExtensionRestorer(workerResourcesInput, sharedMcpOpener),
             dataDir: profile.dataDir,
             profileDir,
