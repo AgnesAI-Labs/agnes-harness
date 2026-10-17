@@ -14,12 +14,16 @@ export function buildRuntimeTargetConvergenceReport(
   ordinaryState: (id: string) => RuntimeConvergenceRow['state'] = () => 'active',
   /** Why a row is not active, for the rows that are not: a report that only says `pending` hides it. */
   ordinaryReason: (id: string) => string | undefined = () => undefined,
+  /** Actual ordinary rows also include Host-private boot rows omitted from the daemon artifact. */
+  ordinaryRows: readonly Readonly<{ id: string; disabled?: boolean }>[] = target.tree.rows,
 ): RuntimeConvergenceReport {
-  const rows: RuntimeConvergenceRow[] = target.tree.rows.map((row) => {
-    const state = row.disabled ? 'disabled' : ordinaryState(row.id)
-    const reason = state === 'active' || state === 'disabled' ? undefined : ordinaryReason(row.id)
-    return Object.freeze({ id: row.id, state, ...(reason === undefined ? {} : { reason }) })
-  })
+  const rows: RuntimeConvergenceRow[] = ordinaryRows
+    .filter((row) => !RESOURCE_OWNED_ROW_IDS.some((id) => id === row.id))
+    .map((row) => {
+      const state = row.disabled ? 'disabled' : ordinaryState(row.id)
+      const reason = state === 'active' || state === 'disabled' ? undefined : ordinaryReason(row.id)
+      return Object.freeze({ id: row.id, state, ...(reason === undefined ? {} : { reason }) })
+    })
   for (const id of RESOURCE_OWNED_ROW_IDS) {
     const row = target.resource.rows[id]
     rows.push(

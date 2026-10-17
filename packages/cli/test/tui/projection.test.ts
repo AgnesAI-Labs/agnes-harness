@@ -616,7 +616,9 @@ it('invalidates a resync baseline until a failed opening retry eventually succee
   c.projectUIOpening
     .mockResolvedValueOnce(opening)
     .mockRejectedValueOnce(new Error('opening temporarily unavailable'))
-    .mockResolvedValue(opening)
+    // The successful retry includes both notifications already delivered during recovery.
+    // An opening at the old cut would correctly require another patch before the next event.
+    .mockResolvedValue({ ...opening, timeline: { ...opening.timeline, upto: 2 } })
   c.projectUIPatch.mockRejectedValueOnce(
     Object.assign(new Error('resync'), { data: { code: 'UI_PROJECTION_RESYNC_REQUIRED' } }),
   )
@@ -635,6 +637,7 @@ it('invalidates a resync baseline until a failed opening retry eventually succee
   await vi.advanceTimersByTimeAsync(1)
   await vi.waitFor(() => expect(c.projectUIOpening).toHaveBeenCalledTimes(3))
   await vi.waitFor(() => expect(c.sink.timeline).toHaveBeenCalledTimes(2))
+  expect(c.sink.timeline.mock.calls.at(-1)?.[0].upto).toBe(2)
   await c.emit(3, 'user/message')
   await vi.waitFor(() => expect(c.projectUIPatch).toHaveBeenCalledTimes(2))
   expect(c.sink.error).not.toHaveBeenCalled()

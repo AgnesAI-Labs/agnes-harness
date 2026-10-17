@@ -133,35 +133,14 @@ export type ClientModuleRegistryOptions = Readonly<{
         desired?: RuntimeTargetArtifact
         previous?: RuntimeTargetArtifact
         lastGood?: RuntimeTargetArtifact
+        /** Host-private backend rows confirmed by the current worker, outside package artifacts. */
+        activeBackendRows?: ReadonlySet<string>
       }>
     | undefined
   changed?: (event: ClientModulesChanged) => void
 }>
 
-/**
- * Read the composite runtime artifact references without exposing the store itself to the
- * client-module registry.  Keeping this projection in one place makes both supervisor wiring
- * paths use the same desired/previous/lastGood authority.
- */
-export type RuntimeArtifactsStore = Readonly<{
-  desired(): RuntimeTargetArtifact | undefined
-  previous(): RuntimeTargetArtifact | undefined
-  lastGood(): RuntimeTargetArtifact | undefined
-}>
-
-export function runtimeArtifactsFromStore(
-  store: RuntimeArtifactsStore | undefined,
-): ReturnType<NonNullable<ClientModuleRegistryOptions['runtimeArtifacts']>> {
-  if (!store) return undefined
-  const desired = store.desired()
-  const previous = store.previous()
-  const lastGood = store.lastGood()
-  return {
-    ...(desired ? { desired } : {}),
-    ...(previous ? { previous } : {}),
-    ...(lastGood ? { lastGood } : {}),
-  }
-}
+export { type RuntimeArtifactsStore, runtimeArtifactsFromStore } from './client-runtime-truth.js'
 
 export type ClientModuleRegistry = Readonly<{
   list(input: {
@@ -1303,7 +1282,11 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
         (item): item is Readonly<{ revision: string; expiresAt: string }> => item.expiresAt !== undefined,
       )
       for (const item of activeDeclarations) {
-        if (item.client.requiresBackendRows?.some((id) => !truth.backend.has(id))) {
+        if (
+          item.client.requiresBackendRows?.some(
+            (id) => !truth.backend.has(id) && !truth.activeBackendRows.has(id),
+          )
+        ) {
           statuses.push({ ...baseStatus, state: 'blocked', reason: 'backend-not-running' })
           continue
         }

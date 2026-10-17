@@ -361,6 +361,7 @@ export class RuntimeTargetPublisher<Resources, Overlay = unknown> {
                     .sort()
                   return `waiting for ${missing.length === 1 ? 'service' : 'services'}: ${missing.join(', ') || 'unknown'}`
                 },
+                ordinary.pluginTree.currentRows(),
               ),
               ordinary,
               resources: generation,

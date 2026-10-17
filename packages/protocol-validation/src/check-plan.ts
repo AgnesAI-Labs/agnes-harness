@@ -1,6 +1,5 @@
-import { FormatRegistry, Kind, type TSchema } from '@sinclair/typebox'
+import { ExtendsUndefinedCheck, FormatRegistry, Kind, type TSchema } from '@sinclair/typebox'
 import { TypeSystemPolicy } from '@sinclair/typebox/system'
-import { ExtendsUndefinedCheck } from '@sinclair/typebox/type'
 import { Value } from '@sinclair/typebox/value'
 
 type Check = (value: unknown) => boolean

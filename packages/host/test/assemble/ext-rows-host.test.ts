@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { buildRuntimeTarget } from '@agnes/plugin-runtime/host'
+import { buildRuntimeTarget, RESOURCE_OWNED_ROW_IDS } from '@agnes/plugin-runtime/host'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createTestHost } from '../../testkit/index.js'
 
@@ -187,13 +187,13 @@ describe('ext: rows on the tree', () => {
     await h.host.close()
   })
 
-  it('an ext: row apply is built from the published target, not from the boot rows', async () => {
+  it('an ext: row apply preserves the published target without resurrecting removed extensions', async () => {
     const h = await createTestHost({ dataDir: scratch(), packageDirs })
     const ids = () => h.host.ordinaryConvergence().rows.map((r) => r.id)
     const bootIds = ids()
     expect(bootIds.length).toBeGreaterThan(1)
-    // A post-boot composite target that drops every boot row: the shape the daemon publishes when it
-    // owns the rows (the existing seam-facade tests apply the same empty target).
+    // The daemon's empty package target leaves Host-private rows mounted. The convergence report
+    // includes those actual rows, while the published artifact still has no requested rows.
     await h.host.applyRuntimeTarget(
       buildRuntimeTarget({
         rows: [],
@@ -203,13 +203,18 @@ describe('ext: rows on the tree', () => {
       }),
     )
     await settle()
-    // The four resource-owned slots are always reported; the boot rows are what must be gone.
-    const dropped = ids()
-    expect(dropped.length).toBeLessThan(bootIds.length)
-    // Driving only the ext: rows must not resurrect what the published target dropped.
+    expect(h.host.runtimeTargetSnapshot?.()?.tree.rows).toEqual([])
+    const retained = ids()
+    const removed = new Set(h.host.extensionRows.current().map((row) => row.id))
+    expect(retained).toEqual(bootIds)
+    // Removing the Host's ext: rows must keep the published target empty and leave other static
+    // rows untouched. Resource-owned slots remain reported, now disabled.
     await h.host.extensionRows.apply([])
     await settle()
-    expect(ids()).toEqual(dropped)
+    expect(h.host.runtimeTargetSnapshot?.()?.tree.rows).toEqual([])
+    expect(ids()).toEqual(
+      retained.filter((id) => !removed.has(id) || (RESOURCE_OWNED_ROW_IDS as readonly string[]).includes(id)),
+    )
     await h.host.close()
   })
 })

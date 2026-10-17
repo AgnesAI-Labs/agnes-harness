@@ -108,11 +108,18 @@ it('shares host modules even when the extension carries decoy copies', async () 
     import { inspectJsonData } from '@agnes/protocol'
     import { Type } from '@sinclair/typebox'
     import { Value } from '@sinclair/typebox/value'
+    import { prepareValidationSchemas, validateAgainst } from ${JSON.stringify(fileURLToPath(new URL('../../../protocol-validation/src/index.ts', import.meta.url)))}
+    const schema = Type.Module({ Input: Type.Object({ value: Type.String() }) }).Import('Input')
+    prepareValidationSchemas([schema])
+    export const valid = validateAgainst(schema, { value: 'shared validation' })
+    export const invalid = validateAgainst(schema, { value: 42 })
     export const shared = { HOOK_EVENTS, gitWorktreeKind, intelligentUiKind, inspectJsonData, Type, Value }
     export default () => undefined
   `,
   )
   const mod = await f.loader.import(entry)
+  expect(mod.valid).toEqual({ ok: true, value: { value: 'shared validation' } })
+  expect(mod.invalid).toMatchObject({ ok: false, errors: [{ path: '/value', code: 'TYPE' }] })
   expect(mod.shared).toEqual({
     HOOK_EVENTS,
     gitWorktreeKind,

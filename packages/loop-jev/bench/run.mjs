@@ -362,7 +362,7 @@ async function runCell(ctx, cell) {
 }
 
 async function runCellIn(ctx, cell, workspace, kept) {
-  const { client, routes, out, probeEnv, price, state } = ctx
+  const { client, host, routes, out, probeEnv, price, state } = ctx
   const { scenario, lane, rep } = cell
   const base = { scenario: scenario.id, category: scenario.category, lane, rep, workspace, kept }
   const generation = scenario.category === 'generation'
@@ -399,8 +399,22 @@ async function runCellIn(ctx, cell, workspace, kept) {
     }
   } finally {
     offPermission()
-    await stream.stop()
-    await session.detach().catch(() => undefined)
+    try {
+      // This bench owns the embedded Host and its temporary sessions. Closing producers before
+      // the collector lets post-turn features settle their cost rows before the report is cut.
+      const owned = host.kernel.get(session.id)
+      if (!owned) result.problems.push(`bench session ${session.id} is unavailable at shutdown`)
+      else {
+        await owned.close()
+        if (!(await stream.until(() => (stream.events.at(-1)?.seq ?? 0) >= owned.lastSeq, DRAIN_MS)))
+          result.problems.push(`bench session ${session.id} did not drain its final ledger watermark`)
+      }
+    } catch (error) {
+      result.problems.push(`session close failed: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      await stream.stop()
+      await session.detach().catch(() => undefined)
+    }
     // Side calls on other routes are counted over the whole session: a host feature may call the
     // chat model after a turn has ended, outside every turn's slice of events.
     result.otherSideCalls = metricsOf(stream.events, price, routes.jev?.route ?? null).otherSideCalls
@@ -871,6 +885,7 @@ export async function main(argv) {
       suite,
       routes,
       client: booted.client,
+      host: booted.host,
       out: o.out,
       workBase,
       stopped: undefined,

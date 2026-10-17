@@ -1735,7 +1735,8 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           clientModules: createClientModuleRegistry({
             composition: () => composition,
             snapshotDirectory: (profile) => join(o.config.dataDir, 'daemon', 'client-modules', profile),
-            runtimeArtifacts: () => runtimeArtifactsFromStore(runtimeStore),
+            runtimeArtifacts: () =>
+              runtimeArtifactsFromStore(runtimeStore, pool.businessWorker()?.generation),
           }),
         }),
       }
@@ -3029,7 +3030,7 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
               }).selection
             : undefined,
         snapshotDirectory: (profileName) => join(scope.daemonDir, 'client-modules', profileName),
-        runtimeArtifacts: () => runtimeArtifactsFromStore(packagePluginTree),
+        runtimeArtifacts: () => runtimeArtifactsFromStore(packagePluginTree, packageWorkerGeneration?.()),
       }),
     }),
   }

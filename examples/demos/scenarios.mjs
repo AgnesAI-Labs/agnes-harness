@@ -187,6 +187,8 @@ try {
       author,
       `call plugin_helper_install ${JSON.stringify({ action: 'test', proposalId: draft.candidateId })}`,
     )
+    const tested = await result(author, 'plugin_helper_install')
+    assert.equal(tested.tests?.state, 'passed', JSON.stringify(tested.tests ?? tested))
     await prompt(
       author,
       `call plugin_helper_install ${JSON.stringify({ action: 'commit', proposalId: draft.candidateId })}`,

@@ -403,9 +403,7 @@ it('derives the route from the label live and disambiguates collisions with exis
   await type(host, 'side-label', 'My Side Model')
   await choose(host, 'side-credential', 'secret://generic/11111111-1111-4111-8111-111111111111')
   await click(host, 'side-save')
-  expect((api.save.mock.calls[0]?.[0] as Record<string, unknown> | undefined)?.accountId).toBe(
-    'my-side-model',
-  )
+  expect(api.save.mock.calls[0]?.[0]).toMatchObject({ accountId: 'my-side-model' })
 })
 
 it('keeps pricing collapsed by default and only saves it when expanded with values', async () => {
