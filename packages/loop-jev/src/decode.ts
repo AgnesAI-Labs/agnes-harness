@@ -23,7 +23,8 @@ function ownEntry<T>(record: Readonly<Record<string, T>>, key: string): T | unde
   return Object.hasOwn(record, key) ? record[key] : undefined
 }
 
-/** The argument every candidate of a batch must share: all except the target path. */
+// `path` is the targetParam of `read`, the only multi-target tool (profile.ts).
+/** Every argument of a batch must be shared except the target path. */
 const TARGET_PATH = 'path'
 
 function sameExceptPath(a: JsonObject, b: JsonObject): boolean {

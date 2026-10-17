@@ -462,6 +462,18 @@ describe('checkpoints with observations', () => {
       },
     ],
     [
+      'a batch next to a string target as long as the batch',
+      (s: Loose) => {
+        s.cur.decision = { ...decisionOf(), target: 'ab' }
+      },
+    ],
+    [
+      'a batch shorter than a three-item target list',
+      (s: Loose) => {
+        s.cur.decision = { ...decisionOf(), target: ['a.md', 'b.md', 'c.md'] }
+      },
+    ],
+    [
       'a batch whose length differs from the target list',
       (s: Loose) => {
         s.cur.decision = { ...decisionOf(), batch: [{ path: 'a.md' }] }

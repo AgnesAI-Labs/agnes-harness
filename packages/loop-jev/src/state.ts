@@ -1,5 +1,6 @@
 import type { LoopCheckpoint, LoopCheckpointCodec } from '@agnes/extension-api'
 import { DIRECTORY_REF_CAP, FILE_REF_CAP, halveEvidence, VIEW_CAP } from './observations.js'
+import { MAX_BATCH } from './profile.js'
 import type { Counters, JevState, JsonValue } from './types.js'
 import { clip, tail, utf8Bytes } from './util.js'
 
@@ -211,7 +212,12 @@ function checkDecision(value: unknown, path: string): void {
   // A batch exists only for two or more observed targets, one call per target.
   if (Object.hasOwn(d, 'batch') && d.batch !== undefined) {
     const batch = d.batch as unknown[]
-    if (!Array.isArray(d.target) || batch.length !== d.target.length || batch.length < 2 || batch.length > 4)
+    if (
+      !Array.isArray(d.target) ||
+      batch.length !== d.target.length ||
+      batch.length < 2 ||
+      batch.length > MAX_BATCH
+    )
       fail(`${path}.batch`)
   }
   num(d.confidence, `${path}.confidence`)

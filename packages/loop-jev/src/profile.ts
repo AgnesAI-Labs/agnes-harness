@@ -16,6 +16,8 @@ import type {
 import { canonicalJson, clip, fingerprint, tail } from './util.js'
 
 export const BUILTIN_TOOLS = ['ls', 'read', 'grep', 'find', 'write', 'edit', 'shell'] as const
+/** The most targets one read step may take; the same bound limits decoded, replayed and checkpointed batches. */
+export const MAX_BATCH = 4
 export const DISCOVERY_TOOLS = ['tool_search', 'tool_describe'] as const
 type BuiltinTool = (typeof BUILTIN_TOOLS)[number]
 
@@ -175,7 +177,7 @@ export function resolveTool(tool: ToolSchema, meta?: LoopToolMeta): ResolvedTool
     criteria: JEV_CRITERIA[tool.name],
     targetParam: profile.targetParam,
     defaults,
-    multiTargetMax: tool.name === 'read' ? 4 : 1,
+    multiTargetMax: tool.name === 'read' ? MAX_BATCH : 1,
     bindingDefaults: profile.bindingDefaults === null ? null : { ...profile.bindingDefaults },
     referenceKind: profile.referenceKind,
   }

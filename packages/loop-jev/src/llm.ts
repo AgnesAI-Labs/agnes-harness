@@ -1,4 +1,5 @@
 // Portions adapted from JevLoop (https://github.com/parkavenue9639/jevloop, 61e7994), Apache-2.0; modified.
+import { MAX_BATCH } from './profile.js'
 import type {
   AnnouncedContent,
   ErrorStage,
@@ -20,7 +21,6 @@ export const NOTE_MAX_BYTES = 32768
 
 const RUNTIME_NOTE_MAX = 300
 const REASON_MAX = 200
-const READ_BATCH_MAX = 4
 const CANNOT_BIND = 'CANNOT_BIND:'
 
 /** One line recording a refused or failed step; the reason is quoted data, never instructions. */
@@ -214,11 +214,11 @@ export function adoptCalls(input: {
   if (route === 'parameters') {
     if (first.name !== op) return refuse('OPERATION_CHANGED', first.name)
     if (!toolNames.includes(op)) return refuse('UNAVAILABLE', `${op} is not a currently permitted operation`)
-    const calls = leadingRun(reply.calls, op, op === 'read' ? READ_BATCH_MAX : 1)
+    const calls = leadingRun(reply.calls, op, op === 'read' ? MAX_BATCH : 1)
     return { kind: 'calls', calls, dropped: reply.calls.length - calls.length, declined: false }
   }
   if (!toolNames.includes(first.name))
     return refuse('UNAVAILABLE', `${first.name} is not a currently permitted operation`)
-  const calls = leadingRun(reply.calls, first.name, first.name === 'read' ? READ_BATCH_MAX : 1)
+  const calls = leadingRun(reply.calls, first.name, first.name === 'read' ? MAX_BATCH : 1)
   return { kind: 'calls', calls, dropped: reply.calls.length - calls.length, declined: route === 'answer' }
 }

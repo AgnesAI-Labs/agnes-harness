@@ -360,6 +360,73 @@ describe('observed bindings', () => {
     )
     expect(r).toEqual({ ok: false, reason: 'Invalid answer for the include__inspect__read__1 head.' })
   })
+  it('accepts exactly the maximum number of included members', () => {
+    const keys = ['a', 'b', 'c', 'd', 'e']
+    const q = compileQuestions(READ_ALL, { read: files(...keys) })
+    const answers = Object.fromEntries(
+      keys.map((_, i) => [`include__inspect__read__${i}`, member(i < 4 ? 'include' : 'skip')]),
+    )
+    const d = decisionOf(
+      decodeAnswers({ ...base(q), target_mode__inspect__read: mode('many'), ...answers }, q),
+    )
+    expect(d.target).toEqual(['a', 'b', 'c', 'd'])
+    expect(d.batch).toHaveLength(4)
+  })
+  it('refuses a batch whose second member has an extra argument', () => {
+    const extra: Candidate = {
+      key: 'b.md',
+      kind: 'file',
+      label: 'b.md',
+      args: { offset: 1, limit: 200, path: 'b.md', more: 1 },
+    }
+    const q = compileQuestions(READ_ALL, { read: [...files('a.md'), extra] })
+    expect(
+      decodeAnswers(
+        {
+          ...base(q),
+          target_mode__inspect__read: mode('many'),
+          include__inspect__read__0: member('include'),
+          include__inspect__read__1: member('include'),
+        },
+        q,
+      ),
+    ).toEqual({ ok: false, reason: 'Batch invocation candidates have incompatible arguments.' })
+  })
+  it('returns many-mode arguments that do not alias the compiled candidates', () => {
+    const q = compileQuestions(READ_ALL, { read: files('a.md', 'b.md') })
+    const d = decisionOf(
+      decodeAnswers(
+        {
+          ...base(q),
+          target_mode__inspect__read: mode('many'),
+          include__inspect__read__0: member('include'),
+          include__inspect__read__1: member('include'),
+        },
+        q,
+      ),
+    )
+    d.args.limit = 999
+    for (const call of d.batch ?? []) call.limit = 999
+    expect(q.targetCandidates['INSPECT/read']?.map((candidate) => candidate.args.limit)).toEqual([200, 200])
+  })
+  it('takes targetConfidence from the lowest member head even when it is skipped', () => {
+    const q = compileQuestions(READ_ALL, { read: files('a.md', 'b.md', 'c.md') })
+    const r = decodeAnswers(
+      {
+        ...base(q),
+        target_mode__inspect__read: mode('many'),
+        include__inspect__read__0: member('include', 0.8),
+        include__inspect__read__1: member('include', 0.9),
+        include__inspect__read__2: member('skip', 0.55),
+      },
+      q,
+    )
+    expect(decisionOf(r)).toMatchObject({
+      targetConfidence: 0.55,
+      confidence: 0.55,
+      operationPathConfidence: 0.9,
+    })
+  })
   it('honours LLM_PARAMETERS even when observed candidates exist', () => {
     const q = compileQuestions(READ_ALL, { read: files('a.md', 'b.md') })
     const r = decodeAnswers(
