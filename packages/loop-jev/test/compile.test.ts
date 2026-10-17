@@ -15,6 +15,7 @@ import {
   PHASE_INSTRUCTIONS,
   pyRepr,
   TARGET_MODE_ONE,
+  TARGET_PREAMBLE,
   targetModeMany,
 } from '../src/compile.js'
 import { resolveTool } from '../src/profile.js'
@@ -257,5 +258,71 @@ describe('observed targets', () => {
     expect(fitBudget(at(0), () => ({}), { stateTokens: 24_000, requestTokens: 48_000 })?.questions).toEqual(
       at(0).questions,
     )
+  })
+  it('skips reserved and repeated candidate keys and records only the offered candidates', () => {
+    const [a, b] = files('a.md', 'b.md') as [Candidate, Candidate]
+    const reserved = files('LLM_PARAMETERS', 'DEFAULT_ARGUMENTS')
+    const c = compileQuestions(ALL, { read: [a, ...reserved, { ...a, label: 'again' }, b] })
+    expect(c.targetOptions['INSPECT/read']).toEqual(['a.md', 'b.md', 'LLM_PARAMETERS'])
+    const head = c.questions.target__inspect__read as { criteria: Record<string, { file?: string }> }
+    expect(head.criteria['a.md']?.file).toBe('a.md')
+    expect(head.criteria.LLM_PARAMETERS).toEqual({ binding: LLM_PARAMETERS_TEXT.target })
+    expect(c.targetCandidates['INSPECT/read']).toEqual([a, b])
+    expect(c.memberHeads['INSPECT/read']).toEqual({
+      'a.md': 'include__inspect__read__0',
+      'b.md': 'include__inspect__read__1',
+    })
+  })
+  it('orders each batch as target head, mode head, include heads, with the target preamble on the mode head', () => {
+    const c = compileQuestions(ALL, { read: files('a.md', 'b.md') })
+    const ids = Object.keys(c.questions)
+    for (const phase of ['inspect', 'verify']) {
+      const at = ids.indexOf(`target__${phase}__read`)
+      expect(ids.slice(at, at + 4)).toEqual([
+        `target__${phase}__read`,
+        `target_mode__${phase}__read`,
+        `include__${phase}__read__0`,
+        `include__${phase}__read__1`,
+      ])
+      const name = phase.toUpperCase()
+      expect((c.questions[`target_mode__${phase}__read`] as { instructions: string[] }).instructions).toEqual(
+        [TARGET_PREAMBLE.replace('{phase}', name).replace('{operation}', 'read')],
+      )
+      expect(c.modeHeads[`${name}/read`]).toBe(`target_mode__${phase}__read`)
+    }
+    expect(c.memberHeads['VERIFY/read']).toEqual({
+      'a.md': 'include__verify__read__0',
+      'b.md': 'include__verify__read__1',
+    })
+    expect(c.multiTargetMax['VERIFY/read']).toBe(4)
+  })
+  it('compiles tools named like object prototype keys like any other tool', () => {
+    const [ls, read] = tools('ls', 'read') as [ResolvedTool, ResolvedTool]
+    const names = ['constructor', 'toString', '__proto__']
+    const renamed = names.map((name) => ({ ...ls, name, phases: ['INSPECT'] as const }))
+    const plain = compileQuestions([read, ...renamed])
+    const criteria = (plain.questions.action__inspect as { criteria: Record<string, string> }).criteria
+    expect(Object.keys(criteria)).toEqual(['read', ...names])
+    for (const name of names) {
+      expect(plain.targetOptions[`INSPECT/${name}`]).toEqual(['LLM_PARAMETERS', 'DEFAULT_ARGUMENTS'])
+      expect(Object.hasOwn(plain.defaults, name)).toBe(true)
+      expect(plain.defaults[name]).toEqual({ path: '.' })
+    }
+    expect(plain.targetCandidates).toEqual({})
+    expect(plain.modeHeads).toEqual({})
+
+    const batched = names.map((name) => ({ ...read, name }))
+    const observed = compileQuestions(
+      batched,
+      Object.fromEntries(names.map((name) => [name, files('a.md', 'b.md')])),
+    )
+    for (const name of names) {
+      expect(observed.targetCandidates[`INSPECT/${name}`]).toEqual(files('a.md', 'b.md'))
+      expect(observed.modeHeads[`VERIFY/${name}`]).toBe(`target_mode__verify__${name}`)
+      expect(observed.memberHeads[`INSPECT/${name}`]).toEqual({
+        'a.md': `include__inspect__${name}__0`,
+        'b.md': `include__inspect__${name}__1`,
+      })
+    }
   })
 })

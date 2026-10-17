@@ -88,12 +88,15 @@ export const INCLUDE_INSTRUCTIONS =
 const CRITERIA_CHARS = 1500
 const LABEL_CHARS = 300
 
-// An observed path is untrusted: a key such as `__proto__` must become an own property, not reach the setter.
+// Tool names and observed paths are untrusted keys: `__proto__` must become an own property, not reach the setter.
 function put<T>(record: Record<string, T>, key: string, value: T): void {
   Object.defineProperty(record, key, { value, enumerable: true, writable: true, configurable: true })
 }
 
-/** Python repr() of a string, for the include criteria text. */
+/**
+ * Python repr() of a string, for the include criteria text. Follows Python for the quote choice, backslash, C0
+ * controls, DEL and C1 controls; other non-printable Unicode that Python escapes is passed through (still JSON-safe).
+ */
 export function pyRepr(text: string): string {
   const quote = text.includes("'") && !text.includes('"') ? '"' : "'"
   let body = ''
@@ -165,12 +168,15 @@ export function compileQuestions(
       const criteria: JsonObject = {}
       for (const op of ops) {
         const tool = byName.get(op)
-        criteria[op] =
+        put(
+          criteria,
+          op,
           op === ANSWER || tool === undefined
             ? CORE_ANSWER
             : tool.profiled
               ? tool.criteria
-              : clip(tool.criteria, criteriaChars)
+              : clip(tool.criteria, criteriaChars),
+        )
       }
       questions[head] = {
         type: 'choice',
@@ -187,7 +193,8 @@ export function compileQuestions(
       if (op === ANSWER || tool === undefined)
         options[LLM_PARAMETERS] = { binding: LLM_PARAMETERS_TEXT.answer }
       else {
-        for (const candidate of candidates[op] ?? []) {
+        const observed = Object.hasOwn(candidates, op) ? (candidates[op] ?? []) : []
+        for (const candidate of observed) {
           const reserved = candidate.key === LLM_PARAMETERS || candidate.key === DEFAULT_ARGUMENTS
           if (reserved || Object.hasOwn(options, candidate.key)) continue
           put(options, candidate.key, {
@@ -201,7 +208,7 @@ export function compileQuestions(
           binding: tool.targetParam === null ? LLM_PARAMETERS_TEXT.plain : LLM_PARAMETERS_TEXT.target,
         }
         if (tool.defaults !== null && Object.keys(tool.defaults).length > 0) {
-          defaults[op] = structuredClone(tool.defaults)
+          put(defaults, op, structuredClone(tool.defaults))
           options[DEFAULT_ARGUMENTS] = { binding: DEFAULT_ARGUMENTS_TEXT, arguments: pyJson(tool.defaults) }
         }
       }
@@ -292,7 +299,9 @@ export function criteriaCharsAt(level: number): number {
 
 /**
  * The first shrink level, from `fromLevel` up to 7, whose state and questions fit the budget, with the questions
- * of that level. Pass a function to compile the questions per level (for the criteria clipping of level 6).
+ * of that level. Pass a function to compile the questions per level (for the criteria clipping of level 6). The
+ * caller must send the returned `questions` (not `compiled.questions`); head ids and the maps are the same at every
+ * level, so decoding against the level-0 CompiledQuestions is correct.
  */
 export function fitBudget(
   c: CompiledQuestions | ((level: number) => CompiledQuestions),
