@@ -2,12 +2,16 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough, Readable } from 'node:stream'
+import * as daemon from '@agnes/daemon'
 import { createConfigurationService } from '@agnes/host'
-import { afterEach, expect, it } from 'vitest'
+import * as sdk from '@agnes/sdk'
+import { afterEach, expect, it, vi } from 'vitest'
 import { main } from '../src/bin.js'
+import { FakeEndpoint } from './fake-endpoint.js'
 
 const roots: string[] = []
 afterEach(async () => {
+  vi.restoreAllMocks()
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
 })
 it('dispatches app clear before generic boot, ignores broken plugins, and only clears presentation using the configuration CAS', async () => {
@@ -53,4 +57,61 @@ it('dispatches app clear before generic boot, ignores broken plugins, and only c
   expect(await config.application()).toEqual({ revision: 3, selection: null })
   expect((await config.sessionDefaults()).defaults).toEqual({ preset: 'standard' })
   expect(await readFile(join(directory, 'agnes-lock.json'), 'utf8')).toBe(brokenLock)
+})
+
+it('clears an online application over a Unix socket without requiring a Windows pipe identity', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agh-app-online-'))
+  roots.push(root)
+  const owner = {
+    pid: 123,
+    processStartId: 'synthetic',
+    generation: 'generation',
+    startedAt: '2026-10-18T00:00:00.000Z',
+    socketPath: join(root, 'daemon.sock'),
+  }
+  vi.spyOn(daemon, 'daemonStatus').mockResolvedValue({ running: true, socketReachable: true, owner })
+  const state = { revision: 7, selection: null, status: 'host', effective: null, assets: {}, candidates: [] }
+  const endpoint = new FakeEndpoint()
+    .on('initialize', () => ({
+      protocolVersion: 1,
+      agentCapabilities: {},
+      _meta: { agnes: { agnesVersion: '0.1.0' } },
+    }))
+    .on('_agnes/v1/applications.get', () => state)
+    .on('_agnes/v1/applications.clear', (params) => {
+      expect(params).toMatchObject({ profile: 'local-dev', expectedRevision: 7 })
+      state.revision++
+      return state
+    })
+  const create = sdk.createClient
+  vi.spyOn(sdk, 'createClient').mockImplementation((options) => {
+    if (options.transport.kind !== 'unix') throw new Error('expected local transport')
+    // Exercise the real SDK transport's admission before relaying the fixture in process.
+    options.transportFactories?.unix?.(options.transport)
+    return create({ ...options, transport: { kind: 'inproc', endpoint } })
+  })
+  const stdout = new PassThrough(),
+    stderr = new PassThrough()
+  let output = '',
+    errors = ''
+  stdout.on('data', (chunk) => {
+    output += String(chunk)
+  })
+  stderr.on('data', (chunk) => {
+    errors += String(chunk)
+  })
+  const result = await main(['app', 'clear', '--json'], {
+    cwd: root,
+    env: { AGH_HOME: root, HOME: root },
+    stdin: Readable.from([]),
+    stdout,
+    stderr,
+    agnesVersion: '0.1.0',
+  })
+  expect({ result, output, errors, revision: state.revision }).toEqual({
+    result: 0,
+    output: '{"cleared":true}\n',
+    errors: '',
+    revision: 8,
+  })
 })

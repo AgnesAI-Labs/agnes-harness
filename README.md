@@ -23,6 +23,8 @@ node agnes.mjs --new -p 'call plugin_hello_tool {"message":"hello"}'
 
 [Quickstart](docs/guide/quickstart.md) · [Documentation](docs/README.md) · [Build a plugin](docs/extend/quickstart.md) · [Acme application](examples/acme/README.md)
 
+<a id="1-your-business-agent-is-a-plugin"></a>
+
 ## 1. Deliver business agents in plugins
 
 Package a business Loop, tools, model adapters, persona and Skills into an installable plugin. Each session gets its selected capabilities; a support agent's tools do not automatically appear in an unrelated default session. Add a workbench panel through the public frontend APIs.
@@ -49,7 +51,7 @@ Ask the agent to draft a Skill or plugin, test it, then review its files and per
 
 [Run the growing-skills demo](examples/demos/growing-skills/README.md) · [Candidate review](docs/extend/agent-built-plugins.md) · [Memory](docs/guide/memory.md)
 
-The screenshots show the current interface using synthetic browser fixtures. The runnable demos use fresh isolated homes and a deterministic local model by default; they do not send external business messages. Old code remains retained while durable session pins reference it, including idle history.
+The screenshots illustrate trust and version behavior using synthetic browser fixtures; their menus may differ from the current interface. The runnable demos use fresh isolated homes and a deterministic local model by default; they do not send external business messages. Old code remains retained while durable session pins reference it, including idle history.
 
 <a id="new-product-clean-home"></a>
 

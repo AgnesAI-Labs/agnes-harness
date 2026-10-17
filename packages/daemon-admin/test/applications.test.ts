@@ -297,7 +297,11 @@ it('restores the consented transitive closure across upgrades and uninstall, and
 
 it('installs, previews and adopts the Acme application through a real locking package manager', async () => {
   const f = await fixture()
-  const manager = createPackageManager({ dataDir: join(f.home, 'data'), agnesVersion: '0.1.0' })
+  const manager = createPackageManager({
+    dataDir: join(f.home, 'data'),
+    agnesVersion: '0.1.0',
+    references: async () => [],
+  })
   writeLock(f.directory, {
     ...emptyLock('local-dev', '0.1.0'),
     resolvedProfileHash: `sha256-${'0'.repeat(64)}`,

@@ -37,14 +37,13 @@ node "$AGH_SOURCE/agnes.mjs" --new --loop hello-loop@0.1.0 -p 'hello'
 
 Expect a labeled local Demo reply. `--loop` binds the execution choice at new-session creation without creating an agent. The template uses `defineWorkflowLoop` for checkpoints, cancellation and recovery; added effects still need declared capabilities and tool authorization.
 
-## 4. Edit and run again
+## 4. Inspect the result and clean up
 
-Edit the stage prompt in `.agh/plugins/hello-loop/src/index.ts`. Change the Loop version there and the package version in `package.json` to `0.1.1`, then activate and select the new version below. Provider definitions are versioned; existing sessions retain their pinned generation.
+Check the Demo-labeled `answer` from step 3 and retain the session identifier printed by the terminal, then stop this isolated backend. Keep the temporary home to inspect its records later; only remove temporary directories you created.
 
 ```sh
-node "$AGH_SOURCE/agnes.mjs" dev .agh/plugins/hello-loop --profile local-dev
-node "$AGH_SOURCE/agnes.mjs" --new --loop hello-loop@0.1.1 -p 'hello again'
+node "$AGH_SOURCE/agnes.mjs" sessions --json
 node "$AGH_SOURCE/agnes.mjs" daemon stop
 ```
 
-To offer a launchable agent later, add a [Bundle](bundles-and-profiles.md) with an explicit `launch.preset`. Optional compilation and author tests use [tool tutorial step 5](quickstart.md#5-optional-compilation-and-tests).
+To change business stages, read [Workflows](workflow-loops.md) and increment the Loop version when checkpoint meaning changes. To offer a launchable agent, add a [Bundle](bundles-and-profiles.md) with an explicit `launch.preset`. Optional compilation and author tests use [tool tutorial step 5](quickstart.md#5-optional-compilation-and-tests).

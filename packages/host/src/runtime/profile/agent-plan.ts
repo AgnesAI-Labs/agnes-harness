@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { satisfiesApiRange } from '@agnes/extension-api'
 import { HostError } from '@agnes/host-common/errors'
@@ -49,15 +49,19 @@ export function agentSources(
   }))
   for (const pkg of profile.packages.filter((pkg) => pkg.trust === 'builtin')) {
     const directory = dirs.get(pkg.id)
+    // Packaged builtin code is embedded at the verified release root, without a package.json.
+    // Unknown dependency edges remain absent; ordinary snapshots still require their manifest.
+    const manifest = directory ? join(directory, 'package.json') : undefined
     sources.push({
       id: pkg.id,
       version: pkg.version,
       integrity: pkg.integrity,
       source: pkg.source,
       enabled: pkg.enabled,
-      dependencies: directory
-        ? (JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8')).dependencies ?? {})
-        : {},
+      dependencies:
+        manifest && existsSync(manifest)
+          ? (JSON.parse(readFileSync(manifest, 'utf8')).dependencies ?? {})
+          : {},
     })
   }
   return sources

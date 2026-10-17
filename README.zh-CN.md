@@ -23,6 +23,8 @@ node agnes.mjs --new -p 'call plugin_hello_tool {"message":"hello"}'
 
 [快速开始](docs/guide/quickstart.zh-CN.md) · [文档](docs/README.zh-CN.md) · [构建插件](docs/extend/quickstart.zh-CN.md) · [Acme 应用](examples/acme/README.zh-CN.md)
 
+<a id="1-业务-agent-就是插件"></a>
+
 ## 1. 用插件交付业务智能体
 
 把业务 Agent Loop、工具、模型适配器、角色与技能组合成可安装的插件。每个会话只获得所选能力，客服 Agent 的业务工具不会自动出现在无关的默认会话中。通过公开前端 API，还可以加入岗位工作台面板。
@@ -49,7 +51,7 @@ node agnes.mjs --new -p 'call plugin_hello_tool {"message":"hello"}'
 
 [运行技能成长演示](examples/demos/growing-skills/README.zh-CN.md) · [候选审阅](docs/extend/agent-built-plugins.zh-CN.md) · [记忆](docs/guide/memory.zh-CN.md)
 
-截图使用当前界面与合成浏览器测试数据。可运行演示默认使用全新隔离 home 和确定性本地模型，不发送外部业务消息。只要持久会话仍引用旧代码，旧版本就会保留，包括闲置历史会话。
+截图使用合成浏览器测试数据说明信任与版本行为，菜单可能与当前界面不同。可运行演示默认使用全新隔离 home 和确定性本地模型，不发送外部业务消息。只要持久会话仍引用旧代码，旧版本就会保留，包括闲置历史会话。
 
 <a id="new-product-clean-home"></a>
 

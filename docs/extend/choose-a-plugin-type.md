@@ -14,7 +14,7 @@ A plugin is one package. It is the only unit a person installs, upgrades, trusts
 | An agent architecture researcher | `loop`, `model-adapter`, or a provider | How a turn is scheduled, how a model is called, or one runtime service such as compaction or memory | Settings → Advanced → Run configuration, as an option in the matching slot |
 | An agent author | `bundle` | A Bundle with its own launch: Loop, tools, skills and an explicit preset | Agents page; Plugins shows capabilities and status |
 | An interface author | `ui` | Panels, skins or browser-side controls | The workbench slot the panel declares, Settings → General for skins, and Plugins → Marketplace (type “Interface and skins”) |
-| An enterprise solution author (such as reporting) | No new type: seam providers plus a home entry | Organization-wide rules such as approval, identity, billing or audit, and your own page | Your own entry on the home sidebar; Settings → Permissions & security |
+| An application builder | Existing capability labels plus `agnes.application` | Brand, presentation defaults, pages and default/visible agents; providers only where needed | Administrator previews and adopts it in Settings → Application |
 
 ## What each choice means
 

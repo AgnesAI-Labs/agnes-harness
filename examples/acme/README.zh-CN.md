@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-一个插件交付工具、智能体和应用：`acme_status` 只返回模拟状态；`desk` 是带显式 launch 的 Bundle，使用宿主默认 Loop 和 Demo；`application` 提供 Acme 品牌、Ava 助手名、PNG 标志／favicon、概览页面与导航默认值。只导入公开合同，不修改 Core，也不接触客户系统。
+一个插件交付工具、智能体和应用：`acme_status` 只返回模拟状态；`desk` 是带显式 launch 的 Bundle，使用宿主默认 Loop 和 Demo，并将工具范围明确限制为 `acme_status`；`application` 提供 Acme 品牌、Ava 助手名、PNG 标志／favicon、概览页面与导航默认值。只导入公开合同，不修改 Core，也不接触客户系统。
 
 ## 部署者采用流程
 

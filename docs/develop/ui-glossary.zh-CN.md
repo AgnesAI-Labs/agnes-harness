@@ -12,7 +12,7 @@
 | Provider kind | 插件类型 | 运行实现的类别 |
 | Provider | 插件实现 | 已注册的运行实现；模型账户使用“模型服务” |
 | Child agent | 子代理 | 属于会话的子任务执行 |
-| Execution mode (Loop) | 运行方式（Loop） | 有多项可选时才显示，技术名称保留在括号里 |
+| Running mode (Loop) | 运行方式（Loop） | 有多项可选时才显示，技术名称保留在括号里 |
 | Bundle (advanced) | 组合（高级） | 可复用配置；智能体须有自己的 launch |
 | Preset (advanced) | 预设（高级） | 命名的权限或配置预设 |
 | Updating | 更新中 | 可行动的更新状态；保留版本放入详情 |

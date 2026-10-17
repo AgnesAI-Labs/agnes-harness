@@ -37,14 +37,13 @@ node "$AGH_SOURCE/agnes.mjs" --new --loop hello-loop@0.1.0 -p 'hello'
 
 应获得带本地 Demo 标记的回复。`--loop` 在新会话创建时绑定运行方式；不要求创建智能体。模板的 `defineWorkflowLoop` 负责 checkpoint、取消与恢复；新增业务副作用时仍须声明能力并通过工具授权。
 
-## 4. 修改并再次运行
+## 4. 检查结果并清理
 
-编辑 `.agh/plugins/hello-loop/src/index.ts` 的阶段提示词，同时将其中的 Loop 版本和 `package.json` 的包版本更新为 `0.1.1`，再激活并选择下方新版本。Provider 定义有版本，已有会话保留其固定代际。
+确认第 3 步输出带 Demo 标记的 `answer`，记录终端打印的会话标识，然后停止本次隔离后台。保留临时 home 可继续查看运行记录；只删除自己创建的临时目录。
 
 ```sh
-node "$AGH_SOURCE/agnes.mjs" dev .agh/plugins/hello-loop --profile local-dev
-node "$AGH_SOURCE/agnes.mjs" --new --loop hello-loop@0.1.1 -p 'hello again'
+node "$AGH_SOURCE/agnes.mjs" sessions --json
 node "$AGH_SOURCE/agnes.mjs" daemon stop
 ```
 
-需要可启动的智能体时，再添加带显式 `launch.preset` 的 [Bundle](bundles-and-profiles.zh-CN.md)。可选编译与作者测试使用[工具教程第 5 步](quickstart.zh-CN.md#5-可选的构建和测试)相同命令。
+需要修改业务阶段时，阅读[工作流指南](workflow-loops.zh-CN.md)，并在改变 checkpoint 含义时递增 Loop 版本。需要可启动的智能体时，再添加带显式 `launch.preset` 的 [Bundle](bundles-and-profiles.zh-CN.md)。可选编译与作者测试使用[工具教程第 5 步](quickstart.zh-CN.md#5-可选的构建和测试)相同命令。

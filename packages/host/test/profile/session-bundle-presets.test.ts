@@ -415,7 +415,8 @@ it('reviews the compiler final tree, strictly pins an agent and admits saved sch
       }),
     packageDirs: {
       ...packageDirs,
-      '@agnes/ai': fileURLToPath(new URL('../../../ai', import.meta.url)),
+      // Packaged builtins use a verified release directory without a package.json.
+      '@agnes/ai': scratch(),
     },
     script: [],
     disableSessionTitle: true,

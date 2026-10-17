@@ -2,7 +2,7 @@
 
 English | [简体中文](README.zh-CN.md)
 
-One plugin delivers a tool, an agent and an application. `acme_status` returns synthetic status; `desk` is a Bundle with its own launch, using the host default Loop and Demo. `application` supplies Acme identity, the Ava assistant name, PNG mark/favicon, an overview page and navigation defaults. Only public contracts are imported; Core and customer systems are untouched.
+One plugin delivers a tool, an agent and an application. `acme_status` returns synthetic status; `desk` is a Bundle with its own launch, using the host default Loop and Demo, with an explicit tool scope containing only `acme_status`. `application` supplies Acme identity, the Ava assistant name, PNG mark/favicon, an overview page and navigation defaults. Only public contracts are imported; Core and customer systems are untouched.
 
 ## Deployer adoption
 

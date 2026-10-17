@@ -90,6 +90,11 @@
             },
             "mode": "draft"
           }
+        },
+        "profile": {
+          "tools": [
+            "acme_status"
+          ]
         }
       }
     },

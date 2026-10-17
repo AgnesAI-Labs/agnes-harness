@@ -12,7 +12,7 @@ Use these terms in labels, help, accessible names, confirmations and error messa
 | Provider kind | 插件类型 | Runtime implementation category |
 | Provider | 插件实现 | A registered runtime implementation; model accounts use “model provider / 模型服务” |
 | Child agent | 子代理 | Session-owned child execution |
-| Execution mode (Loop) | 运行方式（Loop） | Show only when there is a choice; keep the technical name in parentheses |
+| Running mode (Loop) | 运行方式（Loop） | Show only when there is a choice; keep the technical name in parentheses |
 | Bundle (advanced) | 组合（高级） | Reusable configuration; an agent requires its own launch |
 | Preset (advanced) | 预设（高级） | Named permission/configuration preset |
 | Updating | 更新中 | Actionable update status; retained versions belong in details |

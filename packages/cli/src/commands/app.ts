@@ -30,18 +30,22 @@ export async function clearApplicationCommand(p: ParsedArgs, io: MainIO, home: s
           unix: () =>
             unixTransport({
               path: owner.socketPath,
-              resolveServerIdentity: async () => {
-                const current = await daemonStatus(home)
-                if (
-                  !current.running ||
-                  current.owner?.generation !== owner.generation ||
-                  current.owner.pid !== owner.pid ||
-                  current.owner.processStartId !== owner.processStartId ||
-                  current.owner.socketPath !== owner.socketPath
-                )
-                  throw new Error('The daemon identity changed; retry application recovery.')
-                return { pid: owner.pid, processStartId: owner.processStartId }
-              },
+              ...(owner.socketPath.startsWith('\\\\.\\pipe\\')
+                ? {
+                    resolveServerIdentity: async () => {
+                      const current = await daemonStatus(home)
+                      if (
+                        !current.running ||
+                        current.owner?.generation !== owner.generation ||
+                        current.owner.pid !== owner.pid ||
+                        current.owner.processStartId !== owner.processStartId ||
+                        current.owner.socketPath !== owner.socketPath
+                      )
+                        throw new Error('The daemon identity changed; retry application recovery.')
+                      return { pid: owner.pid, processStartId: owner.processStartId }
+                    },
+                  }
+                : {}),
             }),
         },
         auth: { kind: 'local' },
