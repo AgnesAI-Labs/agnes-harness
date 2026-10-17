@@ -10,6 +10,7 @@ export function schedulesActive(rows: readonly ScheduleRow[], now: number): bool
     return (
       last === 'running' ||
       last === 'waiting_approval' ||
+      last === 'needs_attention' ||
       (row.status === 'active' && row.nextRunAt !== null && row.nextRunAt <= now)
     )
   })

@@ -85,7 +85,24 @@ export async function deliverDecision(
       }
     } else {
       const current = await s.decisions.get(snapshot.handle)
-      if (!current.result && !current.invalidation)
+      if (!current.result && !current.invalidation) {
+        const op = s.op()
+        const [input] = op
+          ? await s.d.log.scan({
+              type: 'user/message',
+              lane: s.lane,
+              toSeq: op.meta.triggerSeq,
+              order: 'desc',
+              limit: 1,
+            })
+          : []
+        if (input?.origin === 'system' && input.actor.attrs.unattendedApproval === 'refuse') {
+          const refused = await s.decisions.withdraw(current.handle, source, 'unattended-refused')
+          await s.d.log.append([
+            s.ev('x/core/unattended-refused', { handle: current.handle }, { ignorable: true }),
+          ])
+          return { snapshot: refused }
+        }
         return {
           snapshot: current,
           pending: isPending(answer),
@@ -100,6 +117,7 @@ export async function deliverDecision(
             { ignorable: true },
           ),
         }
+      }
     }
   }
   return { snapshot: await s.decisions.get(snapshot.handle) }

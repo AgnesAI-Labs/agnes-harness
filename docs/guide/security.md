@@ -36,7 +36,7 @@ The Web approval card shows locating fields such as the path or command first an
 
 A call that is not approved says why, both in the session record and to the model: the user rejected it, no one answered in time, no client was connected to ask, the task was stopped while waiting, the command policy blocked it, or a delegated sub-agent asked for something outside its fixed scope. A call that nobody could be asked about is recorded as unavailable, not as rejected, and is not run.
 
-`approvals.mode` accepts `manual`, `off`, and `auto-review`; the removed `smart` value is a configuration error that points to `auto-review`. Web **Full permissions** (`完全权限`) and TUI `/yolo` skip ordinary tool approval prompts in the current session and allow file tools to read and write outside the selected workspace. The workspace remains the default directory for relative paths. The read-only preset continues to refuse changes. Explicit security denials, protected secret paths, operating-system permissions, and command sandbox constraints still apply. Do not make skipped approvals a beginner example or automation default.
+`approvals.mode` accepts `manual`, `off`, and `auto-review`. `off` skips routine tool approvals; it is not the `full-access` preset and does not widen file scope or remove OS isolation. TUI `/yolo` also skips routine approvals in the current session, while retaining its preset, command table, isolation and [domain confirmations](#full-access-exceptions). It does not select Full access or change the next session's permission choice. `manual` asks when policy requires approval, rather than on every call.
 
 **Auto review** is the middle ground between approving every risky call by hand and skipping approval. In Web **Settings → Security**, enable the policy card and choose a configured `fast` (default, lower cost) or `verifier` model profile. It reviews only calls the default policy would ask about; custom and read-only policies keep their own decisions. Full permissions and `off` retain their existing meaning. A missing reviewer profile never silently uses the primary model.
 
@@ -68,11 +68,25 @@ Windows keeps tool approvals, read-only restrictions, file-tool workspace bounda
 
 Choose a permission preset in the admin session-default selector, CLI `--preset <name>` when creating a session. Changing sandbox permissions in a live session requires a new session; `/preset` refuses that change. The profile's `presets.allowed` controls available choices. The local and enterprise templates select `workspace-write` by default; `standard` remains its compatible recipe name.
 
-| Preset | Command sandbox | Approval and file behavior |
-| --- | --- | --- |
-| `read-only` | macOS/Linux: probed L1, no writable roots or command network; Windows: no OS isolation | Read tools only; non-read effects are denied even under `/yolo` or `approvals.mode: off`; file writes are refused |
-| `workspace-write` (default) | macOS/Linux: probed L1, allowed write roots, no command network; Windows: no OS isolation | Workspace edits use the existing approval rules; shell and other risky calls still ask |
-| `full-access` | Configured L0; memory retains private-file OS isolation on macOS/Linux; Windows has no OS isolation | Ordinary tool approval policy allows calls; file tools can reach outside the workspace; principal denials and protected paths still apply |
+| File scope (permission preset) | Routine approvals | Persistent capability | OS isolation |
+| --- | --- | --- | --- |
+| **Read only** (`read-only`): allowed files and public webpages | Changes and command execution are denied | No agent writes; management trust is separate | macOS/Linux require a successful L1 probe; Windows commands are not isolated |
+| **Edit workspace** (`workspace-write`, also `standard`): file tools can edit the workspace and explicitly granted extra roots; official memory uses its controlled provider | Commands require approval; file changes in scope are preapproved, subject to explicit denies | Memory off denies access; ask requires an exact diff confirmation; auto retains ownership, size and CAS checks. Other-workspace and user memory remain agent read-only | Command isolation depends on the platform: macOS/Linux use probed L1; Windows has no OS command isolation |
+| **Full access** (`full-access`): ordinary files inside and outside the workspace; protected paths remain denied | Routine operations skip individual approvals | Plan/memory rules and installation trust confirmations still apply; see [exceptions](#full-access-exceptions) | Configured L0; an installed memory provider retains private-file isolation on macOS/Linux; Windows has none |
+
+### Unattended approvals
+
+Schedules and webhook triggers use an explicit unattended policy without selecting Full access or turning approvals off. **When approval is needed → Hand off and notify (default)** parks a run as `waiting_approval` / **Needs attention** when nobody can answer. The Web notice and profile approval inbox reach the owner; an attached bound channel also receives the notice. A human can answer through the normal approval surface later and the run continues. No effect is dispatched while the request is pending.
+
+The existing pending TTL applies. Expiry marks the run **Failed / Needs attention**, never **Ran**. The next occurrence can proceed. While a previous occurrence is still waiting, another occurrence is flagged in history rather than silently creating another parked session. The per-schedule/per-trigger alternative **Refuse** ends the unanswered step with `unattended-refused`; it does not manufacture a human rejection or a grant. Missing handlers and disconnected transports do not authorize execution.
+
+### Exact future-call rules
+
+Auto-review's **Future identical calls (same identity, directory and tool definition)** rule binds the complete arguments, cwd, actor identity, tool policy and definition fingerprint. The card previews arguments (possibly truncated), directory and approval mode. Changing any bound value requires another decision; the rule may apply across sessions with the same identity and directory. This differs from session approval. Tainted context also returns an exact saved human allow rule to human review; untainted calls can continue to use the rule. Neither a saved allow rule nor a model allowance waives that check.
+
+<a id="full-access-exceptions"></a>
+
+### Full access exceptions
 
 Candidate author tests run in the Host’s OS sandbox on macOS and Linux, with only a disposable candidate copy writable. Protected paths and the AGH private home are denied; network access follows the session’s isolation rules. A missing POSIX sandbox refuses execution. **Workspace-write / standard** shows one confirmation with the package name, short hash, execution mode, risk and scope; approval authorizes that exact hash once. A changed hash is refused. **Full-access** skips this confirmation only when the effective session policy permits it and OS isolation is actually enforced. **Windows** has no OS isolation and always requires confirmation, including under full-access: “This platform is unisolated; candidate code runs directly on this machine.” Review the source in **Settings → Plugins → Candidates** first. The exact-hash decision is recorded in the private resource-control `candidate-test-audit.jsonl`. Tests do not publish, trust or enable code. Read-only and plan restrictions remain authoritative.
 

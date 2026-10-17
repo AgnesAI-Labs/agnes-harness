@@ -51,7 +51,7 @@ export function ProfileApprovals({ client, locale }: { client: HostAgnesClient; 
     const stopNotice = client.on?.('notice', (payload) => {
       const notice = payload as { kind?: unknown }
       // The daemon routes this signal to the authorized profile/principal, never as list data.
-      if (notice?.kind === 'decisions_changed') wake()
+      if (notice?.kind === 'decisions_changed' || notice?.kind === 'automation_attention') wake()
     })
     let connectionState = client.connectionState
     const stopConnection = client.on?.('connectionStateChanged', (state) => {

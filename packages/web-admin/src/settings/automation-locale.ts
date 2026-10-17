@@ -3,6 +3,18 @@ export const AUTOMATION_NAMESPACE = '@agnes/web/automation-settings'
 /** The automation page and its scheduled-task list. Keys are identical in both locales. */
 export const automationCatalog: LocaleCatalog = {
   en: {
+    approvalBehavior: 'When approval is needed',
+    approvalNotify: 'Hand off and notify (default)',
+    approvalRefuse: 'Refuse',
+    needsAttention: 'Needs attention',
+    'outcome.needs_attention': 'Needs attention',
+    'reason.needs_attention': 'Human attention is required. Open the approval inbox.',
+    'reason.approval_expired':
+      'Approval expired. This run failed and needs attention; the next occurrence can run.',
+    'reason.approval_refused': 'Approval was refused. The step did not run.',
+    'reason.approval_unavailable': 'The approval was stopped or withdrawn. This run needs attention.',
+    'reason.approval_pending_previous_run':
+      'An earlier run is awaiting approval. No additional parked run was started.',
     newSchedule: 'New scheduled task',
     schedulesIntro: 'Run a task at a set time.',
     pageDescription: 'Run tasks at a set time, or start a session when an event arrives.',
@@ -115,6 +127,16 @@ export const automationCatalog: LocaleCatalog = {
     manageAutomation: 'Manage in Automation',
   },
   'zh-CN': {
+    approvalBehavior: '遇到审批时',
+    approvalNotify: '转人工并通知（默认）',
+    approvalRefuse: '直接拒绝',
+    needsAttention: '需要处理',
+    'outcome.needs_attention': '需要处理',
+    'reason.needs_attention': '需要人工处理，请打开审批收件箱。',
+    'reason.approval_expired': '审批已过期，本次失败并需处理；下次仍可运行。',
+    'reason.approval_refused': '审批被拒绝，该步骤未执行。',
+    'reason.approval_unavailable': '审批已停止或撤回，本次运行需要处理。',
+    'reason.approval_pending_previous_run': '上次运行仍在等待审批，本次未新建停等运行。',
     newSchedule: '新建定时任务',
     schedulesIntro: '到点自动运行一项任务。',
     pageDescription: '到点自动运行任务，或由外部事件自动开始会话。',

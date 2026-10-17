@@ -100,9 +100,9 @@ export function hasLegacySessionsDb(home: string): boolean {
 }
 
 /**
- * The installation's own state that file tools may read but never rewrite under full file access:
- * credentials and profiles. They sit beside `data/` in the home root, so the data fence does not
- * cover them. The home is inferred only from the conventional layout - `<home>/profiles/<name>` for
+ * Additional write refusals under full file access, layered over the main private-state fence.
+ * These roots do not grant reads: credentials and profiles remain hard-denied by privateStateRoots.
+ * They sit beside `data/` in the home root, so the data fence does not cover them. The home is inferred only from the conventional layout - `<home>/profiles/<name>` for
  * the profile directory, `<home>/data` for the data directory - and never guessed from anything
  * else, so an unconventional layout narrows the guard instead of widening it to a stranger's
  * directory. A profile that pins its own secrets directory has that listed too.

@@ -18,7 +18,7 @@ export class NotCanonical extends Error {
 const windowsRoot = (path: string): boolean => /^[A-Za-z]:[\\/]/.test(path) || /^[\\/]{2}/.test(path)
 
 /** Lexical identity only. The Host filesystem remains responsible for actual link containment. */
-function normalizeWindowsPath(path: string, workspaceRoot: string): string {
+function normalizeWindowsPath(path: string, workspaceRoot: string, controlledRoot?: string): string {
   const validate = (value: string): void => {
     if (/^[\\/]{2}[?.][\\/]/.test(value)) throw new NotCanonical('device namespace')
     if (/^[\\/]{2}/.test(value)) {
@@ -44,6 +44,11 @@ function normalizeWindowsPath(path: string, workspaceRoot: string): string {
   validate(path)
   if (/^[A-Za-z]:(?![\\/])/.test(path) || (/^[\\/]/.test(path) && !/^[\\/]{2}/.test(path)))
     throw new NotCanonical('path depends on a current drive')
+  if (controlledRoot) {
+    // Relative spellings keep the original workspace as their base, never the granted root.
+    const absolute = normalizeWorkspacePath(path, workspaceRoot).abs
+    return normalizeWindowsPath(absolute, controlledRoot)
+  }
   const unc = /^[\\/]{2}/.test(workspaceRoot)
   if (unc && /^[A-Za-z]:/.test(path)) throw new NotCanonical('path is outside the workspace')
   const rootParts = workspaceRoot.replaceAll('\\', '/').split('/').filter(Boolean)
@@ -90,21 +95,23 @@ export function normalizeArgv(
   args: unknown,
   workspaceRoot: string,
   commandArg?: string,
+  controlledRoot?: string,
 ): string {
   const a = (args ?? {}) as Record<string, unknown>
   const command = commandArg === undefined ? undefined : a[commandArg]
   if (typeof command === 'string') return command.trim().replace(/\s+/g, ' ')
   if (PATH_TOOLS.has(tool) && typeof a.path === 'string') {
     const p = a.path
-    if (windowsRoot(workspaceRoot)) return normalizeWindowsPath(p, workspaceRoot)
+    if (windowsRoot(workspaceRoot)) return normalizeWindowsPath(p, workspaceRoot, controlledRoot)
     if (p.includes('\0')) throw new NotCanonical('path contains NUL')
     if (p.includes('\\')) throw new NotCanonical('path contains a backslash')
     if (p.split('/').some((seg) => /^[A-Za-z]:/.test(seg)))
       throw new NotCanonical('path has a segment that reads as a drive letter')
     const n = normalizeWorkspacePath(p, workspaceRoot)
-    // Outside the workspace is not the command table's business: the rules there are written about
-    // workspace paths, and folding a foreign one into them would answer a question nobody asked.
-    if (!n.inside) throw new NotCanonical('path is outside the workspace')
+    // Only a live Host classification may admit another domain. The original spelling still
+    // has to have one canonical identity; this is never a fallback for normalization failures.
+    if (!n.inside && (!controlledRoot || !normalizeWorkspacePath(n.abs, controlledRoot).inside))
+      throw new NotCanonical('path is outside the workspace')
     return n.abs
   }
   // `env` is not stripped. Stripping it let one approval cover calls carrying different

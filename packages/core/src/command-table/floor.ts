@@ -1,10 +1,16 @@
-import type { ToolPolicy, ToolPolicyDecision } from '@agnes/extension-api'
+import type { ToolPolicy, ToolPolicyDecision, ToolPolicyInput } from '@agnes/extension-api'
 import { matchPolicy, normalizeArgv, type PolicyRule } from './normalize.js'
 
 const DENIED: ToolPolicyDecision = { effect: 'deny', reason: 'blocked by the command policy' }
 
 /** The argument a tool declared as its command text (`ToolMeta.commandArg`), if it declared one. */
 export type CommandArgOf = (tool: string) => string | undefined
+
+/** Host-owned scope, checked live; it admits identity only, never a filesystem mutation. */
+export type CommandPathScope = (
+  input: ToolPolicyInput,
+  signal: AbortSignal,
+) => Promise<{ root: string } | undefined>
 
 /**
  * The command table as a safety floor around whichever tool policy a session selected.
@@ -19,24 +25,30 @@ export function withCommandFloor(
   policy: ToolPolicy,
   rules: readonly PolicyRule[],
   commandArgOf: CommandArgOf = () => undefined,
+  pathScope?: CommandPathScope,
 ): ToolPolicy {
   return {
     ...policy,
     async decide(input, signal, ports) {
       signal.throwIfAborted()
       let argv: string
+      let scope: { root: string } | undefined
       try {
+        scope = await pathScope?.(input, signal)
+        signal.throwIfAborted()
         argv = normalizeArgv(
           input.call.name,
           input.call.args,
           input.workspaceRoot,
           commandArgOf(input.call.name),
+          scope?.root,
         )
       } catch {
+        signal.throwIfAborted()
         // No identity to match a rule against, so no rule may vouch for the call.
         return DENIED
       }
-      const action = matchPolicy(rules, input.call.name, argv)
+      const action = matchPolicy(rules, input.call.name, argv) ?? (scope ? 'allow' : undefined)
       if (action === 'deny') return DENIED
       const decision = await policy.decide(input, signal, ports)
       if (action !== 'allow' || decision.effect !== 'ask' || decision.approval !== undefined) return decision
@@ -63,7 +75,7 @@ export function withCommandFloor(
  * identity to notice a mid-decision policy change, and a preset view rebuilt with the same rules is
  * not such a change while a different table is.
  */
-export function sessionCommandFloor(commandArgOf: CommandArgOf) {
+export function sessionCommandFloor(commandArgOf: CommandArgOf, pathScope?: CommandPathScope) {
   const floored = new WeakMap<ToolPolicy, Map<string, ToolPolicy>>()
   return (policy: ToolPolicy, rules: readonly PolicyRule[] | undefined): ToolPolicy => {
     if (!rules?.length) return policy
@@ -75,7 +87,7 @@ export function sessionCommandFloor(commandArgOf: CommandArgOf) {
     }
     let wrapped = tables.get(key)
     if (!wrapped) {
-      wrapped = withCommandFloor(policy, rules, commandArgOf)
+      wrapped = withCommandFloor(policy, rules, commandArgOf, pathScope)
       tables.set(key, wrapped)
     }
     return wrapped

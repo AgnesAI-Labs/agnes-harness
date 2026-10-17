@@ -53,8 +53,7 @@ export function observeProgress(state: RunProgress, event: EventEnvelope, now: n
       if (decision.consumption || decision.invalidation || decision.result?.reason !== 'answered')
         delete next.pending[decision.handle.id]
       if (
-        decision.result?.reason === 'expired' ||
-        (decision.result?.reason === 'unavailable' && decision.result.code === 'unattended-refused') ||
+        (decision.result && decision.result.reason !== 'answered') ||
         (decision.result?.reason === 'answered' && decision.result.response.option === 'rejected') ||
         decision.invalidation
       ) {
@@ -62,7 +61,13 @@ export function observeProgress(state: RunProgress, event: EventEnvelope, now: n
           ...next,
           outcome: 'failed',
           needsAttention: true,
-          reason: decision.result?.reason === 'expired' ? 'approval_expired' : 'approval_refused',
+          reason:
+            decision.result?.reason === 'expired' || decision.invalidation?.code === 'deadline'
+              ? 'approval_expired'
+              : decision.result?.reason === 'answered' ||
+                  (decision.result?.reason === 'unavailable' && decision.result.code === 'unattended-refused')
+                ? 'approval_refused'
+                : 'approval_unavailable',
         }
       }
     }

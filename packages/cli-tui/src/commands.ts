@@ -405,9 +405,8 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
         sessionId: s.id,
         enabled: true,
       })) as { effectiveFromSeq: number }
-      writeComposerMemoryFile(app.composerSelectionPath, { permission: 'full' })
       return {
-        text: `full access from seq ${r.effectiveFromSeq}: read/write inside and outside the workspace; tool approvals skipped. Explicit denies, OS permissions and command sandbox limits still apply. No TUI disable command.`,
+        text: `routine approvals skipped from seq ${r.effectiveFromSeq}; the current preset and its domain confirmations remain in effect. Explicit denies, OS permissions and command sandbox limits still apply. No TUI disable command.`,
       }
     }
     case '/export':

@@ -325,9 +325,10 @@ export function createComposerController(
         : {}),
       permission: {
         ...(context.connected &&
-        !context.draftingNew &&
-        context.sessionIsolation?.sessionId === context.current?.id &&
-        context.sessionIsolation?.disabled
+        (context.runtimeCatalog?.security?.platform.os === 'win32' ||
+          (!context.draftingNew &&
+            context.sessionIsolation?.sessionId === context.current?.id &&
+            context.sessionIsolation?.disabled))
           ? { isolationNote: context.t('session.runtime.noOsIsolation') }
           : {}),
         disabled:

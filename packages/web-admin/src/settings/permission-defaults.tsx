@@ -141,6 +141,13 @@ export function PermissionDefaults({
       state={readFailed && !snapshot ? 'error' : busy && !snapshot ? 'loading' : undefined}
       onReload={() => setRevision((value) => value + 1)}
     >
+      <a
+        href="https://github.com/AgnesAI-Labs/agnes-harness/blob/feat/agh-plugin-core/docs/guide/security.md#full-access-exceptions"
+        target="_blank"
+        rel="noreferrer"
+      >
+        {t('exceptions')}
+      </a>
       {conflict && (
         <p className="agnes-settings-note" role="status" data-testid="security-default-conflict">
           {t('conflict')}

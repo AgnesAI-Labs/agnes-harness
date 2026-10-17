@@ -67,6 +67,11 @@ export function createAutoReviewPolicy(base: ToolPolicy): ToolPolicy {
         promptHash: hash(prompt),
         argsHash,
         scopeHash,
+        scopePreview: {
+          args: jcs(input.call.args).slice(0, 4096),
+          cwd: input.cwd.slice(0, 4096),
+          mode: `${base.id} / ${input.approvalMode}`.slice(0, 128),
+        },
         decision: 'escalate',
         risk: 'medium',
         reason: 'Reviewer unavailable; human approval required',

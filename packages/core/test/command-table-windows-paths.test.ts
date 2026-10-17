@@ -21,6 +21,17 @@ describe('Windows approval path identity', () => {
       expect(normalizeArgv('edit', { path }, root)).toBe('C:/work/repo/src/file.txt')
     },
   )
+  it('uses the workspace base for an explicitly classified extra path', () => {
+    expect(normalizeArgv('write', { path: '../extra/a.txt' }, root, undefined, 'C:/work/extra')).toBe(
+      'C:/work/extra/a.txt',
+    )
+    expect(() =>
+      normalizeArgv('write', { path: '../other/a.txt' }, root, undefined, 'C:/work/extra'),
+    ).toThrow('NotCanonical')
+    expect(() =>
+      normalizeArgv('write', { path: 'C:/work/extra/NUL.txt' }, root, undefined, 'C:/work/extra'),
+    ).toThrow('NotCanonical')
+  })
   it('preserves Chinese names, spaces and dot names', () => {
     expect(normalizeArgv('edit', { path: '中文 空格\\a..b.txt' }, root)).toBe(
       'C:/work/repo/中文 空格/a..b.txt',

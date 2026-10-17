@@ -38,6 +38,7 @@ async function setup(selected = rule()) {
   const home = await mkdtemp(join(tmpdir(), 'agh-webhooks-'))
   homes.push(home)
   const sessions: TriggerSessionInput[] = []
+  let now = time
   const options = {
     dataDir: home,
     resolveSecret: async () => secret,
@@ -48,7 +49,7 @@ async function setup(selected = rule()) {
       expect(persisted.deliveries[0]).toMatchObject({ status: 'pending', sessionId: input.sessionKey })
       sessions.push(input)
     },
-    now: () => time,
+    now: () => now,
   }
   const service = createWebhookService(options)
   await service.handle({ action: 'upsert', rule: selected })
@@ -71,7 +72,18 @@ async function setup(selected = rule()) {
     }
     return service.handle({ action: 'deliver', body: body.toString('base64'), headers })
   }
-  return { service, options, home, enable, payload, send, sessions }
+  return {
+    service,
+    options,
+    home,
+    enable,
+    payload,
+    send,
+    sessions,
+    advance: (ms: number) => {
+      now += ms
+    },
+  }
 }
 describe('webhook admission', () => {
   it.each([
@@ -270,6 +282,10 @@ describe('webhook admission', () => {
     expect(snapshot?.deliveries).toHaveLength(200)
     const path = join(f.home, 'webhook-triggers.json')
     const state = JSON.parse(await readFile(path, 'utf8'))
+    for (const progress of [null, [], { s: { outcome: 'waiting_approval', pending: { d: 'yesterday' } } }]) {
+      await writeFile(path, JSON.stringify({ ...state, progress }))
+      expect(() => createWebhookService(f.options)).toThrow('Invalid webhook store')
+    }
     state.rates = { missing: [time] }
     await writeFile(path, JSON.stringify(state))
     expect(() => createWebhookService(f.options)).toThrow('Invalid webhook store')
@@ -307,3 +323,70 @@ describe('webhook admission', () => {
     expect(f.sessions).toHaveLength(0)
   })
 })
+
+it.each(['approve', 'expire', 'refuse'] as const)(
+  'persists trigger approval state through %s and flags another waiting delivery',
+  async (action) => {
+    const f = await setup({
+      ...rule('generic'),
+      ratePerMinute: 10,
+      unattendedApproval: action === 'refuse' ? 'refuse' : 'notify',
+    })
+    await f.enable()
+    await f.send()
+    const sessionId = f.sessions[0]?.sessionKey
+    if (!sessionId) throw new Error('missing trigger session')
+    expect(f.sessions[0]?.unattendedApproval).toBe(action === 'refuse' ? 'refuse' : 'notify')
+    const event = (type: string, data: unknown) =>
+      ({ type, data, seq: 1, ts: new Date(time).toISOString() }) as import('@agnes/protocol').EventEnvelope
+    f.service.observeSession(sessionId, event('turn/start', { turn: 1, trigger: 'prompt' }))
+    const decision = {
+      handle: { id: 'd', sessionId },
+      request: { expiresAt: new Date(time + 1000).toISOString() },
+      result: null,
+      consumption: null,
+      invalidation: null,
+    }
+    f.service.observeSession(sessionId, event('decision/state', decision))
+    expect(f.service.observeSession(sessionId, event('turn/end', { turn: 1, reason: 'parked' }))).toBe(true)
+    let snapshot = (await f.service.handle({ action: 'list' })).snapshot
+    expect(snapshot?.deliveries[0]).toMatchObject({ status: 'waiting_approval', needsAttention: true })
+    expect((await f.send(undefined, 'next')).delivery).toMatchObject({
+      status: 'needs_attention',
+      reason: 'approval_pending_previous_run',
+    })
+    expect(f.sessions).toHaveLength(1)
+    if (action === 'approve') {
+      f.service.observeSession(
+        sessionId,
+        event('decision/state', {
+          ...decision,
+          result: { reason: 'answered', response: { option: 'allowed-once' } },
+        }),
+      )
+      f.service.observeSession(sessionId, event('turn/start', { turn: 2, trigger: 'approval-resume' }))
+      f.service.observeSession(sessionId, event('turn/end', { turn: 2, reason: 'completed' }))
+    } else if (action === 'expire') f.advance(1000)
+    else
+      f.service.observeSession(
+        sessionId,
+        event('decision/state', {
+          ...decision,
+          result: { reason: 'unavailable', code: 'unattended-refused' },
+        }),
+      )
+    snapshot = (await f.service.handle({ action: 'list' })).snapshot
+    expect(snapshot?.deliveries.find((row) => row.sessionId === sessionId)).toMatchObject({
+      status: action === 'approve' ? 'ran' : 'failed',
+      needsAttention: action !== 'approve',
+    })
+    const reopened = createWebhookService(f.options)
+    expect(
+      (await reopened.handle({ action: 'list' })).snapshot?.deliveries.find(
+        (row) => row.sessionId === sessionId,
+      )?.status,
+    ).toBe(action === 'approve' ? 'ran' : 'failed')
+    expect((await f.send(undefined, 'after')).delivery?.status).toBe('accepted')
+    expect(f.sessions).toHaveLength(2)
+  },
+)

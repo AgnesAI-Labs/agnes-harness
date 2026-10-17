@@ -102,6 +102,7 @@ export function createScheduleTools(open: ((ctx: ToolContext) => Promise<Schedul
           ...(name === 'schedule_update' ? { id: Id } : {}),
           title: Title,
           prompt: Prompt,
+          unattendedApproval: Type.Optional(Type.Union([Type.Literal('notify'), Type.Literal('refuse')])),
           selector: selectorSchema(includeAfter),
           ...(name === 'schedule_update' ? { target: Type.Optional(Target) } : { target: Target }),
         },
@@ -113,15 +114,26 @@ export function createScheduleTools(open: ((ctx: ToolContext) => Promise<Schedul
         if (blocked) return blocked
         if (!open) return jsonResult({ code: 'internal_error' })
         try {
-          const { target: choice, ...rest } = args as typeof args & {
+          const {
+            target: choice,
+            unattendedApproval,
+            ...rest
+          } = args as typeof args & {
             target?: 'current_session' | 'new_session'
             id?: string
           }
+          const service = await open(ctx)
+          const selectedTarget = choice
+            ? targetFor(choice, ctx.session)
+            : unattendedApproval && rest.id
+              ? (await service.get(rest.id))?.target
+              : undefined
           const input = {
             ...rest,
-            ...(choice ? { target: targetFor(choice, ctx.session) } : {}),
+            ...(selectedTarget
+              ? { target: { ...selectedTarget, ...(unattendedApproval ? { unattendedApproval } : {}) } }
+              : {}),
           }
-          const service = await open(ctx)
           const value = await service.upsert(input)
           return jsonResult(echo(value, ctx.session))
         } catch (error) {

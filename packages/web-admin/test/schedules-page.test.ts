@@ -334,12 +334,19 @@ it('opens a saved task with its values and archives it after confirmation', asyn
     'Asia/Shanghai',
   )
   expect(document.querySelector('[data-testid="schedules-session-picker"]')).not.toBeNull()
+  await act(async () => {
+    const approval = document.querySelector<HTMLSelectElement>('[data-testid="schedules-approval-behavior"]')
+    if (!approval) throw new Error('missing approval behavior')
+    expect(approval.value).toBe('notify')
+    approval.value = 'refuse'
+    approval.dispatchEvent(new Event('change', { bubbles: true }))
+  })
   await submit()
   expect(daemon.upsert).toHaveBeenCalledWith(
     expect.objectContaining({
       id: standup.id,
       selector: { weekly: { time: '14:30', timeZone: 'Asia/Shanghai', weekdays: [2, 4] } },
-      target: { kind: 'session', sessionKey: 's1' },
+      target: { kind: 'session', sessionKey: 's1', unattendedApproval: 'refuse' },
     }),
   )
   await click('schedules-actions', host)

@@ -9,7 +9,10 @@ import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, openSession, shellTool } from './helpers/open-session.js'
 
 const approver = { ...actor, id: 'approver' }
-async function setup(scripts: Script[] = [toolTurn('shell', { command: 'echo ok' }), textTurn('finished')]) {
+async function setup(
+  scripts: Script[] = [toolTurn('shell', { command: 'echo ok' }), textTurn('finished')],
+  policy: 'notify' | 'refuse' = 'notify',
+) {
   let now = 1_757_203_200_000,
     asks = 0,
     executions = 0,
@@ -43,9 +46,13 @@ async function setup(scripts: Script[] = [toolTurn('shell', { command: 'echo ok'
   })
   const provider = fakeProvider(scripts)
   const h = await openSession({ storage, clock, registry, seams, provider })
-  await h.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'go' }] })
+  await h.session.enqueue('next-turn', {
+    actor: { ...actor, attrs: { unattendedApproval: policy } },
+    origin: 'system',
+    content: [{ type: 'text', text: 'go' }],
+  })
   expect((await h.session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
-    'parked',
+    policy === 'refuse' ? 'completed' : 'parked',
   )
   return {
     ...h,
@@ -105,6 +112,20 @@ describe('single-tool parked continuation', () => {
       expect(h.log.lastSeq).toBe(seq)
     },
   )
+  it('refuses an unattended approval without parking or inventing a human answer', async () => {
+    const h = await setup(undefined, 'refuse')
+    try {
+      expect(h.executions()).toBe(0)
+      expect((await h.session.decisions.list())[0]?.result).toMatchObject({
+        reason: 'unavailable',
+        code: 'unattended-refused',
+      })
+      expect(JSON.stringify(h.provider.requests[1]?.messages)).toContain('unattended-refused')
+      expect(await h.log.scan({ type: 'x/core/unattended-refused', limit: 10 })).toHaveLength(1)
+    } finally {
+      await h.session.close()
+    }
+  })
   it('continues an expired unanswered request without executing the tool', async () => {
     const h = await setup()
     h.advance(86400000)

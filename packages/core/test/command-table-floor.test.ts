@@ -53,6 +53,63 @@ describe('command floor', () => {
     expect((await decide([EDIT_ALLOW], { call })).effect).toBe('deny')
   })
 
+  it('admits only Host-classified external paths, preserving normalization, domain asks and denials', async () => {
+    const managed = async () => ({ root: '/private/memory/workspace' })
+    const external = input({
+      call: { id: 'm', name: 'write', args: { path: '/private/memory/workspace/MEMORY.md' } },
+    })
+    const floor = withCommandFloor(defaultToolPolicy, [EDIT_ALLOW], commandArgOf, managed)
+    expect((await floor.decide(external, signal)).effect).toBe('allow')
+    expect((await withCommandFloor(defaultToolPolicy, [EDIT_ALLOW]).decide(external, signal)).effect).toBe(
+      'deny',
+    )
+    for (const path of [
+      '/private/memory/other/MEMORY.md',
+      '/private/memory/workspace/a\\b',
+      '/private/memory/workspace/a\0b',
+    ])
+      expect(
+        (await floor.decide({ ...external, call: { ...external.call, args: { path } } }, signal)).effect,
+      ).toBe('deny')
+    const refusing: ToolPolicy = {
+      id: 'read-only',
+      version: '1',
+      decide: () => ({ effect: 'deny', reason: 'read-only' }),
+    }
+    expect(
+      (await withCommandFloor(refusing, [EDIT_ALLOW], commandArgOf, managed).decide(external, signal)).effect,
+    ).toBe('deny')
+    expect(
+      (
+        await withCommandFloor(
+          defaultToolPolicy,
+          [{ tool: 'write', argv: 'MEMORY', action: 'deny' }],
+          commandArgOf,
+          managed,
+        ).decide(external, signal)
+      ).effect,
+    ).toBe('deny')
+    expect(
+      (
+        await withCommandFloor(defaultToolPolicy, [EDIT_ALLOW], commandArgOf, async () => {
+          throw new Error('identity unavailable')
+        }).decide(external, signal)
+      ).effect,
+    ).toBe('deny')
+    const exact: ToolPolicy = {
+      id: 'domain',
+      version: '1',
+      decide: () => ({
+        effect: 'ask',
+        reason: 'diff',
+        approval: { reviewerRequirement: 'human', grantConstraints: 'once', subjectRevision: 'a'.repeat(64) },
+      }),
+    }
+    expect(
+      (await withCommandFloor(exact, [EDIT_ALLOW], commandArgOf, managed).decide(external, signal)).effect,
+    ).toBe('ask')
+  })
+
   it('asks about a tainted call even when a rule allows it', async () => {
     expect((await decide([EDIT_ALLOW], { tainted: true })).effect).toBe('ask')
   })

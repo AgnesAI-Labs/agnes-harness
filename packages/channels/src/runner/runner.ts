@@ -577,6 +577,7 @@ function isDaemonNotice(payload: unknown): payload is DaemonNotice {
       'overloaded',
       'job_dispatched',
       'job_dead',
+      'automation_attention',
       'shutting_down',
     ].includes(notice.kind) &&
     'detail' in notice &&

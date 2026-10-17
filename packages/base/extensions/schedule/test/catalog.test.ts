@@ -337,3 +337,85 @@ it('checks a new-session target through the port before saving it', async () => 
     sessionKey: 'sess',
   })
 })
+
+it.each(['approve', 'expire', 'refuse'] as const)(
+  'tracks a parked run through %s without reporting it ran',
+  (action) => {
+    let now = NOW
+    const { db } = memory()
+    let catalog = openScheduleCatalogAt(db, () => now)
+    const created = catalog.create({
+      ...daily(),
+      target: {
+        kind: 'session',
+        sessionKey: 'sess',
+        unattendedApproval: action === 'refuse' ? 'refuse' : 'notify',
+      },
+    })
+    const key = `schedule:${created.id}:1`
+    catalog.recordDispatch(key, { at: now, reason: 'prompt', sessionKey: 'sess' })
+    const event = (type: string, data: unknown) =>
+      ({ type, data, seq: 1, ts: new Date(now).toISOString() }) as import('@agnes/protocol').EventEnvelope
+    catalog.observeSession('sess', event('turn/start', { turn: 1, trigger: 'prompt' }))
+    const pending = {
+      handle: { id: 'd1', sessionId: 'sess' },
+      request: { expiresAt: new Date(now + 1000).toISOString() },
+      result: null,
+      invalidation: null,
+      consumption: null,
+    }
+    catalog.observeSession('sess', event('decision/state', pending))
+    expect(catalog.observeSession('sess', event('turn/end', { turn: 1, reason: 'parked' }))).toBe(true)
+    catalog.noteSettlement(key, { at: now, nextRunAt: now + 60_000, reason: 'parked' })
+    expect(catalog.read(created.id)?.runs[0]).toMatchObject({
+      outcome: 'waiting_approval',
+      reason: 'needs_attention',
+    })
+    expect(catalog.read(created.id)?.runs[0]?.endedAt).toBeUndefined()
+    expect(catalog.hasWaiting(key)).toBe(true)
+    catalog.recordFailure(key, { at: now + 1, reason: 'approval_pending_previous_run' })
+    expect(catalog.read(created.id)?.runs.map((run) => run.outcome)).toEqual(['waiting_approval', 'failed'])
+    // Reopening the catalog retains both the pending deadline and the recurring schedule.
+    catalog = openScheduleCatalogAt(db, () => now)
+    if (action === 'approve') {
+      catalog.observeSession(
+        'sess',
+        event('decision/state', {
+          ...pending,
+          result: { reason: 'answered', response: { option: 'allowed-once' } },
+        }),
+      )
+      catalog.observeSession('sess', event('turn/start', { turn: 2, trigger: 'approval-resume' }))
+      catalog.observeSession('sess', event('turn/end', { turn: 2, reason: 'completed' }))
+      expect(catalog.read(created.id)?.runs[0]?.outcome).toBe('ran')
+    } else if (action === 'expire') {
+      now += 1000
+      expect(catalog.read(created.id)?.runs[0]).toMatchObject({
+        outcome: 'failed',
+        reason: 'approval_expired',
+        endedAt: now,
+      })
+    } else {
+      catalog.observeSession('sess', event('x/core/unattended-refused', {}))
+      expect(catalog.read(created.id)?.runs[0]).toMatchObject({
+        outcome: 'failed',
+        reason: 'approval_refused',
+      })
+    }
+    expect(catalog.hasWaiting(key)).toBe(false)
+    expect(catalog.read(created.id)).toMatchObject({ status: 'active', nextRunAt: NOW + 60_000 })
+    if (action === 'expire') {
+      catalog.recordDispatch(key, { at: ++now, reason: 'prompt', sessionKey: 'pending-again' })
+      catalog.noteSettlement(key, { at: now, nextRunAt: now + 60_000, reason: 'parked' })
+      for (let i = 0; i < 55; i++)
+        catalog.recordFailure(key, { at: ++now, reason: 'approval_pending_previous_run' })
+      expect(catalog.hasWaiting(key)).toBe(true)
+      expect(
+        catalog
+          .read(created.id)
+          ?.runs.some((run) => run.sessionKey === 'pending-again' && run.needsAttention),
+      ).toBe(true)
+    }
+    db.close()
+  },
+)

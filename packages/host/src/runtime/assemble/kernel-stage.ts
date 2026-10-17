@@ -22,6 +22,7 @@ import { createNetFetch } from '../adapters/index.js'
 import type { ComputerUseHost } from '../computer-use/index.js'
 import { capabilityEnabled } from '../profile/session-capabilities.js'
 import { createSessionHookPort, readTelemetryConsent } from '../sessions/session-hooks.js'
+import { hostCommandPathScope } from './command-path-scope.js'
 import type { AssemblyContext } from './context.js'
 import type { PresetCatalog } from './presets.js'
 import type { ProcessServices } from './process-services.js'
@@ -92,6 +93,24 @@ async function selectCoreProviders(
   return { compaction, loop, systemPromptProvider }
 }
 
+/** Pin memory to the selected provider while keeping its settings live per workspace. */
+function sessionMemory(ctx: AssemblyContext, pluginTree: HostPluginTreeBase) {
+  const { providerSelections, deps } = ctx
+  return (workspaceRoot: string, sessionKey: string): MemorySession | undefined => {
+    const selection = providerSelections.memory ?? { provider: 'file', version: '1.0.0' }
+    if (
+      !providerSelections.memory &&
+      !pluginTree.root.providers.catalog().some((entry) => entry.kind === 'memory')
+    )
+      return undefined
+    return pluginTree.root.providers.resolve(memoryKind, selection).open({
+      home: dirname(dirname(deps.profileDir)),
+      workspaceRoot,
+      sessionKey,
+    })
+  }
+}
+
 /**
  * Step `kernel` - the repository's single Kernel.create call site. The seams, session
  * capabilities and extension leases are read through `ctx.live` / `extensionLeases` because the
@@ -113,7 +132,7 @@ export async function createKernel(
     extensionLeases: ExtensionLeases
   }>,
 ) {
-  const { deps, rollback, clock, providerSelections, activationBarrier } = ctx
+  const { deps, rollback, clock, activationBarrier } = ctx
   const { publicationDispatch, quietState } = ctx.gates
   const { proc, presets, providerStage, operations, runtimeTarget, skillState, computerUse } = input
   const { discoveredResources, extensionLeases } = input
@@ -147,19 +166,7 @@ export async function createKernel(
     : undefined
   const extensionSessions = new ExtensionSessions<HookPort>()
   const { compaction, loop, systemPromptProvider } = await selectCoreProviders(ctx, pluginTree, view)
-  const memory = (workspaceRoot: string, sessionKey: string): MemorySession | undefined => {
-    const selection = providerSelections.memory ?? { provider: 'file', version: '1.0.0' }
-    if (
-      !providerSelections.memory &&
-      !pluginTree.root.providers.catalog().some((entry) => entry.kind === 'memory')
-    )
-      return undefined
-    return pluginTree.root.providers.resolve(memoryKind, selection).open({
-      home: dirname(dirname(deps.profileDir)),
-      workspaceRoot,
-      sessionKey,
-    })
-  }
+  const memory = sessionMemory(ctx, pluginTree)
   const toolProviderCatalog = (kind: 'tool-runtime' | 'tool-policy') =>
     Object.freeze(
       pluginTree.root.providers
@@ -226,6 +233,7 @@ export async function createKernel(
       read: (path, opts) => adapters.fs.read(path, { ...opts, unit: 'bytes' }),
     },
     memoryFor: ({ key, workspaceRoot }) => memory(workspaceRoot, key),
+    commandPathScopeFor: hostCommandPathScope,
     netFetch: deps.netFetch ?? createNetFetch(),
     publicFetch: deps.publicFetch ?? createPublicFetch(deps.env),
     approvalMode: ctx.profile.approvals.mode,
