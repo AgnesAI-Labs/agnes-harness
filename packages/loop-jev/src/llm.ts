@@ -25,9 +25,20 @@ const CANNOT_BIND = 'CANNOT_BIND:'
 
 /** One line recording a refused or failed step; the reason is quoted data, never instructions. */
 export function runtimeNote(op: string | null, code: string, stage: ErrorStage, reason?: string): string {
-  const base = `[runtime observation] ${op ?? 'decision'} was not applied: ${code} (${stage})`
-  const note = reason ? `${base}; reason (data): ${JSON.stringify(clip(reason, REASON_MAX))}` : base
-  return clip(note, RUNTIME_NOTE_MAX)
+  const base = clip(
+    `[runtime observation] ${op ?? 'decision'} was not applied: ${code} (${stage})`,
+    RUNTIME_NOTE_MAX,
+  )
+  if (!reason) return base
+  const prefix = `${base}; reason (data): `
+  // The reason is cut, not the line, so the closing quote always survives.
+  let length = Math.min(reason.length, REASON_MAX)
+  let quoted = JSON.stringify(clip(reason, length))
+  while (length > 0 && prefix.length + quoted.length > RUNTIME_NOTE_MAX) {
+    length -= 1
+    quoted = JSON.stringify(clip(reason, length))
+  }
+  return prefix.length + quoted.length > RUNTIME_NOTE_MAX ? base : prefix + quoted
 }
 
 function parameterRequest(op: string): string {
@@ -202,6 +213,7 @@ export function adoptCalls(input: {
   }
   if (route === 'parameters') {
     if (first.name !== op) return refuse('OPERATION_CHANGED', first.name)
+    if (!toolNames.includes(op)) return refuse('UNAVAILABLE', `${op} is not a currently permitted operation`)
     const calls = leadingRun(reply.calls, op, op === 'read' ? READ_BATCH_MAX : 1)
     return { kind: 'calls', calls, dropped: reply.calls.length - calls.length, declined: false }
   }

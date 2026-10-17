@@ -64,6 +64,18 @@ describe('notes', () => {
     )
     expect(runtimeNote('x', 'C', 'llm', 'y'.repeat(1000)).length).toBeLessThanOrEqual(300)
   })
+  it('keeps the closing quote of an escaped reason within 300 characters', () => {
+    for (const reason of ['"'.repeat(500), '\\n"\\'.repeat(100), '路径\n'.repeat(100)]) {
+      const note = runtimeNote('o'.repeat(40), 'REFUSED_BY_CORE', 'dispatch', reason)
+      expect(note.length).toBeLessThanOrEqual(300)
+      expect(note.endsWith('"')).toBe(true)
+      expect(() =>
+        JSON.parse(note.slice(note.indexOf('reason (data): ') + 'reason (data): '.length)),
+      ).not.toThrow()
+    }
+    const long = runtimeNote('o'.repeat(400), 'C', 'llm', 'because')
+    expect(long.length).toBeLessThanOrEqual(300)
+  })
   it('writes the parameter request, with the read variant', () => {
     const write = noteFor({
       route: r('parameters', null, decision({ phase: 'ACT', op: 'write' })),
@@ -186,7 +198,7 @@ describe('parseReply', () => {
   })
 })
 
-describe('adoptCalls (spec §4.8 tables)', () => {
+describe('adoptCalls', () => {
   const a = (route: 'parameters' | 'arbitration' | 'answer', rep: LlmReply, op = 'write') =>
     adoptCalls({ route, op, reply: rep, toolNames: NAMES })
   it.each([
@@ -255,6 +267,46 @@ describe('adoptCalls (spec §4.8 tables)', () => {
     expect(a('answer', reply({ calls: [call('shell', { command: 'pytest' })] }))).toMatchObject({
       kind: 'calls',
       declined: true,
+    })
+  })
+  it('arbitration and answer cap a leading read batch at four', () => {
+    const reads = Array.from({ length: 6 }, (_, i) => call('read', { path: `f${i}` }))
+    expect(a('arbitration', reply({ calls: reads }))).toMatchObject({
+      kind: 'calls',
+      dropped: 2,
+      declined: false,
+    })
+    expect((a('arbitration', reply({ calls: reads })) as { calls: unknown[] }).calls).toHaveLength(4)
+    expect(a('answer', reply({ calls: reads }))).toMatchObject({ kind: 'calls', dropped: 2, declined: true })
+    expect((a('answer', reply({ calls: reads })) as { calls: unknown[] }).calls).toHaveLength(4)
+  })
+  it('parameters refuses an operation that is not permitted', () => {
+    expect(
+      adoptCalls({
+        route: 'parameters',
+        op: 'deploy',
+        reply: reply({ calls: [call('deploy')] }),
+        toolNames: NAMES,
+      }),
+    ).toMatchObject({ kind: 'refuse', code: 'UNAVAILABLE' })
+  })
+  it('recognises CANNOT_BIND after leading whitespace', () => {
+    expect(a('parameters', reply({ text: '\n  CANNOT_BIND: no path' }))).toMatchObject({
+      kind: 'refuse',
+      code: 'CANNOT_BIND',
+    })
+  })
+  it('refusal messages name the tool or carry clipped text', () => {
+    expect(a('parameters', reply({ calls: [call('shell')] }))).toMatchObject({
+      code: 'OPERATION_CHANGED',
+      message: 'shell',
+    })
+    const long = `CANNOT_BIND: ${'z'.repeat(500)}`
+    const out = a('arbitration', reply({ text: long }))
+    expect(out).toMatchObject({ kind: 'refuse', code: 'CANNOT_BIND', message: long.slice(0, 200) })
+    expect(a('parameters', reply({ text: 'q'.repeat(500) }))).toMatchObject({
+      code: 'NO_CALL',
+      message: 'q'.repeat(200),
     })
   })
 })
