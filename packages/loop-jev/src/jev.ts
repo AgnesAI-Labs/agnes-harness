@@ -1,7 +1,8 @@
 // Portions adapted from JevLoop (https://github.com/parkavenue9639/jevloop, 61e7994), Apache-2.0; modified.
 import type { LoopSideCallPort, PreparedSideCall, SideCallResult, SideCallUsage } from '@agnes/extension-api'
+import { estimateTokens } from './compile.js'
 import type { JsonObject, JsonValue } from './types.js'
-import { clip, digest16, errorCode, utf8Bytes } from './util.js'
+import { clip, digest16, errorCode } from './util.js'
 
 export type JevPayload = { state: JsonObject; questions: JsonObject }
 
@@ -77,8 +78,6 @@ const failed = (
   message: clip(message, 200),
   invocationId,
 })
-
-const estimateTokens = (value: JsonValue) => Math.ceil(utf8Bytes(JSON.stringify(value)) / 3)
 
 function detailReason(error: unknown): string {
   const detail = (error as { detail?: { reason?: unknown } } | null)?.detail
