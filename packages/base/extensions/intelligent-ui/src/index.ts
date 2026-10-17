@@ -48,7 +48,7 @@ export default defineAgnesPlugin({
         defineTool({
           name: 'ui_render',
           description:
-            'Show tables, charts, forms, dashboards or content the user acts on as a card in your reply; plain text, outlines and summaries belong in the reply itself. For "show/display in the UI", use this instead of writing HTML and presenting a file. Files: present; a question or choice: ask_user_question. Presets or pinned components only; actions map to declared tools; no HTML or code. Title in the conversation language only, never a bilingual "A / B" title; never imitate system ids such as card-<hash>.' +
+            'For "show/display in the UI", use this instead of HTML files: tables/charts/forms/dashboards/actionable cards; plain text/outlines/summaries stay in the reply. Files: present; questions/choices: ask_user_question. Only presets/pinned kinds and declared tool actions; no HTML/code. Titles: conversation language; never a bilingual "A / B" title; never imitate system ids (card-<hash>).' +
             '\n' +
             UI_DATA_DESCRIPTION,
           parameters: reachableParameters(UiRenderParams),
@@ -79,7 +79,7 @@ export default defineAgnesPlugin({
         defineTool({
           name: 'ui_update',
           description:
-            'Replace an open surface at expectedRevision with revision + 1 after the previous action finishes.' +
+            'Replace an open surface at expectedRevision with revision + 1 after actions finish.' +
             '\n' +
             UI_DATA_DESCRIPTION,
           parameters: reachableParameters(UiUpdateParams),

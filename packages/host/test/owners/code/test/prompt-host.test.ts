@@ -231,7 +231,9 @@ it.each(['standard', 'channel', 'minimal-rl'])(
       },
     })
     try {
-      expect((await runOnce(host, { cwd: dataDir, prompt: 'hello' })).reason).toBe('completed')
+      expect((await runOnce(host, { cwd: dataDir, prompt: '请用中文检查文件并汇报进度' })).reason).toBe(
+        'completed',
+      )
       expect(provider.requests).toHaveLength(1)
       const request = provider.requests[0]
       if (!request) throw new Error('provider received no request')
@@ -241,6 +243,11 @@ it.each(['standard', 'channel', 'minimal-rl'])(
         expect(system).not.toContain(loadPrompt('coding-doctrine'))
         expect(system).not.toContain('You have no tools on this request')
       } else {
+        expect(system).toContain("Reply in the user's language unless they request another language")
+        expect(system).toContain('progress updates and narration before and after tool calls')
+        expect(system).toContain(
+          'English tool descriptions, results, examples, or source text do not change the reply language',
+        )
         expect(runtimeContextText(request)).toContain(JSON.stringify(dataDir).slice(1, -1))
         expect(system).toContain(loadPrompt('coding-doctrine'))
       }
