@@ -52,24 +52,14 @@ export const BUNDLED_HELPERS = Object.freeze([
 ])
 
 /** Shipped discovery choices; never auto-installed or enabled in profiles. */
-export const OPTIONAL_BUNDLED_PACKAGES = Object.freeze([
-  {
-    name: 'eval-studio',
-    id: '@agnes/eval-studio',
-    version: '0.1.0',
-    license: 'Apache-2.0',
-    ref: 'file:./bundled-plugins/eval-studio',
-    sourcePath: 'package-manager/bundled-plugins/eval-studio',
-  },
-  {
-    name: 'usage-cockpit',
-    id: '@agnes/usage-cockpit',
-    version: '0.1.0',
-    license: 'Apache-2.0',
-    ref: 'file:./bundled-plugins/usage-cockpit',
-    sourcePath: 'package-manager/bundled-plugins/usage-cockpit',
-  },
-])
+export const OPTIONAL_BUNDLED_PACKAGES: readonly {
+  name: string
+  id: string
+  version: string
+  license: string
+  ref: string
+  sourcePath: string
+}[] = Object.freeze([])
 
 /** Release-owned defaults; freshOnly additions never backfill an existing profile. */
 export const DEFAULT_ENABLED_BUNDLED_PACKAGES = Object.freeze([

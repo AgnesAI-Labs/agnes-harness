@@ -55,8 +55,6 @@
       "consumers": [
         "examples/community/deliverables-gallery",
         "packages/package-manager/bundled-plugins/deliverables-ui",
-        "packages/package-manager/bundled-plugins/eval-studio",
-        "packages/package-manager/bundled-plugins/usage-cockpit",
         "packages/package-manager/bundled-plugins/goal-ui",
         "packages/package-manager/bundled-plugins/interaction-ui",
         "packages/resource-control-web",
@@ -287,7 +285,6 @@
       "purpose": "DOM renderer for the web workbench and client module mount points; bundled into /vendor/* shared-singleton chunks.",
       "rationale": "Same pin line as react (WC5).",
       "consumers": [
-        "packages/package-manager/bundled-plugins/eval-studio",
         "packages/web",
         "packages/web-admin",
         "packages/web-client",

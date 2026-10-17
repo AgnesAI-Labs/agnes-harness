@@ -143,13 +143,11 @@ const LAYER: Record<string, number> = {
   // Independently installed bundled plugins consume public Host/UI contracts.
   '@agnes/deliverables-ui': 10,
   '@agnes/document-reader': 10,
-  '@agnes/eval-studio': 10,
   '@agnes/goal-ui': 10,
   '@agnes/interaction-ui': 10,
   '@agnes/mcp-helper': 10,
   '@agnes/plugin-helper': 10,
   '@agnes/skill-helper': 10,
-  '@agnes/usage-cockpit': 10,
   '@agnes/web': 10,
   // CLI's serve command composes the public Node static server; Web still depends only on SDK/protocol.
   '@agnes/cli': 11,
@@ -349,7 +347,6 @@ describe('browser packages do not depend on backend capability packages', () => 
     '@agnes/web-admin',
     '@agnes/web-conversation',
     '@agnes/resource-control-web',
-    '@agnes/usage-cockpit',
   ])
   const BACKEND = new Set(['@agnes/base', '@agnes/core', '@agnes/host', '@agnes/daemon', '@agnes/code'])
   for (const pkg of packages.filter((p) => BROWSER_PACKAGES.has(p.name))) {

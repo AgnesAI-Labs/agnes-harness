@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { OPTIONAL_BUNDLED_PACKAGES } from '@agnes/package-manager'
+import { DEFAULT_ENABLED_BUNDLED_PACKAGES, OPTIONAL_BUNDLED_PACKAGES } from '@agnes/package-manager'
 import { build } from 'esbuild'
 import { afterEach, expect, it } from 'vitest'
 import { copyBundledExamples, copyBundledPlugins } from '../tools/build-local.js'
@@ -22,18 +22,10 @@ it.each([
   roots.push(root)
   const output = join(root, 'runtime')
   await copyBundledPlugins(output)
-  for (const optional of OPTIONAL_BUNDLED_PACKAGES) {
-    const payload = join(output, 'bundled-plugins', optional.name)
-    expect(await readdir(payload)).toEqual(
-      expect.arrayContaining(['LICENSE', 'README.md', 'README.zh-CN.md', 'index.mjs', 'package.json', 'src']),
-    )
-    for (const file of ['test', 'node_modules', 'build.mjs', 'tsconfig.json'])
-      expect(await readdir(payload)).not.toContain(file)
-    expect(JSON.parse(await readFile(join(payload, 'package.json'), 'utf8'))).toMatchObject({
-      name: optional.id,
-      version: optional.version,
-    })
-  }
+  expect(OPTIONAL_BUNDLED_PACKAGES).toEqual([])
+  expect((await readdir(join(output, 'bundled-plugins'))).sort()).toEqual(
+    DEFAULT_ENABLED_BUNDLED_PACKAGES.map((pkg) => pkg.name).sort(),
+  )
   expect((await readdir(join(output, 'bundled-plugins', helper.name))).sort()).toEqual(
     [
       'LICENSE',
