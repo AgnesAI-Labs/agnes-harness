@@ -343,7 +343,9 @@ function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; 
             ? { shown: sessions, hidden: Math.max(0, page.total - sessions.length) }
             : shownSessions(sorted, expanded, options.currentId)
           const toggleable = page
-            ? !page.stale && page.loaded && (!!page.next || page.items.length > RECENT_SESSIONS)
+            ? (!page.stale || page.loading) &&
+              page.loaded &&
+              (!!page.next || page.items.length > RECENT_SESSIONS)
             : sorted.length > RECENT_SESSIONS
           const listId = `workspace-sessions-${encodeURIComponent(path)}`
           return (
@@ -396,9 +398,9 @@ function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; 
                 )}
                 {!collapsed && page && (
                   <>
-                    {page.loading && <p role="status">{t('nav.loading')}</p>}
+                    {page.loading && !page.loaded && <p role="status">{t('nav.loading')}</p>}
                     {!page.ready && <p role="status">{t('nav.initializing')}</p>}
-                    {(page.error || page.stale) && (
+                    {(page.error || (page.stale && !page.loading)) && (
                       <p role={page.error ? 'alert' : 'status'}>
                         {page.error ?? t('nav.updated')}{' '}
                         <Button

@@ -27,6 +27,7 @@ export function createSidebarPagination(
     mutations = 0,
     initialised = false,
     touched = false,
+    refreshRows = false,
     refreshing: Promise<void> | undefined
   const snapshot = (): SidebarPaging => ({
     groups: groups.map(
@@ -104,10 +105,13 @@ export function createSidebarPagination(
     group.pending = undefined
     group.loading = false
   }
-  const refresh = (): Promise<void> => {
+  const refresh = (metadata = false): Promise<void> => {
+    refreshRows ||= metadata
     if (refreshing) return refreshing
     const connection = epoch,
-      mutation = mutations
+      mutation = mutations,
+      readRows = refreshRows
+    refreshRows = false
     loading = true
     error = undefined
     changed()
@@ -135,7 +139,15 @@ export function createSidebarPagination(
           const total = group.stale && group.items.length > 5 ? group.total : item.total
           delete group.initializationError
           Object.assign(group, item, { total })
-          if (group.opened && group.ready && !group.pending && group.items.length <= 5) reload.push(group)
+          // Revisions cover paging, not every metadata edit; focus/reconnect explicitly reread rows.
+          if (
+            group.opened &&
+            group.ready &&
+            !group.pending &&
+            (!group.loaded || readRows) &&
+            group.items.length <= 5
+          )
+            reload.push(group)
           return group
         })
         ready = summary.ready
@@ -158,7 +170,7 @@ export function createSidebarPagination(
           loading = false
           refreshing = undefined
           changed()
-          if (mutation !== mutations) void refresh()
+          if (mutation !== mutations || refreshRows) await refresh(readRows)
         }
       }
     })
@@ -183,6 +195,7 @@ export function createSidebarPagination(
       await refresh()
       const group = groups.find((item) => item.groupId === workspaceId)
       if (group) {
+        if (group.opened && group.loaded && !group.stale && !group.error && group.items.length <= 5) return
         group.opened = true
         invalidate(group)
         await load(group)
@@ -191,6 +204,7 @@ export function createSidebarPagination(
     reset() {
       epoch++
       refreshing = undefined
+      refreshRows = false
       loading = false
       for (const group of groups) {
         invalidate(group)
