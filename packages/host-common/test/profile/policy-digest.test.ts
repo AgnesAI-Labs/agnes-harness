@@ -8,9 +8,10 @@ const env: ResolveEnv = {
   agnesVersion: '0.1.0',
   now: '2026-09-07T00:00:00Z',
 }
-const builtin = (id: string) => ({
+const builtin = (_id: string) => ({
   version: '0.1.0',
-  integrity: `sha512-${id}`,
+  source: { type: 'builtin' as const, ref: 'builtin' },
+  integrity: 'builtin:0.1.0',
   trust: 'builtin' as const,
   enabled: true,
 })

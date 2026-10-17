@@ -54,9 +54,27 @@ const env = {
   now: '2026-09-07T00:00:00Z',
 }
 const lockPkgs = {
-  '@agnes/ai': { version: '0.1.0', integrity: 'sha512-a', trust: 'builtin' as const, enabled: true },
-  '@agnes/base': { version: '0.1.0', integrity: 'sha512-b', trust: 'builtin' as const, enabled: true },
-  '@agnes/code': { version: '0.1.0', integrity: 'sha512-c', trust: 'builtin' as const, enabled: true },
+  '@agnes/ai': {
+    version: '0.1.0',
+    source: { type: 'builtin' as const, ref: 'builtin' },
+    integrity: 'builtin:0.1.0',
+    trust: 'builtin' as const,
+    enabled: true,
+  },
+  '@agnes/base': {
+    version: '0.1.0',
+    source: { type: 'builtin' as const, ref: 'builtin' },
+    integrity: 'builtin:0.1.0',
+    trust: 'builtin' as const,
+    enabled: true,
+  },
+  '@agnes/code': {
+    version: '0.1.0',
+    source: { type: 'builtin' as const, ref: 'builtin' },
+    integrity: 'builtin:0.1.0',
+    trust: 'builtin' as const,
+    enabled: true,
+  },
 }
 const log = { debug() {}, info() {}, warn() {}, error() {} }
 const SEAM_KEYS = [

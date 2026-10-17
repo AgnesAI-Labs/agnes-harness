@@ -45,6 +45,7 @@ vi.mock('@agnes/host', async (original) => ({
               pkg.id,
               {
                 version: pkg.version,
+                source: { type: pkg.trust === 'builtin' ? 'builtin' : 'file', ref: pkg.source },
                 integrity: pkg.integrity,
                 trust: pkg.trust,
                 enabled: pkg.enabled,
@@ -110,7 +111,7 @@ it('loads zero-build loops and panels into isolated headless sessions and publis
           home,
           cwd: root,
           env: { HOME: root },
-          agnesVersion: '0.0.0',
+          agnesVersion: '0.1.0',
           log: () => {},
         },
       )
@@ -121,14 +122,14 @@ it('loads zero-build loops and panels into isolated headless sessions and publis
     const roots = localPluginRoots(home, root)
     const manager = createPackageManager({
       dataDir: dataDir(home),
-      agnesVersion: '0.0.0',
+      agnesVersion: '0.1.0',
       localPlugins: roots,
     })
     const reviewWorkspace = () =>
       manager.trustWorkspace(
         profileDir,
         root,
-        localWorkspaceTrustHash(roots, readLock(profileDir, { profile: 'local-dev', agnesVersion: '0.0.0' })),
+        localWorkspaceTrustHash(roots, readLock(profileDir, { profile: 'local-dev', agnesVersion: '0.1.0' })),
       )
     expect(initialHost.kernel.loops.catalog()).not.toContainEqual(
       expect.objectContaining({ id: 'student-loop' }),

@@ -194,9 +194,27 @@ describe('snapshotPolicy', () => {
 
   const resolvedLock: LockState = {
     packages: {
-      '@agnes/base': { version: '0.1.0', integrity: 'sha512-b', trust: 'builtin', enabled: true },
-      '@agnes/code': { version: '0.1.0', integrity: 'sha512-c', trust: 'builtin', enabled: true },
-      '@agnes/ai': { version: '0.1.0', integrity: 'sha512-a', trust: 'builtin', enabled: true },
+      '@agnes/base': {
+        version: '0.1.0',
+        source: { type: 'builtin' as const, ref: 'builtin' },
+        integrity: 'builtin:0.1.0',
+        trust: 'builtin',
+        enabled: true,
+      },
+      '@agnes/code': {
+        version: '0.1.0',
+        source: { type: 'builtin' as const, ref: 'builtin' },
+        integrity: 'builtin:0.1.0',
+        trust: 'builtin',
+        enabled: true,
+      },
+      '@agnes/ai': {
+        version: '0.1.0',
+        source: { type: 'builtin' as const, ref: 'builtin' },
+        integrity: 'builtin:0.1.0',
+        trust: 'builtin',
+        enabled: true,
+      },
     },
   }
 

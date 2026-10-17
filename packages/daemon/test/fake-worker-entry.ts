@@ -104,7 +104,13 @@ async function permissionFixture(dataDir: string): Promise<Partial<TestHostOptio
       packages: Object.fromEntries([
         ...['@agnes/ai', '@agnes/base', '@agnes/code'].map((id) => [
           id,
-          { version: '0.1.0', integrity: 'sha512-fixture', trust: 'builtin', enabled: true },
+          {
+            version: '0.1.0',
+            source: { type: 'builtin', ref: 'builtin' },
+            integrity: 'builtin:0.1.0',
+            trust: 'builtin',
+            enabled: true,
+          },
         ]),
         [
           packageId,

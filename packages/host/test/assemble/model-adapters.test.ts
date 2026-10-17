@@ -277,8 +277,12 @@ async function fixture(selected: string, missingCredential = false) {
           ['@agnes/ai', '@agnes/base', '@agnes/code', source.snapshot.packageId].map((id) => [
             id,
             {
-              version: '1.2.3',
-              integrity: `sha256-${'2'.repeat(64)}`,
+              version: id === source.snapshot.packageId ? '1.2.3' : '0.1.0',
+              source:
+                id === source.snapshot.packageId
+                  ? { type: 'file' as const, ref: 'file:fixture' }
+                  : { type: 'builtin' as const, ref: 'builtin' },
+              integrity: id === source.snapshot.packageId ? `sha256-${'2'.repeat(64)}` : 'builtin:0.1.0',
               trust: id === source.snapshot.packageId ? 'trusted' : 'builtin',
               enabled: true,
             },
