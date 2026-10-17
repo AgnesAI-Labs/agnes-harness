@@ -199,14 +199,20 @@ Every `agnes.plugins[].apiRange` and `@agnes/extension-api` dependency range mov
   relative to the session's `workspaceRoot` and `/`-separated, plus `total` (every path found,
   including those left out) and `truncated`. The built-in `ls`, `find` and `grep` return it beside
   their text, which is unchanged, and the model still sees only the text. A payload holds at most 100
-  paths; a path outside the workspace or longer than 1024 bytes is left out and counted in `total`.
-  `run_code` keeps returning these tools' text. A loop that tells payloads apart reads `schema`;
-  every other `structured` payload belongs to its tool.
+  paths, all of them shown in the text; a path outside the workspace, longer than 1024 bytes once
+  encoded as a JSON string or, where the separator is `/`, with a backslash in a name is left out and
+  counted in `total`. `truncated` is also true when the search was partial or the output guard cut
+  the text. A result with `isError` carries no payload. A `run_code` script gets the text of any
+  result whose `structured` has this schema, whichever tool returns it. A loop that tells payloads
+  apart reads `schema`; every other `structured` payload belongs to its tool. `workflowValue` from
+  `@agnes/plugin-runtime` returns this payload for an `ls`, `find` or `grep` result; it used to parse
+  their text as JSON, which throws for nearly every listing.
 - `LoopTurnView.toolMeta` and `LoopTurnView.disclosedTools`. `toolMeta[name]` (`LoopToolMeta`) gives
   `isReadOnly`, `isDestructive` and `isOpenWorld` from the static meta of every tool in the turn's
   catalog, and `offered`: whether a request that names the tool keeps it for the view's model (false
   for a tool hidden from the model, or a computer-use tool when the model takes no images).
-  `disclosedTools` lists the names a request without `tools` would send at this moment. Both are
+  `disclosedTools` lists the names a request without `tools` would send at this moment, in the order
+  it sends them. Both are
   optional, so a test double of the view keeps compiling; Core always fills them. The elements of
   `view.tools` are unchanged.
 

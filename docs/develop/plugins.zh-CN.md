@@ -136,7 +136,7 @@ Agent Loop 负责调度与自身检查点状态。通过 `@agnes/extension-api` 
 
 每一步显式返回 `outcome: 'running' | 'idle' | 'turn-ended' | 'parked'`；`phase` 仅用于展示。`until: 'turn-end'` 在首个轮次结束时停止；`until: 'idle'` 在正常完成后继续处理输入，直到无输入、挂起或其他结束原因。生产 runner 与 `driveLoop` testkit 采用相同规则。用 `ctx.events.finish(reason)` 结束轮次，并返回它给出的结果。关闭轮次的是 Core，不是 driver：`finish('completed')` 先经过所有 Loop 共用的停止门（`turn_stopping` 钩子、verifier 与 repair 决策）。停止门不放行时返回 `running`，原因已写入历史；再走一步（通常是一轮模型）之后才能再次请求完成。没有新的一步就再次请求，轮次以 `blocked`（`STOP_GATE_HELD`）结束，这对没有后续步骤可走的 Loop 是如实的结局。停止门需要询问人时返回 `parked`：Loop 在本轮的工作已经结束，答复到达后由 Core 结束轮次（批准则 `completed`，否则 `blocked`），不会再次执行 driver 的业务步骤。模型或工具端口打开的 step 同样是准入边：步数与额度预算、`before_step` 钩子在这里判定，被拒绝时 Core 结束轮次并抛出带 `detail.reason` 的 `E_BUDGET`。
 
-`ctx.input.claim('next-turn')` 打开或恢复轮次；轮次结束前重复调用返回当前输入。`claim('next-step')` 消费本轮 steer。输入含稳定 `id`、`turnId`、`kind`、`trust`、`actor` 与内容。`ctx.turn.view()` 返回独立且深度冻结的视图：压缩后的可见历史、本轮工具目录与 JSON schema、有效模型及能力、system/runtime 提示词与预算。执行仍受策略和审批约束。
+`ctx.input.claim('next-turn')` 打开或恢复轮次；轮次结束前重复调用返回当前输入。`claim('next-step')` 消费本轮 steer。输入含稳定 `id`、`turnId`、`kind`、`trust`、`actor` 与内容。`ctx.turn.view()` 返回独立且深度冻结的视图：压缩后的可见历史、本轮工具目录与 JSON schema、有效模型及能力、system/runtime 提示词与预算。视图还有 `toolMeta`，即目录里每个工具静态的只读、破坏性与开放世界事实，外加 `offered`（点名这个工具的请求是否会为当前模型保留它）；以及 `disclosedTools`，即此刻一个不带 `tools` 的请求会发送的名字。`disclosedTools` 的顺序就是请求发送它们的顺序。两个字段在类型上都是可选的，所以视图的测试替身可以不填；Core 总会填。执行仍受策略和审批约束。
 
 通过 `await ctx.prepareRequest({ system, messages, tools, sampling, invocationId, tailNote })` 准备请求，再交给 `ctx.model.stream(request, signal)` 或 `complete(request, signal)`。省略 messages 时使用可见历史；tools 指定冻结目录中的精确工具名（每次请求传同一组名字，目录就保持稳定），`tailNote` 在请求末尾加一条尾注，见[从循环塑造请求](#从循环塑造请求)。Core 负责 route、contract、哈希派生、媒体校验和本轮身份绑定；作者不填写 `contractId`、`derivedHash` 或 `route`。所有循环的模型/工具端口都经过 Core 的最大步数、请求上限及 quote/deny 准入。批量结果保持输入顺序，策略决定可并行的调用。
 
@@ -189,6 +189,8 @@ const request = await ctx.prepareRequest({ tools: toolNames, invocationId })
 ```
 
 `'read'` 代表你自己的工具。`ctx.turn.view()` 列出本回合的整个目录，包括延迟工具，所以请挑选要发送的名字，不要全部传入。
+
+想提供默认循环提供的那些工具，就从 `view.disclosedTools` 出发，而不是自己列一份：它已经略去了尚未加载的延迟工具、对模型不可见的工具，以及模型不接受图片时的 computer-use 工具。模型用 `tool_describe` 加载一个延迟工具后，它会多出这个名字；把新名字加进你的那组名字，工具字节改变一次。内置的 `ls`、`find` 和 `grep` 还会在 `structured` 里返回它们显示的路径（`ToolPathReferences`，schema 为 `agh.path-references/1`），循环不必解析文本就能把它们作为目标提供；模型只看到文本。任何工具的结果只要 `structured` 带这个 schema，`run_code` 脚本拿到的就是它的文本。列表的限制见[默认工具](../reference/default-tools.zh-CN.md#path-references)。
 
 名字不在本回合目录里时，`prepareRequest` 抛出 `E_ENVELOPE`。目录是冻结的，所以回合进行中被注销的工具仍留在本回合的目录里，请求还可以点它的名字。这个错误出现在之后的回合里，或回合进行到一半时进程重启之后，因为那时会重新取得目录。循环要自己处理它，例如从 `ctx.turn.view()` 重新选名字。名字在目录里、但不向模型提供的工具会被请求略去，例如标记为对模型不可见的工具，或模型不接受图片时的 computer-use 工具。回合中途由模型通过 `tool_describe` 加载的工具，不会加进你已固定名字的请求；想让它被提供，就把它的名字加进这组名字，这会让字节改变一次。这条保证以同一个槽位和同一个模型为前提：computer-use 过滤取决于该槽位的模型，换模型可能改变列表。
 
