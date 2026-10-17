@@ -1,5 +1,5 @@
 import { basename, relative, sep } from 'node:path'
-import type { ToolContext, ToolPathReferences, ToolResult } from '@agnes/extension-api'
+import type { ToolContext, ToolResult } from '@agnes/extension-api'
 import { defineTool } from '@agnes/plugin-runtime'
 import { guardedResult, refBlock, spillLocator } from '../../../tools-core/src/guards/output.js'
 import { normalizeWorkspacePath } from '../../../tools-core/src/paths.js'
@@ -7,7 +7,7 @@ import { MAX_ARTIFACT_READ_BYTES } from '../../../tools-core/src/tools/read.js'
 import { FindParams, GrepParams } from '../../../tools-core/src/tools/schemas.js'
 import { findTool as fallbackFind } from './find.js'
 import { grepTool as artifactGrep } from './grep.js'
-import { type FoundPath, pathReferences } from './references.js'
+import { type FoundPath, type Row, referencedResult } from './references.js'
 import { ripgrepPath } from './rg-path.js'
 import {
   allowed,
@@ -76,14 +76,18 @@ async function result(
   lines: string[],
   limit: number,
   notes: string[],
-  structured?: ToolPathReferences,
+  refs?: { found: FoundPath[]; shown: number; partial: boolean },
 ): Promise<ToolResult> {
-  const extra = structured === undefined ? {} : { structured }
+  // Every text below starts with the rows the result shows, which is what the references are of.
+  const guard = (text: string) =>
+    refs === undefined
+      ? guardedResult(ctx, text)
+      : referencedResult(ctx, text, lines.slice(0, limit), refs.found, refs.shown, refs.partial)
   const full = [...(lines.length ? lines : ['no matches']), ...notes].join('\n')
   const bytes = new TextEncoder().encode(full)
   if (bytes.length > MAX_ARTIFACT_READ_BYTES)
     return toolError('search output exceeds the 32 MiB artifact limit; narrow the search')
-  if (lines.length <= limit) return { ...(await guardedResult(ctx, full)), ...extra }
+  if (lines.length <= limit) return guard(full)
   // Always spill on the caller's row limit, even if the byte guard would allow all rows.
   try {
     const ref = await ctx.artifacts.put(bytes, { mime: 'text/plain' })
@@ -92,25 +96,18 @@ async function result(
       `[limit ${limit} reached; full output stored at ${spillLocator(ref)}; use read with that path and offset/limit]`,
       ...notes,
     ].join('\n')
-    const guarded = await guardedResult(ctx, preview)
+    const guarded = await guard(preview)
     return {
       ...guarded,
       content: [...guarded.content, refBlock(ref)],
       details: { matches: lines.length, artifact: ref },
-      ...extra,
     }
   } catch {
-    return {
-      ...(await guardedResult(
-        ctx,
-        [
-          ...lines.slice(0, limit),
-          `[limit ${limit} reached; full output could not be stored]`,
-          ...notes,
-        ].join('\n'),
-      )),
-      ...extra,
-    }
+    return guard(
+      [...lines.slice(0, limit), `[limit ${limit} reached; full output could not be stored]`, ...notes].join(
+        '\n',
+      ),
+    )
   }
 }
 
@@ -133,9 +130,11 @@ export const ripgrepFindTool = defineTool({
         .sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0))
       const lines = matched.map((p) => p.rel)
       const limit = args.limit ?? 1000
-      const found = matched.map((p): FoundPath => ({ abs: p.abs, kind: 'file' }))
-      const references = pathReferences(ctx, found, Math.min(found.length, limit), listing.partial)
-      return result(ctx, lines, limit, listing.notes, references)
+      const found = matched.map(
+        (p, row): FoundPath => ({ abs: p.abs, kind: 'file', rows: [{ row, label: p.rel.length }] }),
+      )
+      const shown = Math.min(found.length, limit)
+      return result(ctx, lines, limit, listing.notes, { found, shown, partial: listing.partial })
     } catch (e) {
       if (unavailable(e)) return fallbackFind.execute(args, ctx)
       return toolError(`find failed: ${String(e)}`)
@@ -161,8 +160,8 @@ export const ripgrepGrepTool = defineTool({
         (p) => listing.namedFile || !glob || glob.test(searchRelative(root, p)),
       )
       const lines: string[] = []
-      // Each file with a match, once, in the order first seen, with the row its first match is on.
-      const firstMatch = new Map<string, number>()
+      // Each file with a match, once, in the order first seen, with the rows its matches are on.
+      const matchRows = new Map<string, Row[]>()
       let captured = 0,
         binary = 0,
         failedSearch = false,
@@ -207,10 +206,16 @@ export const ripgrepGrepTool = defineTool({
           const text = item.data.lines?.text
           if (!p || text === undefined || !batch.includes(p)) continue
           const separator = item.type === 'match' ? ':' : '-'
-          const line = `${searchRelative(root, p)}${separator}${item.data.line_number}${separator}${text.replace(/\r?\n$/, '')}`
+          const name = searchRelative(root, p)
+          const line = `${name}${separator}${item.data.line_number}${separator}${text.replace(/\r?\n$/, '')}`
           captured += Buffer.byteLength(line, 'utf8')
           if (captured > 4 * 1024 * 1024) break
-          if (item.type === 'match' && !firstMatch.has(p)) firstMatch.set(p, lines.length)
+          if (item.type === 'match') {
+            const row = { row: lines.length, label: name.length + 1 }
+            const rows = matchRows.get(p)
+            if (rows) rows.push(row)
+            else matchRows.set(p, [row])
+          }
           lines.push(line)
         }
         if (captured > 4 * 1024 * 1024) {
@@ -222,14 +227,14 @@ export const ripgrepGrepTool = defineTool({
       const failed = !lines.length && (failedSearch || (binary > 0 && binary === paths.length))
       const limit = args.limit ?? 100
       partial ||= captured > 4 * 1024 * 1024 || failedSearch || binary > 0
-      const found = [...firstMatch.keys()].map((abs): FoundPath => ({ abs, kind: 'file' }))
-      const shown = [...firstMatch.values()].filter((row) => row < limit).length
+      const found = [...matchRows].map(([abs, rows]): FoundPath => ({ abs, kind: 'file', rows }))
+      const shown = found.filter((f) => (f.rows?.[0]?.row ?? limit) < limit).length
       const response = await result(
         ctx,
         failed ? ['nothing could be searched'] : lines,
         limit,
         listing.notes,
-        failed ? undefined : pathReferences(ctx, found, shown, partial),
+        failed ? undefined : { found, shown, partial },
       )
       return failed ? { ...response, isError: true } : response
     } catch (e) {

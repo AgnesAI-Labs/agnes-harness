@@ -2,6 +2,8 @@ import { boundToolResult, TOOL_RESULT_LIMITS } from '@agnes/core-effects/effects
 import { TOOL_PATH_REFERENCES, type ToolResult } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
+import { MAX_READ_BYTES } from '../../tools-core/src/tools/read.js'
+import { findTool } from '../src/tools/find.js'
 import { grepTool } from '../src/tools/grep.js'
 import { lsTool } from '../src/tools/ls.js'
 import { pathReferences, STRUCTURED_MAX_BYTES } from '../src/tools/references.js'
@@ -299,5 +301,128 @@ describe('find and grep references', () => {
     expect(missing.structured).toBeUndefined()
     const artifact = await grepTool.execute({ path: 'artifact://0123456789ab?size=3', pattern: 'x' }, ctxOf())
     expect(artifact.structured).toBeUndefined()
+  })
+})
+
+/** A context where the bundled search executable cannot run, so the filesystem search answers. */
+function fallbackCtx(o: Parameters<typeof fakeToolContext>[0]) {
+  const ctx = ctxOf(o)
+  ctx.exec = async () => {
+    throw Object.assign(new Error('no process backend'), { code: 'SANDBOX_UNAVAILABLE' })
+  }
+  return ctx
+}
+type Refs = { references: Array<{ path: string }>; total: number; truncated: boolean }
+const pad = (i: number) => String(i).padStart(3, '0')
+const manyFiles = (n: number, content = '') =>
+  Object.fromEntries(Array.from({ length: n }, (_, i) => [`entry-${pad(i)}.txt`, content]))
+
+describe('references of a text the output guard cut', () => {
+  // A small output limit cuts the text to its first 512 and last 128 bytes.
+  const small = { outputMaxBytes: 1024 }
+  /** Every referenced path is shown in the text, the middle of the list is not referenced, and the cut is reported. */
+  function expectCut(r: ToolResult, total: number) {
+    const s = r.structured as Refs
+    expect(textOf(r)).toContain('[truncated: ')
+    expect(s).toMatchObject({ total, truncated: true })
+    expect(s.references.length).toBeGreaterThan(0)
+    expect(s.references.length).toBeLessThan(total)
+    for (const ref of s.references) expect(textOf(r)).toContain(ref.path.split('/').pop())
+    expect(s.references.map((x) => x.path)).not.toContain('entry-050.txt')
+    return s
+  }
+
+  it('ls lists only the entries whose whole name is in the kept head or tail', async () => {
+    const r = await lsTool.execute({}, ctxOf({ ...small, files: manyFiles(100) }))
+    const s = expectCut(r, 100)
+    // Rows are 14 bytes apart: rows 0-35 end inside the first 512 bytes, rows 91-99 start inside the last 128.
+    const kept = [...Array.from({ length: 36 }, (_, i) => i), ...Array.from({ length: 9 }, (_, i) => 91 + i)]
+    expect(s.references.map((x) => x.path)).toEqual(kept.map((i) => `entry-${pad(i)}.txt`))
+  })
+  it('find marks a cut text truncated', async () => {
+    const ctx = rgCtx(manyFiles(100))
+    const r = await ripgrepFindTool.execute({ pattern: '*.txt' }, { ...ctx, outputMaxBytes: 1024 })
+    expectCut(r, 100)
+  })
+  it('grep marks a cut text truncated', async () => {
+    const ctx = rgCtx(manyFiles(100, 'hit'), (paths) =>
+      paths.map((p) => match(p, 1, `hit ${'x'.repeat(20)}`)),
+    )
+    const r = await ripgrepGrepTool.execute({ pattern: 'hit' }, { ...ctx, outputMaxBytes: 1024 })
+    expectCut(r, 100)
+  })
+  it('the filesystem find and grep mark a cut text truncated', async () => {
+    const find = await findTool.execute(
+      { pattern: '*.txt' },
+      fallbackCtx({ ...small, files: manyFiles(100) }),
+    )
+    expectCut(find, 100)
+    const grep = await grepTool.execute(
+      { pattern: 'hit' },
+      fallbackCtx({ ...small, files: manyFiles(100, 'hit') }),
+    )
+    expectCut(grep, 100)
+  })
+})
+
+describe('find and grep references at the edges', () => {
+  it('references only the files the shown rows of grep match in', async () => {
+    const ctx = rgCtx({ 'a.ts': 'x', 'b.ts': 'x', 'c.ts': 'x' }, (paths) =>
+      paths.map((p) => match(p, 1, 'x')),
+    )
+    const r = await ripgrepGrepTool.execute({ pattern: 'x', limit: 2 }, ctx)
+    expect(r.structured).toEqual({
+      schema: TOOL_PATH_REFERENCES,
+      references: [
+        { kind: 'file', path: 'a.ts' },
+        { kind: 'file', path: 'b.ts' },
+      ],
+      total: 3,
+      truncated: true,
+    })
+  })
+  it('counts a file whose name holds a backslash in the filesystem search but does not list it', async () => {
+    const ctx = fallbackCtx({ files: { 'a\\b': 'hit', 'c.ts': 'hit' } })
+    const expected = {
+      schema: TOOL_PATH_REFERENCES,
+      references: [{ kind: 'file', path: 'c.ts' }],
+      total: 2,
+      truncated: true,
+    }
+    const grep = await grepTool.execute({ pattern: 'hit' }, ctx)
+    expect(textOf(grep)).toContain('a\\b:1:hit')
+    expect(grep.structured).toEqual(expected)
+    expect((await findTool.execute({ pattern: '*' }, ctx)).structured).toEqual(expected)
+  })
+  it('marks the filesystem search partial at the limit and over files it passed by', async () => {
+    const two = fallbackCtx({ files: { 'a.ts': 'hit', 'b.ts': 'hit' } })
+    expect((await findTool.execute({ pattern: '*.ts', limit: 1 }, two)).structured).toEqual({
+      schema: TOOL_PATH_REFERENCES,
+      references: [{ kind: 'file', path: 'a.ts' }],
+      total: 1,
+      truncated: true,
+    })
+    expect((await grepTool.execute({ pattern: 'hit', limit: 1 }, two)).structured).toMatchObject({
+      references: [{ path: 'a.ts' }],
+      total: 1,
+      truncated: true,
+    })
+    const binary = fallbackCtx({ files: { 'a.ts': 'hit', 'b.bin': 'hit\0' } })
+    expect((await grepTool.execute({ pattern: 'hit' }, binary)).structured).toMatchObject({
+      references: [{ path: 'a.ts' }],
+      total: 1,
+      truncated: true,
+    })
+    const oversize = fallbackCtx({ files: { 'a.ts': 'hit', 'big.txt': new Uint8Array(MAX_READ_BYTES + 1) } })
+    expect((await grepTool.execute({ pattern: 'hit' }, oversize)).structured).toMatchObject({
+      references: [{ path: 'a.ts' }],
+      total: 1,
+      truncated: true,
+    })
+    expect(
+      (await grepTool.execute({ pattern: 'hit' }, fallbackCtx({ files: { 'a.ts': 'hit' } }))).structured,
+    ).toMatchObject({
+      truncated: false,
+    })
   })
 })

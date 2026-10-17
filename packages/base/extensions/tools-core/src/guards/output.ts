@@ -34,7 +34,13 @@ export function outputLimits(maxBytes: number): OutputLimits {
 /** The limits of a deployment that set nothing. */
 export const OUTPUT_LIMITS = outputLimits(DEFAULT_OUTPUT_MAX_BYTES)
 
-export type GuardedOutput = { text: string; ref?: ArtifactRef; truncated: boolean }
+export type GuardedOutput = {
+  text: string
+  ref?: ArtifactRef
+  truncated: boolean
+  /** When the text was cut: how many UTF-16 code units of it are kept from its start and from its end. */
+  kept?: { head: number; tail: number }
+}
 
 // The message in a store-failure note comes from outside this package — an artifact backend can
 // hand back a whole HTTP response body or a stack trace — and the note is the one part of a guarded
@@ -172,9 +178,11 @@ export async function guardOutput(
   // duplicated — longer than what it replaced.
   const tail = cutTail(text, Math.max(limits.headBytes, bytes - limits.tailBytes))
   const note = `\n[truncated: ${bytes} bytes, ${lines} lines; over the ${reason(bytes, lines, limits)}; ${stored}]\n`
+  // Decoding keeps the length in code units, a lone surrogate included, so these are offsets into `text`.
+  const kept = { head: head.length, tail: tail.length }
   return ref === undefined
-    ? { text: head + note + tail, truncated: true }
-    : { text: head + note + tail, ref, truncated: true }
+    ? { text: head + note + tail, truncated: true, kept }
+    : { text: head + note + tail, ref, truncated: true, kept }
 }
 
 export function refBlock(ref: ArtifactRef, mime?: string): { type: 'ref'; ref: ArtifactRef; mime: string } {

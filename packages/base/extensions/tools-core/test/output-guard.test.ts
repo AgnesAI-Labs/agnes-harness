@@ -207,6 +207,17 @@ describe('guardOutput', () => {
     expect(r.text).toContain('over the 16384-byte limit')
     expect(callOutputLimitBytes(ctx)).toBe(4 * 16384)
   })
+
+  it('says how much of the start and the end of a cut text it kept', async () => {
+    const ctx = ctxOf({ outputMaxBytes: 16384 })
+    const text = `${'中'.repeat(3000)}${'m'.repeat(9000)}${'t'.repeat(2048)}`
+    const r = await guardOutput(ctx, text)
+    const kept = r.kept as { head: number; tail: number }
+    expect(r.text.startsWith(text.slice(0, kept.head))).toBe(true)
+    expect(r.text.endsWith(text.slice(text.length - kept.tail))).toBe(true)
+    expect(kept).toEqual({ head: 2730, tail: 2048 })
+    expect((await guardOutput(ctx, 'short')).kept).toBeUndefined()
+  })
 })
 
 describe('refBlock', () => {

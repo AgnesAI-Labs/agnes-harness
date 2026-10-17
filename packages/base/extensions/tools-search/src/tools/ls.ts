@@ -1,9 +1,8 @@
 import type { FsEntry, ToolResult } from '@agnes/extension-api'
 import { defineTool } from '@agnes/plugin-runtime'
-import { guardedResult } from '../../../tools-core/src/guards/output.js'
 import { normalizeWorkspacePath } from '../../../tools-core/src/paths.js'
 import { LsParams } from '../../../tools-core/src/tools/schemas.js'
-import { type FoundPath, pathReferences } from './references.js'
+import { type FoundPath, referencedResult } from './references.js'
 import { allowed, SEARCH_META, searchPathError, toolError } from './walk.js'
 
 const DEFAULT_LIMIT = 500
@@ -39,14 +38,22 @@ export const lsTool = defineTool({
     if (kept.length > shown) lines.push(`[${kept.length - shown} more]`)
     const hidden = entries.length - kept.length
     if (hidden > 0) lines.push(`[${hidden} entries not listed: denied by policy]`)
+    const rows = lines.slice(0, shown)
     const found = kept.map(
-      (e): FoundPath => ({ abs: `${abs}/${e.name}`, kind: e.kind === 'dir' ? 'directory' : e.kind }),
+      (e, i): FoundPath => ({
+        abs: `${abs}/${e.name}`,
+        kind: e.kind === 'dir' ? 'directory' : e.kind,
+        ...(i < shown ? { rows: [{ row: i, label: (rows[i] as string).length }] } : {}),
+      }),
     )
     // An empty answer is indistinguishable from a broken tool, so an empty directory says so.
-    const result = await guardedResult(ctx, lines.length > 0 ? lines.join('\n') : '(no entries)')
-    // When the guard cuts the text to a head and a tail, the references still name the entries from
-    // the cut middle. At the default output limit that only happens with more than 100 entries, and
-    // then `truncated` is already true; a deployment that sets a lower limit can cut a shorter list.
-    return { ...result, structured: pathReferences(ctx, found, shown, false) }
+    return referencedResult(
+      ctx,
+      lines.length > 0 ? lines.join('\n') : '(no entries)',
+      rows,
+      found,
+      shown,
+      false,
+    )
   },
 })

@@ -1,8 +1,8 @@
+import { isAbsolute, join } from 'node:path'
 import { defineTool } from '@agnes/plugin-runtime'
 import { guardedResult } from '../../../tools-core/src/guards/output.js'
-import { normalizeWorkspacePath } from '../../../tools-core/src/paths.js'
 import { FindParams } from '../../../tools-core/src/tools/schemas.js'
-import { type FoundPath, pathReferences } from './references.js'
+import { type FoundPath, referencedResult } from './references.js'
 import { globToRegExp, newWalkReport, SEARCH_META, searchPathError, walk, walkNotes } from './walk.js'
 
 /** Filesystem-only fallback when the Host cannot launch the bundled search executable. */
@@ -28,21 +28,17 @@ export const findTool = defineTool({
         break
       }
       lines.push(file.rel)
-      found.push({ abs: normalizeWorkspacePath(file.abs, ctx.cwd).abs, kind: 'file' })
+      // Resolved without the workspace fold, which would read a backslash in a name as a separator.
+      const abs = isAbsolute(file.abs) ? file.abs : join(ctx.cwd, file.abs)
+      found.push({ abs, kind: 'file', rows: [{ row: lines.length - 1, label: file.rel.length }] })
     }
     const failed = !lines.length && report.unreadable > 0
-    return {
-      ...(await guardedResult(
-        ctx,
-        [
-          ...(lines.length ? lines : [failed ? 'nothing could be searched' : 'no matches']),
-          ...walkNotes(report, 50000),
-          ...(atLimit ? [`[limit ${limit} reached; narrow the search]`] : []),
-        ].join('\n'),
-      )),
-      ...(failed
-        ? { isError: true }
-        : { structured: pathReferences(ctx, found, found.length, atLimit || report.truncated) }),
-    }
+    const text = [
+      ...(lines.length ? lines : [failed ? 'nothing could be searched' : 'no matches']),
+      ...walkNotes(report, 50000),
+      ...(atLimit ? [`[limit ${limit} reached; narrow the search]`] : []),
+    ].join('\n')
+    if (failed) return { ...(await guardedResult(ctx, text)), isError: true }
+    return referencedResult(ctx, text, lines, found, found.length, atLimit || report.truncated)
   },
 })
