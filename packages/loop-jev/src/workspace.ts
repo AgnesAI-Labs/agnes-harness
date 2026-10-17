@@ -1,5 +1,5 @@
 // Portions adapted from JevLoop (https://github.com/parkavenue9639/jevloop, 61e7994), Apache-2.0; modified.
-import { referencePaths, updateViews } from './observations.js'
+import { halveEvidence, referencePaths, updateViews } from './observations.js'
 import type {
   ContentBlock,
   HistoryEntry,
@@ -106,7 +106,8 @@ export function fileActivity(ws: Workspace): {
 } {
   const readCurrent = new Set<string>()
   const changedUnread = new Set<string>()
-  const readCounts: Record<string, number> = {}
+  // No prototype, so a file named like an Object.prototype key (`constructor`, `__proto__`) counts as any other.
+  const readCounts: Record<string, number> = Object.create(null)
   let mayHaveChanged = false
 
   for (const entry of currentTurn(ws)) {
@@ -133,7 +134,7 @@ export function fileActivity(ws: Workspace): {
     let read = entry.read_files ?? []
     if (read.length === 0 && entry.operation === 'read') read = targetPaths(entry)
     for (const path of read) {
-      readCounts[path] = (readCounts[path] ?? 0) + 1
+      readCounts[path] = Object.hasOwn(readCounts, path) ? (readCounts[path] ?? 0) + 1 : 1
       readCurrent.add(path)
       changedUnread.delete(path)
     }
@@ -153,8 +154,7 @@ function targetPaths(entry: HistoryEntry): string[] {
 /** Copies of the views; from level 1 each evidence keeps its first half, from level 2 the oldest view leaves. */
 function stateViews(views: readonly ObservationView[], level: number): JsonValue[] {
   const kept = views.slice(level >= 2 ? 1 : 0).map((view) => structuredClone(view))
-  if (level >= 1)
-    for (const view of kept) view.evidence = clip(view.evidence, Math.ceil(view.evidence.length / 2))
+  if (level >= 1) for (const view of kept) halveEvidence(view)
   return kept
 }
 

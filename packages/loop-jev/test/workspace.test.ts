@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { normalizeView } from '../src/observations.js'
-import type { HistoryEntry, Observation } from '../src/types.js'
+import type { HistoryEntry, Observation, ObservationView } from '../src/types.js'
 import {
   addNote,
   buildState,
@@ -220,10 +220,37 @@ describe('views in the workspace', () => {
     const ws = emptyWorkspace()
     recordStep(ws, withView(entry(), viewOf('ls', '.', [], 'x'.repeat(1000))))
     recordStep(ws, withView(entry(), viewOf('find', 'src', [], 'y'.repeat(1000))))
-    const one = buildState(ws, 1, surface).observation_views as Array<{ evidence: string }>
+    const one = buildState(ws, 1, surface).observation_views as ObservationView[]
     expect(one.map((v) => v.evidence.length)).toEqual([500, 500])
-    const two = buildState(ws, 2, surface).observation_views as Array<{ kind: string }>
-    expect(two.map((v) => v.kind)).toEqual(['find'])
+    expect(one.map((v) => v.truncated)).toEqual([true, true])
+    const two = buildState(ws, 2, surface).observation_views as ObservationView[]
+    expect(two.map((v) => [v.kind, v.evidence.length, v.truncated])).toEqual([['find', 500, true]])
+    const three = buildState(ws, 3, surface).observation_views as ObservationView[]
+    expect(three.map((v) => v.evidence.length)).toEqual([500])
+    expect(ws.views.map((v) => [v.evidence.length, v.truncated])).toEqual([
+      [1000, false],
+      [1000, false],
+    ])
+  })
+  it('rounds the kept half up, keeps one character whole and never splits a surrogate pair', () => {
+    const ws = emptyWorkspace()
+    recordStep(ws, withView(entry(), viewOf('ls', 'odd', [], 'x'.repeat(1001))))
+    recordStep(ws, withView(entry(), viewOf('ls', 'one', [], 'z')))
+    recordStep(ws, withView(entry(), viewOf('ls', 'pairs', [], '😀😀😀')))
+    const views = buildState(ws, 1, surface).observation_views as ObservationView[]
+    expect(views.map((v) => [v.evidence, v.truncated])).toEqual([
+      ['x'.repeat(501), true],
+      ['z', false],
+      ['😀', true],
+    ])
+  })
+  it('keeps the files of the dropped oldest view among the known files at level 2', () => {
+    const ws = emptyWorkspace()
+    recordStep(ws, withView(entry({ operation: 'ls' }), viewOf('ls', '.', ['a.md'])))
+    recordStep(ws, withView(entry({ operation: 'find' }), viewOf('find', 'src', ['src/c.ts'])))
+    const state = buildState(ws, 2, surface)
+    expect((state.observation_views as ObservationView[]).map((v) => v.kind)).toEqual(['find'])
+    expect(state.known_files).toEqual(['src/c.ts', 'a.md'])
   })
   it('replaces the view of a file read again with another range', () => {
     const ws = emptyWorkspace()
@@ -271,14 +298,50 @@ describe('freshness', () => {
     )
     expect(fileActivity(ws)).toMatchObject({ read_current: ['a'], files_may_have_changed: false })
   })
-  it('keeps reads current after a read whose outcome is unknown', () => {
+  it.each(['ls', 'read', 'grep', 'find'])('keeps reads current after a %s whose outcome is unknown', (op) => {
     const ws = emptyWorkspace()
     recordStep(ws, entry({ operation: 'read', target: 'a', read_files: ['a'] }))
     recordStep(
       ws,
-      entry({ operation: 'read', target: 'b', status: 'failed', disposition: 'UNKNOWN', dispatched: true }),
+      entry({ operation: op, target: 'b', status: 'failed', disposition: 'UNKNOWN', dispatched: true }),
     )
-    expect(fileActivity(ws).read_current).toEqual(['a'])
+    expect(fileActivity(ws)).toMatchObject({ read_current: ['a'], files_may_have_changed: false })
+  })
+  it('marks every file of an edit whose outcome is unknown as changed', () => {
+    const ws = emptyWorkspace()
+    recordStep(ws, entry({ operation: 'read', target: ['a', 'b', 'c'], read_files: ['a', 'b', 'c'] }))
+    recordStep(
+      ws,
+      entry({
+        operation: 'edit',
+        target: ['a', 'b'],
+        status: 'failed',
+        disposition: 'UNKNOWN',
+        dispatched: true,
+      }),
+    )
+    expect(fileActivity(ws)).toMatchObject({
+      read_current: [],
+      changed_unread: ['a', 'b'],
+      files_may_have_changed: true,
+    })
+  })
+  it('counts reads of files named like object prototype keys', () => {
+    const ws = emptyWorkspace()
+    const names = ['constructor', 'toString', '__proto__', 'hasOwnProperty']
+    recordStep(ws, entry({ operation: 'read', target: names, read_files: names }))
+    recordStep(ws, entry({ operation: 'read', target: 'constructor', read_files: ['constructor'] }))
+    const counts = fileActivity(ws).read_counts
+    expect(Object.keys(counts)).toEqual(names)
+    expect(Object.entries(counts)).toEqual([
+      ['constructor', 2],
+      ['toString', 1],
+      ['__proto__', 1],
+      ['hasOwnProperty', 1],
+    ])
+    expect(JSON.parse(JSON.stringify(buildState(ws, 0, surface).file_activity)).read_counts).toEqual(
+      JSON.parse('{"constructor":2,"toString":1,"__proto__":1,"hasOwnProperty":1}'),
+    )
   })
   it('marks the file of a write whose outcome is unknown as changed', () => {
     const ws = emptyWorkspace()

@@ -162,6 +162,19 @@ export function updateViews(
   return views
 }
 
+/**
+ * Cuts the evidence of `view` to its first half (rounded up), never inside a surrogate pair, and
+ * marks the view partial when that shortened it. Changes `view` in place.
+ */
+export function halveEvidence(view: ObservationView): void {
+  const { evidence } = view
+  let keep = Math.ceil(evidence.length / 2)
+  if (keep < evidence.length && (evidence.charCodeAt(keep - 1) & 0xfc00) === 0xd800) keep--
+  if (keep >= evidence.length) return
+  view.evidence = evidence.slice(0, keep)
+  view.truncated = true
+}
+
 /** Paths of `kind`, newest view first, deduplicated, at most the cap of that kind. */
 export function referencePaths(views: readonly ObservationView[], kind: ReferenceKind): string[] {
   const result: string[] = []

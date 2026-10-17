@@ -321,6 +321,8 @@ describe('checkpoints with observations', () => {
     expect(again.codecVersion).toBe(1)
     expect(parseJevState(codec.decode(again) as never)).toEqual(decoded)
   })
+  // A canary: a realistic worst case that fits with under 1 KiB to spare, so a new per-entry field
+  // or a larger view bound fails here first and the shrink order must be revisited.
   it('stays within the checkpoint size with four full views and a 30-step turn', () => {
     const s = initialState()
     s.workspace.goal = '目标'.repeat(2000)
@@ -361,17 +363,44 @@ describe('checkpoints with observations', () => {
           operation: 'read',
           callId: `c${i}`,
           scope: `f${i}.ts`,
-          evidence: '证'.repeat(5000),
+          evidence: '证'.repeat(1599),
           references: [],
           truncated: false,
         }),
       )
     expect(utf8Bytes(JSON.stringify(s))).toBeGreaterThan(CHECKPOINT_MAX_BYTES)
     const out = encodeState(s).state as unknown as typeof s
-    expect(out.workspace.views.map((v) => v.evidence.length)).toEqual([800, 800, 800, 800])
+    expect(out.workspace.views.map((v) => [v.evidence.length, v.truncated])).toEqual(
+      Array.from({ length: 4 }, () => [800, true]),
+    )
     expect(out.workspace.previousAnswer).toHaveLength(4000)
     expect(out.workspace.goal).toHaveLength(12000)
-    expect(s.workspace.views[0]?.evidence).toHaveLength(1600)
+    expect(s.workspace.views.map((v) => [v.evidence.length, v.truncated])).toEqual(
+      Array.from({ length: 4 }, () => [1599, false]),
+    )
+  })
+  it('drops prior-turn history before it halves view evidence', () => {
+    const s = initialState()
+    for (let i = 0; i < 60; i++) s.workspace.history.push(big(i))
+    s.workspace.turnStart = 60
+    for (let i = 0; i < 4; i++)
+      s.workspace.views.push(
+        normalizeView({
+          operation: 'read',
+          callId: `c${i}`,
+          scope: `f${i}.ts`,
+          evidence: '证'.repeat(1600),
+          references: [],
+          truncated: false,
+        }),
+      )
+    expect(utf8Bytes(JSON.stringify(s))).toBeGreaterThan(CHECKPOINT_MAX_BYTES)
+    const out = encodeState(s).state as unknown as typeof s
+    expect(out.workspace.history.length).toBeLessThan(60)
+    expect(out.workspace.history.length).toBe(out.workspace.turnStart)
+    expect(out.workspace.views.map((v) => [v.evidence.length, v.truncated])).toEqual(
+      Array.from({ length: 4 }, () => [1600, false]),
+    )
   })
   it('round-trips a view, a batch decision and the new consumed roles', () => {
     const s = initialState()

@@ -1,5 +1,5 @@
 import type { LoopCheckpoint, LoopCheckpointCodec } from '@agnes/extension-api'
-import { DIRECTORY_REF_CAP, FILE_REF_CAP, VIEW_CAP } from './observations.js'
+import { DIRECTORY_REF_CAP, FILE_REF_CAP, halveEvidence, VIEW_CAP } from './observations.js'
 import type { Counters, JevState, JsonValue } from './types.js'
 import { clip, tail, utf8Bytes } from './util.js'
 
@@ -410,8 +410,9 @@ const sizeOf = (state: JevState): number => utf8Bytes(JSON.stringify(state))
  * the command and output excerpts of every history entry but the last. It never throws and never
  * drops current-turn entries or views, so the result can still be larger when the fields it does
  * not shrink are large: `cur.llm.note`, `workspace.answer`, `workspace.notes`,
- * `cur.calls[].content` and `workspace.views` (kept to the view caps by `updateViews`), which the
- * driver is responsible for bounding. The argument is not changed.
+ * `cur.calls[].content` and `workspace.views`, which the driver is responsible for bounding (views
+ * through `updateViews` when they are recorded; decoding checks only the number of views and the
+ * references per view). The argument is not changed.
  */
 export function encodeState(state: JevState): LoopCheckpoint {
   const next = structuredClone(state)
@@ -420,8 +421,7 @@ export function encodeState(state: JevState): LoopCheckpoint {
     w.history.shift()
     w.turnStart--
   }
-  if (sizeOf(next) > CHECKPOINT_MAX_BYTES)
-    for (const view of w.views) view.evidence = clip(view.evidence, Math.ceil(view.evidence.length / 2))
+  if (sizeOf(next) > CHECKPOINT_MAX_BYTES) for (const view of w.views) halveEvidence(view)
   if (sizeOf(next) > CHECKPOINT_MAX_BYTES) w.previousAnswer = tail(w.previousAnswer, 1000)
   if (sizeOf(next) > CHECKPOINT_MAX_BYTES && w.goal.length > 4003)
     w.goal = `${clip(w.goal, 2000)}\n…\n${tail(w.goal, 2000)}`
