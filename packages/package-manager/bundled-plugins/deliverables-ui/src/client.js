@@ -16,6 +16,7 @@ export function FileCard({ file, ctx, inline = false, subtitle }) {
   const [preview, setPreview] = useState()
   const [error, setError] = useState()
   const [busy, setBusy] = useState(false)
+  const [copied, setCopied] = useState(false)
   const [owner] = useState(() => ({ live: true, releases: new Set() }))
   useEffect(() => {
     owner.live = true
@@ -100,6 +101,14 @@ export function FileCard({ file, ctx, inline = false, subtitle }) {
       if (owner.live) setError(String(cause.message ?? cause))
     } finally {
       if (owner.live) setBusy(false)
+    }
+  }
+  async function copyName() {
+    try {
+      await navigator.clipboard.writeText(file.name)
+      if (owner.live) setCopied(true)
+    } catch {
+      if (owner.live) setCopied(false)
     }
   }
   // A turn card names the exact snapshot requested, including earlier versions.
@@ -188,6 +197,13 @@ export function FileCard({ file, ctx, inline = false, subtitle }) {
               testId: 'deliverable-download',
               onSelect: () => {
                 void download()
+              },
+            },
+            {
+              id: 'copy-name',
+              label: zh ? (copied ? '已复制' : '复制文件名') : copied ? 'Copied' : 'Copy file name',
+              onSelect: () => {
+                void copyName()
               },
             },
           ],
