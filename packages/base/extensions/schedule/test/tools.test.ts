@@ -1,6 +1,7 @@
+import { readFileSync } from 'node:fs'
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import type { SchedulingService, SlotFill, ToolContext, ToolDef } from '@agnes/extension-api'
-import { schedulingKind } from '@agnes/extension-api'
+import { schedulingKind, schedulingServiceCapabilities } from '@agnes/extension-api'
 import type { Context } from '@agnes/plugin-runtime'
 import { expect, it } from 'vitest'
 import { openScheduleCatalog, type ScheduleDb } from '../src/catalog.js'
@@ -173,6 +174,8 @@ it('runs recurring work in a new session of this workspace and reminders here, a
 })
 
 it('publishes the official tools, interaction table and delivery notification through the interface', async () => {
+  const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  expect(manifest.agnes.plugins[0].capabilities.services).toEqual(schedulingServiceCapabilities)
   const row = {
     id: 'sched_0000000000000001',
     title: 'Report',

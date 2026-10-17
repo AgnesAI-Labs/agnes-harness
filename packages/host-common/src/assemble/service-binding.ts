@@ -128,6 +128,7 @@ function clean(value: string | undefined): boolean {
  */
 export class ServiceBindings {
   private readonly installed = new Map<string, InstalledService>()
+  private readonly admittedOpens = new WeakMap<object, object>()
   private readonly claims = new Map<string, OwnerClaim>()
   private readonly registries = new WeakMap<Context, Map<object, unknown>>()
   constructor(private readonly current: () => ProvidersService) {}
@@ -171,8 +172,19 @@ export class ServiceBindings {
   ): () => Promise<void> {
     const registry = this.registries.get(ctx)?.get(kind)
     if (!registry || kind.authority !== 'host') throw closed(kind.kind, 'register')
+    // Public provider resolution must never turn a factory into an ungranted open capability.
+    const guarded: ServiceProvider<S, P> = {
+      ...provider,
+      id: provider.id,
+      version: provider.version,
+      open: (ports) => {
+        if (this.admittedOpens.get(ports?.binding) !== kind) throw closed(kind.kind, 'open')
+        this.admittedOpens.delete(ports.binding)
+        return provider.open(ports)
+      },
+    }
     // The exact invariant token above owns the registry installed with S and P.
-    return (registry as ProviderRegistry<ServiceProvider<S, P>>).register(source, provider, ctx)
+    return (registry as ProviderRegistry<ServiceProvider<S, P>>).register(source, guarded, ctx)
   }
 
   noteOwner(kind: string, id: string, version: string, owner: string, packageId: string): void {
@@ -268,7 +280,13 @@ export class ServiceBindings {
     // A service instance may own a `then` method. Awaiting the open result would adopt that method
     // and never settle. Only a real Promise is waited on, and its fulfillment is kept inside a
     // plain holder so the instance itself is never resolved as a thenable.
-    const opened = provider.open(ports as P)
+    if (kind.authority === 'host') this.admittedOpens.set(binding, kind)
+    let opened: S | Promise<S>
+    try {
+      opened = provider.open(ports as P)
+    } finally {
+      this.admittedOpens.delete(binding)
+    }
     const raw = (
       await new Promise<{ value: unknown }>((resolve, reject) => {
         try {

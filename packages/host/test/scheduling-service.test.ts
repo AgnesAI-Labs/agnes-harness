@@ -6,6 +6,7 @@ import {
   type ExtensionManifest,
   type PluginContextFacets,
   type SchedulingService,
+  type ServicePorts,
   schedulingKind,
   schedulingServiceCapabilities,
   type ToolDef,
@@ -67,7 +68,7 @@ it('lets a declared third-party tool bind the fixed daemon service and closes it
       ports: {
         serviceProviders: host.ports,
         tools: {
-          add(def) {
+          add(def: ToolDef) {
             tool = def
             return () => {}
           },
@@ -82,6 +83,12 @@ it('lets a declared third-party tool bind the fixed daemon service and closes it
     return { api, lease }
   }
   try {
+    const raw = root.providers.resolve(schedulingKind, 'agnes/scheduling')
+    expect(() =>
+      raw.open({
+        binding: { session: { key: 'forged', workspaceRoot: '/work' } },
+      } as unknown as ServicePorts),
+    ).toThrow('service binding is closed')
     const denied = makeApi({
       ...manifest,
       capabilities: { tools: { prefix: 'vendor_', names: ['vendor_list'] } },
@@ -214,6 +221,7 @@ it.each([true, false])(
     }
     const received: string[] = []
     const results: string[] = []
+    const bypasses: string[] = []
     const { host } = await createTestHost({
       dataDir: dir,
       script: [
@@ -254,6 +262,14 @@ it.each([true, false])(
                   },
                   async execute() {
                     try {
+                      const raw = ctx.providers.resolve(schedulingKind, 'agnes/scheduling')
+                      try {
+                        await raw.open({
+                          binding: { session: { key: 'forged', workspaceRoot: dir } },
+                        } as unknown as ServicePorts)
+                      } catch (error) {
+                        bypasses.push((error as Error).message)
+                      }
                       const service = await ctx.providers.bindOwn(schedulingKind)
                       results.push(JSON.stringify(await service.list()))
                     } catch (error) {
@@ -280,6 +296,7 @@ it.each([true, false])(
               entryRevision: snapshotId,
               extrasRevision: 'none',
               mountRevision: 'scheduling:v1',
+              inject: ['tools', 'providers'],
             }),
           ],
           resources: { mcp: [], skills: {} },
@@ -289,6 +306,7 @@ it.each([true, false])(
       )
       const turn = await runOnce(host, { prompt: 'List schedules', cwd: dir })
       expect(turn.toolCalls).toContain('vendor_list')
+      expect(bypasses).toEqual([expect.stringContaining('service binding is closed')])
       if (granted) {
         expect(received).toHaveLength(1)
         expect(received[0]).toMatch(/:list$/)
