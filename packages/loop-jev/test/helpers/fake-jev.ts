@@ -19,6 +19,7 @@ type PickAct = PickSpec & {
   invokeThrows?: never
   unknown?: never
   answers?: never
+  refused?: never
 }
 type Failure = {
   reason: 'deadline' | 'cancelled' | 'adapter-error' | 'invalid-output'
@@ -34,6 +35,7 @@ export type JevAct =
   | { prepareThrows: string }
   | { invokeThrows: string }
   | { unknown: true }
+  | { refused: 'budget' | 'usage-unrecorded' }
   | { answers: unknown }
 
 export type FakeJev = LoopSideCallPort & {
@@ -86,6 +88,8 @@ const usage = {
 } as const
 
 function resultOf(act: JevAct, invocationId: string, questions: Record<string, unknown>): SideCallResult {
+  if ('refused' in act && act.refused !== undefined)
+    return { status: 'refused', invocationId, reason: act.refused }
   if ('unknown' in act && act.unknown === true)
     return { status: 'unknown', invocationId, reason: 'interrupted', replayed: false }
   if ('failed' in act && act.failed !== undefined) {

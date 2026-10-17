@@ -88,7 +88,7 @@ An explicit choice wins over the admin default, which wins over the profile, whi
 
 ## When Jev is unavailable
 
-If a Jev call fails (the route is missing, the credential is refused, the request is too large, the connection drops), the loop records the step as failed and asks again at the next step. It never falls back to running the turn on the conversation model alone. After the same failure three times in one turn, or three steps in a row that observe nothing new, the turn ends with the error `NO_PROGRESS_LIMIT`. The message starts with `No progress:` and names the last failure and its reason code; for a route that is not configured it contains `E_MODEL_UNKNOWN`. Check `jev.route` and `jev.model` against the route you configured.
+If a Jev call fails (the route is missing, the credential is refused, the request is too large, the connection drops), the loop records the step as failed and asks again at the next step. It never falls back to running the turn on the conversation model alone. After the same failure three times in one turn, or three steps in a row that observe nothing new, the turn ends with the error `NO_PROGRESS_LIMIT`. The message starts with `No progress:` and names the last failure and its reason code; for a route that is not configured it contains `E_MODEL_UNKNOWN`. Check `jev.route` and `jev.model` against the route you configured. When the turn's credit is spent, Core refuses the Jev call and the turn ends with `budget` (`BUDGET_EXCEEDED`) instead.
 
 A rate limit is retried within the step, up to `jev.maxRetries` times, waiting as long as the vendor asks, unless the wait would be longer than 10 seconds.
 

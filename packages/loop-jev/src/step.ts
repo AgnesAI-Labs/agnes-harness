@@ -148,6 +148,8 @@ export async function decodeAndRoute(
 ): Promise<LoopStepOutcome> {
   const st = s.state
   if (outcome.kind === 'cancelled') return finishTurn(s, 'aborted')
+  if (outcome.kind === 'budget')
+    return finishTurn(s, 'budget', { code: 'BUDGET_EXCEEDED', message: outcome.message })
   const failed = (code: 'MODEL_UNAVAILABLE' | 'INVALID_PROPOSAL', cause: string, message: string) =>
     endStep(s, recordDecisionFailure(s, code, cause, message), {
       route: 'decision_failed',

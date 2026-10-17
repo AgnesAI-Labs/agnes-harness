@@ -48,6 +48,8 @@ export type JevOutcome =
       invocationId: string | null
     }
   | { kind: 'cancelled' }
+  /** The side call was refused because the turn's credit is spent: the turn ends on budget. */
+  | { kind: 'budget'; message: string }
 
 type Failed = Extract<JevOutcome, { kind: 'failed' }>
 type Call = { prepared: PreparedSideCall; payload: JevPayload; level: number }
@@ -240,6 +242,7 @@ function classify(
         id,
       )
     case 'refused':
+      if (result.reason === 'budget') return { kind: 'budget', message: 'the Jev call was refused: budget' }
       return failed(
         'MODEL_UNAVAILABLE',
         `refused:${result.reason}`,

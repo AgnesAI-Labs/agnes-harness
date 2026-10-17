@@ -553,4 +553,14 @@ describe('Jev loop driver', () => {
     expect(written.at(-1)).toMatchObject({ stage: 'done' })
     expect(written.at(-1)?.cur).not.toHaveProperty('calls')
   })
+  it('ends the turn on budget when the side call is refused for budget', async () => {
+    const r = await run([{ refused: 'budget' }])
+    expect(r.finished).toEqual([
+      'budget',
+      { code: 'BUDGET_EXCEEDED', message: 'the Jev call was refused: budget' },
+    ])
+    expect(r.jev.invoked).toEqual(['jev:1:0:d0'])
+    expect(r.requests).toHaveLength(0)
+    expect(r.metrics).toEqual([expect.objectContaining({ endReason: 'budget', jevCalls: 0 })])
+  })
 })

@@ -199,7 +199,18 @@ describe('callJev edges', () => {
     const wrap = (result: object) => ({ ...fakeJev(() => ({})), invoke: async () => result as never })
     expect(
       await callJev(req(), deps(wrap({ status: 'refused', invocationId: 'x', reason: 'budget' })).d, signal),
-    ).toMatchObject({ code: 'MODEL_UNAVAILABLE', cause: 'refused:budget', invocationId: 'jev:3:2:d0' })
+    ).toEqual({ kind: 'budget', message: 'the Jev call was refused: budget' })
+    expect(
+      await callJev(
+        req(),
+        deps(wrap({ status: 'refused', invocationId: 'x', reason: 'usage-unrecorded' })).d,
+        signal,
+      ),
+    ).toMatchObject({
+      code: 'MODEL_UNAVAILABLE',
+      cause: 'refused:usage-unrecorded',
+      invocationId: 'jev:3:2:d0',
+    })
     expect(await callJev(req(), deps(wrap({ status: 'later', invocationId: 'x' })).d, signal)).toMatchObject({
       code: 'MODEL_UNAVAILABLE',
       cause: 'unrecognized',
