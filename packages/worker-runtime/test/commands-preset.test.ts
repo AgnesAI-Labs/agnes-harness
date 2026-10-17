@@ -222,7 +222,9 @@ it('leaves the models of a payload-only adapter out of the session catalog', asy
     sourcePackage: '@acme/adapter',
     capabilities: { imageInput: false, tools: false, streaming: false, ...capabilities },
   })
+  let currentBundles = {}
   const host = {
+    sessionBundleCatalog: async () => currentBundles,
     profile: {
       presets: { default: 'standard', allowed: ['standard'] },
       bundleCatalog: {},
@@ -255,4 +257,11 @@ it('leaves the models of a payload-only adapter out of the session catalog', asy
     ['typesafe-systemone', []],
     ['mixed', [{ id: 'mixed-1', route: 'mixed-route' }]],
   ])
+  currentBundles = { 'hot#work': { id: 'hot#work', sourcePackage: 'hot' } }
+  const frame = { kind: 'command' as const, requestId: 'hot', method: 'session.catalog' as const, params: {} }
+  expect(await handleServiceCommand(host, frame, new Map())).toMatchObject({
+    bundles: [{ id: 'hot#work', sourcePackage: 'hot' }],
+  })
+  currentBundles = {}
+  expect(await handleServiceCommand(host, frame, new Map())).toMatchObject({ bundles: [] })
 })

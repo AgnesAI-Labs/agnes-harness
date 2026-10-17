@@ -7,6 +7,7 @@ import { type Kernel, leanEvents, type WorkspaceInvocationPort } from '@agnes/co
 import { HostError } from '@agnes/host-common/errors'
 import { type ResolvedPreset, resolvePreset } from '@agnes/host-common/presets/resolve'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
+import { canonicalJson, sha256hex } from '@agnes/host-common/profile/canonical'
 import { assertCompositionCompatible, loopPatch } from '@agnes/host-common/profile/composition'
 import { withAssemblyIsolation } from '@agnes/host-common/profile/isolation'
 import { modelProfileDeployment } from '@agnes/host-common/profile/model-compatibility'
@@ -101,6 +102,9 @@ export interface Host {
   /** Description-only admin port; reads measured facts without probing or execution. */
   securityStatus?(): import('@agnes/protocol').RuntimeSecurityStatus
   resolveAgent?(ref: string): Promise<import('@agnes/protocol').AgentPlan>
+  sessionBundleCatalog?(): Promise<ResolvedProfile['bundleCatalog']>
+  /** Backend-only identity of the published execution configuration; never raw row config. */
+  executionIdentity?(sessionKey?: string): string
   compositionSessions?(): readonly LiveCompositionSession[]
   sessionCapabilities?(sessionKey: string): import('@agnes/protocol').SessionCapabilitySet
   pluginGenerationStatus?(): PluginGenerationStatus
@@ -766,6 +770,10 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
     },
     ordinaryConvergence: () => a.ordinaryConvergence(),
     runtimeTargetSnapshot: () => a.runtimeTargetSnapshot(),
+    executionIdentity: () => {
+      const target = a.runtimeTargetSnapshot()
+      return sha256hex(canonicalJson({ tree: target.tree.hash, resource: target.resource.target }))
+    },
     runtimeSkillCandidates: () => {
       if (closed || !opts.skillContribution) throw new Error('runtime Skill registry is unavailable')
       return readRuntimeSkillCandidates(opts.skillContribution, a.pluginTree.root, (id) =>

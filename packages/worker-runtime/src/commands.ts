@@ -820,10 +820,12 @@ export async function handleServiceCommand(
           : {}),
         ...(host.securityStatus ? { security: host.securityStatus() } : {}),
         providers: host.providers.catalog(),
-        bundles: Object.values(host.profile.bundleCatalog ?? {}).map(({ id, sourcePackage }) => ({
-          id,
-          sourcePackage,
-        })),
+        bundles: Object.values((await host.sessionBundleCatalog?.()) ?? host.profile.bundleCatalog ?? {}).map(
+          ({ id, sourcePackage }) => ({
+            id,
+            sourcePackage,
+          }),
+        ),
         presets: host.profile.presets.allowed.map((id) => ({
           id,
           isDefault: id === host.profile.presets.default,

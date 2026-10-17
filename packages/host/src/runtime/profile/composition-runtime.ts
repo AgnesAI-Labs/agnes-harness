@@ -214,7 +214,9 @@ export async function createCompositionHost(
                 options.runtimePluginSnapshots ??
                 [],
             ).select(project(latestTarget, binding.tree))
-          : options.runtimePluginSnapshots
+          : ((await options.runtimePluginSources?.())?.filter(
+              (source) => source.trusted && source.enabled !== false,
+            ) ?? options.runtimePluginSnapshots)
       if (sources)
         await assertGenerationTrust(
           sources,
@@ -468,6 +470,7 @@ export async function createCompositionHost(
   })
   const overrides: HostFacadeOverrides = {
     resolveAgent: (ref) => calls.enqueue(async () => (await prepareAgent(ref)).plan),
+    sessionBundleCatalog: () => calls.enqueue(async () => (await admission()).current.bundleCatalog),
     ...sessionHostRoutes(
       (key, coldRead = false) => owner(key, coldRead).host,
       () => initial.host,
@@ -556,7 +559,7 @@ export async function createCompositionHost(
               preset: binding.tree.preset,
               ...(binding.tree.selection.loop ? { loop: binding.tree.selection.loop } : {}),
             })
-            if (agent) await verifyAgentPin(agent.plan, session, binding.tree.hash, prepareAgent)
+            if (agent) await verifyAgentPin(agent, session, binding.tree.hash, prepareAgent, container.host)
             sessionOwners.set(key, container)
             const close = session.close.bind(session)
             session.close = async () => {

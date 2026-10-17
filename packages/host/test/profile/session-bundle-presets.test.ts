@@ -9,7 +9,7 @@ import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { createLoader } from '@agnes/host-extensions/ext-host/loader'
 import { CompositionSessionStore } from '@agnes/host-providers/profile/composition-state'
 import { hashDirectory, preflightPackageBundles } from '@agnes/package-manager'
-import { normalizePluginExport } from '@agnes/plugin-runtime/host'
+import { createPluginRow, normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { expect, it, vi } from 'vitest'
 import { admitSessionBundlePresets } from '../../src/runtime/profile/session-bundle-presets.js'
 import { createTestHost } from '../../testkit/index.js'
@@ -499,6 +499,87 @@ it('reviews the compiler final tree, strictly pins an agent and admits saved sch
       },
     }
     await expect(host.resolveAgent!(ref)).rejects.toMatchObject({ code: 'E_PRESET_UNRESOLVED' })
+  } finally {
+    await host.close()
+  }
+})
+
+it('binds an agent review to published row config and the admitted tools without revealing config', async () => {
+  const original = pluginSource(
+    "const t=tool('fixture_review'); t.meta.isReadOnly=config?.readOnly!==false; t.meta.replay='never'; ctx.tools.register(t)",
+  )
+  const file = join(original.snapshot.directory, 'package.json')
+  const manifest = JSON.parse(readFileSync(file, 'utf8'))
+  manifest.agnes.bundles = {
+    work: {
+      profile: { tools: ['fixture_review'], toolPolicy: { readOnly: true } },
+      presets: { safe: { name: 'safe', extends: 'standard' } },
+      launch: { title: { en: 'Review' }, description: { en: 'Synthetic' }, preset: 'safe' },
+    },
+  }
+  writeFileSync(file, JSON.stringify(manifest))
+  const source = {
+    ...original,
+    enabled: true,
+    snapshot: {
+      ...original.snapshot,
+      treeIntegrity: hashDirectory(original.snapshot.directory, { exclude: [] }),
+    },
+  }
+  const { host, dataDir } = await pluginHost(source, {
+    packageDirs: { ...packageDirs, '@agnes/ai': fileURLToPath(new URL('../../../ai', import.meta.url)) },
+    provider: (profile) =>
+      new ScriptedProvider({
+        scripts: [],
+        models: (profile.provider.routes ?? []).flatMap((route) => route.models ?? []),
+      }),
+    script: [],
+    disableSessionTitle: true,
+    extensionLoader: createLoader({ cacheDir: scratch(), hostRoot: process.cwd(), agnesVersion: '0.0.0' }),
+    runtimePluginSources: async () => [source],
+  })
+  const fixtureValue = 'synthetic-private-config'
+  const target = (readOnly: boolean) =>
+    targetOf([
+      createPluginRow({
+        ...pluginRow(),
+        snapshotDigest: source.snapshot.integrity,
+        exportName: 'plugin',
+        config: { readOnly, privateSetting: fixtureValue },
+      }),
+    ])
+  try {
+    await host.applyRuntimeTarget(target(true))
+    const ref = `${VENDOR}#work`
+    const before = await host.resolveAgent!(ref)
+    expect(before.permission).toMatchObject({ readOnly: true, tools: ['fixture_review'] })
+    // Re-publishing unchanged config preserves the ticket and opens on precisely those tools.
+    await host.applyRuntimeTarget(target(true))
+    expect((await host.resolveAgent!(ref)).digest).toBe(before.digest)
+    const unchanged = await host.createSession({
+      key: 'unchanged-config',
+      cwd: dataDir,
+      agent: ref,
+      agentDigest: before.digest,
+    })
+    expect(unchanged.currentTools().resolve('fixture_review')).toBeDefined()
+    await unchanged.close()
+    await host.applyRuntimeTarget(target(false))
+    const after = await host.resolveAgent!(ref)
+    expect(after.digest).not.toBe(before.digest)
+    expect(after.permission).toMatchObject({ readOnly: true, tools: [] })
+    expect(JSON.stringify(after)).not.toContain(fixtureValue)
+    await expect(
+      host.createSession({ key: 'stale-config', cwd: dataDir, agent: ref, agentDigest: before.digest }),
+    ).rejects.toThrow('review drift')
+    const current = await host.createSession({
+      key: 'current-config',
+      cwd: dataDir,
+      agent: ref,
+      agentDigest: after.digest,
+    })
+    expect(current.currentTools().resolve('fixture_review')).toBeUndefined()
+    await current.close()
   } finally {
     await host.close()
   }

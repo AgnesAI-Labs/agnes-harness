@@ -7,6 +7,8 @@ export const HOST_MEMBER_SCOPES = {
   securityStatus: 'deployment',
   compositionSessions: 'deployment',
   resolveAgent: 'deployment',
+  sessionBundleCatalog: 'deployment',
+  executionIdentity: 'session',
   sessionCapabilities: 'session',
   pluginGenerationStatus: 'deployment',
   sessionGeneration: 'session',

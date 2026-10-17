@@ -12,10 +12,22 @@ import { readRuntimeBundles } from '@agnes/host-providers/profile/bundles-reader
 import type { CompositionBinding } from '@agnes/host-providers/profile/composition-state'
 import { pluginSnapshotIdentity } from '@agnes/host-providers/runtime-plugin-catalogue'
 import type { RuntimePluginSnapshot } from '@agnes/package-manager'
-import type { AgentPlan, LoopSelection } from '@agnes/protocol'
+import type { AgentPlan, LoopSelection, SessionCapabilitySet } from '@agnes/protocol'
 import type { Host, HostOptions } from '../lifecycle/host.js'
 import { profileForComposition } from './composition-selection.js'
 import { admitSessionBundlePresets, sessionBundleCatalog } from './session-bundle-presets.js'
+
+function admittedPermission(capabilities: SessionCapabilitySet | undefined, plan: AgentPlan['permission']) {
+  if (!capabilities) throw new HostError('E_PRESET_UNSUPPORTED', 'agent capabilities unavailable')
+  return {
+    ...plan,
+    readOnly: capabilities.permissions.readOnly,
+    tools: capabilities.tools
+      .filter((tool) => tool.enabled)
+      .map((tool) => tool.id)
+      .sort(),
+  }
+}
 
 /** Snapshots have already passed tree-integrity validation; builtin roots were admitted at boot. */
 export function agentSources(
@@ -178,12 +190,15 @@ export function createAgentResolver(deps: {
     for (const [slot, target] of Object.entries(models))
       container.host.validateModelSwitch({ slot, ...target })
     const effective = pinPresetModelDefaults(resolved.view, models, container.host.provider.models())
-    const permission = {
+    const permission = admittedPermission(container.host.sessionCapabilities?.(''), {
       readOnly: tree.selection.toolPolicy?.readOnly === true,
       tools: [...(tree.selection.tools ?? [])],
       allow: [...(tree.selection.toolPolicy?.allow ?? [])],
       deny: [...(tree.selection.toolPolicy?.deny ?? [])],
-    }
+    })
+    const executionIdentity = container.host.executionIdentity?.()
+    if (!executionIdentity)
+      throw new HostError('E_PRESET_UNSUPPORTED', 'agent execution identity unavailable')
     // Bind every admitted source, including provider packages and metadata-only bundles. No credentials leave Host.
     const sourceIdentities = identities
       .filter((source) => source.enabled)
@@ -204,9 +219,9 @@ export function createAgentResolver(deps: {
       permission,
       sources: sourceIdentities,
     }
-    const digest = `sha256-${sha256hex(canonicalJson({ ...content, tree, effective, profile: sessionProfile.hash, provider: container.host.providerFingerprint }))}`
+    const digest = `sha256-${sha256hex(canonicalJson({ ...content, tree, effective, executionIdentity, profile: sessionProfile.hash, provider: container.host.providerFingerprint }))}`
     const plan: AgentPlan = { ...content, digest }
-    return { plan, tree, profile: sessionProfile }
+    return { plan, tree, profile: sessionProfile, executionIdentity }
   }
 }
 
@@ -230,14 +245,22 @@ export function assertAgentRequest(
 
 /** Finish strict admission against current sources and the actual session pin; clean up a refusal. */
 export async function verifyAgentPin(
-  plan: AgentPlan,
+  reviewed: Awaited<ReturnType<ReturnType<typeof createAgentResolver>>>,
   session: Awaited<ReturnType<Host['createSession']>>,
   compositionHash: string,
   resolve: (ref: string) => Promise<{ plan: AgentPlan }>,
+  host: Host,
 ): Promise<void> {
+  const { plan } = reviewed
   try {
     if ((await resolve(plan.ref)).plan.digest !== plan.digest)
       throw new HostError('E_PRESET_UNSUPPORTED', 'agent source or policy drift during admission')
+    if (
+      host.executionIdentity?.(session.key) !== reviewed.executionIdentity ||
+      canonicalJson(admittedPermission(host.sessionCapabilities?.(session.key), plan.permission)) !==
+        canonicalJson(plan.permission)
+    )
+      throw new HostError('E_PRESET_UNSUPPORTED', 'agent runtime configuration or capabilities drift')
     assertAgentPin(plan, session, compositionHash)
   } catch (error) {
     await session.close()
