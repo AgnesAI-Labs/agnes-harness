@@ -190,7 +190,13 @@ export function mountComposerRegion(
     },
     () => <SlotOutlet name="conversation.composer.bar" />,
   )
-  const removeSessionListener = registry.subscribeSession(() => handle.current?.clearImageBlocks())
+  let sessionId = registry.sessionId
+  const removeSessionListener = registry.subscribeSession(() => {
+    const next = registry.sessionId
+    if (next === sessionId) return
+    sessionId = next
+    handle.current?.clearImageBlocks()
+  })
   const root = createRegionRenderer(container)
   flushSync(() => {
     root.render(

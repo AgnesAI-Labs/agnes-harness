@@ -57,11 +57,9 @@ export function bindContributions(
   ownContribution(owner, scope.stop, effect)
   const assertGlobal = () => {
     scope.assert()
-    if (
-      ctx.availability.getSnapshot()?.availability === 'history-only' ||
-      (module.binding && ctx.availability.getSnapshot()?.availability !== 'active')
-    )
-      throw new Error('Global contributions require an active contribution')
+    const binding = ctx.availability.getSnapshot()
+    if (binding?.lifetime !== 'profile' || binding.availability !== 'active')
+      throw new Error('Global contributions require an active profile contribution')
   }
   const bind =
     <T extends unknown[]>(register: (...args: T) => () => void) =>
@@ -93,10 +91,11 @@ export function bindContributions(
   const slots = bindSlots(scope.effect, (name) => {
     scope.assert()
     if (
-      ctx.availability.getSnapshot()?.availability === 'history-only' &&
+      (ctx.availability.getSnapshot()?.lifetime === 'session' ||
+        ctx.availability.getSnapshot()?.availability === 'history-only') &&
       (!name || registry.spec(name)?.scope !== 'session')
     )
-      throw new Error('History-only contributions render recorded session data only')
+      throw new Error('Session contributions render recorded session data only')
   })
   Object.defineProperty(ctx, 'slots', { value: slots, configurable: true })
   const commands = ctx.commands

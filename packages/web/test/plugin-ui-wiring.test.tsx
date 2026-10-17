@@ -214,6 +214,8 @@ it('switches the bundled conversation to an IDE and back, reclaiming partial mou
   const { presentationRoles, clientModule, conversationCards } = await import('@agnes/web-client')
   const conversation = document.createElement('section')
   const composer = document.createElement('section')
+  const originalBlobURL = Object.getOwnPropertyDescriptor(URL, 'createObjectURL')
+  Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: () => 'blob:preview' })
   const cancel = vi.fn()
   const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({}, { status: 403 }))
   document.body.append(conversation, composer)
@@ -247,6 +249,21 @@ it('switches the bundled conversation to an IDE and back, reclaiming partial mou
     await act(async () => {
       runtime.session.setSession('background')
     })
+    const attachment = { type: 'file' as const, data: 'aGVsbG8=', mimeType: 'text/plain', name: 'draft.txt' }
+    const image = {
+      type: 'image' as const,
+      data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      mimeType: 'image/png',
+    }
+    await act(async () => {
+      runtime.composer?.restoreAttachmentBlocks([attachment, image])
+    })
+    const attachments = runtime.composer?.getAttachmentBlocks()
+    const images = runtime.composer?.getImageBlocks()
+    expect(attachments).toHaveLength(2)
+    expect(images).toHaveLength(1)
+    const sessionNotifications = vi.fn()
+    runtime.registry.subscribeSession(sessionNotifications)
     let renders = 0
     await act(async () => {
       custom = runtime.ctx.plugin(
@@ -279,6 +296,9 @@ it('switches the bundled conversation to an IDE and back, reclaiming partial mou
     expect(conversationCards.get('ide-card')).toBeDefined()
     expect(runtime.composer?.getDraft()).toBe('Keep this draft')
     expect(composer.querySelector('textarea')).toBe(composerInput)
+    expect(runtime.composer?.getAttachmentBlocks()).toEqual(attachments)
+    expect(runtime.composer?.getImageBlocks()).toEqual(images)
+    expect(sessionNotifications).not.toHaveBeenCalled()
     await act(async () => {
       presentationRoles.select()
     })
@@ -295,6 +315,8 @@ it('switches the bundled conversation to an IDE and back, reclaiming partial mou
     })
     conversation.remove()
     composer.remove()
+    if (originalBlobURL) Object.defineProperty(URL, 'createObjectURL', originalBlobURL)
+    else Reflect.deleteProperty(URL, 'createObjectURL')
     fetcher.mockRestore()
   }
 })
@@ -352,5 +374,65 @@ it('mounts the release navigation through its public port and retains mobile foc
     header.remove()
     backdrop.remove()
     fetcher.mockRestore()
+  }
+})
+
+it('preserves host composer files and images across same-session reconnects during a renderer gap', async () => {
+  const { startClientModules } = await import('../src/client-modules/boot.js')
+  const { PresentationService } = await import('@agnes/web-client')
+  const container = document.createElement('section')
+  document.body.append(container)
+  let runtime!: Awaited<ReturnType<typeof startClientModules>>
+  await act(async () => {
+    runtime = await startClientModules({
+      agnes: { sessions: { get: (id: string) => ({ id, listeners: new Set() }) } } as never,
+      composerContainer: container,
+    })
+  })
+  const port = (runtime.ctx.get('presentation') as InstanceType<typeof PresentationService>).host.composer!
+  let images: Parameters<NonNullable<typeof runtime.composer>['restoreImageBlocks']>[0] = []
+  let files: Parameters<NonNullable<typeof runtime.composer>['restoreAttachmentBlocks']>[0] = []
+  const handle = {
+    getDraft: () => 'retained draft',
+    getImageBlocks: () => images,
+    getAttachmentBlocks: () => files,
+    hasPendingImages: () => false,
+    focus() {},
+    render() {},
+    setDraft() {},
+    mention() {},
+    dispose() {},
+    clearImageBlocks() {
+      images = []
+      files = []
+    },
+    restoreImageBlocks(value: typeof images) {
+      images = value
+    },
+    restoreAttachmentBlocks(value: typeof files) {
+      files = value
+    },
+  }
+  try {
+    runtime.session.setSession('same')
+    const detach = port.attach(handle)
+    const attachment = { type: 'file' as const, data: 'aGVsbG8=', mimeType: 'text/plain', name: 'draft.txt' }
+    const image = { type: 'image' as const, data: 'aGVsbG8=', mimeType: 'image/png' }
+    runtime.composer!.restoreAttachmentBlocks([attachment])
+    runtime.composer!.restoreImageBlocks([image])
+    detach()
+    runtime.session.setReadiness('connecting', 'same')
+    runtime.session.reattach('same')
+    expect(runtime.composer!.getDraft()).toBe('retained draft')
+    expect(runtime.composer!.getAttachmentBlocks()).toEqual([attachment])
+    expect(runtime.composer!.getImageBlocks()).toEqual([image])
+    runtime.session.setSession('different')
+    expect(runtime.composer!.getAttachmentBlocks()).toEqual([])
+    expect(runtime.composer!.getImageBlocks()).toEqual([])
+  } finally {
+    await act(async () => {
+      await runtime.dispose()
+    })
+    container.remove()
   }
 })

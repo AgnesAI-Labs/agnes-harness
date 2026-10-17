@@ -123,9 +123,9 @@ profile client 须先在 descriptor 声明显式 `client.id` 和 `presentationRo
 
 作者所有登记均使用 `ClientContext` 门面，包括 slots、命令、文件查看动作和语言目录。异步 dispose 前同步撤销；dispose 抛错或超时不能占住 id，迟到回调不能恢复旧贡献。原始导出的 registry 仅供宿主和测试使用。这些生命周期约束不把可信 JavaScript 变成沙箱。
 
-history-only 贡献只可通过会话位置呈现已记录数据，不能登记全局页面、品牌、角色、设置、面板或命令，不能打开 profile stream 或调用 profile 管理服务。后台仍逐次授权读取和动作。
+全局登记要求 `lifetime: profile` 且 `availability: active`；active session 贡献也不能登记全局面板、设置或命令。session 贡献只可通过会话位置呈现已记录数据，不能登记全局页面、品牌、角色、设置、面板或命令，不能打开 profile stream 或调用 profile 管理服务。后台仍逐次授权读取和动作。
 
-`ctx.session.readiness` 提供 `getSnapshot()` 与 `subscribe(listener)`。快照包含 `status`（`no-session`、`connecting`、`ready`、`history-only`、`failed`）、绑定后的 `sessionId` 和单调失效的 `epoch`。实时查询须等 `ready`，保存快照，快照变化后忽略旧结果，并在每次会话绑定变化时重查。不要自动重试 effect。[服务面板示例](../../examples/packages/client-service-panel/v1/extensions/main/client/index.js) 覆盖冷挂载和过期结果。
+`ctx.session.readiness` 提供 `getSnapshot()` 与 `subscribe(listener)`。readiness 订阅与 `ctx.session.subscribe` 的身份通知独立；同一会话重连只更新 readiness，卸载呈现不改变会话身份或清空草稿附件。快照包含 `status`（`no-session`、`connecting`、`ready`、`history-only`、`failed`）、绑定后的 `sessionId` 和单调失效的 `epoch`。实时查询须等 `ready`，保存快照，快照变化后忽略旧结果，并在每次会话绑定变化时重查。不要自动重试 effect。[服务面板示例](../../examples/packages/client-service-panel/v1/extensions/main/client/index.js) 覆盖冷挂载和过期结果。
 
 **懒加载页面模块只交付页面**：混入其他登记会使其等到页面首次打开。设置分区、dock 视图和角色应拆到没有懒加载导航元数据的独立 eager descriptor。profile 页面不依赖会话。
 
@@ -133,4 +133,4 @@ history-only 贡献只可通过会话位置呈现已记录数据，不能登记�
 
 接管的 `mount(child)` 必须使用**子 context** 登记贡献，用 `child.effect` 绑定订阅。挂载失败会先自动回收部分登记，再恢复默认。cleanup 须同步撤销，异步资源可以随后排空。同 priority 冲突通过 `presentationRoles.getSnapshot()/subscribe` 暴露角色和双方来源，并在插件页展示。应用先筛选候选，再比较优先级；发行默认仍可回退。
 
-三个可运行的 [Intelligent UI 示例](../../examples/ui/README.zh-CN.md) 分别演示组件库、整套交互呈现接管和工具结果卡片。Loop 等待认证 action-result 输入；模型 HTML/JS 只作为数据。公开服务 provider 登记事务从准入 row 确定 owner，支持 `bindOwn`，失败回滚、dispose 回收；自行选择 provider id 不能冒充语义 `UI_OWNER`。
+三个可运行的 [Intelligent UI 示例](../../examples/ui/README.zh-CN.md) 分别演示组件库、整套交互呈现接管和工具结果卡片。Loop 等待认证 action-result 输入；模型 HTML/JS 只作为数据。公开服务 provider 登记事务从准入 row 确定 owner，支持 `bindOwn`，失败回滚、dispose 回收；自行选择 provider id 不能冒充语义 `UI_OWNER`。队列读、状态推进与通知按准入 owner 隔离；每次登记有独立租约，撤销后复用同一个 provider 对象也不能恢复旧实例或旧的异步 open。

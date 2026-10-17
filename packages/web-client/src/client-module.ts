@@ -304,6 +304,11 @@ function createFiberBoundRegistry(
   assert: (name?: string) => void = () => {},
 ): SlotRegistry {
   const bound = Object.create(registry) as SlotRegistry
+  // Session binding state belongs to the host registry, never to a role facade.
+  Object.defineProperty(bound, 'sessionId', { get: () => registry.sessionId })
+  bound.bindSession = registry.bindSession.bind(registry)
+  bound.setSession = registry.setSession.bind(registry)
+  bound.subscribeSession = registry.subscribeSession.bind(registry)
   bound.register = ((
     nameOrOptions: SlotName | Record<string, unknown>,
     component: unknown,

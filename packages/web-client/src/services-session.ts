@@ -17,17 +17,21 @@ export class SessionService extends Service {
   private readinessSnapshot: SessionReadiness = Object.freeze({ status: 'no-session', epoch: 0 })
   readonly readiness = {
     getSnapshot: (): SessionReadiness => this.readinessSnapshot,
-    subscribe: (listener: () => void): (() => void) => this.subscribe(listener),
+    subscribe: (listener: () => void): (() => void) => {
+      this.readinessListeners.add(listener)
+      return () => this.readinessListeners.delete(listener)
+    },
   }
   /** Host binding transition; every epoch invalidates in-flight client reads. */
   setReadiness(status: SessionReadiness['status'], sessionId = this.currentSessionId): void {
     this.scope++
     this.readinessSnapshot = Object.freeze({ status, epoch: this.scope, ...(sessionId ? { sessionId } : {}) })
-    notifyListeners(this.listeners, 'session readiness')
+    notifyListeners(this.readinessListeners, 'session readiness')
   }
   private currentSessionId: string | undefined
   private readonly client: HostAgnesClient | undefined
   private readonly listeners = new Set<() => void>()
+  private readonly readinessListeners = new Set<() => void>()
   private readonly projectionListeners = new Set<() => void>()
   private currentHandle: SessionClientHandle | undefined
   private currentHandleListener: ((...args: never[]) => void) | undefined
@@ -51,18 +55,22 @@ export class SessionService extends Service {
       this.readinessSnapshot.status === (sessionId ? 'ready' : 'no-session')
     )
       return
+    const changed = sessionId !== this.currentSessionId
     this.detachHandle()
     this.currentSessionId = sessionId
     this.reattachHandle()
     this.setReadiness(!sessionId ? 'no-session' : this.currentHandle ? 'ready' : 'connecting')
+    if (changed) notifyListeners(this.listeners, 'session identity')
   }
 
   /** Alias for hosts that model a session switch as a scope reattachment. */
   reattach(sessionId: string | undefined): void {
+    const changed = sessionId !== this.currentSessionId
     this.detachHandle()
     this.currentSessionId = sessionId
     this.reattachHandle()
     this.setReadiness(!sessionId ? 'no-session' : this.currentHandle ? 'ready' : 'connecting')
+    if (changed) notifyListeners(this.listeners, 'session identity')
   }
 
   subscribe = (listener: () => void): (() => void) => {

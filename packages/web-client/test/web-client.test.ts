@@ -28,6 +28,15 @@ import {
 // before. Wait for the rendered state instead.
 const committed = { timeout: 5_000 }
 const loadExample = (path: string) => import(path)
+const profileBinding = (owner: string) => ({
+  owner,
+  lifetime: 'profile' as const,
+  availability: 'active' as const,
+  packageId: owner,
+  integrity: 'one',
+  profileId: 'fixture',
+  activationId: 'current',
+})
 
 const containers: { root: Root; el: HTMLElement }[] = []
 
@@ -571,7 +580,11 @@ describe('client command boundary', () => {
           cctx.commands.register({ id: 'demo.run', title: 'Run demo', execute: run })
         },
       }),
-      { packageId: 'pkg-demo', revision: 'r1' },
+      {
+        binding: profileBinding('pkg-demo'),
+        packageId: 'pkg-demo',
+        revision: 'r1',
+      },
     )
     await fiber
     expect(commands.list()).toEqual([{ id: 'demo.run', owner: 'pkg-demo', title: 'Run demo' }])
@@ -596,7 +609,11 @@ describe('client command boundary', () => {
           cctx.commands.register({ id: 'demo.deny', execute() {} })
         },
       }),
-      { packageId: 'pkg-demo', revision: 'r1' },
+      {
+        binding: profileBinding('pkg-demo'),
+        packageId: 'pkg-demo',
+        revision: 'r1',
+      },
     )
     await fiber
     await expect(commands.execute('demo.deny', {})).rejects.toThrow('not authorized')
@@ -623,6 +640,7 @@ describe('client command boundary', () => {
       }),
       {
         rowId: 'web:pkg-demo/panel',
+        binding: profileBinding('pkg-demo'),
         packageId: 'pkg-demo',
         revision: 'r1',
         services: ['panel.write'],
@@ -658,7 +676,12 @@ describe('client command boundary', () => {
           cctx.commands.registerEffect({ id: 'demo.denied-effect', service: 'panel.write' })
         },
       }),
-      { packageId: 'pkg-demo', revision: 'r1', services: ['panel.write'] },
+      {
+        binding: profileBinding('pkg-demo'),
+        packageId: 'pkg-demo',
+        revision: 'r1',
+        services: ['panel.write'],
+      },
     )
     await fiber
     await expect(commands.execute('demo.denied-effect', {})).rejects.toThrow('not authorized')
@@ -1124,59 +1147,66 @@ it('owns author pages, views, tool cards, settings and composer commands; a bad 
   await replacement.dispose()
 })
 
-it('history-only modules cannot register global views, pages, roles, commands, settings or profile management', async () => {
-  const { ctx } = await makeRegistry(undefined, undefined, async () => ({ output: 'secret' }))
-  let module!: ClientContext
-  const fiber = ctx.plugin(
-    clientModule({
-      apply(c) {
-        module = c
-      },
-    }),
-    {
-      packageId: 'historical',
-      revision: 'one',
-      services: ['query'],
-      binding: { owner: 'history', lifetime: 'session', availability: 'history-only' },
-    } as never,
-  )
-  await fiber
-  for (const register of [
-    () => module.slots.register('workbench.panel', () => null),
-    () =>
-      module.workbenchPanels.register({
-        id: 'history-panel',
-        order: 0,
-        edge: 'right',
-        titleKey: 'h',
-        component: () => null,
+it.each(['active', 'history-only'] as const)(
+  'session %s modules cannot register global views, pages, roles, commands, settings or profile management',
+  async (availability) => {
+    const { ctx } = await makeRegistry(undefined, undefined, async () => ({ output: 'secret' }))
+    let module!: ClientContext
+    const fiber = ctx.plugin(
+      clientModule({
+        apply(c) {
+          module = c
+        },
       }),
-    () =>
-      module.settingsSections.register({
-        id: 'history-settings',
-        order: 0,
-        group: 'h',
-        groupTitleKey: 'h',
-        titleKey: 'h',
-        icon: 'puzzle',
-        component: () => null,
-      }),
-    () => module.commands.register({ id: 'history-command', execute() {} }),
-    () => module.presentationRoles.register({ role: 'history-test', mount: () => () => {} }),
-    () =>
-      module.homeEntries.register({
-        id: 'history-page',
-        order: 0,
-        titleKey: 'h',
-        icon: 'puzzle',
-        component: () => null,
-      }),
-  ])
-    expect(register).toThrow()
-  await expect(module.profile.services.query('query', {})).rejects.toThrow('CAPABILITY_DENIED')
-  await expect(module.profile.streams.open('history', {})).rejects.toThrow('unavailable')
-  await fiber.dispose()
-})
+      {
+        packageId: 'historical',
+        slotCatalogVersion: DSH_SLOT_CATALOG_VERSION,
+        revision: 'one',
+        services: ['query'],
+        binding: { owner: 'history', lifetime: 'session', availability },
+      } as never,
+    )
+    await fiber
+    for (const register of [
+      () => module.slots.register('workbench.panel', () => null),
+      () =>
+        module.workbenchPanels.register({
+          id: 'history-panel',
+          order: 0,
+          edge: 'right',
+          titleKey: 'h',
+          component: () => null,
+        }),
+      () =>
+        module.settingsSections.register({
+          id: 'history-settings',
+          order: 0,
+          group: 'h',
+          groupTitleKey: 'h',
+          titleKey: 'h',
+          icon: 'puzzle',
+          component: () => null,
+        }),
+      () => module.commands.register({ id: 'history-command', execute() {} }),
+      () => module.presentationRoles.register({ role: 'history-test', mount: () => () => {} }),
+      () =>
+        module.homeEntries.register({
+          id: 'history-page',
+          order: 0,
+          titleKey: 'h',
+          icon: 'puzzle',
+          component: () => null,
+        }),
+    ])
+      expect(register).toThrow()
+    ;(ctx.get('slots') as SlotRegistry).declare('conversation.view', { kind: 'list', scope: 'session' })
+    module.slots.register('conversation.view', () => null)
+    expect((ctx.get('slots') as SlotRegistry).entries('conversation.view')).toHaveLength(1)
+    await expect(module.profile.services.query('query', {})).rejects.toThrow('CAPABILITY_DENIED')
+    await expect(module.profile.streams.open('history', {})).rejects.toThrow('unavailable')
+    await fiber.dispose()
+  },
+)
 
 it('publishes readiness epochs for cold mount, rebinding and failure and rejects stale projection reads', async () => {
   let finish!: (value: unknown) => void
@@ -1192,12 +1222,22 @@ it('publishes readiness epochs for cold mount, rebinding and failure and rejects
   const { ctx } = await makeRegistry({ sessions: { get: (id: string) => handles.get(id) } } as never)
   const session = ctx.get('session') as SessionService
   expect(session.readiness.getSnapshot().status).toBe('no-session')
+  const identities = vi.fn()
+  const readiness = vi.fn()
+  session.subscribe(identities)
+  session.readiness.subscribe(readiness)
   session.setReadiness('connecting', 'a')
   const connecting = session.readiness.getSnapshot()
   session.setSession('a')
   expect(session.readiness.getSnapshot()).toMatchObject({ status: 'ready', sessionId: 'a' })
+  identities.mockClear()
+  session.setReadiness('connecting', 'a')
+  session.reattach('a')
+  expect(identities).not.toHaveBeenCalled()
+  expect(readiness).toHaveBeenCalled()
   const read = session.projection.read()
   session.setSession('b')
+  expect(identities).toHaveBeenCalledTimes(1)
   finish('old-a')
   expect(await read).toMatchObject({ status: 'unavailable' })
   expect(session.readiness.getSnapshot().epoch).toBeGreaterThan(connecting.epoch)
@@ -1220,6 +1260,7 @@ it('waits for session ready in the official service example and ignores old sess
     async (_, id) => new Promise((resolve) => replies.set(id, resolve)),
   )
   const fiber = ctx.plugin(clientModule(mod), {
+    binding: profileBinding('example'),
     packageId: 'example',
     revision: 'one',
     services: ['panel.version'],
@@ -1252,7 +1293,11 @@ it('runs the public component library as data-only DOM and registers the tool-re
   expect(host.childNodes.length).toBe(0)
   const mod = await loadExample('../../../examples/ui/tool-result-card/src/client.js')
   const { ctx } = await makeRegistry()
-  const fiber = ctx.plugin(clientModule(mod), { packageId: 'tool-result-example', revision: 'one' })
+  const fiber = ctx.plugin(clientModule(mod), {
+    binding: profileBinding('tool-result-example'),
+    packageId: 'tool-result-example',
+    revision: 'one',
+  })
   await fiber
   const { conversationCards } = await import('../src/index.js')
   const card = conversationCards.get('example-tool-result')!

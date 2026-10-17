@@ -347,8 +347,12 @@ export async function startClientModules(options: {
   let composerDraft = options.composer?.initialDraft ?? ''
   let composerImages: ReturnType<ComposerRegionMount['getImageBlocks']> = []
   let composerAttachments: ReturnType<ComposerRegionMount['getAttachmentBlocks']> = []
+  let composerSessionId = session.getSnapshot()
   ctx.effect(() =>
     session.subscribe(() => {
+      const next = session.getSnapshot()
+      if (next === composerSessionId) return
+      composerSessionId = next
       composerImages = []
       composerAttachments = []
     }),
