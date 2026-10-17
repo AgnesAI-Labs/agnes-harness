@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto'
 import type {
+  LoopContext,
+  LoopFactory,
   LoopSideCallPort,
   PreparedSideCall,
   SideCallOptions,
@@ -179,5 +181,30 @@ export function fakeJev(script: (n: number, questions: Record<string, unknown>) 
       if (result === undefined || meta === undefined) return { status: 'absent', invocationId }
       return { status: 'finished', invocationId, ...meta, result }
     },
+  }
+}
+
+/**
+ * The same factory, with `jev` behind the `ctx.sideCall` its drivers see. Every other port is the
+ * original context's, reached through the prototype. A function picks the port for each context,
+ * for example one fake per session, since a fake keeps its records by invocation id.
+ */
+export function withJev(
+  factory: LoopFactory,
+  jev: LoopSideCallPort | ((ctx: LoopContext) => LoopSideCallPort),
+): LoopFactory {
+  const wrap = (ctx: LoopContext): LoopContext =>
+    Object.create(ctx, {
+      sideCall: { value: typeof jev === 'function' ? jev(ctx) : jev, enumerable: true },
+    }) as LoopContext
+  return {
+    id: factory.id,
+    version: factory.version,
+    codec: factory.codec,
+    capabilities: factory.capabilities,
+    ...(factory.controls ? { controls: factory.controls } : {}),
+    ...(factory.checkpointMode ? { checkpointMode: factory.checkpointMode } : {}),
+    create: (ctx, stop) => factory.create(wrap(ctx), stop),
+    resume: (ctx, checkpoint, stop) => factory.resume(wrap(ctx), checkpoint, stop),
   }
 }

@@ -98,7 +98,16 @@ const PHASES = ['INSPECT', 'ACT', 'VERIFY', 'RESPOND']
 const ROUTE_KINDS = ['direct', 'parameters', 'arbitration', 'answer']
 const ROUTE_REASONS = ['low_confidence', 'recoverable_observation', 'premature_answer', 'weak_binding']
 const LLM_KINDS = ['parameters', 'arbitration', 'answer']
-const END_REASONS = ['completed', 'aborted', 'error']
+const END_REASONS = [
+  'completed',
+  'aborted',
+  'error',
+  'parked',
+  'blocked',
+  'budget',
+  'max_steps',
+  'interrupted',
+]
 
 function checkStepError(value: unknown, path: string): void {
   const e = obj(value, path)

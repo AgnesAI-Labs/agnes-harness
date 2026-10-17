@@ -27,6 +27,12 @@ describe('checkpoint codec v1', () => {
     expect(cp.codecVersion).toBe(1)
     expect(parseJevState(codec.decode(cp))).toEqual(initialState())
   })
+  it('accepts every loop end reason, so Core can validate the checkpoint of any ending', () => {
+    for (const endReason of ['max_steps', 'budget', 'blocked', 'parked', 'interrupted'] as const) {
+      const cp = encodeState({ ...initialState(), stage: 'finish', endReason })
+      expect(parseJevState(codec.decode(cp)).endReason).toBe(endReason)
+    }
+  })
   it('rejects other versions and malformed states', () => {
     expect(() => codec.decode({ codecVersion: 2, state: null })).toThrow('expected 1')
     expect(() => parseJevState({ ...initialState(), stage: 'nope' } as never)).toThrow()

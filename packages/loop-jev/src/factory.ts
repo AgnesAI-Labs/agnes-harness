@@ -4,20 +4,23 @@ import {
   loopKind,
   type ProviderPluginContext,
 } from '@agnes/extension-api'
-import { createSkeletonDriver, skeletonCodec } from './driver.js'
+import { resolveConfig } from './config.js'
+import { createDriver } from './driver.js'
+import { codec, parseJevState } from './state.js'
 
 export const JEV_LOOP = Object.freeze({ id: 'agnes.jev', version: '0.1.0' } as const)
 
-export function createJevLoopFactory(_config?: unknown): LoopFactory {
+export function createJevLoopFactory(config?: unknown): LoopFactory {
+  const cfg = resolveConfig(config)
   return Object.freeze({
     ...JEV_LOOP,
     checkpointMode: 'driver',
     controls: Object.freeze({ steer: true }),
     capabilities: Object.freeze(['model', 'tools', 'compaction', 'park', 'recovery']),
-    codec: skeletonCodec,
-    create: (ctx: GenericLoopPorts) => createSkeletonDriver(ctx),
+    codec,
+    create: (ctx: GenericLoopPorts) => createDriver(ctx, cfg),
     resume: (ctx: GenericLoopPorts, checkpoint) =>
-      createSkeletonDriver(ctx, skeletonCodec.decode(checkpoint)),
+      createDriver(ctx, cfg, parseJevState(codec.decode(checkpoint))),
   } satisfies LoopFactory)
 }
 

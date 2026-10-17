@@ -158,7 +158,7 @@ describe('requestLlm', () => {
   it('returns the compaction outcome when compaction ends the turn', async () => {
     expect(
       await requestLlm(req(), deps([text], { shouldCompact: true, compaction: 'ended' }).d, signal),
-    ).toEqual({ kind: 'outcome', outcome: { outcome: 'turn-ended', reason: 'budget' } })
+    ).toEqual({ kind: 'outcome', outcome: { outcome: 'turn-ended', reason: 'budget' }, ids: [] })
   })
   it('recomputes toolNames once after E_ENVELOPE', async () => {
     const { d, calls } = deps([text], { envelopeOnce: true })
@@ -177,6 +177,6 @@ describe('requestLlm', () => {
         deps([[{ type: 'error', reason: 'aborted', code: 'ABORTED', message: 'stop', retryable: false }]]).d,
         signal,
       ),
-    ).toEqual({ kind: 'aborted' })
+    ).toEqual({ kind: 'aborted', ids: ['jev:1:0:m0'] })
   })
 })

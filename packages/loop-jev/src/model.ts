@@ -22,11 +22,16 @@ export type LlmRequest = {
   toolNames: readonly string[]
 }
 
+/**
+ * `ids` lists the attempts actually sent, so the caller can account for each model cost row.
+ * `failed` carries the code of the last error event, or `NO_ATTEMPTS` when `firstAttempt` was already
+ * at `maxAttempts` and nothing was sent; the driver ends the turn the same way for both.
+ */
 export type LlmOutcome =
   | { kind: 'reply'; events: readonly InferenceEvent[]; attempts: number; ids: string[]; toolNames: string[] }
   | { kind: 'failed'; code: string; message: string; attempts: number; ids: string[] }
-  | { kind: 'aborted' }
-  | { kind: 'outcome'; outcome: LoopStepOutcome }
+  | { kind: 'aborted'; ids: string[] }
+  | { kind: 'outcome'; outcome: LoopStepOutcome; ids: string[] }
 
 type ErrorEvent = Extract<InferenceEvent, { type: 'error' }>
 
@@ -74,7 +79,7 @@ export async function requestLlm(req: LlmRequest, deps: ModelDeps, signal: Abort
     const estimate = await deps.estimateRequest(request)
     if (estimate.shouldCompact === true && deps.compaction) {
       const ended = await compact()
-      if (ended) return { kind: 'outcome', outcome: ended }
+      if (ended) return { kind: 'outcome', outcome: ended, ids }
       // Not sent yet, so the same id and the same note are still safe.
       request = await prepare(id, note)
     }
@@ -82,11 +87,11 @@ export async function requestLlm(req: LlmRequest, deps: ModelDeps, signal: Abort
     ids.push(id)
     const error = events.find((event): event is ErrorEvent => event.type === 'error')
     if (!error) return { kind: 'reply', events, attempts: ids.length, ids, toolNames }
-    if (error.reason === 'aborted' || signal.aborted) return { kind: 'aborted' }
+    if (error.reason === 'aborted' || signal.aborted) return { kind: 'aborted', ids }
     const more = k + 1 < req.maxAttempts
     if (error.code === 'OVERFLOW' && deps.compaction && more) {
       const ended = await compact()
-      if (ended) return { kind: 'outcome', outcome: ended }
+      if (ended) return { kind: 'outcome', outcome: ended, ids }
       continue
     }
     if (error.retryable && more) {
