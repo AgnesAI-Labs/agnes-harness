@@ -158,11 +158,15 @@ describe('bench metrics', () => {
       billing: { usdMicros, source: 'gateway', subscription: false },
     },
   })
-  it('counts inference and side-call rows and reconciles with jev.step', () => {
+  const decide = (status: string) => ({ type: 'x/agnes/base/jev.decide', data: { status, latencyMs: 1 } })
+  it('counts inference and side-call rows and reconciles with jev.step and jev.decide', () => {
     const m = turnMetrics([
       cost('inference', 100),
       cost('side-call', 7),
       cost('side-call', 7),
+      decide('ok'),
+      decide('ok'),
+      decide('refused'),
       { type: 'x/agnes/base/jev.step', data: { route: 'answer', llm: { attempts: 1 } } },
       { type: 'x/agnes/base/jev.step', data: { route: 'direct' } },
     ])
@@ -171,7 +175,45 @@ describe('bench metrics', () => {
       sideCall: 2,
       usdMicros: 114,
       reconciled: true,
-      jev: { steps: 2, llmAttempts: 1 },
+      jev: { steps: 2, llmAttempts: 1, decideCalls: 2 },
+    })
+    // A Jev call without its ledger row, or a row without its call, breaks the reconciliation.
+    expect(turnMetrics([cost('side-call', 7), decide('ok'), decide('ok')]).reconciled).toBe(false)
+  })
+  it('keeps side calls on other routes out of the Jev counts and the cost', () => {
+    const on = (route: string, usdMicros: number) => {
+      const row = cost('side-call', usdMicros)
+      return { ...row, data: { ...row.data, route } }
+    }
+    const events = [
+      cost('inference', 100),
+      on('jev', 7),
+      on('chat', 50),
+      on('chat', 50),
+      decide('ok'),
+      { type: 'x/agnes/base/jev.step', data: { route: 'answer', llm: { attempts: 1 } } },
+    ]
+    const m = turnMetrics(events, undefined, { jevRoute: 'jev' })
+    expect(m).toMatchObject({
+      inference: 1,
+      sideCall: 1,
+      usdMicros: 107,
+      credits: 2,
+      tokens: { input: 20, output: 2, cacheRead: 10, cacheWrite: 0 },
+      otherSideCalls: { count: 2, usdMicros: 100, tokens: { input: 20, output: 2, cacheRead: 10 } },
+      reconciled: true,
+    })
+    expect(m.purposes).toEqual({ inference: 1, 'side-call': 3 })
+    // Without a Jev route every side-call row is another one; left out, every row counts as Jev.
+    expect(turnMetrics(events, undefined, { jevRoute: null })).toMatchObject({
+      sideCall: 0,
+      otherSideCalls: { count: 3 },
+      usdMicros: 100,
+    })
+    expect(turnMetrics(events)).toMatchObject({
+      sideCall: 3,
+      otherSideCalls: { count: 0 },
+      reconciled: false,
     })
   })
   it('computes k from the baseline pilot', () => {

@@ -307,10 +307,11 @@ const isTitleRow = (e) => e.type === 'cost/ledger' && e.data?.purpose === 'title
  * background call to the chat model, the same on both lanes, and it is neither inference nor a
  * Jev call. Its rows are still counted under `purposes.title`.
  */
-function metricsOf(events, price) {
+function metricsOf(events, price, jevRoute) {
   const metrics = turnMetrics(
     events.filter((e) => !isTitleRow(e)),
     price,
+    { jevRoute },
   )
   const titles = events.filter(isTitleRow).length
   if (titles) metrics.purposes.title = titles
@@ -400,6 +401,9 @@ async function runCellIn(ctx, cell, workspace, kept) {
     offPermission()
     await stream.stop()
     await session.detach().catch(() => undefined)
+    // Side calls on other routes are counted over the whole session: a host feature may call the
+    // chat model after a turn has ended, outside every turn's slice of events.
+    result.otherSideCalls = metricsOf(stream.events, price, routes.jev?.route ?? null).otherSideCalls
     mkdirSync(join(out, 'events'), { recursive: true })
     writeFileSync(
       join(out, 'events', `${cellName(cell)}.jsonl`),
@@ -464,7 +468,7 @@ async function runCellIn(ctx, cell, workspace, kept) {
       answer: clip(answer),
       probes: probes.map((p) => ({ exit: p.exit, output: clip(p.output) })),
       score: scoreTurn({ turn, answer, endReason, probes }),
-      metrics: metricsOf(events, price),
+      metrics: metricsOf(events, price, routes.jev?.route ?? null),
       ...(lane === 'jev' ? { jevDecide: decideStats(events) } : {}),
       wallMs: start && end ? Date.parse(end.ts) - Date.parse(start.ts) : null,
       tools: result.tools,
@@ -618,13 +622,55 @@ function cacheSection(results, cells) {
   return rows.length ? ['## Cache contract', '', ...rows, ''] : []
 }
 
+/**
+ * Per lane: side-call rows on routes other than the Jev route, over each whole session. They are
+ * kept out of the Jev counts, the cost and the gates; this section is the only place they show.
+ */
+function otherSideCalls(cells, results) {
+  const lanes = {}
+  for (const [i, cell] of cells.entries()) {
+    const o = results[i]?.otherSideCalls
+    if (!o) continue
+    lanes[cell.lane] ??= { count: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, usdMicros: 0 }
+    const lane = lanes[cell.lane]
+    lane.count += o.count
+    for (const key of ['input', 'output', 'cacheRead', 'cacheWrite']) lane[key] += o.tokens[key]
+    lane.usdMicros += o.usdMicros
+  }
+  return lanes
+}
+
+function otherSection(lanes) {
+  const rows = Object.entries(lanes).map(
+    ([lane, s]) =>
+      `- ${lane}: ${s.count} rows; tokens input ${s.input}, output ${s.output}, cache read ${s.cacheRead}, cache write ${s.cacheWrite}; cost $${(s.usdMicros / 1e6).toFixed(6)}`,
+  )
+  return rows.length
+    ? [
+        '## Other side calls',
+        '',
+        'Side calls on routes other than the Jev route; not part of any gate.',
+        '',
+        ...rows,
+        '',
+      ]
+    : []
+}
+
 function writeOutputs(ctx, cells, results) {
   const records = results.flatMap((r) => r?.records ?? [])
   const turns = results.flatMap((r) => r?.turnEvents ?? [])
   const totals = aggregate(records)
   const compare = ctx.o.lanes.length > 1 ? schemaCheck(cells, results) : undefined
+  const other = otherSideCalls(cells, results)
   const flags = [
     ...(compare?.flags ?? []),
+    ...Object.entries(other)
+      .filter(([, s]) => s.count > 0)
+      .map(
+        ([lane, s]) =>
+          `${lane}: ${s.count} side calls on routes other than the Jev route (kept out of the gates)`,
+      ),
     ...cellChecks(cells, results),
     ...turnFlags(records),
     ...[...ctx.missingPrices].map((m) => `cost missing catalogue price: ${m} (counted as 0)`),
@@ -652,6 +698,7 @@ function writeOutputs(ctx, cells, results) {
     ...(pilot ? { pilot } : { k: ctx.o.k, kSource: ctx.o.kSource, verdict: gates ?? null }),
     ...(ctx.stopped ? { stopped: ctx.stopped } : {}),
     totals,
+    otherSideCalls: other,
     flags,
     interrupted: ctx.state.interrupted,
   }
@@ -670,6 +717,7 @@ function writeOutputs(ctx, cells, results) {
     '',
     ...jevSection(records),
     ...cacheSection(results, cells),
+    ...otherSection(other),
     ...(pilot
       ? [
           '## Pilot',

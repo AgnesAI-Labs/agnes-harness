@@ -213,11 +213,20 @@ const bump = (map, key, by = 1) => {
   map[key] = (map[key] ?? 0) + by
 }
 
-/** Per-turn counters from the session events of one turn. */
-export function turnMetrics(events, price) {
+/**
+ * Per-turn counters from the session events of one turn.
+ *
+ * `jevRoute` names the Jev side-call route. When it is given, only side-call rows on that route are
+ * Jev calls; side-call rows on any other route (a host feature calling a model on its own) go to
+ * `otherSideCalls` and stay out of `tokens`, `usdMicros` and `credits`, which feed the gates.
+ * `null` means no Jev route, so every side-call row is another one. Left out, every side-call row
+ * counts as a Jev call.
+ */
+export function turnMetrics(events, price, { jevRoute } = {}) {
   const m = {
     inference: 0,
     sideCall: 0,
+    otherSideCalls: { count: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, usdMicros: 0 },
     compaction: 0,
     purposes: {},
     tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -232,6 +241,7 @@ export function turnMetrics(events, price) {
       decisionFailed: {},
       directSuccess: 0,
       droppedEvents: 0,
+      decideCalls: 0,
     },
     toolSchemaHashes: [],
     promptPrefixHashes: [],
@@ -244,17 +254,29 @@ export function turnMetrics(events, price) {
     if (event.type === 'cost/ledger') {
       const purpose = typeof data.purpose === 'string' ? data.purpose : 'unknown'
       bump(m.purposes, purpose)
+      const tokens = isObject(data.tokens) ? data.tokens : {}
+      const billed = isObject(data.billing) ? data.billing.usdMicros : undefined
+      const usd = typeof billed === 'number' ? billed : price ? num(price(data)) : 0
+      const other = purpose === 'side-call' && jevRoute !== undefined && data.route !== jevRoute
+      const into = other ? m.otherSideCalls.tokens : m.tokens
+      into.input += num(tokens.input)
+      into.output += num(tokens.output)
+      into.cacheRead += num(tokens.cacheRead)
+      into.cacheWrite += num(tokens.cacheWrite)
+      if (other) {
+        m.otherSideCalls.count++
+        m.otherSideCalls.usdMicros += usd
+        continue
+      }
       if (purpose === 'inference') m.inference++
       else if (purpose === 'side-call') m.sideCall++
       else if (purpose === 'compaction') m.compaction++
-      const tokens = isObject(data.tokens) ? data.tokens : {}
-      m.tokens.input += num(tokens.input)
-      m.tokens.output += num(tokens.output)
-      m.tokens.cacheRead += num(tokens.cacheRead)
-      m.tokens.cacheWrite += num(tokens.cacheWrite)
       m.credits += num(data.credits)
-      const billed = isObject(data.billing) ? data.billing.usdMicros : undefined
-      m.usdMicros += typeof billed === 'number' ? billed : price ? num(price(data)) : 0
+      m.usdMicros += usd
+    } else if (event.type.endsWith('/jev.decide')) {
+      sawJev = true
+      // A refused Jev call never reached the provider and has no ledger row.
+      if (data.status !== 'refused') m.jev.decideCalls++
     } else if (event.type === 'request/header') {
       if (typeof data.tool_schema_hash === 'string') m.toolSchemaHashes.push(data.tool_schema_hash)
       if (typeof data.prompt_prefix_hash === 'string') m.promptPrefixHashes.push(data.prompt_prefix_hash)
@@ -286,7 +308,8 @@ export function turnMetrics(events, price) {
     if (typeof metricsEvent.droppedCalls === 'number') m.jev.droppedCalls = metricsEvent.droppedCalls
     m.jev.droppedEvents = num(metricsEvent.droppedEvents)
   }
-  m.reconciled = sawJev ? m.inference === m.jev.llmAttempts : true
+  // Inference rows match the loop's model attempts, and Jev-route side-call rows its Jev calls.
+  m.reconciled = sawJev ? m.inference === m.jev.llmAttempts && m.sideCall === m.jev.decideCalls : true
   return m
 }
 

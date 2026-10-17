@@ -25,7 +25,14 @@ export type TurnScore = {
 
 export type TurnMetrics = {
   inference: number
+  /** Side-call rows on the Jev route. */
   sideCall: number
+  /** Side-call rows on any other route; not in `tokens`, `usdMicros` or `credits`. */
+  otherSideCalls: {
+    count: number
+    tokens: { input: number; output: number; cacheRead: number; cacheWrite: number }
+    usdMicros: number
+  }
   compaction: number
   purposes: Record<string, number>
   tokens: { input: number; output: number; cacheRead: number; cacheWrite: number }
@@ -40,6 +47,8 @@ export type TurnMetrics = {
     decisionFailed: Record<string, number>
     directSuccess: number
     droppedEvents: number
+    /** `jev.decide` events other than refused ones: Jev calls that reached the provider. */
+    decideCalls: number
   }
   toolSchemaHashes: string[]
   promptPrefixHashes: string[]
@@ -106,6 +115,7 @@ export function scoreTurn(o: {
 export function turnMetrics(
   events: MetricEvent[],
   price?: (row: Record<string, unknown>) => number,
+  options?: { jevRoute?: string | null | undefined },
 ): TurnMetrics
 export function computeK(
   turns: Array<{ events: MetricEvent[] }>,

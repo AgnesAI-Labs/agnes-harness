@@ -314,16 +314,36 @@ describe('bench runner', () => {
     for (const scope of scopes) expect(chat.systems.some((s) => s.includes(scope))).toBe(true)
     expect(chat.bodies.length).toBeGreaterThan(0)
     expect(chat.bodies.some((b) => b.includes('REPO_RULES_MUST_NOT_REACH_THE_BENCH'))).toBe(false)
-    // The plugin row's Jev route from the bundle is the Settings account's route.
-    const sideRoutes = readFileSync(join(dir, 'events', 'mini.jev.r1.jsonl'), 'utf8')
-      .trim()
-      .split('\n')
-      .map((line) => JSON.parse(line))
-      .filter((e) => e.type === 'cost/ledger' && e.data.purpose === 'side-call')
-      .map((e) => e.data.route)
-    expect(sideRoutes.length).toBeGreaterThan(0)
-    expect(new Set(sideRoutes)).toEqual(new Set(['account-jev-side']))
-    expect(jevFake.seen.length).toBe(sideRoutes.length)
+    // The plugin row's Jev route from the bundle is the Settings account's route. The host's own
+    // side calls (reply suggestions on the chat route after a completed turn) are counted apart.
+    const sideCalls = (lane: string) =>
+      readFileSync(join(dir, 'events', `mini.${lane}.r1.jsonl`), 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line))
+        .filter((e) => e.type === 'cost/ledger' && e.data.purpose === 'side-call')
+    const onJev = sideCalls('jev').filter((e) => e.data.route === 'account-jev-side')
+    expect(onJev.length).toBeGreaterThan(0)
+    expect(jevFake.seen.length).toBe(onJev.length)
+    expect(sideCalls('default').filter((e) => e.data.route === 'account-jev-side')).toEqual([])
+    // The Jev totals hold exactly the calls the Jev endpoint served, whatever else called a model.
+    expect(jev.metrics.sideCall).toBe(jevFake.seen.length)
+    for (const lane of ['default', 'jev']) {
+      const others = sideCalls(lane).filter((e) => e.data.route !== 'account-jev-side')
+      expect(report.otherSideCalls[lane]?.count ?? 0).toBe(others.length)
+    }
+    const suggestions = chat.bodies.filter((b) => b.includes('follow-up question')).length
+    // The host does make such calls here, so the separation above is exercised, not vacuous.
+    expect(suggestions).toBeGreaterThan(0)
+    expect(report.otherSideCalls.default.count + report.otherSideCalls.jev.count).toBe(suggestions)
+    // Other side calls never reach the cost the gates compare.
+    const ledgerCost = (lane: string) =>
+      sideCalls(lane)
+        .filter((e) => e.data.route !== 'account-jev-side')
+        .reduce((sum, e) => sum + (e.data.billing?.usdMicros ?? 0), 0)
+    expect(report.otherSideCalls.jev.usdMicros).toBe(ledgerCost('jev'))
+    const jevTurnCost = records.find((x) => x.lane === 'jev').metrics.usdMicros
+    expect(report.totals.byLane.jev.usdMicros).toBe(jevTurnCost)
     expect(report.totals.byLane.jev.turns + report.totals.byLane.default.turns).toBe(2)
     // Nothing is written into the home's profile: the bench settings travel in the bundle.
     expect(readdirSync(join(home, 'profiles', 'local-dev'))).not.toContain('profile.yaml')

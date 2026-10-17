@@ -124,7 +124,8 @@ seen.
 The checks section also flags, without failing anything: a pair whose hash could not be compared
 because a lane sent no request, a first request of a cell that read more cached tokens than the tool
 definitions could account for, turns whose inference rows do not match the Jev loop's own count of
-model attempts, dropped Jev telemetry, turns that ended at the no-progress limit, ledger rows whose
+model attempts or whose side-call rows on the Jev route do not match its Jev calls, side calls on
+other routes, dropped Jev telemetry, turns that ended at the no-progress limit, ledger rows whose
 model has no catalogue price, and timeouts.
 
 ## Without the Web UI
@@ -158,6 +159,14 @@ How the runner fits the host as it is in this version:
 - The chat model is set on every session (`primary` slot) to the discovered route and model.
 - The host names each new session with one background call to the chat model. Those `title` rows are
   counted under `purposes` but left out of inference and cost, the same on both lanes.
+- Only side-call rows on the discovered Jev route are Jev calls. The host makes side calls of its own
+  too (reply suggestions ask the chat model for a follow-up question after each completed turn, on
+  both lanes); those rows are reported per lane under "Other side calls" (count, tokens, cost, over
+  the whole session) and stay out of the Jev counts, the cost and every gate. Reply suggestions are a
+  built-in extension row, and in this version neither a headless bundle nor a profile can switch one
+  off: `composition.plugins` names only ordinary plugin rows (the host refuses the extension's id),
+  a preset cannot remove the inherited fast slot it uses, and the Settings model slots are not read
+  by a headless host.
 - Before the first turn the runner checks that the workspace holds only what it wrote (`.gitkeep`
   for the generation family, nothing otherwise); otherwise the cell's turns are recorded as not run.
 - The cache check compares the first request's `cacheRead` with the tool definitions' size estimated
