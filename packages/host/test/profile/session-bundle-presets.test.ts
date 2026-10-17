@@ -486,7 +486,7 @@ it('reviews the compiler final tree, strictly pins an agent and admits saved sch
     await scheduled.close()
     await session.close()
     // A strict caller cannot use ordinary admission's unserved-route fallback.
-    manifest.agnes.bundles.review.launch = bundles.review.launch
+    manifest.agnes.bundles.review.launch = plan.launch
     manifest.agnes.bundles.review.presets.review.model = {
       route: { primary: { route: 'not-served', model: 'default' } },
     }

@@ -111,6 +111,33 @@ export function pinPresetRoutes(preset: PresetView, routes: RouteTable): PresetV
   }
 }
 
+/** Review the initial settings a fresh session records from the sealed model catalogue. */
+export function pinPresetModelDefaults(
+  preset: PresetView,
+  routes: RouteTable,
+  records: readonly ModelRecord[],
+): PresetView {
+  const pinned = pinPresetRoutes(preset, routes)
+  const model = {
+    ...pinned.model,
+    thinking: { ...pinned.model.thinking },
+    contextWindow: { ...pinned.model.contextWindow },
+  }
+  // Unselected auxiliary slots do not adopt model defaults when a session opens.
+  for (const slot of ['fast', 'verifier']) {
+    delete model.thinking[slot]
+    delete model.contextWindow[slot]
+  }
+  for (const [slot, target] of Object.entries(routes)) {
+    const record = records.find((entry) => entry.route === target.route && entry.id === target.model)
+    if (!record) bad('model-unserved', 'the reviewed model is unavailable', { slot, ...target })
+    model.thinking[slot] = pinned.model.thinking[slot] ?? record.defaultSettings?.thinking
+    model.contextWindow[slot] =
+      pinned.model.contextWindow?.[slot] ?? record.defaultSettings?.contextWindow ?? record.contextWindow
+  }
+  return { ...pinned, model }
+}
+
 /**
  * Verifies a materialized table against the registry ai actually sealed. This is the second half of
  * failing loudly: materializeRoutes reasons about what the profile declared, this reasons about what

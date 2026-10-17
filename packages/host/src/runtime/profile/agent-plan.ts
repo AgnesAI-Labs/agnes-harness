@@ -7,7 +7,7 @@ import { agentSelection, validateAgentBundles } from '@agnes/host-common/profile
 import { canonicalJson, sha256hex } from '@agnes/host-common/profile/canonical'
 import { expandBundles, loopPatch, resolveComposition } from '@agnes/host-common/profile/composition'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
-import { materializeRoutes, pinPresetRoutes } from '@agnes/host-providers/assemble/routes'
+import { materializeRoutes, pinPresetModelDefaults } from '@agnes/host-providers/assemble/routes'
 import { readRuntimeBundles } from '@agnes/host-providers/profile/bundles-reader'
 import type { CompositionBinding } from '@agnes/host-providers/profile/composition-state'
 import { pluginSnapshotIdentity } from '@agnes/host-providers/runtime-plugin-catalogue'
@@ -177,7 +177,7 @@ export function createAgentResolver(deps: {
     )
     for (const [slot, target] of Object.entries(models))
       container.host.validateModelSwitch({ slot, ...target })
-    const effective = pinPresetRoutes(resolved.view, models)
+    const effective = pinPresetModelDefaults(resolved.view, models, container.host.provider.models())
     const permission = {
       readOnly: tree.selection.toolPolicy?.readOnly === true,
       tools: [...(tree.selection.tools ?? [])],
