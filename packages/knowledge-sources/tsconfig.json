@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist"
+  },
+  "include": ["src/**/*.ts", "tools/**/*.ts"],
+  "references": [
+    {
+      "path": "../extension-api"
+    },
+    {
+      "path": "../plugin-runtime"
+    },
+    {
+      "path": "../host-extensions"
+    }
+  ]
+}

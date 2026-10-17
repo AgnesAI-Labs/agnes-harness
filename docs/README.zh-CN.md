@@ -29,6 +29,7 @@
 | [输入框引用](extend/references.zh-CN.md) | 选择工作区文件和可读历史会话，注入有界上下文 |
 | [默认上下文](guide/context.zh-CN.md) | 查看实时仓库规则、时间上下文与自定义 Skill 目录 |
 | [反馈与人工评审成长](guide/feedback.zh-CN.md) | 评价消息并起草待人工评审的 Skill |
+| [知识来源](guide/knowledge-sources.zh-CN.md) | 检索获授权的文档版本与有限引用 |
 | [学习记忆](guide/memory.zh-CN.md) | 管理文件偏好、审批与隐私 |
 | [官方默认工具](reference/default-tools.zh-CN.md) | 搜索、问答、交付文件、管理后台任务及修改已读取文件 |
 | [Web 工作台](guide/web.zh-CN.md) | 创建任务、查看历史、管理模型与扩展 |

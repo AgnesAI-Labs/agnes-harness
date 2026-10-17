@@ -1,0 +1,9 @@
+{
+  "client": {
+    "entry": "./index.js",
+    "slots": [],
+    "services": ["knowledge.history", "knowledge.preview"],
+    "projections": ["citations"],
+    "styles": ["./style.css"]
+  }
+}

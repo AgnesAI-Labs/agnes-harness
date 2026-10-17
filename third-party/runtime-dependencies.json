@@ -54,6 +54,7 @@
       "rationale": "Pinned to 18.3.1 per the web client modules design (WC5); a single split build keeps exactly one React copy on the page.",
       "consumers": [
         "examples/community/deliverables-gallery",
+        "packages/knowledge-sources",
         "packages/package-manager/bundled-plugins/deliverables-ui",
         "packages/package-manager/bundled-plugins/eval-studio",
         "packages/package-manager/bundled-plugins/usage-cockpit",
@@ -123,6 +124,7 @@
         "packages/host-computer-use",
         "packages/host-extensions",
         "packages/host-providers",
+        "packages/knowledge-sources",
         "packages/model-adapters",
         "packages/plugin-runtime",
         "packages/protocol",
@@ -287,6 +289,7 @@
       "purpose": "DOM renderer for the web workbench and client module mount points; bundled into /vendor/* shared-singleton chunks.",
       "rationale": "Same pin line as react (WC5).",
       "consumers": [
+        "packages/knowledge-sources",
         "packages/package-manager/bundled-plugins/eval-studio",
         "packages/web",
         "packages/web-admin",

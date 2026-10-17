@@ -352,5 +352,6 @@
   "@agnes/mcp-helper": [],
   "@agnes/plugin-helper": [],
   "@agnes/skill-helper": [],
+  "@agnes/knowledge-sources": ["@agnes/extension-api", "@agnes/plugin-runtime"],
   "@agnes/usage-cockpit": ["@agnes/protocol", "@agnes/web-client", "@agnes/web-ui"]
 }

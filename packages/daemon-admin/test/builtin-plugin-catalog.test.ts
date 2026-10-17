@@ -18,7 +18,7 @@ it.each([false, true])('discovers optional pinned helper even with broken exampl
   if (broken) mkdirSync(join(root, 'examples', 'packages'), { recursive: true })
   const catalog = await discoverLocalExamples(root)
   const result = await catalog.read({ offline: true })
-  expect(result.entries).toHaveLength(26)
+  expect(result.entries).toHaveLength(27)
   const examples = result.entries.filter((entry) => entry.sourceId === 'official-examples')
   expect(examples).toHaveLength(17)
   expect(examples.filter((entry) => entry.id.startsWith('@agnes-fde/'))).toHaveLength(12)
@@ -68,6 +68,9 @@ it.each([false, true])('discovers optional pinned helper even with broken exampl
     sourceId: 'builtin-plugins',
     version: '0.1.0',
     source: { ref: 'file:./bundled-plugins/usage-cockpit' },
+  })
+  expect(result.entries.find((entry) => entry.id === '@agnes/knowledge-sources')).toMatchObject({
+    version: '0.1.0', sourceId: 'builtin-plugins', source: { ref: 'file:./bundled-plugins/knowledge-sources' },
   })
   expect(JSON.stringify(result.entries)).not.toContain('github.com')
   expect(result.sources.find((source) => source.sourceId === 'builtin-plugins')?.status).toBe('cached')

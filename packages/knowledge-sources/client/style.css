@@ -1,0 +1,21 @@
+@layer app {
+  .knowledge-sources-panel {
+    min-width: 0;
+    padding: var(--s16);
+    display: grid;
+    gap: var(--s12);
+  }
+  .knowledge-sources-panel article {
+    padding-block: var(--s12);
+    border-bottom: 1px solid var(--agnes-input-border);
+    overflow-wrap: anywhere;
+  }
+  .knowledge-sources-panel pre {
+    max-height: 20rem;
+    overflow: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+  }
+}

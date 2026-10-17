@@ -29,6 +29,7 @@ import { bundledManifests } from './bundled-manifests.mjs'
 import { bundledPackageVersion, stampBundledPackageVersion } from './bundled-version.js'
 import { checkPackagedClientModules } from './client-module-check.js'
 import { prepareDocumentReader } from './document-reader.js'
+import { copyKnowledgeSources } from './knowledge-sources.js'
 import { copyPluginPackRuntime } from './plugin-pack-runtime.js'
 import { copyRipgrep } from './ripgrep.js'
 import { copySystemRuntime, withBuiltSystemRuntime } from './windows-runtime.js'
@@ -57,10 +58,16 @@ export async function copyJevLoopNotice(outputDirectory: string): Promise<void> 
 
 /** Copy only runtime payload, never repository tests or personal working files. */
 export async function copyBundledPlugins(outputDirectory: string, version = '0.0.0'): Promise<void> {
-  for (const { name: helper } of [...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES]) {
+  for (const { name: helper, sourcePath } of [...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES]) {
     const destination = join(outputDirectory, 'bundled-plugins', helper)
-    const source = join(repoPackages, 'package-manager', 'bundled-plugins', helper)
+    const source = join(repoPackages, sourcePath)
     await mkdir(destination, { recursive: true })
+    if (helper === 'knowledge-sources') {
+      await copyKnowledgeSources(source, destination)
+      await stampBundledPackageVersion(destination, version)
+      await checkPackagedClientModules(destination)
+      continue
+    }
     for (const name of ['package.json', 'index.mjs', 'src', 'README.md', 'LICENSE'])
       await cp(join(source, name), join(destination, name), {
         recursive: true,

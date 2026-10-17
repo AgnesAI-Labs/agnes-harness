@@ -29,6 +29,7 @@ const fixture = () => {
 it.each([...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES])(
   'uses $id runtime payload instead of workspace impostor without network commands',
   async (helper) => {
+    if (helper.id === '@agnes/knowledge-sources') expect(DEFAULT_ENABLED_BUNDLED_PACKAGES.some((item) => item.id === helper.id)).toBe(false)
     const cwd = fixture()
     const impostor = join(cwd, 'bundled-plugins', helper.name)
     mkdirSync(impostor, { recursive: true })

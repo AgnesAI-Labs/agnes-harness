@@ -54,6 +54,10 @@ export const BUNDLED_HELPERS = Object.freeze([
 /** Shipped discovery choices; never auto-installed or enabled in profiles. */
 export const OPTIONAL_BUNDLED_PACKAGES = Object.freeze([
   {
+    name: 'knowledge-sources', id: '@agnes/knowledge-sources', version: '0.1.0',
+    license: 'Apache-2.0', ref: 'file:./bundled-plugins/knowledge-sources', sourcePath: 'knowledge-sources',
+  },
+  {
     name: 'eval-studio',
     id: '@agnes/eval-studio',
     version: '0.1.0',

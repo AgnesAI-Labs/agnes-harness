@@ -315,6 +315,12 @@
     },
     {
       "path": "packages/package-manager/bundled-plugins/usage-cockpit"
+    },
+    {
+      "path": "packages/knowledge-sources"
+    },
+    {
+      "path": "packages/knowledge-sources/tsconfig.test.json"
     }
   ]
 }

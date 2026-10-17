@@ -1,0 +1,380 @@
+{
+  "name": "@agnes/knowledge-sources",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "client",
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "typecheck": "tsc -b",
+    "manifest": "tsx tools/manifest.ts",
+    "gen:check": "tsx tools/manifest.ts --check"
+  },
+  "dependencies": {
+    "@agnes/extension-api": "workspace:*",
+    "@agnes/plugin-runtime": "workspace:*",
+    "@sinclair/typebox": "0.34.33"
+  },
+  "devDependencies": {
+    "@agnes/protocol": "workspace:*",
+    "@agnes/web-client": "workspace:*",
+    "@agnes/web-ui": "workspace:*",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "@agnes/host-extensions": "workspace:*"
+  },
+  "agnes": {
+    "hostProvidedExternals": {
+      "@agnes/plugin-runtime": "0.0.0",
+      "@agnes/extension-api": "^4.0.0",
+      "@sinclair/typebox": "0.34.33"
+    },
+    "plugins": [
+      {
+        "id": "ext:agnes/knowledge-sources",
+        "export": "knowledgeSourcesPlugin",
+        "apiRange": "^4.0.0",
+        "runtime": "in-process",
+        "default": false,
+        "inject": [
+          "tools",
+          "services",
+          "projections",
+          "eventLog",
+          "profileRuntime",
+          "self"
+        ],
+        "capabilities": {
+          "ui": true,
+          "store": true,
+          "artifacts": true,
+          "filesystem": {
+            "read": [
+              "workspace/**"
+            ]
+          },
+          "tools": {
+            "prefix": "knowledge_",
+            "names": [
+              "knowledge_query"
+            ]
+          },
+          "events": true,
+          "projections": [
+            {
+              "name": "citations",
+              "inputEventTypes": [
+                "x/plugin/a6558d7273477e08/cited"
+              ],
+              "maxStateBytes": 65536
+            }
+          ],
+          "services": [
+            {
+              "name": "knowledge.history",
+              "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": false
+              },
+              "kind": "query",
+              "outputSchema": {},
+              "timeoutMs": 10000,
+              "maxResultBytes": 65536
+            },
+            {
+              "name": "knowledge.preview",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "pattern": "^[a-f0-9]{64}$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "additionalProperties": false
+              },
+              "kind": "query",
+              "outputSchema": {},
+              "timeoutMs": 10000,
+              "maxResultBytes": 65536
+            },
+            {
+              "name": "knowledge.status",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 65536,
+              "kind": "query"
+            },
+            {
+              "name": "knowledge.configuration",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 65536,
+              "kind": "query"
+            },
+            {
+              "name": "knowledge.check",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 65536,
+              "kind": "query"
+            },
+            {
+              "name": "knowledge.retry",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 65536,
+              "kind": "effect",
+              "effectPolicy": {
+                "isDestructive": true,
+                "isOpenWorld": true,
+                "replay": "never",
+                "requiresApproval": "always",
+                "approvalScopes": []
+              }
+            },
+            {
+              "name": "knowledge.reconcile",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 65536,
+              "kind": "effect",
+              "effectPolicy": {
+                "isDestructive": true,
+                "isOpenWorld": true,
+                "replay": "never",
+                "requiresApproval": "always",
+                "approvalScopes": []
+              }
+            },
+            {
+              "name": "knowledge.configure",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "sources": {
+                    "maxItems": 16,
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$",
+                              "type": "string"
+                            },
+                            "workspaceRoot": {
+                              "minLength": 1,
+                              "maxLength": 4096,
+                              "type": "string"
+                            },
+                            "sessionKeys": {
+                              "minItems": 1,
+                              "maxItems": 32,
+                              "uniqueItems": true,
+                              "type": "array",
+                              "items": {
+                                "minLength": 1,
+                                "maxLength": 256,
+                                "type": "string"
+                              }
+                            },
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "kind": {
+                              "const": "local",
+                              "type": "string"
+                            },
+                            "path": {
+                              "minLength": 1,
+                              "maxLength": 512,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "workspaceRoot",
+                            "sessionKeys",
+                            "enabled",
+                            "kind",
+                            "path"
+                          ]
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$",
+                              "type": "string"
+                            },
+                            "workspaceRoot": {
+                              "minLength": 1,
+                              "maxLength": 4096,
+                              "type": "string"
+                            },
+                            "sessionKeys": {
+                              "minItems": 1,
+                              "maxItems": 32,
+                              "uniqueItems": true,
+                              "type": "array",
+                              "items": {
+                                "minLength": 1,
+                                "maxLength": 256,
+                                "type": "string"
+                              }
+                            },
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "kind": {
+                              "const": "synthetic-api",
+                              "type": "string"
+                            },
+                            "revision": {
+                              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$",
+                              "type": "string"
+                            },
+                            "text": {
+                              "maxLength": 65536,
+                              "type": "string"
+                            },
+                            "available": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "workspaceRoot",
+                            "sessionKeys",
+                            "enabled",
+                            "kind",
+                            "revision",
+                            "text",
+                            "available"
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "sources"
+                ],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 65536,
+              "kind": "effect",
+              "effectPolicy": {
+                "isDestructive": true,
+                "isOpenWorld": true,
+                "replay": "never",
+                "requiresApproval": "always",
+                "approvalScopes": []
+              }
+            }
+          ],
+          "managedServices": [
+            {
+              "id": "knowledge",
+              "scope": "profile",
+              "artifact": {
+                "kind": "in-process"
+              },
+              "healthPath": "/health",
+              "listeners": [],
+              "startupTimeoutMs": 10000,
+              "shutdownTimeoutMs": 5000,
+              "apiVersion": "1.0.0",
+              "requires": []
+            }
+          ]
+        },
+        "metadata": {
+          "displayName": "Knowledge sources",
+          "summary": "Retrieve authorized documents with versioned, untrusted citations.",
+          "description": "Optional local-document and offline API connectors. Knowledge stays separate from learned memory.",
+          "category": "memory-context",
+          "locales": {
+            "zh-CN": {
+              "displayName": "知识来源",
+              "summary": "检索获授权的文档，提供带版本的不可信内容引用。",
+              "description": "可选本地文档与离线 API 连接器；知识来源与学习记忆分开。"
+            }
+          }
+        }
+      }
+    ],
+    "clientDescriptors": [
+      {
+        "rowId": "ext:agnes/knowledge-sources",
+        "path": "./client/agnes.client.json"
+      }
+    ],
+    "metadata": {
+      "displayName": "Knowledge sources",
+      "summary": "Retrieve authorized documents with versioned, untrusted citations.",
+      "description": "Optional local-document and offline API connectors. Knowledge stays separate from learned memory.",
+      "category": "memory-context",
+      "locales": {
+        "zh-CN": {
+          "displayName": "知识来源",
+          "summary": "检索获授权的文档，提供带版本的不可信内容引用。",
+          "description": "可选本地文档与离线 API 连接器；知识来源与学习记忆分开。"
+        }
+      }
+    }
+  }
+}
