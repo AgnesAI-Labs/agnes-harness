@@ -54,9 +54,13 @@ export interface KernelPorts {
       },
     ): Promise<S>
     /** Present after the kind is installed. Missing means the events check waits until bind. */
-    grants?(
-      kind: BindableKindToken,
-    ): { readonly events: boolean; readonly projections: readonly string[] } | undefined
+    grants?(kind: BindableKindToken):
+      | {
+          readonly events: boolean
+          readonly projections: readonly string[]
+          readonly services?: readonly import('@agnes/extension-api').ServiceCapability[]
+        }
+      | undefined
   }
   /** Live registration ownership for cleanup verification, not an execution snapshot. */
   registrations(source: string): string[]

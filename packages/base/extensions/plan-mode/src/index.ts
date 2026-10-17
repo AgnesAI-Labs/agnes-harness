@@ -1,13 +1,26 @@
-import { type Context, defineAgnesPlugin, defineTool } from '@agnes/plugin-runtime'
+import { type Context, defineAgnesPlugin, defineTool, workspaceStateKind } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
+import { createPlanServices } from './services.js'
 import { clearPlanMode, readPlanMode } from './state.js'
 
 const SUMMARY_LIMIT = 4096
 
-export default defineAgnesPlugin({
-  inject: ['tools', 'hooks'],
+const planBackend = defineAgnesPlugin({
+  inject: ['tools', 'hooks', 'providers', 'self'],
   apply(plugin: Context) {
     const disposers = [
+      plugin.providers.register(workspaceStateKind, {
+        id: 'plan-mode',
+        version: '1.0.0',
+        open() {
+          return {
+            query(workspaceRoot) {
+              plugin.self.signal.throwIfAborted()
+              return { ...readPlanMode(workspaceRoot) }
+            },
+          }
+        },
+      }),
       plugin.tools.register(
         defineTool({
           name: 'exit_plan_mode',
@@ -83,12 +96,72 @@ export default defineAgnesPlugin({
         return { request: { summary: `${header}${body}` } }
       }),
     ]
-    return () => {
-      for (const dispose of disposers.reverse()) dispose()
+    return async () => {
+      for (const dispose of disposers.reverse()) await dispose()
     }
   },
 })
 
+export default planBackend
+
 export { decidePlanMode } from './policy.js'
 export type { PlanModeState } from './state.js'
 export { applyPlanCommand, clearPlanMode, planModePath, readPlanMode, writePlanMode } from './state.js'
+
+/** Optional declared policy dependency over the selected generation's state provider. */
+export const planModePlugin = defineAgnesPlugin({
+  inject: ['providers', 'services'],
+  provide: ['planMode'],
+  apply(plugin: Context) {
+    const available = () =>
+      plugin.providers
+        .catalog()
+        .some((entry) => entry.kind === workspaceStateKind.kind && entry.id === 'plan-mode')
+    const releases = createPlanServices(available).map((service) => plugin.services.register(service))
+    plugin.provide(
+      'planMode',
+      Object.freeze({
+        async status(workspaceRoot: string, signal: AbortSignal) {
+          const entries = plugin.providers
+            .catalog()
+            .filter((entry) => entry.kind === workspaceStateKind.kind && entry.id === 'plan-mode')
+          if (!entries.length) return { active: false, updatedAt: '' }
+          const selected =
+            entries.find((entry) => entry.active) ?? (entries.length === 1 ? entries[0] : undefined)
+          if (!selected) throw new Error('Ambiguous plan state provider')
+          const provider = plugin.providers.resolve(workspaceStateKind, {
+            provider: selected.id,
+            version: selected.version,
+          })
+          const instance = await provider.open({
+            binding: { owner: 'agnes/approval-policy', packageId: selected.sourcePackage, signal },
+            now: Date.now,
+          })
+          try {
+            const state = await instance.query(workspaceRoot)
+            if (
+              !state ||
+              typeof state !== 'object' ||
+              Array.isArray(state) ||
+              typeof state.active !== 'boolean' ||
+              typeof state.updatedAt !== 'string'
+            )
+              throw new Error('Invalid plan state')
+            if (state.active && (state.blocked === true || typeof state.revision !== 'string'))
+              return { active: true, blocked: true, updatedAt: state.updatedAt }
+            return {
+              active: state.active,
+              updatedAt: state.updatedAt,
+              ...(typeof state.revision === 'string' ? { revision: state.revision } : {}),
+            }
+          } finally {
+            await instance.dispose?.()
+          }
+        },
+      }),
+    )
+    return () => {
+      for (const release of releases.reverse()) release()
+    }
+  },
+})

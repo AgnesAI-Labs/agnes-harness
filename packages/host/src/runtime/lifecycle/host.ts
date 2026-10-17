@@ -1,5 +1,5 @@
 import { CoreError } from '@agnes/core'
-import { isProfileDecisionJournal } from '@agnes/protocol'
+import { isProfileDecisionJournal, rpcError } from '@agnes/protocol'
 import '../provided-contracts.js'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
@@ -149,6 +149,17 @@ export interface Host {
   /** Authenticated management port. It is not registered as a model tool or extension service. */
   readonly approvalGrants: Assembled['approvalGrants']
   readonly profileServices?: Assembled['profileServices']
+  resolveService(
+    sessionId: string,
+    names: readonly string[],
+  ): Promise<
+    | {
+        extension: string
+        packageId: string
+        workspaceRoot: string
+      }
+    | undefined
+  >
   callService(
     params: ExtensionCallParams,
     credential: unknown,
@@ -300,6 +311,13 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
     activationBarrier: a.activationBarrier,
     approvalGrants: a.approvalGrants,
     profileServices: a.profileServices,
+    resolveService: async (sessionId, names) => {
+      if (closed) throw new HostError('E_HOST_CLOSED', 'host is closed')
+      const session = a.kernel.get(sessionId)
+      if (!session || session.closingOrClosed) throw rpcError('CAPABILITY_DENIED')
+      const binding = a.serviceBinding(names)
+      return binding && { ...binding, workspaceRoot: session.workspaceRoot }
+    },
     callService: (params, credential, signal, effectAdmission) => {
       if (closed) throw markServicePreDispatchFailure(new HostError('E_HOST_CLOSED', 'host is closed'))
       let entered = false

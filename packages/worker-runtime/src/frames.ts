@@ -77,6 +77,7 @@ export type WorkerMethod =
   | 'profileService.readOperation'
   | 'profileService.listDecisions'
   | 'profileService.answerDecision'
+  | 'resolveService'
   | 'inspectService'
   | 'callService'
   | 'abortService'
@@ -194,6 +195,7 @@ export type RequestFrame = {
   sessionKey: string
   requestId: string
   method:
+    | 'scheduling'
     | 'bound-wake'
     | 'permission'
     | 'permission-abort'

@@ -2,6 +2,7 @@ import type { ContentBlock } from '@agnes/protocol'
 import type { SessionControlStateResult } from '@agnes/protocol/gen/agnes-v1'
 import type { Session } from '@agnes/sdk/browser'
 import type { AppSessionContext } from '../app.js'
+import { showCommandFeedback } from './command-feedback.js'
 
 export function createCommandController(
   context: Pick<
@@ -109,23 +110,6 @@ export function createCommandController(
     })
   }
 
-  /**
-   * "Send at next step": the queued follow-up becomes guidance. There is no conversion command, so
-   * the item is taken out of the queue and its full content (attachments included) is sent as a steer.
-   * Should the steer be refused after the removal, the content goes back as a follow-up, so it is not lost.
-   */
-  async function promoteQueued(session: Session, itemId: string): Promise<void> {
-    const item = (await session.controls()).pending.find((candidate) => candidate.itemId === itemId)
-    if (!item) throw new Error(context.t('composer.queue.gone'))
-    await session.removeQueued(itemId)
-    try {
-      await session.steer(item.content)
-    } catch (error) {
-      await session.followUp(item.content).catch(() => undefined)
-      throw error
-    }
-  }
-
   function handleQueuedAction(itemId: string, kind: 'sendNow' | 'removeQueued' | 'promote'): void {
     const session = context.current
     if (
@@ -154,13 +138,23 @@ export function createCommandController(
     } as NonNullable<typeof context.queueAction>
     context.queueAction = action
     context.renderControls()
-    void (
-      kind === 'sendNow'
+    const work = async () => {
+      const held = await session.pendingCommands()
+      if (
+        held.some(
+          (command) => (command.params as { payload?: { itemId?: string } }).payload?.itemId === itemId,
+        )
+      ) {
+        await showCommandFeedback(context, session)
+        return
+      }
+      return kind === 'sendNow'
         ? session.interrupt(itemId)
         : kind === 'promote'
-          ? promoteQueued(session, itemId)
+          ? session.promoteQueued(itemId)
           : session.removeQueued(itemId)
-    )
+    }
+    void work()
       .then(() => {
         if (context.current === session && context.selection === action.selection) {
           context.live?.refresh()
@@ -230,6 +224,7 @@ export function createCommandController(
       sessionStorage.setItem(key, 'pending')
     }
     context.render()
+    await showCommandFeedback(context, session)
   }
 
   async function handleChildControl(id: string, action: 'stop' | 'continue', text?: string): Promise<void> {

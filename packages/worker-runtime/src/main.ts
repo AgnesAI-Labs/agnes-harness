@@ -93,6 +93,7 @@ import { createMcpStatusFrameBuffer } from './status-frame-buffer.js'
 
 /** Runtime capabilities already bootstrapped for this worker; reuse them without reconnecting. */
 export type WorkerHostSkillResources = Readonly<{
+  scheduling?: NonNullable<HostOptions['scheduling']>
   boundWakes?: NonNullable<HostOptions['boundWakes']>
   mcpManage?: NonNullable<HostOptions['mcpManage']>
   pluginManage?: NonNullable<HostOptions['pluginManage']>
@@ -234,6 +235,14 @@ export async function runWorker(
   }
 
   const sharedChannel = new SharedSessionChannel(send)
+  const scheduling: NonNullable<HostOptions['scheduling']> = (session, operation, input, signal) => {
+    if (session.key !== sharedChannel.currentSessionKey()) throw new Error('Scheduling session mismatch')
+    return sharedChannel.request(
+      'scheduling',
+      { operation, input, workspaceRoot: session.workspaceRoot },
+      signal,
+    )
+  }
   const boundWakes = profileWakeProducer(sharedChannel)
   const skillInstall: NonNullable<HostOptions['skillInstall']> = async (input, signal) => {
     if (input.sessionKey !== sharedChannel.currentSessionKey())
@@ -431,6 +440,7 @@ export async function runWorker(
       ? deps.buildHost(profile, prompter, {
           restoreGenerationExtension: generationExtensionRestorer(workerResourcesInput, sharedMcpOpener),
           boundWakes,
+          scheduling,
           skillInstall,
           mcpManage,
           pluginManage,
@@ -468,6 +478,7 @@ export async function runWorker(
             log: deps.log ?? sessionLog,
             prompter,
             boundWakes,
+            scheduling,
             skillInstall,
             mcpManage,
             pluginManage,

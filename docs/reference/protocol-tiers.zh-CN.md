@@ -51,6 +51,12 @@
 
 - `_agnes/v1/submit`
 - `_agnes/v1/submit.ack`
+
+`submit` 的 `kind: control, payload.action: promote` 将现有队列项（`itemId`）原子转换为
+`next-step` 指导（`kind: steer`），保留条目身份、内容、附件与来源，要求当前轮仍在运行且固定 Loop 支持 steer。
+队列修改与控制回执同时提交；条目过期或拒绝时不改变原项。重放沿用原命令 ID，从回执恢复，
+不会新增消息。旧服务端可拒绝这个新增动作；客户端不得用删除后重发来模拟。
+
 - `session/prompt`
 - `session/cancel`
 

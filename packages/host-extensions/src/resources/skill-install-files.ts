@@ -73,7 +73,7 @@ export type InstallBundle = Readonly<{
 const MAX_BYTES = 8 * 1024 * 1024
 const MAX_FILES = 64
 const SAFE_SEGMENT = /^(?!\.\.?$)[A-Za-z0-9._-]{1,128}$/
-const safeName = (name: string) =>
+export const safeName = (name: string) =>
   SAFE_SEGMENT.test(name) &&
   !name.endsWith('.') &&
   !/^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(name)
@@ -219,6 +219,16 @@ export async function readInstallBundle(
     }
   }
   walk(source, 0)
+  return buildInstallBundle(directoryName, files, root, discovery)
+}
+
+/** Validate frozen bytes with the same discovery/parser and revision calculation as disk Skills. */
+export async function buildInstallBundle(
+  directoryName: string,
+  files: ReadonlyMap<string, Buffer>,
+  root: InstallSkillRoot,
+  discovery: Pick<SkillDiscovery, 'discover'>,
+): Promise<InstallBundle> {
   const base = join(root.path, directoryName)
   const key = (path: string) => relative(base, path).split(sep).join('/')
   const fs: InstallSkillFs = {

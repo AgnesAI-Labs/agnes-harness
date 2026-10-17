@@ -2,7 +2,6 @@ import { readdir, realpath } from 'node:fs/promises'
 import { join } from 'node:path'
 import { loadContextRules, readContextConfig, writeContextConfig } from '@agnes/base'
 import { AutoReviewSettingsStore } from '@agnes/base/approval-policy'
-import { applyPlanCommand } from '@agnes/base/plan-mode'
 import { createSearchAdmin } from '@agnes/base/search'
 import { HistoryIndexError, searchHistoryDirectory } from '@agnes/history-index'
 import {
@@ -48,6 +47,7 @@ export function createAppServerAdmin(options: {
   ): Promise<Pick<import('@agnes/protocol/gen/app-server').AdminMemoryResult, 'inspection' | 'file'>>
   triggerSession?(input: TriggerSessionInput): Promise<void>
   credentialConfigurations?(): Promise<CredentialConfiguration[]>
+  plan?(input: AdminPlanParams): Promise<{ active: boolean; text: string }>
   workspaces(): Promise<{ items: { path: string; available: boolean }[] }>
 }) {
   const composition = createCompositionAdmin({
@@ -159,7 +159,9 @@ export function createAppServerAdmin(options: {
       const { items } = await options.workspaces()
       if (!items.some((item) => item.available && item.path === input.cwd))
         throw rpcError('CAPABILITY_DENIED')
-      return applyPlanCommand(await realpath(input.cwd), input.line)
+      return options.plan
+        ? options.plan({ ...input, cwd: await realpath(input.cwd) })
+        : { active: false, text: 'Plan mode is off (provider unavailable)' }
     },
     async memory(input: AdminMemoryParams) {
       const { items } = await options.workspaces()

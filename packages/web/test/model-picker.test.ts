@@ -1,7 +1,7 @@
 /** @vitest-environment happy-dom */
 import type { ModelSettings } from '@agnes/protocol'
 import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
-import { createRegionRenderer, type RegionRenderer } from '@agnes/web-ui'
+import { createRegionRenderer, installFeedbackSink, type RegionRenderer } from '@agnes/web-ui'
 import { createElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { groupModels } from '../src/model-picker/state.js'
@@ -17,7 +17,12 @@ import { zhT } from './helpers/locale.js'
 setLocaleTranslator(zhT)
 
 /** 第一行是会话当前使用的模型，它的设置就是 fixture 里的 `settings`。 */
-const currentModel: ModelPickerOption = { route: 'openai', id: 'gpt-5.6', label: 'OpenAI' }
+const currentModel: ModelPickerOption = {
+  route: 'openai',
+  id: 'gpt-5.6',
+  label: 'OpenAI',
+  contextWindow: 128000,
+}
 
 const models: readonly ModelPickerOption[] = [
   currentModel,
@@ -101,23 +106,45 @@ function rows(): HTMLElement[] {
 }
 
 function row(id: string): HTMLElement {
-  const found = rows().find((option) => option.textContent === id)
+  const found = rows().find((option) => option.querySelector('.model-picker-model')?.textContent === id)
   if (!found) throw new Error(`missing model row: ${id}`)
   return found
 }
 
-function option(group: string, label: string): HTMLOptionElement {
-  const found = [...document.querySelectorAll<HTMLOptionElement>(`#${group} option`)].find(
-    (option) => option.textContent === label,
+function option(group: string, label: string): HTMLButtonElement {
+  const found = [...document.querySelectorAll<HTMLButtonElement>(`#${group} [role="radio"]`)].find(
+    (option) => option.querySelector('span')?.childNodes[0]?.textContent === label,
   )
   if (!found) throw new Error(`missing choice: ${label}`)
   return found
 }
 function choose(group: string, label: string): void {
-  const selected = option(group, label)
-  const select = selected.closest('select')!
-  select.value = selected.value
-  select.dispatchEvent(new Event('change', { bubbles: true }))
+  option(group, label).click()
+}
+async function enter(panel: 'thinking' | 'context' | 'auxiliary') {
+  document.querySelector<HTMLButtonElement>(`#model-picker-${panel}`)?.click()
+  await vi.waitFor(() =>
+    expect(document.querySelector('.model-picker-back')?.textContent).toBe(
+      panel === 'thinking' ? '思考强度' : panel === 'context' ? '上下文窗口' : '辅助模型',
+    ),
+  )
+}
+async function custom() {
+  await enter('context')
+  choose('session-model-budget', '自定义')
+  await vi.waitFor(() => expect(document.querySelector('#session-model-window')).not.toBeNull())
+}
+
+async function chooseAuxiliary(slot: 'fast' | 'verifier', label: string) {
+  document
+    .querySelector<HTMLElement>(`#session-model-slot-${slot}`)
+    ?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+  await vi.waitFor(() => expect(document.querySelector('.ant-select-dropdown')).not.toBeNull())
+  const row = [...document.querySelectorAll<HTMLElement>('.ant-select-item-option')].find((el) =>
+    el.textContent?.includes(label),
+  )
+  if (!row) throw new Error(`missing auxiliary model: ${label}`)
+  row.click()
 }
 
 function budget(): HTMLInputElement {
@@ -194,7 +221,9 @@ describe('model picker', () => {
     expect(
       [...list.querySelectorAll('[role="group"]')].map((group) => group.getAttribute('aria-label')),
     ).toEqual(['OpenAI', '本机', '已配置账户'])
-    expect(rows().map((option) => option.textContent)).toEqual(models.map((model) => model.id))
+    expect(rows().map((option) => option.querySelector('.model-picker-model')?.textContent)).toEqual(
+      models.map((model) => model.id),
+    )
     expect(row('gpt-5.6').getAttribute('aria-selected')).toBe('true')
     expect(list.getAttribute('aria-activedescendant')).toBe(row('gpt-5.6').id)
     // 模型少时不出搜索框，焦点直接落在列表上。
@@ -230,7 +259,11 @@ describe('model picker', () => {
     expect(onSelect).not.toHaveBeenCalled()
 
     type(search, 'local')
-    await vi.waitFor(() => expect(rows().map((option) => option.textContent)).toEqual(['local-model']))
+    await vi.waitFor(() =>
+      expect(rows().map((option) => option.querySelector('.model-picker-model')?.textContent)).toEqual([
+        'local-model',
+      ]),
+    )
     expect(search.getAttribute('aria-activedescendant')).toBe('model-picker-option-0')
     // 搜索框里空格是输入，不是选择。
     expect(press(search, ' ').defaultPrevented).toBe(false)
@@ -246,7 +279,9 @@ describe('model picker', () => {
     await vi.waitFor(() => expect(document.querySelector('#model-listbox')).not.toBeNull())
     const list = listbox()
     const active = () =>
-      document.getElementById(list.getAttribute('aria-activedescendant') ?? '')?.textContent
+      document
+        .getElementById(list.getAttribute('aria-activedescendant') ?? '')
+        ?.querySelector('.model-picker-model')?.textContent
     expect(active()).toBe('gpt-5.6')
     press(list, 'ArrowDown')
     await vi.waitFor(() => expect(active()).toBe('gpt-5.6-mini'))
@@ -338,9 +373,10 @@ describe('model picker', () => {
   it('lists the declared reasoning levels and applies one together with the saved budget', async () => {
     const { trigger, onSettingsChange } = mountPicker()
     await open(trigger)
-    const levels = [...document.querySelectorAll('#session-model-thinking option')]
+    await enter('thinking')
+    const levels = [...document.querySelectorAll('#session-model-thinking [role=radio]')]
     expect(levels.map((level) => level.textContent)).toEqual(['自动', '低', '高'])
-    expect(String(option('session-model-thinking', '低').selected)).toBe('true')
+    expect(option('session-model-thinking', '低').getAttribute('aria-checked')).toBe('true')
     choose('session-model-thinking', '高')
     // 档位与预算一起提交，免得只改一项把另一项重置。
     await vi.waitFor(() =>
@@ -349,7 +385,7 @@ describe('model picker', () => {
     await closed()
   })
 
-  it('keeps model-driven choices in selects when the model offers more than five levels or budgets', async () => {
+  it('keeps all declared model levels and capacity-valid budgets in their sub-panels', async () => {
     const { trigger, onSettingsChange } = mountPicker({
       settings: {
         ...settings,
@@ -366,8 +402,9 @@ describe('model picker', () => {
       },
     })
     await open(trigger)
-    expect(document.querySelectorAll('#session-model-thinking option')).toHaveLength(8)
-    expect(document.querySelectorAll('#session-model-budget option')).toHaveLength(7)
+    await enter('thinking')
+    expect(document.querySelectorAll('#session-model-thinking [role=radio]')).toHaveLength(8)
+    expect(document.querySelectorAll('#session-model-budget [role=radio]')).toHaveLength(4)
     expect(document.querySelector('#model-settings-popover .agh-segmented')).toBeNull()
     choose('session-model-thinking', '高')
     await vi.waitFor(() =>
@@ -379,9 +416,15 @@ describe('model picker', () => {
   it('offers budget presets within the model capacity and applies one', async () => {
     const { trigger, onSettingsChange } = mountPicker()
     await open(trigger)
-    const presets = [...document.querySelectorAll('#session-model-budget option')]
-    expect(presets.map((preset) => preset.textContent)).toEqual(['自动', '32K', '64K', '128K'])
-    expect(String(option('session-model-budget', '64K').selected)).toBe('true')
+    await enter('context')
+    const presets = [...document.querySelectorAll('#session-model-budget [role=radio]')]
+    expect(presets.map((preset) => preset.textContent)).toEqual([
+      '自动使用模型容量 128K',
+      '32K',
+      '64K',
+      '自定义',
+    ])
+    expect(option('session-model-budget', '64K').getAttribute('aria-checked')).toBe('true')
     choose('session-model-budget', '自动')
     await vi.waitFor(() => expect(onSettingsChange).toHaveBeenCalledWith({ thinking: 'low' }))
     await closed()
@@ -390,8 +433,9 @@ describe('model picker', () => {
   it('commits the custom budget on Enter rather than on every keystroke', async () => {
     const { trigger, onSettingsChange } = mountPicker()
     await open(trigger)
-    type(budget(), '100k')
-    await vi.waitFor(() => expect(budget().value).toBe('100k'))
+    await custom()
+    type(budget(), '100')
+    await vi.waitFor(() => expect(budget().value).toBe('100'))
     expect(onSettingsChange).not.toHaveBeenCalled()
     press(budget(), 'Enter')
     await vi.waitFor(() =>
@@ -403,12 +447,13 @@ describe('model picker', () => {
   it('refuses an out-of-range budget, marks the field invalid and names the range', async () => {
     const { trigger, onSettingsChange } = mountPicker()
     await open(trigger)
-    type(budget(), '999m')
+    await custom()
+    type(budget(), '999000')
     await vi.waitFor(() => expect(budget().getAttribute('aria-invalid')).toBe('true'))
-    expect(document.querySelector('#session-model-settings-error')?.textContent).toContain('128,000')
-    expect(document.querySelector<HTMLSelectElement>('#session-model-budget')?.value).toBe('__unselected__')
+    expect(document.querySelector('#session-model-settings-error')?.textContent).toContain('128 K')
+    expect(option('session-model-budget', '自定义').getAttribute('aria-checked')).toBe('true')
     press(budget(), 'Enter')
-    choose('session-model-thinking', '高')
+    press(budget(), 'Enter')
     expect(onSettingsChange).not.toHaveBeenCalled()
     expect(document.querySelector('#model-listbox')).not.toBeNull()
   })
@@ -420,8 +465,9 @@ describe('model picker', () => {
     })
     const { trigger, onError } = mountPicker({}, { onSettingsChange })
     await open(trigger)
-    type(budget(), '100k')
-    await vi.waitFor(() => expect(budget().value).toBe('100k'))
+    await custom()
+    type(budget(), '100')
+    await vi.waitFor(() => expect(budget().value).toBe('100'))
     press(budget(), 'Enter')
     await vi.waitFor(() => expect(onError).toHaveBeenCalledWith(failure))
     await vi.waitFor(() =>
@@ -429,15 +475,16 @@ describe('model picker', () => {
         '保存设置失败，请重试。',
       ),
     )
-    expect(budget().value).toBe('100k')
+    expect(budget().value).toBe('100')
   })
 
   it('announces a saved level the model no longer declares and resets it with the next change', async () => {
     const { trigger, onSettingsChange } = mountPicker({ settings: { ...settings, thinking: 'max' } })
     expect(trigger.querySelector('[data-model-level]')).toBeNull()
     await open(trigger)
+    await enter('context')
     expect(document.querySelector('.model-picker-notice')?.textContent).toContain('max')
-    expect(document.querySelector<HTMLSelectElement>('#session-model-thinking')?.value).toBe('__unselected__')
+    expect(document.querySelector('#session-model-thinking [aria-checked=true]')).toBeNull()
     choose('session-model-budget', '32K')
     await vi.waitFor(() => expect(onSettingsChange).toHaveBeenCalledWith({ contextWindow: 32000 }))
   })
@@ -474,25 +521,172 @@ describe('model picker', () => {
     expect(listbox().getAttribute('aria-activedescendant')).toBe('model-picker-option-0')
   })
 
-  it('offers explicit auxiliary session overrides without selecting the primary model', async () => {
-    const onAuxiliarySelect = vi.fn(async () => true)
-    const { trigger, onSelect } = mountPicker(
-      { auxiliaryAvailable: true },
-      { onAuxiliaryRead: async () => ({ fast: null, verifier: null }), onAuxiliarySelect },
-    )
+  it.each(['fast', 'verifier'] as const)(
+    'applies %s immediately, reports success, and keeps defaults and primary independent',
+    async (slot) => {
+      const onAuxiliarySelect = vi.fn(async () => true)
+      const publish = vi.fn()
+      const restore = installFeedbackSink({ publish, resolve: vi.fn() })
+      try {
+        const { trigger, onSelect } = mountPicker(
+          { auxiliaryAvailable: true },
+          {
+            onAuxiliaryRead: async () => ({
+              fast: { route: 'openai', model: 'gpt-5.6' },
+              verifier: null,
+              defaults: { fast: { route: 'openai', model: 'gpt-5.6' }, verifier: null },
+            }),
+            onAuxiliarySelect,
+          },
+        )
+        await open(trigger)
+        await vi.waitFor(() =>
+          expect(document.querySelector('#model-picker-auxiliary')?.textContent).toContain('跟随默认'),
+        )
+        await enter('auxiliary')
+        expect(document.querySelector('[data-testid=session-auxiliary-models]')?.textContent).toContain(
+          '跟随默认（gpt-5.6）',
+        )
+        expect(document.querySelector('[data-testid=session-auxiliary-models]')?.textContent).toContain(
+          '跟随默认（未设置）',
+        )
+        expect(document.querySelector('[data-testid$="-save"]')).toBeNull()
+        expect(document.querySelector('.model-picker-defaults-link')?.getAttribute('href')).toBe(
+          '?settings=auxiliary-models',
+        )
+        await chooseAuxiliary(slot, '本机 · local-model')
+        await vi.waitFor(() =>
+          expect(onAuxiliarySelect).toHaveBeenCalledWith(
+            slot,
+            expect.objectContaining({ route: 'local', id: 'local-model' }),
+          ),
+        )
+        await vi.waitFor(() =>
+          expect(publish).toHaveBeenCalledWith(
+            expect.objectContaining({ outcome: 'success', message: '辅助模型已更新。仅用于当前会话。' }),
+          ),
+        )
+        expect(onSelect).not.toHaveBeenCalled()
+        press(document.querySelector('.model-picker-back')!, 'Escape')
+        await vi.waitFor(() =>
+          expect(document.querySelector('#model-picker-auxiliary')?.textContent).toContain('local-model'),
+        )
+        if (slot === 'fast') {
+          await enter('auxiliary')
+          await chooseAuxiliary('fast', '跟随默认（gpt-5.6）')
+          await vi.waitFor(() =>
+            expect(onAuxiliarySelect).toHaveBeenCalledWith('fast', { route: 'openai', id: 'gpt-5.6' }),
+          )
+          press(document.querySelector('.model-picker-back')!, 'Escape')
+          await vi.waitFor(() =>
+            expect(document.querySelector('#model-picker-auxiliary')?.textContent).toContain('跟随默认'),
+          )
+        }
+      } finally {
+        restore()
+      }
+    },
+  )
+
+  it.each(['declined', 'failed'] as const)(
+    'keeps confirmed auxiliary choices and publishes no success when a save is %s',
+    async (outcome) => {
+      const publish = vi.fn()
+      const restore = installFeedbackSink({ publish, resolve: vi.fn() })
+      const onAuxiliarySelect = vi.fn(async () => {
+        if (outcome === 'failed') throw new Error('unavailable')
+        return false
+      })
+      try {
+        const { trigger } = mountPicker(
+          { auxiliaryAvailable: true },
+          { onAuxiliaryRead: async () => ({ fast: null, verifier: null }), onAuxiliarySelect },
+        )
+        await open(trigger)
+        await enter('auxiliary')
+        await vi.waitFor(() => expect(document.querySelector('#session-model-slot-fast')).not.toBeNull())
+        await chooseAuxiliary('fast', '本机 · local-model')
+        await vi.waitFor(() =>
+          expect(document.querySelector('[data-testid=session-model-slot-status]')?.textContent).toBe(
+            '未能为当前会话保存',
+          ),
+        )
+        expect(publish).not.toHaveBeenCalled()
+        expect(document.querySelector('[data-testid=session-auxiliary-models]')?.textContent).toContain(
+          '跟随默认（未设置）',
+        )
+      } finally {
+        restore()
+      }
+    },
+  )
+
+  it('reloads reasoning choices from the selected model and preserves no obsolete levels', async () => {
+    const { trigger, render } = mountPicker()
     await open(trigger)
-    await vi.waitFor(() => expect(document.querySelector('#session-model-slot-fast')).not.toBeNull())
-    const select = document.querySelector<HTMLSelectElement>('#session-model-slot-fast')
-    if (!select) throw new Error('auxiliary slot is missing')
-    select.value = JSON.stringify(['local', 'local-model'])
-    select.dispatchEvent(new Event('change', { bubbles: true }))
-    document.querySelector<HTMLButtonElement>('[data-testid="session-model-slot-fast-save"]')?.click()
+    await enter('thinking')
+    render({
+      selected: models[2],
+      settings: { capacity: 256000, thinkingLevelMap: { off: 'none', medium: 'medium' } },
+    })
     await vi.waitFor(() =>
-      expect(onAuxiliarySelect).toHaveBeenCalledWith(
-        'fast',
-        expect.objectContaining({ route: 'local', id: 'local-model' }),
-      ),
+      expect(
+        [...document.querySelectorAll('#session-model-thinking [role=radio]')].map((el) => el.textContent),
+      ).toEqual(['自动', '关闭', '中']),
     )
-    expect(onSelect).not.toHaveBeenCalled()
   })
+
+  it.each(['100', ''] as const)('commits a custom K value on leaving the field (%s)', async (raw) => {
+    const { trigger, onSettingsChange } = mountPicker()
+    await open(trigger)
+    await custom()
+    budget().focus()
+    type(budget(), raw)
+    await vi.waitFor(() => expect(budget().value).toBe(raw))
+    expect(onSettingsChange).not.toHaveBeenCalled()
+    const outside = document.createElement('button')
+    document.body.append(outside)
+    outside.focus()
+    await vi.waitFor(() =>
+      expect(onSettingsChange).toHaveBeenCalledWith({
+        thinking: 'low',
+        ...(raw ? { contextWindow: 100000 } : {}),
+      }),
+    )
+  })
+
+  it.each([undefined, settings.capacity])(
+    'shows current values and navigates with Enter, arrows and two Escapes (budget %s)',
+    async (window) => {
+      const { contextWindow: _budget, ...automatic } = settings
+      const { trigger } = mountPicker({
+        settings: { ...automatic, ...(window === undefined ? {} : { contextWindow: window }) },
+      })
+      await open(trigger)
+      expect(document.querySelectorAll('.model-picker-nav')).toHaveLength(3)
+      expect(document.querySelector('#model-picker-thinking')?.textContent).toContain('低')
+      expect(document.querySelector('#model-picker-context')?.textContent).toContain('自动 · 128K')
+      expect(document.querySelectorAll('.model-picker-group-title')[0]?.textContent).toBe('OpenAI')
+      expect(document.querySelector('.model-picker-capacity')?.textContent).toBe('128K')
+      expect(document.querySelector('.model-picker-settings-title')).toBeNull()
+      for (const key of ['Enter', 'ArrowRight']) {
+        const row = document.querySelector<HTMLElement>('#model-picker-thinking')!
+        row.focus()
+        press(row, key)
+        await vi.waitFor(() =>
+          expect(document.activeElement).toBe(document.querySelector('.model-picker-back')),
+        )
+        press(document.activeElement as HTMLElement, 'ArrowLeft')
+        await vi.waitFor(() => expect(document.activeElement).toBe(row))
+      }
+      await enter('context')
+      expect(option('session-model-budget', '自动').getAttribute('aria-checked')).toBe('true')
+      press(document.activeElement as HTMLElement, 'Escape')
+      await vi.waitFor(() => expect(document.activeElement?.id).toBe('model-picker-context'))
+      expect(trigger.getAttribute('aria-expanded')).toBe('true')
+      press(document.activeElement as HTMLElement, 'Escape')
+      await closed()
+      expect(document.activeElement).toBe(trigger)
+    },
+  )
 })

@@ -93,6 +93,13 @@ export function createExtensionServiceHost(input: {
   providers(): ProvidersService
   sessionGeneration?: (sessionKey: string) => string | undefined
   readAdmission?: () => ServiceAdmission | undefined
+  serviceIdentity?: (owner: string) =>
+    | {
+        packageId: string
+        packageVersion: string
+        recheck(required: readonly import('@agnes/extension-api').ServiceCapability[]): void
+      }
+    | undefined
 }): ExtensionServiceHost {
   const sink: { current?: ExtensionInvocation } = {}
   const bindings = new ServiceBindings(() => input.providers())
@@ -197,10 +204,14 @@ export function createExtensionServiceHost(input: {
     kind: BindableKind<S, P>,
     provider: ServiceProvider<S, P>,
     identity: { readonly owner: string; readonly packageId: string },
+    root?: Context,
   ): (() => Promise<void>) => {
     if (!EXTENSION_ID_PATTERN.test(identity.owner) || identity.packageId.trim() === '')
       throw closed(kind.kind, 'register')
-    const dispose = providers.registerHost(kind, identity.packageId, provider)
+    const dispose =
+      kind.authority === 'host' && root
+        ? bindings.registerHost(root, kind, provider, identity.packageId)
+        : providers.registerHost(kind, identity.packageId, provider)
     const offs: Array<() => void> = []
     try {
       bindings.noteOwner(kind.kind, provider.id, provider.version, identity.owner, identity.packageId)
@@ -250,7 +261,7 @@ export function createExtensionServiceHost(input: {
           identity.packageId !== GIT_WORKTREE_PACKAGE)
       )
         throw closed(kind.kind, 'register')
-      return claim(ctx.providers, kind, provider, identity)
+      return claim(ctx.providers, kind, provider, identity, ctx)
     },
     bindHost(kind, call, factories) {
       return bindings.bind(kind, call, factories ?? {})
@@ -267,7 +278,13 @@ export function createExtensionServiceHost(input: {
       providers.installServiceBinder((kind) => {
         const admitted = readAdmission()
         if (!admitted?.active || !admitted.owner) throw closed(kind.kind, 'bind')
-        const packageId = bindings.claimPackage(kind.kind, admitted.owner)
+        const required = bindings.grants(kind.kind)?.services
+        const row =
+          kind.authority === 'host' && !kind.operations.register && required?.length
+            ? input.serviceIdentity?.(admitted.owner)
+            : undefined
+        const packageId = row?.packageId ?? bindings.claimPackage(kind.kind, admitted.owner)
+        row?.recheck(required ?? [])
         if (!packageId) throw closed(kind.kind, 'bind')
         const token = admitted.token
         const owner = admitted.owner
@@ -275,8 +292,10 @@ export function createExtensionServiceHost(input: {
           owner,
           packageId,
           trust: 'trusted',
+          ...(row ? { packageVersion: row.packageVersion } : {}),
           projections: unavailableProjections,
           recheck() {
+            row?.recheck(required ?? [])
             const current = readAdmission()
             if (!current?.active || current.token !== token || current.owner !== owner)
               throw closed(kind.kind, 'bind')

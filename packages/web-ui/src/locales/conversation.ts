@@ -252,8 +252,7 @@ export const conversationLocaleCatalog: LocaleCatalog = {
     'usage.viewAriaFallback': 'View session context usage',
     'usage.title': 'Context usage',
     'usage.usedTitle': 'Context used',
-    'usage.note':
-      'Context is estimated by the backend and includes retained conversation content; the model window and output cap come from the model configuration.',
+    'usage.estimate': 'Context usage is estimated by the backend.',
     'markdown.copyCode': 'Copy code',
     'markdown.copied': 'Copied',
     'markdown.copyFailed': 'Copy failed',
@@ -592,7 +591,7 @@ export const conversationLocaleCatalog: LocaleCatalog = {
     'usage.viewAriaFallback': '查看会话上下文占用',
     'usage.title': '上下文用量',
     'usage.usedTitle': '上下文已用',
-    'usage.note': '上下文为后台估算，包含当前保留的对话等内容；模型窗口与输出上限来自模型配置。',
+    'usage.estimate': '上下文占用为后台估算。',
     'markdown.copyCode': '复制代码',
     'markdown.copied': '已复制',
     'markdown.copyFailed': '复制失败',

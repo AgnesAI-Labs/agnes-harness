@@ -1,6 +1,11 @@
 import { randomBytes } from 'node:crypto'
 import type { Host, ResolvedProfile } from '@agnes/host'
-import { rpcError } from '@agnes/protocol'
+import {
+  type ClientModuleServiceCallParams,
+  type ExtensionCallParams,
+  type ExtensionCallResult,
+  rpcError,
+} from '@agnes/protocol'
 import type { WorkerPool } from './worker-pool.js'
 
 function markPreDispatch(error: unknown): unknown {
@@ -59,6 +64,16 @@ async function callWorker(
     throw error
   } finally {
     signal?.removeEventListener('abort', abort)
+  }
+}
+
+/** Resolution runs in the same session-routed Host as the subsequent service call. */
+export function workerServiceResolver(pool: Pick<WorkerPool, 'acquireSharedWorker'>): Host['resolveService'] {
+  return async (sessionKey, names) => {
+    const link = await pool.acquireSharedWorker()
+    return (await link.command('resolveService', { sessionKey, names })) as Awaited<
+      ReturnType<Host['resolveService']>
+    >
   }
 }
 
@@ -206,5 +221,37 @@ export function workerWakeBindings(
       if (gate) await gate({ packageId: target.producerPackageId ?? '', integrity: target.producerIntegrity })
       return target
     },
+  }
+}
+
+/** A ready client row receives one query grant; Host repeats session and principal checks. */
+export function createClientServiceDispatcher(
+  callService: Host['callService'],
+  inspectService: Host['inspectService'],
+) {
+  return async (
+    input: ClientModuleServiceCallParams & Readonly<{ packageId: string; extension: string }>,
+  ): Promise<ExtensionCallResult> => {
+    const params: ExtensionCallParams = {
+      sessionId: input.sessionId,
+      extension: input.extension,
+      service: input.service,
+      input: input.input,
+    }
+    // Synthesized only after a fresh ready-row/manifest match; it never crosses the browser
+    // boundary and has one query service grant rather than generic daemon authority.
+    const credential = Object.freeze({
+      kind: 'surface-service' as const,
+      // `client-web` is a dedicated server-side principal for the authenticated loopback BFF.
+      // It is deliberately not derived from profile/row text: the worker service-authority
+      // envelope allows only a bounded source grammar and the row itself is already held in the
+      // exact grant below.
+      source: 'client-web',
+      subjectCredential: Object.freeze({ kind: 'local' }),
+      grants: Object.freeze([{ extension: input.extension, name: input.service, range: '*' }]),
+    })
+    const inspection = await inspectService(params, credential)
+    if (inspection.kind !== 'query') throw rpcError('CAPABILITY_DENIED')
+    return await callService(params, credential)
   }
 }

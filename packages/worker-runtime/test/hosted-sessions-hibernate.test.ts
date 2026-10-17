@@ -489,7 +489,9 @@ describe('the session idle limit', () => {
 describe('session-scoped worker commands', () => {
   it('wakes session commands but leaves recorded views and runtime reads independent of the writer', () => {
     const commands = readFileSync(new URL('../src/commands.ts', import.meta.url), 'utf8')
-    const service = commands.slice(commands.indexOf('export async function handleServiceCommand'))
+    const service =
+      commands.slice(commands.indexOf('export async function handleServiceCommand')) +
+      readFileSync(new URL('../src/service-commands.ts', import.meta.url), 'utf8')
     const scoped = [...service.matchAll(/case '([\w.]+)': \{[\s\S]*?(?=\n {4}case |\n {4}default:)/g)]
       .filter(([body]) => /\bp\.(sessionKey|sessionId)\b/.test(body))
       .map(([, method]) => method)

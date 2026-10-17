@@ -12,7 +12,7 @@ import {
 } from '@agnes/extension-api'
 import { HostError } from '@agnes/host-common/errors'
 import type { RowOrigin, RowOriginLookup } from '@agnes/plugin-runtime/host'
-import type { JsonValue } from '@agnes/protocol'
+import { type JsonValue, jcs, type ServiceCapability } from '@agnes/protocol'
 import { BUILTIN_HOOK_RANKS } from '../assemble/ext-rows.js'
 import { diagnostic, loadError } from './diagnostics.js'
 import { DisposerBag } from './disposers.js'
@@ -99,6 +99,7 @@ type RowRecord = {
   token: symbol
   fiber: Fiber
   lease: Lease
+  serviceCapabilities: readonly ServiceCapability[]
   ac: AbortController
   bag: DisposerBag
   pending: Set<Pending>
@@ -281,7 +282,10 @@ export function createRowExtensionHost(options: RowExtensionHostOptions) {
       throw new HostError('E_EXT_LOAD', 'extension source is already held by another row')
     const info = options.describePackage?.(origin.packageId, origin.snapshotId, origin.exportName)
     const packageVersion = info?.version ?? origin.snapshotId
-    const lease = leaseFor(manifestLikeFor(source, packageVersion), {
+    const serviceCapabilities = info?.declaredCapabilities?.services ?? []
+    const manifest = manifestLikeFor(source, packageVersion)
+    manifest.capabilities.services = [...serviceCapabilities]
+    const lease = leaseFor(manifest, {
       ttlMs: ROW_BOUND_LEASE_TTL_MS,
       now: clock(),
       clock,
@@ -299,6 +303,7 @@ export function createRowExtensionHost(options: RowExtensionHostOptions) {
       token,
       fiber,
       lease,
+      serviceCapabilities,
       ac,
       bag,
       pending: new Set(),
@@ -580,6 +585,28 @@ export function createRowExtensionHost(options: RowExtensionHostOptions) {
             'E_EXT_LOAD',
             `replacement of ${row.id} must register hooks: ${missing.join(', ')}`,
           )
+      }
+    },
+    serviceIdentity(source: string) {
+      const rowId = sources.get(source)
+      const record = rowId ? records.get(rowId) : undefined
+      if (record?.state !== 'live') return undefined
+      return {
+        packageId: record.packageId,
+        packageVersion: record.packageVersion,
+        recheck(required: readonly ServiceCapability[]) {
+          record.lease.assertAlive('execute')
+          if (record.state !== 'live' || record.ac.signal.aborted || records.get(record.rowId) !== record)
+            throw new ExtensionError('E_LEASE_EXPIRED', 'service row is closed')
+          for (const cap of required)
+            if (
+              !record.serviceCapabilities.some(
+                (item) => jcs(item as unknown as JsonValue) === jcs(cap as unknown as JsonValue),
+              ) ||
+              !record.lease.allows('service', cap.name)
+            )
+              throw new ExtensionError('E_CAPABILITY_UNDECLARED', 'service not declared or granted')
+        },
       }
     },
     leaseFor: (source: string): LeaseView | undefined => leases.get(source)?.view(),

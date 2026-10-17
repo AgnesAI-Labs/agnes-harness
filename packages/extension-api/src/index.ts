@@ -53,6 +53,7 @@ export type {
 export type { RemoteTransport } from './remote-transport.js'
 export * from './resources.js'
 export * from './sandbox-provider.js'
+export * from './scheduling.js'
 export * from './search-provider.js'
 export * from './service-provider.js'
 export * from './services.js'
@@ -73,3 +74,5 @@ export * from './tool-runtime.js'
 export * from './version.js'
 export * from './webhook-trigger.js'
 export * from './workspace-hooks.js'
+
+export * from './workspace-state.js'

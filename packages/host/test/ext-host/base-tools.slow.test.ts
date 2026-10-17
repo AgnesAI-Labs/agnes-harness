@@ -366,6 +366,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         'agnes/session-query',
         'agnes/context-rules',
         'agnes/time-context',
+        'agnes/follow-up-hint',
         'agnes/schedule',
       ])
       const byId = (id: string) => status.find((entry) => entry.id === id)

@@ -193,6 +193,7 @@ export type TestHostOptions = {
   /** Private daemon-owned Skill view, for asserting the production Host request path. */
   mcpManage?: HostOptions['mcpManage']
   pluginManage?: HostOptions['pluginManage']
+  scheduling?: HostOptions['scheduling']
   skillResources?: SkillRuntimeInput
   skillContribution?: HostOptions['skillContribution']
   // A seam with a close(), so a test can watch the teardown run instead of reading an audit line
@@ -432,6 +433,7 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
     ...(o.extensionLoader ? { extensionLoader: o.extensionLoader } : {}),
     ...(o.extensionIsolation ? { extensionIsolation: o.extensionIsolation } : {}),
     ...(o.pluginManage ? { pluginManage: o.pluginManage } : {}),
+    ...(o.scheduling ? { scheduling: o.scheduling } : {}),
     ...(o.mcpManage ? { mcpManage: o.mcpManage } : {}),
     ...(o.extensionIsolationServices ? { extensionIsolationServices: o.extensionIsolationServices } : {}),
     ...(o.skillResources ? { skillResources: o.skillResources } : {}),

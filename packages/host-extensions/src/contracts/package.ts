@@ -46,7 +46,30 @@ export type SkillRuntimeDiscovery = Readonly<
   Pick<BoundSkillRuntimeInput, 'list' | 'runInWorkspace' | 'invocation'>
 >
 
+/** Volatile background work; observation never replays history or opens a turn. */
+export interface SessionTasks {
+  watch(
+    session: import('@agnes/extension-api').SessionRef,
+    listener: (event: {
+      turn: number
+      reason: string
+      messages: Array<{ role: 'user' | 'assistant'; content: Array<{ type: 'text'; text: string }> }>
+    }) => void,
+  ): () => void
+  generate(
+    session: import('@agnes/extension-api').SessionRef,
+    input: {
+      turn: number
+      label: string
+      system: string
+      messages: Array<{ role: 'user' | 'assistant'; content: Array<{ type: 'text'; text: string }> }>
+    },
+    signal: AbortSignal,
+  ): Promise<string | undefined>
+}
+
 export type SeamInitContext = {
+  sessionTasks?: SessionTasks
   searchProvider?: import('@agnes/extension-api').SearchProvider
   /** Deployment grants, supplied only to the exact bundled hooks-runner factory. */
   trustedHookCommands?: Readonly<{
@@ -83,17 +106,6 @@ export type SeamInitContext = {
   }>
   /** Available to ecosystem extensions after the seam phase, never a raw exec substitute. */
   sandbox?: SandboxSeam
-  /** Daemon job tables, supplied only to agnes/schedule. */
-  scheduleTables?: {
-    table(name: string): {
-      name: string
-      exec(sql: string): void
-      run(sql: string, params?: readonly unknown[]): { changes: number }
-      get<T>(sql: string, params?: readonly unknown[]): T | undefined
-      all<T>(sql: string, params?: readonly unknown[]): T[]
-      transaction<T>(fn: () => T): T
-    }
-  }
 }
 export type SeamFactory<S = unknown> = (ctx: SeamInitContext) => Promise<S>
 

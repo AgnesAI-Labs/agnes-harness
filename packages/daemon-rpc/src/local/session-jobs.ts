@@ -11,8 +11,8 @@ import { type ExtensionMethodsContext, executeJournaledEffect } from './methods/
 export type SessionJobServices = Pick<
   ExtensionMethodsContext,
   'activationBarrier' | 'journal' | 'commandQueue' | 'callService' | 'inspectService'
->
-const extension = 'agnes/jobs-web'
+> &
+  Pick<import('@agnes/host').Host, 'resolveService'>
 export function registerSessionJobs(
   ep: LocalEndpoint,
   services: SessionJobServices | undefined,
@@ -23,13 +23,6 @@ export function registerSessionJobs(
       const p = params as SessionJobsReadParams | SessionJobsControlParams
       requireOwner(`session.jobs.${operation}`, p.sessionId, call)
       if (!services || !call.conn.credential) throw rpcError('CAPABILITY_DENIED')
-      const credential = (name: string) =>
-        Object.freeze({
-          kind: 'surface-service',
-          source: 'session-workbench',
-          subjectCredential: call.conn.credential,
-          grants: [{ extension, name, range: '*' }],
-        })
       let invocation: ReturnType<SessionJobServices['activationBarrier']['admit']>
       try {
         invocation = services.activationBarrier.admit('service')
@@ -39,6 +32,16 @@ export function registerSessionJobs(
         throw error
       }
       return invocation.run(async () => {
+        const binding = await services.resolveService(p.sessionId, ['jobs.read', 'jobs.control'])
+        if (!binding) throw rpcError('CAPABILITY_DENIED')
+        const { extension } = binding
+        const credential = (name: string) =>
+          Object.freeze({
+            kind: 'surface-service',
+            source: 'session-workbench',
+            subjectCredential: call.conn.credential,
+            grants: [{ extension, name, range: '*' }],
+          })
         const name = `jobs.${operation}`
         const { sessionId, ...fields } = p
         const input: ExtensionCallParams = {

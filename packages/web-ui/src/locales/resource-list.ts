@@ -11,7 +11,7 @@ export const resourceListLocaleCatalog: LocaleCatalog = {
     'skills.import': 'Import skills',
     'skills.importOther': 'Import from Claude Code / Codex',
     'skills.creatorPrompt':
-      'Help me create a reusable Skill for a task. Ask what I want it to do, draft it, test it and submit it for human review before publishing.',
+      'Help me create a reusable Skill for a task. Ask what I want it to do and draft it. For instructions and reference resources, validate the draft and show its name, description and files before requesting installation confirmation. If code is needed, test the candidate and submit it for human review before publishing.',
     'skills.mine': 'My skills',
     'skills.review': 'Pending review',
     'skills.feedback': 'Feedback',
@@ -111,7 +111,7 @@ export const resourceListLocaleCatalog: LocaleCatalog = {
     'skills.import': '导入已有技能',
     'skills.importOther': '导入 Claude Code / Codex 技能',
     'skills.creatorPrompt':
-      '请帮我创建一个可复用的技能。先询问我希望它完成什么，再起草、测试，并提交人工审阅后再发布。',
+      '请帮我创建一个可复用的技能。先询问我希望它完成什么，再起草。对于说明与参考资料，验证草稿并展示名称、描述和文件清单，再请求安装确认；如需代码，测试候选并提交人工审阅后再发布。',
     'skills.mine': '我的技能',
     'skills.review': '待审阅',
     'skills.feedback': '反馈',

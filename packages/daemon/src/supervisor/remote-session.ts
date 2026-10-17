@@ -145,7 +145,7 @@ export class RemoteSession {
         import('@agnes/protocol/gen/agnes-v1').SessionControlStateResult
       >,
     apply: (
-      action: 'pause' | 'resume' | 'cancel' | 'interrupt' | 'child-stop' | 'child-continue',
+      action: 'pause' | 'resume' | 'cancel' | 'interrupt' | 'promote' | 'child-stop' | 'child-continue',
       actor: Actor,
       admissionId: string,
       itemId?: string,

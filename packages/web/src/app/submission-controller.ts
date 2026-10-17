@@ -8,12 +8,13 @@ import {
   USER_MESSAGE_IMAGE_LIMITS,
   validateUserAttachments,
 } from '@agnes/protocol'
-import type { Session } from '@agnes/sdk/browser'
+import { type Session, unresolvedSubmission } from '@agnes/sdk/browser'
 import { yoloEnabled } from '@agnes/web-admin/permission-picker'
 import { permissionForSessionPreset } from '@agnes/web-admin/settings/session-choice'
 import { PlanModeRequestError, submitPlanCommand } from '@agnes/web-conversation/plan-mode'
 import { canSubmitComposer } from '@agnes/web-conversation/presentation'
 import type { AppSessionContext } from '../app.js'
+import { showCommandFeedback } from './command-feedback.js'
 
 export function createSubmissionController(
   context: Pick<
@@ -196,7 +197,8 @@ export function createSubmissionController(
       }
       context.composerRuntime.setDraft('')
       sessionStorage.removeItem(context.composerDraftKey)
-      void submitPlanCommand(cwd, input)
+      void prepareComposerSession()
+        .then((session) => submitPlanCommand(cwd, input, fetch, session.id))
         .then((result) => {
           context.notice.setText(result.text)
           context.notice.setKind('')
@@ -336,6 +338,11 @@ export function createSubmissionController(
       if (context.current !== session || context.selection !== ownedSelection)
         throw new Error(context.t('app.error.sessionChanged'))
       if (context.sessionYoloEnabled === undefined) throw new Error(context.t('app.error.permissionRequired'))
+      if ((await session.pendingCommands()).length) {
+        throw new Error(context.t('app.command.unconfirmed'))
+      }
+      if (context.current !== session || context.selection !== ownedSelection)
+        throw new Error(context.t('app.error.sessionChanged'))
       const result = await (busy
         ? steer
           ? session.steer(content, { references: referenceSelections })
@@ -356,7 +363,7 @@ export function createSubmissionController(
       if (busy && context.current === session && context.selection === ownedSelection) context.live?.refresh()
     })()
     void work
-      .catch((error: unknown) => {
+      .catch(async (error: unknown) => {
         if (submission === context.submissionGeneration && ownedSelection === context.selection) {
           if (connectionEpoch !== context.permissionConnectionEpoch) {
             context.initialPermissionPending = undefined
@@ -365,7 +372,7 @@ export function createSubmissionController(
           }
           // Closing the connection on purpose (page unload, manual disconnect) rejects a prompt the daemon
           // already accepted. That is not a failed send, so the sent text must not come back as a draft.
-          if (!context.intentionalClose) {
+          if (!context.intentionalClose && !unresolvedSubmission(error)) {
             const laterDraft = context.composerRuntime.getDraft()
             if (originalDraft) {
               const restoredDraft = laterDraft ? `${originalDraft}\n${laterDraft}` : originalDraft
@@ -379,7 +386,8 @@ export function createSubmissionController(
               context.composerRuntime.restoreAttachmentBlocks(attachments)
             context.references.restore([...selectedReferences, ...context.references.getSnapshot()])
           }
-          context.showError(error)
+          if (!unresolvedSubmission(error)) context.showError(error)
+          if (session) await showCommandFeedback(context, session).catch(context.showError)
         }
       })
       .finally(() => {

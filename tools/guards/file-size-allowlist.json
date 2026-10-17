@@ -26,5 +26,6 @@
   "packages/web-admin/src/settings.ts": 1051,
   "packages/web-ui/src/ui/icons.ts": 1345,
   "packages/web-units/src/trace.tsx": 1167,
-  "packages/web/src/app.ts": 2420
+  "packages/web/src/app.ts": 2420,
+  "packages/worker-runtime/src/main.ts": 807
 }

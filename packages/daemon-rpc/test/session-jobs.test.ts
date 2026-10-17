@@ -19,8 +19,9 @@ it('uses narrow authenticated service grants, replays open receipts and refuses 
     expect(credential).toMatchObject({
       source: 'session-workbench',
       subjectCredential: { kind: 'local' },
-      grants: [{ extension: 'agnes/jobs-web', name: params.service, range: '*' }],
+      grants: [{ extension: 'community/jobs', name: params.service, range: '*' }],
     })
+    expect(params.extension).toBe('community/jobs')
     const own = jobs.filter((job) => job.ownerSessionId === params.sessionId)
     if (params.service === 'jobs.read')
       return { output: { jobs: own.map((job) => ({ ...job })), completions: [] } }
@@ -45,6 +46,12 @@ it('uses narrow authenticated service grants, replays open receipts and refuses 
       activationBarrier: createExtensionActivationBarrier(),
       journal: new MemoryJournal(Date.now),
       commandQueue: queue,
+      resolveService: async (key, names) => {
+        expect(names).toEqual(['jobs.read', 'jobs.control'])
+        return key === 'disabled'
+          ? undefined
+          : { extension: 'community/jobs', packageId: '@community/jobs', workspaceRoot: '/workspace' }
+      },
       callService,
       inspectService: async (p) => {
         if (p.sessionId === 'read-only' && p.service === 'jobs.control') throw rpcError('CAPABILITY_DENIED')
@@ -81,6 +88,9 @@ it('uses narrow authenticated service grants, replays open receipts and refuses 
     expect(
       await call('control', { sessionId: 'read-only', operation: 'open', commandId: 'deny' }),
     ).toMatchObject({ error: { data: { code: 'CAPABILITY_DENIED' } } })
+    expect(await call('read', { sessionId: 'disabled' })).toMatchObject({
+      error: { data: { code: 'CAPABILITY_DENIED' } },
+    })
     expect(await call('read', { sessionId: 'foreign' })).toMatchObject({
       error: { data: { code: 'CAPABILITY_DENIED' } },
     })

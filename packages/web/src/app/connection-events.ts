@@ -1,9 +1,13 @@
 import type { AppSessionContext } from '../app.js'
 import type { ReconnectController } from '../reconnect.js'
+import { showCommandFeedback } from './command-feedback.js'
 
 /** Retire transport-driven UI updates before the application releases its React controls. */
 export function bindConnectionEvents(
-  context: Pick<AppSessionContext, 'client' | 'intentionalClose' | 'notice' | 'run' | 't' | 'titleRefresh'>,
+  context: Pick<
+    AppSessionContext,
+    'client' | 'current' | 'live' | 'intentionalClose' | 'notice' | 'run' | 'showError' | 't' | 'titleRefresh'
+  >,
   options: {
     reconnect: ReconnectController
     setConnection(value: 'connecting' | 'connected' | 'reconnecting' | 'closed'): void
@@ -11,12 +15,21 @@ export function bindConnectionEvents(
     recover(message: string): boolean
   },
 ): () => void {
+  const stopCommandNotice = context.client.on('notice', (payload) => {
+    const notice = payload as { kind?: unknown; sessionId?: unknown }
+    const session = context.current
+    if (notice.kind === 'command-needs-confirmation' && session?.id === notice.sessionId && session)
+      context.run(() => showCommandFeedback(context, session).then(() => undefined))
+  })
   const stopReconnecting = context.client.on('reconnecting', () => options.setConnection('reconnecting'))
   const stopReconnected = context.client.on('reconnected', () => {
     options.reconnect.reset()
     options.setConnection('connected')
     // The live projection reopens its session; refresh only the page's catalogs.
-    context.run(options.refresh)
+    context.run(async () => {
+      await options.refresh()
+      if (context.current) await showCommandFeedback(context, context.current)
+    })
   })
   const stopClosed = context.client.on('closed', () => {
     context.titleRefresh.close()
@@ -31,6 +44,7 @@ export function bindConnectionEvents(
     if (!context.intentionalClose) options.reconnect.start()
   })
   return () => {
+    stopCommandNotice()
     stopReconnecting()
     stopReconnected()
     stopClosed()

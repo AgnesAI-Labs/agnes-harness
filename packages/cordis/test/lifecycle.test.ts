@@ -60,3 +60,19 @@ describe('public plugin lifecycle', () => {
     expect(root.logger.buffer.map(message => message.args[0])).toEqual(['after-a', 'after-b'])
   })
 })
+
+it('keeps optional dependencies usable before registration and after disposal', async () => {
+  const root = new Context()
+  const seen: unknown[] = []
+  const dependent = root.plugin({ inject: { optionalState: { required: false } }, apply(ctx: Context) {
+    seen.push((ctx as Context & { optionalState?: string }).optionalState)
+  } })
+  await dependent
+  expect(seen).toEqual([undefined])
+  const release = root.provide('optionalState', 'ready')
+  await expect.poll(() => seen.at(-1)).toBe('ready')
+  await release()
+  await expect.poll(() => seen).toEqual([undefined, 'ready', undefined])
+  expect(dependent.state).toBe(FiberState.ACTIVE)
+  await root.fiber.dispose()
+})

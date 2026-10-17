@@ -601,7 +601,7 @@
           "minimum": 1
         },
         "action": {
-          "enum": ["pause", "resume", "cancel", "interrupt", "child-stop", "child-continue"]
+          "enum": ["pause", "resume", "cancel", "interrupt", "promote", "child-stop", "child-continue"]
         },
         "itemId": {
           "type": "string",

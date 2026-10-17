@@ -49,6 +49,13 @@ class CrashAfterDispatchJournal extends MemoryJournal {
   }
 }
 
+class UncertainBeforeDispatchJournal extends MemoryJournal {
+  override async begin(identity: JournalIdentity, next: ReturnType<typeof binding>) {
+    const state = await super.begin(identity, next)
+    return state.state === 'new' ? { state: 'uncertain' as const } : state
+  }
+}
+
 class RevokeOnUncertainJournal extends CrashAfterDispatchJournal {
   revoke = false
   override async begin(identity: JournalIdentity, next: ReturnType<typeof binding>) {
@@ -221,6 +228,77 @@ describe('submit admission and journal', () => {
       created.mockRestore()
     }
   })
+
+  it.each(['success', 'receipt-loss', 'unknown-before-dispatch'] as const)(
+    'atomically promotes with one identity under %s and recovers without duplicate inputs',
+    async (mode) => {
+      const h = await openTestHost({ provider: slowProvider(0) })
+      const created = vi.spyOn(h.host, 'createSession')
+      const ep = h.endpoint({
+        journal:
+          mode === 'receipt-loss'
+            ? new CrashAfterDispatchJournal()
+            : mode === 'unknown-before-dispatch'
+              ? new UncertainBeforeDispatchJournal()
+              : new MemoryJournal(),
+      })
+      try {
+        const sessionId = await newSession(ep, h.dataDir)
+        const core = await created.mock.results[0]?.value
+        if (!core) throw new Error('missing session')
+        await core.enqueue('next-turn', { actor: core.d.actor, content: [{ type: 'text', text: 'start' }] })
+        await core.acceptInput()
+        await core.enqueue('next-turn', {
+          actor: core.d.actor,
+          kind: 'follow_up',
+          content: [{ type: 'text', text: 'once' }],
+        })
+        const [item] = (await core.controls.state()).pending
+        if (!item) throw new Error('missing queued item')
+        const command = {
+          jsonrpc: '2.0' as const,
+          id: 40,
+          method: '_agnes/v1/submit',
+          params: {
+            clientId: CLIENT,
+            commandId: 'promote-once',
+            kind: 'control',
+            payload: { sessionId, action: 'promote', itemId: item.itemId },
+          },
+        }
+        if (mode === 'unknown-before-dispatch') {
+          for (let attempt = 0; attempt < 2; attempt++) {
+            expect(await ep.handle(command)).toMatchObject({
+              result: { replayed: false, status: 'uncertain' },
+            })
+            expect((await core.controls.state()).pending).toEqual([item])
+          }
+          expect(await core.scan({ type: 'user/message', limit: 10 })).toHaveLength(1)
+          return
+        }
+        const first = await ep.handle(command)
+        expect(first).toMatchObject(
+          mode === 'receipt-loss'
+            ? { error: { code: -32603 } }
+            : { result: { seq: expect.any(Number), replayed: false } },
+        )
+        const through = core.lastSeq
+        const replay = await ep.handle(command)
+        expect(replay).toMatchObject({ result: { seq: through, replayed: true } })
+        if (mode === 'success') expect((first as { result: { seq: number } }).result.seq).toBe(through)
+        expect(core.lastSeq).toBe(through)
+        expect((await core.controls.state()).pending).toEqual([
+          { ...item, kind: 'steer', target: 'next-step' },
+        ])
+        expect((await core.projectUI()).pendingInputs).toMatchObject([{ itemId: item.itemId }])
+        expect(await core.scan({ type: 'user/message', limit: 10 })).toHaveLength(1)
+      } finally {
+        await ep.close()
+        await h.close()
+        created.mockRestore()
+      }
+    },
+  )
 
   it.each(['active', 'paused', 'receipt-loss'] as const)(
     'removes selected queued input during %s and replays its receipt without starting work',

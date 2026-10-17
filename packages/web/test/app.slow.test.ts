@@ -165,6 +165,7 @@ type Deferred<T> = {
 
 type SessionDouble = {
   id: string
+  pendingCommands: ReturnType<typeof vi.fn>
   controls: ReturnType<typeof vi.fn>
   control: ReturnType<typeof vi.fn>
   editQueued: ReturnType<typeof vi.fn>
@@ -263,6 +264,7 @@ function session(id: string, projectUI: () => Promise<UITimeline>): SessionDoubl
     }
   })
   return {
+    pendingCommands: vi.fn(async () => []),
     projectUIOpening: opening,
     projectUIPatch: patch,
     projectUIHistory: vi.fn(async () => {
@@ -1137,40 +1139,41 @@ describe('web session selection', () => {
         expect(model.querySelector('[data-model-label]')?.textContent).toBe('model-b')
       })
       expect(permission.querySelector('[data-permission-label]')?.textContent).toBe('完全访问')
-      // Reuse the current model-picker contract: native selects dispatch change events.
+      // Reuse the current model-picker contract: choices live in their named radio panels.
       const settingsPanel = () => document.querySelector<HTMLElement>('#model-settings-popover')
       const choice = (group: string, label: string) => {
-        const selected = [...document.querySelectorAll<HTMLOptionElement>(`#${group} option`)].find(
-          (option) => option.textContent === label,
+        const selected = [...document.querySelectorAll<HTMLButtonElement>(`#${group} [role="radio"]`)].find(
+          (option) => option.querySelector('span')?.childNodes[0]?.textContent === label,
         )
         if (!selected) throw new Error(`missing choice: ${label}`)
         return selected
       }
       const choose = (group: string, label: string) => {
-        const selected = choice(group, label)
-        const select = selected.closest('select')!
-        select.value = selected.value
-        select.dispatchEvent(new Event('change', { bubbles: true }))
+        choice(group, label).click()
       }
       // 提交在飞行中时触发按钮与面板会一起禁用，每次开关前等它落定。
-      const openPanel = async () => {
+      const openPanel = async (panel: 'thinking' | 'context' = 'thinking') => {
         await vi.waitFor(() => expect(model.disabled).toBe(false))
         if (!document.getElementById('model-listbox')) model.click()
         await vi.waitFor(() => expect(settingsPanel()).not.toBeNull())
+        document.querySelector<HTMLButtonElement>(`#model-picker-${panel}`)?.click()
+        await vi.waitFor(() => expect(settingsPanel()?.hidden).toBe(false))
       }
       const closePanel = async () => {
         await vi.waitFor(() => expect(model.disabled).toBe(false))
         if (document.getElementById('model-listbox')) model.click()
         await vi.waitFor(() => expect(document.getElementById('model-listbox')).toBeNull())
       }
+      await openPanel('context')
+      expect(settingsPanel()?.textContent).toContain('128K')
+      await closePanel()
       await openPanel()
-      expect(settingsPanel()?.textContent).toContain('128,000')
-      expect(choice('session-model-thinking', '高').selected).toBe(true)
+      expect(choice('session-model-thinking', '高').getAttribute('aria-checked')).toBe('true')
       choose('session-model-thinking', '低')
       await vi.waitFor(() => expect(document.getElementById('notice')?.textContent).toContain('新会话将使用'))
       // 选完一个参数面板收起，改下一个要重新展开。
       await vi.waitFor(() => expect(document.getElementById('model-listbox')).toBeNull())
-      await openPanel()
+      await openPanel('context')
       choose('session-model-budget', '32K')
       await vi.waitFor(() => expect(document.getElementById('model-listbox')).toBeNull())
       draftModel.defaultSettings.contextWindow = 96000
@@ -1182,8 +1185,8 @@ describe('web session selection', () => {
         effect: 'new-sessions',
       })
       await openPanel()
-      expect(choice('session-model-thinking', '低').selected).toBe(true)
-      expect(choice('session-model-budget', '32K').selected).toBe(true)
+      expect(choice('session-model-thinking', '低').getAttribute('aria-checked')).toBe('true')
+      expect(choice('session-model-budget', '32K').getAttribute('aria-checked')).toBe('true')
       await closePanel()
       const cwd = document.getElementById('new-session-cwd') as HTMLInputElement
       cwd.value = '/workspace/agnes'
@@ -2496,7 +2499,7 @@ describe('web session selection', () => {
     running.removeQueued.mockImplementationOnce(() => removing.promise)
     remove.click()
     remove.click()
-    expect(running.removeQueued).toHaveBeenCalledExactlyOnceWith(removeItemId)
+    await vi.waitFor(() => expect(running.removeQueued).toHaveBeenCalledExactlyOnceWith(removeItemId))
     expect(remove.disabled).toBe(true)
     // In flight it spins in place of its icon; the state is aria-busy, not a changed label.
     expect(remove.getAttribute('aria-busy')).toBe('true')
@@ -2627,13 +2630,13 @@ describe('queued input deletion', () => {
         true,
       )
       document.querySelector<HTMLButtonElement>('.composer-queue-remove')?.click()
-      expect(old.removeQueued).toHaveBeenCalledExactlyOnceWith('shared-id')
+      await vi.waitFor(() => expect(old.removeQueued).toHaveBeenCalledExactlyOnceWith('shared-id'))
       document.querySelector<HTMLButtonElement>('[data-session="next"]')?.click()
       await vi.waitFor(() =>
         expect(document.querySelector('.composer-queue-preview')?.textContent).toBe('next input'),
       )
       document.querySelector<HTMLButtonElement>('.composer-queue-remove')?.click()
-      expect(next.removeQueued).toHaveBeenCalledExactlyOnceWith('shared-id')
+      await vi.waitFor(() => expect(next.removeQueued).toHaveBeenCalledExactlyOnceWith('shared-id'))
       if (outcome === 'success') oldRemoval.resolve(1)
       else oldRemoval.reject(new Error('late old-session refusal'))
       await new Promise<void>((resolve) => setTimeout(resolve, 0))

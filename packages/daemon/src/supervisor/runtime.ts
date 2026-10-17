@@ -135,6 +135,7 @@ import {
 } from '@agnes/daemon-rpc/local/methods/session-selection'
 import { registerSurfaces } from '@agnes/daemon-rpc/local/methods/surfaces'
 import { registerWorkspaces } from '@agnes/daemon-rpc/local/methods/workspaces'
+import { createPlanCommands } from '@agnes/daemon-rpc/local/plan-commands'
 import { type ApprovalRequest, PrompterRouter } from '@agnes/daemon-rpc/local/prompter'
 import type { SessionEntry } from '@agnes/daemon-rpc/local/sessions'
 import { coordinateSurfacesOnBoot } from '@agnes/daemon-surfaces/surfaces/boot-coordination'
@@ -243,11 +244,14 @@ import { type RemoteEntry, WorkerRegistry } from './registry.js'
 import { openDaemonLogs } from './runtime-log.js'
 import { createRuntimeTargetProbeLauncher, spawnRuntimeTargetProbeWorker } from './runtime-target-probe.js'
 import { type ScheduleCatalog, scheduledTasks } from './schedule-sessions.js'
+import { callWorkerScheduling } from './scheduling-service.js'
 import { canonicalPath, resolveDaemonProfile, resolveDaemonScope } from './scope.js'
 import {
+  createClientServiceDispatcher,
   workerComputerUseStatusSource,
   workerServiceCaller,
   workerServiceInspector,
+  workerServiceResolver,
 } from './service-worker.js'
 import { registerSessionMethods } from './session-methods.js'
 import { recencyCursor } from './session-reads.js'
@@ -1228,6 +1232,8 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       onSessionFailure: (sessionKey, error) => registry.interrupt(sessionKey, error),
       ...(runtimeDelivery ? { runtimeDelivery } : {}),
       onRequest: async (sessionKey, f, workerSignal) => {
+        if (f.method === 'scheduling')
+          return callWorkerScheduling(schedules, workspaceCatalog, sessionKey, f.params, workerSignal)
         if (f.method === 'bound-wake') return profilePorts.ownedWake(f.params)
         if (f.method === 'plugin-manage' || f.method === 'plugin-manage-abort')
           return pluginManageRequests(sessionKey, f.requestId, f.method, f.params, workerSignal)
@@ -1770,31 +1776,8 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
     const host = hostFacade.host
     const callService = workerServiceCaller(pool, () => host.profile)
     const inspectService = workerServiceInspector(pool, () => host.profile)
-    const dispatchClientService = async (
-      input: ClientModuleServiceCallParams & Readonly<{ packageId: string; extension: string }>,
-    ): Promise<ExtensionCallResult> => {
-      const params: ExtensionCallParams = {
-        sessionId: input.sessionId,
-        extension: input.extension,
-        service: input.service,
-        input: input.input,
-      }
-      // Synthesized only after a fresh ready-row/manifest match; it never crosses the browser
-      // boundary and has one query service grant rather than generic daemon authority.
-      const credential = Object.freeze({
-        kind: 'surface-service' as const,
-        // `client-web` is a dedicated server-side principal for the authenticated loopback BFF.
-        // It is deliberately not derived from profile/row text: the worker service-authority
-        // envelope allows only a bounded source grammar and the row itself is already held in the
-        // exact grant below.
-        source: 'client-web',
-        subjectCredential: Object.freeze({ kind: 'local' }),
-        grants: Object.freeze([{ extension: input.extension, name: input.service, range: '*' }]),
-      })
-      const inspection = await inspectService(params, credential)
-      if (inspection.kind !== 'query') throw rpcError('CAPABILITY_DENIED')
-      return await callService(params, credential)
-    }
+    const resolveService = workerServiceResolver(pool)
+    const dispatchClientService = createClientServiceDispatcher(callService, inspectService)
     clientServiceCall = dispatchClientService
     o.packageRuntime?.bindClientService?.(dispatchClientService)
     const dispatchClientEffect = async (
@@ -2074,6 +2057,14 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       profileDir: o.profileDir,
       resolveProfile: o.reloadProfile ?? (async () => o.profile),
       workspaces: () => workspaceCatalog.list(),
+      plan: createPlanCommands({
+        activationBarrier,
+        journal,
+        commandQueue,
+        callService,
+        inspectService,
+        resolveService,
+      }),
       memory: async (input) => {
         const link = await pool.acquireSharedWorker()
         return (await link.command('memory.manage', input)) as Pick<
@@ -2105,7 +2096,14 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         o.sessionFactRead ?? ((key) => (query) => cx.registry.require(key).session.scan(query))
       const cx: AgnesContext = {
         profileFeatures: profilePorts.features,
-        sessionServices: { activationBarrier, journal, commandQueue, callService, inspectService },
+        sessionServices: {
+          activationBarrier,
+          journal,
+          commandQueue,
+          callService,
+          inspectService,
+          resolveService,
+        },
         host,
         registry: supervisorRegistry,
         prompter,

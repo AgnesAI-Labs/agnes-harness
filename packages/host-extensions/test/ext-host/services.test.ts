@@ -150,6 +150,21 @@ describe('S3 Service registration and invocation', () => {
     })
     expect(registry.resolve(owner, h.def.name)?.capability.maxResultBytes).toBe(h.def.maxResultBytes)
     expect(registry.registrations(owner)).toEqual([`service:${owner}/${h.def.name}`])
+    expect(registry.binding([h.def.name])).toEqual({ extension: owner, packageId: owner })
+    expect(registry.binding([h.def.name, 'missing.contract.part'])).toBeUndefined()
+    const releaseAlternative = registry.registerRow(h.def, {
+      owner: 'plugin/fedcba9876543210',
+      packageId: '@community/jobs',
+      version,
+      signal: ac.signal,
+      assertAlive() {},
+      assertRunning() {},
+      consume() {},
+    })
+    expect(() => registry.binding([h.def.name])).toThrow('ambiguous service binding')
+    releaseAlternative()
+    expect(registry.binding([h.def.name])).toMatchObject({ extension: owner })
+
     const invoker = serviceInvoker({
       ...h.deps,
       registry,

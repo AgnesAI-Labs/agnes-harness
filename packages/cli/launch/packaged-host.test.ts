@@ -74,7 +74,7 @@ describe('packaged host wiring', () => {
     )
   })
 
-  it('discovers the default loop, tool policy and all eight base seam plugins in a packaged worker', async () => {
+  it('discovers the default loop, tool policy and shipped base seam plugins in a packaged worker', async () => {
     const module = readPackagedBuiltinExports('@agnes/base', 'worker.mjs', await import('@agnes/base'))
 
     expect(module.plugins?.map(({ declaration }) => declaration)).toEqual(AGNES_BASE_PLUGIN_DECLARATIONS)
@@ -89,6 +89,7 @@ describe('packaged host wiring', () => {
       'memory:file',
       'skills:remembering',
       'reference-resolvers:default',
+      'service:plan-mode',
     ])
     expect(module.plugins?.every(({ entry }) => typeof entry.prepared === 'object')).toBe(true)
   })

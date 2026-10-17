@@ -8,7 +8,7 @@ export const BUNDLED_HELPERS = Object.freeze([
   {
     name: 'skill-helper',
     id: '@agnes/skill-helper',
-    version: '0.2.1',
+    version: '0.3.0',
     license: 'MIT',
     ref: BUNDLED_SKILL_HELPER_REF,
   },

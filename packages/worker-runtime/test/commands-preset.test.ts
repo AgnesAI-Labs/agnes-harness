@@ -169,6 +169,30 @@ it('routes controls to the pinned session while Host publication changes', async
   await expect(
     handleCommand(
       session,
+      {
+        kind: 'command',
+        requestId: 'promote',
+        method: 'control',
+        params: {
+          action: 'promote',
+          itemId: 'queued',
+          actor: { kind: 'principal', id: 'human' },
+          admissionId: 'promote-1',
+        },
+      } as never,
+      opts,
+    ),
+  ).resolves.toBe(99)
+  expect(apply).toHaveBeenLastCalledWith(
+    'promote',
+    { kind: 'principal', id: 'human' },
+    'promote-1',
+    'queued',
+    undefined,
+  )
+  await expect(
+    handleCommand(
+      session,
       { kind: 'command', requestId: 'state', method: 'controlState', params: {} } as never,
       opts,
     ),

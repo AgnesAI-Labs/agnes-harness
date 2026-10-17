@@ -12,7 +12,9 @@
         "apiRange": "^4.0.0",
         "inject": [
           "tools",
-          "hooks"
+          "hooks",
+          "providers",
+          "self"
         ],
         "capabilities": {
           "tools": {

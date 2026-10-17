@@ -19,7 +19,15 @@ export function serviceAuthor(input: {
   alive(): void
   registering(): void
   ports(): KernelPorts | undefined
-  checkGrants(grants: { events: boolean; projections: readonly string[] } | undefined): void
+  checkGrants(
+    grants:
+      | {
+          events: boolean
+          projections: readonly string[]
+          services?: readonly import('@agnes/extension-api').ServiceCapability[]
+        }
+      | undefined,
+  ): void
   install(name: string, create: (ports: KernelPorts) => () => Promise<void>): () => Promise<void>
 }): ServiceAuthorPort {
   const granted = (ports: KernelPorts | undefined) => {
@@ -41,13 +49,19 @@ export function serviceAuthor(input: {
     },
     bindOwn<S extends ServiceInstance, P extends ServicePorts>(kind: BindableKind<S, P>): Promise<S> {
       input.alive()
-      return granted(input.ports()).bindOwn(kind, {
+      const services = granted(input.ports())
+      const recheck = () => {
+        input.alive()
+        input.checkGrants(services.grants?.(kind))
+      }
+      recheck()
+      return services.bindOwn(kind, {
         owner: input.owner,
         packageId: input.packageId,
         packageVersion: input.packageVersion,
         trust: input.trust,
         projections: input.projections,
-        recheck: input.alive,
+        recheck,
       })
     },
   })

@@ -32,7 +32,8 @@ export const AGNES_BASE_PLUGIN_DECLARATIONS = Object.freeze(
         export: 'toolPolicyPlugin',
         apiRange: '^4.0.0',
         id: 'tool-policy:default',
-        inject: ['providers'],
+        inject: ['providers', 'planMode'],
+        optionalInject: ['planMode'],
         runtime: 'in-process',
         default: true,
       },
@@ -193,6 +194,40 @@ export const AGNES_BASE_PLUGIN_DECLARATIONS = Object.freeze(
         default: true,
         apiRange: '^4.0.0',
       },
+      {
+        id: 'service:plan-mode',
+        export: 'planModePlugin',
+        inject: ['providers', 'services'],
+        provide: ['planMode'],
+        runtime: 'in-process',
+        default: true,
+        apiRange: '^4.0.0',
+        capabilities: {
+          services: [
+            {
+              name: 'plan.status',
+              kind: 'query',
+              inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+              outputSchema: { type: 'object', additionalProperties: true },
+              timeoutMs: 10000,
+              maxResultBytes: 1048576,
+            },
+            {
+              name: 'plan.command',
+              kind: 'effect',
+              inputSchema: {
+                type: 'object',
+                properties: { line: { type: 'string', maxLength: 8192, pattern: '^\\s*/plan(?:\\s|$)' } },
+                required: ['line'],
+                additionalProperties: false,
+              },
+              outputSchema: { type: 'object', additionalProperties: true },
+              timeoutMs: 10000,
+              maxResultBytes: 1048576,
+            },
+          ],
+        },
+      },
     ] satisfies readonly Readonly<AgnesPluginManifestEntry>[]
   ).map((entry) => {
     const metadata = AGNES_BASE_PLUGIN_METADATA[entry.id]
@@ -292,6 +327,7 @@ export async function createPackagedHost(
     entryFile: string
   } & Pick<
     HostOptions,
+    | 'scheduling'
     | 'boundWakes'
     | 'skillResources'
     | 'skillInstall'

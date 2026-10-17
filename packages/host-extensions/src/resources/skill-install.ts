@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { closeSync, existsSync, fsyncSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
-import type { SkillInstallRequest, SkillInstallResult } from '@agnes/extension-api'
+import type { SkillInstallResult } from '@agnes/extension-api'
 import type { ResourceControlMethodName, ResourceOperation, SkillDescriptor } from '@agnes/protocol'
 import {
   createPrivateDirectorySync,
@@ -10,6 +10,12 @@ import {
   hasPrivateDaclSync,
   renameWriteThrough,
 } from '@agnes/system-node'
+import {
+  inlineInstallBundle,
+  parseInstallInput,
+  refuseSkillCollision,
+  refuseSkillTarget,
+} from './skill-install-content.js'
 import {
   assertInstallPath,
   boundedInstallFile,
@@ -47,30 +53,7 @@ type Proposal = {
   busy: boolean
   approvalAbort?: AbortController
   cancelled: boolean
-}
-
-function parseInput(value: unknown): SkillInstallRequest {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw installError('SKILL_INSTALL_INVALID')
-  const input = value as Record<string, unknown>
-  const keys =
-    input.action === 'prepare' ? ['action', 'sourceDirectory', 'scope', 'enable'] : ['action', 'proposalId']
-  if (Object.keys(input).length !== keys.length || Object.keys(input).some((key) => !keys.includes(key)))
-    throw installError('SKILL_INSTALL_INVALID')
-  if (input.action === 'prepare') {
-    if (
-      typeof input.sourceDirectory !== 'string' ||
-      input.sourceDirectory.length > 4096 ||
-      (input.scope !== 'workspace' && input.scope !== 'user') ||
-      typeof input.enable !== 'boolean'
-    )
-      throw installError('SKILL_INSTALL_INVALID')
-  } else if (
-    !['commit', 'status', 'cancel'].includes(String(input.action)) ||
-    typeof input.proposalId !== 'string' ||
-    !/^skill-install-[0-9a-f-]{36}$/.test(input.proposalId)
-  )
-    throw installError('SKILL_INSTALL_INVALID')
-  return structuredClone(input) as SkillInstallRequest
+  review?: Readonly<{ principalId: string; digest: string; at: string }>
 }
 
 /** All filesystem effects are behind a server-authenticated authority and a content-bound approval. */
@@ -96,7 +79,21 @@ export function createSkillInstaller(directory: string, discovery: SkillDiscover
     const fd = createPrivateFileSync(temp)
     try {
       try {
-        writeFileSync(fd, JSON.stringify({ owner: p.owner, result }))
+        writeFileSync(
+          fd,
+          JSON.stringify({
+            owner: p.owner,
+            result,
+            ...(p.review ? { review: p.review } : {}),
+            origin: {
+              sessionKey: p.invocation.sessionKey,
+              packageId: p.invocation.packageId,
+              snapshotId: p.invocation.snapshotId,
+              rowId: p.invocation.rowId,
+              toolUseId: p.invocation.toolUseId,
+            },
+          }),
+        )
         fsyncSync(fd)
       } finally {
         closeSync(fd)
@@ -188,7 +185,7 @@ export function createSkillInstaller(directory: string, discovery: SkillDiscover
       })) as SkillDescriptor
       if (resource.revision !== candidate.revision || resource.stale || !resource.resolution.winner)
         throw installError('SKILL_RESOURCE_CHANGED_OR_SHADOWED')
-      if (p.invocation.input.action === 'prepare' && p.invocation.input.enable) {
+      if ('enable' in p.invocation.input && p.invocation.input.enable) {
         await effect(p, 'trust', '_agnes/v1/skills.trust.set', {
           resourceId: candidate.resourceId,
           expectedRevision: candidate.revision,
@@ -247,15 +244,13 @@ export function createSkillInstaller(directory: string, discovery: SkillDiscover
     ): Promise<SkillInstallResult> {
       authority.assertActive()
       signal.throwIfAborted()
-      const input = parseInput(invocation.input)
+      const input = parseInstallInput(invocation.input)
       const owner = ownerOf(invocation, authority)
-      if (input.action === 'prepare') {
+      if (input.action === 'prepare' || input.action === 'prepare-content') {
         for (const [id, proposal] of proposals)
           if (!proposal.busy && proposal.expires < Date.now()) proposals.delete(id)
         if (proposals.size >= 16 || [...proposals.values()].filter((p) => p.owner === owner).length >= 2)
           throw installError('SKILL_INSTALL_BUSY')
-        const source = unlinked(input.sourceDirectory)
-        assertInstallPath(invocation, source)
         const rootKey = input.scope === 'user' ? 'user-agnes' : 'workspace-agnes'
         const root = discovery
           .roots({
@@ -265,22 +260,33 @@ export function createSkillInstaller(directory: string, discovery: SkillDiscover
           })
           .find((r) => r.rootKey === rootKey)
         if (!root) throw installError('SKILL_ROOT_UNAVAILABLE')
-        if (within(source, root.path) || within(root.path, source))
-          throw installError('SKILL_SOURCE_TARGET_OVERLAP')
-        const allowed = await authority.ask(
-          `Read the local skill directory to prepare an install: ${source}. This only reads files and does not run scripts.`,
-          installDigest(source),
-          signal,
-        )
-        signal.throwIfAborted()
-        authority.assertActive()
-        if (!allowed) throw installError('SKILL_READ_REJECTED')
-        const bundle = await readInstallBundle(
-          source,
-          root,
-          (path) => assertInstallPath(invocation, path),
-          discovery,
-        )
+        let bundle: InstallBundle
+        if (input.action === 'prepare-content') {
+          bundle = await inlineInstallBundle(input, root, discovery)
+          for (const name of bundle.files.keys())
+            assertInstallPath(invocation, join(root.path, input.name, name))
+          refuseSkillTarget(join(root.path, input.name))
+          await refuseSkillCollision(authority, bundle)
+        } else {
+          const source = unlinked(input.sourceDirectory)
+          assertInstallPath(invocation, source)
+          if (within(source, root.path) || within(root.path, source))
+            throw installError('SKILL_SOURCE_TARGET_OVERLAP')
+          const allowed = await authority.ask(
+            `Read the local skill directory to prepare an install: ${source}. This only reads files and does not run scripts.`,
+            installDigest(source),
+            signal,
+          )
+          signal.throwIfAborted()
+          authority.assertActive()
+          if (!allowed) throw installError('SKILL_READ_REJECTED')
+          bundle = await readInstallBundle(
+            source,
+            root,
+            (path) => assertInstallPath(invocation, path),
+            discovery,
+          )
+        }
         signal.throwIfAborted()
         authority.assertActive()
         const proposalId = `skill-install-${randomUUID()}`
@@ -288,6 +294,8 @@ export function createSkillInstaller(directory: string, discovery: SkillDiscover
           proposalId,
           state: 'prepared',
           name: bundle.candidate.name,
+          description: bundle.candidate.description,
+          files: Object.freeze([...bundle.files.keys()].sort()),
           digest: bundle.digest,
           fileCount: bundle.files.size,
           scope: input.scope,
@@ -322,7 +330,7 @@ export function createSkillInstaller(directory: string, discovery: SkillDiscover
         const file = unlinked(join(directory, `${input.proposalId}.json`))
         let stored: { owner: string; result: SkillInstallResult }
         try {
-          stored = JSON.parse(boundedInstallFile(file, 16_384).toString('utf8'))
+          stored = JSON.parse(boundedInstallFile(file, 65_536).toString('utf8'))
         } catch {
           throw installError('SKILL_PROPOSAL_UNAVAILABLE')
         }
@@ -364,11 +372,18 @@ export function createSkillInstaller(directory: string, discovery: SkillDiscover
       p.busy = true
       let acquired = false
       try {
-        const enabled = p.invocation.input.action === 'prepare' && p.invocation.input.enable
-        const source = p.invocation.input.action === 'prepare' ? p.invocation.input.sourceDirectory : ''
-        assertInstallPath(invocation, source)
-        for (const name of p.bundle.files.keys()) assertInstallPath(invocation, join(source, name))
-        const summary = `Install skill ${p.bundle.candidate.name}; source ${source}; target ${p.target}; ${p.bundle.files.size} files; SHA256 ${p.bundle.digest}. ${enabled ? 'Trust this version and enable it in the current profile.' : 'Register it only. Do not add trust or enable it.'}${p.rootKey === 'user-agnes' ? ' The user directory can be discovered by other profiles.' : ''} This does not overwrite different content and does not run scripts.`
+        const enabled = 'enable' in p.invocation.input && p.invocation.input.enable
+        const source =
+          p.invocation.input.action === 'prepare' ? p.invocation.input.sourceDirectory : undefined
+        if (source) {
+          assertInstallPath(invocation, source)
+          for (const name of p.bundle.files.keys()) assertInstallPath(invocation, join(source, name))
+        } else {
+          for (const name of p.bundle.files.keys()) assertInstallPath(invocation, join(p.target, name))
+          refuseSkillTarget(p.target)
+          await refuseSkillCollision(authority, p.bundle)
+        }
+        const summary = `Install skill ${p.bundle.candidate.name}; source ${source ?? 'authored instruction data'}; description ${JSON.stringify(p.bundle.candidate.description)}; files ${JSON.stringify([...p.bundle.files.keys()].sort())}; target ${p.target}; ${p.bundle.files.size} files; SHA256 ${p.bundle.digest}. ${enabled ? 'Trust this version and enable it in the current profile.' : 'Register it only. Do not add trust or enable it.'}${p.rootKey === 'user-agnes' ? ' The user directory can be discovered by other profiles.' : ''} This does not overwrite different content and does not run scripts.`
         p.approvalAbort = new AbortController()
         const approvalSignal = AbortSignal.any([signal, p.approvalAbort.signal])
         try {
@@ -384,6 +399,11 @@ export function createSkillInstaller(directory: string, discovery: SkillDiscover
         if (locks.has(key)) throw installError('SKILL_TARGET_BUSY')
         locks.add(key)
         acquired = true
+        p.review = {
+          principalId: authority.principalId,
+          digest: p.bundle.digest,
+          at: new Date().toISOString(),
+        }
         await update(p, { state: 'running', phase: 'accepted' })
         void run(p)
         return p.result

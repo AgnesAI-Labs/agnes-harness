@@ -9,11 +9,12 @@ export class PlanModeRequestError extends Error {
 
 type Fetcher = typeof fetch
 
-/** Ask the same-origin web server to write `<cwd>/.agnes/plan-mode.json`. The browser never touches the file. */
+/** Request the selected backend plan service through the authenticated admin adapter. */
 export async function submitPlanCommand(
   cwd: string,
   line: string,
   fetcher: Fetcher = fetch,
+  sessionId?: string,
 ): Promise<PlanModeResult> {
   let response: Response
   try {
@@ -22,7 +23,7 @@ export async function submitPlanCommand(
       cache: 'no-store',
       credentials: 'same-origin',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ cwd, line }),
+      body: JSON.stringify({ cwd, line, ...(sessionId ? { sessionId } : {}) }),
     })
   } catch {
     throw new PlanModeRequestError()

@@ -4,8 +4,10 @@ import { ChangesPanel, ReviewFileAction } from './changes-panel.js'
 import { panelContext } from './context.js'
 import { FilesPanel } from './files-panel.js'
 import { GoalPanel } from './goal-panel.js'
-import { changesCount, terminalCount } from './tab-counts.js'
-import { TerminalPanel } from './terminal-panel.js'
+import { changesCount } from './tab-counts.js'
+
+export { terminalCount } from './tab-counts.js'
+export { TerminalPanel } from './terminal-panel.js'
 
 if (!workbenchPanels.get('files'))
   workbenchPanels.register({
@@ -18,16 +20,6 @@ if (!workbenchPanels.get('files'))
 
 export type { WorkbenchContext } from './context.js'
 export { workbenchLocaleCatalog } from './locales.js'
-
-if (!workbenchPanels.get('terminal'))
-  workbenchPanels.register({
-    id: 'terminal',
-    order: 50,
-    edge: 'right',
-    titleKey: 'workbench.terminal.title',
-    count: terminalCount,
-    component: TerminalPanel,
-  })
 
 if (!workbenchPanels.get('goal'))
   workbenchPanels.register({

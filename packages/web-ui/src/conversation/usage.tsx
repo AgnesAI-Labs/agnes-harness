@@ -57,8 +57,10 @@ export function ConversationUsage({ usage, connected, t = fallbackT }: Conversat
       hidden={!usage}
       data-pressure={usage ? (Number(pct) > 90 ? 'high' : Number(pct) > 70 ? 'medium' : 'normal') : undefined}
       summaryProps={{
-        'aria-label': usage ? t('usage.viewAria', { summary }) : t('usage.viewAriaFallback'),
-        title: usage ? summary : t('usage.title'),
+        'aria-label': usage
+          ? `${t('usage.viewAria', { summary })}. ${t('usage.estimate')}`
+          : t('usage.viewAriaFallback'),
+        title: usage ? `${summary}. ${t('usage.estimate')}` : t('usage.title'),
       }}
       summary={
         <>
@@ -88,7 +90,6 @@ export function ConversationUsage({ usage, connected, t = fallbackT }: Conversat
             </Fragment>
           ))}
         </dl>
-        <p className="usage-note">{t('usage.note')}</p>
       </div>
     </Disclosure>
   )

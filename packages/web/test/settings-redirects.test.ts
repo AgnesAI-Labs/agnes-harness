@@ -95,6 +95,7 @@ it('opens a moved page by its target: a home page with its tab, the search, or t
 
 it.each([
   ['execution', 'models', 'settings-subsection-session-loop'],
+  ['auxiliary-models', 'model', 'auxiliary-models'],
   ['personalization', 'general', 'settings-subsection-personalization'],
   ['memory', 'general', 'settings-subsection-memory'],
   ['custom-instructions', 'general', 'settings-subsection-custom-instructions'],

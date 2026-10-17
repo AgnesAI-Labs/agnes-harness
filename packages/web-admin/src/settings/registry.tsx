@@ -21,6 +21,7 @@ import { AutoReviewPanel } from './auto-review.js'
 import { ContextPanel } from './context.js'
 import { DiagnosticsPanel } from './diagnostics.js'
 import { ExamplesPanel } from './examples.js'
+import { JobsPanel } from './jobs-panel.js'
 import { PermissionDefaults } from './permission-defaults.js'
 import { PinsPanel } from './pins.js'
 import {
@@ -285,3 +286,18 @@ export const PLUGIN_ADMIN_PAGES: readonly SettingsSection[] = (
   runtimeCatalog: false,
   component: ({ context }) => render(context.data as RuntimeSettingsContext, context.t),
 }))
+
+/** Installed by the provider-independent jobs client contribution. */
+export function registerJobsSettingsContribution(): () => void {
+  if (settingsSections.get('background-jobs')) return () => undefined
+  return settingsSections.register({
+    id: 'background-jobs',
+    group: 'advanced',
+    order: 80,
+    icon: 'terminal',
+    runtimeCatalog: false,
+    titleKey: 'settings-shell.jobs',
+    groupTitleKey: 'settings-shell.advanced',
+    component: () => <JobsPanel />,
+  })
+}

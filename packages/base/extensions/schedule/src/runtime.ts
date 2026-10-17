@@ -17,6 +17,5 @@ export {
   createSchedulesPort,
   openDaemonScheduleDb,
   openScheduleCatalog,
-  openSeamScheduleDb,
   ScheduleRejected,
 } from './catalog.js'

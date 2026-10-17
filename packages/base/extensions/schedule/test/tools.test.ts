@@ -1,11 +1,16 @@
+import { readFileSync } from 'node:fs'
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
+import type { SchedulingService, SlotFill, ToolContext, ToolDef } from '@agnes/extension-api'
+import { schedulingKind, schedulingServiceCapabilities } from '@agnes/extension-api'
+import type { Context } from '@agnes/plugin-runtime'
 import { expect, it } from 'vitest'
-import { openScheduleCatalog, type ScheduleCatalog, type ScheduleDb } from '../src/catalog.js'
+import { openScheduleCatalog, type ScheduleDb } from '../src/catalog.js'
+import { createScheduleExtension } from '../src/index.js'
 import { createScheduleTools } from '../src/tools.js'
 
 const NOW = Date.parse('2026-09-07T00:00:00Z')
 
-function catalog(): ScheduleCatalog {
+function catalog(): (ctx: ToolContext) => Promise<SchedulingService> {
   const db = new DatabaseSync(':memory:')
   const sql: ScheduleDb = {
     exec(statement, params) {
@@ -31,7 +36,36 @@ function catalog(): ScheduleCatalog {
       }
     },
   }
-  return openScheduleCatalog(sql, () => NOW)
+  const catalog = openScheduleCatalog(sql, () => NOW)
+  return async (ctx) => {
+    const key = ctx.session.key
+    const owned = (id: string) => {
+      const row = catalog.read(id)
+      return (row?.target.kind === 'session' ? row.target.sessionKey : row?.origin) === key ? row : undefined
+    }
+    return {
+      async list() {
+        return { schedules: catalog.list({ sessionKey: key }) }
+      },
+      async get(id) {
+        return owned(id)
+      },
+      async runs(id) {
+        return owned(id)?.runs ?? []
+      },
+      async upsert(input) {
+        return input.id
+          ? catalog.update({ ...input, id: input.id, owner: key, origin: key })
+          : catalog.create({ ...input, origin: key })
+      },
+      async control(input) {
+        return catalog.control(input.id, input.action)
+      },
+      async archive(input) {
+        return owned(input.id) ? catalog.archive(input.id) : { deleted: false }
+      },
+    }
+  }
 }
 
 const session = (key: string, depth = 0) =>
@@ -136,5 +170,100 @@ it('runs recurring work in a new session of this workspace and reminders here, a
   expect(kept.details).toMatchObject({ title: 'Weekly report', target: { kind: 'new-session' } })
   expect((await byName('schedule_delete').execute({ id }, session('sess'))).details).toEqual({
     deleted: true,
+  })
+})
+
+it('publishes the official tools, interaction table and delivery notification through the interface', async () => {
+  const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  expect(manifest.agnes.plugins[0].capabilities.services).toEqual(schedulingServiceCapabilities)
+  const row = {
+    id: 'sched_0000000000000001',
+    title: 'Report',
+    prompt: 'Write it',
+    selector: { every_seconds: 3600 },
+    target: { kind: 'new-session' as const, cwd: '/work/app' },
+    origin: 'sess',
+    status: 'active' as const,
+    nextRunAt: NOW + 3600000,
+    revision: 1,
+    runs: [],
+  }
+  const service: SchedulingService = {
+    async list(input) {
+      return {
+        schedules: [row],
+        ...(input?.recentDeliverySince ? { recentDelivery: { title: row.title, prompt: row.prompt } } : {}),
+      }
+    },
+    async get() {
+      return row
+    },
+    async upsert() {
+      return row
+    },
+    async control() {
+      return row
+    },
+    async archive() {
+      return { deleted: true }
+    },
+    async runs() {
+      return []
+    },
+  }
+  const tools: ToolDef[] = []
+  let notification: SlotFill<'notification'> | undefined
+  createScheduleExtension().apply({
+    tools: {
+      register(tool: ToolDef) {
+        tools.push(tool)
+        return () => {}
+      },
+    },
+    slots: {
+      register(_name: string, fill: SlotFill<'notification'>) {
+        notification = fill
+        return () => {}
+      },
+    },
+    providers: {
+      async bindOwn(kind: object) {
+        expect(kind).toBe(schedulingKind)
+        return service
+      },
+    },
+  } as unknown as Context)
+  const surfaces: unknown[] = []
+  const ctx = {
+    session: { key: 'sess', depth: 0, toolUseId: 'use-1', workspaceRoot: '/work/app' },
+    signal: new AbortController().signal,
+    tools: {
+      async invoke(name: string, input: unknown) {
+        expect(name).toBe('ui_render')
+        surfaces.push(input)
+        return { content: [] }
+      },
+    },
+  } as unknown as ToolContext
+  const create = tools.find((tool) => tool.name === 'schedule_create')
+  expect(
+    (
+      await create?.execute(
+        { title: 'Report', prompt: 'Write it', selector: { every_seconds: 3600 }, target: 'new_session' },
+        ctx,
+      )
+    )?.details,
+  ).toMatchObject({ id: row.id, runsIn: 'a new session in /work/app for every run' })
+  expect(surfaces).toMatchObject([
+    {
+      surface: {
+        title: 'Scheduled tasks',
+        data: { rows: [{ c0: 'Report', c1: 'New session · /work/app' }] },
+      },
+    },
+  ])
+  expect(await notification?.({ trigger: { kind: 'turn_end' }, session: ctx.session } as never)).toEqual({
+    title: 'Report',
+    body: 'Write it',
   })
 })
