@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { normalizeView } from '../src/observations.js'
 import type { HistoryEntry, Observation } from '../src/types.js'
 import {
   addNote,
@@ -184,5 +185,108 @@ describe('workspace', () => {
     expect(
       goalText([{ type: 'text', text: 'a' }, { type: 'image' } as never, { type: 'text', text: 'b' }]),
     ).toBe('a\nb')
+  })
+})
+
+const viewOf = (operation: string, scope: string, paths: string[], evidence = 'e') =>
+  normalizeView({
+    operation,
+    callId: `c-${operation}-${scope}`,
+    scope,
+    evidence,
+    references: paths.map((value) => ({ kind: 'file' as const, value })),
+    truncated: false,
+  })
+const withView = (obs: ReturnType<typeof entry>, view: ReturnType<typeof viewOf>) => ({ ...obs, view })
+
+describe('views in the workspace', () => {
+  it('keeps observation views across a new turn and clears the notes', () => {
+    const ws = emptyWorkspace()
+    recordStep(ws, withView(entry({ operation: 'ls' }), viewOf('ls', '.', ['a.md'])))
+    addNote(ws, { kind: 'file', target: 'a.md', text: 'x' })
+    newTurn(ws, 'next goal')
+    expect(ws.views).toHaveLength(1)
+    expect(ws.notes).toEqual([])
+  })
+  it('shows views and known files to Jev, newest file first', () => {
+    const ws = emptyWorkspace()
+    recordStep(ws, withView(entry({ operation: 'ls' }), viewOf('ls', '.', ['a.md', 'b.md'])))
+    recordStep(ws, withView(entry({ operation: 'find' }), viewOf('find', 'src', ['src/c.ts'])))
+    const state = buildState(ws, 0, surface)
+    expect(state.known_files).toEqual(['src/c.ts', 'a.md', 'b.md'])
+    expect((state.observation_views as unknown[]).length).toBe(2)
+  })
+  it('halves view evidence at shrink level 1 and drops the oldest view at level 2', () => {
+    const ws = emptyWorkspace()
+    recordStep(ws, withView(entry(), viewOf('ls', '.', [], 'x'.repeat(1000))))
+    recordStep(ws, withView(entry(), viewOf('find', 'src', [], 'y'.repeat(1000))))
+    const one = buildState(ws, 1, surface).observation_views as Array<{ evidence: string }>
+    expect(one.map((v) => v.evidence.length)).toEqual([500, 500])
+    const two = buildState(ws, 2, surface).observation_views as Array<{ kind: string }>
+    expect(two.map((v) => v.kind)).toEqual(['find'])
+  })
+  it('replaces the view of a file read again with another range', () => {
+    const ws = emptyWorkspace()
+    recordStep(
+      ws,
+      withView(
+        entry({ operation: 'read', target: 'a.ts', read_files: ['a.ts'] }),
+        viewOf('read', 'a.ts', ['a.ts'], 'lines 1-200'),
+      ),
+    )
+    recordStep(
+      ws,
+      withView(
+        entry({ operation: 'read', target: 'a.ts', read_files: ['a.ts'] }),
+        viewOf('read', 'a.ts', ['a.ts'], 'lines 201-400'),
+      ),
+    )
+    expect(ws.views.map((v) => v.evidence)).toEqual(['lines 201-400'])
+    expect(fileActivity(ws).read_counts).toEqual({ 'a.ts': 2 })
+  })
+})
+
+describe('freshness', () => {
+  it('makes earlier reads stale after a shell call whose effect is unknown', () => {
+    const ws = emptyWorkspace()
+    recordStep(ws, entry({ operation: 'read', target: 'a', read_files: ['a'] }))
+    recordStep(
+      ws,
+      entry({ operation: 'shell', target: null, status: 'failed', disposition: 'UNKNOWN', dispatched: true }),
+    )
+    expect(fileActivity(ws)).toMatchObject({ read_current: [], files_may_have_changed: true })
+  })
+  it('keeps reads current after a shell call that was never dispatched', () => {
+    const ws = emptyWorkspace()
+    recordStep(ws, entry({ operation: 'read', target: 'a', read_files: ['a'] }))
+    recordStep(
+      ws,
+      entry({
+        operation: 'shell',
+        target: null,
+        status: 'failed',
+        disposition: 'UNKNOWN',
+        dispatched: false,
+      }),
+    )
+    expect(fileActivity(ws)).toMatchObject({ read_current: ['a'], files_may_have_changed: false })
+  })
+  it('keeps reads current after a read whose outcome is unknown', () => {
+    const ws = emptyWorkspace()
+    recordStep(ws, entry({ operation: 'read', target: 'a', read_files: ['a'] }))
+    recordStep(
+      ws,
+      entry({ operation: 'read', target: 'b', status: 'failed', disposition: 'UNKNOWN', dispatched: true }),
+    )
+    expect(fileActivity(ws).read_current).toEqual(['a'])
+  })
+  it('marks the file of a write whose outcome is unknown as changed', () => {
+    const ws = emptyWorkspace()
+    recordStep(ws, entry({ operation: 'read', target: 'a', read_files: ['a'] }))
+    recordStep(
+      ws,
+      entry({ operation: 'write', target: 'a', status: 'failed', disposition: 'UNKNOWN', dispatched: true }),
+    )
+    expect(fileActivity(ws)).toMatchObject({ read_current: [], changed_unread: ['a'] })
   })
 })

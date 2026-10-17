@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DIRECTORY_REF_CAP, FILE_REF_CAP, VIEW_CAP } from '../src/observations.js'
+import { DIRECTORY_REF_CAP, FILE_REF_CAP, normalizeView, VIEW_CAP } from '../src/observations.js'
 import {
   ADDED_COUNTERS,
   CHECKPOINT_MAX_BYTES,
@@ -9,6 +9,7 @@ import {
   parseJevState,
 } from '../src/state.js'
 import type { Decision, HistoryEntry, JsonValue, ObservationView } from '../src/types.js'
+import { utf8Bytes } from '../src/util.js'
 
 const big = (i: number): HistoryEntry => ({
   phase: 'INSPECT',
@@ -319,6 +320,58 @@ describe('checkpoints with observations', () => {
     const again = codec.encode(decoded as never)
     expect(again.codecVersion).toBe(1)
     expect(parseJevState(codec.decode(again) as never)).toEqual(decoded)
+  })
+  it('stays within the checkpoint size with four full views and a 30-step turn', () => {
+    const s = initialState()
+    s.workspace.goal = '目标'.repeat(2000)
+    for (let i = 0; i < 4; i++)
+      s.workspace.views.push(
+        normalizeView({
+          operation: 'read',
+          callId: `c${i}`,
+          scope: `f${i}.ts`,
+          evidence: '证'.repeat(5000),
+          references: [{ kind: 'file', value: `f${i}.ts` }],
+          truncated: false,
+        }),
+      )
+    for (let i = 0; i < 30; i++)
+      s.workspace.history.push({
+        phase: 'INSPECT',
+        operation: 'read',
+        target: `f${i}.ts`,
+        status: 'succeeded',
+        disposition: 'SUCCEEDED',
+        summary: `read(f${i}.ts) conf=0.90`,
+        intentFp: 'a'.repeat(32),
+        observationFp: 'b'.repeat(32),
+        dispatched: true,
+        read_files: [`f${i}.ts`],
+        output_excerpt: 'o'.repeat(500),
+      })
+    expect(utf8Bytes(JSON.stringify(encodeState(s).state))).toBeLessThanOrEqual(32768)
+  })
+  it('halves view evidence once, before cutting the previous answer or the goal', () => {
+    const s = initialState()
+    s.workspace.goal = 'g'.repeat(12000)
+    s.workspace.previousAnswer = 'p'.repeat(4000)
+    for (let i = 0; i < 4; i++)
+      s.workspace.views.push(
+        normalizeView({
+          operation: 'read',
+          callId: `c${i}`,
+          scope: `f${i}.ts`,
+          evidence: '证'.repeat(5000),
+          references: [],
+          truncated: false,
+        }),
+      )
+    expect(utf8Bytes(JSON.stringify(s))).toBeGreaterThan(CHECKPOINT_MAX_BYTES)
+    const out = encodeState(s).state as unknown as typeof s
+    expect(out.workspace.views.map((v) => v.evidence.length)).toEqual([800, 800, 800, 800])
+    expect(out.workspace.previousAnswer).toHaveLength(4000)
+    expect(out.workspace.goal).toHaveLength(12000)
+    expect(s.workspace.views[0]?.evidence).toHaveLength(1600)
   })
   it('round-trips a view, a batch decision and the new consumed roles', () => {
     const s = initialState()
