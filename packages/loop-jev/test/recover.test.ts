@@ -508,6 +508,21 @@ describe('recovery under a code or hybrid disclosure', () => {
     expect(r.jev.invoked).toHaveLength(0)
     expect(r.executed).toHaveLength(0)
   })
+  it('recovers an interrupted model call whose turn is already closed without checking the disclosure', async () => {
+    const r = await resume(saved({ stage: 'llm' }), { noView: true })
+    // The recovery itself runs (and finds nothing recorded); a disclosure check on a null view would throw a TypeError instead.
+    expect(r.finished?.[1]).toEqual({
+      code: 'JEV_LOOP_FAILED',
+      message: 'Error: The interrupted Jev loop model request has no record',
+    })
+  })
+  it.each<[string, Partial<JevState>]>([
+    ['an interrupted step', { stage: 'llm' }],
+    ['a step that only began', { stage: 'decide', cur: { jevAttempts: [], level: 0 } }],
+  ])('refuses %s of a cancelled turn as unsupported, not as aborted', async (_name, over) => {
+    const r = await resume(saved(over), { view: hybrid, cancelled: true })
+    expect(r.finished).toEqual(unsupported)
+  })
   it('keeps recovering under the standard disclosure with run_code in the catalog', async () => {
     const r = await resume(answerStep({ kind: 'answer', attempt: 0 }), {
       view: { tools: hybrid.tools, platform: { disclosed: standard } },

@@ -183,17 +183,21 @@ const userTexts = (rows: Awaited<ReturnType<ReturnType<typeof jevKernel>['rows']
   rows.filter((r) => r.type === 'user/message').map((r) => JSON.stringify(r.data))
 
 describe('agnes.jev on a real Core session', () => {
-  it.each(['hybrid', 'code'] as const)(
-    'ends a turn under the %s disclosure without a Jev, model or tool call',
-    async (disclosure) => {
+  it.each<{ name: string; disclosure: 'hybrid' | 'code'; withRuntime: boolean }>([
+    { name: 'hybrid', disclosure: 'hybrid', withRuntime: true },
+    { name: 'code', disclosure: 'code', withRuntime: true },
+    { name: 'code without a code runtime', disclosure: 'code', withRuntime: false },
+  ])(
+    'ends a turn under the $name disclosure without a Jev, model or tool call',
+    async ({ name, disclosure, withRuntime }) => {
       const jev = fakeJev(() => ({ pick: PICK_RESPOND }))
       const kit = jevKernel({
         scripts: [textTurn('never sent')],
         jev,
         disclosure,
-        tools: [readTool(), writeTool(), runCodeTool()],
+        tools: withRuntime ? [readTool(), writeTool(), runCodeTool()] : [readTool(), writeTool()],
       })
-      const session = await kit.open(`disclosure-${disclosure}`)
+      const session = await kit.open(`disclosure-${name}`)
       try {
         expect((await kit.run(session)).reason).toBe('error')
         const rows = await kit.rows(session)
