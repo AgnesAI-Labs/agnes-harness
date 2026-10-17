@@ -1,0 +1,8 @@
+.acme-sidebar { padding: 24px 16px; display: flex; flex-direction: column; gap: 24px; height: 100%; }
+.acme-lockup { display: flex; align-items: center; gap: 10px; font-size: 18px; }
+.acme-mark { display: inline-grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; color: var(--agnes-bg-surface); background: var(--agnes-brand-mark); font-size: 26px; }
+.acme-sidebar nav { display: grid; gap: 12px; }
+.acme-sidebar button, .acme-home button { padding: 12px; border-radius: 8px; border: 1px solid var(--agnes-line-primary); color: var(--agnes-text-primary); background: var(--agnes-bg-surface); cursor: pointer; }
+.acme-home { padding: 48px; max-width: 780px; }
+.acme-home button { background: var(--agnes-brand-primary); color: var(--agnes-bg-surface); }
+.acme-hero { text-align: center; padding: 48px; }

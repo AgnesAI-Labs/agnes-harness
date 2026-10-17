@@ -1,0 +1,103 @@
+{
+  "name": "acme-maintenance",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": "./index.mjs",
+  "files": [
+    "index.mjs",
+    "client",
+    "README.md"
+  ],
+  "dependencies": {
+    "@agnes/plugin-runtime": "0.0.0",
+    "@agnes/extension-api": "^4.0.0",
+    "@sinclair/typebox": "0.34.33"
+  },
+  "agnes": {
+    "kinds": [
+      "bundle",
+      "loop",
+      "tool",
+      "ui"
+    ],
+    "plugins": [
+      {
+        "export": "main",
+        "apiRange": "^4.0.0",
+        "id": "ext:acme-maintenance/main",
+        "inject": [
+          "tools",
+          "providers",
+          "skills"
+        ],
+        "capabilities": {
+          "ui": true
+        },
+        "metadata": {
+          "displayName": "Acme Maintenance",
+          "summary": "Synthetic maintenance application spike",
+          "description": "One read-only maintenance workflow and a profile-scoped branded interface.",
+          "category": "business-agent",
+          "locales": {
+            "zh-CN": {
+              "displayName": "Acme 维保平台",
+              "summary": "合成维保应用验证",
+              "description": "一个只读维保工作流与 Profile 级品牌界面。"
+            }
+          }
+        }
+      }
+    ],
+    "clientDescriptors": [
+      {
+        "rowId": "ext:acme-maintenance/main",
+        "path": "./client/agnes.client.json"
+      }
+    ],
+    "bundles": {
+      "maintenance": {
+        "profile": {
+          "providers": {
+            "loop": {
+              "provider": "acme.maintenance",
+              "version": "1.0.0"
+            }
+          }
+        },
+        "presets": {
+          "acme-maintenance": {
+            "name": "acme-maintenance",
+            "extends": "standard",
+            "providers": {
+              "tool-policy": {
+                "provider": "acme.maintenance"
+              }
+            },
+            "model": {
+              "route": {
+                "primary": {
+                  "route": "demo",
+                  "model": "demo-model"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "metadata": {
+      "displayName": "Acme Maintenance",
+      "summary": "Synthetic maintenance application spike",
+      "description": "One read-only maintenance workflow and a profile-scoped branded interface.",
+      "category": "business-agent",
+      "locales": {
+        "zh-CN": {
+          "displayName": "Acme 维保平台",
+          "summary": "合成维保应用验证",
+          "description": "一个只读维保工作流与 Profile 级品牌界面。"
+        }
+      }
+    }
+  }
+}

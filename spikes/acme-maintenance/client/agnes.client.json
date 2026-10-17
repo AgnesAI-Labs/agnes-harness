@@ -1,0 +1,53 @@
+{
+  "client": {
+    "entry": "./index.js",
+    "styles": [
+      "./app.css"
+    ],
+    "slots": [
+      "ui:sidebar",
+      "ui:empty-state",
+      "sidebar.brand.mark",
+      "sidebar.brand.name",
+      "conversation.hero.brand.mark"
+    ],
+    "lifetime": "profile",
+    "homeEntries": [
+      {
+        "id": "acme-home",
+        "placement": "primary"
+      }
+    ],
+    "publicConfig": {
+      "version": "1.0.0"
+    },
+    "services": [],
+    "projections": [],
+    "slotCatalogVersion": "dsh-client-slots/v1"
+  },
+  "skins": [
+    {
+      "id": "acme",
+      "name": "Acme",
+      "css": "./skin.css",
+      "tokens": {
+        "--agnes-brand-primary": {
+          "light": "#087f6f",
+          "dark": "#67dbc2"
+        },
+        "--agnes-brand-mark": {
+          "light": "#087f6f",
+          "dark": "#67dbc2"
+        },
+        "--agnes-brand-focus-ring": {
+          "light": "#087f6f",
+          "dark": "#67dbc2"
+        },
+        "--agnes-brand-emphasis-soft": {
+          "light": "#e0f4ef",
+          "dark": "#153c35"
+        }
+      }
+    }
+  ]
+}
