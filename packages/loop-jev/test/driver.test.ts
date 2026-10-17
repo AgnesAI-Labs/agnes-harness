@@ -574,4 +574,24 @@ describe('Jev loop driver', () => {
       ])
     })
   })
+  it('reports the step before it ends the turn on a second internal relation error', async () => {
+    const relation = () => {
+      throw Object.assign(new Error('unsettled'), { code: 'E_RELATION' })
+    }
+    // The first refusal is recoverable, so the second step is an arbitration whose call hits the same error.
+    const r = await run([{ pick: PICK_LS }, { pick: PICK_LS }], {
+      tools: toolPort({ ls: relation }),
+      replies: [callReply('ls', { path: '.' })],
+    })
+    expect(r.steps.map((s) => (s.refusal as JsonObject | undefined)?.code)).toEqual([
+      'INTERNAL_RELATION',
+      'INTERNAL_RELATION',
+    ])
+    expect(r.steps[1]).toMatchObject({
+      route: 'arbitration',
+      llm: { attempts: 1 },
+      refusal: { recoverability: 'terminal' },
+    })
+    expect(r.finished?.[1]).toMatchObject({ code: 'JEV_LOOP_FAILED' })
+  })
 })

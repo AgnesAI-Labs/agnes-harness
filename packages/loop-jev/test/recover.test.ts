@@ -289,6 +289,49 @@ describe('recovery after resume', () => {
     expect(r.executed).toEqual([])
     expect(r.steps[0]).toMatchObject({ dispatch: { results: ['ok'] } })
   })
+  it('dispatch of a read batch responded: one entry and one view, nothing run again', async () => {
+    const reads = ['a.md', 'b.md', 'c.md'].map(
+      (path, i): PendingCall => ({
+        invocationId: `jev:1:0:t${i}`,
+        name: 'read',
+        args: { path, offset: 1, limit: 200 },
+        announce: 'true',
+      }),
+    )
+    const batchDecision = {
+      ...decision,
+      phase: 'INSPECT',
+      op: 'read',
+      target: ['a.md', 'b.md', 'c.md'],
+      bindingMode: 'observed',
+      args: reads[0]?.args,
+      batch: reads.map((c) => c.args),
+    }
+    const r = await resume(
+      saved({
+        stage: 'dispatch',
+        cur: {
+          ...saved({}).cur,
+          decision: batchDecision as never,
+          route: { kind: 'direct', reason: null },
+          calls: reads,
+        },
+      }),
+      {
+        effects: Object.assign(
+          {},
+          ...reads.map((c) => responded(c.invocationId, ok(`text of ${(c.args as { path: string }).path}`))),
+        ),
+      },
+    )
+    expect(r.executed).toEqual([])
+    expect(r.steps[0]).toMatchObject({ dispatch: { batch: true, results: ['ok', 'ok', 'ok'] } })
+    const state = (r.jev.prepared[0] as unknown as { payload: { state: JsonObject } }).payload.state
+    expect((state.recent_steps as JsonObject[]).at(-1)).toMatchObject({
+      read_files: ['a.md', 'b.md', 'c.md'],
+    })
+    expect((state.observation_views as JsonObject[]).filter((v) => v.kind === 'read')).toHaveLength(1)
+  })
   it('dispatch closed with TOOL_NOT_STARTED: records it as recoverable', async () => {
     const r = await resume(saved({ stage: 'dispatch', cur: { ...saved({}).cur, calls: [call] } }), {
       effects: responded('jev:1:0:t0', {

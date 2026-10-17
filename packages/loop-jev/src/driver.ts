@@ -64,6 +64,12 @@ async function step(s: Scope, signal: AbortSignal): Promise<LoopStepOutcome> {
   if (!view) throw new Error('The claimed Jev loop turn has no public view')
   if (signal.aborted || view.cancelled || ctx.turn.cancelled()) return finishTurn(s, 'aborted')
   if (st.step >= s.cfg.stepCap) return finishTurn(s, 'max_steps')
+  // A tool the model loaded earlier in the turn joins the names once; none is ever taken away.
+  const merged = [...new Set([...st.toolNames, ...turnToolNames(view)])].sort()
+  if (merged.join('\n') !== st.toolNames.join('\n')) {
+    st.toolNamesChanges++
+    st.toolNames = merged
+  }
   return decideStep(s, view, signal)
 }
 

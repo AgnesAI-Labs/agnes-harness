@@ -47,7 +47,13 @@ export type FakeJev = LoopSideCallPort & {
 export const PICK_RESPOND = { phase: 'RESPOND' }
 export const PICK_LS = { phase: 'INSPECT', action__inspect: 'ls', target__inspect__ls: 'DEFAULT_ARGUMENTS' }
 export const PICK_WRITE = { phase: 'ACT', action__act: 'write' }
-export const PICK_READ = { phase: 'INSPECT', action__inspect: 'read' }
+// A file that was read has candidates, so the target and the mode are named: the first option would bind a target.
+export const PICK_READ = {
+  phase: 'INSPECT',
+  action__inspect: 'read',
+  target__inspect__read: 'LLM_PARAMETERS',
+  target_mode__inspect__read: 'one',
+}
 
 const thrown = (code: string) => Object.assign(new Error(`scripted ${code}`), { code })
 const isObject = (value: unknown): value is Record<string, unknown> =>
