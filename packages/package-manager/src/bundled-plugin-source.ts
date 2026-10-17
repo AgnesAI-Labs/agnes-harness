@@ -43,6 +43,15 @@ export const BUNDLED_HELPERS = Object.freeze([
     optionalUnderCeiling: true,
   },
   {
+    name: 'usage-cockpit',
+    id: '@agnes/usage-cockpit',
+    version: '0.1.0',
+    license: 'Apache-2.0',
+    ref: 'file:./bundled-plugins/usage-cockpit',
+    disabledByDefault: true,
+    sourcePath: 'usage-cockpit',
+  },
+  {
     name: 'document-reader',
     id: '@agnes/document-reader',
     version: '0.1.2',
@@ -53,24 +62,31 @@ export const BUNDLED_HELPERS = Object.freeze([
 
 /** Release-owned defaults; freshOnly additions never backfill an existing profile. */
 export const DEFAULT_ENABLED_BUNDLED_PACKAGES = Object.freeze([
-  ...BUNDLED_HELPERS.map((helper) => ({
-    optionalUnderCeiling: false,
-    ...helper,
-    sourcePath: `package-manager/bundled-plugins/${helper.name}`,
-    freshOnly: false,
-  })),
+  ...BUNDLED_HELPERS.filter((helper) => !('disabledByDefault' in helper && helper.disabledByDefault)).map(
+    (helper) => ({
+      optionalUnderCeiling: false,
+      ...helper,
+      sourcePath:
+        'sourcePath' in helper ? helper.sourcePath : `package-manager/bundled-plugins/${helper.name}`,
+      freshOnly: false,
+    }),
+  ),
 ])
 
 /** Resolve reserved release payloads independently of the caller's workspace. */
 export function bundledPluginSource(ref: string): { root: string; path: string } | undefined {
-  const pkg = DEFAULT_ENABLED_BUNDLED_PACKAGES.find((item) => item.ref === ref)
+  const pkg = BUNDLED_HELPERS.find((item) => item.ref === ref)
   if (!pkg) return undefined
   const moduleDir = dirname(fileURLToPath(import.meta.url))
   const sea = process.getBuiltinModule('node:sea').isSea()
   const packaged = sea || (typeof AGNES_PACKAGED_BUILTINS !== 'undefined' && AGNES_PACKAGED_BUILTINS)
   return {
     root: sea ? dirname(process.execPath) : packaged ? moduleDir : dirname(dirname(moduleDir)),
-    path: packaged ? `bundled-plugins/${pkg.name}` : pkg.sourcePath,
+    path: packaged
+      ? `bundled-plugins/${pkg.name}`
+      : 'sourcePath' in pkg
+        ? pkg.sourcePath
+        : `package-manager/bundled-plugins/${pkg.name}`,
   }
 }
 

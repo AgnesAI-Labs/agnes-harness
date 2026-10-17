@@ -67,6 +67,7 @@ describe('repo', () => {
       '@agnes/sandbox-remote',
       '@agnes/sdk',
       '@agnes/system-node',
+      '@agnes/usage-cockpit',
       '@agnes/web',
       '@agnes/web-admin',
       '@agnes/web-client',

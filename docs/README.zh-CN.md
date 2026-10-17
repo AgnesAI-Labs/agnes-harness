@@ -34,6 +34,7 @@
 | [Web 工作台](guide/web.zh-CN.md) | 创建任务、查看历史、管理模型与扩展 |
 | [程序化工具与工作流](guide/code-workflows.zh-CN.md) | TypeScript cell 与持久并行子任务工作流 |
 | [会话与恢复](guide/sessions.zh-CN.md) | 继续任务、导出记录、处理中断 |
+| [用量驾驶舱](guide/usage-cockpit.zh-CN.md) | 使用可选插件查看选中会话费用与覆盖缺口 |
 | [插件生命周期](guide/packages.zh-CN.md) | 安装、信任、启用、更新与移除插件 |
 | [通用凭据](guide/credentials.zh-CN.md) | 保存只写 API key 并管理配置引用 |
 | [Webhook 触发器](guide/webhooks.zh-CN.md) | 通过认证的业务事件创建普通业务 Agent 会话 |

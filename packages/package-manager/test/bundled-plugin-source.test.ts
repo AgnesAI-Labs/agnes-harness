@@ -200,3 +200,8 @@ it('installs the community deliverables replacement in a throwaway home and pres
   expect((await restarted.inventory(profile)).packages.some((row) => row.id === review.id)).toBe(false)
   expect(exec).not.toHaveBeenCalled()
 })
+
+it('advertises usage cockpit without enabling it by default', () => {
+  expect(BUNDLED_HELPERS.some((helper) => helper.id === '@agnes/usage-cockpit')).toBe(true)
+  expect(DEFAULT_ENABLED_BUNDLED_PACKAGES.some((helper) => helper.id === '@agnes/usage-cockpit')).toBe(false)
+})

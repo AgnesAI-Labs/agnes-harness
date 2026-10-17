@@ -1,18 +1,18 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
+  BUNDLED_HELPERS,
   bundledExamplesEntries,
   bundledPluginSource,
   createCatalog,
   createLocalExamplesCatalog,
-  DEFAULT_ENABLED_BUNDLED_PACKAGES,
   hashDirectory,
   type LocalExamplesCatalog,
   staticCatalogSource,
 } from '@agnes/package-manager'
 
 /** Read the actual shipped payload; never advertise an unavailable Git fallback. */
-function helperEntry(helper: (typeof DEFAULT_ENABLED_BUNDLED_PACKAGES)[number]) {
+function helperEntry(helper: (typeof BUNDLED_HELPERS)[number]) {
   const source = bundledPluginSource(helper.ref)
   if (!source) throw new Error('Bundled plugin root unavailable')
   const directory = join(source.root, source.path)
@@ -42,7 +42,7 @@ export async function discoverLocalExamples(workspace: string): Promise<LocalExa
     staticCatalogSource('builtin-plugins', async () => ({
       issuedAt: new Date().toISOString(),
       ttlMs: 86_400_000,
-      entries: DEFAULT_ENABLED_BUNDLED_PACKAGES.map(helperEntry),
+      entries: BUNDLED_HELPERS.map(helperEntry),
     })),
     staticCatalogSource('official-examples', async (signal) => ({
       issuedAt: new Date().toISOString(),

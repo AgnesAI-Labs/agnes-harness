@@ -312,6 +312,9 @@
     },
     {
       "path": "packages/loop-jev/tsconfig.test.json"
+    },
+    {
+      "path": "packages/usage-cockpit"
     }
   ]
 }

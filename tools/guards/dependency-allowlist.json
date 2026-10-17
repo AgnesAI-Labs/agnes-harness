@@ -343,5 +343,6 @@
     "@agnes/error-sanitization",
     "@agnes/system-node"
   ],
-  "@agnes/memory-file": ["@agnes/extension-api", "@agnes/system-node"]
+  "@agnes/memory-file": ["@agnes/extension-api", "@agnes/system-node"],
+  "@agnes/usage-cockpit": ["@agnes/protocol", "@agnes/web-client", "@agnes/web-ui"]
 }

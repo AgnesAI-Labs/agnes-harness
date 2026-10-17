@@ -5,7 +5,12 @@ import { appendFile, chmod, copyFile, cp, mkdir, readdir, readFile, rm, writeFil
 import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { BUNDLED_EXAMPLES, DEFAULT_ENABLED_BUNDLED_PACKAGES } from '@agnes/package-manager'
+import {
+  BUNDLED_EXAMPLES,
+  BUNDLED_HELPERS,
+  bundledPluginSource,
+  DEFAULT_ENABLED_BUNDLED_PACKAGES,
+} from '@agnes/package-manager'
 import { type BuildOptions, type BuildResult, build, type Plugin } from 'esbuild'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
 import { productionWebOptions } from '../../../tools/web-build-options.mjs'
@@ -53,9 +58,12 @@ export async function copyJevLoopNotice(outputDirectory: string): Promise<void> 
 
 /** Copy only runtime payload, never repository tests or personal working files. */
 export async function copyBundledPlugins(outputDirectory: string, version = '0.0.0'): Promise<void> {
-  for (const { name: helper } of DEFAULT_ENABLED_BUNDLED_PACKAGES) {
+  for (const payload of BUNDLED_HELPERS) {
+    const helper = payload.name
     const destination = join(outputDirectory, 'bundled-plugins', helper)
-    const source = join(repoPackages, 'package-manager', 'bundled-plugins', helper)
+    const location = bundledPluginSource(payload.ref)
+    if (!location) throw new Error(`Missing bundled plugin source: ${helper}`)
+    const source = join(location.root, location.path)
     await mkdir(destination, { recursive: true })
     for (const name of ['package.json', 'index.mjs', 'src', 'README.md', 'LICENSE'])
       await cp(join(source, name), join(destination, name), {
@@ -63,7 +71,8 @@ export async function copyBundledPlugins(outputDirectory: string, version = '0.0
         force: false,
         errorOnExist: true,
       })
-    if (existsSync(join(source, 'NOTICE'))) await cp(join(source, 'NOTICE'), join(destination, 'NOTICE'))
+    for (const optional of ['NOTICE', 'README.zh-CN.md'])
+      if (existsSync(join(source, optional))) await cp(join(source, optional), join(destination, optional))
     if (helper === 'document-reader') await prepareDocumentReader(destination)
     await stampBundledPackageVersion(destination, version)
     await checkPackagedClientModules(destination)

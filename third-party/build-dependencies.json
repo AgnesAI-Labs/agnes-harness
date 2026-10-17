@@ -82,6 +82,7 @@
       "rationale": "Type-only companion of the pinned react dependency; same version line.",
       "consumers": [
         "packages/resource-control-web",
+        "packages/usage-cockpit",
         "packages/web",
         "packages/web-admin",
         "packages/web-client",

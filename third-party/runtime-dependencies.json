@@ -58,6 +58,7 @@
         "packages/package-manager/bundled-plugins/goal-ui",
         "packages/package-manager/bundled-plugins/interaction-ui",
         "packages/resource-control-web",
+        "packages/usage-cockpit",
         "packages/web",
         "packages/web-admin",
         "packages/web-client",
