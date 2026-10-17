@@ -44,6 +44,9 @@ export const lsTool = defineTool({
     )
     // An empty answer is indistinguishable from a broken tool, so an empty directory says so.
     const result = await guardedResult(ctx, lines.length > 0 ? lines.join('\n') : '(no entries)')
+    // When the guard cuts the text to a head and a tail, the references still name the entries from
+    // the cut middle. At the default output limit that only happens with more than 100 entries, and
+    // then `truncated` is already true; a deployment that sets a lower limit can cut a shorter list.
     return { ...result, structured: pathReferences(ctx, found, shown, false) }
   },
 })

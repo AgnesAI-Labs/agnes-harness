@@ -1,8 +1,9 @@
+import { boundToolResult, TOOL_RESULT_LIMITS } from '@agnes/core-effects/effects/tool-dispatch'
 import { TOOL_PATH_REFERENCES, type ToolResult } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
 import { lsTool } from '../src/tools/ls.js'
-import { pathReferences } from '../src/tools/references.js'
+import { pathReferences, STRUCTURED_MAX_BYTES } from '../src/tools/references.js'
 
 const ctxOf = (o: Parameters<typeof fakeToolContext>[0] = {}) =>
   fakeToolContext({ outputMaxBytes: 8192, ...o })
@@ -34,6 +35,79 @@ describe('pathReferences', () => {
     const refs = pathReferences(ctxOf(), found, 150, false)
     expect(refs.references).toHaveLength(100)
     expect(refs).toMatchObject({ total: 150, truncated: true })
+  })
+  it('measures a path by its JSON-encoded size', () => {
+    const control = '\u0001'.repeat(200)
+    const surrogate = '\ud800'.repeat(200)
+    const refs = pathReferences(
+      ctxOf(),
+      [
+        { abs: `/work/proj/a\u0001b`, kind: 'file' },
+        { abs: `/work/proj/${control}`, kind: 'file' },
+        { abs: `/work/proj/${surrogate}`, kind: 'file' },
+      ],
+      3,
+      false,
+    )
+    expect(refs).toEqual({
+      schema: TOOL_PATH_REFERENCES,
+      references: [{ kind: 'file', path: 'a\u0001b' }],
+      total: 3,
+      truncated: true,
+    })
+  })
+  it('keeps a hundred paths that grow when escaped under the kernel limit on structured results', () => {
+    expect(STRUCTURED_MAX_BYTES).toBe(TOOL_RESULT_LIMITS.maxJsonBytes)
+    // Each is just under the cap once escaped, and just under it raw, which escapes to six times that.
+    const escaped = (i: number) => `${String(i).padStart(4, '0')}${'\u0001'.repeat(170)}`
+    const raw = (i: number) => `${String(i).padStart(4, '0')}${'\u0001'.repeat(1019)}`
+    for (const name of [escaped, raw]) {
+      const found = Array.from({ length: 100 }, (_, i) => ({
+        abs: `/work/proj/${name(i)}`,
+        kind: 'file' as const,
+      }))
+      const result: ToolResult = {
+        content: [{ type: 'text', text: 'listing' }],
+        structured: pathReferences(ctxOf(), found, 100, false),
+      }
+      expect(Buffer.byteLength(JSON.stringify(result.structured))).toBeLessThan(STRUCTURED_MAX_BYTES)
+      expect(boundToolResult(result, 8192)).toBe(result)
+    }
+    const listed = (name: (i: number) => string) =>
+      pathReferences(
+        ctxOf(),
+        Array.from({ length: 100 }, (_, i) => ({ abs: `/work/proj/${name(i)}`, kind: 'file' as const })),
+        100,
+        false,
+      ).references.length
+    expect(listed(escaped)).toBe(100)
+    expect(listed(raw)).toBe(0)
+  })
+  it('leaves out a path with a backslash where the backslash is part of a name', () => {
+    const found = [
+      { abs: '/work/proj/a\\b', kind: 'file' as const },
+      { abs: '/work/proj/c', kind: 'file' as const },
+    ]
+    expect(pathReferences(ctxOf(), found, 2, false)).toEqual({
+      schema: TOOL_PATH_REFERENCES,
+      references: [{ kind: 'file', path: 'c' }],
+      total: 2,
+      truncated: true,
+    })
+  })
+  it('reads a backslash as a separator where it is one', () => {
+    const ctx = ctxOf()
+    const windows = {
+      ...ctx,
+      session: { ...ctx.session, workspaceRoot: 'C:\\work\\proj' },
+      platform: { ...ctx.platform, fs: { ...ctx.platform.fs, pathSep: '\\' as const } },
+    }
+    const refs = pathReferences(windows, [{ abs: 'C:\\work\\proj\\src\\a.ts', kind: 'file' }], 1, false)
+    expect(refs).toMatchObject({
+      references: [{ kind: 'file', path: 'src/a.ts' }],
+      total: 1,
+      truncated: false,
+    })
   })
 })
 
@@ -88,9 +162,26 @@ describe('ls references', () => {
     expect(textOf(r)).toBe('x.txt')
     expect(r.structured).toEqual({ schema: TOOL_PATH_REFERENCES, references: [], total: 1, truncated: true })
   })
+  it('counts an entry whose name holds a backslash but does not list it', async () => {
+    const ctx = ctxOf({ files: { 'b.txt': '' }, entries: { '/work/proj': [{ name: 'a\\b', kind: 'file' }] } })
+    const r = await lsTool.execute({}, ctx)
+    expect(textOf(r).split('\n')).toEqual(['a\\b', 'b.txt'])
+    expect(r.structured).toEqual({
+      schema: TOOL_PATH_REFERENCES,
+      references: [{ kind: 'file', path: 'b.txt' }],
+      total: 2,
+      truncated: true,
+    })
+  })
   it('gives an empty directory empty references and a failure none', async () => {
-    const empty = await lsTool.execute({ path: 'nothing-here' }, ctxOf({ files: { 'a/keep.txt': '' } }))
-    expect(empty.structured).toMatchObject({ references: [], total: 0, truncated: false })
+    const empty = await lsTool.execute({ path: 'empty' }, ctxOf({ entries: { '/work/proj/empty': [] } }))
+    expect(textOf(empty)).toBe('(no entries)')
+    expect(empty.structured).toEqual({
+      schema: TOOL_PATH_REFERENCES,
+      references: [],
+      total: 0,
+      truncated: false,
+    })
     const failed = await lsTool.execute(
       { path: 'locked' },
       ctxOf({ files: { 'a.txt': '' }, listErrors: { locked: { code: 'EACCES', message: 'EACCES' } } }),
