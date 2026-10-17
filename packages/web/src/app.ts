@@ -1502,6 +1502,12 @@ function clearSessionRecovery(): void {
 }
 function setConnection(value: 'connecting' | 'connected' | 'reconnecting' | 'closed'): void {
   connected = value === 'connected'
+  const currentSessionId = clientModules.session.sessionId
+  if (currentSessionId && clientModules.session.readiness.getSnapshot().status !== 'history-only')
+    clientModules.session.setReadiness(
+      connected ? 'ready' : value === 'closed' ? 'failed' : 'connecting',
+      currentSessionId,
+    )
   if (!connected) {
     sidebarPages.reset()
     permissionConnectionEpoch++

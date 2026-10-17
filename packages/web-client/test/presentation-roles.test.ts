@@ -99,3 +99,48 @@ it('filters standard product roles before priority so installing B cannot steal 
   a()
   b()
 })
+
+it('reports conflict sources and restores the release default after an application selects a bad mount', () => {
+  const roles = new PresentationRoleRegistry()
+  let visible = ''
+  roles.register(
+    'release-default',
+    {
+      role: 'conversation',
+      priority: 100,
+      mount() {
+        visible = 'default'
+        return () => {
+          visible = ''
+        }
+      },
+    },
+    { packageId: '@agnes/conversation-ui', clientId: 'ui', revision: 'one' },
+  )
+  roles.register(
+    'broken-source',
+    {
+      role: 'conversation',
+      priority: 0,
+      mount() {
+        throw new Error('bad mount')
+      },
+    },
+    { packageId: 'custom', clientId: 'ui', revision: 'one' },
+  )
+  roles.select({ conversation: { packageId: 'custom', clientId: 'ui' } })
+  expect(visible).toBe('default')
+  expect(roles.getSnapshot()).toContainEqual({
+    role: 'conversation',
+    owners: ['broken-source'],
+    reason: 'mount-failed',
+  })
+  const provider = { role: 'custom-role', mount: () => () => {} }
+  roles.register('source-a', provider)
+  expect(() => roles.register('source-b', provider)).toThrow('source-a, source-b')
+  expect(roles.getSnapshot()).toContainEqual({
+    role: 'custom-role',
+    owners: ['source-a', 'source-b'],
+    reason: 'conflict',
+  })
+})

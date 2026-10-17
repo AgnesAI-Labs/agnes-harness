@@ -15,7 +15,8 @@
     "@agnes/cordis": "workspace:*",
     "@agnes/web-slots": "workspace:*",
     "@agnes/protocol": "workspace:*",
-    "@agnes/sdk": "workspace:*"
+    "@agnes/sdk": "workspace:*",
+    "@agnes/web-units": "workspace:*"
   },
   "peerDependencies": {
     "react": "18.3.1"

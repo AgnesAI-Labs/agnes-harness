@@ -148,6 +148,8 @@ const LAYER: Record<string, number> = {
   '@agnes/document-reader': 10,
   '@agnes/goal-ui': 10,
   '@agnes/interaction-ui': 10,
+  '@agnes/navigation-ui': 10,
+  '@agnes/conversation-ui': 10,
   '@agnes/mcp-helper': 10,
   '@agnes/plugin-helper': 10,
   '@agnes/skill-helper': 10,

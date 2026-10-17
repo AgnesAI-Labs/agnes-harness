@@ -58,10 +58,13 @@ export function ownContribution(
   effect: (off: () => void) => void,
 ): () => void {
   const set = owners.get(owner) ?? new Set<() => void>()
+  let live = true
   const dispose = () => {
-    off()
+    if (!live) return
+    live = false
     set.delete(dispose)
     if (!set.size && owners.get(owner) === set) owners.delete(owner)
+    off()
   }
   set.add(dispose)
   owners.set(owner, set)
@@ -71,7 +74,13 @@ export function ownContribution(
 const owners = new Map<string, Set<() => void>>()
 /** Called before asynchronous fiber teardown, so revocation immediately hides global entries. */
 export function revokeContributionOwner(owner: string): void {
-  for (const off of [...(owners.get(owner) ?? [])]) off()
+  for (const off of [...(owners.get(owner) ?? [])]) {
+    try {
+      off()
+    } catch {
+      console.warn('[client-modules] contribution cleanup failed')
+    }
+  }
   owners.delete(owner)
   for (const store of availability.get(owner) ?? []) store.revoke()
 }

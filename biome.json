@@ -12,6 +12,8 @@
       "!**/generated",
       "!packages/package-manager/bundled-plugins/goal-ui/src/client.js",
       "!packages/package-manager/bundled-plugins/interaction-ui/src/client.js",
+      "!packages/package-manager/bundled-plugins/navigation-ui/src/client.js",
+      "!packages/package-manager/bundled-plugins/conversation-ui/src/client.js",
       "!**/dist",
       "!**/node_modules",
       "!docs",

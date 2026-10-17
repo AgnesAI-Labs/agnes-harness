@@ -22,9 +22,8 @@
 ## 工作台注册
 
 ```tsx
-import { workbenchPanels } from '@agnes/web-client'
 
-const dispose = workbenchPanels.register({
+const dispose = ctx.workbenchPanels.register({
   id: 'example.notes', order: 50, edge: 'right',
   titleKey: 'example.notes.title', icon: 'file',
   visibility: 'contextual',

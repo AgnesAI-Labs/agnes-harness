@@ -1,4 +1,5 @@
 import type { UiSurfaceRecord } from '@agnes/protocol'
+import { conversationCards as testCards, workbenchPanels as testPanels } from '@agnes/web-client'
 import { expect, it, vi } from 'vitest'
 import { mountIntelligentUi } from '../../../web-conversation/src/intelligent-ui/mount.js'
 import { financeRecord } from './fixture.js'
@@ -86,6 +87,7 @@ it('seeds loaded surfaces on every session and reveals only first appearances', 
   }
   const reveal = vi.fn()
   const dispose = mountIntelligentUi({
+    contributions: { conversationCards: testCards, workbenchPanels: testPanels },
     client: { sessions: { get: (id: string) => ({ id }) } } as never,
     registry: { spec: () => ({}), register: () => () => {} } as never,
     session: session as never,
@@ -133,6 +135,7 @@ it('seeds loaded surfaces on every session and reveals only first appearances', 
 it('names the tab «Views» and counts the panels it lists', () => {
   const session = { sessionId: 'counted', subscribe: () => () => {} }
   const dispose = mountIntelligentUi({
+    contributions: { conversationCards: testCards, workbenchPanels: testPanels },
     client: { sessions: { get: (id: string) => ({ id }) } } as never,
     registry: { spec: () => ({}), register: () => () => {} } as never,
     session: session as never,

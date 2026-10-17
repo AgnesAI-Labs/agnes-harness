@@ -142,6 +142,42 @@ importers:
         specifier: workspace:*
         version: link:../../../packages/extension-api
 
+  examples/ui/component-library:
+    devDependencies:
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../../../packages/extension-api
+      '@agnes/plugin-runtime':
+        specifier: workspace:*
+        version: link:../../../packages/plugin-runtime
+      '@sinclair/typebox':
+        specifier: 0.34.33
+        version: 0.34.33
+
+  examples/ui/interaction-renderer:
+    devDependencies:
+      '@agnes/web-client':
+        specifier: workspace:*
+        version: link:../../../packages/web-client
+      '@agnes/web-ui':
+        specifier: workspace:*
+        version: link:../../../packages/web-ui
+      react:
+        specifier: 18.3.1
+        version: 18.3.1
+
+  examples/ui/tool-result-card:
+    devDependencies:
+      '@agnes/web-client':
+        specifier: workspace:*
+        version: link:../../../packages/web-client
+      '@agnes/web-ui':
+        specifier: workspace:*
+        version: link:../../../packages/web-ui
+      react:
+        specifier: 18.3.1
+        version: 18.3.1
+
   packages/ai:
     dependencies:
       '@agnes/extension-api':
@@ -1247,6 +1283,18 @@ importers:
         specifier: 2.9.0
         version: 2.9.0
 
+  packages/package-manager/bundled-plugins/conversation-ui:
+    devDependencies:
+      '@agnes/web-client':
+        specifier: workspace:*
+        version: link:../../../web-client
+      '@agnes/web-ui':
+        specifier: workspace:*
+        version: link:../../../web-ui
+      react:
+        specifier: 18.3.1
+        version: 18.3.1
+
   packages/package-manager/bundled-plugins/deliverables-ui:
     devDependencies:
       '@agnes/web-client':
@@ -1293,6 +1341,18 @@ importers:
         version: 18.3.1
 
   packages/package-manager/bundled-plugins/interaction-ui:
+    devDependencies:
+      '@agnes/web-client':
+        specifier: workspace:*
+        version: link:../../../web-client
+      '@agnes/web-ui':
+        specifier: workspace:*
+        version: link:../../../web-ui
+      react:
+        specifier: 18.3.1
+        version: 18.3.1
+
+  packages/package-manager/bundled-plugins/navigation-ui:
     devDependencies:
       '@agnes/web-client':
         specifier: workspace:*
@@ -1618,6 +1678,9 @@ importers:
       '@agnes/web-slots':
         specifier: workspace:*
         version: link:../web-slots
+      '@agnes/web-units':
+        specifier: workspace:*
+        version: link:../web-units
     devDependencies:
       '@types/react':
         specifier: 18.3.12

@@ -2,11 +2,12 @@
   "client": {
     "entry": "./client/index.js",
     "styles": ["./client/index.css"],
-    "slots": ["ui:sidebar"],
+    "slots": ["workbench.panel"],
     "publicConfig": {
-      "label": "Agnes client module demo · v1"
+      "label": "Agnes client module demo \u00b7 v1"
     },
     "services": [],
-    "projections": []
+    "projections": [],
+    "lifetime": "profile"
   }
 }

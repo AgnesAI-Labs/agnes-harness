@@ -71,6 +71,13 @@ export type { IntelligentUiRenderer, IntelligentUiRendererApi } from './intellig
 export { slotLocaleCatalog } from './locales.js'
 export type { SlotOutletProps } from './outlet.js'
 export { SlotOutlet, SlotsProvider } from './outlet.js'
+export type {
+  ComposerPresentationControls,
+  ComposerPresentationPort,
+  ConversationPresentationPort,
+  NavigationHistory,
+  NavigationPresentationPort,
+} from './presentation-ports.js'
 export type { PresentationProvider } from './presentation-roles.js'
 export { PresentationRoleRegistry, presentationRoles } from './presentation-roles.js'
 export type { RegisterOptions } from './registry.js'
@@ -107,6 +114,7 @@ export {
   CommandService,
   LocaleService,
   resolveUiLocale,
+  type SessionReadiness,
   SessionService,
   ThemeService,
   UI_LOCALES,

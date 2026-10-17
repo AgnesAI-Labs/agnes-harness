@@ -7,8 +7,24 @@ import type {
   SessionProjection,
 } from './service-contracts.js'
 
+export type SessionReadiness = Readonly<{
+  status: 'no-session' | 'connecting' | 'ready' | 'history-only' | 'failed'
+  sessionId?: string
+  epoch: number
+}>
 export class SessionService extends Service {
   private scope = 0
+  private readinessSnapshot: SessionReadiness = Object.freeze({ status: 'no-session', epoch: 0 })
+  readonly readiness = {
+    getSnapshot: (): SessionReadiness => this.readinessSnapshot,
+    subscribe: (listener: () => void): (() => void) => this.subscribe(listener),
+  }
+  /** Host binding transition; every epoch invalidates in-flight client reads. */
+  setReadiness(status: SessionReadiness['status'], sessionId = this.currentSessionId): void {
+    this.scope++
+    this.readinessSnapshot = Object.freeze({ status, epoch: this.scope, ...(sessionId ? { sessionId } : {}) })
+    notifyListeners(this.listeners, 'session readiness')
+  }
   private currentSessionId: string | undefined
   private readonly client: HostAgnesClient | undefined
   private readonly listeners = new Set<() => void>()
@@ -21,6 +37,7 @@ export class SessionService extends Service {
     this.currentSessionId = initial
     this.client = client
     this.reattachHandle()
+    if (initial) this.setReadiness(this.currentHandle ? 'ready' : 'connecting')
   }
 
   get sessionId(): string | undefined {
@@ -29,17 +46,23 @@ export class SessionService extends Service {
 
   /** 仅宿主调用。 */
   setSession(sessionId: string | undefined): void {
-    if (sessionId === this.currentSessionId) return
-    this.scope += 1
+    if (
+      sessionId === this.currentSessionId &&
+      this.readinessSnapshot.status === (sessionId ? 'ready' : 'no-session')
+    )
+      return
     this.detachHandle()
     this.currentSessionId = sessionId
     this.reattachHandle()
-    notifyListeners(this.listeners, 'session scope')
+    this.setReadiness(!sessionId ? 'no-session' : this.currentHandle ? 'ready' : 'connecting')
   }
 
   /** Alias for hosts that model a session switch as a scope reattachment. */
   reattach(sessionId: string | undefined): void {
-    this.setSession(sessionId)
+    this.detachHandle()
+    this.currentSessionId = sessionId
+    this.reattachHandle()
+    this.setReadiness(!sessionId ? 'no-session' : this.currentHandle ? 'ready' : 'connecting')
   }
 
   subscribe = (listener: () => void): (() => void) => {

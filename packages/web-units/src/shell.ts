@@ -208,28 +208,24 @@ export const BUILTIN_WEB_UNITS: readonly WebUnitDefinition[] = Object.freeze([
     './conversation/message-actions.js',
     ['conversation.message.actions'],
     'session-maybe',
-    ['@agnes/web-conversation'],
   ),
   unit(
     '@agnes/web-conversation-attachments',
     './conversation/attachments.js',
     ['conversation.attachments'],
     'session-maybe',
-    ['@agnes/web-conversation'],
   ),
   unit(
     '@agnes/web-conversation-tool-card',
     './conversation/tool-card.js',
     ['conversation.tool-card'],
     'session-maybe',
-    ['@agnes/web-conversation'],
   ),
   unit(
     '@agnes/web-conversation-feedback',
     './conversation/feedback.js',
     ['conversation.feedback'],
     'session-maybe',
-    ['@agnes/web-conversation'],
   ),
 ])
 

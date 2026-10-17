@@ -1,3 +1,4 @@
+import { conversationCards as testCards, workbenchPanels as testPanels } from '@agnes/web-client'
 /** @vitest-environment happy-dom */
 
 import { Context } from '@agnes/cordis'
@@ -671,6 +672,7 @@ it('summarizes interaction protocol and exact demo echoes while preserving raw d
 
 it('shows a submitted question as «你的回答» and folds the queued line that announced it', async () => {
   stopInteraction = mountIntelligentUi({
+    contributions: { conversationCards: testCards, workbenchPanels: testPanels },
     registry,
     client: { sessions: { get: () => undefined } } as never,
     session: new SessionService(ctx),
@@ -740,6 +742,7 @@ it('names the views a turn rendered from its persisted ui_render results', () =>
 
 it('marks the asking answer «answered» before copy and drops the answer node and ui_submit row', async () => {
   stopInteraction = mountIntelligentUi({
+    contributions: { conversationCards: testCards, workbenchPanels: testPanels },
     registry,
     client: { sessions: { get: () => undefined } } as never,
     session: new SessionService(ctx),

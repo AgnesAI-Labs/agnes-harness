@@ -2,13 +2,12 @@
 
 [English](frontend.md) | 简体中文
 
-> 进阶接管示例（历史演示路径）：下文替换整个侧栏，用于解释单占位置与会话版本。新增页面请使用 [tool-with-panel 模板](../../templates/tool-with-panel/)；新增面板请使用[工作台面板](../extend/workbench-panels.zh-CN.md)。
 
 [文档导航](../README.zh-CN.md) · [插件生命周期](../guide/packages.zh-CN.md)
 
 做完本教程，你会在工作台里看到自己的面板，完成一次版本更新，并确认停用后新会话使用内置界面、旧会话保留原版本。先理解生命周期，再把版本文字替换成岗位需要的内容。
 
-复用 [client-panel/v1](../../examples/packages/client-panel/v1/package.json)。它在已支持的 `ui:sidebar` 槽展示版本文字，v2 用于验证页面更新。它是浏览器贡献路径，不是普通 Host `ctx.slots` 的 slot 注册。
+复用 [client-panel/v1](../../examples/packages/client-panel/v1/package.json)。它在已有的工作台视图位置 `workbench.panel` 追加版本文字，不替换侧栏，v2 用于验证页面更新。它是浏览器贡献路径，不是普通 Host `ctx.slots` 的 slot 注册。
 
 ## 声明和代码
 
@@ -18,8 +17,9 @@
 {
   "client": {
     "entry": "./client/index.js",
+    "lifetime": "profile",
     "styles": ["./client/index.css"],
-    "slots": ["ui:sidebar"],
+    "slots": ["workbench.panel"],
     "publicConfig": { "label": "Agnes client module demo · v1" },
     "services": [],
     "projections": []
@@ -34,14 +34,13 @@
 ```js
 export function apply(ctx, config) {
   ctx.slots.register(
-    'ui:sidebar',
+    'workbench.panel',
     () => config.publicConfig.label,
-    { priority: -1 },
   )
 }
 ```
 
-该单实例槽的较小 priority 优先，示例替换内置侧栏。停用后应恢复内置侧栏。正式插件选择合适槽位，不能指望覆盖未迁移区域，也不要依赖宿主私有 DOM/CSS 结构。
+该视图位置追加工作台内容，不接管导航。撤销时同步移除；需要替换整组呈现时使用公开接管角色，不能依赖宿主私有 DOM/CSS。
 
 `publicConfig` 来自随包内容，是公开展示元数据，不是后端 runtime config。客户端 entry/styles 必须是经过校验的包内路径；不能逃出快照、任意 import 本机模块或获取连接凭据。React 与共享 Agnes 包使用宿主的平台 externals，仅将其它依赖打入浏览器产物。
 
@@ -56,7 +55,7 @@ node agnes.mjs package inspect file:./examples/packages/client-panel/v1
 node agnes.mjs install file:./examples/packages/client-panel/v1
 ```
 
-使用预览摘要完成 trust、enable，然后打开同一实例 Web 并新建会话，应看到 v1 字样。通过 Web 管理或 TUI 更新到 `file:./examples/packages/client-panel/v2`，完成其信任与启用后再新建会话检查 v2；返回第一个会话核对保留的 v1。最后 disable，再新建会话确认内置侧栏恢复。示例可能替换管理导航，必要时保留终端使用 shell disable。
+使用预览摘要完成 trust、enable，然后打开同一实例 Web 并新建会话，应看到 v1 字样。通过 Web 管理或 TUI 更新到 `file:./examples/packages/client-panel/v2`，完成其信任与启用后再新建会话检查 v2；返回第一个会话核对 profile 贡献也跟随当前激活显示 v2。最后 disable，确认新增视图立即撤销，管理导航保持可用。
 
 包 desired=enabled、后端 web row ready 和本页面成功加载是不同阶段。浏览器未打开、脚本/CSS 读取失败、槽位越权或 apply 抛错都可能导致前端失败；查看逐行实际状态，不仅看包级 enabled。
 

@@ -46,6 +46,7 @@ export function createReadOnlyController(
   context: Pick<
     AppSessionContext,
     | 'client'
+    | 'clientModules'
     | 'projection'
     | 'readOnly'
     | 'render'
@@ -74,6 +75,7 @@ export function createReadOnlyController(
       if (ticket !== latest || !context.sessionBinding.isCurrent(epoch)) return false
       scan = view.history.scan
       context.readOnly = { id, maxNodes, hasEarlier: view.history.hasEarlier }
+      context.clientModules.session.setReadiness('history-only', id)
       context.projection = view.timeline
       context.windowAtStart = !view.history.hasEarlier
       return true

@@ -1,4 +1,4 @@
-import { conversationCards, DeliverablesStore, workbenchPanels } from '@agnes/web-client'
+import { DeliverablesStore } from '@agnes/web-client'
 import { Button, EmptyState, Icon, ListRow, StatusMessage } from '@agnes/web-ui'
 import { DocumentPreview, HtmlPreviewFrame } from '@agnes/web-ui/conversation'
 import { createElement as h, useEffect, useState, useSyncExternalStore } from 'react'
@@ -100,7 +100,7 @@ export function apply(ctx) {
   return ctx.presentationRoles.register({
     role: 'deliverables',
     priority: 0,
-    mount() {
+    mount(ctx) {
       const store = new DeliverablesStore(ctx.agnes, ctx.session)
       function Gallery({ turn }) {
         const zh = ctx.locale.locale === 'zh-CN'
@@ -154,7 +154,7 @@ export function apply(ctx) {
           ),
         )
         stops.push(
-          workbenchPanels.register({
+          ctx.workbenchPanels.register({
             id: 'deliverables-gallery',
             edge: 'right',
             order: 55,
@@ -165,7 +165,7 @@ export function apply(ctx) {
           }),
         )
         stops.push(
-          conversationCards.register({
+          ctx.conversationCards.register({
             id: 'gallery-surfaces',
             order: 0,
             matches: (card) =>
@@ -176,7 +176,7 @@ export function apply(ctx) {
           }),
         )
         stops.push(
-          conversationCards.register({
+          ctx.conversationCards.register({
             id: 'gallery-artifact',
             order: 0,
             matches: (card) => card.kind === 'artifact-file',

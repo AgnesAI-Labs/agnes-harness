@@ -7,8 +7,7 @@
 设置区注册 `{ group, id, titleKey, groupTitleKey, icon, order, component }`。ID 以小写字母开头，仅包含小写字母、数字、点和连字符，必须唯一；order 为有限数值。渲染前向现有语言服务注册标题键。icon 指定共享设置图标。component 接收 `{ context }`，包括取词函数、可选会话和资源服务，以及由宿主拥有的不透明 data。
 
 ```tsx
-import { settingsSections } from '@agnes/web-client'
-const dispose = settingsSections.register({
+const dispose = ctx.settingsSections.register({
   group: 'example', id: 'example.inspector', order: 52,
   titleKey: 'example.inspector.title', groupTitleKey: 'example.title',
   icon: 'plug', component: Inspector,
@@ -22,7 +21,7 @@ const dispose = settingsSections.register({
 会话卡片注册 `{ id, order, matches, component }`。matches 接收 `{ kind, data }`；按 order、ID 排序后第一个匹配的注册项负责渲染。匹配函数只检查展示数据，不发请求或执行副作用。组件接收 `{ card, context }`。具体渲染器应排在通用兜底之前。内置问题、计划、交付物、作业、子代理、工作流、目标、日程、插件和工具卡片均通过同一 API 注册。插件插槽归属及资源访问仍经过现有插槽与客户端资源服务。
 
 ```tsx
-const disposeCard = conversationCards.register({
+const disposeCard = ctx.conversationCards.register({
   id: 'example.result', order: -10,
   matches: (card) => card.kind === 'example-result',
   component: ResultCard,
@@ -38,8 +37,8 @@ const disposeCard = conversationCards.register({
 `homeEntries` 列出首页侧栏里可以打开的页面。注册项为 `{ id, icon, titleKey, order, component }`，可选 `subtitleKey`（标题旁的次要说明）和 `badge`。选中入口后，`component` 作为整页显示在主区域，替换对话区，侧栏保留。内置的业务 Agent、插件、自动化三个入口也通过这个注册表注册。插件注册的入口无论 `order` 是多少都排在这三个之后，按 `order`、再按 ID 排序；超过三个时折叠成一个「更多」菜单。卸载注册项后入口消失，正在显示的页面回到对话区。
 
 ```tsx
-import { homeEntries, homeNavigation } from '@agnes/web-client'
-const dispose = homeEntries.register({
+import { homeNavigation } from '@agnes/web-client'
+const dispose = ctx.homeEntries.register({
   id: 'example.board', order: 100, icon: 'activity',
   titleKey: 'example.board.title', component: BoardPage,
 })
@@ -68,7 +67,7 @@ register 返回幂等且绑定该注册项身份的卸载函数，须绑定到�
 
 daemon 名册提供 `binding`，包含 owner、包、integrity、profile、activation、lifetime 和 availability；`ctx.availability` 提供只读快照和订阅。profile 模块始终跟随当前启用状态，不随选中会话切换版本；session 模块保留固定的历史呈现。禁用在异步清理前撤销全局注册，已记录的会话内容仍可读。availability 只用于呈现，后端继续独立授权每个操作。应将 profile 页面与 session 历史渲染器拆成两个 client 贡献。受管理服务的健康状态与静态页面可用性分开。
 
-随包示例的 metadata 声明 `category: "example"`、指向宿主包的 `exampleOf`、可选 `pageEntry`，以及最多 32 个 `launches`。每项包含 `id`、`kind: "business-agent"`、`title`、`bundle`、`preset` 和最多 16 KiB 的 `prompt`，并显式声明父包依赖。此类包仅在所属插件的示例页面管理，不进入普通插件列表或业务 Agent 目录。启用前检查所属插件的安装、信任、启用状态及依赖版本兼容性；停用所属插件后，示例的启动入口不可用。发现关系不授予任何服务访问权限。
+随包示例声明 `metadata.exampleOf` 指向所属插件、可选 `pageEntry`、所属插件依赖，以及自有的 `bundles.<id>.launch` 和显式 preset。关系只开放受限示例管理门面，不授予任意服务或管理访问；普通智能体从宿主启动菜单发起。
 
 profile 模块使用 `ctx.profile.examples.list/inspect/enable/read/stop/inspectRemove/remove` 和 `ctx.profile.launch.prepare/start/openPage`。inspect 返回五分钟内有效、绑定调用方、activation、内容与能力的 review。enable 通过既有安装、信任和精确启用流程确认这些字节。停止示例后，inspectRemove 创建独立的移除 review；remove 接受该 review ID 和稳定的 operation ID，并保留普通包引用及 pin 检查。启用 review 不能授权移除。launch 选择示例声明的 bundle 和 preset；同一 operation ID 只产生一个会话和一条耐久输入，丢失回执后仍可安全重试。缺少 bundle、preset、依赖，内容变化或 activation 撤销均拒绝执行。未知外部结果通过 read 保留，不自动重发。浏览器接口不接受包来源或任意管理方法。SDK 可通过 `createExampleClient` 和宿主认证 transport 使用相同窄接口。
 
@@ -117,4 +116,21 @@ profile client 须先在 descriptor 声明显式 `client.id` 和 `presentationRo
 宿主认证的自定义组件名册读取、订阅 `listComponents`、`subscribeComponents`。
 问题和表单继续使用已有 SDK 的授权 UI 协议；回答不能作为执行许可。
 
-会话就绪／epoch 的统一订阅与三个 Intelligent UI 公开示例仍属于后续 UI 插件化交付；本版不把安装或 profile 页面激活等同于会话渲染器就绪。Profile 页面跟随当前激活，会话渲染器跟随会话固定代际。
+
+## 作者任务与生命周期
+
+作者入口按[术语表](ui-glossary.zh-CN.md)称为**页面、视图位置、工具结果卡片、交互卡片、设置分区、接管**。用 `ctx.homeEntries` 添加页面，`ctx.workbenchPanels` 添加工作台视图位置，`ctx.conversationCards` 呈现工具结果卡片，`ctx.settingsSections` 添加设置分区。最小模板追加内容，不替换整个侧栏。
+
+作者所有登记均使用 `ClientContext` 门面，包括 slots、命令、文件查看动作和语言目录。异步 dispose 前同步撤销；dispose 抛错或超时不能占住 id，迟到回调不能恢复旧贡献。原始导出的 registry 仅供宿主和测试使用。这些生命周期约束不把可信 JavaScript 变成沙箱。
+
+history-only 贡献只可通过会话位置呈现已记录数据，不能登记全局页面、品牌、角色、设置、面板或命令，不能打开 profile stream 或调用 profile 管理服务。后台仍逐次授权读取和动作。
+
+`ctx.session.readiness` 提供 `getSnapshot()` 与 `subscribe(listener)`。快照包含 `status`（`no-session`、`connecting`、`ready`、`history-only`、`failed`）、绑定后的 `sessionId` 和单调失效的 `epoch`。实时查询须等 `ready`，保存快照，快照变化后忽略旧结果，并在每次会话绑定变化时重查。不要自动重试 effect。[服务面板示例](../../examples/packages/client-service-panel/v1/extensions/main/client/index.js) 覆盖冷挂载和过期结果。
+
+**懒加载页面模块只交付页面**：混入其他登记会使其等到页面首次打开。设置分区、dock 视图和角色应拆到没有懒加载导航元数据的独立 eager descriptor。profile 页面不依赖会话。
+
+默认 `@agnes/navigation-ui`、`@agnes/conversation-ui` 与 goal、interaction、deliverables 采用相同的发行默认包和补装机制。它们只消费公开 `ctx.presentation.navigation/conversation/composer` 端口和 scoped registry；对话包分别登记 `conversation` 与 `composer`。当前投影、动作、会话绑定、提交和队列仍由宿主拥有；卸载不取消后台会话。外层地标、设置/恢复/管理、dock 容器及授权保留在宿主。
+
+接管的 `mount(child)` 必须使用**子 context** 登记贡献，用 `child.effect` 绑定订阅。挂载失败会先自动回收部分登记，再恢复默认。cleanup 须同步撤销，异步资源可以随后排空。同 priority 冲突通过 `presentationRoles.getSnapshot()/subscribe` 暴露角色和双方来源，并在插件页展示。应用先筛选候选，再比较优先级；发行默认仍可回退。
+
+三个可运行的 [Intelligent UI 示例](../../examples/ui/README.zh-CN.md) 分别演示组件库、整套交互呈现接管和工具结果卡片。Loop 等待认证 action-result 输入；模型 HTML/JS 只作为数据。公开服务 provider 登记事务从准入 row 确定 owner，支持 `bindOwn`，失败回滚、dispose 回收；自行选择 provider id 不能冒充语义 `UI_OWNER`。

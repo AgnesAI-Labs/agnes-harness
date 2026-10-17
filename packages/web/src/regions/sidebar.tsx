@@ -127,7 +127,8 @@ export function mountSidebarRegion(
       <SessionNavigation options={options} t={(key, vars) => locale.t(key, vars)} />
     ),
   }
-  registry.declare(SIDEBAR_SLOT as string, { kind: 'single', scope: 'root' }, 'web-shell')
+  if (!registry.spec(SIDEBAR_SLOT))
+    registry.declare(SIDEBAR_SLOT as string, { kind: 'single', scope: 'root' }, 'web-shell')
   if (!registry.spec('sidebar')) registry.declare('sidebar', { kind: 'single', scope: 'root' }, 'web-shell')
   const handle = { current: null as SidebarHandle | null }
   const removeDshBuiltin = registry.register(

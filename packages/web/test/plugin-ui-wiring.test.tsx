@@ -208,3 +208,149 @@ it('mounts an installed UI package panel and reports a subsequent loader failure
     host.remove()
   }
 })
+
+it('switches the bundled conversation to an IDE and back, reclaiming partial mounts and preserving host work', async () => {
+  const { apply } = await import('../src/presentations/conversation.js')
+  const { presentationRoles, clientModule, conversationCards } = await import('@agnes/web-client')
+  const conversation = document.createElement('section')
+  const composer = document.createElement('section')
+  const cancel = vi.fn()
+  const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({}, { status: 403 }))
+  document.body.append(conversation, composer)
+  let runtime!: Awaited<ReturnType<typeof startClientModules>>
+  await act(async () => {
+    runtime = await startClientModules({
+      agnes: { sessions: { get: (id: string) => ({ id, listeners: new Set(), cancel }) } } as never,
+      conversationContainer: conversation,
+      composerContainer: composer,
+    })
+  })
+  const identity = (packageId: string) => ({
+    packageId,
+    revision: 'one',
+    clientId: 'ui',
+    slotCatalogVersion: 'dsh-client-slots/v1',
+    presentationRoles: ['conversation', 'composer'],
+    binding: { owner: packageId, lifetime: 'profile', availability: 'active' },
+  })
+  let builtin: ReturnType<typeof runtime.ctx.plugin> | undefined
+  let custom: ReturnType<typeof runtime.ctx.plugin> | undefined
+  try {
+    await act(async () => {
+      builtin = runtime.ctx.plugin(clientModule({ apply }), identity('@agnes/conversation-ui') as never)
+      await builtin
+    })
+    await vi.waitFor(() => expect(conversation.querySelector('#transcript')).toBeTruthy())
+    runtime.composer?.setDraft('Keep this draft')
+    const composerInput = composer.querySelector('textarea')
+    const { createRegionRenderer } = await import('@agnes/web-ui')
+    await act(async () => {
+      runtime.session.setSession('background')
+    })
+    let renders = 0
+    await act(async () => {
+      custom = runtime.ctx.plugin(
+        clientModule({
+          apply(ctx) {
+            ctx.presentationRoles.register({
+              role: 'conversation',
+              mount(child) {
+                child.conversationCards.register({
+                  id: 'ide-card',
+                  order: 0,
+                  matches: () => false,
+                  component: () => null,
+                })
+                const root = createRegionRenderer(child.presentation.conversation!.container)
+                root.render(
+                  createElement('section', { 'aria-label': 'IDE conversation' }, `IDE ${++renders}`),
+                )
+                return () => root.unmount()
+              },
+            })
+          },
+        }),
+        identity('acme/ide') as never,
+      )
+      await custom
+      presentationRoles.select({ conversation: { packageId: 'acme/ide', clientId: 'ui' } })
+    })
+    await vi.waitFor(() => expect(conversation.textContent).toContain('IDE'))
+    expect(conversationCards.get('ide-card')).toBeDefined()
+    expect(runtime.composer?.getDraft()).toBe('Keep this draft')
+    expect(composer.querySelector('textarea')).toBe(composerInput)
+    await act(async () => {
+      presentationRoles.select()
+    })
+    await vi.waitFor(() => expect(conversation.querySelector('#transcript')).toBeTruthy())
+    expect(conversationCards.get('ide-card')).toBeUndefined()
+    expect(runtime.session.sessionId).toBe('background')
+    expect(cancel).not.toHaveBeenCalled()
+  } finally {
+    await act(async () => {
+      presentationRoles.select()
+      await custom?.dispose()
+      await builtin?.dispose()
+      await runtime.dispose()
+    })
+    conversation.remove()
+    composer.remove()
+    fetcher.mockRestore()
+  }
+})
+
+it('mounts the release navigation through its public port and retains mobile focus and skin hooks', async () => {
+  const { apply } = await import('../src/presentations/navigation.js')
+  const { clientModule } = await import('@agnes/web-client')
+  const aside = document.createElement('aside')
+  aside.className = 'sidebar'
+  aside.setAttribute('data-agnes-region', 'sidebar')
+  const header = document.createElement('header')
+  const backdrop = document.createElement('button')
+  backdrop.id = 'sidebar-backdrop'
+  document.body.append(aside, header, backdrop)
+  const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({}, { status: 403 }))
+  let runtime!: Awaited<ReturnType<typeof startClientModules>>
+  let fiber: ReturnType<typeof runtime.ctx.plugin> | undefined
+  try {
+    await act(async () => {
+      runtime = await startClientModules({
+        agnes: { sessions: { get: () => undefined } } as never,
+        sidebarContainer: aside,
+        topbarContainer: header,
+      })
+    })
+    await act(async () => {
+      fiber = runtime.ctx.plugin(clientModule({ apply }), {
+        packageId: '@agnes/navigation-ui',
+        revision: 'one',
+        clientId: 'navigation-ui',
+        presentationRoles: ['navigation'],
+        slotCatalogVersion: 'dsh-client-slots/v1',
+        binding: { owner: 'release-navigation', lifetime: 'profile', availability: 'active' },
+      } as never)
+      await fiber
+    })
+    await vi.waitFor(() => expect(aside.querySelector('#new')).toBeTruthy())
+    const { EMPTY_SIDEBAR_STATE } = await import('@agnes/web-units/shell')
+    await act(async () => {
+      runtime.sidebar?.update({ ...EMPTY_SIDEBAR_STATE, newDisabled: false })
+    })
+    runtime.sidebar?.focusNew()
+    expect(document.activeElement?.id).toBe('new')
+    expect(aside.getAttribute('data-agnes-region')).toBe('sidebar')
+    expect(aside.querySelector('nav')?.getAttribute('aria-label')).toBeTruthy()
+    await act(async () => {
+      await fiber?.dispose()
+    })
+    expect(aside.querySelector('#new')).toBeNull()
+  } finally {
+    await act(async () => {
+      await runtime?.dispose()
+    })
+    aside.remove()
+    header.remove()
+    backdrop.remove()
+    fetcher.mockRestore()
+  }
+})

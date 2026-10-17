@@ -7,8 +7,7 @@ English | [简体中文](ui-extension-registries.zh-CN.md)
 Register a settings section with `{ group, id, titleKey, groupTitleKey, icon, order, component }`. `runtimeCatalog: false` lets a section use its own service, refresh and loading states without fetching the plugin catalog; the shell still owns its title and navigation. IDs use lowercase letters, digits, dots and hyphens, starting with a letter. IDs must be unique and order must be finite. Register locale keys in the existing host locale service before rendering. `icon` identifies the shared settings icon. `component` receives `{ context }`, with locale text, optional session/resources and host-specific opaque `data`.
 
 ```tsx
-import { settingsSections } from '@agnes/web-client'
-const dispose = settingsSections.register({
+const dispose = ctx.settingsSections.register({
   group: 'example', id: 'example.inspector', order: 52,
   titleKey: 'example.inspector.title', groupTitleKey: 'example.title',
   icon: 'plug', component: Inspector,
@@ -22,7 +21,7 @@ The rail uses `data-testid="settings-navigation"`. Entries use `settings-nav-<id
 A conversation registration has `{ id, order, matches, component }`. `matches` receives `{ kind, data }`; the first matching registration by order, then ID, renders. Predicates should inspect presentation data without requests or side effects. Components receive `{ card, context }`. Register more specific renderers before broad fallbacks. Built-ins register question, plan, deliverable, job, child, workflow, goal, schedule, plugin and tool categories. Plugin slot ownership and resource authorization continue through the existing slot and client resource services.
 
 ```tsx
-const disposeCard = conversationCards.register({
+const disposeCard = ctx.conversationCards.register({
   id: 'example.result', order: -10,
   matches: (card) => card.kind === 'example-result',
   component: ResultCard,
@@ -38,8 +37,8 @@ Declared primary profile entries keep a host-owned loading page while a runtime 
 `homeEntries` lists the pages a person opens from the home sidebar. A registration has `{ id, icon, titleKey, order, component }`, with optional `subtitleKey` (a quiet second label) and `badge`. Selecting the entry shows `component` as a full page in the main area in place of the conversation; the sidebar stays. The built-in Business agents, Plugins and Automation entries register through the same registry. Entries from plugins list after those three whatever `order` they declare, sorted by `order` then ID; more than three collapse into one “More” menu. Disposing the registration removes the entry, and a page that was showing returns to the conversation.
 
 ```tsx
-import { homeEntries, homeNavigation } from '@agnes/web-client'
-const dispose = homeEntries.register({
+import { homeNavigation } from '@agnes/web-client'
+const dispose = ctx.homeEntries.register({
   id: 'example.board', order: 100, icon: 'activity',
   titleKey: 'example.board.title', component: BoardPage,
 })
@@ -64,9 +63,9 @@ Installed modules register home entries through `ctx.homeEntries.register`, with
 
 The daemon roster supplies `binding` (owner, package, integrity, profile, activation, lifetime and availability). `ctx.availability` exposes a read-only snapshot and subscription. Profile modules use current activation regardless of the selected session; session modules retain their pinned history. Disable revokes global registrations before asynchronous cleanup and leaves recorded session content readable. Availability is presentation information; backend authorization still decides every operation. Split profile pages and session renderers into separate client contributions. A managed service's health is separate from static page availability.
 
-A shipped example declares metadata `category: "example"`, `exampleOf` naming its host package, optional `pageEntry`, and up to 32 `launches` with `id`, `kind: "business-agent"`, `title`, `bundle`, `preset` and `prompt` (at most 16 KiB). It also declares the parent dependency. Examples are managed only on the parent’s Examples page and do not appear in ordinary plugin lists or the business-agent gallery. Parent installation, trust, activation and dependency compatibility are checked before enabling an example; parent disable removes launch availability. The relationship discovers examples and grants no service access.
+A shipped example declares `metadata.exampleOf` naming its parent, an optional `pageEntry`, the parent dependency, and its own `bundles.<id>.launch` with an explicit preset. The relationship only grants the restricted example-management facade; it grants no arbitrary service or administration access. Ordinary agents use the host launch menu.
 
-Profile modules use `ctx.profile.examples.list/inspect/enable/read/stop/inspectRemove/remove` and `ctx.profile.launch.prepare/start/openPage`. Inspection returns a five-minute review bound to the caller, activation, content and capabilities. Enable confirms those exact bytes through install, trust and checked activation. After stopping an example, `inspectRemove` creates a distinct removal review; `remove` accepts that review ID and a stable operation ID and retains the normal package reference/pin checks. Activation reviews cannot authorize removal. A launch selects the example's declared bundle and preset; a stable operation ID creates one session and one durable input, including after a lost receipt. Missing bundles, presets, dependencies, changed content or revoked activation refuse the request. Unknown external outcomes remain visible through `read`; they are not replayed automatically. The browser facade accepts no package source or arbitrary administration method. SDK consumers can use `createExampleClient` with an authenticated host transport.
+Profile modules use `ctx.profile.examples.list/inspect/enable/read/stop/inspectRemove/remove` and `ctx.profile.launch.prepare/start/openPage`. Inspection returns a five-minute review bound to the caller, activation, content and capabilities. Enable confirms those exact bytes through install, trust and checked activation. After stopping an example, `inspectRemove` creates a distinct removal review; `remove` accepts that review ID and a stable operation ID and retains the normal package reference/pin checks. Activation reviews cannot authorize removal. A launch selects the example's declared bundle and preset; a stable operation ID creates one session and one reviewed draft, including after a lost receipt. Missing bundles, presets, dependencies, changed content or revoked activation refuse the request. Unknown external outcomes remain visible through `read`; they are not replayed automatically. The browser facade accepts no package source or arbitrary administration method. SDK consumers can use `createExampleClient` with an authenticated host transport.
 
 An example's profile module registers its declared component through `ctx.examplePages.register`. Its parent calls `ctx.examplePages.render(exampleId, context)` and subscribes to that registry's snapshots. The component retains its own module scope; it receives no parent admin connection. Keep simulation lifetime in the profile module's effect scope, so changing pages only detaches the scene. Dispose connections and stop work when the example is disabled or its owning browser closes. Reuse the existing workbench panel API for session tabs.
 
@@ -135,4 +134,21 @@ input handling in place. Register and dispose these within the same role.
 Question/form reads and actions continue through the existing authorized SDK
 UI protocol; clients must never infer permission from an answer.
 
-Unified session readiness/epoch subscription and the three Intelligent UI public examples belong to the subsequent UI pluginization delivery. This version does not equate installation or profile-page activation with session-renderer readiness. Profile pages follow current activation; session renderers follow the session pinned generation.
+
+## Author tasks and lifetime
+
+Use **pages**, **view positions**, **tool result cards**, **interaction cards**, **settings sections** and **takeover** as in the [UI glossary](ui-glossary.md). Add a page with `ctx.homeEntries`, a dock view with `ctx.workbenchPanels`, a recorded tool result with `ctx.conversationCards`, and a settings section with `ctx.settingsSections`. The minimal template appends content; it does not replace the sidebar.
+
+Every author registration goes through the `ClientContext` facade, including slots, commands, file viewer actions and locale catalogs. It synchronously revokes before asynchronous disposal. A throwing or timed-out disposer cannot reserve an id or revive a revoked scope. Raw exported registries remain host/test APIs, not author registration paths. These lifecycle guards do not sandbox trusted JavaScript.
+
+A history-only contribution may render recorded session slots; it cannot register global pages, brand, roles, settings, panels or commands, open profile streams, or call profile management services. Current backend authorization still controls reads and actions.
+
+`ctx.session.readiness` has `getSnapshot()` and `subscribe(listener)`. Snapshots contain `status` (`no-session`, `connecting`, `ready`, `history-only`, `failed`), `sessionId` when bound, and a monotonically invalidated `epoch`. Wait for `ready` before live session queries. Capture the snapshot, ignore results if it changes, and re-query on every binding change. Never automatically retry an effect. The [service panel example](../../examples/packages/client-service-panel/v1/extensions/main/client/index.js) demonstrates cold mount and stale-result rejection.
+
+A **lazy page module delivers only its page**: its other registrations would otherwise wait until the first page open. Put settings, dock views and roles in a separate eager client descriptor without lazy home-navigation metadata. Profile pages need no session.
+
+The release defaults `@agnes/navigation-ui` and `@agnes/conversation-ui` backfill through the same bundled-package mechanism as goal, interaction and deliverables. They consume public `ctx.presentation.navigation/conversation/composer` ports and scoped registries. The conversation package registers `conversation` and `composer` independently. Host ports own current projections/actions, session binding, submission and queued work; mount/unmount never cancels a background session. Outer landmarks, settings/recovery/admin, dock containers and authorization remain host-owned.
+
+Register a takeover with `mount(child)`: use **the child context** for every registration and `child.effect` for subscriptions. A bad mount automatically reclaims partial registrations before restoring the default. Cleanup must synchronously revoke; asynchronous cleanup can drain afterward. Equal-priority conflicts expose the role and both source owners through `presentationRoles.getSnapshot()/subscribe`, also shown on the plugins page. Application selection filters candidates before priority, and the release default remains the fallback.
+
+The three runnable [Intelligent UI examples](../../examples/ui/README.md) cover a component library, the complete interaction presentation and a tool result card. Their Loop waits for authenticated action-result input; model HTML/JS is data, never executable content. A public service provider registration transaction derives its owner from the admitted row, supports `bindOwn`, rolls back failed claims and releases on dispose. Choosing a provider id cannot impersonate the semantic `UI_OWNER`.

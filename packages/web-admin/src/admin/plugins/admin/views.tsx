@@ -1,4 +1,5 @@
 import { resolvePluginMetadata } from '@agnes/protocol'
+import { presentationRoles } from '@agnes/web-client'
 import {
   Button,
   blockerText,
@@ -21,9 +22,12 @@ import {
   SettingsSelect,
   SourceDialogContent,
   StateSwitch,
+  StatusMessage,
   Tabs,
   UiLocaleProvider,
+  useDocumentLanguage,
 } from '@agnes/web-ui'
+import { useSyncExternalStore } from 'react'
 import { SettingsHub } from '../../../settings/hub.js'
 import { sessionStartUrl } from '../../../settings/runtime-panels.js'
 import { CandidateInbox } from '../candidates.js'
@@ -34,6 +38,28 @@ import { PluginDetailBody } from './detail-body.js'
 import { setDialog } from './dom.js'
 import { asRuntimeView, pinPurposeLabel } from './model.js'
 import type { PluginAdminViewContext } from './page.js'
+
+/** Host diagnostics remain visible even when a presentation fails before returning cleanup. */
+function PresentationDiagnostics() {
+  const diagnostics = useSyncExternalStore(presentationRoles.subscribe, presentationRoles.getSnapshot)
+  const zh = useDocumentLanguage() === 'zh-CN'
+  return (
+    <>
+      {diagnostics.map((item) => (
+        <StatusMessage key={item.role} kind="error">
+          {zh
+            ? item.reason === 'conflict'
+              ? '接管冲突'
+              : '接管挂载失败，已恢复默认'
+            : item.reason === 'conflict'
+              ? 'Presentation conflict'
+              : 'Presentation mount failed; default restored'}
+          {`: ${item.role} · ${item.owners.join(', ')}`}
+        </StatusMessage>
+      ))}
+    </>
+  )
+}
 
 const SOURCE_TYPE_OPTIONS = Object.keys(SOURCE_FORMATS)
   .filter((type) => type !== 'local')
@@ -89,7 +115,10 @@ export function renderPluginView(this: PluginAdminViewContext): void {
     // The full page draws its own status, recovery banner and layout from the same view.
     renderRegion(
       this.listHost,
-      <UiLocaleProvider source={this.locale}>{this.surface.render(this)}</UiLocaleProvider>,
+      <UiLocaleProvider source={this.locale}>
+        <PresentationDiagnostics />
+        {this.surface.render(this)}
+      </UiLocaleProvider>,
     )
     this.renderDetail()
     this.renderConfirm()
@@ -139,6 +168,7 @@ export function renderPluginView(this: PluginAdminViewContext): void {
   renderRegion(
     this.listHost,
     <UiLocaleProvider source={this.locale}>
+      <PresentationDiagnostics />
       <SettingsHub
         api={this.api}
         canInstall={this.canEffect('packages.install')}

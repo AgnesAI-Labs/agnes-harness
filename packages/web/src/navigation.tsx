@@ -8,7 +8,7 @@ import {
   untitledSessionLabel,
 } from '@agnes/web-units/shell'
 import { useState, useSyncExternalStore } from 'react'
-import { archivedSessions } from './archived-sessions.js'
+import { navigationHistory as archivedSessions } from './navigation-history.js'
 import { SessionMenu } from './session-menu.js'
 import { WorkspaceMenu } from './workspace-menu.js'
 

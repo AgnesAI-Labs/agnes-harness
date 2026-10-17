@@ -1,5 +1,11 @@
 import { resolvePluginMetadata } from '@agnes/protocol'
-import { type LocaleService, SlotOutlet, type SlotRegistry, SlotsProvider } from '@agnes/web-client'
+import {
+  type ComposerPresentationControls,
+  type LocaleService,
+  SlotOutlet,
+  type SlotRegistry,
+  SlotsProvider,
+} from '@agnes/web-client'
 import { RegisteredConversationCard } from '@agnes/web-conversation/conversation-registry'
 import { createRegionRenderer, useDocumentLanguage } from '@agnes/web-ui'
 import { ConversationUsage } from '@agnes/web-ui/conversation'
@@ -12,8 +18,6 @@ import {
 } from '@agnes/web-units/shell'
 import { type ReactElement, useSyncExternalStore } from 'react'
 import { flushSync } from 'react-dom'
-import { LoopPicker } from '../loop-picker.js'
-import { businessAgentSuggestions } from '../pages/business-agents.js'
 import { loadReplySuggestion } from '../reply-suggestion.js'
 import {
   COMPOSER_BAR_DSH_CHILDREN,
@@ -24,6 +28,8 @@ import {
 } from './contracts.js'
 import { mountDshShellRegion } from './shell.js'
 
+const EMPTY_SUGGESTIONS = { featured: [], total: 0 } as const
+
 /** Mount the component-owned composer form behind a session-scoped replacement boundary. */
 export interface ComposerRegionMount extends EmptyStateRegionMount, ComposerHandle {}
 
@@ -32,15 +38,17 @@ export function ComposerDshFrame({
   setHandle,
   options,
   dependencies,
+  controls,
 }: {
   registry: SlotRegistry
   setHandle: (value: ComposerHandle | null) => void
   options: ComposerRegionOptions
   dependencies: ComposerDependencies
+  controls?: ComposerPresentationControls
 }): ReactElement {
   const agents = useSyncExternalStore(
-    businessAgentSuggestions.subscribe,
-    businessAgentSuggestions.getSnapshot,
+    controls?.suggestions.subscribe ?? (() => () => {}),
+    controls?.suggestions.getSnapshot ?? (() => EMPTY_SUGGESTIONS),
   )
   const language = useDocumentLanguage() === 'zh-CN' ? 'zh-CN' : 'en'
   const examplePrompts = agents.featured.flatMap((row) => {
@@ -80,7 +88,7 @@ export function ComposerDshFrame({
             ),
             left: (
               <span className="composer-dsh-control">
-                <LoopPicker />
+                {controls && <controls.LoopPicker />}
                 {outlet('conversation.input.left')}
               </span>
             ),
@@ -101,6 +109,7 @@ export function mountComposerRegion(
   container: HTMLElement,
   options: ComposerRegionOptions,
   locale: LocaleService,
+  controls?: ComposerPresentationControls,
 ): ComposerRegionMount {
   // Render-time lookup: the injected translate reads whatever locale is current on each render.
   const composerDependencies: ComposerDependencies = {
@@ -152,7 +161,8 @@ export function mountComposerRegion(
       options.onDraftChange(value)
     },
   }
-  registry.declare(COMPOSER_SLOT as string, { kind: 'single', scope: 'session-maybe' }, 'web-shell')
+  if (!registry.spec(COMPOSER_SLOT))
+    registry.declare(COMPOSER_SLOT as string, { kind: 'single', scope: 'session-maybe' }, 'web-shell')
   const removeDshBarBuiltin = registry.register(
     {
       name: 'conversation.composer.bar',
@@ -167,6 +177,7 @@ export function mountComposerRegion(
         setHandle={setHandle}
         options={composerOptions}
         dependencies={composerDependencies}
+        {...(controls ? { controls } : {})}
       />
     ),
   )

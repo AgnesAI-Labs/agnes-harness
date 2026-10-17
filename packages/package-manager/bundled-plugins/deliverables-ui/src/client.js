@@ -1,11 +1,9 @@
 import {
-  conversationCards,
   DeliverablesStore,
   factChainLinks,
   groupDeliveredFiles,
   surfaceDeliverables,
   workbenchNavigation,
-  workbenchPanels,
 } from '@agnes/web-client'
 import { Button, Disclosure, EmptyState, Icon, IconButton, ListRow, Menu, StatusMessage } from '@agnes/web-ui'
 import { DocumentPreview, HtmlPreviewFrame } from '@agnes/web-ui/conversation'
@@ -476,7 +474,7 @@ export function mountPresentation(ctx) {
       ),
     )
     stops.push(
-      workbenchPanels.register({
+      ctx.workbenchPanels.register({
         id: 'deliverables',
         order: 55,
         edge: 'right',
@@ -492,7 +490,7 @@ export function mountPresentation(ctx) {
       }),
     )
     stops.push(
-      conversationCards.register({
+      ctx.conversationCards.register({
         id: 'delivered-surfaces',
         order: 0,
         matches: (card) =>
@@ -504,7 +502,7 @@ export function mountPresentation(ctx) {
       }),
     )
     stops.push(
-      conversationCards.register({
+      ctx.conversationCards.register({
         id: 'delivered-artifact',
         order: 0,
         matches: (card) => card.kind === 'artifact-file',
@@ -536,6 +534,6 @@ export function apply(ctx) {
   return ctx.presentationRoles.register({
     role: 'deliverables',
     priority: 100,
-    mount: () => mountPresentation(ctx),
+    mount: (child) => mountPresentation(child),
   })
 }

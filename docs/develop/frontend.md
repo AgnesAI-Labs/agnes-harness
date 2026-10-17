@@ -2,15 +2,14 @@
 
 English | [简体中文](frontend.zh-CN.md)
 
-> Advanced takeover example (historical demo path): the example below replaces the entire sidebar to explain singleton positions and session versions. To add a page, use the [tool-with-panel template](../../templates/tool-with-panel/); to add a panel, use [workbench panels](../extend/workbench-panels.md).
 
 <a id="前端插件为工作台增加一个界面"></a>
 
 [Documentation](../README.md) · [Plugin lifecycle](../guide/packages.md)
 
-Display your own panel, update its version, and confirm that disabling it restores the built-in interface. Learn the lifecycle first, then replace the version label with content useful for the role.
+Display your own panel, update its version, and confirm that disabling it removes the added view. Learn the lifecycle first, then replace the version label with content useful for the role.
 
-Reuse [client-panel/v1](../../examples/packages/client-panel/v1/package.json). It displays a version label in the supported `ui:sidebar` slot; v2 tests page updates. This is a browser contribution path, distinct from slot registration through ordinary Host `ctx.slots`.
+Reuse [client-panel/v1](../../examples/packages/client-panel/v1/package.json). It displays a version label in the supported `workbench.panel` slot; v2 tests page updates. This is a browser contribution path, distinct from slot registration through ordinary Host `ctx.slots`.
 
 <a id="声明和代码"></a>
 
@@ -22,8 +21,9 @@ The package declares a backend Cordis row with `agnes.plugins`, then binds a bro
 {
   "client": {
     "entry": "./client/index.js",
+    "lifetime": "profile",
     "styles": ["./client/index.css"],
-    "slots": ["ui:sidebar"],
+    "slots": ["workbench.panel"],
     "publicConfig": { "label": "Agnes client module demo · v1" },
     "services": [],
     "projections": []
@@ -38,14 +38,13 @@ See [package.json](../../examples/packages/client-panel/v1/package.json) and the
 ```js
 export function apply(ctx, config) {
   ctx.slots.register(
-    'ui:sidebar',
+    'workbench.panel',
     () => config.publicConfig.label,
-    { priority: -1 },
   )
 }
 ```
 
-For this singleton slot, a lower priority wins. The example replaces the built-in sidebar. After disabling it, a new session uses the built-in sidebar; a session pinned to the example retains its version. Choose a suitable slot for a production plugin. Do not assume unexposed regions can be replaced or depend on private Host DOM/CSS structure.
+This view position appends a workbench panel. Disabling the contribution synchronously removes it. This profile contribution follows the current activation; use a separate session descriptor for pinned recorded renderers. Use a presentation takeover only when replacing an entire experience. Do not assume unexposed regions can be replaced or depend on private Host DOM/CSS structure.
 
 `publicConfig` is public presentation metadata from package contents, not backend runtime configuration. Client entry/styles must be validated paths inside the package. They cannot escape the snapshot, import arbitrary local modules, or obtain connection credentials. Use the host platform externals for React and shared Agnes packages; bundle only other dependencies into browser artifacts.
 
@@ -62,7 +61,7 @@ node agnes.mjs package inspect file:./examples/packages/client-panel/v1
 node agnes.mjs install file:./examples/packages/client-panel/v1
 ```
 
-Trust and enable using hashes from the preview, then open Web for the same instance and create a new session. You should see v1. Update to `file:./examples/packages/client-panel/v2` through Web management or TUI, complete its trust/enable steps, and create another session to check v2. Return to the first session to check its retained v1. Finally, disable the package and create a new session to confirm the built-in sidebar returns. Because this example may replace management navigation, keep a terminal ready to disable it through the shell.
+Trust and enable using hashes from the preview, then open Web for the same instance and create a new session. You should see v1. Update to `file:./examples/packages/client-panel/v2` through Web management or TUI, complete its trust/enable steps, and create another session to check v2. Return to the first session to confirm that this profile contribution follows the current activation and shows v2 there too. Disable the package and confirm that its additional view disappears immediately; management navigation stays available.
 
 Package desired=enabled, backend web row ready, and successful loading in this page are distinct stages. A closed browser, failed script/CSS fetch, unauthorized slot, or exception in apply can prevent frontend activation. Inspect per-row actual state as well as package enablement.
 

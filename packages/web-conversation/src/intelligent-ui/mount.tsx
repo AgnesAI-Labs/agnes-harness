@@ -7,7 +7,6 @@ import {
   type LocaleService,
   type SessionService,
   type SlotRegistry,
-  workbenchPanels,
 } from '@agnes/web-client'
 import { createDocumentLocaleSource, INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog } from '@agnes/web-ui'
 import type { ReactNode } from 'react'
@@ -32,6 +31,7 @@ import { attachIntelligentBinding, TurnViews } from './turn-views.js'
 
 /** One owned presentation across placements, dock and historical answer receipts. Mounting never submits. */
 export function mountIntelligentUi(options: {
+  contributions: Pick<import('@agnes/web-client').ClientContext, 'conversationCards' | 'workbenchPanels'>
   resources?: ClientResourceService
   customModules?: CustomUiModuleSource
   client: Client
@@ -151,7 +151,7 @@ export function mountIntelligentUi(options: {
     const closed = hiddenSurfaces('panel', current.sessionId)
     return listed().filter((record) => !closed.has(record.surface.id)).length
   }
-  const removePanel = workbenchPanels.register({
+  const removePanel = options.contributions.workbenchPanels.register({
     id: 'intelligent-ui',
     order: 70,
     edge: 'right',
@@ -176,7 +176,7 @@ export function mountIntelligentUi(options: {
     component: ({ context }) => <IntelligentPanel binding={binding} context={context} />,
   })
   const detachTurns = attachIntelligentBinding(binding)
-  const removeTurns = conversationCards.register({
+  const removeTurns = options.contributions.conversationCards.register({
     id: 'intelligent-turn-views',
     order: 100,
     matches: (card) => card.kind === 'conversation.turn-tail',
@@ -191,13 +191,13 @@ export function mountIntelligentUi(options: {
     },
   })
   const removeQuestions = [
-    conversationCards.register({
+    options.contributions.conversationCards.register({
       id: 'question-dock',
       order: 0,
       matches: (card) => card.kind === 'composer.before-input',
       component: QuestionDock,
     }),
-    conversationCards.register({
+    options.contributions.conversationCards.register({
       id: 'question-turn-actions',
       order: 0,
       matches: (card) => card.kind === 'conversation.turn-actions',
@@ -212,7 +212,7 @@ export function mountIntelligentUi(options: {
         return <AnsweredQuestions answered={answeredQuestions(nodes, [turn]).get(turn.id) ?? []} />
       },
     }),
-    conversationCards.register({
+    options.contributions.conversationCards.register({
       id: 'question-answer-node',
       order: 0,
       matches: (card) => card.kind === 'conversation.node' && !!questionSubmission(card.data as UINode),

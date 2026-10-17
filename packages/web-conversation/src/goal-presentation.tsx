@@ -1,11 +1,5 @@
 import type { UITimeline } from '@agnes/protocol'
-import {
-  type ClientContext,
-  composerCommands,
-  conversationCards,
-  readGoal,
-  workbenchPanels,
-} from '@agnes/web-client'
+import { type ClientContext, readGoal } from '@agnes/web-client'
 import { webLocaleCatalog } from '@agnes/web-foundation/locale-catalog'
 import { GoalCard } from './goal-card.js'
 import { GoalPanel } from './workbench/goal-panel.js'
@@ -16,7 +10,7 @@ export function apply(ctx: ClientContext) {
   return ctx.presentationRoles.register({
     role: 'goal',
     priority: 100,
-    mount() {
+    mount(ctx) {
       let show: (() => void) | undefined
       const registerShow = (callback: () => void) => {
         show = callback
@@ -25,7 +19,7 @@ export function apply(ctx: ClientContext) {
         }
       }
       const off = [
-        composerCommands.register({
+        ctx.composerCommands.register({
           id: 'goal',
           order: 0,
           route({ text, busy, sessionId }) {
@@ -39,7 +33,7 @@ export function apply(ctx: ClientContext) {
         }),
         ctx.locale.register('goal.presentation', webLocaleCatalog),
         ctx.locale.register('goal.workbench', workbenchLocaleCatalog),
-        conversationCards.register({
+        ctx.conversationCards.register({
           id: 'goal',
           order: 0,
           matches: (card) => card.kind === 'session.actions',
@@ -63,7 +57,7 @@ export function apply(ctx: ClientContext) {
             )
           },
         }),
-        workbenchPanels.register({
+        ctx.workbenchPanels.register({
           id: 'goal',
           order: 60,
           edge: 'right',
