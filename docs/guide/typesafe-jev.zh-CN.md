@@ -94,6 +94,8 @@ return fallback()
 
 `payload` 上限 1 MiB，`deadlineMs` 范围 100–120000 毫秒（默认 10000），时限覆盖整次调用。完整契约见[循环的旁路模型调用](../develop/plugins.zh-CN.md#循环的旁路模型调用)，包括 `status` 以及 `unknown`、`refused` 两种结果。
 
+[Jev Agent Loop](jev-loop.zh-CN.md) 是随 AGH 提供的循环插件，每一步都发起这样的调用；它的指南说明如何启用它并指向你的路由。
+
 ## 限制
 
 - **上下文。** 厂商接受整个请求约 64k token，其中状态加最长的问题约 32.8k token。超出时返回 `OVERFLOW`。

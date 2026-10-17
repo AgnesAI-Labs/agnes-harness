@@ -1,0 +1,103 @@
+# Use the Jev agent loop
+
+English | [简体中文](jev-loop.zh-CN.md)
+
+[Documentation](../README.md) · [TypeSafe Jev side model calls](typesafe-jev.md) · [Generic credentials](credentials.md) · [Bundles and profiles](../extend/bundles-and-profiles.md) · [Write a plugin](../develop/plugins.md)
+
+The Jev agent loop (`agnes.jev@0.1.0`) is an optional agent loop that ships with AGH. It is off by default; the default loop stays `agnes.default`.
+
+## What it does
+
+At every step the loop asks TypeSafe Jev, through a [side model call](typesafe-jev.md), what to do next: which phase the task is in, which tool to use and how to fill its arguments, or whether to answer. When Jev is confident, the loop runs the tool directly, without a conversation-model request. The conversation model is called only for three jobs:
+
+- **Parameters:** Jev picked a tool but the arguments need writing, for example the content of a file.
+- **Review:** Jev is unsure, or the last result needs judgement, so the conversation model decides the next call.
+- **Answer:** the conversation model writes the reply to the user.
+
+In this version Jev chooses among seven built-in tools (`ls`, `read`, `grep`, `find`, `write`, `edit`, `shell`). The loop also offers `tool_search` and `tool_describe` to the conversation model when they are available. Approvals, budgets and the stop checks work as with the default loop.
+
+The loop needs both a Jev route and an ordinary conversation model. The `state` and `questions` of every Jev call include the task text and excerpts of tool results, and are sent to the vendor; see [Network and privacy](typesafe-jev.md#network-and-privacy).
+
+## Configure the Jev route
+
+**In the settings page (recommended).** Add the Jev endpoint under Settings → Models & accounts → **Side models**, as described in [Settings page](typesafe-jev.md#settings-page). The route that the page creates is named `account-<id>`; the entry's summary line shows the full name after the adapter name. Copy that name into the plugin's `jev.route` setting (next section). The plugin's default `jev.route` is `jev`, which does not match a page entry. Also check that `jev.model` is one of the model ids you saved on the entry; the default is `typesafe/jev-1.13-20260917`.
+
+**In the user profile (headless or scripted use).** Declare the route in `AGH_HOME/profiles/<profile>/profile.yaml`, under `provider.routes`, using the route shown in [Profile route](typesafe-jev.md#profile-route). With the route name `jev`, the plugin's default `jev.route` matches it. This only works for a home where Settings does not manage any account: once an account is saved in Settings, the settings service supplies the whole `provider` block and the routes in `profile.yaml` are no longer used, so the plugin cannot find its route. In that case use the settings page.
+
+`credentialRef` names a secret, never the key: use the `secret://generic/<UUID>` reference of a [generic credential](credentials.md), or a key in the profile's own secret store.
+
+Other places do not work:
+
+- The workspace file `.agh/profile.local.yaml` cannot declare routes. In this version it accepts only `extensionIsolation`, and any other key stops the runtime from starting with `E_DEP_MISSING`.
+- A bundle's `profile` patch cannot carry a `provider` block.
+- Do not name a Jev model in a preset slot: a slot is a conversation model.
+
+## Enable the plugin
+
+The loop is the **Jev Agent Loop** row of the AGH essentials package. Enable it in **Settings → Plugins**, where its **Configuration** page shows the fields below. You can also enable and configure it in a profile or a bundle:
+
+```yaml
+# AGH_HOME/profiles/<profile>/profile.yaml
+composition:
+  plugins:
+    "loop:agnes.jev":
+      enabled: true
+      config:
+        jev: { route: account-<id> }   # or jev, for a route declared in this profile
+```
+
+In a bundle the same `plugins` map goes in the bundle's `profile` patch. A row's `config` replaces the saved configuration as a whole. Changes apply to new sessions.
+
+| Key | Range | Default | Meaning |
+| --- | --- | --- | --- |
+| `jev.route` | text | `jev` | Side-call route that serves the Jev model |
+| `jev.model` | text | `typesafe/jev-1.13-20260917` | Model id on that route; pin a dated version |
+| `jev.deadlineMs` | 1000–120000 | 15000 | Time limit for one Jev call, in milliseconds |
+| `jev.maxRetries` | 0–3 | 2 | Retries within a step, for `RATE_LIMIT` only |
+| `llmMaxAttempts` | 1–5 | 2 | Attempts for a conversation-model request that fails with a retryable error |
+| `thresholds.escalate` | 0–1 | 0.5 | Confidence Jev must reach for its choice to run without review; below it the conversation model reviews the choice, or writes the arguments when only the arguments are uncertain |
+| `thresholds.externalWriteMin` | 0–1 | 0.6 | Higher threshold for tools classed as external writes; none of the tools in this version is in that class |
+| `thresholds.ambiguityGate` | 0–1 or `null` | 0.4 | While inspecting or verifying, a read-only choice below `escalate` still runs when Jev's ambiguity is at most this value; `null` turns this off |
+| `thresholds.answerProgressFloor` | 0–3 or `null` | `null` | When Jev answers before any tool has run in the turn and reports progress below this value, the conversation model reviews; `null` turns this off |
+| `stepCap` | 1–200 | 30 | Steps per turn before the turn ends with `max_steps` |
+| `stateTokenBudget` | 4000–30000 | 24000 | Estimated tokens for the Jev state plus the longest question |
+| `requestTokenBudget` | 8000–60000 | 48000 | Estimated tokens for the whole Jev request |
+
+Omitted keys take the defaults above. A value out of range is refused: Settings does not save it, and the loop does not start with one written in a profile or bundle.
+
+The loop needs a compaction engine. The default engine is selected unless you turn compaction off with `providers.compaction: null`; a session composed that way cannot use this loop.
+
+## Choose the loop
+
+After the row is enabled, pick the loop for a new session in any of these ways:
+
+- the profile: `providers.loop: { provider: agnes.jev, version: 0.1.0 }`;
+- the admin **New session defaults** panel;
+- the SDK: `client.createSession({ cwd, loop: { id: 'agnes.jev', version: '0.1.0' } })`;
+- the CLI: `agh -p "prompt" --loop agnes.jev@0.1.0`.
+
+An explicit choice wins over the admin default, which wins over the profile, which wins over `agnes.default`. A session keeps the loop it started with; changing a default affects new sessions only. See [Write a plugin](../develop/plugins.md) for the selection rules.
+
+## What you see
+
+- The admin loop list and the new-session loop picker show `agnes.jev@0.1.0` next to the default loop. The picker appears once two or more loops are available.
+- Settings → Plugins lists the row and its configuration page. The providers panel lists `typesafe-systemone` as **Payload requests only, no chat**.
+- The conversation looks like one run by the default loop, with two differences: the notes the loop adds to a conversation-model request appear as runtime context, and a tool call that Jev chose directly follows an assistant message with no text.
+- The cost breakdown shows one **Side model call** row for each Jev call. A call whose usage was not reported is marked as estimated.
+- The loop's own telemetry events (`jev.decide`, `jev.step`, `jev.metrics`) are kept in the session history and exports. The conversation view does not show them.
+
+## When Jev is unavailable
+
+If a Jev call fails (the route is missing, the credential is refused, the request is too large, the connection drops), the loop records the step as failed and asks again at the next step. It never falls back to running the turn on the conversation model alone. After the same failure three times in one turn, or three steps in a row that observe nothing new, the turn ends with the error `NO_PROGRESS_LIMIT`. The message starts with `No progress:` and names the last failure and its reason code; for a route that is not configured it contains `E_MODEL_UNKNOWN`. Check `jev.route` and `jev.model` against the route you configured.
+
+A rate limit is retried within the step, up to `jev.maxRetries` times, waiting as long as the vendor asks, unless the wait would be longer than 10 seconds.
+
+## Limits
+
+This version does not yet:
+
+- offer MCP tools or tools from other plugins to Jev: they are left out of the loop's tool set;
+- support pause or interrupt; steering a running turn is supported;
+- run background jobs or child agents from the loop.
+
+A session that restarts in the middle of a turn continues from the loop's last checkpoint. A conversation-model request that may already have been sent is not sent again; the next step asks the conversation model to review instead.

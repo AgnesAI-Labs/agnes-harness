@@ -94,6 +94,8 @@ return fallback()
 
 `payload` is limited to 1 MiB, `deadlineMs` to 100–120000 ms (default 10000), and the deadline covers the whole call. See [Side model calls from a loop](../develop/plugins.md#side-model-calls-from-a-loop) for the full contract, including `status` and the `unknown` and `refused` outcomes.
 
+The [Jev agent loop](jev-loop.md) is a loop plugin that ships with AGH and makes this call at every step; its guide covers enabling it and pointing it at your route.
+
 ## Limits
 
 - **Context.** The vendor accepts about 64k tokens for the whole request, and about 32.8k tokens for the state plus the longest question. A request over the limit comes back as `OVERFLOW`.
