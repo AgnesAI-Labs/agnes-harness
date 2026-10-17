@@ -109,7 +109,7 @@ function fixture(
     rmSync(join(dir, 'client', 'index.js'))
     symlinkSync(join(outside, 'index.js'), join(dir, 'client', 'index.js'))
   }
-  const inspect = () =>
+  const inspect = async () =>
     inspectStaged({
       dir,
       source: { type: 'file', ref: 'file:./panel' },
@@ -144,7 +144,7 @@ it.each([undefined, 'profile', 'session'] as const)(
   'inspects, packs and installs a descriptor with owner stream scope %s',
   async (scope) => {
     const { inspect, rowId, dir } = fixture(scope ? { streams: 'owner', scope } : {})
-    const { preview } = inspect()
+    const { preview } = await inspect()
     expect(preview.contributions).toMatchObject([
       {
         kind: 'client',
@@ -155,7 +155,9 @@ it.each([undefined, 'profile', 'session'] as const)(
     ])
     expect(preview.contributions[0]?.id).toMatch(/^plugin\/[0-9a-f]{16}$/)
     expect(preview.blockers).toEqual([])
-    expect(readDevelopmentPlugin(dir, 'local-dev').snapshot.contributions).toEqual(preview.contributions)
+    expect((await readDevelopmentPlugin(dir, 'local-dev')).snapshot.contributions).toEqual(
+      preview.contributions,
+    )
 
     const dataDir = mkdtempSync(join(tmpdir(), 'agnes-client-install-'))
     roots.push(dataDir)
@@ -237,17 +239,17 @@ it.each([undefined, 'profile', 'session'] as const)(
   },
 )
 
-it('accepts a skin-only descriptor without inventing a browser client', () => {
-  const { preview, rowId } = (() => {
+it('accepts a skin-only descriptor without inventing a browser client', async () => {
+  const { preview, rowId } = await (async () => {
     const input = fixture({ skinsOnly: true })
-    return { preview: input.inspect().preview, rowId: input.rowId }
+    return { preview: (await input.inspect()).preview, rowId: input.rowId }
   })()
   expect(preview.contributions).toMatchObject([{ kind: 'client', rowId, skins: [{ id: 'example-skin' }] }])
   expect(preview.contributions[0]).not.toHaveProperty('client')
 })
 
-it('rejects an empty descriptor', () => {
-  expect(() => fixture({ emptyDescriptor: true }).inspect()).toThrow(
+it('rejects an empty descriptor', async () => {
+  await expect(fixture({ emptyDescriptor: true }).inspect()).rejects.toThrow(
     expect.objectContaining({ detail: { reason: 'client-descriptor-content' } }),
   )
 })
@@ -263,7 +265,7 @@ it.each([
   [{ streams: 'undeclared', selfGranted: true }, 'client-descriptor-content'],
 ] as const)('rejects invalid descriptor ownership %j', async (options, reason) => {
   const { inspect, dir } = fixture(options)
-  expect(inspect).toThrow(expect.objectContaining({ detail: { reason } }))
+  await expect(inspect()).rejects.toThrow(expect.objectContaining({ detail: { reason } }))
   const out = mkdtempSync(join(tmpdir(), 'agnes-client-refused-'))
   roots.push(out)
   await expect(packPlugin(dir, join(out, 'refused.tgz'))).rejects.toMatchObject({
@@ -272,10 +274,10 @@ it.each([
   })
 })
 
-it('rejects a descriptor combined with the old executable extension list with a migration hint', () => {
-  expect(() => fixture({ legacy: true }).inspect()).toThrow(/migrate the backend to agnes.plugins/)
+it('rejects a descriptor combined with the old executable extension list with a migration hint', async () => {
+  await expect(fixture({ legacy: true }).inspect()).rejects.toThrow(/migrate the backend to agnes.plugins/)
 })
 
-it('refuses a symlinked asset before it can enter an immutable snapshot', () => {
-  expect(() => fixture({ escape: true }).inspect()).toThrow(/symbolic link/)
+it('refuses a symlinked asset before it can enter an immutable snapshot', async () => {
+  await expect(fixture({ escape: true }).inspect()).rejects.toThrow(/symbolic link/)
 })

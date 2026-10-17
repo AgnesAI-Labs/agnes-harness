@@ -2,10 +2,14 @@ import { createHash } from 'node:crypto'
 import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, realpathSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import type { ApplicationAsset, ApplicationTemplate } from '@agnes/protocol'
+import { validateApplicationImage } from './application-image.js'
 
 const MAX_BYTES = 128 * 1024
 /** Brand bytes are read from the verified immutable package, never from an author URL. */
-export function readApplicationAsset(directory: string, asset: ApplicationAsset | string): Buffer {
+export async function readApplicationAsset(
+  directory: string,
+  asset: ApplicationAsset | string,
+): Promise<Buffer> {
   const expected = typeof asset === 'string' ? undefined : asset
   const path = (typeof asset === 'string' ? asset : asset.path).replace(/^\.\//, '')
   if (!path || /[\\:\0]/.test(path) || path.split('/').some((p) => !p || p === '.' || p === '..'))
@@ -73,16 +77,17 @@ export function readApplicationAsset(directory: string, asset: ApplicationAsset 
     (expected !== undefined && createHash('sha256').update(bytes).digest('hex') !== expected.sha256)
   )
     throw new Error('application-asset-digest')
+  await validateApplicationImage(bytes, type)
   return bytes
 }
 
-export function readApplicationAssets(directory: string, application: ApplicationTemplate) {
+export async function readApplicationAssets(directory: string, application: ApplicationTemplate) {
   const assets: { mark?: string; favicon?: string } = {}
   for (const key of ['mark', 'favicon'] as const) {
     const asset = application.brand?.[key]
     if (asset)
       assets[key] =
-        `data:${({ png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', ico: 'image/x-icon' } as Record<string, string>)[asset.split('.').at(-1) ?? '']};base64,${readApplicationAsset(directory, asset).toString('base64')}`
+        `data:${({ png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', ico: 'image/x-icon' } as Record<string, string>)[asset.split('.').at(-1) ?? '']};base64,${(await readApplicationAsset(directory, asset)).toString('base64')}`
   }
   return assets
 }

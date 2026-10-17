@@ -8,11 +8,14 @@ import { parseAgnesPluginEntries } from './plugin-manifest.js'
 import { hashDirectory } from './sources.js'
 
 /** Explicit dev entry point: inspect local data before executable code is imported. */
-export function readDevelopmentPlugin(directory: string, profile: string): RuntimePluginSnapshot {
+export async function readDevelopmentPlugin(
+  directory: string,
+  profile: string,
+): Promise<RuntimePluginSnapshot> {
   directory = resolve(directory)
   const pkg = readStaticJson(join(directory, 'package.json'))
   const integrity = hashDirectory(directory, { exclude: [] })
-  const { preview, treeIntegrity } = inspectStaged({
+  const { preview, treeIntegrity } = await inspectStaged({
     dir: directory,
     source: { type: 'file', ref: 'file:./development' },
     fetched: {

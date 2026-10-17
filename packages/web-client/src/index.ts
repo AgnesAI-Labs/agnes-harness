@@ -40,7 +40,7 @@ export type { ClientContext, ClientModule } from './client-module.js'
 export { clientModule } from './client-module.js'
 export type { ContributionAvailability } from './contribution-scope.js'
 export { revokeContributionOwner, updateContributionAvailability } from './contribution-scope.js'
-export { reserveHomeEntry } from './declared-home-entries.js'
+export { reserveHomeEntry, resolveHomeEntry } from './declared-home-entries.js'
 export type { DeliverableRecord, DeliverablesSnapshot } from './deliverables.js'
 export {
   DeliverablesStore,

@@ -441,8 +441,8 @@ describe('client capability hash integration', () => {
     entry: './index.mjs',
   }
 
-  it('keeps a client-less package summary free of the field and its hash identical to the old algorithm', () => {
-    const { preview } = staged({ ...baseManifest, capabilities: {} }, {})
+  it('keeps a client-less package summary free of the field and its hash identical to the old algorithm', async () => {
+    const { preview } = await staged({ ...baseManifest, capabilities: {} }, {})
     expect(preview.contributions).toHaveLength(0)
     expect(JSON.stringify(preview.contributions)).not.toContain('"client"')
     // 旧算法基线：无 client 字段的贡献摘要 + runtimeSupports 缺省归一，逐字段照抄改动前的计算。
@@ -464,8 +464,8 @@ describe('client capability hash integration', () => {
       }),
     ).not.toBe(first)
   })
-  it('adds the normalized client field to the summary and the hash for a declaring package', () => {
-    const { preview } = staged(
+  it('adds the normalized client field to the summary and the hash for a declaring package', async () => {
+    const { preview } = await staged(
       {
         ...baseManifest,
         capabilities: { ui: true },
@@ -494,20 +494,20 @@ describe('client capability hash integration', () => {
     const expected = capabilityHash({ contributions: preview.contributions, dependencies: {} })
     expect(preview.capabilityHash).toBe(expected)
   })
-  it('moves the capability hash when only the declared services change', () => {
+  it('moves the capability hash when only the declared services change', async () => {
     const files = { 'dist/client/index.js': 64 }
     const withServices = (services: string[]) => ({
       ...baseManifest,
       capabilities: { ui: true },
       contributes: { client: { entry: 'dist/client/index.js', services } },
     })
-    const first = staged(withServices(['hello.query']), files).preview.capabilityHash
-    const second = staged(withServices(['hello.other']), files).preview.capabilityHash
+    const first = (await staged(withServices(['hello.query']), files)).preview.capabilityHash
+    const second = (await staged(withServices(['hello.other']), files)).preview.capabilityHash
     expect(second).not.toBe(first)
   })
-  it('rejects a staged package whose declared client files are missing or oversized', () => {
+  it('rejects a staged package whose declared client files are missing or oversized', async () => {
     // inspect/staging 与运行时读取走同一道校验：文件系统真相在 staging 上就把坏包挡下。
-    expect(() =>
+    await expect(
       staged(
         {
           ...baseManifest,
@@ -516,6 +516,6 @@ describe('client capability hash integration', () => {
         },
         {},
       ),
-    ).toThrow(/cannot be resolved/)
+    ).rejects.toThrow(/cannot be resolved/)
   })
 })

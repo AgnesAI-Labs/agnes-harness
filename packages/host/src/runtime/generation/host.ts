@@ -998,7 +998,7 @@ export async function createRuntimeGenerationHost(
           available.find((source) => source.snapshot.packageId === id)?.snapshot.directory ??
           options.packageDirs?.get(id)
         if (!path) throw new Error(`E_PLUGIN_RELOAD_SOURCE_MISSING: register a local directory for ${id}`)
-        const source = readDevelopmentPlugin(resolvePath(options.workspaceRoot, path), profile.name)
+        const source = await readDevelopmentPlugin(resolvePath(options.workspaceRoot, path), profile.name)
         if (source.snapshot.packageId !== id)
           throw new Error('E_PLUGIN_RELOAD_IDENTITY: local package name differs from the requested id')
         const target =

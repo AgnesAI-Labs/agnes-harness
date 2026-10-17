@@ -165,7 +165,7 @@ export function homeEntryGroups(entries: readonly HomeEntry[]) {
   }
 }
 
-export type HomePageSelection = Readonly<{ id: string; selection?: unknown }>
+export type HomePageSelection = Readonly<{ id: string; selection?: unknown; pageRef?: string }>
 /**
  * Which home entry page is requested. The page shows while an entry with that ID is registered; a
  * request whose entry is missing (not loaded yet, or its plugin was disabled) shows the conversation.
@@ -175,6 +175,16 @@ export class HomeNavigation {
   #listeners = new Set<() => void>()
   open(id: string, selection?: unknown): void {
     this.#set(selection === undefined ? { id } : { id, selection })
+  }
+  /** A selected application page keeps its owner through unloads, failures and replacements. */
+  openRef(pageRef: string, selection?: unknown): void {
+    const separator = pageRef.indexOf('#')
+    if (separator < 1) throw new Error('Invalid qualified home page')
+    this.#set({
+      id: pageRef.slice(separator + 1),
+      pageRef,
+      ...(selection === undefined ? {} : { selection }),
+    })
   }
   close(): void {
     if (this.#current) this.#set(undefined)

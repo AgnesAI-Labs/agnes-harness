@@ -129,13 +129,30 @@ type InspectionInput = {
   signal?: AbortSignal
 }
 
-export function inspectStaged(input: InspectionInput): { preview: PackagePreview; treeIntegrity: string } {
+export async function inspectStaged(
+  input: InspectionInput,
+): Promise<{ preview: PackagePreview; treeIntegrity: string }> {
   checkCancelled(input.signal)
   const treeIntegrity = hashDirectory(input.dir, {
     exclude: [],
     ...(input.signal ? { signal: input.signal } : {}),
   })
-  return inspectVerifiedTree(input, treeIntegrity)
+  const result = inspectVerifiedTree(input, treeIntegrity)
+  if (result.preview.application) {
+    try {
+      await readApplicationAssets(input.dir, result.preview.application)
+    } catch (error) {
+      invalid(error instanceof Error ? error.message : 'application')
+    }
+    // Pixel decoding yields; never publish a tree digest captured before changed package bytes.
+    if (
+      hashDirectory(input.dir, { exclude: [], ...(input.signal ? { signal: input.signal } : {}) }) !==
+      treeIntegrity
+    )
+      invalid('application-assets-changed')
+  }
+  checkCancelled(input.signal)
+  return result
 }
 
 /** Internal same-round reuse only: the caller must have just hashed this directory synchronously.
@@ -370,7 +387,6 @@ export function inspectVerifiedTree(
       contributions,
     )
     application = parsed.application
-    if (application) readApplicationAssets(input.dir, application)
     if (parsed.deploymentDependent)
       preflight = {
         level: 'deployment-dependent',

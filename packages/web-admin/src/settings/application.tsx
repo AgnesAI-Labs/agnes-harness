@@ -28,7 +28,7 @@ function PreviewBrand({ preview }: { preview: ApplicationPreview }) {
   return (
     <p>
       {mark ? (
-        <img src={mark} alt="" width={32} height={32} />
+        <img src={mark} alt="" width={32} height={32} onError={() => setMark(undefined)} />
       ) : (
         <span className="agnes-mark" aria-hidden="true" />
       )}{' '}
@@ -159,6 +159,17 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
             <h4>{tr('Replaced roles and code sources', '替换的接管角色与代码来源')}</h4>
             <pre>{JSON.stringify(preview.replacedRoles, null, 2)}</pre>
             <h4>{tr('Dependencies, permissions and changes', '依赖、权限和变化')}</h4>
+            {preview.dependencyDiff &&
+              typeof preview.dependencyDiff === 'object' &&
+              !Array.isArray(preview.dependencyDiff) &&
+              preview.dependencyDiff.status === 'unknown' && (
+                <p role="status">
+                  {tr(
+                    'The previously consented dependency closure is unavailable. Changes are unknown.',
+                    '无法恢复此前已同意的依赖闭包，依赖差异未知。',
+                  )}
+                </p>
+              )}
             <pre>
               {JSON.stringify(
                 { dependencies: preview.dependencies, changes: preview.dependencyDiff },

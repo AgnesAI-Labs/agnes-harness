@@ -35,13 +35,13 @@ This is the `agnes.application` value in `package.json`; all fields except `id` 
 text uses the existing localized `{en, "zh-CN"?}` contract. `favicon` has the same asset shape as
 `mark`. Inspect derives length, MIME and SHA-256 from the immutable package snapshot. Assets must be
 package-contained regular files, at most 128 KiB each, with matching length, SHA-256, extension and
-raster signature (PNG, JPEG, WebP, GIF or ICO). Symlinks, traversal, URLs and SVG are refused. Assets
+raster signature and decoded pixels (PNG, JPEG, WebP, GIF or PNG-backed ICO). Decoding is bounded to 1,048,576 total pixels, 32 frames and a two-second codec timeout. Symlinks, traversal, URLs and SVG are refused. Assets
 are read from verified installed package bytes; the browser renders bounded blob URLs under CSP.
 
 Home and navigation page references use `package#page`. Pages must be statically declared by profile
 clients (`homeEntries` or `examplePages`), and agents must be Bundles with their own `launch`. A skin
 must be declared by this package. Cross-package targets require declared dependencies and deployment
-validation. Unknown targets fail closed.
+validation. Unknown targets fail closed. The browser preserves page package identity through loading, failure and conflicting ordinary page names; another package cannot supply an adopted page default.
 
 The standard takeover roles are `navigation`, `conversation`, `composer`, `goal`, `interaction` and
 `deliverables`. A referenced client must have an explicit stable `client.id`, `lifetime: "profile"`
@@ -55,7 +55,7 @@ retain their existing scopes and semantics.
 The consent preview binds source and signature status, package/version/integrity, brand and assets,
 hidden entries, home/skin, agents, role code sources, dependency permissions/diff, scope and recovery.
 Adoption and clearing use the existing admin principal/method allowlists and configuration CAS revision.
-A changed preview or stale revision is refused. Brand changes are normal package upgrades and require
+A changed preview or stale revision is refused. The accepted preview is retained with its digest so dependency changes compare the previous consented transitive closure with the new one, even after upgrade or uninstall. If the old consent cannot be verified, the diff explicitly reports unknown. Brand changes are normal package upgrades and require
 fresh trust and explicit adoption; old sessions retain their execution pins. Trusted JavaScript runs
 with the workbench and is not a sandbox.
 
@@ -63,7 +63,7 @@ No selection means the host AGH application. Installing B never replaces selecte
 untrusted, removed, changed or has unavailable assets/references, its saved selection remains
 **unresolved**, with a reason, while presentation falls back to AGH. It never silently selects B.
 URL overrides take precedence over user preferences, application defaults and host defaults, in that
-order. Clearing removes application defaults and preserves user preferences.
+order. Clearing removes application defaults and preserves user preferences. Effective-application changes immediately remove application CSS and tokens; late CSS from a revoked application cannot repaint. A browser image decode failure also falls back to the host.
 
 Open **`/?admin`** for the separate host recovery bootstrap. It selects the host identity and skin
 before importing application JavaScript, CSS, roles or navigation. The URL grants no authority;

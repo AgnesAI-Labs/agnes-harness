@@ -151,7 +151,7 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
       await writeFile(join(folder, 'client', file), next.clientModule.code)
     }
     const integrity = hashDirectory(folder, { exclude: [] })
-    const inspected = next.clientModule ? readDevelopmentPlugin(folder, 'local-dev') : undefined
+    const inspected = next.clientModule ? await readDevelopmentPlugin(folder, 'local-dev') : undefined
     const source: RuntimePluginSnapshot = {
       snapshot: {
         packageId: id,

@@ -1237,6 +1237,9 @@ importers:
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
+      sharp:
+        specifier: 0.34.5
+        version: 0.34.5
       sigstore:
         specifier: 4.1.1
         version: 4.1.1

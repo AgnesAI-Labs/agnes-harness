@@ -109,6 +109,46 @@ export function createAppearanceController(options: {
     }
   }
 
+  let skinEpoch = 0
+  let skinIdentity = ''
+  const publishApplicationSkin = (detail: unknown) =>
+    window.dispatchEvent(new CustomEvent('agnes:application-skin', { detail }))
+  const updateApplicationSkin = (): void => {
+    const override = skinOverride(location.search)
+    const application = effectiveApplication()
+    const identity = applicationIdentity.getSnapshot()
+    const selected = roster.find((skin) =>
+      override !== null
+        ? skin.id === override
+        : skin.id === application?.presentation?.skin && skin.packageName === identity?.selection?.packageId,
+    )
+    const next = JSON.stringify([
+      selected,
+      override === null ? [identity?.selection?.packageId, identity?.selection?.consentDigest] : override,
+    ])
+    if (next === skinIdentity) return
+    skinIdentity = next
+    const epoch = ++skinEpoch
+    // Revoke the previous application synchronously, before any fetch or observer can yield.
+    publishApplicationSkin(null)
+    if (!selected || disposed) return
+    const publish = (css: string) => {
+      if (disposed || epoch !== skinEpoch) return
+      publishApplicationSkin({
+        version: 1,
+        id: selected.id,
+        revision: selected.revision,
+        css,
+        tokens: selected.tokens,
+      })
+    }
+    if (selected.css !== undefined) publish(selected.css)
+    else
+      void fetchSkinCss(selected.cssUrl, cssOptions)
+        .then(publish)
+        .catch(() => undefined)
+  }
+
   const skins = bindSkinGroup({
     scope: document,
     storage,
@@ -128,28 +168,7 @@ export function createAppearanceController(options: {
       }))
       // 只有真的拿到清单才能对账：这里的 `[]` 会被读成「皮肤全被卸载」而抹掉用户的选择。
       await reconcile(roster)
-      const application = effectiveApplication()
-      const override = skinOverride(location.search)
-      const selected = roster.find((skin) =>
-        override !== null
-          ? skin.id === override
-          : skin.id === application?.presentation?.skin &&
-            skin.packageName === applicationIdentity.getSnapshot()?.selection?.packageId,
-      )
-      const css = selected ? (selected.css ?? (await fetchSkinCss(selected.cssUrl, cssOptions))) : undefined
-      window.dispatchEvent(
-        new CustomEvent('agnes:application-skin', {
-          detail: selected
-            ? {
-                version: 1,
-                id: selected.id,
-                revision: selected.revision,
-                css: css ?? '',
-                tokens: selected.tokens,
-              }
-            : null,
-        }),
-      )
+      updateApplicationSkin()
       return roster
     },
     select: async (id) => {
@@ -167,10 +186,15 @@ export function createAppearanceController(options: {
       skinChanged()
     },
   })
+  const stopApplication = applicationIdentity.subscribe(updateApplicationSkin)
+  updateApplicationSkin()
   const stopPackages = onBroadcast('agnes:packages-changed', () => void skins.refresh())
   const stopFocus = onWindowFocus(() => void skins.refresh())
   onPageHide(() => {
     disposed = true
+    stopApplication()
+    skinEpoch += 1
+    publishApplicationSkin(null)
     stopPackages()
     stopFocus()
     selection += 1

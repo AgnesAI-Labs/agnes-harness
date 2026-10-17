@@ -7,12 +7,14 @@ import {
   homeNavigation,
   presentationDefault,
   presentationRoles,
+  resolveHomeEntry,
 } from '@agnes/web-client'
 import { safeThemeStorage } from '@agnes/web-foundation/theme'
 
 let urls: string[] = []
 let sourceSignature: string | undefined = ''
 let titleSuffix = 'Agnes Harness'
+let projectionEpoch = 0
 
 export function updateApplicationTitle(): void {
   const prefix = document.title.endsWith(` · ${titleSuffix}`)
@@ -26,6 +28,7 @@ export function projectApplication(state: ApplicationState | undefined): void {
   const signature = JSON.stringify(state)
   if (signature === sourceSignature) return
   sourceSignature = signature
+  const epoch = ++projectionEpoch
   const old = urls
   urls = []
   const assets: ApplicationState['assets'] = {}
@@ -54,9 +57,33 @@ export function projectApplication(state: ApplicationState | undefined): void {
   const requested = homeNavigation.getSnapshot()
   const automatic = (requested?.selection as { applicationDefault?: string } | undefined)?.applicationDefault
   const app = effectiveApplication()
-  const home = app?.presentation?.home?.split('#')[1]
-  if (automatic && (automatic !== app?.id || requested?.id !== home)) homeNavigation.close()
+  const home = app?.presentation?.home
+  if (automatic && (automatic !== app?.id || requested?.pageRef !== home || !resolveHomeEntry(home ?? '')))
+    homeNavigation.close()
   openApplicationHome()
+  if (state?.status === 'active') {
+    const fail = () => {
+      if (epoch !== projectionEpoch) return
+      projectApplication({
+        ...state,
+        status: 'unresolved',
+        reason: 'asset-decode-failed',
+        effective: null,
+        assets: {},
+      })
+      // Do not repeatedly reapply the same broken identity on roster polling.
+      sourceSignature = signature
+    }
+    for (const url of urls) {
+      const image = new Image()
+      image.onerror = fail
+      image.onload = () => {
+        if (!image.naturalWidth || !image.naturalHeight) fail()
+      }
+      image.src = url
+      if (typeof image.decode === 'function') void image.decode().catch(fail)
+    }
+  }
 }
 
 /** Explicit URL and user page choices are resolved before the application's home default. */
@@ -72,6 +99,8 @@ export function openApplicationHome(): void {
   }
   const selected = presentationDefault(undefined, user, app?.presentation?.home, '')
   const id = selected.includes('#') ? selected.slice(selected.indexOf('#') + 1) : selected
-  if (id && homeEntries.get(id))
-    homeNavigation.open(id, user === undefined && app ? { applicationDefault: app.id } : undefined)
+  if (selected.includes('#')) {
+    if (resolveHomeEntry(selected))
+      homeNavigation.openRef(selected, user === undefined && app ? { applicationDefault: app.id } : undefined)
+  } else if (id && homeEntries.get(id)) homeNavigation.open(id)
 }

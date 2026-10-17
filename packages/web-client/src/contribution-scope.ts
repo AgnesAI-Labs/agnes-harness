@@ -1,8 +1,8 @@
 import type { ContributionBinding } from '@agnes/protocol'
 import { notifyListeners } from '@agnes/sdk/browser'
-import { claimHomeEntry } from './declared-home-entries.js'
+import { claimHomeEntry, registerOwnedHomeEntry } from './declared-home-entries.js'
 import type { ModuleIdentity } from './service-contracts.js'
-import { type HomeEntry, homeEntries } from './ui-registries.js'
+import type { HomeEntry } from './ui-registries.js'
 
 export interface ContributionAvailability {
   getSnapshot(): ContributionBinding | undefined
@@ -93,7 +93,7 @@ export function scopedHomeEntries(module: ModuleIdentity, effect: (off: () => vo
       if (!declared || declared.placement !== (entry.placement ?? 'secondary'))
         throw new Error('Undeclared home entry placement')
       claimHomeEntry(module.binding.owner, entry.id)
-      return ownContribution(module.binding.owner, homeEntries.register(entry), effect)
+      return ownContribution(module.binding.owner, registerOwnedHomeEntry(module.packageId, entry), effect)
     },
   })
 }

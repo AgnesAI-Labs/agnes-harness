@@ -433,7 +433,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
   >()
   // Ids whose committed local change has not been reloaded yet; only a successful reload clears one.
   const localPending = new Set<string>()
-  const scanLocal = (profileDir: string): string[] => {
+  const scanLocal = async (profileDir: string): Promise<string[]> => {
     if (!options.localPlugins) return []
     let lock = load(profileDir)
     writable(lock)
@@ -462,7 +462,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
         const current = own(lock.packages, id)
         if (current && current.source.ref !== candidate.source.ref)
           throw new Error('package identity collision')
-        const checked = inspectStaged({
+        const checked = await inspectStaged({
           dir: stage,
           source: candidate.source,
           fetched: {
@@ -800,7 +800,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
         const fetched = await acquire(source, stage, op, profileDir)
         const lock = load(profileDir)
         const previous = own(lock.packages, readPackageJson(stage).name)
-        const { preview } = inspectStaged({
+        const { preview } = await inspectStaged({
           dir: stage,
           source: fetched.source ?? source,
           fetched,
@@ -850,7 +850,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
               throw new PackageError('E_LOCK_MISMATCH', 'package preview is stale', {
                 code: 'E_PACKAGE_PREVIEW_STALE',
               })
-            const { preview, treeIntegrity } = inspectStaged({
+            const { preview, treeIntegrity } = await inspectStaged({
               dir: stage,
               source: fetched.source ?? source,
               fetched,
@@ -1154,7 +1154,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
             next.state = { ...next.state, trusted: null, enabled: false }
             delete next.trustDecision
             const source = parseSource(next.source.ref)
-            const checked = inspectStaged({
+            const checked = await inspectStaged({
               dir: stage,
               source,
               fetched: {
@@ -1280,7 +1280,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
         realpathSync(requestedDeployDir) === localWorkspaceRoot(options.localPlugins)
       ) {
         return locked(profileDir, async () => {
-          scanLocal(profileDir)
+          await scanLocal(profileDir)
           const lock = load(profileDir)
           writable(lock)
           if (lock.policySnapshot.workspacePackages === 'deny')

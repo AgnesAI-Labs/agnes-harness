@@ -1,7 +1,14 @@
 /** @vitest-environment happy-dom */
 import { Context } from '@agnes/cordis'
 import type { ApplicationState } from '@agnes/protocol'
-import { applicationBrand, applicationIdentity, LocaleService, presentationDefault } from '@agnes/web-client'
+import {
+  applicationBrand,
+  applicationIdentity,
+  homeNavigation,
+  LocaleService,
+  presentationDefault,
+  reserveHomeEntry,
+} from '@agnes/web-client'
 import { afterEach, expect, it, vi } from 'vitest'
 import { projectApplication, updateApplicationTitle } from '../src/application.js'
 
@@ -32,7 +39,10 @@ it('projects title, favicon and localized assistant display name, then restores 
         assistantName: { en: 'Ava', 'zh-CN': '小艾' },
       },
     },
-    assets: { favicon: 'data:image/png;base64,iVBORw0KGgo=' },
+    assets: {
+      favicon:
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADUlEQVR4nGNgYGD4DwABBAEAX+XDSwAAAABJRU5ErkJggg==',
+    },
     candidates: [],
   }
   projectApplication(state)
@@ -71,4 +81,65 @@ it('chooses recovery before the workbench can load third-party modules, CSS, rol
   expect(workbench).not.toHaveBeenCalled()
   vi.doUnmock('../src/app.js')
   vi.doUnmock('../src/recovery.js')
+})
+
+it('falls back to the host when the browser cannot decode a package asset, and ignores stale failures', async () => {
+  const decode = vi.spyOn(Image.prototype, 'decode').mockRejectedValue(new Error('invalid raster'))
+  vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:broken-brand')
+  vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
+  document.head.innerHTML = '<title>Agnes Harness</title><link rel="icon" href="/favicon.png">'
+  const state: ApplicationState = {
+    revision: 1,
+    status: 'active',
+    selection: null,
+    effective: { id: 'bad', brand: { title: { en: 'Bad' } } },
+    assets: { favicon: 'data:image/png;base64,iVBORw0KGgo=' },
+    candidates: [],
+  }
+  projectApplication(state)
+  await Promise.resolve()
+  expect(applicationIdentity.getSnapshot()).toMatchObject({
+    status: 'unresolved',
+    reason: 'asset-decode-failed',
+    effective: null,
+    assets: {},
+  })
+  expect(document.title).toBe('Agnes Harness')
+  expect(document.querySelector('link')?.getAttribute('href')).toBe('/favicon.png')
+  projectApplication(state)
+  expect(applicationIdentity.getSnapshot()?.status).toBe('unresolved')
+  decode.mockImplementation(
+    () =>
+      new Promise((_resolve, reject) => {
+        late = reject
+      }),
+  )
+  let late: ((error: Error) => void) | undefined
+  projectApplication({ ...state, revision: 2 })
+  projectApplication(undefined)
+  late?.(new Error('stale'))
+  await Promise.resolve()
+  expect(applicationIdentity.getSnapshot()).toBeUndefined()
+})
+
+it('never resolves an adopted home against another package with the same page name', () => {
+  const off = reserveHomeEntry(
+    'b-row',
+    { id: 'overview', icon: 'home', titleKey: 'B', order: 0, component: () => null },
+    'b',
+  )
+  try {
+    projectApplication({
+      revision: 1,
+      status: 'active',
+      selection: null,
+      effective: { id: 'a', presentation: { home: 'a#overview' } },
+      assets: {},
+      candidates: [],
+    })
+    expect(homeNavigation.getSnapshot()).toBeUndefined()
+  } finally {
+    off()
+    homeNavigation.close()
+  }
 })

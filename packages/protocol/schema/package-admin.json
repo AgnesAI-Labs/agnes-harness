@@ -4123,6 +4123,9 @@
         "bindingDigest": {
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
+        },
+        "consentSnapshot": {
+          "$ref": "#/$defs/ApplicationPreview"
         }
       },
       "required": [

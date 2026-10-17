@@ -90,7 +90,7 @@ export async function updatePackages(deps: {
         throw new PackageError('E_LOCK_MISMATCH', 'package preview is stale', {
           code: 'E_PACKAGE_PREVIEW_STALE',
         })
-      const { preview, treeIntegrity } = inspectStaged({
+      const { preview, treeIntegrity } = await inspectStaged({
         dir: stage,
         source: fetched.source ?? source,
         fetched,

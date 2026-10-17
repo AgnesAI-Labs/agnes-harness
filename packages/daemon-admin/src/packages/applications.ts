@@ -68,7 +68,7 @@ export class Applications {
     const row = packages.find((p) => p.id === packageId)
     if (!row?.entry.application || !eligible(row) || !row.directory) return fail('APPLICATION_UNAVAILABLE')
     const declaration = structuredClone(row.entry.application)
-    const assets = readApplicationAssets(row.directory, declaration)
+    const assets = await readApplicationAssets(row.directory, declaration)
     const requiredPackage = (id: string) => {
       const pkg = packages.find((p) => p.id === id)
       if (!pkg) return fail('APPLICATION_DEPENDENCY_MISSING')
@@ -156,9 +156,35 @@ export class Applications {
         source: p.entry.source,
       }
     })
-    const old = packages.find((p) => p.id === previous?.packageId)
-    const before = Object.keys(old?.entry.dependencies ?? {})
-    const after = [...required].filter((id) => id !== row.id)
+    const snapshot = previous?.consentSnapshot
+    const { consentDigest: _previousDigest, ...previousBody } = snapshot ?? {}
+    const restored =
+      snapshot &&
+      snapshot.packageId === previous?.packageId &&
+      snapshot.integrity === previous.integrity &&
+      snapshot.declarationDigest === previous.declarationDigest &&
+      snapshot.consentDigest === previous.consentDigest &&
+      digest(previousBody) === previous.consentDigest
+    const ids = (rows: ApplicationPreview['dependencies'], owner: string) =>
+      rows.flatMap((value) =>
+        value &&
+        typeof value === 'object' &&
+        !Array.isArray(value) &&
+        typeof value.packageId === 'string' &&
+        value.packageId !== owner
+          ? [value.packageId]
+          : [],
+      )
+    const before = restored ? ids(snapshot.dependencies, snapshot.packageId) : []
+    const after = ids(dependencies, row.id)
+    const dependencyDiff =
+      previous && !restored
+        ? { status: 'unknown', reason: 'previous-consent-unavailable' }
+        : {
+            status: 'known',
+            added: after.filter((id) => !before.includes(id)),
+            removed: before.filter((id) => !after.includes(id)),
+          }
     const checkedSource = validatePackageAdminData('PackageSource', row.entry.source)
     if (!checkedSource.ok) return fail('APPLICATION_SOURCE_INVALID')
     const source = checkedSource.value as ApplicationPreview['source']
@@ -173,10 +199,7 @@ export class Applications {
       declarationDigest: digest(declaration),
       dependencies,
       replacedRoles,
-      dependencyDiff: {
-        added: after.filter((id) => !before.includes(id)),
-        removed: before.filter((id) => !after.includes(id)),
-      },
+      dependencyDiff,
       scope: 'presentation-defaults-and-agent-catalogue',
       recovery: '/?admin; agh app clear',
       warning: 'trusted-javascript-is-not-a-sandbox',
@@ -306,6 +329,7 @@ export class Applications {
           declarationDigest: preview.declarationDigest,
           consentDigest: preview.consentDigest,
           bindingDigest: bindingDigest(preview),
+          consentSnapshot: preview,
         },
       })
     })

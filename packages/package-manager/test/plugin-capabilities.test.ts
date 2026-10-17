@@ -242,7 +242,7 @@ it('pins an unqualified git URL in the preview without executing the plugin', as
     },
   })
   expect(fetched.source?.ref).toBe('git:https://example.com/plugin.git#' + commit)
-  const preview = inspectStaged({ dir, fetched, source: fetched.source!, ceiling: [] }).preview
+  const preview = (await inspectStaged({ dir, fetched, source: fetched.source!, ceiling: [] })).preview
   expect(preview.source).toEqual(fetched.source)
   expect(preview.integrity).toBe(hashDirectory(dir))
 })

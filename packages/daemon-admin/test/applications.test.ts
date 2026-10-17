@@ -150,12 +150,16 @@ it('fails closed for missing or undeclared roles, references and changed asset b
   await expect(f.applications.preview('local-dev', 'a')).rejects.toMatchObject({
     data: { reason: 'APPLICATION_ROLE_UNDECLARED' },
   })
-  const bytes = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
+  const bytes = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADUlEQVR4nGNgYGD4DwABBAEAX+XDSwAAAABJRU5ErkJggg==',
+    'base64',
+  )
   await writeFile(join(f.directory, 'mark.png'), bytes)
   const brand = { mark: 'mark.png' }
   f.replace([{ ...a!, entry: { ...a!.entry, application: { id: 'a', brand } } }, b!])
   await f.adopt('a')
   await writeFile(join(f.directory, 'mark.png'), Buffer.alloc(8))
+  await expect(f.applications.preview('local-dev', 'a')).rejects.toThrow()
   expect(await f.applications.get('local-dev')).toMatchObject({
     status: 'unresolved',
     effective: null,
@@ -228,7 +232,7 @@ it('binds the dependency permission and role code sources, and rejects the loser
   expect(preview.replacedRoles).toContainEqual(
     expect.objectContaining({ packageId: 'a', clientId: 'ui', entry: 'client.js' }),
   )
-  expect(preview.dependencyDiff).toEqual({ added: ['b'], removed: [] })
+  expect(preview.dependencyDiff).toEqual({ status: 'known', added: ['b'], removed: [] })
   f.replace([owner, { ...b!, capabilityHash: 'd'.repeat(64) }])
   expect((await f.applications.preview('local-dev', 'a')).consentDigest).not.toBe(preview.consentDigest)
   f.replace([owner, b!])
@@ -240,4 +244,46 @@ it('binds the dependency permission and role code sources, and rejects the loser
   expect(outcomes.filter((o) => o.status === 'fulfilled')).toHaveLength(1)
   expect((await f.config.application()).revision).toBe(1)
   expect((await f.config.get()).executionRevision).toBe(0)
+})
+
+it('restores the consented transitive closure across upgrades and uninstall, and labels an unavailable baseline unknown', async () => {
+  const f = await fixture()
+  const a = f.packages()[0],
+    b = f.packages()[1]
+  if (!a || !b) throw new Error('missing fixture')
+  const dependency = (id: string, deps = {}) => ({
+    ...b,
+    id,
+    entry: { ...b.entry, application: { id }, dependencies: deps },
+  })
+  const x = dependency('x', { z: '*' }),
+    z = dependency('z'),
+    y = dependency('y', { t: '*' }),
+    t = dependency('t')
+  f.replace([{ ...a, entry: { ...a.entry, dependencies: { x: '*' } } }, x, z, b, y, t])
+  await f.adopt('a')
+  const upgraded = {
+    ...a,
+    entry: { ...a.entry, version: '2.0.0', integrity: 'sha256-' + 'e'.repeat(64), dependencies: { y: '*' } },
+  }
+  f.replace([upgraded, x, z, b, y, t])
+  expect((await f.applications.preview('local-dev', 'a')).dependencyDiff).toEqual({
+    status: 'known',
+    added: ['t', 'y'],
+    removed: ['x', 'z'],
+  })
+  f.replace([{ ...b, entry: { ...b.entry, dependencies: { y: '*' } } }, y, t])
+  expect((await f.applications.preview('local-dev', 'b')).dependencyDiff).toEqual({
+    status: 'known',
+    added: ['t', 'y'],
+    removed: ['x', 'z'],
+  })
+  const current = await f.config.application()
+  if (!current.selection) throw new Error('missing selection')
+  const { consentSnapshot: _snapshot, ...selection } = current.selection
+  await f.config.saveApplication({ revision: current.revision, selection })
+  expect((await f.applications.preview('local-dev', 'b')).dependencyDiff).toEqual({
+    status: 'unknown',
+    reason: 'previous-consent-unavailable',
+  })
 })

@@ -56,18 +56,30 @@ export function createRosterNavigation(locale?: LocaleService) {
             return <p role="status">{locale?.t('loading') ?? '…'}</p>
           }
           cleanups.push(
-            reserveHomeEntry(module.binding.owner, {
-              id: entry.id,
-              placement: entry.placement,
-              titleKey: locale ? titleKey : metadata.title,
-              icon: metadata.icon,
-              order: metadata.order,
-              component: PendingPage,
-            }),
+            reserveHomeEntry(
+              module.binding.owner,
+              {
+                id: entry.id,
+                placement: entry.placement,
+                titleKey: locale ? titleKey : metadata.title,
+                icon: metadata.icon,
+                order: metadata.order,
+                component: PendingPage,
+              },
+              module.packageId,
+            ),
           )
         }
         const selected = () => {
-          if (declarations.some((entry) => entry.id === homeNavigation.getSnapshot()?.id)) open()
+          const selected = homeNavigation.getSnapshot()
+          if (
+            declarations.some(
+              (entry) =>
+                entry.id === selected?.id &&
+                (!selected.pageRef || selected.pageRef === `${module.packageId}#${entry.id}`),
+            )
+          )
+            open()
         }
         cleanups.push(homeNavigation.subscribe(selected))
         selected()

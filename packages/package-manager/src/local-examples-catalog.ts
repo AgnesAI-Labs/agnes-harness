@@ -75,12 +75,12 @@ function json(file: string): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
-function descriptor(
+async function descriptor(
   workspace: string,
   relativeDirectory: string,
   signal?: AbortSignal,
   sourceRef?: string,
-): Omit<PackageCatalogDescriptor, 'sourceId' | 'retrievedAt'> {
+): Promise<Omit<PackageCatalogDescriptor, 'sourceId' | 'retrievedAt'>> {
   signal?.throwIfAborted()
   const directory = join(workspace, relativeDirectory)
   let owned: string
@@ -96,7 +96,7 @@ function descriptor(
     return invalid('identity')
   const source = { type: 'file' as const, ref: sourceRef ?? `file:./${relativeDirectory}` }
   const integrity = hashDirectory(owned, { ...(signal ? { signal } : {}) })
-  const { preview } = inspectStaged({
+  const { preview } = await inspectStaged({
     dir: owned,
     source,
     fetched: {
@@ -147,7 +147,7 @@ export async function createLocalExamplesCatalog(
   const source = staticCatalogSource(SOURCE_ID, async (signal) => ({
     issuedAt: new Date(now()).toISOString(),
     ttlMs: TTL_MS,
-    entries: [
+    entries: await Promise.all([
       ...FAMILIES.flatMap((family) =>
         family.releases.map((release) =>
           descriptor(workspace, `examples/packages/${family.family}/${release}`, signal),
@@ -162,7 +162,7 @@ export async function createLocalExamplesCatalog(
             descriptor(workspace, `examples/packages/${family}/broken`, signal),
           )
         : []),
-    ],
+    ]),
   }))
   const catalog = createCatalog([source], { priority: [SOURCE_ID], now })
   const initial = await catalog.read(options.signal ? { signal: options.signal } : {})
@@ -183,7 +183,7 @@ export async function bundledExamplesEntries(signal?: AbortSignal) {
         cwd: source.root,
         ...(signal ? { signal } : {}),
       })
-      const entry = descriptor(realpathSync(staging), example.name, signal, example.ref)
+      const entry = await descriptor(realpathSync(staging), example.name, signal, example.ref)
       entries.push(entry)
     }
     return entries

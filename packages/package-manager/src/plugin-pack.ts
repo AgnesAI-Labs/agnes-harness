@@ -176,7 +176,7 @@ export async function packPlugin(folder: string, output?: string): Promise<strin
           )
     }
     const integrity = hashDirectory(tree)
-    const result = inspectStaged({
+    const result = await inspectStaged({
       dir: tree,
       source: { type: 'file', ref: sourceRef },
       fetched: {

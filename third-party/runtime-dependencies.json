@@ -298,9 +298,9 @@
       "version": "0.34.5",
       "license": "Apache-2.0",
       "source": "https://github.com/lovell/sharp",
-      "purpose": "Bounded PNG/JPEG decoding and aspect-preserving downsampling for local model image input.",
+      "purpose": "Bounded raster decoding for application brands and aspect-preserving downsampling for local model image input.",
       "rationale": "The shared safe-image validator does not decode raster pixels or resize images; native codec and transitive license notices ship with the runtime.",
-      "consumers": ["packages/base"]
+      "consumers": ["packages/base", "packages/package-manager"]
     },
     {
       "name": "recharts",
