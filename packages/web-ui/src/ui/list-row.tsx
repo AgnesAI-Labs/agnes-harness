@@ -12,6 +12,8 @@ export type ListRowProps = Omit<HTMLAttributes<HTMLElement>, 'title'> & {
   status?: ReactNode
   actions?: ReactNode
   onOpen?: () => void
+  /** Compact file row using the shared deliverable card tokens and skin hooks. */
+  variant?: 'default' | 'file'
 }
 /** The title is a real button. Row actions never trigger the detail action. */
 export function ListRow({
@@ -24,16 +26,18 @@ export function ListRow({
   status,
   actions,
   onOpen,
+  variant = 'default',
   children,
   className,
   ...props
 }: ListRowProps) {
   const trigger = useRef<HTMLButtonElement>(null)
+  const file = variant === 'file'
   return (
     // biome-ignore lint/a11y/useKeyWithClickEvents: the real title button owns keyboard activation; row key handlers would also activate trailing actions.
     <article
       {...props}
-      className={['agh-list-row', className].filter(Boolean).join(' ')}
+      className={[file ? 'deliverable-row' : 'agh-list-row', className].filter(Boolean).join(' ')}
       onClick={(event) => {
         props.onClick?.(event)
         if (
@@ -49,13 +53,13 @@ export function ListRow({
       }}
     >
       {icon && (
-        <div className="agh-list-row-icon" aria-hidden="true">
+        <div className={file ? undefined : 'agh-list-row-icon'} aria-hidden="true">
           {icon}
         </div>
       )}
-      <div className="agh-list-row-copy">
-        <div className="agh-list-row-heading">
-          <h3>
+      <div className={file ? 'deliverable-text' : 'agh-list-row-copy'}>
+        <div className={file ? undefined : 'agh-list-row-heading'}>
+          <h3 className={file ? 'deliverable-name' : undefined}>
             {onOpen ? (
               <Button
                 ref={trigger}
@@ -72,11 +76,11 @@ export function ListRow({
           </h3>
           {status}
         </div>
-        {description && <p>{description}</p>}
-        {meta && <div className="agh-meta">{meta}</div>}
+        {description && <p className={file ? 'deliverable-meta' : undefined}>{description}</p>}
+        {meta && <div className={file ? 'deliverable-meta' : 'agh-meta'}>{meta}</div>}
         <NestedSurfaceContext.Provider value={true}>{children}</NestedSurfaceContext.Provider>
       </div>
-      {actions && <div className="agh-list-row-actions">{actions}</div>}
+      {actions && <div className={file ? 'deliverable-actions' : 'agh-list-row-actions'}>{actions}</div>}
     </article>
   )
 }

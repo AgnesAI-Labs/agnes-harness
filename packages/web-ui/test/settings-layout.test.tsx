@@ -123,11 +123,12 @@ it('offers teaching content and only allows informational banners to be dismisse
   host.querySelector<HTMLButtonElement>('.agh-banner[role="status"] button')!.click()
   expect(dismiss).toHaveBeenCalledTimes(1)
 })
-it('keeps row actions separate from its detail button', () => {
+it.each(['default', 'file'] as const)('keeps %s row actions separate from its detail button', (variant) => {
   const open = vi.fn(),
     action = vi.fn()
   const host = render(
     createElement(ListRow, {
+      variant,
       title: 'Plugin',
       description: 'A short description',
       onOpen: open,
