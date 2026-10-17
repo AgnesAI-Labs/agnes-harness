@@ -1,6 +1,7 @@
 import type { LoopTurnView } from '@agnes/extension-api'
 import { restoreToolDisclosure } from '../execution/turn/tool-disclosure.js'
 import { assembleRequestPrefix, discloseTools, resolveModel } from '../step/inference.js'
+import { modelVisibleTool, toolNamesForModel } from '../step/model-tools.js'
 import type { SessionImpl } from '../step/session.js'
 
 export function freezeView<T>(value: T): T {
@@ -31,6 +32,7 @@ export async function loopTurnView(s: SessionImpl): Promise<LoopTurnView | null>
     disclosed: discloseTools(s),
     model: { slot, ...target },
   }
+  const computerUseAllowed = s.computerUseAllowed(target)
   const { merged } = await assembleRequestPrefix(s, ctx, op.meta.triggerSeq)
   return freezeView(
     structuredClone({
@@ -69,6 +71,18 @@ export async function loopTurnView(s: SessionImpl): Promise<LoopTurnView | null>
         perRequestCap: s.turnBudgetCap(),
         onExceed: s.preset.budget.onExceed,
       },
+      toolMeta: Object.fromEntries(
+        ctx.snapshot.defs.map((tool) => [
+          tool.name,
+          {
+            isReadOnly: tool.meta.isReadOnly,
+            isDestructive: tool.meta.isDestructive,
+            isOpenWorld: tool.meta.isOpenWorld,
+            offered: modelVisibleTool(tool, computerUseAllowed),
+          },
+        ]),
+      ),
+      disclosedTools: toolNamesForModel(ctx.disclosed, ctx.snapshot, computerUseAllowed),
     }),
   )
 }
