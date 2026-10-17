@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, expect, it } from 'vitest'
 import {
@@ -366,7 +366,7 @@ it('opens an earlier reviewed snapshot without granting newly discovered streams
   expect(old.trusted).toBe(true)
   expect(old.capabilityHash).toBe(priorHash)
   expect(old.contributions.every((row) => !('client' in row) || !row.client?.streams)).toBe(true)
-  const source = parseSource(`file:${f.directory}`)
+  const source = parseSource(`file:${f.directory.split(sep).join('/')}`)
   const preview = await f.manager.inspect(f.profileDir, source)
   assert(preview.capabilityHash)
   expect(preview.capabilityHash).not.toBe(priorHash)

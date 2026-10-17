@@ -1,6 +1,6 @@
 /** @vitest-environment happy-dom */
 import type { WorkspaceEntry } from '@agnes/protocol'
-import { mountRegion } from '@agnes/web-ui'
+import { mountRegion, renderRegion } from '@agnes/web-ui'
 import { getByRole } from '@testing-library/dom'
 import { flushSync } from 'react-dom'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -21,30 +21,34 @@ const workspace: WorkspaceEntry = {
   sessionCount: 35,
   lastUsedAt: null,
 }
-function render(runningCount = 0, t = zhT) {
+function render(runningCount = 0, t = zhT, platform = 'darwin') {
   const host = document.createElement('div')
   document.body.append(host)
   const action = vi
     .fn<(kind: 'reveal' | 'remove', workspace: WorkspaceEntry) => Promise<void>>()
     .mockResolvedValue()
   const newSession = vi.fn()
-  dispose = mountRegion(
-    host,
+  const view = (disabled: boolean) => (
     <WorkspaceMenu
       workspace={workspace}
       name="Project"
       t={t}
-      platform="darwin"
-      disabled={false}
-      newDisabled={false}
+      platform={platform}
+      disabled={disabled}
+      newDisabled={disabled}
       runningCount={runningCount}
       newSession={newSession}
       action={action}
-    />,
+    />
   )
-  const trigger = host.querySelector<HTMLButtonElement>('.workspace-menu-trigger')
-  if (!trigger) throw new Error('missing workspace menu trigger')
+  dispose = mountRegion(host, view(false))
+  const getTrigger = () => {
+    const trigger = host.querySelector<HTMLButtonElement>('.workspace-menu-trigger')
+    if (!trigger) throw new Error('missing workspace menu trigger')
+    return trigger
+  }
   const open = async () => {
+    const trigger = getTrigger()
     flushSync(() => trigger.click())
     await vi.waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('true'))
     await vi.waitFor(() => expect(document.querySelectorAll('[role=menuitem]')).toHaveLength(3))
@@ -58,8 +62,40 @@ function render(runningCount = 0, t = zhT) {
     if (!dialog) throw new Error('missing remove dialog')
     return dialog
   }
-  return { action, newSession, trigger, open, confirm, host }
+  return {
+    action,
+    newSession,
+    get trigger() {
+      return getTrigger()
+    },
+    open,
+    confirm,
+    host,
+    setDisabled(disabled: boolean) {
+      renderRegion(host, view(disabled))
+    },
+  }
 }
+
+it.each(['win32', 'darwin'])(
+  'closes a disabled project menu and allows reopening on %s',
+  async (platform) => {
+    const menu = render(0, zhT, platform)
+    const oldItems = await menu.open()
+    menu.setDisabled(true)
+    expect(menu.trigger.disabled).toBe(true)
+    expect(document.querySelector('[role=menu]')).toBeNull()
+    for (const item of oldItems) item.click()
+    menu.trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    expect(menu.action).not.toHaveBeenCalled()
+    expect(menu.newSession).not.toHaveBeenCalled()
+    expect(document.querySelector('[role=dialog]')).toBeNull()
+    menu.setDisabled(false)
+    const reopened = await menu.open()
+    flushSync(() => reopened[1]?.click())
+    await vi.waitFor(() => expect(menu.action).toHaveBeenCalledWith('reveal', workspace))
+  },
+)
 
 it('offers a compose shortcut and ordered project actions with a separated danger action', async () => {
   const { host, open, newSession, action } = render()

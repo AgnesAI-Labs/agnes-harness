@@ -35,6 +35,11 @@ export type AuthoringTestRunner = (
   signal: AbortSignal,
 ) => Promise<Omit<AuthoringTests, 'hash' | 'completedAt'>>
 const commandCandidateId = (key: string) => 'candidate-' + authoringHash(key).slice(7, 39)
+// PackageSource uses raw paths, not file URLs. Preserve %, # and native POSIX names.
+const candidateSource = (path: string) => ({
+  type: 'file' as const,
+  ref: 'file:' + path.split(sep).join('/'),
+})
 export class AuthoringCandidates {
   private readonly publications = new Set<string>()
   private readonly tails = new Map<string, Promise<unknown>>()
@@ -193,7 +198,7 @@ export class AuthoringCandidates {
     let published = false
     try {
       writeAuthoringFiles(tree, checked)
-      const source = { type: 'file' as const, ref: 'file:' + tree },
+      const source = candidateSource(tree),
         preview = await this.manager.inspect(profileDir, source)
       const installed = (await this.manager.inventory(profileDir)).packages.find((p) => p.id === preview.id)
       const candidateHash = hashDirectory(tree, { exclude: [] })
@@ -248,7 +253,7 @@ export class AuthoringCandidates {
       authoringError('Candidate is terminal; create another candidate')
     const tree = join(this.root(profileDir), id, 'trees', randomUUID())
     writeAuthoringFiles(tree, files)
-    const preview = await this.manager.inspect(profileDir, { type: 'file', ref: 'file:' + tree })
+    const preview = await this.manager.inspect(profileDir, candidateSource(tree))
     if (preview.id !== record.value.packageId) authoringError('Candidate package identity cannot change')
     record.tree = tree
     record.value = {
@@ -308,7 +313,7 @@ export class AuthoringCandidates {
     const paths = [...new Set([...next, ...before].map((f) => f.path))].sort()
     const snapshot = join(this.root(profileDir), id, 'reviews', randomUUID())
     writeAuthoringFiles(snapshot, next)
-    const preview = await this.manager.inspect(profileDir, { type: 'file', ref: 'file:' + snapshot })
+    const preview = await this.manager.inspect(profileDir, candidateSource(snapshot))
     if (preview.integrity !== expected || preview.blockers.length || !preview.capabilityHash)
       authoringError('Candidate inspection is blocked or changed')
     record.snapshot = snapshot
@@ -383,7 +388,7 @@ export class AuthoringCandidates {
     this.save(profileDir, record)
     this.publications.add(id)
     try {
-      await publish({ type: 'file', ref: 'file:' + record.snapshot }, record.value)
+      await publish(candidateSource(record.snapshot), record.value)
       record.value.state = 'published'
       record.value.message =
         'Published. Executable tools and plugin code are available in new sessions; existing sessions keep their pins. Approved live resources refresh at turn boundaries.'

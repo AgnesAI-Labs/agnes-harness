@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { relative, resolve } from 'node:path'
+import { relative, resolve, sep } from 'node:path'
 import type { HostSession } from '@agnes/host'
 import type { EventEnvelope, ToolCall, ToolResult } from '@agnes/protocol'
 import { rpcError } from '@agnes/protocol'
@@ -226,7 +226,8 @@ async function snapshot(session: Reader, scope: 'session' | 'turn', root: string
       continue
     try {
       if (
-        args.path.includes('\\') ||
+        (args.path.includes('\\') &&
+          (sep !== '\\' || (!/^[A-Za-z]:[\\/]/.test(args.path) && /^[\\/]|^[A-Za-z]:/.test(args.path)))) ||
         normalizeWorkspacePath(relative(root, resolve(root, args.path))) !== item.value.path
       )
         continue

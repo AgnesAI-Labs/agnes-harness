@@ -42,7 +42,9 @@ export type SeamProfileView = {
 }
 type BoundSkillRuntimeInput = SkillRuntimeInput & Required<Pick<SkillRuntimeInput, 'runInWorkspace'>>
 /** Safe cross-extension Skill discovery view; it intentionally excludes the body read port. */
-export type SkillRuntimeDiscovery = Readonly<Pick<BoundSkillRuntimeInput, 'list' | 'runInWorkspace'>>
+export type SkillRuntimeDiscovery = Readonly<
+  Pick<BoundSkillRuntimeInput, 'list' | 'runInWorkspace' | 'invocation'>
+>
 
 export type SeamInitContext = {
   searchProvider?: import('@agnes/extension-api').SearchProvider

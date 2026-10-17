@@ -1,7 +1,7 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, open, rename, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { ResourceControlMethodName } from '@agnes/protocol'
+import { jcs, type ResourceControlMethodName, rpcError } from '@agnes/protocol'
 import { windowsWritePrivateFile } from '@agnes/system-node'
 import type { McpLifecycleAdapter, SkillCatalogAdapter } from './adapters.js'
 import type { ResourceStateStore } from './handler.js'
@@ -12,6 +12,7 @@ import { createSkillResourceStore, type SkillResourceStore } from './skills.js'
 
 /** One daemon service with independently durable Skill and MCP journals. */
 export class ResourceControlStore implements ResourceStateStore {
+  private readonly instanceId = randomUUID()
   readonly skills: SkillResourceStore
   readonly mcp: McpResourceStore
   private readonly directory: string
@@ -102,25 +103,7 @@ export class ResourceControlStore implements ResourceStateStore {
         return items
       }
       const skillAll = async (): Promise<{ items: unknown[]; skillRoots?: unknown }> => {
-        const items: unknown[] = []
-        let skillRoots: unknown
-        let cursor: string | undefined
-        do {
-          const page = (await this.skills.call(
-            method,
-            {
-              profile: params.profile,
-              ...(params.kind ? { kind: params.kind } : {}),
-              ...(params.workspaceId ? { workspaceId: params.workspaceId } : {}),
-              ...(cursor ? { cursor } : {}),
-            },
-            authority,
-          )) as { items: unknown[]; nextCursor?: string; skillRoots?: unknown }
-          items.push(...page.items)
-          if (skillRoots === undefined && page.skillRoots) skillRoots = page.skillRoots
-          cursor = page.nextCursor
-        } while (cursor)
-        return { items, ...(skillRoots === undefined ? {} : { skillRoots }) }
+        return this.skills.view(params)
       }
       const [skills, mcp] = await Promise.all([
         skillAll(),
@@ -129,18 +112,37 @@ export class ResourceControlStore implements ResourceStateStore {
         mcpAll(),
       ])
       const kind = params.kind
-      const all = (
+      const sorted = (
         [...(kind === 'mcp' ? [] : skills.items), ...(kind === 'skill' ? [] : mcp)] as Array<{
           resourceId: string
         }>
-      )
-        .sort((a, b) => a.resourceId.localeCompare(b.resourceId))
-        .filter((item) => !params.cursor || item.resourceId > params.cursor)
+      ).sort((a, b) => a.resourceId.localeCompare(b.resourceId))
+      const revision = createHash('sha256')
+        .update(
+          jcs({
+            instance: this.instanceId,
+            profile: params.profile,
+            principal: authority.principalId,
+            kind: kind ?? null,
+            workspace: params.workspaceId ?? null,
+            roots: skills.skillRoots ?? null,
+            items: sorted,
+          }),
+        )
+        .digest('hex')
+      const prefix = `v1:${revision}:`
+      if (params.cursor && (typeof params.cursor !== 'string' || !params.cursor.startsWith(prefix)))
+        throw rpcError('SEMANTIC_REJECTED', {
+          code: 'RESOURCE_CURSOR_STALE',
+          reason: 'Resource list changed; reload the first page',
+        })
+      const after = typeof params.cursor === 'string' ? params.cursor.slice(prefix.length) : undefined
+      const all = sorted.filter((item) => !after || item.resourceId > after)
       const items = all.slice(0, 100)
       const last = items.at(-1)
       return {
         items,
-        ...(all.length > items.length && last ? { nextCursor: last.resourceId } : {}),
+        ...(all.length > items.length && last ? { nextCursor: prefix + last.resourceId } : {}),
         ...(kind === 'mcp' || skills.skillRoots === undefined ? {} : { skillRoots: skills.skillRoots }),
       }
     }

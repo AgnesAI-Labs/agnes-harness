@@ -11,6 +11,7 @@ import { appServerErrorMessage } from '../src/app-server-errors.js'
 import { adminLocaleCatalog } from '../src/locales/admin.js'
 import { resourceDetailLocaleCatalog } from '../src/locales/resource-detail.js'
 import { resourceListLocaleCatalog } from '../src/locales/resource-list.js'
+import { resourceFailureCatalog, resourceFailureLabel } from '../src/resource-failure.js'
 import { createCatalogTranslator } from '../src/ui-locale.js'
 
 describe('admin text labels', () => {
@@ -23,6 +24,24 @@ describe('admin text labels', () => {
     const state = { packageId: 'acme/demo', revision: undefined, phase: 'idle' as const }
     expect(runtimeStateLabel(state, createCatalogTranslator(adminLocaleCatalog, 'en'))).toBe('Not loaded')
     expect(runtimeStateLabel(state, createCatalogTranslator(adminLocaleCatalog, 'zh-CN'))).toBe('未加载')
+  })
+
+  it('explains isolated Skill load failures in both locales without displaying exception text', () => {
+    for (const locale of ['en', 'zh-CN'] as const) {
+      const t = createCatalogTranslator(resourceFailureCatalog, locale)
+      const labels = [
+        'SKILL_ATTACHMENTS_LIMIT',
+        'SKILL_ATTACHMENTS_UNREADABLE',
+        'SKILL_DOCUMENT_INVALID',
+        'SKILL_LOAD_FAILED',
+      ].map((code) => resourceFailureLabel(code, t))
+      expect(new Set(labels).size).toBe(4)
+      for (const label of labels) {
+        expect(label).toContain('Skill')
+        expect(label).not.toContain('resource.error.')
+      }
+      expect(resourceFailureLabel('private path and exception', t)).toBe(t('resource.error.operation'))
+    }
   })
 
   it('separates the overflow count from the first three contributions', () => {

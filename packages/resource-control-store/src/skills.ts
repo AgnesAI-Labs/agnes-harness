@@ -325,34 +325,56 @@ export class SkillResourceStore {
     if (!this.resolveWorkspaceId) return workspaceId
     return this.resolveWorkspaceId(workspaceId)
   }
-  private async list(params: Record<string, unknown>) {
+  /** One complete read for the unified list; its outer pagination must not reread changing runtime IDs. */
+  async view(params: Record<string, unknown>) {
     const workspaceId = await this.bindWorkspace(params.workspaceId as string | undefined)
-    return this.journal.read(params.profile as string, (journal) => {
-      const cursor = params.cursor as string | undefined
-      const all = projected(journal)
+    const saved = await this.journal.read(params.profile as string, (journal) => ({
+      items: projected(journal)
         .filter((item) => !params.kind || item.kind === params.kind)
         .filter((item) => {
           if (!workspaceId || item.sourceIdentity.scope !== 'workspace') return true
           return item.workspaceId === workspaceId
-        })
-        .sort((a, b) => a.resourceId.localeCompare(b.resourceId))
-        .filter((item) => !cursor || item.resourceId > cursor)
-      const items = all.slice(0, 100)
-      const last = items.at(-1)
-      return {
-        items,
-        ...(all.length > items.length && last ? { nextCursor: last.resourceId } : {}),
-        ...(params.kind === 'mcp' ? {} : { skillRoots: projectRoots(journal, workspaceId) }),
-      }
-    })
+        }),
+      skillRoots: projectRoots(journal, workspaceId),
+    }))
+    if (params.kind !== 'mcp' && this.adapter?.view) {
+      saved.items = [
+        ...(await this.adapter.view({
+          profile: params.profile as string,
+          skills: saved.items,
+          signal: AbortSignal.timeout(31_000),
+        })),
+      ]
+      saved.skillRoots.push({
+        rootKey: 'runtime',
+        scope: 'runtime',
+        state: saved.items.some((item) => item.sourceIdentity.scope === 'runtime') ? 'ready' : 'empty',
+      })
+    }
+    return { ...saved, items: saved.items.sort((a, b) => a.resourceId.localeCompare(b.resourceId)) }
+  }
+  private async list(params: Record<string, unknown>) {
+    const view = await this.view(params)
+    const all = view.items.filter((item) => !params.cursor || item.resourceId > String(params.cursor))
+    const items = all.slice(0, 100)
+    const last = items.at(-1)
+    return {
+      items,
+      ...(all.length > items.length && last ? { nextCursor: last.resourceId } : {}),
+      ...(params.kind === 'mcp' ? {} : { skillRoots: view.skillRoots }),
+    }
   }
   private async get(params: Record<string, unknown>) {
-    return this.journal.read(params.profile as string, (journal) => {
-      const item = projected(journal).find((value) => value.resourceId === params.resourceId)
-      if (!item)
-        throw rpcError('SEMANTIC_REJECTED', { code: 'RESOURCE_NOT_FOUND', resourceId: params.resourceId })
-      return item
-    })
+    const workspaceId = await this.journal.read(
+      params.profile as string,
+      (journal) => projected(journal).find((value) => value.resourceId === params.resourceId)?.workspaceId,
+    )
+    const item = (await this.view({ ...params, ...(workspaceId ? { workspaceId } : {}) })).items.find(
+      (value) => value.resourceId === params.resourceId,
+    )
+    if (!item)
+      throw rpcError('SEMANTIC_REJECTED', { code: 'RESOURCE_NOT_FOUND', resourceId: params.resourceId })
+    return item
   }
   private async operation(params: Record<string, unknown>, authority: ResourceAuthority) {
     return this.journal.read(params.profile as string, (journal) => {
@@ -367,6 +389,11 @@ export class SkillResourceStore {
     })
   }
   private async effect(method: EffectMethod, params: Record<string, unknown>, authority: ResourceAuthority) {
+    if (typeof params.resourceId === 'string' && params.resourceId.startsWith('skill/runtime/'))
+      throw rpcError('CAPABILITY_DENIED', {
+        code: 'SKILL_MANAGED_BY_PLUGIN',
+        reason: 'Runtime Skills are managed by their owning plugin',
+      })
     const profile = params.profile as string
     const workspaceId =
       method === '_agnes/v1/skills.refresh'

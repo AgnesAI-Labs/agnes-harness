@@ -15,6 +15,7 @@ import { reportWorkerBootFailure } from './boot-failure.js'
 import { requestPluginManage } from './plugin-manage.js'
 import { profileWakeProducer } from './profile-wake-producer.js'
 import { generationExtensionRestorer } from './runtime-generation-restore.js'
+import { runtimeSkillView } from './skill-view.js'
 import { connectSupervisor } from './supervisor-connection.js'
 import { workerDomainFailure } from './worker-errors.js'
 
@@ -704,6 +705,7 @@ export async function runWorker(
             workspaceRoot?: unknown
             rootKey?: unknown
             snapshotRevision?: unknown
+            skills?: unknown
             descriptor?: unknown
             validateOnly?: unknown
           }
@@ -737,6 +739,12 @@ export async function runWorker(
               snapshotRevision: p.snapshotRevision,
             })
           }
+          if (command.method === 'resourceSkillView')
+            return runtimeSkillView(
+              p,
+              workerResourcesInput.env?.AGNES_RESOURCE_SNAPSHOT ?? process.env.AGNES_RESOURCE_SNAPSHOT,
+              requireHost().runtimeSkillCandidates,
+            )
           if (command.method === 'resourceSkillRemove') {
             if (
               typeof p.workspaceRoot !== 'string' ||

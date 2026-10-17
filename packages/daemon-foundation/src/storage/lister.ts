@@ -15,6 +15,7 @@ import {
   validateAgainst,
 } from '@agnes/protocol'
 import type { SessionLister, SessionMetaRow } from '../local/ports.js'
+import { sidebarMessageTime } from './sidebar-message.js'
 import { ensure, type TableHandle } from './table.js'
 
 type EventGroupRow = { session_key: string; first_ts: number; last_seq: number }
@@ -258,6 +259,7 @@ export interface SessionWorkspacePort {
   get(sessionKey: string): string | undefined
   /** All durable session keys, in stable order, including sessions with no live worker. */
   keys(): string[]
+  aggregate?(): Map<string, { count: number; lastUsedAt: string | null }>
   /** Fold observed ledger rows into the bounded listing projection. */
   observe(sessionKey: string, event: EventEnvelope, generation?: number): void
   metadata(sessionKey: string): SessionWorkspaceMeta | undefined
@@ -270,6 +272,8 @@ export type SessionWorkspaceMeta = {
   title?: string
   /** `ts` of the latest `user/message`; absent until someone chats in the session. */
   lastActiveAt?: string
+  /** Visible main-lane user/assistant text, including a persisted interrupted reply. */
+  lastMessageAt?: string
   createdAt: string
   lastSeq: number
   generation: number
@@ -332,6 +336,12 @@ export class SessionWorkspaceIndex implements SessionWorkspacePort {
     ensureColumn(t, 'title', 'TEXT')
     ensureColumn(t, 'last_active_at', 'TEXT')
     ensureColumn(t, 'loop_pin', 'TEXT')
+    ensureColumn(t, 'message_at', 'INTEGER')
+    ensureColumn(t, 'message_seq', 'INTEGER NOT NULL DEFAULT 0')
+    ensureColumn(t, 'sidebar_sort_at', 'INTEGER NOT NULL DEFAULT 0')
+    ensureColumn(t, 'sidebar_failed', 'INTEGER NOT NULL DEFAULT 0')
+    ensureColumn(t, 'sidebar_group', "TEXT NOT NULL DEFAULT 'unassigned'")
+    ensureColumn(t, 'sidebar_target_seq', 'INTEGER NOT NULL DEFAULT 0')
     // The workspace table shipped before the listing projection. Migrate by direct column probes;
     // PRAGMA is intentionally outside Host's owner SQL allow-list. Each ALTER is idempotent under
     // the one-time probe because an old table has all of these columns missing.
@@ -383,9 +393,19 @@ export class SessionWorkspaceIndex implements SessionWorkspacePort {
       .map((row) => row.session_key)
   }
 
+  aggregate(): Map<string, { count: number; lastUsedAt: string | null }> {
+    return new Map(
+      this.t
+        .all<{ cwd: string; count: number; lastUsedAt: string | null }>(
+          "SELECT cwd, COUNT(*) AS count, MAX(NULLIF(created_at, '')) AS lastUsedAt FROM session_workspaces GROUP BY cwd",
+        )
+        .map(({ cwd, ...summary }) => [cwd, summary]),
+    )
+  }
+
   metadata(sessionKey: string): SessionWorkspaceMeta | undefined {
-    const row = this.t.get<SessionWorkspaceMeta & { loopPin: string | null }>(
-      'SELECT created_at AS createdAt, last_seq AS lastSeq, generation, preset, profile_hash AS profileHash, title, last_active_at AS lastActiveAt, loop_pin AS loopPin FROM session_workspaces WHERE session_key = ?',
+    const row = this.t.get<SessionWorkspaceMeta & { loopPin: string | null; messageAt: number | null }>(
+      'SELECT created_at AS createdAt, last_seq AS lastSeq, generation, preset, profile_hash AS profileHash, title, last_active_at AS lastActiveAt, loop_pin AS loopPin, message_at AS messageAt FROM session_workspaces WHERE session_key = ?',
       [sessionKey],
     )
     if (!row) return undefined
@@ -399,6 +419,7 @@ export class SessionWorkspaceIndex implements SessionWorkspacePort {
       profileHash: row.profileHash ?? null,
       ...(row.title ? { title: row.title } : {}),
       ...(row.lastActiveAt ? { lastActiveAt: row.lastActiveAt } : {}),
+      ...(row.messageAt !== null ? { lastMessageAt: new Date(row.messageAt).toISOString() } : {}),
     }
   }
 
@@ -410,6 +431,7 @@ export class SessionWorkspaceIndex implements SessionWorkspacePort {
     let profileHash = current.profileHash
     let title = current.title
     let lastActiveAt = current.lastActiveAt
+    const messageAt = sidebarMessageTime(event) ?? null
     if (event.seq > current.lastSeq) {
       const generated = readSessionTitle(event)
       if (generated?.status === 'generated') title = generated.title
@@ -418,7 +440,7 @@ export class SessionWorkspaceIndex implements SessionWorkspacePort {
       if (event.type === 'user/message') lastActiveAt = event.ts
     }
     const data = event.data as { preset?: unknown; resolvedProfileHash?: unknown; to?: unknown } | null
-    if (event.type === 'session/start') {
+    if (event.type === 'session/start' && (event.seq > current.lastSeq || !createdAt)) {
       this.t.exec('UPDATE session_workspaces SET loop_pin = ? WHERE session_key = ?', [
         JSON.stringify(loopPin((event.data as { loop?: unknown } | null)?.loop) ?? null),
         sessionKey,
@@ -426,14 +448,22 @@ export class SessionWorkspaceIndex implements SessionWorkspacePort {
       if (!createdAt) createdAt = event.ts
       preset = typeof data?.preset === 'string' ? data.preset : null
       profileHash = typeof data?.resolvedProfileHash === 'string' ? data.resolvedProfileHash : null
-    } else if (event.type === 'x/core/preset-switch' && typeof data?.to === 'string') {
+    } else if (
+      event.seq > current.lastSeq &&
+      event.type === 'x/core/preset-switch' &&
+      typeof data?.to === 'string'
+    ) {
       preset = data.to
     }
     this.t.exec(
       `UPDATE session_workspaces
        SET created_at = ?, last_seq = CASE WHEN last_seq < ? THEN ? ELSE last_seq END,
            generation = CASE WHEN generation < ? THEN ? ELSE generation END,
-           preset = ?, profile_hash = ?, title = ?, last_active_at = ?
+           preset = ?, profile_hash = ?, title = ?, last_active_at = ?,
+           message_at = CASE WHEN ? > message_seq AND ? IS NOT NULL THEN MAX(COALESCE(message_at, ?), ?) ELSE message_at END,
+           sidebar_sort_at = CASE WHEN ? > message_seq AND ? IS NOT NULL
+             THEN MAX(COALESCE(message_at, ?), ?) ELSE COALESCE(message_at, ?) END,
+           message_seq = CASE WHEN ? = message_seq + 1 THEN ? ELSE message_seq END
        WHERE session_key = ?`,
       [
         createdAt || null,
@@ -445,6 +475,17 @@ export class SessionWorkspaceIndex implements SessionWorkspacePort {
         profileHash,
         title ?? null,
         lastActiveAt ?? null,
+        event.seq,
+        messageAt,
+        messageAt,
+        messageAt,
+        event.seq,
+        messageAt,
+        messageAt,
+        messageAt,
+        Number.isFinite(Date.parse(createdAt)) ? Date.parse(createdAt) : 0,
+        event.seq,
+        event.seq,
         sessionKey,
       ],
     )
@@ -509,6 +550,7 @@ export class SessionWorkspaceIndex implements SessionWorkspacePort {
 
 export class MemorySessionWorkspaces implements SessionWorkspacePort {
   private readonly rows = new Map<string, { cwd: string; metadata: SessionWorkspaceMeta }>()
+  private readonly messageSequences = new Map<string, number>()
 
   put(sessionKey: string, cwd: string): void {
     checkWorkspace(sessionKey, cwd)
@@ -540,6 +582,15 @@ export class MemorySessionWorkspaces implements SessionWorkspacePort {
   observe(sessionKey: string, event: EventEnvelope, generation = 0): void {
     const row = this.rows.get(sessionKey)
     if (!row) return
+    const lastMessageSeq = this.messageSequences.get(sessionKey) ?? 0
+    const messageAt = sidebarMessageTime(event)
+    if (
+      event.seq > lastMessageSeq &&
+      messageAt !== undefined &&
+      (!row.metadata.lastMessageAt || messageAt > Date.parse(row.metadata.lastMessageAt))
+    )
+      row.metadata.lastMessageAt = new Date(messageAt).toISOString()
+    if (event.seq === lastMessageSeq + 1) this.messageSequences.set(sessionKey, event.seq)
     if (event.seq > row.metadata.lastSeq) {
       const generated = readSessionTitle(event)
       if (generated?.status === 'generated') row.metadata.title = generated.title

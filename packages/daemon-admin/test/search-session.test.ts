@@ -9,6 +9,7 @@ import { createSearchAdmin } from '@agnes/base/search'
 import { createCredentialStore } from '@agnes/host'
 import { createTestHost } from '@agnes/host/testkit'
 import type { InferenceEvent, ToolCall } from '@agnes/protocol'
+import { createPrivateDirectorySync } from '@agnes/system-node'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createAdminSurface } from '../src/packages/admin-surface.js'
 
@@ -125,8 +126,10 @@ describe('search configured through the admin surface', () => {
         }),
       )
     })
-    const home = mkdtempSync(join(tmpdir(), 'agh-search-session-'))
-    dirs.push(home)
+    const fixtureRoot = mkdtempSync(join(tmpdir(), 'agh-search-session-'))
+    dirs.push(fixtureRoot)
+    const home = join(fixtureRoot, 'home')
+    createPrivateDirectorySync(home)
     const dataDir = join(home, 'data')
     mkdirSync(dataDir, { recursive: true })
     // The launcher writes credentials at the scope home and configuration under scope dataDir.
@@ -258,8 +261,10 @@ describe('search configured through the admin surface', () => {
       )
     })
     installFixtureFetch(fixture.origin)
-    const home = mkdtempSync(join(tmpdir(), 'agh-search-keyed-'))
-    dirs.push(home)
+    const fixtureRoot = mkdtempSync(join(tmpdir(), 'agh-search-keyed-'))
+    dirs.push(fixtureRoot)
+    const home = join(fixtureRoot, 'home')
+    createPrivateDirectorySync(home)
     const dataDir = join(home, 'data')
     mkdirSync(dataDir, { recursive: true })
     const credentials = createCredentialStore({ root: home })

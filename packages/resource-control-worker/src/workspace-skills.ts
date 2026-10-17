@@ -17,6 +17,15 @@ export function workspaceSkills(
     return call?.active && call.sessionKey === sessionKey ? call.runtime : undefined
   }
   return Object.freeze({
+    ...(shared.scopeRuntime
+      ? {
+          scopeRuntime: (accept: Parameters<NonNullable<SkillRuntimeInput['scopeRuntime']>>[0]) =>
+            workspaceSkills(shared.scopeRuntime!(accept), async (root) => {
+              const view = await load(root)
+              return view.scopeRuntime?.(accept) ?? view
+            }),
+        }
+      : {}),
     ...(shared.generationSnapshot
       ? {
           generationSnapshot: () => {

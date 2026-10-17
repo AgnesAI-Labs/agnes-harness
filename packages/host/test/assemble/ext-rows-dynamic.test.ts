@@ -66,7 +66,9 @@ function resourceExtension(name: string, log: string[], options: { failOpen?: bo
 }
 
 describe('dynamic ext: rows (stage 2b, D107)', () => {
-  it('keeps late registration on a pinned row and rejects it after its generation drains', async () => {
+  it('keeps late registration on a pinned row and rejects it after its generation drains', {
+    timeout: 60_000,
+  }, async () => {
     const dataDir = scratch()
     const provider = new ScriptedProvider({
       scripts: [

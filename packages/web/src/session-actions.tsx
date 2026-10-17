@@ -32,6 +32,7 @@ const validRenameTitle = (title: string): boolean =>
 export function createSessionActions(options: {
   client: Client
   changed(): Promise<unknown>
+  renamed?(id: string, title: string): void
   fork(id: string, title: string): Promise<void>
   error(error: unknown): void
   /** A session left the list for the archive; the host says where it went. */
@@ -70,6 +71,7 @@ export function createSessionActions(options: {
   const writeTitle = async (id: string, title: string) => {
     if (!validRenameTitle(title)) throw new Error(t('session.rename.invalidName'))
     await options.client.session.rename(id, title)
+    options.renamed?.(id, title)
   }
   const save = () => {
     if (!target || pending) return

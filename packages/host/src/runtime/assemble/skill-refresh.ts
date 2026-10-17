@@ -3,7 +3,6 @@ import type { ExtensionStatus } from '@agnes/host-extensions/ext-host/index'
 import type { SkillRuntimeInput } from '@agnes/host-extensions/resources/skills'
 import { skillRowRevision, withSkillRows } from '@agnes/host-providers/assemble/skill-row'
 import type { EntryRow } from '@agnes/plugin-runtime/host'
-import { compositionSkills } from '../profile/composition-visibility.js'
 import type { BootRows } from './boot-rows.js'
 import type { AssemblyContext } from './context.js'
 import type { ExtensionHost } from './extension-host.js'
@@ -27,12 +26,11 @@ export function createSkillRefresh(
   const { builtin } = bootRows
   const { builtinRows } = host
   const { extensionRows, prepareExtensionRow, preparedExtensionInputs } = rows
-  const skillOwners = skillState.owners
   let skillRefreshTail: Promise<void> = Promise.resolve()
   let skillRetry = 0
   const refreshSkillRow = (fresh: SkillRuntimeInput | undefined): Promise<void> => {
     const supplied = fresh
-    fresh = compositionSkills(fresh, ctx.profile.composition ?? {}, skillOwners)
+    fresh = skillState.bind(fresh)
     const task = skillRefreshTail.then(async () => {
       const previousRows = extensionRows.current()
       const consumers = previousRows.filter((row) => row.liveResources?.includes('skills'))

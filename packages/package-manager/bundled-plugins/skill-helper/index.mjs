@@ -18,6 +18,8 @@ const meta = (readOnly) => ({
   requiresApproval: readOnly ? 'never' : 'always',
 })
 const hints = {
+  E_PACKAGE_SOURCE: '候选来源或文件不符合要求，请检查文件路径、UTF-8 大小和清单，不要重复提交相同参数。',
+  E_PACKAGE_PREVIEW_STALE: '候选已变化，请重新读取当前候选及摘要后再编辑或提交。',
   SKILL_INSTALL_SESSION_NOT_ATTACHED: '当前会话事件订阅未连接，请刷新当前窗口重新连接后再安装。',
   SKILL_INSTALL_CONNECTION_CLOSED: '发起安装的窗口连接已关闭，请在该窗口重新连接后再安装。',
   SKILL_INSTALL_PERMISSION_CHANGED: '安装期间权限或工作区发生变化，已停止。',
@@ -67,11 +69,22 @@ function failure(value) {
       : '报告错误并停止本次流程。不要换路径反复调用，不要通过 creator/create 重建已有 Skill，也不要用 shell 复制绕过拒绝。只有原因解决或用户明确要求后才重新尝试。',
   }
 }
-const result = (data) => ({
-  ...(['failed', 'interrupted', 'cancelled'].includes(data.state) ? { isError: true } : {}),
-  content: [{ type: 'text', text: JSON.stringify(data) }],
-  structured: data,
-})
+const result = (value, failed = ['failed', 'interrupted', 'cancelled'].includes(value.state)) => {
+  const { files, sourceFiles, preview, ...receipt } = value
+  const data = value.candidateId ? receipt : value
+  return {
+    ...(failed ? { isError: true } : {}),
+    content: [
+      {
+        type: 'text',
+        text: JSON.stringify(
+          value.candidateId ? { ...data, tests: data.tests && { ...data.tests, output: undefined } } : data,
+        ),
+      },
+    ],
+    structured: data,
+  }
+}
 function tool(name, description, parameters, readOnly, execute) {
   return {
     name,
@@ -81,11 +94,10 @@ function tool(name, description, parameters, readOnly, execute) {
     async execute(args, ctx) {
       try {
         const data = await execute(args, ctx)
-        return result(
-          ['failed', 'interrupted', 'cancelled'].includes(data.state)
-            ? { ...data, ...failure(data.message), state: data.state }
-            : data,
-        )
+        const failed =
+          !(args.action === 'status' && args.proposalId?.startsWith('candidate-')) &&
+          (['failed', 'interrupted', 'cancelled'].includes(data.state) || data.tests?.state === 'failed')
+        return result(failed ? { ...data, ...failure(data.message), state: data.state } : data, failed)
       } catch (error) {
         // Host diagnostics may contain local paths or transport internals: expose only stable helper/core codes.
         const code =
@@ -172,11 +184,12 @@ export function createTools({ adapters = sourceAdapters } = {}) {
       `仅用于用户要求创作的新内容；已有目录应使用 import，禁止导入失败后逐文件重建。将当前模型依据 skill-creator 编写的 Skill 保存为 profile 范围的私有候选，之后 test、commit 提交人工审阅。在设置 → 插件批准前绝不加载；导入的 workspace/user 安装仍用 import。不覆盖已有 Skill，不代替模型生成内容，不执行脚本。name 是安装目录名，${NAME_RULE}文件路径相对 Skill 根目录，必须包含 SKILL.md。`,
       object({
         name: {
-          ...string(128),
+          ...string(48),
+          pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$',
           description:
-            'ASCII directory identifier, e.g. requirement-organizer. Put the Chinese display name in SKILL.md frontmatter.name.',
+            'Lowercase kebab directory identifier, at most 48 characters, e.g. requirement-organizer. Put the Chinese display name in SKILL.md frontmatter.name.',
         },
-        files: array(object({ path: string(640), content: string(1024 * 1024, 0) }), 64),
+        files: array(object({ path: string(240), content: string(128 * 1024, 0) }), 64),
       }),
       false,
       async (args, ctx) => {
@@ -199,29 +212,22 @@ export function createTools({ adapters = sourceAdapters } = {}) {
               version: '0.1.0',
               type: 'module',
               license: 'MIT',
-              exports: './index.mjs',
               agnes: {
                 kinds: ['skills'],
-                plugins: [
+                contributions: [
                   {
-                    apiRange: '^4.0.0',
-                    id: 'ext:' + name + '/main',
-                    export: 'main',
-                    inject: ['skills'],
-                    capabilities: {},
+                    kind: 'skill',
+                    id: name + '/main',
+                    path: './skills/' + args.name + '/SKILL.md',
                   },
                 ],
               },
             }),
           },
           {
-            path: 'index.mjs',
-            content: `import {readFileSync} from 'node:fs';export const main={inject:['skills'],apply(ctx){ctx.skills.register({name:${JSON.stringify(args.name)},description:'Use this human-reviewed workflow.',body:readFileSync(new URL('./skills/${args.name}/SKILL.md',import.meta.url),'utf8')})}}\n`,
-          },
-          {
             path: 'README.md',
             content:
-              'Human-reviewed authored Skill package. Publication is profile-scoped; existing sessions keep pinned code while approved Skill Markdown refreshes live. Markdown is data. Scripts require normal tool approval.\n',
+              'Human-reviewed static Skill package. Publication is profile-scoped. Name, description and invocation flags come from SKILL.md. Static package Skills have priority 50; same-name user Skills take precedence. Scripts require normal tool approval. Existing runtime Skill packages require a reviewed update to migrate.\n',
           },
           ...checked.map((f) => ({
             path: 'skills/' + args.name + '/' + f.path,
@@ -229,9 +235,21 @@ export function createTools({ adapters = sourceAdapters } = {}) {
           })),
           {
             path: 'test/skill.test.mjs',
-            content: `import {test} from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';test('reviewed Skill is Markdown data',()=>{const body=readFileSync('skills/${args.name}/SKILL.md','utf8');assert.match(body,/^---\\r?\\n/);assert.match(body,/description:/);assert.ok(body.length>20)})\n`,
+            content: `import {test} from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';test('reviewed Skill uses the static document loader',()=>{const pkg=JSON.parse(readFileSync('package.json','utf8'));assert.deepEqual(pkg.agnes.contributions,[{kind:'skill',id:${JSON.stringify(name + '/main')},path:'./skills/${args.name}/SKILL.md'}]);assert.equal(pkg.agnes.plugins,undefined);const body=readFileSync('skills/${args.name}/SKILL.md','utf8');assert.match(body,/^---\\r?\\n/);assert.ok(Buffer.byteLength(body)<=131072)})\n`,
           },
         ]
+        // Creation has the candidate tree budget; import keeps its separate source limits.
+        if (
+          candidateFiles.length > 64 ||
+          candidateFiles.some(
+            (file) =>
+              file.path.length > 240 ||
+              Buffer.byteLength(file.content) > 128 * 1024 ||
+              file.content.includes('\0'),
+          ) ||
+          candidateFiles.reduce((sum, file) => sum + Buffer.byteLength(file.content), 0) > 256 * 1024
+        )
+          throw fail('SIZE_LIMIT')
         const candidate = await ctx.pluginManage.request({
           action: 'candidate.create',
           files: candidateFiles,

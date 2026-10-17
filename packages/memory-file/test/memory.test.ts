@@ -1,6 +1,6 @@
 import { link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, parse } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { MemoryApprovalResult, MemoryFilePort, MemoryProposal } from '@agnes/extension-api'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -45,6 +45,56 @@ afterEach(async () => {
 })
 
 describe('file memory contract', () => {
+  it.each([
+    'same-volume',
+    ...(process.platform === 'win32' &&
+    parse(tmpdir()).root.toLowerCase() !== parse(process.cwd()).root.toLowerCase()
+      ? ['other-volume']
+      : []),
+  ])('delegates ordinary %s files without granting memory access', async (volume) => {
+    const f = await fixture()
+    const workspace =
+      volume === 'same-volume' ? f.home : await mkdtemp(join(process.cwd(), '.agh-memory-test-'))
+    if (workspace !== f.home) homes.push(workspace)
+    const path = join(workspace, '..draft.md')
+    const session = fileMemoryProvider.open({
+      home: f.home,
+      workspaceRoot: workspace,
+      sessionKey: 'ordinary',
+    })
+    const bytes = Buffer.from('ordinary document')
+    const ordinary: MemoryFilePort = {
+      read: async (requested) => {
+        expect(requested).toBe(path)
+        return bytes
+      },
+      write: async (requested, content) => {
+        expect(requested).toBe(path)
+        await writeFile(requested, content)
+      },
+      list: async () => [],
+      stat: async (requested) => {
+        expect(requested).toBe(path)
+        return { kind: 'file', size: bytes.length, mtimeMs: 0 }
+      },
+    }
+    const files = session.files(
+      ordinary,
+      { sessionKey: 'ordinary', turn: 1 },
+      new AbortController().signal,
+      async () => {
+        throw new Error('ordinary file must not ask for memory approval')
+      },
+    )
+    await files.write(path, bytes)
+    expect(await readFile(path)).toEqual(bytes)
+    expect(await files.read(path)).toEqual(bytes)
+    expect(await files.stat(path)).toMatchObject({ kind: 'file', size: bytes.length })
+    await expect(files.read(join(session.root, 'MEMORY.md'))).rejects.toMatchObject({
+      code: 'MEMORY_DISABLED',
+    })
+  })
+
   it('defaults off and refuses read/write/edit semantics even for aliases and symlinks', async () => {
     const f = await fixture()
     expect(await f.session.snapshot(1)).toBeUndefined()

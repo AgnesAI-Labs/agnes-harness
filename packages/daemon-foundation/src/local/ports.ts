@@ -76,6 +76,7 @@ export type SessionMetaRow = {
   sessionId: string
   parent?: string
   createdAt: string
+  lastMessageAt?: string
   lastSeq: number
   generation: number
   preset: string | null

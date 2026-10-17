@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url'
 import { ScriptedProvider } from '@agnes/ai/testkit'
 import { bindMcpResourceServer, type McpConnection, mcpPublicToolName, skillResourceIdAt } from '@agnes/base'
 import { ToolRegistry } from '@agnes/core'
+import type { ToolContext } from '@agnes/extension-api'
 import { compactionKind, loopKind } from '@agnes/extension-api'
 import { parsePackageBundles } from '@agnes/host-common/profile/composition'
 import type { ResolvedProfile, RouteDecl } from '@agnes/host-common/profile/types'
@@ -33,6 +34,7 @@ import {
 import { defineTool } from '@agnes/plugin-runtime'
 import { createPluginRow, normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { RuntimeSecurityStatus, SessionCapabilitySet, validateAgainst } from '@agnes/protocol'
+import { createSkillCandidateRegistry, createSkillCordisService } from '@agnes/resource-control-runtime'
 import { Type } from '@sinclair/typebox'
 import { expect, it, vi } from 'vitest'
 import { assertHostPublication } from '../../src/runtime/lifecycle/host-facade.js'
@@ -60,6 +62,87 @@ import {
 vi.mock('@agnes/host-infrastructure/adapters/process-identity-default', () => ({
   defaultProcessIdentity: async () => ({ state: 'alive', startId: 'composition-test-worker' }),
 }))
+
+// Integration cases assemble and reopen several real composition Hosts. Their per-case budgets
+// include Windows filesystem work; product startup, drain and recovery deadlines remain unchanged.
+
+it('keeps a runtime Skill out of a session that disables its owning package', async () => {
+  const vendor = 'acme/runtime-skill'
+  const source = pluginSourceWith(
+    [
+      {
+        exportName: 'plugin',
+        rowId: 'ext:acme/runtime-skill',
+        body: "ctx.skills.register({name:'runtime-review',description:'runtime review',body:'Enabled package instructions'})",
+      },
+    ],
+    { vendor },
+  )
+  const manifestPath = join(source.snapshot.directory, 'package.json')
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+  manifest.agnes.plugins[0].inject.push('skills')
+  writeFileSync(manifestPath, JSON.stringify(manifest))
+  const entryPath = join(source.snapshot.directory, 'index.js')
+  writeFileSync(
+    entryPath,
+    readFileSync(entryPath, 'utf8').replace(
+      "inject: ['hooks', 'eventLog', 'self', 'tools']",
+      "inject: ['hooks', 'eventLog', 'self', 'tools', 'skills']",
+    ),
+  )
+  const installed = {
+    ...source,
+    snapshot: {
+      ...source.snapshot,
+      treeIntegrity: hashDirectory(source.snapshot.directory, { exclude: [] }),
+    },
+  }
+  const registry = createSkillCandidateRegistry({ barrier: { quiesce: async (_id, publish) => publish({}) } })
+  const fixture = await pluginHost(installed, {
+    skillResources: registry.snapshot(),
+    skillContribution: createSkillCordisService(registry),
+    allowed: ['standard', 'without-runtime'],
+    presets: {
+      'without-runtime': {
+        name: 'without-runtime',
+        extends: 'standard',
+        composition: { packages: [{ id: vendor, source: 'fixture', enabled: false }] },
+      },
+    },
+  })
+  try {
+    const row = createPluginRow({
+      ...pluginRow('ext:acme/runtime-skill', 'plugin', false, { vendor }),
+      snapshotDigest: source.snapshot.integrity,
+      exportName: 'plugin',
+      inject: ['hooks', 'eventLog', 'self', 'tools', 'skills'],
+    })
+    expect(await fixture.host.applyRuntimeTarget(targetOf([row]))).toMatchObject({ ok: true })
+    const enabled = await fixture.host.createSession({ key: 'skill-enabled', cwd: fixture.dataDir })
+    const disabled = await fixture.host.createSession({
+      key: 'skill-disabled',
+      cwd: fixture.dataDir,
+      preset: 'without-runtime',
+    })
+    const read = async (session: typeof enabled) => {
+      const tool = session.currentTools().resolve('skill_read')
+      if (!tool) throw new Error('missing Skill read tool')
+      return tool.execute({ name: 'runtime-review' }, {
+        session: { key: session.key, lane: session.lane, workspaceRoot: session.workspaceRoot },
+        signal: new AbortController().signal,
+      } as ToolContext)
+    }
+    expect(await read(enabled)).not.toMatchObject({ isError: true })
+    expect(await read(disabled)).toMatchObject({ isError: true })
+    expect(fixture.host.runtimeSkillCandidates?.()).toMatchObject([
+      { name: 'runtime-review', body: 'Enabled package instructions' },
+    ])
+    await enabled.close()
+    await disabled.close()
+  } finally {
+    await fixture.host.close()
+  }
+}, 60_000) // Builds three isolated compositions; measures real Windows assembly, not a timer mock.
 
 function bundleFixture() {
   const ids = ['acme/a', 'acme/b', 'acme/general']
@@ -196,7 +279,7 @@ it('isolates bundle tools from default and other bundles while retaining general
   } finally {
     await fixture.host.close()
   }
-})
+}, 90_000)
 
 it('drains a disabled business bundle while existing sessions retain their code', async () => {
   const { ids, sources, options, row } = bundleFixture()
@@ -236,7 +319,7 @@ it('drains a disabled business bundle while existing sessions retain their code'
   } finally {
     await fixture.host.close()
   }
-})
+}, 90_000)
 
 it('retains a cold bundle pin after the live general plugin is disabled', async () => {
   const { ids, sources, options, row } = bundleFixture()
@@ -262,7 +345,7 @@ it('retains a cold bundle pin after the live general plugin is disabled', async 
   } finally {
     await fixture.host.close()
   }
-})
+}, 90_000)
 
 function presetCompositionFixture() {
   const root = mkdtempSync(join(tmpdir(), 'agnes-compositions-'))
@@ -441,7 +524,7 @@ it('isolates preset compositions and keeps session bundle choices immutable', as
     await host?.close()
     rmSync(root, { recursive: true, force: true })
   }
-})
+}, 90_000)
 
 it('publishes model changes per composition and reports a partial provider refusal', async () => {
   const { root, options, refuseWriter } = presetCompositionFixture()
@@ -497,7 +580,7 @@ it('publishes model changes per composition and reports a partial provider refus
     await host.close()
     rmSync(root, { recursive: true, force: true })
   }
-})
+}, 90_000)
 
 it('restores and migrates pinned preset and bundle compositions after a cold reopen', async () => {
   const { root, options } = presetCompositionFixture()
@@ -568,7 +651,7 @@ it('restores and migrates pinned preset and bundle compositions after a cold reo
     await host?.close()
     rmSync(root, { recursive: true, force: true })
   }
-})
+}, 180_000)
 
 it('restricts Skill reads and optional panels to the selected resources and slots', () => {
   let listed = [
@@ -760,7 +843,7 @@ it('retains a legacy session deployment when bundles are configured after its fi
     await host?.close()
     rmSync(root, { recursive: true, force: true })
   }
-})
+}, 90_000)
 
 it('opens a new composition from the published code after retiring a boot snapshot', async () => {
   const root = mkdtempSync(join(tmpdir(), 'agnes-composition-update-'))
@@ -950,7 +1033,7 @@ it('opens a new composition from the published code after retiring a boot snapsh
     await host?.close()
     rmSync(root, { recursive: true, force: true })
   }
-})
+}, 90_000)
 
 it('uses one MCP server decision for discovery and shared resource invocation', async () => {
   const root = mkdtempSync(join(tmpdir(), 'agnes-capability-mcp-'))
@@ -1030,7 +1113,7 @@ it('uses one MCP server decision for discovery and shared resource invocation', 
     await host.close()
     rmSync(root, { recursive: true, force: true })
   }
-})
+}, 90_000)
 
 it('reclaims idle composition containers while preserving cold bindings', async () => {
   const root = scratch()
@@ -1104,4 +1187,4 @@ it('reclaims idle composition containers while preserving cold bindings', async 
     await host.close()
   }
   expect(disposed).toBe(created)
-})
+}, 90_000)

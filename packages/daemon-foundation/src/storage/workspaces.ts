@@ -266,7 +266,7 @@ export class WorkspaceCatalog {
 
   constructor(
     private readonly store: WorkspaceStore,
-    private readonly sessions: Pick<SessionWorkspacePort, 'put' | 'keys' | 'get' | 'metadata'>,
+    private readonly sessions: Pick<SessionWorkspacePort, 'put' | 'keys' | 'get' | 'metadata' | 'aggregate'>,
     private readonly resolve: WorkspaceDirectoryResolver,
     private readonly clock: () => number = () => Date.now(),
     private readonly bindings: WorkspaceBindingStore = new MemoryWorkspaceBindings(),
@@ -494,6 +494,7 @@ export class WorkspaceCatalog {
   }
 
   private sessionAggregate(): Map<string, { count: number; lastUsedAt: string | null }> {
+    if (this.sessions.aggregate) return this.sessions.aggregate()
     const aggregate = new Map<string, { count: number; lastUsedAt: string | null }>()
     for (const key of this.sessions.keys()) {
       const path = this.sessions.get(key)

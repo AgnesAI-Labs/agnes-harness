@@ -1,3 +1,4 @@
+import { resolve } from 'node:path'
 import { checkToolDef } from '@agnes/extension-api'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
@@ -12,13 +13,13 @@ const textOf = (r: { content: { type: string }[] }): string =>
   (r.content[0] as { type: 'text'; text: string }).text
 
 describe('shell', () => {
-  it('preserves foreground execution for a backend that cannot rewrite host argv', async () => {
-    const ctx = fakeToolContext()
-    ctx.sandbox.confine = async () => {
+  it('preserves foreground execution when the Host process port is unavailable', async () => {
+    const ctx = fakeToolContext({ cwd: resolve('/work/proj') })
+    ctx.sandbox.openProcess = async () => {
       throw Object.assign(new Error('external backend'), { code: 'SANDBOX_UNAVAILABLE' })
     }
     const result = await createShellTool(new ShellJobs()).execute({ command: 'echo ready' }, ctx)
-    expect(result.isError).toBeUndefined()
+    expect(result.isError, JSON.stringify(result)).toBeUndefined()
     expect(ctx.calls.exec).toHaveLength(1)
     expect(ctx.calls.exec[0]).toEqual([SHELL_SENTINEL, 'echo ready'])
   })

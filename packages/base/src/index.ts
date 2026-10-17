@@ -102,8 +102,6 @@ export {
   type SandboxWorkspaceProbeInput,
   sandboxWorkspaceProbe,
 } from '../extensions/sandbox/src/workspace-probe.js'
-// Skill discovery is a pure, bounded parser used by the worker resource bridge. Keeping this
-// public Base seam prevents daemon composition from reimplementing file limits/frontmatter rules.
 export {
   discoverPackageSkill,
   discoverSkillRoot,
@@ -121,6 +119,13 @@ export {
   skillRoots,
   workspaceSkillKey,
 } from '../extensions/skills/src/discover.js'
+// Skill discovery is a pure, bounded parser used by the worker resource bridge. Keeping this
+// public Base seam prevents daemon composition from reimplementing file limits/frontmatter rules.
+export {
+  collectPackageSkillFiles,
+  decodePackageSkillFiles,
+  packageSkillLoadError,
+} from '../extensions/skills/src/package-assets.js'
 // The tools each bundled extension defines, for anything that needs the definitions themselves
 // rather than the registry the extension host fills from them - the schema snapshot generator, a
 // preset test that checks this package's full tool surface against what it actually ships, and the

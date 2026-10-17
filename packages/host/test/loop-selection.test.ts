@@ -1,6 +1,6 @@
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { DEFAULT_LOOP, resetChildAgentAllowlists } from '@agnes/core'
 import {
@@ -22,6 +22,7 @@ import { createConfigurationService } from '@agnes/host-infrastructure/configura
 import { readAdminLoopDefault } from '@agnes/host-providers/assemble/loop-selection'
 import { developmentPluginRows, hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
 import { createSkillCandidateRegistry, createSkillCordisService } from '@agnes/resource-control-runtime'
+import { createPrivateDirectorySync } from '@agnes/system-node'
 import { afterEach, expect, it } from 'vitest'
 import * as dagModule from '../../../examples/loops/dag-loop/index.mjs'
 import { scaffold } from '../../../templates/create-agh-plugin.mjs'
@@ -40,8 +41,10 @@ async function fixture(
   bundle = false,
   installedAfterBoot = false,
 ) {
-  const dataDir = mkdtempSync(join(tmpdir(), 'agnes-loops-'))
-  dirs.push(dataDir)
+  const root = mkdtempSync(join(tmpdir(), 'agnes-loops-'))
+  dirs.push(root)
+  const dataDir = join(root, 'home')
+  createPrivateDirectorySync(dataDir)
   const directory = join(dataDir, 'snapshot')
   const loopSelection = childModule
     ? { id: 'test.children', version: '1.0.0' }
@@ -74,7 +77,7 @@ async function fixture(
   else
     cpSync(fileURLToPath(new URL('../../../examples/loops/dag-loop', import.meta.url)), directory, {
       recursive: true,
-      filter: (path) => !path.includes('/node_modules'),
+      filter: (path) => !path.split(sep).includes('node_modules'),
     })
   const manifest = JSON.parse(
     await import('node:fs/promises').then((fs) => fs.readFile(join(directory, 'package.json'), 'utf8')),
@@ -175,7 +178,7 @@ async function fixture(
       ? createLoader({ cacheDir: join(dataDir, 'cache'), hostRoot: dataDir, agnesVersion: '0.0.0' })
       : {
           import: async (file) => {
-            expect(file.endsWith('/snapshot/index.mjs')).toBe(true)
+            expect(file.split(sep).join('/').endsWith('/snapshot/index.mjs')).toBe(true)
             return childModule ?? dagModule
           },
         },

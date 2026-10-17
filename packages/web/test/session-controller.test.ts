@@ -15,6 +15,7 @@ it.each(['x/core/control', 'user/message'])(
       let shown = 'ready'
       const context = {
         current: session,
+        sessionRows: [],
         selection: 1,
         refreshSessionControls: () => failure,
         list: () => failure,

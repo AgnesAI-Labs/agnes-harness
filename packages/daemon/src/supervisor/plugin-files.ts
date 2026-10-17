@@ -37,7 +37,7 @@ export function checkedPluginFiles(value: unknown): { path: string; content: str
     paths.add(key)
     const size = Buffer.byteLength(f.content)
     total += size
-    if (size > 256 * 1024 || total > 1024 * 1024 || f.content.includes('\0')) return invalid()
+    if (size > 128 * 1024 || total > 256 * 1024 || f.content.includes('\0')) return invalid()
     return { path: f.path, content: f.content }
   })
   const manifest = files.find((f) => f.path === 'package.json')

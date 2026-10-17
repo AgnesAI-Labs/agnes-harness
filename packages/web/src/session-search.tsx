@@ -107,6 +107,8 @@ export function SessionSearch({
   open,
   t,
   recent,
+  recentStatus,
+  retryRecent,
   titleOf,
   request,
   onOpen,
@@ -115,6 +117,8 @@ export function SessionSearch({
   open: boolean
   t: Translate
   recent: readonly SessionSearchRecent[]
+  recentStatus?: 'loading' | 'error' | undefined
+  retryRecent?: (() => void) | undefined
   /** The name the sidebar shows for a session the index has no title for. */
   titleOf(sessionId: string): string | undefined
   request: SessionSearchRequest
@@ -287,6 +291,16 @@ export function SessionSearch({
           </div>
         )}
         {!searching && rows.length > 0 && <p className="session-search-label">{t('home.search.recent')}</p>}
+        {!searching && recentStatus && (
+          <p role={recentStatus === 'error' ? 'alert' : 'status'}>
+            {t(recentStatus === 'error' ? 'home.search.unavailable' : 'nav.loading')}
+            {recentStatus === 'error' && (
+              <Button size="small" onClick={retryRecent}>
+                {t('nav.retry')}
+              </Button>
+            )}
+          </p>
+        )}
         <div
           id={listId}
           className="session-search-results"
@@ -377,13 +391,16 @@ export function SessionSearch({
  */
 export function mountSessionSearch(options: {
   translate: Translate
-  recent(): readonly SessionSearchRecent[]
+  recent(): readonly SessionSearchRecent[] | Promise<readonly SessionSearchRecent[]>
   titleOf?(sessionId: string): string | undefined
   open(sessionId: string): void
   request?: SessionSearchRequest
 }): { open(trigger?: HTMLElement): void; refreshLocale(): void; dispose(): void } {
   const host = createRegionHost(document.body, 'div')
   let opened = false
+  let generation = 0
+  let recent: readonly SessionSearchRecent[] = []
+  let recentStatus: 'loading' | 'error' | undefined
   let returnFocus: HTMLElement | undefined
   const render = () =>
     renderRegion(
@@ -399,7 +416,9 @@ export function mountSessionSearch(options: {
         <SessionSearch
           open={opened}
           t={options.translate}
-          recent={opened ? options.recent() : []}
+          recent={opened ? recent : []}
+          recentStatus={recentStatus}
+          retryRecent={loadRecent}
           titleOf={(id) => options.titleOf?.(id)}
           request={options.request ?? fetchSessionSearch}
           onOpen={options.open}
@@ -410,16 +429,47 @@ export function mountSessionSearch(options: {
   function close(): void {
     if (!opened) return
     opened = false
+    generation++
     render()
     if (returnFocus?.isConnected) returnFocus.focus()
     returnFocus = undefined
+  }
+  function loadRecent(): void {
+    const epoch = ++generation
+    recentStatus = 'loading'
+    try {
+      const value = options.recent()
+      if (Array.isArray(value)) {
+        recent = value
+        recentStatus = undefined
+        render()
+        return
+      }
+      render()
+      void Promise.resolve(value).then(
+        (rows) => {
+          if (!opened || epoch !== generation) return
+          recent = rows
+          recentStatus = undefined
+          render()
+        },
+        () => {
+          if (!opened || epoch !== generation) return
+          recentStatus = 'error'
+          render()
+        },
+      )
+    } catch {
+      recentStatus = 'error'
+      render()
+    }
   }
   const open = (trigger?: HTMLElement) => {
     if (opened) return
     returnFocus =
       trigger ?? (document.activeElement instanceof HTMLElement ? document.activeElement : undefined)
     opened = true
-    render()
+    loadRecent()
   }
   const onKeydown = (event: globalThis.KeyboardEvent) => {
     if (event.defaultPrevented || !isSessionSearchShortcut(event)) return
@@ -445,6 +495,8 @@ export function mountSessionSearch(options: {
     open,
     refreshLocale: render,
     dispose() {
+      opened = false
+      generation++
       document.removeEventListener('keydown', onKeydown)
       unmountRegion(host)
       host.remove()

@@ -382,6 +382,12 @@ class ResourceAdminPage {
         this.#nextCursor = result.nextCursor
         this.#loadState = this.#items.length ? 'ready' : 'empty'
       } catch (error) {
+        if (
+          requestGeneration !== this.#generation ||
+          requestTab !== this.#tab ||
+          requestWorkspace !== this.#workspaceId
+        )
+          return
         this.setNotice('notice.load-more-failed', 'error')
         this.showError(error)
       } finally {
@@ -642,6 +648,7 @@ class ResourceAdminPage {
   }
 
   async toggleDesired(item: Item, next: boolean): Promise<void> {
+    if (item.kind === 'skill' && item.sourceIdentity.scope === 'runtime') return
     const kind = item.kind === 'skill' ? 'Skill' : 'MCP'
     const summary = this.#t('action.request', {
       action: this.#t(next ? 'action.enable' : 'action.disable'),
@@ -691,6 +698,7 @@ class ResourceAdminPage {
     const disabled = !this.writable() || this.#activeOperation !== undefined
     const specs: ResourceDetailAction[] = []
     if (item.kind === 'skill') {
+      if (item.sourceIdentity.scope === 'runtime') return []
       const skill = item
       const removing = skill.lastSafeError?.code === 'SKILL_REMOVAL_PENDING'
       const add = (

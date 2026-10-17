@@ -1,6 +1,8 @@
 import type { ToolContext } from '@agnes/extension-api'
 import { type Context, defineAgnesPlugin, defineTool } from '@agnes/plugin-runtime'
+import type { AuthoringCandidate } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
+import { candidateResult } from './candidate-result.js'
 import { candidateTemplate } from './candidate-templates.js'
 import { creatorAssets } from './generated/assets.js'
 
@@ -18,7 +20,7 @@ const file = Type.Object(
   { path: Type.String({ minLength: 1, maxLength: 240 }), content: Type.String({ maxLength: 131072 }) },
   { additionalProperties: false },
 )
-async function request(ctx: ToolContext, input: unknown) {
+async function request(ctx: ToolContext, input: unknown, read?: { offset?: number; expectedHash?: string }) {
   ctx.signal.throwIfAborted()
   if (!ctx.pluginManage)
     return {
@@ -29,7 +31,7 @@ async function request(ctx: ToolContext, input: unknown) {
     }
   const value = await ctx.pluginManage.request(input)
   ctx.signal.throwIfAborted()
-  return { content: [{ type: 'text' as const, text: JSON.stringify(value) }] }
+  return candidateResult(ctx, value as AuthoringCandidate, read)
 }
 export const pluginCreatorTools = [
   defineTool({
@@ -100,11 +102,19 @@ export const pluginCreatorTools = [
   }),
   defineTool({
     name: 'plugin_candidate_read',
-    description: 'Read a candidate, its files, hash, tests and review state.',
-    parameters: Type.Object({ candidateId }, { additionalProperties: false }),
+    description:
+      'Read candidate source as structured data with a short status and artifact preview. Large sources return candidate-source-page: concatenate consecutive data fragments, then parse once. Continue using nextOffset and expectedHash; stop on a changed hash.',
+    parameters: Type.Object(
+      {
+        candidateId,
+        offset: Type.Optional(Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
+        expectedHash: Type.Optional(expectedHash),
+      },
+      { additionalProperties: false },
+    ),
     meta: { ...meta, isReadOnly: true, isDestructive: false, replay: 'safe', requiresApproval: 'never' },
     async execute(args, ctx) {
-      return request(ctx, { action: 'candidate.show', ...args })
+      return request(ctx, { action: 'candidate.show', candidateId: args.candidateId }, args)
     },
   }),
 ] as const

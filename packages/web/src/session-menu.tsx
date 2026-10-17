@@ -34,7 +34,7 @@ export function SessionMenu({
   useLayoutEffect(() => {
     const button = trigger.current
     const row = button?.closest('.session-row')
-    if (!button || !row) return
+    if (disabled || !button || !row) return
     const sync = () => {
       if (button.getAttribute('aria-expanded') === 'true') {
         if (
@@ -57,42 +57,50 @@ export function SessionMenu({
       row.removeAttribute('data-menu-open')
       if (activeTrigger === button) activeTrigger = null
     }
-  }, [])
+  }, [disabled])
+  const button = (
+    <Button
+      ref={trigger}
+      appearance="ghost"
+      className="session-menu-trigger"
+      disabled={disabled}
+      data-session-action-id={id}
+      aria-label={t('session.menu.triggerAria', { name: title })}
+      aria-haspopup="menu"
+      aria-expanded={false}
+    >
+      <Icon name="ellipsis" />
+    </Button>
+  )
   return (
     <div className="session-menu">
-      <Menu
-        tone="neutral"
-        label={t('session.menu.triggerAria', { name: title })}
-        trigger={
-          <Button
-            ref={trigger}
-            appearance="ghost"
-            className="session-menu-trigger"
-            disabled={disabled}
-            data-session-action-id={id}
-            aria-label={t('session.menu.triggerAria', { name: title })}
-          >
-            <Icon name="ellipsis" />
-          </Button>
-        }
-        items={ITEMS.map(([item, key, icon]) => ({
-          id: item,
-          dividerBefore: item === 'revealWorkspace' || item === 'archive',
-          label: t(
-            item === 'revealWorkspace'
-              ? platform === 'darwin'
-                ? 'session.menu.openFinder'
-                : platform === 'win32'
-                  ? 'session.menu.openExplorer'
-                  : key
-              : key,
-          ),
-          icon: <Icon name={icon} />,
-          onSelect: () => {
-            if (trigger.current) action(item, id, title, trigger.current)
-          },
-        }))}
-      />
+      {disabled ? (
+        button
+      ) : (
+        <Menu
+          tone="neutral"
+          label={t('session.menu.triggerAria', { name: title })}
+          trigger={button}
+          items={ITEMS.map(([item, key, icon]) => ({
+            id: item,
+            dividerBefore: item === 'revealWorkspace' || item === 'archive',
+            label: t(
+              item === 'revealWorkspace'
+                ? platform === 'darwin'
+                  ? 'session.menu.openFinder'
+                  : platform === 'win32'
+                    ? 'session.menu.openExplorer'
+                    : key
+                : key,
+            ),
+            icon: <Icon name={icon} />,
+            onSelect: () => {
+              const current = trigger.current
+              if (!disabled && current?.isConnected && !current.disabled) action(item, id, title, current)
+            },
+          }))}
+        />
+      )}
     </div>
   )
 }

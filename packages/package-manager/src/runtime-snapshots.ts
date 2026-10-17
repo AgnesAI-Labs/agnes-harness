@@ -15,7 +15,12 @@ import {
   snapshotHash,
   syncDirectory,
 } from './integrity.js'
-import { type InstalledPackage, isSnapshotPackageEligible, verifyPackageDirectory } from './inventory.js'
+import {
+  type InstalledPackage,
+  isSnapshotPackageEligible,
+  verifyHashedPackageDirectory,
+  verifyPackageDirectory,
+} from './inventory.js'
 import type { LockEntry, Lockfile } from './lockfile.js'
 import type {
   CreateJournal,
@@ -279,15 +284,16 @@ function verifyRecord(s: RuntimeSnapshotStore, record: SnapshotRecord, directory
   }
   if (!contained(root, actual) || actual === root || basename(actual) !== checkedRecord.snapshotId)
     integrityFailure('runtime-path-escape')
-  if (hashDirectory(actual, { exclude: [] }) !== checkedRecord.treeIntegrity)
-    integrityFailure('runtime-tree-mismatch')
+  const treeIntegrity = hashDirectory(actual, { exclude: [] })
+  if (treeIntegrity !== checkedRecord.treeIntegrity) integrityFailure('runtime-tree-mismatch')
   const source = parseSource(checkedRecord.source.ref)
   if (canonical(source) !== canonical(checkedRecord.source)) integrityFailure('runtime-source-mismatch')
-  verifyPackageDirectory(
+  verifyHashedPackageDirectory(
     checkedRecord.packageId,
     recordEntry(checkedRecord),
     actual,
     contributionCeiling(checkedRecord),
+    treeIntegrity,
   )
   return freezeData({
     snapshotId: checkedRecord.snapshotId,
@@ -328,14 +334,19 @@ function recordEntry(record: SnapshotRecord): LockEntry {
     ...(record.releasedAt ? { releasedAt: record.releasedAt } : {}),
   } as LockEntry
 }
-function pinView(s: RuntimeSnapshotStore, state: RuntimeState, pin: PinRecord): RuntimePin {
+function pinView(
+  s: RuntimeSnapshotStore,
+  state: RuntimeState,
+  pin: PinRecord,
+  verified?: RuntimeSnapshot,
+): RuntimePin {
   const record = state.snapshots[pin.snapshotId]
   if (!record) integrityFailure('pin-snapshot-missing')
   return freezeData({
     pinId: pin.pinId,
     operationId: pin.operationId,
     purpose: pin.purpose,
-    snapshot: verifyRecord(s, record, snapshotDir(s, record.snapshotId)),
+    snapshot: verified ?? verifyRecord(s, record, snapshotDir(s, record.snapshotId)),
   })
 }
 function validateRequest(s: RuntimeSnapshotStore, request: RuntimeSnapshotPinRequest): string {
@@ -573,11 +584,12 @@ export function recoverRuntimeSnapshotStoreAsync(s: RuntimeSnapshotStore): Promi
 function* knownRuntimeDirectoryReadSteps(
   s: RuntimeSnapshotStore,
   state: RuntimeState,
-): Generator<void, void, void> {
+): Generator<void, Map<string, RuntimeSnapshot>, void> {
+  const verified = new Map<string, RuntimeSnapshot>()
   const root = runtimeRoot(s)
   if (!present(root)) {
     if (Object.keys(state.snapshots).length) integrityFailure('runtime-root-missing')
-    return
+    return verified
   }
   if (lstatSync(root).isSymbolicLink()) integrityFailure('runtime-root-symlink')
   const allowed = new Set(Object.keys(state.snapshots))
@@ -585,8 +597,9 @@ function* knownRuntimeDirectoryReadSteps(
     if (!allowed.has(entry)) integrityFailure('unknown-runtime-directory')
   for (const record of Object.values(state.snapshots)) {
     yield
-    verifyRecord(s, record, snapshotDir(s, record.snapshotId))
+    verified.set(record.snapshotId, verifyRecord(s, record, snapshotDir(s, record.snapshotId)))
   }
+  return verified
 }
 
 function assertKnownRuntimeDirectories(s: RuntimeSnapshotStore, state: RuntimeState): void {
@@ -722,11 +735,11 @@ export function runtimePinBlockers(s: RuntimeSnapshotStore, packageId: string): 
 
 function* runtimePinReadSteps(s: RuntimeSnapshotStore): Generator<void, RuntimePin[], void> {
   const state = readState(s)
-  yield* knownRuntimeDirectoryReadSteps(s, state)
+  const verified = yield* knownRuntimeDirectoryReadSteps(s, state)
   const pins: RuntimePin[] = []
   for (const pin of Object.values(state.pins)) {
     yield
-    pins.push(pinView(s, state, pin))
+    pins.push(pinView(s, state, pin, verified.get(pin.snapshotId)))
   }
   return pins
 }

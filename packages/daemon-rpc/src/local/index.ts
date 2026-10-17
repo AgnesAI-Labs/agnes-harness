@@ -295,6 +295,7 @@ export type LocalEndpointOptions = {
    *  currently holds open, nothing from storage. A daemon process with a persistent session index
    *  supplies its own. */
   lister?: SessionLister
+  sidebarSessions?: AgnesContext['sidebarSessions']
   /** Ticket lookup. Local form defaults to memory; daemon supplies the package-owned SQLite index. */
   tickets?: TicketPort
   /** Defaults to an in-memory registry over this endpoint's session ownership. */
@@ -472,6 +473,7 @@ export function createLocalEndpoint(
       ...(opts.verifyApprovalSource ? { verifyApprovalSource: opts.verifyApprovalSource } : {}),
       tickets,
       lister,
+      ...(opts.sidebarSessions ? { sidebarSessions: opts.sidebarSessions } : {}),
       // From the same value that named the principal, so the gates that read the authentication and
       // the ones that read the identity cannot disagree about who this connection is.
       authKind: identity.authKind,

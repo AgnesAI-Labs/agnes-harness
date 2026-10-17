@@ -10,6 +10,7 @@ import {
   type ResolvedProfile,
 } from '@agnes/host'
 import { parseAgnesPluginEntries } from '@agnes/package-manager'
+import { createPrivateDirectorySync } from '@agnes/system-node'
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 
 const createHost = vi.hoisted(() =>
@@ -41,8 +42,10 @@ afterEach(async () => {
 const prompter: Prompter = { ask: async () => 'allowed-once' }
 
 async function packagedHome(): Promise<{ home: string; profile: ResolvedProfile; entryFile: string }> {
-  const home = await mkdtemp(join(tmpdir(), 'agnes-packaged-host-'))
-  temporary.push(home)
+  const root = await mkdtemp(join(tmpdir(), 'agnes-packaged-host-'))
+  temporary.push(root)
+  const home = join(root, 'home')
+  createPrivateDirectorySync(home)
   await mkdir(join(home, 'cache'), { recursive: true })
   await mkdir(join(home, 'profiles', 'local-dev'), { recursive: true })
   const profile = {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { pluginRowSource } from '@agnes/host-extensions/ext-host/row-extension-host'
 import * as processIdentity from '@agnes/host-infrastructure/adapters/process-identity-default'
@@ -237,7 +237,7 @@ it('upgrades the pre-stream-normalization snapshot, reviews current code, reconc
     agnesVersion: '0.1.0',
     references: async () => [],
   })
-  const source = parseSource(`file:${directory}`)
+  const source = parseSource(`file:${directory.split(sep).join('/')}`)
   const oldPreview = await manager.inspect(profileDir, source)
   expect(oldPreview.blockers).toEqual([])
   await manager.install(profileDir, source, { expectedIntegrity: oldPreview.integrity })

@@ -30,6 +30,7 @@ function entryTarget(value: unknown): string | undefined {
 /** Bundle third-party dependencies, retain Host SDK imports, then validate the distributable tree. */
 export async function packPlugin(folder: string, output?: string): Promise<string> {
   const source = resolve(folder)
+  const sourceRef = 'file:' + source.split(sep).join('/')
   if (!lstatSync(source).isDirectory() || lstatSync(source).isSymbolicLink())
     throw new PackageError(
       'E_DEP_MISSING',
@@ -50,7 +51,7 @@ export async function packPlugin(folder: string, output?: string): Promise<strin
   const work = mkdtempSync(join(tmpdir(), 'agh-plugin-pack-'))
   try {
     const tree = join(work, 'package')
-    await fetchSource({ type: 'file', ref: 'file:' + source }, tree, { cwd: source })
+    await fetchSource({ type: 'file', ref: sourceRef }, tree, { cwd: source })
     const manifest = readStaticJson(join(tree, 'package.json'))
     const agnes = manifest.agnes as
       | {
@@ -177,7 +178,7 @@ export async function packPlugin(folder: string, output?: string): Promise<strin
     const integrity = hashDirectory(tree)
     const result = inspectStaged({
       dir: tree,
-      source: { type: 'file', ref: 'file:' + source },
+      source: { type: 'file', ref: sourceRef },
       fetched: {
         dir: tree,
         version: pkg.version,

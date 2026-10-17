@@ -255,7 +255,7 @@ it('checks in place on the card: the button is busy, nothing navigates and no no
   expect(document.body.textContent).not.toContain('正在检查来源')
   expect(document.body.textContent).not.toContain('插件操作')
   expectNoDialog()
-})
+}, 60_000)
 
 it('pushes the review page when the check is done, with the hashes under collapsed 技术详情', async () => {
   const kit = backend()

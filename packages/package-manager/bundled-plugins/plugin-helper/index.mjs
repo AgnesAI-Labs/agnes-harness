@@ -2,7 +2,26 @@ import { array, enumeration, object, string } from './src/schema.mjs'
 import { skinFiles, skinGuidance } from './src/skin.mjs'
 import { toolSource } from './src/templates.mjs'
 
-const result = (data) => ({ content: [{ type: 'text', text: JSON.stringify(data) }] })
+const result = (value, action) => {
+  const { files, sourceFiles, preview, ...receipt } = value
+  const data = value.candidateId ? receipt : value
+  return {
+    ...(action !== 'status' &&
+    (['failed', 'interrupted', 'cancelled', 'rejected'].includes(data.state) ||
+      data.tests?.state === 'failed')
+      ? { isError: true }
+      : {}),
+    content: [
+      {
+        type: 'text',
+        text: JSON.stringify(
+          value.candidateId ? { ...data, tests: data.tests && { ...data.tests, output: undefined } } : data,
+        ),
+      },
+    ],
+    structured: data,
+  }
+}
 const meta = (readOnly, approval = 'never') => ({
   isReadOnly: readOnly,
   isDestructive: false,
@@ -117,9 +136,14 @@ export const pluginHelper = {
       name: 'plugin_helper_create',
       description:
         'Save newly authored AGH plugin files only in the Host candidate area outside discovery roots. Read plugin_helper_guide first. Returns draft with candidateId and candidateHash; does not install or execute code. Stop on policy rejection; do not bypass using shell.',
-      parameters: object({ files: array(object({ path: string(240), content: string(256 * 1024, 0) }), 32) }),
+      parameters: object({ files: array(object({ path: string(240), content: string(128 * 1024, 0) }), 32) }),
       meta: meta(false, 'always'),
       async execute({ files }, ctx) {
+        if (
+          files.some((file) => Buffer.byteLength(file.content) > 128 * 1024) ||
+          files.reduce((sum, file) => sum + Buffer.byteLength(file.content), 0) > 256 * 1024
+        )
+          throw new Error('PLUGIN_FILES_INVALID')
         return result(await port(ctx).request({ action: 'prepare', files }))
       },
     })
@@ -130,7 +154,7 @@ export const pluginHelper = {
       parameters: object({ action: enumeration('test', 'commit', 'status'), proposalId: string(80) }),
       meta: meta(false, 'always'),
       async execute(input, ctx) {
-        return result(await port(ctx).request(input))
+        return result(await port(ctx).request(input), input.action)
       },
     })
   },

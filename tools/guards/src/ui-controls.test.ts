@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { join, relative, sep } from 'node:path'
 import { expect, it } from 'vitest'
 import { isTestFile, listSourceFiles, repoRoot } from './repo.js'
 import { segmentedPresentationViolations } from './segmented-controls.js'
@@ -40,9 +40,10 @@ it('keeps existing call sites explicit and forbids new raw controls or colours o
     extensions: ['.ts', '.tsx', '.css', '.html', '.mjs'],
   })
   const errors = files
+    .map((file) => file.split(sep).join('/'))
     .filter((file) => !isTestFile(file) && !file.includes('/web-ui/') && !/\/(?:test|tests)\//.test(file))
     .flatMap((file) => {
-      const path = relative(root, file)
+      const path = relative(root, file).split(sep).join('/')
       return newControlPresentationViolations(
         controlPresentationCounts(readFileSync(file, 'utf8')),
         baseline[path] ?? {},
@@ -75,6 +76,7 @@ it('reserves segmented presentation for fixed 2–5 short choices and permits de
 it('guards segmented presentation without forcing descriptive option lists into Segmented', () => {
   const root = repoRoot()
   const errors = listSourceFiles(join(root, 'packages'))
+    .map((file) => file.split(sep).join('/'))
     .filter(
       (file) =>
         !isTestFile(file) &&
@@ -83,7 +85,7 @@ it('guards segmented presentation without forcing descriptive option lists into 
     )
     .flatMap((file) =>
       segmentedPresentationViolations(readFileSync(file, 'utf8')).map(
-        (error) => `${relative(root, file)}:${error}`,
+        (error) => `${relative(root, file).split(sep).join('/')}:${error}`,
       ),
     )
   expect(errors, errors.join('\n')).toEqual([])

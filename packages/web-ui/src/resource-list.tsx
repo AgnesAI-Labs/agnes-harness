@@ -339,7 +339,7 @@ export function ResourceRow({
                 ? t('row.from', { name: sourceName })
                 : t('row.from-plugin')
               : item.sourceIdentity.scope === 'runtime'
-                ? t('row.builtin')
+                ? t('row.plugin-managed')
                 : t(`row.mine.${item.sourceIdentity.scope}`)}
           </MetaText>
         }
@@ -357,7 +357,7 @@ export function ResourceRow({
               label={t(enabled ? 'row.disable' : 'row.enable', { name: itemName })}
               checked={enabled}
               busy={busy}
-              disabled={switchDisabled}
+              disabled={switchDisabled || item.sourceIdentity.scope === 'runtime'}
               onToggle={(next) => onToggleDesired(item, next)}
             />
             <Menu

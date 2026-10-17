@@ -12,6 +12,7 @@ import type {
 } from './frames.js'
 import { parseWorkerHello } from './frames.js'
 import { encodeFrame, JsonlDecoder } from './framing.js'
+import { packageManageReplyError } from './package-manage-error.js'
 import { skillInstallReplyError } from './skill-install-error.js'
 
 export type WorkerCommandOptions = {
@@ -326,18 +327,20 @@ export class WorkerLink {
             requestId: frame.requestId,
             sessionKey: frame.sessionKey,
             error:
-              frame.method === 'mcp-manage' || frame.method === 'plugin-manage'
-                ? {
-                    code:
-                      typeof (error as { data?: { code?: unknown } })?.data?.code === 'string'
-                        ? (error as { data: { code: string } }).data.code
-                        : 'HELPER_MANAGEMENT_FAILED',
-                    message:
-                      'The AGH extension operation did not finish. Check its status or policy in Settings.',
-                  }
-                : frame.method === 'skill-install'
-                  ? skillInstallReplyError(error)
-                  : { code: 'E_REQUEST', message: String(error) },
+              frame.method === 'plugin-manage'
+                ? packageManageReplyError(error)
+                : frame.method === 'mcp-manage'
+                  ? {
+                      code:
+                        typeof (error as { data?: { code?: unknown } })?.data?.code === 'string'
+                          ? (error as { data: { code: string } }).data.code
+                          : 'HELPER_MANAGEMENT_FAILED',
+                      message:
+                        'The AGH extension operation did not finish. Check its status or policy in Settings.',
+                    }
+                  : frame.method === 'skill-install'
+                    ? skillInstallReplyError(error)
+                    : { code: 'E_REQUEST', message: String(error) },
           }),
       )
     this.options.onActivity?.(frame.sessionKey)

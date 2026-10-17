@@ -122,10 +122,10 @@ export async function extractPluginArchive(
     if (readFileSync(archive).readUInt32LE(0) === 0x04034b50) unzip(archive, temp)
     else {
       const opts = { cwd: dirname(archive), ...(signal ? { signal } : {}) }
-      const names = (await exec('tar', ['-tf', archive], opts)).stdout.split('\n').filter(Boolean)
+      const names = (await exec('tar', ['-tf', archive], opts)).stdout.split(/\r?\n/).filter(Boolean)
       if (!names.length || names.length > 10000) invalid()
       for (const name of names) if (name !== './') safePath(name)
-      const listing = (await exec('tar', ['-tvf', archive], opts)).stdout.split('\n').filter(Boolean)
+      const listing = (await exec('tar', ['-tvf', archive], opts)).stdout.split(/\r?\n/).filter(Boolean)
       let size = 0
       for (const line of listing) {
         if (line[0] !== '-' && line[0] !== 'd') invalid()

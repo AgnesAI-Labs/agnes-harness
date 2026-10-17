@@ -1,7 +1,7 @@
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, expect, it } from 'vitest'
 import { packPlugin } from '../src/plugin-pack.js'
@@ -15,15 +15,17 @@ afterEach(() => {
 it('shares a bundled third-party dependency into an isolated receiving folder', async () => {
   const root = mkdtempSync(join(tmpdir(), 'agh-sharing-'))
   roots.push(root)
-  const source = join(root, 'author'),
+  const source = join(root, 'author 中文 folder'),
     receiver = join(root, 'friend')
   mkdirSync(source)
   mkdirSync(join(source, 'node_modules'), { recursive: true })
   // Reuse a real installed dependency; no registry access or install scripts.
   const require = createRequire(import.meta.url)
-  cpSync(dirname(require.resolve('yaml/package.json')), join(source, 'node_modules', 'yaml'), {
+  // Stage the dependency outside the Unicode path: Node 24's Windows cpSync can misencode it.
+  cpSync(dirname(require.resolve('yaml/package.json')), join(root, 'yaml'), {
     recursive: true,
   })
+  renameSync(join(root, 'yaml'), join(source, 'node_modules', 'yaml'))
   writeFileSync(
     join(source, 'package.json'),
     JSON.stringify({
@@ -63,7 +65,7 @@ it('shares a bundled third-party dependency into an isolated receiving folder', 
   )
   const archive = await packPlugin(source, join(root, 'shared.tgz'))
   rmSync(source, { recursive: true, force: true })
-  await fetchSource(parseSource('file:' + archive), receiver, { cwd: root })
+  await fetchSource(parseSource('file:' + archive.split(sep).join('/')), receiver, { cwd: root })
   const loaded = await import(pathToFileURL(join(receiver, '.agnes-packed-entry.mjs')).href)
   expect(loaded.main()).toBe('friend')
   const browser = readFileSync(join(receiver, 'client.js'), 'utf8')

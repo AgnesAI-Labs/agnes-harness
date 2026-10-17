@@ -45,6 +45,7 @@ import { resolveModel } from './inference.js'
 import { approveMemoryFile } from './memory-approval.js'
 import { approvalContinuation } from './parked.js'
 import { decideToolPolicy } from './policy-review.js'
+import { preflightError } from './preflight-error.js'
 import {
   deliverToolDecision,
   requestToolDecision,
@@ -446,13 +447,19 @@ export async function approveAndExecute(
       const scheme = /^([a-z][a-z0-9+.-]*):\/\//i.exec(target)?.[1]?.toLowerCase()
       if (scheme && path.nonWorkspaceSchemes?.includes(scheme)) continue
       try {
-        if (!s.d.workspaceInvocation) throw new Error('Workspace path preflight unavailable')
+        if (!s.d.workspaceInvocation)
+          throw Object.assign(new Error('Workspace path preflight unavailable'), {
+            code: 'E_FS_PREFLIGHT_UNAVAILABLE',
+          })
         await s.d.workspaceInvocation.run(async (view) => {
           const fs = view.fs()
           const preflight = async (target: string) => {
             if (fs.preflight) await fs.preflight(target, path.access)
             else if (path.access === 'read') await fs.stat(target)
-            else throw new Error('Workspace write preflight unavailable')
+            else
+              throw Object.assign(new Error('Workspace write preflight unavailable'), {
+                code: 'E_FS_PREFLIGHT_UNAVAILABLE',
+              })
           }
           if (s.d.memory) {
             // Use the same provider-owned file boundary as execution. Metadata inspection cannot
@@ -473,16 +480,12 @@ export async function approveAndExecute(
           } else await preflight(target)
         })
       } catch (error) {
-        if ((error as { code?: string }).code !== 'ENOENT')
+        if ((error as { code?: string } | null)?.code !== 'ENOENT') {
+          const failure = preflightError(error)
           return {
-            result: await refuse(
-              s,
-              call.toolUseId,
-              'E_FS_DENIED',
-              'E_FS_DENIED: Filesystem path denied by policy',
-              decisionId,
-            ),
+            result: await refuse(s, call.toolUseId, failure.code, failure.message, decisionId),
           }
+        }
       }
     }
     const approvalMode = s.d.approvalMode ?? 'manual'

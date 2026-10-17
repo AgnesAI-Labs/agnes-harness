@@ -88,6 +88,7 @@ export type WorkerMethod =
   | 'computerUse.operationStatus'
   | 'computerUse.operationCancel'
   | 'resourceSkillScan'
+  | 'resourceSkillView'
   | 'resourceSkillRemove'
   | 'resourceMcpTest'
   | 'resourceMcpTools'

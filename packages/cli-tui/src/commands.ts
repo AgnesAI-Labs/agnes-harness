@@ -87,7 +87,7 @@ export type SessionChoice = {
   sessionId: string
   createdAt: string
   lastSeq: number
-  preset: string
+  preset: string | null
   title?: string
 }
 

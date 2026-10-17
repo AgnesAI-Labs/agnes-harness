@@ -58,6 +58,8 @@ it.each([
   'metadata-failure',
 ] as const)(
   'settles an initial %s memory write without losing revision or approval facts',
+  // This contract runs several real Host turns and flushes the telemetry collector.
+  { timeout: 60_000 },
   async (initialAnswer) => {
     const home = await mkdtemp(join(tmpdir(), 'agh-host-memory-'))
     homes.push(home)

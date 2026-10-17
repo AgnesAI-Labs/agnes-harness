@@ -195,6 +195,41 @@ export function installResourceServiceAdapters(input: ResourceAdapterOptions): {
   }
   localResourceStore.setAdapters({
     skills: {
+      view: async ({ profile, skills, signal }) => {
+        if (profile !== o.profile.name) throw new Error('resource profile mismatch')
+        const snapshotRevision = await currentSnapshotRevision()
+        const link = await sharedWorker(signal)
+        const raw = await link.command(
+          'resourceSkillView',
+          { skills, snapshotRevision },
+          { timeoutMs: 31_000 },
+        )
+        if (
+          link.alive === false ||
+          (await pool.acquireSharedWorker()) !== link ||
+          (await currentSnapshotRevision()) !== snapshotRevision
+        )
+          throw new Error('runtime Skill view changed during read')
+        if (
+          !raw ||
+          typeof raw !== 'object' ||
+          (raw as { snapshotRevision?: unknown }).snapshotRevision !== snapshotRevision ||
+          !Array.isArray((raw as { skills?: unknown }).skills) ||
+          !(raw as { skills: unknown[] }).skills.every(
+            (skill) => validateResourceControlData('SkillDescriptor', skill).ok,
+          )
+        )
+          throw new Error('invalid private Skill view reply')
+        const result = (raw as { skills: SkillDescriptor[] }).skills
+        const known = new Set(skills.map((skill) => skill.resourceId))
+        if (
+          new Set(result.map((skill) => skill.resourceId)).size !== result.length ||
+          result.some((skill) => skill.sourceIdentity.scope !== 'runtime' && !known.has(skill.resourceId)) ||
+          skills.some((skill) => !result.some((item) => item.resourceId === skill.resourceId))
+        )
+          throw new Error('incomplete private Skill view reply')
+        return result
+      },
       validateRemove: ({ profile, descriptor }) =>
         removeSkill(profile, descriptor, new AbortController().signal, true),
       remove: ({ profile, descriptor, signal }) => removeSkill(profile, descriptor, signal, false),

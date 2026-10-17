@@ -30,7 +30,7 @@ it.each([false, true])('discovers optional pinned helper even with broken exampl
   ).toBe(true)
   expect(result.entries[0]).toMatchObject({
     id: '@agnes/skill-helper',
-    version: '0.2.0',
+    version: '0.2.1',
     sourceId: 'builtin-plugins',
     source: { type: 'file', ref: 'file:./bundled-plugins/skill-helper' },
   })

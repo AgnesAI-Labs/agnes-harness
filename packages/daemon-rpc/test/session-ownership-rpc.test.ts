@@ -24,6 +24,46 @@ const meta = (sessionId: string): SessionMetaRow => ({
 })
 
 describe('authenticated session ownership RPC guard', () => {
+  it('binds sidebar queries to the authenticated principal and never enumerates legacy owner IDs', async () => {
+    const h = await openTestHost()
+    const groups = vi.fn(async () => ({ items: [], ready: true }))
+    const list = vi.fn(async () => ({ items: [], total: 0, revision: 'v1' }))
+    const legacy = vi.fn(async () => ({ items: [] }))
+    const endpoint = h.endpoint({
+      identity: { principalId: 'sidebar-owner', authKind: 'jwt', credentialKind: 'jwt' },
+      sidebarSessions: { groups, list },
+      lister: { list: legacy },
+    })
+    try {
+      await endpoint.handle(initialize)
+      await expect(
+        endpoint.handle({ jsonrpc: '2.0', id: 2, method: '_agnes/v1/session.groups', params: {} }),
+      ).resolves.toMatchObject({ result: { ready: true } })
+      expect(groups).toHaveBeenCalledWith('sidebar-owner')
+      await expect(
+        endpoint.handle({
+          jsonrpc: '2.0',
+          id: 3,
+          method: '_agnes/v1/session.list',
+          params: { sidebar: { groupId: 'unassigned' }, limit: 5 },
+        }),
+      ).resolves.toMatchObject({ result: { total: 0, revision: 'v1' } })
+      expect(list).toHaveBeenCalledWith('sidebar-owner', { groupId: 'unassigned', limit: 5 })
+      expect(legacy).not.toHaveBeenCalled()
+      for (const params of [
+        { sidebar: { groupId: 'unassigned' }, q: {} },
+        { sidebar: { groupId: 'unassigned' }, limit: 6 },
+        { sidebar: { groupId: 'unassigned' }, principalId: 'foreign' },
+      ])
+        await expect(
+          endpoint.handle({ jsonrpc: '2.0', id: 4, method: '_agnes/v1/session.list', params }),
+        ).resolves.toHaveProperty('error')
+      expect(list).toHaveBeenCalledTimes(1)
+    } finally {
+      await endpoint.close()
+      await h.close()
+    }
+  })
   it('keeps the Host canonical session key when the client does not supply one', async () => {
     const h = await openTestHost()
     const endpoint = h.endpoint()

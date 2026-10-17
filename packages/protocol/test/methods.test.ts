@@ -282,6 +282,7 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/session.loadingCancel',
         '_agnes/v1/session.fileUpload',
         '_agnes/v1/session.fork',
+        '_agnes/v1/session.groups',
         '_agnes/v1/session.list',
         '_agnes/v1/session.preview',
         '_agnes/v1/session.projectUI',
@@ -323,6 +324,8 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/surfaces.mounts',
         '_agnes/v1/workspace.add',
         '_agnes/v1/workspace.list',
+        '_agnes/v1/workspace.reveal',
+        '_agnes/v1/workspace.remove',
         'authenticate',
         'initialize',
         'session/cancel',
@@ -334,7 +337,7 @@ describe('methods (I1 set)', () => {
         'session/update',
       ].sort(),
     )
-    expect(Object.keys(METHODS)).toHaveLength(203)
+    expect(Object.keys(METHODS)).toHaveLength(206)
     expect(METHODS['_agnes/v1/session.loading']).toMatchObject({ kind: 'notification', direction: 's2c' })
     expect(METHODS['_agnes/v1/session.loadingCancel']).toMatchObject({
       kind: 'notification',
@@ -1070,9 +1073,16 @@ describe('methods (I1 set)', () => {
         limit: 20,
       }).ok,
     ).toBe(true)
-    expect(errorsOf(validateMethod('_agnes/v1/session.list', 'params', { limit: 0 }))).toContainEqual(
-      expect.objectContaining({ code: 'RANGE', key: 'limit' }),
-    )
+    // The legacy and sidebar shapes share a union; invalid input is rejected at that boundary.
+    expect(validateMethod('_agnes/v1/session.list', 'params', { limit: 0 }).ok).toBe(false)
+    const sidebar = { groupId: 'unassigned' }
+    expect(validateMethod('_agnes/v1/session.list', 'params', { sidebar, limit: 5 }).ok).toBe(true)
+    for (const input of [
+      { sidebar, limit: 0 },
+      { sidebar, limit: 6 },
+      { sidebar, q: { cwd: '/work' } },
+    ])
+      expect(validateMethod('_agnes/v1/session.list', 'params', input).ok).toBe(false)
     const meta = {
       sessionId: 's',
       createdAt: '2026-09-10T00:00:00Z',

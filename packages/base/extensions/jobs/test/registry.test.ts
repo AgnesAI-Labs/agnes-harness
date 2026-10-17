@@ -182,7 +182,7 @@ it('keeps backend origin, isolates controls and reports slow or capped output wi
 
 it('retains failed cleanup for explicit retry instead of discarding the owned handle', async () => {
   const jobs = new ShellJobs(),
-    ctx = fakeToolContext({ sessionKey: 'cleanup-retry' })
+    ctx = fakeToolContext({ sessionKey: 'cleanup-retry', cwd: resolve('/work/proj') })
   let finish!: (exit: import('@agnes/extension-api').ProcessExit) => void
   let failing = true
   ctx.sandbox.openProcess = async () => ({

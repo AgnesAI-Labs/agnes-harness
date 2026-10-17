@@ -295,15 +295,24 @@ describe('HostedSessions hibernates idle sessions and wakes them on demand', () 
     const held = new Promise<void>((resolve) => {
       release = resolve
     })
+    let entered!: () => void
+    const running = new Promise<void>((resolve) => {
+      entered = resolve
+    })
     const call = t.hosted.withSession('service', 'callService', async () => {
       expect(t.hibernated('service')).toBe(false)
+      entered()
       await held
       return 'served'
     })
-    await vi.waitFor(() => expect(t.hibernated('service')).toBe(false))
-    await t.idle(10 * T)
-    expect(t.hibernated('service')).toBe(false)
-    release()
+    try {
+      // Resume rebuilds a real session; wait for the command instead of a one-second poll budget.
+      await Promise.race([running, call])
+      await t.idle(10 * T)
+      expect(t.hibernated('service')).toBe(false)
+    } finally {
+      release()
+    }
     await expect(call).resolves.toBe('served')
     // An unknown key is passed straight through, as before.
     await expect(t.hosted.withSession('nobody', 'inspectService', async () => 'through')).resolves.toBe(

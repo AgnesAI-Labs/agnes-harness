@@ -5,6 +5,110 @@ import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { expect, it, vi } from 'vitest'
 import pluginCreator, { pluginCreatorTools } from '../src/index.js'
 
+it('returns large candidate sources as program data, with a bounded display and short write receipt', async () => {
+  const candidateId = `candidate-${'a'.repeat(32)}`,
+    candidateHash = `sha256-${'b'.repeat(64)}`
+  const sourceFiles = [{ path: 'large.md', content: '中文'.repeat(10_000) }]
+  const ctx = {
+    signal: new AbortController().signal,
+    outputMaxBytes: 4096,
+    pluginManage: {
+      request: async () => ({
+        candidateId,
+        candidateHash,
+        sourceFiles,
+        files: sourceFiles.map((f) => ({ path: f.path, before: null, after: f.content })),
+      }),
+    },
+  } as unknown as ToolContext
+  const read = await pluginCreatorTools[5].execute({ candidateId }, ctx)
+  expect(read).toMatchObject({ structured: { candidateId, candidateHash, sourceFiles } })
+  expect(Buffer.byteLength(JSON.stringify(read.content))).toBeLessThan(4096)
+  const written = await pluginCreatorTools[4].execute(
+    { candidateId, expectedHash: candidateHash, files: sourceFiles },
+    ctx,
+  )
+  expect(JSON.stringify(written)).not.toContain(sourceFiles[0]!.content)
+  expect(written).toMatchObject({ structured: { candidateId, candidateHash } })
+})
+
+it.each(['中文🙂'.repeat(9000), '\u0001'.repeat(120_000), '\ufeffA\r\nB\n"\\'.repeat(9000)])(
+  'reads exact source bytes across pages and rejects invalid offsets and changed hashes',
+  async (content) => {
+    const candidateId = `candidate-${'a'.repeat(32)}`,
+      candidateHash = `sha256-${'b'.repeat(64)}`
+    const sourceFiles = [
+      { path: 'source.txt', content },
+      { path: 'empty.txt', content: '' },
+    ]
+    let hash = candidateHash
+    const put = vi.fn(async (bytes: Uint8Array) => ({
+      sha256: 'c'.repeat(64),
+      size: bytes.length,
+      mime: 'text/plain',
+    }))
+    const request = vi.fn(async () => ({ candidateId, candidateHash: hash, sourceFiles }))
+    const ctx = {
+      signal: new AbortController().signal,
+      outputMaxBytes: 4096,
+      artifacts: { put },
+      pluginManage: { request },
+    } as unknown as ToolContext
+    let offset = 0,
+      combined = '',
+      total = 0
+    for (let count = 0; count < 128; count++) {
+      const result = await pluginCreatorTools[5].execute(
+        { candidateId, offset, expectedHash: candidateHash },
+        ctx,
+      )
+      expect(result.isError).not.toBe(true)
+      expect(Buffer.byteLength(JSON.stringify(result.structured))).toBeLessThan(256 * 1024)
+      expect(Buffer.byteLength(JSON.stringify(result.content))).toBeLessThan(4096)
+      const page = result.structured as {
+        kind: string
+        offset: number
+        data: string
+        nextOffset: number | null
+        totalBytes: number
+      }
+      expect(page.kind).toBe('candidate-source-page')
+      expect(page.offset).toBe(offset)
+      combined += page.data
+      total = page.totalBytes
+      if (page.nextOffset === null) break
+      expect(page.nextOffset).toBe(offset + Buffer.byteLength(page.data))
+      expect(page.nextOffset).toBeGreaterThan(offset)
+      offset = page.nextOffset
+    }
+    expect(Buffer.byteLength(combined)).toBe(total)
+    expect(JSON.parse(combined)).toEqual({ candidateId, candidateHash, sourceFiles })
+    expect(put).toHaveBeenCalledOnce()
+    expect(request).toHaveBeenCalledWith({ action: 'candidate.show', candidateId })
+    expect(request).toHaveBeenLastCalledWith({ action: 'candidate.show', candidateId })
+    for (const bad of [-1, 0.5, total + 1])
+      expect(
+        await pluginCreatorTools[5].execute({ candidateId, offset: bad, expectedHash: candidateHash }, ctx),
+      ).toMatchObject({ isError: true })
+    expect(await pluginCreatorTools[5].execute({ candidateId, offset: 1 }, ctx)).toMatchObject({
+      isError: true,
+    })
+    const multi = Buffer.from(combined).findIndex((byte) => (byte & 0xc0) === 0x80)
+    if (multi >= 0)
+      expect(
+        await pluginCreatorTools[5].execute({ candidateId, offset: multi, expectedHash: candidateHash }, ctx),
+      ).toMatchObject({ isError: true })
+    expect(
+      (await pluginCreatorTools[5].execute({ candidateId, offset: total, expectedHash: candidateHash }, ctx))
+        .structured,
+    ).toMatchObject({ data: '', nextOffset: null })
+    hash = `sha256-${'d'.repeat(64)}`
+    expect(
+      await pluginCreatorTools[5].execute({ candidateId, offset: 0, expectedHash: candidateHash }, ctx),
+    ).toMatchObject({ isError: true, details: { code: 'E_PACKAGE_PREVIEW_STALE' } })
+  },
+)
+
 it('submits only an exact candidate hash through the host, propagates refusal and cancellation, and never executes an install', async () => {
   const exec = vi.fn(),
     request = vi.fn(async () => {
@@ -49,6 +153,14 @@ it('scaffolds complete inert text through the host rather than reading virtual a
     expect(input.files.some((f) => /\.test\.mjs$/.test(f.path))).toBe(true)
     const pkg = JSON.parse(input.files.find((f) => f.path === 'package.json')!.content)
     expect(pkg.name).toBe('review-demo')
+    if (template === 'skill') {
+      expect(pkg.agnes.plugins).toBeUndefined()
+      expect(pkg.agnes.contributions).toEqual([
+        { kind: 'skill', id: 'review-demo/main', path: './skills/review-demo/SKILL.md' },
+      ])
+      expect(input.files.some((file) => file.path === 'index.mjs')).toBe(false)
+      continue
+    }
     expect(pkg.agnes.plugins[0].apiRange).toBe('^4.0.0')
     expect(pkg.agnes.plugins[0].inject).toEqual(
       {
@@ -57,7 +169,6 @@ it('scaffolds complete inert text through the host rather than reading virtual a
         'mcp-skills': ['skills'],
         'model-adapter': ['providers'],
         loop: ['tools', 'providers', 'skills'],
-        skill: ['skills'],
       }[template],
     )
     const entry = input.files.find((file) => /^(?:src\/)?index\.(?:ts|mjs)$/.test(file.path))
@@ -117,14 +228,15 @@ it('reads the bundled creator skill without executing commands and fails closed 
   expect(program).toBeDefined()
   expect(program!.length).toBeLessThan(8192)
   const tools = {
-    plugin_candidate_read: (args: { candidateId: string }) => pluginCreatorTools[5].execute(args, writable),
+    plugin_candidate_read: async (args: { candidateId: string }) =>
+      (await pluginCreatorTools[5].execute(args, writable)).structured,
     plugin_candidate_write: (args: {
       candidateId: string
       expectedHash: string
       files: typeof sourceFiles
-    }) => pluginCreatorTools[4].execute(args, writable),
+    }) => pluginCreatorTools[4].execute(args, writable).then((result) => result.structured),
   }
-  expect(await runInNewContext(`(async () => {${program}})()`, { tools })).toEqual({
+  expect(await runInNewContext(`(async () => {${program}})()`, { tools, TextEncoder })).toEqual({
     candidateId,
     candidateHash: `sha256-${'c'.repeat(64)}`,
   })

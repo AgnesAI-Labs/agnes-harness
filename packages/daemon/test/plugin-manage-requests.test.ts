@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createPackageManager, emptyLock, writeLock } from '@agnes/package-manager'
 import type { AuthoringCandidate } from '@agnes/protocol'
+import { createPrivateDirectorySync } from '@agnes/system-node'
 import { afterEach, expect, it, vi } from 'vitest'
 import { LocalEndpoint } from '../src/local/endpoint.js'
 import { createPackageAdminService, FilePackageOperationStore } from '../src/packages/index.js'
@@ -43,8 +44,10 @@ const files = [
   { path: 'index.mjs', content: source },
 ] as const
 async function setup(candidateTestPolicy?: 'allow' | 'ask') {
-  const root = mkdtempSync(join(tmpdir(), 'agh-plugin-helper-'))
-  roots.push(root)
+  const fixtureRoot = mkdtempSync(join(tmpdir(), 'agh-plugin-helper-'))
+  roots.push(fixtureRoot)
+  const root = join(fixtureRoot, 'home')
+  createPrivateDirectorySync(root)
   const profileDir = join(root, 'profiles', 'local-dev')
   mkdirSync(profileDir, { recursive: true })
   writeLock(profileDir, {

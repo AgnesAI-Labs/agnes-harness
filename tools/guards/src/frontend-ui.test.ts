@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { join, relative, sep } from 'node:path'
 import { expect, it } from 'vitest'
 import { frontendUiViolations } from './frontend-ui.js'
 import { isTestFile, listSourceFiles, repoRoot } from './repo.js'
@@ -59,7 +59,7 @@ it('keeps every frontend source inside the shared presentation boundaries', () =
       (file) => !isTestFile(file),
     )) {
       const source = readFileSync(file, 'utf8')
-      const rel = relative(root, file)
+      const rel = relative(root, file).split(sep).join('/')
       for (const violation of frontendUiViolations(source, rel))
         violations.push(
           `${rel}:${source.slice(0, violation.offset).split('\n').length} ${violation.rule}: ${violation.text}`,

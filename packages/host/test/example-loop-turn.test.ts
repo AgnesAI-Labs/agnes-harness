@@ -1,6 +1,6 @@
 import { cpSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { fakeModel, stampFor } from '@agnes/ai/testkit'
 import { hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
@@ -57,7 +57,7 @@ async function runExampleTurn(kind: keyof typeof cases) {
   const directory = join(dataDir, 'snapshot')
   cpSync(fileURLToPath(spec.source), directory, {
     recursive: true,
-    filter: (path) => !path.includes('/node_modules'),
+    filter: (path) => !path.split(sep).includes('node_modules'),
   })
   const source: RuntimePluginSnapshot = {
     snapshot: {
@@ -104,7 +104,7 @@ async function runExampleTurn(kind: keyof typeof cases) {
     runtimePluginSources: async () => [source],
     extensionLoader: {
       import: async (file) => {
-        expect(file.endsWith('/snapshot/index.mjs')).toBe(true)
+        expect(file.split(sep).join('/').endsWith('/snapshot/index.mjs')).toBe(true)
         return spec.module
       },
     },
@@ -197,7 +197,7 @@ async function openExample(kind: keyof typeof cases, provider: Provider) {
   const directory = join(dataDir, 'snapshot')
   cpSync(fileURLToPath(spec.source), directory, {
     recursive: true,
-    filter: (path) => !path.includes('/node_modules'),
+    filter: (path) => !path.split(sep).includes('node_modules'),
   })
   const source: RuntimePluginSnapshot = {
     snapshot: {
@@ -244,7 +244,7 @@ async function openExample(kind: keyof typeof cases, provider: Provider) {
     runtimePluginSources: async () => [source],
     extensionLoader: {
       import: async (file) => {
-        expect(file.endsWith('/index.mjs')).toBe(true)
+        expect(file.split(sep).join('/').endsWith('/index.mjs')).toBe(true)
         return spec.module
       },
     },

@@ -92,6 +92,62 @@ export function registerSkillHelperTests(test) {
     assert.equal(valid.structured.state, 'draft')
     assert.equal(c.writes.length, 0)
     assert.match(c.requests[0].files.find((f) => f.path.endsWith('/SKILL.md')).content, /name: 需求整理助手/)
+    const manifest = JSON.parse(c.requests[0].files.find((f) => f.path === 'package.json').content)
+    assert.equal(manifest.agnes.plugins, undefined)
+    assert.deepEqual(manifest.agnes.contributions, [
+      {
+        kind: 'skill',
+        id: 'agh-skill-requirement-organizer/main',
+        path: './skills/requirement-organizer/SKILL.md',
+      },
+    ])
+    assert.equal(
+      c.requests[0].files.some((file) => file.path === 'index.mjs'),
+      false,
+    )
+  })
+  test('creation applies the final candidate UTF-8 budget without narrowing import', async () => {
+    for (const files of [
+      [
+        { path: 'SKILL.md', content: doc },
+        { path: 'references/big.md', content: '中'.repeat(44000) },
+      ],
+      [
+        { path: 'SKILL.md', content: doc },
+        ...Array.from({ length: 64 }, (_, i) => ({ path: `references/f${i}.md`, content: 'x' })),
+      ],
+      [
+        { path: 'SKILL.md', content: doc },
+        { path: `references/${'a'.repeat(220)}.md`, content: 'x' },
+      ],
+      [
+        { path: 'SKILL.md', content: doc },
+        ...['a', 'b'].map((name) => ({ path: `references/${name}.md`, content: 'x'.repeat(128 * 1024) })),
+      ],
+    ]) {
+      const x = context()
+      assert.equal((await run('create', { name: 'demo', files }, x.ctx)).isError, true)
+      assert.equal(x.requests.length + x.writes.length, 0)
+    }
+    assert.equal(
+      checkedFiles([
+        { path: 'SKILL.md', content: doc },
+        { path: 'references/big.md', content: 'x'.repeat(140000) },
+      ]).length,
+      2,
+    )
+  })
+  test('candidate test failure is an error while status remains readable', async () => {
+    const x = context()
+    x.ctx.pluginManage.request = async () => ({ state: 'tested', tests: { state: 'failed' } })
+    assert.equal(
+      (await run('install', { action: 'test', proposalId: 'candidate-' + 'a'.repeat(32) }, x.ctx)).isError,
+      true,
+    )
+    assert.equal(
+      (await run('install', { action: 'status', proposalId: 'candidate-' + 'a'.repeat(32) }, x.ctx)).isError,
+      undefined,
+    )
   })
   function zip(entries) {
     const locals = [],

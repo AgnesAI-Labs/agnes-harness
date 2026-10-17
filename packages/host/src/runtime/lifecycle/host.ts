@@ -37,6 +37,7 @@ import type { LiveCompositionSession } from '@agnes/host-providers/profile/compo
 import { currentCorrelation } from '@agnes/observability'
 import type { RuntimeTarget } from '@agnes/plugin-runtime/host'
 import type { Actor, ExtensionCallParams, ExtensionCallResult, ThinkingLevel } from '@agnes/protocol'
+import { readRuntimeSkillCandidates, type SkillCandidate } from '@agnes/resource-control-runtime'
 import { startApprovalExpiry } from '../approval/expiry.js'
 import { type AssembleDeps, type Assembled, assemble } from '../assemble/assemble.js'
 import { createRuntimeGenerationHost, type PluginGenerationStatus } from '../generation/host.js'
@@ -141,6 +142,8 @@ export interface Host {
   collectPluginGenerations?(): Promise<void>
   /** Host-private immutable target projection for generation assembly. */
   runtimeTargetSnapshot?(): RuntimeTarget
+  /** Current deployment only. Does not change the versions pinned by existing sessions. */
+  runtimeSkillCandidates?(): readonly SkillCandidate[]
   /** Privileged coordination port. It is not reachable from ExtensionAPI or any wire request. */
   readonly activationBarrier: ExtensionActivationBarrier
   /** Authenticated management port. It is not registered as a model tool or extension service. */
@@ -737,6 +740,12 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
     },
     ordinaryConvergence: () => a.ordinaryConvergence(),
     runtimeTargetSnapshot: () => a.runtimeTargetSnapshot(),
+    runtimeSkillCandidates: () => {
+      if (closed || !opts.skillContribution) throw new Error('runtime Skill registry is unavailable')
+      return readRuntimeSkillCandidates(opts.skillContribution, a.pluginTree.root, (id) =>
+        a.pluginTree.tree.fiber(id),
+      )
+    },
     applyRuntimeTarget: (target) => {
       if (closed) throw new HostError('E_HOST_CLOSED', 'host is closed')
       return a.applyRuntimeTarget(target)

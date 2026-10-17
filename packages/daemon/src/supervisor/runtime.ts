@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { collectPackageSkillFiles } from '@agnes/base'
 import { openDaemonScheduleDb } from '@agnes/base/schedule'
 import { createAppServerAdmin } from '@agnes/daemon-admin/app-server'
 import { runningPackageIdentity } from '@agnes/daemon-admin/package-actual-identity'
@@ -89,6 +90,8 @@ import {
   SessionPreferencesStore,
   withSessionPreferences,
 } from '@agnes/daemon-foundation/storage/session-preferences'
+import { MemorySidebarSessions } from '@agnes/daemon-foundation/storage/sidebar-memory'
+import { SidebarSessions } from '@agnes/daemon-foundation/storage/sidebar-sessions'
 import {
   type SourceAuthCredential,
   SourceAuthRotation,
@@ -976,7 +979,12 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
     // Inventory verifies the lock and installed tree before any contribution reaches a worker.
     // A package-bearing profile therefore fails closed at startup rather than silently scanning a
     // user-controlled package directory.
-    await writePackageSkillInventory(o.profile, o.profileDir, packageSkillSnapshotPath)
+    await writePackageSkillInventory(
+      o.profile,
+      o.profileDir,
+      packageSkillSnapshotPath,
+      collectPackageSkillFiles,
+    )
     const activationBarrier = o.activationBarrier ?? createExtensionActivationBarrier()
     const commandQueue = new CommandQueue(undefined, (depth) => o.observability?.queueDepth(depth))
     startupCleanup.push(() => commandQueue.close())
@@ -1327,7 +1335,12 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           return workspaceCatalog.bind(workspaceId, resourceWorkerRoot)
         },
         refreshPackageSkills: () =>
-          writePackageSkillInventory(o.profile, o.profileDir, packageSkillSnapshotPath),
+          writePackageSkillInventory(
+            o.profile,
+            o.profileDir,
+            packageSkillSnapshotPath,
+            collectPackageSkillFiles,
+          ),
       })
       observeResourceMcpStatus = resourceAdapters.observeMcpStatus
       wireResourceSnapshotNotifications({ localResourceStore, registry, pool, log: console })
@@ -1849,6 +1862,14 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       : undefined
     const sessionSelection = sessionSelectionProvider(o.configuration, () => sharedSessionCatalog(pool))
     const preferences = new SessionPreferencesStore(jobTables?.table('session_preferences'))
+    const sidebarSessions = jobTables
+      ? new SidebarSessions(
+          jobTables.table('session_workspaces'),
+          workspaces,
+          o.sessionFactRead ? (key, query) => o.sessionFactRead!(key)(query) : undefined,
+        )
+      : new MemorySidebarSessions(workspaces, sessionOwnership, preferences, () => workspaceCatalog.list())
+    startupCleanup.push(() => sidebarSessions.close())
     const rawLister =
       o.ports?.lister ??
       (o.tables
@@ -2111,6 +2132,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         // local credential. Any custom principals seam stays closed before a worker exists.
         resolveNewSessionActor,
         sessionOwnership,
+        ...(sidebarSessions ? { sidebarSessions } : {}),
         hasSessionFact: (sessionId: string) =>
           supervisorRegistry.get(sessionId) !== undefined ||
           workspaceCatalog.sessionPath(sessionId) !== undefined,
@@ -2612,6 +2634,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         },
         killWorkers: () => pool.killAll(),
         closeSockets: async () => {
+          await sidebarSessions?.close()
           await triggerSessions.close()
           const results = await Promise.allSettled([
             ...[...conns].map(({ ep }) => Promise.resolve().then(() => ep.close())),

@@ -1,5 +1,5 @@
 import { readdirSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { expect, it } from 'vitest'
 import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
@@ -9,7 +9,8 @@ function catalogFiles(directory: string): string[] {
     const path = resolve(directory, entry.name)
     return entry.isDirectory()
       ? catalogFiles(path)
-      : /(?:\/locales\/.*|(?:locale|locales|locale-catalog)\.ts)$/.test(path) && path.endsWith('.ts')
+      : /(?:\/locales\/.*|(?:locale|locales|locale-catalog)\.ts)$/.test(path.split(sep).join('/')) &&
+          path.endsWith('.ts')
         ? [path]
         : []
   })

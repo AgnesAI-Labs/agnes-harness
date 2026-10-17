@@ -102,6 +102,7 @@ import {
   openMovedSettingsLink,
   rewriteMovedSettingsLink,
 } from './settings-redirects.js'
+import { createSidebarPagination } from './sidebar-pagination.js'
 import { readTraceFactChain } from './trace-facts.js'
 import type { RunReceipt, WebView } from './view.js'
 import { unmountWorkbench } from './workbench/dock.js'
@@ -908,10 +909,16 @@ const clientModules = await startClientModules({
       sessionAction: (action, id, title, trigger) => {
         void sessionActions.act(action, id, title, trigger)
       },
-      loadMore: (cursor) =>
+      loadMore: () =>
         run(async () => {
-          await list(cursor)
+          await list()
         }),
+      groupAction: (id, action) => {
+        void sidebarPages.action(id, action)
+      },
+      refreshGroups: () => {
+        void list().catch(showError)
+      },
     },
   },
   transcript: { onFork: forkTurn },
@@ -1262,6 +1269,7 @@ const titleRefresh = createTitleRefresh(async (id) => {
   sessionTitles.set(id, row.title)
   const index = sessionRows.findIndex((item) => item.sessionId === id)
   if (index >= 0) sessionRows[index] = row
+  sidebarPages.patch(row)
   updateTitle(id, row.title)
   return true
 })
@@ -1273,7 +1281,31 @@ function updateTitle(id: string, title: string): void {
 let runtimePlatform: string | undefined
 let sessionRows: PageSessionMeta['items'] = []
 let workspaceRows: WorkspaceEntry[] = []
-let sessionNext: string | undefined
+const sidebarPages = createSidebarPagination(
+  client.session,
+  () => {
+    const selected = sessionRows.find((row) => row.sessionId === (current?.id ?? readOnly?.id))
+    sessionRows = sidebarPages.rows()
+    if (selected && !sessionRows.some((row) => row.sessionId === selected.sessionId))
+      sessionRows.push(selected)
+    updateSidebar()
+  },
+  (error) => {
+    const failure = error as { code?: number; data?: { code?: string }; message?: string }
+    return failure.code === -32601 ||
+      failure.data?.code === 'SESSION_SIDEBAR_UNAVAILABLE' ||
+      failure.message === 'SESSION_SIDEBAR_UNAVAILABLE'
+      ? t('nav.upgrade')
+      : errorNotice(
+          error instanceof Error ? error.message : String(error),
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          t,
+        )
+  },
+)
 let selectedWorkspace: WorkspaceEntry | undefined
 let draftingNew = false
 let pendingSessionKey: string | undefined
@@ -1283,7 +1315,8 @@ let liveApproval:
 
 function updateSidebar(): void {
   clientModules.sidebar?.update({
-    sessions: sessionRows,
+    sessions: sidebarPages.rows(),
+    paging: sidebarPages.snapshot(),
     ...(runtimePlatform ? { runtimePlatform } : {}),
     workspaces: workspaceRows,
     labels: sessionLabels,
@@ -1296,7 +1329,6 @@ function updateSidebar(): void {
         : readOnly
           ? { currentId: readOnly.id }
           : {}),
-    ...(sessionNext ? { next: sessionNext } : {}),
     sessionPending,
     newDisabled: !connected || sending || sessionPending || newSessionCreating,
   })
@@ -1394,6 +1426,11 @@ const sessionActions = createSessionActions({
   client,
   loopLabel: (id) => newSessionCatalog?.loops.find((loop) => loop.id === id)?.label,
   changed: () => list(),
+  renamed: (id, title) => {
+    const row = sessionRows.find((item) => item.sessionId === id)
+    if (row) sidebarPages.patch({ ...row, title, titleSource: 'user' })
+    updateTitle(id, title)
+  },
   fork: forkSidebar,
   error: (error) => {
     clientModules.sidebar?.dismiss()
@@ -1421,8 +1458,8 @@ archivedSessions.bind({
 // Search finds a session by what was said in it; opening one leaves any home page.
 const sessionSearch = mountSessionSearch({
   translate: t,
-  recent: () =>
-    sortSessionsByRecency(sessionRows.filter((row) => !row.archived))
+  recent: async () =>
+    sortSessionsByRecency((await client.session.list({ limit: 100 })).items.filter((row) => !row.archived))
       .slice(0, 8)
       .map((row) => ({
         sessionId: row.sessionId,
@@ -1569,6 +1606,7 @@ function clearSessionRecovery(): void {
 function setConnection(value: 'connecting' | 'connected' | 'reconnecting' | 'closed'): void {
   connected = value === 'connected'
   if (!connected) {
+    sidebarPages.reset()
     permissionConnectionEpoch++
     if (current) {
       permissionRefreshPending = true
@@ -1616,19 +1654,22 @@ function transcriptMeta(): {
 function searchApproval(limit?: number): void {
   turnController.searchApproval(limit)
 }
-async function list(cursor?: string): Promise<PageSessionMeta> {
+async function list(change?: {
+  sessionId: string
+  cwd?: string
+  created?: boolean
+}): Promise<PageSessionMeta> {
   const epoch = ++listGeneration
-  const page = await client.session.list({ limit: 100, ...(cursor ? { cursor } : {}) })
-  if (epoch !== listGeneration) return page
-  const rows = new Map((cursor ? sessionRows : []).map((row) => [row.sessionId, row]))
-  for (const row of page.items) {
-    if (row.title) sessionTitles.set(row.sessionId, row.title)
-    rows.set(row.sessionId, {
-      ...row,
-      ...(sessionTitles.has(row.sessionId) ? { title: sessionTitles.get(row.sessionId) as string } : {}),
-    })
+  if (change) sidebarPages.invalidateSession(change.sessionId, change.cwd, workspaceRows)
+  await sidebarPages.refresh()
+  if (change?.created) {
+    const groupId = workspaceRows.find((row) => row.path === change.cwd)?.workspaceId ?? 'unassigned'
+    await sidebarPages.created(groupId)
   }
-  if (current && !rows.has(current.id)) {
+  const page = { items: sidebarPages.rows() }
+  if (epoch !== listGeneration) return page
+  const rows = new Map(page.items.map((row) => [row.sessionId, row]))
+  if (current) {
     const selected = await client.session.list({ q: { prefix: current.id }, limit: 100 })
     if (epoch !== listGeneration) return page
     const match = selected.items.find((row) => row.sessionId === current?.id)
@@ -1639,7 +1680,6 @@ async function list(cursor?: string): Promise<PageSessionMeta> {
   }
   sessionRows = [...rows.values()]
   if (current && projection) render()
-  sessionNext = page.next
   updateSidebar()
   const selectedRow = sessionRows.find((row) => row.sessionId === current?.id)
   if (selectedRow?.title || (selectedRow && !projection?.nodes.some((node) => node.kind === 'user')))
@@ -1831,6 +1871,7 @@ function applyWorkspaces(page: { items: WorkspaceEntry[] }): void {
   workspaceRows = page.items
   if (selectedWorkspace) selectedWorkspace = workspaceRows.find((row) => row.path === selectedWorkspace?.path)
   updateWorkspaceOptions()
+  updateSidebar()
 }
 async function refreshWorkspacePicker(): Promise<void> {
   workspacePickerReady = await workspacePickerAvailable()
@@ -2240,6 +2281,7 @@ const stopSessionConfiguration = onBroadcast(
 )
 onPageHide(() => {
   notice.clearErrors()
+  sidebarPages.reset()
   intentionalClose = true
   stopConnectionEvents()
   stopSettingsTerminal()
@@ -2306,6 +2348,23 @@ run(async () => {
   } else showError(new Error(t('app.workspaceList.unreadable'), { cause: workspaces.reason }))
   if (sessions.status === 'rejected') throw sessions.reason
   const page = sessions.value
+  const sidebar = sidebarPages.snapshot()
+  const sidebarReady = sidebar.ready && !sidebar.loading && !sidebar.error
+  // Unloaded/failed pages are not evidence of an empty account. Summary counts own emptiness.
+  const empty =
+    sidebarReady &&
+    sidebar.groups.every(
+      (group) => group.ready && !group.loading && !group.error && !group.stale && group.total === 0,
+    )
+  const first = sidebarReady
+    ? sidebar.groups
+        .filter(
+          (group) =>
+            group.opened && group.ready && group.loaded && !group.loading && !group.error && !group.stale,
+        )
+        .flatMap((group) => group.items)
+        .find((item) => !item.archived)
+    : undefined
   // A user choice also owns whether the account setup dialog may open.
   if (selection !== startupSelection) return
   // Accounts without a usable model get a notice that leads to settings; a load never opens the dialog.
@@ -2330,11 +2389,11 @@ run(async () => {
   }
   if (modelNotice) renderControls()
   const guided =
+    empty &&
     !startupRequest.get('settings') &&
     !homeNavigation.getSnapshot() &&
     !startupRequest.get('session') &&
-    needsFirstRun(snapshot) &&
-    page.items.length === 0
+    needsFirstRun(snapshot)
   // A user selection made while startup was loading owns the current view.
   if (selection !== startupSelection) return
   const selected = new URL(location.href).searchParams.get('session')
@@ -2383,18 +2442,19 @@ run(async () => {
       notice.setText(t('app.session.notFound'))
       renderControls()
     }
+  } else if (first) await open(first.sessionId)
+  else if (empty) {
+    await beginNewDraft(
+      configured &&
+        !startupSection &&
+        !startupTerminal &&
+        !startupMoved &&
+        !homeNavigation.getSnapshot() &&
+        !guided,
+    )
   } else {
-    const first = page.items.find((item) => !item.archived)
-    if (first) await open(first.sessionId)
-    else
-      await beginNewDraft(
-        configured &&
-          !startupSection &&
-          !startupTerminal &&
-          !startupMoved &&
-          !homeNavigation.getSnapshot() &&
-          !guided,
-      )
+    sessionPending = false
+    renderControls()
   }
   const factCandidate = startupRequest.get('factCandidate')
   if (
@@ -2413,8 +2473,7 @@ run(async () => {
   }
   const shown = await firstRun.initialize(
     snapshot,
-    page.items.length > 0 ||
-      Boolean(startupSection || startupTerminal || startupMoved || homeNavigation.getSnapshot()),
+    !empty || Boolean(startupSection || startupTerminal || startupMoved || homeNavigation.getSnapshot()),
   )
   if (guided && !shown) await beginNewDraft(true)
   if (startupMoved)

@@ -21,6 +21,7 @@ export const HOST_MEMBER_SCOPES = {
   reloadPlugin: 'deployment',
   collectPluginGenerations: 'deployment',
   runtimeTargetSnapshot: 'deployment',
+  runtimeSkillCandidates: 'deployment',
   activationBarrier: 'deployment',
   approvalGrants: 'deployment',
   profileServices: 'deployment',

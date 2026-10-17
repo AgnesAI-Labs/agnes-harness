@@ -9,11 +9,14 @@ import { compilePluginConfig } from '@agnes/extension-api'
 import { createCredentialStore, createPlatform, createSecretsFile, resolveProfile } from '@agnes/host'
 import { jcs } from '@agnes/protocol'
 import type { AdminCredentialMetadata } from '@agnes/protocol/gen/app-server'
+import { createPrivateDirectorySync } from '@agnes/system-node'
 import { expect, it } from 'vitest'
 import { createAppServerAdmin, registerAppServerAdmin } from '../src/local/methods/admin.js'
 
 it('owns settings and plan writes behind local admin and registered-workspace authority', async () => {
-  const home = await mkdtemp(join(tmpdir(), 'agh-app-admin-'))
+  const fixtureRoot = await mkdtemp(join(tmpdir(), 'agh-app-admin-'))
+  const home = join(fixtureRoot, 'home')
+  createPrivateDirectorySync(home)
   const cwd = join(home, 'project')
   await mkdir(cwd)
   await mkdir(join(home, 'data'))
@@ -116,7 +119,7 @@ it('owns settings and plan writes behind local admin and registered-workspace au
     ).toHaveProperty('error.data.code', 'CAPABILITY_DENIED')
   } finally {
     await endpoint.close()
-    await rm(home, { recursive: true, force: true })
+    await rm(fixtureRoot, { recursive: true, force: true })
   }
 })
 
@@ -158,7 +161,9 @@ it('keeps doctor local-only and refuses caller-supplied homes and implicit model
 })
 
 it('manages write-only generic credentials with MCP references, restart persistence and local permissions', async () => {
-  const home = await mkdtemp(join(tmpdir(), 'agh-generic-admin-'))
+  const fixtureRoot = await mkdtemp(join(tmpdir(), 'agh-generic-admin-'))
+  const home = join(fixtureRoot, 'home')
+  createPrivateDirectorySync(home)
   const dataDir = join(home, 'data')
   const canary = 'synthetic-generic-canary-never-log'
   const logs: unknown[] = []
@@ -398,6 +403,6 @@ it('manages write-only generic credentials with MCP references, restart persiste
     expect(JSON.stringify([responses, logs])).not.toContain(canary)
   } finally {
     await endpoint.close()
-    await rm(home, { recursive: true, force: true })
+    await rm(fixtureRoot, { recursive: true, force: true })
   }
 })

@@ -1,6 +1,6 @@
 import { chmod, link, mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import * as host from '@agnes/host'
 import {
   createPlatform,
@@ -197,7 +197,7 @@ describe('shared daemon scope', () => {
     )
     await writeFile(join(sourceDir, 'index.mjs'), 'export const main = { apply() {} }')
     const manager = createPackageManager({ dataDir: scope.dataDir, cwd: workspace, agnesVersion: '0.0.0' })
-    const source = parseSource(`file:${sourceDir}`)
+    const source = parseSource(`file:${sourceDir.split(sep).join('/')}`)
     const preview = await manager.inspect(scope.profileDir, source)
     await manager.install(scope.profileDir, source, { expectedIntegrity: preview.integrity })
     const installed = (await manager.inventory(scope.profileDir)).packages.find(

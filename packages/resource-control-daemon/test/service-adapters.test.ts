@@ -368,6 +368,40 @@ function fakeSkillScanReply(input: {
 }
 
 describe('installResourceServiceAdapters — Skill scan/removal over the shared session worker', () => {
+  it('rejects a runtime view from a retired worker connection or changed snapshot', async () => {
+    const { snapshotPath } = snapshotFile()
+    const { store, capturedAdapters } = fakeStoreWith({ snapshotPath })
+    let changed = false
+    let editSnapshot = false
+    const link = {
+      alive: true,
+      hello: Promise.resolve({}),
+      close: () => undefined,
+      command: async (_method: string, params: unknown) => {
+        if (editSnapshot) writeFileSync(snapshotPath, '{"changed":true}')
+        return { skills: [], snapshotRevision: (params as { snapshotRevision: string }).snapshotRevision }
+      },
+    }
+    let acquisitions = 0
+    installResourceServiceAdapters({
+      store,
+      pool: {
+        acquire: vi.fn(),
+        acquireSharedWorker: async () => (++acquisitions % 2 === 0 && changed ? { ...link } : link),
+      },
+      profile: { name: 'local-dev', hash: 'a'.repeat(64) },
+      refreshPackageSkills: async () => undefined,
+    })
+    const view = capturedAdapters().skills.view
+    if (!view) throw new Error('missing runtime view adapter')
+    const input = { profile: 'local-dev', skills: [], signal: new AbortController().signal }
+    expect(await view(input)).toEqual([])
+    changed = true
+    await expect(view(input)).rejects.toThrow('view changed')
+    changed = false
+    editSnapshot = true
+    await expect(view(input)).rejects.toThrow('view changed')
+  })
   it('refresh sends resourceSkillScan with the resolved workspace root, rootKey and current snapshot revision', async () => {
     const { snapshotPath } = snapshotFile()
     const revisionHash = createHash('sha256').update('{"skills":[],"mcp":[]}', 'utf8').digest('hex')

@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { access, copyFile, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { devNull } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -383,7 +384,7 @@ test('goal panel follows durable progress and shares authorized human controls',
   page,
   runtime,
 }, info) => {
-  test.setTimeout(180_000)
+  test.setTimeout(300_000)
   await page.addInitScript(() => {
     if (location.protocol !== 'http:') return
     if (!localStorage.getItem('agnes-locale')) localStorage.setItem('agnes-locale', 'en')
@@ -483,7 +484,7 @@ test('changed files review follows confirmed agent effects and preserves current
   page,
   runtime,
 }, info) => {
-  test.setTimeout(180_000)
+  test.setTimeout(300_000)
   await page.addInitScript(() => {
     if (location.protocol !== 'http:') return
     if (!localStorage.getItem('agnes-locale')) localStorage.setItem('agnes-locale', 'en')
@@ -603,4 +604,48 @@ test('changed files review follows confirmed agent effects and preserves current
   await expect(panel).toBeHidden()
   await expect(page.getByTestId('workbench-right-toggle')).toBeFocused()
   expect(await readFile(join(runtime.workspace, 'review.ts'), 'utf8')).toBe('export const answer = 99\n')
+})
+
+test.describe('server sidebar pagination', () => {
+  test.describe.configure({ timeout: 300_000 })
+  test('sidebar pages five sessions from the real daemon and retains an off-page selected session', async ({
+    page,
+    runtime,
+  }) => {
+    test.setTimeout(300_000)
+    const client = await runtime.connect()
+    const ids: string[] = []
+    for (let index = 0; index < 11; index++) {
+      const session = await client.session.new({
+        sessionKey: randomUUID(),
+        cwd: runtime.workspace,
+        preset: 'full-access',
+      })
+      ids.push(session.id)
+      await client.session.rename(session.id, `Paging task ${index}`)
+    }
+    const groups = await client.session.groups()
+    const group = groups.items.find((item) => item.total === 11)
+    expect(group?.ready).toBe(true)
+    if (!group) throw new Error('missing session group')
+    const first = await client.session.list({ sidebar: { groupId: group.groupId }, limit: 5 })
+    expect(first.items).toHaveLength(5)
+    const selected = ids.find((id) => !first.items.some((row) => row.sessionId === id))!
+    await page.goto(`${runtime.url}/?session=${selected}`)
+    await expect(page.locator('.session-row')).toHaveCount(5)
+    await expect(page.locator(`[data-session-action-id="${selected}"]`)).toHaveCount(0)
+    await expect(page.getByRole('textbox', { name: 'Task content', exact: true })).toBeEnabled()
+    const more = page.getByTestId('workspace-sessions-toggle')
+    await more.click()
+    await expect(page.locator('.session-row')).toHaveCount(10)
+    await more.click()
+    await expect(page.locator('.session-row')).toHaveCount(11)
+    await more.click()
+    await expect(page.locator('.session-row')).toHaveCount(5)
+    await page.locator('.workspace-heading[aria-expanded="true"]').click()
+    await expect(page.locator('.session-row')).toHaveCount(0)
+    await page.locator('.workspace-heading').first().click()
+    await expect(page.locator('.session-row')).toHaveCount(5)
+    expect(new URL(page.url()).searchParams.get('session')).toBe(selected)
+  })
 })

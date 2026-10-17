@@ -1,7 +1,9 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { collectPackageSkillFiles } from '@agnes/base'
 import type { SkillCandidate, SkillControlInput, SkillRuntimeInput } from '@agnes/resource-control-runtime'
+import { createSkillCandidateRegistry } from '@agnes/resource-control-runtime'
 import { afterEach, expect, it } from 'vitest'
 import { bootstrapWorkerResources } from '../src/runtime-bootstrap.js'
 import { scanSkills } from '../src/skill-bootstrap.js'
@@ -15,6 +17,156 @@ function scope(runtime: SkillRuntimeInput) {
 const cleanup: Array<() => Promise<unknown>> = []
 afterEach(async () => {
   for (const close of cleanup.splice(0).reverse()) await close()
+})
+
+it('loads legacy and complete package snapshots, binds revisions and isolates damaged Skills', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'package-skill-snapshot-'))
+  cleanup.push(() => rm(root, { recursive: true, force: true }))
+  const directory = join(root, 'skill')
+  await mkdir(join(directory, 'references'), { recursive: true })
+  await mkdir(join(directory, 'scripts'))
+  await writeFile(join(directory, 'references', 'example.md'), 'reference 中文')
+  await writeFile(join(directory, 'scripts', 'example.py'), 'print("not executed")')
+  const row = {
+    packageId: 'acme/review',
+    contributionId: 'acme/review/main',
+    relativeLocation: './skills/review/SKILL.md',
+    source:
+      '---\r\nname: 复核助手\r\ndescription: 已审核的说明\r\ndisable-model-invocation: true\r\n---\r\nInstructions',
+  }
+  const snapshot = join(root, 'packages.json')
+  async function scan(entry: unknown) {
+    await writeFile(snapshot, JSON.stringify({ version: 1, skills: [entry] }))
+    return scanSkills(undefined, snapshot, undefined, root, join(root, '.agh'))
+  }
+  const legacy = (await scan(row)).roots.flatMap((r) => r.candidates)[0]
+  expect(legacy).toMatchObject({
+    name: '复核助手',
+    description: '已审核的说明',
+    body: 'Instructions',
+    invocation: { modelInvocable: false },
+  })
+  const stored = await collectPackageSkillFiles(directory)
+  const candidate = (await scan({ ...row, directory, files: stored })).roots.flatMap((r) => r.candidates)[0]
+  if (!candidate || !legacy) throw new Error('missing package candidate')
+  expect(candidate.resourceId).toBe(legacy.resourceId)
+  expect(candidate.revision).not.toBe(legacy.revision)
+  const registry = createSkillCandidateRegistry({ barrier: { quiesce: async (_id, publish) => publish({}) } })
+  registry.replaceRoot('package', [candidate])
+  registry.setControl({
+    desired: [{ resourceId: candidate.resourceId, state: 'enabled' }],
+    trust: [
+      {
+        resourceId: candidate.resourceId,
+        revision: candidate.revision,
+        capabilityHash: candidate.capabilityHash,
+        state: 'trusted',
+      },
+    ],
+  })
+  await registry.activate('test', async () => undefined)
+  const read = registry
+    .snapshot()
+    .readFile(candidate.resourceId, candidate.revision, 'references/example.md', { sessionKey: 'test' })
+  expect(read).toMatchObject({ ok: true })
+  expect(
+    registry
+      .snapshot()
+      .readFile(candidate.resourceId, legacy.revision, 'references/example.md', { sessionKey: 'test' }),
+  ).toMatchObject({ ok: false, code: 'UNTRUSTED_REVISION' })
+  expect(JSON.stringify(registry.snapshot().list())).not.toContain(directory)
+  expect(JSON.stringify(registry.snapshot().list())).not.toContain('reference 中文')
+  for (const change of [
+    { source: 'invalid Skill document' },
+    { files: null },
+    { directory: '../outside' },
+    { files: [{ ...stored[0], sha256: '0'.repeat(64) }] },
+  ]) {
+    const damaged = (await scan({ ...row, directory, files: stored, ...change })).roots.flatMap(
+      (r) => r.candidates,
+    )[0]
+    expect(damaged).toMatchObject({
+      resourceId: candidate.resourceId,
+      body: '',
+      loadError: { code: expect.stringMatching(/^SKILL_/) },
+    })
+    if (!damaged) throw new Error('missing failed candidate')
+    registry.replacePackage([damaged])
+    await registry.activate('damaged', async () => undefined)
+    expect(registry.snapshot().list()[0]).toMatchObject({
+      actual: 'unavailable',
+      lastSafeError: { code: expect.stringMatching(/^SKILL_/) },
+    })
+    expect(registry.snapshot().read(candidate.resourceId, { sessionKey: 'test' })).toMatchObject({
+      ok: false,
+    })
+    expect(
+      registry
+        .snapshot()
+        .readFile(candidate.resourceId, candidate.revision, 'references/example.md', { sessionKey: 'test' }),
+    ).toMatchObject({ ok: false })
+  }
+  registry.replacePackage([candidate])
+  await registry.activate('repaired', async () => undefined)
+  expect(
+    registry
+      .snapshot()
+      .readFile(candidate.resourceId, candidate.revision, 'references/example.md', { sessionKey: 'test' }),
+  ).toMatchObject({ ok: true })
+
+  // Startup must retain the healthy package even when a previously installed Skill exceeds limits.
+  await writeFile(
+    snapshot,
+    JSON.stringify({
+      version: 1,
+      skills: [{ ...row, directory, files: stored }],
+      failures: [{ ...row, contributionId: 'acme/broken', code: 'SKILL_ATTACHMENTS_LIMIT' }],
+    }),
+  )
+  const controlPath = join(root, 'control.json')
+  await writeFile(
+    controlPath,
+    JSON.stringify({
+      version: 1,
+      mcpAuthority: 'resource-control',
+      mcp: [],
+      skills: {
+        control: {
+          desired: [{ resourceId: candidate.resourceId, state: 'enabled' }],
+          trust: [
+            {
+              resourceId: candidate.resourceId,
+              revision: candidate.revision,
+              capabilityHash: candidate.capabilityHash,
+              state: 'trusted',
+            },
+          ],
+        },
+      },
+    }),
+  )
+  const boot = await bootstrapWorkerResources({
+    env: { HOME: root, AGNES_RESOURCE_SNAPSHOT: controlPath, AGNES_PACKAGE_SKILL_SNAPSHOT: snapshot },
+    agnesHomeDir: join(root, '.agh'),
+    profile: { name: 'test', dataDir: root, adapters: { secrets: { kind: 'env' } } },
+    createBarrier: () => ({ quiesce: async (_id, publish) => publish({}) }),
+    createSecrets: () => {
+      throw new Error('unexpected secrets')
+    },
+  })
+  if (!boot) throw new Error('startup failed')
+  cleanup.push(() => boot.runtime.mcp.close())
+  expect(boot.skills).toHaveLength(2)
+  expect(boot.skills.find((s) => s.resourceId === candidate.resourceId)).toMatchObject({
+    actual: 'ready',
+    resolution: { winner: true },
+  })
+  expect(boot.skills.find((s) => s.resourceId !== candidate.resourceId)).toMatchObject({
+    actual: 'unavailable',
+    lastSafeError: { code: 'SKILL_ATTACHMENTS_LIMIT' },
+  })
+  expect(JSON.stringify(boot.discovery)).not.toContain('Instructions')
+  expect(JSON.stringify(boot.discovery)).not.toContain(directory)
 })
 
 async function fixture() {

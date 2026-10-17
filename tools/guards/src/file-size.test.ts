@@ -18,8 +18,8 @@ const measured = new Map<string, number>()
 for (const file of [...listSourceFiles(join(root, 'packages')), ...listSourceFiles(join(root, 'tools'))]) {
   if (isTestFile(file)) continue
   const lines = countLines(readFileSync(file, 'utf8'))
-  if (lines > MAX_FILE_LINES || Object.hasOwn(allowlist, file.slice(root.length + 1)))
-    measured.set(file.slice(root.length + 1), lines)
+  if (lines > MAX_FILE_LINES || Object.hasOwn(allowlist, file.slice(root.length + 1).replaceAll('\\', '/')))
+    measured.set(file.slice(root.length + 1).replaceAll('\\', '/'), lines)
 }
 
 describe(`source files stay within ${MAX_FILE_LINES} lines`, () => {

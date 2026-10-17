@@ -1,5 +1,6 @@
 import { isUtf8 } from 'node:buffer'
 import { createHash } from 'node:crypto'
+import { sep, win32 } from 'node:path'
 import type { ToolContext } from '@agnes/extension-api'
 import { normalizeWorkspacePath } from './paths.js'
 
@@ -21,9 +22,18 @@ export function fileChangeReceipt(
 ) {
   const turn = ctx.session.turn
   if (typeof turn !== 'number' || !Number.isSafeInteger(turn) || turn < 1) return undefined
-  if ((input.path.includes('\\') && ctx.platform?.fs.pathSep !== '\\') || input.path.includes('\0'))
+  if (input.path.includes('\0')) return undefined
+  const nativeWindowsPath = input.path.includes('\\')
+  // Admit only unambiguous local Windows paths; POSIX backslashes are literal names.
+  if (
+    nativeWindowsPath &&
+    ((ctx.platform?.fs.pathSep ?? sep) !== '\\' ||
+      (!/^[A-Za-z]:[\\/]/.test(input.path) && /^[\\/]|^[A-Za-z]:/.test(input.path)))
+  )
     return undefined
-  const absolute = normalizeWorkspacePath(input.path, ctx.cwd).abs
+  const absolute = nativeWindowsPath
+    ? win32.resolve(ctx.cwd, input.path)
+    : normalizeWorkspacePath(input.path, ctx.cwd).abs
   const path = normalizeWorkspacePath(absolute, ctx.session.workspaceRoot)
   if (!path.inside || path.rel === '.' || /^[A-Za-z]:/.test(path.rel) || path.rel.length > 4096)
     return undefined

@@ -315,6 +315,34 @@ describe('WorkerLink command settlement', () => {
 
 describe('installation errors across worker frames', () => {
   it.each([
+    ['E_PACKAGE_SOURCE', 'E_PACKAGE_SOURCE'],
+    ['E_PACKAGE_PREVIEW_STALE', 'E_PACKAGE_PREVIEW_STALE'],
+    ['private path and token', 'HELPER_MANAGEMENT_FAILED'],
+  ])('preserves only declared package reasons: %s', async (reason, code) => {
+    const socket = new FakeSocket()
+    const link = new WorkerLink(socket as unknown as Socket, {
+      onEvent() {},
+      async onRequest() {
+        throw rpcError('SEMANTIC_REJECTED', { reason, secret: 'private' })
+      },
+    })
+    const channel = new SharedSessionChannel((frame) => socket.emit('data', encodeFrame(frame)))
+    const pending = channel.run('session', () =>
+      channel.request('plugin-manage', {}, new AbortController().signal),
+    )
+    const rejected = expect(pending).rejects.toMatchObject({ code })
+    await vi.waitFor(() => expect(socket.writes.length).toBe(1))
+    const bytes = socket.writes[0]
+    if (!bytes) throw new Error('missing reply')
+    const reply = JSON.parse(bytes.toString())
+    expect(JSON.stringify(reply)).not.toContain('private')
+    channel.settle(reply)
+    await rejected
+    socket.emit('close')
+    expect(link.alive).toBe(false)
+  })
+
+  it.each([
     [
       rpcError('CAPABILITY_DENIED', { code: 'SKILL_INSTALL_LOCAL_OWNER_REQUIRED', secret: 'private' }),
       'SKILL_INSTALL_LOCAL_OWNER_REQUIRED',

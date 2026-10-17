@@ -202,6 +202,12 @@ export function createSessionController(
         return
       }
       context.clientModules.session.setSession(loaded.id)
+      if (!options.created && !context.sessionRows.some((row) => row.sessionId === id)) {
+        const page = await context.client.session.list({ q: { prefix: id }, limit: 100 })
+        if (epoch !== context.selection) return
+        const row = page.items.find((item) => item.sessionId === id)
+        if (row) context.sessionRows = [...context.sessionRows.filter((item) => item.sessionId !== id), row]
+      }
       if (!options.created)
         context.permissionMode =
           context.sessionRows.find((row) => row.sessionId === id)?.preset === 'read-only'
@@ -299,9 +305,15 @@ export function createSessionController(
       context.sessionPending = false
       context.clearSessionRecovery()
       context.render()
-      void context.list().catch((error: unknown) => {
-        if (epoch === context.selection) context.showError(error)
-      })
+      void context
+        .list(
+          options.created
+            ? { sessionId: loaded.id, ...(workspacePath ? { cwd: workspacePath } : {}), created: true }
+            : undefined,
+        )
+        .catch((error: unknown) => {
+          if (epoch === context.selection) context.showError(error)
+        })
     } catch (error) {
       if (epoch !== context.selection) return
       if (!selectionReady) {
@@ -392,7 +404,14 @@ export function createSessionController(
       context.titleRefresh.stop(session.id)
     } else if (title?.status === 'failed') context.titleRefresh.stop(session.id)
     // A new message makes this the most recently chatted session; the daemon now lists it first.
-    if (event.type === 'user/message') void context.list().catch(showError)
+    if (
+      event.type === 'user/message' ||
+      event.type === 'assistant/message' ||
+      (event.type === 'assistant/output' && (event.data as { state?: string }).state === 'interrupted')
+    ) {
+      const cwd = context.sessionRows.find((row) => row.sessionId === session.id)?.cwd
+      void context.list({ sessionId: session.id, ...(cwd ? { cwd } : {}) }).catch(showError)
+    }
     if (
       event.type === 'turn/end' &&
       (event.data as { reason?: string }).reason === 'completed' &&

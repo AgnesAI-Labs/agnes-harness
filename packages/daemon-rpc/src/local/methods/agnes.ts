@@ -13,6 +13,7 @@ import type {
   SessionLister,
 } from '@agnes/daemon-foundation/local/ports'
 import type { TicketPort } from '@agnes/daemon-foundation/storage/lister'
+import type { SidebarSessionPort } from '@agnes/daemon-foundation/storage/sidebar-sessions'
 import type { WorkspaceBindingEnvelope } from '@agnes/daemon-foundation/storage/workspaces'
 import {
   ActivationInProgressError,
@@ -100,6 +101,7 @@ export type AgnesContext = LocalContext & {
   schedules?: SchedulesPort
   directory?: DirectoryPort
   lister?: SessionLister
+  sidebarSessions?: SidebarSessionPort
   authKind: AuthKind
   credentialKind: CredentialKind
   artifactRead?: boolean
@@ -1171,13 +1173,26 @@ export function registerAgnes(
   // `cx.lister` is declared optional on `AgnesContext` only because nothing outside this package's
   // own `createLocalEndpoint` constructs one directly; that one always supplies a `RegistryLister`
   // default (`index.ts`), so the guard below is defensive, not a real production path.
+  ep.register('_agnes/v1/session.groups', async (_params, c) => {
+    if (!cx.sidebarSessions) throw rpcError('SEMANTIC_REJECTED', { code: 'SESSION_SIDEBAR_UNAVAILABLE' })
+    return cx.sidebarSessions.groups(c.conn.principalId)
+  })
   ep.register('_agnes/v1/session.list', async (params, c) => {
-    if (!cx.lister) throw rpcError('INTERNAL_ERROR', { code: 'NO_LISTER' })
     const p = params as {
       q?: { cwd?: string; prefix?: string; text?: string }
+      sidebar?: { groupId: string }
       cursor?: string
       limit?: number
     }
+    if (p.sidebar) {
+      if (!cx.sidebarSessions) throw rpcError('SEMANTIC_REJECTED', { code: 'SESSION_SIDEBAR_UNAVAILABLE' })
+      return cx.sidebarSessions.list(c.conn.principalId, {
+        groupId: p.sidebar.groupId,
+        ...(p.cursor !== undefined ? { cursor: p.cursor } : {}),
+        ...(p.limit !== undefined ? { limit: p.limit } : {}),
+      })
+    }
+    if (!cx.lister) throw rpcError('INTERNAL_ERROR', { code: 'NO_LISTER' })
     // `text` wins over `prefix` because the internal lister has one free-text key query. cwd remains
     // separate and exact: every implementation either has a recorded session workspace or returns
     // no match, never silently widens the query to every session.

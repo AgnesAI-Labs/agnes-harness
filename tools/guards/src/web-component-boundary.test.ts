@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { join, relative, sep } from 'node:path'
 import { expect, it } from 'vitest'
 import { isTestFile, listPackages, listSourceFiles, repoRoot } from './repo.js'
 import { webComponentViolations } from './web-component-boundary.js'
@@ -59,7 +59,7 @@ it('keeps only the exact existing offenders; remove entries as each migration la
     for (const file of listSourceFiles([join(pkg.dir, 'src'), join(pkg.dir, 'public')], {
       extensions: ['.ts', '.tsx', '.mts', '.cts', '.js', '.html'],
     }).filter((file) => !isTestFile(file))) {
-      const path = relative(root, file)
+      const path = relative(root, file).split(sep).join('/')
       for (const { rule } of webComponentViolations(readFileSync(file, 'utf8'), path)) {
         actual[path] ??= {}
         const row = actual[path]
