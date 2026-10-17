@@ -72,5 +72,6 @@
   "testSubscriptionCredential",
   "toDeviationRows",
   "toPiModel",
-  "toolSchemaHash"
+  "toolSchemaHash",
+  "validateModelBaseUrl"
 ]
