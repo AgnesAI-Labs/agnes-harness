@@ -148,7 +148,7 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
     expect(slashCommand('/resume')?.args).toBe('[id]')
     expect(slashCommand('/rewind')?.args).toBe('<seq>')
     expect(slashCommand('/compact')?.args).toBe('[instructions]')
-    expect(slashCommand('/plan')?.args).toBe('[on|off|instruction]')
+    expect(slashCommand('/plan')?.args).toBe('[on|off|status|pending|instruction]')
     expect(slashCommand('/preset')?.args).toBe('<name>')
     expect(slashCommand('/theme')?.args).toBe('[light|dark|mono]')
     expect(slashCommand('/model')?.args).toBe('[<slot> <route>/<model> [<thinking>]]')

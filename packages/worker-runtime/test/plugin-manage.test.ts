@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { toolPolicyPlugin } from '@agnes/base'
-import { writePlanMode } from '@agnes/base/plan-mode'
+import { readPlanMode, writePlanMode } from '@agnes/base/plan-mode'
 import type { ToolPolicy } from '@agnes/extension-api'
 import type { HostSession, PluginManageInvocation } from '@agnes/host'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -39,6 +39,7 @@ it.each([
     const policies = new Map<string, ToolPolicy>()
     toolPolicyPlugin.apply({
       providers: { register: (_kind: unknown, provider: ToolPolicy) => policies.set(provider.id, provider) },
+      planMode: { status: readPlanMode },
     } as never)
     const selected = policies.get(policy)
     if (!selected) throw new Error('Missing shipped policy')
