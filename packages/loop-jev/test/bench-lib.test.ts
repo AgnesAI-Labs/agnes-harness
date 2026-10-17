@@ -15,6 +15,7 @@ import {
   presetName,
   renderReport,
   scoreTurn,
+  sessionBalance,
   toolSchemaCheck,
   turnMetrics,
   verdict,
@@ -215,6 +216,31 @@ describe('bench metrics', () => {
       otherSideCalls: { count: 0 },
       reconciled: false,
     })
+  })
+  it('checks that the turns of a session add up to its ledger rows', () => {
+    const on = (purpose: string, route?: string) => ({ type: 'cost/ledger', data: { purpose, route } })
+    const session = [
+      on('inference'),
+      on('inference'),
+      on('side-call', 'jev'),
+      on('side-call', 'chat'),
+      on('title'),
+    ]
+    const turn = (inference: number, sideCall: number) => ({ metrics: { inference, sideCall } })
+    expect(sessionBalance(session, [turn(1, 0), turn(1, 1)], 'jev')).toEqual({
+      inferenceRows: 2,
+      turnInference: 2,
+      jevSideCallRows: 1,
+      turnJevSideCalls: 1,
+      ok: true,
+    })
+    // Windows that each start at the session's beginning count the first turn's rows twice.
+    expect(sessionBalance(session, [turn(1, 0), turn(2, 1)], 'jev')).toMatchObject({
+      turnInference: 3,
+      ok: false,
+    })
+    expect(sessionBalance(session, [turn(2, 0)], 'jev')).toMatchObject({ ok: false })
+    expect(sessionBalance(session, [turn(2, 0)], null)).toMatchObject({ jevSideCallRows: 0, ok: true })
   })
   it('computes k from the baseline pilot', () => {
     const events = [

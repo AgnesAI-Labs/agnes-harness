@@ -27,6 +27,7 @@ import {
   presetName,
   renderReport,
   scoreTurn,
+  sessionBalance,
   toolSchemaCheck,
   turnMetrics,
   verdict,
@@ -335,6 +336,7 @@ const notRun = (cell, index, error, tools = []) => ({
   }),
   metrics: turnMetrics([]),
   wallMs: null,
+  steps: 0,
   tools,
 })
 
@@ -378,6 +380,9 @@ async function runCellIn(ctx, cell, workspace, kept) {
   const offPermission = session.onPermissionRequest(async () => ({ verdict: 'allowed-once' }))
   await session.attach({ filter: { acpUpdates: false } })
   const stream = collect(session)
+  // The seq of the last event any earlier turn's window took. The session's own `lastServerSeq`
+  // advances only on attach, so it cannot mark where a turn begins.
+  let cursor = session.lastServerSeq
   // `error` stops the cell (its remaining turns are recorded as not run); `problems` do not.
   const result = { records: [], turnEvents: [], error: undefined, problems: [], tools: [], toolTokens: 0 }
   try {
@@ -404,6 +409,10 @@ async function runCellIn(ctx, cell, workspace, kept) {
     // Side calls on other routes are counted over the whole session: a host feature may call the
     // chat model after a turn has ended, outside every turn's slice of events.
     result.otherSideCalls = metricsOf(stream.events, price, routes.jev?.route ?? null).otherSideCalls
+    result.sessionCheck = {
+      cell: cellName(cell),
+      ...sessionBalance(stream.events, result.records, routes.jev?.route ?? null),
+    }
     mkdirSync(join(out, 'events'), { recursive: true })
     writeFileSync(
       join(out, 'events', `${cellName(cell)}.jsonl`),
@@ -419,7 +428,7 @@ async function runCellIn(ctx, cell, workspace, kept) {
       return
     }
     writeTurnFiles(workspace, turn.inject_files)
-    const fromSeq = session.lastServerSeq
+    const fromSeq = cursor
     const abort = new AbortController()
     state.abort = abort
     let timedOut = false
@@ -445,20 +454,24 @@ async function runCellIn(ctx, cell, workspace, kept) {
     clearTimeout(watchdog)
     state.abort = undefined
     const settled = turnResult !== undefined || promptError !== undefined
-    const target = turnResult?.lastSeq ?? session.lastServerSeq
+    const target = turnResult?.lastSeq ?? stream.events.at(-1)?.seq ?? fromSeq
     const isEnd = (e) => e.seq > fromSeq && e.type === 'turn/end' && mainLane(e)
     await stream.until(
       () => stream.events.some(isEnd) && (stream.events.at(-1)?.seq ?? 0) >= target,
       DRAIN_MS,
     )
-    const end = stream.events.find(isEnd)
-    const upTo = end ? Math.max(end.seq, target) : target
-    const events = stream.events.filter((e) => e.seq > fromSeq && e.seq <= upTo)
-    const start = events.find((e) => e.type === 'turn/start' && mainLane(e))
+    // This turn's window: from its own turn/start to its own turn/end. Rows the host writes between
+    // turns (a session title, a reply suggestion) belong to no turn.
+    const start = stream.events.find((e) => e.seq > fromSeq && e.type === 'turn/start' && mainLane(e))
+    const end = stream.events.find((e) => isEnd(e) && e.seq > (start?.seq ?? fromSeq))
+    const lower = start ? start.seq - 1 : fromSeq
+    const upper = end ? end.seq : Math.max(target, stream.events.at(-1)?.seq ?? fromSeq)
+    const events = stream.events.filter((e) => e.seq > lower && e.seq <= upper)
+    cursor = Math.max(cursor, upper)
     const endReason = timedOut ? 'timeout' : (end?.data?.reason ?? turnResult?.reason ?? 'failed')
     const probes = []
     for (const probe of turn.bash ?? []) probes.push(await runProbe(probe.command, workspace, probeEnv))
-    const answer = finalAnswer(events, fromSeq)
+    const answer = finalAnswer(events, lower)
     const record = {
       ...base,
       turn: index,
@@ -471,6 +484,7 @@ async function runCellIn(ctx, cell, workspace, kept) {
       metrics: metricsOf(events, price, routes.jev?.route ?? null),
       ...(lane === 'jev' ? { jevDecide: decideStats(events) } : {}),
       wallMs: start && end ? Date.parse(end.ts) - Date.parse(start.ts) : null,
+      steps: events.filter((e) => e.type === 'step/start' && mainLane(e)).length,
       tools: result.tools,
       ...(promptError
         ? { error: promptError instanceof Error ? promptError.message : String(promptError) }
@@ -663,7 +677,13 @@ function writeOutputs(ctx, cells, results) {
   const totals = aggregate(records)
   const compare = ctx.o.lanes.length > 1 ? schemaCheck(cells, results) : undefined
   const other = otherSideCalls(cells, results)
+  const sessionChecks = results.flatMap((r) => (r?.sessionCheck ? [r.sessionCheck] : []))
+  const unbalanced = sessionChecks.filter((c) => !c.ok)
   const flags = [
+    ...unbalanced.map(
+      (c) =>
+        `${c.cell}: per-turn counts do not add up to the session ledger (inference ${c.turnInference} of ${c.inferenceRows} rows, Jev side calls ${c.turnJevSideCalls} of ${c.jevSideCallRows} rows)`,
+    ),
     ...(compare?.flags ?? []),
     ...Object.entries(other)
       .filter(([, s]) => s.count > 0)
@@ -699,6 +719,8 @@ function writeOutputs(ctx, cells, results) {
     ...(ctx.stopped ? { stopped: ctx.stopped } : {}),
     totals,
     otherSideCalls: other,
+    sessionChecks,
+    countsAddUp: unbalanced.length === 0,
     flags,
     interrupted: ctx.state.interrupted,
   }
@@ -739,8 +761,16 @@ function writeOutputs(ctx, cells, results) {
     ...(gates?.valid ? { verdict: gates, k: ctx.o.k } : {}),
     records,
   })
-  const headline =
-    gates && !gates.valid ? `> **NOT COMPARABLE: ${gates.reason}. No gate is judged; see Checks.**\n\n` : ''
+  const headline = [
+    ...(unbalanced.length
+      ? [
+          `> **COUNTS DO NOT ADD UP: in ${unbalanced.length} session(s) the per-turn counts differ from the session's ledger rows; the numbers below are not reliable. See Checks.**\n\n`,
+        ]
+      : []),
+    ...(gates && !gates.valid
+      ? [`> **NOT COMPARABLE: ${gates.reason}. No gate is judged; see Checks.**\n\n`]
+      : []),
+  ].join('')
   writeFileSync(join(ctx.o.out, 'report.md'), `${headline}${md}\n${extra.join('\n')}`)
   return report
 }
@@ -920,6 +950,7 @@ export async function main(argv) {
     }
     if (state.interrupted) return 130
     if (report.verdict && !report.verdict.valid) return 1
+    if (!report.countsAddUp) return 1
     return results.some((r) => r?.error || r?.problems.length) ? 1 : 0
   } finally {
     await fake?.close()

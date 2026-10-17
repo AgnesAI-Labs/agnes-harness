@@ -313,6 +313,27 @@ export function turnMetrics(events, price, { jevRoute } = {}) {
   return m
 }
 
+/**
+ * The turns of one session must add up to its ledger: inference rows, and side-call rows on the Jev
+ * route, counted over all the session's events against the sum of the per-turn counts in `records`.
+ * `jevRoute: null` means no Jev route, so only inference is compared.
+ */
+export function sessionBalance(events, records, jevRoute) {
+  const rows = (test) =>
+    events.filter((e) => e.type === 'cost/ledger' && test(isObject(e.data) ? e.data : {})).length
+  const sum = (key) => records.reduce((total, r) => total + num(r.metrics?.[key]), 0)
+  const check = {
+    inferenceRows: rows((d) => d.purpose === 'inference'),
+    turnInference: sum('inference'),
+    jevSideCallRows: jevRoute === null ? 0 : rows((d) => d.purpose === 'side-call' && d.route === jevRoute),
+    turnJevSideCalls: jevRoute === null ? 0 : sum('sideCall'),
+  }
+  return {
+    ...check,
+    ok: check.inferenceRows === check.turnInference && check.jevSideCallRows === check.turnJevSideCalls,
+  }
+}
+
 /** Baseline pilot: mutable calls per tool-using inference request. */
 export function computeK(turns, mutable = DEFAULT_MUTABLE) {
   let mutableCalls = 0

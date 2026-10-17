@@ -99,7 +99,7 @@ Everything goes under `--out`:
 |---|---|
 | `report.md` | Per family, per turn, totals, Jev/default ratios, the three gates (or the pilot's k), the Jev lane breakdown and the checks below |
 | `report.json` | The same as data: routes used, totals, verdict or pilot result, flags |
-| `records.jsonl` | One line per turn: score and every check, answer, probe exits and output, ledger counters, wall time, tool list |
+| `records.jsonl` | One line per turn: score and every check, answer, probe exits and output, ledger counters, steps, wall time, tool list |
 | `events/<scenario>.<lane>.r<n>.jsonl` | Every ledger event of each session, for re-analysis |
 | `workspaces/<scenario>.<lane>.r<n>/` | A copy of each session's workspace as the agent left it (the record names the temp path the session used) |
 | `bundle.json` | The headless bundle the host was started with |
@@ -109,9 +109,15 @@ one archive of `--out` without `workspaces/`). They contain the suite's goals, t
 and token counts; they contain no key, and the runner writes no key anywhere.
 
 Exit codes: 0 every cell ran; 1 a cell could not run as planned (an error, a dirty workspace, a turn
-that hit its watchdog) or the lanes are not comparable (below); 2 bad arguments or setup (the
-message says what to fix, including a profile other than `local-dev` or `enterprise`); 130
-interrupted.
+that hit its watchdog), the lanes are not comparable or the counts do not add up (both below); 2 bad
+arguments or setup (the message says what to fix, including a profile other than `local-dev` or
+`enterprise`); 130 interrupted.
+
+**Turn windows.** Each turn is counted from its own `turn/start` to its own `turn/end`; rows the
+host writes between turns (the session title, reply suggestions) belong to no turn. For every
+session the runner checks that the per-turn inference counts, and the per-turn Jev side calls, add
+up to that session's ledger rows (`sessionChecks` in report.json). When one does not, report.md opens
+with COUNTS DO NOT ADD UP, the session is flagged and the exit code is 1.
 
 **Comparable lanes.** The two lanes count only when they send the same tool schema. After each cell
 the runner compares the first request's `tool_schema_hash` of every scenario and repetition that has
