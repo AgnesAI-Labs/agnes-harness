@@ -40,6 +40,7 @@
     "TOOL_NAME_PATTERN",
     "TOOL_PARAMETERS_MAX_BYTES",
     "TOOL_PARAMETERS_MAX_DEPTH",
+    "TOOL_PATH_REFERENCES",
     "TOOL_POLICY_VERSION_PATTERN",
     "bundledExtensionManifest",
     "bundledPackageJson",

@@ -167,6 +167,14 @@ export interface LoopInput {
   /** Host-authenticated source; data remains untrusted for model policy. */
   system?: import('@agnes/protocol').SystemInput
 }
+/** Static facts about one tool in the turn's catalog. */
+export interface LoopToolMeta {
+  readonly isReadOnly: boolean
+  readonly isDestructive: boolean
+  readonly isOpenWorld: boolean
+  /** Whether a request that names the tool keeps it for the view's model. */
+  readonly offered: boolean
+}
 export interface LoopTurnView {
   readonly turnId: number
   readonly step: number
@@ -197,6 +205,10 @@ export interface LoopTurnView {
     perRequestCap: number | null
     onExceed: 'quote' | 'deny'
   }
+  /** One entry per tool in the catalog, with static values from its definition. Optional so a test double may leave it out. */
+  readonly toolMeta?: Readonly<Record<string, LoopToolMeta>>
+  /** The tool names a request that leaves out `tools` would send at this moment. Optional so a test double may leave it out. */
+  readonly disclosedTools?: readonly string[]
 }
 /** Durable dispatch uncertainty; responded is not a promise of successful execution. */
 export type LoopEffectStatus =
