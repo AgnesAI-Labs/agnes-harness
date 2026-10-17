@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, lstatSync, readdirSync, readFileSync, rmdirSync, rmSync } from 'node:fs'
+import { existsSync, lstatSync, mkdtempSync, readdirSync, readFileSync, rmdirSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join, resolve, sep } from 'node:path'
 import {
   type AuthoringCandidate,
@@ -272,27 +273,38 @@ export class AuthoringCandidates {
     this.save(profileDir, record)
     return this.project(record, profileDir)
   }
-  async test(profileDir: string, id: string, owner: string, expected: string, signal: AbortSignal) {
+  async test(
+    profileDir: string,
+    id: string,
+    owner: string,
+    expected: string,
+    signal: AbortSignal,
+    runner: AuthoringTestRunner = this.testRunner,
+  ) {
     const record = this.load(profileDir, id, owner)
     this.verify(record, expected)
     if (['published', 'rejected', 'publishing', 'interrupted'].includes(record.value.state))
       authoringError('Candidate is terminal')
     const files = readAuthoringFiles(record.tree),
-      work = join(this.root(profileDir), id, 'tests', randomUUID())
-    writeAuthoringFiles(work, files)
-    // Revoke an older review before any test code runs.
-    record.value.reviewHash = null
-    record.value.state = 'draft'
-    record.value.tests = null
-    this.save(profileDir, record)
-    const result = await this.testRunner(work, files, signal)
-    this.verify(record, expected)
-    if (hashDirectory(work) !== expected)
-      authoringError('Tests changed their source; passing results cannot be retained')
-    record.value.tests = { ...result, hash: expected, completedAt: new Date().toISOString() }
-    record.value.state = result.state === 'passed' ? 'tested' : 'failed'
-    this.save(profileDir, record)
-    return this.project(record, profileDir)
+      work = mkdtempSync(join(tmpdir(), 'agh-candidate-test-'))
+    try {
+      writeAuthoringFiles(work, files)
+      // Revoke an older review before any test code runs.
+      record.value.reviewHash = null
+      record.value.state = 'draft'
+      record.value.tests = null
+      this.save(profileDir, record)
+      const result = await runner(work, files, signal)
+      this.verify(record, expected)
+      if (hashDirectory(work) !== expected)
+        authoringError('Tests changed their source; passing results cannot be retained')
+      record.value.tests = { ...result, hash: expected, completedAt: new Date().toISOString() }
+      record.value.state = result.state === 'passed' ? 'tested' : 'failed'
+      this.save(profileDir, record)
+      return this.project(record, profileDir)
+    } finally {
+      rmSync(work, { recursive: true, force: true })
+    }
   }
   async submit(profileDir: string, id: string, owner: string, expected: string) {
     const record = this.load(profileDir, id, owner)

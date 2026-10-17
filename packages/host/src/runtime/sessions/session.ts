@@ -546,6 +546,11 @@ export async function createSession(
     if (explicit.length === 0) await session.setYolo(true, actor)
   }
   Object.assign(session, {
+    commandSandboxPolicy: () => ({
+      policy: structuredClone(sandbox.fsPolicy()),
+      network: session.preset.approval.policy === 'full-access' ? 'allow' : 'deny',
+      local: !a.adapters.transport && (profile.sandbox?.provider ?? 'local') === 'local',
+    }),
     hasActiveProcesses: () => workspace?.runtime.hasActiveProcesses?.() ?? false,
     referenceResolvers: a.pluginTree.root.referenceResolvers,
     referenceSessions: referenceHistory(
