@@ -1,7 +1,20 @@
 import type { GenericLoopPorts, LoopToolCallOptions, ToolResult } from '@agnes/extension-api'
-import { classifyReadBatch, classifyResult } from './profile.js'
-import type { Observation, PendingCall, Phase } from './types.js'
+import { normalizeView } from './observations.js'
+import { classifyReadBatch, classifyResult, normalizePath, resultText, targetOf } from './profile.js'
+import { extractReferences, SEARCH_TOOLS } from './references.js'
+import type {
+  JsonObject,
+  Observation,
+  ObservationView,
+  PendingCall,
+  Phase,
+  ReferenceSource,
+  ViewReference,
+} from './types.js'
 import { clip, errorCode } from './util.js'
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value)
 
 /** Core refusals of an announced call that the step records as a recoverable refusal. */
 export const REFUSAL_CODES = [
@@ -149,7 +162,60 @@ export async function replayCalls(
   })
 }
 
-/** The one observation a dispatch leaves: one entry per step, a read batch included. */
+const SEARCH = new Set<string>(SEARCH_TOOLS)
+const TARGETED = new Set(['read', 'write', 'edit'])
+
+/** What a view is about: the searched path, the file acted on (a batch lists them all), else the root. */
+function scopeOf(calls: PendingCall[], cwd: string): string {
+  const first = calls[0]
+  if (first === undefined) return '.'
+  if (SEARCH.has(first.name)) {
+    const path = isRecord(first.args) ? first.args.path : undefined
+    return normalizePath(path ?? '.', cwd) ?? '.'
+  }
+  if (!TARGETED.has(first.name)) return '.'
+  const targets = calls.flatMap((call) => {
+    const target = targetOf(call.name, call.args, cwd)
+    return target === null ? [] : [target]
+  })
+  return targets.length === 0 ? '.' : targets.join(', ')
+}
+
+/**
+ * The one view a dispatch leaves: the first call names it, the results' text is its evidence, and
+ * the references come from every call's result (a read batch yields each file that was read).
+ */
+export function viewForDispatch(input: { calls: PendingCall[]; results: ToolResult[]; cwd: string }): {
+  view: ObservationView
+  refs: { source: ReferenceSource; count: number }
+} {
+  const { calls, results, cwd } = input
+  const first = calls[0]
+  if (first === undefined) throw new Error('Jev loop dispatch has no call to view')
+  const references: ViewReference[] = []
+  let source: ReferenceSource = 'none'
+  let truncated = false
+  calls.forEach((call, index) => {
+    const result = results[index]
+    if (result === undefined) return
+    const found = extractReferences({ name: call.name, args: call.args, result, cwd })
+    if (source === 'none') source = found.source
+    references.push(...found.references)
+    truncated ||= found.truncated
+  })
+  const view = normalizeView({
+    operation: first.name,
+    callId: first.invocationId,
+    scope: scopeOf(calls, cwd),
+    evidence: results.map(resultText).join('\n'),
+    references,
+    truncated,
+    ...(calls.length === 1 && isRecord(first.args) ? { invocation: first.args as JsonObject } : {}),
+  })
+  return { view, refs: { source, count: references.length } }
+}
+
+/** The one observation a dispatch leaves: one entry per step, a read batch included, and its view. */
 export function observeDispatch(input: {
   phase: Phase | null
   calls: PendingCall[]
@@ -157,20 +223,25 @@ export function observeDispatch(input: {
   cwd: string
   confidence: number | null
   escalated: boolean
+  /** Whether the tool is read-only; reaches `classifyResult` for a tool without a profile. */
+  readOnly?: boolean
 }): Observation {
   const { calls, results, ...common } = input
+  let observed: Observation
   if (calls.length > 1) {
     if (!calls.every((call) => call.name === 'read'))
       throw new Error('Jev loop dispatch batches only read calls')
-    return classifyReadBatch({
+    observed = classifyReadBatch({
       ...common,
       calls: calls.map((call) => ({ name: call.name, args: call.args })),
       results,
     })
+  } else {
+    const call = calls[0]
+    const result = results[0]
+    if (call === undefined || result === undefined)
+      throw new Error('Jev loop dispatch has no result to observe')
+    observed = classifyResult({ ...common, name: call.name, args: call.args, result })
   }
-  const call = calls[0]
-  const result = results[0]
-  if (call === undefined || result === undefined)
-    throw new Error('Jev loop dispatch has no result to observe')
-  return classifyResult({ ...common, name: call.name, args: call.args, result })
+  return Object.assign(observed, viewForDispatch({ calls, results, cwd: input.cwd }))
 }
