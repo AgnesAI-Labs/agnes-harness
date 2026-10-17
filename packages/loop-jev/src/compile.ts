@@ -198,7 +198,7 @@ export const MAX_SHRINK_LEVEL = 7
 
 /** The first shrink level, from `fromLevel` up to 7, whose state and questions fit the budget. */
 // Shrink level 6 (clip non-profiled criteria) cannot change the questions because `c` is fixed; it is a no-op in
-// stage 1, where every built-in tool is profiled.
+// this version, where every built-in tool is profiled.
 export function fitBudget(
   c: CompiledQuestions,
   stateAt: (level: number) => JsonObject,

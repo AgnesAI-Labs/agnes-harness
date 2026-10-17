@@ -29,7 +29,7 @@ function deps(port = fakeJev(() => ({})), over: Partial<JevDeps> = {}) {
 const signal = new AbortController().signal
 
 describe('callJev', () => {
-  it('prepares exactly the spec request and records the attempt before invoking', async () => {
+  it('prepares exactly the jev.decide request and records the attempt before invoking', async () => {
     const { d, log, port } = deps()
     const out = await callJev(req(), d, signal)
     expect(out).toMatchObject({ kind: 'ok', invocationId: 'jev:3:2:d0' })

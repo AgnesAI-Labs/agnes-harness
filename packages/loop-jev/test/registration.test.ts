@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { createJevLoopFactory, JEV_LOOP, jevLoopPlugin } from '../src/index.js'
 
 describe('agnes.jev registration', () => {
-  it('declares the identity, controls and capabilities of the spec', () => {
+  it('declares the agnes.jev identity, the steer control and its capabilities', () => {
     const factory = createJevLoopFactory()
     expect(JEV_LOOP).toEqual({ id: 'agnes.jev', version: '0.1.0' })
     expect([factory.id, factory.version]).toEqual(['agnes.jev', '0.1.0'])

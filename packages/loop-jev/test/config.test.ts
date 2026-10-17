@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { DEFAULT_CONFIG, resolveConfig } from '../src/config.js'
 
 describe('configuration', () => {
-  it('fills the spec defaults in code', () => {
+  it('fills every default in code when no configuration is given', () => {
     expect(resolveConfig(undefined)).toEqual({
       jev: { route: 'jev', model: 'typesafe/jev-1.13-20260917', deadlineMs: 15000, maxRetries: 2 },
       llmMaxAttempts: 2,
