@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 import type { PackageContributionSummary, PluginCapabilities } from '@agnes/protocol'
 import { syncDirectorySync } from '@agnes/system-node'
 import { PackageError } from './errors.js'
+import { legacyMetadata, type StoredPluginMetadata } from './stored-metadata.js'
 
 export function readStaticJson(file: string): Record<string, unknown> {
   try {
@@ -55,21 +56,30 @@ export function capabilityHash(entry: {
   application?: import('@agnes/protocol').ApplicationTemplate
   dependencies: Record<string, string>
 }): string {
+  const metadata = entry.metadata as StoredPluginMetadata | undefined
   return snapshotHash({
     contributions: (entry.contributions ?? []).map((c) =>
       c.kind === 'extension' ? { ...c, runtimeSupports: c.runtimeSupports ?? ['in-process'] } : c,
     ),
     dependencies: entry.dependencies,
-    ...(entry.agents && entry.agents.length ? { agents: entry.agents } : {}),
+    ...(entry.agents?.length ? { agents: entry.agents } : {}),
     ...(entry.application ? { application: entry.application } : {}),
-    ...(entry.metadata?.exampleOf !== undefined
+    ...(legacyMetadata(metadata) && metadata.category === 'example'
       ? {
           example: {
-            exampleOf: entry.metadata.exampleOf,
-            pageEntry: entry.metadata.pageEntry,
+            exampleOf: metadata.exampleOf,
+            launches: metadata.launches ?? [],
+            pageEntry: metadata.pageEntry,
           },
         }
-      : {}),
+      : !legacyMetadata(metadata) && entry.metadata?.exampleOf !== undefined
+        ? {
+            example: {
+              exampleOf: entry.metadata.exampleOf,
+              pageEntry: entry.metadata.pageEntry,
+            },
+          }
+        : {}),
     ...(entry.declaredCapabilities === undefined ? {} : { declaredCapabilities: entry.declaredCapabilities }),
   })
 }

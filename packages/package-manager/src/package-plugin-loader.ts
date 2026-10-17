@@ -114,7 +114,7 @@ export function runtimePluginDataSourcesFromInventory(
       return false
     const manifest = readStaticJson(join(pkg.directory, 'package.json'))
     const agnes = (manifest.agnes ?? {}) as Record<string, unknown>
-    if (parseAgnesPluginEntries(pkg.id, agnes.plugins).length) return false
+    if (parseAgnesPluginEntries(pkg.id, agnes.plugins, { stored: true }).length) return false
     return (
       Object.keys(parsePackageBundleContract(pkg.id, agnes.bundles)).length > 0 ||
       pkg.entry.application !== undefined
@@ -213,7 +213,9 @@ function readDeclarations(
   if ((agnes as Readonly<Record<string, unknown>>).extensions !== undefined)
     stateFailure('legacy-extension-format')
   try {
-    return parseAgnesPluginEntries(snapshot.packageId, (agnes as Readonly<Record<string, unknown>>).plugins)
+    return parseAgnesPluginEntries(snapshot.packageId, (agnes as Readonly<Record<string, unknown>>).plugins, {
+      stored: true,
+    })
   } catch (error) {
     if (error instanceof ProviderError) throw error
     stateFailure('plugin-manifest')

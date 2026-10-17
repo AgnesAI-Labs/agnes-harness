@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { lstatSync, mkdirSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { type PackageBlocker, validatePackageAdminData, validatePluginMetadata } from '@agnes/protocol'
+import { type PackageBlocker, validatePackageAdminData } from '@agnes/protocol'
 import { renameWriteThroughSync } from '@agnes/system-node'
 import { validAgentDeclarations, validApplicationDeclaration } from './agent-declarations.js'
 import { collectRead, collectReadAsync } from './cooperative-read.js'
@@ -39,6 +39,7 @@ import type {
 } from './runtime-snapshot-types.js'
 import { hashDirectory, packageDir, parseSource } from './sources.js'
 import { previousPackageDir } from './store.js'
+import { currentStoredShape, legacyMetadata, validStoredMetadata } from './stored-metadata.js'
 
 export type {
   RuntimePin,
@@ -99,7 +100,7 @@ function validateRecord(raw: unknown): SnapshotRecord {
   const value = raw as Record<string, unknown>
   if (
     !exactKeys(value, [
-      'version',
+      ...(value.version === undefined ? [] : ['version']),
       'snapshotId',
       'packageId',
       'packageVersion',
@@ -118,8 +119,8 @@ function validateRecord(raw: unknown): SnapshotRecord {
     ]) ||
     (value.declaredCapabilities !== undefined &&
       !validatePackageAdminData('PluginCapabilities', value.declaredCapabilities).ok) ||
-    (value.metadata !== undefined && !validatePluginMetadata(value.metadata).ok) ||
-    value.version !== 1 ||
+    (value.metadata !== undefined && !validStoredMetadata(value.metadata)) ||
+    (value.version !== undefined && value.version !== 1 && value.version !== 2) ||
     typeof value.snapshotId !== 'string' ||
     !SHA256.test(value.snapshotId) ||
     typeof value.packageId !== 'string' ||
@@ -147,9 +148,10 @@ function validateRecord(raw: unknown): SnapshotRecord {
     if (!id || id.length > 256 || typeof range !== 'string' || range.length > 1024)
       integrityFailure('snapshot-dependencies')
   for (const contribution of value.contributions)
-    if (!validatePackageAdminData('PackageContributionSummary', contribution).ok)
+    if (!validatePackageAdminData('PackageContributionSummary', currentStoredShape(contribution)).ok)
       integrityFailure('snapshot-contribution')
   if (
+    (legacyMetadata(value.metadata) && (value.agents !== undefined || value.application !== undefined)) ||
     !validApplicationDeclaration(value.application) ||
     !validAgentDeclarations(value.agents, String(value.packageId))
   )
@@ -163,6 +165,7 @@ function validateRecord(raw: unknown): SnapshotRecord {
         integrity: record.integrity,
         treeIntegrity: record.treeIntegrity,
         capabilityHash: record.capabilityHash,
+        ...(record.version === 2 ? { recordVersion: 2 } : {}),
       }) ||
     capabilityHash(record) !== record.capabilityHash
   )
@@ -239,6 +242,7 @@ function runtimeSnapshotId(value: {
   integrity: string
   treeIntegrity: string
   capabilityHash: string
+  recordVersion?: 2
 }): string {
   return `sha256-${snapshotHash(value)}`
 }
@@ -246,13 +250,14 @@ function recordFromEntry(packageId: string, entry: LockEntry): SnapshotRecord {
   if (!entry.treeIntegrity || !entry.contributions) integrityFailure('snapshot-migration-required')
   const hash = capabilityHash(entry)
   return {
-    version: 1,
+    version: 2,
     snapshotId: runtimeSnapshotId({
       packageId,
       version: entry.version,
       integrity: entry.integrity,
       treeIntegrity: entry.treeIntegrity,
       capabilityHash: hash,
+      recordVersion: 2,
     }),
     packageId,
     packageVersion: entry.version,

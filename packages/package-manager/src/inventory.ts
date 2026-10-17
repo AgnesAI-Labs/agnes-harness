@@ -1,11 +1,6 @@
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import {
-  type PackageBlocker,
-  type PackageContributionSummary,
-  type PackagePresentation,
-  validatePluginMetadata,
-} from '@agnes/protocol'
+import type { PackageBlocker, PackageContributionSummary, PackagePresentation } from '@agnes/protocol'
 import { collectRead, collectReadAsync } from './cooperative-read.js'
 import { PackageError } from './errors.js'
 import { exampleParentBlockers } from './example-parent.js'
@@ -24,6 +19,7 @@ import {
 } from './provenance.js'
 import { hashDirectory, packageDir, parseSource } from './sources.js'
 import { previousPackageDir } from './store.js'
+import { validStoredMetadata } from './stored-metadata.js'
 import { verifyWorkspace } from './workspace.js'
 
 export type InstalledPackage = Readonly<{
@@ -181,6 +177,7 @@ export function verifyHashedPackageDirectory(
           ...(entry.releasedAt ? { releasedAt: entry.releasedAt } : {}),
         },
         ceiling,
+        stored: true,
       },
       treeIntegrity,
     )
@@ -361,9 +358,9 @@ function* inventoryReadSteps(
       const pkg = readStaticJson(join(directory, 'package.json'))
       const author = (pkg.agnes as { metadata?: unknown } | undefined)?.metadata
       if (author !== undefined) {
-        const checked = validatePluginMetadata(author)
-        if (!checked.ok) throw new PackageError('E_EXT_LOAD', 'Invalid builtin plugin metadata')
-        metadata = checked.value
+        const checked = validStoredMetadata(author)
+        if (!checked) throw new PackageError('E_EXT_LOAD', 'Invalid builtin plugin metadata')
+        metadata = author as NonNullable<LockEntry['metadata']>
       }
     }
     const trusted =

@@ -72,6 +72,7 @@ import {
   dependentUpdatesApplied,
   reviewedUpdateOptions,
 } from './dependent-updates.js'
+import { metadataView } from './metadata-view.js'
 import {
   type PackageOperationKind,
   type PackageOperationRecovery,
@@ -380,7 +381,7 @@ function projectPackage(
       ...structuredClone({ rows: [], ...row.presentation }),
       origin: packageOrigin(row.entry.source, row.entry.provenance, row.entry.trust === 'builtin'),
     },
-    ...(row.entry.metadata ? { metadata: structuredClone(row.entry.metadata) } : {}),
+    ...(row.entry.metadata ? { metadata: metadataView(row.entry.metadata) } : {}),
     blockers: safeBlockers(row.blockers),
     ...(row.localFailure || observation.actual === 'failed' || row.blockers.length
       ? {

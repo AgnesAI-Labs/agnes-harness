@@ -253,6 +253,10 @@ it('rejects bundled legacy manifests even when the package does not declare plug
 })
 it.each([
   { agnes: { unknown: [] } },
+  { agnes: { kinds: ['tool'], plugins: [{ apiRange: '^4.0.0', export: 'main' }] } },
+  {
+    agnes: { metadata: { ...purpose, category: 'tools' }, plugins: [{ apiRange: '^4.0.0', export: 'main' }] },
+  },
   { agnes: { provides: ['invalid'], plugins: [{ apiRange: '^4.0.0', export: 'main' }] } },
   { agnes: { contributions: [{ kind: 'mystery', id: 'acme/x' }] } },
   {

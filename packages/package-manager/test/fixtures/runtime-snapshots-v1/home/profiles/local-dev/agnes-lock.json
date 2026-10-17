@@ -1,0 +1,151 @@
+{
+  "lockfileVersion": 1,
+  "profile": "local-dev",
+  "resolvedProfileHash": "sha256-0000000000000000000000000000000000000000000000000000000000000000",
+  "generatedAt": "2026-10-17T23:20:49.334Z",
+  "generatedBy": {
+    "agnesVersion": "0.1.0"
+  },
+  "packages": {
+    "acme/parent": {
+      "version": "1.0.0",
+      "provenance": {
+        "source": {
+          "type": "file",
+          "ref": "file:./parent"
+        },
+        "sourceKind": "local-folder",
+        "resolvedLocation": "/private/tmp/agh-snapshot-877-home/parent",
+        "version": "1.0.0",
+        "integrity": "sha256-7b815fc9ebdedd710085e459cf71409899e146539e5f7f30df335f3a0290753a",
+        "treeIntegrity": "sha256-7b815fc9ebdedd710085e459cf71409899e146539e5f7f30df335f3a0290753a",
+        "signatureVerified": false,
+        "verification": "unverified",
+        "installer": "user",
+        "installedAt": "2026-10-01T00:00:00Z",
+        "trustDecision": "confirmed"
+      },
+      "integrity": "sha256-7b815fc9ebdedd710085e459cf71409899e146539e5f7f30df335f3a0290753a",
+      "trust": "trusted",
+      "license": "MIT",
+      "state": {
+        "installed": "2026-10-01T00:00:00Z",
+        "trusted": "2026-10-01T00:00:00Z",
+        "enabled": true
+      },
+      "dependencies": {},
+      "previous": null,
+      "source": {
+        "type": "file",
+        "ref": "file:./parent"
+      },
+      "contributions": [],
+      "metadata": {
+        "displayName": "Upgrade fixture",
+        "summary": "Synthetic legacy snapshot",
+        "description": "Synthetic plugin-core upgrade fixture",
+        "category": "tools"
+      },
+      "treeIntegrity": "sha256-7b815fc9ebdedd710085e459cf71409899e146539e5f7f30df335f3a0290753a",
+      "surfaces": [],
+      "trustDecision": {
+        "integrity": "sha256-7b815fc9ebdedd710085e459cf71409899e146539e5f7f30df335f3a0290753a",
+        "capabilityHash": "e3de4e5f2da4b8aa2650af5c4f822d397c2dadd7a6695e5071c0444d26a22b01",
+        "decidedAt": "2026-10-01T00:00:00Z"
+      }
+    },
+    "acme/legacy": {
+      "version": "1.0.0",
+      "provenance": {
+        "source": {
+          "type": "file",
+          "ref": "file:./legacy"
+        },
+        "sourceKind": "local-folder",
+        "resolvedLocation": "/private/tmp/agh-snapshot-877-home/legacy",
+        "version": "1.0.0",
+        "integrity": "sha256-f78ea345365d181ec786eb13fd8756a27a5f02a5b9ab5a9568218c0fa199d0af",
+        "treeIntegrity": "sha256-f78ea345365d181ec786eb13fd8756a27a5f02a5b9ab5a9568218c0fa199d0af",
+        "signatureVerified": false,
+        "verification": "unverified",
+        "installer": "user",
+        "installedAt": "2026-10-01T00:00:00Z",
+        "trustDecision": "confirmed"
+      },
+      "integrity": "sha256-f78ea345365d181ec786eb13fd8756a27a5f02a5b9ab5a9568218c0fa199d0af",
+      "trust": "trusted",
+      "license": "MIT",
+      "state": {
+        "installed": "2026-10-01T00:00:00Z",
+        "trusted": "2026-10-01T00:00:00Z",
+        "enabled": false
+      },
+      "dependencies": {
+        "acme/parent": "^1.0.0"
+      },
+      "previous": null,
+      "source": {
+        "type": "file",
+        "ref": "file:./legacy"
+      },
+      "contributions": [],
+      "metadata": {
+        "displayName": "Upgrade fixture",
+        "summary": "Synthetic legacy snapshot",
+        "description": "Synthetic plugin-core upgrade fixture",
+        "category": "example",
+        "exampleOf": "acme/parent",
+        "launches": [
+          {
+            "id": "work",
+            "kind": "business-agent",
+            "title": "Work",
+            "bundle": "acme/legacy#work",
+            "preset": "safe",
+            "prompt": "Synthetic draft"
+          }
+        ]
+      },
+      "treeIntegrity": "sha256-f78ea345365d181ec786eb13fd8756a27a5f02a5b9ab5a9568218c0fa199d0af",
+      "surfaces": [],
+      "trustDecision": {
+        "integrity": "sha256-f78ea345365d181ec786eb13fd8756a27a5f02a5b9ab5a9568218c0fa199d0af",
+        "capabilityHash": "74681655e8ad6e7ff8f417f1bbd9fca6c8e4a9691c8816533ada8ecfd2cb70c4",
+        "decidedAt": "2026-10-01T00:00:00Z"
+      }
+    }
+  },
+  "seams": {
+    "approval": {
+      "provider": "local"
+    },
+    "checkpoint": {
+      "provider": "local"
+    },
+    "billing": {
+      "provider": "local"
+    },
+    "verifier": {
+      "provider": "local"
+    },
+    "repair": {
+      "provider": "local"
+    },
+    "artifacts": {
+      "provider": "local"
+    },
+    "principals": {
+      "provider": "local"
+    }
+  },
+  "provider": {
+    "package": "@agnes/ai",
+    "adapters": [
+      "@agnes/ai"
+    ]
+  },
+  "policySnapshot": {
+    "capabilityCeiling": [],
+    "workspacePackages": "require-project-trust"
+  }
+}

@@ -106,7 +106,19 @@ describe('rebuildDesiredFromInventory', () => {
         version: '1.0.0',
         agnes: {
           plugins: [
-            { apiRange: '^4.0.0', export: 'echo', id: 'ext:acme/echo', runtime: 'in-process', default: true },
+            {
+              apiRange: '^4.0.0',
+              export: 'echo',
+              id: 'ext:acme/echo',
+              runtime: 'in-process',
+              default: true,
+              metadata: {
+                displayName: 'Legacy echo',
+                summary: 'Synthetic fixture',
+                description: 'Persisted plugin-core row',
+                category: 'tools',
+              },
+            },
           ],
         },
       })}\n`,

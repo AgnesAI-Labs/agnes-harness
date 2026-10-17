@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import { verifyCurrentDeclarations } from './current-declarations.mjs'
 import { packageId, writePackage } from './fixture.mjs'
 import { connect, eventually, packages } from './runtime.mjs'
 
@@ -90,6 +91,8 @@ try {
             module: import.meta.resolve('@agnes/host-infrastructure/adapters/process-identity-default'),
           }
         : undefined,
+      !!JSON.parse(await readFile(join(source, 'packages/protocol/schema/extension-manifest.json'), 'utf8'))
+        .$defs.PluginMetadata.properties.category,
     )
     const packageSource = { type: 'file', ref: `file:${directory}` }
     const preview = (
@@ -431,6 +434,7 @@ try {
         )
     }
     await verifyManaged(state)
+    await verifyCurrentDeclarations(sdk, admin, workspace)
   }
 } finally {
   await sdk.close()

@@ -15,6 +15,7 @@ import {
   parseAgnesPluginProvides,
 } from './plugin-manifest.js'
 import { summarizeBundlePresets } from './preset-policy-summary.js'
+import { currentStoredShape } from './stored-metadata.js'
 
 /** Static display text/config availability, never registration or activation evidence. */
 export function presentPluginRows(
@@ -32,7 +33,11 @@ export function presentPluginRows(
     ...(includes ? { includes } : {}),
     rows: entries.map((entry) => ({
       id: entry.id,
-      ...(entry.metadata ? { metadata: structuredClone(entry.metadata) } : {}),
+      ...(entry.metadata
+        ? (currentStoredShape({ metadata: entry.metadata }) as {
+            metadata: NonNullable<AgnesPluginManifestEntry['metadata']>
+          })
+        : {}),
       settings: entry.configSchema !== undefined,
     })),
     ...(presets.length ? { presets } : {}),
@@ -49,12 +54,15 @@ export function readPackagePresentation(
   const author = pkg.agnes as
     | { plugins?: unknown; extensions?: unknown; bundles?: unknown; provides?: unknown }
     | undefined
-  const result = presentPluginRows(parseAgnesPluginEntries(String(pkg.name), author?.plugins), {
-    packageId: String(pkg.name),
-    bundles: author?.bundles,
-    provides: parseAgnesPluginProvides(author?.provides),
-    contributions,
-  })
+  const result = presentPluginRows(
+    parseAgnesPluginEntries(String(pkg.name), author?.plugins, { stored: true }),
+    {
+      packageId: String(pkg.name),
+      bundles: author?.bundles,
+      provides: parseAgnesPluginProvides(author?.provides),
+      contributions,
+    },
+  )
   if (builtin && Array.isArray(author?.extensions)) {
     for (const path of author.extensions) {
       if (typeof path !== 'string' || result.rows.length >= 256) throw new TypeError('Invalid bundled rows')
