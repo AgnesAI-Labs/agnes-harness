@@ -1,7 +1,7 @@
 /** @vitest-environment happy-dom */
 
 import { Context } from '@agnes/cordis'
-import { homeEntries } from '@agnes/web-client'
+import { applicationIdentity, homeEntries } from '@agnes/web-client'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -18,6 +18,7 @@ vi.mock('../src/pages/admin-api.js', () => ({
 describe('home entry names', () => {
   let dispose: (() => void) | undefined
   afterEach(() => {
+    applicationIdentity.set(undefined)
     dispose?.()
     dispose = undefined
   })
@@ -115,6 +116,37 @@ describe('home entry names', () => {
           language === 'zh-CN' ? '控制台' : 'Console',
         )
         expect(importer).not.toHaveBeenCalled()
+        await act(async () => {
+          applicationIdentity.set({
+            revision: 1,
+            selection: null,
+            status: 'active',
+            assets: {},
+            candidates: [],
+            effective: {
+              id: 'console',
+              presentation: {
+                navigation: {
+                  entries: ['acme/console#console'],
+                  hideBuiltin: ['plugins'],
+                },
+              },
+            },
+          })
+        })
+        expect(
+          [...host.querySelectorAll('[data-testid^="home-entry-"]')].map((node) =>
+            node.getAttribute('data-testid'),
+          ),
+        ).toEqual(['home-entry-console', 'home-entry-agents', 'home-entry-automation'])
+        await act(async () => {
+          applicationIdentity.set(undefined)
+        })
+        expect(
+          [...host.querySelectorAll('[data-testid^="home-entry-"]')].map((node) =>
+            node.getAttribute('data-testid'),
+          ),
+        ).toEqual(['home-entry-agents', 'home-entry-plugins', 'home-entry-automation', 'home-entry-console'])
         modules = []
         await act(async () => {
           await reconciler.invalidate()

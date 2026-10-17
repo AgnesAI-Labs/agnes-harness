@@ -313,7 +313,7 @@ describe('local package admin surface trust boundary', () => {
     expect(invoke).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps recovery read-only after a failed backend probe, including inspect', async () => {
+  it('keeps recovery read-only after a failed probe while allowing only an authorized application clear', async () => {
     const s = await server()
     await s.login()
     s.invoke.mockRejectedValueOnce(new Error('bad lock'))
@@ -330,9 +330,23 @@ describe('local package admin surface trust boundary', () => {
     })
     expect(response.status).toBe(409)
     expect(s.invoke).not.toHaveBeenCalled()
+    const clear = { profile: 'local-dev', clientId: 'admin-web', commandId: 'clear-1', expectedRevision: 1 }
+    s.invoke.mockResolvedValueOnce({
+      revision: 2,
+      selection: null,
+      status: 'host',
+      effective: null,
+      assets: {},
+      candidates: [],
+    })
+    expect((await s.request('application/clear', clear)).status).toBe(200)
+    expect((await s.request('application/clear', { ...clear, clientId: 'forged' })).status).toBe(403)
+    expect((await s.request('application/clear', clear, { Origin: 'http://evil.invalid' })).status).toBe(403)
+    const reader = await server(undefined, undefined, { permissions: ['packages.read'] })
+    await reader.login()
+    expect((await reader.request('application/clear', clear)).status).toBe(403)
     expect((await s.request('list', { profile: 'local-dev' })).status).toBe(200)
-    await s.request('context')
-    expect(s.invoke).toHaveBeenCalledTimes(2)
+    expect(await (await s.request('context')).json()).toMatchObject({ readOnly: false })
   })
 
   // packages/web-admin/src/admin/plugins/api.ts keeps its own hand-maintained METHOD_BY_PATH map of the
