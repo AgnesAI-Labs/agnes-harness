@@ -102,6 +102,7 @@ export type AssembleDeps = HostPaths &
     /** Host-local resolved Skill snapshot. The daemon supplies it; PackageManager never does. */
     skillResources?: SkillRuntimeInput
     /** Request-only daemon bridge. Never a resource-admin client or authority. */
+    scheduling?: import('@agnes/extension-api').SchedulingBridge
     boundWakes?: (owner: string, integrity: string) => import('@agnes/extension-api').BoundWakes
     mcpManage?: import('@agnes/host-extensions/resources/mcp-manage-port').McpManageBridge
     pluginManage?: import('@agnes/host-extensions/resources/plugin-manage-port').PluginManageBridge

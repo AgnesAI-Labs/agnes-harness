@@ -190,8 +190,6 @@ export type SeamInitContext = {
   computerUseOptions?: ComputerUseToolOptions
   /** Present only after seam assembly; ecosystem extensions must not substitute adapters.exec. */
   sandbox?: SandboxSeam
-  /** Daemon job tables, supplied only to agnes/schedule. */
-  scheduleTables?: { table(name: string): TableHandle }
 }
 
 export type SeamFactory<S = unknown> = (ctx: SeamInitContext) => Promise<S>

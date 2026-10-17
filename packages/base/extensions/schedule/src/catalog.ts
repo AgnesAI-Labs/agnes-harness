@@ -47,17 +47,10 @@ type DaemonTable = {
   all<T>(sql: string, params?: unknown[]): T[]
   transaction<T>(fn: () => T): T
 }
-type SeamTable = {
-  exec(sql: string): void
-  run(sql: string, params?: readonly unknown[]): { changes: number }
-  get<T>(sql: string, params?: readonly unknown[]): T | undefined
-  all<T>(sql: string, params?: readonly unknown[]): T[]
-  transaction<T>(fn: () => T): T
-}
 
 const SCHEDULE_KEY = /^schedule:(sched_[a-f0-9]{16}):(\d+)$/
 
-// Locked copy of JobsRepo's DDL. The worker may insert a reminder before the daemon opens jobs.
+// Shared database schema for the daemon's job and schedule catalog.
 const JOBS_DDL = `CREATE TABLE IF NOT EXISTS jobs (
   idempotency_key TEXT PRIMARY KEY,
   session_key TEXT NOT NULL,
@@ -95,24 +88,6 @@ export function openDaemonScheduleDb(table: DaemonTable): ScheduleDb {
     },
     all(sql, params) {
       return table.all(sql, bind(params))
-    },
-    transaction(fn) {
-      return table.transaction(fn)
-    },
-  }
-}
-
-export function openSeamScheduleDb(table: SeamTable): ScheduleDb {
-  return {
-    exec(sql, params) {
-      if (params && params.length > 0) table.run(sql, params)
-      else table.exec(sql)
-    },
-    get(sql, params) {
-      return table.get(sql, params)
-    },
-    all(sql, params) {
-      return table.all(sql, params)
     },
     transaction(fn) {
       return table.transaction(fn)
@@ -704,13 +679,16 @@ export function createSchedulesPort(
         }),
       })
     },
-    async upsert(params: unknown) {
+    async upsert(params: unknown, signal?: AbortSignal) {
+      signal?.throwIfAborted()
       const body = params as ScheduleWrite
       if (body.id) {
         if (body.target !== undefined) await verify(body.target)
+        signal?.throwIfAborted()
         return catalog.update({ ...body, id: body.id })
       }
       await verify(body.target)
+      signal?.throwIfAborted()
       return catalog.create(body)
     },
     archive(params: { id: string }) {

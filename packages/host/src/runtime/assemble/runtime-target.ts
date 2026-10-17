@@ -228,7 +228,7 @@ function createPublisher(ctx: AssemblyContext, input: RuntimeTargetInput, shared
             )
           const extensionHost = shared.extensionServices.current
           if (!extensionHost) throw new HostError('E_EXT_LOAD', 'service binding is closed')
-          installHostServices(extensionHost, root, origins, proc.gitWorktrees)
+          installHostServices(extensionHost, root, origins, proc.gitWorktrees, ctx.deps)
           const memoryRegistry: import('@agnes/host-common/assemble/provider-registry').ProviderRegistry<
             import('@agnes/extension-api').MemoryProvider
           > = installProviderRegistry(root, memoryKind, (owner, source, provider) =>
@@ -437,6 +437,7 @@ export async function mountRuntimeTarget(
   shared.extensionServices.current = createExtensionServiceHost({
     providers: () => publishedOrdinary().root.providers,
     sessionGeneration: (key) => deps.sessionGeneration?.(key),
+    serviceIdentity: (owner) => input.hosts.rowExtensions.serviceIdentity(owner),
   })
   const intelligentUi = createIntelligentUiBridge({
     dataDir: ctx.dataDir,

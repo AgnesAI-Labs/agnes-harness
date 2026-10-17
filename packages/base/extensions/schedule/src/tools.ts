@@ -1,13 +1,7 @@
-import type { ToolResult } from '@agnes/extension-api'
+import type { SchedulingService, ToolContext, ToolResult } from '@agnes/extension-api'
 import { defineTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
-import {
-  type ScheduleCatalog,
-  ScheduleRejected,
-  type ScheduleTarget,
-  type ScheduleView,
-  type ScheduleWrite,
-} from './catalog.js'
+import { ScheduleRejected, type ScheduleTarget, type ScheduleView } from './rules.js'
 
 const Time = Type.String({ pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$', minLength: 5, maxLength: 5 })
 const Zone = Type.String({ minLength: 1, maxLength: 64 })
@@ -87,18 +81,18 @@ function echo(value: ScheduleView | { updated: false; code: string }, session: T
   return 'target' in value ? { ...value, runsIn: runsIn(value.target, session) } : value
 }
 
-const owner = (row: ScheduleView) => (row.target.kind === 'session' ? row.target.sessionKey : row.origin)
-
 function refused(session: ToolSession) {
   return (session.depth ?? 0) > 0 ? jsonResult({ code: 'subagent_session' }) : undefined
 }
 
 function failed(error: unknown) {
   if (error instanceof ScheduleRejected) return jsonResult({ code: error.code })
+  const data = (error as { data?: { code?: string } })?.data
+  if (data?.code && /^[a-z_]+$/.test(data.code)) return jsonResult({ code: data.code })
   return jsonResult({ code: 'internal_error' })
 }
 
-export function createScheduleTools(catalog: ScheduleCatalog | undefined) {
+export function createScheduleTools(open: ((ctx: ToolContext) => Promise<SchedulingService>) | undefined) {
   const write = (name: 'schedule_create' | 'schedule_update', description: string, includeAfter: boolean) =>
     defineTool({
       name,
@@ -117,21 +111,18 @@ export function createScheduleTools(catalog: ScheduleCatalog | undefined) {
       async execute(args, ctx) {
         const blocked = refused(ctx.session)
         if (blocked) return blocked
-        if (!catalog) return jsonResult({ code: 'internal_error' })
+        if (!open) return jsonResult({ code: 'internal_error' })
         try {
           const { target: choice, ...rest } = args as typeof args & {
             target?: 'current_session' | 'new_session'
             id?: string
           }
-          const input: ScheduleWrite = {
+          const input = {
             ...rest,
-            origin: ctx.session.key,
             ...(choice ? { target: targetFor(choice, ctx.session) } : {}),
           }
-          const value =
-            name === 'schedule_update' && rest.id
-              ? catalog.update({ ...input, id: rest.id, owner: ctx.session.key })
-              : catalog.create(input)
+          const service = await open(ctx)
+          const value = await service.upsert(input)
           return jsonResult(echo(value, ctx.session))
         } catch (error) {
           return failed(error)
@@ -158,11 +149,15 @@ export function createScheduleTools(catalog: ScheduleCatalog | undefined) {
       async execute(_args, ctx) {
         const blocked = refused(ctx.session)
         if (blocked) return blocked
-        if (!catalog) return jsonResult({ code: 'internal_error' })
-        const schedules = catalog
-          .list({ sessionKey: ctx.session.key })
-          .map((row) => ({ ...row, runsIn: runsIn(row.target, ctx.session) }))
-        return jsonResult({ schedules })
+        if (!open) return jsonResult({ code: 'internal_error' })
+        try {
+          const { schedules } = await (await open(ctx)).list()
+          return jsonResult({
+            schedules: schedules.map((row) => ({ ...row, runsIn: runsIn(row.target, ctx.session) })),
+          })
+        } catch (error) {
+          return failed(error)
+        }
       },
     }),
     write(
@@ -179,11 +174,12 @@ export function createScheduleTools(catalog: ScheduleCatalog | undefined) {
       async execute(args, ctx) {
         const blocked = refused(ctx.session)
         if (blocked) return blocked
-        if (!catalog) return jsonResult({ code: 'internal_error' })
-        const row = catalog.read(args.id)
-        if (row && owner(row) !== ctx.session.key) return jsonResult({ deleted: false })
-        const value = catalog.archive(args.id)
-        return jsonResult(value)
+        if (!open) return jsonResult({ code: 'internal_error' })
+        try {
+          return jsonResult(await (await open(ctx)).archive({ id: args.id }))
+        } catch (error) {
+          return failed(error)
+        }
       },
     }),
   ]

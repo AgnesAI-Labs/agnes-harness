@@ -2,7 +2,6 @@ import type { SeamImplementations } from '@agnes/core'
 import type { SeamInitContext } from '@agnes/host-extensions/assemble/packages'
 import { bindSkillRuntimeToWorkspace } from '@agnes/host-extensions/resources/skill-preload'
 import type { SkillRuntimeInput } from '@agnes/host-extensions/resources/skills'
-import { lazyPackageTables } from '../adapters/index.js'
 import type { ComputerUseHost } from '../computer-use/index.js'
 import type { AssemblyContext } from './context.js'
 import type { ProcessServices } from './process-services.js'
@@ -57,9 +56,6 @@ export function createEcosystemContexts(
         : {}),
       ...(owner === '@agnes/base' && extensionId === 'agnes/privacy' && privacyTrajectory.current
         ? { privacyTrajectory: privacyTrajectory.current }
-        : {}),
-      ...(owner === '@agnes/base' && extensionId === 'agnes/schedule'
-        ? { scheduleTables: lazyPackageTables(adapters.storage, '@agnes/daemon') }
         : {}),
       ...computerUse.extensionContext(owner, extensionId),
     }

@@ -74,3 +74,11 @@ pnpm exec vitest run tools/public-docs/examples.test.ts packages/host-extensions
 先保留包结构与注册方式，只替换业务逻辑；再根据实际副作用更新参数校验、权限、审批和重放声明。把连接与监听器加入 Cordis 生命周期，确保禁用后可以清理。需要展示业务结果时，继续[前端面板](frontend.zh-CN.md)和[联动教程](fullstack.zh-CN.md)。
 
 配置服务示例见 [cordis-greeting](../../examples/packages/cordis-greeting/greeting.test.ts)；更新/失败候选/回退可使用 [hot-service](../../examples/packages/hot-service/README.md) 家族。不建议从旧 `hot-tool` 的 `agnes.extensions` 单独复制后端入口。
+
+### 工具访问定时任务
+
+工具可在已准入的回调内，通过 `ctx.providers.bindOwn(schedulingKind)` 绑定 daemon 固定的调度服务。
+在插件清单的 `capabilities.services` 中声明完整且精确匹配的六项 `schedulingServiceCapabilities`，
+并获得对应服务的租约授权。官方和第三方工具采用同样的授权、会话归属及工作区检查。
+接口提供 list/get/upsert/control/archive/runs，不支持替换调度引擎。详见
+[调度服务合同](../../packages/base/extensions/schedule/README.md#scheduling-service)。

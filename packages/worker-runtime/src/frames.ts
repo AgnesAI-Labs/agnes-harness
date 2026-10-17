@@ -194,6 +194,7 @@ export type RequestFrame = {
   sessionKey: string
   requestId: string
   method:
+    | 'scheduling'
     | 'bound-wake'
     | 'permission'
     | 'permission-abort'

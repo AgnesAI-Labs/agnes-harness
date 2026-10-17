@@ -255,7 +255,7 @@ const bundled = {
   'agnes/skills': (init: SeamInitContext): BundledPlugin => createEcosystemExtensions(init).skills(),
   'agnes/plan-mode': (): BundledPlugin => planModeExtension,
   'agnes/mcp-resources': (): BundledPlugin => mcpResourcesExtension,
-  'agnes/schedule': (init: SeamInitContext): BundledPlugin => createScheduleExtension(init.scheduleTables),
+  'agnes/schedule': (): BundledPlugin => createScheduleExtension(),
   'agnes/computer-use': (init: SeamInitContext): BundledPlugin => {
     if (!init.computerUseBackendProvider)
       throw new Error('computer-use extension requires the Host-owned backend provider')

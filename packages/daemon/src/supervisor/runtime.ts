@@ -241,6 +241,7 @@ import { type RemoteEntry, WorkerRegistry } from './registry.js'
 import { openDaemonLogs } from './runtime-log.js'
 import { createRuntimeTargetProbeLauncher, spawnRuntimeTargetProbeWorker } from './runtime-target-probe.js'
 import { type ScheduleCatalog, scheduledTasks } from './schedule-sessions.js'
+import { callWorkerScheduling } from './scheduling-service.js'
 import { canonicalPath, resolveDaemonProfile, resolveDaemonScope } from './scope.js'
 import {
   createClientServiceDispatcher,
@@ -1223,6 +1224,8 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       onSessionFailure: (sessionKey, error) => registry.interrupt(sessionKey, error),
       ...(runtimeDelivery ? { runtimeDelivery } : {}),
       onRequest: async (sessionKey, f, workerSignal) => {
+        if (f.method === 'scheduling')
+          return callWorkerScheduling(schedules, workspaceCatalog, sessionKey, f.params, workerSignal)
         if (f.method === 'bound-wake') return profilePorts.ownedWake(f.params)
         if (f.method === 'plugin-manage' || f.method === 'plugin-manage-abort')
           return pluginManageRequests(sessionKey, f.requestId, f.method, f.params, workerSignal)

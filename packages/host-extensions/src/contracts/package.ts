@@ -104,17 +104,6 @@ export type SeamInitContext = {
   }>
   /** Available to ecosystem extensions after the seam phase, never a raw exec substitute. */
   sandbox?: SandboxSeam
-  /** Daemon job tables, supplied only to agnes/schedule. */
-  scheduleTables?: {
-    table(name: string): {
-      name: string
-      exec(sql: string): void
-      run(sql: string, params?: readonly unknown[]): { changes: number }
-      get<T>(sql: string, params?: readonly unknown[]): T | undefined
-      all<T>(sql: string, params?: readonly unknown[]): T[]
-      transaction<T>(fn: () => T): T
-    }
-  }
 }
 export type SeamFactory<S = unknown> = (ctx: SeamInitContext) => Promise<S>
 
