@@ -37,6 +37,7 @@
 | [插件生命周期](guide/packages.zh-CN.md) | 安装、信任、启用、更新与移除插件 |
 | [通用凭据](guide/credentials.zh-CN.md) | 保存只写 API key 并管理配置引用 |
 | [Webhook 触发器](guide/webhooks.zh-CN.md) | 通过认证的业务事件创建普通业务 Agent 会话 |
+| [评测工作室](guide/eval-studio.zh-CN.md) | 可选离线数据集、回放证据和逐案例对照 |
 | [无界面运行与回放](guide/headless.zh-CN.md) | JSONL 事件、固定模型回复比较和批量输入 |
 | [使用本地模型](guide/local-model.zh-CN.md) | 本地 OpenAI-compatible endpoint 和模型发现 |
 | [使用 TypeSafe Jev 做旁路模型调用](guide/typesafe-jev.zh-CN.md) | 配置内置的只接受 payload 的适配器，供循环插件在对话之外调用 |

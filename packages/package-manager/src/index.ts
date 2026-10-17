@@ -8,6 +8,7 @@ export {
   bundledPluginSource,
   bundledPluginSourceRoot,
   DEFAULT_ENABLED_BUNDLED_PACKAGES,
+  OPTIONAL_BUNDLED_PACKAGES,
 } from './bundled-plugin-source.js'
 export * from './capabilities.js'
 export * from './catalog.js'

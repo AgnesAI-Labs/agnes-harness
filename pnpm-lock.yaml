@@ -1274,6 +1274,33 @@ importers:
         specifier: 3.4.0
         version: 3.4.0
 
+  packages/package-manager/bundled-plugins/eval-studio:
+    devDependencies:
+      '@types/react':
+        specifier: 18.3.12
+        version: 18.3.12
+      '@types/react-dom':
+        specifier: 18.3.1
+        version: 18.3.1
+      '@agnes/sdk':
+        specifier: workspace:*
+        version: link:../../../sdk
+      '@agnes/model-adapters':
+        specifier: workspace:*
+        version: link:../../../model-adapters
+      '@agnes/web-client':
+        specifier: workspace:*
+        version: link:../../../web-client
+      '@agnes/web-ui':
+        specifier: workspace:*
+        version: link:../../../web-ui
+      react:
+        specifier: 18.3.1
+        version: 18.3.1
+      react-dom:
+        specifier: 18.3.1
+        version: 18.3.1(react@18.3.1)
+
   packages/package-manager/bundled-plugins/goal-ui:
     devDependencies:
       '@agnes/web-client':

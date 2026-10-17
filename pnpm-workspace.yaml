@@ -1,5 +1,6 @@
 packages:
   - packages/*
+  - packages/package-manager/bundled-plugins/eval-studio
   - packages/package-manager/bundled-plugins/document-reader
   - packages/package-manager/bundled-plugins/deliverables-ui
   - packages/package-manager/bundled-plugins/goal-ui

@@ -43,6 +43,7 @@ Still choosing? Try the [three examples](guide/demo.md), then use the [extension
 | [Plugin lifecycle](guide/packages.md) | Install, trust, enable, update, and remove plugins |
 | [Generic credentials](guide/credentials.md) | Save write-only API keys and manage their references |
 | [Webhook triggers](guide/webhooks.md) | Start normal business-agent sessions from authenticated business events |
+| [Evaluation Studio](guide/eval-studio.md) | Optional offline datasets, replay evidence and case comparison |
 | [Headless runs and replay](guide/headless.md) | Stream JSONL events, compare fixed model replies and run batches |
 | [Use a local model](guide/local-model.md) | Configure local OpenAI-compatible endpoints and discovery |
 | [Use TypeSafe Jev for side model calls](guide/typesafe-jev.md) | Configure the built-in payload-only adapter that loop plugins call outside the conversation |
