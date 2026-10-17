@@ -1374,6 +1374,7 @@
     "WebhookRule": {
       "type": "object",
       "properties": {
+        "unattendedApproval": { "enum": ["notify", "refuse"] },
         "id": {
           "type": "string",
           "minLength": 1,
@@ -1488,6 +1489,8 @@
     "WebhookDelivery": {
       "type": "object",
       "properties": {
+        "needsAttention": { "type": "boolean" },
+        "reason": { "type": "string", "maxLength": 128 },
         "id": {
           "type": "string",
           "minLength": 1,
@@ -1511,7 +1514,10 @@
             "too-large",
             "capacity",
             "failed",
-            "unknown"
+            "unknown",
+            "waiting_approval",
+            "needs_attention",
+            "ran"
           ]
         },
         "ruleId": {

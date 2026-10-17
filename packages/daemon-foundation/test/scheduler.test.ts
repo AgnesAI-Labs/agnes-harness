@@ -37,7 +37,9 @@ const workspaceAuthority = (path: string | null = '/workspace') => ({
   },
 })
 
-function fakeRegistry(options: { busy?: boolean; fail?: boolean; live?: boolean; cwd?: string } = {}) {
+function fakeRegistry(
+  options: { busy?: boolean; fail?: boolean; live?: boolean; cwd?: string; reason?: string } = {},
+) {
   const calls: Array<{ kind: string; value?: unknown }> = []
   const entry = {
     key: 'k',
@@ -52,7 +54,7 @@ function fakeRegistry(options: { busy?: boolean; fail?: boolean; live?: boolean;
         calls.push({ kind: 'run' })
         return options.fail
           ? { reason: 'error', lastSeq: 6, error: { code: 'X', message: 'boom' } }
-          : { reason: 'completed', lastSeq: 6 }
+          : { reason: options.reason ?? 'completed', lastSeq: 6 }
       },
       resume: async () => {
         calls.push({ kind: 'resume' })
@@ -259,28 +261,31 @@ describe('Scheduler', () => {
     }
   })
 
-  it('dispatches a due once-job to an idle session and completes it', async () => {
-    const now = 10_000
-    const repo = new JobsRepo(sqliteTables().table('jobs'), () => now)
-    repo.insert(row('j1'))
-    const notices: Array<{ kind: string; sessionId?: string }> = []
-    const { calls, registry } = fakeRegistry()
-    const instance = scheduler(
-      repo,
-      registry,
-      () => now,
-      (kind, options) =>
-        notices.push({ kind, ...(options.sessionId ? { sessionId: options.sessionId } : {}) }),
-    )
+  it.each(['completed', 'parked'])(
+    'dispatches a due once-job and preserves its %s outcome',
+    async (reason) => {
+      const now = 10_000
+      const repo = new JobsRepo(sqliteTables().table('jobs'), () => now)
+      repo.insert(row('j1'))
+      const notices: Array<{ kind: string; sessionId?: string }> = []
+      const { calls, registry } = fakeRegistry({ reason })
+      const instance = scheduler(
+        repo,
+        registry,
+        () => now,
+        (kind, options) =>
+          notices.push({ kind, ...(options.sessionId ? { sessionId: options.sessionId } : {}) }),
+      )
 
-    expect(await instance.tick()).toEqual({ claimed: 1, requeued: 0, dead: 0 })
-    expect(calls.map((call) => call.kind)).toEqual(['open', 'enqueue:next-turn', 'run'])
-    expect(repo.get('j1')).toMatchObject({
-      status: 'completed',
-      result: { seq: 6, reason: 'completed' },
-    })
-    expect(notices).toEqual([{ kind: 'job_dispatched', sessionId: 'k' }])
-  })
+      expect(await instance.tick()).toEqual({ claimed: 1, requeued: 0, dead: 0 })
+      expect(calls.map((call) => call.kind)).toEqual(['open', 'enqueue:next-turn', 'run'])
+      expect(repo.get('j1')).toMatchObject({
+        status: 'completed',
+        result: { seq: 6, reason },
+      })
+      expect(notices).toEqual([{ kind: 'job_dispatched', sessionId: 'k' }])
+    },
+  )
 
   it('steers a busy session and preserves the scheduler actor and prompt', async () => {
     const repo = new JobsRepo(sqliteTables().table('jobs'), () => 10_000)

@@ -42,10 +42,11 @@ export type ScheduleSelector =
 
 /** Where a task runs: one existing session, or a fresh session per run in a registered workspace. */
 export type ScheduleTarget =
-  | { kind: 'session'; sessionKey: string }
+  | { kind: 'session'; sessionKey: string; unattendedApproval?: 'notify' | 'refuse' }
   | {
       kind: 'new-session'
       cwd: string
+      unattendedApproval?: 'notify' | 'refuse'
       loop?: { id: string; version: string }
       bundles?: string[]
       preset?: string
@@ -53,10 +54,17 @@ export type ScheduleTarget =
     }
 export type NewSessionTarget = Extract<ScheduleTarget, { kind: 'new-session' }>
 
-export type ScheduleRunOutcome = 'running' | 'waiting_approval' | 'ran' | 'delivered' | 'failed'
+export type ScheduleRunOutcome =
+  | 'running'
+  | 'waiting_approval'
+  | 'needs_attention'
+  | 'ran'
+  | 'delivered'
+  | 'failed'
 export type ScheduleRun = {
   at: number
   outcome: ScheduleRunOutcome
+  needsAttention?: boolean
   sessionKey?: string
   endedAt?: number
   seq?: number
@@ -241,13 +249,24 @@ function plain(value: unknown): Record<string, unknown> {
 export function compileTarget(value: unknown, origin?: string): ScheduleTarget {
   if (value === undefined && origin) return { kind: 'session', sessionKey: origin }
   const record = plain(value)
+  if (
+    record.unattendedApproval !== undefined &&
+    !['notify', 'refuse'].includes(String(record.unattendedApproval))
+  )
+    reject('invalid_target')
+  const approval =
+    record.unattendedApproval === 'refuse'
+      ? { unattendedApproval: 'refuse' as const }
+      : record.unattendedApproval === 'notify'
+        ? { unattendedApproval: 'notify' as const }
+        : {}
   if (record.kind === 'session') {
-    exact(record, ['kind', 'sessionKey'])
-    return { kind: 'session', sessionKey: name(record.sessionKey, 256) }
+    exact(record, ['kind', 'sessionKey', 'unattendedApproval'])
+    return { kind: 'session', sessionKey: name(record.sessionKey, 256), ...approval }
   }
   if (record.kind !== 'new-session') reject('invalid_target')
-  exact(record, ['kind', 'cwd', 'loop', 'bundles', 'preset', 'model'])
-  const target: NewSessionTarget = { kind: 'new-session', cwd: name(record.cwd, 4096) }
+  exact(record, ['kind', 'cwd', 'loop', 'bundles', 'preset', 'model', 'unattendedApproval'])
+  const target: NewSessionTarget = { kind: 'new-session', cwd: name(record.cwd, 4096), ...approval }
   if (record.loop !== undefined) {
     const loop = plain(record.loop)
     exact(loop, ['id', 'version'])

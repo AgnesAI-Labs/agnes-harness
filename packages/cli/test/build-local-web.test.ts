@@ -1,10 +1,11 @@
 import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createWebServer } from '@agnes/web/server'
 import { expect, it } from 'vitest'
+import { assertClientExternals } from '../../../tools/web-client-externals.mjs'
 import { readUiCss } from '../../../tools/web-style-source.mjs'
 import { resolveLaunchResources } from '../launch/resources.js'
 
@@ -12,7 +13,40 @@ it('builds local web assets with the shared platform vendor modules', async () =
   const output = await mkdtemp(join(tmpdir(), 'agnes-local-web-build-'))
   try {
     const { buildLocalWeb } = await import('../tools/build-local.js')
-    await buildLocalWeb(output)
+    const builds = await buildLocalWeb(output)
+
+    // Gate the emitted static module graph, including import-map vendors. Dynamic page chunks
+    // must stay outside it. Bytes are deterministic and avoid machine-dependent build time gates.
+    const base = resolve('packages/web')
+    const emitted = new Map(
+      builds
+        .flatMap((build) => Object.entries(build.metafile?.outputs ?? {}))
+        .map(([file, metadata]) => [resolve(base, file), metadata] as const),
+    )
+    const pageHtml = await readFile(join(output, 'index.html'), 'utf8')
+    const imports: Record<string, string> = JSON.parse(
+      pageHtml.match(/<script type="importmap">([\s\S]*?)<\/script>/)?.[1] ?? '{}',
+    ).imports
+    const cold = new Set<string>()
+    const pending = [join(output, 'app.js'), join(output, 'theme.js')]
+    while (pending.length) {
+      const file = pending.pop()
+      if (!file || cold.has(file)) continue
+      const metadata = emitted.get(file)
+      if (!metadata) throw new Error(`Missing emitted module: ${file}`)
+      cold.add(file)
+      for (const dependency of metadata.imports) {
+        if (dependency.kind === 'dynamic-import') continue
+        const mapped = imports[dependency.path]
+        pending.push(dependency.external && mapped ? join(output, mapped) : resolve(base, dependency.path))
+      }
+    }
+    const coldJsBytes = [...cold].reduce((bytes, file) => bytes + (emitted.get(file)?.bytes ?? 0), 0)
+    // Calibrated at 7.0 MiB with production React and deferred home pages; allow ~30% headroom.
+    expect(coldJsBytes).toBeLessThan(9 * 1024 * 1024)
+    for (const file of cold)
+      for (const input of Object.keys(emitted.get(file)?.inputs ?? {}))
+        expect(input).not.toMatch(/pages\/(agents|plugins|automation)-page/)
 
     // Check the actual local distribution, including lazy entries and all vendor/shared chunks.
     const assets = (await readdir(output, { recursive: true })).filter((file) => /\.(js|css|map)$/.test(file))
@@ -44,7 +78,7 @@ it('builds local web assets with the shared platform vendor modules', async () =
       await server.close()
     }
     const app = await readFile(join(output, 'app.js'), 'utf8')
-    const appChunks = [...app.matchAll(/from\s+["'](\.\/chunk-[^"']+\.js)["']/g)].map((match) => match[1])
+    const appChunks = [...app.matchAll(/from\s*["'](\.\/chunk-[^"']+\.js)["']/g)].map((match) => match[1])
     const chunkSources = await Promise.all(
       appChunks.map((chunk) => readFile(join(output, chunk ?? ''), 'utf8')),
     )
@@ -52,7 +86,7 @@ it('builds local web assets with the shared platform vendor modules', async () =
     const antdVendor = await readFile(join(output, 'vendor', 'antd.js'), 'utf8')
     // antd 产物不自包含是正常情况：另一个 vendor 入口（比如 conversation）只要也引用 antd，esbuild 就会把
     // 共享代码提成 chunk，antd.js 只剩再导出的壳，连带 react-is 的版权声明一起搬进 chunk。所以顺着 chunk 找。
-    const antdVendorChunks = [...antdVendor.matchAll(/(?:from\s+)?["'](\.\/chunk-[\w-]+\.js)["']/g)].map(
+    const antdVendorChunks = [...antdVendor.matchAll(/(?:from\s*)?["'](\.\/chunk-[\w-]+\.js)["']/g)].map(
       (match) => match[1],
     )
     const antdVendorSources = [
@@ -67,9 +101,9 @@ it('builds local web assets with the shared platform vendor modules', async () =
       'utf8',
     )
     expect(markdownLicense).toContain('Copyright (c) 2015-present Ant UED')
-    expect(app).toMatch(/from\s+["']react["']/)
-    expect([app, ...chunkSources].some((source) => /from\s+["']@agnes\/web-ui["']/.test(source))).toBe(true)
-    expect(app).toMatch(/from\s+["']@agnes\/web-ui\/conversation["']/)
+    expect(app).toMatch(/from\s*["']react["']/)
+    expect([app, ...chunkSources].some((source) => /from\s*["']@agnes\/web-ui["']/.test(source))).toBe(true)
+    expect(app).toMatch(/from\s*["']@agnes\/web-ui\/conversation["']/)
     expect(html).toContain('"react": "/vendor/react.js"')
     expect(html).toContain('"@agnes/web-ui": "/vendor/web-ui.js"')
     expect(html).toContain('"recharts": "/vendor/recharts.js"')
@@ -102,12 +136,23 @@ it('builds local web assets with the shared platform vendor modules', async () =
       const importMap = source.match(/<script type="importmap">([\s\S]*?)<\/script>/)?.[1]
       expect(importMap, `${page} import map`).toBeDefined()
       const imports = (JSON.parse(importMap ?? '{}') as { imports: Record<string, string> }).imports
-      for (const source of [app, ...chunkSources]) {
-        for (const [, specifier] of source.matchAll(
-          /^import\s+(?:\{[^}]*\}|[^;\n]+)\s+from\s+["']([^"']+)["']/gm,
-        )) {
-          if (specifier?.startsWith('.') || specifier?.startsWith('/')) continue
-          expect(imports, `${page} resolves browser import ${specifier}`).toHaveProperty(specifier ?? '')
+      for (const build of builds) {
+        for (const [file, metadata] of Object.entries(build.metafile?.outputs ?? {})) {
+          // The platform's explicit CJS bridge binds only React to the import-map singleton.
+          for (const dependency of metadata.imports.filter((item) => item.kind === 'require-call')) {
+            expect(dependency.path).toBe('react')
+            expect(await readFile(resolve(base, file), 'utf8')).toContain(
+              "if (id === 'react') return __agnesSharedReact",
+            )
+          }
+          assertClientExternals(
+            {
+              outputs: {
+                [file]: { imports: metadata.imports.filter((item) => item.kind !== 'require-call') },
+              },
+            },
+            imports,
+          )
         }
       }
       const linkedAssets = [...source.matchAll(/<(?:link|script)\b[^>]*\b(?:href|src)="(\/[^"#?]+)"/g)]

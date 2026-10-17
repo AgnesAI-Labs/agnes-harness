@@ -1,0 +1,65 @@
+{
+  "name": "@agnes/usage-cockpit",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": "./index.mjs",
+  "files": [
+    "index.mjs",
+    "src",
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE"
+  ],
+  "agnes": {
+    "kinds": [
+      "ui"
+    ],
+    "plugins": [
+      {
+        "export": "main",
+        "id": "ext:usage-cockpit/main",
+        "apiRange": "^4.0.0",
+        "runtime": "in-process",
+        "capabilities": {
+          "ui": true
+        },
+        "metadata": {
+          "displayName": "Usage cockpit",
+          "summary": "Selected-session usage, cost and coverage gaps.",
+          "category": "ui",
+          "description": "Optional read-only usage cockpit. No child or global billing access."
+        }
+      }
+    ],
+    "clientDescriptors": [
+      {
+        "rowId": "ext:usage-cockpit/main",
+        "path": "./src/agnes.client.json"
+      }
+    ],
+    "metadata": {
+      "displayName": "Usage cockpit",
+      "summary": "Selected-session usage, cost and coverage gaps.",
+      "category": "ui",
+      "description": "Optional read-only usage cockpit. No child or global billing access."
+    }
+  },
+  "peerDependencies": {
+    "@agnes/web-client": "0.0.0",
+    "@agnes/web-ui": "0.0.0",
+    "react": "18.3.1",
+    "@agnes/protocol": "0.0.0"
+  },
+  "devDependencies": {
+    "@agnes/web-client": "workspace:*",
+    "@agnes/web-ui": "workspace:*",
+    "react": "18.3.1",
+    "@agnes/protocol": "workspace:*",
+    "@types/react": "18.3.12"
+  },
+  "scripts": {
+    "build:client": "node build.mjs",
+    "gen:check": "node build.mjs --check"
+  }
+}

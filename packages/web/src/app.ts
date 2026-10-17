@@ -2119,6 +2119,11 @@ client.on('generationChanged', (payload) => {
 // 名册失效推送（WC10）：packages_changed 只是失效提示，收到后必须重读名册。
 client.on('notice', (payload) => {
   const incoming = payload as { kind?: unknown; detail?: unknown }
+  if (incoming.kind === 'automation_attention') {
+    notice.setKind('warning')
+    notice.setText(t('app.automation.needsAttention'))
+    return
+  }
   if (incoming.kind !== 'packages_changed' && incoming.kind !== 'tree_changed') return
   const detail =
     typeof incoming.detail === 'object' && incoming.detail !== null

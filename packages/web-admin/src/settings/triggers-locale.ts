@@ -1,5 +1,22 @@
 export const triggersCatalog = {
   en: {
+    approvalBehavior: 'When approval is needed',
+    approvalNotify: 'Hand off and notify (default)',
+    approvalRefuse: 'Refuse',
+    needsAttention: 'Needs attention',
+    waiting_approval: 'Waiting for approval · needs attention',
+    needs_attention: 'Needs attention',
+    ran: 'Ran',
+    'outcome.needs_attention': 'Needs attention',
+    'reason.needs_attention': 'Human attention is required. Open the approval inbox.',
+    'reason.approval_expired':
+      'Approval expired. This run failed and needs attention; the next occurrence can run.',
+    'reason.previous_approval_expired':
+      'The previous approval expired. This occurrence can run; review the history.',
+    'reason.approval_refused': 'Approval was refused. The step did not run.',
+    'reason.approval_unavailable': 'The approval was stopped or withdrawn. This run needs attention.',
+    'reason.approval_pending_previous_run':
+      'An earlier run is awaiting approval. No additional parked run was started.',
     loading: 'Loading triggers…',
     receive: 'Receive events',
     receiveOn: 'Other systems can send events to this computer.',
@@ -87,6 +104,20 @@ export const triggersCatalog = {
     unknown: 'Outcome unknown after restart',
   },
   'zh-CN': {
+    approvalBehavior: '遇到审批时',
+    approvalNotify: '转人工并通知（默认）',
+    approvalRefuse: '直接拒绝',
+    needsAttention: '需要处理',
+    waiting_approval: '等待审批 · 需要处理',
+    needs_attention: '需要处理',
+    ran: '已运行',
+    'outcome.needs_attention': '需要处理',
+    'reason.needs_attention': '需要人工处理，请打开审批收件箱。',
+    'reason.approval_expired': '审批已过期，本次失败并需处理；下次仍可运行。',
+    'reason.previous_approval_expired': '上次审批已过期，本次可正常运行；请查看历史并处理。',
+    'reason.approval_refused': '审批被拒绝，该步骤未执行。',
+    'reason.approval_unavailable': '审批已停止或撤回，本次运行需要处理。',
+    'reason.approval_pending_previous_run': '上次运行仍在等待审批，本次未新建停等运行。',
     loading: '正在读取触发器…',
     receive: '开放接收',
     receiveOn: '允许外部系统把事件发到这台电脑。',

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
+import { isRunProgress, type RunProgress } from '@agnes/base/schedule'
 import { validateAgainst } from '@agnes/protocol'
 import {
   type WebhookConfig,
@@ -17,6 +18,7 @@ export type State = {
   deliveries: WebhookDelivery[]
   dedup: { key: string; expires: number }[]
   rates: Record<string, number[]>
+  progress?: Record<string, RunProgress>
 }
 export class WebhookStore {
   private healthy = true
@@ -33,6 +35,11 @@ export class WebhookStore {
           rates: {},
         }
     if (
+      (this.state.progress !== undefined &&
+        (!this.state.progress ||
+          typeof this.state.progress !== 'object' ||
+          Array.isArray(this.state.progress) ||
+          Object.values(this.state.progress).some((value) => !isRunProgress(value)))) ||
       !validateAgainst(WebhookSnapshot, { ...this.snapshot(), secretRefs: [] }).ok ||
       !Array.isArray(this.state.dedup) ||
       this.state.dedup.length > 10000 ||
@@ -107,7 +114,15 @@ export class WebhookStore {
       ...(sessionId ? { sessionId } : {}),
     }
     this.state.deliveries.unshift(row)
-    this.state.deliveries.length = Math.min(200, this.state.deliveries.length)
+    if (this.state.deliveries.length > 200) {
+      // Keep the outstanding run even after many flagged recurrences; losing it would permit
+      // another hidden parked session. At most one pending occurrence per rule is admitted.
+      const disposable = this.state.deliveries.findLastIndex(
+        (entry) => !entry.sessionId || !['waiting_approval', 'needs_attention'].includes(entry.status),
+      )
+      if (disposable >= 0) this.state.deliveries.splice(disposable, 1)
+      else throw new Error('Webhook attention capacity reached')
+    }
     if (durable) this.save()
     return row
   }

@@ -40,6 +40,11 @@ describe('official auto-review policy', () => {
       new AbortController().signal,
       ports(JSON.stringify({ decision, risk, reason: 'Scripted reason' })),
     )
+    expect(result.review?.scopePreview).toEqual({
+      args: JSON.stringify(input.call.args),
+      cwd: input.cwd,
+      mode: 'default / auto-review',
+    })
     expect(result.effect).toBe(effect)
     expect(result.review).toMatchObject({
       model: 'scripted-cheap',
@@ -197,6 +202,23 @@ describe('official auto-review policy', () => {
       decision: 'deny',
       source: 'human-override',
     })
+    const savedRule = config.overrides[0]
+    if (!savedRule) throw new Error('Missing rule fixture')
+    const allowConfig = {
+      overrides: [{ ...savedRule, decision: 'allow' as const, risk: 'low' as const }],
+    }
+    for (const tainted of [false, true]) {
+      const decision = await policy.decide(
+        { ...input, config: allowConfig, tainted },
+        new AbortController().signal,
+      )
+      expect(decision.effect).toBe(tainted ? 'ask' : 'allow')
+      expect(decision.review).toMatchObject({
+        source: 'human-override',
+        decision: tainted ? 'escalate' : 'allow',
+      })
+      if (tainted) expect(decision.reason).toContain('Matching human rule: allow (low)')
+    }
     for (const changed of [
       { cwd: '/another-workspace' },
       { actor: { ...input.actor, id: 'another-human' } },

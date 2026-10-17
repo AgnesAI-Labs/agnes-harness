@@ -11,6 +11,7 @@ import {
   bundledPluginSource,
   bundledPluginSourceRoot,
   DEFAULT_ENABLED_BUNDLED_PACKAGES,
+  OPTIONAL_BUNDLED_PACKAGES,
 } from '../src/bundled-plugin-source.js'
 import { emptyLock, readLock, writeLock } from '../src/lockfile.js'
 import { createPackageManager } from '../src/manager.js'
@@ -25,7 +26,7 @@ const fixture = () => {
   roots.push(root)
   return root
 }
-it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
+it.each([...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES])(
   'uses $id runtime payload instead of workspace impostor without network commands',
   async (helper) => {
     const cwd = fixture()
@@ -64,7 +65,7 @@ it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
     if (helper.name === 'skill-helper') expect(existsSync(join(into, 'src', 'sources.mjs'))).toBe(true)
   },
 )
-it.each(BUNDLED_HELPERS)(
+it.each([...BUNDLED_HELPERS, ...OPTIONAL_BUNDLED_PACKAGES])(
   'inspects and installs $id offline without automatic trust or activation',
   async (helper) => {
     const root = fixture(),
@@ -93,6 +94,8 @@ it.each(BUNDLED_HELPERS)(
       readLock(profile, { profile: 'local-dev', agnesVersion: '0.1.0' }).packages[helper.id],
     ).toBeDefined()
     expect(exec).not.toHaveBeenCalled()
+    if (OPTIONAL_BUNDLED_PACKAGES.some((item) => item.id === helper.id))
+      expect(DEFAULT_ENABLED_BUNDLED_PACKAGES.some((item) => item.id === helper.id)).toBe(false)
   },
 )
 

@@ -264,7 +264,14 @@ it('lists where each task runs, filters by target, and links a session target', 
 it('shows each run outcome in plain words, never a started turn as a failure', async () => {
   const at = Date.parse('2026-09-06T09:00:00Z')
   const runs = [
-    { at, outcome: 'ran', sessionKey: 'r1', endedAt: at + 42_000 },
+    {
+      at,
+      outcome: 'ran',
+      sessionKey: 'r1',
+      endedAt: at + 42_000,
+      needsAttention: true,
+      reason: 'previous_approval_expired',
+    },
     { at: at + 1, outcome: 'delivered', sessionKey: 's1' },
     { at: at + 2, outcome: 'failed', reason: 'bundle_unavailable' },
     { at: at + 3, outcome: 'waiting_approval', sessionKey: 'r4' },
@@ -288,6 +295,8 @@ it('shows each run outcome in plain words, never a started turn as a failure', a
   expect(items[1]?.textContent).toContain(ux('reason.bundle_unavailable'))
   expect(items[2]?.getAttribute('data-failed')).toBeNull()
   expect(items[3]?.textContent).toContain('42 s')
+  expect(items[3]?.textContent).toContain(ux('reason.previous_approval_expired'))
+  expect(items[3]?.textContent).toContain(ux('needsAttention'))
   expect(items[3]?.querySelector('a')?.getAttribute('href')).toBe('/?session=r1')
 })
 
@@ -334,12 +343,19 @@ it('opens a saved task with its values and archives it after confirmation', asyn
     'Asia/Shanghai',
   )
   expect(document.querySelector('[data-testid="schedules-session-picker"]')).not.toBeNull()
+  await act(async () => {
+    const approval = document.querySelector<HTMLSelectElement>('[data-testid="schedules-approval-behavior"]')
+    if (!approval) throw new Error('missing approval behavior')
+    expect(approval.value).toBe('notify')
+    approval.value = 'refuse'
+    approval.dispatchEvent(new Event('change', { bubbles: true }))
+  })
   await submit()
   expect(daemon.upsert).toHaveBeenCalledWith(
     expect.objectContaining({
       id: standup.id,
       selector: { weekly: { time: '14:30', timeZone: 'Asia/Shanghai', weekdays: [2, 4] } },
-      target: { kind: 'session', sessionKey: 's1' },
+      target: { kind: 'session', sessionKey: 's1', unattendedApproval: 'refuse' },
     }),
   )
   await click('schedules-actions', host)

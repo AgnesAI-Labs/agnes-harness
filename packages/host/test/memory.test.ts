@@ -44,7 +44,7 @@ const plugins = [
   entry: normalizePluginExport(entry),
 }))
 
-it.each([
+const memoryCases = [
   'rejected',
   'allowed-session',
   'allowed-permanent',
@@ -56,23 +56,41 @@ it.each([
   'subagent_scope',
   'cas-conflict',
   'metadata-failure',
-] as const)(
-  'settles an initial %s memory write without losing revision or approval facts',
+] as const
+it.each(
+  ['standard', 'workspace-write', 'full-access'].flatMap((preset) =>
+    memoryCases.map((initialAnswer) => ({ preset, initialAnswer })),
+  ),
+)(
+  'settles an initial $initialAnswer memory write under $preset without losing revision or approval facts',
   // This contract runs several real Host turns and flushes the telemetry collector.
   { timeout: 60_000 },
-  async (initialAnswer) => {
+  async ({ initialAnswer, preset }) => {
     const home = await mkdtemp(join(tmpdir(), 'agh-host-memory-'))
     homes.push(home)
+    const workspace = join(home, 'workspace')
+    const extra = join(home, 'extra')
+    await Promise.all([mkdir(workspace), mkdir(extra)])
     const asked: ApprovalRequest[] = []
     const collector = await memoryCollector()
     let allowed = false
     let provider: ScriptedProvider | undefined
     const { host } = await createTestHost({
       dataDir: home,
+      workspaceRoot: workspace,
       ...(nativeWindows ? { platform: createPlatform(), sandboxSeam: createSandboxSeam() } : {}),
       disableSessionTitle: true,
-      allowed: ['standard', 'full-access'],
+      allowed: ['standard', 'workspace-write', 'full-access'],
       presets: {
+        standard: {
+          name: 'standard',
+          extends: 'base',
+          sandbox: { extra_paths: [extra] },
+          approval: {
+            command_policy: [{ tool: 'edit|write', argv: '^/.*$', action: 'allow' }],
+          },
+        },
+        'workspace-write': { name: 'workspace-write', extends: 'standard' },
         'full-access': {
           name: 'full-access',
           extends: 'standard',
@@ -142,7 +160,7 @@ it.each([
         }
       },
       provider: (profile) => {
-        const memory = hostMemoryRoot(home)
+        const memory = hostMemoryRoot(home, workspace)
         provider = new ScriptedProvider({
           models: profile.provider.routes?.[0]?.models ?? [],
           scripts: [
@@ -155,6 +173,17 @@ it.each([
             call('edit', { path: memory, edits: [{ oldText: 'short', newText: 'precise' }] }),
             done,
             call('read', { path: memory }),
+            call('write', { path: memory, content: 'Prefer precise answers.' }),
+            done,
+            ...(initialAnswer === 'rejected'
+              ? [
+                  call('write', { path: join(extra, 'created.txt'), content: 'Explicit extra root' }),
+                  done,
+                  call('read', { path: join(extra, 'created.txt') }),
+                  done,
+                ]
+              : []),
+            call('read', { path: memory }),
             call('write', { path: memory, content: 'Bypass off' }),
             call('edit', { path: memory, edits: [{ oldText: 'precise', newText: 'long' }] }),
             done,
@@ -163,11 +192,11 @@ it.each([
         return provider
       },
     })
-    const memory = host.memory(home, 'human')
+    const memory = host.memory(workspace, 'human')
     if (!memory || !provider) throw new Error('missing memory or provider')
     await memory.configure({ mode: 'ask' })
     async function turn(key: string) {
-      const session = await host.createSession({ key, cwd: home, preset: 'full-access' })
+      const session = await host.createSession({ key, cwd: workspace, preset })
       if (nativeWindows)
         expect(host.sessionRuntime?.(key).policy?.sandbox.enforcement).toEqual({
           level: 'partial',
@@ -287,6 +316,15 @@ it.each([
         'completed',
       )
       expect((await memory.readFile('MEMORY.md')).content).toBe('Prefer precise answers.')
+      await memory.configure({ mode: 'auto' })
+      const beforeAuto = asked.length
+      const automatic = await turn('auto')
+      expect(automatic.results.every((row) => !(row.data as { isError?: boolean }).isError)).toBe(true)
+      expect(asked).toHaveLength(beforeAuto)
+      if (initialAnswer === 'rejected') {
+        expect((await turn('extra-write')).results[0]?.data).toMatchObject({ isError: false })
+        expect((await turn('extra-read')).results[0]?.data).toMatchObject({ isError: false })
+      }
       await memory.configure({ mode: 'off' })
       const off = await turn('off')
       expect(off.results).toHaveLength(3)
@@ -430,6 +468,6 @@ it('pins index and topic revisions across tool requests and a model retry, then 
 // The same public provider path as Host, rather than a machine-specific fixture directory.
 import { fileMemoryRoots } from '@agnes/base'
 
-function hostMemoryRoot(home: string) {
-  return join(fileMemoryRoots(home, home).root, 'MEMORY.md')
+function hostMemoryRoot(home: string, workspace = home) {
+  return join(fileMemoryRoots(home, workspace).root, 'MEMORY.md')
 }

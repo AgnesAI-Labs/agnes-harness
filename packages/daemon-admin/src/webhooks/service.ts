@@ -1,7 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
+import { expireProgress, observeProgress, type RunProgress, startProgress } from '@agnes/base/schedule'
 import { type WebhookTriggerProvider, webhookTriggerKind } from '@agnes/extension-api'
 import { ProviderRegistry } from '@agnes/host'
+import type { EventEnvelope } from '@agnes/protocol'
 import { rpcError, validateAgainst } from '@agnes/protocol'
 import {
   WebhookConfig,
@@ -22,6 +24,7 @@ export type TriggerSessionInput = {
   agent: string
   bundles: string[]
   prompt: string
+  unattendedApproval?: 'notify' | 'refuse'
   trigger: { provider: string; ruleId: string; deliveryId: string }
 }
 export function createWebhookService(options: {
@@ -38,6 +41,30 @@ export function createWebhookService(options: {
   for (const provider of options.providers ?? [githubWebhookProvider, genericWebhookProvider])
     providers.register('@agnes/daemon-admin', provider)
   const now = options.now ?? Date.now
+  store.state.progress ??= {}
+  const progress = store.state.progress
+  const update = (sessionId: string, state: RunProgress) => {
+    progress[sessionId] = state
+    const row = store.state.deliveries.find((entry) => entry.sessionId === sessionId)
+    if (row) {
+      row.status = state.outcome === 'running' ? 'accepted' : state.outcome
+      row.needsAttention = state.needsAttention || row.reason === 'previous_approval_expired'
+      if (state.reason) row.reason = state.reason
+    }
+  }
+  const expire = () => {
+    const retained = new Set(store.state.deliveries.map((row) => row.sessionId))
+    for (const id of Object.keys(progress)) if (!retained.has(id)) delete progress[id]
+    let changed = false
+    for (const [id, state] of Object.entries(progress)) {
+      const next = expireProgress(state, now())
+      if (next !== state) {
+        update(id, next)
+        changed = true
+      }
+    }
+    if (changed) store.save()
+  }
   let serial: Promise<unknown> = Promise.resolve()
   let pending = 0
   async function deliver(
@@ -110,6 +137,21 @@ export function createWebhookService(options: {
       } catch {
         return { delivery: store.log('invalid-payload', rule.id) }
       }
+      expire()
+      if (
+        state.deliveries.some(
+          (row) =>
+            row.ruleId === rule.id &&
+            row.sessionId &&
+            ['waiting_approval', 'needs_attention'].includes(row.status),
+        )
+      ) {
+        const flagged = store.log('needs_attention', rule.id)
+        flagged.needsAttention = true
+        flagged.reason = 'approval_pending_previous_run'
+        store.save()
+        return { delivery: flagged }
+      }
       const sessionId = `agnes:webhook:${rule.id}:${randomUUID()}`
       state.dedup.push(
         ...keys.map((key) => ({
@@ -119,7 +161,14 @@ export function createWebhookService(options: {
       )
       state.rates[rule.id] = [...recent, time]
       // Persist reservation before entering normal session/new. Uncertain work is never retried.
+      const previous = state.deliveries.find((entry) => entry.ruleId === rule.id && entry.sessionId)
       const row = store.log('pending', rule.id, sessionId)
+      if (previous?.reason === 'approval_expired') {
+        row.reason = 'previous_approval_expired'
+        row.needsAttention = true
+      }
+      progress[sessionId] = startProgress()
+      store.save()
       try {
         await options.createSession({
           sessionKey: sessionId,
@@ -127,9 +176,10 @@ export function createWebhookService(options: {
           agent: rule.agent,
           bundles: rule.bundles,
           prompt,
+          unattendedApproval: rule.unattendedApproval ?? 'notify',
           trigger: { provider: rule.provider, ruleId: rule.id, deliveryId: value.deliveryId },
         })
-        row.status = 'accepted'
+        if (row.status === 'pending') row.status = 'accepted'
       } catch {
         row.status = 'failed'
       }
@@ -144,6 +194,7 @@ export function createWebhookService(options: {
   }
   async function handle(input: WebhookRequest): Promise<WebhookResult> {
     const state = store.state
+    expire()
     if (input.action === 'list')
       return { snapshot: { ...store.snapshot(), secretRefs: await options.secretRefs() } }
     if (input.action === 'configure') {
@@ -183,6 +234,16 @@ export function createWebhookService(options: {
     return { snapshot: { ...store.snapshot(), secretRefs: await options.secretRefs() } }
   }
   return {
+    observeSession(sessionId: string, event: EventEnvelope) {
+      if (!['decision/state', 'turn/start', 'turn/end', 'x/core/unattended-refused'].includes(event.type))
+        return false
+      const state = progress[sessionId]
+      if (!state) return false
+      const next = observeProgress(state, event, now())
+      update(sessionId, next)
+      store.save()
+      return next.needsAttention && !state.needsAttention
+    },
     handle(input: WebhookRequest): Promise<WebhookResult> {
       if (!validateAgainst(WebhookRequestSchema, input).ok) return Promise.reject(rpcError('INVALID_PARAMS'))
       // Bound retained raw deliveries while a normal session admission waits for its worker.

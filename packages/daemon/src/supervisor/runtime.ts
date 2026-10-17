@@ -75,7 +75,7 @@ import type { PreviewSnapshotEntry, PreviewUpdate, Registry } from '@agnes/daemo
 import { NonceTable, startClaimsGc, TableClaims } from '@agnes/daemon-foundation/storage/claims-table'
 import { PersistentCommandJournal } from '@agnes/daemon-foundation/storage/command-journal'
 import { CompositeTargetStore } from '@agnes/daemon-foundation/storage/composite-target-store'
-import type { SessionWorkspacePort, TicketPort } from '@agnes/daemon-foundation/storage/lister'
+import type { SessionWorkspacePort } from '@agnes/daemon-foundation/storage/lister'
 import {
   MemorySessionWorkspaces,
   SessionWorkspaceIndex,
@@ -113,12 +113,7 @@ import type { LockedPackageMutationStatusSource } from '@agnes/daemon-rpc/local/
 import { createFollowUpRunner } from '@agnes/daemon-rpc/local/follow-up-runner'
 import { disposeFeeds, type Feed, registerAcp } from '@agnes/daemon-rpc/local/methods/acp'
 import { registerAppServerAdmin } from '@agnes/daemon-rpc/local/methods/admin'
-import {
-  type AgnesContext,
-  indexApprovalTicket,
-  registerAgnes,
-  requireSessionOwner,
-} from '@agnes/daemon-rpc/local/methods/agnes'
+import { type AgnesContext, registerAgnes, requireSessionOwner } from '@agnes/daemon-rpc/local/methods/agnes'
 import { type ArtifactReadRpcOptions, registerArtifactRead } from '@agnes/daemon-rpc/local/methods/artifacts'
 import { type PublishChildEngines, registerConfiguration } from '@agnes/daemon-rpc/local/methods/config'
 import { registerDiagnostics } from '@agnes/daemon-rpc/local/methods/diagnostics'
@@ -262,6 +257,7 @@ import { prepareDaemonSocketPaths } from './socket-paths.js'
 import { watchWindowsStopRequest } from './stop-request.js'
 import { adaptHostTables, persistResolvedProfile } from './storage-adapters.js'
 import { webhookSessions } from './webhook-sessions.js'
+import { createAutomationEvents, deliverWorkerEvent } from './worker-events.js'
 import { WorkerPool } from './worker-pool.js'
 import { PACKAGE_MANAGER_VERSION, workspaceDeployments } from './workspace-deployments.js'
 import { listenWebSocket } from './ws.js'
@@ -769,27 +765,7 @@ const DAEMON_SURFACE_API_VERSION = '1.0.0'
 
 type Conn = { ep: LocalEndpoint; conn: ConnectionState }
 
-/** Index a parked ticket with its worker workspace before publishing the same row to subscribers. */
-export function deliverWorkerEvent(
-  registry: Pick<WorkerRegistry, 'get' | 'deliver'>,
-  tickets: TicketPort | undefined,
-  clock: () => number,
-  sessionKey: string,
-  event: EventEnvelope,
-  workspaces?: Pick<SessionWorkspacePort, 'observe'>,
-): void | Promise<void> {
-  const publish = () => {
-    workspaces?.observe(sessionKey, event, registry.get(sessionKey)?.generation)
-    if (tickets) {
-      tickets.gc(clock())
-      indexApprovalTicket(tickets, sessionKey, event, registry.get(sessionKey)?.session.cwd)
-    }
-  }
-  const indexBeforePublish = () => {
-    publish()
-  }
-  return registry.deliver(sessionKey, event, indexBeforePublish)
-}
+export { deliverWorkerEvent } from './worker-events.js'
 
 /**
  * Wires the daemon's one hook for "a resource-control mutation durably committed"
@@ -1160,26 +1136,27 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           }),
         })
       : undefined
+    const managementClients = {
+      connections: () => [...conns].map((entry) => entry.conn),
+      current: (key: string) => inflightConn.get(key),
+      endpoint: (conn: ConnectionState) => [...conns].find((entry) => entry.conn === conn)?.ep,
+      owner: (key: string) => sessionOwnership.resolve(key),
+    }
     const skillInstallRequests = createSkillInstallRequests({
       directory: resourceControlDirectory,
       profile: o.profile.name,
       service: resourceControl.service,
       ...(resourceControl.unixAuthority ? { authority: resourceControl.unixAuthority } : {}),
-      connections: () => [...conns].map((entry) => entry.conn),
-      current: (key) => inflightConn.get(key),
-      endpoint: (conn) => [...conns].find((entry) => entry.conn === conn)?.ep,
-      owner: (key) => sessionOwnership.resolve(key),
+      ...managementClients,
       workspace: (key) => workspaces.get(key),
     })
     let effectivePackageAdmin = o.packageAdmin
     const pluginManageRequests = createPluginManageRequests({
       directory: resourceControlDirectory,
+      home: ownerHome,
       profile: o.profile.name,
       service: () => effectivePackageAdmin?.service,
-      connections: () => [...conns].map((entry) => entry.conn),
-      current: (key) => inflightConn.get(key),
-      endpoint: (conn) => [...conns].find((entry) => entry.conn === conn)?.ep,
-      owner: (key) => sessionOwnership.resolve(key),
+      ...managementClients,
     })
     const mcpManageRequests = createMcpManageRequests({
       directory: resourceControlDirectory,
@@ -1187,15 +1164,13 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       service: resourceControl.service,
       ...(localResourceStore ? { store: localResourceStore } : {}),
       ...(resourceControl.unixAuthority ? { authority: resourceControl.unixAuthority } : {}),
-      connections: () => [...conns].map((entry) => entry.conn),
-      current: (key) => inflightConn.get(key),
-      endpoint: (conn) => [...conns].find((entry) => entry.conn === conn)?.ep,
-      owner: (key) => sessionOwnership.resolve(key),
+      ...managementClients,
     })
     const permissionRequests = new Map<string, AbortController>()
     startupCleanup.push(() => {
       for (const controller of permissionRequests.values()) controller.abort('stopped')
     })
+    const automationEvents = createAutomationEvents(sessionOwnership, notices, o.profile.name)
     const pool = new WorkerPool({
       config: o.config,
       profile: o.profile,
@@ -1212,6 +1187,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       workerEntry,
 
       onEvent: (sessionKey, e) => {
+        automationEvents.observe(sessionKey, e)
         if (e.type === 'turn/start') pool.resetSessionRequests(sessionKey)
         const control = e.data as { action?: unknown; outcome?: unknown }
         if (
@@ -1738,6 +1714,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       void revertFailedDesired?.()
       effectivePackageAdmin ??= {
         service: createPackageAdminService({
+          authoringHome: ownerHome,
           manager: o.packageRuntime.manager,
           profileDirectory: o.packageRuntime.profileDirectory,
           operations: o.packageRuntime.operations,
@@ -1882,6 +1859,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           },
         })
       : undefined
+    automationEvents.schedules = schedules
     if (schedules) startupCleanup.push(() => schedules.close())
     const profilePorts = createSupervisorProfileServices({
       runtime: o.packageRuntime,
@@ -2038,7 +2016,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
             org: 'webhook',
             role: 'trigger',
             deptPath: [],
-            attrs: { ...input.trigger },
+            attrs: { ...input.trigger, unattendedApproval: input.unattendedApproval ?? 'notify' },
           },
           origin: 'system',
           trust: 'untrusted',
@@ -2076,6 +2054,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         >
       },
     })
+    automationEvents.triggers = appServerAdmin.observeTriggerSession
     // The supervisor holds no adapter registry. `apis.list` learns which adapters take payloads only
     // from the built-in registrations, and from the shared worker if it is already running. One
     // lookup serves every connection, so the catalog it last read is shared.
@@ -3020,6 +2999,7 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
   if (resourceService) await resourceService.recover()
   const defaultPackageAdmin = {
     service: createPackageAdminService({
+      authoringHome: scope.home,
       manager: packageManager,
       profileDirectory: packageProfileDirectory,
       operations: packageOperations,

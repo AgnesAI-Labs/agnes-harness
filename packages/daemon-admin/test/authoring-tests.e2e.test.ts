@@ -1,9 +1,9 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { candidateTemplate } from '@agnes/base/plugin-creator'
 import { expect, it } from 'vitest'
-import { runAuthoringTests } from '../src/packages/authoring-tests.js'
+import { createAuthoringTestRunner, runAuthoringTests } from '../src/packages/authoring-tests.js'
 
 it.each(['tool', 'tool-with-panel', 'mcp-skills', 'model-adapter', 'loop', 'skill', 'bounded-tool'])(
   'runs real Node contract tests against the %s candidate with the public author SDK',
@@ -108,3 +108,60 @@ function writeFiles(directory: string, files: readonly { path: string; content: 
     writeFileSync(path, file.content)
   }
 }
+
+it('candidate tests cannot read or write protected paths or the private home, including in full-access isolation', async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'agh-candidate-boundary-')))
+  const directory = join(root, 'candidate'),
+    home = join(root, 'private-home'),
+    workspace = join(root, 'workspace')
+  const paths = [
+    join(home, 'auth/marker.json'),
+    join(workspace, '.git/config'),
+    join(workspace, '.agh/secrets/marker.json'),
+  ]
+  try {
+    for (const path of paths) {
+      mkdirSync(dirname(path), { recursive: true })
+      writeFileSync(path, 'synthetic private marker')
+    }
+    const files = [
+      { path: 'package.json', content: '{"name":"boundary-probe","type":"module"}' },
+      {
+        path: 'test/boundary.test.mjs',
+        content: `import {test} from 'node:test'; import assert from 'node:assert/strict'; import {readFileSync,writeFileSync} from 'node:fs'; for (const path of ${JSON.stringify(paths)}) test('protected read/write',()=>{assert.throws(()=>readFileSync(path));assert.throws(()=>writeFileSync(path,'changed'))});`,
+      },
+    ]
+    writeFiles(directory, files)
+    for (const network of ['deny', 'allow'] as const) {
+      const runner = createAuthoringTestRunner({
+        home,
+        session: {
+          local: true,
+          network,
+          policy: {
+            workspaceRoot: workspace,
+            rules: paths
+              .slice(1)
+              .map((path) => ({ path, effect: 'deny', hard: true, source: 'host-integrity' })),
+            networkAllow: [],
+            digest: 'a'.repeat(64),
+          },
+        },
+      })
+      const result = await runner(directory, files, new AbortController().signal)
+      expect(result, result.output).toMatchObject({ state: 'passed', count: 3 })
+      for (const path of paths) expect(readFileSync(path, 'utf8')).toBe('synthetic private marker')
+      const attack = files.map((file) =>
+        file.path.endsWith('.mjs')
+          ? { ...file, content: `import marker from ${JSON.stringify(paths[0])}; console.log(marker);` }
+          : file,
+      )
+      expect(await runner(directory, attack, new AbortController().signal)).toMatchObject({
+        state: 'failed',
+        count: 0,
+      })
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 60_000)

@@ -1,0 +1,91 @@
+{
+  "name": "@agnes/eval-studio",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": {
+    ".": "./index.mjs",
+    "./runner": "./src/runner.mjs",
+    "./contract": "./src/contract.mjs",
+    "./offline": "./src/offline.mjs"
+  },
+  "files": [
+    "index.mjs",
+    "src",
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE"
+  ],
+  "agnes": {
+    "kinds": [
+      "tool",
+      "ui"
+    ],
+    "plugins": [
+      {
+        "export": "main",
+        "id": "ext:eval-studio/main",
+        "apiRange": "^4.0.0",
+        "runtime": "in-process",
+        "inject": [
+          "tools"
+        ],
+        "capabilities": {
+          "ui": true
+        },
+        "metadata": {
+          "displayName": "Evaluation Studio",
+          "summary": "Offline datasets, replay evidence and case comparison.",
+          "description": "Optional evaluation tools and local comparison page. Imported evidence does not grant authority.",
+          "category": "tools",
+          "locales": {
+            "zh-CN": {
+              "displayName": "评测工作室",
+              "summary": "离线数据集、回放证据与案例对照。",
+              "description": "可选评测工具和本地对照页面；导入证据不授予权限。"
+            }
+          }
+        }
+      }
+    ],
+    "clientDescriptors": [
+      {
+        "rowId": "ext:eval-studio/main",
+        "path": "./src/agnes.client.json"
+      }
+    ],
+    "metadata": {
+      "displayName": "Evaluation Studio",
+      "summary": "Offline datasets, replay evidence and case comparison.",
+      "description": "Optional evaluation tools and local comparison page. Imported evidence does not grant authority.",
+      "category": "tools",
+      "locales": {
+        "zh-CN": {
+          "displayName": "评测工作室",
+          "summary": "离线数据集、回放证据与案例对照。",
+          "description": "可选评测工具和本地对照页面；导入证据不授予权限。"
+        }
+      }
+    }
+  },
+  "peerDependencies": {
+    "@agnes/sdk": "0.0.0",
+    "@agnes/model-adapters": "0.0.0",
+    "@agnes/web-client": "0.0.0",
+    "@agnes/web-ui": "0.0.0",
+    "react": "18.3.1"
+  },
+  "devDependencies": {
+    "@agnes/sdk": "workspace:*",
+    "@agnes/model-adapters": "workspace:*",
+    "@agnes/web-client": "workspace:*",
+    "@agnes/web-ui": "workspace:*",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1"
+  },
+  "engines": {
+    "node": ">=24.10"
+  }
+}

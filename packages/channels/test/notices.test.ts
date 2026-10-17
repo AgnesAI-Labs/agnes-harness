@@ -37,6 +37,9 @@ describe('noticeText', () => {
     )
     expect(noticeText({ kind: 'shutting_down', detail: {}, at: 't' })).toBe('服务维护中，稍后自动恢复')
     expect(noticeText({ kind: 'overloaded', detail: {}, at: 't' })).toBe('消息太多，正在追赶')
+    const attention = noticeText({ kind: 'automation_attention', sessionId: 'run', detail: {}, at: 't' })
+    expect(attention).toContain('需要人工处理')
+    expect(attention).toContain('Automation needs attention')
   })
 
   it.each([

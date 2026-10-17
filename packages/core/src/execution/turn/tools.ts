@@ -46,6 +46,7 @@ import { approveMemoryFile } from './memory-approval.js'
 import { approvalContinuation } from './parked.js'
 import { decideToolPolicy } from './policy-review.js'
 import { preflightError } from './preflight-error.js'
+import { terminalDecisionRefusal } from './terminal-decision-refusal.js'
 import {
   deliverToolDecision,
   requestToolDecision,
@@ -877,13 +878,7 @@ export async function approveAndExecute(
       const snapshot = delivery.snapshot
       requestId = snapshot.handle.id
       if (snapshot.invalidation || snapshot.result?.reason !== 'answered') {
-        const reason =
-          snapshot.invalidation?.code ?? (snapshot.result?.reason === 'stopped' ? 'stopped' : 'deadline')
-        const refusal = approvalRefusal(
-          reason === 'stopped' ? 'cancelled' : 'unavailable',
-          reason === 'stopped' ? 'stopped' : 'deadline',
-          s.preset.approval.timeoutMs,
-        )
+        const refusal = terminalDecisionRefusal(snapshot, s.preset.approval.timeoutMs)
         return { result: await refuse(s, call.toolUseId, refusal.code, refusal.text, decisionId, settled()) }
       }
       const answer = snapshot.result

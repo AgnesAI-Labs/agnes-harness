@@ -1,7 +1,11 @@
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { bundledPluginSource, DEFAULT_ENABLED_BUNDLED_PACKAGES } from '@agnes/package-manager'
+import {
+  bundledPluginSource,
+  DEFAULT_ENABLED_BUNDLED_PACKAGES,
+  OPTIONAL_BUNDLED_PACKAGES,
+} from '@agnes/package-manager'
 import { expect, it, vi } from 'vitest'
 import { copyBundledExamples } from '../tools/build-local.js'
 import { bundledReleaseVersion, stampBundledPackageVersion } from '../tools/bundled-version.js'
@@ -12,7 +16,7 @@ vi.mock('@agnes/package-manager', async (original) => {
   return { ...module, BUNDLED_EXAMPLES: [{ family: 'fixtures', name: 'parent-example' }] }
 })
 
-it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
+it.each([...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES])(
   'preserves $id declared versions and only raises them for explicit releases',
   async (helper) => {
     const root = await mkdtemp(join(tmpdir(), 'agh-bundle-version-'))

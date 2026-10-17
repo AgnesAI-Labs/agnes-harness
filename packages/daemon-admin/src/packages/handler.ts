@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { readFileSync, statSync } from 'node:fs'
+import { dirname } from 'node:path'
 import { packageOfRow } from '@agnes/daemon-foundation/composite-desired'
 import type { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import type { CompositeTargetStore } from '@agnes/daemon-foundation/storage/composite-target-store'
@@ -57,7 +58,7 @@ import {
 } from '@agnes/protocol'
 import { classifyPackageContributions } from '../package-readiness.js'
 import { pluginTreeList } from '../plugin-tree-surface.js'
-import { runAuthoringTests } from './authoring-tests.js'
+import { createAuthoringTestRunner, runAuthoringTests } from './authoring-tests.js'
 import { callBuiltinClientQuery } from './builtin-client-services.js'
 import {
   type ClientModuleRegistry,
@@ -463,6 +464,7 @@ class Service implements PackageAdminService {
     private readonly options: {
       manager: PackageManager
       authoringTestRunner?: AuthoringTestRunner
+      authoringHome?: string
       profileDirectory: PackageProfileDirectory
       operations: PackageOperationStore
       catalog?: Catalog
@@ -820,6 +822,9 @@ class Service implements PackageAdminService {
           owner,
           expected,
           authority.authoringSignal ?? AbortSignal.timeout(120_000),
+          this.options.authoringTestRunner ??
+            authority.authoringTestRunner ??
+            createAuthoringTestRunner({ home: this.options.authoringHome ?? dirname(dirname(directory)) }),
         )
       if (action === 'submit') return this.candidates.submit(directory, id, owner, expected)
       return this.candidates.decide(
@@ -2087,6 +2092,7 @@ class Service implements PackageAdminService {
 export function createPackageAdminService(options: {
   manager: PackageManager
   authoringTestRunner?: AuthoringTestRunner
+  authoringHome?: string
   profileDirectory: PackageProfileDirectory
   operations: PackageOperationStore
   catalog?: Catalog

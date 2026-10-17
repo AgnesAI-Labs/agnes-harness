@@ -1,12 +1,4 @@
-import {
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, sep } from 'node:path'
 import { validatePackageAdminData } from '@agnes/protocol'
@@ -99,7 +91,19 @@ async function review(s: ReturnType<typeof setup>, command = 'draft', inputFiles
 }
 it('keeps drafts outside discovery and binds tests, diffs, capabilities and provenance to one review; editing invalidates the old decision', async () => {
   const s = setup()
+  const copies: string[] = []
+  s.runner.mockImplementation(async (...args: unknown[]) => {
+    const directory = args[0] as string
+    copies.push(directory)
+    expect(directory.startsWith(s.profile)).toBe(false)
+    expect(readFileSync(join(directory, 'index.mjs'), 'utf8')).toBe(files[1]?.content)
+    return { state: 'passed', count: 1, runner: 'node-test', output: 'synthetic result' }
+  })
   const r = await review(s)
+  for (const directory of copies) expect(existsSync(directory)).toBe(false)
+  s.runner
+    .mockReset()
+    .mockResolvedValue({ state: 'passed', count: 1, runner: 'node-test', output: 'synthetic result' })
   expect(r.origin).toMatchObject({ feedbackId: 'feedback-1', feedbackRevision: 17, messageSeq: 12 })
   expect(discoverLocalPlugins(localPluginRoots(join(s.root, 'home'), join(s.root, 'workspace')))).toEqual([])
   expect((await s.manager.inventory(s.profile)).packages).toEqual([])

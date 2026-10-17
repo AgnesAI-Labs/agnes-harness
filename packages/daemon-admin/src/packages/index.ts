@@ -4,6 +4,8 @@ export {
   type AdminSurfaceOptions,
   createAdminSurface,
 } from './admin-surface.js'
+export { type AuthoringSandboxContext, authoringSandbox } from './authoring-sandbox.js'
+export { createAuthoringTestRunner } from './authoring-tests.js'
 export {
   CLIENT_MODULE_RETENTION_MS,
   CLIENT_MODULE_SNAPSHOT_QUOTA_BYTES,

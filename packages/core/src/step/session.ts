@@ -400,6 +400,7 @@ export type TurnEndReason =
 export type TurnOutcome = { reason: TurnEndReason; lastSeq: Seq; error?: { code: string; message: string } }
 
 export type SessionDeps = {
+  commandPathScope?: import('../command-table/floor.js').CommandPathScope
   memory?: import('@agnes/extension-api').MemorySession
   systemPrompt?: PinnedSystemPrompt
   bindLoopChildren?: (
@@ -863,6 +864,7 @@ export class SessionImpl {
   }
   private readonly commandFloor = sessionCommandFloor(
     (tool) => this.turn?.snapshot.byName.get(tool)?.meta.commandArg,
+    (input, signal) => this.d.commandPathScope?.(input, signal) ?? Promise.resolve(undefined),
   )
   /** The selected policy inside this session's command floor: its own preset's table, read per call. */
   toolPolicy(selection?: string) {

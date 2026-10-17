@@ -40,6 +40,7 @@ type TargetKind = ScheduleTarget['kind']
 /** Everything the dialog edits, as plain form values. */
 export type ScheduleDraft = {
   title: string
+  unattendedApproval?: 'notify' | 'refuse'
   prompt: string
   target: TargetKind
   cwd: string
@@ -104,6 +105,7 @@ export function draftOf(row: ScheduleRow, choices: ScheduleChoices, now: number)
   const base: ScheduleDraft = {
     ...draft,
     title: row.title,
+    ...(row.target.unattendedApproval ? { unattendedApproval: row.target.unattendedApproval } : {}),
     prompt: row.prompt,
     target: target.kind,
     cwd: target.kind === 'new-session' ? target.cwd : '',
@@ -169,7 +171,12 @@ export function selectorOf(draft: ScheduleDraft): Record<string, unknown> {
 }
 
 export function targetOf(draft: ScheduleDraft, choices: ScheduleChoices): ScheduleTarget {
-  if (draft.target === 'session') return { kind: 'session', sessionKey: draft.sessionKey }
+  if (draft.target === 'session')
+    return {
+      kind: 'session',
+      sessionKey: draft.sessionKey,
+      ...(draft.unattendedApproval ? { unattendedApproval: draft.unattendedApproval } : {}),
+    }
   const saved = draft.saved?.target.kind === 'new-session' ? draft.saved : undefined
   const before = saved?.target.kind === 'new-session' ? saved.target : undefined
   const mode = choices.modes.find((item) => item.key === draft.mode)
@@ -193,6 +200,7 @@ export function targetOf(draft: ScheduleDraft, choices: ScheduleChoices): Schedu
   return {
     kind: 'new-session',
     cwd: draft.cwd,
+    ...(draft.unattendedApproval ? { unattendedApproval: draft.unattendedApproval } : {}),
     ...execution,
     ...(draft.preset ? { preset: draft.preset } : {}),
     ...(chosenModel ? { model: chosenModel } : {}),
@@ -437,6 +445,17 @@ export function ScheduleEditor({
             value={draft.prompt}
             onChange={(event) => set('prompt', event.target.value)}
           />
+        </Field>
+        <Field label={ux('approvalBehavior')}>
+          <SettingsSelect
+            data-testid="schedules-approval-behavior"
+            disabled={busy}
+            value={draft.unattendedApproval ?? 'notify'}
+            onChange={(event) => set('unattendedApproval', event.target.value as 'notify' | 'refuse')}
+          >
+            <option value="notify">{ux('approvalNotify')}</option>
+            <option value="refuse">{ux('approvalRefuse')}</option>
+          </SettingsSelect>
         </Field>
         <Field label={ux('frequency')}>
           <Segmented<Frequency>

@@ -36,6 +36,10 @@ pnpm exec vitest run tools/guards/src tools/public-docs/examples.test.ts --maxWo
 
 The CLI startup test still gates successful boot and session creation. On shared CI runners, its elapsed time is reported in the job summary rather than used as a pass/fail threshold. To enforce the 300 ms target on a controlled performance machine, set `AGH_ENFORCE_BOOT_BUDGET=1` and run `pnpm exec vitest run packages/cli/test/boot-budget.test.ts --maxWorkers=1`.
 
+Web delivery builds use production React and compressed JavaScript; the development watcher keeps development diagnostics. The focused `packages/cli/test/build-local-web.test.ts` gate walks the emitted static module graph, including import-map vendors, and limits cold JavaScript to 9 MiB (about 30% above its calibrated 7 MiB). Built-in home pages load when selected. This byte gate is deterministic; it does not replace real-browser paint, interaction, or transcript measurements.
+
+The serial `packages/host-infrastructure/test/adapters/table-reads.slow.test.ts` heavy gate measures five batches of 3,000 owner reads against 50 synthetic rows, with a conservative 150 ms ceiling per batch. It also checks fresh results after writes, schema changes and query-plan eviction, invalid bindings and refused SQL. Query-plan reuse stays within each isolated connection; no rows or authorization results are cached. The existing ledger-integrity and package-load gates remain required.
+
 The package-load gate is the **gates real immutable package preparation** case in `tools/plugin-performance.slow.test.ts`. Run it serially on a performance runner with Node 24:
 
 ```sh

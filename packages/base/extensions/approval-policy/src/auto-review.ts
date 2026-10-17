@@ -67,6 +67,11 @@ export function createAutoReviewPolicy(base: ToolPolicy): ToolPolicy {
         promptHash: hash(prompt),
         argsHash,
         scopeHash,
+        scopePreview: {
+          args: jcs(input.call.args).slice(0, 4096),
+          cwd: input.cwd.slice(0, 4096),
+          mode: `${base.id} / ${input.approvalMode}`.slice(0, 128),
+        },
         decision: 'escalate',
         risk: 'medium',
         reason: 'Reviewer unavailable; human approval required',
@@ -103,10 +108,15 @@ export function createAutoReviewPolicy(base: ToolPolicy): ToolPolicy {
         fact = {
           ...fact,
           decision:
-            override.decision === 'allow' && override.risk === 'high' ? 'escalate' : override.decision,
+            override.decision === 'allow' && (override.risk === 'high' || input.tainted)
+              ? 'escalate'
+              : override.decision,
           risk: override.decision === 'deny' && override.risk === 'low' ? 'medium' : override.risk,
           source: 'human-override',
-          reason: 'Explicit human rule for these exact tool arguments',
+          reason:
+            input.tainted && override.decision === 'allow'
+              ? `Untrusted context requires human approval. Matching human rule: allow (${override.risk}) for these exact tool arguments`
+              : 'Explicit human rule for these exact tool arguments',
         }
         return result()
       }

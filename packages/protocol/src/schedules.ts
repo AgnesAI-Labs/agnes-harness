@@ -6,6 +6,7 @@ const prompt = Type.String({ minLength: 1, maxLength: 16000 })
 const scheduleId = Type.String({ pattern: '^sched_[0-9a-f]{16}$' })
 const time = Type.String({ pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' })
 const zone = Type.String({ minLength: 1, maxLength: 128 })
+const unattendedApproval = Type.Optional(Type.Union([Type.Literal('notify'), Type.Literal('refuse')]))
 const seconds = Type.Integer({ minimum: 60, maximum: 31622400 })
 
 export const ScheduleSelector = Type.Union([
@@ -51,10 +52,14 @@ const id = Type.String({ minLength: 1, maxLength: 256, pattern: '^[^\\u0000-\\u0
  * permission preset and model. Unset fields use the same defaults as a new chat.
  */
 export const ScheduleTarget = Type.Union([
-  Type.Object({ kind: Type.Literal('session'), sessionKey }, { additionalProperties: false }),
+  Type.Object(
+    { kind: Type.Literal('session'), sessionKey, unattendedApproval },
+    { additionalProperties: false },
+  ),
   Type.Object(
     {
       kind: Type.Literal('new-session'),
+      unattendedApproval,
       cwd: Type.String({ minLength: 1, maxLength: 4096 }),
       loop: Type.Optional(Type.Object({ id, version: id }, { additionalProperties: false })),
       bundles: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 512 }), { maxItems: 64 })),
@@ -75,12 +80,13 @@ export const ScheduleTarget = Type.Union([
 
 /**
  * One run of a scheduled task. `running`: a turn started and has not ended; `waiting_approval`: that
- * turn is waiting for a person to answer an approval; `ran`: the turn ended; `delivered`: the prompt
- * joined a turn that was already running; `failed`: nothing ran, `reason` says why.
+ * turn is waiting for a person to answer an approval; `needs_attention`: another human decision is required; `ran`: the turn completed; `delivered`: the prompt
+ * joined a turn that was already running; `failed`: the run failed or its approval expired; `reason` says why.
  */
 export const ScheduleRunOutcome = Type.Union([
   Type.Literal('running'),
   Type.Literal('waiting_approval'),
+  Type.Literal('needs_attention'),
   Type.Literal('ran'),
   Type.Literal('delivered'),
   Type.Literal('failed'),
@@ -89,6 +95,7 @@ export const ScheduleRun = Type.Object(
   {
     at: Type.Integer(),
     outcome: ScheduleRunOutcome,
+    needsAttention: Type.Optional(Type.Boolean()),
     sessionKey: Type.Optional(sessionKey),
     endedAt: Type.Optional(Type.Integer()),
     seq: Type.Optional(Type.Integer()),

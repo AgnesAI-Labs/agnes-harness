@@ -129,6 +129,7 @@ export function createAppServerAdmin(options: {
     },
   })
   return {
+    observeTriggerSession: triggers.observeSession,
     triggers: triggers.handle,
     credentials: genericCredentials.call,
     bundles: () => composition.bundles(),

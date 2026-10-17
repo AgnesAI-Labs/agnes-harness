@@ -146,6 +146,7 @@ export type TestHostOptions = {
   currentRuntime?: import('@agnes/core').KernelOptions['currentRuntime']
   serviceAuthority?: import('@agnes/host-extensions/ext-host/service-invocation').ServiceAuthority
   dataDir: string
+  workspaceRoot?: string
   /** Builtin template loaded by the real resolver; omitted uses local-dev. */
   template?: string
   /** Exact lock state; omitted supplies the test packages, never merged into an explicit lock. */
@@ -410,7 +411,7 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
       ...Object.entries(o.packageDirs ?? {}),
     ]),
     profileDir,
-    workspaceRoot: o.dataDir,
+    workspaceRoot: o.workspaceRoot ?? o.dataDir,
     homeDir: o.dataDir,
     hostRoot: process.cwd(),
     loader,

@@ -139,6 +139,7 @@ export function failureOf(
   error: string,
   info: { newSession: boolean; sessionKey?: string },
 ): { reason: string; detail?: string } {
+  if (error === 'approval_pending_previous_run') return { reason: error }
   if (CODES.has(error)) return { reason: error }
   if (/^session owner unavailable/.test(error) || /SESSION_NOT_FOUND|unknown session/i.test(error))
     return { reason: 'session_unavailable', detail: error }
@@ -169,9 +170,12 @@ export function scheduledTasks(o: {
     onDispatched: (job: JobRow, info: { at: number; seq?: number; reason?: string; sessionKey: string }) =>
       port.recordDispatch(job.idempotencyKey, info),
     keepWaiting: (job: JobRow) => port.stillWaiting(job.idempotencyKey),
-    onSettled: (job: JobRow, info: { at: number; nextRunAt: number | null }) =>
+    onSettled: (job: JobRow, info: { at: number; nextRunAt: number | null; reason?: string }) =>
       port.noteSettlement(job.idempotencyKey, info),
+    unattendedApproval: (job: JobRow) =>
+      port.targetOf(job.idempotencyKey)?.target.unattendedApproval ?? ('notify' as const),
     prepare: async (job: JobRow) => {
+      if (port.hasWaiting(job.idempotencyKey)) throw new Error('approval_pending_previous_run')
       const task = newSession(job)
       if (!task) return undefined
       // Checked again at run time: a workspace or plugin may have gone since the task was saved.

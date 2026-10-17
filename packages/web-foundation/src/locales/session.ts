@@ -70,6 +70,7 @@ export const sessionLocaleCatalog: LocaleCatalog = {
     'session.runtime.versionNewer': 'Newer version available',
     'session.runtime.permission.view': 'Read only',
     'session.runtime.noOsIsolation': 'OS sandbox off',
+    'session.runtime.platformNoCommandIsolation': 'Commands are not isolated on this platform',
     'session.runtime.noOsIsolationHelp':
       'Application permissions still apply. Approved commands run with your system account’s access; approval does not isolate files or network.',
     'session.runtime.permission.workspace': 'Edit workspace',
@@ -211,6 +212,7 @@ export const sessionLocaleCatalog: LocaleCatalog = {
     'session.runtime.versionNewer': '有新版本',
     'session.runtime.permission.view': '只读',
     'session.runtime.noOsIsolation': '系统沙箱未启用',
+    'session.runtime.platformNoCommandIsolation': '此平台命令未隔离',
     'session.runtime.noOsIsolationHelp':
       '应用权限仍按所选模式执行。获准命令使用当前系统账户权限；审批不能隔离文件和网络。',
     'session.runtime.permission.workspace': '可修改工作区',

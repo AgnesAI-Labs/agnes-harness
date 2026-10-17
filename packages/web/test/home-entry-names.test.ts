@@ -6,6 +6,7 @@ import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createReconciler, type ReadyClientModule } from '../src/client-modules/reconcile.js'
+import { deferHomePage } from '../src/pages/deferred.js'
 import { registerBuiltinHomeEntries } from '../src/pages/entries.js'
 import { HomeEntriesNav } from '../src/regions/home-entries.js'
 import { enT, zhLocaleService, zhT } from './helpers/locale.js'
@@ -31,6 +32,32 @@ describe('home entry names', () => {
     // The sidebar entry and the page title read the same two keys: the name, then FDE in the quiet note.
     expect(agents?.titleKey).toBe('home.entry.agents')
     expect(agents?.subtitleKey).toBe('home.entry.agents.sub')
+  })
+  it('loads a selected page and forwards the current context after it becomes available', async () => {
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+    let ready: ((value: { default: import('@agnes/web-client').HomeEntry['component'] }) => void) | undefined
+    const Page = deferHomePage(
+      () =>
+        new Promise((resolve) => {
+          ready = resolve
+        }),
+    )
+    const host = document.body.appendChild(document.createElement('div'))
+    const root = createRoot(host)
+    try {
+      expect(ready).toBeUndefined()
+      await act(async () => root.render(createElement(Page, { context: { t: enT, data: {} } })))
+      expect(host.textContent).toBe('')
+      await act(async () =>
+        ready?.({ default: ({ context }) => createElement('p', null, context.t('home.entry.plugins')) }),
+      )
+      expect(host.textContent).toBe(enT('home.entry.plugins'))
+      await act(async () => root.render(createElement(Page, { context: { t: zhT, data: {} } })))
+      expect(host.textContent).toBe(zhT('home.entry.plugins'))
+    } finally {
+      await act(async () => root.unmount())
+      host.remove()
+    }
   })
   it.each(['en', 'zh-CN'] as const)(
     'renders declared primary navigation beside built-ins before loading code in %s',

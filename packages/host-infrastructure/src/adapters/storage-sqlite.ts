@@ -25,6 +25,7 @@ import type { PersistenceSqliteSchemaObject } from '@agnes/extension-api'
 import { assertSessionTreeTableName } from '@agnes/host-common/session-tree-schema'
 import { sqliteChildControl } from './child-control-sqlite.js'
 import { DDL } from './ddl.js'
+import { preparedStatement } from './prepared-statements.js'
 import { assertOwnedSql, confineToOwnFile } from './sql-guard.js'
 import { syncCheckpointsToMedium } from './sqlite-durability.js'
 import { assertStoredHead, initializeStoredHeads, recordStoredHead } from './storage-sqlite-head.js'
@@ -792,15 +793,15 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
             },
             run: (sql, params = []) => {
               assertOwnedSql(sql)
-              return { changes: Number(conn.prepare(sql).run(...toSqlParams(params)).changes) }
+              return { changes: Number(preparedStatement(conn, sql).run(...toSqlParams(params)).changes) }
             },
             all: <T>(sql: string, params: readonly unknown[] = []) => {
               assertOwnedSql(sql)
-              return conn.prepare(sql).all(...toSqlParams(params)) as unknown as T[]
+              return preparedStatement(conn, sql).all(...toSqlParams(params)) as unknown as T[]
             },
             get: <T>(sql: string, params: readonly unknown[] = []) => {
               assertOwnedSql(sql)
-              return conn.prepare(sql).get(...toSqlParams(params)) as unknown as T | undefined
+              return preparedStatement(conn, sql).get(...toSqlParams(params)) as unknown as T | undefined
             },
             transaction: otx,
           }
