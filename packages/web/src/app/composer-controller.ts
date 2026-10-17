@@ -66,7 +66,7 @@ export function createComposerController(
     | 'selectedDraftPreset'
     | 'selectedModelAvailable'
     | 'selectedWorkspace'
-    | 'selection'
+    | 'sessionBinding'
     | 'sending'
     | 'sessionControls'
     | 'sessionIsolation'
@@ -191,8 +191,9 @@ export function createComposerController(
           !busy ||
           context.stopping ||
           context.sessionPending ||
-          (context.queueAction?.sessionId === context.current?.id &&
-            context.queueAction?.selection === context.selection &&
+          (context.queueAction !== undefined &&
+            context.queueAction.sessionId === context.current?.id &&
+            context.sessionBinding.isCurrent(context.queueAction?.binding) &&
             context.queueAction.kind === 'sendNow' &&
             context.queueAction.pending),
         hidden: !busy && !context.stopping,
@@ -374,8 +375,9 @@ export function createComposerController(
           !context.current ||
           context.sessionPending ||
           context.stopping ||
-          (context.queueAction?.sessionId === context.current?.id &&
-            context.queueAction.selection === context.selection &&
+          (context.queueAction !== undefined &&
+            context.queueAction.sessionId === context.current?.id &&
+            context.sessionBinding.isCurrent(context.queueAction?.binding) &&
             context.queueAction.pending),
         disabled:
           !available ||
@@ -386,11 +388,13 @@ export function createComposerController(
           context.stopping ||
           context.permissionChangePending ||
           permissionUnknown ||
-          (context.queueAction?.sessionId === context.current?.id &&
-            context.queueAction.selection === context.selection &&
+          (context.queueAction !== undefined &&
+            context.queueAction.sessionId === context.current?.id &&
+            context.sessionBinding.isCurrent(context.queueAction?.binding) &&
             context.queueAction.pending),
-        ...(context.queueAction?.sessionId === context.current?.id &&
-        context.queueAction?.selection === context.selection
+        ...(context.queueAction !== undefined &&
+        context.queueAction.sessionId === context.current?.id &&
+        context.sessionBinding.isCurrent(context.queueAction?.binding)
           ? {
               ...(context.queueAction.pending
                 ? context.queueAction.kind === 'sendNow'

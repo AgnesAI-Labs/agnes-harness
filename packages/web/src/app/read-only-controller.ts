@@ -7,6 +7,7 @@ import {
 import { appServerErrorMessage } from '@agnes/web-ui'
 import type { AppSessionContext } from '../app.js'
 import { appReadOnly } from '../app-notices.js'
+import type { SessionBinding } from './session-owner.js'
 
 type ViewScan = { fromSeq: number; throughSeq: number } | undefined
 type ReadOnlyNotice = Pick<SessionViewNotice, 'actions' | 'localized'>
@@ -50,7 +51,7 @@ export function createReadOnlyController(
     | 'render'
     | 'renderControls'
     | 'run'
-    | 'selection'
+    | 'sessionBinding'
     | 't'
     | 'windowAtStart'
   >,
@@ -66,11 +67,11 @@ export function createReadOnlyController(
     | undefined
 
   /** Fetches a view and commits it in one step; false when a newer request or selection superseded it. */
-  async function load(id: string, maxNodes: number, epoch: number): Promise<boolean> {
+  async function load(id: string, maxNodes: number, epoch: SessionBinding): Promise<boolean> {
     const ticket = ++latest
     try {
       const view = await context.client.session.view(id, { maxNodes })
-      if (ticket !== latest || epoch !== context.selection) return false
+      if (ticket !== latest || !context.sessionBinding.isCurrent(epoch)) return false
       scan = view.history.scan
       context.readOnly = { id, maxNodes, hasEarlier: view.history.hasEarlier }
       context.projection = view.timeline
@@ -78,7 +79,7 @@ export function createReadOnlyController(
       return true
     } catch (error) {
       // An obsolete failure must not replace the current selection with recovery UI either.
-      if (ticket !== latest || epoch !== context.selection) return false
+      if (ticket !== latest || !context.sessionBinding.isCurrent(epoch)) return false
       throw error
     }
   }
@@ -107,7 +108,7 @@ export function createReadOnlyController(
    * refusal does not support read-only recovery, or the record cannot be read; the caller offers the
    * usual recovery.
    */
-  async function show(id: string, error: unknown, epoch: number): Promise<boolean> {
+  async function show(id: string, error: unknown, epoch: SessionBinding): Promise<boolean> {
     const refusal = refusalNotice(error, id)
     if (!refusal) return false
     try {
@@ -124,7 +125,7 @@ export function createReadOnlyController(
   async function loadEarlier(): Promise<void> {
     const state = context.readOnly
     if (!state?.hasEarlier) return
-    if (!(await load(state.id, state.maxNodes + PAGE, context.selection))) return
+    if (!(await load(state.id, state.maxNodes + PAGE, context.sessionBinding.capture()))) return
     context.render()
   }
 
@@ -150,7 +151,7 @@ export function createReadOnlyController(
     })
   }
 
-  async function preview(id: string, epoch: number): Promise<void> {
+  async function preview(id: string, epoch: SessionBinding): Promise<void> {
     if (!(await load(id, PAGE, epoch))) return
     const current = openingProgress?.id === id ? openingProgress : undefined
     progress(id, current?.phase ?? 'verifying', current?.done ?? 0, current?.total ?? 0)

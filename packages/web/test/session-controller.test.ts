@@ -2,6 +2,7 @@
 import type { LedgerEvent, Session } from '@agnes/sdk/browser'
 import { expect, it } from 'vitest'
 import { createSessionController } from '../src/app/session-controller.js'
+import { SessionBindingOwner } from '../src/app/session-owner.js'
 
 it.each(['x/core/control', 'user/message'])(
   'keeps late %s refresh errors scoped to the selection that requested them',
@@ -16,7 +17,7 @@ it.each(['x/core/control', 'user/message'])(
       const context = {
         current: session,
         sessionRows: [],
-        selection: 1,
+        sessionBinding: new SessionBindingOwner(),
         refreshSessionControls: () => failure,
         list: () => failure,
         showError: (error: unknown) => {
@@ -26,8 +27,10 @@ it.each(['x/core/control', 'user/message'])(
         sessionTitles: new Map(),
         receipts: new Map(),
       }
+      context.sessionBinding.attach(context.sessionBinding.capture(), { session })
       const controller = createSessionController(
         context as unknown as Parameters<typeof createSessionController>[0],
+        context.sessionBinding,
       )
       const work = controller.followEvent(session, {
         seq: 1,
@@ -37,10 +40,12 @@ it.each(['x/core/control', 'user/message'])(
       } as LedgerEvent)
       if (selection !== 'current') {
         context.current = { id: 'b' } as Session
-        context.selection++
+        context.sessionBinding.begin()
+        context.sessionBinding.attach(context.sessionBinding.capture(), { session: context.current })
         if (selection === 'returned') {
           context.current = session
-          context.selection++
+          context.sessionBinding.begin()
+          context.sessionBinding.attach(context.sessionBinding.capture(), { session: context.current })
         }
       }
       reject(new Error('earlier refresh failed'))

@@ -1,3 +1,6 @@
+import type { Session } from '@agnes/sdk/browser'
+import type { SessionBinding } from '../src/app/session-owner.js'
+import { SessionBindingOwner } from '../src/app/session-owner.js'
 /** @vitest-environment happy-dom */
 
 import { createClient, type JsonRpcMessage, memoryJournal, type PendingCommand } from '@agnes/sdk'
@@ -75,7 +78,7 @@ function submission(session: ReturnType<typeof runningSession>, draft = '补充�
     recoveredReturns: new Set<string>(),
     submissionGeneration: 0,
     permissionConnectionEpoch: 0,
-    selection: 1,
+    sessionBinding: new SessionBindingOwner(),
     notice: {
       setText: vi.fn(),
       setKind: vi.fn(),
@@ -92,6 +95,7 @@ function submission(session: ReturnType<typeof runningSession>, draft = '补充�
     composerDraftKey: 'draft',
     t: enT,
   }
+  context.sessionBinding.attach(context.sessionBinding.capture(), { session: session as unknown as Session })
   return {
     ...createSubmissionController(context as unknown as Parameters<typeof createSubmissionController>[0]),
     context,
@@ -126,7 +130,7 @@ function commands(session: ReturnType<typeof runningSession>) {
     permissionChangePending: false,
     permissionRefreshPending: false,
     sessionYoloEnabled: false,
-    selection: 1,
+    sessionBinding: new SessionBindingOwner(),
     queueAction: undefined as
       | undefined
       | {
@@ -135,7 +139,7 @@ function commands(session: ReturnType<typeof runningSession>) {
           pending: boolean
           error?: string
           sessionId: string
-          selection: number
+          binding: SessionBinding
         },
     projection: { sessionId: session.id, pendingInputs: [{ itemId: 'q1', preview: '主色换成深蓝' }] },
     controlsHistory: new Map(),
@@ -151,6 +155,7 @@ function commands(session: ReturnType<typeof runningSession>) {
     },
     t: enT,
   }
+  context.sessionBinding.attach(context.sessionBinding.capture(), { session: session as unknown as Session })
   const controller = createCommandController(
     context as unknown as Parameters<typeof createCommandController>[0],
   )

@@ -7,6 +7,7 @@ import type { AppSessionContext } from '../app.js'
 import { forkTitle } from '../session-actions.js'
 import { bindWebSession, loadWebSession } from '../session-binding.js'
 import { receiptFromTurns, recordRunEvent, webView } from '../view.js'
+import type { SessionBindingOwner } from './session-owner.js'
 
 export function createSessionController(
   context: Pick<
@@ -32,7 +33,6 @@ export function createSessionController(
     | 'modelSelectionSeq'
     | 'moduleSessionId'
     | 'notice'
-    | 'offPermission'
     | 'permissionChangePending'
     | 'permissionMode'
     | 'permissionRefreshPending'
@@ -45,7 +45,7 @@ export function createSessionController(
     | 'renderControls'
     | 'renderer'
     | 'selectedWorkspace'
-    | 'selection'
+    | 'sessionBinding'
     | 'sending'
     | 'sessionControls'
     | 'sessionIsolation'
@@ -55,7 +55,6 @@ export function createSessionController(
     | 'sessionYoloEnabled'
     | 'showError'
     | 'showSessionRecovery'
-    | 'stopEvents'
     | 'stopping'
     | 'streamFrame'
     | 'submissionGeneration'
@@ -67,6 +66,7 @@ export function createSessionController(
     | 'windowAtStart'
     | 'workspaceRows'
   >,
+  bindingOwner: SessionBindingOwner,
 ) {
   async function open(
     id: string,
@@ -77,7 +77,7 @@ export function createSessionController(
       initialModel?: KnownSessionModel
     } = {},
   ): Promise<void> {
-    const epoch = ++context.selection
+    const { binding: epoch, previous } = bindingOwner.begin()
     if (!options.created) context.references.clear()
     if (!options.preserveSending) context.submissionGeneration++
     let selectionReady = false
@@ -85,11 +85,9 @@ export function createSessionController(
     context.sessionPending = true
     context.draftingNew = false
     context.renderControls()
-    const previous = context.current
     // 投影与转录区都保留到新投影就绪：加载期间旧画面继续显示（body.session-switching
     // 半透明提示，状态栏「正在准备会话」），不经历「清空 → 空白 → 填充」的闪屏，
     // 也避免 `body:has(#transcript:empty)` 把布局跳进空态模式。
-    context.current = undefined
     context.moduleSessionId = undefined
     context.clientModules.session.setSession(undefined)
     context.sessionYoloEnabled = options.created ? false : undefined
@@ -108,22 +106,16 @@ export function createSessionController(
     context.selectedWorkspace = undefined
     context.modelChangePending = false
     context.renderControls()
-    context.offPermission?.()
-    context.offPermission = undefined
     context.liveApproval?.finish({ unanswered: 'detached' })
     context.liveApproval = undefined
     try {
-      const stopped = await stopWithTimeout(context.stopEvents)
-      if (epoch === context.selection) {
-        context.stopEvents = undefined
-        context.live = undefined
-      }
-      if (!stopped && epoch === context.selection) {
+      const stopped = await stopWithTimeout(previous.stop)
+      if (!stopped && context.sessionBinding.isCurrent(epoch)) {
         context.notice.setText(context.t('app.notice.oldSessionClosing'))
         context.notice.setKind('warning')
       }
-      await previous?.detach()
-      if (epoch !== context.selection) return
+      await previous.session?.detach()
+      if (!context.sessionBinding.isCurrent(epoch)) return
       const permission: Parameters<Session['onPermissionRequest']>[0] = (request, permissionContext) =>
         new Promise<PermissionOutcome>((resolve) => {
           const pending = {
@@ -132,14 +124,14 @@ export function createSessionController(
             finish: (answer: PermissionOutcome) => {
               permissionContext.signal.removeEventListener('abort', reject)
               if (context.liveApproval === pending) context.liveApproval = undefined
-              if (epoch === context.selection) context.render()
+              if (context.sessionBinding.isCurrent(epoch)) context.render()
               resolve(permissionContext.signal.aborted ? { unanswered: 'detached' } : answer)
             },
           }
           const reject = () => pending.finish({ unanswered: 'detached' })
           if (
             permissionContext.signal.aborted ||
-            epoch !== context.selection ||
+            !context.sessionBinding.isCurrent(epoch) ||
             context.permissionMode === 'view'
           ) {
             resolve({ unanswered: 'detached' })
@@ -157,7 +149,7 @@ export function createSessionController(
               context.client.session.load(sessionId, {
                 ...options,
                 onProgress: (progress) => {
-                  if (epoch === context.selection && !context.current)
+                  if (context.sessionBinding.isCurrent(epoch) && !context.current)
                     context.readOnlyController.progress(
                       id,
                       progress.phase,
@@ -169,18 +161,14 @@ export function createSessionController(
             id,
             permission,
           )
-      if (epoch !== context.selection) {
-        binding.offPermission?.()
-        return
-      }
+      if (!bindingOwner.attach(epoch, binding)) return
       context.readOnlyController.clear()
       const loaded = binding.session
-      context.current = loaded
       context.sessionIsolation = undefined
       void Promise.resolve()
         .then(() => context.client.session.runtime(loaded.id))
         .then((runtime) => {
-          if (epoch !== context.selection || context.current !== loaded) return
+          if (!context.sessionBinding.isCurrent(epoch, loaded)) return
           const sandbox = runtime.policy?.sandbox
           if (sandbox?.provider === 'local' && sandbox.enforcement) {
             context.sessionIsolation = {
@@ -194,10 +182,9 @@ export function createSessionController(
         .catch(() => undefined)
       context.sessionControls = undefined
       context.controlPending = false
-      context.offPermission = binding.offPermission
       context.moduleSessionId = loaded.id
       await context.clientModules.reconciler.reconcileNow()
-      if (epoch !== context.selection) {
+      if (!context.sessionBinding.isCurrent(epoch)) {
         binding.offPermission?.()
         return
       }
@@ -229,9 +216,8 @@ export function createSessionController(
         url.searchParams.has('settings') && url.hash.startsWith('#settings-subsection-') ? url.hash : ''
       url.hash = settingsHash
       history.replaceState(null, '', preserveRouteParams(url))
-      context.offPermission = binding.offPermission
       let opened = false
-      const selected = () => context.current === loaded && epoch === context.selection
+      const selected = () => context.sessionBinding.isCurrent(epoch, loaded)
       const liveProjection = createLiveProjection(loaded, context.client, {
         timeline(value, window) {
           if (!selected()) return
@@ -296,11 +282,10 @@ export function createSessionController(
           if (selected()) context.showError(error)
         },
       })
-      context.live = liveProjection
-      context.stopEvents = () => liveProjection.stop()
+      bindingOwner.watch(epoch, liveProjection)
       await liveProjection.start()
       await context.refreshSessionControls(loaded)
-      if (epoch !== context.selection) return
+      if (!context.sessionBinding.isCurrent(epoch)) return
       selectionReady = true
       context.sessionPending = false
       context.clearSessionRecovery()
@@ -312,35 +297,29 @@ export function createSessionController(
             : undefined,
         )
         .catch((error: unknown) => {
-          if (epoch === context.selection) context.showError(error)
+          if (context.sessionBinding.isCurrent(epoch)) context.showError(error)
         })
     } catch (error) {
-      if (epoch !== context.selection) return
+      if (!context.sessionBinding.isCurrent(epoch)) return
       if (!selectionReady) {
         context.readOnlyController.clear()
-        const failed = context.current
-        context.current = undefined
+        const failed = bindingOwner.release(epoch)
         context.moduleSessionId = undefined
         context.clientModules.session.setSession(undefined)
         context.projection = undefined
         context.knownSessionModel = undefined
         context.modelChangePending = false
-        context.offPermission?.()
-        context.offPermission = undefined
-        const stop = context.stopEvents
-        context.stopEvents = undefined
-        context.live = undefined
         try {
-          await stopWithTimeout(stop)
+          await stopWithTimeout(failed.stop)
         } catch {
           // The original loading failure is the useful error for this selection.
         }
         try {
-          await failed?.detach()
+          await failed.session?.detach()
         } catch {
           // The failed binding is already unavailable to the composer.
         }
-        if (epoch !== context.selection) return
+        if (!context.sessionBinding.isCurrent(epoch)) return
         // 加载失败没有可保留的画面：清空转录区回到空态，错误走 #notice。
         context.renderer.reset()
         if (options.preserveSending) {
@@ -357,7 +336,7 @@ export function createSessionController(
           (await context.readOnlyController.show(id, error, epoch))
         )
           return
-        if (epoch !== context.selection) return
+        if (!context.sessionBinding.isCurrent(epoch)) return
         context.render()
         if (!options.created && !options.preserveSending) {
           context.showSessionRecovery(error, id)
@@ -391,9 +370,9 @@ export function createSessionController(
 
   /** What watching the event stream used to do per event: titles, the list, the run receipt. */
   async function followEvent(session: Session, event: LedgerEvent): Promise<void> {
-    const epoch = context.selection
+    const epoch = context.sessionBinding.capture()
     const showError = (error: unknown) => {
-      if (context.selection === epoch && context.current === session) context.showError(error)
+      if (context.sessionBinding.isCurrent(epoch, session)) context.showError(error)
     }
     if (['inbox', 'x/core/control', 'x/core/pause-state', 'turn/start', 'turn/end'].includes(event.type))
       void context.refreshSessionControls(session).catch(showError)
@@ -422,21 +401,23 @@ export function createSessionController(
   }
 
   async function forkTurn(turn: UITurn): Promise<void> {
-    const epoch = context.selection
+    const epoch = context.sessionBinding.capture()
     const parent = context.current
     if (!parent || !turn.forkable || turn.endSeq === undefined || context.projection?.opState !== null)
       throw new Error(context.t('app.fork.notIdle'))
     const forked = await context.client.session.fork(parent.id, turn.endSeq)
-    if (context.selection !== epoch || context.current !== parent) return
-    await open(forked.id, { created: forked })
-    if (context.selection !== epoch + 1 || context.current?.id !== forked.id) return
+    if (!context.sessionBinding.isCurrent(epoch, parent)) return
+    const opening = open(forked.id, { created: forked })
+    const forkBinding = context.sessionBinding.capture()
+    await opening
+    if (!context.sessionBinding.isCurrent(forkBinding, forked)) return
     reportSuccess('session-fork', context.t('app.fork.created'))
     context.notice.setKind('')
     context.composerRuntime.focus()
   }
 
   async function forkSidebar(id: string, title: string): Promise<void> {
-    const epoch = context.selection
+    const epoch = context.sessionBinding.capture()
     const row = context.sessionRows.find((item) => item.sessionId === id)
     const source = await context.client.session.load(id, row?.cwd ? { cwd: row.cwd } : {})
     const timeline = await source.projectUI(undefined, { surface: 'web' })
@@ -457,7 +438,7 @@ export function createSessionController(
       refreshError = error
     }
     try {
-      if (epoch === context.selection) await open(child.id, { created: child })
+      if (context.sessionBinding.isCurrent(epoch)) await open(child.id, { created: child })
     } catch (error) {
       refreshError = error
     }

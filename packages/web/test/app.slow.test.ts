@@ -72,8 +72,8 @@ vi.mock('../src/app/session-controller.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/app/session-controller.js')>()
   return {
     ...actual,
-    createSessionController: (context: Parameters<typeof actual.createSessionController>[0]) => {
-      const controller = actual.createSessionController(context)
+    createSessionController: (...args: Parameters<typeof actual.createSessionController>) => {
+      const controller = actual.createSessionController(...args)
       selectionController.open = controller.open
       return controller
     },

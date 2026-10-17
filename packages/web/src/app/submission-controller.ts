@@ -61,7 +61,7 @@ export function createSubmissionController(
     | 'selectedDraftPreset'
     | 'selectedModelAvailable'
     | 'selectedWorkspace'
-    | 'selection'
+    | 'sessionBinding'
     | 'sending'
     | 'sessionControls'
     | 'sessionPending'
@@ -112,7 +112,7 @@ export function createSubmissionController(
     if (context.referenceSessionPending) return context.referenceSessionPending
     if (!context.draftingNew || !context.selectedWorkspace?.available || context.sessionPending)
       throw new Error(context.t('app.session.createFailed'))
-    const epoch = context.selection
+    const epoch = context.sessionBinding.capture()
     context.sessionPending = true
     context.renderControls()
     context.referenceSessionPending = (async () => {
@@ -135,7 +135,7 @@ export function createSubmissionController(
         ...(context.draftPreset ? { preset: context.draftPreset } : {}),
         ...(context.draftBundles.length ? { bundles: context.draftBundles } : {}),
       })
-      if (context.selection !== epoch) throw new Error(context.t('app.session.selectionChanged'))
+      if (!context.sessionBinding.isCurrent(epoch)) throw new Error(context.t('app.session.selectionChanged'))
       await context.open(created.id, {
         created,
         preserveSending: true,
@@ -150,7 +150,7 @@ export function createSubmissionController(
       return await context.referenceSessionPending
     } finally {
       context.referenceSessionPending = undefined
-      if (context.selection === epoch) {
+      if (context.sessionBinding.isCurrent(epoch)) {
         context.sessionPending = false
         context.renderControls()
       }
@@ -266,7 +266,7 @@ export function createSubmissionController(
     )
     const submission = ++context.submissionGeneration
     const connectionEpoch = context.permissionConnectionEpoch
-    let ownedSelection = context.selection
+    let ownedSelection = context.sessionBinding.capture()
     context.sending = true
     context.awaitingPromptStart = !busy
     context.composerRuntime.setDraft('')
@@ -281,7 +281,7 @@ export function createSubmissionController(
         try {
           session = await prepareComposerSession()
         } finally {
-          ownedSelection = context.selection
+          ownedSelection = context.sessionBinding.capture()
         }
       }
       if (!session) throw new Error(context.t('app.session.createFailed'))
@@ -294,7 +294,7 @@ export function createSubmissionController(
           thinking: selectedModel.settings?.thinking ?? null,
           contextWindow: selectedModel.settings?.contextWindow ?? null,
         })
-        if (context.current !== session || context.selection !== ownedSelection)
+        if (!context.sessionBinding.isCurrent(ownedSelection, session))
           throw new Error(context.t('app.error.sessionChanged'))
         context.modelSelectionSeq = applied.effectiveFromSeq
         context.knownSessionModel = selectedModel
@@ -311,7 +311,7 @@ export function createSubmissionController(
         const selectedPermission = context.initialPermissionPending
         const enabled = yoloEnabled(selectedPermission)
         const applied = await session.setYolo(enabled)
-        if (context.current !== session || context.selection !== ownedSelection)
+        if (!context.sessionBinding.isCurrent(ownedSelection, session))
           throw new Error(context.t('app.error.sessionChanged'))
         if (connectionEpoch !== context.permissionConnectionEpoch)
           throw new Error(context.t('app.error.connectionChanged'))
@@ -326,13 +326,13 @@ export function createSubmissionController(
         context.permissionRefreshPending
       )
         throw new Error(context.t('app.error.connectionChanged'))
-      if (context.current !== session || context.selection !== ownedSelection)
+      if (!context.sessionBinding.isCurrent(ownedSelection, session))
         throw new Error(context.t('app.error.sessionChanged'))
       if (context.sessionYoloEnabled === undefined) throw new Error(context.t('app.error.permissionRequired'))
       if ((await session.pendingCommands()).length) {
         throw new Error(context.t('app.command.unconfirmed'))
       }
-      if (context.current !== session || context.selection !== ownedSelection)
+      if (!context.sessionBinding.isCurrent(ownedSelection, session))
         throw new Error(context.t('app.error.sessionChanged'))
       const result = await (busy
         ? steer
@@ -351,11 +351,11 @@ export function createSubmissionController(
         context.titleRefresh.start(submittedId)
       for (const key of submittedReturns) sessionStorage.setItem(key, 'sent')
       context.pendingSessionKey = undefined
-      if (busy && context.current === session && context.selection === ownedSelection) context.live?.refresh()
+      if (busy && context.sessionBinding.isCurrent(ownedSelection, session)) context.live?.refresh()
     })()
     void work
       .catch(async (error: unknown) => {
-        if (submission === context.submissionGeneration && ownedSelection === context.selection) {
+        if (submission === context.submissionGeneration && context.sessionBinding.isCurrent(ownedSelection)) {
           if (connectionEpoch !== context.permissionConnectionEpoch) {
             context.initialPermissionPending = undefined
             context.sessionYoloEnabled = undefined
@@ -382,7 +382,7 @@ export function createSubmissionController(
         }
       })
       .finally(() => {
-        if (submission === context.submissionGeneration && ownedSelection === context.selection) {
+        if (submission === context.submissionGeneration && context.sessionBinding.isCurrent(ownedSelection)) {
           context.sending = false
           context.awaitingPromptStart = false
           context.renderControls()
@@ -404,7 +404,7 @@ export function createSubmissionController(
         throw new Error(context.t('app.session.createFailed'))
       const workspace = context.selectedWorkspace
       const model = context.knownSessionModel
-      const epoch = context.selection
+      const epoch = context.sessionBinding.capture()
       const key = context.pendingSessionKey ?? crypto.randomUUID()
       context.pendingSessionKey = key
       if (
@@ -420,7 +420,7 @@ export function createSubmissionController(
         ...(context.draftPreset ? { preset: context.draftPreset } : {}),
         ...(context.draftBundles.length ? { bundles: context.draftBundles } : {}),
       })
-      if (epoch !== context.selection || !context.draftingNew)
+      if (!context.sessionBinding.isCurrent(epoch) || !context.draftingNew)
         throw new Error(context.t('app.session.selectionChanged'))
       await context.open(created.id, { created, workspace, ...(model ? { initialModel: model } : {}) })
       if (context.current !== created) throw new Error(context.t('app.session.selectionChanged'))

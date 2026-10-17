@@ -27,7 +27,7 @@ export function createCommandController(
     | 'renderControls'
     | 'run'
     | 'selectedModelAvailable'
-    | 'selection'
+    | 'sessionBinding'
     | 'sessionControls'
     | 'sessionPending'
     | 'sessionYoloEnabled'
@@ -46,10 +46,9 @@ export function createCommandController(
     context.run(async () => {
       const session = context.current
       if (!session || context.sessionPending || context.stopping) return
-      const epoch = context.selection
+      const epoch = context.sessionBinding.capture()
       const request = ++stopRequest
-      const current = () =>
-        context.current === session && context.selection === epoch && request === stopRequest
+      const current = () => context.sessionBinding.isCurrent(epoch, session) && request === stopRequest
       context.stopping = true
       context.stopAfterSeq = context.projection?.upto ?? 0
       context.render()
@@ -124,14 +123,14 @@ export function createCommandController(
           context.sessionYoloEnabled === undefined)) ||
       (context.queueAction?.pending &&
         context.queueAction.sessionId === session.id &&
-        context.queueAction.selection === context.selection) ||
+        context.sessionBinding.isCurrent(context.queueAction.binding)) ||
       context.projection?.sessionId !== session.id ||
       !context.projection.pendingInputs?.some((item) => item.itemId === itemId)
     )
       return
     const action = {
       sessionId: session.id,
-      selection: context.selection,
+      binding: context.sessionBinding.capture(),
       itemId,
       kind,
       pending: true,
@@ -156,7 +155,7 @@ export function createCommandController(
     }
     void work()
       .then(() => {
-        if (context.current === session && context.selection === action.selection) {
+        if (context.sessionBinding.isCurrent(action.binding, session)) {
           context.live?.refresh()
           void refreshSessionControls(session).catch(context.showError)
         }
@@ -169,19 +168,19 @@ export function createCommandController(
             : error instanceof Error
               ? error.message
               : String(error)
-        if (context.current === session && context.selection === action.selection) {
+        if (context.sessionBinding.isCurrent(action.binding, session)) {
           context.live?.refresh()
           void refreshSessionControls(session).catch(context.showError)
         }
       })
       .finally(() => {
         action.pending = false
-        if (context.current === session && context.selection === action.selection) context.renderControls()
+        if (context.sessionBinding.isCurrent(action.binding, session)) context.renderControls()
       })
   }
 
   async function refreshSessionControls(session: Session): Promise<void> {
-    const epoch = context.selection
+    const epoch = context.sessionBinding.capture()
     const request = ++context.controlsRefresh
     const history = context.controlsHistory.get(session.id) ?? { through: 0, facts: [] }
     let through = history.through
@@ -189,15 +188,13 @@ export function createCommandController(
     let value: SessionControlStateResult
     do {
       value = await session.controls({ afterSeq: through })
-      if (context.current !== session || context.selection !== epoch || request !== context.controlsRefresh)
-        return
+      if (!context.sessionBinding.isCurrent(epoch, session) || request !== context.controlsRefresh) return
       facts.push(...(value.facts ?? []))
       through = value.factsThrough ?? through
     } while (value.factsMore)
     value = { ...value, facts }
     context.controlsHistory.set(session.id, { through, facts })
-    if (context.current !== session || context.selection !== epoch || request !== context.controlsRefresh)
-      return
+    if (!context.sessionBinding.isCurrent(epoch, session) || request !== context.controlsRefresh) return
     context.sessionControls = { sessionId: session.id, value }
     for (const fact of value.facts ?? []) {
       if (fact.action !== 'cancel' || fact.outcome !== 'requested') continue
@@ -246,7 +243,7 @@ export function createCommandController(
         context.sessionControls?.sessionId !== session.id
       )
         return
-      const epoch = context.selection
+      const epoch = context.sessionBinding.capture()
       context.controlPending = true
       context.renderControls()
       try {
@@ -254,7 +251,7 @@ export function createCommandController(
         await refreshSessionControls(session)
         context.live?.refresh()
       } finally {
-        if (context.current === session && context.selection === epoch) {
+        if (context.sessionBinding.isCurrent(epoch, session)) {
           context.controlPending = false
           context.renderControls()
         }

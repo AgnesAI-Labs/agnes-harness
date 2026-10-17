@@ -100,7 +100,11 @@ async function harness() {
     run: (action: () => Promise<void>) => {
       void action().catch(showError)
     },
-  } as unknown as Parameters<typeof createTurnController>[0]
+  } as unknown as {
+    -readonly [K in keyof Parameters<typeof createTurnController>[0]]: Parameters<
+      typeof createTurnController
+    >[0][K]
+  }
   const controller = createTurnController(context)
   return { context, controller, list, decide, showError }
 }
