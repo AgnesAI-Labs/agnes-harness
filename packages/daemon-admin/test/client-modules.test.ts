@@ -1775,8 +1775,15 @@ it.each([
       clientId: 'test',
       permissions: ['packages.read'],
     },
-  )) as { packages: { actual: string }[] }
+  )) as { packages: { actual: string; primaryStatus: { state: string } }[] }
   expect(result.packages[0]?.actual).toBe(
     'generationRestart' in observation ? 'restart-required' : observation.actual,
+  )
+  expect(result.packages[0]?.primaryStatus.state).toBe(
+    'generationRestart' in observation || observation.actual === 'restart-required'
+      ? 'restart-required'
+      : observation.actual === 'running'
+        ? 'ready'
+        : 'blocked',
   )
 })
