@@ -48,6 +48,20 @@ Every sample gates wall time (10 s per stage, 15 s cold preparation, 1 s Surface
 
 On Windows, tests that exercise symlink escapes require permission to create symbolic links (Developer Mode or the corresponding account privilege). An `EPERM` from `symlinkSync` while staging a fixture means that environment prerequisite is missing; the security assertion has not run. The shared CI startup diagnostic also runs after a failing test step, unless the suite was skipped or the job was cancelled.
 
+## Previous-build upgrade gate
+
+```sh
+pnpm exec vitest run tools/upgrade/previous-build.e2e.test.ts --project heavy --maxWorkers=1
+```
+
+This standing heavy-tier gate builds real distributions from the working tree and pinned plugin-core commits in [distributions.mjs](../../tools/upgrade/distributions.mjs). The recent baseline predates the client-normalization and bundled-default fixes; a second, older baseline predates ledger append watermarks. It creates private synthetic homes with a loopback model account, chat/tool/attachment/deliverable/fork/queued history, trusted packages, settings, a schedule and a trigger. Each baseline upgrades after both clean shutdown and process loss. Assertions cover unchanged historical events, writable history, retained authorization, refreshed bundled bytes, and managed recovery through native decisions when needed. No home conversion or old-product migration runs. History rendering uses the Web timeline projection; browser layout has its own gate.
+
+Use `AGH_UPGRADE_PREVIOUS_REF=<commit>` to select another recent baseline. Git must contain both pinned commits (`git fetch --unshallow` for a shallow clone). Optional absolute `AGH_UPGRADE_PREVIOUS_DIST`, `AGH_UPGRADE_LEDGER_DIST` and `AGH_UPGRADE_CURRENT_DIST` directories reuse complete builds; their bytes must match the selected source revisions. The default build stamps the recent previous/current distributions as `1.0.0`/`1.1.0` to exercise release-owned default updates. `AGH_UPGRADE_KEEP=1` retains successful scratch output; failures always retain it and print its location. Build dependencies require registry access; model traffic stays on loopback and uses only a dummy key. Launcher environments omit operator credentials and use private homes. Run serially with enough disk space for three distributions and the installation guide's native toolchains.
+
+For diagnosis, `AGH_UPGRADE_CASE=recent|legacy` and `AGH_UPGRADE_VARIANT=clean|unclean` narrow the run. Leave both unset for the complete gate.
+
+The existing CI heavy job runs this automatically on Linux for PRs and on Linux/macOS for main, nightly and manual runs, with full Git history. Windows explicitly skips this gate: native crash/process-tree acceptance remains a colleague's follow-up; a POSIX pass is not Windows evidence.
+
 <a id="构建与真实本地进程"></a>
 
 ## Build and real local processes
