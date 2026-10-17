@@ -1,5 +1,4 @@
 import type {
-  AuxiliaryModelSlots,
   ContentBlock,
   ModelSettings,
   ThinkingLevel,
@@ -8,7 +7,7 @@ import type {
   userImagePolicy,
 } from '@agnes/protocol'
 import type { SessionControlledChild } from '@agnes/protocol/gen/agnes-v1'
-import type { FileMention } from '@agnes/web-ui'
+import type { FileMention, SessionAuxiliarySnapshot } from '@agnes/web-ui'
 import type { ComponentType, ReactNode } from 'react'
 import { composerLocaleCatalog } from '../locales/composer.js'
 import type { Translate } from '../locales/index.js'
@@ -18,6 +17,7 @@ export type ModelPickerOption = {
   id: string
   route: string
   label?: string
+  contextWindow?: number
   /** 模型声明的「档位 → provider 取值」映射；缺省表示任意合法档位都接受。 */
   thinkingLevelMap?: Record<string, string>
 }
@@ -48,7 +48,7 @@ export type ModelPickerProps = {
   onSelect(option: ModelPickerOption): Promise<boolean>
   /** 面板内改档位或预算时的提交口；缺省时面板只渲染模型列表。 */
   onSettingsChange?(settings: ModelSettings): Promise<boolean>
-  onAuxiliaryRead?(): Promise<AuxiliaryModelSlots>
+  onAuxiliaryRead?(): Promise<SessionAuxiliarySnapshot>
   onAuxiliarySelect?(slot: 'fast' | 'verifier', option: ModelPickerOption): Promise<boolean>
 }
 
@@ -170,7 +170,7 @@ export interface ComposerRegionOptions {
   prepareUploadSession?(): Promise<string>
   onDraftChange(value: string): void
   onError(error: unknown): void
-  onAuxiliaryRead?(): Promise<AuxiliaryModelSlots>
+  onAuxiliaryRead?(): Promise<SessionAuxiliarySnapshot>
   onAuxiliarySelect?(slot: 'fast' | 'verifier', option: ModelPickerOption): Promise<boolean>
   onModelSelect(option: ModelPickerOption): Promise<boolean>
   onModelSettingsChange?(settings: ModelSettings): Promise<boolean>

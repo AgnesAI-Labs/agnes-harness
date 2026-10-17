@@ -8,7 +8,19 @@ export const MODEL_SETTINGS_LOCALE_NAMESPACE = '@agnes/web-ui/model-settings'
 
 export const modelSettingsLocaleCatalog: LocaleCatalog = {
   en: {
-    'modelSettings.slots.saveSession': 'Save {slot} for this session',
+    'modelSettings.kUnit': 'K',
+    'modelSettings.session': 'This session',
+    'modelSettings.custom': 'Custom',
+    'modelSettings.usingCapacity': 'Use model capacity {capacity}',
+    'modelSettings.customKAria': 'Custom context budget in K tokens',
+    'modelSettings.windowRangeK': 'Enter a value from {min} to {max} K.',
+    'modelSettings.compactHint': 'Smaller budgets compact earlier. Max {capacity}.',
+    'modelSettings.slots.follow': 'Follow defaults',
+    'modelSettings.slots.followDefault': 'Follow defaults ({model})',
+    'modelSettings.slots.fastSessionHelp': 'Summaries, reply suggestions',
+    'modelSettings.slots.verifierSessionHelp': 'Automatic review',
+    'modelSettings.slots.editDefaults': 'Change defaults in Settings',
+
     'modelSettings.slots.title': 'Auxiliary models',
     'modelSettings.slots.help':
       'Models for background work. Applies to new sessions; each choice is saved as you make it.',
@@ -28,9 +40,8 @@ export const modelSettingsLocaleCatalog: LocaleCatalog = {
     'modelSettings.slots.failed':
       'Could not read or save auxiliary models. Your choice is kept; reload and try again.',
     'modelSettings.slots.advanced': 'Auxiliary models (advanced)',
-    'modelSettings.slots.sessionHelp':
-      'Use different auxiliary models for this session only. Your defaults and the main model stay unchanged.',
-    'modelSettings.slots.sessionSaved': 'Model settings saved. Applies to this session only.',
+    'modelSettings.slots.sessionHelp': 'This session only. Defaults stay unchanged.',
+    'modelSettings.slots.sessionSaved': 'Auxiliary models updated. Applies to this session only.',
     'modelSettings.slots.sessionFailed': 'Could not save for this session',
     'modelSettings.slots.choose': 'Choose a model',
     'modelSettings.thinking.off': 'Off',
@@ -55,7 +66,19 @@ export const modelSettingsLocaleCatalog: LocaleCatalog = {
       'Enter a positive integer between {min} and {max} tokens. K/M units are accepted.',
   },
   'zh-CN': {
-    'modelSettings.slots.saveSession': '为当前会话保存 {slot}',
+    'modelSettings.kUnit': 'K',
+    'modelSettings.session': '本会话',
+    'modelSettings.custom': '自定义',
+    'modelSettings.usingCapacity': '使用模型容量 {capacity}',
+    'modelSettings.customKAria': '自定义上下文预算（K Token）',
+    'modelSettings.windowRangeK': '请输入 {min} 至 {max} K 之间的数值。',
+    'modelSettings.compactHint': '预算越小，越早整理上下文。最多 {capacity}。',
+    'modelSettings.slots.follow': '跟随默认',
+    'modelSettings.slots.followDefault': '跟随默认（{model}）',
+    'modelSettings.slots.fastSessionHelp': '摘要、回复建议',
+    'modelSettings.slots.verifierSessionHelp': '自动审阅',
+    'modelSettings.slots.editDefaults': '在设置中修改默认值',
+
     'modelSettings.slots.title': '辅助模型',
     'modelSettings.slots.help': '后台任务用的模型；对新会话生效，选完即保存。',
     'modelSettings.slots.fast': '快速模型',
@@ -72,8 +95,8 @@ export const modelSettingsLocaleCatalog: LocaleCatalog = {
     'modelSettings.slots.saved': '模型设置已保存。新会话会使用这些设置。',
     'modelSettings.slots.failed': '辅助模型读取或保存失败，你的选择已保留；请重新加载后再试。',
     'modelSettings.slots.advanced': '辅助模型（高级）',
-    'modelSettings.slots.sessionHelp': '只为当前会话更换辅助模型，默认设置和主模型保持不变。',
-    'modelSettings.slots.sessionSaved': '模型设置已保存。仅用于当前会话。',
+    'modelSettings.slots.sessionHelp': '只改当前会话，默认设置不变。',
+    'modelSettings.slots.sessionSaved': '辅助模型已更新。仅用于当前会话。',
     'modelSettings.slots.sessionFailed': '未能为当前会话保存',
     'modelSettings.slots.choose': '选择模型',
     'modelSettings.thinking.off': '关闭',

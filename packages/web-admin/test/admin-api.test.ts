@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest'
 import { type AdminApiError, PluginAdminApi } from '../src/admin/plugins/api.js'
 import { PluginConfigApi } from '../src/admin/plugins/config-api.js'
 import { ADMIN_FEATURES, hasFeature } from '../src/admin/plugins/types.js'
-import { loadRuntimeCatalog } from '../src/settings/api.js'
+import { loadAuxiliaryModelDefaults, loadRuntimeCatalog } from '../src/settings/api.js'
 
 const context = {
   profile: 'local-dev',
@@ -516,5 +516,30 @@ it('deduplicates concurrent tree and candidate reads and releases failed reads f
     expect(fetcher).toHaveBeenCalledTimes(2)
     finish?.(Response.json({ error: { code: 'UNAVAILABLE' } }, { status: 503 }))
     await expect(retry).rejects.toThrow()
+  }
+})
+
+it('resolves auxiliary defaults from explicit slots and the actual automatic fast model, rejecting invalid reads', async () => {
+  const target = { route: 'synthetic', model: 'fast' }
+  for (const [snapshot, expected] of [
+    [
+      { revision: 1, slots: {}, auto: { fast: { ...target, accountId: 'synthetic' } } },
+      { fast: { ...target, accountId: 'synthetic' }, verifier: null },
+    ],
+    [
+      { revision: 1, slots: { fast: null, verifier: target } },
+      { fast: null, verifier: target },
+    ],
+  ]) {
+    const fetcher = vi.fn<typeof fetch>(async () => Response.json(snapshot))
+    expect(await loadAuxiliaryModelDefaults(fetcher)).toEqual(expected)
+    expect(fetcher.mock.calls[0]?.[0]).toBe('/admin/api/model-slots')
+  }
+  for (const response of [
+    Response.json({ slots: {} }),
+    Response.json({ revision: 1, slots: { fast: { route: 'x' } } }),
+    new Response('', { status: 503 }),
+  ]) {
+    await expect(loadAuxiliaryModelDefaults(async () => response)).rejects.toThrow()
   }
 })

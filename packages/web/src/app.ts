@@ -49,7 +49,7 @@ import {
 
 import { type PermissionMode, permissionLabel, yoloEnabled } from '@agnes/web-admin/permission-picker'
 import { createSettingsController } from '@agnes/web-admin/settings'
-import { loadRuntimeCatalog } from '@agnes/web-admin/settings/api'
+import { loadAuxiliaryModelDefaults, loadRuntimeCatalog } from '@agnes/web-admin/settings/api'
 import { settingsCatalog } from '@agnes/web-admin/settings/locales'
 import { effectiveSessionPreset, permissionForSessionPreset } from '@agnes/web-admin/settings/session-choice'
 import { mountStatusCheck } from '@agnes/web-admin/settings/status-check'
@@ -1963,13 +1963,13 @@ function modelDefaults(option: ModelPickerOption): KnownSessionModel {
     },
   }
 }
-async function readAuxiliaryModels(): Promise<import('@agnes/protocol').AuxiliaryModelSlots> {
+async function readAuxiliaryModels(): Promise<import('@agnes/web-ui').SessionAuxiliarySnapshot> {
   const session = current
   if (!session) throw new Error('Session unavailable')
-  const capabilities = await session.capabilities()
+  const [capabilities, defaults] = await Promise.all([session.capabilities(), loadAuxiliaryModelDefaults()])
   if (current !== session || !capabilities?.modelRoutes.value) throw new Error('Session unavailable')
   const routes = capabilities.modelRoutes.value
-  return { fast: routes.fast ?? null, verifier: routes.verifier ?? null }
+  return { fast: routes.fast ?? null, verifier: routes.verifier ?? null, defaults }
 }
 async function selectAuxiliaryModel(slot: 'fast' | 'verifier', option: ModelPickerOption): Promise<boolean> {
   const session = current
@@ -2055,9 +2055,7 @@ async function savedConfiguration(saved: ConfigSnapshot): Promise<void> {
   firstRun.updated(saved)
   notice.setKind('')
   accountProvider = saved.provider
-  accountLabels = new Map(
-    (saved.accounts ?? []).map((row) => [row.route, `${row.label} · ${row.providerId}`]),
-  )
+  accountLabels = new Map((saved.accounts ?? []).map((row) => [row.route, row.label]))
   await modelRefresh.request()
   const savedModels = runtimeModels
   const published = savedModels.some(
@@ -2207,9 +2205,7 @@ onHistoryNavigation(() => {
 async function refreshModelConfiguration(): Promise<void> {
   const snapshot = await client.config.get()
   accountProvider = snapshot.provider
-  accountLabels = new Map(
-    (snapshot.accounts ?? []).map((row) => [row.route, `${row.label} · ${row.providerId}`]),
-  )
+  accountLabels = new Map((snapshot.accounts ?? []).map((row) => [row.route, row.label]))
   await refreshSessionCatalog()
   await refreshModels()
 }
@@ -2268,9 +2264,7 @@ run(async () => {
   void skinGroup.refresh()
   // profile 就绪后做首次真实名册对账（此前名册源按空处理）。
   scheduleClientRosterRead(true)
-  accountLabels = new Map(
-    (snapshot.accounts ?? []).map((row) => [row.route, `${row.label} · ${row.providerId}`]),
-  )
+  accountLabels = new Map((snapshot.accounts ?? []).map((row) => [row.route, row.label]))
   // The sidebar can show usable sessions while models are slow. Navigation and draft defaults
   // still wait for models, then workspaces; failures are isolated to their own read.
   const [models, workspaces, sessions] = await Promise.allSettled([

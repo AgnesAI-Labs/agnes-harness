@@ -1,4 +1,4 @@
-import { RuntimeAdminSnapshot, validateAgainst } from '@agnes/protocol'
+import { ModelSlotsSnapshot, RuntimeAdminSnapshot, validateAgainst } from '@agnes/protocol'
 
 export async function loadRuntimeCatalog(
   fetcher: typeof fetch = fetch,
@@ -15,4 +15,24 @@ export async function loadRuntimeCatalog(
   const current = { ...(value as import('@agnes/protocol').RuntimeAdminSnapshot), bundles: selection.catalog }
   if (!validateAgainst(RuntimeAdminSnapshot, current).ok) throw new Error('invalid bundle catalog')
   return current as import('@agnes/protocol').RuntimeAdminSnapshot
+}
+
+/** Resolve the defaults using the same control-plane read as Models & accounts. */
+export async function loadAuxiliaryModelDefaults(fetcher: typeof fetch = fetch) {
+  const response = await fetcher('/admin/api/model-slots', { credentials: 'same-origin', cache: 'no-store' })
+  if (!response.ok) throw new Error('Model slots unavailable')
+  const value: unknown = await response.json()
+  if (!value || typeof value !== 'object' || !('revision' in value) || !('slots' in value))
+    throw new Error('Invalid model slots')
+  const snapshot = {
+    revision: value.revision,
+    slots: value.slots,
+    ...('auto' in value && value.auto !== undefined ? { auto: value.auto } : {}),
+  }
+  if (!validateAgainst(ModelSlotsSnapshot, snapshot).ok) throw new Error('Invalid model slots')
+  const saved = snapshot as ModelSlotsSnapshot
+  return {
+    fast: saved.slots.fast === undefined ? (saved.auto?.fast ?? null) : saved.slots.fast,
+    verifier: saved.slots.verifier ?? null,
+  }
 }

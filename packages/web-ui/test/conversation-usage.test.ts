@@ -42,13 +42,15 @@ it('renders only actual context fields with the existing ring, values and labels
   expect(host.querySelector('.usage-percent')?.textContent).toBe('1%')
   expect(host.querySelector('.usage-summary-label')?.textContent).toBe('上下文约 1.5K / 128.0K · 1.2%')
   expect(host.querySelector<HTMLElement>('.agh-disclosure-summary')?.title).toBe(
-    '上下文约 1.5K / 128.0K · 1.2%',
+    '上下文约 1.5K / 128.0K · 1.2%. 上下文占用为后台估算。',
   )
   expect(host.querySelector<HTMLElement>('.agh-disclosure-summary')?.getAttribute('aria-label')).toBe(
-    '查看上下文约 1.5K / 128.0K · 1.2%',
+    '查看上下文约 1.5K / 128.0K · 1.2%. 上下文占用为后台估算。',
   )
   expect(host.querySelector<HTMLElement>('.usage-ring')?.style.getPropertyValue('--usage-pct')).toBe('1.2%')
   expect(host.querySelector<HTMLElement>('.usage-bar > span')?.style.width).toBe('1.2%')
+  expect(host.querySelector('.usage-note')).toBeNull()
+  expect(host.querySelector('.usage-popover')?.textContent).not.toContain('后台估算')
   expect(rows()).toEqual([
     ['上下文占用', '1,500 Token'],
     ['模型窗口', '128,000 Token'],
@@ -65,7 +67,7 @@ it('preserves disclosure, rows, expansion and real focus through snapshots and c
   const details = required(host.querySelector<HTMLElement>('.agh-disclosure'))
   const summary = required(host.querySelector<HTMLElement>('.agh-disclosure-summary'))
   const firstRow = host.querySelector('dt')
-  summary.click()
+  await act(async () => summary.click())
   summary.focus()
   for (const connected of [false, false, true]) {
     await render({ ...usage, context: { ...usage.context, tokens: 100000 } }, connected)

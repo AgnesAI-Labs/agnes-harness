@@ -636,11 +636,6 @@
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
-  .usage-note {
-    margin: 0.625rem 0 0;
-    color: var(--agnes-text-tertiary);
-    font-size: var(--font-size-xs);
-  }
   .turn-process-body .assistant .node-label {
     display: none;
   }
