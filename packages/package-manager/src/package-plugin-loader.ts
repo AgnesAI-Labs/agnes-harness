@@ -12,7 +12,6 @@ import { parsePackageBundleContract } from './bundle-contract.js'
 import { PackageError } from './errors.js'
 import { canonical, freezeData, readStaticJson } from './integrity.js'
 import type { InstalledInventory, InstalledPackage } from './inventory.js'
-import { projectLegacyPluginEntries } from './legacy-plugin-metadata.js'
 import { type AgnesPluginManifestEntry, parseAgnesPluginEntries } from './plugin-manifest.js'
 import type { RuntimePin, RuntimeSnapshot } from './runtime-snapshots.js'
 import { hashDirectory, hashDirectoryAsync } from './sources.js'
@@ -214,10 +213,7 @@ function readDeclarations(
   if ((agnes as Readonly<Record<string, unknown>>).extensions !== undefined)
     stateFailure('legacy-extension-format')
   try {
-    return parseAgnesPluginEntries(
-      snapshot.packageId,
-      projectLegacyPluginEntries((agnes as Readonly<Record<string, unknown>>).plugins),
-    )
+    return parseAgnesPluginEntries(snapshot.packageId, (agnes as Readonly<Record<string, unknown>>).plugins)
   } catch (error) {
     if (error instanceof ProviderError) throw error
     stateFailure('plugin-manifest')

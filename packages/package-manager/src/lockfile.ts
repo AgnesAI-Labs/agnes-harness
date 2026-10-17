@@ -13,7 +13,6 @@ import { join, resolve } from 'node:path'
 import { type PackageLock, type Lockfile as ValidatedLockfile, validateLockfile } from '@agnes/protocol'
 import { renameWriteThroughSync, syncFileSync } from '@agnes/system-node'
 import { PackageError } from './errors.js'
-import { projectLegacyPluginMetadata } from './legacy-plugin-metadata.js'
 import { checkCancelled } from './ports.js'
 
 export type LockEntry = PackageLock
@@ -31,21 +30,6 @@ export type Lockfile = Omit<ValidatedLockfile, 'resolvedProfileHash' | 'seams'> 
 }
 
 export const lockPath = (profileDir: string): string => join(profileDir, 'agnes-lock.json')
-const record = (value: unknown): Record<string, unknown> | undefined =>
-  value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined
-
-/** Project retired display metadata from earlier plugin builds; reads never rewrite lock bytes. */
-function projectLegacyMetadata(value: unknown): void {
-  const packages = record(record(value)?.packages)
-  for (const entry of Object.values(packages ?? {})) {
-    const current = record(entry)
-    for (const snapshot of [current, record(current?.previous)]) {
-      if (snapshot?.metadata !== undefined) snapshot.metadata = projectLegacyPluginMetadata(snapshot.metadata)
-    }
-  }
-}
 const STALE_LOCK_MS = 30_000
 /**
  * A valid, dead owner can be reclaimed immediately: publication already includes its PID, so no
@@ -111,7 +95,6 @@ export function readLock(profileDir: string, opts: { profile: string; agnesVersi
       detail: { reason: 'invalid' },
     })
   }
-  projectLegacyMetadata(parsed)
   const r = validateLockfile(parsed)
   if (!r.ok)
     throw new PackageError(

@@ -17,7 +17,6 @@ import { normalizeClientContribution, resolveClientAssets } from './client-asset
 import { containedEntry } from './entry-path.js'
 import { PackageError } from './errors.js'
 import { canonical, capabilityHash, freezeData, own, readStaticJson, snapshotHash } from './integrity.js'
-import { projectLegacyPluginEntries, projectLegacyPluginMetadata } from './legacy-plugin-metadata.js'
 import type { LockEntry } from './lockfile.js'
 import { presentPluginRows } from './package-presentation.js'
 import {
@@ -161,7 +160,6 @@ export async function inspectStaged(
 export function inspectVerifiedTree(
   input: InspectionInput,
   treeIntegrity: string,
-  options: { legacyDisplayMetadata?: boolean } = {},
 ): { preview: PackagePreview; treeIntegrity: string } {
   checkCancelled(input.signal)
   const pkg = readStaticJson(join(input.dir, 'package.json'))
@@ -210,10 +208,6 @@ export function inspectVerifiedTree(
   )
     invalid('agnes-metadata')
   const metadata = agnes as Record<string, unknown>
-  if (options.legacyDisplayMetadata) {
-    if (metadata.metadata !== undefined) metadata.metadata = projectLegacyPluginMetadata(metadata.metadata)
-    if (metadata.plugins !== undefined) metadata.plugins = projectLegacyPluginEntries(metadata.plugins)
-  }
   const displayMetadata =
     metadata.metadata === undefined ? undefined : validatePluginMetadata(metadata.metadata)
   if (displayMetadata && !displayMetadata.ok) invalid('plugin-metadata')
