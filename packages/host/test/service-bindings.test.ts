@@ -2024,3 +2024,106 @@ function feedbackAuthority(
     id: () => 'feedback-1',
   }
 }
+
+it('claims public row registrations transactionally for bindOwn and releases ownership on row disposal', async () => {
+  const { pluginRowSource } = await import('@agnes/host-extensions/ext-host/row-extension-host')
+  const root = new Context()
+  const index = new WeakMap<import('@agnes/cordis').Fiber, import('@agnes/plugin-runtime/host').RowOrigin>()
+  const origins = { lookup: (fiber: import('@agnes/cordis').Fiber) => index.get(fiber) }
+  const rowId = 'ext:ordinary-ui'
+  const rowOwner = pluginRowSource(rowId)
+  let admission: ServiceAdmission | undefined
+  const host = createExtensionServiceHost({ providers: () => root.providers, readAdmission: () => admission })
+  const kind = sampleKind({ ports: [] })
+  host.install(root, kind, { ports: [], audience: 'callback' }, origins)
+  root.providers.verifyRows(origins)
+  host.attachBinder(root.providers)
+  let off!: () => Promise<void>
+  const fiber = root.plugin({
+    apply(ctx: Context) {
+      index.set(ctx.fiber, {
+        trustTier: 'third-party',
+        packageId,
+        snapshotId: 'one',
+        rowId,
+        exportName: 'plugin',
+        declaredProvides: [],
+      })
+      off = ctx.providers.register(
+        kind,
+        provider('agnes/intelligent-ui', () => ({ mark: () => 'own' })),
+      )
+    },
+  })
+  await fiber
+  expect(host.packageFor(kind, rowOwner)).toBe(packageId)
+  expect(host.packageFor(kind, 'agnes/intelligent-ui')).toBeUndefined()
+  admission = {
+    token: {},
+    owner: rowOwner,
+    active: true,
+    signal: new AbortController().signal,
+    session: {
+      key: 'session',
+      lane: 'main',
+      workspaceRoot: '/synthetic',
+      lastSeq: 0,
+      closingOrClosed: false,
+    } as never,
+  }
+  const bound = await root.providers.bindOwn(kind)
+  expect(bound.mark()).toBe('own')
+  await off()
+  expect(() => bound.mark()).toThrow(ProviderError)
+  expect(host.packageFor(kind, rowOwner)).toBeUndefined()
+  expect(() => root.providers.bindOwn(kind)).toThrow(ProviderError)
+  await fiber.dispose()
+  await root.fiber.dispose()
+})
+
+it('rolls back a failed public owner claim and permits the same id after row disposal', async () => {
+  const { pluginRowSource } = await import('@agnes/host-extensions/ext-host/row-extension-host')
+  const root = new Context()
+  const index = new WeakMap<import('@agnes/cordis').Fiber, import('@agnes/plugin-runtime/host').RowOrigin>()
+  const origins = { lookup: (fiber: import('@agnes/cordis').Fiber) => index.get(fiber) }
+  const host = createExtensionServiceHost({ providers: () => root.providers })
+  const kind = sampleKind({ ports: [] })
+  host.install(root, kind, { ports: [], audience: 'callback' }, origins)
+  root.providers.verifyRows(origins)
+  let refuse = true
+  host.onRegistered(kind, () => {
+    if (refuse) throw new Error('claim refused')
+    return () => {}
+  })
+  const rowId = 'ext:rollback-owner'
+  const fibers: import('@agnes/cordis').Fiber[] = []
+  for (const fail of [true, false]) {
+    refuse = fail
+    const fiber = root.plugin({
+      apply(ctx: Context) {
+        index.set(ctx.fiber, {
+          trustTier: 'third-party',
+          packageId,
+          snapshotId: 'one',
+          rowId,
+          exportName: 'main',
+          declaredProvides: [],
+        })
+        const register = () =>
+          ctx.providers.register(
+            kind,
+            provider('owned', () => ({ mark: () => 'ok' })),
+          )
+        if (fail) expect(register).toThrow('claim refused')
+        else register()
+      },
+    })
+    fibers.push(fiber)
+    await fiber
+    expect(host.packageFor(kind, pluginRowSource(rowId))).toBe(fail ? undefined : packageId)
+  }
+  await fibers[1]!.dispose()
+  expect(host.packageFor(kind, pluginRowSource(rowId))).toBeUndefined()
+  expect(root.providers.catalog().filter((entry) => entry.kind === kind.kind)).toHaveLength(0)
+  await root.fiber.dispose()
+})

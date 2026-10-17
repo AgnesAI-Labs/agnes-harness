@@ -138,6 +138,13 @@ export class ServiceBindings {
     kind: BindableKind<S, P>,
     descriptor: ServiceDescriptor,
     origins?: RowOriginLookup,
+    claimPublic?: (
+      context: Context,
+      rowId: string,
+      source: string,
+      provider: ServiceProvider<S, P>,
+      register: () => () => Promise<void>,
+    ) => () => Promise<void>,
   ): void {
     const existing = this.installed.get(kind.kind)
     if (existing && existing.kind !== kind)
@@ -154,9 +161,18 @@ export class ServiceBindings {
     let registry!: ProviderRegistry<ServiceProvider<S, P>>
     registry = installProviderRegistry(ctx, kind, (owner, source, provider) => {
       const verified = providerSource(owner, origins, source)
-      return registry.register(verified, provider, owner, async () => {
-        await provider.dispose?.()
-      })
+      const register = () =>
+        registry.register(verified, provider, owner, async () => {
+          await provider.dispose?.()
+        })
+      for (let fiber = owner.fiber; fiber !== fiber.parent.fiber; fiber = fiber.parent.fiber) {
+        const origin = origins?.lookup(fiber)
+        if (!origin) continue
+        if (origin.packageId !== verified && origin.ownerPackage !== verified)
+          throw closed(kind.kind, 'register')
+        return claimPublic ? claimPublic(owner, origin.rowId, verified, provider, register) : register()
+      }
+      return register()
     })
     const registries = this.registries.get(ctx) ?? new Map()
     registries.set(kind, registry)
@@ -266,6 +282,12 @@ export class ServiceBindings {
     }
     const open = (live: Live): boolean => {
       if (disposeOnce || lifetime.signal.aborted || call.signal.aborted) return false
+      try {
+        if (this.current().resolve(kind, { provider: provider.id, version: provider.version }) !== provider)
+          return false
+      } catch {
+        return false
+      }
       if (!live?.active || live.owner !== call.owner) return false
       return binding.generationId === undefined || live.generationId === binding.generationId
     }
