@@ -12,7 +12,9 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { discoverSkillRoot, skillRoots } from '@agnes/base'
+import { BUNDLED_SKILL_HELPER_REF, bundledPluginSource } from '@agnes/package-manager'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createSkillInstaller, type SkillInstallAuthority } from '../../src/resources/skill-install.js'
 import type { SkillInstallInvocation } from '../../src/resources/skill-install-port.js'
@@ -53,6 +55,7 @@ function setup(enable = true) {
   const installer = createSkillInstaller(join(root, 'receipts'), discovery)
   let revision = ''
   const resources = vi.fn(async (method: string, params: Record<string, unknown>): Promise<unknown> => {
+    if (method === '_agnes/v1/resources.list') return { items: [] }
     if (method === '_agnes/v1/resources.operation.get') return { state: 'succeeded' }
     if (method === '_agnes/v1/resources.get')
       return {
@@ -88,8 +91,8 @@ function setup(enable = true) {
   const signal = new AbortController().signal
   const request = (input: SkillInstallInvocation['input'], changes: Partial<SkillInstallInvocation> = {}) =>
     installer.request({ ...invocation, ...changes, input }, authority, signal)
-  const prepare = async () => {
-    const result = await request(invocation.input)
+  const prepare = async (input = invocation.input) => {
+    const result = await request(input)
     revision = result.revision!
     return result
   }
@@ -107,6 +110,7 @@ function setup(enable = true) {
     root,
     source,
     home,
+    workspace,
     document,
     authority,
     resources,
@@ -120,6 +124,164 @@ function setup(enable = true) {
 }
 
 describe('controlled Skill installer', () => {
+  it.each(['workspace', 'user'] as const)(
+    'statically prepares authored instructions in %s and installs after exactly one content-bound confirmation',
+    async (scope) => {
+      const s = setup()
+      const input = {
+        action: 'prepare-content' as const,
+        name: 'math-teacher',
+        scope,
+        enable: true,
+        files: [
+          {
+            path: 'SKILL.md',
+            content: '---\nname: 数学老师skill\ndescription: Explain mathematics\n---\nTeach step by step.\n',
+          },
+          { path: 'references/examples.md', content: '# Examples\n1 + 1 = 2' },
+          { path: 'references/lesson.json', content: '{"answer":2}' },
+        ],
+      }
+      const helperSource = bundledPluginSource(BUNDLED_SKILL_HELPER_REF)
+      if (!helperSource) throw Error('missing shipped helper')
+      const helperDirectory = join(helperSource.root, helperSource.path)
+      const manifest = JSON.parse(readFileSync(join(helperDirectory, 'package.json'), 'utf8'))
+      expect(manifest.exports).toBe('./index.mjs')
+      const { createTools } = await import(pathToFileURL(join(helperDirectory, manifest.exports)).href)
+      const helperContext = { session: { depth: 0 }, signal: s.signal, skillInstall: { request: s.prepare } }
+      const create = createTools().find((tool: { name: string }) => tool.name === 'skill_helper_create')
+      const install = createTools().find((tool: { name: string }) => tool.name === 'skill_helper_install')
+      // Only the real controlled install port is supplied: no plugin manager, FS staging or exec port.
+      const { structured: p } = await create.execute(
+        { name: input.name, files: input.files, ...(scope === 'user' ? { scope } : {}) },
+        helperContext,
+      )
+      expect(p).toMatchObject({
+        state: 'prepared',
+        name: '数学老师skill',
+        description: 'Explain mathematics',
+        files: ['SKILL.md', 'references/examples.md', 'references/lesson.json'],
+        fileCount: 3,
+      })
+      expect(s.authority.ask).not.toHaveBeenCalled()
+      const first = input.files[0]
+      if (!first) throw Error('missing fixture document')
+      first.content = 'mutated after static validation'
+      await install.execute({ action: 'commit', proposalId: p.proposalId }, helperContext)
+      const result = await s.done(p.proposalId)
+      expect(result).toMatchObject({ state: 'ready', revision: p.revision, effective: 'next-turn' })
+      expect(s.authority.ask).toHaveBeenCalledExactlyOnceWith(
+        expect.stringContaining('files ["SKILL.md","references/examples.md","references/lesson.json"]'),
+        p.digest,
+        expect.any(AbortSignal),
+      )
+      expect(vi.mocked(s.authority.ask).mock.calls[0]?.[0]).toContain('Explain mathematics')
+      const installed =
+        scope === 'workspace'
+          ? join(s.workspace, '.agh', 'skills', 'math-teacher')
+          : join(s.home, 'skills', 'math-teacher')
+      expect(readdirSync(installed).sort()).toEqual(['SKILL.md', 'references'])
+      expect(readFileSync(join(installed, 'SKILL.md'), 'utf8')).toContain('Teach step by step.')
+      const installedRoot = skillRoots({
+        workspaceRoot: s.workspace,
+        agnesHomeDir: s.home,
+        osHomeDir: s.home,
+      }).find((root) => root.rootKey === (scope === 'workspace' ? 'workspace-agnes' : 'user-agnes'))
+      if (!installedRoot) throw Error('missing fixture root')
+      const scan = await discoverSkillRoot(
+        {
+          async list(path) {
+            return readdirSync(path, { withFileTypes: true }).map((entry) => ({
+              name: entry.name,
+              kind: entry.isDirectory() ? ('dir' as const) : ('file' as const),
+            }))
+          },
+          async stat(path) {
+            const { statSync } = await import('node:fs')
+            const value = statSync(path)
+            return { kind: value.isDirectory() ? 'dir' : 'file', size: value.size, mtimeMs: value.mtimeMs }
+          },
+          async read(path) {
+            return readFileSync(path)
+          },
+        },
+        installedRoot,
+      )
+      expect(scan.ok && scan.candidates).toEqual([
+        expect.objectContaining({ name: p.name, revision: p.revision }),
+      ])
+      expect(
+        JSON.parse(readFileSync(join(s.root, 'receipts', `${p.proposalId}.json`), 'utf8')).origin,
+      ).toMatchObject({
+        sessionKey: 'session',
+        packageId: '@fixture/install',
+        snapshotId: 'snapshot',
+        toolUseId: 'tool',
+      })
+      expect(
+        JSON.parse(readFileSync(join(s.root, 'receipts', `${p.proposalId}.json`), 'utf8')).review,
+      ).toMatchObject({ principalId: 'local-user', digest: p.digest, at: expect.any(String) })
+    },
+  )
+
+  it.each([
+    ['missing description', '---\nname: demo\n---\nBody', 'SKILL.md'],
+    ['duplicate YAML key', '---\nname: demo\nname: other\ndescription: text\n---\nBody', 'SKILL.md'],
+    ['invalid flag', '---\nname: demo\ndescription: text\nuser-invocable: maybe\n---\nBody', 'SKILL.md'],
+    ['traversal', 'text', '../escape.md'],
+    ['absolute', 'text', '/escape.md'],
+    ['backslash', 'text', 'a\\escape.md'],
+    ['script', 'throw Error()', 'scripts/lesson.js'],
+    ['unknown resource', 'data', 'package.json'],
+    ['oversized resource', 'x'.repeat(256 * 1024 + 1), 'large.md'],
+    ['file collision', 'text', 'skill.md'],
+  ])(
+    'refuses invalid authored content before confirmation or publication: %s',
+    async (_label, content, path) => {
+      const s = setup()
+      const files =
+        path === 'SKILL.md'
+          ? [{ path, content }]
+          : [
+              { path: 'SKILL.md', content: s.document },
+              { path, content },
+            ]
+      await expect(
+        s.request({ action: 'prepare-content', name: 'demo', scope: 'user', enable: true, files }),
+      ).rejects.toThrow(/SKILL_/)
+      expect(s.authority.ask).not.toHaveBeenCalled()
+      expect(existsSync(join(s.home, 'skills', 'demo'))).toBe(false)
+    },
+  )
+
+  it('refuses authored name collisions, rejected installation and revoked ownership', async () => {
+    for (const mode of ['collision', 'rejected', 'revoked', 'path-denied']) {
+      const s = setup()
+      const input = {
+        action: 'prepare-content' as const,
+        name: 'demo',
+        scope: 'user' as const,
+        enable: true,
+        files: [{ path: 'SKILL.md', content: s.document }],
+      }
+      if (mode === 'collision') {
+        s.resources.mockResolvedValue({ items: [{ name: ' DEMO ' }] })
+        await expect(s.request(input)).rejects.toThrow('SKILL_TARGET_CONFLICT')
+      } else if (mode === 'path-denied') {
+        await expect(s.request(input, { deniedPaths: [s.home] })).rejects.toThrow('SKILL_PATH_DENIED')
+      } else {
+        const p = await s.prepare(input)
+        if (mode === 'rejected') vi.mocked(s.authority.ask).mockResolvedValue(false)
+        else
+          vi.mocked(s.authority.assertActive).mockImplementation(() => {
+            throw Error('revoked')
+          })
+        await expect(s.request({ action: 'commit', proposalId: p.proposalId })).rejects.toThrow()
+      }
+      expect(existsSync(join(s.home, 'skills', 'demo'))).toBe(false)
+    }
+  })
+
   it('imports skills with native script and reference paths', async () => {
     const s = setup()
     mkdirSync(join(s.source, 'scripts'))
@@ -281,26 +443,39 @@ describe('controlled Skill installer', () => {
     expect(s.resources.mock.calls.filter(([m]) => m === '_agnes/v1/skills.refresh')).toHaveLength(1)
   })
 
-  it('aborts a pending installation approval and never publishes after cancellation', async () => {
-    const s = setup()
-    const p = await s.prepare()
-    let approvalSignal: AbortSignal | undefined
-    vi.mocked(s.authority.ask).mockImplementationOnce(async (_summary, _hash, signal) => {
-      approvalSignal = signal
-      return new Promise<boolean>((resolve) =>
-        signal.addEventListener('abort', () => resolve(true), { once: true }),
+  it.each(['disk', 'instructions'])(
+    'aborts a pending %s installation approval and never publishes after cancellation',
+    async (kind) => {
+      const s = setup()
+      const p = await s.prepare(
+        kind === 'disk'
+          ? s.invocation.input
+          : {
+              action: 'prepare-content',
+              name: 'demo',
+              scope: 'user',
+              enable: true,
+              files: [{ path: 'SKILL.md', content: s.document }],
+            },
       )
-    })
-    const commit = s.request({ action: 'commit', proposalId: p.proposalId }).catch((error) => error)
-    await expect.poll(() => approvalSignal !== undefined).toBe(true)
-    const cancelled = await s.request({ action: 'cancel', proposalId: p.proposalId })
-    expect(cancelled.state).toBe('cancelled')
-    expect(approvalSignal?.aborted).toBe(true)
-    expect((await commit).message).toBe('SKILL_INSTALL_CANCELLED')
-    expect((await s.request({ action: 'status', proposalId: p.proposalId })).state).toBe('cancelled')
-    expect(s.resources).not.toHaveBeenCalled()
-    expect(existsSync(join(s.home, 'skills', 'demo'))).toBe(false)
-  })
+      let approvalSignal: AbortSignal | undefined
+      vi.mocked(s.authority.ask).mockImplementationOnce(async (_summary, _hash, signal) => {
+        approvalSignal = signal
+        return new Promise<boolean>((resolve) =>
+          signal.addEventListener('abort', () => resolve(true), { once: true }),
+        )
+      })
+      const commit = s.request({ action: 'commit', proposalId: p.proposalId }).catch((error) => error)
+      await expect.poll(() => approvalSignal !== undefined).toBe(true)
+      const cancelled = await s.request({ action: 'cancel', proposalId: p.proposalId })
+      expect(cancelled.state).toBe('cancelled')
+      expect(approvalSignal?.aborted).toBe(true)
+      expect((await commit).message).toBe('SKILL_INSTALL_CANCELLED')
+      expect((await s.request({ action: 'status', proposalId: p.proposalId })).state).toBe('cancelled')
+      expect(s.resources.mock.calls.every(([method]) => method === '_agnes/v1/resources.list')).toBe(true)
+      expect(existsSync(join(s.home, 'skills', 'demo'))).toBe(false)
+    },
+  )
 
   it('honors allowed children of soft denials, but preserves hard and nested denials', async () => {
     const s = setup()
@@ -359,18 +534,31 @@ describe('controlled Skill installer', () => {
     },
   )
 
-  it('publishes a complete directory and install-only records a disable instead of enabling', async () => {
-    const s = setup(false)
-    const p = await s.prepare()
-    await s.request({ action: 'commit', proposalId: p.proposalId })
-    expect((await s.done(p.proposalId)).state).toBe('installed')
-    const calls = s.resources.mock.calls as unknown as Array<[string, Record<string, unknown>]>
-    expect(calls.some(([m]) => m.includes('trust.set'))).toBe(false)
-    expect(calls.filter(([m]) => m.includes('desired.set')).map(([, params]) => params.state)).toEqual([
-      'disabled',
-    ])
-    expect(readdirSync(s.home).filter((name) => name.startsWith('.skill-install-'))).toEqual([])
-  })
+  it.each(['disk', 'instructions'])(
+    'publishes a complete %s directory and install-only records a disable instead of enabling',
+    async (kind) => {
+      const s = setup(false)
+      const p = await s.prepare(
+        kind === 'disk'
+          ? s.invocation.input
+          : {
+              action: 'prepare-content',
+              name: 'demo',
+              scope: 'user',
+              enable: false,
+              files: [{ path: 'SKILL.md', content: s.document }],
+            },
+      )
+      await s.request({ action: 'commit', proposalId: p.proposalId })
+      expect((await s.done(p.proposalId)).state).toBe('installed')
+      const calls = s.resources.mock.calls as unknown as Array<[string, Record<string, unknown>]>
+      expect(calls.some(([m]) => m.includes('trust.set'))).toBe(false)
+      expect(calls.filter(([m]) => m.includes('desired.set')).map(([, params]) => params.state)).toEqual([
+        'disabled',
+      ])
+      expect(readdirSync(s.home).filter((name) => name.startsWith('.skill-install-'))).toEqual([])
+    },
+  )
 
   it.runIf(process.platform === 'win32')(
     'Windows directory rename cannot replace even an empty existing target',

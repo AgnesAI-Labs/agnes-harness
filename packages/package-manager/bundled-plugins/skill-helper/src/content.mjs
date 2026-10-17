@@ -54,6 +54,16 @@ export function checkedFiles(input) {
     throw fail('SKILL_DOCUMENT_REQUIRED')
   return result
 }
+/** Conservative routing hint only; Host independently validates every inline byte and path. */
+export function instructionFiles(files) {
+  return files.every(
+    (file) =>
+      file.path === 'SKILL.md' ||
+      (!/^scripts\//i.test(file.path) &&
+        /\.(md|txt|json|yaml|yml|csv)$/i.test(file.path) &&
+        file.path.split('/').at(-1).toLowerCase() !== 'package.json'),
+  )
+}
 export function localPath(input, cwd) {
   if (typeof input !== 'string' || !input || [...input].some((c) => c.charCodeAt(0) < 32))
     throw fail('INVALID_LOCAL_PATH')
