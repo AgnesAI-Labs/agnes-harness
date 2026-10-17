@@ -20,7 +20,8 @@ const roots: string[] = []
 // tool_describe, alongside past-session and MCP resource discovery.
 // Includes eager UI display schemas, explicit file/question/UI routing, and child completion notices.
 // Candidate source reads now advertise bounded pages with offset and expectedHash.
-const EXPECTED_SKILL_TOOL_SCHEMA_HASH = '3cf90447e11e13c35018071c4fefe1f921b944c754206b48b86a3387410cce1c'
+// ui_render/ui_update retain their contracts with the reviewed slim model guidance.
+const EXPECTED_SKILL_TOOL_SCHEMA_HASH = '0b3910eac468bde7cdd335ca582d45fcad154414d2a1bca034fbc6adef7c5a41'
 const expectedToolNames = [
   'ask_user_question',
   'compact',
