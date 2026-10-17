@@ -61,6 +61,7 @@ async function resume(
     jev?: ReturnType<typeof fakeJev>
     turnId?: number
     noView?: boolean
+    view?: Parameters<typeof turnView>[0]
     cancelled?: boolean
     resumeTool?: () => unknown
     /** Ports the test kit does not offer, added on top of its context. */
@@ -76,7 +77,9 @@ async function resume(
     checkpoint: encodeState(state),
     turnOpen: true,
     sideCall: jev,
-    ...(o.noView ? {} : { turnView: turnView({ turnId: o.turnId ?? 1, cancelled: o.cancelled ?? false }) }),
+    ...(o.noView
+      ? {}
+      : { turnView: turnView({ turnId: o.turnId ?? 1, cancelled: o.cancelled ?? false, ...o.view }) }),
     effects: (o.effects ?? {}) as never,
     replies: (o.replies ?? [textReply('Done.')]) as never,
     ...(o.resumeParked !== undefined ? { resumeParked: o.resumeParked } : {}),
@@ -480,5 +483,35 @@ describe('recovery after resume', () => {
     expect(r.steps[0]).toMatchObject({ dispatch: { results: ['ok'] } })
     const state = (r.jev.prepared[0] as unknown as { payload: { state: JsonObject } }).payload.state
     expect(state.goal).toBe('write a file')
+  })
+})
+
+describe('recovery under a code or hybrid disclosure', () => {
+  const standard = ['ls', 'read', 'grep', 'find', 'write', 'edit', 'shell', 'tool_search', 'tool_describe']
+  const hybrid = { tools: [...standard, 'run_code'], platform: { disclosed: [...standard, 'run_code'] } }
+  const unsupported = ['error', expect.objectContaining({ code: 'JEV_UNSUPPORTED_DISCLOSURE' })]
+  it('a finished refusal ends again with the saved error and no request', async () => {
+    const error = { code: 'JEV_UNSUPPORTED_DISCLOSURE', message: 'refused earlier' }
+    const r = await resume(saved({ stage: 'finish', endReason: 'error', endError: error }), { view: hybrid })
+    expect(r.finished).toEqual(['error', error])
+    expect(r.requests).toHaveLength(0)
+    expect(r.jev.invoked).toHaveLength(0)
+  })
+  it.each<[string, Partial<JevState>]>([
+    ['an interrupted model call', { stage: 'llm' }],
+    ['an interrupted dispatch', { stage: 'dispatch', cur: { ...saved({}).cur, calls: [call] } }],
+    ['a step that only began', { stage: 'decide', cur: { jevAttempts: [], level: 0 } }],
+  ])('refuses %s of a session whose disclosure became unsupported', async (_name, over) => {
+    const r = await resume(saved(over), { view: hybrid })
+    expect(r.finished).toEqual(unsupported)
+    expect(r.requests).toHaveLength(0)
+    expect(r.jev.invoked).toHaveLength(0)
+    expect(r.executed).toHaveLength(0)
+  })
+  it('keeps recovering under the standard disclosure with run_code in the catalog', async () => {
+    const r = await resume(answerStep({ kind: 'answer', attempt: 0 }), {
+      view: { tools: hybrid.tools, platform: { disclosed: standard } },
+    })
+    expect(r.finished?.[0]).toBe('completed')
   })
 })

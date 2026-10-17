@@ -102,4 +102,6 @@ This version does not yet:
 - keep more than 8 KiB of the text and thinking that the conversation model writes together with a call: the transcript cuts them to 8 KiB;
 - give Jev observation views, references or batched reads, or mark earlier file reads as out of date after a file changes.
 
+The loop works only with presets whose tool disclosure is `standard`. In a session whose preset uses the `code` or `hybrid` disclosure (the presets that offer `run_code`), every turn ends at once with the error `JEV_UNSUPPORTED_DISCLOSURE`, before any Jev or conversation-model call. Use the default loop for such a session, or choose a preset with `disclosure: standard`.
+
 A session that restarts in the middle of a turn continues from the loop's last checkpoint. A conversation-model request that may already have been sent is not sent again; the next step asks the conversation model to review instead.
