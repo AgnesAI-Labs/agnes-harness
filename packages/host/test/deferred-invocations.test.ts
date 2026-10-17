@@ -993,13 +993,17 @@ it.each(['allowed-once', 'rejected'] as const)(
     const root = await mkdtemp(join(tmpdir(), 'agnes-deferred-decision-'))
     const executions: string[] = []
     const notifications = new Map<string, import('@agnes/protocol').SystemInput>()
+    const resultActors = new Map<string, Actor>()
     const observe = (ctx: LoopContext): LoopContext =>
       Object.assign(Object.create(ctx), {
         input: {
           ...ctx.input,
           async claim(target: 'next-turn' | 'next-step') {
             const input = await ctx.input.claim(target)
-            if (input?.origin === 'system' && input.system) notifications.set(input.id, input.system)
+            if (input?.origin === 'system' && input.system) {
+              notifications.set(input.id, input.system)
+              if (input.system.type === 'action-result') resultActors.set(input.id, input.actor)
+            }
             return input
           },
         },
@@ -1091,8 +1095,9 @@ it.each(['allowed-once', 'rejected'] as const)(
           ['@agnes/ai', '@agnes/base', '@agnes/code', packageId].map((id) => [
             id,
             {
-              version: '1.0.0',
-              integrity: source.snapshot.integrity,
+              version: id === packageId ? '1.0.0' : '0.1.0',
+              integrity: id === packageId ? source.snapshot.integrity : 'builtin:0.1.0',
+              ...(id === packageId ? {} : { source: { type: 'builtin', ref: 'builtin' } }),
               trust: id === packageId ? 'trusted' : 'builtin',
               enabled: true,
             },
@@ -1157,7 +1162,8 @@ it.each(['allowed-once', 'rejected'] as const)(
         selection: {},
         confirmed: true,
       }
-      const admitted = await session.intelligentUi!.action(action, session.d.actor, signal)
+      const actionActor = structuredClone(session.d.actor)
+      const admitted = await session.intelligentUi!.action(action, actionActor, signal)
       expect(admitted, JSON.stringify(admitted)).toMatchObject({ status: 'received' })
       const run = await session.run({ until: 'turn-end', signal })
       expect(run, JSON.stringify(run)).toMatchObject({ reason: 'parked' })
@@ -1204,6 +1210,7 @@ it.each(['allowed-once', 'rejected'] as const)(
       expect(executions).toEqual(verdict === 'allowed-once' ? ['committed'] : [])
       const results = [...notifications.values()].filter((input) => input.type === 'action-result')
       expect(results).toHaveLength(1)
+      expect([...resultActors.values()]).toEqual([actionActor])
       expect(results[0]).toMatchObject({
         source: 'agnes/intelligent-ui',
         data: {

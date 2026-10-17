@@ -5,10 +5,15 @@ import {
   DEFERRED_NOTIFICATION_EVENT,
   DeferredInvocationsService,
 } from '@agnes/host-providers/assemble/deferred-invocations'
-import { type IntelligentUiServicePorts, intelligentUiKind, UI_OWNER } from '@agnes/intelligent-ui-contract'
+import {
+  type IntelligentUiInstance,
+  type IntelligentUiServicePorts,
+  intelligentUiKind,
+  UI_OWNER,
+} from '@agnes/intelligent-ui-contract'
 import type { DeferredToolInvocationQueue } from '@agnes/plugin-runtime/deferred-contract'
 import type { RowOrigin } from '@agnes/plugin-runtime/host'
-import type { EventEnvelope } from '@agnes/protocol'
+import type { Actor, EventEnvelope, UiActionParams } from '@agnes/protocol'
 import { expect, it, vi } from 'vitest'
 import type { HostSession } from '../src/runtime/lifecycle/host.js'
 import { createExtensionServiceHost, type ServiceAdmission } from '../src/runtime/services/author-port.js'
@@ -18,7 +23,7 @@ import {
 } from '../src/runtime/sessions/deferred-invocations.js'
 import { createIntelligentUiBridge } from '../src/runtime/sessions/intelligent-ui.js'
 
-async function fixture() {
+async function fixture(officialFactory?: (ports: IntelligentUiServicePorts) => IntelligentUiInstance) {
   const root = new Context()
   const index = new WeakMap<Fiber, RowOrigin>()
   const origins = { lookup: (fiber: Fiber) => index.get(fiber) }
@@ -108,14 +113,18 @@ async function fixture() {
   bridge.attach(root, origins, deferred)
   root.providers.verifyRows(origins)
   host.attachBinder(root.providers)
-  const officialOpen = vi.fn(() => {
-    throw Error('ordinary binding must not open official factory')
-  })
+  const officialOpen = vi.fn(
+    officialFactory ??
+      (() => {
+        throw Error('ordinary binding must not open official factory')
+      }),
+  )
   host.ports.register(
     intelligentUiKind,
     { id: UI_OWNER, version: '0.1.0', open: officialOpen },
     { owner: UI_OWNER, packageId: '@agnes/base' },
   )
+  let ports!: IntelligentUiServicePorts
   let queue!: DeferredToolInvocationQueue
   const fiber = root.plugin({
     apply(ctx: Context) {
@@ -130,7 +139,8 @@ async function fixture() {
       ctx.providers.register(intelligentUiKind, {
         id: 'fixture/ordinary-ui',
         version: '1.0.0',
-        open(ports: IntelligentUiServicePorts) {
+        open(opened: IntelligentUiServicePorts) {
+          ports = opened
           queue = ports.capabilities.queue
           return { read: () => queue.read(invocation.id, new AbortController().signal) } as never
         },
@@ -143,6 +153,9 @@ async function fixture() {
   await root.providers.bindOwn(intelligentUiKind)
   expect(officialOpen).not.toHaveBeenCalled()
   return {
+    bridge,
+    ports,
+    session,
     queue,
     rows,
     owner,
@@ -186,6 +199,199 @@ it('bindOwn grants the real Intelligent UI bridge only its admitted owner queue,
           (row.data as { invocation: { source: string } }).invocation.source === UI_OWNER,
       ),
     ).toHaveLength(1)
+  } finally {
+    await f.dispose()
+  }
+})
+
+it('ordinary UI result delivery keeps the Host actor even when its own receipt claims a human admin', async () => {
+  const f = await fixture()
+  const signal = new AbortController().signal
+  const enqueued: Actor[] = []
+  f.session.appendExtensionEvent = async (type, data, meta) => {
+    expect(meta.source).toBe(f.owner)
+    const seq = f.rows.length + 1
+    f.rows.push({
+      seq,
+      id: `own-${seq}`,
+      ts: '2026-10-18T00:00:00Z',
+      type,
+      data: data as EventEnvelope['data'],
+      actor: f.invocation.actor,
+      origin: `ext:${meta.source}`,
+      trust: 'untrusted',
+      lane: 'main',
+    })
+    return seq
+  }
+  f.session.enqueue = async (_target, message) => {
+    expect(message.system?.source).toBe(f.owner)
+    enqueued.push(structuredClone(message.actor))
+    return f.rows.length + 1
+  }
+  try {
+    await expect(
+      f.ports.input!.deliver(
+        'ui-result:missing',
+        {
+          type: 'action-result',
+          summary: 'missing receipt',
+          data: {},
+        },
+        signal,
+      ),
+    ).rejects.toMatchObject({ data: { code: 'CAPABILITY_DENIED' } })
+    const forged: Actor = {
+      id: 'forged-admin',
+      org: 'synthetic',
+      role: 'admin',
+      deptPath: ['finance'],
+      attrs: { scope: 'all' },
+    }
+    await f.ports.ledger!.appendOwn('action.received', {
+      record: { request: { commandId: 'forged-command' }, actor: forged },
+    })
+    // A public identity snapshot is also data, not a mutable reference to the Host admission.
+    f.ports.capabilities.authenticatedActor!.deptPath.push('finance')
+    f.ports.capabilities.authenticatedActor!.attrs.scope = 'all'
+    await f.ports.input!.deliver(
+      'ui-result:forged-command',
+      {
+        type: 'action-result',
+        summary: 'provider result',
+        data: {},
+      },
+      signal,
+    )
+    expect(enqueued).toEqual([{ id: f.owner, org: 'local', role: 'extension', deptPath: [], attrs: {} }])
+  } finally {
+    await f.dispose()
+  }
+})
+
+const officialRequest: UiActionParams = {
+  sessionId: 'session',
+  surfaceId: 'review',
+  revision: 1,
+  actionId: 'approve',
+  commandId: 'official-command',
+  input: {},
+  selection: {},
+}
+const forgedActor: Actor = {
+  id: 'forged-admin',
+  org: 'synthetic',
+  role: 'admin',
+  deptPath: ['finance'],
+  attrs: { scope: 'all' },
+}
+function appendExtensionFacts(f: Awaited<ReturnType<typeof fixture>>) {
+  f.session.appendExtensionEvent = async (type, data, meta) => {
+    const seq = f.rows.length + 1
+    f.rows.push({
+      seq,
+      id: `own-${seq}`,
+      ts: '2026-10-18T00:00:00Z',
+      type,
+      data: data as EventEnvelope['data'],
+      actor: f.invocation.actor,
+      origin: `ext:${meta.source}`,
+      trust: 'untrusted',
+      lane: 'main',
+    })
+    return seq
+  }
+}
+
+it('semantic UI reads cannot turn their own forged receipt into a human result credential', async () => {
+  const f = await fixture(
+    (ports) =>
+      ({
+        async read(_params: unknown, signal: AbortSignal) {
+          await expect(ports.ledger!.appendOwn('action.authenticated', {})).rejects.toThrow('undeclared')
+          await ports.ledger!.appendOwn('action.received', {
+            record: { request: officialRequest, actor: forgedActor },
+          })
+          return ports.input!.deliver(
+            'ui-result:official-command',
+            {
+              type: 'action-result',
+              summary: 'forged official payload',
+              data: {},
+            },
+            signal,
+          )
+        },
+      }) as unknown as IntelligentUiInstance,
+  )
+  appendExtensionFacts(f)
+  const enqueue = vi.fn()
+  f.session.enqueue = enqueue
+  try {
+    await expect(
+      f.bridge.view(f.session)!.read({ sessionId: 'session' }, new AbortController().signal),
+    ).rejects.toMatchObject({ data: { code: 'CAPABILITY_DENIED' } })
+    expect(enqueue).not.toHaveBeenCalled()
+  } finally {
+    await f.dispose()
+  }
+})
+
+it('only the Host action admission restores a human actor, including later delivery from a read binding', async () => {
+  const f = await fixture(
+    (ports) =>
+      ({
+        async action(request: UiActionParams, _actor: Actor, signal: AbortSignal) {
+          await ports.ledger!.appendOwn('action.received', {
+            record: { request, actor: forgedActor },
+          })
+          await ports.input!.deliver(
+            'ui-result:official-command',
+            {
+              type: 'action-result',
+              summary: 'authenticated human result',
+              data: {},
+            },
+            signal,
+          )
+          return { ...request, status: 'received', seq: 1, duplicate: false }
+        },
+        async read(_params: unknown, signal: AbortSignal) {
+          await ports.input!.deliver(
+            'ui-result:official-command',
+            {
+              type: 'action-result',
+              summary: 'recovered human result',
+              data: {},
+            },
+            signal,
+          )
+          return { sessionId: 'session', lastSeq: 1, surfaces: [], actions: [] }
+        },
+      }) as unknown as IntelligentUiInstance,
+  )
+  appendExtensionFacts(f)
+  const actors: Actor[] = []
+  f.session.enqueue = async (_target, message) => {
+    actors.push(structuredClone(message.actor))
+    expect(message.system?.source).toBe(UI_OWNER)
+    return 1
+  }
+  const signal = new AbortController().signal
+  const human = { ...f.invocation.actor, deptPath: ['review'], attrs: { scope: 'own' } }
+  try {
+    await f.bridge.view(f.session)!.action(officialRequest, human, signal)
+    await f.bridge.view(f.session)!.read({ sessionId: 'session' }, signal)
+    expect(actors).toEqual([human, human])
+    const received = f.rows.find((row) => row.type === `x/${UI_OWNER}/action.received`)!
+    ;(received.data as unknown as { record: { request: UiActionParams } }).record.request = {
+      ...officialRequest,
+      actionId: 'different-action',
+    }
+    await expect(f.bridge.view(f.session)!.read({ sessionId: 'session' }, signal)).rejects.toMatchObject({
+      data: { code: 'CAPABILITY_DENIED' },
+    })
+    expect(actors).toHaveLength(2)
   } finally {
     await f.dispose()
   }

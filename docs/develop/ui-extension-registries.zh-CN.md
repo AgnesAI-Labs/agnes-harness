@@ -134,3 +134,5 @@ profile client 须先在 descriptor 声明显式 `client.id` 和 `presentationRo
 接管的 `mount(child)` 必须使用**子 context** 登记贡献，用 `child.effect` 绑定订阅。挂载失败会先自动回收部分登记，再恢复默认。cleanup 须同步撤销，异步资源可以随后排空。同 priority 冲突通过 `presentationRoles.getSnapshot()/subscribe` 暴露角色和双方来源，并在插件页展示。应用先筛选候选，再比较优先级；发行默认仍可回退。
 
 三个可运行的 [Intelligent UI 示例](../../examples/ui/README.zh-CN.md) 分别演示组件库、整套交互呈现接管和工具结果卡片。Loop 等待认证 action-result 输入；模型 HTML/JS 只作为数据。公开服务 provider 登记事务从准入 row 确定 owner，支持 `bindOwn`，失败回滚、dispose 回收；自行选择 provider id 不能冒充语义 `UI_OWNER`。队列读、状态推进与通知按准入 owner 隔离；每次登记有独立租约，撤销后复用同一个 provider 对象也不能恢复旧实例或旧的异步 open。
+
+普通 owner 的结果投递固定使用 Host 准入的 extension Actor。只有显式准入的语义 UI 实现可从绑定会话、命令和原始请求的 Host 认证回执恢复人类身份；provider 自写的 `action.received` 或其中的 Actor 不构成凭据。没有 Host 认证的旧回执不能投递人类身份的结果；历史数据仍可呈现。
