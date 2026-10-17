@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { CHECKPOINT_MAX_BYTES, codec, encodeState, initialState, parseJevState } from '../src/state.js'
-import type { HistoryEntry } from '../src/types.js'
+import {
+  ADDED_COUNTERS,
+  CHECKPOINT_MAX_BYTES,
+  codec,
+  encodeState,
+  initialState,
+  parseJevState,
+} from '../src/state.js'
+import type { Decision, HistoryEntry, ObservationView } from '../src/types.js'
 
 const big = (i: number): HistoryEntry => ({
   phase: 'INSPECT',
@@ -146,5 +153,101 @@ describe('checkpoint codec v1', () => {
     const broken = structuredClone(s) as never as { cur: { calls: Array<Record<string, unknown>> } }
     delete broken.cur.calls[0]?.name
     expect(() => parseJevState(broken as never)).toThrow('cur.calls[0].name')
+  })
+})
+
+/** A state with the shape checks turned off, to build malformed checkpoints. */
+type Loose = {
+  workspace: { views?: unknown[] }
+  cur: { decision?: unknown }
+  counters: Record<string, unknown>
+}
+const view = (): ObservationView => ({
+  id: '0123456789abcdef',
+  kind: 'ls',
+  scope: '.',
+  source: { operation: 'ls', call_id: 'jev:1:0:t0' },
+  trust: 'untrusted_evidence',
+  historical: true,
+  evidence: 'a.md',
+  references: [{ kind: 'file', value: 'a.md' }],
+  truncated: false,
+  invocation: { path: '.' },
+})
+const decisionOf = (): Decision => ({
+  phase: 'INSPECT',
+  op: 'read',
+  target: ['a.md', 'b.md'],
+  bindingMode: 'observed',
+  args: { path: 'a.md', offset: 1, limit: 200 },
+  batch: [
+    { path: 'a.md', offset: 1, limit: 200 },
+    { path: 'b.md', offset: 1, limit: 200 },
+  ],
+  confidence: 0.7,
+  operationPathConfidence: 0.9,
+  targetConfidence: 0.7,
+  ambiguity: null,
+  progress: null,
+  phaseTop: [['INSPECT', 0.9]],
+  actionTop: [['read', 0.9]],
+  consumed: [
+    {
+      role: 'target_mode',
+      head: 'target_mode__inspect__read',
+      selected: 'many',
+      confidence: 0.8,
+      deterministic: false,
+    },
+    {
+      role: 'target_member',
+      head: 'include__inspect__read__0',
+      selected: 'include',
+      confidence: 0.7,
+      deterministic: false,
+    },
+  ],
+})
+
+describe('checkpoints with observations', () => {
+  it('reads a checkpoint written before observation views and the new counters existed', () => {
+    const old = structuredClone(initialState()) as unknown as Loose
+    delete old.workspace.views
+    for (const key of ADDED_COUNTERS) delete old.counters[key]
+    const state = parseJevState(codec.decode({ codecVersion: 1, state: old as never }) as never)
+    expect(state.workspace.views).toEqual([])
+    for (const key of ADDED_COUNTERS) expect(state.counters[key]).toBe(0)
+  })
+  it('round-trips a view, a batch decision and the new consumed roles', () => {
+    const s = initialState()
+    s.workspace.views = [view()]
+    s.cur.decision = decisionOf()
+    const back = parseJevState(codec.decode(encodeState(s)) as never)
+    expect(back.workspace.views).toEqual(s.workspace.views)
+    expect(back.cur.decision).toEqual(s.cur.decision)
+  })
+  it.each([
+    [
+      'a view with an unknown key',
+      (s: Loose) => {
+        s.workspace.views = [{ ...view(), extra: 1 }]
+      },
+    ],
+    [
+      'a view reference of another kind',
+      (s: Loose) => {
+        s.workspace.views = [{ ...view(), references: [{ kind: 'symlink', value: 'x' }] }]
+      },
+    ],
+    [
+      'a batch that is not a list of objects',
+      (s: Loose) => {
+        s.cur.decision = { ...decisionOf(), batch: ['x'] }
+      },
+    ],
+  ])('rejects %s', (_name, mutate) => {
+    const s = structuredClone(initialState()) as unknown as Loose
+    mutate(s)
+    expect(() => parseJevState(s as never)).toThrow(/Invalid Jev loop checkpoint/)
   })
 })

@@ -7,6 +7,7 @@ import type {
   Note,
   Observation,
   Phase,
+  ReferenceKind,
   ResolvedTool,
   StepError,
   ToolSchema,
@@ -37,6 +38,8 @@ type Profile = {
   readonly readOnly: boolean
   readonly targetParam: string | null
   readonly defaults: JsonObject | null
+  readonly bindingDefaults: JsonObject | null
+  readonly referenceKind: ReferenceKind | null
 }
 const READ_PHASES: readonly Phase[] = ['INSPECT', 'VERIFY']
 const PROFILES: Readonly<Record<BuiltinTool, Profile>> = {
@@ -46,18 +49,62 @@ const PROFILES: Readonly<Record<BuiltinTool, Profile>> = {
     readOnly: true,
     targetParam: 'path',
     defaults: { path: '.' },
+    bindingDefaults: {},
+    referenceKind: 'directory',
   },
-  read: { phases: READ_PHASES, writeClass: 'read', readOnly: true, targetParam: 'path', defaults: null },
-  grep: { phases: READ_PHASES, writeClass: 'read', readOnly: true, targetParam: null, defaults: null },
-  find: { phases: READ_PHASES, writeClass: 'read', readOnly: true, targetParam: null, defaults: null },
-  write: { phases: ['ACT'], writeClass: 'workspace', readOnly: false, targetParam: 'path', defaults: null },
-  edit: { phases: ['ACT'], writeClass: 'workspace', readOnly: false, targetParam: 'path', defaults: null },
+  read: {
+    phases: READ_PHASES,
+    writeClass: 'read',
+    readOnly: true,
+    targetParam: 'path',
+    defaults: null,
+    bindingDefaults: { offset: 1, limit: 200 },
+    referenceKind: 'file',
+  },
+  grep: {
+    phases: READ_PHASES,
+    writeClass: 'read',
+    readOnly: true,
+    targetParam: null,
+    defaults: null,
+    bindingDefaults: null,
+    referenceKind: null,
+  },
+  find: {
+    phases: READ_PHASES,
+    writeClass: 'read',
+    readOnly: true,
+    targetParam: null,
+    defaults: null,
+    bindingDefaults: null,
+    referenceKind: null,
+  },
+  write: {
+    phases: ['ACT'],
+    writeClass: 'workspace',
+    readOnly: false,
+    targetParam: 'path',
+    defaults: null,
+    bindingDefaults: null,
+    referenceKind: null,
+  },
+  edit: {
+    phases: ['ACT'],
+    writeClass: 'workspace',
+    readOnly: false,
+    targetParam: 'path',
+    defaults: null,
+    bindingDefaults: null,
+    referenceKind: null,
+  },
   shell: {
     phases: ['INSPECT', 'ACT', 'VERIFY'],
     writeClass: 'workspace',
     readOnly: false,
     targetParam: null,
     defaults: null,
+    bindingDefaults: null,
+    referenceKind: null,
   },
 }
 
@@ -107,7 +154,9 @@ export function resolveTool(tool: ToolSchema): ResolvedTool | null {
     criteria: JEV_CRITERIA[tool.name],
     targetParam: profile.targetParam,
     defaults,
-    multiTargetMax: 1,
+    multiTargetMax: tool.name === 'read' ? 4 : 1,
+    bindingDefaults: profile.bindingDefaults === null ? null : { ...profile.bindingDefaults },
+    referenceKind: profile.referenceKind,
   }
 }
 
@@ -198,7 +247,8 @@ function summaryOf(op: string, targets: readonly string[], input: Common): strin
   return `${op}(${targets.join(', ')}) conf=${confidence}${input.escalated ? ' [escalated]' : ''}`
 }
 
-function intentFpOf(calls: readonly Call[]): string {
+/** The fingerprint of what a step asks for: its calls, in any order. */
+export function intentFingerprint(calls: ReadonlyArray<{ name: string; args: JsonValue }>): string {
   const keyed = calls.map((call) => {
     const pair: JsonValue = [call.name, call.args]
     return { key: canonicalJson(pair), pair }
@@ -259,7 +309,7 @@ function entryOf(
     summary: summaryOf(op, labels, input),
     ...(command === null ? {} : { command_excerpt: clip(command, 250) }),
     output_excerpt: tail(text, 500),
-    intentFp: intentFpOf(calls),
+    intentFp: intentFingerprint(calls),
     observationFp: fingerprint({ text, isError }),
     dispatched: true,
   }

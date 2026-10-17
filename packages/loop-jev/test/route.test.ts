@@ -18,6 +18,8 @@ const tool = (over: Partial<ResolvedTool>): ResolvedTool => ({
   targetParam: 'path',
   defaults: { path: '.' },
   multiTargetMax: 1,
+  bindingDefaults: null,
+  referenceKind: null,
   ...over,
 })
 const LS = tool({})

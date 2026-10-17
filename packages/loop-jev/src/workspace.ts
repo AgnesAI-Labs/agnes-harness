@@ -28,7 +28,7 @@ export const CONTEXT_CONTRACT: JsonObject = Object.freeze({
 })
 
 export function emptyWorkspace(): Workspace {
-  return { goal: '', previousAnswer: '', answer: '', notes: [], history: [], turnStart: 0 }
+  return { goal: '', previousAnswer: '', answer: '', notes: [], history: [], turnStart: 0, views: [] }
 }
 
 /** The text blocks of a user message, one per line. */

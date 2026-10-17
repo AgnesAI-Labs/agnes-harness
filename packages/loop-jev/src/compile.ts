@@ -172,6 +172,10 @@ export function compileQuestions(allTools: readonly ResolvedTool[]): CompiledQue
     targetConstants,
     targetOptions,
     defaults,
+    targetCandidates: {},
+    modeHeads: {},
+    memberHeads: {},
+    multiTargetMax: {},
   }
 }
 
