@@ -76,7 +76,10 @@ it('loads zero-build loops and panels into isolated headless sessions and publis
     ['loop', loop, 'student-loop'],
   ] as const) {
     const replace = (value: string) =>
-      value.replaceAll('__PACKAGE_NAME__', name).replaceAll('__TOOL_NAME__', 'student_echo')
+      value
+        .replaceAll('__PACKAGE_NAME__', name)
+        .replaceAll('__SKILL_NAME__', name)
+        .replaceAll('__TOOL_NAME__', 'student_echo')
     const manifest = JSON.parse(
       replace(
         await readFile(new URL(`../../../templates/${template}/package.json`, import.meta.url), 'utf8'),
@@ -91,10 +94,21 @@ it('loads zero-build loops and panels into isolated headless sessions and publis
       ),
     )
   }
-  await writeFile(
-    join(panel, 'client/agnes.client.json'),
-    await readFile(new URL('../../../templates/tool-with-panel/client/agnes.client.json', import.meta.url)),
+  const descriptor = JSON.parse(
+    (
+      await readFile(
+        new URL('../../../templates/tool-with-panel/client/agnes.client.json', import.meta.url),
+        'utf8',
+      )
+    )
+      .replaceAll('__PACKAGE_NAME__', 'student-panel')
+      .replaceAll('__SKILL_NAME__', 'student-panel'),
   )
+  // The template now defaults to a profile page; this fixture exercises retained session panels.
+  delete descriptor.client.homeEntries
+  descriptor.client.lifetime = 'session'
+  descriptor.client.slots = ['workbench.panel']
+  await writeFile(join(panel, 'client/agnes.client.json'), JSON.stringify(descriptor))
   await writeFile(join(panel, 'client/index.js'), 'export const panelVersion = "original"')
   const bundle = join(root, 'bundle.json')
   await writeFile(
