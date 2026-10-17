@@ -8,10 +8,19 @@ export type JevPayload = { state: JsonObject; questions: JsonObject }
 export type JevDeps = {
   sideCall: LoopSideCallPort | undefined
   delay(ms: number, signal: AbortSignal): Promise<void>
-  /** Called before an id is first sent at a level, so the caller can checkpoint stage=decide. */
+  /**
+   * Called before a send, once per (id, level), so the caller can checkpoint stage=decide. The same
+   * id comes again only after a re-prepare at a higher level: the caller then updates `cur.level` in
+   * place and does not append the id to `jevAttempts` a second time. Side-call rows are counted from
+   * the `jev.decide` events whose status is not `refused`, not from these calls.
+   */
   recordAttempt(invocationId: string, level: number): Promise<void>
-  /** Receives one `jev.decide` payload after each call that returned a result. */
+  /**
+   * Receives one `jev.decide` payload after each call that returned a result. A throw is swallowed so
+   * the paid result is still used, and is reported to `dropped` when given.
+   */
   emit(data: JsonObject): Promise<void>
+  dropped?(error: unknown): void
 }
 
 export type JevRequest = {
@@ -153,6 +162,14 @@ function decideEvent(attempt: number, id: string, call: Call, result: SideCallRe
   }
 }
 
+async function emitDecide(deps: JevDeps, data: JsonObject): Promise<void> {
+  try {
+    await deps.emit(data)
+  } catch (error) {
+    deps.dropped?.(error)
+  }
+}
+
 /** Sends `id` once, re-preparing a single time when the port reports the request frozen. */
 async function send(
   a: Attempt,
@@ -170,7 +187,7 @@ async function send(
     }
     try {
       const result = await a.port.invoke(call.prepared, a.signal)
-      await a.deps.emit(decideEvent(attempt, id, call, result))
+      await emitDecide(a.deps, decideEvent(attempt, id, call, result))
       return { result, level: call.level }
     } catch (error) {
       if (errorCode(error) !== 'E_REQUEST_FROZEN') throw error

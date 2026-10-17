@@ -140,9 +140,12 @@ describe('resumeJev', () => {
     ).toMatchObject({ kind: 'ok', invocationId: 'jev:3:2:d0' })
     expect(port.invoked).toEqual(['jev:3:2:d0'])
     const fresh = fakeJev(() => ({}))
+    const resumed = deps(fresh)
     expect(
-      await resumeJev({ ...req(), usedAttempts: 1, lastId: 'jev:3:2:d0' }, deps(fresh).d, signal),
+      await resumeJev({ ...req(), usedAttempts: 1, lastId: 'jev:3:2:d0' }, resumed.d, signal),
     ).toMatchObject({ kind: 'ok', invocationId: 'jev:3:2:d0' })
+    expect(fresh.invoked).toEqual(['jev:3:2:d0'])
+    expect(resumed.log).toEqual(['emit jev:3:2:d0 ok'])
   })
   it('treats an interrupted record as spent', async () => {
     const port = fakeJev(() => ({ unknown: true }))
@@ -301,6 +304,67 @@ describe('resumeJev edges', () => {
       await resumeJev({ ...req({ deadlineMs: 1000 }), usedAttempts: 1, lastId: 'jev:3:2:d0' }, d, signal),
     ).toMatchObject({ code: 'MODEL_UNAVAILABLE', cause: 'in-flight', invocationId: 'jev:3:2:d0' })
     expect(delays).toEqual([200, 200, 200, 200, 200])
+  })
+})
+
+describe('review follow-ups', () => {
+  it('ends the step on an ABORTED code', async () => {
+    const { d } = deps(
+      fakeJev(() => ({ failed: { reason: 'adapter-error', code: 'ABORTED', retryable: false } })),
+    )
+    expect(await callJev(req(), d, signal)).toEqual({ kind: 'cancelled' })
+  })
+  it('sends nothing when the signal is already aborted', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const { d, port, log } = deps()
+    expect(await callJev(req(), d, controller.signal)).toEqual({ kind: 'cancelled' })
+    expect(port.prepared).toEqual([])
+    expect(log).toEqual([])
+  })
+  it('keeps the paid answers when the event cannot be emitted', async () => {
+    const dropped: unknown[] = []
+    const failure = Object.assign(new Error('quota'), { code: 'E_ENVELOPE' })
+    const { d } = deps(undefined, {
+      emit: async () => {
+        throw failure
+      },
+      dropped: (error) => void dropped.push(error),
+    })
+    expect(await callJev(req(), d, signal)).toMatchObject({ kind: 'ok', invocationId: 'jev:3:2:d0' })
+    expect(dropped).toEqual([failure])
+    const { d: silent } = deps(undefined, {
+      emit: async () => {
+        throw failure
+      },
+    })
+    expect(await callJev(req(), silent, signal)).toMatchObject({ kind: 'ok' })
+  })
+  it('refuses to replay a recorded id with a different request', async () => {
+    const port = fakeJev(() => ({}))
+    await port.invoke(
+      await port.prepare({
+        label: 'jev.decide',
+        target: { route: 'jev', model: 'm' },
+        invocationId: 'jev:3:2:d0',
+      }),
+      signal,
+    )
+    const other = await port.prepare({
+      label: 'jev.decide',
+      target: { route: 'jev', model: 'n' },
+      invocationId: 'jev:3:2:d0',
+    })
+    await expect(port.invoke(other, signal)).rejects.toMatchObject({
+      code: 'E_RELATION',
+      detail: { reason: 'invocation-reused' },
+    })
+    const same = await port.prepare({
+      label: 'jev.decide',
+      target: { route: 'jev', model: 'm' },
+      invocationId: 'jev:3:2:d0',
+    })
+    expect(await port.invoke(same, signal)).toMatchObject({ status: 'ok', replayed: true })
   })
 })
 

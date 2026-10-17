@@ -9,9 +9,9 @@ import type {
 import type { JsonValue } from '../../src/types.js'
 import { canonicalJson } from '../../src/util.js'
 
-type Pick = { pick?: Record<string, string>; confidence?: number; ambiguity?: number; progress?: number }
+type PickSpec = { pick?: Record<string, string>; confidence?: number; ambiguity?: number; progress?: number }
 // The never keys let a plain `{}` sit in a union with the other acts.
-type PickAct = Pick & {
+type PickAct = PickSpec & {
   failed?: never
   prepareThrows?: never
   invokeThrows?: never
@@ -62,7 +62,7 @@ function choice(options: string[], selected: string, confidence: number): Record
  * (default 0.9) with the rest split evenly (a single option gets probability 1); the meta heads
  * answer `ambiguity` (default 0.1) and `progress` (default 1).
  */
-export function answersFor(questions: Record<string, unknown>, act: Pick): Record<string, JsonValue> {
+export function answersFor(questions: Record<string, unknown>, act: PickSpec): Record<string, JsonValue> {
   const answers: Record<string, JsonValue> = {}
   for (const [head, question] of Object.entries(questions)) {
     if (head === 'meta_ambiguity') answers[head] = { type: 'noul', noul: act.ambiguity ?? 0.1 }
@@ -99,7 +99,7 @@ function resultOf(act: JevAct, invocationId: string, questions: Record<string, u
       replayed: false,
     }
   }
-  const json = ('answers' in act ? act.answers : answersFor(questions, act as Pick)) as JsonValue
+  const json = ('answers' in act ? act.answers : answersFor(questions, act as PickSpec)) as JsonValue
   return {
     status: 'ok',
     invocationId,
@@ -157,7 +157,12 @@ export function fakeJev(script: (n: number, questions: Record<string, unknown>) 
     },
     async invoke(call) {
       const recorded = records.get(call.invocationId)
-      if (recorded !== undefined) return { ...recorded, replayed: true } as SideCallResult
+      if (recorded !== undefined) {
+        if (labels.get(call.invocationId)?.requestHash !== call.requestHash) {
+          throw Object.assign(thrown('E_RELATION'), { detail: { reason: 'invocation-reused' } })
+        }
+        return { ...recorded, replayed: true } as SideCallResult
+      }
       const entry = pending.get(call)
       if (entry === undefined) throw thrown('E_REQUEST_FROZEN')
       if ('invokeThrows' in entry.act && entry.act.invokeThrows !== undefined)
