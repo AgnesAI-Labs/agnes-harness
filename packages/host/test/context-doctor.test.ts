@@ -11,6 +11,7 @@ import { createPluginTestHost } from '@agnes/host/author-testkit'
 import { createExtensionOrder } from '@agnes/host-extensions/ext-host/extension-status-book'
 import type { KernelPorts } from '@agnes/host-extensions/ext-host/ports'
 import { createRowExtensionHost } from '@agnes/host-extensions/ext-host/row-extension-host'
+import { createRowServiceHost } from '@agnes/host-extensions/ext-host/row-services'
 import type { PluginTestRegistration } from '@agnes/plugin-runtime/testkit'
 import { expect, it } from 'vitest'
 
@@ -87,9 +88,14 @@ it('mounts the installed context observer on the production registration bridge 
     reservedTool: () => false,
     governance: new Map(),
   })
+  const serviceBridge = createRowServiceHost(() => ({ version: '0.1.0' }))
+  serviceBridge.activate(ports)
   const registration: PluginTestRegistration = {
     tools,
-    install: (root, origins) => bridge.installRoot(root, origins),
+    install(root, origins) {
+      bridge.installRoot(root, origins)
+      serviceBridge.installRoot(root, origins)
+    },
     assertLoaded() {
       const failure = bridge.statusEntries().find((row) => !row.status.loaded || row.status.error)
       if (failure) throw new Error(failure.status.error?.message ?? 'Plugin failed to mount')
