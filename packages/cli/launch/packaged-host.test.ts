@@ -80,6 +80,7 @@ describe('packaged host wiring', () => {
       'observability:otel',
       'seam-providers:default',
       'loop:agnes.default',
+      'loop:agnes.jev',
       'child-agent:codex',
       'child-agent:claude-code',
       'child-agent:sdk',

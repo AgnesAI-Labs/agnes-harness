@@ -232,6 +232,11 @@
     "excludes": ["from '@agnes/core'", "WeakMap"]
   },
   {
+    "path": "packages/loop-jev/src/factory.ts",
+    "includes": ["from '@agnes/extension-api'", "checkpointMode: 'driver'"],
+    "excludes": ["from '@agnes/core'"]
+  },
+  {
     "path": "packages/package-manager/src/plugin-manifest.ts",
     "includes": ["ordinary plugin requires apiRange", "'bundle'"]
   },

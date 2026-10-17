@@ -306,6 +306,7 @@ export const defaultLoopPlugin = {
     ctx.providers.register(loopKind, defaultLoopFactory)
   },
 }
+export { jevLoopPlugin } from '@agnes/loop-jev'
 
 export { fileMemoryRoots, memoryPlugin } from '@agnes/memory-file'
 export { observabilityPlugin } from '@agnes/observability'

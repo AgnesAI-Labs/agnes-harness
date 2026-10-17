@@ -172,6 +172,9 @@ importers:
       '@agnes/loop-default':
         specifier: workspace:*
         version: link:../loop-default
+      '@agnes/loop-jev':
+        specifier: workspace:*
+        version: link:../loop-jev
       '@agnes/memory-file':
         specifier: workspace:*
         version: link:../memory-file

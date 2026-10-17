@@ -78,6 +78,7 @@
     "@agnes/ai",
     "@agnes/system-node",
     "@agnes/loop-default",
+    "@agnes/loop-jev",
     "@agnes/history-index",
     "@agnes/observability",
     "@agnes/memory-file",

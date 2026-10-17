@@ -146,6 +146,57 @@ export const AGNES_BASE_PLUGIN_DECLARATIONS = Object.freeze(
         apiRange: '^4.0.0',
       },
       {
+        export: 'jevLoopPlugin',
+        id: 'loop:agnes.jev',
+        inject: ['providers'],
+        runtime: 'in-process',
+        default: false,
+        apiRange: '^4.0.0',
+        configReload: 'next-session',
+        configSchema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            jev: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                route: {
+                  type: 'string',
+                  minLength: 1,
+                  maxLength: 128,
+                  default: 'jev',
+                  description: 'Side-call route that serves the Jev model.',
+                },
+                model: {
+                  type: 'string',
+                  minLength: 1,
+                  maxLength: 256,
+                  default: 'typesafe/jev-1.13-20260917',
+                  description: 'Model id on that route. Pin a dated version.',
+                },
+                deadlineMs: { type: 'integer', minimum: 1000, maximum: 120000, default: 15000 },
+                maxRetries: { type: 'integer', minimum: 0, maximum: 3, default: 2 },
+              },
+            },
+            llmMaxAttempts: { type: 'integer', minimum: 1, maximum: 5, default: 2 },
+            thresholds: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                escalate: { type: 'number', minimum: 0, maximum: 1, default: 0.5 },
+                externalWriteMin: { type: 'number', minimum: 0, maximum: 1, default: 0.6 },
+                ambiguityGate: { type: ['number', 'null'], minimum: 0, maximum: 1, default: 0.4 },
+                answerProgressFloor: { type: ['number', 'null'], minimum: 0, maximum: 3, default: null },
+              },
+            },
+            stepCap: { type: 'integer', minimum: 1, maximum: 200, default: 30 },
+            stateTokenBudget: { type: 'integer', minimum: 4000, maximum: 30000, default: 24000 },
+            requestTokenBudget: { type: 'integer', minimum: 8000, maximum: 60000, default: 48000 },
+          },
+        },
+      },
+      {
         export: 'codexChildAgentsPlugin',
         id: 'child-agent:codex',
         inject: ['providers'],

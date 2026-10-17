@@ -34,12 +34,20 @@ const webRoot = join(repoPackages, 'web')
 const require = createRequire(import.meta.url)
 const computerUseNoticeSource = join(repoPackages, 'base', 'extensions', 'computer-use', 'NOTICE')
 const computerUseNoticeRelative = join('THIRD-PARTY-NOTICES', 'computer-use-hermes.txt')
+const jevLoopNoticeSource = join(repoPackages, 'loop-jev', 'NOTICE')
+const jevLoopNoticeRelative = join('THIRD-PARTY-NOTICES', 'jevloop.txt')
 const isDarwin = (): boolean => process.platform === 'darwin' // guards-allow-platform: target native
 
 export async function copyComputerUseNotice(outputDirectory: string): Promise<void> {
   const destination = join(outputDirectory, computerUseNoticeRelative)
   await mkdir(dirname(destination), { recursive: true })
   await copyFile(computerUseNoticeSource, destination)
+}
+
+export async function copyJevLoopNotice(outputDirectory: string): Promise<void> {
+  const destination = join(outputDirectory, jevLoopNoticeRelative)
+  await mkdir(dirname(destination), { recursive: true })
+  await copyFile(jevLoopNoticeSource, destination)
 }
 
 /** Copy only runtime payload, never repository tests or personal working files. */
@@ -377,6 +385,7 @@ async function buildLocal(out: string, nativeOutput?: string, versionOverride?: 
   backendBuilds.push(await bundle(workerSource, join(out, 'worker.mjs'), defines))
   await collectThirdPartyNotices(cliRoot, out, backendBuilds)
   await copyComputerUseNotice(out)
+  await copyJevLoopNotice(out)
   await copySystemRuntime(repoPackages, out, nativeOutput)
   const linux = process.platform === 'linux' // guards-allow-platform: native PTY build target
   if (isDarwin() || linux) {
