@@ -3,17 +3,22 @@ import {
   ACTION_PREAMBLE,
   CORE_ANSWER,
   compileQuestions,
+  criteriaCharsAt,
   decisionSurface,
   estimateTokens,
   fitBudget,
+  INCLUDE_INSTRUCTIONS,
   LLM_PARAMETERS_TEXT,
   META_AMBIGUITY,
   META_PROGRESS,
   PHASE_CRITERIA,
   PHASE_INSTRUCTIONS,
+  pyRepr,
+  TARGET_MODE_ONE,
+  targetModeMany,
 } from '../src/compile.js'
 import { resolveTool } from '../src/profile.js'
-import type { ResolvedTool } from '../src/types.js'
+import type { Candidate, CompiledQuestions, ResolvedTool } from '../src/types.js'
 import { BUILTIN_SCHEMAS } from './helpers/view.js'
 
 const tools = (...names: string[]) =>
@@ -24,7 +29,7 @@ const tools = (...names: string[]) =>
 const ALL = tools('ls', 'read', 'grep', 'find', 'write', 'edit', 'shell')
 
 describe('compileQuestions', () => {
-  it('compiles exactly the stage-one head set for the built-in surface', () => {
+  it('compiles exactly the head set for the built-in surface with no observations', () => {
     const c = compileQuestions(ALL)
     expect(Object.keys(c.questions)).toEqual([
       'phase',
@@ -146,5 +151,111 @@ describe('token budget', () => {
   })
   it('returns null when nothing fits', () => {
     expect(fitBudget(c, () => ({ goal: 'x' }), { stateTokens: 10, requestTokens: 10 })).toBeNull()
+  })
+})
+
+const files = (...keys: string[]): Candidate[] =>
+  keys.map((key) => ({ key, kind: 'file', label: key, args: { offset: 1, limit: 200, path: key } }))
+const dirs = (...keys: string[]): Candidate[] =>
+  keys.map((key) => ({ key, kind: 'directory', label: key, args: { path: key } }))
+
+describe('observed targets', () => {
+  it('puts observed candidates before LLM_PARAMETERS and DEFAULT_ARGUMENTS', () => {
+    const c = compileQuestions(ALL, { ls: dirs('src') })
+    const criteria = (c.questions.target__inspect__ls as { criteria: Record<string, unknown> }).criteria
+    expect(Object.keys(criteria)).toEqual(['src', 'LLM_PARAMETERS', 'DEFAULT_ARGUMENTS'])
+    expect(criteria.src).toEqual({ directory: 'src', arguments: '{"path": "src"}' })
+    expect(c.targetCandidates['INSPECT/ls']).toEqual(dirs('src'))
+  })
+  it('gives read a target head, a mode head and one include head per candidate in each phase', () => {
+    const c = compileQuestions(ALL, { read: files('a.md', 'b.md', 'c.md') })
+    for (const phase of ['inspect', 'verify']) {
+      expect(c.questions[`target__${phase}__read`]).toMatchObject({
+        criteria: { 'a.md': { file: 'a.md', arguments: '{"limit": 200, "offset": 1, "path": "a.md"}' } },
+      })
+      expect(c.questions[`target_mode__${phase}__read`]).toMatchObject({
+        criteria: { one: TARGET_MODE_ONE, many: targetModeMany(4) },
+      })
+      expect(c.questions[`include__${phase}__read__2`]).toEqual({
+        type: 'choice',
+        criteria: { include: "Include offered target 'c.md'.", skip: "Skip offered target 'c.md'." },
+        instructions: [INCLUDE_INSTRUCTIONS],
+      })
+    }
+    expect(c.memberHeads['INSPECT/read']).toEqual({
+      'a.md': 'include__inspect__read__0',
+      'b.md': 'include__inspect__read__1',
+      'c.md': 'include__inspect__read__2',
+    })
+    expect(c.multiTargetMax['INSPECT/read']).toBe(4)
+  })
+  it('adds no mode head for one candidate, for more than 20, or for a tool that reads one target', () => {
+    expect(compileQuestions(ALL, { read: files('a.md') }).modeHeads).toEqual({})
+    expect(
+      compileQuestions(ALL, { read: files(...Array.from({ length: 21 }, (_, i) => `f${i}`)) }).modeHeads,
+    ).toEqual({})
+    expect(compileQuestions(ALL, { ls: dirs('a', 'b', 'c') }).modeHeads).toEqual({})
+  })
+  it('offers a path named like a prototype key as an ordinary option', () => {
+    const c = compileQuestions(ALL, { read: files('__proto__', 'b.md') })
+    const head = c.questions.target__inspect__read as { criteria: Record<string, unknown> }
+    expect(Object.keys(head.criteria)).toEqual(['__proto__', 'b.md', 'LLM_PARAMETERS'])
+    expect(Object.keys(c.memberHeads['INSPECT/read'] ?? {})).toEqual(['__proto__', 'b.md'])
+    expect(c.targetOptions['INSPECT/read']).toEqual(['__proto__', 'b.md', 'LLM_PARAMETERS'])
+  })
+  it('keeps LLM_PARAMETERS on every target when nothing was observed', () => {
+    const c = compileQuestions(ALL)
+    for (const options of Object.values(c.targetOptions)) expect(options).toContain('LLM_PARAMETERS')
+  })
+  it('clips labels to 300 characters', () => {
+    const c = compileQuestions(ALL, {
+      read: [{ ...(files('a.md')[0] as Candidate), label: `a.md${'x'.repeat(400)}` }],
+    })
+    const head = c.questions.target__inspect__read as { criteria: Record<string, { file: string }> }
+    expect(head.criteria['a.md']?.file.length).toBe(300)
+  })
+  it('clips the criteria of tools without a profile at the last shrink levels, keeping every id', () => {
+    const other = {
+      ...(ALL[0] as ResolvedTool),
+      name: 'docs_search',
+      profiled: false,
+      criteria: 'd'.repeat(2000),
+      phases: ['INSPECT'] as const,
+      targetParam: null,
+      defaults: null,
+      bindingDefaults: null,
+      referenceKind: null,
+    }
+    const full = compileQuestions([...ALL, other])
+    const short = compileQuestions([...ALL, other], {}, { criteriaChars: 500 })
+    expect(Object.keys(short.questions)).toEqual(Object.keys(full.questions))
+    const criteria = (q: CompiledQuestions) =>
+      (q.questions.action__inspect as { criteria: Record<string, string> }).criteria
+    expect(criteria(short).docs_search).toHaveLength(500)
+    expect(criteria(full).docs_search).toHaveLength(1500)
+  })
+  it('renders a target key the way Python repr does', () => {
+    expect(pyRepr('a.md')).toBe("'a.md'")
+    expect(pyRepr("it's.md")).toBe(`"it's.md"`)
+    expect(pyRepr(`a'b"c`)).toBe(`'a\\'b"c'`)
+    expect(pyRepr('tab\there')).toBe("'tab\\there'")
+    expect(pyRepr('a\u0001b\nc\\d\u007f')).toBe("'a\\x01b\\nc\\\\d\\x7f'")
+  })
+  it('compiles the questions again for each shrink level it tries and returns those it used', () => {
+    const other = {
+      ...(ALL[0] as ResolvedTool),
+      name: 'docs_search',
+      profiled: false,
+      criteria: 'd'.repeat(2000),
+    }
+    const at = (level: number) =>
+      compileQuestions([...ALL, other], {}, { criteriaChars: criteriaCharsAt(level) })
+    const tight = estimateTokens({ state: {}, questions: at(6).questions })
+    const fit = fitBudget(at, () => ({}), { stateTokens: 24_000, requestTokens: tight })
+    expect(fit?.level).toBe(6)
+    expect(fit?.questions).toEqual(at(6).questions)
+    expect(fitBudget(at(0), () => ({}), { stateTokens: 24_000, requestTokens: 48_000 })?.questions).toEqual(
+      at(0).questions,
+    )
   })
 })

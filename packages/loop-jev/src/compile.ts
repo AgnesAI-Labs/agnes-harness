@@ -1,6 +1,7 @@
 // Portions adapted from JevLoop (https://github.com/parkavenue9639/jevloop, 61e7994), Apache-2.0; modified.
 import {
   ANSWER,
+  type Candidate,
   type CompiledQuestions,
   DEFAULT_ARGUMENTS,
   type JsonObject,
@@ -71,10 +72,56 @@ export const LLM_PARAMETERS_TEXT: {
 
 export const DEFAULT_ARGUMENTS_TEXT = "Use the tool's declared safe default arguments."
 
-const MAX_DESCRIPTION = 1500
+/** The most observed candidates a target head may offer and still ask for a batch. */
+export const MULTI_TARGET_CANDIDATE_CAP = 20
 
-/** Questions for one decision, built from the decision surface: the tools Jev may choose between. */
-export function compileQuestions(allTools: readonly ResolvedTool[]): CompiledQuestions {
+export const TARGET_MODE_ONE =
+  'Use the single binding selected by the target question, including LLM_PARAMETERS.'
+
+export function targetModeMany(max: number): string {
+  return `Use 2 to ${max} compatible independent targets in one bounded call.`
+}
+
+export const INCLUDE_INSTRUCTIONS =
+  'Assume a multi-target call was selected. Include this target only when it is independently needed now; check available evidence coverage and freshness to avoid redundant observations, not necessary new ranges.'
+
+const CRITERIA_CHARS = 1500
+const LABEL_CHARS = 300
+
+// An observed path is untrusted: a key such as `__proto__` must become an own property, not reach the setter.
+function put<T>(record: Record<string, T>, key: string, value: T): void {
+  Object.defineProperty(record, key, { value, enumerable: true, writable: true, configurable: true })
+}
+
+/** Python repr() of a string, for the include criteria text. */
+export function pyRepr(text: string): string {
+  const quote = text.includes("'") && !text.includes('"') ? '"' : "'"
+  let body = ''
+  for (const ch of text) {
+    const code = ch.codePointAt(0) ?? 0
+    if (ch === '\\') body += '\\\\'
+    else if (ch === quote) body += `\\${ch}`
+    else if (ch === '\n') body += '\\n'
+    else if (ch === '\r') body += '\\r'
+    else if (ch === '\t') body += '\\t'
+    else if (code < 0x20 || (code >= 0x7f && code <= 0x9f)) body += `\\x${code.toString(16).padStart(2, '0')}`
+    else body += ch
+  }
+  return `${quote}${body}${quote}`
+}
+
+/**
+ * Questions for one decision, built from the decision surface: the tools Jev may choose between.
+ * `candidates` (tool name → observed complete calls) become target options before LLM_PARAMETERS; a tool that
+ * takes several targets also gets a head choosing one or many and one include head per candidate.
+ * `criteriaChars` bounds the criteria of tools without a profile.
+ */
+export function compileQuestions(
+  allTools: readonly ResolvedTool[],
+  candidates: Readonly<Record<string, readonly Candidate[]>> = {},
+  options: { criteriaChars?: number } = {},
+): CompiledQuestions {
+  const criteriaChars = options.criteriaChars ?? CRITERIA_CHARS
   // The first tool of a name wins; a tool named like the synthetic answer action is never offered.
   const tools = allTools.filter(
     (tool, i) => tool.name !== ANSWER && allTools.findIndex((t) => t.name === tool.name) === i,
@@ -103,6 +150,10 @@ export function compileQuestions(allTools: readonly ResolvedTool[]): CompiledQue
   const targetConstants: Record<string, string> = {}
   const targetOptions: Record<string, readonly string[]> = {}
   const defaults: Record<string, JsonObject> = {}
+  const targetCandidates: Record<string, readonly Candidate[]> = {}
+  const modeHeads: Record<string, string> = {}
+  const memberHeads: Record<string, Readonly<Record<string, string>>> = {}
+  const multiTargetMax: Record<string, number> = {}
 
   for (const phase of phases) {
     const ops = phaseActions[phase] ?? []
@@ -119,7 +170,7 @@ export function compileQuestions(allTools: readonly ResolvedTool[]): CompiledQue
             ? CORE_ANSWER
             : tool.profiled
               ? tool.criteria
-              : clip(tool.criteria, MAX_DESCRIPTION)
+              : clip(tool.criteria, criteriaChars)
       }
       questions[head] = {
         type: 'choice',
@@ -132,9 +183,20 @@ export function compileQuestions(allTools: readonly ResolvedTool[]): CompiledQue
       const key = `${phase}/${op}`
       const tool = byName.get(op)
       const options: JsonObject = {}
+      const offered: Candidate[] = []
       if (op === ANSWER || tool === undefined)
         options[LLM_PARAMETERS] = { binding: LLM_PARAMETERS_TEXT.answer }
       else {
+        for (const candidate of candidates[op] ?? []) {
+          const reserved = candidate.key === LLM_PARAMETERS || candidate.key === DEFAULT_ARGUMENTS
+          if (reserved || Object.hasOwn(options, candidate.key)) continue
+          put(options, candidate.key, {
+            [candidate.kind]: clip(candidate.label, LABEL_CHARS),
+            arguments: pyJson(candidate.args),
+          })
+          offered.push(structuredClone(candidate))
+        }
+        if (offered.length > 0) targetCandidates[key] = offered
         options[LLM_PARAMETERS] = {
           binding: tool.targetParam === null ? LLM_PARAMETERS_TEXT.plain : LLM_PARAMETERS_TEXT.target,
         }
@@ -146,18 +208,41 @@ export function compileQuestions(allTools: readonly ResolvedTool[]): CompiledQue
       const keys = Object.keys(options)
       targetOptions[key] = keys
       const [sole] = keys
-      if (keys.length === 1 && sole !== undefined) targetConstants[key] = sole
-      else {
-        const head = `target__${phase.toLowerCase()}__${op}`
-        targetHeads[key] = head
-        questions[head] = {
+      if (keys.length === 1 && sole !== undefined) {
+        targetConstants[key] = sole
+        continue
+      }
+      const prefix = `${phase.toLowerCase()}__${op}`
+      const preamble = TARGET_PREAMBLE.replace('{phase}', phase).replace('{operation}', op)
+      targetHeads[key] = `target__${prefix}`
+      questions[`target__${prefix}`] = {
+        type: 'choice',
+        criteria: options,
+        instructions: [preamble, TARGET_UNTRUSTED],
+      }
+      const max = tool?.multiTargetMax ?? 1
+      if (max > 1 && offered.length >= 2 && offered.length <= MULTI_TARGET_CANDIDATE_CAP) {
+        modeHeads[key] = `target_mode__${prefix}`
+        multiTargetMax[key] = max
+        questions[`target_mode__${prefix}`] = {
           type: 'choice',
-          criteria: options,
-          instructions: [
-            TARGET_PREAMBLE.replace('{phase}', phase).replace('{operation}', op),
-            TARGET_UNTRUSTED,
-          ],
+          criteria: { one: TARGET_MODE_ONE, many: targetModeMany(max) },
+          instructions: [preamble],
         }
+        const members: Record<string, string> = {}
+        offered.forEach((candidate, index) => {
+          const head = `include__${prefix}__${index}`
+          put(members, candidate.key, head)
+          questions[head] = {
+            type: 'choice',
+            criteria: {
+              include: `Include offered target ${pyRepr(candidate.key)}.`,
+              skip: `Skip offered target ${pyRepr(candidate.key)}.`,
+            },
+            instructions: [INCLUDE_INSTRUCTIONS],
+          }
+        })
+        memberHeads[key] = members
       }
     }
   }
@@ -172,10 +257,10 @@ export function compileQuestions(allTools: readonly ResolvedTool[]): CompiledQue
     targetConstants,
     targetOptions,
     defaults,
-    targetCandidates: {},
-    modeHeads: {},
-    memberHeads: {},
-    multiTargetMax: {},
+    targetCandidates,
+    modeHeads,
+    memberHeads,
+    multiTargetMax,
   }
 }
 
@@ -200,22 +285,35 @@ export type Budget = { stateTokens: number; requestTokens: number }
 
 export const MAX_SHRINK_LEVEL = 7
 
-/** The first shrink level, from `fromLevel` up to 7, whose state and questions fit the budget. */
-// Shrink level 6 (clip non-profiled criteria) cannot change the questions because `c` is fixed; it is a no-op in
-// this version, where every built-in tool is profiled.
+/** The criteria length of tools without a profile at a shrink level: 1500, and 500 from level 6. */
+export function criteriaCharsAt(level: number): number {
+  return level >= 6 ? 500 : CRITERIA_CHARS
+}
+
+/**
+ * The first shrink level, from `fromLevel` up to 7, whose state and questions fit the budget, with the questions
+ * of that level. Pass a function to compile the questions per level (for the criteria clipping of level 6).
+ */
 export function fitBudget(
-  c: CompiledQuestions,
+  c: CompiledQuestions | ((level: number) => CompiledQuestions),
   stateAt: (level: number) => JsonObject,
   budget: Budget,
   fromLevel = 0,
-): { state: JsonObject; level: number; stateTokens: number; requestTokens: number } | null {
-  const longest = Math.max(0, ...Object.values(c.questions).map((question) => estimateTokens(question)))
+): {
+  state: JsonObject
+  questions: JsonObject
+  level: number
+  stateTokens: number
+  requestTokens: number
+} | null {
   for (let level = Math.max(0, fromLevel); level <= MAX_SHRINK_LEVEL; level++) {
+    const { questions } = typeof c === 'function' ? c(level) : c
+    const longest = Math.max(0, ...Object.values(questions).map((question) => estimateTokens(question)))
     const state = stateAt(level)
     const stateTokens = estimateTokens(state)
     if (stateTokens + longest > budget.stateTokens) continue
-    const requestTokens = estimateTokens({ state, questions: c.questions })
-    if (requestTokens <= budget.requestTokens) return { state, level, stateTokens, requestTokens }
+    const requestTokens = estimateTokens({ state, questions })
+    if (requestTokens <= budget.requestTokens) return { state, questions, level, stateTokens, requestTokens }
   }
   return null
 }
