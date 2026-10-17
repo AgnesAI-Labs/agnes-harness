@@ -1,6 +1,6 @@
 import type { UiSurfaceRecord } from '@agnes/protocol'
 import { expect, it, vi } from 'vitest'
-import { mountIntelligentUi } from '../../src/intelligent-ui/mount.js'
+import { mountIntelligentUi } from '../../../web-conversation/src/intelligent-ui/mount.js'
 import { financeRecord } from './fixture.js'
 
 const controls = vi.hoisted(() => ({
@@ -14,7 +14,7 @@ const controls = vi.hoisted(() => ({
         count: { read(context: unknown): number | undefined; subscribe(listener: () => void): () => void }
       },
 }))
-vi.mock('../../src/intelligent-ui/client.js', () => ({
+vi.mock('../../../web-conversation/src/intelligent-ui/client.js', () => ({
   IntelligentUiClient: class {
     snapshot = { ready: false, surfaces: [] as UiSurfaceRecord[] }
     listener: (() => void) | undefined
@@ -42,8 +42,8 @@ vi.mock('../../src/intelligent-ui/client.js', () => ({
     }
   },
 }))
-vi.mock('../../src/intelligent-ui/server.js', () => ({ intelligentUiServer: () => ({}) }))
-vi.mock('../../src/intelligent-ui/placements.js', async (original) => ({
+vi.mock('../../../web-conversation/src/intelligent-ui/server.js', () => ({ intelligentUiServer: () => ({}) }))
+vi.mock('../../../web-conversation/src/intelligent-ui/placements.js', async (original) => ({
   ...(await original<object>()),
   openIntelligentPanel: controls.open,
 }))

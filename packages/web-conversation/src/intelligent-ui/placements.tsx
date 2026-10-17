@@ -5,7 +5,6 @@ import {
   type UiExtensionContext,
   workbenchNavigation,
 } from '@agnes/web-client'
-import { RegisteredConversationCard } from '@agnes/web-conversation/conversation-registry'
 import {
   Button,
   docksInConversation,
@@ -21,6 +20,7 @@ import {
   useUiText,
 } from '@agnes/web-ui'
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
+import { RegisteredConversationCard } from '../registered-card.js'
 import type { IntelligentUiClient } from './client.js'
 import { CustomUiHost, type CustomUiModuleSource } from './custom-host.js'
 import { isQuestionSurface } from './question-dock.js'

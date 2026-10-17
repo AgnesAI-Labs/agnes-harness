@@ -1,5 +1,10 @@
 import type { IntelligentUiInstance } from '@agnes/intelligent-ui-contract'
-import { intelligentUiKind, UI_PROVIDER_ID, UI_PROVIDER_VERSION } from '@agnes/intelligent-ui-contract'
+import {
+  intelligentUiKind,
+  UI_PROVIDER_ID,
+  UI_PROVIDER_VERSION,
+  UI_SUBMIT_TOOL,
+} from '@agnes/intelligent-ui-contract'
 import { type Context, defineAgnesPlugin, defineTool } from '@agnes/plugin-runtime'
 import { UiCloseParams, UiRenderParams, UiUpdateParams } from '@agnes/protocol/gen/intelligent-ui'
 import { Type } from '@sinclair/typebox'
@@ -127,7 +132,7 @@ export default defineAgnesPlugin({
     off.push(
       plugin.tools.register(
         defineTool({
-          name: 'ui_submit',
+          name: UI_SUBMIT_TOOL,
           description:
             'Collect an authenticated surface form submission. Only the deferred surface action can call this tool; answering never grants permission.',
           parameters: Type.Object(

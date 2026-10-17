@@ -29,7 +29,6 @@ import { createSessionController } from './app/session-controller.js'
 import { createSubmissionController } from './app/submission-controller.js'
 import { createTurnController } from './app/turn-controller.js'
 import { readyRosterModules } from './client-modules/reconcile/roster.js'
-import { mountIntelligentUi } from './intelligent-ui/mount.js'
 import '@agnes/web-admin/settings/registry'
 import type {
   ConfigSnapshot,
@@ -783,6 +782,23 @@ let referenceSessionPending: Promise<Session> | undefined
 const removeHomeEntries = registerBuiltinHomeEntries()
 const clientModules = await startClientModules({
   agnes: client,
+  presentation: {
+    revealConversation: () => tracePanel.setOpen(false),
+    focusApproval: () => {
+      searchApproval()
+      approvalRuntime.focus()
+    },
+    async listComponents(sessionId) {
+      if (!profileName) return []
+      return (await client.clientModules.list(profileName, sessionId)).rows ?? []
+    },
+    subscribeComponents(listener) {
+      customModuleListeners.add(listener)
+      return () => {
+        customModuleListeners.delete(listener)
+      }
+    },
+  },
   claim: claimSlotCard,
   clientProfileCaller: async (module, service, input, options) => {
     const response = await fetch('/api/client-modules/profile', {
@@ -1036,31 +1052,6 @@ const conversationRuntime = clientModules.conversation as NonNullable<typeof cli
 if (!conversationRuntime) throw new Error('missing conversation region')
 const renderer = clientModules.transcript as NonNullable<typeof clientModules.transcript>
 if (!renderer) throw new Error('missing transcript region')
-const unmountIntelligentUi = mountIntelligentUi({
-  resources: clientModules.resources,
-  customModules: {
-    theme: clientModules.theme,
-    async list(sessionId) {
-      if (!profileName) return []
-      return (await client.clientModules.list(profileName, sessionId)).rows
-    },
-    subscribe(listener) {
-      customModuleListeners.add(listener)
-      return () => {
-        customModuleListeners.delete(listener)
-      }
-    },
-  },
-  client,
-  registry: clientModules.registry,
-  session: clientModules.session,
-  locale: clientModules.locale,
-  revealInline: () => tracePanel.setOpen(false),
-  approval: () => {
-    searchApproval()
-    approvalRuntime.focus()
-  },
-})
 
 // 渲染时取词：t 只在渲染/组装瞬间调用；语言切换后由订阅重跑渲染函数，命令式区域整体重建。
 const t: Translate = (key, vars) => clientModules.locale.t(key, vars)
@@ -2272,7 +2263,6 @@ onPageHide(() => {
   removeHomeEntries()
   newSessionDialog.dispose()
   unbindDialogSheets()
-  unmountIntelligentUi()
   firstRun.dispose()
   const dockHost = dockControlsHost
   if (dockHost) unmountWorkbench(dockHost)

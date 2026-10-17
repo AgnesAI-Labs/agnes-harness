@@ -27,6 +27,7 @@ import {
   SessionService,
   ThemeService,
 } from './services.js'
+import { type PresentationHost, PresentationService } from './services-presentation.js'
 import type { SlotName } from './slots.js'
 
 export interface ClientModule {
@@ -56,6 +57,7 @@ export interface ClientContext extends Context {
   availability: ContributionAvailability
   homeEntries: ReturnType<typeof scopedHomeEntries>
   resources: ClientResourceService
+  presentation: PresentationHost
   presentationRoles: ReturnType<typeof scopedPresentationRoles>
 }
 
@@ -197,6 +199,11 @@ export function clientModule(mod: ClientModule): {
       })
       const availability = contributionAvailability(config, (off) => {
         ctx.effect(() => off)
+      })
+      const presentation = getService?.('presentation', false)
+      Object.defineProperty(ctx, 'presentation', {
+        value: presentation instanceof PresentationService ? presentation.host : {},
+        configurable: true,
       })
       Object.defineProperty(ctx, 'presentationRoles', {
         value: scopedPresentationRoles(config, (off) => {

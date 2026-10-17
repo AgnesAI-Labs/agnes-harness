@@ -1246,6 +1246,30 @@ importers:
         specifier: 3.4.0
         version: 3.4.0
 
+  packages/package-manager/bundled-plugins/goal-ui:
+    devDependencies:
+      '@agnes/web-client':
+        specifier: workspace:*
+        version: link:../../../web-client
+      '@agnes/web-ui':
+        specifier: workspace:*
+        version: link:../../../web-ui
+      react:
+        specifier: 18.3.1
+        version: 18.3.1
+
+  packages/package-manager/bundled-plugins/interaction-ui:
+    devDependencies:
+      '@agnes/web-client':
+        specifier: workspace:*
+        version: link:../../../web-client
+      '@agnes/web-ui':
+        specifier: workspace:*
+        version: link:../../../web-ui
+      react:
+        specifier: 18.3.1
+        version: 18.3.1
+
   packages/plugin-runtime:
     dependencies:
       '@agnes/cordis':

@@ -1,5 +1,6 @@
 import { resolvePluginMetadata } from '@agnes/protocol'
 import { type LocaleService, SlotOutlet, type SlotRegistry, SlotsProvider } from '@agnes/web-client'
+import { RegisteredConversationCard } from '@agnes/web-conversation/conversation-registry'
 import { createRegionRenderer, useDocumentLanguage } from '@agnes/web-ui'
 import { ConversationUsage } from '@agnes/web-ui/conversation'
 import {
@@ -11,7 +12,6 @@ import {
 } from '@agnes/web-units'
 import { type ReactElement, useSyncExternalStore } from 'react'
 import { flushSync } from 'react-dom'
-import { QuestionDock } from '../intelligent-ui/question-dock.js'
 import { LoopPicker } from '../loop-picker.js'
 import { businessAgentSuggestions } from '../pages/business-agents.js'
 import { loadReplySuggestion } from '../reply-suggestion.js'
@@ -57,7 +57,10 @@ export function ComposerDshFrame({
           owner={{ composerId: 'composer' }}
           hideWhenEmpty={true}
         />
-        <QuestionDock />
+        <RegisteredConversationCard
+          card={{ kind: 'composer.before-input', data: {} }}
+          context={{ t: (key) => key }}
+        />
         <Composer
           ref={setHandle}
           dependencies={dependencies}

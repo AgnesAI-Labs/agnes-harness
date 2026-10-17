@@ -7,8 +7,11 @@ import type {
   UiSurfaceRecord,
 } from '@agnes/protocol/gen/intelligent-ui'
 import { describe, expect, it } from 'vitest'
-import { IntelligentUiClient } from '../../src/intelligent-ui/client.js'
-import type { IntelligentUiServer, UiCommandStorage } from '../../src/intelligent-ui/types.js'
+import { IntelligentUiClient } from '../../../web-conversation/src/intelligent-ui/client.js'
+import type {
+  IntelligentUiServer,
+  UiCommandStorage,
+} from '../../../web-conversation/src/intelligent-ui/types.js'
 import { financeRecord, uiPage, uiReceipt } from './fixture.js'
 
 function sourceAt(sources: object | undefined, key: string): UiSourceStatus | undefined {

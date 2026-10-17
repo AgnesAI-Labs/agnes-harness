@@ -333,6 +333,13 @@
             "$ref": "#/$defs/UiComponentDeclaration"
           }
         },
+        "requiresBackendRows": {
+          "description": "Optional presentation dependencies. Mount this client only while every named backend row is active in the current observed runtime target. This grants no backend authority; absent or unobserved dependencies fail closed.",
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[^\\u0000-\\u001f]+$" }
+        },
         "lifetime": {
           "enum": ["profile", "session"],
           "description": "Defaults to session for legacy modules. Profile contributions always follow current activation, independently of the selected session."

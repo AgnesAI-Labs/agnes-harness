@@ -55,6 +55,8 @@
       "consumers": [
         "examples/community/deliverables-gallery",
         "packages/package-manager/bundled-plugins/deliverables-ui",
+        "packages/package-manager/bundled-plugins/goal-ui",
+        "packages/package-manager/bundled-plugins/interaction-ui",
         "packages/resource-control-web",
         "packages/web",
         "packages/web-admin",

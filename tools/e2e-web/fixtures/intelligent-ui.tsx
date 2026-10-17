@@ -9,15 +9,15 @@ import {
 } from '@agnes/web-ui'
 import { Approval } from '@agnes/web-units'
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import { IntelligentUiClient } from '../../../packages/web/src/intelligent-ui/client.js'
+import { Dock } from '../../../packages/web/src/workbench/dock.js'
+import { financeRecord, uiPage } from '../../../packages/web/test/intelligent-ui/fixture.js'
+import { IntelligentUiClient } from '../../../packages/web-conversation/src/intelligent-ui/client.js'
 import {
   IntelligentInline,
   IntelligentPanel,
   type UiPlacementBinding,
-} from '../../../packages/web/src/intelligent-ui/placements.js'
-import type { IntelligentUiServer } from '../../../packages/web/src/intelligent-ui/types.js'
-import { Dock } from '../../../packages/web/src/workbench/dock.js'
-import { financeRecord, uiPage } from '../../../packages/web/test/intelligent-ui/fixture.js'
+} from '../../../packages/web-conversation/src/intelligent-ui/placements.js'
+import type { IntelligentUiServer } from '../../../packages/web-conversation/src/intelligent-ui/types.js'
 
 // Browser-only fake App Server with persisted synthetic facts. Real catalog, shared client,
 // placements, dock and approval component; never executes a business tool or grants permission.

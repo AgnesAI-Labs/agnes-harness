@@ -304,3 +304,12 @@ export const uiDataSourceKind = defineKind<UiDataSourceInstance, UiDataSourcePor
     if (!refreshCapabilities(source.capabilities)) throw new Error('ui data source capabilities are invalid')
   },
 })
+
+export {
+  readUiAnswerFact,
+  UI_ANSWER_EVENTS,
+  UI_ANSWER_OWNER,
+  UI_SUBMIT_TOOL,
+  type UiAnswerFact,
+  type UiAnswers,
+} from './submissions.js'

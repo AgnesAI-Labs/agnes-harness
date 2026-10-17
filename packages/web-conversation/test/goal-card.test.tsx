@@ -1,11 +1,13 @@
 /** @vitest-environment happy-dom */
 import type { UITimeline } from '@agnes/protocol'
+import { type ClientContext, presentationRoles } from '@agnes/web-client'
 import { setLocaleTranslator, tr } from '@agnes/web-foundation/locale-bridge'
 import { webLocaleCatalog } from '@agnes/web-foundation/locale-catalog'
 import { renderRegion, unmountRegion } from '@agnes/web-ui'
 import { flushSync } from 'react-dom'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { goalSlot, renderGoalCard } from '../src/goal-card.js'
+import { apply as applyGoalPresentation } from '../src/goal-presentation.js'
 import { GoalPanel } from '../src/workbench/goal-panel.js'
 import { workbenchLocaleCatalog } from '../src/workbench/locales.js'
 
@@ -19,6 +21,16 @@ const goal = {
   maxRounds: 2,
   creditsUsed: 1,
 } as const
+let stopPresentation: () => void
+beforeEach(() => {
+  stopPresentation = applyGoalPresentation({
+    locale: { register: () => () => {} },
+    presentationRoles: {
+      register: (provider: Parameters<typeof presentationRoles.register>[1]) =>
+        presentationRoles.register('goal-test', provider),
+    },
+  } as unknown as ClientContext)
+})
 let host: HTMLElement, panel: HTMLElement
 function renderBoth(...args: Parameters<typeof renderGoalCard>) {
   renderGoalCard(...args)
@@ -26,6 +38,7 @@ function renderBoth(...args: Parameters<typeof renderGoalCard>) {
   renderRegion(panel, <GoalPanel context={{ t: tr, data: { timeline, disabled, command } }} />)
 }
 afterEach(() => {
+  stopPresentation()
   if (host) unmountRegion(host)
   if (panel) unmountRegion(panel)
   document.body.replaceChildren()

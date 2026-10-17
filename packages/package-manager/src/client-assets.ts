@@ -115,6 +115,7 @@ function decodeUrlPathSegments(segments: readonly string[]): string[] | null {
  * 同一份清单在任何一条路径上得到的摘要字节都相同。
  */
 export type NormalizedClientContribution = {
+  requiresBackendRows?: ClientContribution['requiresBackendRows']
   lifetime?: ClientContribution['lifetime']
   homeEntries?: ClientContribution['homeEntries']
   examplePages?: ClientContribution['examplePages']
@@ -137,6 +138,9 @@ export function normalizeClientContribution(client: ClientContribution): Normali
   if (client.publicConfig !== undefined) validatePublicClientConfig(client.publicConfig)
   const set = (values: readonly string[] | undefined): string[] => [...new Set(values ?? [])].sort()
   return {
+    ...(client.requiresBackendRows === undefined
+      ? {}
+      : { requiresBackendRows: set(client.requiresBackendRows) }),
     ...(client.lifetime === undefined ? {} : { lifetime: client.lifetime }),
     ...(client.homeEntries === undefined ? {} : { homeEntries: client.homeEntries }),
     ...(client.examplePages === undefined ? {} : { examplePages: set(client.examplePages) }),

@@ -30,7 +30,8 @@
               "inputEventTypes": [
                 "x/agnes/interaction/requested",
                 "x/agnes/intelligent-ui/action.received",
-                "x/agnes/intelligent-ui/action.succeeded"
+                "x/agnes/intelligent-ui/action.succeeded",
+                "x/agnes/intelligent-ui/surface.opened"
               ],
               "maxStateBytes": 262144
             }
@@ -52,5 +53,13 @@
         }
       }
     ]
+  },
+  "peerDependencies": {
+    "@agnes/intelligent-ui": "^0.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@agnes/intelligent-ui": {
+      "optional": true
+    }
   }
 }

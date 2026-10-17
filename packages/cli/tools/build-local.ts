@@ -54,6 +54,7 @@ export async function copyBundledPlugins(outputDirectory: string, version = '0.0
         force: false,
         errorOnExist: true,
       })
+    if (existsSync(join(source, 'NOTICE'))) await cp(join(source, 'NOTICE'), join(destination, 'NOTICE'))
     if (helper === 'document-reader') await prepareDocumentReader(destination)
     await stampBundledPackageVersion(destination, version)
     await checkPackagedClientModules(destination)

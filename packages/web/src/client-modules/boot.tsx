@@ -16,6 +16,8 @@ import {
   CommandService,
   type HostAgnesClient,
   LocaleService,
+  type PresentationHost,
+  PresentationService,
   SessionService,
   type SlotEntry,
   SlotOutlet,
@@ -118,6 +120,7 @@ export type ClaimResolver = (entry: SlotEntry, extId: string) => boolean
 export async function startClientModules(options: {
   /** Raw, host-owned SDK client. `clientModule()` exposes a narrower facade to each module. */
   agnes: HostAgnesClient
+  presentation?: PresentationHost
   /** Same-origin BFF only; absent keeps browser service calls fail-closed. */
   clientProfileCaller?: ClientProfileCaller | undefined
   clientServiceCaller?: ClientServiceCaller | undefined
@@ -158,6 +161,7 @@ export async function startClientModules(options: {
   claim?: ClaimResolver | undefined
 }): Promise<ClientModulesRuntime> {
   const ctx = new Context()
+  new PresentationService(ctx, options.presentation)
   await ctx.plugin(SlotRegistry)
   const builtinUnits = new BuiltinWebUnitRegistry()
   const pref = readThemePreference(safeThemeStorage())
