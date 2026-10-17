@@ -45,4 +45,21 @@ describe('the Jev loop under a code or hybrid disclosure', () => {
     })
     expect(r.finished?.[0]).toBe('completed')
   })
+  it('refuses a new turn before it claims a queued steer', async () => {
+    const r = await run([{ pick: PICK_LS }], {
+      view: { tools: WITH_CODE, platform: { disclosed: WITH_CODE } },
+      inputs: [
+        { content: [{ type: 'text', text: 'goal' }] },
+        { content: [{ type: 'text', text: 'also check docs' }], target: 'next-step' },
+      ],
+    })
+    expect(r.finished?.[0]).toBe('error')
+    expect(r.checkpoint?.state).toMatchObject({ workspace: { notes: [] } })
+  })
+  it('refuses a cancelled turn as unsupported before it reports it aborted', async () => {
+    const r = await run([{ pick: PICK_LS }], {
+      view: { tools: WITH_CODE, platform: { disclosed: WITH_CODE }, cancelled: true },
+    })
+    expect(r.finished).toEqual(['error', expect.objectContaining({ code: 'JEV_UNSUPPORTED_DISCLOSURE' })])
+  })
 })
