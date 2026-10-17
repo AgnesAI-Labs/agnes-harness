@@ -115,7 +115,7 @@ export type ManualRoute = RouteDecl & {
  * function cannot answer: whether a route may state that its endpoint is final. This check stays
  * either way, because a route is also built programmatically and never meets the schema.
  */
-function requireAbsoluteHttpUrl(decl: RouteDecl): void {
+export function requireAbsoluteHttpUrl(decl: Pick<RouteDecl, 'route' | 'baseUrl'>): void {
   let url: URL
   try {
     url = new URL(decl.baseUrl)

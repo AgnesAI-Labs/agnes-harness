@@ -34,6 +34,8 @@ The official model adapters, MCP HTTP/SSE transports, URL/npm/git package downlo
 
 In **Settings → Models → account details**, keep using Base URL for an account endpoint override. The schema-rendered network fields configure optional `networkTimeouts.requestMs`, `connectMs` and `streamIdleMs` (integer milliseconds, 1–3600000). These fields also exist on configuration save/OAuth commit inputs and `provider.routes[]`. Empty fields use defaults: request 300000 ms, connection 10000 ms, stream idle 60000 ms; existing stricter model/turn deadlines still apply. `{}` resets saved overrides. Changes apply to newly assembled sessions; they do not retarget an in-flight request. Stream idle measures gaps in transport/model output, and cancellation clears timers and aborts pending work. Codex uses SSE transport to apply the same proxy and deadline settings. Custom community adapters own their own transport behavior.
 
+Saving or testing an existing account with a changed endpoint requires an explicit credential: enter the API key again, or select a credential reference again for a side model. Otherwise `CONFIG_CREDENTIAL_REQUIRED` leaves the saved revision unchanged. Save and test validate the effective Base URL with the serving adapter’s rules and locate invalid URL errors at `baseUrl`; an older invalid saved URL is refused on its next save or test.
+
 <a id="profile-可配置面"></a>
 
 ## Profile fields

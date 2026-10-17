@@ -64,6 +64,7 @@ import { createWin32Platform } from './adapters/platform.js'
 import { type CodexLoginDependencies, createCodexLogin } from './codex-login.js'
 import { automaticFastModel } from './configuration-auto-slots.js'
 import { configurationCredentialFailure } from './configuration-credential-failure.js'
+import { parseBaseUrl, requireEndpointCredential, validateEndpoint } from './configuration-endpoint.js'
 import { ConfigurationError, type ConfigurationErrorCode } from './configuration-error.js'
 import {
   applyModelConfiguration,
@@ -232,28 +233,6 @@ function stringField(value: unknown, max: number, nonempty = true): string {
   return value
 }
 
-function parseBaseUrl(value: unknown): string {
-  const raw = stringField(value, 2048)
-  let url: URL
-  try {
-    url = new URL(raw)
-  } catch {
-    throw new ConfigurationError('CONFIG_INVALID_INPUT')
-  }
-  if (
-    (url.protocol !== 'http:' && url.protocol !== 'https:') ||
-    url.hostname.length === 0 ||
-    url.username !== '' ||
-    url.password !== '' ||
-    url.hash !== '' ||
-    url.search !== '' ||
-    url.hostname.includes('{') ||
-    raw !== raw.trim()
-  )
-    throw new ConfigurationError('CONFIG_INVALID_INPUT')
-  return raw
-}
-
 function parseApiKey(value: unknown): string {
   const key = stringField(value, 65_536)
   if (!isUsableCredential(key)) throw new ConfigurationError('CONFIG_INVALID_INPUT')
@@ -276,7 +255,7 @@ function providerFor(value: unknown, authType?: 'api-key' | 'oauth'): Configurat
 }
 
 function providerEndpoint(entry: ConfigurationProvider, value: unknown): string {
-  const baseUrl = value === undefined ? entry.baseUrl : parseBaseUrl(value)
+  const baseUrl = value === undefined ? entry.baseUrl : parseBaseUrl(stringField(value, 2048))
   const defaultUrl = entry.baseUrl.endsWith('/') ? entry.baseUrl.slice(0, -1) : entry.baseUrl
   const requestedUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl
   if (requestedUrl !== defaultUrl && !COMPATIBLE_APIS.has(entry.api) && !isPayloadOnlyEntry(entry))
@@ -887,10 +866,8 @@ export function createConfigurationService(
     const state = await loadState()
     const row = selectedAccount(state, input)
     const baseUrl = input.baseUrl === undefined ? (row?.baseUrl ?? parsed.baseUrl) : parsed.baseUrl
-    // Never forward an existing account's credential to an edited destination implicitly.
-    const changedEndpoint = row && baseUrl.replace(/\/$/, '') !== row.baseUrl.replace(/\/$/, '')
-    if (changedEndpoint && parsed.apiKey === undefined && parsed.credentialRef === undefined)
-      throw new ConfigurationError('CONFIG_CREDENTIAL_REQUIRED')
+    validateEndpoint(parsed.entry, baseUrl)
+    requireEndpointCredential(baseUrl, row, parsed)
     if (isPayloadOnlyEntry(parsed.entry))
       return testPayloadOnlyAccount(
         { baseUrl, model: parsed.model, credentialRef: parsed.credentialRef, row },
@@ -995,6 +972,8 @@ export function createConfigurationService(
       input.baseUrl === undefined
         ? (existing?.baseUrl ?? providerEndpoint(entry, undefined))
         : providerEndpoint(entry, input.baseUrl)
+    validateEndpoint(entry, baseUrl)
+    requireEndpointCredential(baseUrl, existing, parsed)
     if (isPayloadOnlyEntry(entry)) {
       const row = payloadOnlyAccountRow({
         input,

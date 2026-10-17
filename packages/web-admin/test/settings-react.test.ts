@@ -210,6 +210,17 @@ it('operates the React settings pane and account dialog without losing native fo
     expect(dialog.querySelectorAll('.config-account')).toHaveLength(1)
     expect(dialog.querySelector('#config-accounts .config-account-select')).toBeTruthy()
     dialog.querySelector<HTMLButtonElement>('#config-accounts .config-account-select')?.click()
+    const baseUrl = dialog.querySelector<HTMLInputElement>('#config-base-url')
+    if (!baseUrl) throw new Error('missing base URL field')
+    baseUrl.value = 'https://replacement.example.invalid/v1'
+    baseUrl.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(dialog.querySelector('#config-key-hint')?.textContent).toBe(zhT('settings.key.endpointChanged'))
+    dialog.querySelector<HTMLButtonElement>('#config-test')?.click()
+    await vi.waitFor(() =>
+      expect(dialog.querySelector('#config-api-key')?.getAttribute('aria-invalid')).toBe('true'),
+    )
+    baseUrl.value = snapshot.accounts?.[0]?.baseUrl ?? ''
+    baseUrl.dispatchEvent(new Event('input', { bubbles: true }))
     // Timeouts are chosen in seconds; a stored value no preset names stays as 自定义.
     const field = dialog.querySelector<HTMLSelectElement>('[data-testid="account-network-connectMs"]')
     expect(field?.value).toBe('custom')
@@ -227,6 +238,16 @@ it('operates the React settings pane and account dialog without losing native fo
     await vi.waitFor(() =>
       expect(dialog.querySelector<HTMLButtonElement>('#config-save')?.disabled).toBe(false),
     )
+    save.mockRejectedValueOnce({
+      data: {
+        reason: 'CONFIG_INVALID_INPUT',
+        field: 'baseUrl',
+        messageKey: 'appServer.errors.invalidParams',
+      },
+    })
+    dialog.querySelector<HTMLButtonElement>('#config-save')?.click()
+    await vi.waitFor(() => expect(baseUrl.getAttribute('aria-invalid')).toBe('true'))
+    expect(dialog.querySelector('#config-error')?.textContent).toBe(zhT('settings.config.invalidBaseUrl'))
     dialog.querySelector<HTMLButtonElement>('#config-save')?.click()
     await vi.waitFor(() =>
       expect(save).toHaveBeenCalledWith(

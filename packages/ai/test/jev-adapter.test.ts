@@ -2,7 +2,14 @@ import { createHash } from 'node:crypto'
 import type { AiErrorCode, InferenceEvent, ModelRecord, RequestBody, RouteDecl } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import type { AdapterStreamOptions, WireEvent } from '../src/index.js'
-import { AiSetupError, createProvider, JEV_WIRE_API, JevAdapter, NullContractStore } from '../src/index.js'
+import {
+  AiSetupError,
+  createProvider,
+  JEV_WIRE_API,
+  JevAdapter,
+  NullContractStore,
+  validateModelBaseUrl,
+} from '../src/index.js'
 import { fakeModel } from '../testkit/index.js'
 
 // Every case here runs against a scripted `fetch`, so nothing opens a socket. The same adapter against
@@ -1076,6 +1083,7 @@ describe('assembly', () => {
     ['https://openrouter.ai/api/v1'],
   ])('accepts the base URL %s', (baseUrl) => {
     expect(() => harness([], { routes: [routeDecl({ baseUrl })] })).not.toThrow()
+    expect(() => validateModelBaseUrl(routeDecl({ baseUrl }))).not.toThrow()
   })
 
   const rejected: Array<[string, () => JevRoute[], string]> = [
@@ -1154,6 +1162,8 @@ describe('assembly', () => {
   it.each(rejected)('refuses %s', (_name, routes, code) => {
     const error = setupError(() => harness([], { routes: routes() }))
     expect(error.code).toBe(code)
+    if (code === 'INVALID_BASE_URL')
+      expect(() => validateModelBaseUrl(routes()[0] as JevRoute)).toThrow(/INVALID_BASE_URL/)
     expect(error.message).not.toContain(SENTINEL)
     expect(error.message).not.toContain('host.invalid')
   })
