@@ -58,6 +58,7 @@ export type { ExamplePageContribution } from './example-pages.js'
 export type { ExternalSpecifier } from './externals.js'
 export { BUILDER_VERSION, externals } from './externals.js'
 export { factChainLinks, RegistrableLink, workbenchNavigation } from './fact-chain-links.js'
+export { type GoalCommand, type GoalView, goalCommand, readGoal } from './goals.js'
 export type { IntelligentUiRenderer, IntelligentUiRendererApi } from './intelligent-ui-renderer.js'
 export { slotLocaleCatalog } from './locales.js'
 export type { SlotOutletProps } from './outlet.js'
@@ -102,6 +103,7 @@ export {
   ThemeService,
   UI_LOCALES,
 } from './services.js'
+export { type PresentationHost, PresentationService } from './services-presentation.js'
 export type {
   ChainRenderOpts,
   ChainSelect,
