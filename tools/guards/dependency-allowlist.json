@@ -1,4 +1,5 @@
 {
+  "@agnes/context-doctor": ["@agnes/extension-api", "@agnes/web-client", "@agnes/web-ui"],
   "@agnes/e2e-web": ["@agnes/sdk", "@agnes/protocol", "@agnes/observability"],
   "@agnes/cosmokit": [],
   "@agnes/cordis": ["@agnes/cosmokit"],

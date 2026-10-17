@@ -1,0 +1,10 @@
+{
+  "client": {
+    "entry": "./client.js",
+    "lifetime": "session",
+    "slotCatalogVersion": "dsh-client-slots/v1",
+    "slots": [],
+    "services": ["context.read"],
+    "projections": []
+  }
+}

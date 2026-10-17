@@ -35,3 +35,5 @@
 扩展作者可以在 `context` hook 返回 `refreshOnRequest: true`，让该贡献者在每次模型请求前刷新；其他贡献者仍保留每轮快照。变化的时钟信息使用 `additionalContext` 尾部注释，仓库规则使用系统 section。
 
 `getSurface()` 中的 `messageKind` 区分真实输入和自动生成的 `runtime_context` 注释；压缩计划选择用户问题时应跳过后者。
+
+[可选上下文元数据诊断](context-doctor.zh-CN.md)。

@@ -35,3 +35,5 @@ Set `rulesEnabled` or `timeEnabled` to `false` to disable that contributor; `ref
 For extension authors, return `refreshOnRequest: true` from a `context` hook to refresh that contributor before each model request. Other contributors retain their once-per-turn snapshot. Use `additionalContext` for changing clock notes; stable repository rules use system sections.
 
 `getSurface()` exposes `messageKind` to distinguish actual input from automatic `runtime_context` notes. Compaction plans selecting user questions should skip those notes.
+
+[Optional context metadata diagnostics](context-doctor.md).

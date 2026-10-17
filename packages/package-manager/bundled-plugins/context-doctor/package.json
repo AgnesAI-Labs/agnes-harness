@@ -1,0 +1,135 @@
+{
+  "name": "@agnes/context-doctor",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": "./index.mjs",
+  "files": [
+    "index.mjs",
+    "src",
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "typecheck": "tsc -b"
+  },
+  "agnes": {
+    "kinds": [
+      "ui"
+    ],
+    "plugins": [
+      {
+        "id": "ext:agnes/context-doctor",
+        "export": "main",
+        "apiRange": "^4.0.0",
+        "runtime": "in-process",
+        "inject": [
+          "hooks",
+          "projections",
+          "services",
+          "eventLog",
+          "self"
+        ],
+        "capabilities": {
+          "hooks": [
+            "session_start",
+            "context",
+            "before_request",
+            "before_compact",
+            "compact",
+            "shutdown"
+          ],
+          "events": true,
+          "ui": true,
+          "services": [
+            {
+              "name": "context.read",
+              "kind": "query",
+              "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              },
+              "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "version",
+                  "status",
+                  "snapshot"
+                ],
+                "properties": {
+                  "version": {
+                    "const": 1
+                  },
+                  "status": {
+                    "enum": [
+                      "live",
+                      "unknown"
+                    ]
+                  },
+                  "snapshot": {
+                    "type": [
+                      "object",
+                      "null"
+                    ]
+                  }
+                }
+              },
+              "timeoutMs": 1000,
+              "maxResultBytes": 32768
+            }
+          ]
+        },
+        "metadata": {
+          "displayName": "Context doctor",
+          "summary": "Read-only context estimates and compaction metadata for the selected session.",
+          "description": "Optional metadata diagnostics. Estimates are not tokenizer measurements; unavailable facts remain unknown.",
+          "category": "memory-context",
+          "locales": {
+            "zh-CN": {
+              "displayName": "\u4e0a\u4e0b\u6587\u8bca\u65ad",
+              "summary": "\u67e5\u770b\u5f53\u524d\u4f1a\u8bdd\u7684\u4e0a\u4e0b\u6587\u4f30\u7b97\u4e0e\u538b\u7f29\u5143\u6570\u636e\u3002",
+              "description": "\u53ef\u9009\u7684\u53ea\u8bfb\u5143\u6570\u636e\u8bca\u65ad\u3002\u4f30\u7b97\u4e0d\u4ee3\u8868 tokenizer \u5b9e\u6d4b\uff0c\u7f3a\u5931\u4e8b\u5b9e\u663e\u793a\u672a\u77e5\u3002"
+            }
+          }
+        }
+      }
+    ],
+    "clientDescriptors": [
+      {
+        "rowId": "ext:agnes/context-doctor",
+        "path": "./src/agnes.client.json"
+      }
+    ],
+    "metadata": {
+      "displayName": "Context doctor",
+      "summary": "Read-only context estimates and compaction metadata for the selected session.",
+      "description": "Optional metadata diagnostics. Estimates are not tokenizer measurements; unavailable facts remain unknown.",
+      "category": "memory-context",
+      "locales": {
+        "zh-CN": {
+          "displayName": "\u4e0a\u4e0b\u6587\u8bca\u65ad",
+          "summary": "\u67e5\u770b\u5f53\u524d\u4f1a\u8bdd\u7684\u4e0a\u4e0b\u6587\u4f30\u7b97\u4e0e\u538b\u7f29\u5143\u6570\u636e\u3002",
+          "description": "\u53ef\u9009\u7684\u53ea\u8bfb\u5143\u6570\u636e\u8bca\u65ad\u3002\u4f30\u7b97\u4e0d\u4ee3\u8868 tokenizer \u5b9e\u6d4b\uff0c\u7f3a\u5931\u4e8b\u5b9e\u663e\u793a\u672a\u77e5\u3002"
+        }
+      }
+    }
+  },
+  "peerDependencies": {
+    "@agnes/extension-api": "^4.0.0",
+    "@agnes/web-client": "0.0.0",
+    "@agnes/web-ui": "0.0.0",
+    "react": "18.3.1"
+  },
+  "devDependencies": {
+    "@agnes/extension-api": "workspace:*",
+    "@agnes/web-client": "workspace:*",
+    "@agnes/web-ui": "workspace:*",
+    "@types/react": "18.3.12",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "@types/react-dom": "18.3.1"
+  }
+}
