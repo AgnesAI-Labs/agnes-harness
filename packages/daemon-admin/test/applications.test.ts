@@ -36,7 +36,9 @@ async function fixture() {
       source: { type: 'file', ref: 'file:./synthetic' },
       integrity: `sha256-${id.repeat(64)}`,
       trust: 'trusted',
-      enabled: true,
+      license: 'Apache-2.0',
+      state: { installed: '2026-10-18T00:00:00.000Z', trusted: '2026-10-18T00:00:00.000Z', enabled: true },
+      previous: null,
       application: { id, brand: { name: { en: id } } },
       dependencies: {},
     },
@@ -173,7 +175,10 @@ it('switches presentation without changing execution profile, hash, composition 
     homeDir: f.home,
   }
   const resolve = async () =>
-    resolveProfile({ builtin: 'local-dev', user: await f.config.profileInput() }, env)
+    resolveProfile(
+      { builtin: 'local-dev', user: { name: 'local-dev', ...(await f.config.profileInput()) } },
+      env,
+    )
   const before = await resolve(),
     tree = resolveComposition(before)
   const sessions = new CompositionSessionStore(f.directory)
