@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { setTimeout as delay } from 'node:timers/promises'
 import { pathToFileURL } from 'node:url'
 import { run } from './distributions.mjs'
@@ -17,6 +18,15 @@ export async function connect(source, home) {
     timeouts: { request: 90_000 },
   })
   await sdk.initialize()
+  const call = sdk.call.bind(sdk)
+  sdk.call = async (method, ...args) => {
+    try {
+      return await call(method, ...args)
+    } catch (cause) {
+      if (cause instanceof Error) cause.message = `Upgrade RPC ${method}: ${cause.message}`
+      throw cause
+    }
+  }
   return sdk
 }
 
@@ -60,6 +70,19 @@ export async function runtime(distribution, home, cwd) {
         }
         return false
       }, 'crashed daemon exit')
+      // The earlier writer's bounded lease remains authoritative after process loss. Wait for
+      // natural expiry rather than deleting a claim or changing clocks to force an upgrade.
+      const db = new DatabaseSync(join(home, 'data/sessions.db'), { readOnly: true })
+      let expires
+      try {
+        expires = db.prepare('SELECT max(until) AS expires FROM writer_claims').get().expires
+      } finally {
+        db.close()
+      }
+      const wait = Math.max(0, Number(expires ?? 0) - Date.now() + 50)
+      assert.ok(wait <= 60_000, 'previous writer lease exceeds bounded upgrade recovery budget')
+      console.info(`Crash recovery: waiting ${wait}ms for the previous writer lease`)
+      if (wait) await delay(wait)
     },
   }
 }

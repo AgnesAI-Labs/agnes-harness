@@ -6,6 +6,7 @@ export const extension = 'upgrade-gate/main'
 export async function writePackage(root, managed = true) {
   const directory = join(root, 'test-package')
   await mkdir(directory)
+  await mkdir(join(directory, 'client'))
   const empty = { type: 'object', properties: {}, additionalProperties: false }
   const services = ['status', 'configuration', 'check', 'retry', 'reconcile', 'configure'].map((method) => ({
     name: `server.${method}`,
@@ -42,7 +43,7 @@ export async function writePackage(root, managed = true) {
             export: 'main',
             apiRange: '^4.0.0',
             runtime: 'in-process',
-            inject: managed ? ['profileRuntime'] : [],
+            inject: managed ? ['services', 'profileRuntime'] : [],
             capabilities: {
               ui: true,
               ...(managed
@@ -79,12 +80,12 @@ export async function writePackage(root, managed = true) {
             },
           },
         ],
-        clientDescriptors: [{ rowId: `ext:${extension}`, path: './agnes.client.json' }],
+        clientDescriptors: [{ rowId: `ext:${extension}`, path: './client/agnes.client.json' }],
       },
     }),
   )
   await writeFile(
-    join(directory, 'agnes.client.json'),
+    join(directory, 'client', 'agnes.client.json'),
     JSON.stringify({
       client: {
         entry: './client.mjs',
@@ -95,12 +96,12 @@ export async function writePackage(root, managed = true) {
       },
     }),
   )
-  await writeFile(join(directory, 'client.mjs'), 'export default { apply() {} }\n')
+  await writeFile(join(directory, 'client', 'client.mjs'), 'export default { apply() {} }\n')
   await writeFile(
     join(directory, 'index.mjs'),
     managed
       ? `
-export const main = { apply(ctx) {
+export const main = { inject: ['services', 'profileRuntime'], apply(ctx) {
   ctx.profileRuntime.register({ id: 'server',
     configSchema: ${JSON.stringify(empty)}, defaultConfig: {},
     async start(init) {

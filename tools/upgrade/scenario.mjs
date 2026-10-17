@@ -4,15 +4,16 @@ import { existsSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { extension, packageId, writePackage } from './fixture.mjs'
+import { packageId, writePackage } from './fixture.mjs'
 import { connect, eventually, packages } from './runtime.mjs'
 
 const [phase, source, home, workspace, baseUrl] = process.argv.slice(2)
 const stateFile = join(workspace, 'upgrade-state.json')
 const sdk = await connect(source, home)
 const admin = await packages(sdk)
+let serviceOwner
 const scoped = (service, extra = {}) =>
-  sdk.call('_agnes/v1/extension.callScoped', { extension, service, input: {}, ...extra })
+  sdk.call('_agnes/v1/extension.callScoped', { extension: serviceOwner, service, input: {}, ...extra })
 const ledgerRows = () => {
   const db = new DatabaseSync(join(home, 'data/sessions.db'), { readOnly: true })
   try {
@@ -20,6 +21,32 @@ const ledgerRows = () => {
   } finally {
     db.close()
   }
+}
+
+const verifyManaged = async (state) => {
+  if (!state.managed) return
+  const status = (await scoped('server.status')).output
+  console.info('Managed status after upgrade:', JSON.stringify(status))
+  if (status.state !== 'ready') {
+    // An unconfirmed shutdown is a native approval boundary, never an automatic replay.
+    const operationId = randomUUID()
+    const receipt = await scoped('server.reconcile', { operationId })
+    assert.equal(receipt.state, 'approval-required', JSON.stringify({ status, receipt }))
+    const listed = await sdk.call('_agnes/v1/profile.decisions.list', {})
+    const decision = listed.decisions.find((row) => !row.result && !row.invalidation)
+    assert.ok(decision, 'missing native managed recovery decision')
+    await sdk.call('_agnes/v1/profile.decisions.answer', {
+      handle: decision.handle,
+      revision: decision.revision,
+      commandId: randomUUID(),
+      response: { option: 'allowed-once', value: null },
+    })
+    assert.equal((await scoped('server.reconcile', { operationId })).state, 'completed')
+  }
+  await eventually(async () => (await scoped('server.status')).output.state === 'ready', 'managed recovery')
+  assert.equal((await scoped('server.status')).output.state, 'ready')
+  assert.deepEqual((await scoped('server.check')).output, { synthetic: true })
+  console.info('Managed recovery: ready with successful health query')
 }
 
 try {
@@ -46,6 +73,8 @@ try {
       await admin.complete(await sdk.packages.inspect({ ...(await admin.command()), source: packageSource }))
     ).preview
     assert.ok(preview.capabilityHash)
+    serviceOwner = preview.contributions.find((row) => row.kind === 'client')?.id
+    assert.ok(serviceOwner, 'inspection must provide the service owner identity')
     await admin.complete(
       await sdk.packages.install({
         ...(await admin.command()),
@@ -65,7 +94,7 @@ try {
     if (managed) assert.equal((await scoped('server.status')).output.state, 'ready')
     const sessions = []
     for (const kind of ['plain', 'tool', 'attachment', 'present', 'queue']) {
-      const session = await sdk.session.new({ cwd: workspace })
+      const session = await sdk.session.new({ cwd: workspace, sessionKey: `upgrade-${kind}-${randomUUID()}` })
       let attachment
       if (kind === 'attachment') {
         const bytes = Buffer.from('Synthetic attachment retained across upgrade. 中文')
@@ -94,25 +123,51 @@ try {
         await session.prompt(`upgrade ${kind}`)
       }
       if (kind === 'queue') {
+        // Pause is an operation control: establish an open turn before requesting it.
+        void session.prompt('upgrade hold').catch(() => undefined)
+        await eventually(async () => (await session.projectUI()).opState !== null, 'queue turn admission')
         await session.pause()
         await session.followUp('Synthetic queued message')
         assert.match(JSON.stringify(await session.controls()), /Synthetic queued message/)
       }
       const timeline = await session.projectUI(undefined, { surface: 'web' })
-      assert.match(JSON.stringify(timeline), /Synthetic upgrade reply/)
-      if (kind === 'tool') assert.match(JSON.stringify(timeline), /Synthetic tool input/)
-      if (kind === 'present') assert.match(JSON.stringify(timeline), /Upgrade report/)
-      if (kind === 'attachment') assert.match(JSON.stringify(timeline), /upgrade.txt/)
+      assert.ok(
+        JSON.stringify(timeline).includes('Synthetic upgrade reply'),
+        'seed assistant history missing',
+      )
+      if (kind === 'tool')
+        assert.ok(
+          JSON.stringify(timeline).includes('Synthetic tool input'),
+          'read tool result missing from history',
+        )
+      if (kind === 'present')
+        assert.ok(
+          JSON.stringify(timeline).includes('Upgrade report'),
+          'present deliverable missing from history',
+        )
+      if (kind === 'attachment')
+        assert.ok(JSON.stringify(timeline).includes('upgrade.txt'), 'attachment missing from history')
       sessions.push({ kind, id: session.id, timeline, attachment })
     }
-    const fork = await sdk.session.fork(sessions[0].id, sessions[0].timeline.upto)
-    await sdk.session.load(fork.id, { cwd: workspace })
-    await fork.prompt('upgrade fork')
-    sessions.push({
-      kind: 'fork',
-      id: fork.id,
-      timeline: await fork.projectUI(undefined, { surface: 'web' }),
-    })
+    // The pre-watermark distribution supplies the existing-fork upgrade fixture. The recent
+    // baseline cannot create forks because its artifact parser rejects valid null inbox resets.
+    if (!managed) {
+      const forkAt = sessions[0].timeline.turns.at(-1).endSeq
+      assert.ok(forkAt, 'plain turn must have a durable completed boundary')
+      const fork = await sdk.session.fork(sessions[0].id, forkAt)
+      await sdk.session.load(fork.id, { cwd: workspace })
+      await fork.prompt('upgrade fork')
+      sessions.push({
+        kind: 'fork',
+        id: fork.id,
+        timeline: await fork.projectUI(undefined, { surface: 'web' }),
+      })
+    }
+    assert.equal(
+      new Set(sessions.map((row) => row.id)).size,
+      managed ? 5 : 6,
+      'fixture sessions must be distinct',
+    )
     const schedule = await sdk.call('_agnes/v1/schedules.upsert', {
       title: 'Synthetic upgrade schedule',
       prompt: 'upgrade scheduled',
@@ -146,6 +201,7 @@ try {
       stateFile,
       JSON.stringify({
         managed,
+        serviceOwner,
         ledger: ledgerRows(),
         sessions,
         schedule,
@@ -157,14 +213,22 @@ try {
       }),
     )
     console.info(
-      'Seed complete: six writable sessions, package client, managed service, config, schedule, trigger',
+      `Seed complete: ${sessions.length} distinct sessions; managed=${managed}; package client, config, schedule, disabled trigger`,
     )
+  } else if (phase === 'managed') {
+    const state = JSON.parse(await readFile(stateFile, 'utf8'))
+    serviceOwner = state.serviceOwner
+    await verifyManaged(state)
   } else {
     const state = JSON.parse(await readFile(stateFile, 'utf8'))
+    serviceOwner = state.serviceOwner
     const rows = new Map(ledgerRows().map((row) => [`${row.session_key}:${row.seq}`, row]))
     for (const row of state.ledger)
       assert.deepEqual(rows.get(`${row.session_key}:${row.seq}`), row, 'historical event was rewritten')
-    assert.deepEqual(await sdk.config.get(), state.config)
+    const { effect: _currentEffect, ...currentConfig } = await sdk.config.get()
+    const { effect: _previousEffect, ...previousConfig } = state.config
+    // `effect` describes this runtime's application strategy, not persisted account data.
+    assert.deepEqual(currentConfig, previousConfig)
     const prompt = await sdk.call('_agnes/v1/systemPrompt.get', {})
     assert.equal(prompt.config.personaSuffix, state.prompt.config.personaSuffix)
     const schedules = await sdk.call('_agnes/v1/schedules.list', { scope: 'all', includeArchived: true })
@@ -186,6 +250,22 @@ try {
         const rendered = opening.nodes.find((row) => row.id === node.id)
         assert.ok(rendered, `${kind}: history node disappeared`)
         assert.deepEqual(rendered.content, node.content, `${kind}: rendered history changed`)
+        assert.equal(rendered.text, node.text, `${kind}: rendered assistant text changed`)
+      }
+      if (kind === 'present') {
+        const expected = Buffer.from('<h1>Synthetic deliverable</h1>')
+        const artifact = {
+          sha256: createHash('sha256').update(expected).digest('hex'),
+          size: expected.length,
+          mime: 'text/html',
+        }
+        const download = await sdk.call('_agnes/v1/artifact.read', {
+          sessionId: id,
+          laneId: 'main',
+          artifact,
+        })
+        assert.equal(download.ok, true, 'presented deliverable unavailable after upgrade')
+        assert.deepEqual(Buffer.from(download.base64, 'base64'), expected)
       }
       if (attachment?.attachment?.artifact) {
         const bytes = await sdk.call('_agnes/v1/artifact.read', {
@@ -211,12 +291,35 @@ try {
       }
       if (kind === 'queue') {
         assert.match(JSON.stringify(await session.controls()), /Synthetic queued message/)
-        await session.resume()
+        if ((await session.controls()).paused) await session.resume()
+        await eventually(async () => {
+          const after = await session.projectUI()
+          const queued = after.nodes.find(
+            (row) =>
+              row.kind === 'user' && row.content?.some((block) => block.text === 'Synthetic queued message'),
+          )
+          return (
+            after.opState === null &&
+            queued &&
+            after.turns.some((turn) => turn.status === 'completed' && turn.nodeIds.includes(queued.id))
+          )
+        }, 'queued input completes after explicit resume')
       }
       // A real successful turn is stronger than a read-only history preview.
-      const result = await session.prompt(`Continue upgraded ${kind}`)
+      const continuation = `Continue upgraded ${kind}`
+      const result = await session.prompt(continuation)
       assert.equal(result.reason, 'completed', `${kind}: cannot continue`)
-      assert.ok(result.lastSeq > timeline.upto)
+      await eventually(async () => {
+        const after = await session.projectUI(undefined, { surface: 'web' })
+        const user = after.nodes.find(
+          (row) => row.kind === 'user' && row.content?.some((block) => block.text === continuation),
+        )
+        return (
+          after.upto > timeline.upto &&
+          user &&
+          after.turns.some((turn) => turn.status === 'completed' && turn.nodeIds.includes(user.id))
+        )
+      }, `${kind}: persisted completed continuation`)
       console.info(`Upgrade session ${kind}: history + continuation passed`)
     }
     const inventory = await sdk.packages.list({ profile: 'local-dev' })
@@ -256,35 +359,32 @@ try {
     }
     assert.ok(unchangedGrantDefaults > 0, 'fixture must exercise an automatic bundled-default refresh')
     console.info('Upgrade packages: enabled, trusted, running; bundled bytes match distribution')
-    assert.deepEqual(
-      (await sdk.clientModules.list('local-dev')).rows.filter((row) => row.packageId === packageId),
-      state.roster.rows.filter((row) => row.packageId === packageId),
+    const currentRows = (await sdk.clientModules.list('local-dev')).rows.filter(
+      (row) => row.packageId === packageId,
     )
-    if (state.managed) {
-      const status = (await scoped('server.status')).output
-      if (status.state !== 'ready') {
-        // An unconfirmed shutdown is a native approval boundary, never an automatic replay.
-        const operationId = randomUUID()
-        const receipt = await scoped('server.reconcile', { operationId })
-        assert.equal(receipt.state, 'approval-required', JSON.stringify({ status, receipt }))
-        const listed = await sdk.call('_agnes/v1/profile.decisions.list', {})
-        const decision = listed.decisions.find((row) => !row.result && !row.invalidation)
-        assert.ok(decision, 'missing native managed recovery decision')
-        await sdk.call('_agnes/v1/profile.decisions.answer', {
-          handle: decision.handle,
-          revision: decision.revision,
-          commandId: randomUUID(),
-          response: { option: 'allowed-once', value: null },
-        })
-        assert.equal((await scoped('server.reconcile', { operationId })).state, 'completed')
-      }
-      await eventually(
-        async () => (await scoped('server.status')).output.state === 'ready',
-        'managed recovery',
-      )
-      assert.equal((await scoped('server.status')).output.state, 'ready')
-      assert.deepEqual((await scoped('server.check')).output, { synthetic: true })
+    const previousRows = state.roster.rows.filter((row) => row.packageId === packageId)
+    const stableRow = ({ binding: _binding, ...row }) => row
+    assert.deepEqual(currentRows.map(stableRow), previousRows.map(stableRow))
+    for (const row of currentRows) {
+      const prior = previousRows.find((old) => old.rowId === row.rowId)
+      if (prior.binding) assert.deepEqual(row.binding, prior.binding)
+      else
+        assert.deepEqual(
+          row.binding && {
+            packageId: row.binding.packageId,
+            integrity: row.binding.integrity,
+            profileId: row.binding.profileId,
+            availability: row.binding.availability,
+          },
+          {
+            packageId,
+            integrity: inventory.packages.find((item) => item.id === packageId).integrity,
+            profileId: 'local-dev',
+            availability: 'active',
+          },
+        )
     }
+    await verifyManaged(state)
   }
 } finally {
   await sdk.close()
