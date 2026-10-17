@@ -75,7 +75,11 @@ export function createConversationMessageActions(
     if (!disposed) flushSync(() => feedbackRef.current?.clear())
   }
   const feedback: ConversationFeedback = {
-    element: feedbackElement,
+    // Feedback changes between an empty host and an actionable error banner. Resolve the
+    // currently rendered node rather than retaining the placeholder from the initial render.
+    get element() {
+      return element.querySelector<HTMLElement>('.turn-feedback') ?? feedbackElement
+    },
     clear: clearFeedback,
     report(message, durationMs) {
       if (!disposed) flushSync(() => feedbackRef.current?.report(message, durationMs))

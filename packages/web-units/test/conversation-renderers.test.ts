@@ -194,6 +194,7 @@ describe('conversation leaf renderers', () => {
     expect(standalone.element.textContent).toBe('')
 
     first.feedback.report('only first', 1600)
+    expect(first.element.contains(first.feedback.element)).toBe(true)
     expect(first.feedback.element.textContent).toBe('only first')
     expect(second.feedback.element.textContent).toBe('')
     first.dispose()
@@ -236,6 +237,7 @@ describe('conversation leaf renderers', () => {
       await vi.waitFor(() => expect(fork.disabled).toBe(true))
       rejectFirst(new Error('offline'))
       await vi.waitFor(() => expect(first.feedback.element.textContent).toBe('分支失败，请重试。'))
+      expect(first.element.contains(first.feedback.element)).toBe(true)
       expect(fork.disabled).toBe(false)
       expect(second.feedback.element.textContent).toBe('')
       fork.click()
