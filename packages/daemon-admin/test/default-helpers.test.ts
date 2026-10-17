@@ -157,6 +157,8 @@ it('installs release defaults and registers a synthetic primary entry offline on
   ).toEqual([
     ['@agnes/deliverables-ui', true, true],
     ['@agnes/document-reader', true, true],
+    ['@agnes/goal-ui', true, true],
+    ['@agnes/interaction-ui', true, true],
     ['@agnes/mcp-helper', true, true],
     ['@agnes/plugin-helper', true, true],
     ['@agnes/skill-helper', true, true],
@@ -249,6 +251,8 @@ it('installs release defaults and registers a synthetic primary entry offline on
   ).toEqual([
     ['@agnes/deliverables-ui', true],
     ['@agnes/document-reader', true],
+    ['@agnes/goal-ui', true],
+    ['@agnes/interaction-ui', true],
     ['@agnes/mcp-helper', false],
     ['@agnes/plugin-helper', true],
     ['@agnes/test-console', false],
@@ -256,9 +260,11 @@ it('installs release defaults and registers a synthetic primary entry offline on
   expect(s.exec).not.toHaveBeenCalled()
 })
 it.each([
-  [false, false],
-  [true, false],
-  [true, true],
+  [false, undefined],
+  [true, undefined],
+  [true, '@agnes/deliverables-ui'],
+  [true, '@agnes/goal-ui'],
+  [true, '@agnes/interaction-ui'],
 ] as const)(
   'provisions profiles under their ceiling and rejects damaged records (restricted=%s, other blocker=%s)',
   async (restricted, otherBlocker) => {
@@ -268,7 +274,7 @@ it.each([
       const inspect = s.manager.inspect.bind(s.manager)
       vi.spyOn(s.manager, 'inspect').mockImplementation(async (...args) => {
         const preview = await inspect(...args)
-        return preview.id === '@agnes/deliverables-ui'
+        return preview.id === otherBlocker
           ? {
               ...preview,
               blockers: [
@@ -279,9 +285,9 @@ it.each([
           : preview
       })
       await expect(initializeDefaultHelpers(s)).rejects.toThrow('verification failed')
-      expect(
-        (await s.manager.inventory(s.profileDir)).packages.some((p) => p.id === '@agnes/deliverables-ui'),
-      ).toBe(false)
+      expect((await s.manager.inventory(s.profileDir)).packages.some((p) => p.id === otherBlocker)).toBe(
+        false,
+      )
       expect(
         JSON.parse(readFileSync(join(s.profileDir, 'default-helpers', 'state.json'), 'utf8')).phase,
       ).toBe('pending')
@@ -289,8 +295,12 @@ it.each([
     }
     await initializeDefaultHelpers(s)
     const packages = (await s.manager.inventory(s.profileDir)).packages
-    expect(packages).toHaveLength(restricted ? 4 : 5)
-    expect(packages.some((pkg) => pkg.id === '@agnes/deliverables-ui')).toBe(!restricted)
+    expect(packages).toHaveLength(restricted ? 4 : 7)
+    for (const id of ['@agnes/deliverables-ui', '@agnes/goal-ui', '@agnes/interaction-ui'])
+      expect(
+        packages.some((pkg) => pkg.id === id),
+        id,
+      ).toBe(!restricted)
     writeFileSync(join(s.profileDir, 'default-helpers', 'state.json'), '{}')
     await expect(initializeDefaultHelpers(s)).rejects.toThrow('Invalid helper initialization')
   },
@@ -367,12 +377,20 @@ it('migrates the earlier existing marker without enabling or replacing an instal
   await s.manager.setEnabled(s.profileDir, '@agnes/mcp-helper', false)
   await s.manager.remove(s.profileDir, '@agnes/mcp-helper')
   await initializeDefaultHelpers(s)
-  expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(4)
+  expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(6)
 })
 it('records completion without activation when all helpers are already installed', async () => {
   const s = setup()
   await s.initializePolicy()
-  for (const name of ['skill-helper', 'mcp-helper', 'plugin-helper', 'deliverables-ui', 'document-reader']) {
+  for (const name of [
+    'skill-helper',
+    'mcp-helper',
+    'plugin-helper',
+    'goal-ui',
+    'interaction-ui',
+    'deliverables-ui',
+    'document-reader',
+  ]) {
     const source = parseSource(`file:./bundled-plugins/${name}`)
     const preview = await s.manager.inspect(s.profileDir, source)
     await s.manager.install(s.profileDir, source, { expectedIntegrity: preview.integrity })

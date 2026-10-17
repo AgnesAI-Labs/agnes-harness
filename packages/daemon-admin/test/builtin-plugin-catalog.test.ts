@@ -18,7 +18,7 @@ it.each([false, true])('discovers optional pinned helper even with broken exampl
   if (broken) mkdirSync(join(root, 'examples', 'packages'), { recursive: true })
   const catalog = await discoverLocalExamples(root)
   const result = await catalog.read({ offline: true })
-  expect(result.entries).toHaveLength(22)
+  expect(result.entries).toHaveLength(24)
   const examples = result.entries.filter((entry) => entry.sourceId === 'official-examples')
   expect(examples).toHaveLength(17)
   expect(examples.filter((entry) => entry.id.startsWith('@agnes-fde/'))).toHaveLength(12)
@@ -40,11 +40,21 @@ it.each([false, true])('discovers optional pinned helper even with broken exampl
     source: { ref: 'file:./bundled-plugins/mcp-helper' },
   })
   expect(result.entries[3]).toMatchObject({
+    id: '@agnes/goal-ui',
+    version: '0.1.0',
+    source: { ref: 'file:./bundled-plugins/goal-ui' },
+  })
+  expect(result.entries[4]).toMatchObject({
+    id: '@agnes/interaction-ui',
+    version: '0.1.0',
+    source: { ref: 'file:./bundled-plugins/interaction-ui' },
+  })
+  expect(result.entries[5]).toMatchObject({
     id: '@agnes/deliverables-ui',
     version: '0.1.0',
     source: { ref: 'file:./bundled-plugins/deliverables-ui' },
   })
-  expect(result.entries[4]).toMatchObject({
+  expect(result.entries[6]).toMatchObject({
     id: '@agnes/document-reader',
     version: '0.1.2',
     source: { ref: 'file:./bundled-plugins/document-reader' },

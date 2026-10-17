@@ -226,6 +226,8 @@ describe('dbh M-14 (second source): daemon composition via runAgnesd with the re
     expect((ownProfile.ok as PackageListResult).packages.map((pkg) => pkg.id)).toEqual([
       '@agnes/deliverables-ui',
       '@agnes/document-reader',
+      '@agnes/goal-ui',
+      '@agnes/interaction-ui',
       '@agnes/mcp-helper',
       '@agnes/plugin-helper',
       '@agnes/skill-helper',
