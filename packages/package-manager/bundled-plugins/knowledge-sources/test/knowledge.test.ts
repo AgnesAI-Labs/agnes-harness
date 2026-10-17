@@ -228,6 +228,12 @@ describe('knowledge connectors', () => {
     expect(api.untrusted).toBe(true)
     expect(api.citation).toMatchObject({ revision: 'r1', locator: 'synthetic:policy' })
     expect(f.state().citations).toHaveLength(2)
+    const unicode = `${'İ'.repeat(100)}😀${'x'.repeat(79)}Target[1]`
+    f.setText(unicode)
+    const exact = data(await f.query({ sourceId: 'manual', query: 'target[1]' }))
+    expect(exact.excerpt).toBe(unicode.slice(100))
+    expect(exact.citation).toMatchObject({ excerptStart: 100, excerptHash: hash(exact.excerpt) })
+    expect(await f.preview(exact.citation.id)).toMatchObject({ status: 'current', excerpt: exact.excerpt })
     let bounded = f.state()
     for (let index = 0; index < 40; index++) {
       bounded = citationProjection.apply(

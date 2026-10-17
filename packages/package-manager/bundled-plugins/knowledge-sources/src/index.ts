@@ -45,9 +45,17 @@ async function inspect(resource: KnowledgeResource, citation: Citation, ctx: Rea
   }
 }
 function excerpt(text: string, query = '') {
-  const position = query ? text.toLowerCase().indexOf(query.toLowerCase()) : 0
+  // Match offsets belong to the original text; Unicode case folding can change its length.
+  const pattern = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const position = query ? (new RegExp(pattern, 'iu').exec(text)?.index ?? -1) : 0
   if (position < 0) return undefined
-  const start = Math.max(0, position - 80)
+  let start = Math.max(0, position - 80)
+  if (
+    start > 0 &&
+    /[\uDC00-\uDFFF]/.test(text.charAt(start)) &&
+    /[\uD800-\uDBFF]/.test(text.charAt(start - 1))
+  )
+    start--
   let result = ''
   for (const char of text.slice(start)) {
     if (Buffer.byteLength(result + char) > MAX_EXCERPT_BYTES) break
