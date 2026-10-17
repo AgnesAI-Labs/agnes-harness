@@ -260,9 +260,11 @@ it.each([
       disabled: false,
       pending: false,
       selected: 'workspace',
-      isolationNote: translate('session.runtime.noOsIsolation'),
+      isolationNote: translate('session.runtime.platformNoCommandIsolation'),
     })
-    expect(trigger.textContent).toContain(translate('session.runtime.noOsIsolation'))
+    expect(trigger.textContent).toContain(
+      _locale === 'en' ? 'Commands are not isolated on this platform' : '此平台命令未隔离',
+    )
     trigger.click()
     await opened()
     expect(option(view).title).toContain(publicWeb)

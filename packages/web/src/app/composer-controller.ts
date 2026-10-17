@@ -329,7 +329,13 @@ export function createComposerController(
           (!context.draftingNew &&
             context.sessionIsolation?.sessionId === context.current?.id &&
             context.sessionIsolation?.disabled))
-          ? { isolationNote: context.t('session.runtime.noOsIsolation') }
+          ? {
+              isolationNote: context.t(
+                context.runtimeCatalog?.security?.platform.os === 'win32'
+                  ? 'session.runtime.platformNoCommandIsolation'
+                  : 'session.runtime.noOsIsolation',
+              ),
+            }
           : {}),
         disabled:
           !available ||
