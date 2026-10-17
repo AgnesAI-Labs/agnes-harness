@@ -167,7 +167,7 @@ export interface LoopInput {
   /** Host-authenticated source; data remains untrusted for model policy. */
   system?: import('@agnes/protocol').SystemInput
 }
-/** Static facts about one tool in the turn's catalog. */
+/** Facts about one tool in the turn's catalog: the three flags come from the tool's static meta; `offered` depends on the view's model. */
 export interface LoopToolMeta {
   readonly isReadOnly: boolean
   readonly isDestructive: boolean
@@ -205,7 +205,7 @@ export interface LoopTurnView {
     perRequestCap: number | null
     onExceed: 'quote' | 'deny'
   }
-  /** One entry per tool in the catalog, with static values from its definition. Optional so a test double may leave it out. */
+  /** One entry per tool in the catalog. `isReadOnly`, `isDestructive` and `isOpenWorld` come from the tool's static meta; `offered` depends on the view's model. Optional so a test double may leave it out. */
   readonly toolMeta?: Readonly<Record<string, LoopToolMeta>>
   /** The tool names a request that leaves out `tools` would send at this moment. Optional so a test double may leave it out. */
   readonly disclosedTools?: readonly string[]
