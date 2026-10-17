@@ -6,6 +6,7 @@ import {
   aggregate,
   buildBundle,
   cacheScope,
+  callsPerInference,
   computeK,
   finalAnswer,
   loadSuite,
@@ -187,6 +188,13 @@ describe('bench metrics', () => {
     ]
     expect(computeK([{ events }])).toEqual({ k: 1, mutableCalls: 2, toolInferences: 3 })
     expect(computeK([{ events: events.slice(0, 5) }]).k).toBe(2)
+    expect(callsPerInference([{ events }, { events: events.slice(0, 3) }])).toEqual({
+      '2 mutable + 0 read-only': 2,
+      '0 mutable + 1 read-only': 1,
+      '1 mutable + 0 read-only': 1,
+    })
+    const answered = [{ type: 'assistant/message', data: { stopReason: 'end_turn' } }, ...events.slice(6, 8)]
+    expect(callsPerInference([{ events: answered }])).toEqual({})
   })
   it('judges the three gates on totals', () => {
     const rec = (lane: string, pass: boolean, inference: number, usd: number) => ({

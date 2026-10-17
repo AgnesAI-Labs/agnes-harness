@@ -1,0 +1,137 @@
+# Jev loop bench
+
+`run.mjs` runs a suite from `suites/` on two lanes, the default loop (`agnes.default@1.0.0`) and the
+Jev loop (`agnes.jev@0.1.0`), in one headless host with the same chat model, the same seven tools
+(`ls`, `read`, `grep`, `find`, `write`, `edit`, `shell`) and the same preset. Every
+(scenario, lane, repetition) gets a fresh session, a fresh workspace and its own prompt-cache scope.
+After each turn the suite's probes run in the workspace, outside the agent, and the turn is scored:
+every hard probe exits 0 with its marker, every `answer_contains` text is in the final answer, and
+the turn ended `completed`. Failed turns are kept, never re-run.
+
+Run every command from the repository root after `pnpm install`.
+
+## Running it with real accounts
+
+The runner never sees a key. Both accounts live in a dedicated AGH home and are added in the Web
+UI, which keeps the keys in the home's own credential store.
+
+### 1. Prepare the bench home once
+
+```sh
+export AGH_HOME="$HOME/agh-bench-home"   # any empty directory that is used only for the bench
+export AGNES_PROFILE=local-dev
+node agnes.mjs serve                     # after the source build; `agh serve` with an installed distribution
+```
+
+Open the printed URL, then:
+
+1. Settings → Models & accounts: add the chat model account (the model both lanes use) and verify
+   it. Its route name and selected model are what the bench uses.
+2. Settings → Models & accounts → Side models: add a TypeSafe Jev entry with the OpenRouter
+   endpoint `https://openrouter.ai/api/v1`, a generic credential holding the key, and the model
+   `typesafe/jev-1.13-20260917` (`contextWindow` 65536, `maxTokens` 32768, cost input 0.042). The
+   entry's route is named `account-<id>`; the runner finds it by itself.
+3. Do not configure the Jev loop under Settings → Plugins in this home; the runner supplies its
+   configuration.
+4. Stop `serve` (Ctrl-C). The bench and `serve` must not run on the same home at the same time.
+
+### 2. Check the plan, then run
+
+The probes call `python`. The runner points it at `--python`, else `BENCH_PYTHON`, else `python3`,
+else `python` on `PATH`. The FastAPI suite needs `fastapi`, `httpx` and `pytest` importable by that
+interpreter; the runner checks this before it starts and stops with a message if they are missing.
+
+```sh
+python3 -m venv ~/bench-venv && ~/bench-venv/bin/pip install fastapi httpx pytest
+export BENCH_PYTHON=~/bench-venv/bin/python
+
+# Plan only: shows the discovered routes and every cell, starts nothing, costs nothing.
+pnpm exec tsx packages/loop-jev/bench/run.mjs --home "$AGH_HOME" \
+  --suite packages/loop-jev/bench/suites/smoke.json --lanes default,jev --reps 1 \
+  --out bench-out/smoke --dry-run
+
+# Smoke run: both lanes, once (6 scenarios, 16 turns per lane). A check before launch, not a measurement.
+pnpm exec tsx packages/loop-jev/bench/run.mjs --home "$AGH_HOME" \
+  --suite packages/loop-jev/bench/suites/smoke.json --lanes default,jev --reps 1 --out bench-out/smoke
+
+# Baseline pilot: default lane only, once over the three FastAPI families (20 turns). Sets k.
+pnpm exec tsx packages/loop-jev/bench/run.mjs --home "$AGH_HOME" \
+  --suite packages/loop-jev/bench/suites/fastapi-families.json --pilot --out bench-out/pilot
+```
+
+The acceptance run, later, is three repetitions of both lanes with the `k` from the pilot:
+
+```sh
+pnpm exec tsx packages/loop-jev/bench/run.mjs --home "$AGH_HOME" \
+  --suite packages/loop-jev/bench/suites/fastapi-families.json --lanes default,jev --reps 3 \
+  --k <k from the pilot> --out bench-out/acceptance
+```
+
+When the home has more than one chat account or more than one Jev entry, the runner lists them and
+asks for `--chat-route <route>` or `--jev-route <route>`. `--chat-model` and `--jev-model` choose a
+model on that route other than the account's selected one. Each turn has a 600 s watchdog
+(`--turn-timeout-ms`); Ctrl-C cancels the running turn and still writes the report of what ran.
+
+### 3. What it writes, and what to send back
+
+Everything goes under `--out`:
+
+| Path | Content |
+|---|---|
+| `report.md` | Per family, per turn, totals, Jev/default ratios, the three gates (or the pilot's k), the Jev lane breakdown and the checks below |
+| `report.json` | The same as data: routes used, totals, verdict or pilot result, flags |
+| `records.jsonl` | One line per turn: score and every check, answer, probe exits and output, ledger counters, wall time, tool list |
+| `events/<scenario>.<lane>.r<n>.jsonl` | Every ledger event of each session, for re-analysis |
+| `workspaces/` | Each session's workspace as the agent left it |
+| `bundle.json` | The headless bundle the host was started with |
+
+Send back `report.md`, `report.json`, `records.jsonl` and the `events/` directory (for example as
+one archive of `--out` without `workspaces/`). They contain the suite's goals, the models' answers
+and token counts; they contain no key, and the runner writes no key anywhere.
+
+Exit codes: 0 every cell ran; 1 a cell could not run as planned (an error, a dirty workspace, a turn
+that hit its watchdog); 2 bad arguments or setup (the message says what to fix); 130 interrupted.
+
+The checks section flags, without failing anything: lanes whose first request has different
+`tool_schema_hash` values, a first request of a cell that read more cached tokens than the tool
+definitions could account for, turns whose inference rows do not match the Jev loop's own count of
+model attempts, dropped Jev telemetry, turns that ended at the no-progress limit, ledger rows whose
+model has no catalogue price, and timeouts.
+
+## Without the Web UI
+
+In a home whose Settings hold no account, the runner reads the routes from
+`AGH_HOME/profiles/<profile>/profile.yaml` instead, as the host does: one route with
+`api: typesafe-systemone` (see `docs/guide/typesafe-jev.md`, Profile route) and one chat route, the
+keys in the profile's secret store. This works only while Settings holds no account: once one is
+saved there, Settings supplies the whole `provider` block and the profile's routes are not used.
+
+`--fake` builds such a home by itself under `--out/home`: a loopback stand-in for Jev, the built-in
+scripted chat model that always answers `ok`, and a placeholder key. It checks the plumbing (boot,
+sessions, events, probes, scoring, report) and says nothing about either loop.
+
+## Implementation notes
+
+How the runner fits the host as it is in this version:
+
+- The routes are not written anywhere. They come from the home, read with the host's own
+  `readConfigurationProfileInputs` over the configuration service's `profileInput()`, the same two
+  calls the host makes at boot. `.agh/profile.local.yaml` cannot hold routes in this version (it
+  accepts only `extensionIsolation`), and a bundle may not carry a `provider` block.
+- The plugin row (with `stepCap` and the discovered `jev.route` and `jev.model`), the tool set and
+  the per-cell presets travel in the headless bundle. The host adds an operator bundle's presets to
+  `presets.allowed` by itself, so nothing is written into the home's profile.
+- The profile name must be one of the built-in templates (`local-dev`, `enterprise`): the host
+  layers the profile over the template of the same name.
+- The headless host keeps its sessions and settings in a temporary data directory, so a system
+  prompt saved in the Web UI does not reach the bench sessions and cannot override the per-cell
+  cache scope.
+- The chat model is set on every session (`primary` slot) to the discovered route and model.
+- The host names each new session with one background call to the chat model. Those `title` rows are
+  counted under `purposes` but left out of inference and cost, the same on both lanes.
+- Before the first turn the runner checks that the workspace holds only what it wrote (`.gitkeep`
+  for the generation family, nothing otherwise); otherwise the cell's turns are recorded as not run.
+- The cache check compares the first request's `cacheRead` with the tool definitions' size estimated
+  as UTF-8 bytes / 3.
+- The pilot also reports how many tool calls each tool-using inference request made (mutable and
+  read-only), next to k.

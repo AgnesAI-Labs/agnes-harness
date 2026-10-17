@@ -111,6 +111,10 @@ export function computeK(
   turns: Array<{ events: MetricEvent[] }>,
   mutable?: string[],
 ): { k: number; mutableCalls: number; toolInferences: number }
+export function callsPerInference(
+  turns: Array<{ events: MetricEvent[] }>,
+  mutable?: string[],
+): Record<string, number>
 export function aggregate(records: BenchRecord[]): Totals
 export function verdict(totals: Totals, k: number): Verdict
 export function renderReport(o: {

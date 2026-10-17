@@ -309,6 +309,32 @@ export function computeK(turns, mutable = DEFAULT_MUTABLE) {
   return { k, mutableCalls, toolInferences }
 }
 
+/**
+ * Baseline pilot: how many tool calls each tool-using inference request made, as a histogram keyed
+ * "<mutable> mutable + <read-only> read-only". Calls belong to the assistant message before them.
+ */
+export function callsPerInference(turns, mutable = DEFAULT_MUTABLE) {
+  const histogram = {}
+  for (const { events } of turns) {
+    let open
+    const close = () => {
+      if (open && open.mutable + open.readOnly > 0)
+        bump(histogram, `${open.mutable} mutable + ${open.readOnly} read-only`)
+    }
+    for (const event of events) {
+      if (event.type === 'assistant/message') {
+        close()
+        open = event.data?.stopReason === 'tool_use' ? { mutable: 0, readOnly: 0 } : undefined
+      } else if (event.type === 'tool/call' && open) {
+        if (mutable.includes(event.data?.name)) open.mutable++
+        else open.readOnly++
+      }
+    }
+    close()
+  }
+  return histogram
+}
+
 // ---- aggregation and gates ----------------------------------------------------------------
 
 const slot = (map, key, make) => {
