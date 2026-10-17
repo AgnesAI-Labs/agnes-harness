@@ -109,7 +109,7 @@ export async function createCompositionHost(
   let closed = false
   let closing: Promise<void> | undefined
   const calls = createHostCallQueue(() => closed)
-  let bootTarget: NonNullable<Host['runtimeTargetSnapshot']> = () => undefined
+  let bootTarget: Host['runtimeTargetSnapshot']
   let latestTarget: RuntimeTarget | undefined
   let latestRows: Parameters<Host['extensionRows']['apply']>[0] | undefined
   const writer = await createLiveCompositionWriter(options.profileDir)
@@ -178,7 +178,7 @@ export async function createCompositionHost(
     const pending = opening.get(identity)
     if (pending) return pending
     const started = (async () => {
-      const target = latestTarget ?? bootTarget()
+      const target = latestTarget ?? bootTarget?.()
       const pinned = generations.session(binding.sessionKey)
       const skills = currentSkills
       // A newly opened composition must not import boot-time pins retired by a later update.
@@ -322,7 +322,7 @@ export async function createCompositionHost(
     writer.close()
     throw error
   })
-  bootTarget = () => initial.host.runtimeTargetSnapshot?.()
+  bootTarget = initial.host.runtimeTargetSnapshot
   const owner = (key: string, coldRead = true): Container => {
     const binding = store.readIfValid(key)
     const active = binding
