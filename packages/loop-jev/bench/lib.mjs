@@ -1,3 +1,4 @@
+// Portions adapted from JevLoop (https://github.com/parkavenue9639/jevloop, 61e7994), Apache-2.0; modified.
 // Scoring and configuration helpers for the Jev loop bench tools. Pure functions only: no
 // process, network or session access, so every rule here is covered by unit tests.
 import { createHash } from 'node:crypto'
@@ -284,7 +285,6 @@ export function turnMetrics(events, price) {
     if (typeof metricsEvent.noCall === 'number') m.jev.noCall = metricsEvent.noCall
     if (typeof metricsEvent.droppedCalls === 'number') m.jev.droppedCalls = metricsEvent.droppedCalls
     m.jev.droppedEvents = num(metricsEvent.droppedEvents)
-    if (typeof metricsEvent.steps === 'number') m.jev.steps = metricsEvent.steps
   }
   m.reconciled = sawJev ? m.inference === m.jev.llmAttempts : true
   return m
@@ -378,8 +378,10 @@ export function aggregate(records) {
 
 /** The three acceptance gates on the totals; `k` scales only the inference-count gate. */
 export function verdict(totals, k) {
-  const jev = totals.byLane.jev ?? emptyTotals()
-  const base = totals.byLane.default ?? emptyTotals()
+  const jev = totals.byLane.jev
+  const base = totals.byLane.default
+  // A gate cannot be met by a lane that never ran: without both lanes every gate fails.
+  if (!jev || !base) return { passGate: false, callGate: false, costGate: false }
   return {
     passGate: jev.passes >= base.passes,
     callGate: jev.inference <= 0.75 * k * base.inference,

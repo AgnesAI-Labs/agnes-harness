@@ -1,7 +1,7 @@
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { afterAll, describe, expect, it } from 'vitest'
 import {
   aggregate,
   buildBundle,
@@ -211,8 +211,13 @@ describe('bench metrics', () => {
 })
 
 describe('bench suite validation', () => {
+  const dirs: string[] = []
+  afterAll(() => {
+    for (const dir of dirs) rmSync(dir, { recursive: true, force: true })
+  })
   const write = (suite: unknown) => {
     const dir = mkdtempSync(join(tmpdir(), 'bench-suite-'))
+    dirs.push(dir)
     const path = join(dir, 'suite.json')
     writeFileSync(path, JSON.stringify(suite))
     return path
@@ -285,5 +290,101 @@ describe('bench suite validation', () => {
     expect(md).toMatch(/## By family[\s\S]*## By turn[\s\S]*## Totals[\s\S]*## Ratios[\s\S]*## Verdict/)
     expect(md).toContain('| s | jev | 1/1 | 1 | 1 | 4 | $0.000700 | 2.0 s |')
     expect(md).toContain('| Cost | jev cost <= 0.8 x default cost | PASS |')
+  })
+
+  it('derives steps from the step events, not from the metrics counters', () => {
+    const m = turnMetrics([
+      { type: 'x/a/b/jev.step', data: { route: 'direct', dispatch: { results: ['ok'] } } },
+      { type: 'x/a/b/jev.step', data: { route: 'decision_failed', reason: 'MODEL_UNAVAILABLE' } },
+      {
+        type: 'x/a/b/jev.metrics',
+        data: {
+          steps: 99,
+          directSuccess: 3,
+          noCall: 2,
+          droppedCalls: 1,
+          droppedEvents: 4,
+          decisionFailures: { MODEL_UNAVAILABLE: 5 },
+        },
+      },
+    ])
+    expect(m.jev).toMatchObject({
+      steps: 2,
+      directSuccess: 3,
+      noCall: 2,
+      droppedCalls: 1,
+      droppedEvents: 4,
+      decisionFailed: { MODEL_UNAVAILABLE: 5 },
+    })
+  })
+  it('fails every gate when a lane has no records', () => {
+    const rec = (lane: string) => ({
+      scenario: 's',
+      category: 'c',
+      lane,
+      rep: 0,
+      turn: 0,
+      score: { pass: true, probesPass: true, answerPass: true, completed: true, checks: [] },
+      metrics: { inference: 1, usdMicros: 1 } as never,
+      wallMs: 1,
+    })
+    const none = { passGate: false, callGate: false, costGate: false }
+    expect(verdict(aggregate([rec('default')]), 1)).toEqual(none)
+    expect(verdict(aggregate([rec('jev')]), 1)).toEqual(none)
+    expect(verdict(aggregate([]), 1)).toEqual(none)
+  })
+  it('does not count soft answer checks and fails on a missing probe result', () => {
+    const base = { endReason: 'completed', probes: [] }
+    expect(scoreTurn({ ...base, turn: { goal: 'g', answer_contains: ['x'] }, answer: 'y' }).checks).toEqual([
+      { name: 'answer contains "x"', ok: false, soft: false },
+    ])
+    const missing = scoreTurn({
+      turn: {
+        goal: 'g',
+        bash: [
+          { command: 'c', contains: 'm' },
+          { command: 'c2', contains: 'm2', soft: true },
+        ],
+      },
+      answer: '',
+      endReason: 'completed',
+      probes: [],
+    })
+    expect(missing).toMatchObject({ pass: false, probesPass: false })
+    expect(missing.checks.map((c) => [c.ok, c.soft])).toEqual([
+      [false, false],
+      [false, true],
+    ])
+    expect(
+      scoreTurn({
+        turn: { goal: 'g', bash: [{ command: 'c', contains: 'm' }] },
+        answer: '',
+        endReason: 'completed',
+        probes: [{ exit: null, output: 'm' }],
+      }).probesPass,
+    ).toBe(false)
+  })
+  it('returns an empty answer when no end_turn message follows fromSeq', () => {
+    const ev = [
+      {
+        seq: 1,
+        type: 'assistant/message',
+        data: { content: [{ type: 'text', text: 'old' }], stopReason: 'end_turn' },
+      },
+      {
+        seq: 3,
+        type: 'assistant/message',
+        data: { content: [{ type: 'text', text: 'mid' }], stopReason: 'tool_use' },
+      },
+      { seq: 4, type: 'tool/result', data: {} },
+    ]
+    expect(finalAnswer(ev, 1)).toBe('')
+    expect(finalAnswer([], 0)).toBe('')
+  })
+  it('keeps k at 1 when there are no tool-using inferences', () => {
+    expect(computeK([])).toEqual({ k: 1, mutableCalls: 0, toolInferences: 0 })
+    expect(computeK([{ events: [{ type: 'assistant/message', data: { stopReason: 'end_turn' } }] }])).toEqual(
+      { k: 1, mutableCalls: 0, toolInferences: 0 },
+    )
   })
 })
