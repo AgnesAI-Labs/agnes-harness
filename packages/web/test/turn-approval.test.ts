@@ -7,6 +7,8 @@ import { enT, zhT } from '@agnes/web-foundation/testkit/locale'
 import { unmountApplication } from '@agnes/web-ui'
 import { afterEach, expect, it, vi } from 'vitest'
 import { approvalExpiry } from '../src/app/pending-approval.js'
+import { SessionBindingOwner } from '../src/app/session-owner.js'
+import { SubmissionOwner } from '../src/app/submission-owner.js'
 import { createTurnController } from '../src/app/turn-controller.js'
 import { mountApprovalRegion } from '../src/regions/approval.js'
 
@@ -74,6 +76,7 @@ async function harness() {
   const decide = vi.fn(async () => undefined)
   const showError = vi.fn()
   const context = {
+    submissions: new SubmissionOwner(new SessionBindingOwner()),
     projection: timeline(),
     current: { id: 's' },
     live: { hasEarlier: () => false, loadEarlier: async () => false, refresh: vi.fn() },

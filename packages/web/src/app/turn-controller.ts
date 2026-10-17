@@ -18,12 +18,12 @@ import { createSessionBookmarks } from './session-bookmarks.js'
 export function createTurnController(
   context: Pick<
     AppSessionContext,
+    | 'submissions'
     | 'TRACE_THROTTLE_MS'
     | 'approvalBusy'
     | 'approvalRuntime'
     | 'approvalSearch'
     | 'approvalSearchTicket'
-    | 'awaitingPromptStart'
     | 'client'
     | 'connected'
     | 'conversationRuntime'
@@ -47,7 +47,6 @@ export function createTurnController(
     | 'renderControls'
     | 'renderer'
     | 'run'
-    | 'sending'
     | 'sessionControls'
     | 'sessionRows'
     | 'sessionTitles'
@@ -145,10 +144,7 @@ export function createTurnController(
     if (firstInput && context.current) {
       context.updateTitle(context.current.id, title)
     }
-    if (context.awaitingPromptStart && view.busy) {
-      context.awaitingPromptStart = false
-      context.sending = false
-    }
+    if (view.busy) context.submissions.promptStarted()
     if (!view.busy && receipt?.reason && receipt.endSeq > context.stopAfterSeq) context.stopping = false
     const awaitingApproval = Boolean(
       context.liveApproval ||

@@ -12,15 +12,14 @@ import type { SessionBindingOwner } from './session-owner.js'
 export function createSessionController(
   context: Pick<
     AppSessionContext,
+    | 'submissions'
     | 'SESSION_WATCH_STOP_TIMEOUT_MS'
     | 'approvalSearch'
-    | 'awaitingPromptStart'
     | 'clearSessionRecovery'
     | 'client'
     | 'clientModules'
     | 'composerRuntime'
     | 'connected'
-    | 'controlPending'
     | 'current'
     | 'draftingNew'
     | 'initialModelPending'
@@ -46,7 +45,6 @@ export function createSessionController(
     | 'renderer'
     | 'selectedWorkspace'
     | 'sessionBinding'
-    | 'sending'
     | 'sessionControls'
     | 'sessionIsolation'
     | 'sessionPending'
@@ -57,7 +55,6 @@ export function createSessionController(
     | 'showSessionRecovery'
     | 'stopping'
     | 'streamFrame'
-    | 'submissionGeneration'
     | 't'
     | 'titleRefresh'
     | 'topbarRuntime'
@@ -77,9 +74,10 @@ export function createSessionController(
       initialModel?: KnownSessionModel
     } = {},
   ): Promise<void> {
+    const preserved = options.preserveSending ? context.submissions.currentComposer : undefined
     const { binding: epoch, previous } = bindingOwner.begin()
+    preserved?.adopt(epoch)
     if (!options.created) context.references.clear()
-    if (!options.preserveSending) context.submissionGeneration++
     let selectionReady = false
     context.topbarRuntime.setStatus('', 'idle')
     context.sessionPending = true
@@ -96,10 +94,6 @@ export function createSessionController(
     context.permissionSelectionSeq = 0
     context.permissionChangePending = false
     context.stopping = false
-    if (!options.preserveSending) {
-      context.sending = false
-      context.awaitingPromptStart = false
-    }
     context.knownSessionModel = undefined
     context.initialModelPending = options.initialModel
     context.modelSelectionSeq = 0
@@ -181,7 +175,6 @@ export function createSessionController(
         })
         .catch(() => undefined)
       context.sessionControls = undefined
-      context.controlPending = false
       context.moduleSessionId = loaded.id
       await context.clientModules.reconciler.reconcileNow()
       if (!context.sessionBinding.isCurrent(epoch)) {

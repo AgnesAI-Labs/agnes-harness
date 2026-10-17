@@ -7,21 +7,19 @@ import { showCommandFeedback } from './command-feedback.js'
 export function createCommandController(
   context: Pick<
     AppSessionContext,
+    | 'submissions'
     | 'composerDraftKey'
     | 'client'
     | 'composerRuntime'
     | 'configured'
     | 'connected'
-    | 'controlPending'
     | 'controlsHistory'
-    | 'controlsRefresh'
     | 'current'
     | 'live'
     | 'notice'
     | 'permissionChangePending'
     | 'permissionRefreshPending'
     | 'projection'
-    | 'queueAction'
     | 'recoveredReturns'
     | 'render'
     | 'renderControls'
@@ -38,6 +36,7 @@ export function createCommandController(
   >,
 ) {
   let stopRequest = 0
+  let controlsRefresh = 0
   function handleComposerCancel(): void {
     requestStop(false)
   }
@@ -121,21 +120,13 @@ export function createCommandController(
         (context.permissionChangePending ||
           context.permissionRefreshPending ||
           context.sessionYoloEnabled === undefined)) ||
-      (context.queueAction?.pending &&
-        context.queueAction.sessionId === session.id &&
-        context.sessionBinding.isCurrent(context.queueAction.binding)) ||
+      context.submissions.queueAction?.pending ||
       context.projection?.sessionId !== session.id ||
       !context.projection.pendingInputs?.some((item) => item.itemId === itemId)
     )
       return
-    const action = {
-      sessionId: session.id,
-      binding: context.sessionBinding.capture(),
-      itemId,
-      kind,
-      pending: true,
-    } as NonNullable<typeof context.queueAction>
-    context.queueAction = action
+    const action = context.submissions.beginQueue({ itemId, kind })
+    if (!action) return
     context.renderControls()
     const work = async () => {
       const held = await session.pendingCommands()
@@ -153,48 +144,51 @@ export function createCommandController(
           ? session.promoteQueued(itemId)
           : session.removeQueued(itemId)
     }
-    void work()
+    void action
+      .run(async () => {
+        await work()
+      })
       .then(() => {
-        if (context.sessionBinding.isCurrent(action.binding, session)) {
+        if (context.submissions.isCurrent(action)) {
           context.live?.refresh()
           void refreshSessionControls(session).catch(context.showError)
         }
       })
       .catch((error: unknown) => {
         const failure = error as { data?: { code?: unknown } }
-        action.error =
+        action.presentError(
           failure?.data?.code === 'QUEUED_INPUT_GONE'
             ? context.t('composer.queue.gone')
             : error instanceof Error
               ? error.message
-              : String(error)
-        if (context.sessionBinding.isCurrent(action.binding, session)) {
+              : String(error),
+        )
+        if (context.submissions.isCurrent(action)) {
           context.live?.refresh()
           void refreshSessionControls(session).catch(context.showError)
         }
       })
       .finally(() => {
-        action.pending = false
-        if (context.sessionBinding.isCurrent(action.binding, session)) context.renderControls()
+        if (context.submissions.isCurrent(action)) context.renderControls()
       })
   }
 
   async function refreshSessionControls(session: Session): Promise<void> {
     const epoch = context.sessionBinding.capture()
-    const request = ++context.controlsRefresh
+    const request = ++controlsRefresh
     const history = context.controlsHistory.get(session.id) ?? { through: 0, facts: [] }
     let through = history.through
     const facts = [...history.facts]
     let value: SessionControlStateResult
     do {
       value = await session.controls({ afterSeq: through })
-      if (!context.sessionBinding.isCurrent(epoch, session) || request !== context.controlsRefresh) return
+      if (!context.sessionBinding.isCurrent(epoch, session) || request !== controlsRefresh) return
       facts.push(...(value.facts ?? []))
       through = value.factsThrough ?? through
     } while (value.factsMore)
     value = { ...value, facts }
     context.controlsHistory.set(session.id, { through, facts })
-    if (!context.sessionBinding.isCurrent(epoch, session) || request !== context.controlsRefresh) return
+    if (!context.sessionBinding.isCurrent(epoch, session) || request !== controlsRefresh) return
     context.sessionControls = { sessionId: session.id, value }
     for (const fact of value.facts ?? []) {
       if (fact.action !== 'cancel' || fact.outcome !== 'requested') continue
@@ -239,22 +233,22 @@ export function createCommandController(
       if (
         !session ||
         context.sessionPending ||
-        context.controlPending ||
+        context.submissions.controlPending ||
         context.sessionControls?.sessionId !== session.id
       )
         return
-      const epoch = context.sessionBinding.capture()
-      context.controlPending = true
+      const action = context.submissions.beginControl()
+      if (!action) return
       context.renderControls()
       try {
-        await session.control(context.sessionControls.value.paused ? 'resume' : 'pause')
-        await refreshSessionControls(session)
-        context.live?.refresh()
+        const kind = context.sessionControls.value.paused ? 'resume' : 'pause'
+        await action.run(async () => {
+          await session.control(kind)
+          await refreshSessionControls(session)
+          if (context.submissions.isCurrent(action)) context.live?.refresh()
+        })
       } finally {
-        if (context.sessionBinding.isCurrent(epoch, session)) {
-          context.controlPending = false
-          context.renderControls()
-        }
+        if (context.submissions.isCurrent(action)) context.renderControls()
       }
     })
   }

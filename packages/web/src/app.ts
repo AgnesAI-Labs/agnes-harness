@@ -28,6 +28,7 @@ import { createReadOnlyController } from './app/read-only-controller.js'
 import { createSessionController } from './app/session-controller.js'
 import { SessionBindingOwner } from './app/session-owner.js'
 import { createSubmissionController } from './app/submission-controller.js'
+import { SubmissionOwner } from './app/submission-owner.js'
 import { createTurnController } from './app/turn-controller.js'
 import { readyRosterModules } from './client-modules/reconcile/roster.js'
 import '@agnes/web-admin/settings/registry'
@@ -123,8 +124,6 @@ export interface AppSessionContext {
   approvalRuntime: typeof approvalRuntime
   approvalSearch: typeof approvalSearch
   approvalSearchTicket: typeof approvalSearchTicket
-  attachmentSessionOpening: typeof attachmentSessionOpening
-  awaitingPromptStart: typeof awaitingPromptStart
   beginNewDraft: typeof beginNewDraft
   clearSessionRecovery: typeof clearSessionRecovery
   client: typeof client
@@ -133,11 +132,10 @@ export interface AppSessionContext {
   composerRuntime: typeof composerRuntime
   configured: typeof configured
   connected: typeof connected
-  controlPending: typeof controlPending
   controlsHistory: typeof controlsHistory
-  controlsRefresh: typeof controlsRefresh
   conversationRuntime: typeof conversationRuntime
-  sessionBinding: Pick<SessionBindingOwner, 'capture' | 'isCurrent'>
+  readonly submissions: SubmissionOwner
+  readonly sessionBinding: Pick<SessionBindingOwner, 'capture' | 'isCurrent'>
   readonly current: Session | undefined
   dockControlsHost: typeof dockControlsHost
   draftBundles: typeof draftBundles
@@ -171,11 +169,9 @@ export interface AppSessionContext {
   permissionRefreshPending: typeof permissionRefreshPending
   permissionSelectionSeq: typeof permissionSelectionSeq
   projection: typeof projection
-  queueAction: typeof queueAction
   receipts: typeof receipts
   recoveredReturns: typeof recoveredReturns
   recoveryDisabled: typeof recoveryDisabled
-  referenceSessionPending: typeof referenceSessionPending
   references: typeof references
   refreshSessionControls: typeof refreshSessionControls
   render: typeof render
@@ -189,7 +185,6 @@ export interface AppSessionContext {
   selectedDraftPreset: typeof selectedDraftPreset
   selectedModelAvailable: typeof selectedModelAvailable
   selectedWorkspace: typeof selectedWorkspace
-  sending: typeof sending
   sessionControls: typeof sessionControls
   sessionPending: typeof sessionPending
   sessionRows: typeof sessionRows
@@ -201,7 +196,6 @@ export interface AppSessionContext {
   stopAfterSeq: typeof stopAfterSeq
   stopping: typeof stopping
   streamFrame: typeof streamFrame
-  submissionGeneration: typeof submissionGeneration
   submitComposer: typeof submitComposer
   syncDraftPermission: typeof syncDraftPermission
   t: typeof t
@@ -220,8 +214,10 @@ export interface AppSessionContext {
   readOnlyController: typeof readOnlyController
 }
 const sessionBinding = new SessionBindingOwner()
+const submissions = new SubmissionOwner(sessionBinding)
 const appSessionContext: AppSessionContext = {
   sessionBinding,
+  submissions,
   get SESSION_WATCH_STOP_TIMEOUT_MS() {
     return SESSION_WATCH_STOP_TIMEOUT_MS
   },
@@ -248,18 +244,6 @@ const appSessionContext: AppSessionContext = {
   },
   set approvalSearchTicket(value: typeof approvalSearchTicket) {
     approvalSearchTicket = value
-  },
-  get attachmentSessionOpening() {
-    return attachmentSessionOpening
-  },
-  set attachmentSessionOpening(value: typeof attachmentSessionOpening) {
-    attachmentSessionOpening = value
-  },
-  get awaitingPromptStart() {
-    return awaitingPromptStart
-  },
-  set awaitingPromptStart(value: typeof awaitingPromptStart) {
-    awaitingPromptStart = value
   },
   get beginNewDraft() {
     return beginNewDraft
@@ -291,20 +275,8 @@ const appSessionContext: AppSessionContext = {
   set connected(value: typeof connected) {
     connected = value
   },
-  get controlPending() {
-    return controlPending
-  },
-  set controlPending(value: typeof controlPending) {
-    controlPending = value
-  },
   get controlsHistory() {
     return controlsHistory
-  },
-  get controlsRefresh() {
-    return controlsRefresh
-  },
-  set controlsRefresh(value: typeof controlsRefresh) {
-    controlsRefresh = value
   },
   get conversationRuntime() {
     return conversationRuntime
@@ -477,12 +449,6 @@ const appSessionContext: AppSessionContext = {
   set projection(value: typeof projection) {
     projection = value
   },
-  get queueAction() {
-    return queueAction
-  },
-  set queueAction(value: typeof queueAction) {
-    queueAction = value
-  },
   get receipts() {
     return receipts
   },
@@ -491,12 +457,6 @@ const appSessionContext: AppSessionContext = {
   },
   get recoveryDisabled() {
     return recoveryDisabled
-  },
-  get referenceSessionPending() {
-    return referenceSessionPending
-  },
-  set referenceSessionPending(value: typeof referenceSessionPending) {
-    referenceSessionPending = value
   },
   get references() {
     return references
@@ -548,12 +508,6 @@ const appSessionContext: AppSessionContext = {
   },
   set selectedWorkspace(value: typeof selectedWorkspace) {
     selectedWorkspace = value
-  },
-  get sending() {
-    return sending
-  },
-  set sending(value: typeof sending) {
-    sending = value
   },
   get sessionControls() {
     return sessionControls
@@ -608,12 +562,6 @@ const appSessionContext: AppSessionContext = {
   },
   set streamFrame(value: typeof streamFrame) {
     streamFrame = value
-  },
-  get submissionGeneration() {
-    return submissionGeneration
-  },
-  set submissionGeneration(value: typeof submissionGeneration) {
-    submissionGeneration = value
   },
   get submitComposer() {
     return submitComposer
@@ -756,7 +704,6 @@ const rosterSource: RosterSource = {
 const claimSlotCard: ClaimResolver = (entry, extId) =>
   entry.owner !== undefined && (moduleExtIds.get(entry.owner)?.includes(extId) ?? false)
 const references = composerReferences(prepareComposerSession, renderControls)
-let referenceSessionPending: Promise<Session> | undefined
 
 // Reserve host entries before installed modules can register their reviewed declarations.
 const removeHomeEntries = registerBuiltinHomeEntries()
@@ -1076,8 +1023,6 @@ onPageHide(() => stopPluginHotReload())
 let connected = false
 let configured = false
 let sessionControls: { sessionId: string; value: SessionControlStateResult } | undefined
-let controlsRefresh = 0
-let controlPending = false
 const recoveredReturns = new Set<string>()
 const controlsHistory = new Map<
   string,
@@ -1105,19 +1050,7 @@ let readOnly: { id: string; maxNodes: number; hasEarlier: boolean } | undefined
 let approvalSearch: 'idle' | 'searching' | 'not-found' = 'idle'
 let approvalSearchTicket: string | undefined
 let streamFrame: number | undefined
-let sending = false
-let awaitingPromptStart = false
 let stopping = false
-let queueAction:
-  | {
-      sessionId: string
-      binding: import('./app/session-owner.js').SessionBinding
-      itemId: string
-      kind: 'sendNow' | 'removeQueued' | 'promote'
-      pending: boolean
-      error?: string
-    }
-  | undefined
 let sessionPending = new URLSearchParams(location.search).get('new') === '1'
 let newSessionCreating = false
 let workspacePickerReady: boolean | undefined
@@ -1213,7 +1146,6 @@ let permissionRefreshPending = false
 let permissionConnectionEpoch = 0
 let sessionYoloEnabled: boolean | undefined
 let permissionSelectionSeq = 0
-let submissionGeneration = 0
 // daemon 自己报出的 profile（config.get() 后才知道）；皮肤清单与客户端模块名册都必须把它传回去。
 const receipts = new Map<string, RunReceipt>()
 const sessionLabels = new Map<string, string>()
@@ -1242,7 +1174,7 @@ let workspaceRows: WorkspaceEntry[] = []
 const sidebarPages = createSidebarPagination(
   client.session,
   () => {
-    const selected = sessionRows.find((row) => row.sessionId === (current?.id ?? readOnly?.id))
+    const selected = sessionRows.find((row) => row.sessionId === (sessionBinding.session?.id ?? readOnly?.id))
     sessionRows = sidebarPages.rows()
     if (selected && !sessionRows.some((row) => row.sessionId === selected.sessionId))
       sessionRows.push(selected)
@@ -1288,7 +1220,7 @@ function updateSidebar(): void {
           ? { currentId: readOnly.id }
           : {}),
     sessionPending,
-    newDisabled: !connected || sending || sessionPending || newSessionCreating,
+    newDisabled: !connected || submissions.sending || sessionPending || newSessionCreating,
   })
 }
 
@@ -1536,7 +1468,7 @@ function showSessionRecovery(error: unknown, id: string): void {
   renderSessionRecovery()
 }
 function recoveryDisabled(): boolean {
-  return !connected || sending || sessionPending || newSessionCreating
+  return !connected || submissions.sending || sessionPending || newSessionCreating
 }
 function renderSessionRecovery(message = ''): void {
   if (!sessionRecovery) return
@@ -1659,7 +1591,6 @@ function forkSidebar(id: string, title: string): Promise<void> {
   homeNavigation.close()
   return sessionController.forkSidebar(id, title)
 }
-let attachmentSessionOpening: Promise<string> | undefined
 function prepareAttachmentSession(): Promise<string> {
   return submissionController.prepareAttachmentSession()
 }
@@ -1737,7 +1668,7 @@ async function pickWorkspace(): Promise<void> {
   }
 }
 async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEntry): Promise<void> {
-  if (sessionPending || sending) return
+  if (sessionPending || submissions.sending) return
   sessionPending = true
   if (workspace) selectedWorkspace = workspace
   clearSessionRecovery()
@@ -1763,7 +1694,6 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   permissionRefreshPending = false
   initialPermissionPending = undefined
   initialModelPending = undefined
-  submissionGeneration++
   liveApproval?.finish({ unanswered: 'detached' })
   liveApproval = undefined
   renderer.reset()
@@ -1974,8 +1904,9 @@ function modelDefaults(option: ModelPickerOption): KnownSessionModel {
 async function readAuxiliaryModels(): Promise<import('@agnes/web-ui').SessionAuxiliarySnapshot> {
   const session = sessionBinding.session
   if (!session) throw new Error('Session unavailable')
+  const binding = sessionBinding.capture()
   const [capabilities, defaults] = await Promise.all([session.capabilities(), loadAuxiliaryModelDefaults()])
-  if (sessionBinding.session !== session || !capabilities?.modelRoutes.value)
+  if (!sessionBinding.isCurrent(binding, session) || !capabilities?.modelRoutes.value)
     throw new Error('Session unavailable')
   const routes = capabilities.modelRoutes.value
   return { fast: routes.fast ?? null, verifier: routes.verifier ?? null, defaults }
@@ -1983,7 +1914,14 @@ async function readAuxiliaryModels(): Promise<import('@agnes/web-ui').SessionAux
 async function selectAuxiliaryModel(slot: 'fast' | 'verifier', option: ModelPickerOption): Promise<boolean> {
   const session = sessionBinding.session
   const epoch = sessionBinding.capture()
-  if (!session || !connected || sending || sessionPending || modelChangePending || auxiliaryModelPending)
+  if (
+    !session ||
+    !connected ||
+    submissions.sending ||
+    sessionPending ||
+    modelChangePending ||
+    auxiliaryModelPending
+  )
     return false
   auxiliaryModelPending = true
   try {
