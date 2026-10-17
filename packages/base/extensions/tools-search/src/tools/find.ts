@@ -1,6 +1,8 @@
 import { defineTool } from '@agnes/plugin-runtime'
 import { guardedResult } from '../../../tools-core/src/guards/output.js'
+import { normalizeWorkspacePath } from '../../../tools-core/src/paths.js'
 import { FindParams } from '../../../tools-core/src/tools/schemas.js'
+import { type FoundPath, pathReferences } from './references.js'
 import { globToRegExp, newWalkReport, SEARCH_META, searchPathError, walk, walkNotes } from './walk.js'
 
 /** Filesystem-only fallback when the Host cannot launch the bundled search executable. */
@@ -15,7 +17,8 @@ export const findTool = defineTool({
     if (denied) return denied
     const report = newWalkReport(),
       re = globToRegExp(args.pattern),
-      lines: string[] = []
+      lines: string[] = [],
+      found: FoundPath[] = []
     const limit = args.limit ?? 1000
     let atLimit = false
     for await (const file of walk(ctx, root, report, { maxEntries: 50000 })) {
@@ -25,6 +28,7 @@ export const findTool = defineTool({
         break
       }
       lines.push(file.rel)
+      found.push({ abs: normalizeWorkspacePath(file.abs, ctx.cwd).abs, kind: 'file' })
     }
     const failed = !lines.length && report.unreadable > 0
     return {
@@ -36,7 +40,9 @@ export const findTool = defineTool({
           ...(atLimit ? [`[limit ${limit} reached; narrow the search]`] : []),
         ].join('\n'),
       )),
-      ...(failed ? { isError: true } : {}),
+      ...(failed
+        ? { isError: true }
+        : { structured: pathReferences(ctx, found, found.length, atLimit || report.truncated) }),
     }
   },
 })

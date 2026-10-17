@@ -1,8 +1,10 @@
 import type { ToolResult } from '@agnes/extension-api'
 import { defineTool } from '@agnes/plugin-runtime'
 import { guardedResult } from '../../../tools-core/src/guards/output.js'
+import { normalizeWorkspacePath } from '../../../tools-core/src/paths.js'
 import { isBinary, loadSpilledLines, MAX_READ_BYTES } from '../../../tools-core/src/tools/read.js'
 import { GrepParams } from '../../../tools-core/src/tools/schemas.js'
+import { type FoundPath, pathReferences } from './references.js'
 import {
   globToRegExp,
   newWalkReport,
@@ -84,6 +86,7 @@ export const grepTool = defineTool({
     }
     const denied = searchPathError(ctx, 'grep', root)
     if (denied) return denied
+    const found: FoundPath[] = []
     for await (const f of walk(ctx, root, report, { maxEntries: MAX_ENTRIES })) {
       if (atLimit) break
       if (f.kind !== 'file' || (f.abs !== root && glob && !glob.test(f.rel))) continue
@@ -109,11 +112,15 @@ export const grepTool = defineTool({
         continue
       }
       report.searched++
+      const before = matches
       searchLines(f.rel, dec.decode(bytes).split('\n'))
+      if (matches > before) found.push({ abs: normalizeWorkspacePath(f.abs, ctx.cwd).abs, kind: 'file' })
     }
     const notes = walkNotes(report, MAX_ENTRIES)
     if (atLimit) notes.push(`[limit ${limit} reached; there may be more matches]`)
     const failed = report.searched === 0 && (report.unreadable > 0 || report.binary > 0)
+    const partial =
+      atLimit || report.truncated || report.unreadable > 0 || report.oversize > 0 || report.binary > 0
     return {
       ...(await guardedResult(
         ctx,
@@ -122,7 +129,7 @@ export const grepTool = defineTool({
           ...notes,
         ].join('\n'),
       )),
-      ...(failed ? { isError: true } : {}),
+      ...(failed ? { isError: true } : { structured: pathReferences(ctx, found, found.length, partial) }),
     }
   },
 })
