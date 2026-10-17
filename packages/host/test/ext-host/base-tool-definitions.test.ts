@@ -4,8 +4,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { fakeModel, ScriptedProvider } from '@agnes/ai/testkit'
+import { openScheduleCatalog, type ScheduleWrite } from '@agnes/base/schedule'
 import { sanitize } from '@agnes/core'
 import { checkToolDef, TOOL_DESCRIPTION_MAX_LENGTH } from '@agnes/extension-api'
+import { createSqliteStorage } from '@agnes/host-infrastructure/adapters/storage-sqlite'
 import type { InferenceEvent, ToolCall } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createTestHost } from '../../testkit/index.js'
@@ -16,7 +18,9 @@ import { createTestHost } from '../../testkit/index.js'
 // "unknown tool ui_render".
 const baseDir = fileURLToPath(new URL('../../../base', import.meta.url))
 const dirs: string[] = []
-afterEach(() => {
+const cleanup: (() => Promise<void>)[] = []
+afterEach(async () => {
+  for (const close of cleanup.splice(0)) await close()
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
 })
 const scratch = () => {
@@ -69,6 +73,18 @@ describe('built-in base tools', () => {
   it('renders the question, deliverable and schedule surfaces through ui_render', async () => {
     const dataDir = scratch()
     writeFileSync(join(dataDir, 'report.txt'), 'A synthetic report')
+    const schedulerStorage = createSqliteStorage({ file: join(dataDir, 'scheduler.db') })
+    cleanup.push(() => schedulerStorage.close())
+    const table = schedulerStorage.tables('fixture/scheduler').table('schedules')
+    const schedules = openScheduleCatalog({
+      exec(sql, params) {
+        if (params?.length) table.run(sql, params)
+        else table.exec(sql)
+      },
+      get: (sql, params) => table.get(sql, params),
+      all: (sql, params) => table.all(sql, params),
+      transaction: (run) => table.transaction(run),
+    })
     const provider = new ScriptedProvider({
       models: [fakeModel({ route: 'gw', id: 'm1' })],
       scripts: [
@@ -102,6 +118,18 @@ describe('built-in base tools', () => {
       packageDirs: { '@agnes/base': baseDir },
       provider,
       disableSessionTitle: true,
+      scheduling: async (session, operation, input, signal) => {
+        signal.throwIfAborted()
+        if (operation === 'list') return { schedules: schedules.list({ sessionKey: session.key }) }
+        if (operation === 'get') return schedules.read((input as { id: string }).id)
+        if (operation === 'upsert')
+          return schedules.create({
+            ...(input as ScheduleWrite),
+            origin: session.key,
+            target: { kind: 'session', sessionKey: session.key },
+          })
+        throw new Error(`Unexpected scheduling operation: ${operation}`)
+      },
       seams: {
         artifacts: {
           put: async (bytes, meta) => {
