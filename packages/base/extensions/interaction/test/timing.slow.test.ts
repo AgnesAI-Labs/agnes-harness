@@ -35,14 +35,26 @@ it('continues immediately or at the durable deadline, accepts late answers and c
   const base = fakeToolContext()
   const ctx = {
     ...base,
-    tools: { ...base.tools, invoke: async () => ({ content: [] }) },
+    tools: {
+      ...base.tools,
+      list: () => [{ name: 'ui_render' } as ToolDef],
+      invoke: async (name, args) => {
+        if (name !== 'ui_render') throw new Error(`Unexpected renderer tool: ${name}`)
+        state = questionProjection.apply(state, {
+          type: 'x/agnes/intelligent-ui/surface.opened',
+          origin: 'ext:agnes/intelligent-ui',
+          data: { record: { status: 'open', surface: (args as { surface: { id: string } }).surface } },
+        } as unknown as Parameters<typeof questionProjection.apply>[1])
+        return { content: [] }
+      },
+    },
     session: { ...base.session, toolUseId: 'q' },
     projections: {
       readOwn: async () => ({
         status: 'available' as const,
         name: 'questions',
         asOfSeq: 1,
-        stateVersion: 2,
+        stateVersion: questionProjection.stateVersion,
         value: state,
       }),
     },
