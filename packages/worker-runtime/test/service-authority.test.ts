@@ -27,3 +27,32 @@ it('accepts only bounded supervisor-verified session read scopes and preserves l
     'invalid service authority',
   )
 })
+
+it('admits selected jobs and plan service owners with one narrow local control grant', async () => {
+  const authority = createWorkerServiceAuthority()
+  for (const [source, name] of [
+    ['session-workbench', 'jobs.read'],
+    ['session-workbench', 'jobs.control'],
+    ['plan-admin', 'plan.command'],
+  ] as const) {
+    const grant = { extension: 'community/selected', name, range: '*' }
+    const envelope = {
+      kind: 'surface-service',
+      source,
+      subjectCredential: { kind: 'local' },
+      grants: [grant],
+    }
+    await expect(authority.resolve(envelope)).resolves.toMatchObject({ source, grants: [grant] })
+    for (const grants of [
+      [],
+      [grant, grant],
+      [{ ...grant, name: 'unrelated.effect' }],
+      [{ ...grant, range: '^1.0' }],
+      [{ ...grant, extension: '../bad' }],
+    ])
+      await expect(authority.resolve({ ...envelope, grants })).rejects.toThrow('invalid service authority')
+    await expect(
+      authority.resolve({ ...envelope, subjectCredential: { kind: 'local', extra: true } }),
+    ).rejects.toThrow('invalid service authority')
+  }
+})
