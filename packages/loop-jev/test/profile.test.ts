@@ -1,5 +1,7 @@
+import type { LoopToolMeta } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
 import {
+  builtinToolNames,
   classifyReadBatch,
   classifyResult,
   completeArgs,
@@ -7,9 +9,10 @@ import {
   normalizePath,
   outcomeUnknown,
   resolveTool,
-  stageOneToolNames,
+  resolveUnprofiled,
+  turnToolNames,
 } from '../src/profile.js'
-import { BUILTIN_SCHEMAS, turnView } from './helpers/view.js'
+import { BUILTIN_META, BUILTIN_SCHEMAS, turnView } from './helpers/view.js'
 
 const tool = (name: string) => ({ name, description: name, parameters: BUILTIN_SCHEMAS[name] }) as never
 const ok = (text: string) => ({ content: [{ type: 'text' as const, text }] })
@@ -41,7 +44,7 @@ describe('tool profiles', () => {
   })
   it('computes toolNames: built-ins in the catalog plus discovery tools, sorted, never compact or run_code', () => {
     const view = turnView({ tools: ['write', 'read', 'tool_search', 'compact', 'run_code', 'todo', 'ls'] })
-    expect(stageOneToolNames(view)).toEqual(['ls', 'read', 'tool_search', 'write'])
+    expect(builtinToolNames(view)).toEqual(['ls', 'read', 'tool_search', 'write'])
     expect(decisionTools(view, ['ls', 'read', 'tool_search', 'write']).map((t) => t.name)).toEqual([
       'ls',
       'read',
@@ -276,5 +279,109 @@ describe('classifyResult', () => {
     expect(o.entry.output_excerpt).toHaveLength(500)
     expect(o.notes[0]?.text.length).toBeLessThanOrEqual(600)
     expect(o.entry.summary.endsWith(' [escalated]')).toBe(true)
+  })
+})
+
+const schema = (name: string, description = name) => ({
+  name,
+  description,
+  parameters: BUILTIN_SCHEMAS[name] ?? { type: 'object' },
+})
+
+const builtinMeta = (name: string): LoopToolMeta => {
+  const meta = BUILTIN_META[name]
+  if (meta === undefined) throw new Error(`no meta for ${name}`)
+  return meta
+}
+
+describe('with platform metadata', () => {
+  it('takes the names a request without tools would send, without compact and run_code', () => {
+    const view = turnView({
+      tools: ['read', 'ls', 'compact', 'run_code', 'docs_search'],
+      platform: { disclosed: ['read', 'compact', 'run_code', 'docs_search', 'ls', 'read'] },
+    })
+    expect(turnToolNames(view)).toEqual(['docs_search', 'ls', 'read'])
+  })
+  it('falls back to the built-in names when the view has no disclosed names', () => {
+    const view = turnView({ tools: ['read', 'ls', 'docs_search', 'tool_search'] })
+    expect(turnToolNames(view)).toEqual(builtinToolNames(view))
+    expect(turnToolNames(view)).toEqual(['ls', 'read', 'tool_search'])
+  })
+  it('resolves a read-only tool without a profile to INSPECT with only model parameters', () => {
+    const tool = resolveUnprofiled(schema('docs_search', 'Search the docs.'), {
+      isReadOnly: true,
+      isDestructive: false,
+      isOpenWorld: true,
+      offered: true,
+    })
+    expect(tool).toMatchObject({
+      phases: ['INSPECT'],
+      writeClass: 'read',
+      readOnly: true,
+      profiled: false,
+      criteria: 'Search the docs.',
+      targetParam: null,
+      defaults: null,
+      bindingDefaults: null,
+      referenceKind: null,
+      multiTargetMax: 1,
+    })
+  })
+  it('treats a mutable open-world tool, or one without metadata, as an external write', () => {
+    expect(
+      resolveUnprofiled(schema('deploy'), {
+        isReadOnly: false,
+        isDestructive: true,
+        isOpenWorld: true,
+        offered: true,
+      }),
+    ).toMatchObject({ phases: ['ACT'], writeClass: 'external', readOnly: false })
+    expect(resolveUnprofiled(schema('deploy'), undefined)).toMatchObject({
+      writeClass: 'external',
+      readOnly: false,
+    })
+    expect(
+      resolveUnprofiled(schema('todo'), {
+        isReadOnly: false,
+        isDestructive: false,
+        isOpenWorld: false,
+        offered: true,
+      }).writeClass,
+    ).toBe('workspace')
+  })
+  it('lets the metadata decide whether a built-in tool is read-only and keeps the shell class', () => {
+    expect(resolveTool(schema('read'), { ...builtinMeta('read'), isReadOnly: false })).toMatchObject({
+      readOnly: false,
+      writeClass: 'workspace',
+    })
+    expect(resolveTool(schema('shell'), { ...builtinMeta('shell'), isOpenWorld: true })).toMatchObject({
+      writeClass: 'workspace',
+    })
+  })
+  it('leaves the discovery tools and tools the model is not offered out of the decision surface', () => {
+    const view = turnView({
+      tools: ['ls', 'read', 'tool_search', 'docs_search', 'hidden'],
+      platform: { meta: { hidden: { offered: false } } },
+    })
+    const names = decisionTools(view, ['docs_search', 'hidden', 'ls', 'read', 'tool_search']).map(
+      (t) => t.name,
+    )
+    expect(names).toEqual(['ls', 'read', 'docs_search'])
+  })
+  it('classifies a failed read-only call of a tool without a profile as not applied and recoverable', () => {
+    const obs = classifyResult({
+      phase: 'INSPECT',
+      name: 'docs_search',
+      args: {},
+      result: { content: [{ type: 'text', text: 'boom' }], isError: true },
+      cwd: '/w',
+      confidence: 0.9,
+      escalated: false,
+      readOnly: true,
+    })
+    expect(obs.entry).toMatchObject({
+      disposition: 'NOT_APPLIED',
+      error: { code: 'EXECUTION_FAILED', recoverability: 'recoverable' },
+    })
   })
 })

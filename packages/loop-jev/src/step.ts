@@ -5,7 +5,7 @@ import { dispatchCalls, observeDispatch, replayCalls } from './dispatch.js'
 import { callJev, type JevDeps, type JevOutcome, type JevPayload } from './jev.js'
 import { type Adoption, adoptCalls, noteFor, parseReply, type Reply } from './llm.js'
 import { type LlmOutcome, requestLlm } from './model.js'
-import { decisionTools, outcomeUnknown, resultText, stageOneToolNames, targetOf } from './profile.js'
+import { decisionTools, outcomeUnknown, resultText, targetOf, turnToolNames } from './profile.js'
 import { routeDecision } from './route.js'
 import {
   boundContent,
@@ -249,7 +249,7 @@ export async function llmStep(
         async recomputeToolNames() {
           const view = await ctx.turn.view()
           if (!view) throw new Error('The Jev loop turn has no public view')
-          const names = stageOneToolNames(view)
+          const names = turnToolNames(view)
           if (names.join('\n') !== st.toolNames.join('\n')) st.toolNamesChanges++
           st.toolNames = names
           return [...names]

@@ -5,7 +5,7 @@ import type {
   LoopInput,
   LoopStepOutcome,
 } from '@agnes/extension-api'
-import { stageOneToolNames } from './profile.js'
+import { turnToolNames } from './profile.js'
 import { recoverStep, resumeParkedStage } from './recover.js'
 import { emitMetrics, finishTurn, type Scope, save, snapshot } from './scope.js'
 import { emptyCounters, initialState } from './state.js'
@@ -32,7 +32,7 @@ async function beginTurn(s: Scope, input: LoopInput): Promise<void> {
   delete st.endError
   const view = await s.ctx.turn.view()
   if (!view) throw new Error('The claimed Jev loop turn has no public view')
-  st.toolNames = stageOneToolNames(view)
+  st.toolNames = turnToolNames(view)
 }
 
 const ended = (st: JevState) => st.stage === 'finish' || st.stage === 'done'
