@@ -50,6 +50,8 @@ export const textStatsTool = {
 
 参数是带 TypeBox kind 标记的 Schema；示例手写 `Symbol.for('TypeBox.Kind')` 避免外部 import。普通纯 JSON Schema 对象不能随意当作所有工具定义 API 接受的 TypeBox 值。使用已安装的 TypeBox 时可用 `Type.Object` 构建，分发前应打包依赖。
 
+`structured` 会到达循环、导出和追踪检查器，从不到达模型。其他代码可能读取它时，给它一个你自己的 `schema` 字段：内置的 `ls`、`find` 和 `grep` 把自己的标为 `agh.path-references/1`，读取方按这个字段区分载荷。结果的 `structured` 带这个 schema 时，不管来自哪个工具，`run_code` 脚本拿到的都是它的文本；其他 `structured` 原样交给脚本。
+
 元数据准确声明只读、非破坏、并发安全、封闭世界、`replay: 'safe'` 和不需审批。若改成写文件或调用外部系统，应重新定义效果、审批与重放语义，不能沿用这里的声明。
 
 ## 安装和运行

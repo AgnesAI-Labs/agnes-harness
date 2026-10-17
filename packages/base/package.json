@@ -617,6 +617,7 @@
     "@agnes/error-sanitization": "workspace:*"
   },
   "devDependencies": {
+    "@agnes/core-effects": "workspace:*",
     "@agnes/extension-api": "workspace:*",
     "@types/turndown": "5.0.6",
     "esbuild": "0.28.2"

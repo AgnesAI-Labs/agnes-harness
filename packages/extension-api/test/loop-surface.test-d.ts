@@ -6,6 +6,8 @@ import type {
   LoopContext,
   LoopFactory,
   LoopToolCallOptions,
+  LoopToolMeta,
+  LoopTurnView,
 } from '../src/index.js'
 
 it('splits the generic ports from the default-loop convenience edges', () => {
@@ -31,4 +33,16 @@ it('takes an optional announce option on execute and batch', () => {
   // An existing two-argument implementation still fits the port.
   const execute: Tools['execute'] = async (_call, _signal) => ({ content: [] })
   expectTypeOf(execute).toBeFunction()
+})
+
+it('gives the turn view optional tool facts beside an unchanged tool list', () => {
+  expectTypeOf<LoopTurnView['toolMeta']>().toEqualTypeOf<Readonly<Record<string, LoopToolMeta>> | undefined>()
+  expectTypeOf<LoopTurnView['disclosedTools']>().toEqualTypeOf<readonly string[] | undefined>()
+  expectTypeOf<LoopToolMeta>().toEqualTypeOf<{
+    readonly isReadOnly: boolean
+    readonly isDestructive: boolean
+    readonly isOpenWorld: boolean
+    readonly offered: boolean
+  }>()
+  expectTypeOf<keyof LoopTurnView['tools'][number]>().toEqualTypeOf<'name' | 'description' | 'parameters'>()
 })

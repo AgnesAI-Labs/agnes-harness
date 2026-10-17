@@ -1,8 +1,10 @@
+import { isAbsolute, join } from 'node:path'
 import type { ToolResult } from '@agnes/extension-api'
 import { defineTool } from '@agnes/plugin-runtime'
 import { guardedResult } from '../../../tools-core/src/guards/output.js'
 import { isBinary, loadSpilledLines, MAX_READ_BYTES } from '../../../tools-core/src/tools/read.js'
 import { GrepParams } from '../../../tools-core/src/tools/schemas.js'
+import { type FoundPath, referencedResult } from './references.js'
 import {
   globToRegExp,
   newWalkReport,
@@ -48,6 +50,8 @@ export const grepTool = defineTool({
     const report = newWalkReport()
     const out: string[] = []
     let matches = 0
+    // The rows of `out` that hold a match rather than context.
+    const matchRows: number[] = []
     let atLimit = false
     const context = args.context ?? 0
     // Matches one file's lines, as `label` and a 1-based line number. Shared by a file in the tree
@@ -62,6 +66,7 @@ export const grepTool = defineTool({
         matches++
         for (let j = Math.max(0, i - context); j < i; j++)
           out.push(`${label}-${numberOf(j)}-${clip(lines[j] as string)}`)
+        matchRows.push(out.length)
         out.push(`${label}:${numberOf(i)}:${clip(lines[i] as string)}`)
         for (let j = i + 1; j <= Math.min(lines.length - 1, i + context); j++)
           out.push(`${label}-${numberOf(j)}-${clip(lines[j] as string)}`)
@@ -84,6 +89,7 @@ export const grepTool = defineTool({
     }
     const denied = searchPathError(ctx, 'grep', root)
     if (denied) return denied
+    const found: FoundPath[] = []
     for await (const f of walk(ctx, root, report, { maxEntries: MAX_ENTRIES })) {
       if (atLimit) break
       if (f.kind !== 'file' || (f.abs !== root && glob && !glob.test(f.rel))) continue
@@ -109,20 +115,26 @@ export const grepTool = defineTool({
         continue
       }
       report.searched++
+      const before = matchRows.length
       searchLines(f.rel, dec.decode(bytes).split('\n'))
+      if (matchRows.length > before)
+        found.push({
+          // Resolved without the workspace fold, which would read a backslash in a name as a separator.
+          abs: isAbsolute(f.abs) ? f.abs : join(ctx.cwd, f.abs),
+          kind: 'file',
+          rows: matchRows.slice(before).map((row) => ({ row, label: f.rel.length + 1 })),
+        })
     }
     const notes = walkNotes(report, MAX_ENTRIES)
     if (atLimit) notes.push(`[limit ${limit} reached; there may be more matches]`)
     const failed = report.searched === 0 && (report.unreadable > 0 || report.binary > 0)
-    return {
-      ...(await guardedResult(
-        ctx,
-        [
-          out.length > 0 ? out.join('\n') : failed ? 'nothing could be searched' : 'no matches',
-          ...notes,
-        ].join('\n'),
-      )),
-      ...(failed ? { isError: true } : {}),
-    }
+    const partial =
+      atLimit || report.truncated || report.unreadable > 0 || report.oversize > 0 || report.binary > 0
+    const text = [
+      out.length > 0 ? out.join('\n') : failed ? 'nothing could be searched' : 'no matches',
+      ...notes,
+    ].join('\n')
+    if (failed) return { ...(await guardedResult(ctx, text)), isError: true }
+    return referencedResult(ctx, text, out, found, found.length, partial)
   },
 })
