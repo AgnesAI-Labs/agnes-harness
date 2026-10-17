@@ -5,7 +5,7 @@ export const packageId = '@sample/upgrade-gate'
 export const extension = 'upgrade-gate/main'
 // The optional probe records the old worker's real OS identity from inside its start hook.
 // Verification never edits markers or grants in the upgraded home.
-export async function writePackage(root, managed = true, identityProbe) {
+export async function writePackage(root, managed = true, identityProbe, legacyMetadata = false) {
   const directory = join(root, 'test-package')
   await mkdir(directory)
   await mkdir(join(directory, 'client'))
@@ -39,6 +39,16 @@ export async function writePackage(root, managed = true, identityProbe) {
       type: 'module',
       exports: './index.mjs',
       agnes: {
+        ...(legacyMetadata
+          ? {
+              metadata: {
+                displayName: 'Synthetic upgrade plugin',
+                summary: 'Plugin-core upgrade fixture',
+                description: 'A synthetic package retained by actual saved sessions',
+                category: 'developer',
+              },
+            }
+          : {}),
         plugins: [
           {
             id: `ext:${extension}`,

@@ -8,6 +8,7 @@ import { PackageError } from './errors.js'
 import { canonical, own, readStaticJson, snapshotHash, syncDirectory } from './integrity.js'
 import { type LockEntry, type Lockfile, readLock, writeLock } from './lockfile.js'
 import { hashDirectory, packageDir } from './sources.js'
+import { currentStoredShape } from './stored-metadata.js'
 
 export type PackageCommitPoint =
   | 'prepared'
@@ -141,7 +142,10 @@ function checked(s: PackageStore, lock: Lockfile, raw: Record<string, unknown>):
     if (raw[key] !== null && (typeof raw[key] !== 'string' || !TREE.test(raw[key] as string)))
       fail('journal-tree')
   for (const key of ['old', 'next'])
-    if (raw[key] !== null && !validateLockfile({ ...lock, packages: { [raw.id]: raw[key] } }).ok)
+    if (
+      raw[key] !== null &&
+      !validateLockfile(currentStoredShape({ ...lock, packages: { [raw.id]: raw[key] } })).ok
+    )
       fail('journal-entry')
   if (
     (raw.old === null && raw.oldTree !== null) ||
@@ -297,7 +301,7 @@ export function commitPackages(s: PackageStore, lock: Lockfile, changes: readonl
     return j
   })
   if (new Set(entries.map((j) => paths(s, j).dest)).size !== entries.length) fail('package-path-collision')
-  if (!validateLockfile(draft).ok) fail('new-lock')
+  if (!validateLockfile(currentStoredShape(draft)).ok) fail('new-lock')
   const serialized = `${JSON.stringify(entries.length === 1 ? entries[0] : { version: 2, entries })}\n`
   if (Buffer.byteLength(serialized) > 1048576) fail('journal-size')
   const file = journalPath(s),

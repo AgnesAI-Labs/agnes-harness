@@ -55,7 +55,9 @@ export type RuntimeSnapshotCollection = Readonly<{
 export type RuntimeSnapshotStore = PackageStore
 
 export type SnapshotRecord = {
-  version: 1
+  /** Missing/1 retains the original identity; 2 includes the record format in its identity.
+   * Early builds with agents/application also wrote 1 and remain readable. */
+  version?: 1 | 2
   snapshotId: string
   packageId: string
   packageVersion: string
