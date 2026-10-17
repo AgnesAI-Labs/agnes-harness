@@ -95,14 +95,18 @@ model on that route other than the account's selected one. Each turn has a 600 s
 
 `suites/read-heavy.json` tests the work the Jev loop is meant to do with fewer conversation-model
 requests: long sessions that mostly list and read files and answer questions about them, with few
-writes. It has two scenarios of eight turns, `read-heavy-code` (a small Python package) and
+writes. It has two scenarios of thirteen turns, `read-heavy-code` (a small Python package) and
 `read-heavy-docs` (an operations handbook), each seeded with 28 small files in its first turn. The
 turns ask where something is defined, compare two modules or two policies, count call sites or
-owners, follow a reference chain across several files, and in the last turn ask again for two
-answers given earlier, so that what the session already read can be reused. One turn per scenario
-writes a single file under `notes/`. Every probe checks that no seed file changed, and in the write
-turn what the new file lists; answers are checked by exact names and numbers. The probes need only
-the Python standard library.
+owners, and follow a reference chain across several files. Later turns go back to files read
+several turns earlier and ask for a detail not asked before, compare files read far apart, read
+again a file a teammate changed just before the turn (the runner writes the new content), and
+answer from the note the session wrote itself; the last turn asks again for answers given earlier.
+One turn per scenario writes a single file under `notes/`. Every probe checks that the workspace
+outside `notes/` still holds exactly the seed files with their expected contents, and in the write
+turn that the new file lists exactly the expected names. Answers are checked by exact names and by
+`KEY=value` lines that the goals ask for, so a count cannot pass by a digit that appears by chance.
+The probes need only the Python standard library.
 
 ```sh
 pnpm exec tsx packages/loop-jev/bench/run.mjs --home "$AGH_HOME" \

@@ -1,7 +1,8 @@
 // Writes `read-heavy.json` next to this file: two long sessions that mostly navigate and read a small
-// seeded workspace and answer questions about it, with one small write each. The seed files, the
-// answers the turns check and the probes all come from the tables below, so every run writes the
-// same suite. Regenerate from the repository root, then format:
+// seeded workspace and answer questions about it, go back to files read several turns earlier, and
+// make one small write each. The seed files, the answers the turns check and the probes all come
+// from the tables below, so every run writes the same suite. Regenerate from the repository root,
+// then format:
 //   node packages/loop-jev/bench/suites/make-read-heavy.mjs
 //   pnpm exec biome format --write packages/loop-jev/bench/suites/read-heavy.json
 import { createHash } from 'node:crypto'
@@ -319,46 +320,113 @@ Every write to the ledger goes through \`audit_log\`.
 `,
 })
 
+/** The seed file called `name`; the tables below read their answers out of it. */
+const fileIn = (seed, name) => {
+  const found = seed.find((f) => f.name === name)
+  if (!found) throw new Error(`no seed file ${name}`)
+  return found
+}
+
+/** The first group of `pattern` in `text`, which must match. */
+const grab = (text, pattern) => {
+  const found = text.match(pattern)
+  if (!found) throw new Error(`no match for ${pattern}`)
+  return found[1]
+}
+
+/** The sentence that asks for answer lines in a fixed `KEY=value` form, so the check is exact. */
+const endWith = (...lines) =>
+  `End your answer with ${lines.length === 1 ? 'the line' : 'the lines'} ${lines.map((l) => `\`${l}\``).join(', ')}, with no spaces around the \`=\`.`
+
+const code = (name) => fileIn(CODE_FILES, name).content
 const SRC = CODE_FILES.filter((f) => f.name.startsWith('src/'))
-const AUDIT_CALLS = SRC.reduce((n, f) => n + f.content.split('audit.audit_log(').length - 1, 0)
-const AUDIT_MODULES = SRC.filter((f) => f.content.includes('audit.audit_log('))
-  .map((f) => f.name.split('/').at(-1).replace(/\.py$/, ''))
-  .sort()
+const moduleName = (name) => name.split('/').at(-1).replace(/\.py$/, '')
+const AUDIT_COUNTS = Object.fromEntries(
+  SRC.map((f) => [moduleName(f.name), f.content.split('audit.audit_log(').length - 1])
+    .filter(([, n]) => n > 0)
+    .sort(([a], [b]) => (a < b ? -1 : 1)),
+)
+const AUDIT_MODULES = Object.keys(AUDIT_COUNTS)
+const AUDIT_CALLS = Object.values(AUDIT_COUNTS).reduce((a, b) => a + b, 0)
 const MODULES = SRC.filter((f) => f.name.endsWith('.py') && !f.name.endsWith('/__init__.py')).length
+const QUEUE = grab(code('config/profiles/nightly.toml'), /queue = "(.+)"/)
+const docstring = (name) => grab(code(name), /^"""(.*?)\.?"""/)
+const CHAIN = ['cli.py', 'pipeline.py', 'batch.py']
+const BATCH_LIMIT = grab(code(`${PKG}/batch.py`), /fetch_rows\(queue, limit=(\d+)\)/)
+const STREAM_LIMIT = grab(code(`${PKG}/stream.py`), /fetch_rows\(queue, limit=(\d+)\)/)
+const STREAM_CURRENCY = grab(code(`${PKG}/stream.py`), /fx\.convert\(row, "(\w+)"\)/)
+const setting = (key) => grab(code(`${PKG}/settings.py`), new RegExp(`${key} = (\\d+)`))
+const AUDITED = ['batch', 'stream'].filter((m) => m in AUDIT_COUNTS)
+
+/** The profile a teammate changes between two turns: same pipeline, another queue. */
+const NIGHTLY_CHANGED = {
+  name: 'config/profiles/nightly.toml',
+  content: code('config/profiles/nightly.toml').replace(QUEUE, 'q-amber-finch'),
+}
+const NEW_QUEUE = grab(NIGHTLY_CHANGED.content, /queue = "(.+)"/)
 
 const CODE_TURNS = [
   {
-    goal: `Give me an overview of this repository: name its top-level directories and say what each holds. Also tell me how many Python modules there are under ${PKG}, counting subpackages but not __init__.py files; give the number in digits. ${NO_CHANGE}`,
-    answer: ['config', 'src', 'tests', 'docs', String(MODULES)],
+    goal: `Give me an overview of this repository: name its top-level directories and say what each holds. Also count the Python modules under ${PKG}, including modules inside subpackages but not __init__.py files. ${endWith('MODULES=<n>')} ${NO_CHANGE}`,
+    answer: ['config', 'src', 'tests', 'docs', `MODULES=${MODULES}`],
   },
   {
-    goal: `In which file is the function normalize_amount defined, and which other function is defined in the same file? ${NO_CHANGE}`,
-    answer: ['money.py', 'round_cents'],
+    goal: `In which file is the function normalize_amount defined (give its path from the repository root), and which other function is defined in the same file? ${NO_CHANGE}`,
+    answer: [`${PKG}/money.py`, 'round_cents'],
   },
   {
     goal: `The scheduler starts the entry point named in config/app.toml. Follow the configuration and the code from there: which job function runs, and which queue does it read? ${NO_CHANGE}`,
-    answer: ['run_batch', 'q-ember-lark'],
+    answer: ['run_batch', QUEUE],
   },
   {
-    goal: `Compare ${PKG}/exporters/csv_export.py with ${PKG}/exporters/json_export.py. Which functions do both define, and which function does each define that the other lacks? ${NO_CHANGE}`,
-    answer: ['export_rows', 'export_totals', 'export_header', 'export_schema'],
+    goal: `Compare ${PKG}/exporters/csv_export.py with ${PKG}/exporters/json_export.py. Which functions do both define, and which function does each define that the other lacks? ${endWith('ONLY_CSV=<function>', 'ONLY_JSON=<function>')} ${NO_CHANGE}`,
+    answer: ['export_rows', 'export_totals', 'ONLY_CSV=export_header', 'ONLY_JSON=export_schema'],
   },
   {
-    goal: `How many times is audit_log called in the code under src/ (call sites only, not its definition), and in which modules? Give the count in digits. ${NO_CHANGE}`,
-    answer: [String(AUDIT_CALLS), ...AUDIT_MODULES],
+    goal: `How many times is audit_log called in the code under src/ (call sites only, not its definition), and in which modules? ${endWith('CALLS=<n>')} ${NO_CHANGE}`,
+    answer: [`CALLS=${AUDIT_CALLS}`, ...AUDIT_MODULES],
   },
   {
-    goal: 'Write notes/audit-sites.md with one line per module under src/ that calls audit_log, the module name only. Do not change any other file.',
+    goal: 'Write notes/audit-sites.md with one line per module under src/ that calls audit_log: the module name only, and no heading or other lines. Do not change any other file.',
     answer: [],
     note: { path: 'notes/audit-sites.md', words: AUDIT_MODULES },
   },
   {
-    goal: `If config/app.toml selected the hourly profile instead, which job function would run, and which retry-limit setting would it use, with what value? ${NO_CHANGE}`,
-    answer: ['run_stream', 'STREAM_RETRY_LIMIT', '17'],
+    goal: `If config/app.toml selected the hourly profile instead, which job function would run, and which retry-limit setting would it use, with what value? ${endWith('LIMIT=<value>')} ${NO_CHANGE}`,
+    answer: ['run_stream', 'STREAM_RETRY_LIMIT', `LIMIT=${setting('STREAM_RETRY_LIMIT')}`],
   },
   {
-    goal: `Remind me of two things from earlier: which queue does the configured entry point read, and in which file is normalize_amount defined? ${NO_CHANGE}`,
-    answer: ['q-ember-lark', 'money.py'],
+    goal: `Open ${PKG}/batch.py again: how many rows does run_batch ask storage.fetch_rows for, and which setting bounds the number of attempts its loop makes, with what value? ${endWith('BATCH_ROWS=<n>', 'BATCH_ATTEMPTS=<n>')} ${NO_CHANGE}`,
+    answer: [
+      'BATCH_RETRY_LIMIT',
+      `BATCH_ROWS=${BATCH_LIMIT}`,
+      `BATCH_ATTEMPTS=${setting('BATCH_RETRY_LIMIT')}`,
+    ],
+  },
+  {
+    goal: `Go back to the modules on the path from the entry point to the job, ${CHAIN.join(', ')} under ${PKG}, and quote the module docstring of each. ${NO_CHANGE}`,
+    answer: CHAIN.map((m) => docstring(`${PKG}/${m}`)),
+  },
+  {
+    goal: `Compare ${PKG}/stream.py with ${PKG}/batch.py: which currency does the stream job convert rows to, how many rows does it ask fetch_rows for, and which of the two jobs writes the audit trail? ${endWith('STREAM_CURRENCY=<code>', 'STREAM_ROWS=<n>', 'AUDITED=<module>')} ${NO_CHANGE}`,
+    answer: [
+      `STREAM_CURRENCY=${STREAM_CURRENCY}`,
+      `STREAM_ROWS=${STREAM_LIMIT}`,
+      ...AUDITED.map((m) => `AUDITED=${m}`),
+    ],
+  },
+  {
+    goal: `A teammate has just changed config/profiles/nightly.toml. Read the configuration again: which job function does the configured entry point run now, and which queue does it read? ${endWith('JOB=<function>', 'QUEUE=<queue>')} ${NO_CHANGE}`,
+    answer: ['JOB=run_batch', `QUEUE=${NEW_QUEUE}`],
+    inject: [NIGHTLY_CHANGED],
+  },
+  {
+    goal: `Open notes/audit-sites.md, which you wrote earlier. For each module it lists, how many times does that module call audit_log? End your answer with one line \`<module>=<n>\` per module, with no spaces around the \`=\`. ${NO_CHANGE}`,
+    answer: AUDIT_MODULES.map((m) => `${m}=${AUDIT_COUNTS[m]}`),
+  },
+  {
+    goal: `Remind me of three things from earlier: the path of the file that defines normalize_amount, the number of audit_log call sites under src/, and the queue the configured entry point reads now. ${endWith('CALLS=<n>', 'QUEUE=<queue>')} ${NO_CHANGE}`,
+    answer: [`${PKG}/money.py`, `CALLS=${AUDIT_CALLS}`, `QUEUE=${NEW_QUEUE}`],
   },
 ]
 
@@ -495,45 +563,85 @@ Pages: ${t.channel}
   })),
 ]
 
+const doc = (name) => fileIn(DOC_FILES, name).content
+const service = (name) => {
+  const found = SERVICES.find((s) => s.name === name)
+  if (!found) throw new Error(`no service ${name}`)
+  return found
+}
 const SPOOL = runbook('disk-pressure.md')
-const BEACON_END = runbook(runbook(SERVICES.find((s) => s.name === 'beacon').runbook).next)
-const BEACON_CHANNEL = TEAMS[BEACON_END.owner].channel.slice(1)
+// One escalation hop: beacon's runbook, then the runbook its escalation link names.
+const BEACON_HOP = runbook(runbook(service('beacon').runbook).next)
+const BEACON_CHANNEL = TEAMS[BEACON_HOP.owner].channel.slice(1)
+const SPOOL_NEXT = runbook(SPOOL.next)
 const KESTREL = RUNBOOKS.filter((r) => r.owner === 'kestrel').map((r) => r.file)
 const ON_LEDGERD = SERVICES.filter((s) => s.deps.includes('ledgerd')).map((s) => s.name)
+const AUDIT_DAYS = grab(doc('policies/retention.md'), /Audit logs are kept for (\d+) days/)
+const REVIEW_DAYS = grab(doc('policies/access.md'), /Access reviews are held every (\d+) days/)
+const lead = (serviceName) => TEAMS[service(serviceName).owner].lead
+
+/** The team page a team changes between two turns: same lead, another paging channel. */
+const BEACON_TEAM_PAGE = `teams/${BEACON_HOP.owner}.md`
+const TEAM_CHANGED = {
+  name: BEACON_TEAM_PAGE,
+  content: doc(BEACON_TEAM_PAGE).replace(TEAMS[BEACON_HOP.owner].channel, `#${BEACON_HOP.owner}-oncall`),
+}
+const NEW_CHANNEL = grab(TEAM_CHANGED.content, /Pages: #(\S+)/)
 
 const DOC_TURNS = [
   {
-    goal: `Give me an overview of this handbook: name its top-level sections and say what each holds. How many runbooks are there? Give the number in digits. ${NO_CHANGE}`,
-    answer: ['services', 'runbooks', 'policies', 'teams', String(RUNBOOKS.length)],
+    goal: `Give me an overview of this handbook: name its top-level sections and say what each holds. How many runbooks are there? ${endWith('RUNBOOKS=<n>')} ${NO_CHANGE}`,
+    answer: ['services', 'runbooks', 'policies', 'teams', `RUNBOOKS=${RUNBOOKS.length}`],
   },
   {
     goal: `Which runbook should I open when write latency climbs while /var/spool/ingest fills up? Give its file name and the team that owns it. ${NO_CHANGE}`,
     answer: [SPOOL.file, SPOOL.owner],
   },
   {
-    goal: `Start from the service page of beacon, open its runbook, then follow the escalation link of that runbook. What is the title of the runbook you end at, and in which chat channel does the team that owns it take pages? ${NO_CHANGE}`,
-    answer: [BEACON_END.title, BEACON_CHANNEL],
+    goal: `Start from the service page of beacon and open its runbook, then follow that runbook's escalation link once (one hop) and stop there. What is the title of the runbook you reach, and in which chat channel does the team that owns that runbook take pages? ${NO_CHANGE}`,
+    answer: [BEACON_HOP.title, BEACON_CHANNEL],
   },
   {
-    goal: `How many runbooks does the kestrel team own, and which are they? Give the count in digits and the file names. ${NO_CHANGE}`,
-    answer: [String(KESTREL.length), ...KESTREL],
+    goal: `How many runbooks does the kestrel team own, and which are they? Give the file names. ${endWith('COUNT=<n>')} ${NO_CHANGE}`,
+    answer: [`COUNT=${KESTREL.length}`, ...KESTREL],
   },
   {
-    goal: `Compare policies/retention.md with policies/access.md: how long are audit logs kept, and how often are access reviews held? ${NO_CHANGE}`,
-    answer: ['400 days', '90 days'],
+    goal: `Compare policies/retention.md with policies/access.md: for how many days are audit logs kept, and every how many days are access reviews held? ${endWith('AUDIT_DAYS=<n>', 'REVIEW_DAYS=<n>')} ${NO_CHANGE}`,
+    answer: [`AUDIT_DAYS=${AUDIT_DAYS}`, `REVIEW_DAYS=${REVIEW_DAYS}`],
   },
   {
-    goal: 'Write notes/kestrel.md with one line per runbook that the kestrel team owns, the file name only. Do not change any other file.',
+    goal: 'Write notes/kestrel.md with one line per runbook that the kestrel team owns: the file name only, and no heading or other lines. Do not change any other file.',
     answer: [],
     note: { path: 'notes/kestrel.md', words: KESTREL },
   },
   {
-    goal: `Which services depend directly on ledgerd? List them. ${NO_CHANGE}`,
-    answer: ON_LEDGERD,
+    goal: `Which services depend directly on ledgerd (its name is on their own "Depends on" line)? List them. ${endWith('DIRECT_COUNT=<n>')} ${NO_CHANGE}`,
+    answer: [...ON_LEDGERD, `DIRECT_COUNT=${ON_LEDGERD.length}`],
   },
   {
-    goal: `Remind me of two things from earlier: which runbook covers write latency while /var/spool/ingest fills up, and in which chat channel does the escalation from beacon end? ${NO_CHANGE}`,
-    answer: [SPOOL.file, BEACON_CHANNEL],
+    goal: `For each service that depends directly on ledgerd, open its service page again and give its tier and its owner team. End your answer with one line \`<service>=<tier>,<team>\` per service, with no spaces. ${NO_CHANGE}`,
+    answer: ON_LEDGERD.map((s) => `${s}=${service(s).tier},${service(s).owner}`),
+  },
+  {
+    goal: `Open runbooks/${SPOOL.file} again: which runbook does its escalation link point to, and which team owns that runbook? ${endWith('NEXT=<file name>', 'NEXT_OWNER=<team>')} ${NO_CHANGE}`,
+    answer: [`NEXT=${SPOOL_NEXT.file}`, `NEXT_OWNER=${SPOOL_NEXT.owner}`],
+  },
+  {
+    goal: `Compare services/ledgerd.md with services/relay.md: which team owns each, and who leads that team? ${endWith('LEDGERD_LEAD=<name>', 'RELAY_LEAD=<name>')} ${NO_CHANGE}`,
+    answer: [`LEDGERD_LEAD=${lead('ledgerd')}`, `RELAY_LEAD=${lead('relay')}`],
+  },
+  {
+    goal: `The ${BEACON_HOP.owner} team has just updated its team page. Read ${BEACON_TEAM_PAGE} again: in which chat channel does the team take pages now? ${endWith('CHANNEL=<channel, without the #>')} ${NO_CHANGE}`,
+    answer: [`CHANNEL=${NEW_CHANNEL}`],
+    inject: [TEAM_CHANGED],
+  },
+  {
+    goal: `Open notes/kestrel.md, which you wrote earlier. For each runbook it lists, give the title of that runbook. End your answer with one line \`<file name>=<title>\` per runbook, with no spaces around the \`=\`. ${NO_CHANGE}`,
+    answer: KESTREL.map((f) => `${f}=${runbook(f).title}`),
+  },
+  {
+    goal: `Remind me of three things from earlier: the runbook that covers write latency while /var/spool/ingest fills up, the chat channel where the team that owns the runbook one escalation hop after beacon's runbook takes pages now, and how many runbooks the kestrel team owns. ${endWith('CHANNEL=<channel, without the #>', 'COUNT=<n>')} ${NO_CHANGE}`,
+    answer: [SPOOL.file, `CHANNEL=${NEW_CHANNEL}`, `COUNT=${KESTREL.length}`],
   },
 ]
 
@@ -548,14 +656,18 @@ function seedDigest(seed) {
 }
 
 /**
- * A probe that checks that no seed file changed, runs `extra` Python lines, and prints `marker`.
- * The Python text holds no single quote, so one pair of single quotes passes it to the shell as is.
+ * A probe that checks that the workspace outside `notes/` holds exactly the seed files with the
+ * contents they have in this turn, runs `extra` Python lines, and prints `marker`. Hidden entries
+ * and `__pycache__` are not counted. The Python text holds no single quote, so one pair of single
+ * quotes passes it to the shell as is.
  */
 function probe(seed, marker, extra) {
   const code = [
     'import hashlib',
     'from pathlib import Path',
     `names = "${seed.map((f) => f.name).join(' ')}".split()`,
+    'found = [str(p) for p in Path(".").rglob("*") if p.is_file() and p.parts[0] != "notes" and not any(part.startswith(".") or part == "__pycache__" for part in p.parts)]',
+    'assert sorted(found) == sorted(names), "a file was added or removed outside notes/: " + str(sorted(set(found) ^ set(names)))',
     'h = hashlib.sha256()',
     'for n in names:',
     '    h.update(n.encode() + b"\\0" + Path(n).read_bytes() + b"\\0")',
@@ -567,26 +679,49 @@ function probe(seed, marker, extra) {
   return { command: `python -B -c '${code}'`, contains: marker }
 }
 
-/** Python lines that check the file a turn wrote: it exists and names every word, ignoring case. */
+/** A list item as the note probes compare it: lower case, no `.py`/`.md` suffix, no directory. */
+const item = (word) => word.toLowerCase().replace(/\.(py|md)$/, '')
+
+/**
+ * Python lines that check the file a turn wrote: its non-empty lines, each stripped of a list
+ * bullet (`-` or `*`), backticks, a directory and a `.py` or `.md` suffix, are exactly `words`.
+ */
 const noteHas = ({ path, words }) => [
-  `text = Path("${path}").read_text(encoding="utf-8").lower()`,
-  `for w in ${JSON.stringify(words.map((w) => w.toLowerCase()))}:`,
-  '    assert w in text, w',
+  `want = set(${JSON.stringify(words.map(item))})`,
+  'got = set()',
+  `for line in Path("${path}").read_text(encoding="utf-8").lower().splitlines():`,
+  '    entry = line.strip().lstrip("-*").strip().strip("`").strip()',
+  '    entry = entry.split("/")[-1].removesuffix(".py").removesuffix(".md")',
+  '    if entry:',
+  '        got.add(entry)',
+  'assert got == want, "the note lists " + str(sorted(got))',
 ]
 
+/**
+ * A turn may replace seed files before it starts (a teammate's change): it lists them in
+ * `inject_files`, and from that turn on the probes expect the new contents.
+ */
 function scenario({ id, tag, description, seed, turns }) {
+  let current = seed
   return {
     id,
     category: 'read_heavy',
     favor: 'jev',
     description,
     max_steps: 20,
-    turns: turns.map((t, i) => ({
-      goal: t.goal,
-      ...(t.answer.length > 0 ? { answer_contains: t.answer } : {}),
-      ...(i === 0 ? { inject_files: seed } : {}),
-      bash: [probe(seed, `READ_HEAVY_${tag}_T${i + 1}_OK`, t.note ? noteHas(t.note) : [])],
-    })),
+    turns: turns.map((t, i) => {
+      for (const f of t.inject ?? []) {
+        if (!current.some((s) => s.name === f.name)) throw new Error(`${id}: ${f.name} is not a seed file`)
+        current = current.map((s) => (s.name === f.name ? f : s))
+      }
+      const inject = i === 0 ? seed : t.inject
+      return {
+        goal: t.goal,
+        ...(t.answer.length > 0 ? { answer_contains: t.answer } : {}),
+        ...(inject ? { inject_files: inject } : {}),
+        bash: [probe(current, `READ_HEAVY_${tag}_T${i + 1}_OK`, t.note ? noteHas(t.note) : [])],
+      }
+    }),
   }
 }
 
@@ -594,13 +729,13 @@ export function buildSuite() {
   return {
     suite: 'read-heavy',
     description:
-      'Long sessions that mostly navigate and read a seeded workspace and answer questions, with one small write each. Written for this bench, not ported.',
+      'Long sessions that mostly navigate and read a seeded workspace and answer questions, go back to files read turns earlier, and make one small write each. Written for this bench, not ported.',
     scenarios: [
       scenario({
         id: 'read-heavy-code',
         tag: 'CODE',
         description:
-          'A small Python package: definitions, a configuration chain, a module comparison and counts.',
+          'A small Python package: definitions, a configuration chain, module comparisons, counts, re-reads and a changed profile.',
         seed: CODE_FILES,
         turns: CODE_TURNS,
       }),
@@ -608,7 +743,7 @@ export function buildSuite() {
         id: 'read-heavy-docs',
         tag: 'DOCS',
         description:
-          'An operations handbook: symptom lookup, an escalation chain across pages, ownership counts.',
+          'An operations handbook: symptom lookup, an escalation hop across pages, ownership counts, re-reads and a changed team page.',
         seed: DOC_FILES,
         turns: DOC_TURNS,
       }),
