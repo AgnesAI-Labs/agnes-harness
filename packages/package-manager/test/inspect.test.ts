@@ -513,17 +513,45 @@ it('projects declared package kinds through preview and verified installed inven
 })
 
 it('installs a static bundle package and exposes its kind without executing an entry', async () => {
+  const launch = { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'standard' }
   pkg({
     exports: undefined,
-    agnes: { provides: ['bundle'], bundles: { base: { profile: { toolPolicy: { readOnly: true } } } } },
+    agnes: {
+      provides: ['bundle'],
+      bundles: { base: { profile: { toolPolicy: { readOnly: true } }, launch } },
+    },
   })
   writeFileSync(join(sourceDir, 'index.ts'), "throw new Error('bundle code must not run')")
   const instance = manager()
   const preview = await instance.inspect(profile, source)
   expect(preview.provides).toEqual(['bundle'])
+  expect(preview.preflight).toMatchObject({
+    level: 'deployment-dependent',
+    reasons: ['launch-preset-definition-required:standard'],
+  })
   expect(preview.blockers).toEqual([])
   await instance.install(profile, source, { expectedIntegrity: preview.integrity })
   expect(
     (await instance.inventory(profile)).packages.find((item) => item.id === 'acme/pkg-a')?.provides,
   ).toEqual(['bundle'])
+  pkg({
+    exports: undefined,
+    agnes: {
+      provides: ['bundle'],
+      bundles: {
+        base: {
+          launch: { ...launch, preset: 'a' },
+          presets: { a: { name: 'a', extends: 'b' }, b: { name: 'b', extends: 'a' } },
+        },
+      },
+    },
+  })
+  const refusal = {
+    code: 'E_PACKAGE_STATE',
+    detail: { reason: expect.stringContaining('preset extends cycle') },
+  }
+  await expect(instance.inspect(profile, source)).rejects.toMatchObject(refusal)
+  await expect(
+    instance.install(profile, source, { expectedIntegrity: hashDirectory(sourceDir) }),
+  ).rejects.toMatchObject(refusal)
 })

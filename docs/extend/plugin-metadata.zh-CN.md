@@ -51,7 +51,7 @@
 
 智能体引用为 `package#bundle`。`launch.title`、`description`、`preset` 必填；本地化文字必含 `en`，可含 `zh-CN`。可选 `pages` 指向同包声明的 profile 页面。草稿 prompt 每种语言不超过 16 KiB，不能包含 secret 引用。**launch 不继承**：上面的 `reuse` 只是复用积木，不是智能体。子 Bundle 可以声明完整 launch 并选择继承的 preset。`extends` 是不重复的完整引用数组，不新增内联组合语法。
 
-静态预检分 `structural`（结构合法）、`static-references`（静态引用可解）、`deployment-dependent`（待部署验证）、`refused`（拒绝），提供原因和下一步。它不执行插件代码，会检查完整 preset、继承、launch 引用和已知 runtime 限制。依赖定义与运行时导出仍可能需要部署验证；安装检查通过不等于就绪，挂载、绑定、新会话、恢复保留动态检查。普通 isolated 插件行目前在导入前拒绝。
+静态预检分 `structural`（结构合法）、`static-references`（静态引用可解）、`deployment-dependent`（待部署验证）、`refused`（拒绝），提供原因和下一步。它不执行插件代码，会检查完整 preset、继承、launch 引用和已知 runtime 限制。预检按 Bundle 父到子覆盖后的有效 preset 链检查继承；完全已知的循环拒绝，缺少继承定义或由部署提供的 launch preset 标为待部署验证。部署准入须校验该显式 preset 及允许列表，launch 不回退默认 preset。依赖定义与运行时导出仍可能需要部署验证；安装检查通过不等于就绪，挂载、绑定、新会话、恢复保留动态检查。普通 isolated 插件行目前在导入前拒绝。
 
 所有包的 launch 声明均进入 `capabilityHash`，修改启动信息必须重新审阅信任。旧 `metadata.launches` 拒绝。`metadata.exampleOf` 作为经依赖版本校验的受限示例关系独立保留；可选 `pageEntry` 须有此关系且对应已声明的 profile 示例页。能力标签不能赋予普通智能体示例管理权限。
 

@@ -8,9 +8,10 @@ import { parsePackageBundles } from '@agnes/host-common/profile/composition'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { createLoader } from '@agnes/host-extensions/ext-host/loader'
 import { CompositionSessionStore } from '@agnes/host-providers/profile/composition-state'
-import { hashDirectory } from '@agnes/package-manager'
+import { hashDirectory, preflightPackageBundles } from '@agnes/package-manager'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { expect, it, vi } from 'vitest'
+import { admitSessionBundlePresets } from '../../src/runtime/profile/session-bundle-presets.js'
 import { createTestHost } from '../../testkit/index.js'
 import {
   pluginHost,
@@ -24,6 +25,38 @@ import {
 vi.mock('@agnes/host-infrastructure/adapters/process-identity-default', () => ({
   defaultProcessIdentity: async () => ({ state: 'alive', startId: 'session-bundle-presets-test-worker' }),
 }))
+
+it('defers a deployment launch preset to admission, which requires its explicit allowed definition', () => {
+  const bundles = {
+    work: {
+      profile: { tools: ['read'] },
+      launch: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'standard' },
+    },
+  }
+  expect(preflightPackageBundles({ packageId: 'acme/kit', bundles })).toMatchObject({
+    level: 'deployment-dependent',
+    reasons: ['launch-preset-definition-required:standard'],
+  })
+  const profile = {
+    provider: { routes: [] },
+    presets: { default: 'other', allowed: ['standard', 'other'] },
+    bundleCatalog: parsePackageBundles('acme/kit', bundles),
+    limits: {},
+  } as unknown as ResolvedProfile
+  const selection = { preset: bundles.work.launch.preset, bundles: ['acme/kit#work'] }
+  const host = { presets: { standard: { name: 'standard' }, other: { name: 'other' } } }
+  expect(admitSessionBundlePresets(profile, host, selection).preset.name).toBe('standard')
+  expect(() =>
+    admitSessionBundlePresets(profile, { presets: { other: host.presets.other } }, selection),
+  ).toThrow('preset standard not provided')
+  expect(() =>
+    admitSessionBundlePresets(
+      { ...profile, presets: { default: 'other', allowed: ['other'] } },
+      host,
+      selection,
+    ),
+  ).toThrow('preset standard is not in presets.allowed')
+})
 
 /** A deployment that knows two bundles but selects neither: only a session can choose them. */
 function fixture() {
@@ -45,7 +78,11 @@ function fixture() {
         ...parsePackageBundles('@fixture/elsewhere', {
           demo: {
             presets: {
-              elsewhere: { ...strict, name: 'elsewhere', model: { route: { primary: 'not-served-here' } } },
+              elsewhere: {
+                ...strict,
+                name: 'elsewhere',
+                model: { route: { primary: { route: 'not-served-here', model: 'default' } } },
+              },
             },
           },
         }),

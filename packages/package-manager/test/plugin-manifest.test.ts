@@ -222,11 +222,20 @@ it('validates explicit launch blocks without inheriting them and reports static 
   ).toBeUndefined()
   expect(preflightPackageBundles({ ...input, stage: 'structural' }).level).toBe('structural')
   expect(preflightPackageBundles(input).level).toBe('static-references')
+  expect(
+    preflightPackageBundles({
+      ...input,
+      bundles: { base: { ...bundles.base, launch: { ...launch, preset: 'deployment' } } },
+    }),
+  ).toMatchObject({
+    level: 'deployment-dependent',
+    reasons: ['launch-preset-definition-required:deployment'],
+    next: 'validate-deployment',
+  })
   expect(preflightPackageBundles({ ...input, runtime: [{ runtime: 'in-process' }] }).level).toBe(
     'deployment-dependent',
   )
   for (const invalid of [
-    { base: { ...bundles.base, launch: { ...launch, preset: 'missing' } } },
     { base: { ...bundles.base, launch: { ...launch, preset: undefined } } },
     { base: { extends: ['base'] } },
     { base: { extends: ['acme/kit#missing'] } },
@@ -275,6 +284,98 @@ it('validates explicit launch blocks without inheriting them and reports static 
       dependencies: { 'other/pkg': '^1' },
     }).level,
   ).toBe('static-references')
+})
+
+it('checks effective preset inheritance after parent-to-child overrides and defers unknown chains', () => {
+  const launch = { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'a' }
+  const input = { packageId: 'acme/kit' }
+  for (const runtime of [undefined, [{ runtime: 'in-process' }]]) {
+    for (const bundles of [
+      {
+        work: {
+          presets: { a: { name: 'a', extends: 'b' }, b: { name: 'b', extends: 'a' } },
+          launch,
+        },
+      },
+      {
+        parent: { presets: { a: { name: 'a', extends: 'b' }, b: { name: 'b' } } },
+        work: {
+          extends: ['acme/kit#parent'],
+          // Omitting a.extends preserves the parent link; overriding b creates the cycle.
+          presets: { a: { name: 'a' }, b: { name: 'b', extends: 'a' } },
+          launch,
+        },
+      },
+    ])
+      expect(preflightPackageBundles({ ...input, bundles, ...(runtime ? { runtime } : {}) })).toMatchObject({
+        level: 'refused',
+        reasons: [expect.stringContaining('preset extends cycle')],
+        next: 'fix-declaration',
+      })
+  }
+  expect(
+    preflightPackageBundles({
+      ...input,
+      bundles: { work: { presets: { a: { name: 'a', extends: 'deployment' } }, launch } },
+    }),
+  ).toMatchObject({
+    level: 'deployment-dependent',
+    reasons: ['preset-inheritance-definition-required:deployment'],
+  })
+  const catalog = parsePackageBundleContract('other/pkg', {
+    common: { presets: { a: { name: 'a', extends: 'deployment' }, b: { name: 'b' } } },
+    left: { extends: ['other/pkg#common'], presets: { a: { name: 'a', extends: 'b' } } },
+    right: { extends: ['other/pkg#common'] },
+  })
+  expect(
+    preflightPackageBundles({
+      ...input,
+      catalog,
+      dependencies: { 'other/pkg': '^1' },
+      bundles: { work: { extends: ['other/pkg#left', 'other/pkg#right'], launch } },
+    }).level,
+  ).toBe('static-references')
+  expect(
+    preflightPackageBundles({
+      ...input,
+      catalog,
+      dependencies: { 'other/pkg': '^1' },
+      bundles: { work: { extends: ['other/pkg#missing'], presets: { a: { name: 'a' } }, launch } },
+    }),
+  ).toMatchObject({
+    level: 'deployment-dependent',
+    reasons: expect.arrayContaining(['preset-inheritance-definition-required:a']),
+  })
+  const cycle = { a: { name: 'a', extends: 'b' }, b: { name: 'b', extends: 'a' } }
+  const cyclicParent = parsePackageBundleContract('other/pkg', { base: { presets: cycle } })
+  // A child can repair an inherited cycle; checking raw parents before their overrides is wrong.
+  expect(
+    preflightPackageBundles({
+      ...input,
+      catalog: cyclicParent,
+      dependencies: { 'other/pkg': '^1' },
+      bundles: {
+        work: {
+          extends: ['other/pkg#base'],
+          presets: { b: { name: 'b', extends: 'c' }, c: { name: 'c' } },
+          launch,
+        },
+      },
+    }).level,
+  ).toBe('static-references')
+  // An unknown later parent might repair the cycle, but explicit later edges prove it again.
+  for (const [presets, level] of [
+    [{}, 'deployment-dependent'],
+    [cycle, 'refused'],
+  ] as const)
+    expect(
+      preflightPackageBundles({
+        ...input,
+        catalog: cyclicParent,
+        dependencies: { 'other/pkg': '^1' },
+        bundles: { work: { extends: ['other/pkg#base', 'other/pkg#missing'], presets, launch } },
+      }).level,
+    ).toBe(level)
 })
 
 it('keeps application schema minimal and validates explicit agent references', () => {

@@ -111,14 +111,12 @@ export function preflightPackageBundles(input: {
     if (input.stage === 'structural')
       return { level: 'structural', reasons: [], next: 'resolve-static-references' }
     const catalog = Object.assign(Object.create(null), input.catalog, local) as PackageBundleCatalog
-    let deployment = false
-    let entryDeployment = false
+    const pending = new Set<string>()
     const get = (ref: string) => {
       if (Object.hasOwn(catalog, ref)) return catalog[ref]
       const owner = ref.slice(0, ref.indexOf('#'))
       if (owner !== input.packageId && Object.hasOwn(input.dependencies ?? {}, owner)) {
-        deployment = true
-        entryDeployment = true
+        pending.add('dependency-definitions-required')
         return undefined
       }
       fail(`unknown bundle ${ref}`)
@@ -133,43 +131,76 @@ export function preflightPackageBundles(input: {
       )
         fail(`undeclared bundle dependency ${owner}`)
     }
-    const walk = (ref: string, presets: Set<string>) => {
-      if (visiting.size >= 64 || visiting.has(ref))
-        fail(`bundle inheritance cycle or excessive depth at ${ref}`)
-      const entry = get(ref)
-      if (!entry) return
-      visiting.add(ref)
-      for (const parent of entry.document.extends ?? []) {
-        checkOwner(parent, entry.sourcePackage)
-        walk(parent, presets)
-      }
-      for (const [id, preset] of Object.entries(entry.document.presets ?? {})) {
-        presets.add(id)
-        for (const selected of preset.bundles ?? []) {
-          if (!REF.test(selected)) fail(`invalid bundle reference ${selected}`)
-          checkOwner(selected, entry.sourcePackage)
-          get(selected)
+    // Only the scalar extends link affects this check. An omitted child link keeps the parent's
+    // link, just as the compiler's recursive map merge does. Each Bundle is applied once in DFS
+    // parent-to-child order, including diamonds shared by several parents.
+    type PresetLink = { parent?: string | undefined; known: boolean }
+    for (const entry of Object.values(local)) {
+      const presets = new Map<string, PresetLink>()
+      const applied = new Set<string>()
+      let unknownPresets = false
+      const walk = (ref: string) => {
+        if (visiting.size >= 64 || visiting.has(ref))
+          fail(`bundle inheritance cycle or excessive depth at ${ref}`)
+        if (applied.has(ref)) return
+        const base = get(ref)
+        if (!base) {
+          // Missing parents may define or override any preset. A later explicit link can make
+          // that individual edge known again; an omitted link cannot prove the chain terminates.
+          unknownPresets = true
+          for (const preset of presets.values()) preset.known = false
+          applied.add(ref)
+          return
+        }
+        visiting.add(ref)
+        for (const parent of base.document.extends ?? []) {
+          checkOwner(parent, base.sourcePackage)
+          walk(parent)
+        }
+        visiting.delete(ref)
+        applied.add(ref)
+        for (const [id, preset] of Object.entries(base.document.presets ?? {})) {
+          const previous = presets.get(id)
+          presets.set(id, {
+            parent: preset.extends ?? previous?.parent,
+            known: preset.extends !== undefined || (previous?.known ?? !unknownPresets),
+          })
+          for (const selected of preset.bundles ?? []) {
+            if (!REF.test(selected)) fail(`invalid bundle reference ${selected}`)
+            checkOwner(selected, base.sourcePackage)
+            get(selected)
+          }
         }
       }
-      visiting.delete(ref)
-    }
-    for (const entry of Object.values(local)) {
-      const presets = new Set<string>()
-      entryDeployment = false
-      walk(entry.id, presets)
+      walk(entry.id)
+      for (const name of presets.keys()) {
+        const seen = new Set<string>()
+        let current: string | undefined = name
+        while (current) {
+          if (seen.has(current)) fail(`preset extends cycle at ${current}`)
+          seen.add(current)
+          const preset: PresetLink | undefined = presets.get(current)
+          if (!preset || !preset.known) {
+            pending.add(`preset-inheritance-definition-required:${current}`)
+            break
+          }
+          current = preset.parent
+        }
+      }
       const launch = entry.document.launch
-      if (launch && !presets.has(launch.preset) && !entryDeployment)
-        fail(`unknown launch preset ${launch.preset}`)
+      if (launch && !presets.has(launch.preset))
+        pending.add(`launch-preset-definition-required:${launch.preset}`)
       if (launch?.pages?.some((page) => !input.pages?.includes(page)))
         fail(`unknown launch page in ${entry.id}`)
     }
     for (const row of input.runtime ?? []) {
       if (row.runtime === 'isolated') fail('unsupported isolated plugin runtime contract')
     }
-    if (deployment || input.runtime?.length)
+    if (input.runtime?.length) pending.add('runtime-registration-required')
+    if (pending.size)
       return {
         level: 'deployment-dependent',
-        reasons: [deployment ? 'dependency-definitions-required' : 'runtime-registration-required'],
+        reasons: [...pending],
         next: 'validate-deployment',
       }
     return { level: 'static-references', reasons: [], next: 'review-trust' }
