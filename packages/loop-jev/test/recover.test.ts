@@ -418,6 +418,50 @@ describe('recovery after resume', () => {
     expect(r.resumed).toEqual(['jev:1:0:t0'])
     expect(r.steps[0]).toMatchObject({ dispatch: { results: ['ok'] } })
   })
+  it('approval continuation: a failed read-only tool without a profile is not applied', async () => {
+    const search: PendingCall = {
+      invocationId: 'jev:1:0:t0',
+      name: 'docs_search',
+      args: {},
+      announce: 'content',
+      content: [],
+    }
+    const s = saved({ stage: 'parked', cur: { ...saved({}).cur, calls: [search] } })
+    s.toolNames = [...s.toolNames, 'docs_search'].sort()
+    const r = await resume(s, {
+      turnId: 2,
+      resumeParked: 'opened',
+      view: {
+        tools: [...s.toolNames],
+        platform: { meta: { docs_search: { isReadOnly: true, isOpenWorld: true } } },
+      },
+      effects: { 'jev:1:0:t0': { status: 'may-have-sent', invocationId: 'jev:1:0:t0', checkpoint: null } },
+      resumeTool: () => ({ ...ok('backend down'), isError: true }),
+    })
+    const state = (r.jev.prepared[0] as unknown as { payload: { state: JsonObject } }).payload.state
+    expect((state.last_result as { error: JsonObject }).error).toMatchObject({
+      code: 'EXECUTION_FAILED',
+      recoverability: 'recoverable',
+    })
+  })
+  it('approval continuation: counts the references taken from text and reports them', async () => {
+    const list: PendingCall = {
+      invocationId: 'jev:1:0:t0',
+      name: 'ls',
+      args: { path: '.' },
+      announce: 'content',
+      content: [],
+    }
+    const s = saved({ stage: 'parked', cur: { ...saved({}).cur, calls: [list] } })
+    const r = await resume(s, {
+      turnId: 2,
+      resumeParked: 'opened',
+      effects: { 'jev:1:0:t0': { status: 'may-have-sent', invocationId: 'jev:1:0:t0', checkpoint: null } },
+      resumeTool: () => ok('notes.txt'),
+    })
+    expect(r.steps[0]).toMatchObject({ dispatch: { refs: { source: 'text', count: 1 } } })
+    expect(r.metrics.at(-1)).toMatchObject({ textReferences: 1 })
+  })
   it('parked: waiting stays parked, blocked ends blocked, nothing parked goes idle', async () => {
     const parked = saved({ stage: 'parked', cur: { ...saved({}).cur, calls: [call] } })
     expect((await resume(parked, { noView: true, resumeParked: 'waiting' })).steps).toEqual([])
