@@ -7,7 +7,7 @@ import {
   initialState,
   parseJevState,
 } from '../src/state.js'
-import type { Decision, HistoryEntry, ObservationView } from '../src/types.js'
+import type { Decision, HistoryEntry, JsonValue, ObservationView } from '../src/types.js'
 
 const big = (i: number): HistoryEntry => ({
   phase: 'INSPECT',
@@ -156,6 +156,101 @@ describe('checkpoint codec v1', () => {
   })
 })
 
+/** A checkpoint as written before observation views, batch decisions and the newer counters existed. */
+const OLD_CHECKPOINT: JsonValue = {
+  v: 1,
+  idTurn: 2,
+  coreTurn: 5,
+  stage: 'llm',
+  step: 3,
+  toolNames: ['edit', 'find', 'grep', 'ls', 'read', 'shell', 'tool_describe', 'tool_search', 'write'],
+  toolNamesChanges: 0,
+  cur: {
+    jevAttempts: ['jev:2:3:d0'],
+    level: 1,
+    decision: {
+      phase: 'INSPECT',
+      op: 'read',
+      target: 'LLM_PARAMETERS',
+      bindingMode: 'llm_parameters',
+      args: {},
+      confidence: 0.62,
+      operationPathConfidence: 0.81,
+      targetConfidence: 0.62,
+      ambiguity: 0.2,
+      progress: null,
+      phaseTop: [
+        ['INSPECT', 0.81],
+        ['ACT', 0.12],
+      ],
+      actionTop: [['read', 0.9]],
+      consumed: [
+        { role: 'phase', head: 'phase', selected: 'INSPECT', confidence: 0.81, deterministic: false },
+        { role: 'action', head: 'action__inspect', selected: 'read', confidence: 0.9, deterministic: false },
+        {
+          role: 'target',
+          head: 'target__inspect__read',
+          selected: 'LLM_PARAMETERS',
+          confidence: 0.62,
+          deterministic: false,
+        },
+      ],
+    },
+    route: { kind: 'parameters', reason: null },
+    llm: { kind: 'parameters', attempt: 2, note: 'the previous reply named no tool', counted: 1 },
+  },
+  pendingNotes: [],
+  workspace: {
+    goal: 'summarize the notes',
+    previousAnswer: 'There are two notes.',
+    answer: '',
+    notes: [{ kind: 'file', target: 'notes.txt', text: '[file: notes.txt]\n1  first note' }],
+    history: [
+      {
+        phase: 'INSPECT',
+        operation: 'ls',
+        target: '.',
+        status: 'succeeded',
+        disposition: 'SUCCEEDED',
+        summary: 'ls(.) conf=0.90',
+        output_excerpt: 'notes.txt',
+        intentFp: '0123456789abcdef0123456789abcdef',
+        observationFp: 'fedcba9876543210fedcba9876543210',
+        dispatched: true,
+      },
+      {
+        phase: 'INSPECT',
+        operation: 'read',
+        target: 'notes.txt',
+        status: 'succeeded',
+        disposition: 'SUCCEEDED',
+        summary: 'read(notes.txt) conf=n/a [escalated]',
+        read_files: ['notes.txt'],
+        output_excerpt: '1  first note',
+        intentFp: '00112233445566778899aabbccddeeff',
+        observationFp: 'ffeeddccbbaa99887766554433221100',
+        dispatched: true,
+      },
+    ],
+    turnStart: 1,
+  },
+  counters: {
+    jevCalls: 3,
+    jevRetries: 0,
+    decisionFailures: { MODEL_UNAVAILABLE: 0, INVALID_PROPOSAL: 0 },
+    llm: { parameters: 1, arbitration: 0, answer: 0, retries: 0 },
+    directSteps: 1,
+    directSuccess: 1,
+    arbitrationAgreed: 0,
+    arbitrationOverturned: 0,
+    droppedCalls: 0,
+    answerDeclined: 0,
+    noCall: 1,
+    emitted: 4,
+    droppedEvents: 0,
+  },
+  internalErrors: 0,
+}
 /** A state with the shape checks turned off, to build malformed checkpoints. */
 type Loose = {
   workspace: { views?: unknown[] }
@@ -211,12 +306,18 @@ const decisionOf = (): Decision => ({
 
 describe('checkpoints with observations', () => {
   it('reads a checkpoint written before observation views and the new counters existed', () => {
-    const old = structuredClone(initialState()) as unknown as Loose
-    delete old.workspace.views
-    for (const key of ADDED_COUNTERS) delete old.counters[key]
-    const state = parseJevState(codec.decode({ codecVersion: 1, state: old as never }) as never)
-    expect(state.workspace.views).toEqual([])
-    for (const key of ADDED_COUNTERS) expect(state.counters[key]).toBe(0)
+    const decoded = parseJevState(codec.decode({ codecVersion: 1, state: OLD_CHECKPOINT }) as never)
+    expect(decoded.workspace.views).toEqual([])
+    for (const key of ADDED_COUNTERS) expect(decoded.counters[key]).toBe(0)
+    const old = structuredClone(OLD_CHECKPOINT) as unknown as Loose & { workspace: object }
+    expect(decoded).toEqual({
+      ...old,
+      workspace: { ...old.workspace, views: [] },
+      counters: { ...old.counters, ...Object.fromEntries(ADDED_COUNTERS.map((key) => [key, 0])) },
+    })
+    const again = codec.encode(decoded as never)
+    expect(again.codecVersion).toBe(1)
+    expect(parseJevState(codec.decode(again) as never)).toEqual(decoded)
   })
   it('round-trips a view, a batch decision and the new consumed roles', () => {
     const s = initialState()
