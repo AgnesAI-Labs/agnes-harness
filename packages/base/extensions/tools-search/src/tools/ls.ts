@@ -3,6 +3,7 @@ import { defineTool } from '@agnes/plugin-runtime'
 import { guardedResult } from '../../../tools-core/src/guards/output.js'
 import { normalizeWorkspacePath } from '../../../tools-core/src/paths.js'
 import { LsParams } from '../../../tools-core/src/tools/schemas.js'
+import { type FoundPath, pathReferences } from './references.js'
 import { allowed, SEARCH_META, searchPathError, toolError } from './walk.js'
 
 const DEFAULT_LIMIT = 500
@@ -34,10 +35,15 @@ export const lsTool = defineTool({
       // Code points, not the machine's collation, so the same directory always lists the same way.
       .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
     const lines = kept.slice(0, args.limit ?? DEFAULT_LIMIT).map((e) => `${e.name}${MARK[e.kind]}`)
-    if (kept.length > lines.length) lines.push(`[${kept.length - lines.length} more]`)
+    const shown = lines.length
+    if (kept.length > shown) lines.push(`[${kept.length - shown} more]`)
     const hidden = entries.length - kept.length
     if (hidden > 0) lines.push(`[${hidden} entries not listed: denied by policy]`)
+    const found = kept.map(
+      (e): FoundPath => ({ abs: `${abs}/${e.name}`, kind: e.kind === 'dir' ? 'directory' : e.kind }),
+    )
     // An empty answer is indistinguishable from a broken tool, so an empty directory says so.
-    return guardedResult(ctx, lines.length > 0 ? lines.join('\n') : '(no entries)')
+    const result = await guardedResult(ctx, lines.length > 0 ? lines.join('\n') : '(no entries)')
+    return { ...result, structured: pathReferences(ctx, found, shown, false) }
   },
 })
