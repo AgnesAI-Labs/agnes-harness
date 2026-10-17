@@ -13,6 +13,7 @@ import {
   isRuntimeSupportedDshSlot,
 } from './dsh-slot-catalog.js'
 import { scopedExamplePages } from './example-pages.js'
+import { scopedPresentationRoles } from './presentation-roles.js'
 import { scopedProfileStreams } from './profile-streams.js'
 import { type RegisterOptions, SlotRegistry } from './registry.js'
 import {
@@ -55,6 +56,7 @@ export interface ClientContext extends Context {
   availability: ContributionAvailability
   homeEntries: ReturnType<typeof scopedHomeEntries>
   resources: ClientResourceService
+  presentationRoles: ReturnType<typeof scopedPresentationRoles>
 }
 
 export function clientModule(mod: ClientModule): {
@@ -195,6 +197,12 @@ export function clientModule(mod: ClientModule): {
       })
       const availability = contributionAvailability(config, (off) => {
         ctx.effect(() => off)
+      })
+      Object.defineProperty(ctx, 'presentationRoles', {
+        value: scopedPresentationRoles(config, (off) => {
+          ctx.effect(() => off)
+        }),
+        configurable: true,
       })
       Object.defineProperty(ctx, 'availability', { value: availability, configurable: true })
       const examplePages = scopedExamplePages(config, (off) => {

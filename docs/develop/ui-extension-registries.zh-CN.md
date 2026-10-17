@@ -77,3 +77,13 @@ profile 模块使用 `ctx.profile.examples.list/inspect/enable/read/stop/inspect
 场景资源声明在 `client.assets` 中，相对于与 entry 相同的描述文件目录。支持 glTF/GLB、二进制缓冲、PNG/JPEG/WebP、KTX2 和 WebAssembly。安装拒绝路径穿越和越界符号链接；不可变快照绑定每个文件的哈希和长度，读取时再次校验。代码继续受单文件 4 MiB、合计 16 MiB 限制；场景资源单文件最多 32 MiB、完整快照最多 128 MiB。不支持或超限的资源拒绝发布。解码器执行仍须满足部署 CSP，能够下发 wasm 文件不代表浏览器能够执行。示例应明确展示场景加载失败，不得据此伪报设备已就绪。 启动器的私有资产读取支持相同的 32 MiB 资源上限，并计入 base64 编码开销。本地和 SEA 打包会检查声明的客户端文件、字面量 `new URL(..., import.meta.url)`、CSS URL 及 glTF 缓冲区/图像引用是否存在于交付 payload；优先使用字面量资产 URL，使漏文件在构建时失败。
 
 profile 的 primary 声明可添加 `navigation: { title, titles?, icon, order }`。`titles` 按界面语言提供标签，`title` 为回退值。宿主收到已启用且就绪的名册后即呈现入口，首次打开才加载模块；模块仍通过原有的 `ctx.homeEntries.register`、声明与归属校验接管同一入口。省略元数据时保留立即加载行为。失败或撤销会立即移除入口；元数据不授予权限。
+
+## 替换交付物呈现
+
+生命周期为 `profile` 的客户端模块可调用 `ctx.presentationRoles.register({ role: 'deliverables', priority: 0, mount })`。`mount` 必须返回同步清理函数，撤销它注册的全部 slot、卡片、面板和订阅。角色沿用 single slot 的优先级规则：数值最小者生效，同优先级拒绝注册，先卸下旧提供方再挂载新提供方。默认 `@agnes/deliverables-ui` 使用 100。名册撤权在异步模块清理之前撤销角色；禁用替代插件会恢复默认呈现。角色不授予后台权限。
+
+使用 `@agnes/web-client` 的 `DeliverablesStore(ctx.agnes, ctx.session)`，并随呈现一起 dispose。只读 `DeliverableRecord` 包含 `id`、`sessionId`、`laneId`、来源 owner/调用、可确定时的所属 `turnId`、呈现 `seq`、名称/说明、inline/workbench 位置及现有完整 `ArtifactRef`。同名历史只是展示分组，不证明版本谱系。修改工作区源文件不会改变已交付快照。新交付在现有交付物事件之外持久化工具 `structured` 结果；原有 Intelligent UI 文件列表仍可读取。Intelligent UI 是可选增强：没有渲染器时仍能展示已记录文件的普通列表。
+
+通过 `conversation.chat.turnTail` 注册轮次卡片（owner 为 `{ turn: UITurn, nodes: readonly UINode[] }`），通过 `workbenchPanels` 注册标签，通过 `conversationCards` 的 `artifact-file` 类别渲染文件组件（data 为 `{ file, sessionId, laneId }`）。匹配 `intelligent-ui.surface` 类别、data 为 `UiSurfaceRecord` 的卡片表示由插件接管整个 surface，通用视图面板会让出它。角色 mount 应返回上述全部注销函数，不依赖异步卸载清除标签。打开和下载必须通过 `ctx.resources.documents/files`，携带记录中的 lane 和完整 artifact 引用，不得把源路径当下载 URL。
+
+参见[独立画廊示例](../../examples/community/deliverables-gallery/README.md)。它不导入 Web 宿主代码，展示当前 profile 启用、历史恢复、接管及回退。
