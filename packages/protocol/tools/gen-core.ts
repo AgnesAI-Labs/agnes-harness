@@ -730,7 +730,10 @@ export function generateModule(schema: JsonSchemaDoc, moduleName: string, schema
     }
   }
 
+  const planned = ['AgnesV1', 'SessionV1', 'AppServerV1'].includes(moduleName)
   let out = HEADER_COMMENT + IMPORT_TYPE
+  if (planned)
+    out += "import { importValidationSchema, prepareValidationSchemas } from '@agnes/protocol-validation'\n"
   if (formats.length > 0) out += IMPORT_FORMAT_REGISTRY
   out += '\n'
   // One format may be used by several fields in a schema (several timestamp fields all using
@@ -757,12 +760,16 @@ export function generateModule(schema: JsonSchemaDoc, moduleName: string, schema
     .join('\n')
   out += `export const ${moduleName} = Type.Module({\n${entries}\n})\n\n`
   for (const n of moduleNames) {
-    out += `export const ${n} = ${moduleName}.Import(${lit(n)})\nexport type ${n} = Static<typeof ${n}>\n`
+    const imported = planned
+      ? `importValidationSchema(${moduleName}, ${lit(n)})`
+      : `${moduleName}.Import(${lit(n)})`
+    out += `export const ${n} = ${imported}\nexport type ${n} = Static<typeof ${n}>\n`
   }
   if (typeof schema.$ref === 'string') {
     out += `export const Root = ${refName(schema.$ref)}\nexport type Root = ${refName(schema.$ref)}\n`
   }
   out += emitExtras(schema)
+  if (planned) out += `\nprepareValidationSchemas([${names.join(', ')}])\n`
   return out
 }
 

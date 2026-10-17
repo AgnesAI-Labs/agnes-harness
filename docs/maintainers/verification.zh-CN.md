@@ -32,6 +32,11 @@ CLI 启动测试仍要求启动和创建会话成功。共享 CI 机器上的耗
 
 Web 交付构建使用生产 React 并压缩 JavaScript；开发 watcher 保留开发诊断。聚焦用例 `packages/cli/test/build-local-web.test.ts` 遍历实际产物的静态模块图（含 import map 中的 vendor），将冷启动 JavaScript 限制为 9 MiB，较校准后的约 7 MiB 留出约 30% 余量。内置主页按选择加载。字节门具有确定性，不能代替真实浏览器的绘制、交互和转录测量。
 
+生成的事件、协议与投影 schema 使用不可变定义和符合 CSP 的缓存引用计划。拒绝值仍使用 TypeBox 的完整错误迭代器；策略开关与已注册格式保持实时读取。调用方自建的可变 schema 继续解释式校验。`packages/protocol/test/validate.test.ts` 对结果与完整错误做差分验证，覆盖递归、畸形与策略相关输入。heavy 层 `validation-plan.slow.test.ts` 将 500 节点投影与解释器配对，要求计划校验耗时中位数低于解释器的 70%。
+
+heavy 层 `packages/cli/test/startup-perf.e2e.test.ts` 通过 `AGNES_LOCAL_CLI` 指向现有本地构建，使用隔离的新 home 和真实 daemon/worker；CLI ready 上限为 8 秒，首次会话为 4 秒，输出测量值并在清理前停止进程。归因仍须在同机配对记录启动 spans 与 CPU profiles；宽松回归预算不能代替配对实测。账本扫描与 append watermark 语句在各自连接内复用查询计划；不缓存行、完整性决定，也不放宽提交顺序或 checkpoint 同步。
+
+
 重型门 `packages/host-infrastructure/test/adapters/table-reads.slow.test.ts` 串行测量 50 行合成数据上的五批 owner 读取，每批 3,000 次，保守上限为 150 ms。它还检查写入、schema 变更和查询计划淘汰后的最新结果，以及非法参数和 SQL 拒绝。查询计划仅在各自隔离连接内复用，不缓存数据行或授权结果。原有账本完整性与包加载门仍须执行。
 
 包加载性能门位于 `tools/plugin-performance.slow.test.ts` 的 **gates real immutable package preparation** 用例。在性能测试机器上使用 Node 24 串行运行：

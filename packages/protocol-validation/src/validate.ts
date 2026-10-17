@@ -1,5 +1,8 @@
 import { FormatRegistry, type TSchema } from '@sinclair/typebox'
 import { Value, type ValueError, ValueErrorType } from '@sinclair/typebox/value'
+import { checkWithPlan } from './check-plan.js'
+
+export { prepareValidationSchemas } from './check-plan.js'
 export type ValidationError = {
   path: string
   message: string
@@ -84,8 +87,13 @@ export function isDateTime(value: unknown): value is string {
 
 export function validateAgainst<T>(schema: TSchema, x: unknown, pathPrefix = ''): ValidationResult<T> {
   // Inlined module roots still use TypeBox references to definitions identified by $id.
+  const planned = checkWithPlan(schema, x)
+  if (planned) return { ok: true, value: x as T }
   const references: TSchema[] = Object.values(schema.$defs ?? {})
-  if (Value.Check(schema, references, x)) return { ok: true, value: x as T }
+  // Mutable or ambiguous schemas keep the original check/reference/error path. Never retry a
+  // rejected value: an accessor could return different data on a second check. Generated plans
+  // have unambiguous references; the existing error visitor resolves those while enumerating.
+  if (planned === undefined && Value.Check(schema, references, x)) return { ok: true, value: x as T }
   const errors = [...Value.Errors(schema, references, x)]
     .map(classify)
     .map((e) => ({ ...e, path: pathPrefix + e.path }))

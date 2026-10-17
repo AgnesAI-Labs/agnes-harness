@@ -8,6 +8,9 @@ import { parseKey } from '../tui/keys.js'
 import { tt } from '../tui/locale.js'
 import { Renderer } from '../tui/renderer.js'
 import type { Terminal } from '../tui/terminal.js'
+
+export { NodeTerminal } from '../tui/terminal.js'
+
 import { AuthMethodView } from '../tui/views/auth-method.js'
 import { SecretInputView } from '../tui/views/secret-input.js'
 import { type OnboardingState, reduceOnboarding } from './state.js'

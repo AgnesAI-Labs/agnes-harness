@@ -38,10 +38,7 @@ import {
 } from './errors.js'
 import { runAcp } from './modes/acp.js'
 import { runPrint } from './modes/print.js'
-import { runTui } from './modes/tui.js'
-import { runOnboardingTui } from './onboarding/tui.js'
 import { resolveLocale } from './tui/locale.js'
-import { NodeTerminal } from './tui/terminal.js'
 import type { Booted } from './types.js'
 
 /** The resource command layer only raises these for backend-confirmed terminal outcomes. */
@@ -860,6 +857,8 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     const mode = resolveMode(p, { stdin: io.stdin.isTTY === true, stdout: io.stdout.isTTY === true })
     if (mode !== 'print' && mode !== 'tui' && mode !== 'acp')
       throw new UsageError(`agh ${mode} is not available in this build; use -p`)
+    // Resolve the selected mode before installing its signal ladder, so loading cannot race cancel.
+    const tuiMode = mode === 'tui' ? await import('./modes/tui.js') : undefined
     const booted: Booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
     let leave!: (code: number) => void
     const exited = new Promise<number>((resolve) => {
@@ -881,6 +880,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
         if (snapshot && !snapshot.configured) {
           // Rendered with the TUI's own selectors. `agh config` keeps the line-oriented wizard so
           // a piped or non-TTY caller still has a scriptable path to the same config endpoint.
+          const { NodeTerminal, runOnboardingTui } = await import('./onboarding/tui.js')
           const term = new NodeTerminal(io.stdin, io.stdout, io.env)
           const saved = await runOnboardingTui(booted.client, snapshot, term, resolveLocale(io.env))
           // Cancellation leaves setup; Demo continues through the already selected local backend.
@@ -941,8 +941,8 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
                 },
                 signal: () => signal,
               })
-            : mode === 'tui'
-              ? runTui(booted, p, {
+            : tuiMode
+              ? tuiMode.runTui(booted, p, {
                   env: io.env,
                   stdin: io.stdin,
                   stdout: io.stdout,

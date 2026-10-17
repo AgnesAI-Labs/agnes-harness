@@ -294,16 +294,21 @@ it('refuses a cache version that could escape its version directory', () => {
   )
 })
 
-it('accepts prerelease and build identifiers in the cache version', async () => {
+it('accepts prerelease cache versions and captures validated loader options', async () => {
   const f = setup()
-  const loader = createLoader({
+  const options = {
     cacheDir: join(f.root, 'cache'),
     hostRoot: f.root,
     agnesVersion: '0.1.0-dev+abc',
-  })
+  }
+  const loader = createLoader(options)
+  options.agnesVersion = '../elsewhere'
+  options.cacheDir = join(f.root, 'changed-cache')
+  options.hostRoot = join(f.root, 'changed-root')
   const entry = f.write('index.ts', 'export default () => {}')
   expect(typeof (await loader.import(entry)).default).toBe('function')
   expect(readdirSync(join(f.root, 'cache', 'jiti', '0.1.0-dev+abc')).length).toBeGreaterThan(0)
+  expect(readdirSync(f.root)).not.toContain('changed-cache')
 })
 
 it.each(['ts', 'js'])(

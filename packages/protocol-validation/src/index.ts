@@ -1,4 +1,5 @@
 export * from './attachments.js'
+export { importValidationSchema } from './generated-imports.js'
 export * from './json-data.js'
 export * from './model-images.js'
 export * from './safe-image.js'
